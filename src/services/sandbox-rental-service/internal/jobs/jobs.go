@@ -133,7 +133,7 @@ type SubmitRequest struct {
 type ExecutionRecord struct {
 	RunID            uuid.UUID
 	ExecutionID      uuid.UUID
-	OrgID            uint64
+	OrgID            string
 	ActorID          string
 	Kind             string
 	SourceKind       string
@@ -220,7 +220,7 @@ type Service struct {
 type executionWorkItem struct {
 	ExecutionID      uuid.UUID
 	AttemptID        uuid.UUID
-	OrgID            uint64
+	OrgID            string
 	ActorID          string
 	Kind             string
 	SourceKind       string
@@ -245,7 +245,7 @@ type executionWorkItem struct {
 type jobEventRow struct {
 	ExecutionID            uuid.UUID `ch:"execution_id"`
 	AttemptID              uuid.UUID `ch:"attempt_id"`
-	OrgID                  uint64    `ch:"org_id"`
+	OrgID                  string    `ch:"org_id"`
 	ActorID                string    `ch:"actor_id"`
 	Kind                   string    `ch:"kind"`
 	SourceKind             string    `ch:"source_kind"`
@@ -300,7 +300,7 @@ type jobEventRow struct {
 type jobLogRow struct {
 	ExecutionID        uuid.UUID `ch:"execution_id"`
 	AttemptID          uuid.UUID `ch:"attempt_id"`
-	OrgID              uint64    `ch:"org_id"`
+	OrgID              string    `ch:"org_id"`
 	SourceKind         string    `ch:"source_kind"`
 	WorkloadKind       string    `ch:"workload_kind"`
 	RunnerClass        string    `ch:"runner_class"`
@@ -346,7 +346,7 @@ func (e *billingStatusError) Unwrap() error {
 	return e.Cause
 }
 
-func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req SubmitRequest) (executionID uuid.UUID, attemptID uuid.UUID, err error) {
+func (s *Service) Submit(ctx context.Context, orgID string, actorID string, req SubmitRequest) (executionID uuid.UUID, attemptID uuid.UUID, err error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.submit")
 	defer func() {
 		if err != nil {
@@ -443,7 +443,7 @@ func (s *Service) Submit(ctx context.Context, orgID uint64, actorID string, req 
 	return executionID, attemptID, nil
 }
 
-func (s *Service) enqueueExecutionAdvance(ctx context.Context, tx pgx.Tx, executionID, attemptID uuid.UUID, orgID uint64, actorID, correlationID string) error {
+func (s *Service) enqueueExecutionAdvance(ctx context.Context, tx pgx.Tx, executionID, attemptID uuid.UUID, orgID string, actorID, correlationID string) error {
 	if s.Scheduler != nil {
 		_, err := s.Scheduler.EnqueueExecutionAdvanceTx(ctx, tx, scheduler.ExecutionAdvanceRequest{
 			ExecutionID:   executionID.String(),
@@ -458,7 +458,7 @@ func (s *Service) enqueueExecutionAdvance(ctx context.Context, tx pgx.Tx, execut
 	return fmt.Errorf("scheduler runtime unavailable")
 }
 
-func (s *Service) existingSubmission(ctx context.Context, orgID uint64, idempotencyKey string) (uuid.UUID, uuid.UUID, error) {
+func (s *Service) existingSubmission(ctx context.Context, orgID string, idempotencyKey string) (uuid.UUID, uuid.UUID, error) {
 	row, err := s.storeQueries().GetExistingSubmission(ctx, store.GetExistingSubmissionParams{
 		OrgID:          dbOrgID(orgID),
 		IdempotencyKey: idempotencyKey,
@@ -998,7 +998,7 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 			Allocation:       billingclient.BillingAllocation(allocation),
 			BillingJobID:     &jobID,
 			ConcurrentCount:  1,
-			OrgID:            billingclient.OrgId(strconv.FormatUint(item.OrgID, 10)),
+			OrgID:            billingclient.OrgId(item.OrgID),
 			ProductID:        billingclient.ProductId(item.ProductID),
 			ReservationShape: billingclient.ReservationShape("time"),
 			ReservedQuantity: 0,
@@ -1290,11 +1290,11 @@ func (s *Service) renewLeaseLoop(ctx context.Context, leaseID, keyPrefix string)
 	}
 }
 
-func (s *Service) GetExecution(ctx context.Context, orgID uint64, executionID uuid.UUID) (*ExecutionRecord, error) {
+func (s *Service) GetExecution(ctx context.Context, orgID string, executionID uuid.UUID) (*ExecutionRecord, error) {
 	return s.GetRun(ctx, orgID, executionID)
 }
 
-func (s *Service) GetExecutionLogs(ctx context.Context, orgID uint64, executionID uuid.UUID) (uuid.UUID, string, error) {
+func (s *Service) GetExecutionLogs(ctx context.Context, orgID string, executionID uuid.UUID) (uuid.UUID, string, error) {
 	attemptID, err := s.storeQueries().GetLatestAttemptForExecution(ctx, store.GetLatestAttemptForExecutionParams{
 		OrgID:       dbOrgID(orgID),
 		ExecutionID: executionID,
@@ -1355,7 +1355,7 @@ func (s *Service) latestBillingReservation(ctx context.Context, item executionWo
 	window := windows[len(windows)-1]
 	return billingclient.BillingWindowReservation{
 		WindowID:            window.BillingWindowID,
-		OrgID:               billingclient.OrgId(strconv.FormatUint(item.OrgID, 10)),
+		OrgID:               billingclient.OrgId(item.OrgID),
 		ProductID:           billingclient.ProductId(item.ProductID),
 		ActorID:             billingclient.ActorId(item.ActorID),
 		SourceType:          billingclient.BillingSourceType(item.SourceKind),

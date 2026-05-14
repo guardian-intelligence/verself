@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -89,7 +88,7 @@ func parseRunCursor(value string) (runCursor, error) {
 	return runCursor{UpdatedAt: updatedAt.UTC(), ExecutionID: executionID}, nil
 }
 
-func (s *Service) ListRuns(ctx context.Context, orgID uint64, filters RunListFilters) (RunPage, error) {
+func (s *Service) ListRuns(ctx context.Context, orgID string, filters RunListFilters) (RunPage, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.runs.list")
 	defer span.End()
 
@@ -148,7 +147,7 @@ func (s *Service) ListRuns(ctx context.Context, orgID uint64, filters RunListFil
 	return RunPage{Runs: runs, NextCursor: nextCursor, Limit: limit}, nil
 }
 
-func (s *Service) GetRun(ctx context.Context, orgID uint64, executionID uuid.UUID) (*ExecutionRecord, error) {
+func (s *Service) GetRun(ctx context.Context, orgID string, executionID uuid.UUID) (*ExecutionRecord, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.runs.get")
 	defer span.End()
 	record, err := s.loadRun(ctx, orgID, executionID, true)
@@ -159,7 +158,7 @@ func (s *Service) GetRun(ctx context.Context, orgID uint64, executionID uuid.UUI
 	return record, nil
 }
 
-func (s *Service) loadRun(ctx context.Context, orgID uint64, executionID uuid.UUID, includeWindows bool) (*ExecutionRecord, error) {
+func (s *Service) loadRun(ctx context.Context, orgID string, executionID uuid.UUID, includeWindows bool) (*ExecutionRecord, error) {
 	row, err := s.storeQueries().GetRun(ctx, store.GetRunParams{
 		OrgID:       dbOrgID(orgID),
 		ExecutionID: executionID,
@@ -360,8 +359,8 @@ func (s *Service) attachRunBillingSummaries(ctx context.Context, runs []Executio
 	return runs, nil
 }
 
-func traceOrgID(orgID uint64) attribute.KeyValue {
-	return attribute.String("verself.org_id", strconv.FormatUint(orgID, 10))
+func traceOrgID(orgID string) attribute.KeyValue {
+	return attribute.String("verself.org_id", orgID)
 }
 
 func traceInt(key string, value int) attribute.KeyValue {

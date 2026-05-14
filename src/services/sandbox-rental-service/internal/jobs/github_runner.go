@@ -76,7 +76,7 @@ type GitHubInstallationConnect struct {
 
 type GitHubInstallationRecord struct {
 	InstallationID int64
-	OrgID          uint64
+	OrgID          string
 	AccountLogin   string
 	AccountType    string
 	Active         bool
@@ -232,7 +232,7 @@ type githubQueuedJob struct {
 	HeadSHA            string
 	HeadBranch         string
 	Labels             []string
-	OrgID              uint64
+	OrgID              string
 	AccountLogin       string
 }
 
@@ -252,7 +252,7 @@ type githubAllocation struct {
 	ExecutionID        uuid.UUID
 	AttemptID          uuid.UUID
 	State              string
-	OrgID              uint64
+	OrgID              string
 	AccountLogin       string
 	RepositoryFullName string
 	Resources          VMResources
@@ -276,15 +276,19 @@ func (r *GitHubRunner) Configured() bool {
 		strings.TrimSpace(r.cfg.WebhookSecret) != ""
 }
 
-func (r *GitHubRunner) BeginInstallation(ctx context.Context, orgID uint64, actorID string) (out GitHubInstallationConnect, err error) {
+func (r *GitHubRunner) BeginInstallation(ctx context.Context, orgID string, actorID string) (out GitHubInstallationConnect, err error) {
 	ctx, span := tracer.Start(ctx, "github.installation.begin")
 	defer func() {
 		recordRunnerError(span, err)
 		span.End()
 	}()
+	orgID = strings.TrimSpace(orgID)
 	span.SetAttributes(traceOrgID(orgID))
 	if !r.Configured() {
 		return GitHubInstallationConnect{}, ErrGitHubRunnerNotConfigured
+	}
+	if orgID == "" {
+		return GitHubInstallationConnect{}, ErrGitHubInstallationInvalid
 	}
 	stateBytes := make([]byte, 32)
 	if _, err := rand.Read(stateBytes); err != nil {
@@ -312,9 +316,13 @@ func (r *GitHubRunner) BeginInstallation(ctx context.Context, orgID uint64, acto
 	}, nil
 }
 
-func (s *Service) ListGitHubInstallations(ctx context.Context, orgID uint64) ([]GitHubInstallationRecord, error) {
+func (s *Service) ListGitHubInstallations(ctx context.Context, orgID string) ([]GitHubInstallationRecord, error) {
 	if s.PGX == nil {
 		return nil, nil
+	}
+	orgID = strings.TrimSpace(orgID)
+	if orgID == "" {
+		return nil, ErrGitHubInstallationInvalid
 	}
 	rows, err := s.storeQueries().ListGitHubInstallations(ctx, store.ListGitHubInstallationsParams{OrgID: dbOrgID(orgID)})
 	if err != nil {
@@ -434,17 +442,18 @@ func (r *GitHubRunner) CompleteInstallation(ctx context.Context, state, code str
 	return githubInstallationRecordFromGetRow(recordRow), nil
 }
 
-func (r *GitHubRunner) SyncInstallationRepositories(ctx context.Context, orgID uint64, installationID int64) (out []GitHubRunnerRepositoryRecord, err error) {
+func (r *GitHubRunner) SyncInstallationRepositories(ctx context.Context, orgID string, installationID int64) (out []GitHubRunnerRepositoryRecord, err error) {
 	ctx, span := tracer.Start(ctx, "github.installation.repositories.sync")
 	defer func() {
 		recordRunnerError(span, err)
 		span.End()
 	}()
+	orgID = strings.TrimSpace(orgID)
 	span.SetAttributes(traceOrgID(orgID), attribute.Int64("github.installation_id", installationID))
 	if !r.Configured() {
 		return nil, ErrGitHubRunnerNotConfigured
 	}
-	if orgID == 0 || installationID <= 0 || r.service == nil || r.service.PGX == nil {
+	if orgID == "" || installationID <= 0 || r.service == nil || r.service.PGX == nil {
 		return nil, ErrGitHubInstallationInvalid
 	}
 	installation, err := r.service.storeQueries().GetGitHubInstallationForOrg(ctx, store.GetGitHubInstallationForOrgParams{
@@ -537,7 +546,8 @@ func (r *GitHubRunner) RegisterRepository(ctx context.Context, req RunnerReposit
 	if !r.Configured() {
 		return ErrGitHubRunnerNotConfigured
 	}
-	if r.service == nil || r.service.PGX == nil || req.OrgID == 0 || req.ProviderRepositoryID <= 0 {
+	req.OrgID = strings.TrimSpace(req.OrgID)
+	if r.service == nil || r.service.PGX == nil || req.OrgID == "" || req.ProviderRepositoryID <= 0 {
 		return ErrGitHubInstallationInvalid
 	}
 	owner := strings.TrimSpace(req.ProviderOwner)

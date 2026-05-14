@@ -25,7 +25,7 @@ WHERE provider = 'github'
 
 type DeactivateMissingGitHubRunnerRepositoriesParams struct {
 	UpdatedAt             pgtype.Timestamptz
-	OrgID                 int64
+	OrgID                 string
 	ProviderOwner         string
 	ProviderRepositoryIds []int64
 }
@@ -109,7 +109,7 @@ type GetGitHubAllocationRow struct {
 	ExecutionID               *uuid.UUID
 	AttemptID                 *uuid.UUID
 	State                     string
-	OrgID                     int64
+	OrgID                     string
 	AccountLogin              string
 	RepositoryFullName        string
 	ProductID                 string
@@ -202,7 +202,7 @@ type GetGitHubAllocationForCleanupRow struct {
 	ExecutionID               *uuid.UUID
 	AttemptID                 *uuid.UUID
 	State                     string
-	OrgID                     int64
+	OrgID                     string
 	AccountLogin              string
 	RepositoryFullName        string
 	ProductID                 string
@@ -290,7 +290,7 @@ type GetGitHubExecutionIdentityParams struct {
 
 type GetGitHubExecutionIdentityRow struct {
 	AllocationID           uuid.UUID
-	OrgID                  int64
+	OrgID                  string
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
@@ -336,13 +336,13 @@ WHERE c.org_id = $1
 `
 
 type GetGitHubInstallationForOrgParams struct {
-	OrgID          int64
+	OrgID          string
 	InstallationID int64
 }
 
 type GetGitHubInstallationForOrgRow struct {
 	InstallationID int64
-	OrgID          int64
+	OrgID          string
 	AccountLogin   string
 	AccountType    string
 	Active         bool
@@ -404,7 +404,7 @@ type GetGitHubQueuedJobRow struct {
 	HeadSha                string
 	HeadBranch             string
 	LabelsJson             []byte
-	OrgID                  int64
+	OrgID                  string
 	AccountLogin           string
 }
 
@@ -439,7 +439,7 @@ ON CONFLICT (state) DO NOTHING
 
 type InsertGitHubInstallationStateParams struct {
 	State     string
-	OrgID     int64
+	OrgID     string
 	ActorID   string
 	ExpiresAt pgtype.Timestamptz
 	CreatedAt pgtype.Timestamptz
@@ -527,12 +527,12 @@ ORDER BY c.updated_at DESC, i.installation_id DESC
 `
 
 type ListGitHubInstallationsParams struct {
-	OrgID int64
+	OrgID string
 }
 
 type ListGitHubInstallationsRow struct {
 	InstallationID int64
-	OrgID          int64
+	OrgID          string
 	AccountLogin   string
 	AccountType    string
 	Active         bool
@@ -580,7 +580,7 @@ type LockGitHubInstallationStateParams struct {
 }
 
 type LockGitHubInstallationStateRow struct {
-	OrgID     int64
+	OrgID     string
 	ActorID   string
 	ExpiresAt pgtype.Timestamptz
 }
@@ -718,7 +718,7 @@ ON CONFLICT (installation_id, org_id) DO UPDATE SET
 type UpsertGitHubInstallationConnectionParams struct {
 	ConnectionID       uuid.UUID
 	InstallationID     int64
-	OrgID              int64
+	OrgID              string
 	ConnectedByActorID string
 	UpdatedAt          pgtype.Timestamptz
 }
@@ -833,7 +833,7 @@ WHERE runner_provider_repositories.org_id = EXCLUDED.org_id
 
 type UpsertGitHubRunnerRepositoryParams struct {
 	ProviderRepositoryID int64
-	OrgID                int64
+	OrgID                string
 	ProviderOwner        string
 	ProviderRepo         string
 	RepositoryFullName   string

@@ -11,7 +11,7 @@ type RunnerExecutionIdentity struct {
 	ExecutionID            uuid.UUID
 	AttemptID              uuid.UUID
 	AllocationID           uuid.UUID
-	OrgID                  uint64
+	OrgID                  string
 	Provider               string
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64

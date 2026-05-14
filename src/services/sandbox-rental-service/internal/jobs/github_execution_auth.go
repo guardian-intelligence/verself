@@ -16,7 +16,7 @@ type GitHubExecutionIdentity struct {
 	ExecutionID        uuid.UUID
 	AttemptID          uuid.UUID
 	AllocationID       uuid.UUID
-	OrgID              uint64
+	OrgID              string
 	Installation       int64
 	RepositoryID       int64
 	RepositoryFullName string

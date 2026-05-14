@@ -13,51 +13,37 @@ import (
 
 const ServiceName = "iam-service"
 
-type DisplayName = string
-
-type EmailAddress = string
-
-type IdempotencyKey = string
-
-type MemberId = string
-
-type MemberResourceName = string
-
-type OrgAclVersion = int64
-
-type OrgId = string
-
-type OrgSlug = string
-
-type OrganizationResourceName = string
-
-type OrganizationVersion = int64
-
-type PageSize = int64
-
-type PageToken = string
-
-type ProblemCode = string
-
-type ProblemDetail = string
-
-type ProblemType = string
-
-type RequestId = string
-
-type TraceParent = string
-
-type OrganizationRole string
-
-const (
-	OrganizationRoleADMIN  OrganizationRole = "admin"
-	OrganizationRoleMEMBER OrganizationRole = "member"
-	OrganizationRoleOWNER  OrganizationRole = "owner"
+type (
+	DisplayName              = string
+	EmailAddress             = string
+	IAMMemberName            = string
+	IAMRoleName              = string
+	IdempotencyKey           = string
+	MemberId                 = string
+	MemberResourceName       = string
+	OrgId                    = string
+	OrgSlug                  = string
+	OrganizationResourceName = string
+	OrganizationVersion      = int64
+	PageSize                 = int64
+	PageToken                = string
+	PermissionName           = string
+	PolicyEtag               = string
+	PolicyVersion            = int64
+	ProblemCode              = string
+	ProblemDetail            = string
+	ProblemType              = string
+	RequestId                = string
+	TraceParent              = string
 )
 
-type Members []MemberSummary
-
-type Organizations []OrganizationSummary
+type (
+	IAMMembers        []IAMMemberName
+	IAMPolicyBindings []IAMPolicyBinding
+	Members           []MemberSummary
+	Organizations     []OrganizationSummary
+	Permissions       []PermissionName
+)
 
 type ConflictError struct {
 	Type        ProblemType    `json:"type"`
@@ -97,17 +83,25 @@ type MemberSummary struct {
 	ResourceName MemberResourceName `json:"resourceName"`
 	Email        EmailAddress       `json:"email"`
 	DisplayName  DisplayName        `json:"displayName"`
-	Role         OrganizationRole   `json:"role"`
 }
 
 type OrganizationSummary struct {
-	OrgID         OrgId                    `json:"orgId"`
-	ResourceName  OrganizationResourceName `json:"resourceName"`
-	Slug          *OrgSlug                 `json:"slug,omitempty"`
-	DisplayName   DisplayName              `json:"displayName"`
-	CallerRole    OrganizationRole         `json:"callerRole"`
-	Version       OrganizationVersion      `json:"version"`
-	OrgACLVersion OrgAclVersion            `json:"orgAclVersion"`
+	OrgID        OrgId                    `json:"orgId"`
+	ResourceName OrganizationResourceName `json:"resourceName"`
+	Slug         *OrgSlug                 `json:"slug,omitempty"`
+	DisplayName  DisplayName              `json:"displayName"`
+	Version      OrganizationVersion      `json:"version"`
+}
+
+type IAMPolicy struct {
+	Version  PolicyVersion     `json:"version"`
+	Bindings IAMPolicyBindings `json:"bindings"`
+	Etag     *PolicyEtag       `json:"etag,omitempty"`
+}
+
+type IAMPolicyBinding struct {
+	Role    IAMRoleName `json:"role"`
+	Members IAMMembers  `json:"members"`
 }
 
 type PermissionDeniedError struct {
@@ -176,6 +170,18 @@ type ValidationFailedError struct {
 	Traceparent *TraceParent   `json:"traceparent,omitempty"`
 }
 
+type GetIamPolicyRequest struct {
+	OrgID OrgId
+}
+
+type GetIamPolicyResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *IAMPolicy
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
 type GetMemberRequest struct {
 	OrgID    OrgId
 	MemberID MemberId
@@ -228,23 +234,41 @@ type ListOrganizationsResponse struct {
 	HTTPResponse *http.Response
 }
 
-type UpdateMemberRoleInputBody struct {
-	Role                  OrganizationRole `json:"role"`
-	ExpectedRole          OrganizationRole `json:"expectedRole"`
-	ExpectedOrgACLVersion OrgAclVersion    `json:"expectedOrgAclVersion"`
+type SetIamPolicyInputBody struct {
+	Policy IAMPolicy `json:"policy"`
 }
 
-type UpdateMemberRoleRequest struct {
+type SetIamPolicyRequest struct {
 	OrgID          OrgId
-	MemberID       MemberId
 	IdempotencyKey IdempotencyKey
-	Body           UpdateMemberRoleInputBody `json:"body"`
+	Body           SetIamPolicyInputBody `json:"body"`
 }
 
-type UpdateMemberRoleResponse struct {
+type SetIamPolicyResponse struct {
 	StatusCode   int
 	Body         []byte
-	Result       *MemberSummary
+	Result       *IAMPolicy
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type TestIamPermissionsInputBody struct {
+	Permissions Permissions `json:"permissions"`
+}
+
+type TestIamPermissionsRequest struct {
+	OrgID OrgId
+	Body  TestIamPermissionsInputBody `json:"body"`
+}
+
+type TestIamPermissionsOutputBody struct {
+	Permissions Permissions `json:"permissions"`
+}
+
+type TestIamPermissionsResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *TestIamPermissionsOutputBody
 	Problem      *ErrorModel
 	HTTPResponse *http.Response
 }
@@ -310,122 +334,93 @@ func WithRequestEditorFn(editor RequestEditorFn) ClientOption {
 	}
 }
 
-func (c *Client) GetMember(ctx context.Context, request GetMemberRequest, reqEditors ...RequestEditorFn) (*GetMemberResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+func (c *Client) GetIamPolicy(ctx context.Context, request GetIamPolicyRequest, reqEditors ...RequestEditorFn) (*GetIamPolicyResponse, error) {
+	req, err := c.newGetIamPolicyRequest(ctx, request)
+	if err != nil {
+		return nil, err
 	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[IAMPolicy](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &GetIamPolicyResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newGetIamPolicyRequest(ctx context.Context, request GetIamPolicyRequest) (*http.Request, error) {
+	path := "/api/v1/orgs/{orgId}/iamPolicy:get"
+	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
+	return c.newRequest(ctx, http.MethodPost, path, nil)
+}
+
+func (c *Client) GetMember(ctx context.Context, request GetMemberRequest, reqEditors ...RequestEditorFn) (*GetMemberResponse, error) {
 	req, err := c.newGetMemberRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return parseGetMemberResponse(resp)
+	status, body, result, problem, err := decodeResponse[MemberSummary](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &GetMemberResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
 }
 
 func (c *Client) newGetMemberRequest(ctx context.Context, request GetMemberRequest) (*http.Request, error) {
 	path := "/api/v1/orgs/{orgId}/members/{memberId}"
 	path = strings.ReplaceAll(path, "{memberId}", url.PathEscape(fmt.Sprint(request.MemberID)))
 	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
-	endpoint, err := url.Parse(c.server + path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	return req, nil
+	return c.newRequest(ctx, http.MethodGet, path, nil)
 }
 
 func (c *Client) GetOrganization(ctx context.Context, request GetOrganizationRequest, reqEditors ...RequestEditorFn) (*GetOrganizationResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
 	req, err := c.newGetOrganizationRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return parseGetOrganizationResponse(resp)
+	status, body, result, problem, err := decodeResponse[OrganizationSummary](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &GetOrganizationResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
 }
 
 func (c *Client) newGetOrganizationRequest(ctx context.Context, request GetOrganizationRequest) (*http.Request, error) {
 	path := "/api/v1/orgs/{orgId}"
 	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
-	endpoint, err := url.Parse(c.server + path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	return req, nil
+	return c.newRequest(ctx, http.MethodGet, path, nil)
 }
 
 func (c *Client) ListMembers(ctx context.Context, request ListMembersRequest, reqEditors ...RequestEditorFn) (*ListMembersResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
 	req, err := c.newListMembersRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return parseListMembersResponse(resp)
+	status, body, result, problem, err := decodeResponse[ListMembersOutputBody](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &ListMembersResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
 }
 
 func (c *Client) newListMembersRequest(ctx context.Context, request ListMembersRequest) (*http.Request, error) {
 	path := "/api/v1/orgs/{orgId}/members"
 	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
-	endpoint, err := url.Parse(c.server + path)
+	endpoint, err := c.endpoint(path)
 	if err != nil {
 		return nil, err
 	}
@@ -437,44 +432,27 @@ func (c *Client) newListMembersRequest(ctx context.Context, request ListMembersR
 		query.Set("page_token", fmt.Sprint(*request.PageToken))
 	}
 	endpoint.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	return req, nil
+	return c.newRequestFromURL(ctx, http.MethodGet, endpoint, nil)
 }
 
 func (c *Client) ListOrganizations(ctx context.Context, request ListOrganizationsRequest, reqEditors ...RequestEditorFn) (*ListOrganizationsResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
 	req, err := c.newListOrganizationsRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return parseListOrganizationsResponse(resp)
+	status, body, result, problem, err := decodeResponse[ListOrganizationsOutputBody](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &ListOrganizationsResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
 }
 
 func (c *Client) newListOrganizationsRequest(ctx context.Context, request ListOrganizationsRequest) (*http.Request, error) {
-	path := "/api/v1/orgs"
-	endpoint, err := url.Parse(c.server + path)
+	endpoint, err := c.endpoint("/api/v1/orgs")
 	if err != nil {
 		return nil, err
 	}
@@ -486,235 +464,152 @@ func (c *Client) newListOrganizationsRequest(ctx context.Context, request ListOr
 		query.Set("page_token", fmt.Sprint(*request.PageToken))
 	}
 	endpoint.RawQuery = query.Encode()
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	return req, nil
+	return c.newRequestFromURL(ctx, http.MethodGet, endpoint, nil)
 }
 
-func (c *Client) UpdateMemberRole(ctx context.Context, request UpdateMemberRoleRequest, reqEditors ...RequestEditorFn) (*UpdateMemberRoleResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
-	req, err := c.newUpdateMemberRoleRequest(ctx, request)
+func (c *Client) SetIamPolicy(ctx context.Context, request SetIamPolicyRequest, reqEditors ...RequestEditorFn) (*SetIamPolicyResponse, error) {
+	req, err := c.newSetIamPolicyRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return parseUpdateMemberRoleResponse(resp)
+	status, body, result, problem, err := decodeResponse[IAMPolicy](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &SetIamPolicyResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
 }
 
-func (c *Client) newUpdateMemberRoleRequest(ctx context.Context, request UpdateMemberRoleRequest) (*http.Request, error) {
-	path := "/api/v1/orgs/{orgId}/members/{memberId}/role"
-	path = strings.ReplaceAll(path, "{memberId}", url.PathEscape(fmt.Sprint(request.MemberID)))
+func (c *Client) newSetIamPolicyRequest(ctx context.Context, request SetIamPolicyRequest) (*http.Request, error) {
+	path := "/api/v1/orgs/{orgId}/iamPolicy:set"
 	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
-	endpoint, err := url.Parse(c.server + path)
+	req, err := c.newRequest(ctx, http.MethodPost, path, request.Body)
 	if err != nil {
 		return nil, err
 	}
-	requestBody, err := json.Marshal(request.Body)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "PATCH", endpoint.String(), bytes.NewReader(requestBody))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
 	return req, nil
 }
 
-func (c *Client) UpdateOrganization(ctx context.Context, request UpdateOrganizationRequest, reqEditors ...RequestEditorFn) (*UpdateOrganizationResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+func (c *Client) TestIamPermissions(ctx context.Context, request TestIamPermissionsRequest, reqEditors ...RequestEditorFn) (*TestIamPermissionsResponse, error) {
+	req, err := c.newTestIamPermissionsRequest(ctx, request)
+	if err != nil {
+		return nil, err
 	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[TestIamPermissionsOutputBody](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &TestIamPermissionsResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newTestIamPermissionsRequest(ctx context.Context, request TestIamPermissionsRequest) (*http.Request, error) {
+	path := "/api/v1/orgs/{orgId}/iamPolicy:testPermissions"
+	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
+	return c.newRequest(ctx, http.MethodPost, path, request.Body)
+}
+
+func (c *Client) UpdateOrganization(ctx context.Context, request UpdateOrganizationRequest, reqEditors ...RequestEditorFn) (*UpdateOrganizationResponse, error) {
 	req, err := c.newUpdateOrganizationRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return parseUpdateOrganizationResponse(resp)
+	status, body, result, problem, err := decodeResponse[OrganizationSummary](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &UpdateOrganizationResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
 }
 
 func (c *Client) newUpdateOrganizationRequest(ctx context.Context, request UpdateOrganizationRequest) (*http.Request, error) {
 	path := "/api/v1/orgs/{orgId}"
 	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
-	endpoint, err := url.Parse(c.server + path)
+	req, err := c.newRequest(ctx, http.MethodPatch, path, request.Body)
 	if err != nil {
 		return nil, err
 	}
-	requestBody, err := json.Marshal(request.Body)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "PATCH", endpoint.String(), bytes.NewReader(requestBody))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
 	return req, nil
 }
 
-func parseGetMemberResponse(resp *http.Response) (*GetMemberResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	result := &GetMemberResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded MemberSummary
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
+func (c *Client) endpoint(path string) (*url.URL, error) {
+	return url.Parse(c.server + path)
 }
 
-func parseGetOrganizationResponse(resp *http.Response) (*GetOrganizationResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+func (c *Client) newRequest(ctx context.Context, method string, path string, body any) (*http.Request, error) {
+	endpoint, err := c.endpoint(path)
 	if err != nil {
 		return nil, err
 	}
-	result := &GetOrganizationResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded OrganizationSummary
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
+	return c.newRequestFromURL(ctx, method, endpoint, body)
 }
 
-func parseListMembersResponse(resp *http.Response) (*ListMembersResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+func (c *Client) newRequestFromURL(ctx context.Context, method string, endpoint *url.URL, body any) (*http.Request, error) {
+	var reader io.Reader
+	if body != nil {
+		requestBody, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(requestBody)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), reader)
 	if err != nil {
 		return nil, err
 	}
-	result := &ListMembersResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded ListMembersOutputBody
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
-	result.Problem = decodeProblem(body)
-	return result, nil
+	return req, nil
 }
 
-func parseListOrganizationsResponse(resp *http.Response) (*ListOrganizationsResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+func (c *Client) do(req *http.Request, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
 	}
-	result := &ListOrganizationsResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded ListOrganizationsOutputBody
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
+	for _, editor := range c.requestEditors {
+		if err := editor(req.Context(), req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(req.Context(), req); err != nil {
 				return nil, err
 			}
 		}
-		result.Result = &decoded
-		return result, nil
 	}
-	result.Problem = decodeProblem(body)
-	return result, nil
+	return c.client.Do(req)
 }
 
-func parseUpdateMemberRoleResponse(resp *http.Response) (*UpdateMemberRoleResponse, error) {
+func decodeResponse[T any](resp *http.Response, okStatus int) (int, []byte, *T, *ErrorModel, error) {
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return 0, nil, nil, nil, err
 	}
-	result := &UpdateMemberRoleResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded MemberSummary
+	if resp.StatusCode == okStatus {
+		var decoded T
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
+				return resp.StatusCode, body, nil, nil, err
 			}
 		}
-		result.Result = &decoded
-		return result, nil
+		return resp.StatusCode, body, &decoded, nil, nil
 	}
-	result.Problem = decodeProblem(body)
-	return result, nil
-}
-
-func parseUpdateOrganizationResponse(resp *http.Response) (*UpdateOrganizationResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	result := &UpdateOrganizationResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded OrganizationSummary
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
+	return resp.StatusCode, body, nil, decodeProblem(body), nil
 }
 
 type ErrorModel struct {

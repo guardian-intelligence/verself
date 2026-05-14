@@ -37,8 +37,6 @@ describe("route boundary fallback links", () => {
           cachePartition: "user:1",
           isAuthenticated: true,
           orgId: "org_1",
-          roleAssignments: [],
-          roles: [],
           selectedOrgId: "org_1",
           userId: "user_1",
         },

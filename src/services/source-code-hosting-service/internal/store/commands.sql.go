@@ -51,7 +51,7 @@ INSERT INTO source_checkout_grants (
 type InsertCheckoutGrantParams struct {
 	GrantID    uuid.UUID
 	RepoID     uuid.UUID
-	OrgID      int64
+	OrgID      string
 	ActorID    string
 	Ref        string
 	PathPrefix string
@@ -84,7 +84,7 @@ INSERT INTO source_git_credentials (
 
 type InsertGitCredentialParams struct {
 	CredentialID uuid.UUID
-	OrgID        int64
+	OrgID        string
 	ActorID      string
 	Label        string
 	Username     string
@@ -118,7 +118,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$6)
 
 type InsertRefHeadParams struct {
 	RepoID    uuid.UUID
-	OrgID     int64
+	OrgID     string
 	RefName   string
 	CommitSha string
 	IsDefault bool
@@ -146,7 +146,7 @@ INSERT INTO source_repositories (
 
 type InsertRepositoryParams struct {
 	RepoID        uuid.UUID
-	OrgID         int64
+	OrgID         string
 	ProjectID     uuid.UUID
 	CreatedBy     string
 	Name          string
@@ -226,7 +226,7 @@ VALUES (
 
 type InsertSourceEventParams struct {
 	EventID   uuid.UUID
-	OrgID     int64
+	OrgID     string
 	ActorID   string
 	EventType string
 	Result    string
@@ -272,7 +272,7 @@ INSERT INTO source_storage_events (
 
 type InsertStorageEventParams struct {
 	StorageEventID    uuid.UUID
-	OrgID             int64
+	OrgID             string
 	Backend           string
 	StorageObjectKind string
 	EventType         string
@@ -310,7 +310,7 @@ RETURNING workflow_run_id
 
 type InsertWorkflowRunParams struct {
 	WorkflowRunID  uuid.UUID
-	OrgID          int64
+	OrgID          string
 	ProjectID      uuid.UUID
 	RepoID         uuid.UUID
 	ActorID        string
@@ -359,7 +359,7 @@ type LockActiveGitCredentialForUseParams struct {
 
 type LockActiveGitCredentialForUseRow struct {
 	CredentialID uuid.UUID
-	OrgID        int64
+	OrgID        string
 	ActorID      string
 	Username     string
 	Scopes       []string
@@ -428,14 +428,14 @@ type LockCheckoutGrantForConsumeParams struct {
 type LockCheckoutGrantForConsumeRow struct {
 	GrantID             uuid.UUID
 	GrantRepoID         uuid.UUID
-	GrantOrgID          int64
+	GrantOrgID          string
 	GrantActorID        string
 	Ref                 string
 	PathPrefix          string
 	GrantExpiresAt      pgtype.Timestamptz
 	GrantCreatedAt      pgtype.Timestamptz
 	RepoID              uuid.UUID
-	OrgID               int64
+	OrgID               string
 	ProjectID           uuid.UUID
 	CreatedBy           string
 	Name                string
@@ -641,7 +641,7 @@ type UpsertWebhookDeliveryParams struct {
 	TraceID           string
 	Details           []byte
 	CreatedAt         pgtype.Timestamptz
-	ResolvedOrgID     pgtype.Int8
+	ResolvedOrgID     string
 	ResolvedProjectID pgtype.UUID
 	ResolvedRepoID    pgtype.UUID
 }

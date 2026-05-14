@@ -47,7 +47,7 @@ SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_i
            ORDER BY s.created_at DESC
            LIMIT 1
        ), ''::text)::text AS fingerprint,
-       c.policy_version_at_issue, c.created_at, c.created_by, c.updated_at,
+       c.created_at, c.created_by, c.updated_at,
        c.expires_at, c.revoked_at, COALESCE(c.revoked_by, '') AS revoked_by, c.last_used_at
 FROM iam_api_credentials c
 WHERE c.org_id = $1 AND c.credential_id = $2
@@ -59,23 +59,22 @@ type GetAPICredentialParams struct {
 }
 
 type GetAPICredentialRow struct {
-	CredentialID         string
-	ServiceAccountID     string
-	OrgID                string
-	SubjectID            string
-	ClientID             string
-	DisplayName          string
-	Status               string
-	AuthMethod           string
-	Fingerprint          string
-	PolicyVersionAtIssue int32
-	CreatedAt            pgtype.Timestamptz
-	CreatedBy            string
-	UpdatedAt            pgtype.Timestamptz
-	ExpiresAt            pgtype.Timestamptz
-	RevokedAt            pgtype.Timestamptz
-	RevokedBy            string
-	LastUsedAt           pgtype.Timestamptz
+	CredentialID     string
+	ServiceAccountID string
+	OrgID            string
+	SubjectID        string
+	ClientID         string
+	DisplayName      string
+	Status           string
+	AuthMethod       string
+	Fingerprint      string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        string
+	UpdatedAt        pgtype.Timestamptz
+	ExpiresAt        pgtype.Timestamptz
+	RevokedAt        pgtype.Timestamptz
+	RevokedBy        string
+	LastUsedAt       pgtype.Timestamptz
 }
 
 func (q *Queries) GetAPICredential(ctx context.Context, arg GetAPICredentialParams) (GetAPICredentialRow, error) {
@@ -91,7 +90,6 @@ func (q *Queries) GetAPICredential(ctx context.Context, arg GetAPICredentialPara
 		&i.Status,
 		&i.AuthMethod,
 		&i.Fingerprint,
-		&i.PolicyVersionAtIssue,
 		&i.CreatedAt,
 		&i.CreatedBy,
 		&i.UpdatedAt,
@@ -156,28 +154,27 @@ func (q *Queries) GetServiceAccount(ctx context.Context, arg GetServiceAccountPa
 const insertAPICredential = `-- name: InsertAPICredential :exec
 INSERT INTO iam_api_credentials (
     credential_id, service_account_id, org_id, subject_id, client_id, display_name, auth_method, status,
-    policy_version_at_issue, created_at, created_by, updated_at, expires_at
+    created_at, created_by, updated_at, expires_at
 )
 VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9,
-    $10, $11, $10, $12
+    $10, $9, $11
 )
 `
 
 type InsertAPICredentialParams struct {
-	CredentialID         string
-	ServiceAccountID     string
-	OrgID                string
-	SubjectID            string
-	ClientID             string
-	DisplayName          string
-	AuthMethod           string
-	Status               string
-	PolicyVersionAtIssue int32
-	CreatedAt            pgtype.Timestamptz
-	CreatedBy            string
-	ExpiresAt            pgtype.Timestamptz
+	CredentialID     string
+	ServiceAccountID string
+	OrgID            string
+	SubjectID        string
+	ClientID         string
+	DisplayName      string
+	AuthMethod       string
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        string
+	ExpiresAt        pgtype.Timestamptz
 }
 
 func (q *Queries) InsertAPICredential(ctx context.Context, arg InsertAPICredentialParams) error {
@@ -190,27 +187,10 @@ func (q *Queries) InsertAPICredential(ctx context.Context, arg InsertAPICredenti
 		arg.DisplayName,
 		arg.AuthMethod,
 		arg.Status,
-		arg.PolicyVersionAtIssue,
 		arg.CreatedAt,
 		arg.CreatedBy,
 		arg.ExpiresAt,
 	)
-	return err
-}
-
-const insertAPICredentialPermission = `-- name: InsertAPICredentialPermission :exec
-INSERT INTO iam_api_credential_permissions (credential_id, permission, created_at)
-VALUES ($1, $2, $3)
-`
-
-type InsertAPICredentialPermissionParams struct {
-	CredentialID string
-	Permission   string
-	CreatedAt    pgtype.Timestamptz
-}
-
-func (q *Queries) InsertAPICredentialPermission(ctx context.Context, arg InsertAPICredentialPermissionParams) error {
-	_, err := q.db.Exec(ctx, insertAPICredentialPermission, arg.CredentialID, arg.Permission, arg.CreatedAt)
 	return err
 }
 
@@ -298,37 +278,6 @@ func (q *Queries) InsertServiceAccount(ctx context.Context, arg InsertServiceAcc
 	return err
 }
 
-const listAPICredentialPermissions = `-- name: ListAPICredentialPermissions :many
-SELECT permission
-FROM iam_api_credential_permissions
-WHERE credential_id = $1
-ORDER BY permission
-`
-
-type ListAPICredentialPermissionsParams struct {
-	CredentialID string
-}
-
-func (q *Queries) ListAPICredentialPermissions(ctx context.Context, arg ListAPICredentialPermissionsParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, listAPICredentialPermissions, arg.CredentialID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var permission string
-		if err := rows.Scan(&permission); err != nil {
-			return nil, err
-		}
-		items = append(items, permission)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listAPICredentials = `-- name: ListAPICredentials :many
 SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
        c.auth_method,
@@ -339,7 +288,7 @@ SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_i
            ORDER BY s.created_at DESC
            LIMIT 1
        ), ''::text)::text AS fingerprint,
-       c.policy_version_at_issue, c.created_at, c.created_by, c.updated_at,
+       c.created_at, c.created_by, c.updated_at,
        c.expires_at, c.revoked_at, COALESCE(c.revoked_by, '') AS revoked_by, c.last_used_at
 FROM iam_api_credentials c
 WHERE c.org_id = $1
@@ -351,23 +300,22 @@ type ListAPICredentialsParams struct {
 }
 
 type ListAPICredentialsRow struct {
-	CredentialID         string
-	ServiceAccountID     string
-	OrgID                string
-	SubjectID            string
-	ClientID             string
-	DisplayName          string
-	Status               string
-	AuthMethod           string
-	Fingerprint          string
-	PolicyVersionAtIssue int32
-	CreatedAt            pgtype.Timestamptz
-	CreatedBy            string
-	UpdatedAt            pgtype.Timestamptz
-	ExpiresAt            pgtype.Timestamptz
-	RevokedAt            pgtype.Timestamptz
-	RevokedBy            string
-	LastUsedAt           pgtype.Timestamptz
+	CredentialID     string
+	ServiceAccountID string
+	OrgID            string
+	SubjectID        string
+	ClientID         string
+	DisplayName      string
+	Status           string
+	AuthMethod       string
+	Fingerprint      string
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        string
+	UpdatedAt        pgtype.Timestamptz
+	ExpiresAt        pgtype.Timestamptz
+	RevokedAt        pgtype.Timestamptz
+	RevokedBy        string
+	LastUsedAt       pgtype.Timestamptz
 }
 
 func (q *Queries) ListAPICredentials(ctx context.Context, arg ListAPICredentialsParams) ([]ListAPICredentialsRow, error) {
@@ -389,7 +337,6 @@ func (q *Queries) ListAPICredentials(ctx context.Context, arg ListAPICredentials
 			&i.Status,
 			&i.AuthMethod,
 			&i.Fingerprint,
-			&i.PolicyVersionAtIssue,
 			&i.CreatedAt,
 			&i.CreatedBy,
 			&i.UpdatedAt,

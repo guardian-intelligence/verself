@@ -48,7 +48,7 @@ type ForgejoRunner struct {
 
 type forgejoRepositoryRecord struct {
 	ProviderRepositoryID int64
-	OrgID                uint64
+	OrgID                string
 	ProjectID            uuid.UUID
 	SourceRepositoryID   uuid.UUID
 	ProviderOwner        string
@@ -66,7 +66,7 @@ type forgejoQueuedJob struct {
 	HeadSHA              string
 	HeadBranch           string
 	Labels               []string
-	OrgID                uint64
+	OrgID                string
 }
 
 type forgejoAllocation struct {
@@ -85,7 +85,7 @@ type forgejoAllocation struct {
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
 	State                string
-	OrgID                uint64
+	OrgID                string
 	ProviderOwner        string
 	ProviderRepo         string
 	RepositoryFullName   string
@@ -899,7 +899,8 @@ func normalizeRunnerRepositoryRegistration(req RunnerRepositoryRegistration) (Ru
 	req.ProviderOwner = strings.TrimSpace(req.ProviderOwner)
 	req.ProviderRepo = strings.TrimSpace(req.ProviderRepo)
 	req.RepositoryFullName = strings.TrimSpace(req.RepositoryFullName)
-	if req.Provider != RunnerProviderForgejo || req.OrgID == 0 || req.ProjectID == uuid.Nil || req.SourceRepositoryID == uuid.Nil || req.ProviderRepositoryID <= 0 || req.ProviderOwner == "" || req.ProviderRepo == "" {
+	req.OrgID = strings.TrimSpace(req.OrgID)
+	if req.Provider != RunnerProviderForgejo || req.OrgID == "" || req.ProjectID == uuid.Nil || req.SourceRepositoryID == uuid.Nil || req.ProviderRepositoryID <= 0 || req.ProviderOwner == "" || req.ProviderRepo == "" {
 		return RunnerRepositoryRegistration{}, ErrRunnerUnavailable
 	}
 	if req.RepositoryFullName == "" {

@@ -4,7 +4,6 @@ import {
   getOrganization,
   listMyOrganizations,
   updateOrganization,
-  updateMemberRoles,
 } from "~/server-fns/api";
 
 // Adapter that wires console's bearer-forwarding server fns into the
@@ -16,5 +15,4 @@ export const iamApiClient: IAMApiClient = {
   listMyOrganizations: () => listMyOrganizations(),
   updateOrganization: (data) => updateOrganization({ data }),
   listMembers: () => getMembers(),
-  updateMemberRoles: (data) => updateMemberRoles({ data }),
 };

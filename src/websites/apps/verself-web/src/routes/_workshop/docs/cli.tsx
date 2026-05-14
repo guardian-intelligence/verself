@@ -118,17 +118,16 @@ verself orgs update acme-corp --display-name "ACME Corporation"`,
     id: "members",
     title: "Members",
     status: "next",
-    summary:
-      "Human member invitation, role assignment, membership removal, and capability inspection.",
+    summary: "Human member invitation, membership removal, and policy inspection.",
     body: [
-      "Members are human users in an organization. Use member commands to invite a person, inspect current access, change their role, or remove their access from the organization.",
-      "The public role model is owner, admin, and member. Owners and admins manage IAM. Members can use product capabilities granted to the member role but do not automatically manage organization policy.",
-      "Machine access is managed through credentials and workload trust. Machine principals can receive IAM grants, but they are not browser or console users.",
+      "Members are human users in an organization. Use member commands to invite a person, inspect current access, or remove their access from the organization.",
+      "Authorization is managed through IAM policy bindings. The default policy roles are Zanzibar usersets, and organization owners can grant access to humans, service accounts, workloads, or usersets.",
+      "Machine access is managed through credentials and workload trust. Machine principals can receive IAM policy grants, but they are not browser or console users.",
     ],
-    topics: ["Invite member", "Accept invite", "Change role", "Remove member", "Capabilities"],
-    commands: `verself orgs members invite ops@acme.example --role admin
+    topics: ["Invite member", "Accept invite", "Inspect policy", "Remove member", "Bindings"],
+    commands: `verself orgs members invite ops@acme.example
 verself orgs members list
-verself orgs members update user_123 --role member
+verself orgs iam get-policy acme-corp
 verself orgs members remove user_123`,
   },
   {

@@ -252,14 +252,14 @@ type AccountSnapshot struct {
 	CreditsPending uint64
 }
 
-func CustomerGrantAccount(id ID, orgID uint64, source string) (AccountPayload, error) {
+func CustomerGrantAccount(id ID, orgKey uint64, source string) (AccountPayload, error) {
 	sourceCode, err := GrantSourceCode(source)
 	if err != nil {
 		return AccountPayload{}, err
 	}
 	return AccountPayload{
 		ID:         id.String(),
-		UserData64: orgID,
+		UserData64: orgKey,
 		UserData32: sourceCode,
 		Ledger:     DefaultLedger,
 		Code:       AccountCodeCustomerGrant,

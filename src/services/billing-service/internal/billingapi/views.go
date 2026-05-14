@@ -3,6 +3,7 @@ package billingapi
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/verself/billing-service/internal/billing"
@@ -34,7 +35,7 @@ func entitlementsResponse(view billing.EntitlementsView) contractapi.BillingEnti
 		})
 	}
 	return contractapi.BillingEntitlementsView{
-		OrgID:     contractapi.OrgID(strconv.FormatUint(uint64(view.OrgID), 10)),
+		OrgID:     contractapi.OrgID(billingOrgIDText(view.OrgID)),
 		Universal: entitlementSlot(view.Universal),
 		Products:  products,
 	}
@@ -101,7 +102,7 @@ func grantResponse(grant billing.GrantBalance) contractapi.BillingGrant {
 func documentResponse(installationID string, orgID billing.OrgID, document billing.DocumentRecord) contractapi.BillingDocument {
 	return contractapi.BillingDocument{
 		DocumentID:             contractapi.DocumentID(document.DocumentID),
-		ResourceName:           contractapi.ResourceName(resourceNameBillingDocument(installationID, strconv.FormatUint(uint64(orgID), 10), document.DocumentID)),
+		ResourceName:           contractapi.ResourceName(resourceNameBillingDocument(installationID, billingOrgIDText(orgID), document.DocumentID)),
 		DocumentNumber:         contractapi.DocumentNumber(document.DocumentNumber),
 		DocumentKind:           contractapi.DocumentKind(document.DocumentKind),
 		FinalizationID:         contractapi.BillingFinalizationID(document.FinalizationID),
@@ -159,7 +160,7 @@ func statementResponse(statement billing.Statement) contractapi.BillingStatement
 		})
 	}
 	return contractapi.BillingStatement{
-		OrgID:          contractapi.OrgID(strconv.FormatUint(uint64(statement.OrgID), 10)),
+		OrgID:          contractapi.OrgID(billingOrgIDText(statement.OrgID)),
 		ProductID:      contractapi.ProductID(statement.ProductID),
 		PeriodStart:    timeString(statement.PeriodStart),
 		PeriodEnd:      timeString(statement.PeriodEnd),
@@ -222,7 +223,7 @@ func publicPlanResponse(plan billing.PlanRecord) contractapi.BillingPlan {
 func reservationResponse(reservation billing.WindowReservation) internalcontractapi.BillingWindowReservation {
 	return internalcontractapi.BillingWindowReservation{
 		WindowID:            internalcontractapi.BillingWindowID(reservation.WindowID),
-		OrgID:               internalcontractapi.OrgID(strconv.FormatUint(uint64(reservation.OrgID), 10)),
+		OrgID:               internalcontractapi.OrgID(billingOrgIDText(reservation.OrgID)),
 		ProductID:           internalcontractapi.ProductID(reservation.ProductID),
 		PlanID:              internalcontractapi.PlanID(reservation.PlanID),
 		ActorID:             internalcontractapi.ActorID(reservation.ActorID),
@@ -257,6 +258,10 @@ func settlementResponse(result billing.SettleResult) internalcontractapi.Billing
 
 func resourceNameBillingDocument(installationID string, orgID string, documentID string) string {
 	return "urn:verself:" + installationID + ":billing-document:" + orgID + ":" + documentID
+}
+
+func billingOrgIDText(orgID billing.OrgID) string {
+	return strings.TrimSpace(string(orgID))
 }
 
 func decimalUint64(value uint64) contractapi.DecimalUint64 {
@@ -308,11 +313,11 @@ func optionalTypedString[T ~string](value string) *T {
 }
 
 func billingOrgIDFromWire(id internalcontractapi.OrgID) (billing.OrgID, error) {
-	parsed, err := strconv.ParseUint(string(id), 10, 64)
-	if err != nil || parsed == 0 {
-		return 0, badRequest("org_id must be positive")
+	orgID := strings.TrimSpace(string(id))
+	if orgID == "" {
+		return "", badRequest("org_id is required")
 	}
-	return billing.OrgID(parsed), nil
+	return billing.OrgID(orgID), nil
 }
 
 func safeUint64(value internalcontractapi.SafeUint64, field string) (uint64, error) {

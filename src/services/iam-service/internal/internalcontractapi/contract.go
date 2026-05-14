@@ -94,11 +94,13 @@ type GivenName string
 
 type OrgSlug string
 
+type OrgID string
+
 type OrganizationResourceName string
 
 type OrganizationVersion int
 
-type ProviderOrgID string
+type IdentityProviderOrgID string
 
 type ResourcePermissionName string
 
@@ -183,7 +185,7 @@ type ValidationFailedError struct {
 }
 
 type AuthorizeOperationInputBody struct {
-	OrgID       ProviderOrgID           `json:"org_id" required:"true" minLength:"1" maxLength:"64" pattern:"^[0-9]+$"`
+	OrgID       OrgID                   `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	Subject     IAMAuthorizationSubject `json:"subject" required:"true"`
 	Permissions Permissions             `json:"permissions" required:"true"`
 	MinZedToken *ZedToken               `json:"min_zed_token,omitempty" maxLength:"1024"`
@@ -194,14 +196,14 @@ type AuthorizeOperationInput struct {
 }
 
 type AuthorizeOperationResult struct {
-	OrgID       ProviderOrgID           `json:"org_id" required:"true" minLength:"1" maxLength:"64" pattern:"^[0-9]+$"`
+	OrgID       OrgID                   `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	Subject     IAMAuthorizationSubject `json:"subject" required:"true"`
 	Permissions Permissions             `json:"permissions" required:"true"`
 	ZedToken    *ZedToken               `json:"zed_token,omitempty" maxLength:"1024"`
 }
 
 type AuthorizeResourceInputBody struct {
-	OrgID               ProviderOrgID           `json:"org_id" required:"true" minLength:"1" maxLength:"64" pattern:"^[0-9]+$"`
+	OrgID               OrgID                   `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	Subject             IAMAuthorizationSubject `json:"subject" required:"true"`
 	OperationPermission *PermissionName         `json:"operation_permission,omitempty" pattern:"^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+$"`
 	Resource            IAMResourceRef          `json:"resource" required:"true"`
@@ -214,7 +216,7 @@ type AuthorizeResourceInput struct {
 }
 
 type AuthorizeResourceResult struct {
-	OrgID               ProviderOrgID           `json:"org_id" required:"true" minLength:"1" maxLength:"64" pattern:"^[0-9]+$"`
+	OrgID               OrgID                   `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	Subject             IAMAuthorizationSubject `json:"subject" required:"true"`
 	OperationPermission *PermissionName         `json:"operation_permission,omitempty" pattern:"^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+$"`
 	Resource            IAMResourceRef          `json:"resource" required:"true"`
@@ -243,20 +245,22 @@ type IAMResourceRef struct {
 }
 
 type OrganizationProfile struct {
-	OrgID          ProviderOrgID             `json:"org_id" required:"true" minLength:"1" maxLength:"64" pattern:"^[0-9]+$"`
-	Slug           OrgSlug                   `json:"slug" required:"true" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
-	DisplayName    DisplayName               `json:"display_name" required:"true" minLength:"1" maxLength:"120"`
-	State          string                    `json:"state" required:"true"`
-	Version        OrganizationVersion       `json:"version" required:"true" minimum:"1" maximum:"2147483647"`
-	UpdatedAt      string                    `json:"updated_at" required:"true"`
-	RedirectedFrom *OrgSlug                  `json:"redirected_from,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
-	ResourceName   *OrganizationResourceName `json:"resourceName,omitempty" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	IdentityProviderOrgID IdentityProviderOrgID     `json:"identity_provider_org_id" required:"true" minLength:"1" maxLength:"64"`
+	OrgID                 OrgID                     `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	Slug                  OrgSlug                   `json:"slug" required:"true" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
+	DisplayName           DisplayName               `json:"display_name" required:"true" minLength:"1" maxLength:"120"`
+	State                 string                    `json:"state" required:"true"`
+	Version               OrganizationVersion       `json:"version" required:"true" minimum:"1" maximum:"2147483647"`
+	UpdatedAt             string                    `json:"updated_at" required:"true"`
+	RedirectedFrom        *OrgSlug                  `json:"redirected_from,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
+	ResourceName          *OrganizationResourceName `json:"resourceName,omitempty" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}$"`
 }
 
 type ResolveOrganizationInputBody struct {
-	OrgID         *ProviderOrgID `json:"org_id,omitempty" minLength:"1" maxLength:"64" pattern:"^[0-9]+$"`
-	RequireActive bool           `json:"require_active" required:"true"`
-	Slug          *OrgSlug       `json:"slug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
+	OrgID                 *OrgID                 `json:"org_id,omitempty" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	IdentityProviderOrgID *IdentityProviderOrgID `json:"identity_provider_org_id,omitempty" minLength:"1" maxLength:"64"`
+	RequireActive         bool                   `json:"require_active" required:"true"`
+	Slug                  *OrgSlug               `json:"slug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
 }
 
 type ResolveOrganizationInput struct {
@@ -275,7 +279,7 @@ type UpdateHumanProfileInput struct {
 }
 
 type WriteResourceParentEdgeInputBody struct {
-	OrgID     ProviderOrgID         `json:"org_id" required:"true" minLength:"1" maxLength:"64" pattern:"^[0-9]+$"`
+	OrgID     OrgID                 `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	Resource  IAMResourceRef        `json:"resource" required:"true"`
 	Relation  AuthorizationRelation `json:"relation" required:"true" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_]*$"`
 	Parent    IAMResourceRef        `json:"parent" required:"true"`

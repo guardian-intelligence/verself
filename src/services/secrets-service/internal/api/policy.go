@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -240,31 +239,7 @@ func openBaoRoleForIdentity(identity *auth.Identity, policy secretsOperationPoli
 	if identity == nil {
 		return ""
 	}
-	if claimString(identity.Raw, "verself:credential_id") != "" {
-		if policy.OpenBaoRole == "" {
-			return ""
-		}
-		for _, role := range stringClaimList(identity.Raw["verself:openbao_roles"]) {
-			if role == policy.OpenBaoRole {
-				return role
-			}
-		}
-		return ""
-	}
-	for _, assignment := range identity.RoleAssignments {
-		if assignment.OrganizationID != identity.OrgID {
-			continue
-		}
-		switch assignment.Role {
-		case "owner":
-			return "secrets-owner"
-		case "admin":
-			return "secrets-admin"
-		case "member":
-			return "secrets-member"
-		}
-	}
-	return ""
+	return policy.OpenBaoRole
 }
 
 func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, operationID string, policy secretsOperationPolicy, identity *auth.Identity, input any) (*billingclient.BillingWindowReservation, error) {
@@ -274,9 +249,9 @@ func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, opera
 	if svc == nil || svc.Billing == nil {
 		return nil, fmt.Errorf("%w: billing client is required for public secrets operations", secrets.ErrStore)
 	}
-	orgID, err := strconv.ParseUint(strings.TrimSpace(identity.OrgID), 10, 64)
-	if err != nil || orgID == 0 {
-		return nil, fmt.Errorf("%w: numeric org_id is required for billing", secrets.ErrInvalidArgument)
+	orgID := strings.TrimSpace(identity.OrgID)
+	if orgID == "" {
+		return nil, fmt.Errorf("%w: org_id is required for billing", secrets.ErrInvalidArgument)
 	}
 	sourceRef := billingSourceRef(ctx, operationID)
 	allocation := map[string]float64{policy.BillingSKU: 1}
@@ -295,7 +270,7 @@ func reserveBillingForOperation(ctx context.Context, svc *secrets.Service, opera
 			ActorID:          billingActorID(identity),
 			Allocation:       allocation,
 			ConcurrentCount:  1,
-			OrgID:            strconv.FormatUint(orgID, 10),
+			OrgID:            orgID,
 			ProductID:        billingProductSecrets,
 			ReservationShape: "count",
 			ReservedQuantity: 1,
@@ -797,40 +772,6 @@ func claimNumericDate(claims map[string]any, key string) time.Time {
 	default:
 		return time.Time{}
 	}
-}
-
-func stringClaimList(value any) []string {
-	switch typed := value.(type) {
-	case string:
-		return strings.Fields(typed)
-	case []string:
-		out := append([]string(nil), typed...)
-		sort.Strings(out)
-		return compactStrings(out)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			out = append(out, stringClaimList(item)...)
-		}
-		sort.Strings(out)
-		return compactStrings(out)
-	default:
-		return nil
-	}
-}
-
-func compactStrings(values []string) []string {
-	out := values[:0]
-	var previous string
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || value == previous {
-			continue
-		}
-		out = append(out, value)
-		previous = value
-	}
-	return out
 }
 
 func problemCode(err error) string {

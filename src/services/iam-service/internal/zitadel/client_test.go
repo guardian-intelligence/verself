@@ -11,57 +11,6 @@ import (
 	"github.com/verself/iam-service/internal/identity"
 )
 
-func TestCreateAuthorizationRequestShape(t *testing.T) {
-	var gotHost string
-	var gotConnect string
-	var gotAuth string
-	var gotBody map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotHost = r.Host
-		gotConnect = r.Header.Get("Connect-Protocol-Version")
-		gotAuth = r.Header.Get("Authorization")
-		if r.URL.Path != "/zitadel.authorization.v2.AuthorizationService/ListAuthorizations" &&
-			r.URL.Path != "/zitadel.authorization.v2.AuthorizationService/CreateAuthorization" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-		if r.URL.Path == "/zitadel.authorization.v2.AuthorizationService/ListAuthorizations" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"authorizations": []any{}})
-			return
-		}
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{})
-	}))
-	defer server.Close()
-
-	client, err := New(Config{
-		BaseURL:    server.URL,
-		HostHeader: "auth.example.com",
-		AdminToken: "admin-token",
-	})
-	if err != nil {
-		t.Fatalf("new client: %v", err)
-	}
-	err = client.createAuthorization(context.Background(), "42", "project-1", "user-1", []string{identity.RoleMember})
-	if err != nil {
-		t.Fatalf("create authorization: %v", err)
-	}
-
-	if gotHost != "auth.example.com" {
-		t.Fatalf("host = %q", gotHost)
-	}
-	if gotConnect != "1" {
-		t.Fatalf("connect protocol = %q", gotConnect)
-	}
-	if gotAuth != "Bearer admin-token" {
-		t.Fatalf("authorization = %q", gotAuth)
-	}
-	if gotBody["userId"] != "user-1" || gotBody["projectId"] != "project-1" || gotBody["organizationId"] != "42" {
-		t.Fatalf("unexpected body %#v", gotBody)
-	}
-}
-
 func TestInviteMemberUsesSendCode(t *testing.T) {
 	var createUserBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,10 +20,6 @@ func TestInviteMemberUsesSendCode(t *testing.T) {
 				t.Fatalf("decode user body: %v", err)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
-		case "/zitadel.authorization.v2.AuthorizationService/ListAuthorizations":
-			_ = json.NewEncoder(w).Encode(map[string]any{"authorizations": []any{}})
-		case "/zitadel.authorization.v2.AuthorizationService/CreateAuthorization":
-			_ = json.NewEncoder(w).Encode(map[string]any{})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -85,9 +30,8 @@ func TestInviteMemberUsesSendCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	_, err = client.InviteMember(context.Background(), "42", "project-1", identity.InviteMemberRequest{
-		Email:    "new@example.com",
-		RoleKeys: []string{identity.RoleMember},
+	_, err = client.InviteMember(context.Background(), "42", identity.InviteMemberRequest{
+		Email: "new@example.com",
 	})
 	if err != nil {
 		t.Fatalf("invite: %v", err)

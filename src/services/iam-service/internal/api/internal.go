@@ -24,11 +24,6 @@ import (
 
 var internalAPITracer = otel.Tracer("iam-service/internal/api/internal")
 
-const (
-	authorizationResourceTypeAPIActivity = "api_activity"
-	authorizationResourceTypeOrg         = "org"
-)
-
 func RegisterInternalRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service) {
 	runtime := internalRuntime{}
 	handlers := internalHandlers{service: svc, authz: authzSvc}
@@ -218,14 +213,17 @@ func resolveOrganization(svc *identity.Service) func(context.Context, *internalc
 			return nil, err
 		}
 		orgID := contractString(input.Body.OrgID)
+		identityProviderOrgID := contractString(input.Body.IdentityProviderOrgID)
 		slug := contractString(input.Body.Slug)
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
 			attribute.String("verself.org_id", orgID),
+			attribute.String("iam.identity_provider_org_id", identityProviderOrgID),
 			attribute.String("iam.org_slug.requested", strings.TrimSpace(slug)),
 		)
 		profile, err := svc.ResolveOrganization(ctx, identity.ResolveOrganizationRequest{
-			IdentityProviderOrgID: orgID,
+			OrgID:                 orgID,
+			IdentityProviderOrgID: identityProviderOrgID,
 			Slug:                  slug,
 			RequireActive:         input.Body.RequireActive,
 		})
@@ -263,7 +261,7 @@ func authorizeOperation(svc *identity.Service, authzSvc *authz.Service) func(con
 			span.SetStatus(codes.Error, problemCode(err))
 			return nil, err
 		}
-		orgID, err := publicOrgIDForProvider(ctx, svc, string(input.Body.OrgID))
+		orgID, err := requireActivePublicOrg(ctx, svc, string(input.Body.OrgID))
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
@@ -277,7 +275,7 @@ func authorizeOperation(svc *identity.Service, authzSvc *authz.Service) func(con
 			attribute.String("verself.org_id", orgID),
 			attribute.String("iam.subject_type", string(subject.Kind)),
 			attribute.String("iam.subject_id", subject.ID),
-			attribute.StringSlice("iam.permissions.requested", compactStrings(permissions)),
+			attribute.StringSlice("iam.permissions.requested", permissions),
 		)
 		allowed, zedToken, err := authzSvc.TestOrganizationPermissions(ctx, orgID, subject, permissions, contractString(input.Body.MinZedToken))
 		if err != nil {
@@ -316,7 +314,7 @@ func authorizeResource(svc *identity.Service, authzSvc *authz.Service) func(cont
 			span.SetStatus(codes.Error, problemCode(err))
 			return nil, err
 		}
-		orgID, err := publicOrgIDForProvider(ctx, svc, string(input.Body.OrgID))
+		orgID, err := requireActivePublicOrg(ctx, svc, string(input.Body.OrgID))
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
@@ -324,7 +322,7 @@ func authorizeResource(svc *identity.Service, authzSvc *authz.Service) func(cont
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-authorization-subject", "authorization subject is invalid", err)
 		}
-		resource := internalAuthorizationResourceRef(resourceRefFromContract(input.Body.Resource), string(input.Body.OrgID), orgID)
+		resource := resourceRefFromContract(input.Body.Resource)
 		operationPermission := contractString(input.Body.OperationPermission)
 		minZedToken := contractString(input.Body.MinZedToken)
 		span.SetAttributes(
@@ -377,15 +375,12 @@ func writeResourceParentEdge(svc *identity.Service, authzSvc *authz.Service) fun
 			span.SetStatus(codes.Error, problemCode(err))
 			return nil, err
 		}
-		orgID, err := publicOrgIDForProvider(ctx, svc, string(input.Body.OrgID))
+		orgID, err := requireActivePublicOrg(ctx, svc, string(input.Body.OrgID))
 		if err != nil {
 			return nil, identityError(ctx, err)
 		}
-		resource := internalAuthorizationResourceRef(resourceRefFromContract(input.Body.Resource), string(input.Body.OrgID), orgID)
+		resource := resourceRefFromContract(input.Body.Resource)
 		parent := resourceRefFromContract(input.Body.Parent)
-		if parent.Type == authorizationResourceTypeOrg && parent.ID == strings.TrimSpace(string(input.Body.OrgID)) {
-			parent.ID = orgID
-		}
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
 			attribute.String("verself.org_id", orgID),
@@ -445,17 +440,6 @@ func resourceRefFromContract(resource internalcontractapi.IAMResourceRef) authz.
 	}
 }
 
-func internalAuthorizationResourceRef(resource authz.ResourceRef, providerOrgID string, publicOrgID string) authz.ResourceRef {
-	resource.Type = strings.TrimSpace(resource.Type)
-	resource.ID = strings.TrimSpace(resource.ID)
-	providerOrgID = strings.TrimSpace(providerOrgID)
-	publicOrgID = strings.TrimSpace(publicOrgID)
-	if resource.Type == authorizationResourceTypeAPIActivity && resource.ID == providerOrgID {
-		resource.ID = publicOrgID
-	}
-	return resource
-}
-
 func resourceRefContract(resource authz.ResourceRef) internalcontractapi.IAMResourceRef {
 	return internalcontractapi.IAMResourceRef{
 		Type: internalcontractapi.AuthorizationResourceType(strings.TrimSpace(resource.Type)),
@@ -463,17 +447,17 @@ func resourceRefContract(resource authz.ResourceRef) internalcontractapi.IAMReso
 	}
 }
 
-func publicOrgIDForProvider(ctx context.Context, svc *identity.Service, providerOrgID string) (string, error) {
+func requireActivePublicOrg(ctx context.Context, svc *identity.Service, orgID string) (string, error) {
 	if svc == nil {
 		return "", identity.ErrStoreUnavailable
 	}
-	providerOrgID = strings.TrimSpace(providerOrgID)
-	if providerOrgID == "" || providerOrgID == "0" {
+	orgID = strings.TrimSpace(orgID)
+	if orgID == "" {
 		return "", fmt.Errorf("%w: org_id is required", identity.ErrInvalidInput)
 	}
 	profile, err := svc.ResolveOrganization(ctx, identity.ResolveOrganizationRequest{
-		IdentityProviderOrgID: providerOrgID,
-		RequireActive:         true,
+		OrgID:         orgID,
+		RequireActive: true,
 	})
 	if err != nil {
 		return "", err
@@ -527,24 +511,20 @@ func requireInternalHumanIAM(ctx context.Context, subjectID string) (*auth.Ident
 }
 
 func hasHumanTokenMarker(claims map[string]any) bool {
-	// ZITADEL access tokens here omit email, so the generic roles claim is the current human-token discriminator.
-	value, ok := claims["urn:zitadel:iam:org:project:roles"]
-	if !ok {
-		return false
-	}
-	roles, ok := value.(map[string]any)
-	return ok && len(roles) > 0
+	return claimString(claims, "urn:zitadel:iam:user:resourceowner:id") != "" ||
+		claimString(claims, "urn:zitadel:iam:org:id") != ""
 }
 
 func organizationProfile(profile identity.OrganizationProfile) internalcontractapi.OrganizationProfile {
 	return internalcontractapi.OrganizationProfile{
-		OrgID:          internalcontractapi.ProviderOrgID(profile.IdentityProviderOrgID),
-		DisplayName:    internalcontractapi.DisplayName(profile.DisplayName),
-		Slug:           internalcontractapi.OrgSlug(profile.Slug),
-		State:          string(profile.State),
-		Version:        internalcontractapi.OrganizationVersion(profile.Version),
-		UpdatedAt:      profile.UpdatedAt.Format(time.RFC3339Nano),
-		RedirectedFrom: optionalOrgSlug(profile.RedirectedFrom),
+		IdentityProviderOrgID: internalcontractapi.IdentityProviderOrgID(profile.IdentityProviderOrgID),
+		OrgID:                 internalcontractapi.OrgID(profile.OrgID),
+		DisplayName:           internalcontractapi.DisplayName(profile.DisplayName),
+		Slug:                  internalcontractapi.OrgSlug(profile.Slug),
+		State:                 string(profile.State),
+		Version:               internalcontractapi.OrganizationVersion(profile.Version),
+		UpdatedAt:             profile.UpdatedAt.Format(time.RFC3339Nano),
+		RedirectedFrom:        optionalOrgSlug(profile.RedirectedFrom),
 	}
 }
 

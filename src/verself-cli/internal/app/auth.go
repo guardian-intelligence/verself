@@ -165,7 +165,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	if *jsonOut {
 		return writeJSON(c.out, profile)
 	}
-	return writef(c.out, "logged in for %s as %s\n", org.DisplayName, org.CallerRole)
+	return writef(c.out, "logged in for %s\n", org.DisplayName)
 }
 
 type loginCredentialOptions struct {
@@ -241,7 +241,6 @@ func deviceLoginScopes(audience string) string {
 		"email",
 		"offline_access",
 		"urn:zitadel:iam:user:resourceowner",
-		"urn:zitadel:iam:org:projects:roles",
 	}
 	if strings.TrimSpace(audience) != "" {
 		scopes = append(scopes, "urn:zitadel:iam:org:project:id:"+strings.TrimSpace(audience)+":aud")
@@ -423,7 +422,7 @@ func (c CLI) authWhoami(ctx context.Context, args []string) error {
 	if *jsonOut {
 		return writeJSON(c.out, org)
 	}
-	return writef(c.out, "%s\t%s\t%s\n", org.OrgID, org.DisplayName, org.CallerRole)
+	return writef(c.out, "%s\t%s\n", org.OrgID, org.DisplayName)
 }
 
 func (c CLI) authToken(args []string) error {

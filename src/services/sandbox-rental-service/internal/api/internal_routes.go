@@ -40,9 +40,9 @@ func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *
 			return nil, serviceUnavailable(ctx, "sandbox-service-unavailable", "sandbox job service is unavailable", jobs.ErrRunnerUnavailable)
 		}
 		req := input.Body
-		orgID, err := parseUnsignedDecimal(strings.TrimSpace(string(req.OrgID)))
-		if err != nil || orgID == 0 {
-			return nil, badRequest(ctx, "invalid-org-id", "org_id must be a positive decimal uint64 string", err)
+		orgID := strings.TrimSpace(string(req.OrgID))
+		if orgID == "" {
+			return nil, badRequest(ctx, "invalid-org-id", "org_id is required", nil)
 		}
 		providerRepoID, err := strconv.ParseInt(strings.TrimSpace(string(req.ProviderRepositoryID)), 10, 64)
 		if err != nil || providerRepoID <= 0 {
@@ -71,7 +71,7 @@ func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *
 		}
 		span.SetAttributes(
 			attribute.String("spiffe.peer_id", peerID.String()),
-			attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")),
+			attribute.String("verself.org_id", orgID),
 			attribute.String("verself.project_id", projectID.String()),
 			attribute.String("runner.provider", registration.Provider),
 			attribute.Int64("runner.provider_repository_id", providerRepoID),

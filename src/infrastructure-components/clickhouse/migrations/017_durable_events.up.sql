@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS verself.durable_events
 (
     observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
-    org_id UInt64 CODEC(T64, ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
     repository_id UInt64 CODEC(T64, ZSTD(3)),
     provider LowCardinality(String),
     provider_repository_id UInt64 CODEC(T64, ZSTD(3)),

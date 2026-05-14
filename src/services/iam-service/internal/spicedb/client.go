@@ -134,6 +134,47 @@ func (c *Client) TestPermissions(ctx context.Context, resource ResourceRef, perm
 	return allowed, checkedAt, nil
 }
 
+func (c *Client) LookupResources(ctx context.Context, resourceType, permission string, subject SubjectRef, limit uint32, minZedToken string) ([]string, string, error) {
+	if c == nil || c.client == nil {
+		return nil, "", errors.New("spicedb client is unavailable")
+	}
+	resourceType = strings.TrimSpace(resourceType)
+	permission = strings.TrimSpace(permission)
+	if resourceType == "" || permission == "" {
+		return nil, "", errors.New("spicedb resource type and permission are required")
+	}
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	stream, err := c.client.LookupResources(ctx, &v1.LookupResourcesRequest{
+		ResourceObjectType: resourceType,
+		Permission:         permission,
+		Subject:            subjectReference(subject),
+		OptionalLimit:      limit,
+		Consistency:        consistency(minZedToken),
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("lookup spicedb resources: %w", err)
+	}
+	out := []string{}
+	readAt := ""
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("lookup spicedb resources stream: %w", err)
+		}
+		if resp.GetLookedUpAt() != nil {
+			readAt = zedTokenString(resp.GetLookedUpAt())
+		}
+		if id := strings.TrimSpace(resp.GetResourceObjectId()); id != "" {
+			out = append(out, id)
+		}
+	}
+	return compactSorted(out), readAt, nil
+}
+
 func (c *Client) ReadResourceRelationships(ctx context.Context, resource ResourceRef, relations map[string]struct{}) ([]Relationship, string, error) {
 	if c == nil || c.client == nil {
 		return nil, "", errors.New("spicedb client is unavailable")

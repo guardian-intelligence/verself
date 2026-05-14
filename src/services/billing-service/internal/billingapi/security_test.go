@@ -56,29 +56,25 @@ func TestOpenAPIPublicBillingOperationsDeclareIAMPolicy(t *testing.T) {
 }
 
 func TestBillingEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
-	ctx := auth.WithIdentity(context.Background(), &auth.Identity{Subject: "user-123", OrgID: "42"})
+	ctx := auth.WithIdentity(context.Background(), &auth.Identity{Subject: "user-123", OrgID: "org_42"})
 
 	orgID, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionBillingCheckout): true}, runtimeiam.OperationPolicy{Permission: permissionBillingCheckout})
 	if err != nil {
 		t.Fatalf("expected IAM allow decision, got %v", err)
 	}
-	if orgID != 42 {
-		t.Fatalf("org id = %d, want 42", orgID)
+	if orgID != "org_42" {
+		t.Fatalf("org id = %q, want org_42", orgID)
 	}
 }
 
 func TestBillingEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), &auth.Identity{
 		Subject: "user-123",
-		OrgID:   "42",
-		RoleAssignments: []auth.RoleAssignment{{
-			OrganizationID: "42",
-			Role:           "member",
-		}},
+		OrgID:   "org_42",
 	})
 
 	orgID, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, runtimeiam.OperationPolicy{Permission: permissionBillingCheckout})
-	if orgID == 0 {
+	if orgID == "" {
 		t.Fatalf("expected denied operation to retain org id")
 	}
 	var statusErr huma.StatusError

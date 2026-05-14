@@ -1,20 +1,26 @@
 import * as v from "valibot";
 import { createClient, type Client } from "./__generated/iam-api/client/index.js";
 import type {
+  IamPolicy as GeneratedIamPolicy,
   ListMembersResponseContent as ListMembersOutputBody,
   ListOrganizationsResponseContent as ListOrganizationsOutputBody,
   MemberSummary,
   OrganizationSummary,
-  UpdateMemberRoleData,
-  UpdateMemberRoleRequestContent as UpdateMemberRoleInputBody,
+  SetIamPolicyData,
+  SetIamPolicyRequestContent,
+  TestIamPermissionsData,
+  TestIamPermissionsRequestContent,
+  TestIamPermissionsResponseContent,
   UpdateOrganizationData,
   UpdateOrganizationRequestContent as UpdateOrganizationInputBody,
 } from "./__generated/iam-api/index.js";
 import {
+  getIamPolicy,
   getOrganization,
   listMembers,
   listOrganizations,
-  updateMemberRole,
+  setIamPolicy,
+  testIamPermissions,
   updateOrganization,
 } from "./__generated/iam-api/index.js";
 import type { BearerClientOptions } from "./service-api";
@@ -75,15 +81,39 @@ const organizationSlugSchema = v.pipe(
   v.maxLength(80),
 );
 
-const organizationRoleSchema = v.picklist(["owner", "admin", "member"]);
+const permissionSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.regex(/^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+$/),
+);
+
+const iamMemberSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.regex(
+    /^(user|serviceAccount|workload):.+$|^principalSet:\/\/iam\.verself\.sh\/organizations\/org_[0-9A-HJKMNP-TV-Z]{26}\/roles\/[A-Za-z][A-Za-z0-9.]*$/,
+  ),
+);
+
+const iamRoleSchema = v.pipe(v.string(), v.trim(), v.regex(/^roles\/[A-Za-z][A-Za-z0-9.]*$/));
+
+const iamPolicyBindingSchema = v.strictObject({
+  role: iamRoleSchema,
+  members: v.array(iamMemberSchema),
+});
+
+export const iamPolicySchema = v.strictObject({
+  version: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2147483647)),
+  bindings: v.array(iamPolicyBindingSchema),
+  etag: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(256))),
+});
+
 const organizationSummarySchema = v.strictObject({
   orgId: v.string(),
   resourceName: v.string(),
   slug: v.optional(v.string()),
   displayName: v.string(),
-  callerRole: organizationRoleSchema,
   version: v.number(),
-  orgAclVersion: v.number(),
 });
 const memberSummarySchema = v.strictObject({
   orgId: v.string(),
@@ -91,7 +121,6 @@ const memberSummarySchema = v.strictObject({
   resourceName: v.string(),
   email: v.string(),
   displayName: v.string(),
-  role: organizationRoleSchema,
 });
 const listOrganizationsOutputBodySchema = v.strictObject({
   organizations: v.array(organizationSummarySchema),
@@ -101,32 +130,6 @@ const listMembersOutputBodySchema = v.strictObject({
   members: v.array(memberSummarySchema),
   nextPageToken: v.optional(v.string()),
 });
-
-function parseRole(value: string): "owner" | "admin" | "member" {
-  return v.parse(organizationRoleSchema, value);
-}
-
-function rolePermissions(role: string): Array<string> {
-  switch (parseRole(role)) {
-    case "owner":
-    case "admin":
-      return [
-        "iam:organization:list",
-        "iam:organization:read",
-        "iam:organization:update",
-        "iam:member:list",
-        "iam:member:read",
-        "iam:member:update_role",
-      ];
-    case "member":
-      return [
-        "iam:organization:list",
-        "iam:organization:read",
-        "iam:member:list",
-        "iam:member:read",
-      ];
-  }
-}
 
 function bigintToNumber(value: number | bigint): number {
   if (typeof value === "number") {
@@ -144,18 +147,13 @@ export interface Member {
   readonly email: string;
   readonly display_name: string;
   readonly state: string;
-  readonly role_keys: ReadonlyArray<OrganizationRoleKey>;
 }
-
-export type OrganizationRoleKey = "owner" | "admin" | "member";
 
 export interface Organization {
   readonly org_id: string;
   readonly display_name: string;
   readonly slug: string;
   readonly version: number;
-  readonly org_acl_version: number;
-  readonly caller: Member;
   readonly permissions: ReadonlyArray<string>;
 }
 
@@ -165,35 +163,38 @@ export interface OrganizationMetadata {
   readonly slug: string;
 }
 
+export interface IAMPolicy {
+  readonly version: number;
+  readonly bindings: ReadonlyArray<IAMPolicyBinding>;
+  readonly etag?: string;
+}
+
+export interface IAMPolicyBinding {
+  readonly role: string;
+  readonly members: ReadonlyArray<string>;
+}
+
 function parseMember(input: MemberSummary): Member {
   const member = v.parse(memberSummarySchema, input) as MemberSummary;
-  const role = parseRole(member.role);
   return {
     user_id: member.memberId,
     email: member.email,
     display_name: member.displayName,
     state: "active",
-    role_keys: [role],
   };
 }
 
-function parseOrganization(input: OrganizationSummary): Organization {
+function parseOrganization(
+  input: OrganizationSummary,
+  permissions: ReadonlyArray<string> = [],
+): Organization {
   const organization = v.parse(organizationSummarySchema, input) as OrganizationSummary;
-  const callerRole = parseRole(organization.callerRole);
   return {
     org_id: organization.orgId,
     display_name: organization.displayName,
     slug: organization.slug ?? "",
     version: bigintToNumber(organization.version),
-    org_acl_version: bigintToNumber(organization.orgAclVersion),
-    caller: {
-      user_id: "",
-      email: "",
-      display_name: "",
-      state: "active",
-      role_keys: [callerRole],
-    },
-    permissions: rolePermissions(callerRole),
+    permissions,
   };
 }
 
@@ -206,6 +207,18 @@ function parseOrganizationMetadata(input: unknown): OrganizationMetadata {
   };
 }
 
+function parsePolicy(input: GeneratedIamPolicy): IAMPolicy {
+  const policy = v.parse(iamPolicySchema, input) as IAMPolicy;
+  return {
+    version: policy.version,
+    bindings: policy.bindings.map((binding) => ({
+      role: binding.role,
+      members: [...binding.members],
+    })),
+    ...(policy.etag ? { etag: policy.etag } : {}),
+  };
+}
+
 export const updateOrganizationRequestSchema = v.strictObject({
   display_name: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120))),
   slug: v.optional(organizationSlugSchema),
@@ -214,16 +227,23 @@ export const updateOrganizationRequestSchema = v.strictObject({
 
 export type UpdateOrganizationRequest = v.InferInput<typeof updateOrganizationRequestSchema>;
 
-export const updateMemberRolesRequestSchema = v.pipe(
-  v.strictObject({
-    expectedOrgAclVersion: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2147483647)),
-    expectedRoleKeys: v.pipe(v.array(organizationRoleSchema), v.minLength(1)),
-    roleKeys: v.pipe(v.array(organizationRoleSchema), v.minLength(1)),
-    userId: v.pipe(v.string(), v.trim(), v.regex(/^member_[0-9A-HJKMNP-TV-Z]{26}$/)),
-  }),
-);
+export const setIamPolicyRequestSchema = v.strictObject({
+  policy: iamPolicySchema,
+});
 
-export type UpdateMemberRolesRequest = v.InferInput<typeof updateMemberRolesRequestSchema>;
+export type SetIamPolicyRequest = v.InferInput<typeof setIamPolicyRequestSchema>;
+
+export const testIamPermissionsRequestSchema = v.strictObject({
+  permissions: v.array(permissionSchema),
+});
+
+export type TestIamPermissionsRequest = v.InferInput<typeof testIamPermissionsRequestSchema>;
+
+const ORGANIZATION_PAGE_PERMISSIONS = [
+  "iam:organization:update",
+  "iam:member:list",
+  "iam:policy:get",
+] as const;
 
 export class IAM {
   readonly #options: IAMClientOptions;
@@ -242,7 +262,13 @@ export class IAM {
       responseStyle: "fields",
       throwOnError: false,
     });
-    return parseOrganization(unwrapIAMResult(path, result));
+    const organization = parseOrganization(unwrapIAMResult(path, result));
+    const permissions = await this.testPermissionsForOrg(
+      client,
+      organization.org_id,
+      ORGANIZATION_PAGE_PERMISSIONS,
+    );
+    return { ...organization, permissions };
   }
 
   async listMyOrganizations(): Promise<Array<OrganizationMetadata>> {
@@ -281,7 +307,13 @@ export class IAM {
       responseStyle: "fields",
       throwOnError: false,
     });
-    return parseOrganization(unwrapIAMResult(path, result));
+    const organization = parseOrganization(unwrapIAMResult(path, result));
+    const permissions = await this.testPermissionsForOrg(
+      client,
+      organization.org_id,
+      ORGANIZATION_PAGE_PERMISSIONS,
+    );
+    return { ...organization, permissions };
   }
 
   async listMembers(): Promise<Array<Member>> {
@@ -301,33 +333,53 @@ export class IAM {
     return body.members.map((member) => parseMember(member));
   }
 
-  async updateMemberRoles(
-    body: UpdateMemberRolesRequest,
-    options: IAMMutationOptions = {},
-  ): Promise<Member> {
+  async getIamPolicy(): Promise<IAMPolicy> {
     const client = createIAMClient(this.#options);
     const org = await this.currentOrganization(client);
-    const input = v.parse(updateMemberRolesRequestSchema, body);
-    const expectedRole = input.expectedRoleKeys[0];
-    const role = input.roleKeys[0];
-    if (expectedRole === undefined || role === undefined) {
-      throw new Error("IAM member role update requires current and desired roles");
-    }
-    const parsedBody: UpdateMemberRoleInputBody = {
-      expectedOrgAclVersion: input.expectedOrgAclVersion,
-      expectedRole,
-      role,
-    };
-    const path = `/api/v1/orgs/${org.org_id}/members/${input.userId}/role`;
-    const result = await updateMemberRole({
+    const path = `/api/v1/orgs/${org.org_id}/iamPolicy:get`;
+    const result = await getIamPolicy({
       client,
-      body: parsedBody as UpdateMemberRoleData["body"],
-      headers: idempotencyHeaders("iam-member-role", options.idempotencyKey),
-      path: { memberId: input.userId, orgId: org.org_id },
+      path: { orgId: org.org_id },
       responseStyle: "fields",
       throwOnError: false,
     });
-    return parseMember(unwrapIAMResult(path, result));
+    return parsePolicy(unwrapIAMResult(path, result));
+  }
+
+  async setIamPolicy(
+    body: SetIamPolicyRequest,
+    options: IAMMutationOptions = {},
+  ): Promise<IAMPolicy> {
+    const client = createIAMClient(this.#options);
+    const org = await this.currentOrganization(client);
+    const input = v.parse(setIamPolicyRequestSchema, body);
+    const policy: GeneratedIamPolicy = {
+      version: input.policy.version,
+      bindings: input.policy.bindings.map((binding) => ({
+        role: binding.role,
+        members: [...binding.members],
+      })),
+      ...(input.policy.etag !== undefined ? { etag: input.policy.etag } : {}),
+    };
+    const parsedBody: SetIamPolicyRequestContent = {
+      policy,
+    };
+    const path = `/api/v1/orgs/${org.org_id}/iamPolicy:set`;
+    const result = await setIamPolicy({
+      client,
+      body: parsedBody as SetIamPolicyData["body"],
+      headers: idempotencyHeaders("iam-policy", options.idempotencyKey),
+      path: { orgId: org.org_id },
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    return parsePolicy(unwrapIAMResult(path, result));
+  }
+
+  async testIamPermissions(body: TestIamPermissionsRequest): Promise<Array<string>> {
+    const client = createIAMClient(this.#options);
+    const org = await this.currentOrganization(client);
+    return this.testPermissionsForOrg(client, org.org_id, body.permissions);
   }
 
   async currentOrganization(client = createIAMClient(this.#options)): Promise<Organization> {
@@ -352,5 +404,28 @@ export class IAM {
       throw new Error("IAM selected-organization token returned no organization");
     }
     return parseOrganization(organization);
+  }
+
+  async testPermissionsForOrg(
+    client: Client,
+    orgID: string,
+    permissions: ReadonlyArray<string>,
+  ): Promise<Array<string>> {
+    const input = v.parse(testIamPermissionsRequestSchema, {
+      permissions: [...permissions],
+    });
+    const body: TestIamPermissionsRequestContent = {
+      permissions: input.permissions,
+    };
+    const path = `/api/v1/orgs/${orgID}/iamPolicy:testPermissions`;
+    const result = await testIamPermissions({
+      client,
+      body: body as TestIamPermissionsData["body"],
+      path: { orgId: orgID },
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    const output = unwrapIAMResult(path, result) as TestIamPermissionsResponseContent;
+    return output.permissions;
   }
 }

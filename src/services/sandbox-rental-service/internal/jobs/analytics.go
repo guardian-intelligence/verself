@@ -86,7 +86,7 @@ func normalizeAnalyticsWindow(window AnalyticsWindow) AnalyticsWindow {
 	return window
 }
 
-func (s *Service) GetJobsAnalytics(ctx context.Context, orgID uint64, window AnalyticsWindow) (JobsAnalytics, error) {
+func (s *Service) GetJobsAnalytics(ctx context.Context, orgID string, window AnalyticsWindow) (JobsAnalytics, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.analytics.jobs")
 	defer span.End()
 	if s.CH == nil {
@@ -163,7 +163,7 @@ func (s *Service) GetJobsAnalytics(ctx context.Context, orgID uint64, window Ana
 	return analytics, nil
 }
 
-func (s *Service) GetCostsAnalytics(ctx context.Context, orgID uint64, window AnalyticsWindow) (CostsAnalytics, error) {
+func (s *Service) GetCostsAnalytics(ctx context.Context, orgID string, window AnalyticsWindow) (CostsAnalytics, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.analytics.costs")
 	defer span.End()
 	if s.CH == nil {
@@ -218,7 +218,7 @@ func (s *Service) GetCostsAnalytics(ctx context.Context, orgID uint64, window An
 	return analytics, nil
 }
 
-func (s *Service) GetRunnerSizingAnalytics(ctx context.Context, orgID uint64, window AnalyticsWindow) (RunnerSizingAnalytics, error) {
+func (s *Service) GetRunnerSizingAnalytics(ctx context.Context, orgID string, window AnalyticsWindow) (RunnerSizingAnalytics, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.analytics.runner_sizing")
 	defer span.End()
 	if s.CH == nil {
@@ -277,7 +277,7 @@ func float64ToUint64(value float64) uint64 {
 	return uint64(value + 0.5)
 }
 
-func (s *Service) queryAnalyticsBuckets(ctx context.Context, query string, orgID uint64, window AnalyticsWindow) ([]AnalyticsBucket, error) {
+func (s *Service) queryAnalyticsBuckets(ctx context.Context, query string, orgID string, window AnalyticsWindow) ([]AnalyticsBucket, error) {
 	rows, err := s.CH.Query(ctx, query, orgID, window.Start, window.End)
 	if err != nil {
 		return nil, fmt.Errorf("query analytics buckets: %w", err)

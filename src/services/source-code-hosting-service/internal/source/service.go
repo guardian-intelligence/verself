@@ -54,7 +54,7 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 	input.Name = firstNonEmpty(input.Name, project.DisplayName, project.Slug)
 	repoName := s.forgejoRepoName(principal.OrgID, input.ProjectID)
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")),
+		attribute.String("verself.org_id", principal.OrgID),
 		attribute.String("verself.project_id", input.ProjectID.String()),
 		attribute.String("source.forgejo_repo", repoName),
 	)
@@ -112,12 +112,13 @@ func (s *Service) CreateGitCredential(ctx context.Context, principal Principal, 
 	return credential, nil
 }
 
-func (s *Service) AuthenticateGitCredential(ctx context.Context, username string, token string, orgID uint64, requiredScopes []string) (GitPrincipal, error) {
+func (s *Service) AuthenticateGitCredential(ctx context.Context, username string, token string, orgID string, requiredScopes []string) (GitPrincipal, error) {
 	ctx, span := tracer.Start(ctx, "source.git.auth")
 	defer span.End()
 	username = strings.TrimSpace(username)
 	token = strings.TrimSpace(token)
-	if !isSourceGitUsername(username) || token == "" || orgID == 0 {
+	orgID = strings.TrimSpace(orgID)
+	if !isSourceGitUsername(username) || token == "" || orgID == "" {
 		return GitPrincipal{}, ErrUnauthorized
 	}
 	if s.Credentials == nil {
@@ -140,7 +141,7 @@ func (s *Service) AuthenticateGitCredential(ctx context.Context, username string
 	}
 	span.SetAttributes(
 		attribute.String("source.git_credential_id", principal.CredentialID.String()),
-		attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")),
+		attribute.String("verself.org_id", principal.OrgID),
 	)
 	return principal, nil
 }
@@ -157,7 +158,7 @@ func isSourceGitUsername(username string) bool {
 func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipal, projectID uuid.UUID) (Repository, bool, error) {
 	ctx, span := tracer.Start(ctx, "source.git.repository.ensure")
 	defer span.End()
-	if projectID == uuid.Nil || principal.OrgID == 0 {
+	if projectID == uuid.Nil || strings.TrimSpace(principal.OrgID) == "" {
 		return Repository{}, false, ErrInvalid
 	}
 	repo, err := s.Store.GetRepositoryByProject(ctx, principal.OrgID, projectID)
@@ -181,7 +182,7 @@ func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipa
 func (s *Service) GetGitRepository(ctx context.Context, principal GitPrincipal, projectID uuid.UUID) (Repository, error) {
 	ctx, span := tracer.Start(ctx, "source.git.repository.get")
 	defer span.End()
-	if projectID == uuid.Nil || principal.OrgID == 0 {
+	if projectID == uuid.Nil || strings.TrimSpace(principal.OrgID) == "" {
 		return Repository{}, ErrInvalid
 	}
 	repo, err := s.Store.GetRepositoryByProject(ctx, principal.OrgID, projectID)
@@ -442,7 +443,7 @@ func (s *Service) DispatchWorkflowInternal(ctx context.Context, input InternalWo
 	})
 }
 
-func (s *Service) resolveProject(ctx context.Context, orgID uint64, projectID uuid.UUID) (ProjectReference, error) {
+func (s *Service) resolveProject(ctx context.Context, orgID string, projectID uuid.UUID) (ProjectReference, error) {
 	if projectID == uuid.Nil {
 		return ProjectReference{}, ErrInvalid
 	}
@@ -480,7 +481,7 @@ func (s *Service) ResolveGitPath(ctx context.Context, orgSlug, projectSlug strin
 	}
 	redirect := org.Slug != orgSlug || project.Slug != projectSlug
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64FromUint64(org.OrgID, "org id")),
+		attribute.String("verself.org_id", org.OrgID),
 		attribute.String("verself.project_id", project.ProjectID.String()),
 		attribute.String("source.git.org_slug", orgSlug),
 		attribute.String("source.git.project_slug", projectSlug),
@@ -524,7 +525,7 @@ func (s *Service) RecordWebhook(ctx context.Context, backend, event, delivery st
 	span.SetAttributes(attribute.String("source.webhook_backend", backend), attribute.String("source.webhook_event", event), attribute.Bool("source.webhook_valid", valid))
 	result := "denied"
 	var (
-		resolvedOrgID     uint64
+		resolvedOrgID     string
 		resolvedProjectID uuid.UUID
 		resolvedRepoID    uuid.UUID
 		details           = map[string]any{"backend": backend, "delivery": delivery}
@@ -609,12 +610,12 @@ func (s *Service) createOrGetForgejoRepository(ctx context.Context, repoName, de
 	return forgejoRepo{}, err
 }
 
-func (s *Service) forgejoRepoName(orgID uint64, projectID uuid.UUID) string {
+func (s *Service) forgejoRepoName(orgID string, projectID uuid.UUID) string {
 	prefix := strings.Trim(strings.TrimSpace(s.ForgejoPrefix), "-")
 	if prefix == "" {
 		prefix = "verself"
 	}
-	return fmt.Sprintf("%s-%d-%s", prefix, orgID, strings.ReplaceAll(projectID.String(), "-", ""))
+	return fmt.Sprintf("%s-%s-%s", prefix, strings.ReplaceAll(orgID, "_", "-"), strings.ReplaceAll(projectID.String(), "-", ""))
 }
 
 func firstNonEmpty(values ...string) string {

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -277,9 +276,9 @@ func getWorkflowRun(svc *source.Service, cfg Config) func(context.Context, sourc
 
 func internalCreateWorkflowRun(svc *source.Service, cfg Config) func(context.Context, source.Principal, *internalcontractapi.InternalCreateSourceWorkflowRunInput) (*internalcontractapi.WorkflowRunOutput, error) {
 	return func(ctx context.Context, _ source.Principal, input *internalcontractapi.InternalCreateSourceWorkflowRunInput) (*internalcontractapi.WorkflowRunOutput, error) {
-		orgID, err := strconv.ParseUint(strings.TrimSpace(string(input.Body.OrgID)), 10, 64)
-		if err != nil || orgID == 0 {
-			return nil, badRequest(ctx, "invalid-org-id", "org_id must be a non-zero unsigned integer", err)
+		orgID := strings.TrimSpace(string(input.Body.OrgID))
+		if orgID == "" {
+			return nil, badRequest(ctx, "invalid-org-id", "org_id is required", nil)
 		}
 		repoID, err := parseUUID(ctx, string(input.Body.RepoID), "invalid-repo-id", "repo_id must be a UUID")
 		if err != nil {

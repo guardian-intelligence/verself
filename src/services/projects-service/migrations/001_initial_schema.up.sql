@@ -1,6 +1,6 @@
 CREATE TABLE projects (
     project_id UUID PRIMARY KEY,
-    org_id BIGINT NOT NULL CHECK (org_id > 0),
+    org_id TEXT NOT NULL CHECK (length(btrim(org_id)) > 0),
     slug TEXT NOT NULL CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$'),
     display_name TEXT NOT NULL CHECK (display_name <> ''),
     description TEXT NOT NULL DEFAULT '',
@@ -18,7 +18,7 @@ CREATE TABLE projects (
 CREATE INDEX projects_org_state_idx ON projects (org_id, state, created_at DESC, project_id DESC);
 
 CREATE TABLE project_slug_redirects (
-    org_id BIGINT NOT NULL CHECK (org_id > 0),
+    org_id TEXT NOT NULL CHECK (length(btrim(org_id)) > 0),
     slug TEXT NOT NULL CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$'),
     project_id UUID NOT NULL,
     created_by TEXT NOT NULL CHECK (created_by <> ''),
@@ -33,7 +33,7 @@ CREATE INDEX project_slug_redirects_project_idx
 CREATE TABLE project_environments (
     environment_id UUID PRIMARY KEY,
     project_id UUID NOT NULL,
-    org_id BIGINT NOT NULL CHECK (org_id > 0),
+    org_id TEXT NOT NULL CHECK (length(btrim(org_id)) > 0),
     slug TEXT NOT NULL CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$'),
     display_name TEXT NOT NULL CHECK (display_name <> ''),
     kind TEXT NOT NULL CHECK (kind IN ('production', 'preview', 'development', 'custom')),
@@ -54,7 +54,7 @@ CREATE INDEX project_environments_project_state_idx ON project_environments (pro
 CREATE INDEX project_environments_org_idx ON project_environments (org_id, project_id);
 
 CREATE TABLE project_idempotency_records (
-    org_id BIGINT NOT NULL CHECK (org_id > 0),
+    org_id TEXT NOT NULL CHECK (length(btrim(org_id)) > 0),
     operation TEXT NOT NULL CHECK (operation <> ''),
     key_hash TEXT NOT NULL CHECK (key_hash ~ '^[a-f0-9]{64}$'),
     request_hash TEXT NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'),
@@ -74,7 +74,7 @@ CREATE TABLE project_idempotency_records (
 
 CREATE TABLE project_events (
     event_id UUID PRIMARY KEY,
-    org_id BIGINT NOT NULL CHECK (org_id > 0),
+    org_id TEXT NOT NULL CHECK (length(btrim(org_id)) > 0),
     project_id UUID NOT NULL,
     environment_id UUID,
     event_type TEXT NOT NULL CHECK (event_type <> ''),

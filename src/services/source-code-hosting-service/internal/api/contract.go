@@ -117,8 +117,6 @@ func runtimeOrgScopeFromContract(source string) string {
 	switch source {
 	case "request_subject":
 		return string(iam.OrgScopeTokenSubject)
-	case "token_role_assignments":
-		return string(iam.OrgScopeTokenRoleAssignmentOrgIDs)
 	case "input_member":
 		return string(iam.OrgScopePathOrgID)
 	default:

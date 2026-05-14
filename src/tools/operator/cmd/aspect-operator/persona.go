@@ -66,7 +66,7 @@ func cmdPersonaUserState(args []string) error {
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	email := fs.String("email", "", "User email")
 	org := fs.String("org", "", "Org slug")
-	orgID := fs.String("org-id", "", "Numeric org ID")
+	orgID := fs.String("org-id", "", "Verself public org ID")
 	orgName := fs.String("org-name", "", "Org display name")
 	state := fs.String("state", "", "Billing state")
 	planID := fs.String("plan-id", "", "Plan ID")
@@ -322,7 +322,7 @@ func zitadelProjectID(ctx context.Context, client *http.Client, baseURL, adminPA
 }
 
 func zitadelProjectToken(ctx context.Context, client *http.Client, baseURL, username, secret, projectID string) (string, error) {
-	scope := "openid profile urn:zitadel:iam:user:resourceowner urn:zitadel:iam:org:projects:roles urn:zitadel:iam:org:project:id:" + projectID + ":aud"
+	scope := "openid profile urn:zitadel:iam:user:resourceowner urn:zitadel:iam:org:project:id:" + projectID + ":aud"
 	values := url.Values{}
 	values.Set("grant_type", "client_credentials")
 	values.Set("scope", scope)

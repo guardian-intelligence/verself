@@ -231,7 +231,7 @@ func (c *Client) DepositCredits(ctx context.Context, grant GrantBalance) (GrantB
 		grant.ScopeType = "account"
 	}
 	orgID := grant.OrgID
-	if orgID == 0 {
+	if orgIDText(orgID) == "" {
 		return GrantBalance{}, fmt.Errorf("org_id is required")
 	}
 	if firstUint64(grant.OriginalAmount, grant.Amount) == 0 {

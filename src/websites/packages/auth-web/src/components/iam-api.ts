@@ -4,7 +4,6 @@ import type {
   Organization,
   OrganizationMetadata,
   UpdateOrganizationRequest,
-  UpdateMemberRolesRequest,
 } from "./types.ts";
 
 // IAMApiClient is the contract every consumer fills with its own
@@ -17,7 +16,6 @@ export interface IAMApiClient {
   listMyOrganizations: () => Promise<ReadonlyArray<OrganizationMetadata>>;
   updateOrganization: (input: UpdateOrganizationRequest) => Promise<Organization>;
   listMembers: () => Promise<ReadonlyArray<Member>>;
-  updateMemberRoles: (input: UpdateMemberRolesRequest) => Promise<Member>;
 }
 
 const IAMApiContext = createContext<IAMApiClient | null>(null);

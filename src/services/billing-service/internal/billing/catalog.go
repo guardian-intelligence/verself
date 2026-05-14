@@ -40,7 +40,7 @@ func (c *Client) EnsureOrg(ctx context.Context, orgID OrgID, displayName string,
 }
 
 func ensureDefaultOrgTx(ctx context.Context, q *store.Queries, orgID OrgID) error {
-	if orgID == 0 {
+	if orgIDText(orgID) == "" {
 		return fmt.Errorf("org_id is required")
 	}
 	if err := q.InsertDefaultOrg(ctx, store.InsertDefaultOrgParams{OrgID: orgIDText(orgID), DisplayName: "Org " + orgIDText(orgID)}); err != nil {

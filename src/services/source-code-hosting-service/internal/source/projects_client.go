@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -28,15 +27,15 @@ func NewProjectsClient(baseURL string, httpClient projectsclient.HTTPRequestDoer
 	return ProjectsClient{Client: client}, nil
 }
 
-func (c ProjectsClient) ResolveSourceProject(ctx context.Context, orgID uint64, projectID uuid.UUID) (_ ProjectReference, err error) {
+func (c ProjectsClient) ResolveSourceProject(ctx context.Context, orgID string, projectID uuid.UUID) (_ ProjectReference, err error) {
 	return c.resolve(ctx, orgID, projectID, "")
 }
 
-func (c ProjectsClient) ResolveSourceProjectSlug(ctx context.Context, orgID uint64, slug string) (_ ProjectReference, err error) {
+func (c ProjectsClient) ResolveSourceProjectSlug(ctx context.Context, orgID string, slug string) (_ ProjectReference, err error) {
 	return c.resolve(ctx, orgID, uuid.Nil, slug)
 }
 
-func (c ProjectsClient) resolve(ctx context.Context, orgID uint64, projectID uuid.UUID, slug string) (_ ProjectReference, err error) {
+func (c ProjectsClient) resolve(ctx context.Context, orgID string, projectID uuid.UUID, slug string) (_ ProjectReference, err error) {
 	ctx, span := projectsTracer.Start(ctx, "source.projects.resolve")
 	defer func() {
 		if err != nil {
@@ -49,11 +48,12 @@ func (c ProjectsClient) resolve(ctx context.Context, orgID uint64, projectID uui
 		return ProjectReference{}, ErrStoreUnavailable
 	}
 	slug = NormalizeSlug(slug)
-	if orgID == 0 || (projectID == uuid.Nil && slug == "") {
+	orgID = strings.TrimSpace(orgID)
+	if orgID == "" || (projectID == uuid.Nil && slug == "") {
 		return ProjectReference{}, ErrInvalid
 	}
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")),
+		attribute.String("verself.org_id", orgID),
 		attribute.String("verself.project_id", projectID.String()),
 		attribute.String("source.project_slug", slug),
 	)
@@ -68,7 +68,7 @@ func (c ProjectsClient) resolve(ctx context.Context, orgID uint64, projectID uui
 		slugValue = &converted
 	}
 	resp, err := c.Client.ResolveProject(ctx, projectsclient.ResolveProjectRequest{Body: projectsclient.ResolveProjectInputBody{
-		OrgID:         projectsclient.OrgId(strconv.FormatUint(orgID, 10)),
+		OrgID:         projectsclient.OrgId(orgID),
 		ProjectID:     projectIDValue,
 		RequireActive: true,
 		Slug:          slugValue,
@@ -100,9 +100,9 @@ func (c ProjectsClient) resolve(ctx context.Context, orgID uint64, projectID uui
 	if parsedID == uuid.Nil {
 		return ProjectReference{}, fmt.Errorf("%w: project resolver returned empty project id", ErrStoreUnavailable)
 	}
-	projectOrgID, err := strconv.ParseUint(strings.TrimSpace(string(project.OrgID)), 10, 64)
-	if err != nil || projectOrgID == 0 {
-		return ProjectReference{}, fmt.Errorf("%w: parse project org id: %v", ErrStoreUnavailable, err)
+	projectOrgID := strings.TrimSpace(string(project.OrgID))
+	if projectOrgID == "" {
+		return ProjectReference{}, fmt.Errorf("%w: project resolver returned empty org id", ErrStoreUnavailable)
 	}
 	ref := ProjectReference{
 		ProjectID:          parsedID,

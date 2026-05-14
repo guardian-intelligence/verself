@@ -404,23 +404,23 @@ function AccessControl() {
       <SectionHeading id="access-control">Access control</SectionHeading>
       <Prose>
         <p>
-          Access to secrets and keys is controlled by three organization roles plus per-resource
-          grants. Members do not receive blanket read access to everything in the organization.
+          Access to secrets and keys is controlled by IAM policy bindings plus per-resource grants.
+          Organization membership alone does not grant blanket read access.
         </p>
       </Prose>
 
       <DefinitionGrid>
         <DefinitionCard
-          term="Owner"
-          definition="Read, write, delete, rotate, and use any secret or key in the organization. Can grant and revoke access for others. Can change organization-level policies."
+          term="roles/owner"
+          definition="Human breakglass userset that can read, write, delete, rotate, and use any secret or key in the organization. Can grant and revoke access for others and change organization-level policies."
         />
         <DefinitionCard
-          term="Admin"
-          definition="Everything an owner can do on secrets and keys, except changing organization-level policies."
+          term="roles/admin"
+          definition="Administrative userset for service operation management. It excludes organization-level policy ownership."
         />
         <DefinitionCard
-          term="Member"
-          definition="Read secrets and use keys only on resources explicitly granted to the member, their team, or a machine principal they hold. No blanket access."
+          term="roles/secretsUser"
+          definition="Purpose-specific userset for secret read/use flows on resources covered by policy bindings or resource grants."
         />
       </DefinitionGrid>
 
@@ -428,10 +428,10 @@ function AccessControl() {
         <SubHeading id="grants">Grants</SubHeading>
         <Prose>
           <p>
-            Owners and admins grant specific operations (<code>read</code>, <code>use</code>,{" "}
-            <code>rotate</code>) on specific resources to specific actors: members, teams, or
-            machine principals. Grants can be time-boxed and are audited on every use. Revoking a
-            grant takes effect on the next read.
+            Policy owners grant specific operations (<code>read</code>, <code>use</code>,{" "}
+            <code>rotate</code>) on specific resources to specific actors: humans, usersets, service
+            accounts, or workloads. Grants can be time-boxed and are audited on every use. Revoking
+            a grant takes effect on the next read.
           </p>
           <p>
             For automated callers such as CI jobs and agents, issue credentials with the exact

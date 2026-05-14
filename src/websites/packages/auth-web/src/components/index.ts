@@ -9,7 +9,6 @@ export type {
   Organization,
   OrganizationMetadata,
   UpdateOrganizationRequest,
-  UpdateMemberRolesRequest,
 } from "./types.ts";
 
 export {
@@ -20,7 +19,7 @@ export {
   organizationQuery,
   type OrganizationMetadataValue,
 } from "./queries.ts";
-export { useUpdateOrganizationMutation, useUpdateMemberRolesMutation } from "./mutations.ts";
+export { useUpdateOrganizationMutation } from "./mutations.ts";
 
 export {
   OrganizationProfile,

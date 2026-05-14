@@ -8,22 +8,27 @@ import (
 	iamcore "github.com/verself/verself-go/internal/transport/iam"
 )
 
-type OrganizationRole string
+type (
+	IAMRoleName   string
+	IAMMemberName string
+)
 
 const (
-	OrganizationRoleOwner  OrganizationRole = "owner"
-	OrganizationRoleAdmin  OrganizationRole = "admin"
-	OrganizationRoleMember OrganizationRole = "member"
+	IAMRoleOwner           IAMRoleName = "roles/owner"
+	IAMRoleAdmin           IAMRoleName = "roles/admin"
+	IAMRoleMember          IAMRoleName = "roles/member"
+	IAMRoleExecutionViewer IAMRoleName = "roles/executionViewer"
+	IAMRoleBillingViewer   IAMRoleName = "roles/billingViewer"
+	IAMRoleSourceViewer    IAMRoleName = "roles/sourceViewer"
+	IAMRoleSecretsUser     IAMRoleName = "roles/secretsUser"
 )
 
 type Organization struct {
-	OrgID         string `json:"orgId"`
-	ResourceName  string `json:"resourceName"`
-	DisplayName   string `json:"displayName"`
-	Slug          string `json:"slug,omitempty"`
-	CallerRole    string `json:"callerRole"`
-	Version       int64  `json:"version"`
-	OrgACLVersion int64  `json:"orgAclVersion"`
+	OrgID        string `json:"orgId"`
+	ResourceName string `json:"resourceName"`
+	DisplayName  string `json:"displayName"`
+	Slug         string `json:"slug,omitempty"`
+	Version      int64  `json:"version"`
 }
 
 type OrganizationList struct {
@@ -37,12 +42,22 @@ type Member struct {
 	ResourceName string `json:"resourceName"`
 	Email        string `json:"email"`
 	DisplayName  string `json:"displayName"`
-	Role         string `json:"role"`
 }
 
 type MemberList struct {
 	Members       []Member `json:"members"`
 	NextPageToken string   `json:"nextPageToken,omitempty"`
+}
+
+type IAMPolicy struct {
+	Version  int64              `json:"version"`
+	Bindings []IAMPolicyBinding `json:"bindings"`
+	Etag     string             `json:"etag,omitempty"`
+}
+
+type IAMPolicyBinding struct {
+	Role    IAMRoleName     `json:"role"`
+	Members []IAMMemberName `json:"members"`
 }
 
 type ListOrganizationsOptions struct {
@@ -69,13 +84,15 @@ type GetMemberInput struct {
 	MemberID string
 }
 
-type UpdateMemberRoleInput struct {
-	OrgID                 string
-	MemberID              string
-	Role                  OrganizationRole
-	ExpectedRole          OrganizationRole
-	ExpectedOrgACLVersion int64
-	IdempotencyKey        string
+type SetIamPolicyInput struct {
+	OrgID          string
+	Policy         IAMPolicy
+	IdempotencyKey string
+}
+
+type TestIamPermissionsInput struct {
+	OrgID       string
+	Permissions []string
 }
 
 type IAMClient struct {
@@ -136,7 +153,7 @@ func (c *IAMClient) UpdateOrganization(ctx context.Context, input UpdateOrganiza
 		return Organization{}, err
 	}
 	body := iamcore.UpdateOrganizationInputBody{
-		Version: input.Version,
+		Version: iamcore.OrganizationVersion(input.Version),
 	}
 	if input.DisplayName != nil {
 		body.DisplayName = trimStringPointer(input.DisplayName)
@@ -207,37 +224,82 @@ func (c *IAMClient) GetMember(ctx context.Context, input GetMemberInput) (Member
 	return memberFromGenerated(*response.Result), nil
 }
 
-func (c *IAMClient) UpdateMemberRole(ctx context.Context, input UpdateMemberRoleInput) (Member, error) {
+func (c *IAMClient) GetIamPolicy(ctx context.Context, orgID string) (IAMPolicy, error) {
 	if c == nil || c.client == nil {
-		return Member{}, fmt.Errorf("verself sdk: iam client is not initialized")
+		return IAMPolicy{}, fmt.Errorf("verself sdk: iam client is not initialized")
 	}
-	orgID := strings.TrimSpace(input.OrgID)
-	memberID := strings.TrimSpace(input.MemberID)
-	if orgID == "" || memberID == "" {
-		return Member{}, fmt.Errorf("verself sdk: org id and member id are required")
+	id := strings.TrimSpace(orgID)
+	if id == "" {
+		return IAMPolicy{}, fmt.Errorf("verself sdk: org id is required")
 	}
-	key, err := mutationKey("iam-member-role", input.IdempotencyKey)
+	response, err := c.client.GetIamPolicy(ctx, iamcore.GetIamPolicyRequest{OrgID: id})
 	if err != nil {
-		return Member{}, err
-	}
-	body := iamcore.UpdateMemberRoleInputBody{
-		ExpectedOrgACLVersion: input.ExpectedOrgACLVersion,
-		ExpectedRole:          iamcore.OrganizationRole(strings.TrimSpace(string(input.ExpectedRole))),
-		Role:                  iamcore.OrganizationRole(strings.TrimSpace(string(input.Role))),
-	}
-	response, err := c.client.UpdateMemberRole(ctx, iamcore.UpdateMemberRoleRequest{
-		OrgID:          orgID,
-		MemberID:       memberID,
-		IdempotencyKey: key,
-		Body:           body,
-	})
-	if err != nil {
-		return Member{}, err
+		return IAMPolicy{}, err
 	}
 	if response.Result == nil {
-		return Member{}, iamAPIError("update member role", response.StatusCode, response.Problem, response.Body)
+		return IAMPolicy{}, iamAPIError("get iam policy", response.StatusCode, response.Problem, response.Body)
 	}
-	return memberFromGenerated(*response.Result), nil
+	return policyFromGenerated(*response.Result), nil
+}
+
+func (c *IAMClient) SetIamPolicy(ctx context.Context, input SetIamPolicyInput) (IAMPolicy, error) {
+	if c == nil || c.client == nil {
+		return IAMPolicy{}, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	orgID := strings.TrimSpace(input.OrgID)
+	if orgID == "" {
+		return IAMPolicy{}, fmt.Errorf("verself sdk: org id is required")
+	}
+	key, err := mutationKey("iam-policy", input.IdempotencyKey)
+	if err != nil {
+		return IAMPolicy{}, err
+	}
+	response, err := c.client.SetIamPolicy(ctx, iamcore.SetIamPolicyRequest{
+		OrgID:          orgID,
+		IdempotencyKey: key,
+		Body: iamcore.SetIamPolicyInputBody{
+			Policy: policyToGenerated(input.Policy),
+		},
+	})
+	if err != nil {
+		return IAMPolicy{}, err
+	}
+	if response.Result == nil {
+		return IAMPolicy{}, iamAPIError("set iam policy", response.StatusCode, response.Problem, response.Body)
+	}
+	return policyFromGenerated(*response.Result), nil
+}
+
+func (c *IAMClient) TestIamPermissions(ctx context.Context, input TestIamPermissionsInput) ([]string, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	orgID := strings.TrimSpace(input.OrgID)
+	if orgID == "" {
+		return nil, fmt.Errorf("verself sdk: org id is required")
+	}
+	permissions := make([]iamcore.PermissionName, 0, len(input.Permissions))
+	for _, permission := range input.Permissions {
+		permission = strings.TrimSpace(permission)
+		if permission != "" {
+			permissions = append(permissions, iamcore.PermissionName(permission))
+		}
+	}
+	response, err := c.client.TestIamPermissions(ctx, iamcore.TestIamPermissionsRequest{
+		OrgID: orgID,
+		Body:  iamcore.TestIamPermissionsInputBody{Permissions: permissions},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if response.Result == nil {
+		return nil, iamAPIError("test iam permissions", response.StatusCode, response.Problem, response.Body)
+	}
+	out := make([]string, 0, len(response.Result.Permissions))
+	for _, permission := range response.Result.Permissions {
+		out = append(out, string(permission))
+	}
+	return out, nil
 }
 
 func organizationListFromGenerated(input iamcore.ListOrganizationsOutputBody) OrganizationList {
@@ -256,13 +318,11 @@ func organizationListFromGenerated(input iamcore.ListOrganizationsOutputBody) Or
 
 func organizationFromGenerated(input iamcore.OrganizationSummary) Organization {
 	return Organization{
-		OrgID:         input.OrgID,
-		ResourceName:  input.ResourceName,
-		DisplayName:   input.DisplayName,
-		Slug:          stringValue(input.Slug),
-		CallerRole:    string(input.CallerRole),
-		Version:       input.Version,
-		OrgACLVersion: input.OrgACLVersion,
+		OrgID:        input.OrgID,
+		ResourceName: input.ResourceName,
+		DisplayName:  input.DisplayName,
+		Slug:         stringValue(input.Slug),
+		Version:      int64(input.Version),
 	}
 }
 
@@ -287,8 +347,54 @@ func memberFromGenerated(input iamcore.MemberSummary) Member {
 		ResourceName: input.ResourceName,
 		Email:        input.Email,
 		DisplayName:  input.DisplayName,
-		Role:         string(input.Role),
 	}
+}
+
+func policyFromGenerated(input iamcore.IAMPolicy) IAMPolicy {
+	out := IAMPolicy{
+		Version: int64(input.Version),
+	}
+	if input.Etag != nil {
+		out.Etag = string(*input.Etag)
+	}
+	if input.Bindings != nil {
+		out.Bindings = make([]IAMPolicyBinding, 0, len(input.Bindings))
+		for _, binding := range input.Bindings {
+			members := make([]IAMMemberName, 0, len(binding.Members))
+			for _, member := range binding.Members {
+				members = append(members, IAMMemberName(member))
+			}
+			out.Bindings = append(out.Bindings, IAMPolicyBinding{
+				Role:    IAMRoleName(binding.Role),
+				Members: members,
+			})
+		}
+	}
+	return out
+}
+
+func policyToGenerated(input IAMPolicy) iamcore.IAMPolicy {
+	out := iamcore.IAMPolicy{
+		Version:  iamcore.PolicyVersion(input.Version),
+		Bindings: make([]iamcore.IAMPolicyBinding, 0, len(input.Bindings)),
+	}
+	if strings.TrimSpace(input.Etag) != "" {
+		etag := iamcore.PolicyEtag(strings.TrimSpace(input.Etag))
+		out.Etag = &etag
+	}
+	for _, binding := range input.Bindings {
+		members := make([]iamcore.IAMMemberName, 0, len(binding.Members))
+		for _, member := range binding.Members {
+			if strings.TrimSpace(string(member)) != "" {
+				members = append(members, iamcore.IAMMemberName(strings.TrimSpace(string(member))))
+			}
+		}
+		out.Bindings = append(out.Bindings, iamcore.IAMPolicyBinding{
+			Role:    iamcore.IAMRoleName(strings.TrimSpace(string(binding.Role))),
+			Members: members,
+		})
+	}
+	return out
 }
 
 func iamAPIError(operation string, statusCode int, model *iamcore.ErrorModel, body []byte) error {

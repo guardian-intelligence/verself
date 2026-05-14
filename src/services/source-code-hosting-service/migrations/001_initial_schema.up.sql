@@ -3,7 +3,7 @@
 
 CREATE TABLE source_repositories (
     repo_id          UUID        PRIMARY KEY,
-    org_id           BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id           TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     project_id       UUID        NOT NULL,
     created_by       TEXT        NOT NULL CHECK (created_by <> ''),
     name             TEXT        NOT NULL CHECK (name <> ''),
@@ -48,7 +48,7 @@ CREATE INDEX idx_source_repository_backends_backend_id
 
 CREATE TABLE source_git_credentials (
     credential_id UUID        PRIMARY KEY,
-    org_id        BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id        TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     actor_id      TEXT        NOT NULL CHECK (actor_id <> ''),
     label         TEXT        NOT NULL CHECK (label <> ''),
     username      TEXT        NOT NULL CHECK (username <> ''),
@@ -66,7 +66,7 @@ CREATE INDEX idx_source_git_credentials_org_created
 
 CREATE TABLE source_ref_heads (
     repo_id      UUID        NOT NULL REFERENCES source_repositories(repo_id) ON DELETE CASCADE,
-    org_id       BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id       TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     ref_name     TEXT        NOT NULL CHECK (ref_name <> ''),
     commit_sha   TEXT        NOT NULL CHECK (commit_sha <> ''),
     is_default   BOOLEAN     NOT NULL DEFAULT false,
@@ -81,7 +81,7 @@ CREATE INDEX idx_source_ref_heads_org_updated
 CREATE TABLE source_checkout_grants (
     grant_id       UUID        PRIMARY KEY,
     repo_id        UUID        NOT NULL REFERENCES source_repositories(repo_id) ON DELETE CASCADE,
-    org_id         BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id         TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     actor_id       TEXT        NOT NULL CHECK (actor_id <> ''),
     ref            TEXT        NOT NULL CHECK (ref <> ''),
     path_prefix    TEXT        NOT NULL DEFAULT '',
@@ -96,7 +96,7 @@ CREATE INDEX idx_source_checkout_grants_repo_created
 
 CREATE TABLE source_workflow_runs (
     workflow_run_id        UUID        PRIMARY KEY,
-    org_id                 BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id                 TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     project_id             UUID        NOT NULL,
     repo_id                UUID        NOT NULL REFERENCES source_repositories(repo_id) ON DELETE CASCADE,
     actor_id               TEXT        NOT NULL CHECK (actor_id <> ''),
@@ -127,7 +127,7 @@ CREATE INDEX idx_source_workflow_runs_trace_id
 
 CREATE TABLE source_storage_events (
     storage_event_id      UUID        PRIMARY KEY,
-    org_id                BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id                TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     repo_id               UUID        REFERENCES source_repositories(repo_id) ON DELETE SET NULL,
     project_id            UUID,
     backend               TEXT        NOT NULL CHECK (backend <> ''),
@@ -151,7 +151,7 @@ CREATE TABLE source_webhook_deliveries (
     event_type          TEXT        NOT NULL CHECK (event_type <> ''),
     signature_valid     BOOLEAN     NOT NULL,
     result              TEXT        NOT NULL CHECK (result IN ('accepted', 'denied', 'unresolved', 'error')),
-    resolved_org_id     BIGINT      CHECK (resolved_org_id > 0),
+    resolved_org_id     TEXT        NOT NULL DEFAULT '',
     resolved_project_id UUID,
     resolved_repo_id    UUID        REFERENCES source_repositories(repo_id) ON DELETE SET NULL,
     trace_id            TEXT        NOT NULL DEFAULT '',
@@ -165,7 +165,7 @@ CREATE INDEX idx_source_webhook_deliveries_created
 
 CREATE TABLE source_events (
     event_id       UUID        PRIMARY KEY,
-    org_id         BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id         TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     actor_id       TEXT        NOT NULL DEFAULT '',
     repo_id        UUID,
     project_id     UUID,

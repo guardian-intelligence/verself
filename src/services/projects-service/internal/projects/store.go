@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -46,7 +45,7 @@ func (s SQLStore) q() *projectstore.Queries {
 
 type idempotencyProjectPayload struct {
 	ID          uuid.UUID  `json:"id"`
-	OrgID       uint64     `json:"org_id"`
+	OrgID       string     `json:"org_id"`
 	Slug        string     `json:"slug"`
 	DisplayName string     `json:"display_name"`
 	Description string     `json:"description"`
@@ -62,7 +61,7 @@ type idempotencyProjectPayload struct {
 type idempotencyEnvironmentPayload struct {
 	ID               uuid.UUID         `json:"id"`
 	ProjectID        uuid.UUID         `json:"project_id"`
-	OrgID            uint64            `json:"org_id"`
+	OrgID            string            `json:"org_id"`
 	Slug             string            `json:"slug"`
 	DisplayName      string            `json:"display_name"`
 	Kind             string            `json:"kind"`
@@ -351,7 +350,7 @@ func (s SQLStore) UpdateProject(ctx context.Context, principal Principal, input 
 	now := s.now()
 	nextVersion := old.Version + 1
 	rowsAffected, err := q.UpdateProject(ctx, projectstore.UpdateProjectParams{
-		OrgID:       int64FromUint64(old.OrgID, "org id"),
+		OrgID:       old.OrgID,
 		ProjectID:   old.ID,
 		Slug:        slug,
 		DisplayName: displayName,
@@ -508,7 +507,7 @@ func (s SQLStore) ListEnvironments(ctx context.Context, principal Principal, pro
 		return nil, err
 	}
 	rows, err := q.ListEnvironments(ctx, projectstore.ListEnvironmentsParams{
-		OrgID:     int64FromUint64(project.OrgID, "org id"),
+		OrgID:     project.OrgID,
 		ProjectID: project.ID,
 	})
 	if err != nil {
@@ -589,7 +588,7 @@ func (s SQLStore) UpdateEnvironment(ctx context.Context, principal Principal, in
 		return Environment{}, fmt.Errorf("%w: invalid protection policy", ErrInvalid)
 	}
 	rowsAffected, err := q.UpdateEnvironment(ctx, projectstore.UpdateEnvironmentParams{
-		OrgID:            int64FromUint64(old.OrgID, "org id"),
+		OrgID:            old.OrgID,
 		ProjectID:        old.ProjectID,
 		EnvironmentID:    old.ID,
 		DisplayName:      input.DisplayName,
@@ -637,11 +636,11 @@ func (s SQLStore) ResolveProject(ctx context.Context, input ResolveProjectReques
 	ctx, span := storeTracer.Start(ctx, "projects.pg.project.resolve")
 	defer endSpan(span, err)
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64FromUint64(input.OrgID, "org id")),
+		attribute.String("verself.org_id", input.OrgID),
 		attribute.String("projects.slug.requested", input.Slug),
 		attribute.String("verself.project_id", input.ProjectID.String()),
 	)
-	if input.OrgID == 0 {
+	if strings.TrimSpace(input.OrgID) == "" {
 		return Project{}, fmt.Errorf("%w: org_id is required", ErrInvalid)
 	}
 	if input.ProjectID == uuid.Nil && strings.TrimSpace(input.Slug) == "" {
@@ -673,7 +672,7 @@ func (s SQLStore) ResolveProject(ctx context.Context, input ResolveProjectReques
 func (s SQLStore) ResolveEnvironment(ctx context.Context, input ResolveEnvironmentRequest) (env Environment, err error) {
 	ctx, span := storeTracer.Start(ctx, "projects.pg.environment.resolve")
 	defer endSpan(span, err)
-	if input.OrgID == 0 || input.ProjectID == uuid.Nil {
+	if strings.TrimSpace(input.OrgID) == "" || input.ProjectID == uuid.Nil {
 		return Environment{}, fmt.Errorf("%w: org_id and project_id are required", ErrInvalid)
 	}
 	if input.EnvironmentID == uuid.Nil && strings.TrimSpace(input.Slug) == "" {
@@ -697,7 +696,7 @@ func (s SQLStore) ResolveEnvironment(ctx context.Context, input ResolveEnvironme
 	return env, nil
 }
 
-func (s SQLStore) ListEvents(ctx context.Context, orgID uint64, cursor string, limit int) (events []Event, nextCursor string, err error) {
+func (s SQLStore) ListEvents(ctx context.Context, orgID string, cursor string, limit int) (events []Event, nextCursor string, err error) {
 	ctx, span := storeTracer.Start(ctx, "projects.pg.event.list")
 	defer endSpan(span, err)
 	pgOrg, err := pgOrgID(orgID)
@@ -794,7 +793,7 @@ func (s SQLStore) setProjectState(ctx context.Context, principal Principal, inpu
 		archivedAt = timestamptz(now)
 	}
 	rowsAffected, err := q.SetProjectState(ctx, projectstore.SetProjectStateParams{
-		OrgID:      int64FromUint64(old.OrgID, "org id"),
+		OrgID:      old.OrgID,
 		ProjectID:  old.ID,
 		State:      state,
 		UpdatedBy:  principal.Subject,
@@ -885,7 +884,7 @@ func (s SQLStore) setEnvironmentState(ctx context.Context, principal Principal, 
 		archivedAt = timestamptz(now)
 	}
 	rowsAffected, err := q.SetEnvironmentState(ctx, projectstore.SetEnvironmentStateParams{
-		OrgID:         int64FromUint64(old.OrgID, "org id"),
+		OrgID:         old.OrgID,
 		ProjectID:     old.ProjectID,
 		EnvironmentID: old.ID,
 		State:         state,
@@ -933,7 +932,7 @@ func (s SQLStore) insertEnvironment(ctx context.Context, q *projectstore.Queries
 	if err := q.InsertEnvironment(ctx, projectstore.InsertEnvironmentParams{
 		EnvironmentID:    env.ID,
 		ProjectID:        env.ProjectID,
-		OrgID:            int64FromUint64(env.OrgID, "org id"),
+		OrgID:            env.OrgID,
 		Slug:             env.Slug,
 		DisplayName:      env.DisplayName,
 		Kind:             env.Kind,
@@ -953,7 +952,7 @@ func (s SQLStore) insertEnvironment(ctx context.Context, q *projectstore.Queries
 	return nil
 }
 
-func (s SQLStore) insertProjectEvent(ctx context.Context, q *projectstore.Queries, orgID uint64, projectID, environmentID uuid.UUID, eventType, actorID string, payload map[string]string) error {
+func (s SQLStore) insertProjectEvent(ctx context.Context, q *projectstore.Queries, orgID string, projectID, environmentID uuid.UUID, eventType, actorID string, payload map[string]string) error {
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
 		return err
@@ -980,7 +979,7 @@ func (s SQLStore) insertProjectEvent(ctx context.Context, q *projectstore.Querie
 	return nil
 }
 
-func (s SQLStore) loadProjectByID(ctx context.Context, q *projectstore.Queries, orgID uint64, projectID uuid.UUID) (Project, error) {
+func (s SQLStore) loadProjectByID(ctx context.Context, q *projectstore.Queries, orgID string, projectID uuid.UUID) (Project, error) {
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
 		return Project{}, err
@@ -995,7 +994,7 @@ func (s SQLStore) loadProjectByID(ctx context.Context, q *projectstore.Queries, 
 	return projectFromStore(row)
 }
 
-func (s SQLStore) loadProjectBySlug(ctx context.Context, q *projectstore.Queries, orgID uint64, slug string) (Project, error) {
+func (s SQLStore) loadProjectBySlug(ctx context.Context, q *projectstore.Queries, orgID string, slug string) (Project, error) {
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
 		return Project{}, err
@@ -1010,7 +1009,7 @@ func (s SQLStore) loadProjectBySlug(ctx context.Context, q *projectstore.Queries
 	return projectFromStore(row)
 }
 
-func (s SQLStore) loadProjectByRedirectSlug(ctx context.Context, q *projectstore.Queries, orgID uint64, slug string) (Project, error) {
+func (s SQLStore) loadProjectByRedirectSlug(ctx context.Context, q *projectstore.Queries, orgID string, slug string) (Project, error) {
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
 		return Project{}, err
@@ -1030,7 +1029,7 @@ func (s SQLStore) loadProjectByRedirectSlug(ctx context.Context, q *projectstore
 	return project, nil
 }
 
-func (s SQLStore) projectSlugAvailable(ctx context.Context, q *projectstore.Queries, orgID int64, slug string, currentProjectID uuid.UUID) (bool, error) {
+func (s SQLStore) projectSlugAvailable(ctx context.Context, q *projectstore.Queries, orgID string, slug string, currentProjectID uuid.UUID) (bool, error) {
 	var unavailable pgtype.Bool
 	var err error
 	if currentProjectID != uuid.Nil {
@@ -1044,7 +1043,7 @@ func (s SQLStore) projectSlugAvailable(ctx context.Context, q *projectstore.Quer
 	return !unavailable.Bool, nil
 }
 
-func (s SQLStore) insertProjectSlugRedirect(ctx context.Context, q *projectstore.Queries, orgID uint64, projectID uuid.UUID, slug string, actorID string, createdAt time.Time) error {
+func (s SQLStore) insertProjectSlugRedirect(ctx context.Context, q *projectstore.Queries, orgID string, projectID uuid.UUID, slug string, actorID string, createdAt time.Time) error {
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
 		return err
@@ -1064,7 +1063,7 @@ func (s SQLStore) insertProjectSlugRedirect(ctx context.Context, q *projectstore
 	return nil
 }
 
-func (s SQLStore) loadEnvironment(ctx context.Context, q *projectstore.Queries, orgID uint64, projectID, environmentID uuid.UUID) (Environment, error) {
+func (s SQLStore) loadEnvironment(ctx context.Context, q *projectstore.Queries, orgID string, projectID, environmentID uuid.UUID) (Environment, error) {
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
 		return Environment{}, err
@@ -1079,7 +1078,7 @@ func (s SQLStore) loadEnvironment(ctx context.Context, q *projectstore.Queries, 
 	return environmentFromStore(row)
 }
 
-func (s SQLStore) loadEnvironmentBySlug(ctx context.Context, q *projectstore.Queries, orgID uint64, projectID uuid.UUID, slug string) (Environment, error) {
+func (s SQLStore) loadEnvironmentBySlug(ctx context.Context, q *projectstore.Queries, orgID string, projectID uuid.UUID, slug string) (Environment, error) {
 	pgOrg, err := pgOrgID(orgID)
 	if err != nil {
 		return Environment{}, err
@@ -1094,7 +1093,7 @@ func (s SQLStore) loadEnvironmentBySlug(ctx context.Context, q *projectstore.Que
 	return environmentFromStore(row)
 }
 
-func (s SQLStore) loadIdempotentProject(ctx context.Context, q *projectstore.Queries, orgID int64, operation, keyHash, requestHash string) (Project, bool, error) {
+func (s SQLStore) loadIdempotentProject(ctx context.Context, q *projectstore.Queries, orgID string, operation, keyHash, requestHash string) (Project, bool, error) {
 	row, err := q.GetProjectIdempotencyRecord(ctx, projectstore.GetProjectIdempotencyRecordParams{OrgID: orgID, Operation: operation, KeyHash: keyHash})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Project{}, false, nil
@@ -1112,7 +1111,7 @@ func (s SQLStore) loadIdempotentProject(ctx context.Context, q *projectstore.Que
 	return projectFromPayload(stored), true, nil
 }
 
-func (s SQLStore) loadIdempotentEnvironment(ctx context.Context, q *projectstore.Queries, orgID int64, operation, keyHash, requestHash string) (Environment, bool, error) {
+func (s SQLStore) loadIdempotentEnvironment(ctx context.Context, q *projectstore.Queries, orgID string, operation, keyHash, requestHash string) (Environment, bool, error) {
 	row, err := q.GetProjectIdempotencyRecord(ctx, projectstore.GetProjectIdempotencyRecordParams{OrgID: orgID, Operation: operation, KeyHash: keyHash})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Environment{}, false, nil
@@ -1130,7 +1129,7 @@ func (s SQLStore) loadIdempotentEnvironment(ctx context.Context, q *projectstore
 	return environmentFromPayload(stored), true, nil
 }
 
-func (s SQLStore) insertIdempotentProject(ctx context.Context, q *projectstore.Queries, orgID int64, operation, keyHash, requestHash string, project Project, createdAt time.Time) error {
+func (s SQLStore) insertIdempotentProject(ctx context.Context, q *projectstore.Queries, orgID string, operation, keyHash, requestHash string, project Project, createdAt time.Time) error {
 	payload, err := json.Marshal(projectPayload(project))
 	if err != nil {
 		return fmt.Errorf("%w: invalid idempotent project payload", ErrInvalid)
@@ -1153,7 +1152,7 @@ func (s SQLStore) insertIdempotentProject(ctx context.Context, q *projectstore.Q
 	return nil
 }
 
-func (s SQLStore) insertIdempotentEnvironment(ctx context.Context, q *projectstore.Queries, orgID int64, operation, keyHash, requestHash string, env Environment, createdAt time.Time) error {
+func (s SQLStore) insertIdempotentEnvironment(ctx context.Context, q *projectstore.Queries, orgID string, operation, keyHash, requestHash string, env Environment, createdAt time.Time) error {
 	payload, err := json.Marshal(environmentPayload(env))
 	if err != nil {
 		return fmt.Errorf("%w: invalid idempotent environment payload", ErrInvalid)
@@ -1178,13 +1177,9 @@ func (s SQLStore) insertIdempotentEnvironment(ctx context.Context, q *projectsto
 }
 
 func projectFromStore(row projectstore.Project) (Project, error) {
-	orgID, err := uint64FromPGOrg(row.OrgID)
-	if err != nil {
-		return Project{}, err
-	}
 	project := Project{
 		ID:          row.ProjectID,
-		OrgID:       orgID,
+		OrgID:       row.OrgID,
 		Slug:        row.Slug,
 		DisplayName: row.DisplayName,
 		Description: row.Description,
@@ -1203,14 +1198,10 @@ func projectFromStore(row projectstore.Project) (Project, error) {
 }
 
 func environmentFromStore(row projectstore.ProjectEnvironment) (Environment, error) {
-	orgID, err := uint64FromPGOrg(row.OrgID)
-	if err != nil {
-		return Environment{}, err
-	}
 	env := Environment{
 		ID:          row.EnvironmentID,
 		ProjectID:   row.ProjectID,
-		OrgID:       orgID,
+		OrgID:       row.OrgID,
 		Slug:        row.Slug,
 		DisplayName: row.DisplayName,
 		Kind:        row.Kind,
@@ -1235,13 +1226,9 @@ func environmentFromStore(row projectstore.ProjectEnvironment) (Environment, err
 }
 
 func eventFromStore(row projectstore.ProjectEvent) (Event, error) {
-	orgID, err := uint64FromPGOrg(row.OrgID)
-	if err != nil {
-		return Event{}, err
-	}
 	event := Event{
 		ID:          row.EventID,
-		OrgID:       orgID,
+		OrgID:       row.OrgID,
 		ProjectID:   row.ProjectID,
 		EventType:   row.EventType,
 		ActorID:     row.ActorID,
@@ -1259,13 +1246,6 @@ func eventFromStore(row projectstore.ProjectEvent) (Event, error) {
 		}
 	}
 	return event, nil
-}
-
-func uint64FromPGOrg(value int64) (uint64, error) {
-	if value <= 0 {
-		return 0, fmt.Errorf("%w: org_id is out of range", ErrStoreUnavailable)
-	}
-	return uint64(value), nil // #nosec G115 -- value is checked as positive above.
 }
 
 func requiredTime(value pgtype.Timestamptz) time.Time {
@@ -1314,11 +1294,12 @@ func (s SQLStore) now() time.Time {
 	return time.Now().UTC()
 }
 
-func pgOrgID(orgID uint64) (int64, error) {
-	if orgID == 0 || orgID > math.MaxInt64 {
-		return 0, fmt.Errorf("%w: org_id is out of range", ErrInvalid)
+func pgOrgID(orgID string) (string, error) {
+	orgID = strings.TrimSpace(orgID)
+	if orgID == "" {
+		return "", fmt.Errorf("%w: org_id is required", ErrInvalid)
 	}
-	return int64(orgID), nil // #nosec G115 -- orgID is checked against MaxInt64 above.
+	return orgID, nil
 }
 
 func normalizeLimit(limit int) int {
@@ -1466,9 +1447,9 @@ func uniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-func lockIdempotencyKey(ctx context.Context, q *projectstore.Queries, orgID int64, operation, keyHash string) error {
+func lockIdempotencyKey(ctx context.Context, q *projectstore.Queries, orgID string, operation, keyHash string) error {
 	// Serialize by idempotency key before touching domain unique indexes.
-	if err := q.LockIdempotencyKey(ctx, projectstore.LockIdempotencyKeyParams{LockKey: strconv.FormatInt(orgID, 10) + "|" + operation + "|" + keyHash}); err != nil {
+	if err := q.LockIdempotencyKey(ctx, projectstore.LockIdempotencyKeyParams{LockKey: orgID + "|" + operation + "|" + keyHash}); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return nil

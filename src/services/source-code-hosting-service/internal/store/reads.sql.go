@@ -58,7 +58,7 @@ type FindRepositoryByBackendParams struct {
 
 type FindRepositoryByBackendRow struct {
 	RepoID              uuid.UUID
-	OrgID               int64
+	OrgID               string
 	ProjectID           uuid.UUID
 	CreatedBy           string
 	Name                string
@@ -149,14 +149,14 @@ WHERE r.org_id = $1 AND r.repo_id = $2 AND r.state = 'active'
 `
 
 type GetRepositoryParams struct {
-	OrgID   int64
+	OrgID   string
 	RepoID  uuid.UUID
 	Backend string
 }
 
 type GetRepositoryRow struct {
 	RepoID              uuid.UUID
-	OrgID               int64
+	OrgID               string
 	ProjectID           uuid.UUID
 	CreatedBy           string
 	Name                string
@@ -242,14 +242,14 @@ WHERE r.org_id = $1 AND r.project_id = $2 AND r.state = 'active'
 `
 
 type GetRepositoryByProjectParams struct {
-	OrgID     int64
+	OrgID     string
 	ProjectID uuid.UUID
 	Backend   string
 }
 
 type GetRepositoryByProjectRow struct {
 	RepoID              uuid.UUID
-	OrgID               int64
+	OrgID               string
 	ProjectID           uuid.UUID
 	CreatedBy           string
 	Name                string
@@ -312,7 +312,7 @@ WHERE org_id = $1 AND workflow_run_id = $2
 `
 
 type GetWorkflowRunParams struct {
-	OrgID         int64
+	OrgID         string
 	WorkflowRunID uuid.UUID
 }
 
@@ -349,7 +349,7 @@ WHERE org_id = $1 AND idempotency_key = $2
 `
 
 type GetWorkflowRunByIdempotencyKeyParams struct {
-	OrgID          int64
+	OrgID          string
 	IdempotencyKey string
 }
 
@@ -386,7 +386,7 @@ ORDER BY is_default DESC, ref_name
 `
 
 type ListRefsParams struct {
-	OrgID  int64
+	OrgID  string
 	RepoID uuid.UUID
 }
 
@@ -447,13 +447,13 @@ ORDER BY r.updated_at DESC, r.repo_id DESC
 `
 
 type ListRepositoriesParams struct {
-	OrgID   int64
+	OrgID   string
 	Backend string
 }
 
 type ListRepositoriesRow struct {
 	RepoID              uuid.UUID
-	OrgID               int64
+	OrgID               string
 	ProjectID           uuid.UUID
 	CreatedBy           string
 	Name                string
@@ -553,14 +553,14 @@ ORDER BY r.updated_at DESC, r.repo_id DESC
 `
 
 type ListRepositoriesByProjectParams struct {
-	OrgID     int64
+	OrgID     string
 	ProjectID uuid.UUID
 	Backend   string
 }
 
 type ListRepositoriesByProjectRow struct {
 	RepoID              uuid.UUID
-	OrgID               int64
+	OrgID               string
 	ProjectID           uuid.UUID
 	CreatedBy           string
 	Name                string
@@ -638,7 +638,7 @@ LIMIT 100
 `
 
 type ListWorkflowRunsParams struct {
-	OrgID  int64
+	OrgID  string
 	RepoID uuid.UUID
 }
 

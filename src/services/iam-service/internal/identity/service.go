@@ -18,10 +18,6 @@ type Store interface {
 	ListOrganizationMetadataByProviderOrgIDs(ctx context.Context, providerOrgIDs []string) ([]OrganizationMetadata, error)
 	UpdateOrganizationProfile(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (OrganizationProfile, error)
 	ResolveOrganizationProfile(ctx context.Context, input ResolveOrganizationRequest) (OrganizationProfile, error)
-	GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error)
-	PutMemberCapabilities(ctx context.Context, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error)
-	GetOrgACLState(ctx context.Context, orgID, actor string) (OrgACLState, error)
-	UpdateMemberRolesCommand(ctx context.Context, command UpdateMemberRolesCommand, directory Directory, projectID string) (UpdateMemberRolesResult, error)
 	CreateServiceAccount(ctx context.Context, account ServiceAccount, credential APICredential, secret APICredentialSecret) (ServiceAccount, APICredential, error)
 	ListServiceAccounts(ctx context.Context, orgID string) ([]ServiceAccount, error)
 	GetServiceAccount(ctx context.Context, orgID, serviceAccountID string) (ServiceAccount, error)
@@ -36,9 +32,8 @@ type Store interface {
 }
 
 type Directory interface {
-	ListMembers(ctx context.Context, orgID, projectID string) ([]Member, error)
-	InviteMember(ctx context.Context, orgID, projectID string, input InviteMemberRequest) (InviteMemberResult, error)
-	UpdateMemberRoles(ctx context.Context, orgID, projectID, userID string, roleKeys []string) (Member, error)
+	ListMembers(ctx context.Context, orgID string) ([]Member, error)
+	InviteMember(ctx context.Context, orgID string, input InviteMemberRequest) (InviteMemberResult, error)
 	UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error)
 	CreateServiceAccountCredential(ctx context.Context, orgID string, input ServiceAccountCredentialInput) (subjectID string, material APICredentialIssuedMaterial, err error)
 	AddServiceAccountCredential(ctx context.Context, input AddServiceAccountCredentialInput) (APICredentialIssuedMaterial, error)
@@ -47,10 +42,7 @@ type Directory interface {
 }
 
 type AuthorizationGraph interface {
-	ReconcileOrganizationRoles(ctx context.Context, orgID string, members []Member, capabilities MemberCapabilitiesDocument, operation string) (string, error)
-	ReconcileMemberRoles(ctx context.Context, orgID string, member Member, operation string) (string, error)
-	ReconcileCapabilityGrants(ctx context.Context, orgID string, capabilities MemberCapabilitiesDocument, operation string) (string, error)
-	ReconcileServiceAccountPermissions(ctx context.Context, orgID, serviceAccountID string, permissions []string, operation string) (string, error)
+	LookupOrganizations(ctx context.Context, subject AuthorizationSubject, permission, minZedToken string) ([]string, string, error)
 	TestOrganizationPermissions(ctx context.Context, orgID string, subject AuthorizationSubject, permissions []string, minZedToken string) ([]string, string, error)
 }
 
@@ -71,16 +63,12 @@ func directoryForProviderOrgID(next Directory, providerOrgID string) Directory {
 	return providerOrgDirectory{next: next, providerOrgID: strings.TrimSpace(providerOrgID)}
 }
 
-func (d providerOrgDirectory) ListMembers(ctx context.Context, _ string, projectID string) ([]Member, error) {
-	return d.next.ListMembers(ctx, d.providerOrgID, projectID)
+func (d providerOrgDirectory) ListMembers(ctx context.Context, _ string) ([]Member, error) {
+	return d.next.ListMembers(ctx, d.providerOrgID)
 }
 
-func (d providerOrgDirectory) InviteMember(ctx context.Context, _ string, projectID string, input InviteMemberRequest) (InviteMemberResult, error) {
-	return d.next.InviteMember(ctx, d.providerOrgID, projectID, input)
-}
-
-func (d providerOrgDirectory) UpdateMemberRoles(ctx context.Context, _ string, projectID, userID string, roleKeys []string) (Member, error) {
-	return d.next.UpdateMemberRoles(ctx, d.providerOrgID, projectID, userID, roleKeys)
+func (d providerOrgDirectory) InviteMember(ctx context.Context, _ string, input InviteMemberRequest) (InviteMemberResult, error) {
+	return d.next.InviteMember(ctx, d.providerOrgID, input)
 }
 
 func (d providerOrgDirectory) UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error) {
@@ -115,45 +103,26 @@ func (s *Service) Organization(ctx context.Context, principal Principal) (Organi
 	if err != nil {
 		return Organization{}, err
 	}
-	capabilities, err := s.memberCapabilities(ctx, principal.OrgID, principal.Subject)
-	if err != nil {
-		return Organization{}, err
-	}
-	members, err := s.members(ctx, principal.OrgID)
-	if err != nil {
-		return Organization{}, err
-	}
-	if err := s.reconcileOrganizationRoles(ctx, principal.OrgID, members, capabilities, "get-organization"); err != nil {
-		return Organization{}, err
-	}
-	orgACL, err := store.GetOrgACLState(ctx, principal.OrgID, principal.Subject)
-	if err != nil {
-		return Organization{}, err
-	}
-	caller := callerMember(principal, members)
 	return Organization{
-		OrgID:              principal.OrgID,
-		DisplayName:        profile.DisplayName,
-		Slug:               profile.Slug,
-		Version:            profile.Version,
-		OrgACLVersion:      orgACL.Version,
-		Caller:             caller,
-		MemberCapabilities: capabilities,
-		Permissions:        PermissionsForRoles(capabilities, caller.RoleKeys),
+		OrgID:       principal.OrgID,
+		DisplayName: profile.DisplayName,
+		Slug:        profile.Slug,
+		Version:     profile.Version,
 	}, nil
 }
 
-// AccessibleOrganizationsBySubject enumerates org metadata across the entire
-// set of orgs the JWT proves the subject is a member of. The token-derived
-// orgIDs list is itself the authorization boundary, so no single Principal
-// is required (multi-org bearers have no "selected org").
-func (s *Service) AccessibleOrganizationsBySubject(ctx context.Context, subject string, orgIDs []string) ([]OrganizationMetadata, error) {
-	if strings.TrimSpace(subject) == "" {
-		return nil, fmt.Errorf("%w: subject is required", ErrInvalidInput)
+func (s *Service) AccessibleOrganizations(ctx context.Context, subject AuthorizationSubject) ([]OrganizationMetadata, error) {
+	graph, err := s.authorizationGraph()
+	if err != nil {
+		return nil, err
+	}
+	orgIDs, _, err := graph.LookupOrganizations(ctx, subject, "read", "")
+	if err != nil {
+		return nil, err
 	}
 	orgIDs = normalizeOrganizationIDs(orgIDs)
 	if len(orgIDs) == 0 {
-		return nil, fmt.Errorf("%w: organization role assignments are required", ErrInvalidInput)
+		return []OrganizationMetadata{}, nil
 	}
 	store, err := s.store()
 	if err != nil {
@@ -164,51 +133,9 @@ func (s *Service) AccessibleOrganizationsBySubject(ctx context.Context, subject 
 		return nil, err
 	}
 	if len(organizations) != len(orgIDs) {
-		return nil, fmt.Errorf("%w: organization metadata is missing for one or more role assignments", ErrOrganizationMissing)
+		return nil, fmt.Errorf("%w: organization metadata is missing for one or more policy grants", ErrOrganizationMissing)
 	}
 	return organizations, nil
-}
-
-func (s *Service) AccessibleOrganizationsByProviderOrgIDs(ctx context.Context, subject string, providerOrgIDs []string) ([]OrganizationMetadata, error) {
-	if strings.TrimSpace(subject) == "" {
-		return nil, fmt.Errorf("%w: subject is required", ErrInvalidInput)
-	}
-	providerOrgIDs = normalizeOrganizationIDs(providerOrgIDs)
-	if len(providerOrgIDs) == 0 {
-		return nil, fmt.Errorf("%w: organization role assignments are required", ErrInvalidInput)
-	}
-	store, err := s.store()
-	if err != nil {
-		return nil, err
-	}
-	organizations, err := store.ListOrganizationMetadataByProviderOrgIDs(ctx, providerOrgIDs)
-	if err != nil {
-		return nil, err
-	}
-	if len(organizations) != len(providerOrgIDs) {
-		return nil, fmt.Errorf("%w: organization metadata is missing for one or more role assignments", ErrOrganizationMissing)
-	}
-	return organizations, nil
-}
-
-func (s *Service) ReconcileOrganizationAuthorization(ctx context.Context, orgID, actor, operation string) error {
-	orgID = strings.TrimSpace(orgID)
-	actor = strings.TrimSpace(actor)
-	if orgID == "" {
-		return fmt.Errorf("%w: org_id is required", ErrInvalidInput)
-	}
-	if actor == "" {
-		return fmt.Errorf("%w: actor is required", ErrInvalidInput)
-	}
-	capabilities, err := s.memberCapabilities(ctx, orgID, actor)
-	if err != nil {
-		return err
-	}
-	members, err := s.members(ctx, orgID)
-	if err != nil {
-		return err
-	}
-	return s.reconcileOrganizationRoles(ctx, orgID, members, capabilities, operation)
 }
 
 func (s *Service) UpdateOrganization(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (Organization, error) {
@@ -244,45 +171,14 @@ func (s *Service) Members(ctx context.Context, principal Principal) ([]Member, e
 	if err != nil {
 		return nil, err
 	}
-	return visibleMembers(members), nil
-}
-
-// visibleMembers narrows the raw Zitadel directory listing to the rows the org
-// console renders. Two classes are dropped:
-//
-//   - Machine users (Zitadel service accounts). These are the same Zitadel
-//     primitive that backs API credentials; they belong on the API Credentials
-//     surface, not the members table. Even though seed-system grants persona
-//     machine users (assume-platform-admin and friends) project authorizations
-//     directly, the table is for human seats.
-//   - Owner-role users. Owner is the org singleton; the role cannot be assigned
-//     or revoked through invite/role-update (validateRoleKeys rejects it), so
-//     showing an owner row would be a UX dead end. The owner is communicated
-//     elsewhere (e.g. the caller's "your roles" badge in the general section).
-//
-// Service.Organization() still resolves callerMember from the unfiltered set so
-// an operator who is the owner can still see themselves in the general section.
-func visibleMembers(members []Member) []Member {
 	out := make([]Member, 0, len(members))
 	for _, member := range members {
 		if member.Type == MemberTypeMachine {
 			continue
 		}
-		if containsRole(member.RoleKeys, RoleOwner) {
-			continue
-		}
 		out = append(out, member)
 	}
-	return out
-}
-
-func containsRole(roles []string, target string) bool {
-	for _, role := range roles {
-		if role == target {
-			return true
-		}
-	}
-	return false
+	return out, nil
 }
 
 func (s *Service) InviteMember(ctx context.Context, principal Principal, input InviteMemberRequest) (InviteMemberResult, error) {
@@ -292,9 +188,6 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 	if err := validateInvite(input); err != nil {
 		return InviteMemberResult{}, err
 	}
-	if err := s.validateRoleKeys(input.RoleKeys); err != nil {
-		return InviteMemberResult{}, err
-	}
 	directory, err := s.directory()
 	if err != nil {
 		return InviteMemberResult{}, err
@@ -303,73 +196,9 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 	if err != nil {
 		return InviteMemberResult{}, err
 	}
-	result, err := directory.InviteMember(ctx, providerOrgID, s.ProjectID, normalizeInvite(input))
+	result, err := directory.InviteMember(ctx, providerOrgID, normalizeInvite(input))
 	if err != nil {
 		return InviteMemberResult{}, err
-	}
-	if err := s.reconcileMemberRoles(ctx, principal.OrgID, Member{
-		UserID:   result.UserID,
-		Type:     MemberTypeHuman,
-		RoleKeys: result.RoleKeys,
-	}, "invite-member"); err != nil {
-		return InviteMemberResult{}, err
-	}
-	return result, nil
-}
-
-func (s *Service) UpdateMemberRoles(ctx context.Context, principal Principal, command UpdateMemberRolesCommand) (UpdateMemberRolesResult, error) {
-	if err := principal.validate(); err != nil {
-		return UpdateMemberRolesResult{}, err
-	}
-	command.OrgID = principal.OrgID
-	command.ActorID = principal.Subject
-	command.UserID = strings.TrimSpace(command.UserID)
-	command.OperationID = strings.TrimSpace(command.OperationID)
-	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
-	if command.UserID == "" {
-		return UpdateMemberRolesResult{}, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
-	}
-	command.RoleKeys = normalizeRoleKeys(command.RoleKeys)
-	command.ExpectedRoleKeys = normalizeRoleKeys(command.ExpectedRoleKeys)
-	if len(command.RoleKeys) == 0 {
-		return UpdateMemberRolesResult{}, fmt.Errorf("%w: role_keys is required", ErrInvalidInput)
-	}
-	if len(command.ExpectedRoleKeys) == 0 {
-		return UpdateMemberRolesResult{}, fmt.Errorf("%w: expected_role_keys is required", ErrInvalidInput)
-	}
-	if command.ExpectedOrgACLVersion <= 0 {
-		return UpdateMemberRolesResult{}, fmt.Errorf("%w: expected_org_acl_version must be positive", ErrInvalidInput)
-	}
-	if command.OperationID == "" {
-		return UpdateMemberRolesResult{}, fmt.Errorf("%w: operation_id is required", ErrInvalidInput)
-	}
-	if command.IdempotencyKey == "" {
-		return UpdateMemberRolesResult{}, fmt.Errorf("%w: idempotency key is required", ErrInvalidInput)
-	}
-	if err := s.validateRoleKeys(command.RoleKeys); err != nil {
-		return UpdateMemberRolesResult{}, err
-	}
-	if err := s.validateRoleKeys(command.ExpectedRoleKeys); err != nil {
-		return UpdateMemberRolesResult{}, err
-	}
-	directory, err := s.directory()
-	if err != nil {
-		return UpdateMemberRolesResult{}, err
-	}
-	providerOrgID, err := s.providerOrgID(ctx, principal.OrgID, principal.Subject)
-	if err != nil {
-		return UpdateMemberRolesResult{}, err
-	}
-	store, err := s.store()
-	if err != nil {
-		return UpdateMemberRolesResult{}, err
-	}
-	result, err := store.UpdateMemberRolesCommand(ctx, command, directoryForProviderOrgID(directory, providerOrgID), s.ProjectID)
-	if err != nil {
-		return UpdateMemberRolesResult{}, err
-	}
-	if err := s.reconcileMemberRoles(ctx, principal.OrgID, result.Member, "update-member-roles"); err != nil {
-		return UpdateMemberRolesResult{}, err
 	}
 	return result, nil
 }
@@ -390,38 +219,6 @@ func (s *Service) UpdateHumanProfile(ctx context.Context, subjectID string, inpu
 	return directory.UpdateHumanProfile(ctx, subjectID, input)
 }
 
-func (s *Service) MemberCapabilities(ctx context.Context, principal Principal) (MemberCapabilitiesDocument, error) {
-	if err := principal.validate(); err != nil {
-		return MemberCapabilitiesDocument{}, err
-	}
-	return s.memberCapabilities(ctx, principal.OrgID, principal.Subject)
-}
-
-func (s *Service) PutMemberCapabilities(ctx context.Context, principal Principal, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error) {
-	if err := principal.validate(); err != nil {
-		return MemberCapabilitiesDocument{}, err
-	}
-	doc.OrgID = principal.OrgID
-	doc.UpdatedBy = principal.Subject
-	doc.UpdatedAt = s.now()
-	doc.EnabledKeys = normalizeCapabilityKeys(doc.EnabledKeys)
-	if err := ValidateMemberCapabilities(doc); err != nil {
-		return MemberCapabilitiesDocument{}, err
-	}
-	store, err := s.store()
-	if err != nil {
-		return MemberCapabilitiesDocument{}, err
-	}
-	updated, err := store.PutMemberCapabilities(ctx, doc)
-	if err != nil {
-		return MemberCapabilitiesDocument{}, err
-	}
-	if err := s.reconcileCapabilityGrants(ctx, principal.OrgID, updated, "put-member-capabilities"); err != nil {
-		return MemberCapabilitiesDocument{}, err
-	}
-	return updated, nil
-}
-
 func (s *Service) ListServiceAccounts(ctx context.Context, principal Principal) ([]ServiceAccount, error) {
 	if err := principal.validate(); err != nil {
 		return nil, err
@@ -433,13 +230,6 @@ func (s *Service) ListServiceAccounts(ctx context.Context, principal Principal) 
 	accounts, err := store.ListServiceAccounts(ctx, principal.OrgID)
 	if err != nil {
 		return nil, err
-	}
-	for i := range accounts {
-		permissions, err := s.serviceAccountPermissions(ctx, accounts[i].OrgID, accounts[i].ServiceAccountID)
-		if err != nil {
-			return nil, err
-		}
-		accounts[i].Permissions = permissions
 	}
 	return accounts, nil
 }
@@ -457,10 +247,6 @@ func (s *Service) GetServiceAccount(ctx context.Context, principal Principal, se
 		return ServiceAccount{}, err
 	}
 	account, err := store.GetServiceAccount(ctx, principal.OrgID, serviceAccountID)
-	if err != nil {
-		return ServiceAccount{}, err
-	}
-	account.Permissions, err = s.serviceAccountPermissions(ctx, account.OrgID, account.ServiceAccountID)
 	if err != nil {
 		return ServiceAccount{}, err
 	}
@@ -494,9 +280,6 @@ func (s *Service) DisableServiceAccount(ctx context.Context, principal Principal
 	if err != nil {
 		return DisableServiceAccountResult{}, err
 	}
-	if _, err := s.reconcileServiceAccountPermissions(ctx, principal.OrgID, serviceAccountID, nil, "disable-service-account"); err != nil {
-		return DisableServiceAccountResult{}, err
-	}
 	return DisableServiceAccountResult{ServiceAccount: account, Credentials: credentials}, nil
 }
 
@@ -512,7 +295,7 @@ func (s *Service) ListAPICredentials(ctx context.Context, principal Principal) (
 	if err != nil {
 		return nil, err
 	}
-	return s.credentialsWithPermissions(ctx, credentials)
+	return credentials, nil
 }
 
 func (s *Service) GetAPICredential(ctx context.Context, principal Principal, credentialID string) (APICredential, error) {
@@ -531,11 +314,6 @@ func (s *Service) GetAPICredential(ctx context.Context, principal Principal, cre
 	if err != nil {
 		return APICredential{}, err
 	}
-	permissions, err := s.serviceAccountPermissions(ctx, credential.OrgID, credential.ServiceAccountID)
-	if err != nil {
-		return APICredential{}, err
-	}
-	credential.Permissions = permissions
 	return credential, nil
 }
 
@@ -543,11 +321,7 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 	if err := principal.validate(); err != nil {
 		return CreateAPICredentialResult{}, err
 	}
-	input, capabilities, err := s.normalizeCreateAPICredentialRequest(ctx, principal, input)
-	if err != nil {
-		return CreateAPICredentialResult{}, err
-	}
-	authzGraph, err := s.authorizationGraph()
+	input, err := s.normalizeCreateAPICredentialRequest(input)
 	if err != nil {
 		return CreateAPICredentialResult{}, err
 	}
@@ -617,19 +391,17 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 		}
 	}
 	credential := APICredential{
-		CredentialID:         credentialID,
-		ServiceAccountID:     serviceAccountID,
-		OrgID:                principal.OrgID,
-		ClientID:             clientID,
-		DisplayName:          input.DisplayName,
-		Status:               APICredentialStatusActive,
-		AuthMethod:           input.AuthMethod,
-		Permissions:          append([]string(nil), input.Permissions...),
-		PolicyVersionAtIssue: capabilities.Version,
-		CreatedAt:            now,
-		CreatedBy:            principal.Subject,
-		UpdatedAt:            now,
-		ExpiresAt:            input.ExpiresAt,
+		CredentialID:     credentialID,
+		ServiceAccountID: serviceAccountID,
+		OrgID:            principal.OrgID,
+		ClientID:         clientID,
+		DisplayName:      input.DisplayName,
+		Status:           APICredentialStatusActive,
+		AuthMethod:       input.AuthMethod,
+		CreatedAt:        now,
+		CreatedBy:        principal.Subject,
+		UpdatedAt:        now,
+		ExpiresAt:        input.ExpiresAt,
 	}
 	if err := validateIssuedMaterial(input.AuthMethod, material); err != nil {
 		cleanupErr := cleanupIssuedCredential(ctx, directory, createServiceAccount, subjectID, APICredentialSecret{})
@@ -640,10 +412,6 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 	account.ClientID = credential.ClientID
 	secret := credentialSecretFromMaterial(credential, material, principal.Subject, now, input.ExpiresAt)
 	credential.Fingerprint = secret.Fingerprint
-	if _, err := authzGraph.ReconcileServiceAccountPermissions(ctx, principal.OrgID, serviceAccountID, input.Permissions, "create-api-credential"); err != nil {
-		cleanupErr := cleanupIssuedCredential(ctx, directory, createServiceAccount, subjectID, secret)
-		return CreateAPICredentialResult{}, errors.Join(err, cleanupErr)
-	}
 	if createServiceAccount {
 		account, credential, err = store.CreateServiceAccount(ctx, account, credential, secret)
 	} else {
@@ -651,10 +419,8 @@ func (s *Service) CreateAPICredential(ctx context.Context, principal Principal, 
 	}
 	if err != nil {
 		cleanupErr := cleanupIssuedCredential(ctx, directory, createServiceAccount, subjectID, secret)
-		reconcileErr := cleanupServiceAccountPermissions(ctx, s, principal.OrgID, serviceAccountID, createServiceAccount)
-		return CreateAPICredentialResult{}, errors.Join(err, cleanupErr, reconcileErr)
+		return CreateAPICredentialResult{}, errors.Join(err, cleanupErr)
 	}
-	credential.Permissions = append([]string(nil), input.Permissions...)
 	material.Fingerprint = credential.Fingerprint
 	material.ClientID = credential.ClientID
 	return CreateAPICredentialResult{Credential: credential, IssuedMaterial: material}, nil
@@ -720,10 +486,6 @@ func (s *Service) RollAPICredential(ctx context.Context, principal Principal, cr
 	}
 	material.Fingerprint = credential.Fingerprint
 	material.ClientID = credential.ClientID
-	credential.Permissions, err = s.serviceAccountPermissions(ctx, credential.OrgID, credential.ServiceAccountID)
-	if err != nil {
-		return RollAPICredentialResult{}, err
-	}
 	return RollAPICredentialResult{Credential: credential, IssuedMaterial: material}, nil
 }
 
@@ -768,21 +530,7 @@ func (s *Service) ResolveAPICredentialClaims(ctx context.Context, subjectID stri
 	if err != nil {
 		return ResolveAPICredentialClaimsResult{}, err
 	}
-	permissions, err := s.serviceAccountPermissions(ctx, result.OrgID, result.ServiceAccountID)
-	if err != nil {
-		return ResolveAPICredentialClaimsResult{}, err
-	}
-	result.Permissions = permissions
-	result.OpenBaoRoles = OpenBaoRolesForPermissions(permissions)
 	return result, nil
-}
-
-func (s *Service) memberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error) {
-	store, err := s.store()
-	if err != nil {
-		return MemberCapabilitiesDocument{}, err
-	}
-	return store.GetMemberCapabilities(ctx, orgID, actor)
 }
 
 func (s *Service) members(ctx context.Context, orgID string) ([]Member, error) {
@@ -794,7 +542,7 @@ func (s *Service) members(ctx context.Context, orgID string) ([]Member, error) {
 	if err != nil {
 		return nil, err
 	}
-	return directory.ListMembers(ctx, providerOrgID, s.ProjectID)
+	return directory.ListMembers(ctx, providerOrgID)
 }
 
 func (s *Service) providerOrgID(ctx context.Context, orgID, actor string) (string, error) {
@@ -827,14 +575,7 @@ func (s *Service) authorizationGraph() (AuthorizationGraph, error) {
 }
 
 func (s *Service) directory() (Directory, error) {
-	directory, err := s.directoryClient()
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(s.ProjectID) == "" {
-		return nil, ErrZitadelUnavailable
-	}
-	return directory, nil
+	return s.directoryClient()
 }
 
 func (s *Service) directoryClient() (Directory, error) {
@@ -851,82 +592,6 @@ func (s *Service) now() time.Time {
 	return time.Now().UTC()
 }
 
-func (s *Service) reconcileOrganizationRoles(ctx context.Context, orgID string, members []Member, capabilities MemberCapabilitiesDocument, operation string) error {
-	if s == nil || s.AuthorizationGraph == nil {
-		return nil
-	}
-	_, err := s.AuthorizationGraph.ReconcileOrganizationRoles(ctx, orgID, members, capabilities, operation)
-	return err
-}
-
-func (s *Service) reconcileMemberRoles(ctx context.Context, orgID string, member Member, operation string) error {
-	if s == nil || s.AuthorizationGraph == nil {
-		return nil
-	}
-	_, err := s.AuthorizationGraph.ReconcileMemberRoles(ctx, orgID, member, operation)
-	return err
-}
-
-func (s *Service) reconcileCapabilityGrants(ctx context.Context, orgID string, capabilities MemberCapabilitiesDocument, operation string) error {
-	if s == nil || s.AuthorizationGraph == nil {
-		return nil
-	}
-	_, err := s.AuthorizationGraph.ReconcileCapabilityGrants(ctx, orgID, capabilities, operation)
-	return err
-}
-
-func (s *Service) reconcileServiceAccountPermissions(ctx context.Context, orgID, serviceAccountID string, permissions []string, operation string) (string, error) {
-	graph, err := s.authorizationGraph()
-	if err != nil {
-		return "", err
-	}
-	return graph.ReconcileServiceAccountPermissions(ctx, orgID, serviceAccountID, permissions, operation)
-}
-
-func (s *Service) serviceAccountPermissions(ctx context.Context, orgID, serviceAccountID string) ([]string, error) {
-	graph, err := s.authorizationGraph()
-	if err != nil {
-		return nil, err
-	}
-	allowed, _, err := graph.TestOrganizationPermissions(ctx, orgID, AuthorizationSubject{
-		Kind: AuthorizationSubjectKindServiceAccount,
-		ID:   serviceAccountID,
-	}, sortedKeys(KnownPermissions()), "")
-	if err != nil {
-		return nil, err
-	}
-	return normalizePermissions(allowed), nil
-}
-
-func (s *Service) credentialsWithPermissions(ctx context.Context, credentials []APICredential) ([]APICredential, error) {
-	for i := range credentials {
-		if strings.TrimSpace(credentials[i].ServiceAccountID) == "" {
-			continue
-		}
-		permissions, err := s.serviceAccountPermissions(ctx, credentials[i].OrgID, credentials[i].ServiceAccountID)
-		if err != nil {
-			return nil, err
-		}
-		credentials[i].Permissions = permissions
-	}
-	return credentials, nil
-}
-
-func (s *Service) validateRoleKeys(roleKeys []string) error {
-	known := KnownRoleKeys()
-	for _, role := range roleKeys {
-		if _, ok := known[role]; !ok {
-			return fmt.Errorf("%w: unknown role key %q", ErrInvalidCapabilities, role)
-		}
-		if role == RoleOwner {
-			// Owner is the org-singleton role transferred via a different flow;
-			// it cannot be granted through the standard invite/role-update path.
-			return fmt.Errorf("%w: role key %q cannot be assigned through invite or role update", ErrInvalidCapabilities, role)
-		}
-	}
-	return nil
-}
-
 func (p Principal) validate() error {
 	if strings.TrimSpace(p.Subject) == "" {
 		return fmt.Errorf("%w: subject is required", ErrInvalidInput)
@@ -937,36 +602,9 @@ func (p Principal) validate() error {
 	return nil
 }
 
-func ValidateMemberCapabilities(doc MemberCapabilitiesDocument) error {
-	if strings.TrimSpace(doc.OrgID) == "" {
-		return fmt.Errorf("%w: org_id is required", ErrInvalidCapabilities)
-	}
-	if doc.Version < 0 {
-		return fmt.Errorf("%w: version must be non-negative", ErrInvalidCapabilities)
-	}
-	seen := map[string]struct{}{}
-	for _, key := range doc.EnabledKeys {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			return fmt.Errorf("%w: enabled_keys must not contain empty entries", ErrInvalidCapabilities)
-		}
-		if _, ok := CapabilityForKey(key); !ok {
-			return fmt.Errorf("%w: unknown capability key %q", ErrInvalidCapabilities, key)
-		}
-		if _, duplicate := seen[key]; duplicate {
-			return fmt.Errorf("%w: duplicate capability key %q", ErrInvalidCapabilities, key)
-		}
-		seen[key] = struct{}{}
-	}
-	return nil
-}
-
 func validateInvite(input InviteMemberRequest) error {
 	if _, err := mail.ParseAddress(strings.TrimSpace(input.Email)); err != nil {
 		return fmt.Errorf("%w: email is invalid", ErrInvalidInput)
-	}
-	if len(normalizeRoleKeys(input.RoleKeys)) == 0 {
-		return fmt.Errorf("%w: role_keys is required", ErrInvalidInput)
 	}
 	return nil
 }
@@ -1010,29 +648,7 @@ func normalizeInvite(input InviteMemberRequest) InviteMemberRequest {
 	input.Email = strings.TrimSpace(input.Email)
 	input.GivenName = strings.TrimSpace(input.GivenName)
 	input.FamilyName = strings.TrimSpace(input.FamilyName)
-	input.RoleKeys = normalizeRoleKeys(input.RoleKeys)
 	return input
-}
-
-func normalizeRoleKeys(roleKeys []string) []string {
-	if len(roleKeys) == 0 {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(roleKeys))
-	for _, role := range roleKeys {
-		role = strings.TrimSpace(role)
-		if role == "" {
-			continue
-		}
-		if _, ok := seen[role]; ok {
-			continue
-		}
-		seen[role] = struct{}{}
-		out = append(out, role)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func normalizeOrganizationIDs(orgIDs []string) []string {
@@ -1056,108 +672,27 @@ func normalizeOrganizationIDs(orgIDs []string) []string {
 	return out
 }
 
-func normalizeCapabilityKeys(keys []string) []string {
-	if len(keys) == 0 {
-		return []string{}
-	}
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(keys))
-	for _, key := range keys {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, key)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sortedKeys(values map[string]struct{}) []string {
-	out := make([]string, 0, len(values))
-	for value := range values {
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func callerMember(principal Principal, members []Member) Member {
-	for _, member := range members {
-		if member.UserID == principal.Subject {
-			return member
-		}
-	}
-	return Member{
-		UserID:   principal.Subject,
-		Email:    principal.Email,
-		RoleKeys: append([]string(nil), principal.Roles...),
-	}
-}
-
-func (s *Service) normalizeCreateAPICredentialRequest(ctx context.Context, principal Principal, input CreateAPICredentialRequest) (CreateAPICredentialRequest, MemberCapabilitiesDocument, error) {
+func (s *Service) normalizeCreateAPICredentialRequest(input CreateAPICredentialRequest) (CreateAPICredentialRequest, error) {
 	input.ServiceAccountID = strings.TrimSpace(input.ServiceAccountID)
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	if input.DisplayName == "" {
-		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: display_name is required", ErrInvalidInput)
+		return CreateAPICredentialRequest{}, fmt.Errorf("%w: display_name is required", ErrInvalidInput)
 	}
 	if len(input.DisplayName) > 200 {
-		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: display_name is too long", ErrInvalidInput)
+		return CreateAPICredentialRequest{}, fmt.Errorf("%w: display_name is too long", ErrInvalidInput)
 	}
 	input.Description = strings.TrimSpace(input.Description)
 	if len(input.Description) > 1000 {
-		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: description is too long", ErrInvalidInput)
+		return CreateAPICredentialRequest{}, fmt.Errorf("%w: description is too long", ErrInvalidInput)
 	}
 	input.AuthMethod = normalizeAuthMethod(string(input.AuthMethod))
 	if err := validateAuthMethod(input.AuthMethod); err != nil {
-		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, err
-	}
-	input.Permissions = normalizePermissions(input.Permissions)
-	if len(input.Permissions) == 0 {
-		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: permissions are required", ErrInvalidInput)
-	}
-	capabilities, err := s.memberCapabilities(ctx, principal.OrgID, principal.Subject)
-	if err != nil {
-		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, err
-	}
-	if err := s.validateCredentialPermissions(ctx, principal, input.Permissions); err != nil {
-		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, err
+		return CreateAPICredentialRequest{}, err
 	}
 	if input.ExpiresAt != nil && !input.ExpiresAt.After(s.now()) {
-		return CreateAPICredentialRequest{}, MemberCapabilitiesDocument{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidInput)
+		return CreateAPICredentialRequest{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidInput)
 	}
-	return input, capabilities, nil
-}
-
-func (s *Service) validateCredentialPermissions(ctx context.Context, principal Principal, requested []string) error {
-	known := KnownPermissions()
-	for _, permission := range requested {
-		if _, ok := known[permission]; !ok {
-			return fmt.Errorf("%w: unknown permission %q", ErrInvalidCapabilities, permission)
-		}
-	}
-	graph, err := s.authorizationGraph()
-	if err != nil {
-		return err
-	}
-	allowed, _, err := graph.TestOrganizationPermissions(ctx, principal.OrgID, principal.authorizationSubject(), requested, "")
-	if err != nil {
-		return err
-	}
-	allowedSet := map[string]struct{}{}
-	for _, permission := range allowed {
-		allowedSet[permission] = struct{}{}
-	}
-	for _, permission := range requested {
-		if _, ok := allowedSet[permission]; !ok {
-			return fmt.Errorf("%w: permission %q is not held by caller", ErrInvalidCapabilities, permission)
-		}
-	}
-	return nil
+	return input, nil
 }
 
 func (p Principal) authorizationSubject() AuthorizationSubject {
@@ -1220,14 +755,6 @@ func cleanupIssuedCredential(ctx context.Context, directory Directory, deactivat
 	return directory.RemoveServiceAccountCredential(ctx, subjectID, secret)
 }
 
-func cleanupServiceAccountPermissions(ctx context.Context, svc *Service, orgID, serviceAccountID string, clear bool) error {
-	if !clear {
-		return nil
-	}
-	_, err := svc.reconcileServiceAccountPermissions(ctx, orgID, serviceAccountID, nil, "cleanup-service-account-permissions")
-	return err
-}
-
 func credentialSecretFromMaterial(credential APICredential, material APICredentialIssuedMaterial, actor string, now time.Time, expiresAt *time.Time) APICredentialSecret {
 	secretText := firstNonEmpty(material.KeyContent, material.ClientSecret, material.KeyID)
 	fingerprint, rawHash := SecretHash(secretText)
@@ -1246,27 +773,6 @@ func credentialSecretFromMaterial(credential APICredential, material APICredenti
 	}
 }
 
-func normalizePermissions(permissions []string) []string {
-	if len(permissions) == 0 {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(permissions))
-	for _, permission := range permissions {
-		permission = strings.TrimSpace(permission)
-		if permission == "" {
-			continue
-		}
-		if _, duplicate := seen[permission]; duplicate {
-			continue
-		}
-		seen[permission] = struct{}{}
-		out = append(out, permission)
-	}
-	sort.Strings(out)
-	return out
-}
-
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -1277,5 +783,5 @@ func firstNonEmpty(values ...string) string {
 }
 
 func IsInvalid(err error) bool {
-	return errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrInvalidCapabilities)
+	return errors.Is(err, ErrInvalidInput)
 }

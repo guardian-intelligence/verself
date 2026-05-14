@@ -19,7 +19,7 @@ type resourcePathSegment struct {
 }
 
 func repositoryView(repo source.Repository, org source.OrganizationReference, project source.ProjectReference, publicBaseURL string, installationID string) contractapi.RepositorySummary {
-	orgID := fmtUint(repo.OrgID)
+	orgID := repo.OrgID
 	projectID := project.ProjectID.String()
 	return contractapi.RepositorySummary{
 		RepoID:              contractapi.RepositoryID(repo.RepoID.String()),
@@ -52,7 +52,7 @@ func repositoryViews(repos []source.Repository, org source.OrganizationReference
 }
 
 func gitCredentialView(credential source.GitCredential, installationID string) contractapi.GitCredentialSummary {
-	orgID := fmtUint(credential.OrgID)
+	orgID := credential.OrgID
 	return contractapi.GitCredentialSummary{
 		CredentialID: contractapi.GitCredentialID(credential.CredentialID.String()),
 		ResourceName: contractapi.ResourceName(resourceNameCredential(installationID, orgID, credential.CredentialID.String())),
@@ -105,7 +105,7 @@ func blobView(blob source.Blob) contractapi.SourceBlobView {
 func checkoutGrantView(grant source.CheckoutGrant, installationID string) contractapi.CheckoutGrantSummary {
 	return contractapi.CheckoutGrantSummary{
 		GrantID:      contractapi.CheckoutGrantID(grant.GrantID.String()),
-		ResourceName: contractapi.ResourceName(resourceNameCheckoutGrant(installationID, fmtUint(grant.OrgID), grant.GrantID.String())),
+		ResourceName: contractapi.ResourceName(resourceNameCheckoutGrant(installationID, grant.OrgID, grant.GrantID.String())),
 		RepoID:       contractapi.RepositoryID(grant.RepoID.String()),
 		Ref:          contractapi.GitRef(grant.Ref),
 		Token:        contractapi.CheckoutGrantToken(grant.Token),
@@ -114,7 +114,7 @@ func checkoutGrantView(grant source.CheckoutGrant, installationID string) contra
 }
 
 func workflowRunView(run source.WorkflowRun, installationID string) contractapi.WorkflowRunSummary {
-	orgID := fmtUint(run.OrgID)
+	orgID := run.OrgID
 	projectID := run.ProjectID.String()
 	repoID := run.RepoID.String()
 	return contractapi.WorkflowRunSummary{
@@ -149,7 +149,7 @@ func workflowRunViews(runs []source.WorkflowRun, installationID string) contract
 }
 
 func internalWorkflowRunView(run source.WorkflowRun, installationID string) internalcontractapi.WorkflowRunSummary {
-	orgID := fmtUint(run.OrgID)
+	orgID := run.OrgID
 	projectID := run.ProjectID.String()
 	repoID := run.RepoID.String()
 	return internalcontractapi.WorkflowRunSummary{

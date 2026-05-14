@@ -14,7 +14,6 @@ export type {
   AuthSnapshot,
   AuthenticatedAuth,
   AuthOrganizationContext,
-  AuthRoleAssignment,
   ClientUser,
   SessionInfo,
 } from "./isomorphic.ts";
@@ -43,13 +42,13 @@ interface AuthContextValue {
 }
 
 export interface UseAuthSignedOut extends Extract<Auth, { isAuthenticated: false }> {
-  has: (params: { role?: string }) => boolean;
+  has: () => boolean;
   isLoaded: true;
   isSignedIn: false;
 }
 
 export interface UseAuthSignedIn extends AuthenticatedAuth {
-  has: (params: { role?: string }) => boolean;
+  has: () => boolean;
   isLoaded: true;
   isSignedIn: true;
 }
@@ -88,11 +87,8 @@ export interface AuthProviderProps {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function authHas(auth: Auth, params: { role?: string }): boolean {
-  if (!auth.isAuthenticated) {
-    return false;
-  }
-  return params.role ? auth.roles.includes(params.role) : true;
+function authHas(auth: Auth): boolean {
+  return auth.isAuthenticated;
 }
 
 function useAuthContextValue(): AuthContextValue {
@@ -116,7 +112,7 @@ export function useAuth(): UseAuthReturn {
   const {
     snapshot: { auth },
   } = useAuthContextValue();
-  const has = (params: { role?: string }) => authHas(auth, params);
+  const has = () => authHas(auth);
 
   if (!auth.isAuthenticated) {
     return {

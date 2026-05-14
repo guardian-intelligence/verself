@@ -127,7 +127,7 @@ type meteringRow struct {
 }
 
 func (c *Client) ReserveWindow(ctx context.Context, req ReserveRequest) (WindowReservation, error) {
-	if req.OrgID == 0 || req.ProductID == "" || req.ActorID == "" || req.SourceType == "" || req.SourceRef == "" {
+	if orgIDText(req.OrgID) == "" || req.ProductID == "" || req.ActorID == "" || req.SourceType == "" || req.SourceRef == "" {
 		return WindowReservation{}, fmt.Errorf("reserve requires org_id, product_id, actor_id, source_type, and source_ref")
 	}
 	if len(req.Allocation) == 0 {
@@ -850,14 +850,14 @@ func (c *Client) loadWindow(ctx context.Context, windowID string) (persistedWind
 	if err != nil {
 		return persistedWindow{}, fmt.Errorf("load billing window %s: %w", windowID, err)
 	}
-	parsedOrg, err := strconv.ParseUint(row.OrgID, 10, 64)
+	parsedOrg, err := parseOrgID(row.OrgID)
 	if err != nil {
-		return persistedWindow{}, fmt.Errorf("parse window org_id %q: %w", row.OrgID, err)
+		return persistedWindow{}, err
 	}
 	w := persistedWindow{
 		WindowID:            row.WindowID,
 		CycleID:             row.CycleID,
-		OrgID:               OrgID(parsedOrg),
+		OrgID:               parsedOrg,
 		ActorID:             row.ActorID,
 		ProductID:           row.ProductID,
 		PricingContractID:   row.PricingContractID,

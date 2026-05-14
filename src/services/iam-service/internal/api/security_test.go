@@ -24,69 +24,41 @@ import (
 func TestIdentityPermissionChecksAuthorizationGraph(t *testing.T) {
 	ctx := context.Background()
 	authzSvc := authz.New(staticAuthzBackend{
-		allowedOrgID:     "42",
+		allowedOrgID:     "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y",
 		allowedSubjectID: "user-1",
 		allowedOrgPerms:  map[string]struct{}{"read": {}, "manage_iam": {}},
 	})
 	runtime := publicRuntime{authz: authzSvc}
-	user := identityServiceToken("42", identity.RoleAdmin)
-	if allowed, err := runtime.identityHasContractPermission(ctx, user, contractapi.UpdateOrganization.Descriptor, []string{"42"}); err != nil || !allowed {
+	user := identityServiceToken("org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y")
+	if allowed, err := runtime.identityHasContractPermission(ctx, user, contractapi.UpdateOrganization.Descriptor, []string{"org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y"}); err != nil || !allowed {
 		t.Fatalf("graph grant should authorize organization update, allowed=%v err=%v", allowed, err)
 	}
 
-	wrongOrg := identityServiceToken("99", identity.RoleAdmin)
-	if allowed, err := runtime.identityHasContractPermission(ctx, wrongOrg, contractapi.UpdateOrganization.Descriptor, []string{"99"}); err != nil || allowed {
-		t.Fatalf("graph grant for org 42 must not authorize org 99, allowed=%v err=%v", allowed, err)
+	wrongOrg := identityServiceToken("org_9ZQ7AZ5QW69HZ9PSWZQ05A7Z9V")
+	if allowed, err := runtime.identityHasContractPermission(ctx, wrongOrg, contractapi.UpdateOrganization.Descriptor, []string{"org_9ZQ7AZ5QW69HZ9PSWZQ05A7Z9V"}); err != nil || allowed {
+		t.Fatalf("graph grant for the allowed org must not authorize another org, allowed=%v err=%v", allowed, err)
 	}
 
 	credentialWithoutServiceAccount := &auth.Identity{
 		Subject: "credential-1",
-		OrgID:   "42",
+		OrgID:   "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y",
 		Raw: map[string]any{
 			"verself:credential_id": "credential-1",
 		},
 	}
-	if allowed, err := runtime.identityHasContractPermission(ctx, credentialWithoutServiceAccount, contractapi.GetOrganization.Descriptor, []string{"42"}); !errors.Is(err, authz.ErrInvalid) || allowed {
+	if allowed, err := runtime.identityHasContractPermission(ctx, credentialWithoutServiceAccount, contractapi.GetOrganization.Descriptor, []string{"org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y"}); !errors.Is(err, authz.ErrInvalid) || allowed {
 		t.Fatalf("credential without service_account_id must be invalid, allowed=%v err=%v", allowed, err)
 	}
 }
 
-func TestInternalAuthorizationResourceRefNormalizesAPIActivityOrgID(t *testing.T) {
-	resource := internalAuthorizationResourceRef(authz.ResourceRef{
-		Type: " api_activity ",
-		ID:   " 371564185181576922 ",
-	}, "371564185181576922", "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y")
-	if resource.Type != "api_activity" || resource.ID != "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y" {
-		t.Fatalf("resource = %#v, want canonical api_activity public org ID", resource)
-	}
-
-	project := internalAuthorizationResourceRef(authz.ResourceRef{
-		Type: "project",
-		ID:   "371564185181576922",
-	}, "371564185181576922", "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y")
-	if project.ID != "371564185181576922" {
-		t.Fatalf("project resource ID = %q, want original ID", project.ID)
-	}
-}
-
-func identityServiceToken(orgID string, roles ...string) *auth.Identity {
-	assignments := make([]auth.RoleAssignment, 0, len(roles))
-	for _, role := range roles {
-		assignments = append(assignments, auth.RoleAssignment{
-			OrganizationID: orgID,
-			Role:           role,
-		})
-	}
+func identityServiceToken(orgID string) *auth.Identity {
 	return &auth.Identity{
-		Subject:         "user-1",
-		OrgID:           orgID,
-		RoleAssignments: assignments,
+		Subject: "user-1",
+		OrgID:   orgID,
 	}
 }
 
-type staticIdentityStore struct {
-	capabilities identity.MemberCapabilitiesDocument
-}
+type staticIdentityStore struct{}
 
 type staticAuthzBackend struct {
 	allowedOrgID     string
@@ -103,6 +75,13 @@ func (b staticAuthzBackend) Check(_ context.Context, resource spicedb.ResourceRe
 	return false, "zed-test", nil
 }
 
+func (b staticAuthzBackend) LookupResources(_ context.Context, resourceType, permission string, subject spicedb.SubjectRef, _ uint32, _ string) ([]string, string, error) {
+	if resourceType == "org" && permission == "read" && subject.ID != "" {
+		return []string{b.allowedOrgID}, "zed-test", nil
+	}
+	return nil, "zed-test", nil
+}
+
 func (b staticAuthzBackend) ReadResourceRelationships(context.Context, spicedb.ResourceRef, map[string]struct{}) ([]spicedb.Relationship, string, error) {
 	return nil, "", nil
 }
@@ -112,13 +91,13 @@ func (b staticAuthzBackend) ReplaceResourceRelationships(context.Context, []spic
 }
 
 func (s staticIdentityStore) GetOrganizationProfile(context.Context, string, string) (identity.OrganizationProfile, error) {
-	return identity.OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
+	return identity.OrganizationProfile{OrgID: "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (s staticIdentityStore) ListOrganizationMetadataByOrgIDs(_ context.Context, orgIDs []string) ([]identity.OrganizationMetadata, error) {
 	out := make([]identity.OrganizationMetadata, 0, len(orgIDs))
 	for _, orgID := range orgIDs {
-		out = append(out, identity.OrganizationMetadata{OrgID: orgID, IdentityProviderOrgID: orgID, DisplayName: "Acme", Slug: "acme", Version: 1, OrgACLVersion: 1})
+		out = append(out, identity.OrganizationMetadata{OrgID: orgID, IdentityProviderOrgID: orgID, DisplayName: "Acme", Slug: "acme", Version: 1})
 	}
 	return out, nil
 }
@@ -126,33 +105,17 @@ func (s staticIdentityStore) ListOrganizationMetadataByOrgIDs(_ context.Context,
 func (s staticIdentityStore) ListOrganizationMetadataByProviderOrgIDs(_ context.Context, providerOrgIDs []string) ([]identity.OrganizationMetadata, error) {
 	out := make([]identity.OrganizationMetadata, 0, len(providerOrgIDs))
 	for _, providerOrgID := range providerOrgIDs {
-		out = append(out, identity.OrganizationMetadata{OrgID: providerOrgID, IdentityProviderOrgID: providerOrgID, DisplayName: "Acme", Slug: "acme", Version: 1, OrgACLVersion: 1})
+		out = append(out, identity.OrganizationMetadata{OrgID: "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y", IdentityProviderOrgID: providerOrgID, DisplayName: "Acme", Slug: "acme", Version: 1})
 	}
 	return out, nil
 }
 
 func (s staticIdentityStore) UpdateOrganizationProfile(context.Context, identity.Principal, identity.UpdateOrganizationRequest) (identity.OrganizationProfile, error) {
-	return identity.OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 2}, nil
+	return identity.OrganizationProfile{OrgID: "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 2}, nil
 }
 
 func (s staticIdentityStore) ResolveOrganizationProfile(context.Context, identity.ResolveOrganizationRequest) (identity.OrganizationProfile, error) {
-	return identity.OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
-}
-
-func (s staticIdentityStore) GetMemberCapabilities(context.Context, string, string) (identity.MemberCapabilitiesDocument, error) {
-	return s.capabilities, nil
-}
-
-func (s staticIdentityStore) PutMemberCapabilities(context.Context, identity.MemberCapabilitiesDocument) (identity.MemberCapabilitiesDocument, error) {
-	return s.capabilities, nil
-}
-
-func (s staticIdentityStore) GetOrgACLState(context.Context, string, string) (identity.OrgACLState, error) {
-	return identity.OrgACLState{Version: 1}, nil
-}
-
-func (s staticIdentityStore) UpdateMemberRolesCommand(context.Context, identity.UpdateMemberRolesCommand, identity.Directory, string) (identity.UpdateMemberRolesResult, error) {
-	return identity.UpdateMemberRolesResult{}, nil
+	return identity.OrganizationProfile{OrgID: "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (s staticIdentityStore) CreateServiceAccount(context.Context, identity.ServiceAccount, identity.APICredential, identity.APICredentialSecret) (identity.ServiceAccount, identity.APICredential, error) {
@@ -212,29 +175,6 @@ func TestOperationPolicyRequiresIdempotencyHeader(t *testing.T) {
 	}
 }
 
-func TestRoleAssignmentOrgIDsNormalizeProviderIDs(t *testing.T) {
-	ctx := context.Background()
-	identity := &auth.Identity{RoleAssignments: []auth.RoleAssignment{
-		{OrganizationID: "42", Role: "owner"},
-		{OrganizationID: "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y", Role: "member"},
-		{OrganizationID: "42", Role: "admin"},
-		{OrganizationID: "", Role: "member"},
-	}}
-	orgIDs, err := roleAssignmentOrgIDs(ctx, identity)
-	if err != nil {
-		t.Fatalf("role assignments rejected: %v", err)
-	}
-	if got := strings.Join(orgIDs, ","); got != "42,org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y" {
-		t.Fatalf("org IDs = %s, want sorted unique provider IDs", got)
-	}
-
-	_, err = roleAssignmentOrgIDs(ctx, &auth.Identity{})
-	var statusErr huma.StatusError
-	if !errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusForbidden {
-		t.Fatalf("missing assignments should be 403, got %#v", err)
-	}
-}
-
 func TestAuditOperationWritesStructuredLogForUserAndServiceAccount(t *testing.T) {
 	var logs bytes.Buffer
 	previous := slog.Default()
@@ -247,16 +187,21 @@ func TestAuditOperationWritesStructuredLogForUserAndServiceAccount(t *testing.T)
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
 	ctx := context.WithValue(context.Background(), operationRequestInfoKey{}, operationRequestInfo{IdempotencyKey: "secret-retry-key"})
-	operation := contractapi.UpdateMemberRole.Descriptor
+	operation := contractapi.SetIamPolicy.Descriptor
 	policy := operationPolicyFromContract(operation)
-	input := contractapi.UpdateMemberRoleInput{MemberID: "member_00000000000000000000000000"}
+	input := contractapi.SetIamPolicyInput{
+		OrgID: "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y",
+		Body: contractapi.SetIamPolicyInputBody{
+			Policy: contractapi.IAMPolicy{Version: 1},
+		},
+	}
 	auditOperation(ctx, huma.Operation{OperationID: operation.OperationID}, policy, &auth.Identity{
 		Subject: "user-1",
-		OrgID:   "42",
+		OrgID:   "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y",
 	}, input, nil, "denied", forbidden(ctx, "permission-denied", "missing required permission"))
 	auditOperation(ctx, huma.Operation{OperationID: operation.OperationID}, policy, &auth.Identity{
 		Subject: "credential-subject",
-		OrgID:   "42",
+		OrgID:   "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y",
 		Raw: map[string]any{
 			"verself:credential_id":      "credential-1",
 			"verself:service_account_id": "service-account-1",
@@ -266,17 +211,17 @@ func TestAuditOperationWritesStructuredLogForUserAndServiceAccount(t *testing.T)
 	body := logs.String()
 	for _, want := range []string{
 		"msg=\"identity api operation\"",
-		"audit_event=iam.member.update_role",
-		"operation_id=update-member-role",
-		"operation_permission=iam:member:update_role",
-		"operation_resource=member",
-		"operation_action=update",
+		"audit_event=iam.policy.set",
+		"operation_id=set-iam-policy",
+		"operation_permission=iam:policy:set",
+		"operation_resource=organization",
+		"operation_action=set",
 		"rate_limit_class=iam_mutation",
 		"outcome=denied",
 		"outcome=allowed",
 		"subject=user-1",
 		"subject=credential-subject",
-		"org_id=42",
+		"org_id=org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("audit log missing %q:\n%s", want, body)

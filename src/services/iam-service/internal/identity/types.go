@@ -8,16 +8,7 @@ import (
 	runtimeiam "github.com/verself/service-runtime/iam"
 )
 
-const (
-	RoleOwner  = "owner"
-	RoleAdmin  = "admin"
-	RoleMember = "member"
-)
-
-// MemberType separates a flesh-and-blood Zitadel user from a Zitadel machine
-// user (service account). The members table renders only humans; machine users
-// are surfaced via the API Credentials path even when they hold project
-// authorizations directly.
+// MemberType separates human directory users from Zitadel machine users.
 type MemberType string
 
 const (
@@ -29,7 +20,6 @@ type Principal struct {
 	Subject     string
 	SubjectKind AuthorizationSubjectKind
 	OrgID       string
-	Roles       []string
 	Email       string
 }
 
@@ -73,14 +63,10 @@ type OrganizationProfile struct {
 }
 
 type Organization struct {
-	OrgID              string
-	DisplayName        string
-	Slug               string
-	Version            int32
-	OrgACLVersion      int32
-	Caller             Member
-	MemberCapabilities MemberCapabilitiesDocument
-	Permissions        []string
+	OrgID       string
+	DisplayName string
+	Slug        string
+	Version     int32
 }
 
 type OrganizationMetadata struct {
@@ -89,7 +75,6 @@ type OrganizationMetadata struct {
 	DisplayName           string
 	Slug                  string
 	Version               int32
-	OrgACLVersion         int32
 }
 
 type UpdateOrganizationRequest struct {
@@ -112,14 +97,12 @@ type Member struct {
 	LoginName   string
 	DisplayName string
 	State       string
-	RoleKeys    []string
 }
 
 type InviteMemberRequest struct {
 	Email      string
 	GivenName  string
 	FamilyName string
-	RoleKeys   []string
 }
 
 type HumanProfileUpdate struct {
@@ -138,41 +121,9 @@ type HumanProfile struct {
 }
 
 type InviteMemberResult struct {
-	UserID   string
-	Email    string
-	RoleKeys []string
-	Status   string
-}
-
-type MemberCapabilitiesDocument struct {
-	OrgID       string
-	Version     int32
-	EnabledKeys []string
-	UpdatedAt   time.Time
-	UpdatedBy   string
-}
-
-type OrgACLState struct {
-	OrgID     string
-	Version   int32
-	UpdatedAt time.Time
-	UpdatedBy string
-}
-
-type UpdateMemberRolesCommand struct {
-	OrgID                 string
-	ActorID               string
-	UserID                string
-	RoleKeys              []string
-	ExpectedRoleKeys      []string
-	ExpectedOrgACLVersion int32
-	OperationID           string
-	IdempotencyKey        string
-}
-
-type UpdateMemberRolesResult struct {
-	Member      Member
-	OrgACLState OrgACLState
+	UserID string
+	Email  string
+	Status string
 }
 
 type Operations struct {
@@ -185,12 +136,11 @@ type ServiceOperations struct {
 }
 
 type Operation struct {
-	OperationID    string
-	Permission     runtimeiam.Permission
-	Resource       runtimeiam.ResourceKind
-	Action         runtimeiam.Action
-	OrgScope       runtimeiam.OrgScope
-	MemberEligible bool
+	OperationID string
+	Permission  runtimeiam.Permission
+	Resource    runtimeiam.ResourceKind
+	Action      runtimeiam.Action
+	OrgScope    runtimeiam.OrgScope
 }
 
 const (
@@ -212,7 +162,6 @@ type ServiceAccount struct {
 	DisplayName      string
 	Description      string
 	Status           ServiceAccountStatus
-	Permissions      []string
 	CreatedAt        time.Time
 	CreatedBy        string
 	UpdatedAt        time.Time
@@ -222,24 +171,22 @@ type ServiceAccount struct {
 }
 
 type APICredential struct {
-	CredentialID         string
-	ServiceAccountID     string
-	OrgID                string
-	SubjectID            string
-	ClientID             string
-	DisplayName          string
-	Status               APICredentialStatus
-	AuthMethod           APICredentialAuthMethod
-	Fingerprint          string
-	Permissions          []string
-	PolicyVersionAtIssue int32
-	CreatedAt            time.Time
-	CreatedBy            string
-	UpdatedAt            time.Time
-	ExpiresAt            *time.Time
-	RevokedAt            *time.Time
-	RevokedBy            string
-	LastUsedAt           *time.Time
+	CredentialID     string
+	ServiceAccountID string
+	OrgID            string
+	SubjectID        string
+	ClientID         string
+	DisplayName      string
+	Status           APICredentialStatus
+	AuthMethod       APICredentialAuthMethod
+	Fingerprint      string
+	CreatedAt        time.Time
+	CreatedBy        string
+	UpdatedAt        time.Time
+	ExpiresAt        *time.Time
+	RevokedAt        *time.Time
+	RevokedBy        string
+	LastUsedAt       *time.Time
 }
 
 type APICredentialSecret struct {
@@ -285,7 +232,6 @@ type AddServiceAccountCredentialInput struct {
 type CreateServiceAccountRequest struct {
 	DisplayName string
 	Description string
-	Permissions []string
 }
 
 type DisableServiceAccountResult struct {
@@ -298,7 +244,6 @@ type CreateAPICredentialRequest struct {
 	DisplayName      string
 	Description      string
 	AuthMethod       APICredentialAuthMethod
-	Permissions      []string
 	ExpiresAt        *time.Time
 }
 
@@ -326,8 +271,6 @@ type ResolveAPICredentialClaimsResult struct {
 	Fingerprint        string
 	OwnerID            string
 	OwnerDisplay       string
-	Permissions        []string
-	OpenBaoRoles       []string
 }
 
 func SecretHash(secret string) (fingerprint string, raw []byte) {

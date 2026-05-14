@@ -3,9 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "identity",
     srcs = [
-        "capabilities.go",
         "catalog.go",
-        "command_store.go",
         "errors.go",
         "operation_catalog.go",
         "organization_store.go",

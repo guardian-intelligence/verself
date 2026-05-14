@@ -78,9 +78,6 @@
       - OIDC_GRANT_TYPE_AUTHORIZATION_CODE
       - OIDC_GRANT_TYPE_REFRESH_TOKEN
     zitadel_oauth_app_create_project_if_missing: true
-    zitadel_oauth_app_project_role_assertion: true
-    zitadel_oauth_app_project_role_check: true
-    zitadel_oauth_app_role_assertions: true
 
 - name: Export Forgejo OIDC app facts
   ansible.builtin.set_fact:
@@ -88,17 +85,6 @@
     forgejo_client_id: "{{ zitadel_oauth_app_out_client_id }}"
     forgejo_client_secret: "{{ zitadel_oauth_app_out_client_secret }}"
   no_log: true
-
-- name: Ensure Forgejo project roles exist
-  ansible.builtin.include_role:
-    name: zitadel_project_roles
-  vars:
-    zitadel_project_roles_admin_pat: "{{ zitadel_oauth_app_pat }}"
-    zitadel_project_roles_project_id: "{{ forgejo_project_id }}"
-    zitadel_project_roles_definitions:
-      - key: "{{ forgejo_auth_admin_group }}"
-        display_name: Forgejo Admin
-        group: forgejo
 
 - name: Configure Forgejo OIDC auth source
   ansible.builtin.include_tasks: configure_oauth.yml

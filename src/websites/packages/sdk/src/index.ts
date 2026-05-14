@@ -256,15 +256,20 @@ export {
 export {
   IAM,
   IAMApiError,
+  iamPolicySchema,
   isIAMApiError,
-  updateMemberRolesRequestSchema,
+  setIamPolicyRequestSchema,
+  testIamPermissionsRequestSchema,
   updateOrganizationRequestSchema,
   type IAMClientOptions,
   type IAMMutationOptions,
+  type IAMPolicy,
+  type IAMPolicyBinding,
   type Member,
   type Organization,
   type OrganizationMetadata,
-  type UpdateMemberRolesRequest,
+  type SetIamPolicyRequest,
+  type TestIamPermissionsRequest,
   type UpdateOrganizationRequest,
 } from "./iam";
 

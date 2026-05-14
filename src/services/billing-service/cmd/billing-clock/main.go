@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -44,13 +43,12 @@ func main() {
 }
 
 func run() error {
-	var pgDSNFile, pgDSN, org, productID, setRaw, reason string
-	var orgID uint64
+	var pgDSNFile, pgDSN, orgID, org, productID, setRaw, reason string
 	var advanceSeconds int64
 	var clear, wallClock bool
 	flag.StringVar(&pgDSNFile, "pg-dsn-file", "", "path to billing PG DSN")
 	flag.StringVar(&pgDSN, "pg-dsn", "", "billing PG DSN")
-	flag.Uint64Var(&orgID, "org-id", 0, "billing org id")
+	flag.StringVar(&orgID, "org-id", "", "billing org id")
 	flag.StringVar(&org, "org", "", "billing org id, display name, billing email, or platform shortcut")
 	flag.StringVar(&productID, "product-id", "sandbox", "billing product id")
 	flag.StringVar(&setRaw, "set", "", "set business time to RFC3339/RFC3339Nano")
@@ -135,7 +133,7 @@ func run() error {
 		}
 	}
 	payload := output{
-		OrgID:                  fmt.Sprintf("%d", state.OrgID),
+		OrgID:                  strings.TrimSpace(string(state.OrgID)),
 		ProductID:              state.ProductID,
 		ScopeKind:              state.ScopeKind,
 		ScopeID:                state.ScopeID,
@@ -158,18 +156,15 @@ func run() error {
 	return enc.Encode(payload)
 }
 
-func resolveOrgID(ctx context.Context, pg *pgxpool.Pool, orgID uint64, org string) (uint64, error) {
-	if orgID != 0 {
+func resolveOrgID(ctx context.Context, pg *pgxpool.Pool, orgID string, org string) (string, error) {
+	if orgID = strings.TrimSpace(orgID); orgID != "" {
 		return orgID, nil
 	}
 	org = strings.TrimSpace(org)
 	if org == "" {
-		return 0, fmt.Errorf("--org-id or --org is required")
+		return "", fmt.Errorf("--org-id or --org is required")
 	}
-	if id, err := strconv.ParseUint(org, 10, 64); err == nil && id > 0 {
-		return id, nil
-	}
-	predicate := `display_name = $1 OR metadata->>'org_key' = $1 OR billing_email = $1`
+	predicate := `org_id = $1 OR display_name = $1 OR metadata->>'org_key' = $1 OR billing_email = $1`
 	args := []any{org}
 	if org == "platform" {
 		predicate = `trust_tier = 'platform'`
@@ -178,31 +173,27 @@ func resolveOrgID(ctx context.Context, pg *pgxpool.Pool, orgID uint64, org strin
 	query := `SELECT org_id FROM orgs WHERE ` + predicate + ` ORDER BY created_at, org_id LIMIT 2`
 	rows, err := pg.Query(ctx, query, args...)
 	if err != nil {
-		return 0, fmt.Errorf("resolve org %q: %w", org, err)
+		return "", fmt.Errorf("resolve org %q: %w", org, err)
 	}
 	defer rows.Close()
 	matches := []string{}
 	for rows.Next() {
 		var match string
 		if err := rows.Scan(&match); err != nil {
-			return 0, err
+			return "", err
 		}
 		matches = append(matches, match)
 	}
 	if err := rows.Err(); err != nil {
-		return 0, err
+		return "", err
 	}
 	if len(matches) == 0 {
-		return 0, fmt.Errorf("org %q not found; pass --org-id", org)
+		return "", fmt.Errorf("org %q not found; pass --org-id", org)
 	}
 	if len(matches) > 1 {
-		return 0, fmt.Errorf("org %q matched multiple billing orgs; pass --org-id", org)
+		return "", fmt.Errorf("org %q matched multiple billing orgs; pass --org-id", org)
 	}
-	parsed, err := strconv.ParseUint(matches[0], 10, 64)
-	if err != nil || parsed == 0 {
-		return 0, fmt.Errorf("resolved org id is not numeric: %q", matches[0])
-	}
-	return parsed, nil
+	return matches[0], nil
 }
 
 func openLedgerClient() (*ledger.Client, error) {

@@ -56,7 +56,7 @@ INSERT INTO runner_classes (
 
 -- Per-org VM resource ceilings. Defaults mirror sandbox runtime DefaultBounds.
 CREATE TABLE vm_resource_bounds (
-    org_id             BIGINT      PRIMARY KEY CHECK (org_id > 0),
+    org_id             TEXT        PRIMARY KEY CHECK (length(btrim(org_id)) > 0),
     min_vcpus          INT         NOT NULL CHECK (min_vcpus > 0),
     max_vcpus          INT         NOT NULL CHECK (max_vcpus >= min_vcpus),
     min_memory_mib     INT         NOT NULL CHECK (min_memory_mib > 0),
@@ -71,7 +71,7 @@ CREATE TABLE vm_resource_bounds (
 
 CREATE TABLE executions (
     execution_id            UUID        PRIMARY KEY,
-    org_id                  BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id                  TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     actor_id                TEXT        NOT NULL,
     kind                    TEXT        NOT NULL,
     source_kind             TEXT        NOT NULL DEFAULT 'api',
@@ -193,7 +193,7 @@ CREATE INDEX idx_execution_billing_windows_state_attempt
 
 CREATE TABLE execution_logs (
     execution_id UUID        NOT NULL REFERENCES executions(execution_id) ON DELETE CASCADE,
-    org_id       BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id       TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     attempt_id   UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
     seq          INTEGER     NOT NULL,
     stream       TEXT        NOT NULL,
@@ -284,7 +284,7 @@ CREATE INDEX idx_github_installations_account
 CREATE TABLE github_installation_connections (
     connection_id         UUID        PRIMARY KEY,
     installation_id       BIGINT      NOT NULL REFERENCES github_installations(installation_id) ON DELETE CASCADE,
-    org_id                BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id                TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     connected_by_actor_id TEXT        NOT NULL CHECK (connected_by_actor_id <> ''),
     state                 TEXT        NOT NULL DEFAULT 'active' CHECK (state IN ('active', 'inactive')),
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -297,7 +297,7 @@ CREATE INDEX idx_github_installation_connections_org
 
 CREATE TABLE github_installation_states (
     state        TEXT        PRIMARY KEY,
-    org_id       BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id       TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     actor_id     TEXT        NOT NULL,
     expires_at   TIMESTAMPTZ NOT NULL,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -309,7 +309,7 @@ CREATE INDEX idx_github_installation_states_expires
 CREATE TABLE runner_provider_repositories (
     provider               TEXT        NOT NULL CHECK (provider <> ''),
     provider_repository_id BIGINT      NOT NULL,
-    org_id                 BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id                 TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     project_id             UUID,
     source_repository_id   UUID,
     provider_owner         TEXT        NOT NULL CHECK (provider_owner <> ''),
@@ -467,7 +467,7 @@ CREATE UNIQUE INDEX idx_runner_job_bindings_runner
 
 CREATE TABLE execution_schedules (
     schedule_id           UUID        PRIMARY KEY,
-    org_id                BIGINT      NOT NULL CHECK (org_id > 0),
+    org_id                TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
     actor_id              TEXT        NOT NULL,
     display_name          TEXT        NOT NULL DEFAULT '',
     idempotency_key       TEXT        NOT NULL CHECK (idempotency_key <> ''),

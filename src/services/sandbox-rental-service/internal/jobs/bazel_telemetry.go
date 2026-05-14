@@ -25,7 +25,7 @@ var (
 
 type bazelInvocationRow struct {
 	ObservedAt           time.Time `ch:"observed_at"`
-	OrgID                uint64    `ch:"org_id"`
+	OrgID                string    `ch:"org_id"`
 	Provider             string    `ch:"provider"`
 	ProviderRepositoryID uint64    `ch:"provider_repository_id"`
 	ProviderRunID        uint64    `ch:"provider_run_id"`
@@ -59,7 +59,7 @@ type bazelInvocationRow struct {
 
 type bazelEventRow struct {
 	ObservedAt           time.Time `ch:"observed_at"`
-	OrgID                uint64    `ch:"org_id"`
+	OrgID                string    `ch:"org_id"`
 	Provider             string    `ch:"provider"`
 	ProviderRepositoryID uint64    `ch:"provider_repository_id"`
 	ProviderRunID        uint64    `ch:"provider_run_id"`
@@ -83,7 +83,7 @@ type bazelEventRow struct {
 
 type bazelProfileSpanRow struct {
 	ObservedAt           time.Time `ch:"observed_at"`
-	OrgID                uint64    `ch:"org_id"`
+	OrgID                string    `ch:"org_id"`
 	Provider             string    `ch:"provider"`
 	ProviderRepositoryID uint64    `ch:"provider_repository_id"`
 	ProviderRunID        uint64    `ch:"provider_run_id"`
@@ -106,7 +106,7 @@ type bazelProfileSpanRow struct {
 
 type bazelSpawnRow struct {
 	ObservedAt           time.Time `ch:"observed_at"`
-	OrgID                uint64    `ch:"org_id"`
+	OrgID                string    `ch:"org_id"`
 	Provider             string    `ch:"provider"`
 	ProviderRepositoryID uint64    `ch:"provider_repository_id"`
 	ProviderRunID        uint64    `ch:"provider_run_id"`
@@ -134,7 +134,7 @@ type bazelSpawnRow struct {
 
 type bazelTargetRow struct {
 	ObservedAt           time.Time `ch:"observed_at"`
-	OrgID                uint64    `ch:"org_id"`
+	OrgID                string    `ch:"org_id"`
 	Provider             string    `ch:"provider"`
 	ProviderRepositoryID uint64    `ch:"provider_repository_id"`
 	ProviderRunID        uint64    `ch:"provider_run_id"`
@@ -247,7 +247,7 @@ func (s *Service) RecordBazelTelemetry(ctx context.Context, identity GitHubExecu
 
 type bazelTelemetryCommon struct {
 	ObservedAt           time.Time
-	OrgID                uint64
+	OrgID                string
 	Provider             string
 	ProviderRepositoryID uint64
 	ProviderRunID        uint64

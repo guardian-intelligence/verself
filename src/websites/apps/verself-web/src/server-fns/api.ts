@@ -52,7 +52,6 @@ import {
   runListQuerySchema,
   runLogSearchQuerySchema,
   sandboxAnalyticsQuerySchema,
-  updateMemberRolesRequestSchema,
   updateOrganizationRequestSchema,
   type BillingCheckoutRequest as CheckoutRequest,
   type BillingContractChangeRequest as ContractChangeRequest,
@@ -114,7 +113,6 @@ import {
   type SourceRepositoryList,
   type SourceTree,
   type SourceWorkflowRunList,
-  type UpdateMemberRolesRequest,
   type UpdateOrganizationRequest,
   Verself,
 } from "@verself/sdk";
@@ -239,19 +237,10 @@ export type {
   JobsAnalytics,
   RunnerSizingAnalytics,
 };
-export type {
-  Member,
-  Organization,
-  OrganizationMetadata,
-  UpdateOrganizationRequest,
-  UpdateMemberRolesRequest,
-};
+export type { Member, Organization, OrganizationMetadata, UpdateOrganizationRequest };
 
-async function iamSDK(
-  context: ConsoleAuthContext | undefined,
-  options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
-) {
-  const accessToken = await getAccessTokenForAudience(context, IAM_SERVICE_AUTH_AUDIENCE, options);
+async function iamSDK(context: ConsoleAuthContext | undefined) {
+  const accessToken = await getAccessTokenForAudience(context, IAM_SERVICE_AUTH_AUDIENCE);
   return new Verself({
     bearerToken: accessToken,
     iamURL: IAM_SERVICE_BASE_URL,
@@ -318,9 +307,7 @@ export const getOrganization = createServerFn({ method: "GET" })
 export const listMyOrganizations = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return (
-      await iamSDK(context, { roleAssignmentScope: "all_granted_orgs" })
-    ).iam.listMyOrganizations();
+    return (await iamSDK(context)).iam.listMyOrganizations();
   });
 
 export const updateOrganization = createServerFn({ method: "POST" })
@@ -334,13 +321,6 @@ export const getMembers = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
     return (await iamSDK(context)).iam.listMembers();
-  });
-
-export const updateMemberRoles = createServerFn({ method: "POST" })
-  .middleware([consoleAuthMiddleware])
-  .inputValidator(updateMemberRolesRequestSchema)
-  .handler(async ({ context, data }) => {
-    return (await iamSDK(context)).iam.updateMemberRoles(data);
   });
 
 export const getProfile = createServerFn({ method: "GET" })

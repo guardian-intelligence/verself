@@ -17,10 +17,7 @@ zitadel_oauth_app_grant_types:
 zitadel_oauth_app_response_types:
   - OIDC_RESPONSE_TYPE_CODE
 zitadel_oauth_app_dev_mode: false
-zitadel_oauth_app_role_assertions: false
 zitadel_oauth_app_create_project_if_missing: false
-zitadel_oauth_app_project_role_assertion: false
-zitadel_oauth_app_project_role_check: false
 zitadel_oauth_app_persist_client_secret: true
 zitadel_oauth_app_credstore_owner: root
 zitadel_oauth_app_credstore_mode: "0640"

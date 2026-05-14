@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -185,6 +183,7 @@ func run() error {
 		ClientSecret:   browserOIDCClientSecret,
 		PublicBaseURL:  browserAuthPublicBaseURL,
 		LoginAudiences: browserAuthLoginAudiences,
+		Authz:          authzService,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 			Timeout:   5 * time.Second,
@@ -193,10 +192,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
-	bgCtx, bgCancel := context.WithCancel(ctx)
-	defer bgCancel()
-	go runDomainLedgerProjectionLoop(bgCtx, logger, store)
 
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -300,28 +295,6 @@ func int32FromInt(value int, field string) int32 {
 		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
 	}
 	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
-}
-
-func runDomainLedgerProjectionLoop(ctx context.Context, logger *slog.Logger, store identity.SQLStore) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			projectCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			projected, err := store.ProjectPendingDomainLedger(projectCtx, 100)
-			cancel()
-			if err != nil && !errors.Is(err, context.Canceled) {
-				logger.WarnContext(ctx, "iam domain ledger projection", "error", err)
-				continue
-			}
-			if projected > 0 {
-				logger.InfoContext(ctx, "iam domain ledger projected", "count", projected)
-			}
-		}
-	}
 }
 
 func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {

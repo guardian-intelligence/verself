@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +24,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/oauth2"
 
+	"github.com/verself/iam-service/internal/authz"
+	"github.com/verself/iam-service/internal/identity"
 	identitystore "github.com/verself/iam-service/internal/store"
 )
 
@@ -49,6 +50,7 @@ type BrowserAuthConfig struct {
 	PublicBaseURL  string
 	LoginAudiences []string
 	HTTPClient     *http.Client
+	Authz          *authz.Service
 }
 
 type BrowserAuth struct {
@@ -58,6 +60,7 @@ type BrowserAuth struct {
 	verifier           *oidc.IDTokenVerifier
 	oauth              oauth2.Config
 	httpClient         *http.Client
+	authz              *authz.Service
 	publicBaseURL      *url.URL
 	postLogoutURL      string
 	endSessionEndpoint string
@@ -88,6 +91,9 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	if len(loginAudiences) == 0 {
 		return nil, errors.New("identity browser auth login audiences are required")
 	}
+	if cfg.Authz == nil {
+		return nil, errors.New("identity browser auth authorization graph is required")
+	}
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -110,7 +116,6 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	for _, audience := range loginAudiences {
 		scopes = append(scopes, "urn:zitadel:iam:org:project:id:"+audience+":aud")
 	}
-	scopes = append(scopes, "urn:zitadel:iam:org:projects:roles")
 	callbackURL := publicBaseURL.ResolveReference(&url.URL{Path: browserAuthCallbackPath}).String()
 	// Zitadel matches post_logout_redirect_uri against the registered string.
 	postLogoutURL := publicBaseURL.String()
@@ -129,6 +134,7 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 			Scopes:       scopes,
 		},
 		httpClient:         httpClient,
+		authz:              cfg.Authz,
 		publicBaseURL:      publicBaseURL,
 		postLogoutURL:      postLogoutURL,
 		endSessionEndpoint: strings.TrimSpace(metadata.EndSessionEndpoint),
@@ -340,8 +346,7 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		return
 	}
-	organization, ok := session.User.organization(orgID)
-	if !ok {
+	if _, ok := session.User.organization(orgID); !ok {
 		http.Error(w, "selected organization is not available to this session", http.StatusForbidden)
 		return
 	}
@@ -352,7 +357,6 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 	}
 	if err := a.q.UpdateBrowserSessionOrganization(r.Context(), identitystore.UpdateBrowserSessionOrganizationParams{
 		SelectedOrgID:        textValue(orgID),
-		Roles:                organization.Roles,
 		ClientCachePartition: cachePartition,
 		SessionHash:          session.SessionHash,
 	}); err != nil {
@@ -377,8 +381,7 @@ func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var input struct {
-		Audience            string `json:"audience"`
-		RoleAssignmentScope string `json:"roleAssignmentScope"`
+		Audience string `json:"audience"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "invalid resource token payload", http.StatusBadRequest)
@@ -389,19 +392,11 @@ func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request
 		http.Error(w, "audience is required", http.StatusBadRequest)
 		return
 	}
-	roleAssignmentScope := input.RoleAssignmentScope
-	if roleAssignmentScope == "" {
-		roleAssignmentScope = "selected_org"
-	}
-	if roleAssignmentScope != "selected_org" && roleAssignmentScope != "all_granted_orgs" {
-		http.Error(w, "invalid roleAssignmentScope", http.StatusBadRequest)
-		return
-	}
 	session, err := a.requireSession(w, r)
 	if err != nil {
 		return
 	}
-	token, err := a.resourceToken(r.Context(), session, audience, roleAssignmentScope)
+	token, err := a.resourceToken(r.Context(), session, audience)
 	if err != nil {
 		a.serverError(w, "exchange browser resource token", err)
 		return
@@ -530,7 +525,7 @@ func (a *BrowserAuth) refreshSession(ctx context.Context, session *browserSessio
 	return a.readSession(ctx, session.SessionHash)
 }
 
-func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession, audience, roleAssignmentScope string) (string, error) {
+func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession, audience string) (string, error) {
 	selectedOrgID := stringValue(session.User.SelectedOrgID)
 	if selectedOrgID == "" {
 		return "", errors.New("selected organization is required for resource token exchange")
@@ -546,10 +541,6 @@ func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession
 		"email",
 		"urn:zitadel:iam:org:id:" + providerOrgID,
 		"urn:zitadel:iam:org:project:id:" + audience + ":aud",
-		"urn:zitadel:iam:org:projects:roles",
-	}
-	if roleAssignmentScope == "selected_org" {
-		requestedScopes = append(requestedScopes[:4], append([]string{"urn:zitadel:iam:org:roles:id:" + providerOrgID}, requestedScopes[4:]...)...)
 	}
 	requestedScope := strings.Join(requestedScopes, " ")
 	scopeHash := hashToken(requestedScope)
@@ -567,7 +558,7 @@ func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession
 		ScopeHash:     scopeHash,
 	})
 	if err == nil && time.Until(requiredTime(cached.ExpiresAt)) > browserAuthRefreshLeeway {
-		if err := a.verifyAccessToken(ctx, cached.AccessToken, audience, providerOrgID, roleAssignmentScope); err == nil {
+		if err := a.verifyAccessToken(ctx, cached.AccessToken, audience, providerOrgID); err == nil {
 			span.SetAttributes(attribute.Bool("auth.cache_hit", true))
 			span.SetStatus(codes.Ok, "")
 			return cached.AccessToken, nil
@@ -598,14 +589,12 @@ func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession
 		span.SetStatus(codes.Error, err.Error())
 		return "", err
 	}
-	expiresAt, claims, err := a.verifyAccessTokenClaims(ctx, tokens.AccessToken, audience, providerOrgID, roleAssignmentScope)
+	expiresAt, _, err := a.verifyAccessTokenClaims(ctx, tokens.AccessToken, audience, providerOrgID)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return "", err
 	}
-	assignments := extractRoleAssignmentsForProject(claims, audience)
-	span.SetAttributes(attribute.Int("auth.role_assignment_count", len(assignments)))
 	if err := a.q.UpsertBrowserResourceToken(ctx, identitystore.UpsertBrowserResourceTokenParams{
 		SessionHash:   session.SessionHash,
 		Audience:      audience,
@@ -623,12 +612,12 @@ func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession
 	return tokens.AccessToken, nil
 }
 
-func (a *BrowserAuth) verifyAccessToken(ctx context.Context, accessToken, audience, selectedOrgID, roleAssignmentScope string) error {
-	_, _, err := a.verifyAccessTokenClaims(ctx, accessToken, audience, selectedOrgID, roleAssignmentScope)
+func (a *BrowserAuth) verifyAccessToken(ctx context.Context, accessToken, audience, selectedOrgID string) error {
+	_, _, err := a.verifyAccessTokenClaims(ctx, accessToken, audience, selectedOrgID)
 	return err
 }
 
-func (a *BrowserAuth) verifyAccessTokenClaims(ctx context.Context, accessToken, audience, selectedOrgID, roleAssignmentScope string) (time.Time, map[string]any, error) {
+func (a *BrowserAuth) verifyAccessTokenClaims(ctx context.Context, accessToken, audience, selectedOrgID string) (time.Time, map[string]any, error) {
 	verifier := a.provider.Verifier(&oidc.Config{ClientID: audience})
 	token, err := verifier.Verify(a.oidcContext(ctx), accessToken)
 	if err != nil {
@@ -638,35 +627,15 @@ func (a *BrowserAuth) verifyAccessTokenClaims(ctx context.Context, accessToken, 
 	if err := token.Claims(&claims); err != nil {
 		return time.Time{}, nil, err
 	}
-	if err := verifySelectedOrganizationClaims(claims, audience, selectedOrgID, roleAssignmentScope); err != nil {
+	if err := verifySelectedOrganizationClaims(claims, selectedOrgID); err != nil {
 		return time.Time{}, nil, err
 	}
 	return token.Expiry, claims, nil
 }
 
-func verifySelectedOrganizationClaims(claims map[string]any, audience, selectedOrgID, roleAssignmentScope string) error {
+func verifySelectedOrganizationClaims(claims map[string]any, selectedOrgID string) error {
 	if asserted, ok := claims["urn:zitadel:iam:org:id"].(string); ok && asserted != "" && asserted != selectedOrgID {
 		return errors.New("access token selected organization mismatch")
-	}
-	assignments := extractRoleAssignmentsForProject(claims, audience)
-	if len(assignments) == 0 {
-		return errors.New("access token is missing selected organization roles")
-	}
-	orgIDs := map[string]struct{}{}
-	for _, assignment := range assignments {
-		orgIDs[assignment.OrgID] = struct{}{}
-	}
-	if roleAssignmentScope == "all_granted_orgs" {
-		if _, ok := orgIDs[selectedOrgID]; !ok {
-			return errors.New("access token is missing selected organization role assignment")
-		}
-		return nil
-	}
-	if len(orgIDs) != 1 {
-		return errors.New("access token carries roles outside the selected organization")
-	}
-	if _, ok := orgIDs[selectedOrgID]; !ok {
-		return errors.New("access token is missing selected organization role assignment")
 	}
 	return nil
 }
@@ -688,27 +657,24 @@ func (a *BrowserAuth) userSnapshot(ctx context.Context, tokens tokenResponse, id
 		name = firstString(preferredUsername, email, stringClaim(idClaims, "sub"))
 	}
 	providerHomeOrgID := stringClaim(claims, "urn:zitadel:iam:user:resourceowner:id")
-	assignments := extractRoleAssignments(claims)
-	organizations, err := a.publicOrganizationContexts(ctx, buildOrganizationContexts(assignments))
+	sub := stringValue(stringClaim(idClaims, "sub"))
+	if sub == "" {
+		return browserUser{}, errors.New("id_token subject is required")
+	}
+	organizations, err := a.publicOrganizationContexts(ctx, sub)
 	if err != nil {
 		return browserUser{}, err
 	}
 	homeOrgID := publicOrgIDForProviderOrgID(organizations, providerHomeOrgID)
 	selectedOrgID := selectInitialOrganizationID(organizations, providerHomeOrgID, previousSelectedOrgID)
-	roles := rolesForOrganization(organizations, selectedOrgID)
-	if len(roles) == 0 {
-		roles = extractRoles(claims)
-	}
 	return browserUser{
-		Sub:                    stringValue(stringClaim(idClaims, "sub")),
+		Sub:                    sub,
 		Email:                  email,
 		Name:                   name,
 		PreferredUsername:      preferredUsername,
 		HomeOrgID:              homeOrgID,
 		SelectedOrgID:          selectedOrgID,
 		OrgID:                  selectedOrgID,
-		Roles:                  roles,
-		RoleAssignments:        roleAssignmentsFromOrganizationContexts(organizations),
 		AvailableOrganizations: organizations,
 		Claims:                 claims,
 	}, nil
@@ -792,8 +758,6 @@ func (a *BrowserAuth) readSession(ctx context.Context, sessionHash string) (*bro
 		HomeOrgID:              stringFromText(row.HomeOrgID),
 		SelectedOrgID:          stringFromText(row.SelectedOrgID),
 		OrgID:                  stringFromText(row.SelectedOrgID),
-		Roles:                  append([]string(nil), row.Roles...),
-		RoleAssignments:        roleAssignmentsFromOrganizationContexts(organizations),
 		AvailableOrganizations: organizations,
 		Claims:                 claims,
 	}
@@ -830,7 +794,6 @@ func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, cachePartit
 		OrgID:                    nullableTextPtr(user.OrgID),
 		HomeOrgID:                nullableTextPtr(user.HomeOrgID),
 		SelectedOrgID:            nullableTextPtr(user.SelectedOrgID),
-		Roles:                    user.Roles,
 		AvailableOrgContextsJson: organizations,
 		UserClaimsJson:           claims,
 		IDToken:                  nullableText(tokens.IDToken),
@@ -997,8 +960,6 @@ type browserUser struct {
 	HomeOrgID              *string                   `json:"homeOrgID"`
 	SelectedOrgID          *string                   `json:"selectedOrgID"`
 	OrgID                  *string                   `json:"orgID"`
-	Roles                  []string                  `json:"roles"`
-	RoleAssignments        []authRoleAssignment      `json:"roleAssignments"`
 	AvailableOrganizations []authOrganizationContext `json:"availableOrganizations"`
 	Claims                 map[string]any            `json:"-"`
 }
@@ -1012,27 +973,17 @@ func (u browserUser) organization(orgID string) (authOrganizationContext, bool) 
 	return authOrganizationContext{}, false
 }
 
-type authRoleAssignment struct {
-	ProjectID *string `json:"projectID"`
-	OrgID     string  `json:"orgID"`
-	Role      string  `json:"role"`
-}
-
 type authOrganizationContext struct {
-	OrgID                 string               `json:"orgID"`
-	IdentityProviderOrgID string               `json:"identityProviderOrgID"`
-	Roles                 []string             `json:"roles"`
-	RoleAssignments       []authRoleAssignment `json:"roleAssignments"`
+	OrgID                 string `json:"orgID"`
+	IdentityProviderOrgID string `json:"identityProviderOrgID"`
 }
 
 type authState struct {
-	IsAuthenticated bool                 `json:"isAuthenticated"`
-	UserID          *string              `json:"userId"`
-	OrgID           *string              `json:"orgId"`
-	SelectedOrgID   *string              `json:"selectedOrgId"`
-	Roles           []string             `json:"roles"`
-	RoleAssignments []authRoleAssignment `json:"roleAssignments"`
-	CachePartition  *string              `json:"cachePartition"`
+	IsAuthenticated bool    `json:"isAuthenticated"`
+	UserID          *string `json:"userId"`
+	OrgID           *string `json:"orgId"`
+	SelectedOrgID   *string `json:"selectedOrgId"`
+	CachePartition  *string `json:"cachePartition"`
 }
 
 type sessionInfo struct {
@@ -1053,8 +1004,6 @@ func snapshotForSession(session *browserSession) authSnapshot {
 			IsSignedIn: false,
 			Auth: authState{
 				IsAuthenticated: false,
-				Roles:           []string{},
-				RoleAssignments: []authRoleAssignment{},
 			},
 		}
 	}
@@ -1067,8 +1016,6 @@ func snapshotForSession(session *browserSession) authSnapshot {
 			UserID:          &userID,
 			OrgID:           session.User.SelectedOrgID,
 			SelectedOrgID:   session.User.SelectedOrgID,
-			Roles:           session.User.Roles,
-			RoleAssignments: roleAssignmentsForOrganization(session.User.AvailableOrganizations, session.User.SelectedOrgID),
 			CachePartition:  &cachePartition,
 		},
 		User: &browserUser{
@@ -1079,149 +1026,36 @@ func snapshotForSession(session *browserSession) authSnapshot {
 			HomeOrgID:              session.User.HomeOrgID,
 			SelectedOrgID:          session.User.SelectedOrgID,
 			OrgID:                  session.User.SelectedOrgID,
-			Roles:                  session.User.Roles,
-			RoleAssignments:        session.User.RoleAssignments,
 			AvailableOrganizations: session.User.AvailableOrganizations,
 		},
 		Session: &sessionInfo{CreatedAt: session.CreatedAt, ExpiresAt: session.ExpiresAt},
 	}
 }
 
-func extractRoles(claims map[string]any) []string {
-	roles := map[string]struct{}{}
-	for key, value := range claims {
-		if key != "urn:zitadel:iam:org:project:roles" && (!strings.HasPrefix(key, "urn:zitadel:iam:org:project:") || !strings.HasSuffix(key, ":roles")) {
-			continue
-		}
-		roleMap, ok := value.(map[string]any)
-		if !ok {
-			continue
-		}
-		for role := range roleMap {
-			roles[role] = struct{}{}
-		}
+func (a *BrowserAuth) publicOrganizationContexts(ctx context.Context, subject string) ([]authOrganizationContext, error) {
+	orgIDs, _, err := a.authz.LookupOrganizations(ctx, identity.AuthorizationSubject{
+		Kind: identity.AuthorizationSubjectKindUser,
+		ID:   subject,
+	}, "read", "")
+	if err != nil {
+		return nil, fmt.Errorf("lookup browser organization contexts: %w", err)
 	}
-	return sortedKeys(roles)
-}
-
-func extractRoleAssignmentsForProject(claims map[string]any, projectID string) []authRoleAssignment {
-	assignments := extractRoleAssignments(claims)
-	filtered := make([]authRoleAssignment, 0, len(assignments))
-	for _, assignment := range assignments {
-		if assignment.ProjectID != nil && *assignment.ProjectID == projectID {
-			filtered = append(filtered, assignment)
-		}
-	}
-	return filtered
-}
-
-func extractRoleAssignments(claims map[string]any) []authRoleAssignment {
-	assignments := []authRoleAssignment{}
-	for key, value := range claims {
-		var projectID *string
-		switch {
-		case key == "urn:zitadel:iam:org:project:roles":
-			projectID = nil
-		case strings.HasPrefix(key, "urn:zitadel:iam:org:project:") && strings.HasSuffix(key, ":roles"):
-			extracted := strings.TrimSuffix(strings.TrimPrefix(key, "urn:zitadel:iam:org:project:"), ":roles")
-			projectID = &extracted
-		default:
-			continue
-		}
-		roleMap, ok := value.(map[string]any)
-		if !ok {
-			continue
-		}
-		for role, organizations := range roleMap {
-			orgMap, ok := organizations.(map[string]any)
-			if !ok {
-				continue
-			}
-			for orgID := range orgMap {
-				assignments = append(assignments, authRoleAssignment{ProjectID: projectID, OrgID: orgID, Role: role})
-			}
-		}
-	}
-	sort.Slice(assignments, func(i, j int) bool {
-		leftProject := stringValue(assignments[i].ProjectID)
-		rightProject := stringValue(assignments[j].ProjectID)
-		if leftProject != rightProject {
-			return leftProject < rightProject
-		}
-		if assignments[i].OrgID != assignments[j].OrgID {
-			return assignments[i].OrgID < assignments[j].OrgID
-		}
-		return assignments[i].Role < assignments[j].Role
-	})
-	return assignments
-}
-
-func buildOrganizationContexts(assignments []authRoleAssignment) []authOrganizationContext {
-	type contextParts struct {
-		roles       map[string]struct{}
-		assignments []authRoleAssignment
-	}
-	contexts := map[string]*contextParts{}
-	for _, assignment := range assignments {
-		parts := contexts[assignment.OrgID]
-		if parts == nil {
-			parts = &contextParts{roles: map[string]struct{}{}}
-			contexts[assignment.OrgID] = parts
-		}
-		parts.roles[assignment.Role] = struct{}{}
-		parts.assignments = append(parts.assignments, assignment)
-	}
-	orgIDs := make([]string, 0, len(contexts))
-	for orgID := range contexts {
-		orgIDs = append(orgIDs, orgID)
-	}
-	sort.Strings(orgIDs)
-	result := make([]authOrganizationContext, 0, len(orgIDs))
-	for _, orgID := range orgIDs {
-		parts := contexts[orgID]
-		sort.Slice(parts.assignments, func(i, j int) bool {
-			leftProject := stringValue(parts.assignments[i].ProjectID)
-			rightProject := stringValue(parts.assignments[j].ProjectID)
-			if leftProject != rightProject {
-				return leftProject < rightProject
-			}
-			return parts.assignments[i].Role < parts.assignments[j].Role
-		})
-		result = append(result, authOrganizationContext{OrgID: orgID, IdentityProviderOrgID: orgID, Roles: sortedKeys(parts.roles), RoleAssignments: parts.assignments})
-	}
-	return result
-}
-
-func (a *BrowserAuth) publicOrganizationContexts(ctx context.Context, contexts []authOrganizationContext) ([]authOrganizationContext, error) {
-	if len(contexts) == 0 {
+	orgIDs = compactUniqueStrings(orgIDs)
+	if len(orgIDs) == 0 {
 		return []authOrganizationContext{}, nil
 	}
-	providerOrgIDs := make([]string, 0, len(contexts))
-	for _, context := range contexts {
-		providerOrgIDs = append(providerOrgIDs, context.IdentityProviderOrgID)
-	}
-	rows, err := a.q.ListOrganizationMetadataByProviderOrgIDs(ctx, identitystore.ListOrganizationMetadataByProviderOrgIDsParams{ProviderOrgIds: compactUniqueStrings(providerOrgIDs)})
+	rows, err := a.q.ListOrganizationMetadataByOrgIDs(ctx, identitystore.ListOrganizationMetadataByOrgIDsParams{OrgIds: orgIDs})
 	if err != nil {
 		return nil, fmt.Errorf("map browser organization contexts: %w", err)
 	}
-	publicByProvider := map[string]string{}
+	seen := map[string]struct{}{}
+	out := make([]authOrganizationContext, 0, len(rows))
 	for _, row := range rows {
-		publicByProvider[row.IdentityProviderOrgID] = row.OrgID
+		seen[row.OrgID] = struct{}{}
+		out = append(out, authOrganizationContext{OrgID: row.OrgID, IdentityProviderOrgID: row.IdentityProviderOrgID})
 	}
-	out := make([]authOrganizationContext, 0, len(contexts))
-	for _, context := range contexts {
-		publicOrgID := publicByProvider[context.IdentityProviderOrgID]
-		if publicOrgID == "" {
-			return nil, fmt.Errorf("browser organization context missing IAM mapping for provider org %s", context.IdentityProviderOrgID)
-		}
-		assignments := make([]authRoleAssignment, 0, len(context.RoleAssignments))
-		for _, assignment := range context.RoleAssignments {
-			assignment.OrgID = publicOrgID
-			assignments = append(assignments, assignment)
-		}
-		context.OrgID = publicOrgID
-		context.RoleAssignments = assignments
-		out = append(out, context)
+	if len(seen) != len(orgIDs) {
+		return nil, errors.New("browser organization context missing IAM metadata")
 	}
 	return out, nil
 }
@@ -1237,49 +1071,6 @@ func publicOrgIDForProviderOrgID(contexts []authOrganizationContext, providerOrg
 		}
 	}
 	return nil
-}
-
-func roleAssignmentsFromOrganizationContexts(contexts []authOrganizationContext) []authRoleAssignment {
-	assignments := []authRoleAssignment{}
-	for _, context := range contexts {
-		assignments = append(assignments, context.RoleAssignments...)
-	}
-	sort.Slice(assignments, func(i, j int) bool {
-		leftProject := stringValue(assignments[i].ProjectID)
-		rightProject := stringValue(assignments[j].ProjectID)
-		if leftProject != rightProject {
-			return leftProject < rightProject
-		}
-		if assignments[i].OrgID != assignments[j].OrgID {
-			return assignments[i].OrgID < assignments[j].OrgID
-		}
-		return assignments[i].Role < assignments[j].Role
-	})
-	return assignments
-}
-
-func rolesForOrganization(contexts []authOrganizationContext, selectedOrgID *string) []string {
-	if selectedOrgID == nil {
-		return []string{}
-	}
-	for _, context := range contexts {
-		if context.OrgID == *selectedOrgID {
-			return context.Roles
-		}
-	}
-	return []string{}
-}
-
-func roleAssignmentsForOrganization(contexts []authOrganizationContext, selectedOrgID *string) []authRoleAssignment {
-	if selectedOrgID == nil {
-		return []authRoleAssignment{}
-	}
-	for _, context := range contexts {
-		if context.OrgID == *selectedOrgID {
-			return context.RoleAssignments
-		}
-	}
-	return []authRoleAssignment{}
 }
 
 func selectInitialOrganizationID(contexts []authOrganizationContext, providerHomeOrgID, previousSelectedOrgID *string) *string {
@@ -1359,15 +1150,6 @@ func compactUniqueStrings(values []string) []string {
 		result = append(result, trimmed)
 	}
 	return result
-}
-
-func sortedKeys(values map[string]struct{}) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func stringClaim(claims map[string]any, name string) *string {

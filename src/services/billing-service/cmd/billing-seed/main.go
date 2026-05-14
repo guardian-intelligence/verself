@@ -32,7 +32,7 @@ const (
 type config struct {
 	pgDSNFile            string
 	pgDSN                string
-	orgID                uint64
+	orgID                string
 	orgName              string
 	orgTrustTier         string
 	productID            string
@@ -50,7 +50,7 @@ type config struct {
 }
 
 type seedResult struct {
-	OrgID                uint64 `json:"org_id"`
+	OrgID                string `json:"org_id"`
 	OrgName              string `json:"org_name"`
 	OrgTrustTier         string `json:"org_trust_tier"`
 	ProductID            string `json:"product_id"`
@@ -160,7 +160,7 @@ func run() error {
 	if before < cfg.targetPrepaidUnits {
 		deposited = cfg.targetPrepaidUnits - before
 		expiresAt := time.Now().UTC().Add(cfg.expiresAfter)
-		_, err := client.DepositCredits(ctx, billing.GrantBalance{OrgID: billing.OrgID(cfg.orgID), ScopeType: "account", Amount: deposited, Source: cfg.prepaidSource, SourceReferenceID: fmt.Sprintf("seed:%d:%s", cfg.orgID, cfg.productID), ExpiresAt: &expiresAt})
+		_, err := client.DepositCredits(ctx, billing.GrantBalance{OrgID: billing.OrgID(cfg.orgID), ScopeType: "account", Amount: deposited, Source: cfg.prepaidSource, SourceReferenceID: fmt.Sprintf("seed:%s:%s", cfg.orgID, cfg.productID), ExpiresAt: &expiresAt})
 		if err != nil {
 			return fmt.Errorf("deposit prepaid credits: %w", err)
 		}
@@ -195,7 +195,7 @@ func parseFlags() (config, error) {
 	cfg := config{productID: sandboxProductID, productDisplayName: "Sandbox", meterUnit: "sku_ms", billingModel: "metered", orgTrustTier: "new", planID: "sandbox-default", planDisplayName: "Sandbox PAYG", freeTierBucketsJSON: `{}`, planEntitlementsJSON: `{}`, targetPrepaidUnits: 500_000_000, prepaidSource: "purchase", expiresAfter: 365 * 24 * time.Hour}
 	flag.StringVar(&cfg.pgDSNFile, "pg-dsn-file", "", "path to PostgreSQL DSN file")
 	flag.StringVar(&cfg.pgDSN, "pg-dsn", "", "PostgreSQL DSN")
-	flag.Uint64Var(&cfg.orgID, "org-id", 0, "org ID to seed")
+	flag.StringVar(&cfg.orgID, "org-id", "", "org ID to seed")
 	flag.StringVar(&cfg.orgName, "org-name", "", "org display name")
 	flag.StringVar(&cfg.orgTrustTier, "org-trust-tier", cfg.orgTrustTier, "org trust tier")
 	flag.StringVar(&cfg.productID, "product-id", cfg.productID, "product ID")
@@ -214,11 +214,12 @@ func parseFlags() (config, error) {
 	if cfg.pgDSN == "" && cfg.pgDSNFile == "" {
 		return config{}, fmt.Errorf("either --pg-dsn or --pg-dsn-file is required")
 	}
-	if cfg.orgID == 0 {
+	cfg.orgID = strings.TrimSpace(cfg.orgID)
+	if cfg.orgID == "" {
 		return config{}, fmt.Errorf("--org-id is required")
 	}
 	if cfg.orgName == "" {
-		cfg.orgName = fmt.Sprintf("org-%d", cfg.orgID)
+		cfg.orgName = "org-" + cfg.orgID
 	}
 	if _, err := productSeedFor(cfg.productID); err != nil {
 		return config{}, err
@@ -320,7 +321,7 @@ func upsertEntitlementPolicy(ctx context.Context, pg *pgxpool.Pool, policyID, so
 	return err
 }
 
-func currentPrepaidUnits(ctx context.Context, client *billing.Client, orgID uint64, productID string) (uint64, error) {
+func currentPrepaidUnits(ctx context.Context, client *billing.Client, orgID string, productID string) (uint64, error) {
 	grants, err := client.ListGrantBalances(ctx, billing.OrgID(orgID), productID)
 	if err != nil {
 		return 0, err
@@ -360,7 +361,7 @@ func depositSKUScopedGrants(ctx context.Context, client *billing.Client, pg *pgx
 		if err := pg.QueryRow(ctx, `SELECT product_id, bucket_id FROM skus WHERE sku_id = $1`, spec.SKUID).Scan(&productID, &bucketID); err != nil {
 			return count, err
 		}
-		_, err := client.DepositCredits(ctx, billing.GrantBalance{OrgID: billing.OrgID(cfg.orgID), ScopeType: "sku", ScopeProductID: productID, ScopeBucketID: bucketID, ScopeSKUID: spec.SKUID, Amount: spec.Units, Source: spec.Source, SourceReferenceID: fmt.Sprintf("seed-sku:%d:%s:%s", cfg.orgID, spec.SKUID, spec.Source), ExpiresAt: &expiresAt})
+		_, err := client.DepositCredits(ctx, billing.GrantBalance{OrgID: billing.OrgID(cfg.orgID), ScopeType: "sku", ScopeProductID: productID, ScopeBucketID: bucketID, ScopeSKUID: spec.SKUID, Amount: spec.Units, Source: spec.Source, SourceReferenceID: fmt.Sprintf("seed-sku:%s:%s:%s", cfg.orgID, spec.SKUID, spec.Source), ExpiresAt: &expiresAt})
 		if err != nil {
 			return count, err
 		}

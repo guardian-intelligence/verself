@@ -64,7 +64,7 @@ type GetForgejoAllocationRow struct {
 	ExecutionID               *uuid.UUID
 	AttemptID                 *uuid.UUID
 	State                     string
-	OrgID                     int64
+	OrgID                     string
 	ProviderOwner             string
 	ProviderRepo              string
 	RepositoryFullName        string
@@ -165,7 +165,7 @@ type GetForgejoQueuedJobRow struct {
 	HeadSha              string
 	HeadBranch           string
 	LabelsJson           []byte
-	OrgID                int64
+	OrgID                string
 }
 
 func (q *Queries) GetForgejoQueuedJob(ctx context.Context, arg GetForgejoQueuedJobParams) (GetForgejoQueuedJobRow, error) {
@@ -200,7 +200,7 @@ type GetForgejoRepositoryParams struct {
 
 type GetForgejoRepositoryRow struct {
 	ProviderRepositoryID int64
-	OrgID                int64
+	OrgID                string
 	ProjectID            *uuid.UUID
 	SourceRepositoryID   *uuid.UUID
 	ProviderOwner        string
@@ -364,7 +364,7 @@ ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
 
 type UpsertForgejoRunnerRepositoryParams struct {
 	ProviderRepositoryID int64
-	OrgID                int64
+	OrgID                string
 	ProjectID            *uuid.UUID
 	SourceRepositoryID   *uuid.UUID
 	ProviderOwner        string

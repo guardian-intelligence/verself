@@ -379,7 +379,7 @@ func environmentResourceName(installationID, orgID, projectID, environmentID str
 }
 
 func projectDTO(project projects.Project, installationID string) contractapi.ProjectSummary {
-	orgID := strconv.FormatUint(project.OrgID, 10)
+	orgID := project.OrgID
 	projectID := project.ID.String()
 	return contractapi.ProjectSummary{
 		ProjectID:          contractapi.ProjectID(projectID),
@@ -408,7 +408,7 @@ func projectDTOs(records []projects.Project, installationID string) contractapi.
 }
 
 func environmentDTO(env projects.Environment, installationID string) contractapi.ProjectEnvironmentSummary {
-	orgID := strconv.FormatUint(env.OrgID, 10)
+	orgID := env.OrgID
 	projectID := env.ProjectID.String()
 	return contractapi.ProjectEnvironmentSummary{
 		EnvironmentID:       contractapi.EnvironmentID(env.ID.String()),

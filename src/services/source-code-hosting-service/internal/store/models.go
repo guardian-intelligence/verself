@@ -11,7 +11,7 @@ import (
 
 type SourceWorkflowRun struct {
 	WorkflowRunID     uuid.UUID
-	OrgID             int64
+	OrgID             string
 	ProjectID         uuid.UUID
 	RepoID            uuid.UUID
 	ActorID           string

@@ -13,15 +13,12 @@ func (s *Service) storeQueries() *store.Queries {
 	return store.New(s.pgx)
 }
 
-func dbOrgID(orgID uint64) int64 {
-	return int64FromUint64(orgID, "org id")
+func dbOrgID(orgID string) string {
+	return orgID
 }
 
-func orgIDFromDB(orgID int64) uint64 {
-	if orgID <= 0 {
-		return 0
-	}
-	return uint64(orgID) // #nosec G115 -- orgID is checked as positive above.
+func orgIDFromDB(orgID string) string {
+	return orgID
 }
 
 func pgTime(value time.Time) pgtype.Timestamptz {

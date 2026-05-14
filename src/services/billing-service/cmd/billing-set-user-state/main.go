@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -143,7 +142,7 @@ func run() error {
 		}
 		if balanceUnits > 0 {
 			expiresAt := now.AddDate(1, 0, 0)
-			sourceRef := textID("set_user_state_purchase", strconv.FormatUint(orgID, 10), cfg.productID, time.Now().UTC().Format(time.RFC3339Nano))
+			sourceRef := textID("set_user_state_purchase", orgID, cfg.productID, time.Now().UTC().Format(time.RFC3339Nano))
 			if _, err := client.DepositCredits(ctx, billing.GrantBalance{OrgID: billing.OrgID(orgID), ScopeType: "account", Source: "purchase", SourceReferenceID: sourceRef, Amount: balanceUnits, StartsAt: now, ExpiresAt: &expiresAt}); err != nil {
 				return fmt.Errorf("deposit balance grant: %w", err)
 			}
@@ -193,7 +192,7 @@ func parseFlags() (config, error) {
 	flag.StringVar(&cfg.pgDSN, "pg-dsn", "", "PostgreSQL DSN")
 	flag.StringVar(&cfg.email, "email", "", "user email to store as billing_email")
 	flag.StringVar(&cfg.org, "org", "", "org id, billing org display name, or platform/acme shortcut")
-	flag.StringVar(&cfg.orgID, "org-id", "", "numeric org id")
+	flag.StringVar(&cfg.orgID, "org-id", "", "org id")
 	flag.StringVar(&cfg.orgName, "org-name", "", "org display name when inserting a new org by id")
 	flag.StringVar(&cfg.productID, "product-id", cfg.productID, "product id")
 	flag.StringVar(&cfg.state, "state", "", "named state: free, hobby, pro, or a plan tier")
@@ -271,38 +270,25 @@ func resolveBusinessNow(cfg config) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("parse --business-now: expected RFC3339/RFC3339Nano")
 }
 
-func resolveOrg(ctx context.Context, pg *pgxpool.Pool, cfg config) (uint64, string, error) {
+func resolveOrg(ctx context.Context, pg *pgxpool.Pool, cfg config) (string, string, error) {
 	if cfg.orgID != "" {
-		id, err := strconv.ParseUint(cfg.orgID, 10, 64)
-		if err != nil || id == 0 {
-			return 0, "", fmt.Errorf("--org-id must be an unsigned integer")
-		}
+		id := strings.TrimSpace(cfg.orgID)
 		name := cfg.orgName
 		if name == "" {
-			_ = pg.QueryRow(ctx, `SELECT display_name FROM orgs WHERE org_id = $1`, cfg.orgID).Scan(&name)
+			_ = pg.QueryRow(ctx, `SELECT display_name FROM orgs WHERE org_id = $1`, id).Scan(&name)
 		}
 		if name == "" {
-			name = "Org " + cfg.orgID
-		}
-		return id, name, nil
-	}
-	if id, err := strconv.ParseUint(cfg.org, 10, 64); err == nil && id > 0 {
-		name := cfg.orgName
-		if name == "" {
-			_ = pg.QueryRow(ctx, `SELECT display_name FROM orgs WHERE org_id = $1`, cfg.org).Scan(&name)
-		}
-		if name == "" {
-			name = "Org " + cfg.org
+			name = "Org " + id
 		}
 		return id, name, nil
 	}
 	if cfg.org == "platform" {
 		return resolveSingleOrg(ctx, pg, cfg, `trust_tier = 'platform'`)
 	}
-	return resolveSingleOrg(ctx, pg, cfg, `display_name = $1 OR metadata->>'org_key' = $1 OR billing_email = $1`)
+	return resolveSingleOrg(ctx, pg, cfg, `org_id = $1 OR display_name = $1 OR metadata->>'org_key' = $1 OR billing_email = $1`)
 }
 
-func resolveSingleOrg(ctx context.Context, pg *pgxpool.Pool, cfg config, predicate string) (uint64, string, error) {
+func resolveSingleOrg(ctx context.Context, pg *pgxpool.Pool, cfg config, predicate string) (string, string, error) {
 	query := `SELECT org_id, display_name FROM orgs WHERE ` + predicate + ` ORDER BY created_at, org_id LIMIT 2`
 	var rows pgx.Rows
 	var err error
@@ -312,7 +298,7 @@ func resolveSingleOrg(ctx context.Context, pg *pgxpool.Pool, cfg config, predica
 		rows, err = pg.Query(ctx, query)
 	}
 	if err != nil {
-		return 0, "", fmt.Errorf("resolve org %q: %w", cfg.org, err)
+		return "", "", fmt.Errorf("resolve org %q: %w", cfg.org, err)
 	}
 	defer rows.Close()
 	type match struct {
@@ -323,24 +309,20 @@ func resolveSingleOrg(ctx context.Context, pg *pgxpool.Pool, cfg config, predica
 	for rows.Next() {
 		var m match
 		if err := rows.Scan(&m.id, &m.name); err != nil {
-			return 0, "", err
+			return "", "", err
 		}
 		matches = append(matches, m)
 	}
 	if err := rows.Err(); err != nil {
-		return 0, "", err
+		return "", "", err
 	}
 	if len(matches) == 0 {
-		return 0, "", fmt.Errorf("org %q not found in billing orgs; pass --org-id for a new org", cfg.org)
+		return "", "", fmt.Errorf("org %q not found in billing orgs; pass --org-id for a new org", cfg.org)
 	}
 	if len(matches) > 1 {
-		return 0, "", fmt.Errorf("org %q matched multiple billing orgs; pass --org-id", cfg.org)
+		return "", "", fmt.Errorf("org %q matched multiple billing orgs; pass --org-id", cfg.org)
 	}
-	id, err := strconv.ParseUint(matches[0].id, 10, 64)
-	if err != nil || id == 0 {
-		return 0, "", fmt.Errorf("resolved org id is not numeric: %q", matches[0].id)
-	}
-	return id, matches[0].name, nil
+	return matches[0].id, matches[0].name, nil
 }
 
 func resolveTargetPlan(ctx context.Context, pg *pgxpool.Pool, cfg config) (string, error) {
@@ -387,10 +369,10 @@ func resolveTargetPlan(ctx context.Context, pg *pgxpool.Pool, cfg config) (strin
 	}
 }
 
-func prepareState(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID uint64, orgName, planID, overagePolicy string, now time.Time) error {
+func prepareState(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID string, orgName, planID, overagePolicy string, now time.Time) error {
 	cycleStart := monthStartUTC(now)
 	cycleEnd := nextMonth(now)
-	cycleID := textID("cycle", strconv.FormatUint(orgID, 10), cfg.productID, cycleStart.Format(time.RFC3339Nano))
+	cycleID := textID("cycle", orgIDText(orgID), cfg.productID, cycleStart.Format(time.RFC3339Nano))
 	return withTx(ctx, pg, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO orgs (org_id, display_name, billing_email, trust_tier, overage_policy, overage_consent_at)
@@ -489,7 +471,7 @@ func prepareState(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID uint6
 	})
 }
 
-func clearDocumentArtifacts(ctx context.Context, tx pgx.Tx, orgID uint64, productID string) error {
+func clearDocumentArtifacts(ctx context.Context, tx pgx.Tx, orgID string, productID string) error {
 	args := []any{orgIDText(orgID), productID}
 	statements := []struct {
 		name string
@@ -512,7 +494,7 @@ func clearDocumentArtifacts(ctx context.Context, tx pgx.Tx, orgID uint64, produc
 	return nil
 }
 
-func closePurchaseGrants(ctx context.Context, pg *pgxpool.Pool, orgID uint64, productID string, now time.Time) error {
+func closePurchaseGrants(ctx context.Context, pg *pgxpool.Pool, orgID string, productID string, now time.Time) error {
 	_, err := pg.Exec(ctx, `
 		UPDATE credit_grants
 		SET closed_at = $3, closed_reason = 'set-user-state'
@@ -532,7 +514,7 @@ func closePurchaseGrants(ctx context.Context, pg *pgxpool.Pool, orgID uint64, pr
 	return nil
 }
 
-func appendStateEvent(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID uint64, planID string, balanceUnits uint64, now time.Time) error {
+func appendStateEvent(ctx context.Context, pg *pgxpool.Pool, cfg config, orgID string, planID string, balanceUnits uint64, now time.Time) error {
 	payload := map[string]any{
 		"email":                     cfg.email,
 		"org_id":                    orgIDText(orgID),
@@ -611,8 +593,8 @@ func nextMonth(t time.Time) time.Time {
 	return monthStartUTC(t).AddDate(0, 1, 0)
 }
 
-func orgIDText(orgID uint64) string {
-	return strconv.FormatUint(orgID, 10)
+func orgIDText(orgID string) string {
+	return strings.TrimSpace(orgID)
 }
 
 func cleanNonEmpty(parts ...string) string {

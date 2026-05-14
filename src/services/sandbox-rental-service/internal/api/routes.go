@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -45,14 +46,14 @@ func requireIdentity(ctx context.Context) (*auth.Identity, error) {
 	return identity, nil
 }
 
-func requireOrgID(ctx context.Context) (uint64, error) {
+func requireOrgID(ctx context.Context) (string, error) {
 	identity, err := requireIdentity(ctx)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
-	orgID, err := parseUnsignedDecimal(identity.OrgID)
-	if err != nil {
-		return 0, badRequest(ctx, "invalid-token-org", "token org_id must be an unsigned integer", err)
+	orgID := strings.TrimSpace(identity.OrgID)
+	if orgID == "" {
+		return "", badRequest(ctx, "invalid-token-org", "token org_id is required", nil)
 	}
 	return orgID, nil
 }

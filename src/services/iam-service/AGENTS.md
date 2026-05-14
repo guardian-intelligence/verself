@@ -6,14 +6,13 @@ Zitadel identity state.
 
 ## Boundary
 
-Zitadel owns authentication, organizations, users, service accounts, OIDC/OAuth
-applications, project roles, role assignments, project grants, JWKS, MFA,
+Zitadel owns authentication, human identity, OIDC/OAuth applications, JWKS, MFA,
 passkeys, and social identity providers.
 
-Verself owns the fixed three-role product IAM (`owner`, `admin`, `member`),
-the static code-owned capability catalog that gates the `member` role, and the
-organization-management UX. This service is the API surface for those Forge
-Verself-owned concerns.
+Verself owns product organizations, service accounts, API credentials, and
+authorization policy. `iam-service` stores the mapping from Verself public org
+IDs to identity-provider org IDs and is the API surface for organization IAM
+policy.
 
 Go product services remain authorization enforcement points. Each service owns
 its operation catalog through Smithy contract metadata under `src/smithy`.
@@ -53,11 +52,11 @@ and common `Action` values are closed enums. Service-owned `Resource`,
 `RateLimitClass`, and `AuditEvent` values should be declared as typed constants
 next to the route catalog, not repeated as anonymous strings.
 
-Public organization APIs derive organization scope from the validated Zitadel
-token. Do not trust `org_id`, role keys, user IDs, or customer IDs supplied by
-browser request bodies as evidence of authority. Handlers must still validate
-resource ownership against Zitadel or Verself-owned storage after the
-operation permission check passes.
+Public organization APIs derive organization scope from the validated token and
+the Verself public `org_id` claim. Do not trust request-body org IDs, user IDs,
+or customer IDs as evidence of authority. Handlers must still validate resource
+ownership against Verself-owned storage after the operation permission check
+passes.
 
 Use contract DTOs for public request/response payloads. Handwritten
 DTOs remain appropriate for internal-only data structures that do not cross the
@@ -67,54 +66,33 @@ contract for OpenAPI consumers and drift gates.
 
 ## Product IAM Model
 
-The product IAM is a fixed three-role model: `owner`, `admin`, `member`. Owner
-is the org singleton (one per org, transferred via a separate flow); owner and
-admin are otherwise identical and resolve to the full known permission set.
-Member is gated by a small, static, code-owned catalog of named **capability**
-bundles in `internal/identity/capabilities.go`. There is no customer-editable
-policy document and no per-member override surface.
-
-Each operation in `internal/identity/catalog.go` carries a `MemberEligible bool`
-flag. The `init()` check in `capabilities.go` panics at process start if any
-capability bundles a permission whose operation is not tagged member-eligible,
-or if any member-eligible permission is not covered by the baseline ∪ capability
-union. Drift between the catalog and the capability list is therefore a
-boot-time bug, not a runtime authorization gap.
-
-Zitadel role assignments prove who the caller is and which org/project role
-they hold. The Verself capability state is org-scoped and stored in
-`iam_member_capabilities` (PostgreSQL); it is resolved per request at the
-service boundary and is not embedded into Zitadel tokens.
+The product IAM model is Zanzibar-native. The public policy document follows
+the GCP IAM shape: version, etag, and role/member bindings. Roles are SpiceDB
+`role#member` subject sets exposed through `principalSet://` member strings.
+`roles/owner` is the human breakglass role and `SetIamPolicy` enforces that an
+organization always retains at least one human owner.
 
 Operation catalogs are code-defined service contracts. A service operation such
 as `sandbox:execution:read` or `sandbox:execution_schedule:write` is declared
-and enforced by the owning service and documented through contract projections. Adding a
-capability or moving an operation between member-eligible and admin-only is a
-code change in `iam-service`, gated by the `init()` invariant check.
-
-The members table is human-non-owner only. `Service.Members` filters Zitadel
-machine users (they hold project authorizations as service accounts but live
-on the API Credentials surface) and owner-role users (the org singleton role
-is non-editable from this UI per `validateRoleKeys`). `Service.Organization`
-still resolves the caller from the unfiltered set so an operator who is the
-owner can still see themselves in the general section.
+and enforced by the owning service and documented through contract projections.
+Product services ask `iam-service` to check the current relationship graph
+rather than interpreting token-embedded authorization state.
 
 ## Zitadel Integration
 
 All direct Zitadel Management/API calls belong behind an internal adapter
 boundary. API handlers and frontend code should not build raw Zitadel requests.
 The adapter should expose Verself concepts such as organization membership,
-invitations, service accounts, project role assignments, and project grants.
+invitations, service accounts, and API credential subjects.
 
 Credentials used to administer Zitadel are service credentials, not browser
 tokens and not exported rehearsal persona credentials. Keep the credential source
 narrow enough that systemd `LoadCredential=` can be replaced later by OpenBao
 and SPIFFE/SPIRE workload identity without changing the external API contract.
 
-Role changes are eventually reflected in new or refreshed tokens. Do not assume
-that a currently issued access token immediately reflects a role update; product
-flows must either use fresh tokens where needed or tolerate the token-refresh
-boundary explicitly.
+Authorization changes take effect in SpiceDB and are checked at request time.
+Zitadel tokens identify a subject and organization; they do not carry product
+authorization state.
 
 ## API Credentials
 
@@ -133,14 +111,11 @@ metadata such as display name, status, auth method, key or secret fingerprint,
 exact operation permissions, created/revoked timestamps, and last-used
 telemetry. Never persist or return plaintext customer credential secrets.
 
-Use a Zitadel pre-access-token Action to append `verself:credential_id`,
-non-secret credential metadata (`verself:credential_name`,
-`verself:credential_fingerprint`, owner id/display, auth method), `org_id`,
-and the exact Verself operation permissions granted to the active
-credential. Member capability state stays in `iam_member_capabilities`
-PostgreSQL; it is not embedded into Zitadel tokens. Issuance and roll must
-reject any requested permission that is not in a service-declared operation
-catalog or is not held by the creating principal at the moment of issuance.
+Use a Zitadel pre-access-token Action to append `org_id` and, for API
+credentials, `verself:credential_id` plus non-secret credential metadata
+(`verself:credential_name`, `verself:credential_fingerprint`, owner
+id/display, auth method). Credential authorization is expressed in SpiceDB and
+checked by `iam-service` at request time.
 
 ## Observability And Security
 
@@ -150,5 +125,5 @@ organization scope, subject, outcome, and stable failure code.
 
 Live rehearsal should prove that public operations declare the canonical
 contract metadata, require bearer auth, enforce idempotency where applicable,
-and deny callers whose current organization role assignments do not grant the
-required permission.
+and deny callers whose current Zanzibar relationships do not grant the required
+permission.

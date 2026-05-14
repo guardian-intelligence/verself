@@ -1,19 +1,9 @@
 import { redirect } from "@tanstack/react-router";
 import * as v from "valibot";
 
-export const authRoleAssignmentSchema = v.object({
-  projectID: v.nullable(v.string()),
-  orgID: v.string(),
-  role: v.string(),
-});
-
-export type AuthRoleAssignment = v.InferOutput<typeof authRoleAssignmentSchema>;
-
 export const authOrganizationContextSchema = v.object({
   orgID: v.string(),
   identityProviderOrgID: v.string(),
-  roles: v.array(v.string()),
-  roleAssignments: v.array(authRoleAssignmentSchema),
 });
 
 export type AuthOrganizationContext = v.InferOutput<typeof authOrganizationContextSchema>;
@@ -26,8 +16,6 @@ export const clientUserSchema = v.object({
   homeOrgID: v.nullable(v.string()),
   selectedOrgID: v.nullable(v.string()),
   orgID: v.nullable(v.string()),
-  roles: v.array(v.string()),
-  roleAssignments: v.array(authRoleAssignmentSchema),
   availableOrganizations: v.array(authOrganizationContextSchema),
 });
 
@@ -38,8 +26,6 @@ export const anonymousAuthSchema = v.object({
   userId: v.null_(),
   orgId: v.null_(),
   selectedOrgId: v.null_(),
-  roles: v.array(v.string()),
-  roleAssignments: v.array(authRoleAssignmentSchema),
   cachePartition: v.null_(),
 });
 
@@ -50,8 +36,6 @@ export const authenticatedAuthSchema = v.object({
   userId: v.string(),
   orgId: v.nullable(v.string()),
   selectedOrgId: v.nullable(v.string()),
-  roles: v.array(v.string()),
-  roleAssignments: v.array(authRoleAssignmentSchema),
   cachePartition: v.string(),
 });
 
@@ -110,8 +94,6 @@ export const anonymousAuth: AnonymousAuth = {
   userId: null,
   orgId: null,
   selectedOrgId: null,
-  roles: [],
-  roleAssignments: [],
   cachePartition: null,
 };
 
@@ -119,9 +101,6 @@ export function parseAuthSnapshot(input: unknown): AuthSnapshot {
   const snapshot = v.parse(authSnapshotSchema, input);
 
   if (!snapshot.isSignedIn) {
-    if (snapshot.auth.roles.length > 0 || snapshot.auth.roleAssignments.length > 0) {
-      throw new Error("Anonymous auth snapshot cannot carry roles");
-    }
     return snapshot;
   }
 

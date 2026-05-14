@@ -62,17 +62,7 @@ argument_specs:
       zitadel_oauth_app_dev_mode:
         type: bool
         default: false
-      zitadel_oauth_app_role_assertions:
-        type: bool
-        default: false
-        description: When true, PUT oidc_config to enable access/id/userinfo role assertions after creation.
       zitadel_oauth_app_create_project_if_missing:
-        type: bool
-        default: false
-      zitadel_oauth_app_project_role_assertion:
-        type: bool
-        default: false
-      zitadel_oauth_app_project_role_check:
         type: bool
         default: false
       zitadel_oauth_app_persist_client_secret:

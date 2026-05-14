@@ -78,8 +78,8 @@ func finishOperationSpan(span trace.Span, orgID billing.OrgID, policy runtimeiam
 	if span == nil {
 		return
 	}
-	if orgID != 0 {
-		span.SetAttributes(attribute.String("verself.org_id", strconv.FormatUint(uint64(orgID), 10)))
+	if strings.TrimSpace(string(orgID)) != "" {
+		span.SetAttributes(attribute.String("verself.org_id", strings.TrimSpace(string(orgID))))
 	}
 	span.SetAttributes(
 		attribute.String("billing.outcome", outcome),
@@ -136,11 +136,11 @@ func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param
 func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.OperationAuthorizer, policy runtimeiam.OperationPolicy) (billing.OrgID, error) {
 	identity := auth.FromContext(ctx)
 	if identity == nil {
-		return 0, problem(ctx, http.StatusUnauthorized, "unauthorized", "authentication required", nil)
+		return "", problem(ctx, http.StatusUnauthorized, "unauthorized", "authentication required", nil)
 	}
-	orgID, err := strconv.ParseUint(strings.TrimSpace(identity.OrgID), 10, 64)
-	if err != nil || orgID == 0 {
-		return 0, problem(ctx, http.StatusForbidden, "organization-required", "billing routes require an organization-scoped token", err)
+	orgID := strings.TrimSpace(identity.OrgID)
+	if orgID == "" {
+		return "", problem(ctx, http.StatusForbidden, "organization-required", "billing routes require an organization-scoped token", nil)
 	}
 	if authorizer == nil {
 		return billing.OrgID(orgID), problem(ctx, http.StatusServiceUnavailable, "iam-authorizer-unavailable", "IAM authorizer unavailable", runtimeiam.ErrAuthorizerUnavailable)
@@ -185,8 +185,8 @@ func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	return info
 }
 
-func operationRateLimitKey(identity *auth.Identity, orgID uint64) string {
-	key := strconv.FormatUint(orgID, 10)
+func operationRateLimitKey(identity *auth.Identity, orgID string) string {
+	key := strings.TrimSpace(orgID)
 	if identity != nil {
 		key += "\x00" + strings.TrimSpace(identity.Subject)
 	}

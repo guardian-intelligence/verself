@@ -232,7 +232,7 @@ func (c *Client) recordStripeProviderEvent(ctx context.Context, event stripe.Eve
 			return fmt.Errorf("insert stripe provider event: %w", err)
 		}
 		orgID, _ := parseOrgID(metadata["org_id"])
-		if orgID == 0 {
+		if orgIDText(orgID) == "" {
 			return nil
 		}
 		if err := appendEvent(ctx, tx, q, eventFact{EventType: "provider_event_received", AggregateType: "provider_event", AggregateID: eventID, OrgID: orgID, ProductID: metadata["product_id"], OccurredAt: occurred, Payload: map[string]any{"provider_event_id": event.ID, "provider_event_type": string(event.Type), "provider_event_id_internal": eventID, "contract_id": metadata["contract_id"], "change_id": metadata["change_id"], "finalization_id": metadata["finalization_id"], "document_id": metadata["document_id"], "document_kind": metadata["document_kind"]}}); err != nil {
@@ -433,7 +433,7 @@ func (c *Client) handlePaymentIntentSucceeded(ctx context.Context, event stripe.
 		return fmt.Errorf("decode payment intent: %w", err)
 	}
 	orgID, err := parseOrgID(intent.Metadata["org_id"])
-	if err != nil || orgID == 0 {
+	if err != nil || orgIDText(orgID) == "" {
 		return nil
 	}
 	productID := intent.Metadata["product_id"]
@@ -505,7 +505,7 @@ func (c *Client) markProviderEventFinal(ctx context.Context, eventID, state stri
 		return fmt.Errorf("mark provider event final: %w", err)
 	}
 	orgID, _ := parseOrgID(row.OrgID)
-	if orgID == 0 {
+	if orgIDText(orgID) == "" {
 		return nil
 	}
 	return c.WithTx(ctx, "billing.provider_event.final_event", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
@@ -571,17 +571,6 @@ func stringValue(value any) string {
 	default:
 		return ""
 	}
-}
-
-func parseOrgID(value string) (OrgID, error) {
-	if strings.TrimSpace(value) == "" {
-		return 0, nil
-	}
-	parsed, err := strconv.ParseUint(value, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("parse org_id %q: %w", value, err)
-	}
-	return OrgID(parsed), nil
 }
 
 func nullableInt4(value int) pgtype.Int4 {

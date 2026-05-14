@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -50,7 +49,7 @@ func (c SecretsCredentialClient) CreateSourceGitCredential(ctx context.Context, 
 	}
 	scopes := credentialScopes(input.Scopes)
 	expiresAt := time.Now().UTC().Add(time.Duration(input.ExpiresInSeconds) * time.Second)
-	orgID := strconv.FormatUint(principal.OrgID, 10)
+	orgID := strings.TrimSpace(principal.OrgID)
 	metadata := secretsinternalclient.CredentialMetadata{
 		"source": "source-code-hosting-service",
 		"label":  input.Label,
@@ -77,14 +76,14 @@ func (c SecretsCredentialClient) CreateSourceGitCredential(ctx context.Context, 
 		return GitCredential{}, err
 	}
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")),
+		attribute.String("verself.org_id", principal.OrgID),
 		attribute.String("source.git_credential_id", credential.CredentialID.String()),
 		attribute.String("secrets.credential_kind", GitCredentialKind),
 	)
 	return credential, nil
 }
 
-func (c SecretsCredentialClient) VerifySourceGitCredential(ctx context.Context, orgID uint64, actorID string, token string, requiredScopes []string) (_ GitCredential, _ bool, err error) {
+func (c SecretsCredentialClient) VerifySourceGitCredential(ctx context.Context, orgID string, actorID string, token string, requiredScopes []string) (_ GitCredential, _ bool, err error) {
 	ctx, span := secretsCredentialTracer.Start(ctx, "source.secrets.git_credential.verify")
 	defer func() {
 		if err != nil {
@@ -96,7 +95,7 @@ func (c SecretsCredentialClient) VerifySourceGitCredential(ctx context.Context, 
 	if c.Client == nil {
 		return GitCredential{}, false, ErrStoreUnavailable
 	}
-	orgText := strconv.FormatUint(orgID, 10)
+	orgText := strings.TrimSpace(orgID)
 	actorID = strings.TrimSpace(actorID)
 	body := secretsinternalclient.VerifyInternalOpaqueCredentialInputBody{
 		Kind:  secretsinternalclient.CredentialKind(GitCredentialKind),
@@ -127,7 +126,7 @@ func (c SecretsCredentialClient) VerifySourceGitCredential(ctx context.Context, 
 		return GitCredential{}, false, err
 	}
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")),
+		attribute.String("verself.org_id", orgID),
 		attribute.String("source.git_credential_id", credential.CredentialID.String()),
 		attribute.Bool("secrets.credential_active", true),
 	)
@@ -141,13 +140,9 @@ func gitCredentialFromSecrets(principal Principal, fallbackLabel string, wire se
 	}
 	orgID := principal.OrgID
 	if strings.TrimSpace(string(wire.OrgID)) != "" {
-		parsed, err := strconv.ParseUint(strings.TrimSpace(string(wire.OrgID)), 10, 64)
-		if err != nil || parsed == 0 {
-			return GitCredential{}, ErrStoreUnavailable
-		}
-		orgID = parsed
+		orgID = strings.TrimSpace(string(wire.OrgID))
 	}
-	if orgID == 0 {
+	if orgID == "" {
 		return GitCredential{}, ErrStoreUnavailable
 	}
 	metadata := map[string]string(wire.Metadata)

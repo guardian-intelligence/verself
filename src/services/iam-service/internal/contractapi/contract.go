@@ -90,8 +90,6 @@ type MemberID string
 
 type MemberResourceName string
 
-type OrgAclVersion int
-
 type OrgID string
 
 type OrgSlug string
@@ -100,17 +98,23 @@ type OrganizationResourceName string
 
 type OrganizationVersion int
 
-type OrganizationRole string
+type PermissionName string
 
-const (
-	OrganizationRoleAdmin  OrganizationRole = "admin"
-	OrganizationRoleMember OrganizationRole = "member"
-	OrganizationRoleOwner  OrganizationRole = "owner"
-)
+type PolicyEtag string
+
+type PolicyVersion int
+
+type IAMRoleName string
+
+type IAMMemberName string
 
 type Members []MemberSummary
 
 type Organizations []OrganizationSummary
+
+type Permissions []PermissionName
+
+type IAMPolicyBindings []IAMPolicyBinding
 
 type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
@@ -226,30 +230,25 @@ type MemberSummary struct {
 	ResourceName MemberResourceName `json:"resourceName" required:"true" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}/members/member_[0-9A-HJKMNP-TV-Z]{26}$"`
 	Email        EmailAddress       `json:"email" required:"true" minLength:"3" maxLength:"320"`
 	DisplayName  DisplayName        `json:"displayName" required:"true" minLength:"1" maxLength:"120"`
-	Role         OrganizationRole   `json:"role" required:"true"`
 }
 
 type OrganizationSummary struct {
-	OrgID         OrgID                    `json:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
-	ResourceName  OrganizationResourceName `json:"resourceName" required:"true" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}$"`
-	Slug          *OrgSlug                 `json:"slug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
-	DisplayName   DisplayName              `json:"displayName" required:"true" minLength:"1" maxLength:"120"`
-	CallerRole    OrganizationRole         `json:"callerRole" required:"true"`
-	Version       OrganizationVersion      `json:"version" required:"true" minimum:"1" maximum:"2147483647"`
-	OrgAclVersion OrgAclVersion            `json:"orgAclVersion" required:"true" minimum:"1" maximum:"2147483647"`
+	OrgID        OrgID                    `json:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	ResourceName OrganizationResourceName `json:"resourceName" required:"true" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	Slug         *OrgSlug                 `json:"slug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
+	DisplayName  DisplayName              `json:"displayName" required:"true" minLength:"1" maxLength:"120"`
+	Version      OrganizationVersion      `json:"version" required:"true" minimum:"1" maximum:"2147483647"`
 }
 
-type UpdateMemberRoleInputBody struct {
-	Role                  OrganizationRole `json:"role" required:"true"`
-	ExpectedRole          OrganizationRole `json:"expectedRole" required:"true"`
-	ExpectedOrgAclVersion OrgAclVersion    `json:"expectedOrgAclVersion" required:"true" minimum:"1" maximum:"2147483647"`
+type IAMPolicy struct {
+	Version  PolicyVersion     `json:"version" required:"true" minimum:"1" maximum:"2147483647"`
+	Bindings IAMPolicyBindings `json:"bindings" required:"true"`
+	Etag     *PolicyEtag       `json:"etag,omitempty" minLength:"1" maxLength:"256"`
 }
 
-type UpdateMemberRoleInput struct {
-	OrgID          OrgID          `path:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
-	MemberID       MemberID       `path:"memberId" required:"true" pattern:"^member_[0-9A-HJKMNP-TV-Z]{26}$"`
-	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
-	Body           UpdateMemberRoleInputBody
+type IAMPolicyBinding struct {
+	Role    IAMRoleName     `json:"role" required:"true" minLength:"1" maxLength:"128"`
+	Members []IAMMemberName `json:"members" required:"true"`
 }
 
 type UpdateOrganizationInputBody struct {
@@ -262,6 +261,29 @@ type UpdateOrganizationInput struct {
 	OrgID          OrgID          `path:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
 	Body           UpdateOrganizationInputBody
+}
+
+type GetIamPolicyInput struct {
+	OrgID OrgID `path:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+}
+
+type SetIamPolicyInputBody struct {
+	Policy IAMPolicy `json:"policy" required:"true"`
+}
+
+type SetIamPolicyInput struct {
+	OrgID          OrgID          `path:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+	Body           SetIamPolicyInputBody
+}
+
+type TestIamPermissionsInputBody struct {
+	Permissions Permissions `json:"permissions" required:"true"`
+}
+
+type TestIamPermissionsInput struct {
+	OrgID OrgID `path:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	Body  TestIamPermissionsInputBody
 }
 
 type ListOrganizationsOutputBody struct {
@@ -294,8 +316,20 @@ type GetMemberOutput struct {
 	Body MemberSummary
 }
 
-type UpdateMemberRoleOutput struct {
-	Body MemberSummary
+type GetIamPolicyOutput struct {
+	Body IAMPolicy
+}
+
+type SetIamPolicyOutput struct {
+	Body IAMPolicy
+}
+
+type TestIamPermissionsOutput struct {
+	Body TestIamPermissionsOutputBody
+}
+
+type TestIamPermissionsOutputBody struct {
+	Permissions Permissions `json:"permissions" required:"true"`
 }
 
 var Operations = []OperationDescriptor{
@@ -304,7 +338,9 @@ var Operations = []OperationDescriptor{
 	UpdateOrganization.Descriptor,
 	ListMembers.Descriptor,
 	GetMember.Descriptor,
-	UpdateMemberRole.Descriptor,
+	GetIamPolicy.Descriptor,
+	SetIamPolicy.Descriptor,
+	TestIamPermissions.Descriptor,
 }
 
 var ListOrganizations = Operation[ListOrganizationsInput, ListOrganizationsOutput]{
@@ -317,7 +353,7 @@ var ListOrganizations = Operation[ListOrganizationsInput, ListOrganizationsOutpu
 		Readonly:            true,
 		Paginated:           true,
 		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "iam-service", Principals: []string{"browser", "cli", "workload"}},
-		Authorization:       AuthorizationDescriptor{Permission: "iam:organization:list", OrganizationSource: "token_role_assignments", OrganizationMember: ""},
+		Authorization:       AuthorizationDescriptor{Permission: "iam:organization:list", OrganizationSource: "request_subject", OrganizationMember: ""},
 		Audit:               AuditDescriptor{Event: "iam.organization.list", Resource: "organization", Action: "list"},
 		RateLimitBucket:     "read",
 		RequestBodyMaxBytes: 0,
@@ -439,25 +475,79 @@ var GetMember = Operation[GetMemberInput, GetMemberOutput]{
 	},
 }
 
-var UpdateMemberRole = Operation[UpdateMemberRoleInput, UpdateMemberRoleOutput]{
+var GetIamPolicy = Operation[GetIamPolicyInput, GetIamPolicyOutput]{
 	Descriptor: OperationDescriptor{
-		ShapeID:             "verself.iam.v1#UpdateMemberRole",
-		OperationID:         "update-member-role",
-		Method:              "PATCH",
-		Path:                "/api/v1/orgs/{orgId}/members/{memberId}/role",
+		ShapeID:             "verself.iam.v1#GetIamPolicy",
+		OperationID:         "get-iam-policy",
+		Method:              "POST",
+		Path:                "/api/v1/orgs/{orgId}/iamPolicy:get",
+		DefaultStatus:       200,
+		Readonly:            true,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "iam-service", Principals: []string{"browser", "cli", "workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "iam:policy:get", OrganizationSource: "input_member", OrganizationMember: "orgId"},
+		Audit:               AuditDescriptor{Event: "iam.policy.get", Resource: "organization", Action: "read"},
+		RateLimitBucket:     "read",
+		RequestBodyMaxBytes: 8192,
+		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "iamPolicies", Method: "get", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+var SetIamPolicy = Operation[SetIamPolicyInput, SetIamPolicyOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.iam.v1#SetIamPolicy",
+		OperationID:         "set-iam-policy",
+		Method:              "POST",
+		Path:                "/api/v1/orgs/{orgId}/iamPolicy:set",
 		DefaultStatus:       200,
 		Readonly:            false,
 		Paginated:           false,
 		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "iam-service", Principals: []string{"browser", "cli"}},
-		Authorization:       AuthorizationDescriptor{Permission: "iam:member:update_role", OrganizationSource: "input_member", OrganizationMember: "orgId"},
-		Audit:               AuditDescriptor{Event: "iam.member.update_role", Resource: "member", Action: "update"},
+		Authorization:       AuthorizationDescriptor{Permission: "iam:policy:set", OrganizationSource: "input_member", OrganizationMember: "orgId"},
+		Audit:               AuditDescriptor{Event: "iam.policy.set", Resource: "organization", Action: "set"},
 		RateLimitBucket:     "iam_mutation",
-		RequestBodyMaxBytes: 8192,
+		RequestBodyMaxBytes: 32768,
 		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
-		SDK:                 SDKDescriptor{Module: "members", Method: "updateRole", Paginated: false, Retryable: false},
+		SDK:                 SDKDescriptor{Module: "iamPolicies", Method: "set", Paginated: false, Retryable: false},
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
 			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+var TestIamPermissions = Operation[TestIamPermissionsInput, TestIamPermissionsOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.iam.v1#TestIamPermissions",
+		OperationID:         "test-iam-permissions",
+		Method:              "POST",
+		Path:                "/api/v1/orgs/{orgId}/iamPolicy:testPermissions",
+		DefaultStatus:       200,
+		Readonly:            true,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "iam-service", Principals: []string{"browser", "cli", "workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "iam:policy:test", OrganizationSource: "input_member", OrganizationMember: "orgId"},
+		Audit:               AuditDescriptor{Event: "iam.policy.test", Resource: "organization", Action: "test"},
+		RateLimitBucket:     "read",
+		RequestBodyMaxBytes: 8192,
+		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "iamPolicies", Method: "testPermissions", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
@@ -476,7 +566,9 @@ type PublicHandlers interface {
 	UpdateOrganization(context.Context, *UpdateOrganizationInput) (*UpdateOrganizationOutput, error)
 	ListMembers(context.Context, *ListMembersInput) (*ListMembersOutput, error)
 	GetMember(context.Context, *GetMemberInput) (*GetMemberOutput, error)
-	UpdateMemberRole(context.Context, *UpdateMemberRoleInput) (*UpdateMemberRoleOutput, error)
+	GetIamPolicy(context.Context, *GetIamPolicyInput) (*GetIamPolicyOutput, error)
+	SetIamPolicy(context.Context, *SetIamPolicyInput) (*SetIamPolicyOutput, error)
+	TestIamPermissions(context.Context, *TestIamPermissionsInput) (*TestIamPermissionsOutput, error)
 }
 
 type ListOrganizationsHandler = Handler[ListOrganizationsInput, ListOrganizationsOutput]
@@ -489,4 +581,8 @@ type ListMembersHandler = Handler[ListMembersInput, ListMembersOutput]
 
 type GetMemberHandler = Handler[GetMemberInput, GetMemberOutput]
 
-type UpdateMemberRoleHandler = Handler[UpdateMemberRoleInput, UpdateMemberRoleOutput]
+type GetIamPolicyHandler = Handler[GetIamPolicyInput, GetIamPolicyOutput]
+
+type SetIamPolicyHandler = Handler[SetIamPolicyInput, SetIamPolicyOutput]
+
+type TestIamPermissionsHandler = Handler[TestIamPermissionsInput, TestIamPermissionsOutput]

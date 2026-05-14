@@ -10,12 +10,11 @@ import (
 	"github.com/verself/iam-service/internal/spicedb"
 )
 
-func TestCheckResourcePermissionUsesDirectOperationGrant(t *testing.T) {
+func TestCheckResourcePermissionUsesResourceGraph(t *testing.T) {
 	subject := identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindServiceAccount, ID: "svc_123"}
 	backend := &fakeBackend{
 		checks: map[string]bool{
-			checkKey(operationPermissionResource("org_1", identity.PermissionAnalyticsDatasetRead), permissionUse, subjectRef(ServiceAccountSubject("svc_123"))): true,
-			checkKey(spicedb.ResourceRef{Type: resourceTypeAnalyticsDataset, ID: "dataset_1"}, "read", subjectRef(ServiceAccountSubject("svc_123"))):             false,
+			checkKey(spicedb.ResourceRef{Type: resourceTypeAnalyticsDataset, ID: "dataset_1"}, "read", subjectRef(ServiceAccountSubject("svc_123"))): true,
 		},
 	}
 	decision, err := New(backend).CheckResourcePermission(context.Background(), "org_1", subject, ResourceRef{Type: resourceTypeAnalyticsDataset, ID: "dataset_1"}, "read", identity.PermissionAnalyticsDatasetRead, "")
@@ -26,27 +25,7 @@ func TestCheckResourcePermissionUsesDirectOperationGrant(t *testing.T) {
 		t.Fatalf("Allowed = false, want true")
 	}
 	if got := len(backend.checkCalls); got != 1 {
-		t.Fatalf("backend checks = %d, want direct operation check only", got)
-	}
-}
-
-func TestCheckResourcePermissionFallsBackToResourceGraph(t *testing.T) {
-	subject := identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindUser, ID: "user_123"}
-	backend := &fakeBackend{
-		checks: map[string]bool{
-			checkKey(operationPermissionResource("org_1", identity.PermissionAnalyticsDatasetRead), permissionUse, subjectRef(UserSubject("user_123"))): false,
-			checkKey(spicedb.ResourceRef{Type: resourceTypeAnalyticsDataset, ID: "dataset_1"}, "read", subjectRef(UserSubject("user_123"))):             true,
-		},
-	}
-	decision, err := New(backend).CheckResourcePermission(context.Background(), "org_1", subject, ResourceRef{Type: resourceTypeAnalyticsDataset, ID: "dataset_1"}, "read", identity.PermissionAnalyticsDatasetRead, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !decision.Allowed {
-		t.Fatalf("Allowed = false, want true")
-	}
-	if got := len(backend.checkCalls); got != 2 {
-		t.Fatalf("backend checks = %d, want operation then resource", got)
+		t.Fatalf("backend checks = %d, want resource check only", got)
 	}
 }
 
@@ -105,6 +84,10 @@ func (b *fakeBackend) Check(_ context.Context, resource spicedb.ResourceRef, per
 	key := checkKey(resource, permission, subject)
 	b.checkCalls = append(b.checkCalls, key)
 	return b.checks[key], "zed-check", nil
+}
+
+func (b *fakeBackend) LookupResources(_ context.Context, _ string, _ string, _ spicedb.SubjectRef, _ uint32, _ string) ([]string, string, error) {
+	return nil, "zed-lookup", nil
 }
 
 func (b *fakeBackend) ReadResourceRelationships(_ context.Context, _ spicedb.ResourceRef, _ map[string]struct{}) ([]spicedb.Relationship, string, error) {

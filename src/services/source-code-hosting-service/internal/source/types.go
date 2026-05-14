@@ -40,13 +40,13 @@ const (
 
 type Principal struct {
 	Subject string
-	OrgID   uint64
+	OrgID   string
 	Email   string
 }
 
 type Repository struct {
 	RepoID        uuid.UUID
-	OrgID         uint64
+	OrgID         string
 	ProjectID     uuid.UUID
 	CreatedBy     string
 	Name          string
@@ -87,7 +87,7 @@ type RepositoryList struct {
 
 type GitCredential struct {
 	CredentialID uuid.UUID
-	OrgID        uint64
+	OrgID        string
 	ActorID      string
 	Label        string
 	Username     string
@@ -108,7 +108,7 @@ type CreateGitCredentialRequest struct {
 
 type GitPrincipal struct {
 	CredentialID uuid.UUID
-	OrgID        uint64
+	OrgID        string
 	ActorID      string
 	Username     string
 	Scopes       []string
@@ -116,7 +116,7 @@ type GitPrincipal struct {
 
 type GitCredentialIssuer interface {
 	CreateSourceGitCredential(ctx context.Context, principal Principal, input CreateGitCredentialRequest) (GitCredential, error)
-	VerifySourceGitCredential(ctx context.Context, orgID uint64, actorID string, token string, requiredScopes []string) (GitCredential, bool, error)
+	VerifySourceGitCredential(ctx context.Context, orgID string, actorID string, token string, requiredScopes []string) (GitCredential, bool, error)
 }
 
 type RunnerRepositoryRegistrar interface {
@@ -124,7 +124,7 @@ type RunnerRepositoryRegistrar interface {
 }
 
 type OrganizationReference struct {
-	OrgID          uint64
+	OrgID          string
 	Slug           string
 	DisplayName    string
 	RedirectedFrom string
@@ -132,20 +132,20 @@ type OrganizationReference struct {
 
 type OrganizationResolver interface {
 	ResolveSourceOrganization(ctx context.Context, slug string) (OrganizationReference, error)
-	ResolveSourceOrganizationID(ctx context.Context, orgID uint64) (OrganizationReference, error)
+	ResolveSourceOrganizationID(ctx context.Context, orgID string) (OrganizationReference, error)
 }
 
 type ProjectReference struct {
 	ProjectID          uuid.UUID
-	OrgID              uint64
+	OrgID              string
 	Slug               string
 	DisplayName        string
 	RedirectedFromSlug string
 }
 
 type ProjectResolver interface {
-	ResolveSourceProject(ctx context.Context, orgID uint64, projectID uuid.UUID) (ProjectReference, error)
-	ResolveSourceProjectSlug(ctx context.Context, orgID uint64, slug string) (ProjectReference, error)
+	ResolveSourceProject(ctx context.Context, orgID string, projectID uuid.UUID) (ProjectReference, error)
+	ResolveSourceProjectSlug(ctx context.Context, orgID string, slug string) (ProjectReference, error)
 }
 
 type GitRepositoryPath struct {
@@ -182,7 +182,7 @@ type Blob struct {
 type CheckoutGrant struct {
 	GrantID    uuid.UUID
 	RepoID     uuid.UUID
-	OrgID      uint64
+	OrgID      string
 	ActorID    string
 	Ref        string
 	PathPrefix string
@@ -201,7 +201,7 @@ type WorkflowDispatchRequest struct {
 }
 
 type InternalWorkflowDispatchRequest struct {
-	OrgID          uint64
+	OrgID          string
 	ActorID        string
 	RepoID         uuid.UUID
 	ProjectID      uuid.UUID
@@ -213,7 +213,7 @@ type InternalWorkflowDispatchRequest struct {
 
 type WorkflowRun struct {
 	WorkflowRunID     uuid.UUID
-	OrgID             uint64
+	OrgID             string
 	ProjectID         uuid.UUID
 	RepoID            uuid.UUID
 	ActorID           string
@@ -242,7 +242,7 @@ type WebhookDelivery struct {
 	EventType         string
 	SignatureValid    bool
 	Result            string
-	ResolvedOrgID     uint64
+	ResolvedOrgID     string
 	ResolvedProjectID uuid.UUID
 	ResolvedRepoID    uuid.UUID
 	TraceID           string
@@ -261,7 +261,7 @@ func NormalizeSlug(name string) string {
 }
 
 func ValidatePrincipal(principal Principal) error {
-	if strings.TrimSpace(principal.Subject) == "" || principal.OrgID == 0 {
+	if strings.TrimSpace(principal.Subject) == "" || strings.TrimSpace(principal.OrgID) == "" {
 		return ErrInvalid
 	}
 	return nil

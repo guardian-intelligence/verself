@@ -34,7 +34,6 @@ INSERT INTO iam_browser_sessions (
   org_id,
   home_org_id,
   selected_org_id,
-  roles,
   available_org_contexts,
   user_claims,
   id_token,
@@ -52,7 +51,6 @@ INSERT INTO iam_browser_sessions (
   sqlc.narg(org_id),
   sqlc.narg(home_org_id),
   sqlc.narg(selected_org_id),
-  sqlc.arg(roles),
   sqlc.arg(available_org_contexts_json)::jsonb,
   sqlc.arg(user_claims_json)::jsonb,
   sqlc.narg(id_token),
@@ -70,7 +68,6 @@ ON CONFLICT (session_hash) DO UPDATE SET
   org_id = EXCLUDED.org_id,
   home_org_id = EXCLUDED.home_org_id,
   selected_org_id = EXCLUDED.selected_org_id,
-  roles = EXCLUDED.roles,
   available_org_contexts = EXCLUDED.available_org_contexts,
   user_claims = EXCLUDED.user_claims,
   id_token = EXCLUDED.id_token,
@@ -91,7 +88,6 @@ SELECT
   org_id,
   home_org_id,
   selected_org_id,
-  roles,
   available_org_contexts::text AS available_org_contexts_json,
   user_claims::text AS user_claims_json,
   id_token,
@@ -112,7 +108,6 @@ WHERE session_hash = sqlc.arg(session_hash);
 UPDATE iam_browser_sessions
 SET org_id = sqlc.arg(selected_org_id),
     selected_org_id = sqlc.arg(selected_org_id),
-    roles = sqlc.arg(roles),
     client_cache_partition = sqlc.arg(client_cache_partition),
     updated_at = now()
 WHERE session_hash = sqlc.arg(session_hash);

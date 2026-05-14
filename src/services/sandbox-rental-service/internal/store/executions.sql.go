@@ -155,7 +155,7 @@ type GetExecutionWorkItemParams struct {
 type GetExecutionWorkItemRow struct {
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
-	OrgID                int64
+	OrgID                string
 	ActorID              string
 	Kind                 string
 	SourceKind           string
@@ -221,7 +221,7 @@ LIMIT 1
 `
 
 type GetExistingSubmissionParams struct {
-	OrgID          int64
+	OrgID          string
 	IdempotencyKey string
 }
 
@@ -247,7 +247,7 @@ LIMIT 1
 `
 
 type GetLatestAttemptForExecutionParams struct {
-	OrgID       int64
+	OrgID       string
 	ExecutionID uuid.UUID
 }
 
@@ -307,7 +307,7 @@ RETURNING execution_id
 
 type InsertExecutionParams struct {
 	ExecutionID          uuid.UUID
-	OrgID                int64
+	OrgID                string
 	ActorID              string
 	Kind                 string
 	SourceKind           string
@@ -499,7 +499,7 @@ INSERT INTO execution_logs (
 
 type InsertExecutionLogParams struct {
 	ExecutionID uuid.UUID
-	OrgID       int64
+	OrgID       string
 	AttemptID   uuid.UUID
 	Chunk       string
 	CreatedAt   pgtype.Timestamptz
@@ -700,7 +700,7 @@ ORDER BY seq ASC
 `
 
 type ListExecutionLogChunksParams struct {
-	OrgID     int64
+	OrgID     string
 	AttemptID uuid.UUID
 }
 

@@ -95,8 +95,8 @@ func finishOperationSpan(span trace.Span, principal projects.Principal, policy p
 	if span == nil {
 		return
 	}
-	if principal.OrgID != 0 {
-		span.SetAttributes(attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id")))
+	if strings.TrimSpace(principal.OrgID) != "" {
+		span.SetAttributes(attribute.String("verself.org_id", principal.OrgID))
 	}
 	if principal.Subject != "" {
 		span.SetAttributes(attribute.String("verself.subject_id", principal.Subject))
@@ -238,8 +238,8 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 	if identity == nil {
 		return projects.Principal{}, unauthorized(ctx)
 	}
-	orgID, err := strconv.ParseUint(strings.TrimSpace(identity.OrgID), 10, 64)
-	if err != nil || orgID == 0 {
+	orgID := strings.TrimSpace(identity.OrgID)
+	if orgID == "" {
 		return projects.Principal{}, forbidden(ctx, "organization-required", "projects routes require an organization-scoped token")
 	}
 	principal := projects.Principal{Subject: identity.Subject, OrgID: orgID, Email: identity.Email}
@@ -267,9 +267,9 @@ func enforceOperationPolicy(ctx context.Context, authorizer runtimeiam.Operation
 
 func principalFromServiceOrigin(ctx context.Context) (projects.Principal, error) {
 	info := operationRequestInfoFromContext(ctx)
-	orgID, err := strconv.ParseUint(strings.TrimSpace(info.OriginOrgID), 10, 64)
-	if err != nil || orgID == 0 {
-		return projects.Principal{}, badRequest(ctx, "origin-organization-required", originOrgIDHeader+" must be a non-zero decimal organization ID", err)
+	orgID := strings.TrimSpace(info.OriginOrgID)
+	if orgID == "" {
+		return projects.Principal{}, badRequest(ctx, "origin-organization-required", originOrgIDHeader+" is required", nil)
 	}
 	principal := projects.Principal{
 		Subject: strings.TrimSpace(info.OriginSubject),
@@ -333,10 +333,7 @@ func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 }
 
 func operationRateLimitKey(principal projects.Principal) string {
-	orgID := ""
-	if principal.OrgID != 0 {
-		orgID = strconv.FormatUint(principal.OrgID, 10)
-	}
+	orgID := strings.TrimSpace(principal.OrgID)
 	key := strings.TrimSpace(orgID) + "\x00" + strings.TrimSpace(principal.Subject)
 	if strings.Trim(key, "\x00") == "" {
 		return "anonymous"

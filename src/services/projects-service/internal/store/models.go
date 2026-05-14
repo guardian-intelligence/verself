@@ -11,7 +11,7 @@ import (
 
 type Project struct {
 	ProjectID   uuid.UUID
-	OrgID       int64
+	OrgID       string
 	Slug        string
 	DisplayName string
 	Description string
@@ -27,7 +27,7 @@ type Project struct {
 type ProjectEnvironment struct {
 	EnvironmentID    uuid.UUID
 	ProjectID        uuid.UUID
-	OrgID            int64
+	OrgID            string
 	Slug             string
 	DisplayName      string
 	Kind             string
@@ -43,7 +43,7 @@ type ProjectEnvironment struct {
 
 type ProjectEvent struct {
 	EventID       uuid.UUID
-	OrgID         int64
+	OrgID         string
 	ProjectID     uuid.UUID
 	EnvironmentID pgtype.UUID
 	EventType     string

@@ -214,7 +214,7 @@ type GetRunnerExecutionIdentityParams struct {
 type GetRunnerExecutionIdentityRow struct {
 	AllocationID              uuid.UUID
 	Provider                  string
-	OrgID                     int64
+	OrgID                     string
 	ProviderInstallationID    int64
 	ProviderRepositoryID      int64
 	RepositoryFullName        string

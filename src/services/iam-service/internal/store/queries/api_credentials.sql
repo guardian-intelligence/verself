@@ -46,17 +46,13 @@ WHERE c.credential_id = s.credential_id
 -- name: InsertAPICredential :exec
 INSERT INTO iam_api_credentials (
     credential_id, service_account_id, org_id, subject_id, client_id, display_name, auth_method, status,
-    policy_version_at_issue, created_at, created_by, updated_at, expires_at
+    created_at, created_by, updated_at, expires_at
 )
 VALUES (
     sqlc.arg(credential_id), sqlc.arg(service_account_id), sqlc.arg(org_id), sqlc.arg(subject_id), sqlc.arg(client_id),
-    sqlc.arg(display_name), sqlc.arg(auth_method), sqlc.arg(status), sqlc.arg(policy_version_at_issue),
-    sqlc.arg(created_at), sqlc.arg(created_by), sqlc.arg(created_at), sqlc.narg(expires_at)
+    sqlc.arg(display_name), sqlc.arg(auth_method), sqlc.arg(status), sqlc.arg(created_at),
+    sqlc.arg(created_by), sqlc.arg(created_at), sqlc.narg(expires_at)
 );
-
--- name: InsertAPICredentialPermission :exec
-INSERT INTO iam_api_credential_permissions (credential_id, permission, created_at)
-VALUES (sqlc.arg(credential_id), sqlc.arg(permission), sqlc.arg(created_at));
 
 -- name: ListAPICredentials :many
 SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_id, c.display_name, c.status,
@@ -68,7 +64,7 @@ SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_i
            ORDER BY s.created_at DESC
            LIMIT 1
        ), ''::text)::text AS fingerprint,
-       c.policy_version_at_issue, c.created_at, c.created_by, c.updated_at,
+       c.created_at, c.created_by, c.updated_at,
        c.expires_at, c.revoked_at, COALESCE(c.revoked_by, '') AS revoked_by, c.last_used_at
 FROM iam_api_credentials c
 WHERE c.org_id = sqlc.arg(org_id)
@@ -84,16 +80,10 @@ SELECT c.credential_id, c.service_account_id, c.org_id, c.subject_id, c.client_i
            ORDER BY s.created_at DESC
            LIMIT 1
        ), ''::text)::text AS fingerprint,
-       c.policy_version_at_issue, c.created_at, c.created_by, c.updated_at,
+       c.created_at, c.created_by, c.updated_at,
        c.expires_at, c.revoked_at, COALESCE(c.revoked_by, '') AS revoked_by, c.last_used_at
 FROM iam_api_credentials c
 WHERE c.org_id = sqlc.arg(org_id) AND c.credential_id = sqlc.arg(credential_id);
-
--- name: ListAPICredentialPermissions :many
-SELECT permission
-FROM iam_api_credential_permissions
-WHERE credential_id = sqlc.arg(credential_id)
-ORDER BY permission;
 
 -- name: ListActiveAPICredentialSecrets :many
 SELECT s.secret_id, s.credential_id, s.auth_method, s.provider_key_id, s.fingerprint,

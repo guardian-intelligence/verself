@@ -26,7 +26,7 @@ type Store interface {
 	ArchiveEnvironment(context.Context, Principal, EnvironmentLifecycleRequest) (Environment, error)
 	ResolveProject(context.Context, ResolveProjectRequest) (Project, error)
 	ResolveEnvironment(context.Context, ResolveEnvironmentRequest) (Environment, error)
-	ListEvents(context.Context, uint64, string, int) ([]Event, string, error)
+	ListEvents(context.Context, string, string, int) ([]Event, string, error)
 }
 
 type Service struct {
@@ -102,7 +102,7 @@ func (s *Service) ArchiveEnvironment(ctx context.Context, principal Principal, i
 
 func (s *Service) ResolveProject(ctx context.Context, input ResolveProjectRequest) (project Project, err error) {
 	attrs := []attribute.KeyValue{
-		attribute.Int64("verself.org_id", int64FromUint64(input.OrgID, "org id")),
+		attribute.String("verself.org_id", input.OrgID),
 		attribute.Bool("projects.require_active", input.RequireActive),
 	}
 	if input.ProjectID != uuid.Nil {
@@ -118,7 +118,7 @@ func (s *Service) ResolveProject(ctx context.Context, input ResolveProjectReques
 
 func (s *Service) ResolveEnvironment(ctx context.Context, input ResolveEnvironmentRequest) (env Environment, err error) {
 	attrs := []attribute.KeyValue{
-		attribute.Int64("verself.org_id", int64FromUint64(input.OrgID, "org id")),
+		attribute.String("verself.org_id", input.OrgID),
 		attribute.String("verself.project_id", input.ProjectID.String()),
 		attribute.Bool("projects.require_active", input.RequireActive),
 	}
@@ -133,14 +133,14 @@ func (s *Service) ResolveEnvironment(ctx context.Context, input ResolveEnvironme
 	return s.Store.ResolveEnvironment(ctx, input)
 }
 
-func (s *Service) ListEvents(ctx context.Context, orgID uint64, cursor string, limit int) (events []Event, nextCursor string, err error) {
-	ctx, span := serviceTracer.Start(ctx, "projects.event.list", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id"))))
+func (s *Service) ListEvents(ctx context.Context, orgID string, cursor string, limit int) (events []Event, nextCursor string, err error) {
+	ctx, span := serviceTracer.Start(ctx, "projects.event.list", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attribute.String("verself.org_id", orgID)))
 	defer finishServiceSpan(span, err)
 	return s.Store.ListEvents(ctx, orgID, cursor, limit)
 }
 
 func startServiceSpan(ctx context.Context, name string, principal Principal, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
-	all := []attribute.KeyValue{attribute.Int64("verself.org_id", int64FromUint64(principal.OrgID, "org id"))}
+	all := []attribute.KeyValue{attribute.String("verself.org_id", principal.OrgID)}
 	if principal.Subject != "" {
 		all = append(all, attribute.String("verself.subject_id", principal.Subject))
 	}

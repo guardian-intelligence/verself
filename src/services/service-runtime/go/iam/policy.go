@@ -11,9 +11,7 @@ import (
 //
 // In the Zanzibar/SpiceDB model this names a product operation permission such
 // as "sandbox:execution:read". It is not a Cedar-style action expression and
-// it is not a raw SpiceDB object/relation string. Product services send this
-// value to iam-service; iam-service decides whether that maps to a direct
-// operation_permission grant or an inherited organization/resource permission.
+// it is not a raw SpiceDB object/relation string.
 type Permission string
 
 func (p Permission) String() string { return string(p) }
@@ -95,10 +93,9 @@ const (
 	// OrgScopeTokenOrgID checks against the selected org_id carried by the
 	// validated Zitadel access token.
 	OrgScopeTokenOrgID OrgScope = "token_org_id"
-	// OrgScopeTokenRoleAssignmentOrgIDs checks every org in the token's
-	// structured role assignments and authorizes the operation when any one
-	// assignment grants the required permission.
-	OrgScopeTokenRoleAssignmentOrgIDs OrgScope = "token_role_assignment_org_ids"
+	// OrgScopeRequestSubject discovers accessible organizations from the
+	// request subject instead of from token-carried authorization claims.
+	OrgScopeRequestSubject OrgScope = "request_subject"
 	// OrgScopeTokenSubject is for subject-scoped personal surfaces such as
 	// profile, notifications, and mailbox APIs.
 	OrgScopeTokenSubject OrgScope = "token_subject"
@@ -284,7 +281,7 @@ func validateAction(action Action) error {
 
 func validateOrgScope(scope OrgScope) error {
 	switch scope {
-	case OrgScopeTokenOrgID, OrgScopeTokenRoleAssignmentOrgIDs, OrgScopeTokenSubject,
+	case OrgScopeTokenOrgID, OrgScopeRequestSubject, OrgScopeTokenSubject,
 		OrgScopePathOrgID, OrgScopeBodyOrgID, OrgScopeRequestOrgID,
 		OrgScopeRequestSubjectID, OrgScopeRequestID, OrgScopeCheckoutGrant:
 		return nil

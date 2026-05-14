@@ -5,12 +5,9 @@ go_library(
     srcs = [
         "api_credentials.sql.go",
         "browser_auth.sql.go",
-        "capabilities.sql.go",
-        "commands.sql.go",
         "db.go",
         "models.go",
         "organization.sql.go",
-        "outbox.sql.go",
     ],
     importpath = "github.com/verself/iam-service/internal/store",
     visibility = ["//src/services/iam-service:__subpackages__"],

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"sort"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -25,7 +24,9 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 	registerPublicOperation(api, runtime, contractapi.UpdateOrganization, handlers.UpdateOrganization, "Update organization")
 	registerPublicOperation(api, runtime, contractapi.ListMembers, handlers.ListMembers, "List members")
 	registerPublicOperation(api, runtime, contractapi.GetMember, handlers.GetMember, "Get member")
-	registerPublicOperation(api, runtime, contractapi.UpdateMemberRole, handlers.UpdateMemberRole, "Update member role")
+	registerPublicOperation(api, runtime, contractapi.GetIamPolicy, handlers.GetIamPolicy, "Get IAM policy")
+	registerPublicOperation(api, runtime, contractapi.SetIamPolicy, handlers.SetIamPolicy, "Set IAM policy")
+	registerPublicOperation(api, runtime, contractapi.TestIamPermissions, handlers.TestIamPermissions, "Test IAM permissions")
 }
 
 func registerPublicOperation[Input any, Output any](
@@ -96,7 +97,6 @@ func principalForAuthIdentityOrg(ctx context.Context, authIdentity *auth.Identit
 		Subject:     subject,
 		SubjectKind: subjectKind,
 		OrgID:       orgID,
-		Roles:       identityRolesForCurrentOrg(authIdentity),
 		Email:       authIdentity.Email,
 	}, nil
 }
@@ -113,28 +113,4 @@ func authzSubjectFromIdentity(authIdentity *auth.Identity) identity.Authorizatio
 		return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindServiceAccount, ID: strings.TrimSpace(serviceAccountID)}
 	}
 	return identity.AuthorizationSubject{Kind: identity.AuthorizationSubjectKindUser, ID: authIdentity.Subject}
-}
-
-func roleAssignmentOrgIDs(ctx context.Context, authIdentity *auth.Identity) ([]string, error) {
-	if authIdentity == nil {
-		return nil, unauthorized(ctx)
-	}
-	seen := map[string]struct{}{}
-	orgIDs := make([]string, 0, len(authIdentity.RoleAssignments))
-	for _, assignment := range authIdentity.RoleAssignments {
-		orgID := strings.TrimSpace(assignment.OrganizationID)
-		if orgID == "" {
-			continue
-		}
-		if _, ok := seen[orgID]; ok {
-			continue
-		}
-		seen[orgID] = struct{}{}
-		orgIDs = append(orgIDs, orgID)
-	}
-	if len(orgIDs) == 0 {
-		return nil, forbidden(ctx, "organization-role-assignment-required", "token does not carry any organization role assignments")
-	}
-	sort.Strings(orgIDs)
-	return orgIDs, nil
 }

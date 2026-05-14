@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -110,17 +109,17 @@ func (c *Client) ApplyPendingDueBillingWork(ctx context.Context, limit int) (int
 	}
 	applied := 0
 	for _, target := range targets {
-		parsed, err := strconv.ParseUint(target.orgIDText, 10, 64)
+		orgID, err := parseOrgID(target.orgIDText)
 		if err != nil {
-			return applied, fmt.Errorf("parse pending due org_id %q: %w", target.orgIDText, err)
-		}
-		if _, err := c.ApplyDueBillingWork(ctx, OrgID(parsed), target.productID); err != nil {
 			return applied, err
 		}
-		if err := c.ensureCurrentEntitlements(ctx, OrgID(parsed), target.productID); err != nil {
+		if _, err := c.ApplyDueBillingWork(ctx, orgID, target.productID); err != nil {
 			return applied, err
 		}
-		if _, err := c.PostPendingGrantDeposits(ctx, OrgID(parsed), target.productID); err != nil {
+		if err := c.ensureCurrentEntitlements(ctx, orgID, target.productID); err != nil {
+			return applied, err
+		}
+		if _, err := c.PostPendingGrantDeposits(ctx, orgID, target.productID); err != nil {
 			return applied, err
 		}
 		applied++

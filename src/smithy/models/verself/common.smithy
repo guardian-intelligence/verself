@@ -189,7 +189,6 @@ structure identity {
 
 enum OrganizationScopeSource {
     TOKEN_ORG_ID = "token_org_id"
-    TOKEN_ROLE_ASSIGNMENTS = "token_role_assignments"
     INPUT_MEMBER = "input_member"
     REQUEST_SUBJECT = "request_subject"
     BODY_ORG_ID = "body_org_id"

@@ -31,13 +31,13 @@ var (
 
 type Principal struct {
 	Subject string
-	OrgID   uint64
+	OrgID   string
 	Email   string
 }
 
 type Project struct {
 	ID                 uuid.UUID
-	OrgID              uint64
+	OrgID              string
 	Slug               string
 	RedirectedFromSlug string
 	DisplayName        string
@@ -54,7 +54,7 @@ type Project struct {
 type Environment struct {
 	ID               uuid.UUID
 	ProjectID        uuid.UUID
-	OrgID            uint64
+	OrgID            string
 	Slug             string
 	DisplayName      string
 	Kind             string
@@ -70,7 +70,7 @@ type Environment struct {
 
 type Event struct {
 	ID            uuid.UUID
-	OrgID         uint64
+	OrgID         string
 	ProjectID     uuid.UUID
 	EnvironmentID uuid.UUID
 	EventType     string
@@ -135,14 +135,14 @@ type EnvironmentLifecycleRequest struct {
 }
 
 type ResolveProjectRequest struct {
-	OrgID         uint64
+	OrgID         string
 	ProjectID     uuid.UUID
 	Slug          string
 	RequireActive bool
 }
 
 type ResolveEnvironmentRequest struct {
-	OrgID         uint64
+	OrgID         string
 	ProjectID     uuid.UUID
 	EnvironmentID uuid.UUID
 	Slug          string
@@ -153,7 +153,7 @@ func ValidatePrincipal(principal Principal) error {
 	if strings.TrimSpace(principal.Subject) == "" {
 		return fmt.Errorf("%w: subject is required", ErrInvalid)
 	}
-	if principal.OrgID == 0 {
+	if strings.TrimSpace(principal.OrgID) == "" {
 		return fmt.Errorf("%w: org_id is required", ErrInvalid)
 	}
 	return nil

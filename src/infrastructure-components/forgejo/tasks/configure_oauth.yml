@@ -56,7 +56,6 @@
       - >-
         openid profile email
         urn:zitadel:iam:org:project:id:{{ forgejo_project_id }}:aud
-        urn:zitadel:iam:org:projects:roles
   become: true
   become_user: forgejo
   environment:
@@ -94,7 +93,6 @@
       - >-
         openid profile email
         urn:zitadel:iam:org:project:id:{{ forgejo_project_id }}:aud
-        urn:zitadel:iam:org:projects:roles
   become: true
   become_user: forgejo
   environment:

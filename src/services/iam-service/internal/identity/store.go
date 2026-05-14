@@ -24,68 +24,6 @@ func (s SQLStore) q() *identitystore.Queries {
 	return identitystore.New(s.PG)
 }
 
-func (s SQLStore) GetMemberCapabilities(ctx context.Context, orgID, actor string) (MemberCapabilitiesDocument, error) {
-	if s.PG == nil {
-		return MemberCapabilitiesDocument{}, ErrStoreUnavailable
-	}
-	row, err := s.q().GetMemberCapabilities(ctx, identitystore.GetMemberCapabilitiesParams{OrgID: orgID})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return DefaultMemberCapabilitiesDocument(orgID, actor, time.Now().UTC()), nil
-	}
-	if err != nil {
-		return MemberCapabilitiesDocument{}, fmt.Errorf("get identity member capabilities: %w", err)
-	}
-	return memberCapabilitiesFromRow(row)
-}
-
-func (s SQLStore) PutMemberCapabilities(ctx context.Context, doc MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error) {
-	if s.PG == nil {
-		return MemberCapabilitiesDocument{}, ErrStoreUnavailable
-	}
-	if err := ValidateMemberCapabilities(doc); err != nil {
-		return MemberCapabilitiesDocument{}, err
-	}
-	var (
-		row identitystore.IamMemberCapability
-		err error
-	)
-	if doc.Version == 0 {
-		row, err = s.q().InsertMemberCapabilities(ctx, identitystore.InsertMemberCapabilitiesParams{
-			OrgID:       doc.OrgID,
-			EnabledKeys: append([]string(nil), doc.EnabledKeys...),
-			UpdatedBy:   doc.UpdatedBy,
-		})
-	} else {
-		row, err = s.q().UpdateMemberCapabilities(ctx, identitystore.UpdateMemberCapabilitiesParams{
-			OrgID:       doc.OrgID,
-			EnabledKeys: append([]string(nil), doc.EnabledKeys...),
-			UpdatedBy:   doc.UpdatedBy,
-			Version:     doc.Version,
-		})
-	}
-	if errors.Is(err, pgx.ErrNoRows) {
-		return MemberCapabilitiesDocument{}, fmt.Errorf("%w: stale version for org %s", ErrCapabilitiesConflict, doc.OrgID)
-	}
-	if err != nil {
-		return MemberCapabilitiesDocument{}, fmt.Errorf("put identity member capabilities: %w", err)
-	}
-	return memberCapabilitiesFromRow(row)
-}
-
-func memberCapabilitiesFromRow(row identitystore.IamMemberCapability) (MemberCapabilitiesDocument, error) {
-	updatedAt, err := requiredTime(row.UpdatedAt, "iam_member_capabilities.updated_at")
-	if err != nil {
-		return MemberCapabilitiesDocument{}, err
-	}
-	return MemberCapabilitiesDocument{
-		OrgID:       row.OrgID,
-		Version:     row.Version,
-		EnabledKeys: append([]string(nil), row.EnabledKeys...),
-		UpdatedAt:   updatedAt,
-		UpdatedBy:   row.UpdatedBy,
-	}, nil
-}
-
 func (s SQLStore) CreateServiceAccount(ctx context.Context, account ServiceAccount, credential APICredential, secret APICredentialSecret) (ServiceAccount, APICredential, error) {
 	if s.PG == nil {
 		return ServiceAccount{}, APICredential{}, ErrStoreUnavailable
@@ -111,15 +49,6 @@ func (s SQLStore) CreateServiceAccount(ctx context.Context, account ServiceAccou
 	}
 	if err := insertAPICredential(ctx, q, credential); err != nil {
 		return ServiceAccount{}, APICredential{}, err
-	}
-	for _, permission := range credential.Permissions {
-		if err := q.InsertAPICredentialPermission(ctx, identitystore.InsertAPICredentialPermissionParams{
-			CredentialID: credential.CredentialID,
-			Permission:   permission,
-			CreatedAt:    timestamptz(credential.CreatedAt),
-		}); err != nil {
-			return ServiceAccount{}, APICredential{}, fmt.Errorf("insert api credential permission: %w", err)
-		}
 	}
 	if err := insertAPICredentialSecret(ctx, q, secret); err != nil {
 		return ServiceAccount{}, APICredential{}, err
@@ -242,15 +171,6 @@ func (s SQLStore) CreateAPICredential(ctx context.Context, credential APICredent
 	if err := insertAPICredential(ctx, q, credential); err != nil {
 		return APICredential{}, err
 	}
-	for _, permission := range credential.Permissions {
-		if err := q.InsertAPICredentialPermission(ctx, identitystore.InsertAPICredentialPermissionParams{
-			CredentialID: credential.CredentialID,
-			Permission:   permission,
-			CreatedAt:    timestamptz(credential.CreatedAt),
-		}); err != nil {
-			return APICredential{}, fmt.Errorf("insert api credential permission: %w", err)
-		}
-	}
 	if err := insertAPICredentialSecret(ctx, q, secret); err != nil {
 		return APICredential{}, err
 	}
@@ -274,10 +194,6 @@ func (s SQLStore) ListAPICredentials(ctx context.Context, orgID string) ([]APICr
 		if err != nil {
 			return nil, err
 		}
-		credential.Permissions, err = s.apiCredentialPermissions(ctx, credential.CredentialID)
-		if err != nil {
-			return nil, err
-		}
 		credentials = append(credentials, credential)
 	}
 	return credentials, nil
@@ -295,10 +211,6 @@ func (s SQLStore) GetAPICredential(ctx context.Context, orgID, credentialID stri
 		return APICredential{}, err
 	}
 	credential, err := apiCredentialFromGetRow(row)
-	if err != nil {
-		return APICredential{}, err
-	}
-	credential.Permissions, err = s.apiCredentialPermissions(ctx, credential.CredentialID)
 	if err != nil {
 		return APICredential{}, err
 	}
@@ -453,7 +365,6 @@ func apiCredentialFromGetRow(row identitystore.GetAPICredentialRow) (APICredenti
 		row.Status,
 		row.AuthMethod,
 		row.Fingerprint,
-		row.PolicyVersionAtIssue,
 		row.CreatedAt,
 		row.CreatedBy,
 		row.UpdatedAt,
@@ -475,7 +386,6 @@ func apiCredentialFromListRow(row identitystore.ListAPICredentialsRow) (APICrede
 		row.Status,
 		row.AuthMethod,
 		row.Fingerprint,
-		row.PolicyVersionAtIssue,
 		row.CreatedAt,
 		row.CreatedBy,
 		row.UpdatedAt,
@@ -486,7 +396,7 @@ func apiCredentialFromListRow(row identitystore.ListAPICredentialsRow) (APICrede
 	)
 }
 
-func apiCredentialFromFields(credentialID, serviceAccountID, orgID, subjectID, clientID, displayName, status, method, fingerprint string, policyVersionAtIssue int32, createdAt pgtype.Timestamptz, createdBy string, updatedAt, expiresAt, revokedAt pgtype.Timestamptz, revokedBy string, lastUsedAt pgtype.Timestamptz) (APICredential, error) {
+func apiCredentialFromFields(credentialID, serviceAccountID, orgID, subjectID, clientID, displayName, status, method, fingerprint string, createdAt pgtype.Timestamptz, createdBy string, updatedAt, expiresAt, revokedAt pgtype.Timestamptz, revokedBy string, lastUsedAt pgtype.Timestamptz) (APICredential, error) {
 	created, err := requiredTime(createdAt, "iam_api_credentials.created_at")
 	if err != nil {
 		return APICredential{}, err
@@ -496,24 +406,22 @@ func apiCredentialFromFields(credentialID, serviceAccountID, orgID, subjectID, c
 		return APICredential{}, err
 	}
 	return APICredential{
-		CredentialID:         credentialID,
-		ServiceAccountID:     serviceAccountID,
-		OrgID:                orgID,
-		SubjectID:            subjectID,
-		ClientID:             clientID,
-		DisplayName:          displayName,
-		Status:               APICredentialStatus(status),
-		AuthMethod:           APICredentialAuthMethod(method),
-		Fingerprint:          fingerprint,
-		Permissions:          nil,
-		PolicyVersionAtIssue: policyVersionAtIssue,
-		CreatedAt:            created,
-		CreatedBy:            createdBy,
-		UpdatedAt:            updated,
-		ExpiresAt:            nullableTime(expiresAt),
-		RevokedAt:            nullableTime(revokedAt),
-		RevokedBy:            revokedBy,
-		LastUsedAt:           nullableTime(lastUsedAt),
+		CredentialID:     credentialID,
+		ServiceAccountID: serviceAccountID,
+		OrgID:            orgID,
+		SubjectID:        subjectID,
+		ClientID:         clientID,
+		DisplayName:      displayName,
+		Status:           APICredentialStatus(status),
+		AuthMethod:       APICredentialAuthMethod(method),
+		Fingerprint:      fingerprint,
+		CreatedAt:        created,
+		CreatedBy:        createdBy,
+		UpdatedAt:        updated,
+		ExpiresAt:        nullableTime(expiresAt),
+		RevokedAt:        nullableTime(revokedAt),
+		RevokedBy:        revokedBy,
+		LastUsedAt:       nullableTime(lastUsedAt),
 	}, nil
 }
 
@@ -570,7 +478,6 @@ func serviceAccountFromFields(serviceAccountID, orgID, subjectID, clientID, disp
 		DisplayName:      displayName,
 		Description:      description,
 		Status:           ServiceAccountStatus(status),
-		Permissions:      nil,
 		CreatedAt:        created,
 		CreatedBy:        createdBy,
 		UpdatedAt:        updated,
@@ -580,28 +487,19 @@ func serviceAccountFromFields(serviceAccountID, orgID, subjectID, clientID, disp
 	}, nil
 }
 
-func (s SQLStore) apiCredentialPermissions(ctx context.Context, credentialID string) ([]string, error) {
-	permissions, err := s.q().ListAPICredentialPermissions(ctx, identitystore.ListAPICredentialPermissionsParams{CredentialID: credentialID})
-	if err != nil {
-		return nil, fmt.Errorf("list api credential permissions: %w", err)
-	}
-	return append([]string(nil), permissions...), nil
-}
-
 func insertAPICredential(ctx context.Context, q *identitystore.Queries, credential APICredential) error {
 	if err := q.InsertAPICredential(ctx, identitystore.InsertAPICredentialParams{
-		CredentialID:         credential.CredentialID,
-		ServiceAccountID:     credential.ServiceAccountID,
-		OrgID:                credential.OrgID,
-		SubjectID:            credential.SubjectID,
-		ClientID:             credential.ClientID,
-		DisplayName:          credential.DisplayName,
-		AuthMethod:           string(credential.AuthMethod),
-		Status:               string(credential.Status),
-		PolicyVersionAtIssue: credential.PolicyVersionAtIssue,
-		CreatedAt:            timestamptz(credential.CreatedAt),
-		CreatedBy:            credential.CreatedBy,
-		ExpiresAt:            nullableTimestamptz(credential.ExpiresAt),
+		CredentialID:     credential.CredentialID,
+		ServiceAccountID: credential.ServiceAccountID,
+		OrgID:            credential.OrgID,
+		SubjectID:        credential.SubjectID,
+		ClientID:         credential.ClientID,
+		DisplayName:      credential.DisplayName,
+		AuthMethod:       string(credential.AuthMethod),
+		Status:           string(credential.Status),
+		CreatedAt:        timestamptz(credential.CreatedAt),
+		CreatedBy:        credential.CreatedBy,
+		ExpiresAt:        nullableTimestamptz(credential.ExpiresAt),
 	}); err != nil {
 		return fmt.Errorf("insert api credential: %w", err)
 	}

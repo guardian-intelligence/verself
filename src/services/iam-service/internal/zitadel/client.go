@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	defaultTimeout         = 5 * time.Second
-	authorizationPageLimit = 1000
+	defaultTimeout = 5 * time.Second
+	userPageLimit  = 200
 )
 
 var zitadelMaxKeyExpiration = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
@@ -61,46 +61,25 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) ListMembers(ctx context.Context, orgID, projectID string) ([]identity.Member, error) {
+func (c *Client) ListMembers(ctx context.Context, orgID string) ([]identity.Member, error) {
 	orgID = strings.TrimSpace(orgID)
-	projectID = strings.TrimSpace(projectID)
-	if orgID == "" || projectID == "" {
-		return nil, fmt.Errorf("%w: org_id and project_id are required", identity.ErrInvalidInput)
+	if orgID == "" {
+		return nil, fmt.Errorf("%w: org_id is required", identity.ErrInvalidInput)
 	}
-	assignments, err := c.listAuthorizations(ctx, authorizationFilterProjectID(projectID), authorizationFilterOrganizationID(orgID))
+	users, err := c.listUsersByOrganization(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
-	membersByID := map[string]identity.Member{}
-	for _, assignment := range assignments {
-		if assignment.ProjectID != projectID || assignment.OrganizationID != orgID || assignment.UserID == "" || !assignment.Active() {
-			continue
-		}
-		member := membersByID[assignment.UserID]
-		member.UserID = assignment.UserID
-		member.DisplayName = firstNonEmpty(member.DisplayName, assignment.UserDisplayName)
-		member.RoleKeys = append(member.RoleKeys, assignment.RoleKeys...)
-		membersByID[assignment.UserID] = member
-	}
-	if len(membersByID) == 0 {
-		return []identity.Member{}, nil
-	}
-	users, err := c.listUsers(ctx, keys(membersByID))
-	if err != nil {
-		return nil, err
-	}
+	members := make([]identity.Member, 0, len(users))
 	for userID, user := range users {
-		member := membersByID[userID]
-		member.Type = user.Type
-		member.Email = user.Email
-		member.LoginName = user.LoginName
-		member.DisplayName = firstNonEmpty(member.DisplayName, user.DisplayName, user.LoginName, user.Email)
-		member.State = user.State
-		membersByID[userID] = member
-	}
-	members := make([]identity.Member, 0, len(membersByID))
-	for _, member := range membersByID {
-		member.RoleKeys = compactStrings(member.RoleKeys)
+		member := identity.Member{
+			UserID:      userID,
+			Type:        user.Type,
+			Email:       user.Email,
+			LoginName:   user.LoginName,
+			DisplayName: firstNonEmpty(user.DisplayName, user.LoginName, user.Email),
+			State:       user.State,
+		}
 		members = append(members, member)
 	}
 	sort.Slice(members, func(i, j int) bool {
@@ -109,149 +88,16 @@ func (c *Client) ListMembers(ctx context.Context, orgID, projectID string) ([]id
 	return members, nil
 }
 
-func (c *Client) InviteMember(ctx context.Context, orgID, projectID string, input identity.InviteMemberRequest) (identity.InviteMemberResult, error) {
+func (c *Client) InviteMember(ctx context.Context, orgID string, input identity.InviteMemberRequest) (identity.InviteMemberResult, error) {
 	userID, err := c.createHumanUser(ctx, orgID, input)
 	if err != nil {
 		return identity.InviteMemberResult{}, err
 	}
-	if _, err := c.upsertAuthorization(ctx, orgID, projectID, userID, input.RoleKeys); err != nil {
-		return identity.InviteMemberResult{}, err
-	}
 	return identity.InviteMemberResult{
-		UserID:   userID,
-		Email:    input.Email,
-		RoleKeys: compactStrings(input.RoleKeys),
-		Status:   "invited",
+		UserID: userID,
+		Email:  input.Email,
+		Status: "invited",
 	}, nil
-}
-
-func (c *Client) UpdateMemberRoles(ctx context.Context, orgID, projectID, userID string, roleKeys []string) (identity.Member, error) {
-	assignment, err := c.upsertAuthorization(ctx, orgID, projectID, userID, roleKeys)
-	if err != nil {
-		return identity.Member{}, err
-	}
-	users, err := c.listUsers(ctx, []string{userID})
-	if err != nil {
-		return identity.Member{}, err
-	}
-	user := users[userID]
-	return identity.Member{
-		UserID:      userID,
-		Type:        user.Type,
-		Email:       user.Email,
-		LoginName:   user.LoginName,
-		DisplayName: firstNonEmpty(user.DisplayName, user.LoginName, user.Email, assignment.UserDisplayName),
-		State:       user.State,
-		RoleKeys:    compactStrings(roleKeys),
-	}, nil
-}
-
-type authorization struct {
-	ID              string
-	UserID          string
-	UserDisplayName string
-	ProjectID       string
-	OrganizationID  string
-	RoleKeys        []string
-	State           string
-}
-
-func (a authorization) Active() bool {
-	return a.State == "" || a.State == "STATE_ACTIVE"
-}
-
-type authorizationListRequest struct {
-	Pagination pagination       `json:"pagination"`
-	Filters    []map[string]any `json:"filters,omitempty"`
-}
-
-type authorizationListResponse struct {
-	Pagination struct {
-		TotalResult  flexibleInt `json:"totalResult"`
-		AppliedLimit flexibleInt `json:"appliedLimit"`
-	} `json:"pagination"`
-	Authorizations []struct {
-		ID           string `json:"id"`
-		User         entity `json:"user"`
-		Project      entity `json:"project"`
-		Organization entity `json:"organization"`
-		Roles        []role `json:"roles"`
-		State        string `json:"state"`
-	} `json:"authorizations"`
-}
-
-type entity struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	DisplayName string `json:"displayName"`
-}
-
-type role struct {
-	Key string `json:"key"`
-}
-
-func (c *Client) listAuthorizations(ctx context.Context, filters ...map[string]any) ([]authorization, error) {
-	assignments := []authorization{}
-	for {
-		var out authorizationListResponse
-		err := c.doJSON(ctx, http.MethodPost, "/zitadel.authorization.v2.AuthorizationService/ListAuthorizations", authorizationListRequest{
-			Pagination: pagination{Limit: authorizationPageLimit, Offset: len(assignments)},
-			Filters:    filters,
-		}, &out, true)
-		if err != nil {
-			return nil, fmt.Errorf("%w: list authorizations: %v", identity.ErrZitadelUnavailable, err)
-		}
-		page := authorizationPage(out)
-		assignments = append(assignments, page...)
-		if len(page) == 0 || out.Pagination.TotalResult.Int() <= len(assignments) {
-			return assignments, nil
-		}
-	}
-}
-
-func (c *Client) upsertAuthorization(ctx context.Context, orgID, projectID, userID string, roleKeys []string) (authorization, error) {
-	assignments, err := c.listAuthorizations(
-		ctx,
-		authorizationFilterInUserIDs(userID),
-		authorizationFilterProjectID(projectID),
-		authorizationFilterOrganizationID(orgID),
-	)
-	if err != nil {
-		return authorization{}, err
-	}
-	for _, assignment := range assignments {
-		if assignment.UserID == userID && assignment.ProjectID == projectID && assignment.OrganizationID == orgID {
-			return assignment, c.updateAuthorization(ctx, assignment.ID, roleKeys)
-		}
-	}
-	if err := c.createAuthorization(ctx, orgID, projectID, userID, roleKeys); err != nil {
-		return authorization{}, err
-	}
-	return authorization{UserID: userID, ProjectID: projectID, OrganizationID: orgID, RoleKeys: compactStrings(roleKeys)}, nil
-}
-
-func (c *Client) createAuthorization(ctx context.Context, orgID, projectID, userID string, roleKeys []string) error {
-	body := map[string]any{
-		"userId":         userID,
-		"projectId":      projectID,
-		"organizationId": orgID,
-		"roleKeys":       compactStrings(roleKeys),
-	}
-	if err := c.doJSON(ctx, http.MethodPost, "/zitadel.authorization.v2.AuthorizationService/CreateAuthorization", body, nil, true); err != nil {
-		return fmt.Errorf("%w: create authorization: %v", identity.ErrZitadelUnavailable, err)
-	}
-	return nil
-}
-
-func (c *Client) updateAuthorization(ctx context.Context, authorizationID string, roleKeys []string) error {
-	body := map[string]any{
-		"id":       authorizationID,
-		"roleKeys": compactStrings(roleKeys),
-	}
-	if err := c.doJSON(ctx, http.MethodPost, "/zitadel.authorization.v2.AuthorizationService/UpdateAuthorization", body, nil, true); err != nil {
-		return fmt.Errorf("%w: update authorization: %v", identity.ErrZitadelUnavailable, err)
-	}
-	return nil
 }
 
 type userSummary struct {
@@ -280,6 +126,9 @@ type machineBlock struct {
 }
 
 type usersResponse struct {
+	Details struct {
+		TotalResult flexibleInt `json:"totalResult"`
+	} `json:"details"`
 	Result []struct {
 		UserID             string        `json:"userId"`
 		State              string        `json:"state"`
@@ -289,6 +138,30 @@ type usersResponse struct {
 		Human              *humanBlock   `json:"human"`
 		Machine            *machineBlock `json:"machine"`
 	} `json:"result"`
+}
+
+func (c *Client) listUsersByOrganization(ctx context.Context, orgID string) (map[string]userSummary, error) {
+	orgID = strings.TrimSpace(orgID)
+	users := map[string]userSummary{}
+	for {
+		var out usersResponse
+		body := map[string]any{
+			"query": map[string]any{"limit": userPageLimit, "offset": len(users)},
+			"queries": []map[string]any{
+				{"organizationIdQuery": map[string]any{"organizationId": orgID}},
+			},
+		}
+		if err := c.doJSON(ctx, http.MethodPost, "/v2/users", body, &out); err != nil {
+			return nil, fmt.Errorf("%w: list organization users: %v", identity.ErrZitadelUnavailable, err)
+		}
+		page := userSummariesFromResponse(out)
+		for userID, user := range page {
+			users[userID] = user
+		}
+		if len(page) == 0 || len(page) < userPageLimit || (out.Details.TotalResult.Int() > 0 && out.Details.TotalResult.Int() <= len(users)) {
+			return users, nil
+		}
+	}
 }
 
 func (c *Client) listUsers(ctx context.Context, userIDs []string) (map[string]userSummary, error) {
@@ -303,9 +176,13 @@ func (c *Client) listUsers(ctx context.Context, userIDs []string) (map[string]us
 			{"inUserIdsQuery": map[string]any{"userIds": userIDs}},
 		},
 	}
-	if err := c.doJSON(ctx, http.MethodPost, "/v2/users", body, &out, false); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users", body, &out); err != nil {
 		return nil, fmt.Errorf("%w: list users: %v", identity.ErrZitadelUnavailable, err)
 	}
+	return userSummariesFromResponse(out), nil
+}
+
+func userSummariesFromResponse(out usersResponse) map[string]userSummary {
 	users := make(map[string]userSummary, len(out.Result))
 	for _, item := range out.Result {
 		loginName := item.PreferredLoginName
@@ -335,7 +212,7 @@ func (c *Client) listUsers(ctx context.Context, userIDs []string) (map[string]us
 		}
 		users[item.UserID] = summary
 	}
-	return users, nil
+	return users
 }
 
 type updateUserResponse struct {
@@ -377,7 +254,7 @@ func (c *Client) UpdateHumanProfile(ctx context.Context, subjectID string, input
 		},
 	}
 	var updated updateUserResponse
-	if err := c.doJSON(ctx, http.MethodPatch, "/v2/users/"+url.PathEscape(subjectID), body, &updated, false); err != nil {
+	if err := c.doJSON(ctx, http.MethodPatch, "/v2/users/"+url.PathEscape(subjectID), body, &updated); err != nil {
 		if zitadelResourceAlreadyGone(err) {
 			return identity.HumanProfile{}, fmt.Errorf("%w: human profile subject not found", identity.ErrMemberMissing)
 		}
@@ -428,7 +305,7 @@ func (c *Client) createHumanUser(ctx context.Context, orgID string, input identi
 		},
 	}
 	var out createUserResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out, false); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out); err != nil {
 		return "", fmt.Errorf("%w: create user: %v", identity.ErrZitadelUnavailable, err)
 	}
 	if out.ID != "" {
@@ -465,51 +342,7 @@ func (n flexibleInt) Int() int {
 	return int(n)
 }
 
-func authorizationFilterInUserIDs(userIDs ...string) map[string]any {
-	return map[string]any{
-		"inUserIds": map[string]any{
-			"ids": compactStrings(userIDs),
-		},
-	}
-}
-
-func authorizationFilterProjectID(projectID string) map[string]any {
-	return map[string]any{
-		"projectId": map[string]any{
-			"id": strings.TrimSpace(projectID),
-		},
-	}
-}
-
-func authorizationFilterOrganizationID(orgID string) map[string]any {
-	return map[string]any{
-		"organizationId": map[string]any{
-			"id": strings.TrimSpace(orgID),
-		},
-	}
-}
-
-func authorizationPage(out authorizationListResponse) []authorization {
-	assignments := make([]authorization, 0, len(out.Authorizations))
-	for _, item := range out.Authorizations {
-		assignment := authorization{
-			ID:              item.ID,
-			UserID:          item.User.ID,
-			UserDisplayName: firstNonEmpty(item.User.DisplayName, item.User.Name),
-			ProjectID:       item.Project.ID,
-			OrganizationID:  item.Organization.ID,
-			State:           item.State,
-			RoleKeys:        make([]string, 0, len(item.Roles)),
-		}
-		for _, role := range item.Roles {
-			assignment.RoleKeys = append(assignment.RoleKeys, role.Key)
-		}
-		assignments = append(assignments, assignment)
-	}
-	return assignments
-}
-
-func (c *Client) doJSON(ctx context.Context, method, path string, body any, out any, connect bool) error {
+func (c *Client) doJSON(ctx context.Context, method, path string, body any, out any) error {
 	if c == nil || c.baseURL == nil {
 		return errors.New("zitadel client is nil")
 	}
@@ -525,9 +358,6 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.adminToken)
 	req.Header.Set("Content-Type", "application/json")
-	if connect {
-		req.Header.Set("Connect-Protocol-Version", "1")
-	}
 	if c.hostHeader != "" {
 		req.Host = c.hostHeader
 	}
@@ -599,15 +429,6 @@ func compactStrings(values []string) []string {
 	return out
 }
 
-func keys[T any](values map[string]T) []string {
-	out := make([]string, 0, len(values))
-	for key := range values {
-		out = append(out, key)
-	}
-	sort.Strings(out)
-	return out
-}
-
 type serviceAccountKeyResponse struct {
 	KeyID      string `json:"keyId"`
 	ID         string `json:"id"`
@@ -635,7 +456,7 @@ func (c *Client) CreateServiceAccountCredential(ctx context.Context, orgID strin
 		},
 	}
 	var out createUserResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out, false); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out); err != nil {
 		return "", identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: create service account: %v", identity.ErrZitadelUnavailable, err)
 	}
 	subjectID := firstNonEmpty(out.ID, out.UserID)
@@ -680,7 +501,7 @@ func (c *Client) RemoveServiceAccountCredential(ctx context.Context, subjectID s
 	switch secret.AuthMethod {
 	case identity.APICredentialAuthMethodPrivateKeyJWT:
 		path := "/v2/users/" + url.PathEscape(subjectID) + "/keys/" + url.PathEscape(secret.ProviderKeyID)
-		if err := c.doJSON(ctx, http.MethodDelete, path, map[string]any{}, nil, false); err != nil {
+		if err := c.doJSON(ctx, http.MethodDelete, path, map[string]any{}, nil); err != nil {
 			if zitadelResourceAlreadyGone(err) {
 				return nil
 			}
@@ -688,7 +509,7 @@ func (c *Client) RemoveServiceAccountCredential(ctx context.Context, subjectID s
 		}
 	case identity.APICredentialAuthMethodClientSecret:
 		path := "/v2/users/" + url.PathEscape(subjectID) + "/secret"
-		if err := c.doJSON(ctx, http.MethodDelete, path, map[string]any{}, nil, false); err != nil {
+		if err := c.doJSON(ctx, http.MethodDelete, path, map[string]any{}, nil); err != nil {
 			if zitadelResourceAlreadyGone(err) {
 				return nil
 			}
@@ -705,7 +526,7 @@ func (c *Client) DeactivateServiceAccount(ctx context.Context, subjectID string)
 	if subjectID == "" {
 		return fmt.Errorf("%w: subject_id is required", identity.ErrInvalidInput)
 	}
-	if err := c.doJSON(ctx, http.MethodDelete, "/v2/users/"+url.PathEscape(subjectID), map[string]any{}, nil, false); err != nil {
+	if err := c.doJSON(ctx, http.MethodDelete, "/v2/users/"+url.PathEscape(subjectID), map[string]any{}, nil); err != nil {
 		if zitadelResourceAlreadyGone(err) {
 			return nil
 		}
@@ -720,7 +541,7 @@ func (c *Client) addServiceAccountKey(ctx context.Context, input identity.AddSer
 		"expirationDate": effectiveKeyExpiration(input.ExpiresAt).Format(time.RFC3339Nano),
 	}
 	var out serviceAccountKeyResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(input.SubjectID)+"/keys", body, &out, false); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(input.SubjectID)+"/keys", body, &out); err != nil {
 		return identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: add service account key: %v", identity.ErrZitadelUnavailable, err)
 	}
 	keyID := firstNonEmpty(out.KeyID, out.ID)
@@ -747,7 +568,7 @@ func effectiveKeyExpiration(expiresAt *time.Time) time.Time {
 
 func (c *Client) addServiceAccountSecret(ctx context.Context, input identity.AddServiceAccountCredentialInput) (identity.APICredentialIssuedMaterial, error) {
 	var out serviceAccountSecretResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(input.SubjectID)+"/secret", map[string]any{}, &out, false); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(input.SubjectID)+"/secret", map[string]any{}, &out); err != nil {
 		return identity.APICredentialIssuedMaterial{}, fmt.Errorf("%w: add service account secret: %v", identity.ErrZitadelUnavailable, err)
 	}
 	if strings.TrimSpace(out.ClientSecret) == "" {

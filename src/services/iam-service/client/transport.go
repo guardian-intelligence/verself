@@ -41,7 +41,9 @@ type ProblemDetail = string
 
 type ProblemType = string
 
-type ProviderOrgId = string
+type IdentityProviderOrgId = string
+
+type OrgId = string
 
 type RequestId = string
 
@@ -64,14 +66,14 @@ const (
 type Permissions []PermissionName
 
 type AuthorizeOperationResult struct {
-	OrgID       ProviderOrgId           `json:"org_id"`
+	OrgID       OrgId                   `json:"org_id"`
 	Subject     IAMAuthorizationSubject `json:"subject"`
 	Permissions Permissions             `json:"permissions"`
 	ZedToken    *ZedToken               `json:"zed_token,omitempty"`
 }
 
 type AuthorizeResourceResult struct {
-	OrgID               ProviderOrgId           `json:"org_id"`
+	OrgID               OrgId                   `json:"org_id"`
 	Subject             IAMAuthorizationSubject `json:"subject"`
 	OperationPermission *PermissionName         `json:"operation_permission,omitempty"`
 	Resource            IAMResourceRef          `json:"resource"`
@@ -111,14 +113,15 @@ type IAMResourceRef struct {
 }
 
 type OrganizationProfile struct {
-	OrgID          ProviderOrgId             `json:"org_id"`
-	Slug           OrgSlug                   `json:"slug"`
-	DisplayName    DisplayName               `json:"display_name"`
-	State          string                    `json:"state"`
-	Version        OrganizationVersion       `json:"version"`
-	UpdatedAt      string                    `json:"updated_at"`
-	RedirectedFrom *OrgSlug                  `json:"redirected_from,omitempty"`
-	ResourceName   *OrganizationResourceName `json:"resourceName,omitempty"`
+	IdentityProviderOrgID IdentityProviderOrgId     `json:"identity_provider_org_id"`
+	OrgID                 OrgId                     `json:"org_id"`
+	Slug                  OrgSlug                   `json:"slug"`
+	DisplayName           DisplayName               `json:"display_name"`
+	State                 string                    `json:"state"`
+	Version               OrganizationVersion       `json:"version"`
+	UpdatedAt             string                    `json:"updated_at"`
+	RedirectedFrom        *OrgSlug                  `json:"redirected_from,omitempty"`
+	ResourceName          *OrganizationResourceName `json:"resourceName,omitempty"`
 }
 
 type PermissionDeniedError struct {
@@ -189,7 +192,7 @@ type WriteResourceParentEdgeResult struct {
 }
 
 type AuthorizeOperationInputBody struct {
-	OrgID       ProviderOrgId           `json:"org_id"`
+	OrgID       OrgId                   `json:"org_id"`
 	Subject     IAMAuthorizationSubject `json:"subject"`
 	Permissions Permissions             `json:"permissions"`
 	MinZedToken *ZedToken               `json:"min_zed_token,omitempty"`
@@ -208,7 +211,7 @@ type AuthorizeOperationResponse struct {
 }
 
 type AuthorizeResourceInputBody struct {
-	OrgID               ProviderOrgId           `json:"org_id"`
+	OrgID               OrgId                   `json:"org_id"`
 	Subject             IAMAuthorizationSubject `json:"subject"`
 	OperationPermission *PermissionName         `json:"operation_permission,omitempty"`
 	Resource            IAMResourceRef          `json:"resource"`
@@ -229,9 +232,10 @@ type AuthorizeResourceResponse struct {
 }
 
 type ResolveOrganizationInputBody struct {
-	OrgID         *ProviderOrgId `json:"org_id,omitempty"`
-	RequireActive bool           `json:"require_active"`
-	Slug          *OrgSlug       `json:"slug,omitempty"`
+	OrgID                 *OrgId                 `json:"org_id,omitempty"`
+	IdentityProviderOrgID *IdentityProviderOrgId `json:"identity_provider_org_id,omitempty"`
+	RequireActive         bool                   `json:"require_active"`
+	Slug                  *OrgSlug               `json:"slug,omitempty"`
 }
 
 type ResolveOrganizationRequest struct {
@@ -266,7 +270,7 @@ type UpdateHumanProfileResponse struct {
 }
 
 type WriteResourceParentEdgeInputBody struct {
-	OrgID     ProviderOrgId         `json:"org_id"`
+	OrgID     OrgId                 `json:"org_id"`
 	Resource  IAMResourceRef        `json:"resource"`
 	Relation  AuthorizationRelation `json:"relation"`
 	Parent    IAMResourceRef        `json:"parent"`

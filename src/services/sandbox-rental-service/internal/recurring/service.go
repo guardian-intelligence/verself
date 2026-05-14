@@ -64,7 +64,7 @@ type WorkflowDispatcher interface {
 }
 
 type WorkflowDispatchRequest struct {
-	OrgID              uint64
+	OrgID              string
 	ActorID            string
 	ProjectID          uuid.UUID
 	SourceRepositoryID uuid.UUID
@@ -111,7 +111,7 @@ type CreateRequest struct {
 
 type ScheduleRecord struct {
 	ScheduleID         uuid.UUID
-	OrgID              uint64
+	OrgID              string
 	ActorID            string
 	DisplayName        string
 	IdempotencyKey     string
@@ -159,7 +159,7 @@ type DispatchRecord struct {
 
 type WorkflowInput struct {
 	ScheduleID         string
-	OrgID              uint64
+	OrgID              string
 	ActorID            string
 	ProjectID          string
 	SourceRepositoryID string
@@ -171,7 +171,7 @@ type WorkflowInput struct {
 
 type DispatchInput struct {
 	ScheduleID         string
-	OrgID              uint64
+	OrgID              string
 	ActorID            string
 	ProjectID          string
 	SourceRepositoryID string
@@ -275,7 +275,7 @@ func (s *Service) RegisterWorker(workerInstance worker.Worker) {
 	workerInstance.RegisterActivityWithOptions(s.DispatchExecutionActivity, activity.RegisterOptions{Name: ActivityName})
 }
 
-func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID string, req CreateRequest) (_ ScheduleRecord, err error) {
+func (s *Service) CreateSchedule(ctx context.Context, orgID string, actorID string, req CreateRequest) (_ ScheduleRecord, err error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution_schedule.create")
 	defer func() {
 		if err != nil {
@@ -329,7 +329,7 @@ func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID stri
 		Paused:  normalized.Paused,
 		Memo: map[string]interface{}{
 			"schedule_id":          scheduleID.String(),
-			"org_id":               fmt.Sprintf("%d", orgID),
+			"org_id":               orgID,
 			"project_id":           normalized.ProjectID.String(),
 			"temporal_schedule_id": temporalScheduleID,
 			"display_name":         normalized.DisplayName,
@@ -375,7 +375,7 @@ func (s *Service) CreateSchedule(ctx context.Context, orgID uint64, actorID stri
 	return row, nil
 }
 
-func (s *Service) ListSchedules(ctx context.Context, orgID uint64, filters ScheduleListFilters) (_ SchedulePage, err error) {
+func (s *Service) ListSchedules(ctx context.Context, orgID string, filters ScheduleListFilters) (_ SchedulePage, err error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution_schedule.list")
 	defer func() {
 		if err != nil {
@@ -430,11 +430,11 @@ func (s *Service) ListSchedules(ctx context.Context, orgID uint64, filters Sched
 		nextCursor = makeScheduleCursor(last.CreatedAt, last.ScheduleID)
 		out = out[:limit]
 	}
-	span.SetAttributes(attribute.String("verself.org_id", fmt.Sprintf("%d", orgID)), attribute.Int("sandbox.schedule_count", len(out)))
+	span.SetAttributes(attribute.String("verself.org_id", orgID), attribute.Int("sandbox.schedule_count", len(out)))
 	return SchedulePage{Schedules: out, NextCursor: nextCursor, Limit: limit}, nil
 }
 
-func (s *Service) GetSchedule(ctx context.Context, orgID uint64, scheduleID uuid.UUID) (_ *ScheduleRecord, err error) {
+func (s *Service) GetSchedule(ctx context.Context, orgID string, scheduleID uuid.UUID) (_ *ScheduleRecord, err error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution_schedule.read")
 	defer func() {
 		if err != nil {
@@ -455,7 +455,7 @@ func (s *Service) GetSchedule(ctx context.Context, orgID uint64, scheduleID uuid
 	return record, nil
 }
 
-func (s *Service) PauseSchedule(ctx context.Context, orgID uint64, scheduleID uuid.UUID) (_ *ScheduleRecord, err error) {
+func (s *Service) PauseSchedule(ctx context.Context, orgID string, scheduleID uuid.UUID) (_ *ScheduleRecord, err error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution_schedule.pause")
 	defer func() {
 		if err != nil {
@@ -483,7 +483,7 @@ func (s *Service) PauseSchedule(ctx context.Context, orgID uint64, scheduleID uu
 	return record, nil
 }
 
-func (s *Service) ResumeSchedule(ctx context.Context, orgID uint64, scheduleID uuid.UUID) (_ *ScheduleRecord, err error) {
+func (s *Service) ResumeSchedule(ctx context.Context, orgID string, scheduleID uuid.UUID) (_ *ScheduleRecord, err error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution_schedule.resume")
 	defer func() {
 		if err != nil {
@@ -642,7 +642,7 @@ func (s *Service) insertScheduleRow(ctx context.Context, record ScheduleRecord) 
 	return nil
 }
 
-func (s *Service) loadSchedule(ctx context.Context, orgID uint64, scheduleID uuid.UUID) (*ScheduleRecord, error) {
+func (s *Service) loadSchedule(ctx context.Context, orgID string, scheduleID uuid.UUID) (*ScheduleRecord, error) {
 	row, err := s.storeQueries().GetExecutionSchedule(ctx, store.GetExecutionScheduleParams{
 		OrgID:      dbOrgID(orgID),
 		ScheduleID: scheduleID,
@@ -660,7 +660,7 @@ func (s *Service) loadSchedule(ctx context.Context, orgID uint64, scheduleID uui
 	return &record, nil
 }
 
-func (s *Service) loadScheduleByIdempotencyKey(ctx context.Context, orgID uint64, idempotencyKey string) (*ScheduleRecord, error) {
+func (s *Service) loadScheduleByIdempotencyKey(ctx context.Context, orgID string, idempotencyKey string) (*ScheduleRecord, error) {
 	row, err := s.storeQueries().GetExecutionScheduleByIdempotencyKey(ctx, store.GetExecutionScheduleByIdempotencyKeyParams{
 		OrgID:          dbOrgID(orgID),
 		IdempotencyKey: strings.TrimSpace(idempotencyKey),

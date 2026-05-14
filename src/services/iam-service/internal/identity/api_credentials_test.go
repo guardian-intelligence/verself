@@ -7,44 +7,25 @@ import (
 	"time"
 )
 
-func TestCreateAPICredentialValidatesRequestedPermissions(t *testing.T) {
-	defaults := DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())
+func TestCreateAPICredentialCreatesServiceAccountCredential(t *testing.T) {
+	now := time.Unix(1700000000, 0).UTC()
 	svc := &Service{
-		Store:              &apiCredentialTestStore{capabilities: defaults},
-		Directory:          &apiCredentialTestDirectory{material: testIssuedMaterial(APICredentialAuthMethodPrivateKeyJWT, "client-1")},
-		AuthorizationGraph: apiCredentialTestAuthz{},
-		ProjectID:          "identity-project",
-		Now:                func() time.Time { return time.Unix(1700000000, 0).UTC() },
-	}
-
-	_, err := svc.CreateAPICredential(context.Background(), Principal{
-		Subject: "member-1",
-		OrgID:   "42",
-		Roles:   []string{RoleMember},
-	}, CreateAPICredentialRequest{
-		DisplayName: "credential mint",
-		Permissions: []string{PermissionAPICredentialsCreate},
-	})
-	if !errors.Is(err, ErrInvalidCapabilities) {
-		t.Fatalf("member should not mint api_credentials:create, got %v", err)
+		Store:     &apiCredentialTestStore{},
+		Directory: &apiCredentialTestDirectory{material: testIssuedMaterial(APICredentialAuthMethodPrivateKeyJWT, "client-1")},
+		Now:       func() time.Time { return now },
 	}
 
 	result, err := svc.CreateAPICredential(context.Background(), Principal{
 		Subject: "owner-1",
-		OrgID:   "42",
-		Roles:   []string{RoleOwner},
+		OrgID:   "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
 	}, CreateAPICredentialRequest{
 		DisplayName: "sandbox automation",
-		Permissions: []string{PermissionSandboxExecutionScheduleWrite, PermissionSandboxLogsRead},
 	})
 	if err != nil {
-		t.Fatalf("owner should mint sandbox permissions: %v", err)
+		t.Fatalf("CreateAPICredential: %v", err)
 	}
-	if result.Credential.OrgID != "42" || result.Credential.SubjectID != "subject-1" || result.Credential.ServiceAccountID == "" {
+	if result.Credential.OrgID != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" || result.Credential.SubjectID != "subject-1" || result.Credential.ServiceAccountID == "" {
 		t.Fatalf("unexpected credential: %#v", result.Credential)
-	}
-	if result.Credential.PolicyVersionAtIssue != 0 {
-		t.Fatalf("unexpected policy version at issue: %d", result.Credential.PolicyVersionAtIssue)
 	}
 	if result.IssuedMaterial.KeyContent == "" || result.IssuedMaterial.Fingerprint == "" {
 		t.Fatalf("issued material was not returned once: %#v", result.IssuedMaterial)
@@ -55,23 +36,16 @@ func TestCreateAPICredentialCleansUpServiceAccountWhenStoreFails(t *testing.T) {
 	storeErr := errors.New("store failed")
 	directory := &apiCredentialTestDirectory{material: testIssuedMaterial(APICredentialAuthMethodPrivateKeyJWT, "client-1")}
 	svc := &Service{
-		Store: &apiCredentialTestStore{
-			capabilities: DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC()),
-			createErr:    storeErr,
-		},
-		Directory:          directory,
-		AuthorizationGraph: apiCredentialTestAuthz{},
-		ProjectID:          "identity-project",
-		Now:                func() time.Time { return time.Unix(1700000000, 0).UTC() },
+		Store:     &apiCredentialTestStore{createErr: storeErr},
+		Directory: directory,
+		Now:       func() time.Time { return time.Unix(1700000000, 0).UTC() },
 	}
 
 	_, err := svc.CreateAPICredential(context.Background(), Principal{
 		Subject: "owner-1",
-		OrgID:   "42",
-		Roles:   []string{RoleOwner},
+		OrgID:   "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
 	}, CreateAPICredentialRequest{
 		DisplayName: "sandbox automation",
-		Permissions: []string{PermissionSandboxExecutionScheduleWrite},
 	})
 	if !errors.Is(err, storeErr) {
 		t.Fatalf("expected store error, got %v", err)
@@ -99,19 +73,18 @@ func testIssuedMaterial(method APICredentialAuthMethod, clientID string) APICred
 }
 
 type apiCredentialTestStore struct {
-	capabilities MemberCapabilitiesDocument
-	created      APICredential
-	createErr    error
+	created   APICredential
+	createErr error
 }
 
 func (s *apiCredentialTestStore) GetOrganizationProfile(context.Context, string, string) (OrganizationProfile, error) {
-	return OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
+	return OrganizationProfile{OrgID: "org_01J8QJ4P1R7S9W2X5M6N8P0Q2", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (s *apiCredentialTestStore) ListOrganizationMetadataByOrgIDs(_ context.Context, orgIDs []string) ([]OrganizationMetadata, error) {
 	out := make([]OrganizationMetadata, 0, len(orgIDs))
 	for _, orgID := range orgIDs {
-		out = append(out, OrganizationMetadata{OrgID: orgID, IdentityProviderOrgID: orgID, DisplayName: "Acme", Slug: "acme", Version: 1, OrgACLVersion: 1})
+		out = append(out, OrganizationMetadata{OrgID: orgID, IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", Version: 1})
 	}
 	return out, nil
 }
@@ -119,7 +92,7 @@ func (s *apiCredentialTestStore) ListOrganizationMetadataByOrgIDs(_ context.Cont
 func (s *apiCredentialTestStore) ListOrganizationMetadataByProviderOrgIDs(_ context.Context, providerOrgIDs []string) ([]OrganizationMetadata, error) {
 	out := make([]OrganizationMetadata, 0, len(providerOrgIDs))
 	for _, providerOrgID := range providerOrgIDs {
-		out = append(out, OrganizationMetadata{OrgID: providerOrgID, IdentityProviderOrgID: providerOrgID, DisplayName: "Acme", Slug: "acme", Version: 1, OrgACLVersion: 1})
+		out = append(out, OrganizationMetadata{OrgID: "org_01J8QJ4P1R7S9W2X5M6N8P0Q2", IdentityProviderOrgID: providerOrgID, DisplayName: "Acme", Slug: "acme", Version: 1})
 	}
 	return out, nil
 }
@@ -129,23 +102,7 @@ func (s *apiCredentialTestStore) UpdateOrganizationProfile(context.Context, Prin
 }
 
 func (s *apiCredentialTestStore) ResolveOrganizationProfile(context.Context, ResolveOrganizationRequest) (OrganizationProfile, error) {
-	return OrganizationProfile{OrgID: "42", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
-}
-
-func (s *apiCredentialTestStore) GetMemberCapabilities(context.Context, string, string) (MemberCapabilitiesDocument, error) {
-	return s.capabilities, nil
-}
-
-func (s *apiCredentialTestStore) PutMemberCapabilities(context.Context, MemberCapabilitiesDocument) (MemberCapabilitiesDocument, error) {
-	return MemberCapabilitiesDocument{}, nil
-}
-
-func (s *apiCredentialTestStore) GetOrgACLState(context.Context, string, string) (OrgACLState, error) {
-	return OrgACLState{Version: 1}, nil
-}
-
-func (s *apiCredentialTestStore) UpdateMemberRolesCommand(context.Context, UpdateMemberRolesCommand, Directory, string) (UpdateMemberRolesResult, error) {
-	return UpdateMemberRolesResult{}, nil
+	return OrganizationProfile{OrgID: "org_01J8QJ4P1R7S9W2X5M6N8P0Q2", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (s *apiCredentialTestStore) CreateServiceAccount(_ context.Context, account ServiceAccount, credential APICredential, secret APICredentialSecret) (ServiceAccount, APICredential, error) {
@@ -155,7 +112,6 @@ func (s *apiCredentialTestStore) CreateServiceAccount(_ context.Context, account
 	account.SubjectID = credential.SubjectID
 	account.ClientID = credential.ClientID
 	credential.Fingerprint = secret.Fingerprint
-	credential.Permissions = append([]string(nil), credential.Permissions...)
 	s.created = credential
 	return account, credential, nil
 }
@@ -177,7 +133,6 @@ func (s *apiCredentialTestStore) CreateAPICredential(_ context.Context, credenti
 		return APICredential{}, s.createErr
 	}
 	credential.Fingerprint = secret.Fingerprint
-	credential.Permissions = append([]string(nil), credential.Permissions...)
 	s.created = credential
 	return credential, nil
 }
@@ -211,16 +166,12 @@ type apiCredentialTestDirectory struct {
 	deactivatedSubjects []string
 }
 
-func (d *apiCredentialTestDirectory) ListMembers(context.Context, string, string) ([]Member, error) {
+func (d *apiCredentialTestDirectory) ListMembers(context.Context, string) ([]Member, error) {
 	return nil, nil
 }
 
-func (d *apiCredentialTestDirectory) InviteMember(context.Context, string, string, InviteMemberRequest) (InviteMemberResult, error) {
+func (d *apiCredentialTestDirectory) InviteMember(context.Context, string, InviteMemberRequest) (InviteMemberResult, error) {
 	return InviteMemberResult{}, nil
-}
-
-func (d *apiCredentialTestDirectory) UpdateMemberRoles(context.Context, string, string, string, []string) (Member, error) {
-	return Member{}, nil
 }
 
 func (d *apiCredentialTestDirectory) UpdateHumanProfile(context.Context, string, HumanProfileUpdate) (HumanProfile, error) {
@@ -244,29 +195,4 @@ func (d *apiCredentialTestDirectory) RemoveServiceAccountCredential(context.Cont
 func (d *apiCredentialTestDirectory) DeactivateServiceAccount(_ context.Context, subjectID string) error {
 	d.deactivatedSubjects = append(d.deactivatedSubjects, subjectID)
 	return nil
-}
-
-type apiCredentialTestAuthz struct{}
-
-func (apiCredentialTestAuthz) ReconcileOrganizationRoles(context.Context, string, []Member, MemberCapabilitiesDocument, string) (string, error) {
-	return "", nil
-}
-
-func (apiCredentialTestAuthz) ReconcileMemberRoles(context.Context, string, Member, string) (string, error) {
-	return "", nil
-}
-
-func (apiCredentialTestAuthz) ReconcileCapabilityGrants(context.Context, string, MemberCapabilitiesDocument, string) (string, error) {
-	return "", nil
-}
-
-func (apiCredentialTestAuthz) ReconcileServiceAccountPermissions(context.Context, string, string, []string, string) (string, error) {
-	return "", nil
-}
-
-func (apiCredentialTestAuthz) TestOrganizationPermissions(_ context.Context, _ string, _ AuthorizationSubject, permissions []string, _ string) ([]string, string, error) {
-	if len(permissions) == 1 && permissions[0] == PermissionAPICredentialsCreate {
-		return nil, "", nil
-	}
-	return append([]string(nil), permissions...), "", nil
 }

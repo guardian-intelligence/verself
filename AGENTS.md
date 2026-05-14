@@ -193,7 +193,7 @@ See `docs/product-direction.md`.
 
 Service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
 
-- See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, three-role (owner/admin/member), API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
+- See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, SpiceDB-backed IAM policies, API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
 - Verself Go service clients and Go SDK transport cores are hand-maintained transport layers for canonical Smithy contracts under `src/smithy/models/verself`. OpenAPI projections are generated compatibility artifacts, and frontend SDK packages may generate transport code from public projections. Services must not depend on curated SDKs. If a service API shape is missing, add the Smithy operation/shape/traits and update the relevant transport wrapper instead of bypassing the contract.
 - Services can be in any language as long as they implement the Smithy-modeled HTTP bindings and generated compatibility projections.
 - Go service code uses sqlc for type safe queries. Avoid reading code in generated directories.
@@ -312,4 +312,3 @@ Planned Upcoming Projects
 ## Adding a site
 
 Site names are `prod`, `beta`, `gamma`, or `dev-<operator>`. The apex domain, Pomerium route name, Cloudflare zone scope, and allowed Stripe environment are site-level facts in `src/host/sites/<site>/vars.yml`.
-

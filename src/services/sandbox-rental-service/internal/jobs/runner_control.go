@@ -18,7 +18,7 @@ import (
 
 type RunnerRepositoryRegistration struct {
 	Provider             string
-	OrgID                uint64
+	OrgID                string
 	ProjectID            uuid.UUID
 	SourceRepositoryID   uuid.UUID
 	ProviderOwner        string

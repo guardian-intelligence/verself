@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,17 +23,10 @@ var identityKey contextKey
 
 // Identity is attached to the request context after successful validation.
 type Identity struct {
-	Subject         string           // Zitadel user or service account ID.
-	OrgID           string           // Explicitly selected organization ID for the target service token.
-	Roles           []string         // Roles from the target service project claim for OrgID.
-	RoleAssignments []RoleAssignment // Structured target-project role assignments.
-	Email           string           // Email, if present in the token.
-	Raw             map[string]any   // All claims, for extensibility.
-}
-
-type RoleAssignment struct {
-	Role           string
-	OrganizationID string
+	Subject string         // Zitadel user or service account ID.
+	OrgID   string         // Explicitly selected organization ID for the target service token.
+	Email   string         // Email, if present in the token.
+	Raw     map[string]any // All claims, for extensibility.
 }
 
 // Config for the middleware.
@@ -98,21 +90,16 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 				return
 			}
 
-			roleAssignments := extractRoleAssignments(rawClaims, cache.cfg.Audience)
-			orgID := extractOrgID(rawClaims, roleAssignments)
+			orgID := extractOrgID(rawClaims)
 			identity := &Identity{
-				Subject:         idToken.Subject,
-				OrgID:           orgID,
-				Roles:           rolesFromAssignmentsForOrg(roleAssignments, orgID),
-				RoleAssignments: roleAssignments,
-				Email:           stringClaim(rawClaims, "email"),
-				Raw:             rawClaims,
+				Subject: idToken.Subject,
+				OrgID:   orgID,
+				Email:   stringClaim(rawClaims, "email"),
+				Raw:     rawClaims,
 			}
 			trace.SpanFromContext(r.Context()).SetAttributes(
 				attribute.String("auth.audience", cache.cfg.Audience),
 				attribute.String("auth.selected_org_id", orgID),
-				attribute.Int("auth.role_assignment_count", len(roleAssignments)),
-				attribute.Int("auth.role_assignment_org_count", roleAssignmentOrgCount(roleAssignments)),
 			)
 
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey, identity)))
@@ -207,110 +194,17 @@ func stringClaim(claims map[string]any, key string) string {
 	return text
 }
 
-func extractOrgID(claims map[string]any, assignments []RoleAssignment) string {
+func extractOrgID(claims map[string]any) string {
+	if value := stringClaim(claims, "org_id"); value != "" {
+		return value
+	}
 	if value := stringClaim(claims, "urn:zitadel:iam:org:id"); value != "" {
 		return value
 	}
-	if orgID, ok := uniqueAssignmentOrgID(assignments); ok {
-		return orgID
-	}
-	if len(assignments) > 0 {
-		return ""
-	}
-	for _, key := range []string{"urn:zitadel:iam:user:resourceowner:id", "resource_owner", "org_id"} {
+	for _, key := range []string{"urn:zitadel:iam:user:resourceowner:id", "resource_owner"} {
 		if value := stringClaim(claims, key); value != "" {
 			return value
 		}
 	}
 	return ""
-}
-
-func uniqueAssignmentOrgID(assignments []RoleAssignment) (string, bool) {
-	var orgID string
-	for _, assignment := range assignments {
-		if assignment.OrganizationID == "" {
-			continue
-		}
-		if orgID == "" {
-			orgID = assignment.OrganizationID
-			continue
-		}
-		if orgID != assignment.OrganizationID {
-			return "", false
-		}
-	}
-	return orgID, orgID != ""
-}
-
-func roleAssignmentOrgCount(assignments []RoleAssignment) int {
-	seen := map[string]struct{}{}
-	for _, assignment := range assignments {
-		if assignment.OrganizationID != "" {
-			seen[assignment.OrganizationID] = struct{}{}
-		}
-	}
-	return len(seen)
-}
-
-func rolesFromAssignmentsForOrg(assignments []RoleAssignment, orgID string) []string {
-	roleSet := map[string]struct{}{}
-	for _, assignment := range assignments {
-		if assignment.OrganizationID == orgID && assignment.Role != "" {
-			roleSet[assignment.Role] = struct{}{}
-		}
-	}
-	if len(roleSet) == 0 {
-		return nil
-	}
-
-	roles := make([]string, 0, len(roleSet))
-	for role := range roleSet {
-		roles = append(roles, role)
-	}
-	sort.Strings(roles)
-	return roles
-}
-
-func extractRoleAssignments(claims map[string]any, projectID string) []RoleAssignment {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil
-	}
-	assignments := collectRoleAssignments(claims["urn:zitadel:iam:org:project:"+projectID+":roles"])
-
-	if len(assignments) == 0 {
-		return nil
-	}
-
-	sort.Slice(assignments, func(i, j int) bool {
-		left := assignments[i]
-		right := assignments[j]
-		if left.OrganizationID != right.OrganizationID {
-			return left.OrganizationID < right.OrganizationID
-		}
-		return left.Role < right.Role
-	})
-	return assignments
-}
-
-func collectRoleAssignments(value any) []RoleAssignment {
-	roleMap, ok := value.(map[string]any)
-	if !ok {
-		return nil
-	}
-
-	assignments := make([]RoleAssignment, 0, len(roleMap))
-	for role, organizationsValue := range roleMap {
-		organizations, ok := organizationsValue.(map[string]any)
-		if !ok {
-			continue
-		}
-		for organizationID := range organizations {
-			assignments = append(assignments, RoleAssignment{
-				Role:           role,
-				OrganizationID: organizationID,
-			})
-		}
-	}
-	return assignments
 }

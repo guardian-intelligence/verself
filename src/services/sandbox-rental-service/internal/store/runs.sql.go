@@ -113,13 +113,13 @@ WHERE e.org_id = $1
 `
 
 type GetRunParams struct {
-	OrgID       int64
+	OrgID       string
 	ExecutionID uuid.UUID
 }
 
 type GetRunRow struct {
 	ExecutionID            uuid.UUID
-	OrgID                  int64
+	OrgID                  string
 	ActorID                string
 	Kind                   string
 	SourceKind             string
@@ -401,7 +401,7 @@ LIMIT $11
 `
 
 type ListRunsParams struct {
-	OrgID             int64
+	OrgID             string
 	SourceKind        string
 	Status            string
 	Repository        string
@@ -416,7 +416,7 @@ type ListRunsParams struct {
 
 type ListRunsRow struct {
 	ExecutionID            uuid.UUID
-	OrgID                  int64
+	OrgID                  string
 	ActorID                string
 	Kind                   string
 	SourceKind             string

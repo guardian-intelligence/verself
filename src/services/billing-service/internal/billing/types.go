@@ -7,7 +7,7 @@ import (
 	"github.com/verself/billing-service/internal/billing/ledger"
 )
 
-type OrgID uint64
+type OrgID string
 
 type Config struct {
 	StripeSecretKey           string

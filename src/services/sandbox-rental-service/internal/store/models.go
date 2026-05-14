@@ -11,7 +11,7 @@ import (
 
 type ExecutionSchedule struct {
 	ScheduleID         uuid.UUID
-	OrgID              int64
+	OrgID              string
 	ActorID            string
 	DisplayName        string
 	IdempotencyKey     string

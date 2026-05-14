@@ -140,7 +140,7 @@ INSERT INTO source_webhook_deliveries (
     $4,
     $5,
     $6,
-    sqlc.narg(resolved_org_id),
+    sqlc.arg(resolved_org_id),
     sqlc.narg(resolved_project_id),
     sqlc.narg(resolved_repo_id),
     $7,

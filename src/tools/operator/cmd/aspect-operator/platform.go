@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -84,8 +83,6 @@ type platformMainVars struct {
 type platformConfig struct {
 	OrgIDText            string   `json:"org_id"`
 	PublicOrgIDText      string   `json:"public_org_id"`
-	OrgID                uint64   `json:"-"`
-	OrgIDPG              int64    `json:"-"`
 	OrganizationName     string   `json:"organization_name"`
 	CompanySlug          string   `json:"company_slug"`
 	CompanyDisplayName   string   `json:"company_display_name"`
@@ -320,12 +317,6 @@ func (cfg *platformConfig) validate() error {
 	if !platformPublicOrgIDRE.MatchString(cfg.PublicOrgIDText) {
 		return fmt.Errorf("platform config: platform_public_org_id must match %s", platformPublicOrgIDRE.String())
 	}
-	orgID, err := strconv.ParseUint(cfg.OrgIDText, 10, 64)
-	if err != nil || orgID == 0 || orgID > uint64(math.MaxInt64) {
-		return fmt.Errorf("platform config: platform_org_id must be a positive PostgreSQL BIGINT-compatible uint")
-	}
-	cfg.OrgID = orgID
-	cfg.OrgIDPG = int64(orgID)
 	if !platformSlugRE.MatchString(cfg.CompanySlug) {
 		return fmt.Errorf("platform config: platform_company_slug must match %s", platformSlugRE.String())
 	}
@@ -488,8 +479,8 @@ func (r *platformRunner) check() (platformReport, error) {
 }
 
 func (r *platformRunner) ids() platformIDs {
-	projectID := stableUUID("project", r.cfg.OrgIDText, r.cfg.RepoSlug)
-	repoID := stableUUID("source-repository", r.cfg.OrgIDText, projectID.String())
+	projectID := stableUUID("project", r.cfg.PublicOrgIDText, r.cfg.RepoSlug)
+	repoID := stableUUID("source-repository", r.cfg.PublicOrgIDText, projectID.String())
 	backendID := stableUUID("source-repository-backend", repoID.String(), "forgejo")
 	return platformIDs{ProjectID: projectID, RepoID: repoID, BackendID: backendID}
 }
@@ -598,7 +589,7 @@ func (r *platformRunner) ensureProject() error {
 	return r.withSpan("platform.projects.ensure", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "projects_service"),
-		attribute.Int64("verself.org_id", r.cfg.OrgIDPG),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
 		attribute.String("verself.project_slug", r.cfg.RepoSlug),
 	}, func(ctx context.Context) error {
 		conn, err := r.openPG(ctx, "projects_service")
@@ -618,7 +609,7 @@ func (r *platformRunner) ensureProject() error {
 SELECT slug, display_name, description, state
 FROM projects
 WHERE org_id = $1 AND project_id = $2
-FOR UPDATE`, r.cfg.OrgIDPG, ids.ProjectID).Scan(&existingSlug, &displayName, &description, &state)
+FOR UPDATE`, r.cfg.PublicOrgIDText, ids.ProjectID).Scan(&existingSlug, &displayName, &description, &state)
 		now := time.Now().UTC()
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
@@ -626,7 +617,7 @@ FOR UPDATE`, r.cfg.OrgIDPG, ids.ProjectID).Scan(&existingSlug, &displayName, &de
 			conflictErr := tx.QueryRow(ctx, `
 SELECT project_id
 FROM projects
-WHERE org_id = $1 AND slug = $2`, r.cfg.OrgIDPG, r.cfg.RepoSlug).Scan(&conflicting)
+WHERE org_id = $1 AND slug = $2`, r.cfg.PublicOrgIDText, r.cfg.RepoSlug).Scan(&conflicting)
 			if conflictErr == nil {
 				return fmt.Errorf("project: slug %q is already owned by non-deterministic project_id %s", r.cfg.RepoSlug, conflicting)
 			}
@@ -636,7 +627,7 @@ WHERE org_id = $1 AND slug = $2`, r.cfg.OrgIDPG, r.cfg.RepoSlug).Scan(&conflicti
 			if _, err := tx.Exec(ctx, `
 INSERT INTO projects (project_id, org_id, slug, display_name, description, state, version, created_by, updated_by, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, 'active', 1, $6, $6, $7, $7)`,
-				ids.ProjectID, r.cfg.OrgIDPG, r.cfg.RepoSlug, r.cfg.RepoDisplayName, r.cfg.RepoDescription, platformActor, now); err != nil {
+				ids.ProjectID, r.cfg.PublicOrgIDText, r.cfg.RepoSlug, r.cfg.RepoDisplayName, r.cfg.RepoDescription, platformActor, now); err != nil {
 				return fmt.Errorf("project: insert: %w", err)
 			}
 			r.markChanged("projects.project.created")
@@ -647,7 +638,7 @@ VALUES ($1, $2, $3, $4, $5, 'active', 1, $6, $6, $7, $7)`,
 				if _, err := tx.Exec(ctx, `
 INSERT INTO project_slug_redirects (org_id, slug, project_id, created_by, created_at)
 VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT DO NOTHING`, r.cfg.OrgIDPG, existingSlug, ids.ProjectID, platformActor, now); err != nil {
+ON CONFLICT DO NOTHING`, r.cfg.PublicOrgIDText, existingSlug, ids.ProjectID, platformActor, now); err != nil {
 					return fmt.Errorf("project: insert slug redirect: %w", err)
 				}
 			}
@@ -663,7 +654,7 @@ SET slug = $3,
     updated_at = $7,
     archived_at = NULL
 WHERE org_id = $1 AND project_id = $2`,
-					r.cfg.OrgIDPG, ids.ProjectID, r.cfg.RepoSlug, r.cfg.RepoDisplayName, r.cfg.RepoDescription, platformActor, now); err != nil {
+					r.cfg.PublicOrgIDText, ids.ProjectID, r.cfg.RepoSlug, r.cfg.RepoDisplayName, r.cfg.RepoDescription, platformActor, now); err != nil {
 					return fmt.Errorf("project: update: %w", err)
 				}
 				r.markChanged("projects.project.updated")
@@ -683,7 +674,7 @@ INSERT INTO project_events (event_id, org_id, project_id, environment_id, event_
 VALUES ($1, $2, $3, NULL, 'project.platform_seeded', $4, $5, $6, '', $7)
 ON CONFLICT DO NOTHING`,
 			stableUUID("project-event", ids.ProjectID.String(), "platform-seeded"),
-			r.cfg.OrgIDPG,
+			r.cfg.PublicOrgIDText,
 			ids.ProjectID,
 			platformActor,
 			payload,
@@ -704,13 +695,13 @@ func (r *platformRunner) ensureProjectEnvironment(ctx context.Context, tx pgx.Tx
 SELECT slug, display_name, kind, state
 FROM project_environments
 WHERE org_id = $1 AND project_id = $2 AND environment_id = $3
-FOR UPDATE`, r.cfg.OrgIDPG, projectID, env.ID).Scan(&existingSlug, &displayName, &kind, &state)
+FOR UPDATE`, r.cfg.PublicOrgIDText, projectID, env.ID).Scan(&existingSlug, &displayName, &kind, &state)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		if _, err := tx.Exec(ctx, `
 INSERT INTO project_environments (environment_id, project_id, org_id, slug, display_name, kind, state, protection_policy, version, created_by, updated_by, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, 'active', '{}'::jsonb, 1, $7, $7, $8, $8)`,
-			env.ID, projectID, r.cfg.OrgIDPG, env.Slug, env.DisplayName, env.Kind, platformActor, now); err != nil {
+			env.ID, projectID, r.cfg.PublicOrgIDText, env.Slug, env.DisplayName, env.Kind, platformActor, now); err != nil {
 			return fmt.Errorf("project environment %s: insert: %w", env.Slug, err)
 		}
 		r.markChanged("projects.environment." + env.Slug + ".created")
@@ -730,7 +721,7 @@ SET slug = $4,
     updated_at = $8,
     archived_at = NULL
 WHERE org_id = $1 AND project_id = $2 AND environment_id = $3`,
-			r.cfg.OrgIDPG, projectID, env.ID, env.Slug, env.DisplayName, env.Kind, platformActor, now); err != nil {
+			r.cfg.PublicOrgIDText, projectID, env.ID, env.Slug, env.DisplayName, env.Kind, platformActor, now); err != nil {
 			return fmt.Errorf("project environment %s: update: %w", env.Slug, err)
 		}
 		r.markChanged("projects.environment." + env.Slug + ".updated")
@@ -825,7 +816,7 @@ func (r *platformRunner) ensureSourceRepository(forgejoRepoID string) error {
 	return r.withSpan("platform.source.ensure", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "source_code_hosting"),
-		attribute.Int64("verself.org_id", r.cfg.OrgIDPG),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
 		attribute.String("source.backend", "forgejo"),
 		attribute.String("source.backend_owner", r.cfg.CompanySlug),
 		attribute.String("source.backend_repo", r.cfg.RepoSlug),
@@ -849,14 +840,14 @@ func (r *platformRunner) ensureSourceRepository(forgejoRepoID string) error {
 SELECT project_id, name, slug, description, default_branch, visibility, state
 FROM source_repositories
 WHERE org_id = $1 AND repo_id = $2
-FOR UPDATE`, r.cfg.OrgIDPG, ids.RepoID).Scan(&existingProjectID, &name, &slug, &description, &defaultBranch, &visibility, &state)
+FOR UPDATE`, r.cfg.PublicOrgIDText, ids.RepoID).Scan(&existingProjectID, &name, &slug, &description, &defaultBranch, &visibility, &state)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			var conflicting uuid.UUID
 			conflictErr := tx.QueryRow(ctx, `
 SELECT repo_id
 FROM source_repositories
-WHERE org_id = $1 AND project_id = $2`, r.cfg.OrgIDPG, ids.ProjectID).Scan(&conflicting)
+WHERE org_id = $1 AND project_id = $2`, r.cfg.PublicOrgIDText, ids.ProjectID).Scan(&conflicting)
 			if conflictErr == nil {
 				return fmt.Errorf("source repository: org/project is already owned by non-deterministic repo_id %s", conflicting)
 			}
@@ -866,7 +857,7 @@ WHERE org_id = $1 AND project_id = $2`, r.cfg.OrgIDPG, ids.ProjectID).Scan(&conf
 			if _, err := tx.Exec(ctx, `
 INSERT INTO source_repositories (repo_id, org_id, project_id, created_by, name, slug, description, default_branch, visibility, state, version, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'private', 'active', 1, $9, $9)`,
-				ids.RepoID, r.cfg.OrgIDPG, ids.ProjectID, platformActor, r.cfg.RepoDisplayName, r.cfg.RepoSlug, r.cfg.RepoDescription, platformDefaultBranch, now); err != nil {
+				ids.RepoID, r.cfg.PublicOrgIDText, ids.ProjectID, platformActor, r.cfg.RepoDisplayName, r.cfg.RepoSlug, r.cfg.RepoDescription, platformDefaultBranch, now); err != nil {
 				return fmt.Errorf("source repository: insert: %w", err)
 			}
 			r.markChanged("source.repository.created")
@@ -887,7 +878,7 @@ SET project_id = $3,
     updated_at = $8,
     deleted_at = NULL
 WHERE org_id = $1 AND repo_id = $2`,
-					r.cfg.OrgIDPG, ids.RepoID, ids.ProjectID, r.cfg.RepoDisplayName, r.cfg.RepoSlug, r.cfg.RepoDescription, platformDefaultBranch, now); err != nil {
+					r.cfg.PublicOrgIDText, ids.RepoID, ids.ProjectID, r.cfg.RepoDisplayName, r.cfg.RepoSlug, r.cfg.RepoDescription, platformDefaultBranch, now); err != nil {
 					return fmt.Errorf("source repository: update: %w", err)
 				}
 				r.markChanged("source.repository.updated")
@@ -912,7 +903,7 @@ INSERT INTO source_events (event_id, org_id, actor_id, repo_id, project_id, even
 VALUES ($1, $2, $3, $4, $5, 'source.platform_repository.seeded', 'allowed', $6, $7, $8)
 ON CONFLICT DO NOTHING`,
 			stableUUID("source-event", ids.RepoID.String(), "platform-seeded"),
-			r.cfg.OrgIDPG,
+			r.cfg.PublicOrgIDText,
 			platformActor,
 			ids.RepoID,
 			ids.ProjectID,
@@ -990,7 +981,7 @@ func (r *platformRunner) ensureSandboxRunnerRepository(forgejoRepoID int64) erro
 	return r.withSpan("platform.sandbox_runner.ensure", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "sandbox_rental"),
-		attribute.Int64("verself.org_id", r.cfg.OrgIDPG),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
 		attribute.Int64("forgejo.repository_id", forgejoRepoID),
 	}, func(ctx context.Context) error {
 		conn, err := r.openPG(ctx, "sandbox_rental")
@@ -1016,7 +1007,7 @@ ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
     active = true,
     updated_at = EXCLUDED.updated_at`,
 			forgejoRepoID,
-			r.cfg.OrgIDPG,
+			r.cfg.PublicOrgIDText,
 			ids.ProjectID,
 			ids.RepoID,
 			r.cfg.CompanySlug,
@@ -1133,7 +1124,7 @@ func (r *platformRunner) checkProject(issues *[]string) platformBoundaryRow {
 	err := r.withSpan("platform.projects.check", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "projects_service"),
-		attribute.Int64("verself.org_id", r.cfg.OrgIDPG),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
 		attribute.String("verself.project_slug", r.cfg.RepoSlug),
 	}, func(ctx context.Context) error {
 		conn, err := r.openPG(ctx, "projects_service")
@@ -1146,7 +1137,7 @@ func (r *platformRunner) checkProject(issues *[]string) platformBoundaryRow {
 		err = conn.QueryRow(ctx, `
 SELECT slug, display_name, description, state
 FROM projects
-WHERE org_id = $1 AND project_id = $2`, r.cfg.OrgIDPG, ids.ProjectID).Scan(&slug, &displayName, &description, &state)
+WHERE org_id = $1 AND project_id = $2`, r.cfg.PublicOrgIDText, ids.ProjectID).Scan(&slug, &displayName, &description, &state)
 		if errors.Is(err, pgx.ErrNoRows) {
 			*issues = append(*issues, "platform project is missing")
 			row.Status = "missing"
@@ -1192,7 +1183,7 @@ func (r *platformRunner) checkProjectEnvironments(ctx context.Context, conn *pgx
 	rows, err := conn.Query(ctx, `
 SELECT environment_id, slug, display_name, kind, state
 FROM project_environments
-WHERE org_id = $1 AND project_id = $2`, r.cfg.OrgIDPG, projectID)
+WHERE org_id = $1 AND project_id = $2`, r.cfg.PublicOrgIDText, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("project environments: query: %w", err)
 	}
@@ -1300,7 +1291,7 @@ func (r *platformRunner) checkSourceRepository(forgejoRepoID string, issues *[]s
 	err := r.withSpan("platform.source.check", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "source_code_hosting"),
-		attribute.Int64("verself.org_id", r.cfg.OrgIDPG),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
 		attribute.String("source.backend", "forgejo"),
 		attribute.String("source.backend_owner", r.cfg.CompanySlug),
 		attribute.String("source.backend_repo", r.cfg.RepoSlug),
@@ -1331,7 +1322,7 @@ SELECT
 FROM source_repositories r
 JOIN source_repository_backends b ON b.repo_id = r.repo_id AND b.backend = 'forgejo'
 WHERE r.org_id = $1 AND r.repo_id = $2`,
-			r.cfg.OrgIDPG, ids.RepoID).Scan(
+			r.cfg.PublicOrgIDText, ids.RepoID).Scan(
 			&projectID,
 			&name,
 			&slug,
@@ -1404,7 +1395,7 @@ func (r *platformRunner) checkSandboxRunnerRepository(forgejoRepoID string, issu
 	err := r.withSpan("platform.sandbox_runner.check", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "sandbox_rental"),
-		attribute.Int64("verself.org_id", r.cfg.OrgIDPG),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
 	}, func(ctx context.Context) error {
 		conn, err := r.openPG(ctx, "sandbox_rental")
 		if err != nil {
@@ -1416,7 +1407,7 @@ func (r *platformRunner) checkSandboxRunnerRepository(forgejoRepoID string, issu
 		if err != nil || providerRepoID <= 0 {
 			return fmt.Errorf("sandbox runner repository: invalid forgejo repo id %q", forgejoRepoID)
 		}
-		var orgID int64
+		var orgID string
 		var projectID, sourceRepositoryID uuid.UUID
 		var providerOwner, providerRepo, repositoryFullName string
 		var active bool
@@ -1441,8 +1432,8 @@ WHERE provider = 'forgejo' AND provider_repository_id = $1`, providerRepoID).Sca
 			return fmt.Errorf("sandbox runner repository: query: %w", err)
 		}
 		var mismatches []string
-		if orgID != r.cfg.OrgIDPG {
-			mismatches = append(mismatches, fmt.Sprintf("org_id=%d", orgID))
+		if orgID != r.cfg.PublicOrgIDText {
+			mismatches = append(mismatches, fmt.Sprintf("org_id=%q", orgID))
 		}
 		if projectID != ids.ProjectID {
 			mismatches = append(mismatches, fmt.Sprintf("project_id=%s", projectID))

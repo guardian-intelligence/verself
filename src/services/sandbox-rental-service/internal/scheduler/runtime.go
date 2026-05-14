@@ -59,7 +59,7 @@ type ProbeResult struct {
 type ExecutionAdvanceRequest struct {
 	ExecutionID   string
 	AttemptID     string
-	OrgID         uint64
+	OrgID         string
 	ActorID       string
 	CorrelationID string
 	TraceParent   string
@@ -123,7 +123,7 @@ type GoldenRunPromoteRequest struct {
 type ExecutionAdvanceArgs struct {
 	ExecutionID   string `json:"execution_id"`
 	AttemptID     string `json:"attempt_id"`
-	OrgID         uint64 `json:"org_id,omitempty"`
+	OrgID         string `json:"org_id,omitempty"`
 	ActorID       string `json:"actor_id,omitempty"`
 	CorrelationID string `json:"correlation_id,omitempty"`
 	TraceParent   string `json:"trace_parent,omitempty"`

@@ -932,15 +932,14 @@ IAM then:
 
 - materializes the product organization profile;
 - records the trust tier;
-- grants owner authorization in Zitadel for required product projects;
-- reconciles authorization graph state;
+- grants owner authorization in the Zanzibar graph;
 - records audit and domain-event evidence;
-- forces fresh token minting so the caller receives role assignments in the
-  next access token.
+- appends the Verself public organization ID to subsequent provider tokens.
 
-The normal member-management API remains a standard owner/admin/member workflow.
+The member-management API owns invitation and removal. IAM policy APIs own
+authorization bindings for humans, service accounts, workloads, and usersets.
 The platform owner claim command has narrower input and stronger preconditions
-than normal member management.
+than normal organization membership.
 
 ## Security Controls
 

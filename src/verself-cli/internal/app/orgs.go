@@ -189,7 +189,7 @@ func orgRefFromSDK(org verself.Organization) *OrgRef {
 }
 
 func writeOrg(w interface{ Write([]byte) (int, error) }, org verself.Organization) error {
-	return writef(w, "%s\t%s\t%s\t%s\n", org.Slug, org.OrgID, org.DisplayName, org.CallerRole)
+	return writef(w, "%s\t%s\t%s\n", org.Slug, org.OrgID, org.DisplayName)
 }
 
 func parseInt32Flag(value, name string) (int32, error) {

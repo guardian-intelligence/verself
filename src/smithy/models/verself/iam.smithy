@@ -94,21 +94,25 @@ string OrgSlug
 @length(min: 3, max: 320)
 string EmailAddress
 
-enum OrganizationRole {
-    OWNER = "owner"
-    ADMIN = "admin"
-    MEMBER = "member"
-}
+@length(min: 1, max: 64)
+@pattern("^[0-9]+$")
+string IdentityProviderOrgId
 
 @range(min: 1, max: 2147483647)
 integer OrganizationVersion
 
-@range(min: 1, max: 2147483647)
-integer OrgAclVersion
+@length(min: 1, max: 1024)
+string PolicyEtag
 
-@length(min: 1, max: 64)
-@pattern("^[0-9]+$")
-string ProviderOrgId
+@range(min: 1, max: 3)
+integer PolicyVersion
+
+@length(min: 1, max: 256)
+@pattern("^roles/[A-Za-z][A-Za-z0-9.]*$")
+string IAMRoleName
+
+@length(min: 1, max: 1024)
+string IAMMemberName
 
 @length(min: 1, max: 512)
 string SubjectId
@@ -166,8 +170,14 @@ string MemberListPermission
 @permission(name: "iam:member:read")
 string MemberReadPermission
 
-@permission(name: "iam:member:update_role")
-string MemberUpdateRolePermission
+@permission(name: "iam:policy:get")
+string IAMPolicyGetPermission
+
+@permission(name: "iam:policy:set")
+string IAMPolicySetPermission
+
+@permission(name: "iam:policy:test")
+string IAMPolicyTestPermission
 
 @permission(name: "iam:organization:resolve")
 string OrganizationResolvePermission
@@ -199,8 +209,14 @@ string MemberListAuditEvent
 @auditEvent(name: "iam.member.read")
 string MemberReadAuditEvent
 
-@auditEvent(name: "iam.member.update_role")
-string MemberUpdateRoleAuditEvent
+@auditEvent(name: "iam.policy.get")
+string IAMPolicyGetAuditEvent
+
+@auditEvent(name: "iam.policy.set")
+string IAMPolicySetAuditEvent
+
+@auditEvent(name: "iam.policy.test")
+string IAMPolicyTestAuditEvent
 
 @auditEvent(name: "iam.organization.resolve")
 string OrganizationResolveAuditEvent
@@ -225,13 +241,16 @@ resource Organization {
         resourceName: OrganizationResourceName
         slug: OrgSlug
         displayName: DisplayName
-        callerRole: OrganizationRole
         version: OrganizationVersion
-        orgAclVersion: OrgAclVersion
     }
     list: ListOrganizations
     read: GetOrganization
     update: UpdateOrganization
+    operations: [
+        GetIamPolicy
+        SetIamPolicy
+        TestIamPermissions
+    ]
     resources: [Member]
 }
 
@@ -244,11 +263,9 @@ resource Member {
         resourceName: MemberResourceName
         email: EmailAddress
         displayName: DisplayName
-        role: OrganizationRole
     }
     list: ListMembers
     read: GetMember
-    operations: [UpdateMemberRole]
 }
 
 resource HumanProfile {
@@ -276,15 +293,7 @@ structure OrganizationSummary for Organization {
 
     @required
     @protoField(number: 5)
-    $callerRole
-
-    @required
-    @protoField(number: 6)
     $version
-
-    @required
-    @protoField(number: 7)
-    $orgAclVersion
 }
 
 structure MemberSummary for Member {
@@ -310,16 +319,13 @@ structure MemberSummary for Member {
     @protoField(number: 5)
     $displayName
 
-    @required
-    @protoField(number: 6)
-    $role
 }
 
 @readonly
 @http(method: "GET", uri: "/api/v1/orgs")
 @paginated(inputToken: "pageToken", outputToken: "nextPageToken", pageSize: "pageSize", items: "organizations")
 @identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli", "workload"])
-@authz(permission: OrganizationListPermission, organization: {source: "token_role_assignments"})
+@authz(permission: OrganizationListPermission, organization: {source: "request_subject"})
 @audit(event: OrganizationListAuditEvent, resource: Organization, action: "list")
 @rateLimit(bucket: "read")
 @requestBudget(maxBytes: 0)
@@ -528,17 +534,86 @@ structure GetMemberOutput {
     member: MemberSummary
 }
 
-@idempotent
-@http(method: "PATCH", uri: "/api/v1/orgs/{orgId}/members/{memberId}/role")
-@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli"])
-@authz(permission: MemberUpdateRolePermission, organization: {source: "input_member", member: "orgId"})
-@audit(event: MemberUpdateRoleAuditEvent, resource: Member, action: "update")
-@rateLimit(bucket: "iam_mutation")
+structure IAMPolicy {
+    @required
+    @protoField(number: 1)
+    version: PolicyVersion
+
+    @required
+    @protoField(number: 2)
+    bindings: IAMPolicyBindings
+
+    @protoField(number: 3)
+    etag: PolicyEtag
+}
+
+list IAMPolicyBindings {
+    member: IAMPolicyBinding
+}
+
+structure IAMPolicyBinding {
+    @required
+    @protoField(number: 1)
+    role: IAMRoleName
+
+    @required
+    @protoField(number: 2)
+    members: IAMMembers
+}
+
+list IAMMembers {
+    member: IAMMemberName
+}
+
+@readonly
+@http(method: "POST", uri: "/api/v1/orgs/{orgId}/iamPolicy:get")
+@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli", "workload"])
+@authz(permission: IAMPolicyGetPermission, organization: {source: "input_member", member: "orgId"})
+@audit(event: IAMPolicyGetAuditEvent, resource: Organization, action: "read")
+@rateLimit(bucket: "read")
 @requestBudget(maxBytes: 8192)
-@sdk(module: "members", method: "updateRole", paginated: false, retryable: false)
-operation UpdateMemberRole {
-    input: UpdateMemberRoleInput
-    output: UpdateMemberRoleOutput
+@sdk(module: "iamPolicies", method: "get", paginated: false, retryable: true)
+operation GetIamPolicy {
+    input: GetIamPolicyInput
+    output: GetIamPolicyOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        PermissionDeniedError
+        ResourceNotFoundError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure GetIamPolicyInput for Organization {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    $orgId
+}
+
+@output
+structure GetIamPolicyOutput {
+    @required
+    @httpPayload
+    @notProperty
+    @protoField(number: 1)
+    policy: IAMPolicy
+}
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/orgs/{orgId}/iamPolicy:set")
+@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli"])
+@authz(permission: IAMPolicySetPermission, organization: {source: "input_member", member: "orgId"})
+@audit(event: IAMPolicySetAuditEvent, resource: Organization, action: "set")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 32768)
+@sdk(module: "iamPolicies", method: "set", paginated: false, retryable: false)
+operation SetIamPolicy {
+    input: SetIamPolicyInput
+    output: SetIamPolicyOutput
     errors: [
         ValidationFailedError
         UnauthenticatedError
@@ -552,30 +627,16 @@ operation UpdateMemberRole {
 }
 
 @input
-structure UpdateMemberRoleInput for Member {
+structure SetIamPolicyInput for Organization {
     @required
     @httpLabel
     @protoField(number: 1)
     $orgId
 
     @required
-    @httpLabel
+    @notProperty
     @protoField(number: 2)
-    $memberId
-
-    @required
-    @protoField(number: 3)
-    $role
-
-    @required
-    @notProperty
-    @protoField(number: 4)
-    expectedRole: OrganizationRole
-
-    @required
-    @notProperty
-    @protoField(number: 5)
-    expectedOrgAclVersion: OrgAclVersion
+    policy: IAMPolicy
 
     @required
     @notProperty
@@ -586,13 +647,54 @@ structure UpdateMemberRoleInput for Member {
 }
 
 @output
-structure UpdateMemberRoleOutput {
+structure SetIamPolicyOutput {
     @required
     @httpPayload
-    @nestedProperties
     @notProperty
     @protoField(number: 1)
-    member: MemberSummary
+    policy: IAMPolicy
+}
+
+@readonly
+@http(method: "POST", uri: "/api/v1/orgs/{orgId}/iamPolicy:testPermissions")
+@identity(mode: "bearer", audience: "iam-service", principals: ["browser", "cli", "workload"])
+@authz(permission: IAMPolicyTestPermission, organization: {source: "input_member", member: "orgId"})
+@audit(event: IAMPolicyTestAuditEvent, resource: Organization, action: "test")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 8192)
+@sdk(module: "iamPolicies", method: "testPermissions", paginated: false, retryable: true)
+operation TestIamPermissions {
+    input: TestIamPermissionsInput
+    output: TestIamPermissionsOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        PermissionDeniedError
+        ResourceNotFoundError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure TestIamPermissionsInput for Organization {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    $orgId
+
+    @required
+    @notProperty
+    @protoField(number: 2)
+    permissions: Permissions
+}
+
+@output
+structure TestIamPermissionsOutput {
+    @required
+    @notProperty
+    @protoField(number: 1)
+    permissions: Permissions
 }
 
 structure IAMAuthorizationSubject {
@@ -618,7 +720,7 @@ structure IAMResourceRef {
 structure OrganizationProfile {
     @required
     @protoField(number: 1)
-    org_id: ProviderOrgId
+    identity_provider_org_id: IdentityProviderOrgId
 
     @required
     @protoField(number: 2)
@@ -677,7 +779,7 @@ structure HumanProfileSummary {
 structure AuthorizeOperationResult {
     @required
     @protoField(number: 1)
-    org_id: ProviderOrgId
+    org_id: OrgId
 
     @required
     @protoField(number: 2)
@@ -694,7 +796,7 @@ structure AuthorizeOperationResult {
 structure AuthorizeResourceResult {
     @required
     @protoField(number: 1)
-    org_id: ProviderOrgId
+    org_id: OrgId
 
     @required
     @protoField(number: 2)
@@ -759,7 +861,9 @@ operation ResolveOrganization {
 
 @input
 structure ResolveOrganizationInput {
-    org_id: ProviderOrgId
+    org_id: OrgId
+
+    identity_provider_org_id: IdentityProviderOrgId
 
     slug: OrgSlug
 
@@ -844,7 +948,7 @@ operation AuthorizeOperation {
 structure AuthorizeOperationInput {
     @required
     @protoField(number: 1)
-    org_id: ProviderOrgId
+    org_id: OrgId
 
     @required
     @protoField(number: 2)
@@ -890,7 +994,7 @@ operation AuthorizeResource {
 structure AuthorizeResourceInput {
     @required
     @protoField(number: 1)
-    org_id: ProviderOrgId
+    org_id: OrgId
 
     @required
     @protoField(number: 2)
@@ -944,7 +1048,7 @@ operation WriteResourceParentEdge {
 structure WriteResourceParentEdgeInput {
     @required
     @protoField(number: 1)
-    org_id: ProviderOrgId
+    org_id: OrgId
 
     @required
     @protoField(number: 2)

@@ -16,11 +16,10 @@ import (
 
 func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 	store := actionStore{
-		staticIdentityStore: staticIdentityStore{capabilities: identity.DefaultMemberCapabilitiesDocument("42", "tester", time.Unix(1700000000, 0).UTC())},
 		result: identity.ResolveAPICredentialClaimsResult{
 			CredentialID:       "credential-1",
 			ServiceAccountID:   "service-account-1",
-			OrgID:              "42",
+			OrgID:              "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
 			DisplayName:        "deploy bot key",
 			ServiceAccountName: "deploy bot",
 			AuthMethod:         identity.APICredentialAuthMethodPrivateKeyJWT,
@@ -29,7 +28,7 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 			OwnerDisplay:       "owner@example.test",
 		},
 	}
-	svc := &identity.Service{Store: store, AuthorizationGraph: actionAuthz{permissions: []string{"sandbox:logs:read"}}}
+	svc := &identity.Service{Store: store}
 	payload := []byte(`{"user":{"id":"subject-1"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/internal/zitadel/actions/api-credential-claims", bytes.NewReader(payload))
 	req.Header.Set(zitadelActionSigningHeader, actionSignatureHeader(time.Now(), payload, "signing-key"))
@@ -48,7 +47,7 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 	for _, claim := range response.AppendClaims {
 		claims[claim.Key] = claim.Value
 	}
-	if claims["verself:credential_id"] != "credential-1" || claims["org_id"] != "42" {
+	if claims["verself:credential_id"] != "credential-1" || claims["org_id"] != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
 		t.Fatalf("missing identity claims: %#v", claims)
 	}
 	if claims["verself:credential_name"] != "deploy bot key" ||
@@ -61,9 +60,8 @@ func TestZitadelActionAppendsCredentialClaims(t *testing.T) {
 		claims["verself:service_account_name"] != "deploy bot" {
 		t.Fatalf("missing credential audit claims: %#v", claims)
 	}
-	permissions, ok := claims["permissions"].([]any)
-	if !ok || len(permissions) != 1 || permissions[0] != "sandbox:logs:read" {
-		t.Fatalf("unexpected permissions claim: %#v", claims["permissions"])
+	if _, ok := claims["permissions"]; ok {
+		t.Fatalf("permissions claim should not be minted by the identity provider action: %#v", claims)
 	}
 }
 
@@ -95,28 +93,4 @@ func (s actionStore) ResolveAPICredentialClaims(context.Context, string, time.Ti
 		return identity.ResolveAPICredentialClaimsResult{}, s.err
 	}
 	return s.result, nil
-}
-
-type actionAuthz struct {
-	permissions []string
-}
-
-func (a actionAuthz) ReconcileOrganizationRoles(context.Context, string, []identity.Member, identity.MemberCapabilitiesDocument, string) (string, error) {
-	return "", nil
-}
-
-func (a actionAuthz) ReconcileMemberRoles(context.Context, string, identity.Member, string) (string, error) {
-	return "", nil
-}
-
-func (a actionAuthz) ReconcileCapabilityGrants(context.Context, string, identity.MemberCapabilitiesDocument, string) (string, error) {
-	return "", nil
-}
-
-func (a actionAuthz) ReconcileServiceAccountPermissions(context.Context, string, string, []string, string) (string, error) {
-	return "", nil
-}
-
-func (a actionAuthz) TestOrganizationPermissions(context.Context, string, identity.AuthorizationSubject, []string, string) ([]string, string, error) {
-	return append([]string(nil), a.permissions...), "", nil
 }

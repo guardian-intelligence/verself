@@ -79,12 +79,6 @@ func (r publicRuntime) BeforeOperation(ctx context.Context, desc contractapi.Ope
 	if err != nil {
 		return authIdentity, err
 	}
-	if err := r.synchronizeAuthorization(ctx, authIdentity, desc, orgIDs); err != nil {
-		if errorsIsAuthz(err) {
-			return authIdentity, authzError(ctx, err)
-		}
-		return authIdentity, identityError(ctx, err)
-	}
 	allowed, err := r.identityHasContractPermission(ctx, authIdentity, desc, orgIDs)
 	if err != nil {
 		if errorsIsAuthz(err) {
@@ -150,43 +144,21 @@ func validateGeneratedOperation(desc contractapi.OperationDescriptor) error {
 
 func (r publicRuntime) contractOrganizationScope(ctx context.Context, desc contractapi.OperationDescriptor, authIdentity *auth.Identity, input any) ([]string, error) {
 	switch desc.Authorization.OrganizationSource {
-	case "token_role_assignments":
-		providerOrgIDs, err := roleAssignmentOrgIDs(ctx, authIdentity)
-		if err != nil {
-			return nil, err
+	case "request_subject":
+		if r.authz == nil {
+			return nil, authz.ErrUnavailable
 		}
-		organizations, err := r.service.AccessibleOrganizationsByProviderOrgIDs(ctx, authIdentity.Subject, providerOrgIDs)
-		if err != nil {
-			return nil, identityError(ctx, err)
-		}
-		return organizationMetadataOrgIDs(organizations), nil
+		orgIDs, _, err := r.authz.LookupOrganizations(ctx, authzSubjectFromIdentity(authIdentity), "read", "")
+		return orgIDs, err
 	case "input_member":
 		publicOrgID := stringFromInputMember(input, desc.Authorization.OrganizationMember)
-		selectedPublicOrgID, err := r.publicOrgIDForProviderOrgID(ctx, authIdentity.OrgID)
-		if err != nil {
-			return nil, identityError(ctx, err)
-		}
-		if publicOrgID != selectedPublicOrgID {
-			return nil, forbidden(ctx, "organization-scope-mismatch", "path orgId must match the selected organization")
+		if publicOrgID == "" {
+			return nil, badRequest(ctx, "organization-required", "path orgId is required", nil)
 		}
 		return []string{publicOrgID}, nil
 	default:
 		return nil, internalFailure(ctx, "unsupported-organization-scope", "unsupported organization scope", nil)
 	}
-}
-
-func (r publicRuntime) publicOrgIDForProviderOrgID(ctx context.Context, providerOrgID string) (string, error) {
-	if r.service == nil {
-		return "", identity.ErrStoreUnavailable
-	}
-	profile, err := r.service.ResolveOrganization(ctx, identity.ResolveOrganizationRequest{
-		IdentityProviderOrgID: strings.TrimSpace(providerOrgID),
-		RequireActive:         true,
-	})
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(profile.OrgID), nil
 }
 
 func stringFromInputMember(input any, member string) string {
@@ -216,28 +188,15 @@ func contractInputFieldName(member string) string {
 	}
 }
 
-func (r publicRuntime) synchronizeAuthorization(ctx context.Context, authIdentity *auth.Identity, desc contractapi.OperationDescriptor, orgIDs []string) error {
-	if r.service == nil || authIdentity == nil {
-		return identity.ErrStoreUnavailable
-	}
-	actor := authorizationActor(authIdentity)
-	if actor == "" {
-		return fmt.Errorf("%w: actor is required", identity.ErrInvalidInput)
-	}
-	for _, orgID := range orgIDs {
-		if err := r.service.ReconcileOrganizationAuthorization(ctx, orgID, actor, "authorize-"+desc.Authorization.Permission); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r publicRuntime) identityHasContractPermission(ctx context.Context, authIdentity *auth.Identity, desc contractapi.OperationDescriptor, orgIDs []string) (bool, error) {
 	if authIdentity == nil || desc.Authorization.Permission == "" {
 		return false, nil
 	}
 	if r.authz == nil {
 		return false, authz.ErrUnavailable
+	}
+	if desc.Authorization.OrganizationSource == "request_subject" {
+		return true, nil
 	}
 	subject := authzSubjectFromIdentity(authIdentity)
 	for _, orgID := range orgIDs {
@@ -339,8 +298,8 @@ func uniqueSortedStatusCodes(statuses []int) []int {
 
 func runtimeOrgScopeFromContract(source string) string {
 	switch source {
-	case "token_role_assignments":
-		return string(runtimeiam.OrgScopeTokenRoleAssignmentOrgIDs)
+	case "request_subject":
+		return string(runtimeiam.OrgScopeRequestSubject)
 	case "input_member":
 		return string(runtimeiam.OrgScopePathOrgID)
 	default:
@@ -359,22 +318,13 @@ func (h publicHandlers) ListOrganizations(ctx context.Context, _ *contractapi.Li
 	if err != nil {
 		return nil, err
 	}
-	providerOrgIDs, err := roleAssignmentOrgIDs(ctx, authIdentity)
-	if err != nil {
-		return nil, err
-	}
-	organizations, err := h.service.AccessibleOrganizationsByProviderOrgIDs(ctx, authIdentity.Subject, providerOrgIDs)
+	organizations, err := h.service.AccessibleOrganizations(ctx, authzSubjectFromIdentity(authIdentity))
 	if err != nil {
 		return nil, identityError(ctx, err)
 	}
-	authorizedPublicOrgIDs, err := authorizedOrgIDs(ctx, h.authz, authIdentity, organizationMetadataOrgIDs(organizations), runtimeiam.Permission(contractapi.ListOrganizations.Descriptor.Authorization.Permission))
-	if err != nil {
-		return nil, authzError(ctx, err)
-	}
-	organizations = filterOrganizationMetadataByOrgID(organizations, authorizedPublicOrgIDs)
 	return &contractapi.ListOrganizationsOutput{
 		Body: contractapi.ListOrganizationsOutputBody{
-			Organizations: h.organizationSummariesFromMetadata(organizations, authIdentity),
+			Organizations: h.organizationSummariesFromMetadata(organizations),
 		},
 	}, nil
 }
@@ -445,27 +395,62 @@ func (h publicHandlers) GetMember(ctx context.Context, input *contractapi.GetMem
 	return &contractapi.GetMemberOutput{Body: h.memberSummary(principal.OrgID, member)}, nil
 }
 
-func (h publicHandlers) UpdateMemberRole(ctx context.Context, input *contractapi.UpdateMemberRoleInput) (*contractapi.UpdateMemberRoleOutput, error) {
-	principal, member, err := h.memberForPublicID(ctx, input.OrgID, input.MemberID)
+func (h publicHandlers) GetIamPolicy(ctx context.Context, input *contractapi.GetIamPolicyInput) (*contractapi.GetIamPolicyOutput, error) {
+	if _, err := h.principalForPublicOrg(ctx, input.OrgID); err != nil {
+		return nil, err
+	}
+	if h.authz == nil {
+		return nil, authzError(ctx, authz.ErrUnavailable)
+	}
+	policy, err := h.authz.GetOrganizationPolicy(ctx, string(input.OrgID))
+	if err != nil {
+		return nil, authzError(ctx, err)
+	}
+	return &contractapi.GetIamPolicyOutput{Body: contractPolicy(policy)}, nil
+}
+
+func (h publicHandlers) SetIamPolicy(ctx context.Context, input *contractapi.SetIamPolicyInput) (*contractapi.SetIamPolicyOutput, error) {
+	if _, err := h.principalForPublicOrg(ctx, input.OrgID); err != nil {
+		return nil, err
+	}
+	if h.authz == nil {
+		return nil, authzError(ctx, authz.ErrUnavailable)
+	}
+	policy, err := authzPolicy(input.Body.Policy)
+	if err != nil {
+		return nil, badRequest(ctx, "invalid-iam-policy", "IAM policy is invalid", err)
+	}
+	out, err := h.authz.SetOrganizationPolicy(ctx, string(input.OrgID), policy, contractapi.SetIamPolicy.Descriptor.OperationID)
+	if err != nil {
+		return nil, authzError(ctx, err)
+	}
+	return &contractapi.SetIamPolicyOutput{Body: contractPolicy(out)}, nil
+}
+
+func (h publicHandlers) TestIamPermissions(ctx context.Context, input *contractapi.TestIamPermissionsInput) (*contractapi.TestIamPermissionsOutput, error) {
+	if _, err := h.principalForPublicOrg(ctx, input.OrgID); err != nil {
+		return nil, err
+	}
+	if h.authz == nil {
+		return nil, authzError(ctx, authz.ErrUnavailable)
+	}
+	authIdentity, err := requireIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
-	expectedOrgACLVersion, err := int32FromInt64(int64(input.Body.ExpectedOrgAclVersion), "expected organization ACL version")
-	if err != nil {
-		return nil, badRequest(ctx, "organization-acl-version-out-of-range", "organization ACL version is outside the supported range", err)
+	permissions := make([]string, 0, len(input.Body.Permissions))
+	for _, permission := range input.Body.Permissions {
+		permissions = append(permissions, string(permission))
 	}
-	result, err := h.service.UpdateMemberRoles(ctx, principal, identity.UpdateMemberRolesCommand{
-		UserID:                member.UserID,
-		RoleKeys:              []string{string(input.Body.Role)},
-		ExpectedRoleKeys:      []string{string(input.Body.ExpectedRole)},
-		ExpectedOrgACLVersion: expectedOrgACLVersion,
-		OperationID:           contractapi.UpdateMemberRole.Descriptor.OperationID,
-		IdempotencyKey:        string(input.IdempotencyKey),
-	})
+	allowed, _, err := h.authz.TestOrganizationPermissions(ctx, string(input.OrgID), authzSubjectFromIdentity(authIdentity), permissions, "")
 	if err != nil {
-		return nil, identityError(ctx, err)
+		return nil, authzError(ctx, err)
 	}
-	return &contractapi.UpdateMemberRoleOutput{Body: h.memberSummary(principal.OrgID, result.Member)}, nil
+	out := make(contractapi.Permissions, 0, len(allowed))
+	for _, permission := range allowed {
+		out = append(out, contractapi.PermissionName(permission))
+	}
+	return &contractapi.TestIamPermissionsOutput{Body: contractapi.TestIamPermissionsOutputBody{Permissions: out}}, nil
 }
 
 func (h publicHandlers) organizationForPublicOrg(ctx context.Context, orgID contractapi.OrgID) (identity.Organization, error) {
@@ -486,19 +471,8 @@ func (h publicHandlers) principalForPublicOrg(ctx context.Context, orgID contrac
 	if err != nil {
 		return identity.Principal{}, err
 	}
-	authIdentity, err := requireIdentity(ctx)
-	if err != nil {
-		return identity.Principal{}, err
-	}
-	profile, err := h.service.ResolveOrganization(ctx, identity.ResolveOrganizationRequest{
-		IdentityProviderOrgID: strings.TrimSpace(authIdentity.OrgID),
-		RequireActive:         true,
-	})
-	if err != nil {
-		return identity.Principal{}, identityError(ctx, err)
-	}
-	if publicOrgID != profile.OrgID {
-		return identity.Principal{}, forbidden(ctx, "organization-scope-mismatch", "path orgId must match the selected organization")
+	if publicOrgID == "" {
+		return identity.Principal{}, badRequest(ctx, "organization-required", "path orgId is required", nil)
 	}
 	principal.OrgID = publicOrgID
 	return principal, nil
@@ -522,48 +496,17 @@ func (h publicHandlers) memberForPublicID(ctx context.Context, orgID contractapi
 	return identity.Principal{}, identity.Member{}, notFound(ctx, "member-not-found", "organization member not found")
 }
 
-func (h publicHandlers) organizationSummariesFromMetadata(organizations []identity.OrganizationMetadata, authIdentity *auth.Identity) []contractapi.OrganizationSummary {
-	callerRoles := callerRoleByPublicOrgID(authIdentity, organizations)
+func (h publicHandlers) organizationSummariesFromMetadata(organizations []identity.OrganizationMetadata) []contractapi.OrganizationSummary {
 	out := make([]contractapi.OrganizationSummary, 0, len(organizations))
 	for _, organization := range organizations {
 		publicOrgID := contractapi.OrgID(organization.OrgID)
-		callerRole := callerRoles[organization.OrgID]
-		if callerRole == "" {
-			callerRole = contractapi.OrganizationRoleMember
-		}
 		out = append(out, contractapi.OrganizationSummary{
-			OrgID:         publicOrgID,
-			ResourceName:  publicOrganizationResourceName(h.installationID, publicOrgID),
-			Slug:          optionalContractValue[contractapi.OrgSlug](organization.Slug),
-			DisplayName:   contractapi.DisplayName(organization.DisplayName),
-			CallerRole:    callerRole,
-			Version:       contractapi.OrganizationVersion(organization.Version),
-			OrgAclVersion: contractapi.OrgAclVersion(organization.OrgACLVersion),
+			OrgID:        publicOrgID,
+			ResourceName: publicOrganizationResourceName(h.installationID, publicOrgID),
+			Slug:         optionalContractValue[contractapi.OrgSlug](organization.Slug),
+			DisplayName:  contractapi.DisplayName(organization.DisplayName),
+			Version:      contractapi.OrganizationVersion(organization.Version),
 		})
-	}
-	return out
-}
-
-func callerRoleByPublicOrgID(authIdentity *auth.Identity, organizations []identity.OrganizationMetadata) map[string]contractapi.OrganizationRole {
-	if authIdentity == nil {
-		return nil
-	}
-	publicByProvider := make(map[string]string, len(organizations))
-	for _, organization := range organizations {
-		publicByProvider[strings.TrimSpace(organization.IdentityProviderOrgID)] = strings.TrimSpace(organization.OrgID)
-	}
-	rolesByOrgID := map[string][]string{}
-	for _, assignment := range authIdentity.RoleAssignments {
-		orgID := publicByProvider[strings.TrimSpace(assignment.OrganizationID)]
-		role := strings.TrimSpace(assignment.Role)
-		if orgID == "" || role == "" {
-			continue
-		}
-		rolesByOrgID[orgID] = append(rolesByOrgID[orgID], role)
-	}
-	out := make(map[string]contractapi.OrganizationRole, len(rolesByOrgID))
-	for orgID, roles := range rolesByOrgID {
-		out[orgID] = contractapi.OrganizationRole(roleFromKeys(roles))
 	}
 	return out
 }
@@ -571,13 +514,11 @@ func callerRoleByPublicOrgID(authIdentity *auth.Identity, organizations []identi
 func (h publicHandlers) organizationSummary(org identity.Organization) contractapi.OrganizationSummary {
 	publicOrgID := contractapi.OrgID(org.OrgID)
 	return contractapi.OrganizationSummary{
-		OrgID:         publicOrgID,
-		ResourceName:  publicOrganizationResourceName(h.installationID, publicOrgID),
-		Slug:          optionalContractValue[contractapi.OrgSlug](org.Slug),
-		DisplayName:   contractapi.DisplayName(org.DisplayName),
-		CallerRole:    contractapi.OrganizationRole(roleFromKeys(org.Caller.RoleKeys)),
-		Version:       contractapi.OrganizationVersion(org.Version),
-		OrgAclVersion: contractapi.OrgAclVersion(org.OrgACLVersion),
+		OrgID:        publicOrgID,
+		ResourceName: publicOrganizationResourceName(h.installationID, publicOrgID),
+		Slug:         optionalContractValue[contractapi.OrgSlug](org.Slug),
+		DisplayName:  contractapi.DisplayName(org.DisplayName),
+		Version:      contractapi.OrganizationVersion(org.Version),
 	}
 }
 
@@ -598,26 +539,57 @@ func (h publicHandlers) memberSummary(orgID string, member identity.Member) cont
 		ResourceName: publicMemberResourceName(h.installationID, publicOrgID, publicMemberID),
 		Email:        contractapi.EmailAddress(member.Email),
 		DisplayName:  contractapi.DisplayName(member.DisplayName),
-		Role:         contractapi.OrganizationRole(roleFromKeys(member.RoleKeys)),
 	}
 }
 
-func roleFromKeys(keys []string) string {
-	for _, role := range []string{identity.RoleOwner, identity.RoleAdmin, identity.RoleMember} {
-		if hasRole(keys, role) {
-			return role
+func contractPolicy(policy authz.Policy) contractapi.IAMPolicy {
+	bindings := make(contractapi.IAMPolicyBindings, 0, len(policy.Bindings))
+	for _, binding := range policy.Bindings {
+		members := make([]contractapi.IAMMemberName, 0, len(binding.Members))
+		for _, member := range binding.Members {
+			members = append(members, contractapi.IAMMemberName(member))
 		}
+		bindings = append(bindings, contractapi.IAMPolicyBinding{
+			Role:    contractapi.IAMRoleName(binding.Role),
+			Members: members,
+		})
 	}
-	return identity.RoleMember
+	var etag *contractapi.PolicyEtag
+	if strings.TrimSpace(policy.Etag) != "" {
+		value := contractapi.PolicyEtag(policy.Etag)
+		etag = &value
+	}
+	return contractapi.IAMPolicy{
+		Version:  contractapi.PolicyVersion(policy.Version),
+		Bindings: bindings,
+		Etag:     etag,
+	}
 }
 
-func hasRole(keys []string, target string) bool {
-	for _, key := range keys {
-		if key == target {
-			return true
-		}
+func authzPolicy(policy contractapi.IAMPolicy) (authz.Policy, error) {
+	if policy.Version <= 0 {
+		return authz.Policy{}, fmt.Errorf("%w: policy version must be positive", authz.ErrInvalid)
 	}
-	return false
+	bindings := make([]authz.PolicyBinding, 0, len(policy.Bindings))
+	for _, binding := range policy.Bindings {
+		members := make([]string, 0, len(binding.Members))
+		for _, member := range binding.Members {
+			members = append(members, string(member))
+		}
+		bindings = append(bindings, authz.PolicyBinding{
+			Role:    string(binding.Role),
+			Members: members,
+		})
+	}
+	etag := ""
+	if policy.Etag != nil {
+		etag = string(*policy.Etag)
+	}
+	return authz.Policy{
+		Version:  int32(policy.Version),
+		Etag:     etag,
+		Bindings: bindings,
+	}, nil
 }
 
 func publicOrganizationResourceName(installationID string, orgID contractapi.OrgID) contractapi.OrganizationResourceName {

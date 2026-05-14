@@ -84,7 +84,7 @@ type GetDurableRunRepositoryParams struct {
 }
 
 type GetDurableRunRepositoryRow struct {
-	OrgID                  int64
+	OrgID                  string
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RepositoryFullName     string

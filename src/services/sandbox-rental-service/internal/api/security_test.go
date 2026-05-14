@@ -161,7 +161,7 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 }
 
 func TestEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
-	ctx := auth.WithIdentity(context.Background(), sandboxServiceToken("42", "member"))
+	ctx := auth.WithIdentity(context.Background(), sandboxServiceToken("org_42"))
 
 	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionGitHubWrite): true}, runtimeiam.OperationPolicy{
 		Permission: permissionGitHubWrite,
@@ -174,29 +174,17 @@ func TestEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 	}
 }
 
-func sandboxServiceToken(orgID string, roles ...string) *auth.Identity {
-	assignments := make([]auth.RoleAssignment, 0, len(roles))
-	for _, role := range roles {
-		assignments = append(assignments, auth.RoleAssignment{
-			OrganizationID: orgID,
-			Role:           role,
-		})
-	}
+func sandboxServiceToken(orgID string) *auth.Identity {
 	return &auth.Identity{
-		Subject:         "user-1",
-		OrgID:           orgID,
-		RoleAssignments: assignments,
+		Subject: "user-1",
+		OrgID:   orgID,
 	}
 }
 
 func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), &auth.Identity{
 		Subject: "user-123",
-		OrgID:   "42",
-		RoleAssignments: []auth.RoleAssignment{{
-			OrganizationID: "42",
-			Role:           "member",
-		}},
+		OrgID:   "org_42",
 	})
 
 	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, runtimeiam.OperationPolicy{

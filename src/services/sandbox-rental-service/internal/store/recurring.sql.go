@@ -37,7 +37,7 @@ WHERE org_id = $1
 `
 
 type GetExecutionScheduleParams struct {
-	OrgID      int64
+	OrgID      string
 	ScheduleID uuid.UUID
 }
 
@@ -91,7 +91,7 @@ WHERE org_id = $1
 `
 
 type GetExecutionScheduleByIdempotencyKeyParams struct {
-	OrgID          int64
+	OrgID          string
 	IdempotencyKey string
 }
 
@@ -135,7 +135,7 @@ INSERT INTO execution_schedules (
 
 type InsertExecutionScheduleParams struct {
 	ScheduleID         uuid.UUID
-	OrgID              int64
+	OrgID              string
 	ActorID            string
 	DisplayName        string
 	IdempotencyKey     string
@@ -279,7 +279,7 @@ LIMIT $5
 `
 
 type ListExecutionSchedulesParams struct {
-	OrgID            int64
+	OrgID            string
 	CursorEnabled    bool
 	CursorCreatedAt  pgtype.Timestamptz
 	CursorScheduleID uuid.UUID

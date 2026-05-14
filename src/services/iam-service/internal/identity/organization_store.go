@@ -69,7 +69,6 @@ func (s SQLStore) ListOrganizationMetadataByOrgIDs(ctx context.Context, orgIDs [
 			DisplayName:           row.DisplayName,
 			Slug:                  row.Slug,
 			Version:               row.Version,
-			OrgACLVersion:         row.OrgAclVersion,
 		})
 	}
 	return organizations, nil
@@ -104,7 +103,6 @@ func (s SQLStore) ListOrganizationMetadataByProviderOrgIDs(ctx context.Context, 
 			DisplayName:           row.DisplayName,
 			Slug:                  row.Slug,
 			Version:               row.Version,
-			OrgACLVersion:         row.OrgAclVersion,
 		})
 	}
 	return organizations, nil

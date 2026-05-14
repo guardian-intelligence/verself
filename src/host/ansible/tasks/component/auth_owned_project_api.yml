@@ -16,8 +16,8 @@
     body_format: json
     body:
       name: "{{ component_auth_project_name }}"
-      projectRoleAssertion: "{{ component_auth_component.workload.auth.project_role_assertion }}"
-      projectRoleCheck: "{{ component_auth_component.workload.auth.project_role_check }}"
+      projectRoleAssertion: false
+      projectRoleCheck: false
     return_content: true
   register: component_auth_project_created
   when: component_auth_project == {}
@@ -42,20 +42,10 @@
     body_format: json
     body:
       name: "{{ component_auth_project_name }}"
-      projectRoleAssertion: "{{ component_auth_component.workload.auth.project_role_assertion }}"
-      projectRoleCheck: "{{ component_auth_component.workload.auth.project_role_check }}"
+      projectRoleAssertion: false
+      projectRoleCheck: false
     status_code: 200
   when: component_auth_project != {}
-  no_log: true
-
-- name: Ensure owned component Zitadel project roles exist
-  ansible.builtin.include_role:
-    name: zitadel_project_roles
-  vars:
-    zitadel_project_roles_admin_pat: "{{ component_zitadel_admin_pat }}"
-    zitadel_project_roles_project_id: "{{ component_auth_project_id }}"
-    zitadel_project_roles_definitions: "{{ component_auth_component.workload.auth.roles }}"
-  when: component_auth_component.workload.auth.roles | length > 0
   no_log: true
 
 - name: Index owned component Zitadel project ID

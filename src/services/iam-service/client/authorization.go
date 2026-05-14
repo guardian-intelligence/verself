@@ -70,7 +70,7 @@ func (a Authorizer) AuthorizeOperation(ctx context.Context, identity *auth.Ident
 	}
 	resp, err := client.AuthorizeOperation(ctx, AuthorizeOperationRequest{
 		Body: AuthorizeOperationInputBody{
-			OrgID:       ProviderOrgId(orgID),
+			OrgID:       OrgId(orgID),
 			Subject:     subject,
 			Permissions: Permissions{PermissionName(permission)},
 		},
@@ -123,7 +123,7 @@ func (a Authorizer) AuthorizeResource(ctx context.Context, identity *auth.Identi
 	}
 	resp, err := client.AuthorizeResource(ctx, AuthorizeResourceRequest{
 		Body: AuthorizeResourceInputBody{
-			OrgID:               ProviderOrgId(orgID),
+			OrgID:               OrgId(orgID),
 			Subject:             subject,
 			OperationPermission: permissionPtr(string(request.OperationPermission)),
 			Resource:            resourceRef(request.Resource),
@@ -160,7 +160,7 @@ func (a Authorizer) EnsureResourceParent(ctx context.Context, request runtimeiam
 	}
 	resp, err := client.WriteResourceParentEdge(ctx, WriteResourceParentEdgeRequest{
 		Body: WriteResourceParentEdgeInputBody{
-			OrgID:     ProviderOrgId(orgID),
+			OrgID:     OrgId(orgID),
 			Resource:  resourceRef(request.Resource),
 			Relation:  AuthorizationRelation(strings.TrimSpace(request.Relation)),
 			Parent:    resourceRef(request.Parent),

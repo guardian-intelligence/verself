@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"cmp"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -9,7 +8,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"testing"
 	"time"
 
@@ -50,20 +48,10 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		"aud":                                   []string{"billing-project"},
 		"exp":                                   time.Now().Add(time.Hour).Unix(),
 		"email":                                 "alice@example.com",
-		"urn:zitadel:iam:user:resourceowner:id": "home-org",
-		"roles":                                 []string{"unscoped-admin"},
-		"urn:zitadel:iam:org:project:roles": map[string]any{
-			"unscoped-viewer": map[string]any{"org-456": "billing"},
-		},
-		"urn:zitadel:iam:org:project:billing-project:roles": map[string]any{
-			"admin":  map[string]any{"org-456": "billing"},
-			"viewer": map[string]any{"org-456": "billing"},
-		},
-		"urn:zitadel:iam:org:project:999:roles": map[string]any{
-			"viewer": map[string]any{"org-456": "billing"},
-			"editor": map[string]any{"org-456": "billing"},
-		},
-		"amr": []string{"pwd", "mfa"},
+		"org_id":                                "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
+		"urn:zitadel:iam:org:id":                "42",
+		"urn:zitadel:iam:user:resourceowner:id": "42",
+		"amr":                                   []string{"pwd", "mfa"},
 	})
 
 	handler := Middleware(Config{
@@ -77,41 +65,11 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		if identity.Subject != "user-123" {
 			t.Fatalf("unexpected subject: %q", identity.Subject)
 		}
-		if identity.OrgID != "org-456" {
+		if identity.OrgID != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
 			t.Fatalf("unexpected org id: %q", identity.OrgID)
 		}
 		if identity.Email != "alice@example.com" {
 			t.Fatalf("unexpected email: %q", identity.Email)
-		}
-		expectedRoles := []string{"admin", "viewer"}
-		if len(identity.Roles) != len(expectedRoles) {
-			t.Fatalf("unexpected roles length: got %v want %v", identity.Roles, expectedRoles)
-		}
-		for i, role := range expectedRoles {
-			if identity.Roles[i] != role {
-				t.Fatalf("unexpected roles: got %v want %v", identity.Roles, expectedRoles)
-			}
-		}
-		expectedAssignments := []RoleAssignment{
-			{
-				OrganizationID: "org-456",
-				Role:           "admin",
-			},
-			{
-				OrganizationID: "org-456",
-				Role:           "viewer",
-			},
-		}
-		if len(identity.RoleAssignments) != len(expectedAssignments) {
-			t.Fatalf("unexpected role assignments length: got %#v want %#v", identity.RoleAssignments, expectedAssignments)
-		}
-		actualAssignments := slices.Clone(identity.RoleAssignments)
-		slices.SortFunc(actualAssignments, compareRoleAssignment)
-		slices.SortFunc(expectedAssignments, compareRoleAssignment)
-		for i, assignment := range expectedAssignments {
-			if actualAssignments[i] != assignment {
-				t.Fatalf("unexpected role assignments: got %#v want %#v", actualAssignments, expectedAssignments)
-			}
 		}
 		if _, ok := identity.Raw["amr"]; !ok {
 			t.Fatal("expected raw amr claim")
@@ -129,7 +87,7 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 	}
 }
 
-func TestMiddlewareMissingTargetProjectRoleClaimAttachesNoRoles(t *testing.T) {
+func TestMiddlewareFallsBackToZitadelOrganizationClaim(t *testing.T) {
 	t.Parallel()
 
 	provider := newTestProvider(t)
@@ -140,10 +98,7 @@ func TestMiddlewareMissingTargetProjectRoleClaimAttachesNoRoles(t *testing.T) {
 		"sub":                                   "user-123",
 		"aud":                                   []string{"identity-project"},
 		"exp":                                   time.Now().Add(time.Hour).Unix(),
-		"urn:zitadel:iam:user:resourceowner:id": "org-456",
-		"urn:zitadel:iam:org:project:sandbox-project:roles": map[string]any{
-			"admin": map[string]any{"org-456": "billing"},
-		},
+		"urn:zitadel:iam:user:resourceowner:id": "42",
 	})
 
 	handler := Middleware(Config{
@@ -154,8 +109,8 @@ func TestMiddlewareMissingTargetProjectRoleClaimAttachesNoRoles(t *testing.T) {
 		if identity == nil {
 			t.Fatal("expected identity in context")
 		}
-		if len(identity.Roles) != 0 || len(identity.RoleAssignments) != 0 {
-			t.Fatalf("target project without a role claim must not inherit other project roles: %#v", identity)
+		if identity.OrgID != "42" {
+			t.Fatalf("resource owner org should be preserved as authn context: %#v", identity)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -170,50 +125,7 @@ func TestMiddlewareMissingTargetProjectRoleClaimAttachesNoRoles(t *testing.T) {
 	}
 }
 
-func TestMiddlewareDoesNotSelectOrgFromMultiOrgRoleClaims(t *testing.T) {
-	t.Parallel()
-
-	provider := newTestProvider(t)
-	defer provider.Close()
-
-	token := provider.signToken(t, jwt.MapClaims{
-		"iss": provider.URL,
-		"sub": "user-123",
-		"aud": []string{"billing-project"},
-		"exp": time.Now().Add(time.Hour).Unix(),
-		"urn:zitadel:iam:org:project:billing-project:roles": map[string]any{
-			"admin": map[string]any{
-				"org-456": "billing",
-				"org-789": "billing-alt",
-			},
-		},
-	})
-
-	handler := Middleware(Config{
-		IssuerURL: provider.URL,
-		Audience:  "billing-project",
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		identity := FromContext(r.Context())
-		if identity == nil {
-			t.Fatal("expected identity in context")
-		}
-		if identity.OrgID != "" {
-			t.Fatalf("multi-org target role token must not select an org implicitly: %q", identity.OrgID)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/private", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", rec.Code)
-	}
-}
-
-func TestMiddlewareSelectsExplicitOrgWithMultiOrgRoleClaims(t *testing.T) {
+func TestMiddlewarePrefersPublicOrgClaim(t *testing.T) {
 	t.Parallel()
 
 	provider := newTestProvider(t)
@@ -224,13 +136,8 @@ func TestMiddlewareSelectsExplicitOrgWithMultiOrgRoleClaims(t *testing.T) {
 		"sub":                    "user-123",
 		"aud":                    []string{"billing-project"},
 		"exp":                    time.Now().Add(time.Hour).Unix(),
-		"urn:zitadel:iam:org:id": "org-456",
-		"urn:zitadel:iam:org:project:billing-project:roles": map[string]any{
-			"admin": map[string]any{
-				"org-456": "billing",
-				"org-789": "billing-alt",
-			},
-		},
+		"org_id":                 "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
+		"urn:zitadel:iam:org:id": "42",
 	})
 
 	handler := Middleware(Config{
@@ -241,8 +148,8 @@ func TestMiddlewareSelectsExplicitOrgWithMultiOrgRoleClaims(t *testing.T) {
 		if identity == nil {
 			t.Fatal("expected identity in context")
 		}
-		if identity.OrgID != "org-456" {
-			t.Fatalf("explicit selected org must survive multi-org role claims: %q", identity.OrgID)
+		if identity.OrgID != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
+			t.Fatalf("public org claim must be preferred: %q", identity.OrgID)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -285,13 +192,6 @@ func TestMiddlewareRejectsWrongAudience(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}
-}
-
-func compareRoleAssignment(a, b RoleAssignment) int {
-	if diff := cmp.Compare(a.OrganizationID, b.OrganizationID); diff != 0 {
-		return diff
-	}
-	return cmp.Compare(a.Role, b.Role)
 }
 
 type testProvider struct {

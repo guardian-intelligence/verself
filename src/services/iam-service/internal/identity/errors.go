@@ -4,9 +4,6 @@ import "errors"
 
 var (
 	ErrInvalidInput         = errors.New("invalid input")
-	ErrInvalidCapabilities  = errors.New("invalid capabilities")
-	ErrCapabilitiesConflict = errors.New("capabilities conflict")
-	ErrOrgACLConflict       = errors.New("organization acl conflict")
 	ErrOrganizationConflict = errors.New("organization conflict")
 	ErrOrganizationMissing  = errors.New("organization missing")
 	ErrMemberMissing        = errors.New("member missing")

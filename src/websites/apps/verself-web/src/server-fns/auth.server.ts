@@ -103,7 +103,6 @@ export async function selectIdentityOrganization(data: { orgID: string }): Promi
 export async function getIdentityAccessTokenForAudience(
   context: ConsoleAuthContext | undefined,
   audience: string,
-  options: { roleAssignmentScope?: "selected_org" | "all_granted_orgs" } = {},
 ): Promise<string> {
   await requireAuthSnapshot(context);
   const response = await identityAuthFetch("resource-token", {
@@ -111,7 +110,6 @@ export async function getIdentityAccessTokenForAudience(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       audience,
-      ...(options.roleAssignmentScope ? { roleAssignmentScope: options.roleAssignmentScope } : {}),
     }),
   });
   if (!response.ok) {

@@ -961,8 +961,8 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	if err := os.WriteFile(tokenPath, []byte("tok_iam_test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	orgJSON := func(role string, version string) string {
-		return `{"orgId":"org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","resourceName":"urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","displayName":"Guardian Intelligence","slug":"guardian","callerRole":"` + role + `","version":` + version + `,"orgAclVersion":1}`
+	orgJSON := func(version string) string {
+		return `{"orgId":"org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","resourceName":"urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","displayName":"Guardian Intelligence","slug":"guardian","version":` + version + `}`
 	}
 	var updateKey string
 	var updateBody map[string]any
@@ -973,15 +973,15 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs":
-			_, _ = w.Write([]byte(`{"organizations":[` + orgJSON("owner", "1") + `]}`))
+			_, _ = w.Write([]byte(`{"organizations":[` + orgJSON("1") + `]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT":
-			_, _ = w.Write([]byte(orgJSON("owner", "1")))
+			_, _ = w.Write([]byte(orgJSON("1")))
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT":
 			updateKey = r.Header.Get("Idempotency-Key")
 			if err := json.NewDecoder(r.Body).Decode(&updateBody); err != nil {
 				t.Fatal(err)
 			}
-			_, _ = w.Write([]byte(orgJSON("owner", "2")))
+			_, _ = w.Write([]byte(orgJSON("2")))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -998,7 +998,7 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 
 	var whoami bytes.Buffer
 	runCLI(t, &whoami, "auth", "whoami")
-	if !strings.Contains(whoami.String(), "Guardian Intelligence\towner") {
+	if !strings.Contains(whoami.String(), "org_01J8QK0M2A7W4H3P9FQ6G1R8ZT\tGuardian Intelligence") {
 		t.Fatalf("auth whoami output:\n%s", whoami.String())
 	}
 

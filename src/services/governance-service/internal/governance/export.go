@@ -436,11 +436,7 @@ func (s *Service) identityExportFiles(ctx context.Context, orgID string) ([]expo
 		files = append(files, jsonlArtifactFile(path, rows))
 		return nil
 	}
-	rows, err := q.ExportIdentityMemberCapabilitiesJSONL(ctx, identityexport.ExportIdentityMemberCapabilitiesJSONLParams{OrgID: orgID})
-	if err := add("identity/member_capabilities.jsonl", rows, err); err != nil {
-		return nil, err
-	}
-	rows, err = q.ExportIdentityAPICredentialsJSONL(ctx, identityexport.ExportIdentityAPICredentialsJSONLParams{OrgID: orgID})
+	rows, err := q.ExportIdentityAPICredentialsJSONL(ctx, identityexport.ExportIdentityAPICredentialsJSONLParams{OrgID: orgID})
 	if err := add("identity/api_credentials.jsonl", rows, err); err != nil {
 		return nil, err
 	}
@@ -561,9 +557,9 @@ func (s *Service) sandboxExportFiles(ctx context.Context, orgID string, includeL
 	if s.SandboxPG == nil {
 		return nil, nil
 	}
-	sandboxOrgID, err := strconv.ParseInt(orgID, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("%w: parse sandbox export org_id %q: %v", ErrInvalidArgument, orgID, err)
+	sandboxOrgID := strings.TrimSpace(orgID)
+	if sandboxOrgID == "" {
+		return nil, fmt.Errorf("%w: sandbox export org_id is required", ErrInvalidArgument)
 	}
 	q := sandboxexport.New(s.SandboxPG)
 	files := []exportArtifactFile{}

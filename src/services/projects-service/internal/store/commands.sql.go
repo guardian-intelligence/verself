@@ -21,7 +21,7 @@ INSERT INTO project_environments (
 type InsertEnvironmentParams struct {
 	EnvironmentID    uuid.UUID
 	ProjectID        uuid.UUID
-	OrgID            int64
+	OrgID            string
 	Slug             string
 	DisplayName      string
 	Kind             string
@@ -60,7 +60,7 @@ INSERT INTO project_idempotency_records (
 `
 
 type InsertEnvironmentIdempotencyRecordParams struct {
-	OrgID               int64
+	OrgID               string
 	Operation           string
 	KeyHash             string
 	RequestHash         string
@@ -94,7 +94,7 @@ INSERT INTO projects (
 
 type InsertProjectParams struct {
 	ProjectID   uuid.UUID
-	OrgID       int64
+	OrgID       string
 	Slug        string
 	DisplayName string
 	Description string
@@ -131,7 +131,7 @@ INSERT INTO project_events (
 
 type InsertProjectEventParams struct {
 	EventID       uuid.UUID
-	OrgID         int64
+	OrgID         string
 	ProjectID     uuid.UUID
 	EventType     string
 	ActorID       string
@@ -165,7 +165,7 @@ INSERT INTO project_idempotency_records (
 `
 
 type InsertProjectIdempotencyRecordParams struct {
-	OrgID           int64
+	OrgID           string
 	Operation       string
 	KeyHash         string
 	RequestHash     string
@@ -196,7 +196,7 @@ ON CONFLICT DO NOTHING
 `
 
 type InsertProjectSlugRedirectParams struct {
-	OrgID     int64
+	OrgID     string
 	Slug      string
 	ProjectID uuid.UUID
 	CreatedBy string
@@ -249,7 +249,7 @@ WHERE org_id = $1 AND project_id = $2 AND environment_id = $3 AND version = $7
 `
 
 type SetEnvironmentStateParams struct {
-	OrgID         int64
+	OrgID         string
 	ProjectID     uuid.UUID
 	EnvironmentID uuid.UUID
 	State         string
@@ -287,7 +287,7 @@ WHERE org_id = $1 AND project_id = $2 AND version = $6
 `
 
 type SetProjectStateParams struct {
-	OrgID      int64
+	OrgID      string
 	ProjectID  uuid.UUID
 	State      string
 	UpdatedBy  string
@@ -323,7 +323,7 @@ WHERE org_id = $1 AND project_id = $2 AND environment_id = $3 AND version = $8 A
 `
 
 type UpdateEnvironmentParams struct {
-	OrgID            int64
+	OrgID            string
 	ProjectID        uuid.UUID
 	EnvironmentID    uuid.UUID
 	DisplayName      string
@@ -362,7 +362,7 @@ WHERE org_id = $1 AND project_id = $2 AND version = $8 AND state = 'active'
 `
 
 type UpdateProjectParams struct {
-	OrgID       int64
+	OrgID       string
 	ProjectID   uuid.UUID
 	Slug        string
 	DisplayName string

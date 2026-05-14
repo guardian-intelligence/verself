@@ -19,7 +19,7 @@ WHERE org_id = $1 AND project_id = $2 AND environment_id = $3
 `
 
 type GetEnvironmentByIDParams struct {
-	OrgID         int64
+	OrgID         string
 	ProjectID     uuid.UUID
 	EnvironmentID uuid.UUID
 }
@@ -53,7 +53,7 @@ WHERE org_id = $1 AND project_id = $2 AND slug = $3
 `
 
 type GetEnvironmentBySlugParams struct {
-	OrgID     int64
+	OrgID     string
 	ProjectID uuid.UUID
 	Slug      string
 }
@@ -87,7 +87,7 @@ WHERE org_id = $1 AND project_id = $2
 `
 
 type GetProjectByIDParams struct {
-	OrgID     int64
+	OrgID     string
 	ProjectID uuid.UUID
 }
 
@@ -119,7 +119,7 @@ WHERE r.org_id = $1 AND r.slug = $2
 `
 
 type GetProjectByRedirectSlugParams struct {
-	OrgID int64
+	OrgID string
 	Slug  string
 }
 
@@ -150,7 +150,7 @@ WHERE org_id = $1 AND slug = $2
 `
 
 type GetProjectBySlugParams struct {
-	OrgID int64
+	OrgID string
 	Slug  string
 }
 
@@ -181,7 +181,7 @@ WHERE org_id = $1 AND operation = $2 AND key_hash = $3
 `
 
 type GetProjectIdempotencyRecordParams struct {
-	OrgID     int64
+	OrgID     string
 	Operation string
 	KeyHash   string
 }
@@ -207,7 +207,7 @@ ORDER BY kind, slug
 `
 
 type ListEnvironmentsParams struct {
-	OrgID     int64
+	OrgID     string
 	ProjectID uuid.UUID
 }
 
@@ -255,7 +255,7 @@ LIMIT $2
 `
 
 type ListEventsParams struct {
-	OrgID int64
+	OrgID string
 	Limit int32
 }
 
@@ -299,7 +299,7 @@ LIMIT $4
 `
 
 type ListEventsAfterCursorParams struct {
-	OrgID         int64
+	OrgID         string
 	CreatedBefore pgtype.Timestamptz
 	IDBefore      uuid.UUID
 	LimitCount    int32
@@ -350,7 +350,7 @@ LIMIT $2
 `
 
 type ListProjectsParams struct {
-	OrgID int64
+	OrgID string
 	Limit int32
 }
 
@@ -396,7 +396,7 @@ LIMIT $4
 `
 
 type ListProjectsAfterCursorParams struct {
-	OrgID         int64
+	OrgID         string
 	CreatedBefore pgtype.Timestamptz
 	IDBefore      uuid.UUID
 	LimitCount    int32
@@ -449,7 +449,7 @@ LIMIT $3
 `
 
 type ListProjectsByStateParams struct {
-	OrgID int64
+	OrgID string
 	State string
 	Limit int32
 }
@@ -496,7 +496,7 @@ LIMIT $5
 `
 
 type ListProjectsByStateAfterCursorParams struct {
-	OrgID         int64
+	OrgID         string
 	State         string
 	CreatedBefore pgtype.Timestamptz
 	IDBefore      uuid.UUID
@@ -551,7 +551,7 @@ SELECT EXISTS (
 `
 
 type ProjectSlugUnavailableParams struct {
-	OrgID int64
+	OrgID string
 	Slug  string
 }
 
@@ -571,7 +571,7 @@ SELECT EXISTS (
 `
 
 type ProjectSlugUnavailableForOtherProjectParams struct {
-	OrgID     int64
+	OrgID     string
 	Slug      string
 	ProjectID uuid.UUID
 }

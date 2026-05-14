@@ -2,6 +2,7 @@ package billing
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"strconv"
@@ -12,7 +13,24 @@ import (
 const ledgerUnitsPerCent uint64 = 100_000
 
 func orgIDText(orgID OrgID) string {
-	return strconv.FormatUint(uint64(orgID), 10)
+	return strings.TrimSpace(string(orgID))
+}
+
+func parseOrgID(value string) (OrgID, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	return OrgID(value), nil
+}
+
+func ledgerOrgKey(orgID OrgID) uint64 {
+	sum := sha256.Sum256([]byte(orgIDText(orgID)))
+	key := binary.BigEndian.Uint64(sum[:8])
+	if key == 0 {
+		return 1
+	}
+	return key
 }
 
 func textID(kind string, parts ...string) string {

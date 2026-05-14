@@ -119,7 +119,6 @@ SELECT
   org_id,
   home_org_id,
   selected_org_id,
-  roles,
   available_org_contexts::text AS available_org_contexts_json,
   user_claims::text AS user_claims_json,
   id_token,
@@ -147,7 +146,6 @@ type GetBrowserSessionRow struct {
 	OrgID                    pgtype.Text
 	HomeOrgID                pgtype.Text
 	SelectedOrgID            pgtype.Text
-	Roles                    []string
 	AvailableOrgContextsJson string
 	UserClaimsJson           string
 	IDToken                  pgtype.Text
@@ -172,7 +170,6 @@ func (q *Queries) GetBrowserSession(ctx context.Context, arg GetBrowserSessionPa
 		&i.OrgID,
 		&i.HomeOrgID,
 		&i.SelectedOrgID,
-		&i.Roles,
 		&i.AvailableOrgContextsJson,
 		&i.UserClaimsJson,
 		&i.IDToken,
@@ -225,26 +222,19 @@ const updateBrowserSessionOrganization = `-- name: UpdateBrowserSessionOrganizat
 UPDATE iam_browser_sessions
 SET org_id = $1,
     selected_org_id = $1,
-    roles = $2,
-    client_cache_partition = $3,
+    client_cache_partition = $2,
     updated_at = now()
-WHERE session_hash = $4
+WHERE session_hash = $3
 `
 
 type UpdateBrowserSessionOrganizationParams struct {
 	SelectedOrgID        pgtype.Text
-	Roles                []string
 	ClientCachePartition string
 	SessionHash          string
 }
 
 func (q *Queries) UpdateBrowserSessionOrganization(ctx context.Context, arg UpdateBrowserSessionOrganizationParams) error {
-	_, err := q.db.Exec(ctx, updateBrowserSessionOrganization,
-		arg.SelectedOrgID,
-		arg.Roles,
-		arg.ClientCachePartition,
-		arg.SessionHash,
-	)
+	_, err := q.db.Exec(ctx, updateBrowserSessionOrganization, arg.SelectedOrgID, arg.ClientCachePartition, arg.SessionHash)
 	return err
 }
 
@@ -307,7 +297,6 @@ INSERT INTO iam_browser_sessions (
   org_id,
   home_org_id,
   selected_org_id,
-  roles,
   available_org_contexts,
   user_claims,
   id_token,
@@ -325,14 +314,13 @@ INSERT INTO iam_browser_sessions (
   $7,
   $8,
   $9,
-  $10,
+  $10::jsonb,
   $11::jsonb,
-  $12::jsonb,
+  $12,
   $13,
   $14,
   $15,
-  $16,
-  $17
+  $16
 )
 ON CONFLICT (session_hash) DO UPDATE SET
   client_cache_partition = EXCLUDED.client_cache_partition,
@@ -343,7 +331,6 @@ ON CONFLICT (session_hash) DO UPDATE SET
   org_id = EXCLUDED.org_id,
   home_org_id = EXCLUDED.home_org_id,
   selected_org_id = EXCLUDED.selected_org_id,
-  roles = EXCLUDED.roles,
   available_org_contexts = EXCLUDED.available_org_contexts,
   user_claims = EXCLUDED.user_claims,
   id_token = EXCLUDED.id_token,
@@ -364,7 +351,6 @@ type UpsertBrowserSessionParams struct {
 	OrgID                    pgtype.Text
 	HomeOrgID                pgtype.Text
 	SelectedOrgID            pgtype.Text
-	Roles                    []string
 	AvailableOrgContextsJson []byte
 	UserClaimsJson           []byte
 	IDToken                  pgtype.Text
@@ -385,7 +371,6 @@ func (q *Queries) UpsertBrowserSession(ctx context.Context, arg UpsertBrowserSes
 		arg.OrgID,
 		arg.HomeOrgID,
 		arg.SelectedOrgID,
-		arg.Roles,
 		arg.AvailableOrgContextsJson,
 		arg.UserClaimsJson,
 		arg.IDToken,

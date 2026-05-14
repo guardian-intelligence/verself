@@ -10,23 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	opruntime "github.com/verself/operator-runtime/runtime"
 	"go.opentelemetry.io/otel/attribute"
 )
-
-type platformOwnerGrantSpec struct {
-	ProjectName string
-	RoleKeys    []string
-}
-
-type platformOwnerGrantSubject struct {
-	Email string
-	User  platformZitadelUser
-}
 
 type platformRuntimeAuthAudienceSpec struct {
 	ComponentName        string
@@ -65,31 +54,6 @@ type platformZitadelProject struct {
 	State string
 }
 
-type platformZitadelAuthorization struct {
-	ID             string
-	UserID         string
-	ProjectID      string
-	OrganizationID string
-	RoleKeys       []string
-	State          string
-}
-
-type flexibleInt int
-
-func (n *flexibleInt) UnmarshalJSON(data []byte) error {
-	data = bytes.Trim(data, `"`)
-	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
-		*n = 0
-		return nil
-	}
-	value, err := strconv.Atoi(string(data))
-	if err != nil {
-		return err
-	}
-	*n = flexibleInt(value)
-	return nil
-}
-
 type platformZitadelStatusError struct {
 	Method string
 	Path   string
@@ -99,16 +63,6 @@ type platformZitadelStatusError struct {
 
 func (e platformZitadelStatusError) Error() string {
 	return fmt.Sprintf("zitadel %s %s status %d: %s", e.Method, e.Path, e.Status, e.Body)
-}
-
-func platformOwnerGrantSpecs() []platformOwnerGrantSpec {
-	return []platformOwnerGrantSpec{
-		{ProjectName: "iam-service", RoleKeys: []string{"owner"}},
-		{ProjectName: "sandbox-rental", RoleKeys: []string{"owner"}},
-		{ProjectName: "secrets-service", RoleKeys: []string{"owner"}},
-		{ProjectName: "forgejo", RoleKeys: []string{"forgejo_admin"}},
-		{ProjectName: "mailbox-service", RoleKeys: []string{"mailbox_user"}},
-	}
 }
 
 func platformRuntimeAuthAudienceSpecs() []platformRuntimeAuthAudienceSpec {
@@ -189,28 +143,9 @@ func (r *platformRunner) ensurePlatformOwner() error {
 			}
 			r.markChanged("zitadel.owner.created")
 		}
-		grantSubjects, err := r.platformOwnerGrantSubjects(ctx, client, user)
-		if err != nil {
-			return err
-		}
 		projectIDs, err := r.resolvePlatformZitadelProjectIDs(ctx, client)
 		if err != nil {
 			return err
-		}
-		for _, subject := range grantSubjects {
-			for _, spec := range platformOwnerGrantSpecs() {
-				projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
-				if projectID == "" {
-					return fmt.Errorf("zitadel project not resolved: %s", spec.ProjectName)
-				}
-				changed, err := client.UpsertAuthorization(ctx, r.cfg.OrgIDText, projectID, subject.User.ID, spec.RoleKeys)
-				if err != nil {
-					return err
-				}
-				if changed {
-					r.markChanged("zitadel.owner_grant." + spec.ProjectName + "." + subject.User.ID + ".upserted")
-				}
-			}
 		}
 		if err := r.ensureRuntimeAuthAudienceCredentials(ctx, projectIDs); err != nil {
 			return err
@@ -264,26 +199,6 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 		if err != nil {
 			return err
 		}
-		grantSubjects, err := r.platformOwnerGrantSubjects(ctx, client, user)
-		if err != nil {
-			return err
-		}
-		for _, subject := range grantSubjects {
-			for _, spec := range platformOwnerGrantSpecs() {
-				projectID := strings.TrimSpace(projectIDs[spec.ProjectName])
-				if projectID == "" {
-					mismatches = append(mismatches, fmt.Sprintf("%s.project_missing", spec.ProjectName))
-					continue
-				}
-				ok, roles, err := client.AuthorizationHasRoles(ctx, r.cfg.OrgIDText, projectID, subject.User.ID, spec.RoleKeys)
-				if err != nil {
-					return err
-				}
-				if !ok {
-					mismatches = append(mismatches, fmt.Sprintf("%s.%s.roles=%q", subject.Email, spec.ProjectName, strings.Join(roles, ",")))
-				}
-			}
-		}
 		credentialMismatches, err := r.platformRuntimeAuthAudienceCredentialMismatches(ctx, projectIDs)
 		if err != nil {
 			return err
@@ -307,32 +222,6 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 		*issues = append(*issues, err.Error())
 	}
 	return row
-}
-
-func (r *platformRunner) platformOwnerGrantSubjects(ctx context.Context, client platformZitadelClient, canonical platformZitadelUser) ([]platformOwnerGrantSubject, error) {
-	subjects := []platformOwnerGrantSubject{{Email: r.cfg.OwnerEmail, User: canonical}}
-	seenUserIDs := map[string]struct{}{canonical.ID: {}}
-	for _, email := range r.cfg.OwnerBootstrapEmails {
-		if strings.EqualFold(email, r.cfg.OwnerEmail) {
-			continue
-		}
-		user, found, err := client.FindHumanByEmail(ctx, email)
-		if err != nil {
-			return nil, err
-		}
-		if !found {
-			return nil, fmt.Errorf("platform bootstrap owner %s is missing in Zitadel", email)
-		}
-		if user.ResourceOwner != "" && user.ResourceOwner != r.cfg.OrgIDText {
-			return nil, fmt.Errorf("platform bootstrap owner %s belongs to Zitadel org %s, expected %s", email, user.ResourceOwner, r.cfg.OrgIDText)
-		}
-		if _, ok := seenUserIDs[user.ID]; ok {
-			continue
-		}
-		seenUserIDs[user.ID] = struct{}{}
-		subjects = append(subjects, platformOwnerGrantSubject{Email: email, User: user})
-	}
-	return subjects, nil
 }
 
 func (r *platformRunner) zitadelClient(ctx context.Context) (platformZitadelClient, func(), error) {
@@ -360,9 +249,6 @@ func (r *platformRunner) zitadelClient(ctx context.Context) (platformZitadelClie
 
 func (r *platformRunner) resolvePlatformZitadelProjectIDs(ctx context.Context, client platformZitadelClient) (map[string]string, error) {
 	projectNames := map[string]struct{}{}
-	for _, spec := range platformOwnerGrantSpecs() {
-		projectNames[spec.ProjectName] = struct{}{}
-	}
 	for _, spec := range platformRuntimeAuthAudienceSpecs() {
 		projectNames[spec.ProjectName] = struct{}{}
 	}
@@ -701,113 +587,6 @@ func (c platformZitadelClient) CreateHumanInvite(ctx context.Context, orgID stri
 	}, nil
 }
 
-func (c platformZitadelClient) UpsertAuthorization(ctx context.Context, orgID, projectID, userID string, roleKeys []string) (bool, error) {
-	assignments, err := c.listAuthorizations(ctx,
-		zitadelAuthorizationFilterInUserIDs(userID),
-		zitadelAuthorizationFilterProjectID(projectID),
-		zitadelAuthorizationFilterOrganizationID(orgID),
-	)
-	if err != nil {
-		return false, err
-	}
-	expected := compactRoleKeys(roleKeys)
-	for _, assignment := range assignments {
-		if assignment.UserID != userID || assignment.ProjectID != projectID || assignment.OrganizationID != orgID {
-			continue
-		}
-		if sameStringSet(assignment.RoleKeys, expected) {
-			return false, nil
-		}
-		body := map[string]any{
-			"id":       assignment.ID,
-			"roleKeys": expected,
-		}
-		if err := c.doJSON(ctx, http.MethodPost, "/zitadel.authorization.v2.AuthorizationService/UpdateAuthorization", body, nil, true); err != nil {
-			return false, fmt.Errorf("update Zitadel authorization %s: %w", assignment.ID, err)
-		}
-		return true, nil
-	}
-	body := map[string]any{
-		"userId":         userID,
-		"projectId":      projectID,
-		"organizationId": orgID,
-		"roleKeys":       expected,
-	}
-	if err := c.doJSON(ctx, http.MethodPost, "/zitadel.authorization.v2.AuthorizationService/CreateAuthorization", body, nil, true); err != nil {
-		return false, fmt.Errorf("create Zitadel authorization: %w", err)
-	}
-	return true, nil
-}
-
-func (c platformZitadelClient) AuthorizationHasRoles(ctx context.Context, orgID, projectID, userID string, expected []string) (bool, []string, error) {
-	assignments, err := c.listAuthorizations(ctx,
-		zitadelAuthorizationFilterInUserIDs(userID),
-		zitadelAuthorizationFilterProjectID(projectID),
-		zitadelAuthorizationFilterOrganizationID(orgID),
-	)
-	if err != nil {
-		return false, nil, err
-	}
-	for _, assignment := range assignments {
-		if assignment.UserID == userID && assignment.ProjectID == projectID && assignment.OrganizationID == orgID {
-			return sameStringSet(assignment.RoleKeys, expected), compactRoleKeys(assignment.RoleKeys), nil
-		}
-	}
-	return false, nil, nil
-}
-
-func (c platformZitadelClient) listAuthorizations(ctx context.Context, filters ...map[string]any) ([]platformZitadelAuthorization, error) {
-	var all []platformZitadelAuthorization
-	for {
-		var out struct {
-			Pagination struct {
-				TotalResult flexibleInt `json:"totalResult"`
-			} `json:"pagination"`
-			Authorizations []struct {
-				ID   string `json:"id"`
-				User struct {
-					ID string `json:"id"`
-				} `json:"user"`
-				Project struct {
-					ID string `json:"id"`
-				} `json:"project"`
-				Organization struct {
-					ID string `json:"id"`
-				} `json:"organization"`
-				Roles []struct {
-					Key string `json:"key"`
-				} `json:"roles"`
-				State string `json:"state"`
-			} `json:"authorizations"`
-		}
-		body := map[string]any{
-			"pagination": map[string]int{"limit": 1000, "offset": len(all)},
-			"filters":    filters,
-		}
-		if err := c.doJSON(ctx, http.MethodPost, "/zitadel.authorization.v2.AuthorizationService/ListAuthorizations", body, &out, true); err != nil {
-			return nil, fmt.Errorf("list Zitadel authorizations: %w", err)
-		}
-		page := make([]platformZitadelAuthorization, 0, len(out.Authorizations))
-		for _, item := range out.Authorizations {
-			authz := platformZitadelAuthorization{
-				ID:             item.ID,
-				UserID:         item.User.ID,
-				ProjectID:      item.Project.ID,
-				OrganizationID: item.Organization.ID,
-				State:          item.State,
-			}
-			for _, role := range item.Roles {
-				authz.RoleKeys = append(authz.RoleKeys, role.Key)
-			}
-			page = append(page, authz)
-		}
-		all = append(all, page...)
-		if len(page) == 0 || int(out.Pagination.TotalResult) <= len(all) {
-			return all, nil
-		}
-	}
-}
-
 func (c platformZitadelClient) doJSON(ctx context.Context, method, path string, body any, out any, connect bool) error {
 	var reader io.Reader
 	if body != nil {
@@ -854,30 +633,6 @@ func (c platformZitadelClient) doJSON(ctx context.Context, method, path string, 
 	return nil
 }
 
-func zitadelAuthorizationFilterInUserIDs(userIDs ...string) map[string]any {
-	return map[string]any{
-		"inUserIds": map[string]any{
-			"ids": compactRoleKeys(userIDs),
-		},
-	}
-}
-
-func zitadelAuthorizationFilterProjectID(projectID string) map[string]any {
-	return map[string]any{
-		"projectId": map[string]any{
-			"id": strings.TrimSpace(projectID),
-		},
-	}
-}
-
-func zitadelAuthorizationFilterOrganizationID(orgID string) map[string]any {
-	return map[string]any{
-		"organizationId": map[string]any{
-			"id": strings.TrimSpace(orgID),
-		},
-	}
-}
-
 func ownerGivenName(name, fallback string) string {
 	parts := strings.Fields(name)
 	if len(parts) == 0 {
@@ -892,36 +647,4 @@ func ownerFamilyName(name string) string {
 		return "Owner"
 	}
 	return strings.Join(parts[1:], " ")
-}
-
-func compactRoleKeys(values []string) []string {
-	out := values[:0]
-	seen := map[string]struct{}{}
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sameStringSet(a, b []string) bool {
-	left := compactRoleKeys(append([]string(nil), a...))
-	right := compactRoleKeys(append([]string(nil), b...))
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
 }

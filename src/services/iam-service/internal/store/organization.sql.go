@@ -303,11 +303,10 @@ func (q *Queries) InsertOrganizationSlugRedirect(ctx context.Context, arg Insert
 }
 
 const listOrganizationMetadataByOrgIDs = `-- name: ListOrganizationMetadataByOrgIDs :many
-SELECT o.org_id, o.identity_provider_org_id, o.display_name, o.slug, o.version, COALESCE(a.version, 1)::integer AS org_acl_version
-FROM iam_organizations o
-LEFT JOIN iam_org_acl_state a ON a.org_id = o.org_id
-WHERE o.org_id = ANY($1::text[])
-ORDER BY o.display_name, o.org_id
+SELECT org_id, identity_provider_org_id, display_name, slug, version
+FROM iam_organizations
+WHERE org_id = ANY($1::text[])
+ORDER BY display_name, org_id
 `
 
 type ListOrganizationMetadataByOrgIDsParams struct {
@@ -320,7 +319,6 @@ type ListOrganizationMetadataByOrgIDsRow struct {
 	DisplayName           string
 	Slug                  string
 	Version               int32
-	OrgAclVersion         int32
 }
 
 func (q *Queries) ListOrganizationMetadataByOrgIDs(ctx context.Context, arg ListOrganizationMetadataByOrgIDsParams) ([]ListOrganizationMetadataByOrgIDsRow, error) {
@@ -338,7 +336,6 @@ func (q *Queries) ListOrganizationMetadataByOrgIDs(ctx context.Context, arg List
 			&i.DisplayName,
 			&i.Slug,
 			&i.Version,
-			&i.OrgAclVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -351,11 +348,10 @@ func (q *Queries) ListOrganizationMetadataByOrgIDs(ctx context.Context, arg List
 }
 
 const listOrganizationMetadataByProviderOrgIDs = `-- name: ListOrganizationMetadataByProviderOrgIDs :many
-SELECT o.org_id, o.identity_provider_org_id, o.display_name, o.slug, o.version, COALESCE(a.version, 1)::integer AS org_acl_version
-FROM iam_organizations o
-LEFT JOIN iam_org_acl_state a ON a.org_id = o.org_id
-WHERE o.identity_provider_org_id = ANY($1::text[])
-ORDER BY o.display_name, o.org_id
+SELECT org_id, identity_provider_org_id, display_name, slug, version
+FROM iam_organizations
+WHERE identity_provider_org_id = ANY($1::text[])
+ORDER BY display_name, org_id
 `
 
 type ListOrganizationMetadataByProviderOrgIDsParams struct {
@@ -368,7 +364,6 @@ type ListOrganizationMetadataByProviderOrgIDsRow struct {
 	DisplayName           string
 	Slug                  string
 	Version               int32
-	OrgAclVersion         int32
 }
 
 func (q *Queries) ListOrganizationMetadataByProviderOrgIDs(ctx context.Context, arg ListOrganizationMetadataByProviderOrgIDsParams) ([]ListOrganizationMetadataByProviderOrgIDsRow, error) {
@@ -386,7 +381,6 @@ func (q *Queries) ListOrganizationMetadataByProviderOrgIDs(ctx context.Context, 
 			&i.DisplayName,
 			&i.Slug,
 			&i.Version,
-			&i.OrgAclVersion,
 		); err != nil {
 			return nil, err
 		}

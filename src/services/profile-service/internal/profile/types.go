@@ -23,8 +23,6 @@ const (
 	ThemeSystem        = "system"
 	ThemeLight         = "light"
 	ThemeDark          = "dark"
-
-	zitadelGenericProjectRolesClaim = "urn:zitadel:iam:org:project:roles"
 )
 
 var (
@@ -99,20 +97,7 @@ func ValidatePrincipal(principal Principal) error {
 	if credentialID, _ := principal.Raw["verself:credential_id"].(string); strings.TrimSpace(credentialID) != "" {
 		return fmt.Errorf("%w: api credentials cannot mutate human profiles", ErrInvalidInput)
 	}
-	if !hasGenericProjectRolesClaim(principal.Raw) {
-		return fmt.Errorf("%w: human token marker is required", ErrInvalidInput)
-	}
 	return nil
-}
-
-func hasGenericProjectRolesClaim(claims map[string]any) bool {
-	// ZITADEL access tokens here omit email, so the generic roles claim is the current human-token discriminator.
-	value, ok := claims[zitadelGenericProjectRolesClaim]
-	if !ok {
-		return false
-	}
-	roles, ok := value.(map[string]any)
-	return ok && len(roles) > 0
 }
 
 func NormalizeIdentityInput(input UpdateIdentityRequest) (UpdateIdentityRequest, error) {

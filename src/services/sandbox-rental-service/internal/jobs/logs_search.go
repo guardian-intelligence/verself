@@ -93,7 +93,7 @@ func parseUint32(value string) (uint32, error) {
 	return uint32(parsed), nil
 }
 
-func (s *Service) SearchRunLogs(ctx context.Context, orgID uint64, filters RunLogSearchFilters) (RunLogSearchPage, error) {
+func (s *Service) SearchRunLogs(ctx context.Context, orgID string, filters RunLogSearchFilters) (RunLogSearchPage, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.logs.search")
 	defer span.End()
 	if s.CH == nil {

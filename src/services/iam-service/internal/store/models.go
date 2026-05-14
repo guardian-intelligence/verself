@@ -16,18 +16,3 @@ type IamBrowserLoginTransaction struct {
 	ExpiresAt    pgtype.Timestamptz
 	CreatedAt    pgtype.Timestamptz
 }
-
-type IamMemberCapability struct {
-	OrgID       string
-	EnabledKeys []string
-	Version     int32
-	UpdatedAt   pgtype.Timestamptz
-	UpdatedBy   string
-}
-
-type IamOrgAclState struct {
-	OrgID     string
-	Version   int32
-	UpdatedAt pgtype.Timestamptz
-	UpdatedBy string
-}

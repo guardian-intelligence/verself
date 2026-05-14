@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	iamclient "github.com/verself/iam-service/client"
@@ -28,14 +27,14 @@ func NewIAMClient(baseURL string, httpClient iamclient.HTTPRequestDoer) (IAMClie
 }
 
 func (c IAMClient) ResolveSourceOrganization(ctx context.Context, slug string) (_ OrganizationReference, err error) {
-	return c.resolve(ctx, 0, slug)
+	return c.resolve(ctx, "", slug)
 }
 
-func (c IAMClient) ResolveSourceOrganizationID(ctx context.Context, orgID uint64) (_ OrganizationReference, err error) {
+func (c IAMClient) ResolveSourceOrganizationID(ctx context.Context, orgID string) (_ OrganizationReference, err error) {
 	return c.resolve(ctx, orgID, "")
 }
 
-func (c IAMClient) resolve(ctx context.Context, orgID uint64, slug string) (_ OrganizationReference, err error) {
+func (c IAMClient) resolve(ctx context.Context, orgID string, slug string) (_ OrganizationReference, err error) {
 	ctx, span := identityTracer.Start(ctx, "source.identity.organization.resolve")
 	defer func() {
 		if err != nil {
@@ -48,15 +47,16 @@ func (c IAMClient) resolve(ctx context.Context, orgID uint64, slug string) (_ Or
 		return OrganizationReference{}, ErrStoreUnavailable
 	}
 	slug = NormalizeSlug(slug)
-	if orgID == 0 && slug == "" {
+	orgID = strings.TrimSpace(orgID)
+	if orgID == "" && slug == "" {
 		return OrganizationReference{}, ErrInvalid
 	}
-	span.SetAttributes(attribute.Int64("verself.org_id", int64FromUint64(orgID, "org id")), attribute.String("source.org_slug.requested", slug))
+	span.SetAttributes(attribute.String("verself.org_id", orgID), attribute.String("source.org_slug.requested", slug))
 	body := iamclient.ResolveOrganizationInputBody{
 		RequireActive: true,
 	}
-	if orgID != 0 {
-		value := iamclient.ProviderOrgId(strconv.FormatUint(orgID, 10))
+	if orgID != "" {
+		value := iamclient.OrgId(orgID)
 		body.OrgID = &value
 	}
 	if slug != "" {
@@ -83,21 +83,18 @@ func (c IAMClient) resolve(ctx context.Context, orgID uint64, slug string) (_ Or
 		}
 	}
 	org := resp.Result.Organization
-	resolvedOrgID, err := strconv.ParseUint(strings.TrimSpace(string(org.OrgID)), 10, 64)
-	if err != nil || resolvedOrgID == 0 {
-		return OrganizationReference{}, fmt.Errorf("%w: parse organization id: %v", ErrStoreUnavailable, err)
-	}
+	resolvedOrgID := strings.TrimSpace(string(org.OrgID))
 	ref := OrganizationReference{
 		OrgID:          resolvedOrgID,
 		Slug:           strings.TrimSpace(string(org.Slug)),
 		DisplayName:    strings.TrimSpace(string(org.DisplayName)),
 		RedirectedFrom: trimOptionalString(org.RedirectedFrom),
 	}
-	if ref.OrgID == 0 || ref.Slug == "" {
+	if ref.OrgID == "" || ref.Slug == "" {
 		return OrganizationReference{}, ErrStoreUnavailable
 	}
 	span.SetAttributes(
-		attribute.Int64("verself.org_id", int64FromUint64(ref.OrgID, "org id")),
+		attribute.String("verself.org_id", ref.OrgID),
 		attribute.String("source.org_slug", ref.Slug),
 		attribute.String("source.org_slug.redirected_from", ref.RedirectedFrom),
 	)

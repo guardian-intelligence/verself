@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -72,7 +73,7 @@ func resolveProject(svc *projects.Service, installationID string) func(context.C
 		if err != nil {
 			return nil, err
 		}
-		orgID, err := uint64FromContract(ctx, string(input.Body.OrgID), "org_id")
+		orgID, err := orgIDFromContract(ctx, string(input.Body.OrgID), "org_id")
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +100,7 @@ func resolveEnvironment(svc *projects.Service, installationID string) func(conte
 		if err != nil {
 			return nil, err
 		}
-		orgID, err := uint64FromContract(ctx, string(input.Body.OrgID), "org_id")
+		orgID, err := orgIDFromContract(ctx, string(input.Body.OrgID), "org_id")
 		if err != nil {
 			return nil, err
 		}
@@ -119,7 +120,7 @@ func resolveEnvironment(svc *projects.Service, installationID string) func(conte
 
 func listEvents(svc *projects.Service, installationID string) func(context.Context, projects.Principal, *projectEventsInput) (*projectEventsOutput, error) {
 	return func(ctx context.Context, _ projects.Principal, input *projectEventsInput) (*projectEventsOutput, error) {
-		orgID, err := uint64FromContract(ctx, string(input.OrgID), "org_id")
+		orgID, err := orgIDFromContract(ctx, string(input.OrgID), "org_id")
 		if err != nil {
 			return nil, err
 		}
@@ -138,16 +139,16 @@ func optionalUUID[T ~string](ctx context.Context, value *T, field string) (uuid.
 	return parseUUID(ctx, *value, field)
 }
 
-func uint64FromContract(ctx context.Context, value, field string) (uint64, error) {
-	parsed, err := strconv.ParseUint(value, 10, 64)
-	if err != nil || parsed == 0 {
-		return 0, badRequest(ctx, "invalid-"+field, field+" must be a positive decimal uint64", err)
+func orgIDFromContract(ctx context.Context, value, field string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", badRequest(ctx, "invalid-"+field, field+" is required", nil)
 	}
-	return parsed, nil
+	return value, nil
 }
 
 func internalProjectDTO(project projects.Project, installationID string) internalcontractapi.ProjectSummary {
-	orgID := strconv.FormatUint(project.OrgID, 10)
+	orgID := project.OrgID
 	projectID := project.ID.String()
 	return internalcontractapi.ProjectSummary{
 		ProjectID:          internalcontractapi.ProjectID(projectID),
@@ -168,7 +169,7 @@ func internalProjectDTO(project projects.Project, installationID string) interna
 }
 
 func internalEnvironmentDTO(env projects.Environment, installationID string) internalcontractapi.ProjectEnvironmentSummary {
-	orgID := strconv.FormatUint(env.OrgID, 10)
+	orgID := env.OrgID
 	projectID := env.ProjectID.String()
 	return internalcontractapi.ProjectEnvironmentSummary{
 		EnvironmentID:       internalcontractapi.EnvironmentID(env.ID.String()),
@@ -195,10 +196,10 @@ func eventDTO(event projects.Event, installationID string) internalcontractapi.P
 	var envResourceName *internalcontractapi.ResourceName
 	if event.EnvironmentID != uuid.Nil {
 		environmentID = optionalContractString[internalcontractapi.EnvironmentID](event.EnvironmentID.String())
-		orgID := strconv.FormatUint(event.OrgID, 10)
+		orgID := event.OrgID
 		envResourceName = optionalContractString[internalcontractapi.ResourceName](environmentResourceName(installationID, orgID, event.ProjectID.String(), event.EnvironmentID.String()))
 	}
-	orgID := strconv.FormatUint(event.OrgID, 10)
+	orgID := event.OrgID
 	projectID := event.ProjectID.String()
 	return internalcontractapi.ProjectEventSummary{
 		EventID:                 internalcontractapi.ProjectEventID(event.ID.String()),

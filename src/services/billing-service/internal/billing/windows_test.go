@@ -97,8 +97,8 @@ func TestReserveWindowQuantityRejectsInvalidQuantities(t *testing.T) {
 func TestBillingWindowIDIsOrgScoped(t *testing.T) {
 	t.Parallel()
 
-	left := billingWindowID(42, "sandbox", "volume_meter_tick", "tick-1", 1)
-	right := billingWindowID(43, "sandbox", "volume_meter_tick", "tick-1", 1)
+	left := billingWindowID("org_42", "sandbox", "volume_meter_tick", "tick-1", 1)
+	right := billingWindowID("org_43", "sandbox", "volume_meter_tick", "tick-1", 1)
 
 	if left == right {
 		t.Fatalf("billingWindowID collided across orgs: %s", left)
@@ -109,7 +109,7 @@ func TestReserveSourceFingerprintUsesResolvedQuantityAndAllocation(t *testing.T)
 	t.Parallel()
 
 	base := ReserveRequest{
-		OrgID:            42,
+		OrgID:            "org_42",
 		ProductID:        "sandbox",
 		ActorID:          "actor",
 		ConcurrentCount:  1,
@@ -176,7 +176,7 @@ func TestReservationExposesChosenQuantity(t *testing.T) {
 	expiresAt, renewBy := reserveWindowTiming(ReservationShapeTime, windowStart, 60_000)
 	reservation := persistedWindow{
 		WindowID:            "win_test",
-		OrgID:               42,
+		OrgID:               "org_42",
 		ProductID:           "sandbox",
 		PricingPlanID:       "sandbox-default",
 		ActorID:             "actor",
@@ -210,7 +210,7 @@ func TestMeteringRowForWindowUsesSettledQuantity(t *testing.T) {
 	row, err := meteringRowForWindow(persistedWindow{
 		WindowID:          "win_metering",
 		CycleID:           "cycle",
-		OrgID:             42,
+		OrgID:             "org_42",
 		ActorID:           "actor",
 		ProductID:         "sandbox",
 		SourceType:        "test",
@@ -253,7 +253,7 @@ func TestMeteringRowForWindowRoundsComponentChargesAfterQuantity(t *testing.T) {
 	row, err := meteringRowForWindow(persistedWindow{
 		WindowID:         "win_metering_fractional",
 		CycleID:          "cycle",
-		OrgID:            42,
+		OrgID:            "org_42",
 		ActorID:          "actor",
 		ProductID:        "sandbox",
 		SourceType:       "volume_meter_tick",

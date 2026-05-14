@@ -20,7 +20,7 @@ type resourcePathSegment struct {
 }
 
 func githubInstallationRecord(record jobs.GitHubInstallationRecord, installationID string) contractapi.SandboxGitHubInstallationRecord {
-	orgID := strconv.FormatUint(record.OrgID, 10)
+	orgID := record.OrgID
 	githubInstallationID := strconv.FormatInt(record.InstallationID, 10)
 	return contractapi.SandboxGitHubInstallationRecord{
 		InstallationID: contractapi.DecimalUint64(githubInstallationID),
@@ -78,7 +78,7 @@ func githubInstallationRepositorySync(installationID string, records []jobs.GitH
 }
 
 func executionRecord(record jobs.ExecutionRecord, installationID string) contractapi.SandboxExecutionRecord {
-	orgID := strconv.FormatUint(record.OrgID, 10)
+	orgID := record.OrgID
 	return contractapi.SandboxExecutionRecord{
 		RunID:            contractapi.RunID(record.RunID.String()),
 		ResourceName:     contractapi.ResourceName(resourceName(installationID, resourcePathSegment{"orgs", orgID}, resourcePathSegment{"runs", record.RunID.String()})),
@@ -108,14 +108,14 @@ func executionRecord(record jobs.ExecutionRecord, installationID string) contrac
 	}
 }
 
-func attemptRecord(record jobs.AttemptRecord, orgID uint64, runID uuid.UUID, installationID string) contractapi.SandboxAttemptRecord {
+func attemptRecord(record jobs.AttemptRecord, orgID string, runID uuid.UUID, installationID string) contractapi.SandboxAttemptRecord {
 	var exitCode *contractapi.SafeExitCode
 	if record.CompletedAt != nil {
 		exitCode = optionalSafeExitCode(record.ExitCode)
 	}
 	return contractapi.SandboxAttemptRecord{
 		AttemptID:              contractapi.AttemptID(record.AttemptID.String()),
-		ResourceName:           optionalContractString[contractapi.ResourceName](resourceName(installationID, resourcePathSegment{"orgs", strconv.FormatUint(orgID, 10)}, resourcePathSegment{"runs", runID.String()}, resourcePathSegment{"attempts", record.AttemptID.String()})),
+		ResourceName:           optionalContractString[contractapi.ResourceName](resourceName(installationID, resourcePathSegment{"orgs", orgID}, resourcePathSegment{"runs", runID.String()}, resourcePathSegment{"attempts", record.AttemptID.String()})),
 		AttemptSeq:             safeLongFromInt(record.AttemptSeq, "attempt seq"),
 		State:                  contractapi.AttemptState(record.State),
 		LeaseID:                optionalContractString[contractapi.LeaseID](record.LeaseID),
@@ -202,7 +202,7 @@ func runnerRunMetadata(metadata jobs.RunnerRunMetadata) *contractapi.SandboxRunn
 	}
 }
 
-func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata, orgID uint64, installationID string) *contractapi.SandboxScheduleRunMetadata {
+func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata, orgID string, installationID string) *contractapi.SandboxScheduleRunMetadata {
 	if metadata.ScheduleID == uuid.Nil && metadata.DisplayName == "" && metadata.TemporalWorkflowID == "" && metadata.TemporalRunID == "" {
 		return nil
 	}
@@ -214,7 +214,7 @@ func scheduleRunMetadata(metadata jobs.ScheduleRunMetadata, orgID uint64, instal
 	if metadata.ScheduleID != uuid.Nil {
 		scheduleID := metadata.ScheduleID.String()
 		out.ScheduleID = optionalContractString[contractapi.ScheduleID](scheduleID)
-		out.ScheduleResourceName = optionalContractString[contractapi.ResourceName](resourceName(installationID, resourcePathSegment{"orgs", strconv.FormatUint(orgID, 10)}, resourcePathSegment{"schedules", scheduleID}))
+		out.ScheduleResourceName = optionalContractString[contractapi.ResourceName](resourceName(installationID, resourcePathSegment{"orgs", orgID}, resourcePathSegment{"schedules", scheduleID}))
 	}
 	return &out
 }
@@ -395,7 +395,7 @@ func executionScheduleCreateRequest(ctx context.Context, request contractapi.Cre
 }
 
 func executionScheduleRecord(record recurring.ScheduleRecord, installationID string) contractapi.SandboxExecutionScheduleRecord {
-	orgID := strconv.FormatUint(record.OrgID, 10)
+	orgID := record.OrgID
 	projectID := record.ProjectID.String()
 	return contractapi.SandboxExecutionScheduleRecord{
 		ScheduleID:                   contractapi.ScheduleID(record.ScheduleID.String()),

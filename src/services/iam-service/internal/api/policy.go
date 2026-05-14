@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -341,37 +340,6 @@ func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {
 	headers := http.Header{}
 	headers.Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
 	return huma.ErrorWithHeaders(err, headers)
-}
-
-func identityRolesForCurrentOrg(identity *auth.Identity) []string {
-	if identity == nil {
-		return nil
-	}
-	if len(identity.RoleAssignments) == 0 || identity.OrgID == "" {
-		return nil
-	}
-	roles := make([]string, 0, len(identity.RoleAssignments))
-	for _, assignment := range identity.RoleAssignments {
-		if assignment.OrganizationID == identity.OrgID && assignment.Role != "" {
-			roles = append(roles, assignment.Role)
-		}
-	}
-	sort.Strings(roles)
-	return compactStrings(roles)
-}
-
-func compactStrings(values []string) []string {
-	out := values[:0]
-	var previous string
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || value == previous {
-			continue
-		}
-		out = append(out, value)
-		previous = value
-	}
-	return out
 }
 
 func applyPublicAPISecurityScheme(api huma.API) {

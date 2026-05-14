@@ -65,10 +65,6 @@ func identityError(ctx context.Context, err error) error {
 		return badRequest(ctx, "invalid-request", "invalid identity request", err)
 	case errors.Is(err, identity.ErrMemberMissing):
 		return notFound(ctx, "member-not-found", "organization member not found")
-	case errors.Is(err, identity.ErrCapabilitiesConflict):
-		return conflict(ctx, "member-capabilities-version-conflict", "organization member capabilities version conflict", err)
-	case errors.Is(err, identity.ErrOrgACLConflict):
-		return conflict(ctx, "organization-acl-version-conflict", "organization ACL changed before this update was applied", err)
 	case errors.Is(err, identity.ErrOrganizationConflict):
 		return conflict(ctx, "organization-profile-version-conflict", "organization profile changed before this update was applied", err)
 	case errors.Is(err, identity.ErrOrganizationMissing):

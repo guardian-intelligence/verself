@@ -109,7 +109,7 @@ func (op durableVolumeOperation) event(executionID, attemptID uuid.UUID, identit
 }
 
 type goldenWorkflowRunRef struct {
-	OrgID                  uint64
+	OrgID                  string
 	Provider               string
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
@@ -165,7 +165,7 @@ type durableEvent struct {
 
 type durableEventRow struct {
 	ObservedAt            time.Time `ch:"observed_at"`
-	OrgID                 uint64    `ch:"org_id"`
+	OrgID                 string    `ch:"org_id"`
 	RepositoryID          uint64    `ch:"repository_id"`
 	Provider              string    `ch:"provider"`
 	ProviderRepositoryID  uint64    `ch:"provider_repository_id"`
@@ -325,7 +325,7 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 	matrixKey := githubMatrixKey(identity)
 	workspacePolicyHash := stableHex("workspace", "v0", githubRunnerDurableWorkDir, "preserve-untracked")
 	upsertJobShape := func(componentCompatibilityHash string) (uuid.UUID, error) {
-		jobShapeID := stableUUID("durable-job-shape", strconv.FormatUint(identity.OrgID, 10), identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), workflowIdentity, jobIdentity, matrixKey, identity.RunnerClass, durablePlatformImage, durableGuestArch, workspacePolicyHash, componentCompatibilityHash)
+		jobShapeID := stableUUID("durable-job-shape", identity.OrgID, identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), workflowIdentity, jobIdentity, matrixKey, identity.RunnerClass, durablePlatformImage, durableGuestArch, workspacePolicyHash, componentCompatibilityHash)
 		shape, err := s.storeQueries().UpsertJobShape(ctx, store.UpsertJobShapeParams{
 			JobShapeID:             jobShapeID,
 			RepositoryID:           identity.ProviderRepositoryID,
@@ -432,7 +432,7 @@ type durableOperationSpec struct {
 }
 
 func (s *Service) insertDurableOperation(ctx context.Context, item executionWorkItem, identity RunnerExecutionIdentity, spec durableOperationSpec) (durableVolumeOperation, error) {
-	scopeID := stableUUID("durable-scope", strconv.FormatUint(identity.OrgID, 10), identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), spec.ScopeRef, spec.JobShapeID.String(), spec.ComponentKind, spec.ComponentName, spec.TrustClass)
+	scopeID := stableUUID("durable-scope", identity.OrgID, identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), spec.ScopeRef, spec.JobShapeID.String(), spec.ComponentKind, spec.ComponentName, spec.TrustClass)
 	scope, err := s.storeQueries().UpsertDurableScope(ctx, store.UpsertDurableScopeParams{
 		DurableScopeID:       scopeID,
 		RepositoryID:         identity.ProviderRepositoryID,
@@ -799,7 +799,7 @@ func (s *Service) PromoteGoldenRun(ctx context.Context, req scheduler.GoldenRunP
 	}
 	repositoryFullName := strings.TrimSpace(req.RepositoryFullName)
 	installationID := req.ProviderInstallationID
-	var orgID uint64
+	var orgID string
 	repository, err := s.storeQueries().GetDurableRunRepository(ctx, store.GetDurableRunRepositoryParams{ProviderRepositoryID: req.ProviderRepositoryID, ProviderRunID: req.ProviderRunID})
 	if err == nil {
 		repositoryFullName = firstNonEmpty(repositoryFullName, repository.RepositoryFullName)

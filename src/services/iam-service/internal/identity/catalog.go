@@ -7,10 +7,7 @@ const (
 	PermissionMemberList                    = "iam:member:list"
 	PermissionMemberRead                    = "iam:member:read"
 	PermissionMemberInvite                  = "iam:member:invite"
-	PermissionMemberRoleUpdate              = "iam:member:update_role"
-	PermissionMemberCapabilitiesRead        = "iam:member_capabilities:read"
-	PermissionMemberCapabilitiesWrite       = "iam:member_capabilities:write"
-	PermissionIAMPolicyRead                 = "iam:policy:read"
+	PermissionIAMPolicyRead                 = "iam:policy:get"
 	PermissionIAMPolicySet                  = "iam:policy:set"
 	PermissionIAMPolicyTest                 = "iam:policy:test"
 	PermissionAPICredentialsRead            = "iam:api_credentials:read"
@@ -81,32 +78,6 @@ const (
 	PermissionObjectStorageAccessKeyWrite   = "object-storage:access-key:write"
 )
 
-var openBaoRolesByPermission = map[string]string{
-	PermissionSecretWrite:      "secrets-direct-put-secret",
-	PermissionSecretRead:       "secrets-direct-read-secret",
-	PermissionSecretList:       "secrets-direct-list-secrets",
-	PermissionSecretDelete:     "secrets-direct-delete-secret",
-	PermissionVariableWrite:    "secrets-direct-put-variable",
-	PermissionVariableRead:     "secrets-direct-read-variable",
-	PermissionVariableList:     "secrets-direct-list-variables",
-	PermissionVariableDelete:   "secrets-direct-delete-variable",
-	PermissionCredentialCreate: "secrets-direct-create-credential",
-	PermissionCredentialRead:   "secrets-direct-read-credential",
-	PermissionCredentialList:   "secrets-direct-list-credentials",
-	PermissionCredentialRoll:   "secrets-direct-roll-credential",
-	PermissionCredentialRevoke: "secrets-direct-revoke-credential",
-	PermissionTransitKeyCreate: "secrets-direct-create-transit-key",
-	PermissionTransitKeyRotate: "secrets-direct-rotate-transit-key",
-	PermissionTransitEncrypt:   "secrets-direct-encrypt-with-transit-key",
-	PermissionTransitDecrypt:   "secrets-direct-decrypt-with-transit-key",
-	PermissionTransitSign:      "secrets-direct-sign-with-transit-key",
-	PermissionTransitVerify:    "secrets-direct-verify-with-transit-key",
-}
-
-// member_eligible: true marks a permission as one that can ever appear in a
-// member-role caller's effective set, either as a baseline or via a Capability
-// bundle. The init() check in capabilities.go enforces that no permission
-// outside this set leaks into the member resolution path.
 var defaultOperations = Operations{
 	Services: []ServiceOperations{
 		smithyIAMServiceOperations(),
@@ -115,31 +86,31 @@ var defaultOperations = Operations{
 			Operations: []Operation{
 				{OperationID: "begin-github-installation", Permission: PermissionSandboxGitHubWrite, Resource: "github_installation", Action: "connect", OrgScope: "token_org_id"},
 				{OperationID: "list-github-installations", Permission: PermissionSandboxGitHubRead, Resource: "github_installation", Action: "list", OrgScope: "token_org_id"},
-				{OperationID: "get-execution", Permission: PermissionSandboxExecutionRead, Resource: "execution", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-execution-logs", Permission: PermissionSandboxLogsRead, Resource: "execution_logs", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-runs", Permission: PermissionSandboxExecutionRead, Resource: "run", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-run", Permission: PermissionSandboxExecutionRead, Resource: "run", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "search-run-logs", Permission: PermissionSandboxLogsRead, Resource: "run_logs", Action: "search", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-jobs-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_jobs", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-costs-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_costs", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-caches-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_caches", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-runner-sizing-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_runner_sizing", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "create-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "create", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-execution-schedules", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-execution-schedule", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "pause-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "pause", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "resume-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "resume", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-execution", Permission: PermissionSandboxExecutionRead, Resource: "execution", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "get-execution-logs", Permission: PermissionSandboxLogsRead, Resource: "execution_logs", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "list-runs", Permission: PermissionSandboxExecutionRead, Resource: "run", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-run", Permission: PermissionSandboxExecutionRead, Resource: "run", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "search-run-logs", Permission: PermissionSandboxLogsRead, Resource: "run_logs", Action: "search", OrgScope: "token_org_id"},
+				{OperationID: "get-jobs-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_jobs", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "get-costs-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_costs", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "get-caches-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_caches", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "get-runner-sizing-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_runner_sizing", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "create-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "create", OrgScope: "token_org_id"},
+				{OperationID: "list-execution-schedules", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-execution-schedule", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "pause-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "pause", OrgScope: "token_org_id"},
+				{OperationID: "resume-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "resume", OrgScope: "token_org_id"},
 			},
 		},
 		{
 			Service: "billing-service",
 			Operations: []Operation{
-				{OperationID: "get-billing-entitlements", Permission: PermissionBillingRead, Resource: "billing_entitlements", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-billing-grants", Permission: PermissionBillingRead, Resource: "billing_grant", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-billing-documents", Permission: PermissionBillingRead, Resource: "billing_document", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-billing-contracts", Permission: PermissionBillingRead, Resource: "billing_contract", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-billing-plans", Permission: PermissionBillingRead, Resource: "billing_plan", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-billing-statement", Permission: PermissionBillingRead, Resource: "billing_statement", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "get-billing-entitlements", Permission: PermissionBillingRead, Resource: "billing_entitlements", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "list-billing-grants", Permission: PermissionBillingRead, Resource: "billing_grant", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "list-billing-documents", Permission: PermissionBillingRead, Resource: "billing_document", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "list-billing-contracts", Permission: PermissionBillingRead, Resource: "billing_contract", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "list-billing-plans", Permission: PermissionBillingRead, Resource: "billing_plan", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-billing-statement", Permission: PermissionBillingRead, Resource: "billing_statement", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "create-billing-checkout", Permission: PermissionBillingCheckout, Resource: "billing_checkout", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "create-billing-contract", Permission: PermissionBillingCheckout, Resource: "billing_contract_checkout", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "create-billing-contract-change", Permission: PermissionBillingCheckout, Resource: "billing_contract_change", Action: "create", OrgScope: "token_org_id"},
@@ -151,17 +122,17 @@ var defaultOperations = Operations{
 			Service: "projects-service",
 			Operations: []Operation{
 				{OperationID: "create-project", Permission: PermissionProjectWrite, Resource: "project", Action: "create", OrgScope: "token_org_id"},
-				{OperationID: "list-projects", Permission: PermissionProjectRead, Resource: "project", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-project", Permission: PermissionProjectRead, Resource: "project", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-projects", Permission: PermissionProjectRead, Resource: "project", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-project", Permission: PermissionProjectRead, Resource: "project", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "patch-project", Permission: PermissionProjectWrite, Resource: "project", Action: "update", OrgScope: "token_org_id"},
 				{OperationID: "archive-project", Permission: PermissionProjectWrite, Resource: "project", Action: "archive", OrgScope: "token_org_id"},
 				{OperationID: "restore-project", Permission: PermissionProjectWrite, Resource: "project", Action: "restore", OrgScope: "token_org_id"},
-				{OperationID: "list-project-environments", Permission: PermissionProjectEnvironmentRead, Resource: "project_environment", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-project-environments", Permission: PermissionProjectEnvironmentRead, Resource: "project_environment", Action: "list", OrgScope: "token_org_id"},
 				{OperationID: "create-project-environment", Permission: PermissionProjectEnvironmentWrite, Resource: "project_environment", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "patch-project-environment", Permission: PermissionProjectEnvironmentWrite, Resource: "project_environment", Action: "update", OrgScope: "token_org_id"},
 				{OperationID: "archive-project-environment", Permission: PermissionProjectEnvironmentWrite, Resource: "project_environment", Action: "archive", OrgScope: "token_org_id"},
-				{OperationID: "list-project-events", Permission: PermissionProjectEventRead, Resource: "project_event", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "resolve-project", Permission: PermissionProjectResolve, Resource: "project", Action: "resolve", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-project-events", Permission: PermissionProjectEventRead, Resource: "project_event", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "resolve-project", Permission: PermissionProjectResolve, Resource: "project", Action: "resolve", OrgScope: "token_org_id"},
 			},
 		},
 		{
@@ -169,16 +140,16 @@ var defaultOperations = Operations{
 			Operations: []Operation{
 				{OperationID: "create-source-repository", Permission: PermissionSourceRepoWrite, Resource: "source_repository", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "create-source-git-credential", Permission: PermissionSourceGitCredentialWrite, Resource: "source_git_credential", Action: "create", OrgScope: "token_org_id"},
-				{OperationID: "list-source-repositories", Permission: PermissionSourceRepoRead, Resource: "source_repository", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-source-repository", Permission: PermissionSourceRepoRead, Resource: "source_repository", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-source-refs", Permission: PermissionSourceRepoRead, Resource: "source_ref", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-source-tree", Permission: PermissionSourceRepoRead, Resource: "source_tree", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-source-blob", Permission: PermissionSourceRepoRead, Resource: "source_blob", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-source-repositories", Permission: PermissionSourceRepoRead, Resource: "source_repository", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-source-repository", Permission: PermissionSourceRepoRead, Resource: "source_repository", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "list-source-refs", Permission: PermissionSourceRepoRead, Resource: "source_ref", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-source-tree", Permission: PermissionSourceRepoRead, Resource: "source_tree", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "get-source-blob", Permission: PermissionSourceRepoRead, Resource: "source_blob", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "create-source-checkout-grant", Permission: PermissionSourceCheckoutWrite, Resource: "source_checkout_grant", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "create-source-integration", Permission: PermissionSourceIntegrationWrite, Resource: "source_integration", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "create-source-workflow-run", Permission: PermissionSourceWorkflowWrite, Resource: "source_workflow_run", Action: "create", OrgScope: "token_org_id"},
-				{OperationID: "list-source-workflow-runs", Permission: PermissionSourceWorkflowRead, Resource: "source_workflow_run", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "get-source-workflow-run", Permission: PermissionSourceWorkflowRead, Resource: "source_workflow_run", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "list-source-workflow-runs", Permission: PermissionSourceWorkflowRead, Resource: "source_workflow_run", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "get-source-workflow-run", Permission: PermissionSourceWorkflowRead, Resource: "source_workflow_run", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "download-source-checkout-archive", Permission: PermissionSourceCheckoutWrite, Resource: "source_checkout_archive", Action: "download", OrgScope: "token_org_id"},
 			},
 		},
@@ -186,13 +157,13 @@ var defaultOperations = Operations{
 			Service: "secrets-service",
 			Operations: []Operation{
 				{OperationID: "put-secret", Permission: PermissionSecretWrite, Resource: "secret", Action: "write", OrgScope: "token_org_id"},
-				{OperationID: "read-secret", Permission: PermissionSecretRead, Resource: "secret", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-secrets", Permission: PermissionSecretList, Resource: "secret", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "resolve-secrets", Permission: PermissionSecretRead, Resource: "secret", Action: "resolve", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "read-secret", Permission: PermissionSecretRead, Resource: "secret", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "list-secrets", Permission: PermissionSecretList, Resource: "secret", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "resolve-secrets", Permission: PermissionSecretRead, Resource: "secret", Action: "resolve", OrgScope: "token_org_id"},
 				{OperationID: "delete-secret", Permission: PermissionSecretDelete, Resource: "secret", Action: "delete", OrgScope: "token_org_id"},
 				{OperationID: "put-variable", Permission: PermissionVariableWrite, Resource: "variable", Action: "write", OrgScope: "token_org_id"},
-				{OperationID: "read-variable", Permission: PermissionVariableRead, Resource: "variable", Action: "read", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "list-variables", Permission: PermissionVariableList, Resource: "variable", Action: "list", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "read-variable", Permission: PermissionVariableRead, Resource: "variable", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "list-variables", Permission: PermissionVariableList, Resource: "variable", Action: "list", OrgScope: "token_org_id"},
 				{OperationID: "delete-variable", Permission: PermissionVariableDelete, Resource: "variable", Action: "delete", OrgScope: "token_org_id"},
 				{OperationID: "create-opaque-credential", Permission: PermissionCredentialCreate, Resource: "opaque_credential", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "get-opaque-credential", Permission: PermissionCredentialRead, Resource: "opaque_credential", Action: "read", OrgScope: "token_org_id"},
@@ -201,10 +172,10 @@ var defaultOperations = Operations{
 				{OperationID: "revoke-opaque-credential", Permission: PermissionCredentialRevoke, Resource: "opaque_credential", Action: "revoke", OrgScope: "token_org_id"},
 				{OperationID: "create-transit-key", Permission: PermissionTransitKeyCreate, Resource: "transit_key", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "rotate-transit-key", Permission: PermissionTransitKeyRotate, Resource: "transit_key", Action: "rotate", OrgScope: "token_org_id"},
-				{OperationID: "encrypt-with-transit-key", Permission: PermissionTransitEncrypt, Resource: "transit_key", Action: "encrypt", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "decrypt-with-transit-key", Permission: PermissionTransitDecrypt, Resource: "transit_key", Action: "decrypt", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "sign-with-transit-key", Permission: PermissionTransitSign, Resource: "transit_key", Action: "sign", OrgScope: "token_org_id", MemberEligible: true},
-				{OperationID: "verify-with-transit-key", Permission: PermissionTransitVerify, Resource: "transit_key", Action: "verify", OrgScope: "token_org_id", MemberEligible: true},
+				{OperationID: "encrypt-with-transit-key", Permission: PermissionTransitEncrypt, Resource: "transit_key", Action: "encrypt", OrgScope: "token_org_id"},
+				{OperationID: "decrypt-with-transit-key", Permission: PermissionTransitDecrypt, Resource: "transit_key", Action: "decrypt", OrgScope: "token_org_id"},
+				{OperationID: "sign-with-transit-key", Permission: PermissionTransitSign, Resource: "transit_key", Action: "sign", OrgScope: "token_org_id"},
+				{OperationID: "verify-with-transit-key", Permission: PermissionTransitVerify, Resource: "transit_key", Action: "verify", OrgScope: "token_org_id"},
 			},
 		},
 		{
@@ -248,47 +219,39 @@ var defaultOperations = Operations{
 		{
 			Service: "profile-service",
 			Operations: []Operation{
-				{OperationID: "get-profile", Permission: PermissionProfileRead, Resource: "profile_subject", Action: "read", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "patch-profile-identity", Permission: PermissionProfileIdentityWrite, Resource: "profile_identity", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "put-profile-preferences", Permission: PermissionProfilePreferencesWrite, Resource: "profile_preferences", Action: "write", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "get-profile", Permission: PermissionProfileRead, Resource: "profile_subject", Action: "read", OrgScope: "token_subject"},
+				{OperationID: "patch-profile-identity", Permission: PermissionProfileIdentityWrite, Resource: "profile_identity", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "put-profile-preferences", Permission: PermissionProfilePreferencesWrite, Resource: "profile_preferences", Action: "write", OrgScope: "token_subject"},
 			},
 		},
 		{
 			Service: "notifications-service",
 			Operations: []Operation{
-				{OperationID: "list-notifications", Permission: PermissionNotificationsRead, Resource: "notification_subject", Action: "list", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "get-notification-summary", Permission: PermissionNotificationsRead, Resource: "notification_subject", Action: "read", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "put-notification-preferences", Permission: PermissionNotificationsPreferencesWrite, Resource: "notification_preferences", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "advance-notification-read-cursor", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "dismiss-notification", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "mark-notification-read", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "clear-notifications", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "publish-test-notification", Permission: PermissionNotificationsTest, Resource: "notification_subject", Action: "test", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "list-notifications", Permission: PermissionNotificationsRead, Resource: "notification_subject", Action: "list", OrgScope: "token_subject"},
+				{OperationID: "get-notification-summary", Permission: PermissionNotificationsRead, Resource: "notification_subject", Action: "read", OrgScope: "token_subject"},
+				{OperationID: "put-notification-preferences", Permission: PermissionNotificationsPreferencesWrite, Resource: "notification_preferences", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "advance-notification-read-cursor", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "dismiss-notification", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mark-notification-read", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "clear-notifications", Permission: PermissionNotificationsWrite, Resource: "notification_subject", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "publish-test-notification", Permission: PermissionNotificationsTest, Resource: "notification_subject", Action: "test", OrgScope: "token_subject"},
 			},
 		},
 		{
 			Service: "mailbox-service",
 			Operations: []Operation{
-				{OperationID: "mail-mark-read", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "mail-mark-unread", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "mail-flag", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "mail-unflag", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "mail-move", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "mail-trash", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "mail-body", Permission: PermissionMailboxMailRead, Resource: "mailbox_email", Action: "read", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "mail-account", Permission: PermissionMailboxAccountRead, Resource: "mailbox_account", Action: "read", OrgScope: "token_subject", MemberEligible: true},
-				{OperationID: "mail-sync-status", Permission: PermissionMailboxSyncStatusRead, Resource: "mailbox_sync_status", Action: "read", OrgScope: "token_subject", MemberEligible: true},
+				{OperationID: "mail-mark-read", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-mark-unread", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-flag", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-unflag", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-move", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-trash", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-body", Permission: PermissionMailboxMailRead, Resource: "mailbox_email", Action: "read", OrgScope: "token_subject"},
+				{OperationID: "mail-account", Permission: PermissionMailboxAccountRead, Resource: "mailbox_account", Action: "read", OrgScope: "token_subject"},
+				{OperationID: "mail-sync-status", Permission: PermissionMailboxSyncStatusRead, Resource: "mailbox_sync_status", Action: "read", OrgScope: "token_subject"},
 			},
 		},
 	},
-}
-
-func KnownRoleKeys() map[string]struct{} {
-	return map[string]struct{}{
-		RoleOwner:  {},
-		RoleAdmin:  {},
-		RoleMember: {},
-	}
 }
 
 func KnownPermissions() map[string]struct{} {
@@ -302,7 +265,7 @@ func KnownPermissions() map[string]struct{} {
 }
 
 // DefaultOperations returns a copy of the static operation catalog used by IAM
-// capability resolution and API credential permission validation.
+// policy validation and operator inspection.
 func DefaultOperations() Operations {
 	services := make([]ServiceOperations, len(defaultOperations.Services))
 	for i, service := range defaultOperations.Services {
@@ -310,48 +273,4 @@ func DefaultOperations() Operations {
 		services[i] = service
 	}
 	return Operations{Services: services}
-}
-
-func OpenBaoRolesForPermissions(permissions []string) []string {
-	roles := map[string]struct{}{}
-	for _, permission := range permissions {
-		if role, ok := openBaoRolesByPermission[permission]; ok {
-			roles[role] = struct{}{}
-		}
-	}
-	return sortedKeys(roles)
-}
-
-func memberEligiblePermissions() map[string]struct{} {
-	eligible := map[string]struct{}{}
-	for _, service := range defaultOperations.Services {
-		for _, operation := range service.Operations {
-			if operation.MemberEligible {
-				eligible[string(operation.Permission)] = struct{}{}
-			}
-		}
-	}
-	return eligible
-}
-
-// PermissionsForRoles resolves a role-keyed principal's effective product
-// permissions against the org's enabled member capabilities. owner and admin
-// always receive the full known permission set; member receives the union of
-// baseline member permissions and the permissions bundled into each enabled
-// capability key.
-func PermissionsForRoles(capabilities MemberCapabilitiesDocument, roleKeys []string) []string {
-	roleSet := map[string]struct{}{}
-	for _, role := range roleKeys {
-		roleSet[role] = struct{}{}
-	}
-	if _, ok := roleSet[RoleOwner]; ok {
-		return sortedKeys(KnownPermissions())
-	}
-	if _, ok := roleSet[RoleAdmin]; ok {
-		return sortedKeys(KnownPermissions())
-	}
-	if _, ok := roleSet[RoleMember]; ok {
-		return ResolveMemberPermissions(capabilities.EnabledKeys)
-	}
-	return nil
 }

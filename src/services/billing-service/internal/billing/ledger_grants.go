@@ -119,7 +119,7 @@ func (c *Client) loadGrantLedgerRowTx(ctx context.Context, q *store.Queries, gra
 }
 
 func (c *Client) grantDepositPayload(operators map[string]ledger.ID, grant grantLedgerRow) (ledger.CommandPayload, error) {
-	account, err := ledger.CustomerGrantAccount(grant.AccountID, uint64(grant.OrgID), grant.Source)
+	account, err := ledger.CustomerGrantAccount(grant.AccountID, ledgerOrgKey(grant.OrgID), grant.Source)
 	if err != nil {
 		return ledger.CommandPayload{}, err
 	}

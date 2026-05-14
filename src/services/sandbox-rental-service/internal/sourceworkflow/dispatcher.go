@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -59,7 +58,7 @@ func (d *Dispatcher) DispatchWorkflow(ctx context.Context, req recurring.Workflo
 		attribute.String("source.ref", req.Ref),
 	)
 	body := sourceclient.InternalCreateSourceWorkflowRunInputBody{
-		OrgID:          strconv.FormatUint(req.OrgID, 10),
+		OrgID:          req.OrgID,
 		ActorID:        strings.TrimSpace(req.ActorID),
 		ProjectID:      req.ProjectID.String(),
 		RepoID:         req.SourceRepositoryID.String(),

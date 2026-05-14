@@ -22,7 +22,7 @@ FROM (
 `
 
 type ExportSandboxExecutionAttemptsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxExecutionAttemptsJSONL(ctx context.Context, arg ExportSandboxExecutionAttemptsJSONLParams) ([]string, error) {
@@ -59,7 +59,7 @@ FROM (
 `
 
 type ExportSandboxExecutionBillingWindowsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxExecutionBillingWindowsJSONL(ctx context.Context, arg ExportSandboxExecutionBillingWindowsJSONLParams) ([]string, error) {
@@ -95,7 +95,7 @@ FROM (
 `
 
 type ExportSandboxExecutionEventsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxExecutionEventsJSONL(ctx context.Context, arg ExportSandboxExecutionEventsJSONLParams) ([]string, error) {
@@ -132,7 +132,7 @@ FROM (
 `
 
 type ExportSandboxExecutionFilesystemMountsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxExecutionFilesystemMountsJSONL(ctx context.Context, arg ExportSandboxExecutionFilesystemMountsJSONLParams) ([]string, error) {
@@ -168,7 +168,7 @@ FROM (
 `
 
 type ExportSandboxExecutionLogsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxExecutionLogsJSONL(ctx context.Context, arg ExportSandboxExecutionLogsJSONLParams) ([]string, error) {
@@ -197,7 +197,7 @@ FROM (SELECT execution_id, org_id, actor_id, kind, source_kind, workload_kind, s
 `
 
 type ExportSandboxExecutionsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxExecutionsJSONL(ctx context.Context, arg ExportSandboxExecutionsJSONLParams) ([]string, error) {
@@ -250,7 +250,7 @@ FROM (
 `
 
 type ExportSandboxGithubInstallationsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxGithubInstallationsJSONL(ctx context.Context, arg ExportSandboxGithubInstallationsJSONLParams) ([]string, error) {
@@ -286,7 +286,7 @@ FROM (
 `
 
 type ExportSandboxRunnerAllocationsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxRunnerAllocationsJSONL(ctx context.Context, arg ExportSandboxRunnerAllocationsJSONLParams) ([]string, error) {
@@ -323,7 +323,7 @@ FROM (
 `
 
 type ExportSandboxRunnerJobBindingsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxRunnerJobBindingsJSONL(ctx context.Context, arg ExportSandboxRunnerJobBindingsJSONLParams) ([]string, error) {
@@ -360,7 +360,7 @@ FROM (
 `
 
 type ExportSandboxRunnerJobsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxRunnerJobsJSONL(ctx context.Context, arg ExportSandboxRunnerJobsJSONLParams) ([]string, error) {
@@ -389,7 +389,7 @@ FROM (SELECT provider, provider_repository_id, org_id, project_id, source_reposi
 `
 
 type ExportSandboxRunnerProviderRepositoriesJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxRunnerProviderRepositoriesJSONL(ctx context.Context, arg ExportSandboxRunnerProviderRepositoriesJSONLParams) ([]string, error) {
@@ -418,7 +418,7 @@ FROM (SELECT org_id, min_vcpus, max_vcpus, min_memory_mib, max_memory_mib, min_r
 `
 
 type ExportSandboxVMResourceBoundsJSONLParams struct {
-	OrgID int64
+	OrgID string
 }
 
 func (q *Queries) ExportSandboxVMResourceBoundsJSONL(ctx context.Context, arg ExportSandboxVMResourceBoundsJSONLParams) ([]string, error) {

@@ -21,7 +21,6 @@ func TestAPICredentialFromFieldsAcceptsNullRevokedBy(t *testing.T) {
 		string(APICredentialStatusActive),
 		string(APICredentialAuthMethodClientSecret),
 		"sha256:test",
-		7,
 		timestamptz(now),
 		"owner-1",
 		timestamptz(now),
@@ -36,7 +35,7 @@ func TestAPICredentialFromFieldsAcceptsNullRevokedBy(t *testing.T) {
 	if credential.RevokedBy != "" || credential.RevokedAt != nil {
 		t.Fatalf("unexpected revocation metadata: %#v", credential)
 	}
-	if credential.CredentialID != "credential-1" || credential.PolicyVersionAtIssue != 7 {
+	if credential.CredentialID != "credential-1" {
 		t.Fatalf("unexpected credential: %#v", credential)
 	}
 }

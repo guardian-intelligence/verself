@@ -69,7 +69,7 @@ func cmdBilling(args []string) error {
 func cmdBillingSeed(args []string) error {
 	fs := flagSet("billing seed")
 	opts := addBillingFlags(fs)
-	orgID := fs.String("org-id", "", "Numeric org ID")
+	orgID := fs.String("org-id", "", "Verself public org ID")
 	orgName := fs.String("org-name", "", "Org display name")
 	orgTrustTier := fs.String("org-trust-tier", "", "Org trust tier")
 	productID := fs.String("product-id", billingProductDefault, "Billing product ID")
@@ -79,9 +79,6 @@ func cmdBillingSeed(args []string) error {
 	}
 	if *orgID == "" {
 		return errors.New("billing seed: --org-id is required")
-	}
-	if _, err := strconv.ParseUint(*orgID, 10, 64); err != nil {
-		return fmt.Errorf("billing seed: --org-id must be an unsigned integer: %w", err)
 	}
 	if *productID == "" {
 		return errors.New("billing seed: --product-id is required")
@@ -113,7 +110,7 @@ func cmdBillingClock(args []string) error {
 	fs := flagSet("billing clock")
 	opts := addBillingFlags(fs)
 	org := fs.String("org", "", "Org slug")
-	orgID := fs.String("org-id", "", "Numeric org ID")
+	orgID := fs.String("org-id", "", "Verself public org ID")
 	productID := fs.String("product-id", billingProductDefault, "Billing product ID")
 	setAt := fs.String("set", "", "Set business-time to RFC3339 timestamp")
 	advanceSeconds := fs.String("advance-seconds", "", "Advance business-time by N seconds")
@@ -235,7 +232,7 @@ func addBillingInspectFlags(fs *flag.FlagSet) *billingInspectOptions {
 	base := addBillingFlags(fs)
 	opts := &billingInspectOptions{billingOptions: base, productID: billingProductDefault, format: "table", limit: 100, minutes: 60}
 	fs.StringVar(&opts.org, "org", "", "Org slug")
-	fs.StringVar(&opts.orgID, "org-id", "", "Numeric org ID")
+	fs.StringVar(&opts.orgID, "org-id", "", "Verself public org ID")
 	fs.StringVar(&opts.productID, "product-id", opts.productID, "Billing product ID")
 	fs.StringVar(&opts.format, "format", opts.format, "Output format: table|json|csv|tsv")
 	fs.UintVar(&opts.limit, "limit", opts.limit, "Maximum rows")
@@ -261,10 +258,7 @@ func openBillingPG(rt *opruntime.Runtime, opts *billingOptions) (*pgx.Conn, erro
 }
 
 func resolveBillingOrgID(rt *opruntime.Runtime, conn *pgx.Conn, orgID, org string, allowEmpty bool) (string, error) {
-	if orgID != "" {
-		if _, err := strconv.ParseUint(orgID, 10, 64); err != nil {
-			return "", fmt.Errorf("--org-id must be an unsigned integer: %w", err)
-		}
+	if orgID = strings.TrimSpace(orgID); orgID != "" {
 		return orgID, nil
 	}
 	org = strings.TrimSpace(org)
@@ -274,7 +268,7 @@ func resolveBillingOrgID(rt *opruntime.Runtime, conn *pgx.Conn, orgID, org strin
 		}
 		return "", errors.New("--org or --org-id is required")
 	}
-	if _, err := strconv.ParseUint(org, 10, 64); err == nil {
+	if strings.HasPrefix(org, "org_") {
 		return org, nil
 	}
 	predicate := `display_name = $1 OR metadata->>'org_key' = $1 OR billing_email = $1`

@@ -85,7 +85,7 @@ func TestSourceCheckoutGrantPublicRequestDoesNotExposeUnimplementedPathPrefix(t 
 }
 
 func TestSourceEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
-	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("42", "member"))
+	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("org_01J8QJ4P1R7S9W2X5M6N8P0Q2"))
 	ctx = context.WithValue(ctx, operationRequestInfoKey{}, operationRequestInfo{IdempotencyKey: "test-key"})
 
 	policy := sourceOperationPolicy{OperationPolicy: operationPolicyFromContract(contractapi.CreateSourceRepository.Descriptor)}
@@ -93,18 +93,18 @@ func TestSourceEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected IAM allow decision, got %v", err)
 	}
-	if principal.OrgID != 42 {
-		t.Fatalf("org id = %d, want 42", principal.OrgID)
+	if principal.OrgID != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
+		t.Fatalf("org id = %q, want public org id", principal.OrgID)
 	}
 }
 
 func TestSourceEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
-	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("42", "member"))
+	ctx := auth.WithIdentity(context.Background(), sourceServiceToken("org_01J8QJ4P1R7S9W2X5M6N8P0Q2"))
 
 	policy := sourceOperationPolicy{OperationPolicy: operationPolicyFromContract(contractapi.CreateSourceRepository.Descriptor)}
 	principal, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, policy)
-	if principal.OrgID != 42 {
-		t.Fatalf("expected denied operation to retain org id, got %d", principal.OrgID)
+	if principal.OrgID != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
+		t.Fatalf("expected denied operation to retain org id, got %q", principal.OrgID)
 	}
 	if err == nil {
 		t.Fatal("member should not be allowed to create source repositories")
@@ -129,18 +129,10 @@ func (f fakeAuthorizer) AuthorizeOperation(_ context.Context, _ *auth.Identity, 
 	}, nil
 }
 
-func sourceServiceToken(orgID string, roles ...string) *auth.Identity {
-	assignments := make([]auth.RoleAssignment, 0, len(roles))
-	for _, role := range roles {
-		assignments = append(assignments, auth.RoleAssignment{
-			OrganizationID: orgID,
-			Role:           role,
-		})
-	}
+func sourceServiceToken(orgID string) *auth.Identity {
 	return &auth.Identity{
-		Subject:         "user-1",
-		OrgID:           orgID,
-		RoleAssignments: assignments,
+		Subject: "user-1",
+		OrgID:   orgID,
 	}
 }
 

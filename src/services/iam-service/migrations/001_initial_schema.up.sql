@@ -31,114 +31,6 @@ CREATE TABLE IF NOT EXISTS iam_organization_slug_redirects (
 CREATE INDEX IF NOT EXISTS iam_organization_slug_redirects_org_idx
     ON iam_organization_slug_redirects (org_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS iam_member_capabilities (
-    org_id TEXT PRIMARY KEY,
-    enabled_keys TEXT[] NOT NULL DEFAULT '{}',
-    version INTEGER NOT NULL DEFAULT 1,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by TEXT NOT NULL,
-    CHECK (length(btrim(org_id)) > 0),
-    CHECK (length(btrim(updated_by)) > 0),
-    CHECK (version >= 0)
-);
-
-CREATE TABLE IF NOT EXISTS iam_org_acl_state (
-    org_id TEXT PRIMARY KEY,
-    version INTEGER NOT NULL DEFAULT 1,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by TEXT NOT NULL,
-    CHECK (length(btrim(org_id)) > 0),
-    CHECK (length(btrim(updated_by)) > 0),
-    CHECK (version > 0)
-);
-
-CREATE TABLE IF NOT EXISTS iam_command_results (
-    command_id UUID PRIMARY KEY,
-    org_id TEXT NOT NULL,
-    actor_id TEXT NOT NULL,
-    operation_id TEXT NOT NULL,
-    idempotency_key_hash TEXT NOT NULL,
-    request_hash TEXT NOT NULL,
-    result TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    aggregate_kind TEXT NOT NULL,
-    aggregate_id TEXT NOT NULL,
-    aggregate_version INTEGER NOT NULL,
-    target_user_id TEXT NOT NULL,
-    requested_role_keys TEXT[] NOT NULL DEFAULT '{}',
-    expected_role_keys TEXT[] NOT NULL DEFAULT '{}',
-    actual_role_keys TEXT[] NOT NULL DEFAULT '{}',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (length(btrim(org_id)) > 0),
-    CHECK (length(btrim(actor_id)) > 0),
-    CHECK (length(btrim(operation_id)) > 0),
-    CHECK (length(btrim(idempotency_key_hash)) = 64),
-    CHECK (length(btrim(request_hash)) = 64),
-    CHECK (result IN ('accepted', 'rejected')),
-    CHECK (length(btrim(reason)) > 0),
-    CHECK (length(btrim(aggregate_kind)) > 0),
-    CHECK (length(btrim(aggregate_id)) > 0),
-    CHECK (aggregate_version > 0),
-    CHECK (length(btrim(target_user_id)) > 0)
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS iam_command_results_idempotency_idx
-    ON iam_command_results (org_id, actor_id, operation_id, idempotency_key_hash);
-
-CREATE TABLE IF NOT EXISTS iam_domain_event_outbox (
-    event_id UUID PRIMARY KEY,
-    command_id UUID NOT NULL REFERENCES iam_command_results (command_id) ON DELETE CASCADE,
-    event_type TEXT NOT NULL,
-    org_id TEXT NOT NULL,
-    actor_id TEXT NOT NULL,
-    operation_id TEXT NOT NULL,
-    idempotency_key_hash TEXT NOT NULL,
-    aggregate_kind TEXT NOT NULL,
-    aggregate_id TEXT NOT NULL,
-    aggregate_version INTEGER NOT NULL,
-    target_type TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    result TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    conflict_policy TEXT NOT NULL,
-    expected_version INTEGER NOT NULL,
-    actual_version INTEGER NOT NULL,
-    expected_hash TEXT NOT NULL,
-    actual_hash TEXT NOT NULL,
-    requested_hash TEXT NOT NULL,
-    changed_fields TEXT[] NOT NULL DEFAULT '{}',
-    payload JSONB NOT NULL DEFAULT '{}',
-    traceparent TEXT NOT NULL DEFAULT '',
-    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    projected_at TIMESTAMPTZ,
-    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    attempts INTEGER NOT NULL DEFAULT 0,
-    last_error TEXT NOT NULL DEFAULT '',
-    CHECK (length(btrim(event_type)) > 0),
-    CHECK (length(btrim(org_id)) > 0),
-    CHECK (length(btrim(actor_id)) > 0),
-    CHECK (length(btrim(operation_id)) > 0),
-    CHECK (length(btrim(idempotency_key_hash)) = 64),
-    CHECK (length(btrim(aggregate_kind)) > 0),
-    CHECK (length(btrim(aggregate_id)) > 0),
-    CHECK (aggregate_version > 0),
-    CHECK (length(btrim(target_type)) > 0),
-    CHECK (length(btrim(target_id)) > 0),
-    CHECK (result IN ('accepted', 'rejected')),
-    CHECK (length(btrim(reason)) > 0),
-    CHECK (length(btrim(conflict_policy)) > 0),
-    CHECK (expected_version >= 0),
-    CHECK (actual_version >= 0),
-    CHECK (length(btrim(expected_hash)) = 64),
-    CHECK (length(btrim(actual_hash)) = 64),
-    CHECK (length(btrim(requested_hash)) = 64),
-    CHECK (attempts >= 0)
-);
-
-CREATE INDEX IF NOT EXISTS iam_domain_event_outbox_pending_idx
-    ON iam_domain_event_outbox (next_attempt_at, occurred_at, event_id)
-    WHERE projected_at IS NULL;
-
 CREATE TABLE IF NOT EXISTS iam_service_accounts (
     service_account_id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL,
@@ -182,7 +74,6 @@ CREATE TABLE IF NOT EXISTS iam_api_credentials (
     display_name TEXT NOT NULL,
     auth_method TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
-    policy_version_at_issue INTEGER NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_by TEXT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -198,7 +89,6 @@ CREATE TABLE IF NOT EXISTS iam_api_credentials (
     CHECK (length(btrim(display_name)) > 0),
     CHECK (auth_method IN ('private_key_jwt', 'client_secret')),
     CHECK (length(btrim(created_by)) > 0),
-    CHECK (policy_version_at_issue >= 0),
     CHECK (status IN ('active', 'revoked')),
     CHECK (expires_at IS NULL OR expires_at > created_at),
     CHECK (
@@ -217,14 +107,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS iam_api_credentials_active_subject_idx
 
 CREATE INDEX IF NOT EXISTS iam_api_credentials_service_account_idx
     ON iam_api_credentials (service_account_id, status, created_at DESC, credential_id DESC);
-
-CREATE TABLE IF NOT EXISTS iam_api_credential_permissions (
-    credential_id TEXT NOT NULL REFERENCES iam_api_credentials (credential_id) ON DELETE CASCADE,
-    permission TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (credential_id, permission),
-    CHECK (length(btrim(permission)) > 0)
-);
 
 CREATE TABLE IF NOT EXISTS iam_api_credential_secrets (
     secret_id TEXT PRIMARY KEY,
@@ -285,7 +167,6 @@ CREATE TABLE IF NOT EXISTS iam_browser_sessions (
     org_id TEXT,
     home_org_id TEXT,
     selected_org_id TEXT,
-    roles TEXT[] NOT NULL DEFAULT '{}',
     available_org_contexts JSONB NOT NULL DEFAULT '[]'::jsonb,
     user_claims JSONB NOT NULL DEFAULT '{}'::jsonb,
     id_token TEXT,

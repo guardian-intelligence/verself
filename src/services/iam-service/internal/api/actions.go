@@ -69,27 +69,36 @@ func zitadelActionHandler(svc *identity.Service, signingKey string) http.Handler
 			writeActionResponse(w, zitadelActionResponse{})
 			return
 		}
+		appendClaims := []zitadelActionClaim{}
+		if providerOrgID := actionProviderOrgID(raw); providerOrgID != "" {
+			if profile, err := svc.ResolveOrganization(r.Context(), identity.ResolveOrganizationRequest{
+				IdentityProviderOrgID: providerOrgID,
+				RequireActive:         true,
+			}); err == nil && strings.TrimSpace(profile.OrgID) != "" {
+				appendClaims = append(appendClaims, zitadelActionClaim{Key: "org_id", Value: profile.OrgID})
+			} else if err != nil {
+				slog.Default().WarnContext(r.Context(), "zitadel action public org claim denied", "provider_org_id", providerOrgID, "error", err)
+			}
+		}
 		claims, err := svc.ResolveAPICredentialClaims(r.Context(), subjectID)
 		if err != nil {
 			slog.Default().WarnContext(r.Context(), "zitadel action api credential claims denied", "subject_id", subjectID, "error", err)
-			writeActionResponse(w, zitadelActionResponse{})
+			writeActionResponse(w, zitadelActionResponse{AppendClaims: appendClaims})
 			return
 		}
-		appendClaims := []zitadelActionClaim{
-			{Key: "verself:credential_id", Value: claims.CredentialID},
-			{Key: "verself:credential_name", Value: claims.DisplayName},
-			{Key: "verself:credential_fingerprint", Value: claims.Fingerprint},
-			{Key: "verself:credential_owner_id", Value: claims.OwnerID},
-			{Key: "verself:credential_owner_display", Value: claims.OwnerDisplay},
-			{Key: "verself:credential_auth_method", Value: string(claims.AuthMethod)},
-			{Key: "verself:principal_type", Value: "service_account"},
-			{Key: "verself:service_account_id", Value: claims.ServiceAccountID},
-			{Key: "verself:service_account_name", Value: claims.ServiceAccountName},
-			{Key: "org_id", Value: claims.OrgID},
-			{Key: "permissions", Value: claims.Permissions},
-		}
-		if len(claims.OpenBaoRoles) > 0 {
-			appendClaims = append(appendClaims, zitadelActionClaim{Key: "verself:openbao_roles", Value: claims.OpenBaoRoles})
+		appendClaims = append(appendClaims,
+			zitadelActionClaim{Key: "verself:credential_id", Value: claims.CredentialID},
+			zitadelActionClaim{Key: "verself:credential_name", Value: claims.DisplayName},
+			zitadelActionClaim{Key: "verself:credential_fingerprint", Value: claims.Fingerprint},
+			zitadelActionClaim{Key: "verself:credential_owner_id", Value: claims.OwnerID},
+			zitadelActionClaim{Key: "verself:credential_owner_display", Value: claims.OwnerDisplay},
+			zitadelActionClaim{Key: "verself:credential_auth_method", Value: string(claims.AuthMethod)},
+			zitadelActionClaim{Key: "verself:principal_type", Value: "service_account"},
+			zitadelActionClaim{Key: "verself:service_account_id", Value: claims.ServiceAccountID},
+			zitadelActionClaim{Key: "verself:service_account_name", Value: claims.ServiceAccountName},
+		)
+		if !hasActionClaim(appendClaims, "org_id") {
+			appendClaims = append(appendClaims, zitadelActionClaim{Key: "org_id", Value: claims.OrgID})
 		}
 		writeActionResponse(w, zitadelActionResponse{AppendClaims: appendClaims})
 	})
@@ -102,6 +111,34 @@ func actionSubjectID(raw map[string]any) string {
 		}
 	}
 	return ""
+}
+
+func actionProviderOrgID(raw map[string]any) string {
+	for _, path := range [][]string{
+		{"orgID"},
+		{"orgId"},
+		{"organization", "id"},
+		{"request", "orgID"},
+		{"request", "orgId"},
+		{"userResourceOwner"},
+		{"user", "resourceOwner"},
+		{"user", "resourceOwnerID"},
+		{"claims", "urn:zitadel:iam:org:id"},
+	} {
+		if value := nestedString(raw, path...); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func hasActionClaim(claims []zitadelActionClaim, key string) bool {
+	for _, claim := range claims {
+		if claim.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func nestedString(value any, path ...string) string {
