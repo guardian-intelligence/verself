@@ -71,6 +71,7 @@ type platformMainVars struct {
 	PlatformOwnerAlias           string `yaml:"platform_owner_alias"`
 	PlatformOwnerName            string `yaml:"platform_owner_name"`
 	PlatformOwnerEmail           string `yaml:"platform_owner_email"`
+	PlatformRootOwnerEmail       string `yaml:"platform_root_owner_email"`
 	PlatformTrustTier            string `yaml:"platform_trust_tier"`
 	PlatformRepoSlug             string `yaml:"platform_repo_slug"`
 	PlatformRepoDisplayName      string `yaml:"platform_repo_display_name"`
@@ -94,6 +95,7 @@ type platformConfig struct {
 	OwnerAlias           string `json:"owner_alias"`
 	OwnerName            string `json:"owner_name"`
 	OwnerEmail           string `json:"owner_email"`
+	RootOwnerEmail       string `json:"root_owner_email"`
 	TrustTier            string `json:"trust_tier"`
 	RepoSlug             string `json:"repo_slug"`
 	RepoDisplayName      string `json:"repo_display_name"`
@@ -298,6 +300,7 @@ func loadPlatformConfig(repoRoot, site string) (platformConfig, error) {
 		OwnerAlias:           strings.TrimSpace(mainVars.PlatformOwnerAlias),
 		OwnerName:            strings.TrimSpace(mainVars.PlatformOwnerName),
 		OwnerEmail:           strings.TrimSpace(mainVars.PlatformOwnerEmail),
+		RootOwnerEmail:       strings.TrimSpace(mainVars.PlatformRootOwnerEmail),
 		TrustTier:            strings.TrimSpace(mainVars.PlatformTrustTier),
 		RepoSlug:             strings.TrimSpace(mainVars.PlatformRepoSlug),
 		RepoDisplayName:      strings.TrimSpace(mainVars.PlatformRepoDisplayName),
@@ -345,6 +348,12 @@ func (cfg *platformConfig) validate() error {
 	}
 	if _, err := mail.ParseAddress(cfg.OwnerEmail); err != nil {
 		return fmt.Errorf("platform config: platform_owner_email is invalid: %w", err)
+	}
+	if cfg.RootOwnerEmail == "" {
+		return fmt.Errorf("platform config: platform_root_owner_email is required")
+	}
+	if _, err := mail.ParseAddress(cfg.RootOwnerEmail); err != nil {
+		return fmt.Errorf("platform config: platform_root_owner_email is invalid: %w", err)
 	}
 	if cfg.OwnerName == "" {
 		return fmt.Errorf("platform config: platform_owner_name is required")
@@ -436,11 +445,14 @@ func (r *platformRunner) seed() (platformReport, error) {
 	if err := r.ensureIdentityOrganization(); err != nil {
 		return platformReport{}, err
 	}
-	owner, err := r.ensurePlatformOwner()
+	if _, err := r.ensurePlatformOwner(); err != nil {
+		return platformReport{}, err
+	}
+	rootOwner, err := r.resolvePlatformRootOwner()
 	if err != nil {
 		return platformReport{}, err
 	}
-	if err := r.ensureIAMOwnerPolicy(owner.ID); err != nil {
+	if err := r.ensureIAMOwnerPolicy(rootOwner.ID); err != nil {
 		return platformReport{}, err
 	}
 	if err := r.ensurePlatformBillingOrganization(); err != nil {

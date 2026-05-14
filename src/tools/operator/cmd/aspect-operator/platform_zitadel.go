@@ -151,6 +151,35 @@ func (r *platformRunner) ensurePlatformOwner() (platformZitadelUser, error) {
 	return owner, err
 }
 
+func (r *platformRunner) resolvePlatformRootOwner() (platformZitadelUser, error) {
+	var owner platformZitadelUser
+	err := r.withSpan("platform.zitadel_root_owner.resolve", []attribute.KeyValue{
+		attribute.String("zitadel.host", r.cfg.ZitadelHost),
+		attribute.String("verself.org_id", r.cfg.OrgIDText),
+		attribute.String("verself.root_owner_email", r.cfg.RootOwnerEmail),
+	}, func(ctx context.Context) error {
+		client, closeFn, err := r.zitadelClient(ctx)
+		if err != nil {
+			return err
+		}
+		defer closeFn()
+
+		user, found, err := client.FindHumanByEmail(ctx, r.cfg.RootOwnerEmail)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("platform root owner: %s is missing from Zitadel", r.cfg.RootOwnerEmail)
+		}
+		if user.ResourceOwner != "" && user.ResourceOwner != r.cfg.OrgIDText {
+			return fmt.Errorf("platform root owner: %s belongs to Zitadel org %s, expected %s", r.cfg.RootOwnerEmail, user.ResourceOwner, r.cfg.OrgIDText)
+		}
+		owner = user
+		return nil
+	})
+	return owner, err
+}
+
 func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRow {
 	row := platformBoundaryRow{Boundary: "zitadel.platform_owner", Status: "ok"}
 	err := r.withSpan("platform.zitadel_owner.check", []attribute.KeyValue{
