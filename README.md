@@ -22,13 +22,13 @@ a. Internal Core -- Infrastructure, bootstrap configuration, integration with 3p
 
 b. Services -- Smithy-modeled HTTP APIs implemented by product services. Public projections feed SDKs and facades; internal projections use SPIFFE mTLS for repo-owned cross-service calls. OpenAPI is generated for documentation and ecosystem tooling.
 
-c. SDK -- Customer-facing multi-language resource API. The SDK shape drives public API design and wraps SDK-owned transport cores, using generated code only where OpenAPI tooling is reliable. See [`docs/architecture/sdk-api-surface.md`](docs/architecture/sdk-api-surface.md).
+c. SDK -- Customer-facing multi-language resource API. The SDK shape drives public API design and wraps public transport implementations, using generated code only where OpenAPI tooling is reliable. See [`docs/architecture/sdk-api-surface.md`](docs/architecture/sdk-api-surface.md).
 
 d. Clients -- websites, mobile apps, CLI. Call the SDK under the hood. See [`docs/verself-cli.md`](docs/verself-cli.md) for more on the CLI.
 
 (Note on above, the structure is still WIP and we are at maybe 5% parity in terms of having even just a golang SDK over our services.)
 
-The web app lives at `https://<domain>` (console, public docs, and policy in one TanStack Start app). Public service APIs use per-service origins such as `https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and `https://iam.api.<domain>`. Protocol origins include `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`. See [`docs/architecture/public-origins.md`](docs/architecture/public-origins.md).
+The web app lives at `https://<domain>` (console, public docs, and policy in one TanStack Start app). Public service APIs use per-service origins such as `https://billing.api.<domain>`, `https://sandbox.api.<domain>`, and `https://iam.api.<domain>`. Protocol origins include `git.<domain>`, `auth.<domain>`, `mail.<domain>`, and `dashboard.<domain>`.
 
 Per-task documentation lives in `aspect <task> --help`.
 

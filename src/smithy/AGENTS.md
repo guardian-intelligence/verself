@@ -15,8 +15,8 @@ interoperability projections, not semantic authority.
 - Put Connect/protobuf contracts under `proto/` only for RPC, streaming, or
   binary transport surfaces where protobuf is the primary protocol.
 - Do not make product services import curated SDKs. Repo-owned service calls use
-  service-owned transport clients; public SDKs live under `src/sdks/` and
-  frontend packages.
+  service-local typed clients/adapters with caller-owned SPIFFE mTLS transports;
+  public SDKs live under `src/sdks/` and frontend packages.
 - Downstream tooling should consume Smithy directly or the official OpenAPI
   projection rather than inventing another semantic contract format.
 

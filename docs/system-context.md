@@ -1,13 +1,11 @@
 # System Context
 
 How the platform is wired together and where the settled deployment boundaries
-sit. Product direction lives in `docs/product-direction.md`; detailed migration
-notes for the host-to-Nomad cutover live in
-[`docs/architecture/nomad-managed-substrate-migration.md`](architecture/nomad-managed-substrate-migration.md).
+sit. Product direction lives in [`docs/product/future-state.md`](product/future-state.md).
 
 ## Product Surface
 
-What customers buy from `verself.sh`: sandbox compute on Firecracker, sold today as a Blacksmith.sh-style GitHub Actions runner replacement (`sandbox-rental-service`). Customer code runs in short-lived Firecracker VMs the customer rents per workflow run. The hosted runner product contract is [`docs/product/hosted-actions-runners.md`](product/hosted-actions-runners.md). Lambda-style workloads and persistent dev VMs are planned on the same isolation, billing, and telemetry substrate (see `docs/product-direction.md`).
+What customers buy from `verself.sh`: sandbox compute on Firecracker, sold today as a Blacksmith.sh-style GitHub Actions runner replacement (`sandbox-rental-service`). Customer code runs in short-lived Firecracker VMs the customer rents per workflow run. The golden workspace and durable mount model is documented in [`docs/product/golden-environments.md`](product/golden-environments.md). Lambda-style workloads and persistent dev VMs are planned on the same isolation, billing, and telemetry substrate (see [`docs/product/future-state.md`](product/future-state.md)).
 
 Verself does not run customer-authored applications as managed long-lived services. The sandbox products rent compute time; they do not host applications. There is no PaaS surface and no roadmap toward one.
 
@@ -26,7 +24,7 @@ Grafana, OTel collector, Electric, SpiceDB, Temporal, services, and frontends
 are Nomad-managed. Devtools remain controller-local/host-local tooling outside
 Nomad.
 
-Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<site>/secrets/host.sops.yml` and written into root-owned host credential files. External SaaS credentials live in `src/host/sites/<site>/secrets/external.sops.yml`. Bootstrap systemd units consume host credentials with `LoadCredential=`; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services. See [`docs/architecture/workload-identity.md`](architecture/workload-identity.md).
+Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<site>/secrets/host.sops.yml` and written into root-owned host credential files. External SaaS credentials live in `src/host/sites/<site>/secrets/external.sops.yml`. Bootstrap systemd units consume host credentials with `LoadCredential=`; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services.
 
 Product service APIs are modeled in Smithy under `src/smithy`. The Smithy
 model is the semantic authority for resource DTOs, HTTP bindings, auth
@@ -36,26 +34,25 @@ descriptors. OpenAPI is generated from the model for documentation, API
 explorers, TypeScript transport generation, and ecosystem importers. Go
 services may continue to serve those HTTP APIs with Huma v2 during cutover, but
 Huma/OpenAPI output is not the source of truth. Do not write ad hoc
-`http.NewRequest` calls for repo-owned service calls; use service-owned clients
-that implement the Smithy-modeled HTTP surface. Public route shape is designed
+`http.NewRequest` calls for repo-owned service calls; use service-local typed
+clients/adapters that implement the Smithy-modeled HTTP surface. Public route shape is designed
 from the SDK resource method outward; durable customer-facing resources return
 immutable IDs and globally unique URN resource names; see
 [`docs/architecture/sdk-api-surface.md`](architecture/sdk-api-surface.md).
 Services with repo-owned operations expose internal HTTP routes that use SPIFFE
 mTLS and may include repo-only operations. Repo-owned service callers pass a
-`workloadauth.MTLSClientForService` HTTP client into the service-owned client so
-trace propagation and peer authorization stay centralized. Smithy models under
+`workloadauth.MTLSClientForService` HTTP client into the service-local
+client/adapter so trace propagation and peer authorization stay centralized. Smithy models under
 `src/smithy/models/verself` own boundary types, operation contracts, and numeric
 wire encodings.
 
-Public origins follow the AWS-style service subdomain model documented in
-[`docs/architecture/public-origins.md`](architecture/public-origins.md):
-the product apex (`<domain>`) serves the authenticated console alongside
-docs and policy in a single TanStack Start app, and public service APIs
-live at `<service>.api.<domain>` such as `billing.api.<domain>`,
-`sandbox.api.<domain>`, and `iam.api.<domain>`. Browser code does not
-call service API origins directly; TanStack Start server functions preserve
-the same-origin CSP and attach service credentials server-side.
+Public origins follow the AWS-style service subdomain model: the product apex
+(`<domain>`) serves the authenticated console alongside docs and policy in a
+single TanStack Start app, and public service APIs live at
+`<service>.api.<domain>` such as `billing.api.<domain>`,
+`sandbox.api.<domain>`, and `iam.api.<domain>`. Browser code does not call
+service API origins directly; TanStack Start server functions preserve the
+same-origin CSP and attach service credentials server-side.
 
 HAProxy 3.3 with AWS-LC terminates public TLS. Ansible renders `haproxy.cfg`
 from authored routes, and deployment reconciles `/etc/haproxy/maps/upstreams.map`
@@ -87,11 +84,11 @@ Hard product requirement: everything self-hosted. Exceptions:
 
 ## Auth and IAM
 
-Zitadel is the sole IdP for humans, organizations, and customer credentials. All public Go service APIs import `src/services/service-runtime/go/`, which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context. Repo-owned workload identity is SPIFFE/SPIRE (see [workload-identity.md](architecture/workload-identity.md)); Zitadel machine users are not used for repo-owned service-to-service calls.
+Zitadel is the sole IdP for humans, organizations, and customer credentials. All public Go service APIs import `src/services/service-runtime/go/`, which validates JWTs against Zitadel's JWKS endpoint (cached, local crypto after first fetch). Identity (subject, org ID, roles, email) is extracted from token claims and attached to request context. Repo-owned workload identity is SPIFFE/SPIRE; Zitadel machine users are not used for repo-owned service-to-service calls.
 
 Auth at the web application level is treated only as a UX concern. Authentication and authorization happen in services validating JWTs and calling out to Zitadel, and sometimes at the DB level. Any violation of this principle is a critical security concern.
 
-Full model for organization boundaries, three-role IAM (`owner`/`admin`/`member`), capability catalog, credentials, SCIM, TanStack Start server-owned OAuth sessions, browser CSP bearer isolation, and the service OIDC discovery path lives in `src/platform/docs/identity-and-iam.md`.
+Full model for organization boundaries, three-role IAM (`owner`/`admin`/`member`), capability catalog, credentials, SCIM, TanStack Start server-owned OAuth sessions, browser CSP bearer isolation, and the service OIDC discovery path lives in [`docs/iam-service.md`](iam-service.md).
 
 We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is a relying party for workload identity and the resource plane for secrets/KMS material: it accepts SPIRE-issued JWT-SVID login assertions, exchanges them for short-lived OpenBao tokens, and maps SPIFFE subjects to OpenBao policies. OpenBao is not the source of truth for repo-owned workload identity.
 
@@ -99,7 +96,7 @@ We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is
 
 Services that produce data for both real-time UX and long-term analytics use **application-level dual write**: the service writes to PostgreSQL (for live sync via ElectricSQL → TanStack DB in the browser) and to ClickHouse (for dashboards, metering, historical queries) in the same request path. Consistency is verified by periodic reconciliation, same pattern as billing's 6-check `Reconcile()`.
 
-ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative and rejected — experimental, with replication-slot coupling risks on a single node. The near-term replacement for request-path dual write is service-owned transactional projection delivery, not a shared third-party CDC appliance. [`docs/architecture/change-data-capture.md`](architecture/change-data-capture.md) records the current redesign direction for eventual WAL-based CDC.
+ClickHouse's `MaterializedPostgreSQL` engine was evaluated as a CDC alternative and rejected — experimental, with replication-slot coupling risks on a single node. The near-term replacement for request-path dual write is service-owned transactional projection delivery, not a shared third-party CDC appliance.
 
 ## Billing
 
@@ -135,10 +132,11 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
 ## Platform Contracts
 
 - Service-to-service and product integrations use HTTP APIs, not ad hoc CLIs.
-  Customer/operator CLIs are a generated-client surface over those same APIs,
-  not a private control plane.
-- Repo-owned service-to-service calls use service-owned Go clients plus SPIFFE
-  mTLS HTTP clients. Smithy public projections feed SDK-layer generated code;
+  Customer/operator CLIs use curated SDKs over those same APIs, not a private
+  control plane.
+- Repo-owned service-to-service calls use service-local typed clients/adapters
+  plus SPIFFE mTLS HTTP clients. Smithy public projections feed SDK-layer
+  generated code where tooling is reliable;
   internal Smithy-modeled HTTP surfaces may include SPIFFE-only operations and
   origin-attribution headers. OpenAPI is a generated compatibility projection.
 - Start telemetry investigation with `aspect observe` — discoverability-first.

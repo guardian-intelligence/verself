@@ -1,7 +1,6 @@
 <repo_overview>
 See @README.md
 See @src/services/iam-service/schema/verself.zed for Zanzibar policies
-See @docs/CODE_STANDARDS.md for engineering opinions.
 
 console: verself.sh
 auth portal: auth.verself.sh
@@ -28,18 +27,19 @@ General Structure:
  Smithy IDL + Verself traits (`src/smithy/models/verself`)
     -> Smithy semantic model
     -> Verself validators
-    -> official Smithy OpenAPI + x-verself extensions for public tooling
-    -> hand-written Huma routes that conform to the Smithy projection
-    -> service-owned internal transport clients
-    -> TS/browser SDKs through OpenAPI tooling + curated wrappers
+    -> compact route catalog read model for runtimes and conformance
+    -> official Smithy OpenAPI projection for public HTTP tooling
+    -> hand-written routes that conform to the Smithy operation model
+    -> service-local typed clients/adapters for repo-owned calls
+    -> public SDK transports through OpenAPI tooling where reliable + curated wrappers
 
 Layers:
 
 1. Host layer: machine + OS configuration and bootstrap substrate like vm-orchestrator, guest telemetry staging, HAProxy, nftables, ClickHouse initial schema, ZFS, SPIRE, Nomad, WireGuard, and site/domain facts. Ansible operates on bootstrap host substrate. Nomad manages platform components, services, and frontends beyond that layer. Directories: `src/host`, `src/integrations`
 2. Contract layer: Smithy models under `src/smithy/models/verself` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, generated projections, and conformance cases.
 3. Service API layer: services expose the Smithy-modeled HTTP APIs at <service>.api.<domain>. Go services may use Huma during the cutover, but Huma/OpenAPI output is an implementation/projection artifact rather than the semantic contract.
-4. Client/projection layer: OpenAPI compatibility artifacts are generated from the contract model. Repo-owned service calls use service-owned transport clients authenticating to each other via SPIFFE mTLS.
-5. Curated SDK layer: stable hand-written exports that wrap transport clients and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
+4. Client/projection layer: OpenAPI compatibility artifacts are generated from the contract model for docs, ecosystem tooling, and public SDK transport generation where reliable. Repo-owned service calls use service-local typed clients/adapters with caller-owned SPIFFE mTLS transports.
+5. Curated SDK layer: stable hand-written exports that wrap public transport implementations and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
 6. Facades: the verself-web app and the CLI and, in the future, mobile apps.
 
 IAM:
@@ -76,11 +76,11 @@ Invariant patterns:
 * Canonical API contracts live under `src/smithy/models/verself` as Smithy models. OpenAPI is generated for docs, ecosystem tooling, and transitional generators; it is not semantic truth.
 * Smithy-first: OpenAPI is good at describing HTTP shapes, but Verself needs one contract to also carry correctness-critical semantics: Zanzibar permissions, OIDC audience and auth mode, SPIFFE-only internal surfaces, audit event names, idempotency policy, pagination shape, rate-limit class, request body limits, stable problem types, SDK behavior, and conformance cases. Smithy gives us a protocol-aware model with custom traits so those invariants can be validated and generated instead of re-declared in prose, route metadata, SDK code, and audit code.
 
-* Service-oriented-architecture: with notable exceptions, repo-owned services talk to each other through service-owned transport clients that implement the Smithy-modeled internal HTTP surface. Internal routes use SPIFFE mTLS and may include repo-only operations; public routes use Zitadel bearer auth.
+* Service-oriented-architecture: with notable exceptions, repo-owned services talk to each other through service-local typed clients/adapters that implement the Smithy-modeled internal HTTP surface. Internal routes use SPIFFE mTLS and may include repo-only operations; public routes use Zitadel bearer auth.
 * Every modeled operation should declare auth scheme, audience, permission, resource kind, action, org-scope derivation, rate-limit class, idempotency policy, audit event, request body budget, stable error set, SDK behavior, and conformance case coverage. Missing metadata is a contract bug, not a documentation gap.
-* Service-owned Go transport clients are the boundary for repo-owned service-to-service calls. Their consumers should be other services, with auth carried by caller-owned transports such as SPIFFE mTLS `http.Client` values from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic. Curated customer/operator SDKs are generated and handwritten only under `src/sdks/` or frontend SDK packages from public contract projections, and product services must not import those SDKs.
+* Service-local Go clients/adapters are the boundary for repo-owned service-to-service calls. Their consumers should be other services, with auth carried by caller-owned transports such as SPIFFE mTLS `http.Client` values from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic. Curated customer/operator SDKs are handwritten only under `src/sdks/` or frontend SDK packages and may use generated public OpenAPI transports where tooling is reliable. Product services must not import those SDKs.
 * Connect/protobuf belongs under `src/smithy/proto` for RPC-shaped internal surfaces, streaming, binary payloads, and privileged substrate protocols where protobuf is the primary protocol. For the public product-control-plane contract we project OpenAPI 3.1.
-* Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through the service-owned secrets-service client over SPIFFE.
+* Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through the service-local secrets-service client over SPIFFE.
 * Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount.
 * Sync-engine pattern: PostgreSQL owns state, ClickHouse records the append-only ledger/traces, Electric/TanStack expose live read projections, and writes go through typed service commands whose conflict behavior matches the domain (strict observed-state rejection for security-critical resources, monotonic/idempotent collapse for notification-style cursors and dismissals).
 * Generated artifacts in ignored directories are cacheable infrastructure, not disposable outputs. Do not fix stale generated imports by deleting `__generated` or other golden workspace state. A source dependency on generated output must have a current generator owner/manifest in the build graph; when removing a generator, update every source import in the same change. See `docs/architecture/generated-artifact-governance.md`.
@@ -185,7 +185,7 @@ Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data 
 
 Where the platform is headed: open-source-per-subdirectory, privileged-host / product-service split, multi-tenant + customer dogfooding, three customer-facing sandbox products (CI runner, Lambda-like workload, long-running VM), self-hosted Forgejo/CI; agents merge to `main` continuously and environments deploy whichever SHA the `staging-tip`/`prod-tip` refs point at, advancing only after a canary soak passes — no long-lived release branches, unfinished work hidden behind feature flags.
 
-See `docs/product-direction.md`.
+See `docs/product/future-state.md`.
 
 </product_direction>
 
@@ -193,8 +193,8 @@ See `docs/product-direction.md`.
 
 Service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
 
-- See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, SpiceDB-backed IAM policies, API credentials, frontend sessions, OIDC discovery — all in `src/platform/docs/identity-and-iam.md`.
-- Verself Go service clients and Go SDK transport cores are hand-maintained transport layers for canonical Smithy contracts under `src/smithy/models/verself`. OpenAPI projections are generated compatibility artifacts, and frontend SDK packages may generate transport code from public projections. Services must not depend on curated SDKs. If a service API shape is missing, add the Smithy operation/shape/traits and update the relevant transport wrapper instead of bypassing the contract.
+- See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, SpiceDB-backed IAM policies, API credentials, frontend sessions, and OIDC discovery are covered by `docs/iam-service.md`.
+- Verself service-local Go clients/adapters and Go SDK facades are hand-maintained transport layers for canonical Smithy contracts under `src/smithy/models/verself`. OpenAPI projections are generated compatibility artifacts, and frontend SDK packages may generate transport code from public projections. Services must not depend on curated SDKs. If a service API shape is missing, add the Smithy operation/shape/traits and update the relevant transport wrapper instead of bypassing the contract.
 - Services can be in any language as long as they implement the Smithy-modeled HTTP bindings and generated compatibility projections.
 - Go service code uses sqlc for type safe queries. Avoid reading code in generated directories.
 - Python package management is done through `uv`.
@@ -243,15 +243,10 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation:** `src/services/mailbox-service/docs/inbound-mail.md`
 - **vm-orchestrator privilege boundary, Firecracker VM networking, TAP allocator, host service plane, nftables, guest CIDR, lease/exec model, vm-bridge control:** `src/substrate/vm-orchestrator/AGENTS.md`
 - **ZFS golden environment lifecycle, zvol, clone, snapshot, promote:** `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`
-- **Canonical API contracts, Smithy models, OpenAPI projections, SDK transport cores, Connect/protobuf boundary:** `src/smithy/README.md`
+- **Canonical API contracts, Smithy models, route catalog, OpenAPI projections, public SDK transport generation, Connect/protobuf boundary:** `src/smithy/README.md`
 - **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
-- **Workload identity, SPIFFE/SPIRE trust domain, service mTLS, OpenBao relying-party model, runtime secret cleanup:** `docs/architecture/workload-identity.md`
-- **Secrets service, identity model, OIDC provider role, resource model, billing, KMS alternative:** `src/platform/docs/secrets-service.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/services/governance-service/docs/audit-data-contract.md`
-- **Nomad-managed substrate boundary:** `docs/architecture/nomad-managed-substrate-migration.md`; host bootstrap lives in `src/host`, workload identity and runtime inputs live with the owning component/service/frontend.
-- **Directory structure, repo layout:** `docs/architecture/directory-structure.md`
-- **Agent workspace, QEMU/KVM, AI coding agent VMs:** `docs/architecture/agent-workspace.md`
 
 </operational_runbook>
 
