@@ -3,5 +3,5 @@ argument_specs:
   main:
     short_description: "Host firewall via nftables (default-deny ingress)"
     description:
-      - "Copies platform nftables files plus service-owned rulesets declared in component substrate descriptors."
+      - "Copies bootstrap host nftables files."
     options: {}

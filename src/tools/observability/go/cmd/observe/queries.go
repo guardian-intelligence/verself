@@ -949,39 +949,53 @@ LIMIT {row_limit:UInt32}`
 
 const supplyChainPolicySummarySQL = `
 SELECT
-  deploy_run_key,
-  site,
-  surface,
-  source_kind,
-  policy_result,
-  admission_state,
+  event_attrs['verself.deploy_run_key'] AS deploy_run_key,
+  event_attrs['verself.site'] AS site,
+  event_attrs['supply_chain.surface'] AS surface,
+  event_attrs['supply_chain.source_kind'] AS source_kind,
+  event_attrs['supply_chain.policy_result'] AS policy_result,
+  event_attrs['supply_chain.admission_state'] AS admission_state,
   count() AS findings,
-  countIf(digest = '') AS without_digest,
-  max(event_at) AS last_seen
-FROM verself.supply_chain_policy_events
-WHERE ({run_key:String} = '' AND event_at > now() - toIntervalMinute({minutes:UInt32}))
-   OR ({run_key:String} != '' AND deploy_run_key = {run_key:String})
+  countIf(event_attrs['supply_chain.digest'] = '') AS without_digest,
+  max(event_at) AS last_seen,
+  any(TraceId) AS trace_id
+FROM default.otel_traces
+ARRAY JOIN
+  Events.Timestamp AS event_at,
+  Events.Name AS event_name,
+  Events.Attributes AS event_attrs
+WHERE ServiceName = 'verself-deploy'
+  AND event_name = 'verself.supply_chain.policy_finding'
+  AND (({run_key:String} = '' AND event_at > now() - toIntervalMinute({minutes:UInt32}))
+    OR ({run_key:String} != '' AND event_attrs['verself.deploy_run_key'] = {run_key:String}))
 GROUP BY deploy_run_key, site, surface, source_kind, policy_result, admission_state
 ORDER BY last_seen DESC, surface, source_kind, policy_result
 LIMIT {row_limit:UInt32}`
 
 const supplyChainPolicyFindingsSQL = `
 SELECT
-  source_path,
-  line,
-  surface,
-  source_kind,
-  artifact,
-  policy_result,
-  admission_state,
-  policy_reason,
-  digest,
-  tuf_target_path,
-  storage_uri,
-  trace_id
-FROM verself.supply_chain_policy_events
-WHERE ({run_key:String} = '' AND event_at > now() - toIntervalMinute({minutes:UInt32}))
-   OR ({run_key:String} != '' AND deploy_run_key = {run_key:String})
+  event_at,
+  event_attrs['supply_chain.source_path'] AS source_path,
+  toUInt32OrZero(event_attrs['supply_chain.line']) AS line,
+  event_attrs['supply_chain.surface'] AS surface,
+  event_attrs['supply_chain.source_kind'] AS source_kind,
+  event_attrs['supply_chain.artifact'] AS artifact,
+  event_attrs['supply_chain.policy_result'] AS policy_result,
+  event_attrs['supply_chain.admission_state'] AS admission_state,
+  event_attrs['supply_chain.policy_reason'] AS policy_reason,
+  event_attrs['supply_chain.digest'] AS digest,
+  event_attrs['supply_chain.tuf_target_path'] AS tuf_target_path,
+  event_attrs['supply_chain.storage_uri'] AS storage_uri,
+  TraceId AS trace_id
+FROM default.otel_traces
+ARRAY JOIN
+  Events.Timestamp AS event_at,
+  Events.Name AS event_name,
+  Events.Attributes AS event_attrs
+WHERE ServiceName = 'verself-deploy'
+  AND event_name = 'verself.supply_chain.policy_finding'
+  AND (({run_key:String} = '' AND event_at > now() - toIntervalMinute({minutes:UInt32}))
+    OR ({run_key:String} != '' AND event_attrs['verself.deploy_run_key'] = {run_key:String}))
 ORDER BY event_at DESC, policy_result DESC, surface, source_path, line
 LIMIT {row_limit:UInt32}`
 

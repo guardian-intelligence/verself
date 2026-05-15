@@ -589,7 +589,7 @@ var queryDocs = []queryDoc{
 		ID:      "supply_chain.policy_summary",
 		Family:  "supply-chain",
 		Title:   "Supply-Chain Policy Summary",
-		Purpose: "Group deploy-time artifact policy evidence by surface, source kind, policy result, and admission state.",
+		Purpose: "Group deploy-time artifact policy span events by surface, source kind, policy result, and admission state.",
 		Optional: []string{
 			"--run-key=<deploy-run-key>",
 			"--minutes=<lookback>",
@@ -609,7 +609,7 @@ var queryDocs = []queryDoc{
 		ID:      "supply_chain.policy_findings",
 		Family:  "supply-chain",
 		Title:   "Supply-Chain Policy Findings",
-		Purpose: "Show per-source supply-chain policy evidence rows for a deploy_run_key or lookback window.",
+		Purpose: "Show per-source supply-chain policy span events for a deploy_run_key or lookback window.",
 		Optional: []string{
 			"--run-key=<deploy-run-key>",
 			"--minutes=<lookback>",

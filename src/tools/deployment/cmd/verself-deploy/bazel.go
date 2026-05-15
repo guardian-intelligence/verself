@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	hostNftablesSourcesTarget = "//src/host:nftables_sources"
-	nomadComponentsQuery      = `kind("nomad_component rule", //src/...)`
+	nomadComponentsQuery = `kind("nomad_component rule", //src/...)`
 )
 
 func queryNomadComponentLabels(ctx context.Context, repoRoot string) ([]string, error) {
@@ -61,18 +60,6 @@ func buildNomadComponentDescriptors(ctx context.Context, repoRoot string) ([]str
 		descriptorPaths = append(descriptorPaths, descriptorPath)
 	}
 	return labels, descriptorPaths, nil
-}
-
-func buildHostNftablesRegistry(ctx context.Context, repoRoot string) (string, error) {
-	build, err := bazelbuild.Build(ctx, repoRoot, []string{hostNftablesSourcesTarget})
-	if err != nil {
-		return "", err
-	}
-	outputs, err := build.Stream.ResolveOutputs(hostNftablesSourcesTarget, repoRoot)
-	if err != nil {
-		return "", fmt.Errorf("resolve %s outputs: %w", hostNftablesSourcesTarget, err)
-	}
-	return selectBazelOutput(hostNftablesSourcesTarget, outputs, ".component_substrate_registry.json")
 }
 
 func selectBazelOutput(label string, outputs []string, suffix string) (string, error) {

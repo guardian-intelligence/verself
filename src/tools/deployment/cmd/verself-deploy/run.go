@@ -13,18 +13,11 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/identity"
 	"github.com/verself/deployment-tools/internal/runtime"
 )
 
 const deployScope = "nomad"
-
-const (
-	clickHouseOperatorDatabase = "verself"
-	clickHouseOperatorUser     = "clickhouse_operator"
-	clickHouseOperatorConfig   = "/etc/clickhouse-client/operator.xml"
-)
 
 type runOptions struct {
 	Site     string
@@ -92,16 +85,6 @@ func run(ctx context.Context, opts runOptions) error {
 	}
 	defer rt.Close()
 
-	db, err := deploydb.OpenOperator(parentCtx, rt.SSH, deploydb.Config{
-		Database:           clickHouseOperatorDatabase,
-		Username:           clickHouseOperatorUser,
-		OperatorConfigPath: clickHouseOperatorConfig,
-	})
-	if err != nil {
-		return fmt.Errorf("open deploy evidence ClickHouse client: %w", err)
-	}
-	defer func() { _ = db.Close() }()
-
 	runCtx, span := rt.Tracer.Start(rt.Ctx, "verself_deploy.run",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
@@ -114,14 +97,7 @@ func run(ctx context.Context, opts runOptions) error {
 	startedAt := time.Now()
 	recordDeployStarted(span, snap.RunKey(), opts.Site, resolvedSHA, snap.Get("VERSELF_AUTHOR"), startedAt)
 
-	if err := checkSupplyChainPolicy(runCtx, rt.Tracer, db, opts.RepoRoot, snap.RunKey(), opts.Site); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		recordDeployFailed(span, nil, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
-		return err
-	}
-
-	if err := applyHostFirewall(runCtx, rt, db, opts.RepoRoot, opts.Site); err != nil {
+	if err := checkSupplyChainPolicy(runCtx, rt.Tracer, opts.RepoRoot, snap.RunKey(), opts.Site); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		recordDeployFailed(span, nil, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
@@ -140,7 +116,7 @@ func run(ctx context.Context, opts runOptions) error {
 		attribute.Int("verself.nomad_job_count", len(plan.Jobs)),
 	)
 
-	results, err := applyNomadPlan(runCtx, rt, db, plan)
+	results, err := applyNomadPlan(runCtx, rt, plan)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

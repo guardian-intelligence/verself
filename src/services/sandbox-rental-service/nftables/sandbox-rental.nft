@@ -1,5 +1,5 @@
-# Service-owned substrate file.
-# Source: component substrate descriptor
+# Owner-local nftables file.
+# Owner-local nftables ruleset
 # nftables ruleset sandbox_rental.
 table inet verself_sandbox_rental
 delete table inet verself_sandbox_rental

@@ -1,5 +1,5 @@
-# Service-owned substrate file.
-# Source: component substrate descriptor
+# Owner-local nftables file.
+# Owner-local nftables ruleset
 # nftables ruleset object_storage_admin.
 table inet verself_object_storage_admin
 delete table inet verself_object_storage_admin

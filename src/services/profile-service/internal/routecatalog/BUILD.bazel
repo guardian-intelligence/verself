@@ -19,8 +19,8 @@ go_library(
     name = "routecatalog",
     srcs = ["catalog.go"],
     embedsrcs = [
-        ":profile_internal_route_catalog_json",
-        ":profile_route_catalog_json",
+        "profile-internal.route-catalog.json",
+        "profile.route-catalog.json",
     ],
     importpath = "github.com/verself/profile-service/internal/routecatalog",
     visibility = ["//src/services/profile-service:__subpackages__"],

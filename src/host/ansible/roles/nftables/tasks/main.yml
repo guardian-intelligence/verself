@@ -17,16 +17,6 @@
     mode: "0644"
   notify: reload nftables
 
-- name: Load service-owned component substrate registry for nftables
-  ansible.builtin.set_fact:
-    nftables_component_registry_available: "{{ component_substrate_registry_file is defined and (component_substrate_registry_file | length > 0) }}"
-    nftables_component_substrate_registry: >-
-      {{
-        lookup('ansible.builtin.file', component_substrate_registry_file) | from_json
-        if component_substrate_registry_file is defined and (component_substrate_registry_file | length > 0)
-        else {"schema_version": 1, "components": []}
-      }}
-
 - name: Collect platform nftables source files
   ansible.builtin.set_fact:
     nftables_platform_ruleset_paths: >-
@@ -53,43 +43,6 @@
   loop: "{{ nftables_platform_ruleset_paths }}"
   loop_control:
     label: "{{ item | basename }}"
-
-- name: Collect service-owned nftables ruleset records
-  ansible.builtin.set_fact:
-    nftables_service_rulesets: >-
-      {{
-        nftables_component_substrate_registry.components
-        | selectattr('nftables_rulesets', 'defined')
-        | map(attribute='nftables_rulesets')
-        | flatten
-        | list
-      }}
-
-- name: Assert service-owned nftables rulesets declare source and target
-  ansible.builtin.assert:
-    that:
-      - item.source is defined
-      - item.source | default('') | length > 0
-      - item.target is defined
-      - (item.target | default('')) is match('^/etc/nftables\\.d/[^/]+\\.nft$')
-    fail_msg: "component nftables rulesets must declare workspace-relative source and /etc/nftables.d target"
-  loop: "{{ nftables_service_rulesets }}"
-  loop_control:
-    label: "{{ item.name | default(item.target | default('unknown')) }}"
-
-- name: Add service-owned nftables rulesets
-  ansible.builtin.set_fact:
-    nftables_rendered_rulesets: >-
-      {{
-        nftables_rendered_rulesets + [{
-          'basename': item.target | basename,
-          'dest': item.target,
-          'source': verself_repo_root ~ '/' ~ item.source,
-        }]
-      }}
-  loop: "{{ nftables_service_rulesets }}"
-  loop_control:
-    label: "{{ item.target | basename }}"
 
 - name: Assert nftables ruleset filenames are unique
   ansible.builtin.assert:

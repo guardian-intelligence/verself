@@ -1,4 +1,3 @@
-load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
@@ -39,35 +38,4 @@ nomad_component(
     job_spec = "nomad.hcl",
     provides = ["nats:client"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-component_substrate_json(
-    name = "component_substrate",
-    srcs = ["nftables/nats.nft"],
-    definition_json = """
-{
-  "component": "nats",
-  "kind": "platform_component",
-  "nftables_rulesets": [
-    {
-      "name": "nats",
-      "source": "src/infrastructure-components/nats/nftables/nats.nft",
-      "table": "verself_nats",
-      "target": "/etc/nftables.d/nats.nft"
-    }
-  ],
-  "nomad_component_label": "//src/infrastructure-components/nats:nomad_component",
-  "order": 25,
-  "postgres": {},
-  "workload": {
-    "directories": [
-      {"group": "nats", "mode": "0750", "owner": "root", "path": "/etc/nats"},
-      {"group": "nats", "mode": "0750", "owner": "nats", "path": "/var/lib/nats"},
-      {"group": "nats", "mode": "0750", "owner": "nats", "path": "/var/lib/nats/jetstream"}
-    ],
-    "units": [{"name": "nats", "supplementary_groups": ["spire_workload"], "user": "nats"}]
-  }
-}
-""",
-    visibility = ["//src/host:__pkg__"],
 )

@@ -22,7 +22,7 @@ func LoadPolicy(repoRoot, policyPath string) (Policy, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		// The policy file lives under __generated/ and is gitignored, so a
 		// fresh checkout has no committed copy. Regenerate from the scanner;
-		// admission state is sourced from ClickHouse, not this file.
+		// admission state is carried by the generated policy and deploy spans.
 		report, scanErr := Scan(context.Background(), ScanOptions{RepoRoot: repoRoot})
 		if scanErr != nil {
 			return Policy{}, fmt.Errorf("supplychain: regenerate missing policy %s: %w", policyPath, scanErr)

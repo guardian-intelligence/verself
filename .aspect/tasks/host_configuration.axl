@@ -65,30 +65,17 @@ def _host_playbook(ctx, site, playbook, extra_vars = None):
 
 def _firewall_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    rc = checked_spawn(
-        ctx,
-        "bazelisk",
-        ["build", "//src/host:nftables_sources"],
-        cwd = ws_path(ctx),
-        label = "bazelisk build //src/host:nftables_sources",
-    )
-    if rc != 0:
-        return rc
     return _host_playbook(
         ctx,
         site,
         "nftables.yml",
-        extra_vars = {
-            "component_substrate_registry_file": ws_path(ctx, "bazel-bin/src/host/component_substrate_registry.component_substrate_registry.json"),
-            "verself_repo_root": ws_path(ctx),
-        },
     )
 
 firewall = task(
     implementation = _firewall_impl,
     name = "firewall",
     group = ["host"],
-    summary = "Converge host and owner-local nftables rulesets.",
+    summary = "Converge bootstrap host nftables rulesets.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },

@@ -1,3 +1,0 @@
----
-- name: Materialise runtime accounts for every Nomad component
-  ansible.builtin.import_tasks: ../../tasks/runtime_accounts_batch.yml

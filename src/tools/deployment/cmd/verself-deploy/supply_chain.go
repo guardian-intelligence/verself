@@ -3,17 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/supplychain"
 )
 
-func checkSupplyChainPolicy(ctx context.Context, rtTracer trace.Tracer, db *deploydb.Client, repoRoot, runKey, site string) error {
+func checkSupplyChainPolicy(ctx context.Context, rtTracer trace.Tracer, repoRoot, runKey, site string) error {
 	checkCtx, checkSpan := rtTracer.Start(ctx, "verself_deploy.supply_chain.policy_check",
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
@@ -49,12 +47,7 @@ func checkSupplyChainPolicy(ctx context.Context, rtTracer trace.Tracer, db *depl
 		checkSpan.End()
 		return fmt.Errorf("evaluate supply-chain policy: %w", err)
 	}
-	checkSpan.SetAttributes(
-		attribute.Int("supply_chain.finding_count", len(report.Findings)),
-		attribute.Int64("supply_chain.accepted_count", int64(eval.Accepted)),
-		attribute.Int64("supply_chain.provisional_count", int64(eval.Provisional)),
-		attribute.Int64("supply_chain.rejected_count", int64(eval.Rejected)),
-	)
+	recordSupplyChainEvaluation(checkSpan, runKey, site, eval)
 	if eval.Rejected > 0 {
 		err := fmt.Errorf("supply-chain policy rejected %d source(s)", eval.Rejected)
 		checkSpan.RecordError(err)
@@ -64,67 +57,42 @@ func checkSupplyChainPolicy(ctx context.Context, rtTracer trace.Tracer, db *depl
 	}
 	checkSpan.SetStatus(codes.Ok, "")
 	checkSpan.End()
-
-	recordCtx, recordSpan := rtTracer.Start(ctx, "verself_deploy.supply_chain.policy_record",
-		trace.WithSpanKind(trace.SpanKindClient),
-		trace.WithAttributes(
-			attribute.String("db.system", "clickhouse"),
-			attribute.String("verself.deploy_run_key", runKey),
-			attribute.String("verself.site", site),
-			attribute.Int("supply_chain.row_count", len(eval.Results)),
-		),
-	)
-	defer recordSpan.End()
-	rows := supplyChainPolicyEventRows(eval.Results, runKey, site, recordSpan.SpanContext(), time.Now())
-	if err := db.InsertSupplyChainPolicyEvents(recordCtx, rows); err != nil {
-		recordSpan.RecordError(err)
-		recordSpan.SetStatus(codes.Error, err.Error())
-		return fmt.Errorf("record supply-chain policy evidence: %w", err)
-	}
-	recordSpan.SetStatus(codes.Ok, "")
 	return nil
 }
 
-func supplyChainPolicyEventRows(results []supplychain.FindingResult, runKey, site string, spanContext trace.SpanContext, eventAt time.Time) []deploydb.SupplyChainPolicyEventRow {
-	rows := make([]deploydb.SupplyChainPolicyEventRow, 0, len(results))
-	traceID := spanContext.TraceID().String()
-	spanID := spanContext.SpanID().String()
-	for _, result := range results {
+func recordSupplyChainEvaluation(span trace.Span, runKey, site string, eval supplychain.Evaluation) {
+	span.SetAttributes(
+		attribute.Int("supply_chain.finding_count", len(eval.Results)),
+		attribute.Int64("supply_chain.accepted_count", int64(eval.Accepted)),
+		attribute.Int64("supply_chain.provisional_count", int64(eval.Provisional)),
+		attribute.Int64("supply_chain.rejected_count", int64(eval.Rejected)),
+	)
+	span.AddEvent("verself.supply_chain.policy_evaluated", trace.WithAttributes(
+		attribute.String("verself.deploy_run_key", runKey),
+		attribute.String("verself.site", site),
+		attribute.Int("supply_chain.finding_count", len(eval.Results)),
+		attribute.Int64("supply_chain.accepted_count", int64(eval.Accepted)),
+		attribute.Int64("supply_chain.provisional_count", int64(eval.Provisional)),
+		attribute.Int64("supply_chain.rejected_count", int64(eval.Rejected)),
+	))
+	for _, result := range eval.Results {
 		finding := result.Finding
-		rows = append(rows, deploydb.SupplyChainPolicyEventRow{
-			EventAt:               eventAt,
-			DeployRunKey:          runKey,
-			Site:                  site,
-			SourcePath:            finding.SourcePath,
-			Line:                  finding.Line,
-			SourceKind:            finding.SourceKind,
-			Surface:               finding.Surface,
-			Artifact:              finding.Artifact,
-			UpstreamURL:           finding.UpstreamURL,
-			Digest:                finding.Digest,
-			PolicyResult:          result.PolicyResult,
-			PolicyReason:          result.PolicyReason,
-			AdmissionState:        result.AdmissionState,
-			MinimumAgeResult:      result.MinimumAgeResult,
-			ScannerResults:        result.ScannerResults,
-			OCIRepository:         result.OCIRepository,
-			OCIManifestDigest:     result.OCIManifestDigest,
-			OCIMediaType:          result.OCIMediaType,
-			SignatureDigest:       result.SignatureDigest,
-			AttestationDigest:     result.AttestationDigest,
-			SBOMDigest:            result.SBOMDigest,
-			ProvenanceDigest:      result.ProvenanceDigest,
-			ScannerResultDigest:   result.ScannerResultDigest,
-			ScannerName:           result.ScannerName,
-			ScannerVersion:        result.ScannerVersion,
-			ScannerDatabaseDigest: result.ScannerDatabaseDigest,
-			GUACSubject:           result.GUACSubject,
-			TUFTargetPath:         result.TUFTargetPath,
-			StorageURI:            result.StorageURI,
-			TraceID:               traceID,
-			SpanID:                spanID,
-			Evidence:              finding.Evidence,
-		})
+		span.AddEvent("verself.supply_chain.policy_finding", trace.WithAttributes(
+			attribute.String("verself.deploy_run_key", runKey),
+			attribute.String("verself.site", site),
+			attribute.String("supply_chain.source_path", finding.SourcePath),
+			attribute.Int64("supply_chain.line", int64(finding.Line)),
+			attribute.String("supply_chain.surface", finding.Surface),
+			attribute.String("supply_chain.source_kind", finding.SourceKind),
+			attribute.String("supply_chain.artifact", finding.Artifact),
+			attribute.String("supply_chain.upstream_url", finding.UpstreamURL),
+			attribute.String("supply_chain.install_url", result.InstallURL),
+			attribute.String("supply_chain.policy_result", result.PolicyResult),
+			attribute.String("supply_chain.admission_state", result.AdmissionState),
+			attribute.String("supply_chain.policy_reason", result.PolicyReason),
+			attribute.String("supply_chain.digest", finding.Digest),
+			attribute.String("supply_chain.tuf_target_path", result.TUFTargetPath),
+			attribute.String("supply_chain.storage_uri", result.StorageURI),
+		))
 	}
-	return rows
 }

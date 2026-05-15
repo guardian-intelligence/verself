@@ -1,7 +1,6 @@
 # gazelle:prefix github.com/verself/iam-service
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
@@ -32,99 +31,4 @@ nomad_component(
         "zitadel:http",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-component_substrate_json(
-    name = "component_substrate",
-    srcs = ["nftables/iam-service.nft"],
-    definition_json = """{
-      "component": "iam_service",
-      "kind": "service",
-      "nftables_rulesets": [
-        {
-          "name": "iam_service",
-          "table": "verself_iam_service",
-          "target": "/etc/nftables.d/iam-service.nft",
-          "source": "src/services/iam-service/nftables/iam-service.nft"
-        }
-      ],
-      "nomad_component_label": "//src/services/iam-service:nomad_component",
-      "order": 10,
-      "postgres": {
-        "database": "iam_service",
-        "password_ref": {
-          "kind": "ansible_var",
-          "name": "postgresql_iam_service_password",
-          "no_log": true
-        }
-      },
-      "workload": {
-        "auth": {
-          "kind": "owned_project",
-          "project_name": "verself-api"
-        },
-        "clickhouse": {
-          "grants": [
-            {
-              "action": "INSERT",
-              "table": "verself.domain_update_ledger"
-            },
-            {
-              "action": "SELECT",
-              "table": "verself.domain_update_ledger"
-            }
-          ],
-          "spiffe_identity_key": "iam_service.default",
-          "user": "iam_service"
-        },
-        "directories": [
-          {
-            "group": "iam_service",
-            "mode": "0750",
-            "owner": "root",
-            "path": "/etc/credstore/iam-service"
-          }
-        ],
-        "secret_refs": [
-          {
-            "group": "iam_service",
-            "mode": "0640",
-            "name": "clickhouse-ca-cert",
-            "no_log": true,
-            "owner": "root",
-            "path": "/etc/credstore/iam-service/clickhouse-ca-cert",
-            "restart_units": [],
-            "source": {
-              "kind": "remote_src",
-              "remote_src": "/etc/clickhouse-server/tls/server-ca.pem"
-            }
-          },
-          {
-            "group": "iam_service",
-            "mode": "0640",
-            "name": "spicedb-grpc-preshared-key",
-            "no_log": true,
-            "owner": "root",
-            "path": "/etc/credstore/iam-service/spicedb-grpc-preshared-key",
-            "restart_units": [
-              "iam-service"
-            ],
-            "source": {
-              "kind": "remote_src",
-              "remote_src": "/etc/credstore/spicedb/grpc-preshared-key"
-            }
-          }
-        ],
-        "units": [
-          {
-            "name": "iam-service",
-            "supplementary_groups": [
-              "spire_workload"
-            ],
-            "user": "iam_service"
-          }
-        ]
-      }
-    }""",
-    visibility = ["//src/host:__pkg__"],
 )

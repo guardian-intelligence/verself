@@ -1,4 +1,3 @@
-load("//src/tools/deployment/components:substrate.bzl", "component_substrate_json")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 filegroup(
@@ -31,27 +30,4 @@ nomad_component(
     ],
     requires = ["postgres:server"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-component_substrate_json(
-    name = "component_substrate",
-    srcs = [],
-    definition_json = """
-{
-  "component": "stalwart",
-  "kind": "platform_component",
-  "nomad_component_label": "//src/infrastructure-components/stalwart:nomad_component",
-  "order": 65,
-  "postgres": {},
-  "workload": {
-    "directories": [
-      {"group": "stalwart", "mode": "0755", "owner": "root", "path": "/etc/stalwart"},
-      {"group": "stalwart", "mode": "0750", "owner": "root", "path": "/etc/stalwart/certs"},
-      {"group": "stalwart", "mode": "0750", "owner": "stalwart", "path": "/var/lib/stalwart"}
-    ],
-    "units": [{"name": "stalwart", "user": "stalwart"}]
-  }
-}
-""",
-    visibility = ["//src/host:__pkg__"],
 )

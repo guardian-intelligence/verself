@@ -1,7 +1,6 @@
 load("@host_ansible_pip//:requirements.bzl", "requirement")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("//src/tools/build:check_tests.bzl", "stamp_test")
-load("//src/tools/deployment/components:substrate.bzl", "component_substrate_registry")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
 
 package(default_visibility = ["//visibility:public"])
@@ -28,46 +27,6 @@ spire_identity_registry(
         "//src/services/sandbox-rental-service:spiffe_identity",
         "//src/services/secrets-service:spiffe_identity",
         "//src/services/source-code-hosting-service:spiffe_identity",
-    ],
-)
-
-component_substrate_registry(
-    name = "component_substrate_registry",
-    components = [
-        "//src/infrastructure-components/electric:component_substrate",
-        "//src/infrastructure-components/garage:component_substrate",
-        "//src/infrastructure-components/nats:component_substrate",
-        "//src/infrastructure-components/openbao:component_substrate",
-        "//src/infrastructure-components/stalwart:component_substrate",
-        "//src/websites/apps/company:component_substrate",
-        "//src/websites/apps/verself-web:component_substrate",
-        "//src/services/analytics-service:component_substrate",
-        "//src/services/billing-service:component_substrate",
-        "//src/services/governance-service:component_substrate",
-        "//src/services/iam-service:component_substrate",
-        "//src/services/mailbox-service:component_substrate",
-        "//src/services/notifications-service:component_substrate",
-        "//src/services/object-storage-service:component_substrate",
-        "//src/services/profile-service:component_substrate",
-        "//src/services/projects-service:component_substrate",
-        "//src/services/sandbox-rental-service:component_substrate",
-        "//src/services/secrets-service:component_substrate",
-        "//src/services/source-code-hosting-service:component_substrate",
-        "//src/substrate/vm-orchestrator:component_substrate",
-    ],
-)
-
-filegroup(
-    name = "converge_sources",
-    srcs = [
-        ":component_substrate_registry",
-        ":site_sources",
-        ":spire_identity_registry",
-        ":substrate_sources",
-        "//src/host/binaries:server_tools_archive",
-        "//src/host/binaries:substrate_go_tools",
-        "//src/infrastructure-components:role_sources",
-        "//src/substrate/vm-orchestrator:host_ansible_sources",
     ],
 )
 
@@ -327,22 +286,6 @@ stamp_test(
         "repo_check",
     ],
     target = ":ansible_lint_check",
-)
-
-filegroup(
-    name = "nftables_sources",
-    srcs = [
-        "ansible/host-files/etc/nftables.conf",
-        "ansible/host-files/etc/systemd/system/verself-firewall.target",
-        "ansible/playbooks/nftables.yml",
-        ":component_substrate_registry",
-    ] + glob(
-        [
-            "ansible/host-files/etc/nftables.d/**",
-            "ansible/roles/nftables/**",
-        ],
-        allow_empty = False,
-    ),
 )
 
 filegroup(

@@ -6,7 +6,6 @@ go_library(
         "artifacts.go",
         "bazel.go",
         "evidence.go",
-        "host.go",
         "main.go",
         "nomad.go",
         "plan.go",
@@ -17,9 +16,7 @@ go_library(
     importpath = "github.com/verself/deployment-tools/cmd/verself-deploy",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/tools/deployment/internal/ansible",
         "//src/tools/deployment/internal/bazelbuild",
-        "//src/tools/deployment/internal/deploydb",
         "//src/tools/deployment/internal/deploymodel",
         "//src/tools/deployment/internal/garage",
         "//src/tools/deployment/internal/identity",
@@ -36,11 +33,6 @@ go_library(
 
 go_binary(
     name = "verself-deploy",
-    data = [
-        "//src/host:ansible_collections_archive",
-        "//src/host:ansible_playbook_bin",
-        "//src/tools/dev/binaries:sops",
-    ],
     embed = [":verself-deploy_lib"],
     visibility = ["//visibility:public"],
 )

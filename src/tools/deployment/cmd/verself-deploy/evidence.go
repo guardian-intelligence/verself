@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/verself/deployment-tools/internal/deploydb"
 	"github.com/verself/deployment-tools/internal/deploymodel"
 	"github.com/verself/deployment-tools/internal/nomadclient"
 )
@@ -155,7 +153,7 @@ func recordNomadDeploymentFailed(span trace.Span, runKey, site string, job deplo
 	))
 }
 
-func recordDeployWaveStarted(ctx context.Context, span trace.Span, db *deploydb.Client, runKey, site, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact, startedAt time.Time) error {
+func recordDeployWaveStarted(span trace.Span, runKey, site, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact, startedAt time.Time) {
 	span.AddEvent("verself.deploy.wave_started", trace.WithTimestamp(startedAt), trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", runKey),
 		attribute.String("verself.site", site),
@@ -164,18 +162,9 @@ func recordDeployWaveStarted(ctx context.Context, span trace.Span, db *deploydb.
 		attribute.Int("verself.changed_job_count", changedIntentCount(intents)),
 		attribute.Int("verself.artifact_count", len(artifacts)),
 	))
-	return db.RecordDeployWaveEvent(ctx, deploydb.DeployWaveEvent{
-		RunKey:          runKey,
-		Site:            site,
-		Wave:            wave,
-		Kind:            deploydb.DeployWaveEventStarted,
-		JobCount:        uint16FromInt(len(intents), "wave job count"),
-		ChangedJobCount: uint16FromInt(changedIntentCount(intents), "wave changed job count"),
-		ArtifactCount:   uint16FromInt(len(artifacts), "wave artifact count"),
-	})
 }
 
-func recordDeployWaveSucceeded(ctx context.Context, span trace.Span, db *deploydb.Client, runKey, site, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact, startedAt time.Time) error {
+func recordDeployWaveSucceeded(span trace.Span, runKey, site, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact, startedAt time.Time) {
 	duration := time.Since(startedAt)
 	span.AddEvent("verself.deploy.wave_succeeded", trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", runKey),
@@ -186,19 +175,9 @@ func recordDeployWaveSucceeded(ctx context.Context, span trace.Span, db *deployd
 		attribute.Int("verself.artifact_count", len(artifacts)),
 		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
 	))
-	return db.RecordDeployWaveEvent(ctx, deploydb.DeployWaveEvent{
-		RunKey:          runKey,
-		Site:            site,
-		Wave:            wave,
-		Kind:            deploydb.DeployWaveEventSucceeded,
-		JobCount:        uint16FromInt(len(intents), "wave job count"),
-		ChangedJobCount: uint16FromInt(changedIntentCount(intents), "wave changed job count"),
-		ArtifactCount:   uint16FromInt(len(artifacts), "wave artifact count"),
-		DurationMs:      uint32FromDuration(duration),
-	})
 }
 
-func recordDeployWaveFailed(ctx context.Context, span trace.Span, db *deploydb.Client, runKey, site, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact, startedAt time.Time, err error) error {
+func recordDeployWaveFailed(span trace.Span, runKey, site, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact, startedAt time.Time, err error) {
 	duration := time.Since(startedAt)
 	span.AddEvent("verself.deploy.wave_failed", trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", runKey),
@@ -210,108 +189,6 @@ func recordDeployWaveFailed(ctx context.Context, span trace.Span, db *deploydb.C
 		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
 		attribute.String("error.message", truncateError(err)),
 	))
-	return db.RecordDeployWaveEvent(ctx, deploydb.DeployWaveEvent{
-		RunKey:          runKey,
-		Site:            site,
-		Wave:            wave,
-		Kind:            deploydb.DeployWaveEventFailed,
-		JobCount:        uint16FromInt(len(intents), "wave job count"),
-		ChangedJobCount: uint16FromInt(changedIntentCount(intents), "wave changed job count"),
-		ArtifactCount:   uint16FromInt(len(artifacts), "wave artifact count"),
-		DurationMs:      uint32FromDuration(duration),
-		ErrorMessage:    truncateError(err),
-	})
-}
-
-func persistNomadDecision(ctx context.Context, db *deploydb.Client, runKey, site string, job deploymodel.NomadJob, decision nomadclient.Decision, duration time.Duration) error {
-	return db.RecordNomadJobEvent(ctx, deploydb.NomadJobEvent{
-		RunKey:              runKey,
-		Site:                site,
-		JobID:               job.JobID,
-		Kind:                deploydb.NomadJobEventDecided,
-		SpecSHA256:          job.SpecSHA256,
-		ArtifactSHA256:      job.ArtifactSHA256,
-		PriorJobModifyIndex: decision.PriorJobModifyIndex,
-		PriorVersion:        decision.PriorVersion,
-		PriorStopped:        decision.PriorStopped,
-		NoOp:                decision.NoOp,
-		DurationMs:          uint32FromDuration(duration),
-	})
-}
-
-func persistNomadSubmitted(ctx context.Context, db *deploydb.Client, runKey, site string, job deploymodel.NomadJob, decision nomadclient.Decision, submitted *nomadclient.SubmitResult, duration time.Duration) error {
-	return db.RecordNomadJobEvent(ctx, deploydb.NomadJobEvent{
-		RunKey:              runKey,
-		Site:                site,
-		JobID:               job.JobID,
-		Kind:                deploydb.NomadJobEventSubmitted,
-		SpecSHA256:          job.SpecSHA256,
-		ArtifactSHA256:      job.ArtifactSHA256,
-		PriorJobModifyIndex: decision.PriorJobModifyIndex,
-		PriorVersion:        decision.PriorVersion,
-		PriorStopped:        decision.PriorStopped,
-		EvalID:              submitted.EvalID,
-		DeploymentID:        submitted.DeploymentID,
-		JobModifyIndex:      submitted.JobModifyIndex,
-		DurationMs:          uint32FromDuration(duration),
-	})
-}
-
-func persistNomadSubmitFailed(ctx context.Context, db *deploydb.Client, runKey, site string, job deploymodel.NomadJob, decision nomadclient.Decision, duration time.Duration, err error) error {
-	return db.RecordNomadJobEvent(ctx, deploydb.NomadJobEvent{
-		RunKey:              runKey,
-		Site:                site,
-		JobID:               job.JobID,
-		Kind:                deploydb.NomadJobEventSubmitFailed,
-		SpecSHA256:          job.SpecSHA256,
-		ArtifactSHA256:      job.ArtifactSHA256,
-		PriorJobModifyIndex: decision.PriorJobModifyIndex,
-		PriorVersion:        decision.PriorVersion,
-		PriorStopped:        decision.PriorStopped,
-		DurationMs:          uint32FromDuration(duration),
-		ErrorMessage:        truncateError(err),
-	})
-}
-
-func persistNomadDeploymentSucceeded(ctx context.Context, db *deploydb.Client, runKey, site string, job deploymodel.NomadJob, submitted *nomadclient.SubmitResult, monitor nomadclient.MonitorResult, duration time.Duration) error {
-	return db.RecordNomadJobEvent(ctx, deploydb.NomadJobEvent{
-		RunKey:         runKey,
-		Site:           site,
-		JobID:          job.JobID,
-		Kind:           deploydb.NomadJobEventDeploymentSucceeded,
-		SpecSHA256:     job.SpecSHA256,
-		ArtifactSHA256: job.ArtifactSHA256,
-		EvalID:         submitted.EvalID,
-		DeploymentID:   monitor.DeploymentID,
-		JobModifyIndex: submitted.JobModifyIndex,
-		DesiredTotal:   uint16FromInt(monitor.DesiredTotal, "desired total"),
-		HealthyTotal:   uint16FromInt(monitor.HealthyTotal, "healthy total"),
-		UnhealthyTotal: uint16FromInt(monitor.UnhealthyTotal, "unhealthy total"),
-		PlacedTotal:    uint16FromInt(monitor.PlacedTotal, "placed total"),
-		TerminalStatus: monitor.TerminalStatus,
-		DurationMs:     uint32FromDuration(duration),
-	})
-}
-
-func persistNomadDeploymentFailed(ctx context.Context, db *deploydb.Client, runKey, site string, job deploymodel.NomadJob, submitted *nomadclient.SubmitResult, monitor nomadclient.MonitorResult, duration time.Duration, err error) error {
-	return db.RecordNomadJobEvent(ctx, deploydb.NomadJobEvent{
-		RunKey:         runKey,
-		Site:           site,
-		JobID:          job.JobID,
-		Kind:           deploydb.NomadJobEventDeploymentFailed,
-		SpecSHA256:     job.SpecSHA256,
-		ArtifactSHA256: job.ArtifactSHA256,
-		EvalID:         submitted.EvalID,
-		DeploymentID:   monitor.DeploymentID,
-		JobModifyIndex: submitted.JobModifyIndex,
-		DesiredTotal:   uint16FromInt(monitor.DesiredTotal, "desired total"),
-		HealthyTotal:   uint16FromInt(monitor.HealthyTotal, "healthy total"),
-		UnhealthyTotal: uint16FromInt(monitor.UnhealthyTotal, "unhealthy total"),
-		PlacedTotal:    uint16FromInt(monitor.PlacedTotal, "placed total"),
-		TerminalStatus: monitor.TerminalStatus,
-		DurationMs:     uint32FromDuration(duration),
-		ErrorMessage:   truncateError(err),
-	})
 }
 
 func changedJobIDs(results []jobApplyResult) []string {
