@@ -11,6 +11,8 @@ import (
 
 	"github.com/verself/profile-service/internal/internalcontractapi"
 	"github.com/verself/profile-service/internal/profile"
+	profilecatalog "github.com/verself/profile-service/internal/routecatalog"
+	runtimecatalog "github.com/verself/service-runtime/routecatalog"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
@@ -30,27 +32,26 @@ func (o *dataRightsOutput) auditDetails() auditDetails {
 }
 
 func RegisterInternalRoutes(api huma.API, svc *profile.Service) {
-	op, policy := internalProfileContract(internalcontractapi.ProfileOrgExport.Descriptor, "Export organization-local profile data")
+	op, policy := internalProfileContract(profilecatalog.Internal.MustOperation("profile-org-export"), "Export organization-local profile data")
 	registerProfileRoute(api, nil, op, policy, orgExport(svc))
-	op, policy = internalProfileContract(internalcontractapi.ProfileSubjectExport.Descriptor, "Export subject-local profile data")
+	op, policy = internalProfileContract(profilecatalog.Internal.MustOperation("profile-subject-export"), "Export subject-local profile data")
 	registerProfileRoute(api, nil, op, policy, subjectExport(svc))
-	op, policy = internalProfileContract(internalcontractapi.ProfileSubjectErasure.Descriptor, "Erase subject-local profile data")
+	op, policy = internalProfileContract(profilecatalog.Internal.MustOperation("profile-subject-erasure"), "Erase subject-local profile data")
 	registerProfileRoute(api, nil, op, policy, subjectErasure(svc))
-	op, policy = internalProfileContract(internalcontractapi.ProfileDataRightsStatus.Descriptor, "Get profile data-rights request status")
+	op, policy = internalProfileContract(profilecatalog.Internal.MustOperation("profile-data-rights-status"), "Get profile data-rights request status")
 	registerProfileRoute(api, nil, op, policy, dataRightsStatus(svc))
 }
 
-func internalProfileContract(desc internalcontractapi.OperationDescriptor, summary string) (huma.Operation, profileOperationPolicy) {
+func internalProfileContract(desc runtimecatalog.Operation, summary string) (huma.Operation, profileOperationPolicy) {
 	op := huma.Operation{
 		OperationID:   desc.OperationID,
 		Method:        desc.Method,
 		Path:          desc.Path,
 		Summary:       summary,
 		DefaultStatus: desc.DefaultStatus,
-		Errors:        internalContractProblemStatuses(desc.Problems),
-		Extensions:    map[string]any{"x-verself-contract": internalContractExtension(desc)},
+		Errors:        desc.ProblemStatuses(),
 	}
-	return op, profileOperationPolicy{OperationPolicy: operationPolicyFromInternalContract(desc), Internal: true}
+	return op, profileOperationPolicy{OperationPolicy: desc.OperationPolicy(), Internal: true}
 }
 
 func orgExport(svc *profile.Service) func(context.Context, *dataRightsInput) (*dataRightsOutput, error) {

@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "routecatalog",
+    srcs = ["routecatalog.go"],
+    importpath = "github.com/verself/service-runtime/routecatalog",
+    visibility = ["//visibility:public"],
+    deps = ["//src/services/service-runtime/go/iam"],
+)
+
+go_test(
+    name = "routecatalog_test",
+    srcs = ["routecatalog_test.go"],
+    embed = [":routecatalog"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":routecatalog",
+    visibility = ["//visibility:public"],
+)

@@ -15,7 +15,6 @@ use smithy.api#required
 use smithy.api#sensitive
 use smithy.api#trait
 use smithy.api#timestampFormat
-use smithy.openapi#specificationExtension
 
 /// Opaque installation identifier generated during first bootstrap.
 @pattern("^inst_[0-9A-HJKMNP-TV-Z]{26}$")
@@ -141,7 +140,6 @@ string ResourceShape
 
 /// Runtime service metadata required by deployment, auth, and projections.
 @trait(selector: "service")
-@specificationExtension(as: "x-verself-service-runtime")
 structure serviceRuntime {
     @required
     serviceName: ServiceName
@@ -175,7 +173,6 @@ list PrincipalKinds {
 
 /// Authentication expectations beyond the native Smithy auth scheme.
 @trait(selector: "operation")
-@specificationExtension(as: "x-verself-identity")
 structure identity {
     @required
     mode: AuthMode
@@ -209,7 +206,6 @@ structure OrganizationBinding {
 
 /// Zanzibar authorization metadata for a product operation.
 @trait(selector: "operation")
-@specificationExtension(as: "x-verself-authz")
 structure authz {
     @required
     permission: PermissionShape
@@ -256,7 +252,6 @@ enum Action {
 
 /// Audit metadata projected into governance-service and OCSF builders.
 @trait(selector: "operation")
-@specificationExtension(as: "x-verself-audit")
 structure audit {
     @required
     event: AuditEventShape
@@ -274,7 +269,6 @@ structure audit {
 
 /// Service-owned request throttle bucket.
 @trait(selector: "operation")
-@specificationExtension(as: "x-verself-rate-limit")
 structure rateLimit {
     @required
     bucket: RateLimitBucket
@@ -282,7 +276,6 @@ structure rateLimit {
 
 /// Maximum accepted request body bytes. Zero is valid only for bodyless operations.
 @trait(selector: "operation")
-@specificationExtension(as: "x-verself-request-budget")
 structure requestBudget {
     @required
     maxBytes: Long
@@ -290,7 +283,6 @@ structure requestBudget {
 
 /// SDK operation placement and transport behavior.
 @trait(selector: "operation")
-@specificationExtension(as: "x-verself-sdk")
 structure sdk {
     @required
     module: String

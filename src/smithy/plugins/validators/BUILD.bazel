@@ -14,6 +14,7 @@ java_library(
     resource_strip_prefix = "src/smithy/plugins/validators/resources",
     resources = glob(["resources/**"]),
     deps = [
+        "@maven//:software_amazon_smithy_smithy_build",
         "@maven//:software_amazon_smithy_smithy_model",
     ],
 )

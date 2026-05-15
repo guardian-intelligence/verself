@@ -127,11 +127,6 @@ func withOperationPolicy(op huma.Operation, policy profileOperationPolicy) huma.
 	if policy.Idempotency == idempotencyHeaderKey {
 		op.Parameters = appendIdempotencyKeyHeaderParameter(op.Parameters)
 	}
-	if op.Extensions == nil {
-		op.Extensions = map[string]any{}
-	}
-	iam := policy.OpenAPIExtension()
-	op.Extensions["x-verself-iam"] = iam
 	if policy.Internal {
 		op.Security = []map[string][]string{{"mutualTLS": {}}}
 	} else {

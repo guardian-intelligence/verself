@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//src/smithy/build:catalog.bzl", "verself_route_catalog")
+
+verself_route_catalog(
+    name = "profile_route_catalog_json",
+    out = "profile.route-catalog.json",
+    service = "Profile",
+)
+
+verself_route_catalog(
+    name = "profile_internal_route_catalog_json",
+    out = "profile-internal.route-catalog.json",
+    service = "ProfileInternal",
+)
+
+go_library(
+    name = "routecatalog",
+    srcs = ["catalog.go"],
+    embedsrcs = [
+        ":profile_internal_route_catalog_json",
+        ":profile_route_catalog_json",
+    ],
+    importpath = "github.com/verself/profile-service/internal/routecatalog",
+    visibility = ["//src/services/profile-service:__subpackages__"],
+    deps = ["//src/services/service-runtime/go/routecatalog"],
+)
+
+go_test(
+    name = "routecatalog_test",
+    srcs = ["catalog_test.go"],
+    embed = [":routecatalog"],
+)
+
+alias(
+    name = "go_default_library",
+    actual = ":routecatalog",
+    visibility = ["//src/services/profile-service:__subpackages__"],
+)

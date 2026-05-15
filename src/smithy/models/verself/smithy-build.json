@@ -16,7 +16,11 @@
     "source.smithy"
   ],
   "projections": {
-    "source": {},
+    "source": {
+      "plugins": {
+        "verselfRouteCatalog": {}
+      }
+    },
     "analytics-public": {
       "plugins": {
         "openapi": {

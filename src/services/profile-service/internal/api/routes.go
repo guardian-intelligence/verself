@@ -10,7 +10,9 @@ import (
 
 	"github.com/verself/profile-service/internal/contractapi"
 	"github.com/verself/profile-service/internal/profile"
+	profilecatalog "github.com/verself/profile-service/internal/routecatalog"
 	runtimeiam "github.com/verself/service-runtime/iam"
+	runtimecatalog "github.com/verself/service-runtime/routecatalog"
 )
 
 type mutationOutput struct {
@@ -29,25 +31,24 @@ func (o *mutationOutput) auditDetails() auditDetails {
 }
 
 func RegisterRoutes(api huma.API, svc *profile.Service, authorizer runtimeiam.OperationAuthorizer) {
-	op, policy := profileContract(contractapi.GetProfile.Descriptor, "Get the current human profile snapshot")
+	op, policy := profileContract(profilecatalog.Public.MustOperation("get-profile"), "Get the current human profile snapshot")
 	registerProfileRoute(api, authorizer, op, policy, getProfile(svc))
-	op, policy = profileContract(contractapi.PatchProfileIdentity.Descriptor, "Update the current human's identity profile fields")
+	op, policy = profileContract(profilecatalog.Public.MustOperation("patch-profile-identity"), "Update the current human's identity profile fields")
 	registerProfileRoute(api, authorizer, op, policy, updateIdentity(svc))
-	op, policy = profileContract(contractapi.PutProfilePreferences.Descriptor, "Replace the current human's profile preferences")
+	op, policy = profileContract(profilecatalog.Public.MustOperation("put-profile-preferences"), "Replace the current human's profile preferences")
 	registerProfileRoute(api, authorizer, op, policy, putPreferences(svc))
 }
 
-func profileContract(desc contractapi.OperationDescriptor, summary string) (huma.Operation, profileOperationPolicy) {
+func profileContract(desc runtimecatalog.Operation, summary string) (huma.Operation, profileOperationPolicy) {
 	op := huma.Operation{
 		OperationID:   desc.OperationID,
 		Method:        desc.Method,
 		Path:          desc.Path,
 		Summary:       summary,
 		DefaultStatus: desc.DefaultStatus,
-		Errors:        contractProblemStatuses(desc.Problems),
-		Extensions:    map[string]any{"x-verself-contract": contractExtension(desc)},
+		Errors:        desc.ProblemStatuses(),
 	}
-	return op, profileOperationPolicy{OperationPolicy: operationPolicyFromContract(desc)}
+	return op, profileOperationPolicy{OperationPolicy: desc.OperationPolicy()}
 }
 
 func getProfile(svc *profile.Service) func(context.Context, *contractapi.EmptyInput) (*contractapi.ProfileOutput, error) {
