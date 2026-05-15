@@ -23,7 +23,7 @@ export async function resolveDefaultSignedInPath(
   auth: AuthenticatedAuth,
 ): Promise<string> {
   const active = await resolveCurrentOrganization(queryClient, auth);
-  return orgPath(active.organization.slug, "/builds");
+  return orgPath(active.organization.slug, "/");
 }
 
 export async function loadActiveOrganizationRoute({

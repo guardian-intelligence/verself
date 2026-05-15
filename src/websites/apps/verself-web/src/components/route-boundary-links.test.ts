@@ -9,22 +9,22 @@ describe("route boundary fallback links", () => {
   it("uses not-found data before loose route params", () => {
     expect(
       resolveShellFallbackPath({
-        notFoundData: shellNotFoundFallbackData("/guardian/builds"),
+        notFoundData: shellNotFoundFallbackData("/guardian"),
         orgSlug: "executions",
       }),
-    ).toBe("/guardian/builds");
+    ).toBe("/guardian");
   });
 
-  it("falls back to an org-scoped builds route when the current params are trusted", () => {
+  it("falls back to the org-scoped console route when the current params are trusted", () => {
     expect(resolveShellFallbackPath({ notFoundData: undefined, orgSlug: "guardian" })).toBe(
-      "/guardian/builds",
+      "/guardian",
     );
   });
 
   it("rejects non-root fallback data", () => {
     expect(
       resolveShellFallbackPath({
-        notFoundData: shellNotFoundFallbackData("executions/builds"),
+        notFoundData: shellNotFoundFallbackData("executions/console"),
         orgSlug: null,
       }),
     ).toBe("/login");
@@ -42,6 +42,6 @@ describe("route boundary fallback links", () => {
         },
         new Map([["org_1", { display_name: "Guardian", slug: "guardian" }]]),
       ),
-    ).toBe("/guardian/builds");
+    ).toBe("/guardian");
   });
 });

@@ -37,7 +37,7 @@ export function AppRouteError({ error, reset }: ErrorComponentProps) {
               variant="outline"
               render={<Link from="/" to={fallbackPath} search={() => ({})} />}
             >
-              Back to builds
+              Back to console
             </Button>
           </div>
         }
@@ -54,7 +54,7 @@ export function AppNotFound(props: NotFoundRouteProps) {
       body="The page or resource you requested does not exist."
       action={
         <Button render={<Link from="/" to={fallbackPath} search={() => ({})} />}>
-          Return to builds
+          Return to console
         </Button>
       }
     />

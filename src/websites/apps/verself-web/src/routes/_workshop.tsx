@@ -41,11 +41,7 @@ function SiteFooter() {
         borderTop: "1px solid var(--treatment-hairline)",
       }}
     >
-      <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-4 md:px-6">
-        <FooterColumn heading="Platform">
-          <FooterLink to="/docs">Docs</FooterLink>
-          <FooterLink to="/docs/reference">API Reference</FooterLink>
-        </FooterColumn>
+      <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-10 md:grid-cols-2 md:px-6">
         <FooterColumn heading="Policy">
           <FooterLink to="/policy">Overview</FooterLink>
           <FooterLink to="/policy/terms">Terms of Service</FooterLink>

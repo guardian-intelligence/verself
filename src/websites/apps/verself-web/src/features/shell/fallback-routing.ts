@@ -17,9 +17,7 @@ export function resolveShellFallbackPath({
   readonly notFoundData: unknown;
   readonly orgSlug: string | null;
 }): string {
-  return (
-    fallbackPathFromNotFoundData(notFoundData) ?? (orgSlug ? orgPath(orgSlug, "/builds") : "/login")
-  );
+  return fallbackPathFromNotFoundData(notFoundData) ?? (orgSlug ? orgPath(orgSlug, "/") : "/login");
 }
 
 export function resolveAuthenticatedShellFallbackPath(
@@ -29,7 +27,7 @@ export function resolveAuthenticatedShellFallbackPath(
   const orgID = auth.selectedOrgId ?? auth.orgId;
   if (!orgID) return "/login";
   const organization = organizations.get(orgID);
-  return organization ? orgPath(organization.slug, "/builds") : "/login";
+  return organization ? orgPath(organization.slug, "/") : "/login";
 }
 
 function fallbackPathFromNotFoundData(data: unknown): string | null {
