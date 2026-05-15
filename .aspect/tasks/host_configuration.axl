@@ -5,12 +5,23 @@ handoff. Pomerium is a manual host action because a bad change can move SSH
 listeners and lock operators out.
 """
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "HOST_CONFIGURATION_DIR", "checked_spawn", "inventory_check", "ws_path")
+load(
+    ".aspect/lib/helpers.axl",
+    "DEFAULT_SITE",
+    "HOST_CONFIGURATION_DIR",
+    "SOPS_SHIM",
+    "bazel_run",
+    "checked_spawn",
+    "host_ansible_env",
+    "host_ansible_playbook",
+    "inventory_check",
+    "ws_path",
+)
 
 def _edit_secrets_impl(ctx):
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        "sops",
+        "//src/tools/dev/binaries:sops",
         [ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/prod/secrets/host.sops.yml")],
         label = "sops edit host secrets",
     )
@@ -26,6 +37,12 @@ def _host_playbook(ctx, site, playbook, extra_vars = None):
     rc = inventory_check(ctx, site)
     if rc != 0:
         return rc
+    ansible_playbook = host_ansible_playbook(ctx)
+    if ansible_playbook == "":
+        return 1
+    env = host_ansible_env(ctx, tool_shims = [SOPS_SHIM])
+    if env == None:
+        return 1
     ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
     playbook_args = [
         "-i",
@@ -39,9 +56,10 @@ def _host_playbook(ctx, site, playbook, extra_vars = None):
             playbook_args.extend(["-e", key + "=" + value])
     return checked_spawn(
         ctx,
-        "ansible-playbook",
+        ansible_playbook,
         playbook_args,
         cwd = ansible_dir,
+        env = env,
         label = "ansible-playbook " + playbook + " --site " + site,
     )
 
@@ -81,10 +99,16 @@ def _operator_access_handoff_impl(ctx):
         ctx.std.io.stderr.write("ERROR: pass --confirm to run the Pomerium operator-access handoff\n")
         return 1
     site = ctx.args.site or "prod"
+    ansible_playbook = host_ansible_playbook(ctx)
+    if ansible_playbook == "":
+        return 1
+    env = host_ansible_env(ctx, tool_shims = [SOPS_SHIM])
+    if env == None:
+        return 1
     ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
     return checked_spawn(
         ctx,
-        "ansible-playbook",
+        ansible_playbook,
         [
             "-i",
             ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/inventory.ini"),
@@ -93,6 +117,7 @@ def _operator_access_handoff_impl(ctx):
             "verself_site=" + site,
         ],
         cwd = ansible_dir,
+        env = env,
         label = "ansible-playbook operator-access-handoff --site " + site,
     )
 

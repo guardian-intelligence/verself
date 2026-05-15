@@ -36,6 +36,11 @@ go_library(
 
 go_binary(
     name = "verself-deploy",
+    data = [
+        "//src/host:ansible_collections_archive",
+        "//src/host:ansible_playbook_bin",
+        "//src/tools/dev/binaries:sops",
+    ],
     embed = [":verself-deploy_lib"],
     visibility = ["//visibility:public"],
 )

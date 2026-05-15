@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"gopkg.in/yaml.v3"
 )
 
@@ -352,7 +353,7 @@ func decryptSopsToken(path string) (string, error) {
 	if _, err := os.Stat(path); err != nil {
 		return "", fmt.Errorf("stat %s: %w", path, err)
 	}
-	cmd := exec.Command("sops", "-d", "--extract", `["cloudflare_api_token"]`, path)
+	cmd := exec.Command(sopsBinary(), "-d", "--extract", `["cloudflare_api_token"]`, path)
 	out, err := cmd.Output()
 	if err != nil {
 		var ee *exec.ExitError
@@ -369,6 +370,30 @@ func decryptSopsToken(path string) (string, error) {
 		return "", fmt.Errorf("sops -d %s returned empty value for cloudflare_api_token", path)
 	}
 	return tok, nil
+}
+
+func sopsBinary() string {
+	if value := strings.TrimSpace(os.Getenv("VERSELF_SOPS_BIN")); value != "" {
+		return value
+	}
+	if path := bazelRunfile("src/tools/dev/binaries/sops"); path != "" {
+		return path
+	}
+	return "sops"
+}
+
+func bazelRunfile(rel string) string {
+	for _, candidate := range []string{"verself/" + rel, "_main/" + rel, rel} {
+		path, err := runfiles.Rlocation(candidate)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
 }
 
 // ---- helpers used by main / cf client ------------------------------------

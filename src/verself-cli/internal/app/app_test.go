@@ -1083,14 +1083,37 @@ func runCLI(t *testing.T, out *bytes.Buffer, args ...string) {
 
 func requireTool(t *testing.T, name string) {
 	t.Helper()
-	if _, err := exec.LookPath(name); err != nil {
+	envName := ""
+	runfile := ""
+	switch name {
+	case "age-keygen":
+		envName = "VERSELF_AGE_KEYGEN_BIN"
+		runfile = "src/tools/dev/binaries/age-keygen"
+	case "sops":
+		envName = "VERSELF_SOPS_BIN"
+		runfile = "src/tools/dev/binaries/sops"
+	}
+	if envName != "" && os.Getenv(envName) != "" {
+		return
+	}
+	if runfile != "" {
+		if path := findRunfile(runfile); path != "" {
+			t.Setenv(envName, path)
+			return
+		}
+	}
+	path, err := exec.LookPath(name)
+	if err != nil {
 		t.Skipf("%s is required for bootstrap render verification: %v", name, err)
+	}
+	if envName != "" {
+		t.Setenv(envName, path)
 	}
 }
 
 func decryptSOPS(t *testing.T, repoRoot, path, identity string) string {
 	t.Helper()
-	cmd := exec.Command("sops", "-d", path)
+	cmd := exec.Command(toolBinary("VERSELF_SOPS_BIN", "sops"), "-d", path)
 	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "SOPS_AGE_KEY="+identity)
 	out, err := cmd.CombinedOutput()
@@ -1098,6 +1121,24 @@ func decryptSOPS(t *testing.T, repoRoot, path, identity string) string {
 		t.Fatalf("sops -d %s: %v\n%s", path, err, string(out))
 	}
 	return string(out)
+}
+
+func findRunfile(rel string) string {
+	testSrcDir := os.Getenv("TEST_SRCDIR")
+	if testSrcDir == "" {
+		return ""
+	}
+	candidates := []string{}
+	if workspace := os.Getenv("TEST_WORKSPACE"); workspace != "" {
+		candidates = append(candidates, filepath.Join(testSrcDir, workspace, rel))
+	}
+	candidates = append(candidates, filepath.Join(testSrcDir, "_main", rel), filepath.Join(testSrcDir, rel))
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func assertFileContains(t *testing.T, path string, values []string) {

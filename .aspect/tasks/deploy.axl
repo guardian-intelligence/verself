@@ -15,7 +15,8 @@ observability concern, not a deploy-runner correctness dependency.
 
 load(
     ".aspect/lib/helpers.axl",
-    "build_verself_deploy",
+    "VERSELF_DEPLOY_TARGET",
+    "bazel_run",
     "checked_spawn",
     "git_dirty",
     "git_head",
@@ -31,12 +32,9 @@ def _deploy_one(ctx, site, sha):
         "--sha=" + sha,
         "--repo-root=" + ws_path(ctx),
     ]
-    bin = build_verself_deploy(ctx)
-    if bin == "":
-        return 1
-    deploy_rc = checked_spawn(
+    deploy_rc = bazel_run(
         ctx,
-        bin,
+        VERSELF_DEPLOY_TARGET,
         deploy_args,
         cwd = ws_path(ctx),
         label = "verself-deploy run --site=" + site,
@@ -51,8 +49,8 @@ def _make_tree_removable(ctx, path):
         .spawn().wait())
     if r.code != 0:
         return
-    _ = checked_spawn(ctx, "find", [path, "-type", "d", "-exec", "chmod", "u+w", "{}", "+"], label = "make " + path + " directories removable")
-    _ = checked_spawn(ctx, "find", [path, "-type", "f", "-exec", "chmod", "u+w", "{}", "+"], label = "make " + path + " files removable")
+    checked_spawn(ctx, "find", [path, "-type", "d", "-exec", "chmod", "u+w", "{}", "+"], label = "make " + path + " directories removable")
+    checked_spawn(ctx, "find", [path, "-type", "f", "-exec", "chmod", "u+w", "{}", "+"], label = "make " + path + " files removable")
 
 def _remove_worktree(ctx, wt):
     # Bazel/frontend generators can leave read-only files that block worktree removal.
@@ -60,12 +58,14 @@ def _remove_worktree(ctx, wt):
     return checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
 
 def _deploy_in_worktree(ctx, site, sha):
-    """Add a temporary worktree at <sha>, exec `aspect deploy` from inside,
-    and clean up. Inside the worktree HEAD == sha, so the inner invocation
-    falls through to the in-tree path with no further branching."""
+    """Deploy from a temporary detached worktree at <sha>.
+
+    Inside the worktree HEAD == sha, so the inner invocation falls through to
+    the in-tree path with no further branching.
+    """
     wt = "/tmp/verself-deploy-" + sha[:12]
     _make_tree_removable(ctx, wt)
-    _ = checked_spawn(ctx, "rm", ["-rf", wt], label = "clean " + wt)
+    checked_spawn(ctx, "rm", ["-rf", wt], label = "clean " + wt)
     rc = checked_spawn(
         ctx,
         "git",
@@ -79,42 +79,30 @@ def _deploy_in_worktree(ctx, site, sha):
     rc = checked_spawn(ctx, "test", ["-f", inv_abs], label = "test -f " + inv_rel)
     if rc != 0:
         ctx.std.io.stderr.write("ERROR: " + inv_rel + " not found. Run: aspect provision apply\n")
-        _ = _remove_worktree(ctx, wt)
+        _remove_worktree(ctx, wt)
         return 1
     rc = checked_spawn(ctx, "mkdir", ["-p", wt + "/src/host/sites/" + site], label = "mkdir worktree inventory dir")
     if rc != 0:
-        _ = _remove_worktree(ctx, wt)
+        _remove_worktree(ctx, wt)
         return rc
     rc = checked_spawn(ctx, "cp", [inv_abs, wt + "/" + inv_rel], label = "copy " + inv_rel + " into deploy worktree")
     if rc != 0:
-        _ = _remove_worktree(ctx, wt)
+        _remove_worktree(ctx, wt)
         return rc
-    target = "//src/tools/deployment/cmd/verself-deploy:verself-deploy"
-    rc = checked_spawn(
-        ctx,
-        "bazelisk",
-        ["build", target],
-        cwd = wt,
-        label = "bazelisk build " + target + " (worktree " + sha[:12] + ")",
-    )
-    if rc != 0:
-        _ = _remove_worktree(ctx, wt)
-        return rc
-    bin = wt + "/bazel-bin/src/tools/deployment/cmd/verself-deploy/verself-deploy_/verself-deploy"
     deploy_args = [
         "run",
         "--site=" + site,
         "--sha=" + sha,
         "--repo-root=" + wt,
     ]
-    deploy_rc = checked_spawn(
+    deploy_rc = bazel_run(
         ctx,
-        bin,
+        VERSELF_DEPLOY_TARGET,
         deploy_args,
         cwd = wt,
         label = "verself-deploy run --site=" + site + " (worktree " + sha[:12] + ")",
     )
-    _ = _remove_worktree(ctx, wt)
+    _remove_worktree(ctx, wt)
     return deploy_rc
 
 def _deploy_impl(ctx):

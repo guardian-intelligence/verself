@@ -21,7 +21,6 @@ import (
 
 const (
 	billingSetUserStateTarget = "//src/services/billing-service/cmd/billing-set-user-state:billing-set-user-state"
-	billingSetUserStateBin    = "bazel-bin/src/services/billing-service/cmd/billing-set-user-state/billing-set-user-state_/billing-set-user-state"
 )
 
 type personaOptions struct {
@@ -109,7 +108,7 @@ func cmdPersonaUserState(args []string) error {
 		addStringFlag("--business-now", *businessNow)
 		addStringFlag("--overage-policy", *overagePolicy)
 		addStringFlag("--trust-tier", *trustTier)
-		return runRemoteBazelExecutable(rt, billingSetUserStateTarget, billingSetUserStateBin, "verself-billing-set-user-state", "billing", remoteArgs)
+		return runRemoteBazelExecutable(rt, billingSetUserStateTarget, "verself-billing-set-user-state", "billing", remoteArgs)
 	})
 }
 

@@ -5,7 +5,7 @@ Language-specific lint, validation, and generated-output checks are modeled as
 Bazel test targets so warm CI runners reuse the local action/test cache.
 """
 
-load(".aspect/lib/helpers.axl", "bazel_tracked_files", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "bazel_run", "bazel_tracked_files", "checked_spawn", "ws_path")
 
 def _bazel(ctx, args, label):
     return checked_spawn(
@@ -20,11 +20,13 @@ def _buildifier(ctx):
     files = bazel_tracked_files(ctx)
     if files == None:
         return 1
-    return checked_spawn(
+    abs_files = []
+    for f in files:
+        abs_files.append(ws_path(ctx, f))
+    return bazel_run(
         ctx,
-        "buildifier",
-        ["-mode=check", "-lint=warn"] + files,
-        cwd = ws_path(ctx),
+        "//src/tools/dev/binaries:buildifier",
+        ["-mode=check", "-lint=warn"] + abs_files,
         label = "buildifier -mode=check -lint=warn",
     )
 

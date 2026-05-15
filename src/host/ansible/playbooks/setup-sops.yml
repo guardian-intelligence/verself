@@ -5,9 +5,8 @@
 # What it does:
 #   1. Generates an Age keypair if one doesn't exist
 #   2. Writes .sops.yaml with the Age public key
-#   3. Installs the community.sops Ansible collection
-#   4. Generates all service credentials
-#   5. Writes and encrypts the prod host SOPS bag
+#   3. Generates all service credentials
+#   4. Writes and encrypts the prod host SOPS bag
 #
 # Usage:
 #   aspect dev sops-init
@@ -23,18 +22,26 @@
     age_key_file: >-
       {{ lookup('env', 'SOPS_AGE_KEY_FILE')
          | default(lookup('env', 'HOME') ~ '/.config/sops/age/keys.txt', true) }}
+    age_keygen_bin: age-keygen
+    sops_bin: sops
 
   tasks:
     # --- Dependency checks ---
 
     - name: Assert age-keygen is installed
-      ansible.builtin.command: which age-keygen
+      ansible.builtin.command:
+        argv:
+          - "{{ age_keygen_bin }}"
+          - -version
       changed_when: false
       failed_when: age_keygen_check.rc != 0
       register: age_keygen_check
 
     - name: Assert sops is installed
-      ansible.builtin.command: which sops
+      ansible.builtin.command:
+        argv:
+          - "{{ sops_bin }}"
+          - --version
       changed_when: false
       failed_when: sops_check.rc != 0
       register: sops_check
@@ -55,7 +62,10 @@
 
     - name: Generate Age keypair
       ansible.builtin.command:
-        cmd: age-keygen -o {{ age_key_file }}
+        argv:
+          - "{{ age_keygen_bin }}"
+          - -o
+          - "{{ age_key_file }}"
       when: not age_key_stat.stat.exists
       changed_when: true
 
@@ -93,16 +103,6 @@
                 {{ age_pub_key.stdout }}
         dest: "{{ repo_root }}/.sops.yaml"
         mode: "0644"
-
-    # --- Ansible collection ---
-
-    - name: Install community.sops Ansible collection
-      ansible.builtin.command:
-        cmd: >-
-          ansible-galaxy collection install
-          -r {{ playbook_dir }}/../requirements.yml
-          --force-with-deps
-      changed_when: true
 
     # --- Skip if already encrypted ---
 
@@ -167,7 +167,11 @@
 
     - name: Encrypt secrets file with SOPS
       ansible.builtin.command:
-        cmd: sops encrypt -i {{ secrets_file }}
+        argv:
+          - "{{ sops_bin }}"
+          - encrypt
+          - -i
+          - "{{ secrets_file }}"
       changed_when: true
 
     # --- Summary ---
@@ -180,5 +184,5 @@
             Age key:      {{ age_key_file }}
 
             Next steps:
-              Edit secrets:  sops src/host/sites/prod/secrets/host.sops.yml
+              Edit secrets:  aspect host edit-secrets
               Deploy:        aspect deploy --site=prod

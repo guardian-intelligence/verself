@@ -41,3 +41,45 @@ http_file(
     sha256 = "41c40d82ab4bde07d80c3e20254e3474b1d6abc3b4b8f57e181a3e66c1006521",
     url = "https://code.forgejo.org/forgejo/runner/releases/download/v12.9.0/forgejo-runner-12.9.0-linux-amd64",
 )
+
+http_file(
+    name = "guest_image_e2fsprogs",
+    downloaded_file_path = "e2fsprogs_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
+    sha256 = "1d0fb19dcf14316d04602260871dba3c1441c0ecf3c3bde54eacba35dcc5a40b",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/e/e2fsprogs/e2fsprogs_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
+)
+
+http_file(
+    name = "guest_image_e2fsprogs_libblkid",
+    downloaded_file_path = "libblkid1_2.39.3-9ubuntu6.5_amd64.deb",
+    sha256 = "2307a9ed92642a69de0284ac63e233e45ac5a2c3831f04399f7d212379487e82",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/u/util-linux/libblkid1_2.39.3-9ubuntu6.5_amd64.deb",
+)
+
+http_file(
+    name = "guest_image_e2fsprogs_libcom_err",
+    downloaded_file_path = "libcom-err2_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
+    sha256 = "7ab24d3057dabf86db8f771ad6e43f073ed86b6b950d6e8ba22cb9fe6707bbc9",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/e/e2fsprogs/libcom-err2_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
+)
+
+http_file(
+    name = "guest_image_e2fsprogs_libe2fs",
+    downloaded_file_path = "libext2fs2t64_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
+    sha256 = "276686704314749497f1530ff9e62fd0280328be786a28db0cfe2aa31c88119e",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/e/e2fsprogs/libext2fs2t64_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
+)
+
+http_file(
+    name = "guest_image_e2fsprogs_libss",
+    downloaded_file_path = "libss2_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
+    sha256 = "e3b6140b815970461c4312f1dc3d6b1f0d62d99f4ebe2ad087bffa630010035a",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/e/e2fsprogs/libss2_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
+)
+
+http_file(
+    name = "guest_image_e2fsprogs_libuuid",
+    downloaded_file_path = "libuuid1_2.39.3-9ubuntu6.5_amd64.deb",
+    sha256 = "2f801582b5f0e7cb0c2d3d3651193e69f4540ee3b7dcb6079a3562f0880b9edf",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/u/util-linux/libuuid1_2.39.3-9ubuntu6.5_amd64.deb",
+)

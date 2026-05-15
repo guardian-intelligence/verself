@@ -10,16 +10,10 @@ direct-host access signal. During bootstrap/recovery this should line up with
 intentional use of the :2222 recovery listener.
 """
 
-load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "inventory_check", "ws_path")
-
-def _aspect_operator_bin(ctx):
-    return build_aspect_operator(ctx)
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "inventory_check", "ws_path")
 
 def _impl(ctx):
     if inventory_check(ctx) != 0:
-        return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
         return 1
     cli_args = []
     if ctx.args.site:
@@ -28,9 +22,9 @@ def _impl(ctx):
         cli_args = cli_args + ["--hours", ctx.args.hours]
     if ctx.args.format:
         cli_args = cli_args + ["--format", ctx.args.format]
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["detect-intrusions", "--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "aspect-operator detect-intrusions",

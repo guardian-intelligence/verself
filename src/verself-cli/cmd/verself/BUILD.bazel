@@ -10,6 +10,10 @@ go_library(
 
 go_binary(
     name = "verself",
+    data = [
+        "//src/tools/dev/binaries:age-keygen",
+        "//src/tools/dev/binaries:sops",
+    ],
     embed = [":verself_lib"],
     visibility = ["//visibility:public"],
 )

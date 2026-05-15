@@ -6,7 +6,7 @@ the index. Bazel metadata updates live under `aspect bazel *`; semantic
 verification gates live under `aspect check`.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "bazel_run", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "ws_path")
 
 def _viteplus(ctx):
     return checked_spawn(
@@ -19,11 +19,10 @@ def _viteplus(ctx):
 
 def _go(ctx):
     for d in GO_DIRS:
-        rc = checked_spawn(
+        rc = bazel_run(
             ctx,
-            "gofumpt",
-            ["-w", "."],
-            cwd = ws_path(ctx, d),
+            "//src/tools/dev/binaries:gofumpt",
+            ["-w", ws_path(ctx, d)],
             label = "gofumpt -w (" + d + ")",
         )
         if rc != 0:
@@ -48,11 +47,13 @@ def _buildifier(ctx):
     files = bazel_tracked_files(ctx)
     if files == None:
         return 1
-    return checked_spawn(
+    abs_files = []
+    for f in files:
+        abs_files.append(ws_path(ctx, f))
+    return bazel_run(
         ctx,
-        "buildifier",
-        ["-mode=fix"] + files,
-        cwd = ws_path(ctx),
+        "//src/tools/dev/binaries:buildifier",
+        ["-mode=fix"] + abs_files,
         label = "buildifier -mode=fix",
     )
 

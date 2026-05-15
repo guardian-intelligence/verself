@@ -5,12 +5,9 @@ There are intentionally no per-persona shortcut tasks; pass the persona name
 as the positional argument (`aspect persona assume platform-admin`).
 """
 
-load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "inventory_check", "ws_path")
 
 _VALID_PERSONAS = ["platform-admin", "acme-admin", "acme-member"]
-
-def _aspect_operator_bin(ctx):
-    return build_aspect_operator(ctx)
 
 def _assume_impl(ctx):
     if inventory_check(ctx) != 0:
@@ -23,18 +20,15 @@ def _assume_impl(ctx):
             "ERROR: persona must be one of " + ", ".join(_VALID_PERSONAS) + "\n",
         )
         return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
     cli_args = []
     if ctx.args.output:
         cli_args = cli_args + ["--output", ctx.args.output]
     if ctx.args.print:
         cli_args.append("--print")
     cli_args.append(name)
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["persona", "assume", "--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "aspect-operator persona assume " + name,
@@ -42,9 +36,6 @@ def _assume_impl(ctx):
 
 def _user_state_impl(ctx):
     if inventory_check(ctx) != 0:
-        return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
         return 1
     cli_args = [
         "--email",
@@ -72,9 +63,9 @@ def _user_state_impl(ctx):
         "--trust-tier",
         ctx.args.trust_tier,
     ]
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["persona", "user-state", "--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "aspect-operator persona user-state",

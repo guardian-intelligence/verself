@@ -1,11 +1,8 @@
 """aspect actions — publish repo-owned GitHub Actions."""
 
-load(".aspect/lib/helpers.axl", "build_actions_publisher", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "ACTIONS_PUBLISHER_TARGET", "bazel_run", "ws_path")
 
 def _publish_impl(ctx):
-    bin = build_actions_publisher(ctx)
-    if bin == "":
-        return 1
     cli_args = [
         "--name",
         ctx.args.name,
@@ -22,7 +19,7 @@ def _publish_impl(ctx):
         cli_args.append("--allow-dirty")
     if ctx.args.dry_run:
         cli_args.append("--dry-run")
-    return checked_spawn(ctx, bin, cli_args, cwd = ws_path(ctx), label = "actions-publisher " + ctx.args.name + " -> " + ctx.args.repo + "@" + ctx.args.ref)
+    return bazel_run(ctx, ACTIONS_PUBLISHER_TARGET, cli_args, cwd = ws_path(ctx), label = "actions-publisher " + ctx.args.name + " -> " + ctx.args.repo + "@" + ctx.args.ref)
 
 publish = task(
     implementation = _publish_impl,

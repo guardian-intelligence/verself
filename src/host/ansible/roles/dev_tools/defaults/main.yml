@@ -1,13 +1,4 @@
 ---
-# Dev tools install controls. Mirrors substrate_profile's defaults; the dev
-# bridge consumes Bazel-managed dev_tools.tar.zst the same way substrate_profile
-# consumes server_tools.tar.zst.
-dev_tools_repo_root: "{{ playbook_dir }}/../../../.."
-dev_tools_bazelisk: bazelisk
-dev_tools_staging_dir: /opt/verself/dev-tools/staging
-dev_tools_archive_marker_path: /opt/verself/dev-tools/.installed-version
-dev_tools_archive_bazel_label: //src/tools/dev/binaries:dev_tools.tar.zst
-
 # Apt-managed controller packages. These intentionally bypass content pinning;
 # each entry records why Ubuntu archive integrity is acceptable for this host
 # bootstrap-only channel.
@@ -40,16 +31,3 @@ dev_tools_system_packages:
       package whose only role on operator devices is to dispatch URLs to
       whichever browser is registered.
     version_cmd: xdg-open --version
-
-dev_tools_uv_tools:
-  ansible-core:
-    package: ansible-core
-    version: 2.20.3
-    with:
-      - ansible-lint==26.4.0
-  guarddog:
-    package: guarddog
-    version: 2.9.0
-  pre-commit:
-    package: pre-commit
-    version: 4.5.1

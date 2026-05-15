@@ -1,6 +1,8 @@
 package ansible
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -69,6 +71,41 @@ func TestParser_BasicFlow(t *testing.T) {
 	}
 	if got, want := recap.ChangedTotal(), 2; got != want {
 		t.Errorf("ChangedTotal: got %d, want %d", got, want)
+	}
+}
+
+func TestBazelRunfilesResolveAnsibleRuntimeTools(t *testing.T) {
+	for _, rel := range []string{
+		"src/host/ansible_collections.tar",
+		"src/host/ansible_playbook_bin",
+		"src/tools/dev/binaries/sops",
+	} {
+		path := bazelRunfile(rel)
+		if path == "" {
+			t.Fatalf("bazelRunfile(%q) returned empty", rel)
+		}
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			t.Fatalf("bazelRunfile(%q) = %q, stat=%v info=%+v", rel, path, err, info)
+		}
+	}
+}
+
+func TestAnsibleCollectionsPathExtractsRunfileArchive(t *testing.T) {
+	t.Setenv("ANSIBLE_COLLECTIONS_PATH", "")
+	path, err := ansibleCollectionsPath()
+	if err != nil {
+		t.Fatalf("ansibleCollectionsPath: %v", err)
+	}
+	if path == "" {
+		t.Fatal("ansibleCollectionsPath returned empty")
+	}
+	for _, rel := range []string{
+		"ansible_collections/ansible/posix/MANIFEST.json",
+		"ansible_collections/community/sops/MANIFEST.json",
+	} {
+		if info, err := os.Stat(filepath.Join(path, rel)); err != nil || info.IsDir() {
+			t.Fatalf("extracted %s: stat=%v info=%+v", rel, err, info)
+		}
 	}
 }
 

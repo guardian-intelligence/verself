@@ -152,10 +152,35 @@ py_binary(
 py_binary(
     name = "ansible_playbook_bin",
     main_module = "ansible.cli.playbook",
-    visibility = ["//visibility:private"],
+    visibility = ["//src/tools/deployment:__subpackages__"],
     deps = [
         requirement("ansible-core"),
     ],
+)
+
+genrule(
+    name = "ansible_collections_archive",
+    srcs = [
+        "@dev_tool_ansible_collection_ansible_posix//file",
+        "@dev_tool_ansible_collection_community_general//file",
+        "@dev_tool_ansible_collection_community_postgresql//file",
+        "@dev_tool_ansible_collection_community_sops//file",
+    ],
+    outs = ["ansible_collections.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/ansible_collections/ansible/posix"
+mkdir -p "$$tmp/ansible_collections/community/general"
+mkdir -p "$$tmp/ansible_collections/community/postgresql"
+mkdir -p "$$tmp/ansible_collections/community/sops"
+tar -xzf "$(location @dev_tool_ansible_collection_ansible_posix//file)" -C "$$tmp/ansible_collections/ansible/posix"
+tar -xzf "$(location @dev_tool_ansible_collection_community_general//file)" -C "$$tmp/ansible_collections/community/general"
+tar -xzf "$(location @dev_tool_ansible_collection_community_postgresql//file)" -C "$$tmp/ansible_collections/community/postgresql"
+tar -xzf "$(location @dev_tool_ansible_collection_community_sops//file)" -C "$$tmp/ansible_collections/community/sops"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" ansible_collections
+""",
 )
 
 genrule(

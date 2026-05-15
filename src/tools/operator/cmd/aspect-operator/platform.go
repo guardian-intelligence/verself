@@ -34,7 +34,6 @@ const (
 	platformDefaultForgejoRemote                   = "127.0.0.1:3000"
 	platformDefaultForgejoTokenPath                = "/etc/credstore/forgejo/automation-token"
 	platformIAMBootstrapTarget                     = "//src/services/iam-service/cmd/iam-service:iam-service"
-	platformIAMBootstrapBin                        = "bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service"
 	platformIAMSpiceDBPresharedKeyPath             = "/etc/credstore/iam-service/spicedb-grpc-preshared-key"
 	platformDefaultSandboxForgejoWebhookSecretPath = "/etc/credstore/sandbox-rental/forgejo-webhook-secret"
 	platformDefaultZitadelRemote                   = "127.0.0.1:8085"
@@ -494,7 +493,7 @@ func (r *platformRunner) ensureIAMOwnerPolicy(ownerSubject string) error {
 			"--org-id", r.cfg.PublicOrgIDText,
 			"--owner-subject", ownerSubject,
 		}
-		if err := runRemoteBazelExecutable(r.rt, platformIAMBootstrapTarget, platformIAMBootstrapBin, "verself-iam-bootstrap-policy", "iam_service", args); err != nil {
+		if err := runRemoteBazelExecutable(r.rt, platformIAMBootstrapTarget, "verself-iam-bootstrap-policy", "iam_service", args); err != nil {
 			return fmt.Errorf("iam policy: bootstrap owner policy: %w", err)
 		}
 		return nil

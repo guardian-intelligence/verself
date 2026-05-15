@@ -47,11 +47,12 @@ GO_DIRS = [
 ]
 
 VERSELF_DEPLOY_TARGET = "//src/tools/deployment/cmd/verself-deploy:verself-deploy"
-VERSELF_DEPLOY_BIN = "bazel-bin/src/tools/deployment/cmd/verself-deploy/verself-deploy_/verself-deploy"
 ASPECT_OPERATOR_TARGET = "//src/tools/operator/cmd/aspect-operator:aspect-operator"
-ASPECT_OPERATOR_BIN = "bazel-bin/src/tools/operator/cmd/aspect-operator/aspect-operator_/aspect-operator"
 ACTIONS_PUBLISHER_TARGET = "//src/tools/actions/cmd/actions-publisher:actions-publisher"
-ACTIONS_PUBLISHER_BIN = "bazel-bin/src/tools/actions/cmd/actions-publisher/actions-publisher_/actions-publisher"
+ANSIBLE_PLAYBOOK_TARGET = "//src/host:ansible_playbook_bin"
+ANSIBLE_COLLECTIONS_ARCHIVE_TARGET = "//src/host:ansible_collections_archive"
+DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+SOPS_SHIM = ("sops", "//src/tools/dev/binaries:sops")
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -107,6 +108,155 @@ def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
     r = cmd.spawn().wait()
     return r.code
 
+def bazel_run(ctx, target, args = None, cwd = None, env = None, label = None, bazel_args = None):
+    """Run a Bazel executable target and pass argv after `--`."""
+    target_args = list(args) if args != None else []
+    run_args = ["run"] + (list(bazel_args) if bazel_args != None else []) + [target, "--"] + target_args
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        run_args,
+        cwd = cwd if cwd != None else ws_path(ctx),
+        env = env,
+        label = label if label != None else "bazelisk run " + target,
+    )
+
+def _capture_stdout(ctx, program, args, cwd = None, env = None, label = None):
+    cmd = ctx.std.process.command(program).args(args)
+    if cwd != None:
+        cmd = cmd.current_dir(cwd)
+    if env != None:
+        for k, v in env.items():
+            cmd = cmd.env(k, v)
+    label_str = label if label != None else program
+    if ctx.std.io.stderr.is_tty:
+        ctx.std.io.stderr.write("$ " + label_str + "\n")
+    r = cmd.stdout("piped").stderr("piped").spawn().wait_with_output()
+    if r.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: " + label_str + " failed\n")
+        if r.stderr != "":
+            ctx.std.io.stderr.write(r.stderr)
+        return None
+    return r.stdout.strip()
+
+def bazel_output_file(ctx, target):
+    """Build a single-output Bazel target and return its execroot-absolute path."""
+    rc = checked_spawn(
+        ctx,
+        "bazelisk",
+        ["build", target],
+        cwd = ws_path(ctx),
+        label = "bazelisk build " + target,
+    )
+    if rc != 0:
+        return ""
+    raw_files = _capture_stdout(
+        ctx,
+        "bazelisk",
+        ["cquery", "--output=files", target],
+        cwd = ws_path(ctx),
+        label = "bazelisk cquery --output=files " + target,
+    )
+    if raw_files == None:
+        return ""
+    files = []
+    for line in raw_files.split("\n"):
+        clean = line.strip()
+        if clean != "":
+            files.append(clean)
+    if len(files) != 1:
+        ctx.std.io.stderr.write("ERROR: expected one output for " + target + ", got " + str(len(files)) + "\n")
+        return ""
+    execroot = _capture_stdout(
+        ctx,
+        "bazelisk",
+        ["info", "execution_root"],
+        cwd = ws_path(ctx),
+        label = "bazelisk info execution_root",
+    )
+    if execroot == None:
+        return ""
+    return execroot + "/" + files[0]
+
+def _absolute_or_workspace_path(ctx, path):
+    if path.startswith("/"):
+        return path
+    return ws_path(ctx, path)
+
+def install_bazel_tool_shims(ctx, shims, bin_dir):
+    """Install repo-local symlinks for Bazel-resolved executable targets."""
+    out_dir = _absolute_or_workspace_path(ctx, bin_dir)
+    rc = checked_spawn(ctx, "mkdir", ["-p", out_dir], label = "mkdir -p " + out_dir)
+    if rc != 0:
+        return ""
+    for name, target in shims:
+        tool = bazel_output_file(ctx, target)
+        if tool == "":
+            return ""
+        rc = checked_spawn(ctx, "ln", ["-sf", tool, out_dir + "/" + name], label = "ln -sf " + name)
+        if rc != 0:
+            return ""
+    return out_dir
+
+def path_env_with_bazel_tool_shims(ctx, shims, bin_dir = ".verself/tools/aspect/bin", extra_env = None):
+    env = {}
+    if extra_env != None:
+        for k, v in extra_env.items():
+            env[k] = v
+    if len(shims) > 0:
+        tool_dir = install_bazel_tool_shims(ctx, shims, bin_dir)
+        if tool_dir == "":
+            return None
+        env["PATH"] = tool_dir + ":" + DEFAULT_PROCESS_PATH
+        for name, _target in shims:
+            if name == "age-keygen":
+                env["VERSELF_AGE_KEYGEN_BIN"] = tool_dir + "/age-keygen"
+            if name == "ansible-playbook":
+                env["VERSELF_ANSIBLE_PLAYBOOK_BIN"] = tool_dir + "/ansible-playbook"
+            if name == "sops":
+                env["VERSELF_SOPS_BIN"] = tool_dir + "/sops"
+            if name == "tofu":
+                env["TOFU_BIN"] = tool_dir + "/tofu"
+    return env
+
+def ansible_collections_path(ctx):
+    archive = bazel_output_file(ctx, ANSIBLE_COLLECTIONS_ARCHIVE_TARGET)
+    if archive == "":
+        return ""
+    hash_line = _capture_stdout(ctx, "sha256sum", [archive], label = "sha256sum ansible_collections.tar")
+    if hash_line == None:
+        return ""
+    archive_hash = hash_line.split(" ")[0]
+    out_dir = ws_path(ctx, ".verself", "tools", "host", "ansible-collections", archive_hash)
+    r = (ctx.std.process.command("test")
+        .args(["-d", out_dir + "/ansible_collections"])
+        .spawn().wait())
+    if r.code == 0:
+        return out_dir
+    rc = checked_spawn(ctx, "mkdir", ["-p", out_dir], label = "mkdir -p " + out_dir)
+    if rc != 0:
+        return ""
+    rc = checked_spawn(ctx, "tar", ["-xf", archive, "-C", out_dir], label = "tar -xf ansible_collections.tar")
+    if rc != 0:
+        return ""
+    return out_dir
+
+def host_ansible_playbook(ctx):
+    return bazel_output_file(ctx, ANSIBLE_PLAYBOOK_TARGET)
+
+def host_ansible_env(ctx, tool_shims = None, include_collections = True, extra_env = None):
+    shims = tool_shims if tool_shims != None else []
+    env = path_env_with_bazel_tool_shims(ctx, shims, extra_env = extra_env)
+    if env == None:
+        return None
+    if include_collections:
+        collections = ansible_collections_path(ctx)
+        if collections == "":
+            return None
+        env["ANSIBLE_COLLECTIONS_PATH"] = collections
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return env
+
 def require_arg(ctx, name, value):
     """Reject empty required string args with the same message shape Make used."""
     if not value or value == "":
@@ -155,52 +305,6 @@ def resolve_sha(ctx, raw):
         ctx.std.io.stderr.write("ERROR: cannot resolve git ref " + target + "\n")
         return ""
     return r.stdout.strip()
-
-def build_verself_deploy(ctx):
-    """Build the verself-deploy binary and return its absolute path,
-    or empty string on failure. Cached after the first build via the
-    bazel disk cache, so per-task invocations are sub-second.
-    """
-    rc = checked_spawn(
-        ctx,
-        "bazelisk",
-        ["build", VERSELF_DEPLOY_TARGET],
-        cwd = ws_path(ctx),
-        label = "bazelisk build " + VERSELF_DEPLOY_TARGET,
-    )
-    if rc != 0:
-        return ""
-    return ws_path(ctx, VERSELF_DEPLOY_BIN)
-
-def build_aspect_operator(ctx):
-    """Build the aspect-operator binary and return its absolute path, or
-    empty string on failure.
-    """
-    rc = checked_spawn(
-        ctx,
-        "bazelisk",
-        ["build", ASPECT_OPERATOR_TARGET],
-        cwd = ws_path(ctx),
-        label = "bazelisk build " + ASPECT_OPERATOR_TARGET,
-    )
-    if rc != 0:
-        return ""
-    return ws_path(ctx, ASPECT_OPERATOR_BIN)
-
-def build_actions_publisher(ctx):
-    """Build the actions-publisher binary and return its absolute path, or
-    empty string on failure.
-    """
-    rc = checked_spawn(
-        ctx,
-        "bazelisk",
-        ["build", ACTIONS_PUBLISHER_TARGET],
-        cwd = ws_path(ctx),
-        label = "bazelisk build " + ACTIONS_PUBLISHER_TARGET,
-    )
-    if rc != 0:
-        return ""
-    return ws_path(ctx, ACTIONS_PUBLISHER_BIN)
 
 _BAZEL_FILE_BASENAMES = ["BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel"]
 

@@ -10,11 +10,15 @@ go_library(
     ],
     importpath = "github.com/verself/integrations/cloudflare/dns-reconciler/cmd/reconcile-cloudflare-dns",
     visibility = ["//visibility:private"],
-    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
+    deps = [
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
 )
 
 go_binary(
     name = "reconcile-cloudflare-dns",
+    data = ["//src/tools/dev/binaries:sops"],
     embed = [":reconcile-cloudflare-dns_lib"],
     visibility = ["//visibility:public"],
 )

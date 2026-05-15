@@ -4,9 +4,8 @@
 # `risk_acknowledgement` documents why we accept upstream Ubuntu's
 # archive integrity instead of sha256-pinning the binary.
 #
-# This is the only Ansible-side delivery channel for unpinned packages;
-# every other dev tool flows through dev_tools.tar.zst (Bazel-managed),
-# uv lockfile sync, or rules_go source builds.
+# This is the only Ansible-side delivery channel for controller package
+# installs; repo tools are resolved by Bazel at the command boundary.
 
 - name: Install system packages via apt
   ansible.builtin.apt:

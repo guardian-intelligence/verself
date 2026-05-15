@@ -1,6 +1,6 @@
 """aspect observe — telemetry discovery / query surface."""
 
-load(".aspect/lib/helpers.axl", "checked_spawn", "inventory_check", "ws_path")
+load(".aspect/lib/helpers.axl", "bazel_run", "inventory_check", "ws_path")
 
 # Each entry maps an AXL arg name (snake_case) to the script's flag (kebab).
 # Emit only flags whose value is non-empty.
@@ -26,18 +26,8 @@ _FLAG_MAP = [
     ("limit", "--limit"),
 ]
 
-def _observe_bin(ctx):
-    target = "//src/tools/observability/go/cmd/observe:observe"
-    rc = checked_spawn(ctx, "bazelisk", ["build", target], cwd = ws_path(ctx), label = "bazelisk build " + target)
-    if rc != 0:
-        return ""
-    return ws_path(ctx, "bazel-bin/src/tools/observability/go/cmd/observe/observe_/observe")
-
 def _impl(ctx):
     if inventory_check(ctx) != 0:
-        return 1
-    bin = _observe_bin(ctx)
-    if bin == "":
         return 1
     cli_args = []
     for arg_name, flag in _FLAG_MAP:
@@ -48,9 +38,9 @@ def _impl(ctx):
         cli_args.append("--errors")
     if ctx.args.site:
         cli_args = cli_args + ["--site", ctx.args.site]
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        "//src/tools/observability/go/cmd/observe:observe",
         ["--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "observe",

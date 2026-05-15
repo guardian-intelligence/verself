@@ -10,12 +10,9 @@ catalog resolver and reports any non-2xx-or-4xx outcome.
 The implementation lives in src/tools/operator/cmd/aspect-operator.
 """
 
-load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "ws_path")
 
 def _service_discovery_impl(ctx):
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        return 1
     cli_args = [
         "service-discovery-canary",
         "--repo-root",
@@ -37,7 +34,7 @@ def _service_discovery_impl(ctx):
     ]
     if ctx.args.authz_org_id:
         cli_args.extend(["--authz-org-id", ctx.args.authz_org_id])
-    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator service-discovery-canary")
+    return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator service-discovery-canary")
 
 service_discovery = task(
     implementation = _service_discovery_impl,

@@ -1,45 +1,108 @@
 """aspect dev <action> — controller development helpers."""
 
-load(".aspect/lib/helpers.axl", "HOST_CONFIGURATION_DIR", "build_aspect_operator", "checked_spawn", "inventory_check", "ws_path")
+load(
+    ".aspect/lib/helpers.axl",
+    "ASPECT_OPERATOR_TARGET",
+    "HOST_CONFIGURATION_DIR",
+    "SOPS_SHIM",
+    "bazel_run",
+    "checked_spawn",
+    "host_ansible_env",
+    "host_ansible_playbook",
+    "install_bazel_tool_shims",
+    "inventory_check",
+    "ws_path",
+)
 
-def _aspect_operator_bin(ctx):
-    return build_aspect_operator(ctx)
+DEV_CONVENIENCE_SHIMS = [
+    ("age", "//src/tools/dev/binaries:age"),
+    ("age-keygen", "//src/tools/dev/binaries:age-keygen"),
+    ("buildifier", "//src/tools/dev/binaries:buildifier"),
+    ("gofumpt", "//src/tools/dev/binaries:gofumpt"),
+    SOPS_SHIM,
+    ("uv", "//src/tools/dev/binaries:uv"),
+    ("uvx", "//src/tools/dev/binaries:uvx"),
+]
 
-def _ansible_local(ctx, playbook, *extra_args):
-    args_list = [playbook] + list(extra_args)
+def _ansible_local(ctx, playbook, extra_args = None, tool_shims = None, include_collections = True):
+    ansible_playbook = host_ansible_playbook(ctx)
+    if ansible_playbook == "":
+        return 1
+    env = host_ansible_env(ctx, tool_shims = tool_shims, include_collections = include_collections)
+    if env == None:
+        return 1
+    extra = extra_args if extra_args != None else []
+    args_list = [playbook] + list(extra)
     return checked_spawn(
         ctx,
-        "ansible-playbook",
+        ansible_playbook,
         args_list,
         cwd = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
+        env = env,
         label = "ansible-playbook " + " ".join(args_list),
     )
 
 def _install_impl(ctx):
-    return _ansible_local(ctx, "playbooks/setup-dev.yml")
+    rc = _ansible_local(ctx, "playbooks/setup-dev.yml", include_collections = False)
+    if rc != 0:
+        return rc
+    if ctx.args.install_shims or ctx.args.print_path:
+        bin_dir = install_bazel_tool_shims(ctx, DEV_CONVENIENCE_SHIMS, ctx.args.bin_dir)
+        if bin_dir == "":
+            return 1
+        if ctx.args.print_path:
+            ctx.std.io.stdout.write(bin_dir + "\n")
+    return 0
 
 def _sops_init_impl(ctx):
-    return _ansible_local(ctx, "playbooks/setup-sops.yml")
+    bin_dir = install_bazel_tool_shims(
+        ctx,
+        [
+            ("age-keygen", "//src/tools/dev/binaries:age-keygen"),
+            SOPS_SHIM,
+        ],
+        ".verself/tools/host/bin",
+    )
+    if bin_dir == "":
+        return 1
+    return _ansible_local(
+        ctx,
+        "playbooks/setup-sops.yml",
+        extra_args = [
+            "-e",
+            "age_keygen_bin=" + bin_dir + "/age-keygen",
+            "-e",
+            "sops_bin=" + bin_dir + "/sops",
+        ],
+        tool_shims = [SOPS_SHIM],
+    )
 
 def _hooks_install_impl(ctx):
-    (ctx.std.process.command("git")
-        .args(["config", "--unset-all", "core.hooksPath"])
+    existing_hooks_path = (ctx.std.process.command("git")
+        .args(["config", "--get-all", "core.hooksPath"])
         .stdout("piped").stderr("piped")
-        .spawn().wait())
-    return checked_spawn(ctx, "pre-commit", ["install"], label = "pre-commit install")
+        .spawn().wait_with_output())
+    if existing_hooks_path.status.code == 0 and existing_hooks_path.stdout.strip() != "":
+        rc = checked_spawn(ctx, "git", ["config", "--unset-all", "core.hooksPath"], label = "git config --unset-all core.hooksPath")
+        if rc != 0:
+            return rc
+    return bazel_run(
+        ctx,
+        "//src/tools/dev/binaries:uv",
+        ["tool", "run", "--from", "pre-commit==4.5.1", "pre-commit", "install"],
+        cwd = ws_path(ctx),
+        label = "uv tool run pre-commit install",
+    )
 
 def _verself_web_impl(ctx):
     if inventory_check(ctx) != 0:
         return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
     cli_args = []
     if ctx.args.print_env:
         cli_args.append("--print-env")
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["dev", "verself-web", "--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "aspect-operator dev verself-web",
@@ -49,7 +112,12 @@ install = task(
     implementation = _install_impl,
     name = "install",
     group = ["dev"],
-    summary = "Install pinned controller development tools.",
+    summary = "Install controller OS prerequisites and optional repo-local tool shims.",
+    args = {
+        "install_shims": args.boolean(default = False, description = "Install repo-local shims for common developer tools."),
+        "print_path": args.boolean(default = False, description = "Print the shim directory that should lead PATH for local development."),
+        "bin_dir": args.string(default = ".verself/tools/dev/bin", description = "Directory for --install-shims output."),
+    },
 )
 
 sops_init = task(

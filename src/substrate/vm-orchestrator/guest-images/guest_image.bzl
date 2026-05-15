@@ -30,12 +30,12 @@ just a tarball-extracted ext4.
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 _E2FSPROGS_INPUTS = [
-    "@dev_tool_e2fsprogs//file",
-    "@dev_tool_e2fsprogs_libblkid//file",
-    "@dev_tool_e2fsprogs_libcom_err//file",
-    "@dev_tool_e2fsprogs_libe2fs//file",
-    "@dev_tool_e2fsprogs_libss//file",
-    "@dev_tool_e2fsprogs_libuuid//file",
+    "@guest_image_e2fsprogs//file",
+    "@guest_image_e2fsprogs_libblkid//file",
+    "@guest_image_e2fsprogs_libcom_err//file",
+    "@guest_image_e2fsprogs_libe2fs//file",
+    "@guest_image_e2fsprogs_libss//file",
+    "@guest_image_e2fsprogs_libuuid//file",
 ]
 
 def _e2fsprogs_setup_cmd():

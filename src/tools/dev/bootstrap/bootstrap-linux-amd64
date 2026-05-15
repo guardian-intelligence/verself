@@ -3,9 +3,8 @@
 # delivery channel can run. CI uses `--bazelisk-only`; developer/agent
 # environments install Bazelisk, the Aspect CLI, and Vite+.
 #
-# The dev-tools catalog owns the version-of-record for controller tools. The
-# constants here are hand-mirrored because this script bootstraps Bazelisk
-# before Bazel-owned catalog checks can run.
+# These constants are hand-mirrored because this script bootstraps Bazelisk
+# before Bazel-owned repository rules can run.
 #
 # After install, bazel is symlinked next to bazelisk so the Aspect CLI's
 # ctx.bazel.{build,test,run,query} APIs (which spawn `bazel` directly) resolve

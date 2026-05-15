@@ -14,18 +14,12 @@ operator identity, SSH certificate, inventory, credential, and telemetry
 invariants. ClickHouse and TigerBeetle use the same operator runtime.
 """
 
-load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "require_arg", "ws_path")
-
-def _aspect_operator_bin(ctx):
-    return build_aspect_operator(ctx)
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "require_arg", "ws_path")
 
 def _pg_list_impl(ctx):
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["db", "pg", "list", "--repo-root", ws_path(ctx)],
         cwd = ws_path(ctx),
         label = "aspect-operator db pg list",
@@ -34,12 +28,9 @@ def _pg_list_impl(ctx):
 def _pg_shell_impl(ctx):
     if not require_arg(ctx, "db", ctx.args.db):
         return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["db", "pg", "shell", "--repo-root", ws_path(ctx), "--db", ctx.args.db],
         cwd = ws_path(ctx),
         label = "aspect-operator db pg shell",
@@ -50,12 +41,9 @@ def _pg_query_impl(ctx):
         return 1
     if not require_arg(ctx, "query", ctx.args.query):
         return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["db", "pg", "query", "--repo-root", ws_path(ctx), "--db", ctx.args.db, "--query", ctx.args.query],
         cwd = ws_path(ctx),
         label = "aspect-operator db pg query",
@@ -64,49 +52,37 @@ def _pg_query_impl(ctx):
 def _ch_query_impl(ctx):
     if not require_arg(ctx, "query", ctx.args.query):
         return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
     cli_args = []
     if ctx.args.database:
         cli_args = cli_args + ["--database", ctx.args.database]
     cli_args = cli_args + ["--query", ctx.args.query]
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["db", "ch", "query", "--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "aspect-operator db ch query",
     )
 
 def _ch_schemas_impl(ctx):
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["db", "ch", "schemas", "--repo-root", ws_path(ctx)],
         cwd = ws_path(ctx),
         label = "aspect-operator db ch schemas",
     )
 
 def _tb_shell_impl(ctx):
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["db", "tb", "shell", "--repo-root", ws_path(ctx)],
         cwd = ws_path(ctx),
         label = "aspect-operator db tb shell",
     )
 
 def _tb_query_accounts_impl(ctx):
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
     cli_args = []
     if ctx.args.limit:
         cli_args = cli_args + ["--limit", ctx.args.limit]
@@ -126,9 +102,9 @@ def _tb_query_accounts_impl(ctx):
         cli_args = cli_args + ["--timestamp-max", ctx.args.timestamp_max]
     if ctx.args.reversed:
         cli_args.append("--reversed")
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["db", "tb", "query-accounts", "--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "aspect-operator db tb query-accounts",
@@ -137,12 +113,9 @@ def _tb_query_accounts_impl(ctx):
 def _tb_lookup_account_impl(ctx):
     if not require_arg(ctx, "id", ctx.args.id):
         return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["db", "tb", "lookup-account", "--repo-root", ws_path(ctx), "--id", ctx.args.id],
         cwd = ws_path(ctx),
         label = "aspect-operator db tb lookup-account",

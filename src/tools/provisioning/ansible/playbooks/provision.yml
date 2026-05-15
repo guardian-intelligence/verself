@@ -10,7 +10,8 @@
   gather_facts: false
   vars:
     terraform_project_path: "{{ playbook_dir }}/../../terraform"
-    tofu_binary_path: "{{ lookup('env', 'TOFU_BIN') | default('/home/ubuntu/.nix-profile/bin/tofu', true) }}"
+    tofu_binary_path: "{{ lookup('env', 'TOFU_BIN') | default('tofu', true) }}"
+    sops_binary_path: "{{ lookup('env', 'SOPS_BIN') | default('sops', true) }}"
     provision_site: "{{ lookup('env', 'VERSELF_SITE') | default('prod', true) }}"
     provisioning_site_dir: "{{ playbook_dir }}/../../../../host/sites/{{ provision_site }}"
     sops_secrets_file: "{{ provisioning_site_dir }}/secrets/provisioning.sops.yml"
@@ -31,9 +32,12 @@
 
     - name: Extract Latitude.sh auth token from SOPS
       ansible.builtin.command:
-        cmd: >-
-          sops -d --extract '["latitudesh_auth_token"]'
-          {{ sops_secrets_file }}
+        argv:
+          - "{{ sops_binary_path }}"
+          - -d
+          - --extract
+          - '["latitudesh_auth_token"]'
+          - "{{ sops_secrets_file }}"
       register: latitudesh_token
       changed_when: false
       no_log: true

@@ -1,36 +1,7 @@
 ---
-# Bring the controller's dev tools up to topology. Three delivery channels:
-#
-#   1. dev_tools.tar.zst (pinned_http_file + source_built_go tiers) —
-#      Bazel-fetched (http_file with sha256 pin) or Bazel-built (rules_go
-#      go_binary with go.sum pin), packed into one tar and unpacked at /.
-#      Owns 22 binaries plus /usr/local/{go,zig} symlinks.
-#   2. systemPackages — apt-managed entries with explicit risk
-#      acknowledgements; the only intentionally unpinned channel.
-#   3. uvTools (uv_tool tier) — `uv tool install` per pinned PyPI
-#      package; uv handles per-tool venv isolation, entrypoints land
-#      under /usr/local/bin via UV_TOOL_BIN_DIR.
-#
-# Order matters: the tarball must land before uv_tools (needs /usr/local/bin/uv).
-
-- name: Install pinned_http_file dev tools via Bazel-managed archive
-  ansible.builtin.include_tasks: dev_tools_archive.yml
+# Bring controller-local operating-system prerequisites up to date.
+# Repository tools are resolved through Bazel by the Aspect task that invokes
+# them; this role does not install developer binaries into /usr/local/bin.
 
 - name: Install system packages
   ansible.builtin.include_tasks: system_packages.yml
-
-- name: Install uv-managed dev tools
-  ansible.builtin.include_tasks: uv_tools.yml
-
-- name: Install required Ansible collections
-  ansible.builtin.command:
-    argv:
-      - /usr/local/bin/ansible-galaxy
-      - collection
-      - install
-      - -r
-      - "{{ playbook_dir }}/../requirements.yml"
-  register: dev_tools_galaxy_result
-  changed_when: >-
-    'Installing' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)
-    or 'Downloading' in (dev_tools_galaxy_result.stdout + dev_tools_galaxy_result.stderr)

@@ -11,6 +11,7 @@ go_library(
     visibility = ["//src/tools/deployment:__subpackages__"],
     deps = [
         "//src/tools/deployment/internal/deploydb",
+        "@io_bazel_rules_go//go/runfiles",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
@@ -21,6 +22,11 @@ go_library(
 go_test(
     name = "ansible_test",
     srcs = ["parser_test.go"],
+    data = [
+        "//src/host:ansible_collections_archive",
+        "//src/host:ansible_playbook_bin",
+        "//src/tools/dev/binaries:sops",
+    ],
     embed = [":ansible"],
 )
 

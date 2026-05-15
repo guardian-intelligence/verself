@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
 func DecryptSOPSValue(ctx context.Context, path, key string) (string, error) {
@@ -16,7 +19,7 @@ func DecryptSOPSValue(ctx context.Context, path, key string) (string, error) {
 		return "", errors.New("sops decrypt: key is required")
 	}
 	extract := fmt.Sprintf("[\"%s\"]", key)
-	cmd := exec.CommandContext(ctx, "sops", "-d", "--extract", extract, path)
+	cmd := exec.CommandContext(ctx, sopsBinary(), "-d", "--extract", extract, path)
 	out, err := cmd.Output()
 	if err != nil {
 		var ee *exec.ExitError
@@ -30,4 +33,28 @@ func DecryptSOPSValue(ctx context.Context, path, key string) (string, error) {
 		return "", fmt.Errorf("%s yielded an empty value for %s", path, key)
 	}
 	return value, nil
+}
+
+func sopsBinary() string {
+	if value := strings.TrimSpace(os.Getenv("VERSELF_SOPS_BIN")); value != "" {
+		return value
+	}
+	if path := bazelRunfile("src/tools/dev/binaries/sops"); path != "" {
+		return path
+	}
+	return "sops"
+}
+
+func bazelRunfile(rel string) string {
+	for _, candidate := range []string{"verself/" + rel, "_main/" + rel, rel} {
+		path, err := runfiles.Rlocation(candidate)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
 }

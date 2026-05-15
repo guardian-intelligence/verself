@@ -6,8 +6,8 @@ import (
 	opruntime "github.com/verself/operator-runtime/runtime"
 )
 
-func runRemoteBazelExecutable(rt *opruntime.Runtime, target, binRel, prefix, runAsUser string, args []string) error {
-	localPath, err := buildBazelBinary(rt.Ctx, rt.RepoRoot, target, binRel)
+func runRemoteBazelExecutable(rt *opruntime.Runtime, target, prefix, runAsUser string, args []string) error {
+	localPath, err := buildBazelBinary(rt.Ctx, rt.RepoRoot, target)
 	if err != nil {
 		return err
 	}

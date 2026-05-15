@@ -5,9 +5,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
 type SecretInventoryItem struct {
@@ -220,7 +223,7 @@ func randomSecret(n int) (string, error) {
 }
 
 func generateAgeIdentity() (identity string, recipient string, err error) {
-	out, err := exec.Command("age-keygen").CombinedOutput()
+	out, err := exec.Command(toolBinary("VERSELF_AGE_KEYGEN_BIN", "age-keygen")).CombinedOutput()
 	if err != nil {
 		return "", "", fmt.Errorf("age-keygen: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -243,6 +246,30 @@ func generateAgeIdentity() (identity string, recipient string, err error) {
 		return "", "", errors.New("age-keygen did not emit an age recipient")
 	}
 	return identity, recipient, nil
+}
+
+func toolBinary(envName, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(envName)); value != "" {
+		return value
+	}
+	if path := bazelRunfile("src/tools/dev/binaries/" + fallback); path != "" {
+		return path
+	}
+	return fallback
+}
+
+func bazelRunfile(rel string) string {
+	for _, candidate := range []string{"verself/" + rel, "_main/" + rel, rel} {
+		path, err := runfiles.Rlocation(candidate)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
 }
 
 func envGetCommand(cliName string, scope EnvScope, key string) string {

@@ -6,12 +6,9 @@
 The implementation lives in src/tools/operator/cmd/aspect-operator.
 """
 
-load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "ws_path")
 
 def _platform_impl(ctx):
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        return 1
     action = ctx.args.action or "check"
     if action != "check" and action != "seed":
         ctx.std.io.stderr.write("ERROR: --action must be check or seed\n")
@@ -31,12 +28,9 @@ def _platform_impl(ctx):
         "--format",
         fmt,
     ]
-    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator platform " + action)
+    return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator platform " + action)
 
 def _device_impl(ctx):
-    bin = build_aspect_operator(ctx)
-    if bin == "":
-        return 1
     site = ctx.args.site or "prod"
     cli_args = [
         "device",
@@ -55,7 +49,7 @@ def _device_impl(ctx):
         cli_args.append("--dry-run")
     if not ctx.args.generate_key:
         cli_args.append("--generate-key=false")
-    return checked_spawn(ctx, bin, cli_args, label = "aspect-operator device --site " + site)
+    return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator device --site " + site)
 
 device = task(
     implementation = _device_impl,

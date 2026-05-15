@@ -1,19 +1,13 @@
 """aspect billing seed|clock|state|documents|finalizations|events — billing inspection + fixture control."""
 
-load(".aspect/lib/helpers.axl", "build_aspect_operator", "checked_spawn", "inventory_check", "require_one_of", "ws_path")
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "inventory_check", "require_one_of", "ws_path")
 
 _DEFAULT_PRODUCT_ID = "sandbox"
-
-def _aspect_operator_bin(ctx):
-    return build_aspect_operator(ctx)
 
 def _clock_impl(ctx):
     if inventory_check(ctx) != 0:
         return 1
     if not require_one_of(ctx, ["org", "org-id"], [ctx.args.org, ctx.args.org_id]):
-        return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
         return 1
     cli_args = [
         "--org",
@@ -33,9 +27,9 @@ def _clock_impl(ctx):
         cli_args.append("--wall-clock")
     if ctx.args.reason:
         cli_args = cli_args + ["--reason", ctx.args.reason]
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["billing", "clock", "--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "aspect-operator billing clock",
@@ -45,9 +39,6 @@ def _seed_impl(ctx):
     if inventory_check(ctx) != 0:
         return 1
     if not require_one_of(ctx, ["org-id"], [ctx.args.org_id]):
-        return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
         return 1
     cli_args = [
         "--org-id",
@@ -61,9 +52,9 @@ def _seed_impl(ctx):
         "--target-prepaid-units",
         ctx.args.target_prepaid_units,
     ]
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["billing", "seed", "--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "aspect-operator billing seed",
@@ -75,9 +66,6 @@ def _inspect(ctx, kind):
     if kind != "events":
         if not require_one_of(ctx, ["org", "org-id"], [ctx.args.org, ctx.args.org_id]):
             return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
     cli_args = [
         "--org",
         ctx.args.org,
@@ -93,9 +81,9 @@ def _inspect(ctx, kind):
             cli_args = cli_args + ["--minutes", ctx.args.minutes]
     if ctx.args.format:
         cli_args = cli_args + ["--format", ctx.args.format]
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["billing", kind, "--repo-root", ws_path(ctx)] + cli_args,
         cwd = ws_path(ctx),
         label = "aspect-operator billing " + kind,

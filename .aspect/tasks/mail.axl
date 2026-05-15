@@ -6,17 +6,14 @@ not preserved; use `aspect mail send --to=ceo` / `--to=agents`.
 
 load(
     ".aspect/lib/helpers.axl",
-    "build_aspect_operator",
-    "checked_spawn",
+    "ASPECT_OPERATOR_TARGET",
+    "bazel_run",
     "inventory_check",
     "require_arg",
     "ws_path",
 )
 
 _SITE = "prod"
-
-def _aspect_operator_bin(ctx):
-    return build_aspect_operator(ctx)
 
 def _send_impl(ctx):
     if inventory_check(ctx, _SITE) != 0:
@@ -27,12 +24,9 @@ def _send_impl(ctx):
         return 1
     if not require_arg(ctx, "body", ctx.args.body):
         return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["mail", "send", "--repo-root", ws_path(ctx), "--to", ctx.args.to, "--subject", ctx.args.subject, "--body", ctx.args.body],
         cwd = ws_path(ctx),
         label = "aspect-operator mail send",
@@ -41,12 +35,9 @@ def _send_impl(ctx):
 def _passwords_impl(ctx):
     if inventory_check(ctx, _SITE) != 0:
         return 1
-    bin = _aspect_operator_bin(ctx)
-    if bin == "":
-        return 1
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        bin,
+        ASPECT_OPERATOR_TARGET,
         ["mail", "passwords", "--repo-root", ws_path(ctx)],
         cwd = ws_path(ctx),
         label = "aspect-operator mail passwords",

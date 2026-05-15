@@ -1,19 +1,24 @@
 package ansible
 
 import (
+	"archive/tar"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/verself/deployment-tools/internal/deploydb"
 )
 
@@ -109,10 +114,18 @@ func Run(ctx context.Context, db *deploydb.Client, opts Options) (*Result, error
 	defer span.End()
 
 	args := append([]string{"-i", opts.Inventory, opts.Playbook}, opts.ExtraArgs...)
-	cmd := exec.CommandContext(ctx, "ansible-playbook", args...)
+	cmd := exec.CommandContext(ctx, ansiblePlaybookBinary(), args...)
 	cmd.Dir = ansibleDir
-
-	cmd.Env = buildChildEnv(opts)
+	env, err := buildChildEnv(opts)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		if sink != nil {
+			_ = sink.Close(ctx)
+		}
+		return nil, err
+	}
+	cmd.Env = env
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -281,12 +294,32 @@ func (r *recorder) observe(ev TaskEvent) {
 	r.recordTaskEvent(ev)
 }
 
+func ansiblePlaybookBinary() string {
+	if value := strings.TrimSpace(os.Getenv("VERSELF_ANSIBLE_PLAYBOOK_BIN")); value != "" {
+		return value
+	}
+	if path := bazelRunfile("src/host/ansible_playbook_bin"); path != "" {
+		return path
+	}
+	return "ansible-playbook"
+}
+
 // buildChildEnv composes the env for ansible-playbook. The parent's
 // env is the base; OTLPEndpoint pins OTEL_EXPORTER_OTLP_ENDPOINT to
 // the SSH-forwarded tunnel for any subprocess that itself initialises
 // an OTel SDK; AdditionalEnv is appended last.
-func buildChildEnv(opts Options) []string {
+func buildChildEnv(opts Options) ([]string, error) {
 	env := os.Environ()
+	collections, err := ansibleCollectionsPath()
+	if err != nil {
+		return nil, err
+	}
+	if collections != "" {
+		env = append(env, "ANSIBLE_COLLECTIONS_PATH="+collections)
+	}
+	if sops := bazelRunfile("src/tools/dev/binaries/sops"); sops != "" {
+		env = append(env, "PATH="+filepath.Dir(sops)+":"+os.Getenv("PATH"))
+	}
 	if opts.OTLPEndpoint != "" {
 		env = append(env, "OTEL_EXPORTER_OTLP_ENDPOINT=http://"+opts.OTLPEndpoint)
 		env = append(env, "VERSELF_OTLP_ENDPOINT="+opts.OTLPEndpoint)
@@ -297,5 +330,158 @@ func buildChildEnv(opts Options) []string {
 	if len(opts.AdditionalEnv) > 0 {
 		env = append(env, opts.AdditionalEnv...)
 	}
-	return env
+	return env, nil
+}
+
+func bazelRunfile(rel string) string {
+	for _, candidate := range []string{"verself/" + rel, "_main/" + rel, rel} {
+		path, err := runfiles.Rlocation(candidate)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
+}
+
+func ansibleCollectionsPath() (string, error) {
+	if strings.TrimSpace(os.Getenv("ANSIBLE_COLLECTIONS_PATH")) != "" {
+		return "", nil
+	}
+	archive := bazelRunfile("src/host/ansible_collections.tar")
+	if archive == "" {
+		return "", nil
+	}
+	sum, err := fileSHA256(archive)
+	if err != nil {
+		return "", err
+	}
+	outDir := filepath.Join(os.TempDir(), "verself-ansible-collections", sum)
+	if info, err := os.Stat(filepath.Join(outDir, "ansible_collections")); err == nil && info.IsDir() {
+		return outDir, nil
+	}
+	parent := filepath.Dir(outDir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return "", fmt.Errorf("ansible: create collections cache: %w", err)
+	}
+	tmp, err := os.MkdirTemp(parent, ".extract-*")
+	if err != nil {
+		return "", fmt.Errorf("ansible: create collections temp dir: %w", err)
+	}
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = os.RemoveAll(tmp)
+		}
+	}()
+	if err := extractTar(archive, tmp); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, outDir); err != nil {
+		if info, statErr := os.Stat(filepath.Join(outDir, "ansible_collections")); statErr == nil && info.IsDir() {
+			return outDir, nil
+		}
+		return "", fmt.Errorf("ansible: publish collections cache: %w", err)
+	}
+	removeTmp = false
+	return outDir, nil
+}
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("ansible: open collections archive: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("ansible: hash collections archive: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func extractTar(archive, dest string) error {
+	f, err := os.Open(archive)
+	if err != nil {
+		return fmt.Errorf("ansible: open collections archive: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	tr := tar.NewReader(f)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("ansible: read collections archive: %w", err)
+		}
+		target, err := safeTarTarget(dest, hdr.Name)
+		if err != nil {
+			return err
+		}
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, hdr.FileInfo().Mode().Perm()); err != nil {
+				return fmt.Errorf("ansible: create collection directory %s: %w", hdr.Name, err)
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return fmt.Errorf("ansible: create collection parent %s: %w", hdr.Name, err)
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, hdr.FileInfo().Mode().Perm())
+			if err != nil {
+				return fmt.Errorf("ansible: create collection file %s: %w", hdr.Name, err)
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				_ = out.Close()
+				return fmt.Errorf("ansible: extract collection file %s: %w", hdr.Name, err)
+			}
+			if err := out.Close(); err != nil {
+				return fmt.Errorf("ansible: close collection file %s: %w", hdr.Name, err)
+			}
+		case tar.TypeSymlink:
+			if err := safeSymlinkTarget(dest, target, hdr.Linkname); err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return fmt.Errorf("ansible: create collection parent %s: %w", hdr.Name, err)
+			}
+			if err := os.Symlink(hdr.Linkname, target); err != nil {
+				return fmt.Errorf("ansible: create collection symlink %s: %w", hdr.Name, err)
+			}
+		default:
+			return fmt.Errorf("ansible: unsupported collection archive entry %s", hdr.Name)
+		}
+	}
+}
+
+func safeTarTarget(root, name string) (string, error) {
+	if filepath.IsAbs(name) {
+		return "", fmt.Errorf("ansible: unsafe absolute archive entry %s", name)
+	}
+	clean := filepath.Clean(name)
+	if clean == "." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || clean == ".." {
+		return "", fmt.Errorf("ansible: unsafe archive entry %s", name)
+	}
+	target := filepath.Join(root, clean)
+	rootPrefix := filepath.Clean(root) + string(os.PathSeparator)
+	if target != filepath.Clean(root) && !strings.HasPrefix(target, rootPrefix) {
+		return "", fmt.Errorf("ansible: unsafe archive entry %s", name)
+	}
+	return target, nil
+}
+
+func safeSymlinkTarget(root, linkPath, linkName string) error {
+	if filepath.IsAbs(linkName) {
+		return fmt.Errorf("ansible: unsafe absolute archive symlink %s", linkName)
+	}
+	target := filepath.Clean(filepath.Join(filepath.Dir(linkPath), linkName))
+	rootPrefix := filepath.Clean(root) + string(os.PathSeparator)
+	if target != filepath.Clean(root) && !strings.HasPrefix(target, rootPrefix) {
+		return fmt.Errorf("ansible: unsafe archive symlink %s", linkName)
+	}
+	return nil
 }

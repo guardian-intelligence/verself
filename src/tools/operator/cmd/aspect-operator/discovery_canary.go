@@ -14,7 +14,6 @@ import (
 
 const (
 	discoveryCanaryTarget = "//src/tools/operator/cmd/discovery-canary:discovery-canary"
-	discoveryCanaryBin    = "bazel-bin/src/tools/operator/cmd/discovery-canary/discovery-canary_/discovery-canary"
 	discoveryCanaryUser   = "billing"
 )
 
@@ -85,6 +84,6 @@ func cmdDiscoveryCanary(args []string) error {
 		}
 		fmt.Fprintf(os.Stderr, "service-discovery canary: target=%s peer=%s rps=%d duration=%s\n",
 			discoveryCanaryTarget, "iam-service", opts.rps, opts.duration)
-		return runRemoteBazelExecutable(rt, discoveryCanaryTarget, discoveryCanaryBin, "discovery-canary", discoveryCanaryUser, canaryArgs)
+		return runRemoteBazelExecutable(rt, discoveryCanaryTarget, "discovery-canary", discoveryCanaryUser, canaryArgs)
 	})
 }

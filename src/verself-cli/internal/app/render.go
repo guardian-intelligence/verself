@@ -486,7 +486,7 @@ func writeEncryptedSOPSBag(repoRoot, path string, values map[string]string, forc
 		return err
 	}
 	// SOPS encrypts in place, so use a temp path and rename only after success.
-	cmd := exec.Command("sops", "encrypt", "-i", tmpName)
+	cmd := exec.Command(toolBinary("VERSELF_SOPS_BIN", "sops"), "encrypt", "-i", tmpName)
 	cmd.Dir = repoRoot
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

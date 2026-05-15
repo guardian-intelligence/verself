@@ -18,9 +18,7 @@ import (
 const (
 	billingProductDefault = "sandbox"
 	billingClockTarget    = "//src/services/billing-service/cmd/billing-clock:billing-clock"
-	billingClockBin       = "bazel-bin/src/services/billing-service/cmd/billing-clock/billing-clock_/billing-clock"
 	billingSeedTarget     = "//src/services/billing-service/cmd/billing-seed:billing-seed"
-	billingSeedBin        = "bazel-bin/src/services/billing-service/cmd/billing-seed/billing-seed_/billing-seed"
 )
 
 var billingTokenRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
@@ -102,7 +100,7 @@ func cmdBillingSeed(args []string) error {
 		addStringFlag("--org-name", *orgName)
 		addStringFlag("--org-trust-tier", *orgTrustTier)
 		addStringFlag("--target-prepaid-units", *targetPrepaidUnits)
-		return runRemoteBazelExecutable(rt, billingSeedTarget, billingSeedBin, "verself-billing-seed", "billing", remoteArgs)
+		return runRemoteBazelExecutable(rt, billingSeedTarget, "verself-billing-seed", "billing", remoteArgs)
 	})
 }
 
@@ -141,7 +139,7 @@ func cmdBillingClock(args []string) error {
 		}
 	}
 	return runOperatorRuntime("billing.clock", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
-		localPath, err := buildBazelBinary(rt.Ctx, rt.RepoRoot, billingClockTarget, billingClockBin)
+		localPath, err := buildBazelBinary(rt.Ctx, rt.RepoRoot, billingClockTarget)
 		if err != nil {
 			return err
 		}
