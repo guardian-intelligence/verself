@@ -1,5 +1,5 @@
 ---
-# Install uv-managed Python dev tools. Each entry in topology_uv_tools
+# Install uv-managed Python dev tools. Each entry in dev_tools_uv_tools
 # pins one PyPI package + version; uv handles isolation per tool. With
 # UV_TOOL_BIN_DIR set to /usr/local/bin, the entrypoints land where
 # the rest of the dev tools live, no extra symlink step.
@@ -12,7 +12,7 @@
 # `uv` itself comes from dev_tools.tar.zst. This task must run AFTER
 # dev_tools_archive.yml so /usr/local/bin/uv exists.
 
-- name: Install uv tools (verself catalog)
+- name: Install uv tools
   ansible.builtin.command:
     argv: >-
       {{
@@ -20,7 +20,7 @@
          (item.value.package ~ '==' ~ item.value.version)]
         + (item.value['with'] | default([]) | map('regex_replace', '^', '--with=') | list)
       }}
-  loop: "{{ topology_uv_tools | dict2items }}"
+  loop: "{{ dev_tools_uv_tools | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
   environment:

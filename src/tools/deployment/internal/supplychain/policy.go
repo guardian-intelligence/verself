@@ -464,7 +464,7 @@ func validatePolicy(policy Policy) error {
 
 func requiresDigest(sourceKind string) bool {
 	switch sourceKind {
-	case "bazel_http_file", "bazel_http_archive", "catalog_url", "direct_release_url", "curl_fetch", "wget_fetch":
+	case "bazel_http_file", "bazel_http_archive", "direct_release_url", "curl_fetch", "wget_fetch":
 		return true
 	default:
 		return false
@@ -482,7 +482,7 @@ func requiresUpstream(sourceKind string) bool {
 
 func sourceRequiresAdmission(sourceKind string) bool {
 	switch sourceKind {
-	case "bazel_http_file", "bazel_http_archive", "catalog_url", "bootstrap_url", "direct_release_url", "curl_fetch", "wget_fetch", "apt_get_update", "apt_get_install", "npm_install", "uv_tool_install", "uvx_from", "go_install", "pip_install":
+	case "bazel_http_file", "bazel_http_archive", "bootstrap_url", "direct_release_url", "curl_fetch", "wget_fetch", "apt_get_update", "apt_get_install", "npm_install", "uv_tool_install", "uvx_from", "go_install", "pip_install":
 		return true
 	default:
 		return false

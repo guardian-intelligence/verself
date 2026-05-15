@@ -6,29 +6,92 @@
 # ext4s land at /var/lib/verself/guest-images/ via the guest_rootfs role
 # that runs before this one.
 
-- name: Load Firecracker version pins
+- name: Build Firecracker release archive with Bazel
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - "{{ firecracker_bazelisk }}"
+      - build
+      - "{{ firecracker_release_bazel_label }}"
+    chdir: "{{ firecracker_monorepo_root }}"
+  changed_when: false
+
+- name: Resolve Bazel execution root
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - "{{ firecracker_bazelisk }}"
+      - info
+      - execution_root
+    chdir: "{{ firecracker_monorepo_root }}"
+  changed_when: false
+  register: firecracker_bazel_execution_root
+
+- name: Resolve Firecracker release archive output path
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.command:
+    argv:
+      - "{{ firecracker_bazelisk }}"
+      - cquery
+      - --output=files
+      - "{{ firecracker_release_bazel_label }}"
+    chdir: "{{ firecracker_monorepo_root }}"
+  changed_when: false
+  register: firecracker_release_bazel_output
+
+- name: Set Firecracker release archive facts
+  ansible.builtin.set_fact:
+    firecracker_release_local_archive: >-
+      {{ firecracker_bazel_execution_root.stdout | trim
+      }}/{{ firecracker_release_bazel_output.stdout | trim }}
+    firecracker_release_filename: "{{ firecracker_release_bazel_output.stdout | trim | basename }}"
+
+- name: Assert Firecracker release archive filename is parseable
   ansible.builtin.assert:
     that:
-      - topology_guest_versions is defined
-      - topology_guest_versions.firecracker.version is defined
-      - topology_guest_versions.firecracker.sha256 is defined
+      - firecracker_release_filename is match('^firecracker-v.+-[A-Za-z0-9_]+\\.tgz$')
     fail_msg: >-
-      topology_guest_versions is missing from src/host/ansible/group_vars/all/catalog.yml.
+      Expected Firecracker release archive filename like
+      firecracker-v<version>-<arch>.tgz, got {{ firecracker_release_filename }}.
+
+- name: Inspect Firecracker release archive produced by Bazel
+  delegate_to: localhost
+  become: false
+  run_once: true
+  ansible.builtin.stat:
+    path: "{{ firecracker_release_local_archive }}"
+    checksum_algorithm: sha256
+  register: firecracker_release_archive_stat
+  failed_when: not firecracker_release_archive_stat.stat.exists
 
 - name: Set Firecracker version pins
   ansible.builtin.set_fact:
-    firecracker_version_pins: "{{ topology_guest_versions }}"
+    firecracker_version_pins:
+      version: >-
+        {{ firecracker_release_filename
+        | regex_replace('^firecracker-v(.+)-[A-Za-z0-9_]+\\.tgz$', '\\1') }}
+      arch: >-
+        {{ firecracker_release_filename
+        | regex_replace('^firecracker-v.+-([A-Za-z0-9_]+)\\.tgz$', '\\1') }}
 
 - name: Set Firecracker release paths
   ansible.builtin.set_fact:
-    firecracker_release_archive: "/tmp/firecracker-{{ firecracker_version_pins.firecracker.version }}-{{ firecracker_version_pins.firecracker.arch }}.tgz"
-    firecracker_release_dir: "/tmp/firecracker-release-{{ firecracker_version_pins.firecracker.version }}-{{ firecracker_version_pins.firecracker.arch }}"
+    firecracker_release_archive: "{{ firecracker_release_remote_tmp }}/{{ firecracker_release_filename }}"
+    firecracker_release_dir: >-
+      {{ firecracker_release_remote_tmp
+      }}/firecracker-release-{{ firecracker_version_pins.version
+      }}-{{ firecracker_version_pins.arch }}
 
-- name: Download pinned Firecracker release archive
-  ansible.builtin.get_url:
-    url: "{{ firecracker_version_pins.firecracker.url }}"
+- name: Upload Firecracker release archive
+  ansible.builtin.copy:
+    src: "{{ firecracker_release_local_archive }}"
     dest: "{{ firecracker_release_archive }}"
-    checksum: "sha256:{{ firecracker_version_pins.firecracker.sha256 }}"
     mode: "0644"
 
 - name: Create Firecracker extraction directory
@@ -49,13 +112,13 @@
       {{
         firecracker_release_dir
         ~ '/release-v'
-        ~ firecracker_version_pins.firecracker.version
+        ~ firecracker_version_pins.version
         ~ '-'
-        ~ firecracker_version_pins.firecracker.arch
+        ~ firecracker_version_pins.arch
         ~ '/firecracker-v'
-        ~ firecracker_version_pins.firecracker.version
+        ~ firecracker_version_pins.version
         ~ '-'
-        ~ firecracker_version_pins.firecracker.arch
+        ~ firecracker_version_pins.arch
       }}
     dest: /usr/local/bin/firecracker
     remote_src: true
@@ -69,13 +132,13 @@
       {{
         firecracker_release_dir
         ~ '/release-v'
-        ~ firecracker_version_pins.firecracker.version
+        ~ firecracker_version_pins.version
         ~ '-'
-        ~ firecracker_version_pins.firecracker.arch
+        ~ firecracker_version_pins.arch
         ~ '/jailer-v'
-        ~ firecracker_version_pins.firecracker.version
+        ~ firecracker_version_pins.version
         ~ '-'
-        ~ firecracker_version_pins.firecracker.arch
+        ~ firecracker_version_pins.arch
       }}
     dest: /usr/local/bin/jailer
     remote_src: true
@@ -87,7 +150,7 @@
   ansible.builtin.command: /usr/local/bin/firecracker --version
   register: firecracker_installed_version
   changed_when: false
-  failed_when: "'v' + firecracker_version_pins.firecracker.version not in firecracker_installed_version.stdout"
+  failed_when: "'v' + firecracker_version_pins.version not in firecracker_installed_version.stdout"
 
 # --- KVM ---
 

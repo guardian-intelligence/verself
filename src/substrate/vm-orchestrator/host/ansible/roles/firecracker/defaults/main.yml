@@ -6,6 +6,10 @@ firecracker_zfs_pool: vspool
 firecracker_image_dataset: images
 firecracker_golden_dataset: goldens
 firecracker_workload_dataset: workloads
+firecracker_monorepo_root: "{{ playbook_dir }}/../../../.."
+firecracker_bazelisk: bazelisk
+firecracker_release_bazel_label: "@guest_image_firecracker_release//file"
+firecracker_release_remote_tmp: /tmp
 firecracker_default_substrate_ref: substrate
 firecracker_jailer_root: /srv/jailer
 firecracker_jailer_uid: 10000

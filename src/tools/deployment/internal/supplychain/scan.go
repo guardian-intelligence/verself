@@ -147,10 +147,6 @@ func scanFile(path, rel string) ([]Finding, error) {
 		findings = append(findings, scanMavenLock(rel, raw)...)
 		return dedupeFindings(findings), nil
 	}
-	if strings.HasSuffix(rel, "catalog.yml") {
-		findings = append(findings, scanCatalogURLs(rel, text)...)
-		return dedupeFindings(findings), nil
-	}
 	findings = append(findings, scanLines(rel, text)...)
 	return dedupeFindings(findings), nil
 }
@@ -197,10 +193,6 @@ func scanBazelRepoRules(rel, text string) []Finding {
 }
 
 var (
-	yamlURLRe       = regexp.MustCompile(`^\s*([A-Za-z0-9_]*url):\s*["']?([^"'\s]+)["']?\s*$`)
-	yamlSHARe       = regexp.MustCompile(`^\s*([A-Za-z0-9_]*sha256):\s*["']?([0-9a-fA-F]+)["']?\s*$`)
-	yamlRootKeyRe   = regexp.MustCompile(`^([A-Za-z0-9_.-]+):\s*$`)
-	yamlChildKeyRe  = regexp.MustCompile(`^  ([A-Za-z0-9_.-]+):\s*$`)
 	shellSHARe      = regexp.MustCompile(`^\s*([A-Za-z0-9_]+)_sha256=["']?([0-9a-fA-F]+)["']?\s*$`)
 	shellURLRe      = regexp.MustCompile(`^\s*([A-Za-z0-9_]+?)(?:_install)?_url=["'](https?://[^"']+)["']\s*$`)
 	aptGetUpdateRe  = regexp.MustCompile(`\bapt-get\s+update\b`)
@@ -302,82 +294,6 @@ func scanShellURLVars(rel, text string) []Finding {
 		}
 	}
 	return findings
-}
-
-func scanCatalogURLs(rel, text string) []Finding {
-	lines := strings.Split(text, "\n")
-	var findings []Finding
-	section := ""
-	child := ""
-	type urlHit struct {
-		key  string
-		line uint32
-		url  string
-	}
-	urls := map[string]urlHit{}
-	digests := map[string]string{}
-	flush := func() {
-		if section == "" || child == "" {
-			return
-		}
-		for prefix, hit := range urls {
-			artifact := section + "." + child
-			if prefix != "" {
-				artifact += "." + prefix
-			}
-			digest := digests[prefix]
-			findings = append(findings, finding(rel, hit.line, "catalog_url", classifyCatalogSurface(section), artifact, hit.url, normalizeDigest(digest), hit.key))
-		}
-	}
-	for idx, line := range lines {
-		lineNo := uint32(idx + 1)
-		if m := yamlRootKeyRe.FindStringSubmatch(line); m != nil {
-			flush()
-			section = m[1]
-			child = ""
-			urls = map[string]urlHit{}
-			digests = map[string]string{}
-			continue
-		}
-		if m := yamlChildKeyRe.FindStringSubmatch(line); m != nil {
-			flush()
-			child = m[1]
-			urls = map[string]urlHit{}
-			digests = map[string]string{}
-			continue
-		}
-		if child == "" {
-			continue
-		}
-		if m := yamlURLRe.FindStringSubmatch(line); m != nil {
-			urls[urlPrefix(m[1])] = urlHit{key: strings.TrimSpace(m[1]), line: lineNo, url: m[2]}
-			continue
-		}
-		if m := yamlSHARe.FindStringSubmatch(line); m != nil {
-			digests[shaPrefix(m[1])] = m[2]
-		}
-	}
-	flush()
-	return findings
-}
-
-func urlPrefix(key string) string {
-	return strings.TrimSuffix(key, "url")
-}
-
-func shaPrefix(key string) string {
-	return strings.TrimSuffix(key, "sha256")
-}
-
-func classifyCatalogSurface(section string) string {
-	switch section {
-	case "topology_guest_versions":
-		return "guest-rootfs"
-	case "topology_dev_tools":
-		return "developer-only"
-	default:
-		return "host-bootstrap"
-	}
 }
 
 func scanLines(rel, text string) []Finding {

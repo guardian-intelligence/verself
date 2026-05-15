@@ -8,7 +8,7 @@
 
 - name: Set dev tools archive facts
   ansible.builtin.set_fact:
-    dev_tools_archive_artifact: "{{ topology_dev_tools_archive }}"
+    dev_tools_archive_label: "{{ dev_tools_archive_bazel_label }}"
 
 - name: Ensure dev tools staging directory exists
   ansible.builtin.file:
@@ -22,7 +22,7 @@
     argv:
       - "{{ dev_tools_bazelisk }}"
       - build
-      - "{{ dev_tools_archive_artifact.bazel_label }}"
+      - "{{ dev_tools_archive_label }}"
     chdir: "{{ dev_tools_repo_root }}"
   changed_when: false
 
@@ -33,7 +33,7 @@
       - "{{ dev_tools_bazelisk }}"
       - cquery
       - --output=files
-      - "{{ dev_tools_archive_artifact.bazel_label }}"
+      - "{{ dev_tools_archive_label }}"
     chdir: "{{ dev_tools_repo_root }}"
   changed_when: false
   register: dev_tools_bazel_output
@@ -48,8 +48,8 @@
 - name: Set dev tools archive deployment facts
   ansible.builtin.set_fact:
     dev_tools_archive_expected_marker: |-
-      version={{ dev_tools_archive_artifact.version }}
-      sha256={{ dev_tools_archive_stat.stat.checksum }}
+      label={{ dev_tools_archive_label }}
+      archive_sha256={{ dev_tools_archive_stat.stat.checksum }}
     dev_tools_archive_staged_path: >-
       {{ dev_tools_staging_dir }}/dev_tools-{{ (dev_tools_archive_stat.stat.checksum)[:16] }}.tar.zst
 

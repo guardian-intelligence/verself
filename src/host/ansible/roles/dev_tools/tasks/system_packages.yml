@@ -1,7 +1,7 @@
 ---
-# Install apt-managed system packages declared in topology_system_packages.
+# Install apt-managed system packages declared by the dev_tools role.
 # These intentionally bypass content pinning — each entry's
-# `risk_acknowledgement` (in topology) documents why we accept upstream Ubuntu's
+# `risk_acknowledgement` documents why we accept upstream Ubuntu's
 # archive integrity instead of sha256-pinning the binary.
 #
 # This is the only Ansible-side delivery channel for unpinned packages;
@@ -10,6 +10,6 @@
 
 - name: Install system packages via apt
   ansible.builtin.apt:
-    name: "{{ topology_system_packages | dict2items | map(attribute='key') | list }}"
+    name: "{{ dev_tools_system_packages | dict2items | map(attribute='key') | list }}"
     state: present
     update_cache: true
