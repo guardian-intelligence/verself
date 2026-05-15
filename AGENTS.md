@@ -103,7 +103,7 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 </repo_overview>
 
 <product_context>
-Conceptually, the core product is sketched out as follows:
+Conceptually, the core product can be simplified as follows:
 
 1. You onboard, switch to our runner and our custom checkout action.
 2. You open a PR. You CI as normal.
@@ -113,7 +113,7 @@ Conceptually, the core product is sketched out as follows:
 6. Your CI goes red, golden zvol stays where it is. You push some commits to your PR, we start from the golden zvol of the target branch.
 7. Every time CI on a branch goes green we snapshot the result as that branch's new golden zvol. Merging is not a separate promotion step — it triggers CI on the target branch like any other push, and the green snapshot becomes that branch's golden. 
 
-The above is simplified, for repos with workflow yamls like 
+For repos with workflow yamls like 
 
 ```
    jobs:                                                                                                                                                  
@@ -199,7 +199,7 @@ Service topology, three safety rings, self-hosted mandate + allowed third-party 
 - Go service code uses sqlc for type safe queries. Avoid reading code in generated directories.
 - Python package management is done through `uv`.
 - No need to be frugal with telemetry. We store 10+ million rows for around ~150MB in ClickHouse thanks to optimizations.
-- One database per service on a single PG instance
+- One database per service on a single PG instance.
 </system_context>
 
 <operational_runbook>
@@ -255,17 +255,15 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies stitched together; understand how everything connects.
 - Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming.
 - You are not alone in this repo. Expect parallel changes in unrelated files by the user. Leave them alone (don't stash them) and continue with your work. Do not stash parallel work.
-<important>
 - This software is currently pre-release and serves no customers or users. There is no backwards compatibility to maintain. No compatibility wrappers, no legacy shims, no temporary plumbing. All changes must be performed via a full cutover.
-</important>
-- Ensure old or outdated code is deleted each time we upgrade technology, abstractions, or logic. Eliminating contradictory approaches is a high priority.
+- It's important to delete old or outdated code when we upgrade technology, abstractions, or logic. Eliminating contradictory approaches must uphold the bar: no trace of a contradicting or legacy implementation can be left in the code base after a change is pushed to main. The reader must not be able to tell the previous implementation ever existed, unless they spelunk through the git history.
 - Details matter. The founder cares about arcane versioning issues, subtle race conditions, timing-attack vulnerabilities, GC pressure, and abstraction leaks. Simplicity is for code and architecture, not for technical argument.
 - Some directories have their own `AGENTS.md` file. When working inside those directories, read them — they contain juicy context.
 - Incidental edits from running linters and formatters are expected. Don't worry about them.
-- When in doubt, use the industry-standard pattern. Pagination, idempotency, rate limiting, Smithy/OpenAPI projections, OpenTelemetry, state machines — these are all solved problems with boring, battle-tested solutions. Don't reinvent the wheel. The one piece of genuinely novel technology in this repo is ZFS + Firecracker for customer workloads. Everything else is tried-and-tested FOSS.
-- `.aspect/`, `README.md`, `AGENTS.md`, schema migration files, Smithy models, and OpenAPI projection YAML files are high signal per token. Read them directly; avoid summarizing them with a subagent as important detail may be lost.
+- When in doubt, use the industry-standard pattern. Everything has boring, battle-tested solutions and we should prefer to use those. Don't reinvent the wheel. Open standards and protocols underneath FOSS are the gold standard.
+- `.aspect/`, `README.md`, `AGENTS.md`, schema migration files, and Smithy models are high signal documents. Read them directly; avoid summarizing them with a subagent as important detail may be lost.
 - Do not provide time estimates.
-- We work backwards from ensuring proper systems are in place to make incorrect behavior impossible by construction. E.g. to prevent bearer tokens from appearing in logs, we use a mixture of strategies: configure Otel HTTP instrumentation to sanitize it, harden read access to logs, structure our logging abstractions to avoid it, and (aspirational) execute a canary that asserts safety systems omit the token even if one system fails.
+- Prefer to make incorrect behavior impossible by construction.
 - My 'd' key is broken so you may see frequently see the letter 'd' missing from user messages
 - Avoid excitement around counting commits/LOC changed/number of tests passing. Maintain an intellectually curious, skeptical posture.
 </assistant_contract>

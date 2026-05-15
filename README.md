@@ -6,7 +6,7 @@ Verself is two things:
 
 2. [PLANNED ONLY] See docs/product/future-state.md
 
-The main product offering is a (hopefully) better Blacksmith.sh: a GitHub App where we run customer's GitHub actions on our bare metal. We ship a custom GitHub action that replaces the standard `actions/checkout`. The action:
+The main product offering is a (hopefully) better Blacksmith.sh: a GitHub App where we run customer's GitHub actions on our bare metal. We ship a custom GitHub action that replaces the standard `actions/checkout`. The action does the following:
 
 1. Runs the customer's workload on our bare metal, inside a firecracker VM that boots with a composed set of zvols mounted at user-configured directories + the repo's main branch checked out and ready before the CI job even starts. Once the CI Job starts, our custom `checkout` action applies the TIP of the `github.event.pull_request.head.sha` against the base branch.
 
