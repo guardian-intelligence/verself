@@ -49,7 +49,7 @@ def _impl(ctx):
 observe = task(
     implementation = _impl,
     name = "observe",
-    summary = "Discover or query telemetry (--what catalog|queries|describe|metric|trace|logs|http|service|errors|mail|deploy|bazel|supply-chain|workload-identity|temporal).",
+    summary = "Discover or query telemetry (--what catalog|queries|describe|metric|trace|logs|http|service|errors|mail|deploy|nomad|bazel|supply-chain|workload-identity|temporal).",
     args = {
         "what": args.string(default = "", description = "Discovery group."),
         "signal": args.string(default = "", description = "Signal name."),

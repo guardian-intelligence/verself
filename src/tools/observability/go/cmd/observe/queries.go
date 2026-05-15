@@ -73,6 +73,20 @@ func buildQueries(cfg config) ([]query, error) {
 		return []query{
 			newQuery("deploy.tasks", deployTasksSQL, params),
 		}, nil
+	case "nomad":
+		if cfg.runKey != "" {
+			return []query{
+				newQuery("nomad.events", nomadEventsSQL, params),
+				newQuery("nomad.failures", nomadFailuresSQL, params),
+				newQuery("nomad.failure_logs", nomadFailureLogsSQL, params),
+				newQuery("nomad.log_capture_spans", nomadLogCaptureSpansSQL, params),
+			}, nil
+		}
+		return []query{
+			newQuery("nomad.events", nomadEventsSQL, params),
+			newQuery("nomad.failures", nomadFailuresSQL, params),
+			newQuery("nomad.failure_logs", nomadFailureLogsSQL, params),
+		}, nil
 	case "bazel":
 		return []query{
 			newQuery("bazel.invocations", bazelInvocationsSQL, params),
@@ -228,6 +242,10 @@ func emptyHintFor(id string) string {
 		return "No ResourceAttribute with this name across traces or logs."
 	case "catalog.deploys":
 		return "No verself-deploy spans have been recorded. Run `aspect deploy` to populate deploy traces."
+	case "nomad.events":
+		return "No nomad-observer logs have been recorded. The nomad-observer job may not be deployed yet."
+	case "nomad.failure_logs":
+		return "No failed allocation tails were captured in this window. This is expected when Nomad rollouts are healthy."
 	default:
 		return ""
 	}
@@ -819,6 +837,99 @@ FROM default.otel_traces
 WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
   AND (ServiceName = 'verself-deploy' OR ServiceName = 'bazel')
 ORDER BY Timestamp, ServiceName, SpanName
+LIMIT {row_limit:UInt32}`
+
+const nomadEventsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  SeverityText AS level,
+  LogAttributes['nomad.topic'] AS topic,
+  LogAttributes['nomad.event.type'] AS event_type,
+  if(LogAttributes['nomad.job_id'] != '', LogAttributes['nomad.job_id'], LogAttributes['nomad.node_name']) AS subject,
+  LogAttributes['nomad.alloc.client_status'] AS alloc_status,
+  LogAttributes['nomad.deployment.status'] AS deployment_status,
+  LogAttributes['nomad.eval.status'] AS eval_status,
+  LogAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  LogAttributes['nomad.alloc_id'] AS alloc_id,
+  TraceId AS trace_id,
+  left(Body, 220) AS message
+FROM default.otel_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName = 'nomad-observer'
+  AND ({run_key:String} = '' OR LogAttributes['verself.deploy_run_key'] = {run_key:String})
+  AND ({search:String} = '' OR positionCaseInsensitive(Body, {search:String}) > 0 OR positionCaseInsensitive(toString(LogAttributes), {search:String}) > 0)
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const nomadFailuresSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  SeverityText AS level,
+  LogAttributes['nomad.topic'] AS topic,
+  LogAttributes['nomad.event.type'] AS event_type,
+  LogAttributes['nomad.job_id'] AS job_id,
+  LogAttributes['nomad.alloc_id'] AS alloc_id,
+  LogAttributes['nomad.task'] AS task,
+  LogAttributes['nomad.alloc.client_status'] AS alloc_status,
+  LogAttributes['nomad.deployment.status'] AS deployment_status,
+  LogAttributes['nomad.eval.status'] AS eval_status,
+  nullIf(LogAttributes['nomad.task.event.message'], '') AS task_message,
+  LogAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  TraceId AS trace_id,
+  left(Body, 240) AS message
+FROM default.otel_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName = 'nomad-observer'
+  AND ({run_key:String} = '' OR LogAttributes['verself.deploy_run_key'] = {run_key:String})
+  AND (
+    lower(SeverityText) IN ('warn', 'error', 'fatal')
+    OR LogAttributes['nomad.alloc.client_status'] IN ('failed', 'lost')
+    OR LogAttributes['nomad.deployment.status'] IN ('failed', 'blocked', 'cancelled')
+    OR LogAttributes['nomad.eval.status'] IN ('failed', 'blocked', 'canceled')
+  )
+  AND ({search:String} = '' OR positionCaseInsensitive(Body, {search:String}) > 0 OR positionCaseInsensitive(toString(LogAttributes), {search:String}) > 0)
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const nomadFailureLogsSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  LogAttributes['nomad.log.stream'] AS stream,
+  LogAttributes['nomad.job_id'] AS job_id,
+  LogAttributes['nomad.alloc_id'] AS alloc_id,
+  LogAttributes['nomad.task'] AS task,
+  toUInt64OrZero(LogAttributes['nomad.log.captured_bytes']) AS captured_bytes,
+  LogAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  TraceId AS trace_id,
+  left(Body, 1000) AS tail
+FROM default.otel_logs
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName = 'nomad-observer'
+  AND LogAttributes['nomad.event_name'] IN ('nomad.alloc.stderr_tail', 'nomad.alloc.stdout_tail')
+  AND ({run_key:String} = '' OR LogAttributes['verself.deploy_run_key'] = {run_key:String})
+  AND ({search:String} = '' OR positionCaseInsensitive(Body, {search:String}) > 0 OR positionCaseInsensitive(toString(LogAttributes), {search:String}) > 0)
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const nomadLogCaptureSpansSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  SpanAttributes['nomad.job_id'] AS job_id,
+  SpanAttributes['nomad.alloc_id'] AS alloc_id,
+  SpanAttributes['nomad.task'] AS task,
+  SpanAttributes['nomad.log.stream'] AS stream,
+  toUInt64OrZero(SpanAttributes['nomad.log.captured_bytes']) AS captured_bytes,
+  intDiv(Duration, 1000000) AS ms,
+  StatusCode AS status,
+  TraceId AS trace_id,
+  SpanId AS span_id,
+  left(StatusMessage, 160) AS error
+FROM default.otel_traces
+WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND ServiceName = 'nomad-observer'
+  AND SpanName = 'nomad_observer.log_capture'
+  AND ({run_key:String} = '' OR SpanAttributes['verself.deploy_run_key'] = {run_key:String})
+ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
 // deployCodegenActionsSQL surfaces every projection/codegen Bazel spawn that

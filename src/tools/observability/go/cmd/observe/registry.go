@@ -43,6 +43,7 @@ var families = []family{
 	{Name: "logs", Purpose: "Discover or query structured log attributes."},
 	{Name: "http", Purpose: "Query normalized HTTP access events."},
 	{Name: "deploy", Purpose: "Inspect verself-deploy, Bazel, and Nomad spans correlated by deploy_run_key."},
+	{Name: "nomad", Purpose: "Inspect Nomad event-stream logs and bounded failed-allocation log tails emitted by nomad-observer."},
 	{Name: "bazel", Purpose: "Inspect instrumented CI Bazel invocations, parser lifecycle events, BUILD.bazel package spans, and execution spawns."},
 	{Name: "supply-chain", Purpose: "Inspect artifact policy results recorded during deploy runs."},
 	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics."},
@@ -563,6 +564,89 @@ var queryDocs = []queryDoc{
 		Next: []string{
 			"aspect observe --what=deploy --run-key=<deploy-run-key>",
 			"aspect observe --what=catalog --signal=deploys",
+		},
+	},
+	{
+		ID:      "nomad.events",
+		Family:  "nomad",
+		Title:   "Nomad Events",
+		Purpose: "Recent selected Nomad deployment, evaluation, allocation, job, and node events from nomad-observer.",
+		Optional: []string{
+			"--run-key=<deploy-run-key>",
+			"--search=<substring>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=nomad",
+			"aspect observe --what=nomad --run-key=2026-04-29.000003@rust-forge-01",
+			"aspect observe --what=nomad --search=failed",
+		},
+		Next: []string{
+			"aspect observe --what=nomad --run-key=<deploy-run-key>",
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
+			"aspect observe --what=trace --trace-id=<trace-id>",
+		},
+	},
+	{
+		ID:      "nomad.failures",
+		Family:  "nomad",
+		Title:   "Nomad Failures",
+		Purpose: "Nomad observer rows with failed/lost allocations, failed/blocked deployments or evaluations, warning logs, and capture failures.",
+		Optional: []string{
+			"--run-key=<deploy-run-key>",
+			"--search=<substring>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=nomad",
+			"aspect observe --what=nomad --run-key=2026-04-29.000003@rust-forge-01",
+		},
+		Next: []string{
+			"aspect observe --what=nomad --run-key=<deploy-run-key> --search=<alloc-or-task>",
+			"aspect observe --what=logs --service=nomad-observer",
+		},
+	},
+	{
+		ID:      "nomad.failure_logs",
+		Family:  "nomad",
+		Title:   "Nomad Failure Logs",
+		Purpose: "Bounded stdout/stderr tails captured from failed or lost Nomad allocations.",
+		Optional: []string{
+			"--run-key=<deploy-run-key>",
+			"--search=<substring>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=nomad --run-key=2026-04-29.000003@rust-forge-01",
+		},
+		Next: []string{
+			"aspect observe --what=trace --trace-id=<trace-id>",
+			"aspect observe --what=logs --service=nomad-observer --field=nomad.alloc_id --search=<alloc-id>",
+		},
+	},
+	{
+		ID:      "nomad.log_capture_spans",
+		Family:  "nomad",
+		Title:   "Nomad Log Capture Spans",
+		Purpose: "Trace spans for allocation log-tail fetches, correlated to deploy_run_key when the Nomad job metadata carries one.",
+		Optional: []string{
+			"--run-key=<deploy-run-key>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=nomad --run-key=2026-04-29.000003@rust-forge-01",
+		},
+		Next: []string{
+			"aspect observe --what=trace --trace-id=<trace-id>",
+			"aspect observe --what=nomad --run-key=<deploy-run-key>",
 		},
 	},
 	{

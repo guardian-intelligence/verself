@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "nomad-observer_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/nomad-observer/cmd/nomad-observer",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/tools/observability/go/otel",
+        "@com_github_hashicorp_nomad_api//:api",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_binary(
+    name = "nomad-observer",
+    embed = [":nomad-observer_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "nomad-observer_nomad_artifact",
+    binary = ":nomad-observer",
+    output = "nomad-observer",
+)

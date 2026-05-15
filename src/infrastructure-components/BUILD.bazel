@@ -20,6 +20,7 @@ filegroup(
         "//src/infrastructure-components/grafana:role_sources",
         "//src/infrastructure-components/haproxy:role_sources",
         "//src/infrastructure-components/nats:role_sources",
+        "//src/infrastructure-components/nomad-observer:role_sources",
         "//src/infrastructure-components/otelcol:role_sources",
         "//src/infrastructure-components/postgresql:role_sources",
         "//src/infrastructure-components/spicedb:role_sources",

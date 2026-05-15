@@ -167,27 +167,42 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 	if !opts.SkipOTLPForward {
 		forward, err := sshClient.Forward(ctx, "otlp", otlpForwardRemotePort)
 		if err != nil {
-			_ = sshClient.Close()
-			return nil, fmt.Errorf("runtime: open OTLP forward: %w", err)
+			fmt.Fprintf(os.Stderr, "verself-deploy: telemetry disabled: runtime: open OTLP forward: %v\n", err)
+		} else {
+			rt.otlpForward = forward
+
+			// Bind the parent's SDK and any child processes (reconciler
+			// scripts, ansible-playbook) to the SSH-forwarded loopback
+			// address. The OTel SDK reads OTEL_EXPORTER_OTLP_ENDPOINT once
+			// at Init, so this must be set before verselfotel.Init.
+			_ = os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+forward.ListenAddr)
 		}
-		rt.otlpForward = forward
-
-		// Bind the parent's SDK and any child processes (reconciler
-		// scripts, ansible-playbook) to the SSH-forwarded loopback
-		// address. The OTel SDK reads OTEL_EXPORTER_OTLP_ENDPOINT once
-		// at Init, so this must be set before verselfotel.Init.
-		_ = os.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+forward.ListenAddr)
 	}
 
-	otelShutdown, _, err := verselfotel.Init(ctx, verselfotel.Config{
-		ServiceName:    opts.ServiceName,
-		ServiceVersion: opts.ServiceVersion,
-	})
-	if err != nil {
-		_ = sshClient.Close()
-		return nil, fmt.Errorf("runtime: otel init: %w", err)
+	if opts.SkipOTLPForward || rt.otlpForward != nil {
+		otelShutdown, _, err := verselfotel.Init(ctx, verselfotel.Config{
+			ServiceName:    opts.ServiceName,
+			ServiceVersion: opts.ServiceVersion,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "verself-deploy: telemetry disabled: runtime: otel init: %v\n", err)
+			if rt.otlpForward != nil {
+				_ = rt.otlpForward.Close()
+				rt.otlpForward = nil
+			}
+			otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+				propagation.TraceContext{},
+				propagation.Baggage{},
+			))
+		} else {
+			rt.otelShutdown = otelShutdown
+		}
+	} else {
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
 	}
-	rt.otelShutdown = otelShutdown
 
 	// Identity onto baggage; the verselfotel SpanProcessor copies any
 	// `verself.` baggage member onto every started span.
@@ -216,6 +231,7 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 			attribute.String("ssh.host", selected.Host),
 			attribute.String("ssh.user", selected.User),
 			attribute.Bool("verself.skip_otlp_forward", opts.SkipOTLPForward),
+			attribute.Bool("verself.telemetry_enabled", rt.otelShutdown != nil),
 		),
 	)
 	rt.Ctx = ctx
