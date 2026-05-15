@@ -1,7 +1,7 @@
 # Verself CLI
 
 `verself` is the public CLI and SDK facade for hosted Verself APIs. It sits
-above curated SDKs, which wrap SDK transport clients for product services.
+above curated SDKs, which wrap public transport implementations for product services.
 Browser server functions, the CLI, and customer automation use the same service
 contracts with different auth flows and local state handling.
 
@@ -19,14 +19,14 @@ The command pipeline is:
 CLI command
   -> local profile and project resolution
   -> curated SDK operation
-  -> SDK transport client
+  -> SDK transport implementation
   -> service API
   -> service-owned PostgreSQL, Zitadel, SpiceDB, ClickHouse, or external adapter
 ```
 
 Service calls go through SDK operations. Missing service behavior is added at
 the Smithy contract layer, projected into OpenAPI where needed, and wrapped by
-the SDK transport core.
+the SDK transport implementation.
 
 ## SDK Shape
 
@@ -106,7 +106,7 @@ The CLI boundary has these major pieces:
 | Piece | Owns |
 | --- | --- |
 | CLI facade | Command grammar, local profile resolution, interactive UX, JSON output, company option capture, and command orchestration. |
-| Curated SDK | Auth, retries, idempotency keys, pagination, waiters, error normalization, trace propagation, and DTO conversion above SDK transport clients. |
+| Curated SDK | Auth, retries, idempotency keys, pagination, waiters, error normalization, trace propagation, and DTO conversion above public transport implementations. |
 | XDG file store | Non-secret profiles, active context, cached discovery documents, and local locks across config, data, state, cache, and runtime directories. |
 | Credential store | Machine credential bundles, provider tokens, and company option secret values when they are not rendered into SOPS bags. |
 | Source-code-hosting-service | Repository storage, Git HTTP, checkout grants, archive resources, and signed download URLs. |
@@ -983,14 +983,14 @@ CLI implementation should have deterministic tests for:
 - secret reveal and set command behavior, including no plaintext in default JSON
   or progress output;
 - generated next-command output that uses `aspect deploy` for deployment;
-- generated-client request shapes for SDK-backed commands;
+- Smithy/OpenAPI-derived request shapes for SDK-backed commands;
 - idempotency key generation and retry behavior for mutating commands;
 - JSON output stability for automation.
 
 Live SDK and CLI coverage should exercise:
 
 - `verself projects list` and `verself projects create` through the Go SDK;
-- the Go SDK `Projects` client using the generated projects-service client;
+- the Go SDK `Projects` client using the public transport path without importing service-local clients;
 - TypeScript server functions in `verself-web` using the TypeScript SDK;
 - idempotency keys on project mutations;
 - service-side API-activity/domain-event rows and ClickHouse traces for each live

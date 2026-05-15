@@ -32,39 +32,37 @@ workspaces; stale generated artifacts stop silently satisfying source imports.
 
 The concrete incident was in the frontend SDK generation path.
 
-1. Commit `d846157c` added a Smithy IR TypeScript transport generator for IAM:
+1. A frontend SDK change added a generated IAM transport target:
 
-   - `src/websites/packages/sdk:iam_transport_gen`
+   - a Bazel generator target under `src/websites/packages/sdk`
    - generated output:
-     `__generated_sources/src/__generated/iam-transport/client.gen.ts`
+     `__generated_sources/src/__generated/<api>/client.gen.ts`
    - materialized ignored source-tree projection:
-     `src/websites/packages/sdk/src/__generated/iam-transport/client.gen.ts`
+     `src/websites/packages/sdk/src/__generated/<api>/client.gen.ts`
 
-2. Commit `d7a21cdd` removed the Smithy IR projection layer and deleted:
+2. A later change removed that generator path and deleted:
 
-   - the `ir_sdk_ts` rule load
-   - the `iam_transport_gen` target
-   - the `iam_transport_generated_sources` filegroup
+   - the generator rule load
+   - the generator target
+   - the generated-sources filegroup
    - the `write_source_files` target that projected
-     `src/__generated/iam-transport/client.gen.ts`
-   - references to `//src/websites/packages/sdk:iam_transport_generated_sources`
+     `src/__generated/<api>/client.gen.ts`
+   - references to the generated-sources target
      in web build/check/test `generated_srcs`
 
-3. At that same commit, `src/websites/packages/sdk/src/iam.ts` still imported:
+3. At that same commit, source still imported the stale ignored projection:
 
    ```ts
-   import type { IAMTransport } from "./__generated/iam-transport/client.gen.js";
-   import { createIAMTransport } from "./__generated/iam-transport/client.gen.js";
+   import { createClient } from "./__generated/<api>/client.gen.js";
    ```
 
 4. `**/__generated/` is gitignored. The Verself checkout action intentionally
    preserves untracked and ignored workspace state. A durable workspace that
-   had already materialized `iam-transport/client.gen.ts` could therefore build
+   had already materialized the stale client file could therefore build
    successfully even though no current Bazel target produced that file.
 
-5. Commit `a43cde9d` fixed the active source dependency by switching IAM SDK
-   code back to the OpenAPI-generated `iam-api` transport and restoring the
-   `iam-api` OpenAPI client generation input.
+5. The active source dependency was fixed by pointing SDK code at the current
+   OpenAPI-generated transport and restoring the owning generator input.
 
 This was not a generator failing to clean its current output directory. It was
 a source import that retained a dependency on a generated path after the
@@ -166,9 +164,8 @@ References:
 
 Rattle and related work argue for discovering dependencies by tracing execution
 instead of relying only on manually declared dependency edges. A Linux
-file-access trace for `vp build` would have caught a read of
-`src/__generated/iam-transport/client.gen.ts` and compared it with current
-generated-artifact authority.
+file-access trace for `vp build` would have caught a read under
+`src/__generated/` and compared it with current generated-artifact authority.
 
 References:
 

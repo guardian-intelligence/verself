@@ -12,17 +12,17 @@ The layering is:
 ```text
 facade: CLI, browser server route, customer automation, agent
   -> curated SDK resource method
-  -> SDK-owned transport core from official OpenAPI projection
+  -> public transport implementation from official OpenAPI projection where reliable
   -> public service API
   -> service-owned state and integrations
 ```
 
 Product services expose public and internal contract projections. Product
-services do not import curated SDK packages. Service-owned Go clients remain
-service-facing transport clients. SDK packages generate their own transport
-cores from public OpenAPI projections and wrap them with customer-facing
-resource modules. OpenAPI projections are downstream artifacts, not the API
-source of truth.
+services do not import curated SDK packages. Service-local Go clients/adapters
+remain service-facing integration code. SDK packages may generate their own
+transport implementations from public OpenAPI projections and wrap them with
+customer-facing resource modules. OpenAPI projections are downstream artifacts,
+not the API source of truth.
 
 Missing SDK coverage blocks public CLI commands and docs examples. If the SDK
 method would be awkward, the public API shape should be revisited before the
@@ -146,7 +146,7 @@ accepted by APIs that take cross-resource references. Parent-scoped APIs may
 still use short IDs or slugs in path parameters when that improves CLI
 ergonomics. SDKs normalize resource references into typed `ResourceRef` values
 that can carry a resource name, typed ID, or parent-scoped slug before calling
-the SDK transport core.
+the public transport implementation.
 
 Resource names are not primary database keys. Hot OLTP tables use typed
 immutable IDs. High-volume event tables store installation ID, resource type,
@@ -273,7 +273,7 @@ and maximum token lifetime. SPIFFE JWT-SVID assertions should be minted for a
 single audience.
 
 SDKs do not implement SPIFFE mTLS. Repo-owned service-to-service traffic uses
-service-owned clients with workload-owned mTLS transports.
+service-local typed clients/adapters with workload-owned mTLS transports.
 
 ## Credentials
 
@@ -340,7 +340,7 @@ Public service APIs should be designed from the SDK method outward:
 2. Define stable Smithy shapes, typed errors, and operation traits for that
    method.
 3. Generate or mirror the service HTTP binding and public/internal projections.
-4. Regenerate SDK-owned transports and runtime descriptors.
+4. Regenerate public SDK transports where OpenAPI tooling is reliable and update runtime descriptors.
 5. Wrap the generated operation in the curated SDK.
 6. Use the SDK method from the CLI, browser server route, docs example, or agent.
 

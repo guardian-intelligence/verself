@@ -76,7 +76,7 @@ The generated files under `apps/*/src/__generated` and
 path plus the generated First Light shader TypeScript module. `verself-web:dev_update`
 materializes its route tree plus OpenAPI clients and copied specs from service-owned
 Bazel targets. Run the verself-web generator even when working on `apps/company`
-if `vp check` reports missing generated clients; workspace checks type both apps.
+if `vp check` reports missing OpenAPI-generated clients; workspace checks type both apps.
 
 Generated projections are allowed to persist in Verself golden workspaces. Do
 not delete `src/__generated` as a correctness fix. The correctness invariant is
