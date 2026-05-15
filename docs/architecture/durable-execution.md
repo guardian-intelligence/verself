@@ -198,10 +198,6 @@ Drawbacks:
 
 ## Source notes
 
-- Workload identity contract: [`workload-identity.md`](workload-identity.md).
-- Related planes:
-  [`change-data-capture.md`](change-data-capture.md),
-  [`domain-event-stream.md`](domain-event-stream.md).
 - Implementation references:
   `src/infrastructure-components/temporal-platform/cmd/verself-temporal-server/main.go`,
   `src/infrastructure-components/temporal-platform/nomad.hcl`,

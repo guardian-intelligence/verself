@@ -30,9 +30,10 @@ through official Smithy tooling, and implemented by handwritten Huma routes in
 
 Authentication is a Zitadel OIDC access token for a human subject. The service
 rejects API credentials for human inbox routes and requires the Zitadel generic
-project roles claim as the current human-token discriminator. Each route declares
-`x-verself-iam` metadata containing permission, resource, rate-limit class,
-audit event name, product area, risk level, and data classification.
+project roles claim as the current human-token discriminator. Each operation's
+permission, resource, rate-limit class, audit event name, product area, risk
+level, and data classification belong in Smithy operation traits and the
+generated route catalog consumed by service-runtime policy.
 
 Mutating routes require `Idempotency-Key`. Request bodies for the small mutation
 routes are capped at 16 KiB. The process-level request cap is 1 MiB. The inbox
@@ -293,7 +294,7 @@ The subject and org come from the validated token, not from request bodies.
 Human routes reject API credential subjects because API credentials do not own
 human inboxes.
 
-Internal workflow triggers use SPIFFE mTLS and generated internal clients.
+Internal workflow triggers use SPIFFE mTLS and service-local typed clients.
 Each producer service is authorized for an allowlist of workflow keys and, when
 needed, recipient forms. Example:
 

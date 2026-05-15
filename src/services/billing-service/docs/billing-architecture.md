@@ -20,7 +20,7 @@ Stripe is a payment and hosted billing provider. The target architecture does no
 
 Reference points in this repo:
 
-- `src/platform/docs/identity-and-iam.md` for org/auth ownership boundaries.
+- `docs/iam-service.md` for org/auth ownership boundaries.
 - `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md` for the reserve/settle split used by sandbox jobs and the existing River control-plane pattern.
 - `src/smithy/README.md` for canonical wire contracts and projection conventions.
 
@@ -2834,5 +2834,5 @@ The expected target event set contains setup-intent, invoice, payment-intent, ch
 ## Related docs
 
 - `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
-- `src/platform/docs/identity-and-iam.md`
+- `docs/iam-service.md`
 - `src/smithy/README.md`

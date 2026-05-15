@@ -49,7 +49,7 @@ several SpiceDB processes.
 - Product mutations that require authorization accept typed decision evidence.
 - Relationship writes are idempotent by default and carry transaction metadata.
 - Public mutations require an idempotency key. Internal mutations require a
-  command request ID or idempotency key in the generated internal contract.
+  command request ID or idempotency key in the Smithy-modeled internal contract.
 - List APIs use `page_size`, `page_token`, `next_page_token`, `filter`, and
   `order_by` rather than offset pagination.
 - A resource is not exposed to read paths until its authorization parent edges
@@ -208,8 +208,8 @@ scope epoch and forces affected active streams to recheck.
 ## Go Service Shape
 
 `iam-service` is a Go service using the same service contract as the rest of
-the product surface: Smithy-modeled HTTP contracts, service-owned transport
-clients, SPIFFE mTLS for internal calls, sqlc for PostgreSQL, and OpenTelemetry
+the product surface: Smithy-modeled HTTP contracts, service-local typed
+clients/adapters, SPIFFE mTLS for internal calls, sqlc for PostgreSQL, and OpenTelemetry
 spans that land in ClickHouse. Public Huma routes are implemented by the
 service and checked against the Smithy/OpenAPI contract boundary.
 
@@ -322,7 +322,7 @@ Wire contract locations:
 | Service Go transport client | `src/services/iam-service/client` | `//src/services/iam-service/client:client` |
 | Curated Go IAM SDK | `src/sdks/go/verself/iam.go` | `//src/sdks/go/verself:verself` |
 | Curated TypeScript IAM SDK | `src/websites/packages/sdk/src/iam.ts` | `//src/websites/packages/sdk:pkg` |
-| TypeScript transport support | `src/websites/packages/sdk/src/__generated/iam-transport/` | `//src/websites/packages/sdk:pkg` |
+| TypeScript transport support | `src/websites/packages/sdk/src/__generated/iam-api/` | `//src/websites/packages/sdk:pkg` |
 | SpiceDB schema | `src/services/iam-service/schema/verself.zed` | `//src/services/iam-service/schema:schema` |
 | SpiceDB schema validation | `src/services/iam-service/schema/verself.zed`, pinned `zed` CLI from the server-tool catalog | `//src/services/iam-service/schema:schema_tests` |
 | Shared API shapes used by services, SDK transports, and frontend wrappers | `src/smithy/models/verself/` | `//src/smithy/models/verself:smithy_validate` |
@@ -346,7 +346,7 @@ The product surface is organized in four layers:
 
 1. `iam-service` exposes Smithy-modeled HTTP JSON APIs. Internal
    product-service operations use the SPIFFE-only internal projection.
-2. Language SDKs wrap SDK-owned transport cores. SDKs own retries, idempotency key
+2. Language SDKs wrap public transport implementations. SDKs own retries, idempotency key
    generation, auto-pagination, resource-name helpers, error normalization,
    request tracing headers, and DTO conversion.
 3. The console uses TanStack server functions as web adapters. Server
@@ -594,7 +594,7 @@ The root `BUILD.bazel` contains only the Gazelle prefix:
 ```
 
 Package visibility should enforce the dependency rules below. Public visibility
-belongs only on service-owned clients, contract/projection artifacts, and any
+belongs only on service-local clients/adapters, contract/projection artifacts, and any
 explicit shared contract package.
 
 The generated model package is the only ergonomic way to refer to schema
@@ -742,8 +742,8 @@ codes or serialize problem documents.
   small interfaces declared by the caller or through `internal/commands`
   envelopes.
 - No package imports from `cmd/`.
-- Service-owned clients are the only supported cross-service API surface.
-  Curated SDKs wrap public SDK transport cores; they do not bypass them.
+- Service-local clients/adapters are the only supported cross-service API surface.
+  Curated SDKs wrap public transport implementations; they do not bypass them.
 
 These rules should be enforced with Bazel package visibility or a static import
 check. A compile-time failure is preferable to a code review convention.
@@ -1058,7 +1058,7 @@ command ID, idempotency key hash, origin subject, and traceparent.
 
 ## Query APIs
 
-`iam-service` exposes typed internal APIs over service-owned clients:
+`iam-service` exposes typed internal APIs over service-local clients/adapters:
 
 - `Check`: one request gate.
 - `CheckBulk`: table rows, command affordances, dashboard cards, and batch
@@ -1243,15 +1243,15 @@ Internal APIs are SPIFFE-only and serve product services:
 
 Internal APIs carry origin subject fields explicitly. They do not accept
 browser cookies, console session IDs, or customer refresh tokens. Product
-services call service-owned transport clients with SPIFFE mTLS and typed origin
+services call service-local typed clients/adapters with SPIFFE mTLS and typed origin
 context.
 
 Public route declarations include IAM metadata, audit metadata, idempotency
 metadata, body limits, rate-limit class, and response problem types in Smithy
 operation traits. Huma operation definitions mirror those traits during
 cutover. Internal routes authorize exact SPIFFE peer IDs and carry their own
-operation policies. Service callers use transport clients from the service
-`client` package and provide SPIFFE-aware `http.Client` values at the call site.
+operation policies. Service callers use service-local client packages and
+provide SPIFFE-aware `http.Client` values at the call site.
 
 ## PostgreSQL State
 

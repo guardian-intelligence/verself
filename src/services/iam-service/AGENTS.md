@@ -20,7 +20,7 @@ Contract packages expose DTOs, operation descriptors, and handler types;
 handwritten Huma route registration consumes those types and projects the same
 metadata into OpenAPI. Runtime authorization decisions are delegated to
 `iam-service` over SPIFFE mTLS. Public API packages depend on the narrow
-`service-runtime/iam` interface; service entrypoints wire service-owned
+`service-runtime/iam` interface; service entrypoints wire service-local
 `iam-service` internal clients.
 
 ## Product Surface
@@ -33,7 +33,7 @@ read or persist Zitadel bearer tokens.
 
 Do not model this as an iframe, a Zitadel console extension, or a dedicated shell
 app unless the product surface later needs to stand alone. The product contract
-is the shared component plus service-owned clients, not a specific hosting
+is the shared component plus service-local clients, not a specific hosting
 route.
 
 ## API Shape
@@ -61,8 +61,9 @@ passes.
 Use contract DTOs for public request/response payloads. Handwritten
 DTOs remain appropriate for internal-only data structures that do not cross the
 public contract boundary. Smithy operation traits are the settled metadata home;
-Huma route metadata exposes `x-verself-contract` as a projection of the same
-contract for OpenAPI consumers and drift gates.
+the route catalog exposes the same contract metadata for runtime policy and
+drift gates. Huma/OpenAPI metadata is transitional implementation detail, not
+contract authority.
 
 ## Product IAM Model
 

@@ -17,9 +17,8 @@ Recipients prove identity at a declared assurance level before any signing call 
 
 Reference points in this repo:
 
-- `src/platform/docs/secrets-service.md` for KEK custody, key wrap/unwrap, and short-lived signing key issuance.
-- `src/platform/docs/identity-and-iam.md` for Zitadel-fronted user auth, machine identity, and SCIM org boundaries.
-- `docs/architecture/workload-identity.md` for SPIFFE/SPIRE trust domain, x509-SVID issuance, and how Python services bind a workload-identity-aware HTTP client.
+- `src/smithy/models/verself/secrets.smithy` and `src/services/secrets-service/` for KEK custody, key wrap/unwrap, and short-lived signing key issuance.
+- `docs/iam-service.md` for Zitadel-fronted user auth, machine identity, and SCIM org boundaries.
 - `src/services/governance-service/docs/audit-data-contract.md` for the OCSF-flavored audit-ledger schema this service emits into.
 - `src/smithy/README.md` for canonical wire contracts and projection patterns.
 - `src/services/mailbox-service/docs/inbound-mail.md` for the transactional outbound mail surface used to deliver envelope invitations.
