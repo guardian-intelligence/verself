@@ -32,6 +32,14 @@ The web app lives at `https://<domain>` (console, public docs, and policy in one
 
 Per-task documentation lives in `aspect <task> --help`.
 
+## GitHub App
+
+Prod GitHub App name: Verself Runner https://github.com/organizations/guardian-intelligence/settings/apps/verself-runner
+
+Homepage url: https://verself.sh
+Callback URL: https://verself.sh/github/installations/callback (needs to be updated)
+Webhook URL: https://sandbox.api.verself.sh/webhooks/github/actions
+
 ## Quickstart
 
 Choose the controller platform that is running the repo commands.
