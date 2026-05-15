@@ -393,7 +393,7 @@ func (r *platformRunner) ensureProductTokenClaimsAction(ctx context.Context, cli
 		r.markChanged("zitadel.product_token_claims_target.updated")
 	}
 	if strings.TrimSpace(target.ID) == "" || strings.TrimSpace(target.SigningKey) == "" {
-		return fmt.Errorf("Zitadel product token claims target returned incomplete credentials")
+		return fmt.Errorf("zitadel product token claims target returned incomplete credentials")
 	}
 	if changed, err := r.writeRootCredential(ctx, browserOIDCCredstoreDir+"/zitadel-action-signing-key", browserOIDCCredstoreGroup, target.SigningKey+"\n"); err != nil {
 		return fmt.Errorf("write Zitadel product token claims signing key: %w", err)

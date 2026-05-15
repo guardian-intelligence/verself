@@ -5,12 +5,14 @@ verself_route_catalog(
     name = "profile_route_catalog_json",
     out = "profile.route-catalog.json",
     service = "Profile",
+    visibility = ["//src/services/profile-service:__pkg__"],
 )
 
 verself_route_catalog(
     name = "profile_internal_route_catalog_json",
     out = "profile-internal.route-catalog.json",
     service = "ProfileInternal",
+    visibility = ["//src/services/profile-service:__pkg__"],
 )
 
 go_library(

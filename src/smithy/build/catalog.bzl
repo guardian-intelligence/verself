@@ -2,13 +2,14 @@
 
 load("//src/smithy/build:openapi.bzl", "smithy_projection_file")
 
-def verself_route_catalog(name, service, out):
+def verself_route_catalog(name, service, out, visibility = None):
     """Expose a generated route catalog for one Smithy service shape.
 
     Args:
       name: Bazel target name.
       service: Smithy service shape name, for example "Profile".
       out: Output file name.
+      visibility: Optional Bazel visibility for the generated artifact target.
     """
 
     smithy_projection_file(
@@ -16,4 +17,5 @@ def verself_route_catalog(name, service, out):
         out = out,
         build = "//src/smithy/models/verself:smithy_build",
         path = "source/verselfRouteCatalog/route-catalog/%s.json" % service,
+        visibility = visibility,
     )

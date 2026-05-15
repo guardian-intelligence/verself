@@ -5,7 +5,17 @@ load("//src/tools/deployment/components:substrate.bzl", "component_substrate_jso
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
-go_module_checks()
+go_module_checks(
+    extra_srcs = [
+        "//src/services/profile-service/internal/routecatalog:profile_internal_route_catalog_json",
+        "//src/services/profile-service/internal/routecatalog:profile_route_catalog_json",
+    ],
+    package_setup = """
+rm -f internal/routecatalog/profile-internal.route-catalog.json internal/routecatalog/profile.route-catalog.json
+install -m 0644 "$$execroot/$(location //src/services/profile-service/internal/routecatalog:profile_internal_route_catalog_json)" internal/routecatalog/profile-internal.route-catalog.json
+install -m 0644 "$$execroot/$(location //src/services/profile-service/internal/routecatalog:profile_route_catalog_json)" internal/routecatalog/profile.route-catalog.json
+""",
+)
 
 spire_identity(
     name = "spiffe_identity",

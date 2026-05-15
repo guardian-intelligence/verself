@@ -49,9 +49,10 @@ _CHECK_TEST_TAGS = [
     "no-sandbox",
 ]
 
-def _check_cmd(package_name, setup, invocation):
+def _check_cmd(package_name, setup, package_setup, invocation):
     return """set -euo pipefail
 out="$$PWD/$@"
+execroot="$$PWD"
 go_archive="$$PWD/$(location @dev_tool_go//file)"
 go_tmp="$$(mktemp -d)"
 trap 'rm -rf "$$go_tmp"' EXIT
@@ -75,6 +76,7 @@ fi
 export HOME GOPATH GOMODCACHE GOCACHE
 {setup}
 cd "{package_name}"
+{package_setup}
 export GOFLAGS="-mod=readonly"
 export GOTOOLCHAIN=local
 {invocation}
@@ -82,15 +84,16 @@ touch "$$out"
 """.format(
         invocation = invocation,
         package_name = package_name,
+        package_setup = package_setup,
         setup = setup,
     )
 
-def _check(name, test_name, srcs, tag, setup, invocation, tools = []):
+def _check(name, test_name, srcs, tag, setup, package_setup, invocation, tools = []):
     native.genrule(
         name = name,
         srcs = srcs,
         outs = [name + ".stamp"],
-        cmd = _check_cmd(native.package_name(), setup, invocation),
+        cmd = _check_cmd(native.package_name(), setup, package_setup, invocation),
         tags = _CHECK_TAGS + [tag],
         tools = ["@dev_tool_go//file"] + tools,
     )
@@ -100,11 +103,14 @@ def _check(name, test_name, srcs, tag, setup, invocation, tools = []):
         tags = _CHECK_TEST_TAGS + [tag],
     )
 
-def go_module_checks(name = "go_checks"):
+def go_module_checks(name = "go_checks", extra_srcs = [], package_setup = ""):
     """Installs vet, lint, and G115 conversion checks for a Go module root.
 
     Args:
       name: Filegroup name that aggregates the generated check targets.
+      extra_srcs: Additional files produced by Bazel rules that plain Go
+        tooling needs in its package tree, such as go:embed inputs.
+      package_setup: Shell setup run from the Go module root before checks.
     """
 
     native.filegroup(
@@ -116,7 +122,7 @@ def go_module_checks(name = "go_checks"):
         ),
     )
 
-    sources = [":" + name + "_sources"]
+    sources = [":" + name + "_sources"] + extra_srcs
 
     _check(
         name = "go_vet_check",
@@ -124,6 +130,7 @@ def go_module_checks(name = "go_checks"):
         srcs = sources,
         tag = GO_VET_TAG,
         setup = "",
+        package_setup = package_setup,
         invocation = '"$$go_tool" vet ./...',
     )
 
@@ -133,6 +140,7 @@ def go_module_checks(name = "go_checks"):
         srcs = sources,
         tag = GOLANGCI_LINT_TAG,
         setup = 'tool="$$PWD/$(execpath @com_github_golangci_golangci_lint_v2//cmd/golangci-lint:golangci-lint)"',
+        package_setup = package_setup,
         invocation = '"$$tool" run --allow-parallel-runners ./...',
         tools = ["@com_github_golangci_golangci_lint_v2//cmd/golangci-lint:golangci-lint"],
     )
@@ -143,6 +151,7 @@ def go_module_checks(name = "go_checks"):
         srcs = sources,
         tag = GOSEC_G115_TAG,
         setup = 'tool="$$PWD/$(execpath @com_github_securego_gosec_v2//cmd/gosec:gosec)"',
+        package_setup = package_setup,
         invocation = '"$$tool" -quiet -include=G115 ./...',
         tools = ["@com_github_securego_gosec_v2//cmd/gosec:gosec"],
     )
