@@ -11,7 +11,7 @@ import (
 )
 
 // zvolDevicePath returns the block device path for a ZFS zvol.
-// e.g. "vspool/workloads/lease-abc" -> "/dev/zvol/vspool/workloads/lease-abc"
+// e.g. "vspool/orgs/org-abc/workloads/lease-abc" -> "/dev/zvol/vspool/orgs/org-abc/workloads/lease-abc"
 func zvolDevicePath(dataset string) string {
 	return "/dev/zvol/" + dataset
 }

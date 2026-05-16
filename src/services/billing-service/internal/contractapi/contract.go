@@ -166,6 +166,8 @@ type RequestID string
 
 type ResourceName string
 
+type SafeUint64 int64
+
 type TraceParent string
 
 type BillingContracts []BillingContract
@@ -280,9 +282,10 @@ type BillingEntitlementSourceTotal struct {
 }
 
 type BillingEntitlementsView struct {
-	OrgID     OrgID                             `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
-	Products  BillingEntitlementProductSections `json:"products" required:"true"`
-	Universal BillingEntitlementSlot            `json:"universal" required:"true"`
+	DurableStorageQuotaBytes SafeUint64                        `json:"durable_storage_quota_bytes" required:"true" minimum:"0" maximum:"9007199254740991"`
+	OrgID                    OrgID                             `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	Products                 BillingEntitlementProductSections `json:"products" required:"true"`
+	Universal                BillingEntitlementSlot            `json:"universal" required:"true"`
 }
 
 type BillingGrant struct {

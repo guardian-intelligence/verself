@@ -69,7 +69,7 @@ func TestNormalizeFilesystemMountsAllowsEmptyGoldenSource(t *testing.T) {
 }
 
 func TestNormalizeFilesystemMountsAllowsGoldenGenerationSource(t *testing.T) {
-	sourceRef := "pool/goldens/21a47db4-8a9d-4fb4-9072-1c727eaa3d65/generations/01KR70P9CK4F3XT6A9C732HMZC@sealed"
+	sourceRef := "pool/orgs/org_a/goldens/21a47db4-8a9d-4fb4-9072-1c727eaa3d65/generations/01KR70P9CK4F3XT6A9C732HMZC@sealed"
 	mounts, err := normalizeFilesystemMounts([]FilesystemMount{{
 		Name:      "workspace-generation",
 		SourceRef: sourceRef,

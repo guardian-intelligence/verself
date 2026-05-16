@@ -8,9 +8,10 @@ import (
 )
 
 type EntitlementsView struct {
-	OrgID     OrgID
-	Universal EntitlementSlot
-	Products  []EntitlementProductSection
+	DurableStorageQuotaBytes uint64
+	OrgID                    OrgID
+	Universal                EntitlementSlot
+	Products                 []EntitlementProductSection
 }
 
 type EntitlementProductSection struct {
@@ -112,7 +113,13 @@ func (c *Client) ListEntitlementsView(ctx context.Context, orgID OrgID) (Entitle
 	if err != nil {
 		return EntitlementsView{}, err
 	}
-	return buildEntitlementsView(orgID, defaultNow, nowByProduct, catalog, grants), nil
+	view := buildEntitlementsView(orgID, defaultNow, nowByProduct, catalog, grants)
+	storage, err := c.GetStorageEntitlement(ctx, orgID, SandboxProductID)
+	if err != nil {
+		return EntitlementsView{}, err
+	}
+	view.DurableStorageQuotaBytes = storage.DurableStorageQuotaBytes
+	return view, nil
 }
 
 func (c *Client) loadEntitlementCatalog(ctx context.Context) (entitlementCatalog, error) {

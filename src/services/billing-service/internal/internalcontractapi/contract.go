@@ -90,6 +90,8 @@ type BillingSourceRef string
 
 type BillingSourceType string
 
+type BillingTier string
+
 type BillingWindowID string
 
 type DecimalUint64 string
@@ -165,6 +167,23 @@ type BillingWindowReservation struct {
 	WindowID            BillingWindowID   `json:"window_id" required:"true" minLength:"1" maxLength:"255"`
 	WindowSeq           WindowSequence    `json:"window_seq" required:"true" minimum:"0" maximum:"2147483647"`
 	WindowStart         string            `json:"window_start" required:"true"`
+}
+
+type BillingStorageEntitlement struct {
+	DurableStorageQuotaBytes SafeUint64  `json:"durable_storage_quota_bytes" required:"true" minimum:"0" maximum:"9007199254740991"`
+	OrgID                    OrgID       `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	PlanID                   PlanID      `json:"plan_id" required:"true" minLength:"1" maxLength:"255"`
+	PlanTier                 BillingTier `json:"plan_tier" required:"true" minLength:"1" maxLength:"128"`
+	ProductID                ProductID   `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
+}
+
+type GetStorageEntitlementInputBody struct {
+	OrgID     OrgID     `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	ProductID ProductID `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
+}
+
+type GetStorageEntitlementInput struct {
+	Body GetStorageEntitlementInputBody
 }
 
 type ReserveWindowInputBody struct {
@@ -266,6 +285,14 @@ type ReserveWindowOutput struct {
 	Body ReserveWindowOutputBody
 }
 
+type GetStorageEntitlementOutputBody struct {
+	Entitlement BillingStorageEntitlement `json:"entitlement" required:"true"`
+}
+
+type GetStorageEntitlementOutput struct {
+	Body GetStorageEntitlementOutputBody
+}
+
 type SettleWindowOutput struct {
 	Body BillingSettleResult
 }
@@ -280,9 +307,37 @@ type VoidWindowOutput struct {
 
 var Operations = []OperationDescriptor{
 	ActivateWindow.Descriptor,
+	GetStorageEntitlement.Descriptor,
 	ReserveWindow.Descriptor,
 	SettleWindow.Descriptor,
 	VoidWindow.Descriptor,
+}
+
+var GetStorageEntitlement = Operation[GetStorageEntitlementInput, GetStorageEntitlementOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.billing.v1#GetStorageEntitlement",
+		OperationID:         "get-storage-entitlement",
+		Method:              "POST",
+		Path:                "/internal/billing/v1/storage-entitlement",
+		DefaultStatus:       200,
+		Readonly:            true,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "billing-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "billing:read", OrganizationSource: "body_org_id", OrganizationMember: "org_id"},
+		Audit:               AuditDescriptor{Event: "billing.entitlements.read", Resource: "billing_entitlements", Action: "read"},
+		RateLimitBucket:     "internal_read",
+		RequestBodyMaxBytes: 65536,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "billingInternal.entitlements", Method: "getStorage", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
 }
 
 var ActivateWindow = Operation[ActivateWindowInput, ReserveWindowOutput]{
@@ -401,12 +456,15 @@ type Handlers = PublicHandlers
 
 type PublicHandlers interface {
 	ActivateWindow(context.Context, *ActivateWindowInput) (*ReserveWindowOutput, error)
+	GetStorageEntitlement(context.Context, *GetStorageEntitlementInput) (*GetStorageEntitlementOutput, error)
 	ReserveWindow(context.Context, *ReserveWindowInput) (*ReserveWindowOutput, error)
 	SettleWindow(context.Context, *SettleWindowInput) (*SettleWindowOutput, error)
 	VoidWindow(context.Context, *VoidWindowInput) (*VoidWindowOutput, error)
 }
 
 type ActivateWindowHandler = Handler[ActivateWindowInput, ReserveWindowOutput]
+
+type GetStorageEntitlementHandler = Handler[GetStorageEntitlementInput, GetStorageEntitlementOutput]
 
 type ReserveWindowHandler = Handler[ReserveWindowInput, ReserveWindowOutput]
 

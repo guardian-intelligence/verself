@@ -2,7 +2,6 @@ version: 1
 
 cache:
   - name: bazel
-    size: 120GiB
     paths:
       - ~/.cache/bazel-disk
       - ~/.cache/bazel-repo
@@ -13,11 +12,9 @@ cache:
       # every CI run re-runs every check from scratch.
       - ~/.cache/bazel
   - name: pnpm
-    size: 40GiB
     paths:
       - ~/.local/share/pnpm/store
   - name: bootstrap-tools
-    size: 2GiB
     paths:
       - ~/.cache/verself/bootstrap-bin
       - ~/.cache/bazelisk

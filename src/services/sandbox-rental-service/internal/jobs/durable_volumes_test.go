@@ -12,7 +12,6 @@ func TestParseCacheManifestNormalizesHomePathsAndSorts(t *testing.T) {
 version: 1
 cache:
   - name: bazel
-    size: 100GiB
     paths:
       - ~/.cache/bazel-repo
       - ~/.cache/bazel-disk
@@ -24,12 +23,23 @@ cache:
 		t.Fatalf("volume count = %d, want %d", got, want)
 	}
 	volume := decl.Volumes[0]
-	if got, want := volume.SizeBytes, uint64(100<<30); got != want {
-		t.Fatalf("size bytes = %d, want %d", got, want)
-	}
 	wantPaths := []string{"/home/runner/.cache/bazel-disk", "/home/runner/.cache/bazel-repo"}
 	if got := volume.Paths; len(got) != len(wantPaths) || got[0] != wantPaths[0] || got[1] != wantPaths[1] {
 		t.Fatalf("paths = %#v, want %#v", got, wantPaths)
+	}
+}
+
+func TestParseCacheManifestRejectsSize(t *testing.T) {
+	_, err := parseCacheManifest([]byte(`
+version: 1
+cache:
+  - name: bazel
+    size: 100GiB
+    paths:
+      - ~/.cache/bazel-repo
+`), "manifest", ".verself/cache.yml", "abc123", "", "", "")
+	if !errors.Is(err, ErrCacheDeclarationInvalid) {
+		t.Fatalf("error = %v, want ErrCacheDeclarationInvalid", err)
 	}
 }
 
@@ -38,7 +48,6 @@ func TestParseCacheManifestRejectsWorkspacePaths(t *testing.T) {
 version: 1
 cache:
   - name: workspace-cache
-    size: 1GiB
     paths:
       - /workspace/project/cache
 `), "manifest", ".verself/cache.yml", "abc123", "", "", "")
@@ -52,7 +61,6 @@ func TestParseCacheManifestRejectsNestedPaths(t *testing.T) {
 version: 1
 cache:
   - name: nested
-    size: 1GiB
     paths:
       - /verself/cache
       - /verself/cache/bazel

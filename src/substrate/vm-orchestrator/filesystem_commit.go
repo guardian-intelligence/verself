@@ -70,7 +70,7 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 	if !zfs.IsValidRef(operationID) {
 		return FilesystemCommitResult{}, fmt.Errorf("operation id is invalid")
 	}
-	volume, vErr := zfs.NewVolume(o.roots, volumeID)
+	volume, vErr := zfs.NewVolume(o.roots, runtime.Lease.OrgID(), volumeID)
 	if vErr != nil {
 		return FilesystemCommitResult{}, fmt.Errorf("volume id is invalid: %w", vErr)
 	}

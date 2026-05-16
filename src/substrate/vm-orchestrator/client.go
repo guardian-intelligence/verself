@@ -144,13 +144,14 @@ func (c *Client) CommitFilesystemMount(ctx context.Context, leaseID, key, operat
 	}, nil
 }
 
-func (c *Client) PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, volumeID, snapshotRef string) (FilesystemPruneRecord, error) {
+func (c *Client) PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, volumeID, snapshotRef, orgID string) (FilesystemPruneRecord, error) {
 	resp, err := c.client.PruneFilesystemGeneration(ctx, &vmrpc.PruneFilesystemGenerationRequest{
 		IdempotencyKey:      key,
 		OperationId:         operationID,
 		DurableGenerationId: durableGenerationID,
 		VolumeId:            volumeID,
 		SnapshotRef:         snapshotRef,
+		OrgId:               orgID,
 	})
 	if err != nil {
 		return FilesystemPruneRecord{}, fmt.Errorf("prune filesystem generation %s: %w", durableGenerationID, err)
@@ -199,6 +200,21 @@ func (c *Client) GetCapacity(ctx context.Context) (Capacity, error) {
 		out.MaxMemoryMiBPerLease = pool.GetMaxMemoryMibPerLease()
 		out.MaxRootDiskGiBPerLease = pool.GetMaxRootDiskGibPerLease()
 		out.RootfsProvisionedBytes = pool.GetRootfsProvisionedBytes()
+		out.ZpoolSizeBytes = pool.GetZpoolSizeBytes()
+		out.ZpoolAllocatedBytes = pool.GetZpoolAllocatedBytes()
+		out.ZpoolFreeBytes = pool.GetZpoolFreeBytes()
+		out.OrgStorage = make([]OrgStorageCapacity, 0, len(pool.GetOrgStorage()))
+		for _, org := range pool.GetOrgStorage() {
+			if org == nil {
+				continue
+			}
+			out.OrgStorage = append(out.OrgStorage, OrgStorageCapacity{
+				OrgID:          org.GetOrgId(),
+				UsedBytes:      org.GetUsedBytes(),
+				QuotaBytes:     org.GetQuotaBytes(),
+				AvailableBytes: org.GetAvailableBytes(),
+			})
+		}
 	}
 	return out, nil
 }
@@ -213,6 +229,7 @@ func leaseSpecToProto(spec LeaseSpec) *vmrpc.LeaseSpec {
 		TtlSeconds:       spec.TTLSeconds,
 		TrustClass:       spec.TrustClass,
 		Network:          &vmrpc.NetworkAttach{Mode: mode},
+		StorageNamespace: storageNamespaceToProto(spec.StorageNamespace),
 		FilesystemMounts: filesystemMountsToProto(spec.FilesystemMounts),
 	}
 }

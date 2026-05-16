@@ -27,20 +27,19 @@ version: 1
 
 cache:
   - name: build-cache
-    size: 100GiB
     paths:
       - ~/.cache/bazel-disk
       - ~/.cache/bazel-repo
 
   - name: postgres-seed
-    size: 40GiB
     paths:
       - /verself/cache/postgres
 ```
 
 Declarations define named volumes and the guest-visible paths that should be
 backed by those volumes. Verself does not interpret the contents. Customers
-configure their tools to write to those paths.
+configure their tools to write to those paths. Capacity is governed by the
+organization storage quota, not by per-volume manifest declarations.
 
 Examples:
 
@@ -120,12 +119,10 @@ Each manifest `cache` entry declares one volume:
 
 ```text
 name      stable volume name, unique within the declaration
-size      required capacity, parsed as bytes or IEC units
 paths     one or more directories backed by the volume
 ```
 
-The declaration has no tool profiles. `name`, `size`, and `paths` are the
-public API.
+The declaration has no tool profiles. `name` and `paths` are the public API.
 
 Declaration source rules:
 
@@ -194,9 +191,9 @@ The host prepares each writable volume as a ZFS zvol:
 
 ```text
 if current generation exists:
-  zfs clone <current_snapshot> workloads/<lease>/mounts/<idx>-<name>
+  zfs clone <current_snapshot> orgs/<org>/workloads/<lease>/mounts/<idx>-<name>
 else:
-  zfs create -V <size> workloads/<lease>/mounts/<idx>-<name>
+  zfs create -s -V <nominal_size> orgs/<org>/workloads/<lease>/mounts/<idx>-<name>
   mkfs.ext4 /dev/zvol/<dataset>
 ```
 
@@ -373,7 +370,7 @@ and the component compatibility hash, so a manifest edit only invalidates
 volumes whose compatibility-affecting fields changed.
 
 `declaration_hash` is the canonical hash of the normalized declaration. It
-changes when volume names, sizes, paths, or mount policy change.
+changes when volume names, paths, or mount policy change.
 
 ### Cache Volume Spec
 
@@ -382,7 +379,6 @@ cache_volume_spec
   cache_volume_spec_id
   cache_declaration_id
   name
-  size_bytes
   path_set_hash
   mount_policy_hash
   normalized_paths_json
@@ -415,9 +411,9 @@ job_shape
 
 `job_shape` is the compatibility boundary for generated state. The
 `cache_declaration_hash` column stores the component compatibility hash:
-workspace policy for the workspace volume, and volume name, size, path set, and
-mount policy for a cache volume. `guest_arch` is explicit so x86_64 and aarch64
-never share cache generations.
+workspace policy for the workspace volume, and volume name, path set, and mount
+policy for a cache volume. `guest_arch` is explicit so x86_64 and aarch64 never
+share cache generations.
 
 ### Durable Scope
 
@@ -671,9 +667,9 @@ been merged into the trusted branch.
 
 ### Declaration Changes
 
-A compatibility-affecting change to a volume's name, size, path set, or mount
-policy changes that volume's component compatibility hash and creates a new
-durable scope. Existing current pointers remain available for older scopes until
+A compatibility-affecting change to a volume's name, path set, or mount policy
+changes that volume's component compatibility hash and creates a new durable
+scope. Existing current pointers remain available for older scopes until
 retention prunes them. Adding, removing, or changing one cache volume does not
 invalidate the workspace volume or unrelated cache volumes.
 
@@ -709,16 +705,17 @@ sealed generation whose promotion decision is still pending. Retention reads
 references and destroys through vm-orchestrator-owned host mutation, not by
 service-side shell commands.
 
-### Volume Size Changes
+### Org Storage Quota
 
-`size_bytes` is part of the cache volume spec. Increasing size can be treated
-as a new lineage or as a compatible working-clone resize when the source
-filesystem supports safe online or offline growth. Shrinking is not compatible
-with an existing generation and creates a new lineage.
+Durable zvols are sparse and use a fixed nominal volsize. The customer manifest
+does not carry a volume size. The host applies a ZFS `quota` to the
+organization dataset so the org subtree, including child workload and
+generation zvols, cannot consume more than the plan allows.
 
-A full cache volume produces normal filesystem errors in the job, usually
-`ENOSPC`. That is a customer-visible job behavior, not a storage promotion
-race.
+Firecracker virtio-block does not expose discard to the guest. Bytes freed
+inside a job are reclaimed when the host destroys unreferenced generations, not
+while the job is running. A full org quota produces normal filesystem errors in
+the job, usually `ENOSPC`.
 
 ### Path Conflicts
 
@@ -767,14 +764,14 @@ Mount hardening:
 The host stores durable volume generations under the golden root:
 
 ```text
-vspool/goldens/<durable_scope_id>/generations/<durable_generation_id>
-vspool/goldens/<durable_scope_id>/generations/<durable_generation_id>@sealed
+vspool/orgs/<org_id>/goldens/<durable_scope_id>/generations/<durable_generation_id>
+vspool/orgs/<org_id>/goldens/<durable_scope_id>/generations/<durable_generation_id>@sealed
 ```
 
 Lease working datasets live under the workload root:
 
 ```text
-vspool/workloads/<lease_id>/mounts/<index>-<mount_name>
+vspool/orgs/<org_id>/workloads/<lease_id>/mounts/<index>-<mount_name>
 ```
 
 The same ZFS lifecycle applies to the GitHub workspace and customer cache

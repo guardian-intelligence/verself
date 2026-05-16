@@ -105,6 +105,7 @@ func RegisterPublicRoutes(api huma.API, cfg Config) {
 
 func RegisterInternalRoutes(api huma.API, cfg Config) {
 	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret, billingReturnOrigins: cfg.BillingReturnOrigins, installationID: cfg.InstallationID}
+	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.GetStorageEntitlement.Descriptor, "Get storage entitlement", h.getStorageEntitlement)
 	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.ReserveWindow.Descriptor, "Reserve billing window", h.reserveWindow)
 	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.ActivateWindow.Descriptor, "Activate billing window", h.activateWindow)
 	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.SettleWindow.Descriptor, "Settle billing window", h.settleWindow)
@@ -264,6 +265,22 @@ func (h *Handler) createPortal(ctx context.Context, orgID billing.OrgID, input *
 		return nil, h.internalError(ctx, "create portal", err)
 	}
 	return &contractapi.BillingURLResponseOutput{Body: contractapi.BillingURLResponse{URL: contractapi.URL(url)}}, nil
+}
+
+func (h *Handler) getStorageEntitlement(ctx context.Context, input *internalcontractapi.GetStorageEntitlementInput) (*internalcontractapi.GetStorageEntitlementOutput, error) {
+	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	entitlement, err := h.client.GetStorageEntitlement(ctx, orgID, string(input.Body.ProductID))
+	if err != nil {
+		return nil, h.internalError(ctx, "get storage entitlement", err)
+	}
+	return &internalcontractapi.GetStorageEntitlementOutput{
+		Body: internalcontractapi.GetStorageEntitlementOutputBody{
+			Entitlement: storageEntitlementResponse(entitlement),
+		},
+	}, nil
 }
 
 func (h *Handler) reserveWindow(ctx context.Context, input *internalcontractapi.ReserveWindowInput) (*internalcontractapi.ReserveWindowOutput, error) {

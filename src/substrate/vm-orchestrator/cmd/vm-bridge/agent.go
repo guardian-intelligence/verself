@@ -722,6 +722,8 @@ func (s *agentSession) mountFilesystem(fs vmproto.FilesystemMount) vmproto.Files
 		flags |= syscall.MS_RDONLY
 		data = "ro"
 	}
+	// Firecracker virtio-block does not negotiate discard; host-side
+	// generation destruction is the reclaim boundary for durable mounts.
 	if err := syscall.Mount(fs.DevicePath, fs.MountPath, firstNonEmpty(fs.FSType, "ext4"), flags, data); err != nil {
 		if err != syscall.EBUSY {
 			result.Error = fmt.Sprintf("mount composed filesystem %s (%s) on %s: %v", fs.Name, fs.DevicePath, fs.MountPath, err)

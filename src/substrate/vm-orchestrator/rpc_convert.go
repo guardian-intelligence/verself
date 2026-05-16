@@ -20,8 +20,26 @@ func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) (LeaseSpec, error) {
 		TTLSeconds:       spec.GetTtlSeconds(),
 		TrustClass:       spec.GetTrustClass(),
 		NetworkMode:      networkMode,
+		StorageNamespace: storageNamespaceFromProto(spec.GetStorageNamespace()),
 		FilesystemMounts: filesystemMountsFromProto(spec.GetFilesystemMounts()),
 	}, cfg)
+}
+
+func storageNamespaceFromProto(namespace *vmrpc.StorageNamespace) StorageNamespace {
+	if namespace == nil {
+		return StorageNamespace{}
+	}
+	return StorageNamespace{
+		OrgID:      namespace.GetOrgId(),
+		QuotaBytes: namespace.GetQuotaBytes(),
+	}
+}
+
+func storageNamespaceToProto(namespace StorageNamespace) *vmrpc.StorageNamespace {
+	return &vmrpc.StorageNamespace{
+		OrgId:      namespace.OrgID,
+		QuotaBytes: namespace.QuotaBytes,
+	}
 }
 
 func filesystemMountsFromProto(mounts []*vmrpc.FilesystemMount) []FilesystemMount {
@@ -42,7 +60,6 @@ func filesystemMountsFromProto(mounts []*vmrpc.FilesystemMount) []FilesystemMoun
 			FSType:      mount.GetFsType(),
 			ReadOnly:    mount.GetReadOnly(),
 			Required:    mount.GetRequired(),
-			SizeBytes:   mount.GetSizeBytes(),
 		})
 	}
 	return out
@@ -63,7 +80,6 @@ func filesystemMountsToProto(mounts []FilesystemMount) []*vmrpc.FilesystemMount 
 			FsType:      mount.FSType,
 			ReadOnly:    mount.ReadOnly,
 			Required:    mount.Required,
-			SizeBytes:   mount.SizeBytes,
 		})
 	}
 	return out

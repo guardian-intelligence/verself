@@ -100,9 +100,18 @@ message LeaseSpec {
   string trust_class = 6;
   NetworkAttach network = 8;
   repeated FilesystemMount filesystem_mounts = 9;
+  StorageNamespace storage_namespace = 11;
+}
+
+message StorageNamespace {
+  string org_id = 1;
+  uint64 quota_bytes = 2;
 }
 
 message FilesystemMount {
+  reserved 9;
+  reserved "size_bytes";
+
   string name = 1;
   string source_ref = 2;
   string mount_path = 3;
@@ -111,7 +120,6 @@ message FilesystemMount {
   string operation_id = 6;
   repeated string bind_paths = 7;
   bool required = 8;
-  uint64 size_bytes = 9;
 }
 
 message FilesystemMountResult {
@@ -318,6 +326,7 @@ message PruneFilesystemGenerationRequest {
   string durable_generation_id = 3;
   string volume_id = 4;
   string snapshot_ref = 5;
+  string org_id = 6;
 }
 
 message PruneFilesystemGenerationResponse {
@@ -351,6 +360,17 @@ message VMPoolCapacity {
   uint32 max_memory_mib_per_lease = 5;
   uint32 max_root_disk_gib_per_lease = 6;
   uint64 rootfs_provisioned_bytes = 7;
+  uint64 zpool_size_bytes = 8;
+  uint64 zpool_allocated_bytes = 9;
+  uint64 zpool_free_bytes = 10;
+  repeated OrgStorageCapacity org_storage = 11;
+}
+
+message OrgStorageCapacity {
+  string org_id = 1;
+  uint64 used_bytes = 2;
+  uint64 quota_bytes = 3;
+  uint64 available_bytes = 4;
 }
 
 message GetCapacityRequest {}

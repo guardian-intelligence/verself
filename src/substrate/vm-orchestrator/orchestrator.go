@@ -27,11 +27,10 @@ import (
 var tracer = otel.Tracer("vm-orchestrator")
 
 const (
-	defaultTrustClass         = "trusted"
-	firecrackerStepTimeout    = 5 * time.Second
-	maxBufferedGuestLogs      = 10 * 1024 * 1024
-	maxFilesystemMounts       = 99
-	defaultDurableVolumeBytes = 100 * 1024 * 1024 * 1024
+	defaultTrustClass      = "trusted"
+	firecrackerStepTimeout = 5 * time.Second
+	maxBufferedGuestLogs   = 10 * 1024 * 1024
+	maxFilesystemMounts    = 99
 )
 
 // firecrackerStep is one PUT against the Firecracker API socket. The
@@ -148,7 +147,13 @@ type LeaseSpec struct {
 	TTLSeconds       uint64
 	TrustClass       string
 	NetworkMode      string
+	StorageNamespace StorageNamespace
 	FilesystemMounts []FilesystemMount
+}
+
+type StorageNamespace struct {
+	OrgID      string
+	QuotaBytes uint64
 }
 
 type FilesystemMount struct {
@@ -160,7 +165,6 @@ type FilesystemMount struct {
 	FSType      string
 	ReadOnly    bool
 	Required    bool
-	SizeBytes   uint64
 }
 
 type preparedFilesystemMount struct {
@@ -297,6 +301,13 @@ func normalizeLeaseSpec(spec LeaseSpec, cfg Config) (LeaseSpec, error) {
 	spec.TrustClass = strings.TrimSpace(spec.TrustClass)
 	if spec.TrustClass == "" {
 		spec.TrustClass = defaultTrustClass
+	}
+	spec.StorageNamespace.OrgID = strings.TrimSpace(spec.StorageNamespace.OrgID)
+	if !zfs.IsValidRef(spec.StorageNamespace.OrgID) {
+		return LeaseSpec{}, fmt.Errorf("storage_namespace.org_id is required and must be a safe ref")
+	}
+	if spec.StorageNamespace.QuotaBytes == 0 {
+		return LeaseSpec{}, fmt.Errorf("storage_namespace.quota_bytes is required")
 	}
 	spec.Resources = spec.Resources.Normalize()
 	bounds := cfg.Bounds
@@ -451,7 +462,15 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		span.End()
 	}()
 
-	lease, leaseRefErr := zfs.NewLease(o.roots, leaseID)
+	namespace := zfs.StorageNamespace{
+		OrgID:      spec.StorageNamespace.OrgID,
+		QuotaBytes: spec.StorageNamespace.QuotaBytes,
+	}
+	if ensureErr := o.volumes.EnsureStorageNamespace(ctx, namespace); ensureErr != nil {
+		err = fmt.Errorf("ensure storage namespace: %w", ensureErr)
+		return nil, err
+	}
+	lease, leaseRefErr := zfs.NewLease(o.roots, spec.StorageNamespace.OrgID, leaseID)
 	if leaseRefErr != nil {
 		err = fmt.Errorf("lease ref: %w", leaseRefErr)
 		return nil, err
@@ -554,15 +573,14 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 			SourceDatasetRef: mount.SourceRef,
 		})
 		if mount.SourceRef == "" {
-			sizeBytes := mount.SizeBytes
-			if sizeBytes == 0 {
-				sizeBytes = defaultDurableVolumeBytes
-			}
-			clone, prepErr = o.volumes.PrepareEmptyMount(ctx, lease, idx, mount.Name, sizeBytes, operationID)
+			clone, prepErr = o.volumes.PrepareEmptyMount(ctx, lease, idx, mount.Name, operationID)
 		} else if strings.Contains(mount.SourceRef, "@") {
 			gen, genErr := zfs.ParseGeneration(o.roots, mount.SourceRef)
 			if genErr != nil {
 				return prepared, fmt.Errorf("filesystem mount %s source: %w", mount.Name, genErr)
+			}
+			if gen.Volume().OrgID() != lease.OrgID() {
+				return prepared, fmt.Errorf("filesystem mount %s source belongs to another org", mount.Name)
 			}
 			clone, prepErr = o.volumes.PrepareMountFromSnapshot(ctx, lease, gen.Snapshot(), idx, mount.Name, operationID)
 		} else {

@@ -149,11 +149,18 @@ func (DirectPrivOps) ZFSGetProperty(ctx context.Context, target, key string) (st
 	return value, nil
 }
 
-// ZFSCreateVolume creates a sparse-by-default zvol with lz4 compression and
-// the requested volblocksize. Compression matches the prior Ansible block;
-// callers needing different compression should plumb a flag rather than
-// branching here.
+// ZFSCreateVolume creates a thick zvol with lz4 compression and the requested
+// volblocksize. Seed image sizing is explicit, so callers needing sparse
+// durable volumes must use ZFSCreateSparseVolume.
 func (DirectPrivOps) ZFSCreateVolume(ctx context.Context, dataset string, sizeBytes uint64, volblocksize string) error {
+	return zfsCreateVolume(ctx, dataset, sizeBytes, volblocksize, false)
+}
+
+func (DirectPrivOps) ZFSCreateSparseVolume(ctx context.Context, dataset string, sizeBytes uint64, volblocksize string) error {
+	return zfsCreateVolume(ctx, dataset, sizeBytes, volblocksize, true)
+}
+
+func zfsCreateVolume(ctx context.Context, dataset string, sizeBytes uint64, volblocksize string, sparse bool) error {
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
@@ -165,16 +172,20 @@ func (DirectPrivOps) ZFSCreateVolume(ctx context.Context, dataset string, sizeBy
 	if strings.TrimSpace(volblocksize) == "" {
 		return fmt.Errorf("zfs volume volblocksize is required")
 	}
-	args := []string{
-		"create", "-V", strconv.FormatUint(sizeBytes, 10),
-		"-o", "volblocksize=" + volblocksize,
+	args := []string{"create"}
+	if sparse {
+		args = append(args, "-s")
+	}
+	args = append(args,
+		"-V", strconv.FormatUint(sizeBytes, 10),
+		"-o", "volblocksize="+volblocksize,
 		"-o", "compression=lz4",
 		dataset,
-	}
+	)
 	cmd := exec.CommandContext(ctx, "zfs", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("zfs create -V %d %s: %s: %w", sizeBytes, dataset, strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("zfs create volume %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }
@@ -240,7 +251,7 @@ func (DirectPrivOps) ZFSMkfs(ctx context.Context, devicePath, fsType, label stri
 	}
 	switch fsType {
 	case "ext4":
-		args := []string{"-F"}
+		args := []string{"-F", "-E", "lazy_itable_init=1,lazy_journal_init=1"}
 		if label != "" {
 			args = append(args, "-L", label)
 		}
@@ -327,8 +338,7 @@ func (DirectPrivOps) ZFSPromote(ctx context.Context, dataset string) error {
 }
 
 // ZFSListChildren returns the fully-qualified names of the direct children of
-// dataset (depth 1). Used by the seed flow to find workload clones that need
-// to be torn down before the image they are derived from can be destroyed.
+// dataset (depth 1).
 func (DirectPrivOps) ZFSListChildren(ctx context.Context, dataset string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()

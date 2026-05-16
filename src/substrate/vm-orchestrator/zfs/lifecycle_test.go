@@ -55,6 +55,11 @@ func (o *lifecycleOps) ZFSCreateVolume(_ context.Context, dataset string, _ uint
 	return nil
 }
 
+func (o *lifecycleOps) ZFSCreateSparseVolume(_ context.Context, dataset string, _ uint64, _ string) error {
+	o.creates = append(o.creates, dataset)
+	return nil
+}
+
 func (o *lifecycleOps) ZFSWriteVolumeFromFile(context.Context, string, string) (uint64, error) {
 	return 0, nil
 }
@@ -92,7 +97,7 @@ func TestPrepareSubstrateCloneEnsuresLeaseDatasetParent(t *testing.T) {
 	roots := Roots{Pool: "pool", ImageDataset: "images", GoldenDataset: "goldens", WorkloadDataset: "workloads"}
 	ops := &lifecycleOps{}
 	lifecycle := NewVolumeLifecycle(roots, ops, nil)
-	lease, err := NewLease(roots, "lease-a")
+	lease, err := NewLease(roots, "org_a", "lease-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,10 +108,10 @@ func TestPrepareSubstrateCloneEnsuresLeaseDatasetParent(t *testing.T) {
 	if err := lifecycle.PrepareSubstrateClone(context.Background(), lease, image); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ops.ensures[0], "pool/workloads/lease-a"; got != want {
+	if got, want := ops.ensures[0], "pool/orgs/org_a/workloads/lease-a"; got != want {
 		t.Fatalf("ensured dataset = %q, want %q", got, want)
 	}
-	if got, want := ops.clones[0], "pool/images/substrate@ready -> pool/workloads/lease-a/root"; got != want {
+	if got, want := ops.clones[0], "pool/images/substrate@ready -> pool/orgs/org_a/workloads/lease-a/root"; got != want {
 		t.Fatalf("clone = %q, want %q", got, want)
 	}
 }
@@ -115,7 +120,7 @@ func TestPrepareFilesystemMountsEnsureMountParent(t *testing.T) {
 	roots := Roots{Pool: "pool", ImageDataset: "images", GoldenDataset: "goldens", WorkloadDataset: "workloads"}
 	ops := &lifecycleOps{}
 	lifecycle := NewVolumeLifecycle(roots, ops, nil)
-	lease, err := NewLease(roots, "lease-a")
+	lease, err := NewLease(roots, "org_a", "lease-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,13 +131,13 @@ func TestPrepareFilesystemMountsEnsureMountParent(t *testing.T) {
 	if _, err := lifecycle.PrepareMount(context.Background(), lease, image, 0, "toolchain", "op-a"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ops.ensures[0], "pool/workloads/lease-a/mounts"; got != want {
+	if got, want := ops.ensures[0], "pool/orgs/org_a/workloads/lease-a/mounts"; got != want {
 		t.Fatalf("ensured cloned mount parent = %q, want %q", got, want)
 	}
-	if _, err := lifecycle.PrepareEmptyMount(context.Background(), lease, 1, "workspace", 1<<20, "op-b"); err != nil {
+	if _, err := lifecycle.PrepareEmptyMount(context.Background(), lease, 1, "workspace", "op-b"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ops.ensures[1], "pool/workloads/lease-a/mounts"; got != want {
+	if got, want := ops.ensures[1], "pool/orgs/org_a/workloads/lease-a/mounts"; got != want {
 		t.Fatalf("ensured empty mount parent = %q, want %q", got, want)
 	}
 }
@@ -141,7 +146,7 @@ func TestCommitReturnsStatsErrors(t *testing.T) {
 	roots := Roots{Pool: "pool", ImageDataset: "images", GoldenDataset: "goldens", WorkloadDataset: "workloads"}
 	ops := &lifecycleOps{usedErr: errors.New("zfs used failed")}
 	lifecycle := NewVolumeLifecycle(roots, ops, nil)
-	lease, err := NewLease(roots, "lease-a")
+	lease, err := NewLease(roots, "org_a", "lease-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +155,7 @@ func TestCommitReturnsStatsErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	clone := MountClone{lease: lease, dataset: cloneDataset, name: "workspace"}
-	volume, err := NewVolume(roots, "scope-a")
+	volume, err := NewVolume(roots, "org_a", "scope-a")
 	if err != nil {
 		t.Fatal(err)
 	}

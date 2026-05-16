@@ -21,6 +21,7 @@ go_library(
         "safeconv.go",
         "service.go",
         "statement.go",
+        "storage_entitlements.go",
         "stripe.go",
         "types.go",
         "windows.go",

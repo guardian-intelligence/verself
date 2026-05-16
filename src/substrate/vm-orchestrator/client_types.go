@@ -84,6 +84,17 @@ type Capacity struct {
 	MaxMemoryMiBPerLease   uint32
 	MaxRootDiskGiBPerLease uint32
 	RootfsProvisionedBytes uint64
+	ZpoolSizeBytes         uint64
+	ZpoolAllocatedBytes    uint64
+	ZpoolFreeBytes         uint64
+	OrgStorage             []OrgStorageCapacity
+}
+
+type OrgStorageCapacity struct {
+	OrgID          string
+	UsedBytes      uint64
+	QuotaBytes     uint64
+	AvailableBytes uint64
 }
 
 type TelemetryEvent struct {

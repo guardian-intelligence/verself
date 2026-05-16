@@ -20,6 +20,7 @@ var (
 type Roots struct {
 	Pool            string
 	ImageDataset    string
+	OrgDataset      string
 	GoldenDataset   string
 	WorkloadDataset string
 }
@@ -28,6 +29,7 @@ func (r Roots) normalized() Roots {
 	out := Roots{
 		Pool:            cleanSegment(firstNonEmpty(r.Pool, "vspool")),
 		ImageDataset:    cleanSegment(firstNonEmpty(r.ImageDataset, "images")),
+		OrgDataset:      cleanSegment(firstNonEmpty(r.OrgDataset, "orgs")),
 		GoldenDataset:   cleanSegment(firstNonEmpty(r.GoldenDataset, "goldens")),
 		WorkloadDataset: cleanSegment(firstNonEmpty(r.WorkloadDataset, "workloads")),
 	}
@@ -39,14 +41,28 @@ func (r Roots) imageRoot() string {
 	return path.Join(r.Pool, r.ImageDataset)
 }
 
-func (r Roots) workloadRoot() string {
+func (r Roots) orgsRoot() string {
 	r = r.normalized()
-	return path.Join(r.Pool, r.WorkloadDataset)
+	return path.Join(r.Pool, r.OrgDataset)
 }
 
-func (r Roots) goldenRoot() string {
+func (r Roots) OrgsRootDataset() string { return r.orgsRoot() }
+
+func (r Roots) orgRoot(orgID string) string {
 	r = r.normalized()
-	return path.Join(r.Pool, r.GoldenDataset)
+	return path.Join(r.orgsRoot(), orgID)
+}
+
+func (r Roots) OrgRootDataset(orgID string) string { return r.orgRoot(orgID) }
+
+func (r Roots) workloadRoot(orgID string) string {
+	r = r.normalized()
+	return path.Join(r.orgRoot(orgID), r.WorkloadDataset)
+}
+
+func (r Roots) goldenRoot(orgID string) string {
+	r = r.normalized()
+	return path.Join(r.orgRoot(orgID), r.GoldenDataset)
 }
 
 type Snapshot struct {
@@ -82,19 +98,25 @@ func (i Image) Snapshot() Snapshot { return Snapshot{dataset: i.Dataset(), name:
 
 type Lease struct {
 	roots Roots
+	orgID string
 	id    string
 }
 
-func NewLease(roots Roots, leaseID string) (Lease, error) {
+func NewLease(roots Roots, orgID, leaseID string) (Lease, error) {
+	orgID = strings.TrimSpace(orgID)
+	if !IsValidRef(orgID) {
+		return Lease{}, fmt.Errorf("lease org id is invalid: %s", orgID)
+	}
 	leaseID = strings.TrimSpace(leaseID)
 	if !IsValidRef(leaseID) {
 		return Lease{}, fmt.Errorf("lease id is invalid: %s", leaseID)
 	}
-	return Lease{roots: roots.normalized(), id: leaseID}, nil
+	return Lease{roots: roots.normalized(), orgID: orgID, id: leaseID}, nil
 }
 
+func (l Lease) OrgID() string       { return l.orgID }
 func (l Lease) ID() string          { return l.id }
-func (l Lease) Dataset() string     { return path.Join(l.roots.workloadRoot(), l.id) }
+func (l Lease) Dataset() string     { return path.Join(l.roots.workloadRoot(l.orgID), l.id) }
 func (l Lease) RootDataset() string { return path.Join(l.Dataset(), "root") }
 func (l Lease) MountDataset(index int, name string) (string, error) {
 	if index < 0 {
@@ -109,19 +131,25 @@ func (l Lease) MountDataset(index int, name string) (string, error) {
 
 type Volume struct {
 	roots Roots
+	orgID string
 	id    string
 }
 
-func NewVolume(roots Roots, volumeID string) (Volume, error) {
+func NewVolume(roots Roots, orgID, volumeID string) (Volume, error) {
+	orgID = strings.TrimSpace(orgID)
+	if !IsValidRef(orgID) {
+		return Volume{}, fmt.Errorf("volume org id is invalid: %s", orgID)
+	}
 	volumeID = strings.TrimSpace(volumeID)
 	if !IsValidRef(volumeID) {
 		return Volume{}, fmt.Errorf("volume id is invalid: %s", volumeID)
 	}
-	return Volume{roots: roots.normalized(), id: volumeID}, nil
+	return Volume{roots: roots.normalized(), orgID: orgID, id: volumeID}, nil
 }
 
+func (v Volume) OrgID() string   { return v.orgID }
 func (v Volume) ID() string      { return v.id }
-func (v Volume) Dataset() string { return path.Join(v.roots.goldenRoot(), v.id) }
+func (v Volume) Dataset() string { return path.Join(v.roots.goldenRoot(v.orgID), v.id) }
 func (v Volume) GenerationDataset(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -148,22 +176,27 @@ func ParseGeneration(roots Roots, ref string) (Generation, error) {
 		return Generation{}, err
 	}
 	roots = roots.normalized()
-	prefix := roots.goldenRoot() + "/"
+	prefix := roots.orgsRoot() + "/"
 	if !strings.HasPrefix(dataset, prefix) {
-		return Generation{}, fmt.Errorf("generation dataset is outside golden root")
+		return Generation{}, fmt.Errorf("generation dataset is outside org root")
 	}
-	volumeID := strings.TrimPrefix(dataset, prefix)
-	volumeID = strings.TrimSuffix(strings.TrimPrefix(volumeID, "/"), "/")
+	relative := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(dataset, prefix), "/"), "/")
+	parts := strings.Split(relative, "/")
+	if len(parts) != 5 || parts[1] != roots.GoldenDataset || parts[3] != "generations" {
+		return Generation{}, fmt.Errorf("generation dataset is outside org golden root")
+	}
+	orgID := parts[0]
+	volumeID := parts[2]
 	if volumeID == "" {
 		return Generation{}, fmt.Errorf("generation volume id is empty")
 	}
-	if before, _, ok := strings.Cut(volumeID, "/generations/"); ok {
-		volumeID = before
+	if !IsValidRef(orgID) {
+		return Generation{}, fmt.Errorf("generation org id is invalid: %s", orgID)
 	}
 	if !IsValidRef(volumeID) {
 		return Generation{}, fmt.Errorf("generation volume id is invalid: %s", volumeID)
 	}
-	volume, err := NewVolume(roots, volumeID)
+	volume, err := NewVolume(roots, orgID, volumeID)
 	if err != nil {
 		return Generation{}, err
 	}

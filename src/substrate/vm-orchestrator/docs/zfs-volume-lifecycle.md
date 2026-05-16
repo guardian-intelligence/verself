@@ -11,17 +11,19 @@ Default roots under the configured pool:
 | Root | Purpose |
 | --- | --- |
 | `images/` | Read-only composable toolchain images seeded by `SeedImage`. |
-| `workloads/` | Ephemeral per-lease root disks and writable mount clones. |
-| `goldens/` | Immutable golden environment generations committed after a seal-eligible successful execution. |
+| `orgs/<org>/workloads/` | Ephemeral per-lease root disks and writable mount clones under the org quota. |
+| `orgs/<org>/goldens/` | Immutable golden environment generations committed after a seal-eligible successful execution under the org quota. |
 
-`EnsureRoots` creates those roots at daemon startup. Ansible configures the host
-and service unit; it does not issue runtime ZFS mutations for workloads.
+`EnsureRoots` creates global roots at daemon startup. Lease acquisition creates
+the org namespace idempotently and applies the org dataset quota before any
+workload or generation zvol is created. Ansible configures the host and service
+unit; it does not issue runtime ZFS mutations for workloads.
 
 ## Lease Boot
 
 1. sandbox-rental builds a `LeaseSpec` containing the substrate image and any
    boot-time filesystem mounts.
-2. vm-orchestrator clones the substrate snapshot into `workloads/<lease>/root`.
+2. vm-orchestrator clones the substrate snapshot into `orgs/<org>/workloads/<lease>/root`.
 3. For each filesystem mount, vm-orchestrator either clones the selected golden
    generation snapshot or creates a fresh ext4 zvol on a cache miss.
 4. vm-orchestrator waits for every `/dev/zvol/<dataset>` node, jailer-binds the
@@ -49,7 +51,7 @@ after the local runner process exits. The commit path:
 1. Seals the guest mount through vm-bridge.
 2. Flushes the host block device.
 3. Snapshots the lease mount clone.
-4. Clones that snapshot to `goldens/<scope>/generations/<generation>`.
+4. Clones that snapshot to `orgs/<org>/goldens/<scope>/generations/<generation>`.
 5. Promotes the clone so the immutable generation no longer depends on the
    ephemeral lease dataset.
 6. Creates `@sealed` on the promoted generation and returns the full snapshot
@@ -65,7 +67,7 @@ protected branch pointers happens outside the host commit path.
 
 Committed generations are immutable. A generation that loses promotion CAS is
 retained as an unreferenced candidate until a retention worker destroys its
-`goldens/<scope>/generations/<generation>` dataset. Destroy operations remain
-host-owned RPCs or daemon-local maintenance tasks; product services request
-destruction by generation ref over the vm-orchestrator Unix socket and never
-shell out to `zfs`.
+`orgs/<org>/goldens/<scope>/generations/<generation>` dataset. Destroy
+operations remain host-owned RPCs or daemon-local maintenance tasks; product
+services request destruction by generation ref over the vm-orchestrator Unix
+socket and never shell out to `zfs`.

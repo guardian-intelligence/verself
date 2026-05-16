@@ -546,7 +546,6 @@ CREATE TABLE cache_volume_spec (
     cache_volume_spec_id UUID        PRIMARY KEY,
     cache_declaration_id UUID        NOT NULL REFERENCES cache_declaration(cache_declaration_id) ON DELETE CASCADE,
     name                 TEXT        NOT NULL CHECK (name <> ''),
-    size_bytes           BIGINT      NOT NULL CHECK (size_bytes > 0),
     path_set_hash        TEXT        NOT NULL,
     mount_policy_hash    TEXT        NOT NULL,
     normalized_paths_json JSONB      NOT NULL,
@@ -580,6 +579,7 @@ CREATE TABLE job_shape (
 
 CREATE TABLE durable_scope (
     durable_scope_id       UUID        PRIMARY KEY,
+    org_id                 TEXT        NOT NULL CHECK (org_id <> ''),
     repository_id          BIGINT      NOT NULL CHECK (repository_id > 0),
     provider               TEXT        NOT NULL,
     provider_repository_id BIGINT      NOT NULL CHECK (provider_repository_id > 0),
@@ -590,7 +590,7 @@ CREATE TABLE durable_scope (
     component_kind         TEXT        NOT NULL CHECK (component_kind IN ('github_workspace', 'cache_volume', 'platform_toolchain')),
     trust_class            TEXT        NOT NULL,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
+    UNIQUE (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
 );
 
 CREATE TABLE durable_operation (
@@ -601,11 +601,11 @@ CREATE TABLE durable_operation (
     durable_scope_id        UUID        NOT NULL REFERENCES durable_scope(durable_scope_id) ON DELETE RESTRICT,
     source_generation_id    UUID,
     source_snapshot_ref     TEXT        NOT NULL DEFAULT '',
+    source_skip_reason      TEXT        NOT NULL DEFAULT '',
     candidate_generation_id UUID        NOT NULL,
     mount_name              TEXT        NOT NULL,
     internal_mount_path     TEXT        NOT NULL,
     bind_paths_json         JSONB       NOT NULL DEFAULT '[]'::jsonb,
-    size_bytes              BIGINT      NOT NULL CHECK (size_bytes > 0),
     trust_class             TEXT        NOT NULL,
     requested_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     host_accepted_at        TIMESTAMPTZ,
@@ -659,6 +659,8 @@ CREATE INDEX idx_durable_generation_run
     ON durable_generation (provider_run_id, provider_run_attempt, provider_job_id, head_sha);
 CREATE INDEX idx_durable_generation_retention
     ON durable_generation (state, expires_at, committed_at);
+CREATE INDEX idx_durable_generation_eviction
+    ON durable_generation (state, last_used_at, committed_at);
 
 CREATE TABLE durable_current_pointer (
     durable_scope_id          UUID        PRIMARY KEY REFERENCES durable_scope(durable_scope_id) ON DELETE CASCADE,

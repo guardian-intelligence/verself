@@ -209,9 +209,10 @@ type BillingEntitlementSourceTotal struct {
 }
 
 type BillingEntitlementsView struct {
-	OrgID     OrgId                             `json:"org_id"`
-	Products  BillingEntitlementProductSections `json:"products"`
-	Universal BillingEntitlementSlot            `json:"universal"`
+	DurableStorageQuotaBytes int64                             `json:"durable_storage_quota_bytes"`
+	OrgID                    OrgId                             `json:"org_id"`
+	Products                 BillingEntitlementProductSections `json:"products"`
+	Universal                BillingEntitlementSlot            `json:"universal"`
 }
 
 type BillingGrant struct {

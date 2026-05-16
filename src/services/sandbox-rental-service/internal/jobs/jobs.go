@@ -96,7 +96,7 @@ type Runner interface {
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
 	CommitFilesystemMount(ctx context.Context, leaseID, key, operationID, mountName, volumeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
-	PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, volumeID, snapshotRef string) (vmorchestrator.FilesystemPruneRecord, error)
+	PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, volumeID, snapshotRef, orgID string) (vmorchestrator.FilesystemPruneRecord, error)
 }
 
 type SchedulerRuntime interface {
@@ -587,12 +587,25 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if durablePlan.Enabled {
 		item.FilesystemMounts = append(item.FilesystemMounts, durablePlan.filesystemMounts()...)
 	}
+	storageQuotaBytes, err := s.durableStorageQuotaBytes(ctx, item)
+	if err != nil {
+		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
+		defer cancel()
+		_ = s.voidBillingWindow(cleanupCtx, reservation)
+		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
+		s.failDurableVolumes(ctx, durablePlan, "durable_storage_entitlement_failed", err)
+		return s.failAttempt(ctx, item, "durable_storage_entitlement_failed", err)
+	}
 
 	lease, err := s.Orchestrator.AcquireLease(ctx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
-		Resources:        vmResourcesForLease(item.Resources),
-		TTLSeconds:       leaseTTLSeconds(item, s.WorkloadTimeout),
-		TrustClass:       "trusted",
-		NetworkMode:      "nat",
+		Resources:   vmResourcesForLease(item.Resources),
+		TTLSeconds:  leaseTTLSeconds(item, s.WorkloadTimeout),
+		TrustClass:  "trusted",
+		NetworkMode: "nat",
+		StorageNamespace: vmorchestrator.StorageNamespace{
+			OrgID:      item.OrgID,
+			QuotaBytes: storageQuotaBytes,
+		},
 		FilesystemMounts: item.FilesystemMounts,
 	})
 	if err != nil {
@@ -1032,6 +1045,32 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 	default:
 		return billingclient.BillingWindowReservation{}, newBillingStatusError("reserve billing window", resp.StatusCode, resp.Problem, nil)
 	}
+}
+
+func (s *Service) durableStorageQuotaBytes(ctx context.Context, item executionWorkItem) (uint64, error) {
+	if s.Billing == nil {
+		return 0, fmt.Errorf("billing client is required for durable storage entitlement")
+	}
+	resp, err := s.Billing.GetStorageEntitlement(ctx, billingclient.GetStorageEntitlementRequest{
+		Body: billingclient.GetStorageEntitlementInputBody{
+			OrgID:     billingclient.OrgId(item.OrgID),
+			ProductID: billingclient.ProductId(item.ProductID),
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("get durable storage entitlement: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK || resp.Result == nil {
+		return 0, newBillingStatusError("get durable storage entitlement", resp.StatusCode, resp.Problem, nil)
+	}
+	quotaBytes, err := billingSafeUint64(resp.Result.Entitlement.DurableStorageQuotaBytes, "durable storage quota bytes")
+	if err != nil {
+		return 0, err
+	}
+	if quotaBytes == 0 {
+		return 0, fmt.Errorf("durable storage quota bytes is required")
+	}
+	return quotaBytes, nil
 }
 
 func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation billingclient.BillingWindowReservation) error {
@@ -1769,6 +1808,13 @@ func billingDecimalUint64(value billingclient.DecimalUint64, field string) (uint
 		return 0, fmt.Errorf("%s is not an unsigned decimal: %w", field, err)
 	}
 	return parsed, nil
+}
+
+func billingSafeUint64(value billingclient.SafeUint64, field string) (uint64, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("%s must be non-negative", field)
+	}
+	return uint64(value), nil
 }
 
 func billingTime(value string, field string) (time.Time, error) {

@@ -631,8 +631,9 @@ func (s *APIServer) PruneFilesystemGeneration(ctx context.Context, req *vmrpc.Pr
 	durableGenerationID := strings.TrimSpace(req.GetDurableGenerationId())
 	volumeID := strings.TrimSpace(req.GetVolumeId())
 	snapshotRef := strings.TrimSpace(req.GetSnapshotRef())
-	if key == "" || operationID == "" || durableGenerationID == "" || volumeID == "" || snapshotRef == "" {
-		return nil, status.Error(codes.InvalidArgument, "idempotency_key, operation_id, durable_generation_id, volume_id, and snapshot_ref are required")
+	orgID := strings.TrimSpace(req.GetOrgId())
+	if key == "" || operationID == "" || durableGenerationID == "" || volumeID == "" || snapshotRef == "" || orgID == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key, operation_id, durable_generation_id, volume_id, snapshot_ref, and org_id are required")
 	}
 	if !zfs.IsValidRef(operationID) {
 		return nil, status.Error(codes.InvalidArgument, "operation_id is invalid")
@@ -642,6 +643,9 @@ func (s *APIServer) PruneFilesystemGeneration(ctx context.Context, req *vmrpc.Pr
 	}
 	if !zfs.IsValidRef(volumeID) {
 		return nil, status.Error(codes.InvalidArgument, "volume_id is invalid")
+	}
+	if !zfs.IsValidRef(orgID) {
+		return nil, status.Error(codes.InvalidArgument, "org_id is invalid")
 	}
 	scope := "prune_filesystem_generation"
 	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
@@ -657,7 +661,7 @@ func (s *APIServer) PruneFilesystemGeneration(ctx context.Context, req *vmrpc.Pr
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if generation.Volume().ID() != volumeID {
+	if generation.Volume().ID() != volumeID || generation.Volume().OrgID() != orgID {
 		return nil, status.Error(codes.InvalidArgument, "snapshot_ref does not belong to volume_id")
 	}
 	span.SetAttributes(
@@ -800,6 +804,14 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 			rootfsBytes = size
 		}
 	}
+	poolStats, poolErr := zfs.PoolCapacity(ctx, s.roots.Pool)
+	if poolErr != nil {
+		return nil, status.Error(codes.Internal, poolErr.Error())
+	}
+	orgStorage, orgStorageErr := s.orgStorageCapacity(ctx)
+	if orgStorageErr != nil {
+		return nil, status.Error(codes.Internal, orgStorageErr.Error())
+	}
 	return &vmrpc.GetCapacityResponse{
 		GuestPoolCidr: s.cfg.GuestPoolCIDR,
 		Pool: &vmrpc.VMPoolCapacity{
@@ -810,8 +822,46 @@ func (s *APIServer) GetCapacity(ctx context.Context, _ *vmrpc.GetCapacityRequest
 			MaxMemoryMibPerLease:   s.cfg.Bounds.MaxMemoryMiB,
 			MaxRootDiskGibPerLease: s.cfg.Bounds.MaxRootDiskGiB,
 			RootfsProvisionedBytes: rootfsBytes,
+			ZpoolSizeBytes:         poolStats.SizeBytes,
+			ZpoolAllocatedBytes:    poolStats.AllocatedBytes,
+			ZpoolFreeBytes:         poolStats.FreeBytes,
+			OrgStorage:             orgStorage,
 		},
 	}, nil
+}
+
+func (s *APIServer) orgStorageCapacity(ctx context.Context) ([]*vmrpc.OrgStorageCapacity, error) {
+	children, err := DirectPrivOps{}.ZFSListChildren(ctx, s.roots.OrgsRootDataset())
+	if err != nil || len(children) == 0 {
+		return nil, err
+	}
+	out := make([]*vmrpc.OrgStorageCapacity, 0, len(children))
+	prefix := strings.TrimRight(s.roots.OrgsRootDataset(), "/") + "/"
+	for _, child := range children {
+		orgID := strings.TrimPrefix(child, prefix)
+		if orgID == "" || strings.Contains(orgID, "/") {
+			continue
+		}
+		used, usedErr := zfs.Used(ctx, child)
+		if usedErr != nil {
+			return nil, usedErr
+		}
+		quota, quotaErr := zfs.Quota(ctx, child)
+		if quotaErr != nil {
+			return nil, quotaErr
+		}
+		available, availableErr := zfs.Available(ctx, child)
+		if availableErr != nil {
+			return nil, availableErr
+		}
+		out = append(out, &vmrpc.OrgStorageCapacity{
+			OrgId:          orgID,
+			UsedBytes:      used,
+			QuotaBytes:     quota,
+			AvailableBytes: available,
+		})
+	}
+	return out, nil
 }
 
 func (a *vmActor) run() {

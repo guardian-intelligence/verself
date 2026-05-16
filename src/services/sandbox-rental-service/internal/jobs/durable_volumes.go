@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/bits"
 	"net/http"
 	"net/url"
 	"path"
@@ -28,23 +30,24 @@ import (
 )
 
 const (
-	durableWorkspaceMountName     = "github-workspace"
-	durableWorkspaceComponentKind = "github_workspace"
-	durableCacheComponentKind     = "cache_volume"
-	durableDeclarationKind        = "cache_declaration"
-	durableTrustProtectedBranch   = "protected_branch"
-	durablePlatformImage          = "ubuntu-2404-actions-runner"
-	durableGuestArch              = "x86_64"
-	durableToolchainImage         = "gh-actions-runner"
-	durableDogfoodBranch          = "main"
-	durableScopeKindBranch        = "branch"
-	durableCacheManifestPath      = ".verself/cache.yml"
-	durableCacheMountRoot         = "/verself/.mounts"
-	durableDefaultCacheBytes      = uint64(1 << 30)
-	durableMaxCacheBytes          = uint64(1 << 40)
-	durableMaxVolumesPerJob       = 99
-	durableRetainedGenerationTTL  = 7 * 24 * time.Hour
-	durablePruneBatchSize         = 32
+	durableWorkspaceMountName        = "github-workspace"
+	durableWorkspaceComponentKind    = "github_workspace"
+	durableCacheComponentKind        = "cache_volume"
+	durableDeclarationKind           = "cache_declaration"
+	durableTrustProtectedBranch      = "protected_branch"
+	durablePlatformImage             = "ubuntu-2404-actions-runner"
+	durableGuestArch                 = "x86_64"
+	durableToolchainImage            = "gh-actions-runner"
+	durableDogfoodBranch             = "main"
+	durableScopeKindBranch           = "branch"
+	durableCacheManifestPath         = ".verself/cache.yml"
+	durableCacheMountRoot            = "/verself/.mounts"
+	durableMaxVolumesPerJob          = 99
+	durableRetainedGenerationTTL     = 7 * 24 * time.Hour
+	durablePruneBatchSize            = 32
+	durableEvictionMaxBatches        = 8
+	durablePoolLowWatermarkPermille  = 700
+	durablePoolHardWatermarkPermille = 850
 )
 
 const (
@@ -58,7 +61,9 @@ const (
 	durableEventPromote            = "durable.volume.promote"
 	durableEventRetain             = "durable.volume.retain"
 	durableEventPrune              = "durable.volume.prune"
+	durableEventEvict              = "durable.volume.evict"
 	durableEventReconcile          = "durable.volume.reconcile"
+	durableEventPoolObserve        = "durable.pool.observe"
 )
 
 var ErrCacheDeclarationInvalid = errors.New("sandbox-rental: cache declaration invalid")
@@ -78,12 +83,12 @@ type durableVolumeOperation struct {
 	MountName             string
 	MountPath             string
 	BindPaths             []string
-	SizeBytes             uint64
 	TrustClass            string
 	ComponentKind         string
 	ComponentName         string
 	PromotionEligible     bool
 	Required              bool
+	SelectMissReason      string
 	Mounted               bool
 	MountSkipped          bool
 	MountSkipReason       string
@@ -131,10 +136,8 @@ type cacheDeclaration struct {
 }
 
 type cacheVolumeDecl struct {
-	Name      string   `json:"name" yaml:"name"`
-	Size      string   `json:"size,omitempty" yaml:"size"`
-	SizeBytes uint64   `json:"size_bytes" yaml:"-"`
-	Paths     []string `json:"paths" yaml:"paths"`
+	Name  string   `json:"name" yaml:"name"`
+	Paths []string `json:"paths" yaml:"paths"`
 }
 
 type cacheManifestFile struct {
@@ -161,6 +164,12 @@ type durableEvent struct {
 	ZFSSnapshotRef        string
 	UsedBytes             uint64
 	WrittenBytes          uint64
+	PoolSizeBytes         uint64
+	PoolAllocatedBytes    uint64
+	PoolFreeBytes         uint64
+	OrgQuotaBytes         uint64
+	OrgUsedBytes          uint64
+	OrgAvailableBytes     uint64
 }
 
 type durableEventRow struct {
@@ -189,6 +198,12 @@ type durableEventRow struct {
 	ZFSSnapshotRef        string    `ch:"zfs_snapshot_ref"`
 	UsedBytes             uint64    `ch:"used_bytes"`
 	WrittenBytes          uint64    `ch:"written_bytes"`
+	PoolSizeBytes         uint64    `ch:"pool_size_bytes"`
+	PoolAllocatedBytes    uint64    `ch:"pool_allocated_bytes"`
+	PoolFreeBytes         uint64    `ch:"pool_free_bytes"`
+	OrgQuotaBytes         uint64    `ch:"org_quota_bytes"`
+	OrgUsedBytes          uint64    `ch:"org_used_bytes"`
+	OrgAvailableBytes     uint64    `ch:"org_available_bytes"`
 	TraceID               string    `ch:"trace_id"`
 	SpanID                string    `ch:"span_id"`
 }
@@ -208,7 +223,6 @@ func (p durableVolumePlan) filesystemMounts() []vmorchestrator.FilesystemMount {
 			FSType:      "ext4",
 			ReadOnly:    false,
 			Required:    op.Required,
-			SizeBytes:   op.SizeBytes,
 		})
 	}
 	return mounts
@@ -305,12 +319,11 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 		if err != nil {
 			return durableVolumePlan{}, err
 		}
-		cacheVolumeCompatibilityHashes[volume.Name] = stableHex("cache-volume", volume.Name, strconv.FormatUint(volume.SizeBytes, 10), pathHash, mountPolicyHash)
+		cacheVolumeCompatibilityHashes[volume.Name] = stableHex("cache-volume", volume.Name, pathHash, mountPolicyHash)
 		if err := s.storeQueries().InsertCacheVolumeSpec(ctx, store.InsertCacheVolumeSpecParams{
 			CacheVolumeSpecID:   stableUUID("cache-volume-spec", cacheDeclarationID.String(), volume.Name),
 			CacheDeclarationID:  cacheDeclarationID,
 			Name:                volume.Name,
-			SizeBytes:           mustInt64FromUint64(volume.SizeBytes, "cache volume size"),
 			PathSetHash:         pathHash,
 			MountPolicyHash:     mountPolicyHash,
 			NormalizedPathsJson: pathsJSON,
@@ -355,6 +368,16 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 
 	scopeRef := durableScopeRef(identity)
 	promotionEligible := durablePromotionCandidate(identity)
+	storage, storageKnown, err := s.durableStorageSnapshot(ctx)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return durableVolumePlan{}, err
+	}
+	warmSourceSkipReason := ""
+	if storageKnown && storage.AllocatedPermille >= durablePoolHardWatermarkPermille {
+		warmSourceSkipReason = "zpool_hard_watermark_exceeded"
+	}
 	plan := durableVolumePlan{Enabled: true, Identity: identity}
 	workspace, err := s.insertDurableOperation(ctx, item, identity, durableOperationSpec{
 		JobShapeID:        workspaceShape,
@@ -364,10 +387,10 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 		MountName:         durableWorkspaceMountName,
 		MountPath:         githubRunnerDurableWorkDir,
 		BindPaths:         nil,
-		SizeBytes:         100 * 1024 * 1024 * 1024,
 		TrustClass:        durableTrustProtectedBranch,
 		PromotionEligible: promotionEligible,
 		Required:          true,
+		SourceSkipReason:  warmSourceSkipReason,
 		Now:               now,
 	})
 	if err != nil {
@@ -387,10 +410,10 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 			MountName:         "cache-" + sanitizeMountName(volume.Name),
 			MountPath:         path.Join(durableCacheMountRoot, volume.Name),
 			BindPaths:         volume.Paths,
-			SizeBytes:         volume.SizeBytes,
 			TrustClass:        durableTrustProtectedBranch,
 			PromotionEligible: promotionEligible,
 			Required:          false,
+			SourceSkipReason:  warmSourceSkipReason,
 			Now:               now,
 		})
 		if err != nil {
@@ -402,6 +425,9 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 		attribute.Int("durable.volume_count", len(plan.Operations)),
 		attribute.String("durable.cache_declaration_hash", declarationHash),
 		attribute.Bool("durable.promotion_candidate", promotionEligible),
+		attribute.Bool("durable.storage_known", storageKnown),
+		attribute.Int64("durable.pool_allocated_permille", mustInt64FromUint64(storage.AllocatedPermille, "pool allocated permille")),
+		attribute.String("durable.warm_source_skip_reason", warmSourceSkipReason),
 		attribute.String("github.repository", identity.RepositoryFullName),
 		attribute.String("github.scope_ref", scopeRef),
 	)
@@ -409,7 +435,10 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 		_ = s.appendDurableEvent(ctx, op.event(item.ExecutionID, item.AttemptID, identity, durableEventPrepare, "succeeded", "", ""))
 		selectEvent := op.event(item.ExecutionID, item.AttemptID, identity, durableEventSelect, boolResult(op.SourceSnapshotRef != "", "hit", "miss"), "", op.SourceSnapshotRef)
 		if op.SourceSnapshotRef == "" {
-			selectEvent.Reason = "current_generation_missing"
+			selectEvent.Reason = firstNonEmpty(op.SelectMissReason, "current_generation_missing")
+		}
+		if storageKnown {
+			selectEvent = selectEvent.withStorageCapacity(storage.Capacity, identity.OrgID)
 		}
 		_ = s.appendDurableEvent(ctx, selectEvent)
 	}
@@ -424,10 +453,10 @@ type durableOperationSpec struct {
 	MountName         string
 	MountPath         string
 	BindPaths         []string
-	SizeBytes         uint64
 	TrustClass        string
 	PromotionEligible bool
 	Required          bool
+	SourceSkipReason  string
 	Now               time.Time
 }
 
@@ -435,6 +464,7 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 	scopeID := stableUUID("durable-scope", identity.OrgID, identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), spec.ScopeRef, spec.JobShapeID.String(), spec.ComponentKind, spec.ComponentName, spec.TrustClass)
 	scope, err := s.storeQueries().UpsertDurableScope(ctx, store.UpsertDurableScopeParams{
 		DurableScopeID:       scopeID,
+		OrgID:                identity.OrgID,
 		RepositoryID:         identity.ProviderRepositoryID,
 		Provider:             identity.Provider,
 		ProviderRepositoryID: identity.ProviderRepositoryID,
@@ -454,10 +484,19 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 	}
 	var sourceGenerationID *uuid.UUID
 	sourceSnapshotRef := ""
+	sourceSkipReason := ""
 	current, err := s.storeQueries().GetCurrentDurableGeneration(ctx, store.GetCurrentDurableGenerationParams{DurableScopeID: scope})
 	if err == nil {
-		sourceGenerationID = &current.DurableGenerationID
-		sourceSnapshotRef = current.ZfsSnapshotRef
+		if spec.SourceSkipReason == "" {
+			sourceGenerationID = &current.DurableGenerationID
+			sourceSnapshotRef = current.ZfsSnapshotRef
+			_ = s.storeQueries().TouchDurableGenerationLastUsed(ctx, store.TouchDurableGenerationLastUsedParams{
+				DurableGenerationID: current.DurableGenerationID,
+				LastUsedAt:          pgTime(spec.Now),
+			})
+		} else {
+			sourceSkipReason = spec.SourceSkipReason
+		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return durableVolumeOperation{}, fmt.Errorf("select current durable generation %s: %w", spec.ComponentName, err)
 	}
@@ -475,11 +514,11 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 		DurableScopeID:        scope,
 		SourceGenerationID:    sourceGenerationID,
 		SourceSnapshotRef:     sourceSnapshotRef,
+		SourceSkipReason:      sourceSkipReason,
 		CandidateGenerationID: candidateGenerationID,
 		MountName:             spec.MountName,
 		InternalMountPath:     spec.MountPath,
 		BindPathsJson:         bindPathsJSON,
-		SizeBytes:             mustInt64FromUint64(spec.SizeBytes, "durable operation size"),
 		TrustClass:            spec.TrustClass,
 		RequestedAt:           pgTime(spec.Now),
 	})
@@ -495,12 +534,12 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 		MountName:             op.MountName,
 		MountPath:             op.InternalMountPath,
 		BindPaths:             append([]string(nil), spec.BindPaths...),
-		SizeBytes:             uint64FromInt64(op.SizeBytes, "durable operation size"),
 		TrustClass:            op.TrustClass,
 		ComponentKind:         spec.ComponentKind,
 		ComponentName:         spec.ComponentName,
 		PromotionEligible:     spec.PromotionEligible,
 		Required:              spec.Required,
+		SelectMissReason:      op.SourceSkipReason,
 	}, nil
 }
 
@@ -740,6 +779,56 @@ func durableExecFailedReason(finalExec vmorchestrator.ExecRecord) string {
 	return reason
 }
 
+type durableStorageSnapshot struct {
+	Capacity          vmorchestrator.Capacity
+	AllocatedPermille uint64
+}
+
+func (s *Service) durableStorageSnapshot(ctx context.Context) (durableStorageSnapshot, bool, error) {
+	if s.Orchestrator == nil {
+		return durableStorageSnapshot{}, false, nil
+	}
+	capacity, err := s.Orchestrator.GetCapacity(ctx)
+	if err != nil {
+		return durableStorageSnapshot{}, false, fmt.Errorf("query durable storage capacity: %w", err)
+	}
+	return durableStorageSnapshot{
+		Capacity:          capacity,
+		AllocatedPermille: poolAllocatedPermille(capacity),
+	}, true, nil
+}
+
+func poolAllocatedPermille(capacity vmorchestrator.Capacity) uint64 {
+	if capacity.ZpoolSizeBytes == 0 || capacity.ZpoolAllocatedBytes == 0 {
+		return 0
+	}
+	if capacity.ZpoolAllocatedBytes >= capacity.ZpoolSizeBytes {
+		return 1000
+	}
+	hi, lo := bits.Mul64(capacity.ZpoolAllocatedBytes, 1000)
+	if hi >= capacity.ZpoolSizeBytes {
+		return 1000
+	}
+	permille, _ := bits.Div64(hi, lo, capacity.ZpoolSizeBytes)
+	return permille
+}
+
+func (event durableEvent) withStorageCapacity(capacity vmorchestrator.Capacity, orgID string) durableEvent {
+	event.PoolSizeBytes = capacity.ZpoolSizeBytes
+	event.PoolAllocatedBytes = capacity.ZpoolAllocatedBytes
+	event.PoolFreeBytes = capacity.ZpoolFreeBytes
+	for _, org := range capacity.OrgStorage {
+		if org.OrgID != orgID {
+			continue
+		}
+		event.OrgQuotaBytes = org.QuotaBytes
+		event.OrgUsedBytes = org.UsedBytes
+		event.OrgAvailableBytes = org.AvailableBytes
+		break
+	}
+	return event
+}
+
 func durableCommitFailureEvents(op durableVolumeOperation, executionID, attemptID uuid.UUID, identity RunnerExecutionIdentity, cause error) []durableEvent {
 	reason := durableFailureReason("commit_failed", cause)
 	if durableCommitFailureReachedGuestSeal(cause) {
@@ -815,11 +904,66 @@ func (s *Service) PromoteGoldenRun(ctx context.Context, req scheduler.GoldenRunP
 	return err
 }
 
+func (s *Service) observeDurableStorage(ctx context.Context) error {
+	storage, storageKnown, err := s.durableStorageSnapshot(ctx)
+	if err != nil {
+		_ = s.appendDurableEvent(ctx, durableEvent{Name: durableEventPoolObserve, Result: "failed", Reason: err.Error()})
+		return err
+	}
+	if !storageKnown {
+		return nil
+	}
+	if len(storage.Capacity.OrgStorage) == 0 {
+		_ = s.appendDurableEvent(ctx, durableEvent{Name: durableEventPoolObserve, Result: "succeeded"}.withStorageCapacity(storage.Capacity, ""))
+		return nil
+	}
+	for _, org := range storage.Capacity.OrgStorage {
+		event := durableEvent{
+			Identity: RunnerExecutionIdentity{OrgID: org.OrgID},
+			Name:     durableEventPoolObserve,
+			Result:   "succeeded",
+		}
+		_ = s.appendDurableEvent(ctx, event.withStorageCapacity(storage.Capacity, org.OrgID))
+	}
+	return nil
+}
+
 func (s *Service) pruneDurableGenerations(ctx context.Context) error {
 	if s.Orchestrator == nil {
 		return nil
 	}
 	now := time.Now().UTC()
+	storage, storageKnown, err := s.durableStorageSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	if storageKnown && storage.AllocatedPermille >= durablePoolLowWatermarkPermille {
+		var errs []error
+		for batch := 0; batch < durableEvictionMaxBatches; batch++ {
+			rows, err := s.storeQueries().ListEvictableDurableGenerations(ctx, store.ListEvictableDurableGenerationsParams{
+				LimitCount: durablePruneBatchSize,
+			})
+			if err != nil {
+				return fmt.Errorf("query evictable durable generations: %w", err)
+			}
+			pruned, err := s.pruneDurableGenerationCandidates(ctx, now, durableEventEvict, "zpool_low_watermark_exceeded", storage, evictableDurablePruneCandidates(rows))
+			if err != nil {
+				errs = append(errs, err)
+			}
+			if pruned == 0 {
+				break
+			}
+			storage, storageKnown, err = s.durableStorageSnapshot(ctx)
+			if err != nil {
+				errs = append(errs, err)
+				break
+			}
+			if !storageKnown || storage.AllocatedPermille < durablePoolLowWatermarkPermille {
+				break
+			}
+		}
+		return errors.Join(errs...)
+	}
 	rows, err := s.storeQueries().ListPrunableDurableGenerations(ctx, store.ListPrunableDurableGenerationsParams{
 		NowAt:      pgTime(now),
 		LimitCount: durablePruneBatchSize,
@@ -827,7 +971,82 @@ func (s *Service) pruneDurableGenerations(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("query prunable durable generations: %w", err)
 	}
+	_, err = s.pruneDurableGenerationCandidates(ctx, now, durableEventPrune, "retention_ttl_expired", storage, prunableDurablePruneCandidates(rows))
+	return err
+}
+
+type durablePruneCandidate struct {
+	DurableGenerationID  uuid.UUID
+	DurableScopeID       uuid.UUID
+	OperationID          uuid.UUID
+	ZFSSnapshotRef       string
+	UsedBytes            int64
+	WrittenBytes         int64
+	ProviderRunID        int64
+	ProviderRunAttempt   int64
+	ProviderJobID        int64
+	OrgID                string
+	Provider             string
+	ProviderRepositoryID int64
+	ComponentKind        string
+	ComponentName        string
+	ExecutionID          uuid.UUID
+	AttemptID            uuid.UUID
+}
+
+func prunableDurablePruneCandidates(rows []store.ListPrunableDurableGenerationsRow) []durablePruneCandidate {
+	out := make([]durablePruneCandidate, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, durablePruneCandidate{
+			DurableGenerationID:  row.DurableGenerationID,
+			DurableScopeID:       row.DurableScopeID,
+			OperationID:          row.OperationID,
+			ZFSSnapshotRef:       row.ZfsSnapshotRef,
+			UsedBytes:            row.UsedBytes,
+			WrittenBytes:         row.WrittenBytes,
+			ProviderRunID:        row.ProviderRunID,
+			ProviderRunAttempt:   row.ProviderRunAttempt,
+			ProviderJobID:        row.ProviderJobID,
+			OrgID:                row.OrgID,
+			Provider:             row.Provider,
+			ProviderRepositoryID: row.ProviderRepositoryID,
+			ComponentKind:        row.ComponentKind,
+			ComponentName:        row.ComponentName,
+			ExecutionID:          row.ExecutionID,
+			AttemptID:            row.AttemptID,
+		})
+	}
+	return out
+}
+
+func evictableDurablePruneCandidates(rows []store.ListEvictableDurableGenerationsRow) []durablePruneCandidate {
+	out := make([]durablePruneCandidate, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, durablePruneCandidate{
+			DurableGenerationID:  row.DurableGenerationID,
+			DurableScopeID:       row.DurableScopeID,
+			OperationID:          row.OperationID,
+			ZFSSnapshotRef:       row.ZfsSnapshotRef,
+			UsedBytes:            row.UsedBytes,
+			WrittenBytes:         row.WrittenBytes,
+			ProviderRunID:        row.ProviderRunID,
+			ProviderRunAttempt:   row.ProviderRunAttempt,
+			ProviderJobID:        row.ProviderJobID,
+			OrgID:                row.OrgID,
+			Provider:             row.Provider,
+			ProviderRepositoryID: row.ProviderRepositoryID,
+			ComponentKind:        row.ComponentKind,
+			ComponentName:        row.ComponentName,
+			ExecutionID:          row.ExecutionID,
+			AttemptID:            row.AttemptID,
+		})
+	}
+	return out
+}
+
+func (s *Service) pruneDurableGenerationCandidates(ctx context.Context, now time.Time, eventName, reason string, storage durableStorageSnapshot, rows []durablePruneCandidate) (int, error) {
 	var errs []error
+	pruned := 0
 	for _, row := range rows {
 		rowsChanged, err := s.storeQueries().MarkDurableGenerationPruning(ctx, store.MarkDurableGenerationPruningParams{
 			PruningAt:           pgTime(now),
@@ -842,15 +1061,17 @@ func (s *Service) pruneDurableGenerations(ctx context.Context) error {
 			continue
 		}
 		identity := RunnerExecutionIdentity{
+			OrgID:                row.OrgID,
 			Provider:             row.Provider,
 			ProviderRepositoryID: row.ProviderRepositoryID,
 			ProviderRunID:        row.ProviderRunID,
 			ProviderRunAttempt:   row.ProviderRunAttempt,
 			ProviderJobID:        row.ProviderJobID,
 		}
-		_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, row.DurableGenerationID.String()+":prune", row.OperationID.String(), row.DurableGenerationID.String(), row.DurableScopeID.String(), row.ZfsSnapshotRef)
+		_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, row.DurableGenerationID.String()+":prune", row.OperationID.String(), row.DurableGenerationID.String(), row.DurableScopeID.String(), row.ZFSSnapshotRef, row.OrgID)
 		if err != nil {
-			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, ComponentKind: row.ComponentKind, ComponentName: row.ComponentName, Name: durableEventPrune, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: row.ZfsSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")})
+			event := durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, ComponentKind: row.ComponentKind, ComponentName: row.ComponentName, Name: eventName, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: row.ZFSSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")}
+			_ = s.appendDurableEvent(ctx, event.withStorageCapacity(storage.Capacity, row.OrgID))
 			errs = append(errs, fmt.Errorf("prune durable generation %s: %w", row.DurableGenerationID, err))
 			continue
 		}
@@ -858,9 +1079,11 @@ func (s *Service) pruneDurableGenerations(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("mark durable generation pruned %s: %w", row.DurableGenerationID, err))
 			continue
 		}
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, ComponentKind: row.ComponentKind, ComponentName: row.ComponentName, Name: durableEventPrune, Result: "succeeded", ZFSSnapshotRef: row.ZfsSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")})
+		event := durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, ComponentKind: row.ComponentKind, ComponentName: row.ComponentName, Name: eventName, Result: "succeeded", Reason: reason, ZFSSnapshotRef: row.ZFSSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")}
+		_ = s.appendDurableEvent(ctx, event.withStorageCapacity(storage.Capacity, row.OrgID))
+		pruned++
 	}
-	return errors.Join(errs...)
+	return pruned, errors.Join(errs...)
 }
 
 func (s *Service) hydrateGitHubRunIdentity(ctx context.Context, identity RunnerExecutionIdentity) (RunnerExecutionIdentity, error) {
@@ -1051,7 +1274,9 @@ func (s *Service) fetchManifestCacheDeclaration(ctx context.Context, identity Ru
 
 func parseCacheManifest(content []byte, sourceKind, sourcePath, sourceSHA, workflowIdentity, jobIdentity, stepIdentity string) (cacheDeclaration, error) {
 	var manifest cacheManifestFile
-	if err := yaml.Unmarshal(content, &manifest); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&manifest); err != nil {
 		return cacheDeclaration{}, fmt.Errorf("%w: parse %s: %w", ErrCacheDeclarationInvalid, sourcePath, err)
 	}
 	decl := cacheDeclaration{SourceKind: sourceKind, SourcePath: sourcePath, SourceSHA: sourceSHA, WorkflowIdentity: workflowIdentity, JobIdentity: jobIdentity, StepIdentity: stepIdentity, Version: manifest.Version, Volumes: manifest.Cache}
@@ -1079,12 +1304,6 @@ func normalizeCacheDeclaration(decl *cacheDeclaration) error {
 			return fmt.Errorf("%w: duplicate cache volume %q", ErrCacheDeclarationInvalid, volume.Name)
 		}
 		seen[volume.Name] = struct{}{}
-		size, err := parseCacheSize(volume.Size)
-		if err != nil {
-			return fmt.Errorf("%w: cache %s size: %w", ErrCacheDeclarationInvalid, volume.Name, err)
-		}
-		volume.SizeBytes = size
-		volume.Size = ""
 		paths, err := normalizeCachePaths(volume.Paths)
 		if err != nil {
 			return fmt.Errorf("%w: cache %s paths: %w", ErrCacheDeclarationInvalid, volume.Name, err)
@@ -1093,44 +1312,6 @@ func normalizeCacheDeclaration(decl *cacheDeclaration) error {
 	}
 	sort.Slice(decl.Volumes, func(i, j int) bool { return decl.Volumes[i].Name < decl.Volumes[j].Name })
 	return nil
-}
-
-func parseCacheSize(raw string) (uint64, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return durableDefaultCacheBytes, nil
-	}
-	upper := strings.ToUpper(raw)
-	units := []struct {
-		suffix string
-		mult   uint64
-	}{
-		{"TIB", 1 << 40},
-		{"GIB", 1 << 30},
-		{"MIB", 1 << 20},
-		{"KIB", 1 << 10},
-		{"TB", 1000 * 1000 * 1000 * 1000},
-		{"GB", 1000 * 1000 * 1000},
-		{"MB", 1000 * 1000},
-		{"KB", 1000},
-		{"B", 1},
-	}
-	mult := uint64(1)
-	for _, unit := range units {
-		if strings.HasSuffix(upper, unit.suffix) {
-			mult = unit.mult
-			upper = strings.TrimSpace(strings.TrimSuffix(upper, unit.suffix))
-			break
-		}
-	}
-	value, err := strconv.ParseUint(upper, 10, 64)
-	if err != nil || value == 0 {
-		return 0, fmt.Errorf("must be a positive byte count or IEC size")
-	}
-	if value > durableMaxCacheBytes/mult {
-		return 0, fmt.Errorf("exceeds 1TiB")
-	}
-	return value * mult, nil
 }
 
 func normalizeCachePaths(paths []string) ([]string, error) {
@@ -1361,6 +1542,12 @@ func (s *Service) appendDurableEvent(ctx context.Context, event durableEvent) er
 		attribute.String("zfs.snapshot_ref", event.ZFSSnapshotRef),
 		attribute.String("zfs.used_bytes", strconv.FormatUint(event.UsedBytes, 10)),
 		attribute.String("zfs.written_bytes", strconv.FormatUint(event.WrittenBytes, 10)),
+		attribute.String("zfs.pool_size_bytes", strconv.FormatUint(event.PoolSizeBytes, 10)),
+		attribute.String("zfs.pool_allocated_bytes", strconv.FormatUint(event.PoolAllocatedBytes, 10)),
+		attribute.String("zfs.pool_free_bytes", strconv.FormatUint(event.PoolFreeBytes, 10)),
+		attribute.String("zfs.org_quota_bytes", strconv.FormatUint(event.OrgQuotaBytes, 10)),
+		attribute.String("zfs.org_used_bytes", strconv.FormatUint(event.OrgUsedBytes, 10)),
+		attribute.String("zfs.org_available_bytes", strconv.FormatUint(event.OrgAvailableBytes, 10)),
 	))
 	if s.CH == nil {
 		return nil
@@ -1392,6 +1579,12 @@ func (s *Service) appendDurableEvent(ctx context.Context, event durableEvent) er
 		ZFSSnapshotRef:        event.ZFSSnapshotRef,
 		UsedBytes:             event.UsedBytes,
 		WrittenBytes:          event.WrittenBytes,
+		PoolSizeBytes:         event.PoolSizeBytes,
+		PoolAllocatedBytes:    event.PoolAllocatedBytes,
+		PoolFreeBytes:         event.PoolFreeBytes,
+		OrgQuotaBytes:         event.OrgQuotaBytes,
+		OrgUsedBytes:          event.OrgUsedBytes,
+		OrgAvailableBytes:     event.OrgAvailableBytes,
 		TraceID:               spanContext.TraceID().String(),
 		SpanID:                spanContext.SpanID().String(),
 	}

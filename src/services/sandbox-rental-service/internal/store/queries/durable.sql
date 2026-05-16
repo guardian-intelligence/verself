@@ -21,11 +21,11 @@ RETURNING cache_declaration_id;
 
 -- name: InsertCacheVolumeSpec :exec
 INSERT INTO cache_volume_spec (
-    cache_volume_spec_id, cache_declaration_id, name, size_bytes,
+    cache_volume_spec_id, cache_declaration_id, name,
     path_set_hash, mount_policy_hash, normalized_paths_json, created_at
 ) VALUES (
     sqlc.arg(cache_volume_spec_id), sqlc.arg(cache_declaration_id), sqlc.arg(name),
-    sqlc.arg(size_bytes), sqlc.arg(path_set_hash), sqlc.arg(mount_policy_hash),
+    sqlc.arg(path_set_hash), sqlc.arg(mount_policy_hash),
     sqlc.arg(normalized_paths_json)::jsonb, sqlc.arg(created_at)
 )
 ON CONFLICT (cache_declaration_id, name) DO NOTHING;
@@ -54,15 +54,15 @@ RETURNING job_shape_id;
 
 -- name: UpsertDurableScope :one
 INSERT INTO durable_scope (
-    durable_scope_id, repository_id, provider, provider_repository_id, scope_kind,
+    durable_scope_id, org_id, repository_id, provider, provider_repository_id, scope_kind,
     scope_ref, job_shape_id, component_name, component_kind, trust_class, created_at
 ) VALUES (
-    sqlc.arg(durable_scope_id), sqlc.arg(repository_id), sqlc.arg(provider),
+    sqlc.arg(durable_scope_id), sqlc.arg(org_id), sqlc.arg(repository_id), sqlc.arg(provider),
     sqlc.arg(provider_repository_id), sqlc.arg(scope_kind), sqlc.arg(scope_ref),
     sqlc.arg(job_shape_id), sqlc.arg(component_name), sqlc.arg(component_kind),
     sqlc.arg(trust_class), sqlc.arg(created_at)
 )
-ON CONFLICT (repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
+ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
 DO UPDATE SET created_at = durable_scope.created_at
 RETURNING durable_scope_id;
 
@@ -84,20 +84,25 @@ WHERE p.durable_scope_id = sqlc.arg(durable_scope_id);
 -- name: InsertDurableOperation :one
 INSERT INTO durable_operation (
     operation_id, execution_id, attempt_id, allocation_id, durable_scope_id,
-    source_generation_id, source_snapshot_ref, candidate_generation_id,
-    mount_name, internal_mount_path, bind_paths_json, size_bytes, trust_class,
+    source_generation_id, source_snapshot_ref, source_skip_reason, candidate_generation_id,
+    mount_name, internal_mount_path, bind_paths_json, trust_class,
     requested_at, final_state
 ) VALUES (
     sqlc.arg(operation_id), sqlc.arg(execution_id), sqlc.arg(attempt_id), sqlc.narg(allocation_id),
     sqlc.arg(durable_scope_id), sqlc.narg(source_generation_id), sqlc.arg(source_snapshot_ref),
-    sqlc.arg(candidate_generation_id), sqlc.arg(mount_name), sqlc.arg(internal_mount_path),
-    sqlc.arg(bind_paths_json)::jsonb, sqlc.arg(size_bytes), sqlc.arg(trust_class),
+    sqlc.arg(source_skip_reason), sqlc.arg(candidate_generation_id), sqlc.arg(mount_name), sqlc.arg(internal_mount_path),
+    sqlc.arg(bind_paths_json)::jsonb, sqlc.arg(trust_class),
     sqlc.arg(requested_at), 'requested'
 )
 ON CONFLICT (operation_id) DO UPDATE SET requested_at = durable_operation.requested_at
-RETURNING operation_id, durable_scope_id, source_generation_id, source_snapshot_ref,
+RETURNING operation_id, durable_scope_id, source_generation_id, source_snapshot_ref, source_skip_reason,
           candidate_generation_id, mount_name, internal_mount_path, bind_paths_json,
-          size_bytes, trust_class;
+          trust_class;
+
+-- name: TouchDurableGenerationLastUsed :exec
+UPDATE durable_generation
+SET last_used_at = sqlc.arg(last_used_at)
+WHERE durable_generation_id = sqlc.arg(durable_generation_id);
 
 -- name: MarkDurableOperationMounted :exec
 UPDATE durable_operation
@@ -199,6 +204,7 @@ SELECT
     g.provider_run_id,
     g.provider_run_attempt,
     g.provider_job_id,
+    s.org_id,
     s.provider,
     s.provider_repository_id,
     s.component_kind,
@@ -231,18 +237,73 @@ WHERE g.expires_at <= sqlc.arg(now_at)
 ORDER BY g.expires_at, g.committed_at, g.durable_generation_id
 LIMIT sqlc.arg(limit_count);
 
+-- name: ListEvictableDurableGenerations :many
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    s.component_kind,
+    s.component_name,
+    op.execution_id,
+    op.attempt_id
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+WHERE g.state IN ('committed', 'retained', 'prunable')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_current_pointer p
+      WHERE p.durable_scope_id = g.durable_scope_id
+        AND p.current_generation_id = g.durable_generation_id
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_operation open_op
+      WHERE open_op.source_generation_id = g.durable_generation_id
+        AND open_op.final_state IN ('requested', 'mounted')
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_generation child
+      WHERE child.source_generation_id = g.durable_generation_id
+        AND child.state <> 'pruned'
+  )
+ORDER BY g.last_used_at, g.committed_at, g.durable_generation_id
+LIMIT sqlc.arg(limit_count);
+
 -- name: MarkDurableGenerationPruning :execrows
-UPDATE durable_generation
+UPDATE durable_generation AS target
 SET state = 'prunable',
     last_used_at = sqlc.arg(pruning_at)
-WHERE durable_generation_id = sqlc.arg(durable_generation_id)
-  AND durable_generation.durable_scope_id = sqlc.arg(durable_scope_id)
+WHERE target.durable_generation_id = sqlc.arg(durable_generation_id)
+  AND target.durable_scope_id = sqlc.arg(durable_scope_id)
   AND state IN ('committed', 'retained', 'prunable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_current_pointer p
-      WHERE p.durable_scope_id = durable_generation.durable_scope_id
-        AND p.current_generation_id = durable_generation.durable_generation_id
+      WHERE p.durable_scope_id = target.durable_scope_id
+        AND p.current_generation_id = target.durable_generation_id
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_operation open_op
+      WHERE open_op.source_generation_id = target.durable_generation_id
+        AND open_op.final_state IN ('requested', 'mounted')
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_generation child
+      WHERE child.source_generation_id = target.durable_generation_id
+        AND child.state <> 'pruned'
   );
 
 -- name: MarkDurableGenerationPruned :exec

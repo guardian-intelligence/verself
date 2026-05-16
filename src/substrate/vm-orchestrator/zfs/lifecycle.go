@@ -14,7 +14,15 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-const Timeout = 30 * time.Second
+const (
+	Timeout                   = 30 * time.Second
+	DurableVolumeNominalBytes = uint64(1 << 40)
+)
+
+type StorageNamespace struct {
+	OrgID      string
+	QuotaBytes uint64
+}
 
 type PrivZFS interface {
 	ZFSClone(ctx context.Context, snapshot, target, operationID string) error
@@ -27,6 +35,7 @@ type PrivZFS interface {
 	ZFSSetProperty(ctx context.Context, dataset, key, value string) error
 	ZFSGetProperty(ctx context.Context, target, key string) (string, error)
 	ZFSCreateVolume(ctx context.Context, dataset string, sizeBytes uint64, volblocksize string) error
+	ZFSCreateSparseVolume(ctx context.Context, dataset string, sizeBytes uint64, volblocksize string) error
 	ZFSWriteVolumeFromFile(ctx context.Context, devicePath, sourcePath string) (uint64, error)
 	ZFSMkfs(ctx context.Context, devicePath, fsType, label string) error
 	ZFSEnsureVolumeSizeExt4(ctx context.Context, dataset string, sizeBytes uint64) error
@@ -52,10 +61,31 @@ func NewVolumeLifecycle(roots Roots, ops PrivZFS, logger *slog.Logger) *VolumeLi
 }
 
 func (l *VolumeLifecycle) EnsureRoots(ctx context.Context) error {
-	for _, dataset := range []string{l.roots.imageRoot(), l.roots.workloadRoot(), l.roots.goldenRoot()} {
+	for _, dataset := range []string{l.roots.imageRoot(), l.roots.orgsRoot()} {
 		if err := l.ops.ZFSEnsureFilesystem(ctx, dataset); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (l *VolumeLifecycle) EnsureStorageNamespace(ctx context.Context, namespace StorageNamespace) error {
+	namespace.OrgID = strings.TrimSpace(namespace.OrgID)
+	if !IsValidRef(namespace.OrgID) {
+		return fmt.Errorf("storage namespace org id is invalid: %s", namespace.OrgID)
+	}
+	if namespace.QuotaBytes == 0 {
+		return fmt.Errorf("storage namespace quota is required")
+	}
+	orgRoot := l.roots.orgRoot(namespace.OrgID)
+	for _, dataset := range []string{orgRoot, l.roots.workloadRoot(namespace.OrgID), l.roots.goldenRoot(namespace.OrgID)} {
+		if err := l.ops.ZFSEnsureFilesystem(ctx, dataset); err != nil {
+			return err
+		}
+	}
+	// quota, not refquota: the org boundary must include child zvols.
+	if err := l.ops.ZFSSetProperty(ctx, orgRoot, "quota", fmt.Sprintf("%d", namespace.QuotaBytes)); err != nil {
+		return fmt.Errorf("set storage namespace quota: %w", err)
 	}
 	return nil
 }
@@ -100,18 +130,15 @@ func (l *VolumeLifecycle) PrepareMountFromSnapshot(ctx context.Context, lease Le
 	return MountClone{lease: lease, dataset: target, name: name}, nil
 }
 
-func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, index int, name string, sizeBytes uint64, operationID string) (MountClone, error) {
+func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, index int, name string, operationID string) (MountClone, error) {
 	target, err := lease.MountDataset(index, name)
 	if err != nil {
 		return MountClone{}, err
 	}
-	if sizeBytes == 0 {
-		return MountClone{}, fmt.Errorf("empty mount size is required")
-	}
 	if err := l.ops.ZFSEnsureFilesystem(ctx, filepath.ToSlash(filepath.Dir(target))); err != nil {
 		return MountClone{}, err
 	}
-	if err := l.ops.ZFSCreateVolume(ctx, target, sizeBytes, "16K"); err != nil {
+	if err := l.ops.ZFSCreateSparseVolume(ctx, target, DurableVolumeNominalBytes, "16K"); err != nil {
 		return MountClone{}, err
 	}
 	if err := l.ops.ZFSSetProperty(ctx, target, "vs:operation_id", firstNonEmpty(operationID, lease.ID())); err != nil {
@@ -292,11 +319,15 @@ func (l *VolumeLifecycle) Seed(ctx context.Context, image Image, spec SeedSpec) 
 		if !spec.AllowDestroyingActiveClones {
 			return SeedResult{}, fmt.Errorf("image %s already exists; allow_destroying_active_clones is required to replace it", image.Ref())
 		}
-		children, _ := l.ops.ZFSListChildren(ctx, l.roots.workloadRoot())
-		for _, child := range children {
-			if strings.Contains(child, image.Ref()) {
-				_ = l.ops.ZFSDestroyRecursive(ctx, child)
-				dependents++
+		orgRoots, _ := l.ops.ZFSListChildren(ctx, l.roots.orgsRoot())
+		for _, orgRoot := range orgRoots {
+			orgID := strings.TrimPrefix(orgRoot, l.roots.orgsRoot()+"/")
+			children, _ := l.ops.ZFSListChildren(ctx, l.roots.workloadRoot(orgID))
+			for _, child := range children {
+				if strings.Contains(child, image.Ref()) {
+					_ = l.ops.ZFSDestroyRecursive(ctx, child)
+					dependents++
+				}
 			}
 		}
 		if err := l.ops.ZFSDestroyRecursive(ctx, image.Dataset()); err != nil {

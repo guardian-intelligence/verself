@@ -9,7 +9,7 @@ import (
 type VMResources struct {
 	VCPUs       uint32         `json:"vcpus" minimum:"1" maximum:"128" doc:"Number of vCPUs exposed to the guest."`
 	MemoryMiB   uint32         `json:"memory_mib" minimum:"128" maximum:"524288" doc:"Guest RAM in MiB."`
-	RootDiskGiB uint32         `json:"root_disk_gib" minimum:"1" maximum:"2048" doc:"Root disk quota in GiB; enforced on the per-lease ZFS clone via refquota/refreservation."`
+	RootDiskGiB uint32         `json:"root_disk_gib" minimum:"1" maximum:"2048" doc:"Guest root zvol size in GiB."`
 	KernelImage KernelImageRef `json:"kernel_image,omitempty" doc:"Named guest kernel image. Defaults to \"default\"."`
 }
 

@@ -34,8 +34,49 @@ func Volsize(ctx context.Context, dataset string) (uint64, error) {
 	return getUintProperty(ctx, dataset, "volsize")
 }
 
+func Quota(ctx context.Context, dataset string) (uint64, error) {
+	return getUintProperty(ctx, dataset, "quota")
+}
+
+func Available(ctx context.Context, dataset string) (uint64, error) {
+	return getUintProperty(ctx, dataset, "available")
+}
+
 func Written(ctx context.Context, dataset string) (uint64, error) {
 	return getUintProperty(ctx, dataset, "written")
+}
+
+type PoolStats struct {
+	SizeBytes      uint64
+	AllocatedBytes uint64
+	FreeBytes      uint64
+}
+
+func PoolCapacity(ctx context.Context, pool string) (PoolStats, error) {
+	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zpool", "list", "-H", "-p", "-o", "size,alloc,free", pool)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return PoolStats{}, fmt.Errorf("zpool list %s: %s: %w", pool, strings.TrimSpace(string(out)), err)
+	}
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	if len(fields) != 3 {
+		return PoolStats{}, fmt.Errorf("zpool list %s returned %d fields, want 3", pool, len(fields))
+	}
+	sizeBytes, err := strconv.ParseUint(fields[0], 10, 64)
+	if err != nil {
+		return PoolStats{}, fmt.Errorf("parse zpool size=%q: %w", fields[0], err)
+	}
+	allocatedBytes, err := strconv.ParseUint(fields[1], 10, 64)
+	if err != nil {
+		return PoolStats{}, fmt.Errorf("parse zpool allocated=%q: %w", fields[1], err)
+	}
+	freeBytes, err := strconv.ParseUint(fields[2], 10, 64)
+	if err != nil {
+		return PoolStats{}, fmt.Errorf("parse zpool free=%q: %w", fields[2], err)
+	}
+	return PoolStats{SizeBytes: sizeBytes, AllocatedBytes: allocatedBytes, FreeBytes: freeBytes}, nil
 }
 
 func Used(ctx context.Context, dataset string) (uint64, error) {
@@ -51,7 +92,7 @@ func getUintProperty(ctx context.Context, target, property string) (uint64, erro
 		return 0, fmt.Errorf("zfs get %s on %s: %s: %w", property, target, strings.TrimSpace(string(out)), err)
 	}
 	text := strings.TrimSpace(string(out))
-	if text == "" || text == "-" {
+	if text == "" || text == "-" || text == "none" {
 		return 0, nil
 	}
 	value, err := strconv.ParseUint(text, 10, 64)

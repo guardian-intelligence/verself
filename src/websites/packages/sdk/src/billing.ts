@@ -212,6 +212,7 @@ function parseEntitlementProductSection(input: RawEntitlementProductSection) {
 function parseEntitlementsView(input: unknown) {
   const parsed = v.parse(vBillingEntitlementsView, input);
   return {
+    durable_storage_quota_bytes: parsed.durable_storage_quota_bytes,
     org_id: parsed.org_id,
     universal: parseEntitlementSlot(parsed.universal),
     products: parsed.products?.map((product) => parseEntitlementProductSection(product)) ?? [],

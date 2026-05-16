@@ -35,9 +35,10 @@ func entitlementsResponse(view billing.EntitlementsView) contractapi.BillingEnti
 		})
 	}
 	return contractapi.BillingEntitlementsView{
-		OrgID:     contractapi.OrgID(billingOrgIDText(view.OrgID)),
-		Universal: entitlementSlot(view.Universal),
-		Products:  products,
+		DurableStorageQuotaBytes: safeUint64Contract[contractapi.SafeUint64](view.DurableStorageQuotaBytes, "durable storage quota bytes"),
+		OrgID:                    contractapi.OrgID(billingOrgIDText(view.OrgID)),
+		Universal:                entitlementSlot(view.Universal),
+		Products:                 products,
 	}
 }
 
@@ -284,6 +285,16 @@ func internalSKURates(input map[string]uint64) internalcontractapi.BillingSKURat
 	return out
 }
 
+func storageEntitlementResponse(entitlement billing.StorageEntitlement) internalcontractapi.BillingStorageEntitlement {
+	return internalcontractapi.BillingStorageEntitlement{
+		DurableStorageQuotaBytes: safeUint64Contract[internalcontractapi.SafeUint64](entitlement.DurableStorageQuotaBytes, "durable storage quota bytes"),
+		OrgID:                    internalcontractapi.OrgID(billingOrgIDText(entitlement.OrgID)),
+		PlanID:                   internalcontractapi.PlanID(entitlement.PlanID),
+		PlanTier:                 internalcontractapi.BillingTier(entitlement.PlanTier),
+		ProductID:                internalcontractapi.ProductID(entitlement.ProductID),
+	}
+}
+
 func timeString(value time.Time) string {
 	return value.UTC().Format(time.RFC3339Nano)
 }
@@ -325,6 +336,13 @@ func safeUint64(value internalcontractapi.SafeUint64, field string) (uint64, err
 		return 0, badRequest(fmt.Sprintf("%s must be non-negative", field))
 	}
 	return uint64(value), nil // #nosec G115 -- value is checked to be non-negative above.
+}
+
+func safeUint64Contract[T ~int64](value uint64, field string) T {
+	if value > uint64(1<<63-1) {
+		panic(fmt.Sprintf("%s exceeds int64 range: %d", field, value))
+	}
+	return T(value) // #nosec G115 -- value is checked against MaxInt64 above.
 }
 
 func windowSequence(value internalcontractapi.WindowSequence, field string) (uint32, error) {

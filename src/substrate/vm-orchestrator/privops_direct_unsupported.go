@@ -53,6 +53,10 @@ func (DirectPrivOps) ZFSCreateVolume(context.Context, string, uint64, string) er
 	return unsupportedHostMutation("zfs create volume")
 }
 
+func (DirectPrivOps) ZFSCreateSparseVolume(context.Context, string, uint64, string) error {
+	return unsupportedHostMutation("zfs create sparse volume")
+}
+
 func (DirectPrivOps) ZFSWriteVolumeFromFile(context.Context, string, string) (uint64, error) {
 	return 0, unsupportedHostMutation("zfs write volume from file")
 }

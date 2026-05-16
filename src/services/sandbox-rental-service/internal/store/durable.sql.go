@@ -104,12 +104,12 @@ func (q *Queries) GetDurableRunRepository(ctx context.Context, arg GetDurableRun
 
 const insertCacheVolumeSpec = `-- name: InsertCacheVolumeSpec :exec
 INSERT INTO cache_volume_spec (
-    cache_volume_spec_id, cache_declaration_id, name, size_bytes,
+    cache_volume_spec_id, cache_declaration_id, name,
     path_set_hash, mount_policy_hash, normalized_paths_json, created_at
 ) VALUES (
     $1, $2, $3,
-    $4, $5, $6,
-    $7::jsonb, $8
+    $4, $5,
+    $6::jsonb, $7
 )
 ON CONFLICT (cache_declaration_id, name) DO NOTHING
 `
@@ -118,7 +118,6 @@ type InsertCacheVolumeSpecParams struct {
 	CacheVolumeSpecID   uuid.UUID
 	CacheDeclarationID  uuid.UUID
 	Name                string
-	SizeBytes           int64
 	PathSetHash         string
 	MountPolicyHash     string
 	NormalizedPathsJson []byte
@@ -130,7 +129,6 @@ func (q *Queries) InsertCacheVolumeSpec(ctx context.Context, arg InsertCacheVolu
 		arg.CacheVolumeSpecID,
 		arg.CacheDeclarationID,
 		arg.Name,
-		arg.SizeBytes,
 		arg.PathSetHash,
 		arg.MountPolicyHash,
 		arg.NormalizedPathsJson,
@@ -209,20 +207,20 @@ func (q *Queries) InsertDurableGeneration(ctx context.Context, arg InsertDurable
 const insertDurableOperation = `-- name: InsertDurableOperation :one
 INSERT INTO durable_operation (
     operation_id, execution_id, attempt_id, allocation_id, durable_scope_id,
-    source_generation_id, source_snapshot_ref, candidate_generation_id,
-    mount_name, internal_mount_path, bind_paths_json, size_bytes, trust_class,
+    source_generation_id, source_snapshot_ref, source_skip_reason, candidate_generation_id,
+    mount_name, internal_mount_path, bind_paths_json, trust_class,
     requested_at, final_state
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7,
-    $8, $9, $10,
-    $11::jsonb, $12, $13,
+    $8, $9, $10, $11,
+    $12::jsonb, $13,
     $14, 'requested'
 )
 ON CONFLICT (operation_id) DO UPDATE SET requested_at = durable_operation.requested_at
-RETURNING operation_id, durable_scope_id, source_generation_id, source_snapshot_ref,
+RETURNING operation_id, durable_scope_id, source_generation_id, source_snapshot_ref, source_skip_reason,
           candidate_generation_id, mount_name, internal_mount_path, bind_paths_json,
-          size_bytes, trust_class
+          trust_class
 `
 
 type InsertDurableOperationParams struct {
@@ -233,11 +231,11 @@ type InsertDurableOperationParams struct {
 	DurableScopeID        uuid.UUID
 	SourceGenerationID    *uuid.UUID
 	SourceSnapshotRef     string
+	SourceSkipReason      string
 	CandidateGenerationID uuid.UUID
 	MountName             string
 	InternalMountPath     string
 	BindPathsJson         []byte
-	SizeBytes             int64
 	TrustClass            string
 	RequestedAt           pgtype.Timestamptz
 }
@@ -247,11 +245,11 @@ type InsertDurableOperationRow struct {
 	DurableScopeID        uuid.UUID
 	SourceGenerationID    *uuid.UUID
 	SourceSnapshotRef     string
+	SourceSkipReason      string
 	CandidateGenerationID uuid.UUID
 	MountName             string
 	InternalMountPath     string
 	BindPathsJson         []byte
-	SizeBytes             int64
 	TrustClass            string
 }
 
@@ -264,11 +262,11 @@ func (q *Queries) InsertDurableOperation(ctx context.Context, arg InsertDurableO
 		arg.DurableScopeID,
 		arg.SourceGenerationID,
 		arg.SourceSnapshotRef,
+		arg.SourceSkipReason,
 		arg.CandidateGenerationID,
 		arg.MountName,
 		arg.InternalMountPath,
 		arg.BindPathsJson,
-		arg.SizeBytes,
 		arg.TrustClass,
 		arg.RequestedAt,
 	)
@@ -278,11 +276,11 @@ func (q *Queries) InsertDurableOperation(ctx context.Context, arg InsertDurableO
 		&i.DurableScopeID,
 		&i.SourceGenerationID,
 		&i.SourceSnapshotRef,
+		&i.SourceSkipReason,
 		&i.CandidateGenerationID,
 		&i.MountName,
 		&i.InternalMountPath,
 		&i.BindPathsJson,
-		&i.SizeBytes,
 		&i.TrustClass,
 	)
 	return i, err
@@ -367,6 +365,110 @@ func (q *Queries) ListDurablePromotionCandidatesForRun(ctx context.Context, arg 
 	return items, nil
 }
 
+const listEvictableDurableGenerations = `-- name: ListEvictableDurableGenerations :many
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    s.component_kind,
+    s.component_name,
+    op.execution_id,
+    op.attempt_id
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+WHERE g.state IN ('committed', 'retained', 'prunable')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_current_pointer p
+      WHERE p.durable_scope_id = g.durable_scope_id
+        AND p.current_generation_id = g.durable_generation_id
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_operation open_op
+      WHERE open_op.source_generation_id = g.durable_generation_id
+        AND open_op.final_state IN ('requested', 'mounted')
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_generation child
+      WHERE child.source_generation_id = g.durable_generation_id
+        AND child.state <> 'pruned'
+  )
+ORDER BY g.last_used_at, g.committed_at, g.durable_generation_id
+LIMIT $1
+`
+
+type ListEvictableDurableGenerationsParams struct {
+	LimitCount int32
+}
+
+type ListEvictableDurableGenerationsRow struct {
+	DurableGenerationID  uuid.UUID
+	DurableScopeID       uuid.UUID
+	OperationID          uuid.UUID
+	ZfsSnapshotRef       string
+	UsedBytes            int64
+	WrittenBytes         int64
+	ProviderRunID        int64
+	ProviderRunAttempt   int64
+	ProviderJobID        int64
+	OrgID                string
+	Provider             string
+	ProviderRepositoryID int64
+	ComponentKind        string
+	ComponentName        string
+	ExecutionID          uuid.UUID
+	AttemptID            uuid.UUID
+}
+
+func (q *Queries) ListEvictableDurableGenerations(ctx context.Context, arg ListEvictableDurableGenerationsParams) ([]ListEvictableDurableGenerationsRow, error) {
+	rows, err := q.db.Query(ctx, listEvictableDurableGenerations, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEvictableDurableGenerationsRow{}
+	for rows.Next() {
+		var i ListEvictableDurableGenerationsRow
+		if err := rows.Scan(
+			&i.DurableGenerationID,
+			&i.DurableScopeID,
+			&i.OperationID,
+			&i.ZfsSnapshotRef,
+			&i.UsedBytes,
+			&i.WrittenBytes,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.ProviderJobID,
+			&i.OrgID,
+			&i.Provider,
+			&i.ProviderRepositoryID,
+			&i.ComponentKind,
+			&i.ComponentName,
+			&i.ExecutionID,
+			&i.AttemptID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPrunableDurableGenerations = `-- name: ListPrunableDurableGenerations :many
 SELECT
     g.durable_generation_id,
@@ -378,6 +480,7 @@ SELECT
     g.provider_run_id,
     g.provider_run_attempt,
     g.provider_job_id,
+    s.org_id,
     s.provider,
     s.provider_repository_id,
     s.component_kind,
@@ -426,6 +529,7 @@ type ListPrunableDurableGenerationsRow struct {
 	ProviderRunID        int64
 	ProviderRunAttempt   int64
 	ProviderJobID        int64
+	OrgID                string
 	Provider             string
 	ProviderRepositoryID int64
 	ComponentKind        string
@@ -453,6 +557,7 @@ func (q *Queries) ListPrunableDurableGenerations(ctx context.Context, arg ListPr
 			&i.ProviderRunID,
 			&i.ProviderRunAttempt,
 			&i.ProviderJobID,
+			&i.OrgID,
 			&i.Provider,
 			&i.ProviderRepositoryID,
 			&i.ComponentKind,
@@ -535,17 +640,29 @@ func (q *Queries) MarkDurableGenerationPruned(ctx context.Context, arg MarkDurab
 }
 
 const markDurableGenerationPruning = `-- name: MarkDurableGenerationPruning :execrows
-UPDATE durable_generation
+UPDATE durable_generation AS target
 SET state = 'prunable',
     last_used_at = $1
-WHERE durable_generation_id = $2
-  AND durable_generation.durable_scope_id = $3
+WHERE target.durable_generation_id = $2
+  AND target.durable_scope_id = $3
   AND state IN ('committed', 'retained', 'prunable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_current_pointer p
-      WHERE p.durable_scope_id = durable_generation.durable_scope_id
-        AND p.current_generation_id = durable_generation.durable_generation_id
+      WHERE p.durable_scope_id = target.durable_scope_id
+        AND p.current_generation_id = target.durable_generation_id
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_operation open_op
+      WHERE open_op.source_generation_id = target.durable_generation_id
+        AND open_op.final_state IN ('requested', 'mounted')
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_generation child
+      WHERE child.source_generation_id = target.durable_generation_id
+        AND child.state <> 'pruned'
   )
 `
 
@@ -781,6 +898,22 @@ func (q *Queries) RetainDurableGeneration(ctx context.Context, arg RetainDurable
 	return err
 }
 
+const touchDurableGenerationLastUsed = `-- name: TouchDurableGenerationLastUsed :exec
+UPDATE durable_generation
+SET last_used_at = $1
+WHERE durable_generation_id = $2
+`
+
+type TouchDurableGenerationLastUsedParams struct {
+	LastUsedAt          pgtype.Timestamptz
+	DurableGenerationID uuid.UUID
+}
+
+func (q *Queries) TouchDurableGenerationLastUsed(ctx context.Context, arg TouchDurableGenerationLastUsedParams) error {
+	_, err := q.db.Exec(ctx, touchDurableGenerationLastUsed, arg.LastUsedAt, arg.DurableGenerationID)
+	return err
+}
+
 const upsertCacheDeclaration = `-- name: UpsertCacheDeclaration :one
 INSERT INTO cache_declaration (
     cache_declaration_id, repository_id, source_kind, source_ref, source_sha,
@@ -842,21 +975,22 @@ func (q *Queries) UpsertCacheDeclaration(ctx context.Context, arg UpsertCacheDec
 
 const upsertDurableScope = `-- name: UpsertDurableScope :one
 INSERT INTO durable_scope (
-    durable_scope_id, repository_id, provider, provider_repository_id, scope_kind,
+    durable_scope_id, org_id, repository_id, provider, provider_repository_id, scope_kind,
     scope_ref, job_shape_id, component_name, component_kind, trust_class, created_at
 ) VALUES (
-    $1, $2, $3,
-    $4, $5, $6,
-    $7, $8, $9,
-    $10, $11
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9, $10,
+    $11, $12
 )
-ON CONFLICT (repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
+ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
 DO UPDATE SET created_at = durable_scope.created_at
 RETURNING durable_scope_id
 `
 
 type UpsertDurableScopeParams struct {
 	DurableScopeID       uuid.UUID
+	OrgID                string
 	RepositoryID         int64
 	Provider             string
 	ProviderRepositoryID int64
@@ -872,6 +1006,7 @@ type UpsertDurableScopeParams struct {
 func (q *Queries) UpsertDurableScope(ctx context.Context, arg UpsertDurableScopeParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, upsertDurableScope,
 		arg.DurableScopeID,
+		arg.OrgID,
 		arg.RepositoryID,
 		arg.Provider,
 		arg.ProviderRepositoryID,

@@ -19,6 +19,8 @@ type BillingSourceRef = string
 
 type BillingSourceType = string
 
+type BillingTier = string
+
 type BillingWindowId = string
 
 type DecimalUint64 = string
@@ -54,6 +56,14 @@ type WindowSequence = int64
 type BillingAllocation map[string]float64
 
 type BillingSKURates map[string]DecimalUint64
+
+type BillingStorageEntitlement struct {
+	DurableStorageQuotaBytes SafeUint64  `json:"durable_storage_quota_bytes"`
+	OrgID                    OrgId       `json:"org_id"`
+	PlanID                   PlanId      `json:"plan_id"`
+	PlanTier                 BillingTier `json:"plan_tier"`
+	ProductID                ProductId   `json:"product_id"`
+}
 
 type BillingSettleResult struct {
 	ActualQuantity      WindowQuantity  `json:"actual_quantity"`
@@ -149,6 +159,27 @@ type ActivateWindowInputBody struct {
 
 type ActivateWindowRequest struct {
 	Body ActivateWindowInputBody `json:"body"`
+}
+
+type GetStorageEntitlementInputBody struct {
+	OrgID     OrgId     `json:"org_id"`
+	ProductID ProductId `json:"product_id"`
+}
+
+type GetStorageEntitlementRequest struct {
+	Body GetStorageEntitlementInputBody `json:"body"`
+}
+
+type GetStorageEntitlementOutputBody struct {
+	Entitlement BillingStorageEntitlement `json:"entitlement"`
+}
+
+type GetStorageEntitlementResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *GetStorageEntitlementOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
 }
 
 type ReserveWindowOutputBody struct {
@@ -297,6 +328,52 @@ func (c *Client) ActivateWindow(ctx context.Context, request ActivateWindowReque
 
 func (c *Client) newActivateWindowRequest(ctx context.Context, request ActivateWindowRequest) (*http.Request, error) {
 	path := "/internal/billing/v1/activate"
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
+
+func (c *Client) GetStorageEntitlement(ctx context.Context, request GetStorageEntitlementRequest, reqEditors ...RequestEditorFn) (*GetStorageEntitlementResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newGetStorageEntitlementRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseGetStorageEntitlementResponse(resp)
+}
+
+func (c *Client) newGetStorageEntitlementRequest(ctx context.Context, request GetStorageEntitlementRequest) (*http.Request, error) {
+	path := "/internal/billing/v1/storage-entitlement"
 	endpoint, err := url.Parse(c.server + path)
 	if err != nil {
 		return nil, err
@@ -482,6 +559,27 @@ func parseReserveWindowResponse(resp *http.Response) (*ReserveWindowResponse, er
 	result := &ReserveWindowResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 200 {
 		var decoded ReserveWindowOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseGetStorageEntitlementResponse(resp *http.Response) (*GetStorageEntitlementResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &GetStorageEntitlementResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded GetStorageEntitlementOutputBody
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &decoded); err != nil {
 				return nil, err

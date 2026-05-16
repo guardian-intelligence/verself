@@ -72,6 +72,7 @@ service Billing {
 service BillingInternal {
     version: "2026-05-13"
     operations: [
+        GetStorageEntitlement,
         ReserveWindow,
         ActivateWindow,
         SettleWindow,
@@ -461,6 +462,8 @@ structure BillingDocument {
 structure BillingEntitlementsView {
     @required
     org_id: OrgId
+    @required
+    durable_storage_quota_bytes: SafeUint64
     @required
     universal: BillingEntitlementSlot
     @required
@@ -1000,6 +1003,47 @@ structure BillingURLResponseOutput {
     @httpPayload
     @nestedProperties
     response: BillingURLResponse
+}
+
+@readonly
+@http(method: "POST", uri: "/internal/billing/v1/storage-entitlement")
+@identity(mode: "spiffe_mtls", audience: "billing-service", principals: ["workload"])
+@authz(permission: BillingReadPermission, organization: {source: "body_org_id", member: "org_id"})
+@audit(event: BillingEntitlementsReadAuditEvent, resource: BillingEntitlements, action: "read")
+@rateLimit(bucket: "internal_read")
+@requestBudget(maxBytes: 65536)
+@sdk(module: "billingInternal.entitlements", method: "getStorage", paginated: false, retryable: true)
+operation GetStorageEntitlement {
+    input: GetStorageEntitlementInput
+    output: GetStorageEntitlementOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ServiceUnavailableError]
+}
+
+structure GetStorageEntitlementInput {
+    @required
+    org_id: OrgId
+    @required
+    product_id: ProductId
+}
+
+structure GetStorageEntitlementOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    entitlement: BillingStorageEntitlement
+}
+
+structure BillingStorageEntitlement {
+    @required
+    org_id: OrgId
+    @required
+    product_id: ProductId
+    @required
+    plan_id: BillingScopeId
+    @required
+    plan_tier: BillingTier
+    @required
+    durable_storage_quota_bytes: SafeUint64
 }
 
 @http(method: "POST", uri: "/internal/billing/v1/reserve")
