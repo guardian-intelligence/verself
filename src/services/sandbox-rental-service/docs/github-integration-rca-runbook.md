@@ -242,7 +242,7 @@ Interpretation:
 
 - `retryable` or `discarded` on `runner.capacity.reconcile` points before allocation.
 - `retryable` or `discarded` on `runner.allocate` points at GitHub JIT, runner group policy, or execution submission.
-- `retryable` or `discarded` on `execution.advance` points at billing, VM lease, exec start/wait, durable volume, or log finalization.
+- `retryable` or `discarded` on `execution.advance` points at billing, VM lease, exec start/wait, durable cache, or log finalization.
 - `runner.cleanup` can be retryable while GitHub still considers a runner busy.
 
 ### 4. Inspect Allocation State

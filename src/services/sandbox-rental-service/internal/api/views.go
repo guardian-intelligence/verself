@@ -263,7 +263,6 @@ func cacheView(record jobs.DurableCacheRecord, installationID string) contractap
 		RepositoryFullName:   optionalContractString[contractapi.RepositoryFullName](record.RepositoryFullName),
 		ResourceName:         contractapi.ResourceName(resourceName(installationID, resourcePathSegment{"orgs", record.OrgID}, resourcePathSegment{"caches", record.CacheID.String()})),
 		ScopeRef:             contractapi.GitRef(record.ScopeRef),
-		Source:               contractapi.CacheSource(record.Source),
 		UsedBytes:            safeLongFromUint64(record.UsedBytes, "cache used bytes"),
 		WrittenBytes:         safeLongFromUint64(record.WrittenBytes, "cache written bytes"),
 	}
@@ -298,7 +297,6 @@ func cacheGeneration(record jobs.DurableCacheGenerationRecord, _ string) contrac
 		ScopeRef:             contractapi.GitRef(record.ScopeRef),
 		SealedAt:             timestampPtr(&record.SealedAt),
 		SourceGenerationID:   optionalUUIDPtr[contractapi.CacheGenerationID](record.SourceGenerationID),
-		Source:               contractapi.CacheSource(record.Source),
 		State:                record.State,
 		TreeHash:             optionalContractString[string](record.TreeHash),
 		UsedBytes:            safeLongFromUint64(record.UsedBytes, "cache generation used bytes"),

@@ -112,8 +112,6 @@ type CacheGenerationID string
 
 type CachePath string
 
-type CacheSource string
-
 type CacheID string
 
 type CacheName string
@@ -691,7 +689,6 @@ type SandboxCache struct {
 	RepositoryFullName   *RepositoryFullName  `json:"repository_full_name,omitempty" minLength:"1" maxLength:"1024"`
 	ResourceName         ResourceName         `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	ScopeRef             GitRef               `json:"scope_ref" required:"true" minLength:"1" maxLength:"1024"`
-	Source               CacheSource          `json:"source" required:"true" enum:"platform,manifest"`
 	UsedBytes            SafeNonNegativeLong  `json:"used_bytes" required:"true" minimum:"0"`
 	WrittenBytes         SafeNonNegativeLong  `json:"written_bytes" required:"true" minimum:"0"`
 }
@@ -716,7 +713,6 @@ type SandboxCacheGeneration struct {
 	ScopeRef             GitRef               `json:"scope_ref" required:"true" minLength:"1" maxLength:"1024"`
 	SealedAt             *string              `json:"sealed_at,omitempty"`
 	SourceGenerationID   *CacheGenerationID   `json:"source_generation_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
-	Source               CacheSource          `json:"source" required:"true" enum:"platform,manifest"`
 	State                string               `json:"state" required:"true"`
 	TreeHash             *string              `json:"tree_hash,omitempty"`
 	UsedBytes            SafeNonNegativeLong  `json:"used_bytes" required:"true" minimum:"0"`

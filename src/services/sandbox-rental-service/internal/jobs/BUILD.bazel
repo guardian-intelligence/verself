@@ -9,8 +9,8 @@ go_library(
         "bazel_telemetry.go",
         "checkout.go",
         "correlation.go",
+        "durable_caches.go",
         "durable_management.go",
-        "durable_volumes.go",
         "forgejo_runner.go",
         "github_execution_auth.go",
         "github_runner.go",
@@ -63,7 +63,7 @@ alias(
 go_test(
     name = "go_default_test",
     srcs = [
-        "durable_volumes_test.go",
+        "durable_caches_test.go",
         "execution_lifecycle_test.go",
     ],
     embed = [":jobs"],

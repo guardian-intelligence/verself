@@ -1,67 +1,33 @@
--- name: UpsertCacheDeclaration :one
-INSERT INTO cache_declaration (
-    cache_declaration_id, repository_id, source_kind, source_ref, source_sha,
-    source_path, workflow_identity, job_identity, step_identity,
-    declaration_sha256, declaration_hash, normalized_json, parsed_at
-) VALUES (
-    sqlc.arg(cache_declaration_id), sqlc.arg(repository_id), sqlc.arg(source_kind),
-    sqlc.arg(source_ref), sqlc.arg(source_sha), sqlc.arg(source_path),
-    sqlc.arg(workflow_identity), sqlc.arg(job_identity), sqlc.arg(step_identity),
-    sqlc.arg(declaration_sha256), sqlc.arg(declaration_hash), sqlc.arg(normalized_json)::jsonb,
-    sqlc.arg(parsed_at)
-)
-ON CONFLICT (repository_id, declaration_hash, source_kind, source_path, workflow_identity, job_identity, step_identity)
-DO UPDATE SET
-    source_ref = EXCLUDED.source_ref,
-    source_sha = EXCLUDED.source_sha,
-    declaration_sha256 = EXCLUDED.declaration_sha256,
-    normalized_json = EXCLUDED.normalized_json,
-    parsed_at = EXCLUDED.parsed_at
-RETURNING cache_declaration_id;
-
--- name: InsertDurableCacheSpec :exec
-INSERT INTO durable_cache_spec (
-    durable_cache_spec_id, cache_declaration_id, cache_source, cache_name,
-    path_set_hash, mount_policy_hash, reconcile_policy, normalized_paths_json, created_at
-) VALUES (
-    sqlc.arg(durable_cache_spec_id), sqlc.arg(cache_declaration_id),
-    sqlc.arg(cache_source), sqlc.arg(cache_name), sqlc.arg(path_set_hash),
-    sqlc.arg(mount_policy_hash), sqlc.arg(reconcile_policy),
-    sqlc.arg(normalized_paths_json)::jsonb, sqlc.arg(created_at)
-)
-ON CONFLICT (cache_declaration_id, cache_source, cache_name) DO NOTHING;
-
 -- name: UpsertJobShape :one
 INSERT INTO job_shape (
     job_shape_id, repository_id, provider, workflow_identity, called_workflow_identity,
     job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
-    kernel_image_id, runner_toolchain_image_id, durable_cache_spec_hash, created_at
+    kernel_image_id, runner_toolchain_image_id, cache_spec_hash, created_at
 ) VALUES (
     sqlc.arg(job_shape_id), sqlc.arg(repository_id), sqlc.arg(provider),
     sqlc.arg(workflow_identity), sqlc.arg(called_workflow_identity),
     sqlc.arg(job_identity), sqlc.arg(matrix_key), sqlc.arg(runner_class),
     sqlc.arg(guest_arch), sqlc.arg(platform_image_id), sqlc.arg(kernel_image_id),
-    sqlc.arg(runner_toolchain_image_id), sqlc.arg(durable_cache_spec_hash),
+    sqlc.arg(runner_toolchain_image_id), sqlc.arg(cache_spec_hash),
     sqlc.arg(created_at)
 )
 ON CONFLICT (
     repository_id, provider, workflow_identity, called_workflow_identity,
     job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
-    kernel_image_id, runner_toolchain_image_id, durable_cache_spec_hash
+    kernel_image_id, runner_toolchain_image_id, cache_spec_hash
 ) DO UPDATE SET created_at = job_shape.created_at
 RETURNING job_shape_id;
 
 -- name: UpsertDurableScope :one
 INSERT INTO durable_scope (
     durable_scope_id, org_id, repository_id, provider, provider_repository_id, scope_kind,
-    scope_ref, job_shape_id, cache_name, cache_source, trust_class, created_at
+    scope_ref, job_shape_id, cache_name, trust_class, created_at
 ) VALUES (
     sqlc.arg(durable_scope_id), sqlc.arg(org_id), sqlc.arg(repository_id), sqlc.arg(provider),
     sqlc.arg(provider_repository_id), sqlc.arg(scope_kind), sqlc.arg(scope_ref),
-    sqlc.arg(job_shape_id), sqlc.arg(cache_name), sqlc.arg(cache_source),
-    sqlc.arg(trust_class), sqlc.arg(created_at)
+    sqlc.arg(job_shape_id), sqlc.arg(cache_name), sqlc.arg(trust_class), sqlc.arg(created_at)
 )
-ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, cache_name, cache_source, trust_class)
+ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, cache_name, trust_class)
 DO UPDATE SET created_at = durable_scope.created_at
 RETURNING durable_scope_id;
 
@@ -148,11 +114,6 @@ RETURNING
     execution_id,
     attempt_id,
     (
-        SELECT s.cache_source
-        FROM durable_scope s
-        WHERE s.durable_scope_id = durable_operation.durable_scope_id
-    ) AS cache_source,
-    (
         SELECT s.cache_name
         FROM durable_scope s
         WHERE s.durable_scope_id = durable_operation.durable_scope_id
@@ -221,7 +182,6 @@ SELECT
     s.org_id,
     s.provider,
     s.provider_repository_id,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id
@@ -265,7 +225,6 @@ SELECT
     s.org_id,
     s.provider,
     s.provider_repository_id,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id
@@ -302,7 +261,6 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     s.created_at,
     cp.current_generation_id,
@@ -327,7 +285,6 @@ GROUP BY
     s.provider_repository_id,
     r.repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     s.created_at,
     cp.current_generation_id
@@ -366,7 +323,6 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     op.bind_paths_json,
     op.execution_id,
@@ -411,7 +367,6 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id,
@@ -454,7 +409,6 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id,
@@ -548,7 +502,6 @@ SELECT
     g.zfs_snapshot_ref,
     g.used_bytes,
     g.written_bytes,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id,

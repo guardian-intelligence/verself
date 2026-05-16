@@ -127,7 +127,6 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id,
@@ -175,7 +174,6 @@ type GetDurableCacheGenerationForUserPruneRow struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	CacheSource          string
 	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
@@ -210,7 +208,6 @@ func (q *Queries) GetDurableCacheGenerationForUserPrune(ctx context.Context, arg
 		&i.ProviderRepositoryID,
 		&i.RepositoryFullName,
 		&i.ScopeRef,
-		&i.CacheSource,
 		&i.CacheName,
 		&i.ExecutionID,
 		&i.AttemptID,
@@ -258,46 +255,6 @@ func (q *Queries) GetDurableRunRepository(ctx context.Context, arg GetDurableRun
 		&i.RepositoryFullName,
 	)
 	return i, err
-}
-
-const insertDurableCacheSpec = `-- name: InsertDurableCacheSpec :exec
-INSERT INTO durable_cache_spec (
-    durable_cache_spec_id, cache_declaration_id, cache_source, cache_name,
-    path_set_hash, mount_policy_hash, reconcile_policy, normalized_paths_json, created_at
-) VALUES (
-    $1, $2,
-    $3, $4, $5,
-    $6, $7,
-    $8::jsonb, $9
-)
-ON CONFLICT (cache_declaration_id, cache_source, cache_name) DO NOTHING
-`
-
-type InsertDurableCacheSpecParams struct {
-	DurableCacheSpecID  uuid.UUID
-	CacheDeclarationID  uuid.UUID
-	CacheSource         string
-	CacheName           string
-	PathSetHash         string
-	MountPolicyHash     string
-	ReconcilePolicy     string
-	NormalizedPathsJson []byte
-	CreatedAt           pgtype.Timestamptz
-}
-
-func (q *Queries) InsertDurableCacheSpec(ctx context.Context, arg InsertDurableCacheSpecParams) error {
-	_, err := q.db.Exec(ctx, insertDurableCacheSpec,
-		arg.DurableCacheSpecID,
-		arg.CacheDeclarationID,
-		arg.CacheSource,
-		arg.CacheName,
-		arg.PathSetHash,
-		arg.MountPolicyHash,
-		arg.ReconcilePolicy,
-		arg.NormalizedPathsJson,
-		arg.CreatedAt,
-	)
-	return err
 }
 
 const insertDurableGeneration = `-- name: InsertDurableGeneration :one
@@ -475,7 +432,6 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     op.bind_paths_json,
     op.execution_id,
@@ -527,7 +483,6 @@ type ListDurableCacheGenerationsRow struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	CacheSource          string
 	CacheName            string
 	BindPathsJson        []byte
 	ExecutionID          uuid.UUID
@@ -569,7 +524,6 @@ func (q *Queries) ListDurableCacheGenerations(ctx context.Context, arg ListDurab
 			&i.ProviderRepositoryID,
 			&i.RepositoryFullName,
 			&i.ScopeRef,
-			&i.CacheSource,
 			&i.CacheName,
 			&i.BindPathsJson,
 			&i.ExecutionID,
@@ -611,7 +565,6 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id,
@@ -662,7 +615,6 @@ type ListDurableCacheGenerationsForPathPruneRow struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	CacheSource          string
 	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
@@ -703,7 +655,6 @@ func (q *Queries) ListDurableCacheGenerationsForPathPrune(ctx context.Context, a
 			&i.ProviderRepositoryID,
 			&i.RepositoryFullName,
 			&i.ScopeRef,
-			&i.CacheSource,
 			&i.CacheName,
 			&i.ExecutionID,
 			&i.AttemptID,
@@ -728,7 +679,6 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     s.created_at,
     cp.current_generation_id,
@@ -753,7 +703,6 @@ GROUP BY
     s.provider_repository_id,
     r.repository_full_name,
     s.scope_ref,
-    s.cache_source,
     s.cache_name,
     s.created_at,
     cp.current_generation_id
@@ -773,7 +722,6 @@ type ListDurableCachesRow struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	CacheSource          string
 	CacheName            string
 	CreatedAt            pgtype.Timestamptz
 	CurrentGenerationID  *uuid.UUID
@@ -799,7 +747,6 @@ func (q *Queries) ListDurableCaches(ctx context.Context, arg ListDurableCachesPa
 			&i.ProviderRepositoryID,
 			&i.RepositoryFullName,
 			&i.ScopeRef,
-			&i.CacheSource,
 			&i.CacheName,
 			&i.CreatedAt,
 			&i.CurrentGenerationID,
@@ -827,7 +774,6 @@ SELECT
     g.zfs_snapshot_ref,
     g.used_bytes,
     g.written_bytes,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id,
@@ -857,7 +803,6 @@ type ListDurablePromotionCandidatesForRunRow struct {
 	ZfsSnapshotRef      string
 	UsedBytes           int64
 	WrittenBytes        int64
-	CacheSource         string
 	CacheName           string
 	ExecutionID         uuid.UUID
 	AttemptID           uuid.UUID
@@ -881,7 +826,6 @@ func (q *Queries) ListDurablePromotionCandidatesForRun(ctx context.Context, arg 
 			&i.ZfsSnapshotRef,
 			&i.UsedBytes,
 			&i.WrittenBytes,
-			&i.CacheSource,
 			&i.CacheName,
 			&i.ExecutionID,
 			&i.AttemptID,
@@ -911,7 +855,6 @@ SELECT
     s.org_id,
     s.provider,
     s.provider_repository_id,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id
@@ -958,7 +901,6 @@ type ListEvictableDurableGenerationsRow struct {
 	OrgID                string
 	Provider             string
 	ProviderRepositoryID int64
-	CacheSource          string
 	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
@@ -986,7 +928,6 @@ func (q *Queries) ListEvictableDurableGenerations(ctx context.Context, arg ListE
 			&i.OrgID,
 			&i.Provider,
 			&i.ProviderRepositoryID,
-			&i.CacheSource,
 			&i.CacheName,
 			&i.ExecutionID,
 			&i.AttemptID,
@@ -1015,7 +956,6 @@ SELECT
     s.org_id,
     s.provider,
     s.provider_repository_id,
-    s.cache_source,
     s.cache_name,
     op.execution_id,
     op.attempt_id
@@ -1064,7 +1004,6 @@ type ListPrunableDurableGenerationsRow struct {
 	OrgID                string
 	Provider             string
 	ProviderRepositoryID int64
-	CacheSource          string
 	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
@@ -1092,7 +1031,6 @@ func (q *Queries) ListPrunableDurableGenerations(ctx context.Context, arg ListPr
 			&i.OrgID,
 			&i.Provider,
 			&i.ProviderRepositoryID,
-			&i.CacheSource,
 			&i.CacheName,
 			&i.ExecutionID,
 			&i.AttemptID,
@@ -1375,11 +1313,6 @@ RETURNING
     execution_id,
     attempt_id,
     (
-        SELECT s.cache_source
-        FROM durable_scope s
-        WHERE s.durable_scope_id = durable_operation.durable_scope_id
-    ) AS cache_source,
-    (
         SELECT s.cache_name
         FROM durable_scope s
         WHERE s.durable_scope_id = durable_operation.durable_scope_id
@@ -1397,7 +1330,6 @@ type MarkOpenDurableOperationsFailedByAttemptRow struct {
 	DurableScopeID uuid.UUID
 	ExecutionID    uuid.UUID
 	AttemptID      uuid.UUID
-	CacheSource    string
 	CacheName      string
 }
 
@@ -1415,7 +1347,6 @@ func (q *Queries) MarkOpenDurableOperationsFailedByAttempt(ctx context.Context, 
 			&i.DurableScopeID,
 			&i.ExecutionID,
 			&i.AttemptID,
-			&i.CacheSource,
 			&i.CacheName,
 		); err != nil {
 			return nil, err
@@ -1508,76 +1439,16 @@ func (q *Queries) TouchDurableGenerationLastUsed(ctx context.Context, arg TouchD
 	return err
 }
 
-const upsertCacheDeclaration = `-- name: UpsertCacheDeclaration :one
-INSERT INTO cache_declaration (
-    cache_declaration_id, repository_id, source_kind, source_ref, source_sha,
-    source_path, workflow_identity, job_identity, step_identity,
-    declaration_sha256, declaration_hash, normalized_json, parsed_at
-) VALUES (
-    $1, $2, $3,
-    $4, $5, $6,
-    $7, $8, $9,
-    $10, $11, $12::jsonb,
-    $13
-)
-ON CONFLICT (repository_id, declaration_hash, source_kind, source_path, workflow_identity, job_identity, step_identity)
-DO UPDATE SET
-    source_ref = EXCLUDED.source_ref,
-    source_sha = EXCLUDED.source_sha,
-    declaration_sha256 = EXCLUDED.declaration_sha256,
-    normalized_json = EXCLUDED.normalized_json,
-    parsed_at = EXCLUDED.parsed_at
-RETURNING cache_declaration_id
-`
-
-type UpsertCacheDeclarationParams struct {
-	CacheDeclarationID uuid.UUID
-	RepositoryID       int64
-	SourceKind         string
-	SourceRef          string
-	SourceSha          string
-	SourcePath         string
-	WorkflowIdentity   string
-	JobIdentity        string
-	StepIdentity       string
-	DeclarationSha256  string
-	DeclarationHash    string
-	NormalizedJson     []byte
-	ParsedAt           pgtype.Timestamptz
-}
-
-func (q *Queries) UpsertCacheDeclaration(ctx context.Context, arg UpsertCacheDeclarationParams) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, upsertCacheDeclaration,
-		arg.CacheDeclarationID,
-		arg.RepositoryID,
-		arg.SourceKind,
-		arg.SourceRef,
-		arg.SourceSha,
-		arg.SourcePath,
-		arg.WorkflowIdentity,
-		arg.JobIdentity,
-		arg.StepIdentity,
-		arg.DeclarationSha256,
-		arg.DeclarationHash,
-		arg.NormalizedJson,
-		arg.ParsedAt,
-	)
-	var cache_declaration_id uuid.UUID
-	err := row.Scan(&cache_declaration_id)
-	return cache_declaration_id, err
-}
-
 const upsertDurableScope = `-- name: UpsertDurableScope :one
 INSERT INTO durable_scope (
     durable_scope_id, org_id, repository_id, provider, provider_repository_id, scope_kind,
-    scope_ref, job_shape_id, cache_name, cache_source, trust_class, created_at
+    scope_ref, job_shape_id, cache_name, trust_class, created_at
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7,
-    $8, $9, $10,
-    $11, $12
+    $8, $9, $10, $11
 )
-ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, cache_name, cache_source, trust_class)
+ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, cache_name, trust_class)
 DO UPDATE SET created_at = durable_scope.created_at
 RETURNING durable_scope_id
 `
@@ -1592,7 +1463,6 @@ type UpsertDurableScopeParams struct {
 	ScopeRef             string
 	JobShapeID           uuid.UUID
 	CacheName            string
-	CacheSource          string
 	TrustClass           string
 	CreatedAt            pgtype.Timestamptz
 }
@@ -1608,7 +1478,6 @@ func (q *Queries) UpsertDurableScope(ctx context.Context, arg UpsertDurableScope
 		arg.ScopeRef,
 		arg.JobShapeID,
 		arg.CacheName,
-		arg.CacheSource,
 		arg.TrustClass,
 		arg.CreatedAt,
 	)
@@ -1621,7 +1490,7 @@ const upsertJobShape = `-- name: UpsertJobShape :one
 INSERT INTO job_shape (
     job_shape_id, repository_id, provider, workflow_identity, called_workflow_identity,
     job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
-    kernel_image_id, runner_toolchain_image_id, durable_cache_spec_hash, created_at
+    kernel_image_id, runner_toolchain_image_id, cache_spec_hash, created_at
 ) VALUES (
     $1, $2, $3,
     $4, $5,
@@ -1633,7 +1502,7 @@ INSERT INTO job_shape (
 ON CONFLICT (
     repository_id, provider, workflow_identity, called_workflow_identity,
     job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
-    kernel_image_id, runner_toolchain_image_id, durable_cache_spec_hash
+    kernel_image_id, runner_toolchain_image_id, cache_spec_hash
 ) DO UPDATE SET created_at = job_shape.created_at
 RETURNING job_shape_id
 `
@@ -1651,7 +1520,7 @@ type UpsertJobShapeParams struct {
 	PlatformImageID        string
 	KernelImageID          string
 	RunnerToolchainImageID string
-	DurableCacheSpecHash   string
+	CacheSpecHash          string
 	CreatedAt              pgtype.Timestamptz
 }
 
@@ -1669,7 +1538,7 @@ func (q *Queries) UpsertJobShape(ctx context.Context, arg UpsertJobShapeParams) 
 		arg.PlatformImageID,
 		arg.KernelImageID,
 		arg.RunnerToolchainImageID,
-		arg.DurableCacheSpecHash,
+		arg.CacheSpecHash,
 		arg.CreatedAt,
 	)
 	var job_shape_id uuid.UUID

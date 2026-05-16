@@ -9,7 +9,7 @@ vm-bridge control, and guest telemetry.
 Code pointers:
 
 - `internal/jobs/` - River workers, execution attempts, runner provider demand
-  records, runner allocations, durable volume planning, and reconciliation.
+  records, runner allocations, durable cache planning, and reconciliation.
 - `internal/api/` - secured Huma routes for GitHub installations, execution
   history/logs, recurring schedules, and billing views.
 - `migrations/` - PostgreSQL tables for executions, attempts, billing windows,

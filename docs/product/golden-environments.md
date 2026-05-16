@@ -102,7 +102,7 @@ execution.
 Verself differences:
 
 - Cache promotion is scoped by repository, target ref, workflow job identity,
-  runner class, platform image, architecture, and durable cache spec hash.
+  runner class, platform image, architecture, and cache spec hash.
 - Pull requests may read a protected branch's secretless cache generation, but
   PR writes never promote that protected branch pointer.
 - Protected branch promotion is gated by the provider workflow result, not by a
@@ -341,61 +341,26 @@ The schema is a full cutover. The committed schema should contain only the
 current model. Prior development tables and migration compatibility shims are
 removed before merge; git history is the only record of obsolete shapes.
 
-### Cache Declaration
+### Cache Manifest
 
 ```text
-cache_declaration
-  cache_declaration_id
-  repository_id
-  source_kind
-  source_ref
-  source_sha
-  source_path
-  workflow_identity
-  job_identity
-  step_identity
-  declaration_sha256
-  declaration_hash
-  parsed_at
+cache.yml
+  version
+  cache[]
+    name
+    paths[]
 ```
 
-`source_kind` values:
-
-```text
-manifest
-none
-```
-
-`source_ref` and `source_sha` record the last observed source for diagnostics.
-The declaration identity is repository, normalized declaration hash, source
-kind, source path, workflow identity, job identity, and step identity. Runtime
-lineage is keyed later per cache by `job_shape`, `durable_scope.scope_ref`, and
-the durable cache spec hash, so a manifest edit only invalidates caches whose
+The manifest is parsed at job preparation time. Its normalized hash is recorded
+on spans and durable events for diagnostics, but there is no declaration table.
+Lineage is keyed per cache by `job_shape`, `durable_scope.scope_ref`, and the
+cache compatibility hash, so a manifest edit only invalidates caches whose
 compatibility-affecting fields changed.
 
-`declaration_hash` is the canonical hash of the normalized declaration. It
-changes when volume names, paths, or mount policy change.
-
-### Durable Cache Spec
-
-```text
-durable_cache_spec
-  durable_cache_spec_id
-  cache_declaration_id
-  cache_source
-  cache_name
-  path_set_hash
-  mount_policy_hash
-  reconcile_policy
-  normalized_paths_json
-  created_at
-```
-
-`cache_source=platform, cache_name=workspace, reconcile_policy=git_checkout`
-represents `GITHUB_WORKSPACE`. `cache_source=manifest` represents customer
-declared caches and uses `reconcile_policy=none`. The spec is immutable.
-Changing any compatibility-affecting field creates a new spec hash and
-therefore a new cache lineage.
+`workspace` is a reserved built-in cache name for `GITHUB_WORKSPACE`.
+Customer-declared caches use the same storage model and cannot declare that
+name. `workspace` reconciles through git checkout; declared caches have no
+platform reconciliation policy.
 
 ### Job Shape
 
@@ -413,15 +378,14 @@ job_shape
   platform_image_id
   kernel_image_id
   runner_toolchain_image_id
-  durable_cache_spec_hash
+  cache_spec_hash
   created_at
 ```
 
 `job_shape` is the compatibility boundary for generated state. The
-`durable_cache_spec_hash` column stores the cache compatibility hash:
-reconcile policy for `workspace`, and cache name, path set, mount policy, and
-reconcile policy for manifest caches. `guest_arch` is explicit so x86_64 and
-aarch64 never share cache generations.
+`cache_spec_hash` column stores the cache compatibility hash: cache name, mount
+policy, reconcile policy, and visible paths. `guest_arch` is explicit so x86_64
+and aarch64 never share cache generations.
 
 ### Durable Scope
 
@@ -434,16 +398,14 @@ durable_scope
   scope_kind
   scope_ref
   job_shape_id
-  cache_source
   cache_name
   trust_class
   created_at
 ```
 
-`cache_source=platform, cache_name=workspace` is the built-in workspace cache.
-Manifest caches use `cache_source=manifest, cache_name=<declaration cache
-name>`. The source is part of the identity so a customer cannot shadow the
-built-in workspace cache.
+`cache_name=workspace` is the built-in workspace cache. Other cache names come
+from `.verself/cache.yml`. The name is part of the scope identity and
+`workspace` is reserved, so customers cannot shadow the built-in cache.
 
 ### Durable Operation
 
@@ -597,8 +559,7 @@ guest_arch
 platform_image_id
 kernel_image_id
 runner_toolchain_image_id
-durable_cache_spec_hash
-cache_source
+cache_spec_hash
 cache_name
 trust_class
 ```
@@ -606,7 +567,7 @@ trust_class
 Matrix values are canonicalized after GitHub expands the job. Jobs with
 different Node versions, Python versions, CPU architecture, service topology,
 or runner class naturally receive different scopes because their job identity,
-matrix key, runner class, platform image, or durable cache spec hash
+matrix key, runner class, platform image, or cache spec hash
 differs.
 
 ## CPU Architecture
@@ -803,56 +764,56 @@ Canonical event names:
 
 ```text
 durable.declaration.resolve
-durable.volume.prepare
-durable.volume.select
-durable.volume.mount
-durable.volume.bind
-durable.volume.seal
-durable.volume.commit
-durable.volume.promote
-durable.volume.retain
-durable.volume.prune
-durable.volume.reconcile
+durable.cache.prepare
+durable.cache.select
+durable.cache.mount
+durable.cache.bind
+durable.cache.seal
+durable.cache.commit
+durable.cache.promote
+durable.cache.retain
+durable.cache.prune
+durable.cache.reconcile
 ```
 
 Expected durable-cache sequence for a mounted successful protected-branch run:
 
 ```text
 durable.declaration.resolve  declaration  manifest|none  succeeded
-durable.volume.prepare       platform     workspace      succeeded
-durable.volume.select        platform     workspace      hit|miss
-durable.volume.mount         platform     workspace      mounted
-durable.volume.seal          platform     workspace      succeeded
-durable.volume.commit        platform     workspace      succeeded
-durable.volume.promote       platform     workspace      succeeded|already_current|conflicted
-durable.volume.prepare       manifest     <name>         succeeded
-durable.volume.select        manifest     <name>         hit|miss
-durable.volume.mount         manifest     <name>         mounted
-durable.volume.bind          manifest     <name>         mounted
-durable.volume.seal          manifest     <name>         succeeded
-durable.volume.commit        manifest     <name>         succeeded
-durable.volume.promote       manifest     <name>         succeeded|already_current|conflicted
+durable.cache.prepare        workspace    succeeded
+durable.cache.select         workspace    hit|miss
+durable.cache.mount          workspace    mounted
+durable.cache.seal           workspace    succeeded
+durable.cache.commit         workspace    succeeded
+durable.cache.promote        workspace    succeeded|already_current|conflicted
+durable.cache.prepare        <name>       succeeded
+durable.cache.select         <name>       hit|miss
+durable.cache.mount          <name>       mounted
+durable.cache.bind           <name>       mounted
+durable.cache.seal           <name>       succeeded
+durable.cache.commit         <name>       succeeded
+durable.cache.promote        <name>       succeeded|already_current|conflicted
 ```
 
 Mount misses remain visible and non-terminal after declaration acceptance:
 
 ```text
-durable.volume.mount         manifest|platform  <name>         skipped
-durable.volume.bind          manifest           <name>         skipped
-durable.volume.seal          manifest|platform  <name>         skipped
+durable.cache.mount          <name>       skipped
+durable.cache.bind           <name>       skipped
+durable.cache.seal           <name>       skipped
 ```
 
 Failed, cancelled, and lease-expired jobs skip seal and commit:
 
 ```text
-durable.volume.seal          manifest|platform  <name>         skipped
+durable.cache.seal           <name>       skipped
 ```
 
 Successful non-promotable contexts may retain committed generations:
 
 ```text
-durable.volume.commit        manifest|platform  <name>         succeeded
-durable.volume.retain        manifest|platform  <name>         succeeded
+durable.cache.commit         <name>       succeeded
+durable.cache.retain         <name>       succeeded
 ```
 
 Required row fields for debugging and verification:
@@ -861,7 +822,6 @@ Required row fields for debugging and verification:
 event_name
 result
 reason
-cache_source
 cache_name
 mount_name
 source_generation_id

@@ -24,7 +24,6 @@ type DurableCacheRecord struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	Source               string
 	Name                 string
 	CreatedAt            time.Time
 	CurrentGenerationID  *uuid.UUID
@@ -43,7 +42,6 @@ type DurableCacheGenerationRecord struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	Source               string
 	CacheName            string
 	BindPaths            []string
 	ProviderRunID        int64
@@ -90,7 +88,6 @@ func (s *Service) ListDurableCaches(ctx context.Context, orgID string) ([]Durabl
 			ProviderRepositoryID: row.ProviderRepositoryID,
 			RepositoryFullName:   row.RepositoryFullName,
 			ScopeRef:             row.ScopeRef,
-			Source:               row.CacheSource,
 			Name:                 row.CacheName,
 			CreatedAt:            timeFromPG(row.CreatedAt),
 			CurrentGenerationID:  copyUUIDPtr(row.CurrentGenerationID),
@@ -203,7 +200,6 @@ type durableCacheUserPruneCandidate struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	CacheSource          string
 	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
@@ -236,7 +232,6 @@ func durableCachePruneCandidateFromGenerationRow(row store.GetDurableCacheGenera
 		ProviderRepositoryID: row.ProviderRepositoryID,
 		RepositoryFullName:   row.RepositoryFullName,
 		ScopeRef:             row.ScopeRef,
-		CacheSource:          row.CacheSource,
 		CacheName:            row.CacheName,
 		ExecutionID:          row.ExecutionID,
 		AttemptID:            row.AttemptID,
@@ -270,7 +265,6 @@ func durableCachePruneCandidateFromPathRow(row store.ListDurableCacheGenerations
 		ProviderRepositoryID: row.ProviderRepositoryID,
 		RepositoryFullName:   row.RepositoryFullName,
 		ScopeRef:             row.ScopeRef,
-		CacheSource:          row.CacheSource,
 		CacheName:            row.CacheName,
 		ExecutionID:          row.ExecutionID,
 		AttemptID:            row.AttemptID,
@@ -336,7 +330,7 @@ func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate
 	}
 	_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, candidate.DurableGenerationID.String()+":user-prune", candidate.OperationID.String(), candidate.DurableGenerationID.String(), candidate.DurableScopeID.String(), candidate.ZFSSnapshotRef, candidate.OrgID)
 	if err != nil {
-		event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheSource: candidate.CacheSource, CacheName: candidate.CacheName, Name: durableEventPrune, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
+		event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheName: candidate.CacheName, Name: durableEventPrune, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
 		if storageKnown {
 			event = event.withStorageCapacity(storage.Capacity, candidate.OrgID)
 		}
@@ -350,7 +344,7 @@ func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate
 	}); err != nil {
 		return DurableCacheGenerationRecord{}, fmt.Errorf("mark durable cache generation pruned: %w", err)
 	}
-	event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheSource: candidate.CacheSource, CacheName: candidate.CacheName, Name: durableEventPrune, Result: "succeeded", Reason: reason, ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
+	event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheName: candidate.CacheName, Name: durableEventPrune, Result: "succeeded", Reason: reason, ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
 	if storageKnown {
 		event = event.withStorageCapacity(storage.Capacity, candidate.OrgID)
 	}
@@ -364,7 +358,6 @@ func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate
 		ProviderRepositoryID: candidate.ProviderRepositoryID,
 		RepositoryFullName:   candidate.RepositoryFullName,
 		ScopeRef:             candidate.ScopeRef,
-		Source:               candidate.CacheSource,
 		CacheName:            candidate.CacheName,
 		BindPaths:            bindPaths,
 		ProviderRunID:        candidate.ProviderRunID,
@@ -399,7 +392,6 @@ func durableCacheGenerationRecordFromListRow(row store.ListDurableCacheGeneratio
 		ProviderRepositoryID: row.ProviderRepositoryID,
 		RepositoryFullName:   row.RepositoryFullName,
 		ScopeRef:             row.ScopeRef,
-		Source:               row.CacheSource,
 		CacheName:            row.CacheName,
 		BindPaths:            bindPaths,
 		ProviderRunID:        row.ProviderRunID,

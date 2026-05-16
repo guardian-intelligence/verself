@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS verself.durable_events
     operation_id UUID,
     durable_scope_id UUID,
     durable_generation_id UUID,
-    cache_source LowCardinality(String),
     cache_name LowCardinality(String),
     event_name LowCardinality(String),
     result LowCardinality(String),
@@ -30,4 +29,4 @@ CREATE TABLE IF NOT EXISTS verself.durable_events
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(observed_at)
-ORDER BY (event_name, provider, org_id, repository_id, cache_source, observed_at, operation_id);
+ORDER BY (event_name, provider, org_id, repository_id, cache_name, observed_at, operation_id);

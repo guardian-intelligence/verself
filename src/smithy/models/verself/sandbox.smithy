@@ -129,11 +129,6 @@ string CachePath
 @length(min: 1, max: 128)
 string CacheName
 
-enum CacheSource {
-    PLATFORM = "platform"
-    MANIFEST = "manifest"
-}
-
 @pattern("^[0-9a-fA-F-]{36}$")
 string CacheId
 
@@ -759,9 +754,6 @@ structure SandboxCache {
     @required
     name: CacheName
 
-    @required
-    source: CacheSource
-
     current_generation_id: CacheGenerationId
 
     @required
@@ -805,9 +797,6 @@ structure SandboxCacheGeneration {
 
     @required
     cache_name: CacheName
-
-    @required
-    source: CacheSource
 
     @required
     bind_paths: SandboxCachePaths

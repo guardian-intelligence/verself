@@ -98,8 +98,8 @@ type Runner interface {
 	GetExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
-	CommitFilesystemMount(ctx context.Context, leaseID, key, operationID, mountName, volumeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
-	PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, volumeID, snapshotRef, orgID string) (vmorchestrator.FilesystemPruneRecord, error)
+	CommitFilesystemMount(ctx context.Context, leaseID, key, operationID, mountName, scopeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
+	PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, scopeID, snapshotRef, orgID string) (vmorchestrator.FilesystemPruneRecord, error)
 }
 
 type SchedulerRuntime interface {
@@ -579,13 +579,13 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err := s.transition(ctx, item, StateReserved, StateLaunching, "launching", nil); err != nil {
 		return err
 	}
-	durablePlan, err := s.prepareDurableVolumes(ctx, item)
+	durablePlan, err := s.prepareDurableCaches(ctx, item)
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
-		return s.failAttempt(ctx, item, "durable_volume_prepare_failed", err)
+		return s.failAttempt(ctx, item, "durable_cache_prepare_failed", err)
 	}
 	if durablePlan.Enabled {
 		item.FilesystemMounts = append(item.FilesystemMounts, durablePlan.filesystemMounts()...)
@@ -596,7 +596,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
-		s.failDurableVolumes(ctx, durablePlan, "durable_storage_entitlement_failed", err)
+		s.failDurableCaches(ctx, durablePlan, "durable_storage_entitlement_failed", err)
 		return s.failAttempt(ctx, item, "durable_storage_entitlement_failed", err)
 	}
 
@@ -616,7 +616,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
-		s.failDurableVolumes(ctx, durablePlan, "lease_acquire_failed", err)
+		s.failDurableCaches(ctx, durablePlan, "lease_acquire_failed", err)
 		return s.failAttempt(ctx, item, "lease_acquire_failed", err)
 	}
 	item.LeaseID = lease.LeaseID
@@ -636,7 +636,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	durablePlan, err = s.recordDurableLeaseMountResults(ctx, durablePlan, lease.FilesystemMounts)
 	if err != nil {
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
-		s.failDurableVolumes(ctx, durablePlan, "required_durable_mount_failed", err)
+		s.failDurableCaches(ctx, durablePlan, "required_durable_mount_failed", err)
 		return s.failAttempt(ctx, item, "required_durable_mount_failed", err)
 	}
 
@@ -649,7 +649,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	execRecord, err := s.Orchestrator.StartExec(ctx, lease.LeaseID, item.AttemptID.String()+":exec", execSpec)
 	if err != nil {
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
-		s.failDurableVolumes(ctx, durablePlan, "exec_start_failed", err)
+		s.failDurableCaches(ctx, durablePlan, "exec_start_failed", err)
 		return s.failAttempt(ctx, item, "exec_start_failed", err)
 	}
 	item.ExecID = execRecord.ExecID
@@ -658,7 +658,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err != nil {
 		_, _ = s.Orchestrator.CancelExec(detachedContext(ctx), lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":cancel", "billing_activate_failed")
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
-		s.failDurableVolumes(ctx, durablePlan, "billing_activate_failed", err)
+		s.failDurableCaches(ctx, durablePlan, "billing_activate_failed", err)
 		return s.failAttempt(ctx, item, "billing_activate_failed", err)
 	}
 	reservation = activated
@@ -685,10 +685,10 @@ func (s *Service) resumeRunningExecution(ctx context.Context, span trace.Span, i
 	if err != nil {
 		return err
 	}
-	return s.waitForExecutionAndFinalize(ctx, span, item, item.LeaseID, execRecord, reservation, durableVolumePlan{})
+	return s.waitForExecutionAndFinalize(ctx, span, item, item.LeaseID, execRecord, reservation, durableCachePlan{})
 }
 
-func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Span, item executionWorkItem, leaseID string, execRecord vmorchestrator.ExecRecord, reservation billingclient.BillingWindowReservation, durablePlan durableVolumePlan) error {
+func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Span, item executionWorkItem, leaseID string, execRecord vmorchestrator.ExecRecord, reservation billingclient.BillingWindowReservation, durablePlan durableCachePlan) error {
 	renewCtx, stopRenew := context.WithCancel(detachedContext(ctx))
 	defer stopRenew()
 	go s.renewLeaseLoop(renewCtx, leaseID, item.AttemptID.String())
@@ -716,7 +716,7 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 		}
 		terminalCtx := detachedContext(ctx)
 		_, _ = s.Orchestrator.CancelExec(terminalCtx, leaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
-		s.failDurableVolumes(terminalCtx, durablePlan, "exec_wait_failed", waitErr)
+		s.failDurableCaches(terminalCtx, durablePlan, "exec_wait_failed", waitErr)
 		failErr := s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
 		s.cleanupLeaseAndReservation(terminalCtx, leaseID, reservation)
 		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
@@ -737,7 +737,7 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 			s.Logger.WarnContext(ctx, "execution outcome verification failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", outcomeErr)
 		}
 	}
-	durableErr := s.finalizeDurableVolumes(ctx, item, leaseID, durablePlan, outcome.SealDecision)
+	durableErr := s.finalizeDurableCaches(ctx, item, leaseID, durablePlan, outcome.SealDecision)
 	if durableErr != nil {
 		span.RecordError(durableErr)
 		if s.Logger != nil {

@@ -31,9 +31,6 @@ import (
 
 const (
 	durableWorkspaceCacheName        = "workspace"
-	durableCacheSourcePlatform       = "platform"
-	durableCacheSourceManifest       = "manifest"
-	durableDeclarationSource         = "declaration"
 	durableTrustProtectedBranch      = "protected_branch"
 	durablePlatformImage             = "ubuntu-2404-actions-runner"
 	durableGuestArch                 = "x86_64"
@@ -42,7 +39,7 @@ const (
 	durableScopeKindBranch           = "branch"
 	durableCacheManifestPath         = ".verself/cache.yml"
 	durableCacheMountRoot            = "/verself/.mounts"
-	durableMaxVolumesPerJob          = 99
+	durableMaxCachesPerJob           = 99
 	durableRetainedGenerationTTL     = 7 * 24 * time.Hour
 	durablePruneBatchSize            = 32
 	durableEvictionMaxBatches        = 8
@@ -52,29 +49,29 @@ const (
 
 const (
 	durableEventDeclarationResolve = "durable.declaration.resolve"
-	durableEventPrepare            = "durable.volume.prepare"
-	durableEventSelect             = "durable.volume.select"
-	durableEventMount              = "durable.volume.mount"
-	durableEventBind               = "durable.volume.bind"
-	durableEventSeal               = "durable.volume.seal"
-	durableEventCommit             = "durable.volume.commit"
-	durableEventPromote            = "durable.volume.promote"
-	durableEventRetain             = "durable.volume.retain"
-	durableEventPrune              = "durable.volume.prune"
-	durableEventEvict              = "durable.volume.evict"
-	durableEventReconcile          = "durable.volume.reconcile"
+	durableEventPrepare            = "durable.cache.prepare"
+	durableEventSelect             = "durable.cache.select"
+	durableEventMount              = "durable.cache.mount"
+	durableEventBind               = "durable.cache.bind"
+	durableEventSeal               = "durable.cache.seal"
+	durableEventCommit             = "durable.cache.commit"
+	durableEventPromote            = "durable.cache.promote"
+	durableEventRetain             = "durable.cache.retain"
+	durableEventPrune              = "durable.cache.prune"
+	durableEventEvict              = "durable.cache.evict"
+	durableEventReconcile          = "durable.cache.reconcile"
 	durableEventPoolObserve        = "durable.pool.observe"
 )
 
 var ErrCacheDeclarationInvalid = errors.New("sandbox-rental: cache declaration invalid")
 
-type durableVolumePlan struct {
+type durableCachePlan struct {
 	Enabled    bool
 	Identity   RunnerExecutionIdentity
-	Operations []durableVolumeOperation
+	Operations []durableCacheOperation
 }
 
-type durableVolumeOperation struct {
+type durableCacheOperation struct {
 	OperationID           uuid.UUID
 	DurableScopeID        uuid.UUID
 	SourceGenerationID    *uuid.UUID
@@ -84,7 +81,6 @@ type durableVolumeOperation struct {
 	MountPath             string
 	BindPaths             []string
 	TrustClass            string
-	CacheSource           string
 	CacheName             string
 	PromotionEligible     bool
 	Required              bool
@@ -94,7 +90,7 @@ type durableVolumeOperation struct {
 	MountSkipReason       string
 }
 
-func (op durableVolumeOperation) event(executionID, attemptID uuid.UUID, identity RunnerExecutionIdentity, name, result, reason, zfsSnapshotRef string) durableEvent {
+func (op durableCacheOperation) event(executionID, attemptID uuid.UUID, identity RunnerExecutionIdentity, name, result, reason, zfsSnapshotRef string) durableEvent {
 	return durableEvent{
 		OperationID:           &op.OperationID,
 		ScopeID:               &op.DurableScopeID,
@@ -103,7 +99,6 @@ func (op durableVolumeOperation) event(executionID, attemptID uuid.UUID, identit
 		ExecutionID:           &executionID,
 		AttemptID:             &attemptID,
 		Identity:              identity,
-		CacheSource:           op.CacheSource,
 		CacheName:             op.CacheName,
 		Name:                  name,
 		Result:                result,
@@ -145,6 +140,16 @@ type cacheManifestFile struct {
 	Cache   []cacheDecl `yaml:"cache"`
 }
 
+type durableCacheDefinition struct {
+	Name            string
+	VisiblePaths    []string
+	MountName       string
+	MountPath       string
+	BindPaths       []string
+	ReconcilePolicy string
+	Required        bool
+}
+
 type durableEvent struct {
 	OperationID           *uuid.UUID
 	ScopeID               *uuid.UUID
@@ -155,7 +160,6 @@ type durableEvent struct {
 	ExecutionID           *uuid.UUID
 	AttemptID             *uuid.UUID
 	Identity              RunnerExecutionIdentity
-	CacheSource           string
 	CacheName             string
 	Name                  string
 	Result                string
@@ -186,7 +190,6 @@ type durableEventRow struct {
 	OperationID           uuid.UUID `ch:"operation_id"`
 	DurableScopeID        uuid.UUID `ch:"durable_scope_id"`
 	DurableGenerationID   uuid.UUID `ch:"durable_generation_id"`
-	CacheSource           string    `ch:"cache_source"`
 	CacheName             string    `ch:"cache_name"`
 	EventName             string    `ch:"event_name"`
 	Result                string    `ch:"result"`
@@ -208,7 +211,7 @@ type durableEventRow struct {
 	SpanID                string    `ch:"span_id"`
 }
 
-func (p durableVolumePlan) filesystemMounts() []vmorchestrator.FilesystemMount {
+func (p durableCachePlan) filesystemMounts() []vmorchestrator.FilesystemMount {
 	if !p.Enabled {
 		return nil
 	}
@@ -228,9 +231,41 @@ func (p durableVolumePlan) filesystemMounts() []vmorchestrator.FilesystemMount {
 	return mounts
 }
 
-func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkItem) (durableVolumePlan, error) {
+func durableCacheDefinitions(decl cacheDeclaration) []durableCacheDefinition {
+	caches := make([]durableCacheDefinition, 0, len(decl.Caches)+1)
+	caches = append(caches, durableCacheDefinition{
+		Name:            durableWorkspaceCacheName,
+		VisiblePaths:    []string{githubRunnerDurableWorkDir},
+		MountName:       durableWorkspaceCacheName,
+		MountPath:       githubRunnerDurableWorkDir,
+		BindPaths:       nil,
+		ReconcilePolicy: "git_checkout",
+		Required:        true,
+	})
+	for _, cache := range decl.Caches {
+		caches = append(caches, durableCacheDefinition{
+			Name:            cache.Name,
+			VisiblePaths:    append([]string(nil), cache.Paths...),
+			MountName:       "cache-" + sanitizeMountName(cache.Name),
+			MountPath:       path.Join(durableCacheMountRoot, cache.Name),
+			BindPaths:       append([]string(nil), cache.Paths...),
+			ReconcilePolicy: "none",
+			Required:        false,
+		})
+	}
+	return caches
+}
+
+func (cache durableCacheDefinition) specHash(mountPolicyHash string) string {
+	parts := make([]string, 0, len(cache.VisiblePaths)+4)
+	parts = append(parts, "durable-cache", cache.Name, mountPolicyHash, cache.ReconcilePolicy)
+	parts = append(parts, cache.VisiblePaths...)
+	return stableHex(parts...)
+}
+
+func (s *Service) prepareDurableCaches(ctx context.Context, item executionWorkItem) (durableCachePlan, error) {
 	if item.WorkloadKind != WorkloadKindRunner || item.ExternalProvider != RunnerProviderGitHub {
-		return durableVolumePlan{}, nil
+		return durableCachePlan{}, nil
 	}
 	ctx, span := tracer.Start(ctx, durableEventPrepare, trace.WithAttributes(
 		attribute.String("execution.id", item.ExecutionID.String()),
@@ -245,16 +280,16 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return durableVolumePlan{}, err
+		return durableCachePlan{}, err
 	}
 	if identity.Provider != RunnerProviderGitHub {
-		return durableVolumePlan{}, nil
+		return durableCachePlan{}, nil
 	}
 	identity, err = s.hydrateGitHubRunIdentity(ctx, identity)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return durableVolumePlan{}, err
+		return durableCachePlan{}, err
 	}
 
 	decl, err := s.resolveCacheDeclaration(ctx, identity)
@@ -263,97 +298,35 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 			ExecutionID: &item.ExecutionID,
 			AttemptID:   &item.AttemptID,
 			Identity:    identity,
-			CacheSource: durableDeclarationSource,
-			CacheName:   "unknown",
+			CacheName:   "declaration",
 			Name:        durableEventDeclarationResolve,
 			Result:      "failed",
 			Reason:      err.Error(),
 		})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return durableVolumePlan{}, err
+		return durableCachePlan{}, err
 	}
-	if len(decl.Caches)+1 > durableMaxVolumesPerJob {
-		return durableVolumePlan{}, fmt.Errorf("%w: requested %d durable caches, maximum is %d", ErrCacheDeclarationInvalid, len(decl.Caches)+1, durableMaxVolumesPerJob)
+	caches := durableCacheDefinitions(decl)
+	if len(caches) > durableMaxCachesPerJob {
+		return durableCachePlan{}, fmt.Errorf("%w: requested %d durable caches, maximum is %d", ErrCacheDeclarationInvalid, len(caches), durableMaxCachesPerJob)
 	}
 
-	normalizedJSON, declarationHash, err := normalizedDeclarationJSON(decl)
+	declarationHash, err := normalizedDeclarationHash(decl)
 	if err != nil {
-		return durableVolumePlan{}, err
+		return durableCachePlan{}, err
 	}
 	now := time.Now().UTC()
-	declarationID := stableUUID("cache-declaration", strconv.FormatInt(identity.ProviderRepositoryID, 10), declarationHash, decl.SourceKind, decl.SourcePath, decl.WorkflowIdentity, decl.JobIdentity, decl.StepIdentity)
-	declarationSHA := stableHex(string(normalizedJSON))
-	cacheDeclarationID, err := s.storeQueries().UpsertCacheDeclaration(ctx, store.UpsertCacheDeclarationParams{
-		CacheDeclarationID: declarationID,
-		RepositoryID:       identity.ProviderRepositoryID,
-		SourceKind:         decl.SourceKind,
-		SourceRef:          durableScopeRef(identity),
-		SourceSha:          firstNonEmpty(decl.SourceSHA, identity.HeadSHA, identity.RunHeadSHA),
-		SourcePath:         decl.SourcePath,
-		WorkflowIdentity:   decl.WorkflowIdentity,
-		JobIdentity:        decl.JobIdentity,
-		StepIdentity:       decl.StepIdentity,
-		DeclarationSha256:  declarationSHA,
-		DeclarationHash:    declarationHash,
-		NormalizedJson:     normalizedJSON,
-		ParsedAt:           pgTime(now),
-	})
-	if err != nil {
-		return durableVolumePlan{}, fmt.Errorf("upsert cache declaration: %w", err)
-	}
 	_ = s.appendDurableEvent(ctx, durableEvent{
 		ExecutionID: &item.ExecutionID,
 		AttemptID:   &item.AttemptID,
 		Identity:    identity,
-		CacheSource: durableDeclarationSource,
-		CacheName:   decl.SourceKind,
+		CacheName:   "declaration",
 		Name:        durableEventDeclarationResolve,
 		Result:      "succeeded",
 		Reason:      firstNonEmpty(decl.SourcePath, decl.SourceSHA),
 	})
 	mountPolicyHash := stableHex("bind", "noatime", "nodev", "nosuid")
-	workspacePathsJSON, err := json.Marshal([]string{githubRunnerDurableWorkDir})
-	if err != nil {
-		return durableVolumePlan{}, err
-	}
-	workspacePathHash := stableHex("paths", githubRunnerDurableWorkDir)
-	workspaceSpecHash := stableHex("durable-cache", durableCacheSourcePlatform, durableWorkspaceCacheName, workspacePathHash, mountPolicyHash, "git_checkout")
-	if err := s.storeQueries().InsertDurableCacheSpec(ctx, store.InsertDurableCacheSpecParams{
-		DurableCacheSpecID:  stableUUID("durable-cache-spec", cacheDeclarationID.String(), durableCacheSourcePlatform, durableWorkspaceCacheName),
-		CacheDeclarationID:  cacheDeclarationID,
-		CacheSource:         durableCacheSourcePlatform,
-		CacheName:           durableWorkspaceCacheName,
-		PathSetHash:         workspacePathHash,
-		MountPolicyHash:     mountPolicyHash,
-		ReconcilePolicy:     "git_checkout",
-		NormalizedPathsJson: workspacePathsJSON,
-		CreatedAt:           pgTime(now),
-	}); err != nil {
-		return durableVolumePlan{}, fmt.Errorf("insert workspace cache spec: %w", err)
-	}
-	cacheSpecHashes := make(map[string]string, len(decl.Caches))
-	for _, cache := range decl.Caches {
-		pathsJSON, pathHash, err := normalizedPathsJSON(cache.Paths)
-		if err != nil {
-			return durableVolumePlan{}, err
-		}
-		cacheSpecHashes[cache.Name] = stableHex("durable-cache", durableCacheSourceManifest, cache.Name, pathHash, mountPolicyHash, "none")
-		if err := s.storeQueries().InsertDurableCacheSpec(ctx, store.InsertDurableCacheSpecParams{
-			DurableCacheSpecID:  stableUUID("durable-cache-spec", cacheDeclarationID.String(), durableCacheSourceManifest, cache.Name),
-			CacheDeclarationID:  cacheDeclarationID,
-			CacheSource:         durableCacheSourceManifest,
-			CacheName:           cache.Name,
-			PathSetHash:         pathHash,
-			MountPolicyHash:     mountPolicyHash,
-			ReconcilePolicy:     "none",
-			NormalizedPathsJson: pathsJSON,
-			CreatedAt:           pgTime(now),
-		}); err != nil {
-			return durableVolumePlan{}, fmt.Errorf("insert durable cache spec %s: %w", cache.Name, err)
-		}
-	}
-
 	workflowIdentity := firstNonEmpty(identity.WorkflowName, "github-actions")
 	jobIdentity := githubJobIdentity(identity)
 	matrixKey := githubMatrixKey(identity)
@@ -372,7 +345,7 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 			PlatformImageID:        durablePlatformImage,
 			KernelImageID:          "default",
 			RunnerToolchainImageID: durableToolchainImage,
-			DurableCacheSpecHash:   cacheSpecHash,
+			CacheSpecHash:          cacheSpecHash,
 			CreatedAt:              pgTime(now),
 		})
 		if err != nil {
@@ -380,68 +353,44 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 		}
 		return shape, nil
 	}
-	workspaceShape, err := upsertJobShape(workspaceSpecHash)
-	if err != nil {
-		return durableVolumePlan{}, err
-	}
-
 	scopeRef := durableScopeRef(identity)
 	promotionEligible := durablePromotionCandidate(identity)
 	storage, storageKnown, err := s.durableStorageSnapshot(ctx)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return durableVolumePlan{}, err
+		return durableCachePlan{}, err
 	}
 	warmSourceSkipReason := ""
 	if storageKnown && storage.AllocatedPermille >= durablePoolHardWatermarkPermille {
 		warmSourceSkipReason = "zpool_hard_watermark_exceeded"
 	}
-	plan := durableVolumePlan{Enabled: true, Identity: identity}
-	workspace, err := s.insertDurableOperation(ctx, item, identity, durableOperationSpec{
-		JobShapeID:        workspaceShape,
-		ScopeRef:          scopeRef,
-		CacheSource:       durableCacheSourcePlatform,
-		CacheName:         durableWorkspaceCacheName,
-		MountName:         durableWorkspaceCacheName,
-		MountPath:         githubRunnerDurableWorkDir,
-		BindPaths:         nil,
-		TrustClass:        durableTrustProtectedBranch,
-		PromotionEligible: promotionEligible,
-		Required:          true,
-		SourceSkipReason:  warmSourceSkipReason,
-		Now:               now,
-	})
-	if err != nil {
-		return durableVolumePlan{}, err
-	}
-	plan.Operations = append(plan.Operations, workspace)
-	for _, cache := range decl.Caches {
-		cacheShape, err := upsertJobShape(cacheSpecHashes[cache.Name])
+	plan := durableCachePlan{Enabled: true, Identity: identity}
+	for _, cache := range caches {
+		cacheShape, err := upsertJobShape(cache.specHash(mountPolicyHash))
 		if err != nil {
-			return durableVolumePlan{}, err
+			return durableCachePlan{}, err
 		}
 		op, err := s.insertDurableOperation(ctx, item, identity, durableOperationSpec{
 			JobShapeID:        cacheShape,
 			ScopeRef:          scopeRef,
-			CacheSource:       durableCacheSourceManifest,
 			CacheName:         cache.Name,
-			MountName:         "cache-" + sanitizeMountName(cache.Name),
-			MountPath:         path.Join(durableCacheMountRoot, cache.Name),
-			BindPaths:         cache.Paths,
+			MountName:         cache.MountName,
+			MountPath:         cache.MountPath,
+			BindPaths:         cache.BindPaths,
 			TrustClass:        durableTrustProtectedBranch,
 			PromotionEligible: promotionEligible,
-			Required:          false,
+			Required:          cache.Required,
 			SourceSkipReason:  warmSourceSkipReason,
 			Now:               now,
 		})
 		if err != nil {
-			return durableVolumePlan{}, err
+			return durableCachePlan{}, err
 		}
 		plan.Operations = append(plan.Operations, op)
 	}
 	span.SetAttributes(
-		attribute.Int("durable.volume_count", len(plan.Operations)),
+		attribute.Int("durable.cache_count", len(plan.Operations)),
 		attribute.String("durable.declaration_hash", declarationHash),
 		attribute.Bool("durable.promotion_candidate", promotionEligible),
 		attribute.Bool("durable.storage_known", storageKnown),
@@ -467,7 +416,6 @@ func (s *Service) prepareDurableVolumes(ctx context.Context, item executionWorkI
 type durableOperationSpec struct {
 	JobShapeID        uuid.UUID
 	ScopeRef          string
-	CacheSource       string
 	CacheName         string
 	MountName         string
 	MountPath         string
@@ -479,8 +427,8 @@ type durableOperationSpec struct {
 	Now               time.Time
 }
 
-func (s *Service) insertDurableOperation(ctx context.Context, item executionWorkItem, identity RunnerExecutionIdentity, spec durableOperationSpec) (durableVolumeOperation, error) {
-	scopeID := stableUUID("durable-scope", identity.OrgID, identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), spec.ScopeRef, spec.JobShapeID.String(), spec.CacheSource, spec.CacheName, spec.TrustClass)
+func (s *Service) insertDurableOperation(ctx context.Context, item executionWorkItem, identity RunnerExecutionIdentity, spec durableOperationSpec) (durableCacheOperation, error) {
+	scopeID := stableUUID("durable-scope", identity.OrgID, identity.Provider, strconv.FormatInt(identity.ProviderRepositoryID, 10), spec.ScopeRef, spec.JobShapeID.String(), spec.CacheName, spec.TrustClass)
 	scope, err := s.storeQueries().UpsertDurableScope(ctx, store.UpsertDurableScopeParams{
 		DurableScopeID:       scopeID,
 		OrgID:                identity.OrgID,
@@ -491,15 +439,14 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 		ScopeRef:             spec.ScopeRef,
 		JobShapeID:           spec.JobShapeID,
 		CacheName:            spec.CacheName,
-		CacheSource:          spec.CacheSource,
 		TrustClass:           spec.TrustClass,
 		CreatedAt:            pgTime(spec.Now),
 	})
 	if err != nil {
-		return durableVolumeOperation{}, fmt.Errorf("upsert durable scope %s: %w", spec.CacheName, err)
+		return durableCacheOperation{}, fmt.Errorf("upsert durable scope %s: %w", spec.CacheName, err)
 	}
 	if err := s.storeQueries().EnsureDurableCurrentPointer(ctx, store.EnsureDurableCurrentPointerParams{DurableScopeID: scope, PromotedAt: pgTime(spec.Now)}); err != nil {
-		return durableVolumeOperation{}, fmt.Errorf("ensure durable current pointer %s: %w", spec.CacheName, err)
+		return durableCacheOperation{}, fmt.Errorf("ensure durable current pointer %s: %w", spec.CacheName, err)
 	}
 	var sourceGenerationID *uuid.UUID
 	sourceSnapshotRef := ""
@@ -517,11 +464,11 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 			sourceSkipReason = spec.SourceSkipReason
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return durableVolumeOperation{}, fmt.Errorf("select current durable generation %s: %w", spec.CacheName, err)
+		return durableCacheOperation{}, fmt.Errorf("select current durable generation %s: %w", spec.CacheName, err)
 	}
 	bindPathsJSON, err := json.Marshal(spec.BindPaths)
 	if err != nil {
-		return durableVolumeOperation{}, err
+		return durableCacheOperation{}, err
 	}
 	operationID := uuid.New()
 	candidateGenerationID := uuid.New()
@@ -542,9 +489,9 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 		RequestedAt:           pgTime(spec.Now),
 	})
 	if err != nil {
-		return durableVolumeOperation{}, fmt.Errorf("insert durable operation %s: %w", spec.CacheName, err)
+		return durableCacheOperation{}, fmt.Errorf("insert durable operation %s: %w", spec.CacheName, err)
 	}
-	return durableVolumeOperation{
+	return durableCacheOperation{
 		OperationID:           op.OperationID,
 		DurableScopeID:        op.DurableScopeID,
 		SourceGenerationID:    op.SourceGenerationID,
@@ -554,7 +501,6 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 		MountPath:             op.InternalMountPath,
 		BindPaths:             append([]string(nil), spec.BindPaths...),
 		TrustClass:            op.TrustClass,
-		CacheSource:           spec.CacheSource,
 		CacheName:             spec.CacheName,
 		PromotionEligible:     spec.PromotionEligible,
 		Required:              spec.Required,
@@ -562,7 +508,7 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 	}, nil
 }
 
-func (s *Service) recordDurableLeaseMountResults(ctx context.Context, plan durableVolumePlan, results []vmorchestrator.FilesystemMountResult) (durableVolumePlan, error) {
+func (s *Service) recordDurableLeaseMountResults(ctx context.Context, plan durableCachePlan, results []vmorchestrator.FilesystemMountResult) (durableCachePlan, error) {
 	if !plan.Enabled {
 		return plan, nil
 	}
@@ -630,7 +576,7 @@ func (s *Service) recordDurableLeaseMountResults(ctx context.Context, plan durab
 	return plan, nil
 }
 
-func (s *Service) failDurableVolumes(ctx context.Context, plan durableVolumePlan, reason string, cause error) {
+func (s *Service) failDurableCaches(ctx context.Context, plan durableCachePlan, reason string, cause error) {
 	if !plan.Enabled {
 		return
 	}
@@ -654,17 +600,17 @@ func (s *Service) failOpenDurableOperationsForAttempt(ctx context.Context, item 
 		return
 	}
 	for _, row := range rows {
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, CacheSource: row.CacheSource, CacheName: row.CacheName, Name: durableEventReconcile, Result: "failed", Reason: failureReason})
+		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, CacheName: row.CacheName, Name: durableEventReconcile, Result: "failed", Reason: failureReason})
 	}
 }
 
-func (s *Service) finalizeDurableVolumes(ctx context.Context, item executionWorkItem, leaseID string, plan durableVolumePlan, sealDecision durableSealDecision) error {
+func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkItem, leaseID string, plan durableCachePlan, sealDecision durableSealDecision) error {
 	if !plan.Enabled {
 		return nil
 	}
 	ctx, span := tracer.Start(ctx, durableEventSeal, trace.WithAttributes(
 		attribute.String("lease.id", leaseID),
-		attribute.Int("durable.volume_count", len(plan.Operations)),
+		attribute.Int("durable.cache_count", len(plan.Operations)),
 	))
 	defer span.End()
 	var errs []error
@@ -848,7 +794,7 @@ func (event durableEvent) withStorageCapacity(capacity vmorchestrator.Capacity, 
 	return event
 }
 
-func durableCommitFailureEvents(op durableVolumeOperation, executionID, attemptID uuid.UUID, identity RunnerExecutionIdentity, cause error) []durableEvent {
+func durableCommitFailureEvents(op durableCacheOperation, executionID, attemptID uuid.UUID, identity RunnerExecutionIdentity, cause error) []durableEvent {
 	reason := durableFailureReason("commit_failed", cause)
 	if durableCommitFailureReachedGuestSeal(cause) {
 		sealEvent := op.event(executionID, attemptID, identity, durableEventSeal, "succeeded", "", "")
@@ -887,14 +833,14 @@ func durableCommitFailureBeforeGuestSeal(cause error) bool {
 		strings.Contains(reason, "guest control is not available")
 }
 
-func durableGenerationInitialState(op durableVolumeOperation) string {
+func durableGenerationInitialState(op durableCacheOperation) string {
 	if op.PromotionEligible {
 		return "committed"
 	}
 	return "retained"
 }
 
-func durableGenerationExpiresAt(op durableVolumeOperation, now time.Time) time.Time {
+func durableGenerationExpiresAt(op durableCacheOperation, now time.Time) time.Time {
 	if op.PromotionEligible {
 		return time.Time{}
 	}
@@ -1007,7 +953,6 @@ type durablePruneCandidate struct {
 	OrgID                string
 	Provider             string
 	ProviderRepositoryID int64
-	CacheSource          string
 	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
@@ -1029,7 +974,6 @@ func prunableDurablePruneCandidates(rows []store.ListPrunableDurableGenerationsR
 			OrgID:                row.OrgID,
 			Provider:             row.Provider,
 			ProviderRepositoryID: row.ProviderRepositoryID,
-			CacheSource:          row.CacheSource,
 			CacheName:            row.CacheName,
 			ExecutionID:          row.ExecutionID,
 			AttemptID:            row.AttemptID,
@@ -1054,7 +998,6 @@ func evictableDurablePruneCandidates(rows []store.ListEvictableDurableGeneration
 			OrgID:                row.OrgID,
 			Provider:             row.Provider,
 			ProviderRepositoryID: row.ProviderRepositoryID,
-			CacheSource:          row.CacheSource,
 			CacheName:            row.CacheName,
 			ExecutionID:          row.ExecutionID,
 			AttemptID:            row.AttemptID,
@@ -1089,7 +1032,7 @@ func (s *Service) pruneDurableGenerationCandidates(ctx context.Context, now time
 		}
 		_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, row.DurableGenerationID.String()+":prune", row.OperationID.String(), row.DurableGenerationID.String(), row.DurableScopeID.String(), row.ZFSSnapshotRef, row.OrgID)
 		if err != nil {
-			event := durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, CacheSource: row.CacheSource, CacheName: row.CacheName, Name: eventName, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: row.ZFSSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")}
+			event := durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, CacheName: row.CacheName, Name: eventName, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: row.ZFSSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")}
 			_ = s.appendDurableEvent(ctx, event.withStorageCapacity(storage.Capacity, row.OrgID))
 			errs = append(errs, fmt.Errorf("prune durable generation %s: %w", row.DurableGenerationID, err))
 			continue
@@ -1098,7 +1041,7 @@ func (s *Service) pruneDurableGenerationCandidates(ctx context.Context, now time
 			errs = append(errs, fmt.Errorf("mark durable generation pruned %s: %w", row.DurableGenerationID, err))
 			continue
 		}
-		event := durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, CacheSource: row.CacheSource, CacheName: row.CacheName, Name: eventName, Result: "succeeded", Reason: reason, ZFSSnapshotRef: row.ZFSSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")}
+		event := durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, CacheName: row.CacheName, Name: eventName, Result: "succeeded", Reason: reason, ZFSSnapshotRef: row.ZFSSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")}
 		_ = s.appendDurableEvent(ctx, event.withStorageCapacity(storage.Capacity, row.OrgID))
 		pruned++
 	}
@@ -1217,7 +1160,7 @@ func (s *Service) promoteDurableCandidate(ctx context.Context, candidate store.L
 		attribute.String("durable.current_generation_id", currentGenerationID.String()),
 	)
 	identity := RunnerExecutionIdentity{OrgID: ref.OrgID, Provider: ref.Provider, ProviderRepositoryID: ref.ProviderRepositoryID, ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, ProviderJobID: candidate.ProviderJobID, RepositoryFullName: ref.RepositoryFullName}
-	_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, SourceGenerationID: candidate.SourceGenerationID, CurrentGenerationID: &currentGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheSource: candidate.CacheSource, CacheName: candidate.CacheName, Name: durableEventPromote, Result: result, ZFSSnapshotRef: candidate.ZfsSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")})
+	_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, SourceGenerationID: candidate.SourceGenerationID, CurrentGenerationID: &currentGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheName: candidate.CacheName, Name: durableEventPromote, Result: result, ZFSSnapshotRef: candidate.ZfsSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")})
 	return promoted, nil
 }
 
@@ -1400,24 +1343,16 @@ func normalizeCachePath(raw string) (string, error) {
 	return clean, nil
 }
 
-func normalizedDeclarationJSON(decl cacheDeclaration) ([]byte, string, error) {
+func normalizedDeclarationHash(decl cacheDeclaration) (string, error) {
 	copyDecl := decl
 	if copyDecl.Caches == nil {
 		copyDecl.Caches = []cacheDecl{}
 	}
 	payload, err := json.Marshal(copyDecl)
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
-	return payload, stableHex(string(payload)), nil
-}
-
-func normalizedPathsJSON(paths []string) ([]byte, string, error) {
-	payload, err := json.Marshal(paths)
-	if err != nil {
-		return nil, "", err
-	}
-	return payload, stableHex(string(payload)), nil
+	return stableHex(string(payload)), nil
 }
 
 func (r *GitHubRunner) fetchRepositoryFile(ctx context.Context, identity RunnerExecutionIdentity, filePath, ref string) ([]byte, bool, error) {
@@ -1552,7 +1487,6 @@ func (s *Service) appendDurableEvent(ctx context.Context, event durableEvent) er
 		attribute.String("durable.event_name", event.Name),
 		attribute.String("durable.result", event.Result),
 		attribute.String("durable.reason", event.Reason),
-		attribute.String("durable.cache_source", event.CacheSource),
 		attribute.String("durable.cache_name", event.CacheName),
 		attribute.String("durable.mount_name", event.MountName),
 		attribute.String("durable.operation_id", uuidValue(event.OperationID).String()),
@@ -1589,7 +1523,6 @@ func (s *Service) appendDurableEvent(ctx context.Context, event durableEvent) er
 		OperationID:           uuidValue(event.OperationID),
 		DurableScopeID:        uuidValue(event.ScopeID),
 		DurableGenerationID:   uuidValue(event.GenerationID),
-		CacheSource:           event.CacheSource,
 		CacheName:             event.CacheName,
 		EventName:             event.Name,
 		Result:                event.Result,
@@ -1636,7 +1569,6 @@ func (s *Service) recordDurableEventInsertFailure(ctx context.Context, event dur
 	s.Logger.WarnContext(ctx, "durable event insert failed",
 		"event_name", event.Name,
 		"result", event.Result,
-		"cache_source", event.CacheSource,
 		"cache_name", event.CacheName,
 		"mount_name", event.MountName,
 		"operation_id", uuidValue(event.OperationID),
