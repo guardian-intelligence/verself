@@ -30,6 +30,21 @@
           Create the site-scoped tfvars before running provisioning.
       when: not tfvars_stat.stat.exists
 
+    - name: Read provisioning.tfvars.json
+      ansible.builtin.slurp:
+        src: "{{ provisioning_site_dir }}/provisioning.tfvars.json"
+      register: tfvars_content
+
+    - name: Resolve provisioning inputs
+      ansible.builtin.set_fact:
+        provisioning_tfvars: "{{ tfvars_content.content | b64decode | from_json }}"
+        provisioning_r2_backups_enabled: >-
+          {{
+            (tfvars_content.content | b64decode | from_json).r2_backups_enabled
+            | default(false)
+            | bool
+          }}
+
     - name: Extract Latitude.sh auth token from SOPS
       ansible.builtin.command:
         argv:
@@ -42,6 +57,19 @@
       changed_when: false
       no_log: true
 
+    - name: Extract Cloudflare API token from SOPS
+      ansible.builtin.command:
+        argv:
+          - "{{ sops_binary_path }}"
+          - -d
+          - --extract
+          - '["cloudflare_api_token"]'
+          - "{{ sops_secrets_file }}"
+      register: cloudflare_token
+      changed_when: false
+      no_log: true
+      when: provisioning_r2_backups_enabled | bool
+
     - name: Apply OpenTofu configuration
       community.general.terraform:
         project_path: "{{ terraform_project_path }}"
@@ -52,6 +80,7 @@
           - "{{ provisioning_site_dir }}/provisioning.tfvars.json"
       environment:
         LATITUDESH_AUTH_TOKEN: "{{ latitudesh_token.stdout }}"
+        CLOUDFLARE_API_TOKEN: "{{ cloudflare_token.stdout | default('') }}"
 
     - name: Read worker IPs from OpenTofu outputs
       ansible.builtin.command:
@@ -97,14 +126,9 @@
         msg: "No IPs found in OpenTofu outputs. Is infrastructure provisioned?"
       when: worker_ips | length == 0 and infra_ips | length == 0
 
-    - name: Read provisioning.tfvars.json
-      ansible.builtin.slurp:
-        src: "{{ provisioning_site_dir }}/provisioning.tfvars.json"
-      register: tfvars_content
-
     - name: Resolve inventory cluster name
       ansible.builtin.set_fact:
-        inventory_cluster_name: "{{ (tfvars_content.content | b64decode | from_json).cluster_name | default('dev') }}"
+        inventory_cluster_name: "{{ provisioning_tfvars.cluster_name | default('dev') }}"
 
     - name: Ensure generated inventory directory exists
       ansible.builtin.file:

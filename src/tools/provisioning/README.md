@@ -11,8 +11,14 @@ Optional Cloudflare R2 backup infrastructure is also provisioned here when the
 site tfvars set `r2_backups_enabled = true`. The Cloudflare provider reads
 `CLOUDFLARE_API_TOKEN` from `src/host/sites/<site>/secrets/provisioning.sops.yml`
 key `cloudflare_api_token`, with a controller environment variable fallback.
-OpenTofu creates scoped R2 runtime and restore tokens, so the local OpenTofu
-state is Tier 0 secret material.
+OpenTofu provisions the recovery bucket and bucket lock only. Runtime and
+restore credentials are owned by `object-storage-service` and the offline
+recovery procedure so that OpenTofu state does not contain live R2 object
+credentials.
+
+`aspect provision destroy` tears down bare-metal resources only. Recovery
+storage has Terraform `prevent_destroy` enabled and must be retired by a
+separate recovery-data decommissioning procedure.
 
 Use the explicit command surface:
 

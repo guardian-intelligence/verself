@@ -42,6 +42,12 @@
         binary_path: "{{ tofu_binary_path }}"
         variables_files:
           - "{{ provisioning_site_dir }}/provisioning.tfvars.json"
+        # Recovery storage is intentionally not part of bare-metal teardown.
+        targets:
+          - latitudesh_server.worker
+          - latitudesh_server.infra
+          - latitudesh_ssh_key.verself
+          - latitudesh_user_data.verself
       environment:
         LATITUDESH_AUTH_TOKEN: "{{ latitudesh_token.stdout }}"
 

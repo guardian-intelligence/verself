@@ -5,5 +5,9 @@ terraform {
       source  = "latitudesh/latitudesh"
       version = "~> 2.5"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.19"
+    }
   }
 }
