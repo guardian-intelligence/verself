@@ -6,8 +6,9 @@ import type { SVGProps } from "react";
 export function GitCommitGlyph(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
-      <rect x="8" y="110" width="240" height="36" rx="18" />
-      <circle cx="128" cy="128" r="56" />
+      <rect x="6" y="110" width="74" height="36" rx="18" />
+      <rect x="176" y="110" width="74" height="36" rx="18" />
+      <circle cx="128" cy="128" r="62" />
     </svg>
   );
 }

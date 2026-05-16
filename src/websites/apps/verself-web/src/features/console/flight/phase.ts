@@ -125,10 +125,11 @@ export function monotone(prevMax: number, candidate: number): number {
   return candidate > prevMax ? candidate : prevMax;
 }
 
-// Minute resolution, as specified: "<1 min" floor, ">60 min" ceiling.
+// Minute resolution, compact `Nm` per the brief ("Building in 55m"):
+// "<1m" floor, ">60m" ceiling.
 export function formatRemaining(ms: number): string {
-  if (ms < 60_000) return "<1 min";
+  if (ms < 60_000) return "<1m";
   const minutes = Math.round(ms / 60_000);
-  if (minutes > 60) return ">60 min";
-  return `${minutes} min`;
+  if (minutes > 60) return ">60m";
+  return `${minutes}m`;
 }

@@ -153,15 +153,15 @@ function FlightRoute({
   readonly phaseKind: PhaseKind;
 }) {
   return (
-    <div className="flex flex-1 items-center py-5">
-      <div className="flex w-full items-center gap-3 sm:gap-4">
+    <div className="flex flex-1 items-center py-4">
+      <div className="flex w-full items-center gap-2 sm:gap-3">
         <Terminal label={source} />
         <Endpoint accent={accent}>
-          <ArrowUpRight className="size-[1.15rem]" strokeWidth={2.75} />
+          <ArrowUpRight className="size-[1.05rem]" strokeWidth={2.75} />
         </Endpoint>
         <FlightArc progress={progress} accent={accent} phaseKind={phaseKind} />
         <Endpoint accent={accent}>
-          <ArrowDownRight className="size-[1.15rem]" strokeWidth={2.75} />
+          <ArrowDownRight className="size-[1.05rem]" strokeWidth={2.75} />
         </Endpoint>
         <Terminal label={dest} />
       </div>
@@ -169,9 +169,15 @@ function FlightRoute({
   );
 }
 
+// Terminals are bold but must not starve the arc: capped size + no-wrap +
+// shrink-0 so the arc keeps the dominant central span (the Flighty
+// proportion), matching the reference at the 598px width and narrower.
 function Terminal({ label }: { readonly label: string }) {
   return (
-    <span className="text-5xl font-extrabold tracking-tight sm:text-6xl" style={{ color: INK }}>
+    <span
+      className="shrink-0 whitespace-nowrap text-[clamp(1.75rem,7.5vw,3rem)] font-extrabold tracking-tight"
+      style={{ color: INK }}
+    >
       {label}
     </span>
   );

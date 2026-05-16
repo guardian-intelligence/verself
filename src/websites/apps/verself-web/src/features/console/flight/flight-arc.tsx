@@ -60,7 +60,7 @@ export function FlightArc({
   return (
     <div
       ref={hostRef}
-      className="relative flex h-12 min-w-0 flex-1 items-center"
+      className="relative flex h-14 min-w-[5rem] flex-[1_1_40%] items-center"
       aria-hidden="true"
       data-phase={phaseKind}
     >
