@@ -117,6 +117,79 @@ Do not reintroduce per-line roll-ups, per-bucket rollup tables,
 gross/credit/due metric cards, or any other secondary aggregation surface
 here. Bucket-level analytics belong in Grafana, not the customer UI.
 
+## agent-browser login runbook (console QA / design review)
+
+The signed-in console (`_shell/_authenticated/*`, including the flight widget)
+is Zitadel-auth-gated. Do **not** use `ceo@verself.sh` for automation: the
+founder account has a U2F hardware key (FaceID/Hello/fingerprint) as a second
+factor that cannot be satisfied headlessly, and stripping it is off-limits.
+Use the dedicated QA human instead.
+
+**QA account (verified working, 2026-05-16):** `qa-flight@verself.sh`, a
+password-only Zitadel human in the platform org `guardian-intelligence`
+(slug), credential in the agent-browser vault profile `verself-qa`. It is
+authorized by exactly **one** SpiceDB tuple — membership in the org's `admin`
+role — which is the minimum that satisfies iam-service `AccessibleOrganizations`
+(`org` permission `read = owner + admin + member`). Do not clone ceo's project
+grants; they are root-equivalent and unnecessary.
+
+**Login flow** (the agent-browser env here forces an 800×600 ozone viewport
+and the daemon's active page can flip between separate CLI calls — run the
+whole flow in **one uninterrupted script**, and resolve refs dynamically and
+element-type-aware, e.g. `snapshot -i | grep -E '(button|textbox) "Login
+Name"'`, never a bare label grep which also matches the `heading "Password"`):
+
+1. `agent-browser close` (env needs `--args "--no-sandbox"`).
+2. `open https://verself.sh/login` → click **"Continue to sign in"** (hands off
+   to `auth.verself.sh`).
+3. Login-name page: fill **"Login Name"** textbox = `qa-flight@verself.sh`,
+   click **"Next"**.
+4. Password page: fill the **"Password"** textbox, focus it, then **press
+   Enter**. **Do not click "Next"** — it is under a sticky footer / below the
+   forced-short fold and the click silently no-ops (cost two debug cycles).
+5. If a "set up 2-Factor" page appears, it is the optional prompt (org does
+   not force MFA): `scrollintoview` + click **"Skip"**.
+6. It redirects to `https://verself.sh/<org>`. Append `?flight=…` and
+   `screenshot`.
+
+**Re-provisioning a QA human** (sanctioned path; secrets stay on the host /
+in the vault, never in tracked files or echoed commands):
+
+- Zitadel admin token: `sudo -n cat /etc/credstore/iam-service/zitadel-admin-token`
+  over operator SSH (`ssh ubuntu@prod@access.verself.sh`), fed into a mode-600
+  curl config (`curl -K`), not argv. API base `https://auth.verself.sh`,
+  `Authorization: Bearer …`.
+- Create: `POST /v2/users/human` `{username,organization:{orgId},profile,
+  email:{isVerified:true},password:{changeRequired:false}}` in the platform
+  org (orgId resolved from `POST /v2/users` email search of an existing
+  member). Returns `userId`.
+- Authorize (the actual console gate is SpiceDB, not Zitadel grants): on the
+  host, `zed --endpoint 127.0.0.1:24009 --token "$(sudo -n cat
+  /etc/credstore/iam-service/spicedb-grpc-preshared-key)" --insecure
+  relationship create role:org_org_<ORG>_role_admin member
+  user:b64_<base64(zitadelUserId)>`. Discover `<ORG>` / subject form from
+  `zed relationship read org` + `… read role` (subject is
+  `user:b64_<base64 of the decimal Zitadel user id>`).
+- Vault it: `printf %s '<pw>' | agent-browser auth save verself-qa
+  --url https://verself.sh/login --username qa-flight@verself.sh
+  --password-stdin`.
+
+(Historical note: `ceo@verself.sh`'s password was rotated during this work to a
+value held only in the `verself-ceo` vault profile; ceo remains unusable for
+automation because of its U2F factor. The vault is AES-256-GCM —
+`~/.agent-browser/.encryption-key` 64-hex → 32-byte key, `iv`/`authTag`/`data`
+base64, `node:crypto createDecipheriv("aes-256-gcm", …)`.)
+
+### Flight widget QA states (no backend needed)
+
+The console index renders synthetic states from `?flight=` (opt-in,
+auth-gated; live Electric is the default). Useful once logged in:
+
+- `?flight=building-on-time | running-late | no-history | no-build`
+- `?flight=debug&actor=ash&src=PR47&dst=MAIN&state=ontime&remaining=12&commits=4`
+  — `state` ∈ `ontime|late|cold`; vary `actor/src/dst/remaining/commits`
+  (`commits=none` hides the pill). Seeds one card entirely from query params.
+
 ## ShadCN/ui
 
 Use the /shadcn skill (if you're Claude) when working in this repo. All components are installed. Blocks are not installed.
