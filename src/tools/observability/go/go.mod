@@ -4,6 +4,7 @@ go 1.25.8
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
+	github.com/bazelbuild/rules_go v0.60.0
 	github.com/verself/operator-runtime v0.0.0
 	github.com/verself/service-runtime v0.0.0
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0
