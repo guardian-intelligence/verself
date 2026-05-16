@@ -30,6 +30,15 @@ Provider reference points:
 - Paddle subscription updates require an explicit `proration_billing_mode` when replacing subscription items: <https://developer.paddle.com/build/subscriptions/replace-products-prices-upgrade-downgrade>.
 - Recurly and Chargebee expose proration and timing as subscription-change policy knobs rather than one universal behavior: <https://docs.recurly.com/recurly-subscriptions/docs/change-subscription> and <https://www.chargebee.com/docs/billing/2.0/subscriptions/proration>.
 
+Recovery reference points:
+
+- Verself data handling and recovery contract: `docs/architecture/data-handling.md`.
+- PostgreSQL continuous archiving and point-in-time recovery: <https://www.postgresql.org/docs/current/continuous-archiving.html>.
+- pgBackRest backup, archive, retention, and encryption behavior: <https://pgbackrest.org/user-guide.html> and <https://pgbackrest.org/configuration.html>.
+- OpenBao Transit for online wrapping of recovery secret material: <https://openbao.org/docs/secrets/transit/>.
+- Cloudflare R2 bucket locks for backup immutability: <https://developers.cloudflare.com/r2/buckets/bucket-locks/>.
+- TigerBeetle cluster and recovery posture: <https://docs.tigerbeetle.com/operating/cluster/> and <https://docs.tigerbeetle.com/operating/recovering/>.
+
 Verself follows the industry-standard price-side shape: immediate upgrades can charge the prorated positive price delta now; downgrades default to the next renewal unless explicitly overridden. Verself must additionally define entitlement-side proration because Stripe, Paddle, Recurly, and Chargebee do not model our credit-bucket grant semantics.
 
 ## Non-negotiable invariants
@@ -73,6 +82,142 @@ Verself follows the industry-standard price-side shape: immediate upgrades can c
 | ClickHouse | Append-only usage evidence plus billing event, metering, document, adjustment, and provider-event projections used for document preview, statements, dashboards, verification, and reconciliation. |
 | Stripe | SetupIntents, PaymentMethods, Customer Portal, one-off invoice collection, payment intents, refunds, disputes, optional Stripe Tax, and hosted payment artifacts. Stripe Subscriptions are not part of the target domain model. |
 | Mailbox service | Transactional delivery of Verself document emails from the stored billing document artifact. Stripe invoice emailing is disabled in the target Verself canonical-document path. |
+
+## Recovery posture
+
+Billing recovery has three state planes:
+
+| Plane | Recovery role |
+|---|---|
+| PostgreSQL `billing` database | First implemented backup target. It owns billing domain state, schedule-defining timestamps, durable side-effect envelopes, immutable billing events, projection queues, and currently stored billing document artifacts. |
+| TigerBeetle ledger | Financial balance and transfer truth. PostgreSQL recovery alone is not sufficient for billing recovery after TigerBeetle has accepted transfers. |
+| ClickHouse billing projections | Append-only evidence and read models. ClickHouse rows prove and present billing activity but must not become authorization, document-issuance, or ledger truth. |
+
+The first recovery milestone covers PostgreSQL PITR for the `billing` database.
+The target recovery story evolves to cover all billing-related truth:
+PostgreSQL, TigerBeetle, billing ClickHouse evidence, and long-retention billing
+document artifacts where they outgrow PostgreSQL storage.
+
+### PostgreSQL backup mechanics
+
+Billing PostgreSQL is protected by the site PostgreSQL physical recovery unit:
+
+```text
+postgres.primary
+  mechanism: pgBackRest PITR
+  repository: pgbackrest-prod
+  initial cadence: continuous WAL archive plus daily full backup
+  rpo: 5m
+  rto: 1h
+  product retention: 35d
+  backup immutability: 35d
+
+postgres.billing
+  protected_by: postgres.primary
+  class: financial_truth
+```
+
+The RPO is measured by WAL archive lag, not by the age of the latest full
+backup. The RTO is the time to restore the selected base backup, replay WAL to
+the requested recovery target, start a quarantine PostgreSQL instance, and run
+billing validation.
+
+The initial cadence uses daily full backups because the billing database is
+small. Differential or incremental backups can be added when restore time,
+repository size, or WAL replay time justifies the extra policy surface. The
+restore contract is PITR either way.
+
+pgBackRest owns backup consistency, base backup metadata, WAL archiving,
+retention expiration, and repository verification. Billing-service consumes
+pgBackRest status through the internal status endpoint; it does not implement a
+separate PostgreSQL backup engine.
+
+### Backup encryption and manifests
+
+pgBackRest repository encryption is the first encryption boundary for billing
+PostgreSQL backups. The repository cipher passphrase is generated as high
+entropy secret material and is not stored in the repository, manifests, logs,
+ClickHouse, or service configuration.
+
+The repository cipher passphrase has two recovery paths:
+
+- an online OpenBao Transit-wrapped secret for normal backup operation and
+  restore drills;
+- an offline recovery bundle that can be decrypted with operator recovery
+  material on a blank host.
+
+Each backup attempt writes a signed manifest to recovery object storage. The
+manifest records source id, protected recovery unit, pgBackRest stanza, backup
+label, WAL range, `pgbackrest info` digest, validation result, retention class,
+manifest signer, and trace id. The manifest contains no cipher passphrase,
+database URL, provider credential, Stripe secret, or native command output that
+could expose secrets.
+
+Recovery object storage is treated as untrusted for confidentiality. An
+attacker with object-store read access should see encrypted pgBackRest
+repository bytes and signed manifests only. Delete and retention-shortening
+authority is separate from routine backup-write authority, and protected
+billing backups use provider immutability for the declared window.
+
+### Billing internal status
+
+Billing-service exposes recovery posture through its internal status endpoint.
+The status endpoint reports:
+
+- `postgres.billing` coverage through `postgres.primary`;
+- latest successful pgBackRest backup label;
+- latest archived WAL timestamp or LSN when available;
+- current WAL archive lag;
+- latest signed manifest ref;
+- latest pgBackRest check result;
+- retention and immutability policy;
+- TigerBeetle recovery status as `unimplemented` until the ledger recovery
+  mechanism is declared;
+- ClickHouse billing evidence status as `unimplemented` until billing evidence
+  export is declared.
+
+The status endpoint reports posture only. It does not execute backups, mutate
+retention policy, issue restore credentials, or decide billing correctness.
+
+### Restore validation
+
+The first drill restores `postgres.primary` to a quarantine PostgreSQL instance
+at a selected timestamp, then validates the `billing` database without touching
+production. Validation checks:
+
+- schema migration version and service boot compatibility;
+- `billing_events` continuity;
+- pending and terminal `billing_event_delivery_queue` state;
+- `billing_ledger_commands` command-state distribution;
+- immutable `billing_documents` rows, document hashes, and issued document
+  numbering;
+- no open critical `billing_ledger_drift_events`;
+- read-only billing reconciliation against any available TigerBeetle and
+  ClickHouse evidence.
+
+A PostgreSQL-only restore drill is not a full billing system restore. It proves
+that the billing domain database is recoverable and that its restored state can
+participate in later ledger and evidence reconciliation.
+
+### Evolution to full billing recovery
+
+Full billing recovery must add TigerBeetle and ClickHouse coverage before
+billing is considered fully disaster-recoverable:
+
+- TigerBeetle recovery uses the database's replica/recovery model. The
+  preferred production posture is enough replicas to make single-node loss a
+  cluster repair event rather than a backup restore event.
+- PostgreSQL `billing_ledger_commands` and TigerBeetle account/transfer facts
+  must reconcile after restore. A PostgreSQL PITR target that predates accepted
+  TigerBeetle transfers requires operator reconciliation, not silent rollback
+  of ledger truth.
+- Billing ClickHouse rows are rebuilt from `billing_events` and projection
+  queues when possible. Rows that become independent governance evidence must
+  receive their own recovery declaration and retention policy.
+- Immutable issued billing document artifacts remain covered by PostgreSQL
+  while they are stored in `billing_documents`. If document bodies move to
+  object storage or require longer retention than operational PITR, they become
+  a separate `billing.documents` recovery source with long product retention.
 
 ## Design commitments and reversible choices
 

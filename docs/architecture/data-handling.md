@@ -1,570 +1,651 @@
 # Data Handling And Recovery Architecture
 
-Data handling is the repo-owned contract for durable state. Each service or
-substrate component declares the state it owns, the impact of losing or exposing
-that state, the source-native backup mechanism, the storage target, the backup
-schedule, and the restore runbook. The compiled catalog drives generated Nomad
-jobs, adapter execution, signed attempt manifests, and operator status queries.
+Recoverable product state is declared in Smithy. Service contracts carry the
+state classification, recovery objective, retention policy, and status contract
+for the large state that materially affects platform recovery.
 
-The initial implementation is static and generated:
+Smithy is the semantic source for service-owned product state because the repo
+already uses Smithy for API contracts, auth metadata, audit metadata, runtime
+catalogs, and validators. Recovery metadata follows the same pattern: custom
+traits attach semantic obligations to service shapes, and a projection emits a
+recovery catalog for validation, operator inventory, and documentation.
+
+Small bootstrap artifacts and host-local recovery material that sit outside
+service contracts can use ad hoc host runbooks. The Smithy model is for the
+big-ticket state that belongs to services, databases, customer-facing storage,
+and internal product APIs.
+
+## Recovery Model
+
+Normal flow:
 
 ```text
-data-assets.yml files
-  -> compiled site catalog
-  -> generated Nomad periodic jobs
-  -> source-native backup adapters
-  -> signed attempt manifests in object storage
-  -> ClickHouse and object-storage status queries
+Smithy service model and recovery traits
+  -> Smithy validator and recovery catalog projection
+  -> service/internal status endpoint
+  -> source-native backup mechanism
+  -> signed attempt manifest in object storage
+  -> append-only ClickHouse recovery event
 ```
 
-There is no online recovery controller in the first implementation. Nomad owns
-periodic execution and placement. Source-native tools own backup consistency.
-Signed manifests in object storage are the durable record of backup attempts.
-Operator status is derived from the compiled catalog, manifests, Nomad logs, and
-ClickHouse evidence.
+The initial design is federated. Services and infrastructure owners expose
+recovery status; native backup systems produce recovery points; ClickHouse
+records append-only evidence; and object storage holds portable signed
+manifests.
 
-The catalog and manifest schema remain forward-compatible with a future
-`recovery-service`. A later controller can consume the same catalog, invoke the
-same adapters, and publish the same manifests if dynamic scheduling, short-lived
-grants, online pause/resume, or coordinated restore workflows become necessary.
+## Scope
 
-## Recovery Objectives
+The Smithy recovery model covers:
 
-The platform recovery objective is expressed as source-level invariants:
+- service PostgreSQL databases and logical database ownership;
+- native database recovery units such as the primary PostgreSQL cluster;
+- service-owned logical objects written to object storage;
+- classified ClickHouse evidence tables;
+- TigerBeetle, Forgejo, Stalwart, Verdaccio, Zot, NATS JetStream, and similar
+  product-state systems when they become active recovery obligations;
+- customer-facing durable state whose loss is not acceptable as a cache miss.
 
-1. Every durable source has an owning component and a catalog entry.
-2. Every source declares whether its bytes are authoritative, evidence,
-   projection, cache, or reproducible output.
-3. Every source declares confidentiality, integrity, and availability impact.
-4. Every source with backup requirements declares a native adapter, repository,
-   schedule, retention policy, validation checks, and restore runbook.
-5. Every backup attempt emits a signed manifest, including failed attempts.
-6. Backup bytes and manifests are restorable without the running Verself control
-   plane when the required repository credentials and recovery keys are present.
-7. Restore automation is documented per source, but restore attempts are not a
-   first-class online workflow in the initial implementation.
+The Smithy recovery model does not need to cover every byte:
 
-## Security Objectives
+- `.tfstate`, SOPS bags, bootstrap keys, and first-host recovery material can
+  stay in host/provisioning runbooks;
+- generated artifacts remain governed by generated-artifact policy;
+- CI goldens, package caches, Docker layer caches, and other acceleration state
+  are explicitly declared as rebuildable only when they appear in product
+  service semantics;
+- local temporary files and process-private scratch space remain outside this
+  model.
 
-Each source receives independent confidentiality, integrity, and availability
-ratings:
-
-| Rating | Meaning |
-| --- | --- |
-| `low` | Loss has limited operational or customer impact. |
-| `moderate` | Loss has serious impact, requires operator intervention, or can affect customer trust. |
-| `high` | Loss can prevent recovery, corrupt customer state, compromise secrets, violate billing or audit truth, or materially impair a customer workload. |
-
-Controls follow the highest impact rating. A source with low confidentiality and
-high availability still receives high-grade backup controls because availability
-is the limiting risk.
+ZFS goldens are `rebuildable_acceleration`. They are not backed up in the
+initial design. Loss causes cold CI rebuilds and cache misses.
 
 ## State Classes
 
 | Class | Examples | Default CIA | Backup posture |
 | --- | --- | --- | --- |
-| `tier0_recovery` | SOPS age identities, OpenTofu state, OpenBao recovery material, Cloudflare bootstrap token metadata, root CA and SPIRE bootstrap material | C high, I high, A high | Encrypted, offline-capable, multi-destination, backed up after every provisioning change. |
-| `customer_mission_state` | Customer durable zvols, future persistent VM disks, Forgejo repos and LFS, Stalwart mailboxes, customer-owned artifacts | C high, I high, A high | Event-driven or frequent backup, tenant-indexed manifests, restore runbook requires quarantine. |
-| `platform_authority` | PostgreSQL service databases, Zitadel, IAM, SpiceDB source relationships, Temporal persistence | C moderate/high, I high, A high | Database-native backup, PITR where available, service-owned validation. |
-| `financial_truth` | TigerBeetle replicas, billing PostgreSQL ledger-command rows, immutable billing documents | C moderate, I high, A high | Consensus replication preferred, deterministic reconciliation, strict validation. |
+| `customer_mission_state` | Customer durable objects, future persistent VM disks, Forgejo repos and LFS, Stalwart mailboxes | C high, I high, A high | Backed up through source-native or service-owned mechanism; restore requires quarantine when mutable customer state is involved. |
+| `platform_authority` | PostgreSQL service databases, Zitadel, IAM, SpiceDB source relationships, Temporal persistence | C moderate/high, I high, A high | Native database backup, PITR where available, service-owned validation. |
+| `financial_truth` | TigerBeetle replicas, billing ledger-command rows, immutable billing documents | C moderate, I high, A high | Consensus replication preferred, deterministic reconciliation, strict validation. |
 | `governance_evidence` | API activity events, audit payloads, HMAC chains, deploy evidence, billing events | C moderate/high, I high, A moderate/high | Append-only backup or export, chain verification, manifest parity. |
-| `rebuildable_acceleration` | Golden CI workspaces and caches declared rebuildable, package caches, Docker layer caches | C moderate/high, I moderate, A low/moderate | Backup only when product policy requires faster recovery; cache misses are tolerated. |
+| `rebuildable_acceleration` | Golden CI workspaces and caches declared rebuildable, package caches, Docker layer caches | C moderate/high, I moderate, A low/moderate | No recovery-byte promise unless a product policy explicitly adds one. |
 | `public_or_reproducible` | Built binaries, generated OpenAPI, published docs, reproducible release artifacts | C low, I moderate/high, A moderate | Rebuild from repo or content-addressed artifact store. |
 
-Current golden CI generations are classified per durable scope. A scope used only
-for runner acceleration remains `rebuildable_acceleration` when the customer
-contract accepts cache misses. A customer-declared durable directory or paid
-persistence feature is `customer_mission_state`.
+## Smithy Trait Package
 
-## Source Declarations
-
-Owners declare data sources near the code that owns the source semantics:
+Recovery traits live in a shared Smithy namespace:
 
 ```text
-src/services/<service>/data-assets.yml
-src/infrastructure-components/<component>/data-assets.yml
-src/substrate/<component>/data-assets.yml
-src/host/data-assets.yml
+src/smithy/models/verself/recovery.smithy
 ```
 
-Minimum shape:
+The traits are ordinary Smithy custom traits and use selectors to limit where
+they apply.
 
-```yaml
-service: billing-service
-version: 1
+```smithy
+$version: "2"
 
-sources:
-  - id: postgres.billing
-    class: platform_authority
-    owner: billing-service
-    authority:
-      kind: postgres_database
-      database: billing
-    impact:
-      confidentiality: moderate
-      integrity: high
-      availability: high
-    backup:
-      adapter: pgbackrest
-      repository: pgbackrest-prod
-      schedule: "*/30 * * * *"
-      retention_ref: postgres_authority_default
-      overlap: forbid
-    validate:
-      checks:
-        - pgbackrest_check
-        - billing_reconcile_readonly
-    restore:
-      mode: database_pitr
-      runbook: docs/runbooks/restore-postgres-billing.md
-      quarantine_required: true
-```
+namespace verself.recovery.v1
 
-Tenant-scoped sources declare the stable tenant keys that must appear in attempt
-manifests:
+use smithy.api#idRef
+use smithy.api#pattern
+use smithy.api#required
+use smithy.api#trait
 
-```yaml
-tenant_scope:
-  kind: org
-  keys:
-    - org_id
-    - repository_id
-    - durable_scope_id
-    - generation_id
-```
+@pattern("^[a-z][a-z0-9_.-]*$")
+string RecoverySourceId
 
-Repository and policy definitions live in site configuration compiled into the
-same catalog:
+@pattern("^[a-z][a-z0-9_.-]*$")
+string RecoveryUnitId
 
-```yaml
-repositories:
-  r2-prod-recovery:
-    kind: object_storage
-    provider: r2
-    bucket: verself-prod-recovery
-    prefix: data-handling/v1/sites/prod
-    lock_policy_ref: recovery_default
+@pattern("^([0-9]+(s|m|h|d)|not_applicable|on_change|continuous)$")
+string RecoveryObjective
 
-  pgbackrest-prod:
-    kind: pgbackrest
-    storage_ref: r2-prod-recovery
-    repo_name: repo1
+@pattern("^(none|indefinite|[0-9]+(d|mo|y))$")
+string RetentionPeriod
 
-policies:
-  postgres_authority_default:
-    minimum_success_interval: 30m
-    retention: 7d
-    immutability: 7d
-    stale_after: 45m
-```
+@idRef(failWhenMissing: true, selector: "operation")
+string OperationShape
 
-## Catalog Compilation
+enum RecoveryClass {
+    CUSTOMER_MISSION_STATE = "customer_mission_state"
+    PLATFORM_AUTHORITY = "platform_authority"
+    FINANCIAL_TRUTH = "financial_truth"
+    GOVERNANCE_EVIDENCE = "governance_evidence"
+    REBUILDABLE_ACCELERATION = "rebuildable_acceleration"
+    PUBLIC_OR_REPRODUCIBLE = "public_or_reproducible"
+}
 
-The compiler reads all `data-assets.yml` files and site repository policy files.
-It emits:
+enum ImpactRating {
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+}
 
-- a canonical site catalog with a stable digest;
-- generated Nomad job specifications for scheduled backups;
-- generated adapter input files per source;
-- operator inventory grouped by class, owner, repository, and stale threshold;
-- expected ClickHouse evidence metadata for status queries.
+enum CustomerCommitment {
+    NONE = "none"
+    INTERNAL = "internal"
+    PRE_PRODUCT = "pre_product"
+    PUBLIC = "public"
+}
 
-The catalog digest is written into every generated job and every attempt
-manifest. Status tools can therefore detect attempts produced from stale catalog
-inputs.
+enum DataLossBehavior {
+    CACHE_MISS_AND_REBUILD = "cache_miss_and_rebuild"
+    REPLAY_WAL_TO_RECOVERY_TARGET = "replay_wal_to_recovery_target"
+    RESTORE_LAST_SUCCESSFUL_RECOVERY_POINT = "restore_last_successful_recovery_point"
+    RECONCILE_FROM_LEDGER = "reconcile_from_ledger"
+    MANUAL_REPROVISION = "manual_reprovision"
+}
 
-The compiler fails on high-risk unclassified changes:
+enum RecoveryMechanism {
+    NONE = "none"
+    POSTGRES_PITR = "postgres_pitr"
+    CLICKHOUSE_BACKUP = "clickhouse_backup"
+    TIGERBEETLE_REPLICA_RECOVERY = "tigerbeetle_replica_recovery"
+    OBJECT_MANIFEST_EXPORT = "object_manifest_export"
+    APPLICATION_NATIVE = "application_native"
+    REBUILD = "rebuild"
+}
 
-- PostgreSQL migrations adding tables without a matching source entry;
-- migrations adding `org_id`, `subject_id`, `credential`, `secret`, `token`,
-  `private_key`, `document`, `invoice`, `event`, or `snapshot` columns without
-  review;
-- new ZFS dataset roots or zvol generation paths;
-- new Nomad host volumes under `/var/lib`;
-- new SOPS bags or OpenTofu state-producing resources;
-- new object-storage buckets or external storage providers.
+structure RecoveryImpact {
+    @required
+    confidentiality: ImpactRating
 
-## Generated Nomad Jobs
+    @required
+    integrity: ImpactRating
 
-Nomad periodic jobs provide scheduling, placement, retries, resource limits,
-logs, and allocation history. Generated jobs call a repo-built adapter binary
-with a source id and catalog digest:
+    @required
+    availability: ImpactRating
+}
 
-```text
-data-backup-adapter \
-  --catalog /etc/verself/data-handling/catalog.json \
-  --source postgres.billing \
-  --attempt-id ${NOMAD_ALLOC_ID} \
-  --write-manifest
-```
+structure RecoveryPolicy {
+    @required
+    rpo: RecoveryObjective
 
-Generated job examples:
+    @required
+    rto: RecoveryObjective
 
-```text
-generated/data-handling/nomad/postgres-billing-backup.nomad.hcl
-generated/data-handling/nomad/tier0-backup.nomad.hcl
-generated/data-handling/nomad/clickhouse-governance-backup.nomad.hcl
-generated/data-handling/nomad/sandbox-durable-zfs-backup.nomad.hcl
-```
+    @required
+    dataLossBehavior: DataLossBehavior
 
-`backup.overlap: forbid` maps to a per-source lock. The first implementation may
-use native tool locking when available, a host-local lock for single-node
-deployment, or a database advisory lock for sources with a natural authority
-database. The lock identity includes `site`, `source_id`, and repository id.
+    @required
+    customerCommitment: CustomerCommitment
 
-Event-driven sources can still use generated jobs. The source owner records an
-event, and the job runner receives the source ref as a dispatch payload or
-through a small queue table owned by the source service. Customer durable zvol
-backup is triggered from sealed generation metadata rather than path scanning.
+    @required
+    backupRequired: Boolean
 
-## Native Adapters
+    @required
+    retention: RetentionPolicy
+}
 
-Adapters wrap source-native tools and produce normalized manifests. They do not
-implement a generic backup engine.
+structure RetentionPolicy {
+    @required
+    productRetention: RetentionPeriod
 
-Adapter contract:
+    @required
+    backupImmutability: RetentionPeriod
+}
 
-```text
-Input:
-  catalog path
-  catalog digest
-  source id
-  attempt id
-  repository config
-  credential paths
+@trait(selector: "structure")
+structure recoverySource {
+    @required
+    id: RecoverySourceId
 
-Output:
-  native receipt
-  validation result
-  signed attempt manifest
-  ClickHouse evidence row
-```
+    @required
+    class: RecoveryClass
 
-Initial adapter locations:
+    @required
+    owner: String
 
-```text
-src/tools/data-handling/cmd/data-backup-adapter/
-src/tools/data-handling/internal/catalog/
-src/tools/data-handling/internal/manifest/
-src/tools/data-handling/internal/signing/
-src/tools/data-handling/internal/status/
-src/tools/data-handling/adapters/pgbackrest/
-src/tools/data-handling/adapters/clickhouse/
-src/tools/data-handling/adapters/zfs/
-src/tools/data-handling/adapters/tier0/
-src/tools/data-handling/adapters/kopia/
-```
+    @required
+    impact: RecoveryImpact
 
-Adapters execute typed operations only. Source declarations refer to known
-validation checks by id; they do not embed arbitrary shell commands.
+    @required
+    policy: RecoveryPolicy
 
-### PostgreSQL
+    @required
+    mechanism: RecoveryMechanism
 
-PostgreSQL authority sources use pgBackRest for base backups, incrementals, WAL
-archiving, integrity checks, and restore metadata. The adapter records stanza,
-repository, backup label, backup type, WAL range, pgBackRest version, `info`
-output digest, and validation results. `pg_dump` is an export format, not the
-primary recovery path for authoritative service state.
+    protectedBy: RecoveryUnitId
+}
 
-### ZFS Durable Volumes
+@trait(selector: "structure")
+structure postgresRecoveryUnit {
+    @required
+    id: RecoveryUnitId
 
-ZFS sources use event-driven snapshots and `zfs send` streams. vm-orchestrator
-owns privileged ZFS operations. The adapter calls typed vm-orchestrator RPCs for
-export and later restore helpers; product services never pass host paths or
-execute ZFS commands.
+    @required
+    cluster: String
 
-Customer durable generation manifests record snapshot ref, dataset root, org
-namespace, durable scope id, generation id, source generation id, operation id,
-stream type, parent snapshot or bookmark, used bytes, written bytes, and
-filesystem validation results.
+    @required
+    stanza: String
 
-### ClickHouse
+    @required
+    repositoryRef: String
+}
 
-ClickHouse sources use ClickHouse-native backup and restore where practical.
-Each source entry declares whether selected tables are authoritative evidence,
-rebuildable projections, or operational telemetry. The adapter records database,
-table set, backup id, base backup id for incrementals, storage endpoint, row
-counts, byte counts, and verification queries.
+@trait(selector: "structure")
+structure postgresDatabaseState {
+    @required
+    database: String
 
-### Object And File Authorities
+    @required
+    protectedBy: RecoveryUnitId
+}
 
-Forgejo repositories, LFS objects, Stalwart mailboxes, Verdaccio storage, Zot
-storage, and future customer artifact stores use application-aware backups where
-available. Generic filesystem capture uses Kopia or restic only when no stronger
-application-native tool exists. The manifest records the tool that produced the
-backup so restore uses the same repository semantics.
+@trait(selector: "structure")
+structure objectRecoveryState {
+    @required
+    bucketClass: String
 
-### Tier 0 Files
+    @required
+    keyPrefix: String
 
-Tier 0 material is backed up after every provisioning change and on a scheduled
-cadence:
+    grantRequired: Boolean
+}
 
-- SOPS bags;
-- Age recipients and recovery identity metadata;
-- OpenTofu state and state backups;
-- OpenBao recovery and unseal metadata;
-- Cloudflare/R2 bootstrap token metadata;
-- root CA, SPIRE bootstrap, Pomerium, and WireGuard recovery facts.
-
-OpenTofu state is always sensitive. Marking outputs `sensitive` only redacts CLI
-output; it does not remove secrets from state. State files and saved plans use
-the same encryption and manifest path as other Tier 0 artifacts.
-
-## Attempt Manifests
-
-Every attempt writes a manifest, including failures. Successful manifests prove
-a recoverable point. Failed manifests preserve operational evidence and make
-status queries complete.
-
-Provider-neutral layout:
-
-```text
-data-handling/v1/sites/<site>/sources/<source_id>/attempts/<attempt_id>/manifest.json
-data-handling/v1/sites/<site>/sources/<source_id>/attempts/<attempt_id>/manifest.sig
-data-handling/v1/sites/<site>/sources/<source_id>/latest.json
-data-handling/v1/sites/<site>/indexes/classes/<class>/<source_id>.json
-data-handling/v1/sites/<site>/indexes/orgs/<org_id>/<source_id>/<attempt_id>.json
-```
-
-Minimum manifest shape:
-
-```json
-{
-  "schema_version": 1,
-  "attempt_id": "dhat_01J...",
-  "site": "prod",
-  "source_id": "postgres.billing",
-  "source_class": "platform_authority",
-  "owner": "billing-service",
-  "catalog_digest": "sha256:...",
-  "adapter": "pgbackrest",
-  "status": "succeeded",
-  "started_at": "2026-05-16T18:00:01Z",
-  "completed_at": "2026-05-16T18:03:41Z",
-  "repository": {
-    "id": "pgbackrest-prod",
-    "storage_ref": "r2-prod-recovery"
-  },
-  "native": {
-    "tool": "pgbackrest",
-    "version": "2.x",
-    "stanza": "billing",
-    "backup_label": "20260516-180001F",
-    "wal_start": "0000000100000000000000AA",
-    "wal_stop": "0000000100000000000000AB"
-  },
-  "validation": [
-    {
-      "check": "pgbackrest_check",
-      "status": "passed"
-    }
-  ],
-  "retention_ref": "postgres_authority_default",
-  "trace_id": "...",
-  "log_refs": []
+@trait(selector: "service")
+structure internalStatus {
+    @required
+    operation: OperationShape
 }
 ```
 
-Manifests contain no plaintext secrets. Provider ETags and checksums are
-recorded as provider evidence. Artifact integrity comes from platform-computed
-hashes over encrypted bytes and, where practical, plaintext stream hashes before
-encryption. Native repositories such as pgBackRest, ClickHouse, ZFS replication,
-Kopia, or restic may store data in their own layout; the manifest binds native
-repository handles to source identity, tenant scope, policy, and validation
-evidence.
+The exact Smithy syntax can evolve during implementation. The important
+standard shape is:
 
-Manifest signatures bind the canonical manifest bytes. The public verifier is
-committed to the repository so operators can verify manifests before Postgres,
-Nomad, SPIRE, OpenBao, or object-storage-service are available.
+- one trait marks a shape as a recoverable source;
+- authority-specific traits describe native recovery units;
+- service-level metadata points to a modeled internal status operation;
+- validators enforce coverage and reject contradictory combinations.
 
-## Encryption And Access
+## PostgreSQL And PITR
 
-Backup encryption is client-side by default.
+PostgreSQL point-in-time recovery is a native cluster mechanism. It combines:
 
-Artifact encryption uses envelope encryption:
+- a physical base backup;
+- continuous archived WAL segments;
+- a recovery target such as a timestamp, transaction id, or named restore
+  point.
 
-- a random data-encryption key per artifact or native chunk group;
-- recipient wrapping for an online KMS path, such as OpenBao Transit;
-- recipient wrapping for at least one offline recovery identity independent of
-  the site being recovered;
-- authenticated metadata binding `source_id`, `attempt_id`, repository id, and
-  tenant scope into the encryption context.
+The service databases are logical sources. The physical recovery unit is the
+PostgreSQL cluster or pgBackRest stanza that owns base backups and WAL
+continuity.
 
-Runtime credentials are scoped to the generated job and source repository where
-the provider allows it. Initial R2 and native repository credentials may be
-provisioned through site secrets and host credential files. Short-lived dynamic
-grants are a future `recovery-service` capability.
+```smithy
+namespace verself.billing.v1
 
-Runtime write credentials do not authorize retention policy changes or bucket
-deletion. Restore credentials are read-only and used by documented restore
-runbooks or operator drills. Deletion and retention-shortening require a
-separate break-glass authority path.
+use verself.recovery.v1#RecoveryClass
+use verself.recovery.v1#RecoveryImpact
+use verself.recovery.v1#RecoveryMechanism
+use verself.recovery.v1#RecoveryPolicy
+use verself.recovery.v1#postgresDatabaseState
+use verself.recovery.v1#postgresRecoveryUnit
+use verself.recovery.v1#recoverySource
 
-## Restore Runbooks
+@recoverySource(
+    id: "postgres.primary",
+    class: "platform_authority",
+    owner: "host-postgres",
+    impact: {
+        confidentiality: "moderate",
+        integrity: "high",
+        availability: "high"
+    },
+    policy: {
+        rpo: "5m",
+        rto: "1h",
+        dataLossBehavior: "replay_wal_to_recovery_target",
+        customerCommitment: "internal",
+        backupRequired: true,
+        retention: {
+            productRetention: "35d",
+            backupImmutability: "35d"
+        }
+    },
+    mechanism: "postgres_pitr"
+)
+@postgresRecoveryUnit(
+    id: "postgres.primary",
+    cluster: "primary",
+    stanza: "postgres-primary",
+    repositoryRef: "pgbackrest-prod"
+)
+structure PrimaryPostgresRecoveryUnit {}
 
-Restore workflows are source-owned runbooks in the initial implementation. A
-source declaration records the restore mode, runbook path, required quarantine
-behavior, and validation checks. The system does not maintain online restore
-state.
-
-Restore modes:
-
-| Restore mode | Description |
-| --- | --- |
-| `decrypt_only` | Decrypt and verify small Tier 0 files into a clean recovery workspace. |
-| `database_pitr` | Restore a database base backup and replay WAL to a target timestamp. |
-| `database_snapshot` | Restore a consistent database snapshot without PITR. |
-| `zfs_receive_to_quarantine_then_promote` | Receive a ZFS stream into a non-production dataset, validate, then update product pointers by runbook. |
-| `object_inventory_rehydrate` | Recreate object or file authorities from manifest and native inventory. |
-| `rebuild_projection` | Recompute a projection from authoritative sources. |
-| `cluster_replica_recover` | Rejoin or reconstruct a database replica using the database's native recovery protocol. |
-
-High-integrity sources require quarantine and owner-specific validation before
-production promotion. Operator drills can be recorded as signed attempt
-manifests or ClickHouse evidence rows without creating a separate online drill
-workflow.
-
-## Status Queries
-
-Status is derived from expected catalog sources and observed attempt manifests.
-The operator surface answers:
-
-- latest successful attempt by source;
-- latest failed attempt by source;
-- sources with no attempts;
-- sources whose latest success is older than `stale_after`;
-- attempts produced from stale catalog digests;
-- policy violations such as missing validation, missing lock evidence, or
-  unexpected repository id.
-
-Near-term operator commands:
-
-```text
-aspect data catalog
-aspect data status
-aspect data stale
-aspect data attempts --source postgres.billing
-aspect data verify --source postgres.billing --latest
+@recoverySource(
+    id: "postgres.billing",
+    class: "financial_truth",
+    owner: "billing-service",
+    impact: {
+        confidentiality: "moderate",
+        integrity: "high",
+        availability: "high"
+    },
+    policy: {
+        rpo: "5m",
+        rto: "1h",
+        dataLossBehavior: "replay_wal_to_recovery_target",
+        customerCommitment: "internal",
+        backupRequired: true,
+        retention: {
+            productRetention: "35d",
+            backupImmutability: "35d"
+        }
+    },
+    mechanism: "postgres_pitr",
+    protectedBy: "postgres.primary"
+)
+@postgresDatabaseState(database: "billing", protectedBy: "postgres.primary")
+structure BillingPostgresState {}
 ```
 
-ClickHouse stores a narrow attempt evidence table for fast status queries:
+Restoring a single service database should start by restoring the PostgreSQL
+cluster to a quarantine instance at the target time. The service owner then
+exports, imports, or reconciles the relevant database state through a
+documented repair procedure. Production is not mutated directly from a PITR
+restore.
+
+Billing-service is the first recovery candidate. Its initial recovery contract
+covers `postgres.billing` through `postgres.primary` PITR with pgBackRest. This
+does not complete the full billing recovery story because billing financial
+truth also includes TigerBeetle transfers and billing-related ClickHouse
+evidence. The first milestone proves billing PostgreSQL recovery; later
+milestones add TigerBeetle replica recovery, billing ClickHouse evidence
+exports, and long-retention billing document object manifests where required.
+
+## Service-Owned Object State
+
+Logical service-owned objects use service code plus short-lived object-storage
+grants. Broad provider credentials do not live in product services.
+
+```smithy
+@recoverySource(
+    id: "billing.documents",
+    class: "financial_truth",
+    owner: "billing-service",
+    impact: {
+        confidentiality: "moderate",
+        integrity: "high",
+        availability: "high"
+    },
+    policy: {
+        rpo: "on_change",
+        rto: "4h",
+        dataLossBehavior: "restore_last_successful_recovery_point",
+        customerCommitment: "internal",
+        backupRequired: true,
+        retention: {
+            productRetention: "7y",
+            backupImmutability: "30d"
+        }
+    },
+    mechanism: "object_manifest_export"
+)
+@objectRecoveryState(
+    bucketClass: "recovery",
+    keyPrefix: "billing/documents",
+    grantRequired: true
+)
+structure BillingDocumentRecoveryState {}
+```
+
+The service requests a short-lived upload grant for a concrete object or
+multipart upload, writes the encrypted payload directly to object storage, and
+emits a signed manifest. The manifest records source id, attempt id, object
+key, byte counts, checksums, retention class, validation status, and trace id.
+
+## Rebuildable Acceleration
+
+Acceleration state receives an explicit recovery declaration only when it is
+large enough or visible enough that future readers might otherwise infer a
+backup promise.
+
+```smithy
+@recoverySource(
+    id: "sandbox.github-goldens",
+    class: "rebuildable_acceleration",
+    owner: "sandbox-rental-service",
+    impact: {
+        confidentiality: "moderate",
+        integrity: "moderate",
+        availability: "low"
+    },
+    policy: {
+        rpo: "not_applicable",
+        rto: "not_applicable",
+        dataLossBehavior: "cache_miss_and_rebuild",
+        customerCommitment: "none",
+        backupRequired: false,
+        retention: {
+            productRetention: "none",
+            backupImmutability: "none"
+        }
+    },
+    mechanism: "rebuild"
+)
+structure SandboxGithubGoldensState {}
+```
+
+This is the classification for ZFS CI goldens in the initial design.
+
+## Internal Status Endpoint
+
+Recovery status is part of each service's internal status surface.
+
+Each service that owns recoverable state exposes a Smithy-modeled internal
+status operation. The operation can live beside existing health/status
+operations:
+
+```smithy
+@internalStatus(operation: GetBillingInternalStatus)
+service BillingService {
+    version: "2026-05-16"
+    operations: [
+        GetBillingInternalStatus
+    ]
+}
+
+@readonly
+@http(method: "GET", uri: "/internal/v1/status")
+@identity(mode: "spiffe_mtls", audience: "billing-service", principals: ["workload"])
+@rateLimit(bucket: "internal_read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "billingInternal.status", method: "get", paginated: false, retryable: true)
+operation GetBillingInternalStatus {
+    output: InternalStatusOutput
+}
+```
+
+Shared status shapes live in `verself.recovery.v1` or
+`verself.common.v1`:
+
+```smithy
+structure InternalStatusOutput {
+    @required
+    service: String
+
+    @required
+    status: ServiceStatus
+
+    @required
+    checkedAt: Timestamp
+
+    @required
+    recovery: RecoveryStatusSummary
+}
+
+enum ServiceStatus {
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+}
+
+structure RecoveryStatusSummary {
+    @required
+    status: RecoveryStatus
+
+    @required
+    sources: RecoverySourceStatuses
+}
+
+enum RecoveryStatus {
+    HEALTHY = "healthy"
+    STALE = "stale"
+    UNPROTECTED = "unprotected"
+    UNKNOWN = "unknown"
+}
+
+list RecoverySourceStatuses {
+    member: RecoverySourceStatus
+}
+
+structure RecoverySourceStatus {
+    @required
+    sourceId: RecoverySourceId
+
+    @required
+    class: RecoveryClass
+
+    @required
+    mechanism: RecoveryMechanism
+
+    protectedBy: RecoveryUnitId
+
+    latestRecoveryPointAt: Timestamp
+
+    latestSuccessfulAttemptAt: Timestamp
+
+    latestManifestRef: String
+
+    logicalBytes: Long
+
+    bytesWritten: Long
+
+    @required
+    stale: Boolean
+
+    staleReason: String
+
+    @required
+    integrity: IntegrityStatus
+}
+
+enum IntegrityStatus {
+    NOT_APPLICABLE = "not_applicable"
+    NOT_CHECKED = "not_checked"
+    VERIFIED = "verified"
+    FAILED = "failed"
+}
+```
+
+The status endpoint reports posture. It does not execute backups. It reads
+native backup status, service metadata, signed manifest indexes, and local
+service state. Operator tooling can aggregate all internal status endpoints
+plus ClickHouse events into a site view.
+
+## Append-Only Evidence
+
+Every backup attempt or recovery-relevant event emits an append-only
+ClickHouse row. ClickHouse is the operational query layer; signed manifests in
+object storage are the portable recovery inventory.
 
 ```text
-verself.data_backup_attempts
+verself.recovery_events
   time
   site
+  service
   source_id
   source_class
-  owner
-  adapter
-  attempt_id
+  mechanism
+  event_type
   status
-  duration_ms
-  bytes_written
-  catalog_digest
-  repository_id
+  recovery_point_at
+  attempt_id
   manifest_ref
+  logical_bytes
+  bytes_written
+  product_retention
+  backup_immutability
+  rpo
+  rto
   trace_id
   error_code
 ```
 
-Object storage manifests remain the portable evidence. ClickHouse rows are an
-operator acceleration layer and can be rebuilt by scanning signed manifests.
+ClickHouse status can be rebuilt by scanning signed manifests and native
+repository inventories.
 
-## Retention And Immutability
+## Validation Rules
 
-Retention has two layers:
+Smithy validators enforce the recovery contract:
 
-1. Product retention: how long Verself promises to preserve or be able to
-   restore a source.
-2. Backup immutability: how long a written artifact cannot be deleted or
-   overwritten.
+- any shape with `@recoverySource` must declare class, impact, policy,
+  mechanism, owner, and retention;
+- `backupRequired: true` must not use `mechanism: "none"` or
+  `mechanism: "rebuild"`;
+- `backupRequired: false` is valid only for `REBUILDABLE_ACCELERATION` and
+  `PUBLIC_OR_REPRODUCIBLE`;
+- PostgreSQL database sources using `POSTGRES_PITR` must reference a
+  `@postgresRecoveryUnit`;
+- a service with recoverable sources must declare an internal status operation;
+- public customer commitments require a matching public policy entry before
+  release;
+- high-integrity sources must expose a restore or validation procedure;
+- Smithy projections fail when a service database appears in repo metadata but
+  has no declared recovery source.
 
-The backup immutability window is at least the operational rollback window for
-the source. High-impact sources use provider-side lock where available.
-Lifecycle cleanup must never run before the strictest matching lock or product
-retention rule expires.
-
-Default policy references:
-
-| Policy | Minimum behavior |
-| --- | --- |
-| `tier0_default` | Preserve indefinitely in at least two destinations, including one offline-capable path. |
-| `postgres_authority_default` | Continuous WAL plus base backups with at least seven days PITR in pre-release; increase before customer commitments. |
-| `customer_durable_volume_default` | Backup on sealed generation, retain current and recent generations according to customer policy, lock artifacts for at least 30 days. |
-| `governance_evidence_default` | Retain according to audit policy and verify chain during operator checks. |
-| `rebuildable_cache_default` | No offsite backup requirement unless an explicit product tier says otherwise. |
+Schema migration inspection can remain outside Smithy, but its result should be
+checked against the Smithy recovery projection. For example, a newly added
+service database or new high-risk table can fail CI if no matching Smithy
+recovery source exists.
 
 ## Implementation Strategy
 
-### Stage 1: Catalog And Tier 0
+### Stage 1: Smithy Traits And Projection
 
-- Add `data-assets.yml` schema and compiler.
-- Add source entries for SOPS bags, OpenTofu state, provisioning secrets, and R2
-  backup infrastructure.
-- Add manifest signing and offline verification.
-- Generate the Tier 0 Nomad job or provisioning hook.
-- Encrypt and upload Tier 0 attempt manifests after provisioning apply.
-- Add `aspect data status` against local catalog and object-storage manifests.
+- Add `verself.recovery.v1` traits and shared status shapes.
+- Add a recovery catalog projection to the existing Smithy build.
+- Add validators for required fields and contradictory policy combinations.
+- Add declarations for `postgres.primary`, `postgres.billing`, rebuildable ZFS
+  goldens, and the first service-owned object source.
 
-### Stage 2: One Authority Database And One ZFS Source
+### Stage 2: Internal Status Endpoint
 
-- Add pgBackRest backup and WAL archiving for one service database.
-- Add generated Nomad periodic job for that source.
-- Add event-driven backup for one sealed durable zvol generation.
-- Record attempt evidence in ClickHouse.
-- Prove manual restore from signed manifests and native repositories.
+- Add the shared internal status response shape.
+- Add one modeled internal status operation per service that owns recoverable
+  state.
+- Implement status by reading native backup metadata, service-local state, and
+  manifest indexes.
+- Add `aspect data status` as an aggregator over internal status endpoints and
+  ClickHouse evidence.
 
-### Stage 3: Service Coverage
+### Stage 3: Native Backup Evidence
 
-- Add source entries for every service database and infrastructure state
-  directory.
-- Add CI checks for unclassified durable state.
-- Add owner-local validation checks.
-- Add operator status views grouped by class, stale threshold, owner,
-  repository, and tenant.
+- Add pgBackRest base backup and WAL archive evidence for `postgres.billing`.
+- Add signed object-storage manifests for successful and failed attempts.
+- Add `verself.recovery_events` in ClickHouse.
+- Add object-storage short-lived upload grants for service-owned logical
+  objects.
 
-### Stage 4: Cross-Provider And Recovery Automation
+### Stage 4: Coverage Enforcement
 
-- Add second provider destination for `tier0_recovery` and
-  `customer_mission_state`.
-- Add regular clean-workspace verification for Tier 0.
-- Add full-site runbooks from blank host: provision, restore Tier 0, restore
-  authority databases, restore selected customer zvol, deploy, and verify
-  evidence.
-- Introduce `recovery-service` only when online coordination is required for
-  dynamic scheduling, short-lived grants, pause/resume, promotion approvals, or
-  customer-visible restore workflows.
-
-## Source Inventory Baseline
-
-Initial catalog entries cover:
-
-- `src/host/sites/<site>/secrets/*.sops.yml`;
-- OpenTofu state and state backups;
-- PostgreSQL cluster and per-service databases;
-- OpenBao raft storage and recovery metadata;
-- Zitadel database and bootstrap identity state;
-- SPIRE server state and trust bundle bootstrap;
-- TigerBeetle data file or replica set;
-- ClickHouse governance, billing, deployment, and trace evidence tables;
-- Garage, Forgejo, Stalwart, Verdaccio, Zot, NATS JetStream, and Temporal state
-  directories;
-- vm-orchestrator ZFS roots under `images/`, `orgs/<org>/workloads/`, and
-  `orgs/<org>/goldens/`;
-- sandbox-rental durable generation metadata in PostgreSQL;
-- object-storage-service bucket metadata and provider credential records.
-
-Every entry declares whether bytes are authoritative, evidence, projection,
-cache, or reproducible output.
+- Wire migration and storage-provider checks into the Smithy recovery
+  projection.
+- Fail CI on newly introduced recoverable state without a Smithy declaration.
+- Add restore drills for PostgreSQL PITR into quarantine and one service-owned
+  object source.
+- Extend billing coverage to billing-related ClickHouse evidence and
+  TigerBeetle replica recovery.
 
 ## References
 
-- NIST SP 800-34 Rev. 1, Contingency Planning Guide for Federal Information Systems: <https://csrc.nist.gov/pubs/sp/800/34/r1/upd1/final>
-- FIPS 199, Standards for Security Categorization of Federal Information and Information Systems: <https://csrc.nist.gov/pubs/fips/199/final>
+- Smithy 2.0 Specification: <https://smithy.io/2.0/spec/index.html>
+- Smithy Selectors: <https://smithy.io/2.0/spec/selectors.html>
+- Smithy Style Guide: <https://smithy.io/2.0/guides/style-guide.html>
 - PostgreSQL Continuous Archiving and Point-in-Time Recovery: <https://www.postgresql.org/docs/current/continuous-archiving.html>
-- OpenZFS send documentation: <https://openzfs.github.io/openzfs-docs/man/master/8/zfs-send.8.html>
+- pgBackRest User Guide: <https://pgbackrest.org/user-guide.html>
+- Cloudflare R2 Presigned URLs: <https://developers.cloudflare.com/r2/api/s3/presigned-urls/>
+- Cloudflare R2 Temporary Credentials: <https://developers.cloudflare.com/r2/api/s3/temporary-credentials/>
 - Cloudflare R2 Bucket Locks: <https://developers.cloudflare.com/r2/buckets/bucket-locks/>
-- OpenTofu Sensitive Data in State: <https://opentofu.org/docs/language/state/sensitive-data/>
 - TigerBeetle Cluster Recommendations: <https://docs.tigerbeetle.com/operating/cluster/>
 - TigerBeetle Recovering: <https://docs.tigerbeetle.com/operating/recovering/>
