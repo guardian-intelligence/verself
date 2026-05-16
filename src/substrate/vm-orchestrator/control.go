@@ -97,9 +97,10 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 			attemptSpan.End()
 			select {
 			case <-ctx.Done():
-				lastErr = ctx.Err()
-				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
-				return nil, nil, fmt.Errorf("dial guest bridge %s: %w", udsPath, ctx.Err())
+				doneErr := contextDoneErr(ctx)
+				lastErr = doneErr
+				connectSpan.SetStatus(codes.Error, doneErr.Error())
+				return nil, nil, fmt.Errorf("dial guest bridge %s: %w", udsPath, doneErr)
 			default:
 			}
 			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "unix_dial"); err != nil {
@@ -130,9 +131,10 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 			attemptSpan.End()
 			select {
 			case <-ctx.Done():
-				lastErr = ctx.Err()
-				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
-				return nil, nil, fmt.Errorf("write guest bridge connect command: %w", ctx.Err())
+				doneErr := contextDoneErr(ctx)
+				lastErr = doneErr
+				connectSpan.SetStatus(codes.Error, doneErr.Error())
+				return nil, nil, fmt.Errorf("write guest bridge connect command: %w", doneErr)
 			default:
 			}
 			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "connect_command_write"); err != nil {
@@ -167,9 +169,10 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 			attemptSpan.End()
 			select {
 			case <-ctx.Done():
-				lastErr = ctx.Err()
-				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
-				return nil, nil, fmt.Errorf("set guest bridge ack deadline: %w", ctx.Err())
+				doneErr := contextDoneErr(ctx)
+				lastErr = doneErr
+				connectSpan.SetStatus(codes.Error, doneErr.Error())
+				return nil, nil, fmt.Errorf("set guest bridge ack deadline: %w", doneErr)
 			default:
 			}
 			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "ack_deadline_set"); err != nil {
@@ -193,9 +196,10 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 			attemptSpan.End()
 			select {
 			case <-ctx.Done():
-				lastErr = ctx.Err()
-				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
-				return nil, nil, fmt.Errorf("read guest bridge ack: %w", ctx.Err())
+				doneErr := contextDoneErr(ctx)
+				lastErr = doneErr
+				connectSpan.SetStatus(codes.Error, doneErr.Error())
+				return nil, nil, fmt.Errorf("read guest bridge ack: %w", doneErr)
 			default:
 			}
 			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "ack_read"); err != nil {
@@ -218,9 +222,10 @@ func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID s
 			attemptSpan.End()
 			select {
 			case <-ctx.Done():
-				lastErr = ctx.Err()
-				connectSpan.SetStatus(codes.Error, ctx.Err().Error())
-				return nil, nil, fmt.Errorf("clear guest bridge ack deadline: %w", ctx.Err())
+				doneErr := contextDoneErr(ctx)
+				lastErr = doneErr
+				connectSpan.SetStatus(codes.Error, doneErr.Error())
+				return nil, nil, fmt.Errorf("clear guest bridge ack deadline: %w", doneErr)
 			default:
 			}
 			if err := traceGuestBridgeRetrySleep(connectCtx, leaseID, attempts, port, "ack_deadline_clear"); err != nil {
@@ -270,10 +275,17 @@ func traceGuestBridgeRetrySleep(ctx context.Context, leaseID string, attempt, po
 	select {
 	case <-ctx.Done():
 		sleepSpan.SetAttributes(attribute.Bool("guest.vsock.retry_sleep_interrupted", true))
-		return ctx.Err()
+		return contextDoneErr(ctx)
 	case <-time.After(guestBridgeRetryDelay):
 		return nil
 	}
+}
+
+func contextDoneErr(ctx context.Context) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	return ctx.Err()
 }
 
 func endGuestBridgeSpan(span trace.Span, err error) {

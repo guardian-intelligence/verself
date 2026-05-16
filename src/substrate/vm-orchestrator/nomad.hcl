@@ -49,8 +49,10 @@ job "vm-orchestrator" {
       }
 
       resources {
-        cpu = 300
-        memory = 256
+        # Firecracker VMM children inherit this task cgroup, so this reservation
+        # must cover guest RAM, not just the Go daemon.
+        cpu = 24000
+        memory = 53248
       }
 
       restart {

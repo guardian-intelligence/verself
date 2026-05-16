@@ -28,6 +28,7 @@ var tracer = otel.Tracer("vm-orchestrator")
 
 const (
 	defaultTrustClass      = "trusted"
+	leaseBootTimeout       = 3 * time.Minute
 	firecrackerStepTimeout = 5 * time.Second
 	maxBufferedGuestLogs   = 10 * 1024 * 1024
 	maxFilesystemMounts    = 99
@@ -443,9 +444,12 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		return nil, fmt.Errorf("normalize lease spec: %w", normErr)
 	}
 	spec = normalized
+	ctx, cancelBoot := context.WithTimeout(ctx, leaseBootTimeout)
+	defer cancelBoot()
 	ctx, span := tracer.Start(ctx, "vmorchestrator.lease.boot",
 		trace.WithAttributes(
 			attribute.String("lease.id", leaseID),
+			attribute.Int64("lease.boot_timeout_ms", leaseBootTimeout.Milliseconds()),
 			attribute.Int("vmresources.vcpus", int(spec.Resources.VCPUs)),
 			attribute.Int("vmresources.memory_mib", int(spec.Resources.MemoryMiB)),
 			attribute.Int("vmresources.root_disk_gib", int(spec.Resources.RootDiskGiB)),
@@ -797,7 +801,17 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 		go captureSerialOutput(jailer.Stderr, &runtime.serialBuf, &runtime.logWg)
 	}
 	runtime.waitDone = make(chan error, 1)
-	go func() { runtime.waitDone <- jailer.Wait() }()
+	ctx, cancelOnJailerExit := context.WithCancelCause(ctx)
+	go func() {
+		waitErr := jailer.Wait()
+		runtime.jailerExited.Store(true)
+		if waitErr != nil {
+			cancelOnJailerExit(fmt.Errorf("firecracker exited during boot: %w", waitErr))
+		} else {
+			cancelOnJailerExit(fmt.Errorf("firecracker exited during boot"))
+		}
+		runtime.waitDone <- waitErr
+	}()
 
 	apiSocketCtx, endAPISocketSpan := startStepSpan(ctx, "vmorchestrator.firecracker.api_socket_wait",
 		attribute.String("lease.id", leaseID),
@@ -897,13 +911,15 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 		return nil, fmt.Errorf("chmod guest control socket: %w", err)
 	}
 
-	telemetryCtx, telemetryCancel := context.WithCancel(ctx)
+	// Telemetry is lease-lifetime; the boot timeout context ends once the VM is ready.
+	telemetryBaseCtx := detachedTraceContext(ctx)
+	telemetryCtx, telemetryCancel := context.WithCancel(telemetryBaseCtx)
 	runtime.cancelTelemetry = telemetryCancel
 	runtime.telemetryDone = make(chan struct{})
 	go func() {
 		defer close(runtime.telemetryDone)
 		if err := streamGuestTelemetry(telemetryCtx, controlSockHost, leaseID, observer, logger, telemetryFaultProfile); err != nil && !errors.Is(err, context.Canceled) {
-			logger.WarnContext(ctx, "guest telemetry stream ended", "lease_id", leaseID, "error", err)
+			logger.WarnContext(telemetryBaseCtx, "guest telemetry stream ended", "lease_id", leaseID, "error", err)
 		}
 	}()
 
@@ -1030,7 +1046,7 @@ func waitForSocket(ctx context.Context, path string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("API socket %s not connectable: %w", path, ctx.Err())
+			return fmt.Errorf("API socket %s not connectable: %w", path, contextDoneErr(ctx))
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
@@ -1045,7 +1061,7 @@ func waitForPath(ctx context.Context, path string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("path %s not present: %w", path, ctx.Err())
+			return fmt.Errorf("path %s not present: %w", path, contextDoneErr(ctx))
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
