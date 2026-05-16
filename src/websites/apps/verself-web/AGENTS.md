@@ -160,19 +160,19 @@ in the vault, never in tracked files or echoed commands):
   curl config (`curl -K`), not argv. API base `https://auth.verself.sh`,
   `Authorization: Bearer …`.
 - Create: `POST /v2/users/human` `{username,organization:{orgId},profile,
-  email:{isVerified:true},password:{changeRequired:false}}` in the platform
+email:{isVerified:true},password:{changeRequired:false}}` in the platform
   org (orgId resolved from `POST /v2/users` email search of an existing
   member). Returns `userId`.
 - Authorize (the actual console gate is SpiceDB, not Zitadel grants): on the
   host, `zed --endpoint 127.0.0.1:24009 --token "$(sudo -n cat
-  /etc/credstore/iam-service/spicedb-grpc-preshared-key)" --insecure
-  relationship create role:org_org_<ORG>_role_admin member
-  user:b64_<base64(zitadelUserId)>`. Discover `<ORG>` / subject form from
+/etc/credstore/iam-service/spicedb-grpc-preshared-key)" --insecure
+relationship create role:org_org_<ORG>_role_admin member
+user:b64_<base64(zitadelUserId)>`. Discover `<ORG>` / subject form from
   `zed relationship read org` + `… read role` (subject is
   `user:b64_<base64 of the decimal Zitadel user id>`).
 - Vault it: `printf %s '<pw>' | agent-browser auth save verself-qa
-  --url https://verself.sh/login --username qa-flight@verself.sh
-  --password-stdin`.
+--url https://verself.sh/login --username qa-flight@verself.sh
+--password-stdin`.
 
 (Historical note: `ceo@verself.sh`'s password was rotated during this work to a
 value held only in the `verself-ceo` vault profile; ceo remains unusable for
