@@ -21,6 +21,8 @@ const (
 	PermissionSandboxExecutionScheduleWrite = "sandbox:execution_schedule:write"
 	PermissionSandboxLogsRead               = "sandbox:logs:read"
 	PermissionSandboxAnalyticsRead          = "sandbox:analytics:read"
+	PermissionSandboxCacheRead              = "sandbox:cache:read"
+	PermissionSandboxCacheWrite             = "sandbox:cache:write"
 	PermissionBillingRead                   = "billing:read"
 	PermissionBillingCheckout               = "billing:checkout"
 	PermissionProjectRead                   = "projects:project:read"
@@ -95,6 +97,10 @@ var defaultOperations = Operations{
 				{OperationID: "get-costs-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_costs", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "get-caches-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_caches", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "get-runner-sizing-analytics", Permission: PermissionSandboxAnalyticsRead, Resource: "run_analytics_runner_sizing", Action: "read", OrgScope: "token_org_id"},
+				{OperationID: "list-cache-volumes", Permission: PermissionSandboxCacheRead, Resource: "cache_volume", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "list-cache-generations", Permission: PermissionSandboxCacheRead, Resource: "cache_generation", Action: "list", OrgScope: "token_org_id"},
+				{OperationID: "delete-cache-generation", Permission: PermissionSandboxCacheWrite, Resource: "cache_generation", Action: "delete", OrgScope: "token_org_id"},
+				{OperationID: "delete-cache-path", Permission: PermissionSandboxCacheWrite, Resource: "cache_volume", Action: "delete", OrgScope: "token_org_id"},
 				{OperationID: "create-execution-schedule", Permission: PermissionSandboxExecutionScheduleWrite, Resource: "execution_schedule", Action: "create", OrgScope: "token_org_id"},
 				{OperationID: "list-execution-schedules", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "list", OrgScope: "token_org_id"},
 				{OperationID: "get-execution-schedule", Permission: PermissionSandboxExecutionScheduleRead, Resource: "execution_schedule", Action: "read", OrgScope: "token_org_id"},
