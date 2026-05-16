@@ -18,8 +18,11 @@ function FlightConsole() {
   const { orgSlug } = Route.useParams();
   const { flight } = Route.useSearch();
 
-  // Deterministic fixture states for `aspect dev verself-web` + agent-browser.
-  if (import.meta.env.DEV && flight && isFlightFixtureName(flight)) {
+  // Deterministic synthetic states behind an explicit `?flight=<state>` param
+  // (building-on-time | running-late | no-history | no-build). Opt-in, purely
+  // synthetic, still behind auth — the QA / agent-browser / design-review
+  // affordance; the live Electric board is the default.
+  if (flight && isFlightFixtureName(flight)) {
     return <FlightBoard flights={flightFixture(flight)} orgSlug={orgSlug} />;
   }
 
