@@ -56,6 +56,10 @@ service SandboxRental {
         GetJobsAnalytics,
         GetCostsAnalytics,
         GetRunnerSizingAnalytics,
+        ListCacheVolumes,
+        ListCacheGenerations,
+        DeleteCacheGeneration,
+        DeleteCachePath,
         CreateExecutionSchedule,
         ListExecutionSchedules,
         GetExecutionSchedule,
@@ -72,6 +76,8 @@ service SandboxRental {
         RunAnalyticsJobsResource,
         RunAnalyticsCostsResource,
         RunAnalyticsRunnerSizingResource,
+        CacheVolume,
+        CacheGeneration,
         ExecutionSchedule
     ]
 }
@@ -113,6 +119,18 @@ string ActorId
 
 @length(min: 1, max: 512)
 string BillingWindowId
+
+@pattern("^[0-9a-fA-F-]{36}$")
+string CacheGenerationId
+
+@length(min: 1, max: 255)
+string CachePath
+
+@length(min: 1, max: 128)
+string CacheVolumeName
+
+@pattern("^[0-9a-fA-F-]{36}$")
+string CacheVolumeId
 
 @length(min: 1, max: 512)
 string CorrelationId
@@ -318,6 +336,18 @@ list SandboxRunnerSizingSamples {
     member: SandboxRunnerSizingSample
 }
 
+list SandboxCacheVolumes {
+    member: SandboxCacheVolume
+}
+
+list SandboxCacheGenerations {
+    member: SandboxCacheGeneration
+}
+
+list SandboxCachePaths {
+    member: CachePath
+}
+
 @permission(name: "sandbox:github_installation:read")
 string GitHubInstallationReadPermission
 
@@ -338,6 +368,12 @@ string LogsReadPermission
 
 @permission(name: "sandbox:analytics:read")
 string AnalyticsReadPermission
+
+@permission(name: "sandbox:cache:read")
+string CacheReadPermission
+
+@permission(name: "sandbox:cache:write")
+string CacheWritePermission
 
 @permission(name: "sandbox:runner_repository:register")
 string RunnerRepositoryRegisterPermission
@@ -375,6 +411,18 @@ string CostsAnalyticsReadAuditEvent
 @auditEvent(name: "sandbox.run_analytics.runner_sizing.read")
 string RunnerSizingAnalyticsReadAuditEvent
 
+@auditEvent(name: "sandbox.cache_volume.list")
+string CacheVolumeListAuditEvent
+
+@auditEvent(name: "sandbox.cache_generation.list")
+string CacheGenerationListAuditEvent
+
+@auditEvent(name: "sandbox.cache_generation.delete")
+string CacheGenerationDeleteAuditEvent
+
+@auditEvent(name: "sandbox.cache_path.delete")
+string CachePathDeleteAuditEvent
+
 @auditEvent(name: "sandbox.execution_schedule.create")
 string ScheduleCreateAuditEvent
 
@@ -402,6 +450,8 @@ resource RunLogsResource {}
 resource RunAnalyticsJobsResource {}
 resource RunAnalyticsCostsResource {}
 resource RunAnalyticsRunnerSizingResource {}
+resource CacheVolume {}
+resource CacheGeneration {}
 resource ExecutionSchedule {}
 resource RunnerRepository {}
 
@@ -678,6 +728,139 @@ structure SandboxExecutionSchedulesPage {
 
     @required
     limit: ScheduleListPageSize
+}
+
+structure SandboxCacheVolume {
+    @required
+    cache_volume_id: CacheVolumeId
+
+    @required
+    resourceName: ResourceName
+
+    @required
+    org_id: OrgId
+
+    @required
+    provider: Provider
+
+    @required
+    provider_repository_id: ProviderRepositoryId
+
+    repository_full_name: RepositoryFullName
+
+    @required
+    scope_ref: GitRef
+
+    @required
+    name: CacheVolumeName
+
+    current_generation_id: CacheGenerationId
+
+    @required
+    generation_count: SafeNonNegativeLong
+
+    @required
+    used_bytes: SafeNonNegativeLong
+
+    @required
+    written_bytes: SafeNonNegativeLong
+
+    @required
+    created_at: DateTime
+
+    @required
+    last_used_at: DateTime
+}
+
+structure SandboxCacheGeneration {
+    @required
+    cache_generation_id: CacheGenerationId
+
+    @required
+    cache_volume_id: CacheVolumeId
+
+    source_generation_id: CacheGenerationId
+
+    @required
+    org_id: OrgId
+
+    @required
+    provider: Provider
+
+    @required
+    provider_repository_id: ProviderRepositoryId
+
+    repository_full_name: RepositoryFullName
+
+    @required
+    scope_ref: GitRef
+
+    @required
+    volume_name: CacheVolumeName
+
+    @required
+    bind_paths: SandboxCachePaths
+
+    @required
+    provider_run_id: DecimalUint64
+
+    @required
+    provider_run_attempt: DecimalUint64
+
+    @required
+    provider_job_id: DecimalUint64
+
+    head_sha: HeadSHA
+    tree_hash: String
+
+    @required
+    result: String
+
+    @required
+    state: String
+
+    @required
+    zfs_snapshot_ref: String
+
+    @required
+    used_bytes: SafeNonNegativeLong
+
+    @required
+    written_bytes: SafeNonNegativeLong
+
+    sealed_at: DateTime
+    committed_at: DateTime
+    last_used_at: DateTime
+    expires_at: DateTime
+
+    @required
+    current: Boolean
+}
+
+structure SandboxCacheVolumesPage {
+    @required
+    volumes: SandboxCacheVolumes
+}
+
+structure SandboxCacheGenerationsPage {
+    @required
+    generations: SandboxCacheGenerations
+}
+
+structure SandboxCacheGenerationDeleteResult {
+    @required
+    generation: SandboxCacheGeneration
+}
+
+structure SandboxCachePathDeleteResult {
+    @required
+    cache_volume_id: CacheVolumeId
+
+    @required
+    path: CachePath
+
+    @required
+    generations: SandboxCacheGenerations
 }
 
 structure SandboxRunLogSearchResult {
@@ -1276,6 +1459,107 @@ structure SandboxRunnerSizingAnalyticsOutput {
     @httpPayload
     @nestedProperties
     analytics: SandboxRunnerSizingAnalytics
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/cache/volumes")
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
+@authz(permission: CacheReadPermission, organization: {source: "token_org_id"})
+@audit(event: CacheVolumeListAuditEvent, resource: CacheVolume, action: "list")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "sandbox.cache", method: "listVolumes", paginated: false, retryable: true)
+operation ListCacheVolumes {
+    input: EmptyInput
+    output: SandboxCacheVolumesPage
+    errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/cache/volumes/{cache_volume_id}/generations")
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
+@authz(permission: CacheReadPermission, organization: {source: "token_org_id"})
+@audit(event: CacheGenerationListAuditEvent, resource: CacheGeneration, action: "list")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "sandbox.cache", method: "listGenerations", paginated: false, retryable: true)
+operation ListCacheGenerations {
+    input: CacheVolumePathInput
+    output: SandboxCacheGenerationsPage
+    errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
+}
+
+structure CacheVolumePathInput {
+    @required
+    @httpLabel
+    cache_volume_id: CacheVolumeId
+}
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/cache/generations/{cache_generation_id}/delete")
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
+@authz(permission: CacheWritePermission, organization: {source: "token_org_id"})
+@audit(event: CacheGenerationDeleteAuditEvent, resource: CacheGeneration, action: "delete")
+@rateLimit(bucket: "cache_mutation")
+@requestBudget(maxBytes: 1024)
+@sdk(module: "sandbox.cache", method: "deleteGeneration", paginated: false, retryable: false)
+operation DeleteCacheGeneration {
+    input: DeleteCacheGenerationInput
+    output: SandboxCacheGenerationDeleteOutput
+    errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, ConflictError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
+}
+
+structure DeleteCacheGenerationInput {
+    @required
+    @httpLabel
+    cache_generation_id: CacheGenerationId
+
+    @required
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+}
+
+structure SandboxCacheGenerationDeleteOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    result: SandboxCacheGenerationDeleteResult
+}
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/cache/volumes/{cache_volume_id}/paths/delete")
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
+@authz(permission: CacheWritePermission, organization: {source: "token_org_id"})
+@audit(event: CachePathDeleteAuditEvent, resource: CacheVolume, action: "delete")
+@rateLimit(bucket: "cache_mutation")
+@requestBudget(maxBytes: 4096)
+@sdk(module: "sandbox.cache", method: "deletePath", paginated: false, retryable: false)
+operation DeleteCachePath {
+    input: DeleteCachePathInput
+    output: SandboxCachePathDeleteOutput
+    errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, ConflictError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
+}
+
+structure DeleteCachePathInput {
+    @required
+    @httpLabel
+    cache_volume_id: CacheVolumeId
+
+    @required
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+
+    @required
+    path: CachePath
+}
+
+structure SandboxCachePathDeleteOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    result: SandboxCachePathDeleteResult
 }
 
 @idempotent

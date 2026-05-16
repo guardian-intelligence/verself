@@ -1005,7 +1005,7 @@ structure BillingURLResponseOutput {
     response: BillingURLResponse
 }
 
-@readonly
+@idempotent
 @http(method: "POST", uri: "/internal/billing/v1/storage-entitlement")
 @identity(mode: "spiffe_mtls", audience: "billing-service", principals: ["workload"])
 @authz(permission: BillingReadPermission, organization: {source: "body_org_id", member: "org_id"})

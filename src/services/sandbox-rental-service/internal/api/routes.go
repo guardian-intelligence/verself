@@ -31,6 +31,10 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.GetJobsAnalytics, "Get run duration and success analytics", getJobsAnalytics(svc))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.GetCostsAnalytics, "Get run cost analytics", getCostsAnalytics(svc))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.GetRunnerSizingAnalytics, "Get runner sizing analytics", getRunnerSizingAnalytics(svc))
+	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.ListCacheVolumes, "List durable cache volumes", listCacheVolumes(svc, publicConfig.InstallationID))
+	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.ListCacheGenerations, "List durable cache generations", listCacheGenerations(svc, publicConfig.InstallationID))
+	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.DeleteCacheGeneration, "Delete a durable cache generation", deleteCacheGeneration(svc, publicConfig.InstallationID))
+	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.DeleteCachePath, "Delete a durable cache path", deleteCachePath(svc, publicConfig.InstallationID))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.CreateExecutionSchedule, "Create a recurring execution schedule", createExecutionSchedule(recurringSvc, publicConfig.InstallationID))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.ListExecutionSchedules, "List recurring execution schedules", listExecutionSchedules(recurringSvc, publicConfig.InstallationID))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.GetExecutionSchedule, "Get a recurring execution schedule", getExecutionSchedule(recurringSvc, publicConfig.InstallationID))
@@ -328,6 +332,92 @@ func getRunnerSizingAnalytics(svc *jobs.Service) func(context.Context, *contract
 			return nil, internalFailure(ctx, "get-runner-sizing-analytics-failed", "get runner sizing analytics failed", err)
 		}
 		return &contractapi.SandboxRunnerSizingAnalyticsOutput{Body: runnerSizingAnalytics(analytics)}, nil
+	}
+}
+
+func listCacheVolumes(svc *jobs.Service, installationID string) func(context.Context, *contractapi.EmptyInput) (*contractapi.SandboxCacheVolumesPage, error) {
+	return func(ctx context.Context, _ *contractapi.EmptyInput) (*contractapi.SandboxCacheVolumesPage, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		volumes, err := svc.ListDurableCacheVolumes(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		return &contractapi.SandboxCacheVolumesPage{Body: contractapi.SandboxCacheVolumesPageBody{Volumes: cacheVolumes(volumes, installationID)}}, nil
+	}
+}
+
+func listCacheGenerations(svc *jobs.Service, installationID string) func(context.Context, *contractapi.CacheVolumePathInput) (*contractapi.SandboxCacheGenerationsPage, error) {
+	return func(ctx context.Context, input *contractapi.CacheVolumePathInput) (*contractapi.SandboxCacheGenerationsPage, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cacheVolumeID, err := uuid.Parse(string(input.CacheVolumeID))
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-cache-volume-id", "cache_volume_id must be a UUID", err)
+		}
+		generations, err := svc.ListDurableCacheGenerations(ctx, orgID, cacheVolumeID)
+		if err != nil {
+			if errors.Is(err, jobs.ErrDurableCacheMissing) {
+				return nil, notFound(ctx, "cache-volume-not-found", "cache volume not found")
+			}
+			return nil, err
+		}
+		return &contractapi.SandboxCacheGenerationsPage{Body: contractapi.SandboxCacheGenerationsPageBody{Generations: cacheGenerations(generations, installationID)}}, nil
+	}
+}
+
+func deleteCacheGeneration(svc *jobs.Service, installationID string) func(context.Context, *contractapi.DeleteCacheGenerationInput) (*contractapi.SandboxCacheGenerationDeleteOutput, error) {
+	return func(ctx context.Context, input *contractapi.DeleteCacheGenerationInput) (*contractapi.SandboxCacheGenerationDeleteOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		generationID, err := uuid.Parse(string(input.CacheGenerationID))
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-cache-generation-id", "cache_generation_id must be a UUID", err)
+		}
+		result, err := svc.DeleteDurableCacheGeneration(ctx, orgID, generationID)
+		if err != nil {
+			return nil, durableCacheMutationError(ctx, err)
+		}
+		return &contractapi.SandboxCacheGenerationDeleteOutput{Body: contractapi.SandboxCacheGenerationDeleteResult{Generation: cacheGeneration(result.DeletedGeneration, installationID)}}, nil
+	}
+}
+
+func deleteCachePath(svc *jobs.Service, installationID string) func(context.Context, *contractapi.DeleteCachePathInput) (*contractapi.SandboxCachePathDeleteOutput, error) {
+	return func(ctx context.Context, input *contractapi.DeleteCachePathInput) (*contractapi.SandboxCachePathDeleteOutput, error) {
+		orgID, err := requireOrgID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cacheVolumeID, err := uuid.Parse(string(input.CacheVolumeID))
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-cache-volume-id", "cache_volume_id must be a UUID", err)
+		}
+		result, err := svc.DeleteDurableCachePath(ctx, orgID, cacheVolumeID, string(input.Body.Path))
+		if err != nil {
+			return nil, durableCacheMutationError(ctx, err)
+		}
+		return &contractapi.SandboxCachePathDeleteOutput{Body: contractapi.SandboxCachePathDeleteResult{CacheVolumeID: contractapi.CacheVolumeID(result.CacheVolumeID.String()), Path: contractapi.CachePath(result.Path), Generations: cacheGenerations(result.DeletedGenerations, installationID)}}, nil
+	}
+}
+
+func durableCacheMutationError(ctx context.Context, err error) error {
+	switch {
+	case errors.Is(err, jobs.ErrDurableCacheInvalid):
+		return badRequest(ctx, "invalid-cache-path", err.Error(), err)
+	case errors.Is(err, jobs.ErrDurableCacheMissing):
+		return notFound(ctx, "cache-not-found", "cache generation or path not found")
+	case errors.Is(err, jobs.ErrDurableCacheBusy):
+		return conflict(ctx, "cache-generation-busy", "cache generation is in use or has live descendants")
+	case errors.Is(err, jobs.ErrRunnerUnavailable):
+		return serviceUnavailable(ctx, "vm-orchestrator-unavailable", "vm orchestrator is unavailable", err)
+	default:
+		return err
 	}
 }
 

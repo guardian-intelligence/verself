@@ -57,23 +57,6 @@ func (q *Queries) DeleteRunnerBootstrapConfig(ctx context.Context, arg DeleteRun
 	return err
 }
 
-const getRunnerBootstrapSecretNameByAllocation = `-- name: GetRunnerBootstrapSecretNameByAllocation :one
-SELECT bootstrap_secret_name
-FROM runner_bootstrap_configs
-WHERE allocation_id = $1
-`
-
-type GetRunnerBootstrapSecretNameByAllocationParams struct {
-	AllocationID uuid.UUID
-}
-
-func (q *Queries) GetRunnerBootstrapSecretNameByAllocation(ctx context.Context, arg GetRunnerBootstrapSecretNameByAllocationParams) (string, error) {
-	row := q.db.QueryRow(ctx, getRunnerBootstrapSecretNameByAllocation, arg.AllocationID)
-	var bootstrap_secret_name string
-	err := row.Scan(&bootstrap_secret_name)
-	return bootstrap_secret_name, err
-}
-
 const findAllocationForRunner = `-- name: FindAllocationForRunner :one
 SELECT allocation_id, requested_for_provider_job_id
 FROM runner_allocations
@@ -170,6 +153,23 @@ func (q *Queries) GetRunnerAllocationProvider(ctx context.Context, arg GetRunner
 	var provider string
 	err := row.Scan(&provider)
 	return provider, err
+}
+
+const getRunnerBootstrapSecretNameByAllocation = `-- name: GetRunnerBootstrapSecretNameByAllocation :one
+SELECT bootstrap_secret_name
+FROM runner_bootstrap_configs
+WHERE allocation_id = $1
+`
+
+type GetRunnerBootstrapSecretNameByAllocationParams struct {
+	AllocationID uuid.UUID
+}
+
+func (q *Queries) GetRunnerBootstrapSecretNameByAllocation(ctx context.Context, arg GetRunnerBootstrapSecretNameByAllocationParams) (string, error) {
+	row := q.db.QueryRow(ctx, getRunnerBootstrapSecretNameByAllocation, arg.AllocationID)
+	var bootstrap_secret_name string
+	err := row.Scan(&bootstrap_secret_name)
+	return bootstrap_secret_name, err
 }
 
 const getRunnerExecutionIdentity = `-- name: GetRunnerExecutionIdentity :one

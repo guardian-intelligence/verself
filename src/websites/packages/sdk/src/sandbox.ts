@@ -9,6 +9,8 @@ import {
   type SearchRunLogsData,
   beginGithubInstallation as beginGeneratedGithubInstallation,
   createExecutionSchedule as createGeneratedExecutionSchedule,
+  deleteCacheGeneration as deleteGeneratedCacheGeneration,
+  deleteCachePath as deleteGeneratedCachePath,
   getCostsAnalytics as getGeneratedCostsAnalytics,
   getExecution as getGeneratedExecution,
   getExecutionLogs as getGeneratedExecutionLogs,
@@ -16,6 +18,8 @@ import {
   getJobsAnalytics as getGeneratedJobsAnalytics,
   getRun as getGeneratedRun,
   getRunnerSizingAnalytics as getGeneratedRunnerSizingAnalytics,
+  listCacheGenerations as listGeneratedCacheGenerations,
+  listCacheVolumes as listGeneratedCacheVolumes,
   listExecutionSchedules as listGeneratedExecutionSchedules,
   listGithubInstallations as listGeneratedGithubInstallations,
   listRuns as listGeneratedRuns,
@@ -28,6 +32,13 @@ import {
   vCreateExecutionScheduleResponse,
   vBeginGithubInstallationHeaders,
   vBeginGithubInstallationResponse,
+  vDeleteCacheGenerationHeaders,
+  vDeleteCacheGenerationPath,
+  vDeleteCacheGenerationResponse,
+  vDeleteCachePathBody,
+  vDeleteCachePathHeaders,
+  vDeleteCachePathPath,
+  vDeleteCachePathResponse,
   vGetCostsAnalyticsQuery,
   vGetCostsAnalyticsResponse,
   vGetExecutionPath,
@@ -42,6 +53,9 @@ import {
   vGetRunResponse,
   vGetRunnerSizingAnalyticsQuery,
   vGetRunnerSizingAnalyticsResponse,
+  vListCacheGenerationsPath,
+  vListCacheGenerationsResponse,
+  vListCacheVolumesResponse,
   vListExecutionSchedulesQuery,
   vListExecutionSchedulesResponse,
   vListGithubInstallationsResponse,
@@ -57,6 +71,8 @@ import {
   vSearchRunLogsResponse,
   vSandboxAttemptRecord,
   vSandboxBillingWindow,
+  vSandboxCacheGeneration,
+  vSandboxCacheVolume,
   vSandboxExecutionRecord,
   vSandboxExecutionScheduleDispatchRecord,
   vSandboxExecutionScheduleRecord,
@@ -113,6 +129,38 @@ export class SandboxRental {
     return getRunnerSizingAnalytics({
       ...this.#options,
       ...(query === undefined ? {} : { query }),
+    });
+  }
+
+  listCacheVolumes(): Promise<CacheVolume[]> {
+    return listCacheVolumes(this.#options);
+  }
+
+  listCacheGenerations(cacheVolumeId: string): Promise<CacheGeneration[]> {
+    return listCacheGenerations({ ...this.#options, cacheVolumeId });
+  }
+
+  deleteCacheGeneration(
+    cacheGenerationId: string,
+    options?: SandboxMutationOptions,
+  ): Promise<CacheGeneration> {
+    return deleteCacheGeneration({
+      ...this.#options,
+      cacheGenerationId,
+      ...(options === undefined ? {} : { options }),
+    });
+  }
+
+  deleteCachePath(
+    cacheVolumeId: string,
+    path: string,
+    options?: SandboxMutationOptions,
+  ): Promise<CachePathDeleteResult> {
+    return deleteCachePath({
+      ...this.#options,
+      cacheVolumeId,
+      path,
+      ...(options === undefined ? {} : { options }),
     });
   }
 
@@ -318,6 +366,55 @@ function parseRunnerSizingAnalytics(input: unknown) {
 }
 
 export type RunnerSizingAnalytics = ReturnType<typeof parseRunnerSizingAnalytics>;
+
+function parseCacheVolume(input: unknown) {
+  const parsed = v.parse(vSandboxCacheVolume, input);
+  return {
+    ...parsed,
+    generation_count: toSafeNumber(parsed.generation_count, "cache.generation_count"),
+    used_bytes: toSafeNumber(parsed.used_bytes, "cache.used_bytes"),
+    written_bytes: toSafeNumber(parsed.written_bytes, "cache.written_bytes"),
+  };
+}
+
+export type CacheVolume = ReturnType<typeof parseCacheVolume>;
+
+function parseCacheGeneration(input: unknown) {
+  const parsed = v.parse(vSandboxCacheGeneration, input);
+  return {
+    ...parsed,
+    bind_paths: parsed.bind_paths ?? [],
+    used_bytes: toSafeNumber(parsed.used_bytes, "cache_generation.used_bytes"),
+    written_bytes: toSafeNumber(parsed.written_bytes, "cache_generation.written_bytes"),
+  };
+}
+
+export type CacheGeneration = ReturnType<typeof parseCacheGeneration>;
+
+function parseCacheVolumes(input: unknown) {
+  return (
+    v.parse(vListCacheVolumesResponse, input).volumes?.map((volume) => parseCacheVolume(volume)) ??
+    []
+  );
+}
+
+function parseCacheGenerations(input: unknown) {
+  return (
+    v
+      .parse(vListCacheGenerationsResponse, input)
+      .generations?.map((generation) => parseCacheGeneration(generation)) ?? []
+  );
+}
+
+function parseCachePathDeleteResult(input: unknown) {
+  const parsed = v.parse(vDeleteCachePathResponse, input);
+  return {
+    ...parsed,
+    generations: parsed.generations?.map((generation) => parseCacheGeneration(generation)) ?? [],
+  };
+}
+
+export type CachePathDeleteResult = ReturnType<typeof parseCachePathDeleteResult>;
 
 type RawRunsPage = v.InferOutput<typeof vListRunsResponse>;
 
@@ -573,6 +670,46 @@ export const runIdInputSchema = v.pipe(
 
 export type RunIdInput = v.InferOutput<typeof runIdInputSchema>;
 
+export const cacheVolumeIdInputSchema = v.pipe(
+  v.strictObject({
+    cacheVolumeId: v.string(),
+  }),
+  v.transform(({ cacheVolumeId }) => ({
+    cacheVolumeId: v.parse(vListCacheGenerationsPath, {
+      cache_volume_id: cacheVolumeId,
+    }).cache_volume_id,
+  })),
+);
+
+export type CacheVolumeIdInput = v.InferOutput<typeof cacheVolumeIdInputSchema>;
+
+export const cacheGenerationIdInputSchema = v.pipe(
+  v.strictObject({
+    cacheGenerationId: v.string(),
+  }),
+  v.transform(({ cacheGenerationId }) => ({
+    cacheGenerationId: v.parse(vDeleteCacheGenerationPath, {
+      cache_generation_id: cacheGenerationId,
+    }).cache_generation_id,
+  })),
+);
+
+export type CacheGenerationIdInput = v.InferOutput<typeof cacheGenerationIdInputSchema>;
+
+export const cachePathDeleteRequestSchema = v.pipe(
+  v.strictObject({
+    cacheVolumeId: v.string(),
+    path: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(255)),
+  }),
+  v.transform(({ cacheVolumeId, path }) => ({
+    cacheVolumeId: v.parse(vDeleteCachePathPath, { cache_volume_id: cacheVolumeId })
+      .cache_volume_id,
+    path: v.parse(vDeleteCachePathBody, { path }).path,
+  })),
+);
+
+export type CachePathDeleteRequest = v.InferInput<typeof cachePathDeleteRequestSchema>;
+
 export const executionScheduleIdInputSchema = v.pipe(
   v.strictObject({
     scheduleId: v.string(),
@@ -804,6 +941,109 @@ export async function getRunnerSizingAnalytics(
   }
 
   return parseRunnerSizingAnalytics(result.data);
+}
+
+export async function listCacheVolumes(
+  options: SandboxRentalClientOptions,
+): Promise<CacheVolume[]> {
+  const client = createSandboxRentalClient(options);
+  const path = "/api/v1/cache/volumes";
+  const result = await listGeneratedCacheVolumes({
+    client,
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseCacheVolumes(result.data);
+}
+
+export async function listCacheGenerations(
+  options: SandboxRentalClientOptions & { cacheVolumeId: string },
+): Promise<CacheGeneration[]> {
+  const client = createSandboxRentalClient(options);
+  const { cacheVolumeId } = v.parse(cacheVolumeIdInputSchema, {
+    cacheVolumeId: options.cacheVolumeId,
+  });
+  const path = `/api/v1/cache/volumes/${cacheVolumeId}/generations`;
+  const result = await listGeneratedCacheGenerations({
+    client,
+    path: v.parse(vListCacheGenerationsPath, { cache_volume_id: cacheVolumeId }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseCacheGenerations(result.data);
+}
+
+export async function deleteCacheGeneration(
+  options: SandboxRentalClientOptions & {
+    cacheGenerationId: string;
+    options?: SandboxMutationOptions;
+  },
+): Promise<CacheGeneration> {
+  const client = createSandboxRentalClient(options);
+  const { cacheGenerationId } = v.parse(cacheGenerationIdInputSchema, {
+    cacheGenerationId: options.cacheGenerationId,
+  });
+  const headers = v.parse(
+    vDeleteCacheGenerationHeaders,
+    idempotencyHeaders("cache-generation-delete", options.options?.idempotencyKey),
+  );
+  const path = `/api/v1/cache/generations/${cacheGenerationId}/delete`;
+  const result = await deleteGeneratedCacheGeneration({
+    client,
+    headers,
+    path: v.parse(vDeleteCacheGenerationPath, { cache_generation_id: cacheGenerationId }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseCacheGeneration(v.parse(vDeleteCacheGenerationResponse, result.data).generation);
+}
+
+export async function deleteCachePath(
+  options: SandboxRentalClientOptions & {
+    cacheVolumeId: string;
+    path: string;
+    options?: SandboxMutationOptions;
+  },
+): Promise<CachePathDeleteResult> {
+  const client = createSandboxRentalClient(options);
+  const request = v.parse(cachePathDeleteRequestSchema, {
+    cacheVolumeId: options.cacheVolumeId,
+    path: options.path,
+  });
+  const headers = v.parse(
+    vDeleteCachePathHeaders,
+    idempotencyHeaders("cache-path-delete", options.options?.idempotencyKey),
+  );
+  const path = `/api/v1/cache/volumes/${request.cacheVolumeId}/paths/delete`;
+  const result = await deleteGeneratedCachePath({
+    body: { path: request.path },
+    client,
+    headers,
+    path: v.parse(vDeleteCachePathPath, { cache_volume_id: request.cacheVolumeId }),
+    responseStyle: "fields",
+    throwOnError: false,
+  });
+
+  if (result.error !== undefined) {
+    throwSandboxRentalError(path, result.response, result.error);
+  }
+
+  return parseCachePathDeleteResult(result.data);
 }
 
 export async function listGitHubInstallations(

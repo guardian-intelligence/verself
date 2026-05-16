@@ -9,6 +9,7 @@ go_library(
         "bazel_telemetry.go",
         "checkout.go",
         "correlation.go",
+        "durable_management.go",
         "durable_volumes.go",
         "forgejo_runner.go",
         "github_execution_auth.go",

@@ -29,12 +29,12 @@ cache:
 	}
 }
 
-func TestParseCacheManifestRejectsSize(t *testing.T) {
+func TestParseCacheManifestRejectsUnknownFields(t *testing.T) {
 	_, err := parseCacheManifest([]byte(`
 version: 1
 cache:
   - name: bazel
-    size: 100GiB
+    ttl: 7d
     paths:
       - ~/.cache/bazel-repo
 `), "manifest", ".verself/cache.yml", "abc123", "", "", "")

@@ -108,6 +108,14 @@ type AttemptState string
 
 type BillingWindowID string
 
+type CacheGenerationID string
+
+type CachePath string
+
+type CacheVolumeID string
+
+type CacheVolumeName string
+
 type CorrelationID string
 
 type DecimalUint64 string
@@ -241,6 +249,12 @@ type SandboxRunDurationSamples []SandboxRunDurationSample
 type SandboxRunLogSearchResults []SandboxRunLogSearchResult
 
 type SandboxRunnerSizingSamples []SandboxRunnerSizingSample
+
+type SandboxCacheGenerations []SandboxCacheGeneration
+
+type SandboxCachePaths []CachePath
+
+type SandboxCacheVolumes []SandboxCacheVolume
 
 type ScheduleInputs map[string]ScheduleInputValue
 
@@ -662,6 +676,51 @@ type SandboxScheduleRunMetadata struct {
 	TemporalWorkflowID   *TemporalID   `json:"temporal_workflow_id,omitempty" minLength:"1" maxLength:"512"`
 }
 
+type SandboxCacheVolume struct {
+	CacheVolumeID        CacheVolumeID        `json:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	CreatedAt            string               `json:"created_at" required:"true"`
+	CurrentGenerationID  *CacheGenerationID   `json:"current_generation_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
+	GenerationCount      SafeNonNegativeLong  `json:"generation_count" required:"true" minimum:"0"`
+	LastUsedAt           string               `json:"last_used_at" required:"true"`
+	Name                 CacheVolumeName      `json:"name" required:"true" minLength:"1" maxLength:"128"`
+	OrgID                OrgID                `json:"org_id" required:"true" minLength:"1" maxLength:"128" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	Provider             Provider             `json:"provider" required:"true" minLength:"1" maxLength:"64"`
+	ProviderRepositoryID ProviderRepositoryID `json:"provider_repository_id" required:"true" minLength:"1" maxLength:"512"`
+	RepositoryFullName   *RepositoryFullName  `json:"repository_full_name,omitempty" minLength:"1" maxLength:"1024"`
+	ResourceName         ResourceName         `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
+	ScopeRef             GitRef               `json:"scope_ref" required:"true" minLength:"1" maxLength:"1024"`
+	UsedBytes            SafeNonNegativeLong  `json:"used_bytes" required:"true" minimum:"0"`
+	WrittenBytes         SafeNonNegativeLong  `json:"written_bytes" required:"true" minimum:"0"`
+}
+
+type SandboxCacheGeneration struct {
+	BindPaths            SandboxCachePaths    `json:"bind_paths" required:"true"`
+	CacheGenerationID    CacheGenerationID    `json:"cache_generation_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	CacheVolumeID        CacheVolumeID        `json:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	CommittedAt          *string              `json:"committed_at,omitempty"`
+	Current              bool                 `json:"current" required:"true"`
+	ExpiresAt            *string              `json:"expires_at,omitempty"`
+	HeadSha              *HeadSHA             `json:"head_sha,omitempty" minLength:"1" maxLength:"128"`
+	LastUsedAt           *string              `json:"last_used_at,omitempty"`
+	OrgID                OrgID                `json:"org_id" required:"true" minLength:"1" maxLength:"128" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	Provider             Provider             `json:"provider" required:"true" minLength:"1" maxLength:"64"`
+	ProviderJobID        DecimalUint64        `json:"provider_job_id" required:"true" pattern:"^[0-9]+$"`
+	ProviderRepositoryID ProviderRepositoryID `json:"provider_repository_id" required:"true" minLength:"1" maxLength:"512"`
+	ProviderRunAttempt   DecimalUint64        `json:"provider_run_attempt" required:"true" pattern:"^[0-9]+$"`
+	ProviderRunID        DecimalUint64        `json:"provider_run_id" required:"true" pattern:"^[0-9]+$"`
+	RepositoryFullName   *RepositoryFullName  `json:"repository_full_name,omitempty" minLength:"1" maxLength:"1024"`
+	Result               string               `json:"result" required:"true"`
+	ScopeRef             GitRef               `json:"scope_ref" required:"true" minLength:"1" maxLength:"1024"`
+	SealedAt             *string              `json:"sealed_at,omitempty"`
+	SourceGenerationID   *CacheGenerationID   `json:"source_generation_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
+	State                string               `json:"state" required:"true"`
+	TreeHash             *string              `json:"tree_hash,omitempty"`
+	UsedBytes            SafeNonNegativeLong  `json:"used_bytes" required:"true" minimum:"0"`
+	VolumeName           CacheVolumeName      `json:"volume_name" required:"true" minLength:"1" maxLength:"128"`
+	WrittenBytes         SafeNonNegativeLong  `json:"written_bytes" required:"true" minimum:"0"`
+	ZFSSnapshotRef       string               `json:"zfs_snapshot_ref" required:"true"`
+}
+
 type SearchRunLogsInput struct {
 	AttemptID   AttemptID            `query:"attempt_id" pattern:"^[0-9a-fA-F-]{36}$"`
 	Branch      GitRef               `query:"branch" minLength:"1" maxLength:"1024"`
@@ -673,6 +732,25 @@ type SearchRunLogsInput struct {
 	RunnerClass RunnerClass          `query:"runner_class" minLength:"1" maxLength:"255"`
 	SourceKind  SourceKind           `query:"source_kind" minLength:"1" maxLength:"64"`
 	Workflow    WorkflowName         `query:"workflow" minLength:"1" maxLength:"1024"`
+}
+
+type CacheVolumePathInput struct {
+	CacheVolumeID CacheVolumeID `path:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+}
+
+type DeleteCacheGenerationInput struct {
+	CacheGenerationID CacheGenerationID `path:"cache_generation_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	IdempotencyKey    IdempotencyKey    `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+}
+
+type DeleteCachePathInputBody struct {
+	Path CachePath `json:"path" required:"true" minLength:"1" maxLength:"255"`
+}
+
+type DeleteCachePathInput struct {
+	Body           DeleteCachePathInputBody
+	CacheVolumeID  CacheVolumeID  `path:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
 }
 
 type SyncGithubInstallationRepositoriesInput struct {
@@ -758,7 +836,45 @@ type SandboxRunsPage struct {
 	Body SandboxRunsPageBody
 }
 
+type SandboxCacheVolumesPageBody struct {
+	Volumes SandboxCacheVolumes `json:"volumes" required:"true"`
+}
+
+type SandboxCacheVolumesPage struct {
+	Body SandboxCacheVolumesPageBody
+}
+
+type SandboxCacheGenerationsPageBody struct {
+	Generations SandboxCacheGenerations `json:"generations" required:"true"`
+}
+
+type SandboxCacheGenerationsPage struct {
+	Body SandboxCacheGenerationsPageBody
+}
+
+type SandboxCacheGenerationDeleteResult struct {
+	Generation SandboxCacheGeneration `json:"generation" required:"true"`
+}
+
+type SandboxCacheGenerationDeleteOutput struct {
+	Body SandboxCacheGenerationDeleteResult
+}
+
+type SandboxCachePathDeleteResult struct {
+	CacheVolumeID CacheVolumeID           `json:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	Generations   SandboxCacheGenerations `json:"generations" required:"true"`
+	Path          CachePath               `json:"path" required:"true" minLength:"1" maxLength:"255"`
+}
+
+type SandboxCachePathDeleteOutput struct {
+	Body SandboxCachePathDeleteResult
+}
+
 var Operations = []OperationDescriptor{
+	ListCacheVolumes.Descriptor,
+	ListCacheGenerations.Descriptor,
+	DeleteCacheGeneration.Descriptor,
+	DeleteCachePath.Descriptor,
 	ListExecutionSchedules.Descriptor,
 	CreateExecutionSchedule.Descriptor,
 	GetExecutionSchedule.Descriptor,
@@ -775,6 +891,126 @@ var Operations = []OperationDescriptor{
 	SearchRunLogs.Descriptor,
 	ListRuns.Descriptor,
 	GetRun.Descriptor,
+}
+
+var ListCacheVolumes = Operation[EmptyInput, SandboxCacheVolumesPage]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.sandbox.v1#ListCacheVolumes",
+		OperationID:         "list-cache-volumes",
+		Method:              "GET",
+		Path:                "/api/v1/cache/volumes",
+		DefaultStatus:       200,
+		Readonly:            true,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "verself-api", Principals: []string{"browser", "cli"}},
+		Authorization:       AuthorizationDescriptor{Permission: "sandbox:cache:read", OrganizationSource: "token_org_id", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "sandbox.cache_volume.list", Resource: "cache_volume", Action: "list"},
+		RateLimitBucket:     "read",
+		RequestBodyMaxBytes: 0,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "sandbox.cache", Method: "listVolumes", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+		},
+	},
+}
+
+var ListCacheGenerations = Operation[CacheVolumePathInput, SandboxCacheGenerationsPage]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.sandbox.v1#ListCacheGenerations",
+		OperationID:         "list-cache-generations",
+		Method:              "GET",
+		Path:                "/api/v1/cache/volumes/{cache_volume_id}/generations",
+		DefaultStatus:       200,
+		Readonly:            true,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "verself-api", Principals: []string{"browser", "cli"}},
+		Authorization:       AuthorizationDescriptor{Permission: "sandbox:cache:read", OrganizationSource: "token_org_id", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "sandbox.cache_generation.list", Resource: "cache_generation", Action: "list"},
+		RateLimitBucket:     "read",
+		RequestBodyMaxBytes: 0,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "sandbox.cache", Method: "listGenerations", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+		},
+	},
+}
+
+var DeleteCacheGeneration = Operation[DeleteCacheGenerationInput, SandboxCacheGenerationDeleteOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.sandbox.v1#DeleteCacheGeneration",
+		OperationID:         "delete-cache-generation",
+		Method:              "POST",
+		Path:                "/api/v1/cache/generations/{cache_generation_id}/delete",
+		DefaultStatus:       200,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "verself-api", Principals: []string{"browser", "cli"}},
+		Authorization:       AuthorizationDescriptor{Permission: "sandbox:cache:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "sandbox.cache_generation.delete", Resource: "cache_generation", Action: "delete"},
+		RateLimitBucket:     "cache_mutation",
+		RequestBodyMaxBytes: 1024,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "sandbox.cache", Method: "deleteGeneration", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:idempotency:payload_mismatch", Code: "idempotency.payload_mismatch", Status: 409},
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+		},
+	},
+}
+
+var DeleteCachePath = Operation[DeleteCachePathInput, SandboxCachePathDeleteOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.sandbox.v1#DeleteCachePath",
+		OperationID:         "delete-cache-path",
+		Method:              "POST",
+		Path:                "/api/v1/cache/volumes/{cache_volume_id}/paths/delete",
+		DefaultStatus:       200,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "verself-api", Principals: []string{"browser", "cli"}},
+		Authorization:       AuthorizationDescriptor{Permission: "sandbox:cache:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "sandbox.cache_path.delete", Resource: "cache_volume", Action: "delete"},
+		RateLimitBucket:     "cache_mutation",
+		RequestBodyMaxBytes: 4096,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "sandbox.cache", Method: "deletePath", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:idempotency:payload_mismatch", Code: "idempotency.payload_mismatch", Status: 409},
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
 }
 
 var ListExecutionSchedules = Operation[ListExecutionSchedulesInput, SandboxExecutionSchedulesPage]{
@@ -1241,6 +1477,10 @@ var GetRun = Operation[RunPathInput, SandboxExecutionOutput]{
 type Handlers = PublicHandlers
 
 type PublicHandlers interface {
+	ListCacheVolumes(context.Context, *EmptyInput) (*SandboxCacheVolumesPage, error)
+	ListCacheGenerations(context.Context, *CacheVolumePathInput) (*SandboxCacheGenerationsPage, error)
+	DeleteCacheGeneration(context.Context, *DeleteCacheGenerationInput) (*SandboxCacheGenerationDeleteOutput, error)
+	DeleteCachePath(context.Context, *DeleteCachePathInput) (*SandboxCachePathDeleteOutput, error)
 	ListExecutionSchedules(context.Context, *ListExecutionSchedulesInput) (*SandboxExecutionSchedulesPage, error)
 	CreateExecutionSchedule(context.Context, *CreateExecutionScheduleInput) (*SandboxExecutionScheduleOutput, error)
 	GetExecutionSchedule(context.Context, *ExecutionSchedulePathInput) (*SandboxExecutionScheduleOutput, error)
@@ -1258,6 +1498,14 @@ type PublicHandlers interface {
 	ListRuns(context.Context, *ListRunsInput) (*SandboxRunsPage, error)
 	GetRun(context.Context, *RunPathInput) (*SandboxExecutionOutput, error)
 }
+
+type ListCacheVolumesHandler = Handler[EmptyInput, SandboxCacheVolumesPage]
+
+type ListCacheGenerationsHandler = Handler[CacheVolumePathInput, SandboxCacheGenerationsPage]
+
+type DeleteCacheGenerationHandler = Handler[DeleteCacheGenerationInput, SandboxCacheGenerationDeleteOutput]
+
+type DeleteCachePathHandler = Handler[DeleteCachePathInput, SandboxCachePathDeleteOutput]
 
 type ListExecutionSchedulesHandler = Handler[ListExecutionSchedulesInput, SandboxExecutionSchedulesPage]
 

@@ -24,6 +24,9 @@ import {
   billingPortalRequestSchema as portalRequestSchema,
   billingStatementQuerySchema as statementQuerySchema,
   cancelBillingContractRequestSchema as cancelContractRequestSchema,
+  cacheGenerationIdInputSchema,
+  cachePathDeleteRequestSchema,
+  cacheVolumeIdInputSchema,
   createProjectRequestSchema,
   createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
   createGitCredentialRequestSchema as createSourceGitCredentialRequestSchema,
@@ -66,6 +69,12 @@ import {
   type BillingStatement as Statement,
   type BillingStatementQuery as StatementQuery,
   type CancelBillingContractRequest as CancelContractRequest,
+  type CacheGeneration,
+  type CacheGenerationIdInput,
+  type CachePathDeleteRequest,
+  type CachePathDeleteResult,
+  type CacheVolume,
+  type CacheVolumeIdInput,
   type CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
   type CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
   type CreateProjectRequest,
@@ -200,6 +209,12 @@ export type {
   RunLogSearchPage,
   RunsPage,
   ExecutionLogs,
+  CacheGeneration,
+  CacheGenerationIdInput,
+  CachePathDeleteRequest,
+  CachePathDeleteResult,
+  CacheVolume,
+  CacheVolumeIdInput,
   GitHubInstallation,
   GitHubInstallationConnect,
   JobsAnalytics,
@@ -648,6 +663,33 @@ export const getRunnerSizingAnalytics = createServerFn({ method: "GET" })
   .inputValidator(v.optional(sandboxAnalyticsQuerySchema))
   .handler(async ({ context, data }) => {
     return (await sandboxRentalSDK(context)).sandbox.getRunnerSizingAnalytics(data);
+  });
+
+export const listCacheVolumes = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .handler(async ({ context }) => {
+    return (await sandboxRentalSDK(context)).sandbox.listCacheVolumes();
+  });
+
+export const listCacheGenerations = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(cacheVolumeIdInputSchema)
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.listCacheGenerations(data.cacheVolumeId);
+  });
+
+export const deleteCacheGeneration = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(cacheGenerationIdInputSchema)
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.deleteCacheGeneration(data.cacheGenerationId);
+  });
+
+export const deleteCachePath = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(cachePathDeleteRequestSchema)
+  .handler(async ({ context, data }) => {
+    return (await sandboxRentalSDK(context)).sandbox.deleteCachePath(data.cacheVolumeId, data.path);
   });
 
 export const listGitHubInstallations = createServerFn({ method: "GET" })

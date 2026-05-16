@@ -81,6 +81,9 @@ var (
 	ErrRunnerClassMissing     = errors.New("sandbox-rental: runner class missing")
 	ErrBillingPaymentRequired = errors.New("sandbox-rental: billing payment required")
 	ErrBillingForbidden       = errors.New("sandbox-rental: billing forbidden")
+	ErrDurableCacheInvalid    = errors.New("sandbox-rental: durable cache invalid")
+	ErrDurableCacheMissing    = errors.New("sandbox-rental: durable cache missing")
+	ErrDurableCacheBusy       = errors.New("sandbox-rental: durable cache busy")
 )
 
 var tracer = otel.Tracer("sandbox-rental-service/jobs")

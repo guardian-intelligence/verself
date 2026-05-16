@@ -241,6 +241,79 @@ func runPage(page jobs.RunPage, filters jobs.RunListFilters, installationID stri
 	return out
 }
 
+func cacheVolumes(records []jobs.DurableCacheVolumeRecord, installationID string) contractapi.SandboxCacheVolumes {
+	out := make(contractapi.SandboxCacheVolumes, 0, len(records))
+	for _, record := range records {
+		out = append(out, cacheVolume(record, installationID))
+	}
+	return out
+}
+
+func cacheVolume(record jobs.DurableCacheVolumeRecord, installationID string) contractapi.SandboxCacheVolume {
+	return contractapi.SandboxCacheVolume{
+		CacheVolumeID:        contractapi.CacheVolumeID(record.CacheVolumeID.String()),
+		CreatedAt:            timestamp(record.CreatedAt),
+		CurrentGenerationID:  optionalUUIDPtr[contractapi.CacheGenerationID](record.CurrentGenerationID),
+		GenerationCount:      safeLongFromUint64(record.GenerationCount, "cache generation count"),
+		LastUsedAt:           timestamp(record.LastUsedAt),
+		Name:                 contractapi.CacheVolumeName(record.Name),
+		OrgID:                contractapi.OrgID(record.OrgID),
+		Provider:             contractapi.Provider(record.Provider),
+		ProviderRepositoryID: contractapi.ProviderRepositoryID(strconv.FormatInt(record.ProviderRepositoryID, 10)),
+		RepositoryFullName:   optionalContractString[contractapi.RepositoryFullName](record.RepositoryFullName),
+		ResourceName:         contractapi.ResourceName(resourceName(installationID, resourcePathSegment{"orgs", record.OrgID}, resourcePathSegment{"cacheVolumes", record.CacheVolumeID.String()})),
+		ScopeRef:             contractapi.GitRef(record.ScopeRef),
+		UsedBytes:            safeLongFromUint64(record.UsedBytes, "cache used bytes"),
+		WrittenBytes:         safeLongFromUint64(record.WrittenBytes, "cache written bytes"),
+	}
+}
+
+func cacheGenerations(records []jobs.DurableCacheGenerationRecord, installationID string) contractapi.SandboxCacheGenerations {
+	out := make(contractapi.SandboxCacheGenerations, 0, len(records))
+	for _, record := range records {
+		out = append(out, cacheGeneration(record, installationID))
+	}
+	return out
+}
+
+func cacheGeneration(record jobs.DurableCacheGenerationRecord, _ string) contractapi.SandboxCacheGeneration {
+	return contractapi.SandboxCacheGeneration{
+		BindPaths:            cachePaths(record.BindPaths),
+		CacheGenerationID:    contractapi.CacheGenerationID(record.CacheGenerationID.String()),
+		CacheVolumeID:        contractapi.CacheVolumeID(record.CacheVolumeID.String()),
+		CommittedAt:          timestampPtr(&record.CommittedAt),
+		Current:              record.IsCurrent,
+		ExpiresAt:            timestampPtr(record.ExpiresAt),
+		HeadSha:              optionalContractString[contractapi.HeadSHA](record.HeadSHA),
+		LastUsedAt:           timestampPtr(&record.LastUsedAt),
+		OrgID:                contractapi.OrgID(record.OrgID),
+		Provider:             contractapi.Provider(record.Provider),
+		ProviderJobID:        contractapi.DecimalUint64(strconv.FormatInt(record.ProviderJobID, 10)),
+		ProviderRepositoryID: contractapi.ProviderRepositoryID(strconv.FormatInt(record.ProviderRepositoryID, 10)),
+		ProviderRunAttempt:   contractapi.DecimalUint64(strconv.FormatInt(record.ProviderRunAttempt, 10)),
+		ProviderRunID:        contractapi.DecimalUint64(strconv.FormatInt(record.ProviderRunID, 10)),
+		RepositoryFullName:   optionalContractString[contractapi.RepositoryFullName](record.RepositoryFullName),
+		Result:               record.Result,
+		ScopeRef:             contractapi.GitRef(record.ScopeRef),
+		SealedAt:             timestampPtr(&record.SealedAt),
+		SourceGenerationID:   optionalUUIDPtr[contractapi.CacheGenerationID](record.SourceGenerationID),
+		State:                record.State,
+		TreeHash:             optionalContractString[string](record.TreeHash),
+		UsedBytes:            safeLongFromUint64(record.UsedBytes, "cache generation used bytes"),
+		VolumeName:           contractapi.CacheVolumeName(record.VolumeName),
+		WrittenBytes:         safeLongFromUint64(record.WrittenBytes, "cache generation written bytes"),
+		ZFSSnapshotRef:       record.ZFSSnapshotRef,
+	}
+}
+
+func cachePaths(paths []string) contractapi.SandboxCachePaths {
+	out := make(contractapi.SandboxCachePaths, 0, len(paths))
+	for _, path := range paths {
+		out = append(out, contractapi.CachePath(path))
+	}
+	return out
+}
+
 func runLogSearchResult(record jobs.RunLogSearchResult) contractapi.SandboxRunLogSearchResult {
 	return contractapi.SandboxRunLogSearchResult{
 		ExecutionID:        contractapi.ExecutionID(record.ExecutionID.String()),
@@ -552,6 +625,13 @@ func safeLongFromInt(value int, field string) contractapi.SafeNonNegativeLong {
 
 func safeLongFromUint32(value uint32, _ string) contractapi.SafeNonNegativeLong {
 	return contractapi.SafeNonNegativeLong(value)
+}
+
+func safeLongFromUint64(value uint64, field string) contractapi.SafeNonNegativeLong {
+	if value > uint64(1<<63-1) {
+		panic(fmt.Sprintf("%s exceeds int64: %d", field, value))
+	}
+	return contractapi.SafeNonNegativeLong(int64(value)) // #nosec G115 guarded above.
 }
 
 func optionalSafeLongFromInt(value int, field string) *contractapi.SafeNonNegativeLong {

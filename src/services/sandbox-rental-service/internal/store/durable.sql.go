@@ -12,6 +12,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearDurableCurrentPointerForGeneration = `-- name: ClearDurableCurrentPointerForGeneration :exec
+UPDATE durable_current_pointer
+SET current_generation_id = NULL,
+    promoted_by_operation_id = NULL,
+    promoted_at = $1
+WHERE durable_scope_id = $2
+  AND current_generation_id = $3
+`
+
+type ClearDurableCurrentPointerForGenerationParams struct {
+	ClearedAt           pgtype.Timestamptz
+	DurableScopeID      uuid.UUID
+	DurableGenerationID *uuid.UUID
+}
+
+func (q *Queries) ClearDurableCurrentPointerForGeneration(ctx context.Context, arg ClearDurableCurrentPointerForGenerationParams) error {
+	_, err := q.db.Exec(ctx, clearDurableCurrentPointerForGeneration, arg.ClearedAt, arg.DurableScopeID, arg.DurableGenerationID)
+	return err
+}
+
 const ensureDurableCurrentPointer = `-- name: EnsureDurableCurrentPointer :exec
 INSERT INTO durable_current_pointer (durable_scope_id, current_generation_id, promoted_at)
 VALUES ($1, NULL, $2)
@@ -37,6 +57,7 @@ SELECT
 FROM durable_current_pointer p
 JOIN durable_generation g ON g.durable_generation_id = p.current_generation_id
 WHERE p.durable_scope_id = $1
+  AND g.state IN ('committed', 'retained')
 `
 
 type GetCurrentDurableGenerationParams struct {
@@ -60,6 +81,145 @@ func (q *Queries) GetCurrentDurableGeneration(ctx context.Context, arg GetCurren
 		&i.TreeHash,
 	)
 	return i, err
+}
+
+const getDurableCacheGenerationForUserPrune = `-- name: GetDurableCacheGenerationForUserPrune :one
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.source_generation_id,
+    g.head_sha,
+    g.tree_hash,
+    g.result,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    g.state,
+    g.sealed_at,
+    g.committed_at,
+    g.last_used_at,
+    g.expires_at,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    COALESCE(r.repository_full_name, '') AS repository_full_name,
+    s.scope_ref,
+    s.component_kind,
+    s.component_name,
+    op.execution_id,
+    op.attempt_id,
+    op.bind_paths_json,
+    cp.current_generation_id IS NOT DISTINCT FROM g.durable_generation_id AS is_current
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+LEFT JOIN runner_provider_repositories r
+    ON r.provider = s.provider
+   AND r.provider_repository_id = s.provider_repository_id
+LEFT JOIN durable_current_pointer cp
+    ON cp.durable_scope_id = g.durable_scope_id
+WHERE s.org_id = $1
+  AND s.component_kind = 'cache_volume'
+  AND g.durable_generation_id = $2
+  AND g.state <> 'pruned'
+`
+
+type GetDurableCacheGenerationForUserPruneParams struct {
+	OrgID               string
+	DurableGenerationID uuid.UUID
+}
+
+type GetDurableCacheGenerationForUserPruneRow struct {
+	DurableGenerationID  uuid.UUID
+	DurableScopeID       uuid.UUID
+	OperationID          uuid.UUID
+	SourceGenerationID   *uuid.UUID
+	HeadSha              string
+	TreeHash             string
+	Result               string
+	ZfsSnapshotRef       string
+	UsedBytes            int64
+	WrittenBytes         int64
+	ProviderRunID        int64
+	ProviderRunAttempt   int64
+	ProviderJobID        int64
+	State                string
+	SealedAt             pgtype.Timestamptz
+	CommittedAt          pgtype.Timestamptz
+	LastUsedAt           pgtype.Timestamptz
+	ExpiresAt            pgtype.Timestamptz
+	OrgID                string
+	Provider             string
+	ProviderRepositoryID int64
+	RepositoryFullName   string
+	ScopeRef             string
+	ComponentKind        string
+	ComponentName        string
+	ExecutionID          uuid.UUID
+	AttemptID            uuid.UUID
+	BindPathsJson        []byte
+	IsCurrent            bool
+}
+
+func (q *Queries) GetDurableCacheGenerationForUserPrune(ctx context.Context, arg GetDurableCacheGenerationForUserPruneParams) (GetDurableCacheGenerationForUserPruneRow, error) {
+	row := q.db.QueryRow(ctx, getDurableCacheGenerationForUserPrune, arg.OrgID, arg.DurableGenerationID)
+	var i GetDurableCacheGenerationForUserPruneRow
+	err := row.Scan(
+		&i.DurableGenerationID,
+		&i.DurableScopeID,
+		&i.OperationID,
+		&i.SourceGenerationID,
+		&i.HeadSha,
+		&i.TreeHash,
+		&i.Result,
+		&i.ZfsSnapshotRef,
+		&i.UsedBytes,
+		&i.WrittenBytes,
+		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
+		&i.ProviderJobID,
+		&i.State,
+		&i.SealedAt,
+		&i.CommittedAt,
+		&i.LastUsedAt,
+		&i.ExpiresAt,
+		&i.OrgID,
+		&i.Provider,
+		&i.ProviderRepositoryID,
+		&i.RepositoryFullName,
+		&i.ScopeRef,
+		&i.ComponentKind,
+		&i.ComponentName,
+		&i.ExecutionID,
+		&i.AttemptID,
+		&i.BindPathsJson,
+		&i.IsCurrent,
+	)
+	return i, err
+}
+
+const getDurableCacheVolume = `-- name: GetDurableCacheVolume :one
+SELECT durable_scope_id
+FROM durable_scope
+WHERE org_id = $1
+  AND component_kind = 'cache_volume'
+  AND durable_scope_id = $2
+`
+
+type GetDurableCacheVolumeParams struct {
+	OrgID          string
+	DurableScopeID uuid.UUID
+}
+
+func (q *Queries) GetDurableCacheVolume(ctx context.Context, arg GetDurableCacheVolumeParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getDurableCacheVolume, arg.OrgID, arg.DurableScopeID)
+	var durable_scope_id uuid.UUID
+	err := row.Scan(&durable_scope_id)
+	return durable_scope_id, err
 }
 
 const getDurableRunRepository = `-- name: GetDurableRunRepository :one
@@ -284,6 +444,371 @@ func (q *Queries) InsertDurableOperation(ctx context.Context, arg InsertDurableO
 		&i.TrustClass,
 	)
 	return i, err
+}
+
+const listDurableCacheGenerations = `-- name: ListDurableCacheGenerations :many
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.source_generation_id,
+    g.head_sha,
+    g.tree_hash,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    g.result,
+    g.promotion_eligible,
+    g.state,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.sealed_at,
+    g.committed_at,
+    g.last_used_at,
+    g.expires_at,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    COALESCE(r.repository_full_name, '') AS repository_full_name,
+    s.scope_ref,
+    s.component_name,
+    op.bind_paths_json,
+    op.execution_id,
+    op.attempt_id,
+    cp.current_generation_id IS NOT DISTINCT FROM g.durable_generation_id AS is_current
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+LEFT JOIN runner_provider_repositories r
+    ON r.provider = s.provider
+   AND r.provider_repository_id = s.provider_repository_id
+LEFT JOIN durable_current_pointer cp
+    ON cp.durable_scope_id = g.durable_scope_id
+WHERE s.org_id = $1
+  AND s.component_kind = 'cache_volume'
+  AND g.durable_scope_id = $2
+  AND g.state <> 'pruned'
+ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id
+LIMIT $3
+`
+
+type ListDurableCacheGenerationsParams struct {
+	OrgID          string
+	DurableScopeID uuid.UUID
+	LimitCount     int32
+}
+
+type ListDurableCacheGenerationsRow struct {
+	DurableGenerationID  uuid.UUID
+	DurableScopeID       uuid.UUID
+	OperationID          uuid.UUID
+	SourceGenerationID   *uuid.UUID
+	HeadSha              string
+	TreeHash             string
+	ProviderRunID        int64
+	ProviderRunAttempt   int64
+	ProviderJobID        int64
+	Result               string
+	PromotionEligible    bool
+	State                string
+	ZfsSnapshotRef       string
+	UsedBytes            int64
+	WrittenBytes         int64
+	SealedAt             pgtype.Timestamptz
+	CommittedAt          pgtype.Timestamptz
+	LastUsedAt           pgtype.Timestamptz
+	ExpiresAt            pgtype.Timestamptz
+	OrgID                string
+	Provider             string
+	ProviderRepositoryID int64
+	RepositoryFullName   string
+	ScopeRef             string
+	ComponentName        string
+	BindPathsJson        []byte
+	ExecutionID          uuid.UUID
+	AttemptID            uuid.UUID
+	IsCurrent            bool
+}
+
+func (q *Queries) ListDurableCacheGenerations(ctx context.Context, arg ListDurableCacheGenerationsParams) ([]ListDurableCacheGenerationsRow, error) {
+	rows, err := q.db.Query(ctx, listDurableCacheGenerations, arg.OrgID, arg.DurableScopeID, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDurableCacheGenerationsRow{}
+	for rows.Next() {
+		var i ListDurableCacheGenerationsRow
+		if err := rows.Scan(
+			&i.DurableGenerationID,
+			&i.DurableScopeID,
+			&i.OperationID,
+			&i.SourceGenerationID,
+			&i.HeadSha,
+			&i.TreeHash,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.ProviderJobID,
+			&i.Result,
+			&i.PromotionEligible,
+			&i.State,
+			&i.ZfsSnapshotRef,
+			&i.UsedBytes,
+			&i.WrittenBytes,
+			&i.SealedAt,
+			&i.CommittedAt,
+			&i.LastUsedAt,
+			&i.ExpiresAt,
+			&i.OrgID,
+			&i.Provider,
+			&i.ProviderRepositoryID,
+			&i.RepositoryFullName,
+			&i.ScopeRef,
+			&i.ComponentName,
+			&i.BindPathsJson,
+			&i.ExecutionID,
+			&i.AttemptID,
+			&i.IsCurrent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDurableCacheGenerationsForPathPrune = `-- name: ListDurableCacheGenerationsForPathPrune :many
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.source_generation_id,
+    g.head_sha,
+    g.tree_hash,
+    g.result,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    g.state,
+    g.sealed_at,
+    g.committed_at,
+    g.last_used_at,
+    g.expires_at,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    COALESCE(r.repository_full_name, '') AS repository_full_name,
+    s.scope_ref,
+    s.component_kind,
+    s.component_name,
+    op.execution_id,
+    op.attempt_id,
+    op.bind_paths_json,
+    cp.current_generation_id IS NOT DISTINCT FROM g.durable_generation_id AS is_current
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+LEFT JOIN runner_provider_repositories r
+    ON r.provider = s.provider
+   AND r.provider_repository_id = s.provider_repository_id
+LEFT JOIN durable_current_pointer cp
+    ON cp.durable_scope_id = g.durable_scope_id
+WHERE s.org_id = $1
+  AND s.component_kind = 'cache_volume'
+  AND g.durable_scope_id = $2
+  AND g.state <> 'pruned'
+  AND op.bind_paths_json ? $3::text
+ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id
+`
+
+type ListDurableCacheGenerationsForPathPruneParams struct {
+	OrgID          string
+	DurableScopeID uuid.UUID
+	BindPath       string
+}
+
+type ListDurableCacheGenerationsForPathPruneRow struct {
+	DurableGenerationID  uuid.UUID
+	DurableScopeID       uuid.UUID
+	OperationID          uuid.UUID
+	SourceGenerationID   *uuid.UUID
+	HeadSha              string
+	TreeHash             string
+	Result               string
+	ZfsSnapshotRef       string
+	UsedBytes            int64
+	WrittenBytes         int64
+	ProviderRunID        int64
+	ProviderRunAttempt   int64
+	ProviderJobID        int64
+	State                string
+	SealedAt             pgtype.Timestamptz
+	CommittedAt          pgtype.Timestamptz
+	LastUsedAt           pgtype.Timestamptz
+	ExpiresAt            pgtype.Timestamptz
+	OrgID                string
+	Provider             string
+	ProviderRepositoryID int64
+	RepositoryFullName   string
+	ScopeRef             string
+	ComponentKind        string
+	ComponentName        string
+	ExecutionID          uuid.UUID
+	AttemptID            uuid.UUID
+	BindPathsJson        []byte
+	IsCurrent            bool
+}
+
+func (q *Queries) ListDurableCacheGenerationsForPathPrune(ctx context.Context, arg ListDurableCacheGenerationsForPathPruneParams) ([]ListDurableCacheGenerationsForPathPruneRow, error) {
+	rows, err := q.db.Query(ctx, listDurableCacheGenerationsForPathPrune, arg.OrgID, arg.DurableScopeID, arg.BindPath)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDurableCacheGenerationsForPathPruneRow{}
+	for rows.Next() {
+		var i ListDurableCacheGenerationsForPathPruneRow
+		if err := rows.Scan(
+			&i.DurableGenerationID,
+			&i.DurableScopeID,
+			&i.OperationID,
+			&i.SourceGenerationID,
+			&i.HeadSha,
+			&i.TreeHash,
+			&i.Result,
+			&i.ZfsSnapshotRef,
+			&i.UsedBytes,
+			&i.WrittenBytes,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.ProviderJobID,
+			&i.State,
+			&i.SealedAt,
+			&i.CommittedAt,
+			&i.LastUsedAt,
+			&i.ExpiresAt,
+			&i.OrgID,
+			&i.Provider,
+			&i.ProviderRepositoryID,
+			&i.RepositoryFullName,
+			&i.ScopeRef,
+			&i.ComponentKind,
+			&i.ComponentName,
+			&i.ExecutionID,
+			&i.AttemptID,
+			&i.BindPathsJson,
+			&i.IsCurrent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDurableCacheVolumes = `-- name: ListDurableCacheVolumes :many
+SELECT
+    s.durable_scope_id,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    COALESCE(r.repository_full_name, '') AS repository_full_name,
+    s.scope_ref,
+    s.component_name,
+    s.created_at,
+    cp.current_generation_id,
+    COUNT(g.durable_generation_id)::bigint AS generation_count,
+    COALESCE(SUM(g.used_bytes), 0)::bigint AS used_bytes,
+    COALESCE(SUM(g.written_bytes), 0)::bigint AS written_bytes,
+    COALESCE(MAX(g.last_used_at), s.created_at) AS last_used_at
+FROM durable_scope s
+LEFT JOIN runner_provider_repositories r
+    ON r.provider = s.provider
+   AND r.provider_repository_id = s.provider_repository_id
+LEFT JOIN durable_current_pointer cp
+    ON cp.durable_scope_id = s.durable_scope_id
+LEFT JOIN durable_generation g
+    ON g.durable_scope_id = s.durable_scope_id
+   AND g.state <> 'pruned'
+WHERE s.org_id = $1
+  AND s.component_kind = 'cache_volume'
+GROUP BY
+    s.durable_scope_id,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    r.repository_full_name,
+    s.scope_ref,
+    s.component_name,
+    s.created_at,
+    cp.current_generation_id
+ORDER BY COALESCE(MAX(g.last_used_at), s.created_at) DESC, s.created_at DESC, s.durable_scope_id
+LIMIT $2
+`
+
+type ListDurableCacheVolumesParams struct {
+	OrgID      string
+	LimitCount int32
+}
+
+type ListDurableCacheVolumesRow struct {
+	DurableScopeID       uuid.UUID
+	OrgID                string
+	Provider             string
+	ProviderRepositoryID int64
+	RepositoryFullName   string
+	ScopeRef             string
+	ComponentName        string
+	CreatedAt            pgtype.Timestamptz
+	CurrentGenerationID  *uuid.UUID
+	GenerationCount      int64
+	UsedBytes            int64
+	WrittenBytes         int64
+	LastUsedAt           pgtype.Timestamptz
+}
+
+func (q *Queries) ListDurableCacheVolumes(ctx context.Context, arg ListDurableCacheVolumesParams) ([]ListDurableCacheVolumesRow, error) {
+	rows, err := q.db.Query(ctx, listDurableCacheVolumes, arg.OrgID, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDurableCacheVolumesRow{}
+	for rows.Next() {
+		var i ListDurableCacheVolumesRow
+		if err := rows.Scan(
+			&i.DurableScopeID,
+			&i.OrgID,
+			&i.Provider,
+			&i.ProviderRepositoryID,
+			&i.RepositoryFullName,
+			&i.ScopeRef,
+			&i.ComponentName,
+			&i.CreatedAt,
+			&i.CurrentGenerationID,
+			&i.GenerationCount,
+			&i.UsedBytes,
+			&i.WrittenBytes,
+			&i.LastUsedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listDurablePromotionCandidatesForRun = `-- name: ListDurablePromotionCandidatesForRun :many
@@ -674,6 +1199,51 @@ type MarkDurableGenerationPruningParams struct {
 
 func (q *Queries) MarkDurableGenerationPruning(ctx context.Context, arg MarkDurableGenerationPruningParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markDurableGenerationPruning, arg.PruningAt, arg.DurableGenerationID, arg.DurableScopeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markDurableGenerationUserPruning = `-- name: MarkDurableGenerationUserPruning :execrows
+UPDATE durable_generation AS target
+SET state = 'prunable',
+    last_used_at = $1
+FROM durable_scope s
+WHERE target.durable_generation_id = $2
+  AND target.durable_scope_id = $3
+  AND s.durable_scope_id = target.durable_scope_id
+  AND s.org_id = $4
+  AND s.component_kind = 'cache_volume'
+  AND target.state IN ('committed', 'retained', 'prunable')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_operation open_op
+      WHERE open_op.source_generation_id = target.durable_generation_id
+        AND open_op.final_state IN ('requested', 'mounted')
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_generation child
+      WHERE child.source_generation_id = target.durable_generation_id
+        AND child.state <> 'pruned'
+  )
+`
+
+type MarkDurableGenerationUserPruningParams struct {
+	PruningAt           pgtype.Timestamptz
+	DurableGenerationID uuid.UUID
+	DurableScopeID      uuid.UUID
+	OrgID               string
+}
+
+func (q *Queries) MarkDurableGenerationUserPruning(ctx context.Context, arg MarkDurableGenerationUserPruningParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markDurableGenerationUserPruning,
+		arg.PruningAt,
+		arg.DurableGenerationID,
+		arg.DurableScopeID,
+		arg.OrgID,
+	)
 	if err != nil {
 		return 0, err
 	}

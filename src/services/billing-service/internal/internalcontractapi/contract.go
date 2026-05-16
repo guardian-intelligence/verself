@@ -320,7 +320,7 @@ var GetStorageEntitlement = Operation[GetStorageEntitlementInput, GetStorageEnti
 		Method:              "POST",
 		Path:                "/internal/billing/v1/storage-entitlement",
 		DefaultStatus:       200,
-		Readonly:            true,
+		Readonly:            false,
 		Paginated:           false,
 		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "billing-service", Principals: []string{"workload"}},
 		Authorization:       AuthorizationDescriptor{Permission: "billing:read", OrganizationSource: "body_org_id", OrganizationMember: "org_id"},
@@ -330,7 +330,7 @@ var GetStorageEntitlement = Operation[GetStorageEntitlementInput, GetStorageEnti
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
-		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotent", Header: "", Member: ""},
 		SDK:                 SDKDescriptor{Module: "billingInternal.entitlements", Method: "getStorage", Paginated: false, Retryable: true},
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},

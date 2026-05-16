@@ -79,7 +79,8 @@ SELECT
     g.tree_hash
 FROM durable_current_pointer p
 JOIN durable_generation g ON g.durable_generation_id = p.current_generation_id
-WHERE p.durable_scope_id = sqlc.arg(durable_scope_id);
+WHERE p.durable_scope_id = sqlc.arg(durable_scope_id)
+  AND g.state IN ('committed', 'retained');
 
 -- name: InsertDurableOperation :one
 INSERT INTO durable_operation (
@@ -279,6 +280,220 @@ WHERE g.state IN ('committed', 'retained', 'prunable')
   )
 ORDER BY g.last_used_at, g.committed_at, g.durable_generation_id
 LIMIT sqlc.arg(limit_count);
+
+-- name: ListDurableCacheVolumes :many
+SELECT
+    s.durable_scope_id,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    COALESCE(r.repository_full_name, '') AS repository_full_name,
+    s.scope_ref,
+    s.component_name,
+    s.created_at,
+    cp.current_generation_id,
+    COUNT(g.durable_generation_id)::bigint AS generation_count,
+    COALESCE(SUM(g.used_bytes), 0)::bigint AS used_bytes,
+    COALESCE(SUM(g.written_bytes), 0)::bigint AS written_bytes,
+    COALESCE(MAX(g.last_used_at), s.created_at) AS last_used_at
+FROM durable_scope s
+LEFT JOIN runner_provider_repositories r
+    ON r.provider = s.provider
+   AND r.provider_repository_id = s.provider_repository_id
+LEFT JOIN durable_current_pointer cp
+    ON cp.durable_scope_id = s.durable_scope_id
+LEFT JOIN durable_generation g
+    ON g.durable_scope_id = s.durable_scope_id
+   AND g.state <> 'pruned'
+WHERE s.org_id = sqlc.arg(org_id)
+  AND s.component_kind = 'cache_volume'
+GROUP BY
+    s.durable_scope_id,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    r.repository_full_name,
+    s.scope_ref,
+    s.component_name,
+    s.created_at,
+    cp.current_generation_id
+ORDER BY COALESCE(MAX(g.last_used_at), s.created_at) DESC, s.created_at DESC, s.durable_scope_id
+LIMIT sqlc.arg(limit_count);
+
+-- name: GetDurableCacheVolume :one
+SELECT durable_scope_id
+FROM durable_scope
+WHERE org_id = sqlc.arg(org_id)
+  AND component_kind = 'cache_volume'
+  AND durable_scope_id = sqlc.arg(durable_scope_id);
+
+-- name: ListDurableCacheGenerations :many
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.source_generation_id,
+    g.head_sha,
+    g.tree_hash,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    g.result,
+    g.promotion_eligible,
+    g.state,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.sealed_at,
+    g.committed_at,
+    g.last_used_at,
+    g.expires_at,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    COALESCE(r.repository_full_name, '') AS repository_full_name,
+    s.scope_ref,
+    s.component_name,
+    op.bind_paths_json,
+    op.execution_id,
+    op.attempt_id,
+    cp.current_generation_id IS NOT DISTINCT FROM g.durable_generation_id AS is_current
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+LEFT JOIN runner_provider_repositories r
+    ON r.provider = s.provider
+   AND r.provider_repository_id = s.provider_repository_id
+LEFT JOIN durable_current_pointer cp
+    ON cp.durable_scope_id = g.durable_scope_id
+WHERE s.org_id = sqlc.arg(org_id)
+  AND s.component_kind = 'cache_volume'
+  AND g.durable_scope_id = sqlc.arg(durable_scope_id)
+  AND g.state <> 'pruned'
+ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id
+LIMIT sqlc.arg(limit_count);
+
+-- name: GetDurableCacheGenerationForUserPrune :one
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.source_generation_id,
+    g.head_sha,
+    g.tree_hash,
+    g.result,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    g.state,
+    g.sealed_at,
+    g.committed_at,
+    g.last_used_at,
+    g.expires_at,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    COALESCE(r.repository_full_name, '') AS repository_full_name,
+    s.scope_ref,
+    s.component_kind,
+    s.component_name,
+    op.execution_id,
+    op.attempt_id,
+    op.bind_paths_json,
+    cp.current_generation_id IS NOT DISTINCT FROM g.durable_generation_id AS is_current
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+LEFT JOIN runner_provider_repositories r
+    ON r.provider = s.provider
+   AND r.provider_repository_id = s.provider_repository_id
+LEFT JOIN durable_current_pointer cp
+    ON cp.durable_scope_id = g.durable_scope_id
+WHERE s.org_id = sqlc.arg(org_id)
+  AND s.component_kind = 'cache_volume'
+  AND g.durable_generation_id = sqlc.arg(durable_generation_id)
+  AND g.state <> 'pruned';
+
+-- name: ListDurableCacheGenerationsForPathPrune :many
+SELECT
+    g.durable_generation_id,
+    g.durable_scope_id,
+    g.operation_id,
+    g.source_generation_id,
+    g.head_sha,
+    g.tree_hash,
+    g.result,
+    g.zfs_snapshot_ref,
+    g.used_bytes,
+    g.written_bytes,
+    g.provider_run_id,
+    g.provider_run_attempt,
+    g.provider_job_id,
+    g.state,
+    g.sealed_at,
+    g.committed_at,
+    g.last_used_at,
+    g.expires_at,
+    s.org_id,
+    s.provider,
+    s.provider_repository_id,
+    COALESCE(r.repository_full_name, '') AS repository_full_name,
+    s.scope_ref,
+    s.component_kind,
+    s.component_name,
+    op.execution_id,
+    op.attempt_id,
+    op.bind_paths_json,
+    cp.current_generation_id IS NOT DISTINCT FROM g.durable_generation_id AS is_current
+FROM durable_generation g
+JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
+JOIN durable_operation op ON op.operation_id = g.operation_id
+LEFT JOIN runner_provider_repositories r
+    ON r.provider = s.provider
+   AND r.provider_repository_id = s.provider_repository_id
+LEFT JOIN durable_current_pointer cp
+    ON cp.durable_scope_id = g.durable_scope_id
+WHERE s.org_id = sqlc.arg(org_id)
+  AND s.component_kind = 'cache_volume'
+  AND g.durable_scope_id = sqlc.arg(durable_scope_id)
+  AND g.state <> 'pruned'
+  AND op.bind_paths_json ? sqlc.arg(bind_path)::text
+ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id;
+
+-- name: MarkDurableGenerationUserPruning :execrows
+UPDATE durable_generation AS target
+SET state = 'prunable',
+    last_used_at = sqlc.arg(pruning_at)
+FROM durable_scope s
+WHERE target.durable_generation_id = sqlc.arg(durable_generation_id)
+  AND target.durable_scope_id = sqlc.arg(durable_scope_id)
+  AND s.durable_scope_id = target.durable_scope_id
+  AND s.org_id = sqlc.arg(org_id)
+  AND s.component_kind = 'cache_volume'
+  AND target.state IN ('committed', 'retained', 'prunable')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_operation open_op
+      WHERE open_op.source_generation_id = target.durable_generation_id
+        AND open_op.final_state IN ('requested', 'mounted')
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM durable_generation child
+      WHERE child.source_generation_id = target.durable_generation_id
+        AND child.state <> 'pruned'
+  );
+
+-- name: ClearDurableCurrentPointerForGeneration :exec
+UPDATE durable_current_pointer
+SET current_generation_id = NULL,
+    promoted_by_operation_id = NULL,
+    promoted_at = sqlc.arg(cleared_at)
+WHERE durable_scope_id = sqlc.arg(durable_scope_id)
+  AND current_generation_id = sqlc.arg(durable_generation_id);
 
 -- name: MarkDurableGenerationPruning :execrows
 UPDATE durable_generation AS target
