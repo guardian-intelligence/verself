@@ -91,13 +91,19 @@ function commitPill(raw: string | null): string | null {
   return count > 99 ? "99+" : String(count);
 }
 
-export function formatElapsed(elapsedMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  if (minutes >= 60) return ">60m";
-  const seconds = totalSeconds % 60;
-  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+// Estimated time remaining = frozen p50 baseline minus elapsed. null when
+// there is no baseline (cold start) — the widget then shows status only.
+export function remainingMs(flight: Flight, nowMs: number): number | null {
+  if (flight.baselineMs === null) return null;
+  return flight.baselineMs - (nowMs - flight.departedAtMs);
+}
+
+// Minutes only, as the user specified: "<1 min" floor, ">60 min" ceiling.
+export function formatRemaining(ms: number): string {
+  if (ms < 60_000) return "<1 min";
+  const minutes = Math.round(ms / 60_000);
+  if (minutes > 60) return ">60 min";
+  return `${minutes} min`;
 }
 
 export function isRunningLate(flight: Flight, nowMs: number): boolean {

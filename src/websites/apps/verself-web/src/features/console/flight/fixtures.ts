@@ -1,10 +1,10 @@
 import type { FlightRow } from "./collection";
 import { toFlights, type Flight } from "./model";
 
-// Deterministic states for `aspect dev verself-web` + agent-browser. Raw rows
-// (strings, like Electric delivers) so the fixtures exercise model.ts too.
-// Timestamps are relative to call time so elapsed/badge stay deterministic
-// whenever the fixture is loaded.
+// Deterministic states for `aspect dev verself-web` + agent-browser + design
+// review. Raw rows (strings, like Electric delivers) so the fixtures exercise
+// model.ts too. Timestamps are relative to call time so elapsed/ETA stay
+// deterministic whenever the fixture is loaded.
 export type FlightFixtureName = "no-build" | "building-on-time" | "running-late" | "no-history";
 
 export const FLIGHT_FIXTURE_NAMES: readonly FlightFixtureName[] = [
@@ -53,10 +53,10 @@ export function flightFixture(name: FlightFixtureName): readonly Flight[] {
       break;
     case "building-on-time":
       rows = [
-        job({ provider_job_id: "1", job_name: "test-node-20", started_at: isoAgo(12) }),
-        job({ provider_job_id: "2", job_name: "test-node-22", started_at: isoAgo(11) }),
+        job({ provider_job_id: "1", job_name: "test-node-20", started_at: isoAgo(180) }),
+        job({ provider_job_id: "2", job_name: "test-node-22", started_at: isoAgo(170) }),
         job({ provider_job_id: "3", job_name: "lint", status: "queued", started_at: null }),
-        job({ provider_job_id: "4", job_name: "integration", started_at: isoAgo(9) }),
+        job({ provider_job_id: "4", job_name: "integration", started_at: isoAgo(150) }),
       ];
       break;
     case "running-late":
@@ -64,8 +64,8 @@ export function flightFixture(name: FlightFixtureName): readonly Flight[] {
         job({
           provider_job_id: "5",
           job_name: "integration",
-          started_at: isoAgo(130),
-          predicted_baseline_ms: "60000",
+          started_at: isoAgo(900),
+          predicted_baseline_ms: "600000",
         }),
       ];
       break;
@@ -85,4 +85,58 @@ export function flightFixture(name: FlightFixtureName): readonly Flight[] {
       break;
   }
   return toFlights(rows);
+}
+
+// Debug harness: a single card seeded entirely from query params, so every
+// configuration (actor, endpoints, on-time/late/cold, remaining minutes,
+// commit count) is reachable without backend or fixtures. `?flight=debug`.
+export type DebugFlightParams = {
+  readonly actor?: string | undefined;
+  readonly src?: string | undefined;
+  readonly dst?: string | undefined;
+  readonly status?: string | undefined;
+  readonly state?: string | undefined; // "ontime" | "late" | "cold"
+  readonly remaining?: string | undefined; // minutes (state=ontime)
+  readonly commits?: string | undefined; // number, or "none"
+};
+
+export function debugFlight(p: DebugFlightParams): readonly Flight[] {
+  const now = Date.now();
+  const state = p.state ?? "ontime";
+  let departedAtMs = now;
+  let baselineMs: number | null;
+  if (state === "cold") {
+    baselineMs = null;
+    departedAtMs = now - 60_000;
+  } else if (state === "late") {
+    baselineMs = 60_000;
+    departedAtMs = now - 120_000;
+  } else {
+    const minutes = Math.max(0, Number.parseInt(p.remaining ?? "12", 10) || 12);
+    baselineMs = minutes * 60_000;
+    departedAtMs = now;
+  }
+  const commitsRaw = p.commits ?? "4";
+  const commits = Number.parseInt(commitsRaw, 10);
+  const commitPill =
+    commitsRaw === "none" || !Number.isFinite(commits) || commits <= 0
+      ? null
+      : commits > 99
+        ? "99+"
+        : String(commits);
+
+  return [
+    {
+      key: "debug",
+      providerRunId: "debug",
+      actorLabel: (p.actor ?? "ash").toUpperCase(),
+      sourceLabel: (p.src ?? "PR47").toUpperCase(),
+      destLabel: (p.dst ?? "MAIN").toUpperCase(),
+      statusLabel: p.status ?? "Building",
+      jobsLeft: 1,
+      departedAtMs,
+      baselineMs,
+      commitPill,
+    },
+  ];
 }

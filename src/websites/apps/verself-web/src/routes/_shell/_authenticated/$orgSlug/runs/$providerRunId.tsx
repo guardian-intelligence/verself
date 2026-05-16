@@ -18,7 +18,16 @@ function RunLogsStub() {
       <Link
         to="/$orgSlug"
         params={{ orgSlug }}
-        search={{ flight: undefined }}
+        search={{
+          flight: undefined,
+          actor: undefined,
+          src: undefined,
+          dst: undefined,
+          status: undefined,
+          state: undefined,
+          remaining: undefined,
+          commits: undefined,
+        }}
         className="mt-6 inline-block text-sm text-foreground underline underline-offset-4"
       >
         Back to flights
