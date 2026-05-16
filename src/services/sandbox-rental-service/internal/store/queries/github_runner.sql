@@ -169,13 +169,14 @@ INSERT INTO github_workflow_invocations (
     provider_installation_id, provider_repository_id, provider_run_id,
     provider_run_attempt, repository_full_name, event_name, head_sha,
     head_branch, head_repository_full_name, base_sha, base_branch,
-    pull_request_number, workflow_path, updated_at
+    pull_request_number, workflow_path, commit_count, updated_at
 ) VALUES (
     sqlc.arg(provider_installation_id), sqlc.arg(provider_repository_id),
     sqlc.arg(provider_run_id), sqlc.arg(provider_run_attempt),
     sqlc.arg(repository_full_name), sqlc.arg(event_name), sqlc.arg(head_sha),
     sqlc.arg(head_branch), sqlc.arg(head_repository_full_name), sqlc.arg(base_sha),
-    sqlc.arg(base_branch), sqlc.arg(pull_request_number), sqlc.arg(workflow_path), sqlc.arg(updated_at)
+    sqlc.arg(base_branch), sqlc.arg(pull_request_number), sqlc.arg(workflow_path),
+    NULLIF(sqlc.arg(commit_count)::bigint, 0), sqlc.arg(updated_at)
 )
 ON CONFLICT (
     provider_installation_id, provider_repository_id, provider_run_id,
@@ -190,6 +191,7 @@ ON CONFLICT (
     base_branch = COALESCE(NULLIF(EXCLUDED.base_branch, ''), github_workflow_invocations.base_branch),
     pull_request_number = CASE WHEN EXCLUDED.pull_request_number <> 0 THEN EXCLUDED.pull_request_number ELSE github_workflow_invocations.pull_request_number END,
     workflow_path = COALESCE(NULLIF(EXCLUDED.workflow_path, ''), github_workflow_invocations.workflow_path),
+    commit_count = COALESCE(EXCLUDED.commit_count, github_workflow_invocations.commit_count),
     updated_at = EXCLUDED.updated_at;
 
 -- name: GetGitHubQueuedJob :one

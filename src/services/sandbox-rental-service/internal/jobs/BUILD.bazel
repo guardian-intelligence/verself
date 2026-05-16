@@ -8,6 +8,7 @@ go_library(
         "analytics.go",
         "bazel_telemetry.go",
         "checkout.go",
+        "console_flight.go",
         "correlation.go",
         "durable_caches.go",
         "durable_management.go",

@@ -12,6 +12,7 @@
       electric_pg_role: electric
       electric_publication_name: electric_publication_default
       electric_publication_tables:
+        - console_flight_jobs
         - execution_logs
         - executions
         - runner_provider_repositories

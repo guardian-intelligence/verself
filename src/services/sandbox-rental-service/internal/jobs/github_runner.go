@@ -124,6 +124,9 @@ type GitHubWorkflowJobWebhook struct {
 		StartedAt    time.Time `json:"started_at"`
 		CompletedAt  time.Time `json:"completed_at"`
 	} `json:"workflow_job"`
+	Sender struct {
+		Login string `json:"login"`
+	} `json:"sender"`
 }
 
 type githubInstallationToken struct {
@@ -645,6 +648,7 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 	if err != nil {
 		return err
 	}
+	var flightOrg string
 	if event.WorkflowJob.RunID != 0 {
 		if err := store.New(tx).UpsertGitHubWorkflowInvocation(ctx, store.UpsertGitHubWorkflowInvocationParams{
 			ProviderInstallationID: event.Installation.ID,
@@ -657,6 +661,10 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 			HeadRepositoryFullName: event.Repository.FullName,
 			UpdatedAt:              pgTime(now),
 		}); err != nil {
+			return err
+		}
+		flightOrg, err = projectFlightJob(ctx, store.New(tx), event, status, now)
+		if err != nil {
 			return err
 		}
 	}
@@ -712,7 +720,22 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 		attribute.String("github.workflow_job.status", status),
 		attribute.String("github.repository_full_name", event.Repository.FullName),
 	)
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	// Best-effort, detached from the webhook: freeze the p50 baseline once per
+	// flight. ClickHouse must never gate webhook availability.
+	if flightOrg != "" && isActiveFlightStatus(status) {
+		go r.service.refreshFlightBaseline(
+			context.Background(),
+			event.WorkflowJob.ID,
+			flightOrg,
+			event.Repository.FullName,
+			event.WorkflowJob.WorkflowName,
+			event.WorkflowJob.Name,
+		)
+	}
+	return nil
 }
 
 func (r *GitHubRunner) ReconcileCapacity(ctx context.Context, githubJobID int64) error {

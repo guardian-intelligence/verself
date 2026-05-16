@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/verself/sandbox-rental-service/internal/store"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type githubWorkflowInvocation struct {
@@ -25,6 +26,7 @@ type githubWorkflowInvocation struct {
 	BaseBranch             string
 	WorkflowPath           string
 	PullRequestNumber      int64
+	CommitCount            int64
 }
 
 type githubWorkflowRunResponse struct {
@@ -78,12 +80,47 @@ func (r *GitHubRunner) refreshWorkflowRunInvocationForRun(ctx context.Context, r
 		return githubWorkflowInvocation{}, err
 	}
 	invocation := githubWorkflowInvocationFromRun(ref, resp)
+	if invocation.PullRequestNumber > 0 {
+		// Commit count is the only PR-API-dependent field. Best-effort: a PR
+		// API hiccup must not break invocation refresh or golden promotion.
+		if commits, err := r.fetchPullRequestCommitCount(ctx, ref.ProviderInstallationID, owner, repo, invocation.PullRequestNumber); err == nil {
+			invocation.CommitCount = commits
+		}
+	}
 	if r.service != nil && r.service.PGX != nil {
 		if err := r.service.storeQueries().UpsertGitHubWorkflowInvocation(ctx, invocation.upsertParams(time.Now().UTC())); err != nil {
 			return githubWorkflowInvocation{}, err
 		}
 	}
 	return invocation, nil
+}
+
+type githubPullRequestResponse struct {
+	Commits int64 `json:"commits"`
+}
+
+// fetchPullRequestCommitCount returns the PR's commit count for the flight
+// widget's commit pill. Non-PR (push) runs never call this.
+func (r *GitHubRunner) fetchPullRequestCommitCount(ctx context.Context, installationID int64, owner, repo string, number int64) (int64, error) {
+	ctx, span := tracer.Start(ctx, "github.pr.commits.fetch")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("github.repository_full_name", owner+"/"+repo),
+		attribute.Int64("github.pr.number", number),
+	)
+	token, err := r.installationToken(ctx, installationID)
+	if err != nil {
+		span.RecordError(err)
+		return 0, err
+	}
+	var resp githubPullRequestResponse
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(repo), number)
+	if err := r.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
+		span.RecordError(err)
+		return 0, err
+	}
+	span.SetAttributes(attribute.Int64("github.pr.commits", resp.Commits))
+	return resp.Commits, nil
 }
 
 func githubWorkflowInvocationFromRun(ref goldenWorkflowRunRef, run githubWorkflowRunResponse) githubWorkflowInvocation {
@@ -135,6 +172,7 @@ func (i githubWorkflowInvocation) upsertParams(now time.Time) store.UpsertGitHub
 		BaseBranch:             i.BaseBranch,
 		WorkflowPath:           i.WorkflowPath,
 		PullRequestNumber:      i.PullRequestNumber,
+		CommitCount:            i.CommitCount,
 		UpdatedAt:              pgTime(now),
 	}
 }
