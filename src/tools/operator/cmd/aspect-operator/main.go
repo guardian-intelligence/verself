@@ -79,6 +79,8 @@ func run(args []string) error {
 		return cmdDevice(rest)
 	case "platform":
 		return cmdPlatform(rest)
+	case "promote-org":
+		return cmdPromoteOrg(rest)
 	case "service-discovery-canary":
 		return cmdDiscoveryCanary(rest)
 	case "-h", "--help", "help":

@@ -23,6 +23,7 @@ go_library(
         "persona.go",
         "platform.go",
         "platform_zitadel.go",
+        "promote_org.go",
         "remote_binary.go",
         "runtime_common.go",
     ],

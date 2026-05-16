@@ -77,3 +77,36 @@ platform = task(
         "format": args.string(default = "text", description = "Output format: text | json."),
     },
 )
+
+def _promote_org_impl(ctx):
+    slug = ctx.args.slug
+    if not slug:
+        ctx.std.io.stderr.write("ERROR: --slug is required\n")
+        return 1
+    cli_args = [
+        "promote-org",
+        "--repo-root",
+        ws_path(ctx),
+        "--site",
+        ctx.args.site or "prod",
+        "--slug",
+        slug,
+        "--tier",
+        ctx.args.tier or "platform",
+    ]
+    if ctx.args.dry_run:
+        cli_args.append("--dry-run")
+    return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator promote-org " + slug)
+
+promote_org = task(
+    implementation = _promote_org_impl,
+    name = "promote-org",
+    group = ["operator"],
+    summary = "Promote an organization to a privileged billing trust tier (e.g. platform).",
+    args = {
+        "slug": args.string(default = "", description = "Organization slug to promote (required)."),
+        "tier": args.string(default = "platform", description = "Target trust tier: new | established | enterprise | platform."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "dry_run": args.boolean(default = False, description = "Resolve and report the change without writing."),
+    },
+)
