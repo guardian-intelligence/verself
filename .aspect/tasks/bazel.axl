@@ -17,8 +17,8 @@ def _gazelle_impl(ctx):
             "//:gazelle",
             "--",
             "update",
-            "-go_naming_convention=import_alias",
-            "-go_naming_convention_external=import_alias",
+            "-go_naming_convention=import",
+            "-go_naming_convention_external=import",
         ],
         label = "bazelisk run //:gazelle -- update",
     )
