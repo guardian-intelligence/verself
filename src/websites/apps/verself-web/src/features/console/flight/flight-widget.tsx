@@ -40,9 +40,7 @@ export function FlightBoard({
           </div>
         </FlightShell>
       ) : (
-        flights.map((flight) => (
-          <FlightCard key={flight.key} flight={flight} orgSlug={orgSlug} />
-        ))
+        flights.map((flight) => <FlightCard key={flight.key} flight={flight} orgSlug={orgSlug} />)
       )}
     </FlightCanvas>
   );
@@ -52,7 +50,10 @@ export function FlightConsoleSkeleton() {
   return (
     <FlightCanvas>
       <FlightShell>
-        <div className="flex-1 animate-pulse rounded-[1.5rem]" style={{ background: "oklch(0.22 0 0)" }} />
+        <div
+          className="flex-1 animate-pulse rounded-[1.5rem]"
+          style={{ background: "oklch(0.22 0 0)" }}
+        />
       </FlightShell>
     </FlightCanvas>
   );
@@ -103,10 +104,7 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
 
   return (
     <FlightShell>
-      <p
-        className="text-[0.82rem] font-medium tracking-[0.14em]"
-        style={{ color: C.ink }}
-      >
+      <p className="text-[0.82rem] font-medium tracking-[0.14em]" style={{ color: C.ink }}>
         {flight.actorLabel}
       </p>
 
@@ -183,18 +181,8 @@ function FlightArc({ color }: { readonly color: string }) {
   };
   return (
     <div className="relative flex h-12 min-w-0 flex-1 items-center" aria-hidden="true">
-      <svg
-        viewBox="0 0 200 70"
-        preserveAspectRatio="none"
-        className="h-full w-full"
-        fill="none"
-      >
-        <path
-          d="M4 54 Q 72 -8 132 26"
-          stroke={color}
-          strokeWidth="5"
-          strokeLinecap="round"
-        />
+      <svg viewBox="0 0 200 70" preserveAspectRatio="none" className="h-full w-full" fill="none">
+        <path d="M4 54 Q 72 -8 132 26" stroke={color} strokeWidth="5" strokeLinecap="round" />
         <path
           d="M140 30 Q 168 42 196 54"
           stroke={color}

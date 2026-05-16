@@ -1,6 +1,10 @@
 import { createFileRoute, ClientOnly } from "@tanstack/react-router";
 import { FlightBoard, FlightConsoleSkeleton } from "~/features/console/flight/flight-widget";
-import { debugFlight, flightFixture, isFlightFixtureName } from "~/features/console/flight/fixtures";
+import {
+  debugFlight,
+  flightFixture,
+  isFlightFixtureName,
+} from "~/features/console/flight/fixtures";
 import { useFlights } from "~/features/console/flight/live";
 
 function str(value: unknown): string | undefined {
