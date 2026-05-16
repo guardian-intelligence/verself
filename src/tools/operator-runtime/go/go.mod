@@ -4,6 +4,7 @@ go 1.25.8
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
+	github.com/bazelbuild/rules_go v0.60.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/tigerbeetle/tigerbeetle-go v0.17.1
