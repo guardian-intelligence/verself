@@ -26,7 +26,7 @@ import {
   cancelBillingContractRequestSchema as cancelContractRequestSchema,
   cacheGenerationIdInputSchema,
   cachePathDeleteRequestSchema,
-  cacheVolumeIdInputSchema,
+  cacheIdInputSchema,
   createProjectRequestSchema,
   createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
   createGitCredentialRequestSchema as createSourceGitCredentialRequestSchema,
@@ -73,8 +73,8 @@ import {
   type CacheGenerationIdInput,
   type CachePathDeleteRequest,
   type CachePathDeleteResult,
-  type CacheVolume,
-  type CacheVolumeIdInput,
+  type Cache,
+  type CacheIdInput,
   type CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
   type CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
   type CreateProjectRequest,
@@ -213,8 +213,8 @@ export type {
   CacheGenerationIdInput,
   CachePathDeleteRequest,
   CachePathDeleteResult,
-  CacheVolume,
-  CacheVolumeIdInput,
+  Cache,
+  CacheIdInput,
   GitHubInstallation,
   GitHubInstallationConnect,
   JobsAnalytics,
@@ -665,17 +665,17 @@ export const getRunnerSizingAnalytics = createServerFn({ method: "GET" })
     return (await sandboxRentalSDK(context)).sandbox.getRunnerSizingAnalytics(data);
   });
 
-export const listCacheVolumes = createServerFn({ method: "GET" })
+export const listCaches = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
-    return (await sandboxRentalSDK(context)).sandbox.listCacheVolumes();
+    return (await sandboxRentalSDK(context)).sandbox.listCaches();
   });
 
 export const listCacheGenerations = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
-  .inputValidator(cacheVolumeIdInputSchema)
+  .inputValidator(cacheIdInputSchema)
   .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.listCacheGenerations(data.cacheVolumeId);
+    return (await sandboxRentalSDK(context)).sandbox.listCacheGenerations(data.cacheId);
   });
 
 export const deleteCacheGeneration = createServerFn({ method: "POST" })
@@ -689,7 +689,7 @@ export const deleteCachePath = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(cachePathDeleteRequestSchema)
   .handler(async ({ context, data }) => {
-    return (await sandboxRentalSDK(context)).sandbox.deleteCachePath(data.cacheVolumeId, data.path);
+    return (await sandboxRentalSDK(context)).sandbox.deleteCachePath(data.cacheId, data.path);
   });
 
 export const listGitHubInstallations = createServerFn({ method: "GET" })

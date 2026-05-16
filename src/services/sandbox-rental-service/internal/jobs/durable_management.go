@@ -17,13 +17,14 @@ const (
 	durableCacheManagementListLimit = 200
 )
 
-type DurableCacheVolumeRecord struct {
-	CacheVolumeID        uuid.UUID
+type DurableCacheRecord struct {
+	CacheID              uuid.UUID
 	OrgID                string
 	Provider             string
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
+	Source               string
 	Name                 string
 	CreatedAt            time.Time
 	CurrentGenerationID  *uuid.UUID
@@ -35,14 +36,15 @@ type DurableCacheVolumeRecord struct {
 
 type DurableCacheGenerationRecord struct {
 	CacheGenerationID    uuid.UUID
-	CacheVolumeID        uuid.UUID
+	CacheID              uuid.UUID
 	SourceGenerationID   *uuid.UUID
 	OrgID                string
 	Provider             string
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	VolumeName           string
+	Source               string
+	CacheName            string
 	BindPaths            []string
 	ProviderRunID        int64
 	ProviderRunAttempt   int64
@@ -66,29 +68,30 @@ type DurableCacheDeleteResult struct {
 }
 
 type DurableCachePathDeleteResult struct {
-	CacheVolumeID      uuid.UUID
+	CacheID            uuid.UUID
 	Path               string
 	DeletedGenerations []DurableCacheGenerationRecord
 }
 
-func (s *Service) ListDurableCacheVolumes(ctx context.Context, orgID string) ([]DurableCacheVolumeRecord, error) {
-	rows, err := s.storeQueries().ListDurableCacheVolumes(ctx, store.ListDurableCacheVolumesParams{
+func (s *Service) ListDurableCaches(ctx context.Context, orgID string) ([]DurableCacheRecord, error) {
+	rows, err := s.storeQueries().ListDurableCaches(ctx, store.ListDurableCachesParams{
 		OrgID:      dbOrgID(orgID),
 		LimitCount: durableCacheManagementListLimit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list durable cache volumes: %w", err)
+		return nil, fmt.Errorf("list durable caches: %w", err)
 	}
-	out := make([]DurableCacheVolumeRecord, 0, len(rows))
+	out := make([]DurableCacheRecord, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, DurableCacheVolumeRecord{
-			CacheVolumeID:        row.DurableScopeID,
+		out = append(out, DurableCacheRecord{
+			CacheID:              row.DurableScopeID,
 			OrgID:                orgIDFromDB(row.OrgID),
 			Provider:             row.Provider,
 			ProviderRepositoryID: row.ProviderRepositoryID,
 			RepositoryFullName:   row.RepositoryFullName,
 			ScopeRef:             row.ScopeRef,
-			Name:                 row.ComponentName,
+			Source:               row.CacheSource,
+			Name:                 row.CacheName,
 			CreatedAt:            timeFromPG(row.CreatedAt),
 			CurrentGenerationID:  copyUUIDPtr(row.CurrentGenerationID),
 			GenerationCount:      uint64FromInt64(row.GenerationCount, "durable cache generation count"),
@@ -100,23 +103,23 @@ func (s *Service) ListDurableCacheVolumes(ctx context.Context, orgID string) ([]
 	return out, nil
 }
 
-func (s *Service) ListDurableCacheGenerations(ctx context.Context, orgID string, cacheVolumeID uuid.UUID) ([]DurableCacheGenerationRecord, error) {
+func (s *Service) ListDurableCacheGenerations(ctx context.Context, orgID string, cacheID uuid.UUID) ([]DurableCacheGenerationRecord, error) {
 	rows, err := s.storeQueries().ListDurableCacheGenerations(ctx, store.ListDurableCacheGenerationsParams{
 		OrgID:          dbOrgID(orgID),
-		DurableScopeID: cacheVolumeID,
+		DurableScopeID: cacheID,
 		LimitCount:     durableCacheManagementListLimit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list durable cache generations: %w", err)
 	}
 	if len(rows) == 0 {
-		if _, err := s.storeQueries().GetDurableCacheVolume(ctx, store.GetDurableCacheVolumeParams{
+		if _, err := s.storeQueries().GetDurableCache(ctx, store.GetDurableCacheParams{
 			OrgID:          dbOrgID(orgID),
-			DurableScopeID: cacheVolumeID,
+			DurableScopeID: cacheID,
 		}); errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrDurableCacheMissing
 		} else if err != nil {
-			return nil, fmt.Errorf("get durable cache volume: %w", err)
+			return nil, fmt.Errorf("get durable cache: %w", err)
 		}
 		return []DurableCacheGenerationRecord{}, nil
 	}
@@ -149,14 +152,14 @@ func (s *Service) DeleteDurableCacheGeneration(ctx context.Context, orgID string
 	return DurableCacheDeleteResult{DeletedGeneration: record}, nil
 }
 
-func (s *Service) DeleteDurableCachePath(ctx context.Context, orgID string, cacheVolumeID uuid.UUID, bindPath string) (DurableCachePathDeleteResult, error) {
+func (s *Service) DeleteDurableCachePath(ctx context.Context, orgID string, cacheID uuid.UUID, bindPath string) (DurableCachePathDeleteResult, error) {
 	bindPath = strings.TrimSpace(bindPath)
 	if bindPath == "" || !strings.HasPrefix(bindPath, "/") || bindPath == "/" {
 		return DurableCachePathDeleteResult{}, fmt.Errorf("%w: cache path must be an absolute non-root path", ErrDurableCacheInvalid)
 	}
 	rows, err := s.storeQueries().ListDurableCacheGenerationsForPathPrune(ctx, store.ListDurableCacheGenerationsForPathPruneParams{
 		OrgID:          dbOrgID(orgID),
-		DurableScopeID: cacheVolumeID,
+		DurableScopeID: cacheID,
 		BindPath:       bindPath,
 	})
 	if err != nil {
@@ -165,7 +168,7 @@ func (s *Service) DeleteDurableCachePath(ctx context.Context, orgID string, cach
 	if len(rows) == 0 {
 		return DurableCachePathDeleteResult{}, ErrDurableCacheMissing
 	}
-	out := DurableCachePathDeleteResult{CacheVolumeID: cacheVolumeID, Path: bindPath, DeletedGenerations: make([]DurableCacheGenerationRecord, 0, len(rows))}
+	out := DurableCachePathDeleteResult{CacheID: cacheID, Path: bindPath, DeletedGenerations: make([]DurableCacheGenerationRecord, 0, len(rows))}
 	for _, row := range rows {
 		record, err := s.pruneUserDurableCacheGeneration(ctx, durableCachePruneCandidateFromPathRow(row), "user_path_requested")
 		if err != nil {
@@ -200,8 +203,8 @@ type durableCacheUserPruneCandidate struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	ComponentKind        string
-	ComponentName        string
+	CacheSource          string
+	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
 	BindPathsJSON        []byte
@@ -233,8 +236,8 @@ func durableCachePruneCandidateFromGenerationRow(row store.GetDurableCacheGenera
 		ProviderRepositoryID: row.ProviderRepositoryID,
 		RepositoryFullName:   row.RepositoryFullName,
 		ScopeRef:             row.ScopeRef,
-		ComponentKind:        row.ComponentKind,
-		ComponentName:        row.ComponentName,
+		CacheSource:          row.CacheSource,
+		CacheName:            row.CacheName,
 		ExecutionID:          row.ExecutionID,
 		AttemptID:            row.AttemptID,
 		BindPathsJSON:        row.BindPathsJson,
@@ -267,8 +270,8 @@ func durableCachePruneCandidateFromPathRow(row store.ListDurableCacheGenerations
 		ProviderRepositoryID: row.ProviderRepositoryID,
 		RepositoryFullName:   row.RepositoryFullName,
 		ScopeRef:             row.ScopeRef,
-		ComponentKind:        row.ComponentKind,
-		ComponentName:        row.ComponentName,
+		CacheSource:          row.CacheSource,
+		CacheName:            row.CacheName,
 		ExecutionID:          row.ExecutionID,
 		AttemptID:            row.AttemptID,
 		BindPathsJSON:        row.BindPathsJson,
@@ -333,7 +336,7 @@ func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate
 	}
 	_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, candidate.DurableGenerationID.String()+":user-prune", candidate.OperationID.String(), candidate.DurableGenerationID.String(), candidate.DurableScopeID.String(), candidate.ZFSSnapshotRef, candidate.OrgID)
 	if err != nil {
-		event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, ComponentKind: candidate.ComponentKind, ComponentName: candidate.ComponentName, Name: durableEventPrune, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
+		event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheSource: candidate.CacheSource, CacheName: candidate.CacheName, Name: durableEventPrune, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
 		if storageKnown {
 			event = event.withStorageCapacity(storage.Capacity, candidate.OrgID)
 		}
@@ -347,21 +350,22 @@ func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate
 	}); err != nil {
 		return DurableCacheGenerationRecord{}, fmt.Errorf("mark durable cache generation pruned: %w", err)
 	}
-	event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, ComponentKind: candidate.ComponentKind, ComponentName: candidate.ComponentName, Name: durableEventPrune, Result: "succeeded", Reason: reason, ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
+	event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheSource: candidate.CacheSource, CacheName: candidate.CacheName, Name: durableEventPrune, Result: "succeeded", Reason: reason, ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
 	if storageKnown {
 		event = event.withStorageCapacity(storage.Capacity, candidate.OrgID)
 	}
 	_ = s.appendDurableEvent(ctx, event)
 	return DurableCacheGenerationRecord{
 		CacheGenerationID:    candidate.DurableGenerationID,
-		CacheVolumeID:        candidate.DurableScopeID,
+		CacheID:              candidate.DurableScopeID,
 		SourceGenerationID:   copyUUIDPtr(candidate.SourceGenerationID),
 		OrgID:                orgIDFromDB(candidate.OrgID),
 		Provider:             candidate.Provider,
 		ProviderRepositoryID: candidate.ProviderRepositoryID,
 		RepositoryFullName:   candidate.RepositoryFullName,
 		ScopeRef:             candidate.ScopeRef,
-		VolumeName:           candidate.ComponentName,
+		Source:               candidate.CacheSource,
+		CacheName:            candidate.CacheName,
 		BindPaths:            bindPaths,
 		ProviderRunID:        candidate.ProviderRunID,
 		ProviderRunAttempt:   candidate.ProviderRunAttempt,
@@ -388,14 +392,15 @@ func durableCacheGenerationRecordFromListRow(row store.ListDurableCacheGeneratio
 	}
 	return DurableCacheGenerationRecord{
 		CacheGenerationID:    row.DurableGenerationID,
-		CacheVolumeID:        row.DurableScopeID,
+		CacheID:              row.DurableScopeID,
 		SourceGenerationID:   copyUUIDPtr(row.SourceGenerationID),
 		OrgID:                orgIDFromDB(row.OrgID),
 		Provider:             row.Provider,
 		ProviderRepositoryID: row.ProviderRepositoryID,
 		RepositoryFullName:   row.RepositoryFullName,
 		ScopeRef:             row.ScopeRef,
-		VolumeName:           row.ComponentName,
+		Source:               row.CacheSource,
+		CacheName:            row.CacheName,
 		BindPaths:            bindPaths,
 		ProviderRunID:        row.ProviderRunID,
 		ProviderRunAttempt:   row.ProviderRunAttempt,

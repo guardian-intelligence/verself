@@ -56,7 +56,7 @@ service SandboxRental {
         GetJobsAnalytics,
         GetCostsAnalytics,
         GetRunnerSizingAnalytics,
-        ListCacheVolumes,
+        ListCaches,
         ListCacheGenerations,
         DeleteCacheGeneration,
         DeleteCachePath,
@@ -76,7 +76,7 @@ service SandboxRental {
         RunAnalyticsJobsResource,
         RunAnalyticsCostsResource,
         RunAnalyticsRunnerSizingResource,
-        CacheVolume,
+        Cache,
         CacheGeneration,
         ExecutionSchedule
     ]
@@ -127,10 +127,15 @@ string CacheGenerationId
 string CachePath
 
 @length(min: 1, max: 128)
-string CacheVolumeName
+string CacheName
+
+enum CacheSource {
+    PLATFORM = "platform"
+    MANIFEST = "manifest"
+}
 
 @pattern("^[0-9a-fA-F-]{36}$")
-string CacheVolumeId
+string CacheId
 
 @length(min: 1, max: 512)
 string CorrelationId
@@ -336,8 +341,8 @@ list SandboxRunnerSizingSamples {
     member: SandboxRunnerSizingSample
 }
 
-list SandboxCacheVolumes {
-    member: SandboxCacheVolume
+list SandboxCaches {
+    member: SandboxCache
 }
 
 list SandboxCacheGenerations {
@@ -411,8 +416,8 @@ string CostsAnalyticsReadAuditEvent
 @auditEvent(name: "sandbox.run_analytics.runner_sizing.read")
 string RunnerSizingAnalyticsReadAuditEvent
 
-@auditEvent(name: "sandbox.cache_volume.list")
-string CacheVolumeListAuditEvent
+@auditEvent(name: "sandbox.cache.list")
+string CacheListAuditEvent
 
 @auditEvent(name: "sandbox.cache_generation.list")
 string CacheGenerationListAuditEvent
@@ -450,7 +455,7 @@ resource RunLogsResource {}
 resource RunAnalyticsJobsResource {}
 resource RunAnalyticsCostsResource {}
 resource RunAnalyticsRunnerSizingResource {}
-resource CacheVolume {}
+resource Cache {}
 resource CacheGeneration {}
 resource ExecutionSchedule {}
 resource RunnerRepository {}
@@ -730,9 +735,9 @@ structure SandboxExecutionSchedulesPage {
     limit: ScheduleListPageSize
 }
 
-structure SandboxCacheVolume {
+structure SandboxCache {
     @required
-    cache_volume_id: CacheVolumeId
+    cache_id: CacheId
 
     @required
     resourceName: ResourceName
@@ -752,7 +757,10 @@ structure SandboxCacheVolume {
     scope_ref: GitRef
 
     @required
-    name: CacheVolumeName
+    name: CacheName
+
+    @required
+    source: CacheSource
 
     current_generation_id: CacheGenerationId
 
@@ -777,7 +785,7 @@ structure SandboxCacheGeneration {
     cache_generation_id: CacheGenerationId
 
     @required
-    cache_volume_id: CacheVolumeId
+    cache_id: CacheId
 
     source_generation_id: CacheGenerationId
 
@@ -796,7 +804,10 @@ structure SandboxCacheGeneration {
     scope_ref: GitRef
 
     @required
-    volume_name: CacheVolumeName
+    cache_name: CacheName
+
+    @required
+    source: CacheSource
 
     @required
     bind_paths: SandboxCachePaths
@@ -837,9 +848,9 @@ structure SandboxCacheGeneration {
     current: Boolean
 }
 
-structure SandboxCacheVolumesPage {
+structure SandboxCachesPage {
     @required
-    volumes: SandboxCacheVolumes
+    caches: SandboxCaches
 }
 
 structure SandboxCacheGenerationsPage {
@@ -854,7 +865,7 @@ structure SandboxCacheGenerationDeleteResult {
 
 structure SandboxCachePathDeleteResult {
     @required
-    cache_volume_id: CacheVolumeId
+    cache_id: CacheId
 
     @required
     path: CachePath
@@ -1462,21 +1473,21 @@ structure SandboxRunnerSizingAnalyticsOutput {
 }
 
 @readonly
-@http(method: "GET", uri: "/api/v1/cache/volumes")
+@http(method: "GET", uri: "/api/v1/caches")
 @identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: CacheReadPermission, organization: {source: "token_org_id"})
-@audit(event: CacheVolumeListAuditEvent, resource: CacheVolume, action: "list")
+@audit(event: CacheListAuditEvent, resource: Cache, action: "list")
 @rateLimit(bucket: "read")
 @requestBudget(maxBytes: 0)
-@sdk(module: "sandbox.cache", method: "listVolumes", paginated: false, retryable: true)
-operation ListCacheVolumes {
+@sdk(module: "sandbox.cache", method: "list", paginated: false, retryable: true)
+operation ListCaches {
     input: EmptyInput
-    output: SandboxCacheVolumesPage
+    output: SandboxCachesPage
     errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
 }
 
 @readonly
-@http(method: "GET", uri: "/api/v1/cache/volumes/{cache_volume_id}/generations")
+@http(method: "GET", uri: "/api/v1/caches/{cache_id}/generations")
 @identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: CacheReadPermission, organization: {source: "token_org_id"})
 @audit(event: CacheGenerationListAuditEvent, resource: CacheGeneration, action: "list")
@@ -1484,15 +1495,15 @@ operation ListCacheVolumes {
 @requestBudget(maxBytes: 0)
 @sdk(module: "sandbox.cache", method: "listGenerations", paginated: false, retryable: true)
 operation ListCacheGenerations {
-    input: CacheVolumePathInput
+    input: CachePathInput
     output: SandboxCacheGenerationsPage
     errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
 }
 
-structure CacheVolumePathInput {
+structure CachePathInput {
     @required
     @httpLabel
-    cache_volume_id: CacheVolumeId
+    cache_id: CacheId
 }
 
 @idempotent
@@ -1528,10 +1539,10 @@ structure SandboxCacheGenerationDeleteOutput {
 }
 
 @idempotent
-@http(method: "POST", uri: "/api/v1/cache/volumes/{cache_volume_id}/paths/delete")
+@http(method: "POST", uri: "/api/v1/caches/{cache_id}/paths/delete")
 @identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
 @authz(permission: CacheWritePermission, organization: {source: "token_org_id"})
-@audit(event: CachePathDeleteAuditEvent, resource: CacheVolume, action: "delete")
+@audit(event: CachePathDeleteAuditEvent, resource: Cache, action: "delete")
 @rateLimit(bucket: "cache_mutation")
 @requestBudget(maxBytes: 4096)
 @sdk(module: "sandbox.cache", method: "deletePath", paginated: false, retryable: false)
@@ -1544,7 +1555,7 @@ operation DeleteCachePath {
 structure DeleteCachePathInput {
     @required
     @httpLabel
-    cache_volume_id: CacheVolumeId
+    cache_id: CacheId
 
     @required
     @httpHeader("Idempotency-Key")

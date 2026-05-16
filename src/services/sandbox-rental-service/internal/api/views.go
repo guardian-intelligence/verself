@@ -241,28 +241,29 @@ func runPage(page jobs.RunPage, filters jobs.RunListFilters, installationID stri
 	return out
 }
 
-func cacheVolumes(records []jobs.DurableCacheVolumeRecord, installationID string) contractapi.SandboxCacheVolumes {
-	out := make(contractapi.SandboxCacheVolumes, 0, len(records))
+func cachesView(records []jobs.DurableCacheRecord, installationID string) contractapi.SandboxCaches {
+	out := make(contractapi.SandboxCaches, 0, len(records))
 	for _, record := range records {
-		out = append(out, cacheVolume(record, installationID))
+		out = append(out, cacheView(record, installationID))
 	}
 	return out
 }
 
-func cacheVolume(record jobs.DurableCacheVolumeRecord, installationID string) contractapi.SandboxCacheVolume {
-	return contractapi.SandboxCacheVolume{
-		CacheVolumeID:        contractapi.CacheVolumeID(record.CacheVolumeID.String()),
+func cacheView(record jobs.DurableCacheRecord, installationID string) contractapi.SandboxCache {
+	return contractapi.SandboxCache{
+		CacheID:              contractapi.CacheID(record.CacheID.String()),
 		CreatedAt:            timestamp(record.CreatedAt),
 		CurrentGenerationID:  optionalUUIDPtr[contractapi.CacheGenerationID](record.CurrentGenerationID),
 		GenerationCount:      safeLongFromUint64(record.GenerationCount, "cache generation count"),
 		LastUsedAt:           timestamp(record.LastUsedAt),
-		Name:                 contractapi.CacheVolumeName(record.Name),
+		Name:                 contractapi.CacheName(record.Name),
 		OrgID:                contractapi.OrgID(record.OrgID),
 		Provider:             contractapi.Provider(record.Provider),
 		ProviderRepositoryID: contractapi.ProviderRepositoryID(strconv.FormatInt(record.ProviderRepositoryID, 10)),
 		RepositoryFullName:   optionalContractString[contractapi.RepositoryFullName](record.RepositoryFullName),
-		ResourceName:         contractapi.ResourceName(resourceName(installationID, resourcePathSegment{"orgs", record.OrgID}, resourcePathSegment{"cacheVolumes", record.CacheVolumeID.String()})),
+		ResourceName:         contractapi.ResourceName(resourceName(installationID, resourcePathSegment{"orgs", record.OrgID}, resourcePathSegment{"caches", record.CacheID.String()})),
 		ScopeRef:             contractapi.GitRef(record.ScopeRef),
+		Source:               contractapi.CacheSource(record.Source),
 		UsedBytes:            safeLongFromUint64(record.UsedBytes, "cache used bytes"),
 		WrittenBytes:         safeLongFromUint64(record.WrittenBytes, "cache written bytes"),
 	}
@@ -280,7 +281,7 @@ func cacheGeneration(record jobs.DurableCacheGenerationRecord, _ string) contrac
 	return contractapi.SandboxCacheGeneration{
 		BindPaths:            cachePaths(record.BindPaths),
 		CacheGenerationID:    contractapi.CacheGenerationID(record.CacheGenerationID.String()),
-		CacheVolumeID:        contractapi.CacheVolumeID(record.CacheVolumeID.String()),
+		CacheID:              contractapi.CacheID(record.CacheID.String()),
 		CommittedAt:          timestampPtr(&record.CommittedAt),
 		Current:              record.IsCurrent,
 		ExpiresAt:            timestampPtr(record.ExpiresAt),
@@ -297,10 +298,11 @@ func cacheGeneration(record jobs.DurableCacheGenerationRecord, _ string) contrac
 		ScopeRef:             contractapi.GitRef(record.ScopeRef),
 		SealedAt:             timestampPtr(&record.SealedAt),
 		SourceGenerationID:   optionalUUIDPtr[contractapi.CacheGenerationID](record.SourceGenerationID),
+		Source:               contractapi.CacheSource(record.Source),
 		State:                record.State,
 		TreeHash:             optionalContractString[string](record.TreeHash),
 		UsedBytes:            safeLongFromUint64(record.UsedBytes, "cache generation used bytes"),
-		VolumeName:           contractapi.CacheVolumeName(record.VolumeName),
+		CacheName:            contractapi.CacheName(record.CacheName),
 		WrittenBytes:         safeLongFromUint64(record.WrittenBytes, "cache generation written bytes"),
 		ZFSSnapshotRef:       record.ZFSSnapshotRef,
 	}

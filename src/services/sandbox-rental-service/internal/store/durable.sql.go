@@ -83,6 +83,25 @@ func (q *Queries) GetCurrentDurableGeneration(ctx context.Context, arg GetCurren
 	return i, err
 }
 
+const getDurableCache = `-- name: GetDurableCache :one
+SELECT durable_scope_id
+FROM durable_scope
+WHERE org_id = $1
+  AND durable_scope_id = $2
+`
+
+type GetDurableCacheParams struct {
+	OrgID          string
+	DurableScopeID uuid.UUID
+}
+
+func (q *Queries) GetDurableCache(ctx context.Context, arg GetDurableCacheParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getDurableCache, arg.OrgID, arg.DurableScopeID)
+	var durable_scope_id uuid.UUID
+	err := row.Scan(&durable_scope_id)
+	return durable_scope_id, err
+}
+
 const getDurableCacheGenerationForUserPrune = `-- name: GetDurableCacheGenerationForUserPrune :one
 SELECT
     g.durable_generation_id,
@@ -108,8 +127,8 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id,
     op.bind_paths_json,
@@ -123,7 +142,6 @@ LEFT JOIN runner_provider_repositories r
 LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = $1
-  AND s.component_kind = 'cache_volume'
   AND g.durable_generation_id = $2
   AND g.state <> 'pruned'
 `
@@ -157,8 +175,8 @@ type GetDurableCacheGenerationForUserPruneRow struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	ComponentKind        string
-	ComponentName        string
+	CacheSource          string
+	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
 	BindPathsJson        []byte
@@ -192,34 +210,14 @@ func (q *Queries) GetDurableCacheGenerationForUserPrune(ctx context.Context, arg
 		&i.ProviderRepositoryID,
 		&i.RepositoryFullName,
 		&i.ScopeRef,
-		&i.ComponentKind,
-		&i.ComponentName,
+		&i.CacheSource,
+		&i.CacheName,
 		&i.ExecutionID,
 		&i.AttemptID,
 		&i.BindPathsJson,
 		&i.IsCurrent,
 	)
 	return i, err
-}
-
-const getDurableCacheVolume = `-- name: GetDurableCacheVolume :one
-SELECT durable_scope_id
-FROM durable_scope
-WHERE org_id = $1
-  AND component_kind = 'cache_volume'
-  AND durable_scope_id = $2
-`
-
-type GetDurableCacheVolumeParams struct {
-	OrgID          string
-	DurableScopeID uuid.UUID
-}
-
-func (q *Queries) GetDurableCacheVolume(ctx context.Context, arg GetDurableCacheVolumeParams) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, getDurableCacheVolume, arg.OrgID, arg.DurableScopeID)
-	var durable_scope_id uuid.UUID
-	err := row.Scan(&durable_scope_id)
-	return durable_scope_id, err
 }
 
 const getDurableRunRepository = `-- name: GetDurableRunRepository :one
@@ -262,35 +260,40 @@ func (q *Queries) GetDurableRunRepository(ctx context.Context, arg GetDurableRun
 	return i, err
 }
 
-const insertCacheVolumeSpec = `-- name: InsertCacheVolumeSpec :exec
-INSERT INTO cache_volume_spec (
-    cache_volume_spec_id, cache_declaration_id, name,
-    path_set_hash, mount_policy_hash, normalized_paths_json, created_at
+const insertDurableCacheSpec = `-- name: InsertDurableCacheSpec :exec
+INSERT INTO durable_cache_spec (
+    durable_cache_spec_id, cache_declaration_id, cache_source, cache_name,
+    path_set_hash, mount_policy_hash, reconcile_policy, normalized_paths_json, created_at
 ) VALUES (
-    $1, $2, $3,
-    $4, $5,
-    $6::jsonb, $7
+    $1, $2,
+    $3, $4, $5,
+    $6, $7,
+    $8::jsonb, $9
 )
-ON CONFLICT (cache_declaration_id, name) DO NOTHING
+ON CONFLICT (cache_declaration_id, cache_source, cache_name) DO NOTHING
 `
 
-type InsertCacheVolumeSpecParams struct {
-	CacheVolumeSpecID   uuid.UUID
+type InsertDurableCacheSpecParams struct {
+	DurableCacheSpecID  uuid.UUID
 	CacheDeclarationID  uuid.UUID
-	Name                string
+	CacheSource         string
+	CacheName           string
 	PathSetHash         string
 	MountPolicyHash     string
+	ReconcilePolicy     string
 	NormalizedPathsJson []byte
 	CreatedAt           pgtype.Timestamptz
 }
 
-func (q *Queries) InsertCacheVolumeSpec(ctx context.Context, arg InsertCacheVolumeSpecParams) error {
-	_, err := q.db.Exec(ctx, insertCacheVolumeSpec,
-		arg.CacheVolumeSpecID,
+func (q *Queries) InsertDurableCacheSpec(ctx context.Context, arg InsertDurableCacheSpecParams) error {
+	_, err := q.db.Exec(ctx, insertDurableCacheSpec,
+		arg.DurableCacheSpecID,
 		arg.CacheDeclarationID,
-		arg.Name,
+		arg.CacheSource,
+		arg.CacheName,
 		arg.PathSetHash,
 		arg.MountPolicyHash,
+		arg.ReconcilePolicy,
 		arg.NormalizedPathsJson,
 		arg.CreatedAt,
 	)
@@ -472,7 +475,8 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.bind_paths_json,
     op.execution_id,
     op.attempt_id,
@@ -486,7 +490,6 @@ LEFT JOIN runner_provider_repositories r
 LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = $1
-  AND s.component_kind = 'cache_volume'
   AND g.durable_scope_id = $2
   AND g.state <> 'pruned'
 ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id
@@ -524,7 +527,8 @@ type ListDurableCacheGenerationsRow struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	ComponentName        string
+	CacheSource          string
+	CacheName            string
 	BindPathsJson        []byte
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
@@ -565,7 +569,8 @@ func (q *Queries) ListDurableCacheGenerations(ctx context.Context, arg ListDurab
 			&i.ProviderRepositoryID,
 			&i.RepositoryFullName,
 			&i.ScopeRef,
-			&i.ComponentName,
+			&i.CacheSource,
+			&i.CacheName,
 			&i.BindPathsJson,
 			&i.ExecutionID,
 			&i.AttemptID,
@@ -606,8 +611,8 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id,
     op.bind_paths_json,
@@ -621,7 +626,6 @@ LEFT JOIN runner_provider_repositories r
 LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = $1
-  AND s.component_kind = 'cache_volume'
   AND g.durable_scope_id = $2
   AND g.state <> 'pruned'
   AND op.bind_paths_json ? $3::text
@@ -658,8 +662,8 @@ type ListDurableCacheGenerationsForPathPruneRow struct {
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	ComponentKind        string
-	ComponentName        string
+	CacheSource          string
+	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
 	BindPathsJson        []byte
@@ -699,8 +703,8 @@ func (q *Queries) ListDurableCacheGenerationsForPathPrune(ctx context.Context, a
 			&i.ProviderRepositoryID,
 			&i.RepositoryFullName,
 			&i.ScopeRef,
-			&i.ComponentKind,
-			&i.ComponentName,
+			&i.CacheSource,
+			&i.CacheName,
 			&i.ExecutionID,
 			&i.AttemptID,
 			&i.BindPathsJson,
@@ -716,7 +720,7 @@ func (q *Queries) ListDurableCacheGenerationsForPathPrune(ctx context.Context, a
 	return items, nil
 }
 
-const listDurableCacheVolumes = `-- name: ListDurableCacheVolumes :many
+const listDurableCaches = `-- name: ListDurableCaches :many
 SELECT
     s.durable_scope_id,
     s.org_id,
@@ -724,7 +728,8 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     s.created_at,
     cp.current_generation_id,
     COUNT(g.durable_generation_id)::bigint AS generation_count,
@@ -741,7 +746,6 @@ LEFT JOIN durable_generation g
     ON g.durable_scope_id = s.durable_scope_id
    AND g.state <> 'pruned'
 WHERE s.org_id = $1
-  AND s.component_kind = 'cache_volume'
 GROUP BY
     s.durable_scope_id,
     s.org_id,
@@ -749,26 +753,28 @@ GROUP BY
     s.provider_repository_id,
     r.repository_full_name,
     s.scope_ref,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     s.created_at,
     cp.current_generation_id
 ORDER BY COALESCE(MAX(g.last_used_at), s.created_at) DESC, s.created_at DESC, s.durable_scope_id
 LIMIT $2
 `
 
-type ListDurableCacheVolumesParams struct {
+type ListDurableCachesParams struct {
 	OrgID      string
 	LimitCount int32
 }
 
-type ListDurableCacheVolumesRow struct {
+type ListDurableCachesRow struct {
 	DurableScopeID       uuid.UUID
 	OrgID                string
 	Provider             string
 	ProviderRepositoryID int64
 	RepositoryFullName   string
 	ScopeRef             string
-	ComponentName        string
+	CacheSource          string
+	CacheName            string
 	CreatedAt            pgtype.Timestamptz
 	CurrentGenerationID  *uuid.UUID
 	GenerationCount      int64
@@ -777,15 +783,15 @@ type ListDurableCacheVolumesRow struct {
 	LastUsedAt           pgtype.Timestamptz
 }
 
-func (q *Queries) ListDurableCacheVolumes(ctx context.Context, arg ListDurableCacheVolumesParams) ([]ListDurableCacheVolumesRow, error) {
-	rows, err := q.db.Query(ctx, listDurableCacheVolumes, arg.OrgID, arg.LimitCount)
+func (q *Queries) ListDurableCaches(ctx context.Context, arg ListDurableCachesParams) ([]ListDurableCachesRow, error) {
+	rows, err := q.db.Query(ctx, listDurableCaches, arg.OrgID, arg.LimitCount)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListDurableCacheVolumesRow{}
+	items := []ListDurableCachesRow{}
 	for rows.Next() {
-		var i ListDurableCacheVolumesRow
+		var i ListDurableCachesRow
 		if err := rows.Scan(
 			&i.DurableScopeID,
 			&i.OrgID,
@@ -793,7 +799,8 @@ func (q *Queries) ListDurableCacheVolumes(ctx context.Context, arg ListDurableCa
 			&i.ProviderRepositoryID,
 			&i.RepositoryFullName,
 			&i.ScopeRef,
-			&i.ComponentName,
+			&i.CacheSource,
+			&i.CacheName,
 			&i.CreatedAt,
 			&i.CurrentGenerationID,
 			&i.GenerationCount,
@@ -820,8 +827,8 @@ SELECT
     g.zfs_snapshot_ref,
     g.used_bytes,
     g.written_bytes,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id,
     g.provider_job_id
@@ -850,8 +857,8 @@ type ListDurablePromotionCandidatesForRunRow struct {
 	ZfsSnapshotRef      string
 	UsedBytes           int64
 	WrittenBytes        int64
-	ComponentKind       string
-	ComponentName       string
+	CacheSource         string
+	CacheName           string
 	ExecutionID         uuid.UUID
 	AttemptID           uuid.UUID
 	ProviderJobID       int64
@@ -874,8 +881,8 @@ func (q *Queries) ListDurablePromotionCandidatesForRun(ctx context.Context, arg 
 			&i.ZfsSnapshotRef,
 			&i.UsedBytes,
 			&i.WrittenBytes,
-			&i.ComponentKind,
-			&i.ComponentName,
+			&i.CacheSource,
+			&i.CacheName,
 			&i.ExecutionID,
 			&i.AttemptID,
 			&i.ProviderJobID,
@@ -904,8 +911,8 @@ SELECT
     s.org_id,
     s.provider,
     s.provider_repository_id,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id
 FROM durable_generation g
@@ -951,8 +958,8 @@ type ListEvictableDurableGenerationsRow struct {
 	OrgID                string
 	Provider             string
 	ProviderRepositoryID int64
-	ComponentKind        string
-	ComponentName        string
+	CacheSource          string
+	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
 }
@@ -979,8 +986,8 @@ func (q *Queries) ListEvictableDurableGenerations(ctx context.Context, arg ListE
 			&i.OrgID,
 			&i.Provider,
 			&i.ProviderRepositoryID,
-			&i.ComponentKind,
-			&i.ComponentName,
+			&i.CacheSource,
+			&i.CacheName,
 			&i.ExecutionID,
 			&i.AttemptID,
 		); err != nil {
@@ -1008,8 +1015,8 @@ SELECT
     s.org_id,
     s.provider,
     s.provider_repository_id,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id
 FROM durable_generation g
@@ -1057,8 +1064,8 @@ type ListPrunableDurableGenerationsRow struct {
 	OrgID                string
 	Provider             string
 	ProviderRepositoryID int64
-	ComponentKind        string
-	ComponentName        string
+	CacheSource          string
+	CacheName            string
 	ExecutionID          uuid.UUID
 	AttemptID            uuid.UUID
 }
@@ -1085,8 +1092,8 @@ func (q *Queries) ListPrunableDurableGenerations(ctx context.Context, arg ListPr
 			&i.OrgID,
 			&i.Provider,
 			&i.ProviderRepositoryID,
-			&i.ComponentKind,
-			&i.ComponentName,
+			&i.CacheSource,
+			&i.CacheName,
 			&i.ExecutionID,
 			&i.AttemptID,
 		); err != nil {
@@ -1214,7 +1221,6 @@ WHERE target.durable_generation_id = $2
   AND target.durable_scope_id = $3
   AND s.durable_scope_id = target.durable_scope_id
   AND s.org_id = $4
-  AND s.component_kind = 'cache_volume'
   AND target.state IN ('committed', 'retained', 'prunable')
   AND NOT EXISTS (
       SELECT 1
@@ -1363,7 +1369,21 @@ SET final_state = 'failed',
     result_recorded_at = COALESCE(result_recorded_at, $2)
 WHERE attempt_id = $3
   AND final_state IN ('requested', 'mounted')
-RETURNING operation_id, durable_scope_id, execution_id, attempt_id
+RETURNING
+    operation_id,
+    durable_scope_id,
+    execution_id,
+    attempt_id,
+    (
+        SELECT s.cache_source
+        FROM durable_scope s
+        WHERE s.durable_scope_id = durable_operation.durable_scope_id
+    ) AS cache_source,
+    (
+        SELECT s.cache_name
+        FROM durable_scope s
+        WHERE s.durable_scope_id = durable_operation.durable_scope_id
+    ) AS cache_name
 `
 
 type MarkOpenDurableOperationsFailedByAttemptParams struct {
@@ -1377,6 +1397,8 @@ type MarkOpenDurableOperationsFailedByAttemptRow struct {
 	DurableScopeID uuid.UUID
 	ExecutionID    uuid.UUID
 	AttemptID      uuid.UUID
+	CacheSource    string
+	CacheName      string
 }
 
 func (q *Queries) MarkOpenDurableOperationsFailedByAttempt(ctx context.Context, arg MarkOpenDurableOperationsFailedByAttemptParams) ([]MarkOpenDurableOperationsFailedByAttemptRow, error) {
@@ -1393,6 +1415,8 @@ func (q *Queries) MarkOpenDurableOperationsFailedByAttempt(ctx context.Context, 
 			&i.DurableScopeID,
 			&i.ExecutionID,
 			&i.AttemptID,
+			&i.CacheSource,
+			&i.CacheName,
 		); err != nil {
 			return nil, err
 		}
@@ -1546,14 +1570,14 @@ func (q *Queries) UpsertCacheDeclaration(ctx context.Context, arg UpsertCacheDec
 const upsertDurableScope = `-- name: UpsertDurableScope :one
 INSERT INTO durable_scope (
     durable_scope_id, org_id, repository_id, provider, provider_repository_id, scope_kind,
-    scope_ref, job_shape_id, component_name, component_kind, trust_class, created_at
+    scope_ref, job_shape_id, cache_name, cache_source, trust_class, created_at
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7,
     $8, $9, $10,
     $11, $12
 )
-ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
+ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, cache_name, cache_source, trust_class)
 DO UPDATE SET created_at = durable_scope.created_at
 RETURNING durable_scope_id
 `
@@ -1567,8 +1591,8 @@ type UpsertDurableScopeParams struct {
 	ScopeKind            string
 	ScopeRef             string
 	JobShapeID           uuid.UUID
-	ComponentName        string
-	ComponentKind        string
+	CacheName            string
+	CacheSource          string
 	TrustClass           string
 	CreatedAt            pgtype.Timestamptz
 }
@@ -1583,8 +1607,8 @@ func (q *Queries) UpsertDurableScope(ctx context.Context, arg UpsertDurableScope
 		arg.ScopeKind,
 		arg.ScopeRef,
 		arg.JobShapeID,
-		arg.ComponentName,
-		arg.ComponentKind,
+		arg.CacheName,
+		arg.CacheSource,
 		arg.TrustClass,
 		arg.CreatedAt,
 	)
@@ -1597,21 +1621,19 @@ const upsertJobShape = `-- name: UpsertJobShape :one
 INSERT INTO job_shape (
     job_shape_id, repository_id, provider, workflow_identity, called_workflow_identity,
     job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
-    kernel_image_id, runner_toolchain_image_id, workspace_policy_hash,
-    cache_declaration_hash, created_at
+    kernel_image_id, runner_toolchain_image_id, durable_cache_spec_hash, created_at
 ) VALUES (
     $1, $2, $3,
     $4, $5,
     $6, $7, $8,
     $9, $10, $11,
     $12, $13,
-    $14, $15
+    $14
 )
 ON CONFLICT (
     repository_id, provider, workflow_identity, called_workflow_identity,
     job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
-    kernel_image_id, runner_toolchain_image_id, workspace_policy_hash,
-    cache_declaration_hash
+    kernel_image_id, runner_toolchain_image_id, durable_cache_spec_hash
 ) DO UPDATE SET created_at = job_shape.created_at
 RETURNING job_shape_id
 `
@@ -1629,8 +1651,7 @@ type UpsertJobShapeParams struct {
 	PlatformImageID        string
 	KernelImageID          string
 	RunnerToolchainImageID string
-	WorkspacePolicyHash    string
-	CacheDeclarationHash   string
+	DurableCacheSpecHash   string
 	CreatedAt              pgtype.Timestamptz
 }
 
@@ -1648,8 +1669,7 @@ func (q *Queries) UpsertJobShape(ctx context.Context, arg UpsertJobShapeParams) 
 		arg.PlatformImageID,
 		arg.KernelImageID,
 		arg.RunnerToolchainImageID,
-		arg.WorkspacePolicyHash,
-		arg.CacheDeclarationHash,
+		arg.DurableCacheSpecHash,
 		arg.CreatedAt,
 	)
 	var job_shape_id uuid.UUID

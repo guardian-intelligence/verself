@@ -11,10 +11,10 @@ import { formatDateTimeUTC } from "~/lib/format";
 import {
   deleteCacheGeneration,
   deleteCachePath,
+  type Cache,
   type CacheGeneration,
-  type CacheVolume,
 } from "~/server-fns/api";
-import { consoleCacheGenerationsQuery, consoleCacheVolumesQuery, consoleRunsQuery } from "./runs";
+import { consoleCacheGenerationsQuery, consoleCachesQuery, consoleRunsQuery } from "./runs";
 import { toConsoleView, type ConsoleRepo, type ConsoleRunStatus } from "./model";
 
 const statusDotClass: Record<ConsoleRunStatus, string> = {
@@ -29,7 +29,7 @@ const statusDotClass: Record<ConsoleRunStatus, string> = {
 export function RepoConsole() {
   const auth = useSignedInAuth();
   const view = toConsoleView(useSuspenseQuery(consoleRunsQuery(auth)).data);
-  const cacheVolumes = useSuspenseQuery(consoleCacheVolumesQuery(auth)).data;
+  const caches = useSuspenseQuery(consoleCachesQuery(auth)).data;
 
   return (
     <ConsoleCanvas>
@@ -40,7 +40,7 @@ export function RepoConsole() {
           <ConsoleEmpty />
         )}
       </section>
-      <CachePanel volumes={cacheVolumes} />
+      <CachePanel caches={caches} />
     </ConsoleCanvas>
   );
 }
@@ -109,8 +109,8 @@ function RepoCard({ repo }: { readonly repo: ConsoleRepo }) {
   );
 }
 
-function CachePanel({ volumes }: { readonly volumes: readonly CacheVolume[] }) {
-  if (volumes.length === 0) {
+function CachePanel({ caches }: { readonly caches: readonly Cache[] }) {
+  if (caches.length === 0) {
     return (
       <section className="surface-elevated rounded-lg p-4">
         <h2 className="font-mono text-xs tracking-tight text-muted-foreground">Caches</h2>
@@ -123,35 +123,33 @@ function CachePanel({ volumes }: { readonly volumes: readonly CacheVolume[] }) {
     <section className="surface-elevated rounded-lg p-4">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="font-mono text-xs tracking-tight text-muted-foreground">Caches</h2>
-        <span className="text-xs text-muted-foreground">{volumes.length}</span>
+        <span className="text-xs text-muted-foreground">{caches.length}</span>
       </div>
       <div className="mt-4 flex flex-col divide-y divide-border">
-        {volumes.map((volume) => (
-          <CacheVolumeRow key={volume.cache_volume_id} volume={volume} />
+        {caches.map((cache) => (
+          <CacheRow key={cache.cache_id} cache={cache} />
         ))}
       </div>
     </section>
   );
 }
 
-function CacheVolumeRow({ volume }: { readonly volume: CacheVolume }) {
+function CacheRow({ cache }: { readonly cache: Cache }) {
   const auth = useSignedInAuth();
-  const generations = useSuspenseQuery(
-    consoleCacheGenerationsQuery(auth, volume.cache_volume_id),
-  ).data;
+  const generations = useSuspenseQuery(consoleCacheGenerationsQuery(auth, cache.cache_id)).data;
 
   return (
     <article className="py-4 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-medium text-foreground">{volume.name}</h3>
+          <h3 className="truncate text-sm font-medium text-foreground">{cache.name}</h3>
           <p className="mt-1 truncate text-xs text-muted-foreground">
-            {volume.repository_full_name || volume.scope_ref}
+            {cache.repository_full_name || cache.scope_ref}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-          <span>{formatBytes(volume.used_bytes)}</span>
-          <span>{volume.generation_count} generations</span>
+          <span>{formatBytes(cache.used_bytes)}</span>
+          <span>{cache.generation_count} generations</span>
         </div>
       </div>
       <ol className="mt-3 flex flex-col gap-3">
@@ -175,8 +173,7 @@ function CacheGenerationRow({ generation }: { readonly generation: CacheGenerati
     onSuccess: invalidateCaches,
   });
   const deletePathMutation = useMutation({
-    mutationFn: (path: string) =>
-      deleteCachePath({ data: { cacheVolumeId: generation.cache_volume_id, path } }),
+    mutationFn: (path: string) => deleteCachePath({ data: { cacheId: generation.cache_id, path } }),
     onSuccess: invalidateCaches,
   });
 

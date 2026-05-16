@@ -85,7 +85,7 @@ func TestOpenAPIPublicProjectionIsBearerOnly(t *testing.T) {
 		"get-jobs-analytics":                    false,
 		"get-costs-analytics":                   false,
 		"get-runner-sizing-analytics":           false,
-		"list-cache-volumes":                    false,
+		"list-caches":                           false,
 		"list-cache-generations":                false,
 		"delete-cache-generation":               false,
 		"delete-cache-path":                     false,

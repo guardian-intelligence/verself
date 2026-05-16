@@ -1,6 +1,6 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { authQueryKey, type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
-import { listCacheGenerations, listCacheVolumes, listRuns } from "~/server-fns/api";
+import { listCacheGenerations, listCaches, listRuns } from "~/server-fns/api";
 
 // The console is a single ambient surface: one card per connected repo, each
 // showing its recent CI runs. We pull a generous page of recent runs and group
@@ -16,19 +16,19 @@ export function consoleRunsQuery(auth: AuthenticatedAuth) {
   });
 }
 
-export function consoleCacheVolumesQuery(auth: AuthenticatedAuth) {
+export function consoleCachesQuery(auth: AuthenticatedAuth) {
   return queryOptions({
-    queryKey: authQueryKey(auth, "console-cache-volumes"),
-    queryFn: () => listCacheVolumes(),
+    queryKey: authQueryKey(auth, "console-caches"),
+    queryFn: () => listCaches(),
     staleTime: 10_000,
     refetchInterval: 10_000,
   });
 }
 
-export function consoleCacheGenerationsQuery(auth: AuthenticatedAuth, cacheVolumeId: string) {
+export function consoleCacheGenerationsQuery(auth: AuthenticatedAuth, cacheId: string) {
   return queryOptions({
-    queryKey: authQueryKey(auth, "console-cache-generations", cacheVolumeId),
-    queryFn: () => listCacheGenerations({ data: { cacheVolumeId } }),
+    queryKey: authQueryKey(auth, "console-cache-generations", cacheId),
+    queryFn: () => listCacheGenerations({ data: { cacheId } }),
     staleTime: 10_000,
     refetchInterval: 10_000,
   });
@@ -37,6 +37,6 @@ export function consoleCacheGenerationsQuery(auth: AuthenticatedAuth, cacheVolum
 export async function loadConsole(queryClient: QueryClient, auth: AuthenticatedAuth) {
   await Promise.all([
     queryClient.ensureQueryData(consoleRunsQuery(auth)),
-    queryClient.ensureQueryData(consoleCacheVolumesQuery(auth)),
+    queryClient.ensureQueryData(consoleCachesQuery(auth)),
   ]);
 }

@@ -31,7 +31,7 @@ func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Ser
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.GetJobsAnalytics, "Get run duration and success analytics", getJobsAnalytics(svc))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.GetCostsAnalytics, "Get run cost analytics", getCostsAnalytics(svc))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.GetRunnerSizingAnalytics, "Get runner sizing analytics", getRunnerSizingAnalytics(svc))
-	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.ListCacheVolumes, "List durable cache volumes", listCacheVolumes(svc, publicConfig.InstallationID))
+	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.ListCaches, "List durable caches", listCaches(svc, publicConfig.InstallationID))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.ListCacheGenerations, "List durable cache generations", listCacheGenerations(svc, publicConfig.InstallationID))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.DeleteCacheGeneration, "Delete a durable cache generation", deleteCacheGeneration(svc, publicConfig.InstallationID))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.DeleteCachePath, "Delete a durable cache path", deleteCachePath(svc, publicConfig.InstallationID))
@@ -335,34 +335,34 @@ func getRunnerSizingAnalytics(svc *jobs.Service) func(context.Context, *contract
 	}
 }
 
-func listCacheVolumes(svc *jobs.Service, installationID string) func(context.Context, *contractapi.EmptyInput) (*contractapi.SandboxCacheVolumesPage, error) {
-	return func(ctx context.Context, _ *contractapi.EmptyInput) (*contractapi.SandboxCacheVolumesPage, error) {
+func listCaches(svc *jobs.Service, installationID string) func(context.Context, *contractapi.EmptyInput) (*contractapi.SandboxCachesPage, error) {
+	return func(ctx context.Context, _ *contractapi.EmptyInput) (*contractapi.SandboxCachesPage, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		volumes, err := svc.ListDurableCacheVolumes(ctx, orgID)
+		caches, err := svc.ListDurableCaches(ctx, orgID)
 		if err != nil {
 			return nil, err
 		}
-		return &contractapi.SandboxCacheVolumesPage{Body: contractapi.SandboxCacheVolumesPageBody{Volumes: cacheVolumes(volumes, installationID)}}, nil
+		return &contractapi.SandboxCachesPage{Body: contractapi.SandboxCachesPageBody{Caches: cachesView(caches, installationID)}}, nil
 	}
 }
 
-func listCacheGenerations(svc *jobs.Service, installationID string) func(context.Context, *contractapi.CacheVolumePathInput) (*contractapi.SandboxCacheGenerationsPage, error) {
-	return func(ctx context.Context, input *contractapi.CacheVolumePathInput) (*contractapi.SandboxCacheGenerationsPage, error) {
+func listCacheGenerations(svc *jobs.Service, installationID string) func(context.Context, *contractapi.CachePathInput) (*contractapi.SandboxCacheGenerationsPage, error) {
+	return func(ctx context.Context, input *contractapi.CachePathInput) (*contractapi.SandboxCacheGenerationsPage, error) {
 		orgID, err := requireOrgID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		cacheVolumeID, err := uuid.Parse(string(input.CacheVolumeID))
+		cacheID, err := uuid.Parse(string(input.CacheID))
 		if err != nil {
-			return nil, badRequest(ctx, "invalid-cache-volume-id", "cache_volume_id must be a UUID", err)
+			return nil, badRequest(ctx, "invalid-cache-id", "cache_id must be a UUID", err)
 		}
-		generations, err := svc.ListDurableCacheGenerations(ctx, orgID, cacheVolumeID)
+		generations, err := svc.ListDurableCacheGenerations(ctx, orgID, cacheID)
 		if err != nil {
 			if errors.Is(err, jobs.ErrDurableCacheMissing) {
-				return nil, notFound(ctx, "cache-volume-not-found", "cache volume not found")
+				return nil, notFound(ctx, "cache-not-found", "cache not found")
 			}
 			return nil, err
 		}
@@ -394,15 +394,15 @@ func deleteCachePath(svc *jobs.Service, installationID string) func(context.Cont
 		if err != nil {
 			return nil, err
 		}
-		cacheVolumeID, err := uuid.Parse(string(input.CacheVolumeID))
+		cacheID, err := uuid.Parse(string(input.CacheID))
 		if err != nil {
-			return nil, badRequest(ctx, "invalid-cache-volume-id", "cache_volume_id must be a UUID", err)
+			return nil, badRequest(ctx, "invalid-cache-id", "cache_id must be a UUID", err)
 		}
-		result, err := svc.DeleteDurableCachePath(ctx, orgID, cacheVolumeID, string(input.Body.Path))
+		result, err := svc.DeleteDurableCachePath(ctx, orgID, cacheID, string(input.Body.Path))
 		if err != nil {
 			return nil, durableCacheMutationError(ctx, err)
 		}
-		return &contractapi.SandboxCachePathDeleteOutput{Body: contractapi.SandboxCachePathDeleteResult{CacheVolumeID: contractapi.CacheVolumeID(result.CacheVolumeID.String()), Path: contractapi.CachePath(result.Path), Generations: cacheGenerations(result.DeletedGenerations, installationID)}}, nil
+		return &contractapi.SandboxCachePathDeleteOutput{Body: contractapi.SandboxCachePathDeleteResult{CacheID: contractapi.CacheID(result.CacheID.String()), Path: contractapi.CachePath(result.Path), Generations: cacheGenerations(result.DeletedGenerations, installationID)}}, nil
 	}
 }
 

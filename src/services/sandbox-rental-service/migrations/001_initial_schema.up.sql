@@ -539,18 +539,20 @@ CREATE TABLE cache_declaration (
     parsed_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX idx_cache_declaration_hash
+CREATE UNIQUE INDEX idx_cache_declaration_identity
     ON cache_declaration (repository_id, declaration_hash, source_kind, source_path, workflow_identity, job_identity, step_identity);
 
-CREATE TABLE cache_volume_spec (
-    cache_volume_spec_id UUID        PRIMARY KEY,
-    cache_declaration_id UUID        NOT NULL REFERENCES cache_declaration(cache_declaration_id) ON DELETE CASCADE,
-    name                 TEXT        NOT NULL CHECK (name <> ''),
-    path_set_hash        TEXT        NOT NULL,
-    mount_policy_hash    TEXT        NOT NULL,
-    normalized_paths_json JSONB      NOT NULL,
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (cache_declaration_id, name)
+CREATE TABLE durable_cache_spec (
+    durable_cache_spec_id UUID        PRIMARY KEY,
+    cache_declaration_id  UUID        NOT NULL REFERENCES cache_declaration(cache_declaration_id) ON DELETE CASCADE,
+    cache_source          TEXT        NOT NULL CHECK (cache_source IN ('platform', 'manifest')),
+    cache_name            TEXT        NOT NULL CHECK (cache_name <> ''),
+    path_set_hash         TEXT        NOT NULL,
+    mount_policy_hash     TEXT        NOT NULL,
+    reconcile_policy      TEXT        NOT NULL CHECK (reconcile_policy IN ('git_checkout', 'none')),
+    normalized_paths_json JSONB       NOT NULL,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (cache_declaration_id, cache_source, cache_name)
 );
 
 CREATE TABLE job_shape (
@@ -566,14 +568,12 @@ CREATE TABLE job_shape (
     platform_image_id        TEXT        NOT NULL DEFAULT '',
     kernel_image_id          TEXT        NOT NULL DEFAULT '',
     runner_toolchain_image_id TEXT       NOT NULL DEFAULT '',
-    workspace_policy_hash    TEXT        NOT NULL,
-    cache_declaration_hash   TEXT        NOT NULL,
+    durable_cache_spec_hash  TEXT        NOT NULL,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (
         repository_id, provider, workflow_identity, called_workflow_identity,
         job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
-        kernel_image_id, runner_toolchain_image_id, workspace_policy_hash,
-        cache_declaration_hash
+        kernel_image_id, runner_toolchain_image_id, durable_cache_spec_hash
     )
 );
 
@@ -586,11 +586,11 @@ CREATE TABLE durable_scope (
     scope_kind             TEXT        NOT NULL,
     scope_ref              TEXT        NOT NULL,
     job_shape_id           UUID        NOT NULL REFERENCES job_shape(job_shape_id) ON DELETE RESTRICT,
-    component_name         TEXT        NOT NULL,
-    component_kind         TEXT        NOT NULL CHECK (component_kind IN ('github_workspace', 'cache_volume', 'platform_toolchain')),
+    cache_name             TEXT        NOT NULL,
+    cache_source           TEXT        NOT NULL CHECK (cache_source IN ('platform', 'manifest')),
     trust_class            TEXT        NOT NULL,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
+    UNIQUE (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, cache_source, cache_name, trust_class)
 );
 
 CREATE TABLE durable_operation (

@@ -19,50 +19,49 @@ DO UPDATE SET
     parsed_at = EXCLUDED.parsed_at
 RETURNING cache_declaration_id;
 
--- name: InsertCacheVolumeSpec :exec
-INSERT INTO cache_volume_spec (
-    cache_volume_spec_id, cache_declaration_id, name,
-    path_set_hash, mount_policy_hash, normalized_paths_json, created_at
+-- name: InsertDurableCacheSpec :exec
+INSERT INTO durable_cache_spec (
+    durable_cache_spec_id, cache_declaration_id, cache_source, cache_name,
+    path_set_hash, mount_policy_hash, reconcile_policy, normalized_paths_json, created_at
 ) VALUES (
-    sqlc.arg(cache_volume_spec_id), sqlc.arg(cache_declaration_id), sqlc.arg(name),
-    sqlc.arg(path_set_hash), sqlc.arg(mount_policy_hash),
+    sqlc.arg(durable_cache_spec_id), sqlc.arg(cache_declaration_id),
+    sqlc.arg(cache_source), sqlc.arg(cache_name), sqlc.arg(path_set_hash),
+    sqlc.arg(mount_policy_hash), sqlc.arg(reconcile_policy),
     sqlc.arg(normalized_paths_json)::jsonb, sqlc.arg(created_at)
 )
-ON CONFLICT (cache_declaration_id, name) DO NOTHING;
+ON CONFLICT (cache_declaration_id, cache_source, cache_name) DO NOTHING;
 
 -- name: UpsertJobShape :one
 INSERT INTO job_shape (
     job_shape_id, repository_id, provider, workflow_identity, called_workflow_identity,
     job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
-    kernel_image_id, runner_toolchain_image_id, workspace_policy_hash,
-    cache_declaration_hash, created_at
+    kernel_image_id, runner_toolchain_image_id, durable_cache_spec_hash, created_at
 ) VALUES (
     sqlc.arg(job_shape_id), sqlc.arg(repository_id), sqlc.arg(provider),
     sqlc.arg(workflow_identity), sqlc.arg(called_workflow_identity),
     sqlc.arg(job_identity), sqlc.arg(matrix_key), sqlc.arg(runner_class),
     sqlc.arg(guest_arch), sqlc.arg(platform_image_id), sqlc.arg(kernel_image_id),
-    sqlc.arg(runner_toolchain_image_id), sqlc.arg(workspace_policy_hash),
-    sqlc.arg(cache_declaration_hash), sqlc.arg(created_at)
+    sqlc.arg(runner_toolchain_image_id), sqlc.arg(durable_cache_spec_hash),
+    sqlc.arg(created_at)
 )
 ON CONFLICT (
     repository_id, provider, workflow_identity, called_workflow_identity,
     job_identity, matrix_key, runner_class, guest_arch, platform_image_id,
-    kernel_image_id, runner_toolchain_image_id, workspace_policy_hash,
-    cache_declaration_hash
+    kernel_image_id, runner_toolchain_image_id, durable_cache_spec_hash
 ) DO UPDATE SET created_at = job_shape.created_at
 RETURNING job_shape_id;
 
 -- name: UpsertDurableScope :one
 INSERT INTO durable_scope (
     durable_scope_id, org_id, repository_id, provider, provider_repository_id, scope_kind,
-    scope_ref, job_shape_id, component_name, component_kind, trust_class, created_at
+    scope_ref, job_shape_id, cache_name, cache_source, trust_class, created_at
 ) VALUES (
     sqlc.arg(durable_scope_id), sqlc.arg(org_id), sqlc.arg(repository_id), sqlc.arg(provider),
     sqlc.arg(provider_repository_id), sqlc.arg(scope_kind), sqlc.arg(scope_ref),
-    sqlc.arg(job_shape_id), sqlc.arg(component_name), sqlc.arg(component_kind),
+    sqlc.arg(job_shape_id), sqlc.arg(cache_name), sqlc.arg(cache_source),
     sqlc.arg(trust_class), sqlc.arg(created_at)
 )
-ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, component_name, component_kind, trust_class)
+ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, cache_name, cache_source, trust_class)
 DO UPDATE SET created_at = durable_scope.created_at
 RETURNING durable_scope_id;
 
@@ -143,7 +142,21 @@ SET final_state = 'failed',
     result_recorded_at = COALESCE(result_recorded_at, sqlc.arg(recorded_at))
 WHERE attempt_id = sqlc.arg(attempt_id)
   AND final_state IN ('requested', 'mounted')
-RETURNING operation_id, durable_scope_id, execution_id, attempt_id;
+RETURNING
+    operation_id,
+    durable_scope_id,
+    execution_id,
+    attempt_id,
+    (
+        SELECT s.cache_source
+        FROM durable_scope s
+        WHERE s.durable_scope_id = durable_operation.durable_scope_id
+    ) AS cache_source,
+    (
+        SELECT s.cache_name
+        FROM durable_scope s
+        WHERE s.durable_scope_id = durable_operation.durable_scope_id
+    ) AS cache_name;
 
 -- name: InsertDurableGeneration :one
 INSERT INTO durable_generation (
@@ -208,8 +221,8 @@ SELECT
     s.org_id,
     s.provider,
     s.provider_repository_id,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id
 FROM durable_generation g
@@ -252,8 +265,8 @@ SELECT
     s.org_id,
     s.provider,
     s.provider_repository_id,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id
 FROM durable_generation g
@@ -281,7 +294,7 @@ WHERE g.state IN ('committed', 'retained', 'prunable')
 ORDER BY g.last_used_at, g.committed_at, g.durable_generation_id
 LIMIT sqlc.arg(limit_count);
 
--- name: ListDurableCacheVolumes :many
+-- name: ListDurableCaches :many
 SELECT
     s.durable_scope_id,
     s.org_id,
@@ -289,7 +302,8 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     s.created_at,
     cp.current_generation_id,
     COUNT(g.durable_generation_id)::bigint AS generation_count,
@@ -306,7 +320,6 @@ LEFT JOIN durable_generation g
     ON g.durable_scope_id = s.durable_scope_id
    AND g.state <> 'pruned'
 WHERE s.org_id = sqlc.arg(org_id)
-  AND s.component_kind = 'cache_volume'
 GROUP BY
     s.durable_scope_id,
     s.org_id,
@@ -314,17 +327,17 @@ GROUP BY
     s.provider_repository_id,
     r.repository_full_name,
     s.scope_ref,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     s.created_at,
     cp.current_generation_id
 ORDER BY COALESCE(MAX(g.last_used_at), s.created_at) DESC, s.created_at DESC, s.durable_scope_id
 LIMIT sqlc.arg(limit_count);
 
--- name: GetDurableCacheVolume :one
+-- name: GetDurableCache :one
 SELECT durable_scope_id
 FROM durable_scope
 WHERE org_id = sqlc.arg(org_id)
-  AND component_kind = 'cache_volume'
   AND durable_scope_id = sqlc.arg(durable_scope_id);
 
 -- name: ListDurableCacheGenerations :many
@@ -353,7 +366,8 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.bind_paths_json,
     op.execution_id,
     op.attempt_id,
@@ -367,7 +381,6 @@ LEFT JOIN runner_provider_repositories r
 LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = sqlc.arg(org_id)
-  AND s.component_kind = 'cache_volume'
   AND g.durable_scope_id = sqlc.arg(durable_scope_id)
   AND g.state <> 'pruned'
 ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id
@@ -398,8 +411,8 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id,
     op.bind_paths_json,
@@ -413,7 +426,6 @@ LEFT JOIN runner_provider_repositories r
 LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = sqlc.arg(org_id)
-  AND s.component_kind = 'cache_volume'
   AND g.durable_generation_id = sqlc.arg(durable_generation_id)
   AND g.state <> 'pruned';
 
@@ -442,8 +454,8 @@ SELECT
     s.provider_repository_id,
     COALESCE(r.repository_full_name, '') AS repository_full_name,
     s.scope_ref,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id,
     op.bind_paths_json,
@@ -457,7 +469,6 @@ LEFT JOIN runner_provider_repositories r
 LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = sqlc.arg(org_id)
-  AND s.component_kind = 'cache_volume'
   AND g.durable_scope_id = sqlc.arg(durable_scope_id)
   AND g.state <> 'pruned'
   AND op.bind_paths_json ? sqlc.arg(bind_path)::text
@@ -472,7 +483,6 @@ WHERE target.durable_generation_id = sqlc.arg(durable_generation_id)
   AND target.durable_scope_id = sqlc.arg(durable_scope_id)
   AND s.durable_scope_id = target.durable_scope_id
   AND s.org_id = sqlc.arg(org_id)
-  AND s.component_kind = 'cache_volume'
   AND target.state IN ('committed', 'retained', 'prunable')
   AND NOT EXISTS (
       SELECT 1
@@ -538,8 +548,8 @@ SELECT
     g.zfs_snapshot_ref,
     g.used_bytes,
     g.written_bytes,
-    s.component_kind,
-    s.component_name,
+    s.cache_source,
+    s.cache_name,
     op.execution_id,
     op.attempt_id,
     g.provider_job_id

@@ -19,7 +19,7 @@ import {
   getRun as getGeneratedRun,
   getRunnerSizingAnalytics as getGeneratedRunnerSizingAnalytics,
   listCacheGenerations as listGeneratedCacheGenerations,
-  listCacheVolumes as listGeneratedCacheVolumes,
+  listCaches as listGeneratedCaches,
   listExecutionSchedules as listGeneratedExecutionSchedules,
   listGithubInstallations as listGeneratedGithubInstallations,
   listRuns as listGeneratedRuns,
@@ -55,7 +55,7 @@ import {
   vGetRunnerSizingAnalyticsResponse,
   vListCacheGenerationsPath,
   vListCacheGenerationsResponse,
-  vListCacheVolumesResponse,
+  vListCachesResponse,
   vListExecutionSchedulesQuery,
   vListExecutionSchedulesResponse,
   vListGithubInstallationsResponse,
@@ -69,10 +69,10 @@ import {
   vResumeExecutionScheduleResponse,
   vSearchRunLogsQuery,
   vSearchRunLogsResponse,
+  vSandboxCache,
   vSandboxAttemptRecord,
   vSandboxBillingWindow,
   vSandboxCacheGeneration,
-  vSandboxCacheVolume,
   vSandboxExecutionRecord,
   vSandboxExecutionScheduleDispatchRecord,
   vSandboxExecutionScheduleRecord,
@@ -132,12 +132,12 @@ export class SandboxRental {
     });
   }
 
-  listCacheVolumes(): Promise<CacheVolume[]> {
-    return listCacheVolumes(this.#options);
+  listCaches(): Promise<Cache[]> {
+    return listCaches(this.#options);
   }
 
-  listCacheGenerations(cacheVolumeId: string): Promise<CacheGeneration[]> {
-    return listCacheGenerations({ ...this.#options, cacheVolumeId });
+  listCacheGenerations(cacheId: string): Promise<CacheGeneration[]> {
+    return listCacheGenerations({ ...this.#options, cacheId });
   }
 
   deleteCacheGeneration(
@@ -152,13 +152,13 @@ export class SandboxRental {
   }
 
   deleteCachePath(
-    cacheVolumeId: string,
+    cacheId: string,
     path: string,
     options?: SandboxMutationOptions,
   ): Promise<CachePathDeleteResult> {
     return deleteCachePath({
       ...this.#options,
-      cacheVolumeId,
+      cacheId,
       path,
       ...(options === undefined ? {} : { options }),
     });
@@ -367,8 +367,8 @@ function parseRunnerSizingAnalytics(input: unknown) {
 
 export type RunnerSizingAnalytics = ReturnType<typeof parseRunnerSizingAnalytics>;
 
-function parseCacheVolume(input: unknown) {
-  const parsed = v.parse(vSandboxCacheVolume, input);
+function parseCache(input: unknown) {
+  const parsed = v.parse(vSandboxCache, input);
   return {
     ...parsed,
     generation_count: toSafeNumber(parsed.generation_count, "cache.generation_count"),
@@ -377,7 +377,7 @@ function parseCacheVolume(input: unknown) {
   };
 }
 
-export type CacheVolume = ReturnType<typeof parseCacheVolume>;
+export type Cache = ReturnType<typeof parseCache>;
 
 function parseCacheGeneration(input: unknown) {
   const parsed = v.parse(vSandboxCacheGeneration, input);
@@ -391,11 +391,8 @@ function parseCacheGeneration(input: unknown) {
 
 export type CacheGeneration = ReturnType<typeof parseCacheGeneration>;
 
-function parseCacheVolumes(input: unknown) {
-  return (
-    v.parse(vListCacheVolumesResponse, input).volumes?.map((volume) => parseCacheVolume(volume)) ??
-    []
-  );
+function parseCaches(input: unknown) {
+  return v.parse(vListCachesResponse, input).caches?.map((cache) => parseCache(cache)) ?? [];
 }
 
 function parseCacheGenerations(input: unknown) {
@@ -670,18 +667,18 @@ export const runIdInputSchema = v.pipe(
 
 export type RunIdInput = v.InferOutput<typeof runIdInputSchema>;
 
-export const cacheVolumeIdInputSchema = v.pipe(
+export const cacheIdInputSchema = v.pipe(
   v.strictObject({
-    cacheVolumeId: v.string(),
+    cacheId: v.string(),
   }),
-  v.transform(({ cacheVolumeId }) => ({
-    cacheVolumeId: v.parse(vListCacheGenerationsPath, {
-      cache_volume_id: cacheVolumeId,
-    }).cache_volume_id,
+  v.transform(({ cacheId }) => ({
+    cacheId: v.parse(vListCacheGenerationsPath, {
+      cache_id: cacheId,
+    }).cache_id,
   })),
 );
 
-export type CacheVolumeIdInput = v.InferOutput<typeof cacheVolumeIdInputSchema>;
+export type CacheIdInput = v.InferOutput<typeof cacheIdInputSchema>;
 
 export const cacheGenerationIdInputSchema = v.pipe(
   v.strictObject({
@@ -698,12 +695,11 @@ export type CacheGenerationIdInput = v.InferOutput<typeof cacheGenerationIdInput
 
 export const cachePathDeleteRequestSchema = v.pipe(
   v.strictObject({
-    cacheVolumeId: v.string(),
+    cacheId: v.string(),
     path: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(255)),
   }),
-  v.transform(({ cacheVolumeId, path }) => ({
-    cacheVolumeId: v.parse(vDeleteCachePathPath, { cache_volume_id: cacheVolumeId })
-      .cache_volume_id,
+  v.transform(({ cacheId, path }) => ({
+    cacheId: v.parse(vDeleteCachePathPath, { cache_id: cacheId }).cache_id,
     path: v.parse(vDeleteCachePathBody, { path }).path,
   })),
 );
@@ -943,12 +939,10 @@ export async function getRunnerSizingAnalytics(
   return parseRunnerSizingAnalytics(result.data);
 }
 
-export async function listCacheVolumes(
-  options: SandboxRentalClientOptions,
-): Promise<CacheVolume[]> {
+export async function listCaches(options: SandboxRentalClientOptions): Promise<Cache[]> {
   const client = createSandboxRentalClient(options);
-  const path = "/api/v1/cache/volumes";
-  const result = await listGeneratedCacheVolumes({
+  const path = "/api/v1/caches";
+  const result = await listGeneratedCaches({
     client,
     responseStyle: "fields",
     throwOnError: false,
@@ -958,20 +952,20 @@ export async function listCacheVolumes(
     throwSandboxRentalError(path, result.response, result.error);
   }
 
-  return parseCacheVolumes(result.data);
+  return parseCaches(result.data);
 }
 
 export async function listCacheGenerations(
-  options: SandboxRentalClientOptions & { cacheVolumeId: string },
+  options: SandboxRentalClientOptions & { cacheId: string },
 ): Promise<CacheGeneration[]> {
   const client = createSandboxRentalClient(options);
-  const { cacheVolumeId } = v.parse(cacheVolumeIdInputSchema, {
-    cacheVolumeId: options.cacheVolumeId,
+  const { cacheId } = v.parse(cacheIdInputSchema, {
+    cacheId: options.cacheId,
   });
-  const path = `/api/v1/cache/volumes/${cacheVolumeId}/generations`;
+  const path = `/api/v1/caches/${cacheId}/generations`;
   const result = await listGeneratedCacheGenerations({
     client,
-    path: v.parse(vListCacheGenerationsPath, { cache_volume_id: cacheVolumeId }),
+    path: v.parse(vListCacheGenerationsPath, { cache_id: cacheId }),
     responseStyle: "fields",
     throwOnError: false,
   });
@@ -1015,26 +1009,26 @@ export async function deleteCacheGeneration(
 
 export async function deleteCachePath(
   options: SandboxRentalClientOptions & {
-    cacheVolumeId: string;
+    cacheId: string;
     path: string;
     options?: SandboxMutationOptions;
   },
 ): Promise<CachePathDeleteResult> {
   const client = createSandboxRentalClient(options);
   const request = v.parse(cachePathDeleteRequestSchema, {
-    cacheVolumeId: options.cacheVolumeId,
+    cacheId: options.cacheId,
     path: options.path,
   });
   const headers = v.parse(
     vDeleteCachePathHeaders,
     idempotencyHeaders("cache-path-delete", options.options?.idempotencyKey),
   );
-  const path = `/api/v1/cache/volumes/${request.cacheVolumeId}/paths/delete`;
+  const path = `/api/v1/caches/${request.cacheId}/paths/delete`;
   const result = await deleteGeneratedCachePath({
     body: { path: request.path },
     client,
     headers,
-    path: v.parse(vDeleteCachePathPath, { cache_volume_id: request.cacheVolumeId }),
+    path: v.parse(vDeleteCachePathPath, { cache_id: request.cacheId }),
     responseStyle: "fields",
     throwOnError: false,
   });

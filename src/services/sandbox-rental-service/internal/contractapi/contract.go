@@ -112,9 +112,11 @@ type CacheGenerationID string
 
 type CachePath string
 
-type CacheVolumeID string
+type CacheSource string
 
-type CacheVolumeName string
+type CacheID string
+
+type CacheName string
 
 type CorrelationID string
 
@@ -254,7 +256,7 @@ type SandboxCacheGenerations []SandboxCacheGeneration
 
 type SandboxCachePaths []CachePath
 
-type SandboxCacheVolumes []SandboxCacheVolume
+type SandboxCaches []SandboxCache
 
 type ScheduleInputs map[string]ScheduleInputValue
 
@@ -676,19 +678,20 @@ type SandboxScheduleRunMetadata struct {
 	TemporalWorkflowID   *TemporalID   `json:"temporal_workflow_id,omitempty" minLength:"1" maxLength:"512"`
 }
 
-type SandboxCacheVolume struct {
-	CacheVolumeID        CacheVolumeID        `json:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+type SandboxCache struct {
+	CacheID              CacheID              `json:"cache_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
 	CreatedAt            string               `json:"created_at" required:"true"`
 	CurrentGenerationID  *CacheGenerationID   `json:"current_generation_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
 	GenerationCount      SafeNonNegativeLong  `json:"generation_count" required:"true" minimum:"0"`
 	LastUsedAt           string               `json:"last_used_at" required:"true"`
-	Name                 CacheVolumeName      `json:"name" required:"true" minLength:"1" maxLength:"128"`
+	Name                 CacheName            `json:"name" required:"true" minLength:"1" maxLength:"128"`
 	OrgID                OrgID                `json:"org_id" required:"true" minLength:"1" maxLength:"128" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	Provider             Provider             `json:"provider" required:"true" minLength:"1" maxLength:"64"`
 	ProviderRepositoryID ProviderRepositoryID `json:"provider_repository_id" required:"true" minLength:"1" maxLength:"512"`
 	RepositoryFullName   *RepositoryFullName  `json:"repository_full_name,omitempty" minLength:"1" maxLength:"1024"`
 	ResourceName         ResourceName         `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
 	ScopeRef             GitRef               `json:"scope_ref" required:"true" minLength:"1" maxLength:"1024"`
+	Source               CacheSource          `json:"source" required:"true" enum:"platform,manifest"`
 	UsedBytes            SafeNonNegativeLong  `json:"used_bytes" required:"true" minimum:"0"`
 	WrittenBytes         SafeNonNegativeLong  `json:"written_bytes" required:"true" minimum:"0"`
 }
@@ -696,7 +699,7 @@ type SandboxCacheVolume struct {
 type SandboxCacheGeneration struct {
 	BindPaths            SandboxCachePaths    `json:"bind_paths" required:"true"`
 	CacheGenerationID    CacheGenerationID    `json:"cache_generation_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	CacheVolumeID        CacheVolumeID        `json:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	CacheID              CacheID              `json:"cache_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
 	CommittedAt          *string              `json:"committed_at,omitempty"`
 	Current              bool                 `json:"current" required:"true"`
 	ExpiresAt            *string              `json:"expires_at,omitempty"`
@@ -713,10 +716,11 @@ type SandboxCacheGeneration struct {
 	ScopeRef             GitRef               `json:"scope_ref" required:"true" minLength:"1" maxLength:"1024"`
 	SealedAt             *string              `json:"sealed_at,omitempty"`
 	SourceGenerationID   *CacheGenerationID   `json:"source_generation_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
+	Source               CacheSource          `json:"source" required:"true" enum:"platform,manifest"`
 	State                string               `json:"state" required:"true"`
 	TreeHash             *string              `json:"tree_hash,omitempty"`
 	UsedBytes            SafeNonNegativeLong  `json:"used_bytes" required:"true" minimum:"0"`
-	VolumeName           CacheVolumeName      `json:"volume_name" required:"true" minLength:"1" maxLength:"128"`
+	CacheName            CacheName            `json:"cache_name" required:"true" minLength:"1" maxLength:"128"`
 	WrittenBytes         SafeNonNegativeLong  `json:"written_bytes" required:"true" minimum:"0"`
 	ZFSSnapshotRef       string               `json:"zfs_snapshot_ref" required:"true"`
 }
@@ -734,8 +738,8 @@ type SearchRunLogsInput struct {
 	Workflow    WorkflowName         `query:"workflow" minLength:"1" maxLength:"1024"`
 }
 
-type CacheVolumePathInput struct {
-	CacheVolumeID CacheVolumeID `path:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+type CachePathInput struct {
+	CacheID CacheID `path:"cache_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
 }
 
 type DeleteCacheGenerationInput struct {
@@ -749,7 +753,7 @@ type DeleteCachePathInputBody struct {
 
 type DeleteCachePathInput struct {
 	Body           DeleteCachePathInputBody
-	CacheVolumeID  CacheVolumeID  `path:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	CacheID        CacheID        `path:"cache_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
 	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
 }
 
@@ -836,12 +840,12 @@ type SandboxRunsPage struct {
 	Body SandboxRunsPageBody
 }
 
-type SandboxCacheVolumesPageBody struct {
-	Volumes SandboxCacheVolumes `json:"volumes" required:"true"`
+type SandboxCachesPageBody struct {
+	Caches SandboxCaches `json:"caches" required:"true"`
 }
 
-type SandboxCacheVolumesPage struct {
-	Body SandboxCacheVolumesPageBody
+type SandboxCachesPage struct {
+	Body SandboxCachesPageBody
 }
 
 type SandboxCacheGenerationsPageBody struct {
@@ -861,9 +865,9 @@ type SandboxCacheGenerationDeleteOutput struct {
 }
 
 type SandboxCachePathDeleteResult struct {
-	CacheVolumeID CacheVolumeID           `json:"cache_volume_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-	Generations   SandboxCacheGenerations `json:"generations" required:"true"`
-	Path          CachePath               `json:"path" required:"true" minLength:"1" maxLength:"255"`
+	CacheID     CacheID                 `json:"cache_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	Generations SandboxCacheGenerations `json:"generations" required:"true"`
+	Path        CachePath               `json:"path" required:"true" minLength:"1" maxLength:"255"`
 }
 
 type SandboxCachePathDeleteOutput struct {
@@ -871,7 +875,7 @@ type SandboxCachePathDeleteOutput struct {
 }
 
 var Operations = []OperationDescriptor{
-	ListCacheVolumes.Descriptor,
+	ListCaches.Descriptor,
 	ListCacheGenerations.Descriptor,
 	DeleteCacheGeneration.Descriptor,
 	DeleteCachePath.Descriptor,
@@ -893,25 +897,25 @@ var Operations = []OperationDescriptor{
 	GetRun.Descriptor,
 }
 
-var ListCacheVolumes = Operation[EmptyInput, SandboxCacheVolumesPage]{
+var ListCaches = Operation[EmptyInput, SandboxCachesPage]{
 	Descriptor: OperationDescriptor{
-		ShapeID:             "verself.sandbox.v1#ListCacheVolumes",
-		OperationID:         "list-cache-volumes",
+		ShapeID:             "verself.sandbox.v1#ListCaches",
+		OperationID:         "list-caches",
 		Method:              "GET",
-		Path:                "/api/v1/cache/volumes",
+		Path:                "/api/v1/caches",
 		DefaultStatus:       200,
 		Readonly:            true,
 		Paginated:           false,
 		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "verself-api", Principals: []string{"browser", "cli"}},
 		Authorization:       AuthorizationDescriptor{Permission: "sandbox:cache:read", OrganizationSource: "token_org_id", OrganizationMember: ""},
-		Audit:               AuditDescriptor{Event: "sandbox.cache_volume.list", Resource: "cache_volume", Action: "list"},
+		Audit:               AuditDescriptor{Event: "sandbox.cache.list", Resource: "cache", Action: "list"},
 		RateLimitBucket:     "read",
 		RequestBodyMaxBytes: 0,
 		RequestPayload:      PayloadDescriptor{},
 		ResponsePayload:     PayloadDescriptor{},
 		ResponseHeaders:     []HeaderDescriptor{},
 		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
-		SDK:                 SDKDescriptor{Module: "sandbox.cache", Method: "listVolumes", Paginated: false, Retryable: true},
+		SDK:                 SDKDescriptor{Module: "sandbox.cache", Method: "list", Paginated: false, Retryable: true},
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
@@ -921,12 +925,12 @@ var ListCacheVolumes = Operation[EmptyInput, SandboxCacheVolumesPage]{
 	},
 }
 
-var ListCacheGenerations = Operation[CacheVolumePathInput, SandboxCacheGenerationsPage]{
+var ListCacheGenerations = Operation[CachePathInput, SandboxCacheGenerationsPage]{
 	Descriptor: OperationDescriptor{
 		ShapeID:             "verself.sandbox.v1#ListCacheGenerations",
 		OperationID:         "list-cache-generations",
 		Method:              "GET",
-		Path:                "/api/v1/cache/volumes/{cache_volume_id}/generations",
+		Path:                "/api/v1/caches/{cache_id}/generations",
 		DefaultStatus:       200,
 		Readonly:            true,
 		Paginated:           false,
@@ -986,13 +990,13 @@ var DeleteCachePath = Operation[DeleteCachePathInput, SandboxCachePathDeleteOutp
 		ShapeID:             "verself.sandbox.v1#DeleteCachePath",
 		OperationID:         "delete-cache-path",
 		Method:              "POST",
-		Path:                "/api/v1/cache/volumes/{cache_volume_id}/paths/delete",
+		Path:                "/api/v1/caches/{cache_id}/paths/delete",
 		DefaultStatus:       200,
 		Readonly:            false,
 		Paginated:           false,
 		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "verself-api", Principals: []string{"browser", "cli"}},
 		Authorization:       AuthorizationDescriptor{Permission: "sandbox:cache:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
-		Audit:               AuditDescriptor{Event: "sandbox.cache_path.delete", Resource: "cache_volume", Action: "delete"},
+		Audit:               AuditDescriptor{Event: "sandbox.cache_path.delete", Resource: "cache", Action: "delete"},
 		RateLimitBucket:     "cache_mutation",
 		RequestBodyMaxBytes: 4096,
 		RequestPayload:      PayloadDescriptor{},
@@ -1477,8 +1481,8 @@ var GetRun = Operation[RunPathInput, SandboxExecutionOutput]{
 type Handlers = PublicHandlers
 
 type PublicHandlers interface {
-	ListCacheVolumes(context.Context, *EmptyInput) (*SandboxCacheVolumesPage, error)
-	ListCacheGenerations(context.Context, *CacheVolumePathInput) (*SandboxCacheGenerationsPage, error)
+	ListCaches(context.Context, *EmptyInput) (*SandboxCachesPage, error)
+	ListCacheGenerations(context.Context, *CachePathInput) (*SandboxCacheGenerationsPage, error)
 	DeleteCacheGeneration(context.Context, *DeleteCacheGenerationInput) (*SandboxCacheGenerationDeleteOutput, error)
 	DeleteCachePath(context.Context, *DeleteCachePathInput) (*SandboxCachePathDeleteOutput, error)
 	ListExecutionSchedules(context.Context, *ListExecutionSchedulesInput) (*SandboxExecutionSchedulesPage, error)
@@ -1499,9 +1503,9 @@ type PublicHandlers interface {
 	GetRun(context.Context, *RunPathInput) (*SandboxExecutionOutput, error)
 }
 
-type ListCacheVolumesHandler = Handler[EmptyInput, SandboxCacheVolumesPage]
+type ListCachesHandler = Handler[EmptyInput, SandboxCachesPage]
 
-type ListCacheGenerationsHandler = Handler[CacheVolumePathInput, SandboxCacheGenerationsPage]
+type ListCacheGenerationsHandler = Handler[CachePathInput, SandboxCacheGenerationsPage]
 
 type DeleteCacheGenerationHandler = Handler[DeleteCacheGenerationInput, SandboxCacheGenerationDeleteOutput]
 

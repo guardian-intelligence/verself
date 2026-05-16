@@ -741,7 +741,7 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 	if durableErr != nil {
 		span.RecordError(durableErr)
 		if s.Logger != nil {
-			s.Logger.WarnContext(ctx, "durable volume finalization failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", durableErr)
+			s.Logger.WarnContext(ctx, "durable cache finalization failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", durableErr)
 		}
 	}
 

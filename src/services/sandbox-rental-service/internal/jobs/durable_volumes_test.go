@@ -19,12 +19,12 @@ cache:
 	if err != nil {
 		t.Fatalf("parse cache manifest: %v", err)
 	}
-	if got, want := len(decl.Volumes), 1; got != want {
-		t.Fatalf("volume count = %d, want %d", got, want)
+	if got, want := len(decl.Caches), 1; got != want {
+		t.Fatalf("cache count = %d, want %d", got, want)
 	}
-	volume := decl.Volumes[0]
+	cache := decl.Caches[0]
 	wantPaths := []string{"/home/runner/.cache/bazel-disk", "/home/runner/.cache/bazel-repo"}
-	if got := volume.Paths; len(got) != len(wantPaths) || got[0] != wantPaths[0] || got[1] != wantPaths[1] {
+	if got := cache.Paths; len(got) != len(wantPaths) || got[0] != wantPaths[0] || got[1] != wantPaths[1] {
 		t.Fatalf("paths = %#v, want %#v", got, wantPaths)
 	}
 }

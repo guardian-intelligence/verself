@@ -1,26 +1,26 @@
-# Golden Environments And Cache Volumes
+# Golden Environments And Durable Caches
 
 Verself hosted runners accelerate CI by booting each job with ordinary Linux
 filesystems that already contain rebuildable state from prior successful jobs.
 The public surface is the Verself runner label, the Verself checkout action,
-and optional cache-volume declarations. Customer workflows remain ordinary
+and optional durable-cache declarations. Customer workflows remain ordinary
 GitHub Actions YAML.
 
-A golden environment is a set of durable volume generations selected for one
-job shape. The GitHub workspace is a platform-owned durable volume mounted at
-the normal runner `_work` tree. Customer cache volumes are path-based durable
-volumes mounted outside `GITHUB_WORKSPACE` and bound into the paths that tools
-already use for local state: compiler caches, package-manager caches, database
-data directories, Docker or BuildKit storage, generated SDK output, and other
-rebuildable directories.
+A golden environment is a set of durable cache generations selected for one
+job shape. `workspace` is the built-in durable cache mounted at the normal
+runner `_work` tree, and the Verself checkout action reconciles it to the
+event commit before customer steps run. Manifest entries add more durable
+caches for paths outside `GITHUB_WORKSPACE`: compiler caches, package-manager
+caches, database data directories, Docker or BuildKit storage, generated SDK
+output, and other rebuildable directories.
 
-All cache volumes are rebuildable. Promotion is best-effort. The previous
+All durable caches are rebuildable. Promotion is best-effort. The previous
 golden remains authoritative until a new generation is sealed and promoted.
 Ambiguous seal results skip promotion.
 
 ## Customer Contract
 
-A repository opts into cache volumes with a checked-in manifest:
+A repository opts into additional durable caches with a checked-in manifest:
 
 ```yaml
 version: 1
@@ -36,10 +36,12 @@ cache:
       - /verself/cache/postgres
 ```
 
-Declarations define named volumes and the guest-visible paths that should be
-backed by those volumes. Verself does not interpret the contents. Customers
-configure their tools to write to those paths. Capacity is governed by the
-organization storage quota, not by per-volume manifest declarations.
+The built-in `workspace` cache always stores `GITHUB_WORKSPACE`; it is not
+declared in YAML. Manifest declarations define additional named caches and the
+guest-visible paths that should be backed by those caches. Verself does not
+interpret the contents. Customers configure their tools to write to those
+paths. Capacity is governed by the organization storage quota, not by
+per-cache manifest declarations.
 
 Examples:
 
@@ -55,9 +57,9 @@ docker run --rm \
   postgres:16
 ```
 
-The cache contract is the same for Bazel, PostgreSQL, SQLite, Gradle, Cargo,
-pnpm, Docker BuildKit, and unknown tools. Verself provides mounted directories,
-not tool-specific cache APIs.
+The durable cache contract is the same for the workspace, Bazel, PostgreSQL,
+SQLite, Gradle, Cargo, pnpm, Docker BuildKit, and unknown tools. Verself
+provides mounted directories, not tool-specific cache APIs.
 
 ## Product Semantics
 
@@ -66,21 +68,21 @@ not tool-specific cache APIs.
    platform image, trust class, and cache declaration identity from persisted
    GitHub state.
 3. The control plane selects the current compatible durable generation for each
-   volume scope.
+   cache scope.
 4. vm-orchestrator prepares a fresh VM with static block devices for the root
-   disk, platform toolchains, GitHub workspace, and customer cache volumes.
+   disk, platform toolchains, workspace cache, and manifest caches.
 5. vm-bridge mounts those devices before the runner starts.
 6. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
-7. Customer steps execute normally and read or write cache paths as ordinary
+7. Customer steps execute normally and read or write cached paths as ordinary
    directories.
 8. After the runner exits, sandbox-rental waits for the attempt-specific
    GitHub workflow job to reach `status=completed` and `conclusion=success`.
-   vm-bridge then attempts to seal each writable durable volume by syncing and
+   vm-bridge then attempts to seal each writable durable cache by syncing and
    unmounting guest mounts.
 9. vm-orchestrator flushes, snapshots, clones, ZFS-promotes, and seals each
-   volume that the guest sealed cleanly.
+   cache that the guest sealed cleanly.
 10. The service records committed generations observed from the host result.
-11. A protected target-branch workflow run promotes per-job, per-volume
+11. A protected target-branch workflow run promotes per-job, per-cache
     generations only after the provider run's required jobs are green.
 12. Failed jobs, cancelled jobs, non-promotable trust contexts, and ambiguous
     seals leave the current pointer unchanged. Successful non-promotable jobs
@@ -99,8 +101,8 @@ execution.
 
 Verself differences:
 
-- Volume promotion is scoped by repository, target ref, workflow job identity,
-  runner class, platform image, architecture, and component compatibility hash.
+- Cache promotion is scoped by repository, target ref, workflow job identity,
+  runner class, platform image, architecture, and durable cache spec hash.
 - Pull requests may read a protected branch's secretless cache generation, but
   PR writes never promote that protected branch pointer.
 - Protected branch promotion is gated by the provider workflow result, not by a
@@ -108,28 +110,29 @@ Verself differences:
 - Seal and commit eligibility for GitHub Actions jobs is gated by the GitHub
   workflow-job conclusion for the observed run attempt, not by the
   actions-runner process exit code.
-- Cache volumes are ZFS-backed block devices attached to Firecracker guests,
+- Durable caches are ZFS-backed block devices attached to Firecracker guests,
   not archive uploads or downloads.
 
 ## Declaration Rules
 
 Manifest `version` is required and must be `1`.
 
-Each manifest `cache` entry declares one volume:
+Each manifest `cache` entry declares one additional cache:
 
 ```text
-name      stable volume name, unique within the declaration
-paths     one or more directories backed by the volume
+name      stable cache name, unique within the declaration
+paths     one or more directories backed by the cache
 ```
 
 The declaration has no tool profiles. `name` and `paths` are the public API.
+`workspace` is reserved for the built-in `GITHUB_WORKSPACE` cache.
 
 Declaration source rules:
 
 - `.verself/cache.yml` is repository-scoped.
 - Pull request jobs read the manifest from the trusted base ref.
 - Push jobs read the manifest from the pushed head ref.
-- If no manifest is present, the job has no customer cache volumes.
+- If no manifest is present, the job uses only the built-in `workspace` cache.
 
 Path rules:
 
@@ -147,25 +150,25 @@ Path rules:
 - A target path that exists as a non-empty directory is a mount miss.
 
 Invalid declarations are configuration errors. Verself fails the job before
-customer steps start and reports the rejected source, volume, path, and rule.
+customer steps start and reports the rejected source, cache, path, and rule.
 Runtime mount misses are recorded as degraded cache state and the job continues
-without the affected cache volume. Cache volumes are always best-effort after a
+without the affected cache. Durable caches are always best-effort after a
 valid declaration has been accepted.
 
-Mounts are volume-atomic. If one path for a volume cannot be bound, vm-bridge
-unmounts any prior bind targets for that volume and marks the whole volume as a
-miss. Partial multi-path cache volumes are not exposed to customer code.
+Mounts are cache-atomic. If one path for a cache cannot be bound, vm-bridge
+unmounts any prior bind targets for that cache and marks the whole cache as a
+miss. Partial multi-path caches are not exposed to customer code.
 
 ## Static VM Composition
 
-Cache volumes are composed before Firecracker starts. The VM receives a static
+Durable caches are composed before Firecracker starts. The VM receives a static
 virtio-block topology for the full job lifetime:
 
 ```text
-root disk                 /dev/vda
-GitHub workspace volume   /dev/vdb
-cache volume 0            /dev/vdc
-cache volume 1            /dev/vdd
+root disk            /dev/vda
+workspace cache      /dev/vdb
+manifest cache 0     /dev/vdc
+manifest cache 1     /dev/vdd
 ...
 ```
 
@@ -175,19 +178,19 @@ customer process starts.
 
 Read-only runner toolchain images may still declare vm-bridge writable
 overlays for image-owned scratch paths. Those overlays are tmpfs and are not
-durable volume generations. They are only for paths that belong to the
+durable cache generations. They are only for paths that belong to the
 read-only toolchain image and must be writable for the runner process to
 function.
 
 The GitHub Actions runner toolchain currently declares writable overlays in
 `src/substrate/vm-orchestrator/guest-images/gh-actions-runner/writable-overlays`.
 The golden-workspace cutover removes `/opt/actions-runner/_work` from that
-file. The `_work` tree is a platform-owned durable workspace volume, so a
+file. The `_work` tree is the built-in `workspace` durable cache, so a
 toolchain tmpfs overlay must not mount over it or hide it. `_diag` and `_temp`
 remain valid tmpfs overlays because they are runner-local diagnostic and
 scratch paths, not reusable customer state.
 
-The host prepares each writable volume as a ZFS zvol:
+The host prepares each writable cache as a ZFS zvol:
 
 ```text
 if current generation exists:
@@ -201,12 +204,13 @@ vm-orchestrator waits for every `/dev/zvol/...` device, bind-mounts the block
 devices into the jailer chroot, configures Firecracker drives, starts the VM,
 and sends the mount manifest to vm-bridge over the guest control protocol.
 vm-bridge returns a per-filesystem mount result before the runner starts.
-Required mount failures fail lease acquisition. Optional cache mount failures
-are recorded as degraded cache state and the job continues without that cache.
+Required `workspace` mount failures fail lease acquisition. Optional manifest
+cache mount failures are recorded as degraded cache state and the job continues
+without that cache.
 
 ## Guest Mounting
 
-One declared cache volume becomes one guest filesystem mounted at an internal
+One manifest cache becomes one guest filesystem mounted at an internal
 root:
 
 ```text
@@ -226,7 +230,7 @@ Linux bind mount:
 Bind mounts are the default implementation. Symlinks are not the default
 because they change path identity, can be removed by customer code, and are
 handled inconsistently by filesystem walkers, database tools, and archive
-utilities. Symlinks are outside the cache-volume contract. The product contract
+utilities. Symlinks are outside the durable-cache contract. The product contract
 is directory mount semantics.
 
 Guest mount flags:
@@ -310,7 +314,7 @@ current generation remains authoritative.
 
 ## Database Directories
 
-Database files are ordinary cache volume contents.
+Database files are ordinary durable cache contents.
 
 Customers should persist database directories, not individual files. SQLite WAL
 mode writes sidecar files next to the main database. PostgreSQL, MySQL, Redis,
@@ -326,7 +330,7 @@ DB-specific behavior:
 - Verself does not infer health from database contents.
 - Crashy or non-fsync data directories are cache misses in practice.
 - Repeated seal skips or corrupt cache reads are customer-debuggable through
-  logs, traces, and cache-volume metadata.
+  logs, traces, and durable-cache metadata.
 
 A database cache that cannot be reused consistently remains a performance
 issue, not a platform correctness issue.
@@ -365,28 +369,33 @@ none
 `source_ref` and `source_sha` record the last observed source for diagnostics.
 The declaration identity is repository, normalized declaration hash, source
 kind, source path, workflow identity, job identity, and step identity. Runtime
-lineage is keyed later per component by `job_shape`, `durable_scope.scope_ref`,
-and the component compatibility hash, so a manifest edit only invalidates
-volumes whose compatibility-affecting fields changed.
+lineage is keyed later per cache by `job_shape`, `durable_scope.scope_ref`, and
+the durable cache spec hash, so a manifest edit only invalidates caches whose
+compatibility-affecting fields changed.
 
 `declaration_hash` is the canonical hash of the normalized declaration. It
 changes when volume names, paths, or mount policy change.
 
-### Cache Volume Spec
+### Durable Cache Spec
 
 ```text
-cache_volume_spec
-  cache_volume_spec_id
+durable_cache_spec
+  durable_cache_spec_id
   cache_declaration_id
-  name
+  cache_source
+  cache_name
   path_set_hash
   mount_policy_hash
+  reconcile_policy
   normalized_paths_json
   created_at
 ```
 
-The spec is immutable. Changing any compatibility-affecting field creates a
-new spec hash and therefore a new cache lineage.
+`cache_source=platform, cache_name=workspace, reconcile_policy=git_checkout`
+represents `GITHUB_WORKSPACE`. `cache_source=manifest` represents customer
+declared caches and uses `reconcile_policy=none`. The spec is immutable.
+Changing any compatibility-affecting field creates a new spec hash and
+therefore a new cache lineage.
 
 ### Job Shape
 
@@ -404,16 +413,15 @@ job_shape
   platform_image_id
   kernel_image_id
   runner_toolchain_image_id
-  workspace_policy_hash
-  cache_declaration_hash
+  durable_cache_spec_hash
   created_at
 ```
 
 `job_shape` is the compatibility boundary for generated state. The
-`cache_declaration_hash` column stores the component compatibility hash:
-workspace policy for the workspace volume, and volume name, path set, and mount
-policy for a cache volume. `guest_arch` is explicit so x86_64 and aarch64 never
-share cache generations.
+`durable_cache_spec_hash` column stores the cache compatibility hash:
+reconcile policy for `workspace`, and cache name, path set, mount policy, and
+reconcile policy for manifest caches. `guest_arch` is explicit so x86_64 and
+aarch64 never share cache generations.
 
 ### Durable Scope
 
@@ -426,24 +434,16 @@ durable_scope
   scope_kind
   scope_ref
   job_shape_id
-  component_name
-  component_kind
+  cache_source
+  cache_name
   trust_class
   created_at
 ```
 
-`component_kind` values:
-
-```text
-github_workspace
-cache_volume
-platform_toolchain
-```
-
-Customer cache volumes use `component_kind=cache_volume` and
-`component_name=<declaration cache name>`. The GitHub workspace is represented
-by the same durable scope machinery but is platform-owned and mounted at the
-runner `_work` tree.
+`cache_source=platform, cache_name=workspace` is the built-in workspace cache.
+Manifest caches use `cache_source=manifest, cache_name=<declaration cache
+name>`. The source is part of the identity so a customer cannot shadow the
+built-in workspace cache.
 
 ### Durable Operation
 
@@ -597,22 +597,22 @@ guest_arch
 platform_image_id
 kernel_image_id
 runner_toolchain_image_id
-component_compatibility_hash
-component_name
-component_kind
+durable_cache_spec_hash
+cache_source
+cache_name
 trust_class
 ```
 
 Matrix values are canonicalized after GitHub expands the job. Jobs with
 different Node versions, Python versions, CPU architecture, service topology,
 or runner class naturally receive different scopes because their job identity,
-matrix key, runner class, platform image, or component compatibility hash
+matrix key, runner class, platform image, or durable cache spec hash
 differs.
 
 ## CPU Architecture
 
 The supported hosted runner architecture for this design is Linux `x86_64` on
-Firecracker. Linux `aarch64` is design-compatible because the durable volume
+Firecracker. Linux `aarch64` is design-compatible because the durable cache
 contract is a Linux block-device and ext4 contract, but it is a separate
 compatibility lineage. Cache generations never cross architectures.
 
@@ -632,7 +632,7 @@ guarantees `x86_64-v2`. A cache produced on `aarch64` is not reused by
 `x86_64`. Endianness is not used to broaden compatibility; architecture is a
 hard boundary.
 
-The product does not support Windows or macOS cache volumes in this design.
+The product does not support Windows or macOS durable caches in this design.
 Those operating systems need separate mount, filesystem, and runner lifecycle
 contracts.
 
@@ -649,10 +649,10 @@ retained generation or becomes prunable.
 
 A protected branch pointer advances only after the provider run's required job
 set is observed green. The promotion batch is derived from GitHub workflow run
-and job state. Each job's cache volumes still promote independently by durable
-scope CAS. If a job has three cache volumes and only two seal cleanly, the two
-sealed volumes may promote and the ambiguous volume remains on its previous
-current generation.
+and job state. Each job's durable caches still promote independently by durable
+scope CAS. If a job has three caches and only two seal cleanly, the two sealed
+caches may promote and the ambiguous cache remains on its previous current
+generation.
 
 ### Pull Requests
 
@@ -667,16 +667,16 @@ been merged into the trusted branch.
 
 ### Declaration Changes
 
-A compatibility-affecting change to a volume's name, path set, or mount policy
-changes that volume's component compatibility hash and creates a new durable
-scope. Existing current pointers remain available for older scopes until
-retention prunes them. Adding, removing, or changing one cache volume does not
-invalidate the workspace volume or unrelated cache volumes.
+A compatibility-affecting change to a cache's name, path set, mount policy, or
+reconcile policy changes that cache's durable spec hash and creates a new
+durable scope. Existing current pointers remain available for older scopes
+until retention prunes them. Adding, removing, or changing one manifest cache
+does not invalidate `workspace` or unrelated manifest caches.
 
 ### Lease Cancellation
 
 A provider cancellation, timeout, or control-plane cancellation can terminate
-customer execution after cache volumes were mounted. The operation records the
+customer execution after durable caches were mounted. The operation records the
 provider terminal state. Seal is skipped when the provider job does not conclude
 `success`, even if the guest process exits with code `0` during cancellation
 cleanup.
@@ -720,7 +720,7 @@ the job, usually `ENOSPC`.
 ### Path Conflicts
 
 Binding a cache over non-empty image content would hide files from the job.
-Verself treats this as a mount miss for the affected cache volume. The job
+Verself treats this as a mount miss for the affected cache. The job
 continues cold and the mount miss is recorded. Customers choose clean cache
 paths for reliable hit rates.
 
@@ -733,13 +733,12 @@ identity and CAS.
 
 ## Security Model
 
-Generic CI jobs are secretless. Cache volumes are readable by later jobs in
+Generic CI jobs are secretless. Durable caches are readable by later jobs in
 compatible scopes, including PR jobs when policy allows reading the target
 branch's secretless current generation. Customers must not store secrets in
-cache volumes.
+durable caches.
 
-The cache-volume design does not implement content-based secret tainting for
-customer cache volumes.
+The durable-cache design does not implement content-based secret tainting.
 The security model relies on lane separation:
 
 - Generic build/test CI does not receive repository, organization, or
@@ -761,7 +760,7 @@ Mount hardening:
 
 ## ZFS Layout
 
-The host stores durable volume generations under the golden root:
+The host stores durable cache generations under the golden root:
 
 ```text
 vspool/orgs/<org_id>/goldens/<durable_scope_id>/generations/<durable_generation_id>
@@ -774,8 +773,7 @@ Lease working datasets live under the workload root:
 vspool/orgs/<org_id>/workloads/<lease_id>/mounts/<index>-<mount_name>
 ```
 
-The same ZFS lifecycle applies to the GitHub workspace and customer cache
-volumes:
+The same ZFS lifecycle applies to `workspace` and manifest caches:
 
 ```text
 clone source snapshot or create empty zvol
@@ -817,38 +815,44 @@ durable.volume.prune
 durable.volume.reconcile
 ```
 
-Expected cache-volume sequence for a mounted successful protected-branch run:
+Expected durable-cache sequence for a mounted successful protected-branch run:
 
 ```text
-durable.declaration.resolve  cache_declaration  manifest|none  succeeded
-durable.volume.prepare       cache_volume        <name>         succeeded
-durable.volume.select        cache_volume        <name>         hit|miss
-durable.volume.mount         cache_volume        <name>         mounted
-durable.volume.bind          cache_volume        <name>         mounted
-durable.volume.seal          cache_volume        <name>         succeeded
-durable.volume.commit        cache_volume        <name>         succeeded
-durable.volume.promote       cache_volume        <name>         succeeded|already_current|conflicted
+durable.declaration.resolve  declaration  manifest|none  succeeded
+durable.volume.prepare       platform     workspace      succeeded
+durable.volume.select        platform     workspace      hit|miss
+durable.volume.mount         platform     workspace      mounted
+durable.volume.seal          platform     workspace      succeeded
+durable.volume.commit        platform     workspace      succeeded
+durable.volume.promote       platform     workspace      succeeded|already_current|conflicted
+durable.volume.prepare       manifest     <name>         succeeded
+durable.volume.select        manifest     <name>         hit|miss
+durable.volume.mount         manifest     <name>         mounted
+durable.volume.bind          manifest     <name>         mounted
+durable.volume.seal          manifest     <name>         succeeded
+durable.volume.commit        manifest     <name>         succeeded
+durable.volume.promote       manifest     <name>         succeeded|already_current|conflicted
 ```
 
 Mount misses remain visible and non-terminal after declaration acceptance:
 
 ```text
-durable.volume.mount         cache_volume        <name>         skipped
-durable.volume.bind          cache_volume        <name>         skipped
-durable.volume.seal          cache_volume        <name>         skipped
+durable.volume.mount         manifest|platform  <name>         skipped
+durable.volume.bind          manifest           <name>         skipped
+durable.volume.seal          manifest|platform  <name>         skipped
 ```
 
 Failed, cancelled, and lease-expired jobs skip seal and commit:
 
 ```text
-durable.volume.seal          cache_volume        <name>         skipped
+durable.volume.seal          manifest|platform  <name>         skipped
 ```
 
 Successful non-promotable contexts may retain committed generations:
 
 ```text
-durable.volume.commit        cache_volume        <name>         succeeded
-durable.volume.retain        cache_volume        <name>         succeeded
+durable.volume.commit        manifest|platform  <name>         succeeded
+durable.volume.retain        manifest|platform  <name>         succeeded
 ```
 
 Required row fields for debugging and verification:
@@ -857,8 +861,8 @@ Required row fields for debugging and verification:
 event_name
 result
 reason
-component_kind
-component_name
+cache_source
+cache_name
 mount_name
 source_generation_id
 candidate_generation_id

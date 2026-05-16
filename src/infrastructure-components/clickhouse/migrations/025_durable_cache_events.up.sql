@@ -1,4 +1,6 @@
-CREATE TABLE IF NOT EXISTS verself.durable_events
+DROP TABLE IF EXISTS verself.durable_events;
+
+CREATE TABLE verself.durable_events
 (
     observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
     org_id LowCardinality(String) CODEC(ZSTD(3)),
@@ -25,9 +27,17 @@ CREATE TABLE IF NOT EXISTS verself.durable_events
     zfs_snapshot_ref String DEFAULT '' CODEC(ZSTD(3)),
     used_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
     written_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    pool_size_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    pool_allocated_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    pool_free_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    org_quota_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    org_used_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    org_available_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
     trace_id String DEFAULT '' CODEC(ZSTD(3)),
     span_id String DEFAULT '' CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(observed_at)
 ORDER BY (event_name, provider, org_id, repository_id, cache_source, observed_at, operation_id);
+
+GRANT SELECT, INSERT ON verself.durable_events TO sandbox_rental;
