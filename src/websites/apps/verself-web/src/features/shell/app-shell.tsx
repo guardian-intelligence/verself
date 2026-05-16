@@ -8,16 +8,7 @@ import { ElapsedTimeProvider } from "@verself/ui/hooks/use-elapsed-time";
 export function AppShell() {
   return (
     <ElapsedTimeProvider pollIntervalMs={1_000} justNowThresholdSeconds={3}>
-      {/* iOS dark-mode systemBackground (pure black, #000000) behind the
-          OLED widget — the signed-in surface is the only thing painted this
-          way; the light console palette tokens are left untouched for
-          public/policy/shadcn surfaces. color-scheme: dark so the scrollbar,
-          overscroll gutter, and form chrome match. */}
-      <main
-        id="main"
-        className="min-h-svh"
-        style={{ background: "oklch(0 0 0)", colorScheme: "dark" }}
-      >
+      <main id="main" className="min-h-svh">
         <Outlet />
       </main>
     </ElapsedTimeProvider>

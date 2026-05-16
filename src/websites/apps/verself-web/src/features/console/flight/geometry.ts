@@ -18,11 +18,13 @@ export function arcGeometry({ width, height }: ArcBox): Bezier {
   // the top, settles slightly higher into the right endpoint — the Flighty
   // path shape. All control points stay within [0,height] so nothing clips.
   // Ratios are refined against the reference screenshots during tuning.
+  // Endpoints sit at the host's vertical centre so the curve emerges from the
+  // (vertically-centred) endpoint discs; it crests near the top between them.
   return [
-    { x: 0, y: height * 0.62 },
-    { x: width * 0.3, y: height * 0.06 },
-    { x: width * 0.62, y: height * 0.02 },
-    { x: width, y: height * 0.46 },
+    { x: 0, y: height * 0.5 },
+    { x: width * 0.28, y: height * 0.1 },
+    { x: width * 0.62, y: height * 0.05 },
+    { x: width, y: height * 0.48 },
   ];
 }
 

@@ -6,16 +6,15 @@ import { GitCommitGlyph } from "./git-commit-glyph";
 import { useAccentSpring, useFlightMachine } from "./machine";
 import type { Flight } from "./model";
 import type { PhaseKind } from "./phase";
-import { concentric, Squircle, useSquircle } from "./squircle";
+import { Squircle, useSquircle } from "./squircle";
 
-// Single source of truth: the WHOLE widget — light tray included — maxes at
-// exactly 598px (the maxWidth wrapper constrains the tray's border box). The
-// OLED card is therefore 598 − 2×TRAY_INSET_PX of content + its own padding.
+// The whole widget maxes at 598px. There is no light tray — depth comes from
+// a layered shadow, not a border (see CARD_SHADOW).
 const WIDGET_MAX_PX = 598;
-const TRAY_INSET_PX = 7;
-const TRAY_RADIUS_PX = 46; // TODO(audit): tuned to the reference
-const CARD_RADIUS_PX = concentric(TRAY_RADIUS_PX, TRAY_INSET_PX);
-const PILL_RADIUS_PX = 22;
+const CARD_RADIUS_PX = 40; // single squircle card
+// Squircle rounded-rect, deliberately well under the pill's half-height so the
+// vendored iOS corner math renders a rounded rectangle, not a stadium.
+const PILL_RADIUS_PX = 13;
 
 // iOS fidelity: the real San Francisco on Apple devices (the reference
 // context), a near-equivalent neo-grotesque elsewhere. Brand Geist is
@@ -25,9 +24,17 @@ const IOS_FONT =
 
 const INK = "oklch(1 0 0)";
 const INK_DIM = "oklch(0.62 0 0)";
-const CARD = "oklch(0.09 0 0)"; // TODO(audit): re-tune to Image #2
-const TRAY = "oklch(0.928 0 0)";
+const CARD = "oklch(0.05 0 0)";
 const NODE_INK = "oklch(0 0 0)";
+
+// Live-Activity elevation: one overhead light source, three stacked layers —
+// a tight contact shadow that grounds the card, a medium key shadow that is
+// the readable drop, and a wide soft ambient shadow (negative spread) that
+// lifts it off the page. Opacity falls as blur grows; offsets stay vertical.
+const CARD_SHADOW =
+  "0 1px 2px oklch(0 0 0 / 0.07), " +
+  "0 5px 12px -4px oklch(0 0 0 / 0.16), " +
+  "0 22px 46px -16px oklch(0 0 0 / 0.3)";
 
 // ── Composition root ────────────────────────────────────────────────────────
 
@@ -80,19 +87,17 @@ function FlightCanvas({ children }: { readonly children: ReactNode }) {
   );
 }
 
-// Concentric squircle pair: light iOS tray wrapping the OLED Live-Activity
-// card. Both are <Squircle> so the radius framework is the only corner source.
+// One OLED squircle card. Depth is the layered shadow, not a tray/border, so
+// it reads as an elevated iOS Live Activity floating on the page.
 function FlightShell({ children }: { readonly children: ReactNode }) {
   return (
-    <Squircle cornerRadius={TRAY_RADIUS_PX} style={{ background: TRAY, padding: TRAY_INSET_PX }}>
-      <Squircle
-        role="article"
-        cornerRadius={CARD_RADIUS_PX}
-        className="flex min-h-[15.5rem] flex-col justify-between px-9 py-8 sm:px-11 sm:py-9"
-        style={{ background: CARD }}
-      >
-        {children}
-      </Squircle>
+    <Squircle
+      role="article"
+      cornerRadius={CARD_RADIUS_PX}
+      className="flex min-h-[15.5rem] flex-col justify-between px-9 py-8 sm:px-11 sm:py-9"
+      style={{ background: CARD, boxShadow: CARD_SHADOW }}
+    >
+      {children}
     </Squircle>
   );
 }
@@ -133,7 +138,7 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
 
 function FlightHeader({ actor }: { readonly actor: string }) {
   return (
-    <p className="text-[0.82rem] font-medium tracking-[0.14em]" style={{ color: INK }}>
+    <p className="text-sm font-medium tracking-[0.14em]" style={{ color: INK }}>
       {actor}
     </p>
   );
@@ -154,15 +159,20 @@ function FlightRoute({
 }) {
   return (
     <div className="flex flex-1 items-center py-4">
-      <div className="flex w-full items-center gap-2 sm:gap-3">
+      <div className="flex w-full items-center gap-3 sm:gap-4">
         <Terminal label={source} />
-        <Endpoint accent={accent}>
-          <ArrowUpRight className="size-[1.05rem]" strokeWidth={2.75} />
-        </Endpoint>
-        <FlightArc progress={progress} accent={accent} phaseKind={phaseKind} />
-        <Endpoint accent={accent}>
-          <ArrowDownRight className="size-[1.05rem]" strokeWidth={2.75} />
-        </Endpoint>
+        {/* The path group: endpoints + arc with no gap, so the arc tucks
+            UNDER the circles (negative margin + z-order) and reads as one
+            continuous line emerging from each disc. */}
+        <div className="flex flex-[1_1_40%] items-center">
+          <Endpoint accent={accent}>
+            <ArrowUpRight className="size-[1.05rem]" strokeWidth={2.75} />
+          </Endpoint>
+          <FlightArc progress={progress} accent={accent} phaseKind={phaseKind} />
+          <Endpoint accent={accent}>
+            <ArrowDownRight className="size-[1.05rem]" strokeWidth={2.75} />
+          </Endpoint>
+        </div>
         <Terminal label={dest} />
       </div>
     </div>
@@ -175,7 +185,7 @@ function FlightRoute({
 function Terminal({ label }: { readonly label: string }) {
   return (
     <span
-      className="shrink-0 whitespace-nowrap text-[clamp(1.75rem,7.5vw,3rem)] font-extrabold tracking-tight"
+      className="shrink-0 whitespace-nowrap text-[clamp(1.75rem,7.5vw,3rem)] font-bold tracking-[-0.01em]"
       style={{ color: INK }}
     >
       {label}
@@ -186,7 +196,7 @@ function Terminal({ label }: { readonly label: string }) {
 function Endpoint({ accent, children }: { readonly accent: string; readonly children: ReactNode }) {
   return (
     <span
-      className="flex size-9 shrink-0 items-center justify-center rounded-full"
+      className="relative z-10 flex size-9 shrink-0 items-center justify-center rounded-full"
       style={{ background: accent, color: NODE_INK }}
     >
       {children}
@@ -205,10 +215,10 @@ function FlightStatus({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-xl font-bold leading-tight" style={{ color: accent }}>
+      <p className="text-[1.0625rem] font-semibold leading-tight" style={{ color: accent }}>
         {headline}
       </p>
-      <p className="mt-1 text-[0.95rem] font-medium" style={{ color: accent, opacity: 0.82 }}>
+      <p className="mt-1 text-sm font-medium" style={{ color: accent, opacity: 0.82 }}>
         {detail}
       </p>
     </div>
@@ -231,13 +241,13 @@ function CommitPill({
   return (
     <Link
       ref={sq.ref}
-      className="inline-flex shrink-0 items-center gap-2 px-4 py-2.5 text-lg font-bold transition-opacity hover:opacity-90"
+      className="inline-flex shrink-0 items-center gap-1.5 px-3.5 py-2 text-base font-bold transition-opacity hover:opacity-90"
       style={{ ...sq.style, background: "oklch(0.80 0.16 70)", color: NODE_INK }}
       to="/$orgSlug/runs/$providerRunId"
       params={{ orgSlug, providerRunId }}
       title="CI run logs"
     >
-      <GitCommitGlyph className="size-[1.45rem]" />
+      <GitCommitGlyph className="size-[1.2rem]" />
       <span className="tabular-nums">{count}</span>
     </Link>
   );

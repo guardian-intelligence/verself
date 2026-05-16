@@ -14,7 +14,7 @@ import type { PhaseKind } from "./phase";
 // a non-uniform stretch would skew the stroke and the triangle. Same
 // ResizeObserver pattern as the squircle — pixel-faithful by construction.
 
-const FALLBACK = { w: 320, h: 48 } as const; // SSR / pre-measure
+const FALLBACK = { w: 200, h: 56 } as const; // SSR / pre-measure (~host aspect)
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? () => {} : useLayoutEffect;
 
@@ -60,11 +60,18 @@ export function FlightArc({
   return (
     <div
       ref={hostRef}
-      className="relative flex h-14 min-w-[5rem] flex-[1_1_40%] items-center"
+      className="relative z-0 -mx-3 flex h-14 min-w-[3rem] flex-1 items-center"
       aria-hidden="true"
       data-phase={phaseKind}
     >
-      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="absolute inset-0" fill="none">
+      {/* h-full w-full + viewBox in measured px: the SVG always fills the host
+          (never overflows toward the widget edge, killing the SSR flash) and
+          maps 1:1 once measured (no preserveAspectRatio skew). */}
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        className="absolute inset-0 h-full w-full overflow-visible"
+        fill="none"
+      >
         <ArcPath d={solid} color={accent} />
         <ArcPath d={dotted} color={accent} dashed />
         <g transform={`translate(${at.x} ${at.y}) rotate(${angle})`}>{marker}</g>

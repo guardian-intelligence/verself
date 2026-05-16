@@ -20,16 +20,16 @@ source (no install scripts, no transitive deps) is the sanctioned mitigation.
 - `cornerSmoothing` is `0.6` everywhere (Apple's app-icon value).
 - Corner radius scales with the box; the Apple app-icon ratio is `22.37%` of
   width, used as the anchor when tuning per-surface radii.
-- Nesting obeys the concentric rule: `inner = concentric(outer, inset)` where
-  `concentric(r, i) = max(0, r - i)`. Frame, card, and pill share corners.
-- `useSquirclePath` measures the box with a `ResizeObserver`. Before measurement
-  (SSR, first paint) it returns `undefined` and the element falls back to a
-  plain large `border-radius`, so there is no hydration shift.
-- `<Squircle>` is the only corner source in the widget. Three instances: the
-  light tray, the OLED card, the commit pill.
+- `useSquircle` measures the box with a `ResizeObserver`. Before measurement
+  (SSR, first paint) it returns a plain large `border-radius`, so there is no
+  hydration shift.
+- `<Squircle>`/`useSquircle` is the only corner source. Two surfaces: the OLED
+  card and the commit pill. There is **no light tray** — depth is a layered
+  shadow (see Layout), not a border. The pill's radius is held well under its
+  half-height so the corner reads as a squircle _rounded rectangle_, not a
+  stadium. `concentric()` remains exported for future nesting but is unused.
 
-Provisional radii (single source of truth, `flight-widget.tsx`): tray `46`,
-inset `7`, card `concentric(46, 7) = 39`, pill `22`.
+Radii (single source of truth, `flight-widget.tsx`): card `40`, pill `13`.
 
 ## Color and type
 
@@ -41,8 +41,7 @@ Activity), not the brand palette.
 | -------------- | ---------------------- | ------------------------- |
 | `INK`          | `oklch(1 0 0)`         | terminals, header, marker |
 | `INK_DIM`      | `oklch(0.62 0 0)`      | empty-state text          |
-| `CARD`         | `oklch(0.09 0 0)`      | OLED Live-Activity card   |
-| `TRAY`         | `oklch(0.928 0 0)`     | light iOS widget tray     |
+| `CARD`         | `oklch(0.05 0 0)`      | OLED Live-Activity card   |
 | `NODE_INK`     | `oklch(0 0 0)`         | glyphs on accent fills    |
 | accent · green | `oklch(0.82 0.20 152)` | on-time / boarding        |
 | accent · amber | `oklch(0.80 0.16 70)`  | running late, commit pill |
@@ -50,26 +49,32 @@ Activity), not the brand palette.
 Typography uses the Apple system stack
 (`-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
 system-ui, sans-serif`) so the widget renders true San Francisco on Apple
-devices and a near-equivalent neo-grotesque elsewhere. Brand Geist is not used
-in this widget. Terminals (`PR47`, `MAIN`) are heavy weight with tight tracking;
-the status headline is bold; the status detail is medium.
+devices and a near-equivalent neo-grotesque elsewhere. Brand Geist is not used.
+Type scale: terminals (`PR47`, `MAIN`) `font-bold`, tracking `-0.01em` (bold but
+not extra-bold, not over-tight); status headline ~17px `font-semibold`; the
+actor label and the status detail share one meta size (`text-sm`) — the actor
+is the same size as "Building in 11m", which matches the Flighty reference's
+"Landing in 55m".
 
 ## Layout
 
-`WIDGET_MAX_PX = 598`. The constraint applies to the **whole widget, light tray
-included** — the `maxWidth` wrapper constrains the tray's border box, so the OLED
-card is `598 − 2 × TRAY_INSET_PX` (`TRAY_INSET_PX = 7`) of content plus its own
-padding. Below 598px every element shrinks fluidly — terminal type scales with
-the container, the arc flexes to fill the remaining row, gutters hold — so the
-widget reads correctly at iOS width and narrower. The widget is vertically
-centered with a `5` horizontal page gutter on the signed-in surface, which is
-painted iOS dark-mode `systemBackground` (pure black, `oklch(0 0 0)`) in
-`app-shell.tsx` so the light tray reads against black as in reference Image #2.
+`WIDGET_MAX_PX = 598` is the whole widget (there is no tray to add). Depth is a
+three-layer `box-shadow` — a tight contact shadow, a medium key drop, and a
+wide soft ambient lift (negative spread), one overhead light source — so the
+card reads as an elevated iOS Live Activity floating on the page. The signed-in
+surface keeps the **default light console background** (`app-shell.tsx` is
+unchanged; the iOS dark-mode override was reverted), so the shadow reads as a
+dark elevation on light, matching reference Image #1. Below 598px every element
+shrinks fluidly — terminals are capped + `shrink-0`, the arc keeps the dominant
+central span — so it reads at iOS width and narrower. Vertically centered, `5`
+horizontal page gutter.
 
 Card vertical structure: header row (actor) at the top, route row centered and
 flex-filling, status/pill row at the bottom (`items-end`, `justify-between`).
-Route row, left to right: source terminal, source endpoint disc, flight arc
-(flex-1), destination endpoint disc, destination terminal.
+Route row: source terminal, then a no-gap path group [source disc · flight arc
+· dest disc], then dest terminal. The arc host has negative horizontal margin
+and a lower `z`-index than the discs, so the curve tucks **under** both discs
+and reads as one continuous line emerging from each.
 
 ## State machine
 
