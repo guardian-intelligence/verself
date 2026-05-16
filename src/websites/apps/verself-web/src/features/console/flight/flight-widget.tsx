@@ -161,15 +161,15 @@ function FlightRoute({
     <div className="flex flex-1 items-center py-4">
       <div className="flex w-full items-center gap-3 sm:gap-4">
         <Terminal label={source} />
-        {/* The path group: endpoints + arc with no gap, so the arc tucks
-            UNDER the circles (negative margin + z-order) and reads as one
-            continuous line emerging from each disc. */}
-        <div className="flex flex-[1_1_40%] items-center">
-          <Endpoint accent={accent}>
+        {/* Path group: the arc fills it absolutely; the discs sit on top at
+            the exact bezier endpoints, so the curve provably runs
+            disc-centre → disc-centre as one continuous line. */}
+        <div className="relative flex h-14 flex-[1_1_46%] items-center">
+          <FlightArc progress={progress} accent={accent} phaseKind={phaseKind} discPx={36} />
+          <Endpoint accent={accent} className="absolute left-0 top-1/2 -translate-y-1/2">
             <ArrowUpRight className="size-[1.05rem]" strokeWidth={2.75} />
           </Endpoint>
-          <FlightArc progress={progress} accent={accent} phaseKind={phaseKind} />
-          <Endpoint accent={accent}>
+          <Endpoint accent={accent} className="absolute right-0 top-1/2 -translate-y-1/2">
             <ArrowDownRight className="size-[1.05rem]" strokeWidth={2.75} />
           </Endpoint>
         </div>
@@ -185,7 +185,7 @@ function FlightRoute({
 function Terminal({ label }: { readonly label: string }) {
   return (
     <span
-      className="shrink-0 whitespace-nowrap text-[clamp(1.75rem,7.5vw,3rem)] font-bold tracking-[-0.01em]"
+      className="shrink-0 whitespace-nowrap text-[clamp(1.625rem,7vw,2.75rem)] font-bold tracking-[-0.01em]"
       style={{ color: INK }}
     >
       {label}
@@ -193,10 +193,18 @@ function Terminal({ label }: { readonly label: string }) {
   );
 }
 
-function Endpoint({ accent, children }: { readonly accent: string; readonly children: ReactNode }) {
+function Endpoint({
+  accent,
+  className,
+  children,
+}: {
+  readonly accent: string;
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
   return (
     <span
-      className="relative z-10 flex size-9 shrink-0 items-center justify-center rounded-full"
+      className={`z-10 flex size-9 shrink-0 items-center justify-center rounded-full ${className ?? ""}`}
       style={{ background: accent, color: NODE_INK }}
     >
       {children}

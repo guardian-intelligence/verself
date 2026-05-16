@@ -8,23 +8,30 @@ export type Point = { readonly x: number; readonly y: number };
 // p0 = origin, p1/p2 = controls, p3 = destination.
 export type Bezier = readonly [Point, Point, Point, Point];
 
-export type ArcBox = { readonly width: number; readonly height: number };
+export type ArcBox = {
+  readonly width: number;
+  readonly height: number;
+  // x-inset of both endpoints (= endpoint-disc radius) so the curve begins and
+  // ends exactly at the disc centres and reads as one continuous line.
+  readonly inset?: number;
+};
 
 // The reference arc: a shallow, confident lob that rises off the origin and
 // settles toward the destination (matches Image #1/#2). Control points are a
 // fraction of the box so the curve is resolution-independent.
-export function arcGeometry({ width, height }: ArcBox): Bezier {
-  // Shallow, confident lob: leaves the left endpoint low, crests just shy of
-  // the top, settles slightly higher into the right endpoint — the Flighty
-  // path shape. All control points stay within [0,height] so nothing clips.
-  // Ratios are refined against the reference screenshots during tuning.
-  // Endpoints sit at the host's vertical centre so the curve emerges from the
-  // (vertically-centred) endpoint discs; it crests near the top between them.
+export function arcGeometry({ width, height, inset = 0 }: ArcBox): Bezier {
+  // Shallow, confident lob: leaves the left disc centre, crests just shy of
+  // the top, settles into the right disc centre — the Flighty path shape.
+  // Endpoints are inset by the disc radius and sit on the vertical centre so
+  // the curve runs continuously from one disc to the other.
+  const x0 = inset;
+  const x1 = width - inset;
+  const span = x1 - x0;
   return [
-    { x: 0, y: height * 0.5 },
-    { x: width * 0.28, y: height * 0.1 },
-    { x: width * 0.62, y: height * 0.05 },
-    { x: width, y: height * 0.48 },
+    { x: x0, y: height * 0.5 },
+    { x: x0 + span * 0.26, y: height * 0.12 },
+    { x: x0 + span * 0.64, y: height * 0.06 },
+    { x: x1, y: height * 0.48 },
   ];
 }
 

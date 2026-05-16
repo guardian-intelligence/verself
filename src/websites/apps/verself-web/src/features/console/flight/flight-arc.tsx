@@ -35,15 +35,21 @@ function useSize(ref: React.RefObject<HTMLElement | null>) {
   return size;
 }
 
+// The arc is an absolute layer that fills the whole path group; the endpoint
+// discs are positioned on top at exactly the bezier endpoints, so the curve
+// provably runs disc-centre → disc-centre with no gap. `discPx` is the disc
+// diameter; endpoints inset by its radius.
 export function FlightArc({
   progress,
   accent,
   phaseKind,
+  discPx,
   marker = <VerselfTriangleMarker />,
 }: {
   readonly progress: number; // already monotone + spring-driven by the machine
   readonly accent: string;
   readonly phaseKind: PhaseKind;
+  readonly discPx: number;
   readonly marker?: ReactNode;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -52,18 +58,13 @@ export function FlightArc({
   const h = size && size.h > 0 ? size.h : FALLBACK.h;
 
   const t = Math.min(Math.max(progress, 0), 1);
-  const bezier = arcGeometry({ width: w, height: h });
+  const bezier = arcGeometry({ width: w, height: h, inset: discPx / 2 });
   const { solid, dotted } = splitAt(bezier, t);
   const at = pointAt(bezier, t);
   const angle = tangentDeg(bezier, t);
 
   return (
-    <div
-      ref={hostRef}
-      className="relative z-0 -mx-3 flex h-14 min-w-[3rem] flex-1 items-center"
-      aria-hidden="true"
-      data-phase={phaseKind}
-    >
+    <div ref={hostRef} className="absolute inset-0 z-0" aria-hidden="true" data-phase={phaseKind}>
       {/* h-full w-full + viewBox in measured px: the SVG always fills the host
           (never overflows toward the widget edge, killing the SSR flash) and
           maps 1:1 once measured (no preserveAspectRatio skew). */}
@@ -105,6 +106,6 @@ function ArcPath({
 // centroid with the apex on +x so <FlightArc>'s tangent rotation makes it lead
 // the path. Solid white per the reference. This is the only marker.
 function VerselfTriangleMarker() {
-  // Equilateral, circumradius 7: apex (7,0), base (-3.5, ±6.06).
-  return <polygon points="7,0 -3.5,6.06 -3.5,-6.06" fill="oklch(1 0 0)" />;
+  // Equilateral, circumradius 9: apex (9,0), base (-4.5, ±7.79).
+  return <polygon points="9,0 -4.5,7.79 -4.5,-7.79" fill="oklch(1 0 0)" />;
 }
