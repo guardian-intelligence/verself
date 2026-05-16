@@ -21,7 +21,6 @@ const LetterFrontmatterSchema = v.pipe(
     // YYYY-MM-DD only. The Vite plugin coerces YAML dates to this shape, so
     // anything else here is an authoring mistake worth surfacing.
     publishedAt: v.pipe(v.string(), v.regex(/^\d{4}-\d{2}-\d{2}$/)),
-    author: v.pipe(v.string(), v.minLength(1)),
     flare: v.pipe(v.string(), v.minLength(1)),
     summary: v.optional(v.string(), ""),
   }),

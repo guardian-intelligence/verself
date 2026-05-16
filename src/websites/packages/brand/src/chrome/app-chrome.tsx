@@ -3,7 +3,10 @@ import { Lockup } from "../components/lockup";
 import { TREATMENT_DEFAULT_SECTION, TREATMENT_WORDMARK_VARIANT, type Treatment } from "./types";
 import { useBrandTelemetry } from "./telemetry";
 
-// AppChrome — the single sticky header every Guardian surface renders.
+// AppChrome — the single header every Guardian surface renders. Sticky by
+// default; a surface can opt out with sticky={false} (Letters does, so its
+// scroll-locked paper sheet and its document-top grid knockout stay in
+// register instead of fighting a pinned masthead).
 //
 // The chrome reads var(--treatment-*) so its ground, wordmark colour, and
 // hairline repaint when an ancestor flips data-treatment. The consumer is
@@ -47,6 +50,10 @@ export interface AppChromeProps {
   // false on routes where the page already provides its own separation
   // (e.g. /newsroom/$slug, where the article header is the masthead).
   readonly bottomRule?: boolean;
+  // Whether the masthead pins to the top on scroll. Default true. Letters
+  // sets false: its paper is a scroll-locked sheet, so the masthead must
+  // scroll away with it rather than pin and collect the ruling.
+  readonly sticky?: boolean;
 }
 
 function DefaultLink({ to, children, ...rest }: LinkLikeProps) {
@@ -65,6 +72,7 @@ export function AppChrome({
   LinkComponent = DefaultLink,
   section,
   bottomRule = true,
+  sticky = true,
 }: AppChromeProps) {
   const emitSpan = useBrandTelemetry();
   const variant = TREATMENT_WORDMARK_VARIANT[treatment];
@@ -107,7 +115,7 @@ export function AppChrome({
   // reach the viewport edge.
   return (
     <header
-      className="sticky top-0 z-30 transition-colors duration-300 ease-out"
+      className={`${sticky ? "sticky top-0" : "relative"} z-30 transition-colors duration-300 ease-out`}
       style={{
         background: "var(--treatment-ground)",
         color: "var(--treatment-wordmark)",
