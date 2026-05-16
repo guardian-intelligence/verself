@@ -97,13 +97,6 @@ func run(ctx context.Context, opts runOptions) error {
 	startedAt := time.Now()
 	recordDeployStarted(span, snap.RunKey(), opts.Site, resolvedSHA, snap.Get("VERSELF_AUTHOR"), startedAt)
 
-	if err := checkSupplyChainPolicy(runCtx, rt.Tracer, opts.RepoRoot, snap.RunKey(), opts.Site); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		recordDeployFailed(span, nil, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
-		return err
-	}
-
 	plan, err := buildDeployPlan(runCtx, rt, opts.RepoRoot, opts.Site, resolvedSHA, snap)
 	if err != nil {
 		span.RecordError(err)

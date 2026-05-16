@@ -113,7 +113,7 @@ Resume normal work only when all of these are true:
 - Verdaccio cache has no malicious tarballs for the advisory set;
 - affected golden zvols have been invalidated or replaced;
 - credential rotations are complete for every `executed-privileged` or `published` environment;
-- `aspect observe --what=supply-chain --minutes=1440` and targeted ClickHouse queries show the clean deploy, artifact admission, and install verification evidence.
+- targeted ClickHouse queries show clean deploy, dependency resolution, and install verification evidence.
 
 ## Current Incident Profile
 
