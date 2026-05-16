@@ -95,21 +95,21 @@ WHERE allocation_id = sqlc.arg(allocation_id)
 
 -- name: UpsertRunnerBootstrapConfig :exec
 INSERT INTO runner_bootstrap_configs (
-    allocation_id, attempt_id, fetch_token_hash, bootstrap_kind, bootstrap_payload, expires_at, created_at
+    allocation_id, attempt_id, fetch_token_hash, bootstrap_kind, bootstrap_secret_name, expires_at, created_at
 ) VALUES (
     sqlc.arg(allocation_id), sqlc.arg(attempt_id), sqlc.arg(fetch_token_hash),
-    sqlc.arg(bootstrap_kind), sqlc.arg(bootstrap_payload), sqlc.arg(expires_at), sqlc.arg(created_at)
+    sqlc.arg(bootstrap_kind), sqlc.arg(bootstrap_secret_name), sqlc.arg(expires_at), sqlc.arg(created_at)
 )
 ON CONFLICT (allocation_id) DO UPDATE SET
     attempt_id = EXCLUDED.attempt_id,
     fetch_token_hash = EXCLUDED.fetch_token_hash,
     bootstrap_kind = EXCLUDED.bootstrap_kind,
-    bootstrap_payload = EXCLUDED.bootstrap_payload,
+    bootstrap_secret_name = EXCLUDED.bootstrap_secret_name,
     expires_at = EXCLUDED.expires_at,
     consumed_at = NULL;
 
 -- name: LockRunnerBootstrapConfigByTokenHash :one
-SELECT allocation_id, bootstrap_kind, bootstrap_payload, expires_at, consumed_at
+SELECT allocation_id, bootstrap_kind, bootstrap_secret_name, expires_at, consumed_at
 FROM runner_bootstrap_configs
 WHERE fetch_token_hash = sqlc.arg(fetch_token_hash)
 FOR UPDATE;
@@ -123,6 +123,11 @@ WHERE allocation_id = sqlc.arg(allocation_id);
 UPDATE runner_allocations
 SET state = CASE WHEN state = 'vm_submitted' THEN 'runner_config_fetched' ELSE state END,
     updated_at = sqlc.arg(updated_at)
+WHERE allocation_id = sqlc.arg(allocation_id);
+
+-- name: GetRunnerBootstrapSecretNameByAllocation :one
+SELECT bootstrap_secret_name
+FROM runner_bootstrap_configs
 WHERE allocation_id = sqlc.arg(allocation_id);
 
 -- name: DeleteRunnerBootstrapConfig :exec

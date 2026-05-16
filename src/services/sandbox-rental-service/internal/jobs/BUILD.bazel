@@ -32,6 +32,7 @@ go_library(
         "//src/services/billing-service/client",
         "//src/services/sandbox-rental-service/internal/scheduler",
         "//src/services/sandbox-rental-service/internal/store",
+        "//src/services/secrets-service/client",
         "//src/substrate/vm-orchestrator",
         "//src/tools/observability/go/bazeltelemetry",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",

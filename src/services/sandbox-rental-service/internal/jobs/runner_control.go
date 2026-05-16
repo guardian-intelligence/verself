@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/verself/sandbox-rental-service/internal/store"
+	secretsclient "github.com/verself/secrets-service/client"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -27,7 +28,11 @@ type RunnerRepositoryRegistration struct {
 	RepositoryFullName   string
 }
 
-const runnerBootstrapPath = "/internal/sandbox/v1/runner-bootstrap"
+const (
+	runnerBootstrapPath       = "/internal/sandbox/v1/runner-bootstrap"
+	runnerBootstrapSecretTTL  = 15 * time.Minute
+	runnerBootstrapSecretWait = 5 * time.Second
+)
 
 func (s *Service) ReconcileRunnerCapacity(ctx context.Context, provider string, providerJobID int64) error {
 	switch strings.TrimSpace(provider) {
@@ -160,20 +165,29 @@ func schedulerCleanupRequest(ctx context.Context, allocationID uuid.UUID) schedu
 	}
 }
 
-func (s *Service) attachRunnerAllocationExecutionTx(ctx context.Context, tx pgx.Tx, allocationID, executionID, attemptID uuid.UUID, bootstrapKind, bootstrapPayload string) error {
+func (s *Service) attachRunnerAllocationExecutionTx(ctx context.Context, tx pgx.Tx, allocationID, executionID, attemptID uuid.UUID, bootstrapKind, bootstrapPayload string) (string, error) {
 	bootstrapKind = strings.TrimSpace(bootstrapKind)
-	bootstrapPayload = strings.TrimSpace(bootstrapPayload)
-	if bootstrapKind == "" || bootstrapPayload == "" {
-		return fmt.Errorf("%w: runner bootstrap payload is required", ErrRunnerUnavailable)
+	if bootstrapKind == "" || strings.TrimSpace(bootstrapPayload) == "" {
+		return "", fmt.Errorf("%w: runner bootstrap payload is required", ErrRunnerUnavailable)
 	}
 	provider, err := s.runnerAllocationProviderTx(ctx, tx, allocationID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	token, err := s.deriveRunnerBootstrapToken(provider, allocationID, attemptID)
 	if err != nil {
-		return err
+		return "", err
 	}
+	secretName := runnerBootstrapSecretName(provider, allocationID, attemptID)
+	if err := s.putRunnerBootstrapSecret(ctx, secretName, bootstrapPayload, "runner-bootstrap:"+attemptID.String()); err != nil {
+		return "", err
+	}
+	keepSecret := false
+	defer func() {
+		if !keepSecret {
+			_ = s.deleteRunnerBootstrapSecret(context.Background(), secretName, "attach-failed:"+attemptID.String())
+		}
+	}()
 	now := time.Now().UTC()
 	rows, err := store.New(tx).AttachRunnerAllocationExecution(ctx, store.AttachRunnerAllocationExecutionParams{
 		ExecutionID:  &executionID,
@@ -182,20 +196,24 @@ func (s *Service) attachRunnerAllocationExecutionTx(ctx context.Context, tx pgx.
 		AllocationID: allocationID,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	if rows != 1 {
-		return fmt.Errorf("runner allocation %s is not attachable", allocationID)
+		return "", fmt.Errorf("runner allocation %s is not attachable", allocationID)
 	}
-	return store.New(tx).UpsertRunnerBootstrapConfig(ctx, store.UpsertRunnerBootstrapConfigParams{
-		AllocationID:     allocationID,
-		AttemptID:        attemptID,
-		FetchTokenHash:   hashToken(token),
-		BootstrapKind:    bootstrapKind,
-		BootstrapPayload: bootstrapPayload,
-		ExpiresAt:        pgTime(now.Add(15 * time.Minute)),
-		CreatedAt:        pgTime(now),
-	})
+	if err := store.New(tx).UpsertRunnerBootstrapConfig(ctx, store.UpsertRunnerBootstrapConfigParams{
+		AllocationID:        allocationID,
+		AttemptID:           attemptID,
+		FetchTokenHash:      hashToken(token),
+		BootstrapKind:       bootstrapKind,
+		BootstrapSecretName: secretName,
+		ExpiresAt:           pgTime(now.Add(runnerBootstrapSecretTTL)),
+		CreatedAt:           pgTime(now),
+	}); err != nil {
+		return "", err
+	}
+	keepSecret = true
+	return secretName, nil
 }
 
 func (s *Service) runnerExecEnv(ctx context.Context, executionID, attemptID uuid.UUID) map[string]string {
@@ -220,6 +238,112 @@ func (s *Service) runnerExecEnv(ctx context.Context, executionID, attemptID uuid
 	return env
 }
 
+func runnerBootstrapSecretName(provider string, allocationID, attemptID uuid.UUID) string {
+	return secretsclient.SandboxRunnerBootstrapSecretPrefix + strings.TrimSpace(provider) + "." + allocationID.String() + "." + attemptID.String()
+}
+
+func (s *Service) putRunnerBootstrapSecret(ctx context.Context, secretName string, payload string, idempotencyKey string) error {
+	if s.Secrets == nil {
+		return fmt.Errorf("%w: secrets client is required for runner bootstrap", ErrRunnerUnavailable)
+	}
+	secretName = strings.TrimSpace(secretName)
+	if secretName == "" || strings.TrimSpace(payload) == "" {
+		return fmt.Errorf("%w: runner bootstrap secret is required", ErrRunnerUnavailable)
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, runnerBootstrapSecretWait)
+	defer cancel()
+	resp, err := s.Secrets.PutSecret(secretCtx, secretsclient.PutSecretRequest{
+		IdempotencyKey: secretsclient.IdempotencyKey(idempotencyKey),
+		Name:           secretsclient.SecretName(secretName),
+		Body: secretsclient.SecretMutationInputBody{
+			Value: secretsclient.SecretValue(payload),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("%w: put runner bootstrap secret: %v", ErrRunnerUnavailable, err)
+	}
+	if resp == nil || resp.Result == nil {
+		status := 0
+		body := ""
+		if resp != nil {
+			status = resp.StatusCode
+			body = strings.TrimSpace(string(resp.Body))
+		}
+		return fmt.Errorf("%w: put runner bootstrap secret status %d: %s", ErrRunnerUnavailable, status, body)
+	}
+	return nil
+}
+
+func (s *Service) readRunnerBootstrapSecret(ctx context.Context, secretName string) (string, error) {
+	if s.Secrets == nil {
+		return "", fmt.Errorf("%w: secrets client is required for runner bootstrap", ErrRunnerUnavailable)
+	}
+	secretName = strings.TrimSpace(secretName)
+	if secretName == "" {
+		return "", fmt.Errorf("%w: runner bootstrap secret name is required", ErrRunnerUnavailable)
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, runnerBootstrapSecretWait)
+	defer cancel()
+	resp, err := s.Secrets.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: secretsclient.SecretName(secretName)})
+	if err != nil {
+		return "", fmt.Errorf("%w: read runner bootstrap secret: %v", ErrRunnerUnavailable, err)
+	}
+	if resp == nil || resp.Result == nil {
+		status := 0
+		body := ""
+		if resp != nil {
+			status = resp.StatusCode
+			body = strings.TrimSpace(string(resp.Body))
+		}
+		return "", fmt.Errorf("%w: read runner bootstrap secret status %d: %s", ErrRunnerUnavailable, status, body)
+	}
+	payload := string(resp.Result.Value)
+	if strings.TrimSpace(payload) == "" {
+		return "", fmt.Errorf("%w: runner bootstrap secret payload is empty", ErrRunnerUnavailable)
+	}
+	return payload, nil
+}
+
+func (s *Service) deleteRunnerBootstrapSecret(ctx context.Context, secretName string, idempotencyKey string) error {
+	if s.Secrets == nil {
+		return fmt.Errorf("%w: secrets client is required for runner bootstrap", ErrRunnerUnavailable)
+	}
+	secretName = strings.TrimSpace(secretName)
+	if secretName == "" {
+		return nil
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, runnerBootstrapSecretWait)
+	defer cancel()
+	resp, err := s.Secrets.DeleteSecret(secretCtx, secretsclient.DeleteSecretRequest{
+		IdempotencyKey: secretsclient.IdempotencyKey(idempotencyKey),
+		Name:           secretsclient.SecretName(secretName),
+	})
+	if err != nil {
+		return fmt.Errorf("%w: delete runner bootstrap secret: %v", ErrRunnerUnavailable, err)
+	}
+	if resp == nil || resp.Result == nil {
+		status := 0
+		body := ""
+		if resp != nil {
+			status = resp.StatusCode
+			body = strings.TrimSpace(string(resp.Body))
+		}
+		return fmt.Errorf("%w: delete runner bootstrap secret status %d: %s", ErrRunnerUnavailable, status, body)
+	}
+	return nil
+}
+
+func (s *Service) deleteRunnerBootstrapConfig(ctx context.Context, allocationID uuid.UUID) error {
+	secretName, err := s.storeQueries().GetRunnerBootstrapSecretNameByAllocation(ctx, store.GetRunnerBootstrapSecretNameByAllocationParams{AllocationID: allocationID})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if err == nil && strings.TrimSpace(secretName) != "" {
+		_ = s.deleteRunnerBootstrapSecret(ctx, secretName, "runner-bootstrap-cleanup:"+allocationID.String())
+	}
+	return s.storeQueries().DeleteRunnerBootstrapConfig(ctx, store.DeleteRunnerBootstrapConfigParams{AllocationID: allocationID})
+}
+
 func (s *Service) ConsumeRunnerBootstrapConfig(ctx context.Context, token, expectedKind string) (string, error) {
 	token = strings.TrimSpace(token)
 	expectedKind = strings.TrimSpace(expectedKind)
@@ -236,7 +360,7 @@ func (s *Service) ConsumeRunnerBootstrapConfig(ctx context.Context, token, expec
 	var (
 		allocationID uuid.UUID
 		kind         string
-		payload      string
+		secretName   string
 		expiresAt    time.Time
 		consumedAt   *time.Time
 	)
@@ -246,13 +370,21 @@ func (s *Service) ConsumeRunnerBootstrapConfig(ctx context.Context, token, expec
 	}
 	allocationID = row.AllocationID
 	kind = row.BootstrapKind
-	payload = row.BootstrapPayload
+	secretName = row.BootstrapSecretName
 	expiresAt = timeFromPG(row.ExpiresAt)
 	consumedAt = timePtrFromPG(row.ConsumedAt)
 	if expectedKind != "" && kind != expectedKind {
 		return "", ErrRunnerUnavailable
 	}
 	if consumedAt != nil || time.Now().UTC().After(expiresAt) {
+		return "", ErrRunnerUnavailable
+	}
+	payload, err := s.readRunnerBootstrapSecret(ctx, secretName)
+	if err != nil {
+		return "", ErrRunnerUnavailable
+	}
+	// Delete before returning so a consumed bootstrap payload is not recoverable.
+	if err := s.deleteRunnerBootstrapSecret(ctx, secretName, "runner-bootstrap-consume:"+allocationID.String()); err != nil {
 		return "", ErrRunnerUnavailable
 	}
 	now := time.Now().UTC()

@@ -433,7 +433,7 @@ CREATE TABLE runner_bootstrap_configs (
     attempt_id         UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
     fetch_token_hash   TEXT        NOT NULL UNIQUE CHECK (fetch_token_hash <> ''),
     bootstrap_kind     TEXT        NOT NULL CHECK (bootstrap_kind <> ''),
-    bootstrap_payload  TEXT        NOT NULL CHECK (bootstrap_payload <> ''),
+    bootstrap_secret_name TEXT     NOT NULL CHECK (bootstrap_secret_name <> ''),
     expires_at         TIMESTAMPTZ NOT NULL,
     consumed_at        TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()

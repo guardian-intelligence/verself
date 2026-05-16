@@ -32,13 +32,15 @@ type InternalRoutesConfig struct {
 }
 
 type RuntimeSecretPolicy struct {
-	Service     string
-	SecretNames []string
+	Service            string
+	SecretNames        []string
+	SecretNamePrefixes []string
 }
 
 type runtimeSecretPolicy struct {
-	credentialName string
-	secretNames    map[string]struct{}
+	credentialName     string
+	secretNames        map[string]struct{}
+	secretNamePrefixes []string
 }
 
 type injectionResolveRequest struct {
@@ -323,6 +325,32 @@ func RegisterInternalRoutes(mux *http.ServeMux, svc *secrets.Service, source *wo
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(secretDTO(record, ""))
+		case http.MethodDelete:
+			if _, ok := workloadauth.PeerIDFromContext(r.Context()); !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if err := validateRuntimeSecretDeleteRequest(r); err != nil {
+				http.Error(w, "invalid runtime secret delete request", http.StatusBadRequest)
+				return
+			}
+			record, err := deleteRuntimeSecret(r.Context(), svc, cfg.PlatformOrgID, writePolicies, secretName)
+			if err != nil {
+				switch {
+				case errors.Is(err, secrets.ErrInvalidArgument):
+					http.Error(w, "invalid runtime secret delete request", http.StatusBadRequest)
+				case errors.Is(err, secrets.ErrForbidden):
+					http.Error(w, "forbidden", http.StatusForbidden)
+				case errors.Is(err, secrets.ErrNotFound):
+					http.Error(w, "runtime secret not found", http.StatusNotFound)
+				default:
+					http.Error(w, "delete runtime secret failed", http.StatusInternalServerError)
+				}
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(secretDTO(record, ""))
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -390,6 +418,13 @@ func validateRuntimeSecretWriteRequest(r *http.Request, body putSecretBody) erro
 	return nil
 }
 
+func validateRuntimeSecretDeleteRequest(r *http.Request) error {
+	if strings.TrimSpace(r.Header.Get("Idempotency-Key")) == "" {
+		return fmt.Errorf("%w: idempotency key is required", secrets.ErrInvalidArgument)
+	}
+	return validateRuntimeSecretReadQuery(r)
+}
+
 func readRuntimeSecret(ctx context.Context, svc *secrets.Service, platformOrgID string, policies map[spiffeid.ID]runtimeSecretPolicy, secretName string) (secrets.SecretValue, error) {
 	ctx, span := apiTracer.Start(ctx, "secrets.platform.resolve")
 	defer span.End()
@@ -416,7 +451,7 @@ func readRuntimeSecret(ctx context.Context, svc *secrets.Service, platformOrgID 
 		span.SetStatus(codes.Error, err.Error())
 		return secrets.SecretValue{}, err
 	}
-	if _, allowed := policy.secretNames[secretName]; !allowed {
+	if !runtimeSecretAllowed(policy, secretName) {
 		err := fmt.Errorf("%w: platform runtime secret %q is not allowed for %s", secrets.ErrForbidden, secretName, policy.credentialName)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -473,7 +508,7 @@ func writeRuntimeSecret(ctx context.Context, svc *secrets.Service, platformOrgID
 		span.SetStatus(codes.Error, err.Error())
 		return secrets.SecretRecord{}, err
 	}
-	if _, allowed := policy.secretNames[secretName]; !allowed {
+	if !runtimeSecretAllowed(policy, secretName) {
 		err := fmt.Errorf("%w: platform runtime secret %q is not allowed for %s", secrets.ErrForbidden, secretName, policy.credentialName)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -502,6 +537,64 @@ func writeRuntimeSecret(ctx context.Context, svc *secrets.Service, platformOrgID
 		Value: value,
 	})
 	auditRuntimeSecretWrite(ctx, platformOrgID, peerID, policy.credentialName, secretName, record, err)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return secrets.SecretRecord{}, err
+	}
+	return record, nil
+}
+
+func deleteRuntimeSecret(ctx context.Context, svc *secrets.Service, platformOrgID string, policies map[spiffeid.ID]runtimeSecretPolicy, secretName string) (secrets.SecretRecord, error) {
+	ctx, span := apiTracer.Start(ctx, "secrets.platform.delete")
+	defer span.End()
+	ctx = secrets.ContextWithOpenBaoAuditInfo(ctx)
+
+	peerID, ok := workloadauth.PeerIDFromContext(ctx)
+	if !ok {
+		err := fmt.Errorf("%w: missing SPIFFE peer identity", secrets.ErrForbidden)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return secrets.SecretRecord{}, err
+	}
+	policy, ok := policies[peerID]
+	if !ok {
+		err := fmt.Errorf("%w: SPIFFE peer is not allowed to delete platform runtime secrets", secrets.ErrForbidden)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return secrets.SecretRecord{}, err
+	}
+	secretName = strings.TrimSpace(secretName)
+	if secretName == "" {
+		err := fmt.Errorf("%w: runtime secret name is required", secrets.ErrInvalidArgument)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return secrets.SecretRecord{}, err
+	}
+	if !runtimeSecretAllowed(policy, secretName) {
+		err := fmt.Errorf("%w: platform runtime secret %q is not allowed for %s", secrets.ErrForbidden, secretName, policy.credentialName)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return secrets.SecretRecord{}, err
+	}
+	span.SetAttributes(
+		attribute.String("verself.org_id", platformOrgID),
+		attribute.String("spiffe.peer_id", peerID.String()),
+		attribute.String("verself.runtime_secret_consumer", policy.credentialName),
+		attribute.Int("verself.secret_count", 1),
+	)
+	principal := secrets.Principal{
+		OrgID:           platformOrgID,
+		Subject:         peerID.String(),
+		Type:            "service_workload",
+		AuthMethod:      "spiffe_mtls",
+		CredentialID:    peerID.String(),
+		CredentialName:  policy.credentialName,
+		OpenBaoRole:     runtimeSecretWriteOpenBaoRole(platformOrgID),
+		UseWorkloadSVID: true,
+	}
+	record, err := svc.DeleteSecret(ctx, principal, secrets.KindSecret, secretName, secrets.Scope{Level: secrets.ScopeOrg})
+	auditRuntimeSecretDelete(ctx, platformOrgID, peerID, policy.credentialName, secretName, record, err)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -915,6 +1008,19 @@ func runtimeSecretWriteOpenBaoRole(orgID string) string {
 	return "secrets-runtime-write-" + strings.TrimSpace(orgID)
 }
 
+func runtimeSecretAllowed(policy runtimeSecretPolicy, secretName string) bool {
+	secretName = strings.TrimSpace(secretName)
+	if _, allowed := policy.secretNames[secretName]; allowed {
+		return true
+	}
+	for _, prefix := range policy.secretNamePrefixes {
+		if strings.HasPrefix(secretName, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeRuntimeSecretPolicies(source *workloadapi.X509Source, items []RuntimeSecretPolicy) (map[spiffeid.ID]runtimeSecretPolicy, error) {
 	out := make(map[spiffeid.ID]runtimeSecretPolicy, len(items))
 	for _, item := range items {
@@ -929,7 +1035,7 @@ func normalizeRuntimeSecretPolicies(source *workloadapi.X509Source, items []Runt
 		if _, exists := out[peerID]; exists {
 			return nil, fmt.Errorf("duplicate runtime secret policy for %s", peerID.String())
 		}
-		secretNames, err := normalizeRuntimeSecretNames(item.SecretNames)
+		secretNames, secretNamePrefixes, err := normalizeRuntimeSecretSelectors(item.SecretNames, item.SecretNamePrefixes)
 		if err != nil {
 			return nil, err
 		}
@@ -938,34 +1044,57 @@ func normalizeRuntimeSecretPolicies(source *workloadapi.X509Source, items []Runt
 			allowed[secretName] = struct{}{}
 		}
 		out[peerID] = runtimeSecretPolicy{
-			credentialName: service,
-			secretNames:    allowed,
+			credentialName:     service,
+			secretNames:        allowed,
+			secretNamePrefixes: secretNamePrefixes,
 		}
 	}
 	return out, nil
 }
 
-func normalizeRuntimeSecretNames(secretNames []string) ([]string, error) {
-	if len(secretNames) == 0 {
-		return nil, fmt.Errorf("%w: at least one runtime secret is required", secrets.ErrInvalidArgument)
+func normalizeRuntimeSecretSelectors(secretNames []string, secretNamePrefixes []string) ([]string, []string, error) {
+	if len(secretNames) == 0 && len(secretNamePrefixes) == 0 {
+		return nil, nil, fmt.Errorf("%w: at least one runtime secret selector is required", secrets.ErrInvalidArgument)
 	}
 	if len(secretNames) > 32 {
-		return nil, fmt.Errorf("%w: at most 32 runtime secrets are allowed", secrets.ErrInvalidArgument)
+		return nil, nil, fmt.Errorf("%w: at most 32 runtime secrets are allowed", secrets.ErrInvalidArgument)
 	}
-	out := make([]string, 0, len(secretNames))
+	if len(secretNamePrefixes) > 16 {
+		return nil, nil, fmt.Errorf("%w: at most 16 runtime secret prefixes are allowed", secrets.ErrInvalidArgument)
+	}
+	names := make([]string, 0, len(secretNames))
 	seen := make(map[string]struct{}, len(secretNames))
 	for _, name := range secretNames {
 		name = strings.TrimSpace(name)
 		if name == "" {
-			return nil, fmt.Errorf("%w: runtime secret name is required", secrets.ErrInvalidArgument)
+			return nil, nil, fmt.Errorf("%w: runtime secret name is required", secrets.ErrInvalidArgument)
+		}
+		if strings.ContainsAny(name, "/\x00\r\n\t") {
+			return nil, nil, fmt.Errorf("%w: runtime secret name cannot contain path or control characters", secrets.ErrInvalidArgument)
 		}
 		if _, exists := seen[name]; exists {
-			return nil, fmt.Errorf("%w: duplicate runtime secret %q", secrets.ErrInvalidArgument, name)
+			return nil, nil, fmt.Errorf("%w: duplicate runtime secret %q", secrets.ErrInvalidArgument, name)
 		}
 		seen[name] = struct{}{}
-		out = append(out, name)
+		names = append(names, name)
 	}
-	return out, nil
+	prefixes := make([]string, 0, len(secretNamePrefixes))
+	seenPrefixes := make(map[string]struct{}, len(secretNamePrefixes))
+	for _, prefix := range secretNamePrefixes {
+		prefix = strings.TrimSpace(prefix)
+		if prefix == "" {
+			return nil, nil, fmt.Errorf("%w: runtime secret name prefix is required", secrets.ErrInvalidArgument)
+		}
+		if strings.ContainsAny(prefix, "/\x00\r\n\t") {
+			return nil, nil, fmt.Errorf("%w: runtime secret name prefix cannot contain path or control characters", secrets.ErrInvalidArgument)
+		}
+		if _, exists := seenPrefixes[prefix]; exists {
+			return nil, nil, fmt.Errorf("%w: duplicate runtime secret prefix %q", secrets.ErrInvalidArgument, prefix)
+		}
+		seenPrefixes[prefix] = struct{}{}
+		prefixes = append(prefixes, prefix)
+	}
+	return names, prefixes, nil
 }
 
 func auditRuntimeSecret(ctx context.Context, platformOrgID string, peerID spiffeid.ID, credentialName string, secretName string, value secrets.SecretValue, err error) {
@@ -1062,6 +1191,55 @@ func auditRuntimeSecretWrite(ctx context.Context, platformOrgID string, peerID s
 		apiActivity.HTTPStatus = 500
 		apiActivity.StatusCode = "platform-runtime-secret-write-failed"
 		apiActivity.StatusDetail = "platform-runtime-secret-write-failed"
+	}
+	sendGovernanceAPIActivity(ctx, apiActivity)
+}
+
+func auditRuntimeSecretDelete(ctx context.Context, platformOrgID string, peerID spiffeid.ID, credentialName string, secretName string, record secrets.SecretRecord, err error) {
+	baoInfo, _ := secrets.OpenBaoAuditInfoFromContext(ctx)
+	secretMount := "openbao"
+	openBaoRequestID := ""
+	openBaoAccessorHash := ""
+	if baoInfo != nil {
+		secretMount = firstNonEmpty(baoInfo.Mount, secretMount)
+		openBaoRequestID = baoInfo.RequestID
+		openBaoAccessorHash = baoInfo.AccessorHash
+	}
+	deleteDecision, deleteStatus := apiActivityResult("allowed")
+	apiActivity := governanceAPIActivity{
+		OrgID:                 platformOrgID,
+		APIService:            "secrets-service",
+		APIOperation:          "delete-platform-runtime-secret",
+		APIEventCode:          "secrets.secret.delete",
+		APIAction:             "delete",
+		ActorType:             "service_workload",
+		ActorUID:              credentialName,
+		CredentialUID:         peerID.String(),
+		Permission:            "secrets:secret:delete",
+		ResourceType:          "secret",
+		HTTPStatus:            200,
+		AuthorizationDecision: deleteDecision,
+		Status:                deleteStatus,
+		StatusCode:            "200",
+		Unmapped: compactAPIActivityUnmapped(map[string]any{
+			"verself.target_path_hash":      secrets.SecretPathHash(platformOrgID, secrets.KindSecret, secretName, secrets.Scope{Level: secrets.ScopeOrg}),
+			"verself.target_scope":          secrets.ScopeOrg,
+			"verself.content_sha256":        hashTextForAPIActivity(secretName),
+			"verself.secret_mount":          secretMount,
+			"verself.secret_operation":      "delete",
+			"verself.openbao_request_id":    openBaoRequestID,
+			"verself.openbao_accessor_hash": openBaoAccessorHash,
+		}),
+	}
+	if err == nil {
+		apiActivity.ResourceUID = record.SecretID
+		apiActivity.Unmapped["verself.secret_version"] = record.CurrentVersion
+	}
+	if err != nil {
+		apiActivity.AuthorizationDecision, apiActivity.Status = apiActivityResult("error")
+		apiActivity.HTTPStatus = 500
+		apiActivity.StatusCode = "platform-runtime-secret-delete-failed"
+		apiActivity.StatusDetail = "platform-runtime-secret-delete-failed"
 	}
 	sendGovernanceAPIActivity(ctx, apiActivity)
 }

@@ -536,7 +536,7 @@ func (r *ForgejoRunner) CleanupRunner(ctx context.Context, allocationID uuid.UUI
 	}); err != nil {
 		return err
 	}
-	_ = r.service.storeQueries().DeleteRunnerBootstrapConfig(ctx, store.DeleteRunnerBootstrapConfigParams{AllocationID: allocationID})
+	_ = r.service.deleteRunnerBootstrapConfig(ctx, allocationID)
 	return nil
 }
 

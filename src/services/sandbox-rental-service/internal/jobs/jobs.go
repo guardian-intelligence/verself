@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	billingclient "github.com/verself/billing-service/client"
 	"github.com/verself/sandbox-rental-service/internal/store"
+	secretsclient "github.com/verself/secrets-service/client"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -208,6 +209,7 @@ type Service struct {
 	CHDatabase             string
 	Orchestrator           Runner
 	Billing                *billingclient.Client
+	Secrets                *secretsclient.Client
 	Bounds                 VMResourceBounds
 	GitHubRunner           *GitHubRunner
 	ForgejoRunner          *ForgejoRunner
@@ -422,10 +424,17 @@ func (s *Service) Submit(ctx context.Context, orgID string, actorID string, req 
 	if err := s.insertExecutionFilesystemMounts(ctx, tx, executionID, mounts); err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
+	bootstrapSecretName := ""
 	if req.WorkloadKind == WorkloadKindRunner && req.RunnerAllocationID != uuid.Nil {
-		if err := s.attachRunnerAllocationExecutionTx(ctx, tx, req.RunnerAllocationID, executionID, attemptID, req.RunnerBootstrapKind, req.RunnerBootstrapPayload); err != nil {
+		bootstrapSecretName, err = s.attachRunnerAllocationExecutionTx(ctx, tx, req.RunnerAllocationID, executionID, attemptID, req.RunnerBootstrapKind, req.RunnerBootstrapPayload)
+		if err != nil {
 			return uuid.Nil, uuid.Nil, err
 		}
+		defer func() {
+			if err != nil && bootstrapSecretName != "" {
+				_ = s.deleteRunnerBootstrapSecret(context.Background(), bootstrapSecretName, "submit-failed:"+attemptID.String())
+			}
+		}()
 	}
 	if err := s.enqueueExecutionAdvance(ctx, tx, executionID, attemptID, orgID, actorID, correlationID); err != nil {
 		return uuid.Nil, uuid.Nil, err

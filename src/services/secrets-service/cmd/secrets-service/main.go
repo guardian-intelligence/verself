@@ -176,6 +176,8 @@ func run() error {
 				secretsclient.SandboxGitHubPrivateKeyName,
 				secretsclient.SandboxGitHubWebhookSecretName,
 				secretsclient.SandboxGitHubClientSecretName,
+			}, SecretNamePrefixes: []string{
+				secretsclient.SandboxRunnerBootstrapSecretPrefix,
 			}},
 			{Service: workloadauth.ServiceMailbox, SecretNames: []string{
 				secretsclient.MailboxResendAPIKeyName,
@@ -183,6 +185,11 @@ func run() error {
 			}},
 			{Service: workloadauth.ServiceNotifications, SecretNames: []string{
 				secretsclient.NotificationsResendAPIKeyName,
+			}},
+		},
+		RuntimeSecretWritePolicies: []secretsapi.RuntimeSecretPolicy{
+			{Service: workloadauth.ServiceSandboxRental, SecretNamePrefixes: []string{
+				secretsclient.SandboxRunnerBootstrapSecretPrefix,
 			}},
 		},
 	})

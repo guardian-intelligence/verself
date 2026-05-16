@@ -57,6 +57,23 @@ func (q *Queries) DeleteRunnerBootstrapConfig(ctx context.Context, arg DeleteRun
 	return err
 }
 
+const getRunnerBootstrapSecretNameByAllocation = `-- name: GetRunnerBootstrapSecretNameByAllocation :one
+SELECT bootstrap_secret_name
+FROM runner_bootstrap_configs
+WHERE allocation_id = $1
+`
+
+type GetRunnerBootstrapSecretNameByAllocationParams struct {
+	AllocationID uuid.UUID
+}
+
+func (q *Queries) GetRunnerBootstrapSecretNameByAllocation(ctx context.Context, arg GetRunnerBootstrapSecretNameByAllocationParams) (string, error) {
+	row := q.db.QueryRow(ctx, getRunnerBootstrapSecretNameByAllocation, arg.AllocationID)
+	var bootstrap_secret_name string
+	err := row.Scan(&bootstrap_secret_name)
+	return bootstrap_secret_name, err
+}
+
 const findAllocationForRunner = `-- name: FindAllocationForRunner :one
 SELECT allocation_id, requested_for_provider_job_id
 FROM runner_allocations
@@ -541,7 +558,7 @@ func (q *Queries) LockRunnerAllocationProvider(ctx context.Context, arg LockRunn
 }
 
 const lockRunnerBootstrapConfigByTokenHash = `-- name: LockRunnerBootstrapConfigByTokenHash :one
-SELECT allocation_id, bootstrap_kind, bootstrap_payload, expires_at, consumed_at
+SELECT allocation_id, bootstrap_kind, bootstrap_secret_name, expires_at, consumed_at
 FROM runner_bootstrap_configs
 WHERE fetch_token_hash = $1
 FOR UPDATE
@@ -552,11 +569,11 @@ type LockRunnerBootstrapConfigByTokenHashParams struct {
 }
 
 type LockRunnerBootstrapConfigByTokenHashRow struct {
-	AllocationID     uuid.UUID
-	BootstrapKind    string
-	BootstrapPayload string
-	ExpiresAt        pgtype.Timestamptz
-	ConsumedAt       pgtype.Timestamptz
+	AllocationID        uuid.UUID
+	BootstrapKind       string
+	BootstrapSecretName string
+	ExpiresAt           pgtype.Timestamptz
+	ConsumedAt          pgtype.Timestamptz
 }
 
 func (q *Queries) LockRunnerBootstrapConfigByTokenHash(ctx context.Context, arg LockRunnerBootstrapConfigByTokenHashParams) (LockRunnerBootstrapConfigByTokenHashRow, error) {
@@ -565,7 +582,7 @@ func (q *Queries) LockRunnerBootstrapConfigByTokenHash(ctx context.Context, arg 
 	err := row.Scan(
 		&i.AllocationID,
 		&i.BootstrapKind,
-		&i.BootstrapPayload,
+		&i.BootstrapSecretName,
 		&i.ExpiresAt,
 		&i.ConsumedAt,
 	)
@@ -717,7 +734,7 @@ func (q *Queries) UpdateRunnerAllocationAssignment(ctx context.Context, arg Upda
 
 const upsertRunnerBootstrapConfig = `-- name: UpsertRunnerBootstrapConfig :exec
 INSERT INTO runner_bootstrap_configs (
-    allocation_id, attempt_id, fetch_token_hash, bootstrap_kind, bootstrap_payload, expires_at, created_at
+    allocation_id, attempt_id, fetch_token_hash, bootstrap_kind, bootstrap_secret_name, expires_at, created_at
 ) VALUES (
     $1, $2, $3,
     $4, $5, $6, $7
@@ -726,19 +743,19 @@ ON CONFLICT (allocation_id) DO UPDATE SET
     attempt_id = EXCLUDED.attempt_id,
     fetch_token_hash = EXCLUDED.fetch_token_hash,
     bootstrap_kind = EXCLUDED.bootstrap_kind,
-    bootstrap_payload = EXCLUDED.bootstrap_payload,
+    bootstrap_secret_name = EXCLUDED.bootstrap_secret_name,
     expires_at = EXCLUDED.expires_at,
     consumed_at = NULL
 `
 
 type UpsertRunnerBootstrapConfigParams struct {
-	AllocationID     uuid.UUID
-	AttemptID        uuid.UUID
-	FetchTokenHash   string
-	BootstrapKind    string
-	BootstrapPayload string
-	ExpiresAt        pgtype.Timestamptz
-	CreatedAt        pgtype.Timestamptz
+	AllocationID        uuid.UUID
+	AttemptID           uuid.UUID
+	FetchTokenHash      string
+	BootstrapKind       string
+	BootstrapSecretName string
+	ExpiresAt           pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
 }
 
 func (q *Queries) UpsertRunnerBootstrapConfig(ctx context.Context, arg UpsertRunnerBootstrapConfigParams) error {
@@ -747,7 +764,7 @@ func (q *Queries) UpsertRunnerBootstrapConfig(ctx context.Context, arg UpsertRun
 		arg.AttemptID,
 		arg.FetchTokenHash,
 		arg.BootstrapKind,
-		arg.BootstrapPayload,
+		arg.BootstrapSecretName,
 		arg.ExpiresAt,
 		arg.CreatedAt,
 	)

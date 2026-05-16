@@ -984,7 +984,7 @@ func (r *GitHubRunner) CleanupRunner(ctx context.Context, allocationID uuid.UUID
 	}); err != nil {
 		return err
 	}
-	_ = r.service.storeQueries().DeleteRunnerBootstrapConfig(ctx, store.DeleteRunnerBootstrapConfigParams{AllocationID: allocationID})
+	_ = r.service.deleteRunnerBootstrapConfig(ctx, allocationID)
 	return nil
 }
 

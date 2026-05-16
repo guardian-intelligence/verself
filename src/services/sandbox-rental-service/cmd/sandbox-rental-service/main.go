@@ -272,6 +272,7 @@ func run() error {
 		CHDatabase:             "verself",
 		Orchestrator:           orchestrator,
 		Billing:                billingClient,
+		Secrets:                secretsClient,
 		Bounds:                 hostBounds,
 		Logger:                 logger,
 		WorkloadTimeout:        time.Duration(workloadTimeout) * time.Second,
