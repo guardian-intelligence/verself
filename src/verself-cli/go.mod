@@ -2,7 +2,10 @@ module github.com/verself/verself-cli
 
 go 1.25.8
 
-require github.com/verself/verself-go v0.0.0
+require (
+	github.com/bazelbuild/rules_go v0.60.0
+	github.com/verself/verself-go v0.0.0
+)
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
