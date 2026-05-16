@@ -86,7 +86,10 @@ func shouldSkipDir(rel string) bool {
 
 func shouldScanFile(rel string) bool {
 	switch rel {
-	case "MODULE.bazel", "MODULE.aspect", "maven_install.json":
+	case "MODULE.bazel", "MODULE.aspect":
+		return true
+	}
+	if filepath.Base(rel) == "maven_install.json" {
 		return true
 	}
 	if isBootstrapScript(rel) {
@@ -143,7 +146,7 @@ func scanFile(path, rel string) ([]Finding, error) {
 	if rel == "src/websites/.npmrc" {
 		findings = append(findings, scanNpmrcSettings(rel, text)...)
 	}
-	if rel == "maven_install.json" {
+	if filepath.Base(rel) == "maven_install.json" {
 		findings = append(findings, scanMavenLock(rel, raw)...)
 		return dedupeFindings(findings), nil
 	}

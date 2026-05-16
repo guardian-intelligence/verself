@@ -38,7 +38,7 @@ maven.install(
         "software.amazon.smithy:smithy-bom:1.70.0",
     ],
     known_contributing_modules = ["protobuf"],
-    lock_file = "//:maven_install.json",
+    lock_file = "//src/smithy/tools:maven_install.json",
     repositories = [
         "https://repo1.maven.org/maven2",
     ],
