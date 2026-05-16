@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -53,24 +54,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) Ready(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.stalwartBaseURL+"/jmap/session", nil)
-	if err != nil {
-		return fmt.Errorf("build readiness request: %w", err)
-	}
-	resp, err := h.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("stalwart jmap session request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("stalwart returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	return nil
-}
-
 func (h *Handler) proxySession(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.stalwartBaseURL+"/jmap/session", nil)
 	if err != nil {
@@ -79,6 +62,7 @@ func (h *Handler) proxySession(ctx context.Context, w http.ResponseWriter, r *ht
 	if auth := r.Header.Get("Authorization"); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
+	req.Header.Set("X-Forwarded-For", forwardedFor(r))
 
 	resp, err := h.client.Do(req)
 	if err != nil {
@@ -153,6 +137,22 @@ func websocketBaseURL(publicBaseURL string) (string, error) {
 		return "", fmt.Errorf("unsupported public base URL scheme %q", u.Scheme)
 	}
 	return strings.TrimRight(u.String(), "/"), nil
+}
+
+// forwardedFor returns the X-Forwarded-For value to send to Stalwart: the
+// inbound proxy chain (HAProxy sets it from the public client) with this hop's
+// peer appended, or just the peer when the request arrived without a chain.
+// Stalwart has use-x-forwarded enabled and logs a warning on every request
+// that reaches it without this header.
+func forwardedFor(r *http.Request) string {
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		peer = host
+	}
+	if prior := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); prior != "" {
+		return prior + ", " + peer
+	}
+	return peer
 }
 
 func copyHeaders(dst, src http.Header) {

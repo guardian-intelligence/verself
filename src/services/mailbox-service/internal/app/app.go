@@ -56,9 +56,6 @@ func (s *Service) StartBackground(ctx context.Context) {
 }
 
 func (s *Service) Ready(ctx context.Context) error {
-	if err := s.proxy.Ready(ctx); err != nil {
-		return err
-	}
 	if s.store != nil {
 		if err := s.store.Ready(ctx); err != nil {
 			return err
