@@ -3,6 +3,7 @@ module github.com/verself/operator-tools
 go 1.25.8
 
 require (
+	github.com/bazelbuild/rules_go v0.60.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/tigerbeetle/tigerbeetle-go v0.17.1

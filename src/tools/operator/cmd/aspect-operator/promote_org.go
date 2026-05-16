@@ -142,11 +142,11 @@ func promoteOrg(rt *opruntime.Runtime, opts *promoteOrgOptions) (err error) {
 	}
 
 	if current == opts.tier {
-		fmt.Fprintf(os.Stdout, "promote-org: %s (%s) already at trust_tier=%s\n", opts.slug, orgID, opts.tier)
+		_, _ = fmt.Fprintf(os.Stdout, "promote-org: %s (%s) already at trust_tier=%s\n", opts.slug, orgID, opts.tier)
 		return nil
 	}
 	if opts.dryRun {
-		fmt.Fprintf(os.Stdout, "promote-org: DRY RUN %s (%s) trust_tier %q -> %q\n", opts.slug, orgID, current, opts.tier)
+		_, _ = fmt.Fprintf(os.Stdout, "promote-org: DRY RUN %s (%s) trust_tier %q -> %q\n", opts.slug, orgID, current, opts.tier)
 		return nil
 	}
 
@@ -163,7 +163,7 @@ WHERE orgs.trust_tier IS DISTINCT FROM EXCLUDED.trust_tier`,
 	if err = tx.Commit(ctx); err != nil {
 		return fmt.Errorf("promote-org: commit: %w", err)
 	}
-	fmt.Fprintf(os.Stdout, "promote-org: %s (%s) trust_tier %q -> %q\n", opts.slug, orgID, current, opts.tier)
+	_, _ = fmt.Fprintf(os.Stdout, "promote-org: %s (%s) trust_tier %q -> %q\n", opts.slug, orgID, current, opts.tier)
 	return nil
 }
 
