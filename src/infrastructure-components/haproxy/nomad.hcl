@@ -88,7 +88,7 @@ backend be_route_product_mail_stalwart_jmap
 [[ with nomadService "stalwart-http" ]]
 [[ range $i, $svc := . ]]
   use-server srv_[[ $i ]] if stalwart_direct
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_route_product_mail_stalwart_jmap_srv_[[ $i ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] send-proxy-v2 check inter 1s fall 1 rise 1 guid be_route_product_mail_stalwart_jmap_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"

@@ -17,6 +17,14 @@ tls.implicit = false
 bind = ["{{ stalwart_http_address }}"]
 protocol = "http"
 tls.implicit = false
+# HAProxy fronts this listener and speaks PROXY protocol v2 so Stalwart sees
+# the real client (for server.blocked-ip.*, auth bans, audit) instead of the
+# loopback peer. Trust is scoped to loopback because every connection to this
+# listener — HAProxy's send-proxy-v2 data path and the local admin client —
+# originates from 127.0.0.1. A trusted-source connection without a PROXY
+# header (HAProxy's health check, the local admin client) is processed
+# normally, so no health-check special-casing is needed.
+proxy.trusted-networks = ["127.0.0.0/8", "::1"]
 
 # --- TLS ---
 # HAProxy's lego renewal unit writes this material from the product
@@ -53,7 +61,6 @@ local-keys = [
 
 [http]
 url = "'https://{{ stalwart_domain }}'"
-use-x-forwarded = true
 allowed-endpoint.0.if = "starts_with(url_path, '/api') && remote_ip != '127.0.0.1'"
 allowed-endpoint.0.then = "404"
 allowed-endpoint.1.else = "200"
