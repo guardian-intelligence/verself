@@ -1,19 +1,27 @@
-import { type CSSProperties, type HTMLAttributes, type RefObject, useRef } from "react";
+import {
+  type CSSProperties,
+  type HTMLAttributes,
+  type RefObject,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { squircleSvgPath } from "./squircle-path";
 
-// Continuous-corner (Apple superellipse) primitive. Post-audit, `useSquircle`
-// measures the box (ResizeObserver) and feeds figma-squircle's getSvgPath into
-// `clip-path: path(...)` — the canonical port of Figma's reverse-engineered
-// Apple corner-smoothing math (cornerSmoothing 0.6). SSR/no-measure falls back
-// to a plain large border-radius, so there is never a hydration shift.
+// Continuous-corner (Apple superellipse) primitive. `useSquircle` measures the
+// element with a ResizeObserver and applies the figma-squircle curve as
+// `clip-path: path(...)` (layout-neutral, iOS-Safari supported). Before the
+// first client measurement (SSR + first paint) it returns a plain
+// border-radius — identical on the server and the first client render, so
+// there is no hydration mismatch; the clip swaps in after mount.
 //
-// Deliberately NOT a polymorphic `as` component: TanStack Router's <Link> prop
-// surface is too rich to wrap in an `as` generic without the props collapsing
-// to `never`. Instead the corner is a hook returning {ref, style} that applies
-// cleanly to a plain <div> (the tray/card) or a <Link> (the pill) with full
-// typing. <Squircle> is the div convenience wrapper; the pill uses the hook
-// directly. One radius source either way; concentric() keeps nesting aligned.
+// Deliberately NOT a polymorphic `as` component: TanStack <Link>'s prop
+// surface collapses an `as` generic to `never`. The corner is a hook returning
+// {ref, style} that applies cleanly to a <div> (tray/card) or a <Link> (pill)
+// with full typing. <Squircle> is the div convenience wrapper.
 
-export const CORNER_SMOOTHING = 0.6;
+export const CORNER_SMOOTHING = 0.6; // Apple's app-icon value.
 
 // Apple's nested-rounded-rect rule: inner radius = outer radius − inset.
 export function concentric(outerRadius: number, inset: number): number {
@@ -25,15 +33,46 @@ export type SquircleHandle<T extends HTMLElement> = {
   readonly style: CSSProperties;
 };
 
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? () => {} : useLayoutEffect;
+
 export function useSquircle<T extends HTMLElement = HTMLDivElement>(
   cornerRadius: number,
   cornerSmoothing: number = CORNER_SMOOTHING,
 ): SquircleHandle<T> {
   const ref = useRef<T | null>(null);
-  void cornerSmoothing;
-  // TODO(audit): ResizeObserver-measure ref → getSvgPath → clipPath: path(...).
-  // Until then the fallback is a plain large border-radius (no hydration shift).
-  return { ref, style: { borderRadius: cornerRadius } };
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      setBox((prev) =>
+        prev && prev.w === rect.width && prev.h === rect.height
+          ? prev
+          : { w: rect.width, h: rect.height },
+      );
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const style = useMemo<CSSProperties>(() => {
+    if (!box || box.w <= 0 || box.h <= 0) {
+      return { borderRadius: cornerRadius }; // SSR / pre-measure fallback
+    }
+    const d = squircleSvgPath({
+      width: box.w,
+      height: box.h,
+      cornerRadius,
+      cornerSmoothing,
+    });
+    return { clipPath: `path('${d}')` };
+  }, [box, cornerRadius, cornerSmoothing]);
+
+  return { ref, style };
 }
 
 type SquircleProps = HTMLAttributes<HTMLDivElement> & {

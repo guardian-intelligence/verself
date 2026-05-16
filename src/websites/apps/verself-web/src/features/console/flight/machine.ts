@@ -1,8 +1,8 @@
 import { useRef } from "react";
 import { useElapsedTimeNow } from "@verself/ui/hooks/use-elapsed-time";
 import type { Flight } from "./model";
-import { monotone, morphSpec, phaseOf, project, type PhaseKind, type Projection } from "./phase";
-import { useAccentSpring, useNumberSpring } from "./springs";
+import { monotone, morphSpec, phaseOf, project, type Phase, type Projection } from "./phase";
+import { useAccentSpring, useSpring } from "./springs";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Conflated state-machine driver.
@@ -14,28 +14,21 @@ import { useAccentSpring, useNumberSpring } from "./springs";
 // CAPACITY-1 CONFLATING CELL (last-write-wins register), not a queue:
 //
 //   producer (each data update):  cell ← snapshot        O(1), overwrites
-//   consumer (a morph boundary):  read cell → phaseOf → maybe start next morph
+//   consumer (a morph boundary):  read cell → phaseOf → maybe advance
 //
-// "Dequeue 97, then go to 98" is not an explicit dequeue: we only ever store 1.
-// Skipped phases were never recorded. This is the standard conflation /
-// signal-sampling pattern (Rx `conflate`+`sample`, game-loop "latest input
-// wins", a size-1 ring). In React the cell is a ref and the sampler is the
-// spring's rest/step callback.
+// "Dequeue 97, then go to 98" is not an explicit dequeue: we only ever store 1;
+// skipped phases were never recorded. Standard conflation / signal-sampling
+// (Rx conflate+sample, game-loop "latest input wins", a size-1 ring). Here the
+// cell is a ref and the morph boundary is the progress spring reaching rest.
 //
 // Discrete vs. continuous:
-//  • Discrete phase is sampled at morph boundaries → intermediates lopped off.
-//  • Continuous quantities (progress t, accent) use spring RETARGETING, which
+//  • Discrete phase advances only at a morph boundary (spring at rest) unless
+//    the (from→to) is `interruptible` (e.g. →late) — intermediates lopped.
+//  • Continuous quantities (progress, accent) ride spring retargeting, which
 //    conflates by physics (velocity-preserving redirect) — smooth, no replay.
-//  • A transition flagged `interruptible` in phase.ts (e.g. →late) preempts an
-//    in-flight morph instead of waiting for its boundary.
-//
-// Engine note: springs.ts is still stubbed for this audit, so the morph
-// boundary is effectively immediate and this collapses to "track latest". The
-// conflation structure here is what is being audited; wiring @react-spring/web
-// only changes WHEN the sampler fires, not the shape below.
+//  • Monotonicity is enforced on the target only; the spring eases toward a
+//    non-decreasing value, so the marker is structurally unable to reverse.
 // ────────────────────────────────────────────────────────────────────────────
-
-type CommittedPhase = { readonly kind: PhaseKind };
 
 export function useFlightMachine(flight: Flight): Projection {
   // The 1s clock re-derives time-based phase against the frozen baseline.
@@ -46,48 +39,29 @@ export function useFlightMachine(flight: Flight): Projection {
   const cellRef = useRef<Flight>(flight);
   cellRef.current = flight;
 
-  // Committed phase + morph flag. The sampler reads the cell at a morph
-  // boundary (or immediately, for an interruptible target) and only then
-  // advances — so phases that came and went between boundaries are skipped.
-  const committedRef = useRef<CommittedPhase>({ kind: phaseOf(flight, nowMs).kind });
+  // Committed phase + the previous frame's spring-rest reading (the morph
+  // boundary). Reading last frame's rest avoids a phase→target→spring cycle.
+  const committedRef = useRef<Phase>(phaseOf(flight, nowMs));
+  const restRef = useRef(true);
 
   const desired = phaseOf(cellRef.current, nowMs);
   const committed = committedRef.current;
-  const canAdvanceNow =
+  const canAdvance =
     desired.kind === committed.kind ||
     morphSpec(committed.kind, desired.kind).interruptible ||
-    !isMorphing(); // TODO(audit): spring.onRest gates this once engines wire
-
-  const phase = canAdvanceNow ? desired : (committedToPhase(committed) ?? desired);
-  if (canAdvanceNow) committedRef.current = { kind: phase.kind };
+    restRef.current;
+  const phase = canAdvance ? desired : committed;
+  committedRef.current = phase;
 
   const target = project(phase, cellRef.current, nowMs);
 
-  // Continuous channels: monotone gate on the target, then the spring.
+  // Continuous channel: monotone gate on the target, then the spring.
   const maxRef = useRef(0);
   maxRef.current = monotone(maxRef.current, target.progressTarget);
+  const progress = useSpring(maxRef.current);
+  restRef.current = progress.atRest;
 
-  return {
-    ...target,
-    progressTarget: useNumberSpring(maxRef.current),
-    accent: target.accent,
-    // accent string is resolved+crossfaded by the component via useAccentSpring;
-    // exposed here only so the renderer stays a pure Projection consumer.
-  } satisfies Projection & { accent: typeof target.accent };
-}
-
-// Stubbed until @react-spring/web lands: with instant springs there is no
-// in-flight morph, so the boundary is always open.
-function isMorphing(): boolean {
-  return false; // TODO(audit): spring not-at-rest
-}
-
-// `committed` only retains the kind; if we cannot advance we keep showing the
-// last fully-projected phase. enroute needs its variant payload, which the
-// renderer already has from the prior Projection — so null here means "reuse
-// desired" (safe: only reached when engines are stubbed and boundary is open).
-function committedToPhase(_c: CommittedPhase): null {
-  return null;
+  return { ...target, progressTarget: progress.value };
 }
 
 export { useAccentSpring };

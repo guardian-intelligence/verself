@@ -14,15 +14,15 @@ export type ArcBox = { readonly width: number; readonly height: number };
 // settles toward the destination (matches Image #1/#2). Control points are a
 // fraction of the box so the curve is resolution-independent.
 export function arcGeometry({ width, height }: ArcBox): Bezier {
-  // TODO(audit): final control-point ratios are tuned against the reference
-  // screenshots after the composition is approved.
-  const y0 = height * 0.62;
-  const y3 = height * 0.46;
+  // Shallow, confident lob: leaves the left endpoint low, crests just shy of
+  // the top, settles slightly higher into the right endpoint — the Flighty
+  // path shape. All control points stay within [0,height] so nothing clips.
+  // Ratios are refined against the reference screenshots during tuning.
   return [
-    { x: 0, y: y0 },
-    { x: width * 0.34, y: -height * 0.14 },
-    { x: width * 0.66, y: height * 0.06 },
-    { x: width, y: y3 },
+    { x: 0, y: height * 0.62 },
+    { x: width * 0.3, y: height * 0.06 },
+    { x: width * 0.62, y: height * 0.02 },
+    { x: width, y: height * 0.46 },
   ];
 }
 
@@ -55,10 +55,30 @@ export type SplitPaths = {
   readonly dotted: string;
 };
 
+function lerpPt(a: Point, b: Point, t: number): Point {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function fmt(p: Point): string {
+  return `${p.x.toFixed(3)} ${p.y.toFixed(3)}`;
+}
+
 // De Casteljau subdivision at t -> two sub-bezier `d` strings. Splitting the
-// curve itself (rather than dash-offset hacks) keeps the dotted tail's dash
-// rhythm stable as the marker advances.
-export function splitAt(_b: Bezier, _t: number): SplitPaths {
-  // TODO(audit): implement De Casteljau subdivision once the tree is approved.
-  return { solid: "", dotted: "" };
+// curve itself (not a dash-offset hack) keeps the dotted tail's dash rhythm
+// stable as the marker advances. Below/above the [eps,1-eps] band one side is
+// empty so a round line-cap never leaves a stray dot at an endpoint.
+const SPLIT_EPS = 1e-3;
+export function splitAt(b: Bezier, t: number): SplitPaths {
+  const u = Math.min(Math.max(t, 0), 1);
+  const [p0, p1, p2, p3] = b;
+  const a = lerpPt(p0, p1, u);
+  const bc = lerpPt(p1, p2, u);
+  const c = lerpPt(p2, p3, u);
+  const d = lerpPt(a, bc, u);
+  const e = lerpPt(bc, c, u);
+  const f = lerpPt(d, e, u); // point on the curve at u
+  return {
+    solid: u <= SPLIT_EPS ? "" : `M ${fmt(p0)} C ${fmt(a)} ${fmt(d)} ${fmt(f)}`,
+    dotted: u >= 1 - SPLIT_EPS ? "" : `M ${fmt(f)} C ${fmt(e)} ${fmt(c)} ${fmt(p3)}`,
+  };
 }

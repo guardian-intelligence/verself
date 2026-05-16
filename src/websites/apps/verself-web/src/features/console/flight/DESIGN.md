@@ -9,10 +9,13 @@ are owned in `flight-widget.tsx`; the rules and structure here are fixed.
 ## Corner radius framework
 
 Every rounded surface is a continuous-corner superellipse (Apple "squircle"),
-never a circular `border-radius`. The geometry comes from `figma-squircle`'s
-`getSvgPath` — the canonical port of Figma's reverse-engineered Apple
-corner-smoothing math — fed into `clip-path: path(...)`, which is layout-neutral
-and supported on iOS Safari.
+never a circular `border-radius`. The geometry is figma-squircle's
+corner-smoothing math (the canonical port of Figma's reverse-engineered Apple
+curve) **vendored verbatim** into `squircle-path.ts` — MIT, attributed, uniform
+radius only — fed into `clip-path: path(...)`, which is layout-neutral and
+iOS-Safari supported. It is vendored, not npm-installed: this repo's hardened
+npm supply-chain posture has no agent-side lockfile path, and reviewed pure-math
+source (no install scripts, no transitive deps) is the sanctioned mitigation.
 
 - `cornerSmoothing` is `0.6` everywhere (Apple's app-icon value).
 - Corner radius scales with the box; the Apple app-icon ratio is `22.37%` of
@@ -175,12 +178,15 @@ marker's position and rotation.
 
 ## Interpolation
 
-Spring physics come from `@react-spring/web` (`^10.0.3`, the react-spring
-monorepo line already cataloged for `@react-spring/three`), kept behind the
-`springs.ts` hooks so the component tree never imports the engine directly.
-Animated quantities: arc progress and marker glide, accent color crossfade on
-phase change, commit-pill scale-in, status-text opacity on phase swap.
-Monotonicity is enforced on the target, never inside the spring.
+Spring physics are a hand-rolled critically-damped spring (no overshoot — a
+flight marker must never bounce backward) on `requestAnimationFrame`, in
+`springs.ts`, kept behind hooks so the component tree never imports the engine
+directly. Vendored rather than `@react-spring/web` for the same supply-chain
+reason as the squircle math (no agent-side lockfile path); the physics is ~40
+lines and the monotone guarantee already lives in the machine. Animated
+quantities: arc progress and marker glide, and the accent oklch crossfade on
+phase change. Monotonicity is enforced on the target, never inside the spring;
+the spring's at-rest signal is the machine's discrete-phase morph boundary.
 
 ## Content and iconography
 

@@ -202,7 +202,7 @@ function FlightStatus({
       <p className="text-xl font-bold leading-tight" style={{ color: accent }}>
         {headline}
       </p>
-      <p className="mt-1 text-[0.95rem] font-medium" style={{ color: accent }}>
+      <p className="mt-1 text-[0.95rem] font-medium" style={{ color: accent, opacity: 0.82 }}>
         {detail}
       </p>
     </div>
