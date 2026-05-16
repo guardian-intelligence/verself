@@ -78,6 +78,7 @@ type nomadComponentDescriptor struct {
 	Provides      []string                  `json:"provides"`
 	Requires      []string                  `json:"requires"`
 	Sites         []string                  `json:"sites"`
+	TestTargets   []string                  `json:"test_targets"`
 	UnitID        string                    `json:"unit_id"`
 	Artifacts     []nomadDescriptorArtifact `json:"artifacts"`
 }
@@ -114,6 +115,9 @@ func buildDeployPlan(ctx context.Context, rt *runtime.Runtime, repoRoot, site, s
 	}
 	ordered, err := orderNomadComponents(descriptors)
 	if err != nil {
+		return nil, err
+	}
+	if err := runNomadComponentTests(ctx, repoRoot, ordered); err != nil {
 		return nil, err
 	}
 	forward, err := openNomadForward(ctx, rt, cfg.NomadAddr)

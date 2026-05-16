@@ -11,6 +11,7 @@ NomadComponentInfo = provider(
         "job_spec": "Single authored Nomad job spec File.",
         "provides": "Logical resources this component provides.",
         "requires": "Logical resources this component requires.",
+        "test_targets": "Bazel test targets that must pass before this component is deployed.",
     },
 )
 
@@ -85,6 +86,7 @@ def _nomad_component_impl(ctx):
         "provides": provides,
         "requires": requires,
         "sites": ctx.attr.sites,
+        "test_targets": ctx.attr.test_targets,
         "unit_id": ctx.attr.job_id,
     }
     _write_descriptor(ctx, descriptor, json.encode(descriptor_data) + "\n", inputs)
@@ -100,6 +102,7 @@ def _nomad_component_impl(ctx):
             job_spec = job_spec,
             provides = provides,
             requires = requires,
+            test_targets = ctx.attr.test_targets,
         ),
     ]
 
@@ -135,6 +138,9 @@ nomad_component = rule(
         ),
         "sites": attr.string_list(
             doc = "Sites where this component participates. Empty means all sites.",
+        ),
+        "test_targets": attr.string_list(
+            doc = "Bazel test targets that must pass before this component is deployed.",
         ),
     },
 )

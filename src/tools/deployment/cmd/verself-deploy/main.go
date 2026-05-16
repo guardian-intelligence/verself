@@ -36,8 +36,8 @@ usage:
   verself-deploy run --site=<site> [--sha=<rev>] [--repo-root=<path>]
 
 The run command assumes host bootstrap is complete. It discovers Bazel
-nomad_component targets, builds their artifacts, publishes missing artifacts,
-submits changed Nomad jobs by deploy wave, monitors deployments, and emits
-deploy spans.
+nomad_component targets, runs component-owned tests, builds their artifacts,
+publishes missing artifacts, submits changed Nomad jobs by deploy wave,
+monitors deployments, and emits deploy spans.
 `)
 }

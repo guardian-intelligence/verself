@@ -1,4 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "vm-orchestrator-cli_lib",
@@ -17,7 +18,9 @@ go_library(
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
     ],
 )
 
@@ -25,4 +28,16 @@ go_binary(
     name = "vm-orchestrator-cli",
     embed = [":vm-orchestrator-cli_lib"],
     visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "vm-orchestrator-cli_nomad_artifact",
+    binary = ":vm-orchestrator-cli",
+    output = "vm-orchestrator-cli",
+)
+
+go_test(
+    name = "vm-orchestrator-cli_test",
+    srcs = ["main_test.go"],
+    embed = [":vm-orchestrator-cli_lib"],
 )

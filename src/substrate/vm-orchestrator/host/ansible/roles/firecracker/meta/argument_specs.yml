@@ -1,42 +1,17 @@
 ---
 argument_specs:
   main:
-    short_description: "Firecracker host setup: KVM, jailer, vm-orchestrator daemon, image seeding"
+    short_description: "Firecracker host setup: KVM, jailer, networking, guest image staging"
     description:
       - "Installs Firecracker + jailer from topology catalog vars, configures KVM,"
-      - "creates the jailer user/group, deploys the vm-orchestrator daemon, and runs the"
-      - "vm-orchestrator-seed oneshot unit to materialize composable image zvols (including"
-      - "the boot image) via the SeedImage RPC. The role does not issue zfs(8), dd, or"
-      - "mkfs commands directly; the daemon owns image lifecycle behind the vm-clients"
-      - "socket-group capability boundary."
+      - "creates the jailer user/group, configures Firecracker guest networking,"
+      - "and verifies that guest image artifacts have been staged. The runtime"
+      - "daemon and image seeding are deployed by the vm-orchestrator Nomad unit."
     options:
       firecracker_zfs_pool:
         type: str
         default: vspool
-        description: "ZFS pool for composable image zvols and ephemeral VM job clones."
-
-      firecracker_image_dataset:
-        type: str
-        default: images
-        description: "ZFS dataset under firecracker_zfs_pool for composable image zvols."
-
-      firecracker_golden_dataset:
-        type: str
-        default: goldens
-        description: "ZFS dataset under firecracker_zfs_pool for immutable golden environment generations."
-
-      firecracker_workload_dataset:
-        type: str
-        default: workloads
-        description: "ZFS dataset under firecracker_zfs_pool for ephemeral VM job clones."
-
-      firecracker_default_substrate_ref:
-        type: str
-        default: substrate
-        description: >-
-          Composable image ref the daemon clones as the substrate root disk
-          for new leases. Toolchain images compose on top via
-          LeaseSpec.FilesystemMounts.
+        description: "ZFS pool checked by the Firecracker preflight."
 
       firecracker_jailer_root:
         type: path
@@ -78,6 +53,11 @@ argument_specs:
         default: /var/lib/verself/guest-images/manifest.json
         description: "Path to the substrate build manifest JSON (sha256, size, package_count)."
 
+      firecracker_toolchain_image_paths:
+        type: list
+        elements: path
+        description: "Toolchain ext4 images that must be staged before vm-orchestrator seeding."
+
       firecracker_zfs_arc_max_bytes:
         type: int
         default: 8589934592
@@ -102,21 +82,6 @@ argument_specs:
         type: str
         default: "10.255.0.1"
         description: "Host-only IPv4 address exposed on firecracker_host_service_interface."
-
-      firecracker_vm_orchestrator_binary_path:
-        type: path
-        default: /opt/verself/profile/bin/vm-orchestrator
-        description: "Profile path for the topology-built vm-orchestrator host daemon binary."
-
-      firecracker_vm_orchestrator_cli_path:
-        type: path
-        default: /opt/verself/profile/bin/vm-orchestrator-cli
-        description: "Profile path for the vm-orchestrator-cli binary used by the seed oneshot unit."
-
-      firecracker_vm_orchestrator_api_socket:
-        type: path
-        default: /run/vm-orchestrator/api.sock
-        description: "Unix domain socket for the vm-orchestrator API."
 
       firecracker_vm_orchestrator_socket_group:
         type: str

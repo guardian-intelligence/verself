@@ -10,10 +10,3 @@
     name: verself-firecracker-network.service
     state: restarted
     daemon_reload: true
-
-- name: Restart vm-orchestrator
-  listen: restart vm-orchestrator
-  ansible.builtin.systemd:
-    name: vm-orchestrator.service
-    state: restarted
-    daemon_reload: true

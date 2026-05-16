@@ -1,10 +1,7 @@
 ---
-# Firecracker host setup: KVM, jailer user/dirs, host networking, the
-# vm-orchestrator daemon, and the vm-orchestrator-seed oneshot unit that
-# materializes composable image zvols (substrate + every platform_toolchain
-# image) via the SeedImage RPC. The substrate ext4 + vmlinux + toolchain
-# ext4s land at /var/lib/verself/guest-images/ via the guest_rootfs role
-# that runs before this one.
+# Firecracker host setup: KVM, jailer user/dirs, host networking, and guest
+# image staging checks. The daemon and composable image seeding are owned by
+# the component-local vm-orchestrator Nomad job.
 
 - name: Build Firecracker release archive with Bazel
   delegate_to: localhost
@@ -312,52 +309,6 @@
     state: started
     daemon_reload: true
 
-- name: Install vm-orchestrator service
-  ansible.builtin.template:
-    src: vm-orchestrator.service.j2
-    dest: /etc/systemd/system/vm-orchestrator.service
-    mode: "0644"
-  notify: restart vm-orchestrator
-
-- name: Ensure vm-orchestrator service is enabled and started
-  ansible.builtin.systemd:
-    name: vm-orchestrator.service
-    enabled: true
-    state: started
-    daemon_reload: true
-
-- name: Restart vm-orchestrator when substrate Go tools changed
-  ansible.builtin.systemd:
-    name: vm-orchestrator.service
-    state: restarted
-    daemon_reload: true
-  when: substrate_profile_go_tools_needs_unpack | default(false) | bool
-
-- name: Flush vm-orchestrator handlers
-  ansible.builtin.meta: flush_handlers
-
-- name: Verify vm-orchestrator API socket is present
-  ansible.builtin.command: test -S {{ firecracker_vm_orchestrator_api_socket }}
-  register: firecracker_vm_orchestrator_socket
-  changed_when: false
-  retries: 30
-  delay: 1
-  until: firecracker_vm_orchestrator_socket.rc == 0
-
-- name: Read vm-orchestrator API socket permissions
-  ansible.builtin.command: stat -c '%a %G' {{ firecracker_vm_orchestrator_api_socket }}
-  register: firecracker_vm_orchestrator_socket_stat
-  changed_when: false
-
-- name: Assert vm-orchestrator API socket ACLs
-  ansible.builtin.assert:
-    that:
-      - firecracker_vm_orchestrator_socket_stat.stdout is search('^660 ')
-      - firecracker_vm_orchestrator_socket_stat.stdout is search(' ' ~ firecracker_vm_orchestrator_socket_group ~ '$')
-    fail_msg: >-
-      vm-orchestrator socket must be mode 660 and group {{ firecracker_vm_orchestrator_socket_group }};
-      got {{ firecracker_vm_orchestrator_socket_stat.stdout }}.
-
 # --- Guest image verification ---
 # Substrate built on the host by guest_rootfs role; toolchain images
 # Bazel-built and staged by guest_rootfs role.
@@ -383,63 +334,23 @@
     get_checksum: false
   register: firecracker_substrate_manifest
 
-- name: Verify dd_from_file source artifacts referenced by the seed catalog exist
+- name: Verify toolchain image artifacts exist
   ansible.builtin.stat:
     path: "{{ item }}"
     get_checksum: false
-  register: firecracker_seed_source_stats
-  loop: "{{ firecracker_seed_images | selectattr('strategy', 'equalto', 'dd_from_file') | map(attribute='source_path') | reject('equalto', '') | list }}"
+  register: firecracker_toolchain_image_stats
+  loop: "{{ firecracker_toolchain_image_paths }}"
 
-- name: Fail if guest images or seed sources are missing
+- name: Fail if guest image artifacts are missing
   ansible.builtin.fail:
     msg: >
       Guest images not found at {{ firecracker_kernel_path }},
       {{ firecracker_substrate_path }}, {{ firecracker_substrate_manifest_path }},
-      and/or one or more seed source paths.
+      and/or one or more toolchain image paths.
       The guest_rootfs role in the canonical site playbook must stage them
       before the firecracker role runs.
   when: >-
     not firecracker_guest_kernel.stat.exists
     or not firecracker_substrate.stat.exists
     or not firecracker_substrate_manifest.stat.exists
-    or (firecracker_seed_source_stats.results | rejectattr('stat.exists') | list | length > 0)
-
-# --- Composable image seeding ---
-# vm-orchestrator-seed.service is a systemd oneshot that issues one
-# SeedImage RPC per entry in firecracker_seed_images. The daemon owns staging zvol creation,
-# dd/mkfs, snapshot, dependent-clone teardown, and idempotency via
-# vs:source_digest user properties on the @ready snapshot. Ansible
-# carries no zfs(8)/dd/mkfs.ext4 invocations for these images.
-
-- name: Install vm-orchestrator seed oneshot unit
-  ansible.builtin.template:
-    src: vm-orchestrator-seed.service.j2
-    dest: /etc/systemd/system/vm-orchestrator-seed.service
-    mode: "0644"
-  register: firecracker_seed_unit
-
-- name: Reload systemd if seed unit changed
-  ansible.builtin.systemd:
-    daemon_reload: true
-  when: firecracker_seed_unit.changed  # noqa: no-handler
-
-- name: Reset vm-orchestrator-seed when unit changed or images changed
-  ansible.builtin.systemd:
-    name: vm-orchestrator-seed.service
-    state: stopped
-  when: >-
-    firecracker_seed_unit.changed
-    or not (guest_rootfs_substrate_current | default(true) | bool)
-    or not (guest_rootfs_toolchain_current | default(true) | bool)
-
-- name: Run vm-orchestrator-seed oneshot
-  ansible.builtin.systemd:
-    name: vm-orchestrator-seed.service
-    state: started
-    enabled: true
-
-# The vm-orchestrator daemon owns ensure-of pool/<images> + pool/<workloads>
-# at startup (see vm-orchestrator/zfs.VolumeLifecycle.EnsureRoots), and the
-# seed oneshot above materializes every composable image — including the
-# boot image (substrate) — through the SeedImage RPC. There are no Ansible
-# tasks that issue zfs(8), dd, or mkfs commands directly anymore.
+    or (firecracker_toolchain_image_stats.results | rejectattr('stat.exists') | list | length > 0)

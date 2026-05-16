@@ -1,6 +1,6 @@
 """Bazel macros for building Firecracker guest-image ext4 artefacts.
 
-Two macros, one for each tier in the firecracker_seed_images catalog:
+Two macros, one for each tier in the vm-orchestrator seed catalog:
 
 * `toolchain_ext4_image` — read-only toolchain images mounted by
   vm-orchestrator at lease boot. Pure layout (extract one upstream

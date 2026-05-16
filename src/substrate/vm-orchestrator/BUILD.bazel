@@ -1,5 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 # gazelle:prefix github.com/verself/vm-orchestrator
 
@@ -156,4 +157,23 @@ filegroup(
         allow_empty = False,
     ),
     visibility = ["//src/host:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/substrate/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator_nomad_artifact": "vm-orchestrator",
+        "//src/substrate/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli_nomad_artifact": "vm-orchestrator-cli",
+    },
+    component = "vm_orchestrator",
+    deploy_phase = "platform",
+    job_id = "vm-orchestrator",
+    job_spec = "nomad.hcl",
+    provides = [
+        "nomad:job:vm-orchestrator",
+        "vm-orchestrator:socket",
+    ],
+    requires = ["otelcol:otlp"],
+    test_targets = ["//src/substrate/vm-orchestrator/..."],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

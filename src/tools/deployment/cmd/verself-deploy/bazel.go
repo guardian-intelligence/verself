@@ -74,3 +74,33 @@ func selectBazelOutput(label string, outputs []string, suffix string) (string, e
 	}
 	return matches[0], nil
 }
+
+func runNomadComponentTests(ctx context.Context, repoRoot string, components []nomadComponentDescriptor) error {
+	targetSet := map[string]bool{}
+	for _, component := range components {
+		for _, target := range component.TestTargets {
+			target = strings.TrimSpace(target)
+			if target != "" {
+				targetSet[target] = true
+			}
+		}
+	}
+	if len(targetSet) == 0 {
+		return nil
+	}
+	targets := make([]string, 0, len(targetSet))
+	for target := range targetSet {
+		targets = append(targets, target)
+	}
+	sort.Strings(targets)
+	args := append([]string{"test", "--config=ci"}, targets...)
+	cmd := exec.CommandContext(ctx, "bazelisk", args...)
+	cmd.Dir = repoRoot
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	cmd.Stdout = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("bazelisk %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}

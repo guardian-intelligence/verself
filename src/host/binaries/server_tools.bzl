@@ -112,8 +112,6 @@ PROFILE_GO_TOOLS = [
     ("//src/infrastructure-components/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap", "temporal-bootstrap"),
     ("//src/infrastructure-components/temporal-platform/cmd/temporal-schema:temporal-schema", "temporal-schema"),
     ("//src/infrastructure-components/temporal-platform/cmd/verself-temporal-server:verself-temporal-server", "verself-temporal-server"),
-    ("//src/substrate/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator", "vm-orchestrator"),
-    ("//src/substrate/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli", "vm-orchestrator-cli"),
 ]
 
 SERVER_TOOL_SYMLINKS = {

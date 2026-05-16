@@ -1,0 +1,143 @@
+job "vm-orchestrator" {
+  name = "vm-orchestrator"
+  datacenters = ["dc1"]
+  type = "service"
+
+  group "daemon" {
+    count = 1
+
+    task "vm-orchestrator" {
+      driver = "raw_exec"
+      user = "root"
+      kill_signal = "SIGTERM"
+      kill_timeout = "10s"
+
+      artifact {
+        source = "verself-artifact://vm-orchestrator"
+        destination = "local"
+        chown = true
+      }
+
+      config {
+        command = "local/bin/vm-orchestrator"
+        args = [
+          "--listen-unix", "/run/vm-orchestrator/api.sock",
+          "--socket-group", "vm-clients",
+          "--pool", "vspool",
+          "--image-dataset", "images",
+          "--golden-dataset", "goldens",
+          "--workload-dataset", "workloads",
+          "--default-substrate-ref", "substrate",
+          "--kernel-path", "/var/lib/verself/guest-images/vmlinux",
+          "--firecracker-bin", "/usr/local/bin/firecracker",
+          "--jailer-bin", "/usr/local/bin/jailer",
+          "--jailer-root", "/srv/jailer",
+          "--jailer-uid", "10000",
+          "--jailer-gid", "10000",
+          "--guest-pool-cidr", "172.16.0.0/16",
+          "--state-db-path", "/var/lib/verself/vm-orchestrator/state.db",
+          "--host-service-ip", "10.255.0.1",
+          "--host-service-port", "18080",
+        ]
+      }
+
+      env {
+        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
+        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
+        OTEL_SERVICE_NAME = "vm-orchestrator"
+        VERSELF_SUPERVISOR = "nomad"
+      }
+
+      resources {
+        cpu = 300
+        memory = 256
+      }
+
+      restart {
+        attempts = 10
+        delay = "2s"
+        interval = "300s"
+        mode = "delay"
+      }
+    }
+
+    task "seed-images" {
+      driver = "raw_exec"
+      user = "root"
+
+      lifecycle {
+        hook = "poststart"
+        sidecar = false
+      }
+
+      artifact {
+        source = "verself-artifact://vm-orchestrator-cli"
+        destination = "local"
+        chown = true
+      }
+
+      config {
+        command = "local/bin/vm-orchestrator-cli"
+        args = [
+          "seed-catalog",
+          "--socket", "/run/vm-orchestrator/api.sock",
+          "--catalog", "local/seed-catalog.json",
+          "--allow-destroying-active-clones",
+        ]
+      }
+
+      env {
+        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
+        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
+        OTEL_SERVICE_NAME = "vm-orchestrator-seed"
+        VERSELF_SUPERVISOR = "nomad"
+      }
+
+      resources {
+        cpu = 100
+        memory = 128
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "local/seed-catalog.json"
+        data = <<-EOT
+{
+  "images": [
+    {
+      "ref": "substrate",
+      "strategy": "dd_from_file",
+      "source_path": "/var/lib/verself/guest-images/substrate.ext4",
+      "size_bytes": 2147483648,
+      "volblocksize": "16K"
+    },
+    {
+      "ref": "gh-actions-runner",
+      "strategy": "dd_from_file",
+      "source_path": "/var/lib/verself/guest-images/toolchains/gh-actions-runner.ext4",
+      "size_bytes": 1073741824,
+      "volblocksize": "16K"
+    },
+    {
+      "ref": "forgejo-runner",
+      "strategy": "dd_from_file",
+      "source_path": "/var/lib/verself/guest-images/toolchains/forgejo-runner.ext4",
+      "size_bytes": 268435456,
+      "volblocksize": "16K"
+    }
+  ]
+}
+EOT
+      }
+    }
+
+    update {
+      max_parallel = 1
+      health_check = "task_states"
+      min_healthy_time = "5s"
+      healthy_deadline = "180s"
+      progress_deadline = "300s"
+      auto_revert = true
+    }
+  }
+}

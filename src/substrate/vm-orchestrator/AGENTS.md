@@ -7,12 +7,10 @@ Privileged Go daemon for lease-scoped Firecracker lifecycle management: ZFS clon
 
 Firecracker guests boot from a slim **substrate** ext4 and compose
 read-only **toolchain images** at lease boot. The catalog lives in
-the Firecracker host bootstrap configuration; each
-entry declares a `tier` of `substrate`, `platform_toolchain`, or
-`customer_uploaded`, and the `vm-orchestrator-seed.service` oneshot
-materialises every entry via `vm-orchestrator-cli seed-image` (one
-SeedImage RPC per image, idempotent via `vs:source_digest` on
-`@ready`).
+the `vm-orchestrator` Nomad job, which runs
+`vm-orchestrator-cli seed-catalog` after the daemon starts. The CLI
+materialises every entry by issuing SeedImage RPCs in catalog order
+(idempotent via `vs:source_digest` on `@ready`).
 
 - **Substrate** (`/var/lib/verself/guest-images/substrate.ext4`):
   kernel + minimal Ubuntu userland + vm-bridge as `/sbin/init` +
@@ -52,12 +50,12 @@ SeedImage RPC per image, idempotent via `vs:source_digest` on
 ## Subdirectories
 
 - `cmd/vm-orchestrator/` — daemon entry point.
-- `cmd/vm-orchestrator-cli/` — privileged operator CLI (currently just `seed-image`).
+- `cmd/vm-orchestrator-cli/` — privileged operator CLI for image seeding (`seed-image`, `seed-catalog`).
 - `cmd/vm-bridge/` — guest PID 1 + local control socket. Reads toolchain-image overlay manifests at lease boot.
 - `zfs/` — typed refs, validation, channel programs, the `VolumeLifecycle` facade.
 - `proto/v1/` — gRPC contracts for the lease/exec API.
 - `vmproto/` — host↔guest control-plane wire types.
-- `guest-images/` — `toolchain_ext4_image` Bazel macro + substrate builder + per-image build rules. Each image declares a `tier` consumed by `vm-orchestrator-seed.service`. See `<guest_rootfs_split>` in the repo-root `AGENTS.md`.
+- `guest-images/` — `toolchain_ext4_image` Bazel macro + substrate builder + per-image build rules. Each image declares a `tier` consumed by the Nomad-owned seed catalog. See `<guest_rootfs_split>` in the repo-root `AGENTS.md`.
 
 ## Privilege Boundary
 
