@@ -1,0 +1,35 @@
+"""aspect vp — the controller entry point for Vite+.
+
+`vp` is the lockfile-pinned `node_modules/vite-plus` run under the
+server_tools-pinned Node, against the `src/websites` source tree. It is the
+exact toolchain the Bazel frontend build uses, so the console/docs/policy
+workspace formats, lints, tests, installs, and serves identically whether the
+work happens in CI, in a `bazel build`, or by hand. There is no global `vp`
+and no `~/.vite-plus`.
+
+Pass the `vp` argv after `--`:
+
+    aspect vp -- fmt . --write
+    aspect vp -- check .
+    aspect vp -- run @verself/verself-web#dev
+    aspect vp -- install --frozen-lockfile
+"""
+
+load(".aspect/lib/helpers.axl", "viteplus_vp")
+
+def _vp_impl(ctx):
+    # `minimum = 1` on the positional guarantees a non-empty argv.
+    return viteplus_vp(ctx, list(ctx.args.argv))
+
+vp = task(
+    implementation = _vp_impl,
+    name = "vp",
+    summary = "Run the lockfile-pinned Vite+ toolchain: aspect vp -- <vp args>.",
+    args = {
+        "argv": args.positional(
+            minimum = 1,
+            maximum = 256,
+            description = "Vite+ argv, passed verbatim (e.g. `-- run @verself/verself-web#dev`).",
+        ),
+    },
+)

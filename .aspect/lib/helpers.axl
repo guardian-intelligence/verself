@@ -54,6 +54,15 @@ ANSIBLE_COLLECTIONS_ARCHIVE_TARGET = "//src/host:ansible_collections_archive"
 DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 SOPS_SHIM = ("sops", "//src/tools/dev/binaries:sops")
 
+# Single Vite+ toolchain, shared by the frontend build and the controller.
+# `vp` is the lockfile-pinned `node_modules/vite-plus` run under the
+# server_tools-pinned Node — identical to what `viteplus_rules.bzl` runs inside
+# the build. There is no `~/.vite-plus` and no PATH `vp`.
+VITEPLUS_NODE_TARGET = "//src/websites:vp_node"
+VITEPLUS_WORKSPACE_INSTALL_TARGET = "//src/websites:workspace_install"
+VITEPLUS_VP_SCRIPT = "src/websites/node_modules/vite-plus/bin/vp"
+VITEPLUS_WORKSPACE = "src/websites"
+
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
     root = ctx.std.env.root_dir()
@@ -197,6 +206,41 @@ def install_bazel_tool_shims(ctx, shims, bin_dir):
         if rc != 0:
             return ""
     return out_dir
+
+def viteplus_node(ctx):
+    """Build the vendored Node and materialize the source-tree node_modules.
+
+    Returns the execroot-absolute path to the pinned `node` binary, or "" on
+    failure. Building `:workspace_install` runs the same frozen-lockfile
+    `vp install` the frontend build does, so the source `node_modules` (and the
+    `vite-plus` launcher under it) is the lockfile-pinned tree.
+    """
+    node = bazel_output_file(ctx, VITEPLUS_NODE_TARGET)
+    if node == "":
+        return ""
+    if bazel_output_file(ctx, VITEPLUS_WORKSPACE_INSTALL_TARGET) == "":
+        return ""
+    return node
+
+def viteplus_vp(ctx, args, env = None, label = None):
+    """Run the lockfile-pinned Vite+ under the vendored Node, in src/websites.
+
+    The single entry point for `vp` from the controller. `args` is the `vp`
+    argv (e.g. ["fmt", ".", "--write"]). Returns the process exit code.
+    """
+    node = viteplus_node(ctx)
+    if node == "":
+        return 1
+    vp = ws_path(ctx, VITEPLUS_VP_SCRIPT)
+    arglist = list(args)
+    return checked_spawn(
+        ctx,
+        node,
+        [vp] + arglist,
+        cwd = ws_path(ctx, VITEPLUS_WORKSPACE),
+        env = env,
+        label = label if label != None else "vp " + " ".join(arglist),
+    )
 
 def path_env_with_bazel_tool_shims(ctx, shims, bin_dir = ".verself/tools/aspect/bin", extra_env = None):
     env = {}

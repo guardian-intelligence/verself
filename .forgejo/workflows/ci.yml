@@ -31,10 +31,7 @@ jobs:
         run: |
           mkdir -p "${BOOTSTRAP_INSTALL_DIR}"
           src/tools/dev/bootstrap/bootstrap-linux-amd64
-          {
-            echo "${BOOTSTRAP_INSTALL_DIR}"
-            echo "${HOME}/.vite-plus/bin"
-          } >> "${GITHUB_PATH}"
+          echo "${BOOTSTRAP_INSTALL_DIR}" >> "${GITHUB_PATH}"
 
       - name: Restart Bazel server
         run: bazelisk shutdown

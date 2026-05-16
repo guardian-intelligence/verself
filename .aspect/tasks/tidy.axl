@@ -6,16 +6,10 @@ the index. Bazel metadata updates live under `aspect bazel *`; semantic
 verification gates live under `aspect check`.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "bazel_run", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "bazel_run", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "viteplus_vp", "ws_path")
 
 def _viteplus(ctx):
-    return checked_spawn(
-        ctx,
-        "vp",
-        ["fmt", ".", "--write"],
-        cwd = ws_path(ctx, "src/websites"),
-        label = "vp fmt . --write",
-    )
+    return viteplus_vp(ctx, ["fmt", ".", "--write"])
 
 def _go(ctx):
     for d in GO_DIRS:

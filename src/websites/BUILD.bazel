@@ -16,6 +16,23 @@ exports_files([
 
 npm_link_all_packages()
 
+# The vendored Node the frontend build runs on (server_tools-pinned, sha256).
+# `aspect vp`, `aspect tidy`, and `aspect dev verself-web` resolve `vp` through
+# this exact binary + the lockfile-pinned `node_modules/vite-plus`, so there is
+# one Vite+ toolchain shared by the build and the controller — no `~/.vite-plus`.
+genrule(
+    name = "vp_node",
+    srcs = ["@server_tool_nodejs//file"],
+    outs = ["node"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xJf "$(location @server_tool_nodejs//file)" -C "$$tmp" --strip-components=1
+install -m 0755 "$$tmp/bin/node" "$@"
+""",
+)
+
 copy_to_bin(
     name = "workspace_config",
     srcs = [

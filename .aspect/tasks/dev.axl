@@ -5,12 +5,14 @@ load(
     "ASPECT_OPERATOR_TARGET",
     "HOST_CONFIGURATION_DIR",
     "SOPS_SHIM",
+    "VITEPLUS_VP_SCRIPT",
     "bazel_run",
     "checked_spawn",
     "host_ansible_env",
     "host_ansible_playbook",
     "install_bazel_tool_shims",
     "inventory_check",
+    "viteplus_node",
     "ws_path",
 )
 
@@ -97,7 +99,10 @@ def _hooks_install_impl(ctx):
 def _verself_web_impl(ctx):
     if inventory_check(ctx) != 0:
         return 1
-    cli_args = []
+    node = viteplus_node(ctx)
+    if node == "":
+        return 1
+    cli_args = ["--node-bin", node, "--vp-script", ws_path(ctx, VITEPLUS_VP_SCRIPT)]
     if ctx.args.print_env:
         cli_args.append("--print-env")
     return bazel_run(

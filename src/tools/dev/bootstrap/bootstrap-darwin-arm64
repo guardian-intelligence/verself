@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Install the bootstrap_pivot dev tools that have to land before any other
 # delivery channel can run. CI uses `--bazelisk-only`; developer/agent
-# environments install Bazelisk, the Aspect CLI, and Vite+.
+# environments install Bazelisk and the Aspect CLI. Everything else,
+# including the Vite+ toolchain (`aspect vp`), is Bazel-resolved.
 #
 # These constants are hand-mirrored because this script bootstraps Bazelisk
 # before Bazel-owned repository rules can run.
@@ -18,9 +19,6 @@ bazelisk_url="https://github.com/bazelbuild/bazelisk/releases/download/v${bazeli
 aspect_version="2026.17.17"
 aspect_sha256="51260131e52885d6f51c651b3b56101e7f9aaf7468f7cb71ac2e7fdcefdf3f89"
 aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspect_version}/aspect-cli-aarch64-apple-darwin"
-
-viteplus_version="0.1.19"
-viteplus_install_url="https://vite.plus"
 
 install_dir="${BOOTSTRAP_INSTALL_DIR:-/usr/local/bin}"
 last_installed_path=""
@@ -187,37 +185,6 @@ fi
 
 install_pivot aspect "${aspect_version}" "${aspect_sha256}" "${aspect_url}"
 
-# Vite+ ships its own multi-version toolchain at ~/.vite-plus/, with `vp`
-# at ~/.vite-plus/bin/vp. The installer is a shell script (so no sha256 pin
-# at this layer); subsequent `vp upgrade <version>` pins the catalog
-# version. Idempotent: short-circuits when the catalog version is already
-# the active one.
-install_viteplus() {
-  local install_dir="${HOME}/.vite-plus"
-  local vp_bin="${install_dir}/bin/vp"
-
-  if [[ -x "${vp_bin}" ]]; then
-    local existing_version
-    existing_version="$("${vp_bin}" --version 2>/dev/null | awk '/^vp v/ {print $NF; exit}' | tr -d 'v')"
-    if [[ "${existing_version}" == "${viteplus_version}" ]]; then
-      echo "vite-plus ${viteplus_version} already installed at ${vp_bin}"
-      return 0
-    fi
-  fi
-
-  if ! command -v curl >/dev/null 2>&1; then
-    echo "vite-plus install requires curl" >&2
-    return 1
-  fi
-
-  curl -fsSL "${viteplus_install_url}" | bash
-  "${vp_bin}" upgrade "${viteplus_version}" >/dev/null
-  echo "installed vite-plus ${viteplus_version} at ${vp_bin}"
-
-  case ":${PATH}:" in
-    *":${install_dir}/bin:"*) ;;
-    *) echo "add ${install_dir}/bin to PATH before running vp" >&2 ;;
-  esac
-}
-
-install_viteplus
+# The pivot ends here. The Vite+ toolchain is the lockfile-pinned
+# src/websites/node_modules/vite-plus run under the server_tools Node; it is
+# Bazel-resolved and invoked as `aspect vp -- <args>`, not bootstrapped.

@@ -69,9 +69,18 @@ func cmdDevVerselfWeb(args []string) error {
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
 	printEnv := fs.Bool("print-env", false, "Print resolved env and exit before starting HMR")
 	stateFile := fs.String("state-file", envOr("VERSELF_WEB_DEV_STATE_FILE", "/tmp/verself-web-dev.env"), "State env file path")
+	// The Vite+ toolchain is resolved by the caller (`aspect dev verself-web`)
+	// so the dev server runs the same server_tools-pinned Node + lockfile-pinned
+	// vite-plus as the Bazel build. There is no PATH `vp`.
+	nodeBin := fs.String("node-bin", "", "Vendored Node binary (set by `aspect dev verself-web`)")
+	vpScript := fs.String("vp-script", "", "Lockfile-pinned vite-plus launcher (set by `aspect dev verself-web`)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	if *nodeBin == "" || *vpScript == "" {
+		return fmt.Errorf("dev verself-web: --node-bin and --vp-script are required (run via `aspect dev verself-web`)")
+	}
+	vpInvocation := strings.Join([]string{*nodeBin, *vpScript, "run", "@verself/verself-web#dev"}, " ")
 	return runOperatorRuntime("dev.verself_web", opts.operatorRuntimeOptions, !*printEnv, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		env, summary, err := resolveVerselfWebDevEnv(rt, *printEnv)
 		if err != nil {
@@ -80,7 +89,7 @@ func cmdDevVerselfWeb(args []string) error {
 		rendered := renderEnv(env)
 		if *printEnv {
 			fmt.Print(rendered)
-			fmt.Println("vp run @verself/verself-web#dev")
+			fmt.Println(vpInvocation)
 			return nil
 		}
 		if err := writeStateFile(*stateFile, rendered); err != nil {
@@ -88,7 +97,7 @@ func cmdDevVerselfWeb(args []string) error {
 		}
 		summary["state"] = *stateFile
 		printDevSummary(summary)
-		cmd := exec.CommandContext(rt.Ctx, "vp", "run", "@verself/verself-web#dev")
+		cmd := exec.CommandContext(rt.Ctx, *nodeBin, *vpScript, "run", "@verself/verself-web#dev")
 		cmd.Dir = filepath.Join(rt.RepoRoot, "src", "websites")
 		cmd.Env = envMapToList(env)
 		cmd.Stdin = os.Stdin
@@ -99,7 +108,7 @@ func cmdDevVerselfWeb(args []string) error {
 			if errors.As(err, &exitErr) {
 				return exitError{code: exitErr.ExitCode()}
 			}
-			return fmt.Errorf("vp run @verself/verself-web#dev: %w", err)
+			return fmt.Errorf("%s: %w", vpInvocation, err)
 		}
 		return nil
 	})
