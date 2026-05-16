@@ -156,15 +156,9 @@
         new_owner: "{{ stalwart_db_user }}"
       no_log: true
 
-# --- Configuration ---
-
-- name: Deploy stalwart configuration
-  ansible.builtin.template:
-    src: stalwart.toml.j2
-    dest: /etc/stalwart/config.toml
-    owner: root
-    group: stalwart
-    mode: "0640"
+# Stalwart configuration is owned by stalwart/nomad.hcl so edits ride
+# `aspect deploy`. This role keeps only one-time host bootstrap and the
+# post-start Settings API / domain steps below.
 
 - name: Allow Stalwart to bind SMTP
   community.general.capabilities:
