@@ -24,9 +24,3 @@ go_library(
         "@org_golang_x_crypto//ssh/knownhosts",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":runtime",
-    visibility = ["//visibility:public"],
-)

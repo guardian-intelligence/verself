@@ -15,12 +15,6 @@ go_library(
     ],
 )
 
-alias(
-    name = "go_default_library",
-    actual = ":ocsf",
-    visibility = ["//src/services/governance-service:__subpackages__"],
-)
-
 go_test(
     name = "ocsf_test",
     srcs = ["builder_test.go"],

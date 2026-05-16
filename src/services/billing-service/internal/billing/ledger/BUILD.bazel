@@ -11,9 +11,3 @@ go_library(
         "@io_opentelemetry_go_otel//attribute",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":ledger",
-    visibility = ["//src/services/billing-service:__subpackages__"],
-)

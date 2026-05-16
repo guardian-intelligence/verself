@@ -13,9 +13,3 @@ go_test(
     srcs = ["routecatalog_test.go"],
     embed = [":routecatalog"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":routecatalog",
-    visibility = ["//visibility:public"],
-)

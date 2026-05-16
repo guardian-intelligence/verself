@@ -13,9 +13,3 @@ go_library(
         "@com_github_lib_pq//:pq",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":migrations",
-    visibility = ["//visibility:public"],
-)

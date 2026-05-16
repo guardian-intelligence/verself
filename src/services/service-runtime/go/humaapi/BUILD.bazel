@@ -7,9 +7,3 @@ go_library(
     visibility = ["//visibility:public"],
     deps = ["@com_github_danielgtaylor_huma_v2//:huma"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":humaapi",
-    visibility = ["//visibility:public"],
-)

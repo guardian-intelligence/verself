@@ -19,9 +19,3 @@ go_test(
     srcs = ["bazeltelemetry_test.go"],
     embed = [":bazeltelemetry"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":bazeltelemetry",
-    visibility = ["//visibility:public"],
-)

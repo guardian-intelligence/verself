@@ -141,12 +141,6 @@ go_test(
     ],
 )
 
-alias(
-    name = "go_default_library",
-    actual = ":vm-orchestrator",
-    visibility = ["//visibility:public"],
-)
-
 filegroup(
     name = "host_ansible_sources",
     srcs = glob(

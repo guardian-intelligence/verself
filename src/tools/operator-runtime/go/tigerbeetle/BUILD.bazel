@@ -10,9 +10,3 @@ go_library(
         "@com_github_tigerbeetle_tigerbeetle_go//:tigerbeetle-go",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":tigerbeetle",
-    visibility = ["//visibility:public"],
-)

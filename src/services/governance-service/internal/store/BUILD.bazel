@@ -17,9 +17,3 @@ go_library(
         "@com_github_jackc_pgx_v5//pgtype",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":store",
-    visibility = ["//src/services/governance-service:__subpackages__"],
-)

@@ -37,12 +37,6 @@ go_library(
     ],
 )
 
-alias(
-    name = "go_default_library",
-    actual = ":notifications",
-    visibility = ["//src/services/notifications-service:__subpackages__"],
-)
-
 go_test(
     name = "notifications_test",
     srcs = ["platform_alerts_test.go"],

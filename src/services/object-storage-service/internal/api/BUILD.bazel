@@ -31,12 +31,6 @@ go_library(
     ],
 )
 
-alias(
-    name = "go_default_library",
-    actual = ":api",
-    visibility = ["//src/services/object-storage-service:__subpackages__"],
-)
-
 go_test(
     name = "api_test",
     srcs = ["security_test.go"],

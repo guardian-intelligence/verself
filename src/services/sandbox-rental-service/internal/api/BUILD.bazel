@@ -50,9 +50,3 @@ go_test(
         "@com_github_danielgtaylor_huma_v2//:huma",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":api",
-    visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
-)

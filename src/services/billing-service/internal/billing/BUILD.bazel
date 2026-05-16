@@ -54,9 +54,3 @@ go_test(
     srcs = ["windows_test.go"],
     embed = [":billing"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":billing",
-    visibility = ["//src/services/billing-service:__subpackages__"],
-)

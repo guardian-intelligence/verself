@@ -6,9 +6,3 @@ go_library(
     importpath = "github.com/verself/profile-service/internal/contractapi",
     visibility = ["//src/services/profile-service:__subpackages__"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":contractapi",
-    visibility = ["//src/services/profile-service:__subpackages__"],
-)

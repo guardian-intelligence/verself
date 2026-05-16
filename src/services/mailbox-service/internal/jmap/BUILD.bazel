@@ -11,9 +11,3 @@ go_library(
     importpath = "github.com/verself/mailbox-service/internal/jmap",
     visibility = ["//src/services/mailbox-service:__subpackages__"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":jmap",
-    visibility = ["//src/services/mailbox-service:__subpackages__"],
-)

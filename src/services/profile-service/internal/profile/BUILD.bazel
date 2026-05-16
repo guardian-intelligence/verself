@@ -23,9 +23,3 @@ go_library(
         "@org_golang_x_text//unicode/norm",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":profile",
-    visibility = ["//src/services/profile-service:__subpackages__"],
-)

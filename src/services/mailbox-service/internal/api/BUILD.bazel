@@ -24,9 +24,3 @@ go_library(
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":api",
-    visibility = ["//src/services/mailbox-service:__subpackages__"],
-)

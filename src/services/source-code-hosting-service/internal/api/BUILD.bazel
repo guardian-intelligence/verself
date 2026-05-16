@@ -33,12 +33,6 @@ go_library(
     ],
 )
 
-alias(
-    name = "go_default_library",
-    actual = ":api",
-    visibility = ["//src/services/source-code-hosting-service:__subpackages__"],
-)
-
 go_test(
     name = "api_test",
     srcs = ["contract_test.go"],

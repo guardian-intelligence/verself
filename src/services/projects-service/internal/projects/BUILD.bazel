@@ -23,9 +23,3 @@ go_library(
         "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":projects",
-    visibility = ["//src/services/projects-service:__subpackages__"],
-)

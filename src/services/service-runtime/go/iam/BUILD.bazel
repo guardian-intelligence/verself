@@ -22,9 +22,3 @@ go_test(
     ],
     embed = [":iam"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":iam",
-    visibility = ["//visibility:public"],
-)

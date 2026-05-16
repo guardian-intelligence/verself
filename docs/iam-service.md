@@ -537,8 +537,6 @@ never sent to product resource APIs and are not represented in IAM policy DTOs.
 The service should create these targets:
 
 ```text
-//src/services/iam-service:go_default_library
-
 //src/services/iam-service/cmd/iam-service:iam-service
 //src/services/iam-service/cmd/iam-service:iam-service_nomad_artifact
 //src/services/iam-service/cmd/iam-openapi:iam-openapi              # transitional projection

@@ -28,9 +28,3 @@ go_library(
         "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":api",
-    visibility = ["//src/services/notifications-service:__subpackages__"],
-)

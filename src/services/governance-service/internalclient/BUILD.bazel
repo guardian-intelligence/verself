@@ -6,9 +6,3 @@ go_library(
     importpath = "github.com/verself/governance-service/internalclient",
     visibility = ["//visibility:public"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":internalclient",
-    visibility = ["//visibility:public"],
-)

@@ -8,6 +8,7 @@ exports_files(["bazel.go.work"])
 # gazelle:exclude docs/references
 # gazelle:exclude src/websites
 # gazelle:exclude src/substrate/vm-guest-telemetry
+# gazelle:go_naming_convention import
 # gazelle:resolve go github.com/verself/billing-service/client //src/services/billing-service/client
 # gazelle:resolve go github.com/verself/governance-service/internalclient //src/services/governance-service/internalclient
 # gazelle:resolve go github.com/verself/projects-service/client //src/services/projects-service/client

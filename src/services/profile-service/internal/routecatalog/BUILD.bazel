@@ -32,9 +32,3 @@ go_test(
     srcs = ["catalog_test.go"],
     embed = [":routecatalog"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":routecatalog",
-    visibility = ["//src/services/profile-service:__subpackages__"],
-)

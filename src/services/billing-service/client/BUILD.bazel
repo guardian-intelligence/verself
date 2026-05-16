@@ -6,9 +6,3 @@ go_library(
     importpath = "github.com/verself/billing-service/client",
     visibility = ["//src/services:__subpackages__"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":client",
-    visibility = ["//src/services:__subpackages__"],
-)

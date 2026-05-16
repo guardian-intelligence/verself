@@ -6,9 +6,3 @@ go_library(
     importpath = "github.com/verself/object-storage-service/client",
     visibility = ["//visibility:public"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":client",
-    visibility = ["//visibility:public"],
-)

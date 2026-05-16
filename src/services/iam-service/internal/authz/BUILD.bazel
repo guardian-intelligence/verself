@@ -20,9 +20,3 @@ go_test(
         "//src/services/iam-service/internal/spicedb",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":authz",
-    visibility = ["//src/services/iam-service:__subpackages__"],
-)

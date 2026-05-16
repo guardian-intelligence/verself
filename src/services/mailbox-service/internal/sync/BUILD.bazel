@@ -15,9 +15,3 @@ go_library(
         "//src/services/mailbox-service/internal/mailstore",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":sync",
-    visibility = ["//src/services/mailbox-service:__subpackages__"],
-)

@@ -13,9 +13,3 @@ go_library(
         "@io_opentelemetry_go_otel//baggage",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":identity",
-    visibility = ["//src/tools/deployment:__subpackages__"],
-)

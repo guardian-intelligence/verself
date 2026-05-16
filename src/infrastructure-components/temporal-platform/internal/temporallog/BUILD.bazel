@@ -7,9 +7,3 @@ go_library(
     visibility = ["//src/infrastructure-components/temporal-platform:__subpackages__"],
     deps = ["@io_temporal_go_sdk//log"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":temporallog",
-    visibility = ["//src/infrastructure-components/temporal-platform:__subpackages__"],
-)

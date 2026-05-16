@@ -13,9 +13,3 @@ go_library(
         "@io_temporal_go_server//common/config",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":pgsocket",
-    visibility = ["//src/infrastructure-components/temporal-platform:__subpackages__"],
-)

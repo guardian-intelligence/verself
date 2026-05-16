@@ -6,9 +6,3 @@ go_library(
     importpath = "github.com/verself/deployment-tools/internal/deploymodel",
     visibility = ["//src/tools/deployment:__subpackages__"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":deploymodel",
-    visibility = ["//src/tools/deployment:__subpackages__"],
-)

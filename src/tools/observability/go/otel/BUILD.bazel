@@ -35,9 +35,3 @@ go_test(
         "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":otel",
-    visibility = ["//visibility:public"],
-)

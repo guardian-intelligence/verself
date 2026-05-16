@@ -22,9 +22,3 @@ go_test(
     ],
     embed = [":zfs"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":zfs",
-    visibility = ["//visibility:public"],
-)

@@ -14,9 +14,3 @@ go_test(
     embed = [":zitadel"],
     deps = ["//src/services/iam-service/internal/identity"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":zitadel",
-    visibility = ["//src/services/iam-service:__subpackages__"],
-)

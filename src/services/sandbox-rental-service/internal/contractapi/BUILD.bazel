@@ -6,9 +6,3 @@ go_library(
     importpath = "github.com/verself/sandbox-rental-service/internal/contractapi",
     visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":contractapi",
-    visibility = ["//src/services/sandbox-rental-service:__subpackages__"],
-)

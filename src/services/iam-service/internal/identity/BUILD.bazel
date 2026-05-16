@@ -42,9 +42,3 @@ go_test(
         "@com_github_jackc_pgx_v5//pgtype",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":identity",
-    visibility = ["//src/services/iam-service:__subpackages__"],
-)

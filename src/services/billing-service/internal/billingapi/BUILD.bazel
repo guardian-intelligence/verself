@@ -31,12 +31,6 @@ go_library(
     ],
 )
 
-alias(
-    name = "go_default_library",
-    actual = ":billingapi",
-    visibility = ["//src/services/billing-service:__subpackages__"],
-)
-
 go_test(
     name = "billingapi_test",
     srcs = ["security_test.go"],

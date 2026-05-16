@@ -6,9 +6,3 @@ go_library(
     importpath = "github.com/verself/iam-service/internal/internalcontractapi",
     visibility = ["//src/services/iam-service:__subpackages__"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":internalcontractapi",
-    visibility = ["//src/services/iam-service:__subpackages__"],
-)

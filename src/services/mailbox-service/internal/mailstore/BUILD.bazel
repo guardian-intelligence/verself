@@ -16,9 +16,3 @@ go_library(
         "@com_github_jackc_pgx_v5//pgxpool",
     ],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":mailstore",
-    visibility = ["//src/services/mailbox-service:__subpackages__"],
-)

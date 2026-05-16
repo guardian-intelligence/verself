@@ -36,9 +36,3 @@ go_test(
     ],
     embed = [":schema"],
 )
-
-alias(
-    name = "go_default_library",
-    actual = ":schema",
-    visibility = ["//src/services/iam-service:__subpackages__"],
-)
