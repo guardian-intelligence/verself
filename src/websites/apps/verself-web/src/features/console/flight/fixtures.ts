@@ -1,17 +1,18 @@
 import type { FlightRow } from "./collection";
 import { toFlights, type Flight } from "./model";
 
-// Deterministic states for `aspect dev verself-web` + agent-browser + design
-// review. Raw rows (strings, like Electric delivers) so the fixtures exercise
-// model.ts too. Timestamps are relative to call time so elapsed/ETA stay
-// deterministic whenever the fixture is loaded.
-export type FlightFixtureName = "no-build" | "building-on-time" | "running-late" | "no-history";
+// Deterministic mock states for `aspect dev verself-web` + agent-browser +
+// design review. Named fixtures push raw string rows through model.ts (so the
+// data contract is exercised); `?flight=debug` seeds one card straight from
+// query params. No backend, no "cold"/"diverted"/"landed" — only the phases
+// the product tracks: boarding, enroute (on time), late.
+export type FlightFixtureName = "no-build" | "boarding" | "building-on-time" | "running-late";
 
 export const FLIGHT_FIXTURE_NAMES: readonly FlightFixtureName[] = [
   "no-build",
+  "boarding",
   "building-on-time",
   "running-late",
-  "no-history",
 ];
 
 export function isFlightFixtureName(value: string): value is FlightFixtureName {
@@ -51,35 +52,19 @@ export function flightFixture(name: FlightFixtureName): readonly Flight[] {
     case "no-build":
       rows = [];
       break;
+    case "boarding":
+      rows = [job({ provider_job_id: "1", status: "queued", started_at: null })];
+      break;
     case "building-on-time":
-      rows = [
-        job({ provider_job_id: "1", job_name: "test-node-20", started_at: isoAgo(180) }),
-        job({ provider_job_id: "2", job_name: "test-node-22", started_at: isoAgo(170) }),
-        job({ provider_job_id: "3", job_name: "lint", status: "queued", started_at: null }),
-        job({ provider_job_id: "4", job_name: "integration", started_at: isoAgo(150) }),
-      ];
+      rows = [job({ provider_job_id: "1", job_name: "test", started_at: isoAgo(180) })];
       break;
     case "running-late":
       rows = [
         job({
-          provider_job_id: "5",
+          provider_job_id: "1",
           job_name: "integration",
           started_at: isoAgo(900),
           predicted_baseline_ms: "600000",
-        }),
-      ];
-      break;
-    case "no-history":
-      rows = [
-        job({
-          provider_job_id: "6",
-          job_name: "build-docker",
-          pr_number: "0",
-          base_branch: "",
-          head_branch: "main",
-          commit_count: null,
-          predicted_baseline_ms: null,
-          started_at: isoAgo(45),
         }),
       ];
       break;
@@ -87,15 +72,13 @@ export function flightFixture(name: FlightFixtureName): readonly Flight[] {
   return toFlights(rows);
 }
 
-// Debug harness: a single card seeded entirely from query params, so every
-// configuration (actor, endpoints, on-time/late/cold, remaining minutes,
-// commit count) is reachable without backend or fixtures. `?flight=debug`.
+// Single card seeded entirely from query params: `?flight=debug`.
 export type DebugFlightParams = {
   readonly actor?: string | undefined;
   readonly src?: string | undefined;
   readonly dst?: string | undefined;
   readonly status?: string | undefined;
-  readonly state?: string | undefined; // "ontime" | "late" | "cold"
+  readonly state?: string | undefined; // "ontime" | "late"
   readonly remaining?: string | undefined; // minutes (state=ontime)
   readonly commits?: string | undefined; // number, or "none"
 };
@@ -104,11 +87,8 @@ export function debugFlight(p: DebugFlightParams): readonly Flight[] {
   const now = Date.now();
   const state = p.state ?? "ontime";
   let departedAtMs = now;
-  let baselineMs: number | null;
-  if (state === "cold") {
-    baselineMs = null;
-    departedAtMs = now - 60_000;
-  } else if (state === "late") {
+  let baselineMs: number;
+  if (state === "late") {
     baselineMs = 60_000;
     departedAtMs = now - 120_000;
   } else {
@@ -133,7 +113,6 @@ export function debugFlight(p: DebugFlightParams): readonly Flight[] {
       sourceLabel: (p.src ?? "PR47").toUpperCase(),
       destLabel: (p.dst ?? "MAIN").toUpperCase(),
       statusLabel: p.status ?? "Building",
-      jobsLeft: 1,
       departedAtMs,
       baselineMs,
       commitPill,

@@ -1,26 +1,35 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { useElapsedTimeNow } from "@verself/ui/hooks/use-elapsed-time";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { FlightArc } from "./flight-arc";
 import { GitCommitGlyph } from "./git-commit-glyph";
-import { formatRemaining, isRunningLate, remainingMs, type Flight } from "./model";
+import { useAccentSpring, useFlightMachine } from "./machine";
+import type { Flight } from "./model";
+import type { PhaseKind } from "./phase";
+import { concentric, Squircle, useSquircle } from "./squircle";
 
-// OLED-accurate oklch palette (no sRGB hex anywhere in the widget). Tuned to
-// the iOS Live Activity reference: near-black card, bright system green,
-// Flighty amber pill.
-const C = {
-  frame: "oklch(0.928 0 0)",
-  card: "oklch(0.16 0 0)",
-  ink: "oklch(1 0 0)",
-  inkDim: "oklch(0.62 0 0)",
-  green: "oklch(0.82 0.19 150)",
-  greenDim: "oklch(0.72 0.14 150)",
-  amber: "oklch(0.83 0.152 82)",
-  amberInk: "oklch(0.22 0.03 72)",
-  lateInk: "oklch(0.80 0.16 70)",
-  lateDim: "oklch(0.72 0.13 70)",
-  black: "oklch(0 0 0)",
-} as const;
+// Single source of truth: the WHOLE widget — light tray included — maxes at
+// exactly 598px (the maxWidth wrapper constrains the tray's border box). The
+// OLED card is therefore 598 − 2×TRAY_INSET_PX of content + its own padding.
+const WIDGET_MAX_PX = 598;
+const TRAY_INSET_PX = 7;
+const TRAY_RADIUS_PX = 46; // TODO(audit): tuned to the reference
+const CARD_RADIUS_PX = concentric(TRAY_RADIUS_PX, TRAY_INSET_PX);
+const PILL_RADIUS_PX = 22;
+
+// iOS fidelity: the real San Francisco on Apple devices (the reference
+// context), a near-equivalent neo-grotesque elsewhere. Brand Geist is
+// deliberately not used here.
+const IOS_FONT =
+  '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif';
+
+const INK = "oklch(1 0 0)";
+const INK_DIM = "oklch(0.62 0 0)";
+const CARD = "oklch(0.09 0 0)"; // TODO(audit): re-tune to Image #2
+const TRAY = "oklch(0.928 0 0)";
+const NODE_INK = "oklch(0 0 0)";
+
+// ── Composition root ────────────────────────────────────────────────────────
 
 export function FlightBoard({
   flights,
@@ -34,7 +43,7 @@ export function FlightBoard({
       {flights.length === 0 ? (
         <FlightShell>
           <div className="flex flex-1 items-center justify-center">
-            <p className="text-sm font-medium" style={{ color: C.inkDim }}>
+            <p className="text-sm font-medium" style={{ color: INK_DIM }}>
               No CI in flight
             </p>
           </div>
@@ -50,150 +59,180 @@ export function FlightConsoleSkeleton() {
   return (
     <FlightCanvas>
       <FlightShell>
-        <div
-          className="flex-1 animate-pulse rounded-[1.5rem]"
-          style={{ background: "oklch(0.22 0 0)" }}
-        />
+        <div className="flex-1 animate-pulse" style={{ background: "oklch(0.18 0 0)" }} />
       </FlightShell>
     </FlightCanvas>
   );
 }
 
-// Width clamp: never edge-to-edge on phones (px gutter), never cramped on wide
-// screens (a generous fixed widget size, centred). Vertically centred in the
-// console viewport.
+// ── Layout shells ───────────────────────────────────────────────────────────
+
 function FlightCanvas({ children }: { readonly children: ReactNode }) {
   return (
-    <div className="flex min-h-[80svh] w-full items-center justify-center px-5 py-12">
-      <div className="flex w-full max-w-[42rem] flex-col gap-5">{children}</div>
+    <div
+      className="flex min-h-[80svh] w-full items-center justify-center px-5 py-12"
+      style={{ fontFamily: IOS_FONT }}
+    >
+      <div className="flex w-full flex-col gap-5" style={{ maxWidth: WIDGET_MAX_PX }}>
+        {children}
+      </div>
     </div>
   );
 }
 
-// iOS widget framing: a light continuous-radius container with the near-black
-// Live-Activity card inset inside it (matches the reference exactly).
+// Concentric squircle pair: light iOS tray wrapping the OLED Live-Activity
+// card. Both are <Squircle> so the radius framework is the only corner source.
 function FlightShell({ children }: { readonly children: ReactNode }) {
   return (
-    <div
-      className="rounded-[2.6rem] p-[7px] shadow-[0_18px_50px_-20px_oklch(0_0_0/0.5)]"
-      style={{ background: C.frame }}
-    >
-      <article
-        className="flex min-h-[15.5rem] flex-col justify-between rounded-[2.15rem] px-9 py-8 sm:px-11 sm:py-9"
-        style={{ background: C.card }}
+    <Squircle cornerRadius={TRAY_RADIUS_PX} style={{ background: TRAY, padding: TRAY_INSET_PX }}>
+      <Squircle
+        role="article"
+        cornerRadius={CARD_RADIUS_PX}
+        className="flex min-h-[15.5rem] flex-col justify-between px-9 py-8 sm:px-11 sm:py-9"
+        style={{ background: CARD }}
       >
         {children}
-      </article>
-    </div>
+      </Squircle>
+    </Squircle>
   );
 }
 
+// ── Per-run card: clock + state machine ─────────────────────────────────────
+
 function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly orgSlug: string }) {
-  // Local 1s clock from the shell-mounted ElapsedTimeProvider — the only
-  // liveness ticker. Electric delivers state; the clock re-renders the ETA
-  // against the frozen baseline. No polling.
-  const nowMs = useElapsedTimeNow(1000);
-  const late = isRunningLate(flight, nowMs);
-  const remaining = remainingMs(flight, nowMs);
-  const accent = late ? C.lateInk : C.green;
-  const accentDim = late ? C.lateDim : C.greenDim;
-  const etaText =
-    late || remaining === null
-      ? flight.statusLabel
-      : `${flight.statusLabel} · ${formatRemaining(remaining)}`;
+  // The machine owns the clock, conflated sampling, the FSM, monotone progress
+  // and springs. The card is a pure Projection consumer — no phase switch.
+  const proj = useFlightMachine(flight);
+  const accent = useAccentSpring(proj.accent);
 
   return (
     <FlightShell>
-      <p className="text-[0.82rem] font-medium tracking-[0.14em]" style={{ color: C.ink }}>
-        {flight.actorLabel}
-      </p>
-
-      <div className="flex flex-1 items-center py-5">
-        <div className="flex w-full items-center gap-3 sm:gap-4">
-          <span
-            className="text-5xl font-extrabold tracking-tight sm:text-6xl"
-            style={{ color: C.ink }}
-          >
-            {flight.sourceLabel}
-          </span>
-          <Endpoint color={accent}>
-            <ArrowUpRight className="size-[1.15rem]" strokeWidth={2.75} />
-          </Endpoint>
-          <FlightArc color={accent} />
-          <Endpoint color={accent}>
-            <ArrowDownRight className="size-[1.15rem]" strokeWidth={2.75} />
-          </Endpoint>
-          <span
-            className="text-5xl font-extrabold tracking-tight sm:text-6xl"
-            style={{ color: C.ink }}
-          >
-            {flight.destLabel}
-          </span>
-        </div>
-      </div>
-
+      <FlightHeader actor={flight.actorLabel} />
+      <FlightRoute
+        source={flight.sourceLabel}
+        dest={flight.destLabel}
+        accent={accent}
+        progress={proj.progressTarget}
+        phaseKind={proj.phaseKind}
+      />
       <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-xl font-bold leading-tight" style={{ color: accent }}>
-            {late ? "Running Late" : "On Time"}
-          </p>
-          <p className="mt-1 text-[0.95rem] font-medium" style={{ color: accentDim }}>
-            {etaText}
-          </p>
-        </div>
+        <FlightStatus headline={proj.headline} detail={proj.detail} accent={accent} />
         {flight.commitPill !== null ? (
-          <Link
-            to="/$orgSlug/runs/$providerRunId"
-            params={{ orgSlug, providerRunId: flight.providerRunId }}
-            className="inline-flex shrink-0 items-center gap-2 rounded-[1.15rem] px-4 py-2.5 text-lg font-bold transition-opacity hover:opacity-90"
-            style={{ background: C.amber, color: C.amberInk }}
-            title="CI run logs"
-          >
-            <GitCommitGlyph className="size-[1.45rem]" />
-            <span className="tabular-nums">{flight.commitPill}</span>
-          </Link>
+          <CommitPill
+            orgSlug={orgSlug}
+            providerRunId={flight.providerRunId}
+            count={flight.commitPill}
+          />
         ) : null}
       </div>
     </FlightShell>
   );
 }
 
-function Endpoint({ color, children }: { readonly color: string; readonly children: ReactNode }) {
+// ── Leaves ──────────────────────────────────────────────────────────────────
+
+function FlightHeader({ actor }: { readonly actor: string }) {
+  return (
+    <p className="text-[0.82rem] font-medium tracking-[0.14em]" style={{ color: INK }}>
+      {actor}
+    </p>
+  );
+}
+
+function FlightRoute({
+  source,
+  dest,
+  accent,
+  progress,
+  phaseKind,
+}: {
+  readonly source: string;
+  readonly dest: string;
+  readonly accent: string;
+  readonly progress: number;
+  readonly phaseKind: PhaseKind;
+}) {
+  return (
+    <div className="flex flex-1 items-center py-5">
+      <div className="flex w-full items-center gap-3 sm:gap-4">
+        <Terminal label={source} />
+        <Endpoint accent={accent}>
+          <ArrowUpRight className="size-[1.15rem]" strokeWidth={2.75} />
+        </Endpoint>
+        <FlightArc progress={progress} accent={accent} phaseKind={phaseKind} />
+        <Endpoint accent={accent}>
+          <ArrowDownRight className="size-[1.15rem]" strokeWidth={2.75} />
+        </Endpoint>
+        <Terminal label={dest} />
+      </div>
+    </div>
+  );
+}
+
+function Terminal({ label }: { readonly label: string }) {
+  return (
+    <span className="text-5xl font-extrabold tracking-tight sm:text-6xl" style={{ color: INK }}>
+      {label}
+    </span>
+  );
+}
+
+function Endpoint({ accent, children }: { readonly accent: string; readonly children: ReactNode }) {
   return (
     <span
       className="flex size-9 shrink-0 items-center justify-center rounded-full"
-      style={{ background: color, color: C.black }}
+      style={{ background: accent, color: NODE_INK }}
     >
       {children}
     </span>
   );
 }
 
-// Decorative flight motif: bold solid arc → white triangle marker → dotted
-// tail into the destination. Static; liveness is the badge + ETA, not arc
-// geometry (avoids fragile progress math, matches the reference).
-function FlightArc({ color }: { readonly color: string }) {
-  const triangle: CSSProperties = {
-    color: C.ink,
-    left: "58%",
-    top: "8%",
-    transform: "rotate(20deg)",
-  };
+function FlightStatus({
+  headline,
+  detail,
+  accent,
+}: {
+  readonly headline: string;
+  readonly detail: string;
+  readonly accent: string;
+}) {
   return (
-    <div className="relative flex h-12 min-w-0 flex-1 items-center" aria-hidden="true">
-      <svg viewBox="0 0 200 70" preserveAspectRatio="none" className="h-full w-full" fill="none">
-        <path d="M4 54 Q 72 -8 132 26" stroke={color} strokeWidth="5" strokeLinecap="round" />
-        <path
-          d="M140 30 Q 168 42 196 54"
-          stroke={color}
-          strokeWidth="5"
-          strokeLinecap="round"
-          strokeDasharray="1.5 9"
-        />
-      </svg>
-      <svg viewBox="0 0 12 12" className="absolute size-[1.05rem]" style={triangle}>
-        <polygon points="2,1.5 11,6 2,10.5" fill="currentColor" />
-      </svg>
+    <div className="min-w-0">
+      <p className="text-xl font-bold leading-tight" style={{ color: accent }}>
+        {headline}
+      </p>
+      <p className="mt-1 text-[0.95rem] font-medium" style={{ color: accent }}>
+        {detail}
+      </p>
     </div>
+  );
+}
+
+// The bottom-right interactive piece — its own <Squircle> per brief.
+function CommitPill({
+  orgSlug,
+  providerRunId,
+  count,
+}: {
+  readonly orgSlug: string;
+  readonly providerRunId: string;
+  readonly count: string;
+}) {
+  // The pill is a <Link>, so it takes the squircle via the hook rather than
+  // the div wrapper — same single radius source, full Link typing preserved.
+  const sq = useSquircle<HTMLAnchorElement>(PILL_RADIUS_PX);
+  return (
+    <Link
+      ref={sq.ref}
+      className="inline-flex shrink-0 items-center gap-2 px-4 py-2.5 text-lg font-bold transition-opacity hover:opacity-90"
+      style={{ ...sq.style, background: "oklch(0.80 0.16 70)", color: NODE_INK }}
+      to="/$orgSlug/runs/$providerRunId"
+      params={{ orgSlug, providerRunId }}
+      title="CI run logs"
+    >
+      <GitCommitGlyph className="size-[1.45rem]" />
+      <span className="tabular-nums">{count}</span>
+    </Link>
   );
 }

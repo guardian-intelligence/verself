@@ -1,10 +1,13 @@
 import type { SVGProps } from "react";
 
-// Inlined (currentColor, no network fetch, tintable) from git-commit-bold.svg.
+// The prod commit glyph, kept — but the center node is now a SOLID disc
+// (was a hollow ring) and the connector bar is heavier/thicker, per brief.
+// currentColor so the amber pill can paint it true black.
 export function GitCommitGlyph(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M244.00293,116H190.8584a63.98856,63.98856,0,0,0-125.71094,0H12.00293a12,12,0,1,0,0,24H65.14746a63.98856,63.98856,0,0,0,125.71094,0h53.14453a12,12,0,0,0,0-24Zm-116,52a40,40,0,1,1,40-40A40.04552,40.04552,0,0,1,128.00293,168Z" />
+      <rect x="8" y="110" width="240" height="36" rx="18" />
+      <circle cx="128" cy="128" r="56" />
     </svg>
   );
 }

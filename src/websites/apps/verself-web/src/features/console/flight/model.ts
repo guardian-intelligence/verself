@@ -1,20 +1,25 @@
 import type { FlightRow } from "./collection";
 
-// One card per in-flight workflow run. Rows are job-grained; a flight is the
-// group of a run's active jobs (the Electric shape only syncs active jobs, so
-// every synced row is "in flight" and "jobs left" is just the group size).
+// DATA CONTRACT ONLY. This module shapes Electric-delivered rows into the
+// `Flight` value the widget renders. It holds no presentation, no clock, no
+// phase logic — those live in phase.ts so the state machine stays pure and
+// independently auditable. The Electric shape syncs only *active* jobs, so
+// every `Flight` is, by construction, in flight.
 export type Flight = {
   readonly key: string;
   readonly providerRunId: string;
+  // "ASH" — actor, top-left.
   readonly actorLabel: string;
+  // "PR47" — origin terminal (left).
   readonly sourceLabel: string;
+  // "MAIN" — destination terminal (right).
   readonly destLabel: string;
+  // "Building" | "Waiting" | "Queued" — the run verb.
   readonly statusLabel: string;
-  readonly jobsLeft: number;
   // Epoch ms of the run's first job sighting; the elapsed clock anchors here.
   readonly departedAtMs: number;
-  // p50 of this run's slowest job (critical path), frozen at departure.
-  // null = cold start: the badge can never flip to "Running Late".
+  // Historical p50 of this run's critical-path job. null = no history yet:
+  // not a distinct phase, just "no honest ETA to show".
   readonly baselineMs: number | null;
   // Display-clamped PR commit count, or null (non-PR run -> pill omitted).
   readonly commitPill: string | null;
@@ -52,7 +57,6 @@ function toFlight(head: FlightRow, jobs: readonly FlightRow[]): Flight {
     sourceLabel: prNumber > 0 ? `PR${prNumber}` : headBranch.toUpperCase(),
     destLabel: (baseBranch || headBranch).toUpperCase(),
     statusLabel: runStatusLabel(jobs),
-    jobsLeft: jobs.length,
     departedAtMs: departedAtMs(jobs),
     baselineMs: runBaselineMs(jobs),
     commitPill: commitPill(head.commit_count),
@@ -74,40 +78,21 @@ function departedAtMs(jobs: readonly FlightRow[]): number {
   return Number.isFinite(earliest) ? earliest : Date.now();
 }
 
-// The run is "late" once it exceeds the critical-path job's typical time, so
-// take the max p50 across jobs that have a baseline. All-null -> cold start.
+// The run is "late" once it exceeds the critical-path job's historical p50, so
+// take the max p50 across jobs that have one. All-null -> no baseline (no ETA).
 function runBaselineMs(jobs: readonly FlightRow[]): number | null {
   let max: number | null = null;
   for (const job of jobs) {
-    const baseline = epochInt(job.predicted_baseline_ms);
+    const baseline = parseIntOrNull(job.predicted_baseline_ms);
     if (baseline !== null && (max === null || baseline > max)) max = baseline;
   }
   return max;
 }
 
 function commitPill(raw: string | null): string | null {
-  const count = epochInt(raw);
+  const count = parseIntOrNull(raw);
   if (count === null || count <= 0) return null;
   return count > 99 ? "99+" : String(count);
-}
-
-// Estimated time remaining = frozen p50 baseline minus elapsed. null when
-// there is no baseline (cold start) — the widget then shows status only.
-export function remainingMs(flight: Flight, nowMs: number): number | null {
-  if (flight.baselineMs === null) return null;
-  return flight.baselineMs - (nowMs - flight.departedAtMs);
-}
-
-// Minutes only, as the user specified: "<1 min" floor, ">60 min" ceiling.
-export function formatRemaining(ms: number): string {
-  if (ms < 60_000) return "<1 min";
-  const minutes = Math.round(ms / 60_000);
-  if (minutes > 60) return ">60 min";
-  return `${minutes} min`;
-}
-
-export function isRunningLate(flight: Flight, nowMs: number): boolean {
-  return flight.baselineMs !== null && nowMs - flight.departedAtMs > flight.baselineMs;
 }
 
 function firstNonEmpty(jobs: readonly FlightRow[], key: "actor_login"): string {
@@ -127,7 +112,7 @@ function toInt(raw: string): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function epochInt(raw: string | null): number | null {
+function parseIntOrNull(raw: string | null): number | null {
   if (raw === null || raw.trim() === "") return null;
   const value = Number.parseInt(raw, 10);
   return Number.isFinite(value) ? value : null;
