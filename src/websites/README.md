@@ -1,10 +1,10 @@
 # Using Vite+, the Unified Toolchain for the Web
 
-This project is using Vite+, a unified toolchain built on top of Vite, Rolldown, Vitest, tsdown, Oxlint, Oxfmt, and Vite Task. Vite+ wraps runtime management, package management, and frontend tooling in a single global CLI called `vp`. Vite+ is distinct from Vite, but it invokes Vite through `vp dev` and `vp build`.
+This project is using Vite+, a unified toolchain built on top of Vite, Rolldown, Vitest, tsdown, Oxlint, Oxfmt, and Vite Task. Vite+ wraps runtime management, package management, and frontend tooling in a single CLI called `vp`. Vite+ is distinct from Vite, but it invokes Vite through `vp dev` and `vp build`.
 
 ## Vite+ Workflow
 
-`vp` is a global binary that handles the full development lifecycle. Run `vp help` to print a list of commands and `vp <command> --help` for information about a specific command.
+**`vp` is not a global binary.** It is the lockfile-pinned `node_modules/vite-plus`, run under the server_tools-pinned Node — the exact toolchain the Bazel frontend build uses — and the only way to invoke it is `aspect vp -- <vp args>`. There is no `~/.vite-plus`, no PATH `vp`, and no `vp upgrade` (the version is the `pnpm-lock.yaml` entry; bump it like any other dependency). Every `vp <command>` below is run as `aspect vp -- <command>` (e.g. `aspect vp -- fmt . --write`, `aspect vp -- check .`, `aspect vp -- install --frozen-lockfile`). `aspect tidy` and `aspect dev verself-web` route through this same toolchain. Run `aspect vp -- help` for the command list and `aspect vp -- <command> --help` for a specific command.
 
 ### Build
 
@@ -28,11 +28,7 @@ Vite+ automatically detects and wraps the underlying package manager such as pnp
 - `vp pm` - Forward a command to the package manager
 - `vp fmt . --write ` - Format the monorepo with Oxfmt
 
-### Maintain
-
-- `upgrade` - Update `vp` itself to the latest version
-
-These commands map to their corresponding tools. For example, `vp dev --port 3000` runs Vite's dev server and works the same as Vite. `vp test` runs JavaScript tests through the bundled Vitest. The version of all tools can be checked using `vp --version`. This is useful when researching documentation, features, and bugs.
+These commands map to their corresponding tools. For example, `aspect vp -- dev --port 3000` runs Vite's dev server and works the same as Vite. `aspect vp -- test` runs JavaScript tests through the bundled Vitest. The version of all tools can be checked with `aspect vp -- --version`. This is useful when researching documentation, features, and bugs.
 
 ## Common Pitfalls
 
@@ -47,8 +43,8 @@ These commands map to their corresponding tools. For example, `vp dev --port 300
 
 ## Review Checklist for Agents
 
-- [ ] Run `vp install` after pulling remote changes and before getting started.
-- [ ] Run `vp check` and `vp test` to validate changes.
+- [ ] Run `aspect vp -- install --frozen-lockfile` after pulling remote changes and before getting started.
+- [ ] Run `aspect vp -- check .` and `aspect vp -- test run` to validate changes.
 <!--VITE PLUS END-->
 
 ## Quickstart After Pull
@@ -58,14 +54,7 @@ Run the frontend setup from a clean checkout before trusting TypeScript output:
 ```bash
 # repo root
 git pull --ff-only
-aspect dev install
-
-# Vite+ workspace
-cd src/websites
-vp install
-
-# repo root again
-cd ../..
+aspect vp -- install --frozen-lockfile
 bazelisk run //src/websites/apps/company:dev_update
 bazelisk run //src/websites/apps/verself-web:dev_update
 ```
@@ -88,7 +77,7 @@ run the owning `dev_update` target. See
 
 ## Local Frontend Development
 
-Frontend apps (TanStack Start) run locally via `vp dev` with HMR. They talk to remote services over SSH tunnels. Auth goes through real Zitadel (HTTPS, external).
+Frontend apps (TanStack Start) run locally via `aspect dev verself-web` (which drives `aspect vp -- run @verself/verself-web#dev`) with HMR. They talk to remote services over SSH tunnels. Auth goes through real Zitadel (HTTPS, external).
 
 Avoid `as` assertions. Prefer `satisfies`.
 
@@ -160,7 +149,7 @@ Electric SQL delivers real-time data via `useLiveQuery`. This is not a React Que
 
 ## Routing
 
-TanStack Router file-based routing. Route files go in `src/routes/`. The route tree is auto-generated — run `vp dlx @tanstack/router-cli generate` after adding or removing route files.
+TanStack Router file-based routing. Route files go in `src/routes/`. The route tree is auto-generated — run the owning `bazelisk run //src/websites/apps/<app>:dev_update` target after adding or removing route files.
 
 `beforeLoad` has access to `context.queryClient` for route-level side effects (invalidation, prefetching). Prefer this over component-level `useEffect` for navigation-triggered logic.
 
