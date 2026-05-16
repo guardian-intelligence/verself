@@ -547,6 +547,45 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
+		ID:      "deploy.nomad_decisions",
+		Family:  "deploy",
+		Title:   "Deploy Nomad Decisions",
+		Purpose: "Nomad decisions emitted by verself-deploy span events for one deploy_run_key, including no-op decisions, submits, and terminal deployment outcomes.",
+		Required: []string{
+			"--run-key=<deploy-run-key>",
+		},
+		Optional: []string{
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=deploy --run-key=2026-04-29.000003@rust-forge-01",
+		},
+		Next: []string{
+			"aspect observe --what=deploy --run-key=<deploy-run-key>",
+			"aspect observe --what=nomad --run-key=<deploy-run-key>",
+		},
+	},
+	{
+		ID:      "deploy.nomad_observer_events",
+		Family:  "deploy",
+		Title:   "Deploy Nomad Observer Events",
+		Purpose: "Time-bounded nomad-observer event-stream rows for jobs actually changed by one deploy, joined through deploy decisions instead of stale job metadata alone.",
+		Required: []string{
+			"--run-key=<deploy-run-key>",
+		},
+		Optional: []string{
+			"--limit=<rows>",
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=deploy --run-key=2026-04-29.000003@rust-forge-01",
+		},
+		Next: []string{
+			"aspect observe --what=nomad --run-key=<deploy-run-key>",
+			"aspect observe --what=logs --service=nomad-observer",
+		},
+	},
+	{
 		ID:      "deploy.rebuild_blast_radius",
 		Family:  "deploy",
 		Title:   "Deploy Rebuild Blast Radius",
@@ -989,6 +1028,8 @@ func canonicalDocID(id string) string {
 		return "temporal.activity"
 	case id == "deploy.run":
 		return "deploy.tasks"
+	case strings.HasPrefix(id, "deploy.nomad_"):
+		return id
 	case strings.HasPrefix(id, "bazel."):
 		return "bazel.invocations"
 	default:

@@ -66,6 +66,8 @@ func buildQueries(cfg config) ([]query, error) {
 		if cfg.runKey != "" {
 			return []query{
 				newQuery("deploy.run", deployRunSQL, params),
+				newQuery("deploy.nomad_decisions", deployNomadDecisionsSQL, params),
+				newQuery("deploy.nomad_observer_events", deployNomadObserverEventsSQL, params),
 				newQuery("deploy.codegen_actions", deployCodegenActionsSQL, params),
 				newQuery("deploy.rebuild_blast_radius", deployRebuildBlastRadiusSQL, params),
 			}, nil
@@ -237,8 +239,12 @@ func emptyHintFor(id string) string {
 		return "No ResourceAttribute with this name across traces or logs."
 	case "catalog.deploys":
 		return "No verself-deploy spans have been recorded. Run `aspect deploy` to populate deploy traces."
+	case "deploy.nomad_decisions":
+		return "No verself.nomad.* span events were recorded for this deploy. The deploy likely failed before Nomad planning."
+	case "deploy.nomad_observer_events":
+		return "No time-bounded nomad-observer rows matched jobs changed by this deploy. This is expected for no-op deploys; check Deploy Nomad Decisions for explicit no-op evidence."
 	case "nomad.events":
-		return "No nomad-observer logs have been recorded. The nomad-observer job may not be deployed yet."
+		return "No matching nomad-observer logs. With --run-key, no-op deploys have no Nomad event-stream rows because no jobs were submitted."
 	case "nomad.failure_logs":
 		return "No failed allocation tails were captured in this window. This is expected when Nomad rollouts are healthy."
 	default:
@@ -832,6 +838,91 @@ FROM default.otel_traces
 WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
   AND (ServiceName = 'verself-deploy' OR ServiceName = 'bazel')
 ORDER BY Timestamp, ServiceName, SpanName
+LIMIT {row_limit:UInt32}`
+
+const deployNomadDecisionsSQL = `
+SELECT
+  formatDateTime(event_time, '%H:%i:%S') AS time,
+  event_name AS event,
+  event_attrs['nomad.job_id'] AS job_id,
+  event_attrs['verself.deploy_wave'] AS wave,
+  event_attrs['nomad.decision.noop'] AS noop,
+  event_attrs['nomad.eval_id'] AS eval_id,
+  event_attrs['nomad.deployment_id'] AS deployment_id,
+  event_attrs['nomad.terminal_status'] AS terminal_status,
+  event_attrs['nomad.tg.desired_total'] AS desired_total,
+  event_attrs['nomad.tg.healthy'] AS healthy,
+  event_attrs['nomad.tg.unhealthy'] AS unhealthy,
+  event_attrs['nomad.tg.placed'] AS placed,
+  toUInt64OrZero(event_attrs['verself.duration_ms']) AS duration_ms,
+  TraceId AS trace_id,
+  SpanId AS span_id,
+  left(event_attrs['error.message'], 160) AS error
+FROM default.otel_traces
+ARRAY JOIN Events.Timestamp AS event_time, Events.Name AS event_name, Events.Attributes AS event_attrs
+WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+  AND ServiceName = 'verself-deploy'
+  AND event_name IN (
+    'verself.nomad.decision',
+    'verself.nomad.submitted',
+    'verself.nomad.submit_failed',
+    'verself.nomad.deployment_succeeded',
+    'verself.nomad.deployment_failed'
+  )
+ORDER BY if(event_name = 'verself.nomad.decision' AND event_attrs['nomad.decision.noop'] = 'true', 1, 0), event_time, job_id, event
+LIMIT {row_limit:UInt32}`
+
+const deployNomadObserverEventsSQL = `
+WITH
+  deploy AS
+  (
+    SELECT
+      Timestamp AS started_at,
+      Timestamp + toIntervalNanosecond(Duration) AS ended_at,
+      JSONExtract(SpanAttributes['verself.changed_jobs'], 'Array(String)') AS changed_jobs
+    FROM default.otel_traces
+    WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+      AND ServiceName = 'verself-deploy'
+      AND SpanName = 'verself_deploy.run'
+    ORDER BY Timestamp DESC
+    LIMIT 1
+  ),
+  decision_jobs AS
+  (
+    SELECT
+      groupUniqArrayIf(
+        event_attrs['nomad.job_id'],
+        event_attrs['nomad.job_id'] != ''
+          AND event_name = 'verself.nomad.decision'
+          AND event_attrs['nomad.decision.noop'] = 'false'
+      ) AS changed_jobs
+    FROM default.otel_traces
+    ARRAY JOIN Events.Name AS event_name, Events.Attributes AS event_attrs
+    WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
+      AND ServiceName = 'verself-deploy'
+  )
+SELECT
+  formatDateTime(l.Timestamp, '%H:%i:%S') AS time,
+  l.LogAttributes['nomad.event_name'] AS event,
+  l.LogAttributes['nomad.event.type'] AS event_type,
+  l.LogAttributes['nomad.job_id'] AS job_id,
+  l.LogAttributes['nomad.alloc.client_status'] AS alloc_status,
+  l.LogAttributes['nomad.deployment.status'] AS deployment_status,
+  l.LogAttributes['nomad.eval.status'] AS eval_status,
+  l.LogAttributes['verself.deploy_run_key'] AS observer_run_key,
+  l.LogAttributes['nomad.deployment_id'] AS deployment_id,
+  l.LogAttributes['nomad.eval_id'] AS eval_id,
+  l.LogAttributes['nomad.alloc_id'] AS alloc_id,
+  l.TraceId AS trace_id,
+  left(l.Body, 220) AS message
+FROM default.otel_logs AS l
+CROSS JOIN deploy AS d
+CROSS JOIN decision_jobs AS j
+WHERE l.ServiceName = 'nomad-observer'
+  AND l.Timestamp >= d.started_at - toIntervalSecond(5)
+  AND l.Timestamp <= d.ended_at + toIntervalMinute(2)
+  AND has(arrayDistinct(arrayConcat(d.changed_jobs, j.changed_jobs)), l.LogAttributes['nomad.job_id'])
+ORDER BY l.Timestamp, event, job_id
 LIMIT {row_limit:UInt32}`
 
 const nomadEventsSQL = `
