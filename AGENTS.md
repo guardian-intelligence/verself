@@ -102,6 +102,10 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 
 </repo_overview>
 
+<product_invariants>
+* User interfaces should always indicate when a product requires being authenticated or a minimum billing tier. Never throw a user to a redirect screen without lampshading it.
+</product_invariants>
+
 <product_context>
 Conceptually, the core product can be simplified as follows:
 
