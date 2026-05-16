@@ -521,7 +521,7 @@ CREATE INDEX idx_execution_schedule_dispatches_workflow_run
     WHERE source_workflow_run_id IS NOT NULL;
 
 
--- Durable workspace and cache volume model.
+-- Durable workspace and cache model.
 
 CREATE TABLE cache_declaration (
     cache_declaration_id UUID        PRIMARY KEY,
