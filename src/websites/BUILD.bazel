@@ -1,6 +1,14 @@
 load("@bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@npm//:defs.bzl", "npm_link_all_packages")
-load("//src/websites:viteplus_rules.bzl", "viteplus_input_sbom", "viteplus_node_runtime_artifact", "viteplus_workspace_check", "viteplus_workspace_install", "viteplus_workspace_test")
+load("//src/tools/build:check_tests.bzl", "stamp_test")
+load(
+    "//src/websites:viteplus_rules.bzl",
+    "viteplus_generated_source_sync_cmds",
+    "viteplus_input_sbom",
+    "viteplus_node_runtime_artifact",
+    "viteplus_tool_inputs",
+    "viteplus_tool_setup",
+)
 
 package(default_visibility = ["//visibility:public"])
 
@@ -53,7 +61,7 @@ copy_to_bin(
 )
 
 filegroup(
-    name = "workspace_sources",
+    name = "package_sources",
     srcs = [
         ":workspace_config",
         "//src/websites/packages/auth-web:sources",
@@ -68,7 +76,7 @@ filegroup(
 )
 
 filegroup(
-    name = "workspace_install_inputs",
+    name = "install_inputs",
     srcs = [
         ".npmrc",
         "package.json",
@@ -88,7 +96,7 @@ filegroup(
 )
 
 filegroup(
-    name = "workspace_check_sources",
+    name = "check_sources",
     srcs = [
         ":workspace_config",
         "//src/websites/apps/company:sources",
@@ -111,7 +119,7 @@ filegroup(
 )
 
 filegroup(
-    name = "workspace_sbom_sources",
+    name = "sbom_sources",
     srcs = [
         ".npmrc",
         "package.json",
@@ -133,37 +141,151 @@ filegroup(
     ]),
 )
 
-viteplus_workspace_install(
-    name = "workspace_install",
+GENERATED_SRCS = [
+    "//src/websites/apps/company:first_light_shader_generated_sources",
+    "//src/websites/apps/company:route_tree_generated_sources",
+    "//src/websites/apps/verself-web:openapi_clients_generated_sources",
+    "//src/websites/apps/verself-web:openapi_spec_copies_generated_sources",
+    "//src/websites/apps/verself-web:route_tree_generated_sources",
+    "//src/websites/packages/sdk:openapi_clients_generated_sources",
+]
+
+VP_LOCAL_TAGS = [
+    "local",
+    "no-remote",
+    "no-sandbox",
+]
+
+genrule(
+    name = "install",
+    srcs = [
+        ":install_inputs",
+    ] + viteplus_tool_inputs(),
+    outs = ["install.stamp"],
+    cmd = """
+set -euo pipefail
+execroot="$$(pwd)"
+out="$$execroot/$@"
+npm_userconfig="$$(mktemp)"
+trap 'rm -f "$$npm_userconfig"' EXIT
+{viteplus_tool_setup}
+chmod 0600 "$$npm_userconfig"
+printf 'registry=https://npm.verself.sh/\\n' > "$$npm_userconfig"
+export NPM_CONFIG_USERCONFIG="$$npm_userconfig"
+cd "src/websites"
+"$$node" "$$vp" install --frozen-lockfile --prefer-offline
+lockfile_hash="$$(hash_file pnpm-lock.yaml)"
+tool_fingerprint="$$("$$node" "$$vp" --version | hash_stdin)"
+printf 'viteplus install lockfile=%s tool=%s\\n' "$$lockfile_hash" "$$tool_fingerprint" > "$$out"
+""".format(viteplus_tool_setup = viteplus_tool_setup()),
+    local = True,
+    tags = VP_LOCAL_TAGS,
 )
 
-viteplus_workspace_check(
-    name = "workspace_check",
-    generated_srcs = [
-        "//src/websites/apps/company:first_light_shader_generated_sources",
-        "//src/websites/apps/company:route_tree_generated_sources",
-        "//src/websites/apps/verself-web:openapi_clients_generated_sources",
-        "//src/websites/apps/verself-web:openapi_spec_copies_generated_sources",
-        "//src/websites/apps/verself-web:route_tree_generated_sources",
-        "//src/websites/packages/sdk:openapi_clients_generated_sources",
-    ],
+genrule(
+    name = "check_run",
+    srcs = [
+        ":check_sources",
+        ":install",
+    ] + viteplus_tool_inputs() + GENERATED_SRCS,
+    outs = ["check.stamp"],
+    cmd = """
+set -euo pipefail
+execroot="$$(pwd)"
+out="$$execroot/$@"
+{viteplus_tool_setup}
+{generated_sync_cmds}
+cd "src/websites"
+"$$node" "$$vp" run check
+printf 'viteplus check ok\\n' > "$$out"
+""".format(
+        generated_sync_cmds = viteplus_generated_source_sync_cmds(
+            GENERATED_SRCS,
+            "src/websites",
+        ),
+        viteplus_tool_setup = viteplus_tool_setup(),
+    ),
+    local = True,
+    tags = VP_LOCAL_TAGS,
 )
 
-viteplus_workspace_test(
-    name = "workspace_test",
-    generated_srcs = [
-        "//src/websites/apps/company:first_light_shader_generated_sources",
-        "//src/websites/apps/company:route_tree_generated_sources",
-        "//src/websites/apps/verself-web:openapi_clients_generated_sources",
-        "//src/websites/apps/verself-web:openapi_spec_copies_generated_sources",
-        "//src/websites/apps/verself-web:route_tree_generated_sources",
-        "//src/websites/packages/sdk:openapi_clients_generated_sources",
-    ],
+stamp_test(
+    name = "check",
+    tags = [
+        "frontend_check",
+        "repo_check",
+    ] + VP_LOCAL_TAGS,
+    target = ":check_run",
+)
+
+genrule(
+    name = "test_run",
+    srcs = [
+        ":check_sources",
+        ":install",
+    ] + viteplus_tool_inputs() + GENERATED_SRCS,
+    outs = ["test.stamp"],
+    cmd = """
+set -euo pipefail
+execroot="$$(pwd)"
+out="$$execroot/$@"
+{viteplus_tool_setup}
+{generated_sync_cmds}
+cd "src/websites"
+"$$node" "$$vp" run test
+printf 'viteplus test ok\\n' > "$$out"
+""".format(
+        generated_sync_cmds = viteplus_generated_source_sync_cmds(
+            GENERATED_SRCS,
+            "src/websites",
+        ),
+        viteplus_tool_setup = viteplus_tool_setup(),
+    ),
+    local = True,
+    tags = [
+        "frontend_test",
+    ] + VP_LOCAL_TAGS,
+)
+
+stamp_test(
+    name = "test",
+    tags = [
+        "frontend_test",
+        "repo_check",
+    ] + VP_LOCAL_TAGS,
+    target = ":test_run",
+)
+
+genrule(
+    name = "build",
+    srcs = [
+        ":check_sources",
+        ":install",
+    ] + viteplus_tool_inputs() + GENERATED_SRCS,
+    outs = ["build.stamp"],
+    cmd = """
+set -euo pipefail
+execroot="$$(pwd)"
+out="$$execroot/$@"
+{viteplus_tool_setup}
+{generated_sync_cmds}
+cd "src/websites"
+"$$node" "$$vp" run build
+printf 'viteplus build ok\\n' > "$$out"
+""".format(
+        generated_sync_cmds = viteplus_generated_source_sync_cmds(
+            GENERATED_SRCS,
+            "src/websites",
+        ),
+        viteplus_tool_setup = viteplus_tool_setup(),
+    ),
+    local = True,
+    tags = VP_LOCAL_TAGS,
 )
 
 viteplus_input_sbom(
     name = "input_sbom",
-    srcs = [":workspace_sbom_sources"],
+    srcs = [":sbom_sources"],
     output = "viteplus-input.cdx.json",
 )
 

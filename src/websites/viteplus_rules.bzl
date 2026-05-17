@@ -1,16 +1,15 @@
-"""Bazel macros for packaging Vite+ apps, source packages, and OpenAPI clients.
+"""Bazel support for packaging Vite+ apps, source packages, and generated clients.
 
 Apps consume workspace package source directly via TS path mappings, so these
-macros stake out the input set, drive `vp build` for runnable artifacts, and
-generate CycloneDX SBOMs alongside the SDK projection back into the source
-tree via `write_source_files`.
+helpers stake out the input set for deploy artifacts and generate CycloneDX
+SBOMs alongside the SDK projection back into the source tree via
+`write_source_files`.
 """
 
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@npm//:defs.bzl", "npm_link_all_packages")
-load("//src/tools/build:check_tests.bzl", "stamp_test")
 
 _INSTRUMENTATION_BUNDLER = "//src/websites/scripts:bundle_instrumentation"
 _CDXGEN_BINARY = "@dev_tool_cdxgen//file"
@@ -20,13 +19,13 @@ _NODEJS_CONTROLLER_RUNTIME = "//src/websites:vp_node"
 _SYFT_ARCHIVE = "@dev_tool_syft//file"
 _VITEPLUS_PACKAGE = "//src/websites:node_modules/vite-plus"
 
-def _viteplus_tool_inputs():
+def viteplus_tool_inputs():
     return [
         _NODEJS_CONTROLLER_RUNTIME,
         _VITEPLUS_PACKAGE,
     ]
 
-def _viteplus_tool_setup():
+def viteplus_tool_setup():
     return """
 node="$(location {nodejs_controller_runtime})"
 case "$$node" in
@@ -69,46 +68,7 @@ hash_file() {{
         viteplus_package = _VITEPLUS_PACKAGE,
     )
 
-def viteplus_workspace_install(name):
-    """Materialize the Vite+ workspace dependency tree through Bazel.
-
-    The app build still runs as a source-tree action because TanStack Start's
-    route splitting is sensitive to sandbox path layout. This target keys the
-    dependency install on package-manager inputs and makes it an explicit input
-    of every packaged frontend artifact, so deploy orchestration does not
-    perform a hidden `vp install` preflight.
-    """
-    native.genrule(
-        name = name,
-        srcs = [
-            ":workspace_install_inputs",
-        ] + _viteplus_tool_inputs(),
-        outs = [name + ".stamp"],
-        cmd = """
-set -euo pipefail
-execroot="$$(pwd)"
-out="$$execroot/$@"
-npm_userconfig="$$(mktemp)"
-trap 'rm -f "$$npm_userconfig"' EXIT
-{viteplus_tool_setup}
-chmod 0600 "$$npm_userconfig"
-printf 'registry=https://npm.verself.sh/\\n' > "$$npm_userconfig"
-export NPM_CONFIG_USERCONFIG="$$npm_userconfig"
-cd "src/websites"
-"$$node" "$$vp" install --frozen-lockfile --prefer-offline
-lockfile_hash="$$(hash_file pnpm-lock.yaml)"
-tool_fingerprint="$$("$$node" "$$vp" --version | hash_stdin)"
-printf 'viteplus install lockfile=%s tool=%s\\n' "$$lockfile_hash" "$$tool_fingerprint" > "$$out"
-""".format(viteplus_tool_setup = _viteplus_tool_setup()),
-        local = True,
-        tags = [
-            "local",
-            "no-remote",
-            "no-sandbox",
-        ],
-    )
-
-def _generated_source_sync_cmds(generated_srcs, package_dir):
+def viteplus_generated_source_sync_cmds(generated_srcs, package_dir):
     if not generated_srcs:
         return ""
     generated_locations = " ".join(["$(locations %s)" % src for src in generated_srcs])
@@ -173,111 +133,6 @@ done
         package_dir = package_dir,
     )
 
-def viteplus_workspace_check(name, generated_srcs = None):
-    """Run Vite+ format, lint, and type checks as an explicit Bazel target.
-
-    Args:
-      name: target name for the build check; `<name>_test` is the Bazel test wrapper.
-      generated_srcs: generated source labels to materialize before `vp check` reads imports.
-    """
-    if generated_srcs == None:
-        generated_srcs = []
-    native.genrule(
-        name = name,
-        srcs = [
-            ":workspace_check_sources",
-            ":workspace_install",
-        ] + _viteplus_tool_inputs() + generated_srcs,
-        outs = [name + ".stamp"],
-        cmd = """
-set -euo pipefail
-execroot="$$(pwd)"
-out="$$execroot/$@"
-{viteplus_tool_setup}
-{generated_sync_cmds}
-cd "src/websites"
-"$$node" "$$vp" check .
-printf 'viteplus check ok\\n' > "$$out"
-""".format(
-            generated_sync_cmds = _generated_source_sync_cmds(
-                generated_srcs,
-                "src/websites",
-            ),
-            viteplus_tool_setup = _viteplus_tool_setup(),
-        ),
-        local = True,
-        tags = [
-            "local",
-            "no-remote",
-            "no-sandbox",
-        ],
-    )
-    stamp_test(
-        name = name + "_test",
-        target = ":" + name,
-        tags = [
-            "frontend_check",
-            "local",
-            "no-remote",
-            "no-sandbox",
-            "repo_check",
-        ],
-    )
-
-def viteplus_workspace_test(name, generated_srcs = None):
-    """Run Vite+ unit tests as a Bazel test target.
-
-    Args:
-      name: target name for the Bazel test wrapper.
-      generated_srcs: generated source labels to materialize before `vp test run` reads imports.
-    """
-    if generated_srcs == None:
-        generated_srcs = []
-    run_target = name + "_run"
-    native.genrule(
-        name = run_target,
-        srcs = [
-            ":workspace_check_sources",
-            ":workspace_install",
-        ] + _viteplus_tool_inputs() + generated_srcs,
-        outs = [name + ".stamp"],
-        cmd = """
-set -euo pipefail
-execroot="$$(pwd)"
-out="$$execroot/$@"
-{viteplus_tool_setup}
-{generated_sync_cmds}
-cd "src/websites"
-"$$node" "$$vp" test run
-printf 'viteplus test ok\\n' > "$$out"
-""".format(
-            generated_sync_cmds = _generated_source_sync_cmds(
-                generated_srcs,
-                "src/websites",
-            ),
-            viteplus_tool_setup = _viteplus_tool_setup(),
-        ),
-        local = True,
-        tags = [
-            "frontend_test",
-            "local",
-            "no-remote",
-            "no-sandbox",
-            "repo_check",
-        ],
-    )
-    stamp_test(
-        name = name,
-        target = ":" + run_target,
-        tags = [
-            "frontend_test",
-            "local",
-            "no-remote",
-            "no-sandbox",
-            "repo_check",
-        ],
-    )
-
 def viteplus_source_package(npm_name, srcs, name = "pkg"):
     """Source-only workspace package linked into the rules_js npm graph.
 
@@ -318,7 +173,7 @@ def viteplus_app(npm_name, srcs, name = "instrumentation_bundle"):
     """Bazel surface for a viteplus app.
 
     `:node_app_nomad_artifact` runs `vp build` from the source tree as an
-    unsandboxed action. The root `:workspace_install` target materializes
+    unsandboxed action. The root `//src/websites:install` target materializes
     dependencies before artifact packaging; Bazel declares the app/workspace
     input set and decides when the packaging action reruns.
 
@@ -486,9 +341,9 @@ def viteplus_node_app_artifact(name, output, migration_entry = None, migration_d
     srcs = [
         ":instrumentation_bundle",
         ":sources",
-        "//src/websites:workspace_install",
-        "//src/websites:workspace_sources",
-    ] + _viteplus_tool_inputs() + generated_srcs
+        "//src/websites:install",
+        "//src/websites:package_sources",
+    ] + viteplus_tool_inputs() + generated_srcs
     migration_cmds = ""
     if migration_entry:
         js_run_binary(
@@ -532,7 +387,7 @@ chmod 0755 "$$tmp/bin/{output}-migrate"
             migration_data_copies = "\n".join(migration_data_copies),
             output = output,
         )
-    generated_sync_cmds = _generated_source_sync_cmds(generated_srcs, package_dir)
+    generated_sync_cmds = viteplus_generated_source_sync_cmds(generated_srcs, package_dir)
     native.genrule(
         name = name,
         srcs = srcs,
@@ -575,7 +430,7 @@ fi
             package_dir = package_dir,
             migration_cmds = migration_cmds,
             generated_sync_cmds = generated_sync_cmds,
-            viteplus_tool_setup = _viteplus_tool_setup(),
+            viteplus_tool_setup = viteplus_tool_setup(),
         ),
         tags = [
             "no-remote",

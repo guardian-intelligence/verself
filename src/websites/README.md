@@ -65,7 +65,7 @@ The generated files under `apps/*/src/__generated` and
 path plus the generated First Light shader TypeScript module. `verself-web:dev_update`
 materializes its route tree plus OpenAPI clients and copied specs from service-owned
 Bazel targets. Run the verself-web generator even when working on `apps/company`
-if `vp check` reports missing OpenAPI-generated clients; workspace checks type both apps.
+if `vp check` reports missing OpenAPI-generated clients; root checks type both apps.
 
 Generated projections are allowed to persist in Verself golden workspaces. Do
 not delete `src/__generated` as a correctness fix. The correctness invariant is
@@ -74,6 +74,23 @@ source projections must be backed by a current Bazel generator target. If you
 remove or rename a generator, update the importing source in the same commit and
 run the owning `dev_update` target. See
 `docs/architecture/generated-artifact-governance.md`.
+
+## Bazel Target Surface
+
+Bazel intentionally exposes only the standard frontend workflow plus deploy
+artifacts:
+
+```bash
+bazelisk build //src/websites:install
+bazelisk test //src/websites:check
+bazelisk test //src/websites:test
+bazelisk build //src/websites:build
+```
+
+Those targets run the lockfile-pinned `vp` against the source workspace. The
+app-specific Nomad artifact targets still live under `apps/*` because they wire
+service-owned OpenAPI specs, generated projections, Node runtime packaging,
+instrumentation preload bundles, and SBOM output into deployable tarballs.
 
 ## Local Frontend Development
 

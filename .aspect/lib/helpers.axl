@@ -59,7 +59,7 @@ SOPS_SHIM = ("sops", "//src/tools/dev/binaries:sops")
 # Bazel-resolved host Node used by `viteplus_rules.bzl` for controller actions.
 # There is no `~/.vite-plus` and no PATH `vp`.
 VITEPLUS_NODE_TARGET = "//src/websites:vp_node"
-VITEPLUS_WORKSPACE_INSTALL_TARGET = "//src/websites:workspace_install"
+VITEPLUS_INSTALL_TARGET = "//src/websites:install"
 VITEPLUS_VP_SCRIPT = "src/websites/node_modules/vite-plus/bin/vp"
 VITEPLUS_WORKSPACE = "src/websites"
 
@@ -211,14 +211,14 @@ def viteplus_node(ctx):
     """Build the Bazel-resolved host Node and materialize node_modules.
 
     Returns the execroot-absolute path to the pinned `node` binary, or "" on
-    failure. Building `:workspace_install` runs the same frozen-lockfile
+    failure. Building `//src/websites:install` runs the same frozen-lockfile
     `vp install` the frontend build does, so the source `node_modules` (and the
     `vite-plus` launcher under it) is the lockfile-pinned tree.
     """
     node = bazel_output_file(ctx, VITEPLUS_NODE_TARGET)
     if node == "":
         return ""
-    if bazel_output_file(ctx, VITEPLUS_WORKSPACE_INSTALL_TARGET) == "":
+    if bazel_output_file(ctx, VITEPLUS_INSTALL_TARGET) == "":
         return ""
     return node
 
