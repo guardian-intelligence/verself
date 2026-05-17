@@ -16,6 +16,16 @@ import { type CornerRadius, Squircle, useSquircle } from "./squircle";
 const WIDGET_MAX_PX = 598;
 const CARD_H_PX = 160;
 
+// Deterministic vertical layout. The 160px black box is split into three
+// explicit bands so the route gets a definite, generous height for the arc —
+// percentage/flex-1 height against an indefinite parent collapses the arc to
+// zero, so the band heights are computed, not flexed. STATUS_BAND ≥ pill
+// height; ROUTE_BAND takes the rest and is the dominant centre band.
+const PAD_Y = 14; // vertical padding inside the box
+const HEADER_BAND = 22;
+const STATUS_BAND = 38;
+const ROUTE_BAND = CARD_H_PX - 2 * PAD_Y - HEADER_BAND - STATUS_BAND;
+
 // Asymmetric continuous corners: an iOS Live Activity is a fixed 3-D corner
 // "wheel" projected onto the lock-screen — the top edge tucks under the
 // Dynamic Island (tighter radius) while the free bottom edge rides a fuller
@@ -170,8 +180,13 @@ function FlightShell({ children }: { readonly children: ReactNode }) {
     <Squircle
       role="article"
       cornerRadius={CARD_RADIUS}
-      className="flex flex-col justify-between px-7 py-4 sm:px-9"
-      style={{ height: CARD_H_PX, background: CARD, boxShadow: CARD_SHADOW }}
+      className="flex flex-col px-7 sm:px-9"
+      style={{
+        height: CARD_H_PX,
+        paddingBlock: PAD_Y,
+        background: CARD,
+        boxShadow: CARD_SHADOW,
+      }}
     >
       {children}
     </Squircle>
@@ -193,17 +208,26 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
 
   return (
     <FlightShell>
-      <div ref={measureRef} className="flex h-full flex-col justify-between">
-        <FlightHeader actor={flight.actorLabel} scale={scale} />
-        <FlightRoute
-          source={flight.sourceLabel}
-          dest={flight.destLabel}
-          accent={accent}
-          progress={proj.progressTarget}
-          phaseKind={proj.phaseKind}
-          scale={scale}
-        />
-        <div className="flex items-end justify-between gap-4">
+      {/* Three explicit bands summing to the content box — header / route /
+          status. The route band has a definite height so the arc fills it. */}
+      <div ref={measureRef} className="flex flex-col">
+        <div className="flex shrink-0 items-center justify-between" style={{ height: HEADER_BAND }}>
+          <FlightHeader actor={flight.actorLabel} scale={scale} />
+        </div>
+        <div className="shrink-0" style={{ height: ROUTE_BAND }}>
+          <FlightRoute
+            source={flight.sourceLabel}
+            dest={flight.destLabel}
+            accent={accent}
+            progress={proj.progressTarget}
+            phaseKind={proj.phaseKind}
+            scale={scale}
+          />
+        </div>
+        <div
+          className="flex shrink-0 items-end justify-between gap-4"
+          style={{ height: STATUS_BAND }}
+        >
           <FlightStatus headline={proj.headline} detail={proj.detail} accent={accent} />
           {flight.commitPill !== null ? (
             <CommitPill
@@ -226,12 +250,12 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
 // reads as a word, not spaced-out letters (brief note g).
 function FlightHeader({ actor, scale }: { readonly actor: string; readonly scale: Scale }) {
   return (
-    <div className="flex items-center justify-between">
+    <>
       <p className="font-medium tracking-[0.05em]" style={{ color: INK, fontSize: scale.headerPx }}>
         {actor}
       </p>
       <GuardianMark sizePx={scale.headerPx} />
-    </div>
+    </>
   );
 }
 
@@ -240,7 +264,7 @@ function FlightHeader({ actor, scale }: { readonly actor: string; readonly scale
 // then the GUARDIAN wordmark — the reference's white-chip + dark-glyph +
 // wordmark lockup, rebuilt on-brand.
 function GuardianMark({ sizePx }: { readonly sizePx: number }) {
-  const chip = Math.round(sizePx * 1.55);
+  const chip = Math.round(sizePx * 1.3);
   return (
     <div className="flex items-center gap-2">
       <Squircle
@@ -281,8 +305,8 @@ function FlightRoute({
   readonly scale: Scale;
 }) {
   return (
-    <div className="flex flex-1 items-center">
-      <div className="flex w-full items-center gap-2 sm:gap-3">
+    <div className="flex h-full items-center">
+      <div className="flex h-full w-full items-center gap-2 sm:gap-3">
         <Terminal label={source} scale={scale} />
         {/* Path group: the arc fills the whole route band absolutely; the
             discs sit on top at the exact bezier endpoints, so the curve
