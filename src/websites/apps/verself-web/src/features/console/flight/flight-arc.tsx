@@ -44,14 +44,19 @@ export function FlightArc({
   accent,
   phaseKind,
   discPx,
-  marker = <VerselfTriangleMarker />,
+  strokeWidth,
+  markerR,
+  marker,
 }: {
   readonly progress: number; // already monotone + spring-driven by the machine
   readonly accent: string;
   readonly phaseKind: PhaseKind;
   readonly discPx: number;
+  readonly strokeWidth: number;
+  readonly markerR: number;
   readonly marker?: ReactNode;
 }) {
+  const mark = marker ?? <VerselfTriangleMarker r={markerR} />;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const size = useSize(hostRef);
   const w = size && size.w > 0 ? size.w : FALLBACK.w;
@@ -73,9 +78,9 @@ export function FlightArc({
         className="absolute inset-0 h-full w-full overflow-visible"
         fill="none"
       >
-        <ArcPath d={solid} color={accent} />
-        <ArcPath d={dotted} color={accent} dashed />
-        <g transform={`translate(${at.x} ${at.y}) rotate(${angle})`}>{marker}</g>
+        <ArcPath d={solid} color={accent} strokeWidth={strokeWidth} />
+        <ArcPath d={dotted} color={accent} strokeWidth={strokeWidth} dashed />
+        <g transform={`translate(${at.x} ${at.y}) rotate(${angle})`}>{mark}</g>
       </svg>
     </div>
   );
@@ -84,10 +89,12 @@ export function FlightArc({
 function ArcPath({
   d,
   color,
+  strokeWidth,
   dashed = false,
 }: {
   readonly d: string;
   readonly color: string;
+  readonly strokeWidth: number;
   readonly dashed?: boolean;
 }) {
   if (!d) return null;
@@ -95,17 +102,28 @@ function ArcPath({
     <path
       d={d}
       stroke={color}
-      strokeWidth={5}
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
-      {...(dashed ? { strokeDasharray: "1.5 9" } : {})}
+      // Dotted tail: near-zero dash + a gap scaled to the stroke, round-capped,
+      // so it reads as evenly spaced dots whatever the card size (matches the
+      // reference). The gap rhythm is stable because splitAt subdivides the
+      // curve itself rather than offsetting a dash pattern.
+      {...(dashed
+        ? {
+            strokeDasharray: `${(strokeWidth * 0.05).toFixed(3)} ${(strokeWidth * 1.9).toFixed(3)}`,
+          }
+        : {})}
     />
   );
 }
 
-// The Verself brand triangle (`▽`), an equilateral mark centered on its
+// The Verself brand triangle (`▽`), an equilateral mark centred on its
 // centroid with the apex on +x so <FlightArc>'s tangent rotation makes it lead
-// the path. Solid white per the reference. This is the only marker.
-function VerselfTriangleMarker() {
-  // Equilateral, circumradius 9: apex (9,0), base (-4.5, ±7.79).
-  return <polygon points="9,0 -4.5,7.79 -4.5,-7.79" fill="oklch(1 0 0)" />;
+// the path. Solid white per the reference. This is the only marker; `r` is the
+// circumradius so it scales with the card (composed from the disc size).
+function VerselfTriangleMarker({ r }: { readonly r: number }) {
+  // Equilateral, circumradius r: apex (r,0), base (-r/2, ±r·√3/2).
+  const bx = (-r / 2).toFixed(3);
+  const by = ((r * Math.sqrt(3)) / 2).toFixed(3);
+  return <polygon points={`${r.toFixed(3)},0 ${bx},${by} ${bx},-${by}`} fill="oklch(1 0 0)" />;
 }

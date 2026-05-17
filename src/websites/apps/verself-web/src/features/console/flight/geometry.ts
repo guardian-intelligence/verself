@@ -16,22 +16,26 @@ export type ArcBox = {
   readonly inset?: number;
 };
 
-// The reference arc: a shallow, confident lob that rises off the origin and
-// settles toward the destination (matches Image #1/#2). Control points are a
-// fraction of the box so the curve is resolution-independent.
+// The reference arc: a confident lob that rises off the origin disc, crests
+// high and broad through the middle, and settles into the destination disc
+// (matches the Flighty reference). Control points are a fraction of the box so
+// the curve is resolution-independent. Both endpoints sit exactly on the
+// vertical centre (the disc-centre line), inset by the disc radius, so the
+// curve provably runs disc-centre → disc-centre as one continuous line.
 export function arcGeometry({ width, height, inset = 0 }: ArcBox): Bezier {
-  // Shallow, confident lob: leaves the left disc centre, crests just shy of
-  // the top, settles into the right disc centre — the Flighty path shape.
-  // Endpoints are inset by the disc radius and sit on the vertical centre so
-  // the curve runs continuously from one disc to the other.
   const x0 = inset;
   const x1 = width - inset;
   const span = x1 - x0;
+  const cy = height * 0.5; // disc-centre line
+  // Pull both controls hard toward the top so the apex clears the discs by a
+  // healthy margin and the span between the discs reads as the dominant lob,
+  // not a flat hop. Slight asymmetry (left control a touch higher) gives the
+  // climb-out → cruise feel of the reference rather than a symmetric hump.
   return [
-    { x: x0, y: height * 0.5 },
-    { x: x0 + span * 0.26, y: height * 0.12 },
-    { x: x0 + span * 0.64, y: height * 0.06 },
-    { x: x1, y: height * 0.48 },
+    { x: x0, y: cy },
+    { x: x0 + span * 0.3, y: height * 0.04 },
+    { x: x0 + span * 0.68, y: height * -0.02 },
+    { x: x1, y: cy },
   ];
 }
 

@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { squircleSvgPath } from "./squircle-path";
+import { getSvgPath } from "./squircle-path";
 
 // Continuous-corner (Apple superellipse) primitive. `useSquircle` measures the
 // element with a ResizeObserver and applies the figma-squircle curve as
@@ -16,16 +16,34 @@ import { squircleSvgPath } from "./squircle-path";
 // border-radius — identical on the server and the first client render, so
 // there is no hydration mismatch; the clip swaps in after mount.
 //
+// The radius is `number` (uniform) OR `{ top, bottom }` (asymmetric). The card
+// uses the asymmetric form: an iOS Live Activity reads as a fixed 3-D corner
+// "wheel" projected onto the lock-screen, so the top corners (under the
+// Dynamic Island) and the free bottom corners ride different points of that
+// wheel. figma-squircle's per-corner distribution keeps all four corners on
+// Apple's continuous-corner curve while they differ.
+//
 // Deliberately NOT a polymorphic `as` component: TanStack <Link>'s prop
 // surface collapses an `as` generic to `never`. The corner is a hook returning
-// {ref, style} that applies cleanly to a <div> (tray/card) or a <Link> (pill)
+// {ref, style} that applies cleanly to a <div> (card/chip) or a <Link> (pill)
 // with full typing. <Squircle> is the div convenience wrapper.
 
 export const CORNER_SMOOTHING = 0.6; // Apple's app-icon value.
 
+// number → uniform; { top, bottom } → top corners vs. bottom corners differ.
+export type CornerRadius = number | { readonly top: number; readonly bottom: number };
+
 // Apple's nested-rounded-rect rule: inner radius = outer radius − inset.
 export function concentric(outerRadius: number, inset: number): number {
   return Math.max(0, outerRadius - inset);
+}
+
+function topRadius(r: CornerRadius): number {
+  return typeof r === "number" ? r : r.top;
+}
+
+function bottomRadius(r: CornerRadius): number {
+  return typeof r === "number" ? r : r.bottom;
 }
 
 export type SquircleHandle<T extends HTMLElement> = {
@@ -36,7 +54,7 @@ export type SquircleHandle<T extends HTMLElement> = {
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? () => {} : useLayoutEffect;
 
 export function useSquircle<T extends HTMLElement = HTMLDivElement>(
-  cornerRadius: number,
+  cornerRadius: CornerRadius,
   cornerSmoothing: number = CORNER_SMOOTHING,
 ): SquircleHandle<T> {
   const ref = useRef<T | null>(null);
@@ -59,24 +77,33 @@ export function useSquircle<T extends HTMLElement = HTMLDivElement>(
     return () => ro.disconnect();
   }, []);
 
+  const top = topRadius(cornerRadius);
+  const bottom = bottomRadius(cornerRadius);
+
   const style = useMemo<CSSProperties>(() => {
     if (!box || box.w <= 0 || box.h <= 0) {
-      return { borderRadius: cornerRadius }; // SSR / pre-measure fallback
+      // SSR / pre-measure fallback. The 4-value border-radius shorthand is
+      // top-left, top-right, bottom-right, bottom-left — deterministic from
+      // props (not box size), so the server and first client render match.
+      return { borderRadius: `${top}px ${top}px ${bottom}px ${bottom}px` };
     }
-    const d = squircleSvgPath({
+    const d = getSvgPath({
       width: box.w,
       height: box.h,
-      cornerRadius,
+      topLeftCornerRadius: top,
+      topRightCornerRadius: top,
+      bottomLeftCornerRadius: bottom,
+      bottomRightCornerRadius: bottom,
       cornerSmoothing,
     });
     return { clipPath: `path('${d}')` };
-  }, [box, cornerRadius, cornerSmoothing]);
+  }, [box, top, bottom, cornerSmoothing]);
 
   return { ref, style };
 }
 
 type SquircleProps = HTMLAttributes<HTMLDivElement> & {
-  readonly cornerRadius: number;
+  readonly cornerRadius: CornerRadius;
   readonly cornerSmoothing?: number;
 };
 

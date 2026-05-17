@@ -73,8 +73,12 @@ export function useSpring(
 
 type Lch = readonly [number, number, number];
 const ACCENT_LCH: Record<AccentToken, Lch> = {
-  // oklch(L C H) — tuned to Image #2 (iOS systemGreen / Flighty marigold).
-  "accent-green": [0.82, 0.2, 152],
+  // oklch(L C H). The on-time accent is the brand `Flare` (#CCFF00, Pantone
+  // 389 C) from the Newsroom treatment — a deliberate divergence from the
+  // reference's iOS systemGreen (brief note f); brand wins over the literal
+  // photo. Computed once from sRGB → OKLab so the widget stays oklch-only.
+  // Amber (running late) keeps the reference marigold.
+  "accent-green": [0.9307, 0.2286, 123.09],
   "accent-amber": [0.8, 0.16, 70],
 };
 
