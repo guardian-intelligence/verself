@@ -89,11 +89,15 @@ func canonicalArtifactDigestInput(seen map[string]bool, bindings map[string]arti
 	return rows
 }
 
-func stampNomadSpecMeta(job *api.Job, artifactDigest, runKey, sha string) (string, error) {
+func stampNomadSpecMeta(job *api.Job, artifactDigest, inputDigest, runKey, sha string) (string, error) {
 	if job.Meta == nil {
 		job.Meta = map[string]string{}
 	}
 	job.Meta["artifact_sha256"] = artifactDigest
+	delete(job.Meta, "input_sha256")
+	if inputDigest != "" {
+		job.Meta["input_sha256"] = inputDigest
+	}
 	delete(job.Meta, "spec_sha256")
 	delete(job.Meta, "deploy_run_key")
 	delete(job.Meta, "deploy_sha")
@@ -215,6 +219,7 @@ func prepareNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclie
 		attribute.String("nomad.job_id", job.JobID),
 		attribute.String("verself.deploy_wave", job.DeployPhase),
 		attribute.StringSlice("verself.artifact_outputs", job.ArtifactOutputs),
+		attribute.String("verself.input_sha256", job.InputSHA256),
 	)
 	spec, err := nomadclient.ParseSpec(job.Spec, "nomad job "+job.JobID)
 	if err != nil {

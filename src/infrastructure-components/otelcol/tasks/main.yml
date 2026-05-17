@@ -83,7 +83,6 @@
     owner: root
     group: "{{ otelcol_system_group }}"
     mode: "0640"
-  notify: restart otelcol
 
 - name: Deploy OTel Collector ClickHouse SPIFFE helper config
   ansible.builtin.template:
@@ -92,7 +91,6 @@
     owner: root
     group: "{{ otelcol_system_group }}"
     mode: "0640"
-  notify: restart otelcol
 
 - name: Deploy OTel Collector config
   ansible.builtin.template:
@@ -101,4 +99,3 @@
     owner: root
     group: "{{ otelcol_system_group }}"
     mode: "0640"
-  notify: restart otelcol

@@ -46,6 +46,7 @@ type NomadJob struct {
 	DeployPhase     string          `json:"deploy_phase"`
 	DependsOn       []string        `json:"depends_on,omitempty"`
 	ArtifactOutputs []string        `json:"artifact_outputs,omitempty"`
+	InputSHA256     string          `json:"input_sha256,omitempty"`
 	SpecSHA256      string          `json:"spec_sha256"`
 	ArtifactSHA256  string          `json:"artifact_sha256"`
 	Spec            json.RawMessage `json:"spec"`

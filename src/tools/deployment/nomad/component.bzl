@@ -7,6 +7,7 @@ NomadComponentInfo = provider(
         "component": "Topology component key.",
         "descriptor": "Component descriptor JSON file.",
         "deploy_phase": "Deployment phase for graph wave submission.",
+        "digest_inputs": "Files whose content must participate in the Nomad job spec digest without being downloaded as runtime artifacts.",
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
         "provides": "Logical resources this component provides.",
@@ -33,6 +34,23 @@ def _repo_label(label):
     if raw.startswith("@" + "@//"):
         return raw[2:]
     return raw
+
+def _digest_input_records(targets):
+    inputs = []
+    records = []
+    for target in targets:
+        files_by_path = {}
+        for f in target.files.to_list():
+            files_by_path[f.short_path] = f
+        for short_path in sorted(files_by_path.keys()):
+            f = files_by_path[short_path]
+            inputs.append(f)
+            records.append({
+                "label": _repo_label(target.label),
+                "path": f.path,
+                "short_path": f.short_path,
+            })
+    return inputs, records
 
 def _write_descriptor(ctx, out, content, inputs):
     ctx.actions.run_shell(
@@ -67,6 +85,8 @@ def _nomad_component_impl(ctx):
             "output": output,
             "path": artifact_file.path,
         })
+    digest_input_files, digest_inputs = _digest_input_records(ctx.attr.digest_inputs)
+    inputs.extend(digest_input_files)
 
     requires = list(ctx.attr.requires)
     provides = list(ctx.attr.provides)
@@ -75,10 +95,11 @@ def _nomad_component_impl(ctx):
 
     descriptor = ctx.actions.declare_file(ctx.label.name + ".nomad_component.json")
     descriptor_data = {
-        "schema_version": 3,
+        "schema_version": 4,
         "artifacts": artifacts,
         "component": ctx.attr.component,
         "deploy_phase": ctx.attr.deploy_phase,
+        "digest_inputs": digest_inputs,
         "job_id": ctx.attr.job_id,
         "job_spec": job_spec.short_path,
         "job_spec_path": job_spec.path,
@@ -98,6 +119,7 @@ def _nomad_component_impl(ctx):
             component = ctx.attr.component,
             descriptor = descriptor,
             deploy_phase = ctx.attr.deploy_phase,
+            digest_inputs = ctx.attr.digest_inputs,
             job_id = ctx.attr.job_id,
             job_spec = job_spec,
             provides = provides,
@@ -120,6 +142,10 @@ nomad_component = rule(
         "deploy_phase": attr.string(
             default = "product",
             doc = "Deployment phase. pre_artifact jobs are submitted before artifact publication; platform/product/edge jobs are submitted after artifact publication is available.",
+        ),
+        "digest_inputs": attr.label_list(
+            allow_files = True,
+            doc = "Source or generated files that should force a Nomad redeploy when their content changes, without becoming Nomad runtime artifacts.",
         ),
         "job_id": attr.string(
             mandatory = True,

@@ -81,12 +81,19 @@ type nomadComponentDescriptor struct {
 	TestTargets   []string                  `json:"test_targets"`
 	UnitID        string                    `json:"unit_id"`
 	Artifacts     []nomadDescriptorArtifact `json:"artifacts"`
+	DigestInputs  []nomadDescriptorInput    `json:"digest_inputs"`
 }
 
 type nomadDescriptorArtifact struct {
 	Label  string `json:"label"`
 	Output string `json:"output"`
 	Path   string `json:"path"`
+}
+
+type nomadDescriptorInput struct {
+	Label     string `json:"label"`
+	Path      string `json:"path"`
+	ShortPath string `json:"short_path"`
 }
 
 type artifactBinding struct {
@@ -187,7 +194,7 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 		if err := json.Unmarshal(body, &component); err != nil {
 			return nil, fmt.Errorf("decode %s: %w", path, err)
 		}
-		if component.SchemaVersion != 3 {
+		if component.SchemaVersion != 4 {
 			return nil, fmt.Errorf("%s: unsupported nomad_component schema_version=%d", path, component.SchemaVersion)
 		}
 		if !componentInSite(component.Sites, site) {
@@ -212,6 +219,11 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 		for _, artifact := range component.Artifacts {
 			if artifact.Label == "" || artifact.Output == "" || artifact.Path == "" {
 				return nil, fmt.Errorf("%s: artifact entries require label, output, and path", path)
+			}
+		}
+		for _, input := range component.DigestInputs {
+			if input.Label == "" || input.Path == "" || input.ShortPath == "" {
+				return nil, fmt.Errorf("%s: digest_inputs entries require label, path, and short_path", path)
 			}
 		}
 		components = append(components, component)
@@ -331,7 +343,11 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 		}
 		artifactDigest := deploymodel.SHA256(artifactDigestInput)
 		artifactOutputs := sortedArtifactOutputs(seen)
-		specSHA, err := stampNomadSpecMeta(job, artifactDigest, runKey, sha)
+		inputDigest, err := componentInputDigest(repoRoot, component)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", component.JobID, err)
+		}
+		specSHA, err := stampNomadSpecMeta(job, artifactDigest, inputDigest, runKey, sha)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", component.JobID, err)
 		}
@@ -347,6 +363,7 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 			DeployPhase:     component.DeployPhase,
 			DependsOn:       append([]string(nil), component.Requires...),
 			ArtifactOutputs: artifactOutputs,
+			InputSHA256:     inputDigest,
 			SpecSHA256:      specSHA,
 			ArtifactSHA256:  artifactDigest,
 			Spec:            specBody,
@@ -358,6 +375,42 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 		}
 	}
 	return jobs, nil
+}
+
+type componentDigestRow struct {
+	Label  string `json:"label"`
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+}
+
+func componentInputDigest(repoRoot string, component nomadComponentDescriptor) (string, error) {
+	if len(component.DigestInputs) == 0 {
+		return "", nil
+	}
+	rows := make([]componentDigestRow, 0, len(component.DigestInputs))
+	for _, input := range component.DigestInputs {
+		path := resolveWorkspacePath(repoRoot, input.Path)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("read digest input %s: %w", path, err)
+		}
+		rows = append(rows, componentDigestRow{
+			Label:  input.Label,
+			Path:   input.ShortPath,
+			SHA256: deploymodel.SHA256(body),
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Label != rows[j].Label {
+			return rows[i].Label < rows[j].Label
+		}
+		return rows[i].Path < rows[j].Path
+	})
+	body, err := json.Marshal(rows)
+	if err != nil {
+		return "", fmt.Errorf("encode component digest inputs: %w", err)
+	}
+	return deploymodel.SHA256(body), nil
 }
 
 func validDeployPhase(value string) bool {
