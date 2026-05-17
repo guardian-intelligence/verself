@@ -49,6 +49,7 @@ Choose the controller platform that is running the repo commands.
 ```bash
 # 1. Toolchain (one time per controller).
 ./src/tools/dev/bootstrap/bootstrap-linux-amd64
+export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
 bazelisk mod tidy
 ```
 
@@ -57,6 +58,7 @@ bazelisk mod tidy
 ```bash
 # 1. Toolchain (one time per controller).
 ./src/tools/dev/bootstrap/bootstrap-darwin-arm64
+export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
 bazelisk mod tidy
 ```
 
@@ -87,4 +89,5 @@ The two scripts just get any fresh developer/agent environment set up. They
 install into `${HOME}/.cache/verself/bootstrap-bin` by default and
 automatically add that directory to GitHub Actions via `GITHUB_PATH` when that
 file is present. Set `BOOTSTRAP_INSTALL_DIR` to opt into a different install
-directory.
+directory. Local shells need that directory on `PATH` before invoking `aspect`
+or `bazelisk`.
