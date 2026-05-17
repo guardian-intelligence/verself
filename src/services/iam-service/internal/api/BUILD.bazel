@@ -27,6 +27,7 @@ go_library(
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/humaapi",
         "//src/services/service-runtime/go/iam",
+        "//src/services/service-runtime/go/requestmeta",
         "//src/services/service-runtime/go/workload",
         "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_danielgtaylor_huma_v2//:huma",

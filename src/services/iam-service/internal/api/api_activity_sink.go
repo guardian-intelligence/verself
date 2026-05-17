@@ -58,6 +58,8 @@ type governanceAPIActivity struct {
 	HTTPMethod            string
 	HTTPRoute             string
 	HTTPSafeParams        string
+	HTTPUserAgent         string
+	HTTPClientIP          string
 	HTTPStatus            uint16
 	AuthorizationDecision governanceinternalclient.AuthorizationDecision
 	Status                governanceinternalclient.APIActivityStatus
@@ -110,9 +112,11 @@ func governanceAPIActivityToContract(record governanceAPIActivity) governanceint
 			Name: optionalString(record.ResourceName),
 		}},
 		HTTPRequest: governanceinternalclient.APIActivityHTTPRequest{
-			Method: method,
-			Route:  route,
-			Args:   optionalStringTyped[governanceinternalclient.HTTPSafeArgs](record.HTTPSafeParams),
+			Method:        method,
+			Route:         route,
+			Args:          optionalStringTyped[governanceinternalclient.HTTPSafeArgs](record.HTTPSafeParams),
+			UserAgent:     optionalString(record.HTTPUserAgent),
+			SrcEndpointIP: optionalString(record.HTTPClientIP),
 		},
 		HTTPResponse: governanceinternalclient.APIActivityHTTPResponse{
 			Code:    httpStatus,

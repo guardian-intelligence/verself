@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -20,6 +19,7 @@ import (
 	"github.com/verself/governance-service/internal/governance"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
+	"github.com/verself/service-runtime/requestmeta"
 )
 
 type permission = runtimeiam.Permission
@@ -218,21 +218,31 @@ type operationRequestInfo struct {
 	Origin         string
 	Host           string
 	RequestID      string
+	Attribution    requestmeta.Attribution
 }
 
 func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
+	attribution := requestmeta.FromValues(ctx.Header, ctx.RemoteAddr())
+	trustedHops := uint8(0)
+	if attribution.Trusted {
+		trustedHops = 1
+	}
 	info := operationRequestInfo{
-		ClientIP:       clientIPFromHuma(ctx),
-		IPChain:        ipChainFromHuma(ctx),
-		TrustedHops:    1,
+		ClientIP:       attribution.ClientIP,
+		IPChain:        attribution.ClientIP,
+		TrustedHops:    trustedHops,
 		UserAgent:      strings.TrimSpace(ctx.Header("User-Agent")),
 		IdempotencyKey: strings.TrimSpace(ctx.Header("Idempotency-Key")),
 		RefererOrigin:  originFromURL(ctx.Header("Referer")),
 		Origin:         strings.TrimSpace(ctx.Header("Origin")),
 		Host:           strings.TrimSpace(ctx.Header("Host")),
 		RequestID:      firstHeader(ctx, "X-Request-ID", "X-Correlation-ID", "Fly-Request-Id", "Cf-Ray"),
+		Attribution:    attribution,
 	}
-	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
+	nextCtx := requestmeta.WithAttribution(ctx.Context(), attribution)
+	nextCtx = context.WithValue(nextCtx, operationRequestInfoKey{}, info)
+	requestmeta.AnnotateSpan(nextCtx, attribution)
+	next(huma.WithContext(ctx, nextCtx))
 }
 
 func requireOperationIdempotency(ctx context.Context, policy runtimeiam.OperationPolicy) error {
@@ -257,33 +267,6 @@ func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 func operationRateLimitKey(ctx context.Context, identity *auth.Identity, policy runtimeiam.OperationPolicy) string {
 	info := operationRequestInfoFromContext(ctx)
 	return strings.Join([]string{string(policy.RateLimitClass), string(policy.Permission), identity.OrgID, identity.Subject, info.ClientIP}, "\x00")
-}
-
-func clientIPFromHuma(ctx huma.Context) string {
-	for _, header := range []string{"CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For"} {
-		value := strings.TrimSpace(ctx.Header(header))
-		if value == "" {
-			continue
-		}
-		if header == "X-Forwarded-For" {
-			value = strings.TrimSpace(strings.Split(value, ",")[0])
-		}
-		if value != "" {
-			return value
-		}
-	}
-	remote := strings.TrimSpace(ctx.RemoteAddr())
-	if host, _, err := net.SplitHostPort(remote); err == nil {
-		return host
-	}
-	return remote
-}
-
-func ipChainFromHuma(ctx huma.Context) string {
-	if value := strings.TrimSpace(ctx.Header("X-Forwarded-For")); value != "" {
-		return value
-	}
-	return clientIPFromHuma(ctx)
 }
 
 func firstHeader(ctx huma.Context, names ...string) string {
@@ -361,6 +344,10 @@ func recordAPIActivity(ctx context.Context, svc *governance.Service, op huma.Ope
 			"verself.idempotency_key_hash":   governanceHashForAPI(info.IdempotencyKey),
 			"verself.credential_fingerprint": principal.CredentialFingerprint,
 			"verself.trusted_proxy_hops":     info.TrustedHops,
+			"verself.client_ip_source":       info.Attribution.ClientIPSource,
+			"verself.client_ip_trusted":      info.Attribution.Trusted,
+			"verself.edge_peer_ip":           info.Attribution.EdgePeerIP,
+			"verself.rejected_ip_headers":    strings.Join(info.Attribution.RejectedHeaders, ","),
 			"verself.origin":                 info.Origin,
 		}),
 	}

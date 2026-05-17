@@ -2,9 +2,11 @@ import { getRequest, setResponseHeader } from "@tanstack/react-start/server";
 import * as v from "valibot";
 import { requireURLFromEnv } from "@verself/web-env";
 import {
+  browserSessionsResponseSchema,
   parseAuthSnapshot,
   type AuthenticatedAuthSnapshot,
   type AuthSnapshot,
+  type BrowserSessionsResponse,
 } from "@verself/auth-web/isomorphic";
 import type { ConsoleAuthContext } from "./auth";
 
@@ -98,6 +100,23 @@ export async function selectIdentityOrganization(data: { orgID: string }): Promi
     );
   }
   return parseAuthSnapshot(await response.json());
+}
+
+export async function listIdentityBrowserSessions(): Promise<BrowserSessionsResponse> {
+  const response = await identityAuthFetch("sessions");
+  if (!response.ok) {
+    throw new Error(`identity sessions failed: ${response.status} ${await response.text()}`);
+  }
+  return v.parse(browserSessionsResponseSchema, await response.json());
+}
+
+export async function revokeIdentityBrowserSession(sessionHandle: string): Promise<void> {
+  const response = await identityAuthFetch(`sessions/${encodeURIComponent(sessionHandle)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`identity session revoke failed: ${response.status} ${await response.text()}`);
+  }
 }
 
 export async function getIdentityProductAccessToken(

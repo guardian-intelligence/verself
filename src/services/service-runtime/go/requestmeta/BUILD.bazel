@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+# gazelle:prefix github.com/verself/service-runtime/requestmeta
+
+go_library(
+    name = "requestmeta",
+    srcs = ["requestmeta.go"],
+    importpath = "github.com/verself/service-runtime/requestmeta",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "requestmeta_test",
+    srcs = ["requestmeta_test.go"],
+    embed = [":requestmeta"],
+)

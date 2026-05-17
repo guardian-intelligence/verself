@@ -58,11 +58,35 @@ const sessionDateSchema = v.union([
 ]);
 
 export const sessionInfoSchema = v.object({
+  sessionHandle: v.string(),
   createdAt: sessionDateSchema,
+  lastSeenAt: sessionDateSchema,
   expiresAt: sessionDateSchema,
+  clientIP: v.string(),
+  clientIPTrusted: v.boolean(),
+  userAgent: v.string(),
 });
 
 export type SessionInfo = v.InferOutput<typeof sessionInfoSchema>;
+
+export const browserSessionSummarySchema = v.object({
+  sessionHandle: v.string(),
+  isCurrent: v.boolean(),
+  createdAt: sessionDateSchema,
+  lastSeenAt: sessionDateSchema,
+  expiresAt: sessionDateSchema,
+  clientIP: v.string(),
+  clientIPTrusted: v.boolean(),
+  userAgent: v.string(),
+});
+
+export type BrowserSessionSummary = v.InferOutput<typeof browserSessionSummarySchema>;
+
+export const browserSessionsResponseSchema = v.object({
+  sessions: v.array(browserSessionSummarySchema),
+});
+
+export type BrowserSessionsResponse = v.InferOutput<typeof browserSessionsResponseSchema>;
 
 export const anonymousAuthSnapshotSchema = v.object({
   isSignedIn: v.literal(false),

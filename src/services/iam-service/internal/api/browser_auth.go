@@ -22,11 +22,13 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
 
 	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
 	identitystore "github.com/verself/iam-service/internal/store"
+	"github.com/verself/service-runtime/requestmeta"
 )
 
 const (
@@ -35,6 +37,7 @@ const (
 	browserAuthSessionTTL      = 30 * 24 * time.Hour
 	browserAuthLoginTTL        = 5 * time.Minute
 	browserAuthRefreshLeeway   = 60 * time.Second
+	browserAuthSessionPrefix   = "bs_"
 	browserAuthCallbackPath    = "/api/v1/auth/callback"
 	browserAuthDefaultRedirect = "/"
 	zitadelResourceOwnerID     = "urn:zitadel:iam:user:resourceowner:id"
@@ -73,6 +76,13 @@ type BrowserAuth struct {
 
 type browserAuthProviderMetadata struct {
 	EndSessionEndpoint string `json:"end_session_endpoint"`
+}
+
+type browserAuthRequestInfoKey struct{}
+
+type browserAuthRequestInfo struct {
+	Attribution requestmeta.Attribution
+	UserAgent   string
 }
 
 func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, error) {
@@ -168,6 +178,15 @@ func RegisterBrowserAuthRoutes(mux *http.ServeMux, auth *BrowserAuth) {
 }
 
 func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	attribution := requestmeta.FromHTTP(r)
+	ctx := requestmeta.WithAttribution(r.Context(), attribution)
+	ctx = context.WithValue(ctx, browserAuthRequestInfoKey{}, browserAuthRequestInfo{
+		Attribution: attribution,
+		UserAgent:   strings.TrimSpace(r.Header.Get("User-Agent")),
+	})
+	requestmeta.AnnotateSpan(ctx, attribution)
+	r = r.WithContext(ctx)
+
 	switch r.URL.Path {
 	case "/login":
 		a.requireMethod(w, r, http.MethodGet, a.handleLogin)
@@ -181,7 +200,13 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.requireMethod(w, r, http.MethodPost, a.handleResourceToken)
 	case "/logout":
 		a.requireMethod(w, r, http.MethodGet, a.handleLogout)
+	case "/sessions":
+		a.requireMethod(w, r, http.MethodGet, a.handleSessions)
 	default:
+		if strings.HasPrefix(r.URL.Path, "/sessions/") {
+			a.requireMethod(w, r, http.MethodDelete, a.handleSessionRevoke)
+			return
+		}
 		http.NotFound(w, r)
 	}
 }
@@ -312,11 +337,20 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, "generate browser cache partition", err)
 		return
 	}
+	sessionHandle, err := randomSessionHandle()
+	if err != nil {
+		a.serverError(w, "generate browser session handle", err)
+		return
+	}
 	sessionHash := hashToken(sessionID)
-	if err := a.writeSession(r.Context(), sessionHash, cachePartition, tokens, user); err != nil {
+	if err := a.writeSession(r.Context(), sessionHash, sessionHandle, cachePartition, tokens, user); err != nil {
 		a.serverError(w, "persist browser session", err)
 		return
 	}
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_session.created", trace.WithAttributes(
+		attribute.String("auth.session_handle", sessionHandle),
+		attribute.String("enduser.id", user.Sub),
+	))
 	a.setSessionCookie(w, sessionID)
 	http.Redirect(w, r, a.absoluteRedirectTarget(pending.RedirectTo), http.StatusSeeOther)
 }
@@ -397,6 +431,64 @@ func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request
 	a.writeJSON(w, http.StatusOK, map[string]string{"accessToken": token})
 }
 
+func (a *BrowserAuth) handleSessions(w http.ResponseWriter, r *http.Request) {
+	session, err := a.requireSession(w, r)
+	if err != nil {
+		return
+	}
+	rows, err := a.q.ListBrowserSessionsForSubject(r.Context(), identitystore.ListBrowserSessionsForSubjectParams{Subject: session.User.Sub})
+	if err != nil {
+		a.serverError(w, "list browser sessions", err)
+		return
+	}
+	sessions := make([]browserSessionSummary, 0, len(rows))
+	for _, row := range rows {
+		sessions = append(sessions, browserSessionSummary{
+			SessionHandle:   row.SessionHandle,
+			IsCurrent:       row.SessionHash == session.SessionHash,
+			CreatedAt:       requiredTime(row.CreatedAt),
+			LastSeenAt:      requiredTime(row.LastSeenAt),
+			ExpiresAt:       requiredTime(row.ExpiresAt),
+			ClientIP:        row.LastSeenClientIp,
+			ClientIPTrusted: row.LastSeenClientIpTrusted,
+			UserAgent:       row.LastSeenUserAgent,
+		})
+	}
+	a.writeJSON(w, http.StatusOK, browserSessionsResponse{Sessions: sessions})
+}
+
+func (a *BrowserAuth) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
+	if !a.sameOrigin(r) {
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
+	}
+	session, err := a.requireSession(w, r)
+	if err != nil {
+		return
+	}
+	sessionHandle := strings.Trim(strings.TrimPrefix(r.URL.Path, "/sessions/"), "/")
+	if sessionHandle == "" {
+		http.Error(w, "session handle is required", http.StatusBadRequest)
+		return
+	}
+	if err := a.q.DeleteBrowserSessionByHandle(r.Context(), identitystore.DeleteBrowserSessionByHandleParams{
+		SessionHandle: sessionHandle,
+		Subject:       session.User.Sub,
+	}); err != nil {
+		a.serverError(w, "delete browser session", err)
+		return
+	}
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_session.revoked", trace.WithAttributes(
+		attribute.String("auth.session_handle", sessionHandle),
+		attribute.Bool("auth.current_session", sessionHandle == session.SessionHandle),
+		attribute.String("enduser.id", session.User.Sub),
+	))
+	if sessionHandle == session.SessionHandle {
+		a.clearSessionCookie(w)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *BrowserAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
 	sessionID, ok := sessionIDFromRequest(r)
 	var idToken string
@@ -442,6 +534,9 @@ func (a *BrowserAuth) sessionFromRequest(w http.ResponseWriter, r *http.Request)
 		return nil, err
 	}
 	if time.Until(session.ExpiresAt) > browserAuthRefreshLeeway {
+		if err := a.touchSessionSeen(r.Context(), session); err != nil {
+			return nil, err
+		}
 		return session, nil
 	}
 	refreshed, err := a.refreshSession(r.Context(), session)
@@ -512,9 +607,13 @@ func (a *BrowserAuth) refreshSession(ctx context.Context, session *browserSessio
 			return nil, err
 		}
 	}
-	if err := a.writeSession(ctx, session.SessionHash, cachePartition, tokens, user); err != nil {
+	if err := a.writeSession(ctx, session.SessionHash, session.SessionHandle, cachePartition, tokens, user); err != nil {
 		return nil, err
 	}
+	trace.SpanFromContext(ctx).AddEvent("iam.browser_session.refreshed", trace.WithAttributes(
+		attribute.String("auth.session_handle", session.SessionHandle),
+		attribute.String("enduser.id", user.Sub),
+	))
 	return a.readSession(ctx, session.SessionHash)
 }
 
@@ -981,19 +1080,27 @@ func (a *BrowserAuth) readSession(ctx context.Context, sessionHash string) (*bro
 	}
 	return &browserSession{
 		SessionHash:          row.SessionHash,
+		SessionHandle:        row.SessionHandle,
 		ClientCachePartition: row.ClientCachePartition,
 		AccessToken:          row.AccessToken,
 		RefreshToken:         stringValue(stringFromText(row.RefreshToken)),
 		IDToken:              stringValue(stringFromText(row.IDToken)),
 		TokenScope:           stringFromText(row.TokenScope),
 		ExpiresAt:            requiredTime(row.ExpiresAt),
+		CreatedClientIP:      row.CreatedClientIp,
+		CreatedIPTrusted:     row.CreatedClientIpTrusted,
+		CreatedUserAgent:     row.CreatedUserAgent,
+		LastSeenClientIP:     row.LastSeenClientIp,
+		LastSeenIPTrusted:    row.LastSeenClientIpTrusted,
+		LastSeenUserAgent:    row.LastSeenUserAgent,
+		LastSeenAt:           requiredTime(row.LastSeenAt),
 		CreatedAt:            requiredTime(row.CreatedAt),
 		UpdatedAt:            requiredTime(row.UpdatedAt),
 		User:                 user,
 	}, nil
 }
 
-func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, cachePartition string, tokens tokenResponse, user browserUser) error {
+func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, sessionHandle, cachePartition string, tokens tokenResponse, user browserUser) error {
 	organizations, err := json.Marshal(user.AvailableOrganizations)
 	if err != nil {
 		return err
@@ -1002,8 +1109,10 @@ func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, cachePartit
 	if err != nil {
 		return err
 	}
+	requestInfo := browserRequestInfoFromContext(ctx)
 	return a.q.UpsertBrowserSession(ctx, identitystore.UpsertBrowserSessionParams{
 		SessionHash:              sessionHash,
+		SessionHandle:            sessionHandle,
 		ClientCachePartition:     cachePartition,
 		Subject:                  user.Sub,
 		Email:                    nullableTextPtr(user.Email),
@@ -1019,7 +1128,35 @@ func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, cachePartit
 		RefreshToken:             nullableText(tokens.RefreshToken),
 		TokenScope:               nullableText(tokens.Scope),
 		ExpiresAt:                timestamptz(tokens.ExpiresAt),
+		ClientIp:                 requestInfo.Attribution.ClientIP,
+		ClientIpTrusted:          requestInfo.Attribution.Trusted,
+		UserAgent:                requestInfo.UserAgent,
 	})
+}
+
+func (a *BrowserAuth) touchSessionSeen(ctx context.Context, session *browserSession) error {
+	if session == nil {
+		return nil
+	}
+	requestInfo := browserRequestInfoFromContext(ctx)
+	seenAt := time.Now().UTC()
+	if err := a.q.UpdateBrowserSessionSeen(ctx, identitystore.UpdateBrowserSessionSeenParams{
+		SessionHash:     session.SessionHash,
+		ClientIp:        requestInfo.Attribution.ClientIP,
+		ClientIpTrusted: requestInfo.Attribution.Trusted,
+		UserAgent:       requestInfo.UserAgent,
+	}); err != nil {
+		return err
+	}
+	session.LastSeenClientIP = requestInfo.Attribution.ClientIP
+	session.LastSeenIPTrusted = requestInfo.Attribution.Trusted
+	session.LastSeenUserAgent = requestInfo.UserAgent
+	session.LastSeenAt = seenAt
+	trace.SpanFromContext(ctx).AddEvent("iam.browser_session.seen", trace.WithAttributes(
+		attribute.String("auth.session_handle", session.SessionHandle),
+		attribute.String("enduser.id", session.User.Sub),
+	))
+	return nil
 }
 
 func (a *BrowserAuth) sanitizeRedirectTarget(raw string) string {
@@ -1159,12 +1296,20 @@ type tokenResponse struct {
 
 type browserSession struct {
 	SessionHash          string
+	SessionHandle        string
 	ClientCachePartition string
 	AccessToken          string
 	RefreshToken         string
 	IDToken              string
 	TokenScope           *string
 	ExpiresAt            time.Time
+	CreatedClientIP      string
+	CreatedIPTrusted     bool
+	CreatedUserAgent     string
+	LastSeenClientIP     string
+	LastSeenIPTrusted    bool
+	LastSeenUserAgent    string
+	LastSeenAt           time.Time
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 	User                 browserUser
@@ -1205,8 +1350,13 @@ type authState struct {
 }
 
 type sessionInfo struct {
-	CreatedAt time.Time `json:"createdAt"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	SessionHandle   string    `json:"sessionHandle"`
+	CreatedAt       time.Time `json:"createdAt"`
+	LastSeenAt      time.Time `json:"lastSeenAt"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+	ClientIP        string    `json:"clientIP"`
+	ClientIPTrusted bool      `json:"clientIPTrusted"`
+	UserAgent       string    `json:"userAgent"`
 }
 
 type authSnapshot struct {
@@ -1214,6 +1364,21 @@ type authSnapshot struct {
 	Auth       authState    `json:"auth"`
 	User       *browserUser `json:"user"`
 	Session    *sessionInfo `json:"session"`
+}
+
+type browserSessionSummary struct {
+	SessionHandle   string    `json:"sessionHandle"`
+	IsCurrent       bool      `json:"isCurrent"`
+	CreatedAt       time.Time `json:"createdAt"`
+	LastSeenAt      time.Time `json:"lastSeenAt"`
+	ExpiresAt       time.Time `json:"expiresAt"`
+	ClientIP        string    `json:"clientIP"`
+	ClientIPTrusted bool      `json:"clientIPTrusted"`
+	UserAgent       string    `json:"userAgent"`
+}
+
+type browserSessionsResponse struct {
+	Sessions []browserSessionSummary `json:"sessions"`
 }
 
 func snapshotForSession(session *browserSession) authSnapshot {
@@ -1246,7 +1411,15 @@ func snapshotForSession(session *browserSession) authSnapshot {
 			OrgID:                  session.User.SelectedOrgID,
 			AvailableOrganizations: session.User.AvailableOrganizations,
 		},
-		Session: &sessionInfo{CreatedAt: session.CreatedAt, ExpiresAt: session.ExpiresAt},
+		Session: &sessionInfo{
+			SessionHandle:   session.SessionHandle,
+			CreatedAt:       session.CreatedAt,
+			LastSeenAt:      session.LastSeenAt,
+			ExpiresAt:       session.ExpiresAt,
+			ClientIP:        session.LastSeenClientIP,
+			ClientIPTrusted: session.LastSeenIPTrusted,
+			UserAgent:       session.LastSeenUserAgent,
+		},
 	}
 }
 
@@ -1348,6 +1521,14 @@ func randomToken(bytes int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
+func randomSessionHandle() (string, error) {
+	token, err := randomToken(18)
+	if err != nil {
+		return "", err
+	}
+	return browserAuthSessionPrefix + token, nil
+}
+
 func randomPublicOrganizationID() (string, error) {
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
@@ -1359,6 +1540,11 @@ func randomPublicOrganizationID() (string, error) {
 func hashToken(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func browserRequestInfoFromContext(ctx context.Context) browserAuthRequestInfo {
+	info, _ := ctx.Value(browserAuthRequestInfoKey{}).(browserAuthRequestInfo)
+	return info
 }
 
 func compactUniqueStrings(values []string) []string {

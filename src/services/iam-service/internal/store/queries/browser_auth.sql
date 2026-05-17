@@ -26,6 +26,7 @@ WHERE expires_at <= now();
 -- name: UpsertBrowserSession :exec
 INSERT INTO iam_browser_sessions (
   session_hash,
+  session_handle,
   client_cache_partition,
   subject,
   email,
@@ -40,9 +41,17 @@ INSERT INTO iam_browser_sessions (
   access_token,
   refresh_token,
   token_scope,
-  expires_at
+  expires_at,
+  created_client_ip,
+  created_client_ip_trusted,
+  created_user_agent,
+  last_seen_client_ip,
+  last_seen_client_ip_trusted,
+  last_seen_user_agent,
+  last_seen_at
 ) VALUES (
   sqlc.arg(session_hash),
+  sqlc.arg(session_handle),
   sqlc.arg(client_cache_partition),
   sqlc.arg(subject),
   sqlc.narg(email),
@@ -57,7 +66,14 @@ INSERT INTO iam_browser_sessions (
   sqlc.arg(access_token),
   sqlc.narg(refresh_token),
   sqlc.narg(token_scope),
-  sqlc.arg(expires_at)
+  sqlc.arg(expires_at),
+  sqlc.arg(client_ip),
+  sqlc.arg(client_ip_trusted),
+  sqlc.arg(user_agent),
+  sqlc.arg(client_ip),
+  sqlc.arg(client_ip_trusted),
+  sqlc.arg(user_agent),
+  now()
 )
 ON CONFLICT (session_hash) DO UPDATE SET
   client_cache_partition = EXCLUDED.client_cache_partition,
@@ -75,11 +91,16 @@ ON CONFLICT (session_hash) DO UPDATE SET
   refresh_token = EXCLUDED.refresh_token,
   token_scope = EXCLUDED.token_scope,
   expires_at = EXCLUDED.expires_at,
+  last_seen_client_ip = EXCLUDED.last_seen_client_ip,
+  last_seen_client_ip_trusted = EXCLUDED.last_seen_client_ip_trusted,
+  last_seen_user_agent = EXCLUDED.last_seen_user_agent,
+  last_seen_at = EXCLUDED.last_seen_at,
   updated_at = now();
 
 -- name: GetBrowserSession :one
 SELECT
   session_hash,
+  session_handle,
   client_cache_partition,
   subject,
   email,
@@ -95,13 +116,54 @@ SELECT
   refresh_token,
   token_scope,
   expires_at,
+  created_client_ip,
+  created_client_ip_trusted,
+  created_user_agent,
+  last_seen_client_ip,
+  last_seen_client_ip_trusted,
+  last_seen_user_agent,
+  last_seen_at,
   created_at,
   updated_at
 FROM iam_browser_sessions
 WHERE session_hash = sqlc.arg(session_hash);
 
+-- name: ListBrowserSessionsForSubject :many
+SELECT
+  session_hash,
+  session_handle,
+  subject,
+  expires_at,
+  created_client_ip,
+  created_client_ip_trusted,
+  created_user_agent,
+  last_seen_client_ip,
+  last_seen_client_ip_trusted,
+  last_seen_user_agent,
+  last_seen_at,
+  created_at,
+  updated_at
+FROM iam_browser_sessions
+WHERE subject = sqlc.arg(subject)
+  AND expires_at > now()
+ORDER BY last_seen_at DESC, created_at DESC;
+
 -- name: DeleteBrowserSession :exec
 DELETE FROM iam_browser_sessions
+WHERE session_hash = sqlc.arg(session_hash);
+
+-- name: DeleteBrowserSessionByHandle :exec
+DELETE FROM iam_browser_sessions
+WHERE session_handle = sqlc.arg(session_handle)
+  AND subject = sqlc.arg(subject);
+
+-- name: UpdateBrowserSessionSeen :exec
+UPDATE iam_browser_sessions
+SET last_seen_client_ip = sqlc.arg(client_ip),
+    last_seen_client_ip_trusted = sqlc.arg(client_ip_trusted),
+    last_seen_user_agent = sqlc.arg(user_agent),
+    last_seen_at = now(),
+    updated_at = now()
 WHERE session_hash = sqlc.arg(session_hash);
 
 -- name: UpdateBrowserSessionOrganization :exec

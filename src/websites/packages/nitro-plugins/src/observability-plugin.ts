@@ -6,6 +6,9 @@ import { correlationMiddleware } from "./correlation-middleware.ts";
 import { correlationContextKey, correlationHeaderName } from "./correlation.ts";
 
 const requestStartKey = "verself_request_started_at_ns";
+const clientIPHeaderName = "x-verself-client-ip";
+const edgePeerIPHeaderName = "x-verself-edge-peer-ip";
+const clientIPSourceHeaderName = "x-verself-client-ip-source";
 
 function correlationIDFromContext(value: unknown): string {
   if (typeof value === "string") {
@@ -89,6 +92,19 @@ export default definePlugin((nitroApp) => {
       correlationIDFromContext(context[correlationContextKey]);
     span.setAttribute("verself.correlation_id", correlationID);
     span.setAttribute("verself.route", h3Event.url.pathname);
+    const clientIP = h3Event.req.headers.get(clientIPHeaderName) ?? "";
+    if (clientIP !== "") {
+      span.setAttribute("verself.request.client_ip", clientIP);
+      span.setAttribute("verself.request.client_ip_trusted", true);
+    }
+    const edgePeerIP = h3Event.req.headers.get(edgePeerIPHeaderName) ?? "";
+    if (edgePeerIP !== "") {
+      span.setAttribute("verself.request.edge_peer_ip", edgePeerIP);
+    }
+    const clientIPSource = h3Event.req.headers.get(clientIPSourceHeaderName) ?? "";
+    if (clientIPSource !== "") {
+      span.setAttribute("verself.request.client_ip_source", clientIPSource);
+    }
     const serverFnID = serverFnIDFromPath(h3Event.url.pathname);
     if (serverFnID !== "") {
       span.setAttribute("verself.server_fn", serverFnID);
@@ -124,7 +140,9 @@ export default definePlugin((nitroApp) => {
       http_status_code: statusCode,
       duration_ms: durationMs,
       user_agent: h3Event.req.headers.get("user-agent") ?? "",
-      forwarded_for: h3Event.req.headers.get("x-forwarded-for") ?? "",
+      client_ip: h3Event.req.headers.get(clientIPHeaderName) ?? "",
+      edge_peer_ip: h3Event.req.headers.get(edgePeerIPHeaderName) ?? "",
+      client_ip_source: h3Event.req.headers.get(clientIPSourceHeaderName) ?? "",
     });
   });
 
@@ -146,6 +164,9 @@ export default definePlugin((nitroApp) => {
       http_method: h3Event?.req.method ?? "",
       http_target: url ? `${url.pathname}${url.search}` : "",
       url_path: url?.pathname ?? "",
+      client_ip: h3Event?.req.headers.get(clientIPHeaderName) ?? "",
+      edge_peer_ip: h3Event?.req.headers.get(edgePeerIPHeaderName) ?? "",
+      client_ip_source: h3Event?.req.headers.get(clientIPSourceHeaderName) ?? "",
       error_name: error.name,
       error_message: error.message,
       error_stack: error.stack ?? "",

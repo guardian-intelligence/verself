@@ -6,6 +6,10 @@ const selectOrganizationInputSchema = v.object({
   orgID: v.pipe(v.string(), v.nonEmpty()),
 });
 
+const revokeSessionInputSchema = v.object({
+  sessionHandle: v.pipe(v.string(), v.nonEmpty()),
+});
+
 export type ConsoleAuthContext = {
   auth?: AuthenticatedAuthSnapshot;
 };
@@ -37,6 +41,22 @@ export const selectActiveOrganization = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { selectIdentityOrganization } = await import("./auth.server");
     return selectIdentityOrganization(data);
+  });
+
+export const getClientAuthSessions = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .handler(async () => {
+    const { listIdentityBrowserSessions } = await import("./auth.server");
+    return listIdentityBrowserSessions();
+  });
+
+export const revokeClientAuthSession = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(revokeSessionInputSchema)
+  .handler(async ({ data }) => {
+    const { revokeIdentityBrowserSession } = await import("./auth.server");
+    await revokeIdentityBrowserSession(data.sessionHandle);
+    return { revoked: true };
   });
 
 export const getProductAccessToken = createServerOnlyFn(async function getProductAccessToken(

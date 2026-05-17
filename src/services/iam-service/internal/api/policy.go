@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	governanceinternalclient "github.com/verself/governance-service/internalclient"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
+	"github.com/verself/service-runtime/requestmeta"
 )
 
 const (
@@ -66,41 +66,27 @@ type operationRequestInfo struct {
 	UserAgent      string
 	IdempotencyKey string
 	StartedAt      time.Time
+	Attribution    requestmeta.Attribution
 }
 
 func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
+	attribution := requestmeta.FromValues(ctx.Header, ctx.RemoteAddr())
 	info := operationRequestInfo{
-		ClientIP:       clientIPFromHuma(ctx),
+		ClientIP:       attribution.ClientIP,
 		UserAgent:      strings.TrimSpace(ctx.Header("User-Agent")),
 		IdempotencyKey: strings.TrimSpace(ctx.Header("Idempotency-Key")),
 		StartedAt:      time.Now(),
+		Attribution:    attribution,
 	}
-	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
+	nextCtx := requestmeta.WithAttribution(ctx.Context(), attribution)
+	nextCtx = context.WithValue(nextCtx, operationRequestInfoKey{}, info)
+	requestmeta.AnnotateSpan(nextCtx, attribution)
+	next(huma.WithContext(ctx, nextCtx))
 }
 
 func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
 	info, _ := ctx.Value(operationRequestInfoKey{}).(operationRequestInfo)
 	return info
-}
-
-func clientIPFromHuma(ctx huma.Context) string {
-	for _, header := range []string{"CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For"} {
-		value := strings.TrimSpace(ctx.Header(header))
-		if value == "" {
-			continue
-		}
-		if header == "X-Forwarded-For" {
-			value = strings.TrimSpace(strings.Split(value, ",")[0])
-		}
-		if value != "" {
-			return value
-		}
-	}
-	remote := strings.TrimSpace(ctx.RemoteAddr())
-	if host, _, err := net.SplitHostPort(remote); err == nil {
-		return host
-	}
-	return remote
 }
 
 func auditOperation(ctx context.Context, op huma.Operation, policy runtimeiam.OperationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
@@ -150,6 +136,8 @@ func auditOperation(ctx context.Context, op huma.Operation, policy runtimeiam.Op
 		HTTPMethod:            op.Method,
 		HTTPRoute:             op.Path,
 		HTTPSafeParams:        "",
+		HTTPUserAgent:         info.UserAgent,
+		HTTPClientIP:          info.ClientIP,
 		HTTPStatus:            httpStatusFromOperationResult(outcome, err),
 		AuthorizationDecision: decision,
 		Status:                status,

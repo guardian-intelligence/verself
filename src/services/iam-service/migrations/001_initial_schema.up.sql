@@ -159,6 +159,7 @@ CREATE INDEX IF NOT EXISTS iam_browser_login_transactions_expires_at_idx
 
 CREATE TABLE IF NOT EXISTS iam_browser_sessions (
     session_hash TEXT PRIMARY KEY,
+    session_handle TEXT NOT NULL,
     client_cache_partition TEXT NOT NULL,
     subject TEXT NOT NULL,
     email TEXT,
@@ -174,9 +175,17 @@ CREATE TABLE IF NOT EXISTS iam_browser_sessions (
     refresh_token TEXT,
     token_scope TEXT,
     expires_at TIMESTAMPTZ NOT NULL,
+    created_client_ip TEXT NOT NULL,
+    created_client_ip_trusted BOOLEAN NOT NULL,
+    created_user_agent TEXT NOT NULL,
+    last_seen_client_ip TEXT NOT NULL,
+    last_seen_client_ip_trusted BOOLEAN NOT NULL,
+    last_seen_user_agent TEXT NOT NULL,
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (length(btrim(session_hash)) > 0),
+    CHECK (length(btrim(session_handle)) > 0),
     CHECK (length(btrim(client_cache_partition)) > 0),
     CHECK (length(btrim(subject)) > 0),
     CHECK (length(btrim(access_token)) > 0),
@@ -184,7 +193,7 @@ CREATE TABLE IF NOT EXISTS iam_browser_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS iam_browser_sessions_subject_idx
-    ON iam_browser_sessions (subject);
+    ON iam_browser_sessions (subject, last_seen_at DESC);
 
 CREATE INDEX IF NOT EXISTS iam_browser_sessions_expires_at_idx
     ON iam_browser_sessions (expires_at);

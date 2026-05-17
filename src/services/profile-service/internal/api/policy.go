@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"reflect"
 	"sort"
@@ -21,6 +20,7 @@ import (
 	"github.com/verself/profile-service/internal/profile"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
+	"github.com/verself/service-runtime/requestmeta"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
@@ -48,6 +48,7 @@ type operationRequestInfo struct {
 	ClientIP       string
 	UserAgent      string
 	IdempotencyKey string
+	Attribution    requestmeta.Attribution
 }
 
 func registerProfileRoute[I, O any](api huma.API, authorizer runtimeiam.OperationAuthorizer, op huma.Operation, policy profileOperationPolicy, handler func(context.Context, *I) (*O, error)) {
@@ -79,14 +80,18 @@ func registerProfileRoute[I, O any](api huma.API, authorizer runtimeiam.Operatio
 }
 
 func startOperationSpan(ctx context.Context, operationID string, policy profileOperationPolicy) (context.Context, trace.Span) {
-	return apiTracer.Start(ctx, policy.AuditEvent.String(), trace.WithAttributes(
+	attrs := []attribute.KeyValue{
 		attribute.String("profile.operation_id", operationID),
 		attribute.String("profile.permission", string(policy.Permission)),
 		attribute.String("profile.resource", string(policy.Resource)),
 		attribute.String("profile.action", string(policy.Action)),
 		attribute.String("profile.audit_event", string(policy.AuditEvent)),
 		attribute.Bool("profile.internal", policy.Internal),
-	))
+	}
+	if attribution, ok := requestmeta.FromContext(ctx); ok {
+		attrs = append(attrs, attribution.SpanAttributes()...)
+	}
+	return apiTracer.Start(ctx, policy.AuditEvent.String(), trace.WithAttributes(attrs...))
 }
 
 func setIdentitySpanAttributes(span trace.Span, identity *auth.Identity) {
@@ -216,12 +221,17 @@ func requireOperationIdempotency(ctx context.Context, policy profileOperationPol
 }
 
 func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
+	attribution := requestmeta.FromValues(ctx.Header, ctx.RemoteAddr())
 	info := operationRequestInfo{
-		ClientIP:       clientIPFromHuma(ctx),
+		ClientIP:       attribution.ClientIP,
 		UserAgent:      strings.TrimSpace(ctx.Header("User-Agent")),
 		IdempotencyKey: strings.TrimSpace(ctx.Header("Idempotency-Key")),
+		Attribution:    attribution,
 	}
-	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
+	nextCtx := requestmeta.WithAttribution(ctx.Context(), attribution)
+	nextCtx = context.WithValue(nextCtx, operationRequestInfoKey{}, info)
+	requestmeta.AnnotateSpan(nextCtx, attribution)
+	next(huma.WithContext(ctx, nextCtx))
 }
 
 func operationRequestInfoFromContext(ctx context.Context) operationRequestInfo {
@@ -287,6 +297,8 @@ func auditOperation(ctx context.Context, operationID string, policy profileOpera
 		Permission:            string(policy.Permission),
 		ResourceType:          string(policy.Resource),
 		ResourceUID:           targetIDFromInput(input, identity),
+		HTTPUserAgent:         info.UserAgent,
+		HTTPClientIP:          info.ClientIP,
 		HTTPStatus:            httpStatus,
 		AuthorizationDecision: decision,
 		Status:                status,
@@ -393,26 +405,6 @@ func principalFromContext(ctx context.Context) (profile.Principal, error) {
 		return profile.Principal{}, forbidden(ctx, "human-profile-required", "human profile routes require a human subject token")
 	}
 	return principal, nil
-}
-
-func clientIPFromHuma(ctx huma.Context) string {
-	for _, header := range []string{"CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For"} {
-		value := strings.TrimSpace(ctx.Header(header))
-		if value == "" {
-			continue
-		}
-		if header == "X-Forwarded-For" {
-			value = strings.TrimSpace(strings.Split(value, ",")[0])
-		}
-		if value != "" {
-			return value
-		}
-	}
-	remote := strings.TrimSpace(ctx.RemoteAddr())
-	if host, _, err := net.SplitHostPort(remote); err == nil {
-		return host
-	}
-	return remote
 }
 
 func orgIDFromInput(input any) string {

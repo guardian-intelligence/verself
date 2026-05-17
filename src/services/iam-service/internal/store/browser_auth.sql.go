@@ -64,6 +64,22 @@ func (q *Queries) DeleteBrowserSession(ctx context.Context, arg DeleteBrowserSes
 	return err
 }
 
+const deleteBrowserSessionByHandle = `-- name: DeleteBrowserSessionByHandle :exec
+DELETE FROM iam_browser_sessions
+WHERE session_handle = $1
+  AND subject = $2
+`
+
+type DeleteBrowserSessionByHandleParams struct {
+	SessionHandle string
+	Subject       string
+}
+
+func (q *Queries) DeleteBrowserSessionByHandle(ctx context.Context, arg DeleteBrowserSessionByHandleParams) error {
+	_, err := q.db.Exec(ctx, deleteBrowserSessionByHandle, arg.SessionHandle, arg.Subject)
+	return err
+}
+
 const deleteExpiredBrowserLoginTransactions = `-- name: DeleteExpiredBrowserLoginTransactions :exec
 DELETE FROM iam_browser_login_transactions
 WHERE expires_at <= now()
@@ -111,6 +127,7 @@ func (q *Queries) GetBrowserResourceToken(ctx context.Context, arg GetBrowserRes
 const getBrowserSession = `-- name: GetBrowserSession :one
 SELECT
   session_hash,
+  session_handle,
   client_cache_partition,
   subject,
   email,
@@ -126,6 +143,13 @@ SELECT
   refresh_token,
   token_scope,
   expires_at,
+  created_client_ip,
+  created_client_ip_trusted,
+  created_user_agent,
+  last_seen_client_ip,
+  last_seen_client_ip_trusted,
+  last_seen_user_agent,
+  last_seen_at,
   created_at,
   updated_at
 FROM iam_browser_sessions
@@ -138,6 +162,7 @@ type GetBrowserSessionParams struct {
 
 type GetBrowserSessionRow struct {
 	SessionHash              string
+	SessionHandle            string
 	ClientCachePartition     string
 	Subject                  string
 	Email                    pgtype.Text
@@ -153,6 +178,13 @@ type GetBrowserSessionRow struct {
 	RefreshToken             pgtype.Text
 	TokenScope               pgtype.Text
 	ExpiresAt                pgtype.Timestamptz
+	CreatedClientIp          string
+	CreatedClientIpTrusted   bool
+	CreatedUserAgent         string
+	LastSeenClientIp         string
+	LastSeenClientIpTrusted  bool
+	LastSeenUserAgent        string
+	LastSeenAt               pgtype.Timestamptz
 	CreatedAt                pgtype.Timestamptz
 	UpdatedAt                pgtype.Timestamptz
 }
@@ -162,6 +194,7 @@ func (q *Queries) GetBrowserSession(ctx context.Context, arg GetBrowserSessionPa
 	var i GetBrowserSessionRow
 	err := row.Scan(
 		&i.SessionHash,
+		&i.SessionHandle,
 		&i.ClientCachePartition,
 		&i.Subject,
 		&i.Email,
@@ -177,6 +210,13 @@ func (q *Queries) GetBrowserSession(ctx context.Context, arg GetBrowserSessionPa
 		&i.RefreshToken,
 		&i.TokenScope,
 		&i.ExpiresAt,
+		&i.CreatedClientIp,
+		&i.CreatedClientIpTrusted,
+		&i.CreatedUserAgent,
+		&i.LastSeenClientIp,
+		&i.LastSeenClientIpTrusted,
+		&i.LastSeenUserAgent,
+		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -218,6 +258,81 @@ func (q *Queries) InsertBrowserLoginTransaction(ctx context.Context, arg InsertB
 	return err
 }
 
+const listBrowserSessionsForSubject = `-- name: ListBrowserSessionsForSubject :many
+SELECT
+  session_hash,
+  session_handle,
+  subject,
+  expires_at,
+  created_client_ip,
+  created_client_ip_trusted,
+  created_user_agent,
+  last_seen_client_ip,
+  last_seen_client_ip_trusted,
+  last_seen_user_agent,
+  last_seen_at,
+  created_at,
+  updated_at
+FROM iam_browser_sessions
+WHERE subject = $1
+  AND expires_at > now()
+ORDER BY last_seen_at DESC, created_at DESC
+`
+
+type ListBrowserSessionsForSubjectParams struct {
+	Subject string
+}
+
+type ListBrowserSessionsForSubjectRow struct {
+	SessionHash             string
+	SessionHandle           string
+	Subject                 string
+	ExpiresAt               pgtype.Timestamptz
+	CreatedClientIp         string
+	CreatedClientIpTrusted  bool
+	CreatedUserAgent        string
+	LastSeenClientIp        string
+	LastSeenClientIpTrusted bool
+	LastSeenUserAgent       string
+	LastSeenAt              pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+}
+
+func (q *Queries) ListBrowserSessionsForSubject(ctx context.Context, arg ListBrowserSessionsForSubjectParams) ([]ListBrowserSessionsForSubjectRow, error) {
+	rows, err := q.db.Query(ctx, listBrowserSessionsForSubject, arg.Subject)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBrowserSessionsForSubjectRow{}
+	for rows.Next() {
+		var i ListBrowserSessionsForSubjectRow
+		if err := rows.Scan(
+			&i.SessionHash,
+			&i.SessionHandle,
+			&i.Subject,
+			&i.ExpiresAt,
+			&i.CreatedClientIp,
+			&i.CreatedClientIpTrusted,
+			&i.CreatedUserAgent,
+			&i.LastSeenClientIp,
+			&i.LastSeenClientIpTrusted,
+			&i.LastSeenUserAgent,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateBrowserSessionOrganization = `-- name: UpdateBrowserSessionOrganization :exec
 UPDATE iam_browser_sessions
 SET org_id = $1,
@@ -235,6 +350,33 @@ type UpdateBrowserSessionOrganizationParams struct {
 
 func (q *Queries) UpdateBrowserSessionOrganization(ctx context.Context, arg UpdateBrowserSessionOrganizationParams) error {
 	_, err := q.db.Exec(ctx, updateBrowserSessionOrganization, arg.SelectedOrgID, arg.ClientCachePartition, arg.SessionHash)
+	return err
+}
+
+const updateBrowserSessionSeen = `-- name: UpdateBrowserSessionSeen :exec
+UPDATE iam_browser_sessions
+SET last_seen_client_ip = $1,
+    last_seen_client_ip_trusted = $2,
+    last_seen_user_agent = $3,
+    last_seen_at = now(),
+    updated_at = now()
+WHERE session_hash = $4
+`
+
+type UpdateBrowserSessionSeenParams struct {
+	ClientIp        string
+	ClientIpTrusted bool
+	UserAgent       string
+	SessionHash     string
+}
+
+func (q *Queries) UpdateBrowserSessionSeen(ctx context.Context, arg UpdateBrowserSessionSeenParams) error {
+	_, err := q.db.Exec(ctx, updateBrowserSessionSeen,
+		arg.ClientIp,
+		arg.ClientIpTrusted,
+		arg.UserAgent,
+		arg.SessionHash,
+	)
 	return err
 }
 
@@ -289,6 +431,7 @@ func (q *Queries) UpsertBrowserResourceToken(ctx context.Context, arg UpsertBrow
 const upsertBrowserSession = `-- name: UpsertBrowserSession :exec
 INSERT INTO iam_browser_sessions (
   session_hash,
+  session_handle,
   client_cache_partition,
   subject,
   email,
@@ -303,7 +446,14 @@ INSERT INTO iam_browser_sessions (
   access_token,
   refresh_token,
   token_scope,
-  expires_at
+  expires_at,
+  created_client_ip,
+  created_client_ip_trusted,
+  created_user_agent,
+  last_seen_client_ip,
+  last_seen_client_ip_trusted,
+  last_seen_user_agent,
+  last_seen_at
 ) VALUES (
   $1,
   $2,
@@ -314,13 +464,21 @@ INSERT INTO iam_browser_sessions (
   $7,
   $8,
   $9,
-  $10::jsonb,
+  $10,
   $11::jsonb,
-  $12,
+  $12::jsonb,
   $13,
   $14,
   $15,
-  $16
+  $16,
+  $17,
+  $18,
+  $19,
+  $20,
+  $18,
+  $19,
+  $20,
+  now()
 )
 ON CONFLICT (session_hash) DO UPDATE SET
   client_cache_partition = EXCLUDED.client_cache_partition,
@@ -338,11 +496,16 @@ ON CONFLICT (session_hash) DO UPDATE SET
   refresh_token = EXCLUDED.refresh_token,
   token_scope = EXCLUDED.token_scope,
   expires_at = EXCLUDED.expires_at,
+  last_seen_client_ip = EXCLUDED.last_seen_client_ip,
+  last_seen_client_ip_trusted = EXCLUDED.last_seen_client_ip_trusted,
+  last_seen_user_agent = EXCLUDED.last_seen_user_agent,
+  last_seen_at = EXCLUDED.last_seen_at,
   updated_at = now()
 `
 
 type UpsertBrowserSessionParams struct {
 	SessionHash              string
+	SessionHandle            string
 	ClientCachePartition     string
 	Subject                  string
 	Email                    pgtype.Text
@@ -358,11 +521,15 @@ type UpsertBrowserSessionParams struct {
 	RefreshToken             pgtype.Text
 	TokenScope               pgtype.Text
 	ExpiresAt                pgtype.Timestamptz
+	ClientIp                 string
+	ClientIpTrusted          bool
+	UserAgent                string
 }
 
 func (q *Queries) UpsertBrowserSession(ctx context.Context, arg UpsertBrowserSessionParams) error {
 	_, err := q.db.Exec(ctx, upsertBrowserSession,
 		arg.SessionHash,
+		arg.SessionHandle,
 		arg.ClientCachePartition,
 		arg.Subject,
 		arg.Email,
@@ -378,6 +545,9 @@ func (q *Queries) UpsertBrowserSession(ctx context.Context, arg UpsertBrowserSes
 		arg.RefreshToken,
 		arg.TokenScope,
 		arg.ExpiresAt,
+		arg.ClientIp,
+		arg.ClientIpTrusted,
+		arg.UserAgent,
 	)
 	return err
 }

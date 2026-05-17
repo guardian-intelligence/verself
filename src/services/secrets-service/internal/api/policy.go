@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -23,6 +22,7 @@ import (
 	"github.com/verself/secrets-service/internal/secrets"
 	auth "github.com/verself/service-runtime/auth"
 	runtimeiam "github.com/verself/service-runtime/iam"
+	"github.com/verself/service-runtime/requestmeta"
 )
 
 type permission = runtimeiam.Permission
@@ -426,15 +426,21 @@ type operationRequestInfo struct {
 	ClientIP       string
 	UserAgent      string
 	IdempotencyKey string
+	Attribution    requestmeta.Attribution
 }
 
 func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
+	attribution := requestmeta.FromValues(ctx.Header, ctx.RemoteAddr())
 	info := operationRequestInfo{
-		ClientIP:       clientIPFromHuma(ctx),
+		ClientIP:       attribution.ClientIP,
 		UserAgent:      strings.TrimSpace(ctx.Header("User-Agent")),
 		IdempotencyKey: strings.TrimSpace(ctx.Header("Idempotency-Key")),
+		Attribution:    attribution,
 	}
-	next(huma.WithValue(ctx, operationRequestInfoKey{}, info))
+	nextCtx := requestmeta.WithAttribution(ctx.Context(), attribution)
+	nextCtx = context.WithValue(nextCtx, operationRequestInfoKey{}, info)
+	requestmeta.AnnotateSpan(nextCtx, attribution)
+	next(huma.WithContext(ctx, nextCtx))
 }
 
 func requireOperationIdempotency(ctx context.Context, policy secretsOperationPolicy) error {
@@ -470,26 +476,6 @@ func operationRateLimitKey(ctx context.Context, identity *auth.Identity, policy 
 	}, "\x00")
 }
 
-func clientIPFromHuma(ctx huma.Context) string {
-	for _, header := range []string{"CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For"} {
-		value := strings.TrimSpace(ctx.Header(header))
-		if value == "" {
-			continue
-		}
-		if header == "X-Forwarded-For" {
-			value = strings.TrimSpace(strings.Split(value, ",")[0])
-		}
-		if value != "" {
-			return value
-		}
-	}
-	remote := strings.TrimSpace(ctx.RemoteAddr())
-	if host, _, err := net.SplitHostPort(remote); err == nil {
-		return host
-	}
-	return remote
-}
-
 func auditOperation(ctx context.Context, operationID string, policy secretsOperationPolicy, identity *auth.Identity, input any, output any, outcome string, err error) {
 	if identity == nil {
 		return
@@ -522,6 +508,8 @@ func auditOperation(ctx context.Context, operationID string, policy secretsOpera
 		Permission:            string(policy.Permission),
 		ResourceType:          string(policy.Resource),
 		ResourceUID:           targetID,
+		HTTPUserAgent:         info.UserAgent,
+		HTTPClientIP:          info.ClientIP,
 		HTTPStatus:            httpStatus,
 		AuthorizationDecision: decision,
 		Status:                status,

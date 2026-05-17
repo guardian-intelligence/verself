@@ -342,7 +342,7 @@ SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 --   status:    haproxy=http_status, console=http_status_code, zitadel=status
 --   path:      haproxy=http_uri,    console=http_target,      zitadel=path
 --   host:      haproxy=http_host,   console=(none),           zitadel=instance_host
---   client_ip: haproxy=client_ip,   console=forwarded_for,    zitadel=(none)
+--   client_ip: haproxy=client_ip,   console=client_ip,        zitadel=(none)
 --   duration:  haproxy=duration_ms, console=duration_ms,      zitadel=duration (ns)
 
 CREATE TABLE IF NOT EXISTS default.http_access_logs
@@ -400,11 +400,7 @@ AS SELECT
         LogAttributes['instance_host']  != '', LogAttributes['instance_host'],
         ''
     )                                                                  AS Host,
-    multiIf(
-        LogAttributes['client_ip']     != '', LogAttributes['client_ip'],
-        LogAttributes['forwarded_for'] != '', LogAttributes['forwarded_for'],
-        ''
-    )                                                                  AS ClientIP,
+    LogAttributes['client_ip']                                          AS ClientIP,
     multiIf(
         -- Some log producers report seconds as a float string.
         LogAttributes['duration_s']  != '', toFloat64OrZero(LogAttributes['duration_s']) * 1000,
