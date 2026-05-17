@@ -21,9 +21,9 @@
 - name: Ensure OTel Collector ClickHouse user exists with insert grants
   ansible.builtin.shell: |
     set -euo pipefail
-    {{ clickhouse_operator_client_command }} --multiquery <<'SQL'
-    CREATE USER IF NOT EXISTS {{ otelcol_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_registrations_spiffe_ids["otelcol.default"] }}' HOST LOCAL;
-    ALTER USER {{ otelcol_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ spire_registrations_spiffe_ids["otelcol.default"] }}' HOST LOCAL;
+    {{ otelcol_clickhouse_operator_client_command }} --multiquery <<'SQL'
+    CREATE USER IF NOT EXISTS {{ otelcol_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ otelcol_clickhouse_spiffe_id }}' HOST LOCAL;
+    ALTER USER {{ otelcol_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ otelcol_clickhouse_spiffe_id }}' HOST LOCAL;
     GRANT INSERT ON default.* TO {{ otelcol_clickhouse_user }};
     GRANT SELECT ON default.otel_logs TO {{ otelcol_clickhouse_user }};
     GRANT SELECT (Timestamp, SpanAttributes, SpanName, TraceId, SpanId, ServiceName) ON default.otel_traces TO {{ otelcol_clickhouse_user }};
@@ -83,6 +83,7 @@
     owner: root
     group: "{{ otelcol_system_group }}"
     mode: "0640"
+  notify: restart otelcol
 
 - name: Deploy OTel Collector ClickHouse SPIFFE helper config
   ansible.builtin.template:
@@ -91,6 +92,7 @@
     owner: root
     group: "{{ otelcol_system_group }}"
     mode: "0640"
+  notify: restart otelcol
 
 - name: Deploy OTel Collector config
   ansible.builtin.template:
@@ -99,3 +101,4 @@
     owner: root
     group: "{{ otelcol_system_group }}"
     mode: "0640"
+  notify: restart otelcol

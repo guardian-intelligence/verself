@@ -16,7 +16,10 @@ filegroup(
         ],
         allow_empty = True,
     ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
+    visibility = [
+        "//src/host:__pkg__",
+        "//src/infrastructure-components:__pkg__",
+    ],
 )
 
 spire_identity(

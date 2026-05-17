@@ -42,6 +42,18 @@ filegroup(
 )
 
 filegroup(
+    name = "otelcol_sources",
+    srcs = [
+        "ansible/playbooks/otelcol.yml",
+        "ansible/playbooks/tasks/site-secrets.yml",
+        "sites/prod/secrets/external.sops.yml",
+        "sites/prod/secrets/host.sops.yml",
+        "sites/prod/vars.yml",
+        "//src/infrastructure-components/otelcol:role_sources",
+    ],
+)
+
+filegroup(
     name = "ansible_lint_sources",
     srcs = [
         "ansible/.ansible-lint.yml",
