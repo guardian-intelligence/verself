@@ -24,7 +24,7 @@ Last night before bed, I was making sure he brushed his teeth. Do you remember h
 
 And I didn’t know having a daughter would be like getting to meet the two of us as one tiny human, but braver and wiser. Someone who knocks on my door when I’m crying because I’m sad, and barges through it when I cry because I’ve been hurt.
 
-I mentioned needing something from the market and she jumped up from editing a music video to beg to come. I was hoping she would because I adore the way she finds magic in things I stopped looking at. There was one stall selling jewelry for pennies and when we passed by she froze, her entire being enchanted by an aquamarine seahorse necklace. She detailed to me at a few hundred words per minute how each of favorite characters would love or hate the necklace in different ways. She no longer stops herself because she knows now how much I admire the depth of her explanations.
+I mentioned needing something from the market and she jumped up from editing a music video to beg me to let her come. I was hoping she would because I adore the way she finds magic in things I stopped looking at. There was one stall selling jewelry for pennies and when we passed by she froze, her entire being enchanted by an aquamarine seahorse necklace. She detailed to me at a few hundred words per minute how each of favorite characters would love or hate the necklace in different ways. She no longer stops herself because she knows now how much I admire the depth of her explanations.
 
 By the time we got home and parked, she was only halfway done. “It’ll be easier if I make a flow chart,” she said, and raced up to her room.
 
@@ -36,11 +36,11 @@ When I asked her what would keep her safe, she furrowed one brow and said, “Yo
 
 You should see how tender she is with the parts of me that I used to hide. The other day she tore her favorite cargo shorts climbing the tree where the woodpeckers live. She pretended she was fine, but during dinner she barely ate Mom’s sinigang. So I happened to need her help afterward to clean out the attic, and when we found my old sewing machine that I haven’t used since PAX, her whole face came back to life. “Is this how you made Meteion?” she asked, and then demanded I teach her how to use it.
 
-We sat and showed her and watched her sew for a while, neither of us saying a word as the sun set and all you could hear was the whir of the machine. I eventually asked her what had been making her sad, and she said it wasn't about the shorts. I asked her what it was really about, and after a long pause she reached into her pocket and handed me a polaroid. It was torn apart, probably by the woodpeckers, but she had taped it back up. It was one that you took of us the day after she was born: I was holding her up to the sun, doing a Lion King bit.
+I sat with her and watched her sew, neither of us saying a word, listening to the whir of the machine and the occasional chair creak. I eventually asked her what had been making her sad, and she didn't say anything for a long time, but when she hit a good stopping point she reached into her pocket and put a polaroid into my hand. It had been torn apart, probably by the woodpeckers, but she had taped it back up. You took this one, it's me and her last year: I was holding her up to the sun, doing a Lion King bit.
 
-"I don't want to so big you can't pick me up anymore, I wish I could stop growing up but I can't” she said, and that made me cry and she jumped into my arms and squeezed me tight. "Can I just be a baby forever?" she said through tears, and we stayed like that for I don’t know for how long. But when the tears finally stopped I told her that no matter how much she grows up she'll always be my little baby, and she liked that better and fell asleep on my lap.
+"You didn't pick me up once this whole summer.” she said, and paused. "Did I grow up too much?" and that made me cry but she jumped into my arms and hugged me tight. "I wish I could be a baby again." she said through tears I told her that no matter how much she grows up she'll always be my baby, and she liked that better and fell asleep on my lap and we stayed like that for I don’t know for how long.
 
-No one told me that having kids would be like having a compass in my heart that always points home. That no matter how much we fight and yell and our little family breaks apart, that we'll become strong in the broken places.
+No one told me that having kids would be like having a compass in my heart that always points home. That no matter how much we fight and yell and break each other's hearts that our little family becomes strong in the broken places.
 
 I think it’s better that no one told me any of this, actually, because I got to learn it from them.
 
