@@ -56,8 +56,8 @@ SOPS_SHIM = ("sops", "//src/tools/dev/binaries:sops")
 
 # Single Vite+ toolchain, shared by the frontend build and the controller.
 # `vp` is the lockfile-pinned `node_modules/vite-plus` run under the
-# server_tools-pinned Node — identical to what `viteplus_rules.bzl` runs inside
-# the build. There is no `~/.vite-plus` and no PATH `vp`.
+# Bazel-resolved host Node used by `viteplus_rules.bzl` for controller actions.
+# There is no `~/.vite-plus` and no PATH `vp`.
 VITEPLUS_NODE_TARGET = "//src/websites:vp_node"
 VITEPLUS_WORKSPACE_INSTALL_TARGET = "//src/websites:workspace_install"
 VITEPLUS_VP_SCRIPT = "src/websites/node_modules/vite-plus/bin/vp"
@@ -208,7 +208,7 @@ def install_bazel_tool_shims(ctx, shims, bin_dir):
     return out_dir
 
 def viteplus_node(ctx):
-    """Build the vendored Node and materialize the source-tree node_modules.
+    """Build the Bazel-resolved host Node and materialize node_modules.
 
     Returns the execroot-absolute path to the pinned `node` binary, or "" on
     failure. Building `:workspace_install` runs the same frozen-lockfile
@@ -231,14 +231,23 @@ def viteplus_vp(ctx, args, env = None, label = None):
     node = viteplus_node(ctx)
     if node == "":
         return 1
+    node_dir = _capture_stdout(ctx, "dirname", [node], label = "dirname vp node")
+    if node_dir == None:
+        return 1
     vp = ws_path(ctx, VITEPLUS_VP_SCRIPT)
     arglist = list(args)
+    vp_env = {}
+    if env != None:
+        for k, v in env.items():
+            vp_env[k] = v
+    # Vite+ package-manager shims re-exec `node` through PATH.
+    vp_env["PATH"] = node_dir + ":" + DEFAULT_PROCESS_PATH
     return checked_spawn(
         ctx,
         node,
         [vp] + arglist,
         cwd = ws_path(ctx, VITEPLUS_WORKSPACE),
-        env = env,
+        env = vp_env,
         label = label if label != None else "vp " + " ".join(arglist),
     )
 
