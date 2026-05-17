@@ -111,7 +111,14 @@ def _deploy_impl(ctx):
     if sha == "":
         return 1
     head = git_head(ctx)
-    if sha != head or git_dirty(ctx):
+    if sha == head and git_dirty(ctx):
+        ctx.std.io.stderr.write(
+            "ERROR: workspace has uncommitted changes; aspect deploy deploys committed Git SHAs only.\n"
+            + "Commit the changes, clean the worktree, or pass --sha=<committed-ref> for a different clean revision.\n",
+        )
+        checked_spawn(ctx, "git", ["status", "--short"], label = "git status --short")
+        return 1
+    if sha != head:
         return _deploy_in_worktree(ctx, site, sha)
     return _deploy_one(ctx, site, sha)
 

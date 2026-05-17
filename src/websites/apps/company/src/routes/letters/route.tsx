@@ -15,8 +15,8 @@ import { TopNav } from "~/components/top-nav";
 // zones below are NOT separate noise — they are fixed geometry that remaps
 // the same hills into a different opacity band:
 //
-//   • reading column (centred max-w-6xl) ........ 5–20%  (quiet, readable)
-//   • page margins (outside that column) ........ 30–40% (gentle bloom)
+//   • reading column (centred max-w-6xl) ........ 2–7.5%  (quiet, readable)
+//   • page margins (outside that column) ........ 16–23%  (gentle bloom)
 //
 // The calm masthead region is the area ABOVE a seeded, single-valued,
 // circuitous boundary y = f(x), built by function composition:
@@ -28,11 +28,11 @@ import { TopNav } from "~/components/top-nav";
 // sin(πt) pins those endpoints exactly; the summed sine octaves give the
 // wander; the domain warp makes that wander uneven. Every parameter is a
 // pure hash read keyed by a label (no mutable RNG), so the edge is
-// deterministic per slug. It is applied as a clip-path polygon (x in %,
-// y in px so it never stretches with the document; the bottom edge is
-// 100% so the grid stays solid to the page end) — no mask-composite. Above
-// the curve the zone grid is simply clipped away, leaving blank paper, so
-// the masthead band is calm by construction.
+// deterministic per slug. The graph fades in below that curve by stacking
+// opacity-weighted clip polygons at increasing y offsets (x in %, y in px so
+// the curve never stretches with the document). Above the curve the zone grid
+// is clipped away, leaving blank paper, so the masthead band is calm by
+// construction.
 //
 // The layers are position:absolute over the document (NOT viewport fixed)
 // and multiply over the ink, so the words read as printed onto this exact
@@ -65,8 +65,12 @@ const pick = (slug: string, label: string): number => fnv1a(`${slug}:${label}`) 
 
 // One self-contained sheet: a 2800px tile (2800 = 28×100 = 140×20, so the
 // minor and major ruling align perfectly across tile seams) holding the
-// 28/140px grid, its alpha multiplied by a seeded fractal-noise relief
-// linearly remapped into [lo, hi]. baseFrequency 0.0011 → the average
+// 28/140px grid. Its alpha is multiplied by a seeded fractal-noise relief and
+// linearly remapped into [lo, hi].
+// Strokes sit half a pixel inside each pattern tile; boundary strokes are
+// clipped out by Chromium's SVG pattern renderer before the filter runs.
+//
+// baseFrequency 0.0011 → the average
 // "hill" is ~2× the size it was at 0.0022; the larger 2800 tile keeps the
 // repeat period well past a screen so the bigger features don't telegraph.
 function gridReliefDataUri(seed: number, lo: number, hi: number): string {
@@ -76,10 +80,10 @@ function gridReliefDataUri(seed: number, lo: number, hi: number): string {
     "<svg xmlns='http://www.w3.org/2000/svg' width='2800' height='2800'>" +
     "<defs>" +
     "<pattern id='g' width='28' height='28' patternUnits='userSpaceOnUse'>" +
-    "<path d='M28 0V28M0 28H28' stroke='rgb(40,44,52)' stroke-width='1' fill='none' shape-rendering='crispEdges'/>" +
+    "<path d='M27.5 0V28M0 27.5H28' stroke='rgb(40,44,52)' stroke-width='1' fill='none' shape-rendering='crispEdges'/>" +
     "</pattern>" +
     "<pattern id='G' width='140' height='140' patternUnits='userSpaceOnUse'>" +
-    "<path d='M140 0V140M0 140H140' stroke='rgb(40,44,52)' stroke-width='1' fill='none' shape-rendering='crispEdges'/>" +
+    "<path d='M139.5 0V140M0 139.5H140' stroke='rgb(40,44,52)' stroke-width='1' fill='none' shape-rendering='crispEdges'/>" +
     "</pattern>" +
     "<filter id='r' x='0' y='0' width='100%' height='100%' color-interpolation-filters='sRGB'>" +
     `<feTurbulence type='fractalNoise' baseFrequency='0.0011' numOctaves='3' seed='${seed}' stitchTiles='stitch' result='n'/>` +
@@ -153,19 +157,30 @@ function makeBoundary(slug: string): (t: number) => number {
   return (t: number) => clamp(base(t) + envelope(t) * wiggle(warp(t)));
 }
 
-// The clip region kept on the zone layers: everything BELOW the seeded
-// curve. x as % (responsive width), y as px (no vertical stretch); the
-// 100% rows take the polygon to the true document bottom so the grid is
-// solid for the whole scroll. Above the curve falls outside the polygon →
-// clipped away → blank calm paper.
-function belowCurveClip(slug: string): string {
+// The clip region kept on each zone layer: everything BELOW the seeded curve,
+// optionally shifted down by a fade stop. x as % (responsive width), y as px
+// (no vertical stretch); the 100% rows take the polygon to the true document
+// bottom so the grid is solid for the whole scroll once all fade stops apply.
+function belowCurveClip(slug: string, offsetY = 0): string {
   const f = makeBoundary(slug);
   const curve = Array.from({ length: SAMPLES }, (_, i) => {
     const t = i / (SAMPLES - 1);
-    return `${(t * 100).toFixed(3)}% ${f(t).toFixed(2)}px`;
+    return `${(t * 100).toFixed(3)}% ${(f(t) + offsetY).toFixed(2)}px`;
   }).join(", ");
   return `polygon(${curve}, 100% 100%, 0% 100%)`;
 }
+
+// Cumulative opacity reaches 100% after a six-cell descent. The first stop is
+// deliberately faint so the transition starts as atmosphere, not an outline.
+const CURVE_FADE_STOPS: ReadonlyArray<Readonly<{ offsetY: number; opacity: number }>> = [
+  { offsetY: 0, opacity: 0.05 },
+  { offsetY: 28, opacity: 0.07 },
+  { offsetY: 56, opacity: 0.09 },
+  { offsetY: 84, opacity: 0.12 },
+  { offsetY: 112, opacity: 0.16 },
+  { offsetY: 140, opacity: 0.21 },
+  { offsetY: 168, opacity: 0.3 },
+];
 
 // Fine fibre tile — the paper's tooth, and the dither that keeps the
 // remapped relief free of 8-bit banding. Static, uniform, fixed SVG seed.
@@ -221,11 +236,15 @@ function LettersLayout() {
 
   // One field, two bands. Same seed/frequency/coords → continuous relief;
   // only the output range differs by zone.
-  const textBand = gridReliefDataUri(seed, 0.05, 0.2);
-  const marginBand = gridReliefDataUri(seed, 0.3, 0.4);
+  const textBand = gridReliefDataUri(seed, 0.02, 0.075);
+  const marginBand = gridReliefDataUri(seed, 0.16, 0.23);
 
-  // The seeded boundary, as a clip-path kept on both zone layers.
-  const clipPath = belowCurveClip(slug);
+  // The seeded boundary, feathered by offset clip-path layers.
+  const fadeClips = CURVE_FADE_STOPS.map((stop) => ({
+    offsetY: stop.offsetY,
+    opacity: stop.opacity,
+    clipPath: belowCurveClip(slug, stop.offsetY),
+  }));
 
   return (
     <div
@@ -234,8 +253,8 @@ function LettersLayout() {
       style={{ isolation: "isolate", ...PAPER_GEOMETRY_VARS }}
     >
       <PaperGrain />
-      <GridLayer image={textBand} zoneMask={TEXT_ZONE_MASK} clipPath={clipPath} />
-      <GridLayer image={marginBand} zoneMask={MARGIN_ZONE_MASK} clipPath={clipPath} />
+      <FeatheredGridLayer image={textBand} zoneMask={TEXT_ZONE_MASK} fadeClips={fadeClips} />
+      <FeatheredGridLayer image={marginBand} zoneMask={MARGIN_ZONE_MASK} fadeClips={fadeClips} />
       <div className="relative z-10 flex flex-1 flex-col">
         <AppChrome
           treatment="letters"
@@ -270,17 +289,42 @@ function PaperGrain() {
 
 // One band of the sheet: the seeded relief-modulated grid (2800px tile
 // repeated down the whole scrolling document), shown only inside its
-// horizontal zone (single-layer mask) and below the seeded boundary
-// (clip-path). Two independent CSS properties multiply — no mask-composite.
-// aria-hidden decoration; text is never under here.
+// horizontal zone and feathered below the seeded boundary.
+function FeatheredGridLayer({
+  image,
+  zoneMask,
+  fadeClips,
+}: {
+  image: string;
+  zoneMask: string;
+  fadeClips: ReadonlyArray<Readonly<{ offsetY: number; opacity: number; clipPath: string }>>;
+}) {
+  return (
+    <>
+      {fadeClips.map((stop) => (
+        <GridLayer
+          key={stop.offsetY}
+          image={image}
+          zoneMask={zoneMask}
+          clipPath={stop.clipPath}
+          opacity={stop.opacity}
+        />
+      ))}
+    </>
+  );
+}
+
+// aria-hidden decoration; the text DOM is not clipped or blended.
 function GridLayer({
   image,
   zoneMask,
   clipPath,
+  opacity,
 }: {
   image: string;
   zoneMask: string;
   clipPath: string;
+  opacity: number;
 }) {
   return (
     <div
@@ -291,6 +335,7 @@ function GridLayer({
         backgroundSize: "2800px 2800px",
         backgroundRepeat: "repeat",
         mixBlendMode: "multiply",
+        opacity,
         WebkitMaskImage: zoneMask,
         maskImage: zoneMask,
         clipPath,
