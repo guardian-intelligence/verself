@@ -1,6 +1,6 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { WINGS_CROPPED_VIEWBOX, WINGS_PATH_D } from "@verself/brand/components/wings";
+import { WINGS_PADDED_VIEWBOX, WINGS_PATH_D } from "@verself/brand/components/wings";
 import { FlightArc } from "./flight-arc";
 import { arcGeometry, tangentDeg } from "./geometry";
 import { GitCommitGlyph } from "./git-commit-glyph";
@@ -32,9 +32,9 @@ type Bands = {
   readonly status: number;
 };
 function bandsOf(height: number): Bands {
-  const pad = 18; // vertical padding inside the box (was 14 — note c)
-  const header = 22;
-  const status = 40; // ≥ pill height; holds the tight status group
+  const pad = 16; // vertical padding inside the box (note c: more than the prior 14)
+  const header = 20;
+  const status = 38; // ≥ pill height; holds the tight status group
   return { pad, header, status, route: height - 2 * pad - header - status };
 }
 
@@ -327,21 +327,26 @@ function FlightHeader({ actor, scale }: { readonly actor: string; readonly scale
   );
 }
 
-// Bare white wings — no chip, no GUARDIAN wordmark (brief note j → bare). The
-// same argent glyph the company masthead carries, painted INK, sized quiet.
-// The cropped viewBox is glyph-hugging (portrait), so width tracks its aspect.
+// Bare white wings — no chip, no GUARDIAN wordmark (brief note j → bare).
+// Rendered EXACTLY as the company masthead's argent mark: the padded 292
+// viewBox (square footprint, the wings sitting where the chip/emboss place
+// them) with the same 1.21 scale around the wings' optical centre (176,177)
+// that `WingsArgent` applies at chrome size — bare ink reads ~10% small vs a
+// framed mark, so the masthead compensates and we match it 1:1. The prior
+// glyph-hugging crop rendered an illegible portrait sliver at this size.
 function HouseMark({ sizePx }: { readonly sizePx: number }) {
-  const h = Math.round(sizePx * 1.18);
-  const w = Math.round(h * (102.174 / 120.823));
+  const box = Math.round(sizePx * 1.55);
   return (
     <svg
-      viewBox={WINGS_CROPPED_VIEWBOX}
-      style={{ width: w, height: h }}
+      viewBox={WINGS_PADDED_VIEWBOX}
+      style={{ width: box, height: box }}
       role="presentation"
       focusable="false"
       aria-hidden="true"
     >
-      <path d={WINGS_PATH_D} fill={INK} />
+      <g transform="translate(176 177) scale(1.21) translate(-176 -177)">
+        <path d={WINGS_PATH_D} fill={INK} />
+      </g>
     </svg>
   );
 }

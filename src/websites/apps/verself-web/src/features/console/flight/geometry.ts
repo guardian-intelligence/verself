@@ -32,10 +32,15 @@ export function arcGeometry({ width, height, inset = 0 }: ArcBox): Bezier {
   // flat hop. Front-loaded (left control higher than right) so the curve
   // leaves the origin disc steeply and eases into a cruise toward the
   // destination. `overflow-visible` on the host absorbs the small excess.
+  // A confident lob: the apex rises to (and just past) the top of the band so
+  // the climb-out reads like the reference, not a shallow droop. Front-loaded
+  // (left control higher and pulled toward the origin) so the curve leaves the
+  // source disc steeply and eases into a long cruise toward the destination.
+  // `overflow-visible` on the host absorbs the small negative-y excess.
   return [
     { x: x0, y: cy },
-    { x: x0 + span * 0.26, y: height * 0.06 },
-    { x: x0 + span * 0.72, y: height * 0.02 },
+    { x: x0 + span * 0.22, y: -height * 0.04 },
+    { x: x0 + span * 0.7, y: -height * 0.1 },
     { x: x1, y: cy },
   ];
 }
