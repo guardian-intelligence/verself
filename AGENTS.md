@@ -24,7 +24,7 @@ This is a polyglot monorepo structured as a modular monolith.
 
 General Structure:
 
- Smithy IDL + Verself traits (`src/smithy/models/verself`)
+Smithy IDL + Verself traits (`src/smithy/models/verself`)
     -> Smithy semantic model
     -> Verself validators
     -> compact route catalog read model for runtimes and conformance
@@ -194,9 +194,6 @@ See `docs/product/future-state.md`.
 </product_direction>
 
 <system_context>
-
-Service topology, three safety rings, self-hosted mandate + allowed third-party providers (Cloudflare, Latitude.sh, Resend, Stripe), dual-write pattern, billing model summary, supply chain, founder focus areas, bare-metal OS/arch invariants.
-
 - See `docs/system-context.md`. Auth, identity, IAM, Zitadel, JWT, SCIM, organization model, SpiceDB-backed IAM policies, API credentials, frontend sessions, and OIDC discovery are covered by `docs/iam-service.md`.
 - Verself service-local Go clients/adapters and Go SDK facades are hand-maintained transport layers for canonical Smithy contracts under `src/smithy/models/verself`. OpenAPI projections are generated compatibility artifacts, and frontend SDK packages may generate transport code from public projections. Services must not depend on curated SDKs. If a service API shape is missing, add the Smithy operation/shape/traits and update the relevant transport wrapper instead of bypassing the contract.
 - Services can be in any language as long as they implement the Smithy-modeled HTTP bindings and generated compatibility projections.
@@ -210,7 +207,7 @@ Service topology, three safety rings, self-hosted mandate + allowed third-party 
 
 SSH access is tied to identity via Pomerium using Zitadel as its OIDC.
 
-If you are doing work that involves pulling logs or interacting with infrastructure you may be presented a URL to log in to Pomerium. If that happens, please pause and present the URL to me and remind me to open it in Firefox.
+If you are doing work that involves pulling logs or interacting with infrastructure you may be presented a URL to log in to Pomerium. If that happens, please pause and present the URL to me and remind the user to open it in Firefox.
 
 ```shell
 ssh ubuntu@prod@access.verself.sh
@@ -261,15 +258,15 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - You are not alone in this repo. Expect parallel changes in unrelated files by the user. Leave them alone (don't stash them) and continue with your work. Do not stash parallel work.
 - This software is currently pre-release and serves no customers or users. There is no backwards compatibility to maintain. No compatibility wrappers, no legacy shims, no temporary plumbing. All changes must be performed via a full cutover.
 - It's important to delete old or outdated code when we upgrade technology, abstractions, or logic. Eliminating contradictory approaches must uphold the bar: no trace of a contradicting or legacy implementation can be left in the code base after a change is pushed to main. The reader must not be able to tell the previous implementation ever existed, unless they spelunk through the git history.
-- Details matter. The founder cares about arcane versioning issues, subtle race conditions, timing-attack vulnerabilities, GC pressure, and abstraction leaks. Simplicity is for code and architecture, not for technical argument.
+- Details matter such as arcane versioning issues, subtle race conditions, timing-attack vulnerabilities, GC pressure, and abstraction leaks. Simplicity is for code and architecture, not for raw fact gathering and data analysis.
 - Some directories have their own `AGENTS.md` file. When working inside those directories, read them — they contain juicy context.
-- Incidental edits from running linters and formatters are expected. Don't worry about them.
+- Incidental edits from running linters and formatters are expected. Amend your commit with them, it won't be held against you at review time.
 - When in doubt, use the industry-standard pattern. Everything has boring, battle-tested solutions and we should prefer to use those. Don't reinvent the wheel. Open standards and protocols underneath FOSS are the gold standard.
 - `.aspect/`, `README.md`, `AGENTS.md`, schema migration files, and Smithy models are high signal documents. Read them directly; avoid summarizing them with a subagent as important detail may be lost.
 - Do not provide time estimates.
 - Prefer to make incorrect behavior impossible by construction.
 - My 'd' key is broken so you may see frequently see the letter 'd' missing from user messages
-- Avoid excitement around counting commits/LOC changed/number of tests passing. Maintain an intellectually curious, skeptical posture.
+- Avoid excitement around counting commits/LOC changed/number of tests passing. Maintain an intellectually curious, skeptical posture as a QA engineer when verifying changes -- validate end-to-end in prod and double check ground truth reality in ClickHouse and real system behavior.
 </assistant_contract>
 
 <writing_guidelines>
