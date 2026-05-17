@@ -28,14 +28,7 @@ jobs:
           persist-credentials: false
 
       - name: Bootstrap toolchain
-        run: |
-          export BOOTSTRAP_INSTALL_DIR="${HOME}/.cache/verself/bootstrap-bin"
-          export PATH="${BOOTSTRAP_INSTALL_DIR}:${PATH}"
-          mkdir -p "${BOOTSTRAP_INSTALL_DIR}"
-          src/tools/dev/bootstrap/bootstrap-linux-amd64 --bazelisk-only
-          {
-            echo "${BOOTSTRAP_INSTALL_DIR}"
-          } >> "${GITHUB_PATH}"
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64 --bazelisk-only
 
       - name: bazel build //...
         run: bazelisk --batch build --config=ci //...

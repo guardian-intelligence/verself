@@ -16,7 +16,7 @@ _INSTRUMENTATION_BUNDLER = "//src/websites/scripts:bundle_instrumentation"
 _CDXGEN_BINARY = "@dev_tool_cdxgen//file"
 _JQ_BINARY = "@dev_tool_jq//file"
 _NODEJS_ARCHIVE = "@server_tool_nodejs//file"
-_NODEJS_CONTROLLER_RUNTIME = "@rules_nodejs//nodejs:current_node_runtime"
+_NODEJS_CONTROLLER_RUNTIME = "//src/websites:vp_node"
 _SYFT_ARCHIVE = "@dev_tool_syft//file"
 _VITEPLUS_PACKAGE = "//src/websites:node_modules/vite-plus"
 
@@ -26,20 +26,13 @@ def _viteplus_tool_inputs():
         _VITEPLUS_PACKAGE,
     ]
 
-def _viteplus_tool_setup(tool_tmp = "tool_tmp"):
+def _viteplus_tool_setup():
     return """
-node=""
-for candidate in $(locations {nodejs_controller_runtime}); do
-  case "$$candidate" in
-    */bin/node)
-      case "$$candidate" in
-        /*) node="$$candidate" ;;
-        *) node="$$execroot/$$candidate" ;;
-      esac
-      ;;
-  esac
-done
-test -n "$$node"
+node="$(location {nodejs_controller_runtime})"
+case "$$node" in
+  /*) ;;
+  *) node="$$execroot/$$node" ;;
+esac
 test -x "$$node"
 # `vp install` spawns pnpm; pnpm's CLI shim re-execs `node` from PATH, so the
 # resolved node binary's directory must lead PATH or pnpm hits "node: not found"
@@ -73,7 +66,6 @@ hash_file() {{
 }}
 """.format(
         nodejs_controller_runtime = _NODEJS_CONTROLLER_RUNTIME,
-        tool_tmp = tool_tmp,
         viteplus_package = _VITEPLUS_PACKAGE,
     )
 
@@ -96,9 +88,8 @@ def viteplus_workspace_install(name):
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-tool_tmp="$$(mktemp -d)"
 npm_userconfig="$$(mktemp)"
-trap 'rm -rf "$$tool_tmp"; rm -f "$$npm_userconfig"' EXIT
+trap 'rm -f "$$npm_userconfig"' EXIT
 {viteplus_tool_setup}
 chmod 0600 "$$npm_userconfig"
 printf 'registry=https://npm.verself.sh/\\n' > "$$npm_userconfig"
@@ -202,8 +193,6 @@ def viteplus_workspace_check(name, generated_srcs = None):
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-tool_tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tool_tmp"' EXIT
 {viteplus_tool_setup}
 {generated_sync_cmds}
 cd "src/websites"
@@ -256,8 +245,6 @@ def viteplus_workspace_test(name, generated_srcs = None):
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-tool_tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tool_tmp"' EXIT
 {viteplus_tool_setup}
 {generated_sync_cmds}
 cd "src/websites"
@@ -555,9 +542,8 @@ set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
 tmp="$$(mktemp -d)"
-tool_tmp="$$(mktemp -d)"
 members="$$out.members"
-trap 'rm -rf "$$tmp" "$$tool_tmp"; rm -f "$$members"' EXIT
+trap 'rm -rf "$$tmp"; rm -f "$$members"' EXIT
 {viteplus_tool_setup}
 
 {generated_sync_cmds}
