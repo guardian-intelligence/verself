@@ -4,7 +4,7 @@ This project is using Vite+, a unified toolchain built on top of Vite, Rolldown,
 
 ## Vite+ Workflow
 
-**`vp` is not a global binary.** It is the lockfile-pinned `node_modules/vite-plus`, run under the server_tools-pinned Node — the exact toolchain the Bazel frontend build uses — and the only way to invoke it is `aspect vp -- <vp args>`. There is no `~/.vite-plus`, no PATH `vp`, and no `vp upgrade` (the version is the `pnpm-lock.yaml` entry; bump it like any other dependency). Every `vp <command>` below is run as `aspect vp -- <command>` (e.g. `aspect vp -- fmt . --write`, `aspect vp -- check .`, `aspect vp -- install --frozen-lockfile`). `aspect tidy` and `aspect dev verself-web` route through this same toolchain. Run `aspect vp -- help` for the command list and `aspect vp -- <command> --help` for a specific command.
+**`vp` is not a global binary.** It is the lockfile-pinned `node_modules/vite-plus`, run under the Bazel-resolved host Node — the exact controller-side toolchain the Bazel frontend build uses — and the only way to invoke it is `aspect vp -- <vp args>`. There is no `~/.vite-plus`, no PATH `vp`, and no `vp upgrade` (the version is the `pnpm-lock.yaml` entry; bump it like any other dependency). Every `vp <command>` below is run as `aspect vp -- <command>` (e.g. `aspect vp -- fmt . --write`, `aspect vp -- check .`, `aspect vp -- install --frozen-lockfile`). `aspect tidy` and `aspect dev verself-web` route through this same toolchain. Run `aspect vp -- help` for the command list and `aspect vp -- <command> --help` for a specific command.
 
 ### Build
 

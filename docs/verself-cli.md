@@ -811,6 +811,7 @@ The operator-local flow is:
 
 ```text
 ./src/tools/dev/bootstrap/bootstrap-linux-amd64
+export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
 bazelisk build //src/<cli_name>-cli:<cli_name>
 ./bazel-bin/src/<cli_name>-cli/<cli_name> env get VERSELF_SOPS_AGE_IDENTITY --org <org> --project <project> --environment bootstrap
 ./bazel-bin/src/<cli_name>-cli/<cli_name> company inspect <company> --json

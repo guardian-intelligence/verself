@@ -16,25 +16,28 @@ _INSTRUMENTATION_BUNDLER = "//src/websites/scripts:bundle_instrumentation"
 _CDXGEN_BINARY = "@dev_tool_cdxgen//file"
 _JQ_BINARY = "@dev_tool_jq//file"
 _NODEJS_ARCHIVE = "@server_tool_nodejs//file"
+_NODEJS_CONTROLLER_RUNTIME = "//src/websites:vp_node"
 _SYFT_ARCHIVE = "@dev_tool_syft//file"
 _VITEPLUS_PACKAGE = "//src/websites:node_modules/vite-plus"
 
 def _viteplus_tool_inputs():
     return [
-        _NODEJS_ARCHIVE,
+        _NODEJS_CONTROLLER_RUNTIME,
         _VITEPLUS_PACKAGE,
     ]
 
-def _viteplus_tool_setup(tool_tmp = "tool_tmp"):
+def _viteplus_tool_setup():
     return """
-mkdir -p "$${tool_tmp}/node"
-tar -xJf "$(location {nodejs_archive})" -C "$${tool_tmp}/node" --strip-components=1
-node="$${tool_tmp}/node/bin/node"
+node="$(location {nodejs_controller_runtime})"
+case "$$node" in
+  /*) ;;
+  *) node="$$execroot/$$node" ;;
+esac
 test -x "$$node"
 # `vp install` spawns pnpm; pnpm's CLI shim re-execs `node` from PATH, so the
-# extracted node binary's directory must lead PATH or pnpm hits "node: not found"
+# resolved node binary's directory must lead PATH or pnpm hits "node: not found"
 # under --incompatible_strict_action_env.
-export PATH="$${tool_tmp}/node/bin:$${{PATH:-/usr/bin:/bin}}"
+export PATH="$$(dirname "$$node"):$${{PATH:-/usr/bin:/bin}}"
 vp=""
 for candidate in $(locations {viteplus_package}); do
   case "$$candidate" in
@@ -47,9 +50,22 @@ for candidate in $(locations {viteplus_package}); do
   esac
 done
 test -n "$$vp"
+hash_stdin() {{
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{{ print $$1 }}'
+  else
+    shasum -a 256 | awk '{{ print $$1 }}'
+  fi
+}}
+hash_file() {{
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$$1" | awk '{{ print $$1 }}'
+  else
+    shasum -a 256 "$$1" | awk '{{ print $$1 }}'
+  fi
+}}
 """.format(
-        nodejs_archive = _NODEJS_ARCHIVE,
-        tool_tmp = tool_tmp,
+        nodejs_controller_runtime = _NODEJS_CONTROLLER_RUNTIME,
         viteplus_package = _VITEPLUS_PACKAGE,
     )
 
@@ -72,17 +88,16 @@ def viteplus_workspace_install(name):
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-tool_tmp="$$(mktemp -d)"
 npm_userconfig="$$(mktemp)"
-trap 'rm -rf "$$tool_tmp"; rm -f "$$npm_userconfig"' EXIT
+trap 'rm -f "$$npm_userconfig"' EXIT
 {viteplus_tool_setup}
 chmod 0600 "$$npm_userconfig"
 printf 'registry=https://npm.verself.sh/\\n' > "$$npm_userconfig"
 export NPM_CONFIG_USERCONFIG="$$npm_userconfig"
 cd "src/websites"
 "$$node" "$$vp" install --frozen-lockfile --prefer-offline
-lockfile_hash="$$(sha256sum pnpm-lock.yaml | awk '{{ print $$1 }}')"
-tool_fingerprint="$$("$$node" "$$vp" --version | sha256sum | awk '{{ print $$1 }}')"
+lockfile_hash="$$(hash_file pnpm-lock.yaml)"
+tool_fingerprint="$$("$$node" "$$vp" --version | hash_stdin)"
 printf 'viteplus install lockfile=%s tool=%s\\n' "$$lockfile_hash" "$$tool_fingerprint" > "$$out"
 """.format(viteplus_tool_setup = _viteplus_tool_setup()),
         local = True,
@@ -98,10 +113,13 @@ def _generated_source_sync_cmds(generated_srcs, package_dir):
         return ""
     generated_locations = " ".join(["$(locations %s)" % src for src in generated_srcs])
     return """
-generated_sync_lock="$$execroot/bazel-out/viteplus-generated-source-sync.lock"
-mkdir -p "$$(dirname "$$generated_sync_lock")"
+generated_sync_lock_dir="$$execroot/bazel-out/viteplus-generated-source-sync.lockdir"
+mkdir -p "$$(dirname "$$generated_sync_lock_dir")"
 (
-flock 9
+until mkdir "$$generated_sync_lock_dir" 2>/dev/null; do
+  sleep 0.1
+done
+trap 'rmdir "$$generated_sync_lock_dir"' EXIT
 for generated in {generated_locations}; do
   case "$$generated" in
     /*) generated_abs="$$generated" ;;
@@ -149,7 +167,7 @@ for generated in {generated_locations}; do
   fi
   chmod -R u+w "$$generated_dest"
 done
-) 9>"$$generated_sync_lock"
+)
 """.format(
         generated_locations = generated_locations,
         package_dir = package_dir,
@@ -175,8 +193,6 @@ def viteplus_workspace_check(name, generated_srcs = None):
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-tool_tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tool_tmp"' EXIT
 {viteplus_tool_setup}
 {generated_sync_cmds}
 cd "src/websites"
@@ -229,8 +245,6 @@ def viteplus_workspace_test(name, generated_srcs = None):
 set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
-tool_tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tool_tmp"' EXIT
 {viteplus_tool_setup}
 {generated_sync_cmds}
 cd "src/websites"
@@ -378,7 +392,8 @@ def viteplus_node_runtime_artifact(name):
         cmd = """
 set -euo pipefail
 tmp="$$(mktemp -d)"
-members="$@.members"
+out="$$(pwd)/$@"
+members="$$out.members"
 trap 'rm -rf "$$tmp"; rm -f "$$members"' EXIT
 mkdir -p "$$tmp/runtime/nodejs"
 tar -tf "$(location {nodejs_archive})" > "$$tmp/nodejs-members.txt"
@@ -390,11 +405,11 @@ mv "$$tmp/$$node_member" "$$tmp/runtime/nodejs/bin/node"
 rm -rf "$$tmp/$${{node_member%%/*}}"
 rm -f "$$tmp/nodejs-members.txt"
 chmod 0755 "$$tmp/runtime/nodejs/bin/node"
-if tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" . 2>/dev/null; then
+if tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$$out" -C "$$tmp" . 2>/dev/null; then
   :
 else
   (cd "$$tmp" && find . '(' -type f -o -type l ')' -print | LC_ALL=C sort > "$$members")
-  COPYFILE_DISABLE=1 tar -cf "$@" -C "$$tmp" -T "$$members"
+  COPYFILE_DISABLE=1 tar -cf "$$out" -C "$$tmp" -T "$$members"
 fi
 """.format(nodejs_archive = _NODEJS_ARCHIVE),
     )
@@ -527,9 +542,8 @@ set -euo pipefail
 execroot="$$(pwd)"
 out="$$execroot/$@"
 tmp="$$(mktemp -d)"
-tool_tmp="$$(mktemp -d)"
 members="$$out.members"
-trap 'rm -rf "$$tmp" "$$tool_tmp"; rm -f "$$members"' EXIT
+trap 'rm -rf "$$tmp"; rm -f "$$members"' EXIT
 {viteplus_tool_setup}
 
 {generated_sync_cmds}
