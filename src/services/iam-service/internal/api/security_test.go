@@ -110,6 +110,14 @@ func (s staticIdentityStore) ListOrganizationMetadataByProviderOrgIDs(_ context.
 	return out, nil
 }
 
+func (s staticIdentityStore) OrganizationSlugAvailable(context.Context, string) (bool, error) {
+	return true, nil
+}
+
+func (s staticIdentityStore) CreateOrganizationProfile(_ context.Context, input identity.CreateOrganizationRequest) (identity.OrganizationProfile, error) {
+	return identity.OrganizationProfile{OrgID: input.OrgID, IdentityProviderOrgID: input.IdentityProviderOrgID, DisplayName: input.DisplayName, Slug: input.Slug, State: identity.OrganizationProfileStateActive, Version: 1}, nil
+}
+
 func (s staticIdentityStore) UpdateOrganizationProfile(context.Context, identity.Principal, identity.UpdateOrganizationRequest) (identity.OrganizationProfile, error) {
 	return identity.OrganizationProfile{OrgID: "org_G1ZRBDTWBCGK0BQCKMAPKBWZ4Y", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: identity.OrganizationProfileStateActive, Version: 2}, nil
 }

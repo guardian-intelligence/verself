@@ -55,6 +55,9 @@ use verself.common.v1#DateTime
 @restJson1
 service Iam {
     version: "2026-05-12"
+    operations: [
+        InviteMember
+    ]
     resources: [Organization]
 }
 
@@ -158,6 +161,9 @@ enum IAMAuthorizationSubjectType {
 @permission(name: "iam:organization:list")
 string OrganizationListPermission
 
+@permission(name: "iam:organization:create")
+string OrganizationCreatePermission
+
 @permission(name: "iam:organization:read")
 string OrganizationReadPermission
 
@@ -169,6 +175,9 @@ string MemberListPermission
 
 @permission(name: "iam:member:read")
 string MemberReadPermission
+
+@permission(name: "iam:member:invite")
+string MemberInvitePermission
 
 @permission(name: "iam:policy:get")
 string IAMPolicyGetPermission
@@ -197,6 +206,9 @@ string AuthorizationParentEdgeWritePermission
 @auditEvent(name: "iam.organization.list")
 string OrganizationListAuditEvent
 
+@auditEvent(name: "iam.organization.create")
+string OrganizationCreateAuditEvent
+
 @auditEvent(name: "iam.organization.read")
 string OrganizationReadAuditEvent
 
@@ -208,6 +220,9 @@ string MemberListAuditEvent
 
 @auditEvent(name: "iam.member.read")
 string MemberReadAuditEvent
+
+@auditEvent(name: "iam.member.invite")
+string MemberInviteAuditEvent
 
 @auditEvent(name: "iam.policy.get")
 string IAMPolicyGetAuditEvent
@@ -243,6 +258,7 @@ resource Organization {
         displayName: DisplayName
         version: OrganizationVersion
     }
+    create: CreateOrganization
     list: ListOrganizations
     read: GetOrganization
     update: UpdateOrganization
@@ -353,6 +369,55 @@ structure ListOrganizationsOutput with [PageResponse] {
 
 list Organizations {
     member: OrganizationSummary
+}
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/orgs", code: 201)
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
+@authz(permission: OrganizationCreatePermission, organization: {source: "request_subject_id"})
+@audit(event: OrganizationCreateAuditEvent, resource: Organization, action: "create")
+@rateLimit(bucket: "signup_mutation")
+@requestBudget(maxBytes: 16384)
+@sdk(module: "orgs", method: "create", paginated: false, retryable: false)
+operation CreateOrganization {
+    input: CreateOrganizationInput
+    output: CreateOrganizationOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        PermissionDeniedError
+        ConflictError
+        IdempotencyPayloadMismatchError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure CreateOrganizationInput for Organization {
+    @required
+    @protoField(number: 1)
+    $displayName
+
+    @protoField(number: 2)
+    $slug
+
+    @required
+    @notProperty
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    @protoField(number: 100)
+    idempotencyKey: IdempotencyKey
+}
+
+@output
+structure CreateOrganizationOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    @notProperty
+    @protoField(number: 1)
+    organization: OrganizationSummary
 }
 
 @readonly
@@ -490,6 +555,110 @@ structure ListMembersOutput with [PageResponse] {
 list Members {
     member: MemberSummary
 }
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/orgs/{orgId}/members:invite", code: 202)
+@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
+@authz(permission: MemberInvitePermission, organization: {source: "input_member", member: "orgId"})
+@audit(event: MemberInviteAuditEvent, resource: Member, action: "invite")
+@rateLimit(bucket: "iam_invite")
+@requestBudget(maxBytes: 16384)
+@sdk(module: "members", method: "invite", paginated: false, retryable: false)
+@suppress(["ServiceBoundResourceOperation"])
+operation InviteMember {
+    input: InviteMemberInput
+    output: InviteMemberOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        PermissionDeniedError
+        ResourceNotFoundError
+        ConflictError
+        IdempotencyPayloadMismatchError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure InviteMemberInput {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    orgId: OrgId
+
+    @required
+    @protoField(number: 2)
+    email: EmailAddress
+
+    @notProperty
+    @protoField(number: 3)
+    givenName: GivenName
+
+    @notProperty
+    @protoField(number: 4)
+    familyName: FamilyName
+
+    @notProperty
+    @protoField(number: 5)
+    roles: InviteMemberRoles
+
+    @required
+    @notProperty
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    @protoField(number: 100)
+    idempotencyKey: IdempotencyKey
+}
+
+@output
+structure InviteMemberOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    @notProperty
+    @protoField(number: 1)
+    invitation: MemberInvitationSummary
+}
+
+@length(min: 1, max: 8)
+list InviteMemberRoles {
+    member: IAMRoleName
+}
+
+structure MemberInvitationSummary {
+    @required
+    @resourceIdentifier("orgId")
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    orgId: OrgId
+
+    @required
+    @resourceIdentifier("memberId")
+    @protoField(number: 2)
+    @suppress(["MemberShouldReferenceResource"])
+    memberId: MemberId
+
+    @required
+    @protoField(number: 3)
+    resourceName: MemberResourceName
+
+    @required
+    @protoField(number: 4)
+    email: EmailAddress
+
+    @required
+    @protoField(number: 5)
+    status: MemberInvitationStatus
+
+    @required
+    @protoField(number: 6)
+    roles: InviteMemberRoles
+}
+
+@length(min: 1, max: 32)
+string MemberInvitationStatus
 
 @readonly
 @http(method: "GET", uri: "/api/v1/orgs/{orgId}/members/{memberId}")

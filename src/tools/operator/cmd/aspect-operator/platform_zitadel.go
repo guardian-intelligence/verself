@@ -142,6 +142,9 @@ func (r *platformRunner) ensurePlatformOwner() (platformZitadelUser, error) {
 		if err := r.ensureBrowserOIDCApplication(ctx, client, project.ID); err != nil {
 			return err
 		}
+		if err := r.ensureCLIOIDCApplication(ctx, client, project.ID); err != nil {
+			return err
+		}
 		if err := r.ensureProductTokenClaimsAction(ctx, client); err != nil {
 			return err
 		}
@@ -232,6 +235,11 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 			return err
 		}
 		mismatches = append(mismatches, browserAudienceMismatches...)
+		cliAudienceMismatches, err := r.cliOIDCApplicationMismatches(ctx, client, project.ID)
+		if err != nil {
+			return err
+		}
+		mismatches = append(mismatches, cliAudienceMismatches...)
 		tokenActionMismatches, err := r.productTokenClaimsActionMismatches(ctx, client)
 		if err != nil {
 			return err
@@ -355,6 +363,47 @@ func (r *platformRunner) ensureBrowserOIDCApplication(ctx context.Context, clien
 	return nil
 }
 
+func (r *platformRunner) ensureCLIOIDCApplication(ctx context.Context, client platformZitadelClient, projectID string) error {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return fmt.Errorf("CLI OIDC application project ID is required")
+	}
+	app, found, err := client.FindOIDCAppByName(ctx, projectID, cliOIDCAppName)
+	if err != nil {
+		return err
+	}
+	if !found || strings.TrimSpace(app.ClientID) == "" {
+		app, err = client.CreateNativeOIDCApp(ctx, projectID, cliOIDCAppName)
+		if err != nil {
+			return err
+		}
+		r.markChanged("iam.cli_oidc_app.created")
+	} else if err := client.ReconcileNativeOIDCApp(ctx, projectID, app.ID, cliOIDCAppName); err != nil {
+		return err
+	}
+	values := map[string]string{
+		"oidc-cli-app-id":     app.ID + "\n",
+		"oidc-cli-client-id":  app.ClientID + "\n",
+		"oidc-cli-project-id": projectID + "\n",
+	}
+	for name, value := range values {
+		changed, err := r.writeRootCredential(ctx, browserOIDCCredstoreDir+"/"+name, browserOIDCCredstoreGroup, value)
+		if err != nil {
+			return fmt.Errorf("write CLI OIDC %s credential: %w", name, err)
+		}
+		if changed {
+			r.markChanged("iam.cli_oidc_app." + name + ".updated")
+		}
+	}
+	marker := fmt.Sprintf("app_id=%s\nclient_id=%s\nauth_method=OIDC_AUTH_METHOD_TYPE_NONE\n", app.ID, app.ClientID)
+	if changed, err := r.writeRootCredential(ctx, browserOIDCCredstoreDir+"/oidc-cli-cutover", browserOIDCCredstoreGroup, marker); err != nil {
+		return fmt.Errorf("write CLI OIDC cutover marker: %w", err)
+	} else if changed {
+		r.markChanged("iam.cli_oidc_app.cutover_marker.updated")
+	}
+	return nil
+}
+
 func (r *platformRunner) browserOIDCRedirectURIs() []string {
 	return []string{"https://" + r.cfg.VerselfDomain + "/api/v1/auth/callback"}
 }
@@ -366,6 +415,7 @@ func (r *platformRunner) browserOIDCPostLogoutRedirectURIs() []string {
 const (
 	platformProductAPIProjectName = "verself-api"
 	browserOIDCAppName            = "verself-web"
+	cliOIDCAppName                = "verself-cli"
 	browserOIDCCredstoreDir       = "/etc/credstore/iam-service"
 	browserOIDCCredstoreGroup     = "iam_service"
 	productTokenClaimsTargetName  = "verself-product-token-claims"
@@ -519,6 +569,46 @@ func (r *platformRunner) browserOIDCApplicationMismatches(ctx context.Context, c
 		}
 		if stat.Mode != "640" {
 			mismatches = append(mismatches, fmt.Sprintf("iam.browser_oidc_app.%s.mode=%q", name, stat.Mode))
+		}
+	}
+	return mismatches, nil
+}
+
+func (r *platformRunner) cliOIDCApplicationMismatches(ctx context.Context, client platformZitadelClient, projectID string) ([]string, error) {
+	var mismatches []string
+	app, found, err := client.FindOIDCAppByName(ctx, projectID, cliOIDCAppName)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		mismatches = append(mismatches, "iam.cli_oidc_app.missing")
+		return mismatches, nil
+	}
+	expected := map[string]string{
+		"oidc-cli-app-id":     app.ID,
+		"oidc-cli-client-id":  app.ClientID,
+		"oidc-cli-project-id": projectID,
+	}
+	for name, value := range expected {
+		path := browserOIDCCredstoreDir + "/" + name
+		raw, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, path)
+		if err != nil {
+			mismatches = append(mismatches, fmt.Sprintf("iam.cli_oidc_app.%s.read_error=%q", name, err.Error()))
+			continue
+		}
+		if strings.TrimSpace(string(raw)) != value {
+			mismatches = append(mismatches, "iam.cli_oidc_app."+name+".value_mismatch")
+		}
+		stat, err := r.remoteCredentialStat(ctx, path)
+		if err != nil {
+			mismatches = append(mismatches, fmt.Sprintf("iam.cli_oidc_app.%s.stat_error=%q", name, err.Error()))
+			continue
+		}
+		if stat.Group != browserOIDCCredstoreGroup {
+			mismatches = append(mismatches, fmt.Sprintf("iam.cli_oidc_app.%s.group=%q", name, stat.Group))
+		}
+		if stat.Mode != "640" {
+			mismatches = append(mismatches, fmt.Sprintf("iam.cli_oidc_app.%s.mode=%q", name, stat.Mode))
 		}
 	}
 	return mismatches, nil
@@ -720,6 +810,25 @@ func (c platformZitadelClient) CreateBrowserOIDCApp(ctx context.Context, project
 	return platformZitadelOIDCApp{ID: appID, ClientID: clientID, ClientSecret: clientSecret}, nil
 }
 
+func (c platformZitadelClient) CreateNativeOIDCApp(ctx context.Context, projectID, name string) (platformZitadelOIDCApp, error) {
+	body := nativeOIDCConfigBody()
+	body["name"] = strings.TrimSpace(name)
+	var out struct {
+		AppID    string `json:"appId"`
+		ClientID string `json:"clientId"`
+	}
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/oidc"
+	if err := c.doJSON(ctx, http.MethodPost, path, body, &out, false); err != nil {
+		return platformZitadelOIDCApp{}, fmt.Errorf("create Zitadel native OIDC app %s: %w", name, err)
+	}
+	appID := strings.TrimSpace(out.AppID)
+	clientID := strings.TrimSpace(out.ClientID)
+	if appID == "" || clientID == "" {
+		return platformZitadelOIDCApp{}, fmt.Errorf("create Zitadel native OIDC app %s returned incomplete credentials", name)
+	}
+	return platformZitadelOIDCApp{ID: appID, ClientID: clientID}, nil
+}
+
 func (c platformZitadelClient) ReconcileBrowserOIDCApp(ctx context.Context, projectID, appID, name string, redirectURIs, postLogoutRedirectURIs []string) error {
 	body := browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs)
 	body["accessTokenRoleAssertion"] = false
@@ -728,6 +837,18 @@ func (c platformZitadelClient) ReconcileBrowserOIDCApp(ctx context.Context, proj
 	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/" + url.PathEscape(strings.TrimSpace(appID)) + "/oidc_config"
 	if err := c.doJSON(ctx, http.MethodPut, path, body, nil, false); err != nil && !isZitadelNoChanges(err) {
 		return fmt.Errorf("update Zitadel OIDC app %s: %w", name, err)
+	}
+	return nil
+}
+
+func (c platformZitadelClient) ReconcileNativeOIDCApp(ctx context.Context, projectID, appID, name string) error {
+	body := nativeOIDCConfigBody()
+	body["accessTokenRoleAssertion"] = false
+	body["idTokenRoleAssertion"] = false
+	body["idTokenUserinfoAssertion"] = true
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/" + url.PathEscape(strings.TrimSpace(appID)) + "/oidc_config"
+	if err := c.doJSON(ctx, http.MethodPut, path, body, nil, false); err != nil && !isZitadelNoChanges(err) {
+		return fmt.Errorf("update Zitadel native OIDC app %s: %w", name, err)
 	}
 	return nil
 }
@@ -748,6 +869,19 @@ func browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs []string) map[st
 		"appType":                "OIDC_APP_TYPE_WEB",
 		"authMethodType":         "OIDC_AUTH_METHOD_TYPE_POST",
 		"postLogoutRedirectUris": postLogoutRedirectURIs,
+		"devMode":                false,
+		"accessTokenType":        "OIDC_TOKEN_TYPE_JWT",
+	}
+}
+
+func nativeOIDCConfigBody() map[string]any {
+	return map[string]any{
+		"redirectUris":           []string{},
+		"responseTypes":          []string{"OIDC_RESPONSE_TYPE_CODE"},
+		"grantTypes":             []string{"OIDC_GRANT_TYPE_DEVICE_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"},
+		"appType":                "OIDC_APP_TYPE_NATIVE",
+		"authMethodType":         "OIDC_AUTH_METHOD_TYPE_NONE",
+		"postLogoutRedirectUris": []string{},
 		"devMode":                false,
 		"accessTokenType":        "OIDC_TOKEN_TYPE_JWT",
 	}

@@ -2,6 +2,7 @@ package identity
 
 const (
 	PermissionOrganizationList              = "iam:organization:list"
+	PermissionOrganizationCreate            = "iam:organization:create"
 	PermissionOrganizationRead              = "iam:organization:read"
 	PermissionOrganizationUpdate            = "iam:organization:update"
 	PermissionMemberList                    = "iam:member:list"

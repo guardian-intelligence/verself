@@ -622,6 +622,8 @@ func auditInternalProfileUpdate(ctx context.Context, subjectID string, authIdent
 		return
 	}
 	decision, status := apiActivityResult(outcome)
+	op := huma.Operation{Method: "PATCH", Path: "/internal/v1/human-profile/{subject_id}", DefaultStatus: http.StatusOK}
+	httpStatus := httpStatusFromOperationResult(op, outcome, err)
 	record := governanceAPIActivity{
 		OrgID:                 authIdentity.OrgID,
 		APIService:            "iam-service",
@@ -635,12 +637,12 @@ func auditInternalProfileUpdate(ctx context.Context, subjectID string, authIdent
 		Permission:            "iam:human_profile:write",
 		ResourceType:          "human_profile",
 		ResourceUID:           strings.TrimSpace(subjectID),
-		HTTPMethod:            "PATCH",
-		HTTPRoute:             "/internal/v1/human-profile/{subject_id}",
-		HTTPStatus:            httpStatusFromOperationResult(outcome, err),
+		HTTPMethod:            op.Method,
+		HTTPRoute:             op.Path,
+		HTTPStatus:            httpStatus,
 		AuthorizationDecision: decision,
 		Status:                status,
-		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatusFromOperationResult(outcome, err)))),
+		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatus))),
 	}
 	if err != nil {
 		record.StatusDetail = problemCode(err)

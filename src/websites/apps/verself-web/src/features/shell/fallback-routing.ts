@@ -25,9 +25,9 @@ export function resolveAuthenticatedShellFallbackPath(
   organizations: ReadonlyMap<string, OrganizationMetadataValue>,
 ): string {
   const orgID = auth.selectedOrgId ?? auth.orgId;
-  if (!orgID) return "/login";
+  if (!orgID) return "/onboarding";
   const organization = organizations.get(orgID);
-  return organization ? orgPath(organization.slug, "/") : "/login";
+  return organization ? orgPath(organization.slug, "/") : "/onboarding";
 }
 
 function fallbackPathFromNotFoundData(data: unknown): string | null {

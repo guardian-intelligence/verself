@@ -2,8 +2,13 @@ import * as v from "valibot";
 import { createClient, type Client } from "./__generated/iam-api/client/index.js";
 import type {
   IamPolicy as GeneratedIamPolicy,
+  CreateOrganizationData,
+  CreateOrganizationRequestContent as CreateOrganizationInputBody,
+  InviteMemberData,
+  InviteMemberRequestContent as InviteMemberInputBody,
   ListMembersResponseContent as ListMembersOutputBody,
   ListOrganizationsResponseContent as ListOrganizationsOutputBody,
+  MemberInvitationSummary,
   MemberSummary,
   OrganizationSummary,
   SetIamPolicyData,
@@ -15,8 +20,10 @@ import type {
   UpdateOrganizationRequestContent as UpdateOrganizationInputBody,
 } from "./__generated/iam-api/index.js";
 import {
+  createOrganization as createOrganizationOperation,
   getIamPolicy,
   getOrganization,
+  inviteMember as inviteMemberOperation,
   listMembers,
   listOrganizations,
   setIamPolicy,
@@ -97,6 +104,15 @@ const iamMemberSchema = v.pipe(
 
 const iamRoleSchema = v.pipe(v.string(), v.trim(), v.regex(/^roles\/[A-Za-z][A-Za-z0-9.]*$/));
 
+const displayNameSchema = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120));
+
+const emailSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
+  v.maxLength(320),
+);
+
 const iamPolicyBindingSchema = v.strictObject({
   role: iamRoleSchema,
   members: v.array(iamMemberSchema),
@@ -121,6 +137,14 @@ const memberSummarySchema = v.strictObject({
   resourceName: v.string(),
   email: v.string(),
   displayName: v.string(),
+});
+const memberInvitationSummarySchema = v.strictObject({
+  orgId: v.string(),
+  memberId: v.string(),
+  resourceName: v.string(),
+  email: v.string(),
+  status: v.string(),
+  roles: v.array(iamRoleSchema),
 });
 const listOrganizationsOutputBodySchema = v.strictObject({
   organizations: v.array(organizationSummarySchema),
@@ -147,6 +171,14 @@ export interface Member {
   readonly email: string;
   readonly display_name: string;
   readonly state: string;
+}
+
+export interface MemberInvitation {
+  readonly org_id: string;
+  readonly member_id: string;
+  readonly email: string;
+  readonly status: string;
+  readonly roles: ReadonlyArray<string>;
 }
 
 export interface Organization {
@@ -181,6 +213,17 @@ function parseMember(input: MemberSummary): Member {
     email: member.email,
     display_name: member.displayName,
     state: "active",
+  };
+}
+
+function parseMemberInvitation(input: MemberInvitationSummary): MemberInvitation {
+  const invitation = v.parse(memberInvitationSummarySchema, input) as MemberInvitationSummary;
+  return {
+    org_id: invitation.orgId,
+    member_id: invitation.memberId,
+    email: invitation.email,
+    status: invitation.status,
+    roles: [...invitation.roles],
   };
 }
 
@@ -219,8 +262,15 @@ function parsePolicy(input: GeneratedIamPolicy): IAMPolicy {
   };
 }
 
+export const createOrganizationRequestSchema = v.strictObject({
+  display_name: displayNameSchema,
+  slug: v.optional(organizationSlugSchema),
+});
+
+export type CreateOrganizationRequest = v.InferInput<typeof createOrganizationRequestSchema>;
+
 export const updateOrganizationRequestSchema = v.strictObject({
-  display_name: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120))),
+  display_name: v.optional(displayNameSchema),
   slug: v.optional(organizationSlugSchema),
   version: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2147483647)),
 });
@@ -239,8 +289,18 @@ export const testIamPermissionsRequestSchema = v.strictObject({
 
 export type TestIamPermissionsRequest = v.InferInput<typeof testIamPermissionsRequestSchema>;
 
+export const inviteMemberRequestSchema = v.strictObject({
+  email: emailSchema,
+  given_name: v.optional(displayNameSchema),
+  family_name: v.optional(displayNameSchema),
+  roles: v.optional(v.array(iamRoleSchema)),
+});
+
+export type InviteMemberRequest = v.InferInput<typeof inviteMemberRequestSchema>;
+
 const ORGANIZATION_PAGE_PERMISSIONS = [
   "iam:organization:update",
+  "iam:member:invite",
   "iam:member:list",
   "iam:policy:get",
 ] as const;
@@ -250,6 +310,27 @@ export class IAM {
 
   constructor(options: IAMClientOptions) {
     this.#options = options;
+  }
+
+  async createOrganization(
+    body: CreateOrganizationRequest,
+    options: IAMMutationOptions = {},
+  ): Promise<Organization> {
+    const client = createIAMClient(this.#options);
+    const input = v.parse(createOrganizationRequestSchema, body);
+    const parsedBody: CreateOrganizationInputBody = {
+      displayName: input.display_name,
+      ...(input.slug !== undefined ? { slug: input.slug } : {}),
+    };
+    const path = "/api/v1/orgs";
+    const result = await createOrganizationOperation({
+      client,
+      body: parsedBody as CreateOrganizationData["body"],
+      headers: idempotencyHeaders("iam-organization", options.idempotencyKey),
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    return parseOrganization(unwrapIAMResult(path, result));
   }
 
   async getOrganization(): Promise<Organization> {
@@ -331,6 +412,31 @@ export class IAM {
       unwrapIAMResult(path, result),
     ) as ListMembersOutputBody;
     return body.members.map((member) => parseMember(member));
+  }
+
+  async inviteMember(
+    body: InviteMemberRequest,
+    options: IAMMutationOptions = {},
+  ): Promise<MemberInvitation> {
+    const client = createIAMClient(this.#options);
+    const org = await this.currentOrganization(client);
+    const input = v.parse(inviteMemberRequestSchema, body);
+    const parsedBody: InviteMemberInputBody = {
+      email: input.email,
+      ...(input.given_name !== undefined ? { givenName: input.given_name } : {}),
+      ...(input.family_name !== undefined ? { familyName: input.family_name } : {}),
+      ...(input.roles !== undefined ? { roles: [...input.roles] } : {}),
+    };
+    const path = `/api/v1/orgs/${org.org_id}/members:invite`;
+    const result = await inviteMemberOperation({
+      client,
+      body: parsedBody as InviteMemberData["body"],
+      headers: idempotencyHeaders("iam-member-invite", options.idempotencyKey),
+      path: { orgId: org.org_id },
+      responseStyle: "fields",
+      throwOnError: false,
+    });
+    return parseMemberInvitation(unwrapIAMResult(path, result));
   }
 
   async getIamPolicy(): Promise<IAMPolicy> {

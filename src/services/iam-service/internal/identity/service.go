@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -16,6 +17,8 @@ type Store interface {
 	GetOrganizationProfile(ctx context.Context, orgID, actorID string) (OrganizationProfile, error)
 	ListOrganizationMetadataByOrgIDs(ctx context.Context, orgIDs []string) ([]OrganizationMetadata, error)
 	ListOrganizationMetadataByProviderOrgIDs(ctx context.Context, providerOrgIDs []string) ([]OrganizationMetadata, error)
+	OrganizationSlugAvailable(ctx context.Context, slug string) (bool, error)
+	CreateOrganizationProfile(ctx context.Context, input CreateOrganizationRequest) (OrganizationProfile, error)
 	UpdateOrganizationProfile(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (OrganizationProfile, error)
 	ResolveOrganizationProfile(ctx context.Context, input ResolveOrganizationRequest) (OrganizationProfile, error)
 	CreateServiceAccount(ctx context.Context, account ServiceAccount, credential APICredential, secret APICredentialSecret) (ServiceAccount, APICredential, error)
@@ -32,6 +35,7 @@ type Store interface {
 }
 
 type Directory interface {
+	CreateOrganization(ctx context.Context, input DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error)
 	ListMembers(ctx context.Context, orgID string) ([]Member, error)
 	InviteMember(ctx context.Context, orgID string, input InviteMemberRequest) (InviteMemberResult, error)
 	UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error)
@@ -101,6 +105,56 @@ func (s *Service) AccessibleOrganizations(ctx context.Context, subject Authoriza
 	return organizations, nil
 }
 
+func (s *Service) CreateOrganization(ctx context.Context, subjectID string, input PublicCreateOrganizationRequest) (Organization, error) {
+	subjectID = strings.TrimSpace(subjectID)
+	if subjectID == "" {
+		return Organization{}, fmt.Errorf("%w: subject_id is required", ErrInvalidInput)
+	}
+	input, err := normalizePublicCreateOrganizationRequest(input)
+	if err != nil {
+		return Organization{}, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return Organization{}, err
+	}
+	slug, err := s.availableOrganizationSlug(ctx, store, input.Slug, input.DisplayName)
+	if err != nil {
+		return Organization{}, err
+	}
+	orgID, err := randomOrganizationID()
+	if err != nil {
+		return Organization{}, err
+	}
+	directory, err := s.directory()
+	if err != nil {
+		return Organization{}, err
+	}
+	provider, err := directory.CreateOrganization(ctx, DirectoryCreateOrganizationRequest{
+		Name:        slug + "-" + strings.TrimPrefix(orgID, organizationPublicIDPrefix),
+		AdminUserID: subjectID,
+	})
+	if err != nil {
+		return Organization{}, err
+	}
+	profile, err := store.CreateOrganizationProfile(ctx, CreateOrganizationRequest{
+		OrgID:                 orgID,
+		IdentityProviderOrgID: provider.OrganizationID,
+		DisplayName:           input.DisplayName,
+		Slug:                  slug,
+		ActorID:               subjectID,
+	})
+	if err != nil {
+		return Organization{}, err
+	}
+	return Organization{
+		OrgID:       profile.OrgID,
+		DisplayName: profile.DisplayName,
+		Slug:        profile.Slug,
+		Version:     profile.Version,
+	}, nil
+}
+
 func (s *Service) UpdateOrganization(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (Organization, error) {
 	if err := principal.validate(); err != nil {
 		return Organization{}, err
@@ -163,6 +217,7 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 	if err != nil {
 		return InviteMemberResult{}, err
 	}
+	result.Roles = normalizeInviteRoles(input.Roles)
 	return result, nil
 }
 
@@ -565,9 +620,105 @@ func (p Principal) validate() error {
 	return nil
 }
 
+func normalizePublicCreateOrganizationRequest(input PublicCreateOrganizationRequest) (PublicCreateOrganizationRequest, error) {
+	input.DisplayName = normalizeHumanText(input.DisplayName)
+	input.Slug = normalizeSlug(input.Slug)
+	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
+	if err := validateHumanText("display_name", input.DisplayName, 1, 120, 240); err != nil {
+		return PublicCreateOrganizationRequest{}, err
+	}
+	if input.Slug != "" {
+		if err := validateSlug("slug", input.Slug); err != nil {
+			return PublicCreateOrganizationRequest{}, err
+		}
+	}
+	if input.IdempotencyKey == "" {
+		return PublicCreateOrganizationRequest{}, fmt.Errorf("%w: idempotency_key is required", ErrInvalidInput)
+	}
+	return input, nil
+}
+
+func (s *Service) availableOrganizationSlug(ctx context.Context, store Store, requested, displayName string) (string, error) {
+	base := normalizeSlug(firstNonEmpty(requested, displayName, "organization"))
+	if base == "" {
+		base = "organization"
+	}
+	if requested != "" {
+		available, err := store.OrganizationSlugAvailable(ctx, base)
+		if err != nil {
+			return "", err
+		}
+		if !available {
+			return "", fmt.Errorf("%w: organization slug is unavailable", ErrOrganizationConflict)
+		}
+		return base, nil
+	}
+	for attempt := 0; attempt < 8; attempt++ {
+		candidate := base
+		if attempt > 0 {
+			suffix, err := randomCrockfordText(6)
+			if err != nil {
+				return "", err
+			}
+			candidate = trimSlugBase(base, 73) + "-" + strings.ToLower(suffix)
+		}
+		available, err := store.OrganizationSlugAvailable(ctx, candidate)
+		if err != nil {
+			return "", err
+		}
+		if available {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("%w: organization slug is unavailable", ErrOrganizationConflict)
+}
+
+func trimSlugBase(value string, max int) string {
+	value = strings.Trim(value, "-")
+	if len(value) <= max {
+		return value
+	}
+	return strings.Trim(value[:max], "-")
+}
+
+func randomOrganizationID() (string, error) {
+	payload, err := randomCrockfordText(26)
+	if err != nil {
+		return "", err
+	}
+	return organizationPublicIDPrefix + payload, nil
+}
+
+func randomCrockfordText(length int) (string, error) {
+	raw := make([]byte, length)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	b.Grow(length)
+	for _, value := range raw {
+		b.WriteByte(organizationPublicIDAlphabet[int(value)%len(organizationPublicIDAlphabet)])
+	}
+	return b.String(), nil
+}
+
 func validateInvite(input InviteMemberRequest) error {
 	if _, err := mail.ParseAddress(strings.TrimSpace(input.Email)); err != nil {
 		return fmt.Errorf("%w: email is invalid", ErrInvalidInput)
+	}
+	roles := normalizeInviteRoles(input.Roles)
+	if len(roles) == 0 {
+		return fmt.Errorf("%w: at least one role is required", ErrInvalidInput)
+	}
+	if len(roles) > 8 {
+		return fmt.Errorf("%w: too many roles", ErrInvalidInput)
+	}
+	for _, role := range roles {
+		switch role {
+		case "roles/admin", "roles/member", "roles/executionViewer", "roles/billingViewer", "roles/sourceViewer", "roles/secretsUser":
+		default:
+			return fmt.Errorf("%w: unsupported invite role %q", ErrInvalidInput, role)
+		}
 	}
 	return nil
 }
@@ -611,7 +762,29 @@ func normalizeInvite(input InviteMemberRequest) InviteMemberRequest {
 	input.Email = strings.TrimSpace(input.Email)
 	input.GivenName = strings.TrimSpace(input.GivenName)
 	input.FamilyName = strings.TrimSpace(input.FamilyName)
+	input.Roles = normalizeInviteRoles(input.Roles)
 	return input
+}
+
+func normalizeInviteRoles(input []string) []string {
+	roles := make([]string, 0, len(input))
+	seen := map[string]struct{}{}
+	for _, role := range input {
+		role = strings.TrimSpace(role)
+		if role == "" {
+			continue
+		}
+		if _, ok := seen[role]; ok {
+			continue
+		}
+		seen[role] = struct{}{}
+		roles = append(roles, role)
+	}
+	if len(roles) == 0 {
+		roles = append(roles, "roles/member")
+	}
+	sort.Strings(roles)
+	return roles
 }
 
 func normalizeOrganizationIDs(orgIDs []string) []string {

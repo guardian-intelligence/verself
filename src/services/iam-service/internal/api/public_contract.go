@@ -111,7 +111,17 @@ func (r publicRuntime) AfterOperation(ctx context.Context, desc contractapi.Oper
 		}
 	}
 	identityValue := publicAuditIdentity(authIdentity)
-	auditOperation(ctx, huma.Operation{OperationID: desc.OperationID}, operationPolicyFromContract(desc), identityValue, input, output, outcome, err)
+	if identityValue != nil && strings.TrimSpace(identityValue.OrgID) == "" {
+		if targetID, _ := targetFromBoundary(input, output); strings.HasPrefix(targetID, "org_") {
+			identityValue.OrgID = targetID
+		}
+	}
+	auditOperation(ctx, huma.Operation{
+		OperationID:   desc.OperationID,
+		Method:        desc.Method,
+		Path:          desc.Path,
+		DefaultStatus: desc.DefaultStatus,
+	}, operationPolicyFromContract(desc), identityValue, input, output, outcome, err)
 }
 
 func validateGeneratedOperation(desc contractapi.OperationDescriptor) error {
@@ -150,6 +160,8 @@ func (r publicRuntime) contractOrganizationScope(ctx context.Context, desc contr
 		}
 		orgIDs, _, err := r.authz.LookupOrganizations(ctx, authzSubjectFromIdentity(authIdentity), "read", "")
 		return orgIDs, err
+	case "request_subject_id":
+		return nil, nil
 	case "input_member":
 		publicOrgID := stringFromInputMember(input, desc.Authorization.OrganizationMember)
 		if publicOrgID == "" {
@@ -195,7 +207,7 @@ func (r publicRuntime) identityHasContractPermission(ctx context.Context, authId
 	if r.authz == nil {
 		return false, authz.ErrUnavailable
 	}
-	if desc.Authorization.OrganizationSource == "request_subject" {
+	if desc.Authorization.OrganizationSource == "request_subject" || desc.Authorization.OrganizationSource == "request_subject_id" {
 		return true, nil
 	}
 	subject := authzSubjectFromIdentity(authIdentity)
@@ -300,6 +312,8 @@ func runtimeOrgScopeFromContract(source string) string {
 	switch source {
 	case "request_subject":
 		return string(runtimeiam.OrgScopeRequestSubject)
+	case "request_subject_id":
+		return string(runtimeiam.OrgScopeRequestSubjectID)
 	case "input_member":
 		return string(runtimeiam.OrgScopePathOrgID)
 	default:
@@ -327,6 +341,35 @@ func (h publicHandlers) ListOrganizations(ctx context.Context, _ *contractapi.Li
 			Organizations: h.organizationSummariesFromMetadata(organizations),
 		},
 	}, nil
+}
+
+func (h publicHandlers) CreateOrganization(ctx context.Context, input *contractapi.CreateOrganizationInput) (*contractapi.CreateOrganizationOutput, error) {
+	authIdentity, err := requireIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	org, err := h.service.CreateOrganization(ctx, authIdentity.Subject, identity.PublicCreateOrganizationRequest{
+		DisplayName:    string(input.Body.DisplayName),
+		Slug:           contractString(input.Body.Slug),
+		IdempotencyKey: string(input.IdempotencyKey),
+	})
+	if err != nil {
+		return nil, identityError(ctx, err)
+	}
+	if h.authz == nil {
+		return nil, authzError(ctx, authz.ErrUnavailable)
+	}
+	_, err = h.authz.SetOrganizationPolicy(ctx, org.OrgID, authz.Policy{
+		Version: 1,
+		Bindings: []authz.PolicyBinding{{
+			Role:    "roles/owner",
+			Members: []string{"user:" + authIdentity.Subject},
+		}},
+	}, contractapi.CreateOrganization.Descriptor.OperationID)
+	if err != nil {
+		return nil, authzError(ctx, err)
+	}
+	return &contractapi.CreateOrganizationOutput{Body: h.organizationSummary(org)}, nil
 }
 
 func (h publicHandlers) GetOrganization(ctx context.Context, input *contractapi.GetOrganizationInput) (*contractapi.GetOrganizationOutput, error) {
@@ -393,6 +436,36 @@ func (h publicHandlers) GetMember(ctx context.Context, input *contractapi.GetMem
 		return nil, err
 	}
 	return &contractapi.GetMemberOutput{Body: h.memberSummary(principal.OrgID, member)}, nil
+}
+
+func (h publicHandlers) InviteMember(ctx context.Context, input *contractapi.InviteMemberInput) (*contractapi.InviteMemberOutput, error) {
+	principal, err := h.principalForPublicOrg(ctx, input.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	roles := inviteRolesFromContract(input.Body.Roles)
+	result, err := h.service.InviteMember(ctx, principal, identity.InviteMemberRequest{
+		Email:      string(input.Body.Email),
+		GivenName:  contractString(input.Body.GivenName),
+		FamilyName: contractString(input.Body.FamilyName),
+		Roles:      roles,
+	})
+	if err != nil {
+		return nil, identityError(ctx, err)
+	}
+	if h.authz == nil {
+		return nil, authzError(ctx, authz.ErrUnavailable)
+	}
+	policy, err := h.authz.GetOrganizationPolicy(ctx, string(input.OrgID))
+	if err != nil {
+		return nil, authzError(ctx, err)
+	}
+	policy = addPolicyMember(policy, result.Roles, "user:"+result.UserID)
+	if _, err := h.authz.SetOrganizationPolicy(ctx, string(input.OrgID), policy, contractapi.InviteMember.Descriptor.OperationID); err != nil {
+		return nil, authzError(ctx, err)
+	}
+	invitation := h.memberInvitationSummary(principal.OrgID, result)
+	return &contractapi.InviteMemberOutput{Body: invitation}, nil
 }
 
 func (h publicHandlers) GetIamPolicy(ctx context.Context, input *contractapi.GetIamPolicyInput) (*contractapi.GetIamPolicyOutput, error) {
@@ -540,6 +613,86 @@ func (h publicHandlers) memberSummary(orgID string, member identity.Member) cont
 		Email:        contractapi.EmailAddress(member.Email),
 		DisplayName:  contractapi.DisplayName(member.DisplayName),
 	}
+}
+
+func (h publicHandlers) memberInvitationSummary(orgID string, invitation identity.InviteMemberResult) contractapi.MemberInvitationSummary {
+	publicOrgID := contractapi.OrgID(orgID)
+	publicMemberID := publicMemberID(invitation.UserID)
+	roles := make(contractapi.InviteMemberRoles, 0, len(invitation.Roles))
+	for _, role := range invitation.Roles {
+		roles = append(roles, contractapi.IAMRoleName(role))
+	}
+	return contractapi.MemberInvitationSummary{
+		OrgID:        publicOrgID,
+		MemberID:     publicMemberID,
+		ResourceName: publicMemberResourceName(h.installationID, publicOrgID, publicMemberID),
+		Email:        contractapi.EmailAddress(invitation.Email),
+		Status:       contractapi.MemberInvitationStatus(invitation.Status),
+		Roles:        roles,
+	}
+}
+
+func inviteRolesFromContract(input contractapi.InviteMemberRoles) []string {
+	roles := make([]string, 0, len(input))
+	for _, role := range input {
+		if trimmed := strings.TrimSpace(string(role)); trimmed != "" {
+			roles = append(roles, trimmed)
+		}
+	}
+	return roles
+}
+
+func addPolicyMember(policy authz.Policy, roles []string, member string) authz.Policy {
+	member = strings.TrimSpace(member)
+	if member == "" {
+		return policy
+	}
+	roles = compactStrings(roles)
+	for _, role := range roles {
+		found := false
+		for i := range policy.Bindings {
+			if policy.Bindings[i].Role != role {
+				continue
+			}
+			policy.Bindings[i].Members = appendIfMissing(policy.Bindings[i].Members, member)
+			found = true
+			break
+		}
+		if !found {
+			policy.Bindings = append(policy.Bindings, authz.PolicyBinding{
+				Role:    role,
+				Members: []string{member},
+			})
+		}
+	}
+	return policy
+}
+
+func compactStrings(input []string) []string {
+	out := make([]string, 0, len(input))
+	seen := map[string]struct{}{}
+	for _, value := range input {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func appendIfMissing(input []string, value string) []string {
+	for _, existing := range input {
+		if existing == value {
+			return input
+		}
+	}
+	return append(input, value)
 }
 
 func contractPolicy(policy authz.Policy) contractapi.IAMPolicy {

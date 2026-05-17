@@ -144,6 +144,17 @@ func (s SQLStore) CreateOrganizationProfile(ctx context.Context, input CreateOrg
 	return profile, err
 }
 
+func (s SQLStore) OrganizationSlugAvailable(ctx context.Context, slug string) (bool, error) {
+	if s.PG == nil {
+		return false, ErrStoreUnavailable
+	}
+	slug = normalizeSlug(slug)
+	if err := validateSlug("slug", slug); err != nil {
+		return false, err
+	}
+	return organizationSlugAvailable(ctx, s.q(), "", slug)
+}
+
 func (s SQLStore) UpdateOrganizationProfile(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (profile OrganizationProfile, err error) {
 	ctx, span := organizationStoreTracer.Start(ctx, "iam.pg.organization_profile.update")
 	defer finishOrganizationSpan(span, principal.OrgID, profile, err)

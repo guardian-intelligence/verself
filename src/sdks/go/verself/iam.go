@@ -44,6 +44,15 @@ type Member struct {
 	DisplayName  string `json:"displayName"`
 }
 
+type MemberInvitation struct {
+	OrgID        string        `json:"orgId"`
+	MemberID     string        `json:"memberId"`
+	ResourceName string        `json:"resourceName"`
+	Email        string        `json:"email"`
+	Status       string        `json:"status"`
+	Roles        []IAMRoleName `json:"roles"`
+}
+
 type MemberList struct {
 	Members       []Member `json:"members"`
 	NextPageToken string   `json:"nextPageToken,omitempty"`
@@ -65,6 +74,12 @@ type ListOrganizationsOptions struct {
 	PageToken string
 }
 
+type CreateOrganizationInput struct {
+	DisplayName    string
+	Slug           *string
+	IdempotencyKey string
+}
+
 type UpdateOrganizationInput struct {
 	OrgID          string
 	Version        int64
@@ -82,6 +97,15 @@ type ListMembersOptions struct {
 type GetMemberInput struct {
 	OrgID    string
 	MemberID string
+}
+
+type InviteMemberInput struct {
+	OrgID          string
+	Email          string
+	GivenName      *string
+	FamilyName     *string
+	Roles          []IAMRoleName
+	IdempotencyKey string
 }
 
 type SetIamPolicyInput struct {
@@ -120,6 +144,37 @@ func (c *IAMClient) ListOrganizations(ctx context.Context, options ListOrganizat
 		return OrganizationList{}, iamAPIError("list organizations", response.StatusCode, response.Problem, response.Body)
 	}
 	return organizationListFromGenerated(*response.Result), nil
+}
+
+func (c *IAMClient) CreateOrganization(ctx context.Context, input CreateOrganizationInput) (Organization, error) {
+	if c == nil || c.client == nil {
+		return Organization{}, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	displayName := strings.TrimSpace(input.DisplayName)
+	if displayName == "" {
+		return Organization{}, fmt.Errorf("verself sdk: display name is required")
+	}
+	key, err := mutationKey("iam-organization-create", input.IdempotencyKey)
+	if err != nil {
+		return Organization{}, err
+	}
+	body := iamcore.CreateOrganizationInputBody{
+		DisplayName: iamcore.DisplayName(displayName),
+	}
+	if input.Slug != nil {
+		body.Slug = trimStringPointer(input.Slug)
+	}
+	response, err := c.client.CreateOrganization(ctx, iamcore.CreateOrganizationRequest{
+		IdempotencyKey: iamcore.IdempotencyKey(key),
+		Body:           body,
+	})
+	if err != nil {
+		return Organization{}, err
+	}
+	if response.Result == nil {
+		return Organization{}, iamAPIError("create organization", response.StatusCode, response.Problem, response.Body)
+	}
+	return organizationFromGenerated(*response.Result), nil
 }
 
 func (c *IAMClient) GetOrganization(ctx context.Context, orgID string) (Organization, error) {
@@ -222,6 +277,50 @@ func (c *IAMClient) GetMember(ctx context.Context, input GetMemberInput) (Member
 		return Member{}, iamAPIError("get member", response.StatusCode, response.Problem, response.Body)
 	}
 	return memberFromGenerated(*response.Result), nil
+}
+
+func (c *IAMClient) InviteMember(ctx context.Context, input InviteMemberInput) (MemberInvitation, error) {
+	if c == nil || c.client == nil {
+		return MemberInvitation{}, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	orgID := strings.TrimSpace(input.OrgID)
+	email := strings.TrimSpace(input.Email)
+	if orgID == "" || email == "" {
+		return MemberInvitation{}, fmt.Errorf("verself sdk: org id and email are required")
+	}
+	key, err := mutationKey("iam-member-invite", input.IdempotencyKey)
+	if err != nil {
+		return MemberInvitation{}, err
+	}
+	roles := make(iamcore.InviteMemberRoles, 0, len(input.Roles))
+	for _, role := range input.Roles {
+		role = IAMRoleName(strings.TrimSpace(string(role)))
+		if role != "" {
+			roles = append(roles, iamcore.IAMRoleName(role))
+		}
+	}
+	body := iamcore.InviteMemberInputBody{
+		Email: iamcore.EmailAddress(email),
+		Roles: roles,
+	}
+	if input.GivenName != nil {
+		body.GivenName = trimStringPointer(input.GivenName)
+	}
+	if input.FamilyName != nil {
+		body.FamilyName = trimStringPointer(input.FamilyName)
+	}
+	response, err := c.client.InviteMember(ctx, iamcore.InviteMemberRequest{
+		OrgID:          iamcore.OrgId(orgID),
+		IdempotencyKey: iamcore.IdempotencyKey(key),
+		Body:           body,
+	})
+	if err != nil {
+		return MemberInvitation{}, err
+	}
+	if response.Result == nil {
+		return MemberInvitation{}, iamAPIError("invite member", response.StatusCode, response.Problem, response.Body)
+	}
+	return memberInvitationFromGenerated(*response.Result), nil
 }
 
 func (c *IAMClient) GetIamPolicy(ctx context.Context, orgID string) (IAMPolicy, error) {
@@ -347,6 +446,21 @@ func memberFromGenerated(input iamcore.MemberSummary) Member {
 		ResourceName: input.ResourceName,
 		Email:        input.Email,
 		DisplayName:  input.DisplayName,
+	}
+}
+
+func memberInvitationFromGenerated(input iamcore.MemberInvitationSummary) MemberInvitation {
+	roles := make([]IAMRoleName, 0, len(input.Roles))
+	for _, role := range input.Roles {
+		roles = append(roles, IAMRoleName(role))
+	}
+	return MemberInvitation{
+		OrgID:        input.OrgID,
+		MemberID:     input.MemberID,
+		ResourceName: input.ResourceName,
+		Email:        input.Email,
+		Status:       string(input.Status),
+		Roles:        roles,
 	}
 }
 

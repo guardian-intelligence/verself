@@ -1,5 +1,6 @@
 import { useForm } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { UserPlus } from "lucide-react";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -11,6 +12,7 @@ import {
   SectionHeaderContent,
   SectionTitle,
 } from "@verself/ui/components/ui/page";
+import { Select } from "@verself/ui/components/ui/select";
 import { toast } from "@verself/ui/components/ui/sonner";
 import {
   Table,
@@ -22,13 +24,27 @@ import {
 } from "@verself/ui/components/ui/table";
 import { useSignedInAuth } from "../../react.ts";
 import { useIAMApi } from "../iam-api.ts";
-import { useUpdateOrganizationMutation } from "../mutations.ts";
+import { useInviteMemberMutation, useUpdateOrganizationMutation } from "../mutations.ts";
 import { organizationMembersQuery, organizationQuery } from "../queries.ts";
 import type { Member, Organization } from "../types.ts";
 import { PermissionAlert } from "./error-alert.tsx";
 
 const PERMISSION_ORGANIZATION_UPDATE = "iam:organization:update";
+const PERMISSION_MEMBER_INVITE = "iam:member:invite";
 const ACTIVE_MEMBER_STATE = "active";
+const DEFAULT_INVITE_ROLE = "roles/member";
+const INVITE_ROLES = [
+  ["roles/member", "Member"],
+  ["roles/admin", "Admin"],
+  ["roles/executionViewer", "Execution viewer"],
+  ["roles/billingViewer", "Billing viewer"],
+  ["roles/sourceViewer", "Source viewer"],
+  ["roles/secretsUser", "Secrets user"],
+] as const;
+
+function formString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
 
 function hasPermission(permissions: ReadonlyArray<string>, permission: string): boolean {
   return permissions.includes(permission);
@@ -48,6 +64,7 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
     organization.permissions,
     PERMISSION_ORGANIZATION_UPDATE,
   );
+  const canInviteMember = hasPermission(organization.permissions, PERMISSION_MEMBER_INVITE);
 
   const activeMembers = members.filter((member) => member.state === ACTIVE_MEMBER_STATE);
 
@@ -58,7 +75,7 @@ export function OrganizationProfile(_props: OrganizationProfileProps = {}) {
         key={organization.version}
         organization={organization}
       />
-      <MembersSection members={activeMembers} />
+      <MembersSection canInviteMember={canInviteMember} members={activeMembers} />
     </PageSections>
   );
 }
@@ -73,8 +90,8 @@ function OrganizationSettingsSection({
   const mutation = useUpdateOrganizationMutation();
   const form = useForm({
     defaultValues: {
-      displayName: organization.display_name,
-      slug: organization.slug,
+      displayName: formString(organization.display_name),
+      slug: formString(organization.slug),
     },
     onSubmit: async ({ value }) => {
       if (!canUpdateOrganization) {
@@ -85,8 +102,8 @@ function OrganizationSettingsSection({
         toast.info("Still syncing the last organization change.");
         return;
       }
-      const displayName = value.displayName.trim();
-      const slug = value.slug.trim().toLowerCase();
+      const displayName = formString(value.displayName).trim();
+      const slug = formString(value.slug).trim().toLowerCase();
       if (!displayName || !slug) {
         toast.error("Display name and slug are required.");
         return;
@@ -141,7 +158,7 @@ function OrganizationSettingsSection({
               <Label htmlFor={field.name}>Display name</Label>
               <Input
                 id={field.name}
-                value={field.state.value}
+                value={formString(field.state.value)}
                 onBlur={field.handleBlur}
                 onChange={(event) => field.handleChange(event.target.value)}
               />
@@ -155,7 +172,7 @@ function OrganizationSettingsSection({
               <Label htmlFor={field.name}>Slug</Label>
               <Input
                 id={field.name}
-                value={field.state.value}
+                value={formString(field.state.value)}
                 onBlur={field.handleBlur}
                 onChange={(event) => field.handleChange(event.target.value)}
               />
@@ -179,7 +196,45 @@ function OrganizationSettingsSection({
   );
 }
 
-function MembersSection({ members }: { members: ReadonlyArray<Member> }) {
+function MembersSection({
+  canInviteMember,
+  members,
+}: {
+  canInviteMember: boolean;
+  members: ReadonlyArray<Member>;
+}) {
+  const mutation = useInviteMemberMutation();
+  const form = useForm({
+    defaultValues: {
+      email: "",
+      role: DEFAULT_INVITE_ROLE,
+    },
+    onSubmit: async ({ value }) => {
+      if (!canInviteMember) {
+        toast.error("You don't have permission to invite members.");
+        return;
+      }
+      if (mutation.isPending) {
+        toast.info("Still sending the last invitation.");
+        return;
+      }
+      const email = formString(value.email).trim().toLowerCase();
+      const role = formString(value.role) || DEFAULT_INVITE_ROLE;
+      if (!email) {
+        toast.error("Email is required.");
+        return;
+      }
+      try {
+        await mutation.mutateAsync({ email, roles: [role] });
+        form.reset();
+        toast.success("Invitation sent");
+      } catch (error) {
+        toast.error("Invitation failed", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  });
   return (
     <PageSection>
       <SectionHeader>
@@ -188,6 +243,62 @@ function MembersSection({ members }: { members: ReadonlyArray<Member> }) {
           <SectionDescription>People provisioned in the identity provider.</SectionDescription>
         </SectionHeaderContent>
       </SectionHeader>
+      {canInviteMember ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void form.handleSubmit();
+          }}
+          className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,14rem)_auto] sm:items-end"
+        >
+          <form.Field name="email">
+            {(field) => (
+              <div className="space-y-1.5">
+                <Label htmlFor={field.name}>Email</Label>
+                <Input
+                  id={field.name}
+                  type="email"
+                  value={formString(field.state.value)}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                />
+              </div>
+            )}
+          </form.Field>
+          <form.Field name="role">
+            {(field) => (
+              <div className="space-y-1.5">
+                <Label htmlFor={field.name}>Role</Label>
+                <Select
+                  id={field.name}
+                  value={formString(field.state.value) || DEFAULT_INVITE_ROLE}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                >
+                  {INVITE_ROLES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+          </form.Field>
+          <form.Subscribe selector={(state) => state.isSubmitting}>
+            {(isSubmitting) => (
+              <Button
+                type="submit"
+                aria-busy={isSubmitting || mutation.isPending}
+                className="sm:shrink-0"
+              >
+                <UserPlus aria-hidden="true" />
+                <span>{isSubmitting || mutation.isPending ? "Sending..." : "Invite"}</span>
+              </Button>
+            )}
+          </form.Subscribe>
+        </form>
+      ) : null}
       <div className="overflow-hidden rounded-md border">
         <Table>
           <TableHeader>

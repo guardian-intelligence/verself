@@ -44,4 +44,19 @@ describe("route boundary fallback links", () => {
       ),
     ).toBe("/guardian");
   });
+
+  it("routes authenticated users without an organization to onboarding", () => {
+    expect(
+      resolveAuthenticatedShellFallbackPath(
+        {
+          cachePartition: "user:1",
+          isAuthenticated: true,
+          orgId: null,
+          selectedOrgId: null,
+          userId: "user_1",
+        },
+        new Map(),
+      ),
+    ).toBe("/onboarding");
+  });
 });

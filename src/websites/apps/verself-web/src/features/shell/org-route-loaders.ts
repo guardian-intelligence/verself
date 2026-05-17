@@ -23,7 +23,7 @@ export async function resolveDefaultSignedInPath(
   auth: AuthenticatedAuth,
 ): Promise<string> {
   const active = await resolveCurrentOrganization(queryClient, auth);
-  return orgPath(active.organization.slug, "/");
+  return active ? orgPath(active.organization.slug, "/") : "/onboarding";
 }
 
 export async function loadActiveOrganizationRoute({
@@ -61,17 +61,17 @@ export async function loadActiveOrganizationRoute({
 async function resolveCurrentOrganization(
   queryClient: QueryClient,
   auth: AuthenticatedAuth,
-): Promise<ActiveOrganizationRouteContext> {
+): Promise<ActiveOrganizationRouteContext | null> {
   const orgID = auth.selectedOrgId ?? auth.orgId;
   if (!orgID) {
-    throw new Error("signed-in session is missing a selected organization");
+    return null;
   }
   const organizations = await queryClient.ensureQueryData(
     availableOrganizationMetadataQuery(auth, iamApiClient),
   );
   const organization = organizations.get(orgID);
   if (!organization) {
-    throw new Error("selected organization is not available to this session");
+    return null;
   }
   return { orgID, organization };
 }

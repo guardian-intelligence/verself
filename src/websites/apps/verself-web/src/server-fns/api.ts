@@ -27,6 +27,7 @@ import {
   cacheGenerationIdInputSchema,
   cachePathDeleteRequestSchema,
   cacheIdInputSchema,
+  createOrganizationRequestSchema,
   createProjectRequestSchema,
   createCheckoutGrantRequestSchema as createSourceCheckoutGrantRequestSchema,
   createGitCredentialRequestSchema as createSourceGitCredentialRequestSchema,
@@ -41,6 +42,7 @@ import {
   isGovernanceApiError,
   isNotificationsApiError,
   runIdInputSchema,
+  inviteMemberRequestSchema,
   isBillingApiError,
   isIAMApiError,
   isProjectsApiError,
@@ -77,6 +79,7 @@ import {
   type CacheIdInput,
   type CreateCheckoutGrantRequest as CreateSourceCheckoutGrantRequest,
   type CreateGitCredentialRequest as CreateSourceGitCredentialRequest,
+  type CreateOrganizationRequest,
   type CreateProjectRequest,
   type CreateRepositoryRequest as CreateSourceRepositoryRequest,
   type CostsAnalytics,
@@ -88,7 +91,9 @@ import {
   type ExecutionScheduleListQueryInput,
   type ExecutionScheduleRequest,
   type ExecutionSchedules,
+  type InviteMemberRequest,
   type Member,
+  type MemberInvitation,
   type MarkNotificationReadRequest,
   type Notification,
   type NotificationAccepted,
@@ -220,7 +225,15 @@ export type {
   JobsAnalytics,
   RunnerSizingAnalytics,
 };
-export type { Member, Organization, OrganizationMetadata, UpdateOrganizationRequest };
+export type {
+  CreateOrganizationRequest,
+  InviteMemberRequest,
+  Member,
+  MemberInvitation,
+  Organization,
+  OrganizationMetadata,
+  UpdateOrganizationRequest,
+};
 
 async function iamSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getProductAccessToken(context);
@@ -287,6 +300,13 @@ export const listMyOrganizations = createServerFn({ method: "GET" })
     return (await iamSDK(context)).iam.listMyOrganizations();
   });
 
+export const createOrganization = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(createOrganizationRequestSchema)
+  .handler(async ({ context, data }) => {
+    return (await iamSDK(context)).iam.createOrganization(data);
+  });
+
 export const updateOrganization = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(updateOrganizationRequestSchema)
@@ -298,6 +318,13 @@ export const getMembers = createServerFn({ method: "GET" })
   .middleware([consoleAuthMiddleware])
   .handler(async ({ context }) => {
     return (await iamSDK(context)).iam.listMembers();
+  });
+
+export const inviteMember = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(inviteMemberRequestSchema)
+  .handler(async ({ context, data }) => {
+    return (await iamSDK(context)).iam.inviteMember(data);
   });
 
 export const getProfile = createServerFn({ method: "GET" })

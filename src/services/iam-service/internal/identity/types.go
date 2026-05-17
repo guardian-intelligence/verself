@@ -85,6 +85,21 @@ type CreateOrganizationRequest struct {
 	ActorID               string
 }
 
+type PublicCreateOrganizationRequest struct {
+	DisplayName    string
+	Slug           string
+	IdempotencyKey string
+}
+
+type DirectoryCreateOrganizationRequest struct {
+	Name        string
+	AdminUserID string
+}
+
+type DirectoryCreateOrganizationResult struct {
+	OrganizationID string
+}
+
 type UpdateOrganizationRequest struct {
 	Version     int32
 	DisplayName string
@@ -111,6 +126,7 @@ type InviteMemberRequest struct {
 	Email      string
 	GivenName  string
 	FamilyName string
+	Roles      []string
 }
 
 type HumanProfileUpdate struct {
@@ -132,6 +148,7 @@ type InviteMemberResult struct {
 	UserID string
 	Email  string
 	Status string
+	Roles  []string
 }
 
 type Operations struct {

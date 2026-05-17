@@ -17,6 +17,7 @@ go_library(
         "repos.go",
         "sandbox.go",
         "secrets.go",
+        "signup.go",
         "store.go",
     ],
     importpath = "github.com/verself/verself-cli/internal/app",

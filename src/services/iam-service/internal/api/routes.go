@@ -20,10 +20,12 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		installationID: installationID,
 	}
 	registerPublicOperation(api, runtime, contractapi.ListOrganizations, handlers.ListOrganizations, "List organizations")
+	registerPublicOperation(api, runtime, contractapi.CreateOrganization, handlers.CreateOrganization, "Create organization")
 	registerPublicOperation(api, runtime, contractapi.GetOrganization, handlers.GetOrganization, "Get organization")
 	registerPublicOperation(api, runtime, contractapi.UpdateOrganization, handlers.UpdateOrganization, "Update organization")
 	registerPublicOperation(api, runtime, contractapi.ListMembers, handlers.ListMembers, "List members")
 	registerPublicOperation(api, runtime, contractapi.GetMember, handlers.GetMember, "Get member")
+	registerPublicOperation(api, runtime, contractapi.InviteMember, handlers.InviteMember, "Invite member")
 	registerPublicOperation(api, runtime, contractapi.GetIamPolicy, handlers.GetIamPolicy, "Get IAM policy")
 	registerPublicOperation(api, runtime, contractapi.SetIamPolicy, handlers.SetIamPolicy, "Set IAM policy")
 	registerPublicOperation(api, runtime, contractapi.TestIamPermissions, handlers.TestIamPermissions, "Test IAM permissions")

@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignedInAuth } from "../react.ts";
 import { useIAMApi } from "./iam-api.ts";
 import { invalidateOrganizationQueries } from "./queries.ts";
-import type { UpdateOrganizationRequest } from "./types.ts";
+import type { InviteMemberRequest, UpdateOrganizationRequest } from "./types.ts";
 
 export function useUpdateOrganizationMutation() {
   const auth = useSignedInAuth();
@@ -11,6 +11,19 @@ export function useUpdateOrganizationMutation() {
 
   return useMutation({
     mutationFn: (input: UpdateOrganizationRequest) => api.updateOrganization(input),
+    onSuccess: async () => {
+      await invalidateOrganizationQueries(queryClient, auth);
+    },
+  });
+}
+
+export function useInviteMemberMutation() {
+  const auth = useSignedInAuth();
+  const api = useIAMApi();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: InviteMemberRequest) => api.inviteMember(input),
     onSuccess: async () => {
       await invalidateOrganizationQueries(queryClient, auth);
     },

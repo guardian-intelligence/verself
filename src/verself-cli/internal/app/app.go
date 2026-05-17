@@ -48,6 +48,8 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.usage()
 	}
 	switch args[0] {
+	case "signup":
+		return c.runSignup(ctx, args[1:])
 	case "auth":
 		return c.runAuth(ctx, args[1:])
 	case "company":
@@ -83,13 +85,16 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 
 func (c CLI) usage() error {
 	return writef(c.out, `Usage:
-  %[1]s auth login --token-file PATH [--profile NAME]
+  %[1]s auth login [--token-file PATH|--issuer URL --client-id ID] [--profile NAME]
+  %[1]s signup --display-name NAME [--slug SLUG] [--profile NAME]
   %[1]s auth whoami [--json]
   %[1]s auth token
   %[1]s orgs list [--json]
+  %[1]s orgs create --display-name NAME [--slug SLUG] [--json]
   %[1]s orgs use <org-id|slug>
   %[1]s orgs inspect [--json]
   %[1]s orgs update --version VERSION [--display-name NAME] [--slug SLUG] [--json]
+  %[1]s orgs members invite <email> [--role ROLE] [--given-name NAME] [--family-name NAME] [--json]
   %[1]s company configure <name> [flags]
   %[1]s company options add <company> <key> [--from-env KEY|--stdin|--from-file PATH|--value VALUE]
   %[1]s company secret generate <company> --all|--key KEY

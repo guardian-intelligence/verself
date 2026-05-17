@@ -9,6 +9,14 @@ export interface Member {
   readonly state: string;
 }
 
+export interface MemberInvitation {
+  readonly org_id: string;
+  readonly member_id: string;
+  readonly email: string;
+  readonly status: string;
+  readonly roles: ReadonlyArray<string>;
+}
+
 export interface Organization {
   readonly org_id: string;
   readonly display_name: string;
@@ -27,4 +35,16 @@ export interface UpdateOrganizationRequest {
   version: number;
   display_name?: string;
   slug?: string;
+}
+
+export interface CreateOrganizationRequest {
+  display_name: string;
+  slug?: string;
+}
+
+export interface InviteMemberRequest {
+  email: string;
+  given_name?: string;
+  family_name?: string;
+  roles?: ReadonlyArray<string>;
 }

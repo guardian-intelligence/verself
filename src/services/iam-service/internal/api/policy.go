@@ -26,6 +26,8 @@ const (
 const (
 	rateLimitRead        runtimeiam.RateLimitClass = "read"
 	rateLimitIAMMutation runtimeiam.RateLimitClass = "iam_mutation"
+	rateLimitIAMInvite   runtimeiam.RateLimitClass = "iam_invite"
+	rateLimitSignup      runtimeiam.RateLimitClass = "signup_mutation"
 )
 
 func appendIdempotencyKeyHeaderParameter(parameters []*huma.Param) []*huma.Param {
@@ -138,10 +140,10 @@ func auditOperation(ctx context.Context, op huma.Operation, policy runtimeiam.Op
 		HTTPSafeParams:        "",
 		HTTPUserAgent:         info.UserAgent,
 		HTTPClientIP:          info.ClientIP,
-		HTTPStatus:            httpStatusFromOperationResult(outcome, err),
+		HTTPStatus:            httpStatusFromOperationResult(op, outcome, err),
 		AuthorizationDecision: decision,
 		Status:                status,
-		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatusFromOperationResult(outcome, err)))),
+		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatusFromOperationResult(op, outcome, err)))),
 		Unmapped: compactAPIActivityUnmapped(map[string]any{
 			"verself.idempotency_key_hash": hashTextForAPIActivity(info.IdempotencyKey),
 		}),
@@ -163,7 +165,7 @@ func apiActivityResult(outcome string) (governanceinternalclient.AuthorizationDe
 	}
 }
 
-func httpStatusFromOperationResult(outcome string, err error) uint16 {
+func httpStatusFromOperationResult(op huma.Operation, outcome string, err error) uint16 {
 	if err != nil {
 		var statusErr huma.StatusError
 		if errors.As(err, &statusErr) {
@@ -178,6 +180,9 @@ func httpStatusFromOperationResult(outcome string, err error) uint16 {
 	}
 	if outcome == "error" {
 		return http.StatusInternalServerError
+	}
+	if op.DefaultStatus >= http.StatusContinue && op.DefaultStatus <= 599 {
+		return uint16(op.DefaultStatus)
 	}
 	return http.StatusOK
 }
@@ -289,6 +294,8 @@ func firstNonEmpty(values ...string) string {
 var apiOperationRateLimiter = runtimeiam.NewFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]runtimeiam.RateLimitRule{
 	rateLimitRead:        {Limit: 6000, Window: time.Minute},
 	rateLimitIAMMutation: {Limit: 600, Window: time.Minute},
+	rateLimitIAMInvite:   {Limit: 120, Window: time.Minute},
+	rateLimitSignup:      {Limit: 30, Window: time.Minute},
 })
 
 func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {

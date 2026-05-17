@@ -17,3 +17,32 @@ func TestPlatformRuntimeAuthAudienceSpecsUseProductAudience(t *testing.T) {
 		t.Fatalf("product API project name = %q", platformProductAPIProjectName)
 	}
 }
+
+func TestNativeOIDCConfigSupportsDeviceCodeWithoutClientSecret(t *testing.T) {
+	body := nativeOIDCConfigBody()
+	if got := body["appType"]; got != "OIDC_APP_TYPE_NATIVE" {
+		t.Fatalf("native app type = %#v", got)
+	}
+	if got := body["authMethodType"]; got != "OIDC_AUTH_METHOD_TYPE_NONE" {
+		t.Fatalf("native auth method = %#v", got)
+	}
+	if got := body["accessTokenType"]; got != "OIDC_TOKEN_TYPE_JWT" {
+		t.Fatalf("native access token type = %#v", got)
+	}
+	grantTypes, ok := body["grantTypes"].([]string)
+	if !ok {
+		t.Fatalf("grantTypes = %#v", body["grantTypes"])
+	}
+	if !containsString(grantTypes, "OIDC_GRANT_TYPE_DEVICE_CODE") || !containsString(grantTypes, "OIDC_GRANT_TYPE_REFRESH_TOKEN") {
+		t.Fatalf("native grant types = %#v", grantTypes)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

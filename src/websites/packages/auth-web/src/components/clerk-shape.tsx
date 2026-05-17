@@ -51,7 +51,9 @@ export function SignInButton({
 }
 
 function initialsFor(input: { name?: string | null; email?: string | null }): string {
-  const source = input.name?.trim() || input.email?.trim() || "";
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  const email = typeof input.email === "string" ? input.email.trim() : "";
+  const source = name || email;
   if (!source) return "?";
   const parts = source.split(/\s+/).filter(Boolean);
   if (parts.length >= 2) {

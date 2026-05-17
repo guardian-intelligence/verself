@@ -1,8 +1,11 @@
 import { createContext, createElement, type ReactNode, useContext } from "react";
 import type {
   Member,
+  MemberInvitation,
   Organization,
   OrganizationMetadata,
+  CreateOrganizationRequest,
+  InviteMemberRequest,
   UpdateOrganizationRequest,
 } from "./types.ts";
 
@@ -12,10 +15,12 @@ import type {
 // own its bearer-forwarding layer (per the auth model: browser code never
 // holds Zitadel tokens).
 export interface IAMApiClient {
+  createOrganization: (input: CreateOrganizationRequest) => Promise<Organization>;
   getOrganization: () => Promise<Organization>;
   listMyOrganizations: () => Promise<ReadonlyArray<OrganizationMetadata>>;
   updateOrganization: (input: UpdateOrganizationRequest) => Promise<Organization>;
   listMembers: () => Promise<ReadonlyArray<Member>>;
+  inviteMember: (input: InviteMemberRequest) => Promise<MemberInvitation>;
 }
 
 const IAMApiContext = createContext<IAMApiClient | null>(null);

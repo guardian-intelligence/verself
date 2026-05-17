@@ -28,11 +28,13 @@ export class ServiceApiError extends Error {
 }
 
 export function createBearerJSONHeaders(accessToken: string, traceparent?: string): Headers {
+  const token = requiredTrimmedString(accessToken, "accessToken");
   const headers = new Headers();
   headers.set("Accept", "application/json");
-  headers.set("Authorization", `Bearer ${accessToken}`);
-  if (traceparent !== undefined && traceparent.trim() !== "") {
-    headers.set("Traceparent", traceparent.trim());
+  headers.set("Authorization", `Bearer ${token}`);
+  const traceparentHeader = optionalTrimmedString(traceparent, "traceparent");
+  if (traceparentHeader !== undefined) {
+    headers.set("Traceparent", traceparentHeader);
   }
   return headers;
 }
@@ -70,9 +72,30 @@ export function createIdempotencyKey(namespace: string): string {
 }
 
 export function idempotencyHeaders(namespace: string, explicitKey?: string): IdempotencyHeaders {
-  const key = explicitKey?.trim() || createIdempotencyKey(namespace);
+  const key =
+    optionalTrimmedString(explicitKey, "Idempotency-Key") ?? createIdempotencyKey(namespace);
   if (key.length > idempotencyKeyMaxLength) {
     throw new Error("Idempotency-Key must be 128 characters or fewer");
   }
   return { "Idempotency-Key": key };
+}
+
+export function requiredTrimmedString(value: unknown, name: string): string {
+  if (typeof value !== "string") {
+    throw new TypeError(`${name} must be a string`);
+  }
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    throw new Error(`${name} is required`);
+  }
+  return trimmed;
+}
+
+function optionalTrimmedString(value: unknown, name: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new TypeError(`${name} must be a string`);
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
 }

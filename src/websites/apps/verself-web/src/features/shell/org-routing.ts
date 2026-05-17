@@ -7,6 +7,7 @@ const RESERVED_ROOT_SEGMENTS = new Set([
   "docs",
   "login",
   "logout",
+  "onboarding",
   "policy",
   "favicon.ico",
   "site.webmanifest",

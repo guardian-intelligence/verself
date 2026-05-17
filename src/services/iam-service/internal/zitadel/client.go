@@ -88,6 +88,33 @@ func (c *Client) ListMembers(ctx context.Context, orgID string) ([]identity.Memb
 	return members, nil
 }
 
+func (c *Client) CreateOrganization(ctx context.Context, input identity.DirectoryCreateOrganizationRequest) (identity.DirectoryCreateOrganizationResult, error) {
+	name := strings.TrimSpace(input.Name)
+	adminUserID := strings.TrimSpace(input.AdminUserID)
+	if name == "" || adminUserID == "" {
+		return identity.DirectoryCreateOrganizationResult{}, fmt.Errorf("%w: organization name and admin user id are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{
+		"name": name,
+		"admins": []map[string]any{{
+			"userId": adminUserID,
+		}},
+	}
+	var out struct {
+		OrganizationID string `json:"organizationId"`
+		OrgID          string `json:"orgId"`
+		ID             string `json:"id"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/organizations", body, &out); err != nil {
+		return identity.DirectoryCreateOrganizationResult{}, fmt.Errorf("%w: create organization: %v", identity.ErrZitadelUnavailable, err)
+	}
+	orgID := firstNonEmpty(out.OrganizationID, out.OrgID, out.ID)
+	if orgID == "" {
+		return identity.DirectoryCreateOrganizationResult{}, fmt.Errorf("%w: create organization returned no organization id", identity.ErrZitadelUnavailable)
+	}
+	return identity.DirectoryCreateOrganizationResult{OrganizationID: orgID}, nil
+}
+
 func (c *Client) InviteMember(ctx context.Context, orgID string, input identity.InviteMemberRequest) (identity.InviteMemberResult, error) {
 	userID, err := c.createHumanUser(ctx, orgID, input)
 	if err != nil {

@@ -4,9 +4,11 @@ import runtimeiam "github.com/verself/service-runtime/iam"
 
 func smithyIAMServiceOperations() ServiceOperations {
 	return ServiceOperations{Service: "iam-service", Operations: []Operation{
+		{OperationID: "create-organization", Permission: runtimeiam.Permission("iam:organization:create"), Resource: runtimeiam.ResourceKind("organization"), Action: runtimeiam.Action("create"), OrgScope: runtimeiam.OrgScope("request_subject_id")},
 		{OperationID: "get-member", Permission: runtimeiam.Permission("iam:member:read"), Resource: runtimeiam.ResourceKind("member"), Action: runtimeiam.Action("read"), OrgScope: runtimeiam.OrgScope("path_org_id")},
 		{OperationID: "get-organization", Permission: runtimeiam.Permission("iam:organization:read"), Resource: runtimeiam.ResourceKind("organization"), Action: runtimeiam.Action("read"), OrgScope: runtimeiam.OrgScope("path_org_id")},
 		{OperationID: "get-iam-policy", Permission: runtimeiam.Permission("iam:policy:get"), Resource: runtimeiam.ResourceKind("organization"), Action: runtimeiam.Action("read"), OrgScope: runtimeiam.OrgScope("path_org_id")},
+		{OperationID: "invite-member", Permission: runtimeiam.Permission("iam:member:invite"), Resource: runtimeiam.ResourceKind("member"), Action: runtimeiam.Action("invite"), OrgScope: runtimeiam.OrgScope("path_org_id")},
 		{OperationID: "list-members", Permission: runtimeiam.Permission("iam:member:list"), Resource: runtimeiam.ResourceKind("member"), Action: runtimeiam.Action("list"), OrgScope: runtimeiam.OrgScope("path_org_id")},
 		{OperationID: "list-organizations", Permission: runtimeiam.Permission("iam:organization:list"), Resource: runtimeiam.ResourceKind("organization"), Action: runtimeiam.Action("list"), OrgScope: runtimeiam.OrgScope("request_subject")},
 		{OperationID: "set-iam-policy", Permission: runtimeiam.Permission("iam:policy:set"), Resource: runtimeiam.ResourceKind("organization"), Action: runtimeiam.Action("set"), OrgScope: runtimeiam.OrgScope("path_org_id")},

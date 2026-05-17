@@ -964,14 +964,28 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	orgJSON := func(version string) string {
 		return `{"orgId":"org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","resourceName":"urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","displayName":"Guardian Intelligence","slug":"guardian","version":` + version + `}`
 	}
+	invitationJSON := func() string {
+		return `{"orgId":"org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","memberId":"member_01J8QK4M5N6P7Q8R9S0T1V2W3X","resourceName":"urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT/members/member_01J8QK4M5N6P7Q8R9S0T1V2W3X","email":"invited@example.test","status":"invited","roles":["roles/admin"]}`
+	}
+	var createKey string
+	var createBody map[string]any
 	var updateKey string
 	var updateBody map[string]any
+	var inviteKey string
+	var inviteBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer tok_iam_test" {
 			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
 		}
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs":
+			createKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(orgJSON("1")))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs":
 			_, _ = w.Write([]byte(`{"organizations":[` + orgJSON("1") + `]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT":
@@ -982,6 +996,13 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, _ = w.Write([]byte(orgJSON("2")))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT/members:invite":
+			inviteKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&inviteBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(invitationJSON()))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1014,6 +1035,26 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	}
 	if updateBody["displayName"] != "Guardian Intelligence" || updateBody["version"] != float64(1) {
 		t.Fatalf("unexpected organization update body: %#v", updateBody)
+	}
+
+	runCLI(t, nil, "orgs", "create", "--display-name", "Guardian Intelligence", "--slug", "guardian", "--idempotency-key", "iam:create")
+	if createKey != "iam:create" {
+		t.Fatalf("create idempotency key = %q", createKey)
+	}
+	if createBody["displayName"] != "Guardian Intelligence" || createBody["slug"] != "guardian" {
+		t.Fatalf("unexpected organization create body: %#v", createBody)
+	}
+
+	var inviteOut bytes.Buffer
+	runCLI(t, &inviteOut, "orgs", "members", "invite", "invited@example.test", "--role", "roles/admin", "--idempotency-key", "iam:invite")
+	if inviteKey != "iam:invite" {
+		t.Fatalf("invite idempotency key = %q", inviteKey)
+	}
+	if inviteBody["email"] != "invited@example.test" {
+		t.Fatalf("unexpected invite body: %#v", inviteBody)
+	}
+	if !strings.Contains(inviteOut.String(), "invited@example.test\tmember_01J8QK4M5N6P7Q8R9S0T1V2W3X\tinvited") {
+		t.Fatalf("invite output:\n%s", inviteOut.String())
 	}
 }
 

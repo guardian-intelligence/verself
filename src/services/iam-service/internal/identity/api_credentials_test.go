@@ -97,6 +97,14 @@ func (s *apiCredentialTestStore) ListOrganizationMetadataByProviderOrgIDs(_ cont
 	return out, nil
 }
 
+func (s *apiCredentialTestStore) OrganizationSlugAvailable(context.Context, string) (bool, error) {
+	return true, nil
+}
+
+func (s *apiCredentialTestStore) CreateOrganizationProfile(_ context.Context, input CreateOrganizationRequest) (OrganizationProfile, error) {
+	return OrganizationProfile{OrgID: input.OrgID, IdentityProviderOrgID: input.IdentityProviderOrgID, DisplayName: input.DisplayName, Slug: input.Slug, State: OrganizationProfileStateActive, Version: 1}, nil
+}
+
 func (s *apiCredentialTestStore) UpdateOrganizationProfile(context.Context, Principal, UpdateOrganizationRequest) (OrganizationProfile, error) {
 	return OrganizationProfile{}, nil
 }
@@ -164,6 +172,10 @@ func (s *apiCredentialTestStore) ResolveAPICredentialClaims(context.Context, str
 type apiCredentialTestDirectory struct {
 	material            APICredentialIssuedMaterial
 	deactivatedSubjects []string
+}
+
+func (d *apiCredentialTestDirectory) CreateOrganization(context.Context, DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error) {
+	return DirectoryCreateOrganizationResult{OrganizationID: "43"}, nil
 }
 
 func (d *apiCredentialTestDirectory) ListMembers(context.Context, string) ([]Member, error) {

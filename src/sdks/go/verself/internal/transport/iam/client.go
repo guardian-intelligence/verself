@@ -40,6 +40,7 @@ type (
 type (
 	IAMMembers        []IAMMemberName
 	IAMPolicyBindings []IAMPolicyBinding
+	InviteMemberRoles []IAMRoleName
 	Members           []MemberSummary
 	Organizations     []OrganizationSummary
 	Permissions       []PermissionName
@@ -75,6 +76,22 @@ type ListMembersOutputBody struct {
 type ListOrganizationsOutputBody struct {
 	Organizations Organizations `json:"organizations"`
 	NextPageToken *PageToken    `json:"nextPageToken,omitempty"`
+}
+
+type MemberInvitationStatus = string
+
+type CreateOrganizationInputBody struct {
+	DisplayName DisplayName `json:"displayName"`
+	Slug        *OrgSlug    `json:"slug,omitempty"`
+}
+
+type MemberInvitationSummary struct {
+	OrgID        OrgId                  `json:"orgId"`
+	MemberID     MemberId               `json:"memberId"`
+	ResourceName MemberResourceName     `json:"resourceName"`
+	Email        EmailAddress           `json:"email"`
+	Status       MemberInvitationStatus `json:"status"`
+	Roles        InviteMemberRoles      `json:"roles"`
 }
 
 type MemberSummary struct {
@@ -207,6 +224,19 @@ type GetOrganizationResponse struct {
 	HTTPResponse *http.Response
 }
 
+type CreateOrganizationRequest struct {
+	IdempotencyKey IdempotencyKey
+	Body           CreateOrganizationInputBody `json:"body"`
+}
+
+type CreateOrganizationResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *OrganizationSummary
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
 type ListMembersRequest struct {
 	OrgID     OrgId
 	PageSize  *PageSize
@@ -230,6 +260,27 @@ type ListOrganizationsResponse struct {
 	StatusCode   int
 	Body         []byte
 	Result       *ListOrganizationsOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type InviteMemberInputBody struct {
+	Email      EmailAddress      `json:"email"`
+	GivenName  *string           `json:"givenName,omitempty"`
+	FamilyName *string           `json:"familyName,omitempty"`
+	Roles      InviteMemberRoles `json:"roles,omitempty"`
+}
+
+type InviteMemberRequest struct {
+	OrgID          OrgId
+	IdempotencyKey IdempotencyKey
+	Body           InviteMemberInputBody `json:"body"`
+}
+
+type InviteMemberResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *MemberInvitationSummary
 	Problem      *ErrorModel
 	HTTPResponse *http.Response
 }
@@ -379,6 +430,31 @@ func (c *Client) newGetMemberRequest(ctx context.Context, request GetMemberReque
 	return c.newRequest(ctx, http.MethodGet, path, nil)
 }
 
+func (c *Client) CreateOrganization(ctx context.Context, request CreateOrganizationRequest, reqEditors ...RequestEditorFn) (*CreateOrganizationResponse, error) {
+	req, err := c.newCreateOrganizationRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[OrganizationSummary](resp, http.StatusCreated)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateOrganizationResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newCreateOrganizationRequest(ctx context.Context, request CreateOrganizationRequest) (*http.Request, error) {
+	req, err := c.newRequest(ctx, http.MethodPost, "/api/v1/orgs", request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
 func (c *Client) GetOrganization(ctx context.Context, request GetOrganizationRequest, reqEditors ...RequestEditorFn) (*GetOrganizationResponse, error) {
 	req, err := c.newGetOrganizationRequest(ctx, request)
 	if err != nil {
@@ -465,6 +541,33 @@ func (c *Client) newListOrganizationsRequest(ctx context.Context, request ListOr
 	}
 	endpoint.RawQuery = query.Encode()
 	return c.newRequestFromURL(ctx, http.MethodGet, endpoint, nil)
+}
+
+func (c *Client) InviteMember(ctx context.Context, request InviteMemberRequest, reqEditors ...RequestEditorFn) (*InviteMemberResponse, error) {
+	req, err := c.newInviteMemberRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[MemberInvitationSummary](resp, http.StatusAccepted)
+	if err != nil {
+		return nil, err
+	}
+	return &InviteMemberResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newInviteMemberRequest(ctx context.Context, request InviteMemberRequest) (*http.Request, error) {
+	path := "/api/v1/orgs/{orgId}/members:invite"
+	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
+	req, err := c.newRequest(ctx, http.MethodPost, path, request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
 }
 
 func (c *Client) SetIamPolicy(ctx context.Context, request SetIamPolicyRequest, reqEditors ...RequestEditorFn) (*SetIamPolicyResponse, error) {

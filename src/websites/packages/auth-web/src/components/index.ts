@@ -5,7 +5,10 @@
 
 export { IAMApiProvider, useIAMApi, type IAMApiClient } from "./iam-api.ts";
 export type {
+  CreateOrganizationRequest,
+  InviteMemberRequest,
   Member,
+  MemberInvitation,
   Organization,
   OrganizationMetadata,
   UpdateOrganizationRequest,
@@ -19,7 +22,7 @@ export {
   organizationQuery,
   type OrganizationMetadataValue,
 } from "./queries.ts";
-export { useUpdateOrganizationMutation } from "./mutations.ts";
+export { useInviteMemberMutation, useUpdateOrganizationMutation } from "./mutations.ts";
 
 export {
   OrganizationProfile,

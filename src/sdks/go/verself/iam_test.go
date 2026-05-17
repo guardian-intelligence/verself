@@ -15,12 +15,21 @@ const (
 
 func TestIAMOrganizationsUsePublicAPI(t *testing.T) {
 	var authHeader string
+	var createIDKey string
+	var createBody map[string]any
 	var updateIDKey string
 	var updateBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs":
+			createIDKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(organizationJSON("1")))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs":
 			authHeader = r.Header.Get("Authorization")
 			if r.URL.Query().Get("page_size") != "10" || r.URL.Query().Get("page_token") != "cursor-1" {
@@ -44,6 +53,23 @@ func TestIAMOrganizationsUsePublicAPI(t *testing.T) {
 	client, err := New(Options{BearerToken: "tok_test", IAMURL: server.URL})
 	if err != nil {
 		t.Fatal(err)
+	}
+	created, err := client.IAM.CreateOrganization(context.Background(), CreateOrganizationInput{
+		DisplayName:    "Guardian Intelligence",
+		Slug:           ptrString("guardian-intelligence"),
+		IdempotencyKey: "iam:create-org",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if createIDKey != "iam:create-org" {
+		t.Fatalf("create idempotency key = %q", createIDKey)
+	}
+	if createBody["displayName"] != "Guardian Intelligence" || createBody["slug"] != "guardian-intelligence" {
+		t.Fatalf("unexpected create body: %#v", createBody)
+	}
+	if created.OrgID != testOrgID {
+		t.Fatalf("unexpected created organization: %#v", created)
 	}
 	page, err := client.IAM.ListOrganizations(context.Background(), ListOrganizationsOptions{
 		PageSize:  10,
@@ -89,6 +115,8 @@ func TestIAMOrganizationsUsePublicAPI(t *testing.T) {
 }
 
 func TestIAMMembersUsePublicAPI(t *testing.T) {
+	var inviteIDKey string
+	var inviteBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -99,6 +127,13 @@ func TestIAMMembersUsePublicAPI(t *testing.T) {
 			_, _ = w.Write([]byte(`{"members":[` + memberJSON() + `]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/"+testOrgID+"/members/"+testMemberID:
 			_, _ = w.Write([]byte(memberJSON()))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/"+testOrgID+"/members:invite":
+			inviteIDKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&inviteBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(invitationJSON()))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -128,6 +163,27 @@ func TestIAMMembersUsePublicAPI(t *testing.T) {
 	}
 	if member.Email != "operator@example.test" || member.DisplayName != "Operator" {
 		t.Fatalf("unexpected member: %#v", member)
+	}
+	invitation, err := client.IAM.InviteMember(context.Background(), InviteMemberInput{
+		OrgID:          testOrgID,
+		Email:          "operator@example.test",
+		Roles:          []IAMRoleName{IAMRoleAdmin, IAMRoleMember},
+		IdempotencyKey: "iam:invite",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inviteIDKey != "iam:invite" {
+		t.Fatalf("invite idempotency key = %q", inviteIDKey)
+	}
+	if inviteBody["email"] != "operator@example.test" {
+		t.Fatalf("unexpected invite body: %#v", inviteBody)
+	}
+	if roles, ok := inviteBody["roles"].([]any); !ok || len(roles) != 2 {
+		t.Fatalf("unexpected invite roles body: %#v", inviteBody)
+	}
+	if invitation.Status != "invited" || len(invitation.Roles) != 2 {
+		t.Fatalf("unexpected invitation: %#v", invitation)
 	}
 }
 
@@ -234,6 +290,14 @@ func memberJSON() string {
 	return `{"orgId":"` + testOrgID + `","memberId":"` + testMemberID + `","resourceName":"urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/` + testOrgID + `/members/` + testMemberID + `","email":"operator@example.test","displayName":"Operator"}`
 }
 
+func invitationJSON() string {
+	return `{"orgId":"` + testOrgID + `","memberId":"` + testMemberID + `","resourceName":"urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/` + testOrgID + `/members/` + testMemberID + `","email":"operator@example.test","status":"invited","roles":["roles/admin","roles/member"]}`
+}
+
 func policyJSON(etag string) string {
 	return `{"version":1,"etag":"` + etag + `","bindings":[{"role":"roles/owner","members":["user:acct_01J8QK4M5N6P7Q8R9S0T1V2W3X"]}]}`
+}
+
+func ptrString(value string) *string {
+	return &value
 }

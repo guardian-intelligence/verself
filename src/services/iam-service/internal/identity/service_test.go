@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -49,8 +50,63 @@ func TestAccessibleOrganizationsUsesAuthorizationGraph(t *testing.T) {
 	}
 }
 
+func TestServiceCreateOrganizationCreatesDirectoryOrgAndProfile(t *testing.T) {
+	store := &fakeSignupStore{}
+	directory := &fakeMembersDirectory{}
+	svc := &Service{
+		Store:     store,
+		Directory: directory,
+	}
+
+	got, err := svc.CreateOrganization(context.Background(), "user-1", PublicCreateOrganizationRequest{
+		DisplayName:    "  Acme   Labs  ",
+		Slug:           "Acme_Labs",
+		IdempotencyKey: "signup-key",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if !strings.HasPrefix(got.OrgID, "org_") || got.Slug != "acme-labs" || got.DisplayName != "Acme Labs" || got.Version != 1 {
+		t.Fatalf("unexpected created organization: %#v", got)
+	}
+	if directory.createInput.AdminUserID != "user-1" || !strings.HasPrefix(directory.createInput.Name, "acme-labs-") {
+		t.Fatalf("unexpected directory create input: %#v", directory.createInput)
+	}
+	if store.created.OrgID != got.OrgID || store.created.IdentityProviderOrgID != "43" || store.created.ActorID != "user-1" {
+		t.Fatalf("unexpected stored profile input: %#v", store.created)
+	}
+}
+
+func TestServiceInviteMemberNormalizesRolesForDirectoryAndPolicy(t *testing.T) {
+	directory := &fakeMembersDirectory{}
+	svc := &Service{
+		Store:     fakeMembersStore{},
+		Directory: directory,
+	}
+
+	got, err := svc.InviteMember(context.Background(), Principal{Subject: "owner-1", OrgID: "org_01J8QJ4P1R7S9W2X5M6N8P0Q2"}, InviteMemberRequest{
+		Email: " invited@example.test ",
+		Roles: []string{"roles/member", "roles/admin", "roles/member"},
+	})
+	if err != nil {
+		t.Fatalf("InviteMember: %v", err)
+	}
+	if directory.inviteProviderOrgID != "42" {
+		t.Fatalf("provider org = %q", directory.inviteProviderOrgID)
+	}
+	if directory.inviteInput.Email != "invited@example.test" {
+		t.Fatalf("directory invite input = %#v", directory.inviteInput)
+	}
+	if strings.Join(got.Roles, ",") != "roles/admin,roles/member" {
+		t.Fatalf("roles = %#v", got.Roles)
+	}
+}
+
 type fakeMembersDirectory struct {
-	members []Member
+	members             []Member
+	createInput         DirectoryCreateOrganizationRequest
+	inviteProviderOrgID string
+	inviteInput         InviteMemberRequest
 }
 
 func (d *fakeMembersDirectory) ListMembers(context.Context, string) ([]Member, error) {
@@ -59,8 +115,15 @@ func (d *fakeMembersDirectory) ListMembers(context.Context, string) ([]Member, e
 	return out, nil
 }
 
-func (d *fakeMembersDirectory) InviteMember(context.Context, string, InviteMemberRequest) (InviteMemberResult, error) {
-	return InviteMemberResult{}, nil
+func (d *fakeMembersDirectory) CreateOrganization(_ context.Context, input DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error) {
+	d.createInput = input
+	return DirectoryCreateOrganizationResult{OrganizationID: "43"}, nil
+}
+
+func (d *fakeMembersDirectory) InviteMember(_ context.Context, providerOrgID string, input InviteMemberRequest) (InviteMemberResult, error) {
+	d.inviteProviderOrgID = providerOrgID
+	d.inviteInput = input
+	return InviteMemberResult{UserID: "user-invite", Email: input.Email, Status: "invited"}, nil
 }
 
 func (d *fakeMembersDirectory) UpdateHumanProfile(context.Context, string, HumanProfileUpdate) (HumanProfile, error) {
@@ -97,6 +160,16 @@ func (a fakeMembersAuthz) TestOrganizationPermissions(context.Context, string, A
 
 type fakeMembersStore struct{}
 
+type fakeSignupStore struct {
+	fakeMembersStore
+	created CreateOrganizationRequest
+}
+
+func (s *fakeSignupStore) CreateOrganizationProfile(_ context.Context, input CreateOrganizationRequest) (OrganizationProfile, error) {
+	s.created = input
+	return OrganizationProfile{OrgID: input.OrgID, IdentityProviderOrgID: input.IdentityProviderOrgID, DisplayName: input.DisplayName, Slug: input.Slug, State: OrganizationProfileStateActive, Version: 1}, nil
+}
+
 func (fakeMembersStore) GetOrganizationProfile(context.Context, string, string) (OrganizationProfile, error) {
 	return OrganizationProfile{OrgID: "org_01J8QJ4P1R7S9W2X5M6N8P0Q2", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
 }
@@ -115,6 +188,14 @@ func (fakeMembersStore) ListOrganizationMetadataByProviderOrgIDs(_ context.Conte
 		out = append(out, OrganizationMetadata{OrgID: "org_01J8QJ4P1R7S9W2X5M6N8P0Q2", IdentityProviderOrgID: providerOrgID, DisplayName: "Acme", Slug: "acme", Version: 1})
 	}
 	return out, nil
+}
+
+func (fakeMembersStore) OrganizationSlugAvailable(context.Context, string) (bool, error) {
+	return true, nil
+}
+
+func (fakeMembersStore) CreateOrganizationProfile(_ context.Context, input CreateOrganizationRequest) (OrganizationProfile, error) {
+	return OrganizationProfile{OrgID: input.OrgID, IdentityProviderOrgID: input.IdentityProviderOrgID, DisplayName: input.DisplayName, Slug: input.Slug, State: OrganizationProfileStateActive, Version: 1}, nil
 }
 
 func (fakeMembersStore) UpdateOrganizationProfile(context.Context, Principal, UpdateOrganizationRequest) (OrganizationProfile, error) {

@@ -5,6 +5,7 @@ import { Notifications } from "./notifications";
 import { Projects } from "./projects";
 import { SandboxRental } from "./sandbox";
 import { Secrets } from "./secrets";
+import { requiredTrimmedString } from "./service-api";
 import { Source } from "./source";
 
 export const DEFAULT_SERVER_URL = "https://verself.sh";
@@ -43,10 +44,7 @@ export class Verself {
   readonly source: Source;
 
   constructor(options: VerselfOptions) {
-    const token = options.bearerToken.trim();
-    if (token === "") {
-      throw new Error("Verself SDK requires bearerToken");
-    }
+    const token = requiredTrimmedString(options.bearerToken, "Verself bearerToken");
     this.iam = new IAM({
       accessToken: token,
       baseUrl: resolveIAMURL(options),
@@ -256,7 +254,9 @@ export {
 export {
   IAM,
   IAMApiError,
+  createOrganizationRequestSchema,
   iamPolicySchema,
+  inviteMemberRequestSchema,
   isIAMApiError,
   setIamPolicyRequestSchema,
   testIamPermissionsRequestSchema,
@@ -265,7 +265,10 @@ export {
   type IAMMutationOptions,
   type IAMPolicy,
   type IAMPolicyBinding,
+  type CreateOrganizationRequest,
+  type InviteMemberRequest,
   type Member,
+  type MemberInvitation,
   type Organization,
   type OrganizationMetadata,
   type SetIamPolicyRequest,

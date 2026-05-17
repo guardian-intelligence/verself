@@ -133,11 +133,10 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(orgs.Organizations) == 0 {
-		return errors.New("auth login did not find any available organizations")
+	if len(orgs.Organizations) > 0 {
+		org := orgs.Organizations[0]
+		profile.SelectedOrg = orgRefFromSDK(org)
 	}
-	org := orgs.Organizations[0]
-	profile.SelectedOrg = orgRefFromSDK(org)
 	store, err := newStore(c.getenv)
 	if err != nil {
 		return err
@@ -165,7 +164,10 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	if *jsonOut {
 		return writeJSON(c.out, profile)
 	}
-	return writef(c.out, "logged in for %s\n", org.DisplayName)
+	if profile.SelectedOrg == nil {
+		return writeln(c.out, "logged in; no organizations available")
+	}
+	return writef(c.out, "logged in for %s\n", profile.SelectedOrg.DisplayName)
 }
 
 type loginCredentialOptions struct {
