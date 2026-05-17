@@ -27,14 +27,15 @@ export function arcGeometry({ width, height, inset = 0 }: ArcBox): Bezier {
   const x1 = width - inset;
   const span = x1 - x0;
   const cy = height * 0.5; // disc-centre line
-  // Pull both controls hard toward the top so the apex clears the discs by a
-  // healthy margin and the span between the discs reads as the dominant lob,
-  // not a flat hop. Slight asymmetry (left control a touch higher) gives the
-  // climb-out → cruise feel of the reference rather than a symmetric hump.
+  // Pull both controls near the top of the band so the apex rises a full
+  // climb above the disc line — the reference's bold confident hump, not a
+  // flat hop. Front-loaded (left control higher than right) so the curve
+  // leaves the origin disc steeply and eases into a cruise toward the
+  // destination. `overflow-visible` on the host absorbs the small excess.
   return [
     { x: x0, y: cy },
-    { x: x0 + span * 0.3, y: height * 0.04 },
-    { x: x0 + span * 0.68, y: height * -0.02 },
+    { x: x0 + span * 0.26, y: height * 0.06 },
+    { x: x0 + span * 0.72, y: height * 0.02 },
     { x: x1, y: cy },
   ];
 }

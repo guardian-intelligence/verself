@@ -67,7 +67,7 @@ type Scale = {
 // means is the cap height of the rendered glyphs, not the em box.
 const SF_CAP_RATIO = 0.714;
 // Brief note (a): "about half the height of the airport code". Tunable.
-const DISC_TO_CAP = 0.55;
+const DISC_TO_CAP = 0.52;
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi);
@@ -80,9 +80,9 @@ function scaleOf(cardW: number): Scale {
   const terminalPx = clamp(w * 0.099, 30, 52);
   const capPx = terminalPx * SF_CAP_RATIO;
   const discPx = Math.round(capPx * DISC_TO_CAP);
-  const arrowPx = Math.round(discPx * 0.52);
-  const arcStroke = Math.max(4, Math.round(discPx * 0.3));
-  const markerR = Math.max(6, Math.round(discPx * 0.62));
+  const arrowPx = Math.round(discPx * 0.62);
+  const arcStroke = Math.max(4, Math.round(discPx * 0.42));
+  const markerR = Math.max(6, Math.round(discPx * 0.7));
   const headerPx = clamp(terminalPx * 0.3, 12, 16);
   return { terminalPx, discPx, arrowPx, arcStroke, markerR, headerPx };
 }
@@ -170,7 +170,7 @@ function FlightShell({ children }: { readonly children: ReactNode }) {
     <Squircle
       role="article"
       cornerRadius={CARD_RADIUS}
-      className="flex flex-col justify-between px-7 py-5 sm:px-9"
+      className="flex flex-col justify-between px-7 py-4 sm:px-9"
       style={{ height: CARD_H_PX, background: CARD, boxShadow: CARD_SHADOW }}
     >
       {children}
@@ -282,15 +282,13 @@ function FlightRoute({
 }) {
   return (
     <div className="flex flex-1 items-center">
-      <div className="flex w-full items-center gap-3 sm:gap-4">
+      <div className="flex w-full items-center gap-2 sm:gap-3">
         <Terminal label={source} scale={scale} />
-        {/* Path group: the arc fills it absolutely; the discs sit on top at
-            the exact bezier endpoints, so the curve provably runs
-            disc-centre → disc-centre as one continuous line. */}
-        <div
-          className="relative flex flex-[1_1_46%] items-center"
-          style={{ height: scale.discPx * 2.6 }}
-        >
+        {/* Path group: the arc fills the whole route band absolutely; the
+            discs sit on top at the exact bezier endpoints, so the curve
+            provably runs disc-centre → disc-centre as one continuous line.
+            h-full so the arc has the full vertical band for a generous lob. */}
+        <div className="relative flex h-full flex-[1_1_54%] items-center">
           <FlightArc
             progress={progress}
             accent={accent}
