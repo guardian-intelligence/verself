@@ -2,9 +2,9 @@ receivers:
   otlp:
     protocols:
       grpc:
-        endpoint: 127.0.0.1:{{ otelcol_otlp_grpc_port }}
+        endpoint: 127.0.0.1:4317
       http:
-        endpoint: 127.0.0.1:{{ otelcol_otlp_http_port }}
+        endpoint: 127.0.0.1:4318
   journald/haproxy:
     units: [haproxy]
     resource:
@@ -21,9 +21,6 @@ receivers:
     resource:
       service.name: zitadel
     operators:
-      # The journald receiver emits body as map[string]interface{} (Go map,
-      # not a JSON string). Extract the MESSAGE field to body first, then
-      # parse the Zitadel JSON log (slog.JSONHandler output).
       - type: move
         from: body.MESSAGE
         to: body
@@ -49,7 +46,6 @@ receivers:
       - type: move
         from: attributes.msg
         to: body
-      # Flatten nested request object
       - type: move
         from: attributes.request.id
         to: attributes.request_id
@@ -58,12 +54,10 @@ receivers:
         from: attributes.request.instance_host
         to: attributes.instance_host
         if: attributes.request != nil
-      # Rename to avoid collision with OTel resource service.name
       - type: move
         from: attributes.service
         to: attributes.zitadel_service
         if: attributes.service != nil
-      # Clean up parsed intermediate fields
       - type: remove
         field: attributes.time
         if: attributes.time != nil
@@ -90,11 +84,6 @@ receivers:
       - type: move
         from: body.MESSAGE
         to: body
-  # sshd journald → default.otel_logs → verself.host_auth_events MV. Captures
-  # every authentication attempt against the host's sshd so failure rate, cert
-  # serials, and source-IP geo can be queried alongside the rest of the
-  # observability surface. The unit on Ubuntu 24.04 is ssh.service; service.name
-  # stays as sshd by convention.
   journald/sshd:
     units: [ssh]
     resource:
@@ -119,23 +108,16 @@ receivers:
       - type: move
         from: body.MESSAGE
         to: body
-  # Capture lifecycle / handshake messages for every WireGuard tunnel so an
-  # operator can confirm `wg-quick@<iface>` came up on each deploy. Driven
-  # off site-owned host tunnel definitions.
   journald/wireguard:
     units:
-{% for tunnel_name, tunnel in (host_wireguard_tunnels | dictsort) %}
-      - wg-quick@{{ tunnel.interface }}
-{% endfor %}
+      - wg-quick@wg-ops
+      - wg-quick@wg-guest
     resource:
       service.name: wireguard
     operators:
       - type: move
         from: body.MESSAGE
         to: body
-  # App logs for billing-service and sandbox-rental flow through OTLP (via
-  # otelslog bridge), not journald. These receivers capture only systemd
-  # lifecycle messages (start/stop/crash) and pre-init fatal errors.
   journald/billing-service:
     units: [billing-service]
     resource:
@@ -199,8 +181,6 @@ receivers:
     resource:
       service.name: forgejo
     operators:
-      # Forgejo router logs are plain text wrapped in journald metadata.
-      # Extract MESSAGE to get the log line itself.
       - type: move
         from: body.MESSAGE
         to: body
@@ -262,16 +242,9 @@ receivers:
     resource:
       service.name: verdaccio
     operators:
-      # Verdaccio writes pino JSON to stdout with log.format: json. Parse
-      # into attributes, map pino numeric levels to OTel severity, and
-      # drop the full req/request objects so auth headers can never reach
-      # ClickHouse even if Verdaccio's own pino-redact misses them.
       - type: move
         from: body.MESSAGE
         to: body
-      # log.format: json is set in Verdaccio's config, so every captured line
-      # is pino JSON. on_error: send_quiet keeps the entry
-      # flowing if a future pre-pino line ever sneaks through.
       - type: json_parser
         parse_from: body
         on_error: send_quiet
@@ -279,10 +252,6 @@ receivers:
           parse_from: attributes.time
           layout_type: epoch
           layout: ms
-      # pino levels: trace=10 debug=20 info=30 warn=40 error=50 fatal=60.
-      # Verdaccio adds http=25 for per-request access logs; map it to INFO.
-      # stanza's severity_parser ignores dash-range syntax (N-M) for numeric
-      # input — list form is the only shape that matches int attributes.
       - type: severity_parser
         parse_from: attributes.level
         if: attributes.level != nil
@@ -338,15 +307,14 @@ receivers:
         field: attributes.bytes
         if: attributes.bytes != nil
   postgresql:
-    endpoint: "{{ otelcol_postgresql_address }}"
-    username: postgres
-    password: "{{ postgresql_admin_password }}"
+    endpoint: "/var/run/postgresql:5432"
+    transport: unix
+    username: otelcol
+    password: peer-auth-placeholder
     databases: [sandbox_rental]
     collection_interval: 10s
-    tls:
-      insecure: true
   filelog/postgresql:
-    include: [{{ postgresql_log_dir }}/postgresql-*.log]
+    include: [/var/log/postgresql/postgresql-*.log]
     storage: file_storage
     resource:
       service.name: postgresql
@@ -394,7 +362,7 @@ receivers:
       disk: {}
       network: {}
   statsd:
-    endpoint: "{{ otelcol_statsd_address }}"
+    endpoint: 127.0.0.1:8125
     aggregation_interval: 10s
   prometheus/openbao:
     config:
@@ -408,14 +376,14 @@ receivers:
           tls_config:
             insecure_skip_verify: true
           static_configs:
-            - targets: ["{{ otelcol_openbao_api_address }}"]
+            - targets: ["127.0.0.1:8200"]
   prometheus/temporal:
     config:
       scrape_configs:
         - job_name: temporal
           scrape_interval: 10s
           static_configs:
-            - targets: ["{{ otelcol_temporal_metrics_address }}"]
+            - targets: ["127.0.0.1:9001"]
   prometheus/nomad:
     config:
       scrape_configs:
@@ -425,7 +393,7 @@ receivers:
           params:
             format: [prometheus]
           static_configs:
-            - targets: ["{{ otelcol_nomad_http_address }}"]
+            - targets: ["127.0.0.1:4646"]
   prometheus/haproxy:
     config:
       scrape_configs:
@@ -433,19 +401,12 @@ receivers:
           scrape_interval: 10s
           metrics_path: /metrics
           static_configs:
-            - targets: ["{{ otelcol_haproxy_metrics_address }}"]
+            - targets: ["127.0.0.1:8404"]
 
 processors:
   batch:
     send_batch_size: 10000
     timeout: 5s
-  # Upstream community.general.opentelemetry emits the playbook span named
-  # after the playbook file (e.g. "box.yml") and each task span
-  # named after the raw task title. Rename to a stable
-  # ansible.playbook/ansible.task schema so downstream queries don't have to
-  # special-case per-playbook names, and mirror verself.* resource
-  # attributes onto span attributes so ansible and service spans share one
-  # query shape: SpanAttributes['verself.deploy_id'].
   transform/ansible_spans:
     error_mode: ignore
     trace_statements:
@@ -466,28 +427,24 @@ processors:
 
 exporters:
   clickhouse:
-    endpoint: tcp://{{ otelcol_clickhouse_native_tls_address }}?secure=true&dial_timeout=10s
-    username: {{ otelcol_clickhouse_user }}
+    endpoint: tcp://127.0.0.1:9440?secure=true&dial_timeout=10s
+    username: otelcol
     database: default
     logs_table_name: otel_logs
     traces_table_name: otel_traces
     create_schema: false
-    # The collector only wires its TLS client when cert/key are set; keep the
-    # full mTLS tuple here so ClickHouse never silently falls back to plaintext auth.
-    # spiffe-helper rotates the SVID on disk every ~30 minutes; reload_interval
-    # makes the exporter re-read cert/key/ca so the in-memory TLS material never
-    # outlives the SVID lifetime and connections don't fail with expired cert.
     tls:
-      ca_file: {{ otelcol_clickhouse_server_ca_path }}
-      cert_file: {{ otelcol_clickhouse_spiffe_dir }}/svid.pem
-      key_file: {{ otelcol_clickhouse_spiffe_dir }}/svid_key.pem
+      ca_file: /etc/otelcol/clickhouse-server-ca.pem
+      cert_file: /var/lib/otelcol/clickhouse-spiffe/svid.pem
+      key_file: /var/lib/otelcol/clickhouse-spiffe/svid_key.pem
       reload_interval: 60s
 
 extensions:
   health_check:
-    endpoint: 127.0.0.1:13133  # local collector health endpoint
+    endpoint: 127.0.0.1:13133
   file_storage:
     directory: /var/lib/otelcol/storage
+    create_directory: true
 
 service:
   extensions: [health_check, file_storage]

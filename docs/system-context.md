@@ -127,7 +127,7 @@ Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-servi
   uses `ssh -p 2222 ubuntu@10.66.66.1` over `wg-ops`.
 - Auth: Zitadel (Stalwart JMAP has a separate auth path).
 - Payments: Stripe + TigerBeetle + PostgreSQL.
-- `otelcol-config.yaml.j2` contains the custom otel collection config.
+- `src/infrastructure-components/otelcol/files/otelcol-config.yaml` contains the custom otel collection config used by the Nomad otelcol unit.
 
 ## Platform Contracts
 

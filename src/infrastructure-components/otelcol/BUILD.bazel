@@ -1,25 +1,18 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = [
-        "//src/host:__pkg__",
-        "//src/infrastructure-components:__pkg__",
-    ],
+pkg_tar(
+    name = "config_artifact",
+    out = "otelcol-config.tar",
+    files = {
+        "files/otelcol-clickhouse-spiffe-helper.conf": "config/clickhouse-spiffe-helper.conf",
+        "files/otelcol-config.yaml": "config/config.yaml",
+    },
+    modes = {
+        "config/clickhouse-spiffe-helper.conf": "0640",
+        "config/config.yaml": "0640",
+    },
 )
 
 spire_identity(
@@ -35,11 +28,18 @@ spire_identity(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        ":config_artifact": "otelcol-config",
+        "//src/infrastructure-components/otelcol/cmd/otelcol-setup:otelcol-setup_nomad_artifact": "otelcol-setup",
+    },
     component = "otelcol",
-    deploy_phase = "pre_artifact",
-    digest_inputs = [":role_sources"],
+    deploy_phase = "platform",
     job_id = "otelcol",
     job_spec = "nomad.hcl",
     provides = ["otelcol:otlp"],
+    requires = [
+        "artifact-origin",
+        "postgres:server",
+    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -1,4 +1,4 @@
-"""aspect host edit-secrets | firewall | otelcol | operator-access-handoff
+"""aspect host edit-secrets | firewall | operator-access-handoff
 
 Bootstrap convergence and Nomad deployments do not own the operator-access
 handoff. Pomerium is a manual host action because a bad change can move SSH
@@ -76,24 +76,6 @@ firewall = task(
     name = "firewall",
     group = ["host"],
     summary = "Converge bootstrap host nftables rulesets.",
-    args = {
-        "site": args.string(default = "prod", description = "Deployment site."),
-    },
-)
-
-def _otelcol_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
-    return _host_playbook(
-        ctx,
-        site,
-        "otelcol.yml",
-    )
-
-otelcol = task(
-    implementation = _otelcol_impl,
-    name = "otelcol",
-    group = ["host"],
-    summary = "Converge bootstrap host OpenTelemetry Collector configuration.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
     },
