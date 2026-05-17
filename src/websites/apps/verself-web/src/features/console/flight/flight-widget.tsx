@@ -1,14 +1,15 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { WINGS_PADDED_VIEWBOX, WINGS_PATH_D } from "@verself/brand/components/wings";
+import { elevation, LIVE_ACTIVITY_LIFT } from "./elevation";
 import { FlightArc } from "./flight-arc";
 import { arcGeometry, tangentDeg } from "./geometry";
 import { GitCommitGlyph } from "./git-commit-glyph";
 import { IPhoneFrame, type FrameKind } from "./iphone-frame";
-import { useAccentSpring, useFlightMachine } from "./machine";
+import { useFlightMachine } from "./machine";
 import type { Flight } from "./model";
 import type { PhaseKind } from "./phase";
-import { concentric, type CornerRadius, Squircle, useSquircle } from "./squircle";
+import { type CornerRadius, Squircle, useSquircle } from "./squircle";
 
 // ── Numeric tokens (single source of truth; the brief tunes these here) ──────
 
@@ -17,25 +18,77 @@ import { concentric, type CornerRadius, Squircle, useSquircle } from "./squircle
 const WIDGET_MAX_PX = 598;
 // CARD_H_PX is a parameter, not a literal sprinkled through the layout. The
 // future lock-screen variant (320, not yet designed) is one argument to
-// bandsOf — never a forked layout.
+// layoutOf — never a forked layout.
 const CARD_H_PX = 160;
 
-// Deterministic vertical layout. bandsOf splits ANY card height into three
-// explicit bands so the route gets a definite, generous height for the arc;
-// percentage/flex height against an indefinite parent collapses the arc to
-// zero, so the band heights are computed, not flexed. Interior padding is
-// generous (brief note c asks for more top/bottom air than the prior pass).
-type Bands = {
-  readonly pad: number;
+// ── Safe rectangle (correct-by-construction layout) ─────────────────────────
+//
+// The card is a 160px-tall bulbous squircle. Content must never enter a corner
+// or it clips. Rather than eyeball the padding, we COMPUTE the largest inner
+// rectangle that provably clears the corner curve, then lay every band inside
+// it.
+//
+// Key fact that removes all SVG-path parsing: figma's corner-smoothing bows
+// the curve OUTWARD (a fuller, less-pointy corner than a plain rounded rect),
+// so for any cornerSmoothing ≥ 0 the inward depth of the vendored superellipse
+// at a given edge offset is ≤ the inward depth of a *circular* arc of the same
+// radius. The circular depth is therefore a strict upper bound: inset content
+// by it and it cannot be clipped — independent of the exact smoothing value.
+//
+// `cornerDepth(x, r)` = how far the boundary intrudes from an edge at offset
+// `x` along it: full `r` at the very corner, zero once past the radius (the
+// straight-edge region). Quarter-circle of radius r centred (r, r).
+function cornerDepth(edgeOffset: number, radius: number): number {
+  if (edgeOffset >= radius) return 0;
+  const k = radius - edgeOffset;
+  return radius - Math.sqrt(radius * radius - k * k);
+}
+
+// Aesthetic top/bottom air as a fraction of card height — the reference reads
+// markedly more vertical breathing room than the prior fixed 16px (brief note
+// c: ≈1.5–2.5×). It is *added on top of* the geometric safety floor, so the
+// rendered air is `max(floor, aesthetic)` and clipping is impossible while the
+// look is the reference's. Tuned against the deployed render.
+const VERTICAL_AIR_RATIO = 0.16;
+
+type Layout = {
+  readonly sidePad: number; // horizontal content inset (≈ the prior px-7/px-9)
+  readonly padTop: number; // vertical air above content (note c)
+  readonly padBottom: number; // ≥ padTop: the bottom corner is the fuller one
   readonly header: number;
-  readonly route: number;
+  readonly route: number; // remainder — definite px so the arc never collapses
   readonly status: number;
 };
-function bandsOf(height: number): Bands {
-  const pad = 16; // vertical padding inside the box (note c: more than the prior 14)
-  const header = 20;
-  const status = 38; // ≥ pill height; holds the tight status group
-  return { pad, header, status, route: height - 2 * pad - header - status };
+
+// The single layout function. Splits ANY (width,height,radius) into a safe
+// inner rectangle and three bands. The 320px lock-screen variant is one
+// argument; deterministic px (a %/flex height against an indefinite parent
+// collapses the arc to zero).
+function layoutOf(cardW: number, cardH: number, radius: CornerRadius): Layout {
+  const top = typeof radius === "number" ? radius : radius.top;
+  const bottom = typeof radius === "number" ? radius : radius.bottom;
+  // Side padding tracks width like the prior responsive px-7 → px-9, now
+  // continuous and a single source of truth (it feeds the safety math).
+  const sidePad = Math.round(clamp(cardW * 0.062, 24, 38));
+  // Provable floor: at horizontal inset `sidePad`, the corner cannot reach
+  // deeper than this. Anything ≥ this is in the straight-edge region.
+  const air = Math.round(cardH * VERTICAL_AIR_RATIO);
+  const padTop = Math.max(Math.ceil(cornerDepth(sidePad, top)), air);
+  const padBottom = Math.max(Math.ceil(cornerDepth(sidePad, bottom)), air);
+  // Inter-element bands are tight (note c trades inter-element padding for
+  // top/bottom air); the route takes the remainder so the arc keeps the
+  // dominant central span and may overshoot into the safe air like the
+  // reference (the squircle clip, not the band, is the only real bound).
+  const header = 18;
+  const status = 34; // ≥ pill height; holds the tight status group
+  return {
+    sidePad,
+    padTop,
+    padBottom,
+    header,
+    status,
+    route: cardH - padTop - padBottom - header - status,
+  };
 }
 
 // Asymmetric continuous corners. The prior `{ 28, 46 }` read as a tight top
@@ -45,12 +98,12 @@ function bandsOf(height: number): Bands {
 // metaphor), but the gap is small. cornerSmoothing stays Apple-canonical 0.6
 // (the figma plugin default) — the fix is the radius, not the smoothing.
 const CARD_RADIUS: CornerRadius = { top: 42, bottom: 52 };
-// Pill radius held well under its half-height so the corner reads as a
-// squircle rounded-rectangle, not a stadium.
-const PILL_RADIUS = 13;
-// The commit-glyph well is inset inside the pill; its radius nests on Apple's
-// nested-rounded-rect rule rather than an ad-hoc value.
-const WELL_INSET = 4;
+// The pill corner is a fraction of its OWN height, held well under half-height
+// so it reads as a squircle rounded-rectangle, never a stadium. A fixed radius
+// against a small pill collapsed toward a stadium ("we squircled so much it
+// looks like a pill", brief note d) — deriving it from pillH fixes that by
+// construction at every scale.
+const PILL_RADIUS_RATIO = 0.3;
 
 // iOS fidelity: real San Francisco on Apple devices (the reference context),
 // a near-equivalent neo-grotesque elsewhere. Brand Geist is deliberately not
@@ -58,23 +111,33 @@ const WELL_INSET = 4;
 const IOS_FONT =
   '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif';
 
+// The region actor (`ASH`) AND both status lines share this weight by
+// construction (brief note e: the status group is the same size and weight as
+// ASH). One constant so they can never drift apart into a headline/caption
+// hierarchy — the only difference between the three is the text itself.
+const REGION_WEIGHT = 530;
+
 const INK = "oklch(1 0 0)";
 const INK_DIM = "oklch(0.62 0 0)";
 const CARD = "oklch(0.05 0 0)";
 const NODE_INK = "oklch(0 0 0)";
-const ACCENT_AMBER = "oklch(0.8 0.16 70)";
-// iOS systemOrange (dark) — the commit glyph reads as orange light through the
-// punched well (brief note d's negative-space treatment).
-const IOS_ORANGE = "oklch(0.7824 0.1711 67.22)";
+// The single accent. Sampled from the Flighty reference (#8FF28F) — a soft,
+// low-saturation spring-green, deliberately NOT iOS systemGreen (the prior
+// pass's value, reverted on the brief's "match the photo / single shade
+// everywhere", note f). One value for the arc, both discs and the status
+// group; `late` is label-only and never recolors, so there is no second
+// accent and no crossfade — the green cannot vary by construction.
+const ACCENT = "oklch(0.8767 0.1631 144.03)";
+// The commit button. Sampled from the reference pill body (#E9B13A) — a
+// marigold gold at oklch hue ≈ 82; the prior hue-70 token read "too orange"
+// (brief). This is the only place the color appears; the glyph and the count
+// are NODE_INK painted directly on it (no well, no third color — note d).
+const BUTTON = "oklch(0.7923 0.1443 82.08)";
 
-// Live-Activity elevation: one overhead light source, three stacked layers —
-// a tight contact shadow that grounds the card, a medium key shadow that is
-// the readable drop, and a wide soft ambient shadow (negative spread) that
-// lifts it off the page. Opacity falls as blur grows; offsets stay vertical.
-const CARD_SHADOW =
-  "0 1px 2px oklch(0 0 0 / 0.07), " +
-  "0 5px 12px -4px oklch(0 0 0 / 0.16), " +
-  "0 22px 46px -16px oklch(0 0 0 / 0.3)";
+// The card floats at the Live-Activity elevation level — the framework
+// derives the three contact/key/ambient layers from that single choice, so
+// the card has no hand-written shadow numbers (brief note 1).
+const CARD_SHADOW = elevation(LIVE_ACTIVITY_LIFT);
 
 // ── Scale model (pure: card width → every derived size) ─────────────────────
 //
@@ -106,11 +169,14 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi);
 }
 
-function scaleOf(cardW: number): Scale {
+function scaleOf(cardW: number, routeH: number): Scale {
   const w = clamp(cardW, 0, WIDGET_MAX_PX);
-  // Terminals dominate like SFO/JFK, but the reference's are bold-not-huge:
-  // a touch under the prior pass (brief note h).
-  const terminalPx = clamp(w * 0.085, 28, 46);
+  // Terminals dominate like SFO/JFK, but the reference's are bold-not-huge
+  // (brief note h) AND must fit the route band the layout actually computed —
+  // capping by routeH closes the composition loop so the terminals can never
+  // overflow the band and crush the arc, at any card height. Width still
+  // governs below the cap so narrow cards shrink fluidly.
+  const terminalPx = clamp(Math.min(w * 0.085, routeH * 0.7), 28, 46);
   const capPx = terminalPx * SF_CAP_RATIO;
   const discPx = Math.round(capPx * DISC_TO_CAP);
   const arrowPx = Math.round(discPx * 0.62);
@@ -224,17 +290,30 @@ function FlightCanvas({
 }
 
 // One OLED squircle card, exactly CARD_H_PX tall (the black box; padding is
-// inside). Depth is the layered shadow, not a tray/border. Font smoothing +
-// own compositing layer kill the sub-pixel clip-path/text shimmer (note k).
-function FlightShell({ children }: { readonly children: ReactNode }) {
+// inside). The padding is the computed safe-rectangle inset, not a literal:
+// content placed inside it provably clears the bulbous corners. Empty/skeleton
+// states have no measured width, so they fall back to the max-width layout —
+// identical card chrome. Depth is the layered shadow, not a tray/border. Font
+// smoothing + own compositing layer kill the sub-pixel clip-path shimmer (k).
+const DEFAULT_LAYOUT = layoutOf(WIDGET_MAX_PX, CARD_H_PX, CARD_RADIUS);
+
+function FlightShell({
+  children,
+  layout = DEFAULT_LAYOUT,
+}: {
+  readonly children: ReactNode;
+  readonly layout?: Layout;
+}) {
   return (
     <Squircle
       role="article"
       cornerRadius={CARD_RADIUS}
-      className="flex flex-col px-7 sm:px-9"
+      className="flex flex-col"
       style={{
         height: CARD_H_PX,
-        paddingBlock: bandsOf(CARD_H_PX).pad,
+        paddingInline: layout.sidePad,
+        paddingTop: layout.padTop,
+        paddingBottom: layout.padBottom,
         background: CARD,
         boxShadow: CARD_SHADOW,
         transform: "translateZ(0)",
@@ -254,30 +333,31 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
   // The machine owns the clock, conflated sampling, the FSM, monotone progress
   // and springs. The card is a pure Projection consumer — no phase switch.
   const proj = useFlightMachine(flight);
-  const accent = useAccentSpring(proj.accent);
 
-  // Single measurement → single Scale → every derived size below.
+  // Single measurement → one safe-rect layout + one Scale → every derived size
+  // below. The layout computes the clip-safe inner rectangle; scale is capped
+  // to the route band it produced so nothing downstream can overflow.
   const measureRef = useRef<HTMLDivElement | null>(null);
   const cardBox = useBox(measureRef);
-  const scale = scaleOf(cardBox?.w ?? WIDGET_MAX_PX);
-  const bands = bandsOf(CARD_H_PX);
+  const measuredW = cardBox?.w ?? WIDGET_MAX_PX;
+  const layout = layoutOf(measuredW, CARD_H_PX, CARD_RADIUS);
+  const scale = scaleOf(measuredW, layout.route);
 
   return (
-    <FlightShell>
-      {/* Three explicit bands summing to the content box — header / route /
+    <FlightShell layout={layout}>
+      {/* Three explicit bands summing to the safe rectangle — header / route /
           status. The route band has a definite height so the arc fills it. */}
       <div ref={measureRef} className="flex flex-col">
         <div
           className="flex shrink-0 items-center justify-between"
-          style={{ height: bands.header }}
+          style={{ height: layout.header }}
         >
           <FlightHeader actor={flight.actorLabel} scale={scale} />
         </div>
-        <div className="shrink-0" style={{ height: bands.route }}>
+        <div className="shrink-0" style={{ height: layout.route }}>
           <FlightRoute
             source={flight.sourceLabel}
             dest={flight.destLabel}
-            accent={accent}
             progress={proj.progressTarget}
             phaseKind={proj.phaseKind}
             scale={scale}
@@ -285,12 +365,12 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
         </div>
         <div
           className="flex shrink-0 items-end justify-between gap-4"
-          style={{ height: bands.status }}
+          style={{ height: layout.status }}
         >
           <FlightStatus
             headline={proj.headline}
             detail={proj.detail}
-            accent={accent}
+            accent={ACCENT}
             scale={scale}
           />
           {flight.commitPill !== null ? (
@@ -318,7 +398,7 @@ function FlightHeader({ actor, scale }: { readonly actor: string; readonly scale
     <>
       <p
         className="tracking-[0.01em]"
-        style={{ color: INK, fontSize: scale.headerPx, fontWeight: 530 }}
+        style={{ color: INK, fontSize: scale.headerPx, fontWeight: REGION_WEIGHT }}
       >
         {actor}
       </p>
@@ -356,14 +436,12 @@ const ROUTE_FALLBACK = { w: 260, h: 60 } as const; // SSR / pre-measure
 function FlightRoute({
   source,
   dest,
-  accent,
   progress,
   phaseKind,
   scale,
 }: {
   readonly source: string;
   readonly dest: string;
-  readonly accent: string;
   readonly progress: number;
   readonly phaseKind: PhaseKind;
   readonly scale: Scale;
@@ -393,20 +471,20 @@ function FlightRoute({
             width={w}
             height={h}
             progress={progress}
-            accent={accent}
+            accent={ACCENT}
             phaseKind={phaseKind}
             strokeWidth={scale.arcStroke}
             markerR={scale.markerR}
           />
           <Endpoint
-            accent={accent}
+            accent={ACCENT}
             scale={scale}
             className="absolute left-0 top-1/2 -translate-y-1/2"
           >
             <ArrowGlyph deg={outboundDeg} px={scale.arrowPx} stroke={scale.arrowStroke} />
           </Endpoint>
           <Endpoint
-            accent={accent}
+            accent={ACCENT}
             scale={scale}
             className="absolute right-0 top-1/2 -translate-y-1/2"
           >
@@ -485,10 +563,12 @@ function ArrowGlyph({
   );
 }
 
-// Bottom-left status as ONE tight group (brief note e): both lines at the
-// actor/header size, leadings collapsed, near-identical weight so the
-// difference is luminance not boldness — the headline carries full accent,
-// the detail the same hue dimmed; it reads as a unit, not headline + caption.
+// Bottom-left status as ONE tight group (brief note e). Both lines are the
+// SAME single green, the SAME size, and the SAME weight as the region actor
+// (`REGION_WEIGHT`) — no luminance dim, no caption weight. The brief is
+// explicit that the pair matches `ASH`, and "single shade everywhere" (note f)
+// forbids a dimmed second hue, so the only thing distinguishing the two lines
+// is their text. Leadings collapsed so it reads as one tight unit.
 function FlightStatus({
   headline,
   detail,
@@ -500,31 +580,27 @@ function FlightStatus({
   readonly accent: string;
   readonly scale: Scale;
 }) {
+  const lineStyle = {
+    color: accent,
+    fontSize: scale.statusPx,
+    fontWeight: REGION_WEIGHT,
+    lineHeight: 1.18,
+  } as const;
   return (
     <div className="min-w-0">
-      <p style={{ color: accent, fontSize: scale.statusPx, fontWeight: 590, lineHeight: 1.18 }}>
-        {headline}
-      </p>
-      <p
-        style={{
-          color: accent,
-          fontSize: scale.statusPx,
-          fontWeight: 560,
-          lineHeight: 1.18,
-          opacity: 0.62,
-        }}
-      >
-        {detail}
-      </p>
+      <p style={lineStyle}>{headline}</p>
+      <p style={lineStyle}>{detail}</p>
     </div>
   );
 }
 
 // The bottom-right interactive piece — its own <Squircle> with an integer-px
-// box (so the clip-path never hairline-aliases, note k). The amber pill holds
-// a dark WELL (a concentric <Squircle>) and the commit glyph reads as iOS
-// orange light through it — negative space, not ink on amber (brief note d).
-// The count stays black on the amber, like the reference. Links to the logs.
+// box (so the clip-path never hairline-aliases, note k). It is the gold
+// BUTTON, the card's fourth and only non-grayscale-besides-green color, kept
+// exactly as the reference baggage chip: the commit glyph and the count are
+// solid NODE_INK painted DIRECTLY on the gold — no well, no recess, no third
+// color (brief note d; the prior "orange-through-a-well" was a divergence the
+// reference does not have). Links to the logs.
 function CommitPill({
   orgSlug,
   providerRunId,
@@ -538,9 +614,14 @@ function CommitPill({
 }) {
   // The pill is a <Link>, so it takes the squircle via the hook rather than
   // the div wrapper — same single radius source, full Link typing preserved.
-  const sq = useSquircle<HTMLAnchorElement>(PILL_RADIUS);
-  const wellSize = scale.pillH - 2 * WELL_INSET;
-  const glyphPx = Math.round(wellSize * 0.62);
+  // Radius derived from the pill's own height so it is a rounded-rect, never a
+  // stadium, at any scale (note d).
+  const sq = useSquircle<HTMLAnchorElement>(Math.round(scale.pillH * PILL_RADIUS_RATIO));
+  // The glyph is sized to the reference baggage-chip footprint: ≈ the count's
+  // cap height, compact — ~30% under the prior pass and far less internal
+  // negative space (note d; the glyph's own viewBox is now tight-cropped).
+  const glyphPx = Math.round(scale.pillH * 0.42);
+  const padX = Math.round(scale.pillH * 0.34);
   return (
     <Link
       ref={sq.ref}
@@ -548,9 +629,9 @@ function CommitPill({
       style={{
         ...sq.style,
         height: scale.pillH,
-        paddingInline: WELL_INSET,
-        gap: Math.round(scale.pillH * 0.22),
-        background: ACCENT_AMBER,
+        paddingInline: padX,
+        gap: Math.round(scale.pillH * 0.2),
+        background: BUTTON,
         color: NODE_INK,
         fontSize: Math.round(scale.statusPx * 0.95),
       }}
@@ -558,17 +639,11 @@ function CommitPill({
       params={{ orgSlug, providerRunId }}
       title="CI run logs"
     >
-      <Squircle
-        cornerRadius={concentric(PILL_RADIUS, WELL_INSET)}
-        className="flex items-center justify-center"
-        style={{ width: wellSize, height: wellSize, background: CARD }}
+      <GitCommitGlyph
+        style={{ height: glyphPx, width: "auto", color: NODE_INK }}
         aria-hidden="true"
-      >
-        <GitCommitGlyph style={{ width: glyphPx, height: glyphPx, color: IOS_ORANGE }} />
-      </Squircle>
-      <span className="tabular-nums" style={{ paddingRight: Math.round(scale.pillH * 0.28) }}>
-        {count}
-      </span>
+      />
+      <span className="tabular-nums">{count}</span>
     </Link>
   );
 }

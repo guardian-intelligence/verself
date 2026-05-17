@@ -24,14 +24,13 @@ export type Phase =
 
 export type PhaseKind = Phase["kind"];
 
-export type AccentToken = "accent-green" | "accent-amber";
-
 // What the view binds to. Every field is independently animatable; adding a
-// phase produces different values here, never new render branches.
+// phase produces different values here, never new render branches. There is no
+// `accent` channel: the widget is a single shade of green everywhere (brief
+// note f), so `late` is label-only and never recolors the route or status.
 export type Projection = {
   readonly phaseKind: PhaseKind;
   readonly progressTarget: number; // pre-monotone; the machine gates it
-  readonly accent: AccentToken;
   readonly headline: string;
   readonly detail: string;
 };
@@ -86,7 +85,6 @@ export function project(phase: Phase, f: Flight, now: number): Projection {
       return {
         phaseKind: "boarding",
         progressTarget: 0,
-        accent: "accent-green",
         headline: "On Time",
         detail: f.statusLabel,
       };
@@ -94,7 +92,6 @@ export function project(phase: Phase, f: Flight, now: number): Projection {
       return {
         phaseKind: "late",
         progressTarget: LATE_ASYMPTOTE,
-        accent: "accent-amber",
         headline: "Running Late",
         detail: f.statusLabel,
       };
@@ -110,7 +107,6 @@ export function project(phase: Phase, f: Flight, now: number): Projection {
       return {
         phaseKind: "enroute",
         progressTarget: raw,
-        accent: "accent-green",
         headline: "On Time",
         detail,
       };

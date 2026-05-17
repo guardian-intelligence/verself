@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { AccentToken } from "./phase";
 
 // Hand-rolled critically-damped spring (no overshoot — a flight marker must
 // never bounce backward) on rAF. Vendored rather than @react-spring/web because
@@ -69,31 +68,4 @@ export function useSpring(
 
   if (typeof window === "undefined") return { value: target, atRest: true };
   return { value: posRef.current, atRest };
-}
-
-type Lch = readonly [number, number, number];
-const ACCENT_LCH: Record<AccentToken, Lch> = {
-  // oklch(L C H). The on-time accent is iOS `systemGreen` (dark) — #30D158,
-  // the value the reference renders on a dark lock screen — computed once from
-  // sRGB → OKLab so the widget stays oklch-only (brief note f: match the
-  // reference literally). This REVERTS the prior brand-Flare divergence; the
-  // green is now the platform's, not the Newsroom treatment's. Amber (running
-  // late) keeps the reference marigold.
-  "accent-green": [0.7556, 0.2082, 146.98],
-  "accent-amber": [0.8, 0.16, 70],
-};
-
-export function resolveAccent(token: AccentToken): string {
-  const [l, c, h] = ACCENT_LCH[token];
-  return `oklch(${l} ${c} ${h})`;
-}
-
-// Crossfades the accent in oklch space on phase change (green ⇄ amber). Each
-// channel rides its own spring so the transition is perceptually smooth.
-export function useAccentSpring(token: AccentToken): string {
-  const [tl, tc, th] = ACCENT_LCH[token];
-  const l = useSpring(tl);
-  const c = useSpring(tc);
-  const h = useSpring(th);
-  return `oklch(${l.value.toFixed(4)} ${c.value.toFixed(4)} ${h.value.toFixed(2)})`;
 }

@@ -26,21 +26,22 @@ export function arcGeometry({ width, height, inset = 0 }: ArcBox): Bezier {
   const x0 = inset;
   const x1 = width - inset;
   const span = x1 - x0;
-  const cy = height * 0.5; // disc-centre line
-  // Pull both controls near the top of the band so the apex rises a full
-  // climb above the disc line — the reference's bold confident hump, not a
-  // flat hop. Front-loaded (left control higher than right) so the curve
-  // leaves the origin disc steeply and eases into a cruise toward the
-  // destination. `overflow-visible` on the host absorbs the small excess.
-  // A confident lob: the apex rises to (and just past) the top of the band so
-  // the climb-out reads like the reference, not a shallow droop. Front-loaded
-  // (left control higher and pulled toward the origin) so the curve leaves the
-  // source disc steeply and eases into a long cruise toward the destination.
-  // `overflow-visible` on the host absorbs the small negative-y excess.
+  const cy = height * 0.5; // disc-centre line; both endpoints sit on it
+  // Control points NUMERICALLY FITTED to the sampled Flighty arc (least-
+  // squares over the traced profile, SSE ≈ 8e-4): a shallow, front-loaded
+  // lob — a steep climb out of the source disc through an apex at x-fraction
+  // ≈0.47, then a long, gentle descent into the destination (the brief's
+  // "left third more intense, right two-thirds more gradual", note a). NOT
+  // the prior dramatic symmetric arch.
+  //
+  // Rise is expressed against the disc-to-disc SPAN, not the band height, so
+  // the lob keeps the reference's exact proportions at any card width and may
+  // overshoot the band into the safe air (the squircle clip — never the band —
+  // is the only real bound; the host is `overflow-visible`).
   return [
     { x: x0, y: cy },
-    { x: x0 + span * 0.22, y: -height * 0.04 },
-    { x: x0 + span * 0.7, y: -height * 0.1 },
+    { x: x0 + span * 0.393, y: cy - span * 0.218 },
+    { x: x0 + span * 0.98, y: cy - span * 0.044 },
     { x: x1, y: cy },
   ];
 }

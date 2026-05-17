@@ -13,6 +13,12 @@ import type { PhaseKind } from "./phase";
 // The SVG maps 1:1 to the integer pixel box (no preserveAspectRatio skew, no
 // fractional viewBox — brief note k), so the stroke and triangle stay crisp.
 
+// Shimmer wavelength as a fraction of the box width. A solid head is roughly
+// half-to-two-thirds of the box, so ≈0.42 puts about one-and-a-half bright
+// bands on it at once (brief note g: "a gradient and a half"). It is also the
+// exact translate distance per loop, which is what makes the motion seamless.
+const SHIMMER_PERIOD = 0.42;
+
 export function FlightArc({
   bezier,
   width,
@@ -56,28 +62,34 @@ export function FlightArc({
       >
         {showShimmer ? (
           <defs>
-            {/* A narrow bright window swept left→right along the box, then
-                held off-screen, so the solid head periodically flashes. Pure
-                SMIL: no rAF, no React state, no coupling to the spring. */}
+            {/* Continuous "work in motion" sheen. ONE period of a soft bright
+                band, tiled across the whole path with spreadMethod="repeat"
+                so ≈1.5 bands ride the solid head at once ("a gradient and a
+                half"). It translates by EXACTLY one period at constant
+                velocity and loops — because the pattern is period-periodic,
+                +1 period maps it onto itself, so the motion is perfectly
+                seamless: it flows continuously rather than flashing once and
+                pausing. Pure SMIL, no rAF/React state, zero coupling to the
+                spring or `t` (DESIGN.md). */}
             <linearGradient
               id={shimmerId}
               gradientUnits="userSpaceOnUse"
+              spreadMethod="repeat"
               x1="0"
               y1="0"
-              x2={width * 0.2}
+              x2={SHIMMER_PERIOD * width}
               y2="0"
             >
               <stop offset="0" stopColor="oklch(1 0 0)" stopOpacity="0" />
-              <stop offset="0.5" stopColor="oklch(1 0 0)" stopOpacity="0.6" />
+              <stop offset="0.5" stopColor="oklch(1 0 0)" stopOpacity="0.5" />
               <stop offset="1" stopColor="oklch(1 0 0)" stopOpacity="0" />
               <animateTransform
                 attributeName="gradientTransform"
                 type="translate"
-                values={`${-width * 0.3} 0; ${width * 1.05} 0; ${width * 1.05} 0`}
-                keyTimes="0; 0.62; 1"
-                dur="1.9s"
-                calcMode="spline"
-                keySplines="0.4 0 0.2 1; 0 0 1 1"
+                from="0 0"
+                to={`${SHIMMER_PERIOD * width} 0`}
+                dur="1.6s"
+                calcMode="linear"
                 repeatCount="indefinite"
               />
             </linearGradient>
@@ -86,8 +98,8 @@ export function FlightArc({
         <ArcPath d={solid} color={accent} strokeWidth={strokeWidth} />
         <ArcPath d={dotted} color={accent} strokeWidth={strokeWidth} dashed />
         {showShimmer ? (
-          // Same path as the solid head, stroked with the moving gradient so
-          // the sheen rides exactly the traversed segment.
+          // Same path as the solid head, stroked with the flowing gradient so
+          // the sheen rides exactly the traversed segment, origin → marker.
           <path
             d={solid}
             stroke={`url(#${shimmerId})`}

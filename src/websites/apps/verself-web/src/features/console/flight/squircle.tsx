@@ -33,11 +33,6 @@ export const CORNER_SMOOTHING = 0.6; // Apple's app-icon value.
 // number → uniform; { top, bottom } → top corners vs. bottom corners differ.
 export type CornerRadius = number | { readonly top: number; readonly bottom: number };
 
-// Apple's nested-rounded-rect rule: inner radius = outer radius − inset.
-export function concentric(outerRadius: number, inset: number): number {
-  return Math.max(0, outerRadius - inset);
-}
-
 function topRadius(r: CornerRadius): number {
   return typeof r === "number" ? r : r.top;
 }

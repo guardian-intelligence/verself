@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useElapsedTimeNow } from "@verself/ui/hooks/use-elapsed-time";
 import type { Flight } from "./model";
 import { monotone, morphSpec, phaseOf, project, type Phase, type Projection } from "./phase";
-import { useAccentSpring, useSpring } from "./springs";
+import { useSpring } from "./springs";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Conflated state-machine driver.
@@ -63,5 +63,3 @@ export function useFlightMachine(flight: Flight): Projection {
 
   return { ...target, progressTarget: progress.value };
 }
-
-export { useAccentSpring };

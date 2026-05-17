@@ -32,14 +32,13 @@ mitigation.
   (SSR, first paint) it returns a plain `border-radius` (the 4-value shorthand
   carries the asymmetry), derived from props not box size, so there is no
   hydration shift.
-- `<Squircle>`/`useSquircle` is the only corner source. Three surfaces: the
-  OLED card, the commit pill, and the commit-glyph **well** (a dark inset
-  squircle inside the pill — note d's negative-space treatment). There is **no
-  light tray** and **no Guardian chip** (the mark is bare wings) — depth is a
-  layered shadow (see Layout), not a border. The pill's radius is held well
-  under its half-height so the corner reads as a squircle _rounded rectangle_,
-  not a stadium; the well's radius is `concentric(pill, inset)` so it nests on
-  Apple's nested-rounded-rect rule rather than an ad-hoc value.
+- `<Squircle>`/`useSquircle` is the only corner source. **Two** surfaces: the
+  OLED card and the commit pill. There is no well, **no light tray** and **no
+  Guardian chip** (the mark is bare wings) — depth is a layered shadow (see
+  Layout), not a border. The pill's radius is a fraction of its **own height**
+  (`PILL_RADIUS_RATIO`, well under half-height) so the corner reads as a
+  squircle _rounded rectangle_, never a stadium, at any scale — a fixed radius
+  against a small pill is what made the prior pass "look like a pill" (note d).
 - The card corner is **bulbous and only slightly asymmetric**: the prior
   `{ 28, 46 }` read as a tight top over an oblong bottom. The fix is the radius,
   not the smoothing — `cornerSmoothing` stays Apple's canonical `0.6` (the
@@ -49,30 +48,44 @@ mitigation.
   small, so the card reads full and rounded like the reference.
 
 Radii (single source of truth, `flight-widget.tsx`): card
-`{ top: 42, bottom: 52 }`, pill `13`. The glyph well derives from the pill via
-`concentric()` — not a checked-in constant.
+`{ top: 42, bottom: 52 }`; pill `round(pillH · PILL_RADIUS_RATIO)`. No well,
+so no nested radius.
 
 ## Color and type
 
-The palette is OLED-tuned and expressed only in `oklch` (no sRGB anywhere in
-the widget). The on-time accent is **iOS `systemGreen` (dark)** — `#30D158`,
-the value the reference renders on a dark lock screen — computed once from
-sRGB → OKLab as `oklch(0.7556 0.2082 146.98)`. The widget mirrors the iOS
-Live-Activity context literally: brand Flare was a documented divergence here
-and has been **reverted** (see git history) so the green is the platform's,
-not the Newsroom treatment's. The running-late accent keeps the reference
-marigold amber. The commit glyph alone paints iOS `systemOrange` (dark) —
-`#FF9F0A` → `oklch(0.7824 0.1711 67.22)`.
+The palette is exactly **four colors** (brief note f) and expressed only in
+`oklch` (no sRGB anywhere in the widget): white, the card black, one green,
+and the gold button. Both chromatic values are **sampled from the reference
+photograph itself**, not chosen from a system palette:
 
-| Token               | Value                      | Use                          |
-| ------------------- | -------------------------- | ---------------------------- |
-| `INK`               | `oklch(1 0 0)`             | terminals, header, marker    |
-| `INK_DIM`           | `oklch(0.62 0 0)`          | empty-state text             |
-| `CARD`              | `oklch(0.05 0 0)`          | OLED card, commit-glyph well |
-| `NODE_INK`          | `oklch(0 0 0)`             | glyphs on accent fills       |
-| accent · iOS green  | `oklch(0.7556 0.2082 147)` | on-time / boarding           |
-| accent · amber      | `oklch(0.80 0.16 70)`      | running late, commit pill    |
-| commit · iOS orange | `oklch(0.7824 0.1711 67)`  | commit glyph in its well     |
+- The single accent is the reference's green — `#8FF28F`, a soft,
+  low-saturation spring-green, `oklch(0.8767 0.1631 144.03)`. This is _not_
+  iOS `systemGreen`: an earlier pass locked `systemGreen` `#30D158` on the
+  theory that the photo merely blooms the platform color, but the brief is
+  "the color used is the same as the one in the photo / single shade
+  everywhere", and the pixel sample is decisively lighter and less saturated.
+  That prior decision (and the brand-Flare one before it) is **reverted** —
+  see git history; there is no trace of either in the code.
+- The button is the reference's marigold gold — `#E9B13A`,
+  `oklch(0.7923 0.1443 82.08)`. The prior `oklch(0.80 0.16 70)` token sat at
+  hue ~70 and read "too orange" (brief); the sample is hue ~82.
+
+There is **one accent and it never varies**: `late` is label-only and does
+not recolor anything, so the old green⇄amber crossfade is gone (the accent is
+a constant, not an animated channel). The button gold is the _only_ place a
+non-grayscale-besides-green color appears; the commit glyph and its count are
+`NODE_INK` painted **directly on the gold** — there is no inset "well" and no
+third (orange) color (that negative-space treatment was a divergence the
+reference does not have — note d).
+
+| Token      | Value                      | Use                               |
+| ---------- | -------------------------- | --------------------------------- |
+| `INK`      | `oklch(1 0 0)`             | terminals, header, marker         |
+| `INK_DIM`  | `oklch(0.62 0 0)`          | empty-state text                  |
+| `CARD`     | `oklch(0.05 0 0)`          | OLED card                         |
+| `NODE_INK` | `oklch(0 0 0)`             | disc glyphs; commit glyph + count |
+| `ACCENT`   | `oklch(0.8767 0.1631 144)` | arc, both discs, the status group |
+| `BUTTON`   | `oklch(0.7923 0.1443 82)`  | the commit pill (only)            |
 
 Typography uses the Apple system stack
 (`-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
@@ -84,25 +97,30 @@ SFO/JFK is bold-not-heavy: weight `620` (between semibold and bold), tracking
 the central span. The region actor sits at the header size with near-zero
 tracking (`0.01em`) so a short all-caps run like `ASH` reads as one tight
 word, not spaced-out letters. The two status lines (`On Time` / `Building in
-1m`) are **one group**: both set at the actor/header size, leadings collapsed,
-near-identical weight (headline `590`, detail `560`) so the difference is
-luminance not boldness — the headline carries full accent, the detail the same
-hue dimmed; the pair reads as a unit, not a headline plus a caption.
+1m`) are **one group**: both set at the actor/header size, the **same green**,
+and the **same weight as `ASH`** (the shared `REGION_WEIGHT` constant) with
+leadings collapsed. The brief is explicit that the pair matches the region
+actor, and "single shade everywhere" forbids a dimmed second hue, so the only
+thing distinguishing the two lines is their text — no headline/caption weight
+or luminance hierarchy. (This is a deliberate departure from the reference,
+which carries a subtle weight difference; the brief overrides it.)
 
 ## Scale model
 
-Composition over ad-hoc numbers. One pure function, `scaleOf(cardW)`, maps the
-measured card width to the entire figure scale; nothing downstream invents a
-size. The card is measured once (`useMeasuredWidth`, the same sanctioned
-DOM-measurement exception as `<Squircle>`/`<FlightArc>`); SSR and the first
-client render fall back to the max-width scale, so there is no hydration shift.
+Composition over ad-hoc numbers. One pure function, `scaleOf(cardW, routeH)`,
+maps the measured card width **and the route band the layout computed** to the
+entire figure scale; nothing downstream invents a size. The card is measured
+once; SSR and the first client render fall back to the max-width scale, so
+there is no hydration shift.
 
-`Scale = { terminalPx, discPx, arrowPx, arcStroke, markerR, headerPx }`, all
-derived from `terminalPx`:
+`Scale = { terminalPx, discPx, arrowPx, arcStroke, markerR, headerPx,
+statusPx, pillH }`, all derived from `terminalPx`:
 
-- `terminalPx` is clamped (`28 … 48`) off card width — terminals dominate like
-  SFO/JFK but the reference's are bold-not-huge, so the band is a touch under
-  the prior `30 … 52` (brief note h).
+- `terminalPx = clamp(min(cardW · 0.085, routeH · 0.7), 28, 46)` — width
+  governs (the reference's terminals are bold-not-huge, note h) **but it is
+  also capped to the route band the safe-rect layout produced**, so the
+  terminals can never overflow the band and crush the arc at any card
+  height — the composition loop is closed by construction.
 - `discPx = round(terminalPx · SF_CAP_RATIO · DISC_TO_CAP)`. The endpoint
   disc diameter is **≈ half the airport-code cap height** (brief note a);
   `SF_CAP_RATIO = 0.714` (SF Pro Display cap-height ÷ em), `DISC_TO_CAP` tuned
@@ -121,24 +139,39 @@ derived from `terminalPx`:
 ## Layout
 
 `WIDGET_MAX_PX = 598` is the whole widget width. The card's **black box is
-exactly `CARD_H_PX = 160`px tall** — its padding lives inside the 160; only the
-surrounding page gutter is outside (brief note c). `CARD_H_PX` is a parameter,
-not a literal sprinkled through the layout: `bandsOf(height)` is the single
-pure function that splits any card height into header / route / status bands,
-so the future **lock-screen variant (320px, not yet designed)** is one
-argument, never a forked layout. Interior vertical padding is generous (note c
-asks for more top/bottom air than the prior pass). Depth is a three-layer
-`box-shadow` — contact `0 1px 2px /.07`, key `0 5px 12px -4px /.16`, ambient
-`0 22px 46px -16px /.30`, one overhead light source (offsets vertical, opacity
-falling as blur grows) — so the card reads as a low-elevation Live Activity
-floating on the page. The signed-in surface keeps the **default light console
-background** (`app-shell.tsx` unchanged): on light the dark shadow reads
-directly (it would vanish on black, where a faint light hairline would replace
-it instead), matching the reference. Below 598px every element shrinks fluidly
-through the scale model; terminals are capped + `shrink-0` so the arc keeps the
-dominant central span. Vertically centered, `5` horizontal page gutter.
+exactly `CARD_H_PX = 160`px tall** — its padding lives inside the 160; only
+the surrounding page gutter is outside (brief note c).
 
-Card vertical structure (deterministic `bandsOf(CARD_H_PX)` split — **not**
+**Safe rectangle (correct by construction).** Content must never enter a
+bulbous corner or it clips. `layoutOf(cardW, cardH, radius)` is the single
+pure function that computes the largest inner rectangle provably clear of the
+corner curve and splits it into header / route / status bands. The proof needs
+no SVG-path parsing: figma's corner-smoothing bows the curve _outward_ (a
+fuller corner than a plain rounded rect), so for any `cornerSmoothing ≥ 0` the
+inward depth of the vendored superellipse at an edge offset is `≤` the depth
+of a **circular** arc of the same radius; `cornerDepth(x, r)` returns that
+circular bound, and the vertical pad is `max(that floor, aesthetic air)`. So
+clipping is impossible _and_ the air matches the reference. The aesthetic air
+is `VERTICAL_AIR_RATIO · cardH` (the reference reads ≈1.5–2.5× the prior fixed
+16px — note c); side padding tracks width continuously (the old responsive
+`px-7 → px-9`) and feeds the safety math as a single source. `CARD_H_PX` is a
+parameter, so the future **lock-screen variant (320px, not yet designed)** is
+one argument to `layoutOf`, never a forked layout.
+
+**Elevation.** Depth is the `elevation(liftPt)` framework, not hand-written
+numbers: one overhead light source and a single _lift_ choice produce the
+three stacked layers (contact/key/ambient; vertical offsets, geometry a fixed
+multiple of the lift). The card picks `LIVE_ACTIVITY_LIFT` (5pt — Live
+Activities float low), which evaluates to exactly contact `0 1px 2px /.07`,
+key `0 5px 12px -4px /.16`, ambient `0 22px 46px -16px /.30`. The signed-in
+surface keeps the **default light console background**: on light the dark
+shadow reads directly (it would vanish on black, where a light hairline would
+replace it — a different surface treatment, intentionally out of the
+function's scope), matching the reference. Below 598px every element shrinks
+fluidly; terminals are capped + `shrink-0` so the arc keeps the dominant
+central span. Vertically centered, `5` horizontal page gutter.
+
+Card vertical structure (deterministic `layoutOf` band split — **not**
 `flex`/`justify-between`; `h-full` against an indefinite flex parent collapses
 the arc to zero, so the band heights are computed px, padding inside):
 
@@ -180,8 +213,9 @@ The machine is **extensible by construction** (open/closed):
 - Add a phase = add a `Phase` variant + one `CLASSIFIERS` row (ordered, first
   match wins) + one `project` arm. Existing rows are untouched.
 - The renderer never switches on `Phase`. It consumes a flat `Projection`
-  (animated targets: `progressTarget`, `accent`, `headline`, `detail`,
-  `phaseKind`), so a new phase changes values, not components.
+  (`progressTarget`, `headline`, `detail`, `phaseKind`), so a new phase
+  changes values, not components. There is no `accent` field: the accent is a
+  single constant (note f), not a per-phase animated channel.
 - Transition behavior is declared in `MORPH`, a `(from→to)` table, not branched
   in code. `interruptible: true` (e.g. `enroute→late`) lets a transition preempt
   an in-flight morph; unlisted pairs wait for the morph boundary.
@@ -201,8 +235,8 @@ ever stored; skipped phases were never recorded. This is the standard
 conflation / signal-sampling pattern (Rx `conflate`+`sample`, game-loop "latest
 input wins", a size-1 ring). In React the cell is a ref and the sampler is the
 spring's rest/step callback (`machine.ts`). Discrete phase is sampled at morph
-boundaries (intermediates lopped); continuous quantities (progress `t`, accent)
-use spring **retargeting**, which conflates by physics — smooth, no replay.
+boundaries (intermediates lopped); the one continuous quantity (progress `t`)
+uses spring **retargeting**, which conflates by physics — smooth, no replay.
 
 `Phase` is a discriminated union, total over `(Flight, now)`:
 
@@ -232,9 +266,10 @@ Transition rules and invariants, enforced by construction:
   detail, not a distinct phase. The arc uses a small fixed
   `INDETERMINATE_DRIFT = 0.06` placeholder until a no-baseline arc treatment is
   specified.
-- **`late` is label-only.** The phase models the transition; accent crossfades
-  to amber and the marker holds at `LATE_ASYMPTOTE = 0.92`. No further `late`
-  geometry or treatment is designed pending mockups.
+- **`late` is label-only.** The phase changes the headline to `Running Late`
+  and the marker holds at `LATE_ASYMPTOTE = 0.92`. It does **not** recolor
+  anything — single shade everywhere (note f), so there is no accent crossfade.
+  No further `late` geometry or treatment is designed pending mockups.
 
 Status lines (bottom-left, two tight rows, no vertical padding):
 
@@ -263,9 +298,14 @@ and the progress shimmer.
   a stroke-scaled round-capped dot pattern so it reads as even dots at any
   card size.
 - Both endpoints sit exactly on the vertical centre (the disc-centre line),
-  inset by the disc radius; the controls pull hard toward the top so the apex
-  clears the discs and the span between them is the dominant lob — the
-  reference's confident climb-out, not a flat hop.
+  inset by the disc radius. The control points are **numerically fitted**
+  (least-squares) to the traced reference arc, not eyeballed: a **shallow,
+  front-loaded lob** — a steep climb out of the source disc through an apex at
+  x-fraction ≈0.47, then a long gentle descent into the destination (the
+  brief's "left third more intense, right two-thirds more gradual", note a).
+  Rise is expressed against the disc-to-disc **span**, not the band height, so
+  the lob keeps the reference's proportions at any width and may overshoot the
+  band into the safe air (the squircle clip is the only real bound).
 - The marker is **always** the Verself brand triangle (`▽`), a solid white
   equilateral mark whose circumradius is `markerR` (derived from the disc), at
   `pointAt(t)` and rotated to `tangentDeg(t)` so its apex leads the path. It is
@@ -273,15 +313,19 @@ and the progress shimmer.
   injected rather than hardcoded in geometry.
 - `t` is the phase-derived progress after the monotone gate, driven by a spring,
   so the marker glides and never reverses.
-- **Progress shimmer (brief note l).** The solid head periodically flashes a
-  brighter band that sweeps origin → marker, the standard "work is in motion"
-  cue. It is a **decorative layer with no state-machine coupling**: a looping
-  SVG gradient masked to the solid sub-path, NOT a second progress channel. It
-  never reads or moves `t`, never feeds the monotone gate, and is gated to the
-  building phases (off at `boarding` t≡0 and `late`). Removing it changes
-  nothing about phase, progress, or the marker.
+- **Progress shimmer (brief note g).** A soft bright band flows **continuously**
+  origin → marker along the solid head — the standard "work is in motion" cue.
+  One period of the gradient is tiled across the path (`spreadMethod="repeat"`,
+  ≈1.5 bands visible — "a gradient and a half") and translated by **exactly one
+  period** at constant velocity on an indefinite loop; because the pattern is
+  period-periodic, +1 period maps it onto itself, so the motion is perfectly
+  **seamless — it flows, it does not flash once and pause** (the prior
+  sweep-then-hold strobed). It is a **decorative layer with no state-machine
+  coupling**: pure SMIL, never reads or moves `t`, never feeds the monotone
+  gate, gated to `enroute` only (off at `boarding` t≡0 and `late`). Removing it
+  changes nothing about phase, progress, or the marker.
 - Geometry (`pointAt`, `tangentDeg`, `splitAt`, `arcGeometry`) is pure and holds
-  no React or time. Control-point ratios are tuned to the reference.
+  no React or time. Control-point ratios are the numeric fit above.
 
 ## Interpolation
 
@@ -290,15 +334,15 @@ flight marker must never bounce backward) on `requestAnimationFrame`, in
 `springs.ts`, kept behind hooks so the component tree never imports the engine
 directly. Vendored rather than `@react-spring/web` for the same supply-chain
 reason as the squircle math (no agent-side lockfile path); the physics is ~40
-lines and the monotone guarantee already lives in the machine. Animated
-quantities: arc progress and marker glide, and the accent oklch crossfade on
-phase change (each of L, C, H rides its own spring; iOS green → amber is a
-smooth sweep). Monotonicity is enforced on the target, never inside the
-spring; the spring's at-rest signal is the machine's discrete-phase morph
-boundary. The **progress shimmer is the one animation deliberately outside the
-spring engine** — a bounded, self-contained decorative loop (note l) with no
-input from and no output to phase, progress, or the monotone gate, so it is
-structurally unable to perturb the marker.
+lines and the monotone guarantee already lives in the machine. The **only**
+sprung quantity is arc progress / marker glide — the accent is a single
+constant now (no crossfade), so the per-channel L/C/H springs are gone.
+Monotonicity is enforced on the target, never inside the spring; the spring's
+at-rest signal is the machine's discrete-phase morph boundary. The **progress
+shimmer is the one animation deliberately outside the spring engine** — a
+bounded, self-contained decorative loop (note g) with no input from and no
+output to phase, progress, or the monotone gate, so it is structurally unable
+to perturb the marker.
 
 ## Content and iconography
 
@@ -307,14 +351,15 @@ structurally unable to perturb the marker.
 - The house mark is bare white wings, not a per-run datum; it is the same on
   every card. No chip, no wordmark.
 - No "jobs left" anywhere. The concept is removed from the model, not hidden.
-- The commit pill keeps the production git-commit glyph (solid centre node,
-  heavier connector bars). The pill is amber; inside it, a small dark
-  **well** — an OLED-black `<Squircle>` whose radius is `concentric()` of the
-  pill's — holds the glyph painted iOS `systemOrange` (brief note d's
-  negative-space treatment: the glyph reads as orange light through a punched
-  recess, not ink on amber). The well and the glyph are sized to ≈ the
-  reference baggage icon. The pill is a `<Squircle>` with an integer-px box (so
-  the clip-path never hairline-aliases — brief note k) and links to the logs.
+- The commit pill is the gold `BUTTON` `<Squircle>` (rounded-rect, never a
+  stadium — radius from its own height). It carries the git-commit glyph and
+  the count painted **`NODE_INK` directly on the gold** — no well, no recess,
+  no orange (the reference is solid black on the chip; the prior
+  orange-through-a-punched-well was a divergence — note d). The glyph's own
+  viewBox is tight-cropped (a dense, compact mark, ≈20% less internal negative
+  space) and it is sized to the reference baggage-chip footprint (≈30% under
+  the prior pass). Integer-px box so the clip-path never hairline-aliases
+  (note k); links to the logs.
 
 ## Mocking
 
@@ -334,19 +379,20 @@ auth-gated and opt-in (live is the default):
 
 ## Module seams
 
-| Concern                                                                  | Module              | Pure |
-| ------------------------------------------------------------------------ | ------------------- | ---- |
-| Electric row → `Flight`                                                  | `model.ts`          | yes  |
-| classify `Phase`, `project` → `Projection`, `MORPH` table, monotone gate | `phase.ts`          | yes  |
-| conflating cell, sampler, FSM driver (`useFlightMachine`)                | `machine.ts`        | no   |
-| bezier point/tangent/split                                               | `geometry.ts`       | yes  |
-| full per-corner figma-squircle, `concentric` (well nests in pill)        | `squircle.tsx`      | no   |
-| interpolation hooks, accent resolution                                   | `springs.ts`        | no   |
-| arc draw + marker + decorative shimmer (consumes a bezier)               | `flight-arc.tsx`    | no   |
-| scale model, one bezier, endpoint-tangent arrows, composition            | `flight-widget.tsx` | no   |
+| Concern                                                                    | Module              | Pure |
+| -------------------------------------------------------------------------- | ------------------- | ---- |
+| Electric row → `Flight`                                                    | `model.ts`          | yes  |
+| classify `Phase`, `project` → `Projection`, `MORPH` table, monotone gate   | `phase.ts`          | yes  |
+| conflating cell, sampler, FSM driver (`useFlightMachine`)                  | `machine.ts`        | no   |
+| bezier point/tangent/split                                                 | `geometry.ts`       | yes  |
+| full per-corner figma-squircle (uniform or `{top,bottom}`)                 | `squircle.tsx`      | no   |
+| critically-damped scalar spring (progress only)                            | `springs.ts`        | no   |
+| `elevation(lift)` → composed 3-layer shadow                                | `elevation.ts`      | yes  |
+| arc draw + marker + continuous decorative shimmer (consumes a bezier)      | `flight-arc.tsx`    | no   |
+| safe-rect `layoutOf`, scale model, one bezier, tangent arrows, composition | `flight-widget.tsx` | no   |
 
 `model.ts` carries no clock, phase, or presentation. `phase.ts` is pure and the
 state machine is independently auditable there; `machine.ts` is the only
-stateful seam (clock, conflation, morph boundary). `flight-widget.tsx` carries
-no math or logic beyond the pure `scaleOf` token map and consumes only a
-`Projection`.
+stateful seam (clock, conflation, morph boundary). `elevation.ts` and the
+`layoutOf`/`scaleOf`/`cornerDepth` helpers are pure; `flight-widget.tsx`
+carries no math beyond them and consumes only a `Projection`.
