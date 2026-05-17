@@ -65,11 +65,12 @@ export function useSquircle<T extends HTMLElement = HTMLDivElement>(
     if (!el || typeof ResizeObserver === "undefined") return;
     const measure = () => {
       const rect = el.getBoundingClientRect();
-      setBox((prev) =>
-        prev && prev.w === rect.width && prev.h === rect.height
-          ? prev
-          : { w: rect.width, h: rect.height },
-      );
+      // Integer box: a fractional clip-path('…') rasterizes a hairline-aliased
+      // edge (brief note k). Rounding the measured box snaps the corner path
+      // to the pixel grid for every squircle (card, pill, well).
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      setBox((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
     };
     measure();
     const ro = new ResizeObserver(measure);

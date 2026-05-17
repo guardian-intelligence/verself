@@ -1,45 +1,60 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { WINGS_CROPPED_VIEWBOX, WINGS_PATH_D } from "@verself/brand/components/wings";
 import { FlightArc } from "./flight-arc";
+import { arcGeometry, tangentDeg } from "./geometry";
 import { GitCommitGlyph } from "./git-commit-glyph";
+import { IPhoneFrame, type FrameKind } from "./iphone-frame";
 import { useAccentSpring, useFlightMachine } from "./machine";
 import type { Flight } from "./model";
 import type { PhaseKind } from "./phase";
-import { type CornerRadius, Squircle, useSquircle } from "./squircle";
+import { concentric, type CornerRadius, Squircle, useSquircle } from "./squircle";
 
 // ── Numeric tokens (single source of truth; the brief tunes these here) ──────
 
 // The whole widget maxes at 598px wide. The card's BLACK BOX is exactly 160px
 // tall (padding lives inside it); only the surrounding page gutter is outside.
 const WIDGET_MAX_PX = 598;
+// CARD_H_PX is a parameter, not a literal sprinkled through the layout. The
+// future lock-screen variant (320, not yet designed) is one argument to
+// bandsOf — never a forked layout.
 const CARD_H_PX = 160;
 
-// Deterministic vertical layout. The 160px black box is split into three
-// explicit bands so the route gets a definite, generous height for the arc —
-// percentage/flex-1 height against an indefinite parent collapses the arc to
-// zero, so the band heights are computed, not flexed. STATUS_BAND ≥ pill
-// height; ROUTE_BAND takes the rest and is the dominant centre band.
-const PAD_Y = 14; // vertical padding inside the box
-const HEADER_BAND = 22;
-const STATUS_BAND = 38;
-const ROUTE_BAND = CARD_H_PX - 2 * PAD_Y - HEADER_BAND - STATUS_BAND;
+// Deterministic vertical layout. bandsOf splits ANY card height into three
+// explicit bands so the route gets a definite, generous height for the arc;
+// percentage/flex height against an indefinite parent collapses the arc to
+// zero, so the band heights are computed, not flexed. Interior padding is
+// generous (brief note c asks for more top/bottom air than the prior pass).
+type Bands = {
+  readonly pad: number;
+  readonly header: number;
+  readonly route: number;
+  readonly status: number;
+};
+function bandsOf(height: number): Bands {
+  const pad = 18; // vertical padding inside the box (was 14 — note c)
+  const header = 22;
+  const status = 40; // ≥ pill height; holds the tight status group
+  return { pad, header, status, route: height - 2 * pad - header - status };
+}
 
-// Asymmetric continuous corners: an iOS Live Activity is a fixed 3-D corner
-// "wheel" projected onto the lock-screen — the top edge tucks under the
-// Dynamic Island (tighter radius) while the free bottom edge rides a fuller
-// part of the wheel. figma-squircle's per-corner distribution keeps all four
-// on Apple's superellipse while top ≠ bottom, so vertical swipes stay seamless.
-const CARD_RADIUS: CornerRadius = { top: 28, bottom: 46 };
-// Pill radius is held well under its half-height so the corner reads as a
+// Asymmetric continuous corners. The prior `{ 28, 46 }` read as a tight top
+// over an oblong bottom (brief note i). Both corners grow and converge into a
+// bulbous, only-slightly-asymmetric card: the top still tucks marginally
+// tighter than the free bottom edge (the iOS Dynamic-Island "wheel"
+// metaphor), but the gap is small. cornerSmoothing stays Apple-canonical 0.6
+// (the figma plugin default) — the fix is the radius, not the smoothing.
+const CARD_RADIUS: CornerRadius = { top: 42, bottom: 52 };
+// Pill radius held well under its half-height so the corner reads as a
 // squircle rounded-rectangle, not a stadium.
-const PILL_RADIUS = 12;
-const CHIP_RADIUS = 6;
+const PILL_RADIUS = 13;
+// The commit-glyph well is inset inside the pill; its radius nests on Apple's
+// nested-rounded-rect rule rather than an ad-hoc value.
+const WELL_INSET = 4;
 
-// iOS fidelity: the real San Francisco on Apple devices (the reference
-// context), a near-equivalent neo-grotesque elsewhere. Brand Geist is
-// deliberately not used here.
+// iOS fidelity: real San Francisco on Apple devices (the reference context),
+// a near-equivalent neo-grotesque elsewhere. Brand Geist is deliberately not
+// used here — the whole card stays one type system.
 const IOS_FONT =
   '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif';
 
@@ -47,6 +62,10 @@ const INK = "oklch(1 0 0)";
 const INK_DIM = "oklch(0.62 0 0)";
 const CARD = "oklch(0.05 0 0)";
 const NODE_INK = "oklch(0 0 0)";
+const ACCENT_AMBER = "oklch(0.8 0.16 70)";
+// iOS systemOrange (dark) — the commit glyph reads as orange light through the
+// punched well (brief note d's negative-space treatment).
+const IOS_ORANGE = "oklch(0.7824 0.1711 67.22)";
 
 // Live-Activity elevation: one overhead light source, three stacked layers —
 // a tight contact shadow that grounds the card, a medium key shadow that is
@@ -60,23 +79,27 @@ const CARD_SHADOW =
 // ── Scale model (pure: card width → every derived size) ─────────────────────
 //
 // Composition over ad-hoc numbers. One pure function maps the measured card
-// width to the full type/figure scale, so the disc, arrow, arc stroke and
-// marker are all *derived* from the airport-code size — never magic constants.
-// Brief note (a): the disc diameter stays ≈ half the airport-code height.
+// width to the full type/figure scale, so the disc, arrow, arc stroke, marker
+// and status group are all *derived* — never magic constants. Brief note (a):
+// the disc stays ≈ half the airport-code cap height, but the stroke / dots /
+// marker / arrow were 2–3× too heavy and drop hard here.
 
 type Scale = {
   readonly terminalPx: number; // airport-code font size
   readonly discPx: number; // green endpoint disc diameter
-  readonly arrowPx: number; // arrow glyph inside the disc
-  readonly arcStroke: number; // flight-path stroke width
-  readonly markerR: number; // triangle marker circumradius
-  readonly headerPx: number; // actor / wordmark size
+  readonly arrowPx: number; // arrow glyph box inside the disc
+  readonly arrowStroke: number; // arrow stroke (fine — note a)
+  readonly arcStroke: number; // flight-path stroke width (thin — note a)
+  readonly markerR: number; // triangle marker circumradius (small — note a)
+  readonly headerPx: number; // actor / house-mark size
+  readonly statusPx: number; // status group — matches the actor size (note e)
+  readonly pillH: number; // commit pill height
 };
 
-// SF Pro Display: cap-height ÷ font-size. The airport-code "height" the brief
+// SF Pro Display cap-height ÷ font-size. The airport-code "height" the brief
 // means is the cap height of the rendered glyphs, not the em box.
 const SF_CAP_RATIO = 0.714;
-// Brief note (a): "about half the height of the airport code". Tunable.
+// Brief note (a): "about half the height of the airport code".
 const DISC_TO_CAP = 0.52;
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -85,40 +108,54 @@ function clamp(n: number, lo: number, hi: number): number {
 
 function scaleOf(cardW: number): Scale {
   const w = clamp(cardW, 0, WIDGET_MAX_PX);
-  // Terminals dominate like SFO/JFK in the reference; calibrated so a
-  // full-width card lands ~52px and never starves below ~30px.
-  const terminalPx = clamp(w * 0.099, 30, 52);
+  // Terminals dominate like SFO/JFK, but the reference's are bold-not-huge:
+  // a touch under the prior pass (brief note h).
+  const terminalPx = clamp(w * 0.085, 28, 46);
   const capPx = terminalPx * SF_CAP_RATIO;
   const discPx = Math.round(capPx * DISC_TO_CAP);
   const arrowPx = Math.round(discPx * 0.62);
-  const arcStroke = Math.max(4, Math.round(discPx * 0.42));
-  const markerR = Math.max(6, Math.round(discPx * 0.7));
-  const headerPx = clamp(terminalPx * 0.3, 12, 16);
-  return { terminalPx, discPx, arrowPx, arcStroke, markerR, headerPx };
+  // Fine weights — the reference arc is a thin confident line, not a rope.
+  const arrowStroke = Math.max(1.25, discPx * 0.085);
+  const arcStroke = Math.max(2, Math.round(discPx * 0.17));
+  const markerR = Math.max(4, Math.round(discPx * 0.52));
+  const headerPx = clamp(terminalPx * 0.33, 12, 16);
+  return {
+    terminalPx,
+    discPx,
+    arrowPx,
+    arrowStroke,
+    arcStroke,
+    markerR,
+    headerPx,
+    statusPx: headerPx, // note e: the status group matches the ASH size
+    pillH: clamp(Math.round(terminalPx * 0.74), 28, 40),
+  };
 }
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? () => {} : useLayoutEffect;
 
-// Measures one element's width with a ResizeObserver. SSR / pre-measure
-// returns null and the caller falls back to the max-width scale, which is
-// identical on the server and the first client render (no hydration shift);
-// the observer refines it after mount. Same sanctioned DOM-measurement
-// exception as <Squircle> / <FlightArc>.
-function useMeasuredWidth(ref: React.RefObject<HTMLElement | null>): number | null {
-  const [width, setWidth] = useState<number | null>(null);
+// Measures one element's integer box with a ResizeObserver. SSR / pre-measure
+// returns null and the caller falls back to a deterministic value, identical
+// on the server and the first client render (no hydration shift); the observer
+// refines it after mount. Rounded to integers so the squircle clip-path and
+// the SVG viewBox never sit on sub-pixel boundaries (brief note k).
+function useBox(ref: React.RefObject<HTMLElement | null>): { w: number; h: number } | null {
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   useIsomorphicLayoutEffect(() => {
     const el = ref.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const measure = () => {
-      const w = el.getBoundingClientRect().width;
-      setWidth((prev) => (prev !== null && Math.abs(prev - w) < 0.5 ? prev : w));
+      const r = el.getBoundingClientRect();
+      const w = Math.round(r.width);
+      const h = Math.round(r.height);
+      setBox((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [ref]);
-  return width;
+  return box;
 }
 
 // ── Composition root ────────────────────────────────────────────────────────
@@ -126,12 +163,14 @@ function useMeasuredWidth(ref: React.RefObject<HTMLElement | null>): number | nu
 export function FlightBoard({
   flights,
   orgSlug,
+  frame,
 }: {
   readonly flights: readonly Flight[];
   readonly orgSlug: string;
+  readonly frame?: FrameKind | undefined;
 }) {
   return (
-    <FlightCanvas>
+    <FlightCanvas frame={frame}>
       {flights.length === 0 ? (
         <FlightShell>
           <div className="flex flex-1 items-center justify-center">
@@ -159,22 +198,34 @@ export function FlightConsoleSkeleton() {
 
 // ── Layout shells ───────────────────────────────────────────────────────────
 
-function FlightCanvas({ children }: { readonly children: ReactNode }) {
+function FlightCanvas({
+  children,
+  frame,
+}: {
+  readonly children: ReactNode;
+  readonly frame?: FrameKind | undefined;
+}) {
+  const board = (
+    <div className="flex w-full flex-col gap-5" style={{ maxWidth: WIDGET_MAX_PX }}>
+      {children}
+    </div>
+  );
+  // `?...&frame=iphone17` is a dev-only calibration overlay (DESIGN.md) — it
+  // renders the card in a pixel-accurate iPhone bezel so the squircle can be
+  // tuned 1:1. It is never part of the shipped console surface.
   return (
     <div
       className="flex min-h-[80svh] w-full items-center justify-center px-5 py-12"
       style={{ fontFamily: IOS_FONT }}
     >
-      <div className="flex w-full flex-col gap-5" style={{ maxWidth: WIDGET_MAX_PX }}>
-        {children}
-      </div>
+      {frame ? <IPhoneFrame kind={frame}>{board}</IPhoneFrame> : board}
     </div>
   );
 }
 
-// One OLED squircle card, exactly 160px tall (the black box; padding is
-// inside). Depth is the layered shadow, not a tray/border, so it reads as an
-// elevated iOS Live Activity floating on the page.
+// One OLED squircle card, exactly CARD_H_PX tall (the black box; padding is
+// inside). Depth is the layered shadow, not a tray/border. Font smoothing +
+// own compositing layer kill the sub-pixel clip-path/text shimmer (note k).
 function FlightShell({ children }: { readonly children: ReactNode }) {
   return (
     <Squircle
@@ -183,9 +234,13 @@ function FlightShell({ children }: { readonly children: ReactNode }) {
       className="flex flex-col px-7 sm:px-9"
       style={{
         height: CARD_H_PX,
-        paddingBlock: PAD_Y,
+        paddingBlock: bandsOf(CARD_H_PX).pad,
         background: CARD,
         boxShadow: CARD_SHADOW,
+        transform: "translateZ(0)",
+        WebkitFontSmoothing: "antialiased",
+        MozOsxFontSmoothing: "grayscale",
+        textRendering: "optimizeLegibility",
       }}
     >
       {children}
@@ -203,18 +258,22 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
 
   // Single measurement → single Scale → every derived size below.
   const measureRef = useRef<HTMLDivElement | null>(null);
-  const cardW = useMeasuredWidth(measureRef);
-  const scale = scaleOf(cardW ?? WIDGET_MAX_PX);
+  const cardBox = useBox(measureRef);
+  const scale = scaleOf(cardBox?.w ?? WIDGET_MAX_PX);
+  const bands = bandsOf(CARD_H_PX);
 
   return (
     <FlightShell>
       {/* Three explicit bands summing to the content box — header / route /
           status. The route band has a definite height so the arc fills it. */}
       <div ref={measureRef} className="flex flex-col">
-        <div className="flex shrink-0 items-center justify-between" style={{ height: HEADER_BAND }}>
+        <div
+          className="flex shrink-0 items-center justify-between"
+          style={{ height: bands.header }}
+        >
           <FlightHeader actor={flight.actorLabel} scale={scale} />
         </div>
-        <div className="shrink-0" style={{ height: ROUTE_BAND }}>
+        <div className="shrink-0" style={{ height: bands.route }}>
           <FlightRoute
             source={flight.sourceLabel}
             dest={flight.destLabel}
@@ -226,14 +285,20 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
         </div>
         <div
           className="flex shrink-0 items-end justify-between gap-4"
-          style={{ height: STATUS_BAND }}
+          style={{ height: bands.status }}
         >
-          <FlightStatus headline={proj.headline} detail={proj.detail} accent={accent} />
+          <FlightStatus
+            headline={proj.headline}
+            detail={proj.detail}
+            accent={accent}
+            scale={scale}
+          />
           {flight.commitPill !== null ? (
             <CommitPill
               orgSlug={orgSlug}
               providerRunId={flight.providerRunId}
               count={flight.commitPill}
+              scale={scale}
             />
           ) : null}
         </div>
@@ -244,50 +309,44 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
 
 // ── Leaves ──────────────────────────────────────────────────────────────────
 
-// Header row: the region actor (left) and the Guardian lockup (right),
-// mirroring the reference's "FL234 … ✈ FLIGHTY". The region label keeps a
-// touch of tracking for the all-caps run, but far less than before so "ASH"
-// reads as a word, not spaced-out letters (brief note g).
+// Header row: the region actor (left) and the house mark (right), mirroring
+// the reference's "FL234 … ✈ FLIGHTY". The actor keeps near-zero tracking so a
+// short all-caps run like ASH reads as one tight word, not spaced-out letters
+// (brief note g).
 function FlightHeader({ actor, scale }: { readonly actor: string; readonly scale: Scale }) {
   return (
     <>
-      <p className="font-medium tracking-[0.05em]" style={{ color: INK, fontSize: scale.headerPx }}>
+      <p
+        className="tracking-[0.01em]"
+        style={{ color: INK, fontSize: scale.headerPx, fontWeight: 530 }}
+      >
         {actor}
       </p>
-      <GuardianMark sizePx={scale.headerPx} />
+      <HouseMark sizePx={scale.headerPx} />
     </>
   );
 }
 
-// The Verself house mark: the Guardian wings in OLED-black inside a small white
-// squircle chip (our own corner primitive, so the chip is a true squircle),
-// then the GUARDIAN wordmark — the reference's white-chip + dark-glyph +
-// wordmark lockup, rebuilt on-brand.
-function GuardianMark({ sizePx }: { readonly sizePx: number }) {
-  const chip = Math.round(sizePx * 1.3);
+// Bare white wings — no chip, no GUARDIAN wordmark (brief note j → bare). The
+// same argent glyph the company masthead carries, painted INK, sized quiet.
+// The cropped viewBox is glyph-hugging (portrait), so width tracks its aspect.
+function HouseMark({ sizePx }: { readonly sizePx: number }) {
+  const h = Math.round(sizePx * 1.18);
+  const w = Math.round(h * (102.174 / 120.823));
   return (
-    <div className="flex items-center gap-2">
-      <Squircle
-        cornerRadius={CHIP_RADIUS}
-        className="flex items-center justify-center"
-        style={{ width: chip, height: chip, background: INK }}
-        aria-hidden="true"
-      >
-        <svg
-          viewBox={WINGS_CROPPED_VIEWBOX}
-          style={{ width: "62%", height: "62%" }}
-          role="presentation"
-          focusable="false"
-        >
-          <path d={WINGS_PATH_D} fill={CARD} />
-        </svg>
-      </Squircle>
-      <span className="font-semibold tracking-[0.14em]" style={{ color: INK, fontSize: sizePx }}>
-        GUARDIAN
-      </span>
-    </div>
+    <svg
+      viewBox={WINGS_CROPPED_VIEWBOX}
+      style={{ width: w, height: h }}
+      role="presentation"
+      focusable="false"
+      aria-hidden="true"
+    >
+      <path d={WINGS_PATH_D} fill={INK} />
+    </svg>
   );
 }
+
+const ROUTE_FALLBACK = { w: 260, h: 60 } as const; // SSR / pre-measure
 
 function FlightRoute({
   source,
@@ -304,20 +363,33 @@ function FlightRoute({
   readonly phaseKind: PhaseKind;
   readonly scale: Scale;
 }) {
+  // The route band owns the measured box and builds the bezier ONCE; the arc
+  // consumes it and so do both endpoint arrows — single geometry source
+  // (brief note b). Endpoints inset by the disc radius, so the curve provably
+  // runs disc-centre → disc-centre.
+  const pgRef = useRef<HTMLDivElement | null>(null);
+  const pg = useBox(pgRef);
+  const w = pg && pg.w > 0 ? pg.w : ROUTE_FALLBACK.w;
+  const h = pg && pg.h > 0 ? pg.h : ROUTE_FALLBACK.h;
+  const bezier = arcGeometry({ width: w, height: h, inset: scale.discPx / 2 });
+  const outboundDeg = tangentDeg(bezier, 0); // climb-out, into the source disc
+  const inboundDeg = tangentDeg(bezier, 1); // descent, into the dest disc
+
   return (
     <div className="flex h-full items-center">
       <div className="flex h-full w-full items-center gap-2 sm:gap-3">
         <Terminal label={source} scale={scale} />
         {/* Path group: the arc fills the whole route band absolutely; the
-            discs sit on top at the exact bezier endpoints, so the curve
-            provably runs disc-centre → disc-centre as one continuous line.
-            h-full so the arc has the full vertical band for a generous lob. */}
-        <div className="relative flex h-full flex-[1_1_54%] items-center">
+            discs sit on top at the exact bezier endpoints, so the curve reads
+            as one continuous line tucked under both discs. */}
+        <div ref={pgRef} className="relative flex h-full flex-[1_1_54%] items-center">
           <FlightArc
+            bezier={bezier}
+            width={w}
+            height={h}
             progress={progress}
             accent={accent}
             phaseKind={phaseKind}
-            discPx={scale.discPx}
             strokeWidth={scale.arcStroke}
             markerR={scale.markerR}
           />
@@ -326,17 +398,14 @@ function FlightRoute({
             scale={scale}
             className="absolute left-0 top-1/2 -translate-y-1/2"
           >
-            <ArrowUpRight style={{ width: scale.arrowPx, height: scale.arrowPx }} strokeWidth={3} />
+            <ArrowGlyph deg={outboundDeg} px={scale.arrowPx} stroke={scale.arrowStroke} />
           </Endpoint>
           <Endpoint
             accent={accent}
             scale={scale}
             className="absolute right-0 top-1/2 -translate-y-1/2"
           >
-            <ArrowDownRight
-              style={{ width: scale.arrowPx, height: scale.arrowPx }}
-              strokeWidth={3}
-            />
+            <ArrowGlyph deg={inboundDeg} px={scale.arrowPx} stroke={scale.arrowStroke} />
           </Endpoint>
         </div>
         <Terminal label={dest} scale={scale} />
@@ -345,14 +414,14 @@ function FlightRoute({
   );
 }
 
-// Terminals are the visual mass (the SFO/JFK proportion): capped size +
-// no-wrap + shrink-0 so the arc keeps the dominant central span at 598px and
-// narrower.
+// Terminals are the visual mass (the SFO/JFK proportion) but bold-not-heavy
+// (brief note h): weight 620, capped size, no-wrap + shrink-0 so the arc keeps
+// the dominant central span at 598px and narrower.
 function Terminal({ label, scale }: { readonly label: string; readonly scale: Scale }) {
   return (
     <span
-      className="shrink-0 whitespace-nowrap font-bold tracking-[-0.01em]"
-      style={{ color: INK, fontSize: scale.terminalPx, lineHeight: 1 }}
+      className="shrink-0 whitespace-nowrap tracking-[-0.01em]"
+      style={{ color: INK, fontSize: scale.terminalPx, fontWeight: 620, lineHeight: 1 }}
     >
       {label}
     </span>
@@ -380,26 +449,65 @@ function Endpoint({
   );
 }
 
-// Bottom-left status, two tight rows (brief note e: no vertical padding; the
-// detail sits directly under the headline like the reference's "On Time /
-// Landing in 55m").
+// One right-pointing arrow rotated to the bezier tangent (brief note b) — the
+// disc arrows carry the curve's climb-out / descent direction rather than a
+// hardcoded 45° glyph. A single glyph; the rotation makes takeoff and landing
+// fall out of the geometry, not two different icons.
+function ArrowGlyph({
+  deg,
+  px,
+  stroke,
+}: {
+  readonly deg: number;
+  readonly px: number;
+  readonly stroke: number;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={px}
+      height={px}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={stroke * (24 / px)}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ transform: `rotate(${deg.toFixed(2)}deg)`, transformOrigin: "50% 50%" }}
+    >
+      <path d="M4 12h15M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+// Bottom-left status as ONE tight group (brief note e): both lines at the
+// actor/header size, leadings collapsed, near-identical weight so the
+// difference is luminance not boldness — the headline carries full accent,
+// the detail the same hue dimmed; it reads as a unit, not headline + caption.
 function FlightStatus({
   headline,
   detail,
   accent,
+  scale,
 }: {
   readonly headline: string;
   readonly detail: string;
   readonly accent: string;
+  readonly scale: Scale;
 }) {
   return (
-    <div className="min-w-0 leading-tight">
-      <p className="text-[1.0625rem] font-semibold leading-tight" style={{ color: accent }}>
+    <div className="min-w-0">
+      <p style={{ color: accent, fontSize: scale.statusPx, fontWeight: 590, lineHeight: 1.18 }}>
         {headline}
       </p>
       <p
-        className="mt-0.5 text-sm font-medium leading-tight"
-        style={{ color: accent, opacity: 0.82 }}
+        style={{
+          color: accent,
+          fontSize: scale.statusPx,
+          fontWeight: 560,
+          lineHeight: 1.18,
+          opacity: 0.62,
+        }}
       >
         {detail}
       </p>
@@ -407,38 +515,55 @@ function FlightStatus({
   );
 }
 
-// The bottom-right interactive piece — its own <Squircle>, a fixed integer-px
-// box so the clip-path never hairline-aliases (brief note d), compact like the
-// reference's baggage pill. Links to the run's logs.
+// The bottom-right interactive piece — its own <Squircle> with an integer-px
+// box (so the clip-path never hairline-aliases, note k). The amber pill holds
+// a dark WELL (a concentric <Squircle>) and the commit glyph reads as iOS
+// orange light through it — negative space, not ink on amber (brief note d).
+// The count stays black on the amber, like the reference. Links to the logs.
 function CommitPill({
   orgSlug,
   providerRunId,
   count,
+  scale,
 }: {
   readonly orgSlug: string;
   readonly providerRunId: string;
   readonly count: string;
+  readonly scale: Scale;
 }) {
   // The pill is a <Link>, so it takes the squircle via the hook rather than
   // the div wrapper — same single radius source, full Link typing preserved.
   const sq = useSquircle<HTMLAnchorElement>(PILL_RADIUS);
+  const wellSize = scale.pillH - 2 * WELL_INSET;
+  const glyphPx = Math.round(wellSize * 0.62);
   return (
     <Link
       ref={sq.ref}
-      className="inline-flex shrink-0 items-center justify-center gap-1.5 text-[0.9375rem] font-bold leading-none transition-opacity hover:opacity-90"
+      className="inline-flex shrink-0 items-center font-bold leading-none transition-opacity hover:opacity-90"
       style={{
         ...sq.style,
-        height: 34,
-        paddingInline: 13,
-        background: "oklch(0.80 0.16 70)",
+        height: scale.pillH,
+        paddingInline: WELL_INSET,
+        gap: Math.round(scale.pillH * 0.22),
+        background: ACCENT_AMBER,
         color: NODE_INK,
+        fontSize: Math.round(scale.statusPx * 0.95),
       }}
       to="/$orgSlug/runs/$providerRunId"
       params={{ orgSlug, providerRunId }}
       title="CI run logs"
     >
-      <GitCommitGlyph style={{ width: "1.05em", height: "1.05em" }} />
-      <span className="tabular-nums">{count}</span>
+      <Squircle
+        cornerRadius={concentric(PILL_RADIUS, WELL_INSET)}
+        className="flex items-center justify-center"
+        style={{ width: wellSize, height: wellSize, background: CARD }}
+        aria-hidden="true"
+      >
+        <GitCommitGlyph style={{ width: glyphPx, height: glyphPx, color: IOS_ORANGE }} />
+      </Squircle>
+      <span className="tabular-nums" style={{ paddingRight: Math.round(scale.pillH * 0.28) }}>
+        {count}
+      </span>
     </Link>
   );
 }

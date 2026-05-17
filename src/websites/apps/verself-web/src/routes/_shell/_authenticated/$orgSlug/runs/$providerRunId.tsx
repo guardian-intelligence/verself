@@ -27,6 +27,7 @@ function RunLogsStub() {
           state: undefined,
           remaining: undefined,
           commits: undefined,
+          frame: undefined,
         }}
         className="mt-6 inline-block text-sm text-foreground underline underline-offset-4"
       >
