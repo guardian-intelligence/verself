@@ -7,6 +7,8 @@ auth portal: auth.verself.sh
 services: <service>.api.verself.sh
 company website: guardianintelligence.org
 
+The manifest of all discoverable public APIs is in `src/infrastructure-components/haproxy/templates/verself-discovery.json.j2`; all new public services must be registered there.
+
 * `aspect` contains lots of helpful commands under `.aspect/`. Run `aspect` to get the list of tasks and task groups and `aspect <task> --help` for more details.
 * Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output, filter accordingly)
 

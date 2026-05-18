@@ -38,11 +38,60 @@
 
 - name: Create well-known publication directory
   ansible.builtin.file:
-    path: /var/www/verself/.well-known
+    path: "{{ haproxy_well_known_dir }}"
     state: directory
     owner: root
     group: root
     mode: "0755"
+
+- name: Inspect Verself CLI OIDC client ID
+  ansible.builtin.stat:
+    path: "{{ haproxy_verself_cli_client_id_path }}"
+  register: haproxy_verself_cli_client_id_stat
+
+- name: Read Verself CLI OIDC client ID
+  ansible.builtin.slurp:
+    src: "{{ haproxy_verself_cli_client_id_path }}"
+  register: haproxy_verself_cli_client_id_raw
+  no_log: true
+  when: haproxy_verself_cli_client_id_stat.stat.exists
+
+- name: Inspect Verself product API audience
+  ansible.builtin.stat:
+    path: "{{ haproxy_verself_product_api_audience_path }}"
+  register: haproxy_verself_product_api_audience_stat
+
+- name: Read Verself product API audience
+  ansible.builtin.slurp:
+    src: "{{ haproxy_verself_product_api_audience_path }}"
+  register: haproxy_verself_product_api_audience_raw
+  no_log: true
+  when: haproxy_verself_product_api_audience_stat.stat.exists
+
+- name: Resolve Verself discovery public auth identifiers
+  ansible.builtin.set_fact:
+    haproxy_verself_cli_client_id: >-
+      {{
+        haproxy_verself_cli_client_id_raw.content | default('') | b64decode | trim
+        if haproxy_verself_cli_client_id_stat.stat.exists
+        else ''
+      }}
+    haproxy_verself_product_api_audience: >-
+      {{
+        haproxy_verself_product_api_audience_raw.content | default('') | b64decode | trim
+        if haproxy_verself_product_api_audience_stat.stat.exists
+        else ''
+      }}
+  no_log: true
+
+- name: Publish Verself discovery manifest
+  ansible.builtin.template:
+    src: verself-discovery.json.j2
+    dest: "{{ haproxy_verself_discovery_manifest_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload haproxy
 
 - name: Store Cloudflare DNS token for lego
   ansible.builtin.copy:

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "installation_id": {{ verself_installation_id | to_json }},
+  "site": {{ verself_site | to_json }},
+  "domain": {{ verself_domain | to_json }},
+  "console_url": {{ ('https://' ~ verself_domain) | to_json }},
+  "auth": {
+    "issuer_url": {{ ('https://' ~ zitadel_domain) | to_json }},
+    "cli_client_id": {{ (haproxy_verself_cli_client_id | default('')) | to_json }},
+    "product_api_audience": {{ (haproxy_verself_product_api_audience | default('')) | to_json }}
+  },
+  "public_apis": {
+    "analytics": {
+      "base_url": {{ ('https://analytics.api.' ~ verself_domain) | to_json }},
+      "path_prefix": "/v1/logs"
+    },
+    "billing": {
+      "base_url": {{ ('https://' ~ billing_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
+    "governance": {
+      "base_url": {{ ('https://' ~ governance_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
+    "iam": {
+      "base_url": {{ ('https://' ~ iam_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
+    "mailbox": {
+      "base_url": {{ ('https://' ~ mailbox_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
+    "notifications": {
+      "base_url": {{ ('https://' ~ notifications_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
+    "profile": {
+      "base_url": {{ ('https://' ~ profile_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
+    "projects": {
+      "base_url": {{ ('https://' ~ projects_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
+    "sandbox": {
+      "base_url": {{ ('https://' ~ sandbox_rental_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
+    "secrets": {
+      "base_url": {{ ('https://' ~ secrets_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
+    "source": {
+      "base_url": {{ ('https://' ~ source_code_hosting_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    }
+  }
+}
