@@ -28,13 +28,16 @@ defaults
   timeout http-keep-alive 10s
   unique-id-format %[uuid()]
   unique-id-header X-Request-ID
-  log-format "request_id=%ID client_ip=%ci edge_peer_ip=%ci client_ip_source=direct client_port=%cp method=%HM host=%[var(txn.host)] path=%HP query=%HQ uri=%HU status=%ST bytes=%B duration_ms=%Ta t_request_ms=%TR t_queue_ms=%Tw t_connect_ms=%Tc t_response_ms=%Tr termination=%tsc active_conn=%ac frontend_conn=%fc backend_conn=%bc server_conn=%sc retries=%rc server_queue=%sq backend_queue=%bq frontend=%ft backend=%b server=%s tls_version=%[ssl_fc_protocol] tls_cipher=%[ssl_fc_cipher] tls_sni=%[ssl_fc_sni] alpn=%[ssl_fc_alpn]"
+  log-format "request_id=%ID client_ip=%[var(txn.client_ip)] edge_peer_ip=%[var(txn.edge_peer_ip)] client_ip_source=%[var(txn.client_ip_source)] client_port=%cp method=%HM host=%[var(txn.host)] path=%HP query=%HQ uri=%HU status=%ST bytes=%B duration_ms=%Ta t_request_ms=%TR t_queue_ms=%Tw t_connect_ms=%Tc t_response_ms=%Tr termination=%tsc active_conn=%ac frontend_conn=%fc backend_conn=%bc server_conn=%sc retries=%rc server_queue=%sq backend_queue=%bq frontend=%ft backend=%b server=%s tls_version=%[ssl_fc_protocol] tls_cipher=%[ssl_fc_cipher] tls_sni=%[ssl_fc_sni] alpn=%[ssl_fc_alpn]"
 
 frontend fe_http
   guid fe_http
   maxconn {{ haproxy_public_frontend_maxconn }}
   bind 0.0.0.0:80
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
+  http-request set-var(txn.client_ip) src
+  http-request set-var(txn.edge_peer_ip) src
+  http-request set-var(txn.client_ip_source) str(direct)
   http-request redirect scheme https code 308
 
 frontend fe_https
@@ -42,17 +45,39 @@ frontend fe_https
   maxconn {{ haproxy_public_frontend_maxconn }}
   bind 0.0.0.0:443 ssl crt {{ haproxy_cert_dir }} strict-sni alpn h2,http/1.1
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
+  http-request set-var(txn.client_ip) src
+  http-request set-var(txn.edge_peer_ip) src
+  http-request set-var(txn.client_ip_source) str(direct)
+  acl cloudflare_edge src {{ haproxy_cloudflare_trusted_ips | join(' ') }}
+  acl cloudflare_client_ip req.hdr(CF-Connecting-IP) -m found
+  acl cloudflare_country req.hdr(CF-IPCountry) -m found
+  acl cloudflare_region req.hdr(CF-Region) -m found
+  acl cloudflare_city req.hdr(CF-City) -m found
+  http-request set-var(txn.client_ip) req.hdr(CF-Connecting-IP) if cloudflare_edge cloudflare_client_ip
+  http-request set-var(txn.client_ip_source) str(cloudflare) if cloudflare_edge cloudflare_client_ip
+  http-request set-var(txn.client_country) req.hdr(CF-IPCountry) if cloudflare_edge cloudflare_country
+  http-request set-var(txn.client_region) req.hdr(CF-Region) if cloudflare_edge cloudflare_region
+  http-request set-var(txn.client_city) req.hdr(CF-City) if cloudflare_edge cloudflare_city
   http-request del-header CF-Connecting-IP
   http-request del-header CF-Connecting-IPv6
   http-request del-header CF-Pseudo-IPv4
   http-request del-header True-Client-IP
+  http-request del-header CF-IPCountry
+  http-request del-header CF-Region
+  http-request del-header CF-City
   http-request del-header Forwarded
   http-request del-header X-Client-IP
   http-request del-header X-Cluster-Client-IP
   http-request del-header X-Original-Forwarded-For
-  http-request set-header X-Verself-Client-IP %[src]
-  http-request set-header X-Verself-Edge-Peer-IP %[src]
-  http-request set-header X-Verself-Client-IP-Source direct
+  http-request del-header X-Verself-Client-Country
+  http-request del-header X-Verself-Client-Region
+  http-request del-header X-Verself-Client-City
+  http-request set-header X-Verself-Client-IP %[var(txn.client_ip)]
+  http-request set-header X-Verself-Edge-Peer-IP %[var(txn.edge_peer_ip)]
+  http-request set-header X-Verself-Client-IP-Source %[var(txn.client_ip_source)]
+  http-request set-header X-Verself-Client-Country %[var(txn.client_country)] if { var(txn.client_country) -m found }
+  http-request set-header X-Verself-Client-Region %[var(txn.client_region)] if { var(txn.client_region) -m found }
+  http-request set-header X-Verself-Client-City %[var(txn.client_city)] if { var(txn.client_city) -m found }
   http-request set-header X-Real-IP %[src]
   http-request set-header X-Forwarded-For %[src]
   http-request set-header X-Forwarded-Host %[req.hdr(host)]
@@ -145,6 +170,9 @@ frontend fe_haproxy_metrics
   guid fe_haproxy_metrics
   maxconn {{ haproxy_metrics_frontend_maxconn }}
   bind 127.0.0.1:8404
+  http-request set-var(txn.client_ip) src
+  http-request set-var(txn.edge_peer_ip) src
+  http-request set-var(txn.client_ip_source) str(direct)
   option socket-stats
   http-request use-service prometheus-exporter if { path -i /metrics }
   http-request return status 404
@@ -154,6 +182,9 @@ frontend fe_firecracker_host_http
   maxconn {{ haproxy_internal_frontend_maxconn }}
   bind 10.255.0.1:18080
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
+  http-request set-var(txn.client_ip) src
+  http-request set-var(txn.edge_peer_ip) src
+  http-request set-var(txn.client_ip_source) str(direct)
   http-request set-header X-Forwarded-Proto http
   acl method_get method GET
   acl method_post method POST
@@ -177,6 +208,9 @@ frontend fe_firecracker_npm_registry
   maxconn {{ haproxy_internal_frontend_maxconn }}
   bind 10.255.0.1:4873
   http-request set-var(txn.host) str({{ haproxy_npm_registry_domain }})
+  http-request set-var(txn.client_ip) src
+  http-request set-var(txn.edge_peer_ip) src
+  http-request set-var(txn.client_ip_source) str(direct)
   http-request set-header Host {{ haproxy_npm_registry_domain }}
   http-request set-header X-Forwarded-Host {{ haproxy_npm_registry_domain }}
   http-request set-header X-Forwarded-Proto http
@@ -187,6 +221,9 @@ frontend fe_nomad_artifacts
   maxconn {{ haproxy_internal_frontend_maxconn }}
   bind 127.0.0.1:9443 ssl crt /etc/verself/pki/nomad-artifacts-server-haproxy.pem alpn h2,http/1.1
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
+  http-request set-var(txn.client_ip) src
+  http-request set-var(txn.edge_peer_ip) src
+  http-request set-var(txn.client_ip_source) str(direct)
   default_backend be_garage_nomad_artifacts
 
 backend be_edge_public_rates

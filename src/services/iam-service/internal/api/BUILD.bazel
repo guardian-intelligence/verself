@@ -6,6 +6,8 @@ go_library(
         "actions.go",
         "api_activity_sink.go",
         "browser_auth.go",
+        "browser_auth_activity.go",
+        "browser_auth_devices.go",
         "errors.go",
         "internal.go",
         "internal_openapi.go",

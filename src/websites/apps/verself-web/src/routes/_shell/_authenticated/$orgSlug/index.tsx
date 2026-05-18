@@ -1,4 +1,6 @@
-import { createFileRoute, ClientOnly } from "@tanstack/react-router";
+import { createFileRoute, ClientOnly, Link } from "@tanstack/react-router";
+import { ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
 import { FlightBoard, FlightConsoleSkeleton } from "~/features/console/flight/flight-widget";
 import {
   debugFlight,
@@ -47,21 +49,56 @@ function FlightConsole() {
 
   if (flight === "debug") {
     return (
-      <FlightBoard
-        flights={debugFlight({ actor, src, dst, status, state, remaining, commits })}
-        orgSlug={orgSlug}
-        frame={frame}
-      />
+      <ConsoleSurface orgSlug={orgSlug}>
+        <FlightBoard
+          flights={debugFlight({ actor, src, dst, status, state, remaining, commits })}
+          orgSlug={orgSlug}
+          frame={frame}
+        />
+      </ConsoleSurface>
     );
   }
   if (flight && isFlightFixtureName(flight)) {
-    return <FlightBoard flights={flightFixture(flight)} orgSlug={orgSlug} frame={frame} />;
+    return (
+      <ConsoleSurface orgSlug={orgSlug}>
+        <FlightBoard flights={flightFixture(flight)} orgSlug={orgSlug} frame={frame} />
+      </ConsoleSurface>
+    );
   }
 
   return (
-    <ClientOnly fallback={<FlightConsoleSkeleton />}>
+    <ClientOnly
+      fallback={
+        <ConsoleSurface orgSlug={orgSlug}>
+          <FlightConsoleSkeleton />
+        </ConsoleSurface>
+      }
+    >
       <LiveFlightConsole orgSlug={orgSlug} frame={frame} />
     </ClientOnly>
+  );
+}
+
+function ConsoleSurface({
+  orgSlug,
+  children,
+}: {
+  readonly orgSlug: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="relative min-h-svh">
+      <Link
+        to="/$orgSlug/account/security"
+        params={{ orgSlug }}
+        className="fixed right-3 top-3 z-50 inline-flex size-9 items-center justify-center rounded-md border border-white/15 bg-black/20 text-white/80 backdrop-blur transition-colors hover:bg-black/35 hover:text-white"
+        title="Account security"
+      >
+        <ShieldCheck className="size-4" aria-hidden="true" />
+        <span className="sr-only">Account security</span>
+      </Link>
+      {children}
+    </div>
   );
 }
 
@@ -74,7 +111,15 @@ function LiveFlightConsole({
 }) {
   const { flights, isLoading } = useFlights();
   if (isLoading && flights.length === 0) {
-    return <FlightConsoleSkeleton />;
+    return (
+      <ConsoleSurface orgSlug={orgSlug}>
+        <FlightConsoleSkeleton />
+      </ConsoleSurface>
+    );
   }
-  return <FlightBoard flights={flights} orgSlug={orgSlug} frame={frame} />;
+  return (
+    <ConsoleSurface orgSlug={orgSlug}>
+      <FlightBoard flights={flights} orgSlug={orgSlug} frame={frame} />
+    </ConsoleSurface>
+  );
 }

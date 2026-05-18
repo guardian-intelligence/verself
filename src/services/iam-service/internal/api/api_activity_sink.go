@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
+	"go.opentelemetry.io/otel/trace"
+
 	governanceinternalclient "github.com/verself/governance-service/internalclient"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
@@ -85,6 +87,14 @@ func sendGovernanceAPIActivity(ctx context.Context, record governanceAPIActivity
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		slog.Default().ErrorContext(ctx, "identity governance API Activity rejected", "status", resp.StatusCode)
 	}
+}
+
+func traceIDsFromContext(ctx context.Context) (string, string) {
+	spanContext := trace.SpanContextFromContext(ctx)
+	if !spanContext.IsValid() {
+		return "", ""
+	}
+	return spanContext.TraceID().String(), spanContext.SpanID().String()
 }
 
 func governanceAPIActivityToContract(record governanceAPIActivity) governanceinternalclient.APIActivityRecord {

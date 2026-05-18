@@ -7,6 +7,9 @@ const forwardedRequestMetadataHeaderNames = [
   "X-Request-ID",
   "X-Verself-Client-IP",
   "X-Verself-Client-IP-Source",
+  "X-Verself-Client-Country",
+  "X-Verself-Client-Region",
+  "X-Verself-Client-City",
   "X-Verself-Edge-Peer-IP",
 ] as const;
 

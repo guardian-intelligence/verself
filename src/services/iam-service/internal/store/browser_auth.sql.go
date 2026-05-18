@@ -145,10 +145,28 @@ SELECT
   expires_at,
   created_client_ip,
   created_client_ip_trusted,
+  created_client_ip_source,
+  created_edge_peer_ip,
   created_user_agent,
+  created_device_label,
+  created_device_kind,
+  created_browser_name,
+  created_os_name,
+  created_geo_country_code,
+  created_geo_region,
+  created_geo_city,
   last_seen_client_ip,
   last_seen_client_ip_trusted,
+  last_seen_client_ip_source,
+  last_seen_edge_peer_ip,
   last_seen_user_agent,
+  last_seen_device_label,
+  last_seen_device_kind,
+  last_seen_browser_name,
+  last_seen_os_name,
+  last_seen_geo_country_code,
+  last_seen_geo_region,
+  last_seen_geo_city,
   last_seen_at,
   created_at,
   updated_at
@@ -180,10 +198,28 @@ type GetBrowserSessionRow struct {
 	ExpiresAt                pgtype.Timestamptz
 	CreatedClientIp          string
 	CreatedClientIpTrusted   bool
+	CreatedClientIpSource    string
+	CreatedEdgePeerIp        string
 	CreatedUserAgent         string
+	CreatedDeviceLabel       string
+	CreatedDeviceKind        string
+	CreatedBrowserName       string
+	CreatedOsName            string
+	CreatedGeoCountryCode    string
+	CreatedGeoRegion         string
+	CreatedGeoCity           string
 	LastSeenClientIp         string
 	LastSeenClientIpTrusted  bool
+	LastSeenClientIpSource   string
+	LastSeenEdgePeerIp       string
 	LastSeenUserAgent        string
+	LastSeenDeviceLabel      string
+	LastSeenDeviceKind       string
+	LastSeenBrowserName      string
+	LastSeenOsName           string
+	LastSeenGeoCountryCode   string
+	LastSeenGeoRegion        string
+	LastSeenGeoCity          string
 	LastSeenAt               pgtype.Timestamptz
 	CreatedAt                pgtype.Timestamptz
 	UpdatedAt                pgtype.Timestamptz
@@ -212,10 +248,28 @@ func (q *Queries) GetBrowserSession(ctx context.Context, arg GetBrowserSessionPa
 		&i.ExpiresAt,
 		&i.CreatedClientIp,
 		&i.CreatedClientIpTrusted,
+		&i.CreatedClientIpSource,
+		&i.CreatedEdgePeerIp,
 		&i.CreatedUserAgent,
+		&i.CreatedDeviceLabel,
+		&i.CreatedDeviceKind,
+		&i.CreatedBrowserName,
+		&i.CreatedOsName,
+		&i.CreatedGeoCountryCode,
+		&i.CreatedGeoRegion,
+		&i.CreatedGeoCity,
 		&i.LastSeenClientIp,
 		&i.LastSeenClientIpTrusted,
+		&i.LastSeenClientIpSource,
+		&i.LastSeenEdgePeerIp,
 		&i.LastSeenUserAgent,
+		&i.LastSeenDeviceLabel,
+		&i.LastSeenDeviceKind,
+		&i.LastSeenBrowserName,
+		&i.LastSeenOsName,
+		&i.LastSeenGeoCountryCode,
+		&i.LastSeenGeoRegion,
+		&i.LastSeenGeoCity,
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -258,6 +312,81 @@ func (q *Queries) InsertBrowserLoginTransaction(ctx context.Context, arg InsertB
 	return err
 }
 
+const insertBrowserSessionObservation = `-- name: InsertBrowserSessionObservation :exec
+INSERT INTO iam_browser_session_observations (
+  session_hash,
+  session_handle,
+  subject,
+  client_ip,
+  client_ip_trusted,
+  client_ip_source,
+  edge_peer_ip,
+  user_agent,
+  device_label,
+  device_kind,
+  browser_name,
+  os_name,
+  geo_country_code,
+  geo_region,
+  geo_city
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6,
+  $7,
+  $8,
+  $9,
+  $10,
+  $11,
+  $12,
+  $13,
+  $14,
+  $15
+)
+`
+
+type InsertBrowserSessionObservationParams struct {
+	SessionHash     string
+	SessionHandle   string
+	Subject         string
+	ClientIp        string
+	ClientIpTrusted bool
+	ClientIpSource  string
+	EdgePeerIp      string
+	UserAgent       string
+	DeviceLabel     string
+	DeviceKind      string
+	BrowserName     string
+	OsName          string
+	GeoCountryCode  string
+	GeoRegion       string
+	GeoCity         string
+}
+
+func (q *Queries) InsertBrowserSessionObservation(ctx context.Context, arg InsertBrowserSessionObservationParams) error {
+	_, err := q.db.Exec(ctx, insertBrowserSessionObservation,
+		arg.SessionHash,
+		arg.SessionHandle,
+		arg.Subject,
+		arg.ClientIp,
+		arg.ClientIpTrusted,
+		arg.ClientIpSource,
+		arg.EdgePeerIp,
+		arg.UserAgent,
+		arg.DeviceLabel,
+		arg.DeviceKind,
+		arg.BrowserName,
+		arg.OsName,
+		arg.GeoCountryCode,
+		arg.GeoRegion,
+		arg.GeoCity,
+	)
+	return err
+}
+
 const listBrowserSessionsForSubject = `-- name: ListBrowserSessionsForSubject :many
 SELECT
   session_hash,
@@ -266,10 +395,28 @@ SELECT
   expires_at,
   created_client_ip,
   created_client_ip_trusted,
+  created_client_ip_source,
+  created_edge_peer_ip,
   created_user_agent,
+  created_device_label,
+  created_device_kind,
+  created_browser_name,
+  created_os_name,
+  created_geo_country_code,
+  created_geo_region,
+  created_geo_city,
   last_seen_client_ip,
   last_seen_client_ip_trusted,
+  last_seen_client_ip_source,
+  last_seen_edge_peer_ip,
   last_seen_user_agent,
+  last_seen_device_label,
+  last_seen_device_kind,
+  last_seen_browser_name,
+  last_seen_os_name,
+  last_seen_geo_country_code,
+  last_seen_geo_region,
+  last_seen_geo_city,
   last_seen_at,
   created_at,
   updated_at
@@ -290,10 +437,28 @@ type ListBrowserSessionsForSubjectRow struct {
 	ExpiresAt               pgtype.Timestamptz
 	CreatedClientIp         string
 	CreatedClientIpTrusted  bool
+	CreatedClientIpSource   string
+	CreatedEdgePeerIp       string
 	CreatedUserAgent        string
+	CreatedDeviceLabel      string
+	CreatedDeviceKind       string
+	CreatedBrowserName      string
+	CreatedOsName           string
+	CreatedGeoCountryCode   string
+	CreatedGeoRegion        string
+	CreatedGeoCity          string
 	LastSeenClientIp        string
 	LastSeenClientIpTrusted bool
+	LastSeenClientIpSource  string
+	LastSeenEdgePeerIp      string
 	LastSeenUserAgent       string
+	LastSeenDeviceLabel     string
+	LastSeenDeviceKind      string
+	LastSeenBrowserName     string
+	LastSeenOsName          string
+	LastSeenGeoCountryCode  string
+	LastSeenGeoRegion       string
+	LastSeenGeoCity         string
 	LastSeenAt              pgtype.Timestamptz
 	CreatedAt               pgtype.Timestamptz
 	UpdatedAt               pgtype.Timestamptz
@@ -315,10 +480,28 @@ func (q *Queries) ListBrowserSessionsForSubject(ctx context.Context, arg ListBro
 			&i.ExpiresAt,
 			&i.CreatedClientIp,
 			&i.CreatedClientIpTrusted,
+			&i.CreatedClientIpSource,
+			&i.CreatedEdgePeerIp,
 			&i.CreatedUserAgent,
+			&i.CreatedDeviceLabel,
+			&i.CreatedDeviceKind,
+			&i.CreatedBrowserName,
+			&i.CreatedOsName,
+			&i.CreatedGeoCountryCode,
+			&i.CreatedGeoRegion,
+			&i.CreatedGeoCity,
 			&i.LastSeenClientIp,
 			&i.LastSeenClientIpTrusted,
+			&i.LastSeenClientIpSource,
+			&i.LastSeenEdgePeerIp,
 			&i.LastSeenUserAgent,
+			&i.LastSeenDeviceLabel,
+			&i.LastSeenDeviceKind,
+			&i.LastSeenBrowserName,
+			&i.LastSeenOsName,
+			&i.LastSeenGeoCountryCode,
+			&i.LastSeenGeoRegion,
+			&i.LastSeenGeoCity,
 			&i.LastSeenAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -357,16 +540,34 @@ const updateBrowserSessionSeen = `-- name: UpdateBrowserSessionSeen :exec
 UPDATE iam_browser_sessions
 SET last_seen_client_ip = $1,
     last_seen_client_ip_trusted = $2,
-    last_seen_user_agent = $3,
+    last_seen_client_ip_source = $3,
+    last_seen_edge_peer_ip = $4,
+    last_seen_user_agent = $5,
+    last_seen_device_label = $6,
+    last_seen_device_kind = $7,
+    last_seen_browser_name = $8,
+    last_seen_os_name = $9,
+    last_seen_geo_country_code = $10,
+    last_seen_geo_region = $11,
+    last_seen_geo_city = $12,
     last_seen_at = now(),
     updated_at = now()
-WHERE session_hash = $4
+WHERE session_hash = $13
 `
 
 type UpdateBrowserSessionSeenParams struct {
 	ClientIp        string
 	ClientIpTrusted bool
+	ClientIpSource  string
+	EdgePeerIp      string
 	UserAgent       string
+	DeviceLabel     string
+	DeviceKind      string
+	BrowserName     string
+	OsName          string
+	GeoCountryCode  string
+	GeoRegion       string
+	GeoCity         string
 	SessionHash     string
 }
 
@@ -374,7 +575,16 @@ func (q *Queries) UpdateBrowserSessionSeen(ctx context.Context, arg UpdateBrowse
 	_, err := q.db.Exec(ctx, updateBrowserSessionSeen,
 		arg.ClientIp,
 		arg.ClientIpTrusted,
+		arg.ClientIpSource,
+		arg.EdgePeerIp,
 		arg.UserAgent,
+		arg.DeviceLabel,
+		arg.DeviceKind,
+		arg.BrowserName,
+		arg.OsName,
+		arg.GeoCountryCode,
+		arg.GeoRegion,
+		arg.GeoCity,
 		arg.SessionHash,
 	)
 	return err
@@ -449,10 +659,28 @@ INSERT INTO iam_browser_sessions (
   expires_at,
   created_client_ip,
   created_client_ip_trusted,
+  created_client_ip_source,
+  created_edge_peer_ip,
   created_user_agent,
+  created_device_label,
+  created_device_kind,
+  created_browser_name,
+  created_os_name,
+  created_geo_country_code,
+  created_geo_region,
+  created_geo_city,
   last_seen_client_ip,
   last_seen_client_ip_trusted,
+  last_seen_client_ip_source,
+  last_seen_edge_peer_ip,
   last_seen_user_agent,
+  last_seen_device_label,
+  last_seen_device_kind,
+  last_seen_browser_name,
+  last_seen_os_name,
+  last_seen_geo_country_code,
+  last_seen_geo_region,
+  last_seen_geo_city,
   last_seen_at
 ) VALUES (
   $1,
@@ -475,9 +703,27 @@ INSERT INTO iam_browser_sessions (
   $18,
   $19,
   $20,
+  $21,
+  $22,
+  $23,
+  $24,
+  $25,
+  $26,
+  $27,
+  $28,
+  $29,
   $18,
   $19,
   $20,
+  $21,
+  $22,
+  $23,
+  $24,
+  $25,
+  $26,
+  $27,
+  $28,
+  $29,
   now()
 )
 ON CONFLICT (session_hash) DO UPDATE SET
@@ -498,7 +744,16 @@ ON CONFLICT (session_hash) DO UPDATE SET
   expires_at = EXCLUDED.expires_at,
   last_seen_client_ip = EXCLUDED.last_seen_client_ip,
   last_seen_client_ip_trusted = EXCLUDED.last_seen_client_ip_trusted,
+  last_seen_client_ip_source = EXCLUDED.last_seen_client_ip_source,
+  last_seen_edge_peer_ip = EXCLUDED.last_seen_edge_peer_ip,
   last_seen_user_agent = EXCLUDED.last_seen_user_agent,
+  last_seen_device_label = EXCLUDED.last_seen_device_label,
+  last_seen_device_kind = EXCLUDED.last_seen_device_kind,
+  last_seen_browser_name = EXCLUDED.last_seen_browser_name,
+  last_seen_os_name = EXCLUDED.last_seen_os_name,
+  last_seen_geo_country_code = EXCLUDED.last_seen_geo_country_code,
+  last_seen_geo_region = EXCLUDED.last_seen_geo_region,
+  last_seen_geo_city = EXCLUDED.last_seen_geo_city,
   last_seen_at = EXCLUDED.last_seen_at,
   updated_at = now()
 `
@@ -523,7 +778,16 @@ type UpsertBrowserSessionParams struct {
 	ExpiresAt                pgtype.Timestamptz
 	ClientIp                 string
 	ClientIpTrusted          bool
+	ClientIpSource           string
+	EdgePeerIp               string
 	UserAgent                string
+	DeviceLabel              string
+	DeviceKind               string
+	BrowserName              string
+	OsName                   string
+	GeoCountryCode           string
+	GeoRegion                string
+	GeoCity                  string
 }
 
 func (q *Queries) UpsertBrowserSession(ctx context.Context, arg UpsertBrowserSessionParams) error {
@@ -547,7 +811,16 @@ func (q *Queries) UpsertBrowserSession(ctx context.Context, arg UpsertBrowserSes
 		arg.ExpiresAt,
 		arg.ClientIp,
 		arg.ClientIpTrusted,
+		arg.ClientIpSource,
+		arg.EdgePeerIp,
 		arg.UserAgent,
+		arg.DeviceLabel,
+		arg.DeviceKind,
+		arg.BrowserName,
+		arg.OsName,
+		arg.GeoCountryCode,
+		arg.GeoRegion,
+		arg.GeoCity,
 	)
 	return err
 }

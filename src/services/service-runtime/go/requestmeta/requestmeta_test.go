@@ -10,6 +10,9 @@ func TestFromValuesTrustsOnlyCanonicalEdgeHeader(t *testing.T) {
 	headers.Set(HeaderClientIP, "2001:db8::1")
 	headers.Set(HeaderEdgePeerIP, "198.51.100.10")
 	headers.Set(HeaderClientIPSource, SourceDirect)
+	headers.Set(HeaderClientCountry, "US")
+	headers.Set(HeaderClientRegion, "WA")
+	headers.Set(HeaderClientCity, "Seattle")
 	headers.Set("CF-Connecting-IP", "203.0.113.66")
 	headers.Set("X-Forwarded-For", "203.0.113.67")
 
@@ -25,6 +28,9 @@ func TestFromValuesTrustsOnlyCanonicalEdgeHeader(t *testing.T) {
 	}
 	if got.ClientIPSource != SourceDirect {
 		t.Fatalf("ClientIPSource = %q, want %q", got.ClientIPSource, SourceDirect)
+	}
+	if got.ClientCountry != "US" || got.ClientRegion != "WA" || got.ClientCity != "Seattle" {
+		t.Fatalf("location = %q/%q/%q, want US/WA/Seattle", got.ClientCountry, got.ClientRegion, got.ClientCity)
 	}
 	if len(got.RejectedHeaders) != 1 || got.RejectedHeaders[0] != "CF-Connecting-IP" {
 		t.Fatalf("RejectedHeaders = %#v, want only raw vendor header", got.RejectedHeaders)

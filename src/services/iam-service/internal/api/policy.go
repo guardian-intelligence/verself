@@ -120,6 +120,7 @@ func auditOperation(ctx context.Context, op huma.Operation, policy runtimeiam.Op
 	}
 	targetID, targetDisplay := targetFromBoundary(input, output)
 	decision, status := apiActivityResult(outcome)
+	traceID, spanID := traceIDsFromContext(ctx)
 	record := governanceAPIActivity{
 		OrgID:                 identity.OrgID,
 		APIService:            "iam-service",
@@ -144,6 +145,8 @@ func auditOperation(ctx context.Context, op huma.Operation, policy runtimeiam.Op
 		AuthorizationDecision: decision,
 		Status:                status,
 		StatusCode:            firstNonEmpty(problemCodeOrEmpty(err), strconv.Itoa(int(httpStatusFromOperationResult(op, outcome, err)))),
+		TraceUID:              traceID,
+		SpanUID:               spanID,
 		Unmapped: compactAPIActivityUnmapped(map[string]any{
 			"verself.idempotency_key_hash": hashTextForAPIActivity(info.IdempotencyKey),
 		}),

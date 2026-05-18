@@ -349,6 +349,7 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 		attribute.String("auth.session_handle", sessionHandle),
 		attribute.String("enduser.id", user.Sub),
 	))
+	sendBrowserAuthActivity(r.Context(), user, sessionHandle, "browserAuth.createSession", "iam.browser_session.created", "create", "iam.browser_session.create", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
 	a.setSessionCookie(w, sessionID)
 	http.Redirect(w, r, a.absoluteRedirectTarget(pending.RedirectTo), http.StatusSeeOther)
 }
@@ -358,6 +359,9 @@ func (a *BrowserAuth) handleSession(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.serverError(w, "load browser session", err)
 		return
+	}
+	if session != nil {
+		sendBrowserAuthActivity(r.Context(), session.User, session.SessionHandle, "browserAuth.readSession", "iam.browser_session.read", "read", "iam.browser_session.read", r.Method, browserAuthExternalRoute(r), http.StatusOK)
 	}
 	a.writeJSON(w, http.StatusOK, snapshotForSession(session))
 }
@@ -429,6 +433,7 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 		a.serverError(w, "reload browser session", err)
 		return
 	}
+	sendBrowserAuthActivity(r.Context(), next.User, next.SessionHandle, "browserAuth.selectOrganization", "iam.browser_session.organization_selected", "update", "iam.browser_session.update", r.Method, browserAuthExternalRoute(r), http.StatusOK)
 	a.writeJSON(w, http.StatusOK, snapshotForSession(next))
 }
 
@@ -462,16 +467,46 @@ func (a *BrowserAuth) handleSessions(w http.ResponseWriter, r *http.Request) {
 	sessions := make([]browserSessionSummary, 0, len(rows))
 	for _, row := range rows {
 		sessions = append(sessions, browserSessionSummary{
-			SessionHandle:   row.SessionHandle,
-			IsCurrent:       row.SessionHash == session.SessionHash,
-			CreatedAt:       requiredTime(row.CreatedAt),
-			LastSeenAt:      requiredTime(row.LastSeenAt),
-			ExpiresAt:       requiredTime(row.ExpiresAt),
+			SessionHandle:          row.SessionHandle,
+			IsCurrent:              row.SessionHash == session.SessionHash,
+			CreatedAt:              requiredTime(row.CreatedAt),
+			LastSeenAt:             requiredTime(row.LastSeenAt),
+			ExpiresAt:              requiredTime(row.ExpiresAt),
+			CreatedClientIP:        row.CreatedClientIp,
+			CreatedClientIPTrusted: row.CreatedClientIpTrusted,
+			CreatedClientIPSource:  row.CreatedClientIpSource,
+			CreatedEdgePeerIP:      row.CreatedEdgePeerIp,
+			CreatedUserAgent:       row.CreatedUserAgent,
+			CreatedDevice: browserDevice{
+				Label:       row.CreatedDeviceLabel,
+				Kind:        row.CreatedDeviceKind,
+				BrowserName: row.CreatedBrowserName,
+				OSName:      row.CreatedOsName,
+			},
+			CreatedLocation: browserLocation{
+				CountryCode: row.CreatedGeoCountryCode,
+				Region:      row.CreatedGeoRegion,
+				City:        row.CreatedGeoCity,
+			},
 			ClientIP:        row.LastSeenClientIp,
 			ClientIPTrusted: row.LastSeenClientIpTrusted,
+			ClientIPSource:  row.LastSeenClientIpSource,
+			EdgePeerIP:      row.LastSeenEdgePeerIp,
 			UserAgent:       row.LastSeenUserAgent,
+			Device: browserDevice{
+				Label:       row.LastSeenDeviceLabel,
+				Kind:        row.LastSeenDeviceKind,
+				BrowserName: row.LastSeenBrowserName,
+				OSName:      row.LastSeenOsName,
+			},
+			Location: browserLocation{
+				CountryCode: row.LastSeenGeoCountryCode,
+				Region:      row.LastSeenGeoRegion,
+				City:        row.LastSeenGeoCity,
+			},
 		})
 	}
+	sendBrowserAuthActivity(r.Context(), session.User, session.SessionHandle, "browserAuth.listSessions", "iam.browser_sessions.listed", "read", "iam.browser_session.read", r.Method, browserAuthExternalRoute(r), http.StatusOK)
 	a.writeJSON(w, http.StatusOK, browserSessionsResponse{Sessions: sessions})
 }
 
@@ -501,6 +536,7 @@ func (a *BrowserAuth) handleSessionRevoke(w http.ResponseWriter, r *http.Request
 		attribute.Bool("auth.current_session", sessionHandle == session.SessionHandle),
 		attribute.String("enduser.id", session.User.Sub),
 	))
+	sendBrowserAuthActivity(r.Context(), session.User, sessionHandle, "browserAuth.revokeSession", "iam.browser_session.revoked", "delete", "iam.browser_session.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
 	if sessionHandle == session.SessionHandle {
 		a.clearSessionCookie(w)
 	}
@@ -510,10 +546,14 @@ func (a *BrowserAuth) handleSessionRevoke(w http.ResponseWriter, r *http.Request
 func (a *BrowserAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
 	sessionID, ok := sessionIDFromRequest(r)
 	var idToken string
+	var logoutSession *browserSession
 	if ok {
 		sessionHash := hashToken(sessionID)
-		if session, err := a.readSession(r.Context(), sessionHash); err == nil && session.IDToken != "" {
-			idToken = session.IDToken
+		if session, err := a.readSession(r.Context(), sessionHash); err == nil {
+			logoutSession = session
+			if session.IDToken != "" {
+				idToken = session.IDToken
+			}
 		}
 		if err := a.q.DeleteBrowserSession(r.Context(), identitystore.DeleteBrowserSessionParams{SessionHash: sessionHash}); err != nil {
 			a.serverError(w, "delete browser session", err)
@@ -522,6 +562,9 @@ func (a *BrowserAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	a.clearSessionCookie(w)
 	a.clearLoginCookie(w)
+	if logoutSession != nil {
+		sendBrowserAuthActivity(r.Context(), logoutSession.User, logoutSession.SessionHandle, "browserAuth.logout", "iam.browser_session.logged_out", "delete", "iam.browser_session.delete", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
+	}
 	if idToken == "" || a.endSessionEndpoint == "" {
 		http.Redirect(w, r, a.postLogoutURL, http.StatusSeeOther)
 		return
@@ -890,24 +933,50 @@ func (a *BrowserAuth) readSession(ctx context.Context, sessionHash string) (*bro
 		Claims:                 claims,
 	}
 	return &browserSession{
-		SessionHash:          row.SessionHash,
-		SessionHandle:        row.SessionHandle,
-		ClientCachePartition: row.ClientCachePartition,
-		AccessToken:          row.AccessToken,
-		RefreshToken:         stringValue(stringFromText(row.RefreshToken)),
-		IDToken:              stringValue(stringFromText(row.IDToken)),
-		TokenScope:           stringFromText(row.TokenScope),
-		ExpiresAt:            requiredTime(row.ExpiresAt),
-		CreatedClientIP:      row.CreatedClientIp,
-		CreatedIPTrusted:     row.CreatedClientIpTrusted,
-		CreatedUserAgent:     row.CreatedUserAgent,
-		LastSeenClientIP:     row.LastSeenClientIp,
-		LastSeenIPTrusted:    row.LastSeenClientIpTrusted,
-		LastSeenUserAgent:    row.LastSeenUserAgent,
-		LastSeenAt:           requiredTime(row.LastSeenAt),
-		CreatedAt:            requiredTime(row.CreatedAt),
-		UpdatedAt:            requiredTime(row.UpdatedAt),
-		User:                 user,
+		SessionHash:           row.SessionHash,
+		SessionHandle:         row.SessionHandle,
+		ClientCachePartition:  row.ClientCachePartition,
+		AccessToken:           row.AccessToken,
+		RefreshToken:          stringValue(stringFromText(row.RefreshToken)),
+		IDToken:               stringValue(stringFromText(row.IDToken)),
+		TokenScope:            stringFromText(row.TokenScope),
+		ExpiresAt:             requiredTime(row.ExpiresAt),
+		CreatedClientIP:       row.CreatedClientIp,
+		CreatedIPTrusted:      row.CreatedClientIpTrusted,
+		CreatedClientIPSource: row.CreatedClientIpSource,
+		CreatedEdgePeerIP:     row.CreatedEdgePeerIp,
+		CreatedUserAgent:      row.CreatedUserAgent,
+		CreatedDevice: browserDevice{
+			Label:       row.CreatedDeviceLabel,
+			Kind:        row.CreatedDeviceKind,
+			BrowserName: row.CreatedBrowserName,
+			OSName:      row.CreatedOsName,
+		},
+		CreatedLocation: browserLocation{
+			CountryCode: row.CreatedGeoCountryCode,
+			Region:      row.CreatedGeoRegion,
+			City:        row.CreatedGeoCity,
+		},
+		LastSeenClientIP:       row.LastSeenClientIp,
+		LastSeenIPTrusted:      row.LastSeenClientIpTrusted,
+		LastSeenClientIPSource: row.LastSeenClientIpSource,
+		LastSeenEdgePeerIP:     row.LastSeenEdgePeerIp,
+		LastSeenUserAgent:      row.LastSeenUserAgent,
+		LastSeenDevice: browserDevice{
+			Label:       row.LastSeenDeviceLabel,
+			Kind:        row.LastSeenDeviceKind,
+			BrowserName: row.LastSeenBrowserName,
+			OSName:      row.LastSeenOsName,
+		},
+		LastSeenLocation: browserLocation{
+			CountryCode: row.LastSeenGeoCountryCode,
+			Region:      row.LastSeenGeoRegion,
+			City:        row.LastSeenGeoCity,
+		},
+		LastSeenAt: requiredTime(row.LastSeenAt),
+		CreatedAt:  requiredTime(row.CreatedAt),
+		UpdatedAt:  requiredTime(row.UpdatedAt),
+		User:       user,
 	}, nil
 }
 
@@ -920,8 +989,8 @@ func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, sessionHand
 	if err != nil {
 		return err
 	}
-	requestInfo := browserRequestInfoFromContext(ctx)
-	return a.q.UpsertBrowserSession(ctx, identitystore.UpsertBrowserSessionParams{
+	observation := browserSessionObservationFromContext(ctx)
+	if err := a.q.UpsertBrowserSession(ctx, identitystore.UpsertBrowserSessionParams{
 		SessionHash:              sessionHash,
 		SessionHandle:            sessionHandle,
 		ClientCachePartition:     cachePartition,
@@ -939,9 +1008,41 @@ func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, sessionHand
 		RefreshToken:             nullableText(tokens.RefreshToken),
 		TokenScope:               nullableText(tokens.Scope),
 		ExpiresAt:                timestamptz(tokens.ExpiresAt),
-		ClientIp:                 requestInfo.Attribution.ClientIP,
-		ClientIpTrusted:          requestInfo.Attribution.Trusted,
-		UserAgent:                requestInfo.UserAgent,
+		ClientIp:                 observation.ClientIP,
+		ClientIpTrusted:          observation.ClientIPTrusted,
+		ClientIpSource:           observation.ClientIPSource,
+		EdgePeerIp:               observation.EdgePeerIP,
+		UserAgent:                observation.UserAgent,
+		DeviceLabel:              observation.Device.Label,
+		DeviceKind:               observation.Device.Kind,
+		BrowserName:              observation.Device.BrowserName,
+		OsName:                   observation.Device.OSName,
+		GeoCountryCode:           observation.Location.CountryCode,
+		GeoRegion:                observation.Location.Region,
+		GeoCity:                  observation.Location.City,
+	}); err != nil {
+		return err
+	}
+	return a.insertSessionObservation(ctx, sessionHash, sessionHandle, user.Sub, observation)
+}
+
+func (a *BrowserAuth) insertSessionObservation(ctx context.Context, sessionHash, sessionHandle, subject string, observation browserSessionObservation) error {
+	return a.q.InsertBrowserSessionObservation(ctx, identitystore.InsertBrowserSessionObservationParams{
+		SessionHash:     sessionHash,
+		SessionHandle:   sessionHandle,
+		Subject:         subject,
+		ClientIp:        observation.ClientIP,
+		ClientIpTrusted: observation.ClientIPTrusted,
+		ClientIpSource:  observation.ClientIPSource,
+		EdgePeerIp:      observation.EdgePeerIP,
+		UserAgent:       observation.UserAgent,
+		DeviceLabel:     observation.Device.Label,
+		DeviceKind:      observation.Device.Kind,
+		BrowserName:     observation.Device.BrowserName,
+		OsName:          observation.Device.OSName,
+		GeoCountryCode:  observation.Location.CountryCode,
+		GeoRegion:       observation.Location.Region,
+		GeoCity:         observation.Location.City,
 	})
 }
 
@@ -949,23 +1050,41 @@ func (a *BrowserAuth) touchSessionSeen(ctx context.Context, session *browserSess
 	if session == nil {
 		return nil
 	}
-	requestInfo := browserRequestInfoFromContext(ctx)
+	observation := browserSessionObservationFromContext(ctx)
 	seenAt := time.Now().UTC()
 	if err := a.q.UpdateBrowserSessionSeen(ctx, identitystore.UpdateBrowserSessionSeenParams{
 		SessionHash:     session.SessionHash,
-		ClientIp:        requestInfo.Attribution.ClientIP,
-		ClientIpTrusted: requestInfo.Attribution.Trusted,
-		UserAgent:       requestInfo.UserAgent,
+		ClientIp:        observation.ClientIP,
+		ClientIpTrusted: observation.ClientIPTrusted,
+		ClientIpSource:  observation.ClientIPSource,
+		EdgePeerIp:      observation.EdgePeerIP,
+		UserAgent:       observation.UserAgent,
+		DeviceLabel:     observation.Device.Label,
+		DeviceKind:      observation.Device.Kind,
+		BrowserName:     observation.Device.BrowserName,
+		OsName:          observation.Device.OSName,
+		GeoCountryCode:  observation.Location.CountryCode,
+		GeoRegion:       observation.Location.Region,
+		GeoCity:         observation.Location.City,
 	}); err != nil {
 		return err
 	}
-	session.LastSeenClientIP = requestInfo.Attribution.ClientIP
-	session.LastSeenIPTrusted = requestInfo.Attribution.Trusted
-	session.LastSeenUserAgent = requestInfo.UserAgent
+	if err := a.insertSessionObservation(ctx, session.SessionHash, session.SessionHandle, session.User.Sub, observation); err != nil {
+		return err
+	}
+	session.LastSeenClientIP = observation.ClientIP
+	session.LastSeenIPTrusted = observation.ClientIPTrusted
+	session.LastSeenClientIPSource = observation.ClientIPSource
+	session.LastSeenEdgePeerIP = observation.EdgePeerIP
+	session.LastSeenUserAgent = observation.UserAgent
+	session.LastSeenDevice = observation.Device
+	session.LastSeenLocation = observation.Location
 	session.LastSeenAt = seenAt
 	trace.SpanFromContext(ctx).AddEvent("iam.browser_session.seen", trace.WithAttributes(
 		attribute.String("auth.session_handle", session.SessionHandle),
 		attribute.String("enduser.id", session.User.Sub),
+		attribute.String("verself.request.client_ip_source", observation.ClientIPSource),
+		attribute.String("auth.device_label", observation.Device.Label),
 	))
 	return nil
 }
@@ -1106,24 +1225,32 @@ type tokenResponse struct {
 }
 
 type browserSession struct {
-	SessionHash          string
-	SessionHandle        string
-	ClientCachePartition string
-	AccessToken          string
-	RefreshToken         string
-	IDToken              string
-	TokenScope           *string
-	ExpiresAt            time.Time
-	CreatedClientIP      string
-	CreatedIPTrusted     bool
-	CreatedUserAgent     string
-	LastSeenClientIP     string
-	LastSeenIPTrusted    bool
-	LastSeenUserAgent    string
-	LastSeenAt           time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	User                 browserUser
+	SessionHash            string
+	SessionHandle          string
+	ClientCachePartition   string
+	AccessToken            string
+	RefreshToken           string
+	IDToken                string
+	TokenScope             *string
+	ExpiresAt              time.Time
+	CreatedClientIP        string
+	CreatedIPTrusted       bool
+	CreatedClientIPSource  string
+	CreatedEdgePeerIP      string
+	CreatedUserAgent       string
+	CreatedDevice          browserDevice
+	CreatedLocation        browserLocation
+	LastSeenClientIP       string
+	LastSeenIPTrusted      bool
+	LastSeenClientIPSource string
+	LastSeenEdgePeerIP     string
+	LastSeenUserAgent      string
+	LastSeenDevice         browserDevice
+	LastSeenLocation       browserLocation
+	LastSeenAt             time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	User                   browserUser
 }
 
 type browserUser struct {
@@ -1161,13 +1288,18 @@ type authState struct {
 }
 
 type sessionInfo struct {
-	SessionHandle   string    `json:"sessionHandle"`
-	CreatedAt       time.Time `json:"createdAt"`
-	LastSeenAt      time.Time `json:"lastSeenAt"`
-	ExpiresAt       time.Time `json:"expiresAt"`
-	ClientIP        string    `json:"clientIP"`
-	ClientIPTrusted bool      `json:"clientIPTrusted"`
-	UserAgent       string    `json:"userAgent"`
+	SessionHandle   string          `json:"sessionHandle"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	LastSeenAt      time.Time       `json:"lastSeenAt"`
+	ExpiresAt       time.Time       `json:"expiresAt"`
+	AuthMethods     []string        `json:"authMethods"`
+	ClientIP        string          `json:"clientIP"`
+	ClientIPTrusted bool            `json:"clientIPTrusted"`
+	ClientIPSource  string          `json:"clientIPSource"`
+	EdgePeerIP      string          `json:"edgePeerIP"`
+	UserAgent       string          `json:"userAgent"`
+	Device          browserDevice   `json:"device"`
+	Location        browserLocation `json:"location"`
 }
 
 type authSnapshot struct {
@@ -1178,14 +1310,25 @@ type authSnapshot struct {
 }
 
 type browserSessionSummary struct {
-	SessionHandle   string    `json:"sessionHandle"`
-	IsCurrent       bool      `json:"isCurrent"`
-	CreatedAt       time.Time `json:"createdAt"`
-	LastSeenAt      time.Time `json:"lastSeenAt"`
-	ExpiresAt       time.Time `json:"expiresAt"`
-	ClientIP        string    `json:"clientIP"`
-	ClientIPTrusted bool      `json:"clientIPTrusted"`
-	UserAgent       string    `json:"userAgent"`
+	SessionHandle          string          `json:"sessionHandle"`
+	IsCurrent              bool            `json:"isCurrent"`
+	CreatedAt              time.Time       `json:"createdAt"`
+	LastSeenAt             time.Time       `json:"lastSeenAt"`
+	ExpiresAt              time.Time       `json:"expiresAt"`
+	CreatedClientIP        string          `json:"createdClientIP"`
+	CreatedClientIPTrusted bool            `json:"createdClientIPTrusted"`
+	CreatedClientIPSource  string          `json:"createdClientIPSource"`
+	CreatedEdgePeerIP      string          `json:"createdEdgePeerIP"`
+	CreatedUserAgent       string          `json:"createdUserAgent"`
+	CreatedDevice          browserDevice   `json:"createdDevice"`
+	CreatedLocation        browserLocation `json:"createdLocation"`
+	ClientIP               string          `json:"clientIP"`
+	ClientIPTrusted        bool            `json:"clientIPTrusted"`
+	ClientIPSource         string          `json:"clientIPSource"`
+	EdgePeerIP             string          `json:"edgePeerIP"`
+	UserAgent              string          `json:"userAgent"`
+	Device                 browserDevice   `json:"device"`
+	Location               browserLocation `json:"location"`
 }
 
 type browserSessionsResponse struct {
@@ -1227,9 +1370,14 @@ func snapshotForSession(session *browserSession) authSnapshot {
 			CreatedAt:       session.CreatedAt,
 			LastSeenAt:      session.LastSeenAt,
 			ExpiresAt:       session.ExpiresAt,
+			AuthMethods:     authMethodsFromClaims(session.User.Claims),
 			ClientIP:        session.LastSeenClientIP,
 			ClientIPTrusted: session.LastSeenIPTrusted,
+			ClientIPSource:  session.LastSeenClientIPSource,
+			EdgePeerIP:      session.LastSeenEdgePeerIP,
 			UserAgent:       session.LastSeenUserAgent,
+			Device:          session.LastSeenDevice,
+			Location:        session.LastSeenLocation,
 		},
 	}
 }

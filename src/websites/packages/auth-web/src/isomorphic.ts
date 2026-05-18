@@ -57,14 +57,36 @@ const sessionDateSchema = v.union([
   ),
 ]);
 
+export const browserDeviceSchema = v.object({
+  label: v.string(),
+  kind: v.string(),
+  browserName: v.string(),
+  osName: v.string(),
+});
+
+export type BrowserDevice = v.InferOutput<typeof browserDeviceSchema>;
+
+export const browserLocationSchema = v.object({
+  countryCode: v.string(),
+  region: v.string(),
+  city: v.string(),
+});
+
+export type BrowserLocation = v.InferOutput<typeof browserLocationSchema>;
+
 export const sessionInfoSchema = v.object({
   sessionHandle: v.string(),
   createdAt: sessionDateSchema,
   lastSeenAt: sessionDateSchema,
   expiresAt: sessionDateSchema,
+  authMethods: v.array(v.string()),
   clientIP: v.string(),
   clientIPTrusted: v.boolean(),
+  clientIPSource: v.string(),
+  edgePeerIP: v.string(),
   userAgent: v.string(),
+  device: browserDeviceSchema,
+  location: browserLocationSchema,
 });
 
 export type SessionInfo = v.InferOutput<typeof sessionInfoSchema>;
@@ -75,9 +97,20 @@ export const browserSessionSummarySchema = v.object({
   createdAt: sessionDateSchema,
   lastSeenAt: sessionDateSchema,
   expiresAt: sessionDateSchema,
+  createdClientIP: v.string(),
+  createdClientIPTrusted: v.boolean(),
+  createdClientIPSource: v.string(),
+  createdEdgePeerIP: v.string(),
+  createdUserAgent: v.string(),
+  createdDevice: browserDeviceSchema,
+  createdLocation: browserLocationSchema,
   clientIP: v.string(),
   clientIPTrusted: v.boolean(),
+  clientIPSource: v.string(),
+  edgePeerIP: v.string(),
   userAgent: v.string(),
+  device: browserDeviceSchema,
+  location: browserLocationSchema,
 });
 
 export type BrowserSessionSummary = v.InferOutput<typeof browserSessionSummarySchema>;
