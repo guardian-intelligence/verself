@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -51,6 +53,21 @@ type config struct {
 	haproxyLDLibraryPath string
 	reloadUnit           string
 	daemon               bool
+	authEdgeDomain       string
+	authEdgeConfig       string
+	authEdgePublicMap    string
+	authEdgeDiscovery    string
+	cliClientIDPath      string
+	productAudiencePath  string
+}
+
+type fileSwap struct {
+	path    string
+	content []byte
+	old     []byte
+	existed bool
+	group   string
+	mode    fs.FileMode
 }
 
 func main() {
@@ -72,6 +89,12 @@ func run(args []string) error {
 	fs.StringVar(&cfg.haproxyLDLibraryPath, "haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "LD_LIBRARY_PATH used when invoking HAProxy.")
 	fs.StringVar(&cfg.reloadUnit, "reload-unit", "haproxy.service", "systemd unit to reload after a valid upstream swap.")
 	fs.BoolVar(&cfg.daemon, "daemon", false, "Apply once, then stay alive until SIGINT or SIGTERM.")
+	fs.StringVar(&cfg.authEdgeDomain, "auth-edge-domain", "", "Product apex domain whose same-origin auth routes should be installed.")
+	fs.StringVar(&cfg.authEdgeConfig, "auth-edge-haproxy-config", "/etc/haproxy/haproxy.cfg", "Static HAProxy config to normalize when --auth-edge-domain is set.")
+	fs.StringVar(&cfg.authEdgePublicMap, "auth-edge-public-hosts-map", "/etc/haproxy/maps/public-hosts.map", "Public host map to normalize when --auth-edge-domain is set.")
+	fs.StringVar(&cfg.authEdgeDiscovery, "auth-edge-discovery-manifest", "/var/www/verself/.well-known/verself", "Verself discovery manifest to normalize when --auth-edge-domain is set.")
+	fs.StringVar(&cfg.cliClientIDPath, "auth-edge-cli-client-id-path", "/etc/credstore/iam-service/oidc-cli-client-id", "CLI OIDC client ID credential path.")
+	fs.StringVar(&cfg.productAudiencePath, "auth-edge-product-audience-path", "/etc/credstore/iam-service/auth-audience", "Product API auth audience credential path.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -155,25 +178,30 @@ func applyOnce(cfg config) (bool, error) {
 	if !bytes.Contains(content, []byte("\nbackend ")) {
 		return false, fmt.Errorf("%s does not look like an HAProxy backend config", cfg.source)
 	}
-	oldContent, oldErr := os.ReadFile(cfg.dest)
-	if oldErr != nil && !errors.Is(oldErr, os.ErrNotExist) {
-		return false, fmt.Errorf("read existing %s: %w", cfg.dest, oldErr)
+	swaps := []fileSwap{}
+	if swap, changed, err := plannedSwap(cfg.dest, content, cfg.group, 0o640); err != nil {
+		return false, err
+	} else if changed {
+		swaps = append(swaps, swap)
 	}
-	if oldErr == nil && bytes.Equal(oldContent, content) {
+	if cfg.authEdgeDomain != "" {
+		authSwaps, err := planAuthEdgeSwaps(cfg)
+		if err != nil {
+			return false, err
+		}
+		swaps = append(swaps, authSwaps...)
+	}
+	if len(swaps) == 0 {
 		return false, nil
 	}
-	if err := atomicWrite(cfg.dest, content, cfg.group); err != nil {
+	if err := applySwaps(swaps); err != nil {
 		return false, err
 	}
 	if err := validateHAProxy(cfg); err != nil {
-		if oldErr == nil {
-			if restoreErr := atomicWrite(cfg.dest, oldContent, cfg.group); restoreErr != nil {
-				return false, fmt.Errorf("haproxy validation failed after writing %s: %w; rollback failed: %v", cfg.dest, err, restoreErr)
-			}
-		} else if removeErr := os.Remove(cfg.dest); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			return false, fmt.Errorf("haproxy validation failed after writing %s: %w; cleanup failed: %v", cfg.dest, err, removeErr)
+		if restoreErr := restoreSwaps(swaps); restoreErr != nil {
+			return false, fmt.Errorf("haproxy validation failed after writing config set: %w; restore failed: %v", err, restoreErr)
 		}
-		return false, fmt.Errorf("haproxy validation failed after writing %s; previous upstreams restored: %w", cfg.dest, err)
+		return false, fmt.Errorf("haproxy validation failed after writing config set; previous files restored: %w", err)
 	}
 	if cfg.reloadUnit != "" {
 		if err := systemctl("reload", cfg.reloadUnit); err != nil {
@@ -183,7 +211,86 @@ func applyOnce(cfg config) (bool, error) {
 	return true, nil
 }
 
-func atomicWrite(path string, content []byte, group string) error {
+func plannedSwap(path string, content []byte, group string, mode fs.FileMode) (fileSwap, bool, error) {
+	oldContent, oldErr := os.ReadFile(path)
+	if oldErr != nil && !errors.Is(oldErr, os.ErrNotExist) {
+		return fileSwap{}, false, fmt.Errorf("read existing %s: %w", path, oldErr)
+	}
+	if oldErr == nil && bytes.Equal(oldContent, content) {
+		return fileSwap{}, false, nil
+	}
+	return fileSwap{
+		path:    path,
+		content: content,
+		old:     oldContent,
+		existed: oldErr == nil,
+		group:   group,
+		mode:    mode,
+	}, true, nil
+}
+
+func planAuthEdgeSwaps(cfg config) ([]fileSwap, error) {
+	staticConfig, err := os.ReadFile(cfg.authEdgeConfig)
+	if err != nil {
+		return nil, fmt.Errorf("read auth edge HAProxy config %s: %w", cfg.authEdgeConfig, err)
+	}
+	nextStatic, err := normalizeAuthEdgeHAProxy(staticConfig, cfg.authEdgeDomain)
+	if err != nil {
+		return nil, err
+	}
+	publicMap, err := os.ReadFile(cfg.authEdgePublicMap)
+	if err != nil {
+		return nil, fmt.Errorf("read auth edge public host map %s: %w", cfg.authEdgePublicMap, err)
+	}
+	nextPublicMap := normalizeAuthEdgePublicHosts(publicMap, cfg.authEdgeDomain)
+	discovery, err := renderAuthEdgeDiscovery(cfg)
+	if err != nil {
+		return nil, err
+	}
+	swaps := []fileSwap{}
+	for _, candidate := range []fileSwap{
+		{path: cfg.authEdgeConfig, content: nextStatic, group: "haproxy", mode: 0o640},
+		{path: cfg.authEdgePublicMap, content: nextPublicMap, group: "haproxy", mode: 0o640},
+		{path: cfg.authEdgeDiscovery, content: discovery, group: "root", mode: 0o644},
+	} {
+		swap, changed, err := plannedSwap(candidate.path, candidate.content, candidate.group, candidate.mode)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			swaps = append(swaps, swap)
+		}
+	}
+	return swaps, nil
+}
+
+func applySwaps(swaps []fileSwap) error {
+	for _, swap := range swaps {
+		if err := atomicWrite(swap.path, swap.content, swap.group, swap.mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func restoreSwaps(swaps []fileSwap) error {
+	var restoreErr error
+	for i := len(swaps) - 1; i >= 0; i-- {
+		swap := swaps[i]
+		if swap.existed {
+			if err := atomicWrite(swap.path, swap.old, swap.group, swap.mode); err != nil {
+				restoreErr = errors.Join(restoreErr, err)
+			}
+			continue
+		}
+		if err := os.Remove(swap.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			restoreErr = errors.Join(restoreErr, fmt.Errorf("remove %s: %w", swap.path, err))
+		}
+	}
+	return restoreErr
+}
+
+func atomicWrite(path string, content []byte, group string, mode fs.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)
@@ -198,7 +305,7 @@ func atomicWrite(path string, content []byte, group string) error {
 		_ = tmp.Close()
 		return fmt.Errorf("write %s: %w", tmpName, err)
 	}
-	if err := tmp.Chmod(0o640); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("chmod %s: %w", tmpName, err)
 	}
@@ -220,6 +327,161 @@ func atomicWrite(path string, content []byte, group string) error {
 		return fmt.Errorf("rename %s to %s: %w", tmpName, path, err)
 	}
 	return nil
+}
+
+func normalizeAuthEdgeHAProxy(content []byte, domain string) ([]byte, error) {
+	if strings.TrimSpace(domain) == "" {
+		return nil, errors.New("auth edge domain is required")
+	}
+	text := strings.ReplaceAll(string(content), "\r\n", "\n")
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	out := make([]string, 0, len(lines)+8)
+	hasOIDCExact := hasLine(lines, "acl zitadel_oidc_path path -i /.well-known/openid-configuration /.well-known/webfinger /robots.txt")
+	hasOIDCPrefix := hasLine(lines, "acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console")
+	hasProductClaims405 := hasLine(lines, "http-request return status 405 if host_verself zitadel_product_token_claims !method_post")
+	hasProductClaimsBackend := hasLine(lines, "use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims")
+	hasOIDCBackend := hasLine(lines, "use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path")
+	for _, line := range lines {
+		trim := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trim, "acl host_zitadel "):
+			continue
+		case strings.HasPrefix(trim, "acl host_zitadel_actions "):
+			continue
+		case strings.HasPrefix(trim, "http-request return status 405 if host_zitadel "):
+			continue
+		case strings.HasPrefix(trim, "http-request return status 405 if host_zitadel_actions "):
+			continue
+		case strings.HasPrefix(trim, "use_backend be_zitadel_product_token_claims if host_zitadel "):
+			continue
+		case strings.HasPrefix(trim, "use_backend be_zitadel_product_token_claims if host_zitadel_actions "):
+			continue
+		case strings.HasPrefix(trim, "acl auth_path path -i "):
+			line = "  acl auth_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept"
+		case strings.HasPrefix(trim, "acl route_1_path path -i "):
+			line = "  acl route_1_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept"
+		}
+		trim = strings.TrimSpace(line)
+		if trim == "acl zitadel_oidc_path path -i /.well-known/openid-configuration /.well-known/webfinger /robots.txt" {
+			hasOIDCExact = true
+		}
+		if trim == "acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console" {
+			hasOIDCPrefix = true
+		}
+		if trim == "http-request return status 405 if host_verself zitadel_product_token_claims !method_post" {
+			hasProductClaims405 = true
+		}
+		if trim == "use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims" {
+			hasProductClaimsBackend = true
+		}
+		if trim == "use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path" {
+			hasOIDCBackend = true
+		}
+		out = append(out, line)
+		if strings.HasPrefix(trim, "acl stripe_source src ") {
+			if !hasOIDCExact {
+				out = append(out, "  acl zitadel_oidc_path path -i /.well-known/openid-configuration /.well-known/webfinger /robots.txt")
+				hasOIDCExact = true
+			}
+			if !hasOIDCPrefix {
+				out = append(out, "  acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console")
+				hasOIDCPrefix = true
+			}
+		}
+		if trim == "http-request return status 405 if host_sandbox { path -i /github/installations/callback } !method_get" && !hasProductClaims405 {
+			out = append(out, "  http-request return status 405 if host_verself zitadel_product_token_claims !method_post")
+			hasProductClaims405 = true
+		}
+		if strings.HasPrefix(trim, "use_backend be_source_forgejo_webhook ") && !hasProductClaimsBackend {
+			out = append(out, "  use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims")
+			hasProductClaimsBackend = true
+			if !hasOIDCBackend {
+				out = append(out, "  use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path")
+				hasOIDCBackend = true
+			}
+		}
+		if trim == "use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims" && !hasOIDCBackend {
+			out = append(out, "  use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path")
+			hasOIDCBackend = true
+		}
+	}
+	if !hasOIDCExact || !hasOIDCPrefix || !hasProductClaims405 || !hasProductClaimsBackend || !hasOIDCBackend {
+		return nil, errors.New("auth edge HAProxy config did not contain expected insertion anchors")
+	}
+	return []byte(strings.Join(out, "\n") + "\n"), nil
+}
+
+func hasLine(lines []string, needle string) bool {
+	for _, line := range lines {
+		if strings.TrimSpace(line) == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeAuthEdgePublicHosts(content []byte, domain string) []byte {
+	legacyAuth := "auth." + domain
+	legacyActions := "zitadel-actions." + domain
+	lines := strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trim := strings.TrimSpace(line)
+		if trim == "" {
+			continue
+		}
+		if strings.HasPrefix(trim, legacyAuth+" ") || strings.HasPrefix(trim, legacyActions+" ") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return []byte(strings.Join(out, "\n") + "\n")
+}
+
+func renderAuthEdgeDiscovery(cfg config) ([]byte, error) {
+	raw, err := os.ReadFile(cfg.authEdgeDiscovery)
+	if err != nil {
+		return nil, fmt.Errorf("read discovery manifest %s: %w", cfg.authEdgeDiscovery, err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return nil, fmt.Errorf("decode discovery manifest %s: %w", cfg.authEdgeDiscovery, err)
+	}
+	auth, _ := manifest["auth"].(map[string]any)
+	if auth == nil {
+		auth = map[string]any{}
+		manifest["auth"] = auth
+	}
+	cliClientID, err := readTrimmedOptional(cfg.cliClientIDPath)
+	if err != nil {
+		return nil, err
+	}
+	productAudience, err := readTrimmedOptional(cfg.productAudiencePath)
+	if err != nil {
+		return nil, err
+	}
+	auth["issuer_url"] = "https://" + cfg.authEdgeDomain
+	auth["cli_client_id"] = cliClientID
+	auth["product_api_audience"] = productAudience
+	out, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode discovery manifest: %w", err)
+	}
+	return append(out, '\n'), nil
+}
+
+func readTrimmedOptional(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", nil
+	}
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	return strings.TrimSpace(string(raw)), nil
 }
 
 func groupID(group string) (int, error) {

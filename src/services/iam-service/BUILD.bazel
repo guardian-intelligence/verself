@@ -25,10 +25,10 @@ nomad_component(
     job_id = "iam-service",
     job_spec = "nomad.hcl",
     requires = [
+        "auth:control-plane",
         "clickhouse:migrations",
         "nomad:job:spicedb",
         "postgres:server",
-        "zitadel:http",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

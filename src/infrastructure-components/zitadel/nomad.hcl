@@ -17,30 +17,27 @@ job "zitadel" {
 
     task "setup" {
       driver = "raw_exec"
-      user = "zitadel"
+      user = "root"
       lifecycle {
         hook = "prestart"
         sidecar = false
       }
 
+      artifact {
+        source = "verself-artifact://zitadel-setup-apply"
+        destination = "local"
+        chown = true
+      }
+
       config {
-        command = "/opt/verself/profile/bin/zitadel"
-        args = [
-          "setup",
-          "--masterkeyFile",
-          "/etc/credstore/zitadel/masterkey",
-          "--config",
-          "/etc/zitadel/config.yaml",
-          "--steps",
-          "/etc/zitadel/steps.yaml",
-        ]
+        command = "local/bin/zitadel-setup-apply"
       }
 
       env {
         HOME = "/var/lib/zitadel"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "zitadel-setup"
+        OTEL_SERVICE_NAME = "zitadel-setup-apply"
         VERSELF_ZITADEL_EXTERNAL_DOMAIN = "verself.sh"
         VERSELF_SUPERVISOR = "nomad"
       }

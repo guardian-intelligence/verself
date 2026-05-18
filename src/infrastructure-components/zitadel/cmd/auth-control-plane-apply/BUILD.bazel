@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "auth-control-plane-apply_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/zitadel/cmd/auth-control-plane-apply",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/tools/observability/go/otel",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+    ],
+)
+
+go_binary(
+    name = "auth-control-plane-apply",
+    embed = [":auth-control-plane-apply_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "auth-control-plane-apply_nomad_artifact",
+    binary = ":auth-control-plane-apply",
+    output = "auth-control-plane-apply",
+)
+
+go_test(
+    name = "auth-control-plane-apply_test",
+    srcs = ["main_test.go"],
+    embed = [":auth-control-plane-apply_lib"],
+)
