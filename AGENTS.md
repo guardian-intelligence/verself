@@ -20,9 +20,13 @@ our internal CI - ~1m30s
 
 If we ever become slower than either platform, that becomes a top concern as speeding up our customers is a top priority.
 
-This is a polyglot monorepo structured as a modular monolith.
+# verself.sh (Verself)
 
-General Structure:
+This is a polyglot monorepo structured as a modular monolith. This philosophical goal of the software architecture is to maximize portability onto as many platform surfaces as possible with as rapid a software-development-lifecycle as possible. We place high importance on verifying that software is working correctly through repeatable automated QA. Therefore our main objectives with regards to improving the code base and architecture are:
+
+1. Figure out how to run our onboarding in prod continuously while h
+
+## General Structure:
 
 Smithy IDL + Verself traits (`src/smithy/models/verself`)
     -> Smithy semantic model
@@ -33,7 +37,9 @@ Smithy IDL + Verself traits (`src/smithy/models/verself`)
     -> service-local typed clients/adapters for repo-owned calls
     -> public SDK transports through OpenAPI tooling where reliable + curated wrappers
 
-Layers:
+## Tech Stack (partial description):
+
+## Layers:
 
 1. Host layer: machine + OS configuration and bootstrap substrate like vm-orchestrator, guest telemetry staging, HAProxy, nftables, ClickHouse initial schema, ZFS, SPIRE, Nomad, WireGuard, and site/domain facts. Ansible operates on bootstrap host substrate. Nomad manages platform components, services, and frontends beyond that layer. Directories: `src/host`, `src/integrations`
 2. Contract layer: Smithy models under `src/smithy/models/verself` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, generated projections, and conformance cases.
@@ -42,7 +48,7 @@ Layers:
 5. Curated SDK layer: stable hand-written exports that wrap public transport implementations and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
 6. Facades: the verself-web app and the CLI and, in the future, mobile apps.
 
-IAM:
+## IAM:
 
 GCP-style IAM API
    `getIamPolicy` / `setIamPolicy` / `testIamPermissions`
@@ -61,8 +67,6 @@ Data Handling: See docs/architecture/data-handling.md
 
 Each service defines a /recoveryz to expose recovery health status
 
-Tech Stack (partial description):
-
 * ClickHouse for all time series data (host process metrics, time-series data from APIs), logs, traces, metrics (Wide Event pattern a. la Majors et. al/Honeycomb), miscellaneous append only event ledger where realtime policy decisions or UX isn't critical. ClickHouse rows never get updated
 * TigerBeetle for financial OLTP. Currently using for financial truth and treating as a ledger -- we model debits/credits.
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
@@ -70,6 +74,8 @@ Tech Stack (partial description):
 * SPIRE for our SPIFFE implementation, x509-SVIDs everywhere except services that don't support SPIFFE where we use short-lived JWT-SVIDs.
 * Golang's River library for background jobs within a service. NATS JetStream for messaging/fan-out batch jobs between services.
 * Stalwart over JMAP for inbound mail, Resend API integration for outbound
+
+## Finance 
 
 Invariant patterns:
 
