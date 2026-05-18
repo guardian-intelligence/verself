@@ -22,6 +22,7 @@ import (
 	"github.com/verself/iam-service/internal/zitadel"
 	"github.com/verself/iam-service/migrations"
 	iamschema "github.com/verself/iam-service/schema"
+	notificationsinternalclient "github.com/verself/notifications-service/internalclient"
 	verselfotel "github.com/verself/observability/otel"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
@@ -264,6 +265,15 @@ func run() error {
 		ProjectID:          authAudience,
 	}
 	api.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
+	notificationsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceNotifications, nil)
+	if err != nil {
+		return fmt.Errorf("iam notifications mtls: %w", err)
+	}
+	notificationsClient, err := notificationsinternalclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceNotifications), notificationsinternalclient.WithHTTPClient(notificationsHTTPClient))
+	if err != nil {
+		return fmt.Errorf("iam notifications client: %w", err)
+	}
+	inviteNotifier := notificationInviteSender{client: notificationsClient}
 	browserAuth, err := api.NewBrowserAuth(ctx, api.BrowserAuthConfig{
 		PG:              pg,
 		Logger:          logger,
@@ -301,9 +311,18 @@ func run() error {
 	})
 	api.RegisterZitadelActionRoutes(rootMux, identityService, zitadelActionSigningKey)
 	api.RegisterBrowserAuthRoutes(rootMux, browserAuth)
+	api.RegisterInviteAcceptanceRoutes(rootMux, identityService)
 
 	privateMux := http.NewServeMux()
-	api.NewAPI(privateMux, api.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: identityService, Authz: authzService, InstallationID: installationID})
+	api.NewAPI(privateMux, api.Config{
+		Version:        serviceVersion,
+		ListenAddr:     listenAddr,
+		Service:        identityService,
+		Authz:          authzService,
+		InstallationID: installationID,
+		ProductBaseURL: browserAuthPublicBaseURL,
+		InviteNotifier: inviteNotifier,
+	})
 	authConfig := auth.Config{
 		IssuerURL: authIssuerURL,
 		Audience:  authAudience,
@@ -406,4 +425,59 @@ func requestMayHaveBody(r *http.Request) bool {
 	default:
 		return false
 	}
+}
+
+type notificationInviteSender struct {
+	client *notificationsinternalclient.Client
+}
+
+func (s notificationInviteSender) SendMemberInvite(ctx context.Context, input api.MemberInviteNotification) error {
+	if s.client == nil {
+		return fmt.Errorf("notifications client is required")
+	}
+	orgName := strings.TrimSpace(input.OrgDisplayName)
+	if orgName == "" {
+		orgName = strings.TrimSpace(input.OrgSlug)
+	}
+	title := notificationsinternalclient.NotificationTitle("Join " + orgName + " on Verself")
+	priority := notificationsinternalclient.NotificationPriorityNORMAL
+	actionURL := notificationsinternalclient.ActionURL(strings.TrimSpace(input.ActionURL))
+	email := notificationsinternalclient.EmailAddress(strings.TrimSpace(input.Email))
+	var resourceName *notificationsinternalclient.ResourceName
+	if trimmed := strings.TrimSpace(input.ResourceName); trimmed != "" {
+		value := notificationsinternalclient.ResourceName(trimmed)
+		resourceName = &value
+	}
+	data := map[string]any{
+		"org_id":   strings.TrimSpace(input.OrgID),
+		"org_slug": strings.TrimSpace(input.OrgSlug),
+		"user_id":  strings.TrimSpace(input.UserID),
+	}
+	body := notificationsinternalclient.RequiredNotificationBody(
+		fmt.Sprintf("You were invited to join %s on Verself.\n\nAccept the invite: %s\n\nIf you did not expect this invitation, ignore this email.", orgName, actionURL),
+	)
+	resp, err := s.client.TriggerNotificationWorkflow(ctx, notificationsinternalclient.TriggerNotificationWorkflowRequest{
+		WorkflowKey:    notificationsinternalclient.WorkflowKey("iam.member.invite"),
+		IdempotencyKey: notificationsinternalclient.IdempotencyKey("iam:member_invite:" + strings.TrimSpace(input.UserID)),
+		Body: notificationsinternalclient.TriggerNotificationWorkflowInputBody{
+			ActionURL:          &actionURL,
+			Body:               body,
+			Data:               &data,
+			OrgID:              notificationsinternalclient.OrgId(strings.TrimSpace(input.OrgID)),
+			Priority:           &priority,
+			Recipients:         notificationsinternalclient.WorkflowRecipients{{Email: &email}},
+			TargetResourceName: resourceName,
+			Title:              &title,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return fmt.Errorf("notifications workflow returned no response")
+	}
+	if resp.StatusCode != http.StatusAccepted || resp.Result == nil {
+		return fmt.Errorf("notifications workflow status %d: %s", resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+	}
+	return nil
 }

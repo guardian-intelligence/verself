@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -32,12 +33,16 @@ type Store interface {
 	AddAPICredentialSecret(ctx context.Context, orgID, credentialID, actor string, secret APICredentialSecret) (APICredential, error)
 	RevokeAPICredential(ctx context.Context, orgID, credentialID, actor string, now time.Time) (APICredential, error)
 	ResolveAPICredentialClaims(ctx context.Context, subjectID string, usedAt time.Time) (ResolveAPICredentialClaimsResult, error)
+	CreateMemberInviteAcceptance(ctx context.Context, invite MemberInviteAcceptance) error
+	GetMemberInviteAcceptance(ctx context.Context, tokenHash string, now time.Time) (MemberInviteAcceptance, error)
+	AcceptMemberInviteAcceptance(ctx context.Context, tokenHash string, now time.Time) error
 }
 
 type Directory interface {
 	CreateOrganization(ctx context.Context, input DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error)
 	ListMembers(ctx context.Context, orgID string) ([]Member, error)
-	InviteMember(ctx context.Context, orgID string, input InviteMemberRequest) (InviteMemberResult, error)
+	InviteMember(ctx context.Context, orgID string, input InviteMemberRequest) (DirectoryInviteMemberResult, error)
+	CompleteMemberInvite(ctx context.Context, input DirectoryCompleteMemberInviteRequest) error
 	UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error)
 	CreateServiceAccountCredential(ctx context.Context, orgID string, input ServiceAccountCredentialInput) (subjectID string, material APICredentialIssuedMaterial, err error)
 	AddServiceAccountCredential(ctx context.Context, input AddServiceAccountCredentialInput) (APICredentialIssuedMaterial, error)
@@ -205,6 +210,10 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 	if err := validateInvite(input); err != nil {
 		return InviteMemberResult{}, err
 	}
+	store, err := s.store()
+	if err != nil {
+		return InviteMemberResult{}, err
+	}
 	directory, err := s.directory()
 	if err != nil {
 		return InviteMemberResult{}, err
@@ -213,12 +222,66 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 	if err != nil {
 		return InviteMemberResult{}, err
 	}
-	result, err := directory.InviteMember(ctx, providerOrgID, normalizeInvite(input))
+	directoryResult, err := directory.InviteMember(ctx, providerOrgID, normalizeInvite(input))
 	if err != nil {
 		return InviteMemberResult{}, err
 	}
-	result.Roles = normalizeInviteRoles(input.Roles)
-	return result, nil
+	token, tokenHash, err := randomMemberInviteAcceptanceToken()
+	if err != nil {
+		return InviteMemberResult{}, err
+	}
+	now := s.now()
+	expiresAt := now.Add(72 * time.Hour)
+	if err := store.CreateMemberInviteAcceptance(ctx, MemberInviteAcceptance{
+		TokenHash:             tokenHash,
+		OrgID:                 principal.OrgID,
+		UserID:                directoryResult.UserID,
+		Email:                 directoryResult.Email,
+		EmailVerificationCode: directoryResult.EmailVerificationCode,
+		PasswordResetCode:     directoryResult.PasswordResetCode,
+		CreatedAt:             now,
+		ExpiresAt:             expiresAt,
+	}); err != nil {
+		return InviteMemberResult{}, err
+	}
+	return InviteMemberResult{
+		UserID:              directoryResult.UserID,
+		Email:               directoryResult.Email,
+		Status:              directoryResult.Status,
+		Roles:               normalizeInviteRoles(input.Roles),
+		AcceptanceToken:     token,
+		AcceptanceExpiresAt: expiresAt,
+	}, nil
+}
+
+func (s *Service) CompleteMemberInvite(ctx context.Context, input CompleteMemberInviteRequest) error {
+	input, err := normalizeCompleteMemberInvite(input)
+	if err != nil {
+		return err
+	}
+	store, err := s.store()
+	if err != nil {
+		return err
+	}
+	tokenHash := memberInviteAcceptanceTokenHash(input.AcceptanceToken)
+	now := s.now()
+	acceptance, err := store.GetMemberInviteAcceptance(ctx, tokenHash, now)
+	if err != nil {
+		return err
+	}
+	directory, err := s.directory()
+	if err != nil {
+		return err
+	}
+	if err := directory.CompleteMemberInvite(ctx, DirectoryCompleteMemberInviteRequest{
+		UserID:                acceptance.UserID,
+		PasswordResetCode:     acceptance.PasswordResetCode,
+		EmailVerificationCode: acceptance.EmailVerificationCode,
+		Password:              input.Password,
+	}); err != nil {
+		return err
+	}
+	return store.AcceptMemberInviteAcceptance(ctx, tokenHash, s.now())
 }
 
 func (s *Service) UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error) {
@@ -702,6 +765,20 @@ func randomCrockfordText(length int) (string, error) {
 	return b.String(), nil
 }
 
+func randomMemberInviteAcceptanceToken() (token string, hash string, err error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", "", err
+	}
+	token = base64.RawURLEncoding.EncodeToString(raw)
+	return token, memberInviteAcceptanceTokenHash(token), nil
+}
+
+func memberInviteAcceptanceTokenHash(token string) string {
+	hash, _ := SecretHash(strings.TrimSpace(token))
+	return hash
+}
+
 func validateInvite(input InviteMemberRequest) error {
 	if _, err := mail.ParseAddress(strings.TrimSpace(input.Email)); err != nil {
 		return fmt.Errorf("%w: email is invalid", ErrInvalidInput)
@@ -764,6 +841,26 @@ func normalizeInvite(input InviteMemberRequest) InviteMemberRequest {
 	input.FamilyName = strings.TrimSpace(input.FamilyName)
 	input.Roles = normalizeInviteRoles(input.Roles)
 	return input
+}
+
+func normalizeCompleteMemberInvite(input CompleteMemberInviteRequest) (CompleteMemberInviteRequest, error) {
+	input.AcceptanceToken = strings.TrimSpace(input.AcceptanceToken)
+	if input.AcceptanceToken == "" {
+		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: invite token is required", ErrInvalidInput)
+	}
+	if strings.TrimSpace(input.Password) == "" {
+		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password is required", ErrInvalidInput)
+	}
+	if len(input.AcceptanceToken) > 512 {
+		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: invite token is invalid", ErrInvalidInput)
+	}
+	if len(input.Password) < 12 {
+		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password must be at least 12 characters", ErrInvalidInput)
+	}
+	if len(input.Password) > 1024 {
+		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password is too long", ErrInvalidInput)
+	}
+	return input, nil
 }
 
 func normalizeInviteRoles(input []string) []string {

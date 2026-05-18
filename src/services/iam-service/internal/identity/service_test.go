@@ -100,6 +100,9 @@ func TestServiceInviteMemberNormalizesRolesForDirectoryAndPolicy(t *testing.T) {
 	if strings.Join(got.Roles, ",") != "roles/admin,roles/member" {
 		t.Fatalf("roles = %#v", got.Roles)
 	}
+	if got.AcceptanceToken == "" || got.AcceptanceExpiresAt.IsZero() {
+		t.Fatalf("invite acceptance token missing: %#v", got)
+	}
 }
 
 type fakeMembersDirectory struct {
@@ -107,6 +110,7 @@ type fakeMembersDirectory struct {
 	createInput         DirectoryCreateOrganizationRequest
 	inviteProviderOrgID string
 	inviteInput         InviteMemberRequest
+	completeInput       DirectoryCompleteMemberInviteRequest
 }
 
 func (d *fakeMembersDirectory) ListMembers(context.Context, string) ([]Member, error) {
@@ -120,10 +124,15 @@ func (d *fakeMembersDirectory) CreateOrganization(_ context.Context, input Direc
 	return DirectoryCreateOrganizationResult{OrganizationID: "43"}, nil
 }
 
-func (d *fakeMembersDirectory) InviteMember(_ context.Context, providerOrgID string, input InviteMemberRequest) (InviteMemberResult, error) {
+func (d *fakeMembersDirectory) InviteMember(_ context.Context, providerOrgID string, input InviteMemberRequest) (DirectoryInviteMemberResult, error) {
 	d.inviteProviderOrgID = providerOrgID
 	d.inviteInput = input
-	return InviteMemberResult{UserID: "user-invite", Email: input.Email, Status: "invited"}, nil
+	return DirectoryInviteMemberResult{UserID: "user-invite", Email: input.Email, Status: "invited", EmailVerificationCode: "email-code", PasswordResetCode: "password-code"}, nil
+}
+
+func (d *fakeMembersDirectory) CompleteMemberInvite(_ context.Context, input DirectoryCompleteMemberInviteRequest) error {
+	d.completeInput = input
+	return nil
 }
 
 func (d *fakeMembersDirectory) UpdateHumanProfile(context.Context, string, HumanProfileUpdate) (HumanProfile, error) {
@@ -172,6 +181,18 @@ func (s *fakeSignupStore) CreateOrganizationProfile(_ context.Context, input Cre
 
 func (fakeMembersStore) GetOrganizationProfile(context.Context, string, string) (OrganizationProfile, error) {
 	return OrganizationProfile{OrgID: "org_01J8QJ4P1R7S9W2X5M6N8P0Q2", IdentityProviderOrgID: "42", DisplayName: "Acme", Slug: "acme", State: OrganizationProfileStateActive, Version: 1}, nil
+}
+
+func (fakeMembersStore) CreateMemberInviteAcceptance(context.Context, MemberInviteAcceptance) error {
+	return nil
+}
+
+func (fakeMembersStore) GetMemberInviteAcceptance(context.Context, string, time.Time) (MemberInviteAcceptance, error) {
+	return MemberInviteAcceptance{UserID: "user-invite", EmailVerificationCode: "email-code", PasswordResetCode: "password-code"}, nil
+}
+
+func (fakeMembersStore) AcceptMemberInviteAcceptance(context.Context, string, time.Time) error {
+	return nil
 }
 
 func (fakeMembersStore) ListOrganizationMetadataByOrgIDs(_ context.Context, orgIDs []string) ([]OrganizationMetadata, error) {

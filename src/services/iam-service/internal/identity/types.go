@@ -145,10 +145,44 @@ type HumanProfile struct {
 }
 
 type InviteMemberResult struct {
-	UserID string
-	Email  string
-	Status string
-	Roles  []string
+	UserID              string
+	Email               string
+	Status              string
+	Roles               []string
+	AcceptanceToken     string
+	AcceptanceExpiresAt time.Time
+}
+
+type DirectoryInviteMemberResult struct {
+	UserID                string
+	Email                 string
+	Status                string
+	EmailVerificationCode string
+	PasswordResetCode     string
+}
+
+type CompleteMemberInviteRequest struct {
+	AcceptanceToken string
+	Password        string
+}
+
+type DirectoryCompleteMemberInviteRequest struct {
+	UserID                string
+	PasswordResetCode     string
+	EmailVerificationCode string
+	Password              string
+}
+
+type MemberInviteAcceptance struct {
+	TokenHash             string
+	OrgID                 string
+	UserID                string
+	Email                 string
+	EmailVerificationCode string
+	PasswordResetCode     string
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	AcceptedAt            *time.Time
 }
 
 type Operations struct {

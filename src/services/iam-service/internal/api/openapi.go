@@ -16,8 +16,10 @@ type Config struct {
 	Version        string
 	ListenAddr     string
 	InstallationID string
+	ProductBaseURL string
 	Service        *identity.Service
 	Authz          *authz.Service
+	InviteNotifier InviteNotifier
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -31,7 +33,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
-	RegisterRoutes(api, cfg.Service, cfg.Authz, cfg.InstallationID)
+	RegisterRoutes(api, cfg.Service, cfg.Authz, cfg.InstallationID, cfg.ProductBaseURL, cfg.InviteNotifier)
 	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }

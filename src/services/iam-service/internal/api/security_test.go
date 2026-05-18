@@ -170,6 +170,18 @@ func (s staticIdentityStore) ResolveAPICredentialClaims(context.Context, string,
 	return identity.ResolveAPICredentialClaimsResult{}, identity.ErrAPICredentialMissing
 }
 
+func (s staticIdentityStore) CreateMemberInviteAcceptance(context.Context, identity.MemberInviteAcceptance) error {
+	return nil
+}
+
+func (s staticIdentityStore) GetMemberInviteAcceptance(context.Context, string, time.Time) (identity.MemberInviteAcceptance, error) {
+	return identity.MemberInviteAcceptance{}, identity.ErrMemberMissing
+}
+
+func (s staticIdentityStore) AcceptMemberInviteAcceptance(context.Context, string, time.Time) error {
+	return identity.ErrMemberMissing
+}
+
 func TestOperationPolicyRequiresIdempotencyHeader(t *testing.T) {
 	err := requireContractIdempotency(context.Background(), contractapi.UpdateOrganization.Descriptor)
 	var statusErr huma.StatusError

@@ -9,6 +9,7 @@ go_library(
         "errors.go",
         "internal.go",
         "internal_openapi.go",
+        "invite_accept.go",
         "openapi.go",
         "policy.go",
         "public_contract.go",

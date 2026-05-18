@@ -13,6 +13,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/verself/governance-service v0.0.0
+	github.com/verself/notifications-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
@@ -49,7 +50,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jzelinskie/stringz v0.0.3 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
@@ -79,6 +80,8 @@ require (
 )
 
 replace github.com/verself/governance-service => ../governance-service
+
+replace github.com/verself/notifications-service => ../notifications-service
 
 replace github.com/verself/service-runtime => ../service-runtime/go
 

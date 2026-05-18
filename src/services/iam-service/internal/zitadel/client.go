@@ -115,16 +115,38 @@ func (c *Client) CreateOrganization(ctx context.Context, input identity.Director
 	return identity.DirectoryCreateOrganizationResult{OrganizationID: orgID}, nil
 }
 
-func (c *Client) InviteMember(ctx context.Context, orgID string, input identity.InviteMemberRequest) (identity.InviteMemberResult, error) {
-	userID, err := c.createHumanUser(ctx, orgID, input)
+func (c *Client) InviteMember(ctx context.Context, orgID string, input identity.InviteMemberRequest) (identity.DirectoryInviteMemberResult, error) {
+	created, err := c.createHumanUser(ctx, orgID, input)
 	if err != nil {
-		return identity.InviteMemberResult{}, err
+		return identity.DirectoryInviteMemberResult{}, err
 	}
-	return identity.InviteMemberResult{
-		UserID: userID,
-		Email:  input.Email,
-		Status: "invited",
+	passwordResetCode, err := c.createPasswordResetCode(ctx, created.UserID)
+	if err != nil {
+		return identity.DirectoryInviteMemberResult{}, err
+	}
+	return identity.DirectoryInviteMemberResult{
+		UserID:                created.UserID,
+		Email:                 input.Email,
+		Status:                "invited",
+		EmailVerificationCode: created.EmailVerificationCode,
+		PasswordResetCode:     passwordResetCode,
 	}, nil
+}
+
+func (c *Client) CompleteMemberInvite(ctx context.Context, input identity.DirectoryCompleteMemberInviteRequest) error {
+	userID := strings.TrimSpace(input.UserID)
+	passwordResetCode := strings.TrimSpace(input.PasswordResetCode)
+	emailVerificationCode := strings.TrimSpace(input.EmailVerificationCode)
+	if userID == "" || passwordResetCode == "" || emailVerificationCode == "" || strings.TrimSpace(input.Password) == "" {
+		return fmt.Errorf("%w: user_id, invite codes, and password are required", identity.ErrInvalidInput)
+	}
+	if err := c.setPassword(ctx, userID, passwordResetCode, input.Password); err != nil {
+		return err
+	}
+	if err := c.verifyEmail(ctx, userID, emailVerificationCode); err != nil {
+		return err
+	}
+	return nil
 }
 
 type userSummary struct {
@@ -312,11 +334,17 @@ func (c *Client) UpdateHumanProfile(ctx context.Context, subjectID string, input
 }
 
 type createUserResponse struct {
-	ID     string `json:"id"`
-	UserID string `json:"userId"`
+	ID        string `json:"id"`
+	UserID    string `json:"userId"`
+	EmailCode string `json:"emailCode"`
 }
 
-func (c *Client) createHumanUser(ctx context.Context, orgID string, input identity.InviteMemberRequest) (string, error) {
+type createdHumanUser struct {
+	UserID                string
+	EmailVerificationCode string
+}
+
+func (c *Client) createHumanUser(ctx context.Context, orgID string, input identity.InviteMemberRequest) (createdHumanUser, error) {
 	body := map[string]any{
 		"organizationId": orgID,
 		"username":       input.Email,
@@ -326,22 +354,86 @@ func (c *Client) createHumanUser(ctx context.Context, orgID string, input identi
 				"familyName": firstNonEmpty(input.FamilyName, "Member"),
 			},
 			"email": map[string]any{
-				"email":    input.Email,
-				"sendCode": map[string]any{},
+				"email":      input.Email,
+				"returnCode": map[string]any{},
 			},
 		},
 	}
 	var out createUserResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out); err != nil {
-		return "", fmt.Errorf("%w: create user: %v", identity.ErrZitadelUnavailable, err)
+		if zitadelRequestInvalid(err) {
+			return createdHumanUser{}, fmt.Errorf("%w: create user: %v", identity.ErrInvalidInput, err)
+		}
+		return createdHumanUser{}, fmt.Errorf("%w: create user: %v", identity.ErrZitadelUnavailable, err)
 	}
-	if out.ID != "" {
-		return out.ID, nil
+	userID := firstNonEmpty(out.ID, out.UserID)
+	if userID == "" {
+		return createdHumanUser{}, fmt.Errorf("%w: create user returned no user id", identity.ErrZitadelUnavailable)
 	}
-	if out.UserID != "" {
-		return out.UserID, nil
+	if strings.TrimSpace(out.EmailCode) == "" {
+		return createdHumanUser{}, fmt.Errorf("%w: create user returned no email verification code", identity.ErrZitadelUnavailable)
 	}
-	return "", fmt.Errorf("%w: create user returned no user id", identity.ErrZitadelUnavailable)
+	return createdHumanUser{UserID: userID, EmailVerificationCode: strings.TrimSpace(out.EmailCode)}, nil
+}
+
+type passwordResetResponse struct {
+	VerificationCode string `json:"verificationCode"`
+}
+
+func (c *Client) createPasswordResetCode(ctx context.Context, userID string) (string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return "", fmt.Errorf("%w: user_id is required", identity.ErrInvalidInput)
+	}
+	var out passwordResetResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/password_reset", map[string]any{"returnCode": map[string]any{}}, &out); err != nil {
+		if zitadelRequestInvalid(err) {
+			return "", fmt.Errorf("%w: create password reset code: %v", identity.ErrInvalidInput, err)
+		}
+		return "", fmt.Errorf("%w: create password reset code: %v", identity.ErrZitadelUnavailable, err)
+	}
+	if strings.TrimSpace(out.VerificationCode) == "" {
+		return "", fmt.Errorf("%w: create password reset returned no verification code", identity.ErrZitadelUnavailable)
+	}
+	return strings.TrimSpace(out.VerificationCode), nil
+}
+
+func (c *Client) setPassword(ctx context.Context, userID, verificationCode, password string) error {
+	userID = strings.TrimSpace(userID)
+	verificationCode = strings.TrimSpace(verificationCode)
+	if userID == "" || verificationCode == "" || strings.TrimSpace(password) == "" {
+		return fmt.Errorf("%w: user_id, verification_code, and password are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{
+		"newPassword": map[string]any{
+			"password":       password,
+			"changeRequired": false,
+		},
+		"verificationCode": verificationCode,
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/password", body, nil); err != nil {
+		if zitadelRequestInvalid(err) {
+			return fmt.Errorf("%w: set password: %v", identity.ErrInvalidInput, err)
+		}
+		return fmt.Errorf("%w: set password: %v", identity.ErrZitadelUnavailable, err)
+	}
+	return nil
+}
+
+func (c *Client) verifyEmail(ctx context.Context, userID, verificationCode string) error {
+	userID = strings.TrimSpace(userID)
+	verificationCode = strings.TrimSpace(verificationCode)
+	if userID == "" || verificationCode == "" {
+		return fmt.Errorf("%w: user_id and verification_code are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{"verificationCode": verificationCode}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/email/verify", body, nil); err != nil {
+		if zitadelRequestInvalid(err) {
+			return fmt.Errorf("%w: verify email: %v", identity.ErrInvalidInput, err)
+		}
+		return fmt.Errorf("%w: verify email: %v", identity.ErrZitadelUnavailable, err)
+	}
+	return nil
 }
 
 type flexibleInt int
@@ -395,7 +487,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 		return fmt.Errorf("read response: %w", readErr)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return zitadelStatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(respBody))}
 	}
 	if out == nil {
 		return nil
@@ -407,6 +499,31 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
+}
+
+type zitadelStatusError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e zitadelStatusError) Error() string {
+	if e.Body == "" {
+		return fmt.Sprintf("status %d", e.StatusCode)
+	}
+	return fmt.Sprintf("status %d: %s", e.StatusCode, e.Body)
+}
+
+func zitadelRequestInvalid(err error) bool {
+	var statusErr zitadelStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	switch statusErr.StatusCode {
+	case http.StatusBadRequest, http.StatusNotFound, http.StatusConflict:
+		return true
+	default:
+		return false
+	}
 }
 
 func zitadelResourceAlreadyGone(err error) bool {

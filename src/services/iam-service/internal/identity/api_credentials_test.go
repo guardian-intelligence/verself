@@ -169,6 +169,18 @@ func (s *apiCredentialTestStore) ResolveAPICredentialClaims(context.Context, str
 	return ResolveAPICredentialClaimsResult{}, ErrAPICredentialMissing
 }
 
+func (s *apiCredentialTestStore) CreateMemberInviteAcceptance(context.Context, MemberInviteAcceptance) error {
+	return nil
+}
+
+func (s *apiCredentialTestStore) GetMemberInviteAcceptance(context.Context, string, time.Time) (MemberInviteAcceptance, error) {
+	return MemberInviteAcceptance{}, ErrMemberMissing
+}
+
+func (s *apiCredentialTestStore) AcceptMemberInviteAcceptance(context.Context, string, time.Time) error {
+	return ErrMemberMissing
+}
+
 type apiCredentialTestDirectory struct {
 	material            APICredentialIssuedMaterial
 	deactivatedSubjects []string
@@ -182,8 +194,12 @@ func (d *apiCredentialTestDirectory) ListMembers(context.Context, string) ([]Mem
 	return nil, nil
 }
 
-func (d *apiCredentialTestDirectory) InviteMember(context.Context, string, InviteMemberRequest) (InviteMemberResult, error) {
-	return InviteMemberResult{}, nil
+func (d *apiCredentialTestDirectory) InviteMember(context.Context, string, InviteMemberRequest) (DirectoryInviteMemberResult, error) {
+	return DirectoryInviteMemberResult{}, nil
+}
+
+func (d *apiCredentialTestDirectory) CompleteMemberInvite(context.Context, DirectoryCompleteMemberInviteRequest) error {
+	return nil
 }
 
 func (d *apiCredentialTestDirectory) UpdateHumanProfile(context.Context, string, HumanProfileUpdate) (HumanProfile, error) {

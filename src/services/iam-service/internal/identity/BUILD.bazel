@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "catalog.go",
         "errors.go",
+        "member_invites_store.go",
         "operation_catalog.go",
         "organization_store.go",
         "service.go",

@@ -12,12 +12,28 @@ import (
 	auth "github.com/verself/service-runtime/auth"
 )
 
-func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string) {
+type InviteNotifier interface {
+	SendMemberInvite(ctx context.Context, input MemberInviteNotification) error
+}
+
+type MemberInviteNotification struct {
+	OrgID          string
+	OrgSlug        string
+	OrgDisplayName string
+	UserID         string
+	Email          string
+	ActionURL      string
+	ResourceName   string
+}
+
+func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string, inviteNotifier InviteNotifier) {
 	runtime := publicRuntime{service: svc, authz: authzSvc}
 	handlers := publicHandlers{
 		service:        svc,
 		authz:          authzSvc,
 		installationID: installationID,
+		productBaseURL: productBaseURL,
+		inviteNotifier: inviteNotifier,
 	}
 	registerPublicOperation(api, runtime, contractapi.ListOrganizations, handlers.ListOrganizations, "List organizations")
 	registerPublicOperation(api, runtime, contractapi.CreateOrganization, handlers.CreateOrganization, "Create organization")

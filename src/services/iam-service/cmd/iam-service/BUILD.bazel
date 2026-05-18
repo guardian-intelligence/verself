@@ -14,6 +14,7 @@ go_library(
         "//src/services/iam-service/internal/zitadel",
         "//src/services/iam-service/migrations",
         "//src/services/iam-service/schema",
+        "//src/services/notifications-service/internalclient",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",

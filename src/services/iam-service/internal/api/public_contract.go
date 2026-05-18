@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -325,6 +326,8 @@ type publicHandlers struct {
 	service        *identity.Service
 	authz          *authz.Service
 	installationID string
+	productBaseURL string
+	inviteNotifier InviteNotifier
 }
 
 func (h publicHandlers) ListOrganizations(ctx context.Context, _ *contractapi.ListOrganizationsInput) (*contractapi.ListOrganizationsOutput, error) {
@@ -465,6 +468,28 @@ func (h publicHandlers) InviteMember(ctx context.Context, input *contractapi.Inv
 		return nil, authzError(ctx, err)
 	}
 	invitation := h.memberInvitationSummary(principal.OrgID, result)
+	if h.inviteNotifier == nil {
+		return nil, internalFailure(ctx, "invite-notifier-unavailable", "invite notification delivery is unavailable", nil)
+	}
+	org, err := h.service.Organization(ctx, principal)
+	if err != nil {
+		return nil, identityError(ctx, err)
+	}
+	actionURL, err := h.memberInviteActionURL(org, result)
+	if err != nil {
+		return nil, internalFailure(ctx, "invite-url-invalid", "invite URL could not be built", err)
+	}
+	if err := h.inviteNotifier.SendMemberInvite(ctx, MemberInviteNotification{
+		OrgID:          principal.OrgID,
+		OrgSlug:        org.Slug,
+		OrgDisplayName: org.DisplayName,
+		UserID:         result.UserID,
+		Email:          result.Email,
+		ActionURL:      actionURL,
+		ResourceName:   string(invitation.ResourceName),
+	}); err != nil {
+		return nil, upstreamFailure(ctx, "invite-notification-failed", "invite notification could not be queued", err)
+	}
 	return &contractapi.InviteMemberOutput{Body: invitation}, nil
 }
 
@@ -630,6 +655,31 @@ func (h publicHandlers) memberInvitationSummary(orgID string, invitation identit
 		Status:       contractapi.MemberInvitationStatus(invitation.Status),
 		Roles:        roles,
 	}
+}
+
+func (h publicHandlers) memberInviteActionURL(org identity.Organization, invitation identity.InviteMemberResult) (string, error) {
+	if strings.TrimSpace(invitation.AcceptanceToken) == "" {
+		return "", fmt.Errorf("invite acceptance token is required")
+	}
+	if strings.TrimSpace(org.Slug) == "" {
+		return "", fmt.Errorf("organization slug is required")
+	}
+	base, err := url.Parse(strings.TrimSpace(h.productBaseURL))
+	if err != nil {
+		return "", err
+	}
+	if base.Scheme == "" || base.Host == "" {
+		return "", fmt.Errorf("product base URL must be absolute")
+	}
+	base.Path = "/invite"
+	base.RawPath = ""
+	base.RawQuery = ""
+	base.Fragment = ""
+	query := base.Query()
+	query.Set("token", invitation.AcceptanceToken)
+	query.Set("org", strings.TrimSpace(org.Slug))
+	base.RawQuery = query.Encode()
+	return base.String(), nil
 }
 
 func inviteRolesFromContract(input contractapi.InviteMemberRoles) []string {

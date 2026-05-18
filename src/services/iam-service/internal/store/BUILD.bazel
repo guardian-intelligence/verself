@@ -6,6 +6,7 @@ go_library(
         "api_credentials.sql.go",
         "browser_auth.sql.go",
         "db.go",
+        "member_invites.sql.go",
         "models.go",
         "organization.sql.go",
     ],

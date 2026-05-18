@@ -16,3 +16,15 @@ type IamBrowserLoginTransaction struct {
 	ExpiresAt    pgtype.Timestamptz
 	CreatedAt    pgtype.Timestamptz
 }
+
+type IamMemberInviteAcceptanceToken struct {
+	TokenHash             string
+	OrgID                 string
+	UserID                string
+	Email                 string
+	EmailVerificationCode string
+	PasswordResetCode     string
+	CreatedAt             pgtype.Timestamptz
+	ExpiresAt             pgtype.Timestamptz
+	AcceptedAt            pgtype.Timestamptz
+}

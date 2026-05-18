@@ -11,15 +11,21 @@ import (
 	"github.com/verself/iam-service/internal/identity"
 )
 
-func TestInviteMemberUsesSendCode(t *testing.T) {
+func TestInviteMemberCreatesReturnCodes(t *testing.T) {
 	var createUserBody map[string]any
+	var passwordResetBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/users/new":
 			if err := json.NewDecoder(r.Body).Decode(&createUserBody); err != nil {
 				t.Fatalf("decode user body: %v", err)
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": "user-1"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "user-1", "emailCode": "email-code"})
+		case "/v2/users/user-1/password_reset":
+			if err := json.NewDecoder(r.Body).Decode(&passwordResetBody); err != nil {
+				t.Fatalf("decode password reset body: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"verificationCode": "password-code"})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -30,7 +36,7 @@ func TestInviteMemberUsesSendCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	_, err = client.InviteMember(context.Background(), "42", identity.InviteMemberRequest{
+	got, err := client.InviteMember(context.Background(), "42", identity.InviteMemberRequest{
 		Email: "new@example.com",
 	})
 	if err != nil {
@@ -38,8 +44,60 @@ func TestInviteMemberUsesSendCode(t *testing.T) {
 	}
 	human, _ := createUserBody["human"].(map[string]any)
 	email, _ := human["email"].(map[string]any)
-	if _, ok := email["sendCode"].(map[string]any); !ok {
-		t.Fatalf("expected email.sendCode object in %#v", createUserBody)
+	if _, ok := email["returnCode"].(map[string]any); !ok {
+		t.Fatalf("expected email.returnCode object in %#v", createUserBody)
+	}
+	if _, ok := passwordResetBody["returnCode"].(map[string]any); !ok {
+		t.Fatalf("expected password reset returnCode object in %#v", passwordResetBody)
+	}
+	if got.UserID != "user-1" || got.EmailVerificationCode != "email-code" || got.PasswordResetCode != "password-code" {
+		t.Fatalf("unexpected invite result %#v", got)
+	}
+}
+
+func TestCompleteMemberInviteSetsPasswordAndVerifiesEmail(t *testing.T) {
+	var passwordBody map[string]any
+	var verifyBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/users/user-1/password":
+			if err := json.NewDecoder(r.Body).Decode(&passwordBody); err != nil {
+				t.Fatalf("decode password body: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{})
+		case "/v2/users/user-1/email/verify":
+			if err := json.NewDecoder(r.Body).Decode(&verifyBody); err != nil {
+				t.Fatalf("decode verify body: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client, err := New(Config{BaseURL: server.URL, AdminToken: "admin-token"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	err = client.CompleteMemberInvite(context.Background(), identity.DirectoryCompleteMemberInviteRequest{
+		UserID:                "user-1",
+		PasswordResetCode:     "password-code",
+		EmailVerificationCode: "email-code",
+		Password:              "correct horse battery staple",
+	})
+	if err != nil {
+		t.Fatalf("complete invite: %v", err)
+	}
+	if passwordBody["verificationCode"] != "password-code" {
+		t.Fatalf("unexpected password body %#v", passwordBody)
+	}
+	newPassword, _ := passwordBody["newPassword"].(map[string]any)
+	if newPassword["password"] != "correct horse battery staple" || newPassword["changeRequired"] != false {
+		t.Fatalf("unexpected password body %#v", passwordBody)
+	}
+	if verifyBody["verificationCode"] != "email-code" {
+		t.Fatalf("unexpected verify body %#v", verifyBody)
 	}
 }
 
