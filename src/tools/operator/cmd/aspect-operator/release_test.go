@@ -98,10 +98,7 @@ func TestNormalizeGitHubOwnerRepo(t *testing.T) {
 func hasReleaseProbeRow(rows []releaseProbeRow, check, status string) bool {
 	for _, row := range rows {
 		if row.Check == check && row.Status == status {
-			if strings.TrimSpace(row.Detail) == "" {
-				return false
-			}
-			return true
+			return strings.TrimSpace(row.Detail) != ""
 		}
 	}
 	return false

@@ -135,7 +135,9 @@ func fetchNPMRegistryPackage(ctx context.Context, client *http.Client, registry,
 	if err != nil {
 		return npmRegistryProbe{}, fmt.Errorf("query npm registry %s: %w", packageURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var metadata npmRegistryPackage
