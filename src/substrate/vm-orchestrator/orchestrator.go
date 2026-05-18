@@ -566,9 +566,7 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		err = bootErr
 		return nil, err
 	}
-	runtime.cleanups = append([]func(){func() {
-		o.releaseStorageKey(context.Background(), spec.StorageNamespace.OrgID, leaseID, keyHold)
-	}}, runtime.cleanups...)
+	o.prependStorageKeyCleanup(runtime, spec.StorageNamespace.OrgID, leaseID, keyHold)
 	keyHold = nil
 	for _, mount := range mounts {
 		mount := mount
@@ -610,6 +608,16 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		}
 	})
 	return runtime, nil
+}
+
+func (o *Orchestrator) prependStorageKeyCleanup(runtime *LeaseRuntime, orgID, leaseID string, hold *StorageKeyHold) {
+	if runtime == nil || hold == nil {
+		return
+	}
+	keyHold := hold
+	runtime.cleanups = append([]func(){func() {
+		o.releaseStorageKey(context.Background(), orgID, leaseID, keyHold)
+	}}, runtime.cleanups...)
 }
 
 func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Lease, mounts []FilesystemMount) ([]preparedFilesystemMount, error) {

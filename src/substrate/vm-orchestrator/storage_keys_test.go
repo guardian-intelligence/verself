@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -48,4 +49,47 @@ func TestFileStorageKeyProviderRejectsUnsafeOrgID(t *testing.T) {
 	if _, err := provider.GetOrCreateStorageKey(context.Background(), "../org_a"); err == nil {
 		t.Fatal("GetOrCreateStorageKey accepted unsafe org id")
 	}
+}
+
+func TestStorageKeyCleanupCapturesHold(t *testing.T) {
+	key := make([]byte, storageKeyBytes)
+	for i := range key {
+		key[i] = byte(i + 1)
+	}
+	manager := NewStorageKeyManager(staticStorageKeyProvider{material: StorageKeyMaterial{Key: key, Version: "test-key"}}, nil)
+	hold, err := manager.Acquire(context.Background(), "org_a", "lease-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Equal(hold.key, make([]byte, storageKeyBytes)) {
+		t.Fatal("test setup produced an empty key hold")
+	}
+	o := New(Config{Pool: "pool", ImageDataset: "images", GoldenDataset: "goldens", WorkloadDataset: "workloads"}, nil, WithPrivOps(&filesystemMountTestPrivOps{}), WithStorageKeyManager(manager))
+	runtime := &LeaseRuntime{}
+	captured := hold
+	o.prependStorageKeyCleanup(runtime, "org_a", "lease-a", hold)
+	hold = nil
+	if hold != nil {
+		t.Fatal("test setup failed to clear outer hold reference")
+	}
+	for i := len(runtime.cleanups) - 1; i >= 0; i-- {
+		runtime.cleanups[i]()
+	}
+	manager.mu.Lock()
+	_, stillHeld := manager.refs["org_a"]
+	manager.mu.Unlock()
+	if stillHeld {
+		t.Fatal("storage key hold was not released")
+	}
+	if !slices.Equal(captured.key, make([]byte, storageKeyBytes)) {
+		t.Fatal("released storage key material was not zeroed")
+	}
+}
+
+type staticStorageKeyProvider struct {
+	material StorageKeyMaterial
+}
+
+func (p staticStorageKeyProvider) GetOrCreateStorageKey(context.Context, string) (StorageKeyMaterial, error) {
+	return StorageKeyMaterial{Key: append([]byte(nil), p.material.Key...), Version: p.material.Version}, nil
 }
