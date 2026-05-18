@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verself · Pricing & Capacity Calculator</title>
+<style>
+  :root{
+    --bg:#0d0f12; --panel:#14171c; --panel2:#181c22; --line:#262b33;
+    --ink:#e7eaf0; --mut:#8b94a3; --dim:#5b6472; --acc:#6ea8fe;
+    --pos:#3ecf8e; --neg:#f0626f; --warn:#e0a83b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-variant-numeric:tabular-nums}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px}
+  header{display:flex;align-items:baseline;justify-content:space-between;
+    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
+  header h1{font-size:15px;font-weight:600;letter-spacing:.2px}
+  header .sub{color:var(--dim);font-size:12px}
+  .presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .presets button{background:var(--panel);color:var(--mut);border:1px solid var(--line);
+    padding:5px 10px;font-size:12px;border-radius:4px;cursor:pointer}
+  .presets button:hover{color:var(--ink);border-color:var(--dim)}
+  .grid{display:grid;grid-template-columns:380px 1fr;gap:18px;align-items:start}
+  .col{display:flex;flex-direction:column;gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+  .card h2{font-size:11px;text-transform:uppercase;letter-spacing:.12em;
+    color:var(--dim);font-weight:600;margin-bottom:12px}
+  .ctl{margin-bottom:13px}
+  .ctl:last-child{margin-bottom:0}
+  .ctl label{display:flex;justify-content:space-between;font-size:12px;
+    color:var(--mut);margin-bottom:5px}
+  .ctl label b{color:var(--ink);font-weight:600}
+  input[type=range]{width:100%;height:3px;appearance:none;background:var(--line);
+    border-radius:2px;outline:none}
+  input[type=range]::-webkit-slider-thumb{appearance:none;width:13px;height:13px;
+    border-radius:50%;background:var(--acc);cursor:pointer}
+  .seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+  .seg button{flex:1;background:var(--panel2);color:var(--mut);border:0;
+    padding:7px 0;font-size:12px;cursor:pointer}
+  .seg button.on{background:var(--acc);color:#0d0f12;font-weight:600}
+  .ref{position:relative;height:0}
+  .ref span{position:absolute;top:-4px;font-size:10px;color:var(--dim);
+    transform:translateX(-50%);white-space:nowrap}
+  .num input{width:74px;background:var(--panel2);border:1px solid var(--line);
+    color:var(--ink);padding:4px 6px;border-radius:3px;font:inherit;text-align:right}
+  .bundled{display:none}
+  .bundled.show{display:block}
+  /* results */
+  .verdict{display:flex;align-items:flex-end;justify-content:space-between;gap:14px}
+  .verdict .big{font-size:34px;font-weight:600;line-height:1}
+  .verdict .lab{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+  .pos{color:var(--pos)} .neg{color:var(--neg)} .warn{color:var(--warn)}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-top:14px}
+  .kpi{background:var(--panel);padding:11px 13px}
+  .kpi .v{font-size:18px;font-weight:600}
+  .kpi .l{font-size:11px;color:var(--dim);margin-top:2px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left;color:var(--mut)}
+  th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+  tfoot td{border-bottom:0;font-weight:600;border-top:1px solid var(--dim)}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .badge{font-size:12px;padding:5px 10px;border:1px solid var(--line);
+    border-radius:4px;background:var(--panel2);color:var(--mut)}
+  .badge b{color:var(--ink)}
+  .note{font-size:12px;color:var(--mut);line-height:1.6}
+  .note code{color:var(--acc);background:var(--panel2);padding:1px 5px;border-radius:3px}
+  .sumhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .sumhead button{background:var(--acc);color:#0d0f12;border:0;padding:6px 14px;
+    font-size:12px;font-weight:600;border-radius:4px;cursor:pointer}
+  pre{background:var(--bg);border:1px solid var(--line);border-radius:5px;
+    padding:13px;font-size:12px;color:var(--mut);white-space:pre-wrap;
+    font-family:ui-monospace,Menlo,Consolas,monospace;max-height:280px;overflow:auto}
+  @media(max-width:920px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1>Verself — Pricing &amp; Capacity Calculator</h1>
+      <div class="sub">Pre-revenue GTM exploration · grounded in <span class="mono">docs/product/pricing.md</span></div></div>
+    <div class="sub mono" id="boxspec">s3-large-x86 · 48 vCPU · 128 GiB · 1024 GB NVMe</div>
+  </header>
+
+  <div class="presets" id="presets"></div>
+
+  <div class="grid">
+    <!-- ================= CONTROLS ================= -->
+    <div class="col">
+      <div class="card">
+        <h2>Pricing mode</h2>
+        <div class="seg" id="modeSeg">
+          <button data-mode="metered" class="on">Per-resource metered</button>
+          <button data-mode="bundled">Bundled</button>
+        </div>
+      </div>
+
+      <div class="card" id="meteredCard">
+        <h2>Price vector</h2>
+        <div class="ctl">
+          <label>Compute <b class="mono"><span id="vCompute"></span> $/vCPU-hr</b></label>
+          <input type="range" id="compute" min="0" max="0.50" step="0.005">
+          <div class="ref"><span style="left:48%">Blacksmith ·12¢</span><span style="left:96%">GitHub ·24¢</span></div>
+        </div>
+        <div class="ctl">
+          <label>Memory <b class="mono"><span id="vMem"></span> $/GiB-hr</b></label>
+          <input type="range" id="mem" min="0" max="0.05" step="0.0005">
+        </div>
+        <div class="ctl">
+          <label>Durable storage <b class="mono"><span id="vStor"></span> $/GiB-mo</b></label>
+          <input type="range" id="stor" min="0" max="0.50" step="0.01">
+        </div>
+        <div class="ctl">
+          <label>North/South egress <b class="mono"><span id="vEgr"></span> $/GB</b></label>
+          <input type="range" id="egr" min="0" max="0.20" step="0.005">
+        </div>
+      </div>
+
+      <div class="card bundled" id="bundledCard">
+        <h2>Bundle shape</h2>
+        <div class="ctl num"><label>Bundle vCPU <input id="bvcpu" type="number" min="1" max="48" step="1"></label></div>
+        <div class="ctl num"><label>Bundle GiB <input id="bgib" type="number" min="1" max="128" step="1"></label></div>
+        <div class="ctl num"><label>Bundle storage GB <input id="bstor" type="number" min="0" max="1024" step="8"></label></div>
+        <div class="ctl num"><label>Bundle $/hr <input id="bprice" type="number" min="0" max="20" step="0.01"></label></div>
+      </div>
+
+      <div class="card">
+        <h2>Box &amp; commitment</h2>
+        <div class="ctl">
+          <label>Commitment</label>
+          <div class="seg" id="commitSeg">
+            <button data-c="ondemand">On-demand</button>
+            <button data-c="monthly" class="on">Monthly</button>
+            <button data-c="annual">Annual</button>
+          </div>
+        </div>
+        <div class="ctl">
+          <label>Fleet size <b class="mono"><span id="vBoxes"></span> boxes</b></label>
+          <input type="range" id="boxes" min="1" max="50" step="1">
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Sustained demand</h2>
+        <div class="ctl">
+          <label>Avg concurrent vCPU / box <b class="mono"><span id="vDem"></span> of 48</b></label>
+          <input type="range" id="dem" min="0" max="48" step="0.5">
+        </div>
+        <div class="ctl">
+          <label>Workload vCPU : GiB ratio <b class="mono"><span id="vRatio"></span></b></label>
+          <input type="range" id="ratio" min="0.1" max="2.0" step="0.05">
+        </div>
+        <div class="ctl">
+          <label>Durable storage sold / box <b class="mono"><span id="vSsold"></span> GB</b></label>
+          <input type="range" id="ssold" min="0" max="1024" step="16">
+        </div>
+        <div class="ctl">
+          <label>Egress / box <b class="mono"><span id="vEsold"></span> GB/mo</b></label>
+          <input type="range" id="esold" min="0" max="5000" step="50">
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= RESULTS ================= -->
+    <div class="col">
+      <div class="card">
+        <div class="verdict">
+          <div><div class="lab">Contribution margin / box / mo</div>
+            <div class="big mono" id="mDollar">—</div></div>
+          <div style="text-align:right"><div class="lab">Margin</div>
+            <div class="big mono" id="mPct">—</div></div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="v mono" id="kRev">—</div><div class="l">Revenue / box / mo</div></div>
+          <div class="kpi"><div class="v mono" id="kCost">—</div><div class="l">Box cost / mo</div></div>
+          <div class="kpi"><div class="v mono" id="kFleet">—</div><div class="l">Fleet contribution / mo</div></div>
+        </div>
+        <div class="badges">
+          <span class="badge" id="bDom">—</span>
+          <span class="badge" id="bBE">—</span>
+          <span class="badge" id="bCommit">—</span>
+          <span class="badge" id="bComp">—</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Revenue breakdown / box / mo</h2>
+        <table>
+          <thead><tr><th>Resource</th><th>Quantity</th><th>Rate</th><th>Revenue</th></tr></thead>
+          <tbody id="brk"></tbody>
+          <tfoot><tr><td>Total</td><td></td><td></td><td class="mono" id="brkTot">—</td></tr></tfoot>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Break-even &amp; rate-card config</h2>
+        <div class="note" id="beNote"></div>
+        <table style="margin-top:10px">
+          <thead><tr><th>SKU</th><th>Price</th><th>plan_sku_rates.unit_rate</th></tr></thead>
+          <tbody id="urt"></tbody>
+        </table>
+        <div class="note" style="margin-top:8px">
+          Identity: <code>USD/resource-hr = unit_rate × 0.36</code> ($1 = 10,000,000 charge-units).
+          Set these in <code>billing-seed</code>. Durable storage &amp; egress are per-month / per-GB SKUs (not yet seeded).
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sumhead"><h2 style="margin:0">GTM pricing summary</h2>
+          <button id="copyBtn">Copy</button></div>
+        <pre id="summary"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const C = { // grounded constants
+  BOX:{vcpu:48,gib:128,nvme:1024},
+  HOURS:730,
+  COST:{ondemand:1.78*730, monthly:650, annual:455}, // $/box/mo
+  COSTHR:{ondemand:1.78, monthly:0.890, annual:0.623},
+  BOX_RATIO:48/128,           // 0.375 vCPU/GiB
+  GH:0.24, BS:0.12,           // competitor $/vCPU-hr
+  CU_PER_USD:1e7, FACTOR:0.36 // unit_rate = price_per_hr / 0.36
+};
+const DEF = {mode:'metered',compute:0.12,mem:0.005,stor:0.10,egr:0.01,
+  bvcpu:4,bgib:8,bstor:64,bprice:0.55,commit:'monthly',boxes:1,
+  dem:8,ratio:0.5,ssold:512,esold:200};
+const PRESETS = {
+  'Target (recommended)':{...DEF},
+  'Undercut GitHub 2×':{...DEF,compute:0.12,commit:'monthly',dem:10},
+  'Aggressive land-grab':{...DEF,compute:0.08,commit:'annual',dem:16,ssold:768},
+  'Premium':{...DEF,compute:0.20,commit:'monthly',dem:6},
+  'Break-even floor':{...DEF,compute:0.12,commit:'monthly',dem:7.4,ssold:0,esold:0}
+};
+let S = {...DEF};
+
+const $=id=>document.getElementById(id);
+const money=n=>(n<0?'-$':'$')+Math.abs(n).toLocaleString('en-US',{maximumFractionDigits:0});
+const money2=n=>(n<0?'-$':'$')+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+function compute(){
+  const o={};
+  if(S.mode==='metered'){
+    o.cVcpu=S.dem;
+    o.cGib=Math.min(S.dem/S.ratio, C.BOX.gib);
+    o.rCompute=o.cVcpu*S.compute*C.HOURS;
+    o.rMem=o.cGib*S.mem*C.HOURS;
+    o.rStor=S.ssold*S.stor;
+    o.rEgr=S.esold*S.egr;
+  } else {
+    const maxB=Math.min(C.BOX.vcpu/S.bvcpu, C.BOX.gib/S.bgib);
+    o.bundles=S.dem/S.bvcpu;
+    o.bundleCap=maxB;
+    o.rCompute=o.bundles*S.bprice*C.HOURS; // bundle covers all resources
+    o.rMem=0;o.rStor=0;o.rEgr=0;
+    o.cVcpu=S.dem;o.cGib=S.dem/S.bvcpu*S.bgib;
+  }
+  o.rev=o.rCompute+o.rMem+o.rStor+o.rEgr;
+  o.cost=C.COST[S.commit];
+  o.contrib=o.rev-o.cost;
+  o.pct=o.rev>0?o.contrib/o.rev*100:(o.contrib<0?-100:0);
+  o.fleet=o.contrib*S.boxes;
+  // break-even (compute-only and all-in), metered compute-bound
+  const cph=S.mode==='metered'?S.compute:(S.bprice/S.bvcpu);
+  o.beCompute=cph>0?o.cost/(cph*C.HOURS):Infinity;
+  const nonComp=o.rMem+o.rStor+o.rEgr;
+  o.beAllIn=cph>0?Math.max(0,(o.cost-nonComp))/(cph*C.HOURS):Infinity;
+  o.dominant=S.ratio>=C.BOX_RATIO?'compute':'memory';
+  o.memInfeasible=(S.mode==='metered'&&S.dem/S.ratio>C.BOX.gib);
+  // cheapest commitment for an always-on box
+  o.cheapest=Object.entries(C.COST).sort((a,b)=>a[1]-b[1])[0][0];
+  o.vsGH=S.compute>0?C.GH/ (S.mode==='metered'?S.compute:cph):Infinity;
+  return o;
+}
+
+function render(){
+  const o=compute();
+  // verdict
+  const pos=o.contrib>=0;
+  $('mDollar').textContent=money2(o.contrib);
+  $('mDollar').className='big mono '+(pos?'pos':'neg');
+  $('mPct').textContent=(o.rev>0?o.pct.toFixed(0):'—')+'%';
+  $('mPct').className='big mono '+(pos?'pos':'neg');
+  $('kRev').textContent=money(o.rev);
+  $('kCost').textContent=money(o.cost);
+  $('kFleet').textContent=money(o.fleet);
+  $('kFleet').className='v mono '+(o.fleet>=0?'pos':'neg');
+
+  // badges
+  $('bDom').innerHTML=`Dominant: <b>${o.dominant}-bound</b>`+(o.memInfeasible?' ⚠ mem-capped':'');
+  $('bDom').className='badge'+(o.memInfeasible?' warn':'');
+  const above=S.dem>=o.beAllIn;
+  $('bBE').innerHTML=`Break-even: <b>${o.beCompute.toFixed(1)} vCPU</b> (all-in ${o.beAllIn.toFixed(1)})`;
+  $('bBE').className='badge '+(above?'pos':'neg');
+  $('bCommit').innerHTML=`Cheapest always-on: <b>${o.cheapest}</b>`;
+  $('bComp').innerHTML=isFinite(o.vsGH)?`<b>${o.vsGH.toFixed(1)}×</b> vs GitHub`:'free';
+
+  // breakdown
+  const rows=[];
+  if(S.mode==='metered'){
+    rows.push(['Compute',`${o.cVcpu.toFixed(1)} vCPU · ${C.HOURS}h`,`$${S.compute}/vCPU-hr`,o.rCompute]);
+    rows.push(['Memory',`${o.cGib.toFixed(1)} GiB · ${C.HOURS}h`,`$${S.mem}/GiB-hr`,o.rMem]);
+    rows.push(['Durable storage',`${S.ssold} GB`,`$${S.stor}/GiB-mo`,o.rStor]);
+    rows.push(['Egress',`${S.esold} GB`,`$${S.egr}/GB`,o.rEgr]);
+  } else {
+    rows.push(['Bundles',`${o.bundles.toFixed(2)} active (cap ${o.bundleCap.toFixed(1)})`,`$${S.bprice}/hr`,o.rCompute]);
+  }
+  $('brk').innerHTML=rows.map(r=>`<tr><td>${r[0]}</td><td class="mono">${r[1]}</td><td class="mono">${r[2]}</td><td class="mono">${money2(r[3])}</td></tr>`).join('');
+  $('brkTot').textContent=money2(o.rev);
+
+  // break-even note + unit_rate
+  $('beNote').innerHTML=`At <b>${S.commit}</b> cost ${money(o.cost)}/mo, compute-only break-even is `+
+    `<b>${o.beCompute.toFixed(1)} sustained vCPU</b>; memory+storage+egress lower it to `+
+    `<b>${o.beAllIn.toFixed(1)} vCPU</b>. You are at <b>${S.dem} vCPU</b> — `+
+    `<span class="${above?'pos':'neg'}">${above?'above':'below'} break-even`+
+    `${above?` (+${(S.dem-o.beAllIn).toFixed(1)})`:` (${(S.dem-o.beAllIn).toFixed(1)})`}</span>.`;
+  const ur=[['compute',S.compute,'vCPU-ms'],['memory',S.mem,'GiB-ms']];
+  $('urt').innerHTML=ur.map(u=>`<tr><td>${u[0]}</td><td class="mono">$${u[1]}/${u[2].replace('-ms','-hr')}</td><td class="mono">${(u[1]/C.FACTOR).toFixed(4)}</td></tr>`).join('');
+
+  // summary
+  $('summary').textContent=summary(o);
+}
+
+function summary(o){
+  const L=[];
+  L.push('VERSELF — GTM PRICING SCENARIO');
+  L.push('================================');
+  L.push(`Mode: ${S.mode==='metered'?'per-resource metered':'bundled'}`);
+  if(S.mode==='metered'){
+    L.push(`Price vector: compute $${S.compute}/vCPU-hr · memory $${S.mem}/GiB-hr · storage $${S.stor}/GiB-mo · egress $${S.egr}/GB`);
+    L.push(`Compute vs market: ${o.vsGH.toFixed(1)}× cheaper than GitHub ($0.24), ${(C.BS/S.compute).toFixed(2)}× vs Blacksmith ($0.12)`);
+  } else {
+    L.push(`Bundle: ${S.bvcpu} vCPU / ${S.bgib} GiB / ${S.bstor} GB @ $${S.bprice}/hr (box holds ${o.bundleCap.toFixed(1)})`);
+  }
+  L.push(`Box: s3-large-x86, ${S.commit} commitment = ${money(o.cost)}/box/mo · fleet ${S.boxes}`);
+  L.push(`Sustained demand: ${S.dem} vCPU/box (workload ${S.ratio} vCPU:GiB → ${o.dominant}-bound)`);
+  L.push('');
+  L.push(`Revenue/box/mo : ${money2(o.rev)}`);
+  L.push(`Cost/box/mo    : ${money2(o.cost)}`);
+  L.push(`Contribution   : ${money2(o.contrib)}  (${o.rev>0?o.pct.toFixed(0):'n/a'}% margin)`);
+  L.push(`Fleet/mo       : ${money2(o.fleet)} across ${S.boxes} box(es)`);
+  L.push('');
+  L.push(`Break-even: ${o.beCompute.toFixed(1)} vCPU compute-only, ${o.beAllIn.toFixed(1)} vCPU all-in — currently ${S.dem>=o.beAllIn?'ABOVE':'BELOW'}.`);
+  L.push(`Cheapest always-on commitment: ${o.cheapest} (annual $455 < monthly $650 < on-demand $1,299; on-demand only wins <365 busy h/mo).`);
+  if(S.mode==='metered')
+    L.push(`Configure plan_sku_rates.unit_rate: compute ${(S.compute/C.FACTOR).toFixed(4)}, memory ${(S.mem/C.FACTOR).toFixed(4)}.`);
+  if(o.memInfeasible) L.push('WARNING: memory demand exceeds 128 GiB — box is memory-capped, compute target unreachable.');
+  return L.join('\n');
+}
+
+// ---- wire controls ----
+const SL=[['compute','vCompute',v=>'$'+(+v).toFixed(3)],['mem','vMem',v=>'$'+(+v).toFixed(4)],
+ ['stor','vStor',v=>'$'+(+v).toFixed(2)],['egr','vEgr',v=>'$'+(+v).toFixed(3)],
+ ['boxes','vBoxes',v=>v],['dem','vDem',v=>(+v).toFixed(1)],['ratio','vRatio',v=>(+v).toFixed(2)],
+ ['ssold','vSsold',v=>v],['esold','vEsold',v=>v]];
+SL.forEach(([id,lab,fmt])=>{
+  $(id).addEventListener('input',e=>{S[id]=parseFloat(e.target.value);$(lab).textContent=fmt(e.target.value);render();});
+});
+['bvcpu','bgib','bstor','bprice'].forEach(id=>{
+  $(id).addEventListener('input',e=>{S[id]=parseFloat(e.target.value)||0;render();});
+});
+$('modeSeg').addEventListener('click',e=>{
+  const m=e.target.dataset.mode; if(!m)return; S.mode=m;
+  [...$('modeSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
+  $('bundledCard').classList.toggle('show',m==='bundled');
+  $('meteredCard').style.display=m==='bundled'?'none':'block';
+  render();
+});
+$('commitSeg').addEventListener('click',e=>{
+  const c=e.target.dataset.c; if(!c)return; S.commit=c;
+  [...$('commitSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.c===c));
+  render();
+});
+$('copyBtn').addEventListener('click',()=>{
+  navigator.clipboard.writeText($('summary').textContent).then(()=>{
+    const b=$('copyBtn'),t=b.textContent;b.textContent='Copied!';setTimeout(()=>b.textContent=t,1200);
+  });
+});
+
+function applyState(){
+  SL.forEach(([id,lab,fmt])=>{$(id).value=S[id];$(lab).textContent=fmt(S[id]);});
+  ['bvcpu','bgib','bstor','bprice'].forEach(id=>$(id).value=S[id]);
+  [...$('modeSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.mode===S.mode));
+  [...$('commitSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.c===S.commit));
+  $('bundledCard').classList.toggle('show',S.mode==='bundled');
+  $('meteredCard').style.display=S.mode==='bundled'?'none':'block';
+  render();
+}
+// presets
+$('presets').innerHTML=Object.keys(PRESETS).map(n=>`<button data-p="${n}">${n}</button>`).join('');
+$('presets').addEventListener('click',e=>{
+  const p=e.target.dataset.p; if(!p)return; S={...PRESETS[p]}; applyState();
+});
+
+applyState();
+</script>
+</body>
+</html>
