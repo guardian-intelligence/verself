@@ -85,6 +85,7 @@ type platformMainVars struct {
 	ForgejoSubdomain             string `yaml:"forgejo_subdomain"`
 	VerselfDomain                string `yaml:"verself_domain"`
 	ZitadelDomain                string `yaml:"zitadel_domain"`
+	ZitadelSubdomain             string `yaml:"zitadel_subdomain"`
 }
 
 type platformConfig struct {
@@ -374,7 +375,7 @@ func (cfg *platformConfig) validate() error {
 		return fmt.Errorf("platform config: verself_domain is required for the sandbox Forgejo webhook URL")
 	}
 	if cfg.ZitadelHost == "" || strings.Contains(cfg.ZitadelHost, "{{") {
-		return fmt.Errorf("platform config: zitadel_domain or verself_domain is required")
+		return fmt.Errorf("platform config: zitadel_domain or zitadel_subdomain + verself_domain is required")
 	}
 	return nil
 }
@@ -416,11 +417,15 @@ func resolveZitadelHost(ops platformMainVars) string {
 	if domain != "" && !strings.Contains(domain, "{{") {
 		return domain
 	}
+	subdomain := strings.TrimSpace(ops.ZitadelSubdomain)
 	verselfDomain := strings.TrimSpace(ops.VerselfDomain)
+	if subdomain == "" {
+		subdomain = "auth"
+	}
 	if verselfDomain == "" {
 		return domain
 	}
-	return verselfDomain
+	return subdomain + "." + verselfDomain
 }
 
 func resolveForgejoWebhookURL(ops platformMainVars) string {

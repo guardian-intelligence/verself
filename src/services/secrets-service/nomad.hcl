@@ -38,7 +38,7 @@ job "secrets-service" {
         SECRETS_OPENBAO_WORKLOAD_AUDIENCE = "openbao"
         SECRETS_PLATFORM_ORG_ID = "371564185181576922"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "https://verself.sh"
+        VERSELF_AUTH_ISSUER_URL = "https://auth.verself.sh"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/secrets-service/auth-audience"
         VERSELF_CRED_OPENBAO_CA_CERT = "/etc/credstore/secrets-service/openbao-ca-cert"
         VERSELF_INSTALLATION_ID = "inst_5NZSEA08R8P3HN566DNH8D301M"

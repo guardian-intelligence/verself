@@ -40,7 +40,7 @@ DefaultInstance:
       # Zitadel Go binary. Until deployed as a separate service, use embedded Login V1.
       Required: false
   DomainPolicy:
-    # Sender domain differs from Zitadel's product-apex ExternalDomain.
+    # Sender domain (notify.X) differs from Zitadel's ExternalDomain (auth.X).
     SMTPSenderAddressMatchesInstanceDomain: false
   SMTPConfiguration:
     SMTP:

@@ -1,7 +1,8 @@
 ---
 # Zitadel defaults.
 zitadel_config_dir: /etc/zitadel
-zitadel_domain: "{{ verself_domain }}"
+zitadel_subdomain: auth
+zitadel_domain: "{{ zitadel_subdomain }}.{{ verself_domain }}"
 zitadel_host: 127.0.0.1
 zitadel_http_port: 8085
 zitadel_http_address: "{{ zitadel_host }}:{{ zitadel_http_port }}"

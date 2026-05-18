@@ -36,7 +36,7 @@ job "analytics-service" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "analytics-service"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "https://verself.sh"
+        VERSELF_AUTH_ISSUER_URL = "https://auth.verself.sh"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "analytics_service"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/analytics-service/auth-audience"

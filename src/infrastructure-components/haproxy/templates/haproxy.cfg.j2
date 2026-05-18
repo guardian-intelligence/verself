@@ -88,6 +88,7 @@ frontend fe_https
   acl host_billing var(txn.host) -m str billing.api.verself.sh
   acl host_sandbox var(txn.host) -m str sandbox.api.verself.sh
   acl host_source var(txn.host) -m str source.api.verself.sh
+  acl host_zitadel var(txn.host) -m str auth.verself.sh
   acl host_zitadel_actions var(txn.host) -m str zitadel-actions.verself.sh
   acl host_mail var(txn.host) -m str mail.verself.sh
   acl host_npm var(txn.host) -m str {{ haproxy_npm_registry_domain }}
@@ -112,8 +113,6 @@ frontend fe_https
   acl stripe_source src {{ haproxy_stripe_webhook_ips | join(' ') }}
   acl auth_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept
   acl auth_sessions_path path_beg /api/v1/auth/sessions/
-  acl auth_protocol_path path -i /.well-known/openid-configuration
-  acl auth_protocol_path path_beg /oauth/ /oidc/ /saml/ /device /idps/callback /ui/login
   acl verself_discovery path -i /.well-known/verself
   acl sandbox_actions_webhook path -i /webhooks/github/actions /webhooks/forgejo/actions
   acl source_forgejo_webhook path -i /webhooks/forgejo
@@ -125,7 +124,6 @@ frontend fe_https
   http-request track-sc0 src table be_edge_public_rates unless host_npm
   http-request track-sc1 src table be_edge_auth_rates if host_verself auth_path
   http-request track-sc1 src table be_edge_auth_rates if host_verself auth_sessions_path
-  http-request track-sc1 src table be_edge_auth_rates if host_verself auth_protocol_path
   http-request track-sc2 src table be_edge_webhook_rates if host_billing stripe_webhook
   http-request track-sc2 src table be_edge_webhook_rates if host_sandbox sandbox_actions_webhook
   http-request track-sc2 src table be_edge_webhook_rates if host_source source_forgejo_webhook
@@ -133,7 +131,6 @@ frontend fe_https
   http-request return status 429 content-type text/plain string "rate limit exceeded" if edge_public_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_path edge_auth_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_sessions_path edge_auth_rate_limited
-  http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_protocol_path edge_auth_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_billing stripe_webhook edge_webhook_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_sandbox sandbox_actions_webhook edge_webhook_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_source source_forgejo_webhook edge_webhook_rate_limited
@@ -147,6 +144,7 @@ frontend fe_https
   http-request return status 405 if host_sandbox { path -i /webhooks/github/actions } !method_post
   http-request return status 405 if host_sandbox { path -i /webhooks/forgejo/actions } !method_post
   http-request return status 405 if host_sandbox { path -i /github/installations/callback } !method_get
+  http-request return status 405 if host_zitadel zitadel_product_token_claims !method_post
   http-request return status 405 if host_zitadel_actions zitadel_product_token_claims !method_post
 
   use_backend be_billing_stripe_webhook if host_billing stripe_webhook method_post stripe_source
@@ -156,6 +154,7 @@ frontend fe_https
   use_backend be_sandbox_execution_submit if host_sandbox method_post { path -i /api/v1/executions }
   use_backend be_sandbox_execution_schedule_create if host_sandbox method_post { path -i /api/v1/execution-schedules }
   use_backend be_source_forgejo_webhook if host_source { path -i /webhooks/forgejo }
+  use_backend be_zitadel_product_token_claims if host_zitadel method_post zitadel_product_token_claims
   use_backend be_zitadel_product_token_claims if host_zitadel_actions method_post zitadel_product_token_claims
   use_backend be_mailbox_jmap_session if host_mail jmap_session
   use_backend be_route_product_npm_registry_verdaccio if host_npm
@@ -163,9 +162,6 @@ frontend fe_https
   acl route_1_host var(txn.host) -m str verself.sh
   acl route_1_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept
   acl route_1_sessions_path path_beg /api/v1/auth/sessions/
-  acl route_1_protocol_path path -i /.well-known/openid-configuration
-  acl route_1_protocol_path path_beg /oauth/ /oidc/ /saml/ /device /idps/callback /ui/login
-  use_backend be_route_product_auth_zitadel_oidc if route_1_host route_1_protocol_path
   use_backend be_route_product_apex_iam_service_public_api if route_1_host route_1_path
   use_backend be_route_product_apex_iam_service_public_api if route_1_host route_1_sessions_path
   use_backend %[var(txn.host),map({{ haproxy_map_dir }}/public-hosts.map,be_not_found)]

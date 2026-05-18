@@ -343,7 +343,7 @@ The default hosted profile points at `https://verself.sh` and refreshes
       "discovery_url": "https://verself.sh/.well-known/verself",
       "discovery_schema_version": 1,
       "installation_id": "inst_5NZSEA08R8P3HN566DNH8D301M",
-      "auth_issuer": "https://verself.sh",
+      "auth_issuer": "https://auth.verself.sh",
       "console_url": "https://verself.sh",
       "credential_ref": "verself://profiles/guardian-prod/oauth",
       "default_org": "guardianintelligence.org",
@@ -777,7 +777,7 @@ derived:
   organization_name: guardianintelligence.org
   platform_company_slug: guardian-intelligence
   platform_company_display_name: Guardian Intelligence
-  zitadel_domain: verself.sh
+  zitadel_domain: auth.verself.sh
   iam_service_domain: iam.api.verself.sh
   sandbox_rental_service_domain: sandbox.api.verself.sh
   forgejo_domain: git.verself.sh

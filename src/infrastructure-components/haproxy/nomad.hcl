@@ -70,8 +70,8 @@ backend be_route_product_npm_registry_verdaccio
 
 backend be_route_product_auth_zitadel_oidc
   guid be_route_product_auth_zitadel_oidc
-  http-request set-header X-Zitadel-Public-Host verself.sh
-  http-request set-header X-Zitadel-Instance-Host verself.sh
+  http-request set-header X-Zitadel-Public-Host auth.verself.sh
+  http-request set-header X-Zitadel-Instance-Host auth.verself.sh
 [[ with nomadService "zitadel-http" ]]
 [[ range $i, $svc := . ]]
   server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_route_product_auth_zitadel_oidc_srv_[[ $i ]]
