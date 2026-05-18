@@ -1,0 +1,39 @@
+"""aspect release — release publication checks and helpers."""
+
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "ws_path")
+
+def _workspace_or_absolute(ctx, path):
+    if path.startswith("/"):
+        return path
+    return ws_path(ctx, path)
+
+def _npm_probe_impl(ctx):
+    cli_args = [
+        "release",
+        "npm-probe",
+        "--package-json",
+        _workspace_or_absolute(ctx, ctx.args.package_json),
+        "--registry",
+        ctx.args.registry,
+        "--github-repository",
+        ctx.args.github_repository,
+        "--format",
+        ctx.args.format,
+    ]
+    if ctx.args.require_publishable:
+        cli_args.append("--require-publishable")
+    return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator release npm-probe")
+
+npm_probe = task(
+    implementation = _npm_probe_impl,
+    name = "npm-probe",
+    group = ["release"],
+    summary = "Probe npm registry state for the TypeScript SDK release boundary.",
+    args = {
+        "package_json": args.string(default = "src/websites/packages/sdk/package.json", description = "Package manifest to inspect."),
+        "registry": args.string(default = "https://registry.npmjs.org", description = "npm registry base URL."),
+        "github_repository": args.string(default = "guardian-intelligence/verself-sh", description = "GitHub owner/repo expected by npm trusted publishing."),
+        "format": args.string(default = "table", description = "Output format: table | json | csv | tsv."),
+        "require_publishable": args.boolean(default = False, description = "Fail when local manifest fields block publishing."),
+    },
+)

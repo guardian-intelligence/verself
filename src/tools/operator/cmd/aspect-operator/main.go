@@ -31,6 +31,9 @@
 //	aspect-operator service-discovery-canary
 //	    Drive billing API traffic through the IAM authorize round-trip while
 //	    iam-service rolls; report any non-2xx-or-4xx outcome as a deploy gap.
+//
+//	aspect-operator release npm-probe
+//	    Probe npm registry state for SDK release publication.
 package main
 
 import (
@@ -83,6 +86,8 @@ func run(args []string) error {
 		return cmdPromoteOrg(rest)
 	case "service-discovery-canary":
 		return cmdDiscoveryCanary(rest)
+	case "release":
+		return cmdRelease(rest)
 	case "-h", "--help", "help":
 		printUsage(os.Stdout)
 		return nil
@@ -105,6 +110,7 @@ Subcommands:
   device            Configure this device for operator access
   platform          Platform org/project/source convergence
   service-discovery-canary  Drive billing -> IAM traffic through the resolver
+  release           Release publication helpers
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.
 `)

@@ -87,6 +87,10 @@ load(
     provision_apply = "apply",
     provision_destroy = "destroy",
 )
+load(
+    ".aspect/tasks/release.axl",
+    release_npm_probe = "npm_probe",
+)
 load(".aspect/tasks/tidy.axl", "tidy")
 load(".aspect/tasks/vp.axl", "vp")
 
@@ -109,6 +113,9 @@ def config(ctx):
     # aspect provision ...
     ctx.tasks.add(provision_apply)
     ctx.tasks.add(provision_destroy)
+
+    # aspect release ...
+    ctx.tasks.add(release_npm_probe)
 
     # aspect host ...
     ctx.tasks.add(host_configuration_edit_secrets)

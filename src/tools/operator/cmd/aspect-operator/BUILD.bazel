@@ -24,6 +24,7 @@ go_library(
         "platform.go",
         "platform_zitadel.go",
         "promote_org.go",
+        "release.go",
         "remote_binary.go",
         "runtime_common.go",
     ],
@@ -54,6 +55,9 @@ go_binary(
 
 go_test(
     name = "aspect-operator_test",
-    srcs = ["platform_zitadel_test.go"],
+    srcs = [
+        "platform_zitadel_test.go",
+        "release_test.go",
+    ],
     embed = [":aspect-operator_lib"],
 )

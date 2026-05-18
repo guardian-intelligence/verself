@@ -1,0 +1,29 @@
+name: SDK npm release probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  npm-release-probe:
+    name: npm release probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap toolchain
+        env:
+          BOOTSTRAP_INSTALL_DIR: ${{ runner.temp }}/bootstrap-bin
+        run: |
+          mkdir -p "${BOOTSTRAP_INSTALL_DIR}"
+          src/tools/dev/bootstrap/bootstrap-linux-amd64
+          echo "${BOOTSTRAP_INSTALL_DIR}" >> "${GITHUB_PATH}"
+
+      - name: Probe npm package boundary
+        run: aspect release npm-probe --github-repository="${{ github.repository }}" --format=json
