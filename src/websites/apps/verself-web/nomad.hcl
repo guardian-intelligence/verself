@@ -59,7 +59,7 @@ job "verself-web" {
         check {
           name = "verself-web-http-http"
           type = "http"
-          path = "/"
+          path = "/readyz"
           port = "http"
           interval = "1s"
           timeout = "3s"
