@@ -40,8 +40,8 @@ function InvitePage() {
       }
       const password = formString(value.password);
       const confirmPassword = formString(value.confirmPassword);
-      if (password.length < 12) {
-        throw new Error("Password must be at least 12 characters.");
+      if (password.length < 15) {
+        throw new Error("Password must be at least 15 characters.");
       }
       if (password !== confirmPassword) {
         throw new Error("Passwords do not match.");

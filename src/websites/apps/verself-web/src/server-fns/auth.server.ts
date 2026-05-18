@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { setResponseHeader } from "@tanstack/react-start/server";
 import * as v from "valibot";
 import { requireURLFromEnv } from "@verself/web-env";
@@ -139,14 +140,25 @@ export async function acceptIdentityMemberInvite(data: {
     "invites/accept",
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": inviteAcceptanceIdempotencyKey(data.token),
+      },
+      body: JSON.stringify({
+        acceptanceToken: data.token,
+        credential: { password: data.password },
+      }),
     },
     { cookieHeader: undefined, forwardCookies: false },
   );
   if (!response.ok) {
     throw new Error(`identity invite acceptance failed: ${response.status}`);
   }
+}
+
+function inviteAcceptanceIdempotencyKey(token: string): string {
+  const digest = createHash("sha256").update(token).digest("base64url").slice(0, 48);
+  return `invite-${digest}`;
 }
 
 export async function getIdentityProductAccessToken(

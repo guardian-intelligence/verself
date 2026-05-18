@@ -195,6 +195,26 @@ func TestOperationPolicyRequiresIdempotencyHeader(t *testing.T) {
 	}
 }
 
+func TestPublicContractOperationDoesNotRequireBearerIdentity(t *testing.T) {
+	runtime := publicRuntime{installationID: "inst_01J8QJ4P1R7S9W2X5M6N8P0Q2"}
+	ctx := context.WithValue(context.Background(), operationRequestInfoKey{}, operationRequestInfo{
+		ClientIP:       "203.0.113.10",
+		IdempotencyKey: "invite-retry-key",
+	})
+
+	identityValue, err := runtime.BeforeOperation(ctx, contractapi.AcceptMemberInvite.Descriptor, &contractapi.AcceptMemberInviteInput{})
+	if err != nil {
+		t.Fatalf("public operation rejected without bearer identity: %v", err)
+	}
+	publicIdentity, ok := identityValue.(publicOperationIdentity)
+	if !ok {
+		t.Fatalf("unexpected public identity value: %#v", identityValue)
+	}
+	if publicIdentity.Auth != nil || len(publicIdentity.PublicOrgIDs) != 1 || publicIdentity.PublicOrgIDs[0] != "inst_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
+		t.Fatalf("unexpected public identity scope: %#v", publicIdentity)
+	}
+}
+
 func TestAuditOperationWritesStructuredLogForUserAndServiceAccount(t *testing.T) {
 	var logs bytes.Buffer
 	previous := slog.Default()

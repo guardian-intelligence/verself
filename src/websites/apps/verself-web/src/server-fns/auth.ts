@@ -12,7 +12,7 @@ const revokeSessionInputSchema = v.object({
 
 const acceptMemberInviteInputSchema = v.object({
   token: v.pipe(v.string(), v.nonEmpty()),
-  password: v.pipe(v.string(), v.minLength(12)),
+  password: v.pipe(v.string(), v.minLength(15)),
 });
 
 export type ConsoleAuthContext = {

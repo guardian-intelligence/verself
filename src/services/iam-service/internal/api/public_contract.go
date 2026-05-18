@@ -33,8 +33,9 @@ type publicOperationIdentity struct {
 }
 
 type publicRuntime struct {
-	service *identity.Service
-	authz   *authz.Service
+	service        *identity.Service
+	authz          *authz.Service
+	installationID string
 }
 
 func (r publicRuntime) PrepareOperation(desc contractapi.OperationDescriptor, op huma.Operation) huma.Operation {
@@ -66,12 +67,27 @@ func (r publicRuntime) PrepareOperation(desc contractapi.OperationDescriptor, op
 		"request_body_max_bytes": desc.RequestBodyMaxBytes,
 		"idempotency":            desc.Idempotency.Policy,
 	}
-	op.Security = []map[string][]string{{"bearerAuth": {}}}
+	if desc.Identity.Mode == "bearer" {
+		op.Security = []map[string][]string{{"bearerAuth": {}}}
+	}
 	op.Middlewares = append(op.Middlewares, operationRequestMiddleware)
 	return op
 }
 
 func (r publicRuntime) BeforeOperation(ctx context.Context, desc contractapi.OperationDescriptor, input any) (any, error) {
+	if desc.Identity.Mode == "public" {
+		orgIDs, err := r.contractOrganizationScope(ctx, desc, nil, input)
+		if err != nil {
+			return nil, err
+		}
+		if err := requireContractIdempotency(ctx, desc); err != nil {
+			return nil, err
+		}
+		if decision := apiOperationRateLimiter.Allow(runtimeiam.RateLimitClass(desc.RateLimitBucket), contractRateLimitKey(ctx, nil, desc, orgIDs), time.Now()); !decision.Allowed {
+			return nil, rateLimitExceeded(ctx, decision.RetryAfter)
+		}
+		return publicOperationIdentity{PublicOrgIDs: orgIDs}, nil
+	}
 	authIdentity, err := requireIdentity(ctx)
 	if err != nil {
 		return nil, err
@@ -129,7 +145,7 @@ func validateGeneratedOperation(desc contractapi.OperationDescriptor) error {
 	if strings.TrimSpace(desc.OperationID) == "" || strings.TrimSpace(desc.Method) == "" || strings.TrimSpace(desc.Path) == "" {
 		return fmt.Errorf("generated operation missing id, method, or path: %#v", desc)
 	}
-	if desc.Identity.Mode != "bearer" {
+	if desc.Identity.Mode != "bearer" && desc.Identity.Mode != "public" {
 		return fmt.Errorf("%s: unsupported public identity mode %q", desc.OperationID, desc.Identity.Mode)
 	}
 	if desc.Identity.Audience != "verself-api" {
@@ -169,6 +185,11 @@ func (r publicRuntime) contractOrganizationScope(ctx context.Context, desc contr
 			return nil, badRequest(ctx, "organization-required", "path orgId is required", nil)
 		}
 		return []string{publicOrgID}, nil
+	case "installation":
+		if strings.TrimSpace(r.installationID) == "" {
+			return nil, nil
+		}
+		return []string{strings.TrimSpace(r.installationID)}, nil
 	default:
 		return nil, internalFailure(ctx, "unsupported-organization-scope", "unsupported organization scope", nil)
 	}
@@ -245,11 +266,15 @@ func requireContractIdempotency(ctx context.Context, desc contractapi.OperationD
 func contractRateLimitKey(ctx context.Context, identity *auth.Identity, desc contractapi.OperationDescriptor, publicOrgIDs []string) string {
 	info := operationRequestInfoFromContext(ctx)
 	orgKey := strings.Join(publicOrgIDs, ",")
+	subject := "anonymous"
+	if identity != nil {
+		subject = identity.Subject
+	}
 	return strings.Join([]string{
 		desc.RateLimitBucket,
 		desc.Authorization.Permission,
 		orgKey,
-		identity.Subject,
+		subject,
 		info.ClientIP,
 	}, "\x00")
 }
@@ -328,6 +353,27 @@ type publicHandlers struct {
 	installationID string
 	productBaseURL string
 	inviteNotifier InviteNotifier
+}
+
+func (h publicHandlers) AcceptMemberInvite(ctx context.Context, input *contractapi.AcceptMemberInviteInput) (*contractapi.AcceptMemberInviteOutput, error) {
+	if input == nil {
+		return nil, badRequest(ctx, "invalid-invite", "invite request is invalid", nil)
+	}
+	acceptance, err := h.service.CompleteMemberInvite(ctx, identity.CompleteMemberInviteRequest{
+		AcceptanceToken: string(input.Body.AcceptanceToken),
+		Password:        string(input.Body.Credential.Password),
+	})
+	if err != nil {
+		return nil, inviteAcceptanceContractError(ctx, err)
+	}
+	publicOrgID := contractapi.OrgID(acceptance.OrgID)
+	publicMemberID := publicMemberID(acceptance.UserID)
+	return &contractapi.AcceptMemberInviteOutput{Body: contractapi.MemberInviteAcceptanceSummary{
+		OrgID:        publicOrgID,
+		MemberID:     publicMemberID,
+		ResourceName: publicMemberResourceName(h.installationID, publicOrgID, publicMemberID),
+		LoginURL:     h.loginURL(),
+	}}, nil
 }
 
 func (h publicHandlers) ListOrganizations(ctx context.Context, _ *contractapi.ListOrganizationsInput) (*contractapi.ListOrganizationsOutput, error) {
@@ -680,6 +726,31 @@ func (h publicHandlers) memberInviteActionURL(org identity.Organization, invitat
 	query.Set("org", strings.TrimSpace(org.Slug))
 	base.RawQuery = query.Encode()
 	return base.String(), nil
+}
+
+func (h publicHandlers) loginURL() contractapi.LoginURL {
+	base, err := url.Parse(strings.TrimSpace(h.productBaseURL))
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return contractapi.LoginURL("/login")
+	}
+	base.Path = "/login"
+	base.RawPath = ""
+	base.RawQuery = ""
+	base.Fragment = ""
+	return contractapi.LoginURL(base.String())
+}
+
+func inviteAcceptanceContractError(ctx context.Context, err error) error {
+	switch {
+	case identity.IsInvalid(err), errors.Is(err, identity.ErrMemberMissing):
+		return badRequest(ctx, "invalid-invite", "invite could not be completed", err)
+	case errors.Is(err, identity.ErrZitadelUnavailable):
+		return upstreamFailure(ctx, "zitadel-unavailable", "identity provider unavailable", err)
+	case errors.Is(err, identity.ErrStoreUnavailable):
+		return internalFailure(ctx, "iam-store-unavailable", "iam store unavailable", err)
+	default:
+		return internalFailure(ctx, "invite-acceptance-failed", "invite could not be completed", err)
+	}
 }
 
 func inviteRolesFromContract(input contractapi.InviteMemberRoles) []string {

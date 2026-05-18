@@ -38,6 +38,18 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	return api
 }
 
+func NewAuthPublicAPI(mux *http.ServeMux, cfg Config) huma.API {
+	version := cfg.Version
+	if version == "" {
+		version = "1.0.0"
+	}
+	config := humaapi.DefaultConfig("IAM Browser Auth API", version)
+	api := humago.New(mux, config)
+	RegisterAuthPublicRoutes(api, cfg.Service, cfg.Authz, cfg.InstallationID, cfg.ProductBaseURL)
+	humaapi.ApplyOpenAPIWireDefaults(api)
+	return api
+}
+
 func serverURL(addr string) string {
 	if strings.Contains(addr, "://") {
 		return addr

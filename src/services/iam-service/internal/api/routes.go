@@ -27,7 +27,7 @@ type MemberInviteNotification struct {
 }
 
 func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string, inviteNotifier InviteNotifier) {
-	runtime := publicRuntime{service: svc, authz: authzSvc}
+	runtime := publicRuntime{service: svc, authz: authzSvc, installationID: installationID}
 	handlers := publicHandlers{
 		service:        svc,
 		authz:          authzSvc,
@@ -45,6 +45,17 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 	registerPublicOperation(api, runtime, contractapi.GetIamPolicy, handlers.GetIamPolicy, "Get IAM policy")
 	registerPublicOperation(api, runtime, contractapi.SetIamPolicy, handlers.SetIamPolicy, "Set IAM policy")
 	registerPublicOperation(api, runtime, contractapi.TestIamPermissions, handlers.TestIamPermissions, "Test IAM permissions")
+}
+
+func RegisterAuthPublicRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string) {
+	runtime := publicRuntime{service: svc, authz: authzSvc, installationID: installationID}
+	handlers := publicHandlers{
+		service:        svc,
+		authz:          authzSvc,
+		installationID: installationID,
+		productBaseURL: productBaseURL,
+	}
+	registerPublicOperation(api, runtime, contractapi.AcceptMemberInvite, handlers.AcceptMemberInvite, "Accept member invite")
 }
 
 func registerPublicOperation[Input any, Output any](

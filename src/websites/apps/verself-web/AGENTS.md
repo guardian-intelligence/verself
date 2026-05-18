@@ -140,8 +140,8 @@ element-type-aware, e.g. `snapshot -i | grep -E '(button|textbox) "Login
 Name"'`, never a bare label grep which also matches the `heading "Password"`):
 
 1. `agent-browser close` (env needs `--args "--no-sandbox"`).
-2. `open https://verself.sh/login` → click **"Continue to sign in"** (hands off
-   to `auth.verself.sh`).
+2. `open https://verself.sh/login` → click **"Continue to sign in"** (continues
+   through the standards protocol routes on `verself.sh`).
 3. Login-name page: fill **"Login Name"** textbox = `qa-flight@verself.sh`,
    click **"Next"**.
 4. Password page: fill the **"Password"** textbox, focus it, then **press
@@ -157,7 +157,7 @@ in the vault, never in tracked files or echoed commands):
 
 - Zitadel admin token: `sudo -n cat /etc/credstore/iam-service/zitadel-admin-token`
   over operator SSH (`ssh ubuntu@prod@access.verself.sh`), fed into a mode-600
-  curl config (`curl -K`), not argv. API base `https://auth.verself.sh`,
+  curl config (`curl -K`), not argv. API base `https://verself.sh`,
   `Authorization: Bearer …`.
 - Create: `POST /v2/users/human` `{username,organization:{orgId},profile,
 email:{isVerified:true},password:{changeRequired:false}}` in the platform

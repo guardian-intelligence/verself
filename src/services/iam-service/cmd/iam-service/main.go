@@ -311,7 +311,13 @@ func run() error {
 	})
 	api.RegisterZitadelActionRoutes(rootMux, identityService, zitadelActionSigningKey)
 	api.RegisterBrowserAuthRoutes(rootMux, browserAuth)
-	api.RegisterInviteAcceptanceRoutes(rootMux, identityService)
+	api.NewAuthPublicAPI(rootMux, api.Config{
+		Version:        serviceVersion,
+		Service:        identityService,
+		Authz:          authzService,
+		InstallationID: installationID,
+		ProductBaseURL: browserAuthPublicBaseURL,
+	})
 
 	privateMux := http.NewServeMux()
 	api.NewAPI(privateMux, api.Config{

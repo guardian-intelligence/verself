@@ -24,6 +24,7 @@ use smithy.api#range
 use smithy.api#readonly
 use smithy.api#required
 use smithy.api#resourceIdentifier
+use smithy.api#sensitive
 use verself.common.v1#PermissionName
 use verself.common.v1#ConflictError
 use verself.common.v1#DisplayName
@@ -56,9 +57,13 @@ use verself.common.v1#DateTime
 service Iam {
     version: "2026-05-12"
     operations: [
+        AcceptMemberInvite
         InviteMember
     ]
-    resources: [Organization]
+    resources: [
+        SignupIntent
+        Organization
+    ]
 }
 
 @serviceRuntime(serviceName: "iam-service", publicAudience: "verself-api", internalAudience: "iam-service")
@@ -84,8 +89,14 @@ string OrgId
 @pattern("^member_[0-9A-HJKMNP-TV-Z]{26}$")
 string MemberId
 
+@pattern("^signup_[0-9A-HJKMNP-TV-Z]{26}$")
+string SignupIntentId
+
 @pattern("^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}$")
 string OrganizationResourceName
+
+@pattern("^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:signup-intents/signup_[0-9A-HJKMNP-TV-Z]{26}$")
+string SignupIntentResourceName
 
 @pattern("^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}/members/member_[0-9A-HJKMNP-TV-Z]{26}$")
 string MemberResourceName
@@ -96,6 +107,21 @@ string OrgSlug
 
 @length(min: 3, max: 320)
 string EmailAddress
+
+@length(min: 32, max: 512)
+@sensitive
+string SignupVerificationToken
+
+@length(min: 32, max: 512)
+@sensitive
+string MemberInviteAcceptanceToken
+
+@length(min: 15, max: 1024)
+@sensitive
+string AccountPassword
+
+@length(min: 1, max: 2048)
+string LoginURL
 
 @length(min: 1, max: 64)
 @pattern("^[0-9]+$")
@@ -158,6 +184,30 @@ enum IAMAuthorizationSubjectType {
     WORKLOAD
 }
 
+enum SignupIntentStatus {
+    @enumValue("verification_pending")
+    VERIFICATION_PENDING
+
+    @enumValue("verified")
+    VERIFIED
+
+    @enumValue("expired")
+    EXPIRED
+}
+
+union AccountCredential {
+    password: AccountPassword
+}
+
+@permission(name: "iam:signup_intent:create")
+string SignupIntentCreatePermission
+
+@permission(name: "iam:signup_intent:verify")
+string SignupIntentVerifyPermission
+
+@permission(name: "iam:member_invite:accept")
+string MemberInviteAcceptPermission
+
 @permission(name: "iam:organization:list")
 string OrganizationListPermission
 
@@ -202,6 +252,15 @@ string AuthorizationResourceCheckPermission
 
 @permission(name: "iam:authorization:parent_edge_write")
 string AuthorizationParentEdgeWritePermission
+
+@auditEvent(name: "iam.signup_intent.create")
+string SignupIntentCreateAuditEvent
+
+@auditEvent(name: "iam.signup_intent.verify")
+string SignupIntentVerifyAuditEvent
+
+@auditEvent(name: "iam.member_invite.accept")
+string MemberInviteAcceptAuditEvent
 
 @auditEvent(name: "iam.organization.list")
 string OrganizationListAuditEvent
@@ -270,6 +329,24 @@ resource Organization {
     resources: [Member]
 }
 
+resource SignupIntent {
+    identifiers: {
+        signupIntentId: SignupIntentId
+    }
+    properties: {
+        resourceName: SignupIntentResourceName
+        email: EmailAddress
+        organizationDisplayName: DisplayName
+        organizationSlug: OrgSlug
+        status: SignupIntentStatus
+        verificationExpiresAt: DateTime
+    }
+    create: StartSignup
+    operations: [
+        VerifySignup
+    ]
+}
+
 resource Member {
     identifiers: {
         orgId: OrgId
@@ -288,6 +365,32 @@ resource HumanProfile {
 }
 
 resource Authorization {
+}
+
+structure SignupIntentSummary for SignupIntent {
+    @required
+    @resourceIdentifier("signupIntentId")
+    @protoField(number: 1)
+    $signupIntentId
+
+    @required
+    @protoField(number: 2)
+    $resourceName
+
+    @required
+    @protoField(number: 3)
+    $organizationDisplayName
+
+    @protoField(number: 4)
+    $organizationSlug
+
+    @required
+    @protoField(number: 5)
+    $status
+
+    @required
+    @protoField(number: 6)
+    verificationExpiresAt: DateTime
 }
 
 structure OrganizationSummary for Organization {
@@ -335,6 +438,199 @@ structure MemberSummary for Member {
     @protoField(number: 5)
     $displayName
 
+}
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/signup-intents", code: 202)
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "cli", "anonymous"])
+@authz(permission: SignupIntentCreatePermission, organization: {source: "installation"})
+@audit(event: SignupIntentCreateAuditEvent, resource: SignupIntent, action: "create")
+@rateLimit(bucket: "signup_mutation")
+@requestBudget(maxBytes: 16384)
+@sdk(module: "signup", method: "start", paginated: false, retryable: false)
+operation StartSignup {
+    input: StartSignupInput
+    output: StartSignupOutput
+    errors: [
+        ValidationFailedError
+        ConflictError
+        IdempotencyPayloadMismatchError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure StartSignupInput {
+    @required
+    @protoField(number: 1)
+    email: EmailAddress
+
+    @required
+    @protoField(number: 2)
+    organizationDisplayName: DisplayName
+
+    @protoField(number: 3)
+    organizationSlug: OrgSlug
+
+    @protoField(number: 4)
+    @notProperty
+    givenName: GivenName
+
+    @protoField(number: 5)
+    @notProperty
+    familyName: FamilyName
+
+    @required
+    @notProperty
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    @protoField(number: 100)
+    idempotencyKey: IdempotencyKey
+}
+
+@output
+structure StartSignupOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    @notProperty
+    @protoField(number: 1)
+    signupIntent: SignupIntentSummary
+}
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/signup-intents/{signupIntentId}/verification", code: 201)
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "cli", "anonymous"])
+@authz(permission: SignupIntentVerifyPermission, organization: {source: "installation"})
+@audit(event: SignupIntentVerifyAuditEvent, resource: SignupIntent, action: "verify")
+@rateLimit(bucket: "signup_mutation")
+@requestBudget(maxBytes: 16384)
+@sdk(module: "signup", method: "verify", paginated: false, retryable: false)
+operation VerifySignup {
+    input: VerifySignupInput
+    output: VerifySignupOutput
+    errors: [
+        ValidationFailedError
+        ConflictError
+        IdempotencyPayloadMismatchError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure VerifySignupInput {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    signupIntentId: SignupIntentId
+
+    @required
+    @protoField(number: 2)
+    @notProperty
+    verificationToken: SignupVerificationToken
+
+    @required
+    @protoField(number: 3)
+    @notProperty
+    credential: AccountCredential
+
+    @required
+    @notProperty
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    @protoField(number: 100)
+    idempotencyKey: IdempotencyKey
+}
+
+@output
+structure VerifySignupOutput {
+    @required
+    @httpPayload
+    @notProperty
+    @protoField(number: 1)
+    result: VerifySignupResult
+}
+
+structure VerifySignupResult {
+    @required
+    @protoField(number: 1)
+    organization: OrganizationSummary
+
+    @required
+    @protoField(number: 2)
+    loginUrl: LoginURL
+}
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/auth/invites/accept")
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "cli", "anonymous"])
+@authz(permission: MemberInviteAcceptPermission, organization: {source: "installation"})
+@audit(event: MemberInviteAcceptAuditEvent, resource: Member, action: "verify")
+@rateLimit(bucket: "signup_mutation")
+@requestBudget(maxBytes: 16384)
+@sdk(module: "auth", method: "acceptMemberInvite", paginated: false, retryable: false)
+operation AcceptMemberInvite {
+    input: AcceptMemberInviteInput
+    output: AcceptMemberInviteOutput
+    errors: [
+        ValidationFailedError
+        ConflictError
+        IdempotencyPayloadMismatchError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure AcceptMemberInviteInput {
+    @required
+    @protoField(number: 1)
+    acceptanceToken: MemberInviteAcceptanceToken
+
+    @required
+    @protoField(number: 2)
+    credential: AccountCredential
+
+    @required
+    @notProperty
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    @protoField(number: 100)
+    idempotencyKey: IdempotencyKey
+}
+
+@output
+structure AcceptMemberInviteOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    @notProperty
+    @protoField(number: 1)
+    acceptance: MemberInviteAcceptanceSummary
+}
+
+structure MemberInviteAcceptanceSummary {
+    @required
+    @resourceIdentifier("orgId")
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    orgId: OrgId
+
+    @required
+    @resourceIdentifier("memberId")
+    @protoField(number: 2)
+    @suppress(["MemberShouldReferenceResource"])
+    memberId: MemberId
+
+    @required
+    @protoField(number: 3)
+    resourceName: MemberResourceName
+
+    @required
+    @protoField(number: 4)
+    loginUrl: LoginURL
 }
 
 @readonly

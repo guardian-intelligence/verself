@@ -26,7 +26,7 @@ See @README.md
 See @src/services/iam-service/schema/verself.zed for Zanzibar policies
 
 console: verself.sh
-auth portal: auth.verself.sh
+auth portal: verself.sh
 services: <service>.api.verself.sh
 company website: guardianintelligence.org
 

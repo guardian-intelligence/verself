@@ -86,6 +86,12 @@ type TraceParent string
 
 type EmailAddress string
 
+type AccountPassword string
+
+type MemberInviteAcceptanceToken string
+
+type LoginURL string
+
 type GivenName string
 
 type FamilyName string
@@ -123,6 +129,10 @@ type IAMPolicyBindings []IAMPolicyBinding
 type InviteMemberRoles []IAMRoleName
 
 type MemberInvitationStatus string
+
+type AccountCredential struct {
+	Password AccountPassword `json:"password" required:"true" minLength:"15" maxLength:"1024"`
+}
 
 type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
@@ -326,6 +336,16 @@ type InviteMemberInput struct {
 	Body           InviteMemberInputBody
 }
 
+type AcceptMemberInviteInputBody struct {
+	AcceptanceToken MemberInviteAcceptanceToken `json:"acceptanceToken" required:"true" minLength:"32" maxLength:"512"`
+	Credential      AccountCredential           `json:"credential" required:"true"`
+}
+
+type AcceptMemberInviteInput struct {
+	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+	Body           AcceptMemberInviteInputBody
+}
+
 type ListOrganizationsOutputBody struct {
 	Organizations Organizations `json:"organizations" required:"true"`
 	NextPageToken *PageToken    `json:"nextPageToken,omitempty" minLength:"1" maxLength:"4096"`
@@ -364,6 +384,17 @@ type InviteMemberOutput struct {
 	Body MemberInvitationSummary
 }
 
+type AcceptMemberInviteOutput struct {
+	Body MemberInviteAcceptanceSummary
+}
+
+type MemberInviteAcceptanceSummary struct {
+	OrgID        OrgID              `json:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	MemberID     MemberID           `json:"memberId" required:"true" pattern:"^member_[0-9A-HJKMNP-TV-Z]{26}$"`
+	ResourceName MemberResourceName `json:"resourceName" required:"true" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}/members/member_[0-9A-HJKMNP-TV-Z]{26}$"`
+	LoginURL     LoginURL           `json:"loginUrl" required:"true" minLength:"1" maxLength:"2048"`
+}
+
 type GetIamPolicyOutput struct {
 	Body IAMPolicy
 }
@@ -381,6 +412,7 @@ type TestIamPermissionsOutputBody struct {
 }
 
 var Operations = []OperationDescriptor{
+	AcceptMemberInvite.Descriptor,
 	ListOrganizations.Descriptor,
 	CreateOrganization.Descriptor,
 	GetOrganization.Descriptor,
@@ -391,6 +423,32 @@ var Operations = []OperationDescriptor{
 	GetIamPolicy.Descriptor,
 	SetIamPolicy.Descriptor,
 	TestIamPermissions.Descriptor,
+}
+
+var AcceptMemberInvite = Operation[AcceptMemberInviteInput, AcceptMemberInviteOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.iam.v1#AcceptMemberInvite",
+		OperationID:         "accept-member-invite",
+		Method:              "POST",
+		Path:                "/api/v1/auth/invites/accept",
+		DefaultStatus:       200,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "public", Audience: "verself-api", Principals: []string{"browser", "cli", "anonymous"}},
+		Authorization:       AuthorizationDescriptor{Permission: "iam:member_invite:accept", OrganizationSource: "installation", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "iam.member_invite.accept", Resource: "member", Action: "verify"},
+		RateLimitBucket:     "signup_mutation",
+		RequestBodyMaxBytes: 16384,
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "auth", Method: "acceptMemberInvite", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
 }
 
 var ListOrganizations = Operation[ListOrganizationsInput, ListOrganizationsOutput]{
@@ -668,6 +726,7 @@ var TestIamPermissions = Operation[TestIamPermissionsInput, TestIamPermissionsOu
 type Handlers = PublicHandlers
 
 type PublicHandlers interface {
+	AcceptMemberInvite(context.Context, *AcceptMemberInviteInput) (*AcceptMemberInviteOutput, error)
 	ListOrganizations(context.Context, *ListOrganizationsInput) (*ListOrganizationsOutput, error)
 	CreateOrganization(context.Context, *CreateOrganizationInput) (*CreateOrganizationOutput, error)
 	GetOrganization(context.Context, *GetOrganizationInput) (*GetOrganizationOutput, error)
@@ -681,6 +740,8 @@ type PublicHandlers interface {
 }
 
 type ListOrganizationsHandler = Handler[ListOrganizationsInput, ListOrganizationsOutput]
+
+type AcceptMemberInviteHandler = Handler[AcceptMemberInviteInput, AcceptMemberInviteOutput]
 
 type CreateOrganizationHandler = Handler[CreateOrganizationInput, CreateOrganizationOutput]
 

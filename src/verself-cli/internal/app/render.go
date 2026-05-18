@@ -209,8 +209,7 @@ secrets_service_subdomain: secrets.api
 secrets_service_domain: "{{ secrets_service_subdomain }}.{{ verself_domain }}"
 source_code_hosting_service_subdomain: source.api
 source_code_hosting_service_domain: "{{ source_code_hosting_service_subdomain }}.{{ verself_domain }}"
-zitadel_subdomain: auth
-zitadel_domain: "{{ zitadel_subdomain }}.{{ verself_domain }}"
+zitadel_domain: "{{ verself_domain }}"
 
 platform_company_slug: %s
 platform_company_display_name: %s

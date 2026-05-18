@@ -254,24 +254,24 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 	}, nil
 }
 
-func (s *Service) CompleteMemberInvite(ctx context.Context, input CompleteMemberInviteRequest) error {
+func (s *Service) CompleteMemberInvite(ctx context.Context, input CompleteMemberInviteRequest) (MemberInviteAcceptance, error) {
 	input, err := normalizeCompleteMemberInvite(input)
 	if err != nil {
-		return err
+		return MemberInviteAcceptance{}, err
 	}
 	store, err := s.store()
 	if err != nil {
-		return err
+		return MemberInviteAcceptance{}, err
 	}
 	tokenHash := memberInviteAcceptanceTokenHash(input.AcceptanceToken)
 	now := s.now()
 	acceptance, err := store.GetMemberInviteAcceptance(ctx, tokenHash, now)
 	if err != nil {
-		return err
+		return MemberInviteAcceptance{}, err
 	}
 	directory, err := s.directory()
 	if err != nil {
-		return err
+		return MemberInviteAcceptance{}, err
 	}
 	if err := directory.CompleteMemberInvite(ctx, DirectoryCompleteMemberInviteRequest{
 		UserID:                acceptance.UserID,
@@ -279,9 +279,14 @@ func (s *Service) CompleteMemberInvite(ctx context.Context, input CompleteMember
 		EmailVerificationCode: acceptance.EmailVerificationCode,
 		Password:              input.Password,
 	}); err != nil {
-		return err
+		return MemberInviteAcceptance{}, err
 	}
-	return store.AcceptMemberInviteAcceptance(ctx, tokenHash, s.now())
+	acceptedAt := s.now()
+	if err := store.AcceptMemberInviteAcceptance(ctx, tokenHash, acceptedAt); err != nil {
+		return MemberInviteAcceptance{}, err
+	}
+	acceptance.AcceptedAt = &acceptedAt
+	return acceptance, nil
 }
 
 func (s *Service) UpdateHumanProfile(ctx context.Context, subjectID string, input HumanProfileUpdate) (HumanProfile, error) {
@@ -854,8 +859,8 @@ func normalizeCompleteMemberInvite(input CompleteMemberInviteRequest) (CompleteM
 	if len(input.AcceptanceToken) > 512 {
 		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: invite token is invalid", ErrInvalidInput)
 	}
-	if len(input.Password) < 12 {
-		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password must be at least 12 characters", ErrInvalidInput)
+	if len(input.Password) < 15 {
+		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password must be at least 15 characters", ErrInvalidInput)
 	}
 	if len(input.Password) > 1024 {
 		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password is too long", ErrInvalidInput)

@@ -95,9 +95,11 @@ page, err := client.Projects.List(ctx, verself.ListProjectsOptions{
 })
 ```
 
-`baseURL` is the installation apex for the common path. Service URL overrides
-remain available for service-local development, staging tunnels, and operator
-diagnostics. Public examples should omit service URL overrides.
+`baseURL` is the installation apex. Omitted `baseURL` means
+`https://verself.sh`. SDKs and the CLI resolve service origins from
+`{baseURL}/.well-known/verself`; service URL overrides are diagnostic inputs for
+service-local development, staging tunnels, and operator break-glass sessions.
+Public examples omit service URL overrides.
 
 ## System Pieces
 
@@ -325,6 +327,8 @@ the user also writes them through `verself company`.
 
 A profile represents one hosted Verself account context.
 Profiles are named with `[A-Za-z0-9_.-]+` and contain no path separators.
+The default hosted profile points at `https://verself.sh` and refreshes
+`https://verself.sh/.well-known/verself` before the first auth or API command.
 
 `$XDG_CONFIG_HOME/verself/config.json`:
 
@@ -337,7 +341,9 @@ Profiles are named with `[A-Za-z0-9_.-]+` and contain no path separators.
       "kind": "operator",
       "root_url": "https://verself.sh",
       "discovery_url": "https://verself.sh/.well-known/verself",
-      "auth_issuer": "https://auth.verself.sh",
+      "discovery_schema_version": 1,
+      "installation_id": "inst_5NZSEA08R8P3HN566DNH8D301M",
+      "auth_issuer": "https://verself.sh",
       "console_url": "https://verself.sh",
       "credential_ref": "verself://profiles/guardian-prod/oauth",
       "default_org": "guardianintelligence.org",
@@ -371,9 +377,11 @@ verself profiles inspect guardian-prod --json
 verself profiles remove guardian-prod
 ```
 
-`verself profiles add` performs service discovery from `root_url` and stores the
-resolved endpoints. A failed discovery can be repaired with `verself profiles
-refresh <name>`.
+`verself profiles add` performs service discovery from `root_url`, validates the
+manifest schema, and stores installation metadata plus the auth issuer. Resolved
+service endpoints live in the rebuildable discovery cache and are reloaded when
+the manifest `schema_version`, `installation_id`, or cache TTL changes. A failed
+discovery can be repaired with `verself profiles refresh <name>`.
 
 ## Project-Local State
 
@@ -395,28 +403,44 @@ deployment linkage. User-specific overrides belong in XDG profile config.
 
 ## Auth UX
 
-The v0 auth UX is non-human. A profile names the installation, organization,
-credential source, and output preferences. The SDK exchanges that source for
-short-lived service-audience tokens as needed.
+Hosted auth is profile-first. `verself auth login` loads the active profile,
+fetches its discovery manifest, reads `auth.issuer_url`, `auth.cli_client_id`,
+and `auth.product_api_audience`, and runs OAuth device authorization. The access
+and refresh token bundle is stored behind `credential_ref`; profile files store
+only non-secret references and selected org metadata.
 
 ```text
-verself auth use --profile ci --org guardian-intelligence --credential-file /run/secrets/verself-credential.json
-verself auth exchange --profile ci --org guardian-intelligence --issuer github-actions
+verself signup --email founder@example.com --org "Acme"
+verself auth login
 verself auth whoami
 verself auth logout
 ```
+
+`verself signup` starts an unauthenticated IAM signup intent. IAM sends a
+verification email and creates no Zitadel user, organization, SpiceDB
+relationship, or product account until the verification token is submitted with
+an initial credential. After verification, the user signs in through the same
+OIDC login path as any existing user.
+
+Organization invites use the authenticated IAM member invite API and the public
+invite acceptance API:
+
+```text
+verself orgs members invite teammate@example.com --role roles/admin
+verself auth login
+```
+
+The invite email points at the console invite page. CLI automation can consume
+the same acceptance token through the Smithy-modeled IAM operation when an agent
+controls the mailbox used for testing.
 
 Workload trust is the preferred path for CI, Verself runners, agents, and
 self-hosted runtimes that can present their own identity. Credential files are
 the fallback for runtimes without an identity provider. Credential files must be
 regular files with owner-only permissions; the CLI refuses world-readable files.
-
 SDK-backed commands read the active auth profile by default. Command-level
-credential-source overrides exist for diagnostics and isolated CI jobs.
-
-Human CLI login via OAuth device authorization is a later feature. Device flow
-belongs behind an explicit human-login surface and should not be required for
-agent, CI, or SDK e2e testing.
+credential-source and service-origin overrides exist for diagnostics and isolated
+CI jobs.
 
 ## Public Command Surface
 
@@ -428,7 +452,9 @@ environments, source resources, credentials, billing, logs, and sandbox
 workloads.
 
 ```text
-verself auth use|exchange|whoami|logout
+verself signup
+verself profiles list|add|use|inspect|refresh|remove
+verself auth login|whoami|logout
 verself credentials list|create|inspect|rotate|revoke
 verself credentials trust list|create|inspect|delete
 verself orgs list|create|use|inspect|update
@@ -751,7 +777,7 @@ derived:
   organization_name: guardianintelligence.org
   platform_company_slug: guardian-intelligence
   platform_company_display_name: Guardian Intelligence
-  zitadel_domain: auth.verself.sh
+  zitadel_domain: verself.sh
   iam_service_domain: iam.api.verself.sh
   sandbox_rental_service_domain: sandbox.api.verself.sh
   forgejo_domain: git.verself.sh

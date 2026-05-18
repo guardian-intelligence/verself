@@ -65,6 +65,53 @@ several SpiceDB processes.
 - OAuth refresh tokens, device-code login, and PKCE remain Zitadel/OIDC
   concerns. `iam-service` validates access tokens and manages product
   authorization state; it does not become an OAuth authorization server.
+- Public signup creates a signup intent and sends a verification email. It does
+  not create a Zitadel user, Zitadel organization, IAM organization row, SpiceDB
+  relationship, service account, or billing customer until verification succeeds.
+- Invite acceptance activates an invited directory user through the public IAM
+  acceptance API. Member invitation remains an authenticated org-scoped
+  mutation.
+
+## Signup and Invite Activation
+
+Signup is modeled as an installation-scoped public flow:
+
+```text
+POST /api/v1/signup-intents
+POST /api/v1/signup-intents/{signupIntentId}/verification
+```
+
+`StartSignup` records a pending signup intent with normalized email, draft
+organization display name, optional org slug, verification expiry, idempotency
+metadata, request attribution, and delivery state. The operation returns a
+generic accepted response and queues email verification. The response must not
+reveal whether the email already belongs to a user or pending invite.
+
+`VerifySignup` consumes the verification token and initial account credential.
+Only this operation may create the Zitadel human, create the Zitadel
+organization, insert `iam_organizations`, bind the user as `roles/owner`, and
+emit governance API activity for the materialized organization. The credential
+payload is a Smithy union with a password member today and a stable envelope for
+later OIDC-provider branches.
+
+Invites are split across authenticated and public operations:
+
+```text
+POST /api/v1/orgs/{orgId}/members:invite
+POST /api/v1/auth/invites/accept
+```
+
+`InviteMember` is authenticated and authorized by `iam:member:invite` on the
+target org. It creates a pending directory user, writes a hashed invite
+acceptance token, reconciles role bindings, and sends the invite email.
+`AcceptMemberInvite` is public, rate-limited as signup traffic, idempotent, and
+uses the same account credential envelope as signup verification.
+
+Public signup and invite acceptance are installation-scoped for rate limiting,
+audit, and bot-defense decisions. Org-scoped audit begins at verification or
+invite acceptance, when the target org and actor are known. Unverified intents
+and invalid token attempts still emit security telemetry with request
+attribution, but they do not produce customer-visible IAM state.
 
 ## Substrate
 
@@ -624,6 +671,7 @@ surface:
 | Organization profile read/update/resolve | `internal/orgs` | Profile state lives in IAM PostgreSQL; authorization is checked through typed decisions. |
 | Organization members | `internal/members` | Directory-backed read model for humans. Service accounts are listed and governed through their own resource surface. |
 | Member invite and removal | `internal/members` | Mutations write directory state and SpiceDB relationships through command envelopes. |
+| Signup intent and invite acceptance | `internal/signup` | Public installation-scoped commands own pending signup state, hashed verification tokens, account activation, and post-verification org materialization. |
 | IAM policy binding update | `internal/policies` plus `internal/roles` | `setIamPolicy` validates role bindings and writes SpiceDB relationships as the customer-editable policy surface. |
 | IAM policy get/set/test | `internal/policies` plus `internal/authz` | Google-IAM-style resource policy operations over Smithy-modeled HTTP APIs. `setIamPolicy` requires `etag` and idempotency after bootstrap. |
 | Permission and role catalog | `internal/roles` plus `internal/policies` | Exposes predefined roles, org-scoped roles, and permission metadata for SDKs, CLI, and console affordances. |
@@ -1201,14 +1249,16 @@ secret ownership should be represented as relationships.
 
 ## API Surface
 
-Public APIs are for organization IAM management by authenticated users and
-customer credentials. The public surface is intentionally conventional:
+Public APIs cover installation-scoped signup activation and organization IAM
+management by authenticated users and customer credentials. The public surface is
+intentionally conventional:
 
 | Resource | Operations |
 | --- | --- |
+| Signup intents | start signup, verify signup. |
 | IAM policy | `getIamPolicy`, `setIamPolicy`, `testIamPermissions` on supported resources. |
 | Roles | list predefined roles, list org roles, create org role, update org role, delete org role. |
-| Members | list members, invite member, update member role bindings, remove member. |
+| Members | list members, invite member, accept invite, update member role bindings, remove member. |
 | Service accounts | list, read metadata, disable. Creation is currently coupled to API credential creation; standalone create/update/delete are resource-surface extensions. |
 | API credentials | list, read metadata, create, roll, revoke. API credential creation can create the backing service account or attach a new credential to an existing service account. |
 | Permission catalog | list permissions, inspect role-to-permission expansion, list effective permissions. |

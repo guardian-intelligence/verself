@@ -105,6 +105,29 @@ func TestServiceInviteMemberNormalizesRolesForDirectoryAndPolicy(t *testing.T) {
 	}
 }
 
+func TestServiceCompleteMemberInviteReturnsAcceptedMember(t *testing.T) {
+	directory := &fakeMembersDirectory{}
+	svc := &Service{
+		Store:     fakeMembersStore{},
+		Directory: directory,
+		Now:       func() time.Time { return time.Unix(1700000000, 0).UTC() },
+	}
+
+	got, err := svc.CompleteMemberInvite(context.Background(), CompleteMemberInviteRequest{
+		AcceptanceToken: strings.Repeat("a", 32),
+		Password:        "correct horse pass",
+	})
+	if err != nil {
+		t.Fatalf("CompleteMemberInvite: %v", err)
+	}
+	if directory.completeInput.UserID != "user-invite" || directory.completeInput.Password != "correct horse pass" {
+		t.Fatalf("unexpected directory completion input: %#v", directory.completeInput)
+	}
+	if got.OrgID != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" || got.UserID != "user-invite" || got.AcceptedAt == nil {
+		t.Fatalf("unexpected accepted invite: %#v", got)
+	}
+}
+
 type fakeMembersDirectory struct {
 	members             []Member
 	createInput         DirectoryCreateOrganizationRequest
@@ -188,7 +211,13 @@ func (fakeMembersStore) CreateMemberInviteAcceptance(context.Context, MemberInvi
 }
 
 func (fakeMembersStore) GetMemberInviteAcceptance(context.Context, string, time.Time) (MemberInviteAcceptance, error) {
-	return MemberInviteAcceptance{UserID: "user-invite", EmailVerificationCode: "email-code", PasswordResetCode: "password-code"}, nil
+	return MemberInviteAcceptance{
+		OrgID:                 "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
+		UserID:                "user-invite",
+		Email:                 "invited@example.test",
+		EmailVerificationCode: "email-code",
+		PasswordResetCode:     "password-code",
+	}, nil
 }
 
 func (fakeMembersStore) AcceptMemberInviteAcceptance(context.Context, string, time.Time) error {

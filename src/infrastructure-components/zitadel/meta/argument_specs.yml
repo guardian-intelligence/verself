@@ -14,14 +14,9 @@ argument_specs:
         default: /etc/zitadel
         description: "Zitadel configuration directory."
 
-      zitadel_subdomain:
-        type: str
-        default: auth
-        description: "Subdomain for Zitadel (prepended to verself_domain)."
-
       zitadel_domain:
         type: str
-        description: "Full domain for Zitadel (auto-derived as <subdomain>.<verself_domain>)."
+        description: "Public issuer and protocol domain for Zitadel."
 
       verself_bin:
         type: path

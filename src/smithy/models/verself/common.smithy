@@ -165,6 +165,7 @@ enum PrincipalKind {
     WORKLOAD = "workload"
     GITHUB_ACTION = "github_action"
     PROVIDER = "provider"
+    ANONYMOUS = "anonymous"
 }
 
 list PrincipalKinds {
@@ -185,6 +186,7 @@ structure identity {
 }
 
 enum OrganizationScopeSource {
+    INSTALLATION = "installation"
     TOKEN_ORG_ID = "token_org_id"
     INPUT_MEMBER = "input_member"
     REQUEST_SUBJECT = "request_subject"
