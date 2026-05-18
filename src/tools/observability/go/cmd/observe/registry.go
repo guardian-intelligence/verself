@@ -233,7 +233,7 @@ var queryDocs = []queryDoc{
 		},
 		Examples: []string{
 			"aspect observe --what=catalog --signal=http",
-			"aspect observe --what=http --host=auth.example.com --status-min=400",
+			"aspect observe --what=http --host=example.com --status-min=400",
 		},
 		Next: []string{
 			"aspect observe --what=http --host=<host>",
@@ -458,7 +458,7 @@ var queryDocs = []queryDoc{
 		},
 		Examples: []string{
 			"aspect observe --what=http --status-min=400",
-			"aspect observe --what=http --host=auth.example.com --status-min=400",
+			"aspect observe --what=http --host=example.com --status-min=400",
 		},
 		Next: []string{
 			"aspect observe --what=catalog --signal=http",

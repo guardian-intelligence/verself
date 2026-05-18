@@ -15,6 +15,42 @@ job "zitadel" {
       }
     }
 
+    task "setup" {
+      driver = "raw_exec"
+      user = "zitadel"
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "/opt/verself/profile/bin/zitadel"
+        args = [
+          "setup",
+          "--masterkeyFile",
+          "/etc/credstore/zitadel/masterkey",
+          "--config",
+          "/etc/zitadel/config.yaml",
+          "--steps",
+          "/etc/zitadel/steps.yaml",
+        ]
+      }
+
+      env {
+        HOME = "/var/lib/zitadel"
+        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
+        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
+        OTEL_SERVICE_NAME = "zitadel-setup"
+        VERSELF_ZITADEL_EXTERNAL_DOMAIN = "verself.sh"
+        VERSELF_SUPERVISOR = "nomad"
+      }
+
+      resources {
+        cpu = 200
+        memory = 256
+      }
+    }
+
     task "server" {
       driver = "raw_exec"
       user = "zitadel"
@@ -29,6 +65,7 @@ job "zitadel" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "zitadel"
+        VERSELF_ZITADEL_EXTERNAL_DOMAIN = "verself.sh"
         VERSELF_SUPERVISOR = "nomad"
       }
 

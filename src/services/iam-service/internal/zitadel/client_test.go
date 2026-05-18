@@ -122,7 +122,7 @@ func TestCreateServiceAccountCredentialRequestShape(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(Config{BaseURL: server.URL, HostHeader: "auth.example.com", AdminToken: "admin-token"})
+	client, err := New(Config{BaseURL: server.URL, HostHeader: "example.com", AdminToken: "admin-token"})
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestCreateServiceAccountCredentialRequestShape(t *testing.T) {
 	if material.AuthMethod != identity.APICredentialAuthMethodPrivateKeyJWT || material.KeyID != "key-1" || material.KeyContent != "private-key" {
 		t.Fatalf("unexpected material %#v", material)
 	}
-	if material.TokenURL != "https://auth.example.com/oauth/v2/token" {
+	if material.TokenURL != "https://example.com/oauth/v2/token" {
 		t.Fatalf("token url = %q", material.TokenURL)
 	}
 	machine, _ := createBody["machine"].(map[string]any)

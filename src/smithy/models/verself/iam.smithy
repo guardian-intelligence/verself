@@ -11,6 +11,7 @@ use smithy.api#httpBearerAuth
 use smithy.api#httpHeader
 use smithy.api#httpLabel
 use smithy.api#httpPayload
+use smithy.api#httpQuery
 use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#input
@@ -57,10 +58,19 @@ use verself.common.v1#DateTime
 service Iam {
     version: "2026-05-12"
     operations: [
+        BrowserLogin
+        BrowserAuthCallback
+        GetBrowserSession
+        SelectBrowserOrganization
+        CreateBrowserResourceToken
+        LogoutBrowserSession
+        ListBrowserSessions
+        RevokeBrowserSession
         AcceptMemberInvite
         InviteMember
     ]
     resources: [
+        BrowserSession
         SignupIntent
         Organization
     ]
@@ -146,6 +156,62 @@ string IAMMemberName
 @length(min: 1, max: 512)
 string SubjectId
 
+@length(min: 27, max: 27)
+@pattern("^bs_[A-Za-z0-9_-]{24}$")
+string BrowserSessionHandle
+
+@length(min: 1, max: 2048)
+string BrowserRedirectPath
+
+@length(min: 1, max: 2048)
+string BrowserRedirectURL
+
+@length(min: 1, max: 2048)
+@sensitive
+string OAuthAuthorizationCode
+
+@length(min: 1, max: 512)
+@sensitive
+string OAuthState
+
+@length(min: 1, max: 4096)
+@sensitive
+string OAuthErrorDescription
+
+@length(min: 1, max: 4096)
+@sensitive
+string BrowserAccessToken
+
+@length(min: 1, max: 128)
+string ClientIPAddress
+
+@length(min: 1, max: 128)
+string ClientIPSource
+
+@length(min: 1, max: 512)
+string UserAgent
+
+@length(min: 1, max: 160)
+string DeviceLabel
+
+@length(min: 1, max: 80)
+string DeviceKind
+
+@length(min: 1, max: 80)
+string BrowserName
+
+@length(min: 1, max: 80)
+string OperatingSystemName
+
+@length(min: 1, max: 2)
+string CountryCode
+
+@length(min: 1, max: 120)
+string RegionName
+
+@length(min: 1, max: 120)
+string CityName
+
 @length(min: 1, max: 100)
 string GivenName
 
@@ -208,6 +274,21 @@ string SignupIntentVerifyPermission
 @permission(name: "iam:member_invite:accept")
 string MemberInviteAcceptPermission
 
+@permission(name: "iam:browser_session:create")
+string BrowserSessionCreatePermission
+
+@permission(name: "iam:browser_session:read")
+string BrowserSessionReadPermission
+
+@permission(name: "iam:browser_session:update")
+string BrowserSessionUpdatePermission
+
+@permission(name: "iam:browser_session:delete")
+string BrowserSessionDeletePermission
+
+@permission(name: "iam:browser_resource_token:create")
+string BrowserResourceTokenCreatePermission
+
 @permission(name: "iam:organization:list")
 string OrganizationListPermission
 
@@ -262,6 +343,21 @@ string SignupIntentVerifyAuditEvent
 @auditEvent(name: "iam.member_invite.accept")
 string MemberInviteAcceptAuditEvent
 
+@auditEvent(name: "iam.browser_session.create")
+string BrowserSessionCreateAuditEvent
+
+@auditEvent(name: "iam.browser_session.read")
+string BrowserSessionReadAuditEvent
+
+@auditEvent(name: "iam.browser_session.update")
+string BrowserSessionUpdateAuditEvent
+
+@auditEvent(name: "iam.browser_session.delete")
+string BrowserSessionDeleteAuditEvent
+
+@auditEvent(name: "iam.browser_resource_token.create")
+string BrowserResourceTokenCreateAuditEvent
+
 @auditEvent(name: "iam.organization.list")
 string OrganizationListAuditEvent
 
@@ -306,6 +402,12 @@ string AuthorizationResourceCheckAuditEvent
 
 @auditEvent(name: "iam.authorization.resource_parent_edge.write")
 string AuthorizationParentEdgeWriteAuditEvent
+
+resource BrowserSession {
+    identifiers: {
+        sessionHandle: BrowserSessionHandle
+    }
+}
 
 resource Organization {
     identifiers: {
@@ -562,6 +664,493 @@ structure VerifySignupResult {
     @protoField(number: 2)
     loginUrl: LoginURL
 }
+
+structure BrowserDevice {
+    @required
+    @protoField(number: 1)
+    label: DeviceLabel
+
+    @required
+    @protoField(number: 2)
+    kind: DeviceKind
+
+    @protoField(number: 3)
+    browserName: BrowserName
+
+    @protoField(number: 4)
+    osName: OperatingSystemName
+}
+
+structure BrowserLocation {
+    @protoField(number: 1)
+    countryCode: CountryCode
+
+    @protoField(number: 2)
+    region: RegionName
+
+    @protoField(number: 3)
+    city: CityName
+}
+
+list BrowserAuthMethods {
+    member: String
+}
+
+structure BrowserOrganizationContext {
+    @required
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    orgId: OrgId
+
+    @required
+    @protoField(number: 2)
+    identityProviderOrgId: IdentityProviderOrgId
+}
+
+list BrowserOrganizationContexts {
+    member: BrowserOrganizationContext
+}
+
+structure BrowserUser {
+    @required
+    @protoField(number: 1)
+    sub: SubjectId
+
+    @protoField(number: 2)
+    email: EmailAddress
+
+    @protoField(number: 3)
+    name: DisplayName
+
+    @protoField(number: 4)
+    preferredUsername: DisplayName
+
+    @protoField(number: 5)
+    homeOrgId: OrgId
+
+    @protoField(number: 6)
+    selectedOrgId: OrgId
+
+    @protoField(number: 7)
+    @suppress(["MemberShouldReferenceResource"])
+    orgId: OrgId
+
+    @required
+    @protoField(number: 8)
+    availableOrganizations: BrowserOrganizationContexts
+}
+
+structure BrowserAuthState {
+    @required
+    @protoField(number: 1)
+    isAuthenticated: Boolean
+
+    @protoField(number: 2)
+    userId: SubjectId
+
+    @protoField(number: 3)
+    @suppress(["MemberShouldReferenceResource"])
+    orgId: OrgId
+
+    @protoField(number: 4)
+    selectedOrgId: OrgId
+
+    @protoField(number: 5)
+    cachePartition: String
+}
+
+structure BrowserSessionInfo {
+    @required
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    sessionHandle: BrowserSessionHandle
+
+    @required
+    @protoField(number: 2)
+    createdAt: DateTime
+
+    @required
+    @protoField(number: 3)
+    lastSeenAt: DateTime
+
+    @required
+    @protoField(number: 4)
+    expiresAt: DateTime
+
+    @required
+    @protoField(number: 5)
+    authMethods: BrowserAuthMethods
+
+    @protoField(number: 6)
+    clientIP: ClientIPAddress
+
+    @required
+    @protoField(number: 7)
+    clientIPTrusted: Boolean
+
+    @protoField(number: 8)
+    clientIPSource: ClientIPSource
+
+    @protoField(number: 9)
+    edgePeerIP: ClientIPAddress
+
+    @protoField(number: 10)
+    userAgent: UserAgent
+
+    @required
+    @protoField(number: 11)
+    device: BrowserDevice
+
+    @required
+    @protoField(number: 12)
+    location: BrowserLocation
+}
+
+structure BrowserAuthSnapshot {
+    @required
+    @protoField(number: 1)
+    isSignedIn: Boolean
+
+    @required
+    @protoField(number: 2)
+    auth: BrowserAuthState
+
+    @protoField(number: 3)
+    user: BrowserUser
+
+    @protoField(number: 4)
+    session: BrowserSessionInfo
+}
+
+structure BrowserSessionSummary {
+    @required
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    sessionHandle: BrowserSessionHandle
+
+    @required
+    @protoField(number: 2)
+    isCurrent: Boolean
+
+    @required
+    @protoField(number: 3)
+    createdAt: DateTime
+
+    @required
+    @protoField(number: 4)
+    lastSeenAt: DateTime
+
+    @required
+    @protoField(number: 5)
+    expiresAt: DateTime
+
+    @protoField(number: 6)
+    createdClientIP: ClientIPAddress
+
+    @required
+    @protoField(number: 7)
+    createdClientIPTrusted: Boolean
+
+    @protoField(number: 8)
+    createdClientIPSource: ClientIPSource
+
+    @protoField(number: 9)
+    createdEdgePeerIP: ClientIPAddress
+
+    @protoField(number: 10)
+    createdUserAgent: UserAgent
+
+    @required
+    @protoField(number: 11)
+    createdDevice: BrowserDevice
+
+    @required
+    @protoField(number: 12)
+    createdLocation: BrowserLocation
+
+    @protoField(number: 13)
+    clientIP: ClientIPAddress
+
+    @required
+    @protoField(number: 14)
+    clientIPTrusted: Boolean
+
+    @protoField(number: 15)
+    clientIPSource: ClientIPSource
+
+    @protoField(number: 16)
+    edgePeerIP: ClientIPAddress
+
+    @protoField(number: 17)
+    userAgent: UserAgent
+
+    @required
+    @protoField(number: 18)
+    device: BrowserDevice
+
+    @required
+    @protoField(number: 19)
+    location: BrowserLocation
+}
+
+list BrowserSessionSummaries {
+    member: BrowserSessionSummary
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/auth/login", code: 303)
+@suppress(["HttpResponseCodeSemantics"])
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "anonymous"])
+@authz(permission: BrowserSessionCreatePermission, organization: {source: "installation"})
+@audit(event: BrowserSessionCreateAuditEvent, resource: BrowserSession, action: "create")
+@rateLimit(bucket: "signup_mutation")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "login", paginated: false, retryable: false)
+operation BrowserLogin {
+    input: BrowserLoginInput
+    output: BrowserLoginOutput
+    errors: [
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure BrowserLoginInput {
+    @httpQuery("redirect_to")
+    @protoField(number: 1)
+    redirectTo: BrowserRedirectPath
+}
+
+@output
+structure BrowserLoginOutput {
+    @httpHeader("Location")
+    @protoField(number: 1)
+    location: BrowserRedirectURL
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/auth/callback", code: 303)
+@suppress(["HttpResponseCodeSemantics"])
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "anonymous"])
+@authz(permission: BrowserSessionCreatePermission, organization: {source: "installation"})
+@audit(event: BrowserSessionCreateAuditEvent, resource: BrowserSession, action: "create")
+@rateLimit(bucket: "signup_mutation")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "callback", paginated: false, retryable: false)
+operation BrowserAuthCallback {
+    input: BrowserAuthCallbackInput
+    output: BrowserAuthCallbackOutput
+    errors: [
+        ValidationFailedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure BrowserAuthCallbackInput {
+    @httpQuery("code")
+    @protoField(number: 1)
+    code: OAuthAuthorizationCode
+
+    @httpQuery("state")
+    @protoField(number: 2)
+    state: OAuthState
+
+    @httpQuery("error")
+    @protoField(number: 3)
+    error: String
+
+    @httpQuery("error_description")
+    @protoField(number: 4)
+    errorDescription: OAuthErrorDescription
+}
+
+@output
+structure BrowserAuthCallbackOutput {
+    @httpHeader("Location")
+    @protoField(number: 1)
+    location: BrowserRedirectURL
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/auth/session")
+@identity(mode: "browser_session", audience: "verself-api", principals: ["browser", "anonymous"])
+@authz(permission: BrowserSessionReadPermission, organization: {source: "installation"})
+@audit(event: BrowserSessionReadAuditEvent, resource: BrowserSession, action: "read")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "getSession", paginated: false, retryable: true)
+operation GetBrowserSession {
+    input: GetBrowserSessionInput
+    output: GetBrowserSessionOutput
+    errors: [
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure GetBrowserSessionInput {}
+
+@output
+structure GetBrowserSessionOutput {
+    @required
+    @protoField(number: 1)
+    snapshot: BrowserAuthSnapshot
+}
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/auth/organization")
+@suppress(["ServiceBoundResourceOperation"])
+@identity(mode: "browser_session", audience: "verself-api", principals: ["browser"])
+@authz(permission: BrowserSessionUpdatePermission, organization: {source: "body_org_id", member: "orgId"})
+@audit(event: BrowserSessionUpdateAuditEvent, resource: BrowserSession, action: "update")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 4096)
+@sdk(module: "auth", method: "selectOrganization", paginated: false, retryable: false)
+operation SelectBrowserOrganization {
+    input: SelectBrowserOrganizationInput
+    output: SelectBrowserOrganizationOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        PermissionDeniedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure SelectBrowserOrganizationInput {
+    @required
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    orgId: OrgId
+}
+
+@output
+structure SelectBrowserOrganizationOutput {
+    @required
+    @protoField(number: 1)
+    snapshot: BrowserAuthSnapshot
+}
+
+@http(method: "POST", uri: "/api/v1/auth/resource-token")
+@identity(mode: "browser_session", audience: "verself-api", principals: ["browser"])
+@authz(permission: BrowserResourceTokenCreatePermission, organization: {source: "request_subject"})
+@audit(event: BrowserResourceTokenCreateAuditEvent, resource: BrowserSession, action: "create")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "createResourceToken", paginated: false, retryable: false)
+operation CreateBrowserResourceToken {
+    input: CreateBrowserResourceTokenInput
+    output: CreateBrowserResourceTokenOutput
+    errors: [
+        UnauthenticatedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure CreateBrowserResourceTokenInput {}
+
+@output
+structure CreateBrowserResourceTokenOutput {
+    @required
+    @protoField(number: 1)
+    accessToken: BrowserAccessToken
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/auth/logout", code: 303)
+@suppress(["HttpResponseCodeSemantics"])
+@identity(mode: "browser_session", audience: "verself-api", principals: ["browser", "anonymous"])
+@authz(permission: BrowserSessionDeletePermission, organization: {source: "installation"})
+@audit(event: BrowserSessionDeleteAuditEvent, resource: BrowserSession, action: "delete")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "logout", paginated: false, retryable: false)
+operation LogoutBrowserSession {
+    input: LogoutBrowserSessionInput
+    output: LogoutBrowserSessionOutput
+    errors: [
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure LogoutBrowserSessionInput {}
+
+@output
+structure LogoutBrowserSessionOutput {
+    @httpHeader("Location")
+    @protoField(number: 1)
+    location: BrowserRedirectURL
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/auth/sessions")
+@identity(mode: "browser_session", audience: "verself-api", principals: ["browser"])
+@authz(permission: BrowserSessionReadPermission, organization: {source: "request_subject"})
+@audit(event: BrowserSessionReadAuditEvent, resource: BrowserSession, action: "read")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "listSessions", paginated: false, retryable: true)
+operation ListBrowserSessions {
+    input: ListBrowserSessionsInput
+    output: ListBrowserSessionsOutput
+    errors: [
+        UnauthenticatedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure ListBrowserSessionsInput {}
+
+@output
+structure ListBrowserSessionsOutput {
+    @required
+    @protoField(number: 1)
+    sessions: BrowserSessionSummaries
+}
+
+@http(method: "DELETE", uri: "/api/v1/auth/sessions/{sessionHandle}", code: 204)
+@idempotent
+@suppress(["ServiceBoundResourceOperation"])
+@identity(mode: "browser_session", audience: "verself-api", principals: ["browser"])
+@authz(permission: BrowserSessionDeletePermission, organization: {source: "request_subject"})
+@audit(event: BrowserSessionDeleteAuditEvent, resource: BrowserSession, action: "delete")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "revokeSession", paginated: false, retryable: false)
+operation RevokeBrowserSession {
+    input: RevokeBrowserSessionInput
+    output: RevokeBrowserSessionOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure RevokeBrowserSessionInput {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    sessionHandle: BrowserSessionHandle
+}
+
+@output
+structure RevokeBrowserSessionOutput {}
 
 @idempotent
 @http(method: "POST", uri: "/api/v1/auth/invites/accept")

@@ -451,6 +451,22 @@ func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request
 		a.serverError(w, "exchange browser resource token", err)
 		return
 	}
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_resource_token.created", trace.WithAttributes(
+		attribute.String("auth.session_handle", session.SessionHandle),
+		attribute.String("enduser.id", session.User.Sub),
+	))
+	sendBrowserAuthActivity(
+		r.Context(),
+		session.User,
+		session.SessionHandle,
+		"browserAuth.createResourceToken",
+		"iam.browser_resource_token.created",
+		"create",
+		"iam.browser_resource_token.create",
+		r.Method,
+		browserAuthExternalRoute(r),
+		http.StatusOK,
+	)
 	a.writeJSON(w, http.StatusOK, map[string]string{"accessToken": token})
 }
 

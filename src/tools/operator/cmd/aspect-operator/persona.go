@@ -196,7 +196,7 @@ func assumePersona(rt *opruntime.Runtime, def personaDefinition, outputPath stri
 	if err != nil {
 		return err
 	}
-	authBaseURL := "https://auth." + domain
+	authBaseURL := "https://" + domain
 	adminPAT, err := readRemoteSecretString(rt, "/etc/zitadel/admin.pat")
 	if err != nil {
 		return err

@@ -457,7 +457,7 @@ func (r *platformRunner) ensureProductTokenClaimsAction(ctx context.Context, cli
 }
 
 func (r *platformRunner) productTokenClaimsActionEndpoint() string {
-	return "https://zitadel-actions." + r.cfg.VerselfDomain + productTokenClaimsActionPath
+	return "https://" + r.cfg.VerselfDomain + productTokenClaimsActionPath
 }
 
 func (r *platformRunner) writeRootCredential(ctx context.Context, path, group, value string) (bool, error) {

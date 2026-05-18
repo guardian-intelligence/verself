@@ -41,8 +41,7 @@ source_code_hosting_service_subdomain: source.api
 source_code_hosting_service_domain: "{{ source_code_hosting_service_subdomain }}.{{ verself_domain }}"
 stalwart_subdomain: mail
 stalwart_domain: "{{ stalwart_subdomain }}.{{ verself_domain }}"
-zitadel_subdomain: auth
-zitadel_domain: "{{ zitadel_subdomain }}.{{ verself_domain }}"
+zitadel_domain: "{{ verself_domain }}"
 
 cloudflare_dns_records:
   - kind: browser_origin
@@ -89,12 +88,6 @@ cloudflare_dns_records:
     zone: product
   - kind: protocol_origin
     record: git
-    zone: product
-  - kind: protocol_origin
-    record: auth
-    zone: product
-  - kind: protocol_origin
-    record: zitadel-actions
     zone: product
   - kind: protocol_origin
     record: mail

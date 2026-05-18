@@ -101,7 +101,7 @@
     content: |
       127.0.0.1 localhost
       ::1 localhost ip6-localhost ip6-loopback
-      127.0.0.1 auth.{{ verself_domain }}
+      127.0.0.1 {{ verself_domain }}
 
 - name: Deploy Zitadel masterkey to credstore
   ansible.builtin.copy:

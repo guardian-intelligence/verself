@@ -20,7 +20,7 @@ openbao_rebootstrap_confirm: ""
 openbao_key_shares: 3
 openbao_key_threshold: 2
 openbao_oidc_loopback_hosts:
-  - "auth.{{ verself_domain }}"
+  - "{{ verself_domain }}"
 openbao_spiffe_jwt_mount: spiffe-jwt
 openbao_spiffe_jwt_jwks_url: "{{ spire_jwt_bundle_endpoint_url }}"
 openbao_spiffe_jwt_jwks_ca_pem_path: /etc/spire/bundle-endpoint/ca.pem

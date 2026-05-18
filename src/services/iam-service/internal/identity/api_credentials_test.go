@@ -59,7 +59,7 @@ func testIssuedMaterial(method APICredentialAuthMethod, clientID string) APICred
 	material := APICredentialIssuedMaterial{
 		AuthMethod:  method,
 		ClientID:    clientID,
-		TokenURL:    "https://auth.example.com/oauth/v2/token",
+		TokenURL:    "https://example.com/oauth/v2/token",
 		Fingerprint: "sha256:test",
 	}
 	switch method {

@@ -152,6 +152,7 @@ structure serviceRuntime {
 
 enum AuthMode {
     BEARER = "bearer"
+    BROWSER_SESSION = "browser_session"
     SPIFFE_MTLS = "spiffe_mtls"
     SPIFFE_MTLS_BEARER = "spiffe_mtls_bearer"
     CHECKOUT_GRANT = "checkout_grant"

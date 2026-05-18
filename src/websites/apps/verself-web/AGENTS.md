@@ -141,7 +141,7 @@ Name"'`, never a bare label grep which also matches the `heading "Password"`):
 
 1. `agent-browser close` (env needs `--args "--no-sandbox"`).
 2. `open https://verself.sh/login` → click **"Continue to sign in"** (continues
-   through Zitadel on `auth.verself.sh`).
+   through Zitadel on `verself.sh`).
 3. Login-name page: fill **"Login Name"** textbox = `qa-flight@verself.sh`,
    click **"Next"**.
 4. Password page: fill the **"Password"** textbox, focus it, then **press

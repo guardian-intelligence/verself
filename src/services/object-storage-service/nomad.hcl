@@ -175,7 +175,7 @@ EOT
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "object-storage-admin"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "https://auth.verself.sh"
+        VERSELF_AUTH_ISSUER_URL = "https://verself.sh"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/object-storage-service/auth-audience"
         VERSELF_CRED_CREDENTIAL_KEK = "/etc/credstore/object-storage-service/credential-kek"
         VERSELF_CRED_GARAGE_ADMIN_TOKEN = "/etc/credstore/object-storage-service/garage-admin-token"
