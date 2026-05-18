@@ -27,6 +27,7 @@ job "vm-orchestrator" {
           "--image-dataset", "images",
           "--golden-dataset", "goldens",
           "--workload-dataset", "workloads",
+          "--storage-key-dir", "/var/lib/verself/vm-orchestrator/storage-keys",
           "--default-substrate-ref", "substrate",
           "--kernel-path", "/var/lib/verself/guest-images/vmlinux",
           "--firecracker-bin", "/usr/local/bin/firecracker",

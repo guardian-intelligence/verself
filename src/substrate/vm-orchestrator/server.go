@@ -26,6 +26,7 @@ type APIServer struct {
 	roots  zfs.Roots
 	logger *slog.Logger
 	state  *hostStateStore
+	keys   *StorageKeyManager
 
 	mu     sync.RWMutex
 	actors map[string]*vmActor
@@ -125,6 +126,9 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	if base.WorkloadDataset == "" {
 		base.WorkloadDataset = "workloads"
 	}
+	if base.StorageKeyDir == "" {
+		base.StorageKeyDir = "/var/lib/verself/vm-orchestrator/storage-keys"
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -148,6 +152,7 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 		},
 		logger: logger,
 		state:  state,
+		keys:   NewStorageKeyManager(NewFileStorageKeyProvider(base.StorageKeyDir), logger),
 		actors: map[string]*vmActor{},
 	}
 	if err := server.ensureZFSRoots(context.Background()); err != nil {
@@ -162,10 +167,21 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 		_ = state.close()
 		return nil, err
 	}
+	if err := server.unloadIdleStorageNamespaceKeys(context.Background()); err != nil {
+		_ = state.close()
+		return nil, err
+	}
 	return server, nil
 }
 
-// ensureZFSRoots creates pool/<images> and pool/<workloads> if they do not
+func (s *APIServer) newOrchestrator(opts ...Option) *Orchestrator {
+	all := make([]Option, 0, len(opts)+1)
+	all = append(all, WithStorageKeyManager(s.keys))
+	all = append(all, opts...)
+	return New(s.cfg, s.logger, all...)
+}
+
+// ensureZFSRoots creates pool/<images> and pool/<orgs> if they do not
 // already exist. The firecracker Ansible role no longer issues these
 // `zfs create` commands directly; the daemon owns that responsibility on
 // every startup so a fresh pool requires no operator intervention beyond
@@ -180,6 +196,33 @@ func (s *APIServer) ensureZFSRoots(ctx context.Context) error {
 	err := volumes.EnsureRoots(ensureCtx)
 	end(err)
 	return err
+}
+
+func (s *APIServer) unloadIdleStorageNamespaceKeys(ctx context.Context) error {
+	unloadCtx, end := startStepSpan(ctx, "vmorchestrator.zfs.unload_idle_storage_keys",
+		attribute.String("zfs.orgs_dataset", s.roots.OrgsRootDataset()),
+	)
+	var err error
+	defer func() { end(err) }()
+	ops := DirectPrivOps{}
+	orgRoots, err := ops.ZFSListChildren(unloadCtx, s.roots.OrgsRootDataset())
+	if err != nil {
+		return err
+	}
+	volumes := zfs.NewVolumeLifecycle(s.roots, ops, s.logger)
+	for _, orgRoot := range orgRoots {
+		orgID := strings.TrimPrefix(orgRoot, s.roots.OrgsRootDataset()+"/")
+		if !zfs.IsValidRef(orgID) {
+			s.logger.WarnContext(unloadCtx, "skip invalid storage namespace during idle key unload", "dataset", orgRoot)
+			continue
+		}
+		if unloadErr := volumes.UnloadStorageNamespaceKey(unloadCtx, orgID); unloadErr != nil {
+			s.logger.WarnContext(unloadCtx, "idle storage namespace key unload failed", "org_id", orgID, "dataset", orgRoot, "error", unloadErr)
+			continue
+		}
+		s.logger.InfoContext(unloadCtx, "idle storage namespace key unloaded", "org_id", orgID, "dataset", orgRoot)
+	}
+	return nil
 }
 
 func (s *APIServer) recoverNetworkState(ctx context.Context) error {
@@ -939,7 +982,7 @@ func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 	}
 	_ = a.server.state.appendLeaseEvent(ctx, a.leaseID, LeaseEventVMBooting, "", nil)
 	observer := &leaseObserver{actor: a}
-	runtime, err := New(a.server.cfg, a.server.logger, withDurableJournal(a.durableJournalSink())).BootLease(ctx, a.leaseID, spec, observer)
+	runtime, err := a.server.newOrchestrator(withDurableJournal(a.durableJournalSink())).BootLease(ctx, a.leaseID, spec, observer)
 	if err != nil {
 		_ = a.server.state.finishLease(ctx, a.leaseID, LeaseStateCrashed, err.Error(), LeaseEventLeaseCrashed)
 		return acquireReply{err: err}
@@ -1064,7 +1107,7 @@ func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountNa
 		return commitFilesystemMountReply{err: err}
 	}
 	commitCtx := detachedTraceContext(callerCtx)
-	result, err := New(a.server.cfg, a.server.logger).CommitFilesystemMount(commitCtx, a.runtime, FilesystemCommitInput{
+	result, err := a.server.newOrchestrator().CommitFilesystemMount(commitCtx, a.runtime, FilesystemCommitInput{
 		MountName:         mountName,
 		VolumeID:          volumeID,
 		OperationID:       operationID,

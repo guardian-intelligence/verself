@@ -60,6 +60,11 @@ func (r Roots) workloadRoot(orgID string) string {
 	return path.Join(r.orgRoot(orgID), r.WorkloadDataset)
 }
 
+func (r Roots) orgImageRoot(orgID string) string {
+	r = r.normalized()
+	return path.Join(r.orgRoot(orgID), "images")
+}
+
 func (r Roots) goldenRoot(orgID string) string {
 	r = r.normalized()
 	return path.Join(r.orgRoot(orgID), r.GoldenDataset)

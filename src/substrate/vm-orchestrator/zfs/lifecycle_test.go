@@ -3,16 +3,21 @@ package zfs
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
 type lifecycleOps struct {
-	ensures []string
-	clones  []string
-	creates []string
-	sets    []string
-	mkfs    []string
-	usedErr error
+	ensures  []string
+	clones   []string
+	creates  []string
+	sets     []string
+	mkfs     []string
+	receives []string
+	usedErr  error
+
+	datasets  map[string]bool
+	snapshots map[string]bool
 }
 
 func (o *lifecycleOps) ZFSClone(_ context.Context, snapshot, target, _ string) error {
@@ -28,17 +33,36 @@ func (o *lifecycleOps) ZFSDestroy(context.Context, string) error { return nil }
 
 func (o *lifecycleOps) ZFSDestroyRecursive(context.Context, string) error { return nil }
 
-func (o *lifecycleOps) ZFSEnsureFilesystem(_ context.Context, dataset string) error {
-	o.ensures = append(o.ensures, dataset)
+func (o *lifecycleOps) ZFSCreateEncryptedFilesystem(_ context.Context, dataset string, _ []byte) error {
+	if o.datasets == nil {
+		o.datasets = map[string]bool{}
+	}
+	o.datasets[dataset] = true
 	return nil
 }
 
-func (o *lifecycleOps) ZFSSnapshotExists(context.Context, string) (bool, error) {
-	return false, nil
+func (o *lifecycleOps) ZFSEnsureFilesystem(_ context.Context, dataset string) error {
+	o.ensures = append(o.ensures, dataset)
+	if o.datasets == nil {
+		o.datasets = map[string]bool{}
+	}
+	o.datasets[dataset] = true
+	return nil
 }
 
-func (o *lifecycleOps) ZFSDatasetExists(context.Context, string) (bool, error) {
-	return false, nil
+func (o *lifecycleOps) ZFSLoadKey(context.Context, string, []byte) error { return nil }
+
+func (o *lifecycleOps) ZFSUnloadKey(context.Context, string) error { return nil }
+
+func (o *lifecycleOps) ZFSSnapshotExists(_ context.Context, snapshot string) (bool, error) {
+	if strings.HasPrefix(snapshot, "pool/images/") {
+		return true, nil
+	}
+	return o.snapshots[snapshot], nil
+}
+
+func (o *lifecycleOps) ZFSDatasetExists(_ context.Context, dataset string) (bool, error) {
+	return o.datasets[dataset], nil
 }
 
 func (o *lifecycleOps) ZFSSetProperty(_ context.Context, dataset, key, value string) error {
@@ -46,7 +70,22 @@ func (o *lifecycleOps) ZFSSetProperty(_ context.Context, dataset, key, value str
 	return nil
 }
 
-func (o *lifecycleOps) ZFSGetProperty(context.Context, string, string) (string, error) {
+func (o *lifecycleOps) ZFSGetProperty(_ context.Context, target, key string) (string, error) {
+	switch key {
+	case "encryption":
+		return "aes-256-gcm", nil
+	case "encryptionroot":
+		const prefix = "pool/orgs/"
+		if strings.HasPrefix(target, prefix) {
+			parts := strings.Split(strings.TrimPrefix(target, prefix), "/")
+			if len(parts) > 0 && parts[0] != "" {
+				return prefix + parts[0], nil
+			}
+		}
+		return "", nil
+	case "keystatus":
+		return "available", nil
+	}
 	return "", nil
 }
 
@@ -57,6 +96,19 @@ func (o *lifecycleOps) ZFSCreateVolume(_ context.Context, dataset string, _ uint
 
 func (o *lifecycleOps) ZFSCreateSparseVolume(_ context.Context, dataset string, _ uint64, _ string) error {
 	o.creates = append(o.creates, dataset)
+	return nil
+}
+
+func (o *lifecycleOps) ZFSReceiveSnapshot(_ context.Context, sourceSnapshot, targetDataset string) error {
+	o.receives = append(o.receives, sourceSnapshot+" -> "+targetDataset)
+	if o.datasets == nil {
+		o.datasets = map[string]bool{}
+	}
+	if o.snapshots == nil {
+		o.snapshots = map[string]bool{}
+	}
+	o.datasets[targetDataset] = true
+	o.snapshots[targetDataset+"@ready"] = true
 	return nil
 }
 
@@ -111,7 +163,10 @@ func TestPrepareSubstrateCloneEnsuresLeaseDatasetParent(t *testing.T) {
 	if got, want := ops.ensures[0], "pool/orgs/org_a/workloads/lease-a"; got != want {
 		t.Fatalf("ensured dataset = %q, want %q", got, want)
 	}
-	if got, want := ops.clones[0], "pool/images/substrate@ready -> pool/orgs/org_a/workloads/lease-a/root"; got != want {
+	if got, want := ops.receives[0], "pool/images/substrate@ready -> pool/orgs/org_a/images/substrate"; got != want {
+		t.Fatalf("receive = %q, want %q", got, want)
+	}
+	if got, want := ops.clones[0], "pool/orgs/org_a/images/substrate@ready -> pool/orgs/org_a/workloads/lease-a/root"; got != want {
 		t.Fatalf("clone = %q, want %q", got, want)
 	}
 }
@@ -131,14 +186,17 @@ func TestPrepareFilesystemMountsEnsureMountParent(t *testing.T) {
 	if _, err := lifecycle.PrepareMount(context.Background(), lease, image, 0, "toolchain", "op-a"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ops.ensures[0], "pool/orgs/org_a/workloads/lease-a/mounts"; got != want {
-		t.Fatalf("ensured cloned mount parent = %q, want %q", got, want)
+	if !containsString(ops.ensures, "pool/orgs/org_a/images") {
+		t.Fatalf("org image parent was not ensured: %#v", ops.ensures)
+	}
+	if !containsString(ops.ensures, "pool/orgs/org_a/workloads/lease-a/mounts") {
+		t.Fatalf("cloned mount parent was not ensured: %#v", ops.ensures)
 	}
 	if _, err := lifecycle.PrepareEmptyMount(context.Background(), lease, 1, "workspace", "op-b"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ops.ensures[1], "pool/orgs/org_a/workloads/lease-a/mounts"; got != want {
-		t.Fatalf("ensured empty mount parent = %q, want %q", got, want)
+	if !containsString(ops.ensures, "pool/orgs/org_a/workloads/lease-a/mounts") {
+		t.Fatalf("empty mount parent was not ensured: %#v", ops.ensures)
 	}
 }
 
@@ -163,4 +221,13 @@ func TestCommitReturnsStatsErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("Commit returned nil error for zfs stats failure")
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

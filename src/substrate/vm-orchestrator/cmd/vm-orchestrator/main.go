@@ -45,6 +45,7 @@ func run() error {
 	flag.StringVar(&cfg.ImageDataset, "image-dataset", cfg.ImageDataset, "ZFS dataset under the pool containing composable image zvol snapshots")
 	flag.StringVar(&cfg.GoldenDataset, "golden-dataset", cfg.GoldenDataset, "ZFS dataset under the pool containing immutable golden environment generations")
 	flag.StringVar(&cfg.WorkloadDataset, "workload-dataset", cfg.WorkloadDataset, "ZFS dataset for ephemeral VM leases")
+	flag.StringVar(&cfg.StorageKeyDir, "storage-key-dir", cfg.StorageKeyDir, "Root-only directory containing raw per-org ZFS storage keys")
 	flag.StringVar(&cfg.DefaultSubstrateRef, "default-substrate-ref", cfg.DefaultSubstrateRef, "Composable image ref cloned as the substrate root disk for new leases (toolchain images compose on top via FilesystemMounts)")
 	flag.StringVar(&cfg.KernelPath, "kernel-path", cfg.KernelPath, "Path to vmlinux on the host")
 	flag.StringVar(&cfg.FirecrackerBin, "firecracker-bin", cfg.FirecrackerBin, "Path to firecracker binary")

@@ -11,6 +11,7 @@ Default roots under the configured pool:
 | Root | Purpose |
 | --- | --- |
 | `images/` | Read-only composable toolchain images seeded by `SeedImage`. |
+| `orgs/<org>/images/` | Org-encrypted received copies of platform images used as clone origins for that org. |
 | `orgs/<org>/workloads/` | Ephemeral per-lease root disks and writable mount clones under the org quota. |
 | `orgs/<org>/goldens/` | Immutable golden environment generations committed after a seal-eligible successful execution under the org quota. |
 
@@ -21,17 +22,27 @@ unit; it does not issue runtime ZFS mutations for workloads.
 
 ## Customer Dataset Encryption
 
-Every dataset that may contain customer bytes under `orgs/<org>/workloads/`
-or `orgs/<org>/goldens/` is encrypted before guest I/O. The organization root
-is the encryption boundary for workload roots, golden roots, lease clones, and
-generation zvols. Customer zvol creation and clone preparation must fail if the
-target namespace encryption key is unavailable or if the resulting dataset is
-not encrypted.
+Every dataset that may contain customer bytes under `orgs/<org>/` is encrypted
+before guest I/O. The organization root is the encryption boundary for received
+platform images, workload roots, golden roots, lease clones, and generation
+zvols. Customer zvol creation and clone preparation fail if the target namespace
+encryption key is unavailable or if the resulting dataset is not encrypted.
 
 vm-orchestrator is the only runtime process that loads customer ZFS keys. The
 keys are host-only operational material and are never returned to product
 services, guests, billing records, or public APIs. Image roots can remain
 unencrypted when they contain only reproducible platform images.
+
+Org namespace filesystems use `mountpoint=none` and `canmount=off`; only zvol
+block devices are attached to guests. This prevents native ZFS mountpoints from
+pinning an org key after lease cleanup and allows vm-orchestrator to unload the
+key when the last live lease for the org releases its hold.
+
+ZFS clones share their origin encryption root, so vm-orchestrator never clones a
+global platform image directly into an org workload. On first use per org and
+image ref, it receives the global `images/<ref>@ready` stream into
+`orgs/<org>/images/<ref>@ready` under the loaded org key. Lease roots and
+toolchain mounts clone from that org-local encrypted snapshot.
 
 ## Backup Exclusion
 
@@ -47,17 +58,21 @@ recovery design before release.
 
 1. sandbox-rental builds a `LeaseSpec` containing the substrate image and any
    boot-time filesystem mounts.
-2. vm-orchestrator clones the substrate snapshot into `orgs/<org>/workloads/<lease>/root`.
-3. For each filesystem mount, vm-orchestrator either clones the selected golden
+2. vm-orchestrator loads the org key and ensures the encrypted namespace.
+3. vm-orchestrator materializes the substrate under `orgs/<org>/images/` when
+   the org-local image snapshot does not already exist.
+4. vm-orchestrator clones the org-local substrate snapshot into
+   `orgs/<org>/workloads/<lease>/root`.
+5. For each filesystem mount, vm-orchestrator either clones the selected golden
    generation snapshot or creates a fresh ext4 zvol on a cache miss.
-4. vm-orchestrator waits for every `/dev/zvol/<dataset>` node, jailer-binds the
+6. vm-orchestrator waits for every `/dev/zvol/<dataset>` node, jailer-binds the
    devices, starts Firecracker, and sends the filesystem manifest to vm-bridge.
-5. vm-bridge mounts the declared filesystems before the runner process starts.
+7. vm-bridge mounts the declared filesystems before the runner process starts.
    Cache filesystems mount once at `/verself/.mounts/<name>` and then bind
    into the declared customer paths. Missing bind-target directories created
    by vm-bridge are owned by the runner user; existing directories keep their
    image-provided ownership and must be empty.
-6. vm-bridge returns per-filesystem mount results. Required mount failures
+8. vm-bridge returns per-filesystem mount results. Required mount failures
    fail lease acquisition; optional cache mount failures are reported to the
    product service as degraded cache state.
 

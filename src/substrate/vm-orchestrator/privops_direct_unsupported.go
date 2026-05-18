@@ -29,8 +29,20 @@ func (DirectPrivOps) ZFSDestroyRecursive(context.Context, string) error {
 	return unsupportedHostMutation("zfs destroy recursive")
 }
 
+func (DirectPrivOps) ZFSCreateEncryptedFilesystem(context.Context, string, []byte) error {
+	return unsupportedHostMutation("zfs create encrypted filesystem")
+}
+
 func (DirectPrivOps) ZFSEnsureFilesystem(context.Context, string) error {
 	return unsupportedHostMutation("zfs ensure filesystem")
+}
+
+func (DirectPrivOps) ZFSLoadKey(context.Context, string, []byte) error {
+	return unsupportedHostMutation("zfs load key")
+}
+
+func (DirectPrivOps) ZFSUnloadKey(context.Context, string) error {
+	return unsupportedHostMutation("zfs unload key")
 }
 
 func (DirectPrivOps) ZFSSnapshotExists(context.Context, string) (bool, error) {
@@ -55,6 +67,10 @@ func (DirectPrivOps) ZFSCreateVolume(context.Context, string, uint64, string) er
 
 func (DirectPrivOps) ZFSCreateSparseVolume(context.Context, string, uint64, string) error {
 	return unsupportedHostMutation("zfs create sparse volume")
+}
+
+func (DirectPrivOps) ZFSReceiveSnapshot(context.Context, string, string) error {
+	return unsupportedHostMutation("zfs receive snapshot")
 }
 
 func (DirectPrivOps) ZFSWriteVolumeFromFile(context.Context, string, string) (uint64, error) {

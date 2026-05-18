@@ -51,6 +51,7 @@ type Config struct {
 	ImageDataset        string
 	GoldenDataset       string
 	WorkloadDataset     string
+	StorageKeyDir       string
 	DefaultSubstrateRef string
 	KernelPath          string
 	FirecrackerBin      string
@@ -76,6 +77,7 @@ func DefaultConfig() Config {
 		ImageDataset:        "images",
 		GoldenDataset:       "goldens",
 		WorkloadDataset:     "workloads",
+		StorageKeyDir:       "/var/lib/verself/vm-orchestrator/storage-keys",
 		DefaultSubstrateRef: "substrate",
 		KernelPath:          "/var/lib/verself/guest-images/vmlinux",
 		FirecrackerBin:      "/usr/local/bin/firecracker",
@@ -231,6 +233,7 @@ type Orchestrator struct {
 	logger  *slog.Logger
 	ops     PrivOps
 	volumes *zfs.VolumeLifecycle
+	keys    *StorageKeyManager
 	journal func(durableJournalEntry)
 }
 
@@ -239,6 +242,12 @@ type Option func(*Orchestrator)
 func WithPrivOps(ops PrivOps) Option {
 	return func(o *Orchestrator) {
 		o.ops = ops
+	}
+}
+
+func WithStorageKeyManager(keys *StorageKeyManager) Option {
+	return func(o *Orchestrator) {
+		o.keys = keys
 	}
 }
 
@@ -261,6 +270,9 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	}
 	if base.WorkloadDataset == "" {
 		base.WorkloadDataset = "workloads"
+	}
+	if base.StorageKeyDir == "" {
+		base.StorageKeyDir = "/var/lib/verself/vm-orchestrator/storage-keys"
 	}
 	if base.Bounds == (VMResourceBounds{}) {
 		base.Bounds = DefaultBounds
@@ -289,8 +301,36 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	for _, opt := range opts {
 		opt(o)
 	}
+	if o.keys == nil {
+		o.keys = NewStorageKeyManager(NewFileStorageKeyProvider(base.StorageKeyDir), logger)
+	}
 	o.volumes = zfs.NewVolumeLifecycle(o.roots, o.ops, logger)
 	return o
+}
+
+func (o *Orchestrator) releaseStorageKey(ctx context.Context, orgID, leaseID string, hold *StorageKeyHold) {
+	if hold == nil {
+		return
+	}
+	lastRef, err := hold.Release(ctx)
+	if err != nil {
+		o.logger.WarnContext(ctx, "storage key release failed", "org_id", orgID, "lease_id", leaseID, "error", err)
+		return
+	}
+	if !lastRef {
+		return
+	}
+	unloadCtx, end := startStepSpan(ctx, "vmorchestrator.zfs.storage_key.unload",
+		attribute.String("org.id", orgID),
+		attribute.String("lease.id", leaseID),
+	)
+	err = o.volumes.UnloadStorageNamespaceKey(unloadCtx, orgID)
+	end(err)
+	if err != nil {
+		o.logger.WarnContext(ctx, "storage namespace key unload failed", "org_id", orgID, "lease_id", leaseID, "error", err)
+		return
+	}
+	o.logger.InfoContext(ctx, "storage namespace key unloaded", "org_id", orgID, "lease_id", leaseID)
 }
 
 // normalizeLeaseSpec fills in defaults and re-validates the VM shape
@@ -458,19 +498,29 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		),
 	)
 	var err error
+	var keyHold *StorageKeyHold
 	defer func() {
 		if err != nil {
+			if keyHold != nil {
+				o.releaseStorageKey(context.Background(), spec.StorageNamespace.OrgID, leaseID, keyHold)
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 		}
 		span.End()
 	}()
 
+	keyHold, err = o.keys.Acquire(ctx, spec.StorageNamespace.OrgID, leaseID)
+	if err != nil {
+		err = fmt.Errorf("acquire storage key: %w", err)
+		return nil, err
+	}
+
 	namespace := zfs.StorageNamespace{
 		OrgID:      spec.StorageNamespace.OrgID,
 		QuotaBytes: spec.StorageNamespace.QuotaBytes,
 	}
-	if ensureErr := o.volumes.EnsureStorageNamespace(ctx, namespace); ensureErr != nil {
+	if ensureErr := o.volumes.EnsureEncryptedStorageNamespace(ctx, namespace, keyHold.Key()); ensureErr != nil {
 		err = fmt.Errorf("ensure storage namespace: %w", ensureErr)
 		return nil, err
 	}
@@ -516,6 +566,10 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		err = bootErr
 		return nil, err
 	}
+	runtime.cleanups = append([]func(){func() {
+		o.releaseStorageKey(context.Background(), spec.StorageNamespace.OrgID, leaseID, keyHold)
+	}}, runtime.cleanups...)
+	keyHold = nil
 	for _, mount := range mounts {
 		mount := mount
 		runtime.cleanups = append(runtime.cleanups, func() {

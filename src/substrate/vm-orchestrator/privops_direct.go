@@ -3,6 +3,7 @@
 package vmorchestrator
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -80,6 +81,28 @@ func (DirectPrivOps) ZFSDestroyRecursive(ctx context.Context, dataset string) er
 	return nil
 }
 
+func (DirectPrivOps) ZFSCreateEncryptedFilesystem(ctx context.Context, dataset string, rawKey []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
+		return fmt.Errorf("zfs encrypted filesystem dataset is invalid: %s", dataset)
+	}
+	if len(rawKey) != 32 {
+		return fmt.Errorf("zfs raw key must be 32 bytes")
+	}
+	cmd := exec.CommandContext(ctx, "zfs", "create", "-p",
+		"-o", "encryption=on",
+		"-o", "keyformat=raw",
+		"-o", "keylocation=prompt",
+		"-o", "mountpoint=none",
+		"-o", "canmount=off",
+		dataset,
+	)
+	cmd.Stdin = bytes.NewReader(rawKey)
+	out, err := cmd.CombinedOutput()
+	return finishZFSEnsureFilesystemCreate(ctx, dataset, out, err, zfs.DatasetExists)
+}
+
 func (DirectPrivOps) ZFSEnsureFilesystem(ctx context.Context, dataset string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
@@ -109,6 +132,52 @@ func finishZFSEnsureFilesystemCreate(ctx context.Context, dataset string, output
 		return nil
 	}
 	return fmt.Errorf("zfs create -p %s: %s: %w", dataset, strings.TrimSpace(string(output)), createErr)
+}
+
+func (DirectPrivOps) ZFSLoadKey(ctx context.Context, dataset string, rawKey []byte) error {
+	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
+		return fmt.Errorf("zfs load-key dataset is invalid: %s", dataset)
+	}
+	if len(rawKey) != 32 {
+		return fmt.Errorf("zfs raw key must be 32 bytes")
+	}
+	status, err := DirectPrivOps{}.ZFSGetProperty(ctx, dataset, "keystatus")
+	if err != nil {
+		return err
+	}
+	if status == "available" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zfs", "load-key", "-L", "prompt", dataset)
+	cmd.Stdin = bytes.NewReader(rawKey)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs load-key %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func (DirectPrivOps) ZFSUnloadKey(ctx context.Context, dataset string) error {
+	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
+		return fmt.Errorf("zfs unload-key dataset is invalid: %s", dataset)
+	}
+	status, err := DirectPrivOps{}.ZFSGetProperty(ctx, dataset, "keystatus")
+	if err != nil {
+		return err
+	}
+	if status != "available" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zfs", "unload-key", "-r", dataset)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("zfs unload-key -r %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
+	}
+	return nil
 }
 
 func (DirectPrivOps) ZFSSnapshotExists(ctx context.Context, snapshot string) (bool, error) {
@@ -158,6 +227,46 @@ func (DirectPrivOps) ZFSCreateVolume(ctx context.Context, dataset string, sizeBy
 
 func (DirectPrivOps) ZFSCreateSparseVolume(ctx context.Context, dataset string, sizeBytes uint64, volblocksize string) error {
 	return zfsCreateVolume(ctx, dataset, sizeBytes, volblocksize, true)
+}
+
+func (DirectPrivOps) ZFSReceiveSnapshot(ctx context.Context, sourceSnapshot, targetDataset string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	if strings.TrimSpace(sourceSnapshot) == "" || !strings.Contains(sourceSnapshot, "@") {
+		return fmt.Errorf("zfs send source snapshot is invalid: %s", sourceSnapshot)
+	}
+	if strings.TrimSpace(targetDataset) == "" || strings.Contains(targetDataset, "@") {
+		return fmt.Errorf("zfs receive target dataset is invalid: %s", targetDataset)
+	}
+	sendCmd := exec.CommandContext(ctx, "zfs", "send", sourceSnapshot)
+	recvCmd := exec.CommandContext(ctx, "zfs", "receive", "-u", "-x", "encryption", targetDataset)
+	sendOut, pipeErr := sendCmd.StdoutPipe()
+	if pipeErr != nil {
+		return fmt.Errorf("zfs send stdout pipe %s: %w", sourceSnapshot, pipeErr)
+	}
+	var sendErrText bytes.Buffer
+	var recvText bytes.Buffer
+	sendCmd.Stderr = &sendErrText
+	recvCmd.Stdin = sendOut
+	recvCmd.Stdout = &recvText
+	recvCmd.Stderr = &recvText
+	if err := recvCmd.Start(); err != nil {
+		return fmt.Errorf("zfs receive start %s: %w", targetDataset, err)
+	}
+	if err := sendCmd.Start(); err != nil {
+		_ = recvCmd.Process.Kill()
+		_ = recvCmd.Wait()
+		return fmt.Errorf("zfs send start %s: %w", sourceSnapshot, err)
+	}
+	sendErr := sendCmd.Wait()
+	recvErr := recvCmd.Wait()
+	if recvErr != nil {
+		return fmt.Errorf("zfs receive %s -> %s: receive=%s send=%s: %w", sourceSnapshot, targetDataset, strings.TrimSpace(recvText.String()), strings.TrimSpace(sendErrText.String()), recvErr)
+	}
+	if sendErr != nil {
+		return fmt.Errorf("zfs send %s: %s: %w", sourceSnapshot, strings.TrimSpace(sendErrText.String()), sendErr)
+	}
+	return nil
 }
 
 func zfsCreateVolume(ctx context.Context, dataset string, sizeBytes uint64, volblocksize string, sparse bool) error {
