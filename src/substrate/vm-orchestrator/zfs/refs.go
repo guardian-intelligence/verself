@@ -1,6 +1,7 @@
 package zfs
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -15,6 +16,8 @@ const (
 var (
 	refPattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 	snapshotPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+
+	ErrSnapshotNotFound = errors.New("zfs source snapshot not found")
 )
 
 type Roots struct {

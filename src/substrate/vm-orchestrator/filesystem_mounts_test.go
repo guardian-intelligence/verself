@@ -1,6 +1,7 @@
 package vmorchestrator
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -117,4 +118,190 @@ func TestImageSnapshotUsesConfiguredImageDataset(t *testing.T) {
 	if got, want := img.Snapshot().String(), "pool/images/workspace-base@ready"; got != want {
 		t.Fatalf("image snapshot = %q, want %q", got, want)
 	}
+}
+
+func TestPrepareFilesystemMountsFallsBackToEmptyMountWhenGenerationSnapshotIsMissing(t *testing.T) {
+	ops := &filesystemMountTestPrivOps{cloneErr: zfs.ErrSnapshotNotFound}
+	var journal []durableJournalEntry
+	o := New(Config{
+		Pool:            "pool",
+		ImageDataset:    "images",
+		GoldenDataset:   "goldens",
+		WorkloadDataset: "workloads",
+	}, nil, WithPrivOps(ops), withDurableJournal(func(entry durableJournalEntry) {
+		journal = append(journal, entry)
+	}))
+	lease, err := zfs.NewLease(o.roots, "org_a", "lease-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const sourceRef = "pool/orgs/org_a/goldens/scope-a/generations/gen-a@sealed"
+	mounts, err := o.prepareFilesystemMounts(context.Background(), lease, []FilesystemMount{{
+		Name:        "workspace",
+		OperationID: "op-a",
+		SourceRef:   sourceRef,
+		MountPath:   "/workspace",
+		FSType:      "ext4",
+		Required:    true,
+	}})
+	if err != nil {
+		t.Fatalf("prepareFilesystemMounts returned error: %v", err)
+	}
+	if len(mounts) != 1 {
+		t.Fatalf("prepared mount count = %d, want 1", len(mounts))
+	}
+	if got, want := mounts[0].Dataset, "pool/orgs/org_a/workloads/lease-a/mounts/00-workspace"; got != want {
+		t.Fatalf("prepared dataset = %q, want %q", got, want)
+	}
+	if len(ops.clones) != 1 {
+		t.Fatalf("clone count = %d, want 1", len(ops.clones))
+	}
+	if got, want := ops.creates[0], "pool/orgs/org_a/workloads/lease-a/mounts/00-workspace"; got != want {
+		t.Fatalf("created sparse volume = %q, want %q", got, want)
+	}
+	if got, want := ops.mkfs[0], "/dev/zvol/pool/orgs/org_a/workloads/lease-a/mounts/00-workspace"; got != want {
+		t.Fatalf("mkfs device = %q, want %q", got, want)
+	}
+	if !journalContainsPhase(journal, "source_snapshot_missing") {
+		t.Fatalf("journal did not include source_snapshot_missing: %#v", journal)
+	}
+}
+
+type filesystemMountTestPrivOps struct {
+	clones   []string
+	creates  []string
+	ensures  []string
+	sets     []string
+	mkfs     []string
+	cloneErr error
+}
+
+func (o *filesystemMountTestPrivOps) ZFSClone(_ context.Context, snapshot, target, _ string) error {
+	o.clones = append(o.clones, snapshot+" -> "+target)
+	return o.cloneErr
+}
+
+func (*filesystemMountTestPrivOps) ZFSSnapshot(context.Context, string, string, map[string]string) error {
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) ZFSDestroy(context.Context, string) error { return nil }
+
+func (*filesystemMountTestPrivOps) ZFSDestroyRecursive(context.Context, string) error { return nil }
+
+func (*filesystemMountTestPrivOps) ZFSCreateEncryptedFilesystem(context.Context, string, []byte) error {
+	return nil
+}
+
+func (o *filesystemMountTestPrivOps) ZFSEnsureFilesystem(_ context.Context, dataset string) error {
+	o.ensures = append(o.ensures, dataset)
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) ZFSLoadKey(context.Context, string, []byte) error { return nil }
+
+func (*filesystemMountTestPrivOps) ZFSUnloadKey(context.Context, string) error { return nil }
+
+func (*filesystemMountTestPrivOps) ZFSSnapshotExists(context.Context, string) (bool, error) {
+	return false, nil
+}
+
+func (*filesystemMountTestPrivOps) ZFSDatasetExists(context.Context, string) (bool, error) {
+	return false, nil
+}
+
+func (o *filesystemMountTestPrivOps) ZFSSetProperty(_ context.Context, dataset, key, value string) error {
+	o.sets = append(o.sets, dataset+" "+key+"="+value)
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) ZFSGetProperty(_ context.Context, target, key string) (string, error) {
+	switch key {
+	case "encryption":
+		return "aes-256-gcm", nil
+	case "encryptionroot":
+		const prefix = "pool/orgs/"
+		return prefix + "org_a", nil
+	case "keystatus":
+		return "available", nil
+	default:
+		return "", nil
+	}
+}
+
+func (*filesystemMountTestPrivOps) ZFSCreateVolume(context.Context, string, uint64, string) error {
+	return nil
+}
+
+func (o *filesystemMountTestPrivOps) ZFSCreateSparseVolume(_ context.Context, dataset string, _ uint64, _ string) error {
+	o.creates = append(o.creates, dataset)
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) ZFSReceiveSnapshot(context.Context, string, string) error {
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) ZFSWriteVolumeFromFile(context.Context, string, string) (uint64, error) {
+	return 0, nil
+}
+
+func (o *filesystemMountTestPrivOps) ZFSMkfs(_ context.Context, devicePath, _, _ string) error {
+	o.mkfs = append(o.mkfs, devicePath)
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) ZFSEnsureVolumeSizeExt4(context.Context, string, uint64) error {
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) ZFSRename(context.Context, string, string) error { return nil }
+
+func (*filesystemMountTestPrivOps) ZFSPromote(context.Context, string) error { return nil }
+
+func (*filesystemMountTestPrivOps) ZFSListChildren(context.Context, string) ([]string, error) {
+	return nil, nil
+}
+
+func (*filesystemMountTestPrivOps) ZFSUsed(context.Context, string) (uint64, error) { return 0, nil }
+
+func (*filesystemMountTestPrivOps) ZFSWritten(context.Context, string) (uint64, error) {
+	return 0, nil
+}
+
+func (*filesystemMountTestPrivOps) UnmountStaleZvolMounts(context.Context, string) (int, error) {
+	return 0, nil
+}
+
+func (*filesystemMountTestPrivOps) FlushBlockDevice(context.Context, string) error { return nil }
+
+func (*filesystemMountTestPrivOps) TapCreate(context.Context, string, string, int, int) error {
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) TapUp(context.Context, string) error { return nil }
+
+func (*filesystemMountTestPrivOps) TapDelete(context.Context, string) error { return nil }
+
+func (*filesystemMountTestPrivOps) SetupJail(context.Context, string, string, int, int, []JailBlockDevice) error {
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) PlaceJailBlockDevice(context.Context, string, JailBlockDevice, int, int) error {
+	return nil
+}
+
+func (*filesystemMountTestPrivOps) StartJailer(context.Context, string, JailerConfig) (*JailerProcess, error) {
+	return nil, nil
+}
+
+func (*filesystemMountTestPrivOps) Chmod(context.Context, string, uint32) error { return nil }
+
+func journalContainsPhase(entries []durableJournalEntry, phase string) bool {
+	for _, entry := range entries {
+		if entry.Phase == phase {
+			return true
+		}
+	}
+	return false
 }

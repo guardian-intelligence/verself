@@ -64,7 +64,9 @@ recovery design before release.
 4. vm-orchestrator clones the org-local substrate snapshot into
    `orgs/<org>/workloads/<lease>/root`.
 5. For each filesystem mount, vm-orchestrator either clones the selected golden
-   generation snapshot or creates a fresh ext4 zvol on a cache miss.
+   generation snapshot or creates a fresh ext4 zvol on a cache miss. Missing
+   durable generation snapshots are cache misses because customer CI mounts are
+   rebuildable; missing platform image snapshots are still lease failures.
 6. vm-orchestrator waits for every `/dev/zvol/<dataset>` node, jailer-binds the
    devices, starts Firecracker, and sends the filesystem manifest to vm-bridge.
 7. vm-bridge mounts the declared filesystems before the runner process starts.

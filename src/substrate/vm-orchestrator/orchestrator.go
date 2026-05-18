@@ -641,6 +641,25 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 				return prepared, fmt.Errorf("filesystem mount %s source belongs to another org", mount.Name)
 			}
 			clone, prepErr = o.volumes.PrepareMountFromSnapshot(ctx, lease, gen.Snapshot(), idx, mount.Name, operationID)
+			if errors.Is(prepErr, zfs.ErrSnapshotNotFound) {
+				o.logger.InfoContext(ctx, "filesystem mount source snapshot missing",
+					"org_id", lease.OrgID(),
+					"lease_id", lease.ID(),
+					"mount_name", mount.Name,
+					"operation_id", operationID,
+					"source_snapshot", gen.Snapshot().String(),
+					"fallback", "empty_mount",
+				)
+				o.appendDurableJournal(durableJournalEntry{
+					OperationID:      operationID,
+					LeaseID:          lease.ID(),
+					MountName:        mount.Name,
+					Phase:            "source_snapshot_missing",
+					SourceDatasetRef: mount.SourceRef,
+					ErrorMessage:     prepErr.Error(),
+				})
+				clone, prepErr = o.volumes.PrepareEmptyMount(ctx, lease, idx, mount.Name, operationID)
+			}
 		} else {
 			image, imgErr := zfs.NewImage(o.roots, mount.SourceRef)
 			if imgErr != nil {

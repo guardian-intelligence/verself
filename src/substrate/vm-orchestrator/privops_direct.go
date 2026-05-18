@@ -31,9 +31,26 @@ func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, operationID
 		snapshot, target)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("zfs clone %s -> %s: %s: %w", snapshot, target, strings.TrimSpace(string(out)), err)
+		return zfsCloneError(snapshot, target, out, err)
 	}
 	return nil
+}
+
+func zfsCloneError(snapshot, target string, output []byte, err error) error {
+	message := strings.TrimSpace(string(output))
+	if zfsCloneSourceSnapshotMissing(snapshot, message) {
+		return fmt.Errorf("zfs clone %s -> %s: %s: %w: %w", snapshot, target, message, zfs.ErrSnapshotNotFound, err)
+	}
+	return fmt.Errorf("zfs clone %s -> %s: %s: %w", snapshot, target, message, err)
+}
+
+func zfsCloneSourceSnapshotMissing(snapshot, message string) bool {
+	snapshot = strings.TrimSpace(snapshot)
+	if snapshot == "" {
+		return false
+	}
+	message = strings.TrimSpace(message)
+	return strings.Contains(message, snapshot) && strings.Contains(message, "does not exist")
 }
 
 func (DirectPrivOps) ZFSSnapshot(ctx context.Context, dataset, snapshotName string, properties map[string]string) error {

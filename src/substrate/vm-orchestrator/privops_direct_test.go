@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/verself/vm-orchestrator/zfs"
 )
 
 func TestEnsureJailDirectoryRestoresModeAfterRestrictiveUmask(t *testing.T) {
@@ -53,5 +55,23 @@ func TestFinishZFSEnsureFilesystemCreateReturnsOriginalFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "permission denied") {
 		t.Fatalf("error = %q, want command output", err.Error())
+	}
+}
+
+func TestZFSCloneErrorClassifiesMissingSourceSnapshot(t *testing.T) {
+	source := "pool/orgs/org_a/goldens/scope/generations/gen-a@sealed"
+	target := "pool/orgs/org_a/workloads/lease-a/mounts/00-workspace"
+	err := zfsCloneError(source, target, []byte("cannot open 'pool/orgs/org_a/goldens/scope/generations/gen-a@sealed': dataset does not exist\n"), errors.New("exit status 1"))
+	if !errors.Is(err, zfs.ErrSnapshotNotFound) {
+		t.Fatalf("zfsCloneError = %v, want ErrSnapshotNotFound", err)
+	}
+}
+
+func TestZFSCloneErrorDoesNotClassifyTargetParentFailure(t *testing.T) {
+	source := "pool/orgs/org_a/goldens/scope/generations/gen-a@sealed"
+	target := "pool/orgs/org_a/workloads/lease-a/mounts/00-workspace"
+	err := zfsCloneError(source, target, []byte("cannot create 'pool/orgs/org_a/workloads/lease-a/mounts/00-workspace': parent does not exist\n"), errors.New("exit status 1"))
+	if errors.Is(err, zfs.ErrSnapshotNotFound) {
+		t.Fatalf("zfsCloneError = %v, did not want ErrSnapshotNotFound", err)
 	}
 }
