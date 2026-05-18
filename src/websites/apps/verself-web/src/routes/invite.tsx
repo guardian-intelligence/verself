@@ -4,6 +4,7 @@ import { KeyRound } from "lucide-react";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
+import { acceptMemberInvite } from "~/server-fns/auth";
 
 function searchString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -45,14 +46,7 @@ function InvitePage() {
       if (password !== confirmPassword) {
         throw new Error("Passwords do not match.");
       }
-      const response = await fetch("/api/v1/auth/invites/accept", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password }),
-      });
-      if (!response.ok) {
-        throw new Error("Invite could not be completed.");
-      }
+      await acceptMemberInvite({ data: { token, password } });
       const login = new URL("/login", window.location.origin);
       if (org) {
         login.searchParams.set("redirect", `/${org}`);

@@ -10,6 +10,11 @@ const revokeSessionInputSchema = v.object({
   sessionHandle: v.pipe(v.string(), v.nonEmpty()),
 });
 
+const acceptMemberInviteInputSchema = v.object({
+  token: v.pipe(v.string(), v.nonEmpty()),
+  password: v.pipe(v.string(), v.minLength(12)),
+});
+
 export type ConsoleAuthContext = {
   auth?: AuthenticatedAuthSnapshot;
 };
@@ -57,6 +62,14 @@ export const revokeClientAuthSession = createServerFn({ method: "POST" })
     const { revokeIdentityBrowserSession } = await import("./auth.server");
     await revokeIdentityBrowserSession(data.sessionHandle);
     return { revoked: true };
+  });
+
+export const acceptMemberInvite = createServerFn({ method: "POST" })
+  .inputValidator(acceptMemberInviteInputSchema)
+  .handler(async ({ data }) => {
+    const { acceptIdentityMemberInvite } = await import("./auth.server");
+    await acceptIdentityMemberInvite(data);
+    return { accepted: true };
   });
 
 export const getProductAccessToken = createServerOnlyFn(async function getProductAccessToken(

@@ -119,6 +119,24 @@ export async function revokeIdentityBrowserSession(sessionHandle: string): Promi
   }
 }
 
+export async function acceptIdentityMemberInvite(data: {
+  token: string;
+  password: string;
+}): Promise<void> {
+  const response = await identityAuthFetch(
+    "invites/accept",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+    { cookieHeader: undefined, forwardCookies: false },
+  );
+  if (!response.ok) {
+    throw new Error(`identity invite acceptance failed: ${response.status}`);
+  }
+}
+
 export async function getIdentityProductAccessToken(
   context: ConsoleAuthContext | undefined,
 ): Promise<string> {
