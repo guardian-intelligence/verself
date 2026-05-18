@@ -16,8 +16,8 @@ const (
 	HeaderEdgePeerIP     = "X-Verself-Edge-Peer-IP"
 	HeaderClientIPSource = "X-Verself-Client-IP-Source"
 
-	SourceTrustedEdge = "trusted_edge"
-	SourceRemoteAddr  = "remote_addr"
+	SourceDirect     = "direct"
+	SourceRemoteAddr = "remote_addr"
 )
 
 var bypassOnlyHeaders = []string{
@@ -69,7 +69,7 @@ func FromValues(header func(string) string, remoteAddr string) Attribution {
 	}
 	if clientIP != "" {
 		if source == "" {
-			source = SourceTrustedEdge
+			source = SourceDirect
 		}
 		return Attribution{
 			ClientIP:        clientIP,

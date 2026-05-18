@@ -1,4 +1,4 @@
-import { getRequest, setResponseHeader } from "@tanstack/react-start/server";
+import { setResponseHeader } from "@tanstack/react-start/server";
 import * as v from "valibot";
 import { requireURLFromEnv } from "@verself/web-env";
 import {
@@ -9,6 +9,11 @@ import {
   type BrowserSessionsResponse,
 } from "@verself/auth-web/isomorphic";
 import type { ConsoleAuthContext } from "./auth";
+import {
+  currentCookieHeader,
+  currentRequestHeaders,
+  forwardRequestMetadata,
+} from "./request-metadata.server";
 
 const IAM_SERVICE_BASE_URL = requireURLFromEnv("IAM_SERVICE_BASE_URL");
 
@@ -18,10 +23,6 @@ const resourceTokenResponseSchema = v.object({
 
 function identityAuthURL(path: string): string {
   return new URL(`/api/v1/auth/${path}`, IAM_SERVICE_BASE_URL).toString();
-}
-
-function currentCookieHeader(): string | undefined {
-  return getRequest().headers.get("cookie") ?? undefined;
 }
 
 function forwardSetCookie(headers: Headers): void {
@@ -37,13 +38,19 @@ function forwardSetCookie(headers: Headers): void {
 async function identityAuthFetch(
   path: string,
   init: RequestInit = {},
-  options: { cookieHeader?: string | undefined; forwardCookies?: boolean } = {},
+  options: {
+    cookieHeader?: string | undefined;
+    forwardCookies?: boolean;
+    sourceHeaders?: Headers | undefined;
+  } = {},
 ): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  const cookie = Object.prototype.hasOwnProperty.call(options, "cookieHeader")
-    ? options.cookieHeader
-    : currentCookieHeader();
+  const hasExplicitCookie = Object.prototype.hasOwnProperty.call(options, "cookieHeader");
+  const sourceHeaders =
+    options.sourceHeaders ?? (hasExplicitCookie ? undefined : currentRequestHeaders());
+  forwardRequestMetadata(headers, sourceHeaders);
+  const cookie = hasExplicitCookie ? options.cookieHeader : currentCookieHeader(sourceHeaders);
   if (cookie) {
     headers.set("Cookie", cookie);
   }
@@ -67,8 +74,13 @@ export async function readAuthSnapshot(): Promise<AuthSnapshot> {
 
 export async function readAuthSnapshotFromCookie(
   cookieHeader: string | undefined,
+  sourceHeaders?: Headers,
 ): Promise<AuthSnapshot> {
-  const response = await identityAuthFetch("session", {}, { cookieHeader, forwardCookies: false });
+  const response = await identityAuthFetch(
+    "session",
+    {},
+    { cookieHeader, forwardCookies: false, sourceHeaders },
+  );
   if (!response.ok) {
     throw new Error(`identity auth session failed: ${response.status} ${await response.text()}`);
   }

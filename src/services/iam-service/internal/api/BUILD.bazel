@@ -49,6 +49,7 @@ go_test(
     name = "api_test",
     srcs = [
         "actions_test.go",
+        "browser_auth_test.go",
         "security_test.go",
     ],
     embed = [":api"],

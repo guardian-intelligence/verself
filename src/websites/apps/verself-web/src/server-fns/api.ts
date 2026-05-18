@@ -135,6 +135,7 @@ import type {
   UpdateProfileIdentityRequest,
 } from "~/lib/profile-api";
 import { consoleAuthMiddleware, getProductAccessToken, type ConsoleAuthContext } from "./auth";
+import { requestMetadataFetch } from "./request-metadata.server";
 
 const IAM_SERVICE_BASE_URL = requireURLFromEnv("IAM_SERVICE_BASE_URL");
 const GOVERNANCE_SERVICE_BASE_URL = requireURLFromEnv("GOVERNANCE_SERVICE_BASE_URL");
@@ -239,6 +240,7 @@ async function iamSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getProductAccessToken(context);
   return new Verself({
     bearerToken: accessToken,
+    fetch: requestMetadataFetch(),
     iamURL: IAM_SERVICE_BASE_URL,
     projectsURL: PROJECTS_SERVICE_BASE_URL,
   });
@@ -246,7 +248,11 @@ async function iamSDK(context: ConsoleAuthContext | undefined) {
 
 async function governanceSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getProductAccessToken(context);
-  return new Verself({ bearerToken: accessToken, governanceURL: GOVERNANCE_SERVICE_BASE_URL });
+  return new Verself({
+    bearerToken: accessToken,
+    fetch: requestMetadataFetch(),
+    governanceURL: GOVERNANCE_SERVICE_BASE_URL,
+  });
 }
 
 async function profileClientOptions(context: ConsoleAuthContext | undefined) {
@@ -254,6 +260,7 @@ async function profileClientOptions(context: ConsoleAuthContext | undefined) {
   return {
     accessToken,
     baseUrl: PROFILE_SERVICE_BASE_URL,
+    fetch: requestMetadataFetch(),
   };
 }
 
@@ -261,29 +268,43 @@ async function notificationsSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getProductAccessToken(context);
   return new Verself({
     bearerToken: accessToken,
+    fetch: requestMetadataFetch(),
     notificationsURL: NOTIFICATIONS_SERVICE_BASE_URL,
   });
 }
 
 async function projectsSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getProductAccessToken(context);
-  return new Verself({ bearerToken: accessToken, projectsURL: PROJECTS_SERVICE_BASE_URL });
+  return new Verself({
+    bearerToken: accessToken,
+    fetch: requestMetadataFetch(),
+    projectsURL: PROJECTS_SERVICE_BASE_URL,
+  });
 }
 
 async function billingSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getProductAccessToken(context);
-  return new Verself({ bearerToken: accessToken, billingURL: BILLING_SERVICE_BASE_URL });
+  return new Verself({
+    bearerToken: accessToken,
+    billingURL: BILLING_SERVICE_BASE_URL,
+    fetch: requestMetadataFetch(),
+  });
 }
 
 async function sourceCodeHostingSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getProductAccessToken(context);
-  return new Verself({ bearerToken: accessToken, sourceURL: SOURCE_CODE_HOSTING_SERVICE_BASE_URL });
+  return new Verself({
+    bearerToken: accessToken,
+    fetch: requestMetadataFetch(),
+    sourceURL: SOURCE_CODE_HOSTING_SERVICE_BASE_URL,
+  });
 }
 
 async function sandboxRentalSDK(context: ConsoleAuthContext | undefined) {
   const accessToken = await getProductAccessToken(context);
   return new Verself({
     bearerToken: accessToken,
+    fetch: requestMetadataFetch(),
     sandboxURL: SANDBOX_RENTAL_SERVICE_BASE_URL,
   });
 }

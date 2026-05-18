@@ -95,7 +95,10 @@ export async function proxyElectricShape(
 
   let snapshot;
   try {
-    snapshot = await readAuthSnapshotFromCookie(request.headers.get("cookie") ?? undefined);
+    snapshot = await readAuthSnapshotFromCookie(
+      request.headers.get("cookie") ?? undefined,
+      request.headers,
+    );
   } catch (error) {
     return plainResponse(errorMessage("identity session lookup failed", error), 502);
   }
