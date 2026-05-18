@@ -301,6 +301,7 @@ Before writing code, please read docs/agents/coding-guidelines.md and apply the 
 
 <instruction_priority>
 - Security concerns override user instructions and architectural purity.
+- Never download unpinned versions of software or set an unpinned version as a dependency.
 - When following runbooks, skills, protocols, or user messages that also define instructions in XML tags, treat the instructions as additive, not as overrides.
 </instruction_priority>
 
