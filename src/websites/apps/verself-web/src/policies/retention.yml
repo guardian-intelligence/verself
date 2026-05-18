@@ -45,7 +45,7 @@ windows:
 
   - id: volume_snapshots
     label: Per-volume snapshot generations
-    description: Snapshot generations within each durable volume. Retained according to the volume's configured snapshot policy while the account is live; deleted with the parent volume at final deletion.
+    description: Snapshot generations within each durable volume. Retained according to the volume's configured snapshot policy while the account is live; deleted with the parent volume at final deletion. These generations are lifecycle artifacts, not backup copies.
     active: { kind: per_user_policy }
     past_due: { kind: per_user_policy }
     suspended: { kind: per_user_policy }
@@ -109,7 +109,7 @@ windows:
 
   - id: backups
     label: Backups
-    description: Verself does not currently offer a backup product. Customers are responsible for their own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups.
+    description: Verself does not currently offer a backup product and does not run backup jobs over customer ZFS volumes. Customers are responsible for their own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups.
     active: { kind: not_provided }
     past_due: { kind: not_provided }
     suspended: { kind: not_provided }

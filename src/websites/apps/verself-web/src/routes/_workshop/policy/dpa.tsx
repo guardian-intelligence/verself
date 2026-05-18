@@ -142,7 +142,9 @@ function SecuritySection() {
         </p>
         <ul>
           <li>Hardware-virtualized microVM isolation of tenant workloads.</li>
-          <li>Per-tenant durable-storage separation, with encryption at rest where configured.</li>
+          <li>
+            Per-tenant durable-storage separation, with encryption at rest for ZFS-backed volumes.
+          </li>
           <li>
             TLS 1.3 for all inter-service and customer-facing traffic; short-lived bearer tokens
             validated against the identity provider's published key set.

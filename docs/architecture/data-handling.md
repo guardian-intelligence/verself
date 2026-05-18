@@ -56,8 +56,10 @@ The Smithy recovery model does not need to cover every byte:
 - local temporary files and process-private scratch space remain outside this
   model.
 
-ZFS goldens are `rebuildable_acceleration`. They are not backed up in the
-initial design. Loss causes cold CI rebuilds and cache misses.
+Customer ZFS volumes are encrypted at rest at the organization dataset
+boundary. ZFS goldens are `rebuildable_acceleration`. They are excluded from
+backup catalogs, provider backup jobs, and object-storage upload pipelines.
+Loss causes cold CI rebuilds and cache misses.
 
 ## State Classes
 
@@ -427,6 +429,11 @@ structure SandboxGithubGoldensState {}
 ```
 
 This is the classification for ZFS CI goldens in the initial design.
+ZFS snapshots and clones remain local lifecycle artifacts for seal, promotion,
+retention, pruning, and placement-affinity replication. Future non-rebuildable
+customer zvols require a separate `customer_mission_state` recovery source
+with a service-owned recovery mechanism; raw zvol backup is outside the
+default recovery model.
 
 ## Internal Status Endpoint
 

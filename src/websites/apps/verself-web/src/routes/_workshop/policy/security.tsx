@@ -125,8 +125,9 @@ function Encryption() {
           disk.
         </p>
         <p>
-          Dataset-level encryption at rest is supported for durable customer volumes; the encryption
-          posture of each volume is visible on its billing record.
+          Customer ZFS-backed durable volumes are encrypted at rest at the dataset boundary. Volume
+          snapshots are lifecycle generations for reuse, retention, and deletion; they are not
+          backup artifacts.
         </p>
       </Prose>
     </section>

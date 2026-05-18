@@ -124,7 +124,7 @@ function Scope() {
         />
         <DefinitionCard
           term="Backups"
-          definition="Verself does not currently offer a backup product. Customers are responsible for their own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups."
+          definition="Verself does not currently offer a backup product and does not run backup jobs over customer ZFS volumes. Customers are responsible for their own backups unless a backup product is purchased. Export during the retention window is not a substitute for backups."
         />
       </DefinitionGrid>
     </section>
@@ -264,7 +264,8 @@ function RetentionWindows() {
           Per-volume snapshot retention is a separate setting that governs how long snapshot
           generations are kept within each volume. It is independent from the account-lifecycle
           windows above; a volume with a 30-day snapshot policy still has its snapshots deleted with
-          the parent volume when the account reaches final deletion.
+          the parent volume when the account reaches final deletion. Volume snapshots are lifecycle
+          generations, not backup copies.
         </p>
         <p>
           Jurisdictions with longer billing-records retention requirements — for example Germany (10

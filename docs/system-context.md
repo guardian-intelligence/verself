@@ -76,7 +76,10 @@ Single-node is the default deployment — everything runs on one box with no rep
 
 Hard product requirement: everything self-hosted. Exceptions:
 
-- **Backups.** Target providers: Backblaze B2, Cloudflare R2, AWS S3 (planned, via `zfs send`). Not yet implemented.
+- **Backups.** Target providers for service-owned recovery artifacts:
+  Backblaze B2, Cloudflare R2, AWS S3. Customer ZFS volumes and CI goldens are
+  excluded from backup pipelines; they are governed by the storage class
+  recovery policy in [`docs/architecture/data-handling.md`](architecture/data-handling.md).
 - **Domain Registrar:** Cloudflare.
 - **Compute Provider:** Latitude.sh.
 - **Email Delivery:** Resend (outbound). Inbound self-hosted via Stalwart.

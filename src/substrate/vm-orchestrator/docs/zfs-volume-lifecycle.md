@@ -19,6 +19,30 @@ the org namespace idempotently and applies the org dataset quota before any
 workload or generation zvol is created. Ansible configures the host and service
 unit; it does not issue runtime ZFS mutations for workloads.
 
+## Customer Dataset Encryption
+
+Every dataset that may contain customer bytes under `orgs/<org>/workloads/`
+or `orgs/<org>/goldens/` is encrypted before guest I/O. The organization root
+is the encryption boundary for workload roots, golden roots, lease clones, and
+generation zvols. Customer zvol creation and clone preparation must fail if the
+target namespace encryption key is unavailable or if the resulting dataset is
+not encrypted.
+
+vm-orchestrator is the only runtime process that loads customer ZFS keys. The
+keys are host-only operational material and are never returned to product
+services, guests, billing records, or public APIs. Image roots can remain
+unencrypted when they contain only reproducible platform images.
+
+## Backup Exclusion
+
+Customer zvol snapshots and clones are lifecycle artifacts for lease boot,
+seal, promotion, retention, pruning, and placement-affinity replication. They
+are excluded from backup and recovery catalogs. A backup job must not run
+`zfs send`, object-store upload, or provider-native backup over customer zvol
+byte streams. CI golden loss is represented to the product as a cache miss and
+rebuild; future non-rebuildable customer storage requires a service-owned
+recovery design before release.
+
 ## Lease Boot
 
 1. sandbox-rental builds a `LeaseSpec` containing the substrate image and any

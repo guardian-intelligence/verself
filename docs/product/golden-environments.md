@@ -18,6 +18,12 @@ All durable caches are rebuildable. Promotion is best-effort. The previous
 golden remains authoritative until a new generation is sealed and promoted.
 Ambiguous seal results skip promotion.
 
+Customer zvols are encrypted at rest under the organization ZFS namespace
+before any guest-visible filesystem is created. ZFS snapshots and clones serve
+the golden lifecycle, retention, and placement-affinity model only. Backup and
+recovery catalogs exclude customer zvol byte streams; loss of these volumes is
+handled as a cache miss and cold rebuild.
+
 ## Customer Contract
 
 A repository opts into additional durable caches with a checked-in manifest:
@@ -712,6 +718,9 @@ The security model relies on lane separation:
 
 Mount hardening:
 
+- Customer zvol datasets inherit encryption from the organization storage
+  namespace. vm-orchestrator must fail lease preparation if the namespace
+  encryption key is unavailable or the target dataset is not encrypted.
 - Cache filesystems are guest block devices, not host bind mounts.
 - Guest mounts use `nodev` and `nosuid`.
 - Cache paths under system roots are rejected.
@@ -749,6 +758,10 @@ snapshot @sealed
 record service generation
 CAS promote current pointer
 ```
+
+Snapshots and clones are local lifecycle artifacts. Retention and pruning
+destroy unreferenced datasets through vm-orchestrator; they do not enqueue,
+upload, or catalog backup copies of customer zvols.
 
 No `zfs receive -F` or rollback-style overwrite is used to resolve conflicts.
 Conflicts are represented by pointer CAS results and retention metadata.
