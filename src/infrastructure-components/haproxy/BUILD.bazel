@@ -25,6 +25,9 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        "//src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply_nomad_artifact": "haproxy-upstreams-apply",
+    },
     component = "haproxy_upstreams",
     deploy_phase = "platform",
     digest_inputs = [":role_sources"],
