@@ -1,0 +1,2 @@
+ALTER TABLE iam_browser_session_observations
+  DROP CONSTRAINT IF EXISTS iam_browser_session_observations_session_hash_fkey;

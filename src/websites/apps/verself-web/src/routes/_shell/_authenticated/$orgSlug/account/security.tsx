@@ -102,11 +102,15 @@ function AccountSecurity() {
           <Metric
             icon={<KeyRound className="size-4" />}
             label="Auth method"
-            value={session.isSignedIn ? authMethodLabel(session.session.authMethods) : "Zitadel"}
+            value={
+              session.isSignedIn
+                ? authMethodLabel(session.session.authMethods)
+                : "Identity provider"
+            }
           />
         </section>
 
-        <section className="overflow-hidden border border-border bg-card">
+        <section className="overflow-x-auto border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow>
@@ -178,10 +182,10 @@ function SessionRow({
           <Laptop className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{session.device.label}</span>
+              <span className="font-medium">{deviceLabel(session)}</span>
               {session.isCurrent ? <Badge variant="success">Current</Badge> : null}
             </div>
-            <p className="truncate text-xs text-muted-foreground">{session.userAgent}</p>
+            <p className="max-w-80 truncate text-xs text-muted-foreground">{session.userAgent}</p>
           </div>
         </div>
       </TableCell>
@@ -209,7 +213,8 @@ function SessionRow({
 }
 
 function currentDevice(sessions: readonly BrowserSessionSummary[]): string {
-  return sessions.find((session) => session.isCurrent)?.device.label ?? "Unknown device";
+  const session = sessions.find((candidate) => candidate.isCurrent);
+  return session ? deviceLabel(session) : "Unknown device";
 }
 
 function currentLocation(sessions: readonly BrowserSessionSummary[]): string {
@@ -218,7 +223,7 @@ function currentLocation(sessions: readonly BrowserSessionSummary[]): string {
 
 function authMethodLabel(methods: readonly string[]): string {
   if (methods.length === 0) {
-    return "Zitadel";
+    return "Identity provider";
   }
   return methods.map(authMethodDisplayName).join(", ");
 }
@@ -245,6 +250,10 @@ function locationLabel(location: BrowserLocation | undefined): string {
   }
   const parts = [location.city, location.region, location.countryCode].filter(Boolean);
   return parts.length > 0 ? parts.join(", ") : "Unknown";
+}
+
+function deviceLabel(session: BrowserSessionSummary): string {
+  return session.device.label || session.createdDevice.label || "Unknown device";
 }
 
 function dateTimeLabel(value: Date | string): string {
