@@ -1,3 +1,26 @@
+<mission_overview>
+This is a monorepo for the entire company and all software + infrastructure.
+
+Remember that we should always be thinking of the company as a suite of layered software products:
+
+Product Concept: We provide he fastest, most efficient, most secure and intuitive agent-native CI platform.
+HTTP Services on top of core technological scheduling/networking/compute/storage primitives stitched together from open-source technologies + bare metal that implement those services
+SDKs that wrap the public APIs of those services for convenient programmatic usage by customers in a variety of languages
+Prebuilt clients that call our SDKs (website/mobile app/cli)
+Integrations between other services the user already has entitlements to and our software offerings (GitHub App/VSCode Extensions) usually highly specific to a particular client.
+
+The objective behind all architectural decisions are to maximize adherence to the following ideas:
+
+* Secure by default - Default deny, defense in depth. 
+* Portable by default - we should minimize the lines of code necessary to ship sweeping changes across websites, embedded applications in third party widgets (e.g. VS Code extensions, once we have one), mobile apps (once we have them)
+
+In practice, this means we end up using almost exclusively boring battle-tested open-source software built on open protocols and specifications.
+
+In this repo, "ship" does not just mean merge to main. It means running on real customer devices in production after a thorough release checklist automated by CI.
+
+We place high importance on verifying that software is working correctly through repeatable automated QA.
+</mission_overview>
+
 <repo_overview>
 See @README.md
 See @src/services/iam-service/schema/verself.zed for Zanzibar policies
@@ -24,9 +47,7 @@ If we ever become slower than either platform, that becomes a top concern as spe
 
 # verself.sh (Verself)
 
-This is a polyglot monorepo structured as a modular monolith. This philosophical goal of the software architecture is to maximize portability onto as many platform surfaces as possible with as rapid a software-development-lifecycle as possible. We place high importance on verifying that software is working correctly through repeatable automated QA. Therefore our main objectives with regards to improving the code base and architecture are:
-
-1. Figure out how to run our onboarding in prod continuously while h
+This is a polyglot monorepo structured as a modular monolith. 
 
 ## General Structure:
 
@@ -65,7 +86,7 @@ Zanzibar/SpiceDB relationships
 
 Zitadel for human identity, organization multi-tenancy & OIDC/SAML with third parties.
 
-Data Handling: See docs/architecture/data-handling.md
+## Data Handling: See docs/architecture/data-handling.md
 
 Each service defines a /recoveryz to expose recovery health status
 
@@ -77,9 +98,21 @@ Each service defines a /recoveryz to expose recovery health status
 * Golang's River library for background jobs within a service. NATS JetStream for messaging/fan-out batch jobs between services.
 * Stalwart over JMAP for inbound mail, Resend API integration for outbound
 
-## Finance 
+## Billing
 
-Invariant patterns:
+Product service receives request
+    -> checks IAM / ownership
+    -> checks product quota / resource policy
+    -> checks risk/compliance hold state if relevant
+    -> asks billing to reserve financial capacity if billable
+    -> executes work
+    -> reports measured usage evidence to billing
+    -> billing settles, emits events, projects evidence
+    -> governance records the API activity/audit trail
+
+The core abstraction is the billing window. Product services should not “charge money”; they should reserve, run, settle, or void bounded windows with SKUs. Fraud and compliance should not “fix money”; they should create explicit business decisions that cause normal billing transitions: deny new reservations, block receivables, suspend a contract, revoke unearned allowance, issue an adjustment, or require operator review.
+
+## Invariant patterns:
 
 * The only shell scripts allowed are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Scripts are load-bearing tooling and infrastructure so choose the right tool for the job (it's never a shell script).
 * Efficient rebuilding & Independent deployments through ref-based GitOps -- Every deployable unit must be able to be deployed atomically without worrying about the rest of the topology. Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. Deploys are just `aspect deploy` and Bazel and Nomad take over via the `verself-deploy` CLI. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
