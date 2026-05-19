@@ -81,7 +81,7 @@ func Dial(ctx context.Context, host, user string, ports []int) (*Client, error) 
 	}
 	ports = normalizePorts(ports)
 
-	authMethods, agentConn, authSpanAttr, err := buildAuthMethods()
+	authMethods, agentConn, authSpanAttr, err := buildAuthMethods(preferAgentForPomeriumRoute(user))
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -339,18 +339,19 @@ func (c *Client) Close() error {
 // buildAuthMethods assembles every operator public-key source available to
 // this process. Pomerium native SSH binds ordinary SSH keys to the OIDC user;
 // the historical cert layout stays readable during the live host cutover.
-func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
+func buildAuthMethods(preferAgent bool) ([]ssh.AuthMethod, net.Conn, string, error) {
 	var (
-		methods  []ssh.AuthMethod
-		labels   []string
-		conn     net.Conn
-		agentErr error
+		methods       []ssh.AuthMethod
+		labels        []string
+		conn          net.Conn
+		agentErr      error
+		defaultSigner ssh.Signer
+		defaultLabel  string
+		agentSigners  []ssh.Signer
 	)
-	// Freshly provisioned hosts accept the cloud-init default key before
-	// Pomerium/Zitadel exists, so prefer it over unrelated agent identities.
 	if signer, label, err := loadDefaultKeySigner(true); err == nil {
-		methods = append(methods, ssh.PublicKeys(signer))
-		labels = append(labels, label)
+		defaultSigner = signer
+		defaultLabel = label
 	} else if !errors.Is(err, errNoDefaultKey) {
 		return nil, nil, "", err
 	}
@@ -376,10 +377,45 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 				_ = agentConn.Close()
 			} else {
 				conn = agentConn
-				methods = append(methods, ssh.PublicKeys(signers...))
-				labels = append(labels, "ssh-agent")
+				agentSigners = signers
 			}
 		}
+	}
+	seenKeys := map[string]bool{}
+	appendSigners := func(label string, signers []ssh.Signer) {
+		filtered := make([]ssh.Signer, 0, len(signers))
+		for _, signer := range signers {
+			key := string(signer.PublicKey().Marshal())
+			if seenKeys[key] {
+				continue
+			}
+			seenKeys[key] = true
+			filtered = append(filtered, signer)
+		}
+		if len(filtered) == 0 {
+			return
+		}
+		methods = append(methods, ssh.PublicKeys(filtered...))
+		labels = append(labels, label)
+	}
+	appendDefault := func() {
+		if defaultSigner != nil {
+			appendSigners(defaultLabel, []ssh.Signer{defaultSigner})
+		}
+	}
+	appendAgent := func() {
+		appendSigners("ssh-agent", agentSigners)
+	}
+	if preferAgent {
+		// Pomerium native SSH caches OAuth credentials per client public key.
+		// Route users should match the key standard OpenSSH presents first.
+		appendAgent()
+		appendDefault()
+	} else {
+		// Direct recovery/first bootstrap hosts prefer the provisioned default
+		// key before unrelated agent identities can exhaust MaxAuthTries.
+		appendDefault()
+		appendAgent()
 	}
 	if signer, err := loadVerselfCertSigner(); err == nil {
 		methods = append(methods, ssh.PublicKeys(signer))
@@ -401,6 +437,10 @@ func buildAuthMethods() ([]ssh.AuthMethod, net.Conn, string, error) {
 		return nil, nil, "", errors.New("sshtun: no usable SSH signer found; run ssh-add ~/.ssh/id_ed25519 or create an unencrypted default key")
 	}
 	return methods, conn, strings.Join(labels, "+"), nil
+}
+
+func preferAgentForPomeriumRoute(user string) bool {
+	return strings.Contains(user, "@")
 }
 
 func operatorKeyboardInteractiveChallenge(name, instruction string, questions []string, _ []bool) ([]string, error) {

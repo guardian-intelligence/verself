@@ -21,7 +21,10 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-const sshDialTimeout = 5 * time.Second
+const (
+	sshAgentSignerTimeout = 2 * time.Second
+	sshDialTimeout        = 5 * time.Second
+)
 
 var remoteStagingPrefixRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
@@ -48,7 +51,7 @@ func DialSSH(ctx context.Context, opts SSHOptions) (*SSHClient, error) {
 	if opts.Host == "" {
 		return nil, errors.New("operator ssh: Host is required")
 	}
-	authMethods, authClosers, authMethod, err := operatorSSHAuthMethods()
+	authMethods, authClosers, authMethod, err := operatorSSHAuthMethods(opts.User)
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +455,7 @@ func ShellWord(s string) (string, error) {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'", nil
 }
 
-func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
+func operatorSSHAuthMethods(user string) ([]ssh.AuthMethod, []io.Closer, string, error) {
 	var (
 		methods           []ssh.AuthMethod
 		closers           []io.Closer
@@ -460,6 +463,78 @@ func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
 		passphraseKeyPath string
 	)
 
+	defaultSigners, defaultLabels, passphraseKeyPath, err := loadDefaultSSHSigners()
+	if err != nil {
+		return nil, nil, "", err
+	}
+	agentSigners, agentConn, agentErr := loadSSHAgentSigners()
+	if agentConn != nil {
+		closers = append(closers, agentConn)
+	}
+	seenKeys := map[string]bool{}
+	appendSigners := func(label string, signers []ssh.Signer) {
+		filtered := make([]ssh.Signer, 0, len(signers))
+		for _, signer := range signers {
+			key := string(signer.PublicKey().Marshal())
+			if seenKeys[key] {
+				continue
+			}
+			seenKeys[key] = true
+			filtered = append(filtered, signer)
+		}
+		if len(filtered) == 0 {
+			return
+		}
+		methods = append(methods, ssh.PublicKeys(filtered...))
+		labels = append(labels, label)
+	}
+	appendDefaults := func() {
+		for i, signer := range defaultSigners {
+			appendSigners(defaultLabels[i], []ssh.Signer{signer})
+		}
+	}
+	appendAgent := func() {
+		appendSigners("ssh-agent", agentSigners)
+	}
+	if preferAgentForPomeriumRoute(user) {
+		// Native SSH client bindings are keyed by public key. For route-style
+		// Pomerium users, prefer the agent key a human OpenSSH client presents.
+		appendAgent()
+		appendDefaults()
+	} else {
+		appendDefaults()
+		appendAgent()
+	}
+
+	if len(methods) > 0 {
+		methods = append(methods, ssh.KeyboardInteractive(operatorKeyboardInteractiveChallenge))
+		labels = append(labels, "keyboard-interactive")
+	}
+	if len(methods) == 0 {
+		for _, closer := range closers {
+			_ = closer.Close()
+		}
+		if passphraseKeyPath != "" {
+			return nil, nil, "", fmt.Errorf("operator ssh: default SSH identity %s is passphrase-protected; run ssh-add %s", passphraseKeyPath, passphraseKeyPath)
+		}
+		if agentErr != nil {
+			return nil, nil, "", fmt.Errorf("%w; no fallback signer found", agentErr)
+		}
+		return nil, nil, "", errors.New("operator ssh: no usable SSH signer found; run ssh-add ~/.ssh/id_ed25519 or create an unencrypted default key")
+	}
+	return methods, closers, strings.Join(labels, "+"), nil
+}
+
+func preferAgentForPomeriumRoute(user string) bool {
+	return strings.Contains(user, "@")
+}
+
+func loadDefaultSSHSigners() ([]ssh.Signer, []string, string, error) {
+	var (
+		signers           []ssh.Signer
+		labels            []string
+		passphraseKeyPath string
+	)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("home dir: %w", err)
@@ -483,40 +558,34 @@ func operatorSSHAuthMethods() ([]ssh.AuthMethod, []io.Closer, string, error) {
 			}
 			return nil, nil, "", fmt.Errorf("parse SSH identity %s: %w", path, err)
 		}
-		methods = append(methods, ssh.PublicKeys(signer))
+		signers = append(signers, signer)
 		labels = append(labels, name)
 		break
 	}
+	return signers, labels, passphraseKeyPath, nil
+}
 
+func loadSSHAgentSigners() ([]ssh.Signer, io.Closer, error) {
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
-		conn, err := net.Dial("unix", sock)
+		dialer := net.Dialer{Timeout: sshAgentSignerTimeout}
+		conn, err := dialer.Dial("unix", sock)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("ssh agent dial: %w", err)
+			return nil, nil, fmt.Errorf("ssh agent dial: %w", err)
 		}
+		_ = conn.SetDeadline(time.Now().Add(sshAgentSignerTimeout))
 		signers, err := agent.NewClient(conn).Signers()
+		_ = conn.SetDeadline(time.Time{})
 		if err != nil {
 			_ = conn.Close()
-			return nil, nil, "", fmt.Errorf("ssh agent signers: %w", err)
+			return nil, nil, fmt.Errorf("ssh agent signers: %w", err)
 		}
 		if len(signers) == 0 {
 			_ = conn.Close()
 		} else {
-			methods = append(methods, ssh.PublicKeys(signers...))
-			closers = append(closers, conn)
-			labels = append(labels, "ssh-agent")
+			return signers, conn, nil
 		}
 	}
-	if len(methods) > 0 {
-		methods = append(methods, ssh.KeyboardInteractive(operatorKeyboardInteractiveChallenge))
-		labels = append(labels, "keyboard-interactive")
-	}
-	if len(methods) == 0 {
-		if passphraseKeyPath != "" {
-			return nil, nil, "", fmt.Errorf("operator ssh: default SSH identity %s is passphrase-protected; run ssh-add %s", passphraseKeyPath, passphraseKeyPath)
-		}
-		return nil, nil, "", errors.New("operator ssh: no usable SSH signer found; run ssh-add ~/.ssh/id_ed25519 or create an unencrypted default key")
-	}
-	return methods, closers, strings.Join(labels, "+"), nil
+	return nil, nil, nil
 }
 
 func operatorKeyboardInteractiveChallenge(name, instruction string, questions []string, _ []bool) ([]string, error) {
