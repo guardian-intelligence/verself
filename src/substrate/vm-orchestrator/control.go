@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	guestBridgeDialTimeout = 250 * time.Millisecond
-	guestBridgeAckTimeout  = 500 * time.Millisecond
-	guestBridgeRetryDelay  = 50 * time.Millisecond
+	guestBridgeDialTimeout          = 250 * time.Millisecond
+	guestBridgeAckTimeout           = 500 * time.Millisecond
+	guestBridgeRetryDelay           = 50 * time.Millisecond
+	guestPreControlReadyReadTimeout = 2 * time.Second
 )
 
 type guestControl struct {
@@ -40,6 +41,29 @@ func connectGuestControl(ctx context.Context, udsPath string, port int, leaseID 
 		return nil, err
 	}
 	return &guestControl{conn: conn, reader: reader, codec: vmproto.NewCodec(reader, conn)}, nil
+}
+
+func probeGuestPreControlReady(ctx context.Context, udsPath string, leaseID string) (string, error) {
+	conn, reader, err := connectGuestBridge(ctx, udsPath, vmproto.GuestPreControlReadyPort, leaseID)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetReadDeadline(time.Now().Add(guestPreControlReadyReadTimeout)); err != nil {
+		return "", fmt.Errorf("set pre-control readiness deadline: %w", err)
+	}
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("read pre-control readiness: %w", err)
+	}
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		return "", fmt.Errorf("clear pre-control readiness deadline: %w", err)
+	}
+	msg := strings.TrimSpace(line)
+	if !strings.HasPrefix(msg, vmproto.PreControlReadyMessage) {
+		return "", fmt.Errorf("unexpected pre-control readiness message %q", msg)
+	}
+	return msg, nil
 }
 
 func connectGuestBridge(ctx context.Context, udsPath string, port int, leaseID string) (net.Conn, *bufio.Reader, error) {

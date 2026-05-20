@@ -103,11 +103,17 @@ func runInit() error {
 		return fmt.Errorf("listen vsock: %w", err)
 	}
 	defer func() { _ = listener.Close() }()
+	readyListener, err := listenVsockPort(vmproto.GuestPreControlReadyPort)
+	if err != nil {
+		return fmt.Errorf("listen pre-control readiness vsock: %w", err)
+	}
+	defer func() { _ = readyListener.Close() }()
 
 	readyAt := time.Now()
 	bootTimings.VSockListenDoneMS = readyAt.Sub(bootStart).Milliseconds()
 	bootTimings.KernelBootToVSockListenDoneMS = kernelUptimeMS()
-	_, _ = fmt.Fprintf(os.Stdout, "%s vsock listener ready (%dms)\n", logPrefix, readyAt.Sub(bootStart).Milliseconds())
+	_, _ = fmt.Fprintf(os.Stdout, "%s control listeners ready (%dms)\n", logPrefix, readyAt.Sub(bootStart).Milliseconds())
+	go servePreControlReady(readyListener, bootStart, readyAt)
 
 	bootTimings.VSockAcceptStartMS = elapsedBootMS(bootStart)
 	conn, err := listener.Accept()
@@ -122,6 +128,17 @@ func runInit() error {
 	maybeStartGuestTelemetry()
 
 	return runAgent(conn, bootStart, readyAt, sigCh, bridgeFault, bootTimings)
+}
+
+func servePreControlReady(listener *vsockListener, bootStart, readyAt time.Time) {
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = fmt.Fprintf(conn, "%s boot_ms=%d\n", vmproto.PreControlReadyMessage, readyAt.Sub(bootStart).Milliseconds())
+		_ = conn.Close()
+	}
 }
 
 func elapsedBootMS(start time.Time) int64 {

@@ -19,7 +19,7 @@ socket path, and metrics path.
 Activation chooses one of two strategies:
 
 - Cold boot configures Firecracker from the prepared environment, starts the
-  instance, waits for vm-bridge to reach the pre-control listener boundary,
+  instance, waits for vm-bridge to acknowledge the pre-control readiness port,
   pauses the VM, creates a pre-control snapshot artifact, resumes the VM, and
   continues into guest initialization.
 - Snapshot restore loads a pre-control snapshot into a fresh Firecracker
@@ -36,8 +36,21 @@ The lease becomes ready only after that result.
 ## Snapshot Boundary
 
 The reusable snapshot boundary is after Firecracker instance start and after
-vm-bridge has opened its vsock listener, before the host connects to the control
-socket. This is the pre-control boundary.
+vm-bridge has opened its vsock control listener and acknowledged the dedicated
+pre-control readiness service port, before the host connects to the control
+port. This is the pre-control boundary.
+
+The vm-bridge service ports are protocol constants inside each guest vsock
+namespace:
+
+- `10788`: pre-control readiness probe;
+- `10789`: lease control protocol.
+
+They are intentionally not dynamically allocated per lease. Parallel VMs do not
+collide because each Firecracker process owns a distinct vsock device, guest
+CID, and host Unix socket under that lease's jail. Dynamic lease state remains
+in the Firecracker vsock CID, jail socket path, TAP name, guest IP, gateway,
+and `LeaseInit` payload.
 
 The snapshot does not contain:
 

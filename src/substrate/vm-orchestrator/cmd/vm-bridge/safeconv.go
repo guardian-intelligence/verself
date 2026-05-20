@@ -23,3 +23,13 @@ func uintptrFromFD(fd int, field string) (uintptr, error) {
 	}
 	return uintptr(fd), nil // #nosec G115 -- Linux accept returned a non-negative file descriptor.
 }
+
+func uint32FromInt(value int, field string) (uint32, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("%s is negative: %d", field, value)
+	}
+	if int64(value) > 1<<32-1 {
+		return 0, fmt.Errorf("%s exceeds uint32: %d", field, value)
+	}
+	return uint32(value), nil // #nosec G115 -- value is checked against the uint32 range above.
+}

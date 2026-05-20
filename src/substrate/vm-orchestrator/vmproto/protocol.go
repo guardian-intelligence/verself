@@ -14,8 +14,10 @@ const (
 	// JSON fields on existing messages do not bump it; the deployed guest
 	// substrate is staged separately from the Nomad daemon artifact, so an
 	// unnecessary bump strands live hosts on an otherwise compatible image.
-	ProtocolVersion = 7
-	GuestPort       = 10789
+	ProtocolVersion          = 7
+	GuestPreControlReadyPort = 10788
+	GuestPort                = 10789
+	PreControlReadyMessage   = "READY vm-bridge-precontrol-v1"
 
 	ControlQueueCapacity = 32
 	LogQueueCapacity     = 256

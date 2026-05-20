@@ -17,7 +17,7 @@ import (
 const (
 	snapshotKeySchema          = "fc-precontrol-v1"
 	snapshotNetworkModel       = "network-overrides+lease-init-v1"
-	snapshotRestoreHookVersion = "lease-init-v1"
+	snapshotRestoreHookVersion = "lease-init+precontrol-ready-v1"
 	snapshotIfaceID            = "eth0"
 	snapshotGuestMAC           = "06:00:00:00:00:01"
 )

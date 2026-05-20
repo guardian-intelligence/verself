@@ -1,7 +1,6 @@
 package vmorchestrator
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -225,8 +224,6 @@ type LeaseRuntime struct {
 
 	waitDone     chan error
 	jailerExited atomic.Bool
-	serialMu     sync.Mutex
-	serialBuf    strings.Builder
 	logWg        sync.WaitGroup
 
 	cleanups []func()
@@ -884,11 +881,11 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	})
 	if jailer.Stdout != nil {
 		runtime.logWg.Add(1)
-		go captureSerialOutput(jailer.Stdout, &runtime.serialMu, &runtime.serialBuf, &runtime.logWg)
+		go captureSerialOutput(jailer.Stdout, &runtime.logWg)
 	}
 	if jailer.Stderr != nil {
 		runtime.logWg.Add(1)
-		go captureSerialOutput(jailer.Stderr, &runtime.serialMu, &runtime.serialBuf, &runtime.logWg)
+		go captureSerialOutput(jailer.Stderr, &runtime.logWg)
 	}
 	runtime.waitDone = make(chan error, 1)
 	ctx, cancelOnJailerExit := context.WithCancelCause(ctx)
@@ -1192,9 +1189,13 @@ func (o *Orchestrator) maybeCreatePreControlSnapshot(ctx context.Context, runtim
 	}
 	readyCtx, endReadySpan := startStepSpan(waitCtx, "vmorchestrator.firecracker.snapshot_precontrol_wait",
 		attribute.String("lease.id", leaseID),
+		attribute.Int("guest.port", vmproto.GuestPreControlReadyPort),
 		attribute.Int64("firecracker.snapshot_wait_timeout_ms", snapshotPreControlWait.Milliseconds()),
 	)
-	err = runtime.waitForSerialContains(readyCtx, "vsock listener ready")
+	readyMessage, err := probeGuestPreControlReady(readyCtx, controlSockHost, leaseID)
+	if err == nil {
+		trace.SpanFromContext(readyCtx).SetAttributes(attribute.String("guest.precontrol_ready_message", readyMessage))
+	}
 	endReadySpan(err)
 	if err != nil {
 		return fmt.Errorf("wait for pre-control readiness: %w", err)
@@ -1372,41 +1373,7 @@ func waitForPath(ctx context.Context, path string) error {
 	}
 }
 
-func (r *LeaseRuntime) waitForSerialContains(ctx context.Context, marker string) error {
-	marker = strings.TrimSpace(marker)
-	if marker == "" {
-		return fmt.Errorf("serial marker is required")
-	}
-	for {
-		r.serialMu.Lock()
-		seen := strings.Contains(r.serialBuf.String(), marker)
-		r.serialMu.Unlock()
-		if seen {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("serial marker %q not observed: %w", marker, contextDoneErr(ctx))
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
-}
-
-func captureSerialOutput(reader io.Reader, mu *sync.Mutex, dst *strings.Builder, wg *sync.WaitGroup) {
+func captureSerialOutput(reader io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if mu != nil {
-			mu.Lock()
-		}
-		if dst.Len() < maxBufferedGuestLogs {
-			dst.WriteString(line)
-			dst.WriteByte('\n')
-		}
-		if mu != nil {
-			mu.Unlock()
-		}
-	}
+	_, _ = io.Copy(io.Discard, reader)
 }

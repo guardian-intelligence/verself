@@ -18,13 +18,21 @@ type vsockConn struct {
 }
 
 func listenVsockListener() (*vsockListener, error) {
+	return listenVsockPort(vmproto.GuestPort)
+}
+
+func listenVsockPort(port int) (*vsockListener, error) {
+	port32, err := uint32FromInt(port, "vsock port")
+	if err != nil {
+		return nil, err
+	}
 	fd, err := unix.Socket(unix.AF_VSOCK, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return nil, fmt.Errorf("socket vsock: %w", err)
 	}
 	if err := unix.Bind(fd, &unix.SockaddrVM{
 		CID:  unix.VMADDR_CID_ANY,
-		Port: vmproto.GuestPort,
+		Port: port32,
 	}); err != nil {
 		_ = unix.Close(fd)
 		return nil, fmt.Errorf("bind vsock: %w", err)
