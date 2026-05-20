@@ -38,9 +38,9 @@ import (
 )
 
 const (
-	tracerName         = "github.com/verself/deployment-tools/internal/garage"
-	emptyPayloadSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	httpClientTimeout  = 30 * time.Second
+	tracerName                = "github.com/verself/deployment-tools/internal/garage"
+	emptyPayloadSHA256        = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	httpResponseHeaderTimeout = 30 * time.Second
 )
 
 var ErrNotFound = errors.New("garage: object not found")
@@ -100,7 +100,6 @@ func New(delivery deploymodel.ArtifactDelivery, cfg Config) (*Publisher, error) 
 	return &Publisher{
 		client: &http.Client{
 			Transport: transport,
-			Timeout:   httpClientTimeout,
 		},
 		signer:   awsv4.NewSigner(),
 		creds:    aws.Credentials{AccessKeyID: cfg.AccessKeyID, SecretAccessKey: cfg.SecretAccessKey, Source: "verself-deploy"},
@@ -573,12 +572,13 @@ func transportFor(endpoint *url.URL, connectAddress string, caBundle []byte) (*h
 		}
 	}
 	return &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		DialContext:         dialContext,
-		TLSClientConfig:     &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
-		MaxIdleConns:        8,
-		MaxIdleConnsPerHost: 8,
-		IdleConnTimeout:     30 * time.Second,
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           dialContext,
+		TLSClientConfig:       &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
+		MaxIdleConns:          8,
+		MaxIdleConnsPerHost:   8,
+		IdleConnTimeout:       30 * time.Second,
+		ResponseHeaderTimeout: httpResponseHeaderTimeout,
 	}, nil
 }
 
