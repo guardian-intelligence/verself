@@ -44,7 +44,7 @@ variable "region" {
 variable "plan" {
   description = "Server plan for worker nodes."
   type        = string
-  default     = "s3-large-x86"
+  default     = "f4-metal-medium"
 }
 
 variable "infra_plan" {

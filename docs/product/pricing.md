@@ -49,35 +49,114 @@ GitHub Actions Linux 2-vCPU runners bill at $0.008/minute ($0.24/vCPU-hour); the
 
 ## Host cost inputs
 
-Worker plan is Latitude `s3-large-x86` (`src/tools/provisioning/terraform/variables.tf`): ~24 cores / 48 threads, 128 GiB, ~1 TB sellable NVMe after OS, ZFS overhead, and pool slack. Live pricing is captured in `verself.latitude_plan_prices` (snapshot of the Latitude `/plans` catalog, USD per plan per site):
+Production capacity planning reads the Latitude plan catalog from
+`verself.latitude_plan_prices`, keyed by plan and site. The planning default for
+paid hosted CI workers is Latitude `f4.metal.medium`: AMD 4564P, 16 physical
+cores / 32 hardware threads at 4.5 GHz, 128 GiB RAM, 2 x 480 GB NVMe plus
+2 x 1.9 TB NVMe, and 2 x 10 Gbps networking. The sellable durable-storage
+number is a site policy derived from the ZFS pool layout, OS reservation, pool
+slack, and replication policy; calculations below use compute as the binding
+resource.
+
+Representative United States catalog rows:
+
+| Role | Plan | CPU | RAM | Local NVMe | US catalog price | Use |
+|---|---|---:|---:|---|---:|---|
+| Entry premium / dogfood | `f4.metal.small` | 12c @ 4.4 GHz | 96 GiB | 2 x 960 GB | $398/mo | Low-concurrency high-frequency workers and early dogfood nodes. |
+| Default premium | `f4.metal.medium` | 16c @ 4.5 GHz | 128 GiB | 2 x 480 GB + 2 x 1.9 TB | $555/mo | Default paid CI worker class. |
+| Flagship premium | `f4.metal.large` | 24c @ 4.1 GHz | 768 GiB | 2 x 480 GB + 2 x 3.8 TB | $1,916/mo | Large monorepos, JVM/browser-heavy suites, and customers buying lowest wall-clock time. |
+| Economy / backfill | `m4.metal.medium` | 16c @ 3.0 GHz | 128 GiB | 2 x 480 GB + 2 x 1.9 TB | $456/mo | Backfill capacity after premium queues are clear. |
+| Economy / migration pool | `c3.large.x86` / `s3.large.x86` | 24c @ 2.85 GHz | 256-512 GiB | 2 x 1.9-3.8 TB | $496-$650/mo | Cost-optimized, lower-clock workloads and migration capacity. |
+| Storage/cache dense | `rs4.metal.large` / `rs4.metal.xlarge` | 32-64c @ 3.1-3.25 GHz | 768-1536 GiB | 2 x 480 GB + 2-4 x 8 TB | $2,351-$3,971/mo | Organizations whose golden ZFS working set or replication traffic dominates. |
+
+`f4` is the default class for customers willing to pay for CI speed because
+golden environments remove checkout, dependency download, and cache
+rehydration from the hot path. Once cache hits dominate, customer wall-clock
+time is primarily shaped by CPU frequency, available parallelism, memory
+headroom, and local NVMe latency. `rs4` is selected by observed durable-cache
+working-set pressure, ZFS replication pressure, or cache eviction rate. `m4`
+and Gen 3 `c3`/`s3` capacity are economy classes for workloads whose queueing
+priority or price point matters more than elapsed time.
+
+The `f4.metal.medium` commitment model:
 
 | Commitment | Price | Hourly-equivalent over 730 h |
 |---|---|---|
-| on-demand hourly | $1.78 / hour | $1.78 |
-| monthly commit | $650 / month | $0.890 |
-| annual commit | $5,460 / year ($455 / month) | $0.623 |
+| on-demand hourly | $1.52 / hour | $1.52 |
+| monthly commit | $555 / month | $0.760 |
+| annual commit | $4,662 / year ($388.50 / month) | $0.532 |
 
-The commitment crossover follows from these: monthly commit beats hourly above `650 ÷ 1.78 ≈ 365` busy hours per month (≈50% duty cycle); annual beats hourly above `455 ÷ 1.78 ≈ 256` hours per month (≈35% duty cycle). Below those duty cycles, on-demand hourly is cheaper.
+The commitment crossover follows from these: monthly commit beats hourly above
+`555 ÷ 1.52 ≈ 365` busy hours per month (≈50% duty cycle); annual beats hourly
+above `388.50 ÷ 1.52 ≈ 256` hours per month (≈35% duty cycle). Below those duty
+cycles, on-demand hourly is cheaper.
 
 ## Multi-resource break-even
 
-A box is a resource vector. `s3-large-x86` supplies 48 vCPU-threads, 128 GiB memory, ~1 TB durable NVMe, and a fixed NIC bandwidth `b_nic`. Instantaneous revenue rate is the dot product of utilized resources and the price vector; the box clears its cost when that rate meets the chosen commitment's hourly-equivalent.
+A box is a resource vector. `f4.metal.medium` supplies 32 vCPU-threads, 128 GiB
+memory, local NVMe governed by the site's ZFS layout, and a fixed NIC bandwidth
+`b_nic`. Instantaneous revenue rate is the dot product of utilized resources
+and the price vector; the box clears its cost when that rate meets the chosen
+commitment's hourly-equivalent.
 
-Resource utilizations are not independent: a workload occupies vCPU and memory in a fixed ratio, and the box saturates on whichever resource that ratio exhausts first. The binding resource is the workload's dominant resource (Dominant Resource Fairness, Ghodsi et al., NSDI 2011). The box ratio is `48 vCPU ÷ 128 GiB = 0.375` vCPU/GiB; a workload above 0.375 vCPU/GiB saturates compute first, below it saturates memory first. A 4 vCPU / 8 GiB CI job is 0.5 vCPU/GiB and is compute-bound, so compute utilization is the controlling break-even variable for the current product.
+Resource utilizations are not independent: a workload occupies vCPU and memory
+in a fixed ratio, and the box saturates on whichever resource that ratio
+exhausts first. The binding resource is the workload's dominant resource
+(Dominant Resource Fairness, Ghodsi et al., NSDI 2011). The `f4.metal.medium`
+box ratio is `32 vCPU ÷ 128 GiB = 0.25` vCPU/GiB; a workload above 0.25
+vCPU/GiB saturates compute first, below it saturates memory first. A
+4 vCPU / 8 GiB CI job is 0.5 vCPU/GiB and is compute-bound, so compute
+utilization is the controlling break-even variable for the current product.
 
-Compute-bound break-even at the target compute price of $0.12/vCPU-hour, full-box compute revenue `48 × $0.12 = $5.76/hour`:
+Compute-bound break-even at the target compute price of $0.12/vCPU-hour,
+full-box compute revenue `32 × $0.12 = $3.84/hour`:
 
 | Commitment | Hourly-equivalent cost | Break-even compute utilization | Sustained vCPU |
 |---|---|---|---|
-| monthly commit | $0.890 | 15.4% | 7.4 of 48 |
-| annual commit | $0.623 | 10.8% | 5.2 of 48 |
-| on-demand hourly | $1.78 | 30.9% | 14.8 of 48 |
+| monthly commit | $0.760 | 19.8% | 6.3 of 32 |
+| annual commit | $0.532 | 13.9% | 4.4 of 32 |
+| on-demand hourly | $1.52 | 39.6% | 12.7 of 32 |
 
 Memory, storage, and egress revenue from the same workloads are additive headroom above these thresholds; they lower the required compute utilization rather than competing with it, until a workload mix shifts the dominant resource to memory.
 
+## Worker class selection
+
+Runner classes map to host classes and customer-facing runner labels. The
+default premium runner class targets `f4.metal.medium`; the flagship class
+targets `f4.metal.large`; storage/cache-dense classes target `rs4.*`; economy
+classes target `m4` or Gen 3 pools.
+
+Observed runner behavior chooses the class:
+
+- CPU-bound CI with hot golden environments goes to `f4`.
+- Memory-heavy JVM, browser, integration-test, or database-backed suites go to
+  `f4.metal.large` before `rs4` because high clock speed still reduces
+  wall-clock time.
+- Large durable-cache working sets, high cache churn, frequent cross-box
+  `zfs send`/`recv`, or durable volume eviction go to `rs4`.
+- Price-sensitive or backfill workloads go to `m4`, `c3`, or `s3`.
+- GPU CI uses metal GPU only when the workflow explicitly needs CUDA or model
+  acceleration.
+- CPU VMs are reserved for control-plane or low-isolation utility workloads;
+  customer CI workers use bare metal so Firecracker, ZFS, and scheduling
+  latency stay predictable.
+
+Runner class is a cache compatibility dimension. Moving a hot organization
+between `f4`, `m4`, and `rs4` creates a distinct compatible working set unless
+the scheduler prewarms the target box with replicated golden zvols before
+cutover.
+
 ## Capacity planning
 
-The provisioning decision for a period is whether forecast sustained demand keeps a box's dominant resource above the commitment break-even for that period, and which commitment minimizes cost at the forecast duty cycle. A box committed monthly must sustain ≥7.4 vCPU (at target price) across the month to clear cost; below a ~50% duty cycle the same demand is served more cheaply on-demand hourly; an annual commitment is justified only by demand that holds above ~35% duty cycle for a year. Forecast is taken from the durable metering history (see open items), not from instantaneous load, because the commitment is a period-length bet.
+The provisioning decision for a period is whether forecast sustained demand
+keeps a box's dominant resource above the commitment break-even for that
+period, and which commitment minimizes cost at the forecast duty cycle. An
+`f4.metal.medium` box committed monthly must sustain ≥6.3 vCPU at the target
+compute price across the month to clear cost; below a ~50% duty cycle the same
+demand is served more cheaply on-demand hourly; an annual commitment is
+justified only by demand that holds above ~35% duty cycle for a year. Forecast
+is taken from the durable metering history (see open items), not from
+instantaneous load, because the commitment is a period-length bet.
 
 Each provisioned box is evaluated independently. A box resets to zero occupancy on provisioning and must reach its dominant-resource break-even within its own billing window; aggregate margin holds only if every committed box clears its own floor. Provisioning ahead of demand carries boxes below break-even, so capacity is added against a forecast of sustained demand rather than reactively against instantaneous demand.
 

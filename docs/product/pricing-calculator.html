@@ -84,7 +84,7 @@
   <header>
     <div><h1>Verself — Pricing &amp; Capacity Calculator</h1>
       <div class="sub">Pre-revenue GTM exploration · grounded in <span class="mono">docs/product/pricing.md</span></div></div>
-    <div class="sub mono" id="boxspec">s3-large-x86 · 48 vCPU · 128 GiB · 1024 GB NVMe</div>
+    <div class="sub mono" id="boxspec">f4.metal.medium · 32 vCPU · 128 GiB · 2048 GB sellable NVMe</div>
   </header>
 
   <div class="presets" id="presets"></div>
@@ -123,9 +123,9 @@
 
       <div class="card bundled" id="bundledCard">
         <h2>Bundle shape</h2>
-        <div class="ctl num"><label>Bundle vCPU <input id="bvcpu" type="number" min="1" max="48" step="1"></label></div>
+        <div class="ctl num"><label>Bundle vCPU <input id="bvcpu" type="number" min="1" max="32" step="1"></label></div>
         <div class="ctl num"><label>Bundle GiB <input id="bgib" type="number" min="1" max="128" step="1"></label></div>
-        <div class="ctl num"><label>Bundle storage GB <input id="bstor" type="number" min="0" max="1024" step="8"></label></div>
+        <div class="ctl num"><label>Bundle storage GB <input id="bstor" type="number" min="0" max="2048" step="8"></label></div>
         <div class="ctl num"><label>Bundle $/hr <input id="bprice" type="number" min="0" max="20" step="0.01"></label></div>
       </div>
 
@@ -148,8 +148,8 @@
       <div class="card">
         <h2>Sustained demand</h2>
         <div class="ctl">
-          <label>Avg concurrent vCPU / box <b class="mono"><span id="vDem"></span> of 48</b></label>
-          <input type="range" id="dem" min="0" max="48" step="0.5">
+          <label>Avg concurrent vCPU / box <b class="mono"><span id="vDem"></span> of 32</b></label>
+          <input type="range" id="dem" min="0" max="32" step="0.5">
         </div>
         <div class="ctl">
           <label>Workload vCPU : GiB ratio <b class="mono"><span id="vRatio"></span></b></label>
@@ -157,7 +157,7 @@
         </div>
         <div class="ctl">
           <label>Durable storage sold / box <b class="mono"><span id="vSsold"></span> GB</b></label>
-          <input type="range" id="ssold" min="0" max="1024" step="16">
+          <input type="range" id="ssold" min="0" max="2048" step="16">
         </div>
         <div class="ctl">
           <label>Egress / box <b class="mono"><span id="vEsold"></span> GB/mo</b></label>
@@ -221,11 +221,11 @@
 
 <script>
 const C = { // grounded constants
-  BOX:{vcpu:48,gib:128,nvme:1024},
+  BOX:{vcpu:32,gib:128,nvme:2048},
   HOURS:730,
-  COST:{ondemand:1.78*730, monthly:650, annual:455}, // $/box/mo
-  COSTHR:{ondemand:1.78, monthly:0.890, annual:0.623},
-  BOX_RATIO:48/128,           // 0.375 vCPU/GiB
+  COST:{ondemand:1.52*730, monthly:555, annual:4662/12}, // $/box/mo
+  COSTHR:{ondemand:1.52, monthly:555/730, annual:(4662/12)/730},
+  BOX_RATIO:32/128,           // 0.25 vCPU/GiB
   GH:0.24, BS:0.12,           // competitor $/vCPU-hr
   CU_PER_USD:1e7, FACTOR:0.36 // unit_rate = price_per_hr / 0.36
 };
@@ -237,7 +237,7 @@ const PRESETS = {
   'Undercut GitHub 2×':{...DEF,compute:0.12,commit:'monthly',dem:10},
   'Aggressive land-grab':{...DEF,compute:0.08,commit:'annual',dem:16,ssold:768},
   'Premium':{...DEF,compute:0.20,commit:'monthly',dem:6},
-  'Break-even floor':{...DEF,compute:0.12,commit:'monthly',dem:7.4,ssold:0,esold:0}
+  'Break-even floor':{...DEF,compute:0.12,commit:'monthly',dem:6.3,ssold:0,esold:0}
 };
 let S = {...DEF};
 
@@ -339,7 +339,7 @@ function summary(o){
   } else {
     L.push(`Bundle: ${S.bvcpu} vCPU / ${S.bgib} GiB / ${S.bstor} GB @ $${S.bprice}/hr (box holds ${o.bundleCap.toFixed(1)})`);
   }
-  L.push(`Box: s3-large-x86, ${S.commit} commitment = ${money(o.cost)}/box/mo · fleet ${S.boxes}`);
+  L.push(`Box: f4.metal.medium, ${S.commit} commitment = ${money(o.cost)}/box/mo · fleet ${S.boxes}`);
   L.push(`Sustained demand: ${S.dem} vCPU/box (workload ${S.ratio} vCPU:GiB → ${o.dominant}-bound)`);
   L.push('');
   L.push(`Revenue/box/mo : ${money2(o.rev)}`);
@@ -348,7 +348,7 @@ function summary(o){
   L.push(`Fleet/mo       : ${money2(o.fleet)} across ${S.boxes} box(es)`);
   L.push('');
   L.push(`Break-even: ${o.beCompute.toFixed(1)} vCPU compute-only, ${o.beAllIn.toFixed(1)} vCPU all-in — currently ${S.dem>=o.beAllIn?'ABOVE':'BELOW'}.`);
-  L.push(`Cheapest always-on commitment: ${o.cheapest} (annual $455 < monthly $650 < on-demand $1,299; on-demand only wins <365 busy h/mo).`);
+  L.push(`Cheapest always-on commitment: ${o.cheapest} (annual $388.50/mo < monthly $555 < on-demand $1,110; on-demand only wins <365 busy h/mo).`);
   if(S.mode==='metered')
     L.push(`Configure plan_sku_rates.unit_rate: compute ${(S.compute/C.FACTOR).toFixed(4)}, memory ${(S.mem/C.FACTOR).toFixed(4)}.`);
   if(o.memInfeasible) L.push('WARNING: memory demand exceeds 128 GiB — box is memory-capped, compute target unreachable.');

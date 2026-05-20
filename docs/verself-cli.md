@@ -534,7 +534,7 @@ verself company options add guardian cloudflare.api_token --from-env CLOUDFLARE_
 verself company options add guardian latitude.api_token --from-env LATITUDESH_AUTH_TOKEN
 verself company options set guardian latitude.project_id --value <project-id>
 verself company options set guardian latitude.region --value ASH
-verself company options set guardian latitude.plan --value s3-large-x86
+verself company options set guardian latitude.plan --value f4-metal-medium
 verself company options add guardian stripe.secret_key --from-env STRIPE_SECRET_KEY
 verself company options add guardian stripe.webhook_secret --from-env STRIPE_WEBHOOK_SECRET
 verself company options set guardian stripe.publishable_key --value "$STRIPE_PUBLISHABLE_KEY"

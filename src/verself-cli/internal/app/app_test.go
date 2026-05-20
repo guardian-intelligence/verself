@@ -39,7 +39,7 @@ func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 	runCLI(t, nil, "company", "options", "add", "guardian", "latitude.api_token", "--from-env", "LATITUDESH_AUTH_TOKEN")
 	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.project_id", "--value", "proj_guardian")
 	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.region", "--value", "ASH")
-	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.plan", "--value", "s3-large-x86")
+	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.plan", "--value", "f4-metal-medium")
 
 	t.Setenv("STRIPE_SECRET_KEY", "sk_test_guardian")
 	runCLI(t, nil, "company", "options", "add", "guardian", "stripe.secret_key", "--from-env", "STRIPE_SECRET_KEY")
