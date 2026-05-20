@@ -6,6 +6,57 @@ job "vm-orchestrator" {
   group "daemon" {
     count = 1
 
+    task "stage-guest-images" {
+      driver = "raw_exec"
+      user = "root"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      artifact {
+        source = "verself-artifact://vm-orchestrator-cli"
+        destination = "local"
+        chown = true
+      }
+
+      artifact {
+        source = "verself-artifact://vm-orchestrator-substrate-inputs"
+        destination = "local/substrate-inputs"
+        chown = true
+      }
+
+      artifact {
+        source = "verself-artifact://vm-orchestrator-toolchain-images"
+        destination = "local/toolchain-images"
+        chown = true
+      }
+
+      config {
+        command = "local/bin/vm-orchestrator-cli"
+        args = [
+          "stage-guest-images",
+          "--substrate-inputs", "local/substrate-inputs",
+          "--toolchain-images", "local/toolchain-images",
+          "--guest-images-dir", "/var/lib/verself/guest-images",
+          "--work-dir", "/tmp/verself-substrate-build",
+        ]
+      }
+
+      env {
+        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
+        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
+        OTEL_SERVICE_NAME = "vm-orchestrator-stage"
+        VERSELF_SUPERVISOR = "nomad"
+      }
+
+      resources {
+        cpu = 8000
+        memory = 8192
+      }
+    }
+
     task "vm-orchestrator" {
       driver = "raw_exec"
       user = "root"
@@ -140,8 +191,8 @@ EOT
       max_parallel = 1
       health_check = "task_states"
       min_healthy_time = "5s"
-      healthy_deadline = "180s"
-      progress_deadline = "300s"
+      healthy_deadline = "900s"
+      progress_deadline = "1800s"
       auto_revert = true
     }
   }

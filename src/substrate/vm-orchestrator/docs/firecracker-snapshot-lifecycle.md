@@ -93,6 +93,20 @@ The network model key is `network-overrides+lease-init-v1`. Firecracker
 lease's fresh TAP. vm-bridge `LeaseInit` applies the guest IP, gateway, and DNS.
 The key does not include TAP name, slot index, guest IP, or gateway.
 
+## Deploy Ownership
+
+The `vm-orchestrator` Nomad component owns both sides of the host/guest ABI:
+the daemon binary and the substrate image containing vm-bridge. Its prestart
+task runs `vm-orchestrator-cli stage-guest-images`, which digest-checks the
+Bazel-built substrate input bundle and toolchain image bundle, rebuilds the
+substrate ext4 when needed, and atomically stages
+`/var/lib/verself/guest-images/{substrate.ext4,vmlinux,...}` before the daemon
+starts. The poststart `seed-catalog` task then materializes those staged files
+into ZFS image zvols.
+
+This makes additive vm-bridge fields, snapshot hook changes, and guest
+after-restore behavior deploy with the daemon revision that expects them.
+
 ## Post-Workload State
 
 Successful workload state is saved through `CommitFilesystemMount`. vm-bridge
