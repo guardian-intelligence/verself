@@ -89,10 +89,7 @@ func (DirectPrivOps) ZFSDestroy(ctx context.Context, dataset string) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "destroy", dataset)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("zfs destroy %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
-	}
-	return nil
+	return finishZFSDestroy("zfs destroy", dataset, out, err)
 }
 
 func (DirectPrivOps) ZFSDestroyRecursive(ctx context.Context, dataset string) error {
@@ -100,10 +97,35 @@ func (DirectPrivOps) ZFSDestroyRecursive(ctx context.Context, dataset string) er
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "destroy", "-R", dataset)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("zfs destroy -R %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
+	return finishZFSDestroy("zfs destroy -R", dataset, out, err)
+}
+
+func finishZFSDestroy(command, dataset string, output []byte, err error) error {
+	if err == nil {
+		return nil
 	}
-	return nil
+	message := strings.TrimSpace(string(output))
+	if zfsDestroyTargetMissing(dataset, message) {
+		return nil
+	}
+	return fmt.Errorf("%s %s: %s: %w", command, dataset, message, err)
+}
+
+func zfsDestroyTargetMissing(dataset, message string) bool {
+	dataset = strings.TrimSpace(dataset)
+	message = strings.TrimSpace(message)
+	if dataset == "" || message == "" || !strings.Contains(message, "does not exist") {
+		return false
+	}
+	if strings.Contains(message, "'"+dataset+"'") || strings.Contains(message, "\""+dataset+"\"") {
+		return true
+	}
+	for _, field := range strings.Fields(message) {
+		if strings.Trim(field, "'\":,") == dataset {
+			return true
+		}
+	}
+	return false
 }
 
 func (DirectPrivOps) ZFSCreateEncryptedFilesystem(ctx context.Context, dataset string, rawKey []byte) error {

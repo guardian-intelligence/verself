@@ -577,9 +577,6 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 	endMountsSpan(mountErr)
 	if mountErr != nil {
 		_ = o.volumes.DestroyLeaseRoot(context.Background(), lease)
-		for _, mount := range mounts {
-			_ = o.volumes.DestroyMount(context.Background(), mount.clone)
-		}
 		err = mountErr
 		return nil, err
 	}
@@ -587,52 +584,63 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 	runtime, bootErr := o.bootDataset(ctx, lease, spec, dataset, mounts, observer)
 	if bootErr != nil {
 		_ = o.volumes.DestroyLeaseRoot(context.Background(), lease)
-		for _, mount := range mounts {
-			_ = o.volumes.DestroyMount(context.Background(), mount.clone)
-		}
 		err = bootErr
 		return nil, err
 	}
-	for _, mount := range mounts {
-		mount := mount
-		runtime.cleanups = append(runtime.cleanups, func() {
-			o.appendDurableJournal(durableJournalEntry{
-				OperationID:       firstNonEmpty(mount.Spec.OperationID, lease.ID()),
-				LeaseID:           lease.ID(),
-				MountName:         mount.Spec.Name,
-				Phase:             "destroy_started",
-				SourceDatasetRef:  mount.Spec.SourceRef,
-				WorkingDatasetRef: mount.Dataset,
-			})
-			if destroyErr := o.volumes.DestroyMount(context.Background(), mount.clone); destroyErr != nil {
-				o.appendDurableJournal(durableJournalEntry{
-					OperationID:       firstNonEmpty(mount.Spec.OperationID, lease.ID()),
-					LeaseID:           lease.ID(),
-					MountName:         mount.Spec.Name,
-					Phase:             "failed",
-					SourceDatasetRef:  mount.Spec.SourceRef,
-					WorkingDatasetRef: mount.Dataset,
-					ErrorMessage:      destroyErr.Error(),
-				})
-				runtime.logger.WarnContext(context.Background(), "filesystem mount zvol destroy failed", "error", destroyErr, "dataset", mount.Dataset)
-				return
-			}
-			o.appendDurableJournal(durableJournalEntry{
-				OperationID:       firstNonEmpty(mount.Spec.OperationID, lease.ID()),
-				LeaseID:           lease.ID(),
-				MountName:         mount.Spec.Name,
-				Phase:             "destroyed",
-				SourceDatasetRef:  mount.Spec.SourceRef,
-				WorkingDatasetRef: mount.Dataset,
-			})
-		})
-	}
 	runtime.cleanups = append(runtime.cleanups, func() {
-		if destroyErr := o.volumes.DestroyLeaseRoot(context.Background(), lease); destroyErr != nil {
-			runtime.logger.WarnContext(context.Background(), "zvol destroy failed", "error", destroyErr, "dataset", dataset)
-		}
+		o.cleanupLeaseDatasets(runtime, lease, dataset, mounts)
 	})
 	return runtime, nil
+}
+
+func (o *Orchestrator) cleanupLeaseDatasets(runtime *LeaseRuntime, lease zfs.Lease, rootDataset string, mounts []preparedFilesystemMount) {
+	ctx := context.Background()
+	for _, mount := range mounts {
+		o.appendDurableJournal(durableJournalEntry{
+			OperationID:       firstNonEmpty(mount.Spec.OperationID, lease.ID()),
+			LeaseID:           lease.ID(),
+			MountName:         mount.Spec.Name,
+			Phase:             "destroy_started",
+			SourceDatasetRef:  mount.Spec.SourceRef,
+			WorkingDatasetRef: mount.Dataset,
+		})
+	}
+	if destroyErr := o.volumes.DestroyLeaseRoot(ctx, lease); destroyErr != nil {
+		for _, mount := range mounts {
+			o.appendDurableJournal(durableJournalEntry{
+				OperationID:       firstNonEmpty(mount.Spec.OperationID, lease.ID()),
+				LeaseID:           lease.ID(),
+				MountName:         mount.Spec.Name,
+				Phase:             "failed",
+				SourceDatasetRef:  mount.Spec.SourceRef,
+				WorkingDatasetRef: mount.Dataset,
+				ErrorMessage:      destroyErr.Error(),
+			})
+		}
+		logger := o.logger
+		if runtime != nil && runtime.logger != nil {
+			logger = runtime.logger
+		}
+		if logger != nil {
+			logger.WarnContext(ctx, "lease zvol tree destroy failed",
+				"error", destroyErr,
+				"dataset", lease.Dataset(),
+				"root_dataset", rootDataset,
+				"filesystem_mount_count", len(mounts),
+			)
+		}
+		return
+	}
+	for _, mount := range mounts {
+		o.appendDurableJournal(durableJournalEntry{
+			OperationID:       firstNonEmpty(mount.Spec.OperationID, lease.ID()),
+			LeaseID:           lease.ID(),
+			MountName:         mount.Spec.Name,
+			Phase:             "destroyed",
+			SourceDatasetRef:  mount.Spec.SourceRef,
+			WorkingDatasetRef: mount.Dataset,
+		})
+	}
 }
 
 func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Lease, mounts []FilesystemMount) ([]preparedFilesystemMount, error) {

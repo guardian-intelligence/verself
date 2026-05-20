@@ -167,12 +167,53 @@ func TestPrepareFilesystemMountsFallsBackToEmptyMountWhenGenerationSnapshotIsMis
 	}
 }
 
+func TestCleanupLeaseDatasetsDestroysLeaseTreeOnce(t *testing.T) {
+	ops := &filesystemMountTestPrivOps{}
+	var journal []durableJournalEntry
+	o := New(Config{
+		Pool:            "pool",
+		ImageDataset:    "images",
+		GoldenDataset:   "goldens",
+		WorkloadDataset: "workloads",
+	}, nil, WithPrivOps(ops), withDurableJournal(func(entry durableJournalEntry) {
+		journal = append(journal, entry)
+	}))
+	lease, err := zfs.NewLease(o.roots, "org_a", "lease-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounts := []preparedFilesystemMount{
+		{
+			Spec:    FilesystemMount{Name: "workspace", OperationID: "op-workspace", SourceRef: "workspace-base"},
+			Dataset: "pool/orgs/org_a/workloads/lease-a/mounts/00-workspace",
+		},
+		{
+			Spec:    FilesystemMount{Name: "cache", OperationID: "op-cache", SourceRef: "cache-base"},
+			Dataset: "pool/orgs/org_a/workloads/lease-a/mounts/01-cache",
+		},
+	}
+
+	o.cleanupLeaseDatasets(&LeaseRuntime{LeaseID: lease.ID()}, lease, lease.RootDataset(), mounts)
+
+	wantDestroys := []string{"pool/orgs/org_a/workloads/lease-a"}
+	if !reflect.DeepEqual(ops.destroys, wantDestroys) {
+		t.Fatalf("destroyed datasets mismatch\n got: %#v\nwant: %#v", ops.destroys, wantDestroys)
+	}
+	if got, want := countJournalPhase(journal, "destroy_started"), len(mounts); got != want {
+		t.Fatalf("destroy_started journal count = %d, want %d", got, want)
+	}
+	if got, want := countJournalPhase(journal, "destroyed"), len(mounts); got != want {
+		t.Fatalf("destroyed journal count = %d, want %d", got, want)
+	}
+}
+
 type filesystemMountTestPrivOps struct {
 	clones     []string
 	creates    []string
 	ensures    []string
 	sets       []string
 	mkfs       []string
+	destroys   []string
 	properties map[string]map[string]string
 	cloneErr   error
 }
@@ -188,7 +229,10 @@ func (*filesystemMountTestPrivOps) ZFSSnapshot(context.Context, string, string, 
 
 func (*filesystemMountTestPrivOps) ZFSDestroy(context.Context, string) error { return nil }
 
-func (*filesystemMountTestPrivOps) ZFSDestroyRecursive(context.Context, string) error { return nil }
+func (o *filesystemMountTestPrivOps) ZFSDestroyRecursive(_ context.Context, dataset string) error {
+	o.destroys = append(o.destroys, dataset)
+	return nil
+}
 
 func (*filesystemMountTestPrivOps) ZFSCreateEncryptedFilesystem(context.Context, string, []byte) error {
 	return nil
@@ -312,4 +356,14 @@ func journalContainsPhase(entries []durableJournalEntry, phase string) bool {
 		}
 	}
 	return false
+}
+
+func countJournalPhase(entries []durableJournalEntry, phase string) int {
+	var count int
+	for _, entry := range entries {
+		if entry.Phase == phase {
+			count++
+		}
+	}
+	return count
 }

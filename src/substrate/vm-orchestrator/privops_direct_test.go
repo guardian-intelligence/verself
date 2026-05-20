@@ -75,3 +75,31 @@ func TestZFSCloneErrorDoesNotClassifyTargetParentFailure(t *testing.T) {
 		t.Fatalf("zfsCloneError = %v, did not want ErrSnapshotNotFound", err)
 	}
 }
+
+func TestFinishZFSDestroyTreatsMissingTargetAsSuccess(t *testing.T) {
+	err := finishZFSDestroy(
+		"zfs destroy -R",
+		"pool/orgs/org_a/workloads/lease-a/mounts/00-workspace",
+		[]byte("cannot open 'pool/orgs/org_a/workloads/lease-a/mounts/00-workspace': dataset does not exist\n"),
+		errors.New("exit status 1"),
+	)
+	if err != nil {
+		t.Fatalf("finishZFSDestroy returned error: %v", err)
+	}
+}
+
+func TestFinishZFSDestroyKeepsUnrelatedMissingTargetFailure(t *testing.T) {
+	destroyErr := errors.New("exit status 1")
+	err := finishZFSDestroy(
+		"zfs destroy -R",
+		"pool/orgs/org_a/workloads/lease-a",
+		[]byte("cannot open 'pool/orgs/org_a/workloads/other-lease': dataset does not exist\n"),
+		destroyErr,
+	)
+	if err == nil {
+		t.Fatal("finishZFSDestroy returned nil")
+	}
+	if !errors.Is(err, destroyErr) {
+		t.Fatalf("error does not wrap destroy error: %v", err)
+	}
+}
