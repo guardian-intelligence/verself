@@ -1,148 +1,171 @@
 # Firecracker Snapshot Lifecycle
 
 vm-orchestrator treats Firecracker snapshots as lease activation cache
-artifacts. They accelerate the interval between host resource preparation and
-guest control initialization. ZFS generations remain the durable source of
-truth for workspace and cache state after a workload succeeds.
+artifacts. ZFS generations remain durable workspace and cache state.
 
-The lease boot path has three phases:
+```mermaid
+flowchart LR
+    prepare["1. Prepare lease environment"] --> activate["2. Activate microVM"]
+    activate --> init["3. LeaseInit"]
+    init --> ready["lease ready"]
+```
 
-1. Prepare the lease environment.
-2. Activate the microVM.
-3. Initialize the guest lease.
+```mermaid
+flowchart TD
+    acquire["AcquireLease"] --> require["RequireReady(org runtime)"]
+    require --> zvols["clone root + mount zvols"]
+    zvols --> jail["jail root + block devices"]
+    jail --> tap["TAP lease + socket paths"]
+    tap --> hit{pre-control snapshot hit?}
 
-Preparation requires the org runtime to be ready before lease acquisition,
-then resolves the host resources that must exist before Firecracker can run:
-root zvol clone, composed filesystem zvol clones, jail root, block device
-nodes, TAP lease, API socket path, vsock control socket path, and metrics path.
-Org runtime ensure owns encrypted namespace convergence, org ZFS key loading,
-quota application, and org-local platform image materialization.
+    hit -->|no| cold["cold boot Firecracker"]
+    hit -->|yes| restore["LoadSnapshot + network_overrides"]
+    cold --> precontrol["vm-bridge pre-control listener"]
+    restore --> precontrol
 
-Activation chooses one of two strategies:
+    precontrol --> leaseinit["LeaseInit(network, filesystems, clock)"]
+    leaseinit --> result["LeaseInitResult"]
+```
 
-- Cold boot configures Firecracker from the prepared environment, starts the
-  instance, and continues into guest initialization.
-- Snapshot restore loads a pre-control snapshot into a fresh Firecracker
-  process, applies a restore-time network override that binds `eth0` to the
-  lease's allocated TAP, resumes the VM, and continues into guest
-  initialization.
-
-Cache misses do not create Firecracker snapshots on the lease boot critical
-path. Creating a pre-control snapshot requires pausing the VM and can leave the
-lease without a responsive guest control channel if the Firecracker snapshot
-operation overruns its control deadline. Snapshot population belongs to a
-trusted cache-refresh path after the source zvol graph is known-good.
-
-Guest initialization is shared by both activation strategies. The host connects
-to vm-bridge over the restored or cold-booted vsock control socket and sends
-`LeaseInit`. vm-bridge applies the lease network, mounts filesystems, syncs the
-wall clock, starts its local control socket, and then returns `LeaseInitResult`.
-The lease becomes ready only after that result.
+| Case | Behavior |
+| --- | --- |
+| Snapshot hit | Restore, apply network override, run `LeaseInit`. |
+| Snapshot miss | Cold boot, run `LeaseInit`, record computed key. |
+| Snapshot creation | Trusted cache refresh only, after the zvol graph is known-good. |
 
 ## Snapshot Boundary
 
-The reusable snapshot boundary is after Firecracker instance start and after
-vm-bridge has opened its vsock control listener and acknowledged the dedicated
-pre-control readiness service port, before the host connects to the control
-port. This is the pre-control boundary.
+```mermaid
+sequenceDiagram
+    participant VMO as vm-orchestrator
+    participant FC as Firecracker
+    participant VB as vm-bridge
 
-The vm-bridge service ports are protocol constants inside each guest vsock
-namespace:
+    VMO->>FC: start or restore instance
+    FC->>VB: boot userspace
+    VB-->>VMO: pre-control ready on vsock:10788
+    Note over VMO,VB: reusable pre-control snapshot boundary
+    VMO->>VB: LeaseInit on vsock:10789
+    VB-->>VMO: LeaseInitResult
+```
 
-- `10788`: pre-control readiness probe;
-- `10789`: lease control protocol.
+| Port | Scope | Protocol |
+| --- | --- | --- |
+| `10788` | Guest vsock namespace | Pre-control readiness probe. |
+| `10789` | Guest vsock namespace | Lease control protocol. |
 
-They are intentionally not dynamically allocated per lease. Parallel VMs do not
-collide because each Firecracker process owns a distinct vsock device, guest
-CID, and host Unix socket under that lease's jail. Dynamic lease state remains
-in the Firecracker vsock CID, jail socket path, TAP name, guest IP, gateway,
-and `LeaseInit` payload.
+```mermaid
+flowchart TD
+    lease["lease"] --> jail["lease jail socket path"]
+    lease --> cid["Firecracker guest CID"]
+    lease --> tap["TAP name"]
+    lease --> init["LeaseInit payload"]
+    cid --> ports["fixed guest ports 10788/10789"]
+```
 
-The snapshot does not contain:
+| Snapshot contains |
+| --- |
+| Booted guest kernel. |
+| Substrate userspace. |
+| vm-bridge at pre-control listener boundary. |
+| Firecracker device model state. |
+| Memory required to resume at the boundary. |
 
-- lease ID;
-- attempt ID;
-- customer exec state;
-- wall-clock-correct guest time;
-- per-lease network address;
-- mounted durable filesystems after `LeaseInit`;
-- product bootstrap secrets or runner tokens.
+| Snapshot excludes |
+| --- |
+| Lease ID. |
+| Attempt ID. |
+| Customer exec state. |
+| Wall-clock-correct guest time. |
+| Per-lease network address. |
+| Mounted durable filesystems after `LeaseInit`. |
+| Product bootstrap secrets or runner tokens. |
 
-The snapshot contains the booted guest kernel, substrate userspace, vm-bridge at
-the vsock listener boundary, Firecracker device model state, and memory needed
-to resume at that boundary.
-
-The lease boot path consumes existing artifacts only. A cache miss proceeds via
-cold boot and records the computed snapshot key so a later cache-refresh pass
-can populate the artifact.
+```mermaid
+flowchart LR
+    miss["cache miss"] --> cold["cold boot"]
+    cold --> key["record snapshot key"]
+    key --> refresh["later trusted cache refresh"]
+    refresh --> artifact["pre-control snapshot artifact"]
+```
 
 ## LeaseInit Contract
 
-`LeaseInit` is the only post-activation hook. It is responsible for all
-lease-specific state:
-
-- flushing and assigning the guest IP, route, DNS, and neighbor table;
-- mounting the prepared filesystem devices at the requested guest paths;
-- applying read-only toolchain overlays;
-- syncing wall clock from the host;
-- starting vm-bridge local control after network and filesystems are valid.
-
-This keeps cold boot and snapshot restore behavior identical after activation.
-No customer workload runs before `LeaseInitResult`.
+```mermaid
+flowchart TD
+    leaseinit["LeaseInit"] --> network["flush + assign guest IP, route, DNS, neighbor table"]
+    leaseinit --> mounts["mount prepared filesystem devices"]
+    leaseinit --> overlays["apply read-only toolchain overlays"]
+    leaseinit --> clock["sync wall clock from host"]
+    leaseinit --> local["start vm-bridge local control"]
+    network --> result["LeaseInitResult"]
+    mounts --> result
+    overlays --> result
+    clock --> result
+    local --> result
+    result --> workload["customer workload may start"]
+```
 
 ## Cache Key
 
-The snapshot key is a hash over:
+```mermaid
+flowchart TD
+    key["snapshot key hash"] --> version["fc-precontrol-v1"]
+    key --> disk["prepared disk layout key"]
+    key --> abi["Firecracker runtime ABI key"]
+    key --> network["network-overrides+lease-init-v1"]
 
-- `fc-precontrol-v1`;
-- the prepared disk layout key;
-- the Firecracker runtime ABI key;
-- the network model key.
+    disk --> root["root substrate image + root size"]
+    disk --> drives["ordered drive IDs + source refs"]
+    disk --> mounts["mount paths + bind paths + fs type + read-only flags"]
 
-The disk layout key is derived from the resolved zvol graph: root substrate
-image, root size, ordered drive IDs, source refs, mounted paths, bind paths,
-filesystem type, and read-only flags. GitHub workflow and matrix semantics stay
-in sandbox-rental's durable cache and job-shape model. If a matrix job changes
-the durable zvol generation mounted into the VM, the resolved disk layout key
-changes.
+    abi --> fc["Firecracker version"]
+    abi --> kernel["kernel content + command line"]
+    abi --> bridge["vm-bridge/vmproto version"]
+    abi --> shape["vCPU count + memory size + hook version"]
 
-The runtime ABI key covers the compatibility surface that ZFS keys do not:
-Firecracker version, kernel path/content identity, kernel command line,
-vm-bridge/vmproto protocol version, vCPU count, memory size, and snapshot hook
-version.
+    network --> override["LoadSnapshot.network_overrides binds eth0 to fresh TAP"]
+    network --> leaseinit["LeaseInit applies guest IP, gateway, DNS"]
+```
 
-The network model key is `network-overrides+lease-init-v1`. Firecracker
-`LoadSnapshot.network_overrides` binds the restored `eth0` device to the
-lease's fresh TAP. vm-bridge `LeaseInit` applies the guest IP, gateway, and DNS.
-The key does not include TAP name, slot index, guest IP, or gateway.
+| Excluded from snapshot key | Owner |
+| --- | --- |
+| GitHub workflow semantics | sandbox-rental job-shape model |
+| Matrix semantics | sandbox-rental job-shape model |
+| Durable zvol generation choice | Prepared disk layout key after source resolution |
+| TAP name, slot index, guest IP, gateway | Per-lease runtime state |
 
 ## Deploy Ownership
 
-The `vm-orchestrator` Nomad component owns both sides of the host/guest ABI:
-the daemon binary and the substrate image containing vm-bridge. Its prestart
-task runs `vm-orchestrator-cli stage-guest-images`, which digest-checks the
-Bazel-built substrate input bundle, rebuilds the substrate ext4 when needed,
-and atomically stages
-`/var/lib/verself/guest-images/{substrate.ext4,vmlinux,...}` before the daemon
-starts. The poststart `seed-catalog` task then materializes those staged files
-into ZFS image zvols with content-derived `vs:source_digest` metadata.
-Lease-time org image materialization addresses encrypted org-local copies by
-that digest, so a new substrate image is received before the lease root is
-created while older active clones keep their existing origin.
+```mermaid
+flowchart LR
+    bazel["Bazel substrate bundle"] --> prestart["prestart: stage-guest-images"]
+    prestart --> staged["/var/lib/verself/guest-images/..."]
+    staged --> daemon["vm-orchestrator daemon"]
+    staged --> seed["poststart: seed-catalog"]
+    seed --> image["images/<ref>@ready + vs:source_digest"]
+    image --> ensure["EnsureOrgRuntime receives org-local encrypted copy"]
+    ensure --> lease["lease root clone"]
+```
 
-This makes additive vm-bridge fields, snapshot hook changes, and guest
-after-restore behavior deploy with the daemon revision that expects them.
+| Artifact | Owner |
+| --- | --- |
+| daemon binary | `vm-orchestrator` Nomad component |
+| substrate image with vm-bridge | `vm-orchestrator` Nomad component |
+| staged guest images | prestart `stage-guest-images` task |
+| ZFS image zvols | poststart `seed-catalog` task |
 
 ## Post-Workload State
 
-Successful workload state is saved through `CommitFilesystemMount`. vm-bridge
-seals the writable filesystem, the host flushes the block device, and ZFS
-creates the immutable durable generation. That generation feeds future disk
-layout keys.
+```mermaid
+flowchart TD
+    success["successful workload"] --> commit["CommitFilesystemMount"]
+    commit --> seal["vm-bridge seals writable filesystem"]
+    seal --> flush["host flushes block device"]
+    flush --> generation["ZFS immutable durable generation"]
+    generation --> future_key["future disk layout keys"]
 
-Reusable Firecracker snapshots are not created from post-workload VMs. The
-accepted-control state includes host control sessions, guest process state,
-time-sensitive kernel state, and workload effects that are outside the
-pre-control contract. Cache refreshes build a fresh pre-control artifact from
-the resolved zvol layout after the relevant CI/cache promotion decision marks
-that layout trusted.
+    success -. forbidden .-> post_snapshot["reusable snapshot from post-workload VM"]
+    generation --> refresh["trusted cache refresh"]
+    refresh --> precontrol["fresh pre-control artifact"]
+```

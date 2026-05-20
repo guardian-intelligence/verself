@@ -15,116 +15,133 @@ Default roots under the configured pool:
 | `orgs/<org>/workloads/` | Ephemeral per-lease root disks and writable mount clones under the org quota. |
 | `orgs/<org>/goldens/` | Immutable golden environment generations committed after a seal-eligible successful execution under the org quota. |
 
-`EnsureRoots` creates global roots at daemon startup. `EnsureOrgRuntime`
-converges the org namespace, applies the org dataset quota, loads the org ZFS
-key, and materializes required platform images before runner capacity is
-advertised. Lease boot calls `RequireReady` and fails fast unless the runtime
-state is already resident in the host manager. Ansible configures the host and
-service unit; it does not issue runtime ZFS mutations for workloads.
+```mermaid
+flowchart TD
+    bootstrap["daemon startup"] --> roots["EnsureRoots()"]
+    roots --> image_root["images/"]
+    roots --> org_root["orgs/"]
+
+    capacity["runner capacity reconcile"] --> ensure["EnsureOrgRuntime(shape)"]
+    ensure --> key["load org ZFS key"]
+    ensure --> namespace["ensure org namespace + quota"]
+    ensure --> org_images["materialize org-local image snapshots"]
+    org_images --> resident["resident OrgRuntimeManager state"]
+
+    acquire["AcquireLease"] --> require["RequireReady(shape)"]
+    resident --> require
+    require --> boot["clone lease zvols"]
+    require -->|miss| fail["fail lease acquisition"]
+```
 
 ## Customer Dataset Encryption
 
-Every dataset that may contain customer bytes under `orgs/<org>/` is encrypted
-before guest I/O. The organization root is the encryption boundary for received
-platform images, workload roots, golden roots, lease clones, and generation
-zvols. Customer zvol creation and clone preparation fail if the target namespace
-encryption key is unavailable or if the resulting dataset is not encrypted.
+```mermaid
+flowchart TD
+    key_file["host-only org key file"] --> ensure["EnsureOrgRuntime"]
+    ensure --> kernel_key["ZFS key loaded in kernel"]
+    kernel_key --> org_root["orgs/<org>/ encryption root"]
 
-vm-orchestrator is the only runtime process that loads customer ZFS keys. The
-keys are host-only operational material and are never returned to product
-services, guests, billing records, or public APIs. Image roots can remain
-unencrypted when they contain only reproducible platform images.
+    global_image["images/<ref>@ready"] -->|zfs receive under org key| org_image["orgs/<org>/images/<ref-digest>@ready"]
+    org_root --> org_image
+    org_root --> workloads["orgs/<org>/workloads/<lease>/..."]
+    org_root --> goldens["orgs/<org>/goldens/<scope>/..."]
 
-Org namespace filesystems use `mountpoint=none` and `canmount=off`; only zvol
-block devices are attached to guests. This prevents native ZFS mountpoints from
-creating hidden host-side mount dependencies on customer datasets.
+    org_image --> root_clone["lease root clone"]
+    org_image --> toolchain_mount["toolchain mount clone"]
+    goldens --> durable_mount["durable mount clone"]
+```
 
-The organization ZFS key is loaded when vm-orchestrator ensures the org runtime
-after host boot or key rotation. The ZFS key remains available while the org is
-healthy on that host. Lease cleanup releases raw key material from daemon
-memory; it does not unload the kernel-held ZFS key. Key unload or rotation is
-reserved for explicit security events, host drain/shutdown policy, or org
-tombstone handling.
-
-ZFS clones share their origin encryption root, so vm-orchestrator never clones a
-global platform image directly into an org workload. On first use per org and
-image ref, it receives the global `images/<ref>@ready` stream into an
-org-local snapshot addressed by image ref and source digest under the loaded
-org key. Lease roots and toolchain mounts clone from that org-local encrypted
-snapshot.
+| Boundary | Rule |
+| --- | --- |
+| Runtime key owner | vm-orchestrator only. |
+| Product services and guests | Never receive raw keys or dataset names. |
+| Org datasets | `mountpoint=none`, `canmount=off`; guests receive zvol block devices. |
+| Lease cleanup | Releases daemon raw-key material; does not unload the kernel-held ZFS key. |
+| Key unload / rotation | Security event, host drain/shutdown policy, or org tombstone. |
 
 ## Backup Exclusion
 
-Customer zvol snapshots and clones are lifecycle artifacts for lease boot,
-seal, promotion, retention, pruning, and placement-affinity replication. They
-are excluded from backup and recovery catalogs. A backup job must not run
-`zfs send`, object-store upload, or provider-native backup over customer zvol
-byte streams. CI golden loss is represented to the product as a cache miss and
-rebuild; future non-rebuildable customer storage requires a service-owned
-recovery design before release.
+| Artifact | Classification |
+| --- | --- |
+| Customer zvol snapshots | Cache lifecycle artifact. |
+| Customer zvol clones | Cache lifecycle artifact. |
+| CI golden loss | Cache miss and rebuild. |
+
+```mermaid
+flowchart LR
+    zvol["customer zvol snapshots/clones"] --> cache["cache lifecycle only"]
+    cache --> miss["loss = cache miss + rebuild"]
+    zvol -. forbidden .-> backup["backup catalog / object upload / provider backup"]
+```
 
 ## Lease Boot
 
-1. sandbox-rental resolves durable cache sources, storage quota, runner class,
-   and boot-time filesystem mounts.
-2. During runner capacity reconciliation, sandbox-rental calls
-   `EnsureOrgRuntime` with the org namespace and platform image refs required
-   by that runner class.
-3. vm-orchestrator loads or verifies the org key, ensures the encrypted
-   namespace, applies quota, materializes missing org-local image snapshots,
-   persists ready state, and releases raw key material from daemon memory.
-4. `AcquireLease` records host-local acquiring state and starts lease boot
-   asynchronously.
-5. Lease boot calls `RequireReady`; a miss fails the lease instead of
-   converging slow state.
-6. vm-orchestrator clones the org-local substrate snapshot into
-   `orgs/<org>/workloads/<lease>/root`.
-7. For each filesystem mount, vm-orchestrator either clones the selected golden
-   generation snapshot or creates a fresh ext4 zvol on a cache miss. Missing
-   durable generation snapshots are cache misses because customer CI mounts are
-   rebuildable; missing platform image snapshots are still lease failures.
-8. vm-orchestrator waits for every `/dev/zvol/<dataset>` node, jailer-binds the
-   devices, starts Firecracker, and sends the filesystem manifest to vm-bridge.
-9. vm-bridge mounts the declared filesystems before the runner process starts.
-   Cache filesystems mount once at `/verself/.mounts/<name>` and then bind
-   into the declared customer paths. Missing bind-target directories created
-   by vm-bridge are owned by the runner user; existing directories keep their
-   image-provided ownership and must be empty.
-10. vm-bridge returns per-filesystem mount results. Required mount failures
-   fail lease acquisition; optional cache mount failures are reported to the
-   product service as degraded cache state.
+```mermaid
+sequenceDiagram
+    participant SR as sandbox-rental
+    participant ORM as OrgRuntimeManager
+    participant VMO as vm-orchestrator
+    participant ZFS as ZFS
+    participant FC as Firecracker
+    participant VB as vm-bridge
 
-There is no dynamic block-device attach path after the guest boots. This keeps
-Firecracker device topology static and makes mount availability part of lease
-acquisition rather than a guest-originated side effect.
+    SR->>SR: resolve runner class, quota, durable sources
+    SR->>ORM: EnsureOrgRuntime(shape)
+    ORM->>ZFS: load key, ensure namespace, materialize image refs
+    ORM-->>SR: ready state resident
+
+    SR->>VMO: AcquireLease(spec)
+    VMO->>ORM: RequireReady(shape)
+    ORM-->>VMO: org-local image snapshot refs
+    VMO->>ZFS: clone root + mount zvols
+    VMO->>FC: start VM with static drive topology
+    VMO->>VB: LeaseInit(filesystems, network, clock)
+    VB-->>VMO: LeaseInitResult
+    VMO-->>SR: lease ready
+```
+
+| Mount case | Result |
+| --- | --- |
+| Missing durable generation | Cache miss; create fresh ext4 zvol. |
+| Missing platform image | Lease failure. |
+| Required mount failure | Lease failure. |
+| Optional mount failure | Degraded cache state. |
+| Post-boot block-device attach | Unsupported. |
 
 ## Commit
 
-After sandbox-rental has verified that the attempt-specific provider job result
-is successful, it may ask vm-orchestrator to commit a named writable filesystem
-mount. GitHub runner jobs are gated on the workflow-job terminal conclusion
-after the local runner process exits. The commit path:
+```mermaid
+sequenceDiagram
+    participant SR as sandbox-rental
+    participant VMO as vm-orchestrator
+    participant VB as vm-bridge
+    participant ZFS as ZFS
+    participant PG as Postgres
 
-1. Seals the guest mount through vm-bridge.
-2. Flushes the host block device.
-3. Snapshots the lease mount clone.
-4. Clones that snapshot to `orgs/<org>/goldens/<scope>/generations/<generation>`.
-5. Promotes the clone so the immutable generation no longer depends on the
-   ephemeral lease dataset.
-6. Creates `@sealed` on the promoted generation and returns the full snapshot
-   ref plus used/written byte counters.
+    SR->>SR: verify provider job success
+    SR->>VMO: CommitFilesystemMount(mount)
+    VMO->>VB: seal mount
+    VMO->>ZFS: flush block device
+    VMO->>ZFS: snapshot lease mount clone
+    VMO->>ZFS: clone to goldens/<scope>/generations/<generation>
+    VMO->>ZFS: promote clone + create @sealed
+    VMO-->>SR: sealed snapshot ref, used bytes, written bytes
+    SR->>PG: record operation + CAS promotion pointer
+```
 
-Postgres records the operation, generation, and product promotion decision. ZFS
-runs only in vm-orchestrator; sandbox-rental records observed results and
-advances current pointers with compare-and-swap. Successful non-promotable
-executions may produce retained generations, but provider-gated promotion of
-protected branch pointers happens outside the host commit path.
+| Promotion step | Owner |
+| --- | --- |
+| Host seal and immutable generation creation | vm-orchestrator |
+| Operation record and generation metadata | sandbox-rental |
+| Protected-branch current pointer CAS | sandbox-rental |
 
 ## Retention
 
-Committed generations are immutable. A generation that loses promotion CAS is
-retained as an unreferenced candidate until a retention worker destroys its
-`orgs/<org>/goldens/<scope>/generations/<generation>` dataset. Destroy
-operations remain host-owned RPCs or daemon-local maintenance tasks; product
-services request destruction by generation ref over the vm-orchestrator Unix
-socket and never shell out to `zfs`.
+```mermaid
+flowchart TD
+    sealed["@sealed generation"] --> cas{promotion CAS}
+    cas -->|wins| current["current golden pointer"]
+    cas -->|loses| retained["unreferenced retained candidate"]
+    retained --> retention["retention worker"]
+    retention --> destroy["vm-orchestrator destroy by generation ref"]
+```
