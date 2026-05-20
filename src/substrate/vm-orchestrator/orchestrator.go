@@ -29,6 +29,7 @@ const (
 	defaultTrustClass      = "trusted"
 	leaseBootTimeout       = 45 * time.Second
 	firecrackerStepTimeout = 5 * time.Second
+	snapshotCreateTimeout  = 2 * time.Minute
 	maxBufferedGuestLogs   = 10 * 1024 * 1024
 	maxFilesystemMounts    = 99
 )

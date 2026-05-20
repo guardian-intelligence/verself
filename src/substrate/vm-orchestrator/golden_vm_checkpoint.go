@@ -159,7 +159,7 @@ func (o *Orchestrator) CheckpointGoldenVM(ctx context.Context, runtime *LeaseRun
 	if err != nil {
 		return GoldenVMCheckpointRecord{}, fmt.Errorf("build snapshot artifact paths: %w", err)
 	}
-	createCtx, cancelCreate := context.WithTimeout(ctx, 30*time.Second)
+	createCtx, cancelCreate := context.WithTimeout(ctx, snapshotCreateTimeout)
 	createCtx, endCreateSpan := startStepSpan(createCtx, "vmorchestrator.firecracker.snapshot_create",
 		attribute.String("lease.id", runtime.LeaseID),
 		attribute.String("firecracker.snapshot_key", key.String()),

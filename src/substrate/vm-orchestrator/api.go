@@ -22,7 +22,6 @@ func newAPIClient(socketPath string) *apiClient {
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	return &apiClient{
 		client: &http.Client{
-			Timeout: 5 * time.Second,
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 					return dialer.DialContext(ctx, "unix", socketPath)
