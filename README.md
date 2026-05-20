@@ -6,11 +6,22 @@ Verself is two things:
 
 2. [PLANNED ONLY] See docs/product/future-state.md
 
-The main product offering is a (hopefully) better Blacksmith.sh: a GitHub App where we run customer's GitHub actions on our bare metal. We ship a custom GitHub action that replaces the standard `actions/checkout`. The action does the following:
+The main product offering is a Blacksmith.sh-style GitHub App that runs
+customer GitHub Actions jobs on Verself bare metal. Customers switch runner
+labels and use the Verself checkout action. The action preserves ordinary
+GitHub Actions workflow semantics while reconciling the restored workspace to
+the event commit.
 
-1. Runs the customer's workload on our bare metal, inside a firecracker VM that boots with a composed set of zvols mounted at user-configured directories + the repo's main branch checked out and ready before the CI job even starts. Once the CI Job starts, our custom `checkout` action applies the TIP of the `github.event.pull_request.head.sha` against the base branch.
+1. A job runs inside a Firecracker VM with a static graph of ZFS zvols mounted
+   before customer steps start: the workspace, any declared durable paths, and
+   platform toolchain images.
 
-2. When default branch's latest commit's CI goes green, we promote the repo file system post-CI (`GITHUB_WORKSPACE`) + durable VM directories outside the `GITHUB_WORKSPACE` such as installed binaries, Bazel caches, DB files, and so on. The next PR that executes CI will now have its VM mount its starting file-system from the golden ZFS volumes composed prior to the job running. 
+2. When a protected target-branch workflow run is green, Verself promotes one
+   golden artifact per compatible job shape. A golden artifact couples the
+   post-build workspace and durable zvol generations with a Firecracker
+   vmstate/memory snapshot of the warm guest. Future PR jobs restore that
+   artifact when compatible, then checkout advances `GITHUB_WORKSPACE` to the
+   PR head SHA.
 
 
 * Verself does not host customer applications as managed long-lived services (yet, but as you may imagine by the `verself` branding we are poised to do that soon via Open vSwitch or something similar). 

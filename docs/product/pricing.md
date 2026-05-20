@@ -67,16 +67,16 @@ Representative United States catalog rows:
 | Flagship premium | `f4.metal.large` | 24c @ 4.1 GHz | 768 GiB | 2 x 480 GB + 2 x 3.8 TB | $1,916/mo | Large monorepos, JVM/browser-heavy suites, and customers buying lowest wall-clock time. |
 | Economy / backfill | `m4.metal.medium` | 16c @ 3.0 GHz | 128 GiB | 2 x 480 GB + 2 x 1.9 TB | $456/mo | Backfill capacity after premium queues are clear. |
 | Economy / migration pool | `c3.large.x86` / `s3.large.x86` | 24c @ 2.85 GHz | 256-512 GiB | 2 x 1.9-3.8 TB | $496-$650/mo | Cost-optimized, lower-clock workloads and migration capacity. |
-| Storage/cache dense | `rs4.metal.large` / `rs4.metal.xlarge` | 32-64c @ 3.1-3.25 GHz | 768-1536 GiB | 2 x 480 GB + 2-4 x 8 TB | $2,351-$3,971/mo | Organizations whose golden ZFS working set or replication traffic dominates. |
+| Storage/cache dense | `rs4.metal.large` / `rs4.metal.xlarge` | 32-64c @ 3.1-3.25 GHz | 768-1536 GiB | 2 x 480 GB + 2-4 x 8 TB | $2,351-$3,971/mo | Organizations whose golden artifact working set or replication traffic dominates. |
 
 `f4` is the default class for customers willing to pay for CI speed because
-golden environments remove checkout, dependency download, and cache
-rehydration from the hot path. Once cache hits dominate, customer wall-clock
-time is primarily shaped by CPU frequency, available parallelism, memory
-headroom, and local NVMe latency. `rs4` is selected by observed durable-cache
-working-set pressure, ZFS replication pressure, or cache eviction rate. `m4`
-and Gen 3 `c3`/`s3` capacity are economy classes for workloads whose queueing
-priority or price point matters more than elapsed time.
+golden artifacts remove checkout, dependency download, and cache rehydration
+from the hot path. Once cache hits dominate, customer wall-clock time is
+primarily shaped by CPU frequency, available parallelism, memory headroom, and
+local NVMe latency. `rs4` is selected by observed durable-cache working-set
+pressure, ZFS replication pressure, or cache eviction rate. `m4` and Gen 3
+`c3`/`s3` capacity are economy classes for workloads whose queueing priority or
+price point matters more than elapsed time.
 
 The `f4.metal.medium` commitment model:
 
@@ -128,7 +128,7 @@ classes target `m4` or Gen 3 pools.
 
 Observed runner behavior chooses the class:
 
-- CPU-bound CI with hot golden environments goes to `f4`.
+- CPU-bound CI with hot golden artifacts goes to `f4`.
 - Memory-heavy JVM, browser, integration-test, or database-backed suites go to
   `f4.metal.large` before `rs4` because high clock speed still reduces
   wall-clock time.
@@ -143,7 +143,7 @@ Observed runner behavior chooses the class:
 
 Runner class is a cache compatibility dimension. Moving a hot organization
 between `f4`, `m4`, and `rs4` creates a distinct compatible working set unless
-the scheduler prewarms the target box with replicated golden zvols before
+the scheduler prewarms the target box with replicated golden artifacts before
 cutover.
 
 ## Capacity planning
@@ -164,9 +164,17 @@ Each provisioned box is evaluated independently. A box resets to zero occupancy 
 
 The marginal unit of supply is a bare-metal box with a multi-stage host-convergence lead time (Ansible bootstrap, ZFS pool, Nomad join, SPIRE attestation, ClickHouse schema). The marginal unit of demand is a sandbox lasting seconds to minutes. Bursts are absorbed from a warm headroom buffer of already-provisioned, already-converged capacity; provisioning is driven by sustained-demand forecast, not by individual bursts.
 
-A newly provisioned box holds no golden zvols, and sandboxes scheduled onto it before its working set is warmed take the cold checkout path that the compute price exists to eliminate. Scaled-out capacity is brought into service warm by replicating hot organizations' golden zvols to buffer boxes with `zfs send`/`recv` ahead of cutover. Golden zvols are per-`(org, repo, target-branch, workflow-id, job-id, matrix-key)` state resident in one box's pool, so scheduling is zvol-affinity constrained: a sandbox is placed where its golden zvol resides or can be cloned cheaply from a local replica.
+A newly provisioned box holds no golden artifacts, and sandboxes scheduled onto
+it before its working set is warmed take the cold acquisition path that the
+compute price exists to eliminate. Scaled-out capacity is brought into service
+warm by replicating hot organizations' durable generations with `zfs send` and
+`zfs recv` and staging their Firecracker vmstate/memory artifacts ahead of
+cutover. Golden artifacts are per-`(org, repo, target-branch, workflow-id,
+job-id, matrix-key)` state resident in one box's pool and snapshot store, so
+scheduling is artifact-affinity constrained: a sandbox is placed where its
+golden artifact resides or can be cloned cheaply from a local replica.
 
-The control signal is dominant-resource utilization per box against the active commitment's break-even. Scale-out is predictive and hysteretic: a box is added when a sustained dominant-resource trend crosses threshold and persists, sized to clear its own floor on forecast load. Scale-in is conservative: a box is drained and deprovisioned only after prolonged idle and after its unique golden-zvol working set is replicated elsewhere or retired.
+The control signal is dominant-resource utilization per box against the active commitment's break-even. Scale-out is predictive and hysteretic: a box is added when a sustained dominant-resource trend crosses threshold and persists, sized to clear its own floor on forecast load. Scale-in is conservative: a box is drained and deprovisioned only after prolonged idle and after its unique golden-artifact working set is replicated elsewhere or retired.
 
 ## The model as data
 

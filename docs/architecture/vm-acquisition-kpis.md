@@ -60,7 +60,7 @@ points that only exist as spans should remain queryable from
 | Durable mount plan persisted | `durable_operation.requested_at`, `execution_filesystem_mounts` | `durable_prepare_ms` | operation ID, scope ID, mount name, required flag. |
 | Org runtime ensured | `sandbox.org_runtime.ensure`, `rpc.EnsureOrgRuntime`, `vmorchestrator.org_runtime.ensure` | `org_runtime_ensure_ms` | org ID, quota bytes, image refs, namespace dataset, image cache hit/miss. |
 | Lease accepted | `rpc.AcquireLease`, client span, `execution_attempts.lease_id` | `lease_accept_ms` | lease ID, attempt ID, mount count, resource shape. |
-| Lease ready | `verself.vm_lease_evidence` `lease_ready`, `GetLease` polling spans | `lease_accept_to_ready_ms` | lease ID, activation mode, filesystem result count. |
+| Lease ready | `verself.vm_lease_evidence` `lease_ready`, `GetLease` polling spans | `lease_accept_to_ready_ms` | lease ID, activation mode, filesystem result count, golden VM snapshot ID on hit. |
 | Exec started | `rpc.StartExec`, `verself.vm_lease_evidence` `exec_started` | `ready_to_exec_started_ms` | lease ID, exec ID, command class. |
 | Runner bootstrap fetched | `runner.bootstrap.consume`, `runner_bootstrap_configs.consumed_at` | `exec_started_to_bootstrap_fetch_ms` | allocation ID, execution ID, attempt ID. |
 | GitHub assigns job | `runner_job_bindings`, `github.job.bind` | `bootstrap_to_assignment_ms` | provider runner ID/name, job ID, allocation ID. |
@@ -88,11 +88,12 @@ share the same parent.
 | TAP/network acquire | `vmorchestrator.network.acquire`, `vmorchestrator.network.tap_create`, `vmorchestrator.network.tap_up`, `vmorchestrator.network.setup` | `network_setup_ms` |
 | Jailer process starts | `vmorchestrator.jailer.start` | `jailer_start_ms` |
 | Firecracker API socket ready | `vmorchestrator.firecracker.api_socket_wait` | `fc_api_socket_wait_ms` |
-| Snapshot key built | required span around snapshot key construction | `fc_snapshot_key_build_ms` |
-| Snapshot cache lookup | required span around `SnapshotStore.Lookup` | `fc_snapshot_lookup_ms`, `fc_snapshot_hit_rate` |
-| Snapshot staged | `vmorchestrator.firecracker.snapshot_stage` | `fc_snapshot_stage_ms` |
-| Snapshot loaded | `vmorchestrator.firecracker.snapshot_load` | `fc_snapshot_load_ms` |
-| Snapshot resumed | `vmorchestrator.firecracker.snapshot_resume` | `fc_snapshot_resume_ms` |
+| Golden VM key built | required span around golden VM compatibility key construction | `golden_vm_key_build_ms` |
+| Golden VM manifest lookup | required span around golden VM manifest lookup | `golden_vm_lookup_ms`, `golden_vm_hit_rate` |
+| Golden VM artifact staged | `vmorchestrator.firecracker.snapshot_stage` | `golden_vm_stage_ms` |
+| Golden VM snapshot loaded | `vmorchestrator.firecracker.snapshot_load` | `golden_vm_load_ms` |
+| Golden VM snapshot resumed | `vmorchestrator.firecracker.snapshot_resume` | `golden_vm_resume_ms` |
+| Guest after-restore | `vmorchestrator.guest.after_restore` | `guest_after_restore_ms` |
 | Cold Firecracker configure | `vmorchestrator.firecracker.configure_all` plus per-step `vmorchestrator.firecracker.configure` | `fc_configure_ms` |
 | Cold Firecracker start | `vmorchestrator.firecracker.instance_start` | `fc_instance_start_ms` |
 | Guest control socket appears | `vmorchestrator.guest.control_socket_wait` | `guest_control_socket_wait_ms` |
@@ -105,7 +106,7 @@ share the same parent.
 | Guest local control start | `guest.lease_init.start_local_control_ms` on `vmorchestrator.guest.lease_init` | `guest_local_control_start_ms` |
 
 The warm target for `lease_accept_to_ready_ms` is as close to zero as the
-Firecracker snapshot path permits. Cold boot remains tracked as a separate
+golden VM restore path permits. Cold boot remains tracked as a separate
 fallback path and should not justify increasing `lease_accept_ms` or provider
 allocation deadlines.
 
@@ -117,7 +118,7 @@ correct boundary is too narrow after the slow substep has been identified.
 | KPI | Budget | Interpretation |
 | --- | --- | --- |
 | `lease_accept_ms` | p99 <= 250 ms | Host accepted durable lease state. No ZFS clone, Firecracker startup, guest readiness, or provider polling belongs here. |
-| `lease_accept_to_ready_ms` on snapshot hit | p50 <= 250 ms, p99 <= 1 s | Restore, after-restore hooks, and `LeaseInit` should trend toward zero. Seconds-grade values require substep attribution. |
+| `lease_accept_to_ready_ms` on golden VM hit | p50 <= 250 ms, p99 <= 1 s | Restore and after-restore hooks should trend toward zero. Seconds-grade values require substep attribution. |
 | `lease_accept_to_ready_ms` on cold boot | tracked separately | Cold boot is fallback evidence, not a reason to widen lease acceptance. |
 | `ready_to_exec_started_ms` | p99 <= 250 ms | Guest control is ready; dispatch should be protocol overhead only. |
 | `bootstrap_to_assignment_ms` | p99 <= provider assignment deadline | Slow values usually point to runner registration, GitHub assignment, or webhook delivery. |
@@ -130,7 +131,7 @@ Cache reporting must distinguish cache identity from cache result.
 | --- | --- | --- | --- |
 | Durable ZFS generation | `verself.durable_events` `durable.cache.select` with `result='hit'` and `source_generation_id` | `durable.cache.select` with `result='miss'` | org, provider, repository, scope kind/ref, job shape, cache name, trust class. |
 | Workspace checkout bundle | `github.checkout.bundle_cache_hit=true` | `github.checkout.bundle_cache_hit=false` | repository, base/head SHA, bundle key. |
-| Firecracker pre-control snapshot | `firecracker.activation_mode='snapshot_restore'` and snapshot key | `firecracker.snapshot_cache_miss=true` | disk layout key, Firecracker runtime ABI key, network model key. |
+| Firecracker golden VM snapshot | `firecracker.activation_mode='snapshot_restore'`, golden VM snapshot ID, and snapshot key | `golden.vm.lookup` with `result='miss'` or `firecracker.snapshot_cache_miss=true` | org, provider, repository, scope kind/ref, job shape, trust class, exact durable generation set, Firecracker runtime ABI, hook profile. |
 | Platform image materialization | required image materialization event | required miss/copy event | org, image digest, image tier, substrate/toolchain ref. |
 | ZFS device wait | device wait span duration | wait timeout/error | dataset, device path, mount name. |
 
@@ -143,12 +144,15 @@ acquisition path.
 | Point | Canonical Evidence | Primary KPI |
 | --- | --- | --- |
 | Exec result received | `rpc.WaitExec`, `vmorchestrator.guest.exec_*` spans | `exec_result_latency_ms` |
+| Golden VM before-snapshot hook | `golden.vm.before_snapshot`, `vmorchestrator.guest.before_golden_snapshot` | `golden_vm_before_snapshot_ms` |
+| Golden VM checkpoint created | `golden.vm.checkpoint`, `vmorchestrator.firecracker.snapshot_create` | `golden_vm_checkpoint_ms` |
+| Golden VM manifest published | `golden.vm.publish` | `golden_vm_publish_ms` |
 | Durable seal starts | `durable.cache.seal`, `durable_operation.seal_started_at` | `seal_queue_ms` |
 | Guest filesystem sealed | `vmorchestrator.guest.filesystem_seal` | `guest_filesystem_seal_ms` |
 | Block flushed | `vmorchestrator.block.flush` | `block_flush_ms` |
 | ZFS generation committed | `durable.cache.commit`, `durable_operation.result_recorded_at` | `zfs_commit_ms` |
 | Golden promotion evaluated | `durable.workflow_run.promote`, `golden.run.promote` | `promotion_decision_ms` |
-| Current pointer promoted | `durable.cache.promote`, `durable_current_pointer.promoted_at` | `promotion_commit_ms` |
+| Current pointer promoted | `durable.cache.promote`, `golden.vm.promote`, `durable_current_pointer.promoted_at`, `golden_vm_current_pointer.promoted_at` | `promotion_commit_ms` |
 | VM cleanup complete | `verself.vm_lease_evidence` `lease_cleanup`, `runner.cleanup` | `cleanup_ms` |
 
 ## Dashboard Cuts
@@ -159,7 +163,7 @@ Dashboards should expose p50, p90, p99, max, error count, and hit rate for:
 - host, Firecracker version, kernel image, substrate image, and toolchain image;
 - activation mode: `snapshot_restore`, `cold_boot`, or disabled snapshots;
 - durable cache name and trust class;
-- cache hit/miss result for ZFS generations, checkout bundles, and Firecracker
+- cache hit/miss result for ZFS generations, checkout bundles, and golden VM
   snapshots;
 - allocation result and failure reason;
 - lease failure reason and vm-orchestrator status message.
@@ -170,8 +174,9 @@ Dashboards should expose p50, p90, p99, max, error count, and hit rate for:
    `workflow_job` timestamps are usable provider proxies. Exact push ingress
    requires accepting and persisting the GitHub `push` or `workflow_run` event
    with provider timestamp and Verself receive timestamp.
-2. Firecracker snapshot key construction and cache lookup are attributes today,
-   not timed substeps. They need spans with hit/miss and artifact size.
+2. Golden VM snapshot key construction and manifest lookup are attributes
+   today, not timed substeps. They need spans with hit/miss, artifact size, and
+   generation-set hash.
 3. Runner process readiness is inferred from bootstrap fetch and GitHub
    assignment. The guest should emit runner process start, registration attempt,
    and registration success/failure as product-visible evidence.
@@ -197,7 +202,9 @@ SELECT
   StatusMessage,
   SpanAttributes['lease.id'] AS lease_id,
   SpanAttributes['firecracker.activation_mode'] AS activation_mode,
-  SpanAttributes['firecracker.snapshot_cache_miss'] AS snapshot_cache_miss
+  SpanAttributes['firecracker.snapshot_cache_miss'] AS snapshot_cache_miss,
+  SpanAttributes['golden_vm.snapshot_id'] AS golden_vm_snapshot_id,
+  SpanAttributes['golden_vm.generation_set_hash'] AS generation_set_hash
 FROM default.otel_traces
 WHERE Timestamp >= now() - INTERVAL 1 HOUR
   AND ServiceName IN ('sandbox-rental-service', 'vm-orchestrator')
@@ -231,6 +238,29 @@ SELECT
   used_bytes,
   written_bytes
 FROM verself.durable_events
+WHERE provider_run_id = {provider_run_id:UInt64}
+ORDER BY observed_at;
+```
+
+Golden VM hit/miss and checkpoint evidence:
+
+```sql
+SELECT
+  observed_at,
+  provider_run_id,
+  provider_job_id,
+  execution_id,
+  attempt_id,
+  event_name,
+  result,
+  reason,
+  golden_vm_snapshot_id,
+  generation_set_hash,
+  snapshot_key,
+  activation_mode,
+  state_bytes,
+  memory_bytes
+FROM verself.golden_vm_events
 WHERE provider_run_id = {provider_run_id:UInt64}
 ORDER BY observed_at;
 ```

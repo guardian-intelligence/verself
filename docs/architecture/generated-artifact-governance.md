@@ -7,9 +7,9 @@ Owner: platform
 ## Summary
 
 Verself hosted runners deliberately preserve ignored build and test artifacts in
-golden workspaces. That is the product: CI starts from the last trusted
-successful filesystem state instead of cold bootstrapping the repository on
-every run.
+durable workspaces that are part of golden artifacts. CI starts from the last
+trusted successful filesystem state instead of cold bootstrapping the
+repository on every run.
 
 This means generated files in ignored directories cannot be treated as
 disposable files that CI may delete to recover confidence. They are cacheable
@@ -25,7 +25,7 @@ The proposed invariant is:
 > in strict mode, its content fingerprint.
 
 The platform should default-deny reads from generated roots that are not
-covered by current generated-artifact authority. Customers keep hot golden
+covered by current generated-artifact authority. Customers keep hot durable
 workspaces; stale generated artifacts stop silently satisfying source imports.
 
 ## Triggering Failure Mode
@@ -57,9 +57,9 @@ The concrete incident was in the frontend SDK generation path.
    ```
 
 4. `**/__generated/` is gitignored. The Verself checkout action intentionally
-   preserves untracked and ignored workspace state. A durable workspace that
-   had already materialized the stale client file could therefore build
-   successfully even though no current Bazel target produced that file.
+   preserves untracked and ignored workspace state. A durable workspace restored
+   from a golden artifact could therefore build successfully even though no
+   current Bazel target produced that file.
 
 5. The active source dependency was fixed by pointing SDK code at the current
    OpenAPI-generated transport and restoring the owning generator input.
@@ -67,7 +67,7 @@ The concrete incident was in the frontend SDK generation path.
 This was not a generator failing to clean its current output directory. It was
 a source import that retained a dependency on a generated path after the
 producing target was removed. The generated file was stale but still present in
-the golden workspace.
+the durable workspace.
 
 ## Local Evidence
 
@@ -97,7 +97,7 @@ show the same ownership gap.
 ## Why Not Delete Generated Artifacts
 
 Deleting ignored outputs on checkout or before every build fights the product
-model. A golden workspace is allowed to contain:
+model. A durable workspace inside a golden artifact is allowed to contain:
 
 - package-manager stores
 - compiler caches
@@ -329,9 +329,9 @@ Cons:
 
 ## Customer Responsibility
 
-Verself should not make customers delete artifacts from golden workspaces. It
-should make customers declare which generated artifacts are allowed to influence
-builds.
+Verself should not make customers delete artifacts from durable workspaces. It
+should make customers declare which generated artifacts are allowed to
+influence builds.
 
 For customer repositories, the platform-facing contract can be:
 

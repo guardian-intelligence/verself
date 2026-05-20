@@ -13,7 +13,7 @@ Default roots under the configured pool:
 | `images/` | Read-only composable toolchain images seeded by `SeedImage`. |
 | `orgs/<org>/images/` | Org-encrypted received copies of platform images used as clone origins for that org. |
 | `orgs/<org>/workloads/` | Ephemeral per-lease root disks and writable mount clones under the org quota. |
-| `orgs/<org>/goldens/` | Immutable golden environment generations committed after a seal-eligible successful execution under the org quota. |
+| `orgs/<org>/goldens/` | Immutable durable zvol generations committed after a seal-eligible successful execution under the org quota. |
 
 ```mermaid
 flowchart TD
@@ -65,7 +65,7 @@ flowchart TD
 | --- | --- |
 | Customer zvol snapshots | Cache lifecycle artifact. |
 | Customer zvol clones | Cache lifecycle artifact. |
-| CI golden loss | Cache miss and rebuild. |
+| CI golden artifact loss | Cache miss and rebuild. |
 
 ```mermaid
 flowchart LR
@@ -85,7 +85,7 @@ sequenceDiagram
     participant FC as Firecracker
     participant VB as vm-bridge
 
-    SR->>SR: resolve runner class, quota, durable sources
+    SR->>SR: resolve runner class, quota, durable sources, golden VM manifest
     SR->>ORM: EnsureOrgRuntime(shape)
     ORM->>ZFS: load key, ensure namespace, materialize image refs
     ORM-->>SR: ready state resident
@@ -94,9 +94,15 @@ sequenceDiagram
     VMO->>ORM: RequireReady(shape)
     ORM-->>VMO: org-local image snapshot refs
     VMO->>ZFS: clone root + mount zvols
-    VMO->>FC: start VM with static drive topology
-    VMO->>VB: LeaseInit(filesystems, network, clock)
-    VB-->>VMO: LeaseInitResult
+    alt golden VM manifest hit
+        VMO->>FC: LoadSnapshot after staged drive graph
+        VMO->>VB: AfterRestore(filesystems, network, clock)
+        VB-->>VMO: AfterRestoreResult
+    else golden VM miss
+        VMO->>FC: cold boot with static drive topology
+        VMO->>VB: LeaseInit(filesystems, network, clock)
+        VB-->>VMO: LeaseInitResult
+    end
     VMO-->>SR: lease ready
 ```
 
@@ -115,24 +121,35 @@ sequenceDiagram
     participant SR as sandbox-rental
     participant VMO as vm-orchestrator
     participant VB as vm-bridge
+    participant FC as Firecracker
     participant ZFS as ZFS
     participant PG as Postgres
 
     SR->>SR: verify provider job success
+    opt promotable golden VM checkpoint
+        SR->>VMO: CheckpointGoldenVM(lease)
+        VMO->>VB: BeforeGoldenSnapshot + guest sync
+        VMO->>FC: pause microVM
+        VMO->>ZFS: snapshot root + mount zvols while paused
+        VMO->>FC: create vmstate/memory
+        VMO-->>SR: golden VM artifact refs + zvol checkpoint refs
+    end
     SR->>VMO: CommitFilesystemMount(mount)
     VMO->>VB: seal mount
     VMO->>ZFS: flush block device
-    VMO->>ZFS: snapshot lease mount clone
+    VMO->>ZFS: select checkpoint snapshot or snapshot lease mount clone
     VMO->>ZFS: clone to goldens/<scope>/generations/<generation>
     VMO->>ZFS: promote clone + create @sealed
     VMO-->>SR: sealed snapshot ref, used bytes, written bytes
-    SR->>PG: record operation + CAS promotion pointer
+    SR->>PG: record durable generation + golden VM manifest
+    SR->>PG: CAS promote durable and golden VM pointers
 ```
 
 | Promotion step | Owner |
 | --- | --- |
-| Host seal and immutable generation creation | vm-orchestrator |
-| Operation record and generation metadata | sandbox-rental |
+| Golden VM checkpoint and Firecracker artifact creation | vm-orchestrator |
+| Host seal and immutable zvol generation creation | vm-orchestrator |
+| Operation, generation, and manifest metadata | sandbox-rental |
 | Protected-branch current pointer CAS | sandbox-rental |
 
 ## Retention
@@ -140,8 +157,15 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     sealed["@sealed generation"] --> cas{promotion CAS}
-    cas -->|wins| current["current golden pointer"]
+    sealed --> vm_manifest["golden VM manifest dependency"]
+    cas -->|wins| current["current durable pointer"]
+    vm_manifest --> vm_current["current golden VM pointer"]
     cas -->|loses| retained["unreferenced retained candidate"]
     retained --> retention["retention worker"]
     retention --> destroy["vm-orchestrator destroy by generation ref"]
 ```
+
+Retention must preserve any durable generation referenced by
+`durable_current_pointer` or `golden_vm_snapshot_generation`. Firecracker
+vmstate and memory artifacts are retained through the golden VM manifest, not
+through ZFS lineage.

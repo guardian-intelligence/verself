@@ -124,7 +124,7 @@ The core abstraction is the billing window. Product services should not “charg
 * Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through the service-local secrets-service client over SPIFFE.
 * Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount.
 * Sync-engine pattern: PostgreSQL owns state, ClickHouse records the append-only ledger/traces, Electric/TanStack expose live read projections, and writes go through typed service commands whose conflict behavior matches the domain (strict observed-state rejection for security-critical resources, monotonic/idempotent collapse for notification-style cursors and dismissals).
-* Generated artifacts in ignored directories are cacheable infrastructure, not disposable outputs. Do not fix stale generated imports by deleting `__generated` or other golden workspace state. A source dependency on generated output must have a current generator owner/manifest in the build graph; when removing a generator, update every source import in the same change. See `docs/architecture/generated-artifact-governance.md`.
+* Generated artifacts in ignored directories are cacheable infrastructure, not disposable outputs. Do not fix stale generated imports by deleting `__generated` or other durable workspace state restored from golden artifacts. A source dependency on generated output must have a current generator owner/manifest in the build graph; when removing a generator, update every source import in the same change. See `docs/architecture/generated-artifact-governance.md`.
 
 Boundary components that sit outside the usual service shape:
 
@@ -148,7 +148,7 @@ Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databa
 </product_invariants>
 
 <product_context>
-Read docs/product/golden-environments.md for more information on how golden ZFS images work within our product. 
+Read docs/product/golden-environments.md for the golden artifact model: durable zvol generations plus Firecracker VM snapshots and product-owned manifests.
 </product_context>
 
 <product_policy>
@@ -217,10 +217,10 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 
 - **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation:** `src/services/mailbox-service/docs/inbound-mail.md`
 - **vm-orchestrator privilege boundary, Firecracker VM networking, TAP allocator, host service plane, nftables, guest CIDR, lease/exec model, vm-bridge control:** `src/substrate/vm-orchestrator/AGENTS.md`
-- **ZFS golden environment lifecycle, zvol, clone, snapshot, promote:** `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`
+- **Durable ZFS generation lifecycle, zvol, clone, snapshot, promote:** `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`
 - **Canonical API contracts, Smithy models, route catalog, OpenAPI projections, public SDK transport generation, Connect/protobuf boundary:** `src/smithy/README.md`
 - **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
-- **Golden zvol cache key, durable scope identity, workspace/durable mount lifecycle, promotion rules:** `docs/product/golden-environments.md`
+- **Golden artifact identity, durable scope identity, workspace/durable mount lifecycle, promotion rules:** `docs/product/golden-environments.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/services/governance-service/docs/audit-data-contract.md`
 

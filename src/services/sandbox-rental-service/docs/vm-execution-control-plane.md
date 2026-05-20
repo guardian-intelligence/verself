@@ -35,9 +35,9 @@ State model:
   job sync.
 - `runner_allocations` are Verself capacity records for runner VMs.
 - `runner_job_bindings` are the authoritative job-to-runner assignment records.
-- Durable volume state belongs beside executions: cache declarations, stable
-  job shape rows, scoped immutable generation rows, current pointers, and
-  durable operations.
+- Golden artifact state belongs beside executions: cache declarations, stable
+  job shape rows, scoped immutable durable generation rows, golden VM manifests,
+  current pointers, and durable operations.
 - `execution_schedules` and `execution_schedule_dispatches` are Temporal-backed
   recurring canary state.
 
@@ -63,24 +63,32 @@ Durable volume flow:
 3. sandbox-rental resolves the current readable generation for the scope and
    inserts a `durable_operation` row with the observed source generation.
    No database row claims a new generation exists before ZFS has sealed it.
-4. The lease request includes a static filesystem mount plan. The workspace
-   mount is required; cache mounts are optional. A hit clones the current
-   generation; a miss creates an empty ext4 zvol. Mounts are available before
-   the GitHub runner process starts.
-5. The runner work directory is the normal GitHub Actions `_work` tree under
+4. sandbox-rental computes the exact durable generation set and looks up a
+   compatible golden VM manifest for that set, job shape, trust class, and
+   Firecracker ABI.
+5. The lease request includes a static filesystem mount plan and, on hit, the
+   expected golden VM manifest. The workspace mount is required; cache mounts
+   are optional. A durable hit clones the current generation; a miss creates an
+   empty ext4 zvol. A golden VM hit restores Firecracker after the disk graph is
+   prepared; a miss cold boots from the same durable sources.
+6. The runner work directory is the normal GitHub Actions `_work` tree under
    `GITHUB_WORKSPACE` semantics, so customer YAML continues to use ordinary
    checkout and build steps.
-6. After the runner exits, sandbox-rental asks vm-orchestrator to seal each
-   mounted writable volume. vm-orchestrator unmounts guest bind mounts, flushes,
-   snapshots, clones the sealed generation, and returns only service-level
-   results.
-7. sandbox-rental records the immutable generation, then promotes the current
-   pointer by compare-and-swap against the source generation observed before the
-   host mutation. A lost CAS leaves the generation retained and prunable, not
-   failed.
-8. A GitHub workflow run promotes branch goldens only after the run's job set is
-   observed complete and every job is successful or skipped. Failed or canceled
-   runs leave the current pointer at the last green generation.
+7. After the runner exits successfully in a promotable context, sandbox-rental
+   asks vm-orchestrator to checkpoint the running VM before filesystem seal.
+   The checkpoint returns Firecracker artifact refs and zvol checkpoint refs for
+   the root, workspace, and declared durable mounts.
+8. sandbox-rental asks vm-orchestrator to seal each mounted writable volume.
+   vm-orchestrator unmounts guest bind mounts, flushes block devices, clones
+   the checkpointed or freshly snapshotted zvol into the durable generation
+   namespace, and returns only service-level results.
+9. sandbox-rental records immutable durable generations and the golden VM
+   manifest, then promotes current pointers by compare-and-swap against the
+   source generation set observed before host mutation. A lost CAS leaves the
+   candidate retained and prunable, not failed.
+10. A GitHub workflow run promotes branch goldens only after the run's job set
+   is observed complete and every required job is successful or skipped. Failed
+   or canceled runs leave current pointers at the last green artifact.
 
 Recurring schedule flow:
 
@@ -117,6 +125,8 @@ Expected evidence surface:
 - ClickHouse `verself.job_events` has a terminal row per execution.
 - ClickHouse `verself.vm_lease_evidence` has `lease_ready`,
   `exec_started`, and `lease_cleanup` rows for each host lease.
+- ClickHouse durable/golden events show durable hit/miss, golden VM hit/miss,
+  checkpoint result, manifest publish, and pointer promotion for the same run.
 - OTel traces include sandbox-rental worker spans plus vm-orchestrator
   lease/exec spans for the same execution.
 - [`VM Acquisition KPIs`](../../../../docs/architecture/vm-acquisition-kpis.md)

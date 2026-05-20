@@ -5,7 +5,7 @@ sit. Product direction lives in [`docs/product/future-state.md`](product/future-
 
 ## Product Surface
 
-What customers buy from `verself.sh`: sandbox compute on Firecracker, sold today as a Blacksmith.sh-style GitHub Actions runner replacement (`sandbox-rental-service`). Customer code runs in short-lived Firecracker VMs the customer rents per workflow run. The golden workspace and durable mount model is documented in [`docs/product/golden-environments.md`](product/golden-environments.md). Lambda-style workloads and persistent dev VMs are planned on the same isolation, billing, and telemetry substrate (see [`docs/product/future-state.md`](product/future-state.md)).
+What customers buy from `verself.sh`: sandbox compute on Firecracker, sold today as a Blacksmith.sh-style GitHub Actions runner replacement (`sandbox-rental-service`). Customer code runs in short-lived Firecracker VMs the customer rents per workflow run. The golden artifact model, including durable workspaces, declared durable mounts, and Firecracker VM snapshots, is documented in [`docs/product/golden-environments.md`](product/golden-environments.md). Lambda-style workloads and persistent dev VMs are planned on the same isolation, billing, and telemetry substrate (see [`docs/product/future-state.md`](product/future-state.md)).
 
 Verself does not run customer-authored applications as managed long-lived services. The sandbox products rent compute time; they do not host applications. There is no PaaS surface and no roadmap toward one.
 
@@ -77,9 +77,10 @@ Single-node is the default deployment — everything runs on one box with no rep
 Hard product requirement: everything self-hosted. Exceptions:
 
 - **Backups.** Target providers for service-owned recovery artifacts:
-  Backblaze B2, Cloudflare R2, AWS S3. Customer ZFS volumes and CI goldens are
-  excluded from backup pipelines; they are governed by the storage class
-  recovery policy in [`docs/architecture/data-handling.md`](architecture/data-handling.md).
+  Backblaze B2, Cloudflare R2, AWS S3. Customer ZFS volumes and CI golden
+  artifacts are excluded from backup pipelines; they are governed by the
+  storage class recovery policy in
+  [`docs/architecture/data-handling.md`](architecture/data-handling.md).
 - **Domain Registrar:** Cloudflare.
 - **Compute Provider:** Latitude.sh.
 - **Email Delivery:** Resend (outbound). Inbound self-hosted via Stalwart.

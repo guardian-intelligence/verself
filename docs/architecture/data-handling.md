@@ -50,16 +50,17 @@ The Smithy recovery model does not need to cover every byte:
 - `.tfstate`, SOPS bags, bootstrap keys, and first-host recovery material can
   stay in host/provisioning runbooks;
 - generated artifacts remain governed by generated-artifact policy;
-- CI goldens, package caches, Docker layer caches, and other acceleration state
-  are explicitly declared as rebuildable only when they appear in product
-  service semantics;
+- CI golden artifacts, package caches, Docker layer caches, and other
+  acceleration state are explicitly declared as rebuildable only when they
+  appear in product service semantics;
 - local temporary files and process-private scratch space remain outside this
   model.
 
 Customer ZFS volumes are encrypted at rest at the organization dataset
-boundary. ZFS goldens are `rebuildable_acceleration`. They are excluded from
-backup catalogs, provider backup jobs, and object-storage upload pipelines.
-Loss causes cold CI rebuilds and cache misses.
+boundary. CI golden artifacts are `rebuildable_acceleration`: durable zvol
+generations plus Firecracker vmstate/memory artifacts and their manifest. They
+are excluded from backup catalogs, provider backup jobs, and object-storage
+upload pipelines. Loss causes cold CI rebuilds and cache misses.
 
 ## State Classes
 
@@ -69,7 +70,7 @@ Loss causes cold CI rebuilds and cache misses.
 | `platform_authority` | PostgreSQL service databases, Zitadel, IAM, SpiceDB source relationships, Temporal persistence | C moderate/high, I high, A high | Native database backup, PITR where available, service-owned validation. |
 | `financial_truth` | TigerBeetle replicas, billing ledger-command rows, immutable billing documents | C moderate, I high, A high | Consensus replication preferred, deterministic reconciliation, strict validation. |
 | `governance_evidence` | API activity events, audit payloads, HMAC chains, deploy evidence, billing events | C moderate/high, I high, A moderate/high | Append-only backup or export, chain verification, manifest parity. |
-| `rebuildable_acceleration` | Golden CI workspaces and caches declared rebuildable, package caches, Docker layer caches | C moderate/high, I moderate, A low/moderate | No recovery-byte promise unless a product policy explicitly adds one. |
+| `rebuildable_acceleration` | Golden CI artifacts, durable workspaces and caches declared rebuildable, package caches, Docker layer caches | C moderate/high, I moderate, A low/moderate | No recovery-byte promise unless a product policy explicitly adds one. |
 | `public_or_reproducible` | Built binaries, generated OpenAPI, published docs, reproducible release artifacts | C low, I moderate/high, A moderate | Rebuild from repo or content-addressed artifact store. |
 
 ## Smithy Trait Package
@@ -404,7 +405,7 @@ backup promise.
 
 ```smithy
 @recoverySource(
-    id: "sandbox.github-goldens",
+    id: "sandbox.github-golden-artifacts",
     class: "rebuildable_acceleration",
     owner: "sandbox-rental-service",
     impact: {
@@ -425,15 +426,16 @@ backup promise.
     },
     mechanism: "rebuild"
 )
-structure SandboxGithubGoldensState {}
+structure SandboxGithubGoldenArtifactsState {}
 ```
 
-This is the classification for ZFS CI goldens in the initial design.
-ZFS snapshots and clones remain local lifecycle artifacts for seal, promotion,
-retention, pruning, and placement-affinity replication. Future non-rebuildable
-customer zvols require a separate `customer_mission_state` recovery source
-with a service-owned recovery mechanism; raw zvol backup is outside the
-default recovery model.
+This is the classification for CI golden artifacts. Durable ZFS snapshots and
+clones remain local lifecycle artifacts for seal, promotion, retention,
+pruning, and placement-affinity replication. Firecracker vmstate and memory
+artifacts are retained only through golden VM manifests. Future
+non-rebuildable customer zvols require a separate `customer_mission_state`
+recovery source with a service-owned recovery mechanism; raw zvol backup is
+outside the default recovery model.
 
 ## Internal Status Endpoint
 
@@ -613,8 +615,8 @@ recovery source exists.
 - Add `verself.recovery.v1` traits and shared status shapes.
 - Add a recovery catalog projection to the existing Smithy build.
 - Add validators for required fields and contradictory policy combinations.
-- Add declarations for `postgres.primary`, `postgres.billing`, rebuildable ZFS
-  goldens, and the first service-owned object source.
+- Add declarations for `postgres.primary`, `postgres.billing`, rebuildable
+  golden artifacts, and the first service-owned object source.
 
 ### Stage 2: Internal Status Endpoint
 

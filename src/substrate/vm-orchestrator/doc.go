@@ -14,11 +14,11 @@
 //     warm, then clone the substrate zvol and any composed toolchain image
 //     zvols the runner_class requests.
 //  3. Allocate a /30 TAP slot for the lease and create the Firecracker jail.
-//  4. Activate Firecracker by restoring a pre-control snapshot when one matches
-//     the prepared zvol layout and runtime ABI, otherwise cold boot. Snapshot
-//     cache refresh is a trusted post-promotion path, not lease acquisition.
-//  5. Initialize vm-bridge over a deterministic vsock control stream; LeaseInit
-//     applies per-lease network state, filesystem mounts, and wall clock.
+//  4. Activate Firecracker by restoring a compatible golden VM snapshot when
+//     one matches the prepared zvol layout and runtime ABI, otherwise cold boot.
+//  5. Initialize vm-bridge over a deterministic vsock control stream;
+//     AfterRestore or LeaseInit applies per-lease network state, filesystem
+//     mounts, runner bootstrap material, and wall clock.
 //  6. Mark the lease ready; StartExec waits for LeaseStateReady before sending
 //     guest work and then enforces the lease runtime concurrency cap.
 //  7. Stream guest logs, filesystem lifecycle events, and telemetry as host facts.

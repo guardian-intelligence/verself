@@ -1,99 +1,78 @@
-# Golden Environments And Durable Caches
+# Golden Artifacts, VM Snapshots, And Durable Caches
 
-Conceptually, the core product can be simplified as follows:
+Verself hosted runners accelerate CI by restoring each job from ordinary Linux
+filesystems and, when compatible, a Firecracker VM snapshot that already holds
+rebuildable process state from prior successful jobs. The public surface is the
+Verself runner label, the Verself checkout action, and optional durable-cache
+declarations. Customer workflows remain ordinary GitHub Actions YAML.
 
-1. You onboard, switch to our runner and our custom checkout action.
-2. You open a PR. You CI as normal.
-3. Your CI goes green, you merge, target branch updates. CI runs on target branch and goes green. We generate a golden zvol of the target branch. We take your CI VM's repo artifacts and set that as the golden zvol for the next checkout. If it went red, the golden zvol stays on the last green CI run.
-4. You open a new PR, it CIs but checkout is instant because we mount the entire repo instantly and all your migrations DB seeds, and so on, are already done. No more manual actions/cache per directory.
-5. You CI but you only execute tests, no scaffolding to get your repo setup.
-6. Your CI goes red, golden zvol stays where it is. You push some commits to your PR, we start from the golden zvol of the target branch.
-7. Every time CI on a branch goes green we snapshot the result as that branch's new golden zvol. Merging is not a separate promotion step — it triggers CI on the target branch like any other push, and the green snapshot becomes that branch's golden. 
+A golden artifact is the product-level aggregate for one compatible job shape:
+the workspace durable generation, declared durable-cache generations, root
+checkpoint identity, Firecracker `vmstate` and memory artifacts, and an
+immutable manifest that couples those pieces. `workspace` is the built-in
+durable cache mounted at the normal runner `_work` tree. The Verself checkout
+action reconciles it to the event commit before customer steps run. Manifest
+entries add more durable caches for paths outside `GITHUB_WORKSPACE`: compiler
+caches, package-manager caches, database data directories, Docker or BuildKit
+storage, generated SDK output, and other rebuildable directories.
 
-For repos with workflow yamls like 
+All durable caches and VM snapshots are rebuildable. Promotion is best-effort.
+The previous golden remains authoritative until a new generation set and VM
+manifest are checkpointed and promoted. Ambiguous checkpoint or seal results
+skip promotion.
 
-```
-   jobs:                                                                                                                                                  
-      test-node-20:                                                                                                                                       
-      test-node-22:                                                                                                                                       
-      lint:                                                                                                                                               
-      integration:                                                                                                                                        
-      build-docker:
-```
+The customer model is:
 
-- test-node-20: Node 20 + node_modules built against Node 20's ABI + jest/vitest cache. Some packages (sharp, better-sqlite3, anything with prebuilds)
-have different binaries per Node major, so this image genuinely differs from the Node 22 one.
-- test-node-22: same shape but on Node 22.
-- lint: Node + node_modules + .eslintcache + tsconfig.tsbuildinfo. No DB, no services. Smallest image in the set — and the one where the speedup vs. a
-cold run looks least dramatic, because lint scaffolding is already light.
-- integration: everything from test plus a running postgres with migrations and seed data, redis, anything else the suite touches. Heaviest image,
-biggest speedup multiplier.
-- build-docker: docker daemon, buildx layer cache, base image layers. None of the Node toolchain. Totally different disk shape.
+1. The repository switches to the Verself runner and checkout action.
+2. A pull request runs CI normally.
+3. After merge, CI runs on the target branch. When the target-branch run's
+   required jobs are green, Verself promotes one golden artifact per job shape.
+4. Future pull requests restore the target branch's latest compatible golden
+   artifact, then checkout reconciles `GITHUB_WORKSPACE` to the PR head.
+5. Failed, cancelled, non-promotable, and ambiguous runs leave the target
+   branch pointer on the last promoted artifact.
 
-We only promote the VM's GITHUB_WORKSPACE + durable volumes if *all* jobs go green on the commit to the trunk branch. A Bazel/npm/cache directory is allowed to be partially stale or corrupt. If it is bad, the tool should miss/rebuild. The cache is not semantic truth.
+For a workflow with separate jobs such as `test-node-20`, `test-node-22`,
+`lint`, `integration`, and `build-docker`, each job/matrix shape gets its own
+lineage. Node 20 and Node 22 differ because native package artifacts encode the
+Node ABI. `integration` commonly has the largest artifact because databases and
+local services are in declared durable caches. `build-docker` is a different
+shape because Docker and BuildKit layer state are unrelated to the Node test
+toolchain.
 
-All mounts are rebuildable. Promotion is best-effort previous golden remains authoritative ambiguous seal skips promotion. We will expose cache misses and warnings so customers can go in and debug their CI themselves when things fail.
+Promotion requires the protected target-branch run's required jobs to be
+green. A Bazel, npm, Docker, database, or generated-output cache may be stale
+or corrupt; consumers must miss and rebuild. Cache state is not semantic truth.
 
-golden zvol cache identity is the durable scope selected by sandbox-rental-service: it is keyed by org, repository, provider/provider repository ID, scope kind, scope ref, job shape, cache name, and trust class. The job shape is keyed by provider, workflow identity, called workflow identity, job identity, matrix key, runner class, guest architecture, platform image ID, kernel image ID, runner toolchain image ID, and cache spec hash. For GitHub PRs, `scope_ref` is the target/base branch ref; for branch pushes, it is the pushed branch ref. `workspace` is the reserved built-in cache name for `GITHUB_WORKSPACE`; declared durable mounts each get their own cache name and cache spec hash.
+The shorthand for GitHub pull-request lookup is `(organization, repository,
+target-branch, workflow-id, job-id, matrix-key)`, plus compatibility
+dimensions: runner class, guest architecture, platform/kernel/toolchain image
+IDs, cache spec hash, cache name, trust class, Firecracker ABI, exact durable
+generation set, and hook profile. Not every job has a matrix key. A workflow
+YAML edit creates a new lineage only when it changes a compatibility-affecting
+job or cache dimension.
 
-Current GitHub normalization: `workflow_identity` is the GitHub workflow name with `github-actions` as fallback, `job_identity` is the job name without a trailing matrix parenthetical, and `matrix_key` is the trailing parenthetical when present. The cache spec hash covers cache name, bind/mount policy, reconcile policy, and visible paths. `head_sha`, `tree_hash`, provider run ID, run attempt, and provider job ID are generation metadata used for checkout/reconciliation, promotion evidence, and fast-path retagging; they are not the durable scope key.
+`tree_hash` is metadata on generations and VM manifests. Checkout uses it to
+compute the workspace diff from the artifact tree to the event tree. Promotion
+may use it to retag an existing artifact when the target branch tree exactly
+matches an already-built candidate.
 
-The shorthand for GitHub PR workspace lookup is therefore `(organization, repository, target-branch, workflow-id, job-id, matrix-key)`, plus the compatibility dimensions that make unsafe reuse impossible: runner class, guest arch, platform/kernel/toolchain images, cache spec hash, cache name, and trust class. Our action's job is to go from our golden image (if it finds one) to make the working copy in `GITHUB_WORKSPACE` match the tree at the head SHA of the PR branch. 
+GitHub `services:` containers stay per-job. When a workflow declares
+`services: postgres:16`, GitHub starts a fresh service container for that job.
+The warm-state speedup applies to customer-managed services and data
+directories that live in the job VM and are declared as durable caches.
 
-Not every PR will have matrix-key. A workflow yaml edit is a non event -- if we have a zvol for that workflow job, then we have it. if not, then we don't, and if the edit gets merged in, we'll now have zvol for it for future PRs once CI passes.
+The customer-facing durable mount promise is:
 
-Tree-hash is metadata on the snapshot, used for two specific things:
-    a. At boot, we compute the diff between the snapshot's tree and the current tree, apply it as the "checkout" step.
-    b. At merge, if the post-merge tree on the target branch exactly matches a snapshot we have, we retag without re-running the workflow (the step 7 fast
-   path).
+> Any directory a CI job writes outside `GITHUB_WORKSPACE` can be declared as
+> durable. Verself mounts the latest trusted version before the job starts,
+> lets the job mutate it normally, and checkpoints the mounted volumes and
+> warm VM after success. Pull requests start from the target branch's last
+> green compatible artifact, and their writes cannot poison the target branch.
 
-On `services: ` -- when a customer writes `services: postgres:16`, GitHub starts a fresh container per job. We honor that as written. The snapshotted-postgres speedup applies to the customer's own setup scripts (the postgres they start and seed themselves) — not to GitHub's managed service containers. 
-
-Note: DB seeds, Docker layers, local services are not in GITHUB_WORKSPACE.
-
-The customer's mental model becomes: "my CI YAML stays exactly the same, the runner type changes, and the steps that used to take minutes now take  seconds because the work was already done." They don't learn a new caching API. They don't declare inputs. They don't tag things. The only Verself-specific surface is the checkout action.
-
-We can offer (in the future):
-
-1. An SDK to list golden zvols and get metadata and to create/delete them
-2. An SDK to spin up a VM with the ID of a zvol
-2a. SSH access to VMs running on our metal, gated by Pomerium.=
-3. An SDK to download a golden zvol
-
-All of the above can help with debugging.
-
-In addition to copying the entire repo, we also provide a durable mount API. The customer-facing promise:
-
-> Any directory your CI job writes outside GITHUB_WORKSPACE can be declared as durable. Verself
-> mounts the latest trusted version before the job starts, lets the job mutate it normally, then
-> snapshots it after success. Pull requests start from the target branch’s last green durable
-> state, but their writes cannot poison the target branch
-
-We can also provide a simple API to prevent certain files or directories from being part of the golden zvol. We can design that later as it requires care and, like most everything else we offer, it will have an SDK/CLI/HTTP API to our services.
-
-- Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement: customers point CI at Verself and workflows run on Verself Firecracker VMs for a 2–10x speedup. We dogfood it on every merge to main, comparing against Blacksmith.sh and GitHub Actions to verify we are faster.
-- Verself does not host customer applications. Customer code runs only inside short-lived sandboxes the customer rents (CI workflow runs today; Lambda-style invocations and persistent dev VMs later) on the same isolation, billing, and telemetry substrate.
-- The bootstrap CLI is a separate offering. It renders site artifacts onto operator-supplied Latitude.sh bare metal so an operator can stand up an independent Verself installation. Once deployed, that installation runs at its own domain under its own name and has no runtime coupling to verself.sh: there is no tenant relationship, no upstream control plane, no shared identity, no shared data. See `docs/verself-cli.md`.
-
-===
-
-Verself hosted runners accelerate CI by booting each job with ordinary Linux
-filesystems that already contain rebuildable state from prior successful jobs.
-The public surface is the Verself runner label, the Verself checkout action,
-and optional durable-cache declarations. Customer workflows remain ordinary
-GitHub Actions YAML.
-
-A golden environment is a set of durable cache generations selected for one
-job shape. `workspace` is the built-in durable cache mounted at the normal
-runner `_work` tree, and the Verself checkout action reconciles it to the
-event commit before customer steps run. Manifest entries add more durable
-caches for paths outside `GITHUB_WORKSPACE`: compiler caches, package-manager
-caches, database data directories, Docker or BuildKit storage, generated SDK
-output, and other rebuildable directories.
-
-All durable caches are rebuildable. Promotion is best-effort. The previous
-golden remains authoritative until a new generation is sealed and promoted.
-Ambiguous seal results skip promotion.
+Future debugging surfaces can list golden artifacts, inspect manifest metadata,
+invalidate artifacts, start a VM from an artifact ID, provide Pomerium-gated
+SSH into a debug VM, and export a manifest with its reusable storage refs.
 
 Customer zvols are encrypted at rest under the organization ZFS namespace
 before any guest-visible filesystem is created. ZFS snapshots and clones serve
@@ -159,27 +138,42 @@ provides mounted directories, not tool-specific cache APIs.
    platform image, trust class, and cache declaration identity from persisted
    GitHub state.
 3. The control plane selects the current compatible durable generation for each
-   cache scope.
+   cache scope and then looks for a golden VM manifest that references exactly
+   those generations plus a compatible Firecracker runtime ABI.
 4. sandbox-rental warms the org runtime for the selected quota and platform
    image refs before it asks vm-orchestrator to acquire a lease.
-5. vm-orchestrator prepares a fresh VM with static block devices for the root
-   disk, platform toolchains, workspace cache, and manifest caches.
-6. vm-bridge mounts those devices before the runner starts.
-7. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
-8. Customer steps execute normally and read or write cached paths as ordinary
+5. vm-orchestrator prepares the static block-device graph for the root disk,
+   platform toolchains, workspace cache, and manifest caches.
+6. On a golden VM hit, vm-orchestrator restores Firecracker from the manifest
+   and vm-bridge runs `AfterRestore` to rebind lease identity, clock, network,
+   host control, and runner bootstrap material.
+7. On a golden VM miss, vm-orchestrator cold boots the VM and vm-bridge runs
+   `LeaseInit` to mount filesystems and apply lease state.
+8. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
+9. Customer steps execute normally and read or write cached paths as ordinary
    directories.
-9. After the runner exits, sandbox-rental waits for the attempt-specific
+10. After the runner exits, sandbox-rental waits for the attempt-specific
    GitHub workflow job to reach `status=completed` and `conclusion=success`.
-   vm-bridge then attempts to seal each writable durable cache by syncing and
-   unmounting guest mounts.
-10. vm-orchestrator flushes, snapshots, clones, ZFS-promotes, and seals each
-   cache that the guest sealed cleanly.
-11. The service records committed generations observed from the host result.
-12. A protected target-branch workflow run promotes per-job, per-cache
-    generations only after the provider run's required jobs are green.
-13. Failed jobs, cancelled jobs, non-promotable trust contexts, and ambiguous
-    seals leave the current pointer unchanged. Successful non-promotable jobs
-    may retain a generation for debugging and later pruning.
+11. For promotable protected-branch success, vm-bridge runs
+   `BeforeGoldenSnapshot`, optional customer expunge hooks, and a guest sync
+   while mounts and warm processes are still present.
+12. vm-orchestrator checkpoints the running VM and snapshots the root,
+   workspace, and durable zvols as one candidate generation set and golden VM
+   manifest.
+13. vm-bridge then attempts to seal each writable durable cache by syncing and
+   unmounting guest mounts for ordinary durable lifecycle cleanup.
+14. vm-orchestrator clones, ZFS-promotes, and seals the checkpointed durable
+   snapshots into the generation namespace. If no golden VM checkpoint was
+   produced, the ordinary durable path snapshots the working zvol after guest
+   seal.
+15. The service records committed generations and the golden VM manifest
+   observed from the host result.
+16. A protected target-branch workflow run promotes per-job golden artifacts
+   only after the provider run's required jobs are green.
+17. Failed jobs, cancelled jobs, non-promotable trust contexts, ambiguous
+   checkpoints, and ambiguous seals leave the current pointer unchanged.
+   Successful non-promotable jobs may retain an artifact for debugging and
+   later pruning.
 
 A job can succeed while cache persistence is skipped. Cache persistence is an
 acceleration artifact, not a correctness requirement for CI.
@@ -269,6 +263,13 @@ There is no dynamic block-device attach path after guest boot. Mount
 availability is part of lease acquisition and guest initialization, before any
 customer process starts.
 
+The same rule applies on a golden VM restore. vm-orchestrator clones every zvol
+generation named by the golden VM manifest before `LoadSnapshot`, binds those
+devices into the jailer chroot with the manifest's drive IDs, and only then
+resumes the guest. A VM snapshot is a miss if any disk generation, drive ID,
+mount path, bind path, filesystem type, read/write flag, or runtime ABI does
+not match the manifest.
+
 Read-only runner toolchain images may still declare vm-bridge writable
 overlays for image-owned scratch paths. Those overlays are tmpfs and are not
 durable cache generations. They are only for paths that belong to the
@@ -294,12 +295,13 @@ else:
 ```
 
 vm-orchestrator waits for every `/dev/zvol/...` device, bind-mounts the block
-devices into the jailer chroot, configures Firecracker drives, starts the VM,
-and sends the mount manifest to vm-bridge over the guest control protocol.
-vm-bridge returns a per-filesystem mount result before the runner starts.
-Required `workspace` mount failures fail lease acquisition. Optional manifest
-cache mount failures are recorded as degraded cache state and the job continues
-without that cache.
+devices into the jailer chroot, configures Firecracker drives, and either
+restores the manifest's Firecracker snapshot or cold boots the VM. Restored VMs
+run `AfterRestore`; cold VMs receive the mount manifest over the guest control
+protocol through `LeaseInit`. vm-bridge returns a per-filesystem mount or
+restore result before the runner starts. Required `workspace` failures fail
+lease acquisition. Optional manifest cache failures are recorded as degraded
+cache state and the job continues without that cache.
 
 ## Guest Mounting
 
@@ -360,25 +362,41 @@ VERSELF_COMPOSED_ZVOL_MOUNTS=<all platform-composed zvol mount roots>
 
 ## Seal Semantics
 
-A seal is filesystem-level quiescence, not application-level quiescence.
-Verself does not call `pg_ctl`, SQLite checkpoint APIs, Docker APIs, Bazel APIs,
-or package-manager cleanup commands. The job owns any graceful application
-shutdown it requires.
+A durable seal is filesystem-level quiescence, not application-level
+quiescence. Golden VM checkpointing is the process-level capture path. Verself
+does not infer tool-specific health from PostgreSQL, SQLite, Docker, Bazel, or
+package-manager internals; customers can use snapshot hooks to prepare or
+expunge state before capture.
+
+Golden VM checkpoint procedure for promotable protected-branch success:
+
+1. Stop accepting new exec work for the lease.
+2. Confirm provider job terminal success without running platform lease
+   teardown.
+3. Run `BeforeGoldenSnapshot` in vm-bridge.
+4. Run optional customer expunge hooks.
+5. Issue `sync` in the guest.
+6. Pause Firecracker.
+7. Snapshot the root, workspace, and declared durable zvols that form the VM's
+   disk graph.
+8. Create Firecracker vmstate and memory snapshot artifacts.
+9. Publish one manifest that couples the VM snapshot to those exact zvol
+   snapshots.
 
 vm-bridge seal procedure for each writable volume:
 
 1. Stop accepting new exec work for the lease.
-2. Run normal runner/job cleanup already implied by the provider execution.
-3. Issue `sync` in the guest.
-4. Unmount bind targets for the volume in reverse mount order.
-5. Unmount the internal cache root.
-6. Return a sealed result only if every unmount succeeds.
+2. Issue `sync` in the guest.
+3. Unmount bind targets for the volume in reverse mount order.
+4. Unmount the internal cache root.
+5. Return a sealed result only if every unmount succeeds.
 
 vm-orchestrator commit procedure after guest seal succeeds:
 
 1. Flush the host block device.
-2. Snapshot the working zvol.
-3. Clone the working snapshot into the golden generation namespace.
+2. Use the checkpoint zvol snapshot when a golden VM checkpoint exists;
+   otherwise snapshot the working zvol.
+3. Clone the selected snapshot into the golden generation namespace.
 4. Promote the clone so the generation no longer depends on the ephemeral
    lease dataset.
 5. Create `@sealed` on the promoted generation.
@@ -392,8 +410,10 @@ and provider-non-success executions skip seal and commit. A successful
 non-promotable execution may still commit a retained generation, but it cannot
 advance a protected branch current pointer.
 
-Ambiguous seal states skip promotion:
+Ambiguous checkpoint or seal states skip promotion:
 
+- Firecracker pause, memory snapshot, vmstate snapshot, or manifest publish
+  fails.
 - Guest control socket disappears before a seal result.
 - `sync` or unmount times out.
 - A bind target or root mount returns busy.
@@ -402,12 +422,15 @@ Ambiguous seal states skip promotion:
 - Host journal recovery cannot prove a terminal committed phase.
 - The GitHub job is cancelled or does not conclude `success`.
 
-The job result does not change because of ambiguous cache seal. The previous
-current generation remains authoritative.
+The job result does not change because of ambiguous checkpoint or cache seal.
+The previous current artifact remains authoritative.
 
 ## Database Directories
 
-Database files are ordinary durable cache contents.
+Database files are ordinary durable cache contents. A golden VM snapshot can
+also preserve the running database process and guest-local client connection
+state when the database was started by the customer's job and its backing data
+directory is part of the manifest's disk graph.
 
 Customers should persist database directories, not individual files. SQLite WAL
 mode writes sidecar files next to the main database. PostgreSQL, MySQL, Redis,
@@ -485,6 +508,7 @@ and aarch64 never share cache generations.
 ```text
 durable_scope
   durable_scope_id
+  org_id
   repository_id
   provider
   provider_repository_id
@@ -511,6 +535,7 @@ durable_operation
   durable_scope_id
   source_generation_id
   source_snapshot_ref
+  source_skip_reason
   candidate_generation_id
   mount_name
   internal_mount_path
@@ -561,6 +586,7 @@ durable_generation
   promotion_eligible
   state
   zfs_snapshot_ref
+  zfs_snapshot_guid
   used_bytes
   written_bytes
   sealed_at
@@ -607,21 +633,175 @@ where durable_scope_id = :durable_scope_id
 If zero rows are affected, another operation won the race. The candidate is
 retained or pruned by retention policy.
 
+### Golden VM Operation
+
+```text
+golden_vm_operation
+  operation_id
+  execution_id
+  attempt_id
+  allocation_id
+  org_id
+  repository_id
+  provider
+  provider_repository_id
+  scope_kind
+  scope_ref
+  job_shape_id
+  trust_class
+  source_generation_set_hash
+  candidate_golden_vm_snapshot_id
+  requested_at
+  checkpoint_started_at
+  checkpointed_at
+  result_recorded_at
+  final_state
+  failure_reason
+```
+
+`final_state` values:
+
+```text
+requested
+checkpointed
+committed
+skipped
+failed
+```
+
+A golden VM operation spans the whole VM checkpoint. It is separate from
+`durable_operation`, which remains per mount. The operation records the source
+generation set observed before lease acquisition and the candidate VM snapshot
+ID the service expects to publish if checkpointing succeeds.
+
+### Golden VM Snapshot
+
+```text
+golden_vm_snapshot
+  golden_vm_snapshot_id
+  operation_id
+  org_id
+  repository_id
+  provider
+  provider_repository_id
+  scope_kind
+  scope_ref
+  job_shape_id
+  trust_class
+  generation_set_hash
+  root_snapshot_ref
+  root_snapshot_guid
+  snapshot_key
+  vmstate_artifact_ref
+  memory_artifact_ref
+  state_bytes
+  memory_bytes
+  drive_manifest_hash
+  mount_manifest_hash
+  firecracker_abi_hash
+  host_abi_hash
+  network_model_hash
+  vsock_model_hash
+  clock_model_hash
+  vmproto_version
+  after_restore_hook_version
+  before_snapshot_hook_version
+  warm_profile_hash
+  vcpus
+  memory_mib
+  provider_run_id
+  provider_run_attempt
+  provider_job_id
+  head_sha
+  tree_hash
+  state
+  created_at
+  last_used_at
+  expires_at
+```
+
+`generation_set_hash` is computed from the exact durable generations
+referenced by the manifest, including cache name, generation ID, ZFS snapshot
+ref, ZFS GUID, drive ID, mount path, bind paths, filesystem type, read-only
+flag, and required flag. A restore hit requires every referenced generation and
+image snapshot to be present locally or staged before `LoadSnapshot`.
+
+`snapshot_key` is the host/product compatibility digest used to bind the
+Firecracker artifacts to the exact disk graph and runtime ABI. It is unique for
+the manifest. Provider run ID, run attempt, provider job ID, head SHA, and
+tree hash are evidence and checkout metadata, not reusable identity.
+
+`state` values:
+
+```text
+candidate
+current
+retained
+invalidated
+prunable
+pruned
+```
+
+### Golden VM Snapshot Generation
+
+```text
+golden_vm_snapshot_generation
+  golden_vm_snapshot_id
+  durable_scope_id
+  durable_generation_id
+  cache_name
+  zfs_snapshot_ref
+  zfs_snapshot_guid
+  drive_id
+  mount_path
+  bind_paths_json
+  fs_type
+  read_only
+  required
+  sort_order
+```
+
+This join table is the retention and debugging boundary for zvol dependencies.
+A current golden VM snapshot pins every durable generation named here. The
+manifest hash is derived from the canonical ordered rows; retention never
+infers dependencies by parsing opaque artifact blobs.
+
+### Golden VM Current Pointer
+
+```text
+golden_vm_current_pointer
+  org_id
+  repository_id
+  provider
+  provider_repository_id
+  scope_kind
+  scope_ref
+  job_shape_id
+  trust_class
+  current_golden_vm_snapshot_id
+  promoted_by_operation_id
+  promoted_at
+```
+
+The pointer advances only after the protected provider run's required job set
+is green and the candidate manifest was published atomically. Provider run ID,
+attempt, job ID, and head SHA are evidence on the candidate, not reusable
+identity. Promotion is compare-and-swap against the source
+`generation_set_hash` observed before lease acquisition.
+
 ### Host Durable Journal
 
 ```text
 host_durable_journal
   operation_id
-  host_id
   lease_id
   mount_name
   phase
   source_dataset_ref
   working_dataset_ref
   sealed_dataset_ref
-  error_code
   error_message
-  recorded_at
+  recorded_at_unix_nano
 ```
 
 Every host mutation has an operation ID before the mutation starts and a
@@ -629,6 +809,29 @@ journal row after it finishes. This table belongs to vm-orchestrator's local
 host state database. The service database records observed durable operations
 and generations after terminal host phases. PostgreSQL locks are not held
 across ZFS operations.
+
+### Host Golden VM Journal
+
+```text
+host_golden_vm_journal
+  journal_seq
+  operation_id
+  checkpoint_id
+  lease_id
+  phase
+  snapshot_key
+  root_dataset_ref
+  root_snapshot_ref
+  state_artifact_ref
+  memory_artifact_ref
+  error_message
+  recorded_at_unix_nano
+```
+
+The host golden VM journal records checkpoint phases that span the whole VM.
+It belongs to vm-orchestrator's local host state database. It is separate from
+`host_durable_journal` because a VM checkpoint couples Firecracker artifacts,
+the root disk, and all mounted durable zvols rather than one mount.
 
 ## Scope Identity
 
@@ -662,6 +865,27 @@ different Node versions, Python versions, CPU architecture, service topology,
 or runner class naturally receive different scopes because their job identity,
 matrix key, runner class, platform image, or cache spec hash
 differs.
+
+Golden VM snapshots add compatibility dimensions on top of durable scope
+identity:
+
+```text
+exact durable generation set
+root substrate snapshot ref/GUID
+drive manifest hash
+mount manifest hash
+Firecracker ABI hash
+vm-bridge/vmproto version
+after-restore hook version
+before-snapshot hook version
+warm profile hash
+vCPU count
+memory size
+```
+
+Provider run ID, run attempt, provider job ID, lease ID, TAP name, guest
+address, and PR head SHA are not reusable identity. They are replaced or
+reconciled after restore.
 
 ## CPU Architecture
 
@@ -706,7 +930,9 @@ set is observed green. The promotion batch is derived from GitHub workflow run
 and job state. Each job's durable caches still promote independently by durable
 scope CAS. If a job has three caches and only two seal cleanly, the two sealed
 caches may promote and the ambiguous cache remains on its previous current
-generation.
+generation. A golden VM current pointer advances only when the VM checkpoint
+manifest was published and all durable generations referenced by the manifest
+are committed.
 
 ### Pull Requests
 
@@ -746,6 +972,8 @@ accepted without working dataset      -> failed
 working dataset without sealed result -> skipped and destroy working dataset
 sealed dataset without service row     -> record committed or retain orphan by policy
 current pointer to missing snapshot    -> platform invariant violation
+published VM manifest with missing artifact -> platform invariant violation
+checkpoint artifact without service row -> retain orphan for recovery or destroy by policy
 ```
 
 Destroying orphan working datasets is allowed only after journal reconciliation
@@ -754,10 +982,12 @@ proves they are not referenced by a live lease or a committed generation.
 ### Retention Race
 
 Retention never destroys a generation referenced by `durable_current_pointer`,
-a running `durable_operation.source_generation_id`, a retained debug pin, or a
-sealed generation whose promotion decision is still pending. Retention reads
-references and destroys through vm-orchestrator-owned host mutation, not by
-service-side shell commands.
+`golden_vm_snapshot_generation`, a running `durable_operation.source_generation_id`,
+a retained debug pin, or a sealed generation whose promotion decision is still
+pending. Retention reads references and destroys through vm-orchestrator-owned
+host mutation, not by service-side shell commands. Firecracker vmstate and
+memory artifacts follow the same root rule: a current golden VM manifest pins
+its artifacts.
 
 ### Org Storage Quota
 
@@ -790,10 +1020,11 @@ identity and CAS.
 Generic CI jobs are secretless. Durable caches are readable by later jobs in
 compatible scopes, including PR jobs when policy allows reading the target
 branch's secretless current generation. Customers must not store secrets in
-durable caches.
+durable caches or golden VM memory.
 
-The durable-cache design does not implement content-based secret tainting.
-The security model relies on lane separation:
+The durable-cache and VM-snapshot design does not implement content-based
+secret tainting. The security model relies on lane separation and explicit
+snapshot hooks:
 
 - Generic build/test CI does not receive repository, organization, or
   environment secrets.
@@ -802,6 +1033,10 @@ The security model relies on lane separation:
 - OIDC or JWT credential exchange for trusted lanes produces separate trust
   scopes.
 - Fork PR jobs cannot promote target branch cache generations.
+- `BeforeGoldenSnapshot` and customer expunge hooks provide the supported
+  surface for deleting state before a warm VM is published.
+- `AfterRestore` replaces per-run bootstrap material before customer work is
+  admitted to the restored VM.
 
 Mount hardening:
 
@@ -836,19 +1071,28 @@ The same ZFS lifecycle applies to `workspace` and manifest caches:
 clone source snapshot or create empty zvol
 attach as Firecracker block device
 mount in guest
+restore or boot VM
+run workload
+checkpoint VM while mounts are still present
+snapshot root/workspace/durable zvols for golden VM manifest
 seal in guest
 flush host block device
-snapshot working dataset
-clone into generation namespace
+select checkpoint snapshot or snapshot working dataset
+clone selected snapshot into generation namespace
 promote clone
 snapshot @sealed
 record service generation
-CAS promote current pointer
+CAS promote durable and golden VM pointers
 ```
 
 Snapshots and clones are local lifecycle artifacts. Retention and pruning
 destroy unreferenced datasets through vm-orchestrator; they do not enqueue,
 upload, or catalog backup copies of customer zvols.
+
+Firecracker vmstate and memory artifacts are stored outside ZFS dataset
+lineage and referenced by the golden VM manifest. Retention treats the manifest
+as the root: it must not delete a VM artifact or any zvol generation named by a
+current manifest.
 
 No `zfs receive -F` or rollback-style overwrite is used to resolve conflicts.
 Conflicts are represented by pointer CAS results and retention metadata.
@@ -874,6 +1118,13 @@ durable.cache.promote
 durable.cache.retain
 durable.cache.prune
 durable.cache.reconcile
+golden.vm.lookup
+golden.vm.restore
+golden.vm.after_restore
+golden.vm.before_snapshot
+golden.vm.checkpoint
+golden.vm.publish
+golden.vm.promote
 ```
 
 Expected durable-cache sequence for a mounted successful protected-branch run:
@@ -934,10 +1185,23 @@ trace_id
 span_id
 ```
 
+Golden VM events additionally carry:
+
+```text
+golden_vm_snapshot_id
+generation_set_hash
+snapshot_key
+activation_mode
+vmstate_artifact_ref
+memory_artifact_ref
+state_bytes
+memory_bytes
+```
+
 Customer debugging surfaces show cache hit or miss, selected source generation,
-mount misses, seal result, commit result, promotion result, and retention state.
-Cache misses are expected operational states and should not require support
-access to diagnose.
+mount misses, golden VM hit or miss, checkpoint result, seal result, commit
+result, promotion result, and retention state. Cache misses are expected
+operational states and should not require support access to diagnose.
 
 ## References
 
@@ -949,5 +1213,7 @@ access to diagnose.
   `src/substrate/vm-orchestrator/AGENTS.md`,
   `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`, and
   `src/substrate/vm-orchestrator/proto/v1/vm_service.proto`.
+- Firecracker snapshot behavior:
+  <https://github.com/firecracker-microvm/firecracker/blob/main/docs/snapshotting/snapshot-support.md>
 - GitHub Actions variables and `GITHUB_WORKSPACE`:
   <https://docs.github.com/en/actions/reference/workflows-and-actions/variables>

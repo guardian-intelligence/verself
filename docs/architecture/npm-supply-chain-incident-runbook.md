@@ -9,13 +9,13 @@ Open an incident record with:
 - incident ID and UTC activation time;
 - upstream advisory URLs, maintainer issues, registry entries, and threat-intel reports;
 - affected package selectors, version ranges, tarball hashes, file indicators, process indicators, network indicators, and first known malicious publish time;
-- impacted surfaces: local developer workspaces, generic CI, trusted deploy lanes, Verdaccio cache, Bazel external repositories, golden zvols, host bootstrap tools, customer workload images, and published packages.
+- impacted surfaces: local developer workspaces, generic CI, trusted deploy lanes, Verdaccio cache, Bazel external repositories, golden artifacts, host bootstrap tools, customer workload images, and published packages.
 
 Declare an install freeze for Node workspaces until scope is known. During the freeze:
 
 - no `vp add`, `vp update`, `vp install`, `pnpm install`, `npm install`, `npm ci`, `npx`, `pnpm dlx`, or `vp dlx` from developer workstations or CI;
 - no deploy promotion from a workflow that refreshed Node dependencies after the incident window opened;
-- no golden zvol promotion from branch/job/matrix keys whose setup path could have executed the affected package set;
+- no golden artifact promotion from branch/job/matrix keys whose setup path could have executed the affected package set;
 - no Verdaccio upstream fetches for scopes in the affected package set.
 
 ## Evidence Preservation
@@ -27,7 +27,7 @@ Preserve suspected environments before cleanup. Capture immutable copies of:
 - package manager store entries for affected tarballs;
 - CI run metadata, process logs, network logs, and environment-secret injection logs;
 - Verdaccio storage metadata and cached tarballs for affected packages;
-- golden zvol identifiers for workflows that ran after the malicious publish window.
+- golden artifact identifiers for workflows that ran after the malicious publish window.
 
 Do not delete caches, node modules, Verdaccio packages, or zvols until the evidence copy exists. The cleanup step is separate from the evidence step.
 
@@ -66,7 +66,7 @@ For `unresolved`, do not rotate credentials. Record the negative evidence and cl
 
 For `resolved`, remove the affected package versions from the lockfile and Verdaccio cache, rebuild from known-good lock input, and keep the install freeze until a clean install produces ClickHouse evidence.
 
-For `executed-unprivileged`, rotate credentials that were present on the machine outside the workflow environment, including `~/.npmrc`, local GitHub credentials, local cloud credentials, and any operator profile loaded into the shell. Invalidate the runner filesystem and related golden zvols.
+For `executed-unprivileged`, rotate credentials that were present on the machine outside the workflow environment, including `~/.npmrc`, local GitHub credentials, local cloud credentials, and any operator profile loaded into the shell. Invalidate the runner filesystem and related golden artifacts.
 
 For `executed-privileged`, revoke or roll every credential reachable from the process environment or local filesystem:
 
@@ -91,15 +91,18 @@ Quarantine the mirror before cleanup:
 
 The hosted mirror is a containment boundary. Direct registry fallback in `.npmrc` is an incident exception and must be reverted before merge.
 
-## Golden Zvol Recovery
+## Golden Artifact Recovery
 
-Golden state can preserve malicious node modules, package manager stores, Bazel external repositories, and developer tool caches. For every affected workflow tuple `(organization, project, repo, target-branch, workflow-id, job-id, matrix-key)`:
+Golden state can preserve malicious node modules, package manager stores,
+Bazel external repositories, developer tool caches, warm process memory, and
+local service state. For every affected workflow tuple `(organization, project,
+repo, target-branch, workflow-id, job-id, matrix-key)`:
 
-- mark branch and pull-request golden volumes produced after the malicious publish window as untrusted;
+- mark branch and pull-request golden artifacts produced after the malicious publish window as untrusted;
 - stop promotion for ambiguous branch/job/matrix tuples;
-- roll the target branch back to the last green golden volume before the incident window, or force a cold rebuild from a clean lockfile;
-- delete PR-derived golden volumes after evidence capture because PR writes must not poison target-branch state;
-- record the invalidated zvol IDs and replacement zvol IDs in the incident record.
+- roll the target branch back to the last green golden artifact before the incident window, or force a cold rebuild from a clean lockfile;
+- delete PR-derived golden artifacts after evidence capture because PR writes must not poison target-branch state;
+- record the invalidated artifact IDs and replacement artifact IDs in the incident record.
 
 ## Reopening Criteria
 
@@ -111,7 +114,7 @@ Resume normal work only when all of these are true:
 - privileged workflows are gated by protected refs and GitHub Environments;
 - `id-token: write` exists only on jobs with an explicit OIDC trust policy and a matching external allowlist;
 - Verdaccio cache has no malicious tarballs for the advisory set;
-- affected golden zvols have been invalidated or replaced;
+- affected golden artifacts have been invalidated or replaced;
 - credential rotations are complete for every `executed-privileged` or `published` environment;
 - targeted ClickHouse queries show clean deploy, dependency resolution, and install verification evidence.
 
