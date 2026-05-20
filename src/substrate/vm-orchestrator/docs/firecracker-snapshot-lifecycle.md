@@ -136,6 +136,9 @@ the Verself manifest contract:
 - Snapshot creation requires a paused microVM.
 - Firecracker writes the VM state file and guest memory file; block-device
   contents are caller-managed and must be snapshotted by vm-orchestrator.
+- The pinned Firecracker `LoadSnapshot` request receives per-lease TAP
+  rebinding through `network_overrides`; vm-bridge restore hooks own clock
+  correction and host control reconnection.
 - Guest network connections and open vsock connections are not reusable across
   a restored Firecracker process. `AfterRestore` reconnects host control and
   rebinds per-lease network state.
