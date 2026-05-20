@@ -115,7 +115,10 @@ Bazel-built substrate input bundle, rebuilds the substrate ext4 when needed,
 and atomically stages
 `/var/lib/verself/guest-images/{substrate.ext4,vmlinux,...}` before the daemon
 starts. The poststart `seed-catalog` task then materializes those staged files
-into ZFS image zvols.
+into ZFS image zvols with content-derived `vs:source_digest` metadata.
+Lease-time org image materialization addresses encrypted org-local copies by
+that digest, so a new substrate image is received before the lease root is
+created while older active clones keep their existing origin.
 
 This makes additive vm-bridge fields, snapshot hook changes, and guest
 after-restore behavior deploy with the daemon revision that expects them.

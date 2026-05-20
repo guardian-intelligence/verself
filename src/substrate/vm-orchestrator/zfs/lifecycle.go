@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 const (
 	Timeout                   = 30 * time.Second
 	DurableVolumeNominalBytes = uint64(1 << 40)
+	sourceDigestProperty      = "vs:source_digest"
 )
 
 type StorageNamespace struct {
@@ -294,7 +296,18 @@ func (l *VolumeLifecycle) EnsureOrgImage(ctx context.Context, orgID string, imag
 	if !sourceExists {
 		return Snapshot{}, fmt.Errorf("image snapshot %s does not exist", source.String())
 	}
-	dataset := filepath.ToSlash(filepath.Join(l.roots.orgImageRoot(orgID), image.Ref()))
+	sourceDigest, err := l.ops.ZFSGetProperty(ctx, source.String(), sourceDigestProperty)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("read source image digest %s: %w", source.String(), err)
+	}
+	if sourceDigest == "" {
+		return Snapshot{}, fmt.Errorf("image snapshot %s is missing %s", source.String(), sourceDigestProperty)
+	}
+	orgImageName, err := orgImageDatasetName(image.Ref(), sourceDigest)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	dataset := filepath.ToSlash(filepath.Join(l.roots.orgImageRoot(orgID), orgImageName))
 	target := Snapshot{dataset: dataset, name: readySnapshot}
 	lock := orgImageLock(orgID, image.Ref())
 	lock.Lock()
@@ -303,12 +316,20 @@ func (l *VolumeLifecycle) EnsureOrgImage(ctx context.Context, orgID string, imag
 	if exists, err := l.ops.ZFSSnapshotExists(ctx, target.String()); err != nil {
 		return Snapshot{}, err
 	} else if exists {
-		if err := l.AssertEncryptedDataset(ctx, dataset, l.roots.orgRoot(orgID)); err != nil {
-			return Snapshot{}, err
+		targetDigest, err := l.ops.ZFSGetProperty(ctx, target.String(), sourceDigestProperty)
+		if err != nil {
+			return Snapshot{}, fmt.Errorf("read org image digest %s: %w", target.String(), err)
 		}
-		return target, nil
-	}
-	if exists, err := l.ops.ZFSDatasetExists(ctx, dataset); err != nil {
+		if targetDigest == sourceDigest {
+			if err := l.AssertEncryptedDataset(ctx, dataset, l.roots.orgRoot(orgID)); err != nil {
+				return Snapshot{}, err
+			}
+			return target, nil
+		}
+		if err := l.ops.ZFSDestroyRecursive(ctx, dataset); err != nil {
+			return Snapshot{}, fmt.Errorf("destroy stale org image %s: %w", dataset, err)
+		}
+	} else if exists, err := l.ops.ZFSDatasetExists(ctx, dataset); err != nil {
 		return Snapshot{}, err
 	} else if exists {
 		if err := l.ops.ZFSDestroyRecursive(ctx, dataset); err != nil {
@@ -323,6 +344,10 @@ func (l *VolumeLifecycle) EnsureOrgImage(ctx context.Context, orgID string, imag
 		return Snapshot{}, err
 	}
 	if err := l.ops.ZFSSetProperty(ctx, target.String(), "vs:image_ref", image.Ref()); err != nil {
+		_ = l.ops.ZFSDestroyRecursive(context.Background(), dataset)
+		return Snapshot{}, err
+	}
+	if err := l.ops.ZFSSetProperty(ctx, target.String(), sourceDigestProperty, sourceDigest); err != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), dataset)
 		return Snapshot{}, err
 	}
@@ -476,7 +501,7 @@ func (l *VolumeLifecycle) Seed(ctx context.Context, image Image, spec SeedSpec) 
 	if err != nil {
 		return SeedResult{}, err
 	}
-	currentDigest, _ := l.ops.ZFSGetProperty(ctx, image.Snapshot().String(), "vs:source_digest")
+	currentDigest, _ := l.ops.ZFSGetProperty(ctx, image.Snapshot().String(), sourceDigestProperty)
 	if currentDigest != "" && currentDigest == sourceDigest {
 		return SeedResult{Image: image, Snapshot: image.Snapshot(), Outcome: SeedOutcomeUpToDate, SourceDigest: sourceDigest, SeededAt: time.Now().UTC()}, nil
 	}
@@ -505,7 +530,7 @@ func (l *VolumeLifecycle) Seed(ctx context.Context, image Image, spec SeedSpec) 
 	if err != nil {
 		return SeedResult{}, err
 	}
-	if err := l.ops.ZFSSnapshot(ctx, staging, readySnapshot, map[string]string{"vs:source_digest": sourceDigest}); err != nil {
+	if err := l.ops.ZFSSnapshot(ctx, staging, readySnapshot, map[string]string{sourceDigestProperty: sourceDigest}); err != nil {
 		return SeedResult{}, err
 	}
 
@@ -548,11 +573,26 @@ func seedDigest(spec SeedSpec) (string, error) {
 	h := sha256.New()
 	_, _ = fmt.Fprintf(h, "%s\x00%d\x00%s\x00%s\x00", spec.Strategy, spec.SizeBytes, spec.VolBlockSize, spec.FilesystemLabel)
 	if spec.Strategy == SeedStrategyDDFromFile {
-		info, err := os.Stat(spec.SourcePath)
+		sourcePath := strings.TrimSpace(spec.SourcePath)
+		if sourcePath == "" {
+			return "", fmt.Errorf("seed source path is required")
+		}
+		source, err := os.Open(sourcePath)
 		if err != nil {
 			return "", err
 		}
-		_, _ = fmt.Fprintf(h, "%s\x00%d\x00%d", spec.SourcePath, info.Size(), info.ModTime().UnixNano())
+		defer func() { _ = source.Close() }()
+		info, err := source.Stat()
+		if err != nil {
+			return "", err
+		}
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("seed source path is not a regular file: %s", sourcePath)
+		}
+		_, _ = fmt.Fprintf(h, "source-content\x00%d\x00", info.Size())
+		if _, err := io.Copy(h, source); err != nil {
+			return "", err
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -589,4 +629,23 @@ func orgImageLock(orgID, imageRef string) *sync.Mutex {
 
 func zvolDevicePath(dataset string) string {
 	return "/dev/zvol/" + strings.Trim(dataset, "/")
+}
+
+func orgImageDatasetName(imageRef, sourceDigest string) (string, error) {
+	imageRef = strings.TrimSpace(imageRef)
+	sourceDigest = strings.ToLower(strings.TrimSpace(sourceDigest))
+	name := imageRef + "-" + sourceDigest
+	if len(name) > 128 {
+		sum := sha256.Sum256([]byte(imageRef + "\x00" + sourceDigest))
+		digest := hex.EncodeToString(sum[:16])
+		maxPrefix := 128 - 1 - len(digest)
+		if len(imageRef) > maxPrefix {
+			imageRef = imageRef[:maxPrefix]
+		}
+		name = imageRef + "-" + digest
+	}
+	if !IsValidRef(name) {
+		return "", fmt.Errorf("org image dataset name is invalid: %s", name)
+	}
+	return name, nil
 }

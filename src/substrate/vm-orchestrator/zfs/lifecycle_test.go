@@ -3,21 +3,26 @@ package zfs
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type lifecycleOps struct {
 	ensures  []string
 	clones   []string
 	creates  []string
+	destroys []string
 	sets     []string
 	mkfs     []string
 	receives []string
 	usedErr  error
 
-	datasets  map[string]bool
-	snapshots map[string]bool
+	datasets   map[string]bool
+	snapshots  map[string]bool
+	properties map[string]string
 }
 
 func (o *lifecycleOps) ZFSClone(_ context.Context, snapshot, target, _ string) error {
@@ -31,7 +36,20 @@ func (o *lifecycleOps) ZFSSnapshot(context.Context, string, string, map[string]s
 
 func (o *lifecycleOps) ZFSDestroy(context.Context, string) error { return nil }
 
-func (o *lifecycleOps) ZFSDestroyRecursive(context.Context, string) error { return nil }
+func (o *lifecycleOps) ZFSDestroyRecursive(_ context.Context, dataset string) error {
+	o.destroys = append(o.destroys, dataset)
+	for child := range o.datasets {
+		if child == dataset || strings.HasPrefix(child, dataset+"/") {
+			delete(o.datasets, child)
+		}
+	}
+	for snapshot := range o.snapshots {
+		if strings.HasPrefix(snapshot, dataset+"@") || strings.HasPrefix(snapshot, dataset+"/") {
+			delete(o.snapshots, snapshot)
+		}
+	}
+	return nil
+}
 
 func (o *lifecycleOps) ZFSCreateEncryptedFilesystem(_ context.Context, dataset string, _ []byte) error {
 	if o.datasets == nil {
@@ -67,11 +85,25 @@ func (o *lifecycleOps) ZFSDatasetExists(_ context.Context, dataset string) (bool
 
 func (o *lifecycleOps) ZFSSetProperty(_ context.Context, dataset, key, value string) error {
 	o.sets = append(o.sets, dataset+" "+key+"="+value)
+	if o.properties == nil {
+		o.properties = map[string]string{}
+	}
+	o.properties[propertyKey(dataset, key)] = value
 	return nil
 }
 
 func (o *lifecycleOps) ZFSGetProperty(_ context.Context, target, key string) (string, error) {
+	if o.properties != nil {
+		if value, ok := o.properties[propertyKey(target, key)]; ok {
+			return value, nil
+		}
+	}
 	switch key {
+	case sourceDigestProperty:
+		if strings.HasPrefix(target, "pool/images/") {
+			return "aaaaaaaa", nil
+		}
+		return "", nil
 	case "encryption":
 		return "aes-256-gcm", nil
 	case "encryptionroot":
@@ -163,11 +195,144 @@ func TestPrepareSubstrateCloneEnsuresLeaseDatasetParent(t *testing.T) {
 	if got, want := ops.ensures[0], "pool/orgs/org_a/workloads/lease-a"; got != want {
 		t.Fatalf("ensured dataset = %q, want %q", got, want)
 	}
-	if got, want := ops.receives[0], "pool/images/substrate@ready -> pool/orgs/org_a/images/substrate"; got != want {
+	if got, want := ops.receives[0], "pool/images/substrate@ready -> pool/orgs/org_a/images/substrate-aaaaaaaa"; got != want {
 		t.Fatalf("receive = %q, want %q", got, want)
 	}
-	if got, want := ops.clones[0], "pool/orgs/org_a/images/substrate@ready -> pool/orgs/org_a/workloads/lease-a/root"; got != want {
+	if !containsString(ops.sets, "pool/orgs/org_a/images/substrate-aaaaaaaa@ready vs:source_digest=aaaaaaaa") {
+		t.Fatalf("org image source digest was not set: %#v", ops.sets)
+	}
+	if got, want := ops.clones[0], "pool/orgs/org_a/images/substrate-aaaaaaaa@ready -> pool/orgs/org_a/workloads/lease-a/root"; got != want {
 		t.Fatalf("clone = %q, want %q", got, want)
+	}
+}
+
+func TestEnsureOrgImageReusesMatchingDigest(t *testing.T) {
+	roots := Roots{Pool: "pool", ImageDataset: "images", GoldenDataset: "goldens", WorkloadDataset: "workloads"}
+	ops := &lifecycleOps{
+		datasets: map[string]bool{
+			"pool/orgs/org_a/images/substrate-aaaaaaaa": true,
+		},
+		snapshots: map[string]bool{
+			"pool/orgs/org_a/images/substrate-aaaaaaaa@ready": true,
+		},
+		properties: map[string]string{
+			propertyKey("pool/images/substrate@ready", sourceDigestProperty):                     "aaaaaaaa",
+			propertyKey("pool/orgs/org_a/images/substrate-aaaaaaaa@ready", sourceDigestProperty): "aaaaaaaa",
+		},
+	}
+	lifecycle := NewVolumeLifecycle(roots, ops, nil)
+	image, err := NewImage(roots, "substrate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := lifecycle.EnsureOrgImage(context.Background(), "org_a", image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := snapshot.String(), "pool/orgs/org_a/images/substrate-aaaaaaaa@ready"; got != want {
+		t.Fatalf("snapshot = %q, want %q", got, want)
+	}
+	if len(ops.receives) != 0 {
+		t.Fatalf("received despite matching digest: %#v", ops.receives)
+	}
+	if len(ops.destroys) != 0 {
+		t.Fatalf("destroyed despite matching digest: %#v", ops.destroys)
+	}
+}
+
+func TestEnsureOrgImageLeavesOlderDigestCopyInPlace(t *testing.T) {
+	roots := Roots{Pool: "pool", ImageDataset: "images", GoldenDataset: "goldens", WorkloadDataset: "workloads"}
+	ops := &lifecycleOps{
+		datasets: map[string]bool{
+			"pool/orgs/org_a/images/substrate-aaaaaaaa": true,
+		},
+		snapshots: map[string]bool{
+			"pool/orgs/org_a/images/substrate-aaaaaaaa@ready": true,
+		},
+		properties: map[string]string{
+			propertyKey("pool/images/substrate@ready", sourceDigestProperty):                     "bbbbbbbb",
+			propertyKey("pool/orgs/org_a/images/substrate-aaaaaaaa@ready", sourceDigestProperty): "aaaaaaaa",
+		},
+	}
+	lifecycle := NewVolumeLifecycle(roots, ops, nil)
+	image, err := NewImage(roots, "substrate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.EnsureOrgImage(context.Background(), "org_a", image); err != nil {
+		t.Fatal(err)
+	}
+	if len(ops.destroys) != 0 {
+		t.Fatalf("destroyed older digest copy: %#v", ops.destroys)
+	}
+	if got, want := ops.receives[0], "pool/images/substrate@ready -> pool/orgs/org_a/images/substrate-bbbbbbbb"; got != want {
+		t.Fatalf("receive = %q, want %q", got, want)
+	}
+	if !containsString(ops.sets, "pool/orgs/org_a/images/substrate-bbbbbbbb@ready vs:source_digest=bbbbbbbb") {
+		t.Fatalf("new digest was not set: %#v", ops.sets)
+	}
+}
+
+func TestEnsureOrgImageRefreshesMismatchedTargetDigest(t *testing.T) {
+	roots := Roots{Pool: "pool", ImageDataset: "images", GoldenDataset: "goldens", WorkloadDataset: "workloads"}
+	ops := &lifecycleOps{
+		datasets: map[string]bool{
+			"pool/orgs/org_a/images/substrate-bbbbbbbb": true,
+		},
+		snapshots: map[string]bool{
+			"pool/orgs/org_a/images/substrate-bbbbbbbb@ready": true,
+		},
+		properties: map[string]string{
+			propertyKey("pool/images/substrate@ready", sourceDigestProperty):                     "bbbbbbbb",
+			propertyKey("pool/orgs/org_a/images/substrate-bbbbbbbb@ready", sourceDigestProperty): "aaaaaaaa",
+		},
+	}
+	lifecycle := NewVolumeLifecycle(roots, ops, nil)
+	image, err := NewImage(roots, "substrate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.EnsureOrgImage(context.Background(), "org_a", image); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ops.destroys[0], "pool/orgs/org_a/images/substrate-bbbbbbbb"; got != want {
+		t.Fatalf("destroy = %q, want %q", got, want)
+	}
+	if got, want := ops.receives[0], "pool/images/substrate@ready -> pool/orgs/org_a/images/substrate-bbbbbbbb"; got != want {
+		t.Fatalf("receive = %q, want %q", got, want)
+	}
+}
+
+func TestSeedDigestUsesSourceContent(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "seed.ext4")
+	fixedTime := time.Unix(1700000000, 0)
+	writeSeedFile := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(sourcePath, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(sourcePath, fixedTime, fixedTime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spec := SeedSpec{
+		Strategy:     SeedStrategyDDFromFile,
+		SizeBytes:    4,
+		VolBlockSize: "16K",
+		SourcePath:   sourcePath,
+	}
+	writeSeedFile("aaaa")
+	first, err := seedDigest(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSeedFile("bbbb")
+	second, err := seedDigest(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatalf("seed digest did not change after same-size content rewrite: %s", first)
 	}
 }
 
@@ -230,4 +395,8 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func propertyKey(target, key string) string {
+	return target + "\x00" + key
 }

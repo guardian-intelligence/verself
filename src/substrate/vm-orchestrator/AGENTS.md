@@ -12,7 +12,10 @@ the `vm-orchestrator` Nomad job. Its prestart task runs
 `/var/lib/verself/guest-images/`, then its poststart task runs
 `vm-orchestrator-cli seed-catalog` after the daemon starts. The CLI
 materialises every entry by issuing SeedImage RPCs in catalog order
-(idempotent via `vs:source_digest` on `@ready`).
+(idempotent via a content-derived `vs:source_digest` on `@ready`). Org-local
+encrypted image copies are addressed by the same digest, so a refreshed global
+image is received into each org before the next lease clone while older active
+clones keep their existing origin.
 
 - **Substrate** (`/var/lib/verself/guest-images/substrate.ext4`):
   kernel + minimal Ubuntu userland + vm-bridge as `/sbin/init` +
