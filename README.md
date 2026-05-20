@@ -12,7 +12,6 @@ The main product offering is a (hopefully) better Blacksmith.sh: a GitHub App wh
 
 2. When default branch's latest commit's CI goes green, we promote the repo file system post-CI (`GITHUB_WORKSPACE`) + durable VM directories outside the `GITHUB_WORKSPACE` such as installed binaries, Bazel caches, DB files, and so on. The next PR that executes CI will now have its VM mount its starting file-system from the golden ZFS volumes composed prior to the job running. 
 
-2a. `getRepoZvolForPR` is approximately `(organization, project, repo, target-branch, workflow-id, job-id, matrix-key)` for GitHub. (Forgejo/Codeberg/GitLab support pending)
 
 * Verself does not host customer applications as managed long-lived services (yet, but as you may imagine by the `verself` branding we are poised to do that soon via Open vSwitch or something similar). 
 

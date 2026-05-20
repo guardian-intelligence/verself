@@ -1,5 +1,82 @@
 # Golden Environments And Durable Caches
 
+Conceptually, the core product can be simplified as follows:
+
+1. You onboard, switch to our runner and our custom checkout action.
+2. You open a PR. You CI as normal.
+3. Your CI goes green, you merge, target branch updates. CI runs on target branch and goes green. We generate a golden zvol of the target branch. We take your CI VM's repo artifacts and set that as the golden zvol for the next checkout. If it went red, the golden zvol stays on the last green CI run.
+4. You open a new PR, it CIs but checkout is instant because we mount the entire repo instantly and all your migrations DB seeds, and so on, are already done. No more manual actions/cache per directory.
+5. You CI but you only execute tests, no scaffolding to get your repo setup.
+6. Your CI goes red, golden zvol stays where it is. You push some commits to your PR, we start from the golden zvol of the target branch.
+7. Every time CI on a branch goes green we snapshot the result as that branch's new golden zvol. Merging is not a separate promotion step — it triggers CI on the target branch like any other push, and the green snapshot becomes that branch's golden. 
+
+For repos with workflow yamls like 
+
+```
+   jobs:                                                                                                                                                  
+      test-node-20:                                                                                                                                       
+      test-node-22:                                                                                                                                       
+      lint:                                                                                                                                               
+      integration:                                                                                                                                        
+      build-docker:
+```
+
+- test-node-20: Node 20 + node_modules built against Node 20's ABI + jest/vitest cache. Some packages (sharp, better-sqlite3, anything with prebuilds)
+have different binaries per Node major, so this image genuinely differs from the Node 22 one.
+- test-node-22: same shape but on Node 22.
+- lint: Node + node_modules + .eslintcache + tsconfig.tsbuildinfo. No DB, no services. Smallest image in the set — and the one where the speedup vs. a
+cold run looks least dramatic, because lint scaffolding is already light.
+- integration: everything from test plus a running postgres with migrations and seed data, redis, anything else the suite touches. Heaviest image,
+biggest speedup multiplier.
+- build-docker: docker daemon, buildx layer cache, base image layers. None of the Node toolchain. Totally different disk shape.
+
+We only promote the VM's GITHUB_WORKSPACE + durable volumes if *all* jobs go green on the commit to the trunk branch. A Bazel/npm/cache directory is allowed to be partially stale or corrupt. If it is bad, the tool should miss/rebuild. The cache is not semantic truth.
+
+All mounts are rebuildable. Promotion is best-effort previous golden remains authoritative ambiguous seal skips promotion. We will expose cache misses and warnings so customers can go in and debug their CI themselves when things fail.
+
+golden zvol cache identity is the durable scope selected by sandbox-rental-service: it is keyed by org, repository, provider/provider repository ID, scope kind, scope ref, job shape, cache name, and trust class. The job shape is keyed by provider, workflow identity, called workflow identity, job identity, matrix key, runner class, guest architecture, platform image ID, kernel image ID, runner toolchain image ID, and cache spec hash. For GitHub PRs, `scope_ref` is the target/base branch ref; for branch pushes, it is the pushed branch ref. `workspace` is the reserved built-in cache name for `GITHUB_WORKSPACE`; declared durable mounts each get their own cache name and cache spec hash.
+
+Current GitHub normalization: `workflow_identity` is the GitHub workflow name with `github-actions` as fallback, `job_identity` is the job name without a trailing matrix parenthetical, and `matrix_key` is the trailing parenthetical when present. The cache spec hash covers cache name, bind/mount policy, reconcile policy, and visible paths. `head_sha`, `tree_hash`, provider run ID, run attempt, and provider job ID are generation metadata used for checkout/reconciliation, promotion evidence, and fast-path retagging; they are not the durable scope key.
+
+The shorthand for GitHub PR workspace lookup is therefore `(organization, repository, target-branch, workflow-id, job-id, matrix-key)`, plus the compatibility dimensions that make unsafe reuse impossible: runner class, guest arch, platform/kernel/toolchain images, cache spec hash, cache name, and trust class. Our action's job is to go from our golden image (if it finds one) to make the working copy in `GITHUB_WORKSPACE` match the tree at the head SHA of the PR branch. 
+
+Not every PR will have matrix-key. A workflow yaml edit is a non event -- if we have a zvol for that workflow job, then we have it. if not, then we don't, and if the edit gets merged in, we'll now have zvol for it for future PRs once CI passes.
+
+Tree-hash is metadata on the snapshot, used for two specific things:
+    a. At boot, we compute the diff between the snapshot's tree and the current tree, apply it as the "checkout" step.
+    b. At merge, if the post-merge tree on the target branch exactly matches a snapshot we have, we retag without re-running the workflow (the step 7 fast
+   path).
+
+On `services: ` -- when a customer writes `services: postgres:16`, GitHub starts a fresh container per job. We honor that as written. The snapshotted-postgres speedup applies to the customer's own setup scripts (the postgres they start and seed themselves) — not to GitHub's managed service containers. 
+
+Note: DB seeds, Docker layers, local services are not in GITHUB_WORKSPACE.
+
+The customer's mental model becomes: "my CI YAML stays exactly the same, the runner type changes, and the steps that used to take minutes now take  seconds because the work was already done." They don't learn a new caching API. They don't declare inputs. They don't tag things. The only Verself-specific surface is the checkout action.
+
+We can offer (in the future):
+
+1. An SDK to list golden zvols and get metadata and to create/delete them
+2. An SDK to spin up a VM with the ID of a zvol
+2a. SSH access to VMs running on our metal, gated by Pomerium.=
+3. An SDK to download a golden zvol
+
+All of the above can help with debugging.
+
+In addition to copying the entire repo, we also provide a durable mount API. The customer-facing promise:
+
+> Any directory your CI job writes outside GITHUB_WORKSPACE can be declared as durable. Verself
+> mounts the latest trusted version before the job starts, lets the job mutate it normally, then
+> snapshots it after success. Pull requests start from the target branch’s last green durable
+> state, but their writes cannot poison the target branch
+
+We can also provide a simple API to prevent certain files or directories from being part of the golden zvol. We can design that later as it requires care and, like most everything else we offer, it will have an SDK/CLI/HTTP API to our services.
+
+- Today's surface is a Blacksmith.sh-style GitHub Actions runner replacement: customers point CI at Verself and workflows run on Verself Firecracker VMs for a 2–10x speedup. We dogfood it on every merge to main, comparing against Blacksmith.sh and GitHub Actions to verify we are faster.
+- Verself does not host customer applications. Customer code runs only inside short-lived sandboxes the customer rents (CI workflow runs today; Lambda-style invocations and persistent dev VMs later) on the same isolation, billing, and telemetry substrate.
+- The bootstrap CLI is a separate offering. It renders site artifacts onto operator-supplied Latitude.sh bare metal so an operator can stand up an independent Verself installation. Once deployed, that installation runs at its own domain under its own name and has no runtime coupling to verself.sh: there is no tenant relationship, no upstream control plane, no shared identity, no shared data. See `docs/verself-cli.md`.
+
+===
+
 Verself hosted runners accelerate CI by booting each job with ordinary Linux
 filesystems that already contain rebuildable state from prior successful jobs.
 The public surface is the Verself runner label, the Verself checkout action,
