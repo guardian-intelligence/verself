@@ -1105,8 +1105,8 @@ func (s *Service) publishGoldenVMSnapshot(ctx context.Context, item executionWor
 		AfterRestoreHookVersion:   "after_restore.v1",
 		BeforeSnapshotHookVersion: "before_golden_snapshot.v1",
 		WarmProfileHash:           plan.GoldenVM.SourceGenerationSetHash,
-		Vcpus:                     int32(item.Resources.VCPUs),
-		MemoryMib:                 int32(item.Resources.MemoryMiB),
+		Vcpus:                     int32FromUint32(item.Resources.VCPUs, "golden VM vcpus"),
+		MemoryMib:                 int32FromUint32(item.Resources.MemoryMiB, "golden VM memory mib"),
 		ProviderRunID:             plan.Identity.ProviderRunID,
 		ProviderRunAttempt:        plan.Identity.ProviderRunAttempt,
 		ProviderJobID:             plan.Identity.ProviderJobID,
@@ -1141,7 +1141,7 @@ func (s *Service) publishGoldenVMSnapshot(ctx context.Context, item executionWor
 			FsType:              gen.FSType,
 			ReadOnly:            gen.ReadOnly,
 			Required:            gen.Required,
-			SortOrder:           int32(gen.SortOrder),
+			SortOrder:           int32FromInt(gen.SortOrder, "golden VM snapshot generation sort order"),
 		}); err != nil {
 			reason := durableFailureReason("publish_failed", err)
 			_ = s.storeQueries().MarkGoldenVMOperationFailed(ctx, store.MarkGoldenVMOperationFailedParams{RecordedAt: pgTime(now), FailureReason: reason, OperationID: plan.GoldenVM.OperationID})
