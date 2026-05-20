@@ -116,7 +116,7 @@ func TestLeaseReadyPersistsFilesystemMountResults(t *testing.T) {
 	}
 }
 
-func TestOrgRuntimeWarmStateRoundTrip(t *testing.T) {
+func TestOrgRuntimeStateRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store, err := openHostStateStore(":memory:", nil)
 	if err != nil {
@@ -153,7 +153,7 @@ func TestOrgRuntimeWarmStateRoundTrip(t *testing.T) {
 	}
 }
 
-func TestOrgRuntimeWarmStateMergesImageRefs(t *testing.T) {
+func TestOrgRuntimeStateMergesImageRefs(t *testing.T) {
 	ctx := context.Background()
 	store, err := openHostStateStore(":memory:", nil)
 	if err != nil {

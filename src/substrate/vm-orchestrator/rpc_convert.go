@@ -42,17 +42,17 @@ func storageNamespaceToProto(namespace StorageNamespace) *vmrpc.StorageNamespace
 	}
 }
 
-func orgRuntimeStatusToProto(status OrgRuntimeStatus) *vmrpc.WarmOrgRuntimeResponse {
-	return &vmrpc.WarmOrgRuntimeResponse{
+func orgRuntimeStatusToProto(status OrgRuntimeStatus) *vmrpc.EnsureOrgRuntimeResponse {
+	return &vmrpc.EnsureOrgRuntimeResponse{
 		OrgId:            status.StorageNamespace.OrgID,
 		QuotaBytes:       status.StorageNamespace.QuotaBytes,
-		Images:           warmedImagesToProto(status.Images),
+		Images:           orgRuntimeImagesToProto(status.Images),
 		ReadyAtUnixNs:    unixNs(status.ReadyAt),
 		VerifiedAtUnixNs: unixNs(status.VerifiedAt),
 	}
 }
 
-func orgRuntimeStatusFromProto(status *vmrpc.WarmOrgRuntimeResponse) OrgRuntimeStatus {
+func orgRuntimeStatusFromProto(status *vmrpc.EnsureOrgRuntimeResponse) OrgRuntimeStatus {
 	if status == nil {
 		return OrgRuntimeStatus{}
 	}
@@ -61,19 +61,19 @@ func orgRuntimeStatusFromProto(status *vmrpc.WarmOrgRuntimeResponse) OrgRuntimeS
 			OrgID:      status.GetOrgId(),
 			QuotaBytes: status.GetQuotaBytes(),
 		},
-		Images:     warmedImagesFromProto(status.GetImages()),
+		Images:     orgRuntimeImagesFromProto(status.GetImages()),
 		ReadyAt:    timeFromUnixNs(status.GetReadyAtUnixNs()),
 		VerifiedAt: timeFromUnixNs(status.GetVerifiedAtUnixNs()),
 	}
 }
 
-func warmedImagesToProto(images []WarmedImage) []*vmrpc.WarmedImage {
+func orgRuntimeImagesToProto(images []OrgRuntimeImage) []*vmrpc.OrgRuntimeImage {
 	if len(images) == 0 {
 		return nil
 	}
-	out := make([]*vmrpc.WarmedImage, 0, len(images))
+	out := make([]*vmrpc.OrgRuntimeImage, 0, len(images))
 	for _, image := range images {
-		out = append(out, &vmrpc.WarmedImage{
+		out = append(out, &vmrpc.OrgRuntimeImage{
 			ImageRef:       image.ImageRef,
 			SourceSnapshot: image.SourceSnapshot,
 			SourceDigest:   image.SourceDigest,
@@ -83,16 +83,16 @@ func warmedImagesToProto(images []WarmedImage) []*vmrpc.WarmedImage {
 	return out
 }
 
-func warmedImagesFromProto(images []*vmrpc.WarmedImage) []WarmedImage {
+func orgRuntimeImagesFromProto(images []*vmrpc.OrgRuntimeImage) []OrgRuntimeImage {
 	if len(images) == 0 {
 		return nil
 	}
-	out := make([]WarmedImage, 0, len(images))
+	out := make([]OrgRuntimeImage, 0, len(images))
 	for _, image := range images {
 		if image == nil {
 			continue
 		}
-		out = append(out, WarmedImage{
+		out = append(out, OrgRuntimeImage{
 			ImageRef:       image.GetImageRef(),
 			SourceSnapshot: image.GetSourceSnapshot(),
 			SourceDigest:   image.GetSourceDigest(),

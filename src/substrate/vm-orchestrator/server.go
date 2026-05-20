@@ -23,11 +23,11 @@ import (
 type APIServer struct {
 	vmrpc.UnimplementedVMServiceServer
 
-	cfg    Config
-	roots  zfs.Roots
-	logger *slog.Logger
-	state  *hostStateStore
-	keys   *StorageKeyManager
+	cfg     Config
+	roots   zfs.Roots
+	logger  *slog.Logger
+	state   *hostStateStore
+	runtime *OrgRuntimeManager
 
 	mu     sync.RWMutex
 	actors map[string]*vmActor
@@ -149,6 +149,7 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 	if base.DefaultSubstrateRef == "" {
 		base.DefaultSubstrateRef = "substrate"
 	}
+	keys := NewStorageKeyManager(NewFileStorageKeyProvider(base.StorageKeyDir), logger)
 	server := &APIServer{
 		cfg: base,
 		roots: zfs.Roots{
@@ -159,9 +160,9 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 		},
 		logger: logger,
 		state:  state,
-		keys:   NewStorageKeyManager(NewFileStorageKeyProvider(base.StorageKeyDir), logger),
 		actors: map[string]*vmActor{},
 	}
+	server.runtime = NewOrgRuntimeManager(base, server.roots, DirectPrivOps{}, keys, state, logger)
 	if err := server.ensureZFSRoots(context.Background()); err != nil {
 		_ = state.close()
 		return nil, err
@@ -179,8 +180,7 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 
 func (s *APIServer) newOrchestrator(opts ...Option) *Orchestrator {
 	all := make([]Option, 0, len(opts)+2)
-	all = append(all, WithStorageKeyManager(s.keys))
-	all = append(all, withHostState(s.state))
+	all = append(all, withOrgRuntimeManager(s.runtime))
 	all = append(all, opts...)
 	return New(s.cfg, s.logger, all...)
 }
@@ -744,21 +744,14 @@ func (s *APIServer) PruneFilesystemGeneration(ctx context.Context, req *vmrpc.Pr
 	return resp, nil
 }
 
-func (s *APIServer) WarmOrgRuntime(ctx context.Context, req *vmrpc.WarmOrgRuntimeRequest) (*vmrpc.WarmOrgRuntimeResponse, error) {
-	ctx, span := tracer.Start(ctx, "rpc.WarmOrgRuntime")
+func (s *APIServer) EnsureOrgRuntime(ctx context.Context, req *vmrpc.EnsureOrgRuntimeRequest) (*vmrpc.EnsureOrgRuntimeResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.EnsureOrgRuntime")
 	defer span.End()
-	key := strings.TrimSpace(req.GetIdempotencyKey())
-	if key == "" {
-		return nil, status.Error(codes.InvalidArgument, "idempotency_key is required")
-	}
 	namespace := storageNamespaceFromProto(req.GetStorageNamespace())
 	if namespace.OrgID == "" || namespace.QuotaBytes == 0 {
 		return nil, status.Error(codes.InvalidArgument, "storage_namespace org_id and quota_bytes are required")
 	}
-	// WarmOrgRuntime is intentionally revalidated on every call: source image
-	// digests can change independently of sandbox-rental's request key.
-	orchestrator := s.newOrchestrator()
-	statusRecord, err := orchestrator.WarmOrgRuntime(ctx, OrgRuntimeWarmSpec{
+	statusRecord, err := s.runtime.Ensure(ctx, OrgRuntimeShape{
 		StorageNamespace: namespace,
 		ImageRefs:        append([]string(nil), req.GetImageRefs()...),
 	})
@@ -770,7 +763,6 @@ func (s *APIServer) WarmOrgRuntime(ctx context.Context, req *vmrpc.WarmOrgRuntim
 	resp := orgRuntimeStatusToProto(statusRecord)
 	span.SetAttributes(
 		attribute.String("org.id", statusRecord.StorageNamespace.OrgID),
-		attribute.String("idempotency_key", key),
 		uint64TraceAttribute("storage.quota_bytes", statusRecord.StorageNamespace.QuotaBytes),
 		attribute.Int("zfs.image_ref_count", len(statusRecord.Images)),
 	)
@@ -835,6 +827,9 @@ func (s *APIServer) SeedImage(ctx context.Context, req *vmrpc.SeedImageRequest) 
 		attribute.Int("seed.dependents_torn", result.DependentsTorn),
 		attribute.Int64("seed.seeded_bytes", seededBytes),
 	)
+	if result.Outcome == zfs.SeedOutcomeRefreshed {
+		s.runtime.InvalidateImage(imageRef, "seed_image")
+	}
 	return &vmrpc.SeedImageResponse{
 		ImageRef:       imageRef,
 		Outcome:        seedOutcomeToProto(result.Outcome),

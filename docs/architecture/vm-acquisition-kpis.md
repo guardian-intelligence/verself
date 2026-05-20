@@ -58,7 +58,7 @@ points that only exist as spans should remain queryable from
 | Durable declarations resolved | `durable.declaration.resolve` span/event | `durable_declaration_resolve_ms` | job shape, cache spec hash, cache names. |
 | Durable source selected | `verself.durable_events`, `durable.cache.select` | `zfs_generation_hit_rate` | cache name, result `hit` or `miss`, source generation, snapshot ref. |
 | Durable mount plan persisted | `durable_operation.requested_at`, `execution_filesystem_mounts` | `durable_prepare_ms` | operation ID, scope ID, mount name, required flag. |
-| Org runtime warmed | `sandbox.org_runtime.warm`, `rpc.WarmOrgRuntime`, `vmorchestrator.org_runtime.warm` | `org_runtime_warm_ms` | org ID, quota bytes, image refs, namespace dataset, image cache hit/miss. |
+| Org runtime ensured | `sandbox.org_runtime.ensure`, `rpc.EnsureOrgRuntime`, `vmorchestrator.org_runtime.ensure` | `org_runtime_ensure_ms` | org ID, quota bytes, image refs, namespace dataset, image cache hit/miss. |
 | Lease accepted | `rpc.AcquireLease`, client span, `execution_attempts.lease_id` | `lease_accept_ms` | lease ID, attempt ID, mount count, resource shape. |
 | Lease ready | `verself.vm_lease_evidence` `lease_ready`, `GetLease` polling spans | `lease_accept_to_ready_ms` | lease ID, activation mode, filesystem result count. |
 | Exec started | `rpc.StartExec`, `verself.vm_lease_evidence` `exec_started` | `ready_to_exec_started_ms` | lease ID, exec ID, command class. |
@@ -76,7 +76,7 @@ share the same parent.
 
 | Substep | Current / Required Span | KPI |
 | --- | --- | --- |
-| Org runtime ready check | `vmorchestrator.org_runtime.ready_check`, `vmorchestrator.org_runtime.assert_ready` | `org_runtime_ready_check_ms` |
+| Org runtime require-ready | `vmorchestrator.org_runtime.require_ready_check`, `vmorchestrator.org_runtime.require_ready` | `org_runtime_require_ready_ms` |
 | Storage namespace assertion | `vmorchestrator.zfs.namespace.assert_ready` | `zfs_namespace_assert_ms` |
 | Root substrate clone | `vmorchestrator.zfs.root_clone`, `vmorchestrator.zfs.root.prepare_substrate_clone_from_snapshot` | `root_clone_ms` |
 | Root resize | required span around `ResizeLeaseRootExt4` | `root_resize_ms` |

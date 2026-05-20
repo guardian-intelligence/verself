@@ -679,29 +679,28 @@ func (x *StorageNamespace) GetQuotaBytes() uint64 {
 	return 0
 }
 
-type WarmOrgRuntimeRequest struct {
+type EnsureOrgRuntimeRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	IdempotencyKey   string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	StorageNamespace *StorageNamespace      `protobuf:"bytes,2,opt,name=storage_namespace,json=storageNamespace,proto3" json:"storage_namespace,omitempty"`
-	ImageRefs        []string               `protobuf:"bytes,3,rep,name=image_refs,json=imageRefs,proto3" json:"image_refs,omitempty"`
+	StorageNamespace *StorageNamespace      `protobuf:"bytes,1,opt,name=storage_namespace,json=storageNamespace,proto3" json:"storage_namespace,omitempty"`
+	ImageRefs        []string               `protobuf:"bytes,2,rep,name=image_refs,json=imageRefs,proto3" json:"image_refs,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *WarmOrgRuntimeRequest) Reset() {
-	*x = WarmOrgRuntimeRequest{}
+func (x *EnsureOrgRuntimeRequest) Reset() {
+	*x = EnsureOrgRuntimeRequest{}
 	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *WarmOrgRuntimeRequest) String() string {
+func (x *EnsureOrgRuntimeRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*WarmOrgRuntimeRequest) ProtoMessage() {}
+func (*EnsureOrgRuntimeRequest) ProtoMessage() {}
 
-func (x *WarmOrgRuntimeRequest) ProtoReflect() protoreflect.Message {
+func (x *EnsureOrgRuntimeRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -713,57 +712,50 @@ func (x *WarmOrgRuntimeRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use WarmOrgRuntimeRequest.ProtoReflect.Descriptor instead.
-func (*WarmOrgRuntimeRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use EnsureOrgRuntimeRequest.ProtoReflect.Descriptor instead.
+func (*EnsureOrgRuntimeRequest) Descriptor() ([]byte, []int) {
 	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *WarmOrgRuntimeRequest) GetIdempotencyKey() string {
-	if x != nil {
-		return x.IdempotencyKey
-	}
-	return ""
-}
-
-func (x *WarmOrgRuntimeRequest) GetStorageNamespace() *StorageNamespace {
+func (x *EnsureOrgRuntimeRequest) GetStorageNamespace() *StorageNamespace {
 	if x != nil {
 		return x.StorageNamespace
 	}
 	return nil
 }
 
-func (x *WarmOrgRuntimeRequest) GetImageRefs() []string {
+func (x *EnsureOrgRuntimeRequest) GetImageRefs() []string {
 	if x != nil {
 		return x.ImageRefs
 	}
 	return nil
 }
 
-type WarmOrgRuntimeResponse struct {
+type EnsureOrgRuntimeResponse struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	OrgId            string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	QuotaBytes       uint64                 `protobuf:"varint,2,opt,name=quota_bytes,json=quotaBytes,proto3" json:"quota_bytes,omitempty"`
-	Images           []*WarmedImage         `protobuf:"bytes,3,rep,name=images,proto3" json:"images,omitempty"`
+	Images           []*OrgRuntimeImage     `protobuf:"bytes,3,rep,name=images,proto3" json:"images,omitempty"`
 	ReadyAtUnixNs    uint64                 `protobuf:"varint,4,opt,name=ready_at_unix_ns,json=readyAtUnixNs,proto3" json:"ready_at_unix_ns,omitempty"`
 	VerifiedAtUnixNs uint64                 `protobuf:"varint,5,opt,name=verified_at_unix_ns,json=verifiedAtUnixNs,proto3" json:"verified_at_unix_ns,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *WarmOrgRuntimeResponse) Reset() {
-	*x = WarmOrgRuntimeResponse{}
+func (x *EnsureOrgRuntimeResponse) Reset() {
+	*x = EnsureOrgRuntimeResponse{}
 	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *WarmOrgRuntimeResponse) String() string {
+func (x *EnsureOrgRuntimeResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*WarmOrgRuntimeResponse) ProtoMessage() {}
+func (*EnsureOrgRuntimeResponse) ProtoMessage() {}
 
-func (x *WarmOrgRuntimeResponse) ProtoReflect() protoreflect.Message {
+func (x *EnsureOrgRuntimeResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -775,47 +767,47 @@ func (x *WarmOrgRuntimeResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use WarmOrgRuntimeResponse.ProtoReflect.Descriptor instead.
-func (*WarmOrgRuntimeResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use EnsureOrgRuntimeResponse.ProtoReflect.Descriptor instead.
+func (*EnsureOrgRuntimeResponse) Descriptor() ([]byte, []int) {
 	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *WarmOrgRuntimeResponse) GetOrgId() string {
+func (x *EnsureOrgRuntimeResponse) GetOrgId() string {
 	if x != nil {
 		return x.OrgId
 	}
 	return ""
 }
 
-func (x *WarmOrgRuntimeResponse) GetQuotaBytes() uint64 {
+func (x *EnsureOrgRuntimeResponse) GetQuotaBytes() uint64 {
 	if x != nil {
 		return x.QuotaBytes
 	}
 	return 0
 }
 
-func (x *WarmOrgRuntimeResponse) GetImages() []*WarmedImage {
+func (x *EnsureOrgRuntimeResponse) GetImages() []*OrgRuntimeImage {
 	if x != nil {
 		return x.Images
 	}
 	return nil
 }
 
-func (x *WarmOrgRuntimeResponse) GetReadyAtUnixNs() uint64 {
+func (x *EnsureOrgRuntimeResponse) GetReadyAtUnixNs() uint64 {
 	if x != nil {
 		return x.ReadyAtUnixNs
 	}
 	return 0
 }
 
-func (x *WarmOrgRuntimeResponse) GetVerifiedAtUnixNs() uint64 {
+func (x *EnsureOrgRuntimeResponse) GetVerifiedAtUnixNs() uint64 {
 	if x != nil {
 		return x.VerifiedAtUnixNs
 	}
 	return 0
 }
 
-type WarmedImage struct {
+type OrgRuntimeImage struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ImageRef       string                 `protobuf:"bytes,1,opt,name=image_ref,json=imageRef,proto3" json:"image_ref,omitempty"`
 	SourceSnapshot string                 `protobuf:"bytes,2,opt,name=source_snapshot,json=sourceSnapshot,proto3" json:"source_snapshot,omitempty"`
@@ -825,20 +817,20 @@ type WarmedImage struct {
 	sizeCache      protoimpl.SizeCache
 }
 
-func (x *WarmedImage) Reset() {
-	*x = WarmedImage{}
+func (x *OrgRuntimeImage) Reset() {
+	*x = OrgRuntimeImage{}
 	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *WarmedImage) String() string {
+func (x *OrgRuntimeImage) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*WarmedImage) ProtoMessage() {}
+func (*OrgRuntimeImage) ProtoMessage() {}
 
-func (x *WarmedImage) ProtoReflect() protoreflect.Message {
+func (x *OrgRuntimeImage) ProtoReflect() protoreflect.Message {
 	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -850,33 +842,33 @@ func (x *WarmedImage) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use WarmedImage.ProtoReflect.Descriptor instead.
-func (*WarmedImage) Descriptor() ([]byte, []int) {
+// Deprecated: Use OrgRuntimeImage.ProtoReflect.Descriptor instead.
+func (*OrgRuntimeImage) Descriptor() ([]byte, []int) {
 	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *WarmedImage) GetImageRef() string {
+func (x *OrgRuntimeImage) GetImageRef() string {
 	if x != nil {
 		return x.ImageRef
 	}
 	return ""
 }
 
-func (x *WarmedImage) GetSourceSnapshot() string {
+func (x *OrgRuntimeImage) GetSourceSnapshot() string {
 	if x != nil {
 		return x.SourceSnapshot
 	}
 	return ""
 }
 
-func (x *WarmedImage) GetSourceDigest() string {
+func (x *OrgRuntimeImage) GetSourceDigest() string {
 	if x != nil {
 		return x.SourceDigest
 	}
 	return ""
 }
 
-func (x *WarmedImage) GetOrgSnapshot() string {
+func (x *OrgRuntimeImage) GetOrgSnapshot() string {
 	if x != nil {
 		return x.OrgSnapshot
 	}
@@ -3589,20 +3581,19 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\x10StorageNamespace\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1f\n" +
 	"\vquota_bytes\x18\x02 \x01(\x04R\n" +
-	"quotaBytes\"\xba\x01\n" +
-	"\x15WarmOrgRuntimeRequest\x12'\n" +
-	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12Y\n" +
-	"\x11storage_namespace\x18\x02 \x01(\v2,.verself.vm_orchestrator.v1.StorageNamespaceR\x10storageNamespace\x12\x1d\n" +
+	"quotaBytes\"\x93\x01\n" +
+	"\x17EnsureOrgRuntimeRequest\x12Y\n" +
+	"\x11storage_namespace\x18\x01 \x01(\v2,.verself.vm_orchestrator.v1.StorageNamespaceR\x10storageNamespace\x12\x1d\n" +
 	"\n" +
-	"image_refs\x18\x03 \x03(\tR\timageRefs\"\xe9\x01\n" +
-	"\x16WarmOrgRuntimeResponse\x12\x15\n" +
+	"image_refs\x18\x02 \x03(\tR\timageRefs\"\xef\x01\n" +
+	"\x18EnsureOrgRuntimeResponse\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1f\n" +
 	"\vquota_bytes\x18\x02 \x01(\x04R\n" +
-	"quotaBytes\x12?\n" +
-	"\x06images\x18\x03 \x03(\v2'.verself.vm_orchestrator.v1.WarmedImageR\x06images\x12'\n" +
+	"quotaBytes\x12C\n" +
+	"\x06images\x18\x03 \x03(\v2+.verself.vm_orchestrator.v1.OrgRuntimeImageR\x06images\x12'\n" +
 	"\x10ready_at_unix_ns\x18\x04 \x01(\x04R\rreadyAtUnixNs\x12-\n" +
-	"\x13verified_at_unix_ns\x18\x05 \x01(\x04R\x10verifiedAtUnixNs\"\x9b\x01\n" +
-	"\vWarmedImage\x12\x1b\n" +
+	"\x13verified_at_unix_ns\x18\x05 \x01(\x04R\x10verifiedAtUnixNs\"\x9f\x01\n" +
+	"\x0fOrgRuntimeImage\x12\x1b\n" +
 	"\timage_ref\x18\x01 \x01(\tR\bimageRef\x12'\n" +
 	"\x0fsource_snapshot\x18\x02 \x01(\tR\x0esourceSnapshot\x12#\n" +
 	"\rsource_digest\x18\x03 \x01(\tR\fsourceDigest\x12!\n" +
@@ -3900,7 +3891,7 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\vSeedOutcome\x12\x1c\n" +
 	"\x18SEED_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16SEED_OUTCOME_REFRESHED\x10\x01\x12\x1b\n" +
-	"\x17SEED_OUTCOME_UP_TO_DATE\x10\x022\xc6\r\n" +
+	"\x17SEED_OUTCOME_UP_TO_DATE\x10\x022\xcc\r\n" +
 	"\tVMService\x12q\n" +
 	"\fAcquireLease\x12/.verself.vm_orchestrator.v1.AcquireLeaseRequest\x1a0.verself.vm_orchestrator.v1.AcquireLeaseResponse\x12k\n" +
 	"\n" +
@@ -3916,8 +3907,8 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\aGetExec\x12*.verself.vm_orchestrator.v1.GetExecRequest\x1a+.verself.vm_orchestrator.v1.GetExecResponse\x12e\n" +
 	"\bWaitExec\x12+.verself.vm_orchestrator.v1.WaitExecRequest\x1a,.verself.vm_orchestrator.v1.WaitExecResponse\x12\x8c\x01\n" +
 	"\x15CommitFilesystemMount\x128.verself.vm_orchestrator.v1.CommitFilesystemMountRequest\x1a9.verself.vm_orchestrator.v1.CommitFilesystemMountResponse\x12\x98\x01\n" +
-	"\x19PruneFilesystemGeneration\x12<.verself.vm_orchestrator.v1.PruneFilesystemGenerationRequest\x1a=.verself.vm_orchestrator.v1.PruneFilesystemGenerationResponse\x12w\n" +
-	"\x0eWarmOrgRuntime\x121.verself.vm_orchestrator.v1.WarmOrgRuntimeRequest\x1a2.verself.vm_orchestrator.v1.WarmOrgRuntimeResponse\x12n\n" +
+	"\x19PruneFilesystemGeneration\x12<.verself.vm_orchestrator.v1.PruneFilesystemGenerationRequest\x1a=.verself.vm_orchestrator.v1.PruneFilesystemGenerationResponse\x12}\n" +
+	"\x10EnsureOrgRuntime\x123.verself.vm_orchestrator.v1.EnsureOrgRuntimeRequest\x1a4.verself.vm_orchestrator.v1.EnsureOrgRuntimeResponse\x12n\n" +
 	"\vGetCapacity\x12..verself.vm_orchestrator.v1.GetCapacityRequest\x1a/.verself.vm_orchestrator.v1.GetCapacityResponse\x12h\n" +
 	"\tSeedImage\x12,.verself.vm_orchestrator.v1.SeedImageRequest\x1a-.verself.vm_orchestrator.v1.SeedImageResponseB3Z1github.com/verself/vm-orchestrator/proto/v1;vmrpcb\x06proto3"
 
@@ -3947,9 +3938,9 @@ var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_goTypes = []any
 	(*VMResources)(nil),                       // 8: verself.vm_orchestrator.v1.VMResources
 	(*LeaseSpec)(nil),                         // 9: verself.vm_orchestrator.v1.LeaseSpec
 	(*StorageNamespace)(nil),                  // 10: verself.vm_orchestrator.v1.StorageNamespace
-	(*WarmOrgRuntimeRequest)(nil),             // 11: verself.vm_orchestrator.v1.WarmOrgRuntimeRequest
-	(*WarmOrgRuntimeResponse)(nil),            // 12: verself.vm_orchestrator.v1.WarmOrgRuntimeResponse
-	(*WarmedImage)(nil),                       // 13: verself.vm_orchestrator.v1.WarmedImage
+	(*EnsureOrgRuntimeRequest)(nil),           // 11: verself.vm_orchestrator.v1.EnsureOrgRuntimeRequest
+	(*EnsureOrgRuntimeResponse)(nil),          // 12: verself.vm_orchestrator.v1.EnsureOrgRuntimeResponse
+	(*OrgRuntimeImage)(nil),                   // 13: verself.vm_orchestrator.v1.OrgRuntimeImage
 	(*FilesystemMount)(nil),                   // 14: verself.vm_orchestrator.v1.FilesystemMount
 	(*FilesystemMountResult)(nil),             // 15: verself.vm_orchestrator.v1.FilesystemMountResult
 	(*AcquireLeaseRequest)(nil),               // 16: verself.vm_orchestrator.v1.AcquireLeaseRequest
@@ -3995,8 +3986,8 @@ var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_depIdxs = []int
 	7,  // 2: verself.vm_orchestrator.v1.LeaseSpec.network:type_name -> verself.vm_orchestrator.v1.NetworkAttach
 	14, // 3: verself.vm_orchestrator.v1.LeaseSpec.filesystem_mounts:type_name -> verself.vm_orchestrator.v1.FilesystemMount
 	10, // 4: verself.vm_orchestrator.v1.LeaseSpec.storage_namespace:type_name -> verself.vm_orchestrator.v1.StorageNamespace
-	10, // 5: verself.vm_orchestrator.v1.WarmOrgRuntimeRequest.storage_namespace:type_name -> verself.vm_orchestrator.v1.StorageNamespace
-	13, // 6: verself.vm_orchestrator.v1.WarmOrgRuntimeResponse.images:type_name -> verself.vm_orchestrator.v1.WarmedImage
+	10, // 5: verself.vm_orchestrator.v1.EnsureOrgRuntimeRequest.storage_namespace:type_name -> verself.vm_orchestrator.v1.StorageNamespace
+	13, // 6: verself.vm_orchestrator.v1.EnsureOrgRuntimeResponse.images:type_name -> verself.vm_orchestrator.v1.OrgRuntimeImage
 	9,  // 7: verself.vm_orchestrator.v1.AcquireLeaseRequest.spec:type_name -> verself.vm_orchestrator.v1.LeaseSpec
 	0,  // 8: verself.vm_orchestrator.v1.AcquireLeaseResponse.state:type_name -> verself.vm_orchestrator.v1.LeaseState
 	8,  // 9: verself.vm_orchestrator.v1.AcquireLeaseResponse.resources:type_name -> verself.vm_orchestrator.v1.VMResources
@@ -4036,7 +4027,7 @@ var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_depIdxs = []int
 	35, // 43: verself.vm_orchestrator.v1.VMService.WaitExec:input_type -> verself.vm_orchestrator.v1.WaitExecRequest
 	39, // 44: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:input_type -> verself.vm_orchestrator.v1.CommitFilesystemMountRequest
 	41, // 45: verself.vm_orchestrator.v1.VMService.PruneFilesystemGeneration:input_type -> verself.vm_orchestrator.v1.PruneFilesystemGenerationRequest
-	11, // 46: verself.vm_orchestrator.v1.VMService.WarmOrgRuntime:input_type -> verself.vm_orchestrator.v1.WarmOrgRuntimeRequest
+	11, // 46: verself.vm_orchestrator.v1.VMService.EnsureOrgRuntime:input_type -> verself.vm_orchestrator.v1.EnsureOrgRuntimeRequest
 	46, // 47: verself.vm_orchestrator.v1.VMService.GetCapacity:input_type -> verself.vm_orchestrator.v1.GetCapacityRequest
 	48, // 48: verself.vm_orchestrator.v1.VMService.SeedImage:input_type -> verself.vm_orchestrator.v1.SeedImageRequest
 	17, // 49: verself.vm_orchestrator.v1.VMService.AcquireLease:output_type -> verself.vm_orchestrator.v1.AcquireLeaseResponse
@@ -4051,7 +4042,7 @@ var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_depIdxs = []int
 	38, // 58: verself.vm_orchestrator.v1.VMService.WaitExec:output_type -> verself.vm_orchestrator.v1.WaitExecResponse
 	40, // 59: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:output_type -> verself.vm_orchestrator.v1.CommitFilesystemMountResponse
 	42, // 60: verself.vm_orchestrator.v1.VMService.PruneFilesystemGeneration:output_type -> verself.vm_orchestrator.v1.PruneFilesystemGenerationResponse
-	12, // 61: verself.vm_orchestrator.v1.VMService.WarmOrgRuntime:output_type -> verself.vm_orchestrator.v1.WarmOrgRuntimeResponse
+	12, // 61: verself.vm_orchestrator.v1.VMService.EnsureOrgRuntime:output_type -> verself.vm_orchestrator.v1.EnsureOrgRuntimeResponse
 	47, // 62: verself.vm_orchestrator.v1.VMService.GetCapacity:output_type -> verself.vm_orchestrator.v1.GetCapacityResponse
 	49, // 63: verself.vm_orchestrator.v1.VMService.SeedImage:output_type -> verself.vm_orchestrator.v1.SeedImageResponse
 	49, // [49:64] is the sub-list for method output_type

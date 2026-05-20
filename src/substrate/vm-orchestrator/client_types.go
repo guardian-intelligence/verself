@@ -47,19 +47,19 @@ type FilesystemPruneRecord struct {
 	PrunedAt            time.Time
 }
 
-type OrgRuntimeWarmSpec struct {
+type OrgRuntimeShape struct {
 	StorageNamespace StorageNamespace
 	ImageRefs        []string
 }
 
 type OrgRuntimeStatus struct {
 	StorageNamespace StorageNamespace
-	Images           []WarmedImage
+	Images           []OrgRuntimeImage
 	ReadyAt          time.Time
 	VerifiedAt       time.Time
 }
 
-type WarmedImage struct {
+type OrgRuntimeImage struct {
 	ImageRef       string
 	SourceSnapshot string
 	SourceDigest   string

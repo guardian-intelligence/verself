@@ -235,8 +235,7 @@ type Orchestrator struct {
 	logger  *slog.Logger
 	ops     PrivOps
 	volumes *zfs.VolumeLifecycle
-	keys    *StorageKeyManager
-	state   *hostStateStore
+	runtime *OrgRuntimeManager
 	journal func(durableJournalEntry)
 }
 
@@ -248,15 +247,9 @@ func WithPrivOps(ops PrivOps) Option {
 	}
 }
 
-func WithStorageKeyManager(keys *StorageKeyManager) Option {
+func withOrgRuntimeManager(runtime *OrgRuntimeManager) Option {
 	return func(o *Orchestrator) {
-		o.keys = keys
-	}
-}
-
-func withHostState(state *hostStateStore) Option {
-	return func(o *Orchestrator) {
-		o.state = state
+		o.runtime = runtime
 	}
 }
 
@@ -313,22 +306,8 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	for _, opt := range opts {
 		opt(o)
 	}
-	if o.keys == nil {
-		o.keys = NewStorageKeyManager(NewFileStorageKeyProvider(base.StorageKeyDir), logger)
-	}
 	o.volumes = zfs.NewVolumeLifecycle(o.roots, o.ops, logger)
 	return o
-}
-
-func (o *Orchestrator) releaseStorageKeyMaterial(ctx context.Context, orgID, leaseID string, hold *StorageKeyHold) {
-	if hold == nil {
-		return
-	}
-	lastRef := hold.Release(ctx)
-	if !lastRef {
-		return
-	}
-	o.logger.InfoContext(ctx, "storage key material idle", "org_id", orgID, "lease_id", leaseID)
 }
 
 // normalizeLeaseSpec fills in defaults and re-validates the VM shape
@@ -504,12 +483,12 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		span.End()
 	}()
 
-	runtimePlanCtx, endRuntimePlanSpan := startStepSpan(ctx, "vmorchestrator.org_runtime.ready_check",
+	runtimePlanCtx, endRuntimePlanSpan := startStepSpan(ctx, "vmorchestrator.org_runtime.require_ready_check",
 		attribute.String("lease.id", leaseID),
 		attribute.String("org.id", spec.StorageNamespace.OrgID),
 		uint64TraceAttribute("storage.quota_bytes", spec.StorageNamespace.QuotaBytes),
 	)
-	runtimePlan, runtimePlanErr := o.AssertOrgRuntimeReady(runtimePlanCtx, o.orgRuntimeWarmSpecForLease(spec))
+	runtimePlan, runtimePlanErr := o.runtime.RequireReady(runtimePlanCtx, orgRuntimeShapeForLease(o.cfg.DefaultSubstrateRef, spec))
 	endRuntimePlanSpan(runtimePlanErr)
 	if runtimePlanErr != nil {
 		err = fmt.Errorf("org runtime is not ready: %w", runtimePlanErr)
@@ -522,7 +501,7 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 	}
 	substrateSnapshot, ok := runtimePlan.ImageSnapshots[o.cfg.DefaultSubstrateRef]
 	if !ok {
-		err = fmt.Errorf("org runtime substrate image %s is not warm", o.cfg.DefaultSubstrateRef)
+		err = fmt.Errorf("org runtime substrate image %s is not ready", o.cfg.DefaultSubstrateRef)
 		return nil, err
 	}
 	rootCloneCtx, endRootCloneSpan := startStepSpan(ctx, "vmorchestrator.zfs.root_clone",
@@ -711,7 +690,7 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 			}
 			source, ok := imageSnapshots[image.Ref()]
 			if !ok {
-				prepErr = fmt.Errorf("filesystem mount %s image %s is not warm", mount.Name, image.Ref())
+				prepErr = fmt.Errorf("filesystem mount %s image %s is not ready", mount.Name, image.Ref())
 				endMountSpan(prepErr)
 				return prepared, prepErr
 			}

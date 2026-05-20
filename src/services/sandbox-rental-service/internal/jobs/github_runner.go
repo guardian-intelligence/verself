@@ -766,7 +766,7 @@ func (r *GitHubRunner) ReconcileCapacity(ctx context.Context, githubJobID int64)
 		span.SetAttributes(attribute.String("github.allocation_id", existing.String()), attribute.Bool("github.capacity.existing_allocation", true))
 		return nil
 	}
-	if err := r.service.warmOrgRuntimeForRunnerClass(ctx, job.OrgID, productID, runnerClass); err != nil {
+	if err := r.service.ensureOrgRuntimeForRunnerClass(ctx, job.OrgID, productID, runnerClass); err != nil {
 		return err
 	}
 	allocationID := uuid.New()

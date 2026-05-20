@@ -165,14 +165,13 @@ func (c *Client) PruneFilesystemGeneration(ctx context.Context, key, operationID
 	}, nil
 }
 
-func (c *Client) WarmOrgRuntime(ctx context.Context, key string, spec OrgRuntimeWarmSpec) (OrgRuntimeStatus, error) {
-	resp, err := c.client.WarmOrgRuntime(ctx, &vmrpc.WarmOrgRuntimeRequest{
-		IdempotencyKey:   key,
+func (c *Client) EnsureOrgRuntime(ctx context.Context, spec OrgRuntimeShape) (OrgRuntimeStatus, error) {
+	resp, err := c.client.EnsureOrgRuntime(ctx, &vmrpc.EnsureOrgRuntimeRequest{
 		StorageNamespace: storageNamespaceToProto(spec.StorageNamespace),
 		ImageRefs:        append([]string(nil), spec.ImageRefs...),
 	})
 	if err != nil {
-		return OrgRuntimeStatus{}, fmt.Errorf("warm org runtime: %w", err)
+		return OrgRuntimeStatus{}, fmt.Errorf("ensure org runtime: %w", err)
 	}
 	return orgRuntimeStatusFromProto(resp), nil
 }

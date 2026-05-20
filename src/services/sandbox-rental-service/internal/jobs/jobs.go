@@ -99,7 +99,7 @@ var tracer = otel.Tracer("sandbox-rental-service/jobs")
 
 type Runner interface {
 	GetCapacity(ctx context.Context) (vmorchestrator.Capacity, error)
-	WarmOrgRuntime(ctx context.Context, key string, spec vmorchestrator.OrgRuntimeWarmSpec) (vmorchestrator.OrgRuntimeStatus, error)
+	EnsureOrgRuntime(ctx context.Context, spec vmorchestrator.OrgRuntimeShape) (vmorchestrator.OrgRuntimeStatus, error)
 	AcquireLease(ctx context.Context, key string, spec vmorchestrator.LeaseSpec) (vmorchestrator.LeaseRecord, error)
 	RenewLease(ctx context.Context, leaseID, key string, extendSeconds uint64, allowlist []string) (time.Time, error)
 	GetLease(ctx context.Context, leaseID string) (vmorchestrator.LeaseRecord, error)
@@ -595,15 +595,6 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		s.failDurableCaches(ctx, durablePlan, "durable_storage_entitlement_failed", err)
 		return s.failAttempt(ctx, item, "durable_storage_entitlement_failed", err)
 	}
-	if err := s.warmOrgRuntimeForExecution(ctx, item, storageQuotaBytes); err != nil {
-		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
-		defer cancel()
-		_ = s.voidBillingWindow(cleanupCtx, reservation)
-		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
-		s.failDurableCaches(ctx, durablePlan, "org_runtime_warm_failed", err)
-		return s.failAttempt(ctx, item, "org_runtime_warm_failed", err)
-	}
-
 	acquireCtx, cancelAcquire := context.WithTimeout(ctx, leaseAcquireTimeout)
 	lease, err := s.Orchestrator.AcquireLease(acquireCtx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
 		Resources:   vmResourcesForLease(item.Resources),

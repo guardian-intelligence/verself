@@ -150,7 +150,7 @@ func (l *VolumeLifecycle) AssertStorageNamespaceReady(ctx context.Context, names
 	}
 	span.SetAttributes(attribute.String("zfs.dataset", orgRoot), attribute.Bool("zfs.dataset_exists", exists))
 	if !exists {
-		return StorageNamespaceStatus{}, fmt.Errorf("storage namespace %s is not warm", orgRoot)
+		return StorageNamespaceStatus{}, fmt.Errorf("storage namespace %s is not ready", orgRoot)
 	}
 	keyStatus, err := l.ops.ZFSGetProperty(ctx, orgRoot, "keystatus")
 	if err != nil {

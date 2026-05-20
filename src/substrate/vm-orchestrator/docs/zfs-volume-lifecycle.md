@@ -15,12 +15,12 @@ Default roots under the configured pool:
 | `orgs/<org>/workloads/` | Ephemeral per-lease root disks and writable mount clones under the org quota. |
 | `orgs/<org>/goldens/` | Immutable golden environment generations committed after a seal-eligible successful execution under the org quota. |
 
-`EnsureRoots` creates global roots at daemon startup. `WarmOrgRuntime` creates
-or verifies the org namespace, applies the org dataset quota, loads the org ZFS
-key, and materializes required platform images before lease acquisition. Lease
-boot asserts that this runtime state is already warm before it creates workload
-zvols. Ansible configures the host and service unit; it does not issue runtime
-ZFS mutations for workloads.
+`EnsureRoots` creates global roots at daemon startup. `EnsureOrgRuntime`
+converges the org namespace, applies the org dataset quota, loads the org ZFS
+key, and materializes required platform images before runner capacity is
+advertised. Lease boot calls `RequireReady` and fails fast unless the runtime
+state is already resident in the host manager. Ansible configures the host and
+service unit; it does not issue runtime ZFS mutations for workloads.
 
 ## Customer Dataset Encryption
 
@@ -39,7 +39,7 @@ Org namespace filesystems use `mountpoint=none` and `canmount=off`; only zvol
 block devices are attached to guests. This prevents native ZFS mountpoints from
 creating hidden host-side mount dependencies on customer datasets.
 
-The organization ZFS key is loaded when vm-orchestrator warms the org runtime
+The organization ZFS key is loaded when vm-orchestrator ensures the org runtime
 after host boot or key rotation. The ZFS key remains available while the org is
 healthy on that host. Lease cleanup releases raw key material from daemon
 memory; it does not unload the kernel-held ZFS key. Key unload or rotation is
@@ -67,15 +67,16 @@ recovery design before release.
 
 1. sandbox-rental resolves durable cache sources, storage quota, runner class,
    and boot-time filesystem mounts.
-2. sandbox-rental calls `WarmOrgRuntime` with the org namespace and platform
-   image refs required by that runner class.
+2. During runner capacity reconciliation, sandbox-rental calls
+   `EnsureOrgRuntime` with the org namespace and platform image refs required
+   by that runner class.
 3. vm-orchestrator loads or verifies the org key, ensures the encrypted
    namespace, applies quota, materializes missing org-local image snapshots,
-   persists warm state, and releases raw key material from daemon memory.
+   persists ready state, and releases raw key material from daemon memory.
 4. `AcquireLease` records host-local acquiring state and starts lease boot
    asynchronously.
-5. Lease boot asserts that the org namespace key, quota, and image snapshots
-   are warm; a miss fails the lease instead of converging slow state.
+5. Lease boot calls `RequireReady`; a miss fails the lease instead of
+   converging slow state.
 6. vm-orchestrator clones the org-local substrate snapshot into
    `orgs/<org>/workloads/<lease>/root`.
 7. For each filesystem mount, vm-orchestrator either clones the selected golden

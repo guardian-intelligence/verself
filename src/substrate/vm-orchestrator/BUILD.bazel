@@ -19,7 +19,9 @@ go_library(
         "network.go",
         "observer.go",
         "orchestrator.go",
-        "org_runtime.go",
+        "org_runtime_manager.go",
+        "org_runtime_store.go",
+        "org_runtime_types.go",
         "peer_creds.go",
         "peer_creds_unsupported.go",
         "privops.go",
@@ -133,6 +135,7 @@ go_test(
     name = "vm-orchestrator_test",
     srcs = [
         "filesystem_mounts_test.go",
+        "org_runtime_manager_test.go",
         "privops_direct_test.go",
         "rpc_convert_test.go",
         "snapshot_key_test.go",

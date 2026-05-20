@@ -331,7 +331,7 @@ func (r *ForgejoRunner) ReconcileCapacity(ctx context.Context, providerJobID int
 		span.SetAttributes(attribute.String("runner.allocation_id", existing.String()), attribute.Bool("forgejo.capacity.existing_allocation", true))
 		return nil
 	}
-	if err := r.service.warmOrgRuntimeForRunnerClass(ctx, job.OrgID, productID, runnerClass); err != nil {
+	if err := r.service.ensureOrgRuntimeForRunnerClass(ctx, job.OrgID, productID, runnerClass); err != nil {
 		recordRunnerError(span, err)
 		return err
 	}

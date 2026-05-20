@@ -2,8 +2,6 @@ package jobs
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"sort"
@@ -19,9 +17,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const orgRuntimeWarmTimeout = 10 * time.Second
+const orgRuntimeEnsureTimeout = 10 * time.Second
 
-func (s *Service) warmOrgRuntimeForRunnerClass(ctx context.Context, orgID, productID, runnerClass string) error {
+func (s *Service) ensureOrgRuntimeForRunnerClass(ctx context.Context, orgID, productID, runnerClass string) error {
 	mounts, err := s.runnerClassFilesystemMountsRead(ctx, runnerClass)
 	if err != nil {
 		return err
@@ -30,17 +28,12 @@ func (s *Service) warmOrgRuntimeForRunnerClass(ctx context.Context, orgID, produ
 	if err != nil {
 		return err
 	}
-	_, err = s.warmOrgRuntime(ctx, orgID, productID, quotaBytes, mounts)
+	_, err = s.ensureOrgRuntime(ctx, orgID, productID, quotaBytes, mounts)
 	return err
 }
 
-func (s *Service) warmOrgRuntimeForExecution(ctx context.Context, item executionWorkItem, quotaBytes uint64) error {
-	_, err := s.warmOrgRuntime(ctx, item.OrgID, item.ProductID, quotaBytes, item.FilesystemMounts)
-	return err
-}
-
-func (s *Service) warmOrgRuntime(ctx context.Context, orgID, productID string, quotaBytes uint64, mounts []vmorchestrator.FilesystemMount) (status vmorchestrator.OrgRuntimeStatus, err error) {
-	ctx, span := tracer.Start(ctx, "sandbox.org_runtime.warm",
+func (s *Service) ensureOrgRuntime(ctx context.Context, orgID, productID string, quotaBytes uint64, mounts []vmorchestrator.FilesystemMount) (status vmorchestrator.OrgRuntimeStatus, err error) {
+	ctx, span := tracer.Start(ctx, "sandbox.org_runtime.ensure",
 		trace.WithAttributes(
 			attribute.String("org.id", orgID),
 			attribute.String("billing.product_id", productID),
@@ -60,9 +53,9 @@ func (s *Service) warmOrgRuntime(ctx context.Context, orgID, productID string, q
 	}
 	imageRefs := imageRefsFromFilesystemMounts(mounts)
 	span.SetAttributes(attribute.Int("zfs.image_ref_count", len(imageRefs)))
-	warmCtx, cancel := context.WithTimeout(ctx, orgRuntimeWarmTimeout)
+	ensureCtx, cancel := context.WithTimeout(ctx, orgRuntimeEnsureTimeout)
 	defer cancel()
-	status, err = s.Orchestrator.WarmOrgRuntime(warmCtx, orgRuntimeWarmKey(orgID, productID, quotaBytes, imageRefs), vmorchestrator.OrgRuntimeWarmSpec{
+	status, err = s.Orchestrator.EnsureOrgRuntime(ensureCtx, vmorchestrator.OrgRuntimeShape{
 		StorageNamespace: vmorchestrator.StorageNamespace{
 			OrgID:      orgID,
 			QuotaBytes: quotaBytes,
@@ -70,7 +63,7 @@ func (s *Service) warmOrgRuntime(ctx context.Context, orgID, productID string, q
 		ImageRefs: imageRefs,
 	})
 	if err != nil {
-		return vmorchestrator.OrgRuntimeStatus{}, fmt.Errorf("warm org runtime: %w", err)
+		return vmorchestrator.OrgRuntimeStatus{}, fmt.Errorf("ensure org runtime: %w", err)
 	}
 	span.SetAttributes(
 		attribute.String("org_runtime.ready_at", status.ReadyAt.Format(time.RFC3339Nano)),
@@ -145,15 +138,4 @@ func imageRefsFromFilesystemMounts(mounts []vmorchestrator.FilesystemMount) []st
 	}
 	sort.Strings(out)
 	return out
-}
-
-func orgRuntimeWarmKey(orgID, productID string, quotaBytes uint64, imageRefs []string) string {
-	material := strings.Join([]string{
-		strings.TrimSpace(orgID),
-		strings.TrimSpace(productID),
-		strconv.FormatUint(quotaBytes, 10),
-		strings.Join(imageRefs, "\x00"),
-	}, "\x00")
-	sum := sha256.Sum256([]byte(material))
-	return "org-runtime:" + hex.EncodeToString(sum[:])
 }

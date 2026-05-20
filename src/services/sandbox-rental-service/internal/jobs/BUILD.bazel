@@ -18,7 +18,7 @@ go_library(
         "github_workflow_invocation.go",
         "jobs.go",
         "logs_search.go",
-        "org_runtime_warm.go",
+        "org_runtime.go",
         "reconcile.go",
         "runner_control.go",
         "runner_execution_identity.go",
@@ -61,7 +61,7 @@ go_test(
     srcs = [
         "durable_caches_test.go",
         "execution_lifecycle_test.go",
-        "org_runtime_warm_test.go",
+        "org_runtime_test.go",
     ],
     embed = [":jobs"],
     deps = ["//src/substrate/vm-orchestrator"],

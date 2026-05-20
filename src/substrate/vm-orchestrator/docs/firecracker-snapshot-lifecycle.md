@@ -11,11 +11,11 @@ The lease boot path has three phases:
 2. Activate the microVM.
 3. Initialize the guest lease.
 
-Preparation asserts that the org runtime was warmed before lease acquisition,
+Preparation requires the org runtime to be ready before lease acquisition,
 then resolves the host resources that must exist before Firecracker can run:
 root zvol clone, composed filesystem zvol clones, jail root, block device
 nodes, TAP lease, API socket path, vsock control socket path, and metrics path.
-Org runtime warmup owns encrypted namespace convergence, org ZFS key loading,
+Org runtime ensure owns encrypted namespace convergence, org ZFS key loading,
 quota application, and org-local platform image materialization.
 
 Activation chooses one of two strategies:
