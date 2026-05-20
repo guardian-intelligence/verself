@@ -653,13 +653,13 @@ func digestDirectory(root string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(h, "path %s\nmode %s\nsize %d\n", rel, info.Mode().String(), info.Size())
+		_, _ = fmt.Fprintf(h, "path %s\nmode %s\nsize %d\n", rel, info.Mode().String(), info.Size())
 		if info.Mode()&os.ModeSymlink != 0 {
 			target, err := os.Readlink(path)
 			if err != nil {
 				return "", err
 			}
-			fmt.Fprintf(h, "symlink %s\n", target)
+			_, _ = fmt.Fprintf(h, "symlink %s\n", target)
 			continue
 		}
 		if !info.Mode().IsRegular() {
