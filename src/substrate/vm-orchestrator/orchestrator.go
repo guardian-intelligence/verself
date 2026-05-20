@@ -1209,7 +1209,7 @@ func (o *Orchestrator) restoreFirecrackerSnapshot(ctx context.Context, runtime *
 	restoreErr := client.loadSnapshot(restoreCtx, paths.StateJailPath, paths.MemJailPath, false, []networkOverrideReq{{
 		IfaceID:     snapshotIfaceID,
 		HostDevName: netSetup.Lease.TapName,
-	}}, "/run/vs-control.sock")
+	}})
 	endRestoreSpan(restoreErr)
 	cancel()
 	if restoreErr != nil {
