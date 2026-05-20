@@ -52,6 +52,7 @@ const getCurrentDurableGeneration = `-- name: GetCurrentDurableGeneration :one
 SELECT
     g.durable_generation_id,
     g.zfs_snapshot_ref,
+    g.zfs_snapshot_guid,
     g.head_sha,
     g.tree_hash
 FROM durable_current_pointer p
@@ -67,6 +68,7 @@ type GetCurrentDurableGenerationParams struct {
 type GetCurrentDurableGenerationRow struct {
 	DurableGenerationID uuid.UUID
 	ZfsSnapshotRef      string
+	ZfsSnapshotGuid     string
 	HeadSha             string
 	TreeHash            string
 }
@@ -77,6 +79,7 @@ func (q *Queries) GetCurrentDurableGeneration(ctx context.Context, arg GetCurren
 	err := row.Scan(
 		&i.DurableGenerationID,
 		&i.ZfsSnapshotRef,
+		&i.ZfsSnapshotGuid,
 		&i.HeadSha,
 		&i.TreeHash,
 	)
@@ -261,7 +264,7 @@ const insertDurableGeneration = `-- name: InsertDurableGeneration :one
 INSERT INTO durable_generation (
     durable_generation_id, durable_scope_id, operation_id, source_generation_id,
     head_sha, tree_hash, provider_run_id, provider_run_attempt, provider_job_id,
-    result, promotion_eligible, state, zfs_snapshot_ref, used_bytes, written_bytes,
+    result, promotion_eligible, state, zfs_snapshot_ref, zfs_snapshot_guid, used_bytes, written_bytes,
     sealed_at, committed_at, last_used_at, expires_at
 ) VALUES (
     $1, $2, $3,
@@ -269,7 +272,7 @@ INSERT INTO durable_generation (
     $7, $8, $9,
     $10, $11, $12, $13,
     $14, $15, $16, $17,
-    $18, $19
+    $18, $19, $20
 )
 ON CONFLICT (operation_id) DO UPDATE SET last_used_at = EXCLUDED.last_used_at
 RETURNING durable_generation_id
@@ -289,6 +292,7 @@ type InsertDurableGenerationParams struct {
 	PromotionEligible   bool
 	State               string
 	ZfsSnapshotRef      string
+	ZfsSnapshotGuid     string
 	UsedBytes           int64
 	WrittenBytes        int64
 	SealedAt            pgtype.Timestamptz
@@ -312,6 +316,7 @@ func (q *Queries) InsertDurableGeneration(ctx context.Context, arg InsertDurable
 		arg.PromotionEligible,
 		arg.State,
 		arg.ZfsSnapshotRef,
+		arg.ZfsSnapshotGuid,
 		arg.UsedBytes,
 		arg.WrittenBytes,
 		arg.SealedAt,
@@ -880,6 +885,13 @@ WHERE g.state IN ('committed', 'retained', 'prunable')
       WHERE child.source_generation_id = g.durable_generation_id
         AND child.state <> 'pruned'
   )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM golden_vm_snapshot_generation vm_gen
+      JOIN golden_vm_snapshot vm ON vm.golden_vm_snapshot_id = vm_gen.golden_vm_snapshot_id
+      WHERE vm_gen.durable_generation_id = g.durable_generation_id
+        AND vm.state IN ('candidate', 'current', 'retained')
+  )
 ORDER BY g.last_used_at, g.committed_at, g.durable_generation_id
 LIMIT $1
 `
@@ -981,6 +993,13 @@ WHERE g.expires_at <= $1
       FROM durable_generation child
       WHERE child.source_generation_id = g.durable_generation_id
         AND child.state <> 'pruned'
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM golden_vm_snapshot_generation vm_gen
+      JOIN golden_vm_snapshot vm ON vm.golden_vm_snapshot_id = vm_gen.golden_vm_snapshot_id
+      WHERE vm_gen.durable_generation_id = g.durable_generation_id
+        AND vm.state IN ('candidate', 'current', 'retained')
   )
 ORDER BY g.expires_at, g.committed_at, g.durable_generation_id
 LIMIT $2

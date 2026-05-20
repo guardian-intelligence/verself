@@ -37,6 +37,7 @@ go_library(
         "//src/services/sandbox-rental-service/internal/store",
         "//src/services/secrets-service/client",
         "//src/substrate/vm-orchestrator",
+        "//src/substrate/vm-orchestrator/vmproto",
         "//src/tools/observability/go/bazeltelemetry",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@com_github_golang_jwt_jwt_v5//:jwt",

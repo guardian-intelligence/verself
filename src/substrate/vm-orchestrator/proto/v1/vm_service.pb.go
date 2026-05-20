@@ -247,22 +247,25 @@ func (NetworkAttachMode) EnumDescriptor() ([]byte, []int) {
 type LeaseEventType int32
 
 const (
-	LeaseEventType_LEASE_EVENT_TYPE_UNSPECIFIED               LeaseEventType = 0
-	LeaseEventType_LEASE_EVENT_TYPE_LEASE_ACQUIRED            LeaseEventType = 1
-	LeaseEventType_LEASE_EVENT_TYPE_VM_BOOTING                LeaseEventType = 2
-	LeaseEventType_LEASE_EVENT_TYPE_VM_READY                  LeaseEventType = 3
-	LeaseEventType_LEASE_EVENT_TYPE_LEASE_RENEWED             LeaseEventType = 4
-	LeaseEventType_LEASE_EVENT_TYPE_EXEC_STARTED              LeaseEventType = 5
-	LeaseEventType_LEASE_EVENT_TYPE_EXEC_FINISHED             LeaseEventType = 6
-	LeaseEventType_LEASE_EVENT_TYPE_EXEC_CANCELED             LeaseEventType = 7
-	LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED LeaseEventType = 8
-	LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED      LeaseEventType = 9
-	LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED  LeaseEventType = 10
-	LeaseEventType_LEASE_EVENT_TYPE_VM_SHUTDOWN               LeaseEventType = 11
-	LeaseEventType_LEASE_EVENT_TYPE_LEASE_EXPIRED             LeaseEventType = 12
-	LeaseEventType_LEASE_EVENT_TYPE_LEASE_RELEASED            LeaseEventType = 13
-	LeaseEventType_LEASE_EVENT_TYPE_LEASE_CRASHED             LeaseEventType = 14
-	LeaseEventType_LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC      LeaseEventType = 15
+	LeaseEventType_LEASE_EVENT_TYPE_UNSPECIFIED                  LeaseEventType = 0
+	LeaseEventType_LEASE_EVENT_TYPE_LEASE_ACQUIRED               LeaseEventType = 1
+	LeaseEventType_LEASE_EVENT_TYPE_VM_BOOTING                   LeaseEventType = 2
+	LeaseEventType_LEASE_EVENT_TYPE_VM_READY                     LeaseEventType = 3
+	LeaseEventType_LEASE_EVENT_TYPE_LEASE_RENEWED                LeaseEventType = 4
+	LeaseEventType_LEASE_EVENT_TYPE_EXEC_STARTED                 LeaseEventType = 5
+	LeaseEventType_LEASE_EVENT_TYPE_EXEC_FINISHED                LeaseEventType = 6
+	LeaseEventType_LEASE_EVENT_TYPE_EXEC_CANCELED                LeaseEventType = 7
+	LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED    LeaseEventType = 8
+	LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED         LeaseEventType = 9
+	LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED     LeaseEventType = 10
+	LeaseEventType_LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_STARTED LeaseEventType = 11
+	LeaseEventType_LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINTED       LeaseEventType = 12
+	LeaseEventType_LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_FAILED  LeaseEventType = 13
+	LeaseEventType_LEASE_EVENT_TYPE_VM_SHUTDOWN                  LeaseEventType = 14
+	LeaseEventType_LEASE_EVENT_TYPE_LEASE_EXPIRED                LeaseEventType = 15
+	LeaseEventType_LEASE_EVENT_TYPE_LEASE_RELEASED               LeaseEventType = 16
+	LeaseEventType_LEASE_EVENT_TYPE_LEASE_CRASHED                LeaseEventType = 17
+	LeaseEventType_LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC         LeaseEventType = 18
 )
 
 // Enum value maps for LeaseEventType.
@@ -279,29 +282,35 @@ var (
 		8:  "LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED",
 		9:  "LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED",
 		10: "LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED",
-		11: "LEASE_EVENT_TYPE_VM_SHUTDOWN",
-		12: "LEASE_EVENT_TYPE_LEASE_EXPIRED",
-		13: "LEASE_EVENT_TYPE_LEASE_RELEASED",
-		14: "LEASE_EVENT_TYPE_LEASE_CRASHED",
-		15: "LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC",
+		11: "LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_STARTED",
+		12: "LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINTED",
+		13: "LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_FAILED",
+		14: "LEASE_EVENT_TYPE_VM_SHUTDOWN",
+		15: "LEASE_EVENT_TYPE_LEASE_EXPIRED",
+		16: "LEASE_EVENT_TYPE_LEASE_RELEASED",
+		17: "LEASE_EVENT_TYPE_LEASE_CRASHED",
+		18: "LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC",
 	}
 	LeaseEventType_value = map[string]int32{
-		"LEASE_EVENT_TYPE_UNSPECIFIED":               0,
-		"LEASE_EVENT_TYPE_LEASE_ACQUIRED":            1,
-		"LEASE_EVENT_TYPE_VM_BOOTING":                2,
-		"LEASE_EVENT_TYPE_VM_READY":                  3,
-		"LEASE_EVENT_TYPE_LEASE_RENEWED":             4,
-		"LEASE_EVENT_TYPE_EXEC_STARTED":              5,
-		"LEASE_EVENT_TYPE_EXEC_FINISHED":             6,
-		"LEASE_EVENT_TYPE_EXEC_CANCELED":             7,
-		"LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED": 8,
-		"LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED":      9,
-		"LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED":  10,
-		"LEASE_EVENT_TYPE_VM_SHUTDOWN":               11,
-		"LEASE_EVENT_TYPE_LEASE_EXPIRED":             12,
-		"LEASE_EVENT_TYPE_LEASE_RELEASED":            13,
-		"LEASE_EVENT_TYPE_LEASE_CRASHED":             14,
-		"LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC":      15,
+		"LEASE_EVENT_TYPE_UNSPECIFIED":                  0,
+		"LEASE_EVENT_TYPE_LEASE_ACQUIRED":               1,
+		"LEASE_EVENT_TYPE_VM_BOOTING":                   2,
+		"LEASE_EVENT_TYPE_VM_READY":                     3,
+		"LEASE_EVENT_TYPE_LEASE_RENEWED":                4,
+		"LEASE_EVENT_TYPE_EXEC_STARTED":                 5,
+		"LEASE_EVENT_TYPE_EXEC_FINISHED":                6,
+		"LEASE_EVENT_TYPE_EXEC_CANCELED":                7,
+		"LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED":    8,
+		"LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED":         9,
+		"LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED":     10,
+		"LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_STARTED": 11,
+		"LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINTED":       12,
+		"LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_FAILED":  13,
+		"LEASE_EVENT_TYPE_VM_SHUTDOWN":                  14,
+		"LEASE_EVENT_TYPE_LEASE_EXPIRED":                15,
+		"LEASE_EVENT_TYPE_LEASE_RELEASED":               16,
+		"LEASE_EVENT_TYPE_LEASE_CRASHED":                17,
+		"LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC":         18,
 	}
 )
 
@@ -544,15 +553,16 @@ func (x *VMResources) GetKernelImage() string {
 }
 
 type LeaseSpec struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Resources        *VMResources           `protobuf:"bytes,1,opt,name=resources,proto3" json:"resources,omitempty"`
-	TtlSeconds       uint64                 `protobuf:"varint,5,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
-	TrustClass       string                 `protobuf:"bytes,6,opt,name=trust_class,json=trustClass,proto3" json:"trust_class,omitempty"`
-	Network          *NetworkAttach         `protobuf:"bytes,8,opt,name=network,proto3" json:"network,omitempty"`
-	FilesystemMounts []*FilesystemMount     `protobuf:"bytes,9,rep,name=filesystem_mounts,json=filesystemMounts,proto3" json:"filesystem_mounts,omitempty"`
-	StorageNamespace *StorageNamespace      `protobuf:"bytes,11,opt,name=storage_namespace,json=storageNamespace,proto3" json:"storage_namespace,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Resources          *VMResources           `protobuf:"bytes,1,opt,name=resources,proto3" json:"resources,omitempty"`
+	TtlSeconds         uint64                 `protobuf:"varint,5,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	TrustClass         string                 `protobuf:"bytes,6,opt,name=trust_class,json=trustClass,proto3" json:"trust_class,omitempty"`
+	Network            *NetworkAttach         `protobuf:"bytes,8,opt,name=network,proto3" json:"network,omitempty"`
+	FilesystemMounts   []*FilesystemMount     `protobuf:"bytes,9,rep,name=filesystem_mounts,json=filesystemMounts,proto3" json:"filesystem_mounts,omitempty"`
+	StorageNamespace   *StorageNamespace      `protobuf:"bytes,11,opt,name=storage_namespace,json=storageNamespace,proto3" json:"storage_namespace,omitempty"`
+	GoldenVmActivation *GoldenVMActivation    `protobuf:"bytes,12,opt,name=golden_vm_activation,json=goldenVmActivation,proto3" json:"golden_vm_activation,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *LeaseSpec) Reset() {
@@ -623,6 +633,13 @@ func (x *LeaseSpec) GetFilesystemMounts() []*FilesystemMount {
 func (x *LeaseSpec) GetStorageNamespace() *StorageNamespace {
 	if x != nil {
 		return x.StorageNamespace
+	}
+	return nil
+}
+
+func (x *LeaseSpec) GetGoldenVmActivation() *GoldenVMActivation {
+	if x != nil {
+		return x.GoldenVmActivation
 	}
 	return nil
 }
@@ -1059,6 +1076,174 @@ func (x *FilesystemMountResult) GetRequired() bool {
 	return false
 }
 
+type GoldenVMActivation struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	GoldenVmSnapshotId string                 `protobuf:"bytes,1,opt,name=golden_vm_snapshot_id,json=goldenVmSnapshotId,proto3" json:"golden_vm_snapshot_id,omitempty"`
+	GenerationSetHash  string                 `protobuf:"bytes,2,opt,name=generation_set_hash,json=generationSetHash,proto3" json:"generation_set_hash,omitempty"`
+	RootSnapshotRef    string                 `protobuf:"bytes,3,opt,name=root_snapshot_ref,json=rootSnapshotRef,proto3" json:"root_snapshot_ref,omitempty"`
+	RootSnapshotGuid   string                 `protobuf:"bytes,4,opt,name=root_snapshot_guid,json=rootSnapshotGuid,proto3" json:"root_snapshot_guid,omitempty"`
+	SnapshotKey        string                 `protobuf:"bytes,5,opt,name=snapshot_key,json=snapshotKey,proto3" json:"snapshot_key,omitempty"`
+	VmstateArtifactRef string                 `protobuf:"bytes,6,opt,name=vmstate_artifact_ref,json=vmstateArtifactRef,proto3" json:"vmstate_artifact_ref,omitempty"`
+	MemoryArtifactRef  string                 `protobuf:"bytes,7,opt,name=memory_artifact_ref,json=memoryArtifactRef,proto3" json:"memory_artifact_ref,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *GoldenVMActivation) Reset() {
+	*x = GoldenVMActivation{}
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GoldenVMActivation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GoldenVMActivation) ProtoMessage() {}
+
+func (x *GoldenVMActivation) ProtoReflect() protoreflect.Message {
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GoldenVMActivation.ProtoReflect.Descriptor instead.
+func (*GoldenVMActivation) Descriptor() ([]byte, []int) {
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GoldenVMActivation) GetGoldenVmSnapshotId() string {
+	if x != nil {
+		return x.GoldenVmSnapshotId
+	}
+	return ""
+}
+
+func (x *GoldenVMActivation) GetGenerationSetHash() string {
+	if x != nil {
+		return x.GenerationSetHash
+	}
+	return ""
+}
+
+func (x *GoldenVMActivation) GetRootSnapshotRef() string {
+	if x != nil {
+		return x.RootSnapshotRef
+	}
+	return ""
+}
+
+func (x *GoldenVMActivation) GetRootSnapshotGuid() string {
+	if x != nil {
+		return x.RootSnapshotGuid
+	}
+	return ""
+}
+
+func (x *GoldenVMActivation) GetSnapshotKey() string {
+	if x != nil {
+		return x.SnapshotKey
+	}
+	return ""
+}
+
+func (x *GoldenVMActivation) GetVmstateArtifactRef() string {
+	if x != nil {
+		return x.VmstateArtifactRef
+	}
+	return ""
+}
+
+func (x *GoldenVMActivation) GetMemoryArtifactRef() string {
+	if x != nil {
+		return x.MemoryArtifactRef
+	}
+	return ""
+}
+
+type GoldenVMActivationResult struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Mode               string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	GoldenVmSnapshotId string                 `protobuf:"bytes,2,opt,name=golden_vm_snapshot_id,json=goldenVmSnapshotId,proto3" json:"golden_vm_snapshot_id,omitempty"`
+	GenerationSetHash  string                 `protobuf:"bytes,3,opt,name=generation_set_hash,json=generationSetHash,proto3" json:"generation_set_hash,omitempty"`
+	SnapshotKey        string                 `protobuf:"bytes,4,opt,name=snapshot_key,json=snapshotKey,proto3" json:"snapshot_key,omitempty"`
+	MissReason         string                 `protobuf:"bytes,5,opt,name=miss_reason,json=missReason,proto3" json:"miss_reason,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *GoldenVMActivationResult) Reset() {
+	*x = GoldenVMActivationResult{}
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GoldenVMActivationResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GoldenVMActivationResult) ProtoMessage() {}
+
+func (x *GoldenVMActivationResult) ProtoReflect() protoreflect.Message {
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GoldenVMActivationResult.ProtoReflect.Descriptor instead.
+func (*GoldenVMActivationResult) Descriptor() ([]byte, []int) {
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GoldenVMActivationResult) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *GoldenVMActivationResult) GetGoldenVmSnapshotId() string {
+	if x != nil {
+		return x.GoldenVmSnapshotId
+	}
+	return ""
+}
+
+func (x *GoldenVMActivationResult) GetGenerationSetHash() string {
+	if x != nil {
+		return x.GenerationSetHash
+	}
+	return ""
+}
+
+func (x *GoldenVMActivationResult) GetSnapshotKey() string {
+	if x != nil {
+		return x.SnapshotKey
+	}
+	return ""
+}
+
+func (x *GoldenVMActivationResult) GetMissReason() string {
+	if x != nil {
+		return x.MissReason
+	}
+	return ""
+}
+
 type AcquireLeaseRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	IdempotencyKey string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -1069,7 +1254,7 @@ type AcquireLeaseRequest struct {
 
 func (x *AcquireLeaseRequest) Reset() {
 	*x = AcquireLeaseRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[9]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1081,7 +1266,7 @@ func (x *AcquireLeaseRequest) String() string {
 func (*AcquireLeaseRequest) ProtoMessage() {}
 
 func (x *AcquireLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[9]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1094,7 +1279,7 @@ func (x *AcquireLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcquireLeaseRequest.ProtoReflect.Descriptor instead.
 func (*AcquireLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{9}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AcquireLeaseRequest) GetIdempotencyKey() string {
@@ -1112,21 +1297,22 @@ func (x *AcquireLeaseRequest) GetSpec() *LeaseSpec {
 }
 
 type AcquireLeaseResponse struct {
-	state            protoimpl.MessageState   `protogen:"open.v1"`
-	LeaseId          string                   `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	State            LeaseState               `protobuf:"varint,2,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
-	AcquiredAtUnixNs uint64                   `protobuf:"varint,3,opt,name=acquired_at_unix_ns,json=acquiredAtUnixNs,proto3" json:"acquired_at_unix_ns,omitempty"`
-	ExpiresAtUnixNs  uint64                   `protobuf:"varint,4,opt,name=expires_at_unix_ns,json=expiresAtUnixNs,proto3" json:"expires_at_unix_ns,omitempty"`
-	VmIp             string                   `protobuf:"bytes,5,opt,name=vm_ip,json=vmIp,proto3" json:"vm_ip,omitempty"`
-	Resources        *VMResources             `protobuf:"bytes,6,opt,name=resources,proto3" json:"resources,omitempty"`
-	FilesystemMounts []*FilesystemMountResult `protobuf:"bytes,7,rep,name=filesystem_mounts,json=filesystemMounts,proto3" json:"filesystem_mounts,omitempty"`
+	state            protoimpl.MessageState    `protogen:"open.v1"`
+	LeaseId          string                    `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	State            LeaseState                `protobuf:"varint,2,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
+	AcquiredAtUnixNs uint64                    `protobuf:"varint,3,opt,name=acquired_at_unix_ns,json=acquiredAtUnixNs,proto3" json:"acquired_at_unix_ns,omitempty"`
+	ExpiresAtUnixNs  uint64                    `protobuf:"varint,4,opt,name=expires_at_unix_ns,json=expiresAtUnixNs,proto3" json:"expires_at_unix_ns,omitempty"`
+	VmIp             string                    `protobuf:"bytes,5,opt,name=vm_ip,json=vmIp,proto3" json:"vm_ip,omitempty"`
+	Resources        *VMResources              `protobuf:"bytes,6,opt,name=resources,proto3" json:"resources,omitempty"`
+	FilesystemMounts []*FilesystemMountResult  `protobuf:"bytes,7,rep,name=filesystem_mounts,json=filesystemMounts,proto3" json:"filesystem_mounts,omitempty"`
+	Activation       *GoldenVMActivationResult `protobuf:"bytes,8,opt,name=activation,proto3" json:"activation,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *AcquireLeaseResponse) Reset() {
 	*x = AcquireLeaseResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[10]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1138,7 +1324,7 @@ func (x *AcquireLeaseResponse) String() string {
 func (*AcquireLeaseResponse) ProtoMessage() {}
 
 func (x *AcquireLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[10]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1151,7 +1337,7 @@ func (x *AcquireLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcquireLeaseResponse.ProtoReflect.Descriptor instead.
 func (*AcquireLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{10}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AcquireLeaseResponse) GetLeaseId() string {
@@ -1203,6 +1389,13 @@ func (x *AcquireLeaseResponse) GetFilesystemMounts() []*FilesystemMountResult {
 	return nil
 }
 
+func (x *AcquireLeaseResponse) GetActivation() *GoldenVMActivationResult {
+	if x != nil {
+		return x.Activation
+	}
+	return nil
+}
+
 type RenewLeaseRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	LeaseId        string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
@@ -1214,7 +1407,7 @@ type RenewLeaseRequest struct {
 
 func (x *RenewLeaseRequest) Reset() {
 	*x = RenewLeaseRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[11]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1226,7 +1419,7 @@ func (x *RenewLeaseRequest) String() string {
 func (*RenewLeaseRequest) ProtoMessage() {}
 
 func (x *RenewLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[11]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1239,7 +1432,7 @@ func (x *RenewLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLeaseRequest.ProtoReflect.Descriptor instead.
 func (*RenewLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{11}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RenewLeaseRequest) GetLeaseId() string {
@@ -1273,7 +1466,7 @@ type RenewLeaseResponse struct {
 
 func (x *RenewLeaseResponse) Reset() {
 	*x = RenewLeaseResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[12]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1285,7 +1478,7 @@ func (x *RenewLeaseResponse) String() string {
 func (*RenewLeaseResponse) ProtoMessage() {}
 
 func (x *RenewLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[12]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1298,7 +1491,7 @@ func (x *RenewLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLeaseResponse.ProtoReflect.Descriptor instead.
 func (*RenewLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{12}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RenewLeaseResponse) GetLeaseId() string {
@@ -1325,7 +1518,7 @@ type ReleaseLeaseRequest struct {
 
 func (x *ReleaseLeaseRequest) Reset() {
 	*x = ReleaseLeaseRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[13]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1337,7 +1530,7 @@ func (x *ReleaseLeaseRequest) String() string {
 func (*ReleaseLeaseRequest) ProtoMessage() {}
 
 func (x *ReleaseLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[13]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1350,7 +1543,7 @@ func (x *ReleaseLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeaseRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{13}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ReleaseLeaseRequest) GetLeaseId() string {
@@ -1378,7 +1571,7 @@ type ReleaseLeaseResponse struct {
 
 func (x *ReleaseLeaseResponse) Reset() {
 	*x = ReleaseLeaseResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[14]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1390,7 +1583,7 @@ func (x *ReleaseLeaseResponse) String() string {
 func (*ReleaseLeaseResponse) ProtoMessage() {}
 
 func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[14]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1403,7 +1596,7 @@ func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeaseResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{14}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ReleaseLeaseResponse) GetLeaseId() string {
@@ -1436,7 +1629,7 @@ type GetLeaseRequest struct {
 
 func (x *GetLeaseRequest) Reset() {
 	*x = GetLeaseRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[15]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1448,7 +1641,7 @@ func (x *GetLeaseRequest) String() string {
 func (*GetLeaseRequest) ProtoMessage() {}
 
 func (x *GetLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[15]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1461,7 +1654,7 @@ func (x *GetLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLeaseRequest.ProtoReflect.Descriptor instead.
 func (*GetLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{15}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetLeaseRequest) GetLeaseId() string {
@@ -1472,25 +1665,26 @@ func (x *GetLeaseRequest) GetLeaseId() string {
 }
 
 type LeaseRecord struct {
-	state            protoimpl.MessageState   `protogen:"open.v1"`
-	LeaseId          string                   `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	State            LeaseState               `protobuf:"varint,2,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
-	AcquiredAtUnixNs uint64                   `protobuf:"varint,3,opt,name=acquired_at_unix_ns,json=acquiredAtUnixNs,proto3" json:"acquired_at_unix_ns,omitempty"`
-	ReadyAtUnixNs    uint64                   `protobuf:"varint,4,opt,name=ready_at_unix_ns,json=readyAtUnixNs,proto3" json:"ready_at_unix_ns,omitempty"`
-	ExpiresAtUnixNs  uint64                   `protobuf:"varint,5,opt,name=expires_at_unix_ns,json=expiresAtUnixNs,proto3" json:"expires_at_unix_ns,omitempty"`
-	TerminalAtUnixNs uint64                   `protobuf:"varint,6,opt,name=terminal_at_unix_ns,json=terminalAtUnixNs,proto3" json:"terminal_at_unix_ns,omitempty"`
-	TerminalReason   string                   `protobuf:"bytes,7,opt,name=terminal_reason,json=terminalReason,proto3" json:"terminal_reason,omitempty"`
-	VmIp             string                   `protobuf:"bytes,8,opt,name=vm_ip,json=vmIp,proto3" json:"vm_ip,omitempty"`
-	Resources        *VMResources             `protobuf:"bytes,9,opt,name=resources,proto3" json:"resources,omitempty"`
-	TrustClass       string                   `protobuf:"bytes,10,opt,name=trust_class,json=trustClass,proto3" json:"trust_class,omitempty"`
-	FilesystemMounts []*FilesystemMountResult `protobuf:"bytes,11,rep,name=filesystem_mounts,json=filesystemMounts,proto3" json:"filesystem_mounts,omitempty"`
+	state            protoimpl.MessageState    `protogen:"open.v1"`
+	LeaseId          string                    `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	State            LeaseState                `protobuf:"varint,2,opt,name=state,proto3,enum=verself.vm_orchestrator.v1.LeaseState" json:"state,omitempty"`
+	AcquiredAtUnixNs uint64                    `protobuf:"varint,3,opt,name=acquired_at_unix_ns,json=acquiredAtUnixNs,proto3" json:"acquired_at_unix_ns,omitempty"`
+	ReadyAtUnixNs    uint64                    `protobuf:"varint,4,opt,name=ready_at_unix_ns,json=readyAtUnixNs,proto3" json:"ready_at_unix_ns,omitempty"`
+	ExpiresAtUnixNs  uint64                    `protobuf:"varint,5,opt,name=expires_at_unix_ns,json=expiresAtUnixNs,proto3" json:"expires_at_unix_ns,omitempty"`
+	TerminalAtUnixNs uint64                    `protobuf:"varint,6,opt,name=terminal_at_unix_ns,json=terminalAtUnixNs,proto3" json:"terminal_at_unix_ns,omitempty"`
+	TerminalReason   string                    `protobuf:"bytes,7,opt,name=terminal_reason,json=terminalReason,proto3" json:"terminal_reason,omitempty"`
+	VmIp             string                    `protobuf:"bytes,8,opt,name=vm_ip,json=vmIp,proto3" json:"vm_ip,omitempty"`
+	Resources        *VMResources              `protobuf:"bytes,9,opt,name=resources,proto3" json:"resources,omitempty"`
+	TrustClass       string                    `protobuf:"bytes,10,opt,name=trust_class,json=trustClass,proto3" json:"trust_class,omitempty"`
+	FilesystemMounts []*FilesystemMountResult  `protobuf:"bytes,11,rep,name=filesystem_mounts,json=filesystemMounts,proto3" json:"filesystem_mounts,omitempty"`
+	Activation       *GoldenVMActivationResult `protobuf:"bytes,12,opt,name=activation,proto3" json:"activation,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *LeaseRecord) Reset() {
 	*x = LeaseRecord{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[16]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1502,7 +1696,7 @@ func (x *LeaseRecord) String() string {
 func (*LeaseRecord) ProtoMessage() {}
 
 func (x *LeaseRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[16]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1515,7 +1709,7 @@ func (x *LeaseRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseRecord.ProtoReflect.Descriptor instead.
 func (*LeaseRecord) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{16}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *LeaseRecord) GetLeaseId() string {
@@ -1595,6 +1789,13 @@ func (x *LeaseRecord) GetFilesystemMounts() []*FilesystemMountResult {
 	return nil
 }
 
+func (x *LeaseRecord) GetActivation() *GoldenVMActivationResult {
+	if x != nil {
+		return x.Activation
+	}
+	return nil
+}
+
 type GetLeaseResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Lease         *LeaseRecord           `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
@@ -1604,7 +1805,7 @@ type GetLeaseResponse struct {
 
 func (x *GetLeaseResponse) Reset() {
 	*x = GetLeaseResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[17]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1616,7 +1817,7 @@ func (x *GetLeaseResponse) String() string {
 func (*GetLeaseResponse) ProtoMessage() {}
 
 func (x *GetLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[17]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1629,7 +1830,7 @@ func (x *GetLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLeaseResponse.ProtoReflect.Descriptor instead.
 func (*GetLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{17}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetLeaseResponse) GetLease() *LeaseRecord {
@@ -1649,7 +1850,7 @@ type ListLeasesRequest struct {
 
 func (x *ListLeasesRequest) Reset() {
 	*x = ListLeasesRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[18]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1661,7 +1862,7 @@ func (x *ListLeasesRequest) String() string {
 func (*ListLeasesRequest) ProtoMessage() {}
 
 func (x *ListLeasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[18]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1674,7 +1875,7 @@ func (x *ListLeasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLeasesRequest.ProtoReflect.Descriptor instead.
 func (*ListLeasesRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{18}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListLeasesRequest) GetIncludeTerminal() bool {
@@ -1700,7 +1901,7 @@ type ListLeasesResponse struct {
 
 func (x *ListLeasesResponse) Reset() {
 	*x = ListLeasesResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[19]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1712,7 +1913,7 @@ func (x *ListLeasesResponse) String() string {
 func (*ListLeasesResponse) ProtoMessage() {}
 
 func (x *ListLeasesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[19]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1725,7 +1926,7 @@ func (x *ListLeasesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLeasesResponse.ProtoReflect.Descriptor instead.
 func (*ListLeasesResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{19}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListLeasesResponse) GetLeases() []*LeaseRecord {
@@ -1747,7 +1948,7 @@ type StreamLeaseEventsRequest struct {
 
 func (x *StreamLeaseEventsRequest) Reset() {
 	*x = StreamLeaseEventsRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[20]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1759,7 +1960,7 @@ func (x *StreamLeaseEventsRequest) String() string {
 func (*StreamLeaseEventsRequest) ProtoMessage() {}
 
 func (x *StreamLeaseEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[20]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1772,7 +1973,7 @@ func (x *StreamLeaseEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLeaseEventsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLeaseEventsRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{20}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *StreamLeaseEventsRequest) GetLeaseId() string {
@@ -1817,7 +2018,7 @@ type LeaseEvent struct {
 
 func (x *LeaseEvent) Reset() {
 	*x = LeaseEvent{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[21]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1829,7 +2030,7 @@ func (x *LeaseEvent) String() string {
 func (*LeaseEvent) ProtoMessage() {}
 
 func (x *LeaseEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[21]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1842,7 +2043,7 @@ func (x *LeaseEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseEvent.ProtoReflect.Descriptor instead.
 func (*LeaseEvent) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{21}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *LeaseEvent) GetLeaseId() string {
@@ -1902,7 +2103,7 @@ type ExecSpec struct {
 
 func (x *ExecSpec) Reset() {
 	*x = ExecSpec{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1914,7 +2115,7 @@ func (x *ExecSpec) String() string {
 func (*ExecSpec) ProtoMessage() {}
 
 func (x *ExecSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[22]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1927,7 +2128,7 @@ func (x *ExecSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecSpec.ProtoReflect.Descriptor instead.
 func (*ExecSpec) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{22}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ExecSpec) GetArgv() []string {
@@ -1990,7 +2191,7 @@ type StartExecRequest struct {
 
 func (x *StartExecRequest) Reset() {
 	*x = StartExecRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2002,7 +2203,7 @@ func (x *StartExecRequest) String() string {
 func (*StartExecRequest) ProtoMessage() {}
 
 func (x *StartExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[23]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2015,7 +2216,7 @@ func (x *StartExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartExecRequest.ProtoReflect.Descriptor instead.
 func (*StartExecRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{23}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *StartExecRequest) GetLeaseId() string {
@@ -2051,7 +2252,7 @@ type StartExecResponse struct {
 
 func (x *StartExecResponse) Reset() {
 	*x = StartExecResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[24]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2063,7 +2264,7 @@ func (x *StartExecResponse) String() string {
 func (*StartExecResponse) ProtoMessage() {}
 
 func (x *StartExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[24]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2076,7 +2277,7 @@ func (x *StartExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartExecResponse.ProtoReflect.Descriptor instead.
 func (*StartExecResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{24}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *StartExecResponse) GetLeaseId() string {
@@ -2119,7 +2320,7 @@ type CancelExecRequest struct {
 
 func (x *CancelExecRequest) Reset() {
 	*x = CancelExecRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[25]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2131,7 +2332,7 @@ func (x *CancelExecRequest) String() string {
 func (*CancelExecRequest) ProtoMessage() {}
 
 func (x *CancelExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[25]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2144,7 +2345,7 @@ func (x *CancelExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelExecRequest.ProtoReflect.Descriptor instead.
 func (*CancelExecRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{25}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CancelExecRequest) GetLeaseId() string {
@@ -2187,7 +2388,7 @@ type CancelExecResponse struct {
 
 func (x *CancelExecResponse) Reset() {
 	*x = CancelExecResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[26]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2199,7 +2400,7 @@ func (x *CancelExecResponse) String() string {
 func (*CancelExecResponse) ProtoMessage() {}
 
 func (x *CancelExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[26]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2212,7 +2413,7 @@ func (x *CancelExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelExecResponse.ProtoReflect.Descriptor instead.
 func (*CancelExecResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{26}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CancelExecResponse) GetLeaseId() string {
@@ -2254,7 +2455,7 @@ type GetExecRequest struct {
 
 func (x *GetExecRequest) Reset() {
 	*x = GetExecRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[27]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2266,7 +2467,7 @@ func (x *GetExecRequest) String() string {
 func (*GetExecRequest) ProtoMessage() {}
 
 func (x *GetExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[27]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2279,7 +2480,7 @@ func (x *GetExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExecRequest.ProtoReflect.Descriptor instead.
 func (*GetExecRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{27}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *GetExecRequest) GetLeaseId() string {
@@ -2314,7 +2515,7 @@ type WaitExecRequest struct {
 
 func (x *WaitExecRequest) Reset() {
 	*x = WaitExecRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[28]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2326,7 +2527,7 @@ func (x *WaitExecRequest) String() string {
 func (*WaitExecRequest) ProtoMessage() {}
 
 func (x *WaitExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[28]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2339,7 +2540,7 @@ func (x *WaitExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitExecRequest.ProtoReflect.Descriptor instead.
 func (*WaitExecRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{28}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *WaitExecRequest) GetLeaseId() string {
@@ -2387,7 +2588,7 @@ type ExecRecord struct {
 
 func (x *ExecRecord) Reset() {
 	*x = ExecRecord{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[29]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2399,7 +2600,7 @@ func (x *ExecRecord) String() string {
 func (*ExecRecord) ProtoMessage() {}
 
 func (x *ExecRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[29]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2412,7 +2613,7 @@ func (x *ExecRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRecord.ProtoReflect.Descriptor instead.
 func (*ExecRecord) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{29}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ExecRecord) GetLeaseId() string {
@@ -2536,7 +2737,7 @@ type GetExecResponse struct {
 
 func (x *GetExecResponse) Reset() {
 	*x = GetExecResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[30]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2548,7 +2749,7 @@ func (x *GetExecResponse) String() string {
 func (*GetExecResponse) ProtoMessage() {}
 
 func (x *GetExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[30]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2561,7 +2762,7 @@ func (x *GetExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExecResponse.ProtoReflect.Descriptor instead.
 func (*GetExecResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{30}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetExecResponse) GetExec() *ExecRecord {
@@ -2580,7 +2781,7 @@ type WaitExecResponse struct {
 
 func (x *WaitExecResponse) Reset() {
 	*x = WaitExecResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[31]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2592,7 +2793,7 @@ func (x *WaitExecResponse) String() string {
 func (*WaitExecResponse) ProtoMessage() {}
 
 func (x *WaitExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[31]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2605,7 +2806,7 @@ func (x *WaitExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitExecResponse.ProtoReflect.Descriptor instead.
 func (*WaitExecResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{31}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *WaitExecResponse) GetExec() *ExecRecord {
@@ -2637,7 +2838,7 @@ type CommitFilesystemMountRequest struct {
 
 func (x *CommitFilesystemMountRequest) Reset() {
 	*x = CommitFilesystemMountRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[32]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2649,7 +2850,7 @@ func (x *CommitFilesystemMountRequest) String() string {
 func (*CommitFilesystemMountRequest) ProtoMessage() {}
 
 func (x *CommitFilesystemMountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[32]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2662,7 +2863,7 @@ func (x *CommitFilesystemMountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitFilesystemMountRequest.ProtoReflect.Descriptor instead.
 func (*CommitFilesystemMountRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{32}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CommitFilesystemMountRequest) GetLeaseId() string {
@@ -2723,13 +2924,14 @@ type CommitFilesystemMountResponse struct {
 	UsedBytes         uint64                 `protobuf:"varint,5,opt,name=used_bytes,json=usedBytes,proto3" json:"used_bytes,omitempty"`
 	WrittenBytes      uint64                 `protobuf:"varint,6,opt,name=written_bytes,json=writtenBytes,proto3" json:"written_bytes,omitempty"`
 	CommittedAtUnixNs uint64                 `protobuf:"varint,7,opt,name=committed_at_unix_ns,json=committedAtUnixNs,proto3" json:"committed_at_unix_ns,omitempty"`
+	SnapshotGuid      string                 `protobuf:"bytes,8,opt,name=snapshot_guid,json=snapshotGuid,proto3" json:"snapshot_guid,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *CommitFilesystemMountResponse) Reset() {
 	*x = CommitFilesystemMountResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[33]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2741,7 +2943,7 @@ func (x *CommitFilesystemMountResponse) String() string {
 func (*CommitFilesystemMountResponse) ProtoMessage() {}
 
 func (x *CommitFilesystemMountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[33]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2754,7 +2956,7 @@ func (x *CommitFilesystemMountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitFilesystemMountResponse.ProtoReflect.Descriptor instead.
 func (*CommitFilesystemMountResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{33}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CommitFilesystemMountResponse) GetLeaseId() string {
@@ -2806,6 +3008,433 @@ func (x *CommitFilesystemMountResponse) GetCommittedAtUnixNs() uint64 {
 	return 0
 }
 
+func (x *CommitFilesystemMountResponse) GetSnapshotGuid() string {
+	if x != nil {
+		return x.SnapshotGuid
+	}
+	return ""
+}
+
+type CheckpointGoldenVMRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LeaseId        string                 `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,2,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	OperationId    string                 `protobuf:"bytes,3,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	CheckpointId   string                 `protobuf:"bytes,4,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CheckpointGoldenVMRequest) Reset() {
+	*x = CheckpointGoldenVMRequest{}
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckpointGoldenVMRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckpointGoldenVMRequest) ProtoMessage() {}
+
+func (x *CheckpointGoldenVMRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckpointGoldenVMRequest.ProtoReflect.Descriptor instead.
+func (*CheckpointGoldenVMRequest) Descriptor() ([]byte, []int) {
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *CheckpointGoldenVMRequest) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMRequest) GetCheckpointId() string {
+	if x != nil {
+		return x.CheckpointId
+	}
+	return ""
+}
+
+type GoldenVMMountCheckpoint struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MountName     string                 `protobuf:"bytes,1,opt,name=mount_name,json=mountName,proto3" json:"mount_name,omitempty"`
+	SnapshotRef   string                 `protobuf:"bytes,2,opt,name=snapshot_ref,json=snapshotRef,proto3" json:"snapshot_ref,omitempty"`
+	SnapshotGuid  string                 `protobuf:"bytes,3,opt,name=snapshot_guid,json=snapshotGuid,proto3" json:"snapshot_guid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GoldenVMMountCheckpoint) Reset() {
+	*x = GoldenVMMountCheckpoint{}
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GoldenVMMountCheckpoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GoldenVMMountCheckpoint) ProtoMessage() {}
+
+func (x *GoldenVMMountCheckpoint) ProtoReflect() protoreflect.Message {
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GoldenVMMountCheckpoint.ProtoReflect.Descriptor instead.
+func (*GoldenVMMountCheckpoint) Descriptor() ([]byte, []int) {
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *GoldenVMMountCheckpoint) GetMountName() string {
+	if x != nil {
+		return x.MountName
+	}
+	return ""
+}
+
+func (x *GoldenVMMountCheckpoint) GetSnapshotRef() string {
+	if x != nil {
+		return x.SnapshotRef
+	}
+	return ""
+}
+
+func (x *GoldenVMMountCheckpoint) GetSnapshotGuid() string {
+	if x != nil {
+		return x.SnapshotGuid
+	}
+	return ""
+}
+
+type CheckpointGoldenVMResponse struct {
+	state                protoimpl.MessageState     `protogen:"open.v1"`
+	LeaseId              string                     `protobuf:"bytes,1,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	OperationId          string                     `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	CheckpointId         string                     `protobuf:"bytes,3,opt,name=checkpoint_id,json=checkpointId,proto3" json:"checkpoint_id,omitempty"`
+	SnapshotKey          string                     `protobuf:"bytes,4,opt,name=snapshot_key,json=snapshotKey,proto3" json:"snapshot_key,omitempty"`
+	RootSnapshotRef      string                     `protobuf:"bytes,5,opt,name=root_snapshot_ref,json=rootSnapshotRef,proto3" json:"root_snapshot_ref,omitempty"`
+	RootSnapshotGuid     string                     `protobuf:"bytes,6,opt,name=root_snapshot_guid,json=rootSnapshotGuid,proto3" json:"root_snapshot_guid,omitempty"`
+	VmstateArtifactRef   string                     `protobuf:"bytes,7,opt,name=vmstate_artifact_ref,json=vmstateArtifactRef,proto3" json:"vmstate_artifact_ref,omitempty"`
+	MemoryArtifactRef    string                     `protobuf:"bytes,8,opt,name=memory_artifact_ref,json=memoryArtifactRef,proto3" json:"memory_artifact_ref,omitempty"`
+	StateBytes           uint64                     `protobuf:"varint,9,opt,name=state_bytes,json=stateBytes,proto3" json:"state_bytes,omitempty"`
+	MemoryBytes          uint64                     `protobuf:"varint,10,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	CheckpointedAtUnixNs uint64                     `protobuf:"varint,11,opt,name=checkpointed_at_unix_ns,json=checkpointedAtUnixNs,proto3" json:"checkpointed_at_unix_ns,omitempty"`
+	MountSnapshots       []*GoldenVMMountCheckpoint `protobuf:"bytes,12,rep,name=mount_snapshots,json=mountSnapshots,proto3" json:"mount_snapshots,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *CheckpointGoldenVMResponse) Reset() {
+	*x = CheckpointGoldenVMResponse{}
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckpointGoldenVMResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckpointGoldenVMResponse) ProtoMessage() {}
+
+func (x *CheckpointGoldenVMResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckpointGoldenVMResponse.ProtoReflect.Descriptor instead.
+func (*CheckpointGoldenVMResponse) Descriptor() ([]byte, []int) {
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *CheckpointGoldenVMResponse) GetLeaseId() string {
+	if x != nil {
+		return x.LeaseId
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMResponse) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMResponse) GetCheckpointId() string {
+	if x != nil {
+		return x.CheckpointId
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMResponse) GetSnapshotKey() string {
+	if x != nil {
+		return x.SnapshotKey
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMResponse) GetRootSnapshotRef() string {
+	if x != nil {
+		return x.RootSnapshotRef
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMResponse) GetRootSnapshotGuid() string {
+	if x != nil {
+		return x.RootSnapshotGuid
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMResponse) GetVmstateArtifactRef() string {
+	if x != nil {
+		return x.VmstateArtifactRef
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMResponse) GetMemoryArtifactRef() string {
+	if x != nil {
+		return x.MemoryArtifactRef
+	}
+	return ""
+}
+
+func (x *CheckpointGoldenVMResponse) GetStateBytes() uint64 {
+	if x != nil {
+		return x.StateBytes
+	}
+	return 0
+}
+
+func (x *CheckpointGoldenVMResponse) GetMemoryBytes() uint64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *CheckpointGoldenVMResponse) GetCheckpointedAtUnixNs() uint64 {
+	if x != nil {
+		return x.CheckpointedAtUnixNs
+	}
+	return 0
+}
+
+func (x *CheckpointGoldenVMResponse) GetMountSnapshots() []*GoldenVMMountCheckpoint {
+	if x != nil {
+		return x.MountSnapshots
+	}
+	return nil
+}
+
+type PruneGoldenVMSnapshotRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	IdempotencyKey     string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	OperationId        string                 `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	GoldenVmSnapshotId string                 `protobuf:"bytes,3,opt,name=golden_vm_snapshot_id,json=goldenVmSnapshotId,proto3" json:"golden_vm_snapshot_id,omitempty"`
+	SnapshotKey        string                 `protobuf:"bytes,4,opt,name=snapshot_key,json=snapshotKey,proto3" json:"snapshot_key,omitempty"`
+	RootSnapshotRef    string                 `protobuf:"bytes,5,opt,name=root_snapshot_ref,json=rootSnapshotRef,proto3" json:"root_snapshot_ref,omitempty"`
+	OrgId              string                 `protobuf:"bytes,6,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PruneGoldenVMSnapshotRequest) Reset() {
+	*x = PruneGoldenVMSnapshotRequest{}
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PruneGoldenVMSnapshotRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PruneGoldenVMSnapshotRequest) ProtoMessage() {}
+
+func (x *PruneGoldenVMSnapshotRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PruneGoldenVMSnapshotRequest.ProtoReflect.Descriptor instead.
+func (*PruneGoldenVMSnapshotRequest) Descriptor() ([]byte, []int) {
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *PruneGoldenVMSnapshotRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *PruneGoldenVMSnapshotRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *PruneGoldenVMSnapshotRequest) GetGoldenVmSnapshotId() string {
+	if x != nil {
+		return x.GoldenVmSnapshotId
+	}
+	return ""
+}
+
+func (x *PruneGoldenVMSnapshotRequest) GetSnapshotKey() string {
+	if x != nil {
+		return x.SnapshotKey
+	}
+	return ""
+}
+
+func (x *PruneGoldenVMSnapshotRequest) GetRootSnapshotRef() string {
+	if x != nil {
+		return x.RootSnapshotRef
+	}
+	return ""
+}
+
+func (x *PruneGoldenVMSnapshotRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+type PruneGoldenVMSnapshotResponse struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	OperationId        string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	GoldenVmSnapshotId string                 `protobuf:"bytes,2,opt,name=golden_vm_snapshot_id,json=goldenVmSnapshotId,proto3" json:"golden_vm_snapshot_id,omitempty"`
+	SnapshotKey        string                 `protobuf:"bytes,3,opt,name=snapshot_key,json=snapshotKey,proto3" json:"snapshot_key,omitempty"`
+	RootSnapshotRef    string                 `protobuf:"bytes,4,opt,name=root_snapshot_ref,json=rootSnapshotRef,proto3" json:"root_snapshot_ref,omitempty"`
+	PrunedAtUnixNs     uint64                 `protobuf:"varint,5,opt,name=pruned_at_unix_ns,json=prunedAtUnixNs,proto3" json:"pruned_at_unix_ns,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PruneGoldenVMSnapshotResponse) Reset() {
+	*x = PruneGoldenVMSnapshotResponse{}
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PruneGoldenVMSnapshotResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PruneGoldenVMSnapshotResponse) ProtoMessage() {}
+
+func (x *PruneGoldenVMSnapshotResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PruneGoldenVMSnapshotResponse.ProtoReflect.Descriptor instead.
+func (*PruneGoldenVMSnapshotResponse) Descriptor() ([]byte, []int) {
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *PruneGoldenVMSnapshotResponse) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *PruneGoldenVMSnapshotResponse) GetGoldenVmSnapshotId() string {
+	if x != nil {
+		return x.GoldenVmSnapshotId
+	}
+	return ""
+}
+
+func (x *PruneGoldenVMSnapshotResponse) GetSnapshotKey() string {
+	if x != nil {
+		return x.SnapshotKey
+	}
+	return ""
+}
+
+func (x *PruneGoldenVMSnapshotResponse) GetRootSnapshotRef() string {
+	if x != nil {
+		return x.RootSnapshotRef
+	}
+	return ""
+}
+
+func (x *PruneGoldenVMSnapshotResponse) GetPrunedAtUnixNs() uint64 {
+	if x != nil {
+		return x.PrunedAtUnixNs
+	}
+	return 0
+}
+
 type PruneFilesystemGenerationRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	IdempotencyKey      string                 `protobuf:"bytes,1,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -2820,7 +3449,7 @@ type PruneFilesystemGenerationRequest struct {
 
 func (x *PruneFilesystemGenerationRequest) Reset() {
 	*x = PruneFilesystemGenerationRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[34]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2832,7 +3461,7 @@ func (x *PruneFilesystemGenerationRequest) String() string {
 func (*PruneFilesystemGenerationRequest) ProtoMessage() {}
 
 func (x *PruneFilesystemGenerationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[34]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2845,7 +3474,7 @@ func (x *PruneFilesystemGenerationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PruneFilesystemGenerationRequest.ProtoReflect.Descriptor instead.
 func (*PruneFilesystemGenerationRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{34}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PruneFilesystemGenerationRequest) GetIdempotencyKey() string {
@@ -2903,7 +3532,7 @@ type PruneFilesystemGenerationResponse struct {
 
 func (x *PruneFilesystemGenerationResponse) Reset() {
 	*x = PruneFilesystemGenerationResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[35]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2915,7 +3544,7 @@ func (x *PruneFilesystemGenerationResponse) String() string {
 func (*PruneFilesystemGenerationResponse) ProtoMessage() {}
 
 func (x *PruneFilesystemGenerationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[35]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2928,7 +3557,7 @@ func (x *PruneFilesystemGenerationResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use PruneFilesystemGenerationResponse.ProtoReflect.Descriptor instead.
 func (*PruneFilesystemGenerationResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{35}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *PruneFilesystemGenerationResponse) GetOperationId() string {
@@ -2982,7 +3611,7 @@ type VMMetrics struct {
 
 func (x *VMMetrics) Reset() {
 	*x = VMMetrics{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[36]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2994,7 +3623,7 @@ func (x *VMMetrics) String() string {
 func (*VMMetrics) ProtoMessage() {}
 
 func (x *VMMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[36]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3007,7 +3636,7 @@ func (x *VMMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VMMetrics.ProtoReflect.Descriptor instead.
 func (*VMMetrics) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{36}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *VMMetrics) GetBootTimeUs() uint64 {
@@ -3089,7 +3718,7 @@ type VMPoolCapacity struct {
 
 func (x *VMPoolCapacity) Reset() {
 	*x = VMPoolCapacity{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[37]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3101,7 +3730,7 @@ func (x *VMPoolCapacity) String() string {
 func (*VMPoolCapacity) ProtoMessage() {}
 
 func (x *VMPoolCapacity) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[37]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3114,7 +3743,7 @@ func (x *VMPoolCapacity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VMPoolCapacity.ProtoReflect.Descriptor instead.
 func (*VMPoolCapacity) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{37}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *VMPoolCapacity) GetTotalSlots() uint32 {
@@ -3206,7 +3835,7 @@ type OrgStorageCapacity struct {
 
 func (x *OrgStorageCapacity) Reset() {
 	*x = OrgStorageCapacity{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[38]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3218,7 +3847,7 @@ func (x *OrgStorageCapacity) String() string {
 func (*OrgStorageCapacity) ProtoMessage() {}
 
 func (x *OrgStorageCapacity) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[38]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3231,7 +3860,7 @@ func (x *OrgStorageCapacity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OrgStorageCapacity.ProtoReflect.Descriptor instead.
 func (*OrgStorageCapacity) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{38}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *OrgStorageCapacity) GetOrgId() string {
@@ -3270,7 +3899,7 @@ type GetCapacityRequest struct {
 
 func (x *GetCapacityRequest) Reset() {
 	*x = GetCapacityRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[39]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3282,7 +3911,7 @@ func (x *GetCapacityRequest) String() string {
 func (*GetCapacityRequest) ProtoMessage() {}
 
 func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[39]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3295,7 +3924,7 @@ func (x *GetCapacityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityRequest.ProtoReflect.Descriptor instead.
 func (*GetCapacityRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{39}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{46}
 }
 
 type GetCapacityResponse struct {
@@ -3308,7 +3937,7 @@ type GetCapacityResponse struct {
 
 func (x *GetCapacityResponse) Reset() {
 	*x = GetCapacityResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[40]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3320,7 +3949,7 @@ func (x *GetCapacityResponse) String() string {
 func (*GetCapacityResponse) ProtoMessage() {}
 
 func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[40]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3333,7 +3962,7 @@ func (x *GetCapacityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapacityResponse.ProtoReflect.Descriptor instead.
 func (*GetCapacityResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{40}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *GetCapacityResponse) GetGuestPoolCidr() string {
@@ -3378,7 +4007,7 @@ type SeedImageRequest struct {
 
 func (x *SeedImageRequest) Reset() {
 	*x = SeedImageRequest{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[41]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3390,7 +4019,7 @@ func (x *SeedImageRequest) String() string {
 func (*SeedImageRequest) ProtoMessage() {}
 
 func (x *SeedImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[41]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3403,7 +4032,7 @@ func (x *SeedImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SeedImageRequest.ProtoReflect.Descriptor instead.
 func (*SeedImageRequest) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{41}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *SeedImageRequest) GetImageRef() string {
@@ -3471,7 +4100,7 @@ type SeedImageResponse struct {
 
 func (x *SeedImageResponse) Reset() {
 	*x = SeedImageResponse{}
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[42]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3483,7 +4112,7 @@ func (x *SeedImageResponse) String() string {
 func (*SeedImageResponse) ProtoMessage() {}
 
 func (x *SeedImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[42]
+	mi := &file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3496,7 +4125,7 @@ func (x *SeedImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SeedImageResponse.ProtoReflect.Descriptor instead.
 func (*SeedImageResponse) Descriptor() ([]byte, []int) {
-	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{42}
+	return file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *SeedImageResponse) GetImageRef() string {
@@ -3567,7 +4196,7 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\n" +
 	"memory_mib\x18\x02 \x01(\rR\tmemoryMib\x12\"\n" +
 	"\rroot_disk_gib\x18\x03 \x01(\rR\vrootDiskGib\x12!\n" +
-	"\fkernel_image\x18\x04 \x01(\tR\vkernelImage\"\xa0\x03\n" +
+	"\fkernel_image\x18\x04 \x01(\tR\vkernelImage\"\x82\x04\n" +
 	"\tLeaseSpec\x12E\n" +
 	"\tresources\x18\x01 \x01(\v2'.verself.vm_orchestrator.v1.VMResourcesR\tresources\x12\x1f\n" +
 	"\vttl_seconds\x18\x05 \x01(\x04R\n" +
@@ -3576,7 +4205,8 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"trustClass\x12C\n" +
 	"\anetwork\x18\b \x01(\v2).verself.vm_orchestrator.v1.NetworkAttachR\anetwork\x12X\n" +
 	"\x11filesystem_mounts\x18\t \x03(\v2+.verself.vm_orchestrator.v1.FilesystemMountR\x10filesystemMounts\x12Y\n" +
-	"\x11storage_namespace\x18\v \x01(\v2,.verself.vm_orchestrator.v1.StorageNamespaceR\x10storageNamespaceJ\x04\b\x04\x10\x05J\x04\b\a\x10\bJ\x04\b\n" +
+	"\x11storage_namespace\x18\v \x01(\v2,.verself.vm_orchestrator.v1.StorageNamespaceR\x10storageNamespace\x12`\n" +
+	"\x14golden_vm_activation\x18\f \x01(\v2..verself.vm_orchestrator.v1.GoldenVMActivationR\x12goldenVmActivationJ\x04\b\x04\x10\x05J\x04\b\a\x10\bJ\x04\b\n" +
 	"\x10\v\"J\n" +
 	"\x10StorageNamespace\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1f\n" +
@@ -3619,10 +4249,25 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\amounted\x18\x03 \x01(\bR\amounted\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12!\n" +
 	"\foperation_id\x18\x05 \x01(\tR\voperationId\x12\x1a\n" +
-	"\brequired\x18\x06 \x01(\bR\brequired\"y\n" +
+	"\brequired\x18\x06 \x01(\bR\brequired\"\xd6\x02\n" +
+	"\x12GoldenVMActivation\x121\n" +
+	"\x15golden_vm_snapshot_id\x18\x01 \x01(\tR\x12goldenVmSnapshotId\x12.\n" +
+	"\x13generation_set_hash\x18\x02 \x01(\tR\x11generationSetHash\x12*\n" +
+	"\x11root_snapshot_ref\x18\x03 \x01(\tR\x0frootSnapshotRef\x12,\n" +
+	"\x12root_snapshot_guid\x18\x04 \x01(\tR\x10rootSnapshotGuid\x12!\n" +
+	"\fsnapshot_key\x18\x05 \x01(\tR\vsnapshotKey\x120\n" +
+	"\x14vmstate_artifact_ref\x18\x06 \x01(\tR\x12vmstateArtifactRef\x12.\n" +
+	"\x13memory_artifact_ref\x18\a \x01(\tR\x11memoryArtifactRef\"\xd5\x01\n" +
+	"\x18GoldenVMActivationResult\x12\x12\n" +
+	"\x04mode\x18\x01 \x01(\tR\x04mode\x121\n" +
+	"\x15golden_vm_snapshot_id\x18\x02 \x01(\tR\x12goldenVmSnapshotId\x12.\n" +
+	"\x13generation_set_hash\x18\x03 \x01(\tR\x11generationSetHash\x12!\n" +
+	"\fsnapshot_key\x18\x04 \x01(\tR\vsnapshotKey\x12\x1f\n" +
+	"\vmiss_reason\x18\x05 \x01(\tR\n" +
+	"missReason\"y\n" +
 	"\x13AcquireLeaseRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x129\n" +
-	"\x04spec\x18\x02 \x01(\v2%.verself.vm_orchestrator.v1.LeaseSpecR\x04spec\"\x87\x03\n" +
+	"\x04spec\x18\x02 \x01(\v2%.verself.vm_orchestrator.v1.LeaseSpecR\x04spec\"\xdd\x03\n" +
 	"\x14AcquireLeaseResponse\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12<\n" +
 	"\x05state\x18\x02 \x01(\x0e2&.verself.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
@@ -3630,7 +4275,10 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\x12expires_at_unix_ns\x18\x04 \x01(\x04R\x0fexpiresAtUnixNs\x12\x13\n" +
 	"\x05vm_ip\x18\x05 \x01(\tR\x04vmIp\x12E\n" +
 	"\tresources\x18\x06 \x01(\v2'.verself.vm_orchestrator.v1.VMResourcesR\tresources\x12^\n" +
-	"\x11filesystem_mounts\x18\a \x03(\v21.verself.vm_orchestrator.v1.FilesystemMountResultR\x10filesystemMounts\"\x84\x01\n" +
+	"\x11filesystem_mounts\x18\a \x03(\v21.verself.vm_orchestrator.v1.FilesystemMountResultR\x10filesystemMounts\x12T\n" +
+	"\n" +
+	"activation\x18\b \x01(\v24.verself.vm_orchestrator.v1.GoldenVMActivationResultR\n" +
+	"activation\"\x84\x01\n" +
 	"\x11RenewLeaseRequest\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12'\n" +
 	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12%\n" +
@@ -3646,7 +4294,7 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\x05state\x18\x02 \x01(\x0e2&.verself.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
 	"\x13released_at_unix_ns\x18\x03 \x01(\x04R\x10releasedAtUnixNs\",\n" +
 	"\x0fGetLeaseRequest\x12\x19\n" +
-	"\blease_id\x18\x01 \x01(\tR\aleaseId\"\xa0\x04\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\"\xf6\x04\n" +
 	"\vLeaseRecord\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12<\n" +
 	"\x05state\x18\x02 \x01(\x0e2&.verself.vm_orchestrator.v1.LeaseStateR\x05state\x12-\n" +
@@ -3660,7 +4308,10 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\vtrust_class\x18\n" +
 	" \x01(\tR\n" +
 	"trustClass\x12^\n" +
-	"\x11filesystem_mounts\x18\v \x03(\v21.verself.vm_orchestrator.v1.FilesystemMountResultR\x10filesystemMounts\"Q\n" +
+	"\x11filesystem_mounts\x18\v \x03(\v21.verself.vm_orchestrator.v1.FilesystemMountResultR\x10filesystemMounts\x12T\n" +
+	"\n" +
+	"activation\x18\f \x01(\v24.verself.vm_orchestrator.v1.GoldenVMActivationResultR\n" +
+	"activation\"Q\n" +
 	"\x10GetLeaseResponse\x12=\n" +
 	"\x05lease\x18\x01 \x01(\v2'.verself.vm_orchestrator.v1.LeaseRecordR\x05lease\"T\n" +
 	"\x11ListLeasesRequest\x12)\n" +
@@ -3758,7 +4409,7 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\x13parent_snapshot_ref\x18\x04 \x01(\tR\x11parentSnapshotRef\x12.\n" +
 	"\x13new_generation_name\x18\x05 \x01(\tR\x11newGenerationName\x12'\n" +
 	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12!\n" +
-	"\foperation_id\x18\a \x01(\tR\voperationId\"\x91\x02\n" +
+	"\foperation_id\x18\a \x01(\tR\voperationId\"\xb6\x02\n" +
 	"\x1dCommitFilesystemMountResponse\x12\x19\n" +
 	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12\x1d\n" +
 	"\n" +
@@ -3768,7 +4419,46 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\n" +
 	"used_bytes\x18\x05 \x01(\x04R\tusedBytes\x12#\n" +
 	"\rwritten_bytes\x18\x06 \x01(\x04R\fwrittenBytes\x12/\n" +
-	"\x14committed_at_unix_ns\x18\a \x01(\x04R\x11committedAtUnixNs\"\xf9\x01\n" +
+	"\x14committed_at_unix_ns\x18\a \x01(\x04R\x11committedAtUnixNs\x12#\n" +
+	"\rsnapshot_guid\x18\b \x01(\tR\fsnapshotGuid\"\xa7\x01\n" +
+	"\x19CheckpointGoldenVMRequest\x12\x19\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12'\n" +
+	"\x0fidempotency_key\x18\x02 \x01(\tR\x0eidempotencyKey\x12!\n" +
+	"\foperation_id\x18\x03 \x01(\tR\voperationId\x12#\n" +
+	"\rcheckpoint_id\x18\x04 \x01(\tR\fcheckpointId\"\x80\x01\n" +
+	"\x17GoldenVMMountCheckpoint\x12\x1d\n" +
+	"\n" +
+	"mount_name\x18\x01 \x01(\tR\tmountName\x12!\n" +
+	"\fsnapshot_ref\x18\x02 \x01(\tR\vsnapshotRef\x12#\n" +
+	"\rsnapshot_guid\x18\x03 \x01(\tR\fsnapshotGuid\"\xb7\x04\n" +
+	"\x1aCheckpointGoldenVMResponse\x12\x19\n" +
+	"\blease_id\x18\x01 \x01(\tR\aleaseId\x12!\n" +
+	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12#\n" +
+	"\rcheckpoint_id\x18\x03 \x01(\tR\fcheckpointId\x12!\n" +
+	"\fsnapshot_key\x18\x04 \x01(\tR\vsnapshotKey\x12*\n" +
+	"\x11root_snapshot_ref\x18\x05 \x01(\tR\x0frootSnapshotRef\x12,\n" +
+	"\x12root_snapshot_guid\x18\x06 \x01(\tR\x10rootSnapshotGuid\x120\n" +
+	"\x14vmstate_artifact_ref\x18\a \x01(\tR\x12vmstateArtifactRef\x12.\n" +
+	"\x13memory_artifact_ref\x18\b \x01(\tR\x11memoryArtifactRef\x12\x1f\n" +
+	"\vstate_bytes\x18\t \x01(\x04R\n" +
+	"stateBytes\x12!\n" +
+	"\fmemory_bytes\x18\n" +
+	" \x01(\x04R\vmemoryBytes\x125\n" +
+	"\x17checkpointed_at_unix_ns\x18\v \x01(\x04R\x14checkpointedAtUnixNs\x12\\\n" +
+	"\x0fmount_snapshots\x18\f \x03(\v23.verself.vm_orchestrator.v1.GoldenVMMountCheckpointR\x0emountSnapshots\"\x83\x02\n" +
+	"\x1cPruneGoldenVMSnapshotRequest\x12'\n" +
+	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12!\n" +
+	"\foperation_id\x18\x02 \x01(\tR\voperationId\x121\n" +
+	"\x15golden_vm_snapshot_id\x18\x03 \x01(\tR\x12goldenVmSnapshotId\x12!\n" +
+	"\fsnapshot_key\x18\x04 \x01(\tR\vsnapshotKey\x12*\n" +
+	"\x11root_snapshot_ref\x18\x05 \x01(\tR\x0frootSnapshotRef\x12\x15\n" +
+	"\x06org_id\x18\x06 \x01(\tR\x05orgId\"\xef\x01\n" +
+	"\x1dPruneGoldenVMSnapshotResponse\x12!\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x121\n" +
+	"\x15golden_vm_snapshot_id\x18\x02 \x01(\tR\x12goldenVmSnapshotId\x12!\n" +
+	"\fsnapshot_key\x18\x03 \x01(\tR\vsnapshotKey\x12*\n" +
+	"\x11root_snapshot_ref\x18\x04 \x01(\tR\x0frootSnapshotRef\x12)\n" +
+	"\x11pruned_at_unix_ns\x18\x05 \x01(\x04R\x0eprunedAtUnixNs\"\xf9\x01\n" +
 	" PruneFilesystemGenerationRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12!\n" +
 	"\foperation_id\x18\x02 \x01(\tR\voperationId\x122\n" +
@@ -3865,7 +4555,7 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\x11NetworkAttachMode\x12#\n" +
 	"\x1fNETWORK_ATTACH_MODE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17NETWORK_ATTACH_MODE_NAT\x10\x01\x12\x1c\n" +
-	"\x18NETWORK_ATTACH_MODE_NONE\x10\x02*\xea\x04\n" +
+	"\x18NETWORK_ATTACH_MODE_NONE\x10\x02*\xfc\x05\n" +
 	"\x0eLeaseEventType\x12 \n" +
 	"\x1cLEASE_EVENT_TYPE_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fLEASE_EVENT_TYPE_LEASE_ACQUIRED\x10\x01\x12\x1f\n" +
@@ -3878,12 +4568,15 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"*LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED\x10\b\x12)\n" +
 	"%LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED\x10\t\x12-\n" +
 	")LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED\x10\n" +
-	"\x12 \n" +
-	"\x1cLEASE_EVENT_TYPE_VM_SHUTDOWN\x10\v\x12\"\n" +
-	"\x1eLEASE_EVENT_TYPE_LEASE_EXPIRED\x10\f\x12#\n" +
-	"\x1fLEASE_EVENT_TYPE_LEASE_RELEASED\x10\r\x12\"\n" +
-	"\x1eLEASE_EVENT_TYPE_LEASE_CRASHED\x10\x0e\x12)\n" +
-	"%LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC\x10\x0f*j\n" +
+	"\x121\n" +
+	"-LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_STARTED\x10\v\x12+\n" +
+	"'LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINTED\x10\f\x120\n" +
+	",LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_FAILED\x10\r\x12 \n" +
+	"\x1cLEASE_EVENT_TYPE_VM_SHUTDOWN\x10\x0e\x12\"\n" +
+	"\x1eLEASE_EVENT_TYPE_LEASE_EXPIRED\x10\x0f\x12#\n" +
+	"\x1fLEASE_EVENT_TYPE_LEASE_RELEASED\x10\x10\x12\"\n" +
+	"\x1eLEASE_EVENT_TYPE_LEASE_CRASHED\x10\x11\x12)\n" +
+	"%LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC\x10\x12*j\n" +
 	"\fSeedStrategy\x12\x1d\n" +
 	"\x19SEED_STRATEGY_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aSEED_STRATEGY_DD_FROM_FILE\x10\x01\x12\x1b\n" +
@@ -3891,7 +4584,7 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"\vSeedOutcome\x12\x1c\n" +
 	"\x18SEED_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16SEED_OUTCOME_REFRESHED\x10\x01\x12\x1b\n" +
-	"\x17SEED_OUTCOME_UP_TO_DATE\x10\x022\xcc\r\n" +
+	"\x17SEED_OUTCOME_UP_TO_DATE\x10\x022\xe1\x0f\n" +
 	"\tVMService\x12q\n" +
 	"\fAcquireLease\x12/.verself.vm_orchestrator.v1.AcquireLeaseRequest\x1a0.verself.vm_orchestrator.v1.AcquireLeaseResponse\x12k\n" +
 	"\n" +
@@ -3906,7 +4599,9 @@ const file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc = "" 
 	"CancelExec\x12-.verself.vm_orchestrator.v1.CancelExecRequest\x1a..verself.vm_orchestrator.v1.CancelExecResponse\x12b\n" +
 	"\aGetExec\x12*.verself.vm_orchestrator.v1.GetExecRequest\x1a+.verself.vm_orchestrator.v1.GetExecResponse\x12e\n" +
 	"\bWaitExec\x12+.verself.vm_orchestrator.v1.WaitExecRequest\x1a,.verself.vm_orchestrator.v1.WaitExecResponse\x12\x8c\x01\n" +
-	"\x15CommitFilesystemMount\x128.verself.vm_orchestrator.v1.CommitFilesystemMountRequest\x1a9.verself.vm_orchestrator.v1.CommitFilesystemMountResponse\x12\x98\x01\n" +
+	"\x15CommitFilesystemMount\x128.verself.vm_orchestrator.v1.CommitFilesystemMountRequest\x1a9.verself.vm_orchestrator.v1.CommitFilesystemMountResponse\x12\x83\x01\n" +
+	"\x12CheckpointGoldenVM\x125.verself.vm_orchestrator.v1.CheckpointGoldenVMRequest\x1a6.verself.vm_orchestrator.v1.CheckpointGoldenVMResponse\x12\x8c\x01\n" +
+	"\x15PruneGoldenVMSnapshot\x128.verself.vm_orchestrator.v1.PruneGoldenVMSnapshotRequest\x1a9.verself.vm_orchestrator.v1.PruneGoldenVMSnapshotResponse\x12\x98\x01\n" +
 	"\x19PruneFilesystemGeneration\x12<.verself.vm_orchestrator.v1.PruneFilesystemGenerationRequest\x1a=.verself.vm_orchestrator.v1.PruneFilesystemGenerationResponse\x12}\n" +
 	"\x10EnsureOrgRuntime\x123.verself.vm_orchestrator.v1.EnsureOrgRuntimeRequest\x1a4.verself.vm_orchestrator.v1.EnsureOrgRuntimeResponse\x12n\n" +
 	"\vGetCapacity\x12..verself.vm_orchestrator.v1.GetCapacityRequest\x1a/.verself.vm_orchestrator.v1.GetCapacityResponse\x12h\n" +
@@ -3925,7 +4620,7 @@ func file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDescGZIP() 
 }
 
 var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
+var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_goTypes = []any{
 	(LeaseState)(0),                           // 0: verself.vm_orchestrator.v1.LeaseState
 	(ExecState)(0),                            // 1: verself.vm_orchestrator.v1.ExecState
@@ -3943,42 +4638,49 @@ var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_goTypes = []any
 	(*OrgRuntimeImage)(nil),                   // 13: verself.vm_orchestrator.v1.OrgRuntimeImage
 	(*FilesystemMount)(nil),                   // 14: verself.vm_orchestrator.v1.FilesystemMount
 	(*FilesystemMountResult)(nil),             // 15: verself.vm_orchestrator.v1.FilesystemMountResult
-	(*AcquireLeaseRequest)(nil),               // 16: verself.vm_orchestrator.v1.AcquireLeaseRequest
-	(*AcquireLeaseResponse)(nil),              // 17: verself.vm_orchestrator.v1.AcquireLeaseResponse
-	(*RenewLeaseRequest)(nil),                 // 18: verself.vm_orchestrator.v1.RenewLeaseRequest
-	(*RenewLeaseResponse)(nil),                // 19: verself.vm_orchestrator.v1.RenewLeaseResponse
-	(*ReleaseLeaseRequest)(nil),               // 20: verself.vm_orchestrator.v1.ReleaseLeaseRequest
-	(*ReleaseLeaseResponse)(nil),              // 21: verself.vm_orchestrator.v1.ReleaseLeaseResponse
-	(*GetLeaseRequest)(nil),                   // 22: verself.vm_orchestrator.v1.GetLeaseRequest
-	(*LeaseRecord)(nil),                       // 23: verself.vm_orchestrator.v1.LeaseRecord
-	(*GetLeaseResponse)(nil),                  // 24: verself.vm_orchestrator.v1.GetLeaseResponse
-	(*ListLeasesRequest)(nil),                 // 25: verself.vm_orchestrator.v1.ListLeasesRequest
-	(*ListLeasesResponse)(nil),                // 26: verself.vm_orchestrator.v1.ListLeasesResponse
-	(*StreamLeaseEventsRequest)(nil),          // 27: verself.vm_orchestrator.v1.StreamLeaseEventsRequest
-	(*LeaseEvent)(nil),                        // 28: verself.vm_orchestrator.v1.LeaseEvent
-	(*ExecSpec)(nil),                          // 29: verself.vm_orchestrator.v1.ExecSpec
-	(*StartExecRequest)(nil),                  // 30: verself.vm_orchestrator.v1.StartExecRequest
-	(*StartExecResponse)(nil),                 // 31: verself.vm_orchestrator.v1.StartExecResponse
-	(*CancelExecRequest)(nil),                 // 32: verself.vm_orchestrator.v1.CancelExecRequest
-	(*CancelExecResponse)(nil),                // 33: verself.vm_orchestrator.v1.CancelExecResponse
-	(*GetExecRequest)(nil),                    // 34: verself.vm_orchestrator.v1.GetExecRequest
-	(*WaitExecRequest)(nil),                   // 35: verself.vm_orchestrator.v1.WaitExecRequest
-	(*ExecRecord)(nil),                        // 36: verself.vm_orchestrator.v1.ExecRecord
-	(*GetExecResponse)(nil),                   // 37: verself.vm_orchestrator.v1.GetExecResponse
-	(*WaitExecResponse)(nil),                  // 38: verself.vm_orchestrator.v1.WaitExecResponse
-	(*CommitFilesystemMountRequest)(nil),      // 39: verself.vm_orchestrator.v1.CommitFilesystemMountRequest
-	(*CommitFilesystemMountResponse)(nil),     // 40: verself.vm_orchestrator.v1.CommitFilesystemMountResponse
-	(*PruneFilesystemGenerationRequest)(nil),  // 41: verself.vm_orchestrator.v1.PruneFilesystemGenerationRequest
-	(*PruneFilesystemGenerationResponse)(nil), // 42: verself.vm_orchestrator.v1.PruneFilesystemGenerationResponse
-	(*VMMetrics)(nil),                         // 43: verself.vm_orchestrator.v1.VMMetrics
-	(*VMPoolCapacity)(nil),                    // 44: verself.vm_orchestrator.v1.VMPoolCapacity
-	(*OrgStorageCapacity)(nil),                // 45: verself.vm_orchestrator.v1.OrgStorageCapacity
-	(*GetCapacityRequest)(nil),                // 46: verself.vm_orchestrator.v1.GetCapacityRequest
-	(*GetCapacityResponse)(nil),               // 47: verself.vm_orchestrator.v1.GetCapacityResponse
-	(*SeedImageRequest)(nil),                  // 48: verself.vm_orchestrator.v1.SeedImageRequest
-	(*SeedImageResponse)(nil),                 // 49: verself.vm_orchestrator.v1.SeedImageResponse
-	nil,                                       // 50: verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
-	nil,                                       // 51: verself.vm_orchestrator.v1.ExecSpec.EnvEntry
+	(*GoldenVMActivation)(nil),                // 16: verself.vm_orchestrator.v1.GoldenVMActivation
+	(*GoldenVMActivationResult)(nil),          // 17: verself.vm_orchestrator.v1.GoldenVMActivationResult
+	(*AcquireLeaseRequest)(nil),               // 18: verself.vm_orchestrator.v1.AcquireLeaseRequest
+	(*AcquireLeaseResponse)(nil),              // 19: verself.vm_orchestrator.v1.AcquireLeaseResponse
+	(*RenewLeaseRequest)(nil),                 // 20: verself.vm_orchestrator.v1.RenewLeaseRequest
+	(*RenewLeaseResponse)(nil),                // 21: verself.vm_orchestrator.v1.RenewLeaseResponse
+	(*ReleaseLeaseRequest)(nil),               // 22: verself.vm_orchestrator.v1.ReleaseLeaseRequest
+	(*ReleaseLeaseResponse)(nil),              // 23: verself.vm_orchestrator.v1.ReleaseLeaseResponse
+	(*GetLeaseRequest)(nil),                   // 24: verself.vm_orchestrator.v1.GetLeaseRequest
+	(*LeaseRecord)(nil),                       // 25: verself.vm_orchestrator.v1.LeaseRecord
+	(*GetLeaseResponse)(nil),                  // 26: verself.vm_orchestrator.v1.GetLeaseResponse
+	(*ListLeasesRequest)(nil),                 // 27: verself.vm_orchestrator.v1.ListLeasesRequest
+	(*ListLeasesResponse)(nil),                // 28: verself.vm_orchestrator.v1.ListLeasesResponse
+	(*StreamLeaseEventsRequest)(nil),          // 29: verself.vm_orchestrator.v1.StreamLeaseEventsRequest
+	(*LeaseEvent)(nil),                        // 30: verself.vm_orchestrator.v1.LeaseEvent
+	(*ExecSpec)(nil),                          // 31: verself.vm_orchestrator.v1.ExecSpec
+	(*StartExecRequest)(nil),                  // 32: verself.vm_orchestrator.v1.StartExecRequest
+	(*StartExecResponse)(nil),                 // 33: verself.vm_orchestrator.v1.StartExecResponse
+	(*CancelExecRequest)(nil),                 // 34: verself.vm_orchestrator.v1.CancelExecRequest
+	(*CancelExecResponse)(nil),                // 35: verself.vm_orchestrator.v1.CancelExecResponse
+	(*GetExecRequest)(nil),                    // 36: verself.vm_orchestrator.v1.GetExecRequest
+	(*WaitExecRequest)(nil),                   // 37: verself.vm_orchestrator.v1.WaitExecRequest
+	(*ExecRecord)(nil),                        // 38: verself.vm_orchestrator.v1.ExecRecord
+	(*GetExecResponse)(nil),                   // 39: verself.vm_orchestrator.v1.GetExecResponse
+	(*WaitExecResponse)(nil),                  // 40: verself.vm_orchestrator.v1.WaitExecResponse
+	(*CommitFilesystemMountRequest)(nil),      // 41: verself.vm_orchestrator.v1.CommitFilesystemMountRequest
+	(*CommitFilesystemMountResponse)(nil),     // 42: verself.vm_orchestrator.v1.CommitFilesystemMountResponse
+	(*CheckpointGoldenVMRequest)(nil),         // 43: verself.vm_orchestrator.v1.CheckpointGoldenVMRequest
+	(*GoldenVMMountCheckpoint)(nil),           // 44: verself.vm_orchestrator.v1.GoldenVMMountCheckpoint
+	(*CheckpointGoldenVMResponse)(nil),        // 45: verself.vm_orchestrator.v1.CheckpointGoldenVMResponse
+	(*PruneGoldenVMSnapshotRequest)(nil),      // 46: verself.vm_orchestrator.v1.PruneGoldenVMSnapshotRequest
+	(*PruneGoldenVMSnapshotResponse)(nil),     // 47: verself.vm_orchestrator.v1.PruneGoldenVMSnapshotResponse
+	(*PruneFilesystemGenerationRequest)(nil),  // 48: verself.vm_orchestrator.v1.PruneFilesystemGenerationRequest
+	(*PruneFilesystemGenerationResponse)(nil), // 49: verself.vm_orchestrator.v1.PruneFilesystemGenerationResponse
+	(*VMMetrics)(nil),                         // 50: verself.vm_orchestrator.v1.VMMetrics
+	(*VMPoolCapacity)(nil),                    // 51: verself.vm_orchestrator.v1.VMPoolCapacity
+	(*OrgStorageCapacity)(nil),                // 52: verself.vm_orchestrator.v1.OrgStorageCapacity
+	(*GetCapacityRequest)(nil),                // 53: verself.vm_orchestrator.v1.GetCapacityRequest
+	(*GetCapacityResponse)(nil),               // 54: verself.vm_orchestrator.v1.GetCapacityResponse
+	(*SeedImageRequest)(nil),                  // 55: verself.vm_orchestrator.v1.SeedImageRequest
+	(*SeedImageResponse)(nil),                 // 56: verself.vm_orchestrator.v1.SeedImageResponse
+	nil,                                       // 57: verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
+	nil,                                       // 58: verself.vm_orchestrator.v1.ExecSpec.EnvEntry
 }
 var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_depIdxs = []int32{
 	3,  // 0: verself.vm_orchestrator.v1.NetworkAttach.mode:type_name -> verself.vm_orchestrator.v1.NetworkAttachMode
@@ -3986,70 +4688,78 @@ var file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_depIdxs = []int
 	7,  // 2: verself.vm_orchestrator.v1.LeaseSpec.network:type_name -> verself.vm_orchestrator.v1.NetworkAttach
 	14, // 3: verself.vm_orchestrator.v1.LeaseSpec.filesystem_mounts:type_name -> verself.vm_orchestrator.v1.FilesystemMount
 	10, // 4: verself.vm_orchestrator.v1.LeaseSpec.storage_namespace:type_name -> verself.vm_orchestrator.v1.StorageNamespace
-	10, // 5: verself.vm_orchestrator.v1.EnsureOrgRuntimeRequest.storage_namespace:type_name -> verself.vm_orchestrator.v1.StorageNamespace
-	13, // 6: verself.vm_orchestrator.v1.EnsureOrgRuntimeResponse.images:type_name -> verself.vm_orchestrator.v1.OrgRuntimeImage
-	9,  // 7: verself.vm_orchestrator.v1.AcquireLeaseRequest.spec:type_name -> verself.vm_orchestrator.v1.LeaseSpec
-	0,  // 8: verself.vm_orchestrator.v1.AcquireLeaseResponse.state:type_name -> verself.vm_orchestrator.v1.LeaseState
-	8,  // 9: verself.vm_orchestrator.v1.AcquireLeaseResponse.resources:type_name -> verself.vm_orchestrator.v1.VMResources
-	15, // 10: verself.vm_orchestrator.v1.AcquireLeaseResponse.filesystem_mounts:type_name -> verself.vm_orchestrator.v1.FilesystemMountResult
-	0,  // 11: verself.vm_orchestrator.v1.ReleaseLeaseResponse.state:type_name -> verself.vm_orchestrator.v1.LeaseState
-	0,  // 12: verself.vm_orchestrator.v1.LeaseRecord.state:type_name -> verself.vm_orchestrator.v1.LeaseState
-	8,  // 13: verself.vm_orchestrator.v1.LeaseRecord.resources:type_name -> verself.vm_orchestrator.v1.VMResources
-	15, // 14: verself.vm_orchestrator.v1.LeaseRecord.filesystem_mounts:type_name -> verself.vm_orchestrator.v1.FilesystemMountResult
-	23, // 15: verself.vm_orchestrator.v1.GetLeaseResponse.lease:type_name -> verself.vm_orchestrator.v1.LeaseRecord
-	23, // 16: verself.vm_orchestrator.v1.ListLeasesResponse.leases:type_name -> verself.vm_orchestrator.v1.LeaseRecord
-	4,  // 17: verself.vm_orchestrator.v1.LeaseEvent.event_type:type_name -> verself.vm_orchestrator.v1.LeaseEventType
-	50, // 18: verself.vm_orchestrator.v1.LeaseEvent.attrs:type_name -> verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
-	51, // 19: verself.vm_orchestrator.v1.ExecSpec.env:type_name -> verself.vm_orchestrator.v1.ExecSpec.EnvEntry
-	2,  // 20: verself.vm_orchestrator.v1.ExecSpec.stdin:type_name -> verself.vm_orchestrator.v1.StdioMode
-	2,  // 21: verself.vm_orchestrator.v1.ExecSpec.stdout:type_name -> verself.vm_orchestrator.v1.StdioMode
-	2,  // 22: verself.vm_orchestrator.v1.ExecSpec.stderr:type_name -> verself.vm_orchestrator.v1.StdioMode
-	29, // 23: verself.vm_orchestrator.v1.StartExecRequest.spec:type_name -> verself.vm_orchestrator.v1.ExecSpec
-	1,  // 24: verself.vm_orchestrator.v1.StartExecResponse.state:type_name -> verself.vm_orchestrator.v1.ExecState
-	1,  // 25: verself.vm_orchestrator.v1.CancelExecResponse.state:type_name -> verself.vm_orchestrator.v1.ExecState
-	1,  // 26: verself.vm_orchestrator.v1.ExecRecord.state:type_name -> verself.vm_orchestrator.v1.ExecState
-	43, // 27: verself.vm_orchestrator.v1.ExecRecord.metrics:type_name -> verself.vm_orchestrator.v1.VMMetrics
-	36, // 28: verself.vm_orchestrator.v1.GetExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
-	36, // 29: verself.vm_orchestrator.v1.WaitExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
-	45, // 30: verself.vm_orchestrator.v1.VMPoolCapacity.org_storage:type_name -> verself.vm_orchestrator.v1.OrgStorageCapacity
-	44, // 31: verself.vm_orchestrator.v1.GetCapacityResponse.pool:type_name -> verself.vm_orchestrator.v1.VMPoolCapacity
-	5,  // 32: verself.vm_orchestrator.v1.SeedImageRequest.strategy:type_name -> verself.vm_orchestrator.v1.SeedStrategy
-	6,  // 33: verself.vm_orchestrator.v1.SeedImageResponse.outcome:type_name -> verself.vm_orchestrator.v1.SeedOutcome
-	16, // 34: verself.vm_orchestrator.v1.VMService.AcquireLease:input_type -> verself.vm_orchestrator.v1.AcquireLeaseRequest
-	18, // 35: verself.vm_orchestrator.v1.VMService.RenewLease:input_type -> verself.vm_orchestrator.v1.RenewLeaseRequest
-	20, // 36: verself.vm_orchestrator.v1.VMService.ReleaseLease:input_type -> verself.vm_orchestrator.v1.ReleaseLeaseRequest
-	22, // 37: verself.vm_orchestrator.v1.VMService.GetLease:input_type -> verself.vm_orchestrator.v1.GetLeaseRequest
-	25, // 38: verself.vm_orchestrator.v1.VMService.ListLeases:input_type -> verself.vm_orchestrator.v1.ListLeasesRequest
-	27, // 39: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:input_type -> verself.vm_orchestrator.v1.StreamLeaseEventsRequest
-	30, // 40: verself.vm_orchestrator.v1.VMService.StartExec:input_type -> verself.vm_orchestrator.v1.StartExecRequest
-	32, // 41: verself.vm_orchestrator.v1.VMService.CancelExec:input_type -> verself.vm_orchestrator.v1.CancelExecRequest
-	34, // 42: verself.vm_orchestrator.v1.VMService.GetExec:input_type -> verself.vm_orchestrator.v1.GetExecRequest
-	35, // 43: verself.vm_orchestrator.v1.VMService.WaitExec:input_type -> verself.vm_orchestrator.v1.WaitExecRequest
-	39, // 44: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:input_type -> verself.vm_orchestrator.v1.CommitFilesystemMountRequest
-	41, // 45: verself.vm_orchestrator.v1.VMService.PruneFilesystemGeneration:input_type -> verself.vm_orchestrator.v1.PruneFilesystemGenerationRequest
-	11, // 46: verself.vm_orchestrator.v1.VMService.EnsureOrgRuntime:input_type -> verself.vm_orchestrator.v1.EnsureOrgRuntimeRequest
-	46, // 47: verself.vm_orchestrator.v1.VMService.GetCapacity:input_type -> verself.vm_orchestrator.v1.GetCapacityRequest
-	48, // 48: verself.vm_orchestrator.v1.VMService.SeedImage:input_type -> verself.vm_orchestrator.v1.SeedImageRequest
-	17, // 49: verself.vm_orchestrator.v1.VMService.AcquireLease:output_type -> verself.vm_orchestrator.v1.AcquireLeaseResponse
-	19, // 50: verself.vm_orchestrator.v1.VMService.RenewLease:output_type -> verself.vm_orchestrator.v1.RenewLeaseResponse
-	21, // 51: verself.vm_orchestrator.v1.VMService.ReleaseLease:output_type -> verself.vm_orchestrator.v1.ReleaseLeaseResponse
-	24, // 52: verself.vm_orchestrator.v1.VMService.GetLease:output_type -> verself.vm_orchestrator.v1.GetLeaseResponse
-	26, // 53: verself.vm_orchestrator.v1.VMService.ListLeases:output_type -> verself.vm_orchestrator.v1.ListLeasesResponse
-	28, // 54: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:output_type -> verself.vm_orchestrator.v1.LeaseEvent
-	31, // 55: verself.vm_orchestrator.v1.VMService.StartExec:output_type -> verself.vm_orchestrator.v1.StartExecResponse
-	33, // 56: verself.vm_orchestrator.v1.VMService.CancelExec:output_type -> verself.vm_orchestrator.v1.CancelExecResponse
-	37, // 57: verself.vm_orchestrator.v1.VMService.GetExec:output_type -> verself.vm_orchestrator.v1.GetExecResponse
-	38, // 58: verself.vm_orchestrator.v1.VMService.WaitExec:output_type -> verself.vm_orchestrator.v1.WaitExecResponse
-	40, // 59: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:output_type -> verself.vm_orchestrator.v1.CommitFilesystemMountResponse
-	42, // 60: verself.vm_orchestrator.v1.VMService.PruneFilesystemGeneration:output_type -> verself.vm_orchestrator.v1.PruneFilesystemGenerationResponse
-	12, // 61: verself.vm_orchestrator.v1.VMService.EnsureOrgRuntime:output_type -> verself.vm_orchestrator.v1.EnsureOrgRuntimeResponse
-	47, // 62: verself.vm_orchestrator.v1.VMService.GetCapacity:output_type -> verself.vm_orchestrator.v1.GetCapacityResponse
-	49, // 63: verself.vm_orchestrator.v1.VMService.SeedImage:output_type -> verself.vm_orchestrator.v1.SeedImageResponse
-	49, // [49:64] is the sub-list for method output_type
-	34, // [34:49] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	16, // 5: verself.vm_orchestrator.v1.LeaseSpec.golden_vm_activation:type_name -> verself.vm_orchestrator.v1.GoldenVMActivation
+	10, // 6: verself.vm_orchestrator.v1.EnsureOrgRuntimeRequest.storage_namespace:type_name -> verself.vm_orchestrator.v1.StorageNamespace
+	13, // 7: verself.vm_orchestrator.v1.EnsureOrgRuntimeResponse.images:type_name -> verself.vm_orchestrator.v1.OrgRuntimeImage
+	9,  // 8: verself.vm_orchestrator.v1.AcquireLeaseRequest.spec:type_name -> verself.vm_orchestrator.v1.LeaseSpec
+	0,  // 9: verself.vm_orchestrator.v1.AcquireLeaseResponse.state:type_name -> verself.vm_orchestrator.v1.LeaseState
+	8,  // 10: verself.vm_orchestrator.v1.AcquireLeaseResponse.resources:type_name -> verself.vm_orchestrator.v1.VMResources
+	15, // 11: verself.vm_orchestrator.v1.AcquireLeaseResponse.filesystem_mounts:type_name -> verself.vm_orchestrator.v1.FilesystemMountResult
+	17, // 12: verself.vm_orchestrator.v1.AcquireLeaseResponse.activation:type_name -> verself.vm_orchestrator.v1.GoldenVMActivationResult
+	0,  // 13: verself.vm_orchestrator.v1.ReleaseLeaseResponse.state:type_name -> verself.vm_orchestrator.v1.LeaseState
+	0,  // 14: verself.vm_orchestrator.v1.LeaseRecord.state:type_name -> verself.vm_orchestrator.v1.LeaseState
+	8,  // 15: verself.vm_orchestrator.v1.LeaseRecord.resources:type_name -> verself.vm_orchestrator.v1.VMResources
+	15, // 16: verself.vm_orchestrator.v1.LeaseRecord.filesystem_mounts:type_name -> verself.vm_orchestrator.v1.FilesystemMountResult
+	17, // 17: verself.vm_orchestrator.v1.LeaseRecord.activation:type_name -> verself.vm_orchestrator.v1.GoldenVMActivationResult
+	25, // 18: verself.vm_orchestrator.v1.GetLeaseResponse.lease:type_name -> verself.vm_orchestrator.v1.LeaseRecord
+	25, // 19: verself.vm_orchestrator.v1.ListLeasesResponse.leases:type_name -> verself.vm_orchestrator.v1.LeaseRecord
+	4,  // 20: verself.vm_orchestrator.v1.LeaseEvent.event_type:type_name -> verself.vm_orchestrator.v1.LeaseEventType
+	57, // 21: verself.vm_orchestrator.v1.LeaseEvent.attrs:type_name -> verself.vm_orchestrator.v1.LeaseEvent.AttrsEntry
+	58, // 22: verself.vm_orchestrator.v1.ExecSpec.env:type_name -> verself.vm_orchestrator.v1.ExecSpec.EnvEntry
+	2,  // 23: verself.vm_orchestrator.v1.ExecSpec.stdin:type_name -> verself.vm_orchestrator.v1.StdioMode
+	2,  // 24: verself.vm_orchestrator.v1.ExecSpec.stdout:type_name -> verself.vm_orchestrator.v1.StdioMode
+	2,  // 25: verself.vm_orchestrator.v1.ExecSpec.stderr:type_name -> verself.vm_orchestrator.v1.StdioMode
+	31, // 26: verself.vm_orchestrator.v1.StartExecRequest.spec:type_name -> verself.vm_orchestrator.v1.ExecSpec
+	1,  // 27: verself.vm_orchestrator.v1.StartExecResponse.state:type_name -> verself.vm_orchestrator.v1.ExecState
+	1,  // 28: verself.vm_orchestrator.v1.CancelExecResponse.state:type_name -> verself.vm_orchestrator.v1.ExecState
+	1,  // 29: verself.vm_orchestrator.v1.ExecRecord.state:type_name -> verself.vm_orchestrator.v1.ExecState
+	50, // 30: verself.vm_orchestrator.v1.ExecRecord.metrics:type_name -> verself.vm_orchestrator.v1.VMMetrics
+	38, // 31: verself.vm_orchestrator.v1.GetExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
+	38, // 32: verself.vm_orchestrator.v1.WaitExecResponse.exec:type_name -> verself.vm_orchestrator.v1.ExecRecord
+	44, // 33: verself.vm_orchestrator.v1.CheckpointGoldenVMResponse.mount_snapshots:type_name -> verself.vm_orchestrator.v1.GoldenVMMountCheckpoint
+	52, // 34: verself.vm_orchestrator.v1.VMPoolCapacity.org_storage:type_name -> verself.vm_orchestrator.v1.OrgStorageCapacity
+	51, // 35: verself.vm_orchestrator.v1.GetCapacityResponse.pool:type_name -> verself.vm_orchestrator.v1.VMPoolCapacity
+	5,  // 36: verself.vm_orchestrator.v1.SeedImageRequest.strategy:type_name -> verself.vm_orchestrator.v1.SeedStrategy
+	6,  // 37: verself.vm_orchestrator.v1.SeedImageResponse.outcome:type_name -> verself.vm_orchestrator.v1.SeedOutcome
+	18, // 38: verself.vm_orchestrator.v1.VMService.AcquireLease:input_type -> verself.vm_orchestrator.v1.AcquireLeaseRequest
+	20, // 39: verself.vm_orchestrator.v1.VMService.RenewLease:input_type -> verself.vm_orchestrator.v1.RenewLeaseRequest
+	22, // 40: verself.vm_orchestrator.v1.VMService.ReleaseLease:input_type -> verself.vm_orchestrator.v1.ReleaseLeaseRequest
+	24, // 41: verself.vm_orchestrator.v1.VMService.GetLease:input_type -> verself.vm_orchestrator.v1.GetLeaseRequest
+	27, // 42: verself.vm_orchestrator.v1.VMService.ListLeases:input_type -> verself.vm_orchestrator.v1.ListLeasesRequest
+	29, // 43: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:input_type -> verself.vm_orchestrator.v1.StreamLeaseEventsRequest
+	32, // 44: verself.vm_orchestrator.v1.VMService.StartExec:input_type -> verself.vm_orchestrator.v1.StartExecRequest
+	34, // 45: verself.vm_orchestrator.v1.VMService.CancelExec:input_type -> verself.vm_orchestrator.v1.CancelExecRequest
+	36, // 46: verself.vm_orchestrator.v1.VMService.GetExec:input_type -> verself.vm_orchestrator.v1.GetExecRequest
+	37, // 47: verself.vm_orchestrator.v1.VMService.WaitExec:input_type -> verself.vm_orchestrator.v1.WaitExecRequest
+	41, // 48: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:input_type -> verself.vm_orchestrator.v1.CommitFilesystemMountRequest
+	43, // 49: verself.vm_orchestrator.v1.VMService.CheckpointGoldenVM:input_type -> verself.vm_orchestrator.v1.CheckpointGoldenVMRequest
+	46, // 50: verself.vm_orchestrator.v1.VMService.PruneGoldenVMSnapshot:input_type -> verself.vm_orchestrator.v1.PruneGoldenVMSnapshotRequest
+	48, // 51: verself.vm_orchestrator.v1.VMService.PruneFilesystemGeneration:input_type -> verself.vm_orchestrator.v1.PruneFilesystemGenerationRequest
+	11, // 52: verself.vm_orchestrator.v1.VMService.EnsureOrgRuntime:input_type -> verself.vm_orchestrator.v1.EnsureOrgRuntimeRequest
+	53, // 53: verself.vm_orchestrator.v1.VMService.GetCapacity:input_type -> verself.vm_orchestrator.v1.GetCapacityRequest
+	55, // 54: verself.vm_orchestrator.v1.VMService.SeedImage:input_type -> verself.vm_orchestrator.v1.SeedImageRequest
+	19, // 55: verself.vm_orchestrator.v1.VMService.AcquireLease:output_type -> verself.vm_orchestrator.v1.AcquireLeaseResponse
+	21, // 56: verself.vm_orchestrator.v1.VMService.RenewLease:output_type -> verself.vm_orchestrator.v1.RenewLeaseResponse
+	23, // 57: verself.vm_orchestrator.v1.VMService.ReleaseLease:output_type -> verself.vm_orchestrator.v1.ReleaseLeaseResponse
+	26, // 58: verself.vm_orchestrator.v1.VMService.GetLease:output_type -> verself.vm_orchestrator.v1.GetLeaseResponse
+	28, // 59: verself.vm_orchestrator.v1.VMService.ListLeases:output_type -> verself.vm_orchestrator.v1.ListLeasesResponse
+	30, // 60: verself.vm_orchestrator.v1.VMService.StreamLeaseEvents:output_type -> verself.vm_orchestrator.v1.LeaseEvent
+	33, // 61: verself.vm_orchestrator.v1.VMService.StartExec:output_type -> verself.vm_orchestrator.v1.StartExecResponse
+	35, // 62: verself.vm_orchestrator.v1.VMService.CancelExec:output_type -> verself.vm_orchestrator.v1.CancelExecResponse
+	39, // 63: verself.vm_orchestrator.v1.VMService.GetExec:output_type -> verself.vm_orchestrator.v1.GetExecResponse
+	40, // 64: verself.vm_orchestrator.v1.VMService.WaitExec:output_type -> verself.vm_orchestrator.v1.WaitExecResponse
+	42, // 65: verself.vm_orchestrator.v1.VMService.CommitFilesystemMount:output_type -> verself.vm_orchestrator.v1.CommitFilesystemMountResponse
+	45, // 66: verself.vm_orchestrator.v1.VMService.CheckpointGoldenVM:output_type -> verself.vm_orchestrator.v1.CheckpointGoldenVMResponse
+	47, // 67: verself.vm_orchestrator.v1.VMService.PruneGoldenVMSnapshot:output_type -> verself.vm_orchestrator.v1.PruneGoldenVMSnapshotResponse
+	49, // 68: verself.vm_orchestrator.v1.VMService.PruneFilesystemGeneration:output_type -> verself.vm_orchestrator.v1.PruneFilesystemGenerationResponse
+	12, // 69: verself.vm_orchestrator.v1.VMService.EnsureOrgRuntime:output_type -> verself.vm_orchestrator.v1.EnsureOrgRuntimeResponse
+	54, // 70: verself.vm_orchestrator.v1.VMService.GetCapacity:output_type -> verself.vm_orchestrator.v1.GetCapacityResponse
+	56, // 71: verself.vm_orchestrator.v1.VMService.SeedImage:output_type -> verself.vm_orchestrator.v1.SeedImageResponse
+	55, // [55:72] is the sub-list for method output_type
+	38, // [38:55] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_init() }
@@ -4063,7 +4773,7 @@ func file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc), len(file_src_substrate_vm_orchestrator_proto_v1_vm_service_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   45,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

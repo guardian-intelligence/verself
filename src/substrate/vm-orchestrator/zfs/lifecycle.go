@@ -733,6 +733,7 @@ func (l *VolumeLifecycle) DestroyMount(ctx context.Context, clone MountClone) er
 
 type CommitResult struct {
 	NewGeneration Generation
+	SnapshotGUID  string
 	UsedBytes     uint64
 	WrittenBytes  uint64
 	CommittedAt   time.Time
@@ -771,19 +772,55 @@ func (l *VolumeLifecycle) Commit(ctx context.Context, clone MountClone, volume V
 	}); err != nil {
 		return CommitResult{}, err
 	}
-	if err := l.ops.ZFSClone(ctx, clone.Dataset()+"@"+workSnapshot, genDataset, firstNonEmpty(operationID, clone.Lease().ID())); err != nil {
+	return l.commitSnapshot(ctx, Snapshot{dataset: clone.Dataset(), name: workSnapshot}, volume, genDataset, generationName, operationID)
+}
+
+func (l *VolumeLifecycle) CommitSnapshot(ctx context.Context, source Snapshot, volume Volume, parent *Generation, generationName, operationID string) (CommitResult, error) {
+	if err := validateSameRoots(l.roots, volume.roots); err != nil {
+		return CommitResult{}, err
+	}
+	generationName = strings.TrimSpace(generationName)
+	if generationName == "" {
+		generationName = "gen-" + strings.ToLower(ulid.Make().String())
+	}
+	if err := ValidateSnapshotName(generationName); err != nil {
+		return CommitResult{}, err
+	}
+	if parent != nil && parent.Volume().Dataset() != volume.Dataset() {
+		return CommitResult{}, fmt.Errorf("parent generation belongs to %s, not %s", parent.Volume().Dataset(), volume.Dataset())
+	}
+	genDataset, err := volume.GenerationDataset(generationName)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	if err := l.ops.ZFSEnsureFilesystem(ctx, filepath.ToSlash(filepath.Dir(genDataset))); err != nil {
+		return CommitResult{}, err
+	}
+	expectedEncryptionRoot := l.roots.orgRoot(volume.OrgID())
+	if err := l.AssertEncryptedDataset(ctx, source.Dataset(), expectedEncryptionRoot); err != nil {
+		return CommitResult{}, err
+	}
+	return l.commitSnapshot(ctx, source, volume, genDataset, generationName, operationID)
+}
+
+func (l *VolumeLifecycle) commitSnapshot(ctx context.Context, source Snapshot, volume Volume, genDataset, generationName, operationID string) (CommitResult, error) {
+	if source.String() == "" {
+		return CommitResult{}, fmt.Errorf("source snapshot is required")
+	}
+	if err := l.ops.ZFSClone(ctx, source.String(), genDataset, firstNonEmpty(operationID, generationName)); err != nil {
 		return CommitResult{}, err
 	}
 	if err := l.ops.ZFSPromote(ctx, genDataset); err != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), genDataset)
 		return CommitResult{}, err
 	}
+	expectedEncryptionRoot := l.roots.orgRoot(volume.OrgID())
 	if err := l.AssertEncryptedDataset(ctx, genDataset, expectedEncryptionRoot); err != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), genDataset)
 		return CommitResult{}, err
 	}
 	if err := l.ops.ZFSSnapshot(ctx, genDataset, sealedSnapshot, map[string]string{
-		"vs:operation_id": firstNonEmpty(operationID, clone.Lease().ID()),
+		"vs:operation_id": firstNonEmpty(operationID, generationName),
 		"vs:generation":   generationName,
 	}); err != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), genDataset)
@@ -791,6 +828,12 @@ func (l *VolumeLifecycle) Commit(ctx context.Context, clone MountClone, volume V
 	}
 	now := time.Now().UTC()
 	snap := Snapshot{dataset: genDataset, name: sealedSnapshot}
+	guid, err := l.ops.ZFSGetProperty(ctx, snap.String(), "guid")
+	if err != nil {
+		_ = l.ops.ZFSDestroyRecursive(context.Background(), genDataset)
+		return CommitResult{}, fmt.Errorf("read sealed snapshot guid: %w", err)
+	}
+	guid = strings.TrimSpace(guid)
 	used, err := l.ops.ZFSUsed(ctx, genDataset)
 	if err != nil {
 		return CommitResult{}, err
@@ -801,6 +844,7 @@ func (l *VolumeLifecycle) Commit(ctx context.Context, clone MountClone, volume V
 	}
 	return CommitResult{
 		NewGeneration: Generation{volume: volume, snap: snap},
+		SnapshotGUID:  guid,
 		UsedBytes:     used,
 		WrittenBytes:  written,
 		CommittedAt:   now,

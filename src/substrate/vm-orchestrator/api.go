@@ -84,11 +84,29 @@ type networkOverrideReq struct {
 	HostDevName string `json:"host_dev_name"`
 }
 
+type memBackendReq struct {
+	BackendPath string `json:"backend_path"`
+	BackendType string `json:"backend_type"`
+}
+
+type vsockOverrideReq struct {
+	UDSPath string `json:"uds_path"`
+}
+
 type snapshotLoadReq struct {
-	MemFilePath      string               `json:"mem_file_path"`
 	SnapshotPath     string               `json:"snapshot_path"`
+	MemBackend       memBackendReq        `json:"mem_backend"`
 	ResumeVM         bool                 `json:"resume_vm"`
 	NetworkOverrides []networkOverrideReq `json:"network_overrides,omitempty"`
+	VSockOverride    *vsockOverrideReq    `json:"vsock_override,omitempty"`
+	TrackDirtyPages  bool                 `json:"track_dirty_pages,omitempty"`
+	ClockRealtime    bool                 `json:"clock_realtime,omitempty"`
+}
+
+type snapshotCreateReq struct {
+	SnapshotType string `json:"snapshot_type"`
+	SnapshotPath string `json:"snapshot_path"`
+	MemFilePath  string `json:"mem_file_path"`
 }
 
 // --- API methods ---
@@ -150,12 +168,26 @@ func (c *apiClient) patchVM(ctx context.Context, state string) error {
 	return c.patch(ctx, "/vm", vmReq{State: state})
 }
 
-func (c *apiClient) loadSnapshot(ctx context.Context, snapshotPath, memFilePath string, resume bool, networkOverrides []networkOverrideReq) error {
+func (c *apiClient) loadSnapshot(ctx context.Context, snapshotPath, memFilePath string, resume bool, networkOverrides []networkOverrideReq, vsockPath string) error {
+	var vsockOverride *vsockOverrideReq
+	if vsockPath != "" {
+		vsockOverride = &vsockOverrideReq{UDSPath: vsockPath}
+	}
 	return c.put(ctx, "/snapshot/load", snapshotLoadReq{
-		MemFilePath:      memFilePath,
 		SnapshotPath:     snapshotPath,
+		MemBackend:       memBackendReq{BackendPath: memFilePath, BackendType: "File"},
 		ResumeVM:         resume,
 		NetworkOverrides: networkOverrides,
+		VSockOverride:    vsockOverride,
+		ClockRealtime:    true,
+	})
+}
+
+func (c *apiClient) createSnapshot(ctx context.Context, snapshotPath, memFilePath string) error {
+	return c.put(ctx, "/snapshot/create", snapshotCreateReq{
+		SnapshotType: "Full",
+		SnapshotPath: snapshotPath,
+		MemFilePath:  memFilePath,
 	})
 }
 

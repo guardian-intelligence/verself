@@ -384,6 +384,34 @@ func (c *guestControl) initLease(ctx context.Context, leaseID string, network vm
 	return results, nil
 }
 
+func (c *guestControl) afterRestore(ctx context.Context, leaseID string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount, activationMode ActivationMode) ([]vmproto.FilesystemMountResult, error) {
+	_, endSpan := startStepSpan(ctx, "vmorchestrator.guest.after_restore",
+		attribute.String("lease.id", leaseID),
+		attribute.Int("filesystem.mount_count", len(filesystems)),
+		attribute.String("firecracker.activation_mode", string(activationMode)),
+	)
+	var retErr error
+	defer func() { endSpan(retErr) }()
+	if err := c.send(vmproto.TypeAfterRestore, vmproto.AfterRestore{
+		LeaseID:             leaseID,
+		Network:             network,
+		Filesystems:         filesystems,
+		HostWallclockUnixNS: time.Now().UnixNano(),
+		ProtocolVersion:     vmproto.ProtocolVersion,
+		ActivationMode:      string(activationMode),
+	}); err != nil {
+		retErr = fmt.Errorf("send after restore: %w", err)
+		return nil, retErr
+	}
+	results, timings, err := c.awaitAfterRestoreResult(leaseID, filesystems)
+	if err != nil {
+		retErr = err
+		return results, err
+	}
+	recordLeaseInitTimingAttrs(ctx, timings)
+	return results, nil
+}
+
 func (c *guestControl) awaitLeaseInitResult(leaseID string, filesystems []vmproto.FilesystemMount) ([]vmproto.FilesystemMountResult, *vmproto.LeaseInitTimings, error) {
 	for {
 		env, err := c.recv()
@@ -416,6 +444,42 @@ func (c *guestControl) awaitLeaseInitResult(leaseID string, filesystems []vmprot
 			return nil, nil, fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
 		default:
 			return nil, nil, unexpectedGuestControlFrame("await_lease_init_result", env.Type, vmproto.TypeLeaseInitResult, vmproto.TypeHeartbeat, vmproto.TypeFatal)
+		}
+	}
+}
+
+func (c *guestControl) awaitAfterRestoreResult(leaseID string, filesystems []vmproto.FilesystemMount) ([]vmproto.FilesystemMountResult, *vmproto.LeaseInitTimings, error) {
+	for {
+		env, err := c.recv()
+		if err != nil {
+			return nil, nil, fmt.Errorf("read after restore result: %w", err)
+		}
+		switch env.Type {
+		case vmproto.TypeAfterRestoreResult:
+			msg, err := vmproto.DecodePayload[vmproto.AfterRestoreResult](env)
+			if err != nil {
+				return nil, nil, err
+			}
+			if msg.ProtocolVersion != vmproto.ProtocolVersion {
+				return msg.Filesystems, msg.Timings, guestProtocolError("await_after_restore_result", "protocol_version mismatch: got %d want %d", msg.ProtocolVersion, vmproto.ProtocolVersion)
+			}
+			if msg.LeaseID != leaseID {
+				return msg.Filesystems, msg.Timings, guestProtocolError("await_after_restore_result", "lease mismatch: got %s want %s", msg.LeaseID, leaseID)
+			}
+			if err := validateLeaseInitMountResults(filesystems, msg.Filesystems); err != nil {
+				return msg.Filesystems, msg.Timings, err
+			}
+			return msg.Filesystems, msg.Timings, nil
+		case vmproto.TypeHeartbeat:
+			continue
+		case vmproto.TypeFatal:
+			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
+			if decodeErr != nil {
+				return nil, nil, decodeErr
+			}
+			return nil, nil, fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
+		default:
+			return nil, nil, unexpectedGuestControlFrame("await_after_restore_result", env.Type, vmproto.TypeAfterRestoreResult, vmproto.TypeHeartbeat, vmproto.TypeFatal)
 		}
 	}
 }
@@ -646,6 +710,52 @@ func (c *guestControl) sealFilesystem(ctx context.Context, leaseID, mountName, m
 			return fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
 		default:
 			return unexpectedGuestControlFrame("await_filesystem_seal_result", env.Type, vmproto.TypeFilesystemSealResult, vmproto.TypeHeartbeat, vmproto.TypeFatal)
+		}
+	}
+}
+
+func (c *guestControl) beforeGoldenSnapshot(ctx context.Context, leaseID, operationID string) error {
+	if c == nil {
+		return fmt.Errorf("guest control is not available")
+	}
+	if err := c.send(vmproto.TypeBeforeGoldenSnapshot, vmproto.BeforeGoldenSnapshot{
+		LeaseID:         leaseID,
+		OperationID:     operationID,
+		ProtocolVersion: vmproto.ProtocolVersion,
+	}); err != nil {
+		return fmt.Errorf("send before golden snapshot request: %w", err)
+	}
+	for {
+		env, err := c.recv()
+		if err != nil {
+			return fmt.Errorf("read before golden snapshot result: %w", err)
+		}
+		switch env.Type {
+		case vmproto.TypeBeforeGoldenSnapshotResult:
+			msg, err := vmproto.DecodePayload[vmproto.BeforeGoldenSnapshotResult](env)
+			if err != nil {
+				return err
+			}
+			if msg.LeaseID != leaseID || msg.OperationID != operationID {
+				return guestProtocolError("await_before_golden_snapshot_result", "result mismatch lease=%s operation=%s", msg.LeaseID, msg.OperationID)
+			}
+			if !msg.Ready {
+				if strings.TrimSpace(msg.Error) == "" {
+					return fmt.Errorf("guest failed before golden snapshot")
+				}
+				return fmt.Errorf("guest failed before golden snapshot: %s", strings.TrimSpace(msg.Error))
+			}
+			return nil
+		case vmproto.TypeHeartbeat:
+			continue
+		case vmproto.TypeFatal:
+			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
+			if decodeErr != nil {
+				return decodeErr
+			}
+			return fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
+		default:
+			return unexpectedGuestControlFrame("await_before_golden_snapshot_result", env.Type, vmproto.TypeBeforeGoldenSnapshotResult, vmproto.TypeHeartbeat, vmproto.TypeFatal)
 		}
 	}
 }

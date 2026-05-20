@@ -23,6 +23,7 @@ import (
 	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	vmorchestrator "github.com/verself/vm-orchestrator"
+	"github.com/verself/vm-orchestrator/vmproto"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -61,6 +62,13 @@ const (
 	durableEventEvict              = "durable.cache.evict"
 	durableEventReconcile          = "durable.cache.reconcile"
 	durableEventPoolObserve        = "durable.pool.observe"
+	goldenVMEventLookup            = "golden.vm.lookup"
+	goldenVMEventRestore           = "golden.vm.restore"
+	goldenVMEventBeforeSnapshot    = "golden.vm.before_snapshot"
+	goldenVMEventCheckpoint        = "golden.vm.checkpoint"
+	goldenVMEventPublish           = "golden.vm.publish"
+	goldenVMEventPromote           = "golden.vm.promote"
+	goldenVMEventPrune             = "golden.vm.prune"
 )
 
 var ErrCacheDeclarationInvalid = errors.New("sandbox-rental: cache declaration invalid")
@@ -69,13 +77,16 @@ type durableCachePlan struct {
 	Enabled    bool
 	Identity   RunnerExecutionIdentity
 	Operations []durableCacheOperation
+	GoldenVM   goldenVMPlan
 }
 
 type durableCacheOperation struct {
 	OperationID           uuid.UUID
 	DurableScopeID        uuid.UUID
+	JobShapeID            uuid.UUID
 	SourceGenerationID    *uuid.UUID
 	SourceSnapshotRef     string
+	SourceSnapshotGUID    string
 	CandidateGenerationID uuid.UUID
 	MountName             string
 	MountPath             string
@@ -88,6 +99,46 @@ type durableCacheOperation struct {
 	Mounted               bool
 	MountSkipped          bool
 	MountSkipReason       string
+}
+
+type goldenVMPlan struct {
+	Enabled                 bool
+	OperationID             uuid.UUID
+	CandidateSnapshotID     uuid.UUID
+	JobShapeID              uuid.UUID
+	ScopeRef                string
+	TrustClass              string
+	SourceGenerationSetHash string
+	Activation              vmorchestrator.GoldenVMActivation
+	PromotionEligible       bool
+	LookupResult            string
+	LookupReason            string
+}
+
+func (p goldenVMPlan) event(executionID, attemptID uuid.UUID, identity RunnerExecutionIdentity, name, result, reason string) goldenVMEvent {
+	activationMode := ""
+	if p.Activation.Requested() {
+		activationMode = string(vmorchestrator.ActivationModeSnapshotRestore)
+	}
+	return goldenVMEvent{
+		OperationID:             &p.OperationID,
+		SnapshotID:              &p.CandidateSnapshotID,
+		JobShapeID:              &p.JobShapeID,
+		ExecutionID:             &executionID,
+		AttemptID:               &attemptID,
+		Identity:                identity,
+		Name:                    name,
+		Result:                  result,
+		Reason:                  reason,
+		GenerationSetHash:       p.SourceGenerationSetHash,
+		SourceGenerationSetHash: p.SourceGenerationSetHash,
+		SnapshotKey:             p.Activation.SnapshotKey,
+		ActivationMode:          activationMode,
+		VMStateArtifactRef:      p.Activation.VMStateArtifactRef,
+		MemoryArtifactRef:       p.Activation.MemoryArtifactRef,
+		RootSnapshotRef:         p.Activation.RootSnapshotRef,
+		RootSnapshotGUID:        p.Activation.RootSnapshotGUID,
+	}
 }
 
 func (op durableCacheOperation) event(executionID, attemptID uuid.UUID, identity RunnerExecutionIdentity, name, result, reason, zfsSnapshotRef string) durableEvent {
@@ -209,6 +260,59 @@ type durableEventRow struct {
 	OrgAvailableBytes     uint64    `ch:"org_available_bytes"`
 	TraceID               string    `ch:"trace_id"`
 	SpanID                string    `ch:"span_id"`
+}
+
+type goldenVMEvent struct {
+	OperationID             *uuid.UUID
+	SnapshotID              *uuid.UUID
+	JobShapeID              *uuid.UUID
+	ExecutionID             *uuid.UUID
+	AttemptID               *uuid.UUID
+	Identity                RunnerExecutionIdentity
+	Name                    string
+	Result                  string
+	Reason                  string
+	GenerationSetHash       string
+	SourceGenerationSetHash string
+	SnapshotKey             string
+	ActivationMode          string
+	VMStateArtifactRef      string
+	MemoryArtifactRef       string
+	RootSnapshotRef         string
+	RootSnapshotGUID        string
+	StateBytes              uint64
+	MemoryBytes             uint64
+}
+
+type goldenVMEventRow struct {
+	ObservedAt              time.Time `ch:"observed_at"`
+	OrgID                   string    `ch:"org_id"`
+	RepositoryID            uint64    `ch:"repository_id"`
+	Provider                string    `ch:"provider"`
+	ProviderRepositoryID    uint64    `ch:"provider_repository_id"`
+	ProviderRunID           uint64    `ch:"provider_run_id"`
+	ProviderRunAttempt      uint64    `ch:"provider_run_attempt"`
+	ProviderJobID           uint64    `ch:"provider_job_id"`
+	ExecutionID             uuid.UUID `ch:"execution_id"`
+	AttemptID               uuid.UUID `ch:"attempt_id"`
+	OperationID             uuid.UUID `ch:"operation_id"`
+	GoldenVMSnapshotID      uuid.UUID `ch:"golden_vm_snapshot_id"`
+	JobShapeID              uuid.UUID `ch:"job_shape_id"`
+	EventName               string    `ch:"event_name"`
+	Result                  string    `ch:"result"`
+	Reason                  string    `ch:"reason"`
+	GenerationSetHash       string    `ch:"generation_set_hash"`
+	SourceGenerationSetHash string    `ch:"source_generation_set_hash"`
+	SnapshotKey             string    `ch:"snapshot_key"`
+	ActivationMode          string    `ch:"activation_mode"`
+	VMStateArtifactRef      string    `ch:"vmstate_artifact_ref"`
+	MemoryArtifactRef       string    `ch:"memory_artifact_ref"`
+	RootSnapshotRef         string    `ch:"root_snapshot_ref"`
+	RootSnapshotGUID        string    `ch:"root_snapshot_guid"`
+	StateBytes              uint64    `ch:"state_bytes"`
+	MemoryBytes             uint64    `ch:"memory_bytes"`
+	TraceID                 string    `ch:"trace_id"`
+	SpanID                  string    `ch:"span_id"`
 }
 
 func (p durableCachePlan) filesystemMounts() []vmorchestrator.FilesystemMount {
@@ -389,8 +493,24 @@ func (s *Service) prepareDurableCaches(ctx context.Context, item executionWorkIt
 		}
 		plan.Operations = append(plan.Operations, op)
 	}
+	goldenJobShape, err := upsertJobShape(stableHex("golden-vm", declarationHash))
+	if err != nil {
+		return durableCachePlan{}, err
+	}
+	plan.GoldenVM, err = s.prepareGoldenVMPlan(ctx, item, identity, plan.Operations, goldenVMPlanSpec{
+		JobShapeID:        goldenJobShape,
+		ScopeRef:          scopeRef,
+		TrustClass:        durableTrustProtectedBranch,
+		PromotionEligible: promotionEligible,
+		Now:               now,
+	})
+	if err != nil {
+		return durableCachePlan{}, err
+	}
 	span.SetAttributes(
 		attribute.Int("durable.cache_count", len(plan.Operations)),
+		attribute.String("golden_vm.source_generation_set_hash", plan.GoldenVM.SourceGenerationSetHash),
+		attribute.String("golden_vm.lookup_result", plan.GoldenVM.LookupResult),
 		attribute.String("durable.declaration_hash", declarationHash),
 		attribute.Bool("durable.promotion_candidate", promotionEligible),
 		attribute.Bool("durable.storage_known", storageKnown),
@@ -410,6 +530,88 @@ func (s *Service) prepareDurableCaches(ctx context.Context, item executionWorkIt
 		}
 		_ = s.appendDurableEvent(ctx, selectEvent)
 	}
+	return plan, nil
+}
+
+type goldenVMPlanSpec struct {
+	JobShapeID        uuid.UUID
+	ScopeRef          string
+	TrustClass        string
+	PromotionEligible bool
+	Now               time.Time
+}
+
+func (s *Service) prepareGoldenVMPlan(ctx context.Context, item executionWorkItem, identity RunnerExecutionIdentity, ops []durableCacheOperation, spec goldenVMPlanSpec) (goldenVMPlan, error) {
+	sourceHash := goldenVMSourceGenerationSetHash(ops)
+	operationID := uuid.New()
+	candidateSnapshotID := uuid.New()
+	inserted, err := s.storeQueries().InsertGoldenVMOperation(ctx, store.InsertGoldenVMOperationParams{
+		OperationID:                 operationID,
+		ExecutionID:                 item.ExecutionID,
+		AttemptID:                   item.AttemptID,
+		AllocationID:                &identity.AllocationID,
+		OrgID:                       identity.OrgID,
+		RepositoryID:                identity.ProviderRepositoryID,
+		Provider:                    identity.Provider,
+		ProviderRepositoryID:        identity.ProviderRepositoryID,
+		ScopeKind:                   durableScopeKindBranch,
+		ScopeRef:                    spec.ScopeRef,
+		JobShapeID:                  spec.JobShapeID,
+		TrustClass:                  spec.TrustClass,
+		SourceGenerationSetHash:     sourceHash,
+		CandidateGoldenVmSnapshotID: candidateSnapshotID,
+		ProviderRunID:               identity.ProviderRunID,
+		ProviderRunAttempt:          identity.ProviderRunAttempt,
+		ProviderJobID:               identity.ProviderJobID,
+		HeadSha:                     firstNonEmpty(identity.HeadSHA, identity.RunHeadSHA),
+		RequestedAt:                 pgTime(spec.Now),
+	})
+	if err != nil {
+		return goldenVMPlan{}, fmt.Errorf("insert golden VM operation: %w", err)
+	}
+	plan := goldenVMPlan{
+		Enabled:                 true,
+		OperationID:             inserted.OperationID,
+		CandidateSnapshotID:     inserted.CandidateGoldenVmSnapshotID,
+		JobShapeID:              spec.JobShapeID,
+		ScopeRef:                spec.ScopeRef,
+		TrustClass:              spec.TrustClass,
+		SourceGenerationSetHash: inserted.SourceGenerationSetHash,
+		PromotionEligible:       spec.PromotionEligible,
+		LookupResult:            "miss",
+		LookupReason:            "current_snapshot_missing",
+	}
+	current, err := s.storeQueries().GetCurrentGoldenVMActivation(ctx, store.GetCurrentGoldenVMActivationParams{
+		OrgID:                identity.OrgID,
+		RepositoryID:         identity.ProviderRepositoryID,
+		Provider:             identity.Provider,
+		ProviderRepositoryID: identity.ProviderRepositoryID,
+		ScopeKind:            durableScopeKindBranch,
+		ScopeRef:             spec.ScopeRef,
+		JobShapeID:           spec.JobShapeID,
+		TrustClass:           spec.TrustClass,
+		GenerationSetHash:    sourceHash,
+	})
+	if err == nil {
+		plan.LookupResult = "hit"
+		plan.LookupReason = ""
+		plan.Activation = vmorchestrator.GoldenVMActivation{
+			SnapshotID:         current.GoldenVmSnapshotID.String(),
+			GenerationSetHash:  current.GenerationSetHash,
+			RootSnapshotRef:    current.RootSnapshotRef,
+			RootSnapshotGUID:   current.RootSnapshotGuid,
+			SnapshotKey:        current.SnapshotKey,
+			VMStateArtifactRef: current.VmstateArtifactRef,
+			MemoryArtifactRef:  current.MemoryArtifactRef,
+		}
+		_ = s.storeQueries().TouchGoldenVMSnapshotLastUsed(ctx, store.TouchGoldenVMSnapshotLastUsedParams{
+			GoldenVmSnapshotID: current.GoldenVmSnapshotID,
+			LastUsedAt:         pgTime(spec.Now),
+		})
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return goldenVMPlan{}, fmt.Errorf("select current golden VM snapshot: %w", err)
+	}
+	_ = s.appendGoldenVMEvent(ctx, plan.event(item.ExecutionID, item.AttemptID, identity, goldenVMEventLookup, plan.LookupResult, plan.LookupReason))
 	return plan, nil
 }
 
@@ -450,12 +652,14 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 	}
 	var sourceGenerationID *uuid.UUID
 	sourceSnapshotRef := ""
+	sourceSnapshotGUID := ""
 	sourceSkipReason := ""
 	current, err := s.storeQueries().GetCurrentDurableGeneration(ctx, store.GetCurrentDurableGenerationParams{DurableScopeID: scope})
 	if err == nil {
 		if spec.SourceSkipReason == "" {
 			sourceGenerationID = &current.DurableGenerationID
 			sourceSnapshotRef = current.ZfsSnapshotRef
+			sourceSnapshotGUID = current.ZfsSnapshotGuid
 			_ = s.storeQueries().TouchDurableGenerationLastUsed(ctx, store.TouchDurableGenerationLastUsedParams{
 				DurableGenerationID: current.DurableGenerationID,
 				LastUsedAt:          pgTime(spec.Now),
@@ -494,8 +698,10 @@ func (s *Service) insertDurableOperation(ctx context.Context, item executionWork
 	return durableCacheOperation{
 		OperationID:           op.OperationID,
 		DurableScopeID:        op.DurableScopeID,
+		JobShapeID:            spec.JobShapeID,
 		SourceGenerationID:    op.SourceGenerationID,
 		SourceSnapshotRef:     op.SourceSnapshotRef,
+		SourceSnapshotGUID:    sourceSnapshotGUID,
 		CandidateGenerationID: op.CandidateGenerationID,
 		MountName:             op.MountName,
 		MountPath:             op.InternalMountPath,
@@ -588,20 +794,53 @@ func (s *Service) failDurableCaches(ctx context.Context, plan durableCachePlan, 
 		}
 		_ = s.appendDurableEvent(ctx, op.event(plan.Identity.ExecutionID, plan.Identity.AttemptID, plan.Identity, durableEventPrepare, "failed", failureReason, ""))
 	}
+	if plan.GoldenVM.Enabled {
+		if err := s.storeQueries().MarkGoldenVMOperationFailed(ctx, store.MarkGoldenVMOperationFailedParams{FailureReason: failureReason, RecordedAt: pgTime(now), OperationID: plan.GoldenVM.OperationID}); err != nil && s.Logger != nil {
+			s.Logger.WarnContext(ctx, "mark golden VM operation failed", "operation_id", plan.GoldenVM.OperationID, "error", err)
+		}
+		_ = s.appendGoldenVMEvent(ctx, plan.GoldenVM.event(plan.Identity.ExecutionID, plan.Identity.AttemptID, plan.Identity, goldenVMEventCheckpoint, "failed", failureReason))
+	}
 }
 
 func (s *Service) failOpenDurableOperationsForAttempt(ctx context.Context, item executionWorkItem, reason string, cause error) {
 	failureReason := durableFailureReason(reason, cause)
-	rows, err := s.storeQueries().MarkOpenDurableOperationsFailedByAttempt(ctx, store.MarkOpenDurableOperationsFailedByAttemptParams{FailureReason: failureReason, RecordedAt: pgTime(time.Now().UTC()), AttemptID: item.AttemptID})
+	recordedAt := pgTime(time.Now().UTC())
+	rows, err := s.storeQueries().MarkOpenDurableOperationsFailedByAttempt(ctx, store.MarkOpenDurableOperationsFailedByAttemptParams{FailureReason: failureReason, RecordedAt: recordedAt, AttemptID: item.AttemptID})
 	if err != nil {
 		if s.Logger != nil {
 			s.Logger.WarnContext(ctx, "mark open durable operations failed", "attempt_id", item.AttemptID, "error", err)
 		}
+	} else {
+		for _, row := range rows {
+			_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, CacheName: row.CacheName, Name: durableEventReconcile, Result: "failed", Reason: failureReason})
+		}
+	}
+	goldenRows, err := s.storeQueries().MarkOpenGoldenVMOperationsFailedByAttempt(ctx, store.MarkOpenGoldenVMOperationsFailedByAttemptParams{FailureReason: failureReason, RecordedAt: recordedAt, AttemptID: item.AttemptID})
+	if err != nil {
+		if s.Logger != nil {
+			s.Logger.WarnContext(ctx, "mark open golden VM operations failed", "attempt_id", item.AttemptID, "error", err)
+		}
 		return
 	}
-	for _, row := range rows {
-		_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, CacheName: row.CacheName, Name: durableEventReconcile, Result: "failed", Reason: failureReason})
+	for _, row := range goldenRows {
+		identity := RunnerExecutionIdentity{OrgID: row.OrgID, Provider: row.Provider, ProviderRepositoryID: row.ProviderRepositoryID, ProviderRunID: row.ProviderRunID, ProviderRunAttempt: row.ProviderRunAttempt, ProviderJobID: row.ProviderJobID}
+		_ = s.appendGoldenVMEvent(ctx, goldenVMEvent{OperationID: &row.OperationID, SnapshotID: &row.CandidateGoldenVmSnapshotID, JobShapeID: &row.JobShapeID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, Name: goldenVMEventCheckpoint, Result: "failed", Reason: failureReason, SourceGenerationSetHash: row.SourceGenerationSetHash})
 	}
+}
+
+type goldenVMSnapshotGeneration struct {
+	DurableScopeID      uuid.UUID
+	DurableGenerationID uuid.UUID
+	CacheName           string
+	ZFSSnapshotRef      string
+	ZFSSnapshotGUID     string
+	DriveID             string
+	MountPath           string
+	BindPaths           []string
+	FSType              string
+	ReadOnly            bool
+	Required            bool
+	SortOrder           int
 }
 
 func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkItem, leaseID string, plan durableCachePlan, sealDecision durableSealDecision) error {
@@ -619,7 +858,12 @@ func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkI
 		attribute.Bool("durable.commit_allowed", sealDecision.Commit),
 		attribute.String("durable.commit_skip_reason", sealDecision.SkipReason),
 	)
-	for _, op := range plan.Operations {
+	checkpoint, checkpointErr := s.checkpointGoldenVMForDurable(ctx, item, leaseID, plan, sealDecision)
+	if checkpointErr != nil {
+		errs = append(errs, checkpointErr)
+	}
+	goldenGenerations := make([]goldenVMSnapshotGeneration, 0, len(plan.Operations))
+	for idx, op := range plan.Operations {
 		if !op.Mounted {
 			skipReason := firstNonEmpty(op.MountSkipReason, "mount_not_available")
 			_ = s.appendDurableEvent(ctx, op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventSeal, "skipped", skipReason, ""))
@@ -674,6 +918,7 @@ func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkI
 			PromotionEligible:   op.PromotionEligible,
 			State:               durableGenerationInitialState(op),
 			ZfsSnapshotRef:      commit.Snapshot,
+			ZfsSnapshotGuid:     commit.SnapshotGUID,
 			UsedBytes:           usedBytes,
 			WrittenBytes:        writtenBytes,
 			SealedAt:            pgTime(commit.CommittedAt),
@@ -702,15 +947,221 @@ func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkI
 			_ = s.appendDurableEvent(ctx, retainEvent)
 		}
 		anyCandidate = anyCandidate || op.PromotionEligible
+		if checkpoint != nil && op.PromotionEligible {
+			goldenGenerations = append(goldenGenerations, goldenVMSnapshotGeneration{
+				DurableScopeID:      op.DurableScopeID,
+				DurableGenerationID: generationID,
+				CacheName:           op.CacheName,
+				ZFSSnapshotRef:      commit.Snapshot,
+				ZFSSnapshotGUID:     commit.SnapshotGUID,
+				DriveID:             op.MountName,
+				MountPath:           op.MountPath,
+				BindPaths:           append([]string(nil), op.BindPaths...),
+				FSType:              "ext4",
+				ReadOnly:            false,
+				Required:            op.Required,
+				SortOrder:           idx,
+			})
+		}
+	}
+	goldenPublished := false
+	if checkpoint != nil {
+		if err := s.publishGoldenVMSnapshot(ctx, item, plan, *checkpoint, goldenGenerations); err != nil {
+			errs = append(errs, err)
+		} else {
+			goldenPublished = true
+		}
 	}
 	if anyCandidate {
 		if _, err := s.promoteDurableWorkflowRun(ctx, goldenRunRefFromRunnerIdentity(plan.Identity)); err != nil {
 			errs = append(errs, err)
 		}
 	}
+	if goldenPublished {
+		if _, err := s.promoteGoldenVMWorkflowRun(ctx, goldenRunRefFromRunnerIdentity(plan.Identity)); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
+	return nil
+}
+
+func (s *Service) checkpointGoldenVMForDurable(ctx context.Context, item executionWorkItem, leaseID string, plan durableCachePlan, sealDecision durableSealDecision) (*vmorchestrator.GoldenVMCheckpointRecord, error) {
+	if !plan.GoldenVM.Enabled {
+		return nil, nil
+	}
+	skipReason := goldenVMCheckpointSkipReason(plan, sealDecision)
+	if skipReason != "" {
+		now := time.Now().UTC()
+		if err := s.storeQueries().MarkGoldenVMOperationSkipped(ctx, store.MarkGoldenVMOperationSkippedParams{RecordedAt: pgTime(now), FailureReason: skipReason, OperationID: plan.GoldenVM.OperationID}); err != nil && s.Logger != nil {
+			s.Logger.WarnContext(ctx, "mark golden VM operation skipped failed", "operation_id", plan.GoldenVM.OperationID, "error", err)
+		}
+		_ = s.appendGoldenVMEvent(ctx, plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventCheckpoint, "skipped", skipReason))
+		return nil, nil
+	}
+	if err := s.storeQueries().MarkGoldenVMOperationCheckpointStarted(ctx, store.MarkGoldenVMOperationCheckpointStartedParams{CheckpointStartedAt: pgTime(time.Now().UTC()), OperationID: plan.GoldenVM.OperationID}); err != nil {
+		_ = s.appendGoldenVMEvent(ctx, plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventCheckpoint, "failed", err.Error()))
+		return nil, fmt.Errorf("mark golden VM checkpoint started: %w", err)
+	}
+	checkpoint, err := s.Orchestrator.CheckpointGoldenVM(ctx, leaseID, plan.GoldenVM.OperationID.String()+":checkpoint", plan.GoldenVM.OperationID.String(), plan.GoldenVM.CandidateSnapshotID.String())
+	if err != nil {
+		reason := durableFailureReason("checkpoint_failed", err)
+		if markErr := s.storeQueries().MarkGoldenVMOperationFailed(ctx, store.MarkGoldenVMOperationFailedParams{RecordedAt: pgTime(time.Now().UTC()), FailureReason: reason, OperationID: plan.GoldenVM.OperationID}); markErr != nil && s.Logger != nil {
+			s.Logger.WarnContext(ctx, "mark golden VM operation failed failed", "operation_id", plan.GoldenVM.OperationID, "error", markErr)
+		}
+		_ = s.appendGoldenVMEvent(ctx, plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventCheckpoint, "failed", reason))
+		return nil, fmt.Errorf("checkpoint golden VM: %w", err)
+	}
+	if err := s.storeQueries().MarkGoldenVMOperationCheckpointed(ctx, store.MarkGoldenVMOperationCheckpointedParams{CheckpointedAt: pgTime(checkpoint.CheckpointedAt), OperationID: plan.GoldenVM.OperationID}); err != nil {
+		_ = s.appendGoldenVMEvent(ctx, plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventCheckpoint, "failed", err.Error()))
+		return nil, fmt.Errorf("mark golden VM checkpointed: %w", err)
+	}
+	beforeEvent := plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventBeforeSnapshot, "succeeded", "")
+	beforeEvent.SnapshotKey = checkpoint.SnapshotKey
+	beforeEvent.VMStateArtifactRef = checkpoint.VMStateArtifactRef
+	beforeEvent.MemoryArtifactRef = checkpoint.MemoryArtifactRef
+	beforeEvent.RootSnapshotRef = checkpoint.RootSnapshotRef
+	beforeEvent.RootSnapshotGUID = checkpoint.RootSnapshotGUID
+	_ = s.appendGoldenVMEvent(ctx, beforeEvent)
+	checkpointEvent := beforeEvent
+	checkpointEvent.Name = goldenVMEventCheckpoint
+	checkpointEvent.StateBytes = checkpoint.StateBytes
+	checkpointEvent.MemoryBytes = checkpoint.MemoryBytes
+	_ = s.appendGoldenVMEvent(ctx, checkpointEvent)
+	return &checkpoint, nil
+}
+
+func goldenVMCheckpointSkipReason(plan durableCachePlan, sealDecision durableSealDecision) string {
+	if !sealDecision.Commit {
+		return firstNonEmpty(sealDecision.SkipReason, "exec_not_success")
+	}
+	if !plan.GoldenVM.PromotionEligible {
+		return "non_promotable_scope"
+	}
+	for _, op := range plan.Operations {
+		if !op.Mounted {
+			return "mount_not_available"
+		}
+	}
+	return ""
+}
+
+func (s *Service) publishGoldenVMSnapshot(ctx context.Context, item executionWorkItem, plan durableCachePlan, checkpoint vmorchestrator.GoldenVMCheckpointRecord, generations []goldenVMSnapshotGeneration) error {
+	if !plan.GoldenVM.Enabled {
+		return nil
+	}
+	if len(generations) != len(plan.Operations) {
+		err := fmt.Errorf("golden VM generation manifest incomplete: got %d generations for %d mounts", len(generations), len(plan.Operations))
+		reason := durableFailureReason("publish_failed", err)
+		_ = s.storeQueries().MarkGoldenVMOperationFailed(ctx, store.MarkGoldenVMOperationFailedParams{RecordedAt: pgTime(time.Now().UTC()), FailureReason: reason, OperationID: plan.GoldenVM.OperationID})
+		_ = s.appendGoldenVMEvent(ctx, plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventPublish, "failed", reason))
+		return err
+	}
+	sort.Slice(generations, func(i, j int) bool {
+		if generations[i].SortOrder != generations[j].SortOrder {
+			return generations[i].SortOrder < generations[j].SortOrder
+		}
+		return generations[i].DurableScopeID.String() < generations[j].DurableScopeID.String()
+	})
+	generationSetHash := goldenVMCandidateGenerationSetHash(generations)
+	now := time.Now().UTC()
+	stateBytes, err := int64FromUint64("golden VM state bytes", checkpoint.StateBytes)
+	if err != nil {
+		return err
+	}
+	memoryBytes, err := int64FromUint64("golden VM memory bytes", checkpoint.MemoryBytes)
+	if err != nil {
+		return err
+	}
+	_, err = s.storeQueries().InsertGoldenVMSnapshot(ctx, store.InsertGoldenVMSnapshotParams{
+		GoldenVmSnapshotID:        plan.GoldenVM.CandidateSnapshotID,
+		OperationID:               plan.GoldenVM.OperationID,
+		OrgID:                     plan.Identity.OrgID,
+		RepositoryID:              plan.Identity.ProviderRepositoryID,
+		Provider:                  plan.Identity.Provider,
+		ProviderRepositoryID:      plan.Identity.ProviderRepositoryID,
+		ScopeKind:                 durableScopeKindBranch,
+		ScopeRef:                  plan.GoldenVM.ScopeRef,
+		JobShapeID:                plan.GoldenVM.JobShapeID,
+		TrustClass:                plan.GoldenVM.TrustClass,
+		GenerationSetHash:         generationSetHash,
+		RootSnapshotRef:           checkpoint.RootSnapshotRef,
+		RootSnapshotGuid:          checkpoint.RootSnapshotGUID,
+		SnapshotKey:               checkpoint.SnapshotKey,
+		VmstateArtifactRef:        checkpoint.VMStateArtifactRef,
+		MemoryArtifactRef:         checkpoint.MemoryArtifactRef,
+		StateBytes:                stateBytes,
+		MemoryBytes:               memoryBytes,
+		DriveManifestHash:         goldenVMDriveManifestHash(checkpoint),
+		MountManifestHash:         generationSetHash,
+		FirecrackerAbiHash:        "firecracker-v1.15.0",
+		HostAbiHash:               durableGuestArch,
+		NetworkModelHash:          stableHex("nat", durableGuestArch, "host-service-plane-v1"),
+		VsockModelHash:            stableHex("vm-bridge", strconv.Itoa(vmproto.ProtocolVersion), "single-control-vsock"),
+		ClockModelHash:            stableHex("clock-realtime", "after-restore-settime-v1"),
+		VmprotoVersion:            int32(vmproto.ProtocolVersion),
+		AfterRestoreHookVersion:   "after_restore.v1",
+		BeforeSnapshotHookVersion: "before_golden_snapshot.v1",
+		WarmProfileHash:           plan.GoldenVM.SourceGenerationSetHash,
+		Vcpus:                     int32(item.Resources.VCPUs),
+		MemoryMib:                 int32(item.Resources.MemoryMiB),
+		ProviderRunID:             plan.Identity.ProviderRunID,
+		ProviderRunAttempt:        plan.Identity.ProviderRunAttempt,
+		ProviderJobID:             plan.Identity.ProviderJobID,
+		HeadSha:                   firstNonEmpty(plan.Identity.HeadSHA, plan.Identity.RunHeadSHA),
+		TreeHash:                  "",
+		State:                     "candidate",
+		CreatedAt:                 pgTime(now),
+		LastUsedAt:                pgTime(now),
+		ExpiresAt:                 pgTime(now.Add(durableRetainedGenerationTTL)),
+	})
+	if err != nil {
+		reason := durableFailureReason("publish_failed", err)
+		_ = s.storeQueries().MarkGoldenVMOperationFailed(ctx, store.MarkGoldenVMOperationFailedParams{RecordedAt: pgTime(now), FailureReason: reason, OperationID: plan.GoldenVM.OperationID})
+		_ = s.appendGoldenVMEvent(ctx, plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventPublish, "failed", reason))
+		return fmt.Errorf("insert golden VM snapshot: %w", err)
+	}
+	for _, gen := range generations {
+		bindPathsJSON, err := json.Marshal(gen.BindPaths)
+		if err != nil {
+			return err
+		}
+		if err := s.storeQueries().InsertGoldenVMSnapshotGeneration(ctx, store.InsertGoldenVMSnapshotGenerationParams{
+			GoldenVmSnapshotID:  plan.GoldenVM.CandidateSnapshotID,
+			DurableScopeID:      gen.DurableScopeID,
+			DurableGenerationID: gen.DurableGenerationID,
+			CacheName:           gen.CacheName,
+			ZfsSnapshotRef:      gen.ZFSSnapshotRef,
+			ZfsSnapshotGuid:     gen.ZFSSnapshotGUID,
+			DriveID:             gen.DriveID,
+			MountPath:           gen.MountPath,
+			BindPathsJson:       bindPathsJSON,
+			FsType:              gen.FSType,
+			ReadOnly:            gen.ReadOnly,
+			Required:            gen.Required,
+			SortOrder:           int32(gen.SortOrder),
+		}); err != nil {
+			reason := durableFailureReason("publish_failed", err)
+			_ = s.storeQueries().MarkGoldenVMOperationFailed(ctx, store.MarkGoldenVMOperationFailedParams{RecordedAt: pgTime(now), FailureReason: reason, OperationID: plan.GoldenVM.OperationID})
+			_ = s.appendGoldenVMEvent(ctx, plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventPublish, "failed", reason))
+			return fmt.Errorf("insert golden VM snapshot generation %s: %w", gen.CacheName, err)
+		}
+	}
+	if err := s.storeQueries().MarkGoldenVMOperationCommitted(ctx, store.MarkGoldenVMOperationCommittedParams{RecordedAt: pgTime(now), OperationID: plan.GoldenVM.OperationID}); err != nil {
+		return fmt.Errorf("mark golden VM operation committed: %w", err)
+	}
+	publishEvent := plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventPublish, "succeeded", "")
+	publishEvent.GenerationSetHash = generationSetHash
+	publishEvent.SnapshotKey = checkpoint.SnapshotKey
+	publishEvent.VMStateArtifactRef = checkpoint.VMStateArtifactRef
+	publishEvent.MemoryArtifactRef = checkpoint.MemoryArtifactRef
+	publishEvent.RootSnapshotRef = checkpoint.RootSnapshotRef
+	publishEvent.RootSnapshotGUID = checkpoint.RootSnapshotGUID
+	publishEvent.StateBytes = checkpoint.StateBytes
+	publishEvent.MemoryBytes = checkpoint.MemoryBytes
+	_ = s.appendGoldenVMEvent(ctx, publishEvent)
 	return nil
 }
 
@@ -865,7 +1316,11 @@ func (s *Service) PromoteGoldenRun(ctx context.Context, req scheduler.GoldenRunP
 	if repositoryFullName == "" || installationID == 0 {
 		return nil
 	}
-	_, err = s.promoteDurableWorkflowRun(ctx, goldenWorkflowRunRef{OrgID: orgID, Provider: RunnerProviderGitHub, ProviderInstallationID: installationID, ProviderRepositoryID: req.ProviderRepositoryID, ProviderRunID: req.ProviderRunID, ProviderRunAttempt: req.ProviderRunAttempt, RepositoryFullName: repositoryFullName, HeadSHA: req.HeadSHA})
+	ref := goldenWorkflowRunRef{OrgID: orgID, Provider: RunnerProviderGitHub, ProviderInstallationID: installationID, ProviderRepositoryID: req.ProviderRepositoryID, ProviderRunID: req.ProviderRunID, ProviderRunAttempt: req.ProviderRunAttempt, RepositoryFullName: repositoryFullName, HeadSHA: req.HeadSHA}
+	if _, err := s.promoteDurableWorkflowRun(ctx, ref); err != nil {
+		return err
+	}
+	_, err = s.promoteGoldenVMWorkflowRun(ctx, ref)
 	return err
 }
 
@@ -938,6 +1393,53 @@ func (s *Service) pruneDurableGenerations(ctx context.Context) error {
 	}
 	_, err = s.pruneDurableGenerationCandidates(ctx, now, durableEventPrune, "retention_ttl_expired", storage, prunableDurablePruneCandidates(rows))
 	return err
+}
+
+func (s *Service) pruneGoldenVMSnapshots(ctx context.Context) error {
+	if s.Orchestrator == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	rows, err := s.storeQueries().ListPrunableGoldenVMSnapshots(ctx, store.ListPrunableGoldenVMSnapshotsParams{
+		NowAt:      pgTime(now),
+		LimitCount: durablePruneBatchSize,
+	})
+	if err != nil {
+		return fmt.Errorf("query prunable golden VM snapshots: %w", err)
+	}
+	var errs []error
+	for _, row := range rows {
+		changed, err := s.storeQueries().MarkGoldenVMSnapshotPruning(ctx, store.MarkGoldenVMSnapshotPruningParams{GoldenVmSnapshotID: row.GoldenVmSnapshotID})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("mark golden VM snapshot pruning %s: %w", row.GoldenVmSnapshotID, err))
+			continue
+		}
+		if changed == 0 {
+			continue
+		}
+		identity := RunnerExecutionIdentity{
+			OrgID:                row.OrgID,
+			Provider:             row.Provider,
+			ProviderRepositoryID: row.ProviderRepositoryID,
+			ProviderRunID:        row.ProviderRunID,
+			ProviderRunAttempt:   row.ProviderRunAttempt,
+			ProviderJobID:        row.ProviderJobID,
+		}
+		_, err = s.Orchestrator.PruneGoldenVMSnapshot(ctx, row.GoldenVmSnapshotID.String()+":prune", row.OperationID.String(), row.GoldenVmSnapshotID.String(), row.SnapshotKey, row.RootSnapshotRef, row.OrgID)
+		if err != nil {
+			event := goldenVMEvent{OperationID: &row.OperationID, SnapshotID: &row.GoldenVmSnapshotID, JobShapeID: &row.JobShapeID, Identity: identity, Name: goldenVMEventPrune, Result: "failed", Reason: err.Error(), GenerationSetHash: row.GenerationSetHash, SourceGenerationSetHash: row.SourceGenerationSetHash, SnapshotKey: row.SnapshotKey, VMStateArtifactRef: row.VmstateArtifactRef, MemoryArtifactRef: row.MemoryArtifactRef, RootSnapshotRef: row.RootSnapshotRef, RootSnapshotGUID: row.RootSnapshotGuid, StateBytes: uint64FromInt64(row.StateBytes, "golden VM state bytes"), MemoryBytes: uint64FromInt64(row.MemoryBytes, "golden VM memory bytes")}
+			_ = s.appendGoldenVMEvent(ctx, event)
+			errs = append(errs, fmt.Errorf("prune golden VM snapshot %s: %w", row.GoldenVmSnapshotID, err))
+			continue
+		}
+		if err := s.storeQueries().MarkGoldenVMSnapshotPruned(ctx, store.MarkGoldenVMSnapshotPrunedParams{PrunedAt: pgTime(time.Now().UTC()), GoldenVmSnapshotID: row.GoldenVmSnapshotID}); err != nil {
+			errs = append(errs, fmt.Errorf("mark golden VM snapshot pruned %s: %w", row.GoldenVmSnapshotID, err))
+			continue
+		}
+		event := goldenVMEvent{OperationID: &row.OperationID, SnapshotID: &row.GoldenVmSnapshotID, JobShapeID: &row.JobShapeID, Identity: identity, Name: goldenVMEventPrune, Result: "succeeded", Reason: "retention_ttl_expired", GenerationSetHash: row.GenerationSetHash, SourceGenerationSetHash: row.SourceGenerationSetHash, SnapshotKey: row.SnapshotKey, VMStateArtifactRef: row.VmstateArtifactRef, MemoryArtifactRef: row.MemoryArtifactRef, RootSnapshotRef: row.RootSnapshotRef, RootSnapshotGUID: row.RootSnapshotGuid, StateBytes: uint64FromInt64(row.StateBytes, "golden VM state bytes"), MemoryBytes: uint64FromInt64(row.MemoryBytes, "golden VM memory bytes")}
+		_ = s.appendGoldenVMEvent(ctx, event)
+	}
+	return errors.Join(errs...)
 }
 
 type durablePruneCandidate struct {
@@ -1162,6 +1664,89 @@ func (s *Service) promoteDurableCandidate(ctx context.Context, candidate store.L
 	identity := RunnerExecutionIdentity{OrgID: ref.OrgID, Provider: ref.Provider, ProviderRepositoryID: ref.ProviderRepositoryID, ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, ProviderJobID: candidate.ProviderJobID, RepositoryFullName: ref.RepositoryFullName}
 	_ = s.appendDurableEvent(ctx, durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, SourceGenerationID: candidate.SourceGenerationID, CurrentGenerationID: &currentGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheName: candidate.CacheName, Name: durableEventPromote, Result: result, ZFSSnapshotRef: candidate.ZfsSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")})
 	return promoted, nil
+}
+
+func (s *Service) promoteGoldenVMWorkflowRun(ctx context.Context, ref goldenWorkflowRunRef) (bool, error) {
+	ctx, span := tracer.Start(ctx, "golden_vm.workflow_run.promote", trace.WithAttributes(
+		attribute.String("runner.provider", ref.Provider),
+		attribute.Int64("runner.provider_installation_id", ref.ProviderInstallationID),
+		attribute.Int64("runner.provider_repository_id", ref.ProviderRepositoryID),
+		attribute.Int64("runner.provider_run_id", ref.ProviderRunID),
+		attribute.String("git.commit.sha", ref.HeadSHA),
+	))
+	defer span.End()
+	invocation, promotable, reason, err := s.githubWorkflowRunPromotionGate(ctx, ref)
+	if err != nil {
+		return false, err
+	}
+	if !promotable {
+		span.SetAttributes(attribute.Bool("golden_vm.promoted", false), attribute.String("golden_vm.promotion_deferred_reason", reason))
+		return false, nil
+	}
+	state, err := s.githubWorkflowRunPromotionStateForRef(ctx, ref)
+	if err != nil {
+		return false, err
+	}
+	promotionReady, reason := state.promotionReady()
+	if !promotionReady {
+		span.SetAttributes(attribute.Bool("golden_vm.promoted", false), attribute.String("golden_vm.promotion_deferred_reason", reason))
+		return false, nil
+	}
+	candidates, err := s.storeQueries().ListGoldenVMSnapshotCandidatesForRun(ctx, store.ListGoldenVMSnapshotCandidatesForRunParams{ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, HeadSha: firstNonEmpty(invocation.HeadSHA, ref.HeadSHA)})
+	if err != nil {
+		return false, err
+	}
+	span.SetAttributes(attribute.Int("golden_vm.candidate_count", len(candidates)))
+	anyPromoted := false
+	for _, candidate := range candidates {
+		promoted, err := s.promoteGoldenVMCandidate(ctx, candidate, ref)
+		if err != nil {
+			return anyPromoted, err
+		}
+		anyPromoted = anyPromoted || promoted
+	}
+	span.SetAttributes(attribute.Bool("golden_vm.promoted", anyPromoted))
+	return anyPromoted, nil
+}
+
+func (s *Service) promoteGoldenVMCandidate(ctx context.Context, candidate store.ListGoldenVMSnapshotCandidatesForRunRow, ref goldenWorkflowRunRef) (bool, error) {
+	ctx, span := tracer.Start(ctx, goldenVMEventPromote, trace.WithAttributes(
+		attribute.String("golden_vm.operation_id", candidate.OperationID.String()),
+		attribute.String("golden_vm.snapshot_id", candidate.GoldenVmSnapshotID.String()),
+		attribute.String("golden_vm.snapshot_key", candidate.SnapshotKey),
+		attribute.String("golden_vm.generation_set_hash", candidate.GenerationSetHash),
+		attribute.String("golden_vm.source_generation_set_hash", candidate.SourceGenerationSetHash),
+	))
+	defer span.End()
+	now := time.Now().UTC()
+	candidateID := candidate.GoldenVmSnapshotID
+	operationID := candidate.OperationID
+	row, err := s.storeQueries().PromoteGoldenVMSnapshotCAS(ctx, store.PromoteGoldenVMSnapshotCASParams{
+		OrgID:                       candidate.OrgID,
+		RepositoryID:                candidate.RepositoryID,
+		Provider:                    candidate.Provider,
+		ProviderRepositoryID:        candidate.ProviderRepositoryID,
+		ScopeKind:                   candidate.ScopeKind,
+		ScopeRef:                    candidate.ScopeRef,
+		JobShapeID:                  candidate.JobShapeID,
+		TrustClass:                  candidate.TrustClass,
+		PromotedAt:                  pgTime(now),
+		CandidateGoldenVmSnapshotID: &candidateID,
+		OperationID:                 &operationID,
+		SourceGenerationSetHash:     candidate.SourceGenerationSetHash,
+		ExpiresAt:                   pgTime(now.Add(durableRetainedGenerationTTL)),
+	})
+	if err != nil {
+		return false, err
+	}
+	result := "conflicted"
+	if row.Promoted {
+		result = "succeeded"
+	}
+	span.SetAttributes(attribute.Bool("golden_vm.promoted", row.Promoted), attribute.String("golden_vm.promotion_result", result))
+	identity := RunnerExecutionIdentity{OrgID: ref.OrgID, Provider: ref.Provider, ProviderRepositoryID: ref.ProviderRepositoryID, ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, ProviderJobID: candidate.ProviderJobID, RepositoryFullName: ref.RepositoryFullName}
+	_ = s.appendGoldenVMEvent(ctx, goldenVMEvent{OperationID: &candidate.OperationID, SnapshotID: &candidate.GoldenVmSnapshotID, JobShapeID: &candidate.JobShapeID, Identity: identity, Name: goldenVMEventPromote, Result: result, GenerationSetHash: candidate.GenerationSetHash, SourceGenerationSetHash: candidate.SourceGenerationSetHash, SnapshotKey: candidate.SnapshotKey})
+	return row.Promoted, nil
 }
 
 func (s *Service) githubWorkflowRunPromotionStateForRef(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowRunJobsState, error) {
@@ -1578,6 +2163,90 @@ func (s *Service) recordDurableEventInsertFailure(ctx context.Context, event dur
 	)
 }
 
+func (s *Service) appendGoldenVMEvent(ctx context.Context, event goldenVMEvent) error {
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent(event.Name, trace.WithAttributes(
+		attribute.String("golden_vm.event_name", event.Name),
+		attribute.String("golden_vm.result", event.Result),
+		attribute.String("golden_vm.reason", event.Reason),
+		attribute.String("golden_vm.operation_id", uuidValue(event.OperationID).String()),
+		attribute.String("golden_vm.snapshot_id", uuidValue(event.SnapshotID).String()),
+		attribute.String("golden_vm.snapshot_key", event.SnapshotKey),
+		attribute.String("golden_vm.activation_mode", event.ActivationMode),
+		attribute.String("golden_vm.generation_set_hash", event.GenerationSetHash),
+		attribute.String("golden_vm.source_generation_set_hash", event.SourceGenerationSetHash),
+		attribute.String("golden_vm.vmstate_artifact_ref", event.VMStateArtifactRef),
+		attribute.String("golden_vm.memory_artifact_ref", event.MemoryArtifactRef),
+		attribute.String("golden_vm.root_snapshot_ref", event.RootSnapshotRef),
+	))
+	if s.CH == nil {
+		return nil
+	}
+	spanContext := span.SpanContext()
+	row := goldenVMEventRow{
+		ObservedAt:              time.Now().UTC(),
+		OrgID:                   event.Identity.OrgID,
+		RepositoryID:            uint64FromNonNegativeInt64(event.Identity.ProviderRepositoryID),
+		Provider:                event.Identity.Provider,
+		ProviderRepositoryID:    uint64FromNonNegativeInt64(event.Identity.ProviderRepositoryID),
+		ProviderRunID:           uint64FromNonNegativeInt64(event.Identity.ProviderRunID),
+		ProviderRunAttempt:      uint64FromNonNegativeInt64(event.Identity.ProviderRunAttempt),
+		ProviderJobID:           uint64FromNonNegativeInt64(event.Identity.ProviderJobID),
+		ExecutionID:             uuidValue(event.ExecutionID),
+		AttemptID:               uuidValue(event.AttemptID),
+		OperationID:             uuidValue(event.OperationID),
+		GoldenVMSnapshotID:      uuidValue(event.SnapshotID),
+		JobShapeID:              uuidValue(event.JobShapeID),
+		EventName:               event.Name,
+		Result:                  event.Result,
+		Reason:                  event.Reason,
+		GenerationSetHash:       event.GenerationSetHash,
+		SourceGenerationSetHash: event.SourceGenerationSetHash,
+		SnapshotKey:             event.SnapshotKey,
+		ActivationMode:          event.ActivationMode,
+		VMStateArtifactRef:      event.VMStateArtifactRef,
+		MemoryArtifactRef:       event.MemoryArtifactRef,
+		RootSnapshotRef:         event.RootSnapshotRef,
+		RootSnapshotGUID:        event.RootSnapshotGUID,
+		StateBytes:              event.StateBytes,
+		MemoryBytes:             event.MemoryBytes,
+		TraceID:                 spanContext.TraceID().String(),
+		SpanID:                  spanContext.SpanID().String(),
+	}
+	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO "+s.CHDatabase+".golden_vm_events")
+	if err != nil {
+		s.recordGoldenVMEventInsertFailure(ctx, event, err)
+		span.RecordError(err)
+		return err
+	}
+	if err := batch.AppendStruct(&row); err != nil {
+		s.recordGoldenVMEventInsertFailure(ctx, event, err)
+		span.RecordError(err)
+		return err
+	}
+	if err := batch.Send(); err != nil {
+		s.recordGoldenVMEventInsertFailure(ctx, event, err)
+		span.RecordError(err)
+		return err
+	}
+	return nil
+}
+
+func (s *Service) recordGoldenVMEventInsertFailure(ctx context.Context, event goldenVMEvent, err error) {
+	if s.Logger == nil || err == nil {
+		return
+	}
+	s.Logger.WarnContext(ctx, "golden VM event insert failed",
+		"event_name", event.Name,
+		"result", event.Result,
+		"operation_id", uuidValue(event.OperationID),
+		"snapshot_id", uuidValue(event.SnapshotID),
+		"execution_id", uuidValue(event.ExecutionID),
+		"attempt_id", uuidValue(event.AttemptID),
+		"error", err,
+	)
+}
+
 func stableUUID(parts ...string) uuid.UUID {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join(parts, "\x00")))
 }
@@ -1585,6 +2254,71 @@ func stableUUID(parts ...string) uuid.UUID {
 func stableHex(parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:])
+}
+
+func goldenVMSourceGenerationSetHash(ops []durableCacheOperation) string {
+	parts := []string{"golden-vm-generation-set-v1"}
+	for idx, op := range ops {
+		bindPaths := append([]string(nil), op.BindPaths...)
+		sort.Strings(bindPaths)
+		parts = append(parts,
+			strconv.Itoa(idx),
+			op.CacheName,
+			op.DurableScopeID.String(),
+			uuidPtrString(op.SourceGenerationID),
+			op.SourceSnapshotRef,
+			op.SourceSnapshotGUID,
+			op.MountName,
+			op.MountPath,
+			strings.Join(bindPaths, "\n"),
+			"ext4",
+			goldenVMAccessMode(false),
+			strconv.FormatBool(op.Required),
+		)
+	}
+	return stableHex(parts...)
+}
+
+func goldenVMCandidateGenerationSetHash(gens []goldenVMSnapshotGeneration) string {
+	parts := []string{"golden-vm-generation-set-v1"}
+	for _, gen := range gens {
+		bindPaths := append([]string(nil), gen.BindPaths...)
+		sort.Strings(bindPaths)
+		parts = append(parts,
+			strconv.Itoa(gen.SortOrder),
+			gen.CacheName,
+			gen.DurableScopeID.String(),
+			gen.DurableGenerationID.String(),
+			gen.ZFSSnapshotRef,
+			gen.ZFSSnapshotGUID,
+			gen.DriveID,
+			gen.MountPath,
+			strings.Join(bindPaths, "\n"),
+			gen.FSType,
+			goldenVMAccessMode(gen.ReadOnly),
+			strconv.FormatBool(gen.Required),
+		)
+	}
+	return stableHex(parts...)
+}
+
+func goldenVMAccessMode(readOnly bool) string {
+	if readOnly {
+		return "ro"
+	}
+	return "rw"
+}
+
+func goldenVMDriveManifestHash(checkpoint vmorchestrator.GoldenVMCheckpointRecord) string {
+	parts := []string{"golden-vm-drive-manifest-v1", checkpoint.RootSnapshotRef, checkpoint.RootSnapshotGUID}
+	mounts := append([]vmorchestrator.GoldenVMMountCheckpoint(nil), checkpoint.MountSnapshots...)
+	sort.Slice(mounts, func(i, j int) bool {
+		return mounts[i].MountName < mounts[j].MountName
+	})
+	for _, mount := range mounts {
+		parts = append(parts, mount.MountName, mount.SnapshotRef, mount.SnapshotGUID)
+	}
+	return stableHex(parts...)
 }
 
 func uuidPtrString(value *uuid.UUID) string {

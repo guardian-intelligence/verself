@@ -18,6 +18,7 @@ type FilesystemCommitResult struct {
 	MountName     string
 	VolumeDataset string
 	Snapshot      string
+	SnapshotGUID  string
 	UsedBytes     uint64
 	WrittenBytes  uint64
 	CommittedAt   time.Time
@@ -113,26 +114,31 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 	if strings.TrimSpace(mount.Spec.OperationID) != "" && strings.TrimSpace(mount.Spec.OperationID) != operationID {
 		return FilesystemCommitResult{}, fmt.Errorf("filesystem mount %q belongs to operation %s, not %s", mountName, mount.Spec.OperationID, operationID)
 	}
-	if runtime.control == nil {
-		return FilesystemCommitResult{}, fmt.Errorf("guest control is not available")
-	}
 	journal := func(phase, sourceDatasetRef, workingDatasetRef, sealedDatasetRef, errorMessage string) {
 		if input.Journal != nil {
 			input.Journal(phase, sourceDatasetRef, workingDatasetRef, sealedDatasetRef, errorMessage)
 		}
 	}
 
-	journal("seal_started", input.ParentSnapshotRef, mount.clone.Dataset(), "", "")
-	sealCtx, sealEnd := startStepSpan(ctx, "vmorchestrator.guest.filesystem_seal",
-		attribute.String("lease.id", runtime.LeaseID),
-		attribute.String("filesystem.name", mountName),
-		attribute.String("filesystem.mount_path", mount.Spec.MountPath),
-	)
-	sealErr := runtime.control.sealFilesystem(sealCtx, runtime.LeaseID, mountName, mount.Spec.MountPath)
-	sealEnd(sealErr)
-	if sealErr != nil {
-		journal("failed", input.ParentSnapshotRef, mount.clone.Dataset(), "", sealErr.Error())
-		return FilesystemCommitResult{}, fmt.Errorf("seal guest filesystem %s: %w", mountName, sealErr)
+	checkpointSnapshot, checkpointOK := runtime.goldenCheckpointMountSnapshot(mountName)
+	if checkpointOK {
+		journal("seal_checkpoint_reused", input.ParentSnapshotRef, mount.clone.Dataset(), checkpointSnapshot.String(), "")
+	} else {
+		if runtime.control == nil {
+			return FilesystemCommitResult{}, fmt.Errorf("guest control is not available")
+		}
+		journal("seal_started", input.ParentSnapshotRef, mount.clone.Dataset(), "", "")
+		sealCtx, sealEnd := startStepSpan(ctx, "vmorchestrator.guest.filesystem_seal",
+			attribute.String("lease.id", runtime.LeaseID),
+			attribute.String("filesystem.name", mountName),
+			attribute.String("filesystem.mount_path", mount.Spec.MountPath),
+		)
+		sealErr := runtime.control.sealFilesystem(sealCtx, runtime.LeaseID, mountName, mount.Spec.MountPath)
+		sealEnd(sealErr)
+		if sealErr != nil {
+			journal("failed", input.ParentSnapshotRef, mount.clone.Dataset(), "", sealErr.Error())
+			return FilesystemCommitResult{}, fmt.Errorf("seal guest filesystem %s: %w", mountName, sealErr)
+		}
 	}
 
 	journal("flush_started", input.ParentSnapshotRef, mount.clone.Dataset(), "", "")
@@ -149,7 +155,13 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 	}
 
 	journal("zfs_commit_started", input.ParentSnapshotRef, mount.clone.Dataset(), "", "")
-	commit, commitErr := o.volumes.Commit(ctx, mount.clone, volume, parent, input.NewGenerationName, operationID)
+	var commit zfs.CommitResult
+	var commitErr error
+	if checkpointOK {
+		commit, commitErr = o.volumes.CommitSnapshot(ctx, checkpointSnapshot, volume, parent, input.NewGenerationName, operationID)
+	} else {
+		commit, commitErr = o.volumes.Commit(ctx, mount.clone, volume, parent, input.NewGenerationName, operationID)
+	}
 	if commitErr != nil {
 		journal("failed", input.ParentSnapshotRef, mount.clone.Dataset(), "", commitErr.Error())
 		return FilesystemCommitResult{}, commitErr
@@ -160,6 +172,7 @@ func (o *Orchestrator) CommitFilesystemMount(ctx context.Context, runtime *Lease
 		MountName:     mountName,
 		VolumeDataset: volume.Dataset(),
 		Snapshot:      commit.NewGeneration.String(),
+		SnapshotGUID:  commit.SnapshotGUID,
 		UsedBytes:     commit.UsedBytes,
 		WrittenBytes:  commit.WrittenBytes,
 		CommittedAt:   commit.CommittedAt,

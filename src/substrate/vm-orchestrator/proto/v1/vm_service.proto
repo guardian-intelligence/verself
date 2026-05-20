@@ -18,6 +18,8 @@ service VMService {
   rpc WaitExec(WaitExecRequest) returns (WaitExecResponse);
 
   rpc CommitFilesystemMount(CommitFilesystemMountRequest) returns (CommitFilesystemMountResponse);
+  rpc CheckpointGoldenVM(CheckpointGoldenVMRequest) returns (CheckpointGoldenVMResponse);
+  rpc PruneGoldenVMSnapshot(PruneGoldenVMSnapshotRequest) returns (PruneGoldenVMSnapshotResponse);
   rpc PruneFilesystemGeneration(PruneFilesystemGenerationRequest) returns (PruneFilesystemGenerationResponse);
   rpc EnsureOrgRuntime(EnsureOrgRuntimeRequest) returns (EnsureOrgRuntimeResponse);
   rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
@@ -75,11 +77,14 @@ enum LeaseEventType {
   LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_STARTED = 8;
   LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED = 9;
   LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED = 10;
-  LEASE_EVENT_TYPE_VM_SHUTDOWN = 11;
-  LEASE_EVENT_TYPE_LEASE_EXPIRED = 12;
-  LEASE_EVENT_TYPE_LEASE_RELEASED = 13;
-  LEASE_EVENT_TYPE_LEASE_CRASHED = 14;
-  LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC = 15;
+  LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_STARTED = 11;
+  LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINTED = 12;
+  LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_FAILED = 13;
+  LEASE_EVENT_TYPE_VM_SHUTDOWN = 14;
+  LEASE_EVENT_TYPE_LEASE_EXPIRED = 15;
+  LEASE_EVENT_TYPE_LEASE_RELEASED = 16;
+  LEASE_EVENT_TYPE_LEASE_CRASHED = 17;
+  LEASE_EVENT_TYPE_TELEMETRY_DIAGNOSTIC = 18;
 }
 
 message NetworkAttach {
@@ -102,6 +107,7 @@ message LeaseSpec {
   NetworkAttach network = 8;
   repeated FilesystemMount filesystem_mounts = 9;
   StorageNamespace storage_namespace = 11;
+  GoldenVMActivation golden_vm_activation = 12;
 }
 
 message StorageNamespace {
@@ -152,6 +158,24 @@ message FilesystemMountResult {
   bool required = 6;
 }
 
+message GoldenVMActivation {
+  string golden_vm_snapshot_id = 1;
+  string generation_set_hash = 2;
+  string root_snapshot_ref = 3;
+  string root_snapshot_guid = 4;
+  string snapshot_key = 5;
+  string vmstate_artifact_ref = 6;
+  string memory_artifact_ref = 7;
+}
+
+message GoldenVMActivationResult {
+  string mode = 1;
+  string golden_vm_snapshot_id = 2;
+  string generation_set_hash = 3;
+  string snapshot_key = 4;
+  string miss_reason = 5;
+}
+
 message AcquireLeaseRequest {
   string idempotency_key = 1;
   LeaseSpec spec = 2;
@@ -165,6 +189,7 @@ message AcquireLeaseResponse {
   string vm_ip = 5;
   VMResources resources = 6;
   repeated FilesystemMountResult filesystem_mounts = 7;
+  GoldenVMActivationResult activation = 8;
 }
 
 message RenewLeaseRequest {
@@ -207,6 +232,7 @@ message LeaseRecord {
   VMResources resources = 9;
   string trust_class = 10;
   repeated FilesystemMountResult filesystem_mounts = 11;
+  GoldenVMActivationResult activation = 12;
 }
 
 message GetLeaseResponse {
@@ -339,6 +365,52 @@ message CommitFilesystemMountResponse {
   uint64 used_bytes = 5;
   uint64 written_bytes = 6;
   uint64 committed_at_unix_ns = 7;
+  string snapshot_guid = 8;
+}
+
+message CheckpointGoldenVMRequest {
+  string lease_id = 1;
+  string idempotency_key = 2;
+  string operation_id = 3;
+  string checkpoint_id = 4;
+}
+
+message GoldenVMMountCheckpoint {
+  string mount_name = 1;
+  string snapshot_ref = 2;
+  string snapshot_guid = 3;
+}
+
+message CheckpointGoldenVMResponse {
+  string lease_id = 1;
+  string operation_id = 2;
+  string checkpoint_id = 3;
+  string snapshot_key = 4;
+  string root_snapshot_ref = 5;
+  string root_snapshot_guid = 6;
+  string vmstate_artifact_ref = 7;
+  string memory_artifact_ref = 8;
+  uint64 state_bytes = 9;
+  uint64 memory_bytes = 10;
+  uint64 checkpointed_at_unix_ns = 11;
+  repeated GoldenVMMountCheckpoint mount_snapshots = 12;
+}
+
+message PruneGoldenVMSnapshotRequest {
+  string idempotency_key = 1;
+  string operation_id = 2;
+  string golden_vm_snapshot_id = 3;
+  string snapshot_key = 4;
+  string root_snapshot_ref = 5;
+  string org_id = 6;
+}
+
+message PruneGoldenVMSnapshotResponse {
+  string operation_id = 1;
+  string golden_vm_snapshot_id = 2;
+  string snapshot_key = 3;
+  string root_snapshot_ref = 4;
+  uint64 pruned_at_unix_ns = 5;
 }
 
 message PruneFilesystemGenerationRequest {

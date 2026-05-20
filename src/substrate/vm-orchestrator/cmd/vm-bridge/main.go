@@ -127,7 +127,14 @@ func runInit() error {
 	// latency covers it instead of the pre-hello critical path.
 	maybeStartGuestTelemetry()
 
-	return runAgent(conn, bootStart, readyAt, sigCh, bridgeFault, bootTimings)
+	session := newAgentSession(conn, bootStart, readyAt, bridgeFault)
+	if err := session.runInitial(sigCh, bootTimings); err != nil {
+		if err == errControlReconnectForSnapshot {
+			return session.runRestoredControlLoop(listener, sigCh)
+		}
+		return err
+	}
+	return nil
 }
 
 func servePreControlReady(listener *vsockListener, bootStart, readyAt time.Time) {

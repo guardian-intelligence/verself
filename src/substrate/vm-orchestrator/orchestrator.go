@@ -131,21 +131,24 @@ func (s ExecState) Terminal() bool {
 type LeaseEventType string
 
 const (
-	LeaseEventLeaseAcquired           LeaseEventType = "lease_acquired"
-	LeaseEventVMBooting               LeaseEventType = "vm_booting"
-	LeaseEventVMReady                 LeaseEventType = "vm_ready"
-	LeaseEventLeaseRenewed            LeaseEventType = "lease_renewed"
-	LeaseEventExecStarted             LeaseEventType = "exec_started"
-	LeaseEventExecFinished            LeaseEventType = "exec_finished"
-	LeaseEventExecCanceled            LeaseEventType = "exec_canceled"
-	LeaseEventFilesystemCommitStarted LeaseEventType = "filesystem_commit_started"
-	LeaseEventFilesystemCommitted     LeaseEventType = "filesystem_committed"
-	LeaseEventFilesystemCommitFailed  LeaseEventType = "filesystem_commit_failed"
-	LeaseEventVMShutdown              LeaseEventType = "vm_shutdown"
-	LeaseEventLeaseExpired            LeaseEventType = "lease_expired"
-	LeaseEventLeaseReleased           LeaseEventType = "lease_released"
-	LeaseEventLeaseCrashed            LeaseEventType = "lease_crashed"
-	LeaseEventTelemetryDiagnostic     LeaseEventType = "telemetry_diagnostic"
+	LeaseEventLeaseAcquired             LeaseEventType = "lease_acquired"
+	LeaseEventVMBooting                 LeaseEventType = "vm_booting"
+	LeaseEventVMReady                   LeaseEventType = "vm_ready"
+	LeaseEventLeaseRenewed              LeaseEventType = "lease_renewed"
+	LeaseEventExecStarted               LeaseEventType = "exec_started"
+	LeaseEventExecFinished              LeaseEventType = "exec_finished"
+	LeaseEventExecCanceled              LeaseEventType = "exec_canceled"
+	LeaseEventFilesystemCommitStarted   LeaseEventType = "filesystem_commit_started"
+	LeaseEventFilesystemCommitted       LeaseEventType = "filesystem_committed"
+	LeaseEventFilesystemCommitFailed    LeaseEventType = "filesystem_commit_failed"
+	LeaseEventGoldenVMCheckpointStarted LeaseEventType = "golden_vm_checkpoint_started"
+	LeaseEventGoldenVMCheckpointed      LeaseEventType = "golden_vm_checkpointed"
+	LeaseEventGoldenVMCheckpointFailed  LeaseEventType = "golden_vm_checkpoint_failed"
+	LeaseEventVMShutdown                LeaseEventType = "vm_shutdown"
+	LeaseEventLeaseExpired              LeaseEventType = "lease_expired"
+	LeaseEventLeaseReleased             LeaseEventType = "lease_released"
+	LeaseEventLeaseCrashed              LeaseEventType = "lease_crashed"
+	LeaseEventTelemetryDiagnostic       LeaseEventType = "telemetry_diagnostic"
 )
 
 type LeaseSpec struct {
@@ -155,6 +158,7 @@ type LeaseSpec struct {
 	NetworkMode      string
 	StorageNamespace StorageNamespace
 	FilesystemMounts []FilesystemMount
+	GoldenVM         GoldenVMActivation
 }
 
 type StorageNamespace struct {
@@ -171,6 +175,32 @@ type FilesystemMount struct {
 	FSType      string
 	ReadOnly    bool
 	Required    bool
+}
+
+type GoldenVMActivation struct {
+	SnapshotID         string
+	GenerationSetHash  string
+	RootSnapshotRef    string
+	RootSnapshotGUID   string
+	SnapshotKey        string
+	VMStateArtifactRef string
+	MemoryArtifactRef  string
+}
+
+func (a GoldenVMActivation) Requested() bool {
+	return strings.TrimSpace(a.SnapshotID) != "" ||
+		strings.TrimSpace(a.RootSnapshotRef) != "" ||
+		strings.TrimSpace(a.SnapshotKey) != "" ||
+		strings.TrimSpace(a.VMStateArtifactRef) != "" ||
+		strings.TrimSpace(a.MemoryArtifactRef) != ""
+}
+
+type ActivationResult struct {
+	Mode              ActivationMode
+	SnapshotID        string
+	GenerationSetHash string
+	SnapshotKey       string
+	MissReason        string
 }
 
 type preparedFilesystemMount struct {
@@ -206,14 +236,17 @@ type ExecResult struct {
 }
 
 type LeaseRuntime struct {
-	LeaseID      string
-	Lease        zfs.Lease
-	Dataset      string
-	Network      NetworkLease
-	Mounts       []preparedFilesystemMount
-	MountResults []FilesystemMountResult
+	LeaseID          string
+	Lease            zfs.Lease
+	Dataset          string
+	Network          NetworkLease
+	Mounts           []preparedFilesystemMount
+	MountResults     []FilesystemMountResult
+	Activation       ActivationResult
+	GoldenCheckpoint *GoldenVMCheckpointRecord
 
 	apiSocketPath   string
+	apiClient       *apiClient
 	jailRoot        string
 	control         *guestControl
 	jailer          *JailerProcess
@@ -343,7 +376,41 @@ func normalizeLeaseSpec(spec LeaseSpec, cfg Config) (LeaseSpec, error) {
 		return LeaseSpec{}, err
 	}
 	spec.FilesystemMounts = mounts
+	goldenVM, err := normalizeGoldenVMActivation(spec.GoldenVM)
+	if err != nil {
+		return LeaseSpec{}, err
+	}
+	spec.GoldenVM = goldenVM
 	return spec, nil
+}
+
+func normalizeGoldenVMActivation(in GoldenVMActivation) (GoldenVMActivation, error) {
+	in.SnapshotID = strings.TrimSpace(in.SnapshotID)
+	in.GenerationSetHash = strings.TrimSpace(in.GenerationSetHash)
+	in.RootSnapshotRef = strings.TrimSpace(in.RootSnapshotRef)
+	in.RootSnapshotGUID = strings.TrimSpace(in.RootSnapshotGUID)
+	in.SnapshotKey = strings.TrimSpace(in.SnapshotKey)
+	in.VMStateArtifactRef = strings.TrimSpace(in.VMStateArtifactRef)
+	in.MemoryArtifactRef = strings.TrimSpace(in.MemoryArtifactRef)
+	if !in.Requested() {
+		return GoldenVMActivation{}, nil
+	}
+	if in.SnapshotID != "" && !zfs.IsValidRef(in.SnapshotID) {
+		return GoldenVMActivation{}, fmt.Errorf("golden_vm.snapshot_id is invalid")
+	}
+	if in.SnapshotKey == "" {
+		in.SnapshotKey = in.SnapshotID
+	}
+	if in.SnapshotKey == "" || strings.Contains(in.SnapshotKey, "/") || strings.Contains(in.SnapshotKey, "..") {
+		return GoldenVMActivation{}, fmt.Errorf("golden_vm.snapshot_key is invalid")
+	}
+	if in.RootSnapshotRef == "" {
+		return GoldenVMActivation{}, fmt.Errorf("golden_vm.root_snapshot_ref is required")
+	}
+	if _, err := zfs.ParseSnapshot(in.RootSnapshotRef); err != nil {
+		return GoldenVMActivation{}, fmt.Errorf("golden_vm.root_snapshot_ref: %w", err)
+	}
+	return in, nil
 }
 
 type filesystemMountSourceMode uint8
@@ -500,18 +567,30 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		return nil, err
 	}
 	substrateSnapshot, ok := runtimePlan.ImageSnapshots[o.cfg.DefaultSubstrateRef]
-	if !ok {
+	if !ok && strings.TrimSpace(spec.GoldenVM.RootSnapshotRef) == "" {
 		err = fmt.Errorf("org runtime substrate image %s is not ready", o.cfg.DefaultSubstrateRef)
 		return nil, err
+	}
+	rootSourceSnapshot := substrateSnapshot
+	rootSourceKind := "substrate"
+	if ref := strings.TrimSpace(spec.GoldenVM.RootSnapshotRef); ref != "" {
+		parsed, parseErr := zfs.ParseSnapshot(ref)
+		if parseErr != nil {
+			err = fmt.Errorf("golden VM root snapshot ref: %w", parseErr)
+			return nil, err
+		}
+		rootSourceSnapshot = parsed
+		rootSourceKind = "golden_vm"
 	}
 	rootCloneCtx, endRootCloneSpan := startStepSpan(ctx, "vmorchestrator.zfs.root_clone",
 		attribute.String("lease.id", leaseID),
 		attribute.String("org.id", spec.StorageNamespace.OrgID),
 		attribute.String("zfs.dataset", lease.RootDataset()),
 		attribute.String("zfs.image_ref", o.cfg.DefaultSubstrateRef),
-		attribute.String("zfs.source_snapshot", substrateSnapshot.String()),
+		attribute.String("zfs.source_snapshot", rootSourceSnapshot.String()),
+		attribute.String("zfs.source_kind", rootSourceKind),
 	)
-	prepErr := o.volumes.PrepareSubstrateCloneFromSnapshot(rootCloneCtx, lease, substrateSnapshot, lease.ID())
+	prepErr := o.volumes.PrepareSubstrateCloneFromSnapshot(rootCloneCtx, lease, rootSourceSnapshot, lease.ID())
 	endRootCloneSpan(prepErr)
 	if prepErr != nil {
 		err = prepErr
@@ -949,12 +1028,14 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	endAPISocketSpan(nil)
 
 	client := newAPIClient(apiSockHost)
+	runtime.apiClient = client
 	// Kernel cmdline flags live with the privileged Firecracker adapter.
 	bootArgs := RenderCmdline(DefaultKernelCmdlineBase)
-	activationMode, err := o.activateFirecracker(ctx, runtime, spec, mounts, client, netSetup, bootArgs)
+	activation, err := o.activateFirecracker(ctx, runtime, spec, mounts, client, netSetup, bootArgs)
 	if err != nil {
 		return nil, err
 	}
+	runtime.Activation = activation
 
 	controlSocketCtx, endControlSocketSpan := startStepSpan(ctx, "vmorchestrator.guest.control_socket_wait",
 		attribute.String("lease.id", leaseID),
@@ -993,16 +1074,22 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	runtime.control = control
 	runtime.cleanups = append(runtime.cleanups, func() { _ = control.close() })
 
-	_, endHelloSpan := startStepSpan(ctx, "vmorchestrator.guest.hello", attribute.String("lease.id", leaseID))
-	hello, err := control.awaitHello(ctx)
-	helloObservedAt := time.Now()
-	if err != nil {
-		endHelloSpan(err)
-		return nil, err
+	var mountResults []vmproto.FilesystemMountResult
+	networkConfig := netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort)
+	if activation.Mode == ActivationModeSnapshotRestore {
+		mountResults, err = control.afterRestore(ctx, leaseID, networkConfig, guestFilesystemMounts(mounts), activation.Mode)
+	} else {
+		_, endHelloSpan := startStepSpan(ctx, "vmorchestrator.guest.hello", attribute.String("lease.id", leaseID))
+		hello, helloErr := control.awaitHello(ctx)
+		helloObservedAt := time.Now()
+		if helloErr != nil {
+			endHelloSpan(helloErr)
+			return nil, helloErr
+		}
+		endHelloSpan(nil)
+		recordGuestBootTimingSpans(ctx, leaseID, hello, helloObservedAt)
+		mountResults, err = control.initLease(ctx, leaseID, networkConfig, guestFilesystemMounts(mounts), activation.Mode)
 	}
-	endHelloSpan(nil)
-	recordGuestBootTimingSpans(ctx, leaseID, hello, helloObservedAt)
-	mountResults, err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort), guestFilesystemMounts(mounts), activationMode)
 	runtime.MountResults = filesystemMountResults(mounts, mountResults)
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("filesystem.result_count", len(runtime.MountResults)))
 	if err != nil {
@@ -1013,61 +1100,72 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	return runtime, nil
 }
 
-func (o *Orchestrator) activateFirecracker(ctx context.Context, runtime *LeaseRuntime, spec LeaseSpec, mounts []preparedFilesystemMount, client *apiClient, netSetup *networkSetup, bootArgs string) (ActivationMode, error) {
+func (o *Orchestrator) activateFirecracker(ctx context.Context, runtime *LeaseRuntime, spec LeaseSpec, mounts []preparedFilesystemMount, client *apiClient, netSetup *networkSetup, bootArgs string) (ActivationResult, error) {
 	store := o.snapshotStore()
-	if store.Enabled() {
-		keyCtx, endKeySpan := startStepSpan(ctx, "vmorchestrator.firecracker.snapshot_key_build",
-			attribute.String("lease.id", runtime.LeaseID),
-			attribute.String("zfs.dataset", runtime.Dataset),
-			attribute.Int("filesystem.mount_count", len(mounts)),
-		)
-		key, err := o.buildSnapshotKey(keyCtx, runtime.Dataset, spec, mounts, bootArgs)
-		if err == nil {
-			trace.SpanFromContext(keyCtx).SetAttributes(attribute.String("firecracker.snapshot_key", key.String()))
+	if store.Enabled() && spec.GoldenVM.Requested() {
+		key := SnapshotKey{value: strings.TrimSpace(spec.GoldenVM.SnapshotKey)}
+		if key.String() == "" {
+			key = SnapshotKey{value: strings.TrimSpace(spec.GoldenVM.SnapshotID)}
 		}
-		endKeySpan(err)
-		if err != nil {
-			return "", fmt.Errorf("build firecracker snapshot key: %w", err)
+		if key.String() == "" {
+			return ActivationResult{}, fmt.Errorf("golden VM activation snapshot key is required")
 		}
-		lookupCtx, endLookupSpan := startStepSpan(ctx, "vmorchestrator.firecracker.snapshot_lookup",
+		lookupCtx, endLookupSpan := startStepSpan(ctx, "vmorchestrator.firecracker.golden_snapshot_lookup",
 			attribute.String("lease.id", runtime.LeaseID),
 			attribute.String("firecracker.snapshot_key", key.String()),
+			attribute.String("golden_vm.snapshot_id", spec.GoldenVM.SnapshotID),
 		)
 		artifact, ok, err := store.Lookup(lookupCtx, key)
 		trace.SpanFromContext(lookupCtx).SetAttributes(attribute.Bool("firecracker.snapshot_cache_hit", ok))
 		endLookupSpan(err)
 		if err != nil {
-			return "", fmt.Errorf("lookup firecracker snapshot: %w", err)
+			return ActivationResult{}, fmt.Errorf("lookup firecracker snapshot: %w", err)
 		}
 		if ok {
 			mode, err := o.restoreFirecrackerSnapshot(ctx, runtime, client, netSetup, store, artifact)
 			if err != nil {
-				return "", err
+				return ActivationResult{}, err
 			}
 			trace.SpanFromContext(ctx).SetAttributes(
 				attribute.String("firecracker.activation_mode", string(mode)),
 				attribute.String("firecracker.snapshot_key", key.String()),
+				attribute.String("golden_vm.snapshot_id", spec.GoldenVM.SnapshotID),
 			)
-			return mode, nil
+			return ActivationResult{
+				Mode:              mode,
+				SnapshotID:        spec.GoldenVM.SnapshotID,
+				GenerationSetHash: spec.GoldenVM.GenerationSetHash,
+				SnapshotKey:       key.String(),
+			}, nil
 		}
 		mode, err := o.coldBootFirecracker(ctx, runtime, spec, mounts, client, netSetup, bootArgs)
 		if err != nil {
-			return "", err
+			return ActivationResult{}, err
 		}
 		trace.SpanFromContext(ctx).SetAttributes(
 			attribute.String("firecracker.activation_mode", string(mode)),
 			attribute.String("firecracker.snapshot_key", key.String()),
-			attribute.Bool("firecracker.snapshot_cache_miss", true),
-			attribute.Bool("firecracker.snapshot_create_deferred", true),
+			attribute.Bool("firecracker.golden_snapshot_miss", true),
+			attribute.String("golden_vm.snapshot_id", spec.GoldenVM.SnapshotID),
 		)
-		return mode, nil
+		return ActivationResult{
+			Mode:              mode,
+			SnapshotID:        spec.GoldenVM.SnapshotID,
+			GenerationSetHash: spec.GoldenVM.GenerationSetHash,
+			SnapshotKey:       key.String(),
+			MissReason:        "artifact_missing",
+		}, nil
 	}
 	mode, err := o.coldBootFirecracker(ctx, runtime, spec, mounts, client, netSetup, bootArgs)
 	if err != nil {
-		return "", err
+		return ActivationResult{}, err
 	}
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String("firecracker.activation_mode", string(mode)))
-	return mode, nil
+	missReason := ""
+	if spec.GoldenVM.Requested() {
+		missReason = "snapshot_store_disabled"
+	}
+	return ActivationResult{Mode: mode, MissReason: missReason}, nil
 }
 
 func (o *Orchestrator) snapshotStore() *SnapshotStore {
@@ -1110,7 +1208,7 @@ func (o *Orchestrator) restoreFirecrackerSnapshot(ctx context.Context, runtime *
 	restoreErr := client.loadSnapshot(restoreCtx, paths.StateJailPath, paths.MemJailPath, false, []networkOverrideReq{{
 		IfaceID:     snapshotIfaceID,
 		HostDevName: netSetup.Lease.TapName,
-	}})
+	}}, "/run/vs-control.sock")
 	endRestoreSpan(restoreErr)
 	cancel()
 	if restoreErr != nil {

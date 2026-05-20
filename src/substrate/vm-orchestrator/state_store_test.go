@@ -97,7 +97,7 @@ func TestLeaseReadyPersistsFilesystemMountResults(t *testing.T) {
 		Mounted:     true,
 		Required:    true,
 	}}
-	if err := store.setLeaseReady(ctx, "lease-mounts", "172.30.0.2", time.Now().UTC(), mounts); err != nil {
+	if err := store.setLeaseReady(ctx, "lease-mounts", "172.30.0.2", time.Now().UTC(), mounts, ActivationResult{Mode: ActivationModeColdBoot}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -69,6 +69,7 @@ type agentSession struct {
 	droppedLogBytes atomic.Uint64
 	activeChildPID  atomic.Int64
 	filesystems     []vmproto.FilesystemMount
+	network         vmproto.NetworkConfig
 
 	jobCancel context.CancelFunc
 
@@ -87,9 +88,8 @@ type etcOverlayEntry struct {
 	sha256    string
 }
 
-func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-chan os.Signal, bridgeFault bridgeFaultMode, bootTimings vmproto.GuestBootTimings) error {
-	bootTimings.AgentStartMS = time.Since(bootStart).Milliseconds()
-	session := &agentSession{
+func newAgentSession(conn io.ReadWriteCloser, bootStart, readyAt time.Time, bridgeFault bridgeFaultMode) *agentSession {
+	return &agentSession{
 		conn:        conn,
 		codec:       vmproto.NewCodec(conn, conn),
 		bootStart:   bootStart,
@@ -99,7 +99,19 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		logQ:        make(chan outboundFrame, vmproto.LogQueueCapacity),
 		errCh:       make(chan error, 2),
 	}
-	bootTimings.AgentSessionReadyMS = time.Since(bootStart).Milliseconds()
+}
+
+func (session *agentSession) attachConn(conn io.ReadWriteCloser) {
+	session.conn = conn
+	session.codec = vmproto.NewCodec(conn, conn)
+	session.controlQ = make(chan outboundFrame, vmproto.ControlQueueCapacity)
+	session.logQ = make(chan outboundFrame, vmproto.LogQueueCapacity)
+	session.errCh = make(chan error, 2)
+}
+
+func (session *agentSession) runInitial(sigCh <-chan os.Signal, bootTimings vmproto.GuestBootTimings) error {
+	bootTimings.AgentStartMS = time.Since(session.bootStart).Milliseconds()
+	bootTimings.AgentSessionReadyMS = time.Since(session.bootStart).Milliseconds()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -108,10 +120,10 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 	go session.writeLoop(ctx)
 	go session.readLoop(ctx, controlCh)
 	go session.heartbeatLoop(ctx)
-	bootTimings.AgentIOLoopsStartedMS = time.Since(bootStart).Milliseconds()
+	bootTimings.AgentIOLoopsStartedMS = time.Since(session.bootStart).Milliseconds()
 
-	bootToReady := readyAt.Sub(bootStart)
-	bootTimings.HelloEnqueueStartMS = time.Since(bootStart).Milliseconds()
+	bootToReady := session.readyAt.Sub(session.bootStart)
+	bootTimings.HelloEnqueueStartMS = time.Since(session.bootStart).Milliseconds()
 	bootTimings.KernelBootToHelloEnqueueStartMS = kernelUptimeMS()
 	bootTimings.HelloEnqueueDoneMS = bootTimings.HelloEnqueueStartMS
 	if err := session.sendControl(vmproto.TypeHello, vmproto.Hello{
@@ -133,6 +145,7 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 	if err := session.applyNetwork(initReq.Network); err != nil {
 		return session.fail(err)
 	}
+	session.network = initReq.Network
 	timings.ApplyNetworkMS = time.Since(stepStarted).Milliseconds()
 	stepStarted = time.Now()
 	mountResults, err := session.mountFilesystems(initReq.Filesystems)
@@ -190,15 +203,94 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 			if errors.Is(err, errGuestShutdownRequested) {
 				return session.shutdown()
 			}
+			if errors.Is(err, errControlReconnectForSnapshot) {
+				return err
+			}
 			return session.fail(err)
 		}
-		if err := session.runOneExec(req, controlCh, initReq.Network); err != nil {
+		if err := session.runOneExec(req, controlCh); err != nil {
 			return session.fail(err)
 		}
 	}
 }
 
 var errGuestShutdownRequested = errors.New("guest shutdown requested")
+
+var errControlReconnectForSnapshot = errors.New("control reconnect for golden snapshot")
+
+func (s *agentSession) runRestoredControlLoop(listener *vsockListener, sigCh <-chan os.Signal) error {
+	for {
+		if s.conn != nil {
+			_ = s.conn.Close()
+		}
+		select {
+		case <-sigCh:
+			return s.shutdown()
+		default:
+		}
+		conn, err := listener.Accept()
+		if err != nil {
+			return fmt.Errorf("accept restored vsock connection: %w", err)
+		}
+		s.attachConn(conn)
+		err = s.runRestored(sigCh)
+		_ = conn.Close()
+		if errors.Is(err, errControlReconnectForSnapshot) {
+			continue
+		}
+		return err
+	}
+}
+
+func (s *agentSession) runRestored(sigCh <-chan os.Signal) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	controlCh := make(chan vmproto.Envelope, 8)
+	go s.writeLoop(ctx)
+	go s.readLoop(ctx, controlCh)
+	go s.heartbeatLoop(ctx)
+
+	if err := s.waitForAfterRestore(controlCh); err != nil {
+		if errors.Is(err, errGuestShutdownRequested) {
+			return s.shutdown()
+		}
+		return s.fail(err)
+	}
+
+	localControlCtx, localControlCancel := context.WithCancel(ctx)
+	stopLocalControl, err := s.startLocalControlServer(localControlCtx)
+	if err != nil {
+		localControlCancel()
+		return s.fail(err)
+	}
+	defer func() {
+		localControlCancel()
+		stopLocalControl()
+	}()
+
+	for {
+		select {
+		case <-sigCh:
+			return s.shutdown()
+		default:
+		}
+
+		req, err := s.waitForExecRequest(controlCh)
+		if err != nil {
+			if errors.Is(err, errGuestShutdownRequested) {
+				return s.shutdown()
+			}
+			if errors.Is(err, errControlReconnectForSnapshot) {
+				return err
+			}
+			return s.fail(err)
+		}
+		if err := s.runOneExec(req, controlCh); err != nil {
+			return s.fail(err)
+		}
+	}
+}
 
 func (s *agentSession) readLoop(ctx context.Context, controlCh chan<- vmproto.Envelope) {
 	for {
@@ -355,12 +447,42 @@ func (s *agentSession) waitForExecRequest(controlCh <-chan vmproto.Envelope) (vm
 				return vmproto.ExecRequest{}, err
 			}
 			continue
+		case vmproto.TypeAfterRestore:
+			if err := s.handleAfterRestoreRequest(env); err != nil {
+				return vmproto.ExecRequest{}, err
+			}
+			continue
+		case vmproto.TypeBeforeGoldenSnapshot:
+			if err := s.handleBeforeGoldenSnapshotRequest(env); err != nil {
+				return vmproto.ExecRequest{}, err
+			}
+			return vmproto.ExecRequest{}, errControlReconnectForSnapshot
 		case vmproto.TypeShutdown:
 			return vmproto.ExecRequest{}, errGuestShutdownRequested
 		case vmproto.TypeCancel:
 			continue
 		default:
-			return vmproto.ExecRequest{}, unexpectedControlFrame(bridgeStateAwaitExecRequest, env.Type, vmproto.TypeExecRequest, vmproto.TypeFilesystemSealRequest, vmproto.TypeFilesystemMountRequest, vmproto.TypeShutdown, vmproto.TypeCancel)
+			return vmproto.ExecRequest{}, unexpectedControlFrame(bridgeStateAwaitExecRequest, env.Type, vmproto.TypeExecRequest, vmproto.TypeFilesystemSealRequest, vmproto.TypeFilesystemMountRequest, vmproto.TypeAfterRestore, vmproto.TypeBeforeGoldenSnapshot, vmproto.TypeShutdown, vmproto.TypeCancel)
+		}
+	}
+}
+
+func (s *agentSession) waitForAfterRestore(controlCh <-chan vmproto.Envelope) error {
+	for {
+		env, err := s.waitForControl(controlCh)
+		if err != nil {
+			return err
+		}
+		if err := requireControlSeq(bridgeStateAwaitLeaseInit, env); err != nil {
+			return err
+		}
+		switch env.Type {
+		case vmproto.TypeAfterRestore:
+			return s.handleAfterRestoreRequest(env)
+		case vmproto.TypeShutdown:
+			return errGuestShutdownRequested
+		default:
+			return unexpectedControlFrame(bridgeStateAwaitLeaseInit, env.Type, vmproto.TypeAfterRestore, vmproto.TypeShutdown)
 		}
 	}
 }
@@ -372,6 +494,113 @@ func (s *agentSession) handleFilesystemMountRequest(env vmproto.Envelope) error 
 	}
 	result := s.mountFilesystem(req.Filesystem)
 	if err := s.sendControl(vmproto.TypeFilesystemMountResult, result); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *agentSession) handleAfterRestoreRequest(env vmproto.Envelope) error {
+	req, err := vmproto.DecodePayload[vmproto.AfterRestore](env)
+	if err != nil {
+		return protocolStateError(bridgeStateAwaitExecRequest, "decode after_restore payload: %v", err)
+	}
+	if req.ProtocolVersion != vmproto.ProtocolVersion {
+		return protocolStateError(bridgeStateAwaitExecRequest, "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
+	}
+	started := time.Now()
+	timings := vmproto.LeaseInitTimings{}
+	stepStarted := time.Now()
+	if err := s.applyNetwork(req.Network); err != nil {
+		return s.sendAfterRestoreResult(req, nil, &timings, err)
+	}
+	timings.ApplyNetworkMS = time.Since(stepStarted).Milliseconds()
+	s.network = req.Network
+	stepStarted = time.Now()
+	results := s.verifyRestoredFilesystems(req.Filesystems)
+	timings.MountFilesystemsMS = time.Since(stepStarted).Milliseconds()
+	stepStarted = time.Now()
+	if err := setWallClock(req.HostWallclockUnixNS); err != nil {
+		s.sendLogString("", "system", fmt.Sprintf("%s warning: set wall clock after restore: %v\n", logPrefix, err))
+	}
+	timings.SetWallClockMS = time.Since(stepStarted).Milliseconds()
+	timings.TotalLeaseInitMS = time.Since(started).Milliseconds()
+	return s.sendAfterRestoreResult(req, results, &timings, nil)
+}
+
+func (s *agentSession) sendAfterRestoreResult(req vmproto.AfterRestore, results []vmproto.FilesystemMountResult, timings *vmproto.LeaseInitTimings, err error) error {
+	if err != nil {
+		for i := range results {
+			if results[i].Required && !results[i].Mounted && results[i].Error == "" {
+				results[i].Error = err.Error()
+			}
+		}
+	}
+	if resultErr := s.sendControlSync(vmproto.TypeAfterRestoreResult, vmproto.AfterRestoreResult{
+		LeaseID:         req.LeaseID,
+		Filesystems:     results,
+		Timings:         timings,
+		ProtocolVersion: vmproto.ProtocolVersion,
+	}); resultErr != nil {
+		return resultErr
+	}
+	if err != nil {
+		return err
+	}
+	for _, result := range results {
+		if result.Required && !result.Mounted {
+			if result.Error != "" {
+				return fmt.Errorf("restored required filesystem %s at %s missing: %s", result.Name, result.MountPath, result.Error)
+			}
+			return fmt.Errorf("restored required filesystem %s at %s missing", result.Name, result.MountPath)
+		}
+	}
+	return nil
+}
+
+func (s *agentSession) verifyRestoredFilesystems(requested []vmproto.FilesystemMount) []vmproto.FilesystemMountResult {
+	if len(requested) == 0 {
+		return nil
+	}
+	mounted := make(map[string]vmproto.FilesystemMount, len(s.filesystems))
+	for _, fs := range s.filesystems {
+		mounted[fs.Name+"\x00"+fs.MountPath] = fs
+	}
+	results := make([]vmproto.FilesystemMountResult, 0, len(requested))
+	for _, fs := range requested {
+		result := vmproto.FilesystemMountResult{
+			Name:      fs.Name,
+			MountPath: fs.MountPath,
+			Required:  fs.Required,
+		}
+		if _, ok := mounted[fs.Name+"\x00"+fs.MountPath]; ok {
+			if _, err := os.Stat(fs.MountPath); err == nil {
+				result.Mounted = true
+			} else {
+				result.Error = err.Error()
+			}
+		} else {
+			result.Error = "filesystem was not mounted in restored guest state"
+		}
+		results = append(results, result)
+	}
+	return results
+}
+
+func (s *agentSession) handleBeforeGoldenSnapshotRequest(env vmproto.Envelope) error {
+	req, err := vmproto.DecodePayload[vmproto.BeforeGoldenSnapshot](env)
+	if err != nil {
+		return protocolStateError(bridgeStateAwaitExecRequest, "decode before_golden_snapshot payload: %v", err)
+	}
+	if req.ProtocolVersion != vmproto.ProtocolVersion {
+		return protocolStateError(bridgeStateAwaitExecRequest, "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
+	}
+	syscall.Sync()
+	result := vmproto.BeforeGoldenSnapshotResult{
+		LeaseID:     req.LeaseID,
+		OperationID: req.OperationID,
+		Ready:       true,
+	}
+	if err := s.sendControlSync(vmproto.TypeBeforeGoldenSnapshotResult, result); err != nil {
 		return err
 	}
 	return nil
@@ -441,7 +670,7 @@ func unmountFilesystem(fs vmproto.FilesystemMount) error {
 	return nil
 }
 
-func (s *agentSession) runOneExec(req vmproto.ExecRequest, controlCh <-chan vmproto.Envelope, network vmproto.NetworkConfig) error {
+func (s *agentSession) runOneExec(req vmproto.ExecRequest, controlCh <-chan vmproto.Envelope) error {
 	s.stdoutBytes.Store(0)
 	s.stderrBytes.Store(0)
 	s.droppedLogBytes.Store(0)
@@ -463,7 +692,7 @@ func (s *agentSession) runOneExec(req vmproto.ExecRequest, controlCh <-chan vmpr
 		s.jobCancel = nil
 	}()
 
-	env, err := buildRuntimeEnv(req.Env, network, s.filesystems)
+	env, err := buildRuntimeEnv(req.Env, s.network, s.filesystems)
 	if err != nil {
 		return err
 	}

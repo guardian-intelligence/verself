@@ -38,6 +38,7 @@ type leaseSnapshot struct {
 	TrustClass       string
 	VMIP             string
 	FilesystemMounts []FilesystemMountResult
+	Activation       ActivationResult
 	AcquiredAt       time.Time
 	ReadyAt          time.Time
 	ExpiresAt        time.Time
@@ -160,6 +161,7 @@ func (s *hostStateStore) ensureSchema(ctx context.Context) error {
 			trust_class TEXT NOT NULL,
 			vm_ip TEXT NOT NULL DEFAULT '',
 			filesystem_mounts_json TEXT NOT NULL DEFAULT '[]',
+			activation_json TEXT NOT NULL DEFAULT '',
 			acquired_at_unix_nano INTEGER NOT NULL,
 			ready_at_unix_nano INTEGER NOT NULL DEFAULT 0,
 			expires_at_unix_nano INTEGER NOT NULL,
@@ -265,6 +267,7 @@ func (s *hostStateStore) ensureLeasesShape(ctx context.Context) error {
 	defer func() { _ = rows.Close() }()
 	hasRuntimeProfileColumn := false
 	hasFilesystemMountsColumn := false
+	hasActivationColumn := false
 	tableExists := false
 	for rows.Next() {
 		var cid int
@@ -282,11 +285,14 @@ func (s *hostStateStore) ensureLeasesShape(ctx context.Context) error {
 		if name == "filesystem_mounts_json" {
 			hasFilesystemMountsColumn = true
 		}
+		if name == "activation_json" {
+			hasActivationColumn = true
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate leases schema: %w", err)
 	}
-	if tableExists && (hasRuntimeProfileColumn || !hasFilesystemMountsColumn) {
+	if tableExists && (hasRuntimeProfileColumn || !hasFilesystemMountsColumn || !hasActivationColumn) {
 		for _, stmt := range []string{
 			`DROP TABLE IF EXISTS lease_events`,
 			`DROP TABLE IF EXISTS execs`,
@@ -383,10 +389,14 @@ func (s *hostStateStore) createLease(ctx context.Context, snapshot leaseSnapshot
 	return nil
 }
 
-func (s *hostStateStore) setLeaseReady(ctx context.Context, leaseID, vmIP string, readyAt time.Time, mounts []FilesystemMountResult) error {
+func (s *hostStateStore) setLeaseReady(ctx context.Context, leaseID, vmIP string, readyAt time.Time, mounts []FilesystemMountResult, activation ActivationResult) error {
 	mountsJSON, err := json.Marshal(mounts)
 	if err != nil {
 		return fmt.Errorf("marshal lease filesystem mount results: %w", err)
+	}
+	activationJSON, err := json.Marshal(activation)
+	if err != nil {
+		return fmt.Errorf("marshal lease activation result: %w", err)
 	}
 	hostStateWriteMu.Lock()
 	defer hostStateWriteMu.Unlock()
@@ -395,8 +405,8 @@ func (s *hostStateStore) setLeaseReady(ctx context.Context, leaseID, vmIP string
 		return fmt.Errorf("begin lease ready tx: %w", err)
 	}
 	defer rollbackTx(tx)
-	res, err := tx.ExecContext(ctx, `UPDATE leases SET state = ?, vm_ip = ?, filesystem_mounts_json = ?, ready_at_unix_nano = ?, updated_at_unix_nano = ? WHERE lease_id = ? AND state = ?`,
-		leaseStateName(LeaseStateReady), vmIP, string(mountsJSON), readyAt.UnixNano(), readyAt.UnixNano(), leaseID, leaseStateName(LeaseStateAcquiring))
+	res, err := tx.ExecContext(ctx, `UPDATE leases SET state = ?, vm_ip = ?, filesystem_mounts_json = ?, activation_json = ?, ready_at_unix_nano = ?, updated_at_unix_nano = ? WHERE lease_id = ? AND state = ?`,
+		leaseStateName(LeaseStateReady), vmIP, string(mountsJSON), string(activationJSON), readyAt.UnixNano(), readyAt.UnixNano(), leaseID, leaseStateName(LeaseStateAcquiring))
 	if err != nil {
 		return fmt.Errorf("mark lease ready %s: %w", leaseID, err)
 	}
@@ -404,7 +414,11 @@ func (s *hostStateStore) setLeaseReady(ctx context.Context, leaseID, vmIP string
 		return errLeaseStateConflict
 	}
 	if err := insertLeaseEventTx(ctx, tx, leaseID, LeaseEventVMReady, "", map[string]string{
-		"vm_ip": vmIP,
+		"vm_ip":                       vmIP,
+		"firecracker.activation_mode": string(activation.Mode),
+		"golden_vm.snapshot_id":       activation.SnapshotID,
+		"golden_vm.snapshot_key":      activation.SnapshotKey,
+		"golden_vm.miss_reason":       activation.MissReason,
 	}, readyAt.UnixNano()); err != nil {
 		return err
 	}
@@ -470,7 +484,7 @@ func (s *hostStateStore) finishLease(ctx context.Context, leaseID string, state 
 }
 
 func (s *hostStateStore) getLease(ctx context.Context, leaseID string) (leaseSnapshot, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT state, spec_json, trust_class, vm_ip, filesystem_mounts_json, acquired_at_unix_nano, ready_at_unix_nano, expires_at_unix_nano, terminal_at_unix_nano, terminal_reason FROM leases WHERE lease_id = ?`, leaseID)
+	row := s.db.QueryRowContext(ctx, `SELECT state, spec_json, trust_class, vm_ip, filesystem_mounts_json, activation_json, acquired_at_unix_nano, ready_at_unix_nano, expires_at_unix_nano, terminal_at_unix_nano, terminal_reason FROM leases WHERE lease_id = ?`, leaseID)
 	return scanLeaseSnapshot(row, leaseID)
 }
 
@@ -478,7 +492,7 @@ func (s *hostStateStore) listLeases(ctx context.Context, includeTerminal bool, l
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
-	query := `SELECT lease_id, state, spec_json, trust_class, vm_ip, filesystem_mounts_json, acquired_at_unix_nano, ready_at_unix_nano, expires_at_unix_nano, terminal_at_unix_nano, terminal_reason FROM leases`
+	query := `SELECT lease_id, state, spec_json, trust_class, vm_ip, filesystem_mounts_json, activation_json, acquired_at_unix_nano, ready_at_unix_nano, expires_at_unix_nano, terminal_at_unix_nano, terminal_reason FROM leases`
 	if !includeTerminal {
 		query += ` WHERE state NOT IN ('released', 'expired', 'crashed')`
 	}
@@ -491,13 +505,13 @@ func (s *hostStateStore) listLeases(ctx context.Context, includeTerminal bool, l
 	out := make([]leaseSnapshot, 0, limit)
 	for rows.Next() {
 		var (
-			leaseID, stateName, specJSON, trustClass, vmIP, mountsJSON, terminalReason string
-			acquiredNS, readyNS, expiresNS, terminalNS                                 int64
+			leaseID, stateName, specJSON, trustClass, vmIP, mountsJSON, activationJSON, terminalReason string
+			acquiredNS, readyNS, expiresNS, terminalNS                                                 int64
 		)
-		if err := rows.Scan(&leaseID, &stateName, &specJSON, &trustClass, &vmIP, &mountsJSON, &acquiredNS, &readyNS, &expiresNS, &terminalNS, &terminalReason); err != nil {
+		if err := rows.Scan(&leaseID, &stateName, &specJSON, &trustClass, &vmIP, &mountsJSON, &activationJSON, &acquiredNS, &readyNS, &expiresNS, &terminalNS, &terminalReason); err != nil {
 			return nil, fmt.Errorf("scan lease row: %w", err)
 		}
-		snap, err := decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, mountsJSON, acquiredNS, readyNS, expiresNS, terminalNS, terminalReason)
+		snap, err := decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, mountsJSON, activationJSON, acquiredNS, readyNS, expiresNS, terminalNS, terminalReason)
 		if err != nil {
 			return nil, err
 		}
@@ -515,19 +529,19 @@ type rowScanner interface {
 
 func scanLeaseSnapshot(row rowScanner, leaseID string) (leaseSnapshot, error) {
 	var (
-		stateName, specJSON, trustClass, vmIP, mountsJSON, terminalReason string
-		acquiredNS, readyNS, expiresNS, terminalNS                        int64
+		stateName, specJSON, trustClass, vmIP, mountsJSON, activationJSON, terminalReason string
+		acquiredNS, readyNS, expiresNS, terminalNS                                        int64
 	)
-	if err := row.Scan(&stateName, &specJSON, &trustClass, &vmIP, &mountsJSON, &acquiredNS, &readyNS, &expiresNS, &terminalNS, &terminalReason); err != nil {
+	if err := row.Scan(&stateName, &specJSON, &trustClass, &vmIP, &mountsJSON, &activationJSON, &acquiredNS, &readyNS, &expiresNS, &terminalNS, &terminalReason); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return leaseSnapshot{}, errLeaseNotFound
 		}
 		return leaseSnapshot{}, fmt.Errorf("scan lease %s: %w", leaseID, err)
 	}
-	return decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, mountsJSON, acquiredNS, readyNS, expiresNS, terminalNS, terminalReason)
+	return decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, mountsJSON, activationJSON, acquiredNS, readyNS, expiresNS, terminalNS, terminalReason)
 }
 
-func decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, mountsJSON string, acquiredNS, readyNS, expiresNS, terminalNS int64, terminalReason string) (leaseSnapshot, error) {
+func decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, mountsJSON, activationJSON string, acquiredNS, readyNS, expiresNS, terminalNS int64, terminalReason string) (leaseSnapshot, error) {
 	state, err := parseLeaseState(stateName)
 	if err != nil {
 		return leaseSnapshot{}, err
@@ -542,6 +556,12 @@ func decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, mountsJ
 			return leaseSnapshot{}, fmt.Errorf("decode lease filesystem mount results %s: %w", leaseID, err)
 		}
 	}
+	var activation ActivationResult
+	if strings.TrimSpace(activationJSON) != "" {
+		if err := json.Unmarshal([]byte(activationJSON), &activation); err != nil {
+			return leaseSnapshot{}, fmt.Errorf("decode lease activation result %s: %w", leaseID, err)
+		}
+	}
 	return leaseSnapshot{
 		LeaseID:          leaseID,
 		State:            state,
@@ -549,6 +569,7 @@ func decodeLeaseSnapshot(leaseID, stateName, specJSON, trustClass, vmIP, mountsJ
 		TrustClass:       trustClass,
 		VMIP:             vmIP,
 		FilesystemMounts: mounts,
+		Activation:       activation,
 		AcquiredAt:       unixNanoTime(acquiredNS),
 		ReadyAt:          unixNanoTime(readyNS),
 		ExpiresAt:        unixNanoTime(expiresNS),

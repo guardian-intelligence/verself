@@ -14,7 +14,7 @@ const (
 	// JSON fields on existing messages do not bump it; the deployed guest
 	// substrate is staged separately from the Nomad daemon artifact, so an
 	// unnecessary bump strands live hosts on an otherwise compatible image.
-	ProtocolVersion          = 7
+	ProtocolVersion          = 8
 	GuestPreControlReadyPort = 10788
 	GuestPort                = 10789
 	PreControlReadyMessage   = "READY vm-bridge-precontrol-v1"
@@ -33,22 +33,26 @@ var ErrFrameTooLarge = errors.New("frame too large")
 type MessageType string
 
 const (
-	TypeHello                  MessageType = "hello"
-	TypeLeaseInit              MessageType = "lease_init"
-	TypeLeaseInitResult        MessageType = "lease_init_result"
-	TypeExecRequest            MessageType = "exec_request"
-	TypeExecStarted            MessageType = "exec_started"
-	TypeLogChunk               MessageType = "log_chunk"
-	TypeHeartbeat              MessageType = "heartbeat"
-	TypeExecResult             MessageType = "exec_result"
-	TypeFilesystemMountRequest MessageType = "filesystem_mount_request"
-	TypeFilesystemMountResult  MessageType = "filesystem_mount_result"
-	TypeFilesystemSealRequest  MessageType = "filesystem_seal_request"
-	TypeFilesystemSealResult   MessageType = "filesystem_seal_result"
-	TypeFatal                  MessageType = "fatal"
-	TypeCancel                 MessageType = "cancel"
-	TypeAck                    MessageType = "ack"
-	TypeShutdown               MessageType = "shutdown"
+	TypeHello                      MessageType = "hello"
+	TypeLeaseInit                  MessageType = "lease_init"
+	TypeLeaseInitResult            MessageType = "lease_init_result"
+	TypeAfterRestore               MessageType = "after_restore"
+	TypeAfterRestoreResult         MessageType = "after_restore_result"
+	TypeBeforeGoldenSnapshot       MessageType = "before_golden_snapshot"
+	TypeBeforeGoldenSnapshotResult MessageType = "before_golden_snapshot_result"
+	TypeExecRequest                MessageType = "exec_request"
+	TypeExecStarted                MessageType = "exec_started"
+	TypeLogChunk                   MessageType = "log_chunk"
+	TypeHeartbeat                  MessageType = "heartbeat"
+	TypeExecResult                 MessageType = "exec_result"
+	TypeFilesystemMountRequest     MessageType = "filesystem_mount_request"
+	TypeFilesystemMountResult      MessageType = "filesystem_mount_result"
+	TypeFilesystemSealRequest      MessageType = "filesystem_seal_request"
+	TypeFilesystemSealResult       MessageType = "filesystem_seal_result"
+	TypeFatal                      MessageType = "fatal"
+	TypeCancel                     MessageType = "cancel"
+	TypeAck                        MessageType = "ack"
+	TypeShutdown                   MessageType = "shutdown"
 )
 
 type Envelope struct {
@@ -110,6 +114,22 @@ type LeaseInit struct {
 }
 
 type LeaseInitResult struct {
+	LeaseID         string                  `json:"lease_id"`
+	Filesystems     []FilesystemMountResult `json:"filesystems,omitempty"`
+	Timings         *LeaseInitTimings       `json:"timings,omitempty"`
+	ProtocolVersion int                     `json:"protocol_version"`
+}
+
+type AfterRestore struct {
+	LeaseID             string            `json:"lease_id"`
+	Network             NetworkConfig     `json:"network"`
+	Filesystems         []FilesystemMount `json:"filesystems,omitempty"`
+	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
+	ProtocolVersion     int               `json:"protocol_version"`
+	ActivationMode      string            `json:"activation_mode,omitempty"`
+}
+
+type AfterRestoreResult struct {
 	LeaseID         string                  `json:"lease_id"`
 	Filesystems     []FilesystemMountResult `json:"filesystems,omitempty"`
 	Timings         *LeaseInitTimings       `json:"timings,omitempty"`
@@ -194,6 +214,19 @@ type FilesystemSealResult struct {
 	Name    string `json:"name"`
 	Sealed  bool   `json:"sealed"`
 	Error   string `json:"error,omitempty"`
+}
+
+type BeforeGoldenSnapshot struct {
+	LeaseID         string `json:"lease_id"`
+	OperationID     string `json:"operation_id"`
+	ProtocolVersion int    `json:"protocol_version"`
+}
+
+type BeforeGoldenSnapshotResult struct {
+	LeaseID     string `json:"lease_id"`
+	OperationID string `json:"operation_id"`
+	Ready       bool   `json:"ready"`
+	Error       string `json:"error,omitempty"`
 }
 
 type Fatal struct {

@@ -87,6 +87,32 @@ func (s Snapshot) String() string {
 	return s.dataset + "@" + s.name
 }
 
+func ParseSnapshot(ref string) (Snapshot, error) {
+	ref = strings.TrimSpace(ref)
+	dataset, snapName, ok := strings.Cut(ref, "@")
+	if !ok || dataset == "" || snapName == "" {
+		return Snapshot{}, fmt.Errorf("snapshot ref must be <dataset>@<snapshot>")
+	}
+	if strings.Contains(dataset, "..") {
+		return Snapshot{}, fmt.Errorf("snapshot dataset is invalid: %s", dataset)
+	}
+	if err := ValidateSnapshotName(snapName); err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{dataset: strings.Trim(dataset, "/"), name: snapName}, nil
+}
+
+func NewSnapshot(dataset, name string) (Snapshot, error) {
+	dataset = strings.Trim(strings.TrimSpace(dataset), "/")
+	if dataset == "" || strings.Contains(dataset, "@") || strings.Contains(dataset, "..") {
+		return Snapshot{}, fmt.Errorf("snapshot dataset is invalid: %s", dataset)
+	}
+	if err := ValidateSnapshotName(name); err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{dataset: dataset, name: strings.TrimSpace(name)}, nil
+}
+
 func OrgImageSnapshot(roots Roots, orgID, imageRef, sourceDigest string) (Snapshot, error) {
 	orgID = strings.TrimSpace(orgID)
 	if !IsValidRef(orgID) {

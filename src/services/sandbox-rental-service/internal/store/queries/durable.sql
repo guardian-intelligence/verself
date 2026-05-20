@@ -40,6 +40,7 @@ ON CONFLICT (durable_scope_id) DO NOTHING;
 SELECT
     g.durable_generation_id,
     g.zfs_snapshot_ref,
+    g.zfs_snapshot_guid,
     g.head_sha,
     g.tree_hash
 FROM durable_current_pointer p
@@ -123,15 +124,15 @@ RETURNING
 INSERT INTO durable_generation (
     durable_generation_id, durable_scope_id, operation_id, source_generation_id,
     head_sha, tree_hash, provider_run_id, provider_run_attempt, provider_job_id,
-    result, promotion_eligible, state, zfs_snapshot_ref, used_bytes, written_bytes,
+    result, promotion_eligible, state, zfs_snapshot_ref, zfs_snapshot_guid, used_bytes, written_bytes,
     sealed_at, committed_at, last_used_at, expires_at
 ) VALUES (
     sqlc.arg(durable_generation_id), sqlc.arg(durable_scope_id), sqlc.arg(operation_id),
     sqlc.narg(source_generation_id), sqlc.arg(head_sha), sqlc.arg(tree_hash),
     sqlc.arg(provider_run_id), sqlc.arg(provider_run_attempt), sqlc.arg(provider_job_id),
     sqlc.arg(result), sqlc.arg(promotion_eligible), sqlc.arg(state), sqlc.arg(zfs_snapshot_ref),
-    sqlc.arg(used_bytes), sqlc.arg(written_bytes), sqlc.arg(sealed_at), sqlc.arg(committed_at),
-    sqlc.arg(last_used_at), sqlc.narg(expires_at)
+    sqlc.arg(zfs_snapshot_guid), sqlc.arg(used_bytes), sqlc.arg(written_bytes), sqlc.arg(sealed_at),
+    sqlc.arg(committed_at), sqlc.arg(last_used_at), sqlc.narg(expires_at)
 )
 ON CONFLICT (operation_id) DO UPDATE SET last_used_at = EXCLUDED.last_used_at
 RETURNING durable_generation_id;
@@ -208,6 +209,13 @@ WHERE g.expires_at <= sqlc.arg(now_at)
       WHERE child.source_generation_id = g.durable_generation_id
         AND child.state <> 'pruned'
   )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM golden_vm_snapshot_generation vm_gen
+      JOIN golden_vm_snapshot vm ON vm.golden_vm_snapshot_id = vm_gen.golden_vm_snapshot_id
+      WHERE vm_gen.durable_generation_id = g.durable_generation_id
+        AND vm.state IN ('candidate', 'current', 'retained')
+  )
 ORDER BY g.expires_at, g.committed_at, g.durable_generation_id
 LIMIT sqlc.arg(limit_count);
 
@@ -249,6 +257,13 @@ WHERE g.state IN ('committed', 'retained', 'prunable')
       FROM durable_generation child
       WHERE child.source_generation_id = g.durable_generation_id
         AND child.state <> 'pruned'
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM golden_vm_snapshot_generation vm_gen
+      JOIN golden_vm_snapshot vm ON vm.golden_vm_snapshot_id = vm_gen.golden_vm_snapshot_id
+      WHERE vm_gen.durable_generation_id = g.durable_generation_id
+        AND vm.state IN ('candidate', 'current', 'retained')
   )
 ORDER BY g.last_used_at, g.committed_at, g.durable_generation_id
 LIMIT sqlc.arg(limit_count);

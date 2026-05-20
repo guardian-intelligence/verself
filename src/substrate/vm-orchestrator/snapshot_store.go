@@ -88,6 +88,20 @@ func (s *SnapshotStore) Lookup(ctx context.Context, key SnapshotKey) (SnapshotAr
 	return SnapshotArtifact{Key: keyValue, Dir: dir, StatePath: statePath, MemPath: memPath}, true, nil
 }
 
+func (s *SnapshotStore) Delete(ctx context.Context, key SnapshotKey) error {
+	if !s.Enabled() {
+		return fmt.Errorf("snapshot store is disabled")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	keyValue := key.String()
+	if keyValue == "" {
+		return fmt.Errorf("snapshot key is required")
+	}
+	return os.RemoveAll(filepath.Join(s.root, keyValue))
+}
+
 func (s *SnapshotStore) StageForJail(ctx context.Context, artifact SnapshotArtifact, jailRoot string) (JailSnapshotPaths, func(), error) {
 	if !s.Enabled() {
 		return JailSnapshotPaths{}, nil, fmt.Errorf("snapshot store is disabled")
@@ -193,7 +207,7 @@ func (s *SnapshotStore) Publish(ctx context.Context, key SnapshotKey, paths Jail
 		CreatedAt:      time.Now().UTC(),
 		StateBytes:     stateInfo.Size(),
 		MemoryBytes:    memInfo.Size(),
-		ActivationMode: string(ActivationModeColdBoot),
+		ActivationMode: string(ActivationModeSnapshotRestore),
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

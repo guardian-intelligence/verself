@@ -105,6 +105,16 @@ type commitFilesystemMountReply struct {
 	result FilesystemCommitResult
 	err    error
 }
+type checkpointGoldenVMCmd struct {
+	ctx          context.Context
+	operationID  string
+	checkpointID string
+	reply        chan checkpointGoldenVMReply
+}
+type checkpointGoldenVMReply struct {
+	result GoldenVMCheckpointRecord
+	err    error
+}
 type cancelExecCmd struct {
 	execID string
 	reason string
@@ -671,10 +681,125 @@ func (s *APIServer) CommitFilesystemMount(ctx context.Context, req *vmrpc.Commit
 		UsedBytes:         out.result.UsedBytes,
 		WrittenBytes:      out.result.WrittenBytes,
 		CommittedAtUnixNs: unixNs(out.result.CommittedAt),
+		SnapshotGuid:      out.result.SnapshotGUID,
 	}
 	data, _ := json.Marshal(resp)
 	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
 	span.SetAttributes(attribute.String("lease.id", leaseID), attribute.String("filesystem.name", mountName), attribute.String("filesystem.volume_id", volumeID), attribute.String("filesystem.operation_id", operationID), attribute.String("filesystem.parent_snapshot", parentSnapshotRef))
+	return resp, nil
+}
+
+func (s *APIServer) CheckpointGoldenVM(ctx context.Context, req *vmrpc.CheckpointGoldenVMRequest) (*vmrpc.CheckpointGoldenVMResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.CheckpointGoldenVM")
+	defer span.End()
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	operationID := strings.TrimSpace(req.GetOperationId())
+	checkpointID := strings.TrimSpace(req.GetCheckpointId())
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	if leaseID == "" || operationID == "" || checkpointID == "" || key == "" {
+		return nil, status.Error(codes.InvalidArgument, "lease_id, operation_id, checkpoint_id, and idempotency_key are required")
+	}
+	if !zfs.IsValidRef(operationID) {
+		return nil, status.Error(codes.InvalidArgument, "operation_id is invalid")
+	}
+	if !zfs.IsValidRef(checkpointID) {
+		return nil, status.Error(codes.InvalidArgument, "checkpoint_id is invalid")
+	}
+	scope := "checkpoint_golden_vm:" + leaseID
+	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if ok {
+		resp := &vmrpc.CheckpointGoldenVMResponse{}
+		if err := json.Unmarshal([]byte(prior), resp); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return resp, nil
+	}
+	actor, ok := s.lookupActor(leaseID)
+	if !ok {
+		return nil, status.Error(codes.NotFound, "lease not live")
+	}
+	reply := make(chan checkpointGoldenVMReply, 1)
+	actor.send(checkpointGoldenVMCmd{ctx: ctx, operationID: operationID, checkpointID: checkpointID, reply: reply})
+	out := <-reply
+	if out.err != nil {
+		span.RecordError(out.err)
+		span.SetStatus(otelcodes.Error, out.err.Error())
+		return nil, status.Error(codes.FailedPrecondition, out.err.Error())
+	}
+	resp := goldenVMCheckpointRecordToProto(out.result)
+	data, _ := json.Marshal(resp)
+	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
+	span.SetAttributes(
+		attribute.String("lease.id", leaseID),
+		attribute.String("golden_vm.operation_id", operationID),
+		attribute.String("golden_vm.checkpoint_id", checkpointID),
+		attribute.String("firecracker.snapshot_key", out.result.SnapshotKey),
+	)
+	return resp, nil
+}
+
+func (s *APIServer) PruneGoldenVMSnapshot(ctx context.Context, req *vmrpc.PruneGoldenVMSnapshotRequest) (*vmrpc.PruneGoldenVMSnapshotResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.PruneGoldenVMSnapshot")
+	defer span.End()
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	operationID := strings.TrimSpace(req.GetOperationId())
+	snapshotID := strings.TrimSpace(req.GetGoldenVmSnapshotId())
+	snapshotKey := strings.TrimSpace(req.GetSnapshotKey())
+	rootSnapshotRef := strings.TrimSpace(req.GetRootSnapshotRef())
+	orgID := strings.TrimSpace(req.GetOrgId())
+	if key == "" || operationID == "" || snapshotID == "" || snapshotKey == "" || rootSnapshotRef == "" || orgID == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key, operation_id, golden_vm_snapshot_id, snapshot_key, root_snapshot_ref, and org_id are required")
+	}
+	for field, value := range map[string]string{"operation_id": operationID, "golden_vm_snapshot_id": snapshotID, "snapshot_key": snapshotKey, "org_id": orgID} {
+		if !zfs.IsValidRef(value) {
+			return nil, status.Errorf(codes.InvalidArgument, "%s is invalid", field)
+		}
+	}
+	scope := "prune_golden_vm_snapshot"
+	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	} else if ok {
+		resp := &vmrpc.PruneGoldenVMSnapshotResponse{}
+		if err := json.Unmarshal([]byte(prior), resp); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return resp, nil
+	}
+	generation, err := zfs.ParseGeneration(s.roots, rootSnapshotRef)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if generation.Volume().OrgID() != orgID || generation.Volume().ID() != "vmroot-"+snapshotID {
+		return nil, status.Error(codes.InvalidArgument, "root_snapshot_ref does not belong to golden VM snapshot")
+	}
+	span.SetAttributes(
+		attribute.String("golden_vm.operation_id", operationID),
+		attribute.String("golden_vm.snapshot_id", snapshotID),
+		attribute.String("firecracker.snapshot_key", snapshotKey),
+		attribute.String("golden_vm.root_snapshot_ref", rootSnapshotRef),
+	)
+	if err := s.newOrchestrator().snapshotStore().Delete(ctx, SnapshotKey{value: snapshotKey}); err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	volumes := zfs.NewVolumeLifecycle(s.roots, DirectPrivOps{}, s.logger)
+	if err := volumes.DestroyGeneration(ctx, generation); err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	prunedAt := time.Now().UTC()
+	resp := &vmrpc.PruneGoldenVMSnapshotResponse{
+		OperationId:        operationID,
+		GoldenVmSnapshotId: snapshotID,
+		SnapshotKey:        snapshotKey,
+		RootSnapshotRef:    rootSnapshotRef,
+		PrunedAtUnixNs:     unixNs(prunedAt),
+	}
+	data, _ := json.Marshal(resp)
+	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
 	return resp, nil
 }
 
@@ -970,6 +1095,8 @@ func (a *vmActor) run() {
 				msg.reply <- a.handleStartExec(msg.ctx, msg.execID, msg.spec)
 			case commitFilesystemMountCmd:
 				msg.reply <- a.handleCommitFilesystemMount(msg.ctx, msg.mountName, msg.volumeID, msg.operationID, msg.parentSnapshotRef, msg.newGenerationName)
+			case checkpointGoldenVMCmd:
+				msg.reply <- a.handleCheckpointGoldenVM(msg.ctx, msg.operationID, msg.checkpointID)
 			case cancelExecCmd:
 				msg.reply <- a.handleCancelExec(msg.execID, msg.reason)
 			case execDoneCmd:
@@ -1079,7 +1206,7 @@ func (a *vmActor) handleBootComplete(msg bootCompleteCmd) bool {
 	}
 	a.runtime = msg.runtime
 	a.state = LeaseStateReady
-	if err := a.server.state.setLeaseReady(context.Background(), a.leaseID, msg.runtime.Network.GuestIP, msg.readyAt, msg.runtime.MountResults); err != nil {
+	if err := a.server.state.setLeaseReady(context.Background(), a.leaseID, msg.runtime.Network.GuestIP, msg.readyAt, msg.runtime.MountResults, msg.runtime.Activation); err != nil {
 		msg.runtime.Cleanup("lease_ready_persist_failed")
 		a.runtime = nil
 		a.state = LeaseStateCrashed
@@ -1219,6 +1346,38 @@ func (a *vmActor) handleCommitFilesystemMount(callerCtx context.Context, mountNa
 		"snapshot":            result.Snapshot,
 	})
 	return commitFilesystemMountReply{result: result}
+}
+
+func (a *vmActor) handleCheckpointGoldenVM(callerCtx context.Context, operationID, checkpointID string) checkpointGoldenVMReply {
+	if a.state != LeaseStateReady || a.runtime == nil {
+		return checkpointGoldenVMReply{err: fmt.Errorf("lease is not ready")}
+	}
+	if a.active != nil {
+		return checkpointGoldenVMReply{err: fmt.Errorf("lease has an active exec")}
+	}
+	attrs := map[string]string{
+		"operation_id":  operationID,
+		"checkpoint_id": checkpointID,
+	}
+	if err := a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventGoldenVMCheckpointStarted, "", attrs); err != nil {
+		return checkpointGoldenVMReply{err: err}
+	}
+	result, err := a.server.newOrchestrator().CheckpointGoldenVM(detachedTraceContext(callerCtx), a.runtime, GoldenVMCheckpointInput{
+		OperationID:  operationID,
+		CheckpointID: checkpointID,
+	})
+	if err != nil {
+		attrs["error"] = err.Error()
+		_ = a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventGoldenVMCheckpointFailed, "", attrs)
+		return checkpointGoldenVMReply{err: err}
+	}
+	_ = a.server.state.appendLeaseEvent(context.Background(), a.leaseID, LeaseEventGoldenVMCheckpointed, "", map[string]string{
+		"operation_id":      operationID,
+		"checkpoint_id":     checkpointID,
+		"snapshot_key":      result.SnapshotKey,
+		"root_snapshot_ref": result.RootSnapshotRef,
+	})
+	return checkpointGoldenVMReply{result: result}
 }
 
 func (a *vmActor) durableJournalSink() func(durableJournalEntry) {

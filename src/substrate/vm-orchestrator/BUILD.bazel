@@ -15,6 +15,7 @@ go_library(
         "control.go",
         "doc.go",
         "filesystem_commit.go",
+        "golden_vm_checkpoint.go",
         "metrics.go",
         "network.go",
         "observer.go",

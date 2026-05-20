@@ -18,6 +18,7 @@ type LeaseRecord struct {
 	Resources        VMResources
 	TrustClass       string
 	FilesystemMounts []FilesystemMountResult
+	Activation       ActivationResult
 }
 
 type FilesystemMountResult struct {
@@ -34,9 +35,39 @@ type FilesystemCommitRecord struct {
 	MountName     string
 	VolumeDataset string
 	Snapshot      string
+	SnapshotGUID  string
 	UsedBytes     uint64
 	WrittenBytes  uint64
 	CommittedAt   time.Time
+}
+
+type GoldenVMMountCheckpoint struct {
+	MountName    string
+	SnapshotRef  string
+	SnapshotGUID string
+}
+
+type GoldenVMCheckpointRecord struct {
+	LeaseID            string
+	OperationID        string
+	CheckpointID       string
+	SnapshotKey        string
+	RootSnapshotRef    string
+	RootSnapshotGUID   string
+	VMStateArtifactRef string
+	MemoryArtifactRef  string
+	StateBytes         uint64
+	MemoryBytes        uint64
+	CheckpointedAt     time.Time
+	MountSnapshots     []GoldenVMMountCheckpoint
+}
+
+type GoldenVMPruneRecord struct {
+	OperationID        string
+	GoldenVMSnapshotID string
+	SnapshotKey        string
+	RootSnapshotRef    string
+	PrunedAt           time.Time
 }
 
 type FilesystemPruneRecord struct {

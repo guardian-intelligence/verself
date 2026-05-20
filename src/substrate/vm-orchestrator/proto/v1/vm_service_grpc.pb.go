@@ -30,6 +30,8 @@ const (
 	VMService_GetExec_FullMethodName                   = "/verself.vm_orchestrator.v1.VMService/GetExec"
 	VMService_WaitExec_FullMethodName                  = "/verself.vm_orchestrator.v1.VMService/WaitExec"
 	VMService_CommitFilesystemMount_FullMethodName     = "/verself.vm_orchestrator.v1.VMService/CommitFilesystemMount"
+	VMService_CheckpointGoldenVM_FullMethodName        = "/verself.vm_orchestrator.v1.VMService/CheckpointGoldenVM"
+	VMService_PruneGoldenVMSnapshot_FullMethodName     = "/verself.vm_orchestrator.v1.VMService/PruneGoldenVMSnapshot"
 	VMService_PruneFilesystemGeneration_FullMethodName = "/verself.vm_orchestrator.v1.VMService/PruneFilesystemGeneration"
 	VMService_EnsureOrgRuntime_FullMethodName          = "/verself.vm_orchestrator.v1.VMService/EnsureOrgRuntime"
 	VMService_GetCapacity_FullMethodName               = "/verself.vm_orchestrator.v1.VMService/GetCapacity"
@@ -51,6 +53,8 @@ type VMServiceClient interface {
 	GetExec(ctx context.Context, in *GetExecRequest, opts ...grpc.CallOption) (*GetExecResponse, error)
 	WaitExec(ctx context.Context, in *WaitExecRequest, opts ...grpc.CallOption) (*WaitExecResponse, error)
 	CommitFilesystemMount(ctx context.Context, in *CommitFilesystemMountRequest, opts ...grpc.CallOption) (*CommitFilesystemMountResponse, error)
+	CheckpointGoldenVM(ctx context.Context, in *CheckpointGoldenVMRequest, opts ...grpc.CallOption) (*CheckpointGoldenVMResponse, error)
+	PruneGoldenVMSnapshot(ctx context.Context, in *PruneGoldenVMSnapshotRequest, opts ...grpc.CallOption) (*PruneGoldenVMSnapshotResponse, error)
 	PruneFilesystemGeneration(ctx context.Context, in *PruneFilesystemGenerationRequest, opts ...grpc.CallOption) (*PruneFilesystemGenerationResponse, error)
 	EnsureOrgRuntime(ctx context.Context, in *EnsureOrgRuntimeRequest, opts ...grpc.CallOption) (*EnsureOrgRuntimeResponse, error)
 	GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error)
@@ -189,6 +193,26 @@ func (c *vMServiceClient) CommitFilesystemMount(ctx context.Context, in *CommitF
 	return out, nil
 }
 
+func (c *vMServiceClient) CheckpointGoldenVM(ctx context.Context, in *CheckpointGoldenVMRequest, opts ...grpc.CallOption) (*CheckpointGoldenVMResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckpointGoldenVMResponse)
+	err := c.cc.Invoke(ctx, VMService_CheckpointGoldenVM_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) PruneGoldenVMSnapshot(ctx context.Context, in *PruneGoldenVMSnapshotRequest, opts ...grpc.CallOption) (*PruneGoldenVMSnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PruneGoldenVMSnapshotResponse)
+	err := c.cc.Invoke(ctx, VMService_PruneGoldenVMSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *vMServiceClient) PruneFilesystemGeneration(ctx context.Context, in *PruneFilesystemGenerationRequest, opts ...grpc.CallOption) (*PruneFilesystemGenerationResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PruneFilesystemGenerationResponse)
@@ -244,6 +268,8 @@ type VMServiceServer interface {
 	GetExec(context.Context, *GetExecRequest) (*GetExecResponse, error)
 	WaitExec(context.Context, *WaitExecRequest) (*WaitExecResponse, error)
 	CommitFilesystemMount(context.Context, *CommitFilesystemMountRequest) (*CommitFilesystemMountResponse, error)
+	CheckpointGoldenVM(context.Context, *CheckpointGoldenVMRequest) (*CheckpointGoldenVMResponse, error)
+	PruneGoldenVMSnapshot(context.Context, *PruneGoldenVMSnapshotRequest) (*PruneGoldenVMSnapshotResponse, error)
 	PruneFilesystemGeneration(context.Context, *PruneFilesystemGenerationRequest) (*PruneFilesystemGenerationResponse, error)
 	EnsureOrgRuntime(context.Context, *EnsureOrgRuntimeRequest) (*EnsureOrgRuntimeResponse, error)
 	GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error)
@@ -295,6 +321,12 @@ func (UnimplementedVMServiceServer) WaitExec(context.Context, *WaitExecRequest) 
 }
 func (UnimplementedVMServiceServer) CommitFilesystemMount(context.Context, *CommitFilesystemMountRequest) (*CommitFilesystemMountResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CommitFilesystemMount not implemented")
+}
+func (UnimplementedVMServiceServer) CheckpointGoldenVM(context.Context, *CheckpointGoldenVMRequest) (*CheckpointGoldenVMResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckpointGoldenVM not implemented")
+}
+func (UnimplementedVMServiceServer) PruneGoldenVMSnapshot(context.Context, *PruneGoldenVMSnapshotRequest) (*PruneGoldenVMSnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PruneGoldenVMSnapshot not implemented")
 }
 func (UnimplementedVMServiceServer) PruneFilesystemGeneration(context.Context, *PruneFilesystemGenerationRequest) (*PruneFilesystemGenerationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PruneFilesystemGeneration not implemented")
@@ -520,6 +552,42 @@ func _VMService_CommitFilesystemMount_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VMService_CheckpointGoldenVM_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckpointGoldenVMRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).CheckpointGoldenVM(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_CheckpointGoldenVM_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).CheckpointGoldenVM(ctx, req.(*CheckpointGoldenVMRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_PruneGoldenVMSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PruneGoldenVMSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).PruneGoldenVMSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_PruneGoldenVMSnapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).PruneGoldenVMSnapshot(ctx, req.(*PruneGoldenVMSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _VMService_PruneFilesystemGeneration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PruneFilesystemGenerationRequest)
 	if err := dec(in); err != nil {
@@ -638,6 +706,14 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CommitFilesystemMount",
 			Handler:    _VMService_CommitFilesystemMount_Handler,
+		},
+		{
+			MethodName: "CheckpointGoldenVM",
+			Handler:    _VMService_CheckpointGoldenVM_Handler,
+		},
+		{
+			MethodName: "PruneGoldenVMSnapshot",
+			Handler:    _VMService_PruneGoldenVMSnapshot_Handler,
 		},
 		{
 			MethodName: "PruneFilesystemGeneration",

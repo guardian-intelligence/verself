@@ -34,6 +34,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.observeDurableStorage(ctx); err != nil {
 		return err
 	}
+	if err := s.pruneGoldenVMSnapshots(ctx); err != nil {
+		return err
+	}
 	if err := s.pruneDurableGenerations(ctx); err != nil {
 		return err
 	}

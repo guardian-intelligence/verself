@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 )
 
@@ -113,6 +114,37 @@ func TestDurableSealDecisionForExec(t *testing.T) {
 				t.Fatalf("skip reason = %q, want %q", got.SkipReason, tt.wantReason)
 			}
 		})
+	}
+}
+
+func TestGoldenVMGenerationSetHashMatchesCommittedSources(t *testing.T) {
+	scopeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	generationID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	ops := []durableCacheOperation{{
+		DurableScopeID:     scopeID,
+		SourceGenerationID: &generationID,
+		SourceSnapshotRef:  "vspool/orgs/org-1/goldens/scope-1/generations/gen-1@sealed",
+		SourceSnapshotGUID: "123456",
+		MountName:          "workspace",
+		MountPath:          "/home/runner/work",
+		BindPaths:          []string{"/home/runner/work"},
+		CacheName:          durableWorkspaceCacheName,
+		Required:           true,
+	}}
+	gens := []goldenVMSnapshotGeneration{{
+		DurableScopeID:      scopeID,
+		DurableGenerationID: generationID,
+		ZFSSnapshotRef:      "vspool/orgs/org-1/goldens/scope-1/generations/gen-1@sealed",
+		ZFSSnapshotGUID:     "123456",
+		DriveID:             "workspace",
+		MountPath:           "/home/runner/work",
+		BindPaths:           []string{"/home/runner/work"},
+		CacheName:           durableWorkspaceCacheName,
+		FSType:              "ext4",
+		Required:            true,
+	}}
+	if got, want := goldenVMSourceGenerationSetHash(ops), goldenVMCandidateGenerationSetHash(gens); got != want {
+		t.Fatalf("generation set hash = %s, want %s", got, want)
 	}
 }
 

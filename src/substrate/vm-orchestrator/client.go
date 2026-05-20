@@ -56,6 +56,7 @@ func (c *Client) AcquireLease(ctx context.Context, key string, spec LeaseSpec) (
 		VMIP:             resp.GetVmIp(),
 		Resources:        vmResourcesFromProto(resp.GetResources()),
 		FilesystemMounts: filesystemMountResultsFromProto(resp.GetFilesystemMounts()),
+		Activation:       activationResultFromProto(resp.GetActivation()),
 	}, nil
 }
 
@@ -138,9 +139,44 @@ func (c *Client) CommitFilesystemMount(ctx context.Context, leaseID, key, operat
 		MountName:     resp.GetMountName(),
 		VolumeDataset: resp.GetVolumeDataset(),
 		Snapshot:      resp.GetSnapshot(),
+		SnapshotGUID:  resp.GetSnapshotGuid(),
 		UsedBytes:     resp.GetUsedBytes(),
 		WrittenBytes:  resp.GetWrittenBytes(),
 		CommittedAt:   timeFromUnixNs(resp.GetCommittedAtUnixNs()),
+	}, nil
+}
+
+func (c *Client) CheckpointGoldenVM(ctx context.Context, leaseID, key, operationID, checkpointID string) (GoldenVMCheckpointRecord, error) {
+	resp, err := c.client.CheckpointGoldenVM(ctx, &vmrpc.CheckpointGoldenVMRequest{
+		LeaseId:        leaseID,
+		IdempotencyKey: key,
+		OperationId:    operationID,
+		CheckpointId:   checkpointID,
+	})
+	if err != nil {
+		return GoldenVMCheckpointRecord{}, fmt.Errorf("checkpoint golden VM %s: %w", leaseID, err)
+	}
+	return goldenVMCheckpointRecordFromProto(resp), nil
+}
+
+func (c *Client) PruneGoldenVMSnapshot(ctx context.Context, key, operationID, snapshotID, snapshotKey, rootSnapshotRef, orgID string) (GoldenVMPruneRecord, error) {
+	resp, err := c.client.PruneGoldenVMSnapshot(ctx, &vmrpc.PruneGoldenVMSnapshotRequest{
+		IdempotencyKey:     key,
+		OperationId:        operationID,
+		GoldenVmSnapshotId: snapshotID,
+		SnapshotKey:        snapshotKey,
+		RootSnapshotRef:    rootSnapshotRef,
+		OrgId:              orgID,
+	})
+	if err != nil {
+		return GoldenVMPruneRecord{}, fmt.Errorf("prune golden VM snapshot %s: %w", snapshotID, err)
+	}
+	return GoldenVMPruneRecord{
+		OperationID:        resp.GetOperationId(),
+		GoldenVMSnapshotID: resp.GetGoldenVmSnapshotId(),
+		SnapshotKey:        resp.GetSnapshotKey(),
+		RootSnapshotRef:    resp.GetRootSnapshotRef(),
+		PrunedAt:           timeFromUnixNs(resp.GetPrunedAtUnixNs()),
 	}, nil
 }
 
@@ -236,12 +272,13 @@ func leaseSpecToProto(spec LeaseSpec) *vmrpc.LeaseSpec {
 		mode = vmrpc.NetworkAttachMode_NETWORK_ATTACH_MODE_NONE
 	}
 	return &vmrpc.LeaseSpec{
-		Resources:        vmResourcesToProto(spec.Resources),
-		TtlSeconds:       spec.TTLSeconds,
-		TrustClass:       spec.TrustClass,
-		Network:          &vmrpc.NetworkAttach{Mode: mode},
-		StorageNamespace: storageNamespaceToProto(spec.StorageNamespace),
-		FilesystemMounts: filesystemMountsToProto(spec.FilesystemMounts),
+		Resources:          vmResourcesToProto(spec.Resources),
+		TtlSeconds:         spec.TTLSeconds,
+		TrustClass:         spec.TrustClass,
+		Network:            &vmrpc.NetworkAttach{Mode: mode},
+		StorageNamespace:   storageNamespaceToProto(spec.StorageNamespace),
+		FilesystemMounts:   filesystemMountsToProto(spec.FilesystemMounts),
+		GoldenVmActivation: goldenVMActivationToProto(spec.GoldenVM),
 	}
 }
 
@@ -297,7 +334,39 @@ func leaseRecordFromProto(record *vmrpc.LeaseRecord) LeaseRecord {
 		Resources:        vmResourcesFromProto(record.GetResources()),
 		TrustClass:       record.GetTrustClass(),
 		FilesystemMounts: filesystemMountResultsFromProto(record.GetFilesystemMounts()),
+		Activation:       activationResultFromProto(record.GetActivation()),
 	}
+}
+
+func goldenVMCheckpointRecordFromProto(resp *vmrpc.CheckpointGoldenVMResponse) GoldenVMCheckpointRecord {
+	if resp == nil {
+		return GoldenVMCheckpointRecord{}
+	}
+	out := GoldenVMCheckpointRecord{
+		LeaseID:            resp.GetLeaseId(),
+		OperationID:        resp.GetOperationId(),
+		CheckpointID:       resp.GetCheckpointId(),
+		SnapshotKey:        resp.GetSnapshotKey(),
+		RootSnapshotRef:    resp.GetRootSnapshotRef(),
+		RootSnapshotGUID:   resp.GetRootSnapshotGuid(),
+		VMStateArtifactRef: resp.GetVmstateArtifactRef(),
+		MemoryArtifactRef:  resp.GetMemoryArtifactRef(),
+		StateBytes:         resp.GetStateBytes(),
+		MemoryBytes:        resp.GetMemoryBytes(),
+		CheckpointedAt:     timeFromUnixNs(resp.GetCheckpointedAtUnixNs()),
+		MountSnapshots:     make([]GoldenVMMountCheckpoint, 0, len(resp.GetMountSnapshots())),
+	}
+	for _, mount := range resp.GetMountSnapshots() {
+		if mount == nil {
+			continue
+		}
+		out.MountSnapshots = append(out.MountSnapshots, GoldenVMMountCheckpoint{
+			MountName:    mount.GetMountName(),
+			SnapshotRef:  mount.GetSnapshotRef(),
+			SnapshotGUID: mount.GetSnapshotGuid(),
+		})
+	}
+	return out
 }
 
 func leaseEventFromProto(event *vmrpc.LeaseEvent) LeaseEvent {

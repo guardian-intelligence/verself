@@ -22,6 +22,7 @@ func leaseSpecFromProto(spec *vmrpc.LeaseSpec, cfg Config) (LeaseSpec, error) {
 		NetworkMode:      networkMode,
 		StorageNamespace: storageNamespaceFromProto(spec.GetStorageNamespace()),
 		FilesystemMounts: filesystemMountsFromProto(spec.GetFilesystemMounts()),
+		GoldenVM:         goldenVMActivationFromProto(spec.GetGoldenVmActivation()),
 	}, cfg)
 }
 
@@ -184,6 +185,89 @@ func filesystemMountResultsToProto(results []FilesystemMountResult) []*vmrpc.Fil
 	return out
 }
 
+func goldenVMActivationFromProto(in *vmrpc.GoldenVMActivation) GoldenVMActivation {
+	if in == nil {
+		return GoldenVMActivation{}
+	}
+	return GoldenVMActivation{
+		SnapshotID:         in.GetGoldenVmSnapshotId(),
+		GenerationSetHash:  in.GetGenerationSetHash(),
+		RootSnapshotRef:    in.GetRootSnapshotRef(),
+		RootSnapshotGUID:   in.GetRootSnapshotGuid(),
+		SnapshotKey:        in.GetSnapshotKey(),
+		VMStateArtifactRef: in.GetVmstateArtifactRef(),
+		MemoryArtifactRef:  in.GetMemoryArtifactRef(),
+	}
+}
+
+func goldenVMActivationToProto(in GoldenVMActivation) *vmrpc.GoldenVMActivation {
+	if !in.Requested() {
+		return nil
+	}
+	return &vmrpc.GoldenVMActivation{
+		GoldenVmSnapshotId: in.SnapshotID,
+		GenerationSetHash:  in.GenerationSetHash,
+		RootSnapshotRef:    in.RootSnapshotRef,
+		RootSnapshotGuid:   in.RootSnapshotGUID,
+		SnapshotKey:        in.SnapshotKey,
+		VmstateArtifactRef: in.VMStateArtifactRef,
+		MemoryArtifactRef:  in.MemoryArtifactRef,
+	}
+}
+
+func activationResultToProto(in ActivationResult) *vmrpc.GoldenVMActivationResult {
+	if in.Mode == "" && in.SnapshotID == "" && in.MissReason == "" {
+		return nil
+	}
+	return &vmrpc.GoldenVMActivationResult{
+		Mode:               string(in.Mode),
+		GoldenVmSnapshotId: in.SnapshotID,
+		GenerationSetHash:  in.GenerationSetHash,
+		SnapshotKey:        in.SnapshotKey,
+		MissReason:         in.MissReason,
+	}
+}
+
+func activationResultFromProto(in *vmrpc.GoldenVMActivationResult) ActivationResult {
+	if in == nil {
+		return ActivationResult{}
+	}
+	return ActivationResult{
+		Mode:              ActivationMode(in.GetMode()),
+		SnapshotID:        in.GetGoldenVmSnapshotId(),
+		GenerationSetHash: in.GetGenerationSetHash(),
+		SnapshotKey:       in.GetSnapshotKey(),
+		MissReason:        in.GetMissReason(),
+	}
+}
+
+func goldenVMCheckpointRecordToProto(record GoldenVMCheckpointRecord) *vmrpc.CheckpointGoldenVMResponse {
+	resp := &vmrpc.CheckpointGoldenVMResponse{
+		LeaseId:              record.LeaseID,
+		OperationId:          record.OperationID,
+		CheckpointId:         record.CheckpointID,
+		SnapshotKey:          record.SnapshotKey,
+		RootSnapshotRef:      record.RootSnapshotRef,
+		RootSnapshotGuid:     record.RootSnapshotGUID,
+		VmstateArtifactRef:   record.VMStateArtifactRef,
+		MemoryArtifactRef:    record.MemoryArtifactRef,
+		StateBytes:           record.StateBytes,
+		MemoryBytes:          record.MemoryBytes,
+		CheckpointedAtUnixNs: unixNs(record.CheckpointedAt),
+	}
+	if len(record.MountSnapshots) > 0 {
+		resp.MountSnapshots = make([]*vmrpc.GoldenVMMountCheckpoint, 0, len(record.MountSnapshots))
+		for _, mount := range record.MountSnapshots {
+			resp.MountSnapshots = append(resp.MountSnapshots, &vmrpc.GoldenVMMountCheckpoint{
+				MountName:    mount.MountName,
+				SnapshotRef:  mount.SnapshotRef,
+				SnapshotGuid: mount.SnapshotGUID,
+			})
+		}
+	}
+	return resp
+}
+
 func vmResourcesFromProto(r *vmrpc.VMResources) VMResources {
 	if r == nil {
 		return VMResources{}
@@ -226,6 +310,7 @@ func acquireLeaseResponseFromRecord(record LeaseRecord) *vmrpc.AcquireLeaseRespo
 		VmIp:             record.VMIP,
 		Resources:        vmResourcesToProto(record.Resources),
 		FilesystemMounts: filesystemMountResultsToProto(record.FilesystemMounts),
+		Activation:       activationResultToProto(record.Activation),
 	}
 }
 
@@ -242,6 +327,7 @@ func leaseSnapshotToProto(snap leaseSnapshot) *vmrpc.LeaseRecord {
 		Resources:        vmResourcesToProto(snap.Spec.Resources),
 		TrustClass:       snap.TrustClass,
 		FilesystemMounts: filesystemMountResultsToProto(snap.FilesystemMounts),
+		Activation:       activationResultToProto(snap.Activation),
 	}
 }
 
@@ -383,6 +469,12 @@ func leaseEventTypeToProto(eventType LeaseEventType) vmrpc.LeaseEventType {
 		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMITTED
 	case LeaseEventFilesystemCommitFailed:
 		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED
+	case LeaseEventGoldenVMCheckpointStarted:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_STARTED
+	case LeaseEventGoldenVMCheckpointed:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINTED
+	case LeaseEventGoldenVMCheckpointFailed:
+		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_FAILED
 	case LeaseEventVMShutdown:
 		return vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_SHUTDOWN
 	case LeaseEventLeaseExpired:
@@ -420,6 +512,12 @@ func leaseEventTypeFromProto(eventType vmrpc.LeaseEventType) LeaseEventType {
 		return LeaseEventFilesystemCommitted
 	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_FILESYSTEM_COMMIT_FAILED:
 		return LeaseEventFilesystemCommitFailed
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_STARTED:
+		return LeaseEventGoldenVMCheckpointStarted
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINTED:
+		return LeaseEventGoldenVMCheckpointed
+	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_GOLDEN_VM_CHECKPOINT_FAILED:
+		return LeaseEventGoldenVMCheckpointFailed
 	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_VM_SHUTDOWN:
 		return LeaseEventVMShutdown
 	case vmrpc.LeaseEventType_LEASE_EVENT_TYPE_LEASE_EXPIRED:

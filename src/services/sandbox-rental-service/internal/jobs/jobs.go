@@ -108,6 +108,8 @@ type Runner interface {
 	GetExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
+	CheckpointGoldenVM(ctx context.Context, leaseID, key, operationID, checkpointID string) (vmorchestrator.GoldenVMCheckpointRecord, error)
+	PruneGoldenVMSnapshot(ctx context.Context, key, operationID, snapshotID, snapshotKey, rootSnapshotRef, orgID string) (vmorchestrator.GoldenVMPruneRecord, error)
 	CommitFilesystemMount(ctx context.Context, leaseID, key, operationID, mountName, scopeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
 	PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, scopeID, snapshotRef, orgID string) (vmorchestrator.FilesystemPruneRecord, error)
 }
@@ -606,6 +608,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 			QuotaBytes: storageQuotaBytes,
 		},
 		FilesystemMounts: item.FilesystemMounts,
+		GoldenVM:         durablePlan.GoldenVM.Activation,
 	})
 	cancelAcquire()
 	if err != nil {
@@ -641,7 +644,15 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	span.SetAttributes(
 		attribute.Int("filesystem.requested_mount_count", len(item.FilesystemMounts)),
 		attribute.Int("filesystem.result_count", len(lease.FilesystemMounts)),
+		attribute.String("golden_vm.activation_mode", string(lease.Activation.Mode)),
+		attribute.String("golden_vm.miss_reason", lease.Activation.MissReason),
 	)
+	if durablePlan.GoldenVM.Enabled {
+		restoreEvent := durablePlan.GoldenVM.event(item.ExecutionID, item.AttemptID, durablePlan.Identity, goldenVMEventRestore, "succeeded", lease.Activation.MissReason)
+		restoreEvent.ActivationMode = string(lease.Activation.Mode)
+		restoreEvent.SnapshotKey = firstNonEmpty(lease.Activation.SnapshotKey, durablePlan.GoldenVM.Activation.SnapshotKey)
+		_ = s.appendGoldenVMEvent(ctx, restoreEvent)
+	}
 	if len(item.FilesystemMounts) > 0 && len(lease.FilesystemMounts) == 0 && s.Logger != nil {
 		s.Logger.WarnContext(ctx, "lease returned no filesystem mount results",
 			"execution_id", item.ExecutionID,
