@@ -8,10 +8,9 @@ Privileged Go daemon for lease-scoped Firecracker lifecycle management: ZFS clon
 Firecracker guests boot from a slim **substrate** ext4 and compose
 read-only **toolchain images** at lease boot. The catalog lives in
 the `vm-orchestrator` Nomad job. Its prestart task runs
-`vm-orchestrator-cli stage-guest-images` to stage the substrate and
-toolchain files under `/var/lib/verself/guest-images/`, then its
-poststart task runs `vm-orchestrator-cli seed-catalog` after the daemon
-starts. The CLI
+`vm-orchestrator-cli stage-guest-images` to stage the substrate files under
+`/var/lib/verself/guest-images/`, then its poststart task runs
+`vm-orchestrator-cli seed-catalog` after the daemon starts. The CLI
 materialises every entry by issuing SeedImage RPCs in catalog order
 (idempotent via `vs:source_digest` on `@ready`).
 

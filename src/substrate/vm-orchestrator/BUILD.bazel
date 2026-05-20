@@ -164,7 +164,6 @@ nomad_component(
     artifacts = {
         "//src/substrate/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator_nomad_artifact": "vm-orchestrator",
         "//src/substrate/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli_nomad_artifact": "vm-orchestrator-cli",
-        "//src/substrate/vm-orchestrator/guest-images:toolchain_images_bundle": "vm-orchestrator-toolchain-images",
         "//src/substrate/vm-orchestrator/guest-images/substrate:substrate_inputs_bundle": "vm-orchestrator-substrate-inputs",
     },
     component = "vm_orchestrator",

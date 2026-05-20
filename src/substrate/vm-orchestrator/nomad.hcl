@@ -27,18 +27,11 @@ job "vm-orchestrator" {
         chown = true
       }
 
-      artifact {
-        source = "verself-artifact://vm-orchestrator-toolchain-images"
-        destination = "local/toolchain-images"
-        chown = true
-      }
-
       config {
         command = "local/bin/vm-orchestrator-cli"
         args = [
           "stage-guest-images",
           "--substrate-inputs", "local/substrate-inputs",
-          "--toolchain-images", "local/toolchain-images",
           "--guest-images-dir", "/var/lib/verself/guest-images",
           "--work-dir", "/tmp/verself-substrate-build",
         ]

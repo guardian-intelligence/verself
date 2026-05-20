@@ -277,7 +277,7 @@ func runStageGuestImages(args []string) int {
 	fs := flag.NewFlagSet("stage-guest-images", flag.ExitOnError)
 	cfg := stageGuestImagesFlags{}
 	fs.StringVar(&cfg.substrateInputs, "substrate-inputs", "", "Directory containing extracted substrate input bundle")
-	fs.StringVar(&cfg.toolchainImages, "toolchain-images", "", "Directory containing extracted toolchain image bundle")
+	fs.StringVar(&cfg.toolchainImages, "toolchain-images", "", "Optional directory containing extracted toolchain image bundle")
 	fs.StringVar(&cfg.guestImagesDir, "guest-images-dir", "/var/lib/verself/guest-images", "Host guest-image staging directory")
 	fs.StringVar(&cfg.workDir, "work-dir", "/tmp/verself-substrate-build", "Scratch directory for substrate rebuilds")
 	if err := fs.Parse(args); err != nil {
@@ -398,9 +398,6 @@ func (c stageGuestImagesFlags) validate() error {
 	if strings.TrimSpace(c.substrateInputs) == "" {
 		return fmt.Errorf("--substrate-inputs is required")
 	}
-	if strings.TrimSpace(c.toolchainImages) == "" {
-		return fmt.Errorf("--toolchain-images is required")
-	}
 	if strings.TrimSpace(c.guestImagesDir) == "" {
 		return fmt.Errorf("--guest-images-dir is required")
 	}
@@ -429,9 +426,13 @@ func stageGuestImages(ctx context.Context, cfg stageGuestImagesFlags) (stageGues
 	if err != nil {
 		return stageGuestImagesResult{}, fmt.Errorf("digest substrate inputs: %w", err)
 	}
-	toolchainDigest, err := digestDirectory(cfg.toolchainImages)
-	if err != nil {
-		return stageGuestImagesResult{}, fmt.Errorf("digest toolchain images: %w", err)
+	var toolchainDigest string
+	if strings.TrimSpace(cfg.toolchainImages) != "" {
+		var err error
+		toolchainDigest, err = digestDirectory(cfg.toolchainImages)
+		if err != nil {
+			return stageGuestImagesResult{}, fmt.Errorf("digest toolchain images: %w", err)
+		}
 	}
 
 	result := stageGuestImagesResult{
@@ -448,15 +449,17 @@ func stageGuestImages(ctx context.Context, cfg stageGuestImagesFlags) (stageGues
 		}
 		result.SubstrateRebuilt = true
 	}
-	current, err = stagedArtifactsCurrent(cfg.guestImagesDir, filepath.Join("toolchains", ".toolchain-images.sha256"), toolchainDigest, toolchainOutputFiles)
-	if err != nil {
-		return result, err
-	}
-	if !current {
-		if err := stageToolchainImages(cfg, toolchainDigest); err != nil {
+	if strings.TrimSpace(cfg.toolchainImages) != "" {
+		current, err = stagedArtifactsCurrent(cfg.guestImagesDir, filepath.Join("toolchains", ".toolchain-images.sha256"), toolchainDigest, toolchainOutputFiles)
+		if err != nil {
 			return result, err
 		}
-		result.ToolchainStaged = true
+		if !current {
+			if err := stageToolchainImages(cfg, toolchainDigest); err != nil {
+				return result, err
+			}
+			result.ToolchainStaged = true
+		}
 	}
 	return result, nil
 }
