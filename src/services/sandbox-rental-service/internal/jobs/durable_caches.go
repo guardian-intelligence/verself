@@ -1731,7 +1731,7 @@ func (s *Service) promoteGoldenVMCandidate(ctx context.Context, candidate store.
 		JobShapeID:                  candidate.JobShapeID,
 		TrustClass:                  candidate.TrustClass,
 		PromotedAt:                  pgTime(now),
-		CandidateGoldenVmSnapshotID: &candidateID,
+		CandidateGoldenVmSnapshotID: candidateID,
 		OperationID:                 &operationID,
 		SourceGenerationSetHash:     candidate.SourceGenerationSetHash,
 		ExpiresAt:                   pgTime(now.Add(durableRetainedGenerationTTL)),

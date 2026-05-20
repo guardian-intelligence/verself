@@ -763,63 +763,76 @@ func (q *Queries) MarkOpenGoldenVMOperationsFailedByAttempt(ctx context.Context,
 }
 
 const promoteGoldenVMSnapshotCAS = `-- name: PromoteGoldenVMSnapshotCAS :one
-WITH ensure_pointer AS (
-    INSERT INTO golden_vm_current_pointer (
-        org_id, repository_id, provider, provider_repository_id, scope_kind,
-        scope_ref, job_shape_id, trust_class, current_golden_vm_snapshot_id,
-        promoted_by_operation_id, promoted_at
-    ) VALUES (
-        $1, $2, $3,
-        $4, $5, $6,
-        $7, $8, NULL, NULL, $9
-    )
-    ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, trust_class)
-    DO NOTHING
+WITH candidate AS (
+    SELECT g.golden_vm_snapshot_id
+    FROM golden_vm_snapshot g
+    WHERE g.golden_vm_snapshot_id = $1
+      AND g.state = 'candidate'
 ),
 prior AS (
     SELECT p.current_golden_vm_snapshot_id AS prior_snapshot_id
     FROM golden_vm_current_pointer p
-    WHERE p.org_id = $1
-      AND p.repository_id = $2
-      AND p.provider = $3
-      AND p.provider_repository_id = $4
-      AND p.scope_kind = $5
-      AND p.scope_ref = $6
-      AND p.job_shape_id = $7
-      AND p.trust_class = $8
+    WHERE p.org_id = $2
+      AND p.repository_id = $3
+      AND p.provider = $4
+      AND p.provider_repository_id = $5
+      AND p.scope_kind = $6
+      AND p.scope_ref = $7
+      AND p.job_shape_id = $8
+      AND p.trust_class = $9
     FOR UPDATE
 ),
-promote_pointer AS (
+promote_existing AS (
     UPDATE golden_vm_current_pointer p
-    SET current_golden_vm_snapshot_id = $10,
-        promoted_by_operation_id = $11,
-        promoted_at = $9
+    SET current_golden_vm_snapshot_id = $1,
+        promoted_by_operation_id = $10,
+        promoted_at = $11
     FROM prior
+    JOIN candidate ON TRUE
     LEFT JOIN golden_vm_snapshot current_snapshot
       ON current_snapshot.golden_vm_snapshot_id = prior.prior_snapshot_id
-    JOIN golden_vm_snapshot candidate
-      ON candidate.golden_vm_snapshot_id = $10
-    WHERE p.org_id = $1
-      AND p.repository_id = $2
-      AND p.provider = $3
-      AND p.provider_repository_id = $4
-      AND p.scope_kind = $5
-      AND p.scope_ref = $6
-      AND p.job_shape_id = $7
-      AND p.trust_class = $8
-      AND candidate.state = 'candidate'
+    WHERE p.org_id = $2
+      AND p.repository_id = $3
+      AND p.provider = $4
+      AND p.provider_repository_id = $5
+      AND p.scope_kind = $6
+      AND p.scope_ref = $7
+      AND p.job_shape_id = $8
+      AND p.trust_class = $9
       AND (
           prior.prior_snapshot_id IS NULL
           OR current_snapshot.generation_set_hash = $12
       )
     RETURNING prior.prior_snapshot_id
 ),
+promote_missing AS (
+    INSERT INTO golden_vm_current_pointer (
+        org_id, repository_id, provider, provider_repository_id, scope_kind,
+        scope_ref, job_shape_id, trust_class, current_golden_vm_snapshot_id,
+        promoted_by_operation_id, promoted_at
+    )
+    SELECT
+        $2, $3, $4,
+        $5, $6, $7,
+        $8, $9, $1,
+        $10, $11
+    FROM candidate
+    WHERE NOT EXISTS (SELECT 1 FROM prior)
+    ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, trust_class)
+    DO NOTHING
+    RETURNING NULL::uuid AS prior_snapshot_id
+),
+promote_pointer AS (
+    SELECT prior_snapshot_id FROM promote_existing
+    UNION ALL
+    SELECT prior_snapshot_id FROM promote_missing
+),
 promote_candidate AS (
     UPDATE golden_vm_snapshot candidate
     SET state = 'current',
-        last_used_at = $9,
+        last_used_at = $11,
         expires_at = NULL
-    WHERE candidate.golden_vm_snapshot_id = $10
+    WHERE candidate.golden_vm_snapshot_id = $1
       AND EXISTS (SELECT 1 FROM promote_pointer)
     RETURNING candidate.golden_vm_snapshot_id
 ),
@@ -829,7 +842,7 @@ retain_prior AS (
         expires_at = $13
     WHERE old.golden_vm_snapshot_id = (SELECT prior_snapshot_id FROM promote_pointer)
       AND old.golden_vm_snapshot_id IS NOT NULL
-      AND old.golden_vm_snapshot_id <> $10
+      AND old.golden_vm_snapshot_id <> $1
       AND old.state = 'current'
 )
 SELECT
@@ -838,6 +851,7 @@ SELECT
 `
 
 type PromoteGoldenVMSnapshotCASParams struct {
+	CandidateGoldenVmSnapshotID uuid.UUID
 	OrgID                       string
 	RepositoryID                int64
 	Provider                    string
@@ -846,9 +860,8 @@ type PromoteGoldenVMSnapshotCASParams struct {
 	ScopeRef                    string
 	JobShapeID                  uuid.UUID
 	TrustClass                  string
-	PromotedAt                  pgtype.Timestamptz
-	CandidateGoldenVmSnapshotID *uuid.UUID
 	OperationID                 *uuid.UUID
+	PromotedAt                  pgtype.Timestamptz
 	SourceGenerationSetHash     string
 	ExpiresAt                   pgtype.Timestamptz
 }
@@ -860,6 +873,7 @@ type PromoteGoldenVMSnapshotCASRow struct {
 
 func (q *Queries) PromoteGoldenVMSnapshotCAS(ctx context.Context, arg PromoteGoldenVMSnapshotCASParams) (PromoteGoldenVMSnapshotCASRow, error) {
 	row := q.db.QueryRow(ctx, promoteGoldenVMSnapshotCAS,
+		arg.CandidateGoldenVmSnapshotID,
 		arg.OrgID,
 		arg.RepositoryID,
 		arg.Provider,
@@ -868,9 +882,8 @@ func (q *Queries) PromoteGoldenVMSnapshotCAS(ctx context.Context, arg PromoteGol
 		arg.ScopeRef,
 		arg.JobShapeID,
 		arg.TrustClass,
-		arg.PromotedAt,
-		arg.CandidateGoldenVmSnapshotID,
 		arg.OperationID,
+		arg.PromotedAt,
 		arg.SourceGenerationSetHash,
 		arg.ExpiresAt,
 	)

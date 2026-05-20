@@ -243,18 +243,11 @@ WHERE golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id)
   AND state = 'prunable';
 
 -- name: PromoteGoldenVMSnapshotCAS :one
-WITH ensure_pointer AS (
-    INSERT INTO golden_vm_current_pointer (
-        org_id, repository_id, provider, provider_repository_id, scope_kind,
-        scope_ref, job_shape_id, trust_class, current_golden_vm_snapshot_id,
-        promoted_by_operation_id, promoted_at
-    ) VALUES (
-        sqlc.arg(org_id), sqlc.arg(repository_id), sqlc.arg(provider),
-        sqlc.arg(provider_repository_id), sqlc.arg(scope_kind), sqlc.arg(scope_ref),
-        sqlc.arg(job_shape_id), sqlc.arg(trust_class), NULL, NULL, sqlc.arg(promoted_at)
-    )
-    ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, trust_class)
-    DO NOTHING
+WITH candidate AS (
+    SELECT g.golden_vm_snapshot_id
+    FROM golden_vm_snapshot g
+    WHERE g.golden_vm_snapshot_id = sqlc.arg(candidate_golden_vm_snapshot_id)
+      AND g.state = 'candidate'
 ),
 prior AS (
     SELECT p.current_golden_vm_snapshot_id AS prior_snapshot_id
@@ -269,16 +262,15 @@ prior AS (
       AND p.trust_class = sqlc.arg(trust_class)
     FOR UPDATE
 ),
-promote_pointer AS (
+promote_existing AS (
     UPDATE golden_vm_current_pointer p
     SET current_golden_vm_snapshot_id = sqlc.arg(candidate_golden_vm_snapshot_id),
         promoted_by_operation_id = sqlc.arg(operation_id),
         promoted_at = sqlc.arg(promoted_at)
     FROM prior
+    JOIN candidate ON TRUE
     LEFT JOIN golden_vm_snapshot current_snapshot
       ON current_snapshot.golden_vm_snapshot_id = prior.prior_snapshot_id
-    JOIN golden_vm_snapshot candidate
-      ON candidate.golden_vm_snapshot_id = sqlc.arg(candidate_golden_vm_snapshot_id)
     WHERE p.org_id = sqlc.arg(org_id)
       AND p.repository_id = sqlc.arg(repository_id)
       AND p.provider = sqlc.arg(provider)
@@ -287,12 +279,33 @@ promote_pointer AS (
       AND p.scope_ref = sqlc.arg(scope_ref)
       AND p.job_shape_id = sqlc.arg(job_shape_id)
       AND p.trust_class = sqlc.arg(trust_class)
-      AND candidate.state = 'candidate'
       AND (
           prior.prior_snapshot_id IS NULL
           OR current_snapshot.generation_set_hash = sqlc.arg(source_generation_set_hash)
       )
     RETURNING prior.prior_snapshot_id
+),
+promote_missing AS (
+    INSERT INTO golden_vm_current_pointer (
+        org_id, repository_id, provider, provider_repository_id, scope_kind,
+        scope_ref, job_shape_id, trust_class, current_golden_vm_snapshot_id,
+        promoted_by_operation_id, promoted_at
+    )
+    SELECT
+        sqlc.arg(org_id), sqlc.arg(repository_id), sqlc.arg(provider),
+        sqlc.arg(provider_repository_id), sqlc.arg(scope_kind), sqlc.arg(scope_ref),
+        sqlc.arg(job_shape_id), sqlc.arg(trust_class), sqlc.arg(candidate_golden_vm_snapshot_id),
+        sqlc.arg(operation_id), sqlc.arg(promoted_at)
+    FROM candidate
+    WHERE NOT EXISTS (SELECT 1 FROM prior)
+    ON CONFLICT (org_id, repository_id, provider, provider_repository_id, scope_kind, scope_ref, job_shape_id, trust_class)
+    DO NOTHING
+    RETURNING NULL::uuid AS prior_snapshot_id
+),
+promote_pointer AS (
+    SELECT prior_snapshot_id FROM promote_existing
+    UNION ALL
+    SELECT prior_snapshot_id FROM promote_missing
 ),
 promote_candidate AS (
     UPDATE golden_vm_snapshot candidate
