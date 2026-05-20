@@ -10,7 +10,11 @@ import (
 )
 
 const (
-	ProtocolVersion = 8
+	// ProtocolVersion is the strict host<->guest envelope version. Additive
+	// JSON fields on existing messages do not bump it; the deployed guest
+	// substrate is staged separately from the Nomad daemon artifact, so an
+	// unnecessary bump strands live hosts on an otherwise compatible image.
+	ProtocolVersion = 7
 	GuestPort       = 10789
 
 	ControlQueueCapacity = 32
