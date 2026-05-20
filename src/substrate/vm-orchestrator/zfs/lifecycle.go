@@ -9,11 +9,16 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -60,7 +65,33 @@ type VolumeLifecycle struct {
 	logger *slog.Logger
 }
 
-var orgImageMaterializationLocks sync.Map
+var (
+	orgImageMaterializationLocks sync.Map
+	lifecycleTracer              = otel.Tracer("vm-orchestrator/zfs")
+)
+
+const maxInt64AsUint64 = uint64(1<<63 - 1)
+
+func startLifecycleSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span, func(error)) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, span := lifecycleTracer.Start(ctx, name, trace.WithAttributes(attrs...))
+	return ctx, span, func(err error) {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}
+}
+
+func uint64LifecycleAttribute(key string, value uint64) attribute.KeyValue {
+	if value <= maxInt64AsUint64 {
+		return attribute.Int64(key, int64(value)) // #nosec G115 -- value is checked against MaxInt64 above.
+	}
+	return attribute.String(key, strconv.FormatUint(value, 10))
+}
 
 func NewVolumeLifecycle(roots Roots, ops PrivZFS, logger *slog.Logger) *VolumeLifecycle {
 	if logger == nil {
@@ -78,8 +109,13 @@ func (l *VolumeLifecycle) EnsureRoots(ctx context.Context) error {
 	return nil
 }
 
-func (l *VolumeLifecycle) EnsureEncryptedStorageNamespace(ctx context.Context, namespace StorageNamespace, rawKey []byte) error {
+func (l *VolumeLifecycle) EnsureEncryptedStorageNamespace(ctx context.Context, namespace StorageNamespace, rawKey []byte) (err error) {
 	namespace.OrgID = strings.TrimSpace(namespace.OrgID)
+	ctx, span, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.namespace.ensure",
+		attribute.String("org.id", namespace.OrgID),
+		uint64LifecycleAttribute("storage.quota_bytes", namespace.QuotaBytes),
+	)
+	defer func() { endSpan(err) }()
 	if !IsValidRef(namespace.OrgID) {
 		return fmt.Errorf("storage namespace org id is invalid: %s", namespace.OrgID)
 	}
@@ -90,16 +126,30 @@ func (l *VolumeLifecycle) EnsureEncryptedStorageNamespace(ctx context.Context, n
 		return fmt.Errorf("storage namespace raw key must be 32 bytes")
 	}
 	orgRoot := l.roots.orgRoot(namespace.OrgID)
-	exists, err := l.ops.ZFSDatasetExists(ctx, orgRoot)
+	existsCtx, existsSpan, endExistsSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.namespace.dataset_exists",
+		attribute.String("org.id", namespace.OrgID),
+		attribute.String("zfs.dataset", orgRoot),
+	)
+	exists, err := l.ops.ZFSDatasetExists(existsCtx, orgRoot)
+	if err == nil {
+		existsSpan.SetAttributes(attribute.Bool("zfs.dataset_exists", exists))
+	}
+	endExistsSpan(err)
 	if err != nil {
 		return err
 	}
+	span.SetAttributes(
+		attribute.String("zfs.dataset", orgRoot),
+		attribute.Bool("zfs.dataset_exists", exists),
+	)
 	if exists {
 		encryption, err := l.ops.ZFSGetProperty(ctx, orgRoot, "encryption")
 		if err != nil {
 			return fmt.Errorf("read storage namespace encryption %s: %w", orgRoot, err)
 		}
+		span.SetAttributes(attribute.String("zfs.encryption", encryption))
 		if encryption == "" || encryption == "off" {
+			span.SetAttributes(attribute.Bool("zfs.namespace_recreated_unencrypted", true))
 			l.logger.WarnContext(ctx, "unencrypted storage namespace replaced", "org_id", namespace.OrgID, "dataset", orgRoot)
 			if err := l.ops.ZFSDestroyRecursive(ctx, orgRoot); err != nil {
 				return fmt.Errorf("destroy unencrypted storage namespace %s: %w", orgRoot, err)
@@ -108,12 +158,19 @@ func (l *VolumeLifecycle) EnsureEncryptedStorageNamespace(ctx context.Context, n
 		}
 	}
 	if !exists {
+		span.SetAttributes(attribute.Bool("zfs.namespace_created", true))
 		if err := l.ops.ZFSCreateEncryptedFilesystem(ctx, orgRoot, rawKey); err != nil {
 			return fmt.Errorf("create encrypted storage namespace %s: %w", orgRoot, err)
 		}
 	}
-	if err := l.ops.ZFSLoadKey(ctx, orgRoot, rawKey); err != nil {
-		return fmt.Errorf("load storage namespace key %s: %w", orgRoot, err)
+	loadKeyCtx, _, endLoadKeySpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.namespace.load_key",
+		attribute.String("org.id", namespace.OrgID),
+		attribute.String("zfs.dataset", orgRoot),
+	)
+	loadKeyErr := l.ops.ZFSLoadKey(loadKeyCtx, orgRoot, rawKey)
+	endLoadKeySpan(loadKeyErr)
+	if loadKeyErr != nil {
+		return fmt.Errorf("load storage namespace key %s: %w", orgRoot, loadKeyErr)
 	}
 	if err := l.ensureStorageNamespace(ctx, namespace); err != nil {
 		return err
@@ -126,8 +183,13 @@ func (l *VolumeLifecycle) EnsureEncryptedStorageNamespace(ctx context.Context, n
 	return nil
 }
 
-func (l *VolumeLifecycle) ensureStorageNamespace(ctx context.Context, namespace StorageNamespace) error {
+func (l *VolumeLifecycle) ensureStorageNamespace(ctx context.Context, namespace StorageNamespace) (err error) {
 	namespace.OrgID = strings.TrimSpace(namespace.OrgID)
+	ctx, _, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.namespace.ensure_layout",
+		attribute.String("org.id", namespace.OrgID),
+		uint64LifecycleAttribute("storage.quota_bytes", namespace.QuotaBytes),
+	)
+	defer func() { endSpan(err) }()
 	if !IsValidRef(namespace.OrgID) {
 		return fmt.Errorf("storage namespace org id is invalid: %s", namespace.OrgID)
 	}
@@ -136,19 +198,36 @@ func (l *VolumeLifecycle) ensureStorageNamespace(ctx context.Context, namespace 
 	}
 	orgRoot := l.roots.orgRoot(namespace.OrgID)
 	for _, dataset := range []string{orgRoot, l.roots.workloadRoot(namespace.OrgID), l.roots.goldenRoot(namespace.OrgID), l.roots.orgImageRoot(namespace.OrgID)} {
-		if err := l.ops.ZFSEnsureFilesystem(ctx, dataset); err != nil {
+		datasetCtx, _, endDatasetSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.namespace.ensure_dataset",
+			attribute.String("org.id", namespace.OrgID),
+			attribute.String("zfs.dataset", dataset),
+		)
+		if err := l.ops.ZFSEnsureFilesystem(datasetCtx, dataset); err != nil {
+			endDatasetSpan(err)
 			return err
 		}
-		if err := l.ops.ZFSSetProperty(ctx, dataset, "mountpoint", "none"); err != nil {
-			return fmt.Errorf("set storage namespace mountpoint on %s: %w", dataset, err)
+		if err := l.ops.ZFSSetProperty(datasetCtx, dataset, "mountpoint", "none"); err != nil {
+			err = fmt.Errorf("set storage namespace mountpoint on %s: %w", dataset, err)
+			endDatasetSpan(err)
+			return err
 		}
-		if err := l.ops.ZFSSetProperty(ctx, dataset, "canmount", "off"); err != nil {
-			return fmt.Errorf("set storage namespace canmount on %s: %w", dataset, err)
+		if err := l.ops.ZFSSetProperty(datasetCtx, dataset, "canmount", "off"); err != nil {
+			err = fmt.Errorf("set storage namespace canmount on %s: %w", dataset, err)
+			endDatasetSpan(err)
+			return err
 		}
+		endDatasetSpan(nil)
 	}
 	// quota, not refquota: the org boundary must include child zvols.
-	if err := l.ops.ZFSSetProperty(ctx, orgRoot, "quota", fmt.Sprintf("%d", namespace.QuotaBytes)); err != nil {
-		return fmt.Errorf("set storage namespace quota: %w", err)
+	quotaCtx, _, endQuotaSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.namespace.set_quota",
+		attribute.String("org.id", namespace.OrgID),
+		attribute.String("zfs.dataset", orgRoot),
+		uint64LifecycleAttribute("storage.quota_bytes", namespace.QuotaBytes),
+	)
+	quotaErr := l.ops.ZFSSetProperty(quotaCtx, orgRoot, "quota", fmt.Sprintf("%d", namespace.QuotaBytes))
+	endQuotaSpan(quotaErr)
+	if quotaErr != nil {
+		return fmt.Errorf("set storage namespace quota: %w", quotaErr)
 	}
 	return nil
 }
@@ -161,7 +240,12 @@ func (l *VolumeLifecycle) UnloadStorageNamespaceKey(ctx context.Context, orgID s
 	return l.ops.ZFSUnloadKey(ctx, l.roots.orgRoot(orgID))
 }
 
-func (l *VolumeLifecycle) AssertEncryptedDataset(ctx context.Context, dataset, expectedRoot string) error {
+func (l *VolumeLifecycle) AssertEncryptedDataset(ctx context.Context, dataset, expectedRoot string) (err error) {
+	ctx, span, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.dataset.assert_encrypted",
+		attribute.String("zfs.dataset", dataset),
+		attribute.String("zfs.expected_encryption_root", expectedRoot),
+	)
+	defer func() { endSpan(err) }()
 	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
 		return fmt.Errorf("encrypted dataset assertion target is invalid: %s", dataset)
 	}
@@ -169,6 +253,7 @@ func (l *VolumeLifecycle) AssertEncryptedDataset(ctx context.Context, dataset, e
 	if err != nil {
 		return fmt.Errorf("read zfs encryption for %s: %w", dataset, err)
 	}
+	span.SetAttributes(attribute.String("zfs.encryption", encryption))
 	if encryption == "" || encryption == "off" {
 		return fmt.Errorf("zfs dataset %s is not encrypted", dataset)
 	}
@@ -176,6 +261,7 @@ func (l *VolumeLifecycle) AssertEncryptedDataset(ctx context.Context, dataset, e
 	if err != nil {
 		return fmt.Errorf("read zfs encryptionroot for %s: %w", dataset, err)
 	}
+	span.SetAttributes(attribute.String("zfs.encryption_root", encryptionRoot))
 	if encryptionRoot != expectedRoot {
 		return fmt.Errorf("zfs dataset %s encryptionroot = %s, want %s", dataset, encryptionRoot, expectedRoot)
 	}
@@ -183,25 +269,50 @@ func (l *VolumeLifecycle) AssertEncryptedDataset(ctx context.Context, dataset, e
 	if err != nil {
 		return fmt.Errorf("read zfs keystatus for %s: %w", dataset, err)
 	}
+	span.SetAttributes(attribute.String("zfs.keystatus", keyStatus))
 	if keyStatus != "available" {
 		return fmt.Errorf("zfs dataset %s key status = %s, want available", dataset, keyStatus)
 	}
 	return nil
 }
 
-func (l *VolumeLifecycle) PrepareSubstrateClone(ctx context.Context, lease Lease, image Image) error {
+func (l *VolumeLifecycle) PrepareSubstrateClone(ctx context.Context, lease Lease, image Image) (err error) {
+	ctx, span, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.root.prepare_substrate_clone",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("zfs.dataset", lease.RootDataset()),
+		attribute.String("zfs.image_ref", image.Ref()),
+	)
+	defer func() { endSpan(err) }()
 	if err := validateSameRoots(l.roots, lease.roots, image.roots); err != nil {
 		return err
 	}
-	if err := l.ops.ZFSEnsureFilesystem(ctx, lease.Dataset()); err != nil {
-		return err
+	ensureCtx, _, endEnsureSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.root.ensure_lease_dataset",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("zfs.dataset", lease.Dataset()),
+	)
+	ensureErr := l.ops.ZFSEnsureFilesystem(ensureCtx, lease.Dataset())
+	endEnsureSpan(ensureErr)
+	if ensureErr != nil {
+		return ensureErr
 	}
 	source, err := l.EnsureOrgImage(ctx, lease.OrgID(), image)
 	if err != nil {
 		return err
 	}
-	if err := l.ops.ZFSClone(ctx, source.String(), lease.RootDataset(), lease.ID()); err != nil {
-		return err
+	span.SetAttributes(attribute.String("zfs.source_snapshot", source.String()))
+	cloneCtx, _, endCloneSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.root.clone",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("zfs.source_snapshot", source.String()),
+		attribute.String("zfs.dataset", lease.RootDataset()),
+		attribute.String("zfs.operation_id", lease.ID()),
+	)
+	cloneErr := l.ops.ZFSClone(cloneCtx, source.String(), lease.RootDataset(), lease.ID())
+	endCloneSpan(cloneErr)
+	if cloneErr != nil {
+		return cloneErr
 	}
 	if err := l.AssertEncryptedDataset(ctx, lease.RootDataset(), l.roots.orgRoot(lease.OrgID())); err != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), lease.RootDataset())
@@ -210,7 +321,14 @@ func (l *VolumeLifecycle) PrepareSubstrateClone(ctx context.Context, lease Lease
 	return nil
 }
 
-func (l *VolumeLifecycle) ResizeLeaseRootExt4(ctx context.Context, lease Lease, sizeBytes uint64) error {
+func (l *VolumeLifecycle) ResizeLeaseRootExt4(ctx context.Context, lease Lease, sizeBytes uint64) (err error) {
+	ctx, _, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.root.resize_ext4",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("zfs.dataset", lease.RootDataset()),
+		uint64LifecycleAttribute("zfs.size_bytes", sizeBytes),
+	)
+	defer func() { endSpan(err) }()
 	return l.ops.ZFSEnsureVolumeSizeExt4(ctx, lease.RootDataset(), sizeBytes)
 }
 
@@ -219,7 +337,16 @@ func (l *VolumeLifecycle) DestroyLeaseRoot(ctx context.Context, lease Lease) err
 	return l.ops.ZFSDestroyRecursive(ctx, lease.Dataset())
 }
 
-func (l *VolumeLifecycle) PrepareMount(ctx context.Context, lease Lease, image Image, index int, name, operationID string) (MountClone, error) {
+func (l *VolumeLifecycle) PrepareMount(ctx context.Context, lease Lease, image Image, index int, name, operationID string) (clone MountClone, err error) {
+	ctx, span, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.mount.prepare_image",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("filesystem.name", name),
+		attribute.Int("filesystem.sort_order", index),
+		attribute.String("filesystem.operation_id", firstNonEmpty(operationID, lease.ID())),
+		attribute.String("zfs.image_ref", image.Ref()),
+	)
+	defer func() { endSpan(err) }()
 	if err := validateSameRoots(l.roots, lease.roots, image.roots); err != nil {
 		return MountClone{}, err
 	}
@@ -227,22 +354,56 @@ func (l *VolumeLifecycle) PrepareMount(ctx context.Context, lease Lease, image I
 	if err != nil {
 		return MountClone{}, err
 	}
-	return l.PrepareMountFromSnapshot(ctx, lease, source, index, name, operationID)
+	span.SetAttributes(attribute.String("zfs.source_snapshot", source.String()))
+	clone, err = l.PrepareMountFromSnapshot(ctx, lease, source, index, name, operationID)
+	if err == nil {
+		span.SetAttributes(attribute.String("zfs.dataset", clone.Dataset()))
+	}
+	return clone, err
 }
 
-func (l *VolumeLifecycle) PrepareMountFromSnapshot(ctx context.Context, lease Lease, snapshot Snapshot, index int, name, operationID string) (MountClone, error) {
+func (l *VolumeLifecycle) PrepareMountFromSnapshot(ctx context.Context, lease Lease, snapshot Snapshot, index int, name, operationID string) (clone MountClone, err error) {
+	ctx, span, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.mount.clone_snapshot",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("filesystem.name", name),
+		attribute.Int("filesystem.sort_order", index),
+		attribute.String("filesystem.operation_id", firstNonEmpty(operationID, lease.ID())),
+		attribute.String("zfs.source_snapshot", snapshot.String()),
+	)
+	defer func() { endSpan(err) }()
 	target, err := lease.MountDataset(index, name)
 	if err != nil {
 		return MountClone{}, err
 	}
+	span.SetAttributes(attribute.String("zfs.dataset", target))
 	if snapshot.String() == "" {
 		return MountClone{}, fmt.Errorf("source snapshot is required")
 	}
-	if err := l.ops.ZFSEnsureFilesystem(ctx, filepath.ToSlash(filepath.Dir(target))); err != nil {
-		return MountClone{}, err
+	parentDataset := filepath.ToSlash(filepath.Dir(target))
+	parentCtx, _, endParentSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.mount.ensure_parent_dataset",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("zfs.dataset", parentDataset),
+		attribute.String("filesystem.name", name),
+	)
+	parentErr := l.ops.ZFSEnsureFilesystem(parentCtx, parentDataset)
+	endParentSpan(parentErr)
+	if parentErr != nil {
+		return MountClone{}, parentErr
 	}
-	if err := l.ops.ZFSClone(ctx, snapshot.String(), target, firstNonEmpty(operationID, lease.ID())); err != nil {
-		return MountClone{}, err
+	cloneCtx, _, endCloneSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.mount.clone",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("filesystem.name", name),
+		attribute.String("zfs.source_snapshot", snapshot.String()),
+		attribute.String("zfs.dataset", target),
+		attribute.String("zfs.operation_id", firstNonEmpty(operationID, lease.ID())),
+	)
+	cloneErr := l.ops.ZFSClone(cloneCtx, snapshot.String(), target, firstNonEmpty(operationID, lease.ID()))
+	endCloneSpan(cloneErr)
+	if cloneErr != nil {
+		return MountClone{}, cloneErr
 	}
 	if err := l.AssertEncryptedDataset(ctx, target, l.roots.orgRoot(lease.OrgID())); err != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), target)
@@ -251,16 +412,45 @@ func (l *VolumeLifecycle) PrepareMountFromSnapshot(ctx context.Context, lease Le
 	return MountClone{lease: lease, dataset: target, name: name}, nil
 }
 
-func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, index int, name string, operationID string) (MountClone, error) {
+func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, index int, name string, operationID string) (clone MountClone, err error) {
+	ctx, span, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.mount.prepare_empty",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("filesystem.name", name),
+		attribute.Int("filesystem.sort_order", index),
+		attribute.String("filesystem.operation_id", firstNonEmpty(operationID, lease.ID())),
+		uint64LifecycleAttribute("zfs.size_bytes", DurableVolumeNominalBytes),
+	)
+	defer func() { endSpan(err) }()
 	target, err := lease.MountDataset(index, name)
 	if err != nil {
 		return MountClone{}, err
 	}
-	if err := l.ops.ZFSEnsureFilesystem(ctx, filepath.ToSlash(filepath.Dir(target))); err != nil {
-		return MountClone{}, err
+	span.SetAttributes(attribute.String("zfs.dataset", target))
+	parentDataset := filepath.ToSlash(filepath.Dir(target))
+	parentCtx, _, endParentSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.mount.ensure_parent_dataset",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("zfs.dataset", parentDataset),
+		attribute.String("filesystem.name", name),
+	)
+	parentErr := l.ops.ZFSEnsureFilesystem(parentCtx, parentDataset)
+	endParentSpan(parentErr)
+	if parentErr != nil {
+		return MountClone{}, parentErr
 	}
-	if err := l.ops.ZFSCreateSparseVolume(ctx, target, DurableVolumeNominalBytes, "16K"); err != nil {
-		return MountClone{}, err
+	createCtx, _, endCreateSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.mount.create_sparse_volume",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("filesystem.name", name),
+		attribute.String("zfs.dataset", target),
+		uint64LifecycleAttribute("zfs.size_bytes", DurableVolumeNominalBytes),
+		attribute.String("zfs.volblocksize", "16K"),
+	)
+	createErr := l.ops.ZFSCreateSparseVolume(createCtx, target, DurableVolumeNominalBytes, "16K")
+	endCreateSpan(createErr)
+	if createErr != nil {
+		return MountClone{}, createErr
 	}
 	if err := l.ops.ZFSSetProperty(ctx, target, "vs:operation_id", firstNonEmpty(operationID, lease.ID())); err != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), target)
@@ -270,15 +460,31 @@ func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, in
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), target)
 		return MountClone{}, err
 	}
-	if err := l.ops.ZFSMkfs(ctx, zvolDevicePath(target), "ext4", safeExt4Label(name)); err != nil {
+	devicePath := zvolDevicePath(target)
+	mkfsCtx, _, endMkfsSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.mount.mkfs",
+		attribute.String("lease.id", lease.ID()),
+		attribute.String("org.id", lease.OrgID()),
+		attribute.String("filesystem.name", name),
+		attribute.String("zfs.dataset", target),
+		attribute.String("device.path", devicePath),
+		attribute.String("filesystem.fs_type", "ext4"),
+	)
+	mkfsErr := l.ops.ZFSMkfs(mkfsCtx, devicePath, "ext4", safeExt4Label(name))
+	endMkfsSpan(mkfsErr)
+	if mkfsErr != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), target)
-		return MountClone{}, err
+		return MountClone{}, mkfsErr
 	}
 	return MountClone{lease: lease, dataset: target, name: name}, nil
 }
 
-func (l *VolumeLifecycle) EnsureOrgImage(ctx context.Context, orgID string, image Image) (Snapshot, error) {
+func (l *VolumeLifecycle) EnsureOrgImage(ctx context.Context, orgID string, image Image) (snapshot Snapshot, err error) {
 	orgID = strings.TrimSpace(orgID)
+	ctx, span, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.image.ensure_org_copy",
+		attribute.String("org.id", orgID),
+		attribute.String("zfs.image_ref", image.Ref()),
+	)
+	defer func() { endSpan(err) }()
 	if !IsValidRef(orgID) {
 		return Snapshot{}, fmt.Errorf("org image org id is invalid: %s", orgID)
 	}
@@ -289,17 +495,39 @@ func (l *VolumeLifecycle) EnsureOrgImage(ctx context.Context, orgID string, imag
 	if source.String() == "" {
 		return Snapshot{}, fmt.Errorf("image snapshot is required")
 	}
-	sourceExists, err := l.ops.ZFSSnapshotExists(ctx, source.String())
+	span.SetAttributes(attribute.String("zfs.source_snapshot", source.String()))
+	sourceExistsCtx, sourceExistsSpan, endSourceExistsSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.image.source_snapshot_exists",
+		attribute.String("org.id", orgID),
+		attribute.String("zfs.image_ref", image.Ref()),
+		attribute.String("zfs.source_snapshot", source.String()),
+	)
+	sourceExists, err := l.ops.ZFSSnapshotExists(sourceExistsCtx, source.String())
+	if err == nil {
+		sourceExistsSpan.SetAttributes(attribute.Bool("zfs.source_snapshot_exists", sourceExists))
+	}
+	endSourceExistsSpan(err)
 	if err != nil {
 		return Snapshot{}, err
 	}
+	span.SetAttributes(attribute.Bool("zfs.source_snapshot_exists", sourceExists))
 	if !sourceExists {
 		return Snapshot{}, fmt.Errorf("image snapshot %s does not exist", source.String())
 	}
-	sourceDigest, err := l.ops.ZFSGetProperty(ctx, source.String(), sourceDigestProperty)
+	digestCtx, digestSpan, endDigestSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.image.read_source_digest",
+		attribute.String("org.id", orgID),
+		attribute.String("zfs.image_ref", image.Ref()),
+		attribute.String("zfs.source_snapshot", source.String()),
+		attribute.String("zfs.property", sourceDigestProperty),
+	)
+	sourceDigest, err := l.ops.ZFSGetProperty(digestCtx, source.String(), sourceDigestProperty)
+	if err == nil {
+		digestSpan.SetAttributes(attribute.String("zfs.source_digest", sourceDigest))
+	}
+	endDigestSpan(err)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("read source image digest %s: %w", source.String(), err)
 	}
+	span.SetAttributes(attribute.String("zfs.source_digest", sourceDigest))
 	if sourceDigest == "" {
 		return Snapshot{}, fmt.Errorf("image snapshot %s is missing %s", source.String(), sourceDigestProperty)
 	}
@@ -309,39 +537,84 @@ func (l *VolumeLifecycle) EnsureOrgImage(ctx context.Context, orgID string, imag
 	}
 	dataset := filepath.ToSlash(filepath.Join(l.roots.orgImageRoot(orgID), orgImageName))
 	target := Snapshot{dataset: dataset, name: readySnapshot}
+	span.SetAttributes(
+		attribute.String("zfs.dataset", dataset),
+		attribute.String("zfs.target_snapshot", target.String()),
+	)
 	lock := orgImageLock(orgID, image.Ref())
+	_, _, endLockSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.image.lock_wait",
+		attribute.String("org.id", orgID),
+		attribute.String("zfs.image_ref", image.Ref()),
+		attribute.String("zfs.dataset", dataset),
+	)
 	lock.Lock()
+	endLockSpan(nil)
 	defer lock.Unlock()
 
-	if exists, err := l.ops.ZFSSnapshotExists(ctx, target.String()); err != nil {
+	targetExistsCtx, targetExistsSpan, endTargetExistsSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.image.target_snapshot_exists",
+		attribute.String("org.id", orgID),
+		attribute.String("zfs.image_ref", image.Ref()),
+		attribute.String("zfs.target_snapshot", target.String()),
+	)
+	exists, err := l.ops.ZFSSnapshotExists(targetExistsCtx, target.String())
+	if err == nil {
+		targetExistsSpan.SetAttributes(attribute.Bool("zfs.target_snapshot_exists", exists))
+	}
+	endTargetExistsSpan(err)
+	if err != nil {
 		return Snapshot{}, err
-	} else if exists {
-		targetDigest, err := l.ops.ZFSGetProperty(ctx, target.String(), sourceDigestProperty)
+	}
+	if exists {
+		span.SetAttributes(attribute.Bool("zfs.org_image_snapshot_exists", true))
+		targetDigestCtx, targetDigestSpan, endTargetDigestSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.image.read_target_digest",
+			attribute.String("org.id", orgID),
+			attribute.String("zfs.image_ref", image.Ref()),
+			attribute.String("zfs.target_snapshot", target.String()),
+			attribute.String("zfs.property", sourceDigestProperty),
+		)
+		targetDigest, err := l.ops.ZFSGetProperty(targetDigestCtx, target.String(), sourceDigestProperty)
+		if err == nil {
+			targetDigestSpan.SetAttributes(attribute.String("zfs.target_digest", targetDigest))
+		}
+		endTargetDigestSpan(err)
 		if err != nil {
 			return Snapshot{}, fmt.Errorf("read org image digest %s: %w", target.String(), err)
 		}
+		span.SetAttributes(attribute.String("zfs.target_digest", targetDigest))
 		if targetDigest == sourceDigest {
+			span.SetAttributes(attribute.Bool("zfs.image_cache_hit", true))
 			if err := l.AssertEncryptedDataset(ctx, dataset, l.roots.orgRoot(orgID)); err != nil {
 				return Snapshot{}, err
 			}
 			return target, nil
 		}
+		span.SetAttributes(attribute.Bool("zfs.image_cache_stale", true))
 		if err := l.ops.ZFSDestroyRecursive(ctx, dataset); err != nil {
 			return Snapshot{}, fmt.Errorf("destroy stale org image %s: %w", dataset, err)
 		}
 	} else if exists, err := l.ops.ZFSDatasetExists(ctx, dataset); err != nil {
 		return Snapshot{}, err
 	} else if exists {
+		span.SetAttributes(attribute.Bool("zfs.partial_org_image_removed", true))
 		if err := l.ops.ZFSDestroyRecursive(ctx, dataset); err != nil {
 			return Snapshot{}, fmt.Errorf("destroy partial org image %s: %w", dataset, err)
 		}
 	}
+	span.SetAttributes(attribute.Bool("zfs.image_cache_hit", false))
 	if err := l.ops.ZFSEnsureFilesystem(ctx, l.roots.orgImageRoot(orgID)); err != nil {
 		return Snapshot{}, err
 	}
-	if err := l.ops.ZFSReceiveSnapshot(ctx, source.String(), dataset); err != nil {
+	receiveCtx, _, endReceiveSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.image.receive_snapshot",
+		attribute.String("org.id", orgID),
+		attribute.String("zfs.image_ref", image.Ref()),
+		attribute.String("zfs.source_snapshot", source.String()),
+		attribute.String("zfs.dataset", dataset),
+	)
+	receiveErr := l.ops.ZFSReceiveSnapshot(receiveCtx, source.String(), dataset)
+	endReceiveSpan(receiveErr)
+	if receiveErr != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), dataset)
-		return Snapshot{}, err
+		return Snapshot{}, receiveErr
 	}
 	if err := l.ops.ZFSSetProperty(ctx, target.String(), "vs:image_ref", image.Ref()); err != nil {
 		_ = l.ops.ZFSDestroyRecursive(context.Background(), dataset)

@@ -527,7 +527,14 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		OrgID:      spec.StorageNamespace.OrgID,
 		QuotaBytes: spec.StorageNamespace.QuotaBytes,
 	}
-	if ensureErr := o.volumes.EnsureEncryptedStorageNamespace(ctx, namespace, keyHold.Key()); ensureErr != nil {
+	namespaceCtx, endNamespaceSpan := startStepSpan(ctx, "vmorchestrator.zfs.namespace_ensure",
+		attribute.String("lease.id", leaseID),
+		attribute.String("org.id", namespace.OrgID),
+		uint64TraceAttribute("storage.quota_bytes", namespace.QuotaBytes),
+	)
+	ensureErr := o.volumes.EnsureEncryptedStorageNamespace(namespaceCtx, namespace, keyHold.Key())
+	endNamespaceSpan(ensureErr)
+	if ensureErr != nil {
 		err = fmt.Errorf("ensure storage namespace: %w", ensureErr)
 		return nil, err
 	}
@@ -541,20 +548,43 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		err = fmt.Errorf("substrate image ref: %w", bootErr)
 		return nil, err
 	}
-	if prepErr := o.volumes.PrepareSubstrateClone(ctx, lease, substrate); prepErr != nil {
+	rootCloneCtx, endRootCloneSpan := startStepSpan(ctx, "vmorchestrator.zfs.root_clone",
+		attribute.String("lease.id", leaseID),
+		attribute.String("org.id", spec.StorageNamespace.OrgID),
+		attribute.String("zfs.dataset", lease.RootDataset()),
+		attribute.String("zfs.image_ref", substrate.Ref()),
+	)
+	prepErr := o.volumes.PrepareSubstrateClone(rootCloneCtx, lease, substrate)
+	endRootCloneSpan(prepErr)
+	if prepErr != nil {
 		err = prepErr
 		return nil, err
 	}
 	dataset := lease.RootDataset()
 
 	rootBytes := uint64(spec.Resources.RootDiskGiB) * 1024 * 1024 * 1024
-	if resizeErr := o.volumes.ResizeLeaseRootExt4(ctx, lease, rootBytes); resizeErr != nil {
+	rootResizeCtx, endRootResizeSpan := startStepSpan(ctx, "vmorchestrator.zfs.root_resize_ext4",
+		attribute.String("lease.id", leaseID),
+		attribute.String("org.id", spec.StorageNamespace.OrgID),
+		attribute.String("zfs.dataset", lease.RootDataset()),
+		uint64TraceAttribute("zfs.size_bytes", rootBytes),
+		attribute.Int("vmresources.root_disk_gib", int(spec.Resources.RootDiskGiB)),
+	)
+	resizeErr := o.volumes.ResizeLeaseRootExt4(rootResizeCtx, lease, rootBytes)
+	endRootResizeSpan(resizeErr)
+	if resizeErr != nil {
 		_ = o.volumes.DestroyLeaseRoot(context.Background(), lease)
 		err = resizeErr
 		return nil, err
 	}
 
-	mounts, mountErr := o.prepareFilesystemMounts(ctx, lease, spec.FilesystemMounts)
+	mountsCtx, endMountsSpan := startStepSpan(ctx, "vmorchestrator.zfs.mounts_prepare",
+		attribute.String("lease.id", leaseID),
+		attribute.String("org.id", spec.StorageNamespace.OrgID),
+		attribute.Int("filesystem.mount_count", len(spec.FilesystemMounts)),
+	)
+	mounts, mountErr := o.prepareFilesystemMounts(mountsCtx, lease, spec.FilesystemMounts)
+	endMountsSpan(mountErr)
 	if mountErr != nil {
 		_ = o.volumes.DestroyLeaseRoot(context.Background(), lease)
 		for _, mount := range mounts {
@@ -638,6 +668,20 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 			prepErr error
 		)
 		operationID := firstNonEmpty(mount.OperationID, lease.ID())
+		mountCtx, endMountSpan := startStepSpan(ctx, "vmorchestrator.zfs.mount_prepare",
+			attribute.String("lease.id", lease.ID()),
+			attribute.String("org.id", lease.OrgID()),
+			attribute.String("filesystem.name", mount.Name),
+			attribute.String("filesystem.mount_path", mount.MountPath),
+			attribute.String("filesystem.source_ref", mount.SourceRef),
+			attribute.String("filesystem.source_kind", filesystemMountSourceKind(mount.SourceRef)),
+			attribute.String("filesystem.operation_id", operationID),
+			attribute.Bool("filesystem.required", mount.Required),
+			attribute.Bool("filesystem.read_only", mount.ReadOnly),
+			attribute.Int("filesystem.sort_order", idx),
+			attribute.Int("filesystem.bind_path_count", len(mount.BindPaths)),
+		)
+		mountSpan := trace.SpanFromContext(mountCtx)
 		o.appendDurableJournal(durableJournalEntry{
 			OperationID:      operationID,
 			LeaseID:          lease.ID(),
@@ -646,17 +690,26 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 			SourceDatasetRef: mount.SourceRef,
 		})
 		if mount.SourceRef == "" {
-			clone, prepErr = o.volumes.PrepareEmptyMount(ctx, lease, idx, mount.Name, operationID)
+			clone, prepErr = o.volumes.PrepareEmptyMount(mountCtx, lease, idx, mount.Name, operationID)
 		} else if strings.Contains(mount.SourceRef, "@") {
 			gen, genErr := zfs.ParseGeneration(o.roots, mount.SourceRef)
 			if genErr != nil {
-				return prepared, fmt.Errorf("filesystem mount %s source: %w", mount.Name, genErr)
+				prepErr = fmt.Errorf("filesystem mount %s source: %w", mount.Name, genErr)
+				endMountSpan(prepErr)
+				return prepared, prepErr
 			}
 			if gen.Volume().OrgID() != lease.OrgID() {
-				return prepared, fmt.Errorf("filesystem mount %s source belongs to another org", mount.Name)
+				prepErr = fmt.Errorf("filesystem mount %s source belongs to another org", mount.Name)
+				endMountSpan(prepErr)
+				return prepared, prepErr
 			}
-			clone, prepErr = o.volumes.PrepareMountFromSnapshot(ctx, lease, gen.Snapshot(), idx, mount.Name, operationID)
+			mountSpan.SetAttributes(attribute.String("filesystem.source_snapshot", gen.Snapshot().String()))
+			clone, prepErr = o.volumes.PrepareMountFromSnapshot(mountCtx, lease, gen.Snapshot(), idx, mount.Name, operationID)
 			if errors.Is(prepErr, zfs.ErrSnapshotNotFound) {
+				mountSpan.SetAttributes(
+					attribute.Bool("filesystem.source_snapshot_missing", true),
+					attribute.String("filesystem.fallback", "empty_mount"),
+				)
 				o.logger.InfoContext(ctx, "filesystem mount source snapshot missing",
 					"org_id", lease.OrgID(),
 					"lease_id", lease.ID(),
@@ -673,14 +726,17 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 					SourceDatasetRef: mount.SourceRef,
 					ErrorMessage:     prepErr.Error(),
 				})
-				clone, prepErr = o.volumes.PrepareEmptyMount(ctx, lease, idx, mount.Name, operationID)
+				clone, prepErr = o.volumes.PrepareEmptyMount(mountCtx, lease, idx, mount.Name, operationID)
 			}
 		} else {
 			image, imgErr := zfs.NewImage(o.roots, mount.SourceRef)
 			if imgErr != nil {
-				return prepared, fmt.Errorf("filesystem mount %s: %w", mount.Name, imgErr)
+				prepErr = fmt.Errorf("filesystem mount %s: %w", mount.Name, imgErr)
+				endMountSpan(prepErr)
+				return prepared, prepErr
 			}
-			clone, prepErr = o.volumes.PrepareMount(ctx, lease, image, idx, mount.Name, operationID)
+			mountSpan.SetAttributes(attribute.String("zfs.image_ref", image.Ref()))
+			clone, prepErr = o.volumes.PrepareMount(mountCtx, lease, image, idx, mount.Name, operationID)
 		}
 		if prepErr != nil {
 			o.appendDurableJournal(durableJournalEntry{
@@ -691,6 +747,7 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 				SourceDatasetRef: mount.SourceRef,
 				ErrorMessage:     prepErr.Error(),
 			})
+			endMountSpan(prepErr)
 			return prepared, prepErr
 		}
 		target := clone.Dataset()
@@ -703,17 +760,35 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 			WorkingDatasetRef: target,
 		})
 		driveID := fmt.Sprintf("fs%d", idx)
+		guestDevicePath := guestVirtioDevicePath(idx)
+		mountSpan.SetAttributes(
+			attribute.String("zfs.dataset", target),
+			attribute.String("firecracker.drive_id", driveID),
+			attribute.String("guest.device_path", guestDevicePath),
+		)
 		prepared = append(prepared, preparedFilesystemMount{
 			Spec:            mount,
 			DriveID:         driveID,
 			Dataset:         target,
 			HostDevicePath:  zvolDevicePath(target),
 			JailDevicePath:  "/drives/" + driveID,
-			GuestDevicePath: guestVirtioDevicePath(idx),
+			GuestDevicePath: guestDevicePath,
 			clone:           clone,
 		})
+		endMountSpan(nil)
 	}
 	return prepared, nil
+}
+
+func filesystemMountSourceKind(sourceRef string) string {
+	sourceRef = strings.TrimSpace(sourceRef)
+	if sourceRef == "" {
+		return "empty"
+	}
+	if strings.Contains(sourceRef, "@") {
+		return "generation_snapshot"
+	}
+	return "image"
 }
 
 func (o *Orchestrator) appendDurableJournal(entry durableJournalEntry) {
@@ -979,11 +1054,26 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 func (o *Orchestrator) activateFirecracker(ctx context.Context, runtime *LeaseRuntime, spec LeaseSpec, mounts []preparedFilesystemMount, client *apiClient, netSetup *networkSetup, bootArgs string) (ActivationMode, error) {
 	store := o.snapshotStore()
 	if store.Enabled() {
-		key, err := o.buildSnapshotKey(ctx, runtime.Dataset, spec, mounts, bootArgs)
+		keyCtx, endKeySpan := startStepSpan(ctx, "vmorchestrator.firecracker.snapshot_key_build",
+			attribute.String("lease.id", runtime.LeaseID),
+			attribute.String("zfs.dataset", runtime.Dataset),
+			attribute.Int("filesystem.mount_count", len(mounts)),
+		)
+		key, err := o.buildSnapshotKey(keyCtx, runtime.Dataset, spec, mounts, bootArgs)
+		if err == nil {
+			trace.SpanFromContext(keyCtx).SetAttributes(attribute.String("firecracker.snapshot_key", key.String()))
+		}
+		endKeySpan(err)
 		if err != nil {
 			return "", fmt.Errorf("build firecracker snapshot key: %w", err)
 		}
-		artifact, ok, err := store.Lookup(ctx, key)
+		lookupCtx, endLookupSpan := startStepSpan(ctx, "vmorchestrator.firecracker.snapshot_lookup",
+			attribute.String("lease.id", runtime.LeaseID),
+			attribute.String("firecracker.snapshot_key", key.String()),
+		)
+		artifact, ok, err := store.Lookup(lookupCtx, key)
+		trace.SpanFromContext(lookupCtx).SetAttributes(attribute.Bool("firecracker.snapshot_cache_hit", ok))
+		endLookupSpan(err)
 		if err != nil {
 			return "", fmt.Errorf("lookup firecracker snapshot: %w", err)
 		}

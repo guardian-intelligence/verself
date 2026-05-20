@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/vishvananda/netlink"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/vm-orchestrator/zfs"
 )
@@ -394,14 +396,25 @@ func (DirectPrivOps) ZFSMkfs(ctx context.Context, devicePath, fsType, label stri
 
 // ZFSEnsureVolumeSizeExt4 grows a zvol and its ext4 filesystem. It never
 // shrinks because truncating below the formatted filesystem size is unsafe.
-func (DirectPrivOps) ZFSEnsureVolumeSizeExt4(ctx context.Context, dataset string, sizeBytes uint64) error {
+func (DirectPrivOps) ZFSEnsureVolumeSizeExt4(ctx context.Context, dataset string, sizeBytes uint64) (err error) {
 	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
 		return fmt.Errorf("zfs volume dataset is invalid: %s", dataset)
 	}
 	if sizeBytes == 0 {
 		return fmt.Errorf("zfs volume size must be > 0")
 	}
-	currentText, err := DirectPrivOps{}.ZFSGetProperty(ctx, dataset, "volsize")
+	ctx, endSpan := startStepSpan(ctx, "vmorchestrator.zfs.ext4.ensure_volume_size",
+		attribute.String("zfs.dataset", dataset),
+		uint64TraceAttribute("zfs.size_bytes", sizeBytes),
+	)
+	span := trace.SpanFromContext(ctx)
+	defer func() { endSpan(err) }()
+
+	getCtx, endGetSpan := startStepSpan(ctx, "vmorchestrator.zfs.ext4.get_volsize",
+		attribute.String("zfs.dataset", dataset),
+	)
+	currentText, err := DirectPrivOps{}.ZFSGetProperty(getCtx, dataset, "volsize")
+	endGetSpan(err)
 	if err != nil {
 		return err
 	}
@@ -409,29 +422,54 @@ func (DirectPrivOps) ZFSEnsureVolumeSizeExt4(ctx context.Context, dataset string
 	if err != nil {
 		return fmt.Errorf("parse zfs volsize %q for %s: %w", currentText, dataset, err)
 	}
+	resizeRequired := currentBytes < sizeBytes
+	span.SetAttributes(
+		uint64TraceAttribute("zfs.current_size_bytes", currentBytes),
+		attribute.Bool("zfs.resize_required", resizeRequired),
+	)
 	if currentBytes < sizeBytes {
 		setCtx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+		setCtx, endSetSpan := startStepSpan(setCtx, "vmorchestrator.zfs.ext4.set_volsize",
+			attribute.String("zfs.dataset", dataset),
+			uint64TraceAttribute("zfs.current_size_bytes", currentBytes),
+			uint64TraceAttribute("zfs.size_bytes", sizeBytes),
+		)
 		cmd := exec.CommandContext(setCtx, "zfs", "set", "volsize="+strconv.FormatUint(sizeBytes, 10), dataset)
 		out, setErr := cmd.CombinedOutput()
 		cancel()
 		if setErr != nil {
-			return fmt.Errorf("zfs set volsize=%d on %s: %s: %w", sizeBytes, dataset, strings.TrimSpace(string(out)), setErr)
+			err = fmt.Errorf("zfs set volsize=%d on %s: %s: %w", sizeBytes, dataset, strings.TrimSpace(string(out)), setErr)
+			endSetSpan(err)
+			return err
 		}
+		endSetSpan(nil)
 	}
 	devicePath := zvolDevicePath(dataset)
 	waitCtx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	waitCtx, endWaitSpan := startStepSpan(waitCtx, "vmorchestrator.zfs.ext4.wait_device",
+		attribute.String("zfs.dataset", dataset),
+		attribute.String("device.path", devicePath),
+	)
 	err = waitForDevice(waitCtx, devicePath)
 	cancel()
+	endWaitSpan(err)
 	if err != nil {
 		return err
 	}
 	resizeCtx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	resizeCtx, endResizeSpan := startStepSpan(resizeCtx, "vmorchestrator.zfs.ext4.resize2fs",
+		attribute.String("zfs.dataset", dataset),
+		attribute.String("device.path", devicePath),
+	)
 	cmd := exec.CommandContext(resizeCtx, "resize2fs", "-f", devicePath)
 	out, resizeErr := cmd.CombinedOutput()
 	cancel()
 	if resizeErr != nil {
-		return fmt.Errorf("resize2fs %s: %s: %w", devicePath, strings.TrimSpace(string(out)), resizeErr)
+		err = fmt.Errorf("resize2fs %s: %s: %w", devicePath, strings.TrimSpace(string(out)), resizeErr)
+		endResizeSpan(err)
+		return err
 	}
+	endResizeSpan(nil)
 	return nil
 }
 

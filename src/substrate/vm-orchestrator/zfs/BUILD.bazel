@@ -11,6 +11,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_oklog_ulid_v2//:ulid",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )
 

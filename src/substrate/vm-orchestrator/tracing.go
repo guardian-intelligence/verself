@@ -2,6 +2,7 @@ package vmorchestrator
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/verself/vm-orchestrator/vmproto"
@@ -37,6 +38,14 @@ func startStepSpan(ctx context.Context, name string, attrs ...attribute.KeyValue
 		}
 		span.End()
 	}
+}
+
+func uint64TraceAttribute(key string, value uint64) attribute.KeyValue {
+	converted, err := int64FromUint64(value, key)
+	if err == nil {
+		return attribute.Int64(key, converted)
+	}
+	return attribute.String(key, strconv.FormatUint(value, 10))
 }
 
 func recordObservedIntervalSpan(ctx context.Context, name string, startedAt, endedAt time.Time, attrs ...attribute.KeyValue) {
