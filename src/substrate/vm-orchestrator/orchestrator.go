@@ -29,8 +29,6 @@ const (
 	defaultTrustClass      = "trusted"
 	leaseBootTimeout       = 45 * time.Second
 	firecrackerStepTimeout = 5 * time.Second
-	snapshotPreControlWait = 5 * time.Second
-	snapshotCreateTimeout  = 2 * time.Second
 	maxBufferedGuestLogs   = 10 * 1024 * 1024
 	maxFilesystemMounts    = 99
 )
@@ -916,7 +914,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	client := newAPIClient(apiSockHost)
 	// Kernel cmdline flags live with the privileged Firecracker adapter.
 	bootArgs := RenderCmdline(DefaultKernelCmdlineBase)
-	activationMode, err := o.activateFirecracker(ctx, runtime, spec, mounts, client, netSetup, bootArgs, controlSockHost)
+	activationMode, err := o.activateFirecracker(ctx, runtime, spec, mounts, client, netSetup, bootArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -978,8 +976,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	return runtime, nil
 }
 
-func (o *Orchestrator) activateFirecracker(ctx context.Context, runtime *LeaseRuntime, spec LeaseSpec, mounts []preparedFilesystemMount, client *apiClient, netSetup *networkSetup, bootArgs, controlSockHost string) (ActivationMode, error) {
-	leaseID := runtime.LeaseID
+func (o *Orchestrator) activateFirecracker(ctx context.Context, runtime *LeaseRuntime, spec LeaseSpec, mounts []preparedFilesystemMount, client *apiClient, netSetup *networkSetup, bootArgs string) (ActivationMode, error) {
 	store := o.snapshotStore()
 	if store.Enabled() {
 		key, err := o.buildSnapshotKey(ctx, runtime.Dataset, spec, mounts, bootArgs)
@@ -1005,16 +1002,11 @@ func (o *Orchestrator) activateFirecracker(ctx context.Context, runtime *LeaseRu
 		if err != nil {
 			return "", err
 		}
-		if err := o.maybeCreatePreControlSnapshot(ctx, runtime, client, store, key, controlSockHost); err != nil {
-			runtime.logger.WarnContext(ctx, "firecracker pre-control snapshot creation skipped", "lease_id", leaseID, "snapshot_key", key.String(), "error", err)
-			trace.SpanFromContext(ctx).SetAttributes(
-				attribute.Bool("firecracker.snapshot_create_failed", true),
-				attribute.String("firecracker.snapshot_create_error", err.Error()),
-			)
-		}
 		trace.SpanFromContext(ctx).SetAttributes(
 			attribute.String("firecracker.activation_mode", string(mode)),
 			attribute.String("firecracker.snapshot_key", key.String()),
+			attribute.Bool("firecracker.snapshot_cache_miss", true),
+			attribute.Bool("firecracker.snapshot_create_deferred", true),
 		)
 		return mode, nil
 	}
@@ -1170,98 +1162,6 @@ func (o *Orchestrator) configureFirecracker(ctx context.Context, leaseID string,
 		}
 	}
 	endConfigureAll(nil)
-	return nil
-}
-
-func (o *Orchestrator) maybeCreatePreControlSnapshot(ctx context.Context, runtime *LeaseRuntime, client *apiClient, store *SnapshotStore, key SnapshotKey, controlSockHost string) error {
-	if !store.Enabled() {
-		return nil
-	}
-	leaseID := runtime.LeaseID
-	waitCtx, cancelWait := context.WithTimeout(ctx, snapshotPreControlWait)
-	defer cancelWait()
-	waitSockCtx, endSockSpan := startStepSpan(waitCtx, "vmorchestrator.firecracker.snapshot_control_socket_wait",
-		attribute.String("lease.id", leaseID),
-		attribute.String("socket.path", controlSockHost),
-		attribute.Int64("firecracker.snapshot_wait_timeout_ms", snapshotPreControlWait.Milliseconds()),
-	)
-	err := waitForPath(waitSockCtx, controlSockHost)
-	endSockSpan(err)
-	if err != nil {
-		return fmt.Errorf("wait for snapshot control socket: %w", err)
-	}
-	readyCtx, endReadySpan := startStepSpan(waitCtx, "vmorchestrator.firecracker.snapshot_precontrol_wait",
-		attribute.String("lease.id", leaseID),
-		attribute.Int("guest.port", vmproto.GuestPreControlReadyPort),
-		attribute.Int64("firecracker.snapshot_wait_timeout_ms", snapshotPreControlWait.Milliseconds()),
-	)
-	readyMessage, err := probeGuestPreControlReady(readyCtx, controlSockHost, leaseID)
-	if err == nil {
-		trace.SpanFromContext(readyCtx).SetAttributes(attribute.String("guest.precontrol_ready_message", readyMessage))
-	}
-	endReadySpan(err)
-	if err != nil {
-		return fmt.Errorf("wait for pre-control readiness: %w", err)
-	}
-
-	paths, err := store.BuildPaths(ctx, key, runtime.jailRoot)
-	if err != nil {
-		return err
-	}
-	pauseCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
-	pauseCtx, endPauseSpan := startStepSpan(pauseCtx, "vmorchestrator.firecracker.snapshot_pause",
-		attribute.String("lease.id", leaseID),
-		attribute.String("firecracker.snapshot_key", key.String()),
-	)
-	pauseErr := client.patchVM(pauseCtx, "Paused")
-	endPauseSpan(pauseErr)
-	cancel()
-	if pauseErr != nil {
-		return fmt.Errorf("pause VM for snapshot: %w", pauseErr)
-	}
-	resumeAfterPause := true
-	defer func() {
-		if resumeAfterPause {
-			resumeCtx, cancel := context.WithTimeout(context.Background(), firecrackerStepTimeout)
-			_ = client.patchVM(resumeCtx, "Resumed")
-			cancel()
-		}
-	}()
-
-	createCtx, cancel := context.WithTimeout(ctx, snapshotCreateTimeout)
-	createCtx, endCreateSpan := startStepSpan(createCtx, "vmorchestrator.firecracker.snapshot_create",
-		attribute.String("lease.id", leaseID),
-		attribute.String("firecracker.snapshot_key", key.String()),
-		attribute.Int64("firecracker.snapshot_create_timeout_ms", snapshotCreateTimeout.Milliseconds()),
-	)
-	createErr := client.createSnapshot(createCtx, paths.StateJailPath, paths.MemJailPath)
-	endCreateSpan(createErr)
-	cancel()
-	if createErr != nil {
-		return fmt.Errorf("create pre-control snapshot: %w", createErr)
-	}
-
-	publishCtx, endPublishSpan := startStepSpan(ctx, "vmorchestrator.firecracker.snapshot_publish",
-		attribute.String("lease.id", leaseID),
-		attribute.String("firecracker.snapshot_key", key.String()),
-	)
-	_, publishErr := store.Publish(publishCtx, key, paths)
-	endPublishSpan(publishErr)
-	if publishErr != nil {
-		return fmt.Errorf("publish pre-control snapshot: %w", publishErr)
-	}
-
-	resumeCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
-	resumeCtx, endResumeSpan := startStepSpan(resumeCtx, "vmorchestrator.firecracker.snapshot_resume_after_create",
-		attribute.String("lease.id", leaseID),
-	)
-	resumeErr := client.patchVM(resumeCtx, "Resumed")
-	endResumeSpan(resumeErr)
-	cancel()
-	if resumeErr != nil {
-		return fmt.Errorf("resume VM after snapshot create: %w", resumeErr)
-	}
-	resumeAfterPause = false
 	return nil
 }
 

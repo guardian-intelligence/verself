@@ -19,13 +19,17 @@ socket path, and metrics path.
 Activation chooses one of two strategies:
 
 - Cold boot configures Firecracker from the prepared environment, starts the
-  instance, waits for vm-bridge to acknowledge the pre-control readiness port,
-  pauses the VM, creates a pre-control snapshot artifact, resumes the VM, and
-  continues into guest initialization.
+  instance, and continues into guest initialization.
 - Snapshot restore loads a pre-control snapshot into a fresh Firecracker
   process, applies a restore-time network override that binds `eth0` to the
   lease's allocated TAP, resumes the VM, and continues into guest
   initialization.
+
+Cache misses do not create Firecracker snapshots on the lease boot critical
+path. Creating a pre-control snapshot requires pausing the VM and can leave the
+lease without a responsive guest control channel if the Firecracker snapshot
+operation overruns its control deadline. Snapshot population belongs to a
+trusted cache-refresh path after the source zvol graph is known-good.
 
 Guest initialization is shared by both activation strategies. The host connects
 to vm-bridge over the restored or cold-booted vsock control socket and sends
@@ -65,6 +69,10 @@ The snapshot does not contain:
 The snapshot contains the booted guest kernel, substrate userspace, vm-bridge at
 the vsock listener boundary, Firecracker device model state, and memory needed
 to resume at that boundary.
+
+The lease boot path consumes existing artifacts only. A cache miss proceeds via
+cold boot and records the computed snapshot key so a later cache-refresh pass
+can populate the artifact.
 
 ## LeaseInit Contract
 
@@ -134,4 +142,5 @@ Reusable Firecracker snapshots are not created from post-workload VMs. The
 accepted-control state includes host control sessions, guest process state,
 time-sensitive kernel state, and workload effects that are outside the
 pre-control contract. Cache refreshes build a fresh pre-control artifact from
-the resolved zvol layout.
+the resolved zvol layout after the relevant CI/cache promotion decision marks
+that layout trusted.
