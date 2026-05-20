@@ -119,3 +119,6 @@ Expected evidence surface:
   `exec_started`, and `lease_cleanup` rows for each host lease.
 - OTel traces include sandbox-rental worker spans plus vm-orchestrator
   lease/exec spans for the same execution.
+- [`VM Acquisition KPIs`](../../../../docs/architecture/vm-acquisition-kpis.md)
+  defines the end-to-end runner acquisition timestamp contract, cache hit
+  dimensions, and boot substep breakdown.

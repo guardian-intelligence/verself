@@ -6,6 +6,11 @@ The GitHub runner integration has three durable identities:
 - Repository execution identity: `runner_provider_repositories(provider='github', provider_repository_id)`.
 - Workload identity: `executions.execution_id` and `execution_attempts.attempt_id`.
 
+Performance work for this path is tracked in
+[`VM Acquisition KPIs`](../../../../docs/architecture/vm-acquisition-kpis.md).
+That document defines the timestamp boundaries, cache hit dimensions, and
+substeps that must remain visible when optimizing runner acquisition latency.
+
 Provider IDs are correlation data until they are joined to a Verself org through `runner_provider_repositories`. A GitHub installation can be connected to an org without any repository being eligible for runner execution. A repository can receive webhooks before its repository sync has created the execution ownership row. RCA starts by locating which identity is missing or inconsistent.
 
 ## State Diagram
