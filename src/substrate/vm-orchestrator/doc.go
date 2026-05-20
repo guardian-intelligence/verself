@@ -8,8 +8,10 @@
 //
 // The lifecycle is:
 //
-//  1. Acquire a lease with immutable resource shape and a bounded deadline.
-//  2. Clone the substrate zvol with ZFS COW; clone any composed
+//  1. Accept a lease with immutable resource shape and a bounded deadline,
+//     returning LeaseStateAcquiring once host-local state is durable.
+//  2. Boot the lease actor asynchronously: clone the substrate zvol with ZFS
+//     COW; clone any composed
 //     toolchain image zvols (gh-actions-runner, etc.) the runner_class
 //     requests, mounted read-only at the configured guest paths.
 //  3. Allocate a /30 TAP slot for the lease and create the Firecracker jail.
@@ -18,7 +20,8 @@
 //     a reusable pre-control snapshot for later leases.
 //  5. Initialize vm-bridge over a deterministic vsock control stream; LeaseInit
 //     applies per-lease network state, filesystem mounts, and wall clock.
-//  6. Start one or more execs subject to the lease runtime concurrency cap.
+//  6. Mark the lease ready; StartExec waits for LeaseStateReady before sending
+//     guest work and then enforces the lease runtime concurrency cap.
 //  7. Stream guest logs, filesystem lifecycle events, and telemetry as host facts.
 //  8. Release or expire the lease, killing in-flight execs and cleaning host
 //     resources exactly once.

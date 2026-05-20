@@ -79,7 +79,7 @@ func (s *Service) reconcileReservedAttempts(ctx context.Context) error {
 func (s *Service) reconcileLaunchingAttempts(ctx context.Context) error {
 	rows, err := s.storeQueries().ListStaleLaunchingAttempts(ctx, store.ListStaleLaunchingAttemptsParams{
 		State:        StateLaunching,
-		StaleSeconds: int32((5 * time.Minute).Seconds()),
+		StaleSeconds: int32((leaseReadyTimeout + 10*time.Second).Seconds()),
 	})
 	if err != nil {
 		return fmt.Errorf("query stale launching attempts: %w", err)

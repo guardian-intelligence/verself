@@ -69,6 +69,15 @@ const (
 	StateLost       = "lost"
 
 	leaseTTLGraceSeconds = 10 * 60
+	leaseAcquireTimeout  = 500 * time.Millisecond
+	leaseReadyTimeout    = 45 * time.Second
+	execStartTimeout     = 2 * time.Second
+
+	runnerAllocateDeadline   = 2 * time.Second
+	runnerBootstrapDeadline  = 5 * time.Second
+	runnerSubmitDeadline     = 7 * time.Second
+	runnerListeningDeadline  = 60 * time.Second
+	runnerAssignmentDeadline = 90 * time.Second
 
 	githubWorkflowJobTerminalWait = 2 * time.Minute
 	githubWorkflowJobTerminalPoll = 2 * time.Second
@@ -600,7 +609,8 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return s.failAttempt(ctx, item, "durable_storage_entitlement_failed", err)
 	}
 
-	lease, err := s.Orchestrator.AcquireLease(ctx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
+	acquireCtx, cancelAcquire := context.WithTimeout(ctx, leaseAcquireTimeout)
+	lease, err := s.Orchestrator.AcquireLease(acquireCtx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
 		Resources:   vmResourcesForLease(item.Resources),
 		TTLSeconds:  leaseTTLSeconds(item, s.WorkloadTimeout),
 		TrustClass:  "trusted",
@@ -611,16 +621,37 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		},
 		FilesystemMounts: item.FilesystemMounts,
 	})
+	cancelAcquire()
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
-		s.failDurableCaches(ctx, durablePlan, "lease_acquire_failed", err)
-		return s.failAttempt(ctx, item, "lease_acquire_failed", err)
+		reason := "lease_acquire_failed"
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			reason = "lease_acquire_timeout"
+		}
+		s.failDurableCaches(ctx, durablePlan, reason, err)
+		return s.failAttempt(ctx, item, reason, err)
 	}
 	item.LeaseID = lease.LeaseID
 	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, "")
+	if lease.State != vmorchestrator.LeaseStateReady {
+		lease, err = s.waitLeaseReady(ctx, lease.LeaseID, leaseReadyTimeout)
+		if err != nil {
+			cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
+			defer cancel()
+			_ = s.Orchestrator.ReleaseLease(cleanupCtx, item.LeaseID, item.AttemptID.String()+":ready-timeout-release")
+			_ = s.voidBillingWindow(cleanupCtx, reservation)
+			_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
+			reason := "lease_ready_failed"
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				reason = "lease_ready_timeout"
+			}
+			s.failDurableCaches(ctx, durablePlan, reason, err)
+			return s.failAttempt(ctx, item, reason, err)
+		}
+	}
 	span.SetAttributes(
 		attribute.Int("filesystem.requested_mount_count", len(item.FilesystemMounts)),
 		attribute.Int("filesystem.result_count", len(lease.FilesystemMounts)),
@@ -646,7 +677,9 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		Env:            s.executionEnv(ctx, item),
 		MaxWallSeconds: maxWallSeconds(item, s.WorkloadTimeout),
 	}
-	execRecord, err := s.Orchestrator.StartExec(ctx, lease.LeaseID, item.AttemptID.String()+":exec", execSpec)
+	execCtx, cancelExec := context.WithTimeout(ctx, execStartTimeout)
+	execRecord, err := s.Orchestrator.StartExec(execCtx, lease.LeaseID, item.AttemptID.String()+":exec", execSpec)
+	cancelExec()
 	if err != nil {
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
 		s.failDurableCaches(ctx, durablePlan, "exec_start_failed", err)
@@ -686,6 +719,39 @@ func (s *Service) resumeRunningExecution(ctx context.Context, span trace.Span, i
 		return err
 	}
 	return s.waitForExecutionAndFinalize(ctx, span, item, item.LeaseID, execRecord, reservation, durableCachePlan{})
+}
+
+func (s *Service) waitLeaseReady(ctx context.Context, leaseID string, timeout time.Duration) (vmorchestrator.LeaseRecord, error) {
+	if s.Orchestrator == nil {
+		return vmorchestrator.LeaseRecord{}, ErrRunnerUnavailable
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		lease, err := s.Orchestrator.GetLease(waitCtx, leaseID)
+		if err != nil {
+			return vmorchestrator.LeaseRecord{}, fmt.Errorf("get lease while waiting for readiness: %w", err)
+		}
+		switch lease.State {
+		case vmorchestrator.LeaseStateReady:
+			return lease, nil
+		case vmorchestrator.LeaseStateAcquiring:
+		case vmorchestrator.LeaseStateReleased, vmorchestrator.LeaseStateExpired, vmorchestrator.LeaseStateCrashed:
+			if lease.TerminalReason != "" {
+				return vmorchestrator.LeaseRecord{}, fmt.Errorf("lease %s reached terminal state before ready: %s", leaseID, lease.TerminalReason)
+			}
+			return vmorchestrator.LeaseRecord{}, fmt.Errorf("lease %s reached terminal state before ready", leaseID)
+		default:
+			return vmorchestrator.LeaseRecord{}, fmt.Errorf("lease %s returned unexpected state", leaseID)
+		}
+		select {
+		case <-waitCtx.Done():
+			return vmorchestrator.LeaseRecord{}, waitCtx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Span, item executionWorkItem, leaseID string, execRecord vmorchestrator.ExecRecord, reservation billingclient.BillingWindowReservation, durablePlan durableCachePlan) error {

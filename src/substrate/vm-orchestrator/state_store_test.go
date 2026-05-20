@@ -3,6 +3,7 @@ package vmorchestrator
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestDurableJournalPersistsCommitPhases(t *testing.T) {
@@ -66,5 +67,51 @@ func TestDurableJournalPersistsCommitPhases(t *testing.T) {
 		if phases[i] != want[i] {
 			t.Fatalf("phases = %v, want %v", phases, want)
 		}
+	}
+}
+
+func TestLeaseReadyPersistsFilesystemMountResults(t *testing.T) {
+	ctx := context.Background()
+	store, err := openHostStateStore(":memory:", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.close() }()
+
+	acquiredAt := time.Now().UTC()
+	expiresAt := acquiredAt.Add(time.Hour)
+	if err := store.createLease(ctx, leaseSnapshot{
+		LeaseID:    "lease-mounts",
+		State:      LeaseStateAcquiring,
+		Spec:       LeaseSpec{Resources: VMResources{VCPUs: 2, MemoryMiB: 2048, RootDiskGiB: 8}},
+		TrustClass: "trusted",
+		AcquiredAt: acquiredAt,
+		ExpiresAt:  expiresAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mounts := []FilesystemMountResult{{
+		Name:        "workspace",
+		MountPath:   "/workspace",
+		OperationID: "op-a",
+		Mounted:     true,
+		Required:    true,
+	}}
+	if err := store.setLeaseReady(ctx, "lease-mounts", "172.30.0.2", time.Now().UTC(), mounts); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := store.getLease(ctx, "lease-mounts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != LeaseStateReady {
+		t.Fatalf("state = %v, want %v", got.State, LeaseStateReady)
+	}
+	if len(got.FilesystemMounts) != 1 {
+		t.Fatalf("filesystem mounts = %v, want one mount", got.FilesystemMounts)
+	}
+	if got.FilesystemMounts[0] != mounts[0] {
+		t.Fatalf("filesystem mount = %+v, want %+v", got.FilesystemMounts[0], mounts[0])
 	}
 }

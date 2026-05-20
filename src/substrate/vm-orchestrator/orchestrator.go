@@ -27,9 +27,10 @@ var tracer = otel.Tracer("vm-orchestrator")
 
 const (
 	defaultTrustClass      = "trusted"
-	leaseBootTimeout       = 3 * time.Minute
+	leaseBootTimeout       = 45 * time.Second
 	firecrackerStepTimeout = 5 * time.Second
-	snapshotPreControlWait = 30 * time.Second
+	snapshotPreControlWait = 5 * time.Second
+	snapshotCreateTimeout  = 2 * time.Second
 	maxBufferedGuestLogs   = 10 * 1024 * 1024
 	maxFilesystemMounts    = 99
 )
@@ -1225,10 +1226,11 @@ func (o *Orchestrator) maybeCreatePreControlSnapshot(ctx context.Context, runtim
 		}
 	}()
 
-	createCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	createCtx, cancel := context.WithTimeout(ctx, snapshotCreateTimeout)
 	createCtx, endCreateSpan := startStepSpan(createCtx, "vmorchestrator.firecracker.snapshot_create",
 		attribute.String("lease.id", leaseID),
 		attribute.String("firecracker.snapshot_key", key.String()),
+		attribute.Int64("firecracker.snapshot_create_timeout_ms", snapshotCreateTimeout.Milliseconds()),
 	)
 	createErr := client.createSnapshot(createCtx, paths.StateJailPath, paths.MemJailPath)
 	endCreateSpan(createErr)

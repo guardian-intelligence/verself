@@ -273,7 +273,7 @@ WHERE (
         FROM runner_allocations a
         WHERE a.provider = j.provider
           AND a.requested_for_provider_job_id = j.provider_job_id
-          AND a.created_at > now() - interval '60 seconds'
+          AND a.created_at > now() - interval '2 seconds'
       )
 ORDER BY j.updated_at ASC, j.provider, j.provider_job_id
 LIMIT 50;

@@ -3,6 +3,7 @@ package vmorchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -40,10 +41,11 @@ type vmActor struct {
 	mailbox chan vmCommand
 	done    chan struct{}
 
-	runtime *LeaseRuntime
-	state   LeaseState
-	expires time.Time
-	active  *activeExec
+	runtime    *LeaseRuntime
+	state      LeaseState
+	expires    time.Time
+	bootCancel context.CancelFunc
+	active     *activeExec
 }
 
 type activeExec struct {
@@ -64,6 +66,11 @@ type acquireCmd struct {
 type acquireReply struct {
 	record LeaseRecord
 	err    error
+}
+type bootCompleteCmd struct {
+	readyAt time.Time
+	runtime *LeaseRuntime
+	err     error
 }
 type renewCmd struct {
 	expiresAt time.Time
@@ -505,6 +512,12 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 	if !ok {
 		return nil, status.Error(codes.NotFound, "lease not live")
 	}
+	if err := s.waitLeaseReady(ctx, leaseID); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
 	execID := newHostID()
 	spec := execSpecFromProto(req.GetSpec())
 	spec = normalizeExecSpec(spec)
@@ -521,8 +534,15 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	reply := make(chan startExecReply, 1)
-	actor.send(startExecCmd{ctx: ctx, execID: execID, spec: spec, reply: reply})
-	out := <-reply
+	if !actor.send(startExecCmd{ctx: ctx, execID: execID, spec: spec, reply: reply}) {
+		return nil, status.Error(codes.Unavailable, "lease actor is not accepting commands")
+	}
+	var out startExecReply
+	select {
+	case out = <-reply:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	if out.err != nil {
 		return nil, status.Error(codes.FailedPrecondition, out.err.Error())
 	}
@@ -530,6 +550,34 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 	data, _ := json.Marshal(resp)
 	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
 	return resp, nil
+}
+
+func (s *APIServer) waitLeaseReady(ctx context.Context, leaseID string) error {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		snap, err := s.state.getLease(ctx, leaseID)
+		if err != nil {
+			return err
+		}
+		switch snap.State {
+		case LeaseStateReady:
+			return nil
+		case LeaseStateAcquiring:
+		case LeaseStateReleased, LeaseStateExpired, LeaseStateCrashed:
+			if snap.TerminalReason != "" {
+				return fmt.Errorf("lease %s reached %s before ready: %s", leaseID, leaseStateName(snap.State), snap.TerminalReason)
+			}
+			return fmt.Errorf("lease %s reached %s before ready", leaseID, leaseStateName(snap.State))
+		default:
+			return fmt.Errorf("lease %s is in unexpected state %s", leaseID, leaseStateName(snap.State))
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func redactExecSpecForPersistence(ctx context.Context, spec ExecSpec) ExecSpec {
@@ -917,6 +965,10 @@ func (a *vmActor) run() {
 			switch msg := cmd.(type) {
 			case acquireCmd:
 				msg.reply <- a.handleAcquire(msg.ctx)
+			case bootCompleteCmd:
+				if a.handleBootComplete(msg) {
+					return
+				}
 			case renewCmd:
 				msg.reply <- a.handleRenew(msg.expiresAt)
 			case releaseCmd:
@@ -956,21 +1008,23 @@ func (a *vmActor) send(cmd vmCommand) bool {
 
 func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 	// Inherit the caller's SpanContext + baggage so lease.boot reparents under
-	// rpc.AcquireLease. detachedTraceContext drops cancellation (the lease
-	// must outlive the RPC), but the trace/baggage ride through.
-	ctx := detachedTraceContext(callerCtx)
+	// rpc.AcquireLease. The boot context is owned by the actor after this RPC
+	// returns, but ReleaseLease can still cancel it before readiness.
+	bootCtx, cancelBoot := context.WithCancel(detachedTraceContext(callerCtx))
 	spec, normErr := normalizeLeaseSpec(a.spec, a.server.cfg)
 	if normErr != nil {
+		cancelBoot()
 		return acquireReply{err: normErr}
 	}
 	a.spec = spec
 	acquiredAt := time.Now().UTC()
 	leaseTTL, ttlErr := durationFromSeconds(spec.TTLSeconds, "ttl_seconds")
 	if ttlErr != nil {
+		cancelBoot()
 		return acquireReply{err: ttlErr}
 	}
 	a.expires = acquiredAt.Add(leaseTTL)
-	if err := a.server.state.createLease(ctx, leaseSnapshot{
+	if err := a.server.state.createLease(bootCtx, leaseSnapshot{
 		LeaseID:    a.leaseID,
 		State:      LeaseStateAcquiring,
 		Spec:       spec,
@@ -978,37 +1032,75 @@ func (a *vmActor) handleAcquire(callerCtx context.Context) acquireReply {
 		AcquiredAt: acquiredAt,
 		ExpiresAt:  a.expires,
 	}); err != nil {
+		cancelBoot()
 		return acquireReply{err: err}
 	}
-	_ = a.server.state.appendLeaseEvent(ctx, a.leaseID, LeaseEventVMBooting, "", nil)
-	observer := &leaseObserver{actor: a}
-	runtime, err := a.server.newOrchestrator(withDurableJournal(a.durableJournalSink())).BootLease(ctx, a.leaseID, spec, observer)
-	if err != nil {
-		_ = a.server.state.finishLease(ctx, a.leaseID, LeaseStateCrashed, err.Error(), LeaseEventLeaseCrashed)
-		return acquireReply{err: err}
-	}
-	a.runtime = runtime
-	a.state = LeaseStateReady
-	readyAt := time.Now().UTC()
-	if err := a.server.state.setLeaseReady(ctx, a.leaseID, runtime.Network.GuestIP, readyAt); err != nil {
-		return acquireReply{err: err}
-	}
-	a.server.logger.InfoContext(ctx, "lease ready",
-		"lease_id", a.leaseID,
-		"vm_ip", runtime.Network.GuestIP,
-		"filesystem_result_count", len(runtime.MountResults),
-	)
+	_ = a.server.state.appendLeaseEvent(bootCtx, a.leaseID, LeaseEventVMBooting, "", nil)
+	a.bootCancel = cancelBoot
+	go a.bootLease(bootCtx)
 	return acquireReply{record: LeaseRecord{
-		LeaseID:          a.leaseID,
-		State:            LeaseStateReady,
-		AcquiredAt:       acquiredAt,
-		ReadyAt:          readyAt,
-		ExpiresAt:        a.expires,
-		VMIP:             runtime.Network.GuestIP,
-		Resources:        spec.Resources,
-		TrustClass:       spec.TrustClass,
-		FilesystemMounts: append([]FilesystemMountResult(nil), runtime.MountResults...),
+		LeaseID:    a.leaseID,
+		State:      LeaseStateAcquiring,
+		AcquiredAt: acquiredAt,
+		ExpiresAt:  a.expires,
+		Resources:  spec.Resources,
+		TrustClass: spec.TrustClass,
 	}}
+}
+
+func (a *vmActor) bootLease(ctx context.Context) {
+	observer := &leaseObserver{actor: a}
+	runtime, err := a.server.newOrchestrator(withDurableJournal(a.durableJournalSink())).BootLease(ctx, a.leaseID, a.spec, observer)
+	msg := bootCompleteCmd{
+		readyAt: time.Now().UTC(),
+		runtime: runtime,
+		err:     err,
+	}
+	if !a.send(msg) && runtime != nil {
+		runtime.Cleanup("lease_actor_stopped_before_ready")
+	}
+}
+
+func (a *vmActor) handleBootComplete(msg bootCompleteCmd) bool {
+	if a.bootCancel != nil {
+		a.bootCancel()
+		a.bootCancel = nil
+	}
+	if a.state.Terminal() {
+		if msg.runtime != nil {
+			msg.runtime.Cleanup("lease_terminal_before_ready")
+		}
+		return true
+	}
+	if msg.err != nil {
+		a.state = LeaseStateCrashed
+		_ = a.server.state.finishLease(context.Background(), a.leaseID, LeaseStateCrashed, msg.err.Error(), LeaseEventLeaseCrashed)
+		a.server.forgetActor(a.leaseID)
+		return true
+	}
+	if msg.runtime == nil {
+		err := fmt.Errorf("lease boot returned no runtime")
+		a.state = LeaseStateCrashed
+		_ = a.server.state.finishLease(context.Background(), a.leaseID, LeaseStateCrashed, err.Error(), LeaseEventLeaseCrashed)
+		a.server.forgetActor(a.leaseID)
+		return true
+	}
+	a.runtime = msg.runtime
+	a.state = LeaseStateReady
+	if err := a.server.state.setLeaseReady(context.Background(), a.leaseID, msg.runtime.Network.GuestIP, msg.readyAt, msg.runtime.MountResults); err != nil {
+		msg.runtime.Cleanup("lease_ready_persist_failed")
+		a.runtime = nil
+		a.state = LeaseStateCrashed
+		_ = a.server.state.finishLease(context.Background(), a.leaseID, LeaseStateCrashed, err.Error(), LeaseEventLeaseCrashed)
+		a.server.forgetActor(a.leaseID)
+		return true
+	}
+	a.server.logger.InfoContext(context.Background(), "lease ready",
+		"lease_id", a.leaseID,
+		"vm_ip", msg.runtime.Network.GuestIP,
+		"filesystem_result_count", len(msg.runtime.MountResults),
+	)
+	return false
 }
 
 func (a *vmActor) handleRenew(expiresAt time.Time) error {
@@ -1023,6 +1115,10 @@ func (a *vmActor) handleRenew(expiresAt time.Time) error {
 }
 
 func (a *vmActor) handleRelease(reason string, state LeaseState, event LeaseEventType) error {
+	if a.bootCancel != nil {
+		a.bootCancel()
+		a.bootCancel = nil
+	}
 	if a.active != nil {
 		a.active.cancel()
 		if a.runtime != nil {

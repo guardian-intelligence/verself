@@ -181,6 +181,7 @@ func leaseSnapshotToProto(snap leaseSnapshot) *vmrpc.LeaseRecord {
 		VmIp:             snap.VMIP,
 		Resources:        vmResourcesToProto(snap.Spec.Resources),
 		TrustClass:       snap.TrustClass,
+		FilesystemMounts: filesystemMountResultsToProto(snap.FilesystemMounts),
 	}
 }
 
