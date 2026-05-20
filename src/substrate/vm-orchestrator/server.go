@@ -331,12 +331,6 @@ func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseReq
 		attribute.String("lease.id", leaseID),
 		attribute.Int("filesystem.result_count", len(out.record.FilesystemMounts)),
 	)
-	if len(spec.FilesystemMounts) > 0 && len(out.record.FilesystemMounts) == 0 {
-		s.logger.WarnContext(ctx, "lease ready without filesystem mount results",
-			"lease_id", leaseID,
-			"requested_mount_count", len(spec.FilesystemMounts),
-		)
-	}
 	data, _ := json.Marshal(resp)
 	if err := s.state.putIdempotency(context.Background(), "acquire_lease", key, string(data)); err != nil {
 		s.logger.WarnContext(ctx, "store acquire lease idempotency failed", "error", err)

@@ -156,6 +156,8 @@ type StorageKeyHold struct {
 	released bool
 }
 
+type StorageKeyIdleFunc func(context.Context, string) error
+
 func (m *StorageKeyManager) Acquire(ctx context.Context, orgID, leaseID string) (*StorageKeyHold, error) {
 	ctx, end := startStepSpan(ctx, "vmorchestrator.storage_key.acquire",
 		attribute.String("org.id", orgID),
@@ -212,6 +214,10 @@ func (h *StorageKeyHold) Version() string {
 }
 
 func (h *StorageKeyHold) Release(ctx context.Context) (bool, error) {
+	return h.ReleaseWhenIdle(ctx, nil)
+}
+
+func (h *StorageKeyHold) ReleaseWhenIdle(ctx context.Context, idle StorageKeyIdleFunc) (bool, error) {
 	if h == nil {
 		return false, nil
 	}
@@ -225,14 +231,14 @@ func (h *StorageKeyHold) Release(ctx context.Context) (bool, error) {
 	if h.manager == nil {
 		return false, nil
 	}
-	lastRef, err := h.manager.release(ctx, h)
+	lastRef, err := h.manager.release(ctx, h, idle)
 	for i := range h.key {
 		h.key[i] = 0
 	}
 	return lastRef, err
 }
 
-func (m *StorageKeyManager) release(ctx context.Context, hold *StorageKeyHold) (bool, error) {
+func (m *StorageKeyManager) release(ctx context.Context, hold *StorageKeyHold, idle StorageKeyIdleFunc) (bool, error) {
 	ctx, end := startStepSpan(ctx, "vmorchestrator.storage_key.release",
 		attribute.String("org.id", hold.orgID),
 		attribute.String("lease.id", hold.leaseID),
@@ -250,6 +256,9 @@ func (m *StorageKeyManager) release(ctx context.Context, hold *StorageKeyHold) (
 		m.refs[hold.orgID] = refCount
 	}
 	lastRef := refCount == 0
+	if lastRef && idle != nil {
+		err = idle(ctx, hold.orgID)
+	}
 	m.mu.Unlock()
 	m.logger.InfoContext(ctx, "storage key released",
 		"org_id", hold.orgID,

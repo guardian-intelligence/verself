@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestFileStorageKeyProviderCreatesStableRootOnlyKey(t *testing.T) {
@@ -83,6 +84,54 @@ func TestStorageKeyCleanupCapturesHold(t *testing.T) {
 	}
 	if !slices.Equal(captured.key, make([]byte, storageKeyBytes)) {
 		t.Fatal("released storage key material was not zeroed")
+	}
+}
+
+func TestStorageKeyReleaseSerializesIdleUnloadWithAcquire(t *testing.T) {
+	key := make([]byte, storageKeyBytes)
+	for i := range key {
+		key[i] = byte(i + 1)
+	}
+	manager := NewStorageKeyManager(staticStorageKeyProvider{material: StorageKeyMaterial{Key: key, Version: "test-key"}}, nil)
+	hold, err := manager.Acquire(context.Background(), "org_a", "lease-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	idleStarted := make(chan struct{})
+	finishIdle := make(chan struct{})
+	releaseDone := make(chan error, 1)
+	go func() {
+		_, releaseErr := hold.ReleaseWhenIdle(context.Background(), func(context.Context, string) error {
+			close(idleStarted)
+			<-finishIdle
+			return nil
+		})
+		releaseDone <- releaseErr
+	}()
+	<-idleStarted
+
+	acquireDone := make(chan error, 1)
+	go func() {
+		next, acquireErr := manager.Acquire(context.Background(), "org_a", "lease-b")
+		if acquireErr == nil {
+			_, acquireErr = next.Release(context.Background())
+		}
+		acquireDone <- acquireErr
+	}()
+
+	select {
+	case err := <-acquireDone:
+		t.Fatalf("acquire completed while idle unload was still running: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	close(finishIdle)
+	if err := <-releaseDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-acquireDone; err != nil {
+		t.Fatal(err)
 	}
 }
 

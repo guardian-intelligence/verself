@@ -319,22 +319,24 @@ func (o *Orchestrator) releaseStorageKey(ctx context.Context, orgID, leaseID str
 	if hold == nil {
 		return
 	}
-	lastRef, err := hold.Release(ctx)
+	lastRef, err := hold.ReleaseWhenIdle(ctx, func(ctx context.Context, idleOrgID string) error {
+		unloadCtx, end := startStepSpan(ctx, "vmorchestrator.zfs.storage_key.unload",
+			attribute.String("org.id", idleOrgID),
+			attribute.String("lease.id", leaseID),
+		)
+		unloadErr := o.volumes.UnloadStorageNamespaceKey(unloadCtx, idleOrgID)
+		end(unloadErr)
+		return unloadErr
+	})
 	if err != nil {
+		if lastRef {
+			o.logger.WarnContext(ctx, "storage namespace key unload failed", "org_id", orgID, "lease_id", leaseID, "error", err)
+			return
+		}
 		o.logger.WarnContext(ctx, "storage key release failed", "org_id", orgID, "lease_id", leaseID, "error", err)
 		return
 	}
 	if !lastRef {
-		return
-	}
-	unloadCtx, end := startStepSpan(ctx, "vmorchestrator.zfs.storage_key.unload",
-		attribute.String("org.id", orgID),
-		attribute.String("lease.id", leaseID),
-	)
-	err = o.volumes.UnloadStorageNamespaceKey(unloadCtx, orgID)
-	end(err)
-	if err != nil {
-		o.logger.WarnContext(ctx, "storage namespace key unload failed", "org_id", orgID, "lease_id", leaseID, "error", err)
 		return
 	}
 	o.logger.InfoContext(ctx, "storage namespace key unloaded", "org_id", orgID, "lease_id", leaseID)
