@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ProtocolVersion = 7
+	ProtocolVersion = 8
 	GuestPort       = 10789
 
 	ControlQueueCapacity = 32
@@ -100,6 +100,7 @@ type LeaseInit struct {
 	Filesystems         []FilesystemMount `json:"filesystems,omitempty"`
 	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
 	ProtocolVersion     int               `json:"protocol_version"`
+	ActivationMode      string            `json:"activation_mode,omitempty"`
 }
 
 type LeaseInitResult struct {

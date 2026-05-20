@@ -332,10 +332,11 @@ func (c *guestControl) awaitHello(ctx context.Context) (vmproto.Hello, error) {
 	return hello, nil
 }
 
-func (c *guestControl) initLease(ctx context.Context, leaseID string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount) ([]vmproto.FilesystemMountResult, error) {
+func (c *guestControl) initLease(ctx context.Context, leaseID string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount, activationMode ActivationMode) ([]vmproto.FilesystemMountResult, error) {
 	_, endSpan := startStepSpan(ctx, "vmorchestrator.guest.lease_init",
 		attribute.String("lease.id", leaseID),
 		attribute.Int("filesystem.mount_count", len(filesystems)),
+		attribute.String("firecracker.activation_mode", string(activationMode)),
 	)
 	var retErr error
 	defer func() { endSpan(retErr) }()
@@ -345,6 +346,7 @@ func (c *guestControl) initLease(ctx context.Context, leaseID string, network vm
 		Filesystems:         filesystems,
 		HostWallclockUnixNS: time.Now().UnixNano(),
 		ProtocolVersion:     vmproto.ProtocolVersion,
+		ActivationMode:      string(activationMode),
 	}); err != nil {
 		retErr = fmt.Errorf("send lease init: %w", err)
 		return nil, retErr

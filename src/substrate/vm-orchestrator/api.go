@@ -75,6 +75,28 @@ type metricsReq struct {
 
 type entropyReq struct{}
 
+type vmReq struct {
+	State string `json:"state"`
+}
+
+type snapshotCreateReq struct {
+	MemFilePath  string `json:"mem_file_path"`
+	SnapshotPath string `json:"snapshot_path"`
+	SnapshotType string `json:"snapshot_type,omitempty"`
+}
+
+type networkOverrideReq struct {
+	IfaceID     string `json:"iface_id"`
+	HostDevName string `json:"host_dev_name"`
+}
+
+type snapshotLoadReq struct {
+	MemFilePath      string               `json:"mem_file_path"`
+	SnapshotPath     string               `json:"snapshot_path"`
+	ResumeVM         bool                 `json:"resume_vm"`
+	NetworkOverrides []networkOverrideReq `json:"network_overrides,omitempty"`
+}
+
 // --- API methods ---
 
 func (c *apiClient) putBootSource(ctx context.Context, kernelPath, bootArgs string) error {
@@ -130,9 +152,34 @@ func (c *apiClient) startInstance(ctx context.Context) error {
 	return c.put(ctx, "/actions", actionReq{ActionType: "InstanceStart"})
 }
 
+func (c *apiClient) patchVM(ctx context.Context, state string) error {
+	return c.patch(ctx, "/vm", vmReq{State: state})
+}
+
+func (c *apiClient) createSnapshot(ctx context.Context, snapshotPath, memFilePath string) error {
+	return c.put(ctx, "/snapshot/create", snapshotCreateReq{
+		MemFilePath:  memFilePath,
+		SnapshotPath: snapshotPath,
+		SnapshotType: "Full",
+	})
+}
+
+func (c *apiClient) loadSnapshot(ctx context.Context, snapshotPath, memFilePath string, resume bool, networkOverrides []networkOverrideReq) error {
+	return c.put(ctx, "/snapshot/load", snapshotLoadReq{
+		MemFilePath:      memFilePath,
+		SnapshotPath:     snapshotPath,
+		ResumeVM:         resume,
+		NetworkOverrides: networkOverrides,
+	})
+}
+
 // put sends a PUT request with JSON body.
 func (c *apiClient) put(ctx context.Context, path string, body interface{}) error {
 	return c.doJSON(ctx, http.MethodPut, path, body)
+}
+
+func (c *apiClient) patch(ctx context.Context, path string, body interface{}) error {
+	return c.doJSON(ctx, http.MethodPatch, path, body)
 }
 
 func (c *apiClient) doJSON(ctx context.Context, method, path string, body interface{}) error {

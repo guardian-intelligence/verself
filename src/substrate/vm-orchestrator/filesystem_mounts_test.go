@@ -168,12 +168,13 @@ func TestPrepareFilesystemMountsFallsBackToEmptyMountWhenGenerationSnapshotIsMis
 }
 
 type filesystemMountTestPrivOps struct {
-	clones   []string
-	creates  []string
-	ensures  []string
-	sets     []string
-	mkfs     []string
-	cloneErr error
+	clones     []string
+	creates    []string
+	ensures    []string
+	sets       []string
+	mkfs       []string
+	properties map[string]map[string]string
+	cloneErr   error
 }
 
 func (o *filesystemMountTestPrivOps) ZFSClone(_ context.Context, snapshot, target, _ string) error {
@@ -215,7 +216,14 @@ func (o *filesystemMountTestPrivOps) ZFSSetProperty(_ context.Context, dataset, 
 	return nil
 }
 
-func (*filesystemMountTestPrivOps) ZFSGetProperty(_ context.Context, target, key string) (string, error) {
+func (o *filesystemMountTestPrivOps) ZFSGetProperty(_ context.Context, target, key string) (string, error) {
+	if o.properties != nil {
+		if byKey := o.properties[target]; byKey != nil {
+			if value, ok := byKey[key]; ok {
+				return value, nil
+			}
+		}
+	}
 	switch key {
 	case "encryption":
 		return "aes-256-gcm", nil

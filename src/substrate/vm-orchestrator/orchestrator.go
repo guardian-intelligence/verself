@@ -30,6 +30,7 @@ const (
 	defaultTrustClass      = "trusted"
 	leaseBootTimeout       = 3 * time.Minute
 	firecrackerStepTimeout = 5 * time.Second
+	snapshotPreControlWait = 30 * time.Second
 	maxBufferedGuestLogs   = 10 * 1024 * 1024
 	maxFilesystemMounts    = 99
 )
@@ -47,24 +48,26 @@ type firecrackerStep struct {
 }
 
 type Config struct {
-	Pool                string
-	ImageDataset        string
-	GoldenDataset       string
-	WorkloadDataset     string
-	StorageKeyDir       string
-	DefaultSubstrateRef string
-	KernelPath          string
-	FirecrackerBin      string
-	JailerBin           string
-	JailerRoot          string
-	JailerUID           int
-	JailerGID           int
-	Bounds              VMResourceBounds
-	HostInterface       string
-	GuestPoolCIDR       string
-	StateDBPath         string
-	HostServiceIP       string
-	HostServicePort     int
+	Pool                        string
+	ImageDataset                string
+	GoldenDataset               string
+	WorkloadDataset             string
+	StorageKeyDir               string
+	DefaultSubstrateRef         string
+	KernelPath                  string
+	FirecrackerBin              string
+	JailerBin                   string
+	JailerRoot                  string
+	SnapshotCacheDir            string
+	FirecrackerSnapshotsEnabled bool
+	JailerUID                   int
+	JailerGID                   int
+	Bounds                      VMResourceBounds
+	HostInterface               string
+	GuestPoolCIDR               string
+	StateDBPath                 string
+	HostServiceIP               string
+	HostServicePort             int
 
 	// Host-side deterministic telemetry faults are verification-only and must
 	// be empty in normal service operation.
@@ -73,23 +76,25 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Pool:                "vspool",
-		ImageDataset:        "images",
-		GoldenDataset:       "goldens",
-		WorkloadDataset:     "workloads",
-		StorageKeyDir:       "/var/lib/verself/vm-orchestrator/storage-keys",
-		DefaultSubstrateRef: "substrate",
-		KernelPath:          "/var/lib/verself/guest-images/vmlinux",
-		FirecrackerBin:      "/usr/local/bin/firecracker",
-		JailerBin:           "/usr/local/bin/jailer",
-		JailerRoot:          "/srv/jailer",
-		JailerUID:           10000,
-		JailerGID:           10000,
-		Bounds:              DefaultBounds,
-		GuestPoolCIDR:       defaultGuestPoolCIDR,
-		StateDBPath:         defaultStateDBPath,
-		HostServiceIP:       defaultHostServiceIP,
-		HostServicePort:     defaultHostServicePort,
+		Pool:                        "vspool",
+		ImageDataset:                "images",
+		GoldenDataset:               "goldens",
+		WorkloadDataset:             "workloads",
+		StorageKeyDir:               "/var/lib/verself/vm-orchestrator/storage-keys",
+		DefaultSubstrateRef:         "substrate",
+		KernelPath:                  "/var/lib/verself/guest-images/vmlinux",
+		FirecrackerBin:              "/usr/local/bin/firecracker",
+		JailerBin:                   "/usr/local/bin/jailer",
+		JailerRoot:                  "/srv/jailer",
+		SnapshotCacheDir:            "/srv/jailer/firecracker-snapshot-cache",
+		FirecrackerSnapshotsEnabled: true,
+		JailerUID:                   10000,
+		JailerGID:                   10000,
+		Bounds:                      DefaultBounds,
+		GuestPoolCIDR:               defaultGuestPoolCIDR,
+		StateDBPath:                 defaultStateDBPath,
+		HostServiceIP:               defaultHostServiceIP,
+		HostServicePort:             defaultHostServicePort,
 	}
 }
 
@@ -220,6 +225,7 @@ type LeaseRuntime struct {
 
 	waitDone     chan error
 	jailerExited atomic.Bool
+	serialMu     sync.Mutex
 	serialBuf    strings.Builder
 	logWg        sync.WaitGroup
 
@@ -288,6 +294,9 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	}
 	if base.DefaultSubstrateRef == "" {
 		base.DefaultSubstrateRef = "substrate"
+	}
+	if base.SnapshotCacheDir == "" {
+		base.SnapshotCacheDir = filepath.Join(base.JailerRoot, "firecracker-snapshot-cache")
 	}
 	o := &Orchestrator{cfg: base, logger: logger, ops: DirectPrivOps{}}
 	o.roots = zfs.Roots{
@@ -875,11 +884,11 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	})
 	if jailer.Stdout != nil {
 		runtime.logWg.Add(1)
-		go captureSerialOutput(jailer.Stdout, &runtime.serialBuf, &runtime.logWg)
+		go captureSerialOutput(jailer.Stdout, &runtime.serialMu, &runtime.serialBuf, &runtime.logWg)
 	}
 	if jailer.Stderr != nil {
 		runtime.logWg.Add(1)
-		go captureSerialOutput(jailer.Stderr, &runtime.serialBuf, &runtime.logWg)
+		go captureSerialOutput(jailer.Stderr, &runtime.serialMu, &runtime.serialBuf, &runtime.logWg)
 	}
 	runtime.waitDone = make(chan error, 1)
 	ctx, cancelOnJailerExit := context.WithCancelCause(ctx)
@@ -907,76 +916,9 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	client := newAPIClient(apiSockHost)
 	// Kernel cmdline flags live with the privileged Firecracker adapter.
 	bootArgs := RenderCmdline(DefaultKernelCmdlineBase)
-	apiSteps := []firecrackerStep{
-		{name: "metrics", fn: func(stepCtx context.Context) error { return client.putMetrics(stepCtx, "/metrics.json") }},
-		{name: "boot-source", fn: func(stepCtx context.Context) error { return client.putBootSource(stepCtx, "/vmlinux", bootArgs) }},
-		{name: "rootfs", fn: func(stepCtx context.Context) error { return client.putDrive(stepCtx, "rootfs", "/rootfs", true, false) }},
-	}
-	for _, mount := range mounts {
-		mount := mount
-		apiSteps = append(apiSteps, firecrackerStep{
-			name: "drive-" + mount.DriveID,
-			fn: func(stepCtx context.Context) error {
-				return client.putDrive(stepCtx, mount.DriveID, mount.JailDevicePath, false, mount.Spec.ReadOnly)
-			},
-		})
-	}
-	apiSteps = append(apiSteps, []firecrackerStep{
-		{name: "machine-config", fn: func(stepCtx context.Context) error {
-			return client.putMachineConfig(stepCtx, int(spec.Resources.VCPUs), int(spec.Resources.MemoryMiB))
-		}},
-		{name: "network", fn: func(stepCtx context.Context) error {
-			return client.putNetworkInterface(stepCtx, "eth0", netSetup.Lease.TapName, netSetup.Lease.MAC)
-		}},
-		{name: "vsock", fn: func(stepCtx context.Context) error {
-			slotIndex, slotErr := uint32FromInt(netSetup.Lease.SlotIndex, "network slot index")
-			if slotErr != nil {
-				return slotErr
-			}
-			cid := slotIndex + 3
-			return client.putVsock(stepCtx, cid, "/run/vs-control.sock")
-		}},
-		{name: "entropy", fn: func(stepCtx context.Context) error { return client.putEntropy(stepCtx) }},
-	}...)
-	// Roll up the FC API PUTs under a single parent span so dashboards
-	// can chart "total configure time" without summing across step children.
-	configureCtx, endConfigureAll := startStepSpan(ctx, "vmorchestrator.firecracker.configure_all",
-		attribute.String("lease.id", leaseID),
-		attribute.Int("firecracker.step_count", len(apiSteps)),
-		attribute.Int("vmresources.vcpus", int(spec.Resources.VCPUs)),
-		attribute.Int("vmresources.memory_mib", int(spec.Resources.MemoryMiB)),
-		attribute.Int("vmresources.root_disk_gib", int(spec.Resources.RootDiskGiB)),
-	)
-	for _, step := range apiSteps {
-		timeout := step.timeout
-		if timeout <= 0 {
-			timeout = firecrackerStepTimeout
-		}
-		stepCtx, cancel := context.WithTimeout(configureCtx, timeout)
-		stepCtx, endStepSpan := startStepSpan(stepCtx, "vmorchestrator.firecracker.configure",
-			attribute.String("lease.id", leaseID),
-			attribute.String("firecracker.step", step.name),
-			attribute.Int64("firecracker.step_timeout_ms", timeout.Milliseconds()),
-		)
-		stepErr := step.fn(stepCtx)
-		endStepSpan(stepErr)
-		cancel()
-		if stepErr != nil {
-			endConfigureAll(stepErr)
-			return nil, fmt.Errorf("configure VM %s: %w", step.name, stepErr)
-		}
-	}
-	endConfigureAll(nil)
-
-	startCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
-	startCtx, endStartSpan := startStepSpan(startCtx, "vmorchestrator.firecracker.instance_start",
-		attribute.String("lease.id", leaseID),
-	)
-	startErr := client.startInstance(startCtx)
-	endStartSpan(startErr)
-	cancel()
-	if startErr != nil {
-		return nil, fmt.Errorf("start VM: %w", startErr)
+	activationMode, err := o.activateFirecracker(ctx, runtime, spec, mounts, client, netSetup, bootArgs, controlSockHost)
+	if err != nil {
+		return nil, err
 	}
 
 	controlSocketCtx, endControlSocketSpan := startStepSpan(ctx, "vmorchestrator.guest.control_socket_wait",
@@ -1025,7 +967,7 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 	}
 	endHelloSpan(nil)
 	recordGuestBootTimingSpans(ctx, leaseID, hello, helloObservedAt)
-	mountResults, err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort), guestFilesystemMounts(mounts))
+	mountResults, err := control.initLease(ctx, leaseID, netSetup.Lease.GuestNetworkConfig(o.cfg.HostServiceIP, o.cfg.HostServicePort), guestFilesystemMounts(mounts), activationMode)
 	runtime.MountResults = filesystemMountResults(mounts, mountResults)
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("filesystem.result_count", len(runtime.MountResults)))
 	if err != nil {
@@ -1034,6 +976,288 @@ func (o *Orchestrator) bootDataset(ctx context.Context, lease zfs.Lease, spec Le
 
 	cleanupOnErr = false
 	return runtime, nil
+}
+
+func (o *Orchestrator) activateFirecracker(ctx context.Context, runtime *LeaseRuntime, spec LeaseSpec, mounts []preparedFilesystemMount, client *apiClient, netSetup *networkSetup, bootArgs, controlSockHost string) (ActivationMode, error) {
+	leaseID := runtime.LeaseID
+	store := o.snapshotStore()
+	if store.Enabled() {
+		key, err := o.buildSnapshotKey(ctx, runtime.Dataset, spec, mounts, bootArgs)
+		if err != nil {
+			return "", fmt.Errorf("build firecracker snapshot key: %w", err)
+		}
+		artifact, ok, err := store.Lookup(ctx, key)
+		if err != nil {
+			return "", fmt.Errorf("lookup firecracker snapshot: %w", err)
+		}
+		if ok {
+			mode, err := o.restoreFirecrackerSnapshot(ctx, runtime, client, netSetup, store, artifact)
+			if err != nil {
+				return "", err
+			}
+			trace.SpanFromContext(ctx).SetAttributes(
+				attribute.String("firecracker.activation_mode", string(mode)),
+				attribute.String("firecracker.snapshot_key", key.String()),
+			)
+			return mode, nil
+		}
+		mode, err := o.coldBootFirecracker(ctx, runtime, spec, mounts, client, netSetup, bootArgs)
+		if err != nil {
+			return "", err
+		}
+		if err := o.maybeCreatePreControlSnapshot(ctx, runtime, client, store, key, controlSockHost); err != nil {
+			runtime.logger.WarnContext(ctx, "firecracker pre-control snapshot creation skipped", "lease_id", leaseID, "snapshot_key", key.String(), "error", err)
+			trace.SpanFromContext(ctx).SetAttributes(
+				attribute.Bool("firecracker.snapshot_create_failed", true),
+				attribute.String("firecracker.snapshot_create_error", err.Error()),
+			)
+		}
+		trace.SpanFromContext(ctx).SetAttributes(
+			attribute.String("firecracker.activation_mode", string(mode)),
+			attribute.String("firecracker.snapshot_key", key.String()),
+		)
+		return mode, nil
+	}
+	mode, err := o.coldBootFirecracker(ctx, runtime, spec, mounts, client, netSetup, bootArgs)
+	if err != nil {
+		return "", err
+	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("firecracker.activation_mode", string(mode)))
+	return mode, nil
+}
+
+func (o *Orchestrator) snapshotStore() *SnapshotStore {
+	if !o.cfg.FirecrackerSnapshotsEnabled {
+		return &SnapshotStore{}
+	}
+	return NewSnapshotStore(o.cfg.SnapshotCacheDir, o.cfg.JailerUID, o.cfg.JailerGID)
+}
+
+func (o *Orchestrator) restoreFirecrackerSnapshot(ctx context.Context, runtime *LeaseRuntime, client *apiClient, netSetup *networkSetup, store *SnapshotStore, artifact SnapshotArtifact) (ActivationMode, error) {
+	leaseID := runtime.LeaseID
+	stageCtx, endStageSpan := startStepSpan(ctx, "vmorchestrator.firecracker.snapshot_stage",
+		attribute.String("lease.id", leaseID),
+		attribute.String("firecracker.snapshot_key", artifact.Key),
+	)
+	paths, cleanup, err := store.StageForJail(stageCtx, artifact, runtime.jailRoot)
+	endStageSpan(err)
+	if err != nil {
+		return "", fmt.Errorf("stage firecracker snapshot: %w", err)
+	}
+	runtime.cleanups = append(runtime.cleanups, cleanup)
+
+	metricsCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
+	metricsCtx, endMetricsSpan := startStepSpan(metricsCtx, "vmorchestrator.firecracker.restore_metrics",
+		attribute.String("lease.id", leaseID),
+	)
+	metricsErr := client.putMetrics(metricsCtx, "/metrics.json")
+	endMetricsSpan(metricsErr)
+	cancel()
+	if metricsErr != nil {
+		return "", fmt.Errorf("configure restore metrics: %w", metricsErr)
+	}
+
+	restoreCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
+	restoreCtx, endRestoreSpan := startStepSpan(restoreCtx, "vmorchestrator.firecracker.snapshot_load",
+		attribute.String("lease.id", leaseID),
+		attribute.String("firecracker.snapshot_key", artifact.Key),
+		attribute.String("network.tap", netSetup.Lease.TapName),
+	)
+	restoreErr := client.loadSnapshot(restoreCtx, paths.StateJailPath, paths.MemJailPath, false, []networkOverrideReq{{
+		IfaceID:     snapshotIfaceID,
+		HostDevName: netSetup.Lease.TapName,
+	}})
+	endRestoreSpan(restoreErr)
+	cancel()
+	if restoreErr != nil {
+		return "", fmt.Errorf("load firecracker snapshot: %w", restoreErr)
+	}
+
+	resumeCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
+	resumeCtx, endResumeSpan := startStepSpan(resumeCtx, "vmorchestrator.firecracker.snapshot_resume",
+		attribute.String("lease.id", leaseID),
+	)
+	resumeErr := client.patchVM(resumeCtx, "Resumed")
+	endResumeSpan(resumeErr)
+	cancel()
+	if resumeErr != nil {
+		return "", fmt.Errorf("resume restored firecracker snapshot: %w", resumeErr)
+	}
+	return ActivationModeSnapshotRestore, nil
+}
+
+func (o *Orchestrator) coldBootFirecracker(ctx context.Context, runtime *LeaseRuntime, spec LeaseSpec, mounts []preparedFilesystemMount, client *apiClient, netSetup *networkSetup, bootArgs string) (ActivationMode, error) {
+	leaseID := runtime.LeaseID
+	guestMAC := netSetup.Lease.MAC
+	if o.cfg.FirecrackerSnapshotsEnabled {
+		guestMAC = snapshotGuestMAC
+	}
+	apiSteps := []firecrackerStep{
+		{name: "metrics", fn: func(stepCtx context.Context) error { return client.putMetrics(stepCtx, "/metrics.json") }},
+		{name: "boot-source", fn: func(stepCtx context.Context) error { return client.putBootSource(stepCtx, "/vmlinux", bootArgs) }},
+		{name: "rootfs", fn: func(stepCtx context.Context) error { return client.putDrive(stepCtx, "rootfs", "/rootfs", true, false) }},
+	}
+	for _, mount := range mounts {
+		mount := mount
+		apiSteps = append(apiSteps, firecrackerStep{
+			name: "drive-" + mount.DriveID,
+			fn: func(stepCtx context.Context) error {
+				return client.putDrive(stepCtx, mount.DriveID, mount.JailDevicePath, false, mount.Spec.ReadOnly)
+			},
+		})
+	}
+	apiSteps = append(apiSteps, []firecrackerStep{
+		{name: "machine-config", fn: func(stepCtx context.Context) error {
+			return client.putMachineConfig(stepCtx, int(spec.Resources.VCPUs), int(spec.Resources.MemoryMiB))
+		}},
+		{name: "network", fn: func(stepCtx context.Context) error {
+			return client.putNetworkInterface(stepCtx, snapshotIfaceID, netSetup.Lease.TapName, guestMAC)
+		}},
+		{name: "vsock", fn: func(stepCtx context.Context) error {
+			slotIndex, slotErr := uint32FromInt(netSetup.Lease.SlotIndex, "network slot index")
+			if slotErr != nil {
+				return slotErr
+			}
+			cid := slotIndex + 3
+			return client.putVsock(stepCtx, cid, "/run/vs-control.sock")
+		}},
+		{name: "entropy", fn: func(stepCtx context.Context) error { return client.putEntropy(stepCtx) }},
+	}...)
+	if err := o.configureFirecracker(ctx, leaseID, spec, apiSteps); err != nil {
+		return "", err
+	}
+
+	startCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
+	startCtx, endStartSpan := startStepSpan(startCtx, "vmorchestrator.firecracker.instance_start",
+		attribute.String("lease.id", leaseID),
+	)
+	startErr := client.startInstance(startCtx)
+	endStartSpan(startErr)
+	cancel()
+	if startErr != nil {
+		return "", fmt.Errorf("start VM: %w", startErr)
+	}
+	return ActivationModeColdBoot, nil
+}
+
+func (o *Orchestrator) configureFirecracker(ctx context.Context, leaseID string, spec LeaseSpec, apiSteps []firecrackerStep) error {
+	// Roll up the FC API PUTs under a single parent span so dashboards
+	// can chart "total configure time" without summing across step children.
+	configureCtx, endConfigureAll := startStepSpan(ctx, "vmorchestrator.firecracker.configure_all",
+		attribute.String("lease.id", leaseID),
+		attribute.Int("firecracker.step_count", len(apiSteps)),
+		attribute.Int("vmresources.vcpus", int(spec.Resources.VCPUs)),
+		attribute.Int("vmresources.memory_mib", int(spec.Resources.MemoryMiB)),
+		attribute.Int("vmresources.root_disk_gib", int(spec.Resources.RootDiskGiB)),
+	)
+	for _, step := range apiSteps {
+		timeout := step.timeout
+		if timeout <= 0 {
+			timeout = firecrackerStepTimeout
+		}
+		stepCtx, cancel := context.WithTimeout(configureCtx, timeout)
+		stepCtx, endStepSpan := startStepSpan(stepCtx, "vmorchestrator.firecracker.configure",
+			attribute.String("lease.id", leaseID),
+			attribute.String("firecracker.step", step.name),
+			attribute.Int64("firecracker.step_timeout_ms", timeout.Milliseconds()),
+		)
+		stepErr := step.fn(stepCtx)
+		endStepSpan(stepErr)
+		cancel()
+		if stepErr != nil {
+			endConfigureAll(stepErr)
+			return fmt.Errorf("configure VM %s: %w", step.name, stepErr)
+		}
+	}
+	endConfigureAll(nil)
+	return nil
+}
+
+func (o *Orchestrator) maybeCreatePreControlSnapshot(ctx context.Context, runtime *LeaseRuntime, client *apiClient, store *SnapshotStore, key SnapshotKey, controlSockHost string) error {
+	if !store.Enabled() {
+		return nil
+	}
+	leaseID := runtime.LeaseID
+	waitCtx, cancelWait := context.WithTimeout(ctx, snapshotPreControlWait)
+	defer cancelWait()
+	waitSockCtx, endSockSpan := startStepSpan(waitCtx, "vmorchestrator.firecracker.snapshot_control_socket_wait",
+		attribute.String("lease.id", leaseID),
+		attribute.String("socket.path", controlSockHost),
+		attribute.Int64("firecracker.snapshot_wait_timeout_ms", snapshotPreControlWait.Milliseconds()),
+	)
+	err := waitForPath(waitSockCtx, controlSockHost)
+	endSockSpan(err)
+	if err != nil {
+		return fmt.Errorf("wait for snapshot control socket: %w", err)
+	}
+	readyCtx, endReadySpan := startStepSpan(waitCtx, "vmorchestrator.firecracker.snapshot_precontrol_wait",
+		attribute.String("lease.id", leaseID),
+		attribute.Int64("firecracker.snapshot_wait_timeout_ms", snapshotPreControlWait.Milliseconds()),
+	)
+	err = runtime.waitForSerialContains(readyCtx, "vsock listener ready")
+	endReadySpan(err)
+	if err != nil {
+		return fmt.Errorf("wait for pre-control readiness: %w", err)
+	}
+
+	paths, err := store.BuildPaths(ctx, key, runtime.jailRoot)
+	if err != nil {
+		return err
+	}
+	pauseCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
+	pauseCtx, endPauseSpan := startStepSpan(pauseCtx, "vmorchestrator.firecracker.snapshot_pause",
+		attribute.String("lease.id", leaseID),
+		attribute.String("firecracker.snapshot_key", key.String()),
+	)
+	pauseErr := client.patchVM(pauseCtx, "Paused")
+	endPauseSpan(pauseErr)
+	cancel()
+	if pauseErr != nil {
+		return fmt.Errorf("pause VM for snapshot: %w", pauseErr)
+	}
+	resumeAfterPause := true
+	defer func() {
+		if resumeAfterPause {
+			resumeCtx, cancel := context.WithTimeout(context.Background(), firecrackerStepTimeout)
+			_ = client.patchVM(resumeCtx, "Resumed")
+			cancel()
+		}
+	}()
+
+	createCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	createCtx, endCreateSpan := startStepSpan(createCtx, "vmorchestrator.firecracker.snapshot_create",
+		attribute.String("lease.id", leaseID),
+		attribute.String("firecracker.snapshot_key", key.String()),
+	)
+	createErr := client.createSnapshot(createCtx, paths.StateJailPath, paths.MemJailPath)
+	endCreateSpan(createErr)
+	cancel()
+	if createErr != nil {
+		return fmt.Errorf("create pre-control snapshot: %w", createErr)
+	}
+
+	publishCtx, endPublishSpan := startStepSpan(ctx, "vmorchestrator.firecracker.snapshot_publish",
+		attribute.String("lease.id", leaseID),
+		attribute.String("firecracker.snapshot_key", key.String()),
+	)
+	_, publishErr := store.Publish(publishCtx, key, paths)
+	endPublishSpan(publishErr)
+	if publishErr != nil {
+		return fmt.Errorf("publish pre-control snapshot: %w", publishErr)
+	}
+
+	resumeCtx, cancel := context.WithTimeout(ctx, firecrackerStepTimeout)
+	resumeCtx, endResumeSpan := startStepSpan(resumeCtx, "vmorchestrator.firecracker.snapshot_resume_after_create",
+		attribute.String("lease.id", leaseID),
+	)
+	resumeErr := client.patchVM(resumeCtx, "Resumed")
+	endResumeSpan(resumeErr)
+	cancel()
+	if resumeErr != nil {
+		return fmt.Errorf("resume VM after snapshot create: %w", resumeErr)
+	}
+	resumeAfterPause = false
+	return nil
 }
 
 func filesystemMountResults(mounts []preparedFilesystemMount, results []vmproto.FilesystemMountResult) []FilesystemMountResult {
@@ -1148,15 +1372,41 @@ func waitForPath(ctx context.Context, path string) error {
 	}
 }
 
-func captureSerialOutput(reader io.Reader, dst *strings.Builder, wg *sync.WaitGroup) {
+func (r *LeaseRuntime) waitForSerialContains(ctx context.Context, marker string) error {
+	marker = strings.TrimSpace(marker)
+	if marker == "" {
+		return fmt.Errorf("serial marker is required")
+	}
+	for {
+		r.serialMu.Lock()
+		seen := strings.Contains(r.serialBuf.String(), marker)
+		r.serialMu.Unlock()
+		if seen {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("serial marker %q not observed: %w", marker, contextDoneErr(ctx))
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+func captureSerialOutput(reader io.Reader, mu *sync.Mutex, dst *strings.Builder, wg *sync.WaitGroup) {
 	defer wg.Done()
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if mu != nil {
+			mu.Lock()
+		}
 		if dst.Len() < maxBufferedGuestLogs {
 			dst.WriteString(line)
 			dst.WriteByte('\n')
+		}
+		if mu != nil {
+			mu.Unlock()
 		}
 	}
 }

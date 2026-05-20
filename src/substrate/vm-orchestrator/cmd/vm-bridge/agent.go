@@ -129,14 +129,14 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		return session.fail(err)
 	}
 	mountResults, err := session.mountFilesystems(initReq.Filesystems)
-	if resultErr := session.sendControlSync(vmproto.TypeLeaseInitResult, vmproto.LeaseInitResult{
-		LeaseID:         initReq.LeaseID,
-		Filesystems:     mountResults,
-		ProtocolVersion: vmproto.ProtocolVersion,
-	}); resultErr != nil {
-		return resultErr
-	}
 	if err != nil {
+		if resultErr := session.sendControlSync(vmproto.TypeLeaseInitResult, vmproto.LeaseInitResult{
+			LeaseID:         initReq.LeaseID,
+			Filesystems:     mountResults,
+			ProtocolVersion: vmproto.ProtocolVersion,
+		}); resultErr != nil {
+			return resultErr
+		}
 		return session.fail(err)
 	}
 	if err := setWallClock(initReq.HostWallclockUnixNS); err != nil {
@@ -153,6 +153,14 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		localControlCancel()
 		stopLocalControl()
 	}()
+
+	if resultErr := session.sendControlSync(vmproto.TypeLeaseInitResult, vmproto.LeaseInitResult{
+		LeaseID:         initReq.LeaseID,
+		Filesystems:     mountResults,
+		ProtocolVersion: vmproto.ProtocolVersion,
+	}); resultErr != nil {
+		return resultErr
+	}
 
 	for {
 		select {
@@ -639,12 +647,17 @@ func (s *agentSession) applyNetwork(cfg vmproto.NetworkConfig) error {
 	steps := [][]string{
 		{ipBin, "link", "set", cfg.LinkName, "up"},
 		{ipBin, "addr", "flush", "dev", cfg.LinkName},
+		{ipBin, "neigh", "flush", "dev", cfg.LinkName},
 		{ipBin, "addr", "add", cfg.AddressCIDR, "dev", cfg.LinkName},
 		{ipBin, "route", "replace", "default", "via", cfg.Gateway, "dev", cfg.LinkName},
 	}
 	for _, args := range steps {
 		out, err := runCommandOutput(args[0], args[1:]...)
 		if err != nil {
+			// ip neigh flush treats an empty table as a non-zero command result.
+			if len(args) >= 3 && args[1] == "neigh" {
+				continue
+			}
 			return fmt.Errorf("%s: %s", strings.Join(args, " "), strings.TrimSpace(out))
 		}
 	}

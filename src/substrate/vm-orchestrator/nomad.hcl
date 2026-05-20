@@ -33,6 +33,8 @@ job "vm-orchestrator" {
           "--firecracker-bin", "/usr/local/bin/firecracker",
           "--jailer-bin", "/usr/local/bin/jailer",
           "--jailer-root", "/srv/jailer",
+          "--snapshot-cache-dir", "/srv/jailer/firecracker-snapshot-cache",
+          "--firecracker-snapshots", "true",
           "--jailer-uid", "10000",
           "--jailer-gid", "10000",
           "--guest-pool-cidr", "172.16.0.0/16",

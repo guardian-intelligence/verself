@@ -51,6 +51,8 @@ func run() error {
 	flag.StringVar(&cfg.FirecrackerBin, "firecracker-bin", cfg.FirecrackerBin, "Path to firecracker binary")
 	flag.StringVar(&cfg.JailerBin, "jailer-bin", cfg.JailerBin, "Path to jailer binary")
 	flag.StringVar(&cfg.JailerRoot, "jailer-root", cfg.JailerRoot, "Jailer chroot root directory")
+	flag.StringVar(&cfg.SnapshotCacheDir, "snapshot-cache-dir", cfg.SnapshotCacheDir, "Directory for reusable pre-control Firecracker snapshot artifacts")
+	flag.BoolVar(&cfg.FirecrackerSnapshotsEnabled, "firecracker-snapshots", cfg.FirecrackerSnapshotsEnabled, "Enable pre-control Firecracker snapshot restore and cache creation")
 	flag.IntVar(&cfg.JailerUID, "jailer-uid", cfg.JailerUID, "UID used for the jailer process")
 	flag.IntVar(&cfg.JailerGID, "jailer-gid", cfg.JailerGID, "GID used for the jailer process")
 	// Per-VM shape is now a request-time LeaseSpec parameter;
