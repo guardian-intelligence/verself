@@ -38,10 +38,9 @@ def _bazel_test(ctx):
         ctx,
         [
             "test",
-            "--config=ci",
             "//...",
         ],
-        "bazelisk test --config=ci //...",
+        "bazelisk test //...",
     )
 
 def _impl(ctx):
@@ -54,5 +53,5 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run Buildifier/Bzlmod preflights, then `bazelisk test --config=ci //...`.",
+    summary = "Run Buildifier/Bzlmod preflights, then `bazelisk test //...`.",
 )

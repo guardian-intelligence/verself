@@ -41,13 +41,3 @@ build --watchfs
 
 test --test_output=errors
 test --test_summary=terse
-
-# CI runners are ephemeral, do not benefit from incremental Skyframe state, and
-# need machine-parseable timestamps with periodic thread dumps so unsupervised
-# hangs are diagnosable from the recorded log.
-build:ci --build_metadata=ROLE=CI
-build:ci --experimental_thread_dump_interval=10m
-build:ci --show_timestamps
-build:ci --noshow_progress
-build:ci --curses=no
-build:ci --keep_state_after_build=false

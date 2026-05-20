@@ -93,7 +93,7 @@ func runNomadComponentTests(ctx context.Context, repoRoot string, components []n
 		targets = append(targets, target)
 	}
 	sort.Strings(targets)
-	args := append([]string{"test", "--config=ci"}, targets...)
+	args := append([]string{"test"}, targets...)
 	cmd := exec.CommandContext(ctx, "bazelisk", args...)
 	cmd.Dir = repoRoot
 	var stderr bytes.Buffer
