@@ -35,8 +35,14 @@ unencrypted when they contain only reproducible platform images.
 
 Org namespace filesystems use `mountpoint=none` and `canmount=off`; only zvol
 block devices are attached to guests. This prevents native ZFS mountpoints from
-pinning an org key after lease cleanup and allows vm-orchestrator to unload the
-key when the last live lease for the org releases its hold.
+creating hidden host-side mount dependencies on customer datasets.
+
+The organization ZFS key is loaded when vm-orchestrator prepares the org
+namespace after host boot or key rotation. The ZFS key remains available while
+the org is healthy on that host. Lease cleanup releases raw key material from
+daemon memory; it does not unload the kernel-held ZFS key. Key unload or
+rotation is reserved for explicit security events, host drain/shutdown policy,
+or org tombstone handling.
 
 ZFS clones share their origin encryption root, so vm-orchestrator never clones a
 global platform image directly into an org workload. On first use per org and
@@ -58,7 +64,8 @@ recovery design before release.
 
 1. sandbox-rental builds a `LeaseSpec` containing the substrate image and any
    boot-time filesystem mounts.
-2. vm-orchestrator loads the org key and ensures the encrypted namespace.
+2. vm-orchestrator loads or verifies the org key, ensures the encrypted
+   namespace, and releases raw key material from daemon memory.
 3. vm-orchestrator materializes the substrate under `orgs/<org>/images/` when
    the org-local image snapshot does not already exist.
 4. vm-orchestrator clones the org-local substrate snapshot into

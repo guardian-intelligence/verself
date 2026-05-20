@@ -156,8 +156,6 @@ type StorageKeyHold struct {
 	released bool
 }
 
-type StorageKeyIdleFunc func(context.Context, string) error
-
 func (m *StorageKeyManager) Acquire(ctx context.Context, orgID, leaseID string) (*StorageKeyHold, error) {
 	ctx, end := startStepSpan(ctx, "vmorchestrator.storage_key.acquire",
 		attribute.String("org.id", orgID),
@@ -213,39 +211,34 @@ func (h *StorageKeyHold) Version() string {
 	return h.version
 }
 
-func (h *StorageKeyHold) Release(ctx context.Context) (bool, error) {
-	return h.ReleaseWhenIdle(ctx, nil)
-}
-
-func (h *StorageKeyHold) ReleaseWhenIdle(ctx context.Context, idle StorageKeyIdleFunc) (bool, error) {
+func (h *StorageKeyHold) Release(ctx context.Context) bool {
 	if h == nil {
-		return false, nil
+		return false
 	}
 	h.mu.Lock()
 	if h.released {
 		h.mu.Unlock()
-		return false, nil
+		return false
 	}
 	h.released = true
 	h.mu.Unlock()
-	if h.manager == nil {
-		return false, nil
+	lastRef := false
+	if h.manager != nil {
+		lastRef = h.manager.release(ctx, h)
 	}
-	lastRef, err := h.manager.release(ctx, h, idle)
 	for i := range h.key {
 		h.key[i] = 0
 	}
-	return lastRef, err
+	return lastRef
 }
 
-func (m *StorageKeyManager) release(ctx context.Context, hold *StorageKeyHold, idle StorageKeyIdleFunc) (bool, error) {
+func (m *StorageKeyManager) release(ctx context.Context, hold *StorageKeyHold) bool {
 	ctx, end := startStepSpan(ctx, "vmorchestrator.storage_key.release",
 		attribute.String("org.id", hold.orgID),
 		attribute.String("lease.id", hold.leaseID),
 		attribute.String("storage_key.version", hold.version),
 	)
-	var err error
-	defer func() { end(err) }()
+	defer func() { end(nil) }()
 	m.mu.Lock()
 	refCount := m.refs[hold.orgID]
 	if refCount <= 1 {
@@ -256,9 +249,6 @@ func (m *StorageKeyManager) release(ctx context.Context, hold *StorageKeyHold, i
 		m.refs[hold.orgID] = refCount
 	}
 	lastRef := refCount == 0
-	if lastRef && idle != nil {
-		err = idle(ctx, hold.orgID)
-	}
 	m.mu.Unlock()
 	m.logger.InfoContext(ctx, "storage key released",
 		"org_id", hold.orgID,
@@ -266,5 +256,5 @@ func (m *StorageKeyManager) release(ctx context.Context, hold *StorageKeyHold, i
 		"key_version", hold.version,
 		"ref_count", refCount,
 	)
-	return lastRef, nil
+	return lastRef
 }

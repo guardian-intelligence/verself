@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
-	"time"
 )
 
 func TestFileStorageKeyProviderCreatesStableRootOnlyKey(t *testing.T) {
@@ -52,7 +51,7 @@ func TestFileStorageKeyProviderRejectsUnsafeOrgID(t *testing.T) {
 	}
 }
 
-func TestStorageKeyCleanupCapturesHold(t *testing.T) {
+func TestStorageKeyReleaseZeroesMaterialAndClearsRef(t *testing.T) {
 	key := make([]byte, storageKeyBytes)
 	for i := range key {
 		key[i] = byte(i + 1)
@@ -65,16 +64,12 @@ func TestStorageKeyCleanupCapturesHold(t *testing.T) {
 	if slices.Equal(hold.key, make([]byte, storageKeyBytes)) {
 		t.Fatal("test setup produced an empty key hold")
 	}
-	o := New(Config{Pool: "pool", ImageDataset: "images", GoldenDataset: "goldens", WorkloadDataset: "workloads"}, nil, WithPrivOps(&filesystemMountTestPrivOps{}), WithStorageKeyManager(manager))
-	runtime := &LeaseRuntime{}
 	captured := hold
-	o.prependStorageKeyCleanup(runtime, "org_a", "lease-a", hold)
-	hold = nil
-	if hold != nil {
-		t.Fatal("test setup failed to clear outer hold reference")
+	if !hold.Release(context.Background()) {
+		t.Fatal("release did not report the last storage key material ref")
 	}
-	for i := len(runtime.cleanups) - 1; i >= 0; i-- {
-		runtime.cleanups[i]()
+	if captured.Release(context.Background()) {
+		t.Fatal("second release reported a live ref")
 	}
 	manager.mu.Lock()
 	_, stillHeld := manager.refs["org_a"]
@@ -87,51 +82,25 @@ func TestStorageKeyCleanupCapturesHold(t *testing.T) {
 	}
 }
 
-func TestStorageKeyReleaseSerializesIdleUnloadWithAcquire(t *testing.T) {
+func TestStorageKeyReleaseTracksConcurrentMaterialRefs(t *testing.T) {
 	key := make([]byte, storageKeyBytes)
 	for i := range key {
 		key[i] = byte(i + 1)
 	}
 	manager := NewStorageKeyManager(staticStorageKeyProvider{material: StorageKeyMaterial{Key: key, Version: "test-key"}}, nil)
-	hold, err := manager.Acquire(context.Background(), "org_a", "lease-a")
+	first, err := manager.Acquire(context.Background(), "org_a", "lease-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	idleStarted := make(chan struct{})
-	finishIdle := make(chan struct{})
-	releaseDone := make(chan error, 1)
-	go func() {
-		_, releaseErr := hold.ReleaseWhenIdle(context.Background(), func(context.Context, string) error {
-			close(idleStarted)
-			<-finishIdle
-			return nil
-		})
-		releaseDone <- releaseErr
-	}()
-	<-idleStarted
-
-	acquireDone := make(chan error, 1)
-	go func() {
-		next, acquireErr := manager.Acquire(context.Background(), "org_a", "lease-b")
-		if acquireErr == nil {
-			_, acquireErr = next.Release(context.Background())
-		}
-		acquireDone <- acquireErr
-	}()
-
-	select {
-	case err := <-acquireDone:
-		t.Fatalf("acquire completed while idle unload was still running: %v", err)
-	case <-time.After(25 * time.Millisecond):
-	}
-
-	close(finishIdle)
-	if err := <-releaseDone; err != nil {
+	second, err := manager.Acquire(context.Background(), "org_a", "lease-b")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := <-acquireDone; err != nil {
-		t.Fatal(err)
+	if first.Release(context.Background()) {
+		t.Fatal("first release reported last ref while second ref was live")
+	}
+	if !second.Release(context.Background()) {
+		t.Fatal("second release did not report last ref")
 	}
 }
 

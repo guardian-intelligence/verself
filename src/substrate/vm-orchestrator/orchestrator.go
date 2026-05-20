@@ -313,31 +313,15 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	return o
 }
 
-func (o *Orchestrator) releaseStorageKey(ctx context.Context, orgID, leaseID string, hold *StorageKeyHold) {
+func (o *Orchestrator) releaseStorageKeyMaterial(ctx context.Context, orgID, leaseID string, hold *StorageKeyHold) {
 	if hold == nil {
 		return
 	}
-	lastRef, err := hold.ReleaseWhenIdle(ctx, func(ctx context.Context, idleOrgID string) error {
-		unloadCtx, end := startStepSpan(ctx, "vmorchestrator.zfs.storage_key.unload",
-			attribute.String("org.id", idleOrgID),
-			attribute.String("lease.id", leaseID),
-		)
-		unloadErr := o.volumes.UnloadStorageNamespaceKey(unloadCtx, idleOrgID)
-		end(unloadErr)
-		return unloadErr
-	})
-	if err != nil {
-		if lastRef {
-			o.logger.WarnContext(ctx, "storage namespace key unload failed", "org_id", orgID, "lease_id", leaseID, "error", err)
-			return
-		}
-		o.logger.WarnContext(ctx, "storage key release failed", "org_id", orgID, "lease_id", leaseID, "error", err)
-		return
-	}
+	lastRef := hold.Release(ctx)
 	if !lastRef {
 		return
 	}
-	o.logger.InfoContext(ctx, "storage namespace key unloaded", "org_id", orgID, "lease_id", leaseID)
+	o.logger.InfoContext(ctx, "storage key material idle", "org_id", orgID, "lease_id", leaseID)
 }
 
 // normalizeLeaseSpec fills in defaults and re-validates the VM shape
@@ -509,7 +493,7 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 	defer func() {
 		if err != nil {
 			if keyHold != nil {
-				o.releaseStorageKey(context.Background(), spec.StorageNamespace.OrgID, leaseID, keyHold)
+				o.releaseStorageKeyMaterial(context.Background(), spec.StorageNamespace.OrgID, leaseID, keyHold)
 			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -532,8 +516,14 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		attribute.String("org.id", namespace.OrgID),
 		uint64TraceAttribute("storage.quota_bytes", namespace.QuotaBytes),
 	)
-	ensureErr := o.volumes.EnsureEncryptedStorageNamespace(namespaceCtx, namespace, keyHold.Key())
+	rawKey := keyHold.Key()
+	ensureErr := o.volumes.EnsureEncryptedStorageNamespace(namespaceCtx, namespace, rawKey)
+	for i := range rawKey {
+		rawKey[i] = 0
+	}
 	endNamespaceSpan(ensureErr)
+	o.releaseStorageKeyMaterial(context.Background(), spec.StorageNamespace.OrgID, leaseID, keyHold)
+	keyHold = nil
 	if ensureErr != nil {
 		err = fmt.Errorf("ensure storage namespace: %w", ensureErr)
 		return nil, err
@@ -603,8 +593,6 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		err = bootErr
 		return nil, err
 	}
-	o.prependStorageKeyCleanup(runtime, spec.StorageNamespace.OrgID, leaseID, keyHold)
-	keyHold = nil
 	for _, mount := range mounts {
 		mount := mount
 		runtime.cleanups = append(runtime.cleanups, func() {
@@ -645,16 +633,6 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		}
 	})
 	return runtime, nil
-}
-
-func (o *Orchestrator) prependStorageKeyCleanup(runtime *LeaseRuntime, orgID, leaseID string, hold *StorageKeyHold) {
-	if runtime == nil || hold == nil {
-		return
-	}
-	keyHold := hold
-	runtime.cleanups = append([]func(){func() {
-		o.releaseStorageKey(context.Background(), orgID, leaseID, keyHold)
-	}}, runtime.cleanups...)
 }
 
 func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Lease, mounts []FilesystemMount) ([]preparedFilesystemMount, error) {

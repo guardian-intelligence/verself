@@ -174,10 +174,6 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 		_ = state.close()
 		return nil, err
 	}
-	if err := server.unloadIdleStorageNamespaceKeys(context.Background()); err != nil {
-		_ = state.close()
-		return nil, err
-	}
 	return server, nil
 }
 
@@ -203,33 +199,6 @@ func (s *APIServer) ensureZFSRoots(ctx context.Context) error {
 	err := volumes.EnsureRoots(ensureCtx)
 	end(err)
 	return err
-}
-
-func (s *APIServer) unloadIdleStorageNamespaceKeys(ctx context.Context) error {
-	unloadCtx, end := startStepSpan(ctx, "vmorchestrator.zfs.unload_idle_storage_keys",
-		attribute.String("zfs.orgs_dataset", s.roots.OrgsRootDataset()),
-	)
-	var err error
-	defer func() { end(err) }()
-	ops := DirectPrivOps{}
-	orgRoots, err := ops.ZFSListChildren(unloadCtx, s.roots.OrgsRootDataset())
-	if err != nil {
-		return err
-	}
-	volumes := zfs.NewVolumeLifecycle(s.roots, ops, s.logger)
-	for _, orgRoot := range orgRoots {
-		orgID := strings.TrimPrefix(orgRoot, s.roots.OrgsRootDataset()+"/")
-		if !zfs.IsValidRef(orgID) {
-			s.logger.WarnContext(unloadCtx, "skip invalid storage namespace during idle key unload", "dataset", orgRoot)
-			continue
-		}
-		if unloadErr := volumes.UnloadStorageNamespaceKey(unloadCtx, orgID); unloadErr != nil {
-			s.logger.WarnContext(unloadCtx, "idle storage namespace key unload failed", "org_id", orgID, "dataset", orgRoot, "error", unloadErr)
-			continue
-		}
-		s.logger.InfoContext(unloadCtx, "idle storage namespace key unloaded", "org_id", orgID, "dataset", orgRoot)
-	}
-	return nil
 }
 
 func (s *APIServer) recoverNetworkState(ctx context.Context) error {

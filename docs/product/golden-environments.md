@@ -101,6 +101,13 @@ the golden lifecycle, retention, and placement-affinity model only. Backup and
 recovery catalogs exclude customer zvol byte streams; loss of these volumes is
 handled as a cache miss and cold rebuild.
 
+The organization ZFS key is host operational state for a healthy org, not a
+lease-scoped secret. vm-orchestrator loads the key when it prepares the org
+namespace and keeps the ZFS key available while the org remains healthy on that
+host. Lease cleanup releases raw key material from daemon memory; it does not
+unload the kernel-held ZFS key. Key unload or rotation is an explicit security
+event, host drain/shutdown policy, or org tombstone action.
+
 ## Customer Contract
 
 A repository opts into additional durable caches with a checked-in manifest:

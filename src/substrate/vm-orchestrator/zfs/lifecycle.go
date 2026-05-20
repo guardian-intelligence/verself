@@ -40,7 +40,6 @@ type PrivZFS interface {
 	ZFSCreateEncryptedFilesystem(ctx context.Context, dataset string, rawKey []byte) error
 	ZFSEnsureFilesystem(ctx context.Context, dataset string) error
 	ZFSLoadKey(ctx context.Context, dataset string, rawKey []byte) error
-	ZFSUnloadKey(ctx context.Context, dataset string) error
 	ZFSSnapshotExists(ctx context.Context, snapshot string) (bool, error)
 	ZFSDatasetExists(ctx context.Context, dataset string) (bool, error)
 	ZFSSetProperty(ctx context.Context, dataset, key, value string) error
@@ -230,14 +229,6 @@ func (l *VolumeLifecycle) ensureStorageNamespace(ctx context.Context, namespace 
 		return fmt.Errorf("set storage namespace quota: %w", quotaErr)
 	}
 	return nil
-}
-
-func (l *VolumeLifecycle) UnloadStorageNamespaceKey(ctx context.Context, orgID string) error {
-	orgID = strings.TrimSpace(orgID)
-	if !IsValidRef(orgID) {
-		return fmt.Errorf("storage namespace org id is invalid: %s", orgID)
-	}
-	return l.ops.ZFSUnloadKey(ctx, l.roots.orgRoot(orgID))
 }
 
 func (l *VolumeLifecycle) AssertEncryptedDataset(ctx context.Context, dataset, expectedRoot string) (err error) {
