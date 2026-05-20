@@ -24,7 +24,13 @@ import (
 
 type DirectPrivOps struct{}
 
-func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, operationID string) error {
+func (DirectPrivOps) ZFSClone(ctx context.Context, snapshot, target, operationID string) (err error) {
+	ctx, endSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.clone",
+		attribute.String("zfs.source_snapshot", snapshot),
+		attribute.String("zfs.dataset", target),
+		attribute.String("zfs.operation_id", operationID),
+	)
+	defer func() { endSpan(err) }()
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "clone",
@@ -122,22 +128,38 @@ func (DirectPrivOps) ZFSCreateEncryptedFilesystem(ctx context.Context, dataset s
 	return finishZFSEnsureFilesystemCreate(ctx, dataset, out, err, zfs.DatasetExists)
 }
 
-func (DirectPrivOps) ZFSEnsureFilesystem(ctx context.Context, dataset string) error {
+func (DirectPrivOps) ZFSEnsureFilesystem(ctx context.Context, dataset string) (err error) {
+	ctx, endSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.ensure_filesystem",
+		attribute.String("zfs.dataset", dataset),
+	)
+	defer func() { endSpan(err) }()
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
 		return fmt.Errorf("zfs filesystem dataset is invalid: %s", dataset)
 	}
-	exists, err := zfs.DatasetExists(ctx, dataset)
+	existsCtx, endExistsSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.dataset_exists",
+		attribute.String("zfs.dataset", dataset),
+	)
+	exists, err := zfs.DatasetExists(existsCtx, dataset)
+	trace.SpanFromContext(existsCtx).SetAttributes(attribute.Bool("zfs.dataset_exists", exists))
+	endExistsSpan(err)
 	if err != nil {
 		return err
 	}
 	if exists {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("zfs.dataset_exists", true))
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, "zfs", "create", "-p", dataset)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("zfs.dataset_exists", false))
+	createCtx, endCreateSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.create_filesystem",
+		attribute.String("zfs.dataset", dataset),
+	)
+	cmd := exec.CommandContext(createCtx, "zfs", "create", "-p", dataset)
 	out, err := cmd.CombinedOutput()
-	return finishZFSEnsureFilesystemCreate(ctx, dataset, out, err, zfs.DatasetExists)
+	err = finishZFSEnsureFilesystemCreate(ctx, dataset, out, err, zfs.DatasetExists)
+	endCreateSpan(err)
+	return err
 }
 
 type datasetExistsFunc func(context.Context, string) (bool, error)
@@ -153,7 +175,12 @@ func finishZFSEnsureFilesystemCreate(ctx context.Context, dataset string, output
 	return fmt.Errorf("zfs create -p %s: %s: %w", dataset, strings.TrimSpace(string(output)), createErr)
 }
 
-func (DirectPrivOps) ZFSLoadKey(ctx context.Context, dataset string, rawKey []byte) error {
+func (DirectPrivOps) ZFSLoadKey(ctx context.Context, dataset string, rawKey []byte) (err error) {
+	ctx, endSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.load_key",
+		attribute.String("zfs.dataset", dataset),
+	)
+	span := trace.SpanFromContext(ctx)
+	defer func() { endSpan(err) }()
 	if strings.TrimSpace(dataset) == "" || strings.Contains(dataset, "@") {
 		return fmt.Errorf("zfs load-key dataset is invalid: %s", dataset)
 	}
@@ -164,17 +191,26 @@ func (DirectPrivOps) ZFSLoadKey(ctx context.Context, dataset string, rawKey []by
 	if err != nil {
 		return err
 	}
+	span.SetAttributes(attribute.String("zfs.keystatus", status))
 	if status == "available" {
+		span.SetAttributes(attribute.Bool("zfs.key_already_available", true))
 		return nil
 	}
+	span.SetAttributes(attribute.Bool("zfs.key_already_available", false))
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "zfs", "load-key", "-L", "prompt", dataset)
+	loadCtx, endLoadSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.load_key_exec",
+		attribute.String("zfs.dataset", dataset),
+	)
+	cmd := exec.CommandContext(loadCtx, "zfs", "load-key", "-L", "prompt", dataset)
 	cmd.Stdin = bytes.NewReader(rawKey)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("zfs load-key %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
+		err = fmt.Errorf("zfs load-key %s: %s: %w", dataset, strings.TrimSpace(string(out)), err)
+		endLoadSpan(err)
+		return err
 	}
+	endLoadSpan(nil)
 	return nil
 }
 
@@ -199,15 +235,34 @@ func (DirectPrivOps) ZFSUnloadKey(ctx context.Context, dataset string) error {
 	return nil
 }
 
-func (DirectPrivOps) ZFSSnapshotExists(ctx context.Context, snapshot string) (bool, error) {
+func (DirectPrivOps) ZFSSnapshotExists(ctx context.Context, snapshot string) (exists bool, err error) {
+	ctx, endSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.snapshot_exists",
+		attribute.String("zfs.snapshot", snapshot),
+	)
+	defer func() {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("zfs.snapshot_exists", exists))
+		endSpan(err)
+	}()
 	return zfs.SnapshotExists(ctx, snapshot)
 }
 
-func (DirectPrivOps) ZFSDatasetExists(ctx context.Context, dataset string) (bool, error) {
+func (DirectPrivOps) ZFSDatasetExists(ctx context.Context, dataset string) (exists bool, err error) {
+	ctx, endSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.dataset_exists",
+		attribute.String("zfs.dataset", dataset),
+	)
+	defer func() {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("zfs.dataset_exists", exists))
+		endSpan(err)
+	}()
 	return zfs.DatasetExists(ctx, dataset)
 }
 
-func (DirectPrivOps) ZFSSetProperty(ctx context.Context, dataset, key, value string) error {
+func (DirectPrivOps) ZFSSetProperty(ctx context.Context, dataset, key, value string) (err error) {
+	ctx, endSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.set_property",
+		attribute.String("zfs.dataset", dataset),
+		attribute.String("zfs.property", key),
+	)
+	defer func() { endSpan(err) }()
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "set", key+"="+value, dataset)
@@ -222,7 +277,16 @@ func (DirectPrivOps) ZFSSetProperty(ctx context.Context, dataset, key, value str
 // A user property that has never been set returns "-" from zfs(8); we map
 // that to an empty string so callers can compare against expected digests
 // without special-casing the sentinel.
-func (DirectPrivOps) ZFSGetProperty(ctx context.Context, target, key string) (string, error) {
+func (DirectPrivOps) ZFSGetProperty(ctx context.Context, target, key string) (value string, err error) {
+	ctx, endSpan := startStepSpan(ctx, "vmorchestrator.zfs.command.get_property",
+		attribute.String("zfs.target", target),
+		attribute.String("zfs.property", key),
+	)
+	span := trace.SpanFromContext(ctx)
+	defer func() {
+		span.SetAttributes(attribute.Bool("zfs.property_value_present", strings.TrimSpace(value) != ""))
+		endSpan(err)
+	}()
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "get", "-H", "-p", "-o", "value", key, target)
@@ -230,7 +294,7 @@ func (DirectPrivOps) ZFSGetProperty(ctx context.Context, target, key string) (st
 	if err != nil {
 		return "", fmt.Errorf("zfs get %s on %s: %s: %w", key, target, strings.TrimSpace(string(out)), err)
 	}
-	value := strings.TrimSpace(string(out))
+	value = strings.TrimSpace(string(out))
 	if value == "-" {
 		return "", nil
 	}
