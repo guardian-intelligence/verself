@@ -236,6 +236,7 @@ type Orchestrator struct {
 	ops     PrivOps
 	volumes *zfs.VolumeLifecycle
 	keys    *StorageKeyManager
+	state   *hostStateStore
 	journal func(durableJournalEntry)
 }
 
@@ -250,6 +251,12 @@ func WithPrivOps(ops PrivOps) Option {
 func WithStorageKeyManager(keys *StorageKeyManager) Option {
 	return func(o *Orchestrator) {
 		o.keys = keys
+	}
+}
+
+func withHostState(state *hostStateStore) Option {
+	return func(o *Orchestrator) {
+		o.state = state
 	}
 }
 
@@ -489,43 +496,23 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		),
 	)
 	var err error
-	var keyHold *StorageKeyHold
 	defer func() {
 		if err != nil {
-			if keyHold != nil {
-				o.releaseStorageKeyMaterial(context.Background(), spec.StorageNamespace.OrgID, leaseID, keyHold)
-			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 		}
 		span.End()
 	}()
 
-	keyHold, err = o.keys.Acquire(ctx, spec.StorageNamespace.OrgID, leaseID)
-	if err != nil {
-		err = fmt.Errorf("acquire storage key: %w", err)
-		return nil, err
-	}
-
-	namespace := zfs.StorageNamespace{
-		OrgID:      spec.StorageNamespace.OrgID,
-		QuotaBytes: spec.StorageNamespace.QuotaBytes,
-	}
-	namespaceCtx, endNamespaceSpan := startStepSpan(ctx, "vmorchestrator.zfs.namespace_ensure",
+	runtimePlanCtx, endRuntimePlanSpan := startStepSpan(ctx, "vmorchestrator.org_runtime.ready_check",
 		attribute.String("lease.id", leaseID),
-		attribute.String("org.id", namespace.OrgID),
-		uint64TraceAttribute("storage.quota_bytes", namespace.QuotaBytes),
+		attribute.String("org.id", spec.StorageNamespace.OrgID),
+		uint64TraceAttribute("storage.quota_bytes", spec.StorageNamespace.QuotaBytes),
 	)
-	rawKey := keyHold.Key()
-	ensureErr := o.volumes.EnsureEncryptedStorageNamespace(namespaceCtx, namespace, rawKey)
-	for i := range rawKey {
-		rawKey[i] = 0
-	}
-	endNamespaceSpan(ensureErr)
-	o.releaseStorageKeyMaterial(context.Background(), spec.StorageNamespace.OrgID, leaseID, keyHold)
-	keyHold = nil
-	if ensureErr != nil {
-		err = fmt.Errorf("ensure storage namespace: %w", ensureErr)
+	runtimePlan, runtimePlanErr := o.AssertOrgRuntimeReady(runtimePlanCtx, o.orgRuntimeWarmSpecForLease(spec))
+	endRuntimePlanSpan(runtimePlanErr)
+	if runtimePlanErr != nil {
+		err = fmt.Errorf("org runtime is not ready: %w", runtimePlanErr)
 		return nil, err
 	}
 	lease, leaseRefErr := zfs.NewLease(o.roots, spec.StorageNamespace.OrgID, leaseID)
@@ -533,18 +520,19 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		err = fmt.Errorf("lease ref: %w", leaseRefErr)
 		return nil, err
 	}
-	substrate, bootErr := zfs.NewImage(o.roots, o.cfg.DefaultSubstrateRef)
-	if bootErr != nil {
-		err = fmt.Errorf("substrate image ref: %w", bootErr)
+	substrateSnapshot, ok := runtimePlan.ImageSnapshots[o.cfg.DefaultSubstrateRef]
+	if !ok {
+		err = fmt.Errorf("org runtime substrate image %s is not warm", o.cfg.DefaultSubstrateRef)
 		return nil, err
 	}
 	rootCloneCtx, endRootCloneSpan := startStepSpan(ctx, "vmorchestrator.zfs.root_clone",
 		attribute.String("lease.id", leaseID),
 		attribute.String("org.id", spec.StorageNamespace.OrgID),
 		attribute.String("zfs.dataset", lease.RootDataset()),
-		attribute.String("zfs.image_ref", substrate.Ref()),
+		attribute.String("zfs.image_ref", o.cfg.DefaultSubstrateRef),
+		attribute.String("zfs.source_snapshot", substrateSnapshot.String()),
 	)
-	prepErr := o.volumes.PrepareSubstrateClone(rootCloneCtx, lease, substrate)
+	prepErr := o.volumes.PrepareSubstrateCloneFromSnapshot(rootCloneCtx, lease, substrateSnapshot, lease.ID())
 	endRootCloneSpan(prepErr)
 	if prepErr != nil {
 		err = prepErr
@@ -573,7 +561,7 @@ func (o *Orchestrator) BootLease(ctx context.Context, leaseID string, spec Lease
 		attribute.String("org.id", spec.StorageNamespace.OrgID),
 		attribute.Int("filesystem.mount_count", len(spec.FilesystemMounts)),
 	)
-	mounts, mountErr := o.prepareFilesystemMounts(mountsCtx, lease, spec.FilesystemMounts)
+	mounts, mountErr := o.prepareFilesystemMounts(mountsCtx, lease, spec.FilesystemMounts, runtimePlan.ImageSnapshots)
 	endMountsSpan(mountErr)
 	if mountErr != nil {
 		_ = o.volumes.DestroyLeaseRoot(context.Background(), lease)
@@ -643,7 +631,7 @@ func (o *Orchestrator) cleanupLeaseDatasets(runtime *LeaseRuntime, lease zfs.Lea
 	}
 }
 
-func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Lease, mounts []FilesystemMount) ([]preparedFilesystemMount, error) {
+func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Lease, mounts []FilesystemMount, imageSnapshots map[string]zfs.Snapshot) ([]preparedFilesystemMount, error) {
 	if len(mounts) == 0 {
 		return nil, nil
 	}
@@ -721,8 +709,17 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 				endMountSpan(prepErr)
 				return prepared, prepErr
 			}
-			mountSpan.SetAttributes(attribute.String("zfs.image_ref", image.Ref()))
-			clone, prepErr = o.volumes.PrepareMount(mountCtx, lease, image, idx, mount.Name, operationID)
+			source, ok := imageSnapshots[image.Ref()]
+			if !ok {
+				prepErr = fmt.Errorf("filesystem mount %s image %s is not warm", mount.Name, image.Ref())
+				endMountSpan(prepErr)
+				return prepared, prepErr
+			}
+			mountSpan.SetAttributes(
+				attribute.String("zfs.image_ref", image.Ref()),
+				attribute.String("zfs.source_snapshot", source.String()),
+			)
+			clone, prepErr = o.volumes.PrepareMountFromSnapshot(mountCtx, lease, source, idx, mount.Name, operationID)
 		}
 		if prepErr != nil {
 			o.appendDurableJournal(durableJournalEntry{

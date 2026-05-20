@@ -165,6 +165,18 @@ func (c *Client) PruneFilesystemGeneration(ctx context.Context, key, operationID
 	}, nil
 }
 
+func (c *Client) WarmOrgRuntime(ctx context.Context, key string, spec OrgRuntimeWarmSpec) (OrgRuntimeStatus, error) {
+	resp, err := c.client.WarmOrgRuntime(ctx, &vmrpc.WarmOrgRuntimeRequest{
+		IdempotencyKey:   key,
+		StorageNamespace: storageNamespaceToProto(spec.StorageNamespace),
+		ImageRefs:        append([]string(nil), spec.ImageRefs...),
+	})
+	if err != nil {
+		return OrgRuntimeStatus{}, fmt.Errorf("warm org runtime: %w", err)
+	}
+	return orgRuntimeStatusFromProto(resp), nil
+}
+
 func (c *Client) StreamLeaseEvents(ctx context.Context, leaseID string, fromSeq uint64, follow bool, handler func(LeaseEvent) error) error {
 	stream, err := c.client.StreamLeaseEvents(ctx, &vmrpc.StreamLeaseEventsRequest{LeaseId: leaseID, FromSeq: fromSeq, Follow: follow})
 	if err != nil {

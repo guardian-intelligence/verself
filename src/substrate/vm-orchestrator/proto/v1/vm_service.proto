@@ -19,6 +19,7 @@ service VMService {
 
   rpc CommitFilesystemMount(CommitFilesystemMountRequest) returns (CommitFilesystemMountResponse);
   rpc PruneFilesystemGeneration(PruneFilesystemGenerationRequest) returns (PruneFilesystemGenerationResponse);
+  rpc WarmOrgRuntime(WarmOrgRuntimeRequest) returns (WarmOrgRuntimeResponse);
   rpc GetCapacity(GetCapacityRequest) returns (GetCapacityResponse);
 
   // SeedImage is the privileged image-seeding entry point used by deploy-time
@@ -106,6 +107,27 @@ message LeaseSpec {
 message StorageNamespace {
   string org_id = 1;
   uint64 quota_bytes = 2;
+}
+
+message WarmOrgRuntimeRequest {
+  string idempotency_key = 1;
+  StorageNamespace storage_namespace = 2;
+  repeated string image_refs = 3;
+}
+
+message WarmOrgRuntimeResponse {
+  string org_id = 1;
+  uint64 quota_bytes = 2;
+  repeated WarmedImage images = 3;
+  uint64 ready_at_unix_ns = 4;
+  uint64 verified_at_unix_ns = 5;
+}
+
+message WarmedImage {
+  string image_ref = 1;
+  string source_snapshot = 2;
+  string source_digest = 3;
+  string org_snapshot = 4;
 }
 
 message FilesystemMount {

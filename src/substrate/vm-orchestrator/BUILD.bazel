@@ -19,6 +19,7 @@ go_library(
         "network.go",
         "observer.go",
         "orchestrator.go",
+        "org_runtime.go",
         "peer_creds.go",
         "peer_creds_unsupported.go",
         "privops.go",

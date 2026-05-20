@@ -31,6 +31,7 @@ const (
 	VMService_WaitExec_FullMethodName                  = "/verself.vm_orchestrator.v1.VMService/WaitExec"
 	VMService_CommitFilesystemMount_FullMethodName     = "/verself.vm_orchestrator.v1.VMService/CommitFilesystemMount"
 	VMService_PruneFilesystemGeneration_FullMethodName = "/verself.vm_orchestrator.v1.VMService/PruneFilesystemGeneration"
+	VMService_WarmOrgRuntime_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/WarmOrgRuntime"
 	VMService_GetCapacity_FullMethodName               = "/verself.vm_orchestrator.v1.VMService/GetCapacity"
 	VMService_SeedImage_FullMethodName                 = "/verself.vm_orchestrator.v1.VMService/SeedImage"
 )
@@ -51,6 +52,7 @@ type VMServiceClient interface {
 	WaitExec(ctx context.Context, in *WaitExecRequest, opts ...grpc.CallOption) (*WaitExecResponse, error)
 	CommitFilesystemMount(ctx context.Context, in *CommitFilesystemMountRequest, opts ...grpc.CallOption) (*CommitFilesystemMountResponse, error)
 	PruneFilesystemGeneration(ctx context.Context, in *PruneFilesystemGenerationRequest, opts ...grpc.CallOption) (*PruneFilesystemGenerationResponse, error)
+	WarmOrgRuntime(ctx context.Context, in *WarmOrgRuntimeRequest, opts ...grpc.CallOption) (*WarmOrgRuntimeResponse, error)
 	GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error)
 	// SeedImage is the privileged image-seeding entry point used by deploy-time
 	// tooling (vm-orchestrator-cli seed-image). It materializes a composable
@@ -197,6 +199,16 @@ func (c *vMServiceClient) PruneFilesystemGeneration(ctx context.Context, in *Pru
 	return out, nil
 }
 
+func (c *vMServiceClient) WarmOrgRuntime(ctx context.Context, in *WarmOrgRuntimeRequest, opts ...grpc.CallOption) (*WarmOrgRuntimeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WarmOrgRuntimeResponse)
+	err := c.cc.Invoke(ctx, VMService_WarmOrgRuntime_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *vMServiceClient) GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetCapacityResponse)
@@ -233,6 +245,7 @@ type VMServiceServer interface {
 	WaitExec(context.Context, *WaitExecRequest) (*WaitExecResponse, error)
 	CommitFilesystemMount(context.Context, *CommitFilesystemMountRequest) (*CommitFilesystemMountResponse, error)
 	PruneFilesystemGeneration(context.Context, *PruneFilesystemGenerationRequest) (*PruneFilesystemGenerationResponse, error)
+	WarmOrgRuntime(context.Context, *WarmOrgRuntimeRequest) (*WarmOrgRuntimeResponse, error)
 	GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error)
 	// SeedImage is the privileged image-seeding entry point used by deploy-time
 	// tooling (vm-orchestrator-cli seed-image). It materializes a composable
@@ -285,6 +298,9 @@ func (UnimplementedVMServiceServer) CommitFilesystemMount(context.Context, *Comm
 }
 func (UnimplementedVMServiceServer) PruneFilesystemGeneration(context.Context, *PruneFilesystemGenerationRequest) (*PruneFilesystemGenerationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PruneFilesystemGeneration not implemented")
+}
+func (UnimplementedVMServiceServer) WarmOrgRuntime(context.Context, *WarmOrgRuntimeRequest) (*WarmOrgRuntimeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WarmOrgRuntime not implemented")
 }
 func (UnimplementedVMServiceServer) GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCapacity not implemented")
@@ -522,6 +538,24 @@ func _VMService_PruneFilesystemGeneration_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VMService_WarmOrgRuntime_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WarmOrgRuntimeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).WarmOrgRuntime(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VMService_WarmOrgRuntime_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).WarmOrgRuntime(ctx, req.(*WarmOrgRuntimeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _VMService_GetCapacity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetCapacityRequest)
 	if err := dec(in); err != nil {
@@ -608,6 +642,10 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PruneFilesystemGeneration",
 			Handler:    _VMService_PruneFilesystemGeneration_Handler,
+		},
+		{
+			MethodName: "WarmOrgRuntime",
+			Handler:    _VMService_WarmOrgRuntime_Handler,
 		},
 		{
 			MethodName: "GetCapacity",

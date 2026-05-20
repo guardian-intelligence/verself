@@ -87,6 +87,22 @@ func (s Snapshot) String() string {
 	return s.dataset + "@" + s.name
 }
 
+func OrgImageSnapshot(roots Roots, orgID, imageRef, sourceDigest string) (Snapshot, error) {
+	orgID = strings.TrimSpace(orgID)
+	if !IsValidRef(orgID) {
+		return Snapshot{}, fmt.Errorf("org image org id is invalid: %s", orgID)
+	}
+	if !IsValidRef(imageRef) {
+		return Snapshot{}, fmt.Errorf("image ref is invalid: %s", imageRef)
+	}
+	name, err := orgImageDatasetName(imageRef, sourceDigest)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	roots = roots.normalized()
+	return Snapshot{dataset: path.Join(roots.orgImageRoot(orgID), name), name: readySnapshot}, nil
+}
+
 type Image struct {
 	roots Roots
 	ref   string

@@ -42,6 +42,66 @@ func storageNamespaceToProto(namespace StorageNamespace) *vmrpc.StorageNamespace
 	}
 }
 
+func orgRuntimeStatusToProto(status OrgRuntimeStatus) *vmrpc.WarmOrgRuntimeResponse {
+	return &vmrpc.WarmOrgRuntimeResponse{
+		OrgId:            status.StorageNamespace.OrgID,
+		QuotaBytes:       status.StorageNamespace.QuotaBytes,
+		Images:           warmedImagesToProto(status.Images),
+		ReadyAtUnixNs:    unixNs(status.ReadyAt),
+		VerifiedAtUnixNs: unixNs(status.VerifiedAt),
+	}
+}
+
+func orgRuntimeStatusFromProto(status *vmrpc.WarmOrgRuntimeResponse) OrgRuntimeStatus {
+	if status == nil {
+		return OrgRuntimeStatus{}
+	}
+	return OrgRuntimeStatus{
+		StorageNamespace: StorageNamespace{
+			OrgID:      status.GetOrgId(),
+			QuotaBytes: status.GetQuotaBytes(),
+		},
+		Images:     warmedImagesFromProto(status.GetImages()),
+		ReadyAt:    timeFromUnixNs(status.GetReadyAtUnixNs()),
+		VerifiedAt: timeFromUnixNs(status.GetVerifiedAtUnixNs()),
+	}
+}
+
+func warmedImagesToProto(images []WarmedImage) []*vmrpc.WarmedImage {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]*vmrpc.WarmedImage, 0, len(images))
+	for _, image := range images {
+		out = append(out, &vmrpc.WarmedImage{
+			ImageRef:       image.ImageRef,
+			SourceSnapshot: image.SourceSnapshot,
+			SourceDigest:   image.SourceDigest,
+			OrgSnapshot:    image.OrgSnapshot,
+		})
+	}
+	return out
+}
+
+func warmedImagesFromProto(images []*vmrpc.WarmedImage) []WarmedImage {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]WarmedImage, 0, len(images))
+	for _, image := range images {
+		if image == nil {
+			continue
+		}
+		out = append(out, WarmedImage{
+			ImageRef:       image.GetImageRef(),
+			SourceSnapshot: image.GetSourceSnapshot(),
+			SourceDigest:   image.GetSourceDigest(),
+			OrgSnapshot:    image.GetOrgSnapshot(),
+		})
+	}
+	return out
+}
+
 func filesystemMountsFromProto(mounts []*vmrpc.FilesystemMount) []FilesystemMount {
 	if len(mounts) == 0 {
 		return nil

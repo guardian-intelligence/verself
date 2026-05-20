@@ -47,6 +47,25 @@ type FilesystemPruneRecord struct {
 	PrunedAt            time.Time
 }
 
+type OrgRuntimeWarmSpec struct {
+	StorageNamespace StorageNamespace
+	ImageRefs        []string
+}
+
+type OrgRuntimeStatus struct {
+	StorageNamespace StorageNamespace
+	Images           []WarmedImage
+	ReadyAt          time.Time
+	VerifiedAt       time.Time
+}
+
+type WarmedImage struct {
+	ImageRef       string
+	SourceSnapshot string
+	SourceDigest   string
+	OrgSnapshot    string
+}
+
 type ExecRecord struct {
 	LeaseID                string
 	ExecID                 string

@@ -58,6 +58,7 @@ points that only exist as spans should remain queryable from
 | Durable declarations resolved | `durable.declaration.resolve` span/event | `durable_declaration_resolve_ms` | job shape, cache spec hash, cache names. |
 | Durable source selected | `verself.durable_events`, `durable.cache.select` | `zfs_generation_hit_rate` | cache name, result `hit` or `miss`, source generation, snapshot ref. |
 | Durable mount plan persisted | `durable_operation.requested_at`, `execution_filesystem_mounts` | `durable_prepare_ms` | operation ID, scope ID, mount name, required flag. |
+| Org runtime warmed | `sandbox.org_runtime.warm`, `rpc.WarmOrgRuntime`, `vmorchestrator.org_runtime.warm` | `org_runtime_warm_ms` | org ID, quota bytes, image refs, namespace dataset, image cache hit/miss. |
 | Lease accepted | `rpc.AcquireLease`, client span, `execution_attempts.lease_id` | `lease_accept_ms` | lease ID, attempt ID, mount count, resource shape. |
 | Lease ready | `verself.vm_lease_evidence` `lease_ready`, `GetLease` polling spans | `lease_accept_to_ready_ms` | lease ID, activation mode, filesystem result count. |
 | Exec started | `rpc.StartExec`, `verself.vm_lease_evidence` `exec_started` | `ready_to_exec_started_ms` | lease ID, exec ID, command class. |
@@ -75,9 +76,9 @@ share the same parent.
 
 | Substep | Current / Required Span | KPI |
 | --- | --- | --- |
-| Storage key acquire | `vmorchestrator.storage_key.acquire` | `storage_key_acquire_ms` |
-| Storage namespace ready | required span around `EnsureEncryptedStorageNamespace` | `zfs_namespace_ms` |
-| Root substrate clone | required span around `PrepareSubstrateClone` | `root_clone_ms` |
+| Org runtime ready check | `vmorchestrator.org_runtime.ready_check`, `vmorchestrator.org_runtime.assert_ready` | `org_runtime_ready_check_ms` |
+| Storage namespace assertion | `vmorchestrator.zfs.namespace.assert_ready` | `zfs_namespace_assert_ms` |
+| Root substrate clone | `vmorchestrator.zfs.root_clone`, `vmorchestrator.zfs.root.prepare_substrate_clone_from_snapshot` | `root_clone_ms` |
 | Root resize | required span around `ResizeLeaseRootExt4` | `root_resize_ms` |
 | Mount source select | `durable.cache.select`, host mount attributes | `mount_source_hit_rate` |
 | Mount clone/create | required span around `PrepareMountFromSnapshot`, `PrepareMount`, `PrepareEmptyMount` | `mount_prepare_ms` |
@@ -98,10 +99,10 @@ share the same parent.
 | Guest control connect | `vmorchestrator.guest.control_connect`, `vmorchestrator.guest.vsock_proxy_*` | `guest_control_connect_ms` |
 | Guest hello | `vmorchestrator.guest.hello`, `verself.vm_lease_evidence` `telemetry_hello` | `guest_hello_ms` |
 | Lease init | `vmorchestrator.guest.lease_init` | `lease_init_ms` |
-| Guest network apply | required vm-bridge timing in `LeaseInitResult` | `guest_network_apply_ms` |
-| Guest filesystem mount | required per-mount vm-bridge timing in `LeaseInitResult` | `guest_mount_ms` |
-| Guest time sync | required vm-bridge timing in `LeaseInitResult` | `guest_time_sync_ms` |
-| Guest local control start | required vm-bridge timing in `LeaseInitResult` | `guest_local_control_start_ms` |
+| Guest network apply | `guest.lease_init.apply_network_ms` on `vmorchestrator.guest.lease_init` | `guest_network_apply_ms` |
+| Guest filesystem mount | `guest.lease_init.mount_filesystems_ms` on `vmorchestrator.guest.lease_init` | `guest_mount_ms` |
+| Guest time sync | `guest.lease_init.set_wall_clock_ms` on `vmorchestrator.guest.lease_init` | `guest_time_sync_ms` |
+| Guest local control start | `guest.lease_init.start_local_control_ms` on `vmorchestrator.guest.lease_init` | `guest_local_control_start_ms` |
 
 The warm target for `lease_accept_to_ready_ms` is as close to zero as the
 Firecracker snapshot path permits. Cold boot remains tracked as a separate
@@ -169,21 +170,15 @@ Dashboards should expose p50, p90, p99, max, error count, and hit rate for:
    `workflow_job` timestamps are usable provider proxies. Exact push ingress
    requires accepting and persisting the GitHub `push` or `workflow_run` event
    with provider timestamp and Verself receive timestamp.
-2. The lease boot rollup lacks spans for encrypted namespace readiness, root
-   clone, root resize, and per-mount clone/create operations. Those ZFS calls
-   need first-class spans before optimizing cold boot.
-3. Firecracker snapshot key construction and cache lookup are attributes today,
+2. Firecracker snapshot key construction and cache lookup are attributes today,
    not timed substeps. They need spans with hit/miss and artifact size.
-4. `LeaseInitResult` reports mount results but not per-guest operation timing.
-   vm-bridge should return network apply, mount, bind, time sync, and local
-   control start timing so `lease_init_ms` can be decomposed.
-5. Runner process readiness is inferred from bootstrap fetch and GitHub
+3. Runner process readiness is inferred from bootstrap fetch and GitHub
    assignment. The guest should emit runner process start, registration attempt,
    and registration success/failure as product-visible evidence.
-6. Cross-system deltas depend on GitHub, host, and guest clocks. Dashboards
+4. Cross-system deltas depend on GitHub, host, and guest clocks. Dashboards
    should show the source of each timestamp and keep host monotonic durations
    separate from provider-to-host wall-clock deltas.
-7. The current ClickHouse evidence is split across OTel traces, OTel logs,
+5. The current ClickHouse evidence is split across OTel traces, OTel logs,
    `verself.vm_lease_evidence`, `verself.durable_events`, and GitHub API
    polling. A dedicated `verself.vm_acquisition_events` projection should
    materialize the lifecycle points above once the event names stabilize.

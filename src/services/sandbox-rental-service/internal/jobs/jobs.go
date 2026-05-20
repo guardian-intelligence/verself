@@ -99,6 +99,7 @@ var tracer = otel.Tracer("sandbox-rental-service/jobs")
 
 type Runner interface {
 	GetCapacity(ctx context.Context) (vmorchestrator.Capacity, error)
+	WarmOrgRuntime(ctx context.Context, key string, spec vmorchestrator.OrgRuntimeWarmSpec) (vmorchestrator.OrgRuntimeStatus, error)
 	AcquireLease(ctx context.Context, key string, spec vmorchestrator.LeaseSpec) (vmorchestrator.LeaseRecord, error)
 	RenewLease(ctx context.Context, leaseID, key string, extendSeconds uint64, allowlist []string) (time.Time, error)
 	GetLease(ctx context.Context, leaseID string) (vmorchestrator.LeaseRecord, error)
@@ -515,21 +516,7 @@ func (s *Service) runnerClassResources(ctx context.Context, runnerClass string) 
 }
 
 func (s *Service) runnerClassFilesystemMounts(ctx context.Context, tx pgx.Tx, runnerClass string) ([]vmorchestrator.FilesystemMount, error) {
-	rows, err := store.New(tx).ListRunnerClassFilesystemMounts(ctx, store.ListRunnerClassFilesystemMountsParams{RunnerClass: runnerClass})
-	if err != nil {
-		return nil, fmt.Errorf("load runner class filesystem mounts: %w", err)
-	}
-	out := make([]vmorchestrator.FilesystemMount, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, vmorchestrator.FilesystemMount{
-			Name:      row.MountName,
-			SourceRef: row.SourceRef,
-			MountPath: row.MountPath,
-			FSType:    row.FsType,
-			ReadOnly:  row.ReadOnly,
-		})
-	}
-	return out, nil
+	return s.runnerClassFilesystemMountsFromQueries(ctx, store.New(tx), runnerClass)
 }
 
 func (s *Service) insertExecutionFilesystemMounts(ctx context.Context, tx pgx.Tx, executionID uuid.UUID, mounts []vmorchestrator.FilesystemMount) error {
@@ -607,6 +594,14 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
 		s.failDurableCaches(ctx, durablePlan, "durable_storage_entitlement_failed", err)
 		return s.failAttempt(ctx, item, "durable_storage_entitlement_failed", err)
+	}
+	if err := s.warmOrgRuntimeForExecution(ctx, item, storageQuotaBytes); err != nil {
+		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
+		defer cancel()
+		_ = s.voidBillingWindow(cleanupCtx, reservation)
+		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
+		s.failDurableCaches(ctx, durablePlan, "org_runtime_warm_failed", err)
+		return s.failAttempt(ctx, item, "org_runtime_warm_failed", err)
 	}
 
 	acquireCtx, cancelAcquire := context.WithTimeout(ctx, leaseAcquireTimeout)
@@ -1117,29 +1112,7 @@ func (s *Service) reserveBilling(ctx context.Context, item executionWorkItem, bi
 }
 
 func (s *Service) durableStorageQuotaBytes(ctx context.Context, item executionWorkItem) (uint64, error) {
-	if s.Billing == nil {
-		return 0, fmt.Errorf("billing client is required for durable storage entitlement")
-	}
-	resp, err := s.Billing.GetStorageEntitlement(ctx, billingclient.GetStorageEntitlementRequest{
-		Body: billingclient.GetStorageEntitlementInputBody{
-			OrgID:     billingclient.OrgId(item.OrgID),
-			ProductID: billingclient.ProductId(item.ProductID),
-		},
-	})
-	if err != nil {
-		return 0, fmt.Errorf("get durable storage entitlement: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK || resp.Result == nil {
-		return 0, newBillingStatusError("get durable storage entitlement", resp.StatusCode, resp.Problem, nil)
-	}
-	quotaBytes, err := billingSafeUint64(resp.Result.Entitlement.DurableStorageQuotaBytes, "durable storage quota bytes")
-	if err != nil {
-		return 0, err
-	}
-	if quotaBytes == 0 {
-		return 0, fmt.Errorf("durable storage quota bytes is required")
-	}
-	return quotaBytes, nil
+	return s.durableStorageQuotaBytesForOrgProduct(ctx, item.OrgID, item.ProductID)
 }
 
 func (s *Service) insertBillingWindow(ctx context.Context, attemptID uuid.UUID, reservation billingclient.BillingWindowReservation) error {

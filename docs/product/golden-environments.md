@@ -102,11 +102,12 @@ recovery catalogs exclude customer zvol byte streams; loss of these volumes is
 handled as a cache miss and cold rebuild.
 
 The organization ZFS key is host operational state for a healthy org, not a
-lease-scoped secret. vm-orchestrator loads the key when it prepares the org
-namespace and keeps the ZFS key available while the org remains healthy on that
-host. Lease cleanup releases raw key material from daemon memory; it does not
-unload the kernel-held ZFS key. Key unload or rotation is an explicit security
-event, host drain/shutdown policy, or org tombstone action.
+lease-scoped secret. vm-orchestrator loads the key during org runtime warmup
+before lease acquisition and keeps the ZFS key available while the org remains
+healthy on that host. Lease cleanup releases raw key material from daemon
+memory; it does not unload the kernel-held ZFS key. Key unload or rotation is
+an explicit security event, host drain/shutdown policy, or org tombstone
+action.
 
 ## Customer Contract
 
@@ -159,22 +160,24 @@ provides mounted directories, not tool-specific cache APIs.
    GitHub state.
 3. The control plane selects the current compatible durable generation for each
    cache scope.
-4. vm-orchestrator prepares a fresh VM with static block devices for the root
+4. sandbox-rental warms the org runtime for the selected quota and platform
+   image refs before it asks vm-orchestrator to acquire a lease.
+5. vm-orchestrator prepares a fresh VM with static block devices for the root
    disk, platform toolchains, workspace cache, and manifest caches.
-5. vm-bridge mounts those devices before the runner starts.
-6. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
-7. Customer steps execute normally and read or write cached paths as ordinary
+6. vm-bridge mounts those devices before the runner starts.
+7. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
+8. Customer steps execute normally and read or write cached paths as ordinary
    directories.
-8. After the runner exits, sandbox-rental waits for the attempt-specific
+9. After the runner exits, sandbox-rental waits for the attempt-specific
    GitHub workflow job to reach `status=completed` and `conclusion=success`.
    vm-bridge then attempts to seal each writable durable cache by syncing and
    unmounting guest mounts.
-9. vm-orchestrator flushes, snapshots, clones, ZFS-promotes, and seals each
+10. vm-orchestrator flushes, snapshots, clones, ZFS-promotes, and seals each
    cache that the guest sealed cleanly.
-10. The service records committed generations observed from the host result.
-11. A protected target-branch workflow run promotes per-job, per-cache
+11. The service records committed generations observed from the host result.
+12. A protected target-branch workflow run promotes per-job, per-cache
     generations only after the provider run's required jobs are green.
-12. Failed jobs, cancelled jobs, non-promotable trust contexts, and ambiguous
+13. Failed jobs, cancelled jobs, non-promotable trust contexts, and ambiguous
     seals leave the current pointer unchanged. Successful non-promotable jobs
     may retain a generation for debugging and later pruning.
 

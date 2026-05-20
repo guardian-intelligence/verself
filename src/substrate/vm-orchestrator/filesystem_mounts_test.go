@@ -143,7 +143,7 @@ func TestPrepareFilesystemMountsFallsBackToEmptyMountWhenGenerationSnapshotIsMis
 		MountPath:   "/workspace",
 		FSType:      "ext4",
 		Required:    true,
-	}})
+	}}, nil)
 	if err != nil {
 		t.Fatalf("prepareFilesystemMounts returned error: %v", err)
 	}

@@ -121,30 +121,44 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		return err
 	}
 
+	leaseInitStarted := time.Now()
+	timings := vmproto.LeaseInitTimings{}
+	stepStarted := time.Now()
 	initReq, err := session.waitForLeaseInit(controlCh)
+	timings.WaitForLeaseInitMS = time.Since(stepStarted).Milliseconds()
 	if err != nil {
 		return session.fail(err)
 	}
+	stepStarted = time.Now()
 	if err := session.applyNetwork(initReq.Network); err != nil {
 		return session.fail(err)
 	}
+	timings.ApplyNetworkMS = time.Since(stepStarted).Milliseconds()
+	stepStarted = time.Now()
 	mountResults, err := session.mountFilesystems(initReq.Filesystems)
+	timings.MountFilesystemsMS = time.Since(stepStarted).Milliseconds()
 	if err != nil {
+		timings.TotalLeaseInitMS = time.Since(leaseInitStarted).Milliseconds()
 		if resultErr := session.sendControlSync(vmproto.TypeLeaseInitResult, vmproto.LeaseInitResult{
 			LeaseID:         initReq.LeaseID,
 			Filesystems:     mountResults,
+			Timings:         &timings,
 			ProtocolVersion: vmproto.ProtocolVersion,
 		}); resultErr != nil {
 			return resultErr
 		}
 		return session.fail(err)
 	}
+	stepStarted = time.Now()
 	if err := setWallClock(initReq.HostWallclockUnixNS); err != nil {
 		session.sendLogString("", "system", fmt.Sprintf("%s warning: set wall clock: %v\n", logPrefix, err))
 	}
+	timings.SetWallClockMS = time.Since(stepStarted).Milliseconds()
 
 	localControlCtx, localControlCancel := context.WithCancel(ctx)
+	stepStarted = time.Now()
 	stopLocalControl, err := session.startLocalControlServer(localControlCtx)
+	timings.StartLocalControlMS = time.Since(stepStarted).Milliseconds()
 	if err != nil {
 		localControlCancel()
 		return session.fail(err)
@@ -154,9 +168,11 @@ func runAgent(conn io.ReadWriteCloser, bootStart, readyAt time.Time, sigCh <-cha
 		stopLocalControl()
 	}()
 
+	timings.TotalLeaseInitMS = time.Since(leaseInitStarted).Milliseconds()
 	if resultErr := session.sendControlSync(vmproto.TypeLeaseInitResult, vmproto.LeaseInitResult{
 		LeaseID:         initReq.LeaseID,
 		Filesystems:     mountResults,
+		Timings:         &timings,
 		ProtocolVersion: vmproto.ProtocolVersion,
 	}); resultErr != nil {
 		return resultErr

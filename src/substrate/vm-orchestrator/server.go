@@ -178,8 +178,9 @@ func NewAPIServer(cfg Config, logger *slog.Logger) (*APIServer, error) {
 }
 
 func (s *APIServer) newOrchestrator(opts ...Option) *Orchestrator {
-	all := make([]Option, 0, len(opts)+1)
+	all := make([]Option, 0, len(opts)+2)
 	all = append(all, WithStorageKeyManager(s.keys))
+	all = append(all, withHostState(s.state))
 	all = append(all, opts...)
 	return New(s.cfg, s.logger, all...)
 }
@@ -740,6 +741,39 @@ func (s *APIServer) PruneFilesystemGeneration(ctx context.Context, req *vmrpc.Pr
 	}
 	data, _ := json.Marshal(resp)
 	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
+	return resp, nil
+}
+
+func (s *APIServer) WarmOrgRuntime(ctx context.Context, req *vmrpc.WarmOrgRuntimeRequest) (*vmrpc.WarmOrgRuntimeResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.WarmOrgRuntime")
+	defer span.End()
+	key := strings.TrimSpace(req.GetIdempotencyKey())
+	if key == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key is required")
+	}
+	namespace := storageNamespaceFromProto(req.GetStorageNamespace())
+	if namespace.OrgID == "" || namespace.QuotaBytes == 0 {
+		return nil, status.Error(codes.InvalidArgument, "storage_namespace org_id and quota_bytes are required")
+	}
+	// WarmOrgRuntime is intentionally revalidated on every call: source image
+	// digests can change independently of sandbox-rental's request key.
+	orchestrator := s.newOrchestrator()
+	statusRecord, err := orchestrator.WarmOrgRuntime(ctx, OrgRuntimeWarmSpec{
+		StorageNamespace: namespace,
+		ImageRefs:        append([]string(nil), req.GetImageRefs()...),
+	})
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	resp := orgRuntimeStatusToProto(statusRecord)
+	span.SetAttributes(
+		attribute.String("org.id", statusRecord.StorageNamespace.OrgID),
+		attribute.String("idempotency_key", key),
+		uint64TraceAttribute("storage.quota_bytes", statusRecord.StorageNamespace.QuotaBytes),
+		attribute.Int("zfs.image_ref_count", len(statusRecord.Images)),
+	)
 	return resp, nil
 }
 

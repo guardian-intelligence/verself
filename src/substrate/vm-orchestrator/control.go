@@ -375,48 +375,63 @@ func (c *guestControl) initLease(ctx context.Context, leaseID string, network vm
 		retErr = fmt.Errorf("send lease init: %w", err)
 		return nil, retErr
 	}
-	results, err := c.awaitLeaseInitResult(leaseID, filesystems)
+	results, timings, err := c.awaitLeaseInitResult(leaseID, filesystems)
 	if err != nil {
 		retErr = err
 		return results, err
 	}
+	recordLeaseInitTimingAttrs(ctx, timings)
 	return results, nil
 }
 
-func (c *guestControl) awaitLeaseInitResult(leaseID string, filesystems []vmproto.FilesystemMount) ([]vmproto.FilesystemMountResult, error) {
+func (c *guestControl) awaitLeaseInitResult(leaseID string, filesystems []vmproto.FilesystemMount) ([]vmproto.FilesystemMountResult, *vmproto.LeaseInitTimings, error) {
 	for {
 		env, err := c.recv()
 		if err != nil {
-			return nil, fmt.Errorf("read lease init result: %w", err)
+			return nil, nil, fmt.Errorf("read lease init result: %w", err)
 		}
 		switch env.Type {
 		case vmproto.TypeLeaseInitResult:
 			msg, err := vmproto.DecodePayload[vmproto.LeaseInitResult](env)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if msg.ProtocolVersion != vmproto.ProtocolVersion {
-				return msg.Filesystems, guestProtocolError("await_lease_init_result", "protocol_version mismatch: got %d want %d", msg.ProtocolVersion, vmproto.ProtocolVersion)
+				return msg.Filesystems, msg.Timings, guestProtocolError("await_lease_init_result", "protocol_version mismatch: got %d want %d", msg.ProtocolVersion, vmproto.ProtocolVersion)
 			}
 			if msg.LeaseID != leaseID {
-				return msg.Filesystems, guestProtocolError("await_lease_init_result", "lease mismatch: got %s want %s", msg.LeaseID, leaseID)
+				return msg.Filesystems, msg.Timings, guestProtocolError("await_lease_init_result", "lease mismatch: got %s want %s", msg.LeaseID, leaseID)
 			}
 			if err := validateLeaseInitMountResults(filesystems, msg.Filesystems); err != nil {
-				return msg.Filesystems, err
+				return msg.Filesystems, msg.Timings, err
 			}
-			return msg.Filesystems, nil
+			return msg.Filesystems, msg.Timings, nil
 		case vmproto.TypeHeartbeat:
 			continue
 		case vmproto.TypeFatal:
 			msg, decodeErr := vmproto.DecodePayload[vmproto.Fatal](env)
 			if decodeErr != nil {
-				return nil, decodeErr
+				return nil, nil, decodeErr
 			}
-			return nil, fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
+			return nil, nil, fmt.Errorf("guest fatal: %s", strings.TrimSpace(msg.Message))
 		default:
-			return nil, unexpectedGuestControlFrame("await_lease_init_result", env.Type, vmproto.TypeLeaseInitResult, vmproto.TypeHeartbeat, vmproto.TypeFatal)
+			return nil, nil, unexpectedGuestControlFrame("await_lease_init_result", env.Type, vmproto.TypeLeaseInitResult, vmproto.TypeHeartbeat, vmproto.TypeFatal)
 		}
 	}
+}
+
+func recordLeaseInitTimingAttrs(ctx context.Context, timings *vmproto.LeaseInitTimings) {
+	if timings == nil {
+		return
+	}
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.Int64("guest.lease_init.wait_for_lease_init_ms", timings.WaitForLeaseInitMS),
+		attribute.Int64("guest.lease_init.apply_network_ms", timings.ApplyNetworkMS),
+		attribute.Int64("guest.lease_init.mount_filesystems_ms", timings.MountFilesystemsMS),
+		attribute.Int64("guest.lease_init.set_wall_clock_ms", timings.SetWallClockMS),
+		attribute.Int64("guest.lease_init.start_local_control_ms", timings.StartLocalControlMS),
+		attribute.Int64("guest.lease_init.total_ms", timings.TotalLeaseInitMS),
+	)
 }
 
 func validateLeaseInitMountResults(requested []vmproto.FilesystemMount, results []vmproto.FilesystemMountResult) error {

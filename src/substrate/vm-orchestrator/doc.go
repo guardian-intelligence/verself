@@ -10,14 +10,13 @@
 //
 //  1. Accept a lease with immutable resource shape and a bounded deadline,
 //     returning LeaseStateAcquiring once host-local state is durable.
-//  2. Boot the lease actor asynchronously: clone the substrate zvol with ZFS
-//     COW; clone any composed
-//     toolchain image zvols (gh-actions-runner, etc.) the runner_class
-//     requests, mounted read-only at the configured guest paths.
+//  2. Boot the lease actor asynchronously: assert the org runtime is already
+//     warm, then clone the substrate zvol and any composed toolchain image
+//     zvols the runner_class requests.
 //  3. Allocate a /30 TAP slot for the lease and create the Firecracker jail.
 //  4. Activate Firecracker by restoring a pre-control snapshot when one matches
-//     the prepared zvol layout and runtime ABI, otherwise cold boot and publish
-//     a reusable pre-control snapshot for later leases.
+//     the prepared zvol layout and runtime ABI, otherwise cold boot. Snapshot
+//     cache refresh is a trusted post-promotion path, not lease acquisition.
 //  5. Initialize vm-bridge over a deterministic vsock control stream; LeaseInit
 //     applies per-lease network state, filesystem mounts, and wall clock.
 //  6. Mark the lease ready; StartExec waits for LeaseStateReady before sending

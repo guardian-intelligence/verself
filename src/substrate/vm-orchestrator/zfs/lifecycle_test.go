@@ -192,8 +192,8 @@ func TestPrepareSubstrateCloneEnsuresLeaseDatasetParent(t *testing.T) {
 	if err := lifecycle.PrepareSubstrateClone(context.Background(), lease, image); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ops.ensures[0], "pool/orgs/org_a/workloads/lease-a"; got != want {
-		t.Fatalf("ensured dataset = %q, want %q", got, want)
+	if !containsString(ops.ensures, "pool/orgs/org_a/workloads/lease-a") {
+		t.Fatalf("lease dataset parent was not ensured: %#v", ops.ensures)
 	}
 	if got, want := ops.receives[0], "pool/images/substrate@ready -> pool/orgs/org_a/images/substrate-aaaaaaaa"; got != want {
 		t.Fatalf("receive = %q, want %q", got, want)
