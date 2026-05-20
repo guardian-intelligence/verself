@@ -1,0 +1,53 @@
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+load("@sdk_generator_pip//:requirements.bzl", "requirement")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "stainful_lib",
+    srcs = glob(["src/stainful/**/*.py"]),
+    imports = ["src"],
+    deps = [
+        requirement("httpx"),
+        requirement("jinja2"),
+        requirement("pydantic"),
+        requirement("ruamel-yaml"),
+    ],
+)
+
+py_binary(
+    name = "stainful",
+    main_module = "stainful.cli",
+    deps = [":stainful_lib"],
+)
+
+py_test(
+    name = "pytest",
+    size = "small",
+    srcs = ["tests/run_pytest.py"],
+    data = glob(
+        [
+            "examples/**",
+            "tests/**",
+        ],
+        exclude = [
+            "**/.mypy_cache/**",
+            "**/.pytest_cache/**",
+            "**/.ruff_cache/**",
+            "**/.venv/**",
+            "**/__pycache__/**",
+            "**/*.pyc",
+            "tests/oracles/**",
+        ],
+    ),
+    main = "tests/run_pytest.py",
+    deps = [
+        ":stainful_lib",
+        requirement("httpx"),
+        requirement("mypy"),
+        requirement("pydantic"),
+        requirement("pytest"),
+    ],
+)

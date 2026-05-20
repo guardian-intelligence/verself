@@ -1,0 +1,53 @@
+"""`stainful generate` — the single CLI entry point (DESIGN.md §5).
+
+Wires the four pipeline functions. Unbuilt slices fail loud with a clear message
+rather than producing a half-broken SDK.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from stainful import __version__
+from stainful.errors import StainfulError
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="stainful")
+    parser.add_argument("--version", action="version", version=f"stainful {__version__}")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    gen = sub.add_parser("generate", help="Generate a Python SDK from a spec + config.")
+    gen.add_argument("--spec", required=True, help="Path to the OpenAPI 3.x document.")
+    gen.add_argument("--config", required=True, help="Path to stainless.yml / stainful.yml.")
+    gen.add_argument("--out", required=True, help="Output directory for the SDK.")
+
+    args = parser.parse_args(argv)
+
+    if args.command == "generate":
+        return _generate(args.spec, args.config, args.out)
+    return 2
+
+
+def _generate(spec_path: str, config_path: str, out_dir: str) -> int:
+    # Imports are local so partial slices don't break `--version`/`--help`.
+    from stainful.config.loader import load_config
+    from stainful.emit.python import emit
+    from stainful.ir.builder import build_ir
+    from stainful.openapi.loader import load_spec
+
+    try:
+        config = load_config(config_path)
+        spec = load_spec(spec_path)
+        api = build_ir(spec, config)
+        emit(api, out_dir)
+    except StainfulError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Generated SDK at {out_dir}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

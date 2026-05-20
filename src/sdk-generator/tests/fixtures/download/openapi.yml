@@ -1,0 +1,30 @@
+openapi: 3.0.0
+info:
+  title: Download
+  version: 1.0.0
+servers:
+  - url: https://api.download.test
+paths:
+  /audio/speech:
+    post:
+      operationId: createSpeech
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input, voice]
+              properties:
+                input: { type: string }
+                voice: { type: string }
+      responses:
+        "200":
+          description: the generated audio
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+components:
+  schemas: {}

@@ -1,0 +1,15 @@
+organization:
+  name: upload-sdk
+
+resources:
+  files:
+    methods:
+      create:
+        endpoint: post /files
+
+targets:
+  python:
+    package_name: upload
+
+environments:
+  production: https://api.upload.test

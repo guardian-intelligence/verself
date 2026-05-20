@@ -1,0 +1,15 @@
+organization:
+  name: download-sdk
+
+resources:
+  speech:
+    methods:
+      create:
+        endpoint: post /audio/speech
+
+targets:
+  python:
+    package_name: download
+
+environments:
+  production: https://api.download.test

@@ -1,0 +1,41 @@
+openapi: 3.0.0
+info:
+  title: Paginated
+  version: 1.0.0
+servers:
+  - url: https://api.paginated.test
+paths:
+  /things:
+    get:
+      operationId: listThings
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: a page of things
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, has_more]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Thing" }
+                  has_more: { type: boolean }
+                  next_cursor: { type: string, nullable: true }
+components:
+  schemas:
+    Thing:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }

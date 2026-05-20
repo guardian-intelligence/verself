@@ -1,0 +1,55 @@
+[project]
+name = "stainful"
+version = "0.2.0"
+description = "Fully open-source, drop-in stainless.yml-compatible idiomatic Python SDK generator."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "the stainful contributors" }]
+keywords = ["openapi", "sdk", "codegen", "stainless", "python"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Code Generators",
+]
+
+# The generator itself is dependency-light on purpose (DESIGN §5).
+dependencies = [
+  "ruamel.yaml==0.19.1", # position-aware YAML for quotable diagnostics
+  "jinja2==3.1.6",       # file-template rendering in the emitter
+]
+
+[project.scripts]
+stainful = "stainful.cli:main"
+
+[project.optional-dependencies]
+# Deps the *generated* SDK needs at runtime — not needed to run the generator.
+# Pinned here so the emitter can declare them in the generated pyproject.
+generated-runtime = [
+  "httpx==0.28.1",
+  "pydantic==2.13.4",
+]
+dev = [
+  "pytest==9.0.3",
+  "ruff==0.15.13",
+  "mypy==2.1.0",
+]
+
+[build-system]
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stainful"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Oracles are pinned third-party SDKs (QUALITY_PLAN §3); their own suites are
+# run deliberately by the P3 harness, never by default collection.
+addopts = "--ignore=tests/oracles"
+norecursedirs = ["tests/oracles", "tests/golden"]

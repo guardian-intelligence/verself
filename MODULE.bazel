@@ -112,6 +112,14 @@ host_ansible_pip.parse(
 )
 use_repo(host_ansible_pip, "host_ansible_pip")
 
+sdk_generator_pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+sdk_generator_pip.parse(
+    hub_name = "sdk_generator_pip",
+    python_version = "3.13",
+    requirements_lock = "//src/sdk-generator:requirements_lock.txt",
+)
+use_repo(sdk_generator_pip, "sdk_generator_pip")
+
 zig = use_extension("@rules_zig//zig:extensions.bzl", "zig")
 zig.toolchain(
     default = True,

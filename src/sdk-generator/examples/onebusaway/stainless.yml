@@ -1,0 +1,229 @@
+# yaml-language-server: $schema=https://app.stainlessapi.com/config.schema.json
+
+organization:
+  name: onebusaway-sdk
+  docs: https://developer.onebusaway.org
+  contact: info@onebusaway.org
+
+resources:
+  agencies_with_coverage:
+    methods:
+      list:
+        endpoint: get /api/where/agencies-with-coverage.json
+        paginated: false
+
+  agency:
+    methods:
+      retrieve: get /api/where/agency/{agencyID}.json
+
+  vehicles_for_agency:
+    methods:
+      list:
+        endpoint: get /api/where/vehicles-for-agency/{agencyID}.json
+        paginated: false
+
+  config:
+    methods:
+      retrieve: get /api/where/config.json
+
+  current_time:
+    methods:
+      retrieve: get /api/where/current-time.json
+
+  stops_for_location:
+    methods:
+      list:
+        endpoint: get /api/where/stops-for-location.json
+        paginated: false
+
+  stops_for_route:
+    methods:
+      list:
+        endpoint: get /api/where/stops-for-route/{routeID}.json
+        paginated: false
+
+  stops_for_agency:
+    methods:
+      list:
+        endpoint: get /api/where/stops-for-agency/{agencyID}.json
+        paginated: false
+
+  stop:
+    methods:
+      retrieve: get /api/where/stop/{stopID}.json
+
+  stop_ids_for_agency:
+    methods:
+      list:
+        endpoint: get /api/where/stop-ids-for-agency/{agencyID}.json
+        paginated: false
+
+  schedule_for_stop:
+    methods:
+      retrieve: get /api/where/schedule-for-stop/{stopID}.json
+
+  route:
+    methods:
+      retrieve: get /api/where/route/{routeID}.json
+
+  route_ids_for_agency:
+    methods:
+      list:
+        endpoint: get /api/where/route-ids-for-agency/{agencyID}.json
+        paginated: false
+
+  routes_for_location:
+    methods:
+      list:
+        endpoint: get /api/where/routes-for-location.json
+        paginated: false
+
+  routes_for_agency:
+    methods:
+      list:
+        endpoint: get /api/where/routes-for-agency/{agencyID}.json
+        paginated: false
+
+  schedule_for_route:
+    methods:
+      retrieve: get /api/where/schedule-for-route/{routeID}.json
+
+  arrivals_and_departures_for_location:
+    methods:
+      list:
+        endpoint: get /api/where/arrivals-and-departures-for-location.json
+        paginated: false
+
+  arrival_and_departure:
+    methods:
+      list:
+        endpoint: get /api/where/arrivals-and-departures-for-stop/{stopID}.json
+        paginated: false
+      retrieve: get /api/where/arrival-and-departure-for-stop/{stopID}.json
+
+  trip:
+    methods:
+      retrieve: get /api/where/trip/{tripID}.json
+
+  trips_for_location:
+    methods:
+      list:
+        endpoint: get /api/where/trips-for-location.json
+        paginated: false
+
+  trip-details:
+    methods:
+      retrieve: get /api/where/trip-details/{tripID}.json
+
+  trip_for_vehicle:
+    methods:
+      retrieve: get /api/where/trip-for-vehicle/{vehicleID}.json
+
+  trips_for_route:
+    methods:
+      list:
+        endpoint: get /api/where/trips-for-route/{routeID}.json
+        paginated: false
+
+  report_problem_with_stop:
+    methods:
+      retrieve: get /api/where/report-problem-with-stop/{stopID}.json
+
+  report_problem_with_trip:
+    methods:
+      retrieve: get /api/where/report-problem-with-trip/{tripID}.json
+
+  search_for_stop:
+    methods:
+      list:
+        endpoint: get /api/where/search/stop.json
+        paginated: false
+
+  search_for_route:
+    methods:
+      list:
+        endpoint: get /api/where/search/route.json
+        paginated: false
+
+  block:
+    methods:
+      retrieve: get /api/where/block/{blockID}.json
+
+  shape:
+    methods:
+      retrieve: get /api/where/shape/{shapeID}.json
+
+  $shared:
+    models:
+      references: Reference
+      response_wrapper: ResponseWrapper
+targets:
+  node:
+    package_name: onebusaway-sdk
+    production_repo: OneBusAway/js-sdk
+    publish:
+      npm: true
+  python:
+    package_name: onebusaway
+    production_repo: OneBusAway/python-sdk
+    publish:
+      pypi: true
+
+  go:
+    package_name: onebusaway
+    production_repo: OneBusAway/go-sdk
+    skip: false
+
+  java:
+    reverse_domain: org.onebusaway
+    production_repo: OneBusAway/java-sdk
+    publish:
+      maven:
+        sonatype_platform: portal
+    skip: false
+
+  kotlin:
+    reverse_domain: org.onebusaway
+    production_repo: OneBusAway/kotlin-sdk
+    publish:
+      maven:
+        sonatype_platform: portal
+    skip: false
+  ruby:
+    gem_name: onebusaway-sdk
+    production_repo: OneBusAway/ruby-sdk
+    publish:
+      rubygems: true
+
+settings:
+  license: Apache-2.0
+client_settings:
+  opts:
+    api_key:
+      type: string
+      auth:
+        security_scheme: ApiKeyAuth
+      read_env: ONEBUSAWAY_API_KEY
+      send_as_query_param: key
+
+environments:
+  production: https://api.pugetsound.onebusaway.org
+
+query_settings:
+  nested_format: brackets
+  array_format: repeat
+
+readme:
+  example_requests:
+    default:
+      type: request
+      endpoint: get /api/where/current-time.json
+      params: &ref_0 {}
+    headline:
+      type: request
+      endpoint: get /api/where/current-time.json
+      params: *ref_0
+    pagination:
+      type: request
+      endpoint: get /api/where/agencies-with-coverage.json
+      params: {}

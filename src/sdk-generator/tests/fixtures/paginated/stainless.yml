@@ -1,0 +1,27 @@
+organization:
+  name: paginated-sdk
+
+resources:
+  things:
+    methods:
+      list:
+        endpoint: get /things
+        paginated: true
+
+pagination:
+  - name: cursor_page
+    type: cursor
+    request:
+      cursor: { type: string }
+      limit: { type: integer }
+    response:
+      data: { type: array }
+      has_more: { type: boolean }
+      next_cursor: { type: string, nullable: true }
+
+targets:
+  python:
+    package_name: paginated
+
+environments:
+  production: https://api.paginated.test

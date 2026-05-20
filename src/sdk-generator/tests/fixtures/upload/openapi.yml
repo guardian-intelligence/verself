@@ -1,0 +1,37 @@
+openapi: 3.0.0
+info:
+  title: Upload
+  version: 1.0.0
+servers:
+  - url: https://api.upload.test
+paths:
+  /files:
+    post:
+      operationId: createFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, purpose]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                purpose:
+                  type: string
+      responses:
+        "200":
+          description: the uploaded file
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileObject" }
+components:
+  schemas:
+    FileObject:
+      type: object
+      required: [id, filename]
+      properties:
+        id: { type: string }
+        filename: { type: string }

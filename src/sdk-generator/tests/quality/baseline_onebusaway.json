@@ -1,0 +1,21 @@
+{
+  "exception_recall": 0.875,
+  "missing_exceptions": [
+    "MissingStreamClassError",
+    "StreamAlreadyConsumed"
+  ],
+  "resource_method_recall": 1.0,
+  "method_signature_match": 1.0,
+  "model_name_recall": 0.9489,
+  "export_recall": 0.5122,
+  "counts": {
+    "oracle_exceptions": 16,
+    "oracle_resource_methods": 176,
+    "oracle_models": 176,
+    "oracle_exports": 41
+  },
+  "targets": {
+    "exception_recall": 0.99,
+    "method_signature_match": 0.95
+  }
+}

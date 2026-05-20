@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=https://app.stainlessapi.com/config.schema.json
+
+organization:
+  name: verself-sdk
+  docs: https://verself.sh
+  contact: support@verself.sh
+
+resources:
+  auth:
+    methods:
+      callback:
+        endpoint: get /api/v1/auth/callback
+      accept_member_invite:
+        endpoint: post /api/v1/auth/invites/accept
+      login:
+        endpoint: get /api/v1/auth/login
+      logout:
+        endpoint: get /api/v1/auth/logout
+      select_organization:
+        endpoint: post /api/v1/auth/organization
+      create_resource_token:
+        endpoint: post /api/v1/auth/resource-token
+      get_session:
+        endpoint: get /api/v1/auth/session
+      list_sessions:
+        endpoint: get /api/v1/auth/sessions
+      revoke_session:
+        endpoint: delete /api/v1/auth/sessions/{sessionHandle}
+
+  orgs:
+    methods:
+      list:
+        endpoint: get /api/v1/orgs
+        paginated: false
+      create:
+        endpoint: post /api/v1/orgs
+      get:
+        endpoint: get /api/v1/orgs/{orgId}
+      update:
+        endpoint: patch /api/v1/orgs/{orgId}
+      get_iam_policy:
+        endpoint: post /api/v1/orgs/{orgId}/iamPolicy:get
+      set_iam_policy:
+        endpoint: post /api/v1/orgs/{orgId}/iamPolicy:set
+      test_permissions:
+        endpoint: post /api/v1/orgs/{orgId}/iamPolicy:testPermissions
+
+  members:
+    methods:
+      list:
+        endpoint: get /api/v1/orgs/{orgId}/members
+        paginated: false
+      get:
+        endpoint: get /api/v1/orgs/{orgId}/members/{memberId}
+      invite:
+        endpoint: post /api/v1/orgs/{orgId}/members:invite
+
+  signup_intents:
+    methods:
+      start:
+        endpoint: post /api/v1/signup-intents
+      verify:
+        endpoint: post /api/v1/signup-intents/{signupIntentId}/verification
+
+targets:
+  python:
+    package_name: verself
+    production_repo: guardian-intelligence/verself-python
+    publish:
+      pypi: true
+
+settings:
+  license: MIT
+
+client_settings:
+  opts:
+    access_token:
+      type: string
+      auth:
+        security_scheme: smithy.api.httpBearerAuth
+      read_env: VERSELF_ACCESS_TOKEN
+
+environments:
+  production: https://iam.api.verself.sh

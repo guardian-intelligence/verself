@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://app.stainlessapi.com/config.schema.json
+# Curated second fixture — exercises the §4 capabilities OneBusAway lacks:
+# SSE streaming, oneOf+discriminator unions, typed error body, nullable.
+
+organization:
+  name: chat-sdk
+  docs: https://docs.chat.example
+
+resources:
+  chat:
+    subresources:
+      completions:
+        models:
+          chat_completion: ChatCompletion
+          chat_completion_chunk: ChatCompletionChunk
+        methods:
+          create:
+            endpoint: post /chat/completions
+            streaming:
+              type: sse
+              param_discriminator: stream
+              stream_event_model: ChatCompletionChunk
+
+  $shared:
+    models:
+      event: Event
+      error_body: ErrorBody
+
+targets:
+  python:
+    package_name: chat
+    production_repo: chat/python-sdk
+    publish:
+      pypi: true
+
+settings:
+  license: Apache-2.0
+
+client_settings:
+  opts:
+    api_key:
+      type: string
+      auth:
+        security_scheme: BearerAuth
+      read_env: CHAT_API_KEY
+
+environments:
+  production: https://api.chat.example

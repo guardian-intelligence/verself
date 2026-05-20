@@ -1,0 +1,42 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+# generator output during local testing
+/out/
+/scratch/
+
+# golden _core is copied from src/stainful/runtime at test time
+tests/golden/*/*/_core/
+
+# conformance oracles — fetched at pinned SHAs, never committed
+tests/oracles/
+
+# internal-only docs (kept locally, not part of the public repo)
+RESEARCH.md
+DESIGN.md
+QUALITY_PLAN.md
+.venv312/
+
+# living fidelity scorecard (regenerated each run); baseline is the committed gate
+tests/quality/fidelity_onebusaway.json
+
+tests/quality/upstream_compat.json
+tests/quality/type_parity.json
+demo/out/
+
+# stray uv artifacts if `uv run` is mistakenly run inside a generated SDK
+examples/*/sdk/.venv/
+examples/*/sdk/uv.lock
+
+# editor swap/backup files (e.g. left in the committed example by vim)
+*.swp
+*.swo
+*~
+examples/openai/sdk/
