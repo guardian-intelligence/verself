@@ -1,16 +1,19 @@
--- Golden VM manifests couple Firecracker snapshot artifacts to exact root and
--- durable zvol generations. The migration is idempotent so early pre-release
--- sites can be wiped or advanced without hand-editing bootstrap state.
+-- Golden VM creation is now an explicit async lifecycle. This pre-release
+-- cutover intentionally discards older golden VM manifests so the live schema
+-- cannot represent both checkpointed/committed and queued/creating/published
+-- operation models at once.
 
-ALTER TABLE durable_generation
-    ADD COLUMN IF NOT EXISTS zfs_snapshot_guid TEXT NOT NULL DEFAULT '';
+DROP TABLE IF EXISTS golden_vm_current_pointer;
+DROP TABLE IF EXISTS golden_vm_snapshot_generation;
+DROP TABLE IF EXISTS golden_vm_snapshot;
+DROP TABLE IF EXISTS golden_vm_operation;
 
 ALTER TABLE durable_operation
     ADD COLUMN IF NOT EXISTS promotion_eligible BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS required BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
 
-CREATE TABLE IF NOT EXISTS golden_vm_operation (
+CREATE TABLE golden_vm_operation (
     operation_id                    UUID        PRIMARY KEY,
     execution_id                    UUID        NOT NULL REFERENCES executions(execution_id) ON DELETE CASCADE,
     attempt_id                      UUID        NOT NULL REFERENCES execution_attempts(attempt_id) ON DELETE CASCADE,
@@ -57,47 +60,16 @@ CREATE TABLE IF NOT EXISTS golden_vm_operation (
     UNIQUE (candidate_golden_vm_snapshot_id)
 );
 
-ALTER TABLE golden_vm_operation
-    DROP COLUMN IF EXISTS checkpoint_started_at,
-    DROP COLUMN IF EXISTS checkpointed_at,
-    DROP COLUMN IF EXISTS final_state,
-    ADD COLUMN IF NOT EXISTS generation_set_hash TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS promotion_eligible BOOLEAN NOT NULL DEFAULT false,
-    ADD COLUMN IF NOT EXISTS provider_run_id BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS provider_run_attempt BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS provider_job_id BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS head_sha TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS lease_id TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS exec_id TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS create_job_id BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS snapshot_key TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS root_snapshot_ref TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS root_snapshot_guid TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS vmstate_artifact_ref TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS memory_artifact_ref TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS mount_snapshots_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-    ADD COLUMN IF NOT EXISTS state_bytes BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS memory_bytes BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS create_queued_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS creating_started_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS publishing_started_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS promoting_started_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS promoted_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT 'requested',
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
-
-CREATE INDEX IF NOT EXISTS idx_golden_vm_operation_attempt
+CREATE INDEX idx_golden_vm_operation_attempt
     ON golden_vm_operation (attempt_id, state, requested_at DESC);
-CREATE INDEX IF NOT EXISTS idx_golden_vm_operation_scope
+CREATE INDEX idx_golden_vm_operation_scope
     ON golden_vm_operation (org_id, provider_repository_id, scope_kind, scope_ref, job_shape_id, trust_class, requested_at DESC);
-CREATE INDEX IF NOT EXISTS idx_golden_vm_operation_state
+CREATE INDEX idx_golden_vm_operation_state
     ON golden_vm_operation (state, updated_at);
-CREATE INDEX IF NOT EXISTS idx_golden_vm_operation_run
+CREATE INDEX idx_golden_vm_operation_run
     ON golden_vm_operation (provider_run_id, provider_run_attempt, provider_job_id, head_sha);
 
-CREATE TABLE IF NOT EXISTS golden_vm_snapshot (
+CREATE TABLE golden_vm_snapshot (
     golden_vm_snapshot_id       UUID        PRIMARY KEY,
     operation_id                UUID        NOT NULL REFERENCES golden_vm_operation(operation_id) ON DELETE RESTRICT,
     org_id                      TEXT        NOT NULL CHECK (org_id <> ''),
@@ -142,17 +114,14 @@ CREATE TABLE IF NOT EXISTS golden_vm_snapshot (
     UNIQUE (snapshot_key)
 );
 
-ALTER TABLE golden_vm_snapshot
-    ADD COLUMN IF NOT EXISTS pruned_at TIMESTAMPTZ;
-
-CREATE INDEX IF NOT EXISTS idx_golden_vm_snapshot_scope
+CREATE INDEX idx_golden_vm_snapshot_scope
     ON golden_vm_snapshot (org_id, provider_repository_id, scope_kind, scope_ref, job_shape_id, trust_class, state, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_golden_vm_snapshot_run
+CREATE INDEX idx_golden_vm_snapshot_run
     ON golden_vm_snapshot (provider_run_id, provider_run_attempt, provider_job_id, head_sha);
-CREATE INDEX IF NOT EXISTS idx_golden_vm_snapshot_retention
+CREATE INDEX idx_golden_vm_snapshot_retention
     ON golden_vm_snapshot (state, expires_at, created_at);
 
-CREATE TABLE IF NOT EXISTS golden_vm_snapshot_generation (
+CREATE TABLE golden_vm_snapshot_generation (
     golden_vm_snapshot_id UUID    NOT NULL REFERENCES golden_vm_snapshot(golden_vm_snapshot_id) ON DELETE CASCADE,
     durable_scope_id      UUID    NOT NULL REFERENCES durable_scope(durable_scope_id) ON DELETE RESTRICT,
     durable_generation_id UUID    NOT NULL REFERENCES durable_generation(durable_generation_id) ON DELETE RESTRICT,
@@ -169,10 +138,10 @@ CREATE TABLE IF NOT EXISTS golden_vm_snapshot_generation (
     PRIMARY KEY (golden_vm_snapshot_id, durable_scope_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_golden_vm_snapshot_generation_generation
+CREATE INDEX idx_golden_vm_snapshot_generation_generation
     ON golden_vm_snapshot_generation (durable_generation_id);
 
-CREATE TABLE IF NOT EXISTS golden_vm_current_pointer (
+CREATE TABLE golden_vm_current_pointer (
     org_id                        TEXT        NOT NULL CHECK (org_id <> ''),
     repository_id                 BIGINT      NOT NULL CHECK (repository_id > 0),
     provider                      TEXT        NOT NULL,

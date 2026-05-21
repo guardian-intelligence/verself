@@ -334,18 +334,19 @@ INSERT INTO durable_operation (
     operation_id, execution_id, attempt_id, allocation_id, durable_scope_id,
     source_generation_id, source_snapshot_ref, source_skip_reason, candidate_generation_id,
     mount_name, internal_mount_path, bind_paths_json, trust_class,
-    requested_at, final_state
+    promotion_eligible, required, sort_order, requested_at, final_state
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7,
     $8, $9, $10, $11,
     $12::jsonb, $13,
-    $14, 'requested'
+    $14, $15, $16,
+    $17, 'requested'
 )
 ON CONFLICT (operation_id) DO UPDATE SET requested_at = durable_operation.requested_at
 RETURNING operation_id, durable_scope_id, source_generation_id, source_snapshot_ref, source_skip_reason,
           candidate_generation_id, mount_name, internal_mount_path, bind_paths_json,
-          trust_class
+          trust_class, promotion_eligible, required, sort_order
 `
 
 type InsertDurableOperationParams struct {
@@ -362,6 +363,9 @@ type InsertDurableOperationParams struct {
 	InternalMountPath     string
 	BindPathsJson         []byte
 	TrustClass            string
+	PromotionEligible     bool
+	Required              bool
+	SortOrder             int32
 	RequestedAt           pgtype.Timestamptz
 }
 
@@ -376,6 +380,9 @@ type InsertDurableOperationRow struct {
 	InternalMountPath     string
 	BindPathsJson         []byte
 	TrustClass            string
+	PromotionEligible     bool
+	Required              bool
+	SortOrder             int32
 }
 
 func (q *Queries) InsertDurableOperation(ctx context.Context, arg InsertDurableOperationParams) (InsertDurableOperationRow, error) {
@@ -393,6 +400,9 @@ func (q *Queries) InsertDurableOperation(ctx context.Context, arg InsertDurableO
 		arg.InternalMountPath,
 		arg.BindPathsJson,
 		arg.TrustClass,
+		arg.PromotionEligible,
+		arg.Required,
+		arg.SortOrder,
 		arg.RequestedAt,
 	)
 	var i InsertDurableOperationRow
@@ -407,6 +417,9 @@ func (q *Queries) InsertDurableOperation(ctx context.Context, arg InsertDurableO
 		&i.InternalMountPath,
 		&i.BindPathsJson,
 		&i.TrustClass,
+		&i.PromotionEligible,
+		&i.Required,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -954,6 +967,87 @@ func (q *Queries) ListEvictableDurableGenerations(ctx context.Context, arg ListE
 	return items, nil
 }
 
+const listGoldenVMDurableOperations = `-- name: ListGoldenVMDurableOperations :many
+SELECT
+    op.operation_id,
+    op.durable_scope_id,
+    op.source_generation_id,
+    op.source_snapshot_ref,
+    op.source_skip_reason,
+    op.candidate_generation_id,
+    op.mount_name,
+    op.internal_mount_path,
+    op.bind_paths_json,
+    op.trust_class,
+    op.promotion_eligible,
+    op.required,
+    op.sort_order,
+    op.final_state,
+    scope.cache_name
+FROM durable_operation op
+JOIN durable_scope scope ON scope.durable_scope_id = op.durable_scope_id
+WHERE op.attempt_id = $1
+ORDER BY op.sort_order, scope.cache_name, op.operation_id
+`
+
+type ListGoldenVMDurableOperationsParams struct {
+	AttemptID uuid.UUID
+}
+
+type ListGoldenVMDurableOperationsRow struct {
+	OperationID           uuid.UUID
+	DurableScopeID        uuid.UUID
+	SourceGenerationID    *uuid.UUID
+	SourceSnapshotRef     string
+	SourceSkipReason      string
+	CandidateGenerationID uuid.UUID
+	MountName             string
+	InternalMountPath     string
+	BindPathsJson         []byte
+	TrustClass            string
+	PromotionEligible     bool
+	Required              bool
+	SortOrder             int32
+	FinalState            string
+	CacheName             string
+}
+
+func (q *Queries) ListGoldenVMDurableOperations(ctx context.Context, arg ListGoldenVMDurableOperationsParams) ([]ListGoldenVMDurableOperationsRow, error) {
+	rows, err := q.db.Query(ctx, listGoldenVMDurableOperations, arg.AttemptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGoldenVMDurableOperationsRow{}
+	for rows.Next() {
+		var i ListGoldenVMDurableOperationsRow
+		if err := rows.Scan(
+			&i.OperationID,
+			&i.DurableScopeID,
+			&i.SourceGenerationID,
+			&i.SourceSnapshotRef,
+			&i.SourceSkipReason,
+			&i.CandidateGenerationID,
+			&i.MountName,
+			&i.InternalMountPath,
+			&i.BindPathsJson,
+			&i.TrustClass,
+			&i.PromotionEligible,
+			&i.Required,
+			&i.SortOrder,
+			&i.FinalState,
+			&i.CacheName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPrunableDurableGenerations = `-- name: ListPrunableDurableGenerations :many
 SELECT
     g.durable_generation_id,
@@ -1074,6 +1168,12 @@ FROM durable_operation op
 JOIN execution_attempts a ON a.attempt_id = op.attempt_id
 WHERE op.final_state IN ('requested', 'mounted')
   AND a.state IN ('succeeded', 'failed', 'canceled', 'lost')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM golden_vm_operation g
+      WHERE g.attempt_id = a.attempt_id
+        AND g.state IN ('create_queued', 'creating', 'created', 'publishing', 'published', 'promoting')
+  )
 `
 
 type ListTerminalAttemptsWithOpenDurableOperationsRow struct {

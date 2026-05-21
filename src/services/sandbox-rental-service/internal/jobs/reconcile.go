@@ -3,10 +3,12 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	billingclient "github.com/verself/billing-service/client"
+	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	vmorchestrator "github.com/verself/vm-orchestrator"
 	"google.golang.org/grpc/codes"
@@ -31,6 +33,9 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.reconcileTerminalDurableOperations(ctx); err != nil {
 		return err
 	}
+	if err := s.reconcileGoldenVMCreateOperations(ctx); err != nil {
+		return err
+	}
 	if err := s.observeDurableStorage(ctx); err != nil {
 		return err
 	}
@@ -51,6 +56,48 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	}
 	if err := s.reconcileQueuedRunnerJobs(ctx); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *Service) reconcileGoldenVMCreateOperations(ctx context.Context) error {
+	if s.Scheduler == nil {
+		return nil
+	}
+	rows, err := s.storeQueries().ListGoldenVMCreateOperationsForReconcile(ctx, store.ListGoldenVMCreateOperationsForReconcileParams{
+		StaleSeconds: int32(reconcileStaleAfter.Seconds()),
+		LimitCount:   50,
+	})
+	if err != nil {
+		return fmt.Errorf("query stale golden VM create operations: %w", err)
+	}
+	for _, operationID := range rows {
+		op, err := s.storeQueries().GetGoldenVMOperationForCreate(ctx, store.GetGoldenVMOperationForCreateParams{OperationID: operationID})
+		if err != nil {
+			return fmt.Errorf("load stale golden VM operation %s: %w", operationID, err)
+		}
+		if goldenVMOperationTerminal(op.State) {
+			continue
+		}
+		if strings.TrimSpace(op.LeaseID) == "" {
+			_ = s.storeQueries().MarkGoldenVMOperationFailed(ctx, store.MarkGoldenVMOperationFailedParams{
+				RecordedAt:    pgTime(time.Now().UTC()),
+				FailureReason: "reconciled_missing_lease",
+				OperationID:   op.OperationID,
+			})
+			continue
+		}
+		if _, err := s.Scheduler.EnqueueGoldenVMCreate(ctx, scheduler.GoldenVMCreateRequest{
+			OperationID:   op.OperationID.String(),
+			ExecutionID:   op.ExecutionID.String(),
+			AttemptID:     op.AttemptID.String(),
+			LeaseID:       op.LeaseID,
+			ExecID:        op.ExecID,
+			CorrelationID: CorrelationIDFromContext(ctx),
+			TraceParent:   traceParent(ctx),
+		}); err != nil {
+			return fmt.Errorf("enqueue stale golden VM create %s: %w", op.OperationID, err)
+		}
 	}
 	return nil
 }

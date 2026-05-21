@@ -574,6 +574,9 @@ CREATE TABLE durable_operation (
     internal_mount_path     TEXT        NOT NULL,
     bind_paths_json         JSONB       NOT NULL DEFAULT '[]'::jsonb,
     trust_class             TEXT        NOT NULL,
+    promotion_eligible      BOOLEAN     NOT NULL DEFAULT false,
+    required                BOOLEAN     NOT NULL DEFAULT false,
+    sort_order              INTEGER     NOT NULL DEFAULT 0,
     requested_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     host_accepted_at        TIMESTAMPTZ,
     mounted_at              TIMESTAMPTZ,
@@ -651,24 +654,47 @@ CREATE TABLE golden_vm_operation (
     job_shape_id                    UUID        NOT NULL REFERENCES job_shape(job_shape_id) ON DELETE RESTRICT,
     trust_class                     TEXT        NOT NULL,
     source_generation_set_hash      TEXT        NOT NULL DEFAULT '',
+    generation_set_hash             TEXT        NOT NULL DEFAULT '',
     candidate_golden_vm_snapshot_id UUID        NOT NULL,
+    promotion_eligible              BOOLEAN     NOT NULL DEFAULT false,
     provider_run_id                 BIGINT      NOT NULL DEFAULT 0,
     provider_run_attempt            BIGINT      NOT NULL DEFAULT 0,
     provider_job_id                 BIGINT      NOT NULL DEFAULT 0,
     head_sha                        TEXT        NOT NULL DEFAULT '',
+    lease_id                        TEXT        NOT NULL DEFAULT '',
+    exec_id                         TEXT        NOT NULL DEFAULT '',
+    create_job_id                   BIGINT      NOT NULL DEFAULT 0,
+    snapshot_key                    TEXT        NOT NULL DEFAULT '',
+    root_snapshot_ref               TEXT        NOT NULL DEFAULT '',
+    root_snapshot_guid              TEXT        NOT NULL DEFAULT '',
+    vmstate_artifact_ref            TEXT        NOT NULL DEFAULT '',
+    memory_artifact_ref             TEXT        NOT NULL DEFAULT '',
+    mount_snapshots_json            JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    state_bytes                     BIGINT      NOT NULL DEFAULT 0,
+    memory_bytes                    BIGINT      NOT NULL DEFAULT 0,
     requested_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    checkpoint_started_at           TIMESTAMPTZ,
-    checkpointed_at                 TIMESTAMPTZ,
+    create_queued_at                TIMESTAMPTZ,
+    creating_started_at             TIMESTAMPTZ,
+    created_at                      TIMESTAMPTZ,
+    publishing_started_at           TIMESTAMPTZ,
+    published_at                    TIMESTAMPTZ,
+    promoting_started_at            TIMESTAMPTZ,
+    promoted_at                     TIMESTAMPTZ,
     result_recorded_at              TIMESTAMPTZ,
-    final_state                     TEXT        NOT NULL CHECK (final_state IN ('requested', 'checkpointed', 'committed', 'skipped', 'failed')),
+    state                           TEXT        NOT NULL CHECK (state IN ('requested', 'create_queued', 'creating', 'created', 'publishing', 'published', 'promoting', 'committed', 'skipped', 'failed')),
     failure_reason                  TEXT        NOT NULL DEFAULT '',
+    updated_at                      TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (candidate_golden_vm_snapshot_id)
 );
 
 CREATE INDEX idx_golden_vm_operation_attempt
-    ON golden_vm_operation (attempt_id, final_state, requested_at DESC);
+    ON golden_vm_operation (attempt_id, state, requested_at DESC);
 CREATE INDEX idx_golden_vm_operation_scope
     ON golden_vm_operation (org_id, provider_repository_id, scope_kind, scope_ref, job_shape_id, trust_class, requested_at DESC);
+CREATE INDEX idx_golden_vm_operation_state
+    ON golden_vm_operation (state, updated_at);
+CREATE INDEX idx_golden_vm_operation_run
+    ON golden_vm_operation (provider_run_id, provider_run_attempt, provider_job_id, head_sha);
 
 CREATE TABLE golden_vm_snapshot (
     golden_vm_snapshot_id       UUID        PRIMARY KEY,

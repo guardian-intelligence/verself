@@ -16,6 +16,7 @@ go_library(
         "github_execution_auth.go",
         "github_runner.go",
         "github_workflow_invocation.go",
+        "golden_vm_create.go",
         "jobs.go",
         "logs_search.go",
         "org_runtime.go",

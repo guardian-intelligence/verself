@@ -53,6 +53,15 @@ type GoldenRunPromoteWorker struct {
 	service *Service
 }
 
+type GoldenVMCreateWorker struct {
+	river.WorkerDefaults[scheduler.GoldenVMCreateArgs]
+	service *Service
+}
+
+func (w *GoldenVMCreateWorker) Timeout(*river.Job[scheduler.GoldenVMCreateArgs]) time.Duration {
+	return -1
+}
+
 func RegisterSchedulerWorkers(workers *river.Workers, service *Service) error {
 	if service == nil {
 		return fmt.Errorf("register scheduler workers: nil jobs service")
@@ -63,6 +72,7 @@ func RegisterSchedulerWorkers(workers *river.Workers, service *Service) error {
 	river.AddWorker(workers, &RunnerJobBindWorker{service: service})
 	river.AddWorker(workers, &RunnerCleanupWorker{service: service})
 	river.AddWorker(workers, &RunnerRepositorySyncWorker{service: service})
+	river.AddWorker(workers, &GoldenVMCreateWorker{service: service})
 	river.AddWorker(workers, &GoldenRunPromoteWorker{service: service})
 	return nil
 }
@@ -202,6 +212,32 @@ func (w *GoldenRunPromoteWorker) Work(ctx context.Context, job *river.Job[schedu
 		attribute.String("verself.correlation_id", args.CorrelationID),
 	)
 	if err := w.service.PromoteGoldenRun(ctx, args); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	return nil
+}
+
+func (w *GoldenVMCreateWorker) Work(ctx context.Context, job *river.Job[scheduler.GoldenVMCreateArgs]) error {
+	args := job.Args
+	ctx = WithCorrelationID(ctx, args.CorrelationID)
+	operationID, err := uuid.Parse(args.OperationID)
+	if err != nil {
+		return fmt.Errorf("parse operation_id: %w", err)
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("golden_vm.operation_id", operationID.String()),
+		attribute.String("execution.id", args.ExecutionID),
+		attribute.String("attempt.id", args.AttemptID),
+		attribute.String("lease.id", args.LeaseID),
+		attribute.Int64("river.job_id", job.ID),
+		attribute.String("river.job_kind", scheduler.GoldenVMCreateKind),
+		attribute.String("river.queue", scheduler.QueueOrchestrator),
+		attribute.String("verself.correlation_id", args.CorrelationID),
+	)
+	if err := w.service.CreateGoldenVM(ctx, operationID, job.ID); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err

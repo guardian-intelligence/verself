@@ -28,3 +28,49 @@ type ExecutionSchedule struct {
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
 }
+
+type GoldenVmOperation struct {
+	OperationID                 uuid.UUID
+	ExecutionID                 uuid.UUID
+	AttemptID                   uuid.UUID
+	AllocationID                *uuid.UUID
+	OrgID                       string
+	RepositoryID                int64
+	Provider                    string
+	ProviderRepositoryID        int64
+	ScopeKind                   string
+	ScopeRef                    string
+	JobShapeID                  uuid.UUID
+	TrustClass                  string
+	SourceGenerationSetHash     string
+	GenerationSetHash           string
+	CandidateGoldenVmSnapshotID uuid.UUID
+	PromotionEligible           bool
+	ProviderRunID               int64
+	ProviderRunAttempt          int64
+	ProviderJobID               int64
+	HeadSha                     string
+	LeaseID                     string
+	ExecID                      string
+	CreateJobID                 int64
+	SnapshotKey                 string
+	RootSnapshotRef             string
+	RootSnapshotGuid            string
+	VmstateArtifactRef          string
+	MemoryArtifactRef           string
+	MountSnapshotsJson          []byte
+	StateBytes                  int64
+	MemoryBytes                 int64
+	RequestedAt                 pgtype.Timestamptz
+	CreateQueuedAt              pgtype.Timestamptz
+	CreatingStartedAt           pgtype.Timestamptz
+	CreatedAt                   pgtype.Timestamptz
+	PublishingStartedAt         pgtype.Timestamptz
+	PublishedAt                 pgtype.Timestamptz
+	PromotingStartedAt          pgtype.Timestamptz
+	PromotedAt                  pgtype.Timestamptz
+	ResultRecordedAt            pgtype.Timestamptz
+	State                       string
+	FailureReason               string
+	UpdatedAt                   pgtype.Timestamptz
+}

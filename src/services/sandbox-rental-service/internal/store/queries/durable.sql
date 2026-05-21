@@ -53,18 +53,19 @@ INSERT INTO durable_operation (
     operation_id, execution_id, attempt_id, allocation_id, durable_scope_id,
     source_generation_id, source_snapshot_ref, source_skip_reason, candidate_generation_id,
     mount_name, internal_mount_path, bind_paths_json, trust_class,
-    requested_at, final_state
+    promotion_eligible, required, sort_order, requested_at, final_state
 ) VALUES (
     sqlc.arg(operation_id), sqlc.arg(execution_id), sqlc.arg(attempt_id), sqlc.narg(allocation_id),
     sqlc.arg(durable_scope_id), sqlc.narg(source_generation_id), sqlc.arg(source_snapshot_ref),
     sqlc.arg(source_skip_reason), sqlc.arg(candidate_generation_id), sqlc.arg(mount_name), sqlc.arg(internal_mount_path),
     sqlc.arg(bind_paths_json)::jsonb, sqlc.arg(trust_class),
+    sqlc.arg(promotion_eligible), sqlc.arg(required), sqlc.arg(sort_order),
     sqlc.arg(requested_at), 'requested'
 )
 ON CONFLICT (operation_id) DO UPDATE SET requested_at = durable_operation.requested_at
 RETURNING operation_id, durable_scope_id, source_generation_id, source_snapshot_ref, source_skip_reason,
           candidate_generation_id, mount_name, internal_mount_path, bind_paths_json,
-          trust_class;
+          trust_class, promotion_eligible, required, sort_order;
 
 -- name: TouchDurableGenerationLastUsed :exec
 UPDATE durable_generation
@@ -531,6 +532,28 @@ WHERE g.provider_run_id = sqlc.arg(provider_run_id)
   AND g.state = 'committed'
 ORDER BY g.committed_at, g.durable_generation_id;
 
+-- name: ListGoldenVMDurableOperations :many
+SELECT
+    op.operation_id,
+    op.durable_scope_id,
+    op.source_generation_id,
+    op.source_snapshot_ref,
+    op.source_skip_reason,
+    op.candidate_generation_id,
+    op.mount_name,
+    op.internal_mount_path,
+    op.bind_paths_json,
+    op.trust_class,
+    op.promotion_eligible,
+    op.required,
+    op.sort_order,
+    op.final_state,
+    scope.cache_name
+FROM durable_operation op
+JOIN durable_scope scope ON scope.durable_scope_id = op.durable_scope_id
+WHERE op.attempt_id = sqlc.arg(attempt_id)
+ORDER BY op.sort_order, scope.cache_name, op.operation_id;
+
 -- name: ListTerminalAttemptsWithOpenDurableOperations :many
 SELECT DISTINCT
     a.execution_id,
@@ -540,7 +563,13 @@ SELECT DISTINCT
 FROM durable_operation op
 JOIN execution_attempts a ON a.attempt_id = op.attempt_id
 WHERE op.final_state IN ('requested', 'mounted')
-  AND a.state IN ('succeeded', 'failed', 'canceled', 'lost');
+  AND a.state IN ('succeeded', 'failed', 'canceled', 'lost')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM golden_vm_operation g
+      WHERE g.attempt_id = a.attempt_id
+        AND g.state IN ('create_queued', 'creating', 'created', 'publishing', 'published', 'promoting')
+  );
 
 -- name: GetDurableRunRepository :one
 SELECT

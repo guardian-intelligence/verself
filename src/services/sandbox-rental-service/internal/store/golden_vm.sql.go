@@ -89,20 +89,125 @@ func (q *Queries) GetCurrentGoldenVMActivation(ctx context.Context, arg GetCurre
 	return i, err
 }
 
+const getGoldenVMOperationForCreate = `-- name: GetGoldenVMOperationForCreate :one
+SELECT
+    operation_id,
+    execution_id,
+    attempt_id,
+    allocation_id,
+    org_id,
+    repository_id,
+    provider,
+    provider_repository_id,
+    scope_kind,
+    scope_ref,
+    job_shape_id,
+    trust_class,
+    source_generation_set_hash,
+    generation_set_hash,
+    candidate_golden_vm_snapshot_id,
+    promotion_eligible,
+    provider_run_id,
+    provider_run_attempt,
+    provider_job_id,
+    head_sha,
+    lease_id,
+    exec_id,
+    create_job_id,
+    snapshot_key,
+    root_snapshot_ref,
+    root_snapshot_guid,
+    vmstate_artifact_ref,
+    memory_artifact_ref,
+    mount_snapshots_json,
+    state_bytes,
+    memory_bytes,
+    requested_at,
+    create_queued_at,
+    creating_started_at,
+    created_at,
+    publishing_started_at,
+    published_at,
+    promoting_started_at,
+    promoted_at,
+    result_recorded_at,
+    state,
+    failure_reason,
+    updated_at
+FROM golden_vm_operation
+WHERE operation_id = $1
+`
+
+type GetGoldenVMOperationForCreateParams struct {
+	OperationID uuid.UUID
+}
+
+func (q *Queries) GetGoldenVMOperationForCreate(ctx context.Context, arg GetGoldenVMOperationForCreateParams) (GoldenVmOperation, error) {
+	row := q.db.QueryRow(ctx, getGoldenVMOperationForCreate, arg.OperationID)
+	var i GoldenVmOperation
+	err := row.Scan(
+		&i.OperationID,
+		&i.ExecutionID,
+		&i.AttemptID,
+		&i.AllocationID,
+		&i.OrgID,
+		&i.RepositoryID,
+		&i.Provider,
+		&i.ProviderRepositoryID,
+		&i.ScopeKind,
+		&i.ScopeRef,
+		&i.JobShapeID,
+		&i.TrustClass,
+		&i.SourceGenerationSetHash,
+		&i.GenerationSetHash,
+		&i.CandidateGoldenVmSnapshotID,
+		&i.PromotionEligible,
+		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
+		&i.ProviderJobID,
+		&i.HeadSha,
+		&i.LeaseID,
+		&i.ExecID,
+		&i.CreateJobID,
+		&i.SnapshotKey,
+		&i.RootSnapshotRef,
+		&i.RootSnapshotGuid,
+		&i.VmstateArtifactRef,
+		&i.MemoryArtifactRef,
+		&i.MountSnapshotsJson,
+		&i.StateBytes,
+		&i.MemoryBytes,
+		&i.RequestedAt,
+		&i.CreateQueuedAt,
+		&i.CreatingStartedAt,
+		&i.CreatedAt,
+		&i.PublishingStartedAt,
+		&i.PublishedAt,
+		&i.PromotingStartedAt,
+		&i.PromotedAt,
+		&i.ResultRecordedAt,
+		&i.State,
+		&i.FailureReason,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const insertGoldenVMOperation = `-- name: InsertGoldenVMOperation :one
 INSERT INTO golden_vm_operation (
     operation_id, execution_id, attempt_id, allocation_id, org_id, repository_id,
     provider, provider_repository_id, scope_kind, scope_ref, job_shape_id,
     trust_class, source_generation_set_hash, candidate_golden_vm_snapshot_id,
-    provider_run_id, provider_run_attempt, provider_job_id, head_sha,
-    requested_at, final_state
+    promotion_eligible, provider_run_id, provider_run_attempt, provider_job_id,
+    head_sha, requested_at, updated_at, state
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6, $7, $8,
     $9, $10, $11, $12,
     $13, $14,
-    $15, $16, $17, $18,
-    $19, 'requested'
+    $15, $16, $17,
+    $18, $19, $20,
+    $20, 'requested'
 )
 ON CONFLICT (operation_id) DO UPDATE SET requested_at = golden_vm_operation.requested_at
 RETURNING
@@ -126,6 +231,7 @@ type InsertGoldenVMOperationParams struct {
 	TrustClass                  string
 	SourceGenerationSetHash     string
 	CandidateGoldenVmSnapshotID uuid.UUID
+	PromotionEligible           bool
 	ProviderRunID               int64
 	ProviderRunAttempt          int64
 	ProviderJobID               int64
@@ -155,6 +261,7 @@ func (q *Queries) InsertGoldenVMOperation(ctx context.Context, arg InsertGoldenV
 		arg.TrustClass,
 		arg.SourceGenerationSetHash,
 		arg.CandidateGoldenVmSnapshotID,
+		arg.PromotionEligible,
 		arg.ProviderRunID,
 		arg.ProviderRunAttempt,
 		arg.ProviderJobID,
@@ -345,6 +452,40 @@ func (q *Queries) InsertGoldenVMSnapshotGeneration(ctx context.Context, arg Inse
 		arg.SortOrder,
 	)
 	return err
+}
+
+const listGoldenVMCreateOperationsForReconcile = `-- name: ListGoldenVMCreateOperationsForReconcile :many
+SELECT operation_id
+FROM golden_vm_operation
+WHERE state IN ('create_queued', 'creating', 'created', 'publishing', 'published', 'promoting')
+  AND updated_at < (now() - ($1 * interval '1 second'))
+ORDER BY updated_at, operation_id
+LIMIT $2
+`
+
+type ListGoldenVMCreateOperationsForReconcileParams struct {
+	StaleSeconds interface{}
+	LimitCount   int32
+}
+
+func (q *Queries) ListGoldenVMCreateOperationsForReconcile(ctx context.Context, arg ListGoldenVMCreateOperationsForReconcileParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listGoldenVMCreateOperationsForReconcile, arg.StaleSeconds, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var operation_id uuid.UUID
+		if err := rows.Scan(&operation_id); err != nil {
+			return nil, err
+		}
+		items = append(items, operation_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listGoldenVMSnapshotCandidatesForRun = `-- name: ListGoldenVMSnapshotCandidatesForRun :many
@@ -547,48 +688,15 @@ func (q *Queries) ListPrunableGoldenVMSnapshots(ctx context.Context, arg ListPru
 	return items, nil
 }
 
-const markGoldenVMOperationCheckpointStarted = `-- name: MarkGoldenVMOperationCheckpointStarted :exec
-UPDATE golden_vm_operation
-SET checkpoint_started_at = COALESCE(checkpoint_started_at, $1)
-WHERE operation_id = $2
-  AND final_state = 'requested'
-`
-
-type MarkGoldenVMOperationCheckpointStartedParams struct {
-	CheckpointStartedAt pgtype.Timestamptz
-	OperationID         uuid.UUID
-}
-
-func (q *Queries) MarkGoldenVMOperationCheckpointStarted(ctx context.Context, arg MarkGoldenVMOperationCheckpointStartedParams) error {
-	_, err := q.db.Exec(ctx, markGoldenVMOperationCheckpointStarted, arg.CheckpointStartedAt, arg.OperationID)
-	return err
-}
-
-const markGoldenVMOperationCheckpointed = `-- name: MarkGoldenVMOperationCheckpointed :exec
-UPDATE golden_vm_operation
-SET checkpointed_at = COALESCE(checkpointed_at, $1),
-    final_state = 'checkpointed'
-WHERE operation_id = $2
-  AND final_state = 'requested'
-`
-
-type MarkGoldenVMOperationCheckpointedParams struct {
-	CheckpointedAt pgtype.Timestamptz
-	OperationID    uuid.UUID
-}
-
-func (q *Queries) MarkGoldenVMOperationCheckpointed(ctx context.Context, arg MarkGoldenVMOperationCheckpointedParams) error {
-	_, err := q.db.Exec(ctx, markGoldenVMOperationCheckpointed, arg.CheckpointedAt, arg.OperationID)
-	return err
-}
-
 const markGoldenVMOperationCommitted = `-- name: MarkGoldenVMOperationCommitted :exec
 UPDATE golden_vm_operation
 SET result_recorded_at = COALESCE(result_recorded_at, $1),
-    final_state = 'committed',
+    promoted_at = COALESCE(promoted_at, $1),
+    state = 'committed',
+    updated_at = $1,
     failure_reason = ''
 WHERE operation_id = $2
-  AND final_state IN ('requested', 'checkpointed')
+  AND state IN ('published', 'promoting', 'committed')
 `
 
 type MarkGoldenVMOperationCommittedParams struct {
@@ -601,13 +709,120 @@ func (q *Queries) MarkGoldenVMOperationCommitted(ctx context.Context, arg MarkGo
 	return err
 }
 
+const markGoldenVMOperationCreateQueued = `-- name: MarkGoldenVMOperationCreateQueued :execrows
+UPDATE golden_vm_operation
+SET state = 'create_queued',
+    lease_id = $1,
+    exec_id = $2,
+    create_job_id = $3,
+    create_queued_at = COALESCE(create_queued_at, $4),
+    updated_at = $4
+WHERE operation_id = $5
+  AND state = 'requested'
+`
+
+type MarkGoldenVMOperationCreateQueuedParams struct {
+	LeaseID     string
+	ExecID      string
+	CreateJobID int64
+	RecordedAt  pgtype.Timestamptz
+	OperationID uuid.UUID
+}
+
+func (q *Queries) MarkGoldenVMOperationCreateQueued(ctx context.Context, arg MarkGoldenVMOperationCreateQueuedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markGoldenVMOperationCreateQueued,
+		arg.LeaseID,
+		arg.ExecID,
+		arg.CreateJobID,
+		arg.RecordedAt,
+		arg.OperationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markGoldenVMOperationCreated = `-- name: MarkGoldenVMOperationCreated :execrows
+UPDATE golden_vm_operation
+SET state = 'created',
+    snapshot_key = $1,
+    root_snapshot_ref = $2,
+    root_snapshot_guid = $3,
+    vmstate_artifact_ref = $4,
+    memory_artifact_ref = $5,
+    mount_snapshots_json = $6::jsonb,
+    state_bytes = $7,
+    memory_bytes = $8,
+    created_at = COALESCE(created_at, $9),
+    updated_at = $9,
+    failure_reason = ''
+WHERE operation_id = $10
+  AND state IN ('creating', 'created')
+`
+
+type MarkGoldenVMOperationCreatedParams struct {
+	SnapshotKey        string
+	RootSnapshotRef    string
+	RootSnapshotGuid   string
+	VmstateArtifactRef string
+	MemoryArtifactRef  string
+	MountSnapshotsJson []byte
+	StateBytes         int64
+	MemoryBytes        int64
+	RecordedAt         pgtype.Timestamptz
+	OperationID        uuid.UUID
+}
+
+func (q *Queries) MarkGoldenVMOperationCreated(ctx context.Context, arg MarkGoldenVMOperationCreatedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markGoldenVMOperationCreated,
+		arg.SnapshotKey,
+		arg.RootSnapshotRef,
+		arg.RootSnapshotGuid,
+		arg.VmstateArtifactRef,
+		arg.MemoryArtifactRef,
+		arg.MountSnapshotsJson,
+		arg.StateBytes,
+		arg.MemoryBytes,
+		arg.RecordedAt,
+		arg.OperationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markGoldenVMOperationCreating = `-- name: MarkGoldenVMOperationCreating :execrows
+UPDATE golden_vm_operation
+SET state = 'creating',
+    creating_started_at = COALESCE(creating_started_at, $1),
+    updated_at = $1
+WHERE operation_id = $2
+  AND state IN ('requested', 'create_queued', 'creating')
+`
+
+type MarkGoldenVMOperationCreatingParams struct {
+	RecordedAt  pgtype.Timestamptz
+	OperationID uuid.UUID
+}
+
+func (q *Queries) MarkGoldenVMOperationCreating(ctx context.Context, arg MarkGoldenVMOperationCreatingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markGoldenVMOperationCreating, arg.RecordedAt, arg.OperationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markGoldenVMOperationFailed = `-- name: MarkGoldenVMOperationFailed :exec
 UPDATE golden_vm_operation
 SET result_recorded_at = COALESCE(result_recorded_at, $1),
-    final_state = 'failed',
+    state = 'failed',
+    updated_at = $1,
     failure_reason = $2
 WHERE operation_id = $3
-  AND final_state IN ('requested', 'checkpointed')
+  AND state IN ('requested', 'create_queued', 'creating', 'created', 'publishing', 'published', 'promoting')
 `
 
 type MarkGoldenVMOperationFailedParams struct {
@@ -621,13 +836,82 @@ func (q *Queries) MarkGoldenVMOperationFailed(ctx context.Context, arg MarkGolde
 	return err
 }
 
+const markGoldenVMOperationPromoting = `-- name: MarkGoldenVMOperationPromoting :execrows
+UPDATE golden_vm_operation
+SET state = 'promoting',
+    promoting_started_at = COALESCE(promoting_started_at, $1),
+    updated_at = $1
+WHERE operation_id = $2
+  AND state IN ('published', 'promoting')
+`
+
+type MarkGoldenVMOperationPromotingParams struct {
+	RecordedAt  pgtype.Timestamptz
+	OperationID uuid.UUID
+}
+
+func (q *Queries) MarkGoldenVMOperationPromoting(ctx context.Context, arg MarkGoldenVMOperationPromotingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markGoldenVMOperationPromoting, arg.RecordedAt, arg.OperationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markGoldenVMOperationPublished = `-- name: MarkGoldenVMOperationPublished :execrows
+UPDATE golden_vm_operation
+SET state = 'published',
+    generation_set_hash = $1,
+    published_at = COALESCE(published_at, $2),
+    updated_at = $2
+WHERE operation_id = $3
+  AND state IN ('publishing', 'published')
+`
+
+type MarkGoldenVMOperationPublishedParams struct {
+	GenerationSetHash string
+	RecordedAt        pgtype.Timestamptz
+	OperationID       uuid.UUID
+}
+
+func (q *Queries) MarkGoldenVMOperationPublished(ctx context.Context, arg MarkGoldenVMOperationPublishedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markGoldenVMOperationPublished, arg.GenerationSetHash, arg.RecordedAt, arg.OperationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markGoldenVMOperationPublishing = `-- name: MarkGoldenVMOperationPublishing :execrows
+UPDATE golden_vm_operation
+SET state = 'publishing',
+    publishing_started_at = COALESCE(publishing_started_at, $1),
+    updated_at = $1
+WHERE operation_id = $2
+  AND state IN ('created', 'publishing')
+`
+
+type MarkGoldenVMOperationPublishingParams struct {
+	RecordedAt  pgtype.Timestamptz
+	OperationID uuid.UUID
+}
+
+func (q *Queries) MarkGoldenVMOperationPublishing(ctx context.Context, arg MarkGoldenVMOperationPublishingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markGoldenVMOperationPublishing, arg.RecordedAt, arg.OperationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markGoldenVMOperationSkipped = `-- name: MarkGoldenVMOperationSkipped :exec
 UPDATE golden_vm_operation
 SET result_recorded_at = COALESCE(result_recorded_at, $1),
-    final_state = 'skipped',
+    state = 'skipped',
+    updated_at = $1,
     failure_reason = $2
 WHERE operation_id = $3
-  AND final_state IN ('requested', 'checkpointed')
+  AND state IN ('requested', 'create_queued', 'creating', 'created', 'publishing', 'published', 'promoting')
 `
 
 type MarkGoldenVMOperationSkippedParams struct {
@@ -686,10 +970,11 @@ func (q *Queries) MarkGoldenVMSnapshotPruning(ctx context.Context, arg MarkGolde
 const markOpenGoldenVMOperationsFailedByAttempt = `-- name: MarkOpenGoldenVMOperationsFailedByAttempt :many
 UPDATE golden_vm_operation
 SET result_recorded_at = COALESCE(result_recorded_at, $1),
-    final_state = 'failed',
+    state = 'failed',
+    updated_at = $1,
     failure_reason = $2
 WHERE attempt_id = $3
-  AND final_state IN ('requested', 'checkpointed')
+  AND state = 'requested'
 RETURNING
     operation_id,
     candidate_golden_vm_snapshot_id,

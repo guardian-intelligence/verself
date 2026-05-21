@@ -33,6 +33,7 @@ const (
 	RunnerJobBindKind           = "runner.job.bind"
 	RunnerCleanupKind           = "runner.cleanup"
 	RunnerRepositorySyncKind    = "runner.repository.sync"
+	GoldenVMCreateKind          = "golden.vm.create"
 	GoldenRunPromoteKind        = "golden.run.promote"
 
 	DefaultExecutionMaxWorkers = 4
@@ -118,6 +119,16 @@ type GoldenRunPromoteRequest struct {
 	HeadSHA                string
 	CorrelationID          string
 	TraceParent            string
+}
+
+type GoldenVMCreateRequest struct {
+	OperationID   string
+	ExecutionID   string
+	AttemptID     string
+	LeaseID       string
+	ExecID        string
+	CorrelationID string
+	TraceParent   string
 }
 
 type ExecutionAdvanceArgs struct {
@@ -251,6 +262,31 @@ func (GoldenRunPromoteArgs) InsertOpts() river.InsertOpts {
 		MaxAttempts: 5,
 		Queue:       QueueRunner,
 		Tags:        []string{"golden", "run", "promote"},
+	}
+}
+
+type GoldenVMCreateArgs struct {
+	OperationID   string `json:"operation_id" river:"unique"`
+	ExecutionID   string `json:"execution_id"`
+	AttemptID     string `json:"attempt_id"`
+	LeaseID       string `json:"lease_id"`
+	ExecID        string `json:"exec_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	TraceParent   string `json:"trace_parent,omitempty"`
+	SubmittedAt   string `json:"submitted_at"`
+}
+
+func (GoldenVMCreateArgs) Kind() string { return GoldenVMCreateKind }
+
+func (GoldenVMCreateArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueOrchestrator,
+		Tags:        []string{"golden", "vm", "create"},
+		UniqueOpts: river.UniqueOpts{
+			ByArgs:  true,
+			ByQueue: true,
+		},
 	}
 }
 
@@ -427,6 +463,44 @@ func (r *Runtime) EnqueueGoldenRunPromoteTx(ctx context.Context, tx pgx.Tx, req 
 	result, err := r.client.InsertTx(ctx, tx, args, nil)
 	if err != nil {
 		return ProbeResult{}, fmt.Errorf("enqueue golden run promote: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
+func (r *Runtime) EnqueueGoldenVMCreateTx(ctx context.Context, tx pgx.Tx, req GoldenVMCreateRequest) (ProbeResult, error) {
+	args := GoldenVMCreateArgs{
+		OperationID:   strings.TrimSpace(req.OperationID),
+		ExecutionID:   strings.TrimSpace(req.ExecutionID),
+		AttemptID:     strings.TrimSpace(req.AttemptID),
+		LeaseID:       strings.TrimSpace(req.LeaseID),
+		ExecID:        strings.TrimSpace(req.ExecID),
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		TraceParent:   strings.TrimSpace(req.TraceParent),
+		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.InsertTx(ctx, tx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue golden VM create: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
+func (r *Runtime) EnqueueGoldenVMCreate(ctx context.Context, req GoldenVMCreateRequest) (ProbeResult, error) {
+	args := GoldenVMCreateArgs{
+		OperationID:   strings.TrimSpace(req.OperationID),
+		ExecutionID:   strings.TrimSpace(req.ExecutionID),
+		AttemptID:     strings.TrimSpace(req.AttemptID),
+		LeaseID:       strings.TrimSpace(req.LeaseID),
+		ExecID:        strings.TrimSpace(req.ExecID),
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		TraceParent:   strings.TrimSpace(req.TraceParent),
+		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.Insert(ctx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue golden VM create: %w", err)
 	}
 	job := result.Job
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil

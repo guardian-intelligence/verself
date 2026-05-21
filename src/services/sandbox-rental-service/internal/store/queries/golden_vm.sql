@@ -3,14 +3,15 @@ INSERT INTO golden_vm_operation (
     operation_id, execution_id, attempt_id, allocation_id, org_id, repository_id,
     provider, provider_repository_id, scope_kind, scope_ref, job_shape_id,
     trust_class, source_generation_set_hash, candidate_golden_vm_snapshot_id,
-    provider_run_id, provider_run_attempt, provider_job_id, head_sha,
-    requested_at, final_state
+    promotion_eligible, provider_run_id, provider_run_attempt, provider_job_id,
+    head_sha, requested_at, updated_at, state
 ) VALUES (
     sqlc.arg(operation_id), sqlc.arg(execution_id), sqlc.arg(attempt_id), sqlc.narg(allocation_id),
     sqlc.arg(org_id), sqlc.arg(repository_id), sqlc.arg(provider), sqlc.arg(provider_repository_id),
     sqlc.arg(scope_kind), sqlc.arg(scope_ref), sqlc.arg(job_shape_id), sqlc.arg(trust_class),
     sqlc.arg(source_generation_set_hash), sqlc.arg(candidate_golden_vm_snapshot_id),
-    sqlc.arg(provider_run_id), sqlc.arg(provider_run_attempt), sqlc.arg(provider_job_id), sqlc.arg(head_sha),
+    sqlc.arg(promotion_eligible), sqlc.arg(provider_run_id), sqlc.arg(provider_run_attempt),
+    sqlc.arg(provider_job_id), sqlc.arg(head_sha), sqlc.arg(requested_at),
     sqlc.arg(requested_at), 'requested'
 )
 ON CONFLICT (operation_id) DO UPDATE SET requested_at = golden_vm_operation.requested_at
@@ -19,50 +20,103 @@ RETURNING
     candidate_golden_vm_snapshot_id,
     source_generation_set_hash;
 
--- name: MarkGoldenVMOperationCheckpointStarted :exec
+-- name: MarkGoldenVMOperationCreateQueued :execrows
 UPDATE golden_vm_operation
-SET checkpoint_started_at = COALESCE(checkpoint_started_at, sqlc.arg(checkpoint_started_at))
+SET state = 'create_queued',
+    lease_id = sqlc.arg(lease_id),
+    exec_id = sqlc.arg(exec_id),
+    create_job_id = sqlc.arg(create_job_id),
+    create_queued_at = COALESCE(create_queued_at, sqlc.arg(recorded_at)),
+    updated_at = sqlc.arg(recorded_at)
 WHERE operation_id = sqlc.arg(operation_id)
-  AND final_state = 'requested';
+  AND state = 'requested';
 
--- name: MarkGoldenVMOperationCheckpointed :exec
+-- name: MarkGoldenVMOperationCreating :execrows
 UPDATE golden_vm_operation
-SET checkpointed_at = COALESCE(checkpointed_at, sqlc.arg(checkpointed_at)),
-    final_state = 'checkpointed'
+SET state = 'creating',
+    creating_started_at = COALESCE(creating_started_at, sqlc.arg(recorded_at)),
+    updated_at = sqlc.arg(recorded_at)
 WHERE operation_id = sqlc.arg(operation_id)
-  AND final_state = 'requested';
+  AND state IN ('requested', 'create_queued', 'creating');
+
+-- name: MarkGoldenVMOperationCreated :execrows
+UPDATE golden_vm_operation
+SET state = 'created',
+    snapshot_key = sqlc.arg(snapshot_key),
+    root_snapshot_ref = sqlc.arg(root_snapshot_ref),
+    root_snapshot_guid = sqlc.arg(root_snapshot_guid),
+    vmstate_artifact_ref = sqlc.arg(vmstate_artifact_ref),
+    memory_artifact_ref = sqlc.arg(memory_artifact_ref),
+    mount_snapshots_json = sqlc.arg(mount_snapshots_json)::jsonb,
+    state_bytes = sqlc.arg(state_bytes),
+    memory_bytes = sqlc.arg(memory_bytes),
+    created_at = COALESCE(created_at, sqlc.arg(recorded_at)),
+    updated_at = sqlc.arg(recorded_at),
+    failure_reason = ''
+WHERE operation_id = sqlc.arg(operation_id)
+  AND state IN ('creating', 'created');
+
+-- name: MarkGoldenVMOperationPublishing :execrows
+UPDATE golden_vm_operation
+SET state = 'publishing',
+    publishing_started_at = COALESCE(publishing_started_at, sqlc.arg(recorded_at)),
+    updated_at = sqlc.arg(recorded_at)
+WHERE operation_id = sqlc.arg(operation_id)
+  AND state IN ('created', 'publishing');
+
+-- name: MarkGoldenVMOperationPublished :execrows
+UPDATE golden_vm_operation
+SET state = 'published',
+    generation_set_hash = sqlc.arg(generation_set_hash),
+    published_at = COALESCE(published_at, sqlc.arg(recorded_at)),
+    updated_at = sqlc.arg(recorded_at)
+WHERE operation_id = sqlc.arg(operation_id)
+  AND state IN ('publishing', 'published');
+
+-- name: MarkGoldenVMOperationPromoting :execrows
+UPDATE golden_vm_operation
+SET state = 'promoting',
+    promoting_started_at = COALESCE(promoting_started_at, sqlc.arg(recorded_at)),
+    updated_at = sqlc.arg(recorded_at)
+WHERE operation_id = sqlc.arg(operation_id)
+  AND state IN ('published', 'promoting');
 
 -- name: MarkGoldenVMOperationCommitted :exec
 UPDATE golden_vm_operation
 SET result_recorded_at = COALESCE(result_recorded_at, sqlc.arg(recorded_at)),
-    final_state = 'committed',
+    promoted_at = COALESCE(promoted_at, sqlc.arg(recorded_at)),
+    state = 'committed',
+    updated_at = sqlc.arg(recorded_at),
     failure_reason = ''
 WHERE operation_id = sqlc.arg(operation_id)
-  AND final_state IN ('requested', 'checkpointed');
+  AND state IN ('published', 'promoting', 'committed');
 
 -- name: MarkGoldenVMOperationSkipped :exec
 UPDATE golden_vm_operation
 SET result_recorded_at = COALESCE(result_recorded_at, sqlc.arg(recorded_at)),
-    final_state = 'skipped',
+    state = 'skipped',
+    updated_at = sqlc.arg(recorded_at),
     failure_reason = sqlc.arg(failure_reason)
 WHERE operation_id = sqlc.arg(operation_id)
-  AND final_state IN ('requested', 'checkpointed');
+  AND state IN ('requested', 'create_queued', 'creating', 'created', 'publishing', 'published', 'promoting');
 
 -- name: MarkGoldenVMOperationFailed :exec
 UPDATE golden_vm_operation
 SET result_recorded_at = COALESCE(result_recorded_at, sqlc.arg(recorded_at)),
-    final_state = 'failed',
+    state = 'failed',
+    updated_at = sqlc.arg(recorded_at),
     failure_reason = sqlc.arg(failure_reason)
 WHERE operation_id = sqlc.arg(operation_id)
-  AND final_state IN ('requested', 'checkpointed');
+  AND state IN ('requested', 'create_queued', 'creating', 'created', 'publishing', 'published', 'promoting');
 
 -- name: MarkOpenGoldenVMOperationsFailedByAttempt :many
 UPDATE golden_vm_operation
 SET result_recorded_at = COALESCE(result_recorded_at, sqlc.arg(recorded_at)),
-    final_state = 'failed',
+    state = 'failed',
+    updated_at = sqlc.arg(recorded_at),
     failure_reason = sqlc.arg(failure_reason)
 WHERE attempt_id = sqlc.arg(attempt_id)
-  AND final_state IN ('requested', 'checkpointed')
+  AND state = 'requested'
 RETURNING
     operation_id,
     candidate_golden_vm_snapshot_id,
@@ -77,6 +131,62 @@ RETURNING
     provider_run_attempt,
     provider_job_id,
     source_generation_set_hash;
+
+-- name: GetGoldenVMOperationForCreate :one
+SELECT
+    operation_id,
+    execution_id,
+    attempt_id,
+    allocation_id,
+    org_id,
+    repository_id,
+    provider,
+    provider_repository_id,
+    scope_kind,
+    scope_ref,
+    job_shape_id,
+    trust_class,
+    source_generation_set_hash,
+    generation_set_hash,
+    candidate_golden_vm_snapshot_id,
+    promotion_eligible,
+    provider_run_id,
+    provider_run_attempt,
+    provider_job_id,
+    head_sha,
+    lease_id,
+    exec_id,
+    create_job_id,
+    snapshot_key,
+    root_snapshot_ref,
+    root_snapshot_guid,
+    vmstate_artifact_ref,
+    memory_artifact_ref,
+    mount_snapshots_json,
+    state_bytes,
+    memory_bytes,
+    requested_at,
+    create_queued_at,
+    creating_started_at,
+    created_at,
+    publishing_started_at,
+    published_at,
+    promoting_started_at,
+    promoted_at,
+    result_recorded_at,
+    state,
+    failure_reason,
+    updated_at
+FROM golden_vm_operation
+WHERE operation_id = sqlc.arg(operation_id);
+
+-- name: ListGoldenVMCreateOperationsForReconcile :many
+SELECT operation_id
+FROM golden_vm_operation
+WHERE state IN ('create_queued', 'creating', 'created', 'publishing', 'published', 'promoting')
+  AND updated_at < (now() - (sqlc.arg(stale_seconds) * interval '1 second'))
+ORDER BY updated_at, operation_id
+LIMIT sqlc.arg(limit_count);
 
 -- name: GetCurrentGoldenVMActivation :one
 SELECT

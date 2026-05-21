@@ -122,6 +122,8 @@ type SchedulerRuntime interface {
 	EnqueueRunnerCleanup(ctx context.Context, req scheduler.RunnerCleanupRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerRepositorySyncTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerRepositorySyncRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerRepositorySync(ctx context.Context, req scheduler.RunnerRepositorySyncRequest) (scheduler.ProbeResult, error)
+	EnqueueGoldenVMCreateTx(ctx context.Context, tx pgx.Tx, req scheduler.GoldenVMCreateRequest) (scheduler.ProbeResult, error)
+	EnqueueGoldenVMCreate(ctx context.Context, req scheduler.GoldenVMCreateRequest) (scheduler.ProbeResult, error)
 	EnqueueGoldenRunPromoteTx(ctx context.Context, tx pgx.Tx, req scheduler.GoldenRunPromoteRequest) (scheduler.ProbeResult, error)
 }
 
@@ -865,7 +867,16 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 			s.Logger.WarnContext(ctx, "execution outcome verification failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", outcomeErr)
 		}
 	}
-	durableErr := s.finalizeDurableCaches(ctx, item, leaseID, durablePlan, outcome.SealDecision)
+	goldenVMCreateQueued := false
+	var durableErr error
+	if shouldQueueGoldenVMCreate(durablePlan, outcome.SealDecision) {
+		enqueueStarted := time.Now().UTC()
+		goldenVMCreateQueued, durableErr = s.enqueueGoldenVMCreate(ctx, item, leaseID, execRecord.ExecID, durablePlan)
+		result, reason = sandboxPhaseResult(durableErr)
+		s.recordExecutionPhase(ctx, item, "sandbox-rental", "golden.vm.create.enqueue", result, reason, enqueueStarted, time.Now().UTC(), nil)
+	} else {
+		durableErr = s.finalizeDurableCaches(ctx, item, leaseID, durablePlan, outcome.SealDecision)
+	}
 	if durableErr != nil {
 		span.RecordError(durableErr)
 		if s.Logger != nil {
@@ -921,13 +932,15 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 		}
 		return err
 	}
-	releaseStarted := time.Now().UTC()
-	releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), leaseID, item.AttemptID.String()+":release")
-	releaseCompleted := time.Now().UTC()
-	result, reason = sandboxPhaseResult(releaseErr)
-	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.lease.release", result, reason, releaseStarted, releaseCompleted, nil)
-	if releaseErr != nil && s.Logger != nil {
-		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", leaseID, "error", releaseErr)
+	if !goldenVMCreateQueued {
+		releaseStarted := time.Now().UTC()
+		releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), leaseID, item.AttemptID.String()+":release")
+		releaseCompleted := time.Now().UTC()
+		result, reason = sandboxPhaseResult(releaseErr)
+		s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.lease.release", result, reason, releaseStarted, releaseCompleted, nil)
+		if releaseErr != nil && s.Logger != nil {
+			s.Logger.WarnContext(ctx, "release lease failed", "lease_id", leaseID, "error", releaseErr)
+		}
 	}
 	runRecord, err := s.loadRun(ctx, item.OrgID, item.ExecutionID, false)
 	if err == nil {
