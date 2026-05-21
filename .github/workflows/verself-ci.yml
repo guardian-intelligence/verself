@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   build:
-    name: Warm VM Bazel workload (all)
+    name: Build with warm VM (Verself runner, durable workspace)
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.stress_workloads }}
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     timeout-minutes: 30
