@@ -890,11 +890,12 @@ func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkI
 	}
 	phaseStarted := time.Now().UTC()
 	var retErr error
+	commitSkipReason := durableCommitSkipReason(plan, sealDecision)
 	defer func() {
 		result, reason := sandboxPhaseResult(retErr)
 		s.recordRunnerIdentityPhase(ctx, plan.Identity, item, "sandbox-rental", "sandbox.durable.seal", result, reason, phaseStarted, time.Now().UTC(), sandboxPhaseAttrs{
-			"commit_allowed":     strconv.FormatBool(sealDecision.Commit),
-			"commit_skip_reason": sealDecision.SkipReason,
+			"commit_allowed":     strconv.FormatBool(commitSkipReason == ""),
+			"commit_skip_reason": commitSkipReason,
 		})
 	}()
 	ctx, span := tracer.Start(ctx, durableEventSeal, trace.WithAttributes(
@@ -905,24 +906,30 @@ func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkI
 	var errs []error
 	anyCandidate := false
 	span.SetAttributes(
-		attribute.Bool("durable.commit_allowed", sealDecision.Commit),
-		attribute.String("durable.commit_skip_reason", sealDecision.SkipReason),
+		attribute.Bool("durable.commit_allowed", commitSkipReason == ""),
+		attribute.String("durable.commit_skip_reason", commitSkipReason),
 	)
 	checkpoint, checkpointErr := s.checkpointGoldenVMForDurable(ctx, item, leaseID, plan, sealDecision)
 	if checkpointErr != nil {
 		errs = append(errs, checkpointErr)
+	}
+	if commitSkipReason != "" {
+		now := time.Now().UTC()
+		for _, op := range plan.Operations {
+			_ = s.storeQueries().MarkDurableOperationResultRecorded(ctx, store.MarkDurableOperationResultRecordedParams{FinalState: "skipped", SealedAt: pgTime(now), RecordedAt: pgTime(now), FailureReason: commitSkipReason, OperationID: op.OperationID})
+			_ = s.appendDurableEvent(ctx, op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventSeal, "skipped", commitSkipReason, ""))
+		}
+		if len(errs) > 0 {
+			retErr = errors.Join(errs...)
+			return retErr
+		}
+		return nil
 	}
 	goldenGenerations := make([]goldenVMSnapshotGeneration, 0, len(plan.Operations))
 	for idx, op := range plan.Operations {
 		if !op.Mounted {
 			skipReason := firstNonEmpty(op.MountSkipReason, "mount_not_available")
 			_ = s.appendDurableEvent(ctx, op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventSeal, "skipped", skipReason, ""))
-			continue
-		}
-		if !sealDecision.Commit {
-			now := time.Now().UTC()
-			_ = s.storeQueries().MarkDurableOperationResultRecorded(ctx, store.MarkDurableOperationResultRecordedParams{FinalState: "skipped", SealedAt: pgTime(now), RecordedAt: pgTime(now), FailureReason: sealDecision.SkipReason, OperationID: op.OperationID})
-			_ = s.appendDurableEvent(ctx, op.event(item.ExecutionID, item.AttemptID, plan.Identity, durableEventSeal, "skipped", sealDecision.SkipReason, ""))
 			continue
 		}
 		if err := s.storeQueries().MarkDurableOperationSealStarted(ctx, store.MarkDurableOperationSealStartedParams{SealStartedAt: pgTime(time.Now().UTC()), OperationID: op.OperationID}); err != nil {
@@ -1246,6 +1253,28 @@ func (s *Service) publishGoldenVMSnapshot(ctx context.Context, item executionWor
 type durableSealDecision struct {
 	Commit     bool
 	SkipReason string
+}
+
+func durableCommitSkipReason(plan durableCachePlan, sealDecision durableSealDecision) string {
+	if !sealDecision.Commit {
+		return firstNonEmpty(sealDecision.SkipReason, "exec_not_success")
+	}
+	if !durablePlanPromotionEligible(plan) {
+		return "non_promotable_scope"
+	}
+	return ""
+}
+
+func durablePlanPromotionEligible(plan durableCachePlan) bool {
+	if plan.GoldenVM.Enabled && plan.GoldenVM.PromotionEligible {
+		return true
+	}
+	for _, op := range plan.Operations {
+		if op.PromotionEligible {
+			return true
+		}
+	}
+	return false
 }
 
 func durableSealDecisionForExec(finalExec vmorchestrator.ExecRecord) durableSealDecision {

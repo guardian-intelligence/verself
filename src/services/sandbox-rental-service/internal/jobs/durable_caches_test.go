@@ -117,6 +117,44 @@ func TestDurableSealDecisionForExec(t *testing.T) {
 	}
 }
 
+func TestDurableCommitSkipReason(t *testing.T) {
+	tests := []struct {
+		name         string
+		plan         durableCachePlan
+		sealDecision durableSealDecision
+		want         string
+	}{
+		{
+			name:         "exec failure skips with original reason",
+			sealDecision: durableSealDecision{SkipReason: "exec_failed"},
+			want:         "exec_failed",
+		},
+		{
+			name:         "successful non-promotable run is informational",
+			plan:         durableCachePlan{GoldenVM: goldenVMPlan{Enabled: true}, Operations: []durableCacheOperation{{PromotionEligible: false}}},
+			sealDecision: durableSealDecision{Commit: true},
+			want:         "non_promotable_scope",
+		},
+		{
+			name:         "promotable durable operation commits",
+			plan:         durableCachePlan{Operations: []durableCacheOperation{{PromotionEligible: true}}},
+			sealDecision: durableSealDecision{Commit: true},
+		},
+		{
+			name:         "promotable golden VM commits",
+			plan:         durableCachePlan{GoldenVM: goldenVMPlan{Enabled: true, PromotionEligible: true}},
+			sealDecision: durableSealDecision{Commit: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := durableCommitSkipReason(tt.plan, tt.sealDecision); got != tt.want {
+				t.Fatalf("skip reason = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGoldenVMGenerationSetHashMatchesCommittedSources(t *testing.T) {
 	scopeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	generationID := uuid.MustParse("22222222-2222-2222-2222-222222222222")

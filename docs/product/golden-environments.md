@@ -1185,12 +1185,15 @@ Failed, cancelled, and lease-expired jobs skip seal and commit:
 durable.cache.seal           <name>       skipped
 ```
 
-Successful non-promotable contexts may retain committed generations:
+Successful non-promotable contexts close their durable operations without
+publishing filesystem mutations:
 
 ```text
-durable.cache.commit         <name>       succeeded
-durable.cache.retain         <name>       succeeded
+durable.cache.seal           <name>       skipped      non_promotable_scope
 ```
+
+The enclosing `sandbox.durable.seal` phase is informational and succeeds with
+`commit_allowed=false` and `commit_skip_reason=non_promotable_scope`.
 
 Required row fields for debugging and verification:
 
