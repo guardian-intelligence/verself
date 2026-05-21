@@ -1674,7 +1674,13 @@ phase() { printf '::verself-phase name=%s ts=%s\n' "$1" "$(date -u +%Y-%m-%dT%H:
 phase runner.bootstrap.start
 jit_file="$(mktemp)"
 header_file="$(mktemp)"
-cleanup() { rm -f "$jit_file" "$header_file"; }
+cleanup() {
+  rm -f "$jit_file" "$header_file"
+  if [ -n "${runtime_dir:-}" ]; then
+    sudo umount "$runtime_dir" 2>/dev/null || true
+    sudo rm -rf "$runtime_dir" "${runtime_upper:-}" "${runtime_work:-}"
+  fi
+}
 trap cleanup EXIT
 printf 'header = "X-Verself-Runner-Bootstrap: %s"\n' "${VERSELF_GITHUB_JIT_TOKEN:?}" > "$header_file"
 if [ -n "${VERSELF_TRACEPARENT:-}" ]; then
@@ -1686,27 +1692,26 @@ unset VERSELF_TRACEPARENT
 unset VERSELF_GITHUB_JIT_TOKEN
 export PATH="/opt/actions-runner/externals/node20/bin:$PATH"
 runtime_dir="` + githubRunnerRuntimeDir + `"
+runtime_upper="${runtime_dir}.upper"
+runtime_work="${runtime_dir}.work"
 durable_work_dir="` + githubRunnerDurableWorkDir + `"
 # GitHub only accepts work_folder relative to the runner install dir.
 tool_cache="` + runnerToolCacheDir + `"
-rm -rf "$runtime_dir"
-mkdir -p "$runtime_dir" "$tool_cache"
 [ -d "$durable_work_dir" ] || { echo "durable GitHub work dir is not mounted: $durable_work_dir" >&2; exit 1; }
+sudo umount "$runtime_dir" 2>/dev/null || true
+sudo rm -rf "$runtime_dir" "$runtime_upper" "$runtime_work"
+mkdir -p "$runtime_dir" "$runtime_upper" "$runtime_work" "$tool_cache"
+sudo mount -t overlay overlay -o "lowerdir=/opt/actions-runner,upperdir=$runtime_upper,workdir=$runtime_work" "$runtime_dir"
+sudo chown runner:runner "$runtime_upper" "$runtime_work" "$runtime_dir"
+rm -rf "$runtime_dir/_work"
 ln -s "$durable_work_dir" "$runtime_dir/_work"
 export RUNNER_TOOL_CACHE="$tool_cache"
 export AGENT_TOOLSDIRECTORY="$tool_cache"
-for entry in /opt/actions-runner/* /opt/actions-runner/.[!.]* /opt/actions-runner/..?*; do
-  [ -e "$entry" ] || continue
-  case "$(basename "$entry")" in
-    lost+found|_work|_diag|_temp) continue ;;
-  esac
-  cp -a "$entry" "$runtime_dir"/
-done
 phase runner.bootstrap.runtime_ready
 cd "$runtime_dir"
 mkdir -p _diag _temp
 phase github.runner.process_start
-exec ./run.sh --jitconfig "$(cat "$jit_file")"`
+./run.sh --jitconfig "$(cat "$jit_file")"`
 }
 
 func traceInt64(key string, value int64) attribute.KeyValue {
