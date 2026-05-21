@@ -282,7 +282,7 @@ func (GoldenVMCreateArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
 		MaxAttempts: 5,
 		Queue:       QueueOrchestrator,
-		Tags:        []string{"golden", "vm", "create"},
+		Tags:        []string{"golden", "firecracker", "create"},
 		UniqueOpts: river.UniqueOpts{
 			ByArgs:  true,
 			ByQueue: true,

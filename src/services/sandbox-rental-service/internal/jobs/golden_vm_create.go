@@ -87,6 +87,25 @@ func (s *Service) enqueueGoldenVMCreate(ctx context.Context, item executionWorkI
 	return true, nil
 }
 
+func (s *Service) failGoldenVMCreateEnqueue(ctx context.Context, item executionWorkItem, plan durableCachePlan, cause error) {
+	if !plan.Enabled || !plan.GoldenVM.Enabled {
+		return
+	}
+	reason := durableFailureReason("golden_vm_create_enqueue_failed", cause)
+	now := time.Now().UTC()
+	if err := s.storeQueries().MarkGoldenVMOperationFailed(ctx, store.MarkGoldenVMOperationFailedParams{
+		RecordedAt:    pgTime(now),
+		FailureReason: reason,
+		OperationID:   plan.GoldenVM.OperationID,
+	}); err != nil && s.Logger != nil {
+		s.Logger.WarnContext(ctx, "mark golden VM enqueue failed", "operation_id", plan.GoldenVM.OperationID, "error", err)
+	}
+	event := plan.GoldenVM.event(item.ExecutionID, item.AttemptID, plan.Identity, goldenVMEventCreateEnqueue, "failed", reason)
+	event.FromState = goldenVMStateRequested
+	event.ToState = goldenVMStateFailed
+	_ = s.appendGoldenVMEvent(ctx, event)
+}
+
 func (s *Service) CreateGoldenVM(ctx context.Context, operationID uuid.UUID, riverJobID int64) error {
 	ctx, span := tracer.Start(ctx, "golden_vm.create", trace.WithAttributes(
 		attribute.String("golden_vm.operation_id", operationID.String()),

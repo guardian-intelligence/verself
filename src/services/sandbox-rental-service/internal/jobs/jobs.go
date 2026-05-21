@@ -874,6 +874,10 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 		goldenVMCreateQueued, durableErr = s.enqueueGoldenVMCreate(ctx, item, leaseID, execRecord.ExecID, durablePlan)
 		result, reason = sandboxPhaseResult(durableErr)
 		s.recordExecutionPhase(ctx, item, "sandbox-rental", "golden.vm.create.enqueue", result, reason, enqueueStarted, time.Now().UTC(), nil)
+		if durableErr != nil {
+			s.failGoldenVMCreateEnqueue(ctx, item, durablePlan, durableErr)
+			durableErr = s.finalizeDurableCaches(ctx, item, leaseID, durablePlan, outcome.SealDecision)
+		}
 	} else {
 		durableErr = s.finalizeDurableCaches(ctx, item, leaseID, durablePlan, outcome.SealDecision)
 	}

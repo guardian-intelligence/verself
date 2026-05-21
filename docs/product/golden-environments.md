@@ -650,29 +650,54 @@ golden_vm_operation
   job_shape_id
   trust_class
   source_generation_set_hash
+  generation_set_hash
   candidate_golden_vm_snapshot_id
+  promotion_eligible
+  lease_id
+  exec_id
+  create_job_id
+  snapshot_key
+  root_snapshot_ref
+  root_snapshot_guid
+  vmstate_artifact_ref
+  memory_artifact_ref
+  mount_snapshots_json
+  state_bytes
+  memory_bytes
   requested_at
-  checkpoint_started_at
-  checkpointed_at
+  create_queued_at
+  creating_started_at
+  created_at
+  publishing_started_at
+  published_at
+  promoting_started_at
+  promoted_at
   result_recorded_at
-  final_state
+  state
   failure_reason
 ```
 
-`final_state` values:
+`state` values:
 
 ```text
 requested
-checkpointed
+create_queued
+creating
+created
+publishing
+published
+promoting
 committed
 skipped
 failed
 ```
 
-A golden VM operation spans the whole VM checkpoint. It is separate from
-`durable_operation`, which remains per mount. The operation records the source
-generation set observed before lease acquisition and the candidate VM snapshot
-ID the service expects to publish if checkpointing succeeds.
+A golden VM operation spans the async checkpoint lifecycle after a successful
+workload exits. It is separate from `durable_operation`, which remains per
+mount. The operation records the source generation set observed before lease
+acquisition, the River job that owns snapshot creation, the lease and exec being
+held for checkpointing, and the candidate VM snapshot ID the service expects to
+publish after Firecracker checkpointing succeeds.
 
 ### Golden VM Snapshot
 
