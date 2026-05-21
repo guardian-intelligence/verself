@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Install the bootstrap_pivot dev tools that have to land before any other
-# delivery channel can run. CI uses `--bazelisk-only`; developer/agent
-# environments install Bazelisk and the Aspect CLI. Everything else, including
-# the Vite+ toolchain (`aspect vp`), is Bazel-resolved.
+# delivery channel can run. Developer, agent, and CI environments install the
+# same Bazelisk and Aspect CLI pivot. Everything else, including the Vite+
+# toolchain (`aspect vp`), is Bazel-resolved.
 #
 # These constants are hand-mirrored because this script bootstraps Bazelisk
 # before Bazel-owned repository rules can run.
@@ -22,25 +22,20 @@ aspect_url="https://github.com/aspect-build/aspect-cli/releases/download/v${aspe
 
 install_dir="${BOOTSTRAP_INSTALL_DIR:-${HOME}/.cache/verself/bootstrap-bin}"
 last_installed_path=""
-bootstrap_scope="${1:-all}"
 
-case "${bootstrap_scope}" in
-  --bazelisk-only | bazelisk-only)
-    bootstrap_scope="bazelisk"
-    ;;
-  --all | all)
-    bootstrap_scope="all"
-    ;;
+if [[ "$#" -gt 0 ]]; then
+  case "$1" in
   -h | --help)
-    echo "usage: $0 [--bazelisk-only]" >&2
+    echo "usage: $0" >&2
     echo "set BOOTSTRAP_INSTALL_DIR to opt into a different install directory" >&2
     exit 0
     ;;
   *)
-    echo "usage: $0 [--bazelisk-only]" >&2
+    echo "usage: $0" >&2
     exit 1
     ;;
-esac
+  esac
+fi
 
 if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
   echo "unsupported bootstrap platform: $(uname -s) $(uname -m)" >&2
@@ -196,10 +191,6 @@ bazelisk_path="${last_installed_path}"
 ensure_bazel_symlink "${bazelisk_path}"
 publish_bootstrap_path "${install_dir}"
 warn_bootstrap_path "${install_dir}"
-
-if [[ "${bootstrap_scope}" == "bazelisk" ]]; then
-  exit 0
-fi
 
 install_pivot aspect "${aspect_version}" "${aspect_sha256}" "${aspect_url}"
 
