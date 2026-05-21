@@ -1,14 +1,10 @@
 common --announce_rc
 common --lockfile_mode=error
 
-# 30 min keeps the JVM warm across a typical edit-build-test cycle without
-# letting Skyframe accumulate a day's worth of drift. The previous 24h value
-# was the upstream of a desync where the server's stat-based file digest
-# cache held a stale view of an in-flight edit (atomic-rename save with
-# colliding mtime+size) and replayed it through every subsequent build until
-# the server was restarted. Long-lived bazel servers are an anti-feature for
-# repos under continuous parallel editing.
-startup --max_idle_secs=1800
+# VM snapshots make the Bazel server part of the warm environment. If the
+# restored server idles out after clock sync, every future restore from that
+# golden snapshot pays a new server startup penalty.
+startup --max_idle_secs=0
 
 # Bazel caching is local-only. A shared remote cache couples bootstrap and deploy
 # to a host service; keep cache state inside the invoking user's home directory.
