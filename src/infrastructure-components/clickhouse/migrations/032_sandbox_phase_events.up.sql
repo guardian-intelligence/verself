@@ -191,27 +191,27 @@ SELECT
     t.phase_order AS phase_order,
     t.result AS result,
     t.reason AS reason,
-    if(t.org_id = '', l.org_id, t.org_id) AS org_id,
-    if(t.execution_id = zero_uuid, l.execution_id, t.execution_id) AS execution_id,
-    if(t.attempt_id = zero_uuid, l.attempt_id, t.attempt_id) AS attempt_id,
-    if(t.allocation_id = zero_uuid, l.allocation_id, t.allocation_id) AS allocation_id,
-    if(t.provider = '', l.provider, t.provider) AS provider,
-    if(t.external_provider = '', l.external_provider, t.external_provider) AS external_provider,
-    if(t.provider_installation_id = 0, l.provider_installation_id, t.provider_installation_id) AS provider_installation_id,
-    if(t.provider_repository_id = 0, l.provider_repository_id, t.provider_repository_id) AS provider_repository_id,
-    if(t.provider_run_id = 0, l.provider_run_id, t.provider_run_id) AS provider_run_id,
-    if(t.provider_run_attempt = 0, l.provider_run_attempt, t.provider_run_attempt) AS provider_run_attempt,
-    if(t.provider_job_id = 0, l.provider_job_id, t.provider_job_id) AS provider_job_id,
-    if(t.repository_full_name = '', l.repository_full_name, t.repository_full_name) AS repository_full_name,
-    if(t.workflow_name = '', l.workflow_name, t.workflow_name) AS workflow_name,
-    if(t.job_name = '', l.job_name, t.job_name) AS job_name,
-    if(t.head_branch = '', l.head_branch, t.head_branch) AS head_branch,
-    if(t.head_sha = '', l.head_sha, t.head_sha) AS head_sha,
-    if(t.runner_class = '', l.runner_class, t.runner_class) AS runner_class,
-    if(t.runner_name = '', l.runner_name, t.runner_name) AS runner_name,
+    multiIf(t.org_id != '', t.org_id, l.org_id != '', l.org_id, p.org_id) AS org_id,
+    if(t.execution_id != zero_uuid, t.execution_id, if(l.execution_id != zero_uuid, l.execution_id, p.execution_id)) AS execution_id,
+    if(t.attempt_id != zero_uuid, t.attempt_id, if(l.attempt_id != zero_uuid, l.attempt_id, p.attempt_id)) AS attempt_id,
+    if(t.allocation_id != zero_uuid, t.allocation_id, if(l.allocation_id != zero_uuid, l.allocation_id, p.allocation_id)) AS allocation_id,
+    multiIf(t.provider != '', t.provider, l.provider != '', l.provider, p.provider) AS provider,
+    multiIf(t.external_provider != '', t.external_provider, l.external_provider != '', l.external_provider, p.external_provider) AS external_provider,
+    if(t.provider_installation_id != 0, t.provider_installation_id, if(l.provider_installation_id != 0, l.provider_installation_id, p.provider_installation_id)) AS provider_installation_id,
+    if(t.provider_repository_id != 0, t.provider_repository_id, if(l.provider_repository_id != 0, l.provider_repository_id, p.provider_repository_id)) AS provider_repository_id,
+    if(t.provider_run_id != 0, t.provider_run_id, if(l.provider_run_id != 0, l.provider_run_id, p.provider_run_id)) AS provider_run_id,
+    if(t.provider_run_attempt != 0, t.provider_run_attempt, if(l.provider_run_attempt != 0, l.provider_run_attempt, p.provider_run_attempt)) AS provider_run_attempt,
+    if(t.provider_job_id != 0, t.provider_job_id, if(l.provider_job_id != 0, l.provider_job_id, p.provider_job_id)) AS provider_job_id,
+    multiIf(t.repository_full_name != '', t.repository_full_name, l.repository_full_name != '', l.repository_full_name, p.repository_full_name) AS repository_full_name,
+    multiIf(t.workflow_name != '', t.workflow_name, l.workflow_name != '', l.workflow_name, p.workflow_name) AS workflow_name,
+    multiIf(t.job_name != '', t.job_name, l.job_name != '', l.job_name, p.job_name) AS job_name,
+    multiIf(t.head_branch != '', t.head_branch, l.head_branch != '', l.head_branch, p.head_branch) AS head_branch,
+    multiIf(t.head_sha != '', t.head_sha, l.head_sha != '', l.head_sha, p.head_sha) AS head_sha,
+    multiIf(t.runner_class != '', t.runner_class, l.runner_class != '', l.runner_class, p.runner_class) AS runner_class,
+    multiIf(t.runner_name != '', t.runner_name, l.runner_name != '', l.runner_name, p.runner_name) AS runner_name,
     t.lease_id AS lease_id,
     t.exec_id AS exec_id,
-    if(t.correlation_id = '', l.correlation_id, t.correlation_id) AS correlation_id,
+    multiIf(t.correlation_id != '', t.correlation_id, l.correlation_id != '', l.correlation_id, p.correlation_id) AS correlation_id,
     t.started_at AS started_at,
     t.completed_at AS completed_at,
     t.duration_ms AS duration_ms,
@@ -229,11 +229,11 @@ LEFT JOIN
         anyLast(e.allocation_id) AS allocation_id,
         anyLast(e.provider) AS provider,
         anyLast(e.external_provider) AS external_provider,
-        anyLast(e.provider_installation_id) AS provider_installation_id,
-        anyLast(e.provider_repository_id) AS provider_repository_id,
-        anyLast(e.provider_run_id) AS provider_run_id,
-        anyLast(e.provider_run_attempt) AS provider_run_attempt,
-        anyLast(e.provider_job_id) AS provider_job_id,
+        max(e.provider_installation_id) AS provider_installation_id,
+        max(e.provider_repository_id) AS provider_repository_id,
+        max(e.provider_run_id) AS provider_run_id,
+        max(e.provider_run_attempt) AS provider_run_attempt,
+        max(e.provider_job_id) AS provider_job_id,
         anyLast(e.repository_full_name) AS repository_full_name,
         anyLast(e.workflow_name) AS workflow_name,
         anyLast(e.job_name) AS job_name,
@@ -246,7 +246,33 @@ LEFT JOIN
     WHERE e.lease_id != ''
       AND e.execution_id != toUUID('00000000-0000-0000-0000-000000000000')
     GROUP BY lease_id
-) AS l ON t.lease_id = l.lease_id;
+) AS l ON t.lease_id = l.lease_id
+LEFT JOIN
+(
+    SELECT
+        e.provider_job_id AS provider_job_id,
+        anyLast(e.org_id) AS org_id,
+        anyLast(e.execution_id) AS execution_id,
+        anyLast(e.attempt_id) AS attempt_id,
+        anyLast(e.allocation_id) AS allocation_id,
+        anyLast(e.provider) AS provider,
+        anyLast(e.external_provider) AS external_provider,
+        max(e.provider_installation_id) AS provider_installation_id,
+        max(e.provider_repository_id) AS provider_repository_id,
+        max(e.provider_run_id) AS provider_run_id,
+        max(e.provider_run_attempt) AS provider_run_attempt,
+        anyLast(e.repository_full_name) AS repository_full_name,
+        anyLast(e.workflow_name) AS workflow_name,
+        anyLast(e.job_name) AS job_name,
+        anyLast(e.head_branch) AS head_branch,
+        anyLast(e.head_sha) AS head_sha,
+        anyLast(e.runner_class) AS runner_class,
+        anyLast(e.runner_name) AS runner_name,
+        anyLast(e.correlation_id) AS correlation_id
+    FROM verself.sandbox_phase_events AS e
+    WHERE e.provider_job_id != 0
+    GROUP BY e.provider_job_id
+) AS p ON t.provider_job_id = p.provider_job_id;
 
 GRANT SELECT, INSERT ON verself.sandbox_phase_events TO sandbox_rental;
 GRANT SELECT ON verself.sandbox_phase_timeline TO sandbox_rental;
