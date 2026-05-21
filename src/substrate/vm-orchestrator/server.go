@@ -273,6 +273,7 @@ func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseReq
 	if specErr != nil {
 		return nil, status.Error(codes.InvalidArgument, specErr.Error())
 	}
+	span.SetAttributes(attribute.String("org.id", spec.StorageNamespace.OrgID))
 	leaseTTL, ttlErr := durationFromSeconds(spec.TTLSeconds, "ttl_seconds")
 	if ttlErr != nil {
 		return nil, status.Error(codes.InvalidArgument, ttlErr.Error())
@@ -374,6 +375,7 @@ func (s *APIServer) ReleaseLease(ctx context.Context, req *vmrpc.ReleaseLeaseReq
 	_, span := tracer.Start(ctx, "rpc.ReleaseLease")
 	defer span.End()
 	leaseID := strings.TrimSpace(req.GetLeaseId())
+	span.SetAttributes(attribute.String("lease.id", leaseID))
 	if leaseID == "" {
 		return nil, status.Error(codes.InvalidArgument, "lease_id is required")
 	}
@@ -469,6 +471,7 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 	defer span.End()
 	leaseID := strings.TrimSpace(req.GetLeaseId())
 	key := strings.TrimSpace(req.GetIdempotencyKey())
+	span.SetAttributes(attribute.String("lease.id", leaseID))
 	if leaseID == "" || key == "" {
 		return nil, status.Error(codes.InvalidArgument, "lease_id and idempotency_key are required")
 	}
@@ -503,6 +506,7 @@ func (s *APIServer) StartExec(ctx context.Context, req *vmrpc.StartExecRequest) 
 	if err := validateExecSpec(spec); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	span.SetAttributes(attribute.String("exec.id", execID))
 	persistedSpec := redactExecSpecForPersistence(ctx, spec)
 	if err := s.state.createExec(ctx, execSnapshot{LeaseID: leaseID, ExecID: execID, Spec: persistedSpec}); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -577,6 +581,7 @@ func (s *APIServer) CancelExec(ctx context.Context, req *vmrpc.CancelExecRequest
 	defer span.End()
 	leaseID := strings.TrimSpace(req.GetLeaseId())
 	execID := strings.TrimSpace(req.GetExecId())
+	span.SetAttributes(attribute.String("lease.id", leaseID), attribute.String("exec.id", execID))
 	actor, ok := s.lookupActor(leaseID)
 	if !ok {
 		return nil, status.Error(codes.NotFound, "lease not live")
@@ -594,7 +599,10 @@ func (s *APIServer) CancelExec(ctx context.Context, req *vmrpc.CancelExecRequest
 func (s *APIServer) GetExec(ctx context.Context, req *vmrpc.GetExecRequest) (*vmrpc.GetExecResponse, error) {
 	_, span := tracer.Start(ctx, "rpc.GetExec")
 	defer span.End()
-	snap, err := s.state.getExec(ctx, strings.TrimSpace(req.GetLeaseId()), strings.TrimSpace(req.GetExecId()))
+	leaseID := strings.TrimSpace(req.GetLeaseId())
+	execID := strings.TrimSpace(req.GetExecId())
+	span.SetAttributes(attribute.String("lease.id", leaseID), attribute.String("exec.id", execID))
+	snap, err := s.state.getExec(ctx, leaseID, execID)
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
@@ -610,6 +618,7 @@ func (s *APIServer) WaitExec(ctx context.Context, req *vmrpc.WaitExecRequest) (*
 	defer span.End()
 	leaseID := strings.TrimSpace(req.GetLeaseId())
 	execID := strings.TrimSpace(req.GetExecId())
+	span.SetAttributes(attribute.String("lease.id", leaseID), attribute.String("exec.id", execID))
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {

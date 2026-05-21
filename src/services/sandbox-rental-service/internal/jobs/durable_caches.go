@@ -377,7 +377,11 @@ func (s *Service) prepareDurableCaches(ctx context.Context, item executionWorkIt
 	))
 	defer span.End()
 
+	identityStarted := time.Now().UTC()
 	identity, err := s.runnerExecutionIdentity(ctx, item.ExecutionID, item.AttemptID)
+	identityCompleted := time.Now().UTC()
+	result, reason := sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.durable.prepare.identity", result, reason, identityStarted, identityCompleted, nil)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			err = fmt.Errorf("%w: runner execution identity missing", ErrRunnerUnavailable)
@@ -389,14 +393,22 @@ func (s *Service) prepareDurableCaches(ctx context.Context, item executionWorkIt
 	if identity.Provider != RunnerProviderGitHub {
 		return durableCachePlan{}, nil
 	}
+	hydrateStarted := time.Now().UTC()
 	identity, err = s.hydrateGitHubRunIdentity(ctx, identity)
+	hydrateCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordRunnerIdentityPhase(ctx, identity, item, "sandbox-rental", "sandbox.durable.prepare.github_run_hydrate", result, reason, hydrateStarted, hydrateCompleted, nil)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return durableCachePlan{}, err
 	}
 
+	declarationStarted := time.Now().UTC()
 	decl, err := s.resolveCacheDeclaration(ctx, identity)
+	declarationCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordRunnerIdentityPhase(ctx, identity, item, "sandbox-rental", "sandbox.durable.prepare.declaration", result, reason, declarationStarted, declarationCompleted, nil)
 	if err != nil {
 		_ = s.appendDurableEvent(ctx, durableEvent{
 			ExecutionID: &item.ExecutionID,
@@ -459,7 +471,13 @@ func (s *Service) prepareDurableCaches(ctx context.Context, item executionWorkIt
 	}
 	scopeRef := durableScopeRef(identity)
 	promotionEligible := durablePromotionCandidate(identity)
+	storageStarted := time.Now().UTC()
 	storage, storageKnown, err := s.durableStorageSnapshot(ctx)
+	storageCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordRunnerIdentityPhase(ctx, identity, item, "sandbox-rental", "sandbox.durable.prepare.storage_capacity", result, reason, storageStarted, storageCompleted, sandboxPhaseAttrs{
+		"storage_known": strconv.FormatBool(storageKnown),
+	})
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -469,6 +487,7 @@ func (s *Service) prepareDurableCaches(ctx context.Context, item executionWorkIt
 	if storageKnown && storage.AllocatedPermille >= durablePoolHardWatermarkPermille {
 		warmSourceSkipReason = "zpool_hard_watermark_exceeded"
 	}
+	planStarted := time.Now().UTC()
 	plan := durableCachePlan{Enabled: true, Identity: identity}
 	for _, cache := range caches {
 		cacheShape, err := upsertJobShape(cache.specHash(mountPolicyHash))
@@ -497,6 +516,9 @@ func (s *Service) prepareDurableCaches(ctx context.Context, item executionWorkIt
 	if err != nil {
 		return durableCachePlan{}, err
 	}
+	s.recordRunnerIdentityPhase(ctx, identity, item, "sandbox-rental", "sandbox.durable.prepare.plan", "succeeded", "", planStarted, time.Now().UTC(), sandboxPhaseAttrs{
+		"durable.cache_count": strconv.Itoa(len(plan.Operations)),
+	})
 	plan.GoldenVM, err = s.prepareGoldenVMPlan(ctx, item, identity, plan.Operations, goldenVMPlanSpec{
 		JobShapeID:        goldenJobShape,
 		ScopeRef:          scopeRef,
@@ -847,6 +869,15 @@ func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkI
 	if !plan.Enabled {
 		return nil
 	}
+	phaseStarted := time.Now().UTC()
+	var retErr error
+	defer func() {
+		result, reason := sandboxPhaseResult(retErr)
+		s.recordRunnerIdentityPhase(ctx, plan.Identity, item, "sandbox-rental", "sandbox.durable.seal", result, reason, phaseStarted, time.Now().UTC(), sandboxPhaseAttrs{
+			"commit_allowed":     strconv.FormatBool(sealDecision.Commit),
+			"commit_skip_reason": sealDecision.SkipReason,
+		})
+	}()
 	ctx, span := tracer.Start(ctx, durableEventSeal, trace.WithAttributes(
 		attribute.String("lease.id", leaseID),
 		attribute.Int("durable.cache_count", len(plan.Operations)),
@@ -983,7 +1014,8 @@ func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkI
 		}
 	}
 	if len(errs) > 0 {
-		return errors.Join(errs...)
+		retErr = errors.Join(errs...)
+		return retErr
 	}
 	return nil
 }

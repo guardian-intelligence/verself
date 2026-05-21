@@ -364,6 +364,7 @@ func (e *billingStatusError) Unwrap() error {
 }
 
 func (s *Service) Submit(ctx context.Context, orgID string, actorID string, req SubmitRequest) (executionID uuid.UUID, attemptID uuid.UUID, err error) {
+	phaseStarted := time.Now().UTC()
 	ctx, span := tracer.Start(ctx, "sandbox-rental.execution.submit")
 	defer func() {
 		if err != nil {
@@ -458,6 +459,19 @@ func (s *Service) Submit(ctx context.Context, orgID string, actorID string, req 
 		return uuid.Nil, uuid.Nil, fmt.Errorf("commit submit: %w", err)
 	}
 	span.SetAttributes(attribute.String("execution.id", executionID.String()), attribute.String("attempt.id", attemptID.String()))
+	phaseRow := sandboxPhaseBase(ctx, "sandbox-rental", "sandbox.execution.submit", "succeeded", "", phaseStarted, time.Now().UTC(), sandboxPhaseAttrs{
+		"workload_kind": req.WorkloadKind,
+		"source_kind":   req.SourceKind,
+	})
+	phaseRow.OrgID = orgID
+	phaseRow.ExecutionID = executionID
+	phaseRow.AttemptID = attemptID
+	phaseRow.Provider = req.Provider
+	phaseRow.ExternalProvider = req.ExternalProvider
+	phaseRow.ProviderJobID = parseUint64Decimal(req.ExternalTaskID)
+	phaseRow.RunnerClass = req.RunnerClass
+	phaseRow.CorrelationID = correlationID
+	go s.writeSandboxPhaseEvent(detachedContext(ctx), phaseRow)
 	_ = s.writeJobEvent(context.Background(), jobEventRow{
 		ExecutionID: executionID, AttemptID: attemptID, OrgID: orgID, ActorID: actorID,
 		Kind: req.Kind, SourceKind: req.SourceKind, WorkloadKind: req.WorkloadKind, RunnerClass: req.RunnerClass,
@@ -546,6 +560,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		attribute.String("attempt.id", attemptID.String()),
 	))
 	defer span.End()
+	loadStarted := time.Now().UTC()
 	item, err := s.loadWorkItem(ctx, executionID, attemptID)
 	if err != nil {
 		span.RecordError(err)
@@ -553,6 +568,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return err
 	}
 	ctx = WithCorrelationID(ctx, item.CorrelationID)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.execution.load_work", "succeeded", "", loadStarted, time.Now().UTC(), nil)
 	switch item.AttemptState {
 	case StateQueued:
 	case StateRunning:
@@ -566,7 +582,13 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err := s.transition(ctx, item, StateQueued, StateReserved, "reserved", map[string]any{"billing_job_id": billingJobID}); err != nil {
 		return err
 	}
+	reserveStarted := time.Now().UTC()
 	reservation, err := s.reserveBilling(ctx, item, billingJobID)
+	reserveCompleted := time.Now().UTC()
+	result, reason := sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.billing.reserve", result, reason, reserveStarted, reserveCompleted, sandboxPhaseAttrs{
+		"billing_job_id": strconv.FormatInt(billingJobID, 10),
+	})
 	if err != nil {
 		_ = s.failAttempt(context.Background(), item, "billing_reserve_failed", err)
 		return err
@@ -577,7 +599,11 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if err := s.transition(ctx, item, StateReserved, StateLaunching, "launching", nil); err != nil {
 		return err
 	}
+	durableStarted := time.Now().UTC()
 	durablePlan, err := s.prepareDurableCaches(ctx, item)
+	durableCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.durable.prepare", result, reason, durableStarted, durableCompleted, nil)
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
@@ -588,7 +614,11 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	if durablePlan.Enabled {
 		item.FilesystemMounts = append(item.FilesystemMounts, durablePlan.filesystemMounts()...)
 	}
+	quotaStarted := time.Now().UTC()
 	storageQuotaBytes, err := s.durableStorageQuotaBytes(ctx, item)
+	quotaCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.durable.storage_quota", result, reason, quotaStarted, quotaCompleted, nil)
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
@@ -598,6 +628,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		return s.failAttempt(ctx, item, "durable_storage_entitlement_failed", err)
 	}
 	acquireCtx, cancelAcquire := context.WithTimeout(ctx, leaseAcquireTimeout)
+	leaseStarted := time.Now().UTC()
 	lease, err := s.Orchestrator.AcquireLease(acquireCtx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
 		Resources:   vmResourcesForLease(item.Resources),
 		TTLSeconds:  leaseTTLSeconds(item, s.WorkloadTimeout),
@@ -610,7 +641,16 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		FilesystemMounts: item.FilesystemMounts,
 		GoldenVM:         durablePlan.GoldenVM.Activation,
 	})
+	leaseCompleted := time.Now().UTC()
 	cancelAcquire()
+	if err == nil {
+		item.LeaseID = lease.LeaseID
+	}
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.lease.acquire", result, reason, leaseStarted, leaseCompleted, sandboxPhaseAttrs{
+		"activation_mode": string(lease.Activation.Mode),
+		"snapshot_key":    lease.Activation.SnapshotKey,
+	})
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
@@ -623,10 +663,13 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		s.failDurableCaches(ctx, durablePlan, reason, err)
 		return s.failAttempt(ctx, item, reason, err)
 	}
-	item.LeaseID = lease.LeaseID
 	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, "")
 	if lease.State != vmorchestrator.LeaseStateReady {
+		readyStarted := time.Now().UTC()
 		lease, err = s.waitLeaseReady(ctx, lease.LeaseID, leaseReadyTimeout)
+		readyCompleted := time.Now().UTC()
+		result, reason = sandboxPhaseResult(err)
+		s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.lease.ready_wait", result, reason, readyStarted, readyCompleted, nil)
 		if err != nil {
 			cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 			defer cancel()
@@ -661,7 +704,13 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 			"requested_mount_count", len(item.FilesystemMounts),
 		)
 	}
+	mountResultsStarted := time.Now().UTC()
 	durablePlan, err = s.recordDurableLeaseMountResults(ctx, durablePlan, lease.FilesystemMounts)
+	mountResultsCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.durable.mount_results", result, reason, mountResultsStarted, mountResultsCompleted, sandboxPhaseAttrs{
+		"mount_result_count": strconv.Itoa(len(lease.FilesystemMounts)),
+	})
 	if err != nil {
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
 		s.failDurableCaches(ctx, durablePlan, "required_durable_mount_failed", err)
@@ -675,16 +724,28 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		MaxWallSeconds: maxWallSeconds(item, s.WorkloadTimeout),
 	}
 	execCtx, cancelExec := context.WithTimeout(ctx, execStartTimeout)
+	execStartStarted := time.Now().UTC()
 	execRecord, err := s.Orchestrator.StartExec(execCtx, lease.LeaseID, item.AttemptID.String()+":exec", execSpec)
+	execStartCompleted := time.Now().UTC()
 	cancelExec()
+	if err == nil {
+		item.ExecID = execRecord.ExecID
+	}
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.exec.start", result, reason, execStartStarted, execStartCompleted, nil)
 	if err != nil {
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
 		s.failDurableCaches(ctx, durablePlan, "exec_start_failed", err)
 		return s.failAttempt(ctx, item, "exec_start_failed", err)
 	}
-	item.ExecID = execRecord.ExecID
 	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, execRecord.ExecID)
+	activateStarted := time.Now().UTC()
 	activated, err := s.activateBillingWindow(ctx, reservation, execRecord.StartedAt)
+	activateCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.billing.activate", result, reason, activateStarted, activateCompleted, sandboxPhaseAttrs{
+		"billing_window_id": reservation.WindowID,
+	})
 	if err != nil {
 		_, _ = s.Orchestrator.CancelExec(detachedContext(ctx), lease.LeaseID, execRecord.ExecID, item.AttemptID.String()+":cancel", "billing_activate_failed")
 		s.cleanupLeaseAndReservation(ctx, lease.LeaseID, reservation)
@@ -761,7 +822,11 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 		waitCtx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
+	waitStarted := time.Now().UTC()
 	finalExec, waitErr := s.Orchestrator.WaitExec(waitCtx, leaseID, execRecord.ExecID, true)
+	waitCompleted := time.Now().UTC()
+	result, reason := sandboxPhaseResult(waitErr)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.exec.wait", result, reason, waitStarted, waitCompleted, nil)
 	if waitErr != nil {
 		span.RecordError(waitErr)
 		span.SetStatus(codes.Error, waitErr.Error())
@@ -823,7 +888,14 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 	if durationMs < 1 {
 		durationMs = 1
 	}
+	settleStarted := time.Now().UTC()
 	settleResult, err := s.settleBillingWindow(ctx, reservation, uint32(clampUint32(durationMs)), usageSummary(finalExec))
+	settleCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.billing.settle", result, reason, settleStarted, settleCompleted, sandboxPhaseAttrs{
+		"billing_window_id": reservation.WindowID,
+		"duration_ms":       strconv.FormatInt(durationMs, 10),
+	})
 	if err != nil {
 		failErr := s.failAttempt(ctx, item, "billing_settle_failed", err)
 		if releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), leaseID, item.AttemptID.String()+":release-after-settle-failed"); releaseErr != nil && s.Logger != nil {
@@ -835,14 +907,27 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 		return nil
 	}
 	_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "settled", int(durationMs), settleResult)
-	if err := s.completeAttempt(ctx, item, outcome.State, outcome.Reason, finalExec, durationMs, completedAt); err != nil {
+	completeStarted := time.Now().UTC()
+	err = s.completeAttempt(ctx, item, outcome.State, outcome.Reason, finalExec, durationMs, completedAt)
+	completeCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.execution.complete", result, reason, completeStarted, completeCompleted, sandboxPhaseAttrs{
+		"terminal_state":  outcome.State,
+		"terminal_reason": outcome.Reason,
+	})
+	if err != nil {
 		if releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), leaseID, item.AttemptID.String()+":release-after-complete-failed"); releaseErr != nil && s.Logger != nil {
 			s.Logger.WarnContext(ctx, "release lease after completion failure failed", "lease_id", leaseID, "error", releaseErr)
 		}
 		return err
 	}
-	if err := s.Orchestrator.ReleaseLease(detachedContext(ctx), leaseID, item.AttemptID.String()+":release"); err != nil && s.Logger != nil {
-		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", leaseID, "error", err)
+	releaseStarted := time.Now().UTC()
+	releaseErr := s.Orchestrator.ReleaseLease(detachedContext(ctx), leaseID, item.AttemptID.String()+":release")
+	releaseCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(releaseErr)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.lease.release", result, reason, releaseStarted, releaseCompleted, nil)
+	if releaseErr != nil && s.Logger != nil {
+		s.Logger.WarnContext(ctx, "release lease failed", "lease_id", leaseID, "error", releaseErr)
 	}
 	runRecord, err := s.loadRun(ctx, item.OrgID, item.ExecutionID, false)
 	if err == nil {
@@ -854,7 +939,9 @@ func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Sp
 		s.Logger.WarnContext(ctx, "load run projection after execution failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "error", err)
 	}
 	if item.WorkloadKind == WorkloadKindRunner {
+		markStarted := time.Now().UTC()
 		s.MarkRunnerExecutionExited(detachedContext(ctx), item.ExecutionID)
+		s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.runner.mark_exited", "succeeded", "", markStarted, time.Now().UTC(), nil)
 	}
 	return nil
 }
@@ -937,7 +1024,14 @@ func (s *Service) executionTerminalOutcome(ctx context.Context, item executionWo
 		reason := durableFailureReason("github_job_identity_failed", err)
 		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}, err
 	}
+	resultStarted := time.Now().UTC()
 	result, pollCount, wait, err := s.waitForGitHubWorkflowJobResult(ctx, identity)
+	resultCompleted := time.Now().UTC()
+	phaseResult, phaseReason := sandboxPhaseResult(err)
+	s.recordRunnerIdentityPhase(ctx, identity, item, "sandbox-rental", "github.job.result_wait", phaseResult, phaseReason, resultStarted, resultCompleted, sandboxPhaseAttrs{
+		"github.workflow_job.poll_count": strconv.Itoa(pollCount),
+		"github.workflow_job.wait_ms":    strconv.FormatInt(wait.Milliseconds(), 10),
+	})
 	if err != nil {
 		reason := durableFailureReason("github_job_result_wait_failed", err)
 		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}, err
@@ -1504,7 +1598,17 @@ func (s *Service) writeExecutionLogs(ctx context.Context, record ExecutionRecord
 	}); err != nil {
 		return err
 	}
-	return batch.Send()
+	if err := batch.Send(); err != nil {
+		return err
+	}
+	if rows := sandboxPhaseRowsForRunnerLog(record, logs); len(rows) > 0 {
+		go func() {
+			if err := s.writeSandboxPhaseEvents(context.Background(), rows); err != nil && s.Logger != nil {
+				s.Logger.WarnContext(context.Background(), "runner log phase event insert failed", "execution_id", record.ExecutionID, "error", err)
+			}
+		}()
+	}
+	return nil
 }
 
 func (s *Service) writeJobEvent(ctx context.Context, row jobEventRow) error {

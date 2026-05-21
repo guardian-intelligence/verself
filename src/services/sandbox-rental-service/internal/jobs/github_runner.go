@@ -590,6 +590,7 @@ func (r *GitHubRunner) VerifyWebhookSignature(payload []byte, signature string) 
 }
 
 func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deliveryID string, payload []byte, signature string) error {
+	phaseStarted := time.Now().UTC()
 	if !r.Configured() {
 		return ErrGitHubRunnerNotConfigured
 	}
@@ -723,6 +724,12 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
+	phaseRow := sandboxPhaseRowFromGitHubWorkflowJob(ctx, event, "github-webhook", "github.webhook.workflow_job", "succeeded", "", phaseStarted, time.Now().UTC(), sandboxPhaseAttrs{
+		"github.webhook.delivery_id": deliveryID,
+		"github.workflow_job.action": event.Action,
+		"github.workflow_job.status": status,
+	})
+	go r.service.writeSandboxPhaseEvent(detachedContext(ctx), phaseRow)
 	// Best-effort, detached from the webhook: freeze the p50 baseline once per
 	// flight. ClickHouse must never gate webhook availability.
 	if flightOrg != "" && isActiveFlightStatus(status) {
@@ -738,7 +745,22 @@ func (r *GitHubRunner) HandleWebhook(ctx context.Context, eventName string, deli
 	return nil
 }
 
-func (r *GitHubRunner) ReconcileCapacity(ctx context.Context, githubJobID int64) error {
+func (r *GitHubRunner) ReconcileCapacity(ctx context.Context, githubJobID int64) (err error) {
+	phaseStarted := time.Now().UTC()
+	var phaseJob githubQueuedJob
+	defer func() {
+		result, reason := sandboxPhaseResult(err)
+		var row sandboxPhaseRow
+		if phaseJob.GitHubJobID != 0 {
+			row = sandboxPhaseRowFromGitHubQueuedJob(ctx, phaseJob, "sandbox-rental", "github.capacity.reconcile", result, reason, phaseStarted, time.Now().UTC(), nil)
+		} else {
+			row = sandboxPhaseBase(ctx, "sandbox-rental", "github.capacity.reconcile", result, reason, phaseStarted, time.Now().UTC(), nil)
+			row.Provider = RunnerProviderGitHub
+			row.ExternalProvider = RunnerProviderGitHub
+			row.ProviderJobID = int64ToUint64(githubJobID)
+		}
+		go r.service.writeSandboxPhaseEvent(detachedContext(ctx), row)
+	}()
 	ctx, span := tracer.Start(ctx, "github.capacity.reconcile")
 	defer span.End()
 	span.SetAttributes(traceInt64("github.job_id", githubJobID))
@@ -750,6 +772,7 @@ func (r *GitHubRunner) ReconcileCapacity(ctx context.Context, githubJobID int64)
 		}
 		return err
 	}
+	phaseJob = job
 	runnerClass, resources, productID, err := r.runnerClassForLabels(ctx, job.Labels)
 	if err != nil {
 		return err
@@ -825,7 +848,17 @@ func (r *GitHubRunner) ReconcileCapacity(ctx context.Context, githubJobID int64)
 	return tx.Commit(ctx)
 }
 
-func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUID) error {
+func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUID) (err error) {
+	phaseStarted := time.Now().UTC()
+	var phaseAllocation githubAllocation
+	defer func() {
+		result, reason := sandboxPhaseResult(err)
+		row := sandboxPhaseRowFromGitHubAllocation(ctx, phaseAllocation, "sandbox-rental", "github.runner.allocate", result, reason, phaseStarted, time.Now().UTC(), nil)
+		if row.AllocationID == uuid.Nil {
+			row.AllocationID = allocationID
+		}
+		go r.service.writeSandboxPhaseEvent(detachedContext(ctx), row)
+	}()
 	ctx, span := tracer.Start(ctx, "github.runner.allocate")
 	defer span.End()
 	span.SetAttributes(attribute.String("github.allocation_id", allocationID.String()))
@@ -833,6 +866,7 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 	if err != nil {
 		return err
 	}
+	phaseAllocation = allocation
 	if allocation.State == "vm_submitted" || allocation.State == "assigned" || allocation.State == "cleaned" {
 		return nil
 	}
@@ -881,6 +915,8 @@ func (r *GitHubRunner) AllocateRunner(ctx context.Context, allocationID uuid.UUI
 		_ = r.setAllocationState(ctx, allocationID, "failed", "execution_submit_failed")
 		return err
 	}
+	phaseAllocation.ExecutionID = executionID
+	phaseAllocation.AttemptID = attemptID
 	span.SetAttributes(
 		attribute.Int64("github.runner_id", runnerID),
 		attribute.String("github.runner_name", firstNonEmpty(jit.Runner.Name, allocation.RunnerName)),
@@ -1422,7 +1458,20 @@ func (r *GitHubRunner) createJITConfig(ctx context.Context, installationID int64
 	return resp, nil
 }
 
-func (r *GitHubRunner) ensureRunnerGroupPolicy(ctx context.Context, token, org string, repositoryID int64) error {
+func (r *GitHubRunner) ensureRunnerGroupPolicy(ctx context.Context, token, org string, repositoryID int64) (err error) {
+	phaseStarted := time.Now().UTC()
+	defer func() {
+		result, reason := sandboxPhaseResult(err)
+		row := sandboxPhaseBase(ctx, "sandbox-rental", "github.runner_group.reconcile", result, reason, phaseStarted, time.Now().UTC(), sandboxPhaseAttrs{
+			"github.org":           org,
+			"github.runner_group":  strconv.FormatInt(r.cfg.RunnerGroupID, 10),
+			"github.repository_id": strconv.FormatInt(repositoryID, 10),
+		})
+		row.Provider = RunnerProviderGitHub
+		row.ExternalProvider = RunnerProviderGitHub
+		row.ProviderRepositoryID = int64ToUint64(repositoryID)
+		go r.service.writeSandboxPhaseEvent(detachedContext(ctx), row)
+	}()
 	ctx, span := tracer.Start(ctx, "github.runner_group.reconcile")
 	defer span.End()
 	span.SetAttributes(
@@ -1621,6 +1670,8 @@ func githubRunnerName(githubJobID int64, allocationID uuid.UUID) string {
 
 func githubRunnerCommand() string {
 	return `set -eu
+phase() { printf '::verself-phase name=%s ts=%s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"; }
+phase runner.bootstrap.start
 jit_file="$(mktemp)"
 header_file="$(mktemp)"
 cleanup() { rm -f "$jit_file" "$header_file"; }
@@ -1630,6 +1681,7 @@ if [ -n "${VERSELF_TRACEPARENT:-}" ]; then
   printf 'header = "traceparent: %s"\n' "$VERSELF_TRACEPARENT" >> "$header_file"
 fi
 curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${VERSELF_HOST_SERVICE_HTTP_ORIGIN:?}${VERSELF_GITHUB_JIT_PATH:?}" -o "$jit_file"
+phase runner.bootstrap.jit_fetched
 unset VERSELF_TRACEPARENT
 unset VERSELF_GITHUB_JIT_TOKEN
 export PATH="/opt/actions-runner/externals/node20/bin:$PATH"
@@ -1650,8 +1702,10 @@ for entry in /opt/actions-runner/* /opt/actions-runner/.[!.]* /opt/actions-runne
   esac
   cp -a "$entry" "$runtime_dir"/
 done
+phase runner.bootstrap.runtime_ready
 cd "$runtime_dir"
 mkdir -p _diag _temp
+phase github.runner.process_start
 exec ./run.sh --jitconfig "$(cat "$jit_file")"`
 }
 

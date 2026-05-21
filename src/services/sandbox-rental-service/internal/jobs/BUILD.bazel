@@ -22,8 +22,10 @@ go_library(
         "reconcile.go",
         "runner_control.go",
         "runner_execution_identity.go",
+        "runner_log_phase_events.go",
         "runs.go",
         "safeconv.go",
+        "sandbox_phase_events.go",
         "scheduler_workers.go",
         "store_conversions.go",
         "vmresources.go",
@@ -63,7 +65,11 @@ go_test(
         "durable_caches_test.go",
         "execution_lifecycle_test.go",
         "org_runtime_test.go",
+        "runner_log_phase_events_test.go",
     ],
     embed = [":jobs"],
-    deps = ["//src/substrate/vm-orchestrator"],
+    deps = [
+        "//src/substrate/vm-orchestrator",
+        "@com_github_google_uuid//:uuid",
+    ],
 )
