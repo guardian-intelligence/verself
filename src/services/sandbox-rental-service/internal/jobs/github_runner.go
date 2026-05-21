@@ -1677,8 +1677,7 @@ header_file="$(mktemp)"
 cleanup() {
   rm -f "$jit_file" "$header_file"
   if [ -n "${runtime_dir:-}" ]; then
-    sudo umount "$runtime_dir" 2>/dev/null || true
-    sudo rm -rf "$runtime_dir" "${runtime_upper:-}" "${runtime_work:-}"
+    rm -rf "$runtime_dir"
   fi
 }
 trap cleanup EXIT
@@ -1692,18 +1691,24 @@ unset VERSELF_TRACEPARENT
 unset VERSELF_GITHUB_JIT_TOKEN
 export PATH="/opt/actions-runner/externals/node20/bin:$PATH"
 runtime_dir="` + githubRunnerRuntimeDir + `"
-runtime_upper="${runtime_dir}.upper"
-runtime_work="${runtime_dir}.work"
 durable_work_dir="` + githubRunnerDurableWorkDir + `"
 # GitHub only accepts work_folder relative to the runner install dir.
 tool_cache="` + runnerToolCacheDir + `"
 [ -d "$durable_work_dir" ] || { echo "durable GitHub work dir is not mounted: $durable_work_dir" >&2; exit 1; }
-sudo umount "$runtime_dir" 2>/dev/null || true
-sudo rm -rf "$runtime_dir" "$runtime_upper" "$runtime_work"
-mkdir -p "$runtime_dir" "$runtime_upper" "$runtime_work" "$tool_cache"
-sudo mount -t overlay overlay -o "lowerdir=/opt/actions-runner,upperdir=$runtime_upper,workdir=$runtime_work" "$runtime_dir"
-sudo chown runner:runner "$runtime_upper" "$runtime_work" "$runtime_dir"
-rm -rf "$runtime_dir/_work"
+rm -rf "$runtime_dir"
+mkdir -p "$runtime_dir" "$tool_cache"
+cp -a /opt/actions-runner/bin "$runtime_dir/bin"
+cp -a /opt/actions-runner/run.sh /opt/actions-runner/run-helper.sh.template "$runtime_dir/"
+for entry in /opt/actions-runner/* /opt/actions-runner/.[!.]* /opt/actions-runner/..?*; do
+  [ -e "$entry" ] || continue
+  base="$(basename "$entry")"
+  case "$base" in
+    _diag|_temp|_work|bin|lost+found|run.sh|run-helper.sh|run-helper.sh.template)
+      continue
+      ;;
+  esac
+  ln -s "$entry" "$runtime_dir/$base"
+done
 ln -s "$durable_work_dir" "$runtime_dir/_work"
 export RUNNER_TOOL_CACHE="$tool_cache"
 export AGENT_TOOLSDIRECTORY="$tool_cache"

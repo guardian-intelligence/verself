@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -57,5 +58,25 @@ func TestSandboxPhaseRowsForRunnerLog(t *testing.T) {
 	}
 	if got := byName["github.runner.job"].ProviderRunID; got != 2 {
 		t.Fatalf("provider_run_id = %d, want 2", got)
+	}
+}
+
+func TestGitHubRunnerCommandBuildsWritableRuntimeWithoutSudo(t *testing.T) {
+	command := githubRunnerCommand()
+	for _, disallowed := range []string{"sudo ", "mount -t overlay"} {
+		if strings.Contains(command, disallowed) {
+			t.Fatalf("runner bootstrap command contains %q", disallowed)
+		}
+	}
+	for _, required := range []string{
+		"cp -a /opt/actions-runner/bin",
+		"cp -a /opt/actions-runner/run.sh /opt/actions-runner/run-helper.sh.template",
+		"ln -s \"$entry\" \"$runtime_dir/$base\"",
+		"ln -s \"$durable_work_dir\" \"$runtime_dir/_work\"",
+		"./run.sh --jitconfig",
+	} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("runner bootstrap command missing %q", required)
+		}
 	}
 }
