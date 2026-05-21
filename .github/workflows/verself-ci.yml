@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
 
       - name: Bootstrap toolchain
-        run: src/tools/dev/bootstrap/bootstrap-linux-amd64 --bazelisk-only
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
 
       - name: Build and Test
         run: |
@@ -81,7 +81,7 @@ jobs:
           persist-credentials: false
 
       - name: Bootstrap toolchain
-        run: src/tools/dev/bootstrap/bootstrap-linux-amd64 --bazelisk-only
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
 
       - name: Build and Test
         env:
