@@ -18,9 +18,23 @@ concurrency:
 
 jobs:
   build:
-    name: Build with warm VM (Verself runner, durable workspace)
+    name: Warm VM Bazel workload (${{ matrix.workload }})
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workload: services
+            targets: //src/services/...
+          - workload: substrate-host
+            targets: //src/substrate/... //src/host/...
+          - workload: contracts-sdks
+            targets: //src/smithy/... //src/sdk-generator/... //src/sdks/...
+          - workload: frontends
+            targets: //src/websites/...
+          - workload: operator-infra-tools
+            targets: //src/tools/... //src/infrastructure-components/... //src/integrations/... //src/verself-cli/...
     steps:
       - name: Check out repository
         uses: guardian-intelligence/verself/.github/actions/checkout@main
@@ -31,12 +45,14 @@ jobs:
         run: src/tools/dev/bootstrap/bootstrap-linux-amd64 --bazelisk-only
 
       - name: Build and Test
+        env:
+          BAZEL_TARGETS: ${{ matrix.targets }}
         run: |
           set -euo pipefail
           if [ -n "${RUNNER_TRACKING_ID:-}" ]; then
             echo "GitHub runner process cleanup marker is present in the step environment."
           fi
-          env -u RUNNER_TRACKING_ID bazelisk test //...
+          env -u RUNNER_TRACKING_ID bazelisk test ${BAZEL_TARGETS}
           server_pid="$(env -u RUNNER_TRACKING_ID bazelisk info server_pid)"
           if [ -z "$server_pid" ] || [ ! -r "/proc/${server_pid}/environ" ]; then
             echo "::error::Bazel server process ${server_pid:-<empty>} is not inspectable"
