@@ -4,6 +4,17 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  vars:
+    clickhouse_client_ca_source: /etc/clickhouse-server/tls/server-ca.pem
+    clickhouse_client_ca_credentials:
+      - { path: /etc/credstore/analytics-service/clickhouse-ca-cert, group: analytics_service }
+      - { path: /etc/credstore/billing/clickhouse-ca-cert, group: billing }
+      - { path: /etc/credstore/github-integration-service/clickhouse-ca-cert, group: github_integration_service }
+      - { path: /etc/credstore/governance-service/clickhouse-ca-cert, group: governance_service }
+      - { path: /etc/credstore/iam-service/clickhouse-ca-cert, group: iam_service }
+      - { path: /etc/credstore/notifications-service/clickhouse-ca-cert, group: notifications_service }
+      - { path: /etc/credstore/object-storage-service/clickhouse-ca-cert, group: object_storage_service }
+      - { path: /etc/credstore/sandbox-rental/clickhouse-ca-cert, group: sandbox_rental }
   tasks:
     - name: Load site secrets
       ansible.builtin.import_tasks: tasks/site-secrets.yml
@@ -29,6 +40,29 @@
     - name: Converge PostgreSQL local service databases
       ansible.builtin.include_role:
         name: postgresql
+
+    - name: Converge ClickHouse client CA credential directories
+      ansible.builtin.file:
+        path: "{{ item.path | dirname }}"
+        state: directory
+        owner: root
+        group: "{{ item.group }}"
+        mode: "0750"
+      loop: "{{ clickhouse_client_ca_credentials }}"
+      loop_control:
+        label: "{{ item.path | dirname }}"
+
+    - name: Converge ClickHouse client CA credentials
+      ansible.builtin.copy:
+        src: "{{ clickhouse_client_ca_source }}"
+        dest: "{{ item.path }}"
+        remote_src: true
+        owner: root
+        group: "{{ item.group }}"
+        mode: "0640"
+      loop: "{{ clickhouse_client_ca_credentials }}"
+      loop_control:
+        label: "{{ item.path }}"
 
     - name: Converge OpenBao platform runtime secrets
       ansible.builtin.import_tasks: tasks/openbao-runtime-secrets.yml
