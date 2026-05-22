@@ -6,6 +6,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/lib/pq v1.10.9
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0

@@ -32,14 +32,18 @@ jobs:
 
       - name: Build and Test
         env:
-          VERSELF_TEST_POSTGRES_REQUIRED: "1"
+          VERSELF_PGTEST_ROOT: /home/runner/.cache/verself/pgtest
         run: |
           set -euo pipefail
           if [ -n "${RUNNER_TRACKING_ID:-}" ]; then
             echo "GitHub runner process cleanup marker is present in the step environment."
           fi
+          mkdir -p "$VERSELF_PGTEST_ROOT"
           started_ms="$(($(date +%s%N) / 1000000))"
-          env -u RUNNER_TRACKING_ID bazelisk test --test_env=VERSELF_TEST_POSTGRES_REQUIRED=1 //...
+          env -u RUNNER_TRACKING_ID bazelisk test \
+            --build_tests_only \
+            --test_env=VERSELF_PGTEST_ROOT="$VERSELF_PGTEST_ROOT" \
+            //...
           finished_ms="$(($(date +%s%N) / 1000000))"
           echo "::notice title=Verself workload timing::workload=full-repo duration_ms=$((finished_ms - started_ms))"
           server_pid="$(env -u RUNNER_TRACKING_ID bazelisk info server_pid)"

@@ -1,8 +1,0 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-
-go_library(
-    name = "testpostgres",
-    srcs = ["testpostgres.go"],
-    importpath = "github.com/verself/service-runtime/testpostgres",
-    visibility = ["//src/services:__subpackages__"],
-)

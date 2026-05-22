@@ -2,11 +2,15 @@ package migrations
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -30,6 +34,10 @@ func Up(ctx context.Context, service string) error {
 	if dsn == "" {
 		return errors.New("VERSELF_PG_DSN is required")
 	}
+	return UpDSN(ctx, service, dsn)
+}
+
+func UpDSN(ctx context.Context, service, dsn string) error {
 	sourceDriver, err := iofs.New(Files, ".")
 	if err != nil {
 		return fmt.Errorf("%s: load migrations: %w", service, err)
@@ -65,4 +73,32 @@ func Up(ctx context.Context, service string) error {
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "%s migrations ok\n", service)
 	return nil
+}
+
+func Fingerprint() string {
+	names := make([]string, 0)
+	if err := fs.WalkDir(Files, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type().IsRegular() && strings.HasSuffix(path, ".up.sql") {
+			names = append(names, path)
+		}
+		return nil
+	}); err != nil {
+		panic(err)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	for _, name := range names {
+		raw, err := Files.ReadFile(name)
+		if err != nil {
+			panic(err)
+		}
+		_, _ = h.Write([]byte(name))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write(raw)
+		_, _ = h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }

@@ -21,16 +21,16 @@ go_binary(
 
 go_test(
     name = "billing-seed_test",
+    size = "medium",
     srcs = ["seed_integration_test.go"],
     embed = [":billing-seed_lib"],
     tags = [
         "integration",
-        "local",
         "postgres",
     ],
     deps = [
         "//src/services/billing-service/migrations",
-        "//src/services/service-runtime/go/testpostgres",
+        "//src/services/service-runtime/go/pgtest",
         "@com_github_jackc_pgx_v5//pgxpool",
     ],
 )

@@ -8,19 +8,21 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/verself/billing-service/migrations"
-	"github.com/verself/service-runtime/testpostgres"
+	"github.com/verself/service-runtime/pgtest"
 )
 
-func TestBillingSeedCatalogLocalPostgres(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func TestBillingSeedCatalogIsIdempotent(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	cluster := testpostgres.Start(ctx, t, testpostgres.Options{Database: "billing_service_test"})
-	t.Setenv("VERSELF_PG_DSN", cluster.DSN)
-	if err := migrations.Up(ctx, "billing-service"); err != nil {
-		t.Fatalf("migrate billing postgres: %v", err)
-	}
-	pg, err := pgxpool.New(ctx, cluster.DSN)
+	db := pgtest.Acquire(ctx, t, pgtest.Template{
+		Service:     "billing-service",
+		Fingerprint: migrations.Fingerprint(),
+		Migrate: func(ctx context.Context, dsn string) error {
+			return migrations.UpDSN(ctx, "billing-service", dsn)
+		},
+	})
+	pg, err := pgxpool.New(ctx, db.DSN)
 	if err != nil {
 		t.Fatalf("open billing postgres: %v", err)
 	}
