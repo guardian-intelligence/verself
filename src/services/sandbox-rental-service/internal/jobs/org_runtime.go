@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const orgRuntimeEnsureTimeout = 10 * time.Second
+const orgRuntimeEnsureTimeout = 45 * time.Second
 
 func (s *Service) ensureOrgRuntimeForRunnerClass(ctx context.Context, orgID, productID, runnerClass string) error {
 	mounts, err := s.runnerClassFilesystemMountsRead(ctx, runnerClass)

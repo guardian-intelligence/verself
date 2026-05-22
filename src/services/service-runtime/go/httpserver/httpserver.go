@@ -15,8 +15,8 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
-// Standard server timeouts. Changing any of these changes them everywhere
-// that uses New(); services should never override them piecemeal.
+// Standard server timeouts. Changing any of these changes every listener that
+// uses New(); long-lived planes should use NewWithTimeouts with a named reason.
 const (
 	ReadHeaderTimeout = 2 * time.Second
 	ReadTimeout       = 5 * time.Second
@@ -24,6 +24,47 @@ const (
 	IdleTimeout       = 30 * time.Second
 	MaxHeaderBytes    = 16 << 10
 )
+
+// Timeouts configures HTTP server deadline fields.
+// Zero values keep the Verself service defaults.
+type Timeouts struct {
+	ReadHeader    time.Duration
+	Read          time.Duration
+	Write         time.Duration
+	Idle          time.Duration
+	MaxHeaderSize int
+}
+
+// DefaultTimeouts returns the standard Verself HTTP server deadlines.
+func DefaultTimeouts() Timeouts {
+	return Timeouts{
+		ReadHeader:    ReadHeaderTimeout,
+		Read:          ReadTimeout,
+		Write:         WriteTimeout,
+		Idle:          IdleTimeout,
+		MaxHeaderSize: MaxHeaderBytes,
+	}
+}
+
+func (t Timeouts) withDefaults() Timeouts {
+	defaults := DefaultTimeouts()
+	if t.ReadHeader <= 0 {
+		t.ReadHeader = defaults.ReadHeader
+	}
+	if t.Read <= 0 {
+		t.Read = defaults.Read
+	}
+	if t.Write <= 0 {
+		t.Write = defaults.Write
+	}
+	if t.Idle <= 0 {
+		t.Idle = defaults.Idle
+	}
+	if t.MaxHeaderSize <= 0 {
+		t.MaxHeaderSize = defaults.MaxHeaderSize
+	}
+	return t
+}
 
 // ShutdownTimeout is the graceful-shutdown deadline applied to every server
 // managed by Run/RunPair.
@@ -39,14 +80,21 @@ const ShutdownTimeout = 5 * time.Second
 // internal plane: net/http intercepts ALPN h2 via TLSNextProto before the
 // handler runs, so h2c.NewHandler only ever sees cleartext traffic.
 func New(addr string, handler http.Handler) *http.Server {
+	return NewWithTimeouts(addr, handler, Timeouts{})
+}
+
+// NewWithTimeouts is New with explicit timeout overrides for service planes
+// that legitimately hold requests open for substrate work.
+func NewWithTimeouts(addr string, handler http.Handler, timeouts Timeouts) *http.Server {
+	timeouts = timeouts.withDefaults()
 	return &http.Server{
 		Addr:              addr,
 		Handler:           h2c.NewHandler(handler, &http2.Server{}),
-		ReadHeaderTimeout: ReadHeaderTimeout,
-		ReadTimeout:       ReadTimeout,
-		WriteTimeout:      WriteTimeout,
-		IdleTimeout:       IdleTimeout,
-		MaxHeaderBytes:    MaxHeaderBytes,
+		ReadHeaderTimeout: timeouts.ReadHeader,
+		ReadTimeout:       timeouts.Read,
+		WriteTimeout:      timeouts.Write,
+		IdleTimeout:       timeouts.Idle,
+		MaxHeaderBytes:    timeouts.MaxHeaderSize,
 	}
 }
 

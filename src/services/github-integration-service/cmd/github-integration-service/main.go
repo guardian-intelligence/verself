@@ -30,7 +30,7 @@ const (
 	serviceVersion    = "0.1.0"
 	defaultListenAddr = "127.0.0.1:4272"
 
-	sandboxRunnerSubmissionTimeout = 30 * time.Second
+	sandboxRunnerSubmissionTimeout = 60 * time.Second
 )
 
 func main() {

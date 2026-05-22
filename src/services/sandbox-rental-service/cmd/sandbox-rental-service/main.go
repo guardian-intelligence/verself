@@ -43,7 +43,8 @@ const (
 	correlationHeader = "X-Verself-Correlation-Id"
 	correlationCookie = "verself_correlation_id"
 
-	sandboxAPIRequestBodyLimit = 1 << 20
+	sandboxAPIRequestBodyLimit  = 1 << 20
+	sandboxInternalWriteTimeout = 60 * time.Second
 )
 
 func main() {
@@ -348,7 +349,9 @@ func run() error {
 		return fmt.Errorf("sandbox-rental internal allowlist: %w", err)
 	}
 	internalHandler := limitInternalAPIRequestBodies(internalAllowlist, sandboxAPIRequestBodyLimit)
-	internalSrv := httpserver.New(internalListenAddr, otelhttp.NewHandler(internalHandler, "sandbox-rental-service-internal"))
+	internalSrv := httpserver.NewWithTimeouts(internalListenAddr, otelhttp.NewHandler(internalHandler, "sandbox-rental-service-internal"), httpserver.Timeouts{
+		Write: sandboxInternalWriteTimeout,
+	})
 	internalSrv.TLSConfig = internalTLSConfig
 
 	go func() {

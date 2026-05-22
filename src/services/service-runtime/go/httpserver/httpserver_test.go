@@ -37,6 +37,25 @@ func TestNewAppliesStandardTimeouts(t *testing.T) {
 	}
 }
 
+func TestNewWithTimeoutsUsesOverridesAndDefaults(t *testing.T) {
+	srv := httpserver.NewWithTimeouts("127.0.0.1:0", http.NotFoundHandler(), httpserver.Timeouts{Write: 45 * time.Second})
+	if srv.ReadHeaderTimeout != httpserver.ReadHeaderTimeout {
+		t.Errorf("ReadHeaderTimeout: got %v", srv.ReadHeaderTimeout)
+	}
+	if srv.ReadTimeout != httpserver.ReadTimeout {
+		t.Errorf("ReadTimeout: got %v", srv.ReadTimeout)
+	}
+	if srv.WriteTimeout != 45*time.Second {
+		t.Errorf("WriteTimeout: got %v", srv.WriteTimeout)
+	}
+	if srv.IdleTimeout != httpserver.IdleTimeout {
+		t.Errorf("IdleTimeout: got %v", srv.IdleTimeout)
+	}
+	if srv.MaxHeaderBytes != httpserver.MaxHeaderBytes {
+		t.Errorf("MaxHeaderBytes: got %d", srv.MaxHeaderBytes)
+	}
+}
+
 func TestRunPairServesBothPlanes(t *testing.T) {
 	publicLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
