@@ -261,7 +261,6 @@ type RunnerCacheManifest struct {
 }
 
 type InternalSubmitRunnerJobInputBody struct {
-	OrgID            OrgID                         `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	Observation      RunnerJobObservation          `json:"observation" required:"true"`
 	RunnerName       RunnerName                    `json:"runner_name" required:"true" minLength:"1" maxLength:"512"`
 	RunnerID         *DecimalUint64                `json:"runner_id,omitempty" pattern:"^[0-9]+$"`
@@ -289,7 +288,6 @@ type InternalSubmitRunnerJobOutput struct {
 }
 
 type InternalObserveRunnerJobInputBody struct {
-	OrgID       OrgID                         `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	Observation RunnerJobObservation          `json:"observation" required:"true"`
 	WorkflowRun *RunnerWorkflowRunObservation `json:"workflow_run,omitempty"`
 }
@@ -310,7 +308,6 @@ type InternalObserveRunnerJobOutput struct {
 }
 
 type InternalObserveRunnerWorkflowRunInputBody struct {
-	OrgID       OrgID                        `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
 	WorkflowRun RunnerWorkflowRunObservation `json:"workflow_run" required:"true"`
 }
 
@@ -371,7 +368,7 @@ var InternalSubmitRunnerJob = Operation[InternalSubmitRunnerJobInput, InternalSu
 		Readonly:            false,
 		Paginated:           false,
 		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "sandbox-rental-service", Principals: []string{"workload"}},
-		Authorization:       AuthorizationDescriptor{Permission: "sandbox:runner_job:submit", OrganizationSource: "body_org_id", OrganizationMember: "org_id"},
+		Authorization:       AuthorizationDescriptor{Permission: "sandbox:runner_job:submit", OrganizationSource: "request_id"},
 		Audit:               AuditDescriptor{Event: "sandbox.runner_job.submit", Resource: "runner_job", Action: "submit"},
 		RateLimitBucket:     "internal_mutation",
 		RequestBodyMaxBytes: 131072,
@@ -395,7 +392,7 @@ var InternalObserveRunnerJob = Operation[InternalObserveRunnerJobInput, Internal
 		Readonly:            false,
 		Paginated:           false,
 		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "sandbox-rental-service", Principals: []string{"workload"}},
-		Authorization:       AuthorizationDescriptor{Permission: "sandbox:runner_job:observe", OrganizationSource: "body_org_id", OrganizationMember: "org_id"},
+		Authorization:       AuthorizationDescriptor{Permission: "sandbox:runner_job:observe", OrganizationSource: "request_id"},
 		Audit:               AuditDescriptor{Event: "sandbox.runner_job.observe", Resource: "runner_job", Action: "observe"},
 		RateLimitBucket:     "internal_mutation",
 		RequestBodyMaxBytes: 131072,
@@ -419,7 +416,7 @@ var InternalObserveRunnerWorkflowRun = Operation[InternalObserveRunnerWorkflowRu
 		Readonly:            false,
 		Paginated:           false,
 		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "sandbox-rental-service", Principals: []string{"workload"}},
-		Authorization:       AuthorizationDescriptor{Permission: "sandbox:runner_job:observe", OrganizationSource: "body_org_id", OrganizationMember: "org_id"},
+		Authorization:       AuthorizationDescriptor{Permission: "sandbox:runner_job:observe", OrganizationSource: "request_id"},
 		Audit:               AuditDescriptor{Event: "sandbox.runner_job.observe", Resource: "runner_job", Action: "observe_workflow_run"},
 		RateLimitBucket:     "internal_mutation",
 		RequestBodyMaxBytes: 131072,

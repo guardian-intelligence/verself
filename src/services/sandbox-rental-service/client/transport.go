@@ -194,7 +194,6 @@ type RunnerCacheManifest struct {
 type RunnerCacheManifestContentBase64 = string
 
 type InternalSubmitRunnerJobInputBody struct {
-	OrgID            OrgId                         `json:"org_id"`
 	Observation      RunnerJobObservation          `json:"observation"`
 	RunnerName       RunnerName                    `json:"runner_name"`
 	RunnerID         *DecimalUint64                `json:"runner_id,omitempty"`
@@ -226,7 +225,6 @@ type InternalSubmitRunnerJobResponse struct {
 }
 
 type InternalObserveRunnerJobInputBody struct {
-	OrgID       OrgId                         `json:"org_id"`
 	Observation RunnerJobObservation          `json:"observation"`
 	WorkflowRun *RunnerWorkflowRunObservation `json:"workflow_run,omitempty"`
 }
@@ -251,7 +249,6 @@ type InternalObserveRunnerJobResponse struct {
 }
 
 type InternalObserveRunnerWorkflowRunInputBody struct {
-	OrgID       OrgId                        `json:"org_id"`
 	WorkflowRun RunnerWorkflowRunObservation `json:"workflow_run"`
 }
 

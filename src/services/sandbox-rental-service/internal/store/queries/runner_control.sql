@@ -135,7 +135,6 @@ JOIN runner_provider_repositories p ON p.provider = j.provider
     AND p.active
 WHERE j.provider = sqlc.arg(provider)
   AND j.provider_job_id = sqlc.arg(provider_job_id)
-  AND p.org_id = sqlc.arg(org_id)
   AND j.status = sqlc.arg(status);
 
 -- name: UpsertRunnerJobCacheManifest :exec

@@ -64,7 +64,6 @@ job "github-integration" {
       env {
         GITHUB_API_BASE_URL = "https://api.github.com"
         GITHUB_APP_ID = "3370540"
-        GITHUB_DEFAULT_ORG_ID = "371564185181576922"
         GITHUB_RUNNER_CLASS_PREFIX = "verself-"
         GITHUB_RUNNER_GROUP_ID = "1"
         GITHUB_WORKER_BATCH_SIZE = "16"

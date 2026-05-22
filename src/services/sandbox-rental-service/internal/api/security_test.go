@@ -131,11 +131,15 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 	if len(schemes) != 1 || schemes["mutualTLS"] == nil {
 		t.Fatalf("internal security schemes = %#v, want only mutualTLS", schemes)
 	}
-	expected := map[string]string{
-		"internal-register-runner-repository":  "sandbox.runner_repository.register",
-		"internal-submit-runner-job":           "sandbox.runner_job.submit",
-		"internal-observe-runner-job":          "sandbox.runner_job.observe",
-		"internal-observe-runner-workflow-run": "sandbox.runner_job.observe",
+	type internalPolicyExpectation struct {
+		auditEvent string
+		orgScope   string
+	}
+	expected := map[string]internalPolicyExpectation{
+		"internal-register-runner-repository":  {auditEvent: "sandbox.runner_repository.register", orgScope: "body_org_id"},
+		"internal-submit-runner-job":           {auditEvent: "sandbox.runner_job.submit", orgScope: "request_id"},
+		"internal-observe-runner-job":          {auditEvent: "sandbox.runner_job.observe", orgScope: "request_id"},
+		"internal-observe-runner-workflow-run": {auditEvent: "sandbox.runner_job.observe", orgScope: "request_id"},
 	}
 	for path, pathItem := range openAPI.Paths {
 		if !strings.HasPrefix(path, "/internal/") {
@@ -145,7 +149,7 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 			if op == nil {
 				continue
 			}
-			auditEvent, ok := expected[op.OperationID]
+			want, ok := expected[op.OperationID]
 			if !ok {
 				t.Fatalf("unexpected internal operation %q at %s", op.OperationID, path)
 			}
@@ -157,7 +161,7 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 				t.Fatalf("%s %s security = %#v, want mutualTLS", op.Method, path, op.Security)
 			}
 			rawPolicy, ok := op.Extensions["x-verself-iam"].(map[string]any)
-			if !ok || rawPolicy["org_scope"] != "body_org_id" || rawPolicy["audit_event"] != auditEvent {
+			if !ok || rawPolicy["org_scope"] != want.orgScope || rawPolicy["audit_event"] != want.auditEvent {
 				t.Fatalf("%s %s internal IAM policy = %#v", op.Method, path, rawPolicy)
 			}
 		}

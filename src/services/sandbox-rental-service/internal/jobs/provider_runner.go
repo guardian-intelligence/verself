@@ -66,7 +66,6 @@ type ProviderCacheManifest struct {
 }
 
 type ProviderRunnerJobSubmission struct {
-	OrgID            string
 	Observation      ProviderRunnerJobObservation
 	WorkflowRun      *ProviderWorkflowRunObservation
 	CacheManifest    *ProviderCacheManifest
@@ -103,9 +102,6 @@ func (s *Service) SubmitProviderRunnerJob(ctx context.Context, req ProviderRunne
 	if req.Observation.Provider == "" || req.Observation.ProviderJobID <= 0 || req.Observation.ProviderRepositoryID <= 0 {
 		return ProviderRunnerJobSubmissionResult{}, fmt.Errorf("%w: runner job provider identity is required", ErrRunnerUnavailable)
 	}
-	if strings.TrimSpace(req.OrgID) == "" {
-		return ProviderRunnerJobSubmissionResult{}, fmt.Errorf("%w: org id is required", ErrRunnerUnavailable)
-	}
 	if strings.TrimSpace(req.BootstrapKind) == "" || strings.TrimSpace(req.BootstrapPayload) == "" {
 		return ProviderRunnerJobSubmissionResult{}, fmt.Errorf("%w: runner bootstrap payload is required", ErrRunnerUnavailable)
 	}
@@ -123,7 +119,7 @@ func (s *Service) SubmitProviderRunnerJob(ctx context.Context, req ProviderRunne
 		}
 	}
 	if req.WorkflowRun != nil {
-		if err := s.ObserveProviderWorkflowRun(ctx, strings.TrimSpace(req.OrgID), *req.WorkflowRun); err != nil {
+		if err := s.ObserveProviderWorkflowRun(ctx, *req.WorkflowRun); err != nil {
 			return ProviderRunnerJobSubmissionResult{}, err
 		}
 	}
@@ -145,7 +141,6 @@ func (s *Service) SubmitProviderRunnerJob(ctx context.Context, req ProviderRunne
 	job, err := s.storeQueries().GetProviderQueuedJobContext(ctx, store.GetProviderQueuedJobContextParams{
 		Provider:      req.Observation.Provider,
 		ProviderJobID: req.Observation.ProviderJobID,
-		OrgID:         dbOrgID(req.OrgID),
 		Status:        req.Observation.Status,
 	})
 	if err != nil {
@@ -253,7 +248,7 @@ func (s *Service) upsertProviderCacheManifest(ctx context.Context, provider stri
 	})
 }
 
-func (s *Service) ObserveProviderRunnerJob(ctx context.Context, orgID string, obs ProviderRunnerJobObservation, workflow *ProviderWorkflowRunObservation) (ProviderRunnerJobObservationResult, error) {
+func (s *Service) ObserveProviderRunnerJob(ctx context.Context, obs ProviderRunnerJobObservation, workflow *ProviderWorkflowRunObservation) (ProviderRunnerJobObservationResult, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.runner_job.observe")
 	defer span.End()
 	if s == nil || s.PGX == nil {
@@ -263,7 +258,7 @@ func (s *Service) ObserveProviderRunnerJob(ctx context.Context, orgID string, ob
 		return ProviderRunnerJobObservationResult{}, err
 	}
 	if workflow != nil {
-		if err := s.ObserveProviderWorkflowRun(ctx, orgID, *workflow); err != nil {
+		if err := s.ObserveProviderWorkflowRun(ctx, *workflow); err != nil {
 			return ProviderRunnerJobObservationResult{}, err
 		}
 	}
@@ -277,7 +272,7 @@ func (s *Service) ObserveProviderRunnerJob(ctx context.Context, orgID string, ob
 	return result, nil
 }
 
-func (s *Service) ObserveProviderWorkflowRun(ctx context.Context, orgID string, obs ProviderWorkflowRunObservation) error {
+func (s *Service) ObserveProviderWorkflowRun(ctx context.Context, obs ProviderWorkflowRunObservation) error {
 	if s == nil || s.PGX == nil {
 		return ErrRunnerUnavailable
 	}
@@ -285,7 +280,7 @@ func (s *Service) ObserveProviderWorkflowRun(ctx context.Context, orgID string, 
 	if obs.Provider != RunnerProviderGitHub {
 		return nil
 	}
-	if strings.TrimSpace(orgID) == "" || obs.ProviderRepositoryID <= 0 || obs.ProviderRunID <= 0 {
+	if obs.ProviderRepositoryID <= 0 || obs.ProviderRunID <= 0 {
 		return fmt.Errorf("%w: workflow run provider identity is required", ErrRunnerUnavailable)
 	}
 	return s.storeQueries().UpsertProviderWorkflowInvocation(ctx, store.UpsertProviderWorkflowInvocationParams{

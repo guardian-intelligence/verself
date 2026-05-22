@@ -1578,7 +1578,7 @@ structure InternalRegisterRunnerRepositoryOutput {
 
 @http(method: "POST", uri: "/internal/v1/runner/jobs", code: 201)
 @identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
-@authz(permission: RunnerJobSubmitPermission, organization: {source: "body_org_id", member: "org_id"})
+@authz(permission: RunnerJobSubmitPermission, organization: {source: "request_id"})
 @audit(event: RunnerJobSubmitAuditEvent, resource: RunnerRepository, action: "write")
 @rateLimit(bucket: "internal_mutation")
 @requestBudget(maxBytes: 131072)
@@ -1591,7 +1591,7 @@ operation InternalSubmitRunnerJob {
 
 @http(method: "POST", uri: "/internal/v1/runner/jobs/observations", code: 202)
 @identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
-@authz(permission: RunnerJobObservePermission, organization: {source: "body_org_id", member: "org_id"})
+@authz(permission: RunnerJobObservePermission, organization: {source: "request_id"})
 @audit(event: RunnerJobObserveAuditEvent, resource: RunnerRepository, action: "write")
 @rateLimit(bucket: "internal_mutation")
 @requestBudget(maxBytes: 131072)
@@ -1604,7 +1604,7 @@ operation InternalObserveRunnerJob {
 
 @http(method: "POST", uri: "/internal/v1/runner/workflow-runs/observations", code: 202)
 @identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
-@authz(permission: RunnerJobObservePermission, organization: {source: "body_org_id", member: "org_id"})
+@authz(permission: RunnerJobObservePermission, organization: {source: "request_id"})
 @audit(event: RunnerJobObserveAuditEvent, resource: RunnerRepository, action: "write")
 @rateLimit(bucket: "internal_mutation")
 @requestBudget(maxBytes: 131072)
@@ -1713,9 +1713,6 @@ structure RunnerWorkflowRunObservation {
 
 structure InternalSubmitRunnerJobInput {
     @required
-    org_id: OrgId
-
-    @required
     observation: RunnerJobObservation
 
     @required
@@ -1755,9 +1752,6 @@ structure InternalSubmitRunnerJobOutput {
 
 structure InternalObserveRunnerJobInput {
     @required
-    org_id: OrgId
-
-    @required
     observation: RunnerJobObservation
 
     workflow_run: RunnerWorkflowRunObservation
@@ -1773,9 +1767,6 @@ structure InternalObserveRunnerJobOutput {
 }
 
 structure InternalObserveRunnerWorkflowRunInput {
-    @required
-    org_id: OrgId
-
     @required
     workflow_run: RunnerWorkflowRunObservation
 }

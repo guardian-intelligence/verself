@@ -199,14 +199,12 @@ JOIN runner_provider_repositories p ON p.provider = j.provider
     AND p.active
 WHERE j.provider = $1
   AND j.provider_job_id = $2
-  AND p.org_id = $3
-  AND j.status = $4
+  AND j.status = $3
 `
 
 type GetProviderQueuedJobContextParams struct {
 	Provider      string
 	ProviderJobID int64
-	OrgID         string
 	Status        string
 }
 
@@ -227,12 +225,7 @@ type GetProviderQueuedJobContextRow struct {
 }
 
 func (q *Queries) GetProviderQueuedJobContext(ctx context.Context, arg GetProviderQueuedJobContextParams) (GetProviderQueuedJobContextRow, error) {
-	row := q.db.QueryRow(ctx, getProviderQueuedJobContext,
-		arg.Provider,
-		arg.ProviderJobID,
-		arg.OrgID,
-		arg.Status,
-	)
+	row := q.db.QueryRow(ctx, getProviderQueuedJobContext, arg.Provider, arg.ProviderJobID, arg.Status)
 	var i GetProviderQueuedJobContextRow
 	err := row.Scan(
 		&i.Provider,

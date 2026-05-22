@@ -60,7 +60,6 @@ type Config struct {
 	WebhookSecret     string
 	APIBaseURL        string
 	RunnerGroupID     int64
-	DefaultOrgID      string
 	RunnerClassPrefix string
 	WorkerInterval    time.Duration
 	WorkerBatchSize   int32
@@ -123,9 +122,6 @@ func NewService(cfg Config) (*Service, error) {
 	}
 	if strings.TrimSpace(cfg.WebhookSecret) == "" {
 		return nil, fmt.Errorf("%w: github webhook secret is required", ErrConfiguration)
-	}
-	if strings.TrimSpace(cfg.DefaultOrgID) == "" {
-		return nil, fmt.Errorf("%w: default Verself org id is required while onboarding is descoped", ErrConfiguration)
 	}
 	if cfg.RunnerGroupID <= 0 {
 		return nil, fmt.Errorf("%w: github runner group id is required", ErrConfiguration)
@@ -486,7 +482,6 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.registration.created", "succeeded", "", started, now))
 
 	req := sandboxrentalclient.InternalSubmitRunnerJobRequest{Body: sandboxrentalclient.InternalSubmitRunnerJobInputBody{
-		OrgID:            sandboxrentalclient.OrgId(s.cfg.DefaultOrgID),
 		Observation:      sandboxObservationFromWebhook(event, deliveryID, runnerID, runnerName),
 		RunnerName:       sandboxrentalclient.RunnerName(runnerName),
 		RunnerID:         decimalPtr(runnerID),
@@ -660,7 +655,6 @@ func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, reposit
 
 func (s *Service) observeSandboxWorkflowRun(ctx context.Context, workflow workflowObservation) error {
 	resp, err := s.cfg.Sandbox.InternalObserveRunnerWorkflowRun(ctx, sandboxrentalclient.InternalObserveRunnerWorkflowRunRequest{Body: sandboxrentalclient.InternalObserveRunnerWorkflowRunInputBody{
-		OrgID:       sandboxrentalclient.OrgId(s.cfg.DefaultOrgID),
 		WorkflowRun: sandboxWorkflowObservation(workflow),
 	}})
 	if err != nil {
@@ -674,7 +668,6 @@ func (s *Service) observeSandboxWorkflowRun(ctx context.Context, workflow workfl
 
 func (s *Service) observeSandboxJob(ctx context.Context, obs sandboxrentalclient.RunnerJobObservation, workflow workflowObservation) error {
 	resp, err := s.cfg.Sandbox.InternalObserveRunnerJob(ctx, sandboxrentalclient.InternalObserveRunnerJobRequest{Body: sandboxrentalclient.InternalObserveRunnerJobInputBody{
-		OrgID:       sandboxrentalclient.OrgId(s.cfg.DefaultOrgID),
 		Observation: obs,
 		WorkflowRun: ptr(sandboxWorkflowObservation(workflow)),
 	}})

@@ -53,9 +53,6 @@ func (s *Service) writeEvent(ctx context.Context, row githubEvent) {
 	if row.DurationMs == 0 && !row.StartedAt.IsZero() && !row.CompletedAt.IsZero() {
 		row.DurationMs = row.CompletedAt.Sub(row.StartedAt).Milliseconds()
 	}
-	if row.OrgID == "" {
-		row.OrgID = s.cfg.DefaultOrgID
-	}
 	span := trace.SpanContextFromContext(ctx)
 	if span.IsValid() {
 		row.TraceID = span.TraceID().String()

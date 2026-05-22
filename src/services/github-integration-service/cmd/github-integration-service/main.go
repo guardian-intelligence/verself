@@ -65,7 +65,6 @@ func run() error {
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	appID := cfg.Int64("GITHUB_APP_ID", 0)
 	apiBaseURL := cfg.URL("GITHUB_API_BASE_URL", "https://api.github.com")
-	defaultOrgID := cfg.RequireString("GITHUB_DEFAULT_ORG_ID")
 	runnerGroupID := cfg.Int64("GITHUB_RUNNER_GROUP_ID", 1)
 	runnerClassPrefix := cfg.String("GITHUB_RUNNER_CLASS_PREFIX", "verself-")
 	workerInterval := cfg.Duration("GITHUB_WORKER_INTERVAL", 500*time.Millisecond)
@@ -166,7 +165,6 @@ func run() error {
 		WebhookSecret:     webhookSecret,
 		APIBaseURL:        apiBaseURL,
 		RunnerGroupID:     runnerGroupID,
-		DefaultOrgID:      defaultOrgID,
 		RunnerClassPrefix: runnerClassPrefix,
 		WorkerInterval:    workerInterval,
 		WorkerBatchSize:   workerBatchSize,

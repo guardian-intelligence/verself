@@ -141,7 +141,6 @@ func internalSubmitRunnerJob(svc *jobs.Service) func(context.Context, *internalc
 			}
 		}
 		result, err := svc.SubmitProviderRunnerJob(ctx, jobs.ProviderRunnerJobSubmission{
-			OrgID:            strings.TrimSpace(string(req.OrgID)),
 			Observation:      obs,
 			WorkflowRun:      workflow,
 			CacheManifest:    cacheManifest,
@@ -208,7 +207,7 @@ func internalObserveRunnerJob(svc *jobs.Service) func(context.Context, *internal
 			}
 			workflow = &value
 		}
-		result, err := svc.ObserveProviderRunnerJob(ctx, strings.TrimSpace(string(input.Body.OrgID)), obs, workflow)
+		result, err := svc.ObserveProviderRunnerJob(ctx, obs, workflow)
 		if err != nil {
 			return nil, runnerJobMutationError(ctx, err)
 		}
@@ -228,7 +227,7 @@ func internalObserveRunnerWorkflowRun(svc *jobs.Service) func(context.Context, *
 		if err != nil {
 			return nil, badRequest(ctx, "invalid-runner-workflow-run-observation", err.Error(), err)
 		}
-		if err := svc.ObserveProviderWorkflowRun(ctx, strings.TrimSpace(string(input.Body.OrgID)), workflow); err != nil {
+		if err := svc.ObserveProviderWorkflowRun(ctx, workflow); err != nil {
 			return nil, runnerJobMutationError(ctx, err)
 		}
 		return &internalcontractapi.InternalObserveRunnerWorkflowRunOutput{Body: internalcontractapi.InternalObserveRunnerWorkflowRunOutputBody{State: "observed"}}, nil
