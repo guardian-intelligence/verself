@@ -51,7 +51,7 @@ type CheckoutBundle struct {
 	PreparedAt     time.Time
 }
 
-func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity GitHubExecutionIdentity, req CheckoutBundleRequest) (CheckoutBundle, error) {
+func (s *Service) PrepareCheckoutBundle(ctx context.Context, identity GitHubExecutionIdentity, req CheckoutBundleRequest) (CheckoutBundle, error) {
 	ctx, span := tracer.Start(ctx, "github.checkout.bundle")
 	defer span.End()
 
@@ -81,10 +81,10 @@ func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity GitHu
 	}
 	span.SetAttributes(checkoutAttributes(identity, repository, ref, sha)...)
 
-	r.checkoutMu.Lock()
-	defer r.checkoutMu.Unlock()
+	s.checkoutMu.Lock()
+	defer s.checkoutMu.Unlock()
 
-	bundlePath := r.checkoutBundlePath(identity, sha)
+	bundlePath := s.checkoutBundlePath(identity, sha)
 	if stat, err := os.Stat(bundlePath); err == nil && stat.Size() > 0 {
 		span.SetAttributes(
 			attribute.Bool("github.checkout.bundle_cache_hit", true),
@@ -102,24 +102,24 @@ func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity GitHu
 		}, nil
 	}
 
-	token, err := r.checkoutFetchToken(ctx, identity, req.GitHubToken)
+	token, err := s.checkoutFetchToken(ctx, identity, req.GitHubToken)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return CheckoutBundle{}, err
 	}
-	mirrorDir := r.checkoutMirrorDir(identity)
-	if err := r.ensureCheckoutMirror(ctx, mirrorDir, repository, token); err != nil {
+	mirrorDir := s.checkoutMirrorDir(identity)
+	if err := s.ensureCheckoutMirror(ctx, mirrorDir, repository, token); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return CheckoutBundle{}, err
 	}
-	if err := r.fetchCheckoutCommit(ctx, mirrorDir, ref, sha, token); err != nil {
+	if err := s.fetchCheckoutCommit(ctx, mirrorDir, ref, sha, token); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return CheckoutBundle{}, err
 	}
-	if err := r.createCheckoutBundle(ctx, mirrorDir, bundlePath, sha); err != nil {
+	if err := s.createCheckoutBundle(ctx, mirrorDir, bundlePath, sha); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return CheckoutBundle{}, err
@@ -146,20 +146,20 @@ func (r *GitHubRunner) PrepareCheckoutBundle(ctx context.Context, identity GitHu
 	}, nil
 }
 
-func (r *GitHubRunner) checkoutBundleStoreRoot() string {
-	root := strings.TrimSpace(r.service.CheckoutBundleStoreDir)
+func (s *Service) checkoutBundleStoreRoot() string {
+	root := strings.TrimSpace(s.CheckoutBundleStoreDir)
 	if root == "" {
 		return defaultCheckoutBundleStoreDir
 	}
 	return root
 }
 
-func (r *GitHubRunner) checkoutMirrorDir(identity GitHubExecutionIdentity) string {
-	return filepath.Join(r.checkoutBundleStoreRoot(), "mirrors", checkoutRepositoryStoreKey(identity))
+func (s *Service) checkoutMirrorDir(identity GitHubExecutionIdentity) string {
+	return filepath.Join(s.checkoutBundleStoreRoot(), "mirrors", checkoutRepositoryStoreKey(identity))
 }
 
-func (r *GitHubRunner) checkoutBundlePath(identity GitHubExecutionIdentity, sha string) string {
-	return filepath.Join(r.checkoutBundleStoreRoot(), "bundles", checkoutRepositoryStoreKey(identity), sha, checkoutBundleFilename)
+func (s *Service) checkoutBundlePath(identity GitHubExecutionIdentity, sha string) string {
+	return filepath.Join(s.checkoutBundleStoreRoot(), "bundles", checkoutRepositoryStoreKey(identity), sha, checkoutBundleFilename)
 }
 
 func checkoutRepositoryStoreKey(identity GitHubExecutionIdentity) string {
@@ -167,7 +167,7 @@ func checkoutRepositoryStoreKey(identity GitHubExecutionIdentity) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (r *GitHubRunner) ensureCheckoutMirror(ctx context.Context, mirrorDir, repository, token string) error {
+func (s *Service) ensureCheckoutMirror(ctx context.Context, mirrorDir, repository, token string) error {
 	ctx, span := tracer.Start(ctx, "github.checkout.mirror.ensure")
 	defer span.End()
 
@@ -181,18 +181,18 @@ func (r *GitHubRunner) ensureCheckoutMirror(ctx context.Context, mirrorDir, repo
 	} else if err != nil {
 		return err
 	}
-	if err := runCheckoutGit(ctx, "remote_set_url", mirrorDir, nil, "remote", "set-url", "origin", r.checkoutRemoteURL(repository)); err == nil {
+	if err := runCheckoutGit(ctx, "remote_set_url", mirrorDir, nil, "remote", "set-url", "origin", s.checkoutRemoteURL(repository)); err == nil {
 		return nil
 	}
-	return runCheckoutGit(ctx, "remote_add", mirrorDir, nil, "remote", "add", "origin", r.checkoutRemoteURL(repository))
+	return runCheckoutGit(ctx, "remote_add", mirrorDir, nil, "remote", "add", "origin", s.checkoutRemoteURL(repository))
 }
 
-func (r *GitHubRunner) fetchCheckoutCommit(ctx context.Context, mirrorDir, ref, sha, token string) error {
+func (s *Service) fetchCheckoutCommit(ctx context.Context, mirrorDir, ref, sha, token string) error {
 	ctx, span := tracer.Start(ctx, "github.checkout.mirror.fetch")
 	defer span.End()
 
 	if ref != "" {
-		if err := runCheckoutGit(ctx, "fetch_ref", mirrorDir, checkoutGitEnv(r.checkoutRemoteHost(), token),
+		if err := runCheckoutGit(ctx, "fetch_ref", mirrorDir, checkoutGitEnv(s.checkoutRemoteHost(), token),
 			"fetch", "--force", "--no-tags", "origin", "+"+ref+":"+checkoutRequestedRef); err != nil {
 			return err
 		}
@@ -200,14 +200,14 @@ func (r *GitHubRunner) fetchCheckoutCommit(ctx context.Context, mirrorDir, ref, 
 	if err := runCheckoutGit(ctx, "cat_file_ref", mirrorDir, nil, "cat-file", "-e", sha+"^{commit}"); err == nil {
 		return nil
 	}
-	if err := runCheckoutGit(ctx, "fetch_sha", mirrorDir, checkoutGitEnv(r.checkoutRemoteHost(), token),
+	if err := runCheckoutGit(ctx, "fetch_sha", mirrorDir, checkoutGitEnv(s.checkoutRemoteHost(), token),
 		"fetch", "--force", "--no-tags", "origin", "+"+sha+":"+checkoutFetchedSHARef); err != nil {
 		return err
 	}
 	return runCheckoutGit(ctx, "cat_file_sha", mirrorDir, nil, "cat-file", "-e", sha+"^{commit}")
 }
 
-func (r *GitHubRunner) createCheckoutBundle(ctx context.Context, mirrorDir, bundlePath, sha string) error {
+func (s *Service) createCheckoutBundle(ctx context.Context, mirrorDir, bundlePath, sha string) error {
 	ctx, span := tracer.Start(ctx, "github.checkout.bundle.create")
 	defer span.End()
 
@@ -230,13 +230,13 @@ func (r *GitHubRunner) createCheckoutBundle(ctx context.Context, mirrorDir, bund
 	return os.Rename(tmpPath, bundlePath)
 }
 
-func (r *GitHubRunner) checkoutRemoteURL(repository string) string {
-	webBase := strings.TrimRight(firstNonEmpty(r.cfg.WebBaseURL, "https://github.com"), "/")
+func (s *Service) checkoutRemoteURL(repository string) string {
+	webBase := strings.TrimRight(firstNonEmpty(s.GitHubWebBaseURL, "https://github.com"), "/")
 	return webBase + "/" + repository + ".git"
 }
 
-func (r *GitHubRunner) checkoutRemoteHost() string {
-	webBase := strings.TrimSpace(firstNonEmpty(r.cfg.WebBaseURL, "https://github.com"))
+func (s *Service) checkoutRemoteHost() string {
+	webBase := strings.TrimSpace(firstNonEmpty(s.GitHubWebBaseURL, "https://github.com"))
 	parsed, err := url.Parse(webBase)
 	if err != nil || parsed.Host == "" {
 		return "github.com"
@@ -300,7 +300,7 @@ func writeCheckoutPack(ctx context.Context, mirrorDir, sha string, out *os.File)
 	return nil
 }
 
-func (r *GitHubRunner) checkoutFetchToken(ctx context.Context, identity GitHubExecutionIdentity, token string) (string, error) {
+func (s *Service) checkoutFetchToken(ctx context.Context, identity GitHubExecutionIdentity, token string) (string, error) {
 	token = strings.TrimSpace(token)
 	if token != "" {
 		if strings.ContainsAny(token, "\x00\r\n") {
@@ -308,7 +308,7 @@ func (r *GitHubRunner) checkoutFetchToken(ctx context.Context, identity GitHubEx
 		}
 		return token, nil
 	}
-	return r.installationToken(ctx, identity.Installation)
+	return "", fmt.Errorf("%w: github token is required for checkout bundle", ErrCheckoutInvalid)
 }
 
 func normalizeCheckoutRepository(repository string) (string, error) {

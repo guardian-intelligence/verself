@@ -15,19 +15,16 @@ import (
 )
 
 const (
-	githubActionsWebhookPath       = "/webhooks/github/actions"
-	forgejoActionsWebhookPath      = "/webhooks/forgejo/actions"
-	githubInstallationCallbackPath = "/github/installations/callback"
-	githubRunnerJITConfigPath      = "/internal/sandbox/v1/github-runner-jit"
-	runnerBootstrapConfigPath      = "/internal/sandbox/v1/runner-bootstrap"
-	runnerBootstrapTokenHeader     = "X-Verself-Runner-Bootstrap"
-	githubCheckoutBundlePath       = "/internal/sandbox/v1/github-checkout/bundle"
-	githubBazelTelemetryPath       = "/internal/sandbox/v1/bazel-telemetry/invocations"
-	publicWebhookBodyLimit         = 1 << 20
-	bazelTelemetryBodyLimit        = 64 << 20
+	forgejoActionsWebhookPath  = "/webhooks/forgejo/actions"
+	runnerBootstrapConfigPath  = "/internal/sandbox/v1/runner-bootstrap"
+	runnerBootstrapTokenHeader = "X-Verself-Runner-Bootstrap"
+	githubCheckoutBundlePath   = "/internal/sandbox/v1/github-checkout/bundle"
+	githubBazelTelemetryPath   = "/internal/sandbox/v1/bazel-telemetry/invocations"
+	publicWebhookBodyLimit     = 1 << 20
+	bazelTelemetryBodyLimit    = 64 << 20
 )
 
-type githubActionsWebhookResponse struct {
+type actionsWebhookResponse struct {
 	Status     string `json:"status"`
 	DeliveryID string `json:"delivery_id,omitempty"`
 	Reason     string `json:"reason,omitempty"`
@@ -44,10 +41,7 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service, installationID 
 	if mux == nil || svc == nil {
 		return
 	}
-	mux.HandleFunc(githubActionsWebhookPath, githubActionsWebhookHandler(svc))
 	mux.HandleFunc(forgejoActionsWebhookPath, forgejoActionsWebhookHandler(svc))
-	mux.HandleFunc(githubInstallationCallbackPath, githubInstallationCallbackHandler(svc, installationID))
-	mux.HandleFunc(githubRunnerJITConfigPath, githubRunnerJITConfigHandler(svc))
 	mux.HandleFunc(runnerBootstrapConfigPath, runnerBootstrapConfigHandler(svc))
 	mux.HandleFunc(githubCheckoutBundlePath, githubCheckoutBundleHandler(svc))
 	mux.HandleFunc(githubBazelTelemetryPath, githubBazelTelemetryHandler(svc))
@@ -95,95 +89,17 @@ func forgejoActionsWebhookHandler(svc *jobs.Service) http.HandlerFunc {
 			writePublicWebhookError(w, status, err)
 			return
 		}
-		writeGitHubActionsWebhookResponse(w, http.StatusAccepted, githubActionsWebhookResponse{
+		writeActionsWebhookResponse(w, http.StatusAccepted, actionsWebhookResponse{
 			Status:     "recorded",
 			DeliveryID: deliveryID,
 		})
 	}
 }
 
-func githubActionsWebhookHandler(svc *jobs.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
-			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
-			return
-		}
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, publicWebhookBodyLimit))
-		if err != nil {
-			var maxBytesErr *http.MaxBytesError
-			if errors.As(err, &maxBytesErr) {
-				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-				return
-			}
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-		eventName := strings.TrimSpace(r.Header.Get("X-GitHub-Event"))
-		deliveryID := strings.TrimSpace(r.Header.Get("X-GitHub-Delivery"))
-		if eventName == "" || deliveryID == "" {
-			http.Error(w, "missing github event headers", http.StatusBadRequest)
-			return
-		}
-		ctx := jobs.WithCorrelationID(r.Context(), deliveryID)
-		if err := svc.GitHubRunner.HandleWebhook(ctx, eventName, deliveryID, body, r.Header.Get("X-Hub-Signature-256")); err != nil {
-			status := http.StatusInternalServerError
-			switch {
-			case errors.Is(err, jobs.ErrGitHubRunnerNotConfigured):
-				status = http.StatusServiceUnavailable
-			case errors.Is(err, jobs.ErrGitHubWebhookSignatureInvalid):
-				status = http.StatusUnauthorized
-			}
-			writePublicWebhookError(w, status, err)
-			return
-		}
-		status := "recorded"
-		reason := ""
-		if eventName != "workflow_job" {
-			status = "ignored"
-			reason = "unsupported event"
-		}
-		writeGitHubActionsWebhookResponse(w, http.StatusAccepted, githubActionsWebhookResponse{
-			Status:     status,
-			DeliveryID: deliveryID,
-			Reason:     reason,
-		})
-	}
-}
-
-func writeGitHubActionsWebhookResponse(w http.ResponseWriter, status int, response githubActionsWebhookResponse) {
+func writeActionsWebhookResponse(w http.ResponseWriter, status int, response actionsWebhookResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(response)
-}
-
-func githubRunnerJITConfigHandler(svc *jobs.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
-			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
-			return
-		}
-		token := strings.TrimSpace(r.Header.Get(runnerBootstrapTokenHeader))
-		if token == "" {
-			http.Error(w, "missing token", http.StatusBadRequest)
-			return
-		}
-		config, err := svc.GitHubRunner.ConsumeJITConfig(r.Context(), token)
-		if err != nil {
-			writePublicWebhookError(w, http.StatusNotFound, err)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		_, _ = w.Write([]byte(config))
-	}
 }
 
 func runnerBootstrapConfigHandler(svc *jobs.Service) http.HandlerFunc {
@@ -197,11 +113,7 @@ func runnerBootstrapConfigHandler(svc *jobs.Service) http.HandlerFunc {
 			http.Error(w, "missing token", http.StatusBadRequest)
 			return
 		}
-		if svc.ForgejoRunner == nil || !svc.ForgejoRunner.Configured() {
-			http.Error(w, "forgejo runner is not configured", http.StatusServiceUnavailable)
-			return
-		}
-		config, err := svc.ForgejoRunner.ConsumeBootstrapConfig(r.Context(), token)
+		config, err := svc.ConsumeRunnerBootstrapConfig(r.Context(), token, "")
 		if err != nil {
 			writePublicWebhookError(w, http.StatusNotFound, err)
 			return
@@ -218,11 +130,7 @@ func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
-			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
-			return
-		}
-		identity, err := svc.GitHubRunner.AuthenticateCheckout(
+		identity, err := svc.AuthenticateCheckout(
 			r.Context(),
 			r.Header.Get("X-Verself-Execution-Id"),
 			r.Header.Get("X-Verself-Attempt-Id"),
@@ -238,7 +146,7 @@ func githubCheckoutBundleHandler(svc *jobs.Service) http.HandlerFunc {
 			writeCheckoutError(w, jobs.ErrCheckoutInvalid)
 			return
 		}
-		bundle, err := svc.GitHubRunner.PrepareCheckoutBundle(r.Context(), identity, jobs.CheckoutBundleRequest{
+		bundle, err := svc.PrepareCheckoutBundle(r.Context(), identity, jobs.CheckoutBundleRequest{
 			Repository:  req.Repository,
 			Ref:         req.Ref,
 			SHA:         req.SHA,
@@ -280,11 +188,7 @@ func githubBazelTelemetryHandler(svc *jobs.Service) http.HandlerFunc {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
-			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
-			return
-		}
-		identity, err := svc.GitHubRunner.AuthenticateBazelTelemetry(
+		identity, err := svc.AuthenticateBazelTelemetry(
 			r.Context(),
 			r.Header.Get("X-Verself-Execution-Id"),
 			r.Header.Get("X-Verself-Attempt-Id"),
@@ -335,42 +239,6 @@ func writeBazelTelemetryError(w http.ResponseWriter, err error) {
 		status = http.StatusServiceUnavailable
 	}
 	writePublicWebhookError(w, status, err)
-}
-
-func githubInstallationCallbackHandler(svc *jobs.Service, verselfInstallationID string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
-			http.Error(w, "github runner is not configured", http.StatusServiceUnavailable)
-			return
-		}
-		query := r.URL.Query()
-		state := strings.TrimSpace(query.Get("state"))
-		code := strings.TrimSpace(query.Get("code"))
-		rawInstallationID := strings.TrimSpace(query.Get("installation_id"))
-		installationID, err := strconv.ParseInt(rawInstallationID, 10, 64)
-		if err != nil || installationID <= 0 || state == "" || code == "" {
-			http.Error(w, "invalid github installation callback", http.StatusBadRequest)
-			return
-		}
-		record, err := svc.GitHubRunner.CompleteInstallation(r.Context(), state, code, installationID)
-		if err != nil {
-			status := http.StatusInternalServerError
-			switch {
-			case errors.Is(err, jobs.ErrGitHubRunnerNotConfigured):
-				status = http.StatusServiceUnavailable
-			case errors.Is(err, jobs.ErrGitHubInstallationInvalid), errors.Is(err, jobs.ErrGitHubInstallationStateInvalid):
-				status = http.StatusBadRequest
-			}
-			writePublicWebhookError(w, status, err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(githubInstallationRecord(record, verselfInstallationID))
-	}
 }
 
 func writePublicWebhookError(w http.ResponseWriter, status int, err error) {

@@ -4,7 +4,6 @@ package api
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,9 +19,6 @@ import (
 
 // RegisterRoutes wires all sandbox-rental-service endpoints onto the Huma API.
 func RegisterRoutes(api huma.API, svc *jobs.Service, recurringSvc *recurring.Service, publicConfig PublicAPIConfig) {
-	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.BeginGithubInstallation, "Start GitHub App installation for the current org", beginGitHubInstallation(svc))
-	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.ListGithubInstallations, "List GitHub App installations for the current org", listGitHubInstallations(svc, publicConfig.InstallationID))
-	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.SyncGithubInstallationRepositories, "Sync GitHub App repositories into runner ownership", syncGitHubInstallationRepositories(svc))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.GetExecution, "Get execution status and latest attempt", getExecution(svc, publicConfig.InstallationID))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.GetExecutionLogs, "Get latest execution attempt log output", getExecutionLogs(svc))
 	registerSandboxContractRoute(api, publicConfig.Authorizer, contractapi.ListRuns, "List CI and scheduled runs for the current org", listRuns(svc, publicConfig.InstallationID))
@@ -60,82 +56,6 @@ func requireOrgID(ctx context.Context) (string, error) {
 		return "", badRequest(ctx, "invalid-token-org", "token org_id is required", nil)
 	}
 	return orgID, nil
-}
-
-func beginGitHubInstallation(svc *jobs.Service) func(context.Context, *contractapi.BeginGithubInstallationInput) (*contractapi.BeginGithubInstallationOutput, error) {
-	return func(ctx context.Context, _ *contractapi.BeginGithubInstallationInput) (*contractapi.BeginGithubInstallationOutput, error) {
-		identity, err := requireIdentity(ctx)
-		if err != nil {
-			return nil, err
-		}
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
-			return nil, serviceUnavailable(ctx, "github-runner-not-configured", "github runner is not configured", jobs.ErrGitHubRunnerNotConfigured)
-		}
-		connect, err := svc.GitHubRunner.BeginInstallation(ctx, orgID, identity.Subject)
-		if err != nil {
-			switch {
-			case errors.Is(err, jobs.ErrGitHubRunnerNotConfigured):
-				return nil, serviceUnavailable(ctx, "github-runner-not-configured", "github runner is not configured", err)
-			case errors.Is(err, jobs.ErrGitHubInstallationInvalid):
-				return nil, badRequest(ctx, "github-installation-invalid", "github installation must be an active organization installation", err)
-			case errors.Is(err, jobs.ErrGitHubInstallationStateInvalid):
-				return nil, badRequest(ctx, "github-installation-state-invalid", "github installation state is invalid", err)
-			default:
-				return nil, internalFailure(ctx, "github-installation-connect-failed", "start github installation failed", err)
-			}
-		}
-		return &contractapi.BeginGithubInstallationOutput{Body: githubInstallationConnect(connect)}, nil
-	}
-}
-
-func listGitHubInstallations(svc *jobs.Service, installationID string) func(context.Context, *contractapi.EmptyInput) (*contractapi.ListGithubInstallationsOutput, error) {
-	return func(ctx context.Context, _ *contractapi.EmptyInput) (*contractapi.ListGithubInstallationsOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		records, err := svc.ListGitHubInstallations(ctx, orgID)
-		if err != nil {
-			return nil, internalFailure(ctx, "github-installation-list-failed", "list github installations failed", err)
-		}
-		return &contractapi.ListGithubInstallationsOutput{
-			Body: contractapi.ListGithubInstallationsOutputBody{
-				Installations: githubInstallationRecords(records, installationID),
-			},
-		}, nil
-	}
-}
-
-func syncGitHubInstallationRepositories(svc *jobs.Service) func(context.Context, *contractapi.SyncGithubInstallationRepositoriesInput) (*contractapi.SyncGithubInstallationRepositoriesOutput, error) {
-	return func(ctx context.Context, input *contractapi.SyncGithubInstallationRepositoriesInput) (*contractapi.SyncGithubInstallationRepositoriesOutput, error) {
-		orgID, err := requireOrgID(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if svc == nil || svc.GitHubRunner == nil || !svc.GitHubRunner.Configured() {
-			return nil, serviceUnavailable(ctx, "github-runner-not-configured", "github runner is not configured", jobs.ErrGitHubRunnerNotConfigured)
-		}
-		installationID, err := strconv.ParseInt(string(input.InstallationID), 10, 64)
-		if err != nil || installationID <= 0 {
-			return nil, badRequest(ctx, "invalid-github-installation-id", "installation_id must be a positive int64", err)
-		}
-		records, err := svc.GitHubRunner.SyncInstallationRepositories(ctx, orgID, installationID)
-		if err != nil {
-			switch {
-			case errors.Is(err, jobs.ErrGitHubRunnerNotConfigured):
-				return nil, serviceUnavailable(ctx, "github-runner-not-configured", "github runner is not configured", err)
-			case errors.Is(err, jobs.ErrGitHubInstallationInvalid):
-				return nil, badRequest(ctx, "github-installation-invalid", "github installation or repository selection is invalid", err)
-			default:
-				return nil, internalFailure(ctx, "github-installation-repository-sync-failed", "sync github installation repositories failed", err)
-			}
-		}
-		return &contractapi.SyncGithubInstallationRepositoriesOutput{Body: githubInstallationRepositorySync(strconv.FormatInt(installationID, 10), records)}, nil
-	}
 }
 
 func getExecution(svc *jobs.Service, installationID string) func(context.Context, *contractapi.ExecutionPathInput) (*contractapi.SandboxExecutionOutput, error) {

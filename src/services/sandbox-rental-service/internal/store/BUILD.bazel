@@ -8,7 +8,6 @@ go_library(
         "durable.sql.go",
         "executions.sql.go",
         "forgejo_runner.sql.go",
-        "github_runner.sql.go",
         "golden_vm.sql.go",
         "models.go",
         "recurring.sql.go",

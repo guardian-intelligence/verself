@@ -19,7 +19,7 @@ func TestRuntimeSecretAllowedWithExactNameAndPrefix(t *testing.T) {
 		}
 	}
 
-	if runtimeSecretAllowed(policy, "sandbox-rental-service.github.private_key") {
+	if runtimeSecretAllowed(policy, "github-integration-service.github.private_key") {
 		t.Fatal("unexpectedly allowed a runtime secret outside the configured selectors")
 	}
 }

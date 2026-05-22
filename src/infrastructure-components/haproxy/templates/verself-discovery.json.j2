@@ -22,6 +22,10 @@
       "base_url": {{ ('https://' ~ governance_service_domain) | to_json }},
       "path_prefix": "/api/v1"
     },
+    "github": {
+      "base_url": {{ ('https://' ~ github_integration_service_domain) | to_json }},
+      "path_prefix": "/api/v1"
+    },
     "iam": {
       "base_url": {{ ('https://' ~ iam_service_domain) | to_json }},
       "path_prefix": "/api/v1"

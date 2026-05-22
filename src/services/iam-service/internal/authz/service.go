@@ -143,8 +143,6 @@ var orgPermissionByProductPermission = map[string]string{
 	identity.PermissionAPICredentialsCreate:          "manage_api_credentials",
 	identity.PermissionAPICredentialsRoll:            "manage_api_credentials",
 	identity.PermissionAPICredentialsRevoke:          "manage_api_credentials",
-	identity.PermissionSandboxGitHubRead:             "list_executions",
-	identity.PermissionSandboxGitHubWrite:            "manage_iam",
 	identity.PermissionSandboxExecutionRead:          "list_executions",
 	identity.PermissionSandboxExecutionScheduleRead:  "list_executions",
 	identity.PermissionSandboxExecutionScheduleWrite: "list_executions",

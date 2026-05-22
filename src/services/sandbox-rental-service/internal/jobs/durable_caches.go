@@ -4,14 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/bits"
-	"net/http"
-	"net/url"
 	"path"
 	"sort"
 	"strconv"
@@ -171,6 +168,29 @@ type goldenWorkflowRunRef struct {
 	ProviderRunAttempt     int64
 	RepositoryFullName     string
 	HeadSHA                string
+}
+
+type githubWorkflowRunJobsState struct {
+	Total            int
+	Completed        int
+	Succeeded        int
+	Failed           int
+	SuccessfulJobIDs []int64
+	JobStatuses      map[int64]string
+	JobConclusions   map[int64]string
+}
+
+func (s githubWorkflowRunJobsState) promotionReady() (bool, string) {
+	if s.Total == 0 {
+		return false, "github workflow run has no observed jobs"
+	}
+	if s.Completed != s.Total {
+		return false, "github workflow run is not complete"
+	}
+	if s.Failed > 0 {
+		return false, "github workflow run has non-success jobs"
+	}
+	return true, ""
 }
 
 type cacheDeclaration struct {
@@ -1658,12 +1678,12 @@ func (s *Service) pruneDurableGenerationCandidates(ctx context.Context, now time
 }
 
 func (s *Service) hydrateGitHubRunIdentity(ctx context.Context, identity RunnerExecutionIdentity) (RunnerExecutionIdentity, error) {
-	if identity.Provider != RunnerProviderGitHub || s.GitHubRunner == nil || identity.ProviderRunID <= 0 {
+	if identity.Provider != RunnerProviderGitHub || identity.ProviderRunID <= 0 {
 		return identity, nil
 	}
-	invocation, err := s.GitHubRunner.refreshWorkflowRunInvocationForRun(ctx, goldenRunRefFromRunnerIdentity(identity))
+	invocation, err := s.githubWorkflowRunInvocationForRef(ctx, goldenRunRefFromRunnerIdentity(identity))
 	if err != nil {
-		return RunnerExecutionIdentity{}, fmt.Errorf("refresh github workflow run invocation: %w", err)
+		return RunnerExecutionIdentity{}, fmt.Errorf("load github workflow run invocation: %w", err)
 	}
 	identity.RepositoryFullName = firstNonEmpty(identity.RepositoryFullName, invocation.RepositoryFullName)
 	identity.RunEventName = firstNonEmpty(invocation.EventName, identity.RunEventName)
@@ -1866,25 +1886,79 @@ func (s *Service) githubWorkflowRunPromotionStateForRef(ctx context.Context, ref
 	if ref.Provider != RunnerProviderGitHub {
 		return githubWorkflowRunJobsState{Total: 1, Completed: 1, Succeeded: 1}, nil
 	}
-	if s.GitHubRunner == nil {
-		return githubWorkflowRunJobsState{}, nil
+	rows, err := s.storeQueries().ListWorkflowRunJobResults(ctx, store.ListWorkflowRunJobResultsParams{
+		Provider:             ref.Provider,
+		ProviderRepositoryID: ref.ProviderRepositoryID,
+		ProviderRunID:        ref.ProviderRunID,
+		ProviderRunAttempt:   ref.ProviderRunAttempt,
+	})
+	if err != nil {
+		return githubWorkflowRunJobsState{}, err
 	}
-	return s.GitHubRunner.refreshWorkflowRunJobsForRun(ctx, ref)
+	state := githubWorkflowRunJobsState{
+		Total:          len(rows),
+		JobStatuses:    make(map[int64]string, len(rows)),
+		JobConclusions: make(map[int64]string, len(rows)),
+	}
+	for _, row := range rows {
+		state.JobStatuses[row.ProviderJobID] = row.Status
+		state.JobConclusions[row.ProviderJobID] = row.Conclusion
+		if row.Status != "completed" {
+			continue
+		}
+		state.Completed++
+		switch row.Conclusion {
+		case "success", "skipped":
+			state.Succeeded++
+			state.SuccessfulJobIDs = append(state.SuccessfulJobIDs, row.ProviderJobID)
+		default:
+			state.Failed++
+		}
+	}
+	return state, nil
 }
 
 func (s *Service) githubWorkflowRunPromotionGate(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowInvocation, bool, string, error) {
 	if ref.Provider != RunnerProviderGitHub {
 		return githubWorkflowInvocation{HeadSHA: ref.HeadSHA}, true, "", nil
 	}
-	if s.GitHubRunner == nil {
-		return githubWorkflowInvocation{}, false, "github runner is not configured", nil
-	}
-	invocation, err := s.GitHubRunner.refreshWorkflowRunInvocationForRun(ctx, ref)
+	invocation, err := s.githubWorkflowRunInvocationForRef(ctx, ref)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return githubWorkflowInvocation{}, false, "github workflow run invocation is not observed", nil
+		}
 		return githubWorkflowInvocation{}, false, "", err
 	}
 	ok, reason := invocation.dogfoodMainPromotion(ref)
 	return invocation, ok, reason, nil
+}
+
+func (s *Service) githubWorkflowRunInvocationForRef(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowInvocation, error) {
+	row, err := s.storeQueries().GetWorkflowRunInvocation(ctx, store.GetWorkflowRunInvocationParams{
+		ProviderInstallationID: ref.ProviderInstallationID,
+		ProviderRepositoryID:   ref.ProviderRepositoryID,
+		ProviderRunID:          ref.ProviderRunID,
+		ProviderRunAttempt:     ref.ProviderRunAttempt,
+	})
+	if err != nil {
+		return githubWorkflowInvocation{}, err
+	}
+	return githubWorkflowInvocation{
+		InstallationID:         row.ProviderInstallationID,
+		RepositoryID:           row.ProviderRepositoryID,
+		RunID:                  row.ProviderRunID,
+		RunAttempt:             row.ProviderRunAttempt,
+		RepositoryFullName:     row.RepositoryFullName,
+		EventName:              row.EventName,
+		HeadSHA:                row.HeadSha,
+		HeadBranch:             row.HeadBranch,
+		HeadRepositoryFullName: row.HeadRepositoryFullName,
+		BaseSHA:                row.BaseSha,
+		BaseBranch:             row.BaseBranch,
+		WorkflowPath:           row.WorkflowPath,
+		PullRequestNumber:      row.PullRequestNumber,
+		CommitCount:            row.CommitCount,
+	}, nil
 }
 
 func (s *Service) resolveCacheDeclaration(ctx context.Context, identity RunnerExecutionIdentity) (cacheDeclaration, error) {
@@ -1920,15 +1994,17 @@ func (s *Service) resolveCacheDeclaration(ctx context.Context, identity RunnerEx
 }
 
 func (s *Service) fetchManifestCacheDeclaration(ctx context.Context, identity RunnerExecutionIdentity) (cacheDeclaration, bool, error) {
-	if s.GitHubRunner == nil {
+	row, err := s.storeQueries().GetRunnerJobCacheManifest(ctx, store.GetRunnerJobCacheManifestParams{
+		Provider:      identity.Provider,
+		ProviderJobID: identity.ProviderJobID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return cacheDeclaration{}, false, nil
 	}
-	ref := cacheDeclarationRef(identity)
-	content, ok, err := s.GitHubRunner.fetchRepositoryFile(ctx, identity, durableCacheManifestPath, ref)
-	if err != nil || !ok {
-		return cacheDeclaration{}, ok, err
+	if err != nil {
+		return cacheDeclaration{}, false, err
 	}
-	decl, err := parseCacheManifest(content, "manifest", durableCacheManifestPath, ref, "", "", "")
+	decl, err := parseCacheManifest(row.ContentBytes, row.SourceKind, row.SourcePath, row.SourceSha, "", "", "")
 	return decl, true, err
 }
 
@@ -2051,49 +2127,6 @@ func normalizedDeclarationHash(decl cacheDeclaration) (string, error) {
 		return "", err
 	}
 	return stableHex(string(payload)), nil
-}
-
-func (r *GitHubRunner) fetchRepositoryFile(ctx context.Context, identity RunnerExecutionIdentity, filePath, ref string) ([]byte, bool, error) {
-	repository := strings.TrimSpace(identity.RepositoryFullName)
-	owner, repo, ok := strings.Cut(repository, "/")
-	if !ok || owner == "" || repo == "" {
-		return nil, false, fmt.Errorf("github repository must be owner/name")
-	}
-	token, err := r.installationToken(ctx, identity.ProviderInstallationID)
-	if err != nil {
-		return nil, false, err
-	}
-	var resp struct {
-		Type     string `json:"type"`
-		Encoding string `json:"encoding"`
-		Content  string `json:"content"`
-	}
-	requestPath := fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), escapeGitHubContentPath(filePath))
-	if strings.TrimSpace(ref) != "" {
-		requestPath += "?ref=" + url.QueryEscape(ref)
-	}
-	if err := r.githubRequest(ctx, http.MethodGet, requestPath, token, nil, &resp, http.StatusOK); err != nil {
-		if strings.Contains(err.Error(), "status 404") {
-			return nil, false, nil
-		}
-		return nil, false, err
-	}
-	if resp.Type != "file" || resp.Encoding != "base64" {
-		return nil, true, fmt.Errorf("%w: %s is not a base64 file", ErrCacheDeclarationInvalid, filePath)
-	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(resp.Content, "\n", ""))
-	if err != nil {
-		return nil, true, fmt.Errorf("%w: decode %s: %w", ErrCacheDeclarationInvalid, filePath, err)
-	}
-	return decoded, true, nil
-}
-
-func escapeGitHubContentPath(filePath string) string {
-	parts := strings.Split(strings.Trim(filePath, "/"), "/")
-	for i := range parts {
-		parts[i] = url.PathEscape(parts[i])
-	}
-	return strings.Join(parts, "/")
 }
 
 func durableScopeRef(identity RunnerExecutionIdentity) string {

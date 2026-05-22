@@ -10,7 +10,7 @@ go_library(
 
 go_binary(
     name = "otelcol-setup",
-    embed = [":otelcol-setup_lib"],
+    embed = [":lib"],
     visibility = ["//visibility:public"],
 )
 
@@ -24,4 +24,17 @@ nomad_binary_artifact(
     name = "otelcol-setup_nomad_artifact",
     binary = ":otelcol-setup",
     output = "otelcol-setup",
+)
+
+go_library(
+    name = "lib",
+    srcs = ["main.go"],
+    importpath = "",
+    visibility = ["//visibility:private"],
+)
+
+go_test(
+    name = "lib_test",
+    srcs = ["main_test.go"],
+    embed = [":lib"],
 )

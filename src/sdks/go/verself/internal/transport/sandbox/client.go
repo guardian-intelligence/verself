@@ -121,8 +121,6 @@ type ScheduleListPageSize = int64
 
 type ScheduleState = string
 
-type SetupURL = string
-
 type SourceKind = string
 
 type SourceRef = string
@@ -151,10 +149,6 @@ type WorkflowState = string
 
 type WorkloadKind = string
 
-type GitHubInstallations []SandboxGitHubInstallationRecord
-
-type InstallationRepositories []GitHubInstallationRepository
-
 type Runs []SandboxExecutionRecord
 
 type SandboxAnalyticsBuckets []SandboxAnalyticsBucket
@@ -182,16 +176,6 @@ type ConflictError struct {
 	Code        ProblemCode    `json:"code"`
 	RequestID   *RequestId     `json:"requestId,omitempty"`
 	Traceparent *TraceParent   `json:"traceparent,omitempty"`
-}
-
-type GitHubInstallationRepository struct {
-	Active               bool                 `json:"active"`
-	Private              bool                 `json:"private"`
-	ProviderOwner        ProviderOwner        `json:"provider_owner"`
-	ProviderRepo         ProviderRepo         `json:"provider_repo"`
-	ProviderRepositoryID ProviderRepositoryId `json:"provider_repository_id"`
-	RepositoryFullName   RepositoryFullName   `json:"repository_full_name"`
-	SyncedAt             string               `json:"synced_at"`
 }
 
 type IdempotencyPayloadMismatchError struct {
@@ -375,23 +359,6 @@ type SandboxExecutionScheduleRecord struct {
 	WorkflowPath                 WorkflowPath                        `json:"workflow_path"`
 }
 
-type SandboxGitHubInstallationConnectResponse struct {
-	ExpiresAt string   `json:"expires_at"`
-	SetupURL  SetupURL `json:"setup_url"`
-	State     string   `json:"state"`
-}
-
-type SandboxGitHubInstallationRecord struct {
-	AccountLogin   string        `json:"account_login"`
-	AccountType    string        `json:"account_type"`
-	Active         bool          `json:"active"`
-	CreatedAt      string        `json:"created_at"`
-	InstallationID DecimalUint64 `json:"installation_id"`
-	OrgID          OrgId         `json:"org_id"`
-	ResourceName   ResourceName  `json:"resourceName"`
-	UpdatedAt      string        `json:"updated_at"`
-}
-
 type SandboxJobsAnalytics struct {
 	ByRunnerClass SandboxAnalyticsBuckets   `json:"by_runner_class"`
 	BySource      SandboxAnalyticsBuckets   `json:"by_source"`
@@ -531,18 +498,6 @@ type ValidationFailedError struct {
 	Traceparent *TraceParent   `json:"traceparent,omitempty"`
 }
 
-type BeginGithubInstallationRequest struct {
-	IdempotencyKey IdempotencyKey
-}
-
-type BeginGithubInstallationResponse struct {
-	StatusCode   int
-	Body         []byte
-	Result       *SandboxGitHubInstallationConnectResponse
-	Problem      *ErrorModel
-	HTTPResponse *http.Response
-}
-
 type CreateExecutionScheduleInputBody struct {
 	DisplayName        *DisplayName       `json:"display_name,omitempty"`
 	IdempotencyKey     IdempotencyKey     `json:"idempotency_key"`
@@ -673,20 +628,6 @@ type ListExecutionSchedulesResponse struct {
 	HTTPResponse *http.Response
 }
 
-type ListGithubInstallationsRequest struct{}
-
-type ListGithubInstallationsOutput struct {
-	Installations GitHubInstallations `json:"installations"`
-}
-
-type ListGithubInstallationsResponse struct {
-	StatusCode   int
-	Body         []byte
-	Result       *ListGithubInstallationsOutput
-	Problem      *ErrorModel
-	HTTPResponse *http.Response
-}
-
 type ListRunsRequest struct {
 	Branch      *GitRef
 	Cursor      *RunListCursor
@@ -767,25 +708,6 @@ type SearchRunLogsResponse struct {
 	HTTPResponse *http.Response
 }
 
-type SyncGithubInstallationRepositoriesRequest struct {
-	IdempotencyKey IdempotencyKey
-	InstallationID DecimalUint64
-}
-
-type SyncGithubInstallationRepositoriesOutputBody struct {
-	InstallationID DecimalUint64            `json:"installation_id"`
-	Repositories   InstallationRepositories `json:"repositories"`
-	SyncedAt       string                   `json:"synced_at"`
-}
-
-type SyncGithubInstallationRepositoriesResponse struct {
-	StatusCode   int
-	Body         []byte
-	Result       *SyncGithubInstallationRepositoriesOutputBody
-	Problem      *ErrorModel
-	HTTPResponse *http.Response
-}
-
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
 
 type HTTPRequestDoer interface {
@@ -825,48 +747,6 @@ func WithRequestEditorFn(editor RequestEditorFn) ClientOption {
 			c.requestEditors = append(c.requestEditors, editor)
 		}
 	}
-}
-
-func (c *Client) BeginGithubInstallation(ctx context.Context, request BeginGithubInstallationRequest, reqEditors ...RequestEditorFn) (*BeginGithubInstallationResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
-	req, err := c.newBeginGithubInstallationRequest(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	return parseBeginGithubInstallationResponse(resp)
-}
-
-func (c *Client) newBeginGithubInstallationRequest(ctx context.Context, request BeginGithubInstallationRequest) (*http.Request, error) {
-	path := "/api/v1/github/installations/connect"
-	endpoint, err := url.Parse(c.server + path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
-	return req, nil
 }
 
 func (c *Client) CreateExecutionSchedule(ctx context.Context, request CreateExecutionScheduleRequest, reqEditors ...RequestEditorFn) (*CreateExecutionScheduleResponse, error) {
@@ -1279,47 +1159,6 @@ func (c *Client) newListExecutionSchedulesRequest(ctx context.Context, request L
 	return req, nil
 }
 
-func (c *Client) ListGithubInstallations(ctx context.Context, request ListGithubInstallationsRequest, reqEditors ...RequestEditorFn) (*ListGithubInstallationsResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
-	req, err := c.newListGithubInstallationsRequest(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	return parseListGithubInstallationsResponse(resp)
-}
-
-func (c *Client) newListGithubInstallationsRequest(ctx context.Context, request ListGithubInstallationsRequest) (*http.Request, error) {
-	path := "/api/v1/github/installations"
-	endpoint, err := url.Parse(c.server + path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	return req, nil
-}
-
 func (c *Client) ListRuns(ctx context.Context, request ListRunsRequest, reqEditors ...RequestEditorFn) (*ListRunsResponse, error) {
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
@@ -1546,70 +1385,6 @@ func (c *Client) newSearchRunLogsRequest(ctx context.Context, request SearchRunL
 	return req, nil
 }
 
-func (c *Client) SyncGithubInstallationRepositories(ctx context.Context, request SyncGithubInstallationRepositoriesRequest, reqEditors ...RequestEditorFn) (*SyncGithubInstallationRepositoriesResponse, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
-	}
-	req, err := c.newSyncGithubInstallationRepositoriesRequest(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	for _, editor := range c.requestEditors {
-		if err := editor(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-	for _, editor := range reqEditors {
-		if editor != nil {
-			if err := editor(ctx, req); err != nil {
-				return nil, err
-			}
-		}
-	}
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	return parseSyncGithubInstallationRepositoriesResponse(resp)
-}
-
-func (c *Client) newSyncGithubInstallationRepositoriesRequest(ctx context.Context, request SyncGithubInstallationRepositoriesRequest) (*http.Request, error) {
-	path := "/api/v1/github/installations/{installation_id}/repositories/sync"
-	path = strings.ReplaceAll(path, "{installation_id}", url.PathEscape(fmt.Sprint(request.InstallationID)))
-	endpoint, err := url.Parse(c.server + path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
-	return req, nil
-}
-
-func parseBeginGithubInstallationResponse(resp *http.Response) (*BeginGithubInstallationResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	result := &BeginGithubInstallationResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 201 {
-		var decoded SandboxGitHubInstallationConnectResponse
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
-}
-
 func parseCreateExecutionScheduleResponse(resp *http.Response) (*CreateExecutionScheduleResponse, error) {
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
@@ -1799,27 +1574,6 @@ func parseListExecutionSchedulesResponse(resp *http.Response) (*ListExecutionSch
 	return result, nil
 }
 
-func parseListGithubInstallationsResponse(resp *http.Response) (*ListGithubInstallationsResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	result := &ListGithubInstallationsResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		decoded := ListGithubInstallationsOutput{}
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
-}
-
 func parseListRunsResponse(resp *http.Response) (*ListRunsResponse, error) {
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
@@ -1892,27 +1646,6 @@ func parseSearchRunLogsResponse(resp *http.Response) (*SearchRunLogsResponse, er
 	result := &SearchRunLogsResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 200 {
 		var decoded SandboxRunLogSearchPageBody
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				return nil, err
-			}
-		}
-		result.Result = &decoded
-		return result, nil
-	}
-	result.Problem = decodeProblem(body)
-	return result, nil
-}
-
-func parseSyncGithubInstallationRepositoriesResponse(resp *http.Response) (*SyncGithubInstallationRepositoriesResponse, error) {
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	result := &SyncGithubInstallationRepositoriesResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
-	if resp.StatusCode == 200 {
-		var decoded SyncGithubInstallationRepositoriesOutputBody
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &decoded); err != nil {
 				return nil, err

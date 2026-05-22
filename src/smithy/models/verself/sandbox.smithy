@@ -45,9 +45,6 @@ use verself.common.v1#DateTime
 service SandboxRental {
     version: "2026-05-13"
     operations: [
-        BeginGithubInstallation,
-        ListGithubInstallations,
-        SyncGithubInstallationRepositories,
         GetExecution,
         GetExecutionLogs,
         ListRuns,
@@ -67,8 +64,6 @@ service SandboxRental {
         ResumeExecutionSchedule
     ]
     resources: [
-        GitHubInstallation,
-        GitHubInstallationRepositoryResource,
         Execution,
         ExecutionLogsResource,
         Run,
@@ -86,7 +81,12 @@ service SandboxRental {
 @restJson1
 service SandboxRentalInternal {
     version: "2026-05-13"
-    operations: [InternalRegisterRunnerRepository]
+    operations: [
+        InternalRegisterRunnerRepository,
+        InternalSubmitRunnerJob,
+        InternalObserveRunnerJob,
+        InternalObserveRunnerWorkflowRun
+    ]
     resources: [RunnerRepository]
 }
 
@@ -202,9 +202,6 @@ long SafeNonNegativeLong
 @range(min: 0, max: 255)
 integer SafeExitCode
 
-@length(min: 1, max: 8192)
-string SetupURL
-
 @length(min: 1, max: 64)
 string SourceKind
 
@@ -253,6 +250,9 @@ string WorkflowPath
 @length(min: 1, max: 1024)
 string JobName
 
+@length(min: 1, max: 512)
+string RunnerName
+
 @length(min: 1, max: 1024)
 string HeadBranch
 
@@ -294,14 +294,6 @@ string ScheduleInputValue
 map ScheduleInputs {
     key: ScheduleInputName
     value: ScheduleInputValue
-}
-
-list GitHubInstallations {
-    member: SandboxGitHubInstallationRecord
-}
-
-list InstallationRepositories {
-    member: GitHubInstallationRepository
 }
 
 list Runs {
@@ -348,12 +340,6 @@ list SandboxCachePaths {
     member: CachePath
 }
 
-@permission(name: "sandbox:github_installation:read")
-string GitHubInstallationReadPermission
-
-@permission(name: "sandbox:github_installation:write")
-string GitHubInstallationWritePermission
-
 @permission(name: "sandbox:execution:read")
 string ExecutionReadPermission
 
@@ -378,14 +364,11 @@ string CacheWritePermission
 @permission(name: "sandbox:runner_repository:register")
 string RunnerRepositoryRegisterPermission
 
-@auditEvent(name: "sandbox.github_installation.connect")
-string GitHubInstallationConnectAuditEvent
+@permission(name: "sandbox:runner_job:submit")
+string RunnerJobSubmitPermission
 
-@auditEvent(name: "sandbox.github_installation.list")
-string GitHubInstallationListAuditEvent
-
-@auditEvent(name: "sandbox.github_installation.repositories.sync")
-string GitHubRepositoriesSyncAuditEvent
+@permission(name: "sandbox:runner_job:observe")
+string RunnerJobObservePermission
 
 @auditEvent(name: "sandbox.execution.read")
 string ExecutionReadAuditEvent
@@ -441,8 +424,12 @@ string ScheduleResumeAuditEvent
 @auditEvent(name: "sandbox.runner_repository.register")
 string RunnerRepositoryRegisterAuditEvent
 
-resource GitHubInstallation {}
-resource GitHubInstallationRepositoryResource {}
+@auditEvent(name: "sandbox.runner_job.submit")
+string RunnerJobSubmitAuditEvent
+
+@auditEvent(name: "sandbox.runner_job.observe")
+string RunnerJobObserveAuditEvent
+
 resource Execution {}
 resource ExecutionLogsResource {}
 resource Run {}
@@ -454,66 +441,6 @@ resource Cache {}
 resource CacheGeneration {}
 resource ExecutionSchedule {}
 resource RunnerRepository {}
-
-structure SandboxGitHubInstallationConnectResponse {
-    @required
-    state: String
-
-    @required
-    setup_url: SetupURL
-
-    @required
-    expires_at: DateTime
-}
-
-structure SandboxGitHubInstallationRecord {
-    @required
-    installation_id: DecimalUint64
-
-    @required
-    resourceName: ResourceName
-
-    @required
-    org_id: OrgId
-
-    @required
-    account_login: String
-
-    @required
-    account_type: String
-
-    @required
-    active: Boolean
-
-    @required
-    created_at: DateTime
-
-    @required
-    updated_at: DateTime
-}
-
-structure GitHubInstallationRepository {
-    @required
-    provider_repository_id: ProviderRepositoryId
-
-    @required
-    provider_owner: ProviderOwner
-
-    @required
-    provider_repo: ProviderRepo
-
-    @required
-    repository_full_name: RepositoryFullName
-
-    @required
-    private: Boolean
-
-    @required
-    active: Boolean
-
-    @required
-    synced_at: DateTime
-}
 
 structure SandboxExecutionRecord {
     @required
@@ -1149,90 +1076,7 @@ structure RunnerRepositoryRegistration {
     state: String
 }
 
-@idempotent
-@http(method: "POST", uri: "/api/v1/github/installations/connect", code: 201)
-@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
-@authz(permission: GitHubInstallationWritePermission, organization: {source: "token_org_id"})
-@audit(event: GitHubInstallationConnectAuditEvent, resource: GitHubInstallation, action: "connect")
-@rateLimit(bucket: "github_installation_mutation")
-@requestBudget(maxBytes: 1024)
-@sdk(module: "sandbox.githubInstallations", method: "beginConnect", paginated: false, retryable: false)
-operation BeginGithubInstallation {
-    input: BeginGithubInstallationInput
-    output: BeginGithubInstallationOutput
-    errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
-}
-
-structure BeginGithubInstallationInput {
-    @required
-    @httpHeader("Idempotency-Key")
-    @idempotencyToken
-    idempotencyKey: IdempotencyKey
-}
-
-structure BeginGithubInstallationOutput {
-    @required
-    @httpPayload
-    @nestedProperties
-    connect: SandboxGitHubInstallationConnectResponse
-}
-
-@readonly
-@http(method: "GET", uri: "/api/v1/github/installations")
-@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
-@authz(permission: GitHubInstallationReadPermission, organization: {source: "token_org_id"})
-@audit(event: GitHubInstallationListAuditEvent, resource: GitHubInstallation, action: "list")
-@rateLimit(bucket: "read")
-@requestBudget(maxBytes: 0)
-@sdk(module: "sandbox.githubInstallations", method: "list", paginated: false, retryable: true)
-operation ListGithubInstallations {
-    input: EmptyInput
-    output: ListGithubInstallationsOutput
-    errors: [UnauthenticatedError, PermissionDeniedError, RateLimitedError, ServiceUnavailableError]
-}
-
 structure EmptyInput {}
-
-structure ListGithubInstallationsOutput {
-    @required
-    installations: GitHubInstallations
-}
-
-@idempotent
-@http(method: "POST", uri: "/api/v1/github/installations/{installation_id}/repositories/sync")
-@identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli"])
-@authz(permission: GitHubInstallationWritePermission, organization: {source: "token_org_id"})
-@audit(event: GitHubRepositoriesSyncAuditEvent, resource: GitHubInstallationRepositoryResource, action: "sync")
-@rateLimit(bucket: "github_installation_mutation")
-@requestBudget(maxBytes: 1024)
-@sdk(module: "sandbox.githubInstallations", method: "syncRepositories", paginated: false, retryable: false)
-operation SyncGithubInstallationRepositories {
-    input: SyncGithubInstallationRepositoriesInput
-    output: SyncGithubInstallationRepositoriesOutput
-    errors: [UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, RateLimitedError, ServiceUnavailableError]
-}
-
-structure SyncGithubInstallationRepositoriesInput {
-    @required
-    @httpLabel
-    installation_id: DecimalUint64
-
-    @required
-    @httpHeader("Idempotency-Key")
-    @idempotencyToken
-    idempotencyKey: IdempotencyKey
-}
-
-structure SyncGithubInstallationRepositoriesOutput {
-    @required
-    installation_id: DecimalUint64
-
-    @required
-    synced_at: DateTime
-
-    @required
-    repositories: InstallationRepositories
-}
 
 @readonly
 @http(method: "GET", uri: "/api/v1/executions/{execution_id}")
@@ -1730,4 +1574,213 @@ structure InternalRegisterRunnerRepositoryInput {
 structure InternalRegisterRunnerRepositoryOutput {
     @required
     registration: RunnerRepositoryRegistration
+}
+
+@http(method: "POST", uri: "/internal/v1/runner/jobs", code: 201)
+@identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
+@authz(permission: RunnerJobSubmitPermission, organization: {source: "body_org_id", member: "org_id"})
+@audit(event: RunnerJobSubmitAuditEvent, resource: RunnerRepository, action: "write")
+@rateLimit(bucket: "internal_mutation")
+@requestBudget(maxBytes: 131072)
+@sdk(module: "sandboxInternal.runnerJobs", method: "submit", paginated: false, retryable: false)
+operation InternalSubmitRunnerJob {
+    input: InternalSubmitRunnerJobInput
+    output: InternalSubmitRunnerJobOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ConflictError, ServiceUnavailableError]
+}
+
+@http(method: "POST", uri: "/internal/v1/runner/jobs/observations", code: 202)
+@identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
+@authz(permission: RunnerJobObservePermission, organization: {source: "body_org_id", member: "org_id"})
+@audit(event: RunnerJobObserveAuditEvent, resource: RunnerRepository, action: "write")
+@rateLimit(bucket: "internal_mutation")
+@requestBudget(maxBytes: 131072)
+@sdk(module: "sandboxInternal.runnerJobs", method: "observe", paginated: false, retryable: false)
+operation InternalObserveRunnerJob {
+    input: InternalObserveRunnerJobInput
+    output: InternalObserveRunnerJobOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ConflictError, ServiceUnavailableError]
+}
+
+@http(method: "POST", uri: "/internal/v1/runner/workflow-runs/observations", code: 202)
+@identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
+@authz(permission: RunnerJobObservePermission, organization: {source: "body_org_id", member: "org_id"})
+@audit(event: RunnerJobObserveAuditEvent, resource: RunnerRepository, action: "write")
+@rateLimit(bucket: "internal_mutation")
+@requestBudget(maxBytes: 131072)
+@sdk(module: "sandboxInternal.runnerWorkflowRuns", method: "observe", paginated: false, retryable: false)
+operation InternalObserveRunnerWorkflowRun {
+    input: InternalObserveRunnerWorkflowRunInput
+    output: InternalObserveRunnerWorkflowRunOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ConflictError, ServiceUnavailableError]
+}
+
+structure RunnerJob {
+    @required
+    provider: Provider
+
+    @required
+    provider_job_id: DecimalUint64
+
+    @required
+    state: String
+}
+
+list RunnerLabels {
+    member: RunnerLabel
+}
+
+@length(min: 1, max: 255)
+string RunnerLabel
+
+@length(min: 1, max: 4096)
+@sensitive
+string RunnerBootstrapPayload
+
+@length(min: 1, max: 64)
+string RunnerBootstrapKind
+
+@length(min: 1, max: 87384)
+@sensitive
+string RunnerCacheManifestContentBase64
+
+structure RunnerCacheManifest {
+    @required
+    source_kind: String
+
+    @required
+    source_path: String
+
+    @required
+    source_sha: String
+
+    @required
+    content_base64: RunnerCacheManifestContentBase64
+}
+
+structure RunnerJobObservation {
+    @required
+    provider: Provider
+
+    @required
+    provider_job_id: DecimalUint64
+
+    @required
+    provider_repository_id: ProviderRepositoryId
+
+    provider_installation_id: DecimalUint64
+    repository_full_name: RepositoryFullName
+    provider_run_id: DecimalUint64
+    provider_run_attempt: DecimalUint64
+    job_name: JobName
+    head_sha: HeadSHA
+    head_branch: HeadBranch
+    workflow_name: WorkflowName
+
+    @required
+    status: String
+
+    conclusion: String
+    labels: RunnerLabels
+    runner_id: DecimalUint64
+    runner_name: RunnerName
+    started_at: DateTime
+    completed_at: DateTime
+    delivery_id: CorrelationId
+}
+
+structure RunnerWorkflowRunObservation {
+    @required
+    provider: Provider
+
+    @required
+    provider_repository_id: ProviderRepositoryId
+
+    provider_installation_id: DecimalUint64
+    provider_run_id: DecimalUint64
+    provider_run_attempt: DecimalUint64
+    repository_full_name: RepositoryFullName
+    event_name: String
+    head_sha: HeadSHA
+    head_branch: HeadBranch
+    head_repository_full_name: RepositoryFullName
+    base_sha: HeadSHA
+    base_branch: HeadBranch
+    workflow_path: WorkflowPath
+    pull_request_number: DecimalUint64
+    commit_count: DecimalUint64
+}
+
+structure InternalSubmitRunnerJobInput {
+    @required
+    org_id: OrgId
+
+    @required
+    observation: RunnerJobObservation
+
+    @required
+    runner_name: RunnerName
+
+    runner_id: DecimalUint64
+
+    @required
+    bootstrap_kind: RunnerBootstrapKind
+
+    @required
+    bootstrap_payload: RunnerBootstrapPayload
+
+    workflow_run: RunnerWorkflowRunObservation
+
+    cache_manifest: RunnerCacheManifest
+}
+
+structure InternalSubmitRunnerJobOutput {
+    @required
+    allocation_id: AttemptId
+
+    @required
+    execution_id: ExecutionId
+
+    @required
+    attempt_id: AttemptId
+
+    @required
+    runner_name: RunnerName
+
+    runner_id: DecimalUint64
+
+    @required
+    created: Boolean
+}
+
+structure InternalObserveRunnerJobInput {
+    @required
+    org_id: OrgId
+
+    @required
+    observation: RunnerJobObservation
+
+    workflow_run: RunnerWorkflowRunObservation
+}
+
+structure InternalObserveRunnerJobOutput {
+    @required
+    state: String
+
+    allocation_id: AttemptId
+    execution_id: ExecutionId
+    attempt_id: AttemptId
+}
+
+structure InternalObserveRunnerWorkflowRunInput {
+    @required
+    org_id: OrgId
+
+    @required
+    workflow_run: RunnerWorkflowRunObservation
+}
+
+structure InternalObserveRunnerWorkflowRunOutput {
+    @required
+    state: String
 }

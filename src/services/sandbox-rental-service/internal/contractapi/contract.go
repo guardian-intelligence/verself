@@ -202,8 +202,6 @@ type ScheduleListPageSize int
 
 type ScheduleState string
 
-type SetupURL string
-
 type SourceKind string
 
 type SourceRef string
@@ -229,10 +227,6 @@ type WorkflowPath string
 type WorkflowState string
 
 type WorkloadKind string
-
-type GitHubInstallations []SandboxGitHubInstallationRecord
-
-type InstallationRepositories []GitHubInstallationRepository
 
 type Runs []SandboxExecutionRecord
 
@@ -351,10 +345,6 @@ type AnalyticsWindowInput struct {
 	Start string `query:"start"`
 }
 
-type BeginGithubInstallationInput struct {
-	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
-}
-
 type CreateExecutionScheduleInputBody struct {
 	DisplayName        *DisplayName       `json:"display_name,omitempty" minLength:"1" maxLength:"120"`
 	IdempotencyKey     IdempotencyKey     `json:"idempotency_key" required:"true" minLength:"8" maxLength:"128"`
@@ -384,16 +374,6 @@ type ExecutionScheduleMutationInput struct {
 
 type ExecutionSchedulePathInput struct {
 	ScheduleID ScheduleID `path:"schedule_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
-}
-
-type GitHubInstallationRepository struct {
-	Active               bool                 `json:"active" required:"true"`
-	Private              bool                 `json:"private" required:"true"`
-	ProviderOwner        ProviderOwner        `json:"provider_owner" required:"true" minLength:"1" maxLength:"255"`
-	ProviderRepo         ProviderRepo         `json:"provider_repo" required:"true" minLength:"1" maxLength:"255"`
-	ProviderRepositoryID ProviderRepositoryID `json:"provider_repository_id" required:"true" minLength:"1" maxLength:"512"`
-	RepositoryFullName   RepositoryFullName   `json:"repository_full_name" required:"true" minLength:"1" maxLength:"1024"`
-	SyncedAt             string               `json:"synced_at" required:"true"`
 }
 
 type ListExecutionSchedulesInput struct {
@@ -551,23 +531,6 @@ type SandboxExecutionScheduleRecord struct {
 	TemporalScheduleID           TemporalID                          `json:"temporal_schedule_id" required:"true" minLength:"1" maxLength:"512"`
 	UpdatedAt                    string                              `json:"updated_at" required:"true"`
 	WorkflowPath                 WorkflowPath                        `json:"workflow_path" required:"true" minLength:"1" maxLength:"4096"`
-}
-
-type SandboxGitHubInstallationConnectResponse struct {
-	ExpiresAt string   `json:"expires_at" required:"true"`
-	SetupURL  SetupURL `json:"setup_url" required:"true" minLength:"1" maxLength:"8192"`
-	State     string   `json:"state" required:"true"`
-}
-
-type SandboxGitHubInstallationRecord struct {
-	AccountLogin   string        `json:"account_login" required:"true"`
-	AccountType    string        `json:"account_type" required:"true"`
-	Active         bool          `json:"active" required:"true"`
-	CreatedAt      string        `json:"created_at" required:"true"`
-	InstallationID DecimalUint64 `json:"installation_id" required:"true" pattern:"^[0-9]+$"`
-	OrgID          OrgID         `json:"org_id" required:"true" minLength:"1" maxLength:"128"`
-	ResourceName   ResourceName  `json:"resourceName" required:"true" minLength:"1" maxLength:"4096" pattern:"^urn:verself:.+$"`
-	UpdatedAt      string        `json:"updated_at" required:"true"`
 }
 
 type SandboxJobsAnalytics struct {
@@ -753,11 +716,6 @@ type DeleteCachePathInput struct {
 	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
 }
 
-type SyncGithubInstallationRepositoriesInput struct {
-	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
-	InstallationID DecimalUint64  `path:"installation_id" required:"true" pattern:"^[0-9]+$"`
-}
-
 type SandboxExecutionSchedulesPageBody struct {
 	Limit      ScheduleListPageSize      `json:"limit" required:"true" minimum:"1" maximum:"500"`
 	NextCursor *ScheduleListCursor       `json:"next_cursor,omitempty" maxLength:"4096"`
@@ -778,28 +736,6 @@ type SandboxExecutionOutput struct {
 
 type SandboxExecutionLogsOutput struct {
 	Body SandboxExecutionLogs
-}
-
-type ListGithubInstallationsOutputBody struct {
-	Installations GitHubInstallations `json:"installations" required:"true"`
-}
-
-type ListGithubInstallationsOutput struct {
-	Body ListGithubInstallationsOutputBody
-}
-
-type BeginGithubInstallationOutput struct {
-	Body SandboxGitHubInstallationConnectResponse
-}
-
-type SyncGithubInstallationRepositoriesOutputBody struct {
-	InstallationID DecimalUint64            `json:"installation_id" required:"true" pattern:"^[0-9]+$"`
-	Repositories   InstallationRepositories `json:"repositories" required:"true"`
-	SyncedAt       string                   `json:"synced_at" required:"true"`
-}
-
-type SyncGithubInstallationRepositoriesOutput struct {
-	Body SyncGithubInstallationRepositoriesOutputBody
 }
 
 type SandboxCostsAnalyticsOutput struct {
@@ -882,9 +818,6 @@ var Operations = []OperationDescriptor{
 	ResumeExecutionSchedule.Descriptor,
 	GetExecution.Descriptor,
 	GetExecutionLogs.Descriptor,
-	ListGithubInstallations.Descriptor,
-	BeginGithubInstallation.Descriptor,
-	SyncGithubInstallationRepositories.Descriptor,
 	GetCostsAnalytics.Descriptor,
 	GetJobsAnalytics.Descriptor,
 	GetRunnerSizingAnalytics.Descriptor,
@@ -1220,91 +1153,6 @@ var GetExecutionLogs = Operation[ExecutionPathInput, SandboxExecutionLogsOutput]
 	},
 }
 
-var ListGithubInstallations = Operation[EmptyInput, ListGithubInstallationsOutput]{
-	Descriptor: OperationDescriptor{
-		ShapeID:             "verself.sandbox.v1#ListGithubInstallations",
-		OperationID:         "list-github-installations",
-		Method:              "GET",
-		Path:                "/api/v1/github/installations",
-		DefaultStatus:       200,
-		Readonly:            true,
-		Paginated:           false,
-		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "verself-api", Principals: []string{"browser", "cli"}},
-		Authorization:       AuthorizationDescriptor{Permission: "sandbox:github_installation:read", OrganizationSource: "token_org_id", OrganizationMember: ""},
-		Audit:               AuditDescriptor{Event: "sandbox.github_installation.list", Resource: "git_hub_installation", Action: "list"},
-		RateLimitBucket:     "read",
-		RequestBodyMaxBytes: 0,
-		RequestPayload:      PayloadDescriptor{},
-		ResponsePayload:     PayloadDescriptor{},
-		ResponseHeaders:     []HeaderDescriptor{},
-		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
-		SDK:                 SDKDescriptor{Module: "sandbox.githubInstallations", Method: "list", Paginated: false, Retryable: true},
-		Problems: []ProblemDescriptor{
-			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
-			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
-			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
-			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
-		},
-	},
-}
-
-var BeginGithubInstallation = Operation[BeginGithubInstallationInput, BeginGithubInstallationOutput]{
-	Descriptor: OperationDescriptor{
-		ShapeID:             "verself.sandbox.v1#BeginGithubInstallation",
-		OperationID:         "begin-github-installation",
-		Method:              "POST",
-		Path:                "/api/v1/github/installations/connect",
-		DefaultStatus:       201,
-		Readonly:            false,
-		Paginated:           false,
-		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "verself-api", Principals: []string{"browser", "cli"}},
-		Authorization:       AuthorizationDescriptor{Permission: "sandbox:github_installation:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
-		Audit:               AuditDescriptor{Event: "sandbox.github_installation.connect", Resource: "git_hub_installation", Action: "connect"},
-		RateLimitBucket:     "github_installation_mutation",
-		RequestBodyMaxBytes: 1024,
-		RequestPayload:      PayloadDescriptor{},
-		ResponsePayload:     PayloadDescriptor{},
-		ResponseHeaders:     []HeaderDescriptor{},
-		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
-		SDK:                 SDKDescriptor{Module: "sandbox.githubInstallations", Method: "beginConnect", Paginated: false, Retryable: false},
-		Problems: []ProblemDescriptor{
-			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
-			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
-			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
-			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
-		},
-	},
-}
-
-var SyncGithubInstallationRepositories = Operation[SyncGithubInstallationRepositoriesInput, SyncGithubInstallationRepositoriesOutput]{
-	Descriptor: OperationDescriptor{
-		ShapeID:             "verself.sandbox.v1#SyncGithubInstallationRepositories",
-		OperationID:         "sync-github-installation-repositories",
-		Method:              "POST",
-		Path:                "/api/v1/github/installations/{installation_id}/repositories/sync",
-		DefaultStatus:       200,
-		Readonly:            false,
-		Paginated:           false,
-		Identity:            IdentityDescriptor{Mode: "bearer", Audience: "verself-api", Principals: []string{"browser", "cli"}},
-		Authorization:       AuthorizationDescriptor{Permission: "sandbox:github_installation:write", OrganizationSource: "token_org_id", OrganizationMember: ""},
-		Audit:               AuditDescriptor{Event: "sandbox.github_installation.repositories.sync", Resource: "git_hub_installation_repository_resource", Action: "sync"},
-		RateLimitBucket:     "github_installation_mutation",
-		RequestBodyMaxBytes: 1024,
-		RequestPayload:      PayloadDescriptor{},
-		ResponsePayload:     PayloadDescriptor{},
-		ResponseHeaders:     []HeaderDescriptor{},
-		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
-		SDK:                 SDKDescriptor{Module: "sandbox.githubInstallations", Method: "syncRepositories", Paginated: false, Retryable: false},
-		Problems: []ProblemDescriptor{
-			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
-			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
-			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
-			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
-			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
-		},
-	},
-}
-
 var GetCostsAnalytics = Operation[AnalyticsWindowInput, SandboxCostsAnalyticsOutput]{
 	Descriptor: OperationDescriptor{
 		ShapeID:             "verself.sandbox.v1#GetCostsAnalytics",
@@ -1488,9 +1336,6 @@ type PublicHandlers interface {
 	ResumeExecutionSchedule(context.Context, *ExecutionScheduleMutationInput) (*SandboxExecutionScheduleOutput, error)
 	GetExecution(context.Context, *ExecutionPathInput) (*SandboxExecutionOutput, error)
 	GetExecutionLogs(context.Context, *ExecutionPathInput) (*SandboxExecutionLogsOutput, error)
-	ListGithubInstallations(context.Context, *EmptyInput) (*ListGithubInstallationsOutput, error)
-	BeginGithubInstallation(context.Context, *BeginGithubInstallationInput) (*BeginGithubInstallationOutput, error)
-	SyncGithubInstallationRepositories(context.Context, *SyncGithubInstallationRepositoriesInput) (*SyncGithubInstallationRepositoriesOutput, error)
 	GetCostsAnalytics(context.Context, *AnalyticsWindowInput) (*SandboxCostsAnalyticsOutput, error)
 	GetJobsAnalytics(context.Context, *AnalyticsWindowInput) (*SandboxJobsAnalyticsOutput, error)
 	GetRunnerSizingAnalytics(context.Context, *AnalyticsWindowInput) (*SandboxRunnerSizingAnalyticsOutput, error)
@@ -1520,12 +1365,6 @@ type ResumeExecutionScheduleHandler = Handler[ExecutionScheduleMutationInput, Sa
 type GetExecutionHandler = Handler[ExecutionPathInput, SandboxExecutionOutput]
 
 type GetExecutionLogsHandler = Handler[ExecutionPathInput, SandboxExecutionLogsOutput]
-
-type ListGithubInstallationsHandler = Handler[EmptyInput, ListGithubInstallationsOutput]
-
-type BeginGithubInstallationHandler = Handler[BeginGithubInstallationInput, BeginGithubInstallationOutput]
-
-type SyncGithubInstallationRepositoriesHandler = Handler[SyncGithubInstallationRepositoriesInput, SyncGithubInstallationRepositoriesOutput]
 
 type GetCostsAnalyticsHandler = Handler[AnalyticsWindowInput, SandboxCostsAnalyticsOutput]
 

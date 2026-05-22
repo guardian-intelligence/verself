@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -125,6 +126,7 @@ type SchedulerRuntime interface {
 	EnqueueGoldenVMCreateTx(ctx context.Context, tx pgx.Tx, req scheduler.GoldenVMCreateRequest) (scheduler.ProbeResult, error)
 	EnqueueGoldenVMCreate(ctx context.Context, req scheduler.GoldenVMCreateRequest) (scheduler.ProbeResult, error)
 	EnqueueGoldenRunPromoteTx(ctx context.Context, tx pgx.Tx, req scheduler.GoldenRunPromoteRequest) (scheduler.ProbeResult, error)
+	EnqueueGoldenRunPromote(ctx context.Context, req scheduler.GoldenRunPromoteRequest) (scheduler.ProbeResult, error)
 }
 
 type SubmitRequest struct {
@@ -228,12 +230,14 @@ type Service struct {
 	Billing                *billingclient.Client
 	Secrets                *secretsclient.Client
 	Bounds                 VMResourceBounds
-	GitHubRunner           *GitHubRunner
 	ForgejoRunner          *ForgejoRunner
 	Scheduler              SchedulerRuntime
 	Logger                 *slog.Logger
 	WorkloadTimeout        time.Duration
 	CheckoutBundleStoreDir string
+	RunnerBootstrapSecret  string
+	GitHubWebBaseURL       string
+	checkoutMu             sync.Mutex
 }
 
 type executionWorkItem struct {
@@ -1032,10 +1036,6 @@ func (s *Service) executionTerminalOutcome(ctx context.Context, item executionWo
 	if !outcome.SealDecision.Commit {
 		return outcome, nil
 	}
-	if s.GitHubRunner == nil {
-		reason := "github_runner_not_configured"
-		return executionTerminalOutcome{State: StateFailed, Reason: reason, SealDecision: durableSealDecision{SkipReason: reason}}, nil
-	}
 	identity, err := s.runnerExecutionIdentity(ctx, item.ExecutionID, item.AttemptID)
 	if err != nil {
 		reason := durableFailureReason("github_job_identity_failed", err)
@@ -1059,8 +1059,8 @@ func (s *Service) executionTerminalOutcome(ctx context.Context, item executionWo
 		attribute.String("github.workflow_job.status", result.Status),
 		attribute.String("github.workflow_job.conclusion", result.Conclusion),
 		attribute.Bool("github.workflow_job.observed", result.Observed),
-		attribute.Int("github.workflow_job.poll_count", pollCount),
-		attribute.Int64("github.workflow_job.wait_ms", wait.Milliseconds()),
+		attribute.Int("provider.workflow_job.poll_count", pollCount),
+		attribute.Int64("provider.workflow_job.wait_ms", wait.Milliseconds()),
 	)
 	return result.outcome(), nil
 }
@@ -1071,12 +1071,17 @@ func (s *Service) waitForGitHubWorkflowJobResult(ctx context.Context, identity R
 	var last githubWorkflowJobResult
 	pollCount := 0
 	for {
-		jobs, err := s.GitHubRunner.refreshWorkflowRunJobs(ctx, identity)
+		row, err := s.storeQueries().GetRunnerJobTerminalResult(ctx, store.GetRunnerJobTerminalResultParams{
+			Provider:      identity.Provider,
+			ProviderJobID: identity.ProviderJobID,
+		})
 		if err != nil {
-			return last, pollCount, time.Since(start), err
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return last, pollCount, time.Since(start), err
+			}
+		} else {
+			last = githubWorkflowJobResult{Status: row.Status, Conclusion: row.Conclusion, Observed: true}
 		}
-		status, conclusion, observed := jobs.jobResult(identity.ProviderJobID)
-		last = githubWorkflowJobResult{Status: status, Conclusion: conclusion, Observed: observed}
 		pollCount++
 		if last.terminal() {
 			return last, pollCount, time.Since(start), nil

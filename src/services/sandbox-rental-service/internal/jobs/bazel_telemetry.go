@@ -154,7 +154,7 @@ type bazelTargetRow struct {
 	SpanID               string    `ch:"span_id"`
 }
 
-func (r *GitHubRunner) AuthenticateBazelTelemetry(ctx context.Context, executionID, attemptID, bearer string) (GitHubExecutionIdentity, error) {
+func (s *Service) AuthenticateBazelTelemetry(ctx context.Context, executionID, attemptID, bearer string) (GitHubExecutionIdentity, error) {
 	executionID = strings.TrimSpace(executionID)
 	attemptID = strings.TrimSpace(attemptID)
 	bearer = strings.TrimSpace(strings.TrimPrefix(bearer, "Bearer "))
@@ -166,7 +166,7 @@ func (r *GitHubRunner) AuthenticateBazelTelemetry(ctx context.Context, execution
 	if err != nil {
 		return GitHubExecutionIdentity{}, fmt.Errorf("%w: invalid attempt id", ErrBazelTelemetryUnauthorized)
 	}
-	return r.authenticateGitHubExecution(ctx, execUUID, attemptUUID, bearer, r.deriveBazelTelemetryToken(execUUID, attemptUUID), ErrBazelTelemetryUnauthorized)
+	return s.authenticateGitHubExecution(ctx, execUUID, attemptUUID, bearer, s.deriveScopedExecutionToken("verself-bazel-telemetry", execUUID, attemptUUID), ErrBazelTelemetryUnauthorized)
 }
 
 func (s *Service) RecordBazelTelemetry(ctx context.Context, identity GitHubExecutionIdentity, upload bazeltelemetry.Upload) error {

@@ -116,6 +116,142 @@ func (q *Queries) GetActiveAllocationForRunnerJob(ctx context.Context, arg GetAc
 	return allocation_id, err
 }
 
+const getProviderExecutionIdentity = `-- name: GetProviderExecutionIdentity :one
+SELECT
+    a.allocation_id,
+    p.org_id,
+    a.provider_installation_id,
+    a.provider_repository_id,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
+    COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(j.head_branch, '')::text AS head_branch,
+    COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
+    e.runner_class,
+    a.runner_name
+FROM runner_allocations a
+JOIN executions e ON e.execution_id = a.execution_id
+JOIN runner_provider_repositories p ON p.provider = a.provider
+    AND p.provider_repository_id = a.provider_repository_id
+    AND p.active
+LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
+LEFT JOIN runner_jobs j ON j.provider = a.provider
+    AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+WHERE a.provider = $1
+  AND a.execution_id = $2
+  AND a.attempt_id = $3
+`
+
+type GetProviderExecutionIdentityParams struct {
+	Provider    string
+	ExecutionID *uuid.UUID
+	AttemptID   *uuid.UUID
+}
+
+type GetProviderExecutionIdentityRow struct {
+	AllocationID           uuid.UUID
+	OrgID                  string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderRunID          int64
+	HeadBranch             string
+	ProviderJobID          int64
+	RunnerClass            string
+	RunnerName             string
+}
+
+func (q *Queries) GetProviderExecutionIdentity(ctx context.Context, arg GetProviderExecutionIdentityParams) (GetProviderExecutionIdentityRow, error) {
+	row := q.db.QueryRow(ctx, getProviderExecutionIdentity, arg.Provider, arg.ExecutionID, arg.AttemptID)
+	var i GetProviderExecutionIdentityRow
+	err := row.Scan(
+		&i.AllocationID,
+		&i.OrgID,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.RepositoryFullName,
+		&i.ProviderRunID,
+		&i.HeadBranch,
+		&i.ProviderJobID,
+		&i.RunnerClass,
+		&i.RunnerName,
+	)
+	return i, err
+}
+
+const getProviderQueuedJobContext = `-- name: GetProviderQueuedJobContext :one
+SELECT
+    j.provider,
+    j.provider_job_id,
+    j.provider_installation_id,
+    j.provider_repository_id,
+    COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
+    j.provider_run_id,
+    j.provider_run_attempt,
+    j.job_name,
+    j.head_sha,
+    j.head_branch,
+    j.workflow_name,
+    j.labels_json,
+    p.org_id
+FROM runner_jobs j
+JOIN runner_provider_repositories p ON p.provider = j.provider
+    AND p.provider_repository_id = j.provider_repository_id
+    AND p.active
+WHERE j.provider = $1
+  AND j.provider_job_id = $2
+  AND p.org_id = $3
+  AND j.status = $4
+`
+
+type GetProviderQueuedJobContextParams struct {
+	Provider      string
+	ProviderJobID int64
+	OrgID         string
+	Status        string
+}
+
+type GetProviderQueuedJobContextRow struct {
+	Provider               string
+	ProviderJobID          int64
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	JobName                string
+	HeadSha                string
+	HeadBranch             string
+	WorkflowName           string
+	LabelsJson             []byte
+	OrgID                  string
+}
+
+func (q *Queries) GetProviderQueuedJobContext(ctx context.Context, arg GetProviderQueuedJobContextParams) (GetProviderQueuedJobContextRow, error) {
+	row := q.db.QueryRow(ctx, getProviderQueuedJobContext,
+		arg.Provider,
+		arg.ProviderJobID,
+		arg.OrgID,
+		arg.Status,
+	)
+	var i GetProviderQueuedJobContextRow
+	err := row.Scan(
+		&i.Provider,
+		&i.ProviderJobID,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.RepositoryFullName,
+		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
+		&i.JobName,
+		&i.HeadSha,
+		&i.HeadBranch,
+		&i.WorkflowName,
+		&i.LabelsJson,
+		&i.OrgID,
+	)
+	return i, err
+}
+
 const getRunnerAllocationByExecution = `-- name: GetRunnerAllocationByExecution :one
 SELECT allocation_id, provider
 FROM runner_allocations
@@ -153,6 +289,42 @@ func (q *Queries) GetRunnerAllocationProvider(ctx context.Context, arg GetRunner
 	var provider string
 	err := row.Scan(&provider)
 	return provider, err
+}
+
+const getRunnerAllocationSubmission = `-- name: GetRunnerAllocationSubmission :one
+SELECT
+    allocation_id,
+    COALESCE(execution_id, '00000000-0000-0000-0000-000000000000'::uuid) AS execution_id,
+    COALESCE(attempt_id, '00000000-0000-0000-0000-000000000000'::uuid) AS attempt_id,
+    runner_name,
+    provider_runner_id
+FROM runner_allocations
+WHERE allocation_id = $1
+`
+
+type GetRunnerAllocationSubmissionParams struct {
+	AllocationID uuid.UUID
+}
+
+type GetRunnerAllocationSubmissionRow struct {
+	AllocationID     uuid.UUID
+	ExecutionID      *uuid.UUID
+	AttemptID        *uuid.UUID
+	RunnerName       string
+	ProviderRunnerID int64
+}
+
+func (q *Queries) GetRunnerAllocationSubmission(ctx context.Context, arg GetRunnerAllocationSubmissionParams) (GetRunnerAllocationSubmissionRow, error) {
+	row := q.db.QueryRow(ctx, getRunnerAllocationSubmission, arg.AllocationID)
+	var i GetRunnerAllocationSubmissionRow
+	err := row.Scan(
+		&i.AllocationID,
+		&i.ExecutionID,
+		&i.AttemptID,
+		&i.RunnerName,
+		&i.ProviderRunnerID,
+	)
+	return i, err
 }
 
 const getRunnerBootstrapSecretNameByAllocation = `-- name: GetRunnerBootstrapSecretNameByAllocation :one
@@ -285,6 +457,37 @@ func (q *Queries) GetRunnerExecutionIdentity(ctx context.Context, arg GetRunnerE
 	return i, err
 }
 
+const getRunnerJobCacheManifest = `-- name: GetRunnerJobCacheManifest :one
+SELECT source_kind, source_path, source_sha, content_bytes
+FROM runner_job_cache_manifests
+WHERE provider = $1
+  AND provider_job_id = $2
+`
+
+type GetRunnerJobCacheManifestParams struct {
+	Provider      string
+	ProviderJobID int64
+}
+
+type GetRunnerJobCacheManifestRow struct {
+	SourceKind   string
+	SourcePath   string
+	SourceSha    string
+	ContentBytes []byte
+}
+
+func (q *Queries) GetRunnerJobCacheManifest(ctx context.Context, arg GetRunnerJobCacheManifestParams) (GetRunnerJobCacheManifestRow, error) {
+	row := q.db.QueryRow(ctx, getRunnerJobCacheManifest, arg.Provider, arg.ProviderJobID)
+	var i GetRunnerJobCacheManifestRow
+	err := row.Scan(
+		&i.SourceKind,
+		&i.SourcePath,
+		&i.SourceSha,
+		&i.ContentBytes,
+	)
+	return i, err
+}
+
 const getRunnerJobForBinding = `-- name: GetRunnerJobForBinding :one
 SELECT runner_id, runner_name, status
 FROM runner_jobs
@@ -308,6 +511,169 @@ func (q *Queries) GetRunnerJobForBinding(ctx context.Context, arg GetRunnerJobFo
 	var i GetRunnerJobForBindingRow
 	err := row.Scan(&i.RunnerID, &i.RunnerName, &i.Status)
 	return i, err
+}
+
+const getRunnerJobTerminalResult = `-- name: GetRunnerJobTerminalResult :one
+SELECT status, conclusion
+FROM runner_jobs
+WHERE provider = $1
+  AND provider_job_id = $2
+`
+
+type GetRunnerJobTerminalResultParams struct {
+	Provider      string
+	ProviderJobID int64
+}
+
+type GetRunnerJobTerminalResultRow struct {
+	Status     string
+	Conclusion string
+}
+
+func (q *Queries) GetRunnerJobTerminalResult(ctx context.Context, arg GetRunnerJobTerminalResultParams) (GetRunnerJobTerminalResultRow, error) {
+	row := q.db.QueryRow(ctx, getRunnerJobTerminalResult, arg.Provider, arg.ProviderJobID)
+	var i GetRunnerJobTerminalResultRow
+	err := row.Scan(&i.Status, &i.Conclusion)
+	return i, err
+}
+
+const getWorkflowRunInvocation = `-- name: GetWorkflowRunInvocation :one
+SELECT
+    provider_installation_id,
+    provider_repository_id,
+    provider_run_id,
+    provider_run_attempt,
+    repository_full_name,
+    event_name,
+    head_sha,
+    head_branch,
+    head_repository_full_name,
+    base_sha,
+    base_branch,
+    workflow_path,
+    pull_request_number,
+    COALESCE(commit_count, 0)::bigint AS commit_count
+FROM github_workflow_invocations
+WHERE provider_installation_id = $1
+  AND provider_repository_id = $2
+  AND provider_run_id = $3
+ORDER BY
+  CASE WHEN $4::bigint <> 0 AND provider_run_attempt = $4 THEN 0 ELSE 1 END,
+  provider_run_attempt DESC
+LIMIT 1
+`
+
+type GetWorkflowRunInvocationParams struct {
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+}
+
+type GetWorkflowRunInvocationRow struct {
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	RepositoryFullName     string
+	EventName              string
+	HeadSha                string
+	HeadBranch             string
+	HeadRepositoryFullName string
+	BaseSha                string
+	BaseBranch             string
+	WorkflowPath           string
+	PullRequestNumber      int64
+	CommitCount            int64
+}
+
+func (q *Queries) GetWorkflowRunInvocation(ctx context.Context, arg GetWorkflowRunInvocationParams) (GetWorkflowRunInvocationRow, error) {
+	row := q.db.QueryRow(ctx, getWorkflowRunInvocation,
+		arg.ProviderInstallationID,
+		arg.ProviderRepositoryID,
+		arg.ProviderRunID,
+		arg.ProviderRunAttempt,
+	)
+	var i GetWorkflowRunInvocationRow
+	err := row.Scan(
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
+		&i.RepositoryFullName,
+		&i.EventName,
+		&i.HeadSha,
+		&i.HeadBranch,
+		&i.HeadRepositoryFullName,
+		&i.BaseSha,
+		&i.BaseBranch,
+		&i.WorkflowPath,
+		&i.PullRequestNumber,
+		&i.CommitCount,
+	)
+	return i, err
+}
+
+const insertProviderRunnerAllocation = `-- name: InsertProviderRunnerAllocation :execrows
+INSERT INTO runner_allocations (
+    allocation_id, provider, provider_installation_id, provider_repository_id, runner_class, runner_name,
+    provider_runner_id, state, requested_for_provider_job_id, allocate_by, jit_by, vm_submitted_by,
+    runner_listening_by, assignment_by, vm_exit_by, cleanup_by, created_at, updated_at
+) VALUES (
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8, $9,
+    $10, $11, $12,
+    $13, $14, $15,
+    $16, $17, $17
+)
+ON CONFLICT DO NOTHING
+`
+
+type InsertProviderRunnerAllocationParams struct {
+	AllocationID              uuid.UUID
+	Provider                  string
+	ProviderInstallationID    int64
+	ProviderRepositoryID      int64
+	RunnerClass               string
+	RunnerName                string
+	ProviderRunnerID          int64
+	State                     string
+	RequestedForProviderJobID int64
+	AllocateBy                pgtype.Timestamptz
+	JitBy                     pgtype.Timestamptz
+	VmSubmittedBy             pgtype.Timestamptz
+	RunnerListeningBy         pgtype.Timestamptz
+	AssignmentBy              pgtype.Timestamptz
+	VmExitBy                  pgtype.Timestamptz
+	CleanupBy                 pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+}
+
+func (q *Queries) InsertProviderRunnerAllocation(ctx context.Context, arg InsertProviderRunnerAllocationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertProviderRunnerAllocation,
+		arg.AllocationID,
+		arg.Provider,
+		arg.ProviderInstallationID,
+		arg.ProviderRepositoryID,
+		arg.RunnerClass,
+		arg.RunnerName,
+		arg.ProviderRunnerID,
+		arg.State,
+		arg.RequestedForProviderJobID,
+		arg.AllocateBy,
+		arg.JitBy,
+		arg.VmSubmittedBy,
+		arg.RunnerListeningBy,
+		arg.AssignmentBy,
+		arg.VmExitBy,
+		arg.CleanupBy,
+		arg.CreatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertRunnerJobBinding = `-- name: InsertRunnerJobBinding :execrows
@@ -539,6 +905,54 @@ func (q *Queries) ListTerminalRunnerExecutionsWithLiveAllocations(ctx context.Co
 	return items, nil
 }
 
+const listWorkflowRunJobResults = `-- name: ListWorkflowRunJobResults :many
+SELECT provider_job_id, status, conclusion
+FROM runner_jobs
+WHERE provider = $1
+  AND provider_repository_id = $2
+  AND provider_run_id = $3
+  AND provider_run_attempt = $4
+ORDER BY provider_job_id
+`
+
+type ListWorkflowRunJobResultsParams struct {
+	Provider             string
+	ProviderRepositoryID int64
+	ProviderRunID        int64
+	ProviderRunAttempt   int64
+}
+
+type ListWorkflowRunJobResultsRow struct {
+	ProviderJobID int64
+	Status        string
+	Conclusion    string
+}
+
+func (q *Queries) ListWorkflowRunJobResults(ctx context.Context, arg ListWorkflowRunJobResultsParams) ([]ListWorkflowRunJobResultsRow, error) {
+	rows, err := q.db.Query(ctx, listWorkflowRunJobResults,
+		arg.Provider,
+		arg.ProviderRepositoryID,
+		arg.ProviderRunID,
+		arg.ProviderRunAttempt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkflowRunJobResultsRow{}
+	for rows.Next() {
+		var i ListWorkflowRunJobResultsRow
+		if err := rows.Scan(&i.ProviderJobID, &i.Status, &i.Conclusion); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockRunnerAllocationProvider = `-- name: LockRunnerAllocationProvider :one
 SELECT provider
 FROM runner_allocations
@@ -732,6 +1146,233 @@ func (q *Queries) UpdateRunnerAllocationAssignment(ctx context.Context, arg Upda
 	return err
 }
 
+const updateRunnerExecutionExternalTaskID = `-- name: UpdateRunnerExecutionExternalTaskID :exec
+UPDATE executions e
+SET external_task_id = $1,
+    updated_at = $2
+FROM runner_allocations a
+WHERE a.execution_id = e.execution_id
+  AND a.allocation_id = $3
+`
+
+type UpdateRunnerExecutionExternalTaskIDParams struct {
+	ExternalTaskID string
+	UpdatedAt      pgtype.Timestamptz
+	AllocationID   uuid.UUID
+}
+
+func (q *Queries) UpdateRunnerExecutionExternalTaskID(ctx context.Context, arg UpdateRunnerExecutionExternalTaskIDParams) error {
+	_, err := q.db.Exec(ctx, updateRunnerExecutionExternalTaskID, arg.ExternalTaskID, arg.UpdatedAt, arg.AllocationID)
+	return err
+}
+
+const upsertProviderRunnerJob = `-- name: UpsertProviderRunnerJob :exec
+INSERT INTO runner_jobs (
+    provider, provider_job_id, provider_installation_id, provider_repository_id, repository_full_name,
+    provider_run_id, provider_run_attempt, job_name, head_sha, head_branch, workflow_name,
+    status, conclusion, labels_json, runner_id, runner_name, started_at, completed_at,
+    last_webhook_delivery, updated_at
+) VALUES (
+    $1, $2, $3,
+    $4, $5,
+    $6, $7, $8,
+    $9, $10, $11,
+    $12, $13, $14::jsonb,
+    $15, $16, $17,
+    $18, $19, $20
+)
+ON CONFLICT (provider, provider_job_id) DO UPDATE SET
+    provider_installation_id = CASE WHEN EXCLUDED.provider_installation_id <> 0 THEN EXCLUDED.provider_installation_id ELSE runner_jobs.provider_installation_id END,
+    provider_repository_id = CASE WHEN EXCLUDED.provider_repository_id <> 0 THEN EXCLUDED.provider_repository_id ELSE runner_jobs.provider_repository_id END,
+    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), runner_jobs.repository_full_name),
+    provider_run_id = CASE WHEN EXCLUDED.provider_run_id <> 0 THEN EXCLUDED.provider_run_id ELSE runner_jobs.provider_run_id END,
+    provider_run_attempt = CASE WHEN EXCLUDED.provider_run_attempt <> 0 THEN EXCLUDED.provider_run_attempt ELSE runner_jobs.provider_run_attempt END,
+    job_name = COALESCE(NULLIF(EXCLUDED.job_name, ''), runner_jobs.job_name),
+    head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), runner_jobs.head_sha),
+    head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), runner_jobs.head_branch),
+    workflow_name = COALESCE(NULLIF(EXCLUDED.workflow_name, ''), runner_jobs.workflow_name),
+    status = EXCLUDED.status,
+    conclusion = EXCLUDED.conclusion,
+    labels_json = EXCLUDED.labels_json,
+    runner_id = EXCLUDED.runner_id,
+    runner_name = EXCLUDED.runner_name,
+    started_at = COALESCE(EXCLUDED.started_at, runner_jobs.started_at),
+    completed_at = COALESCE(EXCLUDED.completed_at, runner_jobs.completed_at),
+    last_webhook_delivery = COALESCE(NULLIF(EXCLUDED.last_webhook_delivery, ''), runner_jobs.last_webhook_delivery),
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertProviderRunnerJobParams struct {
+	Provider               string
+	ProviderJobID          int64
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	JobName                string
+	HeadSha                string
+	HeadBranch             string
+	WorkflowName           string
+	Status                 string
+	Conclusion             string
+	LabelsJson             []byte
+	RunnerID               int64
+	RunnerName             string
+	StartedAt              pgtype.Timestamptz
+	CompletedAt            pgtype.Timestamptz
+	LastWebhookDelivery    string
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertProviderRunnerJob(ctx context.Context, arg UpsertProviderRunnerJobParams) error {
+	_, err := q.db.Exec(ctx, upsertProviderRunnerJob,
+		arg.Provider,
+		arg.ProviderJobID,
+		arg.ProviderInstallationID,
+		arg.ProviderRepositoryID,
+		arg.RepositoryFullName,
+		arg.ProviderRunID,
+		arg.ProviderRunAttempt,
+		arg.JobName,
+		arg.HeadSha,
+		arg.HeadBranch,
+		arg.WorkflowName,
+		arg.Status,
+		arg.Conclusion,
+		arg.LabelsJson,
+		arg.RunnerID,
+		arg.RunnerName,
+		arg.StartedAt,
+		arg.CompletedAt,
+		arg.LastWebhookDelivery,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
+const upsertProviderRunnerRepository = `-- name: UpsertProviderRunnerRepository :execrows
+INSERT INTO runner_provider_repositories (
+    provider, provider_repository_id, org_id, project_id, source_repository_id,
+    provider_owner, provider_repo, repository_full_name, active, created_at, updated_at
+) VALUES (
+    $1, $2, $3,
+    $4, $5,
+    $6, $7, $8,
+    true, $9, $9
+)
+ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
+    org_id = EXCLUDED.org_id,
+    project_id = EXCLUDED.project_id,
+    source_repository_id = EXCLUDED.source_repository_id,
+    provider_owner = EXCLUDED.provider_owner,
+    provider_repo = EXCLUDED.provider_repo,
+    repository_full_name = EXCLUDED.repository_full_name,
+    active = true,
+    updated_at = EXCLUDED.updated_at
+WHERE runner_provider_repositories.org_id = EXCLUDED.org_id
+`
+
+type UpsertProviderRunnerRepositoryParams struct {
+	Provider             string
+	ProviderRepositoryID int64
+	OrgID                string
+	ProjectID            *uuid.UUID
+	SourceRepositoryID   *uuid.UUID
+	ProviderOwner        string
+	ProviderRepo         string
+	RepositoryFullName   string
+	UpdatedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertProviderRunnerRepository(ctx context.Context, arg UpsertProviderRunnerRepositoryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertProviderRunnerRepository,
+		arg.Provider,
+		arg.ProviderRepositoryID,
+		arg.OrgID,
+		arg.ProjectID,
+		arg.SourceRepositoryID,
+		arg.ProviderOwner,
+		arg.ProviderRepo,
+		arg.RepositoryFullName,
+		arg.UpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const upsertProviderWorkflowInvocation = `-- name: UpsertProviderWorkflowInvocation :exec
+INSERT INTO github_workflow_invocations (
+    provider_installation_id, provider_repository_id, provider_run_id,
+    provider_run_attempt, repository_full_name, event_name, head_sha,
+    head_branch, head_repository_full_name, base_sha, base_branch,
+    pull_request_number, workflow_path, commit_count, updated_at
+) VALUES (
+    $1, $2,
+    $3, $4,
+    $5, $6, $7,
+    $8, $9, $10,
+    $11, $12, $13,
+    NULLIF($14::bigint, 0), $15
+)
+ON CONFLICT (
+    provider_installation_id, provider_repository_id, provider_run_id,
+    provider_run_attempt
+) DO UPDATE SET
+    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_workflow_invocations.repository_full_name),
+    event_name = COALESCE(NULLIF(EXCLUDED.event_name, ''), github_workflow_invocations.event_name),
+    head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), github_workflow_invocations.head_sha),
+    head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), github_workflow_invocations.head_branch),
+    head_repository_full_name = COALESCE(NULLIF(EXCLUDED.head_repository_full_name, ''), github_workflow_invocations.head_repository_full_name),
+    base_sha = COALESCE(NULLIF(EXCLUDED.base_sha, ''), github_workflow_invocations.base_sha),
+    base_branch = COALESCE(NULLIF(EXCLUDED.base_branch, ''), github_workflow_invocations.base_branch),
+    pull_request_number = CASE WHEN EXCLUDED.pull_request_number <> 0 THEN EXCLUDED.pull_request_number ELSE github_workflow_invocations.pull_request_number END,
+    workflow_path = COALESCE(NULLIF(EXCLUDED.workflow_path, ''), github_workflow_invocations.workflow_path),
+    commit_count = COALESCE(EXCLUDED.commit_count, github_workflow_invocations.commit_count),
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertProviderWorkflowInvocationParams struct {
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	RepositoryFullName     string
+	EventName              string
+	HeadSha                string
+	HeadBranch             string
+	HeadRepositoryFullName string
+	BaseSha                string
+	BaseBranch             string
+	PullRequestNumber      int64
+	WorkflowPath           string
+	CommitCount            int64
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertProviderWorkflowInvocation(ctx context.Context, arg UpsertProviderWorkflowInvocationParams) error {
+	_, err := q.db.Exec(ctx, upsertProviderWorkflowInvocation,
+		arg.ProviderInstallationID,
+		arg.ProviderRepositoryID,
+		arg.ProviderRunID,
+		arg.ProviderRunAttempt,
+		arg.RepositoryFullName,
+		arg.EventName,
+		arg.HeadSha,
+		arg.HeadBranch,
+		arg.HeadRepositoryFullName,
+		arg.BaseSha,
+		arg.BaseBranch,
+		arg.PullRequestNumber,
+		arg.WorkflowPath,
+		arg.CommitCount,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const upsertRunnerBootstrapConfig = `-- name: UpsertRunnerBootstrapConfig :exec
 INSERT INTO runner_bootstrap_configs (
     allocation_id, attempt_id, fetch_token_hash, bootstrap_kind, bootstrap_secret_name, expires_at, created_at
@@ -767,6 +1408,49 @@ func (q *Queries) UpsertRunnerBootstrapConfig(ctx context.Context, arg UpsertRun
 		arg.BootstrapSecretName,
 		arg.ExpiresAt,
 		arg.CreatedAt,
+	)
+	return err
+}
+
+const upsertRunnerJobCacheManifest = `-- name: UpsertRunnerJobCacheManifest :exec
+INSERT INTO runner_job_cache_manifests (
+    provider, provider_job_id, source_kind, source_path, source_sha,
+    content_sha256, content_bytes, created_at, updated_at
+) VALUES (
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8, $8
+)
+ON CONFLICT (provider, provider_job_id) DO UPDATE SET
+    source_kind = EXCLUDED.source_kind,
+    source_path = EXCLUDED.source_path,
+    source_sha = EXCLUDED.source_sha,
+    content_sha256 = EXCLUDED.content_sha256,
+    content_bytes = EXCLUDED.content_bytes,
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertRunnerJobCacheManifestParams struct {
+	Provider      string
+	ProviderJobID int64
+	SourceKind    string
+	SourcePath    string
+	SourceSha     string
+	ContentSha256 string
+	ContentBytes  []byte
+	UpdatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertRunnerJobCacheManifest(ctx context.Context, arg UpsertRunnerJobCacheManifestParams) error {
+	_, err := q.db.Exec(ctx, upsertRunnerJobCacheManifest,
+		arg.Provider,
+		arg.ProviderJobID,
+		arg.SourceKind,
+		arg.SourcePath,
+		arg.SourceSha,
+		arg.ContentSha256,
+		arg.ContentBytes,
+		arg.UpdatedAt,
 	)
 	return err
 }

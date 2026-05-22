@@ -23,11 +23,9 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	costsAnalyticsJSON := analyticsWindow + `,"reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1","by_source":[{"key":"github","count":"1","reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1"}],"by_runner_class":[],"by_repository":[]}`
 	runnerSizingAnalyticsJSON := analyticsWindow + `,"by_runner_class":[{"runner_class":"linux-2vcpu","run_count":"1","p95_duration_ms":"1000","avg_rootfs_provisioned_bytes":"1","avg_boot_time_us":"2","avg_block_write_bytes":"3","avg_net_tx_bytes":"4"}]}`
 	logSearchJSON := `{"filters":{"query":"build","run_id":"` + runID + `"},"limit":1,"next_cursor":"logs_cursor","results":[{"execution_id":"` + executionID + `","attempt_id":"attempt_1","seq":1,"stream":"stdout","chunk":"build log\n","created_at":"2026-05-06T00:00:30Z","source_kind":"github"}]}`
-	githubInstallationJSON := `{"installation_id":"123","org_id":"370200542594579812","account_login":"guardian","account_type":"Organization","active":true,"created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
 	var createBody map[string]any
 	var pauseKey string
 	var resumeKey string
-	var githubInstallKey string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer tok_sandbox" {
@@ -59,12 +57,6 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 			_, _ = w.Write([]byte(costsAnalyticsJSON))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/runner-sizing":
 			_, _ = w.Write([]byte(runnerSizingAnalyticsJSON))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/github/installations":
-			_, _ = w.Write([]byte(`{"installations":[` + githubInstallationJSON + `]}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/github/installations/connect":
-			githubInstallKey = r.Header.Get("Idempotency-Key")
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"setup_url":"https://github.com/apps/verself/installations/new","state":"github_state","expires_at":"2026-05-06T00:10:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/execution-schedules":
 			_, _ = w.Write([]byte(`{"limit":50,"schedules":[` + scheduleJSON + `]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/execution-schedules":
@@ -146,20 +138,6 @@ func TestSandboxRunsAndSchedulesUsePublicAPI(t *testing.T) {
 	}
 	if len(runnerSizingAnalytics.ByRunnerClass) != 1 || runnerSizingAnalytics.ByRunnerClass[0].RunnerClass != "linux-2vcpu" {
 		t.Fatalf("unexpected runner sizing analytics: %#v", runnerSizingAnalytics)
-	}
-	installations, err := client.Sandbox.ListGitHubInstallations(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(installations) != 1 || installations[0].InstallationID != "123" {
-		t.Fatalf("unexpected github installations: %#v", installations)
-	}
-	connect, err := client.Sandbox.BeginGitHubInstallation(context.Background(), SandboxMutationOptions{IdempotencyKey: "sandbox:github-connect"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if connect.State != "github_state" || githubInstallKey != "sandbox:github-connect" {
-		t.Fatalf("unexpected github connect: response=%#v key=%q", connect, githubInstallKey)
 	}
 	schedules, err := client.Sandbox.ListSchedules(context.Background(), ListSandboxExecutionSchedulesOptions{})
 	if err != nil {

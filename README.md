@@ -47,8 +47,7 @@ Per-task documentation lives in `aspect <task> --help`.
 Prod GitHub App name: Verself Runner https://github.com/organizations/guardian-intelligence/settings/apps/verself-runner
 
 Homepage url: https://verself.sh
-Callback URL: https://verself.sh/github/installations/callback (needs to be updated)
-Webhook URL: https://sandbox.api.verself.sh/webhooks/github/actions
+Webhook URL: https://github.api.verself.sh/api/v1/github/webhooks
 
 ## Quickstart
 

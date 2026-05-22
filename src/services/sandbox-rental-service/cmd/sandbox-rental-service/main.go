@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,10 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	billingclient "github.com/verself/billing-service/client"
@@ -97,12 +94,7 @@ func run() error {
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)
 	vmOrchestratorSocket := cfg.String("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
-	githubAppIDRaw := cfg.RequireString("SANDBOX_GITHUB_APP_ID")
-	githubAppSlug := cfg.RequireString("SANDBOX_GITHUB_APP_SLUG")
-	githubAppClientID := cfg.RequireString("SANDBOX_GITHUB_APP_CLIENT_ID")
-	githubAPIBaseURL := cfg.URL("SANDBOX_GITHUB_API_BASE_URL", "https://api.github.com")
 	githubWebBaseURL := cfg.URL("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
-	githubRunnerGroupID := cfg.Int64("SANDBOX_GITHUB_RUNNER_GROUP_ID", 1)
 	checkoutBundleStoreDir := cfg.String("SANDBOX_GITHUB_CHECKOUT_BUNDLE_STORE_DIR", "/var/lib/verself/sandbox-rental/github-checkout-bundles")
 	forgejoAPIBaseURL := cfg.URL("SANDBOX_FORGEJO_API_BASE_URL", "")
 	forgejoRunnerBaseURL := cfg.String("SANDBOX_FORGEJO_RUNNER_BASE_URL", "")
@@ -110,6 +102,7 @@ func run() error {
 	forgejoToken := cfg.CredentialOr("forgejo-token", "")
 	forgejoWebhookSecret := cfg.CredentialOr("forgejo-webhook-secret", "")
 	forgejoBootstrapSecret := cfg.CredentialOr("forgejo-bootstrap-secret", "")
+	runnerBootstrapSecret := cfg.CredentialOr("runner-bootstrap-secret", forgejoBootstrapSecret)
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 16)
 	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
 	pgConnMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -120,10 +113,6 @@ func run() error {
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	if err := cfg.Err(); err != nil {
 		return err
-	}
-	githubAppID, err := strconv.ParseInt(githubAppIDRaw, 10, 64)
-	if err != nil || githubAppID <= 0 {
-		return fmt.Errorf("SANDBOX_GITHUB_APP_ID must be a positive int64")
 	}
 	if err := validatePublicBaseURL(publicBaseURL); err != nil {
 		return fmt.Errorf("SANDBOX_PUBLIC_BASE_URL: %w", err)
@@ -252,18 +241,6 @@ func run() error {
 	}
 	defer temporalClient.Close()
 
-	githubSecrets, err := readRuntimeSecrets(ctx, secretsClient,
-		secretsclient.SandboxGitHubPrivateKeyName,
-		secretsclient.SandboxGitHubWebhookSecretName,
-		secretsclient.SandboxGitHubClientSecretName,
-	)
-	if err != nil {
-		return fmt.Errorf("sandbox-rental github provider secret: %w", err)
-	}
-	githubAppPrivateKey := requireSecretField(githubSecrets, secretsclient.SandboxGitHubPrivateKeyName, "sandbox-rental github provider secret")
-	githubAppWebhookSecret := requireSecretField(githubSecrets, secretsclient.SandboxGitHubWebhookSecretName, "sandbox-rental github provider secret")
-	githubAppClientSecret := requireSecretField(githubSecrets, secretsclient.SandboxGitHubClientSecretName, "sandbox-rental github provider secret")
-
 	// --- job service ---
 
 	jobService := &jobs.Service{
@@ -277,25 +254,9 @@ func run() error {
 		Logger:                 logger,
 		WorkloadTimeout:        time.Duration(workloadTimeout) * time.Second,
 		CheckoutBundleStoreDir: checkoutBundleStoreDir,
+		RunnerBootstrapSecret:  runnerBootstrapSecret,
+		GitHubWebBaseURL:       githubWebBaseURL,
 	}
-	githubRunner, err := jobs.NewGitHubRunner(jobService, jobs.GitHubRunnerConfig{
-		AppID:         githubAppID,
-		AppSlug:       githubAppSlug,
-		ClientID:      githubAppClientID,
-		ClientSecret:  githubAppClientSecret,
-		PrivateKeyPEM: githubAppPrivateKey,
-		WebhookSecret: githubAppWebhookSecret,
-		APIBaseURL:    githubAPIBaseURL,
-		WebBaseURL:    githubWebBaseURL,
-		RunnerGroupID: githubRunnerGroupID,
-	}, &http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
-		Timeout:   10 * time.Second,
-	})
-	if err != nil {
-		return fmt.Errorf("create github runner adapter: %w", err)
-	}
-	jobService.GitHubRunner = githubRunner
 	forgejoRunner, err := jobs.NewForgejoRunner(jobService, jobs.ForgejoRunnerConfig{
 		APIBaseURL:      forgejoAPIBaseURL,
 		RunnerBaseURL:   forgejoRunnerBaseURL,
@@ -393,7 +354,7 @@ func run() error {
 	rootHandler := limitPublicAPIRequestBodies(rootMux, sandboxAPIRequestBodyLimit)
 	srv := httpserver.New(listenAddr, otelhttp.NewHandler(rootHandler, "sandbox-rental-service"))
 
-	internalPeerIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceSourceCodeHosting)
+	internalPeerIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceSourceCodeHosting, workloadauth.ServiceGitHubIntegration)
 	if err != nil {
 		return err
 	}
@@ -440,48 +401,6 @@ func int32FromInt(value int, field string) int32 {
 		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
 	}
 	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
-}
-
-func requireSecretField(values map[string]string, field string, label string) string {
-	value := strings.TrimSpace(values[field])
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "%s missing required field %s\n", label, field)
-		os.Exit(1)
-	}
-	return value
-}
-
-func readRuntimeSecrets(ctx context.Context, client *secretsclient.Client, secretNames ...string) (map[string]string, error) {
-	ctx, span := otel.Tracer("runtime-secrets").Start(ctx, "secrets.runtime.resolve")
-	defer span.End()
-	span.SetAttributes(attribute.Int("verself.secret_count", len(secretNames)))
-
-	if client == nil {
-		err := fmt.Errorf("runtime secrets client is required")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, err
-	}
-	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	values := make(map[string]string, len(secretNames))
-	for _, secretName := range secretNames {
-		resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: secretsclient.SecretName(secretName)})
-		if err != nil {
-			err = fmt.Errorf("read runtime secret %s: %w", secretName, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		if resp.Result == nil {
-			err := fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		values[secretName] = string(resp.Result.Value)
-	}
-	return values, nil
 }
 
 func validatePublicBaseURL(raw string) error {

@@ -22,8 +22,6 @@ import (
 type permission = runtimeiam.Permission
 
 const (
-	permissionGitHubRead    permission = "sandbox:github_installation:read"
-	permissionGitHubWrite   permission = "sandbox:github_installation:write"
 	permissionExecutionRead permission = "sandbox:execution:read"
 	permissionScheduleRead  permission = "sandbox:execution_schedule:read"
 	permissionScheduleWrite permission = "sandbox:execution_schedule:write"
@@ -414,12 +412,11 @@ func firstNonEmpty(values ...string) string {
 var apiOperationRateLimiter = runtimeiam.NewFixedWindowOperationRateLimiter(map[runtimeiam.RateLimitClass]runtimeiam.RateLimitRule{
 	// Browser SSR plus TanStack refetches can legitimately issue many read
 	// calls during billing return polling; mutation limits carry abuse control.
-	"read":                         {Limit: 6000, Window: time.Minute},
-	"logs_read":                    {Limit: 1200, Window: time.Minute},
-	"execution_schedule_mutation":  {Limit: 300, Window: time.Minute},
-	"github_installation_mutation": {Limit: 120, Window: time.Minute},
-	"billing_mutation":             {Limit: 300, Window: time.Minute},
-	"internal_mutation":            {Limit: 600, Window: time.Minute},
+	"read":                        {Limit: 6000, Window: time.Minute},
+	"logs_read":                   {Limit: 1200, Window: time.Minute},
+	"execution_schedule_mutation": {Limit: 300, Window: time.Minute},
+	"billing_mutation":            {Limit: 300, Window: time.Minute},
+	"internal_mutation":           {Limit: 600, Window: time.Minute},
 })
 
 func rateLimitExceeded(ctx context.Context, retryAfter time.Duration) error {

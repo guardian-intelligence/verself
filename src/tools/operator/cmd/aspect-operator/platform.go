@@ -65,50 +65,46 @@ type platformOptions struct {
 }
 
 type platformMainVars struct {
-	PlatformOrgID                string `yaml:"platform_org_id"`
-	SecretsServicePlatformOrgID  string `yaml:"secrets_service_platform_org_id"`
-	PlatformOrganizationName     string `yaml:"platform_organization_name"`
-	PlatformCompanySlug          string `yaml:"platform_company_slug"`
-	PlatformCompanyDisplayName   string `yaml:"platform_company_display_name"`
-	PlatformOwnerAlias           string `yaml:"platform_owner_alias"`
-	PlatformOwnerName            string `yaml:"platform_owner_name"`
-	PlatformOwnerEmail           string `yaml:"platform_owner_email"`
-	PlatformRootOwnerEmail       string `yaml:"platform_root_owner_email"`
-	PlatformTrustTier            string `yaml:"platform_trust_tier"`
-	PlatformRepoSlug             string `yaml:"platform_repo_slug"`
-	PlatformRepoDisplayName      string `yaml:"platform_repo_display_name"`
-	PlatformRepoDescription      string `yaml:"platform_repo_description"`
-	PlatformGitHubAccountID      int64  `yaml:"platform_github_account_id"`
-	PlatformGitHubInstallationID int64  `yaml:"platform_github_installation_id"`
-	PlatformGitHubRepositoryID   int64  `yaml:"platform_github_repository_id"`
-	ForgejoDomain                string `yaml:"forgejo_domain"`
-	ForgejoSubdomain             string `yaml:"forgejo_subdomain"`
-	VerselfDomain                string `yaml:"verself_domain"`
-	ZitadelDomain                string `yaml:"zitadel_domain"`
+	PlatformOrgID               string `yaml:"platform_org_id"`
+	SecretsServicePlatformOrgID string `yaml:"secrets_service_platform_org_id"`
+	PlatformOrganizationName    string `yaml:"platform_organization_name"`
+	PlatformCompanySlug         string `yaml:"platform_company_slug"`
+	PlatformCompanyDisplayName  string `yaml:"platform_company_display_name"`
+	PlatformOwnerAlias          string `yaml:"platform_owner_alias"`
+	PlatformOwnerName           string `yaml:"platform_owner_name"`
+	PlatformOwnerEmail          string `yaml:"platform_owner_email"`
+	PlatformRootOwnerEmail      string `yaml:"platform_root_owner_email"`
+	PlatformTrustTier           string `yaml:"platform_trust_tier"`
+	PlatformRepoSlug            string `yaml:"platform_repo_slug"`
+	PlatformRepoDisplayName     string `yaml:"platform_repo_display_name"`
+	PlatformRepoDescription     string `yaml:"platform_repo_description"`
+	PlatformGitHubRepositoryID  int64  `yaml:"platform_github_repository_id"`
+	ForgejoDomain               string `yaml:"forgejo_domain"`
+	ForgejoSubdomain            string `yaml:"forgejo_subdomain"`
+	VerselfDomain               string `yaml:"verself_domain"`
+	ZitadelDomain               string `yaml:"zitadel_domain"`
 }
 
 type platformConfig struct {
-	OrgIDText            string `json:"org_id"`
-	PublicOrgIDText      string `json:"public_org_id"`
-	OrganizationName     string `json:"organization_name"`
-	CompanySlug          string `json:"company_slug"`
-	CompanyDisplayName   string `json:"company_display_name"`
-	OwnerAlias           string `json:"owner_alias"`
-	OwnerName            string `json:"owner_name"`
-	OwnerEmail           string `json:"owner_email"`
-	RootOwnerEmail       string `json:"root_owner_email"`
-	TrustTier            string `json:"trust_tier"`
-	RepoSlug             string `json:"repo_slug"`
-	RepoDisplayName      string `json:"repo_display_name"`
-	RepoDescription      string `json:"repo_description"`
-	GitHubAccountID      int64  `json:"github_account_id,omitempty"`
-	GitHubInstallationID int64  `json:"github_installation_id,omitempty"`
-	GitHubRepositoryID   int64  `json:"github_repository_id,omitempty"`
-	ForgejoDomain        string `json:"forgejo_domain"`
-	VerselfDomain        string `json:"verself_domain"`
-	ZitadelHost          string `json:"zitadel_host"`
-	CanonicalGitURL      string `json:"canonical_git_url"`
-	ForgejoWebhookURL    string `json:"forgejo_webhook_url"`
+	OrgIDText          string `json:"org_id"`
+	PublicOrgIDText    string `json:"public_org_id"`
+	OrganizationName   string `json:"organization_name"`
+	CompanySlug        string `json:"company_slug"`
+	CompanyDisplayName string `json:"company_display_name"`
+	OwnerAlias         string `json:"owner_alias"`
+	OwnerName          string `json:"owner_name"`
+	OwnerEmail         string `json:"owner_email"`
+	RootOwnerEmail     string `json:"root_owner_email"`
+	TrustTier          string `json:"trust_tier"`
+	RepoSlug           string `json:"repo_slug"`
+	RepoDisplayName    string `json:"repo_display_name"`
+	RepoDescription    string `json:"repo_description"`
+	GitHubRepositoryID int64  `json:"github_repository_id,omitempty"`
+	ForgejoDomain      string `json:"forgejo_domain"`
+	VerselfDomain      string `json:"verself_domain"`
+	ZitadelHost        string `json:"zitadel_host"`
+	CanonicalGitURL    string `json:"canonical_git_url"`
+	ForgejoWebhookURL  string `json:"forgejo_webhook_url"`
 }
 
 type platformReport struct {
@@ -293,25 +289,23 @@ func loadPlatformConfig(repoRoot, site string) (platformConfig, error) {
 		return platformConfig{}, err
 	}
 	cfg := platformConfig{
-		OrgIDText:            firstNonEmpty(mainVars.PlatformOrgID, mainVars.SecretsServicePlatformOrgID),
-		OrganizationName:     strings.TrimSpace(mainVars.PlatformOrganizationName),
-		CompanySlug:          strings.TrimSpace(mainVars.PlatformCompanySlug),
-		CompanyDisplayName:   strings.TrimSpace(mainVars.PlatformCompanyDisplayName),
-		OwnerAlias:           strings.TrimSpace(mainVars.PlatformOwnerAlias),
-		OwnerName:            strings.TrimSpace(mainVars.PlatformOwnerName),
-		OwnerEmail:           strings.TrimSpace(mainVars.PlatformOwnerEmail),
-		RootOwnerEmail:       strings.TrimSpace(mainVars.PlatformRootOwnerEmail),
-		TrustTier:            strings.TrimSpace(mainVars.PlatformTrustTier),
-		RepoSlug:             strings.TrimSpace(mainVars.PlatformRepoSlug),
-		RepoDisplayName:      strings.TrimSpace(mainVars.PlatformRepoDisplayName),
-		RepoDescription:      strings.TrimSpace(mainVars.PlatformRepoDescription),
-		GitHubAccountID:      mainVars.PlatformGitHubAccountID,
-		GitHubInstallationID: mainVars.PlatformGitHubInstallationID,
-		GitHubRepositoryID:   mainVars.PlatformGitHubRepositoryID,
-		ForgejoDomain:        resolveForgejoDomain(mainVars),
-		VerselfDomain:        strings.TrimSpace(mainVars.VerselfDomain),
-		ZitadelHost:          resolveZitadelHost(mainVars),
-		ForgejoWebhookURL:    resolveForgejoWebhookURL(mainVars),
+		OrgIDText:          firstNonEmpty(mainVars.PlatformOrgID, mainVars.SecretsServicePlatformOrgID),
+		OrganizationName:   strings.TrimSpace(mainVars.PlatformOrganizationName),
+		CompanySlug:        strings.TrimSpace(mainVars.PlatformCompanySlug),
+		CompanyDisplayName: strings.TrimSpace(mainVars.PlatformCompanyDisplayName),
+		OwnerAlias:         strings.TrimSpace(mainVars.PlatformOwnerAlias),
+		OwnerName:          strings.TrimSpace(mainVars.PlatformOwnerName),
+		OwnerEmail:         strings.TrimSpace(mainVars.PlatformOwnerEmail),
+		RootOwnerEmail:     strings.TrimSpace(mainVars.PlatformRootOwnerEmail),
+		TrustTier:          strings.TrimSpace(mainVars.PlatformTrustTier),
+		RepoSlug:           strings.TrimSpace(mainVars.PlatformRepoSlug),
+		RepoDisplayName:    strings.TrimSpace(mainVars.PlatformRepoDisplayName),
+		RepoDescription:    strings.TrimSpace(mainVars.PlatformRepoDescription),
+		GitHubRepositoryID: mainVars.PlatformGitHubRepositoryID,
+		ForgejoDomain:      resolveForgejoDomain(mainVars),
+		VerselfDomain:      strings.TrimSpace(mainVars.VerselfDomain),
+		ZitadelHost:        resolveZitadelHost(mainVars),
+		ForgejoWebhookURL:  resolveForgejoWebhookURL(mainVars),
 	}
 	if err := cfg.validate(); err != nil {
 		return platformConfig{}, err
@@ -380,7 +374,7 @@ func (cfg *platformConfig) validate() error {
 }
 
 func (cfg platformConfig) githubDogfoodConfigured() bool {
-	return cfg.GitHubAccountID > 0 || cfg.GitHubInstallationID > 0 || cfg.GitHubRepositoryID > 0
+	return cfg.GitHubRepositoryID > 0
 }
 
 func (cfg platformConfig) validateGitHubDogfood() error {
@@ -388,10 +382,6 @@ func (cfg platformConfig) validateGitHubDogfood() error {
 		return nil
 	}
 	switch {
-	case cfg.GitHubAccountID <= 0:
-		return fmt.Errorf("platform config: platform_github_account_id is required when GitHub dogfood is configured")
-	case cfg.GitHubInstallationID <= 0:
-		return fmt.Errorf("platform config: platform_github_installation_id is required when GitHub dogfood is configured")
 	case cfg.GitHubRepositoryID <= 0:
 		return fmt.Errorf("platform config: platform_github_repository_id is required when GitHub dogfood is configured")
 	}
@@ -1176,12 +1166,10 @@ func (r *platformRunner) ensureGitHubDogfoodRunnerRepository() error {
 	if !r.cfg.githubDogfoodConfigured() {
 		return nil
 	}
-	return r.withSpan("platform.github_runner.ensure", []attribute.KeyValue{
+	return r.withSpan("platform.runner_provider_repository.ensure", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "sandbox_rental"),
 		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
-		attribute.Int64("github.account_id", r.cfg.GitHubAccountID),
-		attribute.Int64("github.installation_id", r.cfg.GitHubInstallationID),
 		attribute.Int64("github.repository_id", r.cfg.GitHubRepositoryID),
 	}, func(ctx context.Context) error {
 		conn, err := r.openPG(ctx, "sandbox_rental")
@@ -1196,52 +1184,6 @@ func (r *platformRunner) ensureGitHubDogfoodRunnerRepository() error {
 		defer func() { _ = tx.Rollback(context.Background()) }()
 		ids := r.ids()
 		now := time.Now().UTC()
-		if _, err := tx.Exec(ctx, `
-INSERT INTO github_accounts (account_id, account_login, account_type, created_at, updated_at)
-VALUES ($1, $2, 'Organization', $3, $3)
-ON CONFLICT (account_id) DO UPDATE SET
-    account_login = EXCLUDED.account_login,
-    account_type = EXCLUDED.account_type,
-    updated_at = EXCLUDED.updated_at`,
-			r.cfg.GitHubAccountID,
-			r.cfg.CompanySlug,
-			now,
-		); err != nil {
-			return fmt.Errorf("github dogfood: upsert account: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `
-INSERT INTO github_installations (installation_id, account_id, active, repository_selection, permissions_json, created_at, updated_at)
-VALUES ($1, $2, true, 'selected', '{}'::jsonb, $3, $3)
-ON CONFLICT (installation_id) DO UPDATE SET
-    account_id = EXCLUDED.account_id,
-    active = true,
-    repository_selection = EXCLUDED.repository_selection,
-    permissions_json = EXCLUDED.permissions_json,
-    updated_at = EXCLUDED.updated_at`,
-			r.cfg.GitHubInstallationID,
-			r.cfg.GitHubAccountID,
-			now,
-		); err != nil {
-			return fmt.Errorf("github dogfood: upsert installation: %w", err)
-		}
-		connectionID := stableUUID("github-installation-connection", r.cfg.PublicOrgIDText, strconv.FormatInt(r.cfg.GitHubInstallationID, 10))
-		if _, err := tx.Exec(ctx, `
-INSERT INTO github_installation_connections (
-    connection_id, installation_id, org_id, connected_by_actor_id, state, created_at, updated_at
-)
-VALUES ($1, $2, $3, $4, 'active', $5, $5)
-ON CONFLICT (installation_id, org_id) DO UPDATE SET
-    connected_by_actor_id = EXCLUDED.connected_by_actor_id,
-    state = 'active',
-    updated_at = EXCLUDED.updated_at`,
-			connectionID,
-			r.cfg.GitHubInstallationID,
-			r.cfg.PublicOrgIDText,
-			platformActor,
-			now,
-		); err != nil {
-			return fmt.Errorf("github dogfood: upsert connection: %w", err)
-		}
 		if _, err := tx.Exec(ctx, `
 INSERT INTO runner_provider_repositories (
     provider, provider_repository_id, org_id, project_id, source_repository_id,
@@ -1271,7 +1213,7 @@ ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("github dogfood: commit: %w", err)
 		}
-		r.markChanged("sandbox.github_runner_repository.upserted")
+		r.markChanged("sandbox.runner_provider_repository.upserted")
 		return nil
 	})
 }
@@ -1797,12 +1739,11 @@ WHERE provider = 'forgejo' AND provider_repository_id = $1`, providerRepoID).Sca
 }
 
 func (r *platformRunner) checkGitHubDogfoodRunnerRepository(issues *[]string) platformBoundaryRow {
-	row := platformBoundaryRow{Boundary: "sandbox_rental.github_runner_repository", Status: "ok"}
-	err := r.withSpan("platform.github_runner.check", []attribute.KeyValue{
+	row := platformBoundaryRow{Boundary: "sandbox_rental.runner_provider_repository", Status: "ok"}
+	err := r.withSpan("platform.runner_provider_repository.check", []attribute.KeyValue{
 		attribute.String("db.system", "postgresql"),
 		attribute.String("db.name", "sandbox_rental"),
 		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
-		attribute.Int64("github.installation_id", r.cfg.GitHubInstallationID),
 		attribute.Int64("github.repository_id", r.cfg.GitHubRepositoryID),
 	}, func(ctx context.Context) error {
 		conn, err := r.openPG(ctx, "sandbox_rental")
@@ -1811,21 +1752,12 @@ func (r *platformRunner) checkGitHubDogfoodRunnerRepository(issues *[]string) pl
 		}
 		defer func() { _ = conn.Close(context.Background()) }()
 		ids := r.ids()
-		var accountID int64
-		var accountLogin, accountType string
-		var installationActive, repoActive bool
-		var connectionOrgID, connectionState string
+		var repoActive bool
 		var repoOrgID string
 		var projectID, sourceRepositoryID uuid.UUID
 		var providerOwner, providerRepo, repositoryFullName string
 		err = conn.QueryRow(ctx, `
 SELECT
-    ga.account_id,
-    ga.account_login,
-    ga.account_type,
-    gi.active,
-    gc.org_id,
-    gc.state,
     rpr.org_id,
     COALESCE(rpr.project_id, '00000000-0000-0000-0000-000000000000'::uuid),
     COALESCE(rpr.source_repository_id, '00000000-0000-0000-0000-000000000000'::uuid),
@@ -1833,23 +1765,13 @@ SELECT
     rpr.provider_repo,
     rpr.repository_full_name,
     rpr.active
-FROM github_accounts ga
-JOIN github_installations gi ON gi.account_id = ga.account_id
-JOIN github_installation_connections gc ON gc.installation_id = gi.installation_id
-JOIN runner_provider_repositories rpr ON rpr.provider = 'github'
-WHERE gi.installation_id = $1
-  AND gc.org_id = $2
-  AND rpr.provider_repository_id = $3`,
-			r.cfg.GitHubInstallationID,
+FROM runner_provider_repositories rpr
+WHERE rpr.provider = 'github'
+  AND rpr.org_id = $1
+  AND rpr.provider_repository_id = $2`,
 			r.cfg.PublicOrgIDText,
 			r.cfg.GitHubRepositoryID,
 		).Scan(
-			&accountID,
-			&accountLogin,
-			&accountType,
-			&installationActive,
-			&connectionOrgID,
-			&connectionState,
 			&repoOrgID,
 			&projectID,
 			&sourceRepositoryID,
@@ -1867,18 +1789,6 @@ WHERE gi.installation_id = $1
 			return fmt.Errorf("github dogfood: query: %w", err)
 		}
 		var mismatches []string
-		if accountID != r.cfg.GitHubAccountID {
-			mismatches = append(mismatches, fmt.Sprintf("account_id=%d", accountID))
-		}
-		if accountLogin != r.cfg.CompanySlug || accountType != "Organization" {
-			mismatches = append(mismatches, "github account identity mismatch")
-		}
-		if !installationActive {
-			mismatches = append(mismatches, "installation.active=false")
-		}
-		if connectionOrgID != r.cfg.PublicOrgIDText || connectionState != "active" {
-			mismatches = append(mismatches, "installation connection mismatch")
-		}
 		if repoOrgID != r.cfg.PublicOrgIDText {
 			mismatches = append(mismatches, fmt.Sprintf("runner_repository.org_id=%q", repoOrgID))
 		}

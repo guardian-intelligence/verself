@@ -158,9 +158,8 @@
           stripe_secret_key: ""
           stripe_webhook_secret: ""
           resend_api_key: ""
-          sandbox_rental_service_github_app_private_key: ""
-          sandbox_rental_service_github_app_webhook_secret: ""
-          sandbox_rental_service_github_app_client_secret: ""
+          github_integration_service_github_app_private_key: ""
+          github_integration_service_github_app_webhook_secret: ""
         dest: "{{ secrets_file }}"
         mode: "0600"
       no_log: true

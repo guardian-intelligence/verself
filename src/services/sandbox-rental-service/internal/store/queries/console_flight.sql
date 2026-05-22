@@ -1,4 +1,4 @@
--- name: GetGitHubRunnerRepositoryOrgID :one
+-- name: GetRunnerProviderRepositoryOrgID :one
 SELECT org_id
 FROM runner_provider_repositories
 WHERE provider = 'github'

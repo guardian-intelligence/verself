@@ -15,6 +15,8 @@ forgejo_subdomain: git
 forgejo_domain: "{{ forgejo_subdomain }}.{{ verself_domain }}"
 governance_service_subdomain: governance.api
 governance_service_domain: "{{ governance_service_subdomain }}.{{ verself_domain }}"
+github_integration_service_subdomain: github.api
+github_integration_service_domain: "{{ github_integration_service_subdomain }}.{{ verself_domain }}"
 iam_service_subdomain: iam.api
 iam_service_domain: "{{ iam_service_subdomain }}.{{ verself_domain }}"
 mailbox_service_subdomain: mail.api
@@ -73,6 +75,9 @@ cloudflare_dns_records:
     zone: product
   - kind: public_api_origin
     record: governance.api
+    zone: product
+  - kind: public_api_origin
+    record: github.api
     zone: product
   - kind: public_api_origin
     record: secrets.api
@@ -167,13 +172,11 @@ platform_trust_tier: platform
 platform_repo_slug: verself
 platform_repo_display_name: Verself
 platform_repo_description: Verself platform monorepo.
-platform_github_account_id: 258150529
-platform_github_installation_id: 123769944
 platform_github_repository_id: 1195495246
 secrets_service_platform_org_id: "{{ platform_org_id }}"
 stalwart_operator_forward_to: ""
 
-sandbox_rental_service_github_app_id: 3370540
-sandbox_rental_service_github_app_slug: verself-ci
-sandbox_rental_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
-sandbox_rental_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/verself-ci"
+github_integration_service_github_app_id: 3370540
+github_integration_service_github_app_slug: verself-ci
+github_integration_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
+github_integration_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/verself-ci"

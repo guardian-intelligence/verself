@@ -37,6 +37,7 @@ GO_DIRS = [
     "src/tools/operator-runtime/go",
     "src/services/profile-service",
     "src/services/projects-service",
+    "src/services/github-integration-service",
     "src/services/sandbox-rental-service",
     "src/services/secrets-service",
     "src/services/service-runtime/go",
@@ -51,6 +52,7 @@ ASPECT_OPERATOR_TARGET = "//src/tools/operator/cmd/aspect-operator:aspect-operat
 ACTIONS_PUBLISHER_TARGET = "//src/tools/actions/cmd/actions-publisher:actions-publisher"
 ANSIBLE_PLAYBOOK_TARGET = "//src/host:ansible_playbook_bin"
 ANSIBLE_COLLECTIONS_ARCHIVE_TARGET = "//src/host:ansible_collections_archive"
+SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
 DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 SOPS_SHIM = ("sops", "//src/tools/dev/binaries:sops")
 

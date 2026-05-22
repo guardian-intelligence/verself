@@ -99,10 +99,3 @@ func ResourceNameSchedule(installationID, orgID, scheduleID string) ResourceName
 		ResourcePathSegment{Collection: "schedules", ID: scheduleID},
 	)
 }
-
-func ResourceNameGitHubInstallation(installationID, orgID, githubInstallationID string) ResourceName {
-	return FormatResourceName(installationID,
-		ResourcePathSegment{Collection: "orgs", ID: orgID},
-		ResourcePathSegment{Collection: "githubInstallations", ID: githubInstallationID},
-	)
-}

@@ -586,16 +586,16 @@ func (s *Service) sandboxExportFiles(ctx context.Context, orgID string, includeL
 	if err := add("sandbox/execution_billing_windows.jsonl", rows, err); err != nil {
 		return nil, err
 	}
-	rows, err = q.ExportSandboxGithubInstallationsJSONL(ctx, sandboxexport.ExportSandboxGithubInstallationsJSONLParams{OrgID: sandboxOrgID})
-	if err := add("sandbox/github_installations.jsonl", rows, err); err != nil {
-		return nil, err
-	}
 	rows, err = q.ExportSandboxRunnerProviderRepositoriesJSONL(ctx, sandboxexport.ExportSandboxRunnerProviderRepositoriesJSONLParams{OrgID: sandboxOrgID})
 	if err := add("sandbox/runner_provider_repositories.jsonl", rows, err); err != nil {
 		return nil, err
 	}
 	rows, err = q.ExportSandboxRunnerJobsJSONL(ctx, sandboxexport.ExportSandboxRunnerJobsJSONLParams{OrgID: sandboxOrgID})
 	if err := add("sandbox/runner_jobs.jsonl", rows, err); err != nil {
+		return nil, err
+	}
+	rows, err = q.ExportSandboxRunnerJobCacheManifestsJSONL(ctx, sandboxexport.ExportSandboxRunnerJobCacheManifestsJSONLParams{OrgID: sandboxOrgID})
+	if err := add("sandbox/runner_job_cache_manifests.jsonl", rows, err); err != nil {
 		return nil, err
 	}
 	rows, err = q.ExportSandboxRunnerAllocationsJSONL(ctx, sandboxexport.ExportSandboxRunnerAllocationsJSONLParams{OrgID: sandboxOrgID})

@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "github-integration-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/github-integration-service/cmd/github-integration-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/github-integration-service/internal/githubintegration",
+        "//src/services/github-integration-service/migrations",
+        "//src/services/sandbox-rental-service/client",
+        "//src/services/secrets-service/client",
+        "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/httpserver",
+        "//src/services/service-runtime/go/workload",
+        "//src/tools/observability/go/otel",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+    ],
+)
+
+go_binary(
+    name = "github-integration-service",
+    embed = [":github-integration-service_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "github-integration-service_nomad_artifact",
+    binary = ":github-integration-service",
+    output = "github-integration-service",
+)

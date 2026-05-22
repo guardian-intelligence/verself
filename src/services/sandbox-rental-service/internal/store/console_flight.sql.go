@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getGitHubRunnerRepositoryOrgID = `-- name: GetGitHubRunnerRepositoryOrgID :one
+const getRunnerProviderRepositoryOrgID = `-- name: GetRunnerProviderRepositoryOrgID :one
 SELECT org_id
 FROM runner_provider_repositories
 WHERE provider = 'github'
@@ -19,12 +19,12 @@ WHERE provider = 'github'
   AND active
 `
 
-type GetGitHubRunnerRepositoryOrgIDParams struct {
+type GetRunnerProviderRepositoryOrgIDParams struct {
 	ProviderRepositoryID int64
 }
 
-func (q *Queries) GetGitHubRunnerRepositoryOrgID(ctx context.Context, arg GetGitHubRunnerRepositoryOrgIDParams) (string, error) {
-	row := q.db.QueryRow(ctx, getGitHubRunnerRepositoryOrgID, arg.ProviderRepositoryID)
+func (q *Queries) GetRunnerProviderRepositoryOrgID(ctx context.Context, arg GetRunnerProviderRepositoryOrgIDParams) (string, error) {
+	row := q.db.QueryRow(ctx, getRunnerProviderRepositoryOrgID, arg.ProviderRepositoryID)
 	var org_id string
 	err := row.Scan(&org_id)
 	return org_id, err

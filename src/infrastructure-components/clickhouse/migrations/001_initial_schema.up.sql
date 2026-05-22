@@ -517,13 +517,6 @@ ALTER TABLE verself.job_events
     ADD COLUMN IF NOT EXISTS provider_run_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER provider_installation_id;
 ALTER TABLE verself.job_events
     ADD COLUMN IF NOT EXISTS provider_job_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER provider_run_id;
-ALTER TABLE verself.job_events
-    DROP COLUMN IF EXISTS github_installation_id;
-ALTER TABLE verself.job_events
-    DROP COLUMN IF EXISTS github_run_id;
-ALTER TABLE verself.job_events
-    DROP COLUMN IF EXISTS github_job_id;
-
 -- ═══════════════════════════════════════════════════════════════════════════
 -- verself: billing ledger and windowed metering
 -- ═══════════════════════════════════════════════════════════════════════════

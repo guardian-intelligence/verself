@@ -135,63 +135,6 @@ func sandboxPhaseRowFromRun(record ExecutionRecord, eventSource, phaseName, resu
 	return row
 }
 
-func sandboxPhaseRowFromGitHubWorkflowJob(ctx context.Context, event GitHubWorkflowJobWebhook, eventSource, phaseName, result, reason string, startedAt, completedAt time.Time, attrs sandboxPhaseAttrs) sandboxPhaseRow {
-	row := sandboxPhaseBase(ctx, eventSource, phaseName, result, reason, startedAt, completedAt, attrs)
-	row.Provider = RunnerProviderGitHub
-	row.ExternalProvider = RunnerProviderGitHub
-	row.ProviderInstallationID = int64ToUint64(event.Installation.ID)
-	row.ProviderRepositoryID = int64ToUint64(event.Repository.ID)
-	row.ProviderRunID = int64ToUint64(event.WorkflowJob.RunID)
-	row.ProviderRunAttempt = int64ToUint64(event.WorkflowJob.RunAttempt)
-	row.ProviderJobID = int64ToUint64(event.WorkflowJob.ID)
-	row.RepositoryFullName = event.Repository.FullName
-	row.WorkflowName = event.WorkflowJob.WorkflowName
-	row.JobName = event.WorkflowJob.Name
-	row.HeadBranch = event.WorkflowJob.HeadBranch
-	row.HeadSHA = event.WorkflowJob.HeadSHA
-	row.RunnerName = event.WorkflowJob.RunnerName
-	return row
-}
-
-func sandboxPhaseRowFromGitHubQueuedJob(ctx context.Context, job githubQueuedJob, eventSource, phaseName, result, reason string, startedAt, completedAt time.Time, attrs sandboxPhaseAttrs) sandboxPhaseRow {
-	row := sandboxPhaseBase(ctx, eventSource, phaseName, result, reason, startedAt, completedAt, attrs)
-	row.OrgID = job.OrgID
-	row.Provider = RunnerProviderGitHub
-	row.ExternalProvider = RunnerProviderGitHub
-	row.ProviderInstallationID = int64ToUint64(job.InstallationID)
-	row.ProviderRepositoryID = int64ToUint64(job.RepositoryID)
-	row.ProviderRunID = int64ToUint64(job.RunID)
-	row.ProviderRunAttempt = int64ToUint64(job.RunAttempt)
-	row.ProviderJobID = int64ToUint64(job.GitHubJobID)
-	row.RepositoryFullName = job.RepositoryFullName
-	row.JobName = job.JobName
-	row.HeadBranch = job.HeadBranch
-	row.HeadSHA = job.HeadSHA
-	return row
-}
-
-func sandboxPhaseRowFromGitHubAllocation(ctx context.Context, allocation githubAllocation, eventSource, phaseName, result, reason string, startedAt, completedAt time.Time, attrs sandboxPhaseAttrs) sandboxPhaseRow {
-	row := sandboxPhaseBase(ctx, eventSource, phaseName, result, reason, startedAt, completedAt, attrs)
-	row.OrgID = allocation.OrgID
-	row.ExecutionID = allocation.ExecutionID
-	row.AttemptID = allocation.AttemptID
-	row.AllocationID = allocation.AllocationID
-	row.Provider = RunnerProviderGitHub
-	row.ExternalProvider = RunnerProviderGitHub
-	row.ProviderInstallationID = int64ToUint64(allocation.InstallationID)
-	row.ProviderRepositoryID = int64ToUint64(allocation.RepositoryID)
-	row.ProviderRunID = int64ToUint64(allocation.RunID)
-	row.ProviderRunAttempt = int64ToUint64(allocation.RunAttempt)
-	row.ProviderJobID = int64ToUint64(allocation.RequestedJobID)
-	row.RepositoryFullName = allocation.RepositoryFullName
-	row.JobName = allocation.JobName
-	row.HeadBranch = allocation.HeadBranch
-	row.HeadSHA = allocation.HeadSHA
-	row.RunnerClass = allocation.RunnerClass
-	row.RunnerName = allocation.RunnerName
-	return row
-}
-
 func sandboxPhaseBase(ctx context.Context, eventSource, phaseName, result, reason string, startedAt, completedAt time.Time, attrs sandboxPhaseAttrs) sandboxPhaseRow {
 	if ctx == nil {
 		ctx = context.Background()
@@ -288,8 +231,6 @@ func sandboxPhaseGroup(phaseName string) string {
 		return "github.webhook"
 	case strings.HasPrefix(phaseName, "github.capacity."):
 		return "github.capacity"
-	case strings.HasPrefix(phaseName, "github.runner_group."):
-		return "github.runner_group"
 	case strings.HasPrefix(phaseName, "github.runner."):
 		return "github.runner"
 	case strings.HasPrefix(phaseName, "runner.bootstrap."):
@@ -318,8 +259,6 @@ func sandboxPhaseOrder(phaseName string) uint16 {
 		return 20
 	case "github.runner.allocate":
 		return 30
-	case "github.runner_group.reconcile":
-		return 31
 	case "sandbox.execution.submit":
 		return 40
 	case "sandbox.execution.load_work":

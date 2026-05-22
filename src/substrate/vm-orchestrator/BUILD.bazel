@@ -135,6 +135,7 @@ go_library(
 go_test(
     name = "vm-orchestrator_test",
     srcs = [
+        "control_test.go",
         "filesystem_mounts_test.go",
         "org_runtime_manager_test.go",
         "privops_direct_test.go",

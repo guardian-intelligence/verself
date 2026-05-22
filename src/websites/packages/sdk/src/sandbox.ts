@@ -7,7 +7,6 @@ import {
   type ListExecutionSchedulesData,
   type ListRunsData,
   type SearchRunLogsData,
-  beginGithubInstallation as beginGeneratedGithubInstallation,
   createExecutionSchedule as createGeneratedExecutionSchedule,
   deleteCacheGeneration as deleteGeneratedCacheGeneration,
   deleteCachePath as deleteGeneratedCachePath,
@@ -21,7 +20,6 @@ import {
   listCacheGenerations as listGeneratedCacheGenerations,
   listCaches as listGeneratedCaches,
   listExecutionSchedules as listGeneratedExecutionSchedules,
-  listGithubInstallations as listGeneratedGithubInstallations,
   listRuns as listGeneratedRuns,
   pauseExecutionSchedule as pauseGeneratedExecutionSchedule,
   resumeExecutionSchedule as resumeGeneratedExecutionSchedule,
@@ -30,8 +28,6 @@ import {
 import {
   vCreateExecutionScheduleBody,
   vCreateExecutionScheduleResponse,
-  vBeginGithubInstallationHeaders,
-  vBeginGithubInstallationResponse,
   vDeleteCacheGenerationHeaders,
   vDeleteCacheGenerationPath,
   vDeleteCacheGenerationResponse,
@@ -58,7 +54,6 @@ import {
   vListCachesResponse,
   vListExecutionSchedulesQuery,
   vListExecutionSchedulesResponse,
-  vListGithubInstallationsResponse,
   vListRunsQuery,
   vListRunsResponse,
   vPauseExecutionScheduleHeaders,
@@ -160,17 +155,6 @@ export class SandboxRental {
       ...this.#options,
       cacheId,
       path,
-      ...(options === undefined ? {} : { options }),
-    });
-  }
-
-  listGitHubInstallations(): Promise<GitHubInstallation[]> {
-    return listGitHubInstallations(this.#options);
-  }
-
-  beginGitHubInstallation(options?: SandboxMutationOptions): Promise<GitHubInstallationConnect> {
-    return beginGitHubInstallation({
-      ...this.#options,
       ...(options === undefined ? {} : { options }),
     });
   }
@@ -305,18 +289,6 @@ function parseExecutionLogs(input: unknown) {
 }
 
 export type ExecutionLogs = ReturnType<typeof parseExecutionLogs>;
-
-function parseGitHubInstallations(input: unknown) {
-  return v.parse(vListGithubInstallationsResponse, input).installations ?? [];
-}
-
-export type GitHubInstallation = ReturnType<typeof parseGitHubInstallations>[number];
-
-function parseGitHubInstallationConnect(input: unknown) {
-  return v.parse(vBeginGithubInstallationResponse, input);
-}
-
-export type GitHubInstallationConnect = ReturnType<typeof parseGitHubInstallationConnect>;
 
 function parseRunLogSearchPage(input: unknown) {
   const parsed = v.parse(vSearchRunLogsResponse, input);
@@ -1038,47 +1010,6 @@ export async function deleteCachePath(
   }
 
   return parseCachePathDeleteResult(result.data);
-}
-
-export async function listGitHubInstallations(
-  options: SandboxRentalClientOptions,
-): Promise<GitHubInstallation[]> {
-  const client = createSandboxRentalClient(options);
-  const path = "/api/v1/github/installations";
-  const result = await listGeneratedGithubInstallations({
-    client,
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return parseGitHubInstallations(result.data);
-}
-
-export async function beginGitHubInstallation(
-  options: SandboxRentalClientOptions & { options?: SandboxMutationOptions },
-): Promise<GitHubInstallationConnect> {
-  const client = createSandboxRentalClient(options);
-  const headers = v.parse(
-    vBeginGithubInstallationHeaders,
-    idempotencyHeaders("github-installation", options.options?.idempotencyKey),
-  );
-  const path = "/api/v1/github/installations/connect";
-  const result = await beginGeneratedGithubInstallation({
-    client,
-    headers,
-    responseStyle: "fields",
-    throwOnError: false,
-  });
-
-  if (result.error !== undefined) {
-    throwSandboxRentalError(path, result.response, result.error);
-  }
-
-  return parseGitHubInstallationConnect(result.data);
 }
 
 export async function listExecutionSchedules(

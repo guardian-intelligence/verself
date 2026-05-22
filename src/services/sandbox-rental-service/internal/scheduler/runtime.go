@@ -468,6 +468,28 @@ func (r *Runtime) EnqueueGoldenRunPromoteTx(ctx context.Context, tx pgx.Tx, req 
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
 }
 
+func (r *Runtime) EnqueueGoldenRunPromote(ctx context.Context, req GoldenRunPromoteRequest) (ProbeResult, error) {
+	args := GoldenRunPromoteArgs{
+		Provider:               strings.TrimSpace(req.Provider),
+		ProviderInstallationID: req.ProviderInstallationID,
+		ProviderRepositoryID:   req.ProviderRepositoryID,
+		ProviderRunID:          req.ProviderRunID,
+		ProviderRunAttempt:     req.ProviderRunAttempt,
+		ProviderJobID:          req.ProviderJobID,
+		RepositoryFullName:     strings.TrimSpace(req.RepositoryFullName),
+		HeadSHA:                strings.TrimSpace(req.HeadSHA),
+		CorrelationID:          strings.TrimSpace(req.CorrelationID),
+		TraceParent:            strings.TrimSpace(req.TraceParent),
+		SubmittedAt:            time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.Insert(ctx, args, nil)
+	if err != nil {
+		return ProbeResult{}, fmt.Errorf("enqueue golden run promote: %w", err)
+	}
+	job := result.Job
+	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
+}
+
 func (r *Runtime) EnqueueGoldenVMCreateTx(ctx context.Context, tx pgx.Tx, req GoldenVMCreateRequest) (ProbeResult, error) {
 	args := GoldenVMCreateArgs{
 		OperationID:   strings.TrimSpace(req.OperationID),

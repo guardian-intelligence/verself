@@ -109,6 +109,7 @@
     owner: postgres
     group: postgres
     mode: "0600"
+  register: postgresql_conf_template
 
 - name: Deploy pg_hba.conf
   ansible.builtin.template:
@@ -117,6 +118,7 @@
     owner: postgres
     group: postgres
     mode: "0600"
+  register: postgresql_hba_template
 
 - name: Deploy pg_ident.conf
   ansible.builtin.template:
@@ -125,6 +127,7 @@
     owner: postgres
     group: postgres
     mode: "0600"
+  register: postgresql_ident_template
 
 # --- Readiness gate ---
 
@@ -133,6 +136,21 @@
     port: "{{ postgresql_port }}"
     host: "{{ postgresql_host }}"
     timeout: 30
+
+- name: Reload PostgreSQL after local auth configuration changes
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/pg_ctl"
+      - -D
+      - "{{ postgresql_data_dir }}"
+      - reload
+  become: true
+  become_user: postgres
+  when: >-
+    postgresql_conf_template.changed
+    or postgresql_hba_template.changed
+    or postgresql_ident_template.changed
+  changed_when: true
 
 # --- Set admin password (idempotent — always update to match credential file) ---
 
@@ -146,3 +164,31 @@
   become: true
   become_user: postgres
   no_log: true
+
+# --- Local service databases ---
+
+- name: Ensure local service PostgreSQL roles exist
+  community.postgresql.postgresql_user:
+    name: "{{ item.owner }}"
+    role_attr_flags: LOGIN
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+  loop: "{{ postgresql_service_databases }}"
+  loop_control:
+    label: "{{ item.owner }}"
+
+- name: Ensure local service PostgreSQL databases exist
+  community.postgresql.postgresql_db:
+    name: "{{ item.name }}"
+    owner: "{{ item.owner }}"
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+  loop: "{{ postgresql_service_databases }}"
+  loop_control:
+    label: "{{ item.name }}"

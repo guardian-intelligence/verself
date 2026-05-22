@@ -15,8 +15,6 @@ const (
 	PermissionAPICredentialsCreate          = "iam:api_credentials:create"
 	PermissionAPICredentialsRoll            = "iam:api_credentials:roll"
 	PermissionAPICredentialsRevoke          = "iam:api_credentials:revoke"
-	PermissionSandboxGitHubRead             = "sandbox:github_installation:read"
-	PermissionSandboxGitHubWrite            = "sandbox:github_installation:write"
 	PermissionSandboxExecutionRead          = "sandbox:execution:read"
 	PermissionSandboxExecutionScheduleRead  = "sandbox:execution_schedule:read"
 	PermissionSandboxExecutionScheduleWrite = "sandbox:execution_schedule:write"
@@ -87,8 +85,6 @@ var defaultOperations = Operations{
 		{
 			Service: "sandbox-rental-service",
 			Operations: []Operation{
-				{OperationID: "begin-github-installation", Permission: PermissionSandboxGitHubWrite, Resource: "github_installation", Action: "connect", OrgScope: "token_org_id"},
-				{OperationID: "list-github-installations", Permission: PermissionSandboxGitHubRead, Resource: "github_installation", Action: "list", OrgScope: "token_org_id"},
 				{OperationID: "get-execution", Permission: PermissionSandboxExecutionRead, Resource: "execution", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "get-execution-logs", Permission: PermissionSandboxLogsRead, Resource: "execution_logs", Action: "read", OrgScope: "token_org_id"},
 				{OperationID: "list-runs", Permission: PermissionSandboxExecutionRead, Resource: "run", Action: "list", OrgScope: "token_org_id"},

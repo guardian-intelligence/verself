@@ -771,11 +771,9 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 	scheduleJSON := `{"schedule_id":"` + scheduleID + `","org_id":"370200542594579812","project_id":"` + projectID + `","source_repository_id":"` + repoID + `","actor_id":"user_1","display_name":"Nightly","workflow_path":".github/workflows/build.yml","ref":"main","inputs":{"target":"linux"},"interval_seconds":900,"state":"active","task_queue":"sandbox-recurring","temporal_namespace":"default","temporal_schedule_id":"verself-schedule","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
 	analyticsWindow := `{"window_start":"2026-05-06T00:00:00Z","window_end":"2026-05-07T00:00:00Z"`
 	logSearchJSON := `{"filters":{"query":"build","run_id":"` + runID + `"},"limit":1,"next_cursor":"logs_cursor","results":[{"execution_id":"` + executionID + `","attempt_id":"attempt_1","seq":1,"stream":"stdout","chunk":"build log\n","created_at":"2026-05-06T00:00:30Z","source_kind":"github"}]}`
-	githubInstallationJSON := `{"installation_id":"123","org_id":"370200542594579812","account_login":"guardian","account_type":"Organization","active":true,"created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
 	var createBody map[string]any
 	var pauseKey string
 	var resumeKey string
-	var githubInstallKey string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Authorization") != "Bearer tok_sandbox" {
@@ -804,12 +802,6 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 			_, _ = w.Write([]byte(analyticsWindow + `,"reserved_charge_units":"10","billed_charge_units":"9","writeoff_charge_units":"1","by_source":[],"by_runner_class":[],"by_repository":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/run-analytics/runner-sizing":
 			_, _ = w.Write([]byte(analyticsWindow + `,"by_runner_class":[{"runner_class":"linux-2vcpu","run_count":"1","p95_duration_ms":"1000","avg_rootfs_provisioned_bytes":"1","avg_boot_time_us":"2","avg_block_write_bytes":"3","avg_net_tx_bytes":"4"}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/github/installations":
-			_, _ = w.Write([]byte(`{"installations":[` + githubInstallationJSON + `]}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/github/installations/connect":
-			githubInstallKey = r.Header.Get("Idempotency-Key")
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"setup_url":"https://github.com/apps/verself/installations/new","state":"github_state","expires_at":"2026-05-06T00:10:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/execution-schedules":
 			_, _ = w.Write([]byte(`{"limit":50,"next_cursor":"schedule_cursor","schedules":[` + scheduleJSON + `]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/execution-schedules":
@@ -890,17 +882,6 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 	if !strings.Contains(sizingAnalyticsOut.String(), "linux-2vcpu\t1\t1000") {
 		t.Fatalf("runs analytics runner-sizing output:\n%s", sizingAnalyticsOut.String())
 	}
-	var githubInstallationsOut bytes.Buffer
-	runCLI(t, &githubInstallationsOut, "github", "installations", "list")
-	if !strings.Contains(githubInstallationsOut.String(), "123\tguardian\tOrganization\ttrue") {
-		t.Fatalf("github installations list output:\n%s", githubInstallationsOut.String())
-	}
-	var githubConnectOut bytes.Buffer
-	runCLI(t, &githubConnectOut, "github", "installations", "connect", "--idempotency-key", "sandbox:github-connect")
-	if !strings.Contains(githubConnectOut.String(), "github_state\thttps://github.com/apps/verself/installations/new") || githubInstallKey != "sandbox:github-connect" {
-		t.Fatalf("github installations connect output:\n%s key=%q", githubConnectOut.String(), githubInstallKey)
-	}
-
 	var schedulesOut bytes.Buffer
 	runCLI(t, &schedulesOut, "schedules", "list")
 	if !strings.Contains(schedulesOut.String(), scheduleID+"\t"+projectID+"\tactive\t900\t.github/workflows/build.yml\tNightly") || !strings.Contains(schedulesOut.String(), "next_cursor\tschedule_cursor") {

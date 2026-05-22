@@ -253,12 +253,11 @@ func (s *Service) reconcileCleanedRunnerAttempts(ctx context.Context) error {
 }
 
 // reconcileExpiredRunnerAllocations fails allocations whose current-state
-// deadline has elapsed. The deadline columns are populated when the allocation
-// is created (github_runner.go:660-666); a row stuck past its deadline means
-// the worker that should have driven the next transition died, the catalog
-// resolver couldn't reach the upstream, or the guest VM never registered.
-// Failing the allocation also enqueues runner cleanup so the GitHub-side JIT
-// runner registration is removed and the lease is released.
+// deadline has elapsed. The deadline columns are populated when the provider
+// integration submits the runner job; a row stuck past its deadline means the
+// next transition did not arrive, the catalog resolver could not reach the
+// upstream, or the guest VM never registered. Failing the allocation also
+// enqueues runner cleanup so the lease is released.
 func (s *Service) reconcileExpiredRunnerAllocations(ctx context.Context) error {
 	rows, err := s.storeQueries().ListExpiredRunnerAllocations(ctx)
 	if err != nil {

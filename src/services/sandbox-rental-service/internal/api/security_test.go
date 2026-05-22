@@ -74,26 +74,23 @@ func TestOpenAPIPublicProjectionIsBearerOnly(t *testing.T) {
 		t.Fatalf("public security schemes = %#v, want only bearerAuth", schemes)
 	}
 	expected := map[string]bool{
-		"begin-github-installation":             false,
-		"list-github-installations":             false,
-		"sync-github-installation-repositories": false,
-		"get-execution":                         false,
-		"get-execution-logs":                    false,
-		"list-runs":                             false,
-		"get-run":                               false,
-		"search-run-logs":                       false,
-		"get-jobs-analytics":                    false,
-		"get-costs-analytics":                   false,
-		"get-runner-sizing-analytics":           false,
-		"list-caches":                           false,
-		"list-cache-generations":                false,
-		"delete-cache-generation":               false,
-		"delete-cache-path":                     false,
-		"create-execution-schedule":             false,
-		"list-execution-schedules":              false,
-		"get-execution-schedule":                false,
-		"pause-execution-schedule":              false,
-		"resume-execution-schedule":             false,
+		"get-execution":               false,
+		"get-execution-logs":          false,
+		"list-runs":                   false,
+		"get-run":                     false,
+		"search-run-logs":             false,
+		"get-jobs-analytics":          false,
+		"get-costs-analytics":         false,
+		"get-runner-sizing-analytics": false,
+		"list-caches":                 false,
+		"list-cache-generations":      false,
+		"delete-cache-generation":     false,
+		"delete-cache-path":           false,
+		"create-execution-schedule":   false,
+		"list-execution-schedules":    false,
+		"get-execution-schedule":      false,
+		"pause-execution-schedule":    false,
+		"resume-execution-schedule":   false,
 	}
 	for path, pathItem := range openAPI.Paths {
 		if !strings.HasPrefix(path, "/api/") {
@@ -134,7 +131,12 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 	if len(schemes) != 1 || schemes["mutualTLS"] == nil {
 		t.Fatalf("internal security schemes = %#v, want only mutualTLS", schemes)
 	}
-	var checked int
+	expected := map[string]string{
+		"internal-register-runner-repository":  "sandbox.runner_repository.register",
+		"internal-submit-runner-job":           "sandbox.runner_job.submit",
+		"internal-observe-runner-job":          "sandbox.runner_job.observe",
+		"internal-observe-runner-workflow-run": "sandbox.runner_job.observe",
+	}
 	for path, pathItem := range openAPI.Paths {
 		if !strings.HasPrefix(path, "/internal/") {
 			t.Fatalf("internal projection contains non-internal path %s", path)
@@ -143,10 +145,11 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 			if op == nil {
 				continue
 			}
-			checked++
-			if op.OperationID != "internal-register-runner-repository" {
+			auditEvent, ok := expected[op.OperationID]
+			if !ok {
 				t.Fatalf("unexpected internal operation %q at %s", op.OperationID, path)
 			}
+			delete(expected, op.OperationID)
 			if len(op.Security) != 1 || len(op.Security[0]) != 1 {
 				t.Fatalf("%s %s security = %#v, want only mutualTLS", op.Method, path, op.Security)
 			}
@@ -154,21 +157,21 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 				t.Fatalf("%s %s security = %#v, want mutualTLS", op.Method, path, op.Security)
 			}
 			rawPolicy, ok := op.Extensions["x-verself-iam"].(map[string]any)
-			if !ok || rawPolicy["org_scope"] != "body_org_id" || rawPolicy["audit_event"] != "sandbox.runner_repository.register" {
+			if !ok || rawPolicy["org_scope"] != "body_org_id" || rawPolicy["audit_event"] != auditEvent {
 				t.Fatalf("%s %s internal IAM policy = %#v", op.Method, path, rawPolicy)
 			}
 		}
 	}
-	if checked != 1 {
-		t.Fatalf("checked %d internal operations, want 1", checked)
+	if len(expected) != 0 {
+		t.Fatalf("missing internal operations %#v", expected)
 	}
 }
 
 func TestEnforceOperationPolicyAllowsIAMDecision(t *testing.T) {
 	ctx := auth.WithIdentity(context.Background(), sandboxServiceToken("org_42"))
 
-	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionGitHubWrite): true}, runtimeiam.OperationPolicy{
-		Permission: permissionGitHubWrite,
+	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{string(permissionScheduleWrite): true}, runtimeiam.OperationPolicy{
+		Permission: permissionScheduleWrite,
 	}, &contractapi.EmptyInput{})
 	if err != nil {
 		t.Fatalf("expected IAM allow decision, got %v", err)
@@ -192,7 +195,7 @@ func TestEnforceOperationPolicyDeniesMissingPermission(t *testing.T) {
 	})
 
 	identity, err := enforceOperationPolicy(ctx, fakeAuthorizer{}, runtimeiam.OperationPolicy{
-		Permission: permissionGitHubWrite,
+		Permission: permissionScheduleWrite,
 	}, &contractapi.EmptyInput{})
 	if identity == nil || identity.Subject != "user-123" {
 		t.Fatalf("expected denied operation to retain identity, got %#v", identity)
@@ -231,9 +234,9 @@ func TestOperationPolicyRequiresDeclaredIdempotency(t *testing.T) {
 			ctx:    context.Background(),
 		},
 		{
-			name:   "github install header key",
+			name:   "cache delete header key",
 			policy: runtimeiam.OperationPolicy{Idempotency: idempotencyHeaderKey},
-			input:  &contractapi.EmptyInput{},
+			input:  &contractapi.DeleteCacheGenerationInput{},
 			ctx:    context.Background(),
 		},
 	}

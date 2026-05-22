@@ -16,7 +16,7 @@ go_library(
 
 go_binary(
     name = "auth-control-plane-apply",
-    embed = [":auth-control-plane-apply_lib"],
+    embed = [":lib"],
     visibility = ["//visibility:public"],
 )
 
@@ -30,4 +30,23 @@ go_test(
     name = "auth-control-plane-apply_test",
     srcs = ["main_test.go"],
     embed = [":auth-control-plane-apply_lib"],
+)
+
+go_library(
+    name = "lib",
+    srcs = ["main.go"],
+    importpath = "",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/tools/observability/go/otel",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+    ],
+)
+
+go_test(
+    name = "lib_test",
+    srcs = ["main_test.go"],
+    embed = [":lib"],
 )

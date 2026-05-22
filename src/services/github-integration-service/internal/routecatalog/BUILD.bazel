@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//src/smithy/build:catalog.bzl", "verself_route_catalog")
+
+verself_route_catalog(
+    name = "github_integration_route_catalog_json",
+    out = "github-integration.route-catalog.json",
+    service = "GithubIntegration",
+    visibility = ["//src/services/github-integration-service:__pkg__"],
+)
+
+verself_route_catalog(
+    name = "github_integration_internal_route_catalog_json",
+    out = "github-integration-internal.route-catalog.json",
+    service = "GithubIntegrationInternal",
+    visibility = ["//src/services/github-integration-service:__pkg__"],
+)
+
+go_library(
+    name = "routecatalog",
+    srcs = ["catalog.go"],
+    embedsrcs = [
+        "github-integration-internal.route-catalog.json",
+        "github-integration.route-catalog.json",
+    ],
+    importpath = "github.com/verself/github-integration-service/internal/routecatalog",
+    visibility = ["//src/services/github-integration-service:__subpackages__"],
+    deps = ["//src/services/service-runtime/go/routecatalog"],
+)
+
+go_test(
+    name = "routecatalog_test",
+    srcs = ["catalog_test.go"],
+    embed = [":routecatalog"],
+)

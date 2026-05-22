@@ -388,7 +388,7 @@ func normalizeAuthEdgeHAProxy(content []byte, domain string) ([]byte, error) {
 				hasOIDCPrefix = true
 			}
 		}
-		if trim == "http-request return status 405 if host_sandbox { path -i /github/installations/callback } !method_get" && !hasProductClaims405 {
+		if trim == "http-request return status 405 if host_billing stripe_webhook !method_post" && !hasProductClaims405 {
 			out = append(out, "  http-request return status 405 if host_verself zitadel_product_token_claims !method_post")
 			hasProductClaims405 = true
 		}

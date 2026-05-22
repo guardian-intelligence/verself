@@ -255,57 +255,6 @@ CREATE TABLE execution_filesystem_mounts (
 CREATE INDEX idx_execution_filesystem_mounts_execution
     ON execution_filesystem_mounts (execution_id, sort_order);
 
--- ─── GitHub App integration ────────────────────────────────────────────────
-
-CREATE TABLE github_accounts (
-    account_id    BIGINT      PRIMARY KEY CHECK (account_id > 0),
-    account_login TEXT        NOT NULL CHECK (account_login <> ''),
-    account_type  TEXT        NOT NULL DEFAULT '',
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX idx_github_accounts_login
-    ON github_accounts (lower(account_login), account_type);
-
-CREATE TABLE github_installations (
-    installation_id      BIGINT      PRIMARY KEY CHECK (installation_id > 0),
-    account_id           BIGINT      NOT NULL REFERENCES github_accounts(account_id) ON DELETE RESTRICT,
-    active               BOOLEAN     NOT NULL DEFAULT true,
-    repository_selection TEXT        NOT NULL DEFAULT '',
-    permissions_json     JSONB       NOT NULL DEFAULT '{}'::jsonb,
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_github_installations_account
-    ON github_installations (account_id, active, updated_at DESC);
-
-CREATE TABLE github_installation_connections (
-    connection_id         UUID        PRIMARY KEY,
-    installation_id       BIGINT      NOT NULL REFERENCES github_installations(installation_id) ON DELETE CASCADE,
-    org_id                TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
-    connected_by_actor_id TEXT        NOT NULL CHECK (connected_by_actor_id <> ''),
-    state                 TEXT        NOT NULL DEFAULT 'active' CHECK (state IN ('active', 'inactive')),
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (installation_id, org_id)
-);
-
-CREATE INDEX idx_github_installation_connections_org
-    ON github_installation_connections (org_id, state, updated_at DESC);
-
-CREATE TABLE github_installation_states (
-    state        TEXT        PRIMARY KEY,
-    org_id       TEXT        NOT NULL CHECK (length(btrim(org_id)) > 0),
-    actor_id     TEXT        NOT NULL,
-    expires_at   TIMESTAMPTZ NOT NULL,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_github_installation_states_expires
-    ON github_installation_states (expires_at);
-
 CREATE TABLE runner_provider_repositories (
     provider               TEXT        NOT NULL CHECK (provider <> ''),
     provider_repository_id BIGINT      NOT NULL,
@@ -390,6 +339,23 @@ CREATE INDEX idx_runner_jobs_repository_status
 CREATE INDEX idx_runner_jobs_runner
     ON runner_jobs (provider, runner_id, runner_name)
     WHERE runner_id <> 0 OR runner_name <> '';
+
+CREATE TABLE runner_job_cache_manifests (
+    provider          TEXT        NOT NULL CHECK (provider <> ''),
+    provider_job_id   BIGINT      NOT NULL,
+    source_kind       TEXT        NOT NULL CHECK (source_kind <> ''),
+    source_path       TEXT        NOT NULL CHECK (source_path <> ''),
+    source_sha        TEXT        NOT NULL CHECK (source_sha <> ''),
+    content_sha256    TEXT        NOT NULL CHECK (content_sha256 ~ '^[0-9a-f]{64}$'),
+    content_bytes     BYTEA       NOT NULL CHECK (octet_length(content_bytes) <= 65536),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (provider, provider_job_id),
+    FOREIGN KEY (provider, provider_job_id) REFERENCES runner_jobs(provider, provider_job_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_runner_job_cache_manifests_source
+    ON runner_job_cache_manifests (provider, source_sha, updated_at DESC);
 
 CREATE TABLE runner_allocations (
     allocation_id                  UUID        PRIMARY KEY,

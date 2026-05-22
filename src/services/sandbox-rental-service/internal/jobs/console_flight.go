@@ -26,24 +26,22 @@ func isActiveFlightStatus(status string) bool {
 }
 
 // projectFlightJob maintains the console_flight_jobs read-model row for a
-// GitHub workflow job, inside the webhook transaction so the projection is
-// transactionally consistent with the runner_jobs/invocation upserts. It is a
-// pure projection: the web app only ever reads this table over Electric.
+// provider workflow job. It is a pure projection: the web app only ever reads
+// this table over Electric.
 //
 // Returns the resolved Verself org id, or "" when the repository is not bound
 // to an org (nothing to show: no row is written and no baseline is computed).
 func projectFlightJob(
 	ctx context.Context,
 	q *store.Queries,
-	event GitHubWorkflowJobWebhook,
-	status string,
+	obs ProviderRunnerJobObservation,
 	now time.Time,
 ) (string, error) {
 	ctx, span := tracer.Start(ctx, "flight.projection.upsert")
 	defer span.End()
 
-	orgID, err := q.GetGitHubRunnerRepositoryOrgID(ctx, store.GetGitHubRunnerRepositoryOrgIDParams{
-		ProviderRepositoryID: event.Repository.ID,
+	orgID, err := q.GetRunnerProviderRepositoryOrgID(ctx, store.GetRunnerProviderRepositoryOrgIDParams{
+		ProviderRepositoryID: obs.ProviderRepositoryID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -56,21 +54,20 @@ func projectFlightJob(
 	}
 
 	if err := q.UpsertConsoleFlightJob(ctx, store.UpsertConsoleFlightJobParams{
-		ProviderJobID:          event.WorkflowJob.ID,
+		ProviderJobID:          obs.ProviderJobID,
 		OrgID:                  orgID,
-		ProviderRunID:          event.WorkflowJob.RunID,
-		ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
-		RepositoryFullName:     event.Repository.FullName,
-		WorkflowName:           event.WorkflowJob.WorkflowName,
-		JobName:                event.WorkflowJob.Name,
-		HeadBranch:             event.WorkflowJob.HeadBranch,
-		HeadSha:                event.WorkflowJob.HeadSHA,
-		ActorLogin:             event.Sender.Login,
-		Status:                 status,
-		StartedAt:              pgOptionalTime(event.WorkflowJob.StartedAt),
+		ProviderRunID:          obs.ProviderRunID,
+		ProviderRunAttempt:     obs.ProviderRunAttempt,
+		RepositoryFullName:     obs.RepositoryFullName,
+		WorkflowName:           obs.WorkflowName,
+		JobName:                obs.JobName,
+		HeadBranch:             obs.HeadBranch,
+		HeadSha:                obs.HeadSHA,
+		Status:                 obs.Status,
+		StartedAt:              pgOptionalTime(obs.StartedAt),
 		UpdatedAt:              pgTime(now),
-		ProviderInstallationID: event.Installation.ID,
-		ProviderRepositoryID:   event.Repository.ID,
+		ProviderInstallationID: obs.ProviderInstallationID,
+		ProviderRepositoryID:   obs.ProviderRepositoryID,
 	}); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -79,9 +76,9 @@ func projectFlightJob(
 
 	span.SetAttributes(
 		attribute.String("verself.org_id", orgID),
-		attribute.Int64("github.workflow_run.id", event.WorkflowJob.RunID),
-		attribute.String("github.repository_full_name", event.Repository.FullName),
-		attribute.String("flight.status", status),
+		attribute.Int64("runner.provider_run_id", obs.ProviderRunID),
+		attribute.String("runner.repository_full_name", obs.RepositoryFullName),
+		attribute.String("flight.status", obs.Status),
 	)
 	return orgID, nil
 }

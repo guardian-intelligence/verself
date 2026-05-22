@@ -229,23 +229,6 @@ type SandboxRunLogSearchPage struct {
 	NextCursor string                      `json:"next_cursor,omitempty"`
 }
 
-type SandboxGitHubInstallation struct {
-	InstallationID string    `json:"installation_id"`
-	ResourceName   string    `json:"resourceName"`
-	OrgID          string    `json:"org_id"`
-	AccountLogin   string    `json:"account_login"`
-	AccountType    string    `json:"account_type"`
-	Active         bool      `json:"active"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-}
-
-type SandboxGitHubInstallationConnect struct {
-	SetupURL  string    `json:"setup_url"`
-	State     string    `json:"state"`
-	ExpiresAt time.Time `json:"expires_at"`
-}
-
 type SandboxExecutionScheduleDispatch struct {
 	DispatchID          string     `json:"dispatch_id"`
 	ScheduleID          string     `json:"schedule_id"`
@@ -529,38 +512,6 @@ func (c *SandboxClient) GetRunnerSizingAnalytics(ctx context.Context, options Sa
 		return SandboxRunnerSizingAnalytics{}, sandboxAPIError("get runner sizing analytics", response.StatusCode, response.Problem, response.Body)
 	}
 	return sandboxFromGenerated[SandboxRunnerSizingAnalytics](*response.Result)
-}
-
-func (c *SandboxClient) ListGitHubInstallations(ctx context.Context) ([]SandboxGitHubInstallation, error) {
-	if c == nil || c.client == nil {
-		return nil, fmt.Errorf("verself sdk: sandbox client is not initialized")
-	}
-	response, err := c.client.ListGithubInstallations(ctx, sandboxcore.ListGithubInstallationsRequest{})
-	if err != nil {
-		return nil, err
-	}
-	if response.Result == nil {
-		return nil, sandboxAPIError("list GitHub installations", response.StatusCode, response.Problem, response.Body)
-	}
-	return sandboxFromGenerated[[]SandboxGitHubInstallation](response.Result.Installations)
-}
-
-func (c *SandboxClient) BeginGitHubInstallation(ctx context.Context, options SandboxMutationOptions) (SandboxGitHubInstallationConnect, error) {
-	if c == nil || c.client == nil {
-		return SandboxGitHubInstallationConnect{}, fmt.Errorf("verself sdk: sandbox client is not initialized")
-	}
-	key, err := mutationKey("sandbox-github-installation", options.IdempotencyKey)
-	if err != nil {
-		return SandboxGitHubInstallationConnect{}, err
-	}
-	response, err := c.client.BeginGithubInstallation(ctx, sandboxcore.BeginGithubInstallationRequest{IdempotencyKey: sandboxcore.IdempotencyKey(key)})
-	if err != nil {
-		return SandboxGitHubInstallationConnect{}, err
-	}
-	if response.Result == nil {
-		return SandboxGitHubInstallationConnect{}, sandboxAPIError("begin GitHub installation", response.StatusCode, response.Problem, response.Body)
-	}
-	return sandboxFromGenerated[SandboxGitHubInstallationConnect](*response.Result)
 }
 
 func (c *SandboxClient) ListSchedules(ctx context.Context, options ListSandboxExecutionSchedulesOptions) (SandboxExecutionSchedules, error) {

@@ -17,6 +17,7 @@ spire_identity_registry(
         "//src/services/analytics-service:spiffe_identity",
         "//src/services/billing-service:spiffe_identity",
         "//src/services/governance-service:spiffe_identity",
+        "//src/services/github-integration-service:spiffe_identity",
         "//src/services/iam-service:spiffe_identity",
         "//src/services/mailbox-service:spiffe_identity",
         "//src/services/notifications-service:spiffe_identity",

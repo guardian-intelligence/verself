@@ -369,8 +369,6 @@ func (s *Service) resourceFullName(orgID string, resource APIActivityResource) R
 		return optionalResourceName(resource.UID, ResourceNameRun(s.InstallationID, orgID, resource.UID))
 	case "execution_schedule":
 		return optionalResourceName(resource.UID, ResourceNameSchedule(s.InstallationID, orgID, resource.UID))
-	case "github_installation":
-		return optionalResourceName(resource.UID, ResourceNameGitHubInstallation(s.InstallationID, orgID, resource.UID))
 	default:
 		return ""
 	}

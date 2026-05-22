@@ -94,6 +94,7 @@ haproxy_metrics_address: 127.0.0.1:8404
 
 haproxy_h2c_components:
   - billing
+  - github_integration_service
   - governance_service
   - iam_service
   - mailbox_service

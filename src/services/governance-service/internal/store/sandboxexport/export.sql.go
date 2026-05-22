@@ -220,59 +220,6 @@ func (q *Queries) ExportSandboxExecutionsJSONL(ctx context.Context, arg ExportSa
 	return items, nil
 }
 
-const exportSandboxGithubInstallationsJSONL = `-- name: ExportSandboxGithubInstallationsJSONL :many
-SELECT row_to_json(t)::text AS row_json
-FROM (
-    SELECT
-        c.connection_id,
-        c.org_id,
-        c.connected_by_actor_id,
-        c.state AS connection_state,
-        c.created_at AS connected_at,
-        c.updated_at AS connection_updated_at,
-        i.installation_id,
-        i.account_id,
-        i.active AS installation_active,
-        i.repository_selection,
-        i.permissions_json,
-        i.created_at AS installation_created_at,
-        i.updated_at AS installation_updated_at,
-        a.account_login,
-        a.account_type,
-        a.created_at AS account_created_at,
-        a.updated_at AS account_updated_at
-    FROM github_installation_connections c
-    JOIN github_installations i ON i.installation_id = c.installation_id
-    JOIN github_accounts a ON a.account_id = i.account_id
-    WHERE c.org_id::text = $1
-    ORDER BY c.created_at, i.installation_id
-) t
-`
-
-type ExportSandboxGithubInstallationsJSONLParams struct {
-	OrgID string
-}
-
-func (q *Queries) ExportSandboxGithubInstallationsJSONL(ctx context.Context, arg ExportSandboxGithubInstallationsJSONLParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, exportSandboxGithubInstallationsJSONL, arg.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var row_json string
-		if err := rows.Scan(&row_json); err != nil {
-			return nil, err
-		}
-		items = append(items, row_json)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const exportSandboxRunnerAllocationsJSONL = `-- name: ExportSandboxRunnerAllocationsJSONL :many
 SELECT row_to_json(t)::text AS row_json
 FROM (
@@ -346,6 +293,51 @@ func (q *Queries) ExportSandboxRunnerJobBindingsJSONL(ctx context.Context, arg E
 	return items, nil
 }
 
+const exportSandboxRunnerJobCacheManifestsJSONL = `-- name: ExportSandboxRunnerJobCacheManifestsJSONL :many
+SELECT row_to_json(t)::text AS row_json
+FROM (
+    SELECT
+        m.provider,
+        m.provider_job_id,
+        m.source_kind,
+        m.source_path,
+        m.source_sha,
+        m.content_sha256,
+        encode(m.content_bytes, 'base64') AS content_base64,
+        m.created_at,
+        m.updated_at
+    FROM runner_job_cache_manifests m
+    JOIN runner_jobs j ON j.provider = m.provider AND j.provider_job_id = m.provider_job_id
+    JOIN runner_provider_repositories r ON r.provider = j.provider AND r.provider_repository_id = j.provider_repository_id
+    WHERE r.org_id::text = $1
+    ORDER BY m.updated_at, m.provider, m.provider_job_id
+) t
+`
+
+type ExportSandboxRunnerJobCacheManifestsJSONLParams struct {
+	OrgID string
+}
+
+func (q *Queries) ExportSandboxRunnerJobCacheManifestsJSONL(ctx context.Context, arg ExportSandboxRunnerJobCacheManifestsJSONLParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, exportSandboxRunnerJobCacheManifestsJSONL, arg.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var row_json string
+		if err := rows.Scan(&row_json); err != nil {
+			return nil, err
+		}
+		items = append(items, row_json)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const exportSandboxRunnerJobsJSONL = `-- name: ExportSandboxRunnerJobsJSONL :many
 SELECT row_to_json(t)::text AS row_json
 FROM (
@@ -355,7 +347,7 @@ FROM (
     WHERE r.org_id::text = $1
     ORDER BY j.created_at,
              j.provider,
-             j.provider_job_id
+	             j.provider_job_id
 ) t
 `
 

@@ -1,0 +1,38 @@
+---
+- name: "Site secrets"
+  hosts: infra
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tasks:
+    - name: Load site secrets
+      ansible.builtin.import_tasks: tasks/site-secrets.yml
+
+- name: "Service host foundation"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tasks:
+    - name: Assert SPIRE identity registry input
+      ansible.builtin.assert:
+        that:
+          - spire_registrations_file is defined
+          - spire_registrations_file | length > 0
+        fail_msg: "service-foundation.yml requires spire_registrations_file."
+
+    - name: Converge service SPIRE identities
+      ansible.builtin.include_role:
+        name: spire_registrations
+
+    - name: Converge PostgreSQL local service databases
+      ansible.builtin.include_role:
+        name: postgresql
+
+    - name: Converge OpenBao platform runtime secrets
+      ansible.builtin.import_tasks: tasks/openbao-runtime-secrets.yml
+
+    - name: Converge HAProxy public service routing
+      ansible.builtin.include_role:
+        name: haproxy

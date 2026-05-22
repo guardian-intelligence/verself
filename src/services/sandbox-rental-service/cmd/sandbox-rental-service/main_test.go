@@ -52,7 +52,7 @@ func TestLimitPublicAPIRequestBodiesLeavesNonAPIRequestsAlone(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}), 8)
 
-	req := httptest.NewRequest(http.MethodPost, "/webhooks/github/actions", strings.NewReader("123456789"))
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/forgejo/actions", strings.NewReader("123456789"))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 

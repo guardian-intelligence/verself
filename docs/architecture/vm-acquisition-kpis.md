@@ -45,9 +45,9 @@ points that only exist as spans should remain queryable from
 | Point | Canonical Evidence | Primary KPI | Required Attributes |
 | --- | --- | --- | --- |
 | GitHub accepts push/work | GitHub `workflow_run.created_at`, `workflow_job.created_at`, or future `push` webhook row | `github_accept_to_webhook_ms` | provider, repository, head SHA, run ID, job ID. |
-| Webhook reaches Verself edge | `default.http_access_logs` for `/webhooks/github/actions` | `edge_receive_to_handler_ms` | delivery ID, event name, path, status. |
-| Webhook handler starts | `github.webhook.workflow_job` span | `webhook_handler_ms` | delivery ID, action, status, run ID, job ID. |
-| Demand persisted | `runner_jobs`, `github_workflow_invocations` | `webhook_to_demand_persist_ms` | delivery ID, job status, labels, runner identity fields. |
+| Webhook reaches Verself edge | `default.http_access_logs` for `/api/v1/github/webhooks` | `edge_receive_to_handler_ms` | delivery ID, event name, path, status. |
+| Webhook handler starts | `github.webhook.receive` span and `verself.github_integration_events` | `webhook_handler_ms` | delivery ID, action, status, run ID, job ID. |
+| Demand persisted | `runner_jobs`, `github_workflow_invocations`, `verself.github_integration_events` | `webhook_to_demand_persist_ms` | delivery ID, job status, labels, runner identity fields. |
 | Capacity reconcile starts | `river.work/runner.capacity.reconcile`, `github.capacity.reconcile` | `demand_to_reconcile_start_ms` | provider job ID, runner class, repository ownership decision. |
 | Allocation row inserted | `runner_allocations.created_at` | `reconcile_to_allocation_ms` | allocation ID, deadlines, runner class. |
 | GitHub runner capacity requested | `github.runner.allocate`, `github.api.request` | `allocation_to_jit_ms` | API endpoint, status, runner group, provider runner ID. |

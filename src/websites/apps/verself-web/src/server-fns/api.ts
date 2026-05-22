@@ -106,8 +106,6 @@ import {
   type PutNotificationPreferencesRequest,
   type Project,
   type ProjectList,
-  type GitHubInstallation,
-  type GitHubInstallationConnect,
   type GovernanceAPIActivities,
   type GovernanceAPIActivity,
   type GovernanceCreateExportRequest as CreateExportRequest,
@@ -221,8 +219,6 @@ export type {
   CachePathDeleteResult,
   Cache,
   CacheIdInput,
-  GitHubInstallation,
-  GitHubInstallationConnect,
   JobsAnalytics,
   RunnerSizingAnalytics,
 };
@@ -738,18 +734,6 @@ export const deleteCachePath = createServerFn({ method: "POST" })
   .inputValidator(cachePathDeleteRequestSchema)
   .handler(async ({ context, data }) => {
     return (await sandboxRentalSDK(context)).sandbox.deleteCachePath(data.cacheId, data.path);
-  });
-
-export const listGitHubInstallations = createServerFn({ method: "GET" })
-  .middleware([consoleAuthMiddleware])
-  .handler(async ({ context }) => {
-    return (await sandboxRentalSDK(context)).sandbox.listGitHubInstallations();
-  });
-
-export const beginGitHubInstallation = createServerFn({ method: "POST" })
-  .middleware([consoleAuthMiddleware])
-  .handler(async ({ context }) => {
-    return (await sandboxRentalSDK(context)).sandbox.beginGitHubInstallation();
   });
 
 export const listExecutionSchedules = createServerFn({ method: "GET" })

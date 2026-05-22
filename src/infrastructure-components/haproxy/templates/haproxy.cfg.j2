@@ -114,7 +114,7 @@ frontend fe_https
   acl auth_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept
   acl auth_sessions_path path_beg /api/v1/auth/sessions/
   acl verself_discovery path -i /.well-known/verself
-  acl sandbox_actions_webhook path -i /webhooks/github/actions /webhooks/forgejo/actions
+  acl sandbox_actions_webhook path -i /webhooks/forgejo/actions
   acl source_forgejo_webhook path -i /webhooks/forgejo
   acl edge_public_rate_limited sc_http_req_rate(0,be_edge_public_rates) gt {{ haproxy_public_rate_limit }}
   acl edge_auth_rate_limited sc_http_req_rate(1,be_edge_auth_rates) gt {{ haproxy_auth_rate_limit }}
@@ -141,15 +141,11 @@ frontend fe_https
   http-request return status 405 if host_billing stripe_webhook !method_post
   http-request return status 405 if host_verself verself_discovery !well_known_read_method
   http-request return status 200 content-type application/json file {{ haproxy_verself_discovery_manifest_path }} hdr Cache-Control "public, max-age=300" if host_verself verself_discovery well_known_read_method
-  http-request return status 405 if host_sandbox { path -i /webhooks/github/actions } !method_post
   http-request return status 405 if host_sandbox { path -i /webhooks/forgejo/actions } !method_post
-  http-request return status 405 if host_sandbox { path -i /github/installations/callback } !method_get
   http-request return status 405 if host_verself zitadel_product_token_claims !method_post
 
   use_backend be_billing_stripe_webhook if host_billing stripe_webhook method_post stripe_source
-  use_backend be_sandbox_github_actions_webhook if host_sandbox method_post { path -i /webhooks/github/actions }
   use_backend be_sandbox_forgejo_actions_webhook if host_sandbox method_post { path -i /webhooks/forgejo/actions }
-  use_backend be_sandbox_github_installation_callback if host_sandbox method_get { path -i /github/installations/callback }
   use_backend be_sandbox_execution_submit if host_sandbox method_post { path -i /api/v1/executions }
   use_backend be_sandbox_execution_schedule_create if host_sandbox method_post { path -i /api/v1/execution-schedules }
   use_backend be_source_forgejo_webhook if host_source { path -i /webhooks/forgejo }
@@ -190,7 +186,6 @@ frontend fe_firecracker_host_http
   acl forgejo_actions path -i /api/actions
   acl forgejo_actions_prefix path_beg /api/actions/
   acl forgejo_smart_http path_reg ^/[^/]+/[^/]+(\.git)?/(info/refs|git-upload-pack)$
-  use_backend be_firecracker_sandbox_h2c if method_get { path -i /internal/sandbox/v1/github-runner-jit }
   use_backend be_firecracker_sandbox_h2c if method_get { path -i /internal/sandbox/v1/runner-bootstrap }
   use_backend be_firecracker_sandbox_h2c if method_post { path -i /internal/sandbox/v1/github-checkout/bundle }
   use_backend be_firecracker_sandbox_h2c if method_post { path -i /internal/sandbox/v1/bazel-telemetry/invocations }

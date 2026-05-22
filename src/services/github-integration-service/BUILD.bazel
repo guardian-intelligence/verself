@@ -1,0 +1,52 @@
+# gazelle:prefix github.com/verself/github-integration-service
+
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+go_module_checks(
+    extra_srcs = [
+        "//src/services/github-integration-service/internal/routecatalog:github_integration_internal_route_catalog_json",
+        "//src/services/github-integration-service/internal/routecatalog:github_integration_route_catalog_json",
+    ],
+    package_setup = """
+install_route_catalog() {
+    src="$$execroot/$$1"
+    dst="$$2"
+    if [ "$$(realpath -m "$$src")" = "$$(realpath -m "$$dst")" ]; then
+        return 0
+    fi
+    mkdir -p "$$(dirname "$$dst")"
+    rm -f "$$dst"
+    install -m 0644 "$$src" "$$dst"
+}
+install_route_catalog "$(location //src/services/github-integration-service/internal/routecatalog:github_integration_internal_route_catalog_json)" internal/routecatalog/github-integration-internal.route-catalog.json
+install_route_catalog "$(location //src/services/github-integration-service/internal/routecatalog:github_integration_route_catalog_json)" internal/routecatalog/github-integration.route-catalog.json
+""",
+)
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "github_integration_service",
+    entry_id = "verself-github-integration-service",
+    key = "github_integration_service.default",
+    path = "/svc/github-integration-service",
+    user = "github_integration_service",
+    visibility = ["//src/host:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/github-integration-service/cmd/github-integration-service:github-integration-service_nomad_artifact": "github-integration-service",
+    },
+    component = "github_integration_service",
+    job_id = "github-integration",
+    job_spec = "nomad.hcl",
+    requires = [
+        "clickhouse:migrations",
+        "postgres:server",
+        "sandbox-rental:service",
+    ],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

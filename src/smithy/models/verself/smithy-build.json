@@ -4,6 +4,7 @@
     "analytics.smithy",
     "billing.smithy",
     "common.smithy",
+    "github_integration.smithy",
     "governance.smithy",
     "iam.smithy",
     "mailbox.smithy",
@@ -135,6 +136,46 @@
             "/servers": [
               {
                 "url": "https://127.0.0.1:4254"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "github-integration-public": {
+      "plugins": {
+        "openapi": {
+          "service": "verself.githubintegration.v1#GithubIntegration",
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://github.api.verself.sh"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "github-integration-internal": {
+      "plugins": {
+        "openapi": {
+          "service": "verself.githubintegration.v1#GithubIntegrationInternal",
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4273"
               }
             ]
           }

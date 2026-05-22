@@ -60,6 +60,7 @@ load(
     host_configuration_edit_secrets = "edit_secrets",
     host_configuration_firewall = "firewall",
     host_configuration_operator_access_handoff = "operator_access_handoff",
+    host_configuration_service_foundation = "service_foundation",
 )
 load(
     ".aspect/tasks/integrations.axl",
@@ -120,6 +121,7 @@ def config(ctx):
     # aspect host ...
     ctx.tasks.add(host_configuration_edit_secrets)
     ctx.tasks.add(host_configuration_firewall)
+    ctx.tasks.add(host_configuration_service_foundation)
     ctx.tasks.add(host_configuration_operator_access_handoff)
 
     # aspect integrations ...

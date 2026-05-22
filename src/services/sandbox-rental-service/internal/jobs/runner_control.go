@@ -2,6 +2,10 @@ package jobs
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -32,15 +36,14 @@ const (
 	runnerBootstrapPath       = "/internal/sandbox/v1/runner-bootstrap"
 	runnerBootstrapSecretTTL  = 15 * time.Minute
 	runnerBootstrapSecretWait = 5 * time.Second
+	githubCheckoutPath        = "/internal/sandbox/v1/github-checkout"
+	githubBazelTelemetryPath  = "/internal/sandbox/v1/bazel-telemetry/invocations"
 )
 
 func (s *Service) ReconcileRunnerCapacity(ctx context.Context, provider string, providerJobID int64) error {
 	switch strings.TrimSpace(provider) {
 	case RunnerProviderGitHub:
-		if s.GitHubRunner == nil {
-			return ErrGitHubRunnerNotConfigured
-		}
-		return s.GitHubRunner.ReconcileCapacity(ctx, providerJobID)
+		return nil
 	case RunnerProviderForgejo:
 		if s.ForgejoRunner == nil {
 			return ErrForgejoRunnerNotConfigured
@@ -58,10 +61,7 @@ func (s *Service) AllocateRunner(ctx context.Context, allocationID uuid.UUID) er
 	}
 	switch provider {
 	case RunnerProviderGitHub:
-		if s.GitHubRunner == nil {
-			return ErrGitHubRunnerNotConfigured
-		}
-		return s.GitHubRunner.AllocateRunner(ctx, allocationID)
+		return nil
 	case RunnerProviderForgejo:
 		if s.ForgejoRunner == nil {
 			return ErrForgejoRunnerNotConfigured
@@ -75,10 +75,8 @@ func (s *Service) AllocateRunner(ctx context.Context, allocationID uuid.UUID) er
 func (s *Service) BindRunnerJob(ctx context.Context, provider string, providerJobID int64) error {
 	switch strings.TrimSpace(provider) {
 	case RunnerProviderGitHub:
-		if s.GitHubRunner == nil {
-			return ErrGitHubRunnerNotConfigured
-		}
-		return s.GitHubRunner.BindJob(ctx, providerJobID)
+		_, err := s.bindProviderRunnerJob(ctx, RunnerProviderGitHub, providerJobID)
+		return err
 	case RunnerProviderForgejo:
 		if s.ForgejoRunner == nil {
 			return ErrForgejoRunnerNotConfigured
@@ -96,10 +94,14 @@ func (s *Service) CleanupRunner(ctx context.Context, allocationID uuid.UUID) err
 	}
 	switch provider {
 	case RunnerProviderGitHub:
-		if s.GitHubRunner == nil {
-			return ErrGitHubRunnerNotConfigured
+		now := time.Now().UTC()
+		if err := s.storeQueries().MarkRunnerAllocationCleaned(ctx, store.MarkRunnerAllocationCleanedParams{
+			CleanupBy:    pgTime(now),
+			AllocationID: allocationID,
+		}); err != nil {
+			return err
 		}
-		return s.GitHubRunner.CleanupRunner(ctx, allocationID)
+		return s.deleteRunnerBootstrapConfig(ctx, allocationID)
 	case RunnerProviderForgejo:
 		if s.ForgejoRunner == nil {
 			return ErrForgejoRunnerNotConfigured
@@ -125,10 +127,39 @@ func (s *Service) SyncRunnerRepository(ctx context.Context, provider string, pro
 func (s *Service) RegisterRunnerRepository(ctx context.Context, req RunnerRepositoryRegistration) error {
 	switch strings.TrimSpace(req.Provider) {
 	case RunnerProviderGitHub:
-		if s.GitHubRunner == nil {
-			return ErrGitHubRunnerNotConfigured
+		fullName := strings.TrimSpace(req.RepositoryFullName)
+		owner := strings.TrimSpace(req.ProviderOwner)
+		repo := strings.TrimSpace(req.ProviderRepo)
+		if fullName == "" && owner != "" && repo != "" {
+			fullName = owner + "/" + repo
 		}
-		return s.GitHubRunner.RegisterRepository(ctx, req)
+		if owner == "" {
+			owner, _, _ = strings.Cut(fullName, "/")
+		}
+		if repo == "" {
+			_, repo, _ = strings.Cut(fullName, "/")
+		}
+		if owner == "" || repo == "" || fullName == "" || req.ProviderRepositoryID <= 0 {
+			return fmt.Errorf("%w: github repository registration is invalid", ErrRunnerUnavailable)
+		}
+		rows, err := s.storeQueries().UpsertProviderRunnerRepository(ctx, store.UpsertProviderRunnerRepositoryParams{
+			Provider:             RunnerProviderGitHub,
+			ProviderRepositoryID: req.ProviderRepositoryID,
+			OrgID:                dbOrgID(req.OrgID),
+			ProjectID:            uuidPtrFromZero(req.ProjectID),
+			SourceRepositoryID:   uuidPtrFromZero(req.SourceRepositoryID),
+			ProviderOwner:        owner,
+			ProviderRepo:         repo,
+			RepositoryFullName:   fullName,
+			UpdatedAt:            pgTime(time.Now().UTC()),
+		})
+		if err != nil {
+			return err
+		}
+		if rows != 1 {
+			return fmt.Errorf("%w: github repository %s is already registered to another org", ErrRunnerUnavailable, fullName)
+		}
+		return nil
 	case RunnerProviderForgejo:
 		if s.ForgejoRunner == nil {
 			return ErrForgejoRunnerNotConfigured
@@ -221,9 +252,6 @@ func (s *Service) runnerExecEnv(ctx context.Context, executionID, attemptID uuid
 	if err != nil {
 		return nil
 	}
-	if row.Provider == RunnerProviderGitHub && s.GitHubRunner != nil {
-		return s.GitHubRunner.execEnv(ctx, executionID, attemptID)
-	}
 	token, err := s.deriveRunnerBootstrapToken(row.Provider, row.AllocationID, attemptID)
 	if err != nil {
 		return nil
@@ -234,6 +262,12 @@ func (s *Service) runnerExecEnv(ctx context.Context, executionID, attemptID uuid
 	}
 	if parent := traceParent(ctx); parent != "" {
 		env["VERSELF_TRACEPARENT"] = parent
+	}
+	if row.Provider == RunnerProviderGitHub {
+		env["VERSELF_CHECKOUT_TOKEN"] = s.deriveScopedExecutionToken("verself-checkout", executionID, attemptID)
+		env["VERSELF_CHECKOUT_PATH"] = githubCheckoutPath
+		env["VERSELF_BAZEL_TELEMETRY_TOKEN"] = s.deriveScopedExecutionToken("verself-bazel-telemetry", executionID, attemptID)
+		env["VERSELF_BAZEL_TELEMETRY_PATH"] = githubBazelTelemetryPath
 	}
 	return env
 }
@@ -421,10 +455,7 @@ func (s *Service) runnerAllocationProviderTx(ctx context.Context, tx pgx.Tx, all
 func (s *Service) deriveRunnerBootstrapToken(provider string, allocationID, attemptID uuid.UUID) (string, error) {
 	switch strings.TrimSpace(provider) {
 	case RunnerProviderGitHub:
-		if s.GitHubRunner == nil {
-			return "", ErrGitHubRunnerNotConfigured
-		}
-		return s.GitHubRunner.deriveJITFetchToken(allocationID, attemptID), nil
+		return s.deriveScopedAllocationToken("verself-runner-bootstrap:"+provider, allocationID, attemptID)
 	case RunnerProviderForgejo:
 		if s.ForgejoRunner == nil {
 			return "", ErrForgejoRunnerNotConfigured
@@ -433,6 +464,35 @@ func (s *Service) deriveRunnerBootstrapToken(provider string, allocationID, atte
 	default:
 		return "", fmt.Errorf("%w: unsupported runner provider %q", ErrRunnerUnavailable, provider)
 	}
+}
+
+func (s *Service) deriveScopedAllocationToken(scope string, allocationID, attemptID uuid.UUID) (string, error) {
+	secret := strings.TrimSpace(s.RunnerBootstrapSecret)
+	if secret == "" {
+		return "", fmt.Errorf("%w: runner bootstrap secret is not configured", ErrRunnerUnavailable)
+	}
+	mac := hmac.New(sha256.New, []byte(scope+":"+secret))
+	mac.Write([]byte(allocationID.String()))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(attemptID.String()))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+func (s *Service) deriveScopedExecutionToken(scope string, executionID, attemptID uuid.UUID) string {
+	secret := strings.TrimSpace(s.RunnerBootstrapSecret)
+	if secret == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, []byte(scope+":"+secret))
+	mac.Write([]byte(executionID.String()))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(attemptID.String()))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
 }
 
 func recordRunnerError(span trace.Span, err error) {

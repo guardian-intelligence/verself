@@ -27,7 +27,7 @@ type GitHubExecutionIdentity struct {
 	RunnerName         string
 }
 
-func (r *GitHubRunner) AuthenticateCheckout(ctx context.Context, executionID, attemptID, bearer string) (GitHubExecutionIdentity, error) {
+func (s *Service) AuthenticateCheckout(ctx context.Context, executionID, attemptID, bearer string) (GitHubExecutionIdentity, error) {
 	executionID = strings.TrimSpace(executionID)
 	attemptID = strings.TrimSpace(attemptID)
 	bearer = strings.TrimSpace(strings.TrimPrefix(bearer, "Bearer "))
@@ -39,15 +39,16 @@ func (r *GitHubRunner) AuthenticateCheckout(ctx context.Context, executionID, at
 	if err != nil {
 		return GitHubExecutionIdentity{}, fmt.Errorf("%w: invalid attempt id", ErrCheckoutUnauthorized)
 	}
-	return r.authenticateGitHubExecution(ctx, execUUID, attemptUUID, bearer, r.deriveCheckoutToken(execUUID, attemptUUID), ErrCheckoutUnauthorized)
+	return s.authenticateGitHubExecution(ctx, execUUID, attemptUUID, bearer, s.deriveScopedExecutionToken("verself-checkout", execUUID, attemptUUID), ErrCheckoutUnauthorized)
 }
 
-func (r *GitHubRunner) authenticateGitHubExecution(ctx context.Context, executionID, attemptID uuid.UUID, bearer, expected string, unauthorizedErr error) (GitHubExecutionIdentity, error) {
+func (s *Service) authenticateGitHubExecution(ctx context.Context, executionID, attemptID uuid.UUID, bearer, expected string, unauthorizedErr error) (GitHubExecutionIdentity, error) {
 	if bearer == "" || !hmac.Equal([]byte(bearer), []byte(expected)) {
 		return GitHubExecutionIdentity{}, unauthorizedErr
 	}
 
-	row, err := r.service.storeQueries().GetGitHubExecutionIdentity(ctx, store.GetGitHubExecutionIdentityParams{
+	row, err := s.storeQueries().GetProviderExecutionIdentity(ctx, store.GetProviderExecutionIdentityParams{
+		Provider:    RunnerProviderGitHub,
 		ExecutionID: &executionID,
 		AttemptID:   &attemptID,
 	})

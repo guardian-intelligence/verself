@@ -13,7 +13,7 @@ frontend fe_https
   acl host_zitadel_actions var(txn.host) -m str zitadel-actions.verself.sh
   acl stripe_source src 3.18.12.63
   acl auth_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions
-  http-request return status 405 if host_sandbox { path -i /github/installations/callback } !method_get
+  http-request return status 405 if host_billing stripe_webhook !method_post
   http-request return status 405 if host_zitadel zitadel_product_token_claims !method_post
   http-request return status 405 if host_zitadel_actions zitadel_product_token_claims !method_post
   use_backend be_source_forgejo_webhook if host_source { path -i /webhooks/forgejo }

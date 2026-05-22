@@ -1,0 +1,9 @@
+load("//src/smithy/build:openapi.bzl", "verself_openapi_specs")
+
+verself_openapi_specs(
+    name = "github_integration_openapi",
+    internal_projection = "github-integration-internal",
+    internal_service = "GithubIntegrationInternal",
+    public_projection = "github-integration-public",
+    public_service = "GithubIntegration",
+)

@@ -19,64 +19,6 @@ type resourcePathSegment struct {
 	id         string
 }
 
-func githubInstallationRecord(record jobs.GitHubInstallationRecord, installationID string) contractapi.SandboxGitHubInstallationRecord {
-	orgID := record.OrgID
-	githubInstallationID := strconv.FormatInt(record.InstallationID, 10)
-	return contractapi.SandboxGitHubInstallationRecord{
-		InstallationID: contractapi.DecimalUint64(githubInstallationID),
-		ResourceName:   contractapi.ResourceName(resourceName(installationID, resourcePathSegment{"orgs", orgID}, resourcePathSegment{"githubInstallations", githubInstallationID})),
-		OrgID:          contractapi.OrgID(orgID),
-		AccountLogin:   record.AccountLogin,
-		AccountType:    record.AccountType,
-		Active:         record.Active,
-		CreatedAt:      timestamp(record.CreatedAt),
-		UpdatedAt:      timestamp(record.UpdatedAt),
-	}
-}
-
-func githubInstallationConnect(connect jobs.GitHubInstallationConnect) contractapi.SandboxGitHubInstallationConnectResponse {
-	return contractapi.SandboxGitHubInstallationConnectResponse{
-		State:     connect.State,
-		SetupURL:  contractapi.SetupURL(connect.SetupURL),
-		ExpiresAt: timestamp(connect.ExpiresAt),
-	}
-}
-
-func githubInstallationRecords(records []jobs.GitHubInstallationRecord, installationID string) contractapi.GitHubInstallations {
-	out := make(contractapi.GitHubInstallations, 0, len(records))
-	for _, record := range records {
-		out = append(out, githubInstallationRecord(record, installationID))
-	}
-	return out
-}
-
-func githubInstallationRepositorySync(installationID string, records []jobs.GitHubRunnerRepositoryRecord) contractapi.SyncGithubInstallationRepositoriesOutputBody {
-	syncedAt := time.Now().UTC()
-	if len(records) > 0 {
-		syncedAt = records[0].SyncedAt
-	}
-	repos := make(contractapi.InstallationRepositories, 0, len(records))
-	for _, record := range records {
-		if record.SyncedAt.After(syncedAt) {
-			syncedAt = record.SyncedAt
-		}
-		repos = append(repos, contractapi.GitHubInstallationRepository{
-			ProviderRepositoryID: contractapi.ProviderRepositoryID(strconv.FormatInt(record.ProviderRepositoryID, 10)),
-			ProviderOwner:        contractapi.ProviderOwner(record.ProviderOwner),
-			ProviderRepo:         contractapi.ProviderRepo(record.ProviderRepo),
-			RepositoryFullName:   contractapi.RepositoryFullName(record.RepositoryFullName),
-			Private:              record.Private,
-			Active:               record.Active,
-			SyncedAt:             timestamp(record.SyncedAt),
-		})
-	}
-	return contractapi.SyncGithubInstallationRepositoriesOutputBody{
-		InstallationID: contractapi.DecimalUint64(installationID),
-		SyncedAt:       timestamp(syncedAt),
-		Repositories:   repos,
-	}
-}
-
 func executionRecord(record jobs.ExecutionRecord, installationID string) contractapi.SandboxExecutionRecord {
 	orgID := record.OrgID
 	return contractapi.SandboxExecutionRecord{
