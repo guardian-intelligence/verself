@@ -26,9 +26,9 @@ inputs:
     required: false
     default: "false"
   token:
-    description: Optional GitHub token override. Verself runners use the GitHub App installation token server-side by default.
+    description: GitHub token used only by the Verself host checkout bundle endpoint. The action does not persist it into the workspace.
     required: false
-    default: ""
+    default: ${{ github.token }}
 outputs:
   preexisting-head:
     description: Commit that was present in the workspace before checkout, when available.

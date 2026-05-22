@@ -321,28 +321,60 @@ func (s *Service) ProcessQueuedJobs(ctx context.Context) error {
 	}
 	var firstErr error
 	for _, row := range rows {
-		event, err := workflowJobWebhookFromQueuedRow(row)
-		if err != nil {
+		if err := s.processQueuedJob(ctx, row); err != nil {
 			firstErr = errors.Join(firstErr, err)
-			continue
 		}
-		runnerClass, err := s.runnerClassForLabels(event.WorkflowJob.Labels)
-		if err != nil {
-			continue
-		}
-		deliveryID := fmt.Sprintf("reconcile:%d:%d", event.WorkflowJob.RunID, event.WorkflowJob.ID)
-		started := time.Now().UTC()
-		meta := metadataFromWorkflowJob(deliveryID, event)
-		meta.RunnerClass = runnerClass
-		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "started", row.RegistrationState, started, started))
-		if err := s.submitQueuedJob(ctx, event, deliveryID); err != nil {
-			firstErr = errors.Join(firstErr, fmt.Errorf("submit queued github job %d: %w", event.WorkflowJob.ID, err))
-			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_failed", "failed", err.Error(), started, time.Now().UTC()))
-			continue
-		}
-		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "succeeded", row.RegistrationState, started, time.Now().UTC()))
 	}
 	return firstErr
+}
+
+func (s *Service) processQueuedJob(ctx context.Context, row store.ListQueuedWorkflowJobsForRunnerSubmissionRow) error {
+	unlock, locked, err := s.tryQueuedJobLock(ctx, row.ProviderJobID)
+	if err != nil || !locked {
+		return err
+	}
+	defer unlock()
+	event, err := workflowJobWebhookFromQueuedRow(row)
+	if err != nil {
+		return err
+	}
+	runnerClass, err := s.runnerClassForLabels(event.WorkflowJob.Labels)
+	if err != nil {
+		return nil
+	}
+	deliveryID := fmt.Sprintf("reconcile:%d:%d", event.WorkflowJob.RunID, event.WorkflowJob.ID)
+	started := time.Now().UTC()
+	meta := metadataFromWorkflowJob(deliveryID, event)
+	meta.RunnerClass = runnerClass
+	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "started", row.RegistrationState, started, started))
+	if err := s.submitQueuedJob(ctx, event, deliveryID); err != nil {
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_failed", "failed", err.Error(), started, time.Now().UTC()))
+		return fmt.Errorf("submit queued github job %d: %w", event.WorkflowJob.ID, err)
+	}
+	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "succeeded", row.RegistrationState, started, time.Now().UTC()))
+	return nil
+}
+
+func (s *Service) tryQueuedJobLock(ctx context.Context, providerJobID int64) (func(), bool, error) {
+	conn, err := s.cfg.PG.Acquire(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	release := func() { conn.Release() }
+	var locked bool
+	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", providerJobID).Scan(&locked); err != nil {
+		release()
+		return nil, false, err
+	}
+	if !locked {
+		release()
+		return nil, false, nil
+	}
+	unlock := func() {
+		_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", providerJobID)
+		release()
+	}
+	return unlock, true, nil
 }
 
 func (s *Service) processLockedDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
