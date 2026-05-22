@@ -69,6 +69,7 @@ func run() error {
 	apiBaseURL := cfg.URL("GITHUB_API_BASE_URL", "https://api.github.com")
 	runnerGroupID := cfg.Int64("GITHUB_RUNNER_GROUP_ID", 1)
 	runnerClassPrefix := cfg.String("GITHUB_RUNNER_CLASS_PREFIX", "verself-")
+	repositoryRunnerClassActiveLimit := int32FromInt(cfg.Int("GITHUB_REPOSITORY_RUNNER_CLASS_ACTIVE_LIMIT", 15), "GITHUB_REPOSITORY_RUNNER_CLASS_ACTIVE_LIMIT")
 	workerInterval := cfg.Duration("GITHUB_WORKER_INTERVAL", 500*time.Millisecond)
 	workerBatchSize := int32FromInt(cfg.Int("GITHUB_WORKER_BATCH_SIZE", 16), "GITHUB_WORKER_BATCH_SIZE")
 	maxDeliveryTries := int32FromInt(cfg.Int("GITHUB_MAX_DELIVERY_TRIES", 8), "GITHUB_MAX_DELIVERY_TRIES")
@@ -165,20 +166,21 @@ func run() error {
 	defer func() { _ = chConn.Close() }()
 
 	svc, err := githubintegration.NewService(githubintegration.Config{
-		AppID:             appID,
-		PrivateKeyPEM:     privateKey,
-		WebhookSecret:     webhookSecret,
-		APIBaseURL:        apiBaseURL,
-		RunnerGroupID:     runnerGroupID,
-		RunnerClassPrefix: runnerClassPrefix,
-		WorkerInterval:    workerInterval,
-		WorkerBatchSize:   workerBatchSize,
-		MaxDeliveryTries:  maxDeliveryTries,
-		Logger:            logger,
-		PG:                pgPool,
-		CH:                chConn,
-		Sandbox:           sandboxClient,
-		HTTPClient:        http.DefaultClient,
+		AppID:                            appID,
+		PrivateKeyPEM:                    privateKey,
+		WebhookSecret:                    webhookSecret,
+		APIBaseURL:                       apiBaseURL,
+		RunnerGroupID:                    runnerGroupID,
+		RunnerClassPrefix:                runnerClassPrefix,
+		RepositoryRunnerClassActiveLimit: repositoryRunnerClassActiveLimit,
+		WorkerInterval:                   workerInterval,
+		WorkerBatchSize:                  workerBatchSize,
+		MaxDeliveryTries:                 maxDeliveryTries,
+		Logger:                           logger,
+		PG:                               pgPool,
+		CH:                               chConn,
+		Sandbox:                          sandboxClient,
+		HTTPClient:                       http.DefaultClient,
 	})
 	if err != nil {
 		return err

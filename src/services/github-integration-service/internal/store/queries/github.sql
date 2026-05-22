@@ -442,8 +442,8 @@ SET state = 'jit_requested',
     updated_at = @claimed_at
 WHERE github_provider_demands.provider_job_id = @provider_job_id
   AND github_provider_demands.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
-  AND NOT EXISTS (
-      SELECT 1
+  AND (
+      SELECT count(*)
       FROM github_runner_registrations active
       WHERE active.provider_repository_id = github_provider_demands.provider_repository_id
         AND active.runner_class = github_provider_demands.runner_class
@@ -455,7 +455,7 @@ WHERE github_provider_demands.provider_job_id = @provider_job_id
             WHERE active_job.provider_job_id = active.provider_job_id
               AND active_job.status = 'completed'
         )
-  )
+  ) < @repository_runner_class_active_limit
 RETURNING demand_id, provider_job_id, provider_installation_id, provider_repository_id,
           repository_full_name, provider_run_id, provider_run_attempt, runner_name,
           runner_class, job_shape_id, trust_class, state;
@@ -507,6 +507,7 @@ WHERE target.provider_job_id = @to_provider_job_id;
 -- name: ResetProviderDemandAfterRunnerReassignment :execrows
 UPDATE github_provider_demands
 SET runner_id = 0,
+    runner_name = @runner_name,
     jit_config_sha256 = '',
     sandbox_allocation_id = NULL,
     sandbox_execution_id = NULL,
@@ -515,6 +516,31 @@ SET runner_id = 0,
     failure_reason = @failure_reason,
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id;
+
+-- name: SwapProviderDemandRunnerAssignments :execrows
+WITH source AS (
+    SELECT runner_id, runner_name, jit_config_sha256, sandbox_allocation_id,
+           sandbox_execution_id, sandbox_attempt_id, state
+    FROM github_provider_demands
+    WHERE github_provider_demands.provider_job_id = @from_provider_job_id
+), target AS (
+    SELECT runner_id, runner_name, jit_config_sha256, sandbox_allocation_id,
+           sandbox_execution_id, sandbox_attempt_id, state
+    FROM github_provider_demands
+    WHERE github_provider_demands.provider_job_id = @to_provider_job_id
+)
+UPDATE github_provider_demands demand
+SET runner_id = CASE WHEN demand.provider_job_id = @to_provider_job_id THEN source.runner_id ELSE target.runner_id END,
+    runner_name = CASE WHEN demand.provider_job_id = @to_provider_job_id THEN source.runner_name ELSE target.runner_name END,
+    jit_config_sha256 = CASE WHEN demand.provider_job_id = @to_provider_job_id THEN source.jit_config_sha256 ELSE target.jit_config_sha256 END,
+    sandbox_allocation_id = CASE WHEN demand.provider_job_id = @to_provider_job_id THEN source.sandbox_allocation_id ELSE target.sandbox_allocation_id END,
+    sandbox_execution_id = CASE WHEN demand.provider_job_id = @to_provider_job_id THEN source.sandbox_execution_id ELSE target.sandbox_execution_id END,
+    sandbox_attempt_id = CASE WHEN demand.provider_job_id = @to_provider_job_id THEN source.sandbox_attempt_id ELSE target.sandbox_attempt_id END,
+    state = CASE WHEN demand.provider_job_id = @to_provider_job_id THEN 'sandbox_submitted' ELSE target.state END,
+    failure_reason = CASE WHEN demand.provider_job_id = @from_provider_job_id THEN @failure_reason ELSE '' END,
+    updated_at = @updated_at
+FROM source, target
+WHERE demand.provider_job_id IN (@from_provider_job_id, @to_provider_job_id);
 
 -- name: MarkProviderDemandFailed :exec
 UPDATE github_provider_demands
@@ -649,6 +675,12 @@ SET state = 'cleaned',
 WHERE provider_job_id = @provider_job_id;
 
 -- name: TransferRunnerRegistrationToJob :execrows
+WITH stale_target AS (
+    DELETE FROM github_runner_registrations
+    WHERE github_runner_registrations.provider_job_id = @to_provider_job_id
+      AND github_runner_registrations.runner_name <> @runner_name
+      AND github_runner_registrations.state IN ('cleaned', 'failed')
+)
 UPDATE github_runner_registrations
 SET provider_job_id = @to_provider_job_id,
     demand_id = (
@@ -661,6 +693,68 @@ SET provider_job_id = @to_provider_job_id,
     updated_at = @updated_at
 WHERE github_runner_registrations.provider_job_id = @from_provider_job_id
   AND github_runner_registrations.runner_name = @runner_name;
+
+-- name: SwapRunnerRegistrationJobs :execrows
+WITH target AS (
+    DELETE FROM github_runner_registrations
+    WHERE github_runner_registrations.provider_job_id = @to_provider_job_id
+      AND github_runner_registrations.runner_name <> @runner_name
+      AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
+    RETURNING *
+), moved_source AS (
+    UPDATE github_runner_registrations
+    SET provider_job_id = @to_provider_job_id,
+        demand_id = (
+            SELECT demand_id
+            FROM github_provider_demands
+            WHERE github_provider_demands.provider_job_id = @to_provider_job_id
+        ),
+        state = 'sandbox_submitted',
+        failure_reason = '',
+        updated_at = @updated_at
+    WHERE github_runner_registrations.provider_job_id = @from_provider_job_id
+      AND github_runner_registrations.runner_name = @runner_name
+    RETURNING *
+)
+INSERT INTO github_runner_registrations (
+    provider_job_id,
+    demand_id,
+    provider_installation_id,
+    provider_repository_id,
+    runner_id,
+    runner_name,
+    runner_class,
+    jit_config_sha256,
+    sandbox_allocation_id,
+    sandbox_execution_id,
+    sandbox_attempt_id,
+    state,
+    failure_reason,
+    created_at,
+    updated_at
+)
+SELECT
+    @from_provider_job_id,
+    (
+        SELECT demand_id
+        FROM github_provider_demands
+        WHERE github_provider_demands.provider_job_id = @from_provider_job_id
+    ),
+    target.provider_installation_id,
+    target.provider_repository_id,
+    target.runner_id,
+    target.runner_name,
+    target.runner_class,
+    target.jit_config_sha256,
+    target.sandbox_allocation_id,
+    target.sandbox_execution_id,
+    target.sandbox_attempt_id,
+    target.state,
+    '',
+    target.created_at,
+    @updated_at
+FROM target
+WHERE EXISTS (SELECT 1 FROM moved_source);
 
 -- name: GetRunnerRegistrationForJob :one
 SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,
@@ -676,10 +770,8 @@ SELECT provider_job_id, provider_installation_id, provider_repository_id, runner
 FROM github_runner_registrations
 WHERE runner_name = @runner_name;
 
--- name: GetActiveRunnerRegistrationForRunnerClass :one
-SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,
-       runner_name, runner_class, sandbox_allocation_id, sandbox_execution_id,
-       sandbox_attempt_id, state
+-- name: CountActiveRunnerRegistrationsForRunnerClass :one
+SELECT count(*)::bigint
 FROM github_runner_registrations
 WHERE github_runner_registrations.provider_repository_id = @provider_repository_id
   AND github_runner_registrations.runner_class = @runner_class
@@ -689,37 +781,64 @@ WHERE github_runner_registrations.provider_repository_id = @provider_repository_
       FROM github_workflow_jobs active_job
       WHERE active_job.provider_job_id = github_runner_registrations.provider_job_id
         AND active_job.status = 'completed'
-  )
-ORDER BY github_runner_registrations.updated_at ASC, github_runner_registrations.provider_job_id ASC
-LIMIT 1;
+  );
 
 -- name: ListQueuedWorkflowJobsForRunnerSubmission :many
-SELECT
-    j.provider_job_id,
-    j.provider_installation_id,
-    j.provider_repository_id,
-    j.repository_full_name,
-    j.provider_run_id,
-    j.provider_run_attempt,
-    j.job_name,
-    j.head_sha,
-    j.head_branch,
-    j.workflow_name,
-    j.status,
-    j.conclusion,
-    j.labels_json,
-    j.started_at,
-    j.completed_at,
-    COALESCE(d.state, '')::text AS registration_state,
-    d.updated_at AS registration_updated_at
-FROM github_workflow_jobs j
-LEFT JOIN github_provider_demands d ON d.provider_job_id = j.provider_job_id
-WHERE j.status = 'queued'
-  AND (
-        d.provider_job_id IS NULL
-     OR d.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
-  )
-ORDER BY j.provider_job_id ASC
+WITH candidates AS (
+    SELECT
+        j.provider_job_id,
+        j.provider_installation_id,
+        j.provider_repository_id,
+        j.repository_full_name,
+        j.provider_run_id,
+        j.provider_run_attempt,
+        j.job_name,
+        j.head_sha,
+        j.head_branch,
+        j.workflow_name,
+        j.status,
+        j.conclusion,
+        j.labels_json,
+        j.started_at,
+        j.completed_at,
+        COALESCE(d.state, '')::text AS registration_state,
+        d.updated_at AS registration_updated_at,
+        COALESCE((
+            SELECT label
+            FROM jsonb_array_elements_text(j.labels_json) AS label
+            WHERE label LIKE @runner_class_prefix || '%'
+            ORDER BY label
+            LIMIT 1
+        ), '')::text AS runner_class
+    FROM github_workflow_jobs j
+    LEFT JOIN github_provider_demands d ON d.provider_job_id = j.provider_job_id
+    WHERE j.status = 'queued'
+      AND (
+            d.provider_job_id IS NULL
+         OR d.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
+      )
+)
+SELECT DISTINCT ON (provider_repository_id, runner_class)
+    provider_job_id,
+    provider_installation_id,
+    provider_repository_id,
+    repository_full_name,
+    provider_run_id,
+    provider_run_attempt,
+    job_name,
+    head_sha,
+    head_branch,
+    workflow_name,
+    status,
+    conclusion,
+    labels_json,
+    started_at,
+    completed_at,
+    registration_state,
+    registration_updated_at
+FROM candidates
+WHERE runner_class <> ''
+ORDER BY provider_repository_id ASC, runner_class ASC, provider_job_id ASC
 LIMIT @limit_count;
 
 -- name: InsertTerminalJobEvidence :one

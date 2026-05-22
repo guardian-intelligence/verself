@@ -54,8 +54,8 @@ SET state = 'jit_requested',
     updated_at = $1
 WHERE github_provider_demands.provider_job_id = $2
   AND github_provider_demands.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
-  AND NOT EXISTS (
-      SELECT 1
+  AND (
+      SELECT count(*)
       FROM github_runner_registrations active
       WHERE active.provider_repository_id = github_provider_demands.provider_repository_id
         AND active.runner_class = github_provider_demands.runner_class
@@ -67,15 +67,16 @@ WHERE github_provider_demands.provider_job_id = $2
             WHERE active_job.provider_job_id = active.provider_job_id
               AND active_job.status = 'completed'
         )
-  )
+  ) < $3
 RETURNING demand_id, provider_job_id, provider_installation_id, provider_repository_id,
           repository_full_name, provider_run_id, provider_run_attempt, runner_name,
           runner_class, job_shape_id, trust_class, state
 `
 
 type ClaimProviderDemandForJITParams struct {
-	ClaimedAt     pgtype.Timestamptz
-	ProviderJobID int64
+	ClaimedAt                        pgtype.Timestamptz
+	ProviderJobID                    int64
+	RepositoryRunnerClassActiveLimit int64
 }
 
 type ClaimProviderDemandForJITRow struct {
@@ -94,7 +95,7 @@ type ClaimProviderDemandForJITRow struct {
 }
 
 func (q *Queries) ClaimProviderDemandForJIT(ctx context.Context, arg ClaimProviderDemandForJITParams) (ClaimProviderDemandForJITRow, error) {
-	row := q.db.QueryRow(ctx, claimProviderDemandForJIT, arg.ClaimedAt, arg.ProviderJobID)
+	row := q.db.QueryRow(ctx, claimProviderDemandForJIT, arg.ClaimedAt, arg.ProviderJobID, arg.RepositoryRunnerClassActiveLimit)
 	var i ClaimProviderDemandForJITRow
 	err := row.Scan(
 		&i.DemandID,
@@ -111,6 +112,32 @@ func (q *Queries) ClaimProviderDemandForJIT(ctx context.Context, arg ClaimProvid
 		&i.State,
 	)
 	return i, err
+}
+
+const countActiveRunnerRegistrationsForRunnerClass = `-- name: CountActiveRunnerRegistrationsForRunnerClass :one
+SELECT count(*)::bigint
+FROM github_runner_registrations
+WHERE github_runner_registrations.provider_repository_id = $1
+  AND github_runner_registrations.runner_class = $2
+  AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM github_workflow_jobs active_job
+      WHERE active_job.provider_job_id = github_runner_registrations.provider_job_id
+        AND active_job.status = 'completed'
+  )
+`
+
+type CountActiveRunnerRegistrationsForRunnerClassParams struct {
+	ProviderRepositoryID int64
+	RunnerClass          string
+}
+
+func (q *Queries) CountActiveRunnerRegistrationsForRunnerClass(ctx context.Context, arg CountActiveRunnerRegistrationsForRunnerClassParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveRunnerRegistrationsForRunnerClass, arg.ProviderRepositoryID, arg.RunnerClass)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const ensureProviderDemand = `-- name: EnsureProviderDemand :one
@@ -223,60 +250,6 @@ func (q *Queries) EnsureProviderDemand(ctx context.Context, arg EnsureProviderDe
 		&i.SandboxAllocationID,
 		&i.SandboxExecutionID,
 		&i.SandboxAttemptID,
-	)
-	return i, err
-}
-
-const getActiveRunnerRegistrationForRunnerClass = `-- name: GetActiveRunnerRegistrationForRunnerClass :one
-SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,
-       runner_name, runner_class, sandbox_allocation_id, sandbox_execution_id,
-       sandbox_attempt_id, state
-FROM github_runner_registrations
-WHERE github_runner_registrations.provider_repository_id = $1
-  AND github_runner_registrations.runner_class = $2
-  AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
-  AND NOT EXISTS (
-      SELECT 1
-      FROM github_workflow_jobs active_job
-      WHERE active_job.provider_job_id = github_runner_registrations.provider_job_id
-        AND active_job.status = 'completed'
-  )
-ORDER BY github_runner_registrations.updated_at ASC, github_runner_registrations.provider_job_id ASC
-LIMIT 1
-`
-
-type GetActiveRunnerRegistrationForRunnerClassParams struct {
-	ProviderRepositoryID int64
-	RunnerClass          string
-}
-
-type GetActiveRunnerRegistrationForRunnerClassRow struct {
-	ProviderJobID          int64
-	ProviderInstallationID int64
-	ProviderRepositoryID   int64
-	RunnerID               int64
-	RunnerName             string
-	RunnerClass            string
-	SandboxAllocationID    pgtype.UUID
-	SandboxExecutionID     pgtype.UUID
-	SandboxAttemptID       pgtype.UUID
-	State                  string
-}
-
-func (q *Queries) GetActiveRunnerRegistrationForRunnerClass(ctx context.Context, arg GetActiveRunnerRegistrationForRunnerClassParams) (GetActiveRunnerRegistrationForRunnerClassRow, error) {
-	row := q.db.QueryRow(ctx, getActiveRunnerRegistrationForRunnerClass, arg.ProviderRepositoryID, arg.RunnerClass)
-	var i GetActiveRunnerRegistrationForRunnerClassRow
-	err := row.Scan(
-		&i.ProviderJobID,
-		&i.ProviderInstallationID,
-		&i.ProviderRepositoryID,
-		&i.RunnerID,
-		&i.RunnerName,
-		&i.RunnerClass,
-		&i.SandboxAllocationID,
-		&i.SandboxExecutionID,
-		&i.SandboxAttemptID,
-		&i.State,
 	)
 	return i, err
 }
@@ -529,37 +502,67 @@ func (q *Queries) InsertTerminalJobEvidence(ctx context.Context, arg InsertTermi
 }
 
 const listQueuedWorkflowJobsForRunnerSubmission = `-- name: ListQueuedWorkflowJobsForRunnerSubmission :many
-SELECT
-    j.provider_job_id,
-    j.provider_installation_id,
-    j.provider_repository_id,
-    j.repository_full_name,
-    j.provider_run_id,
-    j.provider_run_attempt,
-    j.job_name,
-    j.head_sha,
-    j.head_branch,
-    j.workflow_name,
-    j.status,
-    j.conclusion,
-    j.labels_json,
-    j.started_at,
-    j.completed_at,
-    COALESCE(d.state, '')::text AS registration_state,
-    d.updated_at AS registration_updated_at
-FROM github_workflow_jobs j
-LEFT JOIN github_provider_demands d ON d.provider_job_id = j.provider_job_id
-WHERE j.status = 'queued'
-  AND (
-        d.provider_job_id IS NULL
-     OR d.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
-  )
-ORDER BY j.provider_job_id ASC
+WITH candidates AS (
+    SELECT
+        j.provider_job_id,
+        j.provider_installation_id,
+        j.provider_repository_id,
+        j.repository_full_name,
+        j.provider_run_id,
+        j.provider_run_attempt,
+        j.job_name,
+        j.head_sha,
+        j.head_branch,
+        j.workflow_name,
+        j.status,
+        j.conclusion,
+        j.labels_json,
+        j.started_at,
+        j.completed_at,
+        COALESCE(d.state, '')::text AS registration_state,
+        d.updated_at AS registration_updated_at,
+        COALESCE((
+            SELECT label
+            FROM jsonb_array_elements_text(j.labels_json) AS label
+            WHERE label LIKE $2 || '%'
+            ORDER BY label
+            LIMIT 1
+        ), '')::text AS runner_class
+    FROM github_workflow_jobs j
+    LEFT JOIN github_provider_demands d ON d.provider_job_id = j.provider_job_id
+    WHERE j.status = 'queued'
+      AND (
+            d.provider_job_id IS NULL
+         OR d.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
+      )
+)
+SELECT DISTINCT ON (provider_repository_id, runner_class)
+    provider_job_id,
+    provider_installation_id,
+    provider_repository_id,
+    repository_full_name,
+    provider_run_id,
+    provider_run_attempt,
+    job_name,
+    head_sha,
+    head_branch,
+    workflow_name,
+    status,
+    conclusion,
+    labels_json,
+    started_at,
+    completed_at,
+    registration_state,
+    registration_updated_at
+FROM candidates
+WHERE runner_class <> ''
+ORDER BY provider_repository_id ASC, runner_class ASC, provider_job_id ASC
 LIMIT $1
 `
 
 type ListQueuedWorkflowJobsForRunnerSubmissionParams struct {
-	LimitCount int32
+	LimitCount        int32
+	RunnerClassPrefix pgtype.Text
 }
 
 type ListQueuedWorkflowJobsForRunnerSubmissionRow struct {
@@ -583,7 +586,7 @@ type ListQueuedWorkflowJobsForRunnerSubmissionRow struct {
 }
 
 func (q *Queries) ListQueuedWorkflowJobsForRunnerSubmission(ctx context.Context, arg ListQueuedWorkflowJobsForRunnerSubmissionParams) ([]ListQueuedWorkflowJobsForRunnerSubmissionRow, error) {
-	rows, err := q.db.Query(ctx, listQueuedWorkflowJobsForRunnerSubmission, arg.LimitCount)
+	rows, err := q.db.Query(ctx, listQueuedWorkflowJobsForRunnerSubmission, arg.LimitCount, arg.RunnerClassPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -1203,24 +1206,160 @@ func (q *Queries) RecordWebhookDelivery(ctx context.Context, arg RecordWebhookDe
 const resetProviderDemandAfterRunnerReassignment = `-- name: ResetProviderDemandAfterRunnerReassignment :execrows
 UPDATE github_provider_demands
 SET runner_id = 0,
+    runner_name = $1,
     jit_config_sha256 = '',
     sandbox_allocation_id = NULL,
     sandbox_execution_id = NULL,
     sandbox_attempt_id = NULL,
     state = 'demand_recorded',
-    failure_reason = $1,
-    updated_at = $2
-WHERE provider_job_id = $3
+    failure_reason = $2,
+    updated_at = $3
+WHERE provider_job_id = $4
 `
 
 type ResetProviderDemandAfterRunnerReassignmentParams struct {
+	RunnerName    string
 	FailureReason string
 	UpdatedAt     pgtype.Timestamptz
 	ProviderJobID int64
 }
 
 func (q *Queries) ResetProviderDemandAfterRunnerReassignment(ctx context.Context, arg ResetProviderDemandAfterRunnerReassignmentParams) (int64, error) {
-	result, err := q.db.Exec(ctx, resetProviderDemandAfterRunnerReassignment, arg.FailureReason, arg.UpdatedAt, arg.ProviderJobID)
+	result, err := q.db.Exec(ctx, resetProviderDemandAfterRunnerReassignment,
+		arg.RunnerName,
+		arg.FailureReason,
+		arg.UpdatedAt,
+		arg.ProviderJobID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const swapProviderDemandRunnerAssignments = `-- name: SwapProviderDemandRunnerAssignments :execrows
+WITH source AS (
+    SELECT runner_id, runner_name, jit_config_sha256, sandbox_allocation_id,
+           sandbox_execution_id, sandbox_attempt_id, state
+    FROM github_provider_demands
+    WHERE github_provider_demands.provider_job_id = $2
+), target AS (
+    SELECT runner_id, runner_name, jit_config_sha256, sandbox_allocation_id,
+           sandbox_execution_id, sandbox_attempt_id, state
+    FROM github_provider_demands
+    WHERE github_provider_demands.provider_job_id = $1
+)
+UPDATE github_provider_demands demand
+SET runner_id = CASE WHEN demand.provider_job_id = $1 THEN source.runner_id ELSE target.runner_id END,
+    runner_name = CASE WHEN demand.provider_job_id = $1 THEN source.runner_name ELSE target.runner_name END,
+    jit_config_sha256 = CASE WHEN demand.provider_job_id = $1 THEN source.jit_config_sha256 ELSE target.jit_config_sha256 END,
+    sandbox_allocation_id = CASE WHEN demand.provider_job_id = $1 THEN source.sandbox_allocation_id ELSE target.sandbox_allocation_id END,
+    sandbox_execution_id = CASE WHEN demand.provider_job_id = $1 THEN source.sandbox_execution_id ELSE target.sandbox_execution_id END,
+    sandbox_attempt_id = CASE WHEN demand.provider_job_id = $1 THEN source.sandbox_attempt_id ELSE target.sandbox_attempt_id END,
+    state = CASE WHEN demand.provider_job_id = $1 THEN 'sandbox_submitted' ELSE target.state END,
+    failure_reason = CASE WHEN demand.provider_job_id = $2 THEN $3 ELSE '' END,
+    updated_at = $4
+FROM source, target
+WHERE demand.provider_job_id IN ($2, $1)
+`
+
+type SwapProviderDemandRunnerAssignmentsParams struct {
+	ToProviderJobID   int64
+	FromProviderJobID int64
+	FailureReason     string
+	UpdatedAt         pgtype.Timestamptz
+}
+
+func (q *Queries) SwapProviderDemandRunnerAssignments(ctx context.Context, arg SwapProviderDemandRunnerAssignmentsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, swapProviderDemandRunnerAssignments,
+		arg.ToProviderJobID,
+		arg.FromProviderJobID,
+		arg.FailureReason,
+		arg.UpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const swapRunnerRegistrationJobs = `-- name: SwapRunnerRegistrationJobs :execrows
+WITH target AS (
+    DELETE FROM github_runner_registrations
+    WHERE github_runner_registrations.provider_job_id = $3
+      AND github_runner_registrations.runner_name <> $4
+      AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
+    RETURNING provider_job_id, demand_id, provider_installation_id, provider_repository_id, runner_id, runner_name, runner_class, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id, state, failure_reason, created_at, updated_at
+), moved_source AS (
+    UPDATE github_runner_registrations
+    SET provider_job_id = $3,
+        demand_id = (
+            SELECT demand_id
+            FROM github_provider_demands
+            WHERE github_provider_demands.provider_job_id = $3
+        ),
+        state = 'sandbox_submitted',
+        failure_reason = '',
+        updated_at = $2
+    WHERE github_runner_registrations.provider_job_id = $1
+      AND github_runner_registrations.runner_name = $4
+    RETURNING provider_job_id, demand_id, provider_installation_id, provider_repository_id, runner_id, runner_name, runner_class, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id, state, failure_reason, created_at, updated_at
+)
+INSERT INTO github_runner_registrations (
+    provider_job_id,
+    demand_id,
+    provider_installation_id,
+    provider_repository_id,
+    runner_id,
+    runner_name,
+    runner_class,
+    jit_config_sha256,
+    sandbox_allocation_id,
+    sandbox_execution_id,
+    sandbox_attempt_id,
+    state,
+    failure_reason,
+    created_at,
+    updated_at
+)
+SELECT
+    $1,
+    (
+        SELECT demand_id
+        FROM github_provider_demands
+        WHERE github_provider_demands.provider_job_id = $1
+    ),
+    target.provider_installation_id,
+    target.provider_repository_id,
+    target.runner_id,
+    target.runner_name,
+    target.runner_class,
+    target.jit_config_sha256,
+    target.sandbox_allocation_id,
+    target.sandbox_execution_id,
+    target.sandbox_attempt_id,
+    target.state,
+    '',
+    target.created_at,
+    $2
+FROM target
+WHERE EXISTS (SELECT 1 FROM moved_source)
+`
+
+type SwapRunnerRegistrationJobsParams struct {
+	FromProviderJobID int64
+	UpdatedAt         pgtype.Timestamptz
+	ToProviderJobID   int64
+	RunnerName        string
+}
+
+func (q *Queries) SwapRunnerRegistrationJobs(ctx context.Context, arg SwapRunnerRegistrationJobsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, swapRunnerRegistrationJobs,
+		arg.FromProviderJobID,
+		arg.UpdatedAt,
+		arg.ToProviderJobID,
+		arg.RunnerName,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -1228,6 +1367,12 @@ func (q *Queries) ResetProviderDemandAfterRunnerReassignment(ctx context.Context
 }
 
 const transferRunnerRegistrationToJob = `-- name: TransferRunnerRegistrationToJob :execrows
+WITH stale_target AS (
+    DELETE FROM github_runner_registrations
+    WHERE github_runner_registrations.provider_job_id = $1
+      AND github_runner_registrations.runner_name <> $4
+      AND github_runner_registrations.state IN ('cleaned', 'failed')
+)
 UPDATE github_runner_registrations
 SET provider_job_id = $1,
     demand_id = (

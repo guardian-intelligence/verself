@@ -158,11 +158,29 @@ patterns before inventing service-local variants.
   short-lived, redacted in logs, and unusable as snapshot authority.
 - Runner assignment is not a deterministic GitHub binding. If multiple queued
   jobs share the same `runs-on` labels, GitHub may assign any matching runner to
-  any job. Until the service has an assignment-aware pool model, production JIT
-  issuance is serialized per repository runner class with PostgreSQL advisory
-  locks plus active registration rows. When GitHub assigns the runner to a
-  different queued job with the same labels, the provider demand and runner
-  registration are rebound to the job GitHub actually selected.
+  any job. This is a GitHub integration quirk and must not leak into
+  sandbox-rental-service. Production JIT issuance is gated per repository runner
+  class by a configured active-runner slot limit, never by a global customer
+  queue. The retry reconciler must also select distinct repository/class
+  candidates instead of replaying one saturated repo as a FIFO. This gate is an
+  issuance throttle only; demand that exceeds host capacity will need an
+  explicit provider queue later.
+- Runner assignment mismatch correction is blocking and local. When GitHub
+  reports that runner `R` is executing job `B` but the persisted expectation was
+  job `A`, github-integration-service immediately corrects its provider truth
+  before forwarding the observation to sandbox-rental-service. If job `B`
+  already had another live runner/sandbox assignment, the service performs a
+  pairwise control-plane swap of the provider-demand and runner-registration
+  rows. If job `B` had no live assignment, it transfers `R` to `B` and returns
+  `A` to demand-recorded state with a fresh runner name. The VM is not moved
+  underneath a running GitHub runner process; the provider-to-sandbox identity is
+  realigned to match the runner GitHub already selected, and sandbox-rental
+  binds the actual job by observed runner id/name.
+- Assignment mismatches are product signals. Emit
+  `github.runner.assignment.mismatch.corrected` with `correction_kind`,
+  `assumed_provider_job_id`, `actual_provider_job_id`, and registration state so
+  operators can quantify repositories whose workflow labels do not play well
+  with warm CI assumptions and notify customers out of band.
 - Trust classifier: classify every run/job before it can allocate a sandbox or
   request golden promotion. Forks, pull requests, reusable workflows,
   environment protection, repository visibility, app permission drift, and org
@@ -187,9 +205,11 @@ Expected high-level ClickHouse sequence for a successful CI job:
 6. `github.runner.registration.created`
 7. `github.sandbox.submit.requested`
 8. `github.runner.assignment.observed`
-9. `github.job.terminal.observed`
-10. `github.terminal_evidence.emitted`
-11. `github.golden_snapshot_barrier.requested`
+9. `github.runner.assignment.mismatch.corrected` when GitHub selected a
+   different compatible runner/job pairing than the service expected
+10. `github.job.terminal.observed`
+11. `github.terminal_evidence.emitted`
+12. `github.golden_snapshot_barrier.requested`
 
 ## Security Footguns
 

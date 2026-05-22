@@ -36,10 +36,13 @@ const (
 	providerGitHub   = "github"
 	githubAPIVersion = "2026-03-10"
 
-	defaultAPIBaseURL       = "https://api.github.com"
-	defaultRunnerWorkFolder = "_work"
-	defaultRunnerPrefix     = "verself-"
-	maxWebhookBytes         = 1 << 20
+	defaultAPIBaseURL                       = "https://api.github.com"
+	defaultRunnerWorkFolder                 = "_work"
+	defaultRunnerPrefix                     = "verself-"
+	defaultRepositoryRunnerClassActiveLimit = 15
+	runnerAssignmentCorrectionSwap          = "pairwise_swap"
+	runnerAssignmentCorrectionTransfer      = "single_rebind"
+	maxWebhookBytes                         = 1 << 20
 )
 
 var (
@@ -55,20 +58,21 @@ var (
 var tracer = otel.Tracer("github-integration-service")
 
 type Config struct {
-	AppID             int64
-	PrivateKeyPEM     string
-	WebhookSecret     string
-	APIBaseURL        string
-	RunnerGroupID     int64
-	RunnerClassPrefix string
-	WorkerInterval    time.Duration
-	WorkerBatchSize   int32
-	MaxDeliveryTries  int32
-	Logger            *slog.Logger
-	PG                *pgxpool.Pool
-	CH                chdriver.Conn
-	Sandbox           *sandboxrentalclient.Client
-	HTTPClient        *http.Client
+	AppID                            int64
+	PrivateKeyPEM                    string
+	WebhookSecret                    string
+	APIBaseURL                       string
+	RunnerGroupID                    int64
+	RunnerClassPrefix                string
+	RepositoryRunnerClassActiveLimit int32
+	WorkerInterval                   time.Duration
+	WorkerBatchSize                  int32
+	MaxDeliveryTries                 int32
+	Logger                           *slog.Logger
+	PG                               *pgxpool.Pool
+	CH                               chdriver.Conn
+	Sandbox                          *sandboxrentalclient.Client
+	HTTPClient                       *http.Client
 }
 
 type Service struct {
@@ -104,6 +108,9 @@ func NewService(cfg Config) (*Service, error) {
 	}
 	if cfg.RunnerClassPrefix == "" {
 		cfg.RunnerClassPrefix = defaultRunnerPrefix
+	}
+	if cfg.RepositoryRunnerClassActiveLimit <= 0 {
+		cfg.RepositoryRunnerClassActiveLimit = defaultRepositoryRunnerClassActiveLimit
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -311,7 +318,8 @@ func (s *Service) ProcessReadyDeliveries(ctx context.Context) error {
 
 func (s *Service) ProcessQueuedJobs(ctx context.Context) error {
 	rows, err := s.queries.ListQueuedWorkflowJobsForRunnerSubmission(ctx, store.ListQueuedWorkflowJobsForRunnerSubmissionParams{
-		LimitCount: s.cfg.WorkerBatchSize,
+		LimitCount:        s.cfg.WorkerBatchSize,
+		RunnerClassPrefix: pgText(s.cfg.RunnerClassPrefix),
 	})
 	if err != nil {
 		return err
@@ -637,19 +645,21 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	}
 	defer unlockRunnerClass()
 	claim, err := s.queries.ClaimProviderDemandForJIT(ctx, store.ClaimProviderDemandForJITParams{
-		ClaimedAt:     pgTime(time.Now().UTC()),
-		ProviderJobID: event.WorkflowJob.ID,
+		ClaimedAt:                        pgTime(time.Now().UTC()),
+		ProviderJobID:                    event.WorkflowJob.ID,
+		RepositoryRunnerClassActiveLimit: int64(s.cfg.RepositoryRunnerClassActiveLimit),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		reason := "provider_demand:" + demand.State
-		active, activeErr := s.queries.GetActiveRunnerRegistrationForRunnerClass(ctx, store.GetActiveRunnerRegistrationForRunnerClassParams{
+		active, activeErr := s.queries.CountActiveRunnerRegistrationsForRunnerClass(ctx, store.CountActiveRunnerRegistrationsForRunnerClassParams{
 			ProviderRepositoryID: event.Repository.ID,
 			RunnerClass:          runnerClass,
 		})
-		if activeErr == nil && active.ProviderJobID != event.WorkflowJob.ID {
-			reason = "runner_class_busy:" + strconv.FormatInt(active.ProviderJobID, 10)
-		} else if activeErr != nil && !errors.Is(activeErr, pgx.ErrNoRows) {
+		if activeErr != nil {
 			return activeErr
+		}
+		if active >= int64(s.cfg.RepositoryRunnerClassActiveLimit) {
+			reason = fmt.Sprintf("runner_class_capacity_full:%d/%d", active, s.cfg.RepositoryRunnerClassActiveLimit)
 		}
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_deferred", "deferred", reason, started, time.Now().UTC()))
 		return nil
@@ -1030,13 +1040,14 @@ func (s *Service) recordRunnerAssignment(ctx context.Context, installationID, re
 	}
 	now := time.Now().UTC()
 	reason := fmt.Sprintf("runner moved from provider job %d to provider job %d", reg.ProviderJobID, job.ID)
-	if err := s.reassignRunnerRegistration(ctx, reg.ProviderJobID, job.ID, runnerName, reason, now); err != nil {
+	correctionKind, err := s.reassignRunnerRegistration(ctx, reg.ProviderJobID, job.ID, runnerName, reason, now)
+	if err != nil {
 		return err
 	}
 	s.writeEvent(ctx, githubEvent{
 		ObservedAt:             now,
-		EventName:              "github.runner.registration.rebound",
-		Result:                 "rebound",
+		EventName:              "github.runner.assignment.mismatch.corrected",
+		Result:                 "corrected",
 		Reason:                 reason,
 		DeliveryID:             deliveryID,
 		ProviderInstallationID: uint64FromInt64(installationID),
@@ -1051,30 +1062,63 @@ func (s *Service) recordRunnerAssignment(ctx context.Context, installationID, re
 		StartedAt:              started,
 		CompletedAt:            now,
 		AttributesJSON: mustJSON(map[string]string{
-			"original_provider_job_id": strconv.FormatInt(reg.ProviderJobID, 10),
-			"registration_state":       reg.State,
+			"actual_provider_job_id":  strconv.FormatInt(job.ID, 10),
+			"assumed_provider_job_id": strconv.FormatInt(reg.ProviderJobID, 10),
+			"correction_kind":         correctionKind,
+			"registration_state":      reg.State,
 		}),
 	})
 	return nil
 }
 
-func (s *Service) reassignRunnerRegistration(ctx context.Context, fromProviderJobID, toProviderJobID int64, runnerName string, reason string, at time.Time) error {
+func (s *Service) reassignRunnerRegistration(ctx context.Context, fromProviderJobID, toProviderJobID int64, runnerName string, reason string, at time.Time) (string, error) {
 	tx, err := s.cfg.PG.Begin(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := store.New(tx)
+	target, err := qtx.GetRunnerRegistrationForJob(ctx, store.GetRunnerRegistrationForJobParams{ProviderJobID: toProviderJobID})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	if err == nil && target.RunnerName != "" && target.RunnerName != runnerName && target.State != "cleaned" && target.State != "failed" {
+		swappedDemands, err := qtx.SwapProviderDemandRunnerAssignments(ctx, store.SwapProviderDemandRunnerAssignmentsParams{
+			FromProviderJobID: fromProviderJobID,
+			ToProviderJobID:   toProviderJobID,
+			FailureReason:     truncate(reason, 1024),
+			UpdatedAt:         pgTime(at),
+		})
+		if err != nil {
+			return "", err
+		}
+		if swappedDemands != 2 {
+			return "", fmt.Errorf("github runner demand swap failed: from_provider_job_id=%d to_provider_job_id=%d rows=%d", fromProviderJobID, toProviderJobID, swappedDemands)
+		}
+		swappedRegistrations, err := qtx.SwapRunnerRegistrationJobs(ctx, store.SwapRunnerRegistrationJobsParams{
+			ToProviderJobID:   toProviderJobID,
+			RunnerName:        runnerName,
+			UpdatedAt:         pgTime(at),
+			FromProviderJobID: fromProviderJobID,
+		})
+		if err != nil {
+			return "", err
+		}
+		if swappedRegistrations == 0 {
+			return "", fmt.Errorf("github runner registration swap failed: from_provider_job_id=%d to_provider_job_id=%d runner_name=%s", fromProviderJobID, toProviderJobID, runnerName)
+		}
+		return runnerAssignmentCorrectionSwap, tx.Commit(ctx)
+	}
 	assigned, err := qtx.AssignProviderDemandToRunnerFromDemand(ctx, store.AssignProviderDemandToRunnerFromDemandParams{
 		FromProviderJobID: fromProviderJobID,
 		ToProviderJobID:   toProviderJobID,
 		UpdatedAt:         pgTime(at),
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	if assigned == 0 {
-		return fmt.Errorf("github runner assignment target demand missing: from_provider_job_id=%d to_provider_job_id=%d", fromProviderJobID, toProviderJobID)
+		return "", fmt.Errorf("github runner assignment target demand missing: from_provider_job_id=%d to_provider_job_id=%d", fromProviderJobID, toProviderJobID)
 	}
 	transferred, err := qtx.TransferRunnerRegistrationToJob(ctx, store.TransferRunnerRegistrationToJobParams{
 		FromProviderJobID: fromProviderJobID,
@@ -1083,19 +1127,24 @@ func (s *Service) reassignRunnerRegistration(ctx context.Context, fromProviderJo
 		UpdatedAt:         pgTime(at),
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	if transferred == 0 {
-		return fmt.Errorf("github runner registration missing for reassignment: from_provider_job_id=%d runner_name=%s", fromProviderJobID, runnerName)
+		return "", fmt.Errorf("github runner registration missing for reassignment: from_provider_job_id=%d runner_name=%s", fromProviderJobID, runnerName)
 	}
 	if _, err := qtx.ResetProviderDemandAfterRunnerReassignment(ctx, store.ResetProviderDemandAfterRunnerReassignmentParams{
 		ProviderJobID: fromProviderJobID,
+		RunnerName:    replacementGitHubRunnerName(fromProviderJobID),
 		FailureReason: truncate(reason, 1024),
 		UpdatedAt:     pgTime(at),
 	}); err != nil {
-		return err
+		return "", err
 	}
-	return tx.Commit(ctx)
+	return runnerAssignmentCorrectionTransfer, tx.Commit(ctx)
+}
+
+func replacementGitHubRunnerName(jobID int64) string {
+	return fmt.Sprintf("verself-%d-%s", jobID, strings.ReplaceAll(uuid.NewString(), "-", "")[:10])
 }
 
 func (s *Service) observeSandboxWorkflowRun(ctx context.Context, workflow workflowObservation) error {
@@ -1251,6 +1300,10 @@ func pgTime(t time.Time) pgtype.Timestamptz {
 		return pgtype.Timestamptz{}
 	}
 	return pgtype.Timestamptz{Time: t.UTC(), Valid: true}
+}
+
+func pgText(value string) pgtype.Text {
+	return pgtype.Text{String: value, Valid: true}
 }
 
 func pgUUID(id uuid.UUID) pgtype.UUID {

@@ -87,6 +87,22 @@ func TestGitHubRunnerNameIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestRunnerClassLockKeyIsScopedToRepositoryAndClass(t *testing.T) {
+	repoAKey1, repoAKey2 := runnerClassLockKey(456, "verself-ci-large")
+	repoAAgainKey1, repoAAgainKey2 := runnerClassLockKey(456, "verself-ci-large")
+	if repoAKey1 != repoAAgainKey1 || repoAKey2 != repoAAgainKey2 {
+		t.Fatal("runnerClassLockKey is not stable for the same repository and class")
+	}
+	repoBKey1, repoBKey2 := runnerClassLockKey(789, "verself-ci-large")
+	if repoAKey1 == repoBKey1 && repoAKey2 == repoBKey2 {
+		t.Fatal("runnerClassLockKey collapsed distinct repositories into one lock")
+	}
+	otherClassKey1, otherClassKey2 := runnerClassLockKey(456, "verself-ci-small")
+	if repoAKey1 == otherClassKey1 && repoAKey2 == otherClassKey2 {
+		t.Fatal("runnerClassLockKey collapsed distinct runner classes into one lock")
+	}
+}
+
 func TestBuildGitHubJobShapeCanonicalizesLabels(t *testing.T) {
 	var event workflowJobWebhook
 	event.Installation.ID = 123
