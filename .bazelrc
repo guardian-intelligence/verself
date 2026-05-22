@@ -37,3 +37,6 @@ build --watchfs
 
 test --test_output=errors
 test --test_summary=terse
+# `bazel test //...` is the repo test surface. Broader release validation lives
+# in aspect tasks, so test invocations should not force-build unrelated binaries.
+test --build_tests_only
