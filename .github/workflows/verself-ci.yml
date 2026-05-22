@@ -8,12 +8,6 @@ on:
       - gamma
   pull_request:
   workflow_dispatch:
-    inputs:
-      stress_workloads:
-        description: Run the parallel warm VM workload matrix instead of the default full-repo test.
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -25,7 +19,6 @@ concurrency:
 jobs:
   build:
     name: Build with warm VM (Verself runner, durable workspace)
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.stress_workloads }}
     runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     timeout-minutes: 30
     steps:
@@ -44,54 +37,6 @@ jobs:
             echo "GitHub runner process cleanup marker is present in the step environment."
           fi
           env -u RUNNER_TRACKING_ID bazelisk test //...
-          server_pid="$(env -u RUNNER_TRACKING_ID bazelisk info server_pid)"
-          if [ -z "$server_pid" ] || [ ! -r "/proc/${server_pid}/environ" ]; then
-            echo "::error::Bazel server process ${server_pid:-<empty>} is not inspectable"
-            exit 1
-          fi
-          if tr '\0' '\n' < "/proc/${server_pid}/environ" | grep -q '^RUNNER_TRACKING_ID='; then
-            echo "::error::Bazel server inherited RUNNER_TRACKING_ID and will be killed by GitHub runner cleanup"
-            exit 1
-          fi
-          echo "Bazel server ${server_pid} does not carry RUNNER_TRACKING_ID."
-
-  stress-workloads:
-    name: Warm VM Bazel workload (${{ matrix.workload }})
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.stress_workloads }}
-    runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - workload: services
-            targets: //src/services/...
-          - workload: substrate-host
-            targets: //src/substrate/... //src/host/...
-          - workload: contracts-sdks
-            targets: //src/smithy/... //src/sdk-generator/... //src/sdks/...
-          - workload: frontends
-            targets: //src/websites/...
-          - workload: operator-infra-tools
-            targets: //src/tools/... //src/infrastructure-components/... //src/integrations/... //src/verself-cli/...
-    steps:
-      - name: Check out repository
-        uses: guardian-intelligence/verself/.github/actions/checkout@main
-        with:
-          persist-credentials: false
-
-      - name: Bootstrap toolchain
-        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
-
-      - name: Build and Test
-        env:
-          BAZEL_TARGETS: ${{ matrix.targets }}
-        run: |
-          set -euo pipefail
-          if [ -n "${RUNNER_TRACKING_ID:-}" ]; then
-            echo "GitHub runner process cleanup marker is present in the step environment."
-          fi
-          env -u RUNNER_TRACKING_ID bazelisk test ${BAZEL_TARGETS}
           server_pid="$(env -u RUNNER_TRACKING_ID bazelisk info server_pid)"
           if [ -z "$server_pid" ] || [ ! -r "/proc/${server_pid}/environ" ]; then
             echo "::error::Bazel server process ${server_pid:-<empty>} is not inspectable"
