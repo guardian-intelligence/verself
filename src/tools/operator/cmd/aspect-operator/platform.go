@@ -29,16 +29,15 @@ import (
 )
 
 const (
-	platformActor                                  = "system:platform-seed"
-	platformManifestVersion                        = "verself.platform.v1"
-	platformDefaultForgejoRemote                   = "127.0.0.1:3000"
-	platformDefaultForgejoTokenPath                = "/etc/credstore/forgejo/automation-token"
-	platformIAMBootstrapTarget                     = "//src/services/iam-service/cmd/iam-service:iam-service"
-	platformIAMSpiceDBPresharedKeyPath             = "/etc/credstore/iam-service/spicedb-grpc-preshared-key"
-	platformDefaultSandboxForgejoWebhookSecretPath = "/etc/credstore/sandbox-rental/forgejo-webhook-secret"
-	platformDefaultZitadelRemote                   = "127.0.0.1:8085"
-	platformDefaultZitadelAdminPATPath             = "/etc/zitadel/admin.pat"
-	platformDefaultBranch                          = "main"
+	platformActor                      = "system:platform-seed"
+	platformManifestVersion            = "verself.platform.v1"
+	platformDefaultForgejoRemote       = "127.0.0.1:3000"
+	platformDefaultForgejoTokenPath    = "/etc/credstore/forgejo/automation-token"
+	platformIAMBootstrapTarget         = "//src/services/iam-service/cmd/iam-service:iam-service"
+	platformIAMSpiceDBPresharedKeyPath = "/etc/credstore/iam-service/spicedb-grpc-preshared-key"
+	platformDefaultZitadelRemote       = "127.0.0.1:8085"
+	platformDefaultZitadelAdminPATPath = "/etc/zitadel/admin.pat"
+	platformDefaultBranch              = "main"
 )
 
 var platformSlugRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$`)
@@ -57,7 +56,6 @@ type platformOptions struct {
 	pgUser              string
 	pgRemotePort        int
 	forgejoTokenPath    string
-	forgejoWebhookPath  string
 	forgejoRemoteAddr   string
 	forgejoRepoPrivate  bool
 	zitadelAdminPATPath string
@@ -104,7 +102,6 @@ type platformConfig struct {
 	VerselfDomain      string `json:"verself_domain"`
 	ZitadelHost        string `json:"zitadel_host"`
 	CanonicalGitURL    string `json:"canonical_git_url"`
-	ForgejoWebhookURL  string `json:"forgejo_webhook_url"`
 }
 
 type platformReport struct {
@@ -199,7 +196,6 @@ func cmdPlatform(args []string) error {
 		action:              "check",
 		format:              "text",
 		forgejoTokenPath:    platformDefaultForgejoTokenPath,
-		forgejoWebhookPath:  platformDefaultSandboxForgejoWebhookSecretPath,
 		forgejoRemoteAddr:   platformDefaultForgejoRemote,
 		forgejoRepoPrivate:  true,
 		zitadelAdminPATPath: platformDefaultZitadelAdminPATPath,
@@ -214,7 +210,6 @@ func cmdPlatform(args []string) error {
 	fs.StringVar(&opts.pgUser, "pg-user", envOr("PG_USER", oppg.DefaultUser), "PostgreSQL user")
 	fs.IntVar(&opts.pgRemotePort, "pg-remote-port", envIntOr("PG_PORT", oppg.DefaultPort), "Remote PostgreSQL port on the worker loopback")
 	fs.StringVar(&opts.forgejoTokenPath, "forgejo-token-path", opts.forgejoTokenPath, "Remote Forgejo automation token path")
-	fs.StringVar(&opts.forgejoWebhookPath, "forgejo-webhook-secret-path", opts.forgejoWebhookPath, "Remote sandbox-rental Forgejo webhook secret path")
 	fs.StringVar(&opts.forgejoRemoteAddr, "forgejo-remote-addr", opts.forgejoRemoteAddr, "Remote Forgejo HTTP address reached over SSH")
 	fs.StringVar(&opts.zitadelAdminPATPath, "zitadel-admin-pat-path", opts.zitadelAdminPATPath, "Remote Zitadel admin PAT path")
 	fs.StringVar(&opts.zitadelRemoteAddr, "zitadel-remote-addr", opts.zitadelRemoteAddr, "Remote Zitadel HTTP address reached over SSH")
@@ -267,9 +262,6 @@ func (opts *platformOptions) validate() error {
 	if strings.TrimSpace(opts.forgejoTokenPath) == "" {
 		return fmt.Errorf("platform: --forgejo-token-path is required")
 	}
-	if strings.TrimSpace(opts.forgejoWebhookPath) == "" {
-		return fmt.Errorf("platform: --forgejo-webhook-secret-path is required")
-	}
 	if strings.TrimSpace(opts.forgejoRemoteAddr) == "" {
 		return fmt.Errorf("platform: --forgejo-remote-addr is required")
 	}
@@ -305,7 +297,6 @@ func loadPlatformConfig(repoRoot, site string) (platformConfig, error) {
 		ForgejoDomain:      resolveForgejoDomain(mainVars),
 		VerselfDomain:      strings.TrimSpace(mainVars.VerselfDomain),
 		ZitadelHost:        resolveZitadelHost(mainVars),
-		ForgejoWebhookURL:  resolveForgejoWebhookURL(mainVars),
 	}
 	if err := cfg.validate(); err != nil {
 		return platformConfig{}, err
@@ -364,9 +355,6 @@ func (cfg *platformConfig) validate() error {
 	if cfg.VerselfDomain == "" || strings.Contains(cfg.VerselfDomain, "{{") {
 		return fmt.Errorf("platform config: verself_domain is required")
 	}
-	if cfg.ForgejoWebhookURL == "" || strings.Contains(cfg.ForgejoWebhookURL, "{{") {
-		return fmt.Errorf("platform config: verself_domain is required for the sandbox Forgejo webhook URL")
-	}
 	if cfg.ZitadelHost == "" || strings.Contains(cfg.ZitadelHost, "{{") {
 		return fmt.Errorf("platform config: zitadel_domain or verself_domain is required")
 	}
@@ -413,14 +401,6 @@ func resolveZitadelHost(ops platformMainVars) string {
 	return verselfDomain
 }
 
-func resolveForgejoWebhookURL(ops platformMainVars) string {
-	verselfDomain := strings.TrimSpace(ops.VerselfDomain)
-	if verselfDomain == "" {
-		return ""
-	}
-	return "https://sandbox.api." + verselfDomain + "/webhooks/forgejo/actions"
-}
-
 func (r *platformRunner) seed() (platformReport, error) {
 	if err := r.ensureIdentityOrganization(); err != nil {
 		return platformReport{}, err
@@ -448,13 +428,7 @@ func (r *platformRunner) seed() (platformReport, error) {
 	if err := r.ensureSourceRepository(strconv.FormatInt(forgejoRepo.ID, 10)); err != nil {
 		return platformReport{}, err
 	}
-	if err := r.ensureSandboxRunnerRepository(forgejoRepo.ID); err != nil {
-		return platformReport{}, err
-	}
 	if err := r.ensureGitHubDogfoodRunnerRepository(); err != nil {
-		return platformReport{}, err
-	}
-	if err := r.ensureForgejoActionsWebhook(); err != nil {
 		return platformReport{}, err
 	}
 	report, err := r.check()
@@ -510,7 +484,6 @@ func (r *platformRunner) check() (platformReport, error) {
 	report.ForgejoRepoID = forgejoRepoID
 	report.BoundaryResults = append(report.BoundaryResults, forgejoRow)
 	report.BoundaryResults = append(report.BoundaryResults, r.checkSourceRepository(forgejoRepoID, &issues))
-	report.BoundaryResults = append(report.BoundaryResults, r.checkSandboxRunnerRepository(forgejoRepoID, &issues))
 	if r.cfg.githubDogfoodConfigured() {
 		report.BoundaryResults = append(report.BoundaryResults, r.checkGitHubDogfoodRunnerRepository(&issues))
 	}
@@ -1111,57 +1084,6 @@ WHERE backend_id = $1 AND repo_id = $2`,
 	return nil
 }
 
-func (r *platformRunner) ensureSandboxRunnerRepository(forgejoRepoID int64) error {
-	if forgejoRepoID <= 0 {
-		return fmt.Errorf("sandbox runner repository: forgejo repo id is required")
-	}
-	return r.withSpan("platform.sandbox_runner.ensure", []attribute.KeyValue{
-		attribute.String("db.system", "postgresql"),
-		attribute.String("db.name", "sandbox_rental"),
-		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
-		attribute.Int64("forgejo.repository_id", forgejoRepoID),
-	}, func(ctx context.Context) error {
-		conn, err := r.openPG(ctx, "sandbox_rental")
-		if err != nil {
-			return err
-		}
-		defer func() { _ = conn.Close(context.Background()) }()
-		ids := r.ids()
-		now := time.Now().UTC()
-		tag, err := conn.Exec(ctx, `
-INSERT INTO runner_provider_repositories (
-    provider, provider_repository_id, org_id, project_id, source_repository_id,
-    provider_owner, provider_repo, repository_full_name, active, created_at, updated_at
-)
-VALUES ('forgejo', $1, $2, $3, $4, $5, $6, $7, true, $8, $8)
-ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
-    org_id = EXCLUDED.org_id,
-    project_id = EXCLUDED.project_id,
-    source_repository_id = EXCLUDED.source_repository_id,
-    provider_owner = EXCLUDED.provider_owner,
-    provider_repo = EXCLUDED.provider_repo,
-    repository_full_name = EXCLUDED.repository_full_name,
-    active = true,
-    updated_at = EXCLUDED.updated_at`,
-			forgejoRepoID,
-			r.cfg.PublicOrgIDText,
-			ids.ProjectID,
-			ids.RepoID,
-			r.cfg.CompanySlug,
-			r.cfg.RepoSlug,
-			r.cfg.CompanySlug+"/"+r.cfg.RepoSlug,
-			now,
-		)
-		if err != nil {
-			return fmt.Errorf("sandbox runner repository: upsert: %w", err)
-		}
-		if tag.RowsAffected() > 0 {
-			r.markChanged("sandbox.runner_repository.upserted")
-		}
-		return nil
-	})
-}
-
 func (r *platformRunner) ensureGitHubDogfoodRunnerRepository() error {
 	if !r.cfg.githubDogfoodConfigured() {
 		return nil
@@ -1214,46 +1136,6 @@ ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
 			return fmt.Errorf("github dogfood: commit: %w", err)
 		}
 		r.markChanged("sandbox.runner_provider_repository.upserted")
-		return nil
-	})
-}
-
-func (r *platformRunner) ensureForgejoActionsWebhook() error {
-	return r.withSpan("platform.forgejo.actions_webhook.ensure", []attribute.KeyValue{
-		attribute.String("forgejo.org", r.cfg.CompanySlug),
-		attribute.String("forgejo.repo", r.cfg.RepoSlug),
-		attribute.String("forgejo.webhook_url", r.cfg.ForgejoWebhookURL),
-	}, func(ctx context.Context) error {
-		rawSecret, err := opruntime.ReadRemoteFile(ctx, r.rt.SSH, r.opts.forgejoWebhookPath)
-		if err != nil {
-			return fmt.Errorf("forgejo webhook: read secret: %w", err)
-		}
-		secret := strings.TrimSpace(string(rawSecret))
-		if secret == "" {
-			return fmt.Errorf("forgejo webhook: secret is empty")
-		}
-		client, closeFn, err := r.forgejoClient(ctx)
-		if err != nil {
-			return err
-		}
-		defer closeFn()
-		hooks, err := client.ListRepoHooks(ctx, r.cfg.CompanySlug, r.cfg.RepoSlug)
-		if err != nil {
-			return err
-		}
-		for _, hook := range hooks {
-			if hook.Config != nil && strings.TrimSpace(hook.Config["url"]) == r.cfg.ForgejoWebhookURL {
-				if err := client.PatchRepoHook(ctx, r.cfg.CompanySlug, r.cfg.RepoSlug, hook.ID, platformForgejoHookBody(r.cfg.ForgejoWebhookURL, secret, false)); err != nil {
-					return err
-				}
-				r.markChanged("forgejo.actions_webhook.updated")
-				return nil
-			}
-		}
-		if err := client.CreateRepoHook(ctx, r.cfg.CompanySlug, r.cfg.RepoSlug, platformForgejoHookBody(r.cfg.ForgejoWebhookURL, secret, true)); err != nil {
-			return err
-		}
-		r.markChanged("forgejo.actions_webhook.created")
 		return nil
 	})
 }
@@ -1648,83 +1530,6 @@ WHERE r.org_id = $1 AND r.repo_id = $2`,
 		}
 		if len(mismatches) > 0 {
 			*issues = append(*issues, "source repository mismatch: "+strings.Join(mismatches, ", "))
-			row.Status = "mismatch"
-			row.Detail = strings.Join(mismatches, ", ")
-		}
-		return nil
-	})
-	if err != nil {
-		row.Status = "error"
-		row.Detail = err.Error()
-		*issues = append(*issues, err.Error())
-	}
-	return row
-}
-
-func (r *platformRunner) checkSandboxRunnerRepository(forgejoRepoID string, issues *[]string) platformBoundaryRow {
-	row := platformBoundaryRow{Boundary: "sandbox_rental.runner_provider_repositories", Status: "ok"}
-	if strings.TrimSpace(forgejoRepoID) == "" {
-		*issues = append(*issues, "sandbox runner repository cannot be checked without forgejo repo id")
-		row.Status = "missing"
-		return row
-	}
-	err := r.withSpan("platform.sandbox_runner.check", []attribute.KeyValue{
-		attribute.String("db.system", "postgresql"),
-		attribute.String("db.name", "sandbox_rental"),
-		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
-	}, func(ctx context.Context) error {
-		conn, err := r.openPG(ctx, "sandbox_rental")
-		if err != nil {
-			return err
-		}
-		defer func() { _ = conn.Close(context.Background()) }()
-		ids := r.ids()
-		providerRepoID, err := strconv.ParseInt(forgejoRepoID, 10, 64)
-		if err != nil || providerRepoID <= 0 {
-			return fmt.Errorf("sandbox runner repository: invalid forgejo repo id %q", forgejoRepoID)
-		}
-		var orgID string
-		var projectID, sourceRepositoryID uuid.UUID
-		var providerOwner, providerRepo, repositoryFullName string
-		var active bool
-		err = conn.QueryRow(ctx, `
-SELECT org_id, project_id, source_repository_id, provider_owner, provider_repo, repository_full_name, active
-FROM runner_provider_repositories
-WHERE provider = 'forgejo' AND provider_repository_id = $1`, providerRepoID).Scan(
-			&orgID,
-			&projectID,
-			&sourceRepositoryID,
-			&providerOwner,
-			&providerRepo,
-			&repositoryFullName,
-			&active,
-		)
-		if errors.Is(err, pgx.ErrNoRows) {
-			*issues = append(*issues, "sandbox runner repository mapping is missing")
-			row.Status = "missing"
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("sandbox runner repository: query: %w", err)
-		}
-		var mismatches []string
-		if orgID != r.cfg.PublicOrgIDText {
-			mismatches = append(mismatches, fmt.Sprintf("org_id=%q", orgID))
-		}
-		if projectID != ids.ProjectID {
-			mismatches = append(mismatches, fmt.Sprintf("project_id=%s", projectID))
-		}
-		if sourceRepositoryID != ids.RepoID {
-			mismatches = append(mismatches, fmt.Sprintf("source_repository_id=%s", sourceRepositoryID))
-		}
-		if providerOwner != r.cfg.CompanySlug || providerRepo != r.cfg.RepoSlug || repositoryFullName != r.cfg.CompanySlug+"/"+r.cfg.RepoSlug {
-			mismatches = append(mismatches, "forgejo repository identity mismatch")
-		}
-		if !active {
-			mismatches = append(mismatches, "active=false")
-		}
-		if len(mismatches) > 0 {
-			*issues = append(*issues, "sandbox runner repository mismatch: "+strings.Join(mismatches, ", "))
 			row.Status = "mismatch"
 			row.Detail = strings.Join(mismatches, ", ")
 		}

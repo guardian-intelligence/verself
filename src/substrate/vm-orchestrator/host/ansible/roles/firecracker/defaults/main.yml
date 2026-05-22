@@ -16,7 +16,6 @@ firecracker_substrate_path: "{{ firecracker_guest_images_dir }}/substrate.ext4"
 firecracker_substrate_manifest_path: "{{ firecracker_guest_images_dir }}/manifest.json"
 firecracker_toolchain_image_paths:
   - "{{ firecracker_guest_images_dir }}/toolchains/gh-actions-runner.ext4"
-  - "{{ firecracker_guest_images_dir }}/toolchains/forgejo-runner.ext4"
 firecracker_zfs_arc_max_bytes: 8589934592  # 8 GiB
 firecracker_state_db_path: /var/lib/verself/vm-orchestrator/state.db
 firecracker_host_uplink_interface: ""

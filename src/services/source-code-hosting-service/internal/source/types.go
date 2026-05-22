@@ -19,7 +19,6 @@ var (
 	ErrUnauthorized     = errors.New("source: unauthorized")
 	ErrStoreUnavailable = errors.New("source: store unavailable")
 	ErrForgejo          = errors.New("source: forgejo unavailable")
-	ErrRunner           = errors.New("source: runner registration unavailable")
 )
 
 var slugPattern = regexp.MustCompile(`[^a-z0-9-]+`)
@@ -117,10 +116,6 @@ type GitPrincipal struct {
 type GitCredentialIssuer interface {
 	CreateSourceGitCredential(ctx context.Context, principal Principal, input CreateGitCredentialRequest) (GitCredential, error)
 	VerifySourceGitCredential(ctx context.Context, orgID string, actorID string, token string, requiredScopes []string) (GitCredential, bool, error)
-}
-
-type RunnerRepositoryRegistrar interface {
-	RegisterRunnerRepository(ctx context.Context, repo Repository) error
 }
 
 type OrganizationReference struct {

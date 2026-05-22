@@ -96,12 +96,7 @@ func run() error {
 	vmOrchestratorSocket := cfg.String("SANDBOX_VM_ORCHESTRATOR_SOCKET", vmorchestrator.DefaultSocketPath)
 	githubWebBaseURL := cfg.URL("SANDBOX_GITHUB_WEB_BASE_URL", "https://github.com")
 	checkoutBundleStoreDir := cfg.String("SANDBOX_GITHUB_CHECKOUT_BUNDLE_STORE_DIR", "/var/lib/verself/sandbox-rental/github-checkout-bundles")
-	forgejoAPIBaseURL := cfg.URL("SANDBOX_FORGEJO_API_BASE_URL", "")
-	forgejoRunnerBaseURL := cfg.String("SANDBOX_FORGEJO_RUNNER_BASE_URL", "")
-	forgejoWebhookBaseURL := cfg.String("SANDBOX_FORGEJO_WEBHOOK_BASE_URL", publicBaseURL)
-	forgejoWebhookSecret := cfg.CredentialOr("forgejo-webhook-secret", "")
-	forgejoBootstrapSecret := cfg.CredentialOr("forgejo-bootstrap-secret", "")
-	runnerBootstrapSecret := cfg.CredentialOr("runner-bootstrap-secret", forgejoBootstrapSecret)
+	runnerBootstrapSecret := cfg.RequireCredential("runner-bootstrap-secret")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 16)
 	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
 	pgConnMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -228,10 +223,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create secrets client: %w", err)
 	}
-	forgejoToken, err := readRuntimeSecret(ctx, secretsClient, secretsclient.SandboxForgejoAutomationTokenName)
-	if err != nil {
-		return fmt.Errorf("sandbox forgejo provider secret: %w", err)
-	}
 	sourceHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSourceCodeHosting, nil)
 	if err != nil {
 		return fmt.Errorf("sandbox source-code-hosting mtls: %w", err)
@@ -260,21 +251,6 @@ func run() error {
 		RunnerBootstrapSecret:  runnerBootstrapSecret,
 		GitHubWebBaseURL:       githubWebBaseURL,
 	}
-	forgejoRunner, err := jobs.NewForgejoRunner(jobService, jobs.ForgejoRunnerConfig{
-		APIBaseURL:      forgejoAPIBaseURL,
-		RunnerBaseURL:   forgejoRunnerBaseURL,
-		WebhookBaseURL:  forgejoWebhookBaseURL,
-		Token:           forgejoToken,
-		WebhookSecret:   forgejoWebhookSecret,
-		BootstrapSecret: forgejoBootstrapSecret,
-	}, &http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
-		Timeout:   10 * time.Second,
-	})
-	if err != nil {
-		return fmt.Errorf("create forgejo runner adapter: %w", err)
-	}
-	jobService.ForgejoRunner = forgejoRunner
 	sourceDispatcher, err := sourceworkflow.NewDispatcher(workloadauth.InternalURL(workloadauth.ServiceSourceCodeHosting), sourceHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create source workflow dispatcher: %w", err)
@@ -404,26 +380,6 @@ func int32FromInt(value int, field string) int32 {
 		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
 	}
 	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
-}
-
-func readRuntimeSecret(ctx context.Context, client *secretsclient.Client, name secretsclient.SecretName) (string, error) {
-	if client == nil {
-		return "", fmt.Errorf("runtime secrets client is required")
-	}
-	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: name})
-	if err != nil {
-		return "", fmt.Errorf("read runtime secret %s: %w", name, err)
-	}
-	if resp.Result == nil {
-		return "", fmt.Errorf("read runtime secret %s: unexpected status %d: %s", name, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
-	}
-	value := strings.TrimSpace(string(resp.Result.Value))
-	if value == "" {
-		return "", fmt.Errorf("read runtime secret %s: empty value", name)
-	}
-	return value, nil
 }
 
 func validatePublicBaseURL(raw string) error {

@@ -40,48 +40,11 @@ const (
 	githubBazelTelemetryPath  = "/internal/sandbox/v1/bazel-telemetry/invocations"
 )
 
-func (s *Service) ReconcileRunnerCapacity(ctx context.Context, provider string, providerJobID int64) error {
-	switch strings.TrimSpace(provider) {
-	case RunnerProviderGitHub:
-		return nil
-	case RunnerProviderForgejo:
-		if s.ForgejoRunner == nil {
-			return ErrForgejoRunnerNotConfigured
-		}
-		return s.ForgejoRunner.ReconcileCapacity(ctx, providerJobID)
-	default:
-		return fmt.Errorf("%w: unsupported runner provider %q", ErrRunnerUnavailable, provider)
-	}
-}
-
-func (s *Service) AllocateRunner(ctx context.Context, allocationID uuid.UUID) error {
-	provider, err := s.runnerAllocationProvider(ctx, allocationID)
-	if err != nil {
-		return err
-	}
-	switch provider {
-	case RunnerProviderGitHub:
-		return nil
-	case RunnerProviderForgejo:
-		if s.ForgejoRunner == nil {
-			return ErrForgejoRunnerNotConfigured
-		}
-		return s.ForgejoRunner.AllocateRunner(ctx, allocationID)
-	default:
-		return fmt.Errorf("%w: unsupported runner provider %q", ErrRunnerUnavailable, provider)
-	}
-}
-
 func (s *Service) BindRunnerJob(ctx context.Context, provider string, providerJobID int64) error {
 	switch strings.TrimSpace(provider) {
 	case RunnerProviderGitHub:
 		_, err := s.bindProviderRunnerJob(ctx, RunnerProviderGitHub, providerJobID)
 		return err
-	case RunnerProviderForgejo:
-		if s.ForgejoRunner == nil {
-			return ErrForgejoRunnerNotConfigured
-		}
-		return s.ForgejoRunner.BindJob(ctx, providerJobID)
 	default:
 		return fmt.Errorf("%w: unsupported runner provider %q", ErrRunnerUnavailable, provider)
 	}
@@ -102,25 +65,8 @@ func (s *Service) CleanupRunner(ctx context.Context, allocationID uuid.UUID) err
 			return err
 		}
 		return s.deleteRunnerBootstrapConfig(ctx, allocationID)
-	case RunnerProviderForgejo:
-		if s.ForgejoRunner == nil {
-			return ErrForgejoRunnerNotConfigured
-		}
-		return s.ForgejoRunner.CleanupRunner(ctx, allocationID)
 	default:
 		return fmt.Errorf("%w: unsupported runner provider %q", ErrRunnerUnavailable, provider)
-	}
-}
-
-func (s *Service) SyncRunnerRepository(ctx context.Context, provider string, providerRepositoryID int64) error {
-	switch strings.TrimSpace(provider) {
-	case RunnerProviderForgejo:
-		if s.ForgejoRunner == nil {
-			return ErrForgejoRunnerNotConfigured
-		}
-		return s.ForgejoRunner.SyncRepositoryJobs(ctx, providerRepositoryID)
-	default:
-		return nil
 	}
 }
 
@@ -160,11 +106,6 @@ func (s *Service) RegisterRunnerRepository(ctx context.Context, req RunnerReposi
 			return fmt.Errorf("%w: github repository %s is already registered to another org", ErrRunnerUnavailable, fullName)
 		}
 		return nil
-	case RunnerProviderForgejo:
-		if s.ForgejoRunner == nil {
-			return ErrForgejoRunnerNotConfigured
-		}
-		return s.ForgejoRunner.RegisterRepository(ctx, req)
 	default:
 		return fmt.Errorf("%w: unsupported runner provider %q", ErrRunnerUnavailable, req.Provider)
 	}
@@ -456,11 +397,6 @@ func (s *Service) deriveRunnerBootstrapToken(provider string, allocationID, atte
 	switch strings.TrimSpace(provider) {
 	case RunnerProviderGitHub:
 		return s.deriveScopedAllocationToken("verself-runner-bootstrap:"+provider, allocationID, attemptID)
-	case RunnerProviderForgejo:
-		if s.ForgejoRunner == nil {
-			return "", ErrForgejoRunnerNotConfigured
-		}
-		return s.ForgejoRunner.deriveBootstrapFetchToken(allocationID, attemptID), nil
 	default:
 		return "", fmt.Errorf("%w: unsupported runner provider %q", ErrRunnerUnavailable, provider)
 	}

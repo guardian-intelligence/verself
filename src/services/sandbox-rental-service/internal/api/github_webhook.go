@@ -15,20 +15,12 @@ import (
 )
 
 const (
-	forgejoActionsWebhookPath  = "/webhooks/forgejo/actions"
 	runnerBootstrapConfigPath  = "/internal/sandbox/v1/runner-bootstrap"
 	runnerBootstrapTokenHeader = "X-Verself-Runner-Bootstrap"
 	githubCheckoutBundlePath   = "/internal/sandbox/v1/github-checkout/bundle"
 	githubBazelTelemetryPath   = "/internal/sandbox/v1/bazel-telemetry/invocations"
-	publicWebhookBodyLimit     = 1 << 20
 	bazelTelemetryBodyLimit    = 64 << 20
 )
-
-type actionsWebhookResponse struct {
-	Status     string `json:"status"`
-	DeliveryID string `json:"delivery_id,omitempty"`
-	Reason     string `json:"reason,omitempty"`
-}
 
 type githubCheckoutBundleRequest struct {
 	Repository  string `json:"repository"`
@@ -41,65 +33,9 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *jobs.Service, installationID 
 	if mux == nil || svc == nil {
 		return
 	}
-	mux.HandleFunc(forgejoActionsWebhookPath, forgejoActionsWebhookHandler(svc))
 	mux.HandleFunc(runnerBootstrapConfigPath, runnerBootstrapConfigHandler(svc))
 	mux.HandleFunc(githubCheckoutBundlePath, githubCheckoutBundleHandler(svc))
 	mux.HandleFunc(githubBazelTelemetryPath, githubBazelTelemetryHandler(svc))
-}
-
-func forgejoActionsWebhookHandler(svc *jobs.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if svc.ForgejoRunner == nil || !svc.ForgejoRunner.Configured() {
-			http.Error(w, "forgejo runner is not configured", http.StatusServiceUnavailable)
-			return
-		}
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, publicWebhookBodyLimit))
-		if err != nil {
-			var maxBytesErr *http.MaxBytesError
-			if errors.As(err, &maxBytesErr) {
-				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-				return
-			}
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-		eventName := strings.TrimSpace(firstNonEmpty(r.Header.Get("X-Forgejo-Event"), r.Header.Get("X-Gitea-Event")))
-		deliveryID := strings.TrimSpace(firstNonEmpty(r.Header.Get("X-Forgejo-Delivery"), r.Header.Get("X-Gitea-Delivery")))
-		signature := strings.TrimSpace(r.Header.Get("X-Forgejo-Signature"))
-		if signature == "" {
-			signature = strings.TrimSpace(r.Header.Get("X-Gitea-Signature"))
-		}
-		if eventName == "" || deliveryID == "" {
-			http.Error(w, "missing forgejo event headers", http.StatusBadRequest)
-			return
-		}
-		ctx := jobs.WithCorrelationID(r.Context(), deliveryID)
-		if err := svc.ForgejoRunner.HandleWebhook(ctx, eventName, deliveryID, body, signature); err != nil {
-			status := http.StatusInternalServerError
-			switch {
-			case errors.Is(err, jobs.ErrForgejoRunnerNotConfigured):
-				status = http.StatusServiceUnavailable
-			case errors.Is(err, jobs.ErrForgejoWebhookSignatureInvalid):
-				status = http.StatusUnauthorized
-			}
-			writePublicWebhookError(w, status, err)
-			return
-		}
-		writeActionsWebhookResponse(w, http.StatusAccepted, actionsWebhookResponse{
-			Status:     "recorded",
-			DeliveryID: deliveryID,
-		})
-	}
-}
-
-func writeActionsWebhookResponse(w http.ResponseWriter, status int, response actionsWebhookResponse) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(response)
 }
 
 func runnerBootstrapConfigHandler(svc *jobs.Service) http.HandlerFunc {

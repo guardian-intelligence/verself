@@ -12,7 +12,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 )
 
 var tracer = otel.Tracer("source-code-hosting-service/source")
@@ -21,7 +20,6 @@ type Service struct {
 	Store         Store
 	Forgejo       ForgejoClient
 	Credentials   GitCredentialIssuer
-	Runner        RunnerRepositoryRegistrar
 	Organizations OrganizationResolver
 	Projects      ProjectResolver
 	CheckoutTTL   time.Duration
@@ -72,18 +70,12 @@ func (s *Service) CreateRepository(ctx context.Context, principal Principal, inp
 				if existing.ProjectID != input.ProjectID {
 					return Repository{}, err
 				}
-				if registerErr := s.registerRunnerRepository(ctx, span, existing); registerErr != nil {
-					return Repository{}, registerErr
-				}
 				span.SetAttributes(attribute.String("source.repo_id", existing.RepoID.String()))
 				return existing, nil
 			}
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return Repository{}, err
-	}
-	if err := s.registerRunnerRepository(ctx, span, repo); err != nil {
 		return Repository{}, err
 	}
 	span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()))
@@ -163,9 +155,6 @@ func (s *Service) EnsureGitRepository(ctx context.Context, principal GitPrincipa
 	}
 	repo, err := s.Store.GetRepositoryByProject(ctx, principal.OrgID, projectID)
 	if err == nil {
-		if err := s.registerRunnerRepository(ctx, span, repo); err != nil {
-			return Repository{}, false, err
-		}
 		span.SetAttributes(attribute.String("source.repo_id", repo.RepoID.String()), attribute.Bool("source.repo_created", false))
 		return repo, false, nil
 	}
@@ -198,9 +187,6 @@ func (s *Service) GetGitRepository(ctx context.Context, principal GitPrincipal, 
 func (s *Service) AfterGitReceive(ctx context.Context, principal GitPrincipal, repo Repository) error {
 	ctx, span := tracer.Start(ctx, "source.git.receive.apply")
 	defer span.End()
-	if err := s.registerRunnerRepository(ctx, span, repo); err != nil {
-		return err
-	}
 	refs, err := s.listRefsAfterReceive(ctx, repo)
 	if err != nil {
 		span.RecordError(err)
@@ -216,18 +202,6 @@ func (s *Service) AfterGitReceive(ctx context.Context, principal GitPrincipal, r
 		attribute.String("source.repo_id", repo.RepoID.String()),
 		attribute.Int("source.ref_count", len(refs)),
 	)
-	return nil
-}
-
-func (s *Service) registerRunnerRepository(ctx context.Context, span trace.Span, repo Repository) error {
-	if s.Runner == nil {
-		return nil
-	}
-	if err := s.Runner.RegisterRunnerRepository(ctx, repo); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
 	return nil
 }
 

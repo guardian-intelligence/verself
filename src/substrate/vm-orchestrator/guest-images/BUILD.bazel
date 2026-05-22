@@ -12,7 +12,6 @@ package(default_visibility = ["//visibility:public"])
 #   substrate/         — slim Ubuntu rootfs builder (chroot+apt; runs
 #                        on the deploy host, not in the Bazel sandbox).
 #   gh-actions-runner/ — GitHub Actions runner toolchain image.
-#   forgejo-runner/    — Forgejo runner toolchain image.
 #
 # guest_images.MODULE.bazel is authored here and included from the root
 # MODULE.bazel. It declares one http_file rule per upstream tarball consumed
@@ -33,13 +32,9 @@ pkg_tar(
     files = {
         "//src/substrate/vm-orchestrator/guest-images/gh-actions-runner:gh-actions-runner.ext4": "toolchains/gh-actions-runner.ext4",
         "//src/substrate/vm-orchestrator/guest-images/gh-actions-runner:gh-actions-runner.manifest.json": "toolchains/gh-actions-runner.manifest.json",
-        "//src/substrate/vm-orchestrator/guest-images/forgejo-runner:forgejo-runner.ext4": "toolchains/forgejo-runner.ext4",
-        "//src/substrate/vm-orchestrator/guest-images/forgejo-runner:forgejo-runner.manifest.json": "toolchains/forgejo-runner.manifest.json",
     },
     modes = {
         "toolchains/gh-actions-runner.ext4": "0644",
         "toolchains/gh-actions-runner.manifest.json": "0644",
-        "toolchains/forgejo-runner.ext4": "0644",
-        "toolchains/forgejo-runner.manifest.json": "0644",
     },
 )

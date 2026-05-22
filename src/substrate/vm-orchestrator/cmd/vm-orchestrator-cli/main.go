@@ -116,8 +116,6 @@ var (
 	toolchainOutputFiles = []string{
 		"toolchains/gh-actions-runner.ext4",
 		"toolchains/gh-actions-runner.manifest.json",
-		"toolchains/forgejo-runner.ext4",
-		"toolchains/forgejo-runner.manifest.json",
 	}
 )
 

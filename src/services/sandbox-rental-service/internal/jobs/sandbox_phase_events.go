@@ -229,8 +229,6 @@ func sandboxPhaseGroup(phaseName string) string {
 	switch {
 	case strings.HasPrefix(phaseName, "github.webhook."):
 		return "github.webhook"
-	case strings.HasPrefix(phaseName, "github.capacity."):
-		return "github.capacity"
 	case strings.HasPrefix(phaseName, "github.runner."):
 		return "github.runner"
 	case strings.HasPrefix(phaseName, "runner.bootstrap."):
@@ -255,10 +253,8 @@ func sandboxPhaseOrder(phaseName string) uint16 {
 	switch phaseName {
 	case "github.webhook.workflow_job":
 		return 10
-	case "github.capacity.reconcile":
-		return 20
 	case "github.runner.allocate":
-		return 30
+		return 20
 	case "sandbox.execution.submit":
 		return 40
 	case "sandbox.execution.load_work":

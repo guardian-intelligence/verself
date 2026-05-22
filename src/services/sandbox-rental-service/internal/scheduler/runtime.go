@@ -24,17 +24,12 @@ const (
 	QueueExecution    = "execution"
 	QueueOrchestrator = "orchestrator"
 	QueueRunner       = "runner"
-	QueueReconcile    = "reconcile"
-	QueueWebhook      = "webhook"
 
-	ExecutionAdvanceKind        = "execution.advance"
-	RunnerCapacityReconcileKind = "runner.capacity.reconcile"
-	RunnerAllocateKind          = "runner.allocate"
-	RunnerJobBindKind           = "runner.job.bind"
-	RunnerCleanupKind           = "runner.cleanup"
-	RunnerRepositorySyncKind    = "runner.repository.sync"
-	GoldenVMCreateKind          = "golden.vm.create"
-	GoldenRunPromoteKind        = "golden.run.promote"
+	ExecutionAdvanceKind = "execution.advance"
+	RunnerJobBindKind    = "runner.job.bind"
+	RunnerCleanupKind    = "runner.cleanup"
+	GoldenVMCreateKind   = "golden.vm.create"
+	GoldenRunPromoteKind = "golden.run.promote"
 
 	DefaultExecutionMaxWorkers = 4
 )
@@ -73,21 +68,6 @@ type ExecutionAdvanceResult struct {
 	Status string
 }
 
-type RunnerCapacityReconcileRequest struct {
-	Provider               string
-	ProviderInstallationID int64
-	ProviderRepositoryID   int64
-	ProviderJobID          int64
-	CorrelationID          string
-	TraceParent            string
-}
-
-type RunnerAllocateRequest struct {
-	AllocationID  string
-	CorrelationID string
-	TraceParent   string
-}
-
 type RunnerJobBindRequest struct {
 	Provider      string
 	ProviderJobID int64
@@ -99,13 +79,6 @@ type RunnerCleanupRequest struct {
 	AllocationID  string
 	CorrelationID string
 	TraceParent   string
-}
-
-type RunnerRepositorySyncRequest struct {
-	Provider             string
-	ProviderRepositoryID int64
-	CorrelationID        string
-	TraceParent          string
 }
 
 type GoldenRunPromoteRequest struct {
@@ -151,43 +124,6 @@ func (ExecutionAdvanceArgs) InsertOpts() river.InsertOpts {
 	}
 }
 
-type RunnerCapacityReconcileArgs struct {
-	Provider               string `json:"provider"`
-	ProviderInstallationID int64  `json:"provider_installation_id,omitempty"`
-	ProviderRepositoryID   int64  `json:"provider_repository_id,omitempty"`
-	ProviderJobID          int64  `json:"provider_job_id,omitempty"`
-	CorrelationID          string `json:"correlation_id,omitempty"`
-	TraceParent            string `json:"trace_parent,omitempty"`
-	SubmittedAt            string `json:"submitted_at"`
-}
-
-func (RunnerCapacityReconcileArgs) Kind() string { return RunnerCapacityReconcileKind }
-
-func (RunnerCapacityReconcileArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{
-		MaxAttempts: 5,
-		Queue:       QueueRunner,
-		Tags:        []string{"runner", "capacity"},
-	}
-}
-
-type RunnerAllocateArgs struct {
-	AllocationID  string `json:"allocation_id"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-	TraceParent   string `json:"trace_parent,omitempty"`
-	SubmittedAt   string `json:"submitted_at"`
-}
-
-func (RunnerAllocateArgs) Kind() string { return RunnerAllocateKind }
-
-func (RunnerAllocateArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{
-		MaxAttempts: 3,
-		Queue:       QueueRunner,
-		Tags:        []string{"runner", "allocate"},
-	}
-}
-
 type RunnerJobBindArgs struct {
 	Provider      string `json:"provider"`
 	ProviderJobID int64  `json:"provider_job_id"`
@@ -220,24 +156,6 @@ func (RunnerCleanupArgs) InsertOpts() river.InsertOpts {
 		MaxAttempts: 5,
 		Queue:       QueueRunner,
 		Tags:        []string{"runner", "cleanup"},
-	}
-}
-
-type RunnerRepositorySyncArgs struct {
-	Provider             string `json:"provider"`
-	ProviderRepositoryID int64  `json:"provider_repository_id"`
-	CorrelationID        string `json:"correlation_id,omitempty"`
-	TraceParent          string `json:"trace_parent,omitempty"`
-	SubmittedAt          string `json:"submitted_at"`
-}
-
-func (RunnerRepositorySyncArgs) Kind() string { return RunnerRepositorySyncKind }
-
-func (RunnerRepositorySyncArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{
-		MaxAttempts: 5,
-		Queue:       QueueRunner,
-		Tags:        []string{"runner", "repository", "sync"},
 	}
 }
 
@@ -366,39 +284,6 @@ func (r *Runtime) EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req 
 	}, nil
 }
 
-func (r *Runtime) EnqueueRunnerCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req RunnerCapacityReconcileRequest) (ProbeResult, error) {
-	args := RunnerCapacityReconcileArgs{
-		Provider:               strings.TrimSpace(req.Provider),
-		ProviderInstallationID: req.ProviderInstallationID,
-		ProviderRepositoryID:   req.ProviderRepositoryID,
-		ProviderJobID:          req.ProviderJobID,
-		CorrelationID:          strings.TrimSpace(req.CorrelationID),
-		TraceParent:            strings.TrimSpace(req.TraceParent),
-		SubmittedAt:            time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	result, err := r.client.InsertTx(ctx, tx, args, nil)
-	if err != nil {
-		return ProbeResult{}, fmt.Errorf("enqueue runner capacity reconcile: %w", err)
-	}
-	job := result.Job
-	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
-}
-
-func (r *Runtime) EnqueueRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req RunnerAllocateRequest) (ProbeResult, error) {
-	args := RunnerAllocateArgs{
-		AllocationID:  strings.TrimSpace(req.AllocationID),
-		CorrelationID: strings.TrimSpace(req.CorrelationID),
-		TraceParent:   strings.TrimSpace(req.TraceParent),
-		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	result, err := r.client.InsertTx(ctx, tx, args, nil)
-	if err != nil {
-		return ProbeResult{}, fmt.Errorf("enqueue runner allocate: %w", err)
-	}
-	job := result.Job
-	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
-}
-
 func (r *Runtime) EnqueueRunnerJobBindTx(ctx context.Context, tx pgx.Tx, req RunnerJobBindRequest) (ProbeResult, error) {
 	args := RunnerJobBindArgs{
 		Provider:      strings.TrimSpace(req.Provider),
@@ -425,22 +310,6 @@ func (r *Runtime) EnqueueRunnerCleanup(ctx context.Context, req RunnerCleanupReq
 	result, err := r.client.Insert(ctx, args, nil)
 	if err != nil {
 		return ProbeResult{}, fmt.Errorf("enqueue runner cleanup: %w", err)
-	}
-	job := result.Job
-	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
-}
-
-func (r *Runtime) EnqueueRunnerRepositorySyncTx(ctx context.Context, tx pgx.Tx, req RunnerRepositorySyncRequest) (ProbeResult, error) {
-	args := RunnerRepositorySyncArgs{
-		Provider:             strings.TrimSpace(req.Provider),
-		ProviderRepositoryID: req.ProviderRepositoryID,
-		CorrelationID:        strings.TrimSpace(req.CorrelationID),
-		TraceParent:          strings.TrimSpace(req.TraceParent),
-		SubmittedAt:          time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	result, err := r.client.InsertTx(ctx, tx, args, nil)
-	if err != nil {
-		return ProbeResult{}, fmt.Errorf("enqueue runner repository sync: %w", err)
 	}
 	job := result.Job
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
@@ -528,22 +397,6 @@ func (r *Runtime) EnqueueGoldenVMCreate(ctx context.Context, req GoldenVMCreateR
 	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
 }
 
-func (r *Runtime) EnqueueRunnerRepositorySync(ctx context.Context, req RunnerRepositorySyncRequest) (ProbeResult, error) {
-	args := RunnerRepositorySyncArgs{
-		Provider:             strings.TrimSpace(req.Provider),
-		ProviderRepositoryID: req.ProviderRepositoryID,
-		CorrelationID:        strings.TrimSpace(req.CorrelationID),
-		TraceParent:          strings.TrimSpace(req.TraceParent),
-		SubmittedAt:          time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	result, err := r.client.Insert(ctx, args, nil)
-	if err != nil {
-		return ProbeResult{}, fmt.Errorf("enqueue runner repository sync: %w", err)
-	}
-	job := result.Job
-	return ProbeResult{JobID: job.ID, Kind: job.Kind, Queue: job.Queue, Status: string(job.State)}, nil
-}
-
 func (r *Runtime) Start(ctx context.Context) error {
 	if err := r.client.Start(ctx); err != nil {
 		return fmt.Errorf("start river client: %w", err)
@@ -565,8 +418,6 @@ func queueConfig(cfg Config) map[string]river.QueueConfig {
 		QueueExecution:    {MaxWorkers: normalizeMaxWorkers(cfg.ExecutionMaxWorkers, DefaultExecutionMaxWorkers)},
 		QueueOrchestrator: {MaxWorkers: 2},
 		QueueRunner:       {MaxWorkers: 4},
-		QueueReconcile:    {MaxWorkers: 1},
-		QueueWebhook:      {MaxWorkers: 2},
 	}
 }
 
@@ -582,7 +433,5 @@ func queueNames() []string {
 		QueueExecution,
 		QueueOrchestrator,
 		QueueRunner,
-		QueueReconcile,
-		QueueWebhook,
 	}
 }

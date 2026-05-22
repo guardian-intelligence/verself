@@ -31,7 +31,6 @@ nomad_component(
     job_spec = "nomad.hcl",
     requires = [
         "clickhouse:migrations",
-        "forgejo:http",
         "nomad:job:secrets-service",
         "nomad:job:temporal",
         "postgres:server",

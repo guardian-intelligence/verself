@@ -34,8 +34,6 @@ job "sandbox-rental" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-service-migration"
         SANDBOX_EXECUTION_MAX_WORKERS = "4"
-        SANDBOX_FORGEJO_RUNNER_BASE_URL = "http://10.255.0.1:18080"
-        SANDBOX_FORGEJO_WEBHOOK_BASE_URL = "https://sandbox.api.verself.sh"
         SANDBOX_GITHUB_CHECKOUT_BUNDLE_STORE_DIR = "/var/lib/verself/sandbox-rental/github-checkout-bundles"
         SANDBOX_GITHUB_WEB_BASE_URL = "https://github.com"
         SANDBOX_PUBLIC_BASE_URL = "https://sandbox.api.verself.sh"
@@ -48,8 +46,7 @@ job "sandbox-rental" {
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "sandbox_rental"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/sandbox-rental/clickhouse-ca-cert"
-        VERSELF_CRED_FORGEJO_BOOTSTRAP_SECRET = "/etc/credstore/sandbox-rental/forgejo-bootstrap-secret"
-        VERSELF_CRED_FORGEJO_WEBHOOK_SECRET = "/etc/credstore/sandbox-rental/forgejo-webhook-secret"
+        VERSELF_CRED_RUNNER_BOOTSTRAP_SECRET = "/etc/credstore/sandbox-rental/runner-bootstrap-secret"
         VERSELF_INSTALLATION_ID = "inst_5NZSEA08R8P3HN566DNH8D301M"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -63,14 +60,6 @@ job "sandbox-rental" {
       resources {
         cpu = 100
         memory = 128
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/forgejo.env"
-        data = <<-EOT
-SANDBOX_FORGEJO_API_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-EOT
-        env = true
       }
     }
     task "sandbox-rental-service" {
@@ -92,8 +81,6 @@ EOT
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-service"
         SANDBOX_EXECUTION_MAX_WORKERS = "4"
-        SANDBOX_FORGEJO_RUNNER_BASE_URL = "http://10.255.0.1:18080"
-        SANDBOX_FORGEJO_WEBHOOK_BASE_URL = "https://sandbox.api.verself.sh"
         SANDBOX_GITHUB_CHECKOUT_BUNDLE_STORE_DIR = "/var/lib/verself/sandbox-rental/github-checkout-bundles"
         SANDBOX_GITHUB_WEB_BASE_URL = "https://github.com"
         SANDBOX_PUBLIC_BASE_URL = "https://sandbox.api.verself.sh"
@@ -106,8 +93,7 @@ EOT
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "sandbox_rental"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/sandbox-rental/clickhouse-ca-cert"
-        VERSELF_CRED_FORGEJO_BOOTSTRAP_SECRET = "/etc/credstore/sandbox-rental/forgejo-bootstrap-secret"
-        VERSELF_CRED_FORGEJO_WEBHOOK_SECRET = "/etc/credstore/sandbox-rental/forgejo-webhook-secret"
+        VERSELF_CRED_RUNNER_BOOTSTRAP_SECRET = "/etc/credstore/sandbox-rental/runner-bootstrap-secret"
         VERSELF_INSTALLATION_ID = "inst_5NZSEA08R8P3HN566DNH8D301M"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -158,7 +144,6 @@ EOT
         change_mode = "restart"
         destination = "secrets/upstreams.env"
         data = <<-EOT
-SANDBOX_FORGEJO_API_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService "temporal-frontend-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true

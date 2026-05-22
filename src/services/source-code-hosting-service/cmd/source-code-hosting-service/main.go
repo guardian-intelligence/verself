@@ -97,14 +97,6 @@ func run() error {
 	if _, err := workloadauth.CurrentIDForService(spiffeSource, workloadauth.ServiceSourceCodeHosting); err != nil {
 		return err
 	}
-	sandboxHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSandboxRental, nil)
-	if err != nil {
-		return fmt.Errorf("source sandbox-rental mtls: %w", err)
-	}
-	runnerClient, err := source.NewRunnerRepositoryClient(workloadauth.InternalURL(workloadauth.ServiceSandboxRental), sandboxHTTPClient)
-	if err != nil {
-		return fmt.Errorf("create sandbox-rental internal client: %w", err)
-	}
 	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
 	if err != nil {
 		return fmt.Errorf("source secrets mtls: %w", err)
@@ -152,7 +144,6 @@ func run() error {
 			Owner:   forgejoOwner,
 			Client:  &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second},
 		},
-		Runner:        runnerClient,
 		Organizations: iamClient,
 		Projects:      projectsClient,
 		Credentials:   credentialClient,

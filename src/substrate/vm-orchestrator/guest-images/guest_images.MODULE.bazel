@@ -36,13 +36,6 @@ http_file(
 )
 
 http_file(
-    name = "guest_image_forgejo_runner",
-    downloaded_file_path = "forgejo-runner-12.9.0-linux-amd64",
-    sha256 = "41c40d82ab4bde07d80c3e20254e3474b1d6abc3b4b8f57e181a3e66c1006521",
-    url = "https://code.forgejo.org/forgejo/runner/releases/download/v12.9.0/forgejo-runner-12.9.0-linux-amd64",
-)
-
-http_file(
     name = "guest_image_e2fsprogs",
     downloaded_file_path = "e2fsprogs_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
     sha256 = "1d0fb19dcf14316d04602260871dba3c1441c0ecf3c3bde54eacba35dcc5a40b",

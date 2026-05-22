@@ -227,8 +227,8 @@ CREATE INDEX idx_runner_class_filesystem_mounts_active
     ON runner_class_filesystem_mounts (runner_class, active, sort_order);
 
 -- Runner-class baseline mounts: every verself runner class boots from
--- the substrate image and composes the GitHub Actions and Forgejo
--- runner toolchains read-only. source_ref values match the
+-- the substrate image and composes the GitHub Actions runner toolchain
+-- read-only. source_ref values match the
 -- composable image catalog in authored substrate topology:
 -- firecracker.images, which the daemon resolves to ZFS snapshots at
 -- lease boot. Per-execution writable volume mounts arrive via StartExecRequest,
@@ -236,9 +236,7 @@ CREATE INDEX idx_runner_class_filesystem_mounts_active
 INSERT INTO runner_class_filesystem_mounts (runner_class, mount_name, source_ref, mount_path, fs_type, read_only, sort_order)
 VALUES
     ('verself-4vcpu-ubuntu-2404', 'gh-actions-runner', 'gh-actions-runner', '/opt/actions-runner', 'ext4', true, 10),
-    ('verself-4vcpu-ubuntu-2404', 'forgejo-runner', 'forgejo-runner', '/opt/forgejo-runner', 'ext4', true, 20),
-    ('verself-2vcpu-ubuntu-2404', 'gh-actions-runner', 'gh-actions-runner', '/opt/actions-runner', 'ext4', true, 10),
-    ('verself-2vcpu-ubuntu-2404', 'forgejo-runner', 'forgejo-runner', '/opt/forgejo-runner', 'ext4', true, 20);
+    ('verself-2vcpu-ubuntu-2404', 'gh-actions-runner', 'gh-actions-runner', '/opt/actions-runner', 'ext4', true, 10);
 
 CREATE TABLE execution_filesystem_mounts (
     execution_id UUID        NOT NULL REFERENCES executions(execution_id) ON DELETE CASCADE,
@@ -268,8 +266,7 @@ CREATE TABLE runner_provider_repositories (
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (provider, provider_repository_id),
-    UNIQUE (provider, repository_full_name),
-    CHECK (provider <> 'forgejo' OR (project_id IS NOT NULL AND source_repository_id IS NOT NULL))
+    UNIQUE (provider, repository_full_name)
 );
 
 CREATE INDEX idx_runner_provider_repositories_org

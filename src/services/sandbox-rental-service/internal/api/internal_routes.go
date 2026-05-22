@@ -238,8 +238,6 @@ func runnerRepositoryRegistrationError(ctx context.Context, err error) error {
 	switch {
 	case strings.Contains(err.Error(), "unsupported runner provider"):
 		return badRequest(ctx, "unsupported-runner-provider", "runner provider is not supported", err)
-	case errors.Is(err, jobs.ErrForgejoRunnerNotConfigured):
-		return serviceUnavailable(ctx, "forgejo-runner-not-configured", "forgejo runner is not configured", err)
 	default:
 		return internalFailure(ctx, "runner-repository-registration-failed", "register runner repository failed", err)
 	}

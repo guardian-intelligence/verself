@@ -10,7 +10,6 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/verself/iam-service v0.0.0
 	github.com/verself/projects-service v0.0.0
-	github.com/verself/sandbox-rental-service v0.0.0
 	github.com/verself/secrets-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel v1.43.0
@@ -58,7 +57,6 @@ require (
 replace (
 	github.com/verself/iam-service => ../iam-service
 	github.com/verself/projects-service => ../projects-service
-	github.com/verself/sandbox-rental-service => ../sandbox-rental-service
 	github.com/verself/secrets-service => ../secrets-service
 )
 

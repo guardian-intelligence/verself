@@ -786,7 +786,7 @@ func normalizeCreateRequest(req CreateRequest) (CreateRequest, error) {
 		return CreateRequest{}, fmt.Errorf("%w: source_repository_id is required", ErrInvalid)
 	}
 	if req.WorkflowPath == "" {
-		return CreateRequest{}, fmt.Errorf("%w: workflow_path must be a .forgejo/workflows or .github/workflows YAML path", ErrInvalid)
+		return CreateRequest{}, fmt.Errorf("%w: workflow_path must be a .github/workflows YAML path", ErrInvalid)
 	}
 	if req.Ref == "" {
 		return CreateRequest{}, fmt.Errorf("%w: ref is required", ErrInvalid)
@@ -818,7 +818,7 @@ func normalizeWorkflowPath(value string) string {
 	if path == "" || strings.Contains(path, "..") {
 		return ""
 	}
-	if !strings.HasPrefix(path, ".forgejo/workflows/") && !strings.HasPrefix(path, ".github/workflows/") {
+	if !strings.HasPrefix(path, ".github/workflows/") {
 		return ""
 	}
 	if !strings.HasSuffix(path, ".yml") && !strings.HasSuffix(path, ".yaml") {

@@ -20,7 +20,7 @@ clones keep their existing origin.
 - **Substrate** (`/var/lib/verself/guest-images/substrate.ext4`):
   kernel + minimal Ubuntu userland + vm-bridge as `/sbin/init` +
   vm-guest-telemetry + a few apt deps the runners need at runtime.
-  No Go, no Node.js, no GitHub Actions runner, no Forgejo runner, no
+  No Go, no Node.js, no GitHub Actions runner, no
   `runner` user. Refreshes only when the kernel, vm-bridge,
   vm-guest-telemetry, or Ubuntu base move. Built by
   `//src/substrate/vm-orchestrator/guest-images/substrate:build_substrate`,
@@ -28,7 +28,7 @@ clones keep their existing origin.
 - **Toolchain images** (`/var/lib/verself/guest-images/toolchains/<ref>.ext4`):
   Bazel-built ext4 artefacts under
   `//src/substrate/vm-orchestrator/guest-images/<ref>:`. Today: `gh-actions-runner`
-  (mounted at `/opt/actions-runner`) and `forgejo-runner` (`/opt/forgejo-runner`).
+  (mounted at `/opt/actions-runner`).
   Each carries `etc-overlay/` (vm-bridge copies into `/etc/` at lease
   boot — adds `runner@1000`, NOPASSWD sudo, profile.d hooks) and
   `.verself-writable-overlays` (vm-bridge tmpfs-mounts each listed scratch path

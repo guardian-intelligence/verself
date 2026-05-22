@@ -221,12 +221,9 @@ func (s *Service) RecordAPIActivity(ctx context.Context, record APIActivityRecor
 	}
 	row, err := rowFromAPIActivityRecord(record, built)
 	if err != nil {
-		return nil, fmt.Errorf("%w: project OCSF API activity row: %v", ErrInvalidArgument, err)
+		return nil, fmt.Errorf("%w: build OCSF API activity row: %v", ErrInvalidArgument, err)
 	}
 	if err := s.assignAPIActivitySequence(ctx, row, built.JSON, built.Resources); err != nil {
-		return nil, err
-	}
-	if err := s.projectAPIActivity(ctx, store.New(s.PG), row, built.JSON, built.Resources); err != nil {
 		return nil, err
 	}
 	span.SetAttributes(

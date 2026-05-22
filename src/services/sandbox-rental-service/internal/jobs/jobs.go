@@ -37,20 +37,17 @@ const (
 	SourceKindAPI               = "api"
 	SourceKindExecutionSchedule = "execution_schedule"
 	SourceKindGitHubAction      = "github_actions"
-	SourceKindForgejoAction     = "forgejo_actions"
 	SourceKindSourceHosting     = "source_code_hosting"
 	SourceKindCanary            = "canary"
 	SourceKindVMSession         = "vm_session"
 	WorkloadKindDirect          = "direct"
 	WorkloadKindRunner          = "runner"
 
-	DefaultRunnerClassLabel      = "verself-4vcpu-ubuntu-2404"
-	defaultProductID             = "sandbox"
-	defaultRunCommand            = "echo hello"
-	RunnerProviderGitHub         = "github"
-	RunnerProviderForgejo        = "forgejo"
-	RunnerBootstrapGitHubJIT     = "github_jit"
-	RunnerBootstrapForgejoOneJob = "forgejo_one_job"
+	DefaultRunnerClassLabel  = "verself-4vcpu-ubuntu-2404"
+	defaultProductID         = "sandbox"
+	defaultRunCommand        = "echo hello"
+	RunnerProviderGitHub     = "github"
+	RunnerBootstrapGitHubJIT = "github_jit"
 
 	billingSKUComputeVCPUMs             = "sandbox_compute_amd_epyc_4484px_vcpu_ms"
 	billingSKUMemoryGiBMs               = "sandbox_memory_standard_gib_ms"
@@ -117,12 +114,8 @@ type Runner interface {
 
 type SchedulerRuntime interface {
 	EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req scheduler.ExecutionAdvanceRequest) (scheduler.ExecutionAdvanceResult, error)
-	EnqueueRunnerCapacityReconcileTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerCapacityReconcileRequest) (scheduler.ProbeResult, error)
-	EnqueueRunnerAllocateTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerAllocateRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerJobBindTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerJobBindRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerCleanup(ctx context.Context, req scheduler.RunnerCleanupRequest) (scheduler.ProbeResult, error)
-	EnqueueRunnerRepositorySyncTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerRepositorySyncRequest) (scheduler.ProbeResult, error)
-	EnqueueRunnerRepositorySync(ctx context.Context, req scheduler.RunnerRepositorySyncRequest) (scheduler.ProbeResult, error)
 	EnqueueGoldenVMCreateTx(ctx context.Context, tx pgx.Tx, req scheduler.GoldenVMCreateRequest) (scheduler.ProbeResult, error)
 	EnqueueGoldenVMCreate(ctx context.Context, req scheduler.GoldenVMCreateRequest) (scheduler.ProbeResult, error)
 	EnqueueGoldenRunPromoteTx(ctx context.Context, tx pgx.Tx, req scheduler.GoldenRunPromoteRequest) (scheduler.ProbeResult, error)
@@ -230,7 +223,6 @@ type Service struct {
 	Billing                *billingclient.Client
 	Secrets                *secretsclient.Client
 	Bounds                 VMResourceBounds
-	ForgejoRunner          *ForgejoRunner
 	Scheduler              SchedulerRuntime
 	Logger                 *slog.Logger
 	WorkloadTimeout        time.Duration

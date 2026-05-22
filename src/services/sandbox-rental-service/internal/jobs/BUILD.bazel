@@ -12,7 +12,6 @@ go_library(
         "correlation.go",
         "durable_caches.go",
         "durable_management.go",
-        "forgejo_runner.go",
         "github_execution_auth.go",
         "github_runner_command.go",
         "github_workflow_invocation.go",

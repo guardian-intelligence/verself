@@ -8,7 +8,6 @@ const (
 	IAMSpiceDBPresharedKeyName         = "iam-service.spicedb.grpc_preshared_key"
 	IAMZitadelAdminTokenName           = "iam-service.zitadel.admin_token"
 	SandboxRunnerBootstrapSecretPrefix = "sandbox-rental-service.runner-bootstrap."
-	SandboxForgejoAutomationTokenName  = "sandbox-rental-service.forgejo.automation_token"
 	SourceForgejoAutomationTokenName   = "source-code-hosting-service.forgejo.automation_token"
 	MailboxResendAPIKeyName            = "mailbox-service.resend.api_key"
 	NotificationsResendAPIKeyName      = MailboxResendAPIKeyName

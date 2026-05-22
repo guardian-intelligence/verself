@@ -10,6 +10,7 @@ go_library(
     name = "vm-orchestrator",
     srcs = [
         "api.go",
+        "boot_sequence.go",
         "client.go",
         "client_types.go",
         "control.go",

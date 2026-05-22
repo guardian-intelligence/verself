@@ -31,9 +31,6 @@ The durable tenant binding is provider-specific:
   runner execution ownership is the provider-neutral
   `runner_provider_repositories(provider, provider_repository_id) -> org_id`
   row.
-- Forgejo repositories imported through source-code-hosting-service register a
-  `runner_provider_repositories` row through the SPIFFE-only sandbox internal
-  API.
 
 GitHub flow:
 
@@ -67,35 +64,6 @@ billing_windows
   source_ref = <execution_id>, billing_job_id, usage_summary
 ```
 
-Forgejo flow:
-
-```text
-source-code-hosting-service
-  repo create / first git push
-      |
-      | SPIFFE internal POST /internal/v1/runner/repositories
-      v
-runner_provider_repositories(provider=forgejo)
-  source_repository_id, org_id, provider_repository_id
-      |
-      | Forgejo action webhook -> repository job sync
-      v
-runner_jobs(provider=forgejo)
-  provider_job_id, provider_repository_id, runs_on labels
-      |
-      | capacity reconcile uses runner_classes
-      v
-runner_allocations(provider=forgejo)
-  allocation_id, requested_for_provider_job_id
-      |
-      | one-job bootstrap fetches attempt-scoped config
-      v
-executions
-  org_id from runner_provider_repositories,
-  source_kind = forgejo_actions, workload_kind = runner,
-  external_provider = forgejo, external_task_id = <provider_job_id>
-```
-
 Rules that are easy to get wrong:
 
 - Never infer tenant ownership from a GitHub job ID, runner name, repository
@@ -103,10 +71,6 @@ Rules that are easy to get wrong:
   bound by `runner_provider_repositories(provider, provider_repository_id) ->
   org_id`. github-integration-service owns installation/provider authenticity;
   sandbox-rental-service owns sandbox execution policy.
-- Never infer tenant ownership from a Forgejo repository name, job handle,
-  runner name, or webhook delivery ID. The tenant binding for Forgejo work is
-  `runner_provider_repositories(provider, provider_repository_id) -> org_id`,
-  established by source-code-hosting-service over the internal SPIFFE API.
 - Provider observations create demand facts. They do not directly create
   billable customer work until the provider-neutral runner submission passes
   repository ownership, runner class, org runtime, and billing gates.
@@ -128,12 +92,8 @@ Concrete code anchors:
 - GitHub provider demand ingestion: github-integration-service calls
   `InternalSubmitRunnerJob`, `InternalObserveRunnerJob`, and
   `InternalObserveRunnerWorkflowRun`.
-- Org recovery for Forgejo demand:
-  `internal/jobs/forgejo_runner.go:loadQueuedJob` joins `runner_jobs` to
-  `runner_provider_repositories`.
 - Execution submission from runner allocation:
-  `internal/jobs/provider_runner.go:SubmitProviderRunnerJob` and
-  `internal/jobs/forgejo_runner.go:AllocateRunner`.
+  `internal/jobs/provider_runner.go:SubmitProviderRunnerJob`.
 - Billing reservation from execution org:
   `internal/jobs/jobs.go:reserveBilling`.
 

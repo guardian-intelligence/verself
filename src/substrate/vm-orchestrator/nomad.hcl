@@ -166,13 +166,6 @@ job "vm-orchestrator" {
       "source_path": "/var/lib/verself/guest-images/toolchains/gh-actions-runner.ext4",
       "size_bytes": 1073741824,
       "volblocksize": "16K"
-    },
-    {
-      "ref": "forgejo-runner",
-      "strategy": "dd_from_file",
-      "source_path": "/var/lib/verself/guest-images/toolchains/forgejo-runner.ext4",
-      "size_bytes": 268435456,
-      "volblocksize": "16K"
     }
   ]
 }

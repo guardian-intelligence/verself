@@ -541,28 +541,6 @@ backend be_sandbox_execution_submit
   http-request return status 503 content-type text/plain string "service unavailable"
 [[ end ]]
 
-backend be_sandbox_forgejo_actions_webhook
-  guid be_sandbox_forgejo_actions_webhook
-  balance random
-  http-response set-header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
-  http-response set-header Cross-Origin-Resource-Policy same-origin
-  http-response set-header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
-  http-response set-header Referrer-Policy no-referrer
-  http-response set-header X-Content-Type-Options nosniff
-  http-response set-header X-Frame-Options DENY
-  acl has_content_length req.hdr(content-length) -m found
-  acl has_transfer_encoding req.hdr(transfer-encoding) -m found
-  http-request wait-for-body time 1s at-least 1048577 if has_content_length
-  http-request wait-for-body time 1s at-least 1048577 if has_transfer_encoding
-  http-request deny deny_status 413 if { req.body_size gt 1048576 }
-[[ with nomadService "sandbox-rental-public-http" ]]
-[[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_sandbox_forgejo_actions_webhook_srv_[[ $i ]]
-[[ end ]]
-[[ else ]]
-  http-request return status 503 content-type text/plain string "service unavailable"
-[[ end ]]
-
 backend be_sandbox_small_json_mutation
   guid be_sandbox_small_json_mutation
   balance random

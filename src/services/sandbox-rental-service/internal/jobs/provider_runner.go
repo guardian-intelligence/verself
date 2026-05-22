@@ -462,8 +462,6 @@ func sourceKindForProvider(provider string) string {
 	switch provider {
 	case RunnerProviderGitHub:
 		return SourceKindGitHubAction
-	case RunnerProviderForgejo:
-		return SourceKindForgejoAction
 	default:
 		return "provider_actions"
 	}

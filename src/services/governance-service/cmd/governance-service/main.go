@@ -219,20 +219,29 @@ func run() error {
 }
 
 func runAPIActivityProjector(ctx context.Context, logger *slog.Logger, svc *governance.Service) {
+	const batchLimit = 100
+
 	project := func(ctx context.Context) {
-		projectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		count, err := svc.ProjectPendingAPIActivities(projectCtx, 100)
-		if err != nil {
-			logger.ErrorContext(ctx, "governance: project pending API activities", "error", err)
-			return
+		total := 0
+		for {
+			projectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			count, err := svc.ProjectPendingAPIActivities(projectCtx, batchLimit)
+			cancel()
+			if err != nil {
+				logger.ErrorContext(ctx, "governance: project pending API activities", "error", err)
+				return
+			}
+			total += count
+			if count < batchLimit {
+				break
+			}
 		}
-		if count > 0 {
-			logger.InfoContext(ctx, "governance: projected pending API activities", "count", count)
+		if total > 0 {
+			logger.InfoContext(ctx, "governance: projected pending API activities", "count", total)
 		}
 	}
 	project(ctx)
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
 		select {

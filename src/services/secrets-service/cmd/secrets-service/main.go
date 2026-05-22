@@ -172,9 +172,7 @@ func run() error {
 				secretsclient.BillingStripeSecretKeyName,
 				secretsclient.BillingStripeWebhookSecretName,
 			}},
-			{Service: workloadauth.ServiceSandboxRental, SecretNames: []string{
-				secretsclient.SandboxForgejoAutomationTokenName,
-			}, SecretNamePrefixes: []string{
+			{Service: workloadauth.ServiceSandboxRental, SecretNamePrefixes: []string{
 				secretsclient.SandboxRunnerBootstrapSecretPrefix,
 			}},
 			{Service: workloadauth.ServiceGitHubIntegration, SecretNames: []string{

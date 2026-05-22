@@ -31,8 +31,7 @@ State model:
   receives billing, org, customer, attempt, or quota vocabulary.
 - `runner_provider_repositories` binds provider repository IDs to Verself
   org/source repository ownership.
-- `runner_jobs` are provider demand facts from GitHub webhooks or Forgejo action
-  job sync.
+- `runner_jobs` are provider demand facts from GitHub webhooks.
 - `runner_allocations` are Verself capacity records for runner VMs.
 - `runner_job_bindings` are the authoritative job-to-runner assignment records.
 - Golden artifact state belongs beside executions: cache declarations, stable
@@ -44,8 +43,7 @@ State model:
 Runner flow:
 
 1. Provider events record or refresh `runner_jobs` demand. GitHub uses the
-   `workflow_job` webhook. Forgejo registers a per-repository webhook and syncs
-   queued jobs from the Forgejo v15 Actions runner jobs API.
+   `workflow_job` webhook.
 2. Allocation logic creates a `runner_allocations` row, obtains the provider
    bootstrap material, and internally submits an execution attempt for the
    selected runner class.
