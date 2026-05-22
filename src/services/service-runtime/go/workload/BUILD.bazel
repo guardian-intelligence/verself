@@ -33,6 +33,7 @@ go_test(
     srcs = [
         "dialer_test.go",
         "resolver_test.go",
+        "workload_test.go",
     ],
     embed = [":workload"],
 )

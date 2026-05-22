@@ -37,6 +37,43 @@ var tracer = otel.Tracer("github.com/verself/service-runtime/workload")
 
 type peerIDContextKey struct{}
 
+// ServiceClientTimeouts configures the mTLS service client transport deadlines.
+// Zero values keep the short defaults used by ordinary service reads.
+type ServiceClientTimeouts struct {
+	Dial           time.Duration
+	TLSHandshake   time.Duration
+	ResponseHeader time.Duration
+	Total          time.Duration
+}
+
+// DefaultServiceClientTimeouts returns the default mTLS service client
+// deadlines used by MTLSClientForService.
+func DefaultServiceClientTimeouts() ServiceClientTimeouts {
+	return ServiceClientTimeouts{
+		Dial:           serviceClientDialTimeout,
+		TLSHandshake:   serviceClientTLSHandshakeTimeout,
+		ResponseHeader: serviceClientResponseHeaderTimeout,
+		Total:          serviceClientTotalTimeout,
+	}
+}
+
+func (t ServiceClientTimeouts) withDefaults() ServiceClientTimeouts {
+	defaults := DefaultServiceClientTimeouts()
+	if t.Dial <= 0 {
+		t.Dial = defaults.Dial
+	}
+	if t.TLSHandshake <= 0 {
+		t.TLSHandshake = defaults.TLSHandshake
+	}
+	if t.ResponseHeader <= 0 {
+		t.ResponseHeader = defaults.ResponseHeader
+	}
+	if t.Total <= 0 {
+		t.Total = defaults.Total
+	}
+	return t
+}
+
 // Source returns a Workload API X.509 source. The call blocks until SPIRE
 // delivers the initial SVID and bundle, matching go-spiffe's source contract.
 func Source(ctx context.Context, socket string) (*workloadapi.X509Source, error) {
@@ -187,10 +224,17 @@ func CurrentIDForService(source *workloadapi.X509Source, service string) (spiffe
 // header is cosmetic. Pass a nil base transport to start from
 // http.DefaultTransport.
 func MTLSClientForService(source *workloadapi.X509Source, service string, base http.RoundTripper) (*http.Client, error) {
+	return MTLSClientForServiceWithTimeouts(source, service, base, ServiceClientTimeouts{})
+}
+
+// MTLSClientForServiceWithTimeouts is MTLSClientForService with explicit
+// timeout overrides for calls that legitimately wait on longer substrate work.
+func MTLSClientForServiceWithTimeouts(source *workloadapi.X509Source, service string, base http.RoundTripper, timeouts ServiceClientTimeouts) (*http.Client, error) {
 	id, err := PeerIDForSource(source, service)
 	if err != nil {
 		return nil, err
 	}
+	timeouts = timeouts.withDefaults()
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -204,11 +248,11 @@ func MTLSClientForService(source *workloadapi.X509Source, service string, base h
 		return nil, fmt.Errorf("init nomad resolver: %w", err)
 	}
 	transport.DialContext = newResolvingDialContext(resolver, &net.Dialer{
-		Timeout:   serviceClientDialTimeout,
+		Timeout:   timeouts.Dial,
 		KeepAlive: 30 * time.Second,
 	})
-	transport.TLSHandshakeTimeout = serviceClientTLSHandshakeTimeout
-	transport.ResponseHeaderTimeout = serviceClientResponseHeaderTimeout
+	transport.TLSHandshakeTimeout = timeouts.TLSHandshake
+	transport.ResponseHeaderTimeout = timeouts.ResponseHeader
 	return &http.Client{
 		// otelhttp injects trace context on the repo-wide SPIFFE mTLS path so
 		// downstream service spans and audit rows stay joinable in ClickHouse.
@@ -218,7 +262,7 @@ func MTLSClientForService(source *workloadapi.X509Source, service string, base h
 			expectedServerID: id.String(),
 			source:           source,
 		}),
-		Timeout: serviceClientTotalTimeout,
+		Timeout: timeouts.Total,
 	}, nil
 }
 

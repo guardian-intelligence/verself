@@ -29,6 +29,8 @@ const (
 	serviceName       = githubintegration.ServiceName
 	serviceVersion    = "0.1.0"
 	defaultListenAddr = "127.0.0.1:4272"
+
+	sandboxRunnerSubmissionTimeout = 30 * time.Second
 )
 
 func main() {
@@ -134,7 +136,10 @@ func run() error {
 	}
 	privateKey := strings.TrimSpace(providerSecrets[secretsclient.GitHubIntegrationPrivateKeyName])
 	webhookSecret := strings.TrimSpace(providerSecrets[secretsclient.GitHubIntegrationWebhookSecretName])
-	sandboxHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSandboxRental, nil)
+	sandboxHTTPClient, err := workloadauth.MTLSClientForServiceWithTimeouts(spiffeSource, workloadauth.ServiceSandboxRental, nil, workloadauth.ServiceClientTimeouts{
+		ResponseHeader: sandboxRunnerSubmissionTimeout,
+		Total:          sandboxRunnerSubmissionTimeout,
+	})
 	if err != nil {
 		return fmt.Errorf("github integration sandbox mtls: %w", err)
 	}
