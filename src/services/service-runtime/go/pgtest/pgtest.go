@@ -24,12 +24,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const (
-	requiredEnv = "VERSELF_PGTEST_REQUIRED"
-	adminDSNEnv = "VERSELF_PGTEST_ADMIN_DSN"
-	rootEnv     = "VERSELF_PGTEST_ROOT"
-	port        = "55432"
-)
+const port = "55432"
 
 var safeIdent = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 
@@ -51,10 +46,9 @@ func Acquire(ctx context.Context, t testing.TB, template Template) *Database {
 	if err := template.validate(); err != nil {
 		t.Fatalf("pgtest template: %v", err)
 	}
-	required := os.Getenv(requiredEnv) == "1"
-	adminDSN, err := adminDSN(ctx, required)
+	adminDSN, err := ensureLocalServer(ctx)
 	if err != nil {
-		unavailable(t, required, err.Error())
+		t.Fatalf("pgtest substrate unavailable: %v", err)
 	}
 	admin, err := sql.Open("postgres", adminDSN)
 	if err != nil {
@@ -62,7 +56,7 @@ func Acquire(ctx context.Context, t testing.TB, template Template) *Database {
 	}
 	t.Cleanup(func() { _ = admin.Close() })
 	if err := admin.PingContext(ctx); err != nil {
-		unavailable(t, required, "ping pgtest admin postgres: "+err.Error())
+		t.Fatalf("ping pgtest admin postgres: %v", err)
 	}
 
 	templateName := templateName(template)
@@ -94,13 +88,6 @@ func (template Template) validate() error {
 		return errors.New("migrate is required")
 	}
 	return nil
-}
-
-func adminDSN(ctx context.Context, required bool) (string, error) {
-	if dsn := strings.TrimSpace(os.Getenv(adminDSNEnv)); dsn != "" {
-		return dsn, nil
-	}
-	return ensureLocalServer(ctx, required)
 }
 
 func ensureTemplate(ctx context.Context, t testing.TB, admin *sql.DB, adminDSN, name string, template Template) {
@@ -139,7 +126,7 @@ func ensureTemplate(ctx context.Context, t testing.TB, admin *sql.DB, adminDSN, 
 	execAdmin(ctx, t, admin, "ALTER DATABASE "+quoteIdent(scratch)+" RENAME TO "+quoteIdent(name))
 }
 
-func ensureLocalServer(ctx context.Context, required bool) (string, error) {
+func ensureLocalServer(ctx context.Context) (string, error) {
 	root, err := localRoot()
 	if err != nil {
 		return "", err
@@ -191,7 +178,7 @@ func ensureLocalServer(ctx context.Context, required bool) (string, error) {
 		if err := startPostgres(root, dataDir, socketDir, postgres); err != nil {
 			return "", err
 		}
-		if err := waitReady(ctx, pgIsReady, socketDir, required); err != nil {
+		if err := waitReady(ctx, pgIsReady, socketDir); err != nil {
 			return "", err
 		}
 	}
@@ -229,17 +216,14 @@ func startPostgres(root, dataDir, socketDir, postgres string) error {
 	return nil
 }
 
-func waitReady(ctx context.Context, pgIsReady, socketDir string, required bool) error {
+func waitReady(ctx context.Context, pgIsReady, socketDir string) error {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if ready(ctx, pgIsReady, socketDir) {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			if required {
-				return errors.New("pgtest postgres did not become ready")
-			}
-			return errors.New("pgtest postgres unavailable")
+			return errors.New("pgtest postgres did not become ready")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -280,9 +264,6 @@ func processExists(pid int) bool {
 }
 
 func localRoot() (string, error) {
-	if root := strings.TrimSpace(os.Getenv(rootEnv)); root != "" {
-		return root, nil
-	}
 	if current, err := osuser.Current(); err == nil && strings.TrimSpace(current.HomeDir) != "" {
 		return filepath.Join(current.HomeDir, ".cache", "verself", "pgtest"), nil
 	}
@@ -294,7 +275,7 @@ func localRoot() (string, error) {
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
-		return "", fmt.Errorf("%s or HOME is required for local pgtest server", rootEnv)
+		return "", errors.New("HOME is required for local pgtest server")
 	}
 	return filepath.Join(cache, "verself", "pgtest"), nil
 }
@@ -461,12 +442,4 @@ func postgresEnv() []string {
 	}
 	out = append(out, "LC_ALL=C", "TZ=UTC")
 	return out
-}
-
-func unavailable(t testing.TB, required bool, reason string) {
-	t.Helper()
-	if required {
-		t.Fatalf("pgtest substrate unavailable: %s", reason)
-	}
-	t.Skipf("pgtest substrate unavailable: %s", reason)
 }
