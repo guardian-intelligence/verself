@@ -73,7 +73,7 @@ func TestStampNomadSpecMetaIncludesInputDigest(t *testing.T) {
 		},
 	}
 
-	firstSpec, err := stampNomadSpecMeta(job, "artifact", "input-one", "run", "sha")
+	firstSpec, err := stampNomadSpecMeta(job, "artifact", "input-one")
 	if err != nil {
 		t.Fatalf("stamp first: %v", err)
 	}
@@ -83,11 +83,14 @@ func TestStampNomadSpecMetaIncludesInputDigest(t *testing.T) {
 	if job.Meta["artifact_sha256"] != "artifact" {
 		t.Fatalf("artifact_sha256 = %q, want artifact", job.Meta["artifact_sha256"])
 	}
-	if job.Meta["deploy_run_key"] != "run" || job.Meta["deploy_sha"] != "sha" {
-		t.Fatalf("deploy metadata not restored after digest: %+v", job.Meta)
+	if _, ok := job.Meta["deploy_run_key"]; ok {
+		t.Fatalf("deploy_run_key should not be submitted in Nomad job metadata: %+v", job.Meta)
+	}
+	if _, ok := job.Meta["deploy_sha"]; ok {
+		t.Fatalf("deploy_sha should not be submitted in Nomad job metadata: %+v", job.Meta)
 	}
 
-	secondSpec, err := stampNomadSpecMeta(job, "artifact", "input-two", "run", "sha")
+	secondSpec, err := stampNomadSpecMeta(job, "artifact", "input-two")
 	if err != nil {
 		t.Fatalf("stamp second: %v", err)
 	}

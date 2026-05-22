@@ -140,7 +140,7 @@ func buildDeployPlan(ctx context.Context, rt *runtime.Runtime, repoRoot, site, s
 	if err != nil {
 		return nil, err
 	}
-	jobs, err := resolveNomadJobs(ctx, nomad, repoRoot, ordered, bindings, snap.RunKey(), sha)
+	jobs, err := resolveNomadJobs(ctx, nomad, repoRoot, ordered, bindings)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +321,7 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 	return out, nil
 }
 
-func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoRoot string, components []nomadComponentDescriptor, bindings map[string]artifactBinding, runKey, sha string) ([]deploymodel.NomadJob, error) {
+func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoRoot string, components []nomadComponentDescriptor, bindings map[string]artifactBinding) ([]deploymodel.NomadJob, error) {
 	referenced := map[string]bool{}
 	jobs := make([]deploymodel.NomadJob, 0, len(components))
 	for _, component := range components {
@@ -347,7 +347,7 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", component.JobID, err)
 		}
-		specSHA, err := stampNomadSpecMeta(job, artifactDigest, inputDigest, runKey, sha)
+		specSHA, err := stampNomadSpecMeta(job, artifactDigest, inputDigest)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", component.JobID, err)
 		}

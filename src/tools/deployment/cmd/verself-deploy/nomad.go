@@ -94,7 +94,7 @@ func canonicalArtifactDigestInput(seen map[string]bool, bindings map[string]arti
 	return rows
 }
 
-func stampNomadSpecMeta(job *api.Job, artifactDigest, inputDigest, runKey, sha string) (string, error) {
+func stampNomadSpecMeta(job *api.Job, artifactDigest, inputDigest string) (string, error) {
 	if job.Meta == nil {
 		job.Meta = map[string]string{}
 	}
@@ -114,10 +114,6 @@ func stampNomadSpecMeta(job *api.Job, artifactDigest, inputDigest, runKey, sha s
 	}
 	specDigest := deploymodel.SHA256(specBody)
 	job.Meta["spec_sha256"] = specDigest
-	// These are intentionally excluded from spec_sha256 so no-op deploys do not
-	// churn every job on repo-only SHA/run-key changes.
-	job.Meta["deploy_run_key"] = runKey
-	job.Meta["deploy_sha"] = sha
 	return specDigest, nil
 }
 
