@@ -1,10 +1,10 @@
 -- console_flight_jobs is the read-model behind the web console's CI
--- "flight tracker". It is a pure projection of GitHub job facts
+-- "flight tracker". It is a pure projection of provider job facts
 -- (runner_jobs grain) denormalized with run-level identity
--- (github_workflow_invocations) and the owning Verself org
+-- (provider_workflow_runs) and the owning Verself org
 -- (runner_provider_repositories). The web app syncs the active subset over
--- Electric and never writes back: writes flow only through the workflow_job
--- webhook transaction in sandbox-rental-service.
+-- Electric and never writes back: writes flow only through provider observation
+-- transactions in sandbox-rental-service.
 --
 -- Grain: one row per GitHub workflow job (provider, provider_job_id), matching
 -- runner_jobs. The widget groups rows by provider_run_id into one card per
@@ -37,7 +37,14 @@ CREATE TABLE console_flight_jobs (
 CREATE INDEX idx_console_flight_jobs_org_status
     ON console_flight_jobs (org_id, status);
 
--- Run-level PR commit count. Populated from the GitHub PR API on the
--- invocation refresh path; NULL for non-PR (push) runs and until first fetch.
-ALTER TABLE github_workflow_invocations
-    ADD COLUMN commit_count BIGINT;
+-- Run-level PR commit count. Populated from the provider refresh path; NULL
+-- for non-PR runs and until first fetch. The conditional branch lets partially
+-- migrated early environments converge before the provider-neutral table rename.
+DO $$
+BEGIN
+    IF to_regclass('provider_workflow_runs') IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE provider_workflow_runs ADD COLUMN IF NOT EXISTS commit_count BIGINT';
+    ELSIF to_regclass('github_workflow_invocations') IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE github_workflow_invocations ADD COLUMN IF NOT EXISTS commit_count BIGINT';
+    END IF;
+END $$;

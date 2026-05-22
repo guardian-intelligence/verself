@@ -34,11 +34,16 @@ service GithubIntegration {
         ReceiveGithubWebhook
     ]
     resources: [
+        GithubInstallation,
+        GithubRepository,
         GithubWebhookDelivery,
         GithubWorkflowRun,
         GithubWorkflowJob,
+        GithubJobShape,
+        GithubProviderDemand,
         GithubRunnerRegistration,
-        GithubTerminalJobEvidence
+        GithubTerminalJobEvidence,
+        GithubGoldenSnapshotBarrier
     ]
 }
 
@@ -48,11 +53,16 @@ service GithubIntegrationInternal {
     version: "2026-05-21"
     operations: []
     resources: [
+        GithubInstallation,
+        GithubRepository,
         GithubWebhookDelivery,
         GithubWorkflowRun,
         GithubWorkflowJob,
+        GithubJobShape,
+        GithubProviderDemand,
         GithubRunnerRegistration,
-        GithubTerminalJobEvidence
+        GithubTerminalJobEvidence,
+        GithubGoldenSnapshotBarrier
     ]
 }
 
@@ -129,10 +139,15 @@ string GithubProviderWebhookReceivePermission
 string GithubWebhookReceiveAuditEvent
 
 resource GithubWebhookDelivery {}
+resource GithubInstallation {}
+resource GithubRepository {}
 resource GithubWorkflowRun {}
 resource GithubWorkflowJob {}
+resource GithubJobShape {}
+resource GithubProviderDemand {}
 resource GithubRunnerRegistration {}
 resource GithubTerminalJobEvidence {}
+resource GithubGoldenSnapshotBarrier {}
 
 enum GithubWebhookDeliveryState {
     VERIFIED = "verified"
@@ -158,6 +173,22 @@ enum GithubWorkflowJobConclusion {
     TIMED_OUT = "timed_out"
     ACTION_REQUIRED = "action_required"
     NEUTRAL = "neutral"
+}
+
+enum GithubProviderDemandState {
+    DEMAND_RECORDED = "demand_recorded"
+    JIT_REQUESTED = "jit_requested"
+    JIT_CREATED = "jit_created"
+    JIT_FAILED = "jit_failed"
+    SANDBOX_FAILED = "sandbox_failed"
+    SANDBOX_SUBMITTED = "sandbox_submitted"
+}
+
+enum GithubGoldenSnapshotBarrierState {
+    REQUESTED = "requested"
+    BLOCKED = "blocked"
+    SATISFIED = "satisfied"
+    FAILED = "failed"
 }
 
 structure GithubWebhookAccepted {
@@ -194,6 +225,44 @@ structure GithubWebhookDeliveryRecord {
     received_at: DateTime
     verified_at: DateTime
     processed_at: DateTime
+}
+
+structure GithubInstallationRecord {
+    @required
+    provider_installation_id: SafeNonNegativeLong
+
+    org_id: OrgId
+    account_id: SafeNonNegativeLong
+    account_login: String
+    account_type: String
+    app_slug: String
+    repository_selection: String
+
+    @required
+    state: String
+
+    observed_from_api_at: DateTime
+}
+
+structure GithubRepositoryRecord {
+    @required
+    provider_repository_id: ProviderRepositoryId
+
+    provider_installation_id: SafeNonNegativeLong
+    org_id: OrgId
+    owner_login: String
+    repository_name: String
+
+    @required
+    repository_full_name: RepositoryFullName
+
+    default_branch: String
+    private: Boolean
+
+    @required
+    state: String
+
+    observed_from_api_at: DateTime
 }
 
 structure GithubWorkflowRunRecord {
@@ -251,6 +320,50 @@ structure GithubWorkflowJobRecord {
     observed_from_api_at: DateTime
 }
 
+structure GithubJobShapeRecord {
+    @required
+    job_shape_id: String
+
+    @required
+    provider_repository_id: ProviderRepositoryId
+
+    repository_full_name: RepositoryFullName
+    workflow_path: WorkflowPath
+    workflow_name: WorkflowName
+    job_name: JobName
+    matrix_key: String
+    runner_class: RunnerClass
+    labels: GithubRunnerLabels
+    cache_manifest_sha256: String
+    trust_class: String
+}
+
+structure GithubProviderDemandRecord {
+    @required
+    provider_job_id: SafeNonNegativeLong
+
+    @required
+    provider_run_id: SafeNonNegativeLong
+
+    @required
+    provider_run_attempt: SafeNonNegativeLong
+
+    @required
+    runner_name: RunnerName
+
+    runner_id: SafeNonNegativeLong
+    runner_class: RunnerClass
+    job_shape_id: String
+    trust_class: String
+
+    @required
+    state: GithubProviderDemandState
+
+    allocation_id: AllocationId
+    execution_id: ExecutionId
+    attempt_id: AttemptId
+}
+
 structure GithubRunnerRegistrationRecord {
     @required
     provider_job_id: SafeNonNegativeLong
@@ -293,6 +406,29 @@ structure GithubTerminalJobEvidenceRecord {
     observed_at: DateTime
 
     delivery_id: GithubDeliveryId
+}
+
+structure GithubGoldenSnapshotBarrierRecord {
+    @required
+    provider_job_id: SafeNonNegativeLong
+
+    @required
+    provider_run_id: SafeNonNegativeLong
+
+    @required
+    provider_run_attempt: SafeNonNegativeLong
+
+    execution_id: ExecutionId
+    attempt_id: AttemptId
+    job_shape_id: String
+    trust_class: String
+
+    @required
+    state: GithubGoldenSnapshotBarrierState
+
+    failure_reason: String
+    requested_at: DateTime
+    completed_at: DateTime
 }
 
 @http(method: "POST", uri: "/api/v1/github/webhooks", code: 202)

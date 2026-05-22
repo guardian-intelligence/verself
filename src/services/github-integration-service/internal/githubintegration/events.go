@@ -26,6 +26,8 @@ type githubEvent struct {
 	RunnerID               uint64    `ch:"runner_id"`
 	RunnerName             string    `ch:"runner_name"`
 	RunnerClass            string    `ch:"runner_class"`
+	JobShapeID             string    `ch:"job_shape_id"`
+	TrustClass             string    `ch:"trust_class"`
 	AllocationID           uuid.UUID `ch:"allocation_id"`
 	ExecutionID            uuid.UUID `ch:"execution_id"`
 	AttemptID              uuid.UUID `ch:"attempt_id"`
@@ -101,6 +103,8 @@ func githubEventFromMetadata(meta webhookMetadata, eventName string, result stri
 		RunnerID:               uint64FromInt64(meta.RunnerID),
 		RunnerName:             meta.RunnerName,
 		RunnerClass:            meta.RunnerClass,
+		JobShapeID:             meta.JobShapeID,
+		TrustClass:             meta.TrustClass,
 		AllocationID:           uuidFromLike(meta.AllocationID),
 		ExecutionID:            uuidFromLike(meta.ExecutionID),
 		AttemptID:              uuidFromLike(meta.AttemptID),

@@ -2,7 +2,8 @@ package jobs
 
 import "strings"
 
-type githubWorkflowInvocation struct {
+type providerWorkflowRun struct {
+	Provider               string
 	InstallationID         int64
 	RepositoryID           int64
 	RunID                  int64
@@ -19,17 +20,20 @@ type githubWorkflowInvocation struct {
 	CommitCount            int64
 }
 
-func (i githubWorkflowInvocation) dogfoodMainPromotion(ref goldenWorkflowRunRef) (bool, string) {
-	if i.EventName != "push" {
+func (r providerWorkflowRun) githubDogfoodMainPromotion(ref goldenWorkflowRunRef) (bool, string) {
+	if r.Provider != RunnerProviderGitHub {
+		return false, "provider is not github"
+	}
+	if r.EventName != "push" {
 		return false, "github workflow run is not a push event"
 	}
-	if i.HeadBranch != durableDogfoodBranch {
+	if r.HeadBranch != durableDogfoodBranch {
 		return false, "github workflow run is not on dogfood main"
 	}
-	if i.PullRequestNumber != 0 {
+	if r.PullRequestNumber != 0 {
 		return false, "github workflow run is associated with a pull request"
 	}
-	if ref.HeadSHA != "" && i.HeadSHA != "" && !strings.EqualFold(ref.HeadSHA, i.HeadSHA) {
+	if ref.HeadSHA != "" && r.HeadSHA != "" && !strings.EqualFold(ref.HeadSHA, r.HeadSHA) {
 		return false, "github workflow run head sha does not match promotion request"
 	}
 	return true, ""

@@ -28,6 +28,7 @@ func RegisterInternalRoutes(api huma.API, svc *jobs.Service) {
 	registerInternalSandboxContractRoute(api, internalcontractapi.InternalSubmitRunnerJob, "Submit a provider runner job", internalSubmitRunnerJob(svc))
 	registerInternalSandboxContractRoute(api, internalcontractapi.InternalObserveRunnerJob, "Observe a provider runner job", internalObserveRunnerJob(svc))
 	registerInternalSandboxContractRoute(api, internalcontractapi.InternalObserveRunnerWorkflowRun, "Observe a provider workflow run", internalObserveRunnerWorkflowRun(svc))
+	registerInternalSandboxContractRoute(api, internalcontractapi.InternalRequestGoldenSnapshotBarrier, "Request a golden snapshot barrier", internalRequestGoldenSnapshotBarrier(svc))
 }
 
 func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *internalcontractapi.InternalRegisterRunnerRepositoryInput) (*internalcontractapi.InternalRegisterRunnerRepositoryOutput, error) {
@@ -234,6 +235,30 @@ func internalObserveRunnerWorkflowRun(svc *jobs.Service) func(context.Context, *
 	}
 }
 
+func internalRequestGoldenSnapshotBarrier(svc *jobs.Service) func(context.Context, *internalcontractapi.InternalRequestGoldenSnapshotBarrierInput) (*internalcontractapi.InternalRequestGoldenSnapshotBarrierOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.InternalRequestGoldenSnapshotBarrierInput) (*internalcontractapi.InternalRequestGoldenSnapshotBarrierOutput, error) {
+		if _, ok := workloadauth.PeerIDFromContext(ctx); !ok {
+			return nil, unauthorized(ctx)
+		}
+		if svc == nil {
+			return nil, serviceUnavailable(ctx, "sandbox-service-unavailable", "sandbox job service is unavailable", jobs.ErrRunnerUnavailable)
+		}
+		evidence, err := goldenSnapshotBarrierEvidenceFromContract(input.Body.Evidence)
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-golden-snapshot-barrier-evidence", err.Error(), err)
+		}
+		result, err := svc.RequestGoldenSnapshotBarrier(ctx, evidence)
+		if err != nil {
+			return nil, runnerJobMutationError(ctx, err)
+		}
+		var reason *string
+		if result.Reason != "" {
+			reason = &result.Reason
+		}
+		return &internalcontractapi.InternalRequestGoldenSnapshotBarrierOutput{Body: internalcontractapi.InternalRequestGoldenSnapshotBarrierOutputBody{State: result.State, Reason: reason}}, nil
+	}
+}
+
 func runnerRepositoryRegistrationError(ctx context.Context, err error) error {
 	switch {
 	case strings.Contains(err.Error(), "unsupported runner provider"):
@@ -365,6 +390,64 @@ func workflowRunObservationFromContract(input internalcontractapi.RunnerWorkflow
 		}
 	}
 	return obs, nil
+}
+
+func goldenSnapshotBarrierEvidenceFromContract(input internalcontractapi.GoldenSnapshotBarrierEvidence) (jobs.GoldenSnapshotBarrierEvidence, error) {
+	providerRepoID, err := parsePositiveInt64(string(input.ProviderRepositoryID), "provider_repository_id")
+	if err != nil {
+		return jobs.GoldenSnapshotBarrierEvidence{}, err
+	}
+	runID, err := parsePositiveInt64(string(input.ProviderRunID), "provider_run_id")
+	if err != nil {
+		return jobs.GoldenSnapshotBarrierEvidence{}, err
+	}
+	runAttempt, err := parsePositiveInt64(string(input.ProviderRunAttempt), "provider_run_attempt")
+	if err != nil {
+		return jobs.GoldenSnapshotBarrierEvidence{}, err
+	}
+	jobID, err := parsePositiveInt64(string(input.ProviderJobID), "provider_job_id")
+	if err != nil {
+		return jobs.GoldenSnapshotBarrierEvidence{}, err
+	}
+	executionID, err := uuid.Parse(string(input.ExecutionID))
+	if err != nil {
+		return jobs.GoldenSnapshotBarrierEvidence{}, fmt.Errorf("execution_id must be a UUID: %w", err)
+	}
+	attemptID, err := uuid.Parse(string(input.AttemptID))
+	if err != nil {
+		return jobs.GoldenSnapshotBarrierEvidence{}, fmt.Errorf("attempt_id must be a UUID: %w", err)
+	}
+	evidence := jobs.GoldenSnapshotBarrierEvidence{
+		Provider:                 strings.TrimSpace(string(input.Provider)),
+		ProviderRepositoryID:     providerRepoID,
+		ProviderRunID:            runID,
+		ProviderRunAttempt:       runAttempt,
+		ProviderJobID:            jobID,
+		RepositoryFullName:       stringFromPtr(input.RepositoryFullName),
+		HeadSHA:                  stringFromPtr(input.HeadSHA),
+		Conclusion:               strings.TrimSpace(stringFromPtr(input.Conclusion)),
+		RunnerName:               stringFromPtr(input.RunnerName),
+		ExecutionID:              executionID,
+		AttemptID:                attemptID,
+		LeaseID:                  stringFromPtr(input.LeaseID),
+		JobShapeID:               stringFromPtr(input.JobShapeID),
+		DurableGenerationSetHash: stringFromPtr(input.DurableGenerationSetHash),
+		TrustClass:               stringFromPtr(input.TrustClass),
+		PromotionPolicy:          stringFromPtr(input.PromotionPolicy),
+	}
+	if input.ProviderInstallationID != nil {
+		evidence.ProviderInstallationID, err = parseNonNegativeInt64(string(*input.ProviderInstallationID), "provider_installation_id")
+		if err != nil {
+			return jobs.GoldenSnapshotBarrierEvidence{}, err
+		}
+	}
+	if input.RunnerID != nil {
+		evidence.RunnerID, err = parseNonNegativeInt64(string(*input.RunnerID), "runner_id")
+		if err != nil {
+			return jobs.GoldenSnapshotBarrierEvidence{}, err
+		}
+	}
+	return evidence, nil
 }
 
 func runnerJobObservationOutput(result jobs.ProviderRunnerJobObservationResult) internalcontractapi.InternalObserveRunnerJobOutputBody {

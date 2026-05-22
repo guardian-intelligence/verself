@@ -237,6 +237,42 @@ func (q *Queries) GetExistingSubmission(ctx context.Context, arg GetExistingSubm
 	return i, err
 }
 
+const getGoldenSnapshotBarrierAttempt = `-- name: GetGoldenSnapshotBarrierAttempt :one
+SELECT
+    e.execution_id,
+    a.attempt_id,
+    a.state AS attempt_state,
+    COALESCE(a.lease_id, '')::text AS lease_id
+FROM executions e
+JOIN execution_attempts a ON a.execution_id = e.execution_id
+WHERE e.execution_id = $1
+  AND a.attempt_id = $2
+`
+
+type GetGoldenSnapshotBarrierAttemptParams struct {
+	ExecutionID uuid.UUID
+	AttemptID   uuid.UUID
+}
+
+type GetGoldenSnapshotBarrierAttemptRow struct {
+	ExecutionID  uuid.UUID
+	AttemptID    uuid.UUID
+	AttemptState string
+	LeaseID      string
+}
+
+func (q *Queries) GetGoldenSnapshotBarrierAttempt(ctx context.Context, arg GetGoldenSnapshotBarrierAttemptParams) (GetGoldenSnapshotBarrierAttemptRow, error) {
+	row := q.db.QueryRow(ctx, getGoldenSnapshotBarrierAttempt, arg.ExecutionID, arg.AttemptID)
+	var i GetGoldenSnapshotBarrierAttemptRow
+	err := row.Scan(
+		&i.ExecutionID,
+		&i.AttemptID,
+		&i.AttemptState,
+		&i.LeaseID,
+	)
+	return i, err
+}
+
 const getLatestAttemptForExecution = `-- name: GetLatestAttemptForExecution :one
 SELECT a.attempt_id
 FROM executions e

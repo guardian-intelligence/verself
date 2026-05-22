@@ -489,6 +489,24 @@ func (s *Service) loadGoldenVMCreatePlan(ctx context.Context, op store.GoldenVmO
 	return plan, &checkpoint, nil
 }
 
+func (s *Service) loadRunningDurablePlan(ctx context.Context, item executionWorkItem) (durableCachePlan, error) {
+	if item.WorkloadKind != WorkloadKindRunner || item.ExternalProvider != RunnerProviderGitHub {
+		return durableCachePlan{}, nil
+	}
+	op, err := s.storeQueries().GetGoldenVMOperationForAttempt(ctx, store.GetGoldenVMOperationForAttemptParams{AttemptID: item.AttemptID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return durableCachePlan{}, nil
+		}
+		return durableCachePlan{}, fmt.Errorf("load running golden VM operation: %w", err)
+	}
+	plan, _, err := s.loadGoldenVMCreatePlan(ctx, op)
+	if err != nil {
+		return durableCachePlan{}, fmt.Errorf("load running durable plan: %w", err)
+	}
+	return plan, nil
+}
+
 func goldenVMPlanFromOperation(op store.GoldenVmOperation) goldenVMPlan {
 	return goldenVMPlan{
 		Enabled:                 true,

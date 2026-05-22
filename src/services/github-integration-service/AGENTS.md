@@ -114,8 +114,9 @@ Runner and workload bootstrap:
   sandbox-rental-service decides how those commands affect attempts, leases,
   billing, and snapshot promotion.
 - ClickHouse events should preserve the provider/control-plane sequence:
-  webhook received, provider state refreshed, demand recorded, sandbox execution
-  requested, runner assigned, provider job terminal, terminal evidence emitted.
+  webhook received, provider state refreshed, demand recorded, runner
+  registration created, sandbox execution requested, runner assigned, provider
+  job terminal, terminal evidence emitted.
 
 ## Reference Patterns
 
@@ -155,6 +156,13 @@ patterns before inventing service-local variants.
 - Runner issuance service: create JIT runner config or registration tokens only
   from persisted job demand. Tokens and JIT config are attempt scoped,
   short-lived, redacted in logs, and unusable as snapshot authority.
+- Runner assignment is not a deterministic GitHub binding. If multiple queued
+  jobs share the same `runs-on` labels, GitHub may assign any matching runner to
+  any job. Until the service has an assignment-aware pool model, production JIT
+  issuance is serialized per repository runner class with PostgreSQL advisory
+  locks plus active registration rows. When GitHub assigns the runner to a
+  different queued job with the same labels, the provider demand and runner
+  registration are rebound to the job GitHub actually selected.
 - Trust classifier: classify every run/job before it can allocate a sandbox or
   request golden promotion. Forks, pull requests, reusable workflows,
   environment protection, repository visibility, app permission drift, and org
@@ -176,8 +184,8 @@ Expected high-level ClickHouse sequence for a successful CI job:
 3. `github.delivery.enqueued`
 4. `github.provider.refresh.started`
 5. `github.job.demand.recorded`
-6. `github.sandbox.submit.requested`
-7. `github.runner.registration.created`
+6. `github.runner.registration.created`
+7. `github.sandbox.submit.requested`
 8. `github.runner.assignment.observed`
 9. `github.job.terminal.observed`
 10. `github.terminal_evidence.emitted`
@@ -280,10 +288,9 @@ Expected high-level ClickHouse sequence for a successful CI job:
   credential references.
 - The canonical Actions job-shape model needs a narrow field inventory before
   cache key generation ships. Raw workflow bytes should not be the cache key.
-- GoldenSnapshotBarrier request ownership needs one clear integration point:
-  either github-integration-service pushes exact terminal evidence to
-  sandbox-rental-service, or sandbox-rental-service pulls provider evidence by
-  execution id. Avoid supporting both.
+- GoldenSnapshotBarrier ownership is push-based: github-integration-service
+  pushes exact terminal evidence to sandbox-rental-service over the Smithy
+  internal operation, and sandbox-rental-service remains the snapshot authority.
 
 ## Editing Notes
 

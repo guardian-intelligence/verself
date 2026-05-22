@@ -1432,7 +1432,7 @@ func (s *Service) PromoteGoldenRun(ctx context.Context, req scheduler.GoldenRunP
 	repositoryFullName := strings.TrimSpace(req.RepositoryFullName)
 	installationID := req.ProviderInstallationID
 	var orgID string
-	repository, err := s.storeQueries().GetDurableRunRepository(ctx, store.GetDurableRunRepositoryParams{ProviderRepositoryID: req.ProviderRepositoryID, ProviderRunID: req.ProviderRunID})
+	repository, err := s.storeQueries().GetDurableRunRepository(ctx, store.GetDurableRunRepositoryParams{Provider: req.Provider, ProviderRepositoryID: req.ProviderRepositoryID, ProviderRunID: req.ProviderRunID})
 	if err == nil {
 		repositoryFullName = firstNonEmpty(repositoryFullName, repository.RepositoryFullName)
 		installationID = firstNonZero(installationID, repository.ProviderInstallationID)
@@ -1681,20 +1681,20 @@ func (s *Service) hydrateGitHubRunIdentity(ctx context.Context, identity RunnerE
 	if identity.Provider != RunnerProviderGitHub || identity.ProviderRunID <= 0 {
 		return identity, nil
 	}
-	invocation, err := s.githubWorkflowRunInvocationForRef(ctx, goldenRunRefFromRunnerIdentity(identity))
+	run, err := s.providerWorkflowRunForRef(ctx, goldenRunRefFromRunnerIdentity(identity))
 	if err != nil {
-		return RunnerExecutionIdentity{}, fmt.Errorf("load github workflow run invocation: %w", err)
+		return RunnerExecutionIdentity{}, fmt.Errorf("load provider workflow run: %w", err)
 	}
-	identity.RepositoryFullName = firstNonEmpty(identity.RepositoryFullName, invocation.RepositoryFullName)
-	identity.RunEventName = firstNonEmpty(invocation.EventName, identity.RunEventName)
-	identity.RunHeadSHA = firstNonEmpty(invocation.HeadSHA, identity.RunHeadSHA)
-	identity.RunHeadBranch = firstNonEmpty(invocation.HeadBranch, identity.RunHeadBranch)
-	identity.RunHeadRepository = firstNonEmpty(invocation.HeadRepositoryFullName, identity.RunHeadRepository)
-	identity.RunBaseSHA = firstNonEmpty(invocation.BaseSHA, identity.RunBaseSHA)
-	identity.RunBaseBranch = firstNonEmpty(invocation.BaseBranch, identity.RunBaseBranch)
-	identity.WorkflowPath = firstNonEmpty(invocation.WorkflowPath, identity.WorkflowPath)
-	if invocation.PullRequestNumber != 0 {
-		identity.PullRequestNumber = invocation.PullRequestNumber
+	identity.RepositoryFullName = firstNonEmpty(identity.RepositoryFullName, run.RepositoryFullName)
+	identity.RunEventName = firstNonEmpty(run.EventName, identity.RunEventName)
+	identity.RunHeadSHA = firstNonEmpty(run.HeadSHA, identity.RunHeadSHA)
+	identity.RunHeadBranch = firstNonEmpty(run.HeadBranch, identity.RunHeadBranch)
+	identity.RunHeadRepository = firstNonEmpty(run.HeadRepositoryFullName, identity.RunHeadRepository)
+	identity.RunBaseSHA = firstNonEmpty(run.BaseSHA, identity.RunBaseSHA)
+	identity.RunBaseBranch = firstNonEmpty(run.BaseBranch, identity.RunBaseBranch)
+	identity.WorkflowPath = firstNonEmpty(run.WorkflowPath, identity.WorkflowPath)
+	if run.PullRequestNumber != 0 {
+		identity.PullRequestNumber = run.PullRequestNumber
 	}
 	if identity.HeadSHA == "" {
 		identity.HeadSHA = identity.RunHeadSHA
@@ -1714,7 +1714,7 @@ func (s *Service) promoteDurableWorkflowRun(ctx context.Context, ref goldenWorkf
 		attribute.String("git.commit.sha", ref.HeadSHA),
 	))
 	defer span.End()
-	invocation, promotable, reason, err := s.githubWorkflowRunPromotionGate(ctx, ref)
+	run, promotable, reason, err := s.githubWorkflowRunPromotionGate(ctx, ref)
 	if err != nil {
 		return false, err
 	}
@@ -1731,7 +1731,7 @@ func (s *Service) promoteDurableWorkflowRun(ctx context.Context, ref goldenWorkf
 		span.SetAttributes(attribute.Bool("durable.promoted", false), attribute.String("durable.promotion_deferred_reason", reason))
 		return false, nil
 	}
-	candidates, err := s.storeQueries().ListDurablePromotionCandidatesForRun(ctx, store.ListDurablePromotionCandidatesForRunParams{ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, HeadSha: firstNonEmpty(invocation.HeadSHA, ref.HeadSHA)})
+	candidates, err := s.storeQueries().ListDurablePromotionCandidatesForRun(ctx, store.ListDurablePromotionCandidatesForRunParams{ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, HeadSha: firstNonEmpty(run.HeadSHA, ref.HeadSHA)})
 	if err != nil {
 		return false, err
 	}
@@ -1802,7 +1802,7 @@ func (s *Service) promoteGoldenVMWorkflowRun(ctx context.Context, ref goldenWork
 		attribute.String("git.commit.sha", ref.HeadSHA),
 	))
 	defer span.End()
-	invocation, promotable, reason, err := s.githubWorkflowRunPromotionGate(ctx, ref)
+	run, promotable, reason, err := s.githubWorkflowRunPromotionGate(ctx, ref)
 	if err != nil {
 		return false, err
 	}
@@ -1819,7 +1819,7 @@ func (s *Service) promoteGoldenVMWorkflowRun(ctx context.Context, ref goldenWork
 		span.SetAttributes(attribute.Bool("golden_vm.promoted", false), attribute.String("golden_vm.promotion_deferred_reason", reason))
 		return false, nil
 	}
-	candidates, err := s.storeQueries().ListGoldenVMSnapshotCandidatesForRun(ctx, store.ListGoldenVMSnapshotCandidatesForRunParams{ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, HeadSha: firstNonEmpty(invocation.HeadSHA, ref.HeadSHA)})
+	candidates, err := s.storeQueries().ListGoldenVMSnapshotCandidatesForRun(ctx, store.ListGoldenVMSnapshotCandidatesForRunParams{ProviderRunID: ref.ProviderRunID, ProviderRunAttempt: ref.ProviderRunAttempt, HeadSha: firstNonEmpty(run.HeadSHA, ref.HeadSHA)})
 	if err != nil {
 		return false, err
 	}
@@ -1918,32 +1918,34 @@ func (s *Service) githubWorkflowRunPromotionStateForRef(ctx context.Context, ref
 	return state, nil
 }
 
-func (s *Service) githubWorkflowRunPromotionGate(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowInvocation, bool, string, error) {
+func (s *Service) githubWorkflowRunPromotionGate(ctx context.Context, ref goldenWorkflowRunRef) (providerWorkflowRun, bool, string, error) {
 	if ref.Provider != RunnerProviderGitHub {
-		return githubWorkflowInvocation{HeadSHA: ref.HeadSHA}, true, "", nil
+		return providerWorkflowRun{Provider: ref.Provider, HeadSHA: ref.HeadSHA}, true, "", nil
 	}
-	invocation, err := s.githubWorkflowRunInvocationForRef(ctx, ref)
+	run, err := s.providerWorkflowRunForRef(ctx, ref)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return githubWorkflowInvocation{}, false, "github workflow run invocation is not observed", nil
+			return providerWorkflowRun{}, false, "provider workflow run is not observed", nil
 		}
-		return githubWorkflowInvocation{}, false, "", err
+		return providerWorkflowRun{}, false, "", err
 	}
-	ok, reason := invocation.dogfoodMainPromotion(ref)
-	return invocation, ok, reason, nil
+	ok, reason := run.githubDogfoodMainPromotion(ref)
+	return run, ok, reason, nil
 }
 
-func (s *Service) githubWorkflowRunInvocationForRef(ctx context.Context, ref goldenWorkflowRunRef) (githubWorkflowInvocation, error) {
-	row, err := s.storeQueries().GetWorkflowRunInvocation(ctx, store.GetWorkflowRunInvocationParams{
+func (s *Service) providerWorkflowRunForRef(ctx context.Context, ref goldenWorkflowRunRef) (providerWorkflowRun, error) {
+	row, err := s.storeQueries().GetProviderWorkflowRun(ctx, store.GetProviderWorkflowRunParams{
+		Provider:               ref.Provider,
 		ProviderInstallationID: ref.ProviderInstallationID,
 		ProviderRepositoryID:   ref.ProviderRepositoryID,
 		ProviderRunID:          ref.ProviderRunID,
 		ProviderRunAttempt:     ref.ProviderRunAttempt,
 	})
 	if err != nil {
-		return githubWorkflowInvocation{}, err
+		return providerWorkflowRun{}, err
 	}
-	return githubWorkflowInvocation{
+	return providerWorkflowRun{
+		Provider:               row.Provider,
 		InstallationID:         row.ProviderInstallationID,
 		RepositoryID:           row.ProviderRepositoryID,
 		RunID:                  row.ProviderRunID,

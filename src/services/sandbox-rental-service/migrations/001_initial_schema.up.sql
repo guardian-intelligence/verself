@@ -307,7 +307,8 @@ CREATE TABLE runner_jobs (
     PRIMARY KEY (provider, provider_job_id)
 );
 
-CREATE TABLE github_workflow_invocations (
+CREATE TABLE provider_workflow_runs (
+    provider               TEXT        NOT NULL DEFAULT 'github' CHECK (provider <> ''),
     provider_installation_id BIGINT    NOT NULL DEFAULT 0,
     provider_repository_id BIGINT      NOT NULL,
     provider_run_id        BIGINT      NOT NULL,
@@ -321,13 +322,14 @@ CREATE TABLE github_workflow_invocations (
     base_branch            TEXT        NOT NULL DEFAULT '',
     pull_request_number    BIGINT      NOT NULL DEFAULT 0,
     workflow_path          TEXT        NOT NULL DEFAULT '',
+    commit_count           BIGINT,
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (provider_installation_id, provider_repository_id, provider_run_id, provider_run_attempt)
+    PRIMARY KEY (provider, provider_installation_id, provider_repository_id, provider_run_id, provider_run_attempt)
 );
 
-CREATE INDEX idx_github_workflow_invocations_run
-    ON github_workflow_invocations (provider_repository_id, provider_run_id, provider_run_attempt);
+CREATE INDEX idx_provider_workflow_runs_run
+    ON provider_workflow_runs (provider, provider_repository_id, provider_run_id, provider_run_attempt);
 
 CREATE INDEX idx_runner_jobs_installation_status
     ON runner_jobs (provider, provider_installation_id, status, updated_at DESC);

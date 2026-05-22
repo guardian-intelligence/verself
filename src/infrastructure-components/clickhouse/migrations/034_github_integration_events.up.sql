@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS verself.github_integration_events
     runner_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
     runner_name String DEFAULT '' CODEC(ZSTD(3)),
     runner_class LowCardinality(String) DEFAULT '',
+    job_shape_id String DEFAULT '' CODEC(ZSTD(3)),
+    trust_class LowCardinality(String) DEFAULT '',
     allocation_id UUID,
     execution_id UUID,
     attempt_id UUID,

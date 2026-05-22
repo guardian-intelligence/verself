@@ -223,20 +223,22 @@ func (q *Queries) GetDurableCacheGenerationForUserPrune(ctx context.Context, arg
 const getDurableRunRepository = `-- name: GetDurableRunRepository :one
 SELECT
     p.org_id,
-    provider_installation_id,
-    gi.provider_repository_id,
-    gi.repository_full_name
-FROM github_workflow_invocations gi
-JOIN runner_provider_repositories p ON p.provider = 'github'
-    AND p.provider_repository_id = gi.provider_repository_id
+    run.provider_installation_id,
+    run.provider_repository_id,
+    run.repository_full_name
+FROM provider_workflow_runs run
+JOIN runner_provider_repositories p ON p.provider = run.provider
+    AND p.provider_repository_id = run.provider_repository_id
     AND p.active
-WHERE gi.provider_repository_id = $1
-  AND gi.provider_run_id = $2
-ORDER BY gi.provider_run_attempt DESC
+WHERE run.provider = $1
+  AND run.provider_repository_id = $2
+  AND run.provider_run_id = $3
+ORDER BY run.provider_run_attempt DESC
 LIMIT 1
 `
 
 type GetDurableRunRepositoryParams struct {
+	Provider             string
 	ProviderRepositoryID int64
 	ProviderRunID        int64
 }
@@ -249,7 +251,7 @@ type GetDurableRunRepositoryRow struct {
 }
 
 func (q *Queries) GetDurableRunRepository(ctx context.Context, arg GetDurableRunRepositoryParams) (GetDurableRunRepositoryRow, error) {
-	row := q.db.QueryRow(ctx, getDurableRunRepository, arg.ProviderRepositoryID, arg.ProviderRunID)
+	row := q.db.QueryRow(ctx, getDurableRunRepository, arg.Provider, arg.ProviderRepositoryID, arg.ProviderRunID)
 	var i GetDurableRunRepositoryRow
 	err := row.Scan(
 		&i.OrgID,

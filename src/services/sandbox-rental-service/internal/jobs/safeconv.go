@@ -63,15 +63,6 @@ func durationFromSeconds(value uint64, field string) time.Duration {
 	return time.Duration(value) * time.Second // #nosec G115 -- value is checked against the duration range above.
 }
 
-func vmResourcesFromDB(vcpus, memoryMiB, rootDiskGiB int32) VMResources {
-	return VMResources{
-		VCPUs:       uint32FromInt32(vcpus, "vcpus"),
-		MemoryMiB:   uint32FromInt32(memoryMiB, "memory mib"),
-		RootDiskGiB: uint32FromInt32(rootDiskGiB, "root disk gib"),
-		KernelImage: KernelImageDefault,
-	}
-}
-
 func vmResourcesForLease(resources VMResources) vmorchestrator.VMResources {
 	return vmorchestrator.VMResources{
 		VCPUs:       resources.VCPUs,

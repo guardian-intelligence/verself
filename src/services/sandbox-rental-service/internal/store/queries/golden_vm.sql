@@ -180,6 +180,57 @@ SELECT
 FROM golden_vm_operation
 WHERE operation_id = sqlc.arg(operation_id);
 
+-- name: GetGoldenVMOperationForAttempt :one
+SELECT
+    operation_id,
+    execution_id,
+    attempt_id,
+    allocation_id,
+    org_id,
+    repository_id,
+    provider,
+    provider_repository_id,
+    scope_kind,
+    scope_ref,
+    job_shape_id,
+    trust_class,
+    source_generation_set_hash,
+    generation_set_hash,
+    candidate_golden_vm_snapshot_id,
+    promotion_eligible,
+    provider_run_id,
+    provider_run_attempt,
+    provider_job_id,
+    head_sha,
+    lease_id,
+    exec_id,
+    create_job_id,
+    snapshot_key,
+    root_snapshot_ref,
+    root_snapshot_guid,
+    vmstate_artifact_ref,
+    memory_artifact_ref,
+    mount_snapshots_json,
+    state_bytes,
+    memory_bytes,
+    requested_at,
+    create_queued_at,
+    creating_started_at,
+    created_at,
+    publishing_started_at,
+    published_at,
+    promoting_started_at,
+    promoted_at,
+    result_recorded_at,
+    state,
+    failure_reason,
+    updated_at
+FROM golden_vm_operation
+WHERE attempt_id = sqlc.arg(attempt_id)
+  AND state IN ('requested', 'create_queued', 'creating', 'created', 'publishing', 'published', 'promoting')
+ORDER BY requested_at DESC, operation_id DESC
+LIMIT 1;
+
 -- name: ListGoldenVMCreateOperationsForReconcile :many
 SELECT operation_id
 FROM golden_vm_operation

@@ -3,10 +3,10 @@ package githubintegration
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -40,8 +40,6 @@ const (
 	defaultRunnerWorkFolder = "_work"
 	defaultRunnerPrefix     = "verself-"
 	maxWebhookBytes         = 1 << 20
-
-	runnerRegistrationRetryAfter = 95 * time.Second
 )
 
 var (
@@ -313,8 +311,7 @@ func (s *Service) ProcessReadyDeliveries(ctx context.Context) error {
 
 func (s *Service) ProcessQueuedJobs(ctx context.Context) error {
 	rows, err := s.queries.ListQueuedWorkflowJobsForRunnerSubmission(ctx, store.ListQueuedWorkflowJobsForRunnerSubmissionParams{
-		RetryBefore: pgTime(time.Now().UTC().Add(-runnerRegistrationRetryAfter)),
-		LimitCount:  s.cfg.WorkerBatchSize,
+		LimitCount: s.cfg.WorkerBatchSize,
 	})
 	if err != nil {
 		return err
@@ -355,14 +352,23 @@ func (s *Service) processQueuedJob(ctx context.Context, row store.ListQueuedWork
 	return nil
 }
 
+func (s *Service) tryRunnerClassLock(ctx context.Context, providerRepositoryID int64, runnerClass string) (func(), bool, error) {
+	key1, key2 := runnerClassLockKey(providerRepositoryID, runnerClass)
+	return s.tryAdvisoryLockPair(ctx, key1, key2)
+}
+
 func (s *Service) tryQueuedJobLock(ctx context.Context, providerJobID int64) (func(), bool, error) {
+	return s.tryAdvisoryLock(ctx, providerJobID)
+}
+
+func (s *Service) tryAdvisoryLock(ctx context.Context, key int64) (func(), bool, error) {
 	conn, err := s.cfg.PG.Acquire(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	release := func() { conn.Release() }
 	var locked bool
-	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", providerJobID).Scan(&locked); err != nil {
+	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", key).Scan(&locked); err != nil {
 		release()
 		return nil, false, err
 	}
@@ -371,10 +377,37 @@ func (s *Service) tryQueuedJobLock(ctx context.Context, providerJobID int64) (fu
 		return nil, false, nil
 	}
 	unlock := func() {
-		_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", providerJobID)
+		_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", key)
 		release()
 	}
 	return unlock, true, nil
+}
+
+func (s *Service) tryAdvisoryLockPair(ctx context.Context, key1, key2 int32) (func(), bool, error) {
+	conn, err := s.cfg.PG.Acquire(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	release := func() { conn.Release() }
+	var locked bool
+	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1, $2)", key1, key2).Scan(&locked); err != nil {
+		release()
+		return nil, false, err
+	}
+	if !locked {
+		release()
+		return nil, false, nil
+	}
+	unlock := func() {
+		_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1, $2)", key1, key2)
+		release()
+	}
+	return unlock, true, nil
+}
+
+func runnerClassLockKey(providerRepositoryID int64, runnerClass string) (int32, int32) {
+	sum := sha256.Sum256([]byte("github-runner-class:" + strconv.FormatInt(providerRepositoryID, 10) + ":" + runnerClass))
+	return int32(binary.BigEndian.Uint32(sum[0:4])), int32(binary.BigEndian.Uint32(sum[4:8]))
 }
 
 func (s *Service) processLockedDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
@@ -475,7 +508,7 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.ignored", "ignored", err.Error(), started, time.Now().UTC()))
 		return nil
 	}
-	runnerName, err := githubRunnerName(event.WorkflowJob.ID)
+	runnerName, err := githubRunnerName(event.Repository.ID, event.WorkflowJob.RunID, event.WorkflowJob.RunAttempt, event.WorkflowJob.ID)
 	if err != nil {
 		return err
 	}
@@ -541,19 +574,118 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	if cacheManifest != nil {
 		s.writeEvent(ctx, githubEventFromMetadata(metadataFromWorkflowJob(deliveryID, event), "github.cache_manifest.fetched", "succeeded", "", started, time.Now().UTC()))
 	}
-	jit, err := s.createJITConfig(ctx, event.Installation.ID, owner, runnerName, runnerClass)
+	shape, err := buildGitHubJobShape(event, workflow, runnerClass, cacheManifestContentSHA(cacheManifest))
 	if err != nil {
+		return err
+	}
+	if err := s.queries.UpsertJobShape(ctx, store.UpsertJobShapeParams{
+		JobShapeID:             shape.JobShapeID,
+		ProviderInstallationID: event.Installation.ID,
+		ProviderRepositoryID:   event.Repository.ID,
+		RepositoryFullName:     event.Repository.FullName,
+		WorkflowPath:           shape.Shape.WorkflowPath,
+		WorkflowName:           shape.Shape.WorkflowName,
+		JobName:                shape.Shape.JobName,
+		MatrixKey:              shape.Shape.MatrixKey,
+		RunnerClass:            shape.Shape.RunnerClass,
+		RunnerLabelsJson:       shape.LabelsJSON,
+		CacheManifestSha256:    shape.Shape.CacheManifestSHA256,
+		TrustClass:             shape.Shape.TrustClass,
+		CanonicalJson:          shape.CanonicalJSON,
+		UpdatedAt:              pgTime(time.Now().UTC()),
+	}); err != nil {
+		return err
+	}
+	demand, err := s.queries.EnsureProviderDemand(ctx, store.EnsureProviderDemandParams{
+		DemandID:               pgUUID(uuid.New()),
+		ProviderJobID:          event.WorkflowJob.ID,
+		ProviderInstallationID: event.Installation.ID,
+		ProviderRepositoryID:   event.Repository.ID,
+		RepositoryFullName:     event.Repository.FullName,
+		ProviderRunID:          event.WorkflowJob.RunID,
+		ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
+		JobShapeID:             shape.JobShapeID,
+		TrustClass:             shape.Shape.TrustClass,
+		RunnerClass:            runnerClass,
+		RunnerName:             runnerName,
+		LastDeliveryID:         deliveryID,
+		UpdatedAt:              pgTime(time.Now().UTC()),
+	})
+	if err != nil {
+		return err
+	}
+	meta := metadataFromWorkflowJob(deliveryID, event)
+	meta.RunnerClass = runnerClass
+	meta.JobShapeID = demand.JobShapeID
+	meta.TrustClass = demand.TrustClass
+	if demand.State == "sandbox_submitted" {
+		meta.RunnerID = demand.RunnerID
+		meta.RunnerName = demand.RunnerName
+		meta.AllocationID = uuidFromPG(demand.SandboxAllocationID)
+		meta.ExecutionID = uuidFromPG(demand.SandboxExecutionID)
+		meta.AttemptID = uuidFromPG(demand.SandboxAttemptID)
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.sandbox.submit.reused", "succeeded", "provider_demand:"+demand.State, started, time.Now().UTC()))
+		return nil
+	}
+	unlockRunnerClass, locked, err := s.tryRunnerClassLock(ctx, event.Repository.ID, runnerClass)
+	if err != nil {
+		return err
+	}
+	if !locked {
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_deferred", "deferred", "runner_class_lock_busy", started, time.Now().UTC()))
+		return nil
+	}
+	defer unlockRunnerClass()
+	claim, err := s.queries.ClaimProviderDemandForJIT(ctx, store.ClaimProviderDemandForJITParams{
+		ClaimedAt:     pgTime(time.Now().UTC()),
+		ProviderJobID: event.WorkflowJob.ID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		reason := "provider_demand:" + demand.State
+		active, activeErr := s.queries.GetActiveRunnerRegistrationForRunnerClass(ctx, store.GetActiveRunnerRegistrationForRunnerClassParams{
+			ProviderRepositoryID: event.Repository.ID,
+			RunnerClass:          runnerClass,
+		})
+		if activeErr == nil && active.ProviderJobID != event.WorkflowJob.ID {
+			reason = "runner_class_busy:" + strconv.FormatInt(active.ProviderJobID, 10)
+		} else if activeErr != nil && !errors.Is(activeErr, pgx.ErrNoRows) {
+			return activeErr
+		}
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_deferred", "deferred", reason, started, time.Now().UTC()))
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	jit, err := s.createJITConfig(ctx, event.Installation.ID, owner, claim.RunnerName, runnerClass)
+	if err != nil {
+		_ = s.queries.MarkProviderDemandFailed(ctx, store.MarkProviderDemandFailedParams{
+			ProviderJobID: event.WorkflowJob.ID,
+			State:         "jit_failed",
+			FailureReason: truncate(err.Error(), 1024),
+			UpdatedAt:     pgTime(time.Now().UTC()),
+		})
 		return err
 	}
 	runnerID := jit.Runner.ID
 	if runnerID == 0 {
 		return fmt.Errorf("github jit config response missing runner id")
 	}
-	runnerName = firstNonEmpty(jit.Runner.Name, runnerName)
+	runnerName = firstNonEmpty(jit.Runner.Name, claim.RunnerName)
 	jitHash := sha256Hex([]byte(jit.EncodedJITConfig))
 	now := time.Now().UTC()
+	if err := s.queries.MarkProviderDemandJITCreated(ctx, store.MarkProviderDemandJITCreatedParams{
+		ProviderJobID:   event.WorkflowJob.ID,
+		RunnerID:        runnerID,
+		RunnerName:      runnerName,
+		JitConfigSha256: jitHash,
+		UpdatedAt:       pgTime(now),
+	}); err != nil {
+		return err
+	}
 	if err := s.queries.UpsertRunnerRegistration(ctx, store.UpsertRunnerRegistrationParams{
 		ProviderJobID:          event.WorkflowJob.ID,
+		DemandID:               claim.DemandID,
 		ProviderInstallationID: event.Installation.ID,
 		ProviderRepositoryID:   event.Repository.ID,
 		RunnerID:               runnerID,
@@ -565,7 +697,6 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	}); err != nil {
 		return err
 	}
-	meta := metadataFromWorkflowJob(deliveryID, event)
 	meta.RunnerID = runnerID
 	meta.RunnerName = runnerName
 	meta.RunnerClass = runnerClass
@@ -580,9 +711,26 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		WorkflowRun:      ptr(sandboxWorkflowObservation(workflow)),
 		CacheManifest:    cacheManifest,
 	}}
+	outboxHash, err := s.recordSandboxSubmitOutbox(ctx, event, runnerName, runnerID, runnerClass, jitHash, shape.JobShapeID)
+	if err != nil {
+		return err
+	}
 	resp, err := s.cfg.Sandbox.InternalSubmitRunnerJob(ctx, req)
 	if err != nil {
 		_ = s.deleteRunner(ctx, event.Installation.ID, owner, runnerID)
+		_ = s.queries.MarkProviderOutboxFailed(ctx, store.MarkProviderOutboxFailedParams{
+			CommandKind:   "sandbox_submit_runner_job",
+			CommandSha256: outboxHash,
+			State:         "retryable",
+			FailureReason: truncate(err.Error(), 1024),
+			UpdatedAt:     pgTime(time.Now().UTC()),
+		})
+		_ = s.queries.MarkProviderDemandFailed(ctx, store.MarkProviderDemandFailedParams{
+			ProviderJobID: event.WorkflowJob.ID,
+			State:         "sandbox_failed",
+			FailureReason: truncate(err.Error(), 1024),
+			UpdatedAt:     pgTime(time.Now().UTC()),
+		})
 		_ = s.queries.MarkRunnerRegistrationFailed(ctx, store.MarkRunnerRegistrationFailedParams{
 			ProviderJobID: event.WorkflowJob.ID,
 			FailureReason: truncate(err.Error(), 1024),
@@ -593,6 +741,19 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	if resp.Result == nil || resp.StatusCode != http.StatusCreated {
 		_ = s.deleteRunner(ctx, event.Installation.ID, owner, runnerID)
 		reason := sandboxProblem(resp)
+		_ = s.queries.MarkProviderOutboxFailed(ctx, store.MarkProviderOutboxFailedParams{
+			CommandKind:   "sandbox_submit_runner_job",
+			CommandSha256: outboxHash,
+			State:         "failed",
+			FailureReason: truncate(reason, 1024),
+			UpdatedAt:     pgTime(time.Now().UTC()),
+		})
+		_ = s.queries.MarkProviderDemandFailed(ctx, store.MarkProviderDemandFailedParams{
+			ProviderJobID: event.WorkflowJob.ID,
+			State:         "sandbox_failed",
+			FailureReason: truncate(reason, 1024),
+			UpdatedAt:     pgTime(time.Now().UTC()),
+		})
 		_ = s.queries.MarkRunnerRegistrationFailed(ctx, store.MarkRunnerRegistrationFailedParams{
 			ProviderJobID: event.WorkflowJob.ID,
 			FailureReason: truncate(reason, 1024),
@@ -611,6 +772,26 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		meta.RunnerID = runnerID
 		meta.RunnerName = runnerName
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.registration.reused", "succeeded", "", started, time.Now().UTC()))
+	}
+	if err := s.queries.MarkProviderDemandSandboxSubmitted(ctx, store.MarkProviderDemandSandboxSubmittedParams{
+		ProviderJobID:       event.WorkflowJob.ID,
+		SandboxAllocationID: pgUUID(submission.AllocationID),
+		SandboxExecutionID:  pgUUID(submission.ExecutionID),
+		SandboxAttemptID:    pgUUID(submission.AttemptID),
+		RunnerID:            runnerID,
+		RunnerName:          runnerName,
+		UpdatedAt:           pgTime(time.Now().UTC()),
+	}); err != nil {
+		return err
+	}
+	if err := s.queries.MarkProviderOutboxProcessed(ctx, store.MarkProviderOutboxProcessedParams{
+		CommandKind:        "sandbox_submit_runner_job",
+		CommandSha256:      outboxHash,
+		SandboxExecutionID: pgUUID(submission.ExecutionID),
+		SandboxAttemptID:   pgUUID(submission.AttemptID),
+		ProcessedAt:        pgTime(time.Now().UTC()),
+	}); err != nil {
+		return err
 	}
 	if err := s.queries.MarkRunnerRegistrationSubmitted(ctx, store.MarkRunnerRegistrationSubmittedParams{
 		ProviderJobID:       event.WorkflowJob.ID,
@@ -642,6 +823,57 @@ func (s *Service) cacheManifestForWorkflow(ctx context.Context, installationID i
 		SourceSHA:     ref,
 		ContentBase64: sandboxrentalclient.RunnerCacheManifestContentBase64(base64.StdEncoding.EncodeToString(content)),
 	}, nil
+}
+
+func (s *Service) recordSandboxSubmitOutbox(ctx context.Context, event workflowJobWebhook, runnerName string, runnerID int64, runnerClass string, jitHash string, jobShapeID string) (string, error) {
+	payload, err := json.Marshal(struct {
+		CommandKind            string `json:"command_kind"`
+		Provider               string `json:"provider"`
+		ProviderInstallationID int64  `json:"provider_installation_id"`
+		ProviderRepositoryID   int64  `json:"provider_repository_id"`
+		ProviderRunID          int64  `json:"provider_run_id"`
+		ProviderRunAttempt     int64  `json:"provider_run_attempt"`
+		ProviderJobID          int64  `json:"provider_job_id"`
+		RunnerName             string `json:"runner_name"`
+		RunnerID               int64  `json:"runner_id"`
+		RunnerClass            string `json:"runner_class"`
+		JobShapeID             string `json:"job_shape_id"`
+		JITConfigSHA256        string `json:"jit_config_sha256"`
+	}{
+		CommandKind:            "sandbox_submit_runner_job",
+		Provider:               providerGitHub,
+		ProviderInstallationID: event.Installation.ID,
+		ProviderRepositoryID:   event.Repository.ID,
+		ProviderRunID:          event.WorkflowJob.RunID,
+		ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
+		ProviderJobID:          event.WorkflowJob.ID,
+		RunnerName:             runnerName,
+		RunnerID:               runnerID,
+		RunnerClass:            runnerClass,
+		JobShapeID:             jobShapeID,
+		JITConfigSHA256:        jitHash,
+	})
+	if err != nil {
+		return "", err
+	}
+	hash := sha256Hex(payload)
+	now := time.Now().UTC()
+	if err := s.queries.UpsertProviderOutboxCommand(ctx, store.UpsertProviderOutboxCommandParams{
+		OutboxID:               pgUUID(uuid.New()),
+		CommandKind:            "sandbox_submit_runner_job",
+		ProviderJobID:          event.WorkflowJob.ID,
+		ProviderRunID:          event.WorkflowJob.RunID,
+		ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
+		ProviderInstallationID: event.Installation.ID,
+		ProviderRepositoryID:   event.Repository.ID,
+		CommandSha256:          hash,
+		PayloadJson:            payload,
+		NextAttemptAt:          pgTime(now),
+		UpdatedAt:              pgTime(now),
+	}); err != nil {
+		return "", err
+	}
+	return hash, nil
 }
 
 func githubCacheManifestRef(workflow workflowObservation) string {
@@ -790,29 +1022,28 @@ func (s *Service) recordRunnerAssignment(ctx context.Context, installationID, re
 	if err != nil {
 		return err
 	}
+	if reg.State == "cleaned" || reg.State == "failed" {
+		return nil
+	}
 	if reg.ProviderJobID == job.ID {
 		return nil
 	}
 	now := time.Now().UTC()
-	reason := fmt.Sprintf("runner assigned to provider job %d", job.ID)
-	if err := s.queries.MarkRunnerRegistrationDisplaced(ctx, store.MarkRunnerRegistrationDisplacedParams{
-		ProviderJobID: reg.ProviderJobID,
-		FailureReason: truncate(reason, 1024),
-		UpdatedAt:     pgTime(now),
-	}); err != nil {
+	reason := fmt.Sprintf("runner moved from provider job %d to provider job %d", reg.ProviderJobID, job.ID)
+	if err := s.reassignRunnerRegistration(ctx, reg.ProviderJobID, job.ID, runnerName, reason, now); err != nil {
 		return err
 	}
 	s.writeEvent(ctx, githubEvent{
 		ObservedAt:             now,
-		EventName:              "github.runner.registration.displaced",
-		Result:                 "displaced",
+		EventName:              "github.runner.registration.rebound",
+		Result:                 "rebound",
 		Reason:                 reason,
 		DeliveryID:             deliveryID,
 		ProviderInstallationID: uint64FromInt64(installationID),
 		ProviderRepositoryID:   uint64FromInt64(repositoryID),
 		ProviderRunID:          uint64FromInt64(job.RunID),
 		ProviderRunAttempt:     uint64FromInt64(job.RunAttempt),
-		ProviderJobID:          uint64FromInt64(reg.ProviderJobID),
+		ProviderJobID:          uint64FromInt64(job.ID),
 		RepositoryFullName:     repositoryFullName,
 		RunnerID:               uint64FromInt64(job.RunnerID),
 		RunnerName:             runnerName,
@@ -820,17 +1051,51 @@ func (s *Service) recordRunnerAssignment(ctx context.Context, installationID, re
 		StartedAt:              started,
 		CompletedAt:            now,
 		AttributesJSON: mustJSON(map[string]string{
-			"assigned_provider_job_id": strconv.FormatInt(job.ID, 10),
+			"original_provider_job_id": strconv.FormatInt(reg.ProviderJobID, 10),
 			"registration_state":       reg.State,
 		}),
 	})
-	if job.Status == "completed" && reg.RunnerID != 0 {
-		owner, _, ok := strings.Cut(repositoryFullName, "/")
-		if ok && owner != "" {
-			_ = s.deleteRunner(ctx, installationID, owner, reg.RunnerID)
-		}
-	}
 	return nil
+}
+
+func (s *Service) reassignRunnerRegistration(ctx context.Context, fromProviderJobID, toProviderJobID int64, runnerName string, reason string, at time.Time) error {
+	tx, err := s.cfg.PG.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := store.New(tx)
+	assigned, err := qtx.AssignProviderDemandToRunnerFromDemand(ctx, store.AssignProviderDemandToRunnerFromDemandParams{
+		FromProviderJobID: fromProviderJobID,
+		ToProviderJobID:   toProviderJobID,
+		UpdatedAt:         pgTime(at),
+	})
+	if err != nil {
+		return err
+	}
+	if assigned == 0 {
+		return fmt.Errorf("github runner assignment target demand missing: from_provider_job_id=%d to_provider_job_id=%d", fromProviderJobID, toProviderJobID)
+	}
+	transferred, err := qtx.TransferRunnerRegistrationToJob(ctx, store.TransferRunnerRegistrationToJobParams{
+		FromProviderJobID: fromProviderJobID,
+		ToProviderJobID:   toProviderJobID,
+		RunnerName:        runnerName,
+		UpdatedAt:         pgTime(at),
+	})
+	if err != nil {
+		return err
+	}
+	if transferred == 0 {
+		return fmt.Errorf("github runner registration missing for reassignment: from_provider_job_id=%d runner_name=%s", fromProviderJobID, runnerName)
+	}
+	if _, err := qtx.ResetProviderDemandAfterRunnerReassignment(ctx, store.ResetProviderDemandAfterRunnerReassignmentParams{
+		ProviderJobID: fromProviderJobID,
+		FailureReason: truncate(reason, 1024),
+		UpdatedAt:     pgTime(at),
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Service) observeSandboxWorkflowRun(ctx context.Context, workflow workflowObservation) error {
@@ -957,12 +1222,12 @@ func verifyGitHubSignature(secret string, payload []byte, signature string) erro
 	return nil
 }
 
-func githubRunnerName(jobID int64) (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
+func githubRunnerName(repositoryID, runID, runAttempt, jobID int64) (string, error) {
+	if jobID <= 0 {
+		return "", fmt.Errorf("%w: provider job id is required", ErrWebhookRejected)
 	}
-	return fmt.Sprintf("verself-%d-%s", jobID, hex.EncodeToString(b[:])[:10]), nil
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%d:%d", repositoryID, runID, runAttempt, jobID)))
+	return fmt.Sprintf("verself-%d-%s", jobID, hex.EncodeToString(sum[:])[:10]), nil
 }
 
 func createAppJWT(appID int64, key *rsa.PrivateKey) (string, error) {
@@ -993,6 +1258,13 @@ func pgUUID(id uuid.UUID) pgtype.UUID {
 		return pgtype.UUID{}
 	}
 	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
+func uuidFromPG(id pgtype.UUID) uuid.UUID {
+	if !id.Valid {
+		return uuid.Nil
+	}
+	return uuid.UUID(id.Bytes)
 }
 
 type sandboxSubmissionResult struct {

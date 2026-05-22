@@ -245,6 +245,89 @@ func (q *Queries) GetProviderQueuedJobContext(ctx context.Context, arg GetProvid
 	return i, err
 }
 
+const getProviderWorkflowRun = `-- name: GetProviderWorkflowRun :one
+SELECT
+    provider,
+    provider_installation_id,
+    provider_repository_id,
+    provider_run_id,
+    provider_run_attempt,
+    repository_full_name,
+    event_name,
+    head_sha,
+    head_branch,
+    head_repository_full_name,
+    base_sha,
+    base_branch,
+    workflow_path,
+    pull_request_number,
+    COALESCE(commit_count, 0)::bigint AS commit_count
+FROM provider_workflow_runs
+WHERE provider = $1
+  AND provider_installation_id = $2
+  AND provider_repository_id = $3
+  AND provider_run_id = $4
+ORDER BY
+  CASE WHEN $5::bigint <> 0 AND provider_run_attempt = $5 THEN 0 ELSE 1 END,
+  provider_run_attempt DESC
+LIMIT 1
+`
+
+type GetProviderWorkflowRunParams struct {
+	Provider               string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+}
+
+type GetProviderWorkflowRunRow struct {
+	Provider               string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	RepositoryFullName     string
+	EventName              string
+	HeadSha                string
+	HeadBranch             string
+	HeadRepositoryFullName string
+	BaseSha                string
+	BaseBranch             string
+	WorkflowPath           string
+	PullRequestNumber      int64
+	CommitCount            int64
+}
+
+func (q *Queries) GetProviderWorkflowRun(ctx context.Context, arg GetProviderWorkflowRunParams) (GetProviderWorkflowRunRow, error) {
+	row := q.db.QueryRow(ctx, getProviderWorkflowRun,
+		arg.Provider,
+		arg.ProviderInstallationID,
+		arg.ProviderRepositoryID,
+		arg.ProviderRunID,
+		arg.ProviderRunAttempt,
+	)
+	var i GetProviderWorkflowRunRow
+	err := row.Scan(
+		&i.Provider,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
+		&i.RepositoryFullName,
+		&i.EventName,
+		&i.HeadSha,
+		&i.HeadBranch,
+		&i.HeadRepositoryFullName,
+		&i.BaseSha,
+		&i.BaseBranch,
+		&i.WorkflowPath,
+		&i.PullRequestNumber,
+		&i.CommitCount,
+	)
+	return i, err
+}
+
 const getRunnerAllocationByExecution = `-- name: GetRunnerAllocationByExecution :one
 SELECT allocation_id, provider
 FROM runner_allocations
@@ -371,17 +454,17 @@ LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
 LEFT JOIN runner_jobs j ON j.provider = a.provider
     AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
 LEFT JOIN LATERAL (
-    SELECT gi.event_name, gi.head_sha, gi.head_branch, gi.head_repository_full_name,
-           gi.base_sha, gi.base_branch, gi.workflow_path, gi.pull_request_number
-    FROM github_workflow_invocations gi
-    WHERE a.provider = 'github'
-      AND gi.provider_installation_id = a.provider_installation_id
-      AND gi.provider_repository_id = a.provider_repository_id
-      AND gi.provider_run_id = COALESCE(j.provider_run_id, 0)
+    SELECT run.event_name, run.head_sha, run.head_branch, run.head_repository_full_name,
+           run.base_sha, run.base_branch, run.workflow_path, run.pull_request_number
+    FROM provider_workflow_runs run
+    WHERE run.provider = a.provider
+      AND run.provider_installation_id = a.provider_installation_id
+      AND run.provider_repository_id = a.provider_repository_id
+      AND run.provider_run_id = COALESCE(j.provider_run_id, 0)
     ORDER BY
-      CASE WHEN COALESCE(j.provider_run_attempt, 0) <> 0 AND gi.provider_run_attempt = j.provider_run_attempt THEN 0 ELSE 1 END,
-      CASE WHEN gi.event_name <> '' THEN 0 ELSE 1 END,
-      gi.provider_run_attempt DESC
+      CASE WHEN COALESCE(j.provider_run_attempt, 0) <> 0 AND run.provider_run_attempt = j.provider_run_attempt THEN 0 ELSE 1 END,
+      CASE WHEN run.event_name <> '' THEN 0 ELSE 1 END,
+      run.provider_run_attempt DESC
     LIMIT 1
 ) inv ON true
 WHERE a.execution_id = $1
@@ -527,83 +610,6 @@ func (q *Queries) GetRunnerJobTerminalResult(ctx context.Context, arg GetRunnerJ
 	row := q.db.QueryRow(ctx, getRunnerJobTerminalResult, arg.Provider, arg.ProviderJobID)
 	var i GetRunnerJobTerminalResultRow
 	err := row.Scan(&i.Status, &i.Conclusion)
-	return i, err
-}
-
-const getWorkflowRunInvocation = `-- name: GetWorkflowRunInvocation :one
-SELECT
-    provider_installation_id,
-    provider_repository_id,
-    provider_run_id,
-    provider_run_attempt,
-    repository_full_name,
-    event_name,
-    head_sha,
-    head_branch,
-    head_repository_full_name,
-    base_sha,
-    base_branch,
-    workflow_path,
-    pull_request_number,
-    COALESCE(commit_count, 0)::bigint AS commit_count
-FROM github_workflow_invocations
-WHERE provider_installation_id = $1
-  AND provider_repository_id = $2
-  AND provider_run_id = $3
-ORDER BY
-  CASE WHEN $4::bigint <> 0 AND provider_run_attempt = $4 THEN 0 ELSE 1 END,
-  provider_run_attempt DESC
-LIMIT 1
-`
-
-type GetWorkflowRunInvocationParams struct {
-	ProviderInstallationID int64
-	ProviderRepositoryID   int64
-	ProviderRunID          int64
-	ProviderRunAttempt     int64
-}
-
-type GetWorkflowRunInvocationRow struct {
-	ProviderInstallationID int64
-	ProviderRepositoryID   int64
-	ProviderRunID          int64
-	ProviderRunAttempt     int64
-	RepositoryFullName     string
-	EventName              string
-	HeadSha                string
-	HeadBranch             string
-	HeadRepositoryFullName string
-	BaseSha                string
-	BaseBranch             string
-	WorkflowPath           string
-	PullRequestNumber      int64
-	CommitCount            int64
-}
-
-func (q *Queries) GetWorkflowRunInvocation(ctx context.Context, arg GetWorkflowRunInvocationParams) (GetWorkflowRunInvocationRow, error) {
-	row := q.db.QueryRow(ctx, getWorkflowRunInvocation,
-		arg.ProviderInstallationID,
-		arg.ProviderRepositoryID,
-		arg.ProviderRunID,
-		arg.ProviderRunAttempt,
-	)
-	var i GetWorkflowRunInvocationRow
-	err := row.Scan(
-		&i.ProviderInstallationID,
-		&i.ProviderRepositoryID,
-		&i.ProviderRunID,
-		&i.ProviderRunAttempt,
-		&i.RepositoryFullName,
-		&i.EventName,
-		&i.HeadSha,
-		&i.HeadBranch,
-		&i.HeadRepositoryFullName,
-		&i.BaseSha,
-		&i.BaseBranch,
-		&i.WorkflowPath,
-		&i.PullRequestNumber,
-		&i.CommitCount,
-	)
 	return i, err
 }
 
@@ -1237,38 +1243,39 @@ func (q *Queries) UpsertProviderRunnerRepository(ctx context.Context, arg Upsert
 	return result.RowsAffected(), nil
 }
 
-const upsertProviderWorkflowInvocation = `-- name: UpsertProviderWorkflowInvocation :exec
-INSERT INTO github_workflow_invocations (
-    provider_installation_id, provider_repository_id, provider_run_id,
+const upsertProviderWorkflowRun = `-- name: UpsertProviderWorkflowRun :exec
+INSERT INTO provider_workflow_runs (
+    provider, provider_installation_id, provider_repository_id, provider_run_id,
     provider_run_attempt, repository_full_name, event_name, head_sha,
     head_branch, head_repository_full_name, base_sha, base_branch,
     pull_request_number, workflow_path, commit_count, updated_at
 ) VALUES (
-    $1, $2,
-    $3, $4,
-    $5, $6, $7,
-    $8, $9, $10,
-    $11, $12, $13,
-    NULLIF($14::bigint, 0), $15
+    $1, $2, $3,
+    $4, $5,
+    $6, $7, $8,
+    $9, $10, $11,
+    $12, $13, $14,
+    NULLIF($15::bigint, 0), $16
 )
 ON CONFLICT (
-    provider_installation_id, provider_repository_id, provider_run_id,
+    provider, provider_installation_id, provider_repository_id, provider_run_id,
     provider_run_attempt
 ) DO UPDATE SET
-    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_workflow_invocations.repository_full_name),
-    event_name = COALESCE(NULLIF(EXCLUDED.event_name, ''), github_workflow_invocations.event_name),
-    head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), github_workflow_invocations.head_sha),
-    head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), github_workflow_invocations.head_branch),
-    head_repository_full_name = COALESCE(NULLIF(EXCLUDED.head_repository_full_name, ''), github_workflow_invocations.head_repository_full_name),
-    base_sha = COALESCE(NULLIF(EXCLUDED.base_sha, ''), github_workflow_invocations.base_sha),
-    base_branch = COALESCE(NULLIF(EXCLUDED.base_branch, ''), github_workflow_invocations.base_branch),
-    pull_request_number = CASE WHEN EXCLUDED.pull_request_number <> 0 THEN EXCLUDED.pull_request_number ELSE github_workflow_invocations.pull_request_number END,
-    workflow_path = COALESCE(NULLIF(EXCLUDED.workflow_path, ''), github_workflow_invocations.workflow_path),
-    commit_count = COALESCE(EXCLUDED.commit_count, github_workflow_invocations.commit_count),
+    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), provider_workflow_runs.repository_full_name),
+    event_name = COALESCE(NULLIF(EXCLUDED.event_name, ''), provider_workflow_runs.event_name),
+    head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), provider_workflow_runs.head_sha),
+    head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), provider_workflow_runs.head_branch),
+    head_repository_full_name = COALESCE(NULLIF(EXCLUDED.head_repository_full_name, ''), provider_workflow_runs.head_repository_full_name),
+    base_sha = COALESCE(NULLIF(EXCLUDED.base_sha, ''), provider_workflow_runs.base_sha),
+    base_branch = COALESCE(NULLIF(EXCLUDED.base_branch, ''), provider_workflow_runs.base_branch),
+    pull_request_number = CASE WHEN EXCLUDED.pull_request_number <> 0 THEN EXCLUDED.pull_request_number ELSE provider_workflow_runs.pull_request_number END,
+    workflow_path = COALESCE(NULLIF(EXCLUDED.workflow_path, ''), provider_workflow_runs.workflow_path),
+    commit_count = COALESCE(EXCLUDED.commit_count, provider_workflow_runs.commit_count),
     updated_at = EXCLUDED.updated_at
 `
 
-type UpsertProviderWorkflowInvocationParams struct {
+type UpsertProviderWorkflowRunParams struct {
+	Provider               string
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	ProviderRunID          int64
@@ -1286,8 +1293,9 @@ type UpsertProviderWorkflowInvocationParams struct {
 	UpdatedAt              pgtype.Timestamptz
 }
 
-func (q *Queries) UpsertProviderWorkflowInvocation(ctx context.Context, arg UpsertProviderWorkflowInvocationParams) error {
-	_, err := q.db.Exec(ctx, upsertProviderWorkflowInvocation,
+func (q *Queries) UpsertProviderWorkflowRun(ctx context.Context, arg UpsertProviderWorkflowRunParams) error {
+	_, err := q.db.Exec(ctx, upsertProviderWorkflowRun,
+		arg.Provider,
 		arg.ProviderInstallationID,
 		arg.ProviderRepositoryID,
 		arg.ProviderRunID,

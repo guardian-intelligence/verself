@@ -89,6 +89,113 @@ func (q *Queries) GetCurrentGoldenVMActivation(ctx context.Context, arg GetCurre
 	return i, err
 }
 
+const getGoldenVMOperationForAttempt = `-- name: GetGoldenVMOperationForAttempt :one
+SELECT
+    operation_id,
+    execution_id,
+    attempt_id,
+    allocation_id,
+    org_id,
+    repository_id,
+    provider,
+    provider_repository_id,
+    scope_kind,
+    scope_ref,
+    job_shape_id,
+    trust_class,
+    source_generation_set_hash,
+    generation_set_hash,
+    candidate_golden_vm_snapshot_id,
+    promotion_eligible,
+    provider_run_id,
+    provider_run_attempt,
+    provider_job_id,
+    head_sha,
+    lease_id,
+    exec_id,
+    create_job_id,
+    snapshot_key,
+    root_snapshot_ref,
+    root_snapshot_guid,
+    vmstate_artifact_ref,
+    memory_artifact_ref,
+    mount_snapshots_json,
+    state_bytes,
+    memory_bytes,
+    requested_at,
+    create_queued_at,
+    creating_started_at,
+    created_at,
+    publishing_started_at,
+    published_at,
+    promoting_started_at,
+    promoted_at,
+    result_recorded_at,
+    state,
+    failure_reason,
+    updated_at
+FROM golden_vm_operation
+WHERE attempt_id = $1
+  AND state IN ('requested', 'create_queued', 'creating', 'created', 'publishing', 'published', 'promoting')
+ORDER BY requested_at DESC, operation_id DESC
+LIMIT 1
+`
+
+type GetGoldenVMOperationForAttemptParams struct {
+	AttemptID uuid.UUID
+}
+
+func (q *Queries) GetGoldenVMOperationForAttempt(ctx context.Context, arg GetGoldenVMOperationForAttemptParams) (GoldenVmOperation, error) {
+	row := q.db.QueryRow(ctx, getGoldenVMOperationForAttempt, arg.AttemptID)
+	var i GoldenVmOperation
+	err := row.Scan(
+		&i.OperationID,
+		&i.ExecutionID,
+		&i.AttemptID,
+		&i.AllocationID,
+		&i.OrgID,
+		&i.RepositoryID,
+		&i.Provider,
+		&i.ProviderRepositoryID,
+		&i.ScopeKind,
+		&i.ScopeRef,
+		&i.JobShapeID,
+		&i.TrustClass,
+		&i.SourceGenerationSetHash,
+		&i.GenerationSetHash,
+		&i.CandidateGoldenVmSnapshotID,
+		&i.PromotionEligible,
+		&i.ProviderRunID,
+		&i.ProviderRunAttempt,
+		&i.ProviderJobID,
+		&i.HeadSha,
+		&i.LeaseID,
+		&i.ExecID,
+		&i.CreateJobID,
+		&i.SnapshotKey,
+		&i.RootSnapshotRef,
+		&i.RootSnapshotGuid,
+		&i.VmstateArtifactRef,
+		&i.MemoryArtifactRef,
+		&i.MountSnapshotsJson,
+		&i.StateBytes,
+		&i.MemoryBytes,
+		&i.RequestedAt,
+		&i.CreateQueuedAt,
+		&i.CreatingStartedAt,
+		&i.CreatedAt,
+		&i.PublishingStartedAt,
+		&i.PublishedAt,
+		&i.PromotingStartedAt,
+		&i.PromotedAt,
+		&i.ResultRecordedAt,
+		&i.State,
+		&i.FailureReason,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getGoldenVMOperationForCreate = `-- name: GetGoldenVMOperationForCreate :one
 SELECT
     operation_id,

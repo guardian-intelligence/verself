@@ -17,8 +17,6 @@ import (
 	"github.com/verself/sandbox-rental-service/internal/store"
 	secretsclient "github.com/verself/secrets-service/client"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type RunnerRepositoryRegistration struct {
@@ -429,12 +427,4 @@ func (s *Service) deriveScopedExecutionToken(scope string, executionID, attemptI
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
 	return hex.EncodeToString(sum[:])
-}
-
-func recordRunnerError(span trace.Span, err error) {
-	if err == nil {
-		return
-	}
-	span.RecordError(err)
-	span.SetStatus(codes.Error, err.Error())
 }

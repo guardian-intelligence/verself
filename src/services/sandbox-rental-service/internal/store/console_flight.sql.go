@@ -78,9 +78,10 @@ SELECT
     $12,
     $13
 FROM (SELECT 1) AS _seed
-LEFT JOIN github_workflow_invocations inv
-    ON inv.provider_installation_id = $14
-   AND inv.provider_repository_id   = $15
+LEFT JOIN provider_workflow_runs inv
+    ON inv.provider = $14
+   AND inv.provider_installation_id = $15
+   AND inv.provider_repository_id   = $16
    AND inv.provider_run_id          = $3
    AND inv.provider_run_attempt     = $4
 ON CONFLICT (provider, provider_job_id) DO UPDATE SET
@@ -111,6 +112,7 @@ type UpsertConsoleFlightJobParams struct {
 	Status                 string
 	StartedAt              pgtype.Timestamptz
 	UpdatedAt              pgtype.Timestamptz
+	Provider               string
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 }
@@ -135,6 +137,7 @@ func (q *Queries) UpsertConsoleFlightJob(ctx context.Context, arg UpsertConsoleF
 		arg.Status,
 		arg.StartedAt,
 		arg.UpdatedAt,
+		arg.Provider,
 		arg.ProviderInstallationID,
 		arg.ProviderRepositoryID,
 	)

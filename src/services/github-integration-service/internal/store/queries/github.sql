@@ -175,6 +175,52 @@ SET state = 'failed',
     updated_at = @failed_at
 WHERE delivery_id = @delivery_id;
 
+-- name: UpsertInstallation :exec
+INSERT INTO github_installations (
+    provider_installation_id,
+    state,
+    last_event_delivery_id,
+    updated_at
+) VALUES (
+    @provider_installation_id,
+    @state,
+    @last_event_delivery_id,
+    @updated_at
+)
+ON CONFLICT (provider_installation_id) DO UPDATE SET
+    state = EXCLUDED.state,
+    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_installations.last_event_delivery_id),
+    updated_at = EXCLUDED.updated_at;
+
+-- name: UpsertRepository :exec
+INSERT INTO github_repositories (
+    provider_repository_id,
+    provider_installation_id,
+    owner_login,
+    repository_name,
+    repository_full_name,
+    state,
+    last_event_delivery_id,
+    updated_at
+) VALUES (
+    @provider_repository_id,
+    @provider_installation_id,
+    @owner_login,
+    @repository_name,
+    @repository_full_name,
+    @state,
+    @last_event_delivery_id,
+    @updated_at
+)
+ON CONFLICT (provider_repository_id) DO UPDATE SET
+    provider_installation_id = CASE WHEN EXCLUDED.provider_installation_id <> 0 THEN EXCLUDED.provider_installation_id ELSE github_repositories.provider_installation_id END,
+    owner_login = COALESCE(NULLIF(EXCLUDED.owner_login, ''), github_repositories.owner_login),
+    repository_name = COALESCE(NULLIF(EXCLUDED.repository_name, ''), github_repositories.repository_name),
+    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_repositories.repository_full_name),
+    state = EXCLUDED.state,
+    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_repositories.last_event_delivery_id),
+    updated_at = EXCLUDED.updated_at;
+
 -- name: UpsertWorkflowRun :exec
 INSERT INTO github_workflow_runs (
     provider_installation_id,
@@ -293,9 +339,260 @@ ON CONFLICT (provider_job_id) DO UPDATE SET
     observed_from_api_at = EXCLUDED.observed_from_api_at,
     updated_at = EXCLUDED.updated_at;
 
+-- name: UpsertJobShape :exec
+INSERT INTO github_job_shapes (
+    job_shape_id,
+    provider_installation_id,
+    provider_repository_id,
+    repository_full_name,
+    workflow_path,
+    workflow_name,
+    job_name,
+    matrix_key,
+    runner_class,
+    runner_labels_json,
+    cache_manifest_sha256,
+    trust_class,
+    canonical_json,
+    updated_at
+) VALUES (
+    @job_shape_id,
+    @provider_installation_id,
+    @provider_repository_id,
+    @repository_full_name,
+    @workflow_path,
+    @workflow_name,
+    @job_name,
+    @matrix_key,
+    @runner_class,
+    @runner_labels_json,
+    @cache_manifest_sha256,
+    @trust_class,
+    @canonical_json,
+    @updated_at
+)
+ON CONFLICT (job_shape_id) DO UPDATE SET
+    provider_installation_id = EXCLUDED.provider_installation_id,
+    provider_repository_id = EXCLUDED.provider_repository_id,
+    repository_full_name = EXCLUDED.repository_full_name,
+    workflow_path = EXCLUDED.workflow_path,
+    workflow_name = EXCLUDED.workflow_name,
+    job_name = EXCLUDED.job_name,
+    matrix_key = EXCLUDED.matrix_key,
+    runner_class = EXCLUDED.runner_class,
+    runner_labels_json = EXCLUDED.runner_labels_json,
+    cache_manifest_sha256 = EXCLUDED.cache_manifest_sha256,
+    trust_class = EXCLUDED.trust_class,
+    canonical_json = EXCLUDED.canonical_json,
+    updated_at = EXCLUDED.updated_at;
+
+-- name: EnsureProviderDemand :one
+INSERT INTO github_provider_demands (
+    demand_id,
+    provider_job_id,
+    provider_installation_id,
+    provider_repository_id,
+    repository_full_name,
+    provider_run_id,
+    provider_run_attempt,
+    job_shape_id,
+    trust_class,
+    runner_class,
+    runner_name,
+    state,
+    last_delivery_id,
+    created_at,
+    updated_at
+) VALUES (
+    @demand_id,
+    @provider_job_id,
+    @provider_installation_id,
+    @provider_repository_id,
+    @repository_full_name,
+    @provider_run_id,
+    @provider_run_attempt,
+    @job_shape_id,
+    @trust_class,
+    @runner_class,
+    @runner_name,
+    'demand_recorded',
+    @last_delivery_id,
+    @updated_at,
+    @updated_at
+)
+ON CONFLICT (provider_job_id) DO UPDATE SET
+    provider_installation_id = EXCLUDED.provider_installation_id,
+    provider_repository_id = EXCLUDED.provider_repository_id,
+    repository_full_name = EXCLUDED.repository_full_name,
+    provider_run_id = EXCLUDED.provider_run_id,
+    provider_run_attempt = EXCLUDED.provider_run_attempt,
+    job_shape_id = COALESCE(NULLIF(EXCLUDED.job_shape_id, ''), github_provider_demands.job_shape_id),
+    trust_class = COALESCE(NULLIF(EXCLUDED.trust_class, ''), github_provider_demands.trust_class),
+    runner_class = COALESCE(NULLIF(EXCLUDED.runner_class, ''), github_provider_demands.runner_class),
+    last_delivery_id = COALESCE(NULLIF(EXCLUDED.last_delivery_id, ''), github_provider_demands.last_delivery_id),
+    updated_at = EXCLUDED.updated_at
+RETURNING demand_id, provider_job_id, runner_name, runner_id, runner_class, job_shape_id, trust_class,
+          state, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id;
+
+-- name: ClaimProviderDemandForJIT :one
+UPDATE github_provider_demands
+SET state = 'jit_requested',
+    failure_reason = '',
+    claimed_at = @claimed_at,
+    updated_at = @claimed_at
+WHERE github_provider_demands.provider_job_id = @provider_job_id
+  AND github_provider_demands.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM github_runner_registrations active
+      WHERE active.provider_repository_id = github_provider_demands.provider_repository_id
+        AND active.runner_class = github_provider_demands.runner_class
+        AND active.provider_job_id <> github_provider_demands.provider_job_id
+        AND active.state IN ('jit_created', 'sandbox_submitted')
+        AND NOT EXISTS (
+            SELECT 1
+            FROM github_workflow_jobs active_job
+            WHERE active_job.provider_job_id = active.provider_job_id
+              AND active_job.status = 'completed'
+        )
+  )
+RETURNING demand_id, provider_job_id, provider_installation_id, provider_repository_id,
+          repository_full_name, provider_run_id, provider_run_attempt, runner_name,
+          runner_class, job_shape_id, trust_class, state;
+
+-- name: MarkProviderDemandJITCreated :exec
+UPDATE github_provider_demands
+SET runner_id = @runner_id,
+    runner_name = @runner_name,
+    jit_config_sha256 = @jit_config_sha256,
+    state = 'jit_created',
+    failure_reason = '',
+    updated_at = @updated_at
+WHERE provider_job_id = @provider_job_id
+  AND state = 'jit_requested';
+
+-- name: MarkProviderDemandSandboxSubmitted :exec
+UPDATE github_provider_demands
+SET sandbox_allocation_id = @sandbox_allocation_id,
+    sandbox_execution_id = @sandbox_execution_id,
+    sandbox_attempt_id = @sandbox_attempt_id,
+    runner_id = @runner_id,
+    runner_name = @runner_name,
+    state = 'sandbox_submitted',
+    failure_reason = '',
+    updated_at = @updated_at
+WHERE provider_job_id = @provider_job_id
+  AND state IN ('jit_created', 'sandbox_submitting', 'sandbox_failed');
+
+-- name: AssignProviderDemandToRunnerFromDemand :execrows
+WITH source AS (
+    SELECT runner_id, runner_name, jit_config_sha256, sandbox_allocation_id,
+           sandbox_execution_id, sandbox_attempt_id
+    FROM github_provider_demands
+    WHERE github_provider_demands.provider_job_id = @from_provider_job_id
+)
+UPDATE github_provider_demands target
+SET runner_id = source.runner_id,
+    runner_name = source.runner_name,
+    jit_config_sha256 = source.jit_config_sha256,
+    sandbox_allocation_id = source.sandbox_allocation_id,
+    sandbox_execution_id = source.sandbox_execution_id,
+    sandbox_attempt_id = source.sandbox_attempt_id,
+    state = 'sandbox_submitted',
+    failure_reason = '',
+    updated_at = @updated_at
+FROM source
+WHERE target.provider_job_id = @to_provider_job_id;
+
+-- name: ResetProviderDemandAfterRunnerReassignment :execrows
+UPDATE github_provider_demands
+SET runner_id = 0,
+    jit_config_sha256 = '',
+    sandbox_allocation_id = NULL,
+    sandbox_execution_id = NULL,
+    sandbox_attempt_id = NULL,
+    state = 'demand_recorded',
+    failure_reason = @failure_reason,
+    updated_at = @updated_at
+WHERE provider_job_id = @provider_job_id;
+
+-- name: MarkProviderDemandFailed :exec
+UPDATE github_provider_demands
+SET state = @state,
+    failure_reason = @failure_reason,
+    updated_at = @updated_at
+WHERE provider_job_id = @provider_job_id;
+
+-- name: GetProviderDemandForJob :one
+SELECT demand_id, provider_job_id, provider_installation_id, provider_repository_id,
+       repository_full_name, provider_run_id, provider_run_attempt, runner_name,
+       runner_id, runner_class, job_shape_id, trust_class, state, sandbox_allocation_id,
+       sandbox_execution_id, sandbox_attempt_id
+FROM github_provider_demands
+WHERE provider_job_id = @provider_job_id;
+
+-- name: UpsertProviderOutboxCommand :exec
+INSERT INTO github_provider_outbox (
+    outbox_id,
+    command_kind,
+    provider_job_id,
+    provider_run_id,
+    provider_run_attempt,
+    provider_installation_id,
+    provider_repository_id,
+    state,
+    command_sha256,
+    payload_json,
+    next_attempt_at,
+    created_at,
+    updated_at
+) VALUES (
+    @outbox_id,
+    @command_kind,
+    @provider_job_id,
+    @provider_run_id,
+    @provider_run_attempt,
+    @provider_installation_id,
+    @provider_repository_id,
+    'pending',
+    @command_sha256,
+    @payload_json,
+    @next_attempt_at,
+    @updated_at,
+    @updated_at
+)
+ON CONFLICT (command_kind, command_sha256) DO UPDATE SET
+    state = CASE
+        WHEN github_provider_outbox.state = 'processed' THEN github_provider_outbox.state
+        ELSE 'pending'
+    END,
+    payload_json = EXCLUDED.payload_json,
+    next_attempt_at = EXCLUDED.next_attempt_at,
+    updated_at = EXCLUDED.updated_at;
+
+-- name: MarkProviderOutboxProcessed :exec
+UPDATE github_provider_outbox
+SET state = 'processed',
+    sandbox_execution_id = @sandbox_execution_id,
+    sandbox_attempt_id = @sandbox_attempt_id,
+    processed_at = @processed_at,
+    failure_reason = '',
+    updated_at = @processed_at
+WHERE command_kind = @command_kind
+  AND command_sha256 = @command_sha256;
+
+-- name: MarkProviderOutboxFailed :exec
+UPDATE github_provider_outbox
+SET state = @state,
+    failure_reason = @failure_reason,
+    updated_at = @updated_at
+WHERE command_kind = @command_kind
+  AND command_sha256 = @command_sha256;
+
 -- name: UpsertRunnerRegistration :exec
 INSERT INTO github_runner_registrations (
     provider_job_id,
+    demand_id,
     provider_installation_id,
     provider_repository_id,
     runner_id,
@@ -306,6 +603,7 @@ INSERT INTO github_runner_registrations (
     updated_at
 ) VALUES (
     @provider_job_id,
+    @demand_id,
     @provider_installation_id,
     @provider_repository_id,
     @runner_id,
@@ -316,6 +614,7 @@ INSERT INTO github_runner_registrations (
     @updated_at
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    demand_id = COALESCE(EXCLUDED.demand_id, github_runner_registrations.demand_id),
     runner_id = EXCLUDED.runner_id,
     runner_name = EXCLUDED.runner_name,
     runner_class = EXCLUDED.runner_class,
@@ -349,12 +648,19 @@ SET state = 'cleaned',
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id;
 
--- name: MarkRunnerRegistrationDisplaced :exec
+-- name: TransferRunnerRegistrationToJob :execrows
 UPDATE github_runner_registrations
-SET state = 'displaced',
-    failure_reason = @failure_reason,
+SET provider_job_id = @to_provider_job_id,
+    demand_id = (
+        SELECT demand_id
+        FROM github_provider_demands
+        WHERE github_provider_demands.provider_job_id = @to_provider_job_id
+    ),
+    state = 'sandbox_submitted',
+    failure_reason = '',
     updated_at = @updated_at
-WHERE provider_job_id = @provider_job_id;
+WHERE github_runner_registrations.provider_job_id = @from_provider_job_id
+  AND github_runner_registrations.runner_name = @runner_name;
 
 -- name: GetRunnerRegistrationForJob :one
 SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,
@@ -369,6 +675,23 @@ SELECT provider_job_id, provider_installation_id, provider_repository_id, runner
        sandbox_attempt_id, state
 FROM github_runner_registrations
 WHERE runner_name = @runner_name;
+
+-- name: GetActiveRunnerRegistrationForRunnerClass :one
+SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,
+       runner_name, runner_class, sandbox_allocation_id, sandbox_execution_id,
+       sandbox_attempt_id, state
+FROM github_runner_registrations
+WHERE github_runner_registrations.provider_repository_id = @provider_repository_id
+  AND github_runner_registrations.runner_class = @runner_class
+  AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM github_workflow_jobs active_job
+      WHERE active_job.provider_job_id = github_runner_registrations.provider_job_id
+        AND active_job.status = 'completed'
+  )
+ORDER BY github_runner_registrations.updated_at ASC, github_runner_registrations.provider_job_id ASC
+LIMIT 1;
 
 -- name: ListQueuedWorkflowJobsForRunnerSubmission :many
 SELECT
@@ -387,25 +710,33 @@ SELECT
     j.labels_json,
     j.started_at,
     j.completed_at,
-    COALESCE(r.state, '')::text AS registration_state,
-    r.updated_at AS registration_updated_at
+    COALESCE(d.state, '')::text AS registration_state,
+    d.updated_at AS registration_updated_at
 FROM github_workflow_jobs j
-LEFT JOIN github_runner_registrations r ON r.provider_job_id = j.provider_job_id
+LEFT JOIN github_provider_demands d ON d.provider_job_id = j.provider_job_id
 WHERE j.status = 'queued'
   AND (
-        r.provider_job_id IS NULL
-     OR r.state IN ('failed', 'cleaned', 'displaced')
-     OR r.updated_at <= @retry_before
+        d.provider_job_id IS NULL
+     OR d.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
   )
-ORDER BY j.updated_at ASC, j.provider_job_id ASC
+ORDER BY j.provider_job_id ASC
 LIMIT @limit_count;
 
--- name: InsertTerminalJobEvidence :exec
+-- name: InsertTerminalJobEvidence :one
 INSERT INTO github_terminal_job_evidence (
     terminal_evidence_id,
     provider_job_id,
+    provider_installation_id,
+    provider_repository_id,
     provider_run_id,
     provider_run_attempt,
+    sandbox_allocation_id,
+    sandbox_execution_id,
+    sandbox_attempt_id,
+    runner_id,
+    runner_name,
+    job_shape_id,
+    trust_class,
     status,
     conclusion,
     source,
@@ -414,8 +745,17 @@ INSERT INTO github_terminal_job_evidence (
 ) VALUES (
     @terminal_evidence_id,
     @provider_job_id,
+    @provider_installation_id,
+    @provider_repository_id,
     @provider_run_id,
     @provider_run_attempt,
+    @sandbox_allocation_id,
+    @sandbox_execution_id,
+    @sandbox_attempt_id,
+    @runner_id,
+    @runner_name,
+    @job_shape_id,
+    @trust_class,
     @status,
     @conclusion,
     @source,
@@ -423,8 +763,61 @@ INSERT INTO github_terminal_job_evidence (
     @observed_at
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    provider_installation_id = EXCLUDED.provider_installation_id,
+    provider_repository_id = EXCLUDED.provider_repository_id,
     status = EXCLUDED.status,
     conclusion = EXCLUDED.conclusion,
+    sandbox_allocation_id = EXCLUDED.sandbox_allocation_id,
+    sandbox_execution_id = EXCLUDED.sandbox_execution_id,
+    sandbox_attempt_id = EXCLUDED.sandbox_attempt_id,
+    runner_id = EXCLUDED.runner_id,
+    runner_name = EXCLUDED.runner_name,
+    job_shape_id = EXCLUDED.job_shape_id,
+    trust_class = EXCLUDED.trust_class,
     source = EXCLUDED.source,
     delivery_id = EXCLUDED.delivery_id,
-    observed_at = EXCLUDED.observed_at;
+    observed_at = EXCLUDED.observed_at
+RETURNING terminal_evidence_id;
+
+-- name: UpsertGoldenSnapshotBarrier :exec
+INSERT INTO github_golden_snapshot_barriers (
+    barrier_id,
+    terminal_evidence_id,
+    provider_job_id,
+    provider_run_id,
+    provider_run_attempt,
+    sandbox_execution_id,
+    sandbox_attempt_id,
+    job_shape_id,
+    trust_class,
+    state,
+    failure_reason,
+    requested_at,
+    updated_at
+) VALUES (
+    @barrier_id,
+    @terminal_evidence_id,
+    @provider_job_id,
+    @provider_run_id,
+    @provider_run_attempt,
+    @sandbox_execution_id,
+    @sandbox_attempt_id,
+    @job_shape_id,
+    @trust_class,
+    @state,
+    @failure_reason,
+    @requested_at,
+    @requested_at
+)
+ON CONFLICT (provider_job_id) DO UPDATE SET
+    terminal_evidence_id = EXCLUDED.terminal_evidence_id,
+    provider_run_id = EXCLUDED.provider_run_id,
+    provider_run_attempt = EXCLUDED.provider_run_attempt,
+    sandbox_execution_id = EXCLUDED.sandbox_execution_id,
+    sandbox_attempt_id = EXCLUDED.sandbox_attempt_id,
+    job_shape_id = EXCLUDED.job_shape_id,
+    trust_class = EXCLUDED.trust_class,
+    state = EXCLUDED.state,
+    failure_reason = EXCLUDED.failure_reason,
+    requested_at = EXCLUDED.requested_at,
+    updated_at = EXCLUDED.requested_at;

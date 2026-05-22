@@ -107,7 +107,7 @@ func (s *Service) installationToken(ctx context.Context, installationID int64) (
 		return "", err
 	}
 	var resp githubAccessTokenResponse
-	if err := s.githubRequest(ctx, http.MethodPost, fmt.Sprintf("/app/installations/%d/access_tokens", installationID), appJWT, nil, &resp, http.StatusCreated); err != nil {
+	if err := s.githubRequest(ctx, installationID, http.MethodPost, fmt.Sprintf("/app/installations/%d/access_tokens", installationID), appJWT, nil, &resp, http.StatusCreated); err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(resp.Token) == "" {
@@ -131,7 +131,7 @@ func (s *Service) createJITConfig(ctx context.Context, installationID int64, org
 		"work_folder":     defaultRunnerWorkFolder,
 	}
 	var resp githubJITConfigResponse
-	if err := s.githubRequest(ctx, http.MethodPost, "/orgs/"+url.PathEscape(org)+"/actions/runners/generate-jitconfig", token, body, &resp, http.StatusCreated); err != nil {
+	if err := s.githubRequest(ctx, installationID, http.MethodPost, "/orgs/"+url.PathEscape(org)+"/actions/runners/generate-jitconfig", token, body, &resp, http.StatusCreated); err != nil {
 		return githubJITConfigResponse{}, err
 	}
 	if strings.TrimSpace(resp.EncodedJITConfig) == "" {
@@ -151,7 +151,7 @@ func (s *Service) fetchWorkflowRun(ctx context.Context, installationID int64, re
 	}
 	var out githubWorkflowRunResponse
 	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d", url.PathEscape(owner), url.PathEscape(repo), runID)
-	if err := s.githubRequest(ctx, http.MethodGet, path, token, nil, &out, http.StatusOK); err != nil {
+	if err := s.githubRequest(ctx, installationID, http.MethodGet, path, token, nil, &out, http.StatusOK); err != nil {
 		return githubWorkflowRunResponse{}, err
 	}
 	return out, nil
@@ -174,7 +174,7 @@ func (s *Service) fetchWorkflowRunJobs(ctx context.Context, installationID, repo
 	for page := 1; ; page++ {
 		var resp githubWorkflowRunJobsResponse
 		path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/attempts/%d/jobs?per_page=%d&page=%d", url.PathEscape(owner), url.PathEscape(repo), runID, runAttempt, perPage, page)
-		if err := s.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
+		if err := s.githubRequest(ctx, installationID, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
 			return nil, err
 		}
 		for i := range resp.Jobs {
@@ -212,7 +212,7 @@ func (s *Service) fetchRepositoryFile(ctx context.Context, installationID int64,
 	if strings.TrimSpace(ref) != "" {
 		path += "?ref=" + url.QueryEscape(ref)
 	}
-	if err := s.githubRequest(ctx, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
+	if err := s.githubRequest(ctx, installationID, http.MethodGet, path, token, nil, &resp, http.StatusOK); err != nil {
 		if strings.Contains(err.Error(), "status 404") {
 			return nil, false, nil
 		}
@@ -244,7 +244,7 @@ func (s *Service) deleteRunner(ctx context.Context, installationID int64, org st
 	if err != nil {
 		return err
 	}
-	return s.githubRequest(ctx, http.MethodDelete, fmt.Sprintf("/orgs/%s/actions/runners/%d", url.PathEscape(org), runnerID), token, nil, nil, http.StatusNoContent, http.StatusNotFound)
+	return s.githubRequest(ctx, installationID, http.MethodDelete, fmt.Sprintf("/orgs/%s/actions/runners/%d", url.PathEscape(org), runnerID), token, nil, nil, http.StatusNoContent, http.StatusNotFound)
 }
 
 func (s *Service) deleteRunnerByName(ctx context.Context, installationID int64, org string, runnerName string) error {
@@ -257,7 +257,7 @@ func (s *Service) deleteRunnerByName(ctx context.Context, installationID int64, 
 		return err
 	}
 	var list githubRunnerListResponse
-	if err := s.githubRequest(ctx, http.MethodGet, "/orgs/"+url.PathEscape(org)+"/actions/runners?per_page=100", token, nil, &list, http.StatusOK); err != nil {
+	if err := s.githubRequest(ctx, installationID, http.MethodGet, "/orgs/"+url.PathEscape(org)+"/actions/runners?per_page=100", token, nil, &list, http.StatusOK); err != nil {
 		return err
 	}
 	for _, runner := range list.Runners {
@@ -268,9 +268,10 @@ func (s *Service) deleteRunnerByName(ctx context.Context, installationID int64, 
 	return nil
 }
 
-func (s *Service) githubRequest(ctx context.Context, method, path, bearer string, body any, out any, expected ...int) error {
+func (s *Service) githubRequest(ctx context.Context, installationID int64, method, path, bearer string, body any, out any, expected ...int) error {
 	ctx, span := tracer.Start(ctx, "github.api.request")
 	defer span.End()
+	started := time.Now().UTC()
 	span.SetAttributes(
 		attribute.String("github.api.method", method),
 		attribute.String("github.api.path", path),
@@ -297,12 +298,14 @@ func (s *Service) githubRequest(ctx context.Context, method, path, bearer string
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
+		s.writeGitHubAPIEvent(ctx, installationID, method, path, 0, "", "", started, err)
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 	for _, status := range expected {
 		if resp.StatusCode == status {
+			s.writeGitHubAPIEvent(ctx, installationID, method, path, resp.StatusCode, resp.Header.Get("x-ratelimit-remaining"), resp.Header.Get("x-ratelimit-reset"), started, nil)
 			if out != nil && resp.Body != nil {
 				return json.NewDecoder(resp.Body).Decode(out)
 			}
@@ -310,7 +313,34 @@ func (s *Service) githubRequest(ctx context.Context, method, path, bearer string
 		}
 	}
 	detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return fmt.Errorf("github api %s %s: status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(detail)))
+	err = fmt.Errorf("github api %s %s: status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(detail)))
+	s.writeGitHubAPIEvent(ctx, installationID, method, path, resp.StatusCode, resp.Header.Get("x-ratelimit-remaining"), resp.Header.Get("x-ratelimit-reset"), started, err)
+	return err
+}
+
+func (s *Service) writeGitHubAPIEvent(ctx context.Context, installationID int64, method, path string, status int, remaining, reset string, started time.Time, err error) {
+	result := "succeeded"
+	reason := ""
+	if err != nil {
+		result = "failed"
+		reason = err.Error()
+	}
+	s.writeEvent(ctx, githubEvent{
+		ObservedAt:             time.Now().UTC(),
+		EventName:              "github.api.request",
+		Result:                 result,
+		Reason:                 truncate(reason, 1024),
+		Action:                 method,
+		ProviderInstallationID: uint64FromInt64(installationID),
+		StartedAt:              started,
+		CompletedAt:            time.Now().UTC(),
+		AttributesJSON: mustJSON(map[string]string{
+			"path":                path,
+			"status_code":         fmt.Sprintf("%d", status),
+			"ratelimit_remaining": remaining,
+			"ratelimit_reset":     reset,
+		}),
+	})
 }
 
 func workflowObservationFromRun(installationID, repositoryID int64, repositoryFullName string, run githubWorkflowRunResponse) workflowObservation {

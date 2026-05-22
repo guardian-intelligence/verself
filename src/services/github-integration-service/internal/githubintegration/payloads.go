@@ -26,6 +26,8 @@ type webhookMetadata struct {
 	RunnerID           int64
 	RunnerName         string
 	RunnerClass        string
+	JobShapeID         string
+	TrustClass         string
 	AllocationID       uuidLike
 	ExecutionID        uuidLike
 	AttemptID          uuidLike
@@ -143,6 +145,9 @@ func metadataFromAPIJob(deliveryID string, installationID, repositoryID int64, r
 }
 
 func (s *Service) persistWorkflowJob(ctx context.Context, event workflowJobWebhook, deliveryID string, observedFromAPI bool, now time.Time) error {
+	if err := s.persistInstallationRepository(ctx, event, deliveryID, now); err != nil {
+		return err
+	}
 	labels, err := json.Marshal(event.WorkflowJob.Labels)
 	if err != nil {
 		return err
@@ -197,6 +202,33 @@ func (s *Service) persistWorkflowJobFromAPI(ctx context.Context, installationID,
 		CompletedAt:            pgTime(job.CompletedAt),
 		LastDeliveryID:         deliveryID,
 		ObservedFromApiAt:      pgTime(now),
+		UpdatedAt:              pgTime(now),
+	})
+}
+
+func (s *Service) persistInstallationRepository(ctx context.Context, event workflowJobWebhook, deliveryID string, now time.Time) error {
+	if event.Installation.ID > 0 {
+		if err := s.queries.UpsertInstallation(ctx, store.UpsertInstallationParams{
+			ProviderInstallationID: event.Installation.ID,
+			State:                  "active",
+			LastEventDeliveryID:    deliveryID,
+			UpdatedAt:              pgTime(now),
+		}); err != nil {
+			return err
+		}
+	}
+	if event.Repository.ID <= 0 || strings.TrimSpace(event.Repository.FullName) == "" {
+		return nil
+	}
+	owner, repo, _ := strings.Cut(strings.TrimSpace(event.Repository.FullName), "/")
+	return s.queries.UpsertRepository(ctx, store.UpsertRepositoryParams{
+		ProviderRepositoryID:   event.Repository.ID,
+		ProviderInstallationID: event.Installation.ID,
+		OwnerLogin:             owner,
+		RepositoryName:         repo,
+		RepositoryFullName:     strings.TrimSpace(event.Repository.FullName),
+		State:                  "active",
+		LastEventDeliveryID:    deliveryID,
 		UpdatedAt:              pgTime(now),
 	})
 }

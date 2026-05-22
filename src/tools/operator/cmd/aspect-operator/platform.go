@@ -1723,23 +1723,6 @@ func (c platformForgejoClient) PatchRepoHook(ctx context.Context, owner, repo st
 	return c.doJSON(ctx, http.MethodPatch, "/api/v1/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/hooks/"+strconv.FormatInt(hookID, 10), body, nil, http.StatusOK)
 }
 
-func platformForgejoHookBody(targetURL, secret string, includeType bool) map[string]any {
-	body := map[string]any{
-		"config": map[string]string{
-			"url":          targetURL,
-			"content_type": "json",
-			"http_method":  "post",
-			"secret":       secret,
-		},
-		"events": []string{"push", "pull_request", "schedule", "workflow_dispatch", "action_run_failure", "action_run_recover", "action_run_success"},
-		"active": true,
-	}
-	if includeType {
-		body["type"] = "forgejo"
-	}
-	return body
-}
-
 func (c platformForgejoClient) doJSON(ctx context.Context, method, path string, body any, out any, expected ...int) error {
 	var reader io.Reader
 	if body != nil {

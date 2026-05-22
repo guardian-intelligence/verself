@@ -85,7 +85,8 @@ service SandboxRentalInternal {
         InternalRegisterRunnerRepository,
         InternalSubmitRunnerJob,
         InternalObserveRunnerJob,
-        InternalObserveRunnerWorkflowRun
+        InternalObserveRunnerWorkflowRun,
+        InternalRequestGoldenSnapshotBarrier
     ]
     resources: [RunnerRepository]
 }
@@ -429,6 +430,9 @@ string RunnerJobSubmitAuditEvent
 
 @auditEvent(name: "sandbox.runner_job.observe")
 string RunnerJobObserveAuditEvent
+
+@auditEvent(name: "sandbox.golden_snapshot_barrier.request")
+string GoldenSnapshotBarrierAuditEvent
 
 resource Execution {}
 resource ExecutionLogsResource {}
@@ -1615,6 +1619,19 @@ operation InternalObserveRunnerWorkflowRun {
     errors: [ValidationFailedError, PermissionDeniedError, ConflictError, ServiceUnavailableError]
 }
 
+@http(method: "POST", uri: "/internal/v1/golden-snapshot-barriers", code: 202)
+@identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
+@authz(permission: RunnerJobObservePermission, organization: {source: "request_id"})
+@audit(event: GoldenSnapshotBarrierAuditEvent, resource: RunnerRepository, action: "verify")
+@rateLimit(bucket: "internal_mutation")
+@requestBudget(maxBytes: 131072)
+@sdk(module: "sandboxInternal.goldenSnapshotBarriers", method: "request", paginated: false, retryable: false)
+operation InternalRequestGoldenSnapshotBarrier {
+    input: InternalRequestGoldenSnapshotBarrierInput
+    output: InternalRequestGoldenSnapshotBarrierOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ConflictError, ServiceUnavailableError]
+}
+
 structure RunnerJob {
     @required
     provider: Provider
@@ -1774,4 +1791,64 @@ structure InternalObserveRunnerWorkflowRunInput {
 structure InternalObserveRunnerWorkflowRunOutput {
     @required
     state: String
+}
+
+@length(min: 1, max: 128)
+string JobShapeId
+
+@length(min: 1, max: 128)
+string TrustClass
+
+@length(min: 1, max: 128)
+string PromotionPolicy
+
+@length(min: 1, max: 128)
+string GenerationSetHash
+
+structure GoldenSnapshotBarrierEvidence {
+    @required
+    provider: Provider
+
+    @required
+    provider_repository_id: ProviderRepositoryId
+
+    @required
+    provider_run_id: DecimalUint64
+
+    @required
+    provider_run_attempt: DecimalUint64
+
+    @required
+    provider_job_id: DecimalUint64
+
+    provider_installation_id: DecimalUint64
+    repository_full_name: RepositoryFullName
+    head_sha: HeadSHA
+    conclusion: String
+    runner_id: DecimalUint64
+    runner_name: RunnerName
+
+    @required
+    execution_id: ExecutionId
+
+    @required
+    attempt_id: AttemptId
+
+    lease_id: String
+    job_shape_id: JobShapeId
+    durable_generation_set_hash: GenerationSetHash
+    trust_class: TrustClass
+    promotion_policy: PromotionPolicy
+}
+
+structure InternalRequestGoldenSnapshotBarrierInput {
+    @required
+    evidence: GoldenSnapshotBarrierEvidence
+}
+
+structure InternalRequestGoldenSnapshotBarrierOutput {
+    @required
+    state: String
+
+    reason: String
 }

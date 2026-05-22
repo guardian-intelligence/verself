@@ -66,6 +66,64 @@ func TestGitHubCacheManifestRef(t *testing.T) {
 	}
 }
 
+func TestGitHubRunnerNameIsDeterministic(t *testing.T) {
+	first, err := githubRunnerName(456, 111, 2, 789)
+	if err != nil {
+		t.Fatalf("githubRunnerName: %v", err)
+	}
+	second, err := githubRunnerName(456, 111, 2, 789)
+	if err != nil {
+		t.Fatalf("githubRunnerName second call: %v", err)
+	}
+	if first != second {
+		t.Fatalf("runner name not deterministic: %q != %q", first, second)
+	}
+	otherAttempt, err := githubRunnerName(456, 111, 3, 789)
+	if err != nil {
+		t.Fatalf("githubRunnerName other attempt: %v", err)
+	}
+	if otherAttempt == first {
+		t.Fatalf("runner name did not include run attempt: %q", first)
+	}
+}
+
+func TestBuildGitHubJobShapeCanonicalizesLabels(t *testing.T) {
+	var event workflowJobWebhook
+	event.Installation.ID = 123
+	event.Repository.ID = 456
+	event.Repository.FullName = "guardian-intelligence/verself-sh"
+	event.WorkflowJob = workflowJobPayload{
+		ID:           789,
+		RunID:        111,
+		RunAttempt:   2,
+		Name:         "test",
+		WorkflowName: "ci",
+		Labels:       []string{"verself-ci-large", "linux", "self-hosted"},
+	}
+	workflow := workflowObservation{
+		ProviderRepositoryID:   456,
+		RepositoryFullName:     "guardian-intelligence/verself-sh",
+		EventName:              "pull_request",
+		HeadRepositoryFullName: "guardian-intelligence/verself-sh",
+		WorkflowPath:           ".github/workflows/ci.yml",
+	}
+	first, err := buildGitHubJobShape(event, workflow, "verself-ci-large", "cache-sha")
+	if err != nil {
+		t.Fatalf("buildGitHubJobShape: %v", err)
+	}
+	event.WorkflowJob.Labels = []string{"self-hosted", "verself-ci-large", "linux", "linux"}
+	second, err := buildGitHubJobShape(event, workflow, "verself-ci-large", "cache-sha")
+	if err != nil {
+		t.Fatalf("buildGitHubJobShape second: %v", err)
+	}
+	if first.JobShapeID != second.JobShapeID {
+		t.Fatalf("job shape changed for reordered labels: %q != %q", first.JobShapeID, second.JobShapeID)
+	}
+	if first.Shape.TrustClass != trustClassPR {
+		t.Fatalf("trust class = %q, want %q", first.Shape.TrustClass, trustClassPR)
+	}
+}
+
 func TestParseWebhookMetadata(t *testing.T) {
 	payload, err := json.Marshal(workflowJobWebhook{
 		Action: "queued",

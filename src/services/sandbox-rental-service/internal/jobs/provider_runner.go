@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/verself/sandbox-rental-service/internal/scheduler"
 	"github.com/verself/sandbox-rental-service/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -264,9 +263,6 @@ func (s *Service) ObserveProviderRunnerJob(ctx context.Context, obs ProviderRunn
 	if err != nil {
 		return ProviderRunnerJobObservationResult{}, err
 	}
-	if obs.Status == "completed" && s.Scheduler != nil {
-		_, _ = s.Scheduler.EnqueueGoldenRunPromote(ctx, schedulerGoldenPromoteRequest(ctx, obs))
-	}
 	return result, nil
 }
 
@@ -281,7 +277,8 @@ func (s *Service) ObserveProviderWorkflowRun(ctx context.Context, obs ProviderWo
 	if obs.ProviderRepositoryID <= 0 || obs.ProviderRunID <= 0 {
 		return fmt.Errorf("%w: workflow run provider identity is required", ErrRunnerUnavailable)
 	}
-	return s.storeQueries().UpsertProviderWorkflowInvocation(ctx, store.UpsertProviderWorkflowInvocationParams{
+	return s.storeQueries().UpsertProviderWorkflowRun(ctx, store.UpsertProviderWorkflowRunParams{
+		Provider:               obs.Provider,
 		ProviderInstallationID: obs.ProviderInstallationID,
 		ProviderRepositoryID:   obs.ProviderRepositoryID,
 		ProviderRunID:          obs.ProviderRunID,
@@ -473,20 +470,5 @@ func runnerCommandForProvider(provider string) string {
 		return githubRunnerCommand()
 	default:
 		return defaultRunCommand
-	}
-}
-
-func schedulerGoldenPromoteRequest(ctx context.Context, obs ProviderRunnerJobObservation) scheduler.GoldenRunPromoteRequest {
-	return scheduler.GoldenRunPromoteRequest{
-		Provider:               obs.Provider,
-		ProviderInstallationID: obs.ProviderInstallationID,
-		ProviderRepositoryID:   obs.ProviderRepositoryID,
-		ProviderRunID:          obs.ProviderRunID,
-		ProviderRunAttempt:     obs.ProviderRunAttempt,
-		ProviderJobID:          obs.ProviderJobID,
-		RepositoryFullName:     obs.RepositoryFullName,
-		HeadSHA:                obs.HeadSHA,
-		CorrelationID:          CorrelationIDFromContext(ctx),
-		TraceParent:            traceParent(ctx),
 	}
 }

@@ -774,7 +774,11 @@ func (s *Service) resumeRunningExecution(ctx context.Context, span trace.Span, i
 	if err != nil {
 		return err
 	}
-	return s.waitForExecutionAndFinalize(ctx, span, item, item.LeaseID, execRecord, reservation, durableCachePlan{})
+	durablePlan, err := s.loadRunningDurablePlan(ctx, item)
+	if err != nil {
+		return err
+	}
+	return s.waitForExecutionAndFinalize(ctx, span, item, item.LeaseID, execRecord, reservation, durablePlan)
 }
 
 func (s *Service) waitLeaseReady(ctx context.Context, leaseID string, timeout time.Duration) (vmorchestrator.LeaseRecord, error) {

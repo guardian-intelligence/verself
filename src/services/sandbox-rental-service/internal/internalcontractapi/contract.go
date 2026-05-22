@@ -124,15 +124,23 @@ type HeadSHA string
 
 type JobName string
 
+type JobShapeId string
+
+type GenerationSetHash string
+
 type RunnerBootstrapKind string
 
 type RunnerBootstrapPayload string
 
 type RunnerName string
 
+type PromotionPolicy string
+
 type WorkflowName string
 
 type WorkflowPath string
+
+type TrustClass string
 
 type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
@@ -323,11 +331,50 @@ type InternalObserveRunnerWorkflowRunOutput struct {
 	Body InternalObserveRunnerWorkflowRunOutputBody
 }
 
+type GoldenSnapshotBarrierEvidence struct {
+	Provider                 Provider             `json:"provider" required:"true" minLength:"1" maxLength:"64"`
+	ProviderInstallationID   *DecimalUint64       `json:"provider_installation_id,omitempty" pattern:"^[0-9]+$"`
+	ProviderRepositoryID     ProviderRepositoryID `json:"provider_repository_id" required:"true" pattern:"^[0-9]+$"`
+	ProviderRunID            DecimalUint64        `json:"provider_run_id" required:"true" pattern:"^[0-9]+$"`
+	ProviderRunAttempt       DecimalUint64        `json:"provider_run_attempt" required:"true" pattern:"^[0-9]+$"`
+	ProviderJobID            DecimalUint64        `json:"provider_job_id" required:"true" pattern:"^[0-9]+$"`
+	RepositoryFullName       *RepositoryFullName  `json:"repository_full_name,omitempty" minLength:"1" maxLength:"1024"`
+	HeadSHA                  *HeadSHA             `json:"head_sha,omitempty" minLength:"1" maxLength:"128"`
+	Conclusion               *string              `json:"conclusion,omitempty"`
+	RunnerID                 *DecimalUint64       `json:"runner_id,omitempty" pattern:"^[0-9]+$"`
+	RunnerName               *RunnerName          `json:"runner_name,omitempty" minLength:"1" maxLength:"512"`
+	ExecutionID              ExecutionID          `json:"execution_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	AttemptID                AttemptID            `json:"attempt_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	LeaseID                  *string              `json:"lease_id,omitempty"`
+	JobShapeID               *JobShapeId          `json:"job_shape_id,omitempty" minLength:"1" maxLength:"128"`
+	DurableGenerationSetHash *GenerationSetHash   `json:"durable_generation_set_hash,omitempty" minLength:"1" maxLength:"128"`
+	TrustClass               *TrustClass          `json:"trust_class,omitempty" minLength:"1" maxLength:"128"`
+	PromotionPolicy          *PromotionPolicy     `json:"promotion_policy,omitempty" minLength:"1" maxLength:"128"`
+}
+
+type InternalRequestGoldenSnapshotBarrierInputBody struct {
+	Evidence GoldenSnapshotBarrierEvidence `json:"evidence" required:"true"`
+}
+
+type InternalRequestGoldenSnapshotBarrierInput struct {
+	Body InternalRequestGoldenSnapshotBarrierInputBody
+}
+
+type InternalRequestGoldenSnapshotBarrierOutputBody struct {
+	State  string  `json:"state" required:"true"`
+	Reason *string `json:"reason,omitempty"`
+}
+
+type InternalRequestGoldenSnapshotBarrierOutput struct {
+	Body InternalRequestGoldenSnapshotBarrierOutputBody
+}
+
 var Operations = []OperationDescriptor{
 	InternalRegisterRunnerRepository.Descriptor,
 	InternalSubmitRunnerJob.Descriptor,
 	InternalObserveRunnerJob.Descriptor,
 	InternalObserveRunnerWorkflowRun.Descriptor,
+	InternalRequestGoldenSnapshotBarrier.Descriptor,
 }
 
 var InternalRegisterRunnerRepository = Operation[InternalRegisterRunnerRepositoryInput, InternalRegisterRunnerRepositoryOutput]{
@@ -430,6 +477,30 @@ var InternalObserveRunnerWorkflowRun = Operation[InternalObserveRunnerWorkflowRu
 	},
 }
 
+var InternalRequestGoldenSnapshotBarrier = Operation[InternalRequestGoldenSnapshotBarrierInput, InternalRequestGoldenSnapshotBarrierOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.sandbox.v1#InternalRequestGoldenSnapshotBarrier",
+		OperationID:         "internal-request-golden-snapshot-barrier",
+		Method:              "POST",
+		Path:                "/internal/v1/golden-snapshot-barriers",
+		DefaultStatus:       202,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "sandbox-rental-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "sandbox:runner_job:observe", OrganizationSource: "request_id"},
+		Audit:               AuditDescriptor{Event: "sandbox.golden_snapshot_barrier.request", Resource: "runner_repository", Action: "verify"},
+		RateLimitBucket:     "internal_mutation",
+		RequestBodyMaxBytes: 131072,
+		SDK:                 SDKDescriptor{Module: "sandboxInternal.goldenSnapshotBarriers", Method: "request", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
 type Handlers = PublicHandlers
 
 type PublicHandlers interface {
@@ -437,11 +508,13 @@ type PublicHandlers interface {
 	InternalSubmitRunnerJob(context.Context, *InternalSubmitRunnerJobInput) (*InternalSubmitRunnerJobOutput, error)
 	InternalObserveRunnerJob(context.Context, *InternalObserveRunnerJobInput) (*InternalObserveRunnerJobOutput, error)
 	InternalObserveRunnerWorkflowRun(context.Context, *InternalObserveRunnerWorkflowRunInput) (*InternalObserveRunnerWorkflowRunOutput, error)
+	InternalRequestGoldenSnapshotBarrier(context.Context, *InternalRequestGoldenSnapshotBarrierInput) (*InternalRequestGoldenSnapshotBarrierOutput, error)
 }
 
 type (
-	InternalRegisterRunnerRepositoryHandler = Handler[InternalRegisterRunnerRepositoryInput, InternalRegisterRunnerRepositoryOutput]
-	InternalSubmitRunnerJobHandler          = Handler[InternalSubmitRunnerJobInput, InternalSubmitRunnerJobOutput]
-	InternalObserveRunnerJobHandler         = Handler[InternalObserveRunnerJobInput, InternalObserveRunnerJobOutput]
-	InternalObserveRunnerWorkflowRunHandler = Handler[InternalObserveRunnerWorkflowRunInput, InternalObserveRunnerWorkflowRunOutput]
+	InternalRegisterRunnerRepositoryHandler     = Handler[InternalRegisterRunnerRepositoryInput, InternalRegisterRunnerRepositoryOutput]
+	InternalSubmitRunnerJobHandler              = Handler[InternalSubmitRunnerJobInput, InternalSubmitRunnerJobOutput]
+	InternalObserveRunnerJobHandler             = Handler[InternalObserveRunnerJobInput, InternalObserveRunnerJobOutput]
+	InternalObserveRunnerWorkflowRunHandler     = Handler[InternalObserveRunnerWorkflowRunInput, InternalObserveRunnerWorkflowRunOutput]
+	InternalRequestGoldenSnapshotBarrierHandler = Handler[InternalRequestGoldenSnapshotBarrierInput, InternalRequestGoldenSnapshotBarrierOutput]
 )

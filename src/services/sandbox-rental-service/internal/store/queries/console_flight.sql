@@ -36,8 +36,9 @@ SELECT
     sqlc.narg(started_at),
     sqlc.arg(updated_at)
 FROM (SELECT 1) AS _seed
-LEFT JOIN github_workflow_invocations inv
-    ON inv.provider_installation_id = sqlc.arg(provider_installation_id)
+LEFT JOIN provider_workflow_runs inv
+    ON inv.provider = sqlc.arg(provider)
+   AND inv.provider_installation_id = sqlc.arg(provider_installation_id)
    AND inv.provider_repository_id   = sqlc.arg(provider_repository_id)
    AND inv.provider_run_id          = sqlc.arg(provider_run_id)
    AND inv.provider_run_attempt     = sqlc.arg(provider_run_attempt)

@@ -574,14 +574,15 @@ WHERE op.final_state IN ('requested', 'mounted')
 -- name: GetDurableRunRepository :one
 SELECT
     p.org_id,
-    provider_installation_id,
-    gi.provider_repository_id,
-    gi.repository_full_name
-FROM github_workflow_invocations gi
-JOIN runner_provider_repositories p ON p.provider = 'github'
-    AND p.provider_repository_id = gi.provider_repository_id
+    run.provider_installation_id,
+    run.provider_repository_id,
+    run.repository_full_name
+FROM provider_workflow_runs run
+JOIN runner_provider_repositories p ON p.provider = run.provider
+    AND p.provider_repository_id = run.provider_repository_id
     AND p.active
-WHERE gi.provider_repository_id = sqlc.arg(provider_repository_id)
-  AND gi.provider_run_id = sqlc.arg(provider_run_id)
-ORDER BY gi.provider_run_attempt DESC
+WHERE run.provider = sqlc.arg(provider)
+  AND run.provider_repository_id = sqlc.arg(provider_repository_id)
+  AND run.provider_run_id = sqlc.arg(provider_run_id)
+ORDER BY run.provider_run_attempt DESC
 LIMIT 1;

@@ -271,3 +271,14 @@ WHERE a.state IN ('launching', 'running', 'finalizing')
   AND a.updated_at < (now() - (sqlc.arg(stale_seconds) * interval '1 second'))
 ORDER BY a.updated_at
 LIMIT 50;
+
+-- name: GetGoldenSnapshotBarrierAttempt :one
+SELECT
+    e.execution_id,
+    a.attempt_id,
+    a.state AS attempt_state,
+    COALESCE(a.lease_id, '')::text AS lease_id
+FROM executions e
+JOIN execution_attempts a ON a.execution_id = e.execution_id
+WHERE e.execution_id = sqlc.arg(execution_id)
+  AND a.attempt_id = sqlc.arg(attempt_id);

@@ -47,11 +47,15 @@ type DecimalUint64 = string
 
 type ExecutionId = string
 
+type GenerationSetHash = string
+
 type HeadBranch = string
 
 type HeadSha = string
 
 type JobName = string
+
+type JobShapeId = string
 
 type RunnerBootstrapKind = string
 
@@ -59,9 +63,13 @@ type RunnerBootstrapPayload = string
 
 type RunnerName = string
 
+type PromotionPolicy = string
+
 type WorkflowName = string
 
 type WorkflowPath = string
+
+type TrustClass = string
 
 type ConflictError struct {
 	Type        ProblemType    `json:"type"`
@@ -268,6 +276,48 @@ type InternalObserveRunnerWorkflowRunResponse struct {
 	HTTPResponse *http.Response
 }
 
+type GoldenSnapshotBarrierEvidence struct {
+	Provider                 Provider             `json:"provider"`
+	ProviderInstallationID   *DecimalUint64       `json:"provider_installation_id,omitempty"`
+	ProviderRepositoryID     ProviderRepositoryId `json:"provider_repository_id"`
+	ProviderRunID            DecimalUint64        `json:"provider_run_id"`
+	ProviderRunAttempt       DecimalUint64        `json:"provider_run_attempt"`
+	ProviderJobID            DecimalUint64        `json:"provider_job_id"`
+	RepositoryFullName       *RepositoryFullName  `json:"repository_full_name,omitempty"`
+	HeadSHA                  *HeadSha             `json:"head_sha,omitempty"`
+	Conclusion               *string              `json:"conclusion,omitempty"`
+	RunnerID                 *DecimalUint64       `json:"runner_id,omitempty"`
+	RunnerName               *RunnerName          `json:"runner_name,omitempty"`
+	ExecutionID              ExecutionId          `json:"execution_id"`
+	AttemptID                AttemptId            `json:"attempt_id"`
+	LeaseID                  *string              `json:"lease_id,omitempty"`
+	JobShapeID               *JobShapeId          `json:"job_shape_id,omitempty"`
+	DurableGenerationSetHash *GenerationSetHash   `json:"durable_generation_set_hash,omitempty"`
+	TrustClass               *TrustClass          `json:"trust_class,omitempty"`
+	PromotionPolicy          *PromotionPolicy     `json:"promotion_policy,omitempty"`
+}
+
+type InternalRequestGoldenSnapshotBarrierInputBody struct {
+	Evidence GoldenSnapshotBarrierEvidence `json:"evidence"`
+}
+
+type InternalRequestGoldenSnapshotBarrierRequest struct {
+	Body InternalRequestGoldenSnapshotBarrierInputBody `json:"body"`
+}
+
+type InternalRequestGoldenSnapshotBarrierOutputBody struct {
+	State  string  `json:"state"`
+	Reason *string `json:"reason,omitempty"`
+}
+
+type InternalRequestGoldenSnapshotBarrierResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *InternalRequestGoldenSnapshotBarrierOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
 
 type HTTPRequestDoer interface {
@@ -390,6 +440,24 @@ func (c *Client) InternalObserveRunnerWorkflowRun(ctx context.Context, request I
 	return parseInternalObserveRunnerWorkflowRunResponse(resp)
 }
 
+func (c *Client) InternalRequestGoldenSnapshotBarrier(ctx context.Context, request InternalRequestGoldenSnapshotBarrierRequest, reqEditors ...RequestEditorFn) (*InternalRequestGoldenSnapshotBarrierResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newJSONRequest(ctx, "POST", "/internal/v1/golden-snapshot-barriers", request.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.applyEditors(ctx, req, reqEditors...); err != nil {
+		return nil, err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseInternalRequestGoldenSnapshotBarrierResponse(resp)
+}
+
 func (c *Client) newInternalRegisterRunnerRepositoryRequest(ctx context.Context, request InternalRegisterRunnerRepositoryRequest) (*http.Request, error) {
 	return c.newJSONRequest(ctx, "POST", "/internal/v1/runner/repositories", request.Body)
 }
@@ -503,6 +571,27 @@ func parseInternalObserveRunnerWorkflowRunResponse(resp *http.Response) (*Intern
 	result := &InternalObserveRunnerWorkflowRunResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 202 {
 		var decoded InternalObserveRunnerWorkflowRunOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseInternalRequestGoldenSnapshotBarrierResponse(resp *http.Response) (*InternalRequestGoldenSnapshotBarrierResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &InternalRequestGoldenSnapshotBarrierResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 202 {
+		var decoded InternalRequestGoldenSnapshotBarrierOutputBody
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &decoded); err != nil {
 				return nil, err

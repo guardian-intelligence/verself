@@ -84,14 +84,14 @@ ON CONFLICT (provider, provider_job_id) DO UPDATE SET
     last_webhook_delivery = COALESCE(NULLIF(EXCLUDED.last_webhook_delivery, ''), runner_jobs.last_webhook_delivery),
     updated_at = EXCLUDED.updated_at;
 
--- name: UpsertProviderWorkflowInvocation :exec
-INSERT INTO github_workflow_invocations (
-    provider_installation_id, provider_repository_id, provider_run_id,
+-- name: UpsertProviderWorkflowRun :exec
+INSERT INTO provider_workflow_runs (
+    provider, provider_installation_id, provider_repository_id, provider_run_id,
     provider_run_attempt, repository_full_name, event_name, head_sha,
     head_branch, head_repository_full_name, base_sha, base_branch,
     pull_request_number, workflow_path, commit_count, updated_at
 ) VALUES (
-    sqlc.arg(provider_installation_id), sqlc.arg(provider_repository_id),
+    sqlc.arg(provider), sqlc.arg(provider_installation_id), sqlc.arg(provider_repository_id),
     sqlc.arg(provider_run_id), sqlc.arg(provider_run_attempt),
     sqlc.arg(repository_full_name), sqlc.arg(event_name), sqlc.arg(head_sha),
     sqlc.arg(head_branch), sqlc.arg(head_repository_full_name), sqlc.arg(base_sha),
@@ -99,19 +99,19 @@ INSERT INTO github_workflow_invocations (
     NULLIF(sqlc.arg(commit_count)::bigint, 0), sqlc.arg(updated_at)
 )
 ON CONFLICT (
-    provider_installation_id, provider_repository_id, provider_run_id,
+    provider, provider_installation_id, provider_repository_id, provider_run_id,
     provider_run_attempt
 ) DO UPDATE SET
-    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_workflow_invocations.repository_full_name),
-    event_name = COALESCE(NULLIF(EXCLUDED.event_name, ''), github_workflow_invocations.event_name),
-    head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), github_workflow_invocations.head_sha),
-    head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), github_workflow_invocations.head_branch),
-    head_repository_full_name = COALESCE(NULLIF(EXCLUDED.head_repository_full_name, ''), github_workflow_invocations.head_repository_full_name),
-    base_sha = COALESCE(NULLIF(EXCLUDED.base_sha, ''), github_workflow_invocations.base_sha),
-    base_branch = COALESCE(NULLIF(EXCLUDED.base_branch, ''), github_workflow_invocations.base_branch),
-    pull_request_number = CASE WHEN EXCLUDED.pull_request_number <> 0 THEN EXCLUDED.pull_request_number ELSE github_workflow_invocations.pull_request_number END,
-    workflow_path = COALESCE(NULLIF(EXCLUDED.workflow_path, ''), github_workflow_invocations.workflow_path),
-    commit_count = COALESCE(EXCLUDED.commit_count, github_workflow_invocations.commit_count),
+    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), provider_workflow_runs.repository_full_name),
+    event_name = COALESCE(NULLIF(EXCLUDED.event_name, ''), provider_workflow_runs.event_name),
+    head_sha = COALESCE(NULLIF(EXCLUDED.head_sha, ''), provider_workflow_runs.head_sha),
+    head_branch = COALESCE(NULLIF(EXCLUDED.head_branch, ''), provider_workflow_runs.head_branch),
+    head_repository_full_name = COALESCE(NULLIF(EXCLUDED.head_repository_full_name, ''), provider_workflow_runs.head_repository_full_name),
+    base_sha = COALESCE(NULLIF(EXCLUDED.base_sha, ''), provider_workflow_runs.base_sha),
+    base_branch = COALESCE(NULLIF(EXCLUDED.base_branch, ''), provider_workflow_runs.base_branch),
+    pull_request_number = CASE WHEN EXCLUDED.pull_request_number <> 0 THEN EXCLUDED.pull_request_number ELSE provider_workflow_runs.pull_request_number END,
+    workflow_path = COALESCE(NULLIF(EXCLUDED.workflow_path, ''), provider_workflow_runs.workflow_path),
+    commit_count = COALESCE(EXCLUDED.commit_count, provider_workflow_runs.commit_count),
     updated_at = EXCLUDED.updated_at;
 
 -- name: GetProviderQueuedJobContext :one
@@ -214,17 +214,17 @@ LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
 LEFT JOIN runner_jobs j ON j.provider = a.provider
     AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
 LEFT JOIN LATERAL (
-    SELECT gi.event_name, gi.head_sha, gi.head_branch, gi.head_repository_full_name,
-           gi.base_sha, gi.base_branch, gi.workflow_path, gi.pull_request_number
-    FROM github_workflow_invocations gi
-    WHERE a.provider = 'github'
-      AND gi.provider_installation_id = a.provider_installation_id
-      AND gi.provider_repository_id = a.provider_repository_id
-      AND gi.provider_run_id = COALESCE(j.provider_run_id, 0)
+    SELECT run.event_name, run.head_sha, run.head_branch, run.head_repository_full_name,
+           run.base_sha, run.base_branch, run.workflow_path, run.pull_request_number
+    FROM provider_workflow_runs run
+    WHERE run.provider = a.provider
+      AND run.provider_installation_id = a.provider_installation_id
+      AND run.provider_repository_id = a.provider_repository_id
+      AND run.provider_run_id = COALESCE(j.provider_run_id, 0)
     ORDER BY
-      CASE WHEN COALESCE(j.provider_run_attempt, 0) <> 0 AND gi.provider_run_attempt = j.provider_run_attempt THEN 0 ELSE 1 END,
-      CASE WHEN gi.event_name <> '' THEN 0 ELSE 1 END,
-      gi.provider_run_attempt DESC
+      CASE WHEN COALESCE(j.provider_run_attempt, 0) <> 0 AND run.provider_run_attempt = j.provider_run_attempt THEN 0 ELSE 1 END,
+      CASE WHEN run.event_name <> '' THEN 0 ELSE 1 END,
+      run.provider_run_attempt DESC
     LIMIT 1
 ) inv ON true
 WHERE a.execution_id = sqlc.arg(execution_id)
@@ -396,8 +396,9 @@ WHERE provider = sqlc.arg(provider)
   AND provider_run_attempt = sqlc.arg(provider_run_attempt)
 ORDER BY provider_job_id;
 
--- name: GetWorkflowRunInvocation :one
+-- name: GetProviderWorkflowRun :one
 SELECT
+    provider,
     provider_installation_id,
     provider_repository_id,
     provider_run_id,
@@ -412,8 +413,9 @@ SELECT
     workflow_path,
     pull_request_number,
     COALESCE(commit_count, 0)::bigint AS commit_count
-FROM github_workflow_invocations
-WHERE provider_installation_id = sqlc.arg(provider_installation_id)
+FROM provider_workflow_runs
+WHERE provider = sqlc.arg(provider)
+  AND provider_installation_id = sqlc.arg(provider_installation_id)
   AND provider_repository_id = sqlc.arg(provider_repository_id)
   AND provider_run_id = sqlc.arg(provider_run_id)
 ORDER BY
