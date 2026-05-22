@@ -560,10 +560,10 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
-		ID:      "deploy.nomad_decisions",
+		ID:      "deploy.nomad_job_runs",
 		Family:  "deploy",
-		Title:   "Deploy Nomad Decisions",
-		Purpose: "Nomad decisions emitted by verself-deploy span events for one deploy_run_key, including no-op decisions, submits, and terminal deployment outcomes.",
+		Title:   "Deploy Nomad Job Runs",
+		Purpose: "Nomad CLI job-run events emitted by verself-deploy for one deploy_run_key, including each submitted job and its CLI success or failure output.",
 		Required: []string{
 			"--run-key=<deploy-run-key>",
 		},
@@ -582,7 +582,7 @@ var queryDocs = []queryDoc{
 		ID:      "deploy.nomad_observer_events",
 		Family:  "deploy",
 		Title:   "Deploy Nomad Observer Events",
-		Purpose: "Time-bounded nomad-observer event-stream rows for jobs actually changed by one deploy, joined through deploy decisions instead of stale job metadata alone.",
+		Purpose: "Time-bounded nomad-observer event-stream rows for jobs submitted by one deploy, joined through deploy run evidence instead of stale job metadata alone.",
 		Required: []string{
 			"--run-key=<deploy-run-key>",
 		},

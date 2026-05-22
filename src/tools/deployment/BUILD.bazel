@@ -1,5 +1,17 @@
-# Empty package marker; Go targets live under cmd/ and internal/.
-
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+
+genrule(
+    name = "nomad_cli",
+    srcs = ["@server_tool_nomad//file"],
+    outs = ["nomad"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+unzip -q "$(location @server_tool_nomad//file)" -d "$$tmp"
+install -m 0755 "$$tmp/nomad" "$@"
+""",
+    visibility = ["//visibility:public"],
+)
 
 go_module_checks()

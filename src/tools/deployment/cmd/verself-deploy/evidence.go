@@ -7,7 +7,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/deployment-tools/internal/deploymodel"
-	"github.com/verself/deployment-tools/internal/nomadclient"
 )
 
 func recordDeployStarted(span trace.Span, runKey, site, sha, actor string, startedAt time.Time) {
@@ -25,17 +24,17 @@ func recordDeployStarted(span trace.Span, runKey, site, sha, actor string, start
 	))
 }
 
-func recordDeploySucceeded(span trace.Span, plan *deployPlan, results []jobApplyResult, startedAt time.Time) {
-	changed := changedJobIDs(results)
+func recordDeploySucceeded(span trace.Span, plan *deployPlan, results []jobRunResult, startedAt time.Time) {
+	submitted := submittedJobIDs(results)
 	span.SetAttributes(
-		attribute.StringSlice("verself.changed_jobs", changed),
-		attribute.Int("verself.changed_job_count", len(changed)),
+		attribute.StringSlice("verself.submitted_jobs", submitted),
+		attribute.Int("verself.submitted_job_count", len(submitted)),
 		attribute.Int64("verself.deploy.duration_ms", time.Since(startedAt).Milliseconds()),
 	)
 	span.AddEvent("verself.deploy.succeeded", trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", plan.Identity.RunKey()),
-		attribute.StringSlice("verself.changed_jobs", changed),
-		attribute.Int("verself.changed_job_count", len(changed)),
+		attribute.StringSlice("verself.submitted_jobs", submitted),
+		attribute.Int("verself.submitted_job_count", len(submitted)),
 		attribute.Int64("verself.deploy.duration_ms", time.Since(startedAt).Milliseconds()),
 	))
 }
@@ -60,8 +59,8 @@ func recordDeployFailed(span trace.Span, plan *deployPlan, runKey, site, sha str
 	))
 }
 
-func recordNomadDecision(span trace.Span, runKey, site string, job deploymodel.NomadJob, decision nomadclient.Decision, duration time.Duration) {
-	span.AddEvent("verself.nomad.decision", trace.WithAttributes(
+func recordNomadRunStarted(span trace.Span, runKey, site string, job deploymodel.NomadJob, startedAt time.Time) {
+	span.AddEvent("verself.nomad.run_started", trace.WithTimestamp(startedAt), trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", runKey),
 		attribute.String("verself.site", site),
 		attribute.String("nomad.job_id", job.JobID),
@@ -69,138 +68,77 @@ func recordNomadDecision(span trace.Span, runKey, site string, job deploymodel.N
 		attribute.String("verself.spec_sha256", job.SpecSHA256),
 		attribute.String("verself.artifact_sha256", job.ArtifactSHA256),
 		attribute.String("verself.input_sha256", job.InputSHA256),
-		attribute.String("nomad.prior_spec_sha256", decision.PriorSpecDigest),
-		attribute.Int64("nomad.prior_job_modify_index", int64FromUint64(decision.PriorJobModifyIndex, "prior job modify index")),
-		attribute.Int64("nomad.prior_version", int64FromUint64(decision.PriorVersion, "prior version")),
-		attribute.Bool("nomad.prior_stopped", decision.PriorStopped),
-		attribute.Bool("nomad.decision.noop", decision.NoOp),
 		attribute.StringSlice("verself.dependency_units", job.DependsOn),
-		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
 	))
 }
 
-func recordNomadSkipped(span trace.Span, runKey, site string, job deploymodel.NomadJob, decision nomadclient.Decision) {
-	span.AddEvent("verself.nomad.skipped", trace.WithAttributes(
+func recordNomadRunSucceeded(span trace.Span, runKey, site string, job deploymodel.NomadJob, duration time.Duration, stdout string) {
+	span.AddEvent("verself.nomad.run_succeeded", trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", runKey),
 		attribute.String("verself.site", site),
 		attribute.String("nomad.job_id", job.JobID),
 		attribute.String("verself.deploy_wave", job.DeployPhase),
 		attribute.String("verself.spec_sha256", job.SpecSHA256),
-		attribute.String("verself.input_sha256", job.InputSHA256),
-		attribute.String("nomad.prior_spec_sha256", decision.PriorSpecDigest),
-		attribute.Bool("nomad.decision.noop", true),
-	))
-}
-
-func recordNomadSubmitted(span trace.Span, runKey, site string, job deploymodel.NomadJob, decision nomadclient.Decision, submitted *nomadclient.SubmitResult, duration time.Duration) {
-	span.AddEvent("verself.nomad.submitted", trace.WithAttributes(
-		attribute.String("verself.deploy_run_key", runKey),
-		attribute.String("verself.site", site),
-		attribute.String("nomad.job_id", job.JobID),
-		attribute.String("verself.deploy_wave", job.DeployPhase),
-		attribute.String("verself.input_sha256", job.InputSHA256),
-		attribute.String("nomad.eval_id", submitted.EvalID),
-		attribute.String("nomad.deployment_id", submitted.DeploymentID),
-		attribute.Int64("nomad.job_modify_index", int64FromUint64(submitted.JobModifyIndex, "job modify index")),
-		attribute.Int64("nomad.prior_job_modify_index", int64FromUint64(decision.PriorJobModifyIndex, "prior job modify index")),
 		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
+		attribute.String("nomad.stdout", truncateErrorString(stdout)),
 	))
 }
 
-func recordNomadSubmitFailed(span trace.Span, runKey, site string, job deploymodel.NomadJob, decision nomadclient.Decision, duration time.Duration, err error) {
-	span.AddEvent("verself.nomad.submit_failed", trace.WithAttributes(
+func recordNomadRunFailed(span trace.Span, runKey, site string, job deploymodel.NomadJob, duration time.Duration, stderr string, err error) {
+	span.AddEvent("verself.nomad.run_failed", trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", runKey),
 		attribute.String("verself.site", site),
 		attribute.String("nomad.job_id", job.JobID),
 		attribute.String("verself.deploy_wave", job.DeployPhase),
 		attribute.String("verself.spec_sha256", job.SpecSHA256),
-		attribute.String("verself.input_sha256", job.InputSHA256),
-		attribute.String("nomad.prior_spec_sha256", decision.PriorSpecDigest),
 		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
+		attribute.String("nomad.stderr", truncateErrorString(stderr)),
 		attribute.String("error.message", truncateError(err)),
 	))
 }
 
-func recordNomadDeploymentSucceeded(span trace.Span, runKey, site string, job deploymodel.NomadJob, submitted *nomadclient.SubmitResult, monitor nomadclient.MonitorResult, duration time.Duration) {
-	span.AddEvent("verself.nomad.deployment_succeeded", trace.WithAttributes(
-		attribute.String("verself.deploy_run_key", runKey),
-		attribute.String("verself.site", site),
-		attribute.String("nomad.job_id", job.JobID),
-		attribute.String("verself.deploy_wave", job.DeployPhase),
-		attribute.String("nomad.eval_id", submitted.EvalID),
-		attribute.String("nomad.deployment_id", monitor.DeploymentID),
-		attribute.String("nomad.terminal_status", monitor.TerminalStatus),
-		attribute.Int("nomad.tg.desired_total", monitor.DesiredTotal),
-		attribute.Int("nomad.tg.healthy", monitor.HealthyTotal),
-		attribute.Int("nomad.tg.unhealthy", monitor.UnhealthyTotal),
-		attribute.Int("nomad.tg.placed", monitor.PlacedTotal),
-		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
-	))
-}
-
-func recordNomadDeploymentFailed(span trace.Span, runKey, site string, job deploymodel.NomadJob, submitted *nomadclient.SubmitResult, monitor nomadclient.MonitorResult, duration time.Duration, err error) {
-	span.AddEvent("verself.nomad.deployment_failed", trace.WithAttributes(
-		attribute.String("verself.deploy_run_key", runKey),
-		attribute.String("verself.site", site),
-		attribute.String("nomad.job_id", job.JobID),
-		attribute.String("verself.deploy_wave", job.DeployPhase),
-		attribute.String("nomad.eval_id", submitted.EvalID),
-		attribute.String("nomad.deployment_id", monitor.DeploymentID),
-		attribute.String("nomad.terminal_status", monitor.TerminalStatus),
-		attribute.String("nomad.status_description", monitor.StatusDescription),
-		attribute.Int("nomad.tg.desired_total", monitor.DesiredTotal),
-		attribute.Int("nomad.tg.healthy", monitor.HealthyTotal),
-		attribute.Int("nomad.tg.unhealthy", monitor.UnhealthyTotal),
-		attribute.Int("nomad.tg.placed", monitor.PlacedTotal),
-		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
-		attribute.String("error.message", truncateError(err)),
-	))
-}
-
-func recordDeployWaveStarted(span trace.Span, runKey, site, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact, startedAt time.Time) {
+func recordDeployWaveStarted(span trace.Span, runKey, site, wave string, jobs []deploymodel.NomadJob, artifacts []deploymodel.Artifact, startedAt time.Time) {
 	span.AddEvent("verself.deploy.wave_started", trace.WithTimestamp(startedAt), trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", runKey),
 		attribute.String("verself.site", site),
 		attribute.String("verself.deploy_wave", wave),
-		attribute.Int("verself.nomad_job_count", len(intents)),
-		attribute.Int("verself.changed_job_count", changedIntentCount(intents)),
+		attribute.Int("verself.nomad_job_count", len(jobs)),
+		attribute.Int("verself.submitted_job_count", len(jobs)),
 		attribute.Int("verself.artifact_count", len(artifacts)),
 	))
 }
 
-func recordDeployWaveSucceeded(span trace.Span, runKey, site, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact, startedAt time.Time) {
+func recordDeployWaveSucceeded(span trace.Span, runKey, site, wave string, jobs []deploymodel.NomadJob, artifacts []deploymodel.Artifact, startedAt time.Time) {
 	duration := time.Since(startedAt)
 	span.AddEvent("verself.deploy.wave_succeeded", trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", runKey),
 		attribute.String("verself.site", site),
 		attribute.String("verself.deploy_wave", wave),
-		attribute.Int("verself.nomad_job_count", len(intents)),
-		attribute.Int("verself.changed_job_count", changedIntentCount(intents)),
+		attribute.Int("verself.nomad_job_count", len(jobs)),
+		attribute.Int("verself.submitted_job_count", len(jobs)),
 		attribute.Int("verself.artifact_count", len(artifacts)),
 		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
 	))
 }
 
-func recordDeployWaveFailed(span trace.Span, runKey, site, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact, startedAt time.Time, err error) {
+func recordDeployWaveFailed(span trace.Span, runKey, site, wave string, jobs []deploymodel.NomadJob, artifacts []deploymodel.Artifact, startedAt time.Time, err error) {
 	duration := time.Since(startedAt)
 	span.AddEvent("verself.deploy.wave_failed", trace.WithAttributes(
 		attribute.String("verself.deploy_run_key", runKey),
 		attribute.String("verself.site", site),
 		attribute.String("verself.deploy_wave", wave),
-		attribute.Int("verself.nomad_job_count", len(intents)),
-		attribute.Int("verself.changed_job_count", changedIntentCount(intents)),
+		attribute.Int("verself.nomad_job_count", len(jobs)),
+		attribute.Int("verself.submitted_job_count", len(jobs)),
 		attribute.Int("verself.artifact_count", len(artifacts)),
 		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
 		attribute.String("error.message", truncateError(err)),
 	))
 }
 
-func changedJobIDs(results []jobApplyResult) []string {
+func submittedJobIDs(results []jobRunResult) []string {
 	out := []string{}
 	for _, result := range results {
-		if result.Changed {
-			out = append(out, result.JobID)
-		}
+		out = append(out, result.JobID)
 	}
 	return out
 }

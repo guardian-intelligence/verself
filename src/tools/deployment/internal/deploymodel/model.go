@@ -1,4 +1,4 @@
-// Package deploymodel contains the shared immutable artifact and Nomad submit
+// Package deploymodel contains the shared immutable artifact and Nomad job-run
 // value types used by the deploy controller.
 package deploymodel
 

@@ -224,7 +224,7 @@ Nomad deploys are driven directly by the checked-in `nomad_component` targets fo
 aspect deploy --site=prod --sha=HEAD
 ```
 
-`aspect deploy` builds the Bazel-discovered descriptors, uploads missing content-addressed artifacts to the private Garage origin, resolves each `nomad.json`, and submits the resulting payloads to Nomad with ClickHouse evidence for each job decision.
+`aspect deploy` builds the Bazel-discovered descriptors, uploads missing content-addressed artifacts to the private Garage origin, resolves each `nomad.json`, and hands the resulting payloads to the pinned Nomad CLI with ClickHouse evidence for each `nomad job run`.
 
 ### High-signal Documents.
 

@@ -15,8 +15,10 @@ observability concern, not a deploy-runner correctness dependency.
 
 load(
     ".aspect/lib/helpers.axl",
+    "NOMAD_CLI_TARGET",
     "VERSELF_DEPLOY_TARGET",
     "bazel_run",
+    "bazel_output_file",
     "checked_spawn",
     "git_dirty",
     "git_head",
@@ -25,7 +27,18 @@ load(
     "ws_path",
 )
 
+def _deploy_env(ctx):
+    nomad_bin = bazel_output_file(ctx, NOMAD_CLI_TARGET)
+    if nomad_bin == "":
+        return None
+    return {
+        "VERSELF_NOMAD_BIN": nomad_bin,
+    }
+
 def _deploy_one(ctx, site, sha):
+    env = _deploy_env(ctx)
+    if env == None:
+        return 1
     deploy_args = [
         "run",
         "--site=" + site,
@@ -37,6 +50,7 @@ def _deploy_one(ctx, site, sha):
         VERSELF_DEPLOY_TARGET,
         deploy_args,
         cwd = ws_path(ctx),
+        env = env,
         label = "verself-deploy run --site=" + site,
     )
     if deploy_rc != 0:
@@ -64,6 +78,9 @@ def _deploy_in_worktree(ctx, site, sha):
     the in-tree path with no further branching.
     """
     wt = "/tmp/verself-deploy-" + sha[:12]
+    env = _deploy_env(ctx)
+    if env == None:
+        return 1
     _make_tree_removable(ctx, wt)
     checked_spawn(ctx, "rm", ["-rf", wt], label = "clean " + wt)
     rc = checked_spawn(
@@ -100,6 +117,7 @@ def _deploy_in_worktree(ctx, site, sha):
         VERSELF_DEPLOY_TARGET,
         deploy_args,
         cwd = wt,
+        env = env,
         label = "verself-deploy run --site=" + site + " (worktree " + sha[:12] + ")",
     )
     _remove_worktree(ctx, wt)

@@ -1,7 +1,7 @@
 # deployment
 
 The typed Go orchestrator for verself deploys. It owns the Bazel-to-Nomad
-adapter layer: Nomad submit/monitor and Bazel artifact resolution. Operator
+adapter layer: Nomad CLI job-run handoff and Bazel artifact resolution. Operator
 database access is owned by
 `src/tools/operator/cmd/aspect-operator` and the shared `src/tools/operator-runtime/go`
 packages, not this deployment orchestrator.
@@ -14,18 +14,17 @@ packages, not this deployment orchestrator.
 - `internal/identity/` — derives the verself deploy identity env and emits W3C
   baggage so every span this binary creates carries `verself.deploy_run_key`,
   `verself.deploy_id`, `verself.site`, `verself.author`.
-- `internal/nomadclient/` — typed wrapper around `github.com/hashicorp/nomad/api`.
 - `internal/deploymodel/` — shared value types for Garage artifact delivery and
-  resolved Nomad submit jobs.
+  resolved Nomad job-run payloads.
 - `internal/nomadclient/` — typed wrapper around `github.com/hashicorp/nomad/api`.
-  Uses `Plan` → `EnforceRegister` for CAS-safe submit, then mirrors the
-  upstream `nomad deployment status -monitor` blocking-query loop on
-  `Deployments.Info`.
+  Keeps server-version-aligned HCL parsing and service-catalog reads in Go; job
+  submission and rollout monitoring are delegated to the pinned Nomad CLI via
+  `nomad job run -json`.
 
 ## Phase boundaries
 
 This module owns deploy orchestration: Bazel component discovery, Garage
-artifact publication, Nomad submit/monitor, and identity propagation. It emits
+artifact publication, Nomad job-run handoff, and identity propagation. It emits
 OpenTelemetry spans and stdout. ClickHouse is an observability backend, not a
 runtime dependency of this binary. Host bootstrap and patching are outside this
 binary.

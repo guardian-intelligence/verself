@@ -2,12 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "nomadclient",
-    srcs = [
-        "client.go",
-        "monitor.go",
-        "safeconv.go",
-        "spec.go",
-    ],
+    srcs = ["client.go"],
     importpath = "github.com/verself/deployment-tools/internal/nomadclient",
     visibility = ["//src/tools/deployment:__subpackages__"],
     deps = [
