@@ -1,5 +1,6 @@
 import type { Letter } from "~/content/letters";
-import { syncLetterContinuationMetrics, transitionStyle } from "~/features/letters/transitions";
+import { syncLetterContinuationMetrics } from "~/features/letters/transitions.intent";
+import { transitionStyle } from "~/features/letters/transitions";
 
 export const LETTER_READING_COLUMN_CLASS = "mx-auto w-full max-w-6xl px-[var(--chrome-inline-gap)]";
 

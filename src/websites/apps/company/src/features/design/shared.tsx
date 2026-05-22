@@ -283,7 +283,7 @@ export const heroStyle = `
     border: 1px solid currentColor;
     background: transparent;
     color: inherit;
-    cursor: pointer;
+    cursor: default;
   }
   .hero-btn.primary {
     background: var(--color-flare);
