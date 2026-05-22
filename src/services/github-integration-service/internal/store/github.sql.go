@@ -53,7 +53,21 @@ SET state = 'jit_requested',
     claimed_at = $1,
     updated_at = $1
 WHERE github_provider_demands.provider_job_id = $2
-  AND github_provider_demands.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
+  AND (
+        github_provider_demands.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
+        -- If the process dies or a unique constraint fails after JIT creation
+        -- but before runner registration, the demand has no live runner. Treat
+        -- that orphaned state as retryable instead of leaving GitHub queued.
+     OR (
+            github_provider_demands.state = 'jit_created'
+        AND NOT EXISTS (
+                SELECT 1
+                FROM github_runner_registrations own_registration
+                WHERE own_registration.provider_job_id = github_provider_demands.provider_job_id
+                  AND own_registration.state IN ('jit_created', 'sandbox_submitted')
+            )
+        )
+  )
   AND (
       SELECT count(*)
       FROM github_runner_registrations active
@@ -316,6 +330,10 @@ SELECT provider_job_id, provider_installation_id, provider_repository_id, runner
        sandbox_attempt_id, state
 FROM github_runner_registrations
 WHERE runner_name = $1
+  -- Completed/failed registrations may keep the historical runner name after a
+  -- GitHub assignment correction. Only live rows should participate in future
+  -- assignment matching.
+  AND state IN ('jit_created', 'sandbox_submitted')
 `
 
 type GetRunnerRegistrationByRunnerNameParams struct {
@@ -534,6 +552,18 @@ WITH candidates AS (
       AND (
             d.provider_job_id IS NULL
          OR d.state IN ('demand_recorded', 'jit_failed', 'sandbox_failed')
+         -- Same orphan protection as ClaimProviderDemandForJIT: a queued
+         -- demand marked jit_created without a live registration should be
+         -- selected by the reconciler and retried.
+         OR (
+                d.state = 'jit_created'
+            AND NOT EXISTS (
+                    SELECT 1
+                    FROM github_runner_registrations own_registration
+                    WHERE own_registration.provider_job_id = j.provider_job_id
+                      AND own_registration.state IN ('jit_created', 'sandbox_submitted')
+                )
+            )
       )
 )
 SELECT DISTINCT ON (provider_repository_id, runner_class)

@@ -705,6 +705,16 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		State:                  "jit_created",
 		UpdatedAt:              pgTime(now),
 	}); err != nil {
+		// A runner name collision here usually means GitHub rebound a previous
+		// runner to a different queued job. Delete this newly minted runner and
+		// return demand to a retryable state so the job does not stay queued.
+		_ = s.deleteRunner(ctx, event.Installation.ID, owner, runnerID)
+		_ = s.queries.MarkProviderDemandFailed(ctx, store.MarkProviderDemandFailedParams{
+			ProviderJobID: event.WorkflowJob.ID,
+			State:         "jit_failed",
+			FailureReason: truncate(err.Error(), 1024),
+			UpdatedAt:     pgTime(time.Now().UTC()),
+		})
 		return err
 	}
 	meta.RunnerID = runnerID

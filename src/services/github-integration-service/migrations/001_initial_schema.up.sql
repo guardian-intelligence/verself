@@ -202,8 +202,12 @@ CREATE TABLE github_runner_registrations (
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- GitHub can assign a JIT runner to a different queued job with the same
+-- labels. Once that registration is cleaned or failed, the runner name must be
+-- reusable for the original demand's replacement runner.
 CREATE UNIQUE INDEX idx_github_runner_registrations_runner_name
-    ON github_runner_registrations (runner_name);
+    ON github_runner_registrations (runner_name)
+    WHERE state IN ('jit_created', 'sandbox_submitted');
 
 CREATE TABLE github_terminal_job_evidence (
     terminal_evidence_id     UUID        PRIMARY KEY,
