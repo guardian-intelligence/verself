@@ -45,7 +45,7 @@ Inbound mail now has three distinct boundaries: Stalwart for SMTP/JMAP, HAProxy 
 
 Three layers:
 
-**1. Receive-only SMTP:** Stalwart rejects relay attempts from external SMTP clients and only performs local delivery during inbound SMTP sessions. Outbound relay is not configured in Stalwart. The only current outbound path is the separate operator-forwarding sidecar inside `mailbox-service`, which forwards a copy of `ceo@` mail through Resend's HTTPS API.
+**1. Receive-only SMTP:** Stalwart rejects relay attempts from external SMTP clients and only performs local delivery during inbound SMTP sessions. Outbound relay is not configured in Stalwart. The only current outbound path is the separate operator-forwarding sidecar inside `mailbox-service`, which forwards a copy of the configured operator mailbox through Resend's HTTPS API. The current implementation uses the legacy `ceo` principal; the email-service cutover should remove that principal and use the address policy in [company-address-policy.md](company-address-policy.md).
 
 **2. systemd hardening:** Stalwart runs with `ProtectSystem=strict`, `NoNewPrivileges=true`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` (sole capability — for port 25), `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `RestrictNamespaces=true`, `LockPersonality=true`, `ReadWritePaths` limited to `/var/lib/stalwart`. `mailbox-service` runs as a separate unprivileged service with its own credstore.
 
@@ -65,11 +65,15 @@ There are now two mail-adjacent PostgreSQL databases:
 - It rewrites `/jmap/session` so clients see the public `https://mail.<domain>` / `wss://mail.<domain>` origin instead of Stalwart's internal `127.0.0.1:8090` listener.
 - It discovers Stalwart accounts through the local management API, maps account IDs to configured passwords, subscribes to JMAP EventSource, and applies `Mailbox/changes`, `Email/changes`, and `Thread/changes` into the `mailbox_service` PostgreSQL schema.
 - It exposes the authenticated mailbox write API (`/api/v1/mail/*`) for read/unread, flag, move, trash, and body hydration.
-- It also currently hosts the tactical `ceo@` operator-forwarding sidecar. That forwarding path is deliberately outside Stalwart because per-user Sieve forwarding was not reliable enough for the product path.
+- It also currently hosts the tactical operator-forwarding sidecar. That forwarding path is deliberately outside Stalwart because per-user Sieve forwarding was not reliable enough for the product path. The current `ceo` principal is legacy implementation state and should not be carried forward.
 
-## Mailbox scheme
+## Mailbox scheme and address policy
 
-- `ceo@<domain>` — operator, reserved
+Company address policy lives in [company-address-policy.md](company-address-policy.md). It excludes title aliases such as `ceo@<domain>`, `founder@<domain>`, and `founders@<domain>`. Personal mailboxes use durable human addresses, and company functions use role addresses such as `hello@<domain>`, `security@<domain>`, `sales@<domain>`, and `postmaster@<domain>`.
+
+Current implementation state:
+
+- `ceo@<domain>` — legacy tactical operator mailbox; remove during the email-service cutover
 - `agents@<domain>` — shared agent mailbox
 
 Accounts are pre-created via Stalwart's Management REST API in `seed-system.yml --tags stalwart`. No auto-provisioning on first OIDC or JMAP login.
@@ -78,7 +82,7 @@ Seeded product identity bindings:
 
 | Zitadel subject | Mailbox account | Purpose |
 |---|---|---|
-| `ceo@<domain>` human user | `ceo` | operator webmail |
+| legacy `ceo@<domain>` human user | `ceo` | operator webmail until the email-service cutover removes this path |
 | `agent@<domain>` human user | `agents` | platform admin browser rehearsal |
 | `assume-platform-admin` machine user | `agents` | platform admin API rehearsal |
 
@@ -88,16 +92,16 @@ Stalwart and the Verself app tier do not share an auth system today.
 
 **Stalwart mailbox auth:** Stalwart uses its own internal directory backed by PostgreSQL. Passwords must be bcrypt-hashed before passing to the Management API (Stalwart stores `secrets` verbatim and detects the hash algorithm by prefix). Accounts require `roles: ["user"]` for JMAP/IMAP access — without it, authentication succeeds but returns 403.
 
-**Verself product auth:** The webmail app authenticates humans with Zitadel, not with Stalwart. The browser signs into Zitadel, the frontend server keeps the OAuth session server-side, and `mailbox-service` resolves the caller's Zitadel `sub` claim through `mailbox_bindings` to find the mailbox account (`ceo`, `agents`, future customer mailbox, etc.).
+**Verself product auth:** The webmail app authenticates humans with Zitadel, not with Stalwart. The browser signs into Zitadel, the frontend server keeps the OAuth session server-side, and `mailbox-service` resolves the caller's Zitadel `sub` claim through `mailbox_bindings` to find the mailbox account (legacy `ceo`, `agents`, future customer mailbox, etc.).
 
-**Why two passwords exist today:** `ceo@<domain>` therefore has:
+**Why two passwords exist today:** the legacy operator mailbox therefore has:
 
 - a Zitadel password for logging into repo-owned apps such as webmail, Forgejo, Letters, and console
 - a Stalwart mailbox password for direct mail-protocol access such as JMAP/IMAP/SMTP auth and for box-local operator tooling
 
 The webmail app never asks the human for the Stalwart password. That mailbox password is currently used by Stalwart itself, `mailbox-service` sync/forwarding code, and direct operator access such as `aspect mail passwords`.
 
-**Current binding model:** `mailbox_bindings` is the join between product identity and mailbox identity. Right now the model is intentionally simple: one Zitadel subject maps to one mailbox account, and many subjects may map to the same mailbox account. `seed-system.yml` creates the CEO and platform-admin agent bindings during full seed and `--tags identity` runs so a rotated seeded user or machine-user subject does not strand the webmail app on a stale binding. `--tags stalwart` preserves existing product bindings while resetting Stalwart and the mailbox projection.
+**Current binding model:** `mailbox_bindings` is the join between product identity and mailbox identity. Right now the model is intentionally simple: one Zitadel subject maps to one mailbox account, and many subjects may map to the same mailbox account. `seed-system.yml` creates the legacy operator and platform-admin agent bindings during full seed and `--tags identity` runs so a rotated seeded user or machine-user subject does not strand the webmail app on a stale binding. `--tags stalwart` preserves existing product bindings while resetting Stalwart and the mailbox projection.
 
 Basic Auth is used for both JMAP and the Management API. Stalwart does not support `grant_type=password` on its OAuth endpoint.
 
@@ -160,7 +164,7 @@ Managed by Ansible:
 
 Sieve (RFC 5228) scripts run server-side when a message arrives, before it lands in the recipient's mailbox. Stalwart supports per-account Sieve scripts managed via JMAP (`urn:ietf:params:jmap:sieve`) or ManageSieve (port 4190, internal only).
 
-**Operator forwarding:** The `ceo@` account is forwarded by `mailbox-service`, not by Stalwart Sieve. `mailbox-service` polls the `ceo@` mailbox over loopback JMAP, forwards a copy through the Resend HTTPS API, and keeps a local copy in `ceo@`. This is provisioned by `seed-system.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), operator forwarding is disabled but the mailbox still receives mail locally. This is a tactical operational path, not the future mailbox sync architecture.
+**Operator forwarding:** The legacy operator account is forwarded by `mailbox-service`, not by Stalwart Sieve. `mailbox-service` polls the legacy operator mailbox over loopback JMAP, forwards a copy through the Resend HTTPS API, and keeps a local copy. This is provisioned by `seed-system.yml --tags stalwart` when `stalwart_operator_forward_to` is set in `group_vars/all/main.yml`. When empty (default), operator forwarding is disabled but the mailbox still receives mail locally. This is a tactical operational path, not the future mailbox sync architecture.
 
 **Agent use case:** Sieve can auto-file 2FA codes (`if header :contains "Subject" "verification code" { fileinto "2FA"; }`) or discard noise before JMAP ever sees it. Rules for the shared `agents@` account would be provisioned alongside the account in the seed playbook.
 
@@ -177,7 +181,7 @@ aspect mail list                              # List recent agents@ email
 aspect mail read --id=eaaaaab                 # Read one agents@ email
 aspect mail code                              # Extract latest agents@ verification code
 aspect mail mailboxes                         # Show agents@ mailbox ids/roles
-aspect mail list --mailbox=ceo                # Switch to ceo@
+aspect mail list --mailbox=ceo                # Switch to the legacy operator mailbox
 ```
 
 ## Relevant files
