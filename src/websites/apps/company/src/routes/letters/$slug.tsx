@@ -1,19 +1,32 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import { useEffect } from "react";
 import { letterBySlug } from "~/content/letters";
-import { emitSpan } from "~/lib/telemetry/browser";
+import {
+  LETTER_POST_PAGE_PADDING_CLASS,
+  LETTER_READING_COLUMN_CLASS,
+  LETTER_TEXT_MEASURE_CLASS,
+  LetterBody,
+  LetterDate,
+  LetterSalutation,
+} from "~/features/letters/typography";
+import {
+  fixedTransitionStyle,
+  LETTER_RETURN_TRANSITION_NAME,
+} from "~/features/letters/transitions";
 import { ogMeta } from "~/lib/head";
+import { emitSpan } from "~/lib/telemetry/browser";
 
 // A single letter. The form follows DESIGN.md: the date sits at the very
 // top, left-aligned to the column, sized to exactly two graph-paper cells
 // (2 × 28px) the way it was always written by hand. The title is the
-// salutation — "Dear Shovon" — and renders directly under the date, in the
+// salutation — "Dear Shovon," — and renders directly under the date, in the
 // body's hand, the way a letter is actually addressed. The body opens
-// underneath and runs the full width of the column — the same frame as the
-// masthead, no narrow measure — because these were written to the edge of
-// the page. The body closes on "Love,"; the name is not signed but redacted
-// — a solid marker bar, four characters wide, struck where it would be. The
-// frontmatter title doubles as the <head>/OG title.
+// underneath on the same measure as the index preview, so browser view
+// transitions have stable type geometry to interpolate. The body closes on
+// "Love,"; the name is not signed but redacted — a solid marker bar, four
+// characters wide, struck where it would be. The frontmatter title doubles as
+// the <head>/OG title.
 
 export const Route = createFileRoute("/letters/$slug")({
   component: LetterPost,
@@ -39,45 +52,6 @@ export const Route = createFileRoute("/letters/$slug")({
   },
 });
 
-function ordinal(n: number): string {
-  const teens = n % 100;
-  if (teens >= 11 && teens <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
-
-// "July 4th, 2036" — the date in the hand it was written in, ordinal and
-// all, not the calendar's "July 4, 2036". The date is the one thing every
-// letter opens with, so it carries the voice.
-function formatDate(iso: string): string {
-  const d = new Date(`${iso}T12:00:00Z`);
-  const month = d.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
-  return `${month} ${ordinal(d.getUTCDate())}, ${d.getUTCFullYear()}`;
-}
-
-const letterProseClassName = [
-  "w-full font-display text-[var(--treatment-muted-strong)]",
-  "[font-variation-settings:'opsz'_18,'SOFT'_0]",
-  "[overflow-wrap:break-word]",
-  "[&>*+*]:mt-7",
-  "[&>p]:text-[18px] [&>p]:font-normal [&>p]:leading-[1.62] md:[&>p]:text-[clamp(19px,1.4vw,20px)]",
-  "[&>blockquote]:border-l-2 [&>blockquote]:border-[var(--treatment-rule-color)] [&>blockquote]:pl-5 [&>blockquote]:italic",
-  "[&>blockquote]:text-[18px] [&>blockquote]:leading-[1.62] md:[&>blockquote]:text-[clamp(19px,1.4vw,20px)]",
-  "[&>ul]:list-disc [&>ol]:list-decimal [&>ul]:pl-7 [&>ol]:pl-7",
-  "[&_li]:mt-2 [&_li]:text-[18px] [&_li]:leading-[1.62] md:[&_li]:text-[clamp(19px,1.4vw,20px)]",
-  "[&_a]:text-[var(--treatment-ink)] [&_a]:underline [&_a]:decoration-[1px] [&_a]:underline-offset-[0.18em]",
-  "[&>h2]:mt-14 [&>h2]:font-display [&>h2]:text-[clamp(24px,2.4vw,30px)] [&>h2]:font-normal [&>h2]:leading-[1.18]",
-  "[&>h3]:mt-12 [&>h3]:font-display [&>h3]:text-[clamp(20px,2vw,24px)] [&>h3]:font-normal [&>h3]:leading-[1.22]",
-].join(" ");
-
 function LetterPost() {
   const { letter } = Route.useLoaderData();
 
@@ -89,42 +63,34 @@ function LetterPost() {
   }, [letter.slug, letter.publishedAt]);
 
   return (
-    <article className="mx-auto w-full max-w-6xl px-4 pb-24 pt-16 md:px-6 md:pb-32 md:pt-20">
-      <p
-        className="font-display italic text-[var(--treatment-ink)] [font-variation-settings:'opsz'_60,'SOFT'_30]"
-        // Exactly two graph cells tall (2 × 28px = 56px line box), left
-        // on the column. The face is large but the line box is locked to
-        // the ruling so the date rests on the grid like the hand-written
-        // original.
-        style={{ fontSize: "44px", lineHeight: "56px", margin: 0 }}
-      >
-        {formatDate(letter.publishedAt)}
-      </p>
-      <p
-        className="font-display font-normal text-[var(--treatment-ink)] [font-variation-settings:'opsz'_18,'SOFT'_0]"
-        // The salutation, in the body's hand (not the date's italic voice).
-        // Sits one cell under the date; the letter opens one cell below it.
-        // The comma is presentational — the frontmatter title stays the
-        // clean "Dear Shovon" for <head>/OG.
-        style={{
-          margin: 0,
-          marginTop: "28px",
-          fontSize: "clamp(20px,1.6vw,22px)",
-          lineHeight: 1.4,
-        }}
-      >
-        {letter.title},
-      </p>
-      <div
-        className={letterProseClassName}
-        style={{ marginTop: "28px" }}
-        // The body is markdown rendered to HTML at build time by the
-        // company:letters-markdown Vite plugin; Tailwind child selectors
-        // keep the correspondence typography local to this route.
-        dangerouslySetInnerHTML={{ __html: letter.bodyHtml }}
-      />
-      <RedactionMark />
+    <article
+      data-letter-transition-route="post"
+      className={`${LETTER_READING_COLUMN_CLASS} ${LETTER_POST_PAGE_PADDING_CLASS}`}
+    >
+      <div className={LETTER_TEXT_MEASURE_CLASS} data-letter-entry={letter.slug}>
+        <LetterReturnLink />
+        <LetterDate letter={letter} />
+        <LetterSalutation letter={letter} />
+        <LetterBody letter={letter} />
+        <RedactionMark />
+      </div>
     </article>
+  );
+}
+
+function LetterReturnLink() {
+  return (
+    <Link
+      to="/letters"
+      activeOptions={{ exact: true }}
+      data-letter-return
+      aria-label="Return to letters"
+      className="-mx-3 mb-2 inline-flex min-h-11 items-center gap-2 px-3 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--treatment-muted-meta)] no-underline outline-none focus-visible:ring-2 focus-visible:ring-[var(--treatment-rule-color)] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--treatment-ground)]"
+      style={fixedTransitionStyle(LETTER_RETURN_TRANSITION_NAME)}
+    >
+      <ArrowLeft aria-hidden="true" size={13} strokeWidth={1.75} />
+      <span>Return</span>
+    </Link>
   );
 }
 

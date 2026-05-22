@@ -121,21 +121,14 @@ export function AppChrome({
         color: "var(--treatment-wordmark)",
       }}
     >
-      <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
-        <div
-          className="flex h-[var(--header-h)] items-center justify-between"
-          style={{
-            borderBottom: bottomRule
-              ? "var(--treatment-rule-thickness) solid var(--treatment-rule-color)"
-              : undefined,
-          }}
-        >
+      <div className="mx-auto w-full max-w-6xl px-[var(--chrome-inline-gap)]">
+        <div className="relative flex h-[var(--header-h)] items-start justify-between">
           <LinkComponent
             to={wordmarkHref}
             aria-label={
               resolvedSection ? `Guardian — ${resolvedSection} — home` : "Guardian — home"
             }
-            className="inline-flex items-center"
+            className="mt-[var(--chrome-edge-gap)] inline-flex items-center"
             style={{ color: "var(--treatment-wordmark)" }}
             onClick={handleWordmarkClick}
           >
@@ -143,12 +136,31 @@ export function AppChrome({
               size="sm"
               variant={variant}
               title="Guardian"
+              style={{ padding: 0 }}
               {...(resolvedSection ? { section: resolvedSection } : {})}
             />
           </LinkComponent>
-          {slotRight ? <div className="flex items-center gap-4">{slotRight}</div> : null}
+          {slotRight ? (
+            <div className="mt-[var(--chrome-edge-gap)] flex min-h-[var(--chrome-lockup-h)] items-center gap-4">
+              {slotRight}
+            </div>
+          ) : null}
+          {bottomRule ? <ChromeRule /> : null}
         </div>
       </div>
     </header>
+  );
+}
+
+function ChromeRule() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 bottom-0 transition-[height,background-color] duration-300 ease-out"
+      style={{
+        height: "var(--treatment-rule-thickness)",
+        background: "var(--treatment-rule-color)",
+      }}
+    />
   );
 }

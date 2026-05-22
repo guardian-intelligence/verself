@@ -2,6 +2,8 @@ import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-rout
 import type { ReactNode } from "react";
 import { AppChrome } from "@verself/brand";
 import { TopNav } from "~/components/top-nav";
+import { criticalTreatmentHead, criticalTreatmentRootStyle } from "~/lib/critical-treatment";
+import workshopCriticalCss from "~/styles/critical/workshop.css?inline";
 
 // _workshop — Guardian's default layout. Every URL that is not /letters/* or
 // /newsroom lives here: /, /company, /careers, /changelog, /contact, /press,
@@ -11,6 +13,7 @@ import { TopNav } from "~/components/top-nav";
 
 export const Route = createFileRoute("/_workshop")({
   component: WorkshopLayout,
+  head: () => criticalTreatmentHead("workshop", workshopCriticalCss),
 });
 
 function WorkshopLayout() {
@@ -21,10 +24,7 @@ function WorkshopLayout() {
     <div
       data-treatment="workshop"
       className="flex min-h-svh flex-col"
-      style={{
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
-      }}
+      style={criticalTreatmentRootStyle("workshop")}
     >
       <AppChrome treatment="workshop" LinkComponent={LinkAdapter} slotRight={<TopNav />} />
       <main id="main" className="flex-1">

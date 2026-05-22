@@ -1,4 +1,6 @@
 import { letterBySlug, sortedLetters } from "~/content/letters";
+import { currentNewsroomItem } from "~/content/newsroom";
+import { excerptOf, formatLetterDate, formatLetterSalutation } from "~/features/letters/typography";
 import type { OGSpec } from "./template";
 
 // OG card catalog. Keyed by slug. Every public route looks up its spec by
@@ -11,6 +13,8 @@ import type { OGSpec } from "./template";
 // frontmatter at lookup time via the "letter/<slug>" namespace. Add a .md
 // file under src/content/letters/ and the OG endpoint serves a per-letter
 // card with no catalog edit.
+
+const currentBulletin = currentNewsroomItem();
 
 export const OG_CATALOG: Record<string, OGSpec> = {
   home: {
@@ -28,16 +32,22 @@ export const OG_CATALOG: Record<string, OGSpec> = {
     footerRight: "Seattle · 2026",
   },
   letters: {
+    treatment: "letters",
     slug: "letters",
-    title: "Long-form from Guardian.",
+    title: "Letters",
     flare: "Long-form",
+    kicker: "Long-form from Guardian.",
+    subtitle: "Published when we have something to say, not on a calendar.",
     footerLeft: "guardianintelligence.org/letters",
     footerRight: "Seattle · 2026",
   },
   newsroom: {
+    treatment: "newsroom",
     slug: "newsroom",
-    title: "Bulletins from Guardian.",
+    title: currentBulletin?.title ?? "Bulletins from Guardian.",
     flare: "Bulletins",
+    kicker: currentBulletin ? `${currentBulletin.kicker} · ${currentBulletin.date}` : "Newsroom",
+    subtitle: currentBulletin?.deck ?? "Bulletins, milestones, and public notes from Guardian.",
     footerLeft: "guardianintelligence.org/newsroom",
     footerRight: "Seattle · 2026",
   },
@@ -93,9 +103,13 @@ export function ogSpecFor(slug: string): OGSpec | undefined {
     const letter = letterBySlug(letterSlug);
     if (!letter) return undefined;
     return {
+      treatment: "letters",
       slug,
-      title: letter.title,
+      title: formatLetterSalutation(letter.title),
       flare: letter.flare,
+      kicker: formatLetterDate(letter.publishedAt),
+      bodyExcerpt: excerptOf(letter.bodyHtml),
+      ...(letter.summary === letter.title ? {} : { subtitle: letter.summary }),
       footerLeft: `guardianintelligence.org/letters/${letter.slug}`,
       footerRight: "Seattle · 2026",
     };
