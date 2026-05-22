@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: verself-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -51,3 +51,60 @@ jobs:
             exit 1
           fi
           echo "Bazel server ${server_pid} does not carry RUNNER_TRACKING_ID."
+
+  deploy-prod:
+    name: Deploy prod
+    needs: build
+    if: ${{ github.repository == 'guardian-intelligence/verself' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
+    timeout-minutes: 60
+    environment:
+      name: prod
+      url: https://verself.sh
+    concurrency:
+      group: verself-deploy-prod
+      cancel-in-progress: false
+    steps:
+      - name: Check out repository
+        uses: guardian-intelligence/verself/.github/actions/checkout@main
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap toolchain
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
+
+      - name: Start deploy SSH agent
+        env:
+          VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY:-}" ]; then
+            echo "::error::Missing VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY secret for prod deployment"
+            exit 1
+          fi
+          eval "$(ssh-agent -s)"
+          printf '%s\n' "${VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY}" | ssh-add - >/dev/null
+          {
+            echo "SSH_AUTH_SOCK=${SSH_AUTH_SOCK}"
+            echo "SSH_AGENT_PID=${SSH_AGENT_PID}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Deploy prod
+        run: |
+          set -euo pipefail
+          if [ -n "${RUNNER_TRACKING_ID:-}" ]; then
+            echo "GitHub runner process cleanup marker is present in the step environment."
+            unset RUNNER_TRACKING_ID
+          fi
+          started_ms="$(($(date +%s%N) / 1000000))"
+          aspect deploy --site=prod --sha="${GITHUB_SHA}"
+          finished_ms="$(($(date +%s%N) / 1000000))"
+          echo "::notice title=Verself deploy timing::site=prod sha=${GITHUB_SHA} duration_ms=$((finished_ms - started_ms))"
+
+      - name: Stop deploy SSH agent
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -n "${SSH_AGENT_PID:-}" ]; then
+            ssh-agent -k >/dev/null
+          fi
