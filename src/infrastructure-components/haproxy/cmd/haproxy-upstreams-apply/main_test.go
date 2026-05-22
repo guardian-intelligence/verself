@@ -16,9 +16,13 @@ frontend fe_https
   http-request return status 405 if host_billing stripe_webhook !method_post
   http-request return status 405 if host_zitadel zitadel_product_token_claims !method_post
   http-request return status 405 if host_zitadel_actions zitadel_product_token_claims !method_post
+  acl forgejo_actions path -i /api/actions
+  acl forgejo_actions_prefix path_beg /api/actions/
   use_backend be_source_forgejo_webhook if host_source { path -i /webhooks/forgejo }
   use_backend be_zitadel_product_token_claims if host_zitadel method_post zitadel_product_token_claims
   use_backend be_zitadel_product_token_claims if host_zitadel_actions method_post zitadel_product_token_claims
+  use_backend be_sandbox_forgejo_actions_webhook if method_get forgejo_actions
+  use_backend be_firecracker_forgejo if method_post forgejo_actions_prefix
   acl route_1_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions
 `
 	gotBytes, err := normalizeAuthEdgeHAProxy([]byte(input), "verself.sh")
@@ -31,6 +35,9 @@ frontend fe_https
 		"host_zitadel_actions",
 		"if host_zitadel ",
 		"if host_zitadel_actions ",
+		"forgejo_actions",
+		"be_sandbox_forgejo_actions_webhook",
+		"be_firecracker_forgejo",
 	}
 	for _, needle := range rejected {
 		if strings.Contains(got, needle) {

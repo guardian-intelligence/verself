@@ -348,6 +348,10 @@ func normalizeAuthEdgeHAProxy(content []byte, domain string) ([]byte, error) {
 			continue
 		case strings.HasPrefix(trim, "acl host_zitadel_actions "):
 			continue
+		case trim == "acl forgejo_actions path -i /api/actions":
+			continue
+		case trim == "acl forgejo_actions_prefix path_beg /api/actions/":
+			continue
 		case strings.HasPrefix(trim, "http-request return status 405 if host_zitadel "):
 			continue
 		case strings.HasPrefix(trim, "http-request return status 405 if host_zitadel_actions "):
@@ -355,6 +359,10 @@ func normalizeAuthEdgeHAProxy(content []byte, domain string) ([]byte, error) {
 		case strings.HasPrefix(trim, "use_backend be_zitadel_product_token_claims if host_zitadel "):
 			continue
 		case strings.HasPrefix(trim, "use_backend be_zitadel_product_token_claims if host_zitadel_actions "):
+			continue
+		case strings.Contains(trim, "be_sandbox_forgejo_actions_webhook"):
+			continue
+		case strings.Contains(trim, "be_firecracker_forgejo") && (strings.Contains(trim, "forgejo_actions") || strings.Contains(trim, "forgejo_actions_prefix")):
 			continue
 		case strings.HasPrefix(trim, "acl auth_path path -i "):
 			line = "  acl auth_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept"
