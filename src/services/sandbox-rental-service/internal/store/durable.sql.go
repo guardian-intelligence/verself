@@ -105,7 +105,7 @@ func (q *Queries) GetDurableCache(ctx context.Context, arg GetDurableCacheParams
 	return durable_scope_id, err
 }
 
-const getDurableCacheGenerationForUserPrune = `-- name: GetDurableCacheGenerationForUserPrune :one
+const getDurableCacheGenerationForUserReap = `-- name: GetDurableCacheGenerationForUserReap :one
 SELECT
     g.durable_generation_id,
     g.durable_scope_id,
@@ -145,15 +145,15 @@ LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = $1
   AND g.durable_generation_id = $2
-  AND g.state <> 'pruned'
+  AND g.state <> 'reaped'
 `
 
-type GetDurableCacheGenerationForUserPruneParams struct {
+type GetDurableCacheGenerationForUserReapParams struct {
 	OrgID               string
 	DurableGenerationID uuid.UUID
 }
 
-type GetDurableCacheGenerationForUserPruneRow struct {
+type GetDurableCacheGenerationForUserReapRow struct {
 	DurableGenerationID  uuid.UUID
 	DurableScopeID       uuid.UUID
 	OperationID          uuid.UUID
@@ -184,9 +184,9 @@ type GetDurableCacheGenerationForUserPruneRow struct {
 	IsCurrent            bool
 }
 
-func (q *Queries) GetDurableCacheGenerationForUserPrune(ctx context.Context, arg GetDurableCacheGenerationForUserPruneParams) (GetDurableCacheGenerationForUserPruneRow, error) {
-	row := q.db.QueryRow(ctx, getDurableCacheGenerationForUserPrune, arg.OrgID, arg.DurableGenerationID)
-	var i GetDurableCacheGenerationForUserPruneRow
+func (q *Queries) GetDurableCacheGenerationForUserReap(ctx context.Context, arg GetDurableCacheGenerationForUserReapParams) (GetDurableCacheGenerationForUserReapRow, error) {
+	row := q.db.QueryRow(ctx, getDurableCacheGenerationForUserReap, arg.OrgID, arg.DurableGenerationID)
+	var i GetDurableCacheGenerationForUserReapRow
 	err := row.Scan(
 		&i.DurableGenerationID,
 		&i.DurableScopeID,
@@ -467,7 +467,7 @@ LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = $1
   AND g.durable_scope_id = $2
-  AND g.state <> 'pruned'
+  AND g.state <> 'reaped'
 ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id
 LIMIT $3
 `
@@ -560,7 +560,7 @@ func (q *Queries) ListDurableCacheGenerations(ctx context.Context, arg ListDurab
 	return items, nil
 }
 
-const listDurableCacheGenerationsForPathPrune = `-- name: ListDurableCacheGenerationsForPathPrune :many
+const listDurableCacheGenerationsForPathReap = `-- name: ListDurableCacheGenerationsForPathReap :many
 SELECT
     g.durable_generation_id,
     g.durable_scope_id,
@@ -600,18 +600,18 @@ LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = $1
   AND g.durable_scope_id = $2
-  AND g.state <> 'pruned'
+  AND g.state <> 'reaped'
   AND op.bind_paths_json ? $3::text
 ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id
 `
 
-type ListDurableCacheGenerationsForPathPruneParams struct {
+type ListDurableCacheGenerationsForPathReapParams struct {
 	OrgID          string
 	DurableScopeID uuid.UUID
 	BindPath       string
 }
 
-type ListDurableCacheGenerationsForPathPruneRow struct {
+type ListDurableCacheGenerationsForPathReapRow struct {
 	DurableGenerationID  uuid.UUID
 	DurableScopeID       uuid.UUID
 	OperationID          uuid.UUID
@@ -642,15 +642,15 @@ type ListDurableCacheGenerationsForPathPruneRow struct {
 	IsCurrent            bool
 }
 
-func (q *Queries) ListDurableCacheGenerationsForPathPrune(ctx context.Context, arg ListDurableCacheGenerationsForPathPruneParams) ([]ListDurableCacheGenerationsForPathPruneRow, error) {
-	rows, err := q.db.Query(ctx, listDurableCacheGenerationsForPathPrune, arg.OrgID, arg.DurableScopeID, arg.BindPath)
+func (q *Queries) ListDurableCacheGenerationsForPathReap(ctx context.Context, arg ListDurableCacheGenerationsForPathReapParams) ([]ListDurableCacheGenerationsForPathReapRow, error) {
+	rows, err := q.db.Query(ctx, listDurableCacheGenerationsForPathReap, arg.OrgID, arg.DurableScopeID, arg.BindPath)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListDurableCacheGenerationsForPathPruneRow{}
+	items := []ListDurableCacheGenerationsForPathReapRow{}
 	for rows.Next() {
-		var i ListDurableCacheGenerationsForPathPruneRow
+		var i ListDurableCacheGenerationsForPathReapRow
 		if err := rows.Scan(
 			&i.DurableGenerationID,
 			&i.DurableScopeID,
@@ -714,7 +714,7 @@ LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = s.durable_scope_id
 LEFT JOIN durable_generation g
     ON g.durable_scope_id = s.durable_scope_id
-   AND g.state <> 'pruned'
+   AND g.state <> 'reaped'
 WHERE s.org_id = $1
 GROUP BY
     s.durable_scope_id,
@@ -881,7 +881,7 @@ SELECT
 FROM durable_generation g
 JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
 JOIN durable_operation op ON op.operation_id = g.operation_id
-WHERE g.state IN ('committed', 'retained', 'prunable')
+WHERE g.state IN ('committed', 'retained', 'reapable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_current_pointer p
@@ -898,7 +898,7 @@ WHERE g.state IN ('committed', 'retained', 'prunable')
       SELECT 1
       FROM durable_generation child
       WHERE child.source_generation_id = g.durable_generation_id
-        AND child.state <> 'pruned'
+        AND child.state <> 'reaped'
   )
   AND NOT EXISTS (
       SELECT 1
@@ -1050,7 +1050,7 @@ func (q *Queries) ListGoldenVMDurableOperations(ctx context.Context, arg ListGol
 	return items, nil
 }
 
-const listPrunableDurableGenerations = `-- name: ListPrunableDurableGenerations :many
+const listReapableDurableGenerations = `-- name: ListReapableDurableGenerations :many
 SELECT
     g.durable_generation_id,
     g.durable_scope_id,
@@ -1071,7 +1071,7 @@ FROM durable_generation g
 JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
 JOIN durable_operation op ON op.operation_id = g.operation_id
 WHERE g.expires_at <= $1
-  AND g.state IN ('committed', 'retained', 'prunable')
+  AND g.state IN ('committed', 'retained', 'reapable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_current_pointer p
@@ -1088,7 +1088,7 @@ WHERE g.expires_at <= $1
       SELECT 1
       FROM durable_generation child
       WHERE child.source_generation_id = g.durable_generation_id
-        AND child.state <> 'pruned'
+        AND child.state <> 'reaped'
   )
   AND NOT EXISTS (
       SELECT 1
@@ -1101,12 +1101,12 @@ ORDER BY g.expires_at, g.committed_at, g.durable_generation_id
 LIMIT $2
 `
 
-type ListPrunableDurableGenerationsParams struct {
+type ListReapableDurableGenerationsParams struct {
 	NowAt      pgtype.Timestamptz
 	LimitCount int32
 }
 
-type ListPrunableDurableGenerationsRow struct {
+type ListReapableDurableGenerationsRow struct {
 	DurableGenerationID  uuid.UUID
 	DurableScopeID       uuid.UUID
 	OperationID          uuid.UUID
@@ -1124,15 +1124,15 @@ type ListPrunableDurableGenerationsRow struct {
 	AttemptID            uuid.UUID
 }
 
-func (q *Queries) ListPrunableDurableGenerations(ctx context.Context, arg ListPrunableDurableGenerationsParams) ([]ListPrunableDurableGenerationsRow, error) {
-	rows, err := q.db.Query(ctx, listPrunableDurableGenerations, arg.NowAt, arg.LimitCount)
+func (q *Queries) ListReapableDurableGenerations(ctx context.Context, arg ListReapableDurableGenerationsParams) ([]ListReapableDurableGenerationsRow, error) {
+	rows, err := q.db.Query(ctx, listReapableDurableGenerations, arg.NowAt, arg.LimitCount)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListPrunableDurableGenerationsRow{}
+	items := []ListReapableDurableGenerationsRow{}
 	for rows.Next() {
-		var i ListPrunableDurableGenerationsRow
+		var i ListReapableDurableGenerationsRow
 		if err := rows.Scan(
 			&i.DurableGenerationID,
 			&i.DurableScopeID,
@@ -1210,33 +1210,33 @@ func (q *Queries) ListTerminalAttemptsWithOpenDurableOperations(ctx context.Cont
 	return items, nil
 }
 
-const markDurableGenerationPruned = `-- name: MarkDurableGenerationPruned :exec
+const markDurableGenerationReaped = `-- name: MarkDurableGenerationReaped :exec
 UPDATE durable_generation
-SET state = 'pruned',
+SET state = 'reaped',
     last_used_at = $1
 WHERE durable_generation_id = $2
   AND durable_generation.durable_scope_id = $3
-  AND state = 'prunable'
+  AND state = 'reapable'
 `
 
-type MarkDurableGenerationPrunedParams struct {
-	PrunedAt            pgtype.Timestamptz
+type MarkDurableGenerationReapedParams struct {
+	ReapedAt            pgtype.Timestamptz
 	DurableGenerationID uuid.UUID
 	DurableScopeID      uuid.UUID
 }
 
-func (q *Queries) MarkDurableGenerationPruned(ctx context.Context, arg MarkDurableGenerationPrunedParams) error {
-	_, err := q.db.Exec(ctx, markDurableGenerationPruned, arg.PrunedAt, arg.DurableGenerationID, arg.DurableScopeID)
+func (q *Queries) MarkDurableGenerationReaped(ctx context.Context, arg MarkDurableGenerationReapedParams) error {
+	_, err := q.db.Exec(ctx, markDurableGenerationReaped, arg.ReapedAt, arg.DurableGenerationID, arg.DurableScopeID)
 	return err
 }
 
-const markDurableGenerationPruning = `-- name: MarkDurableGenerationPruning :execrows
+const markDurableGenerationReaping = `-- name: MarkDurableGenerationReaping :execrows
 UPDATE durable_generation AS target
-SET state = 'prunable',
+SET state = 'reapable',
     last_used_at = $1
 WHERE target.durable_generation_id = $2
   AND target.durable_scope_id = $3
-  AND state IN ('committed', 'retained', 'prunable')
+  AND state IN ('committed', 'retained', 'reapable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_current_pointer p
@@ -1253,34 +1253,34 @@ WHERE target.durable_generation_id = $2
       SELECT 1
       FROM durable_generation child
       WHERE child.source_generation_id = target.durable_generation_id
-        AND child.state <> 'pruned'
+        AND child.state <> 'reaped'
   )
 `
 
-type MarkDurableGenerationPruningParams struct {
-	PruningAt           pgtype.Timestamptz
+type MarkDurableGenerationReapingParams struct {
+	ReapingAt           pgtype.Timestamptz
 	DurableGenerationID uuid.UUID
 	DurableScopeID      uuid.UUID
 }
 
-func (q *Queries) MarkDurableGenerationPruning(ctx context.Context, arg MarkDurableGenerationPruningParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markDurableGenerationPruning, arg.PruningAt, arg.DurableGenerationID, arg.DurableScopeID)
+func (q *Queries) MarkDurableGenerationReaping(ctx context.Context, arg MarkDurableGenerationReapingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markDurableGenerationReaping, arg.ReapingAt, arg.DurableGenerationID, arg.DurableScopeID)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
 }
 
-const markDurableGenerationUserPruning = `-- name: MarkDurableGenerationUserPruning :execrows
+const markDurableGenerationUserReaping = `-- name: MarkDurableGenerationUserReaping :execrows
 UPDATE durable_generation AS target
-SET state = 'prunable',
+SET state = 'reapable',
     last_used_at = $1
 FROM durable_scope s
 WHERE target.durable_generation_id = $2
   AND target.durable_scope_id = $3
   AND s.durable_scope_id = target.durable_scope_id
   AND s.org_id = $4
-  AND target.state IN ('committed', 'retained', 'prunable')
+  AND target.state IN ('committed', 'retained', 'reapable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_operation open_op
@@ -1291,20 +1291,20 @@ WHERE target.durable_generation_id = $2
       SELECT 1
       FROM durable_generation child
       WHERE child.source_generation_id = target.durable_generation_id
-        AND child.state <> 'pruned'
+        AND child.state <> 'reaped'
   )
 `
 
-type MarkDurableGenerationUserPruningParams struct {
-	PruningAt           pgtype.Timestamptz
+type MarkDurableGenerationUserReapingParams struct {
+	ReapingAt           pgtype.Timestamptz
 	DurableGenerationID uuid.UUID
 	DurableScopeID      uuid.UUID
 	OrgID               string
 }
 
-func (q *Queries) MarkDurableGenerationUserPruning(ctx context.Context, arg MarkDurableGenerationUserPruningParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markDurableGenerationUserPruning,
-		arg.PruningAt,
+func (q *Queries) MarkDurableGenerationUserReaping(ctx context.Context, arg MarkDurableGenerationUserReapingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markDurableGenerationUserReaping,
+		arg.ReapingAt,
 		arg.DurableGenerationID,
 		arg.DurableScopeID,
 		arg.OrgID,

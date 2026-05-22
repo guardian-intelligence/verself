@@ -132,7 +132,7 @@ func (s *Service) ListDurableCacheGenerations(ctx context.Context, orgID string,
 }
 
 func (s *Service) DeleteDurableCacheGeneration(ctx context.Context, orgID string, generationID uuid.UUID) (DurableCacheDeleteResult, error) {
-	row, err := s.storeQueries().GetDurableCacheGenerationForUserPrune(ctx, store.GetDurableCacheGenerationForUserPruneParams{
+	row, err := s.storeQueries().GetDurableCacheGenerationForUserReap(ctx, store.GetDurableCacheGenerationForUserReapParams{
 		OrgID:               dbOrgID(orgID),
 		DurableGenerationID: generationID,
 	})
@@ -142,7 +142,7 @@ func (s *Service) DeleteDurableCacheGeneration(ctx context.Context, orgID string
 	if err != nil {
 		return DurableCacheDeleteResult{}, fmt.Errorf("get durable cache generation: %w", err)
 	}
-	record, err := s.pruneUserDurableCacheGeneration(ctx, durableCachePruneCandidateFromGenerationRow(row), "user_requested")
+	record, err := s.reapUserDurableCacheGeneration(ctx, durableCacheReapCandidateFromGenerationRow(row), "user_requested")
 	if err != nil {
 		return DurableCacheDeleteResult{}, err
 	}
@@ -154,7 +154,7 @@ func (s *Service) DeleteDurableCachePath(ctx context.Context, orgID string, cach
 	if bindPath == "" || !strings.HasPrefix(bindPath, "/") || bindPath == "/" {
 		return DurableCachePathDeleteResult{}, fmt.Errorf("%w: cache path must be an absolute non-root path", ErrDurableCacheInvalid)
 	}
-	rows, err := s.storeQueries().ListDurableCacheGenerationsForPathPrune(ctx, store.ListDurableCacheGenerationsForPathPruneParams{
+	rows, err := s.storeQueries().ListDurableCacheGenerationsForPathReap(ctx, store.ListDurableCacheGenerationsForPathReapParams{
 		OrgID:          dbOrgID(orgID),
 		DurableScopeID: cacheID,
 		BindPath:       bindPath,
@@ -167,7 +167,7 @@ func (s *Service) DeleteDurableCachePath(ctx context.Context, orgID string, cach
 	}
 	out := DurableCachePathDeleteResult{CacheID: cacheID, Path: bindPath, DeletedGenerations: make([]DurableCacheGenerationRecord, 0, len(rows))}
 	for _, row := range rows {
-		record, err := s.pruneUserDurableCacheGeneration(ctx, durableCachePruneCandidateFromPathRow(row), "user_path_requested")
+		record, err := s.reapUserDurableCacheGeneration(ctx, durableCacheReapCandidateFromPathRow(row), "user_path_requested")
 		if err != nil {
 			return DurableCachePathDeleteResult{}, err
 		}
@@ -176,7 +176,7 @@ func (s *Service) DeleteDurableCachePath(ctx context.Context, orgID string, cach
 	return out, nil
 }
 
-type durableCacheUserPruneCandidate struct {
+type durableCacheUserReapCandidate struct {
 	DurableGenerationID  uuid.UUID
 	DurableScopeID       uuid.UUID
 	OperationID          uuid.UUID
@@ -207,8 +207,8 @@ type durableCacheUserPruneCandidate struct {
 	IsCurrent            bool
 }
 
-func durableCachePruneCandidateFromGenerationRow(row store.GetDurableCacheGenerationForUserPruneRow) durableCacheUserPruneCandidate {
-	return durableCacheUserPruneCandidate{
+func durableCacheReapCandidateFromGenerationRow(row store.GetDurableCacheGenerationForUserReapRow) durableCacheUserReapCandidate {
+	return durableCacheUserReapCandidate{
 		DurableGenerationID:  row.DurableGenerationID,
 		DurableScopeID:       row.DurableScopeID,
 		OperationID:          row.OperationID,
@@ -240,8 +240,8 @@ func durableCachePruneCandidateFromGenerationRow(row store.GetDurableCacheGenera
 	}
 }
 
-func durableCachePruneCandidateFromPathRow(row store.ListDurableCacheGenerationsForPathPruneRow) durableCacheUserPruneCandidate {
-	return durableCacheUserPruneCandidate{
+func durableCacheReapCandidateFromPathRow(row store.ListDurableCacheGenerationsForPathReapRow) durableCacheUserReapCandidate {
+	return durableCacheUserReapCandidate{
 		DurableGenerationID:  row.DurableGenerationID,
 		DurableScopeID:       row.DurableScopeID,
 		OperationID:          row.OperationID,
@@ -273,7 +273,7 @@ func durableCachePruneCandidateFromPathRow(row store.ListDurableCacheGenerations
 	}
 }
 
-func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate durableCacheUserPruneCandidate, reason string) (DurableCacheGenerationRecord, error) {
+func (s *Service) reapUserDurableCacheGeneration(ctx context.Context, candidate durableCacheUserReapCandidate, reason string) (DurableCacheGenerationRecord, error) {
 	if s.Orchestrator == nil {
 		return DurableCacheGenerationRecord{}, ErrRunnerUnavailable
 	}
@@ -284,18 +284,18 @@ func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate
 	now := time.Now().UTC()
 	tx, err := s.PGX.Begin(ctx)
 	if err != nil {
-		return DurableCacheGenerationRecord{}, fmt.Errorf("begin durable cache prune: %w", err)
+		return DurableCacheGenerationRecord{}, fmt.Errorf("begin durable cache reap: %w", err)
 	}
 	qtx := s.storeQueries().WithTx(tx)
-	rowsChanged, err := qtx.MarkDurableGenerationUserPruning(ctx, store.MarkDurableGenerationUserPruningParams{
-		PruningAt:           pgTime(now),
+	rowsChanged, err := qtx.MarkDurableGenerationUserReaping(ctx, store.MarkDurableGenerationUserReapingParams{
+		ReapingAt:           pgTime(now),
 		DurableGenerationID: candidate.DurableGenerationID,
 		DurableScopeID:      candidate.DurableScopeID,
 		OrgID:               candidate.OrgID,
 	})
 	if err != nil {
 		_ = tx.Rollback(ctx)
-		return DurableCacheGenerationRecord{}, fmt.Errorf("mark durable cache generation pruning: %w", err)
+		return DurableCacheGenerationRecord{}, fmt.Errorf("mark durable cache generation reaping: %w", err)
 	}
 	if rowsChanged == 0 {
 		_ = tx.Rollback(ctx)
@@ -313,12 +313,12 @@ func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return DurableCacheGenerationRecord{}, fmt.Errorf("commit durable cache prune state: %w", err)
+		return DurableCacheGenerationRecord{}, fmt.Errorf("commit durable cache reap state: %w", err)
 	}
 
 	storage, storageKnown, storageErr := s.durableStorageSnapshot(ctx)
 	if storageErr != nil && s.Logger != nil {
-		s.Logger.WarnContext(ctx, "durable cache prune capacity snapshot failed", "error", storageErr)
+		s.Logger.WarnContext(ctx, "durable cache reap capacity snapshot failed", "error", storageErr)
 	}
 	identity := RunnerExecutionIdentity{
 		OrgID:                candidate.OrgID,
@@ -328,23 +328,23 @@ func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate
 		ProviderRunAttempt:   candidate.ProviderRunAttempt,
 		ProviderJobID:        candidate.ProviderJobID,
 	}
-	_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, candidate.DurableGenerationID.String()+":user-prune", candidate.OperationID.String(), candidate.DurableGenerationID.String(), candidate.DurableScopeID.String(), candidate.ZFSSnapshotRef, candidate.OrgID)
+	_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, candidate.DurableGenerationID.String()+":user-reap", candidate.OperationID.String(), candidate.DurableGenerationID.String(), candidate.DurableScopeID.String(), candidate.ZFSSnapshotRef, candidate.OrgID)
 	if err != nil {
-		event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheName: candidate.CacheName, Name: durableEventPrune, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
+		event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheName: candidate.CacheName, Name: durableEventReap, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
 		if storageKnown {
 			event = event.withStorageCapacity(storage.Capacity, candidate.OrgID)
 		}
 		_ = s.appendDurableEvent(ctx, event)
-		return DurableCacheGenerationRecord{}, fmt.Errorf("prune durable cache generation: %w", err)
+		return DurableCacheGenerationRecord{}, fmt.Errorf("reap durable cache generation: %w", err)
 	}
-	if err := s.storeQueries().MarkDurableGenerationPruned(ctx, store.MarkDurableGenerationPrunedParams{
-		PrunedAt:            pgTime(time.Now().UTC()),
+	if err := s.storeQueries().MarkDurableGenerationReaped(ctx, store.MarkDurableGenerationReapedParams{
+		ReapedAt:            pgTime(time.Now().UTC()),
 		DurableGenerationID: candidate.DurableGenerationID,
 		DurableScopeID:      candidate.DurableScopeID,
 	}); err != nil {
-		return DurableCacheGenerationRecord{}, fmt.Errorf("mark durable cache generation pruned: %w", err)
+		return DurableCacheGenerationRecord{}, fmt.Errorf("mark durable cache generation reaped: %w", err)
 	}
-	event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheName: candidate.CacheName, Name: durableEventPrune, Result: "succeeded", Reason: reason, ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
+	event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheName: candidate.CacheName, Name: durableEventReap, Result: "succeeded", Reason: reason, ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
 	if storageKnown {
 		event = event.withStorageCapacity(storage.Capacity, candidate.OrgID)
 	}
@@ -366,7 +366,7 @@ func (s *Service) pruneUserDurableCacheGeneration(ctx context.Context, candidate
 		HeadSHA:              candidate.HeadSHA,
 		TreeHash:             candidate.TreeHash,
 		Result:               candidate.Result,
-		State:                "pruned",
+		State:                "reaped",
 		ZFSSnapshotRef:       candidate.ZFSSnapshotRef,
 		UsedBytes:            uint64FromInt64(candidate.UsedBytes, "durable used bytes"),
 		WrittenBytes:         uint64FromInt64(candidate.WrittenBytes, "durable written bytes"),

@@ -569,7 +569,7 @@ CREATE TABLE durable_generation (
     provider_job_id       BIGINT      NOT NULL DEFAULT 0,
     result                TEXT        NOT NULL,
     promotion_eligible    BOOLEAN     NOT NULL DEFAULT false,
-    state                 TEXT        NOT NULL CHECK (state IN ('committed', 'retained', 'invalidated', 'prunable', 'pruned')),
+    state                 TEXT        NOT NULL CHECK (state IN ('committed', 'retained', 'invalidated', 'reapable', 'reaped')),
     zfs_snapshot_ref      TEXT        NOT NULL,
     zfs_snapshot_guid     TEXT        NOT NULL DEFAULT '',
     used_bytes            BIGINT      NOT NULL DEFAULT 0,
@@ -698,11 +698,11 @@ CREATE TABLE golden_vm_snapshot (
     provider_job_id             BIGINT      NOT NULL DEFAULT 0,
     head_sha                    TEXT        NOT NULL DEFAULT '',
     tree_hash                   TEXT        NOT NULL DEFAULT '',
-    state                       TEXT        NOT NULL CHECK (state IN ('candidate', 'current', 'retained', 'invalidated', 'prunable', 'pruned')),
+    state                       TEXT        NOT NULL CHECK (state IN ('candidate', 'current', 'retained', 'invalidated', 'reapable', 'reaped')),
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_used_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at                  TIMESTAMPTZ,
-    pruned_at                   TIMESTAMPTZ,
+    reaped_at                   TIMESTAMPTZ,
     UNIQUE (snapshot_key)
 );
 

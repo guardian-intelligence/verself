@@ -83,7 +83,7 @@ Durable volume flow:
 9. sandbox-rental records immutable durable generations and the golden VM
    manifest, then promotes current pointers by compare-and-swap against the
    source generation set observed before host mutation. A lost CAS leaves the
-   candidate retained and prunable, not failed.
+   candidate retained and reapable, not failed.
 10. A GitHub workflow run promotes branch goldens only after the run's job set
    is observed complete and every required job is successful or skipped. Failed
    or canceled runs leave current pointers at the last green artifact.

@@ -170,7 +170,7 @@ WHERE durable_generation_id = sqlc.arg(durable_generation_id)
         AND durable_current_pointer.current_generation_id = durable_generation.durable_generation_id
   );
 
--- name: ListPrunableDurableGenerations :many
+-- name: ListReapableDurableGenerations :many
 SELECT
     g.durable_generation_id,
     g.durable_scope_id,
@@ -191,7 +191,7 @@ FROM durable_generation g
 JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
 JOIN durable_operation op ON op.operation_id = g.operation_id
 WHERE g.expires_at <= sqlc.arg(now_at)
-  AND g.state IN ('committed', 'retained', 'prunable')
+  AND g.state IN ('committed', 'retained', 'reapable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_current_pointer p
@@ -208,7 +208,7 @@ WHERE g.expires_at <= sqlc.arg(now_at)
       SELECT 1
       FROM durable_generation child
       WHERE child.source_generation_id = g.durable_generation_id
-        AND child.state <> 'pruned'
+        AND child.state <> 'reaped'
   )
   AND NOT EXISTS (
       SELECT 1
@@ -240,7 +240,7 @@ SELECT
 FROM durable_generation g
 JOIN durable_scope s ON s.durable_scope_id = g.durable_scope_id
 JOIN durable_operation op ON op.operation_id = g.operation_id
-WHERE g.state IN ('committed', 'retained', 'prunable')
+WHERE g.state IN ('committed', 'retained', 'reapable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_current_pointer p
@@ -257,7 +257,7 @@ WHERE g.state IN ('committed', 'retained', 'prunable')
       SELECT 1
       FROM durable_generation child
       WHERE child.source_generation_id = g.durable_generation_id
-        AND child.state <> 'pruned'
+        AND child.state <> 'reaped'
   )
   AND NOT EXISTS (
       SELECT 1
@@ -292,7 +292,7 @@ LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = s.durable_scope_id
 LEFT JOIN durable_generation g
     ON g.durable_scope_id = s.durable_scope_id
-   AND g.state <> 'pruned'
+   AND g.state <> 'reaped'
 WHERE s.org_id = sqlc.arg(org_id)
 GROUP BY
     s.durable_scope_id,
@@ -354,11 +354,11 @@ LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = sqlc.arg(org_id)
   AND g.durable_scope_id = sqlc.arg(durable_scope_id)
-  AND g.state <> 'pruned'
+  AND g.state <> 'reaped'
 ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id
 LIMIT sqlc.arg(limit_count);
 
--- name: GetDurableCacheGenerationForUserPrune :one
+-- name: GetDurableCacheGenerationForUserReap :one
 SELECT
     g.durable_generation_id,
     g.durable_scope_id,
@@ -398,9 +398,9 @@ LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = sqlc.arg(org_id)
   AND g.durable_generation_id = sqlc.arg(durable_generation_id)
-  AND g.state <> 'pruned';
+  AND g.state <> 'reaped';
 
--- name: ListDurableCacheGenerationsForPathPrune :many
+-- name: ListDurableCacheGenerationsForPathReap :many
 SELECT
     g.durable_generation_id,
     g.durable_scope_id,
@@ -440,20 +440,20 @@ LEFT JOIN durable_current_pointer cp
     ON cp.durable_scope_id = g.durable_scope_id
 WHERE s.org_id = sqlc.arg(org_id)
   AND g.durable_scope_id = sqlc.arg(durable_scope_id)
-  AND g.state <> 'pruned'
+  AND g.state <> 'reaped'
   AND op.bind_paths_json ? sqlc.arg(bind_path)::text
 ORDER BY g.last_used_at DESC, g.committed_at DESC, g.durable_generation_id;
 
--- name: MarkDurableGenerationUserPruning :execrows
+-- name: MarkDurableGenerationUserReaping :execrows
 UPDATE durable_generation AS target
-SET state = 'prunable',
-    last_used_at = sqlc.arg(pruning_at)
+SET state = 'reapable',
+    last_used_at = sqlc.arg(reaping_at)
 FROM durable_scope s
 WHERE target.durable_generation_id = sqlc.arg(durable_generation_id)
   AND target.durable_scope_id = sqlc.arg(durable_scope_id)
   AND s.durable_scope_id = target.durable_scope_id
   AND s.org_id = sqlc.arg(org_id)
-  AND target.state IN ('committed', 'retained', 'prunable')
+  AND target.state IN ('committed', 'retained', 'reapable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_operation open_op
@@ -464,7 +464,7 @@ WHERE target.durable_generation_id = sqlc.arg(durable_generation_id)
       SELECT 1
       FROM durable_generation child
       WHERE child.source_generation_id = target.durable_generation_id
-        AND child.state <> 'pruned'
+        AND child.state <> 'reaped'
   );
 
 -- name: ClearDurableCurrentPointerForGeneration :exec
@@ -475,13 +475,13 @@ SET current_generation_id = NULL,
 WHERE durable_scope_id = sqlc.arg(durable_scope_id)
   AND current_generation_id = sqlc.arg(durable_generation_id);
 
--- name: MarkDurableGenerationPruning :execrows
+-- name: MarkDurableGenerationReaping :execrows
 UPDATE durable_generation AS target
-SET state = 'prunable',
-    last_used_at = sqlc.arg(pruning_at)
+SET state = 'reapable',
+    last_used_at = sqlc.arg(reaping_at)
 WHERE target.durable_generation_id = sqlc.arg(durable_generation_id)
   AND target.durable_scope_id = sqlc.arg(durable_scope_id)
-  AND state IN ('committed', 'retained', 'prunable')
+  AND state IN ('committed', 'retained', 'reapable')
   AND NOT EXISTS (
       SELECT 1
       FROM durable_current_pointer p
@@ -498,16 +498,16 @@ WHERE target.durable_generation_id = sqlc.arg(durable_generation_id)
       SELECT 1
       FROM durable_generation child
       WHERE child.source_generation_id = target.durable_generation_id
-        AND child.state <> 'pruned'
+        AND child.state <> 'reaped'
   );
 
--- name: MarkDurableGenerationPruned :exec
+-- name: MarkDurableGenerationReaped :exec
 UPDATE durable_generation
-SET state = 'pruned',
-    last_used_at = sqlc.arg(pruned_at)
+SET state = 'reaped',
+    last_used_at = sqlc.arg(reaped_at)
 WHERE durable_generation_id = sqlc.arg(durable_generation_id)
   AND durable_generation.durable_scope_id = sqlc.arg(durable_scope_id)
-  AND state = 'prunable';
+  AND state = 'reapable';
 
 -- name: ListDurablePromotionCandidatesForRun :many
 SELECT

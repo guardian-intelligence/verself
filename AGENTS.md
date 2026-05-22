@@ -238,6 +238,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Canonical API contracts, Smithy models, route catalog, OpenAPI projections, public SDK transport generation, Connect/protobuf boundary:** `src/smithy/README.md`
 - **VM execution control plane, sandbox-rental-service ↔ vm-orchestrator split, attempt state machine, billing windows, execution lifecycle:** `src/services/sandbox-rental-service/docs/vm-execution-control-plane.md`
 - **Golden artifact identity, durable scope identity, workspace/durable mount lifecycle, promotion rules:** `docs/product/golden-environments.md`
+- **Service change packet, SDK-first API design, capacity, metering, retention, waiters, observability, release evidence:** `docs/architecture/service-change-reference-architecture.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/services/governance-service/docs/audit-data-contract.md`
 

@@ -349,7 +349,7 @@ WHERE vm.provider_run_id = sqlc.arg(provider_run_id)
   AND vm.state = 'candidate'
 ORDER BY vm.created_at, vm.golden_vm_snapshot_id;
 
--- name: ListPrunableGoldenVMSnapshots :many
+-- name: ListReapableGoldenVMSnapshots :many
 SELECT
     vm.golden_vm_snapshot_id,
     vm.operation_id,
@@ -370,38 +370,122 @@ SELECT
     vm.memory_artifact_ref,
     vm.state_bytes,
     vm.memory_bytes,
+    vm.state,
     vm.created_at,
     vm.expires_at
 FROM golden_vm_snapshot vm
 JOIN golden_vm_operation op ON op.operation_id = vm.operation_id
-WHERE vm.expires_at IS NOT NULL
-  AND vm.expires_at <= sqlc.arg(now_at)
-  AND vm.state IN ('candidate', 'retained', 'invalidated', 'prunable')
-  AND NOT EXISTS (
-      SELECT 1
-      FROM golden_vm_current_pointer p
-      WHERE p.current_golden_vm_snapshot_id = vm.golden_vm_snapshot_id
+WHERE (
+      vm.state IN ('invalidated', 'reapable')
+      OR (
+          vm.expires_at IS NOT NULL
+          AND vm.expires_at <= sqlc.arg(now_at)
+          AND vm.state IN ('candidate', 'retained')
+      )
   )
-ORDER BY vm.expires_at, vm.created_at, vm.golden_vm_snapshot_id
+ORDER BY
+    CASE WHEN vm.state IN ('invalidated', 'reapable') THEN 0 ELSE 1 END,
+    COALESCE(vm.expires_at, vm.created_at),
+    vm.created_at,
+    vm.golden_vm_snapshot_id
 LIMIT sqlc.arg(limit_count);
 
--- name: MarkGoldenVMSnapshotPruning :execrows
+-- name: MarkGoldenVMSnapshotReaping :execrows
+WITH target AS (
+    SELECT vm.golden_vm_snapshot_id
+    FROM golden_vm_snapshot vm
+    WHERE vm.golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id)
+      AND vm.state IN ('candidate', 'retained', 'invalidated', 'reapable')
+),
+clear_pointer AS (
+    UPDATE golden_vm_current_pointer p
+    SET current_golden_vm_snapshot_id = NULL
+    WHERE p.current_golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id)
+      AND EXISTS (SELECT 1 FROM target)
+    RETURNING 1
+)
 UPDATE golden_vm_snapshot vm
-SET state = 'prunable'
-WHERE vm.golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id)
-  AND vm.state IN ('candidate', 'retained', 'invalidated', 'prunable')
-  AND NOT EXISTS (
-      SELECT 1
-      FROM golden_vm_current_pointer p
-      WHERE p.current_golden_vm_snapshot_id = vm.golden_vm_snapshot_id
-  );
+SET state = 'reapable',
+    expires_at = COALESCE(vm.expires_at, sqlc.arg(reaping_at))
+FROM target
+WHERE vm.golden_vm_snapshot_id = target.golden_vm_snapshot_id
+  AND (SELECT count(*) FROM clear_pointer) >= 0;
 
--- name: MarkGoldenVMSnapshotPruned :exec
+-- name: ListGoldenVMSnapshotRetentionOrgs :many
+SELECT DISTINCT org_id
+FROM golden_vm_snapshot
+WHERE state IN ('candidate', 'current', 'retained')
+ORDER BY org_id
+LIMIT sqlc.arg(limit_count);
+
+-- name: ListGoldenVMSnapshotRingOverflow :many
+SELECT
+    vm.golden_vm_snapshot_id,
+    vm.operation_id,
+    vm.org_id,
+    vm.repository_id,
+    vm.provider,
+    vm.provider_repository_id,
+    vm.provider_run_id,
+    vm.provider_run_attempt,
+    vm.provider_job_id,
+    vm.job_shape_id,
+    vm.generation_set_hash,
+    op.source_generation_set_hash,
+    vm.snapshot_key,
+    vm.root_snapshot_ref,
+    vm.root_snapshot_guid,
+    vm.vmstate_artifact_ref,
+    vm.memory_artifact_ref,
+    vm.state_bytes,
+    vm.memory_bytes,
+    vm.state,
+    vm.created_at,
+    vm.expires_at
+FROM golden_vm_snapshot vm
+JOIN golden_vm_operation op ON op.operation_id = vm.operation_id
+WHERE vm.org_id = sqlc.arg(org_id)
+  AND vm.state IN ('candidate', 'current', 'retained')
+ORDER BY vm.last_used_at DESC, vm.created_at DESC, vm.golden_vm_snapshot_id DESC
+OFFSET sqlc.arg(retain_count)
+LIMIT sqlc.arg(limit_count);
+
+-- name: MarkGoldenVMSnapshotRingReaping :execrows
+WITH target AS (
+    SELECT vm.golden_vm_snapshot_id
+    FROM golden_vm_snapshot vm
+    WHERE vm.org_id = sqlc.arg(org_id)
+      AND vm.golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id)
+      AND vm.state IN ('candidate', 'current', 'retained')
+      AND (
+          SELECT count(*)
+          FROM golden_vm_snapshot newer
+          WHERE newer.org_id = vm.org_id
+            AND newer.state IN ('candidate', 'current', 'retained')
+            AND (newer.last_used_at, newer.created_at, newer.golden_vm_snapshot_id) >= (vm.last_used_at, vm.created_at, vm.golden_vm_snapshot_id)
+      ) > sqlc.arg(retain_count)::bigint
+),
+clear_pointer AS (
+    UPDATE golden_vm_current_pointer p
+    SET current_golden_vm_snapshot_id = NULL
+    WHERE p.current_golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id)
+      AND EXISTS (SELECT 1 FROM target)
+    RETURNING 1
+)
+UPDATE golden_vm_snapshot vm
+SET state = 'reapable',
+    expires_at = COALESCE(vm.expires_at, sqlc.arg(reaping_at))
+FROM target
+WHERE vm.golden_vm_snapshot_id = target.golden_vm_snapshot_id
+  AND vm.state IN ('candidate', 'current', 'retained')
+  AND (SELECT count(*) FROM clear_pointer) >= 0;
+
+-- name: MarkGoldenVMSnapshotReaped :exec
 UPDATE golden_vm_snapshot
-SET state = 'pruned',
-    pruned_at = sqlc.arg(pruned_at)
+SET state = 'reaped',
+    reaped_at = sqlc.arg(reaped_at)
 WHERE golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id)
-  AND state = 'prunable';
+  AND state = 'reapable';
 
 -- name: PromoteGoldenVMSnapshotCAS :one
 WITH candidate AS (

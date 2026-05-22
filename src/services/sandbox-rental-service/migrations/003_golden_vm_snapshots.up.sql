@@ -134,16 +134,16 @@ CREATE TABLE IF NOT EXISTS golden_vm_snapshot (
     provider_job_id             BIGINT      NOT NULL DEFAULT 0,
     head_sha                    TEXT        NOT NULL DEFAULT '',
     tree_hash                   TEXT        NOT NULL DEFAULT '',
-    state                       TEXT        NOT NULL CHECK (state IN ('candidate', 'current', 'retained', 'invalidated', 'prunable', 'pruned')),
+    state                       TEXT        NOT NULL CHECK (state IN ('candidate', 'current', 'retained', 'invalidated', 'reapable', 'reaped')),
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_used_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at                  TIMESTAMPTZ,
-    pruned_at                   TIMESTAMPTZ,
+    reaped_at                   TIMESTAMPTZ,
     UNIQUE (snapshot_key)
 );
 
 ALTER TABLE golden_vm_snapshot
-    ADD COLUMN IF NOT EXISTS pruned_at TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS reaped_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_golden_vm_snapshot_scope
     ON golden_vm_snapshot (org_id, provider_repository_id, scope_kind, scope_ref, job_shape_id, trust_class, state, created_at DESC);

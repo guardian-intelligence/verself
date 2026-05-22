@@ -73,8 +73,23 @@ func (s *Service) ensureOrgRuntime(ctx context.Context, orgID, productID string,
 }
 
 func (s *Service) durableStorageQuotaBytesForOrgProduct(ctx context.Context, orgID, productID string) (uint64, error) {
+	entitlement, err := s.durableStorageEntitlementForOrgProduct(ctx, orgID, productID)
+	if err != nil {
+		return 0, err
+	}
+	quotaBytes, err := billingSafeUint64(entitlement.DurableStorageQuotaBytes, "durable storage quota bytes")
+	if err != nil {
+		return 0, err
+	}
+	if quotaBytes == 0 {
+		return 0, fmt.Errorf("durable storage quota bytes is required")
+	}
+	return quotaBytes, nil
+}
+
+func (s *Service) durableStorageEntitlementForOrgProduct(ctx context.Context, orgID, productID string) (billingclient.BillingStorageEntitlement, error) {
 	if s.Billing == nil {
-		return 0, fmt.Errorf("billing client is required for durable storage entitlement")
+		return billingclient.BillingStorageEntitlement{}, fmt.Errorf("billing client is required for durable storage entitlement")
 	}
 	resp, err := s.Billing.GetStorageEntitlement(ctx, billingclient.GetStorageEntitlementRequest{
 		Body: billingclient.GetStorageEntitlementInputBody{
@@ -83,19 +98,12 @@ func (s *Service) durableStorageQuotaBytesForOrgProduct(ctx context.Context, org
 		},
 	})
 	if err != nil {
-		return 0, fmt.Errorf("get durable storage entitlement: %w", err)
+		return billingclient.BillingStorageEntitlement{}, fmt.Errorf("get durable storage entitlement: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK || resp.Result == nil {
-		return 0, newBillingStatusError("get durable storage entitlement", resp.StatusCode, resp.Problem, nil)
+		return billingclient.BillingStorageEntitlement{}, newBillingStatusError("get durable storage entitlement", resp.StatusCode, resp.Problem, nil)
 	}
-	quotaBytes, err := billingSafeUint64(resp.Result.Entitlement.DurableStorageQuotaBytes, "durable storage quota bytes")
-	if err != nil {
-		return 0, err
-	}
-	if quotaBytes == 0 {
-		return 0, fmt.Errorf("durable storage quota bytes is required")
-	}
-	return quotaBytes, nil
+	return resp.Result.Entitlement, nil
 }
 
 func (s *Service) runnerClassFilesystemMountsRead(ctx context.Context, runnerClass string) ([]vmorchestrator.FilesystemMount, error) {

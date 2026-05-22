@@ -687,7 +687,39 @@ func (q *Queries) ListGoldenVMSnapshotCandidatesForRun(ctx context.Context, arg 
 	return items, nil
 }
 
-const listPrunableGoldenVMSnapshots = `-- name: ListPrunableGoldenVMSnapshots :many
+const listGoldenVMSnapshotRetentionOrgs = `-- name: ListGoldenVMSnapshotRetentionOrgs :many
+SELECT DISTINCT org_id
+FROM golden_vm_snapshot
+WHERE state IN ('candidate', 'current', 'retained')
+ORDER BY org_id
+LIMIT $1
+`
+
+type ListGoldenVMSnapshotRetentionOrgsParams struct {
+	LimitCount int32
+}
+
+func (q *Queries) ListGoldenVMSnapshotRetentionOrgs(ctx context.Context, arg ListGoldenVMSnapshotRetentionOrgsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listGoldenVMSnapshotRetentionOrgs, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var org_id string
+		if err := rows.Scan(&org_id); err != nil {
+			return nil, err
+		}
+		items = append(items, org_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGoldenVMSnapshotRingOverflow = `-- name: ListGoldenVMSnapshotRingOverflow :many
 SELECT
     vm.golden_vm_snapshot_id,
     vm.operation_id,
@@ -708,28 +740,25 @@ SELECT
     vm.memory_artifact_ref,
     vm.state_bytes,
     vm.memory_bytes,
+    vm.state,
     vm.created_at,
     vm.expires_at
 FROM golden_vm_snapshot vm
 JOIN golden_vm_operation op ON op.operation_id = vm.operation_id
-WHERE vm.expires_at IS NOT NULL
-  AND vm.expires_at <= $1
-  AND vm.state IN ('candidate', 'retained', 'invalidated', 'prunable')
-  AND NOT EXISTS (
-      SELECT 1
-      FROM golden_vm_current_pointer p
-      WHERE p.current_golden_vm_snapshot_id = vm.golden_vm_snapshot_id
-  )
-ORDER BY vm.expires_at, vm.created_at, vm.golden_vm_snapshot_id
-LIMIT $2
+WHERE vm.org_id = $1
+  AND vm.state IN ('candidate', 'current', 'retained')
+ORDER BY vm.last_used_at DESC, vm.created_at DESC, vm.golden_vm_snapshot_id DESC
+OFFSET $2
+LIMIT $3
 `
 
-type ListPrunableGoldenVMSnapshotsParams struct {
-	NowAt      pgtype.Timestamptz
-	LimitCount int32
+type ListGoldenVMSnapshotRingOverflowParams struct {
+	OrgID       string
+	RetainCount int32
+	LimitCount  int32
 }
 
-type ListPrunableGoldenVMSnapshotsRow struct {
+type ListGoldenVMSnapshotRingOverflowRow struct {
 	GoldenVmSnapshotID      uuid.UUID
 	OperationID             uuid.UUID
 	OrgID                   string
@@ -749,19 +778,20 @@ type ListPrunableGoldenVMSnapshotsRow struct {
 	MemoryArtifactRef       string
 	StateBytes              int64
 	MemoryBytes             int64
+	State                   string
 	CreatedAt               pgtype.Timestamptz
 	ExpiresAt               pgtype.Timestamptz
 }
 
-func (q *Queries) ListPrunableGoldenVMSnapshots(ctx context.Context, arg ListPrunableGoldenVMSnapshotsParams) ([]ListPrunableGoldenVMSnapshotsRow, error) {
-	rows, err := q.db.Query(ctx, listPrunableGoldenVMSnapshots, arg.NowAt, arg.LimitCount)
+func (q *Queries) ListGoldenVMSnapshotRingOverflow(ctx context.Context, arg ListGoldenVMSnapshotRingOverflowParams) ([]ListGoldenVMSnapshotRingOverflowRow, error) {
+	rows, err := q.db.Query(ctx, listGoldenVMSnapshotRingOverflow, arg.OrgID, arg.RetainCount, arg.LimitCount)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListPrunableGoldenVMSnapshotsRow{}
+	items := []ListGoldenVMSnapshotRingOverflowRow{}
 	for rows.Next() {
-		var i ListPrunableGoldenVMSnapshotsRow
+		var i ListGoldenVMSnapshotRingOverflowRow
 		if err := rows.Scan(
 			&i.GoldenVmSnapshotID,
 			&i.OperationID,
@@ -782,6 +812,122 @@ func (q *Queries) ListPrunableGoldenVMSnapshots(ctx context.Context, arg ListPru
 			&i.MemoryArtifactRef,
 			&i.StateBytes,
 			&i.MemoryBytes,
+			&i.State,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReapableGoldenVMSnapshots = `-- name: ListReapableGoldenVMSnapshots :many
+SELECT
+    vm.golden_vm_snapshot_id,
+    vm.operation_id,
+    vm.org_id,
+    vm.repository_id,
+    vm.provider,
+    vm.provider_repository_id,
+    vm.provider_run_id,
+    vm.provider_run_attempt,
+    vm.provider_job_id,
+    vm.job_shape_id,
+    vm.generation_set_hash,
+    op.source_generation_set_hash,
+    vm.snapshot_key,
+    vm.root_snapshot_ref,
+    vm.root_snapshot_guid,
+    vm.vmstate_artifact_ref,
+    vm.memory_artifact_ref,
+    vm.state_bytes,
+    vm.memory_bytes,
+    vm.state,
+    vm.created_at,
+    vm.expires_at
+FROM golden_vm_snapshot vm
+JOIN golden_vm_operation op ON op.operation_id = vm.operation_id
+WHERE (
+      vm.state IN ('invalidated', 'reapable')
+      OR (
+          vm.expires_at IS NOT NULL
+          AND vm.expires_at <= $1
+          AND vm.state IN ('candidate', 'retained')
+      )
+  )
+ORDER BY
+    CASE WHEN vm.state IN ('invalidated', 'reapable') THEN 0 ELSE 1 END,
+    COALESCE(vm.expires_at, vm.created_at),
+    vm.created_at,
+    vm.golden_vm_snapshot_id
+LIMIT $2
+`
+
+type ListReapableGoldenVMSnapshotsParams struct {
+	NowAt      pgtype.Timestamptz
+	LimitCount int32
+}
+
+type ListReapableGoldenVMSnapshotsRow struct {
+	GoldenVmSnapshotID      uuid.UUID
+	OperationID             uuid.UUID
+	OrgID                   string
+	RepositoryID            int64
+	Provider                string
+	ProviderRepositoryID    int64
+	ProviderRunID           int64
+	ProviderRunAttempt      int64
+	ProviderJobID           int64
+	JobShapeID              uuid.UUID
+	GenerationSetHash       string
+	SourceGenerationSetHash string
+	SnapshotKey             string
+	RootSnapshotRef         string
+	RootSnapshotGuid        string
+	VmstateArtifactRef      string
+	MemoryArtifactRef       string
+	StateBytes              int64
+	MemoryBytes             int64
+	State                   string
+	CreatedAt               pgtype.Timestamptz
+	ExpiresAt               pgtype.Timestamptz
+}
+
+func (q *Queries) ListReapableGoldenVMSnapshots(ctx context.Context, arg ListReapableGoldenVMSnapshotsParams) ([]ListReapableGoldenVMSnapshotsRow, error) {
+	rows, err := q.db.Query(ctx, listReapableGoldenVMSnapshots, arg.NowAt, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReapableGoldenVMSnapshotsRow{}
+	for rows.Next() {
+		var i ListReapableGoldenVMSnapshotsRow
+		if err := rows.Scan(
+			&i.GoldenVmSnapshotID,
+			&i.OperationID,
+			&i.OrgID,
+			&i.RepositoryID,
+			&i.Provider,
+			&i.ProviderRepositoryID,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.ProviderJobID,
+			&i.JobShapeID,
+			&i.GenerationSetHash,
+			&i.SourceGenerationSetHash,
+			&i.SnapshotKey,
+			&i.RootSnapshotRef,
+			&i.RootSnapshotGuid,
+			&i.VmstateArtifactRef,
+			&i.MemoryArtifactRef,
+			&i.StateBytes,
+			&i.MemoryBytes,
+			&i.State,
 			&i.CreatedAt,
 			&i.ExpiresAt,
 		); err != nil {
@@ -1032,42 +1178,104 @@ func (q *Queries) MarkGoldenVMOperationSkipped(ctx context.Context, arg MarkGold
 	return err
 }
 
-const markGoldenVMSnapshotPruned = `-- name: MarkGoldenVMSnapshotPruned :exec
+const markGoldenVMSnapshotReaped = `-- name: MarkGoldenVMSnapshotReaped :exec
 UPDATE golden_vm_snapshot
-SET state = 'pruned',
-    pruned_at = $1
+SET state = 'reaped',
+    reaped_at = $1
 WHERE golden_vm_snapshot_id = $2
-  AND state = 'prunable'
+  AND state = 'reapable'
 `
 
-type MarkGoldenVMSnapshotPrunedParams struct {
-	PrunedAt           pgtype.Timestamptz
+type MarkGoldenVMSnapshotReapedParams struct {
+	ReapedAt           pgtype.Timestamptz
 	GoldenVmSnapshotID uuid.UUID
 }
 
-func (q *Queries) MarkGoldenVMSnapshotPruned(ctx context.Context, arg MarkGoldenVMSnapshotPrunedParams) error {
-	_, err := q.db.Exec(ctx, markGoldenVMSnapshotPruned, arg.PrunedAt, arg.GoldenVmSnapshotID)
+func (q *Queries) MarkGoldenVMSnapshotReaped(ctx context.Context, arg MarkGoldenVMSnapshotReapedParams) error {
+	_, err := q.db.Exec(ctx, markGoldenVMSnapshotReaped, arg.ReapedAt, arg.GoldenVmSnapshotID)
 	return err
 }
 
-const markGoldenVMSnapshotPruning = `-- name: MarkGoldenVMSnapshotPruning :execrows
+const markGoldenVMSnapshotReaping = `-- name: MarkGoldenVMSnapshotReaping :execrows
+WITH target AS (
+    SELECT vm.golden_vm_snapshot_id
+    FROM golden_vm_snapshot vm
+    WHERE vm.golden_vm_snapshot_id = $2
+      AND vm.state IN ('candidate', 'retained', 'invalidated', 'reapable')
+),
+clear_pointer AS (
+    UPDATE golden_vm_current_pointer p
+    SET current_golden_vm_snapshot_id = NULL
+    WHERE p.current_golden_vm_snapshot_id = $2
+      AND EXISTS (SELECT 1 FROM target)
+    RETURNING 1
+)
 UPDATE golden_vm_snapshot vm
-SET state = 'prunable'
-WHERE vm.golden_vm_snapshot_id = $1
-  AND vm.state IN ('candidate', 'retained', 'invalidated', 'prunable')
-  AND NOT EXISTS (
-      SELECT 1
-      FROM golden_vm_current_pointer p
-      WHERE p.current_golden_vm_snapshot_id = vm.golden_vm_snapshot_id
-  )
+SET state = 'reapable',
+    expires_at = COALESCE(vm.expires_at, $1)
+FROM target
+WHERE vm.golden_vm_snapshot_id = target.golden_vm_snapshot_id
+  AND (SELECT count(*) FROM clear_pointer) >= 0
 `
 
-type MarkGoldenVMSnapshotPruningParams struct {
+type MarkGoldenVMSnapshotReapingParams struct {
+	ReapingAt          pgtype.Timestamptz
 	GoldenVmSnapshotID uuid.UUID
 }
 
-func (q *Queries) MarkGoldenVMSnapshotPruning(ctx context.Context, arg MarkGoldenVMSnapshotPruningParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markGoldenVMSnapshotPruning, arg.GoldenVmSnapshotID)
+func (q *Queries) MarkGoldenVMSnapshotReaping(ctx context.Context, arg MarkGoldenVMSnapshotReapingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markGoldenVMSnapshotReaping, arg.ReapingAt, arg.GoldenVmSnapshotID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markGoldenVMSnapshotRingReaping = `-- name: MarkGoldenVMSnapshotRingReaping :execrows
+WITH target AS (
+    SELECT vm.golden_vm_snapshot_id
+    FROM golden_vm_snapshot vm
+    WHERE vm.org_id = $2
+      AND vm.golden_vm_snapshot_id = $3
+      AND vm.state IN ('candidate', 'current', 'retained')
+      AND (
+          SELECT count(*)
+          FROM golden_vm_snapshot newer
+          WHERE newer.org_id = vm.org_id
+            AND newer.state IN ('candidate', 'current', 'retained')
+            AND (newer.last_used_at, newer.created_at, newer.golden_vm_snapshot_id) >= (vm.last_used_at, vm.created_at, vm.golden_vm_snapshot_id)
+      ) > $4::bigint
+),
+clear_pointer AS (
+    UPDATE golden_vm_current_pointer p
+    SET current_golden_vm_snapshot_id = NULL
+    WHERE p.current_golden_vm_snapshot_id = $3
+      AND EXISTS (SELECT 1 FROM target)
+    RETURNING 1
+)
+UPDATE golden_vm_snapshot vm
+SET state = 'reapable',
+    expires_at = COALESCE(vm.expires_at, $1)
+FROM target
+WHERE vm.golden_vm_snapshot_id = target.golden_vm_snapshot_id
+  AND vm.state IN ('candidate', 'current', 'retained')
+  AND (SELECT count(*) FROM clear_pointer) >= 0
+`
+
+type MarkGoldenVMSnapshotRingReapingParams struct {
+	ReapingAt          pgtype.Timestamptz
+	OrgID              string
+	GoldenVmSnapshotID uuid.UUID
+	RetainCount        int64
+}
+
+func (q *Queries) MarkGoldenVMSnapshotRingReaping(ctx context.Context, arg MarkGoldenVMSnapshotRingReapingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markGoldenVMSnapshotRingReaping,
+		arg.ReapingAt,
+		arg.OrgID,
+		arg.GoldenVmSnapshotID,
+		arg.RetainCount,
+	)
 	if err != nil {
 		return 0, err
 	}

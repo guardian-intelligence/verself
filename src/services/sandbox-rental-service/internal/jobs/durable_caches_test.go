@@ -155,6 +155,40 @@ func TestDurableCommitSkipReason(t *testing.T) {
 	}
 }
 
+func TestGoldenVMSnapshotRetentionLimitForPlan(t *testing.T) {
+	tests := []struct {
+		name     string
+		planTier string
+		planID   string
+		want     int32
+		wantErr  bool
+	}{
+		{name: "free tier", planTier: "free", want: 1},
+		{name: "sandbox free plan", planID: "sandbox-free", want: 1},
+		{name: "starter", planTier: "starter", want: 1},
+		{name: "default paid", planTier: "default", want: 2},
+		{name: "team paid", planTier: "team", want: 2},
+		{name: "missing plan", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := goldenVMSnapshotRetentionLimitForPlan(tt.planTier, tt.planID)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("retention limit: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("retention limit = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGoldenVMGenerationSetHashMatchesCommittedSources(t *testing.T) {
 	scopeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	generationID := uuid.MustParse("22222222-2222-2222-2222-222222222222")

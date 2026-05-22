@@ -173,7 +173,7 @@ provides mounted directories, not tool-specific cache APIs.
 17. Failed jobs, cancelled jobs, non-promotable trust contexts, ambiguous
    checkpoints, and ambiguous seals leave the current pointer unchanged.
    Successful non-promotable jobs may retain an artifact for debugging and
-   later pruning.
+   later reaping.
 
 A job can succeed while cache persistence is skipped. Cache persistence is an
 acceleration artifact, not a correctness requirement for CI.
@@ -601,8 +601,8 @@ durable_generation
 committed
 retained
 invalidated
-prunable
-pruned
+reapable
+reaped
 ```
 
 A committed generation requires sealed host storage. No database row may claim
@@ -631,7 +631,7 @@ where durable_scope_id = :durable_scope_id
 ```
 
 If zero rows are affected, another operation won the race. The candidate is
-retained or pruned by retention policy.
+retained or reaped by retention policy.
 
 ### Golden VM Operation
 
@@ -763,8 +763,8 @@ candidate
 current
 retained
 invalidated
-prunable
-pruned
+reapable
+reaped
 ```
 
 ### Golden VM Snapshot Generation
@@ -925,9 +925,22 @@ root-snapshot reuse are globally invalidated.
 The product surface should expose this as a planned platform upgrade: warm VM
 cache misses use the upgraded version, and performance returns after the next
 successful protected-branch run publishes a compatible golden VM snapshot. Old
-Firecracker VM artifacts are retained for seven days for bounded cleanup,
-debugging, and audit evidence, then pruned unless explicitly pinned by an
-operator.
+Firecracker VM artifacts remain subject to the organization snapshot ring and
+are reaped unless explicitly pinned by an operator.
+
+### Golden VM Retention
+
+Golden VM snapshots are retained as an organization-level ring buffer. Free
+organizations retain one physical snapshot. Paid organizations retain two
+physical snapshots. The ring is intentionally not per job shape; it is a
+capacity product policy for the customer's rebuildable warm-state artifacts.
+
+Invalidated or tombstoned snapshots are eligible for immediate physical
+reaping. Reaping destroys the Firecracker vmstate and memory artifacts and the
+root zvol generation through vm-orchestrator. The service keeps the manifest
+row as historical metadata with `state = 'reaped'` and `reaped_at` set so
+Describe-style reads can report that the snapshot existed, was invalidated or
+fell out of retention, and no longer has restorable host artifacts.
 
 ## CPU Architecture
 
@@ -963,7 +976,7 @@ contracts.
 Two jobs may start from the same current generation. Each records the observed
 source generation before lease acquisition. Both may seal candidate generations.
 Only one CAS promotion can advance the current pointer. The loser remains a
-retained generation or becomes prunable.
+retained generation or becomes reapable.
 
 ### Workflow-Level Promotion
 
@@ -992,7 +1005,7 @@ been merged into the trusted branch.
 A compatibility-affecting change to a cache's name, path set, mount policy, or
 reconcile policy changes that cache's durable spec hash and creates a new
 durable scope. Existing current pointers remain available for older scopes
-until retention prunes them. Adding, removing, or changing one manifest cache
+until retention reaps them. Adding, removing, or changing one manifest cache
 does not invalidate `workspace` or unrelated manifest caches.
 
 ### Lease Cancellation
@@ -1127,7 +1140,7 @@ record service generation
 CAS promote durable and golden VM pointers
 ```
 
-Snapshots and clones are local lifecycle artifacts. Retention and pruning
+Snapshots and clones are local lifecycle artifacts. Retention and reaping
 destroy unreferenced datasets through vm-orchestrator; they do not enqueue,
 upload, or catalog backup copies of customer zvols.
 
@@ -1158,7 +1171,7 @@ durable.cache.seal
 durable.cache.commit
 durable.cache.promote
 durable.cache.retain
-durable.cache.prune
+durable.cache.reap
 durable.cache.reconcile
 golden.vm.lookup
 golden.vm.restore
@@ -1167,6 +1180,7 @@ golden.vm.before_snapshot
 golden.vm.checkpoint
 golden.vm.publish
 golden.vm.promote
+golden.vm.reap
 ```
 
 Expected durable-cache sequence for a mounted successful protected-branch run:

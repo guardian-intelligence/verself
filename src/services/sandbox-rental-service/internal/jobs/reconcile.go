@@ -39,10 +39,10 @@ func (s *Service) Reconcile(ctx context.Context) error {
 	if err := s.observeDurableStorage(ctx); err != nil {
 		return err
 	}
-	if err := s.pruneGoldenVMSnapshots(ctx); err != nil {
+	if err := s.reapGoldenVMSnapshots(ctx); err != nil {
 		return err
 	}
-	if err := s.pruneDurableGenerations(ctx); err != nil {
+	if err := s.reapDurableGenerations(ctx); err != nil {
 		return err
 	}
 	if err := s.reconcileTerminalRunnerAllocations(ctx); err != nil {

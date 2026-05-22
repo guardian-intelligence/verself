@@ -39,8 +39,10 @@ const (
 	durableCacheMountRoot            = "/verself/.mounts"
 	durableMaxCachesPerJob           = 99
 	durableRetainedGenerationTTL     = 7 * 24 * time.Hour
-	durablePruneBatchSize            = 32
+	durableReapBatchSize             = 32
 	durableEvictionMaxBatches        = 8
+	goldenVMFreeSnapshotRingSize     = 1
+	goldenVMPaidSnapshotRingSize     = 2
 	durablePoolLowWatermarkPermille  = 700
 	durablePoolHardWatermarkPermille = 850
 )
@@ -55,7 +57,7 @@ const (
 	durableEventCommit              = "durable.cache.commit"
 	durableEventPromote             = "durable.cache.promote"
 	durableEventRetain              = "durable.cache.retain"
-	durableEventPrune               = "durable.cache.prune"
+	durableEventReap                = "durable.cache.reap"
 	durableEventEvict               = "durable.cache.evict"
 	durableEventReconcile           = "durable.cache.reconcile"
 	durableEventPoolObserve         = "durable.pool.observe"
@@ -68,7 +70,7 @@ const (
 	goldenVMEventCheckpoint         = "golden.vm.checkpoint"
 	goldenVMEventPublish            = "golden.vm.publish"
 	goldenVMEventPromote            = "golden.vm.promote"
-	goldenVMEventPrune              = "golden.vm.prune"
+	goldenVMEventReap               = "golden.vm.reap"
 )
 
 var ErrCacheDeclarationInvalid = errors.New("sandbox-rental: cache declaration invalid")
@@ -1475,7 +1477,7 @@ func (s *Service) observeDurableStorage(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) pruneDurableGenerations(ctx context.Context) error {
+func (s *Service) reapDurableGenerations(ctx context.Context) error {
 	if s.Orchestrator == nil {
 		return nil
 	}
@@ -1488,16 +1490,16 @@ func (s *Service) pruneDurableGenerations(ctx context.Context) error {
 		var errs []error
 		for batch := 0; batch < durableEvictionMaxBatches; batch++ {
 			rows, err := s.storeQueries().ListEvictableDurableGenerations(ctx, store.ListEvictableDurableGenerationsParams{
-				LimitCount: durablePruneBatchSize,
+				LimitCount: durableReapBatchSize,
 			})
 			if err != nil {
 				return fmt.Errorf("query evictable durable generations: %w", err)
 			}
-			pruned, err := s.pruneDurableGenerationCandidates(ctx, now, durableEventEvict, "zpool_low_watermark_exceeded", storage, evictableDurablePruneCandidates(rows))
+			reaped, err := s.reapDurableGenerationCandidates(ctx, now, durableEventEvict, "zpool_low_watermark_exceeded", storage, evictableDurableReapCandidates(rows))
 			if err != nil {
 				errs = append(errs, err)
 			}
-			if pruned == 0 {
+			if reaped == 0 {
 				break
 			}
 			storage, storageKnown, err = s.durableStorageSnapshot(ctx)
@@ -1511,34 +1513,167 @@ func (s *Service) pruneDurableGenerations(ctx context.Context) error {
 		}
 		return errors.Join(errs...)
 	}
-	rows, err := s.storeQueries().ListPrunableDurableGenerations(ctx, store.ListPrunableDurableGenerationsParams{
+	rows, err := s.storeQueries().ListReapableDurableGenerations(ctx, store.ListReapableDurableGenerationsParams{
 		NowAt:      pgTime(now),
-		LimitCount: durablePruneBatchSize,
+		LimitCount: durableReapBatchSize,
 	})
 	if err != nil {
-		return fmt.Errorf("query prunable durable generations: %w", err)
+		return fmt.Errorf("query reapable durable generations: %w", err)
 	}
-	_, err = s.pruneDurableGenerationCandidates(ctx, now, durableEventPrune, "retention_ttl_expired", storage, prunableDurablePruneCandidates(rows))
+	_, err = s.reapDurableGenerationCandidates(ctx, now, durableEventReap, "retention_ttl_expired", storage, reapableDurableReapCandidates(rows))
 	return err
 }
 
-func (s *Service) pruneGoldenVMSnapshots(ctx context.Context) error {
+func (s *Service) reapGoldenVMSnapshots(ctx context.Context) error {
 	if s.Orchestrator == nil {
 		return nil
 	}
 	now := time.Now().UTC()
-	rows, err := s.storeQueries().ListPrunableGoldenVMSnapshots(ctx, store.ListPrunableGoldenVMSnapshotsParams{
+	rows, err := s.storeQueries().ListReapableGoldenVMSnapshots(ctx, store.ListReapableGoldenVMSnapshotsParams{
 		NowAt:      pgTime(now),
-		LimitCount: durablePruneBatchSize,
+		LimitCount: durableReapBatchSize,
 	})
 	if err != nil {
-		return fmt.Errorf("query prunable golden VM snapshots: %w", err)
+		return fmt.Errorf("query reapable golden VM snapshots: %w", err)
 	}
 	var errs []error
-	for _, row := range rows {
-		changed, err := s.storeQueries().MarkGoldenVMSnapshotPruning(ctx, store.MarkGoldenVMSnapshotPruningParams{GoldenVmSnapshotID: row.GoldenVmSnapshotID})
+	if _, err := s.reapGoldenVMSnapshotCandidates(ctx, now, reapableGoldenVMReapCandidates(rows)); err != nil {
+		errs = append(errs, err)
+	}
+	orgs, err := s.storeQueries().ListGoldenVMSnapshotRetentionOrgs(ctx, store.ListGoldenVMSnapshotRetentionOrgsParams{
+		LimitCount: durableReapBatchSize,
+	})
+	if err != nil {
+		errs = append(errs, fmt.Errorf("query golden VM snapshot retention orgs: %w", err))
+		return errors.Join(errs...)
+	}
+	for _, orgID := range orgs {
+		retainCount, err := s.goldenVMSnapshotRetentionLimit(ctx, orgID)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("mark golden VM snapshot pruning %s: %w", row.GoldenVmSnapshotID, err))
+			errs = append(errs, fmt.Errorf("resolve golden VM snapshot retention for org %s: %w", orgID, err))
+			continue
+		}
+		overflow, err := s.storeQueries().ListGoldenVMSnapshotRingOverflow(ctx, store.ListGoldenVMSnapshotRingOverflowParams{
+			OrgID:       orgID,
+			RetainCount: retainCount,
+			LimitCount:  durableReapBatchSize,
+		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("query golden VM snapshot ring overflow for org %s: %w", orgID, err))
+			continue
+		}
+		if _, err := s.reapGoldenVMSnapshotCandidates(ctx, now, ringOverflowGoldenVMReapCandidates(overflow, retainCount)); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+type goldenVMReapCandidate struct {
+	GoldenVmSnapshotID      uuid.UUID
+	OperationID             uuid.UUID
+	OrgID                   string
+	Provider                string
+	ProviderRepositoryID    int64
+	ProviderRunID           int64
+	ProviderRunAttempt      int64
+	ProviderJobID           int64
+	JobShapeID              uuid.UUID
+	GenerationSetHash       string
+	SourceGenerationSetHash string
+	SnapshotKey             string
+	RootSnapshotRef         string
+	RootSnapshotGuid        string
+	VmstateArtifactRef      string
+	MemoryArtifactRef       string
+	StateBytes              int64
+	MemoryBytes             int64
+	Reason                  string
+	RingRetainCount         int32
+}
+
+func reapableGoldenVMReapCandidates(rows []store.ListReapableGoldenVMSnapshotsRow) []goldenVMReapCandidate {
+	out := make([]goldenVMReapCandidate, 0, len(rows))
+	for _, row := range rows {
+		reason := "retention_ttl_expired"
+		if row.State == "invalidated" || row.State == "reapable" {
+			reason = "snapshot_tombstoned"
+		}
+		out = append(out, goldenVMReapCandidate{
+			GoldenVmSnapshotID:      row.GoldenVmSnapshotID,
+			OperationID:             row.OperationID,
+			OrgID:                   row.OrgID,
+			Provider:                row.Provider,
+			ProviderRepositoryID:    row.ProviderRepositoryID,
+			ProviderRunID:           row.ProviderRunID,
+			ProviderRunAttempt:      row.ProviderRunAttempt,
+			ProviderJobID:           row.ProviderJobID,
+			JobShapeID:              row.JobShapeID,
+			GenerationSetHash:       row.GenerationSetHash,
+			SourceGenerationSetHash: row.SourceGenerationSetHash,
+			SnapshotKey:             row.SnapshotKey,
+			RootSnapshotRef:         row.RootSnapshotRef,
+			RootSnapshotGuid:        row.RootSnapshotGuid,
+			VmstateArtifactRef:      row.VmstateArtifactRef,
+			MemoryArtifactRef:       row.MemoryArtifactRef,
+			StateBytes:              row.StateBytes,
+			MemoryBytes:             row.MemoryBytes,
+			Reason:                  reason,
+		})
+	}
+	return out
+}
+
+func ringOverflowGoldenVMReapCandidates(rows []store.ListGoldenVMSnapshotRingOverflowRow, retainCount int32) []goldenVMReapCandidate {
+	out := make([]goldenVMReapCandidate, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, goldenVMReapCandidate{
+			GoldenVmSnapshotID:      row.GoldenVmSnapshotID,
+			OperationID:             row.OperationID,
+			OrgID:                   row.OrgID,
+			Provider:                row.Provider,
+			ProviderRepositoryID:    row.ProviderRepositoryID,
+			ProviderRunID:           row.ProviderRunID,
+			ProviderRunAttempt:      row.ProviderRunAttempt,
+			ProviderJobID:           row.ProviderJobID,
+			JobShapeID:              row.JobShapeID,
+			GenerationSetHash:       row.GenerationSetHash,
+			SourceGenerationSetHash: row.SourceGenerationSetHash,
+			SnapshotKey:             row.SnapshotKey,
+			RootSnapshotRef:         row.RootSnapshotRef,
+			RootSnapshotGuid:        row.RootSnapshotGuid,
+			VmstateArtifactRef:      row.VmstateArtifactRef,
+			MemoryArtifactRef:       row.MemoryArtifactRef,
+			StateBytes:              row.StateBytes,
+			MemoryBytes:             row.MemoryBytes,
+			Reason:                  "snapshot_ring_limit_exceeded",
+			RingRetainCount:         retainCount,
+		})
+	}
+	return out
+}
+
+func (s *Service) reapGoldenVMSnapshotCandidates(ctx context.Context, now time.Time, rows []goldenVMReapCandidate) (int, error) {
+	var errs []error
+	reaped := 0
+	for _, row := range rows {
+		var changed int64
+		var err error
+		if row.RingRetainCount > 0 {
+			changed, err = s.storeQueries().MarkGoldenVMSnapshotRingReaping(ctx, store.MarkGoldenVMSnapshotRingReapingParams{
+				OrgID:              row.OrgID,
+				GoldenVmSnapshotID: row.GoldenVmSnapshotID,
+				RetainCount:        int64(row.RingRetainCount),
+				ReapingAt:          pgTime(now),
+			})
+		} else {
+			changed, err = s.storeQueries().MarkGoldenVMSnapshotReaping(ctx, store.MarkGoldenVMSnapshotReapingParams{
+				GoldenVmSnapshotID: row.GoldenVmSnapshotID,
+				ReapingAt:          pgTime(now),
+			})
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("mark golden VM snapshot reaping %s: %w", row.GoldenVmSnapshotID, err))
 			continue
 		}
 		if changed == 0 {
@@ -1552,24 +1687,50 @@ func (s *Service) pruneGoldenVMSnapshots(ctx context.Context) error {
 			ProviderRunAttempt:   row.ProviderRunAttempt,
 			ProviderJobID:        row.ProviderJobID,
 		}
-		_, err = s.Orchestrator.PruneGoldenVMSnapshot(ctx, row.GoldenVmSnapshotID.String()+":prune", row.OperationID.String(), row.GoldenVmSnapshotID.String(), row.SnapshotKey, row.RootSnapshotRef, row.OrgID)
+		_, err = s.Orchestrator.PruneGoldenVMSnapshot(ctx, row.GoldenVmSnapshotID.String()+":reap", row.OperationID.String(), row.GoldenVmSnapshotID.String(), row.SnapshotKey, row.RootSnapshotRef, row.OrgID)
 		if err != nil {
-			event := goldenVMEvent{OperationID: &row.OperationID, SnapshotID: &row.GoldenVmSnapshotID, JobShapeID: &row.JobShapeID, Identity: identity, Name: goldenVMEventPrune, Result: "failed", Reason: err.Error(), GenerationSetHash: row.GenerationSetHash, SourceGenerationSetHash: row.SourceGenerationSetHash, SnapshotKey: row.SnapshotKey, VMStateArtifactRef: row.VmstateArtifactRef, MemoryArtifactRef: row.MemoryArtifactRef, RootSnapshotRef: row.RootSnapshotRef, RootSnapshotGUID: row.RootSnapshotGuid, StateBytes: uint64FromInt64(row.StateBytes, "golden VM state bytes"), MemoryBytes: uint64FromInt64(row.MemoryBytes, "golden VM memory bytes")}
+			event := goldenVMEvent{OperationID: &row.OperationID, SnapshotID: &row.GoldenVmSnapshotID, JobShapeID: &row.JobShapeID, Identity: identity, Name: goldenVMEventReap, Result: "failed", Reason: err.Error(), GenerationSetHash: row.GenerationSetHash, SourceGenerationSetHash: row.SourceGenerationSetHash, SnapshotKey: row.SnapshotKey, VMStateArtifactRef: row.VmstateArtifactRef, MemoryArtifactRef: row.MemoryArtifactRef, RootSnapshotRef: row.RootSnapshotRef, RootSnapshotGUID: row.RootSnapshotGuid, StateBytes: uint64FromInt64(row.StateBytes, "golden VM state bytes"), MemoryBytes: uint64FromInt64(row.MemoryBytes, "golden VM memory bytes")}
 			_ = s.appendGoldenVMEvent(ctx, event)
-			errs = append(errs, fmt.Errorf("prune golden VM snapshot %s: %w", row.GoldenVmSnapshotID, err))
+			errs = append(errs, fmt.Errorf("reap golden VM snapshot %s: %w", row.GoldenVmSnapshotID, err))
 			continue
 		}
-		if err := s.storeQueries().MarkGoldenVMSnapshotPruned(ctx, store.MarkGoldenVMSnapshotPrunedParams{PrunedAt: pgTime(time.Now().UTC()), GoldenVmSnapshotID: row.GoldenVmSnapshotID}); err != nil {
-			errs = append(errs, fmt.Errorf("mark golden VM snapshot pruned %s: %w", row.GoldenVmSnapshotID, err))
+		if err := s.storeQueries().MarkGoldenVMSnapshotReaped(ctx, store.MarkGoldenVMSnapshotReapedParams{ReapedAt: pgTime(time.Now().UTC()), GoldenVmSnapshotID: row.GoldenVmSnapshotID}); err != nil {
+			errs = append(errs, fmt.Errorf("mark golden VM snapshot reaped %s: %w", row.GoldenVmSnapshotID, err))
 			continue
 		}
-		event := goldenVMEvent{OperationID: &row.OperationID, SnapshotID: &row.GoldenVmSnapshotID, JobShapeID: &row.JobShapeID, Identity: identity, Name: goldenVMEventPrune, Result: "succeeded", Reason: "retention_ttl_expired", GenerationSetHash: row.GenerationSetHash, SourceGenerationSetHash: row.SourceGenerationSetHash, SnapshotKey: row.SnapshotKey, VMStateArtifactRef: row.VmstateArtifactRef, MemoryArtifactRef: row.MemoryArtifactRef, RootSnapshotRef: row.RootSnapshotRef, RootSnapshotGUID: row.RootSnapshotGuid, StateBytes: uint64FromInt64(row.StateBytes, "golden VM state bytes"), MemoryBytes: uint64FromInt64(row.MemoryBytes, "golden VM memory bytes")}
+		event := goldenVMEvent{OperationID: &row.OperationID, SnapshotID: &row.GoldenVmSnapshotID, JobShapeID: &row.JobShapeID, Identity: identity, Name: goldenVMEventReap, Result: "succeeded", Reason: row.Reason, GenerationSetHash: row.GenerationSetHash, SourceGenerationSetHash: row.SourceGenerationSetHash, SnapshotKey: row.SnapshotKey, VMStateArtifactRef: row.VmstateArtifactRef, MemoryArtifactRef: row.MemoryArtifactRef, RootSnapshotRef: row.RootSnapshotRef, RootSnapshotGUID: row.RootSnapshotGuid, StateBytes: uint64FromInt64(row.StateBytes, "golden VM state bytes"), MemoryBytes: uint64FromInt64(row.MemoryBytes, "golden VM memory bytes")}
 		_ = s.appendGoldenVMEvent(ctx, event)
+		reaped++
 	}
-	return errors.Join(errs...)
+	return reaped, errors.Join(errs...)
 }
 
-type durablePruneCandidate struct {
+func (s *Service) goldenVMSnapshotRetentionLimit(ctx context.Context, orgID string) (int32, error) {
+	entitlement, err := s.durableStorageEntitlementForOrgProduct(ctx, orgID, defaultProductID)
+	if err != nil {
+		return 0, err
+	}
+	limit, err := goldenVMSnapshotRetentionLimitForPlan(string(entitlement.PlanTier), string(entitlement.PlanID))
+	if err != nil {
+		return 0, fmt.Errorf("billing entitlement plan %q/%q: %w", entitlement.PlanTier, entitlement.PlanID, err)
+	}
+	return limit, nil
+}
+
+func goldenVMSnapshotRetentionLimitForPlan(planTier, planID string) (int32, error) {
+	key := strings.ToLower(firstNonEmpty(planTier, planID))
+	if key == "" {
+		return 0, fmt.Errorf("plan tier is required")
+	}
+	switch key {
+	case "free", "sandbox-free", "starter":
+		return goldenVMFreeSnapshotRingSize, nil
+	default:
+		return goldenVMPaidSnapshotRingSize, nil
+	}
+}
+
+type durableReapCandidate struct {
 	DurableGenerationID  uuid.UUID
 	DurableScopeID       uuid.UUID
 	OperationID          uuid.UUID
@@ -1587,10 +1748,10 @@ type durablePruneCandidate struct {
 	AttemptID            uuid.UUID
 }
 
-func prunableDurablePruneCandidates(rows []store.ListPrunableDurableGenerationsRow) []durablePruneCandidate {
-	out := make([]durablePruneCandidate, 0, len(rows))
+func reapableDurableReapCandidates(rows []store.ListReapableDurableGenerationsRow) []durableReapCandidate {
+	out := make([]durableReapCandidate, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, durablePruneCandidate{
+		out = append(out, durableReapCandidate{
 			DurableGenerationID:  row.DurableGenerationID,
 			DurableScopeID:       row.DurableScopeID,
 			OperationID:          row.OperationID,
@@ -1611,10 +1772,10 @@ func prunableDurablePruneCandidates(rows []store.ListPrunableDurableGenerationsR
 	return out
 }
 
-func evictableDurablePruneCandidates(rows []store.ListEvictableDurableGenerationsRow) []durablePruneCandidate {
-	out := make([]durablePruneCandidate, 0, len(rows))
+func evictableDurableReapCandidates(rows []store.ListEvictableDurableGenerationsRow) []durableReapCandidate {
+	out := make([]durableReapCandidate, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, durablePruneCandidate{
+		out = append(out, durableReapCandidate{
 			DurableGenerationID:  row.DurableGenerationID,
 			DurableScopeID:       row.DurableScopeID,
 			OperationID:          row.OperationID,
@@ -1635,17 +1796,17 @@ func evictableDurablePruneCandidates(rows []store.ListEvictableDurableGeneration
 	return out
 }
 
-func (s *Service) pruneDurableGenerationCandidates(ctx context.Context, now time.Time, eventName, reason string, storage durableStorageSnapshot, rows []durablePruneCandidate) (int, error) {
+func (s *Service) reapDurableGenerationCandidates(ctx context.Context, now time.Time, eventName, reason string, storage durableStorageSnapshot, rows []durableReapCandidate) (int, error) {
 	var errs []error
-	pruned := 0
+	reaped := 0
 	for _, row := range rows {
-		rowsChanged, err := s.storeQueries().MarkDurableGenerationPruning(ctx, store.MarkDurableGenerationPruningParams{
-			PruningAt:           pgTime(now),
+		rowsChanged, err := s.storeQueries().MarkDurableGenerationReaping(ctx, store.MarkDurableGenerationReapingParams{
+			ReapingAt:           pgTime(now),
 			DurableGenerationID: row.DurableGenerationID,
 			DurableScopeID:      row.DurableScopeID,
 		})
 		if err != nil {
-			errs = append(errs, fmt.Errorf("mark durable generation pruning %s: %w", row.DurableGenerationID, err))
+			errs = append(errs, fmt.Errorf("mark durable generation reaping %s: %w", row.DurableGenerationID, err))
 			continue
 		}
 		if rowsChanged == 0 {
@@ -1659,22 +1820,22 @@ func (s *Service) pruneDurableGenerationCandidates(ctx context.Context, now time
 			ProviderRunAttempt:   row.ProviderRunAttempt,
 			ProviderJobID:        row.ProviderJobID,
 		}
-		_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, row.DurableGenerationID.String()+":prune", row.OperationID.String(), row.DurableGenerationID.String(), row.DurableScopeID.String(), row.ZFSSnapshotRef, row.OrgID)
+		_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, row.DurableGenerationID.String()+":reap", row.OperationID.String(), row.DurableGenerationID.String(), row.DurableScopeID.String(), row.ZFSSnapshotRef, row.OrgID)
 		if err != nil {
 			event := durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, CacheName: row.CacheName, Name: eventName, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: row.ZFSSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")}
 			_ = s.appendDurableEvent(ctx, event.withStorageCapacity(storage.Capacity, row.OrgID))
-			errs = append(errs, fmt.Errorf("prune durable generation %s: %w", row.DurableGenerationID, err))
+			errs = append(errs, fmt.Errorf("reap durable generation %s: %w", row.DurableGenerationID, err))
 			continue
 		}
-		if err := s.storeQueries().MarkDurableGenerationPruned(ctx, store.MarkDurableGenerationPrunedParams{PrunedAt: pgTime(time.Now().UTC()), DurableGenerationID: row.DurableGenerationID, DurableScopeID: row.DurableScopeID}); err != nil {
-			errs = append(errs, fmt.Errorf("mark durable generation pruned %s: %w", row.DurableGenerationID, err))
+		if err := s.storeQueries().MarkDurableGenerationReaped(ctx, store.MarkDurableGenerationReapedParams{ReapedAt: pgTime(time.Now().UTC()), DurableGenerationID: row.DurableGenerationID, DurableScopeID: row.DurableScopeID}); err != nil {
+			errs = append(errs, fmt.Errorf("mark durable generation reaped %s: %w", row.DurableGenerationID, err))
 			continue
 		}
 		event := durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, CacheName: row.CacheName, Name: eventName, Result: "succeeded", Reason: reason, ZFSSnapshotRef: row.ZFSSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")}
 		_ = s.appendDurableEvent(ctx, event.withStorageCapacity(storage.Capacity, row.OrgID))
-		pruned++
+		reaped++
 	}
-	return pruned, errors.Join(errs...)
+	return reaped, errors.Join(errs...)
 }
 
 func (s *Service) hydrateGitHubRunIdentity(ctx context.Context, identity RunnerExecutionIdentity) (RunnerExecutionIdentity, error) {
