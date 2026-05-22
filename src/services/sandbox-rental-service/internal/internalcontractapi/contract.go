@@ -266,7 +266,7 @@ type InternalSubmitRunnerJobInputBody struct {
 	RunnerName       RunnerName                    `json:"runner_name" required:"true" minLength:"1" maxLength:"512"`
 	RunnerID         *DecimalUint64                `json:"runner_id,omitempty" pattern:"^[0-9]+$"`
 	BootstrapKind    RunnerBootstrapKind           `json:"bootstrap_kind" required:"true" minLength:"1" maxLength:"64"`
-	BootstrapPayload RunnerBootstrapPayload        `json:"bootstrap_payload" required:"true" minLength:"1" maxLength:"4096"`
+	BootstrapPayload RunnerBootstrapPayload        `json:"bootstrap_payload" required:"true" minLength:"1" maxLength:"32768"`
 	WorkflowRun      *RunnerWorkflowRunObservation `json:"workflow_run,omitempty"`
 	CacheManifest    *RunnerCacheManifest          `json:"cache_manifest,omitempty"`
 }

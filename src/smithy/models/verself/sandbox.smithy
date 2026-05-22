@@ -1633,7 +1633,7 @@ list RunnerLabels {
 @length(min: 1, max: 255)
 string RunnerLabel
 
-@length(min: 1, max: 4096)
+@length(min: 1, max: 32768)
 @sensitive
 string RunnerBootstrapPayload
 
