@@ -1,6 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LETTERS_META, sortedLetters, type Letter } from "~/content/letters";
 import {
+  LETTER_OPEN_VIEW_TRANSITION,
+  letterNavigationIntentHandlers,
+} from "~/features/letters/transitions.intent";
+import {
   excerptOf,
   LETTER_INDEX_PAGE_PADDING_CLASS,
   LETTER_READING_COLUMN_CLASS,
@@ -57,7 +61,8 @@ function LetterEntry({ letter }: { letter: Letter }) {
     <Link
       to="/letters/$slug"
       params={{ slug: letter.slug }}
-      viewTransition
+      viewTransition={LETTER_OPEN_VIEW_TRANSITION}
+      {...letterNavigationIntentHandlers("open")}
       data-letter-entry={letter.slug}
       className="block py-14 no-underline outline-none focus-visible:ring-2 focus-visible:ring-[var(--treatment-rule-color)] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--treatment-ground)] sm:py-16"
     >

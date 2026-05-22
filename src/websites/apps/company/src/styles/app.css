@@ -71,6 +71,10 @@
   html {
     scroll-padding-top: var(--header-scroll-offset);
   }
+  button,
+  [role="button"] {
+    cursor: default;
+  }
 }
 
 /* Visually-hidden unless focused. Used by the Skip-to-main-content link so
@@ -236,6 +240,9 @@
 [data-letter-continuation] {
   contain: paint;
   transform-origin: top left;
+}
+
+[data-letter-continuation][data-letter-continuation-animate] {
   animation: letter-continuation-unfurl var(--letter-continuation-unfurl-duration)
     var(--letter-spring-reveal) both;
 }
@@ -324,7 +331,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-letter-continuation] {
+  [data-letter-continuation][data-letter-continuation-animate] {
     animation-duration: 1ms !important;
   }
 

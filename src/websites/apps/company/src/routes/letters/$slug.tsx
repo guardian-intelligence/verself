@@ -11,6 +11,10 @@ import {
   LetterSalutation,
 } from "~/features/letters/typography";
 import {
+  LETTER_RETURN_VIEW_TRANSITION,
+  letterNavigationIntentHandlers,
+} from "~/features/letters/transitions.intent";
+import {
   fixedTransitionStyle,
   LETTER_RETURN_TRANSITION_NAME,
 } from "~/features/letters/transitions";
@@ -83,6 +87,8 @@ function LetterReturnLink() {
     <Link
       to="/letters"
       activeOptions={{ exact: true }}
+      viewTransition={LETTER_RETURN_VIEW_TRANSITION}
+      {...letterNavigationIntentHandlers("return")}
       data-letter-return
       aria-label="Return to letters"
       className="-mx-3 mb-2 inline-flex min-h-11 items-center gap-2 px-3 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--treatment-muted-meta)] no-underline outline-none focus-visible:ring-2 focus-visible:ring-[var(--treatment-rule-color)] focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--treatment-ground)]"
