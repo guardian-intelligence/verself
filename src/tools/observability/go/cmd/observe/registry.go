@@ -36,20 +36,20 @@ type family struct {
 }
 
 var families = []family{
-	{Name: "overview", Purpose: "Show services emitting telemetry, recent deploy_run_keys, and error counts in one view. Windows are fixed (24h for services and errors, 7d for deploys); --since and --minutes are ignored."},
+	{Name: "overview", Purpose: "Show services emitting telemetry, recent deploy_run_keys, and error counts in one view. Windows are fixed (24h for services and errors, 7d for deploys); --since, --until, and --minutes are ignored."},
 	{Name: "catalog", Purpose: "Discover telemetry vocabulary without turning the landing page into a recency dashboard."},
 	{Name: "describe", Purpose: "Explain one query, metric, service, span, or log field and show valid next commands."},
-	{Name: "metric", Purpose: "Query metric latest values or explicit rate windows; rate windows accept --since or --minutes."},
+	{Name: "metric", Purpose: "Query metric latest values or explicit rate windows; rate windows accept --since, --until, and --minutes."},
 	{Name: "trace", Purpose: "Inspect a single trace by TraceId."},
-	{Name: "logs", Purpose: "Discover or query structured log attributes; recent log windows accept --since or --minutes."},
-	{Name: "http", Purpose: "Query normalized HTTP access events; recent access windows accept --since or --minutes."},
-	{Name: "deploy", Purpose: "Inspect verself-deploy, Bazel, and Nomad spans correlated by deploy_run_key; recent run lists accept --since or --minutes."},
-	{Name: "nomad", Purpose: "Inspect Nomad event-stream logs and bounded failed-allocation log tails emitted by nomad-observer; windows accept --since or --minutes."},
-	{Name: "bazel", Purpose: "Inspect instrumented CI Bazel invocations, parser lifecycle events, BUILD.bazel package spans, and execution spawns; windows accept --since or --minutes."},
-	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics; event windows accept --since or --minutes."},
-	{Name: "workload-identity", Purpose: "Inspect SPIFFE mTLS, JWT-SVID, OpenBao relying-party auth, and SPIRE system logs; windows accept --since or --minutes."},
-	{Name: "temporal", Purpose: "Inspect Temporal Web requests, Temporal auth decisions, smoke-test workflow activity, service logs, and live Temporal metric inventory; windows accept --since or --minutes."},
-	{Name: "errors", Purpose: "Query normalized recent error signals when actively debugging; windows accept --since or --minutes."},
+	{Name: "logs", Purpose: "Discover or query structured log attributes; recent log windows accept --since, --until, and --minutes."},
+	{Name: "http", Purpose: "Query normalized HTTP access events; recent access windows accept --since, --until, and --minutes."},
+	{Name: "deploy", Purpose: "Inspect verself-deploy, Bazel, and Nomad spans correlated by deploy_run_key; recent run lists accept --since, --until, and --minutes."},
+	{Name: "nomad", Purpose: "Inspect Nomad event-stream logs and bounded failed-allocation log tails emitted by nomad-observer; windows accept --since, --until, and --minutes."},
+	{Name: "bazel", Purpose: "Inspect instrumented CI Bazel invocations, parser lifecycle events, BUILD.bazel package spans, and execution spawns; windows accept --since, --until, and --minutes."},
+	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics; event windows accept --since, --until, and --minutes."},
+	{Name: "workload-identity", Purpose: "Inspect SPIFFE mTLS, JWT-SVID, OpenBao relying-party auth, and SPIRE system logs; windows accept --since, --until, and --minutes."},
+	{Name: "temporal", Purpose: "Inspect Temporal Web requests, Temporal auth decisions, smoke-test workflow activity, service logs, and live Temporal metric inventory; windows accept --since, --until, and --minutes."},
+	{Name: "errors", Purpose: "Query normalized recent error signals when actively debugging; windows accept --since, --until, and --minutes."},
 }
 
 var queryDocs = []queryDoc{
@@ -389,6 +389,7 @@ var queryDocs = []queryDoc{
 		Optional: []string{
 			"--group-by=<metric-attribute-key>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -411,6 +412,7 @@ var queryDocs = []queryDoc{
 		Optional: []string{
 			"--errors",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -433,6 +435,7 @@ var queryDocs = []queryDoc{
 		Optional: []string{
 			"--service=<service-name>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -457,6 +460,7 @@ var queryDocs = []queryDoc{
 			"--status-min=<status>",
 			"--search=<path-substring>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -481,6 +485,7 @@ var queryDocs = []queryDoc{
 			"--field=<log-attribute-key>",
 			"--search=<body-or-attribute-substring>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -521,6 +526,7 @@ var queryDocs = []queryDoc{
 		Optional: []string{
 			"--run-key=<deploy-run-key>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -620,6 +626,7 @@ var queryDocs = []queryDoc{
 			"--run-key=<deploy-run-key>",
 			"--search=<substring>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -644,6 +651,7 @@ var queryDocs = []queryDoc{
 			"--run-key=<deploy-run-key>",
 			"--search=<substring>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -666,6 +674,7 @@ var queryDocs = []queryDoc{
 			"--run-key=<deploy-run-key>",
 			"--search=<substring>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -686,6 +695,7 @@ var queryDocs = []queryDoc{
 		Optional: []string{
 			"--run-key=<deploy-run-key>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -706,6 +716,7 @@ var queryDocs = []queryDoc{
 		Optional: []string{
 			"--provider-run-id=<github-run-id>",
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -726,6 +737,7 @@ var queryDocs = []queryDoc{
 		Purpose: "Explicit recent mail events plus latest mail metrics.",
 		Optional: []string{
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -746,6 +758,7 @@ var queryDocs = []queryDoc{
 		Purpose: "Show recent SPIFFE mTLS, JWT-SVID, and OpenBao relying-party auth spans.",
 		Optional: []string{
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -766,6 +779,7 @@ var queryDocs = []queryDoc{
 		Purpose: "Show recent SPIRE server and agent logs.",
 		Optional: []string{
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -785,6 +799,7 @@ var queryDocs = []queryDoc{
 		Purpose: "Show recent Temporal auth spans, schema/bootstrap runs, service logs, and metric catalog rows.",
 		Optional: []string{
 			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
 			"--minutes=<lookback>",
 			"--limit=<rows>",
 			"--format=table|json|markdown",
@@ -832,7 +847,8 @@ func printIndex(cfg config) error {
 		},
 		TimeWindows: []string{
 			"--since=<duration-or-UTC> sets the start time for explicit operational queries. Examples: --since=2h, --since=7d, --since=2026-05-22T14:30:00Z.",
-			"--minutes=<n> remains the minute-count shorthand. Do not combine --since and --minutes.",
+			"--until=<duration-or-UTC> sets the end time for explicit operational queries. It defaults to now and accepts the same grammar as --since.",
+			"--minutes=<n> remains the minute-count shorthand for the lookback ending at --until. Do not combine --since and --minutes.",
 			"Overview and catalog queries keep their documented fixed windows.",
 		},
 		Operational: []string{

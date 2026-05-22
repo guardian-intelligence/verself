@@ -44,6 +44,24 @@ func TestParseSinceAbsoluteTimestampsAreUTC(t *testing.T) {
 	}
 }
 
+func TestParseUntilUsesSameGrammarAsSince(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	got, err := parseUntil("1h30m", now)
+	if err != nil {
+		t.Fatalf("parseUntil relative: %v", err)
+	}
+	if want := now.Add(-90 * time.Minute); !got.Equal(want) {
+		t.Fatalf("parseUntil relative = %s, want %s", got, want)
+	}
+	got, err = parseUntil("2026-05-22 10:30:00", now)
+	if err != nil {
+		t.Fatalf("parseUntil absolute: %v", err)
+	}
+	if want := time.Date(2026, 5, 22, 10, 30, 0, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("parseUntil absolute = %s, want %s", got, want)
+	}
+}
+
 func TestParseSinceRejectsMalformedRelativeDuration(t *testing.T) {
 	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
 	for _, input := range []string{"0m", "1x", "1h30"} {
@@ -55,6 +73,7 @@ func TestParseSinceRejectsMalformedRelativeDuration(t *testing.T) {
 
 func TestParseConfigRejectsSinceWithMinutes(t *testing.T) {
 	t.Setenv("SINCE", "")
+	t.Setenv("UNTIL", "")
 	t.Setenv("MINUTES", "")
 	_, err := parseConfig([]string{"--what=logs", "--since=2h", "--minutes=30"})
 	if err == nil {
@@ -65,11 +84,76 @@ func TestParseConfigRejectsSinceWithMinutes(t *testing.T) {
 	}
 }
 
-func TestBuildQueriesCarriesSinceParameter(t *testing.T) {
+func TestParseConfigAllowsUntilWithMinutes(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	t.Setenv("SINCE", "")
+	t.Setenv("UNTIL", "")
+	t.Setenv("MINUTES", "")
+	cfg, err := parseConfigAt([]string{"--what=logs", "--until=2h", "--minutes=30"}, now)
+	if err != nil {
+		t.Fatalf("parseConfigAt: %v", err)
+	}
+	wantUntil := now.Add(-2 * time.Hour)
+	if !cfg.until.Equal(wantUntil) {
+		t.Fatalf("until = %s, want %s", cfg.until, wantUntil)
+	}
+	if wantSince := wantUntil.Add(-30 * time.Minute); !cfg.since.Equal(wantSince) {
+		t.Fatalf("since = %s, want %s", cfg.since, wantSince)
+	}
+}
+
+func TestParseConfigAllowsSinceUntilWindow(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	t.Setenv("SINCE", "")
+	t.Setenv("UNTIL", "")
+	t.Setenv("MINUTES", "")
+	cfg, err := parseConfigAt([]string{"--what=logs", "--since=4h", "--until=2h"}, now)
+	if err != nil {
+		t.Fatalf("parseConfigAt: %v", err)
+	}
+	if want := now.Add(-4 * time.Hour); !cfg.since.Equal(want) {
+		t.Fatalf("since = %s, want %s", cfg.since, want)
+	}
+	if want := now.Add(-2 * time.Hour); !cfg.until.Equal(want) {
+		t.Fatalf("until = %s, want %s", cfg.until, want)
+	}
+}
+
+func TestParseConfigRejectsSinceAfterUntil(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	t.Setenv("SINCE", "")
+	t.Setenv("UNTIL", "")
+	t.Setenv("MINUTES", "")
+	_, err := parseConfigAt([]string{"--what=logs", "--since=1h", "--until=2h"}, now)
+	if err == nil {
+		t.Fatal("parseConfigAt accepted --since after --until")
+	}
+	if !strings.Contains(err.Error(), "--since must be before or equal to --until") {
+		t.Fatalf("parseConfigAt error = %q", err)
+	}
+}
+
+func TestParseConfigRejectsFutureUntil(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	t.Setenv("SINCE", "")
+	t.Setenv("UNTIL", "")
+	t.Setenv("MINUTES", "")
+	_, err := parseConfigAt([]string{"--what=logs", "--until=2026-05-22T13:00:02Z"}, now)
+	if err == nil {
+		t.Fatal("parseConfigAt accepted future --until")
+	}
+	if !strings.Contains(err.Error(), "--until must not be in the future") {
+		t.Fatalf("parseConfigAt error = %q", err)
+	}
+}
+
+func TestBuildQueriesCarriesWindowParameters(t *testing.T) {
 	since := time.Date(2026, 5, 22, 10, 30, 0, 123456789, time.UTC)
+	until := time.Date(2026, 5, 22, 11, 30, 0, 0, time.UTC)
 	queries, err := buildQueries(config{
 		what:  "logs",
 		since: since,
+		until: until,
 		limit: 10,
 	})
 	if err != nil {
@@ -81,10 +165,16 @@ func TestBuildQueriesCarriesSinceParameter(t *testing.T) {
 	if got := queries[0].params["since"]; got != "2026-05-22T10:30:00.123456789Z" {
 		t.Fatalf("since param = %q", got)
 	}
+	if got := queries[0].params["until"]; got != "2026-05-22T11:30:00Z" {
+		t.Fatalf("until param = %q", got)
+	}
 	if !queries[0].windowed {
 		t.Fatal("logs query was not marked windowed")
 	}
 	if !strings.Contains(queries[0].sql, "parseDateTime64BestEffort({since:String}") {
 		t.Fatalf("logs SQL does not use the since parameter:\n%s", queries[0].sql)
+	}
+	if !strings.Contains(queries[0].sql, "parseDateTime64BestEffort({until:String}") {
+		t.Fatalf("logs SQL does not use the until parameter:\n%s", queries[0].sql)
 	}
 }

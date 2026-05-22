@@ -3,7 +3,7 @@ This is a monorepo for the entire company and all software + infrastructure.
 
 The immediate goal of Verself is to make CI 10x faster across the industry, and to redefine how CI is thought of. Today, CI execution environments start from a clean slate, throwing out precious build artifacts that in many cases take hours to generate, and the standard GitHub golden path is to start a VM without having the repo even cloned. GitHub wins because CI takes forever and they charge by the minute. Our philosophy is that CI should start from a golden image of the deployed software: all build, lint, compilation, and intermediate artifacts intact. This means teaching developers that their CI VM should begin from a snapshot that preserves the same thing a developer machine preserves: hot Bazel server state plus the filesystem cache layout it expects.
 
-That meant:
+That means:
 * The CI path should stop acting like a sterile one-shot build machine.
 * Customers focus on making their developer/agent environments as fast as possible, and then CI becomes fast by default.
 * Bazel remote caches, complex S3 uploads and downloads to claw back build artifacts, and CI-specific cache commands all become obsolete.

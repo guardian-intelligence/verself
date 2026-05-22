@@ -61,6 +61,8 @@ type config struct {
 	host          string
 	sinceInput    string
 	since         time.Time
+	untilInput    string
+	until         time.Time
 	statusMin     uint
 	minutes       uint
 	limit         uint
@@ -153,6 +155,7 @@ func runObserveQueries(rt *opruntime.Runtime, chClient *opch.Client, cfg config,
 			attribute.String("observe.what", cfg.what),
 			attribute.String("observe.signal", cfg.signal),
 			attribute.String("observe.since", cfg.since.Format(time.RFC3339Nano)),
+			attribute.String("observe.until", cfg.until.Format(time.RFC3339Nano)),
 			attribute.String("verself.deploy_id", os.Getenv("VERSELF_DEPLOY_ID")),
 			attribute.String("verself.deploy_run_key", os.Getenv("VERSELF_DEPLOY_RUN_KEY")),
 		),
@@ -208,6 +211,11 @@ func runObserveQueries(rt *opruntime.Runtime, chClient *opch.Client, cfg config,
 }
 
 func parseConfig(args []string) (config, error) {
+	return parseConfigAt(args, time.Now().UTC())
+}
+
+func parseConfigAt(args []string, now time.Time) (config, error) {
+	now = now.UTC()
 	var cfg config
 	var format string
 	flags := flag.NewFlagSet("observe", flag.ContinueOnError)
@@ -231,6 +239,7 @@ func parseConfig(args []string) (config, error) {
 	flags.StringVar(&cfg.providerRunID, "provider-run-id", strings.TrimSpace(os.Getenv("PROVIDER_RUN_ID")), "GitHub provider run id to inspect")
 	flags.StringVar(&cfg.host, "host", strings.TrimSpace(os.Getenv("HOST")), "HTTP host filter")
 	flags.StringVar(&cfg.sinceInput, "since", strings.TrimSpace(os.Getenv("SINCE")), "window start for operational queries: relative duration (15m, 2h, 7d) or UTC timestamp")
+	flags.StringVar(&cfg.untilInput, "until", strings.TrimSpace(os.Getenv("UNTIL")), "window end for operational queries: relative duration (15m, 2h, 7d) or UTC timestamp")
 	defaults := envconfig.New()
 	flags.UintVar(&cfg.statusMin, "status-min", defaults.Uint("STATUS_MIN", 0), "minimum HTTP status")
 	flags.UintVar(&cfg.minutes, "minutes", defaults.Uint("MINUTES", 15), "lookback window for explicit operational queries")
@@ -262,6 +271,7 @@ func parseConfig(args []string) (config, error) {
 	cfg.providerRunID = strings.TrimSpace(cfg.providerRunID)
 	cfg.host = strings.TrimSpace(cfg.host)
 	cfg.sinceInput = strings.TrimSpace(cfg.sinceInput)
+	cfg.untilInput = strings.TrimSpace(cfg.untilInput)
 	cfg.site = strings.TrimSpace(cfg.site)
 	if cfg.mode == "" {
 		cfg.mode = "latest"
@@ -287,7 +297,17 @@ func parseConfig(args []string) (config, error) {
 	if cfg.minutes == 0 {
 		return cfg, errors.New("--minutes must be greater than zero")
 	}
-	now := time.Now().UTC()
+	cfg.until = now.UTC()
+	if cfg.untilInput != "" {
+		until, err := parseUntil(cfg.untilInput, now)
+		if err != nil {
+			return cfg, err
+		}
+		if until.After(now.Add(time.Second)) {
+			return cfg, errors.New("--until must not be in the future")
+		}
+		cfg.until = until.UTC()
+	}
 	if cfg.sinceInput != "" {
 		if visited["minutes"] || strings.TrimSpace(os.Getenv("MINUTES")) != "" {
 			return cfg, errors.New("--since and --minutes are mutually exclusive")
@@ -301,7 +321,10 @@ func parseConfig(args []string) (config, error) {
 		}
 		cfg.since = since.UTC()
 	} else {
-		cfg.since = now.Add(-time.Duration(cfg.minutes) * time.Minute)
+		cfg.since = cfg.until.Add(-time.Duration(cfg.minutes) * time.Minute)
+	}
+	if cfg.since.After(cfg.until) {
+		return cfg, errors.New("--since must be before or equal to --until")
 	}
 	if cfg.limit == 0 || cfg.limit > 500 {
 		return cfg, errors.New("--limit must be between 1 and 500")
@@ -336,13 +359,21 @@ func parseConfig(args []string) (config, error) {
 }
 
 func parseSince(value string, now time.Time) (time.Time, error) {
+	return parseWindowBound("--since", value, now)
+}
+
+func parseUntil(value string, now time.Time) (time.Time, error) {
+	return parseWindowBound("--until", value, now)
+}
+
+func parseWindowBound(flagName, value string, now time.Time) (time.Time, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return time.Time{}, errors.New("--since must not be empty")
+		return time.Time{}, fmt.Errorf("%s must not be empty", flagName)
 	}
-	if d, ok, err := parseRelativeSince(value); ok || err != nil {
+	if d, ok, err := parseRelativeWindowDuration(value); ok || err != nil {
 		if err != nil {
-			return time.Time{}, fmt.Errorf("--since: %w", err)
+			return time.Time{}, fmt.Errorf("%s: %w", flagName, err)
 		}
 		return now.UTC().Add(-d), nil
 	}
@@ -361,10 +392,10 @@ func parseSince(value string, now time.Time) (time.Time, error) {
 			return t.UTC(), nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("--since must be a relative duration like 2h or 7d, or a UTC timestamp like 2026-05-22T14:30:00Z")
+	return time.Time{}, fmt.Errorf("%s must be a relative duration like 2h or 7d, or a UTC timestamp like 2026-05-22T14:30:00Z", flagName)
 }
 
-func parseRelativeSince(value string) (time.Duration, bool, error) {
+func parseRelativeWindowDuration(value string) (time.Duration, bool, error) {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if value == "" || value[0] < '0' || value[0] > '9' {
 		return 0, false, nil
@@ -547,8 +578,8 @@ func runQuery(ctx context.Context, logger *slog.Logger, chClient *opch.Client, c
 func printEmptyHint(cfg config, q query) {
 	var message string
 	if q.windowed {
-		if cfg.sinceInput != "" {
-			message = fmt.Sprintf("0 rows since %s.", cfg.since.Format(time.RFC3339))
+		if cfg.sinceInput != "" || cfg.untilInput != "" {
+			message = fmt.Sprintf("0 rows from %s through %s.", cfg.since.Format(time.RFC3339), cfg.until.Format(time.RFC3339))
 		} else {
 			unit := "minutes"
 			if cfg.minutes == 1 {

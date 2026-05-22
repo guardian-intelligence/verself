@@ -10,6 +10,7 @@ filegroup(
             "handlers/**",
             "meta/**",
             "migrations/**",
+            "roles/**",
             "tasks/**",
             "templates/**",
             "vars/**",

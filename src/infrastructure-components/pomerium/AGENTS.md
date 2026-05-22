@@ -1,0 +1,1 @@
+Pomerium risks lockout/downtime so we manage Pomerium deployment manually.
