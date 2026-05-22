@@ -49,6 +49,8 @@ func runDBRuntimeWithClickHouse(command string, opts dbRuntimeOptions, interacti
 		Site:           opts.site,
 		NeedSSH:        true,
 		NeedOTel:       true,
+		Interactive:    interactive,
+		UseRecovery:    operatorUseRecovery(),
 	}, func(rt *opruntime.Runtime) error {
 		ch, err := opch.OpenOperator(rt.Ctx, rt, chConfig)
 		if err != nil {
