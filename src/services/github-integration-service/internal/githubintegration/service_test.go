@@ -89,3 +89,33 @@ func TestParseWebhookMetadata(t *testing.T) {
 		t.Fatalf("unexpected metadata: %+v", meta)
 	}
 }
+
+func TestSandboxObservationFromWebhookUsesOnlyProviderObservedRunner(t *testing.T) {
+	var event workflowJobWebhook
+	event.Action = "queued"
+	event.Installation.ID = 123
+	event.Repository.ID = 456
+	event.Repository.FullName = "guardian-intelligence/verself-sh"
+	event.WorkflowJob = workflowJobPayload{
+		ID:         789,
+		RunID:      111,
+		RunAttempt: 2,
+		Status:     "queued",
+		Labels:     []string{"self-hosted", "linux", "x64", "verself-4vcpu-ubuntu-2404"},
+	}
+	queued := sandboxObservationFromWebhook(event, "delivery-1")
+	if queued.RunnerID != nil || queued.RunnerName != nil {
+		t.Fatalf("queued observation leaked JIT runner intent: runner_id=%v runner_name=%v", queued.RunnerID, queued.RunnerName)
+	}
+
+	event.WorkflowJob.Status = "in_progress"
+	event.WorkflowJob.RunnerID = 987
+	event.WorkflowJob.RunnerName = "verself-789-abcdef1234"
+	assigned := sandboxObservationFromWebhook(event, "delivery-2")
+	if assigned.RunnerID == nil || string(*assigned.RunnerID) != "987" {
+		t.Fatalf("assigned observation runner_id = %v, want 987", assigned.RunnerID)
+	}
+	if assigned.RunnerName == nil || string(*assigned.RunnerName) != "verself-789-abcdef1234" {
+		t.Fatalf("assigned observation runner_name = %v", assigned.RunnerName)
+	}
+}

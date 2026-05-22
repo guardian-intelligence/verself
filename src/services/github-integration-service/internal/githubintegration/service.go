@@ -40,6 +40,8 @@ const (
 	defaultRunnerWorkFolder = "_work"
 	defaultRunnerPrefix     = "verself-"
 	maxWebhookBytes         = 1 << 20
+
+	runnerRegistrationRetryAfter = 95 * time.Second
 )
 
 var (
@@ -282,6 +284,9 @@ func (s *Service) RunWorker(ctx context.Context) error {
 		if err := s.ProcessReadyDeliveries(ctx); err != nil && s.cfg.Logger != nil {
 			s.cfg.Logger.WarnContext(ctx, "github delivery processing failed", "error", err)
 		}
+		if err := s.ProcessQueuedJobs(ctx); err != nil && s.cfg.Logger != nil {
+			s.cfg.Logger.WarnContext(ctx, "github queued job reconciliation failed", "error", err)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -304,6 +309,40 @@ func (s *Service) ProcessReadyDeliveries(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Service) ProcessQueuedJobs(ctx context.Context) error {
+	rows, err := s.queries.ListQueuedWorkflowJobsForRunnerSubmission(ctx, store.ListQueuedWorkflowJobsForRunnerSubmissionParams{
+		RetryBefore: pgTime(time.Now().UTC().Add(-runnerRegistrationRetryAfter)),
+		LimitCount:  s.cfg.WorkerBatchSize,
+	})
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, row := range rows {
+		event, err := workflowJobWebhookFromQueuedRow(row)
+		if err != nil {
+			firstErr = errors.Join(firstErr, err)
+			continue
+		}
+		runnerClass, err := s.runnerClassForLabels(event.WorkflowJob.Labels)
+		if err != nil {
+			continue
+		}
+		deliveryID := fmt.Sprintf("reconcile:%d:%d", event.WorkflowJob.RunID, event.WorkflowJob.ID)
+		started := time.Now().UTC()
+		meta := metadataFromWorkflowJob(deliveryID, event)
+		meta.RunnerClass = runnerClass
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "started", row.RegistrationState, started, started))
+		if err := s.submitQueuedJob(ctx, event, deliveryID); err != nil {
+			firstErr = errors.Join(firstErr, fmt.Errorf("submit queued github job %d: %w", event.WorkflowJob.ID, err))
+			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_failed", "failed", err.Error(), started, time.Now().UTC()))
+			continue
+		}
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "succeeded", row.RegistrationState, started, time.Now().UTC()))
+	}
+	return firstErr
 }
 
 func (s *Service) processLockedDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
@@ -443,6 +482,25 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		if err := s.observeSandboxWorkflowRun(ctx, workflow); err != nil {
 			return err
 		}
+		job, ok, err := s.fetchWorkflowRunJob(ctx, event.Installation.ID, event.Repository.ID, event.Repository.FullName, event.WorkflowJob.RunID, workflow.ProviderRunAttempt, event.WorkflowJob.ID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("%w: workflow job %d not found in provider run %d attempt %d", ErrWebhookRejected, event.WorkflowJob.ID, event.WorkflowJob.RunID, workflow.ProviderRunAttempt)
+		}
+		if err := s.persistWorkflowJobFromAPI(ctx, event.Installation.ID, event.Repository.ID, event.Repository.FullName, job, deliveryID, time.Now().UTC()); err != nil {
+			return err
+		}
+		if job.Status != "queued" {
+			if err := s.observeSandboxJob(ctx, sandboxObservationFromAPI(event.Installation.ID, event.Repository.ID, event.Repository.FullName, job, deliveryID), workflow); err != nil {
+				return err
+			}
+			meta := metadataFromAPIJob(deliveryID, event.Installation.ID, event.Repository.ID, event.Repository.FullName, job)
+			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.ignored", "ignored", "provider_status:"+job.Status, started, time.Now().UTC()))
+			return nil
+		}
+		event.WorkflowJob = workflowJobPayloadFromAPI(job)
 	}
 	cacheManifest, err := s.cacheManifestForWorkflow(ctx, event.Installation.ID, event.Repository.FullName, workflow)
 	if err != nil {
@@ -482,7 +540,7 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.registration.created", "succeeded", "", started, now))
 
 	req := sandboxrentalclient.InternalSubmitRunnerJobRequest{Body: sandboxrentalclient.InternalSubmitRunnerJobInputBody{
-		Observation:      sandboxObservationFromWebhook(event, deliveryID, runnerID, runnerName),
+		Observation:      sandboxObservationFromWebhook(event, deliveryID),
 		RunnerName:       sandboxrentalclient.RunnerName(runnerName),
 		RunnerID:         decimalPtr(runnerID),
 		BootstrapKind:    sandboxrentalclient.RunnerBootstrapKind("github_jit"),
@@ -572,6 +630,38 @@ func githubCacheManifestRef(workflow workflowObservation) string {
 	return "main"
 }
 
+func (s *Service) fetchWorkflowRunJob(ctx context.Context, installationID, repositoryID int64, repositoryFullName string, runID, runAttempt, jobID int64) (githubWorkflowJob, bool, error) {
+	jobs, err := s.fetchWorkflowRunJobs(ctx, installationID, repositoryID, repositoryFullName, runID, runAttempt)
+	if err != nil {
+		return githubWorkflowJob{}, false, err
+	}
+	for _, job := range jobs {
+		if job.ID == jobID {
+			return job, true, nil
+		}
+	}
+	return githubWorkflowJob{}, false, nil
+}
+
+func workflowJobPayloadFromAPI(job githubWorkflowJob) workflowJobPayload {
+	return workflowJobPayload{
+		ID:           job.ID,
+		RunID:        job.RunID,
+		RunAttempt:   job.RunAttempt,
+		Name:         job.Name,
+		Status:       job.Status,
+		Conclusion:   job.Conclusion,
+		Labels:       append([]string(nil), job.Labels...),
+		RunnerID:     job.RunnerID,
+		RunnerName:   job.RunnerName,
+		HeadSHA:      job.HeadSHA,
+		HeadBranch:   job.HeadBranch,
+		WorkflowName: job.WorkflowName,
+		StartedAt:    job.StartedAt,
+		CompletedAt:  job.CompletedAt,
+	}
+}
+
 func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, repositoryID int64, repositoryFullName string, runID, runAttempt int64, deliveryID string) error {
 	started := time.Now().UTC()
 	s.writeEvent(ctx, githubEvent{
@@ -618,6 +708,9 @@ func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, reposit
 		if err := s.persistWorkflowJobFromAPI(ctx, installationID, repositoryID, repositoryFullName, job, deliveryID, time.Now().UTC()); err != nil {
 			return err
 		}
+		if err := s.recordRunnerAssignment(ctx, installationID, repositoryID, repositoryFullName, job, deliveryID, started); err != nil {
+			return err
+		}
 		obs := sandboxObservationFromAPI(installationID, repositoryID, repositoryFullName, job, deliveryID)
 		if err := s.observeSandboxJob(ctx, obs, workflow); err != nil {
 			return err
@@ -650,6 +743,61 @@ func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, reposit
 		StartedAt:              started,
 		CompletedAt:            time.Now().UTC(),
 	})
+	return nil
+}
+
+func (s *Service) recordRunnerAssignment(ctx context.Context, installationID, repositoryID int64, repositoryFullName string, job githubWorkflowJob, deliveryID string, started time.Time) error {
+	runnerName := strings.TrimSpace(job.RunnerName)
+	if runnerName == "" {
+		return nil
+	}
+	reg, err := s.queries.GetRunnerRegistrationByRunnerName(ctx, store.GetRunnerRegistrationByRunnerNameParams{RunnerName: runnerName})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if reg.ProviderJobID == job.ID {
+		return nil
+	}
+	now := time.Now().UTC()
+	reason := fmt.Sprintf("runner assigned to provider job %d", job.ID)
+	if err := s.queries.MarkRunnerRegistrationDisplaced(ctx, store.MarkRunnerRegistrationDisplacedParams{
+		ProviderJobID: reg.ProviderJobID,
+		FailureReason: truncate(reason, 1024),
+		UpdatedAt:     pgTime(now),
+	}); err != nil {
+		return err
+	}
+	s.writeEvent(ctx, githubEvent{
+		ObservedAt:             now,
+		EventName:              "github.runner.registration.displaced",
+		Result:                 "displaced",
+		Reason:                 reason,
+		DeliveryID:             deliveryID,
+		ProviderInstallationID: uint64FromInt64(installationID),
+		ProviderRepositoryID:   uint64FromInt64(repositoryID),
+		ProviderRunID:          uint64FromInt64(job.RunID),
+		ProviderRunAttempt:     uint64FromInt64(job.RunAttempt),
+		ProviderJobID:          uint64FromInt64(reg.ProviderJobID),
+		RepositoryFullName:     repositoryFullName,
+		RunnerID:               uint64FromInt64(job.RunnerID),
+		RunnerName:             runnerName,
+		RunnerClass:            reg.RunnerClass,
+		StartedAt:              started,
+		CompletedAt:            now,
+		AttributesJSON: mustJSON(map[string]string{
+			"assigned_provider_job_id": strconv.FormatInt(job.ID, 10),
+			"registration_state":       reg.State,
+		}),
+	})
+	if job.Status == "completed" && reg.RunnerID != 0 {
+		owner, _, ok := strings.Cut(repositoryFullName, "/")
+		if ok && owner != "" {
+			_ = s.deleteRunner(ctx, installationID, owner, reg.RunnerID)
+		}
+	}
 	return nil
 }
 
@@ -890,4 +1038,40 @@ func truncate(value string, limit int) string {
 		return value
 	}
 	return value[:limit]
+}
+
+func workflowJobWebhookFromQueuedRow(row store.ListQueuedWorkflowJobsForRunnerSubmissionRow) (workflowJobWebhook, error) {
+	var labels []string
+	if len(row.LabelsJson) > 0 {
+		if err := json.Unmarshal(row.LabelsJson, &labels); err != nil {
+			return workflowJobWebhook{}, err
+		}
+	}
+	var event workflowJobWebhook
+	event.Action = "queued"
+	event.Installation.ID = row.ProviderInstallationID
+	event.Repository.ID = row.ProviderRepositoryID
+	event.Repository.FullName = row.RepositoryFullName
+	event.WorkflowJob = workflowJobPayload{
+		ID:           row.ProviderJobID,
+		RunID:        row.ProviderRunID,
+		RunAttempt:   row.ProviderRunAttempt,
+		Name:         row.JobName,
+		Status:       row.Status,
+		Conclusion:   row.Conclusion,
+		Labels:       labels,
+		HeadSHA:      row.HeadSha,
+		HeadBranch:   row.HeadBranch,
+		WorkflowName: row.WorkflowName,
+		StartedAt:    timeFromPG(row.StartedAt),
+		CompletedAt:  timeFromPG(row.CompletedAt),
+	}
+	return event, nil
+}
+
+func timeFromPG(value pgtype.Timestamptz) time.Time {
+	if !value.Valid {
+		return time.Time{}
+	}
+	return value.Time.UTC()
 }

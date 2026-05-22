@@ -349,12 +349,56 @@ SET state = 'cleaned',
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id;
 
+-- name: MarkRunnerRegistrationDisplaced :exec
+UPDATE github_runner_registrations
+SET state = 'displaced',
+    failure_reason = @failure_reason,
+    updated_at = @updated_at
+WHERE provider_job_id = @provider_job_id;
+
 -- name: GetRunnerRegistrationForJob :one
 SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,
        runner_name, runner_class, sandbox_allocation_id, sandbox_execution_id,
        sandbox_attempt_id, state
 FROM github_runner_registrations
 WHERE provider_job_id = @provider_job_id;
+
+-- name: GetRunnerRegistrationByRunnerName :one
+SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,
+       runner_name, runner_class, sandbox_allocation_id, sandbox_execution_id,
+       sandbox_attempt_id, state
+FROM github_runner_registrations
+WHERE runner_name = @runner_name;
+
+-- name: ListQueuedWorkflowJobsForRunnerSubmission :many
+SELECT
+    j.provider_job_id,
+    j.provider_installation_id,
+    j.provider_repository_id,
+    j.repository_full_name,
+    j.provider_run_id,
+    j.provider_run_attempt,
+    j.job_name,
+    j.head_sha,
+    j.head_branch,
+    j.workflow_name,
+    j.status,
+    j.conclusion,
+    j.labels_json,
+    j.started_at,
+    j.completed_at,
+    COALESCE(r.state, '')::text AS registration_state,
+    r.updated_at AS registration_updated_at
+FROM github_workflow_jobs j
+LEFT JOIN github_runner_registrations r ON r.provider_job_id = j.provider_job_id
+WHERE j.status = 'queued'
+  AND (
+        r.provider_job_id IS NULL
+     OR r.state IN ('failed', 'cleaned', 'displaced')
+     OR r.updated_at <= @retry_before
+  )
+ORDER BY j.updated_at ASC, j.provider_job_id ASC
+LIMIT @limit_count;
 
 -- name: InsertTerminalJobEvidence :exec
 INSERT INTO github_terminal_job_evidence (

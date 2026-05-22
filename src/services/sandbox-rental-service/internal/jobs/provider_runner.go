@@ -108,8 +108,6 @@ func (s *Service) SubmitProviderRunnerJob(ctx context.Context, req ProviderRunne
 	if req.RunnerName == "" {
 		return ProviderRunnerJobSubmissionResult{}, fmt.Errorf("%w: runner name is required", ErrRunnerUnavailable)
 	}
-	req.Observation.RunnerName = firstNonEmpty(req.Observation.RunnerName, req.RunnerName)
-	req.Observation.RunnerID = firstNonZero(req.Observation.RunnerID, req.RunnerID)
 	if err := s.upsertProviderRunnerJob(ctx, req.Observation); err != nil {
 		return ProviderRunnerJobSubmissionResult{}, err
 	}

@@ -11,6 +11,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getRunnerRegistrationByRunnerName = `-- name: GetRunnerRegistrationByRunnerName :one
+SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,
+       runner_name, runner_class, sandbox_allocation_id, sandbox_execution_id,
+       sandbox_attempt_id, state
+FROM github_runner_registrations
+WHERE runner_name = $1
+`
+
+type GetRunnerRegistrationByRunnerNameParams struct {
+	RunnerName string
+}
+
+type GetRunnerRegistrationByRunnerNameRow struct {
+	ProviderJobID          int64
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RunnerID               int64
+	RunnerName             string
+	RunnerClass            string
+	SandboxAllocationID    pgtype.UUID
+	SandboxExecutionID     pgtype.UUID
+	SandboxAttemptID       pgtype.UUID
+	State                  string
+}
+
+func (q *Queries) GetRunnerRegistrationByRunnerName(ctx context.Context, arg GetRunnerRegistrationByRunnerNameParams) (GetRunnerRegistrationByRunnerNameRow, error) {
+	row := q.db.QueryRow(ctx, getRunnerRegistrationByRunnerName, arg.RunnerName)
+	var i GetRunnerRegistrationByRunnerNameRow
+	err := row.Scan(
+		&i.ProviderJobID,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.RunnerID,
+		&i.RunnerName,
+		&i.RunnerClass,
+		&i.SandboxAllocationID,
+		&i.SandboxExecutionID,
+		&i.SandboxAttemptID,
+		&i.State,
+	)
+	return i, err
+}
+
 const getRunnerRegistrationForJob = `-- name: GetRunnerRegistrationForJob :one
 SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,
        runner_name, runner_class, sandbox_allocation_id, sandbox_execution_id,
@@ -109,6 +152,100 @@ func (q *Queries) InsertTerminalJobEvidence(ctx context.Context, arg InsertTermi
 		arg.ObservedAt,
 	)
 	return err
+}
+
+const listQueuedWorkflowJobsForRunnerSubmission = `-- name: ListQueuedWorkflowJobsForRunnerSubmission :many
+SELECT
+    j.provider_job_id,
+    j.provider_installation_id,
+    j.provider_repository_id,
+    j.repository_full_name,
+    j.provider_run_id,
+    j.provider_run_attempt,
+    j.job_name,
+    j.head_sha,
+    j.head_branch,
+    j.workflow_name,
+    j.status,
+    j.conclusion,
+    j.labels_json,
+    j.started_at,
+    j.completed_at,
+    COALESCE(r.state, '')::text AS registration_state,
+    r.updated_at AS registration_updated_at
+FROM github_workflow_jobs j
+LEFT JOIN github_runner_registrations r ON r.provider_job_id = j.provider_job_id
+WHERE j.status = 'queued'
+  AND (
+        r.provider_job_id IS NULL
+     OR r.state IN ('failed', 'cleaned', 'displaced')
+     OR r.updated_at <= $1
+  )
+ORDER BY j.updated_at ASC, j.provider_job_id ASC
+LIMIT $2
+`
+
+type ListQueuedWorkflowJobsForRunnerSubmissionParams struct {
+	RetryBefore pgtype.Timestamptz
+	LimitCount  int32
+}
+
+type ListQueuedWorkflowJobsForRunnerSubmissionRow struct {
+	ProviderJobID          int64
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	JobName                string
+	HeadSha                string
+	HeadBranch             string
+	WorkflowName           string
+	Status                 string
+	Conclusion             string
+	LabelsJson             []byte
+	StartedAt              pgtype.Timestamptz
+	CompletedAt            pgtype.Timestamptz
+	RegistrationState      string
+	RegistrationUpdatedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) ListQueuedWorkflowJobsForRunnerSubmission(ctx context.Context, arg ListQueuedWorkflowJobsForRunnerSubmissionParams) ([]ListQueuedWorkflowJobsForRunnerSubmissionRow, error) {
+	rows, err := q.db.Query(ctx, listQueuedWorkflowJobsForRunnerSubmission, arg.RetryBefore, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListQueuedWorkflowJobsForRunnerSubmissionRow{}
+	for rows.Next() {
+		var i ListQueuedWorkflowJobsForRunnerSubmissionRow
+		if err := rows.Scan(
+			&i.ProviderJobID,
+			&i.ProviderInstallationID,
+			&i.ProviderRepositoryID,
+			&i.RepositoryFullName,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.JobName,
+			&i.HeadSha,
+			&i.HeadBranch,
+			&i.WorkflowName,
+			&i.Status,
+			&i.Conclusion,
+			&i.LabelsJson,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.RegistrationState,
+			&i.RegistrationUpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockReadyDeliveries = `-- name: LockReadyDeliveries :many
@@ -338,6 +475,25 @@ type MarkRunnerRegistrationCleanedParams struct {
 
 func (q *Queries) MarkRunnerRegistrationCleaned(ctx context.Context, arg MarkRunnerRegistrationCleanedParams) error {
 	_, err := q.db.Exec(ctx, markRunnerRegistrationCleaned, arg.UpdatedAt, arg.ProviderJobID)
+	return err
+}
+
+const markRunnerRegistrationDisplaced = `-- name: MarkRunnerRegistrationDisplaced :exec
+UPDATE github_runner_registrations
+SET state = 'displaced',
+    failure_reason = $1,
+    updated_at = $2
+WHERE provider_job_id = $3
+`
+
+type MarkRunnerRegistrationDisplacedParams struct {
+	FailureReason string
+	UpdatedAt     pgtype.Timestamptz
+	ProviderJobID int64
+}
+
+func (q *Queries) MarkRunnerRegistrationDisplaced(ctx context.Context, arg MarkRunnerRegistrationDisplacedParams) error {
+	_, err := q.db.Exec(ctx, markRunnerRegistrationDisplaced, arg.FailureReason, arg.UpdatedAt, arg.ProviderJobID)
 	return err
 }
 

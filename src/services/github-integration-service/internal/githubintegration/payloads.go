@@ -223,7 +223,7 @@ func (s *Service) persistWorkflowRun(ctx context.Context, workflow workflowObser
 	})
 }
 
-func sandboxObservationFromWebhook(event workflowJobWebhook, deliveryID string, runnerID int64, runnerName string) sandboxrentalclient.RunnerJobObservation {
+func sandboxObservationFromWebhook(event workflowJobWebhook, deliveryID string) sandboxrentalclient.RunnerJobObservation {
 	runID := sandboxrentalclient.DecimalUint64(fmt.Sprintf("%d", event.WorkflowJob.RunID))
 	runAttempt := sandboxrentalclient.DecimalUint64(fmt.Sprintf("%d", event.WorkflowJob.RunAttempt))
 	installationID := sandboxrentalclient.DecimalUint64(fmt.Sprintf("%d", event.Installation.ID))
@@ -242,8 +242,8 @@ func sandboxObservationFromWebhook(event workflowJobWebhook, deliveryID string, 
 		Status:                 firstNonEmpty(event.WorkflowJob.Status, event.Action),
 		Conclusion:             stringPtr[string](event.WorkflowJob.Conclusion),
 		Labels:                 sandboxrentalclient.RunnerLabels(event.WorkflowJob.Labels),
-		RunnerID:               decimalPtr(runnerID),
-		RunnerName:             stringPtr[sandboxrentalclient.RunnerName](runnerName),
+		RunnerID:               decimalPtr(event.WorkflowJob.RunnerID),
+		RunnerName:             stringPtr[sandboxrentalclient.RunnerName](event.WorkflowJob.RunnerName),
 		StartedAt:              timePtr(event.WorkflowJob.StartedAt),
 		CompletedAt:            timePtr(event.WorkflowJob.CompletedAt),
 		DeliveryID:             stringPtr[sandboxrentalclient.CorrelationId](deliveryID),
