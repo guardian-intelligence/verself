@@ -21,7 +21,9 @@ This repo is constructed to provide this solution as a suite of layered software
 * Prebuilt clients that call our SDK (website/mobile app/cli)
 * Integrations between other services the user already has entitlements to and our software offerings (GitHub App/VSCode Extensions) usually highly specific to a particular client.
 
-The SDK allows folks to build their own clients and platforms on top of our raw software offerings and to script usage of Verself in whatever language an agent wants to use (currently only Go/TypeScript supported, Python support soon)
+The SDK allows folks to build their own clients and platforms on top of our raw software offerings and to script usage of Verself in whatever language an agent wants to use (currently only Go/TypeScript supported, Python support soon).
+
+Note that the SDK layer today is only 1-2% implemented to the level of rigor it should be.
 
 The objective behind all architectural decisions are to maximize adherence to the following ideas:
 
