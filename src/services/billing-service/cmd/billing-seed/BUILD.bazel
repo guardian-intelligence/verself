@@ -25,7 +25,9 @@ go_test(
     srcs = ["seed_integration_test.go"],
     embed = [":billing-seed_lib"],
     tags = [
+        "external",
         "integration",
+        "no-sandbox",
         "postgres",
     ],
     deps = [
