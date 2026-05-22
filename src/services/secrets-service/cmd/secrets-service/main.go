@@ -172,12 +172,18 @@ func run() error {
 				secretsclient.BillingStripeSecretKeyName,
 				secretsclient.BillingStripeWebhookSecretName,
 			}},
-			{Service: workloadauth.ServiceSandboxRental, SecretNamePrefixes: []string{
+			{Service: workloadauth.ServiceSandboxRental, SecretNames: []string{
+				secretsclient.SandboxForgejoAutomationTokenName,
+			}, SecretNamePrefixes: []string{
 				secretsclient.SandboxRunnerBootstrapSecretPrefix,
 			}},
 			{Service: workloadauth.ServiceGitHubIntegration, SecretNames: []string{
 				secretsclient.GitHubIntegrationPrivateKeyName,
 				secretsclient.GitHubIntegrationWebhookSecretName,
+			}},
+			{Service: workloadauth.ServiceIAM, SecretNames: []string{
+				secretsclient.IAMSpiceDBPresharedKeyName,
+				secretsclient.IAMZitadelAdminTokenName,
 			}},
 			{Service: workloadauth.ServiceMailbox, SecretNames: []string{
 				secretsclient.MailboxResendAPIKeyName,
@@ -185,6 +191,12 @@ func run() error {
 			}},
 			{Service: workloadauth.ServiceNotifications, SecretNames: []string{
 				secretsclient.NotificationsResendAPIKeyName,
+			}},
+			{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
+				secretsclient.ObjectStorageGarageAdminTokenName,
+			}},
+			{Service: workloadauth.ServiceSourceCodeHosting, SecretNames: []string{
+				secretsclient.SourceForgejoAutomationTokenName,
 			}},
 		},
 		RuntimeSecretWritePolicies: []secretsapi.RuntimeSecretPolicy{

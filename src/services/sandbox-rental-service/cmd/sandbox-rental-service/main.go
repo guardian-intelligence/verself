@@ -99,7 +99,6 @@ func run() error {
 	forgejoAPIBaseURL := cfg.URL("SANDBOX_FORGEJO_API_BASE_URL", "")
 	forgejoRunnerBaseURL := cfg.String("SANDBOX_FORGEJO_RUNNER_BASE_URL", "")
 	forgejoWebhookBaseURL := cfg.String("SANDBOX_FORGEJO_WEBHOOK_BASE_URL", publicBaseURL)
-	forgejoToken := cfg.CredentialOr("forgejo-token", "")
 	forgejoWebhookSecret := cfg.CredentialOr("forgejo-webhook-secret", "")
 	forgejoBootstrapSecret := cfg.CredentialOr("forgejo-bootstrap-secret", "")
 	runnerBootstrapSecret := cfg.CredentialOr("runner-bootstrap-secret", forgejoBootstrapSecret)
@@ -228,6 +227,10 @@ func run() error {
 	secretsClient, err := secretsclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
 	if err != nil {
 		return fmt.Errorf("create secrets client: %w", err)
+	}
+	forgejoToken, err := readRuntimeSecret(ctx, secretsClient, secretsclient.SandboxForgejoAutomationTokenName)
+	if err != nil {
+		return fmt.Errorf("sandbox forgejo provider secret: %w", err)
 	}
 	sourceHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSourceCodeHosting, nil)
 	if err != nil {
@@ -401,6 +404,26 @@ func int32FromInt(value int, field string) int32 {
 		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
 	}
 	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
+}
+
+func readRuntimeSecret(ctx context.Context, client *secretsclient.Client, name secretsclient.SecretName) (string, error) {
+	if client == nil {
+		return "", fmt.Errorf("runtime secrets client is required")
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: name})
+	if err != nil {
+		return "", fmt.Errorf("read runtime secret %s: %w", name, err)
+	}
+	if resp.Result == nil {
+		return "", fmt.Errorf("read runtime secret %s: unexpected status %d: %s", name, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+	}
+	value := strings.TrimSpace(string(resp.Result.Value))
+	if value == "" {
+		return "", fmt.Errorf("read runtime secret %s: empty value", name)
+	}
+	return value, nil
 }
 
 func validatePublicBaseURL(raw string) error {

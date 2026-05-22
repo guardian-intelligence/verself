@@ -24,6 +24,7 @@ import (
 	iamschema "github.com/verself/iam-service/schema"
 	notificationsinternalclient "github.com/verself/notifications-service/internalclient"
 	verselfotel "github.com/verself/observability/otel"
+	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
@@ -150,6 +151,26 @@ func appendOwnerBinding(bindings []authz.PolicyBinding, ownerMember string) []au
 	return append(out, authz.PolicyBinding{Role: "roles/owner", Members: []string{ownerMember}})
 }
 
+func readRuntimeSecret(ctx context.Context, client *secretsclient.Client, name secretsclient.SecretName) (string, error) {
+	if client == nil {
+		return "", fmt.Errorf("runtime secrets client is required")
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: name})
+	if err != nil {
+		return "", fmt.Errorf("read runtime secret %s: %w", name, err)
+	}
+	if resp.Result == nil {
+		return "", fmt.Errorf("read runtime secret %s: unexpected status %d: %s", name, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+	}
+	value := strings.TrimSpace(string(resp.Result.Value))
+	if value == "" {
+		return "", fmt.Errorf("read runtime secret %s: empty value", name)
+	}
+	return value, nil
+}
+
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -167,7 +188,6 @@ func run() error {
 	cfg := envconfig.New()
 	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
-	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
 	browserOIDCClientID := cfg.RequireCredential("oidc-client-id")
 	browserOIDCClientSecret := cfg.RequireCredential("oidc-client-secret")
@@ -183,7 +203,6 @@ func run() error {
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IAM_ZITADEL_HOST")
 	spiceDBEndpoint := cfg.RequireString("IAM_SPICEDB_GRPC_ENDPOINT")
-	spiceDBPresharedKey := cfg.RequireCredential("spicedb-grpc-preshared-key")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
 		return err
@@ -194,6 +213,32 @@ func run() error {
 		return fmt.Errorf("open postgres: %w", err)
 	}
 	defer pg.Close()
+
+	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	if err != nil {
+		return fmt.Errorf("iam spiffe workload source: %w", err)
+	}
+	defer func() {
+		if err := spiffeSource.Close(); err != nil {
+			logger.ErrorContext(context.Background(), "iam-service spiffe source close", "error", err)
+		}
+	}()
+	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
+	if err != nil {
+		return fmt.Errorf("iam secrets mtls: %w", err)
+	}
+	secretsClient, err := secretsclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
+	if err != nil {
+		return fmt.Errorf("iam secrets client: %w", err)
+	}
+	zitadelAdminToken, err := readRuntimeSecret(ctx, secretsClient, secretsclient.IAMZitadelAdminTokenName)
+	if err != nil {
+		return fmt.Errorf("iam zitadel provider secret: %w", err)
+	}
+	spiceDBPresharedKey, err := readRuntimeSecret(ctx, secretsClient, secretsclient.IAMSpiceDBPresharedKeyName)
+	if err != nil {
+		return fmt.Errorf("iam spicedb provider secret: %w", err)
+	}
 
 	zitadelClient, err := zitadel.New(zitadel.Config{
 		BaseURL:    zitadelBaseURL,
@@ -207,15 +252,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
-	if err != nil {
-		return fmt.Errorf("iam spiffe workload source: %w", err)
-	}
-	defer func() {
-		if err := spiffeSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), "iam-service spiffe source close", "error", err)
-		}
-	}()
 	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
 	if err != nil {
 		return fmt.Errorf("iam clickhouse tls: %w", err)

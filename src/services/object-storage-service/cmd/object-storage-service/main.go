@@ -25,6 +25,7 @@ import (
 	"github.com/verself/object-storage-service/internal/objectstorage"
 	"github.com/verself/object-storage-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
+	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
@@ -147,7 +148,6 @@ func runAdmin(
 	authIssuerURL := l.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := l.RequireCredential("auth-audience")
 	garageAdminURLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_URLS"))
-	garageAdminToken := l.RequireCredential("garage-admin-token")
 	proxyAccessKeyID := l.RequireCredential("garage-proxy-access-key-id")
 	if err := l.Err(); err != nil {
 		return err
@@ -164,6 +164,18 @@ func runAdmin(
 	iamClient, err := iamclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
 	if err != nil {
 		return fmt.Errorf("object-storage iam client: %w", err)
+	}
+	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
+	if err != nil {
+		return fmt.Errorf("object-storage secrets mtls: %w", err)
+	}
+	secretsClient, err := secretsclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
+	if err != nil {
+		return fmt.Errorf("object-storage secrets client: %w", err)
+	}
+	garageAdminToken, err := readRuntimeSecret(ctx, secretsClient, secretsclient.ObjectStorageGarageAdminTokenName)
+	if err != nil {
+		return err
 	}
 	garageAdminHTTPClient := &http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
@@ -237,6 +249,26 @@ func isUnauthenticatedObjectStorageAdminPath(path string) bool {
 		return true
 	}
 	return strings.HasPrefix(path, "/openapi")
+}
+
+func readRuntimeSecret(ctx context.Context, client *secretsclient.Client, name secretsclient.SecretName) (string, error) {
+	if client == nil {
+		return "", fmt.Errorf("runtime secrets client is required")
+	}
+	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: name})
+	if err != nil {
+		return "", fmt.Errorf("read runtime secret %s: %w", name, err)
+	}
+	if resp.Result == nil {
+		return "", fmt.Errorf("read runtime secret %s: unexpected status %d: %s", name, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+	}
+	value := strings.TrimSpace(string(resp.Result.Value))
+	if value == "" {
+		return "", fmt.Errorf("read runtime secret %s: empty value", name)
+	}
+	return value, nil
 }
 
 func runS3(

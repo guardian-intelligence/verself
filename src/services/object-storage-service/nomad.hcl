@@ -178,7 +178,6 @@ EOT
         VERSELF_AUTH_ISSUER_URL = "https://verself.sh"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/object-storage-service/auth-audience"
         VERSELF_CRED_CREDENTIAL_KEK = "/etc/credstore/object-storage-service/credential-kek"
-        VERSELF_CRED_GARAGE_ADMIN_TOKEN = "/etc/credstore/object-storage-service/garage-admin-token"
         VERSELF_CRED_GARAGE_PROXY_ACCESS_KEY_ID = "/etc/credstore/object-storage-service/garage-proxy-access-key-id"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
         VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"

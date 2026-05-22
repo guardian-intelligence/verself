@@ -30,6 +30,7 @@ nomad_component(
     job_spec = "nomad.hcl",
     requires = [
         "forgejo:http",
+        "nomad:job:secrets-service",
         "postgres:server",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],

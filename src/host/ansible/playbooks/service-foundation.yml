@@ -185,14 +185,31 @@
         label: "{{ item }}"
       no_log: true
 
-    - name: Assert owner-local OpenBao runtime-secret declarations are well formed
+    - name: Assert owner-local OpenBao runtime-secret declaration set is well formed
       ansible.builtin.assert:
         that:
           - openbao_runtime_secret_seed_declarations | length > 0
           - openbao_runtime_secret_seed_declarations | selectattr('name', 'defined') | list | length == openbao_runtime_secret_seed_declarations | length
-          - openbao_runtime_secret_seed_declarations | selectattr('site_secret', 'defined') | list | length == openbao_runtime_secret_seed_declarations | length
           - openbao_runtime_secret_seed_declarations | map(attribute='name') | unique | list | length == openbao_runtime_secret_seed_declarations | length
         fail_msg: "Owner-local OpenBao runtime-secret deploy declarations are missing or malformed."
+      no_log: true
+
+    - name: Assert owner-local OpenBao runtime-secret value sources are well formed
+      ansible.builtin.assert:
+        that:
+          - item.name | length > 0
+          - >-
+            {{
+              [
+                item.site_secret is defined,
+                item.value is defined,
+                item.file is defined
+              ] | select('equalto', true) | list | length == 1
+            }}
+        fail_msg: "Owner-local OpenBao runtime-secret deploy declarations must set exactly one of site_secret, value, or file."
+      loop: "{{ openbao_runtime_secret_seed_declarations }}"
+      loop_control:
+        label: "{{ item.name | default('unnamed-runtime-secret') }}"
       no_log: true
 
     - name: Converge OpenBao platform runtime secrets

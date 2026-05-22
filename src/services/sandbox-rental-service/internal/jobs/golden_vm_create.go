@@ -153,7 +153,7 @@ func (s *Service) CreateGoldenVM(ctx context.Context, operationID uuid.UUID, riv
 
 	switch op.State {
 	case goldenVMStateCreateQueued, goldenVMStateCreating, goldenVMStateRequested:
-		checkpoint, err = s.createGoldenVMCheckpoint(ctx, item, plan, op, riverJobID)
+		_, err = s.createGoldenVMCheckpoint(ctx, item, plan, op, riverJobID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return err
@@ -166,7 +166,7 @@ func (s *Service) CreateGoldenVM(ctx context.Context, operationID uuid.UUID, riv
 		if err != nil {
 			return err
 		}
-		plan, checkpoint, err = s.loadGoldenVMCreatePlan(ctx, op)
+		plan, _, err = s.loadGoldenVMCreatePlan(ctx, op)
 		if err != nil {
 			return err
 		}
@@ -190,7 +190,7 @@ func (s *Service) CreateGoldenVM(ctx context.Context, operationID uuid.UUID, riv
 		if err != nil {
 			return err
 		}
-		plan, checkpoint, err = s.loadGoldenVMCreatePlan(ctx, op)
+		plan, _, err = s.loadGoldenVMCreatePlan(ctx, op)
 		if err != nil {
 			return err
 		}
