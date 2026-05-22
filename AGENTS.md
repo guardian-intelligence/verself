@@ -141,6 +141,7 @@ The core abstraction is the billing window. Product services should not “charg
 * Dogfood as much as possible, even if it involves hairpinning requests through the internet. We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount.
 * Sync-engine pattern: PostgreSQL owns state, ClickHouse records the append-only ledger/traces, Electric/TanStack expose live read projections, and writes go through typed service commands whose conflict behavior matches the domain (strict observed-state rejection for security-critical resources, monotonic/idempotent collapse for notification-style cursors and dismissals).
 * Generated artifacts in ignored directories are cacheable infrastructure, not disposable outputs. Do not fix stale generated imports by deleting `__generated` or other durable workspace state restored from golden artifacts. A source dependency on generated output must have a current generator owner/manifest in the build graph; when removing a generator, update every source import in the same change. See `docs/architecture/generated-artifact-governance.md`.
+* Do not add binaries to the base guest image unnecessarily. It must be kept as pristine as possible and agnostic about the workload running inside it.
 
 Boundary components that sit outside the usual service shape:
 
