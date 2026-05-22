@@ -1,0 +1,90 @@
+package main
+
+import (
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestParseSinceRelativeDurations(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	tests := map[string]time.Time{
+		"90m":   now.Add(-90 * time.Minute),
+		"1h30m": now.Add(-90 * time.Minute),
+		"2h":    now.Add(-2 * time.Hour),
+		"7d":    now.Add(-7 * 24 * time.Hour),
+		"2w":    now.Add(-14 * 24 * time.Hour),
+	}
+	for input, want := range tests {
+		got, err := parseSince(input, now)
+		if err != nil {
+			t.Fatalf("parseSince(%q): %v", input, err)
+		}
+		if !got.Equal(want) {
+			t.Fatalf("parseSince(%q) = %s, want %s", input, got, want)
+		}
+	}
+}
+
+func TestParseSinceAbsoluteTimestampsAreUTC(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	tests := map[string]time.Time{
+		"2026-05-22T10:30:00Z": time.Date(2026, 5, 22, 10, 30, 0, 0, time.UTC),
+		"2026-05-22 10:30:00":  time.Date(2026, 5, 22, 10, 30, 0, 0, time.UTC),
+		"2026-05-22":           time.Date(2026, 5, 22, 0, 0, 0, 0, time.UTC),
+	}
+	for input, want := range tests {
+		got, err := parseSince(input, now)
+		if err != nil {
+			t.Fatalf("parseSince(%q): %v", input, err)
+		}
+		if !got.Equal(want) {
+			t.Fatalf("parseSince(%q) = %s, want %s", input, got, want)
+		}
+	}
+}
+
+func TestParseSinceRejectsMalformedRelativeDuration(t *testing.T) {
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	for _, input := range []string{"0m", "1x", "1h30"} {
+		if _, err := parseSince(input, now); err == nil {
+			t.Fatalf("parseSince(%q) succeeded, want error", input)
+		}
+	}
+}
+
+func TestParseConfigRejectsSinceWithMinutes(t *testing.T) {
+	t.Setenv("SINCE", "")
+	t.Setenv("MINUTES", "")
+	_, err := parseConfig([]string{"--what=logs", "--since=2h", "--minutes=30"})
+	if err == nil {
+		t.Fatal("parseConfig accepted --since with --minutes")
+	}
+	if !strings.Contains(err.Error(), "--since and --minutes are mutually exclusive") {
+		t.Fatalf("parseConfig error = %q", err)
+	}
+}
+
+func TestBuildQueriesCarriesSinceParameter(t *testing.T) {
+	since := time.Date(2026, 5, 22, 10, 30, 0, 123456789, time.UTC)
+	queries, err := buildQueries(config{
+		what:  "logs",
+		since: since,
+		limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("buildQueries: %v", err)
+	}
+	if len(queries) != 1 {
+		t.Fatalf("buildQueries returned %d queries, want 1", len(queries))
+	}
+	if got := queries[0].params["since"]; got != "2026-05-22T10:30:00.123456789Z" {
+		t.Fatalf("since param = %q", got)
+	}
+	if !queries[0].windowed {
+		t.Fatal("logs query was not marked windowed")
+	}
+	if !strings.Contains(queries[0].sql, "parseDateTime64BestEffort({since:String}") {
+		t.Fatalf("logs SQL does not use the since parameter:\n%s", queries[0].sql)
+	}
+}

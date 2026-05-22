@@ -201,6 +201,7 @@ func baseParams(cfg config) map[string]string {
 		"run_key":         cfg.runKey,
 		"provider_run_id": cfg.providerRunID,
 		"host":            cfg.host,
+		"since":           cfg.since.Format("2006-01-02T15:04:05.999999999Z07:00"),
 		"status_min":      strconv.FormatUint(uint64(cfg.statusMin), 10),
 	}
 }
@@ -215,7 +216,7 @@ func newQuery(id, sql string, params map[string]string) query {
 		sql:       sql,
 		params:    params,
 		next:      queryDocNext(id),
-		windowed:  strings.Contains(sql, "toIntervalMinute({minutes:"),
+		windowed:  strings.Contains(sql, "{since:String}") || strings.Contains(sql, "toIntervalMinute({minutes:"),
 		emptyHint: emptyHintFor(id),
 	}
 }
@@ -619,7 +620,7 @@ SELECT
   count() AS samples
 FROM default.otel_metric_scalar
 WHERE MetricName = {metric:String}
-  AND TimeUnix > now() - toIntervalMinute({minutes:UInt32})
+  AND TimeUnix >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
 GROUP BY time, series
 ORDER BY time, series
 LIMIT {row_limit:UInt32}`
@@ -635,7 +636,7 @@ SELECT
   Name AS name,
   TraceId AS trace_id
 FROM default.otel_signal_errors
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ({service:String} = '' OR ServiceName = {service:String})
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
@@ -650,7 +651,7 @@ SELECT
   intDiv(Duration, 1000000) AS ms,
   TraceId AS trace_id
 FROM default.otel_traces
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ServiceName = {service:String}
   AND SpanAttributes['http.target'] != ''
 ORDER BY Timestamp DESC
@@ -663,7 +664,7 @@ SELECT
   Body AS message,
   TraceId AS trace_id
 FROM default.otel_logs
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ServiceName = {service:String}
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
@@ -678,7 +679,7 @@ SELECT
   nullIf(Subject, '') AS subject,
   Message AS message
 FROM default.mail_events
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
@@ -706,7 +707,7 @@ SELECT
   intDiv(Duration, 1000000) AS ms,
   TraceId AS trace_id
 FROM default.otel_traces
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND (
     startsWith(SpanName, 'auth.spiffe.')
     OR startsWith(SpanName, 'workload.openbao.')
@@ -723,7 +724,7 @@ SELECT
   Body AS message,
   toString(LogAttributes) AS attributes
 FROM default.otel_logs
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ServiceName IN ('spire-server', 'spire-agent')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
@@ -742,7 +743,7 @@ SELECT
   StatusCode AS status,
   TraceId AS trace_id
 FROM default.otel_traces
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ServiceName IN ('temporal-server', 'temporal-bootstrap', 'temporal-schema')
   AND SpanName IN ('auth.spiffe.mtls.server', 'auth.spiffe.mtls.client', 'temporal.auth.authorize')
 ORDER BY Timestamp DESC
@@ -759,7 +760,7 @@ SELECT
   intDiv(Duration, 1000000) AS ms,
   TraceId AS trace_id
 FROM default.otel_traces
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND (
     ServiceName IN ('temporal-bootstrap', 'temporal-schema')
     OR (ServiceName = 'temporal-server' AND SpanAttributes['temporal.namespace'] != '')
@@ -775,7 +776,7 @@ SELECT
   Body AS message,
   TraceId AS trace_id
 FROM default.otel_logs
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ServiceName IN ('temporal-server', 'temporal-bootstrap', 'temporal-schema')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
@@ -789,7 +790,7 @@ SELECT
   max(LastSeenAt) AS last_seen_at,
   sum(Samples) AS samples
 FROM default.otel_metric_catalog_live
-WHERE LastSeenAt > now() - toIntervalMinute({minutes:UInt32})
+WHERE LastSeenAt >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND startsWith(ServiceName, 'temporal-server')
 GROUP BY service, metric
 ORDER BY service, metric
@@ -810,7 +811,7 @@ SELECT
 FROM default.otel_traces
 WHERE ServiceName = 'verself-deploy'
   AND SpanName = 'verself_deploy.run'
-  AND Timestamp > now() - toIntervalMinute({minutes:UInt32})
+  AND Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
 ORDER BY Timestamp DESC
 LIMIT {row_limit:UInt32}`
 
@@ -940,7 +941,7 @@ SELECT
   TraceId AS trace_id,
   left(Body, 220) AS message
 FROM default.otel_logs
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ServiceName = 'nomad-observer'
   AND ({run_key:String} = '' OR LogAttributes['verself.deploy_run_key'] = {run_key:String})
   AND ({search:String} = '' OR positionCaseInsensitive(Body, {search:String}) > 0 OR positionCaseInsensitive(toString(LogAttributes), {search:String}) > 0)
@@ -964,7 +965,7 @@ SELECT
   TraceId AS trace_id,
   left(Body, 240) AS message
 FROM default.otel_logs
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ServiceName = 'nomad-observer'
   AND ({run_key:String} = '' OR LogAttributes['verself.deploy_run_key'] = {run_key:String})
   AND (
@@ -989,7 +990,7 @@ SELECT
   TraceId AS trace_id,
   left(Body, 1000) AS tail
 FROM default.otel_logs
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ServiceName = 'nomad-observer'
   AND LogAttributes['nomad.event_name'] IN ('nomad.alloc.stderr_tail', 'nomad.alloc.stdout_tail')
   AND ({run_key:String} = '' OR LogAttributes['verself.deploy_run_key'] = {run_key:String})
@@ -1011,7 +1012,7 @@ SELECT
   SpanId AS span_id,
   left(StatusMessage, 160) AS error
 FROM default.otel_traces
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ServiceName = 'nomad-observer'
   AND SpanName = 'nomad_observer.log_capture'
   AND ({run_key:String} = '' OR SpanAttributes['verself.deploy_run_key'] = {run_key:String})
@@ -1085,7 +1086,7 @@ SELECT
   invocation_id,
   trace_id
 FROM verself.bazel_invocations
-WHERE ({provider_run_id:String} = '' AND observed_at > now() - toIntervalMinute({minutes:UInt32}))
+WHERE ({provider_run_id:String} = '' AND observed_at >= parseDateTime64BestEffort({since:String}, 9, 'UTC'))
    OR ({provider_run_id:String} != '' AND provider_run_id = toUInt64OrZero({provider_run_id:String}))
 ORDER BY observed_at DESC, command
 LIMIT {row_limit:UInt32}`
@@ -1104,7 +1105,7 @@ SELECT
   left(reason, 180) AS reason,
   invocation_id
 FROM verself.bazel_events
-WHERE ({provider_run_id:String} = '' AND observed_at > now() - toIntervalMinute({minutes:UInt32}))
+WHERE ({provider_run_id:String} = '' AND observed_at >= parseDateTime64BestEffort({since:String}, 9, 'UTC'))
    OR ({provider_run_id:String} != '' AND provider_run_id = toUInt64OrZero({provider_run_id:String}))
 ORDER BY observed_at, invocation_id, event_name
 LIMIT {row_limit:UInt32}`
@@ -1120,7 +1121,7 @@ SELECT
   any(invocation_id) AS invocation_id
 FROM verself.bazel_profile_spans
 WHERE span_kind = 'package'
-  AND (({provider_run_id:String} = '' AND observed_at > now() - toIntervalMinute({minutes:UInt32}))
+  AND (({provider_run_id:String} = '' AND observed_at >= parseDateTime64BestEffort({since:String}, 9, 'UTC'))
     OR ({provider_run_id:String} != '' AND provider_run_id = toUInt64OrZero({provider_run_id:String})))
 GROUP BY provider_run_id, command, build_file
 ORDER BY total_ms DESC, max_ms DESC, build_file
@@ -1139,7 +1140,7 @@ SELECT
   exit_code,
   invocation_id
 FROM verself.bazel_spawns
-WHERE ({provider_run_id:String} = '' AND observed_at > now() - toIntervalMinute({minutes:UInt32}))
+WHERE ({provider_run_id:String} = '' AND observed_at >= parseDateTime64BestEffort({since:String}, 9, 'UTC'))
    OR ({provider_run_id:String} != '' AND provider_run_id = toUInt64OrZero({provider_run_id:String}))
 ORDER BY duration_ms DESC, started_at DESC
 LIMIT {row_limit:UInt32}`
@@ -1171,7 +1172,7 @@ SELECT
   ClientIP AS client_ip,
   TraceId AS trace_id
 FROM default.http_access_logs
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ({host:String} = '' OR Host = {host:String})
   AND Status >= {status_min:UInt16}
   AND ({search:String} = '' OR positionCaseInsensitive(Path, {search:String}) > 0)
@@ -1274,7 +1275,7 @@ SELECT
   TraceId AS trace_id,
   toString(LogAttributes) AS attributes
 FROM default.otel_logs
-WHERE Timestamp > now() - toIntervalMinute({minutes:UInt32})
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND ({service:String} = '' OR ServiceName = {service:String})
   AND ({field:String} = ''
        OR arrayElement(LogAttributes, {field:String}) != ''

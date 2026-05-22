@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +59,8 @@ type config struct {
 	runKey        string
 	providerRunID string
 	host          string
+	sinceInput    string
+	since         time.Time
 	statusMin     uint
 	minutes       uint
 	limit         uint
@@ -149,6 +152,7 @@ func runObserveQueries(rt *opruntime.Runtime, chClient *opch.Client, cfg config,
 			attribute.String("observe.run_id", runID),
 			attribute.String("observe.what", cfg.what),
 			attribute.String("observe.signal", cfg.signal),
+			attribute.String("observe.since", cfg.since.Format(time.RFC3339Nano)),
 			attribute.String("verself.deploy_id", os.Getenv("VERSELF_DEPLOY_ID")),
 			attribute.String("verself.deploy_run_key", os.Getenv("VERSELF_DEPLOY_RUN_KEY")),
 		),
@@ -226,6 +230,7 @@ func parseConfig(args []string) (config, error) {
 	flags.StringVar(&cfg.runKey, "run-key", strings.TrimSpace(os.Getenv("RUN_KEY")), "deploy_run_key to inspect")
 	flags.StringVar(&cfg.providerRunID, "provider-run-id", strings.TrimSpace(os.Getenv("PROVIDER_RUN_ID")), "GitHub provider run id to inspect")
 	flags.StringVar(&cfg.host, "host", strings.TrimSpace(os.Getenv("HOST")), "HTTP host filter")
+	flags.StringVar(&cfg.sinceInput, "since", strings.TrimSpace(os.Getenv("SINCE")), "window start for operational queries: relative duration (15m, 2h, 7d) or UTC timestamp")
 	defaults := envconfig.New()
 	flags.UintVar(&cfg.statusMin, "status-min", defaults.Uint("STATUS_MIN", 0), "minimum HTTP status")
 	flags.UintVar(&cfg.minutes, "minutes", defaults.Uint("MINUTES", 15), "lookback window for explicit operational queries")
@@ -236,6 +241,10 @@ func parseConfig(args []string) (config, error) {
 	if err := flags.Parse(args); err != nil {
 		return cfg, err
 	}
+	visited := map[string]bool{}
+	flags.Visit(func(f *flag.Flag) {
+		visited[f.Name] = true
+	})
 
 	cfg.what = normalize(strings.TrimSpace(cfg.what))
 	cfg.signal = normalize(strings.TrimSpace(cfg.signal))
@@ -252,6 +261,7 @@ func parseConfig(args []string) (config, error) {
 	cfg.runKey = strings.TrimSpace(cfg.runKey)
 	cfg.providerRunID = strings.TrimSpace(cfg.providerRunID)
 	cfg.host = strings.TrimSpace(cfg.host)
+	cfg.sinceInput = strings.TrimSpace(cfg.sinceInput)
 	cfg.site = strings.TrimSpace(cfg.site)
 	if cfg.mode == "" {
 		cfg.mode = "latest"
@@ -276,6 +286,22 @@ func parseConfig(args []string) (config, error) {
 	}
 	if cfg.minutes == 0 {
 		return cfg, errors.New("--minutes must be greater than zero")
+	}
+	now := time.Now().UTC()
+	if cfg.sinceInput != "" {
+		if visited["minutes"] || strings.TrimSpace(os.Getenv("MINUTES")) != "" {
+			return cfg, errors.New("--since and --minutes are mutually exclusive")
+		}
+		since, err := parseSince(cfg.sinceInput, now)
+		if err != nil {
+			return cfg, err
+		}
+		if since.After(now.Add(time.Second)) {
+			return cfg, errors.New("--since must not be in the future")
+		}
+		cfg.since = since.UTC()
+	} else {
+		cfg.since = now.Add(-time.Duration(cfg.minutes) * time.Minute)
 	}
 	if cfg.limit == 0 || cfg.limit > 500 {
 		return cfg, errors.New("--limit must be between 1 and 500")
@@ -307,6 +333,121 @@ func parseConfig(args []string) (config, error) {
 		return cfg, errors.New("--search must be at most 128 characters")
 	}
 	return cfg, nil
+}
+
+func parseSince(value string, now time.Time) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, errors.New("--since must not be empty")
+	}
+	if d, ok, err := parseRelativeSince(value); ok || err != nil {
+		if err != nil {
+			return time.Time{}, fmt.Errorf("--since: %w", err)
+		}
+		return now.UTC().Add(-d), nil
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02 15:04",
+		"2006-01-02",
+	} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("--since must be a relative duration like 2h or 7d, or a UTC timestamp like 2026-05-22T14:30:00Z")
+}
+
+func parseRelativeSince(value string) (time.Duration, bool, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" || value[0] < '0' || value[0] > '9' {
+		return 0, false, nil
+	}
+	var total time.Duration
+	parsedUnit := false
+	for len(value) > 0 {
+		numberEnd := 0
+		dotSeen := false
+		for numberEnd < len(value) {
+			c := value[numberEnd]
+			if c >= '0' && c <= '9' {
+				numberEnd++
+				continue
+			}
+			if c == '.' && !dotSeen {
+				dotSeen = true
+				numberEnd++
+				continue
+			}
+			break
+		}
+		if numberEnd == 0 || value[:numberEnd] == "." {
+			return 0, parsedUnit, fmt.Errorf("invalid relative duration %q", value)
+		}
+		unitEnd := numberEnd
+		for unitEnd < len(value) {
+			c := value[unitEnd]
+			if c >= 'a' && c <= 'z' {
+				unitEnd++
+				continue
+			}
+			break
+		}
+		if unitEnd == numberEnd {
+			if parsedUnit {
+				return 0, true, errors.New("relative duration segment is missing a unit")
+			}
+			return 0, false, nil
+		}
+		unit := value[numberEnd:unitEnd]
+		multiplier, ok := durationUnit(unit)
+		if !ok {
+			return 0, true, fmt.Errorf("unsupported relative duration unit %q", unit)
+		}
+		n, err := strconv.ParseFloat(value[:numberEnd], 64)
+		if err != nil {
+			return 0, true, fmt.Errorf("invalid relative duration number %q", value[:numberEnd])
+		}
+		if n <= 0 {
+			return 0, true, errors.New("relative duration must be greater than zero")
+		}
+		total += time.Duration(n * float64(multiplier))
+		parsedUnit = true
+		value = value[unitEnd:]
+	}
+	if total <= 0 {
+		return 0, parsedUnit, errors.New("relative duration must be greater than zero")
+	}
+	return total, parsedUnit, nil
+}
+
+func durationUnit(unit string) (time.Duration, bool) {
+	switch unit {
+	case "ns":
+		return time.Nanosecond, true
+	case "us":
+		return time.Microsecond, true
+	case "ms":
+		return time.Millisecond, true
+	case "s":
+		return time.Second, true
+	case "m":
+		return time.Minute, true
+	case "h":
+		return time.Hour, true
+	case "d":
+		return 24 * time.Hour, true
+	case "w":
+		return 7 * 24 * time.Hour, true
+	default:
+		return 0, false
+	}
 }
 
 func validateToken(label, value string) error {
@@ -406,16 +547,20 @@ func runQuery(ctx context.Context, logger *slog.Logger, chClient *opch.Client, c
 func printEmptyHint(cfg config, q query) {
 	var message string
 	if q.windowed {
-		unit := "minutes"
-		if cfg.minutes == 1 {
-			unit = "minute"
+		if cfg.sinceInput != "" {
+			message = fmt.Sprintf("0 rows since %s.", cfg.since.Format(time.RFC3339))
+		} else {
+			unit := "minutes"
+			if cfg.minutes == 1 {
+				unit = "minute"
+			}
+			message = fmt.Sprintf("0 rows in the last %d %s.", cfg.minutes, unit)
 		}
-		message = fmt.Sprintf("0 rows in the last %d %s.", cfg.minutes, unit)
 	} else {
 		message = "0 rows."
 	}
 	hints := []string{}
-	if q.windowed {
+	if q.windowed && cfg.sinceInput == "" {
 		suggested := nextWindowSuggestion(cfg.minutes)
 		if suggested > 0 {
 			hints = append(hints, fmt.Sprintf("Widen the window: re-run with MINUTES=%d.", suggested))
