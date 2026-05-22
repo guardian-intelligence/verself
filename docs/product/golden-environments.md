@@ -912,6 +912,23 @@ Provider run ID, run attempt, provider job ID, lease ID, TAP name, guest
 address, and PR head SHA are not reusable identity. They are replaced or
 reconciled after restore.
 
+### Platform Version Invalidation
+
+Breaking changes to the root substrate image, Firecracker device model,
+toolchain image graph, vm-bridge protocol, guest agent, restore hooks, or clock
+restore semantics advance a platform VM snapshot epoch. The control plane treats
+all existing golden VM snapshots from the prior epoch as misses and cold boots
+from the upgraded platform image and guest agent. Durable zvol generations keep
+their normal scope and retention rules; only Firecracker vmstate, memory, and
+root-snapshot reuse are globally invalidated.
+
+The product surface should expose this as a planned platform upgrade: warm VM
+cache misses use the upgraded version, and performance returns after the next
+successful protected-branch run publishes a compatible golden VM snapshot. Old
+Firecracker VM artifacts are retained for seven days for bounded cleanup,
+debugging, and audit evidence, then pruned unless explicitly pinned by an
+operator.
+
 ## CPU Architecture
 
 The supported hosted runner architecture for this design is Linux `x86_64` on
