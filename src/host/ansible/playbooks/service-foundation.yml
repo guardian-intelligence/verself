@@ -4,6 +4,16 @@
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tasks:
+    - name: Load site secrets
+      ansible.builtin.import_tasks: tasks/site-secrets.yml
+
+- name: "Service host foundation"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   vars:
     clickhouse_client_ca_source: /etc/clickhouse-server/tls/server-ca.pem
     clickhouse_client_ca_credentials:
@@ -15,16 +25,6 @@
       - { path: /etc/credstore/notifications-service/clickhouse-ca-cert, group: notifications_service }
       - { path: /etc/credstore/object-storage-service/clickhouse-ca-cert, group: object_storage_service }
       - { path: /etc/credstore/sandbox-rental/clickhouse-ca-cert, group: sandbox_rental }
-  tasks:
-    - name: Load site secrets
-      ansible.builtin.import_tasks: tasks/site-secrets.yml
-
-- name: "Service host foundation"
-  hosts: infra
-  become: true
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tasks:
     - name: Assert SPIRE identity registry input
       ansible.builtin.assert:
