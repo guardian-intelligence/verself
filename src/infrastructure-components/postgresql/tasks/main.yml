@@ -137,7 +137,7 @@
     host: "{{ postgresql_host }}"
     timeout: 30
 
-- name: Reload PostgreSQL after local auth configuration changes
+- name: Reload PostgreSQL local auth configuration
   community.postgresql.postgresql_query:
     query: SELECT pg_reload_conf()
     login_unix_socket: /var/run/postgresql
@@ -145,11 +145,7 @@
     trust_input: false
   become: true
   become_user: postgres
-  when: >-
-    postgresql_conf_template.changed
-    or postgresql_hba_template.changed
-    or postgresql_ident_template.changed
-  changed_when: true
+  changed_when: false
 
 # --- Set admin password (idempotent — always update to match credential file) ---
 
