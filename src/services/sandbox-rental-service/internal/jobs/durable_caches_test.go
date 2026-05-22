@@ -158,6 +158,14 @@ func TestDurableCommitSkipReason(t *testing.T) {
 func TestGoldenVMGenerationSetHashMatchesCommittedSources(t *testing.T) {
 	scopeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	generationID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	staticMounts := []vmorchestrator.FilesystemMount{{
+		Name:      "bootstrap-tools",
+		SourceRef: "bootstrap-tools",
+		MountPath: "/opt/verself/bootstrap-tools",
+		FSType:    "ext4",
+		ReadOnly:  true,
+		Required:  true,
+	}}
 	ops := []durableCacheOperation{{
 		DurableScopeID:     scopeID,
 		SourceGenerationID: &generationID,
@@ -181,8 +189,13 @@ func TestGoldenVMGenerationSetHashMatchesCommittedSources(t *testing.T) {
 		FSType:              "ext4",
 		Required:            true,
 	}}
-	if got, want := goldenVMSourceGenerationSetHash(ops), goldenVMCandidateGenerationSetHash(gens); got != want {
+	if got, want := goldenVMSourceGenerationSetHash(staticMounts, ops), goldenVMCandidateGenerationSetHash(staticMounts, gens); got != want {
 		t.Fatalf("generation set hash = %s, want %s", got, want)
+	}
+	changedMounts := append([]vmorchestrator.FilesystemMount(nil), staticMounts...)
+	changedMounts = append(changedMounts, vmorchestrator.FilesystemMount{Name: "forgejo-runner", SourceRef: "forgejo-runner", MountPath: "/opt/forgejo-runner", FSType: "ext4", ReadOnly: true, Required: true})
+	if got, stale := goldenVMSourceGenerationSetHash(staticMounts, ops), goldenVMSourceGenerationSetHash(changedMounts, ops); got == stale {
+		t.Fatalf("generation set hash did not change after static mount set changed: %s", got)
 	}
 }
 

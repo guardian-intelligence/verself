@@ -598,7 +598,7 @@ type goldenVMPlanSpec struct {
 }
 
 func (s *Service) prepareGoldenVMPlan(ctx context.Context, item executionWorkItem, identity RunnerExecutionIdentity, ops []durableCacheOperation, spec goldenVMPlanSpec) (goldenVMPlan, error) {
-	sourceHash := goldenVMSourceGenerationSetHash(ops)
+	sourceHash := goldenVMSourceGenerationSetHash(nonDurableFilesystemMounts(item.FilesystemMounts), ops)
 	operationID := uuid.New()
 	candidateSnapshotID := uuid.New()
 	inserted, err := s.storeQueries().InsertGoldenVMOperation(ctx, store.InsertGoldenVMOperationParams{
@@ -1170,7 +1170,7 @@ func (s *Service) publishGoldenVMSnapshot(ctx context.Context, item executionWor
 		}
 		return generations[i].DurableScopeID.String() < generations[j].DurableScopeID.String()
 	})
-	generationSetHash := goldenVMCandidateGenerationSetHash(generations)
+	generationSetHash := goldenVMCandidateGenerationSetHash(nonDurableFilesystemMounts(item.FilesystemMounts), generations)
 	now := time.Now().UTC()
 	stateBytes, err := int64FromUint64("golden VM state bytes", checkpoint.StateBytes)
 	if err != nil {
@@ -2412,8 +2412,9 @@ func stableHex(parts ...string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func goldenVMSourceGenerationSetHash(ops []durableCacheOperation) string {
-	parts := []string{"golden-vm-generation-set-v1"}
+func goldenVMSourceGenerationSetHash(staticMounts []vmorchestrator.FilesystemMount, ops []durableCacheOperation) string {
+	parts := []string{"golden-vm-generation-set-v2"}
+	parts = appendGoldenVMStaticMountHashParts(parts, staticMounts)
 	for idx, op := range ops {
 		bindPaths := append([]string(nil), op.BindPaths...)
 		sort.Strings(bindPaths)
@@ -2435,8 +2436,9 @@ func goldenVMSourceGenerationSetHash(ops []durableCacheOperation) string {
 	return stableHex(parts...)
 }
 
-func goldenVMCandidateGenerationSetHash(gens []goldenVMSnapshotGeneration) string {
-	parts := []string{"golden-vm-generation-set-v1"}
+func goldenVMCandidateGenerationSetHash(staticMounts []vmorchestrator.FilesystemMount, gens []goldenVMSnapshotGeneration) string {
+	parts := []string{"golden-vm-generation-set-v2"}
+	parts = appendGoldenVMStaticMountHashParts(parts, staticMounts)
 	for _, gen := range gens {
 		bindPaths := append([]string(nil), gen.BindPaths...)
 		sort.Strings(bindPaths)
@@ -2456,6 +2458,36 @@ func goldenVMCandidateGenerationSetHash(gens []goldenVMSnapshotGeneration) strin
 		)
 	}
 	return stableHex(parts...)
+}
+
+func nonDurableFilesystemMounts(mounts []vmorchestrator.FilesystemMount) []vmorchestrator.FilesystemMount {
+	out := make([]vmorchestrator.FilesystemMount, 0, len(mounts))
+	for _, mount := range mounts {
+		if strings.TrimSpace(mount.OperationID) != "" {
+			continue
+		}
+		out = append(out, mount)
+	}
+	return out
+}
+
+func appendGoldenVMStaticMountHashParts(parts []string, mounts []vmorchestrator.FilesystemMount) []string {
+	for idx, mount := range mounts {
+		bindPaths := append([]string(nil), mount.BindPaths...)
+		sort.Strings(bindPaths)
+		parts = append(parts,
+			"static-mount",
+			strconv.Itoa(idx),
+			mount.Name,
+			mount.SourceRef,
+			mount.MountPath,
+			strings.Join(bindPaths, "\n"),
+			firstNonEmpty(mount.FSType, "ext4"),
+			goldenVMAccessMode(mount.ReadOnly),
+			strconv.FormatBool(mount.Required),
+		)
+	}
+	return parts
 }
 
 func goldenVMAccessMode(readOnly bool) string {
