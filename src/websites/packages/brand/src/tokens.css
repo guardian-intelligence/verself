@@ -72,11 +72,16 @@
 
 @layer base {
   :root {
-    /* Header geometry — single source of truth. Both the <header> block and
-       everything that needs to clear it (scroll-padding, sticky sibling
-       offsets, scroll-spy rootMargin) reference these vars, so raising the
-       bar to, say, 4rem on a breakpoint only needs one edit here. */
-    --header-h: 3.5rem;
+    /* Header geometry — single source of truth. --chrome-edge-gap is the
+       vertical logo inset; --chrome-inline-gap is the page-edge inset shared
+       by chrome and aligned content wrappers. The bottom rule offset derives
+       from the vertical gap plus the rule thickness, so tightening horizontal
+       margins does not move the masthead rule. */
+    --chrome-edge-gap: 10px;
+    --chrome-inline-gap: 20px;
+    --chrome-rule-gap: calc(var(--chrome-edge-gap) + var(--treatment-rule-thickness));
+    --chrome-lockup-h: 22px;
+    --header-h: calc(var(--chrome-edge-gap) + var(--chrome-lockup-h) + var(--chrome-rule-gap));
     --header-scroll-offset: calc(var(--header-h) + 1.5rem);
     /* The mark's external clear-space unit, in px. Equals the height of the
        upper wing's tip on a 52px mark per logo-playground.html. Lockups and
@@ -172,30 +177,27 @@
      underline. Bordeaux is RESERVED for the blockquote left-rule and
      appears nowhere else — the single editorial accent is the pull-quote,
      not the whole page. Muted ramp is Stone (ink-on-light). Vellum is the
-     same-family inset used for colophons. Letters uses a near-white,
-     stonewashed ground — the warm/yellow cast laundered almost out, like
-     bleached cotton — so the multiplied graph-paper backdrop reads against
-     a sun-faded sheet rather than cream. The grid alpha is intentionally
-     left unchanged: against the lighter ground the lines recede on their
-     own, which is the sun-bleached graph-paper effect, not a regression. */
-  --treatment-ground: #fcfcf9;
+     same-family inset used for colophons. Letters uses a warm paper ground
+     so the graph-paper backdrop keeps a sun-dried cream cast instead of
+     washing into neutral gray or peach. */
+  --treatment-ground: #fff4dc;
   --treatment-ink: var(--color-ink);
   --treatment-accent: var(--color-ink);
   --treatment-wordmark: var(--color-ink);
   --treatment-display-font: var(--font-display);
   --treatment-body-font: var(--font-display);
-  --treatment-muted-strong: var(--color-stone-strong);
-  --treatment-muted: var(--color-stone);
-  --treatment-muted-meta: var(--color-stone-meta);
-  --treatment-muted-faint: var(--color-stone-faint);
+  --treatment-muted-strong: rgba(11, 11, 11, 0.9);
+  --treatment-muted: rgba(11, 11, 11, 0.78);
+  --treatment-muted-meta: rgba(11, 11, 11, 0.68);
+  --treatment-muted-faint: rgba(11, 11, 11, 0.58);
   --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
   --treatment-surface-border: rgba(11, 11, 11, 0.14);
   --treatment-hairline: rgba(11, 11, 11, 0.14);
   /* Letters paints the masthead/colophon rule in warm sepia. The thickness
-     is tuned to the optical weight of Fraunces body type — 2px reads as
-     pressed ink at our type scale; thicker reads as UI chrome. The rule is
-     column-aligned by the chrome's max-w-4xl wrapper, so it never touches
+     is tuned to the optical weight of Fraunces body type — 3px reads as
+     a deliberate masthead stroke at our type scale. The rule is
+     column-aligned by the chrome's max-w-6xl wrapper, so it never touches
      the viewport edge. */
   --treatment-rule-color: var(--color-sepia);
-  --treatment-rule-thickness: 2px;
+  --treatment-rule-thickness: 3px;
 }

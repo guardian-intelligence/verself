@@ -110,3 +110,228 @@
     rgba(255, 250, 240, calc(var(--firstlight-luminance) * 0.52));
   transform: translateZ(0);
 }
+
+/* Checked-in letters paper pattern. These CSS gradients replace SVG data URI
+   filters so the graph paper paints with CSS during first render. */
+.letters-paper-tooth {
+  background-image:
+    radial-gradient(circle at 11px 17px, rgb(91 58 38 / 0.035) 0 0.55px, transparent 0.8px),
+    radial-gradient(circle at 37px 9px, rgb(40 44 52 / 0.024) 0 0.45px, transparent 0.75px),
+    radial-gradient(circle at 59px 46px, rgb(91 58 38 / 0.026) 0 0.5px, transparent 0.8px),
+    linear-gradient(118deg, transparent 0 42%, rgb(91 58 38 / 0.024) 49%, transparent 56%),
+    linear-gradient(28deg, transparent 0 46%, rgb(255 255 255 / 0.26) 50%, transparent 58%);
+  background-position:
+    0 0,
+    13px 19px,
+    7px 3px,
+    0 0,
+    0 0;
+  background-repeat: repeat;
+  background-size:
+    71px 83px,
+    97px 89px,
+    113px 131px,
+    420px 360px,
+    540px 460px;
+  mix-blend-mode: multiply;
+  opacity: 0.24;
+}
+
+.letters-paper-grid {
+  --letters-grid-minor-alpha: 0.03;
+  --letters-grid-major-alpha: 0.055;
+  background-image:
+    linear-gradient(to right, rgb(40 44 52 / var(--letters-grid-major-alpha)) 1px, transparent 1px),
+    linear-gradient(
+      to bottom,
+      rgb(40 44 52 / var(--letters-grid-major-alpha)) 1px,
+      transparent 1px
+    ),
+    linear-gradient(to right, rgb(40 44 52 / var(--letters-grid-minor-alpha)) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(40 44 52 / var(--letters-grid-minor-alpha)) 1px, transparent 1px);
+  background-position:
+    -1px -1px,
+    -1px -1px,
+    -1px -1px,
+    -1px -1px;
+  background-repeat: repeat;
+  background-size:
+    140px 140px,
+    140px 140px,
+    28px 28px,
+    28px 28px;
+  mix-blend-mode: multiply;
+}
+
+.letters-paper-grid--text {
+  --letters-grid-minor-alpha: 0.026;
+  --letters-grid-major-alpha: 0.052;
+}
+
+.letters-paper-grid--margin {
+  --letters-grid-minor-alpha: 0.12;
+  --letters-grid-major-alpha: 0.2;
+}
+
+:root {
+  --letter-transition-duration: 900ms;
+  --letter-transition-root-duration: 240ms;
+  --letter-return-fade-duration: 560ms;
+  --letter-continuation-unfurl-duration: 500ms;
+  --letter-spring-move: linear(
+    0,
+    0.014 2.4%,
+    0.052 4.8%,
+    0.112 7.2%,
+    0.19 9.6%,
+    0.282 12%,
+    0.382 14.4%,
+    0.487 16.8%,
+    0.591 19.2%,
+    0.691 21.6%,
+    0.783 24%,
+    0.864 26.4%,
+    0.933 28.8%,
+    0.987 31.2%,
+    1.028 33.6%,
+    1.055 36%,
+    1.071 38.4%,
+    1.077 40.8%,
+    1.074 43.2%,
+    1.064 45.6%,
+    1.051 48%,
+    1.036 50.4%,
+    1.022 52.8%,
+    1.009 55.2%,
+    0.999 57.6%,
+    0.991 60%,
+    0.987 62.4%,
+    0.985 64.8%,
+    0.986 67.2%,
+    0.988 69.6%,
+    0.991 72%,
+    0.994 76%,
+    0.998 82%,
+    1.001 88%,
+    1
+  );
+  --letter-spring-reveal: linear(
+    0,
+    0.049 3%,
+    0.178 8%,
+    0.335 14%,
+    0.49 20%,
+    0.625 27%,
+    0.736 34%,
+    0.824 42%,
+    0.889 50%,
+    0.936 59%,
+    0.968 69%,
+    0.987 80%,
+    0.997 91%,
+    1
+  );
+}
+
+[data-letter-continuation] {
+  contain: paint;
+  transform-origin: top left;
+  animation: letter-continuation-unfurl var(--letter-continuation-unfurl-duration)
+    var(--letter-spring-reveal) both;
+}
+
+@keyframes letter-return-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes letter-return-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes letter-continuation-unfurl {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(-12px);
+  }
+
+  14% {
+    opacity: 0.42;
+  }
+
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root::view-transition {
+    pointer-events: none;
+  }
+
+  :root::view-transition-group(*) {
+    animation-duration: var(--letter-transition-duration);
+    animation-timing-function: var(--letter-spring-move);
+  }
+
+  :root::view-transition-image-pair(*) {
+    isolation: isolate;
+  }
+
+  :root::view-transition-old(*),
+  :root::view-transition-new(*) {
+    animation-duration: var(--letter-transition-duration);
+    animation-timing-function: var(--letter-spring-reveal);
+    mix-blend-mode: normal;
+  }
+
+  :root::view-transition-old(root),
+  :root::view-transition-new(root) {
+    animation-duration: var(--letter-transition-root-duration);
+    animation-timing-function: ease-out;
+  }
+
+  :root::view-transition-group(letter-return) {
+    animation-duration: var(--letter-return-fade-duration);
+    animation-timing-function: var(--letter-spring-reveal);
+  }
+
+  :root::view-transition-old(letter-return) {
+    animation: letter-return-out 180ms ease-out both;
+  }
+
+  :root::view-transition-new(letter-return) {
+    animation: letter-return-in var(--letter-return-fade-duration) var(--letter-spring-reveal) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-letter-continuation] {
+    animation-duration: 1ms !important;
+  }
+
+  :root::view-transition-group(*),
+  :root::view-transition-old(*),
+  :root::view-transition-new(*) {
+    animation-delay: 0ms !important;
+    animation-duration: 1ms !important;
+  }
+}

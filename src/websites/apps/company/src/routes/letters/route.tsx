@@ -2,21 +2,21 @@ import { createFileRoute, Link, Outlet, useParams } from "@tanstack/react-router
 import { type CSSProperties, type ReactNode } from "react";
 import { AppChrome } from "@verself/brand";
 import { TopNav } from "~/components/top-nav";
+import { criticalTreatmentHead, criticalTreatmentRootStyle } from "~/lib/critical-treatment";
+import lettersCriticalCss from "~/styles/critical/letters.css?inline";
 
 // Letters layout — /letters and /letters/$slug share this chrome. Paper
 // ground, chip Lockup, sepia rule. The layout sets data-treatment so the
 // entire subtree (chrome + body + footer) resolves var(--treatment-*) to the
 // Letters scope.
 //
-// The graph paper is one seeded procedural relief — feTurbulence (the
-// browser's native fractal-noise primitive), seed = a hash of the slug, so
-// every letter is its own sheet, deterministic across loads and SSR/hydration
-// (never Math.random). There is exactly ONE noise field ("the hills"). The
-// zones below are NOT separate noise — they are fixed geometry that remaps
-// the same hills into a different opacity band:
+// The graph paper pattern is checked into app.css as static CSS gradients, so
+// first paint does not wait for SVG data-URI decode/filter work. The zones
+// below are fixed geometry that remaps the same ruling into a different
+// opacity band:
 //
-//   • reading column (centred max-w-6xl) ........ 2–7.5%  (quiet, readable)
-//   • page margins (outside that column) ........ 16–23%  (gentle bloom)
+//   • reading column (centred max-w-6xl) ........ quiet, readable
+//   • page margins (outside that column) ........ gently stronger
 //
 // The calm masthead region is the area ABOVE a seeded, single-valued,
 // circuitous boundary y = f(x), built by function composition:
@@ -37,11 +37,11 @@ import { TopNav } from "~/components/top-nav";
 // The layers are position:absolute over the document (NOT viewport fixed)
 // and multiply over the ink, so the words read as printed onto this exact
 // sheet and it scrolls 1:1 with them. Text is never touched: no blend, no
-// clip, no JS — it stays selectable/screen-reader-clean. The paper is
-// CSS/SVG only (feTurbulence = the procedural model without a WebGL context).
+// clip, no JS — it stays selectable/screen-reader-clean.
 
 export const Route = createFileRoute("/letters")({
   component: LettersLayout,
+  head: () => criticalTreatmentHead("letters", lettersCriticalCss),
 });
 
 // FNV-1a, 32-bit, of an arbitrary string. Math.imul keeps it a true 32-bit
@@ -55,50 +55,10 @@ function fnv1a(s: string): number {
   return h >>> 0;
 }
 
-// feTurbulence's integer seed space.
-const slugSeed = (slug: string): number => fnv1a(slug) % 65535;
-
 // pick: slug → label → Unit ∈ [0,1). A pure hash read, NOT a stateful RNG —
 // every rule pulls only the entropy it names, order-independent and
 // referentially transparent (identical on every load and SSR/hydration).
 const pick = (slug: string, label: string): number => fnv1a(`${slug}:${label}`) / 4294967296;
-
-// One self-contained sheet: a 2800px tile (2800 = 28×100 = 140×20, so the
-// minor and major ruling align perfectly across tile seams) holding the
-// 28/140px grid. Its alpha is multiplied by a seeded fractal-noise relief and
-// linearly remapped into [lo, hi].
-// Strokes sit half a pixel inside each pattern tile; boundary strokes are
-// clipped out by Chromium's SVG pattern renderer before the filter runs.
-//
-// baseFrequency 0.0011 → the average
-// "hill" is ~2× the size it was at 0.0022; the larger 2800 tile keeps the
-// repeat period well past a screen so the bigger features don't telegraph.
-function gridReliefDataUri(seed: number, lo: number, hi: number): string {
-  const slope = (hi - lo).toFixed(4);
-  const intercept = lo.toFixed(4);
-  const svg =
-    "<svg xmlns='http://www.w3.org/2000/svg' width='2800' height='2800'>" +
-    "<defs>" +
-    "<pattern id='g' width='28' height='28' patternUnits='userSpaceOnUse'>" +
-    "<path d='M27.5 0V28M0 27.5H28' stroke='rgb(40,44,52)' stroke-width='1' fill='none' shape-rendering='crispEdges'/>" +
-    "</pattern>" +
-    "<pattern id='G' width='140' height='140' patternUnits='userSpaceOnUse'>" +
-    "<path d='M139.5 0V140M0 139.5H140' stroke='rgb(40,44,52)' stroke-width='1' fill='none' shape-rendering='crispEdges'/>" +
-    "</pattern>" +
-    "<filter id='r' x='0' y='0' width='100%' height='100%' color-interpolation-filters='sRGB'>" +
-    `<feTurbulence type='fractalNoise' baseFrequency='0.0011' numOctaves='3' seed='${seed}' stitchTiles='stitch' result='n'/>` +
-    "<feColorMatrix in='n' type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 0 0 0 0' result='na'/>" +
-    `<feComponentTransfer in='na' result='nb'><feFuncA type='linear' slope='${slope}' intercept='${intercept}'/></feComponentTransfer>` +
-    "<feComposite in='SourceGraphic' in2='nb' operator='in'/>" +
-    "</filter>" +
-    "</defs>" +
-    "<g filter='url(#r)'>" +
-    "<rect width='2800' height='2800' fill='url(#g)'/>" +
-    "<rect width='2800' height='2800' fill='url(#G)'/>" +
-    "</g>" +
-    "</svg>";
-  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
-}
 
 // --- The seeded circuitous top boundary ---------------------------------
 //
@@ -182,20 +142,6 @@ const CURVE_FADE_STOPS: ReadonlyArray<Readonly<{ offsetY: number; opacity: numbe
   { offsetY: 168, opacity: 0.3 },
 ];
 
-// Fine fibre tile — the paper's tooth, and the dither that keeps the
-// remapped relief free of 8-bit banding. Static, uniform, fixed SVG seed.
-const PAPER_FIBRE_TILE =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    "<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'>" +
-      "<filter id='f'>" +
-      "<feTurbulence type='fractalNoise' baseFrequency='1.35' numOctaves='2' stitchTiles='stitch' seed='7'/>" +
-      "<feColorMatrix values='0 0 0 0 0.42  0 0 0 0 0.42  0 0 0 0 0.42  0 0 0 0.42 0'/>" +
-      "</filter>" +
-      "<rect width='100%' height='100%' filter='url(#f)'/>" +
-      "</svg>",
-  );
-
 // Absolute, not fixed: layer is the size of the whole document and scrolls
 // with it. No fade-in — the paper paints with the page.
 const PAPER_LAYER_CLASS = "pointer-events-none absolute inset-0 z-40";
@@ -232,12 +178,6 @@ function LettersLayout() {
   // index there is no slug, so the sheet falls back to a stable "letters".
   const params = useParams({ strict: false }) as { slug?: string };
   const slug = params.slug ?? "letters";
-  const seed = slugSeed(slug);
-
-  // One field, two bands. Same seed/frequency/coords → continuous relief;
-  // only the output range differs by zone.
-  const textBand = gridReliefDataUri(seed, 0.02, 0.075);
-  const marginBand = gridReliefDataUri(seed, 0.16, 0.23);
 
   // The seeded boundary, feathered by offset clip-path layers.
   const fadeClips = CURVE_FADE_STOPS.map((stop) => ({
@@ -250,11 +190,23 @@ function LettersLayout() {
     <div
       data-treatment="letters"
       className="relative flex min-h-svh flex-col bg-[var(--treatment-ground)] text-[var(--treatment-ink)]"
-      style={{ isolation: "isolate", ...PAPER_GEOMETRY_VARS }}
+      style={{
+        ...criticalTreatmentRootStyle("letters"),
+        isolation: "isolate",
+        ...PAPER_GEOMETRY_VARS,
+      }}
     >
       <PaperGrain />
-      <FeatheredGridLayer image={textBand} zoneMask={TEXT_ZONE_MASK} fadeClips={fadeClips} />
-      <FeatheredGridLayer image={marginBand} zoneMask={MARGIN_ZONE_MASK} fadeClips={fadeClips} />
+      <FeatheredGridLayer
+        toneClass="letters-paper-grid--text"
+        zoneMask={TEXT_ZONE_MASK}
+        fadeClips={fadeClips}
+      />
+      <FeatheredGridLayer
+        toneClass="letters-paper-grid--margin"
+        zoneMask={MARGIN_ZONE_MASK}
+        fadeClips={fadeClips}
+      />
       <div className="relative z-10 flex flex-1 flex-col">
         <AppChrome
           treatment="letters"
@@ -266,36 +218,23 @@ function LettersLayout() {
         <main id="main" className="flex-1">
           <Outlet />
         </main>
-        <LettersFooter />
       </div>
     </div>
   );
 }
 
 function PaperGrain() {
-  return (
-    <div
-      aria-hidden
-      className={PAPER_LAYER_CLASS}
-      style={{
-        backgroundImage: `url("${PAPER_FIBRE_TILE}")`,
-        backgroundSize: "320px 320px",
-        mixBlendMode: "multiply",
-        opacity: 0.34,
-      }}
-    />
-  );
+  return <div aria-hidden className={`${PAPER_LAYER_CLASS} letters-paper-tooth`} />;
 }
 
-// One band of the sheet: the seeded relief-modulated grid (2800px tile
-// repeated down the whole scrolling document), shown only inside its
+// One band of the sheet: the checked-in CSS grid, shown only inside its
 // horizontal zone and feathered below the seeded boundary.
 function FeatheredGridLayer({
-  image,
+  toneClass,
   zoneMask,
   fadeClips,
 }: {
-  image: string;
+  toneClass: string;
   zoneMask: string;
   fadeClips: ReadonlyArray<Readonly<{ offsetY: number; opacity: number; clipPath: string }>>;
 }) {
@@ -304,7 +243,7 @@ function FeatheredGridLayer({
       {fadeClips.map((stop) => (
         <GridLayer
           key={stop.offsetY}
-          image={image}
+          toneClass={toneClass}
           zoneMask={zoneMask}
           clipPath={stop.clipPath}
           opacity={stop.opacity}
@@ -316,12 +255,12 @@ function FeatheredGridLayer({
 
 // aria-hidden decoration; the text DOM is not clipped or blended.
 function GridLayer({
-  image,
+  toneClass,
   zoneMask,
   clipPath,
   opacity,
 }: {
-  image: string;
+  toneClass: string;
   zoneMask: string;
   clipPath: string;
   opacity: number;
@@ -329,12 +268,8 @@ function GridLayer({
   return (
     <div
       aria-hidden
-      className={PAPER_LAYER_CLASS}
+      className={`${PAPER_LAYER_CLASS} letters-paper-grid ${toneClass}`}
       style={{
-        backgroundImage: `url("${image}")`,
-        backgroundSize: "2800px 2800px",
-        backgroundRepeat: "repeat",
-        mixBlendMode: "multiply",
         opacity,
         WebkitMaskImage: zoneMask,
         maskImage: zoneMask,
@@ -355,19 +290,4 @@ function LinkAdapter(props: {
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return <Link {...(props as any)} />;
-}
-
-// Letters footer — minimal colophon. Cross-treatment links live in the
-// chrome's TopNav; the footer just signs the page. No top rule (the page's
-// own rule above the story grid is enough), no link list.
-function LettersFooter() {
-  return (
-    <footer className="bg-[var(--treatment-ground)] text-[var(--treatment-ink)]">
-      <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
-        <div className="py-10 font-mono text-[11px] leading-5 tracking-[0.01em] text-[var(--treatment-muted-faint)] sm:whitespace-nowrap">
-          © 2026 Guardian Intelligence LLC · Seattle, Washington
-        </div>
-      </div>
-    </footer>
-  );
 }

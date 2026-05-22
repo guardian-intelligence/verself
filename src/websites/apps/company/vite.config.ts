@@ -14,10 +14,10 @@ const observabilityPlugin = fileURLToPath(
 );
 
 // Letters markdown loader. Each src/content/letters/*.md becomes a JS module
-// exporting { frontmatter, html } parsed at build time. Keeps the markdown
-// parser out of the browser bundle entirely — the runtime only sees the
-// pre-rendered HTML, so client navigation between letters is a static asset
-// hop with no parse cost.
+// exporting { frontmatter, html, leadHtml, continuationHtml } parsed at build
+// time. Keeps the markdown parser out of the browser bundle entirely — the
+// runtime only sees the pre-rendered HTML, so client navigation between
+// letters is a static asset hop with no parse cost.
 const LETTERS_MD = /\/src\/content\/letters\/[^/]+\.md$/;
 const lettersMarkdown = {
   name: "company:letters-markdown",
@@ -34,8 +34,18 @@ const lettersMarkdown = {
     for (const [key, value] of Object.entries(data)) {
       normalised[key] = value instanceof Date ? value.toISOString().slice(0, 10) : value;
     }
-    const html = marked.parse(content, { async: false }) as string;
-    return `export default ${JSON.stringify({ frontmatter: normalised, html })};`;
+    const tokens = marked.lexer(content);
+    const flowTokens = tokens.filter((token) => token.type !== "space");
+    const [leadToken, ...continuationTokens] = flowTokens;
+    const html = marked.parser(tokens);
+    const leadHtml = leadToken ? marked.parser([leadToken]) : "";
+    const continuationHtml = continuationTokens.length > 0 ? marked.parser(continuationTokens) : "";
+    return `export default ${JSON.stringify({
+      frontmatter: normalised,
+      html,
+      leadHtml,
+      continuationHtml,
+    })};`;
   },
 };
 

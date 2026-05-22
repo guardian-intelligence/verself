@@ -34,11 +34,15 @@ const LetterModuleSchema = v.object({
   default: v.object({
     frontmatter: LetterFrontmatterSchema,
     html: v.string(),
+    leadHtml: v.string(),
+    continuationHtml: v.string(),
   }),
 });
 
 export type Letter = v.InferOutput<typeof LetterFrontmatterSchema> & {
   readonly bodyHtml: string;
+  readonly leadHtml: string;
+  readonly continuationHtml: string;
 };
 
 export const LETTERS_META = {
@@ -57,7 +61,12 @@ function parseLetter(path: string, mod: unknown): Letter {
       .join("\n");
     throw new Error(`letters: ${path} frontmatter is invalid:\n${issues}`);
   }
-  return { ...result.output.default.frontmatter, bodyHtml: result.output.default.html };
+  return {
+    ...result.output.default.frontmatter,
+    bodyHtml: result.output.default.html,
+    leadHtml: result.output.default.leadHtml,
+    continuationHtml: result.output.default.continuationHtml,
+  };
 }
 
 const RAW_LETTERS = import.meta.glob<unknown>("./letters/*.md", { eager: true });

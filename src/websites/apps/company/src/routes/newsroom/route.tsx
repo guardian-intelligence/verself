@@ -2,6 +2,8 @@ import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-r
 import type { ReactNode } from "react";
 import { AppChrome } from "@verself/brand";
 import { TopNav } from "~/components/top-nav";
+import { criticalTreatmentHead, criticalTreatmentRootStyle } from "~/lib/critical-treatment";
+import newsroomCriticalCss from "~/styles/critical/newsroom.css?inline";
 
 // Newsroom layout — /newsroom and any future /newsroom/$slug share this
 // chrome. Flare ground, emboss Lockup, ink type. The broadcast register:
@@ -14,6 +16,7 @@ import { TopNav } from "~/components/top-nav";
 
 export const Route = createFileRoute("/newsroom")({
   component: NewsroomLayout,
+  head: () => criticalTreatmentHead("newsroom", newsroomCriticalCss),
 });
 
 function NewsroomLayout() {
@@ -23,10 +26,7 @@ function NewsroomLayout() {
     <div
       data-treatment="newsroom"
       className="flex min-h-svh flex-col"
-      style={{
-        background: "var(--treatment-ground)",
-        color: "var(--treatment-ink)",
-      }}
+      style={criticalTreatmentRootStyle("newsroom")}
     >
       <AppChrome
         treatment="newsroom"

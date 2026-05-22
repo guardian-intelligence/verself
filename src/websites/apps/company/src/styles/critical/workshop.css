@@ -1,0 +1,37 @@
+@property --treatment-rule-thickness {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 1px;
+}
+
+html,
+body {
+  margin: 0;
+  background: #0e0e0e;
+  color: #f5f5f5;
+  color-scheme: dark;
+}
+
+[data-treatment="workshop"] {
+  --chrome-edge-gap: 10px;
+  --chrome-inline-gap: 20px;
+  --chrome-rule-gap: calc(var(--chrome-edge-gap) + var(--treatment-rule-thickness));
+  --chrome-lockup-h: 22px;
+  --header-h: calc(var(--chrome-edge-gap) + var(--chrome-lockup-h) + var(--chrome-rule-gap));
+  --header-scroll-offset: calc(var(--header-h) + 1.5rem);
+  --treatment-ground: #0e0e0e;
+  --treatment-ink: #f5f5f5;
+  --treatment-accent: #f79326;
+  --treatment-wordmark: #ffffff;
+  --treatment-display-font: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --treatment-body-font: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --treatment-muted-strong: rgba(245, 245, 245, 0.82);
+  --treatment-muted: rgba(245, 245, 245, 0.72);
+  --treatment-muted-meta: rgba(245, 245, 245, 0.6);
+  --treatment-muted-faint: rgba(245, 245, 245, 0.55);
+  --treatment-surface-subtle: rgba(245, 245, 245, 0.04);
+  --treatment-surface-border: rgba(245, 245, 245, 0.12);
+  --treatment-hairline: rgba(245, 245, 245, 0.08);
+  --treatment-rule-color: rgba(245, 245, 245, 0.08);
+  --treatment-rule-thickness: 1px;
+}

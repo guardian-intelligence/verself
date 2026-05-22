@@ -1,0 +1,37 @@
+@property --treatment-rule-thickness {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 1px;
+}
+
+html,
+body {
+  margin: 0;
+  background: #ffffff;
+  color: #0b0b0b;
+  color-scheme: light;
+}
+
+[data-treatment="newsroom"] {
+  --chrome-edge-gap: 10px;
+  --chrome-inline-gap: 20px;
+  --chrome-rule-gap: calc(var(--chrome-edge-gap) + var(--treatment-rule-thickness));
+  --chrome-lockup-h: 22px;
+  --header-h: calc(var(--chrome-edge-gap) + var(--chrome-lockup-h) + var(--chrome-rule-gap));
+  --header-scroll-offset: calc(var(--header-h) + 1.5rem);
+  --treatment-ground: #ffffff;
+  --treatment-ink: #0b0b0b;
+  --treatment-accent: #0b0b0b;
+  --treatment-wordmark: #0b0b0b;
+  --treatment-display-font: "Fraunces", Georgia, serif;
+  --treatment-body-font: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --treatment-muted-strong: rgba(11, 11, 11, 0.78);
+  --treatment-muted: rgba(11, 11, 11, 0.7);
+  --treatment-muted-meta: rgba(11, 11, 11, 0.6);
+  --treatment-muted-faint: rgba(11, 11, 11, 0.55);
+  --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
+  --treatment-surface-border: rgba(11, 11, 11, 0.12);
+  --treatment-hairline: rgba(11, 11, 11, 0.12);
+  --treatment-rule-color: rgba(11, 11, 11, 0.12);
+  --treatment-rule-thickness: 1px;
+}

@@ -67,7 +67,7 @@ export function TopNav() {
               key={item.to}
               to={item.to}
               aria-current={isActive ? "page" : undefined}
-              className="font-mono text-[11px] font-medium uppercase tracking-[0.16em] transition-colors hover:underline hover:underline-offset-4"
+              className="inline-flex min-h-[var(--chrome-lockup-h)] items-center font-mono text-[11px] font-medium uppercase tracking-[0.16em] transition-colors hover:underline hover:underline-offset-4"
               style={{
                 color: isActive ? "var(--treatment-ink)" : "var(--treatment-muted)",
                 textDecoration: isActive ? "underline" : undefined,
@@ -87,10 +87,10 @@ export function TopNav() {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen(true)}
-        className="-mr-2 inline-flex items-center justify-center p-2 md:hidden"
+        className="inline-flex h-[22px] w-[22px] items-center justify-center md:hidden"
         style={{ color: "var(--treatment-ink)" }}
       >
-        <Menu size={22} aria-hidden="true" />
+        <Menu size={17} aria-hidden="true" />
       </button>
 
       {open ? (
@@ -129,7 +129,6 @@ function MobileNavPanel({
         style={{
           background: "var(--treatment-ground)",
           color: "var(--treatment-ink)",
-          borderBottom: "var(--treatment-rule-thickness) solid var(--treatment-rule-color)",
         }}
       >
         <div className="flex items-center justify-end">
@@ -165,6 +164,14 @@ function MobileNavPanel({
             );
           })}
         </nav>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 transition-[height,background-color] duration-300 ease-out"
+          style={{
+            height: "var(--treatment-rule-thickness)",
+            background: "var(--treatment-rule-color)",
+          }}
+        />
       </div>
     </div>
   );
