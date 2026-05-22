@@ -1,0 +1,4 @@
+postgresql_service_databases:
+  - { name: notifications_service, owner: notifications_service }
+postgresql_peer_mappings:
+  - { system_user: notifications_service, pg_user: notifications_service }

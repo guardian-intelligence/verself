@@ -1,0 +1,2 @@
+clickhouse_client_ca_credentials:
+  - { path: /etc/credstore/github-integration-service/clickhouse-ca-cert, group: github_integration_service }

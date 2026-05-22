@@ -1,8 +1,11 @@
 # gazelle:prefix github.com/verself/github-integration-service
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks(
     extra_srcs = [
@@ -41,6 +44,7 @@ nomad_component(
         "//src/services/github-integration-service/cmd/github-integration-service:github-integration-service_nomad_artifact": "github-integration-service",
     },
     component = "github_integration_service",
+    digest_inputs = [":deploy_declarations"],
     job_id = "github-integration",
     job_spec = "nomad.hcl",
     requires = [

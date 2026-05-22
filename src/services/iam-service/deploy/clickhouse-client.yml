@@ -1,0 +1,2 @@
+clickhouse_client_ca_credentials:
+  - { path: /etc/credstore/iam-service/clickhouse-ca-cert, group: iam_service }

@@ -1,0 +1,2 @@
+postgresql_peer_mappings:
+  - { system_user: temporal_server, pg_user: temporal }

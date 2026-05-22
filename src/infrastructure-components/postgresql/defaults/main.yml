@@ -10,16 +10,6 @@ postgresql_log_dir: /var/log/postgresql
 postgresql_max_connections: 300
 postgresql_superuser_reserved_connections: 10
 
-postgresql_service_databases:
-  - { name: billing, owner: billing }
-  - { name: github_integration_service, owner: github_integration_service }
-  - { name: governance_service, owner: governance_service }
-  - { name: iam_service, owner: iam_service }
-  - { name: mailbox_service, owner: mailbox_service }
-  - { name: notifications_service, owner: notifications_service }
-  - { name: object_storage_service, owner: object_storage_service }
-  - { name: profile, owner: profile_service }
-  - { name: projects_service, owner: projects_service }
-  - { name: sandbox_rental, owner: sandbox_rental }
-  - { name: source_code_hosting, owner: source_code_hosting_service }
-  - { name: spicedb, owner: spicedb }
+postgresql_service_databases: []
+postgresql_peer_mappings:
+  - { system_user: postgres, pg_user: postgres }

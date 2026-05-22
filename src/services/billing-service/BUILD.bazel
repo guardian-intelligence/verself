@@ -1,8 +1,11 @@
 # gazelle:prefix github.com/verself/billing-service
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
 
@@ -22,6 +25,7 @@ nomad_component(
         "//src/services/billing-service/cmd/billing-service:billing-service_nomad_artifact": "billing-service",
     },
     component = "billing",
+    digest_inputs = [":deploy_declarations"],
     job_id = "billing",
     job_spec = "nomad.hcl",
     requires = [

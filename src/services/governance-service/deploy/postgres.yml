@@ -1,0 +1,7 @@
+postgresql_service_databases:
+  - { name: governance_service, owner: governance_service }
+postgresql_peer_mappings:
+  - { system_user: governance_service, pg_user: governance_service }
+  - { system_user: governance_service, pg_user: iam_service }
+  - { system_user: governance_service, pg_user: billing }
+  - { system_user: governance_service, pg_user: sandbox_rental }

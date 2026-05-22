@@ -1,6 +1,9 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+deploy_declarations(visibility = ["//visibility:public"])
 
 pkg_tar(
     name = "config_artifact",
@@ -34,6 +37,7 @@ nomad_component(
     },
     component = "otelcol",
     deploy_phase = "platform",
+    digest_inputs = [":deploy_declarations"],
     job_id = "otelcol",
     job_spec = "nomad.hcl",
     provides = ["otelcol:otlp"],

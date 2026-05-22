@@ -15,16 +15,18 @@
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   vars:
+    # Anchor declaration discovery to authored source, independent of the
+    # playbook subprocess cwd chosen by the Aspect task wrapper.
+    verself_repo_root: "{{ playbook_dir | dirname | dirname | dirname | dirname }}"
     clickhouse_client_ca_source: /etc/clickhouse-server/tls/server-ca.pem
-    clickhouse_client_ca_credentials:
-      - { path: /etc/credstore/analytics-service/clickhouse-ca-cert, group: analytics_service }
-      - { path: /etc/credstore/billing/clickhouse-ca-cert, group: billing }
-      - { path: /etc/credstore/github-integration-service/clickhouse-ca-cert, group: github_integration_service }
-      - { path: /etc/credstore/governance-service/clickhouse-ca-cert, group: governance_service }
-      - { path: /etc/credstore/iam-service/clickhouse-ca-cert, group: iam_service }
-      - { path: /etc/credstore/notifications-service/clickhouse-ca-cert, group: notifications_service }
-      - { path: /etc/credstore/object-storage-service/clickhouse-ca-cert, group: object_storage_service }
-      - { path: /etc/credstore/sandbox-rental/clickhouse-ca-cert, group: sandbox_rental }
+    verself_owner_declaration_roots:
+      - "{{ verself_repo_root }}/src/services"
+      - "{{ verself_repo_root }}/src/infrastructure-components"
+      - "{{ verself_repo_root }}/src/websites/apps"
+    postgresql_declaration_suffix: "/deploy/postgres[.]yml$"
+    clickhouse_client_declaration_suffix: "/deploy/clickhouse-client[.]yml$"
+    openbao_runtime_secret_declaration_suffix: "/deploy/runtime-secrets[.]yml$"
+    haproxy_public_route_declaration_suffix: "/deploy/public-routes[.]yml$"
   tasks:
     - name: Assert SPIRE identity registry input
       ansible.builtin.assert:
@@ -37,9 +39,116 @@
       ansible.builtin.include_role:
         name: spire_registrations
 
+    - name: Initialize owner-local foundation declarations
+      ansible.builtin.set_fact:
+        postgresql_service_databases: []
+        postgresql_peer_mappings:
+          - { system_user: postgres, pg_user: postgres }
+        clickhouse_client_ca_credentials: []
+        openbao_runtime_secret_seed_declarations: []
+        haproxy_public_routes: []
+        haproxy_public_apis: []
+
+    - name: Discover owner-local foundation declaration files
+      ansible.builtin.find:
+        paths: "{{ verself_owner_declaration_roots }}"
+        file_type: file
+        recurse: true
+        patterns:
+          - postgres.yml
+          - clickhouse-client.yml
+          - runtime-secrets.yml
+          - public-routes.yml
+      delegate_to: localhost
+      become: false
+      register: owner_local_foundation_declaration_find
+
+    - name: Classify owner-local foundation declaration files
+      ansible.builtin.set_fact:
+        owner_local_foundation_declaration_files: "{{ owner_local_foundation_declaration_find.files | map(attribute='path') | list }}"
+
+    - name: Publish typed owner-local foundation declaration lists
+      ansible.builtin.set_fact:
+        postgresql_declaration_files: >-
+          {{
+            owner_local_foundation_declaration_files
+            | select('search', postgresql_declaration_suffix)
+            | list
+            | sort
+          }}
+        clickhouse_client_declaration_files: >-
+          {{
+            owner_local_foundation_declaration_files
+            | select('search', clickhouse_client_declaration_suffix)
+            | list
+            | sort
+          }}
+        openbao_runtime_secret_declaration_files: >-
+          {{
+            owner_local_foundation_declaration_files
+            | select('search', openbao_runtime_secret_declaration_suffix)
+            | list
+            | sort
+          }}
+        haproxy_public_route_declaration_files: >-
+          {{
+            owner_local_foundation_declaration_files
+            | select('search', haproxy_public_route_declaration_suffix)
+            | list
+            | sort
+          }}
+
+    - name: Load owner-local PostgreSQL declarations
+      ansible.builtin.set_fact:
+        postgresql_service_databases: >-
+          {{
+            postgresql_service_databases
+            + ((lookup('ansible.builtin.file', item) | from_yaml).postgresql_service_databases | default([]))
+          }}
+        postgresql_peer_mappings: >-
+          {{
+            postgresql_peer_mappings
+            + ((lookup('ansible.builtin.file', item) | from_yaml).postgresql_peer_mappings | default([]))
+          }}
+      loop: "{{ postgresql_declaration_files }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Assert owner-local PostgreSQL declarations are well formed
+      ansible.builtin.assert:
+        that:
+          - postgresql_service_databases | length > 0
+          - postgresql_peer_mappings | length > 1
+          - postgresql_service_databases | selectattr('name', 'defined') | list | length == postgresql_service_databases | length
+          - postgresql_service_databases | selectattr('owner', 'defined') | list | length == postgresql_service_databases | length
+          - postgresql_peer_mappings | selectattr('system_user', 'defined') | list | length == postgresql_peer_mappings | length
+          - postgresql_peer_mappings | selectattr('pg_user', 'defined') | list | length == postgresql_peer_mappings | length
+          - postgresql_service_databases | map(attribute='name') | unique | list | length == postgresql_service_databases | length
+        fail_msg: "Owner-local PostgreSQL deploy declarations are missing or malformed."
+
     - name: Converge PostgreSQL local service databases
       ansible.builtin.include_role:
         name: postgresql
+
+    - name: Load owner-local ClickHouse client declarations
+      ansible.builtin.set_fact:
+        clickhouse_client_ca_credentials: >-
+          {{
+            clickhouse_client_ca_credentials
+            + ((lookup('ansible.builtin.file', item) | from_yaml).clickhouse_client_ca_credentials | default([]))
+          }}
+      loop: "{{ clickhouse_client_declaration_files }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Assert owner-local ClickHouse client declarations are well formed
+      ansible.builtin.assert:
+        that:
+          - clickhouse_client_ca_credentials | length > 0
+          - clickhouse_client_ca_credentials | selectattr('path', 'defined') | list | length == clickhouse_client_ca_credentials | length
+          - clickhouse_client_ca_credentials | selectattr('group', 'defined') | list | length == clickhouse_client_ca_credentials | length
+          - clickhouse_client_ca_credentials | map(attribute='path') | unique | list | length == clickhouse_client_ca_credentials | length
+        fail_msg: "Owner-local ClickHouse client deploy declarations are missing or malformed."
 
     - name: Converge ClickHouse client CA credential directories
       ansible.builtin.file:
@@ -64,8 +173,60 @@
       loop_control:
         label: "{{ item.path }}"
 
+    - name: Load owner-local OpenBao runtime-secret declarations
+      ansible.builtin.set_fact:
+        openbao_runtime_secret_seed_declarations: >-
+          {{
+            openbao_runtime_secret_seed_declarations
+            + ((lookup('ansible.builtin.file', item) | from_yaml).openbao_runtime_secret_seed_declarations | default([]))
+          }}
+      loop: "{{ openbao_runtime_secret_declaration_files }}"
+      loop_control:
+        label: "{{ item }}"
+      no_log: true
+
+    - name: Assert owner-local OpenBao runtime-secret declarations are well formed
+      ansible.builtin.assert:
+        that:
+          - openbao_runtime_secret_seed_declarations | length > 0
+          - openbao_runtime_secret_seed_declarations | selectattr('name', 'defined') | list | length == openbao_runtime_secret_seed_declarations | length
+          - openbao_runtime_secret_seed_declarations | selectattr('site_secret', 'defined') | list | length == openbao_runtime_secret_seed_declarations | length
+          - openbao_runtime_secret_seed_declarations | map(attribute='name') | unique | list | length == openbao_runtime_secret_seed_declarations | length
+        fail_msg: "Owner-local OpenBao runtime-secret deploy declarations are missing or malformed."
+      no_log: true
+
     - name: Converge OpenBao platform runtime secrets
       ansible.builtin.import_tasks: tasks/openbao-runtime-secrets.yml
+
+    - name: Load owner-local HAProxy public route declarations
+      ansible.builtin.set_fact:
+        haproxy_public_routes: >-
+          {{
+            haproxy_public_routes
+            + ((lookup('ansible.builtin.template', item) | from_yaml).haproxy_public_routes | default([]))
+          }}
+        haproxy_public_apis: >-
+          {{
+            haproxy_public_apis
+            + ((lookup('ansible.builtin.template', item) | from_yaml).haproxy_public_apis | default([]))
+          }}
+      loop: "{{ haproxy_public_route_declaration_files }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Assert owner-local HAProxy public route declarations are well formed
+      ansible.builtin.assert:
+        that:
+          - haproxy_public_routes | length > 0
+          - haproxy_public_apis | length > 0
+          - haproxy_public_routes | selectattr('host', 'defined') | list | length == haproxy_public_routes | length
+          - haproxy_public_routes | selectattr('backend', 'defined') | list | length == haproxy_public_routes | length
+          - haproxy_public_apis | selectattr('key', 'defined') | list | length == haproxy_public_apis | length
+          - haproxy_public_apis | selectattr('host', 'defined') | list | length == haproxy_public_apis | length
+          - haproxy_public_apis | selectattr('path_prefix', 'defined') | list | length == haproxy_public_apis | length
+          - haproxy_public_routes | map(attribute='host') | unique | list | length == haproxy_public_routes | length
+          - haproxy_public_apis | map(attribute='key') | unique | list | length == haproxy_public_apis | length
+        fail_msg: "Owner-local HAProxy public route deploy declarations are missing or malformed."
 
     - name: Converge HAProxy public service routing
       ansible.builtin.include_role:

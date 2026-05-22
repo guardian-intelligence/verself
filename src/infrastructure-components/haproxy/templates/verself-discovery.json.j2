@@ -10,53 +10,11 @@
     "product_api_audience": {{ (haproxy_verself_product_api_audience | default('')) | to_json }}
   },
   "public_apis": {
-    "analytics": {
-      "base_url": {{ ('https://analytics.api.' ~ verself_domain) | to_json }},
-      "path_prefix": "/v1/logs"
-    },
-    "billing": {
-      "base_url": {{ ('https://' ~ billing_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "governance": {
-      "base_url": {{ ('https://' ~ governance_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "github": {
-      "base_url": {{ ('https://' ~ github_integration_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "iam": {
-      "base_url": {{ ('https://' ~ iam_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "mailbox": {
-      "base_url": {{ ('https://' ~ mailbox_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "notifications": {
-      "base_url": {{ ('https://' ~ notifications_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "profile": {
-      "base_url": {{ ('https://' ~ profile_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "projects": {
-      "base_url": {{ ('https://' ~ projects_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "sandbox": {
-      "base_url": {{ ('https://' ~ sandbox_rental_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "secrets": {
-      "base_url": {{ ('https://' ~ secrets_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    },
-    "source": {
-      "base_url": {{ ('https://' ~ source_code_hosting_service_domain) | to_json }},
-      "path_prefix": "/api/v1"
-    }
+{% for api in haproxy_public_apis | default([]) | sort(attribute='key') %}
+    {{ api.key | to_json }}: {
+      "base_url": {{ ('https://' ~ api.host) | to_json }},
+      "path_prefix": {{ api.path_prefix | to_json }}
+    }{{ "," if not loop.last else "" }}
+{% endfor %}
   }
 }

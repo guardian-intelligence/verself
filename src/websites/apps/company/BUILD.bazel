@@ -1,9 +1,12 @@
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/websites:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_route_tree")
 
 package(default_visibility = ["//visibility:public"])
+
+deploy_declarations(visibility = ["//visibility:public"])
 
 nomad_component(
     name = "nomad_component",
@@ -12,6 +15,7 @@ nomad_component(
         "//src/websites:nodejs_runtime_nomad_artifact": "nodejs-runtime",
     },
     component = "company",
+    digest_inputs = [":deploy_declarations"],
     job_id = "company",
     job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],

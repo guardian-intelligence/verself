@@ -1,0 +1,2 @@
+clickhouse_client_ca_credentials:
+  - { path: /etc/credstore/notifications-service/clickhouse-ca-cert, group: notifications_service }

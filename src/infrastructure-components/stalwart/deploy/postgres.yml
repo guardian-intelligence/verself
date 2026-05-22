@@ -1,0 +1,2 @@
+postgresql_peer_mappings:
+  - { system_user: stalwart, pg_user: stalwart }

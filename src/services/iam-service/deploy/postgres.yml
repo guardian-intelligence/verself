@@ -1,0 +1,4 @@
+postgresql_service_databases:
+  - { name: iam_service, owner: iam_service }
+postgresql_peer_mappings:
+  - { system_user: iam_service, pg_user: iam_service }

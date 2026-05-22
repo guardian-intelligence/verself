@@ -1,0 +1,4 @@
+postgresql_service_databases:
+  - { name: profile, owner: profile_service }
+postgresql_peer_mappings:
+  - { system_user: profile_service, pg_user: profile_service }

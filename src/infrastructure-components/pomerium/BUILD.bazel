@@ -1,0 +1,25 @@
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
+
+deploy_declarations(visibility = ["//visibility:public"])
+
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "defaults/**",
+            "deploy/**",
+            "files/**",
+            "handlers/**",
+            "meta/**",
+            "migrations/**",
+            "tasks/**",
+            "templates/**",
+            "vars/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = [
+        "//src/host:__pkg__",
+        "//src/infrastructure-components:__pkg__",
+    ],
+)

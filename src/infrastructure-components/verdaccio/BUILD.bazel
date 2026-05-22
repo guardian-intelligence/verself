@@ -1,10 +1,14 @@
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+deploy_declarations(visibility = ["//visibility:public"])
 
 filegroup(
     name = "role_sources",
     srcs = glob(
         [
             "defaults/**",
+            "deploy/**",
             "files/**",
             "handlers/**",
             "meta/**",
@@ -25,6 +29,7 @@ nomad_component(
     name = "nomad_component",
     component = "verdaccio",
     deploy_phase = "platform",
+    digest_inputs = [":deploy_declarations"],
     job_id = "verdaccio",
     job_spec = "nomad.hcl",
     provides = ["verdaccio:http"],

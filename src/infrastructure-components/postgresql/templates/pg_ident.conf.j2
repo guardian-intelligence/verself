@@ -4,24 +4,8 @@
 # MAPNAME                 SYSTEM-USERNAME     PG-USERNAME
 
 verself_services      postgres            postgres
-verself_services      billing             billing
-verself_services      github_integration_service  github_integration_service
-verself_services      sandbox_rental      sandbox_rental
-verself_services      iam_service    iam_service
-verself_services      governance_service  governance_service
-verself_services      profile_service     profile_service
-verself_services      notifications_service notifications_service
-verself_services      projects_service    projects_service
-verself_services      source_code_hosting_service source_code_hosting_service
-verself_services      mailbox_service     mailbox_service
-verself_services      object_storage_service object_storage_service
-verself_services      object_storage_admin object_storage_service
-verself_services      spicedb             spicedb
-verself_services      stalwart            stalwart
-verself_services      temporal_server     temporal
-verself_services      otelcol             otelcol
-
-# governance-service performs forensic exports across service-owned databases.
-verself_services      governance_service  iam_service
-verself_services      governance_service  billing
-verself_services      governance_service  sandbox_rental
+{% for mapping in postgresql_peer_mappings | default([]) | sort(attribute='system_user') %}
+{% if not (mapping.system_user == 'postgres' and mapping.pg_user == 'postgres') %}
+verself_services      {{ "%-24s" | format(mapping.system_user) }} {{ mapping.pg_user }}
+{% endif %}
+{% endfor %}

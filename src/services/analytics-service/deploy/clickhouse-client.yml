@@ -1,0 +1,2 @@
+clickhouse_client_ca_credentials:
+  - { path: /etc/credstore/analytics-service/clickhouse-ca-cert, group: analytics_service }

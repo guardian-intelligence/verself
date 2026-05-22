@@ -7,6 +7,7 @@ filegroup(
     srcs = glob(
         [
             "defaults/**",
+            "deploy/**",
             "files/**",
             "handlers/**",
             "meta/**",
@@ -23,6 +24,31 @@ filegroup(
     ],
 )
 
+filegroup(
+    name = "public_route_declarations",
+    srcs = [
+        "//src/infrastructure-components/forgejo:deploy_declarations",
+        "//src/infrastructure-components/grafana:deploy_declarations",
+        "//src/infrastructure-components/pomerium:deploy_declarations",
+        "//src/infrastructure-components/stalwart:deploy_declarations",
+        "//src/infrastructure-components/verdaccio:deploy_declarations",
+        "//src/services/analytics-service:deploy_declarations",
+        "//src/services/billing-service:deploy_declarations",
+        "//src/services/github-integration-service:deploy_declarations",
+        "//src/services/governance-service:deploy_declarations",
+        "//src/services/iam-service:deploy_declarations",
+        "//src/services/mailbox-service:deploy_declarations",
+        "//src/services/notifications-service:deploy_declarations",
+        "//src/services/profile-service:deploy_declarations",
+        "//src/services/projects-service:deploy_declarations",
+        "//src/services/sandbox-rental-service:deploy_declarations",
+        "//src/services/secrets-service:deploy_declarations",
+        "//src/services/source-code-hosting-service:deploy_declarations",
+        "//src/websites/apps/company:deploy_declarations",
+        "//src/websites/apps/verself-web:deploy_declarations",
+    ],
+)
+
 nomad_component(
     name = "nomad_component",
     artifacts = {
@@ -30,7 +56,10 @@ nomad_component(
     },
     component = "haproxy_upstreams",
     deploy_phase = "platform",
-    digest_inputs = [":role_sources"],
+    digest_inputs = [
+        ":public_route_declarations",
+        ":role_sources",
+    ],
     job_id = "haproxy-upstreams",
     job_spec = "nomad.hcl",
     requires = [

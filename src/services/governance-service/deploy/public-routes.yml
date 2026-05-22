@@ -1,0 +1,7 @@
+haproxy_public_routes:
+  - host: '{{ governance_service_domain }}'
+    backend: be_route_product_governance_api_governance_service_public_api
+haproxy_public_apis:
+  - key: governance
+    host: '{{ governance_service_domain }}'
+    path_prefix: /api/v1

@@ -1,0 +1,2 @@
+clickhouse_client_ca_credentials:
+  - { path: /etc/credstore/billing/clickhouse-ca-cert, group: billing }

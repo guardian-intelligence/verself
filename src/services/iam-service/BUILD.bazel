@@ -1,8 +1,11 @@
 # gazelle:prefix github.com/verself/iam-service
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
 
@@ -22,6 +25,7 @@ nomad_component(
         "//src/services/iam-service/cmd/iam-service:iam-service_nomad_artifact": "iam-service",
     },
     component = "iam_service",
+    digest_inputs = [":deploy_declarations"],
     job_id = "iam-service",
     job_spec = "nomad.hcl",
     requires = [
