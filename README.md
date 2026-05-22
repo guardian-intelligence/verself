@@ -60,6 +60,8 @@ Choose the controller platform that is running the repo commands.
 ./src/tools/dev/bootstrap/bootstrap-linux-amd64
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
 bazelisk mod tidy
+aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
+export PATH="${HOME}/.local/bin:${HOME}/.local/share/verself/ruby/4.0.5/bin:${PATH}"
 ```
 
 ### macOS Apple Silicon controller

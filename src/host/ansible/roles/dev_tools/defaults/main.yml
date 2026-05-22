@@ -9,6 +9,55 @@ dev_tools_system_packages:
       we accept upstream Ubuntu's archive integrity for the gcc/g++/make
       versions it pulls in.
     version_cmd: gcc --version
+  libffi-dev:
+    risk_acknowledgement: >-
+      libffi-dev provides headers for Ruby's fiddle extension. We accept
+      upstream Ubuntu's archive integrity because the Ruby source archive is
+      still sha-pinned by Bazel and this package only supplies OS ABI headers
+      and libraries.
+    version_cmd: pkg-config --modversion libffi
+  libgdbm-dev:
+    risk_acknowledgement: >-
+      libgdbm-dev provides headers for Ruby's gdbm extension. We accept
+      upstream Ubuntu's archive integrity because the Ruby source archive is
+      still sha-pinned by Bazel and this package only supplies OS ABI headers
+      and libraries.
+    version_cmd: dpkg-query -W -f='${Version}\n' libgdbm-dev
+  libncurses-dev:
+    risk_acknowledgement: >-
+      libncurses-dev provides terminal capability headers used by interactive
+      Ruby tools. We accept upstream Ubuntu's archive integrity because the
+      Ruby source archive is still sha-pinned by Bazel and this package only
+      supplies OS ABI headers and libraries.
+    version_cmd: ncursesw6-config --version
+  libreadline-dev:
+    risk_acknowledgement: >-
+      libreadline-dev provides headers for Ruby's readline extension. We accept
+      upstream Ubuntu's archive integrity because the Ruby source archive is
+      still sha-pinned by Bazel and this package only supplies OS ABI headers
+      and libraries.
+    version_cmd: dpkg-query -W -f='${Version}\n' libreadline-dev
+  libssl-dev:
+    risk_acknowledgement: >-
+      libssl-dev provides headers for Ruby's OpenSSL extension. We accept
+      upstream Ubuntu's archive integrity because the Ruby source archive is
+      still sha-pinned by Bazel and this package only supplies OS ABI headers
+      and libraries.
+    version_cmd: openssl version
+  libyaml-dev:
+    risk_acknowledgement: >-
+      libyaml-dev provides headers for Ruby's psych YAML extension. We accept
+      upstream Ubuntu's archive integrity because the Ruby source archive is
+      still sha-pinned by Bazel and this package only supplies OS ABI headers
+      and libraries.
+    version_cmd: dpkg-query -W -f='${Version}\n' libyaml-dev
+  zlib1g-dev:
+    risk_acknowledgement: >-
+      zlib1g-dev provides headers for Ruby's zlib extension and RubyGems
+      archive handling. We accept upstream Ubuntu's archive integrity because
+      the Ruby source archive is still sha-pinned by Bazel and this package
+      only supplies OS ABI headers and libraries.
+    version_cmd: dpkg-query -W -f='${Version}\n' zlib1g-dev
   crun:
     apt_version_constraint: 1.14.1
     risk_acknowledgement: >-

@@ -57,6 +57,13 @@ http_file(
 )
 
 http_file(
+    name = "dev_tool_ruby",
+    downloaded_file_path = "ruby-4.0.5.tar.gz",
+    sha256 = "7d6149079a63f8ae1d326c9fa65c6019ba2dc3155eae7b39159817911c88958e",
+    url = "https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.5.tar.gz",
+)
+
+http_file(
     name = "dev_tool_syft",
     downloaded_file_path = "syft_1.43.0_linux_amd64.tar.gz",
     sha256 = "7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a",
