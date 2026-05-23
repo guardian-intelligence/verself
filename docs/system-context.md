@@ -71,7 +71,7 @@ Single-node is the default deployment — everything runs on one box with no rep
 
 ## Safety Rings
 
-- **Internet-Exposed:** frontend TanStack apps (`src/websites/apps/*`), Go services (`src/services/sandbox-rental-service`, `src/services/mailbox-service`, `src/services/billing-service`'s webhook handler), Forgejo, Grafana. Hardened via nftables.
+- **Internet-Exposed:** frontend TanStack apps (`src/websites/apps/*`), Go services (`src/services/sandbox-rental-service`, `src/services/email-service`, `src/services/billing-service`'s webhook handler), Forgejo, Grafana. Hardened via nftables.
 - **Private Subnet / Linux Userspace:** internal Go services (billing-service), databases (PostgreSQL, ClickHouse, TigerBeetle), self-hosted platform components (Zitadel, Stalwart).
 - **Linux Root:** ZFS, `src/substrate/vm-orchestrator`.
 
@@ -86,7 +86,8 @@ Hard product requirement: everything self-hosted. Exceptions:
   [`docs/architecture/data-handling.md`](architecture/data-handling.md).
 - **Domain Registrar:** Cloudflare.
 - **Compute Provider:** Latitude.sh.
-- **Email Delivery:** Resend (outbound). Inbound self-hosted via Stalwart.
+- **Email Delivery:** `email-service` owns outbound and inbound email. Resend
+  is the initial outbound provider; Stalwart owns inbound mail storage.
 - **Payments, Tax, Payment Methods:** Stripe.
 
 ## Auth and IAM
@@ -111,7 +112,7 @@ Credit-based subscription billing with entitlements — a prepaid + metered hybr
 
 ## Inbound Mail
 
-Self-hosted inbound via Stalwart. Boundary, auth, storage, and the mailbox-service model: `src/services/mailbox-service/docs/inbound-mail.md`.
+Self-hosted inbound via Stalwart. Boundary, auth, storage, and the email-service model: `src/services/email-service/docs/email-service.md`.
 
 ## Supply Chain
 

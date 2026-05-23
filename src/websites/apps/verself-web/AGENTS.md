@@ -120,10 +120,7 @@ here. Bucket-level analytics belong in Grafana, not the customer UI.
 ## agent-browser login runbook (console QA / design review)
 
 The signed-in console (`_shell/_authenticated/*`, including the flight widget)
-is Zitadel-auth-gated. Do **not** use `ceo@verself.sh` for automation: the
-founder account has a U2F hardware key (FaceID/Hello/fingerprint) as a second
-factor that cannot be satisfied headlessly, and stripping it is off-limits.
-Use the dedicated QA human instead.
+is Zitadel-auth-gated. Use the dedicated QA human for automation.
 
 **QA account (verified working, 2026-05-16):** `qa-flight@verself.sh`, a
 password-only Zitadel human in the platform org `guardian-intelligence`
@@ -173,12 +170,6 @@ user:b64_<base64(zitadelUserId)>`. Discover `<ORG>` / subject form from
 - Vault it: `printf %s '<pw>' | agent-browser auth save verself-qa
 --url https://verself.sh/login --username qa-flight@verself.sh
 --password-stdin`.
-
-(Historical note: `ceo@verself.sh`'s password was rotated during this work to a
-value held only in the `verself-ceo` vault profile; ceo remains unusable for
-automation because of its U2F factor. The vault is AES-256-GCM —
-`~/.agent-browser/.encryption-key` 64-hex → 32-byte key, `iv`/`authTag`/`data`
-base64, `node:crypto createDecipheriv("aes-256-gcm", …)`.)
 
 ### Flight widget QA states (no backend needed)
 

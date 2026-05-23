@@ -410,7 +410,7 @@ and refresh token bundle is stored behind `credential_ref`; profile files store
 only non-secret references and selected org metadata.
 
 ```text
-verself signup --email founder@example.com --org "Acme"
+verself signup --email owner@example.com --org "Acme"
 verself auth login
 verself auth whoami
 verself auth logout
@@ -638,7 +638,7 @@ Initial option catalog:
 | DNS and TLS | Cloudflare API token, account ID, zone ID, DNS zone intent | DNS reconciliation and host convergence tasks before or during `aspect deploy` |
 | Backups | AWS S3 access key ID, secret access key, region, bucket, prefix, retention policy | Backup verification and scheduled backup jobs |
 | Billing | Stripe secret key, publishable key, webhook signing secret, account mode, price/catalog mapping | Billing service payment and webhook handling |
-| Outbound email | Resend API key, sender domain, default sender address | Email verification, invites, and notifications |
+| Outbound email | Email-service provider secret, sender domain, default sender address | Email verification, invites, notifications, and platform addresses |
 | Identity | Zitadel admin bootstrap material, OIDC issuer defaults, post-deploy owner claim | Operator seeding task and Zitadel grant reconciliation after `aspect deploy` |
 
 Adding a third-party integration starts by adding an option schema with

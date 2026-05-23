@@ -8,7 +8,7 @@ use (
 	./src/services/governance-service
 	./src/services/github-integration-service
 	./src/services/iam-service
-	./src/services/mailbox-service
+	./src/services/email-service
 	./src/services/notifications-service
 	./src/services/object-storage-service
 	./src/tools/observability/go

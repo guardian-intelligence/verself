@@ -38,7 +38,7 @@ pomerium_oidc_scopes: "openid, profile, email, offline_access"
 
 pomerium_operator_allowed_domains: []
 pomerium_operator_allowed_emails:
-  - "ceo@{{ verself_domain }}"
+  - "anveio@{{ verself_domain }}"
 pomerium_operator_http_routes:
   - from: "https://{{ grafana_domain | default('dashboard.' ~ verself_domain) }}"
     to: "http://{{ grafana_http_address | default('127.0.0.1:4300') }}"

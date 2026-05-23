@@ -12,7 +12,7 @@ haproxy_iam_service_credstore_dir: /etc/credstore/iam-service
 haproxy_verself_cli_client_id_path: "{{ haproxy_iam_service_credstore_dir }}/oidc-cli-client-id"
 haproxy_verself_product_api_audience_path: "{{ haproxy_iam_service_credstore_dir }}/auth-audience"
 haproxy_lego_path: /var/lib/lego
-haproxy_lego_email: "ceo@{{ verself_domain }}"
+haproxy_lego_email: "hostmaster@{{ verself_domain }}"
 # lego's authoritative DNS checker can select Cloudflare IPv6 nameservers before host IPv6 egress is fully reliable.
 haproxy_lego_dns_propagation_disable_ans: false
 haproxy_lego_dns_propagation_wait: 60s
@@ -97,7 +97,7 @@ haproxy_h2c_components:
   - github_integration_service
   - governance_service
   - iam_service
-  - mailbox_service
+  - email_service
   - notifications_service
   - profile_service
   - projects_service

@@ -631,7 +631,7 @@ INSERT INTO notification_delivery_attempts (
 ) VALUES (
     $1, $2, $3,
     $4, $5, 'email',
-    $6, $7, 'queued', 'resend',
+    $6, $7, 'queued', 'email-service',
     $8, $9, $10, $11,
     $12, $13, $14,
     $15, $16, $17,

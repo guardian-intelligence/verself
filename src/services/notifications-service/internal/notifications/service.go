@@ -847,6 +847,7 @@ func (s *Service) SendEmailDelivery(ctx context.Context, deliveryAttemptID strin
 		return err
 	}
 	providerMessage, err := s.Email.Send(ctx, EmailMessage{
+		OrgID:          delivery.OrgID,
 		To:             delivery.RecipientAddress,
 		Subject:        delivery.Title,
 		Text:           delivery.Body,

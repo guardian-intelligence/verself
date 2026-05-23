@@ -169,7 +169,7 @@ aspect deploy --site=prod --sha=HEAD
 
 Recommended that you read relevant ones directly. You can have a subagent summarize the ones that are not related to your task.
 
-- **Inbound mail, Stalwart, mailbox-service, JMAP, SMTP, inbound routing, tenant isolation:** `src/services/mailbox-service/docs/inbound-mail.md`
+- **Email, Stalwart, Resend, JMAP, outbound sending, inbound routing, forwarding, tenant isolation:** `src/services/email-service/docs/email-service.md`
 - **vm-orchestrator privilege boundary, Firecracker VM networking, TAP allocator, host service plane, nftables, guest CIDR, lease/exec model, vm-bridge control:** `src/substrate/vm-orchestrator/AGENTS.md`
 - **Durable ZFS generation lifecycle, zvol, clone, snapshot, promote:** `src/substrate/vm-orchestrator/docs/zfs-volume-lifecycle.md`
 - **Canonical API contracts, Smithy models, route catalog, OpenAPI projections, public SDK transport generation, Connect/protobuf boundary:** `src/smithy/README.md`

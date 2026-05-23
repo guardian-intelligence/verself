@@ -738,7 +738,7 @@ CREATE TABLE billing_documents (
     stripe_hosted_invoice_url  TEXT,
     stripe_invoice_pdf_url     TEXT,
     stripe_payment_intent_id   TEXT,
-    resend_message_id          TEXT,
+    email_provider_message_id          TEXT,
     voided_by_document_id      TEXT        REFERENCES billing_documents(document_id) ON DELETE SET NULL,
     blocked_reason             TEXT        NOT NULL DEFAULT '',
     metadata                   JSONB       NOT NULL DEFAULT '{}'::jsonb,

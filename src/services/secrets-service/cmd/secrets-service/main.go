@@ -183,9 +183,9 @@ func run() error {
 				secretsclient.IAMSpiceDBPresharedKeyName,
 				secretsclient.IAMZitadelAdminTokenName,
 			}},
-			{Service: workloadauth.ServiceMailbox, SecretNames: []string{
-				secretsclient.MailboxResendAPIKeyName,
-				secretsclient.MailboxStalwartAdminPasswordName,
+			{Service: workloadauth.ServiceEmail, SecretNames: []string{
+				secretsclient.EmailResendAPIKeyName,
+				secretsclient.EmailStalwartAdminPasswordName,
 			}},
 			{Service: workloadauth.ServiceNotifications, SecretNames: []string{
 				secretsclient.NotificationsResendAPIKeyName,

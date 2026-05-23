@@ -9,7 +9,7 @@ import (
 
 func TestServiceMembersHidesMachineUsers(t *testing.T) {
 	directory := &fakeMembersDirectory{members: []Member{
-		{UserID: "u1", Type: MemberTypeHuman, Email: "ceo@example.test", DisplayName: "CEO"},
+		{UserID: "u1", Type: MemberTypeHuman, Email: "owner@example.test", DisplayName: "Owner"},
 		{UserID: "u2", Type: MemberTypeHuman, Email: "agent@example.test", DisplayName: "Agent"},
 		{UserID: "u3", Type: MemberTypeMachine, LoginName: "ci-bot", DisplayName: "ci-bot"},
 	}}

@@ -22,6 +22,7 @@ go_library(
         "output.go",
         "persona.go",
         "platform.go",
+        "platform_email.go",
         "platform_zitadel.go",
         "promote_org.go",
         "release.go",

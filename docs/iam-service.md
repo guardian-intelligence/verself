@@ -239,7 +239,7 @@ Model authorization-relevant resources and inheritance boundaries:
 - `secret`
 - `transit_key`
 - `document`
-- `mailbox`
+- `email_identity`
 
 Avoid relationships for high-volume append-only leaf data. Execution log chunks
 inherit access from `attempt`; they do not receive one SpiceDB relationship per

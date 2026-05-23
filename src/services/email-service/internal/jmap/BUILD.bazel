@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "jmap",
+    srcs = [
+        "changes.go",
+        "client.go",
+        "eventsource.go",
+        "types.go",
+    ],
+    importpath = "github.com/verself/email-service/internal/jmap",
+    visibility = ["//src/services/email-service:__subpackages__"],
+)

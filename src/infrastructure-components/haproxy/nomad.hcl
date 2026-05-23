@@ -135,12 +135,12 @@ backend be_firecracker_sandbox_h2c
   http-request return status 503 content-type text/plain string "service unavailable"
 [[ end ]]
 
-backend be_mailbox_jmap_session
-  guid be_mailbox_jmap_session
+backend be_email_jmap_session
+  guid be_email_jmap_session
   balance random
-[[ with nomadService "mailbox-service-public-http" ]]
+[[ with nomadService "email-service-public-http" ]]
 [[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_mailbox_jmap_session_srv_[[ $i ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_email_jmap_session_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"
@@ -335,8 +335,8 @@ backend be_route_product_iam_api_iam_service_public_api
   http-request return status 503 content-type text/plain string "service unavailable"
 [[ end ]]
 
-backend be_route_product_mail_api_mailbox_service_public_api
-  guid be_route_product_mail_api_mailbox_service_public_api
+backend be_route_product_email_api_email_service_public_api
+  guid be_route_product_email_api_email_service_public_api
   balance random
   http-response set-header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
   http-response set-header Cross-Origin-Resource-Policy same-origin
@@ -350,9 +350,9 @@ backend be_route_product_mail_api_mailbox_service_public_api
   http-request wait-for-body time 1s at-least 1048577 if has_content_length
   http-request wait-for-body time 1s at-least 1048577 if has_transfer_encoding
   http-request deny deny_status 413 if { req.body_size gt 1048576 }
-[[ with nomadService "mailbox-service-public-http" ]]
+[[ with nomadService "email-service-public-http" ]]
 [[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_route_product_mail_api_mailbox_service_public_api_srv_[[ $i ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_route_product_email_api_email_service_public_api_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"

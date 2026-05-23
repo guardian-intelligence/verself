@@ -81,7 +81,7 @@ Verself follows the industry-standard price-side shape: immediate upgrades can c
 | TigerBeetle | Operational financial ledger for credit balances, top-up deposits, recurring allowance deposits, receivables, settlements, refunds, expiry sweeps, corrections, showback transfers, and spend-cap enforcement. TigerBeetle is not the customer billing document artifact, not the request-path authorization engine, and not a substitute for PostgreSQL domain state. |
 | ClickHouse | Append-only usage evidence plus billing event, metering, document, adjustment, and provider-event projections used for document preview, statements, dashboards, verification, and reconciliation. |
 | Stripe | SetupIntents, PaymentMethods, Customer Portal, one-off invoice collection, payment intents, refunds, disputes, optional Stripe Tax, and hosted payment artifacts. Stripe Subscriptions are not part of the target domain model. |
-| Mailbox service | Transactional delivery of Verself document emails from the stored billing document artifact. Stripe invoice emailing is disabled in the target Verself canonical-document path. |
+| Email service | Transactional delivery of Verself document emails from the stored billing document artifact. Stripe invoice emailing is disabled in the target Verself canonical-document path. |
 
 ## Recovery posture
 
@@ -302,7 +302,7 @@ Target billing job kinds:
 - `billing.cycle.rollover`: close a cycle for usage, open the successor cycle, and enqueue finalization for the closed cycle.
 - `billing.finalization.run`: compute and advance one finalization step for a cycle, contract change, or correction subject; enforce overage consent, apply automatic adjustments, enforce the adjustment cap, allocate the document number, and issue or block the document.
 - `billing.document.stripe_collect`: create/finalize the Stripe invoice for a Verself invoice document that needs Stripe collection.
-- `billing.document.email`: send the stored Verself document email through mailbox-service.
+- `billing.document.email`: send the stored Verself document email through email-service.
 - `billing.payment.retry`: run payment retry policy only when Verself owns dunning instead of delegating automatic collection to Stripe.
 - `billing.ledger.command_dispatch`: dispatch one durable TigerBeetle command, then mark the corresponding PostgreSQL rows posted, settled, voided, retryable, or dead-lettered.
 - `billing.ledger.command_dispatch_pending`: repair stuck or missing ledger dispatch work.
@@ -1483,7 +1483,7 @@ Key fields:
 - `stripe_hosted_invoice_url`
 - `stripe_invoice_pdf_url`
 - `stripe_payment_intent_id`
-- `resend_message_id`
+- `email_provider_message_id`
 - `voided_by_document_id`
 - `created_at`
 - `updated_at`
@@ -2248,7 +2248,7 @@ Hardening requirements:
 - Handle duplicate deliveries using `(provider, provider_event_id)` idempotency.
 - Handle automatic retries by making provider-event application idempotent and replayable.
 - Use Stripe sandboxes to validate invoice creation, payment-method vaulting, duplicate events, delayed events, replay, payment failure, refunds, disputes, and tax behavior.
-- Disable Stripe invoice emails. The target Verself path sends document emails through mailbox-service from the stored Verself document body.
+- Disable Stripe invoice emails. The target Verself path sends document emails through email-service from the stored Verself document body.
 
 Stripe docs to keep near this design:
 
@@ -2616,9 +2616,9 @@ engine. Billing events deduplicate by `event_id`; metering deduplicates by
 `window_id`. Authorization, document issue, and balance reads never depend on
 ClickHouse immediate exactness.
 
-**A finalization row needs to notify Stripe, mailbox-service, and ClickHouse.**
+**A finalization row needs to notify Stripe, email-service, and ClickHouse.**
 
-Do not add a finalization-specific outbox table. The finalization row is mutable workflow state. Immutable facts are emitted into `billing_events`; sink-specific projection state lives in `billing_event_delivery_queue`; TigerBeetle side effects live in `billing_ledger_commands`; Stripe and mailbox-service work is scheduled as idempotent River work keyed by `document_id` or `finalization_id` and backed by provider binding rows when external IDs exist.
+Do not add a finalization-specific outbox table. The finalization row is mutable workflow state. Immutable facts are emitted into `billing_events`; sink-specific projection state lives in `billing_event_delivery_queue`; TigerBeetle side effects live in `billing_ledger_commands`; Stripe and email-service work is scheduled as idempotent River work keyed by `document_id` or `finalization_id` and backed by provider binding rows when external IDs exist.
 
 **A ledger command reaches `dead_letter`.**
 

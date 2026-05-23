@@ -19,7 +19,7 @@ spire_identity_registry(
         "//src/services/governance-service:spiffe_identity",
         "//src/services/github-integration-service:spiffe_identity",
         "//src/services/iam-service:spiffe_identity",
-        "//src/services/mailbox-service:spiffe_identity",
+        "//src/services/email-service:spiffe_identity",
         "//src/services/notifications-service:spiffe_identity",
         "//src/services/object-storage-service:spiffe_identity_admin",
         "//src/services/object-storage-service:spiffe_identity_service",

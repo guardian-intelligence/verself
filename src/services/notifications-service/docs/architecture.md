@@ -146,11 +146,9 @@ The design follows these external APIs:
 - [Grafana file provisioning](https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/):
   alert rules, contact points, notification policies, mute timings, and
   templates managed as version-controlled files.
-- [Resend email API](https://resend.com/docs/api-reference/emails) and
-  [Resend idempotency keys](https://resend.com/docs/dashboard/emails/idempotency-keys):
-  outbound email request shape and provider-level duplicate suppression.
-- [Resend usage limits](https://resend.com/docs/api-reference/rate-limit):
-  rate-limit headers and the default 5 requests/second team-wide API limit.
+- Email-service internal send API: outbound email request shape, provider
+  idempotency, provider failover, and provider rate-limit handling live behind
+  `email-service`.
 
 Slack-style incoming webhooks inform the Grafana adapter's low-friction
 ingestion shape. The product notification API follows Knock because Verself
@@ -272,7 +270,7 @@ targets until live ClickHouse evidence replaces them.
 | Internal workflow triggers, in-app only | 100 triggers/s per installation | 500 triggers/s for 30s | One trigger expands to one workflow run per recipient. Initial request limit should cap recipients at 100. |
 | Internal workflow triggers per org | 10 triggers/s | 50 triggers/s for 30s | Prevents one tenant from consuming the single-node queue. |
 | Grafana alert webhook | 10 payloads/s | 60 payloads/min | Grafana should group related alerts before webhook delivery. |
-| Email delivery through Resend | 4 sends/s | Provider dictated | Resend documents a default 5 requests/s team-wide API limit; the service keeps one request/s headroom and obeys `retry-after`. |
+| Email delivery handoff | 20 sends/s | 100 sends/s for 30s | Notifications hands accepted workflow decisions to `email-service`; provider-specific rate limits and retries are owned there. |
 | ClickHouse projection | 40 rows/s maintenance floor | 200 rows/s during event-triggered scans | Projection workers claim 100 rows/job. Alert when projection lag exceeds 60s. |
 
 Recipient fanout is the main multiplicative factor. A workflow trigger with 100
@@ -319,7 +317,7 @@ carry authorization material.
 Idempotency is required for all producer-triggered workflows. The
 `Idempotency-Key` header scopes retry safety for the API call. `dedupe_key` or
 `cancellation_key` scopes product-level duplicate suppression for a workflow
-run. Email sends also pass provider idempotency keys to Resend.
+run. Email sends also pass provider idempotency keys through `email-service`.
 
 ## Governance Model
 

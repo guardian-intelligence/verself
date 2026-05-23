@@ -183,7 +183,7 @@ load: "apps/web/node_modules/nitro/skills/nitro/SKILL.md"
 
 ### ElectricSQL gotchas
 
-Multiple Electric instances on the same PostgreSQL cluster (e.g., one for `sandbox_rental`, one for `mailbox_service`) require three differentiators to avoid collisions:
+Multiple Electric instances on the same PostgreSQL cluster (e.g., one for `sandbox_rental`, one for `email_service`) require three differentiators to avoid collisions:
 
 1. **`ELECTRIC_REPLICATION_STREAM_ID`** — controls the replication slot name suffix. Without it, both instances fight over `electric_slot_default`. Replication slots are cluster-wide, not per-database.
 2. **`ELECTRIC_INSTANCE_ID`** — controls the PostgreSQL advisory lock hash. Without it, both instances use the same default advisory lock and the second instance blocks forever on `waiting_on_lock`.

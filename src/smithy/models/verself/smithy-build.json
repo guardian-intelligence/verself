@@ -7,7 +7,7 @@
     "github_integration.smithy",
     "governance.smithy",
     "iam.smithy",
-    "mailbox.smithy",
+    "email.smithy",
     "notifications.smithy",
     "object_storage.smithy",
     "profile.smithy",
@@ -222,10 +222,10 @@
         }
       }
     },
-    "mailbox-public": {
+    "email-public": {
       "plugins": {
         "openapi": {
-          "service": "verself.mailbox.v1#Mailbox",
+          "service": "verself.email.v1#Email",
           "protocol": "aws.protocols#restJson1",
           "version": "3.1.0",
           "tags": true,
@@ -235,7 +235,7 @@
           "jsonAdd": {
             "/servers": [
               {
-                "url": "https://mail.api.verself.sh"
+                "url": "https://email.api.verself.sh"
               }
             ]
           }

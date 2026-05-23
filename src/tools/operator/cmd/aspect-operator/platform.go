@@ -415,6 +415,9 @@ func (r *platformRunner) seed() (platformReport, error) {
 	if err := r.ensureIAMOwnerPolicy(rootOwner.ID); err != nil {
 		return platformReport{}, err
 	}
+	if err := r.ensurePlatformEmail(rootOwner); err != nil {
+		return platformReport{}, err
+	}
 	if err := r.ensurePlatformBillingOrganization(); err != nil {
 		return platformReport{}, err
 	}
@@ -478,6 +481,7 @@ func (r *platformRunner) check() (platformReport, error) {
 	report.RepoID = ids.RepoID.String()
 	report.BackendID = ids.BackendID.String()
 	report.BoundaryResults = append(report.BoundaryResults, r.checkPlatformOwner(&issues))
+	report.BoundaryResults = append(report.BoundaryResults, r.checkPlatformEmail(&issues))
 	report.BoundaryResults = append(report.BoundaryResults, r.checkPlatformBillingOrganization(&issues))
 	report.BoundaryResults = append(report.BoundaryResults, r.checkProject(&issues))
 	forgejoRow, forgejoRepoID := r.checkForgejo(&issues)

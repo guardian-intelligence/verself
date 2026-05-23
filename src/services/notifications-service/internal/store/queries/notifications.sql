@@ -206,7 +206,7 @@ INSERT INTO notification_delivery_attempts (
 ) VALUES (
     sqlc.arg(delivery_attempt_id), sqlc.arg(workflow_run_id), sqlc.arg(org_id),
     sqlc.arg(recipient_subject_id), sqlc.arg(recipient_address), 'email',
-    sqlc.arg(workflow_key), sqlc.arg(idempotency_key), 'queued', 'resend',
+    sqlc.arg(workflow_key), sqlc.arg(idempotency_key), 'queued', 'email-service',
     sqlc.arg(priority), sqlc.arg(title), sqlc.arg(body), sqlc.arg(action_url),
     sqlc.arg(resource_kind), sqlc.arg(resource_id), sqlc.arg(content_sha256),
     sqlc.arg(traceparent), sqlc.arg(queued_at), sqlc.arg(next_attempt_at),

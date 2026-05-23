@@ -11,7 +11,7 @@ const (
 	ServiceGovernance         = "governance-service"
 	ServiceGitHubIntegration  = "github-integration-service"
 	ServiceIAM                = "iam-service"
-	ServiceMailbox            = "mailbox-service"
+	ServiceEmail              = "email-service"
 	ServiceNATS               = "nats"
 	ServiceNotifications      = "notifications-service"
 	ServiceObjectStorage      = "object-storage-service"

@@ -248,7 +248,7 @@ func (q *Queries) ExportBillingDocumentLineItemsJSONL(ctx context.Context, arg E
 
 const exportBillingDocumentsJSONL = `-- name: ExportBillingDocumentsJSONL :many
 SELECT row_to_json(t)::text AS row_json
-FROM (SELECT document_id, document_number, document_kind, finalization_id, org_id, product_id, cycle_id, change_id, status, payment_status, period_start, period_end, issued_at, currency, subtotal_units, adjustment_units, tax_units, total_due_units, recipient_email, recipient_name, document_snapshot_json, rendered_html, content_hash, stripe_invoice_id, stripe_hosted_invoice_url, stripe_invoice_pdf_url, stripe_payment_intent_id, resend_message_id, voided_by_document_id, blocked_reason, metadata, created_at, updated_at FROM billing_documents WHERE org_id = $1 ORDER BY created_at, document_id) t
+FROM (SELECT document_id, document_number, document_kind, finalization_id, org_id, product_id, cycle_id, change_id, status, payment_status, period_start, period_end, issued_at, currency, subtotal_units, adjustment_units, tax_units, total_due_units, recipient_email, recipient_name, document_snapshot_json, rendered_html, content_hash, stripe_invoice_id, stripe_hosted_invoice_url, stripe_invoice_pdf_url, stripe_payment_intent_id, email_provider_message_id, voided_by_document_id, blocked_reason, metadata, created_at, updated_at FROM billing_documents WHERE org_id = $1 ORDER BY created_at, document_id) t
 `
 
 type ExportBillingDocumentsJSONLParams struct {

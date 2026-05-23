@@ -1055,42 +1055,52 @@ FROM default.http_access_logs
 WHERE Status >= 400;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- Mail observability views (database: default)
+-- Email observability views (database: default)
 -- ═══════════════════════════════════════════════════════════════════════════
--- Normalize inbound delivery attempts from Stalwart traces and mailbox-service
--- sync/forwarder lifecycle logs into one ClickHouse surface that is easy to
+-- Normalize inbound delivery attempts from Stalwart traces and email-service
+-- sync/outbound lifecycle logs into one ClickHouse surface that is easy to
 -- query during live debugging.
 
 DROP VIEW IF EXISTS default.mail_events;
+DROP VIEW IF EXISTS default.email_events;
 DROP VIEW IF EXISTS default.mail_metrics_latest;
 
-CREATE VIEW default.mail_events AS
+CREATE VIEW default.email_events AS
 SELECT
     Timestamp,
     toDateTime(Timestamp) AS TimestampTime,
     'log' AS SourceKind,
     ServiceName AS SourceService,
     multiIf(
-        Body = 'mailbox-service: email changes applied', 'mailbox_sync_email_changes',
-        Body = 'mailbox-service: forwarded email', 'operator_forwarded_email',
-        Body = 'mailbox-service: operator forwarder skipped self-generated message', 'operator_forwarder_skip',
-        Body = 'mailbox-service: sync worker bootstrap completed', 'mailbox_sync_bootstrap_completed',
-        Body = 'mailbox-service: sync worker eventsource connected', 'mailbox_sync_eventsource_connected',
-        'mailbox_service_log'
+        Body = 'email-service: outbound accepted', 'outbound_accepted',
+        Body = 'email-service: provider accepted', 'provider_accepted',
+        Body = 'email-service: provider send failed', 'provider_send_failed',
+        Body = 'email-service: send_as denied', 'send_as_denied',
+        Body = 'email-service: email changes applied', 'mailbox_sync_email_changes',
+        Body = 'email-service: sync worker bootstrap completed', 'mailbox_sync_bootstrap_completed',
+        Body = 'email-service: sync worker eventsource connected', 'mailbox_sync_eventsource_connected',
+        'email_service_log'
     ) AS EventType,
     multiIf(
-        Body = 'mailbox-service: forwarded email', 'outbound',
-        Body = 'mailbox-service: operator forwarder skipped self-generated message', 'outbound',
+        Body IN (
+            'email-service: outbound accepted',
+            'email-service: provider accepted',
+            'email-service: provider send failed',
+            'email-service: send_as denied'
+        ), 'outbound',
         'inbound'
     ) AS Direction,
-    LogAttributes['mailbox_account'] AS MailboxAccount,
+    LogAttributes['org_id'] AS OrgID,
+    LogAttributes['mailbox_account'] AS AccountID,
+    LogAttributes['message_id'] AS MessageID,
     LogAttributes['email_id'] AS EmailID,
     '' AS QueueID,
     '' AS QueueName,
-    LogAttributes['resend_id'] AS ExternalID,
-    '' AS Sender,
+    LogAttributes['provider'] AS Provider,
+    LogAttributes['provider_message_id'] AS ProviderMessageID,
+    LogAttributes['from_address'] AS FromAddress,
+    LogAttributes['to_address'] AS RecipientSummary,
     LogAttributes['subject'] AS Subject,
-    '' AS RecipientSummary,
     LogAttributes['state'] AS SyncState,
     toUInt32OrZero(LogAttributes['upserted_emails']) AS UpsertedEmails,
     toUInt32OrZero(LogAttributes['destroyed_emails']) AS DestroyedEmails,
@@ -1105,13 +1115,15 @@ SELECT
     Body AS Message,
     LogAttributes AS RawAttributes
 FROM default.otel_logs
-WHERE ServiceName = 'mailbox-service'
+WHERE ServiceName = 'email-service'
   AND Body IN (
-    'mailbox-service: email changes applied',
-    'mailbox-service: forwarded email',
-    'mailbox-service: operator forwarder skipped self-generated message',
-    'mailbox-service: sync worker bootstrap completed',
-    'mailbox-service: sync worker eventsource connected'
+    'email-service: outbound accepted',
+    'email-service: provider accepted',
+    'email-service: provider send failed',
+    'email-service: send_as denied',
+    'email-service: email changes applied',
+    'email-service: sync worker bootstrap completed',
+    'email-service: sync worker eventsource connected'
   )
 
 UNION ALL
@@ -1123,14 +1135,17 @@ SELECT
     ServiceName AS SourceService,
     'stalwart_delivery_attempt' AS EventType,
     'inbound' AS Direction,
-    '' AS MailboxAccount,
+    '' AS OrgID,
+    '' AS AccountID,
+    '' AS MessageID,
     '' AS EmailID,
     SpanAttributes['queueId'] AS QueueID,
     SpanAttributes['queueName'] AS QueueName,
-    '' AS ExternalID,
-    SpanAttributes['from'] AS Sender,
-    '' AS Subject,
+    'stalwart' AS Provider,
+    '' AS ProviderMessageID,
+    SpanAttributes['from'] AS FromAddress,
     SpanAttributes['to'] AS RecipientSummary,
+    '' AS Subject,
     '' AS SyncState,
     toUInt32(0) AS UpsertedEmails,
     toUInt32(0) AS DestroyedEmails,

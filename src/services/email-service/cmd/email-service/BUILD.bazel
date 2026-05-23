@@ -1,0 +1,42 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "email-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/email-service/cmd/email-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/email-service/internal/api",
+        "//src/services/email-service/internal/app",
+        "//src/services/email-service/internal/mailstore",
+        "//src/services/email-service/internal/provider",
+        "//src/services/email-service/internal/sessionproxy",
+        "//src/services/email-service/internal/sync",
+        "//src/services/email-service/migrations",
+        "//src/services/iam-service/client",
+        "//src/services/secrets-service/client",
+        "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/httpserver",
+        "//src/services/service-runtime/go/workload",
+        "//src/tools/observability/go/otel",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+    ],
+)
+
+go_binary(
+    name = "email-service",
+    embed = [":email-service_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "email-service_nomad_artifact",
+    binary = ":email-service",
+    output = "email-service",
+)

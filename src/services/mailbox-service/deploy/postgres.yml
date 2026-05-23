@@ -1,4 +1,0 @@
-postgresql_service_databases:
-  - { name: mailbox_service, owner: mailbox_service }
-postgresql_peer_mappings:
-  - { system_user: mailbox_service, pg_user: mailbox_service }

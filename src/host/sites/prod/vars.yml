@@ -19,8 +19,8 @@ github_integration_service_subdomain: github.api
 github_integration_service_domain: "{{ github_integration_service_subdomain }}.{{ verself_domain }}"
 iam_service_subdomain: iam.api
 iam_service_domain: "{{ iam_service_subdomain }}.{{ verself_domain }}"
-mailbox_service_subdomain: mail.api
-mailbox_service_domain: "{{ mailbox_service_subdomain }}.{{ verself_domain }}"
+email_service_subdomain: email.api
+email_service_domain: "{{ email_service_subdomain }}.{{ verself_domain }}"
 notifications_service_subdomain: notifications.api
 notifications_service_domain: "{{ notifications_service_subdomain }}.{{ verself_domain }}"
 npm_registry_subdomain: npm
@@ -83,7 +83,7 @@ cloudflare_dns_records:
     record: secrets.api
     zone: product
   - kind: public_api_origin
-    record: mail.api
+    record: email.api
     zone: product
   - kind: operator_origin
     record: dashboard
@@ -154,7 +154,7 @@ platform_company_display_name: Guardian Intelligence
 platform_owner_alias: shovon
 platform_owner_name: Shovon Hasan
 platform_owner_email: shovon@guardianintelligence.org
-platform_root_owner_email: ceo@verself.sh
+platform_root_owner_email: anveio@verself.sh
 platform_trust_tier: platform
 platform_repo_slug: verself
 platform_repo_display_name: Verself

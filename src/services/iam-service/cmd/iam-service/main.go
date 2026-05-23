@@ -377,7 +377,7 @@ func run() error {
 		workloadauth.ServiceAnalytics,
 		workloadauth.ServiceBilling,
 		workloadauth.ServiceGovernance,
-		workloadauth.ServiceMailbox,
+		workloadauth.ServiceEmail,
 		workloadauth.ServiceNotifications,
 		workloadauth.ServiceObjectStorageAdmin,
 		workloadauth.ServiceProfile,

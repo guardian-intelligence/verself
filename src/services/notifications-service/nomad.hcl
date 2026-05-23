@@ -30,6 +30,7 @@ job "notifications-service" {
         command = "local/bin/notifications-service"
       }
       env {
+        NOTIFICATIONS_EMAIL_FROM_ADDRESS = "noreply@notify.verself.sh"
         NOTIFICATIONS_PLATFORM_ALERT_EMAIL = "integrations.anveio@gmail.com"
         NOTIFICATIONS_PLATFORM_ALERT_ORG_ID = "371564185181576922"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -79,6 +80,7 @@ EOT
         command = "local/bin/notifications-service"
       }
       env {
+        NOTIFICATIONS_EMAIL_FROM_ADDRESS = "noreply@notify.verself.sh"
         NOTIFICATIONS_PLATFORM_ALERT_EMAIL = "integrations.anveio@gmail.com"
         NOTIFICATIONS_PLATFORM_ALERT_ORG_ID = "371564185181576922"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"

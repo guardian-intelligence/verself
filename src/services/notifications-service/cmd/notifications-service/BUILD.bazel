@@ -7,11 +7,11 @@ go_library(
     importpath = "github.com/verself/notifications-service/cmd/notifications-service",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/services/email-service/internalclient",
         "//src/services/iam-service/client",
         "//src/services/notifications-service/internal/api",
         "//src/services/notifications-service/internal/notifications",
         "//src/services/notifications-service/migrations",
-        "//src/services/secrets-service/client",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",

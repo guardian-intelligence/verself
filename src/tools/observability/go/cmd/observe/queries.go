@@ -679,11 +679,12 @@ SELECT
   formatDateTime(Timestamp, '%H:%i:%S') AS time,
   Direction AS direction,
   EventType AS event,
-  nullIf(MailboxAccount, '') AS mailbox,
-  nullIf(Sender, '') AS sender,
+  nullIf(AccountID, '') AS account_id,
+  nullIf(FromAddress, '') AS sender,
+  nullIf(RecipientSummary, '') AS recipient,
   nullIf(Subject, '') AS subject,
   Message AS message
-FROM default.mail_events
+FROM default.email_events
 WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND Timestamp <= parseDateTime64BestEffort({until:String}, 9, 'UTC')
 ORDER BY Timestamp DESC

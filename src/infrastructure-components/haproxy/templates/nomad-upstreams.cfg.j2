@@ -54,8 +54,8 @@ backend be_firecracker_sandbox_h2c
   balance random
   http-request return status 503 content-type text/plain string "service unavailable"
 
-backend be_mailbox_jmap_session
-  guid be_mailbox_jmap_session
+backend be_email_jmap_session
+  guid be_email_jmap_session
   balance random
   http-request return status 503 content-type text/plain string "service unavailable"
 
@@ -194,8 +194,8 @@ backend be_route_product_iam_api_iam_service_public_api
   http-request deny deny_status 413 if { req.body_size gt 1048576 }
   http-request return status 503 content-type text/plain string "service unavailable"
 
-backend be_route_product_mail_api_mailbox_service_public_api
-  guid be_route_product_mail_api_mailbox_service_public_api
+backend be_route_product_email_api_email_service_public_api
+  guid be_route_product_email_api_email_service_public_api
   balance random
   http-response set-header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
   http-response set-header Cross-Origin-Resource-Policy same-origin

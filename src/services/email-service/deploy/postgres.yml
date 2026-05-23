@@ -1,0 +1,4 @@
+postgresql_service_databases:
+  - { name: email_service, owner: email_service }
+postgresql_peer_mappings:
+  - { system_user: email_service, pg_user: email_service }

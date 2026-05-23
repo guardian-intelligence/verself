@@ -21,7 +21,7 @@ Reference points in this repo:
 - `docs/iam-service.md` for Zitadel-fronted user auth, machine identity, and SCIM org boundaries.
 - `src/services/governance-service/docs/audit-data-contract.md` for the OCSF-flavored audit-ledger schema this service emits into.
 - `src/smithy/README.md` for canonical wire contracts and projection patterns.
-- `src/services/mailbox-service/docs/inbound-mail.md` for the transactional outbound mail surface used to deliver envelope invitations.
+- `src/services/email-service/docs/email-service.md` for the transactional outbound mail surface used to deliver envelope invitations.
 
 External standards consulted directly when implementing:
 
@@ -61,7 +61,7 @@ Out of scope for v1:
 | Object storage | Ciphertext-only blob storage. Stores original uploads, sealed signed revisions, audit-trail PDFs, and rasterized-page caches keyed by `(document_id, revision)`. |
 | secrets-service | Holds the org KEK; performs DEK wrap/unwrap. Mints short-lived signing certificates per recipient per envelope from the platform CA. Performs grant-bound signature primitives and audit-chain HMAC operations over SPIFFE so that private keys and HMAC keys never enter this service. |
 | iam-service | Issues step-up authentication tokens (passkey / SMS-OTP / OIDC re-auth) that signing requests must present. Owns user identity, recipient↔user binding, and recipient invitation routing for internal users. |
-| mailbox-service | Outbound envelope-invitation, signing-link, completion, and decline notifications. |
+| email-service | Outbound envelope-invitation, signing-link, completion, and decline notifications. |
 | governance-service | Consumes this service's committed audit outbox stream and ingests it into the cross-service audit ledger. |
 | billing-service | Consumes envelope-completed and signature-completed events for usage metering and per-org showback. |
 | pyHanko | In-process Python library performing PAdES digest, CMS assembly, TSA round-trip, OCSP/CRL embedding, and DocTimeStamp. Stateless across requests. |

@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "app",
+    srcs = [
+        "app.go",
+        "mail.go",
+        "send.go",
+    ],
+    importpath = "github.com/verself/email-service/internal/app",
+    visibility = ["//src/services/email-service:__subpackages__"],
+    deps = [
+        "//src/services/email-service/internal/jmap",
+        "//src/services/email-service/internal/mailstore",
+        "//src/services/email-service/internal/provider",
+        "//src/services/email-service/internal/sessionproxy",
+        "//src/services/email-service/internal/sync",
+    ],
+)

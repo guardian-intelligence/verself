@@ -33,7 +33,7 @@ type personaDefinition struct {
 	HumanPasswordPath  string
 	MachineUsername    string
 	MachineSecretPath  string
-	MailboxAccount     string
+	EmailLocalPart     string
 	IncludePlatformOps bool
 	TokenProjects      []string
 }
@@ -152,7 +152,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 			HumanPasswordPath:  "/etc/credstore/seed-system/platform-agent-password",
 			MachineUsername:    "assume-platform-admin",
 			MachineSecretPath:  "/etc/credstore/seed-system/assume-platform-admin-client-secret",
-			MailboxAccount:     "agents",
+			EmailLocalPart:     "agents",
 			IncludePlatformOps: true,
 			TokenProjects:      []string{platformProductAPIProjectName, "forgejo"},
 		}, nil
@@ -376,8 +376,8 @@ func personaEnv(def personaDefinition, domain, authBaseURL, humanPassword string
 		env["SANDBOX_RENTAL_TOKEN"] = token
 		env["SECRETS_SERVICE_ACCESS_TOKEN"] = token
 		env["SECRETS_SERVICE_TOKEN"] = token
-		env["MAILBOX_SERVICE_ACCESS_TOKEN"] = token
-		env["MAILBOX_SERVICE_TOKEN"] = token
+		env["EMAIL_SERVICE_ACCESS_TOKEN"] = token
+		env["EMAIL_SERVICE_TOKEN"] = token
 		env["SOURCE_CODE_HOSTING_SERVICE_ACCESS_TOKEN"] = token
 		env["SOURCE_CODE_HOSTING_SERVICE_TOKEN"] = token
 	}
@@ -387,8 +387,8 @@ func personaEnv(def personaDefinition, domain, authBaseURL, humanPassword string
 		env["FORGEJO_OIDC_TOKEN"] = token
 	}
 	if def.IncludePlatformOps {
-		env["MAILBOX_ACCOUNT"] = def.MailboxAccount
-		env["MAIL_OPERATOR_COMMAND"] = "aspect mail list --mailbox=" + def.MailboxAccount
+		env["EMAIL_ADDRESS"] = def.EmailLocalPart + "@" + domain
+		env["EMAIL_OPERATOR_COMMAND"] = "aspect mail addresses"
 		env["CLICKHOUSE_OPERATOR_COMMAND"] = "aspect db ch query --query='SELECT 1'"
 		env["FORGEJO_OPERATOR_CREDENTIAL"] = "provider-native forgejo-automation token in /etc/credstore/forgejo/automation-token"
 	}

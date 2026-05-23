@@ -69,10 +69,10 @@ const (
 	PermissionNotificationsWrite            = "notifications:self:write"
 	PermissionNotificationsPreferencesWrite = "notifications:self:preferences:write"
 	PermissionNotificationsTest             = "notifications:self:test"
-	PermissionMailboxAccountRead            = "mailbox:account:read"
-	PermissionMailboxMailRead               = "mailbox:mail:read"
-	PermissionMailboxMailWrite              = "mailbox:mail:write"
-	PermissionMailboxSyncStatusRead         = "mailbox:sync_status:read"
+	PermissionEmailAccountRead              = "email:account:read"
+	PermissionEmailMailRead                 = "email:mail:read"
+	PermissionEmailMailWrite                = "email:mail:write"
+	PermissionEmailSyncStatusRead           = "email:sync_status:read"
 	PermissionObjectStorageBucketRead       = "object-storage:bucket:read"
 	PermissionObjectStorageBucketWrite      = "object-storage:bucket:write"
 	PermissionObjectStorageAccessKeyRead    = "object-storage:access-key:read"
@@ -241,17 +241,17 @@ var defaultOperations = Operations{
 			},
 		},
 		{
-			Service: "mailbox-service",
+			Service: "email-service",
 			Operations: []Operation{
-				{OperationID: "mail-mark-read", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
-				{OperationID: "mail-mark-unread", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
-				{OperationID: "mail-flag", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
-				{OperationID: "mail-unflag", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
-				{OperationID: "mail-move", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
-				{OperationID: "mail-trash", Permission: PermissionMailboxMailWrite, Resource: "mailbox_email", Action: "write", OrgScope: "token_subject"},
-				{OperationID: "mail-body", Permission: PermissionMailboxMailRead, Resource: "mailbox_email", Action: "read", OrgScope: "token_subject"},
-				{OperationID: "mail-account", Permission: PermissionMailboxAccountRead, Resource: "mailbox_account", Action: "read", OrgScope: "token_subject"},
-				{OperationID: "mail-sync-status", Permission: PermissionMailboxSyncStatusRead, Resource: "mailbox_sync_status", Action: "read", OrgScope: "token_subject"},
+				{OperationID: "mail-mark-read", Permission: PermissionEmailMailWrite, Resource: "email_message", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-mark-unread", Permission: PermissionEmailMailWrite, Resource: "email_message", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-flag", Permission: PermissionEmailMailWrite, Resource: "email_message", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-unflag", Permission: PermissionEmailMailWrite, Resource: "email_message", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-move", Permission: PermissionEmailMailWrite, Resource: "email_message", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-trash", Permission: PermissionEmailMailWrite, Resource: "email_message", Action: "write", OrgScope: "token_subject"},
+				{OperationID: "mail-body", Permission: PermissionEmailMailRead, Resource: "email_message", Action: "read", OrgScope: "token_subject"},
+				{OperationID: "mail-account", Permission: PermissionEmailAccountRead, Resource: "email_account", Action: "read", OrgScope: "token_subject"},
+				{OperationID: "mail-sync-status", Permission: PermissionEmailSyncStatusRead, Resource: "email_sync_status", Action: "read", OrgScope: "token_subject"},
 			},
 		},
 	},

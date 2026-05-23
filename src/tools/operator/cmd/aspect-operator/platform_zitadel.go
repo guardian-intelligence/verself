@@ -89,7 +89,7 @@ func platformRuntimeAuthAudienceSpecs() []platformRuntimeAuthAudienceSpec {
 		{ComponentName: "billing", CredentialPath: "/etc/credstore/billing/auth-audience", Group: "billing"},
 		{ComponentName: "sandbox-rental", CredentialPath: "/etc/credstore/sandbox-rental/auth-audience", Group: "sandbox_rental"},
 		{ComponentName: "secrets-service", CredentialPath: "/etc/credstore/secrets-service/auth-audience", Group: "secrets_service"},
-		{ComponentName: "mailbox-service", CredentialPath: "/etc/credstore/mailbox-service/auth-audience", Group: "mailbox_service"},
+		{ComponentName: "email-service", CredentialPath: "/etc/credstore/email-service/auth-audience", Group: "email_service"},
 	}
 }
 

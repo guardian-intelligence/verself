@@ -15,7 +15,7 @@ import sourceYaml from "../__generated/openapi-specs/source-api/openapi-3.1.yaml
 import sandboxRentalYaml from "../__generated/openapi-specs/sandbox-rental-api/openapi-3.1.yaml?raw";
 import secretsYaml from "../__generated/openapi-specs/secrets-api/openapi-3.1.yaml?raw";
 import identityYaml from "../__generated/openapi-specs/iam-api/openapi-3.1.yaml?raw";
-import mailboxYaml from "../__generated/openapi-specs/mailbox-api/openapi-3.1.yaml?raw";
+import emailYaml from "../__generated/openapi-specs/email-api/openapi-3.1.yaml?raw";
 import billingYaml from "../__generated/openapi-specs/billing-api/openapi-3.1.yaml?raw";
 
 export type OpenApiSchema = {
@@ -200,11 +200,11 @@ export const SERVICE_CATALOG: readonly ServiceCatalogEntry[] = [
     document: parseDocument(identityYaml, "iam-service"),
   },
   {
-    id: "mailbox",
-    title: "Mailbox",
-    subdomain: "mail.api",
+    id: "email",
+    title: "Email",
+    subdomain: "email.api",
     publicSurface: true,
-    document: parseDocument(mailboxYaml, "mailbox-service"),
+    document: parseDocument(emailYaml, "email-service"),
   },
   {
     id: "billing",

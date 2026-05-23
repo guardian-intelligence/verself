@@ -146,7 +146,7 @@ CREATE TABLE notification_delivery_attempts (
     workflow_key TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('queued', 'sending', 'sent', 'failed', 'suppressed')),
-    provider TEXT NOT NULL DEFAULT 'resend',
+    provider TEXT NOT NULL DEFAULT 'email-service',
     provider_message_id TEXT NOT NULL DEFAULT '',
     failure_reason TEXT NOT NULL DEFAULT '',
     priority TEXT NOT NULL CHECK (priority IN ('low', 'normal', 'high')),

@@ -205,7 +205,7 @@ export function BizCard({ ground }: { ground: "iron" | "flare" }) {
           justifyContent: "space-between",
         }}
       >
-        <span>founder@guardianintelligence.org</span>
+        <span>hello@guardianintelligence.org</span>
         <span>+1 (302) XXX XXXX</span>
       </div>
     </div>

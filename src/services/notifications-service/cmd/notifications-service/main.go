@@ -16,12 +16,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	emailinternalclient "github.com/verself/email-service/internalclient"
 	iamclient "github.com/verself/iam-service/client"
 	notificationsapi "github.com/verself/notifications-service/internal/api"
 	"github.com/verself/notifications-service/internal/notifications"
 	"github.com/verself/notifications-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
-	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
@@ -84,8 +84,7 @@ func run() error {
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "notifications_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
-	resendFromAddress := cfg.String("NOTIFICATIONS_RESEND_FROM_ADDRESS", "noreply@notify.verself.sh")
-	resendFromName := cfg.String("NOTIFICATIONS_RESEND_FROM_NAME", "verself")
+	emailFromAddress := cfg.String("NOTIFICATIONS_EMAIL_FROM_ADDRESS", "noreply@notify.verself.sh")
 	platformAlertOrgID := cfg.RequireString("NOTIFICATIONS_PLATFORM_ALERT_ORG_ID")
 	platformAlertEmail := cfg.RequireString("NOTIFICATIONS_PLATFORM_ALERT_EMAIL")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
@@ -160,19 +159,15 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("notifications iam client: %w", err)
 	}
-	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
+	emailHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceEmail, nil)
 	if err != nil {
-		return fmt.Errorf("notifications secrets mtls: %w", err)
+		return fmt.Errorf("notifications email-service mtls: %w", err)
 	}
-	secrets, err := secretsclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
+	emailClient, err := emailinternalclient.New(workloadauth.InternalURL(workloadauth.ServiceEmail), emailHTTPClient)
 	if err != nil {
-		return fmt.Errorf("notifications secrets client: %w", err)
+		return fmt.Errorf("notifications email-service client: %w", err)
 	}
-	resendAPIKey, err := readRuntimeSecret(ctx, secrets, secretsclient.NotificationsResendAPIKeyName)
-	if err != nil {
-		return fmt.Errorf("notifications resend provider secret: %w", err)
-	}
-	emailSender, err := notifications.NewResendSender(resendAPIKey, resendFromAddress, resendFromName, &http.Client{Timeout: 5 * time.Second})
+	emailSender, err := notifications.NewEmailServiceSender(emailClient, emailFromAddress)
 	if err != nil {
 		return fmt.Errorf("notifications email sender: %w", err)
 	}
@@ -267,26 +262,6 @@ func run() error {
 	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 	return httpserver.RunPair(ctx, logger, public, internal)
-}
-
-func readRuntimeSecret(ctx context.Context, client *secretsclient.Client, secretName string) (string, error) {
-	if client == nil {
-		return "", fmt.Errorf("runtime secrets client is required")
-	}
-	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: secretsclient.SecretName(secretName)})
-	if err != nil {
-		return "", fmt.Errorf("read runtime secret %s: %w", secretName, err)
-	}
-	if resp.Result == nil {
-		return "", fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
-	}
-	value := strings.TrimSpace(string(resp.Result.Value))
-	if value == "" {
-		return "", fmt.Errorf("runtime secret %s is empty", secretName)
-	}
-	return value, nil
 }
 
 func openPool(ctx context.Context, dsn string, maxConns, minConns, maxLifetimeSeconds, maxIdleSeconds int) (*pgxpool.Pool, error) {

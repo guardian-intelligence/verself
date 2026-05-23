@@ -9,8 +9,8 @@ const (
 	IAMZitadelAdminTokenName           = "iam-service.zitadel.admin_token"
 	SandboxRunnerBootstrapSecretPrefix = "sandbox-rental-service.runner-bootstrap."
 	SourceForgejoAutomationTokenName   = "source-code-hosting-service.forgejo.automation_token"
-	MailboxResendAPIKeyName            = "mailbox-service.resend.api_key"
-	NotificationsResendAPIKeyName      = MailboxResendAPIKeyName
-	MailboxStalwartAdminPasswordName   = "mailbox-service.stalwart.admin_password"
+	EmailResendAPIKeyName              = "email-service.resend.api_key"
+	NotificationsResendAPIKeyName      = EmailResendAPIKeyName
+	EmailStalwartAdminPasswordName     = "email-service.stalwart.admin_password"
 	ObjectStorageGarageAdminTokenName  = "object-storage-service.garage.admin_token"
 )
