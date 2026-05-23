@@ -21,8 +21,8 @@ go_binary(
 # Substrate-image build inputs bundled for the deploy host.
 # build_substrate runs on the Firecracker host and consumes the Bazel-vendored
 # Ubuntu base + kernel + Bazel-built vm-bridge + vm-guest-telemetry binaries
-# staged alongside it. The Ansible guest_rootfs role builds this bundle on the
-# controller, copies it to the host, and runs the binary remotely.
+# staged alongside it. The vm-orchestrator Nomad prestart task stages the
+# bundle and runs the builder on the host.
 
 pkg_tar(
     name = "substrate_inputs_bundle",

@@ -35,6 +35,10 @@
           - spire_registrations_file | length > 0
         fail_msg: "service-foundation.yml requires spire_registrations_file."
 
+    - name: Converge SPIRE host identity plane
+      ansible.builtin.include_role:
+        name: spire
+
     - name: Converge service SPIRE identities
       ansible.builtin.include_role:
         name: spire_registrations

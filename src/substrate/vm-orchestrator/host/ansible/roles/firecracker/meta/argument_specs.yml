@@ -1,18 +1,13 @@
 ---
 argument_specs:
   main:
-    short_description: "Firecracker host setup: KVM, jailer, networking, guest image staging"
+    short_description: "Firecracker host setup: KVM, jailer, networking, guest image verification"
     description:
       - "Installs Firecracker + jailer from topology catalog vars, configures KVM,"
       - "creates the jailer user/group, configures Firecracker guest networking,"
       - "and verifies that guest image artifacts have been staged. The runtime"
       - "daemon and image seeding are deployed by the vm-orchestrator Nomad unit."
     options:
-      firecracker_zfs_pool:
-        type: str
-        default: vspool
-        description: "ZFS pool checked by the Firecracker preflight."
-
       firecracker_jailer_root:
         type: path
         default: /srv/jailer
@@ -41,12 +36,12 @@ argument_specs:
       firecracker_kernel_path:
         type: path
         default: /var/lib/verself/guest-images/vmlinux
-        description: "Path to the guest kernel. Pre-staged by guest_rootfs role."
+        description: "Path to the guest kernel staged by vm-orchestrator's Nomad prestart task."
 
       firecracker_substrate_path:
         type: path
         default: /var/lib/verself/guest-images/substrate.ext4
-        description: "Path to the substrate ext4 (boot disk source). Built on the host by guest_rootfs role."
+        description: "Path to the substrate ext4 boot disk built by vm-orchestrator's Nomad prestart task."
 
       firecracker_substrate_manifest_path:
         type: path

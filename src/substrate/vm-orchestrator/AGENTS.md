@@ -3,7 +3,7 @@
 Privileged Go daemon for lease-scoped Firecracker lifecycle management: ZFS clone/snapshot/destroy, jailer setup, TAP networking, vm-bridge control, guest telemetry aggregation, and host-side state reconciliation. The public surface is the V1 lease/exec API over a Unix socket (`/run/vm-orchestrator/api.sock`); the daemon owns no product submission queue, payment policy, or mutable workload policy.
 
 
-<guest_rootfs_split>
+<guest_image_split>
 
 Firecracker guests boot from a slim **substrate** ext4 and compose
 read-only **toolchain images** at lease boot. The catalog lives in
@@ -50,7 +50,7 @@ clones keep their existing origin.
   source artefact is a Bazel rule or a customer upload, the daemon's
   privilege boundary doesn't change.
 
-</guest_rootfs_split>
+</guest_image_split>
 
 ## Subdirectories
 
@@ -60,7 +60,7 @@ clones keep their existing origin.
 - `zfs/` — typed refs, validation, channel programs, the `VolumeLifecycle` facade.
 - `proto/v1/` — gRPC contracts for the lease/exec API.
 - `vmproto/` — host↔guest control-plane wire types.
-- `guest-images/` — `toolchain_ext4_image` Bazel macro + substrate builder + per-image build rules. Each image declares a `tier` consumed by the Nomad-owned seed catalog. See `<guest_rootfs_split>` in the repo-root `AGENTS.md`.
+- `guest-images/` — `toolchain_ext4_image` Bazel macro + substrate builder + per-image build rules. Each image declares a `tier` consumed by the Nomad-owned seed catalog. See `<guest_image_split>` in the repo-root `AGENTS.md`.
 
 ## Privilege Boundary
 

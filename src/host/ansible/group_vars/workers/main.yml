@@ -1,6 +1,0 @@
----
-# Variables specific to worker nodes.
-
-# ZFS
-zfs_pool: vspool
-firecracker_zfs_pool: "{{ zfs_pool }}"

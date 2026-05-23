@@ -32,17 +32,6 @@ spire_identity_registry(
 )
 
 filegroup(
-    name = "haproxy_sources",
-    srcs = [
-        "ansible/playbooks/haproxy.yml",
-        "ansible/playbooks/tasks/site-secrets.yml",
-        "sites/prod/secrets/host.sops.yml",
-        "sites/prod/vars.yml",
-        "//src/infrastructure-components/haproxy:role_sources",
-    ],
-)
-
-filegroup(
     name = "ansible_lint_sources",
     srcs = [
         "ansible/.ansible-lint.yml",

@@ -310,8 +310,7 @@
     daemon_reload: true
 
 # --- Guest image verification ---
-# Substrate built on the host by guest_rootfs role; toolchain images
-# Bazel-built and staged by guest_rootfs role.
+# Guest images are staged by the vm-orchestrator Nomad prestart task.
 
 - name: Verify guest kernel exists
   ansible.builtin.stat:
@@ -347,8 +346,8 @@
       Guest images not found at {{ firecracker_kernel_path }},
       {{ firecracker_substrate_path }}, {{ firecracker_substrate_manifest_path }},
       and/or one or more toolchain image paths.
-      The guest_rootfs role in the canonical site playbook must stage them
-      before the firecracker role runs.
+      The vm-orchestrator Nomad prestart task must stage them before the
+      firecracker role runs.
   when: >-
     not firecracker_guest_kernel.stat.exists
     or not firecracker_substrate.stat.exists

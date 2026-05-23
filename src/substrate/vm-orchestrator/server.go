@@ -196,10 +196,8 @@ func (s *APIServer) newOrchestrator(opts ...Option) *Orchestrator {
 }
 
 // ensureZFSRoots creates pool/<images> and pool/<orgs> if they do not
-// already exist. The firecracker Ansible role no longer issues these
-// `zfs create` commands directly; the daemon owns that responsibility on
-// every startup so a fresh pool requires no operator intervention beyond
-// `zpool create`.
+// already exist. The daemon owns that responsibility on every startup so a
+// fresh pool requires no operator intervention beyond `zpool create`.
 func (s *APIServer) ensureZFSRoots(ctx context.Context) error {
 	ensureCtx, end := startStepSpan(ctx, "vmorchestrator.zfs.ensure_roots",
 		attribute.String("zfs.pool", s.roots.Pool),

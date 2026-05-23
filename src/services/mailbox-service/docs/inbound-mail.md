@@ -187,12 +187,11 @@ aspect mail list --mailbox=ceo                # Switch to the legacy operator ma
 ## Relevant files
 
 - `src/services/mailbox-service/` — repo-owned mailbox sync, write API, JMAP session rewrite, operator forwarder
-- `roles/mailbox_service/` — deploy + credstore + migrations for `mailbox-service`
-- `roles/stalwart/` — Ansible role (tasks, templates, defaults, handlers)
-- `roles/stalwart/templates/stalwart.toml.j2` — local-only server config (TOML)
-- `roles/stalwart/tasks/settings.yml` — database-scoped settings push (session, queue, metrics)
-- `roles/stalwart/tasks/dns.yml` — MX + SPF record creation
-- `playbooks/seed-system.yml` (tag: `stalwart`) — mailbox + Sieve provisioning
+- `src/services/mailbox-service/deploy/` — owner-local PostgreSQL, public route, and runtime-secret declarations
+- `src/infrastructure-components/stalwart/` — Stalwart component convergence, Nomad job, and runtime artifact
+- `src/infrastructure-components/stalwart/nomad.hcl` — Stalwart server config and runtime task
+- `src/infrastructure-components/stalwart/tasks/settings.yml` — database-scoped settings push (session, queue, metrics)
+- `src/infrastructure-components/stalwart/tasks/dns.yml` — MX + SPF record creation
 - `src/smithy/models/verself/mailbox.smithy` + `client/` — Smithy-owned authenticated mailbox contract and service-local typed client
 - `aspect mail` task group — operator shortcuts for outbound mail and mailbox credentials
 
