@@ -3,13 +3,6 @@
 **The open-source Stainless.** Generate an idiomatic Python SDK from an OpenAPI
 spec and a `stainless.yml` — open source, runs locally and in CI, no hosted service.
 
-[![License](https://img.shields.io/badge/license-MIT-3da639?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
-[![CI](https://img.shields.io/github/actions/workflow/status/stainlu/stainful/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/stainlu/stainful/actions/workflows/ci.yml)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-7c3aed?style=flat-square)](CONTRIBUTING.md)
-
-<img src="assets/architecture.png" alt="stainful — OpenAPI spec + stainless.yml → resolved IR → idiomatic Python SDK" width="100%">
-
 ---
 
 stainful turns an **OpenAPI 3.x spec** and a **Stainless config** into a Python SDK
