@@ -40,6 +40,8 @@ const (
 	formatMarkdown outputFormat = "markdown"
 )
 
+const maxLookbackMinutes = uint64(1<<63-1) / uint64(time.Minute)
+
 type config struct {
 	repoRoot      string
 	substrateRoot string
@@ -297,6 +299,9 @@ func parseConfigAt(args []string, now time.Time) (config, error) {
 	if cfg.minutes == 0 {
 		return cfg, errors.New("--minutes must be greater than zero")
 	}
+	if uint64(cfg.minutes) > maxLookbackMinutes {
+		return cfg, fmt.Errorf("--minutes must be less than or equal to %d", maxLookbackMinutes)
+	}
 	cfg.until = now.UTC()
 	if cfg.untilInput != "" {
 		until, err := parseUntil(cfg.untilInput, now)
@@ -321,7 +326,8 @@ func parseConfigAt(args []string, now time.Time) (config, error) {
 		}
 		cfg.since = since.UTC()
 	} else {
-		cfg.since = cfg.until.Add(-time.Duration(cfg.minutes) * time.Minute)
+		minutes := int64(cfg.minutes) // #nosec G115 -- cfg.minutes is checked against maxLookbackMinutes above.
+		cfg.since = cfg.until.Add(-time.Duration(minutes) * time.Minute)
 	}
 	if cfg.since.After(cfg.until) {
 		return cfg, errors.New("--since must be before or equal to --until")

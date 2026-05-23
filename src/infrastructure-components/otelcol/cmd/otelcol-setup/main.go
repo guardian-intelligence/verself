@@ -25,10 +25,11 @@ const (
 	clickhouseClient       = "/opt/verself/profile/bin/clickhouse-client"
 	clickhouseOperatorUser = "clickhouse_operator"
 
-	postgresDataDir     = "/var/lib/postgresql/16/verself"
-	postgresIdentPath   = "/etc/postgresql/verself/pg_ident.conf"
-	postgresqlClient    = "/opt/verself/profile/bin/psql"
-	postgresPeerMapLine = "verself_services      otelcol            otelcol"
+	postgresDataDir      = "/var/lib/postgresql/16/verself"
+	postgresIdentPath    = "/etc/postgresql/verself/pg_ident.conf"
+	postgresqlClient     = "/opt/verself/profile/bin/psql"
+	postgresqlLibraryDir = "/opt/verself/postgresql/usr/lib/x86_64-linux-gnu:/opt/verself/postgresql/usr/lib/postgresql/16/lib"
+	postgresPeerMapLine  = "verself_services      otelcol            otelcol"
 )
 
 func main() {
@@ -162,6 +163,8 @@ GRANT pg_monitor TO otelcol;
 `
 	cmd := command("sudo",
 		"-u", "postgres",
+		"env",
+		"LD_LIBRARY_PATH="+postgresqlLibraryDir,
 		postgresqlClient,
 		"-h", "/var/run/postgresql",
 		"-U", "postgres",

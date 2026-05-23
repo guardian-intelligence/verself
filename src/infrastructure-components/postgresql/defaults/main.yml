@@ -3,6 +3,11 @@
 postgresql_data_dir: /var/lib/postgresql/16/verself
 postgresql_config_dir: /etc/postgresql/verself
 postgresql_log_dir: /var/log/postgresql
+postgresql_runtime_root: /opt/verself/postgresql
+postgresql_runtime_lib_dir: "{{ postgresql_runtime_root }}/usr/lib/x86_64-linux-gnu"
+postgresql_runtime_pg_lib_dir: "{{ postgresql_runtime_root }}/usr/lib/postgresql/16/lib"
+postgresql_runtime_share_dir: "{{ postgresql_runtime_root }}/usr/share/postgresql/16"
+postgresql_runtime_ld_library_path: "{{ postgresql_runtime_lib_dir }}:{{ postgresql_runtime_pg_lib_dir }}"
 
 # Single-node Verself runs every product database, Electric sync service, and
 # load-test control plane through this instance. Keep this comfortably above the

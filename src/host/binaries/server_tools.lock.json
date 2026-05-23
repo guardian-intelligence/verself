@@ -1,0 +1,837 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "openbao-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/openbao/openbao/releases/download/v2.5.2/openbao_2.5.2_linux_amd64.deb",
+        "sha256": "5b915011ba8fa8137bd3309830aded0250b8fce42706bd6dcd2b91ac5560cde7",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "clickhouse": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz",
+        "sha256": "2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278",
+        "type": "tgz",
+        "file": "clickhouse-common-static-26.3.2.3/usr/bin/clickhouse",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "containerd": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-amd64.tar.gz",
+        "sha256": "5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27",
+        "type": "tar.gz",
+        "file": "bin/containerd",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "containerd-shim-runc-v2": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-amd64.tar.gz",
+        "sha256": "5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27",
+        "type": "tar.gz",
+        "file": "bin/containerd-shim-runc-v2",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "ctr": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.2.2/containerd-static-2.2.2-linux-amd64.tar.gz",
+        "sha256": "5db46232ce716f85bf1e71497a9038c87e63030574bf03f9d09557802188ad27",
+        "type": "tar.gz",
+        "file": "bin/ctr",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "forgejo": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://codeberg.org/forgejo/forgejo/releases/download/v15.0.0/forgejo-15.0.0-linux-amd64",
+        "sha256": "3919f10a7845f3b71bacc2c7a3bfa2cd71aed58a0b8be6ab5e95f2e150b4ded7",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "garage": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://garagehq.deuxfleurs.fr/_releases/v2.3.0/x86_64-unknown-linux-musl/garage",
+        "sha256": "f98d317942bb341151a2775162016bb50cf86b865d0108de03eb5db16e2120cd",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "grafana-runtime": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://dl.grafana.com/oss/release/grafana-12.4.2.linux-amd64.tar.gz",
+        "sha256": "f240b200a803bf64592fae645331750c2681df5f07496743d714db12393a591f",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "grafana-clickhouse-datasource": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/grafana/clickhouse-datasource/releases/download/v4.14.1/grafana-clickhouse-datasource-4.14.1.linux_amd64.zip",
+        "sha256": "11f569287a607043a9c60c4abca493784cc187b6bc4298270e5ef764719a22f1",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "haproxy-awslc-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/h/haproxy-awslc/haproxy-awslc_3.3.7-0+ha33+ubuntu24.04u1_amd64.deb",
+        "sha256": "02dff22237bb600d947de302ae21d5463ebffbee302e18e423fd417cb4064bdf",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "haproxy-awslc-libs-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/a/awslc/libssl-awslc_3.3.0-0+ha33+ubuntu24.04u1_amd64.deb",
+        "sha256": "e75ceefa692bb002ae76d2e04ad88c344e524f28aeabf8b165c7bab922474b5c",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "lego": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/go-acme/lego/releases/download/v4.35.2/lego_v4.35.2_linux_amd64.tar.gz",
+        "sha256": "ee5be4bf457de8e3efa86a51651c75c87f0ee0e4e9f3ae14f6034d68365770f3",
+        "type": "tar.gz",
+        "file": "lego",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "nats-server": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/nats-io/nats-server/releases/download/v2.12.7/nats-server-v2.12.7-linux-amd64.tar.gz",
+        "sha256": "570d2d627db111e679cc1e6bc57ba78f373ed1769acd8dc9c21c8f62d15b3c52",
+        "type": "tar.gz",
+        "file": "nats-server-v2.12.7-linux-amd64/nats-server",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "nodejs-runtime": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz",
+        "sha256": "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "nomad": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://releases.hashicorp.com/nomad/1.11.3/nomad_1.11.3_linux_amd64.zip",
+        "sha256": "19dac5642a2ba5305e6ff8efee06a708d760ebe4d1cd7936bc3dc526f477dc12",
+        "type": "zip",
+        "file": "nomad",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "otelcol-contrib": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.149.0/otelcol-contrib_0.149.0_linux_amd64.tar.gz",
+        "sha256": "4acb57355e9388f257b28de8c18422ff43e52eb329052bd54ebecde000dcbb47",
+        "type": "tar.gz",
+        "file": "otelcol-contrib",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "pomerium": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/pomerium/pomerium/releases/download/v0.32.6/pomerium-linux-amd64.tar.gz",
+        "sha256": "817b4c13788800f1b3a79d4ad96aeb20ba97c55490690040dc9956150b8d1151",
+        "type": "tar.gz",
+        "file": "pomerium",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libaudit1-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/audit/libaudit1_3.1.2-2.1build1.1_amd64.deb",
+        "sha256": "408457f91745dd33746d24d063986df96a81166d6a59431583073398cefa1301",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libcap-ng0-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libc/libcap-ng/libcap-ng0_0.8.4-2build2_amd64.deb",
+        "sha256": "cf1e9437ac7ddf6539dbe87b68858cbdef84d78c6aac243ab3b6e564a52ed930",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libcap2-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libc/libcap2/libcap2_2.66-5ubuntu2.4_amd64.deb",
+        "sha256": "23c627c77c66552a658e62852f244f4946dc543898e0ec5428d5dc6bffde2d6a",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libcom-err2-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/e/e2fsprogs/libcom-err2_1.47.0-2.4~exp1ubuntu4.1_amd64.deb",
+        "sha256": "7ab24d3057dabf86db8f771ad6e43f073ed86b6b950d6e8ba22cb9fe6707bbc9",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libffi8-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libf/libffi/libffi8_3.4.6-1build1_amd64.deb",
+        "sha256": "637e6a7744de08cd331a41f4efd0d24e6ea9064843dea9d1c6ca87bdb5f038a2",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libgcc-s1-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04.1_amd64.deb",
+        "sha256": "aa7fadbe33b78bcf99885318040601c550c208929565b179891d9a3cc2aa68cd",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libgcrypt20-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libg/libgcrypt20/libgcrypt20_1.10.3-2build1_amd64.deb",
+        "sha256": "ff32bae487706ba6ca646b5b72d89b935e3b8b2811d02e4ad7360cb97d90e2d0",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libgmp10-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gmp/libgmp10_6.3.0+dfsg-2ubuntu6.1_amd64.deb",
+        "sha256": "285f8a505dfa8e1b33f357a9d8d3477ad35bf18c0b34771a6df4c25923f3ae0d",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libgnutls30t64-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gnutls28/libgnutls30t64_3.8.3-1.1ubuntu3.6_amd64.deb",
+        "sha256": "b8944756260c5ea6b7fac019745f931f905aa7a4df0763676b1b25c911b692e2",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libgpg-error0-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libg/libgpg-error/libgpg-error0_1.47-3build2.1_amd64.deb",
+        "sha256": "93654ee8180a73a0363f25c51dc673d67cbabcbecd164187b8a2deb54d007aef",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libgssapi-krb5-2-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/k/krb5/libgssapi-krb5-2_1.20.1-6ubuntu2.6_amd64.deb",
+        "sha256": "0f1b296f6731dc51569350dcb2971629f36e78a21015c73165eddc5af5c978ad",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libhogweed6t64-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nettle/libhogweed6t64_3.9.1-2.2build1.1_amd64.deb",
+        "sha256": "a9b5f7e9d49ba9060e1c933567046fbc6feab6096799cbf550b7214dc9b0f49b",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libicu74-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/i/icu/libicu74_74.2-1ubuntu3.1_amd64.deb",
+        "sha256": "c9a70989678660eed9a1e904c74fa043da8bec8e2036856fc16e31ced79b04f8",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libidn2-0-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libi/libidn2/libidn2-0_2.3.7-2build1.1_amd64.deb",
+        "sha256": "46bfd10df095a23b65f58115de47a547c9a2d14627749bd0423ae78c14be77d3",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libk5crypto3-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/k/krb5/libk5crypto3_1.20.1-6ubuntu2.6_amd64.deb",
+        "sha256": "5c3eb1fc954af26da4190204098af489eb558552a89cf5cf099e0ea6aab157c5",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libkeyutils1-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/k/keyutils/libkeyutils1_1.6.3-3build1_amd64.deb",
+        "sha256": "0679f198b0128179e46cdf956fb2022c23c758664c00bc8efa0382d509683a8a",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libkrb5-3-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/k/krb5/libkrb5-3_1.20.1-6ubuntu2.6_amd64.deb",
+        "sha256": "e8c20d16598108c88495fde116eadb4be568f47ae2ab93cabccfbb220e6e926b",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libkrb5support0-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/k/krb5/libkrb5support0_1.20.1-6ubuntu2.6_amd64.deb",
+        "sha256": "e649ebef274cce86e6133144ce5f587db101f06828dbd88cb73350fe98160b0e",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libldap2-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/o/openldap/libldap2_2.6.10+dfsg-0ubuntu0.24.04.1_amd64.deb",
+        "sha256": "7f3f8e565401256f21d5aa562c9f92dbb63537b73aaea6283e4db5264f1598f4",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-liblz4-1-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/l/lz4/liblz4-1_1.9.4-1build1.1_amd64.deb",
+        "sha256": "319331270d5cc52d5ebffe51c941d7b01b432bc402c2924b557209a64d4ecbad",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-liblzma5-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/x/xz-utils/liblzma5_5.6.1+really5.4.5-1ubuntu0.2_amd64.deb",
+        "sha256": "4c31cc76391ca47dbb4585edc740728f43fe7b6b090f5b3947fc8072db698aca",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libnettle8t64-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nettle/libnettle8t64_3.9.1-2.2build1.1_amd64.deb",
+        "sha256": "6d97fbc1972633083f08f51ccab433606c97bbceb897c631c66495117ca3406f",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libp11-kit0-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/p11-kit/libp11-kit0_0.25.3-4ubuntu2.1_amd64.deb",
+        "sha256": "151a0e70407faef701df3a283bca0b2f2e7aeb2b73e5682101bb5543e8213d98",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libpam0g-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/pam/libpam0g_1.5.3-5ubuntu5.5_amd64.deb",
+        "sha256": "e751722aed2c92b50a88db0db2796e6c7071424ad6ebbc92c7ebba37b388c3e7",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libpq5-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/postgresql-16/libpq5_16.14-0ubuntu0.24.04.1_amd64.deb",
+        "sha256": "a7000b8261d2139cb4a34dcb1e5a04e53ccea175e68499088401e40d5ae3c609",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libreadline8t64-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/r/readline/libreadline8t64_8.2-4build1_amd64.deb",
+        "sha256": "563977a16df03b611f5239cc1e9a0426e86479fcc616b5c9e200ea32063119e5",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libsasl2-2-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28+dfsg1-5ubuntu3.1_amd64.deb",
+        "sha256": "eda097f98dcb3a08b9ce157d6191d140e4885c1cba47b683c94b8ca45e88f458",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libssl3t64-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl3t64_3.0.13-0ubuntu3.9_amd64.deb",
+        "sha256": "ab1e020e8457f2b0b730b412813469477858876e3c30583d2aa98cbba2a61efa",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libstdcpp6-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libstdc++6_14.2.0-4ubuntu2~24.04.1_amd64.deb",
+        "sha256": "a51f8de7829211db961a31f02158058ad1a95f92ac6d0a5dff6350e2821c54c0",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libsystemd0-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/s/systemd/libsystemd0_255.4-1ubuntu8.15_amd64.deb",
+        "sha256": "22cd1e9d9cd58bf8cdf41b2d85fed8a854e0888569f3bf9a3b5f86eee9e4208c",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libtasn1-6-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libt/libtasn1-6/libtasn1-6_4.19.0-3ubuntu0.24.04.2_amd64.deb",
+        "sha256": "f82c9ad142f952ea523bda5bfca7bb0802af3a50b8c0f0dd9ec18cdfa104bde7",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libtinfo6-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/ncurses/libtinfo6_6.4+20240113-1ubuntu2_amd64.deb",
+        "sha256": "53e1e1753729d04cf65b05e6e58abe06e2bb76cc07eff0e1b2a638a638ca209b",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libunistring5-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libu/libunistring/libunistring5_1.1-2build1.1_amd64.deb",
+        "sha256": "203d7657b5f54633fba1a9c9b784d556ef83c9f6787b3185ba55a88e07b865a3",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libxml2-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.7_amd64.deb",
+        "sha256": "74ab8be7aa487e5cc7d9d228212f538ff96658afcb080335c02fe0f3e384ff7c",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-libzstd1-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1.1_amd64.deb",
+        "sha256": "dfcf25061e07aad7efd3f4f880ba5ad4d4d09ebe7fc8cc77ab6b8a161d6d4727",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-postgresql-16-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/postgresql-16/postgresql-16_16.14-0ubuntu0.24.04.1_amd64.deb",
+        "sha256": "13e35dd2bf70ecbc0bdb699313aaa5fa518b45dd5695111a753a1e6e0274e8fa",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-postgresql-client-16-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/postgresql-16/postgresql-client-16_16.14-0ubuntu0.24.04.1_amd64.deb",
+        "sha256": "8d25751b2b7ff568da1aee1c77880e56559e1f3710dea9f87ae00ec5afea9f39",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "postgresql-runtime-zlib1g-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2.1_amd64.deb",
+        "sha256": "7074b6a2f6367a10d280c00a1cb02e74277709180bab4f2491a2f355ab2d6c20",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "runc": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/opencontainers/runc/releases/download/v1.4.2/runc.amd64",
+        "sha256": "ac8a90f9e225bb9322189937b230cdc5478d5753f0e31e1bda98a5cf06bd9539",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "spicedb": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/authzed/spicedb/releases/download/v1.51.1/spicedb_1.51.1_linux_amd64.tar.gz",
+        "sha256": "b9c3d13e7861a321a3a00c846d4670889fe539551ac57c2ff61e5bfb837ccfe5",
+        "type": "tar.gz",
+        "file": "spicedb",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "spiffe-helper": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/spiffe/spiffe-helper/releases/download/v0.11.0/spiffe-helper_v0.11.0_Linux-x86_64.tar.gz",
+        "sha256": "7fba909574320d6a656e2e7d7f0657890fefad08a2abecd86c7bafe62d6d9134",
+        "type": "tar.gz",
+        "file": "spiffe-helper",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "spire-agent": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/spiffe/spire/releases/download/v1.14.5/spire-1.14.5-linux-amd64-musl.tar.gz",
+        "sha256": "cacab9ff32b7a24714edcf4328c4ce27bddd38496b443e8750395883c72a3bfb",
+        "type": "tar.gz",
+        "file": "spire-1.14.5/bin/spire-agent",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "spire-server": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/spiffe/spire/releases/download/v1.14.5/spire-1.14.5-linux-amd64-musl.tar.gz",
+        "sha256": "cacab9ff32b7a24714edcf4328c4ce27bddd38496b443e8750395883c72a3bfb",
+        "type": "tar.gz",
+        "file": "spire-1.14.5/bin/spire-server",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "stalwart": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "b2042dbcf0a110a4a756a5288de013649fd1f7ee84fa002bb3d2e6ec1e5f1f0b",
+        "type": "tar.gz",
+        "file": "stalwart",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "stalwart-cli": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-cli-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "8fbe74206bed46974c272623e184b11d6c8362eb606dddc155fdb6ae9df7b3e9",
+        "type": "tar.gz",
+        "file": "stalwart-cli",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "stalwart-spam-filter": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/stalwartlabs/spam-filter/releases/download/v2.0.5/spam-filter.toml",
+        "sha256": "4ac035283240e5772ad1e422ba68a9cbcb985b8de86dc4c88dbb60061b51bd07",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "stalwart-webadmin": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/stalwartlabs/webadmin/releases/download/v0.1.37/webadmin.zip",
+        "sha256": "9c8245c4e147a0806dd7f947f7bb5f38761acbaa371b0b5bdc0a79036b3b5909",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "tdbg": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/temporalio/temporal/releases/download/v1.30.4/temporal_1.30.4_linux_amd64.tar.gz",
+        "sha256": "83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177",
+        "type": "tar.gz",
+        "file": "tdbg",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "temporal-schema": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/temporalio/temporal/releases/download/v1.30.4/temporal_1.30.4_linux_amd64.tar.gz",
+        "sha256": "83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177",
+        "type": "tar.gz",
+        "file": "temporal-sql-tool",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "temporal-server": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/temporalio/temporal/releases/download/v1.30.4/temporal_1.30.4_linux_amd64.tar.gz",
+        "sha256": "83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177",
+        "type": "tar.gz",
+        "file": "temporal-server",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "tigerbeetle": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/tigerbeetle/tigerbeetle/releases/download/0.17.1/tigerbeetle-x86_64-linux.zip",
+        "sha256": "0071b5a86876afffea067851f26a90b1e6bb60968fe8afbf8121ea55d4a7af19",
+        "type": "zip",
+        "file": "tigerbeetle",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "zed": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/authzed/zed/releases/download/v0.36.1/zed_0.36.1_linux_amd64_gnu.tar.gz",
+        "sha256": "588d50910eead6917c4aad416850a8553f3b334060ef67c63d45efd0e06a174a",
+        "type": "tar.gz",
+        "file": "zed",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "wireguard-tools-deb": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://archive.ubuntu.com/ubuntu/pool/main/w/wireguard/wireguard-tools_1.0.20210914-1ubuntu4_amd64.deb",
+        "sha256": "19790a3203a12791bfaf622ea000780a7558de858766100d52f802079d44c400",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "zitadel": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/zitadel/zitadel/releases/download/v4.13.1/zitadel-linux-amd64.tar.gz",
+        "sha256": "fe1f5231e5dcbdca63ae77adab0d2241daafeb9712e7d6cded3713e9ef50f1cb",
+        "type": "tar.gz",
+        "file": "zitadel-linux-amd64/zitadel",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "zot": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/project-zot/zot/releases/download/v2.1.16/zot-linux-amd64",
+        "sha256": "f9b7e805056db94c97d34bcff4eab77ec8e7cdc2cb76fd6db3d7ad7143605dba",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

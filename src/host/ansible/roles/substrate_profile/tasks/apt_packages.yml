@@ -1,7 +1,6 @@
 ---
-# Install apt-managed software and symlink binaries into verself_bin.
-
-# ── PostgreSQL 16 (PGDG repo) ────────────────────────────────────────────────
+# Install host OS packages. Runtime binaries are supplied by the Bazel-built
+# server tools archive in static_binaries.yml.
 
 - name: Bound apt network and lock waits
   ansible.builtin.copy:
@@ -18,24 +17,9 @@
       Acquire::Queue-Mode "access";
       DPkg::Lock::Timeout "60";
 
-- name: Install PGDG apt signing key
-  ansible.builtin.get_url:
-    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
-    dest: /usr/share/keyrings/pgdg.asc
-    mode: "0644"
-    timeout: 5
-
-- name: Add PGDG apt repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt {{ substrate_profile_distribution_release }}-pgdg main"
-    filename: pgdg
-    state: present
-  register: substrate_profile_pgdg_repository
-
 - name: Install substrate apt packages
   ansible.builtin.apt:
     name:
-      - "postgresql-{{ substrate_profile_postgresql_version }}"
       - python3-psycopg2
       - wireguard-tools
       - git
@@ -54,35 +38,7 @@
       - liblua5.4-0
       - libopentracing-c-wrapper0t64
     state: present
-    update_cache: "{{ substrate_profile_pgdg_repository.changed }}"
+    update_cache: true
     cache_valid_time: 3600
     force_apt_get: true
     lock_timeout: 60
-
-# Disable the auto-started PostgreSQL cluster — we manage our own data directory.
-- name: Stop default PostgreSQL cluster
-  ansible.builtin.command:
-    cmd: "pg_dropcluster --stop {{ substrate_profile_postgresql_version }} main"
-    removes: "/var/lib/postgresql/{{ substrate_profile_postgresql_version }}/main"
-  failed_when: false
-
-- name: Symlink PostgreSQL binaries into verself_bin
-  ansible.builtin.file:
-    src: "/usr/lib/postgresql/{{ substrate_profile_postgresql_version }}/bin/{{ item }}"
-    dest: "{{ verself_bin }}/{{ item }}"
-    state: link
-    force: true
-  loop:
-    - postgres
-    - psql
-    - initdb
-    - pg_dump
-    - pg_restore
-    - pg_isready
-
-- name: Symlink wg into verself_bin
-  ansible.builtin.file:
-    src: /usr/bin/wg
-    dest: "{{ verself_bin }}/wg"
-    state: link
-    force: true

@@ -41,7 +41,7 @@ genrule(
     srcs = [
         "runtime/package-lock.json",
         "runtime/package.json",
-        "@server_tool_nodejs//file",
+        "@server_tools//tools/nodejs-runtime",
     ],
     outs = ["verdaccio_runtime.tar"],
     cmd = """
@@ -50,7 +50,7 @@ out="$$(pwd)/$@"
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
 mkdir -p "$$tmp/node" "$$tmp/runtime" "$$tmp/out/opt/verself/verdaccio/lib/node_modules" "$$tmp/out/opt/verself/verdaccio/bin"
-tar -xJf "$(location @server_tool_nodejs//file)" -C "$$tmp/node" --strip-components=1
+tar -xJf "$(location @server_tools//tools/nodejs-runtime)" -C "$$tmp/node" --strip-components=1
 cp "$(location runtime/package.json)" "$$tmp/runtime/package.json"
 cp "$(location runtime/package-lock.json)" "$$tmp/runtime/package-lock.json"
 cd "$$tmp/runtime"

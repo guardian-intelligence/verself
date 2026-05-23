@@ -19,9 +19,12 @@ install_route_catalog() {
     if [ "$$(realpath -m "$$src")" = "$$(realpath -m "$$dst")" ]; then
         return 0
     fi
-    mkdir -p "$$(dirname "$$dst")"
-    rm -f "$$dst"
-    install -m 0644 "$$src" "$$dst"
+    dir="$$(dirname "$$dst")"
+    base="$$(basename "$$dst")"
+    mkdir -p "$$dir"
+    tmp="$$(mktemp "$$dir/.$$base.XXXXXX")"
+    install -m 0644 "$$src" "$$tmp"
+    mv "$$tmp" "$$dst"
 }
 install_route_catalog "$(location //src/services/github-integration-service/internal/routecatalog:github_integration_internal_route_catalog_json)" internal/routecatalog/github-integration-internal.route-catalog.json
 install_route_catalog "$(location //src/services/github-integration-service/internal/routecatalog:github_integration_route_catalog_json)" internal/routecatalog/github-integration.route-catalog.json

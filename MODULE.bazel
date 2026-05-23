@@ -14,12 +14,21 @@ bazel_dep(name = "rules_jvm_external", version = "7.0")
 bazel_dep(name = "rules_nodejs", version = "6.7.4")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_zig", version = "0.13.0")
 
-include("//src/host/binaries:server_tools.MODULE.bazel")
 include("//src/tools/dev/binaries:dev_tools.MODULE.bazel")
 include("//src/substrate/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
+
+server_tools = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
+server_tools.hub(
+    hub_name = "server_tools",
+    lockfile = "//src/host/binaries:server_tools.lock.json",
+)
+use_repo(server_tools, "multitool", "server_tools")
+
+register_toolchains("@server_tools//toolchains:all")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(

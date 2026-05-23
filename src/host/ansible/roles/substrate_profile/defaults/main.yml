@@ -13,9 +13,3 @@ substrate_profile_server_tools_bazel_label: //src/host/binaries:server_tools.tar
 substrate_profile_server_tools_marker_path: /opt/verself/profile/.server-tools-version
 substrate_profile_go_tools_bazel_label: //src/host/binaries:substrate_go_tools
 substrate_profile_go_tools_marker_path: /opt/verself/profile/.substrate-go-tools-version
-
-# PostgreSQL major version (determines apt package and binary paths)
-substrate_profile_postgresql_version: "16"
-
-# Host images are Ubuntu 24.04; use gathered facts when available.
-substrate_profile_distribution_release: "{{ ansible_facts.get('distribution_release', 'noble') }}"

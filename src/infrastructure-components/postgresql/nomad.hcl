@@ -25,6 +25,7 @@ job "postgresql" {
       }
 
       env {
+        LD_LIBRARY_PATH = "/opt/verself/postgresql/usr/lib/x86_64-linux-gnu:/opt/verself/postgresql/usr/lib/postgresql/16/lib"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "postgresql"

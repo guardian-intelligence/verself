@@ -1,6 +1,7 @@
 package githubintegration
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rsa"
@@ -415,7 +416,15 @@ func (s *Service) tryAdvisoryLockPair(ctx context.Context, key1, key2 int32) (fu
 
 func runnerClassLockKey(providerRepositoryID int64, runnerClass string) (int32, int32) {
 	sum := sha256.Sum256([]byte("github-runner-class:" + strconv.FormatInt(providerRepositoryID, 10) + ":" + runnerClass))
-	return int32(binary.BigEndian.Uint32(sum[0:4])), int32(binary.BigEndian.Uint32(sum[4:8]))
+	return bigEndianInt32(sum[0:4]), bigEndianInt32(sum[4:8])
+}
+
+func bigEndianInt32(raw []byte) int32 {
+	var out int32
+	if err := binary.Read(bytes.NewReader(raw), binary.BigEndian, &out); err != nil {
+		panic(err)
+	}
+	return out
 }
 
 func (s *Service) processLockedDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {

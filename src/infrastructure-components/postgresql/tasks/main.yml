@@ -1,10 +1,12 @@
 ---
 # PostgreSQL database server.
-# Binary provided by substrate_profile role (apt from PGDG repo).
+# Binary and shared-library runtime provided by the Bazel-built server tools archive.
 
 - name: Capture PostgreSQL version
   ansible.builtin.command:
     cmd: "{{ verself_bin }}/postgres --version"
+  environment:
+    LD_LIBRARY_PATH: "{{ postgresql_runtime_ld_library_path }}"
   register: postgresql_version_output
   changed_when: false
 
@@ -87,11 +89,13 @@
       --auth=scram-sha-256
       --encoding=UTF8
       --locale=C.UTF-8
+      -L {{ postgresql_runtime_share_dir }}
       --pwfile=/tmp/.pg_initdb_pw
   become: true
   become_user: postgres
   environment:
     HOME: /tmp
+    LD_LIBRARY_PATH: "{{ postgresql_runtime_ld_library_path }}"
   changed_when: true
   when: not postgresql_data_stat.stat.exists
 

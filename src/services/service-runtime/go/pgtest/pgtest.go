@@ -1,6 +1,8 @@
 package pgtest
 
 import (
+	"archive/tar"
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -10,12 +12,14 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
 	osuser "os/user"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -25,6 +29,14 @@ import (
 )
 
 const port = "55432"
+
+const (
+	postgresqlRuntimeRunfile       = "src/host/binaries/postgresql_runtime.tar"
+	postgresqlRuntimeRelativeBin   = "opt/verself/postgresql/usr/lib/postgresql/16/bin"
+	postgresqlRuntimeRelativeLib   = "opt/verself/postgresql/usr/lib/x86_64-linux-gnu"
+	postgresqlRuntimeRelativePgLib = "opt/verself/postgresql/usr/lib/postgresql/16/lib"
+	postgresqlRuntimeRelativeShare = "opt/verself/postgresql/usr/share/postgresql/16"
+)
 
 var safeIdent = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 
@@ -39,6 +51,15 @@ type Database struct {
 	DSN          string
 	Name         string
 	TemplateName string
+}
+
+type postgresTools struct {
+	initdb     string
+	postgres   string
+	pgIsReady  string
+	shareDir   string
+	env        []string
+	clusterKey string
 }
 
 func Acquire(ctx context.Context, t testing.TB, template Template) *Database {
@@ -144,53 +165,50 @@ func ensureLocalServer(ctx context.Context) (string, error) {
 	}
 	defer func() { _ = flock(lockFile, syscall.LOCK_UN) }()
 
-	initdb, err := findProgram("initdb")
-	if err != nil {
-		return "", err
-	}
-	postgres, err := findProgram("postgres")
-	if err != nil {
-		return "", err
-	}
-	pgIsReady, err := findProgram("pg_isready")
+	tools, err := resolvePostgresTools(root)
 	if err != nil {
 		return "", err
 	}
 
-	dataDir := filepath.Join(root, "data")
-	socketDir := filepath.Join(root, "socket")
+	clusterRoot := filepath.Join(root, "clusters", tools.clusterKey)
+	dataDir := filepath.Join(clusterRoot, "data")
+	socketDir := filepath.Join(clusterRoot, "socket")
 	if err := os.MkdirAll(socketDir, 0o700); err != nil {
 		return "", fmt.Errorf("create pgtest socket dir: %w", err)
 	}
 	if _, err := os.Stat(filepath.Join(dataDir, "PG_VERSION")); errors.Is(err, os.ErrNotExist) {
-		if err := run(ctx, nil, initdb, "-A", "trust", "-U", "postgres", "-D", dataDir, "--no-instructions"); err != nil {
+		args := []string{"-A", "trust", "-U", "postgres", "-D", dataDir, "--no-instructions"}
+		if tools.shareDir != "" {
+			args = append(args, "-L", tools.shareDir)
+		}
+		if err := run(ctx, nil, tools.env, tools.initdb, args...); err != nil {
 			return "", err
 		}
 	} else if err != nil {
 		return "", fmt.Errorf("stat pgtest cluster: %w", err)
 	}
 
-	if ready(ctx, pgIsReady, socketDir) {
+	if ready(ctx, tools, socketDir) {
 		return localDSN(socketDir), nil
 	}
 	cleanupStalePostgres(dataDir, socketDir)
-	if !ready(ctx, pgIsReady, socketDir) {
-		if err := startPostgres(root, dataDir, socketDir, postgres); err != nil {
+	if !ready(ctx, tools, socketDir) {
+		if err := startPostgres(clusterRoot, dataDir, socketDir, tools); err != nil {
 			return "", err
 		}
-		if err := waitReady(ctx, pgIsReady, socketDir); err != nil {
+		if err := waitReady(ctx, tools, socketDir); err != nil {
 			return "", err
 		}
 	}
 	return localDSN(socketDir), nil
 }
 
-func startPostgres(root, dataDir, socketDir, postgres string) error {
+func startPostgres(root, dataDir, socketDir string, tools *postgresTools) error {
 	logFile, err := os.OpenFile(filepath.Join(root, "postgres.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open pgtest postgres log: %w", err)
 	}
-	cmd := exec.Command(postgres,
+	cmd := exec.Command(tools.postgres,
 		"-D", dataDir,
 		"-k", socketDir,
 		"-h", "",
@@ -200,7 +218,7 @@ func startPostgres(root, dataDir, socketDir, postgres string) error {
 		"-c", "synchronous_commit=off",
 		"-c", "full_page_writes=off",
 	)
-	cmd.Env = postgresEnv()
+	cmd.Env = tools.env
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -216,10 +234,10 @@ func startPostgres(root, dataDir, socketDir, postgres string) error {
 	return nil
 }
 
-func waitReady(ctx context.Context, pgIsReady, socketDir string) error {
+func waitReady(ctx context.Context, tools *postgresTools, socketDir string) error {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if ready(ctx, pgIsReady, socketDir) {
+		if ready(ctx, tools, socketDir) {
 			return nil
 		}
 		if time.Now().After(deadline) {
@@ -229,9 +247,9 @@ func waitReady(ctx context.Context, pgIsReady, socketDir string) error {
 	}
 }
 
-func ready(ctx context.Context, pgIsReady, socketDir string) bool {
-	cmd := exec.CommandContext(ctx, pgIsReady, "-h", socketDir, "-p", port, "-U", "postgres", "-d", "postgres", "-q")
-	cmd.Env = postgresEnv()
+func ready(ctx context.Context, tools *postgresTools, socketDir string) bool {
+	cmd := exec.CommandContext(ctx, tools.pgIsReady, "-h", socketDir, "-p", port, "-U", "postgres", "-d", "postgres", "-q")
+	cmd.Env = tools.env
 	return cmd.Run() == nil
 }
 
@@ -376,9 +394,9 @@ func flock(file *os.File, how int) error {
 	return syscall.Flock(int(fd), how)
 }
 
-func run(ctx context.Context, logs *os.File, program string, args ...string) error {
+func run(ctx context.Context, logs *os.File, env []string, program string, args ...string) error {
 	cmd := exec.CommandContext(ctx, program, args...)
-	cmd.Env = postgresEnv()
+	cmd.Env = env
 	if logs != nil {
 		cmd.Stdout = logs
 		cmd.Stderr = logs
@@ -389,57 +407,319 @@ func run(ctx context.Context, logs *os.File, program string, args ...string) err
 	return nil
 }
 
-func findProgram(name string) (string, error) {
-	if path, err := exec.LookPath(name); err == nil {
-		return path, nil
+func resolvePostgresTools(root string) (*postgresTools, error) {
+	dirs := make([]string, 0, 4)
+	libDirs := make([]string, 0, 2)
+	shareDir := strings.TrimSpace(os.Getenv("VERSELF_POSTGRESQL_SHARE_DIR"))
+	source := "system"
+
+	if dir := strings.TrimSpace(os.Getenv("VERSELF_POSTGRESQL_BIN_DIR")); dir != "" {
+		dirs = append(dirs, dir)
+		source = "env:" + dir
 	}
-	for _, dir := range candidateBinDirs() {
+	if dir := strings.TrimSpace(os.Getenv("VERSELF_POSTGRESQL_LIB_DIR")); dir != "" {
+		libDirs = append(libDirs, dir)
+		source += ":lib:" + dir
+	}
+
+	if runtimeRoot, runtimeHash, err := ensureBazelPostgresRuntime(root); err != nil {
+		return nil, err
+	} else if runtimeRoot != "" {
+		dirs = append(dirs, filepath.Join(runtimeRoot, postgresqlRuntimeRelativeBin))
+		libDirs = append(libDirs,
+			filepath.Join(runtimeRoot, postgresqlRuntimeRelativeLib),
+			filepath.Join(runtimeRoot, postgresqlRuntimeRelativePgLib),
+		)
+		if shareDir == "" {
+			shareDir = filepath.Join(runtimeRoot, postgresqlRuntimeRelativeShare)
+		}
+		source = "bazel:" + runtimeHash
+	}
+	if len(dirs) == 0 {
+		return nil, errors.New("postgresql runtime unavailable: run pgtest through Bazel or set VERSELF_POSTGRESQL_BIN_DIR")
+	}
+
+	initdb, err := findProgram("initdb", dirs)
+	if err != nil {
+		return nil, err
+	}
+	postgres, err := findProgram("postgres", dirs)
+	if err != nil {
+		return nil, err
+	}
+	pgIsReady, err := findProgram("pg_isready", dirs)
+	if err != nil {
+		return nil, err
+	}
+	source += ":" + initdb + ":" + postgres + ":" + pgIsReady + ":" + shareDir
+	return &postgresTools{
+		initdb:     initdb,
+		postgres:   postgres,
+		pgIsReady:  pgIsReady,
+		shareDir:   shareDir,
+		env:        postgresEnv(libDirs...),
+		clusterKey: clusterKey(source),
+	}, nil
+}
+
+func findProgram(name string, dirs []string) (string, error) {
+	for _, dir := range dirs {
 		path := filepath.Join(dir, name)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
 			return path, nil
 		}
 	}
-	matches, err := filepath.Glob("/usr/lib/postgresql/*/bin/" + name)
-	if err != nil {
-		return "", err
+	return "", fmt.Errorf("%s not found in configured postgresql runtime dirs", name)
+}
+
+func ensureBazelPostgresRuntime(root string) (string, string, error) {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		return "", "", nil
 	}
-	for i := len(matches) - 1; i >= 0; i-- {
-		if info, statErr := os.Stat(matches[i]); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			return matches[i], nil
+	archive, err := bazelRunfile(postgresqlRuntimeRunfile)
+	if err != nil {
+		return "", "", err
+	}
+	if archive == "" {
+		return "", "", nil
+	}
+	sumHex, err := fileSHA256(archive)
+	if err != nil {
+		return "", "", err
+	}
+	target := filepath.Join(root, "tools", "postgresql", sumHex)
+	marker := filepath.Join(target, ".sha256")
+	if body, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(body)) == sumHex {
+		return target, sumHex, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return "", "", fmt.Errorf("create pgtest postgresql tools dir: %w", err)
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(target), ".postgresql-runtime-*")
+	if err != nil {
+		return "", "", fmt.Errorf("create pgtest postgresql extract dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	if err := extractTar(archive, tmp); err != nil {
+		return "", "", err
+	}
+	if err := os.WriteFile(filepath.Join(tmp, ".sha256"), []byte(sumHex+"\n"), 0o644); err != nil {
+		return "", "", fmt.Errorf("write pgtest postgresql marker: %w", err)
+	}
+	_ = os.RemoveAll(target)
+	if err := os.Rename(tmp, target); err != nil {
+		return "", "", fmt.Errorf("install pgtest postgresql runtime: %w", err)
+	}
+	return target, sumHex, nil
+}
+
+func bazelRunfile(rel string) (string, error) {
+	candidates := []string{"verself/" + rel, "_main/" + rel, rel}
+	if manifest := strings.TrimSpace(os.Getenv("RUNFILES_MANIFEST_FILE")); manifest != "" {
+		path, err := manifestRunfile(manifest, candidates)
+		if err != nil || path != "" {
+			return path, err
 		}
 	}
-	return "", fmt.Errorf("%s not found in PATH, known tool dirs, or /usr/lib/postgresql/*/bin", name)
+	for _, root := range []string{
+		strings.TrimSpace(os.Getenv("RUNFILES_DIR")),
+		strings.TrimSpace(os.Getenv("TEST_SRCDIR")),
+		executableRunfilesDir(),
+	} {
+		if root == "" {
+			continue
+		}
+		for _, candidate := range candidates {
+			path := filepath.Join(root, candidate)
+			info, err := os.Stat(path)
+			if err == nil && !info.IsDir() {
+				return path, nil
+			}
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return "", fmt.Errorf("stat runfile %s: %w", path, err)
+			}
+		}
+	}
+	return "", nil
 }
 
-func candidateBinDirs() []string {
-	dirs := []string{
-		"/opt/verself/profile/bin",
-		"/home/runner/.nix-profile/bin",
-		"/home/ubuntu/.nix-profile/bin",
-		"/usr/local/bin",
-		"/usr/bin",
-		"/bin",
-		"/nix/var/nix/profiles/default/bin",
+func manifestRunfile(manifest string, candidates []string) (string, error) {
+	file, err := os.Open(manifest)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf("open runfiles manifest %s: %w", manifest, err)
 	}
-	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
-		dirs = append(dirs, filepath.Join(home, ".nix-profile/bin"))
+	defer func() { _ = file.Close() }()
+	want := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		want[candidate] = struct{}{}
 	}
-	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
-		dirs = append(dirs, filepath.Join(home, ".nix-profile/bin"))
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		logical, physical, ok := strings.Cut(scanner.Text(), " ")
+		if !ok {
+			continue
+		}
+		if _, found := want[logical]; !found {
+			continue
+		}
+		info, err := os.Stat(physical)
+		if err == nil && !info.IsDir() {
+			return physical, nil
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("stat runfile %s: %w", physical, err)
+		}
 	}
-	return dirs
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read runfiles manifest %s: %w", manifest, err)
+	}
+	return "", nil
 }
 
-func postgresEnv() []string {
+func executableRunfilesDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	for _, path := range []string{
+		exe + ".runfiles",
+		filepath.Dir(exe) + ".runfiles",
+	} {
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			continue
+		}
+		if err == nil && info.IsDir() {
+			return path
+		}
+	}
+	return ""
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open %s: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", fmt.Errorf("hash %s: %w", path, err)
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func extractTar(archive, dest string) error {
+	file, err := os.Open(archive)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", archive, err)
+	}
+	defer func() { _ = file.Close() }()
+	reader := tar.NewReader(file)
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read %s: %w", archive, err)
+		}
+		name := filepath.Clean(header.Name)
+		if name == "." {
+			continue
+		}
+		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("unsafe path %q in %s", header.Name, archive)
+		}
+		path := filepath.Join(dest, name)
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(path, header.FileInfo().Mode().Perm()); err != nil {
+				return fmt.Errorf("mkdir %s: %w", path, err)
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
+			}
+			mode := header.FileInfo().Mode().Perm()
+			if mode == 0 {
+				mode = 0o644
+			}
+			out, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+			if err != nil {
+				return fmt.Errorf("create %s: %w", path, err)
+			}
+			_, copyErr := io.Copy(out, reader)
+			closeErr := out.Close()
+			if copyErr != nil {
+				return fmt.Errorf("extract %s: %w", path, copyErr)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("close %s: %w", path, closeErr)
+			}
+			if err := os.Chmod(path, mode); err != nil {
+				return fmt.Errorf("chmod %s: %w", path, err)
+			}
+		case tar.TypeSymlink:
+			target := filepath.Clean(header.Linkname)
+			if filepath.IsAbs(target) || target == ".." || strings.HasPrefix(target, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("unsafe symlink %q -> %q in %s", header.Name, header.Linkname, archive)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
+			}
+			if err := os.Symlink(target, path); err != nil {
+				return fmt.Errorf("symlink %s -> %s: %w", path, target, err)
+			}
+		default:
+			return fmt.Errorf("unsupported tar entry %q in %s", header.Name, archive)
+		}
+	}
+}
+
+func clusterKey(source string) string {
+	sum := sha256.Sum256([]byte(source))
+	return "pg_" + hex.EncodeToString(sum[:8])
+}
+
+func postgresEnv(libDirs ...string) []string {
 	env := os.Environ()
 	out := make([]string, 0, len(env)+2)
+	ldLibraryPath := ""
 	for _, value := range env {
 		key, _, ok := strings.Cut(value, "=")
 		if ok && (strings.HasPrefix(key, "PG") || key == "RUNNER_TRACKING_ID") {
 			continue
 		}
+		if key == "LD_LIBRARY_PATH" {
+			ldLibraryPath = strings.TrimPrefix(value, "LD_LIBRARY_PATH=")
+			continue
+		}
 		out = append(out, value)
 	}
+	libPath := strings.Join(nonEmpty(libDirs), ":")
+	if libPath != "" {
+		if ldLibraryPath != "" {
+			libPath += ":" + ldLibraryPath
+		}
+		out = append(out, "LD_LIBRARY_PATH="+libPath)
+	} else if ldLibraryPath != "" {
+		out = append(out, "LD_LIBRARY_PATH="+ldLibraryPath)
+	}
 	out = append(out, "LC_ALL=C", "TZ=UTC")
+	return out
+}
+
+func nonEmpty(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			out = append(out, value)
+		}
+	}
 	return out
 }

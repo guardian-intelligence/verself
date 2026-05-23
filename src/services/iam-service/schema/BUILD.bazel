@@ -16,13 +16,10 @@ filegroup(
 
 genrule(
     name = "zed_cli_binary",
-    srcs = ["@server_tool_zed//file"],
+    srcs = ["@server_tools//tools/zed"],
     outs = ["zed.bin"],
     cmd = """
-tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tmp"' EXIT
-tar -xzf "$(location @server_tool_zed//file:file)" -C "$$tmp" zed
-install -m 0755 "$$tmp/zed" "$@"
+install -m 0755 "$(location @server_tools//tools/zed)" "$@"
 """,
 )
 

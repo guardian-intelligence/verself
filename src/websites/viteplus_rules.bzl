@@ -15,7 +15,7 @@ load("//src/tools/build:check_tests.bzl", "stamp_test")
 _INSTRUMENTATION_BUNDLER = "//src/websites/scripts:bundle_instrumentation"
 _CDXGEN_BINARY = "@dev_tool_cdxgen//file"
 _JQ_BINARY = "@dev_tool_jq//file"
-_NODEJS_ARCHIVE = "@server_tool_nodejs//file"
+_NODEJS_ARCHIVE = "@server_tools//tools/nodejs-runtime"
 _NODEJS_CONTROLLER_RUNTIME = "//src/websites:vp_node"
 _SYFT_ARCHIVE = "@dev_tool_syft//file"
 _VITEPLUS_PACKAGE = "//src/websites:node_modules/vite-plus"

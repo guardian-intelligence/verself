@@ -105,6 +105,7 @@
       END
       $$;
   environment:
+    LD_LIBRARY_PATH: "{{ postgresql_runtime_ld_library_path }}"
     PGPASSFILE: "{{ electric_transient_pgpass_file }}"
   changed_when: true
 

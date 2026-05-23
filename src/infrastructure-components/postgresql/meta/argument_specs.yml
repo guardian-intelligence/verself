@@ -23,6 +23,31 @@ argument_specs:
         default: /var/log/postgresql
         description: "PostgreSQL log directory."
 
+      postgresql_runtime_root:
+        type: path
+        default: /opt/verself/postgresql
+        description: "Bazel-installed PostgreSQL runtime root."
+
+      postgresql_runtime_lib_dir:
+        type: path
+        default: /opt/verself/postgresql/usr/lib/x86_64-linux-gnu
+        description: "Directory containing PostgreSQL runtime shared libraries."
+
+      postgresql_runtime_pg_lib_dir:
+        type: path
+        default: /opt/verself/postgresql/usr/lib/postgresql/16/lib
+        description: "Directory containing PostgreSQL extension libraries."
+
+      postgresql_runtime_share_dir:
+        type: path
+        default: /opt/verself/postgresql/usr/share/postgresql/16
+        description: "Directory containing PostgreSQL initdb share files."
+
+      postgresql_runtime_ld_library_path:
+        type: str
+        default: /opt/verself/postgresql/usr/lib/x86_64-linux-gnu:/opt/verself/postgresql/usr/lib/postgresql/16/lib
+        description: "LD_LIBRARY_PATH used to execute the Bazel-installed PostgreSQL binaries."
+
       verself_bin:
         type: path
         required: true
