@@ -37,7 +37,10 @@ nomad_component(
     },
     component = "otelcol",
     deploy_phase = "platform",
-    digest_inputs = [":deploy_declarations"],
+    digest_inputs = [
+        ":deploy_declarations",
+        "//src/host/binaries:host_profile_archives",
+    ],
     job_id = "otelcol",
     job_spec = "nomad.hcl",
     provides = ["otelcol:otlp"],

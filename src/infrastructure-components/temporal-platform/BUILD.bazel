@@ -43,7 +43,10 @@ nomad_component(
     name = "nomad_component",
     component = "temporal",
     deploy_phase = "platform",
-    digest_inputs = [":deploy_declarations"],
+    digest_inputs = [
+        ":deploy_declarations",
+        "//src/host/binaries:host_profile_archives",
+    ],
     job_id = "temporal",
     job_spec = "nomad.hcl",
     requires = ["postgres:server"],

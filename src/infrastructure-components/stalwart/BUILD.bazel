@@ -26,7 +26,10 @@ nomad_component(
     name = "nomad_component",
     component = "stalwart",
     deploy_phase = "platform",
-    digest_inputs = [":deploy_declarations"],
+    digest_inputs = [
+        ":deploy_declarations",
+        "//src/host/binaries:host_profile_archives",
+    ],
     job_id = "stalwart",
     job_spec = "nomad.hcl",
     provides = [

@@ -27,7 +27,10 @@ nomad_component(
     },
     component = "zitadel",
     deploy_phase = "platform",
-    digest_inputs = [":role_sources"],
+    digest_inputs = [
+        ":role_sources",
+        "//src/host/binaries:host_profile_archives",
+    ],
     job_id = "zitadel",
     job_spec = "nomad.hcl",
     provides = ["zitadel:http"],

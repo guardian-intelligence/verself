@@ -10,3 +10,11 @@ exports_files([
 server_tools_archive()
 
 substrate_go_tools_archive()
+
+filegroup(
+    name = "host_profile_archives",
+    srcs = [
+        ":server_tools.tar.zst",
+        ":substrate_go_tools",
+    ],
+)

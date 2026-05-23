@@ -23,6 +23,7 @@ nomad_component(
     name = "nomad_component",
     component = "openbao",
     deploy_phase = "platform",
+    digest_inputs = ["//src/host/binaries:host_profile_archives"],
     job_id = "openbao",
     job_spec = "nomad.hcl",
     provides = ["openbao:api"],

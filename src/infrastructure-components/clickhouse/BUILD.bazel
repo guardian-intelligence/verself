@@ -41,6 +41,7 @@ nomad_component(
     },
     component = "clickhouse_migrations",
     deploy_phase = "platform",
+    digest_inputs = ["//src/host/binaries:host_profile_archives"],
     job_id = "clickhouse-migrations",
     job_spec = "nomad.hcl",
     provides = ["clickhouse:migrations"],

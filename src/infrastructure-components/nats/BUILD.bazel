@@ -35,6 +35,7 @@ nomad_component(
     name = "nomad_component",
     component = "nats",
     deploy_phase = "platform",
+    digest_inputs = ["//src/host/binaries:host_profile_archives"],
     job_id = "nats",
     job_spec = "nomad.hcl",
     provides = ["nats:client"],
