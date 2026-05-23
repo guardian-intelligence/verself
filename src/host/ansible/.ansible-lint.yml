@@ -12,7 +12,6 @@ enable_list:
   - no-default-ports
   - no-execstart-secrets
   - no-masterkey-cli
-  - no-psql-object-state
   - no-secret-without-no-log
   - no-validate-certs-false
   - site-orchestrates-only

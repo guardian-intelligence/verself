@@ -48,11 +48,7 @@
   ansible.builtin.assert:
     that:
       - (nftables_rendered_rulesets | map(attribute='basename') | list | unique | length) == (nftables_rendered_rulesets | length)
-    fail_msg: "nftables ruleset filenames must be unique across platform and service-owned inputs"
-
-- name: Set nftables desired ruleset names
-  ansible.builtin.set_fact:
-    nftables_rendered_ruleset_names: "{{ nftables_rendered_rulesets | map(attribute='basename') | list }}"
+    fail_msg: "nftables ruleset filenames must be unique across platform inputs"
 
 - name: Initialize nftables derived inventories
   ansible.builtin.set_fact:
@@ -99,18 +95,6 @@
           )
         )
       }}
-
-- name: Remove stale nftables rulesets
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: absent
-  loop: "{{ nftables_deployed_rulesets.files }}"
-  loop_control:
-    label: "{{ item.path | basename }}"
-  when:
-    - nftables_component_registry_available | bool
-    - (item.path | basename) not in nftables_rendered_ruleset_names
-  notify: reload nftables
 
 - name: Deploy rendered nftables rulesets
   ansible.builtin.copy:

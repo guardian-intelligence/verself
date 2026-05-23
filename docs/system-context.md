@@ -15,14 +15,14 @@ The platform itself is open-source and self-hostable. The bootstrap CLI (`docs/v
 
 Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall foundation files are authored in `src/host/ansible/host-files/`; component, service, frontend, and privileged-substrate nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages.
 
-The bootstrap ring contains the host foundation required to start Nomad, plus
-HAProxy, SPIRE, ZFS, and ClickHouse server state required for deploy evidence.
-ClickHouse bootstrap applies only `001_initial_schema.up.sql`; subsequent
-ClickHouse migrations are Nomad-managed deployable units. PostgreSQL, Garage,
-OpenBao, Zitadel, NATS, TigerBeetle, Verdaccio, Zot, Stalwart, Forgejo,
-Grafana, OTel collector, Electric, SpiceDB, Temporal, services, and frontends
-are Nomad-managed. Devtools remain controller-local/host-local tooling outside
-Nomad.
+The bootstrap ring contains OS/package hardening, nftables foundation, Nomad
+agent state, operator-recovery SSH, and SPIRE server/agent state required
+before Nomad workloads can receive SVIDs. `aspect host service-foundation`
+converges SPIRE entries, local database declarations, runtime-secret
+declarations, and HAProxy public routing from owner-local deploy files. Runtime
+versions, component binaries, service binaries, ClickHouse migrations, and
+rollout/rollback semantics are Nomad-managed deployable units. Devtools remain
+controller-local/host-local tooling outside Nomad.
 
 Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<site>/secrets/host.sops.yml` and written into root-owned host credential files. External SaaS credentials live in `src/host/sites/<site>/secrets/external.sops.yml`. Bootstrap systemd units consume host credentials with `LoadCredential=`; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services.
 
@@ -54,13 +54,14 @@ single TanStack Start app, and public service APIs live at
 service API origins directly; TanStack Start server functions preserve the
 same-origin CSP and attach service credentials server-side.
 
-HAProxy 3.3 with AWS-LC terminates public TLS. Ansible renders `haproxy.cfg`
-from authored routes, and deployment reconciles `/etc/haproxy/maps/upstreams.map`
-from Nomad's native service catalog after Nomad allocations become healthy.
-Nomad-supervised public origins are therefore keyed by owner-local route/backend
-identity and Nomad service name, not by committed static ports. HAProxy GUIDs
-use those stable frontend, backend, and server identities so reload-persistent
-statistics can match objects across reloads via `shm-stats-file`.
+HAProxy 3.3 with AWS-LC terminates public TLS. `aspect host service-foundation`
+renders `haproxy.cfg` from owner-local route declarations, and deployment
+reconciles `/etc/haproxy/maps/upstreams.map` from Nomad's native service catalog
+after Nomad allocations become healthy.
+Nomad-supervised public origins are keyed by owner-local route/backend identity
+and Nomad service name. HAProxy GUIDs use those stable frontend, backend, and
+server identities so reload-persistent statistics can match objects across
+reloads via `shm-stats-file`.
 
 ## Topology and Replication
 

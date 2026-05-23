@@ -21,10 +21,10 @@ exports_files([
     "guest_images.MODULE.bazel",
 ])
 
-# Aggregated toolchain-image bundle. Stages every platform-tier
-# toolchain ext4 + manifest under toolchains/<ref>.ext4 so the
-# firecracker Ansible role can scp one tarball to the host and lay
-# the artefacts under /var/lib/verself/guest-images/toolchains/.
+# Aggregated toolchain-image bundle consumed by the vm-orchestrator Nomad
+# prestart task. Stages every platform-tier toolchain ext4 + manifest under
+# toolchains/<ref>.ext4 so the artifacts land atomically under
+# /var/lib/verself/guest-images/toolchains/.
 # Adding a new toolchain image = add one line here and one entry to
 # instances/prod/config.cue:firecracker.images.
 pkg_tar(

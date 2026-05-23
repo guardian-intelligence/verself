@@ -146,19 +146,6 @@ host_wireguard_tunnels:
       - allowed_ips: 10.66.66.2/32
         public_key: AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc=
     port: 51821
-  worker:
-    address: 10.0.0.1
-    address_prefix: 16
-    interface: wg0
-    network: 10.0.0.0/16
-    peers: []
-    port: 51820
-wireguard_host_tunnel_groups:
-  infra:
-    - worker
-    - ops
-  workers:
-    - worker
 
 platform_org_id: "371564185181576922"
 platform_organization_name: guardianintelligence.org
