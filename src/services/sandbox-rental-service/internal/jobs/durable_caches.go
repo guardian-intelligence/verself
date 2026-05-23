@@ -2596,7 +2596,7 @@ func goldenVMVsockModelHash() string {
 }
 
 func goldenVMClockModelHash() string {
-	return stableHex("kvm-ptp", "chrony", "clock-realtime-load-snapshot", "after-restore-waitsync-v1")
+	return stableHex("kvm-ptp", "chrony", "firecracker-v1.15-load-snapshot-schema", "after-restore-waitsync-v1")
 }
 
 func goldenVMSourceGenerationSetHash(staticMounts []vmorchestrator.FilesystemMount, ops []durableCacheOperation) string {
