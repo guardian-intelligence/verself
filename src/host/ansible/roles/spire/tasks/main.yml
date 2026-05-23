@@ -12,7 +12,7 @@
 
 - name: Resolve SPIRE binary directory
   ansible.builtin.set_fact:
-    spire_bin_dir: "{{ verself_bin | default('/opt/verself/profile/bin') }}"
+    spire_bin_dir: "{{ verself_bin }}"
 
 - name: Create spire system group
   ansible.builtin.group:

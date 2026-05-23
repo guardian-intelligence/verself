@@ -81,6 +81,7 @@ type nomadComponentDescriptor struct {
 	TestTargets   []string                  `json:"test_targets"`
 	UnitID        string                    `json:"unit_id"`
 	Artifacts     []nomadDescriptorArtifact `json:"artifacts"`
+	PreArtifacts  []nomadDescriptorArtifact `json:"pre_artifacts"`
 	DigestInputs  []nomadDescriptorInput    `json:"digest_inputs"`
 }
 
@@ -101,6 +102,7 @@ type artifactBinding struct {
 	Checksum string
 	Label    string
 	Path     string
+	Pre      bool
 }
 
 type authoredNomadSpecParser interface {
@@ -219,6 +221,11 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 		for _, artifact := range component.Artifacts {
 			if artifact.Label == "" || artifact.Output == "" || artifact.Path == "" {
 				return nil, fmt.Errorf("%s: artifact entries require label, output, and path", path)
+			}
+		}
+		for _, artifact := range component.PreArtifacts {
+			if artifact.Label == "" || artifact.Output == "" || artifact.Path == "" {
+				return nil, fmt.Errorf("%s: pre_artifacts entries require label, output, and path", path)
 			}
 		}
 		for _, input := range component.DigestInputs {

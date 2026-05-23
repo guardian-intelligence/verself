@@ -57,8 +57,13 @@ job "temporal" {
         sidecar = false
       }
       config {
-        args = ["-ec", "/opt/verself/profile/bin/temporal-schema setup --config \"$VERSELF_TEMPORAL_CONFIG_PATH\" --store postgres-default --version 0.0\n/opt/verself/profile/bin/temporal-schema update --config \"$VERSELF_TEMPORAL_CONFIG_PATH\" --store postgres-default --schema-name postgresql/v12/temporal\n/opt/verself/profile/bin/temporal-schema setup --config \"$VERSELF_TEMPORAL_CONFIG_PATH\" --store postgres-visibility --version 0.0\n/opt/verself/profile/bin/temporal-schema update --config \"$VERSELF_TEMPORAL_CONFIG_PATH\" --store postgres-visibility --schema-name postgresql/v12/visibility\n"]
+        args = ["-ec", "local/bin/temporal-schema setup --config \"$VERSELF_TEMPORAL_CONFIG_PATH\" --store postgres-default --version 0.0\nlocal/bin/temporal-schema update --config \"$VERSELF_TEMPORAL_CONFIG_PATH\" --store postgres-default --schema-name postgresql/v12/temporal\nlocal/bin/temporal-schema setup --config \"$VERSELF_TEMPORAL_CONFIG_PATH\" --store postgres-visibility --version 0.0\nlocal/bin/temporal-schema update --config \"$VERSELF_TEMPORAL_CONFIG_PATH\" --store postgres-visibility --schema-name postgresql/v12/visibility\n"]
         command = "/bin/sh"
+      }
+      artifact {
+        source = "verself-artifact://temporal-runtime"
+        destination = "local"
+        chown = true
       }
       env {
         HOME = "/tmp"
@@ -208,7 +213,12 @@ EOT
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       config {
-        command = "/opt/verself/profile/bin/verself-temporal-server"
+        command = "local/bin/verself-temporal-server"
+      }
+      artifact {
+        source = "verself-artifact://temporal-runtime"
+        destination = "local"
+        chown = true
       }
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -395,8 +405,13 @@ EOT
         sidecar = false
       }
       config {
-        args = ["-ec", "last_status=1\nfor attempt in $(seq 1 30); do\n  if /opt/verself/profile/bin/temporal-bootstrap; then\n    exit 0\n  fi\n  last_status=$?\n  sleep 1\ndone\nexit \"$last_status\"\n"]
+        args = ["-ec", "last_status=1\nfor attempt in $(seq 1 30); do\n  if local/bin/temporal-bootstrap; then\n    exit 0\n  fi\n  last_status=$?\n  sleep 1\ndone\nexit \"$last_status\"\n"]
         command = "/bin/sh"
+      }
+      artifact {
+        source = "verself-artifact://temporal-runtime"
+        destination = "local"
+        chown = true
       }
       env {
         HOME = "/tmp"

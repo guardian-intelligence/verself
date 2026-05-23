@@ -7,15 +7,15 @@ deploy_declarations(visibility = ["//visibility:public"])
 exports_files(["tools.lock.json"])
 
 pkg_tar(
-    name = "host_install",
-    out = "spicedb-host-install.tar",
+    name = "runtime_artifact",
+    out = "spicedb-runtime.tar",
     files = {
-        "@spicedb_tools//tools/spicedb": "opt/verself/profile/bin/spicedb",
-        "@spicedb_tools//tools/zed": "opt/verself/profile/bin/zed",
+        "@spicedb_tools//tools/spicedb": "bin/spicedb",
+        "@spicedb_tools//tools/zed": "bin/zed",
     },
     modes = {
-        "opt/verself/profile/bin/spicedb": "0755",
-        "opt/verself/profile/bin/zed": "0755",
+        "bin/spicedb": "0755",
+        "bin/zed": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -41,12 +41,12 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        ":runtime_artifact": "spicedb-runtime",
+    },
     component = "spicedb",
     deploy_phase = "platform",
-    digest_inputs = [
-        ":host_install",
-        ":deploy_declarations",
-    ],
+    digest_inputs = [":deploy_declarations"],
     job_id = "spicedb",
     job_spec = "nomad.hcl",
     requires = ["postgres:server"],

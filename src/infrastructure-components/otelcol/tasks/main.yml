@@ -1,0 +1,84 @@
+---
+- name: Assert otelcol role names
+  ansible.builtin.assert:
+    that:
+      - otelcol_postgresql_user is match('^[a-z][a-z0-9_]*$')
+      - otelcol_clickhouse_user is match('^[a-z][a-z0-9_]*$')
+    fail_msg: "otelcol PostgreSQL and ClickHouse users must be simple SQL identifiers."
+
+- name: Create otelcol system group
+  ansible.builtin.group:
+    name: "{{ otelcol_system_group }}"
+    system: true
+
+- name: Create otelcol system user
+  ansible.builtin.user:
+    name: "{{ otelcol_system_user }}"
+    group: "{{ otelcol_system_group }}"
+    groups:
+      - "{{ spire_workload_group }}"
+      - adm
+      - systemd-journal
+    append: true
+    system: true
+    home: "{{ otelcol_data_dir }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    state: present
+
+- name: Create otelcol runtime directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ otelcol_config_dir }}", owner: root, group: "{{ otelcol_system_group }}", mode: "0750" }
+    - { path: "{{ otelcol_data_dir }}", owner: "{{ otelcol_system_user }}", group: "{{ otelcol_system_group }}", mode: "0750" }
+    - { path: "{{ otelcol_storage_dir }}", owner: "{{ otelcol_system_user }}", group: "{{ otelcol_system_group }}", mode: "0750" }
+    - { path: "{{ otelcol_clickhouse_spiffe_dir }}", owner: "{{ otelcol_system_user }}", group: "{{ otelcol_system_group }}", mode: "0700" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Ensure otelcol PostgreSQL role exists
+  community.postgresql.postgresql_user:
+    name: "{{ otelcol_postgresql_user }}"
+    role_attr_flags: LOGIN
+    login_db: postgres
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+
+- name: Grant otelcol PostgreSQL monitor access
+  community.postgresql.postgresql_query:
+    login_db: postgres
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+    query: GRANT pg_monitor TO "{{ otelcol_postgresql_user }}"
+  become: true
+  become_user: postgres
+  changed_when: false
+
+- name: Converge otelcol ClickHouse certificate role
+  ansible.builtin.command:
+    argv:
+      - sudo
+      - -u
+      - "{{ otelcol_clickhouse_operator_user }}"
+      - "{{ verself_bin }}/clickhouse-client"
+      - --config-file
+      - "{{ otelcol_clickhouse_operator_config_path }}"
+      - --user
+      - "{{ otelcol_clickhouse_operator_user }}"
+      - --multiquery
+    stdin: |
+      CREATE USER IF NOT EXISTS {{ otelcol_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ otelcol_clickhouse_spiffe_id }}' HOST LOCAL;
+      ALTER USER {{ otelcol_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ otelcol_clickhouse_spiffe_id }}' HOST LOCAL;
+      GRANT INSERT ON default.* TO {{ otelcol_clickhouse_user }};
+      GRANT SELECT ON default.otel_logs TO {{ otelcol_clickhouse_user }};
+      GRANT SELECT (Timestamp, SpanAttributes, SpanName, TraceId, SpanId, ServiceName) ON default.otel_traces TO {{ otelcol_clickhouse_user }};
+  changed_when: false

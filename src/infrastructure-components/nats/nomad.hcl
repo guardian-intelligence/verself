@@ -24,13 +24,19 @@ job "nats" {
       driver = "raw_exec"
       user = "nats"
 
+      artifact {
+        source = "verself-artifact://nats-runtime"
+        destination = "local"
+        chown = true
+      }
+
       lifecycle {
         hook = "prestart"
         sidecar = true
       }
 
       config {
-        command = "/opt/verself/profile/bin/spiffe-helper"
+        command = "local/bin/spiffe-helper"
         args = ["-config", "/etc/nats/nats-spiffe-helper.conf"]
       }
 
@@ -44,8 +50,14 @@ job "nats" {
       driver = "raw_exec"
       user = "nats"
 
+      artifact {
+        source = "verself-artifact://nats-runtime"
+        destination = "local"
+        chown = true
+      }
+
       config {
-        command = "/opt/verself/profile/bin/nats-server"
+        command = "local/bin/nats-server"
         args = ["-c", "/etc/nats/nats-server.conf"]
       }
 

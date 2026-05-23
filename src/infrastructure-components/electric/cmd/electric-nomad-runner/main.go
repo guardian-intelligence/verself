@@ -54,7 +54,7 @@ func parseConfig(args []string) (config, error) {
 	fs.StringVar(&cfg.replicationStreamID, "replication-stream-id", "", "stable Electric replication stream id")
 	fs.StringVar(&cfg.dbPoolSize, "db-pool-size", "", "Electric database pool size")
 	fs.StringVar(&cfg.portEnv, "port-env", "NOMAD_PORT_http", "environment variable containing the allocated HTTP port")
-	fs.StringVar(&cfg.runcBinary, "runc-binary", "/opt/verself/profile/bin/runc", "runc-compatible runtime binary")
+	fs.StringVar(&cfg.runcBinary, "runc-binary", "", "runc-compatible runtime binary")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}

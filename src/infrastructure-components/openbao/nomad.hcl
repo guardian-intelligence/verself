@@ -24,8 +24,14 @@ job "openbao" {
       driver = "raw_exec"
       user = "openbao"
 
+      artifact {
+        source = "verself-artifact://openbao-runtime"
+        destination = "local"
+        chown = true
+      }
+
       config {
-        command = "/opt/verself/profile/bin/bao"
+        command = "local/bin/bao"
         args = ["server", "-config=/etc/openbao/openbao.hcl"]
       }
 
@@ -55,6 +61,11 @@ job "openbao" {
       driver = "raw_exec"
       user = "root"
 
+      artifact {
+        source = "verself-artifact://openbao-runtime"
+        destination = "local"
+      }
+
       lifecycle {
         hook = "poststart"
         sidecar = false
@@ -62,7 +73,7 @@ job "openbao" {
 
       config {
         command = "/bin/sh"
-        args = ["-ec", "for i in $(seq 1 45); do /opt/verself/profile/bin/bao status -format=json >/tmp/openbao-status.json 2>/dev/null && break; sleep 1; done\nsealed=$(sed -n 's/.*\"sealed\":[[:space:]]*\\(true\\|false\\).*/\\1/p' /tmp/openbao-status.json | head -n1)\nif [ -z \"$sealed\" ]; then\n  echo \"openbao status did not return a sealed field\" >&2\n  exit 1\nfi\nif [ \"$sealed\" = \"true\" ]; then\n  /opt/verself/profile/bin/bao operator unseal \"$(tr -d '\\n' </etc/credstore/openbao/unseal-key-1)\" >/dev/null\n  /opt/verself/profile/bin/bao operator unseal \"$(tr -d '\\n' </etc/credstore/openbao/unseal-key-2)\" >/dev/null\nfi\n"]
+        args = ["-ec", "for i in $(seq 1 45); do local/bin/bao status -format=json >/tmp/openbao-status.json 2>/dev/null && break; sleep 1; done\nsealed=$(sed -n 's/.*\"sealed\":[[:space:]]*\\(true\\|false\\).*/\\1/p' /tmp/openbao-status.json | head -n1)\nif [ -z \"$sealed\" ]; then\n  echo \"openbao status did not return a sealed field\" >&2\n  exit 1\nfi\nif [ \"$sealed\" = \"true\" ]; then\n  local/bin/bao operator unseal \"$(tr -d '\\n' </etc/credstore/openbao/unseal-key-1)\" >/dev/null\n  local/bin/bao operator unseal \"$(tr -d '\\n' </etc/credstore/openbao/unseal-key-2)\" >/dev/null\nfi\n"]
       }
 
       env {

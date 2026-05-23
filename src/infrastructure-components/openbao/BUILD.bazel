@@ -15,13 +15,13 @@ install -m 0755 "$$tmp/usr/bin/bao" "$@"
 )
 
 pkg_tar(
-    name = "host_install",
-    out = "openbao-host-install.tar",
+    name = "runtime_artifact",
+    out = "openbao-runtime.tar",
     files = {
-        ":bao_bin": "opt/verself/profile/bin/bao",
+        ":bao_bin": "bin/bao",
     },
     modes = {
-        "opt/verself/profile/bin/bao": "0755",
+        "bin/bao": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -47,9 +47,11 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        ":runtime_artifact": "openbao-runtime",
+    },
     component = "openbao",
     deploy_phase = "platform",
-    digest_inputs = [":host_install"],
     job_id = "openbao",
     job_spec = "nomad.hcl",
     provides = ["openbao:api"],

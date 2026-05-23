@@ -6,15 +6,15 @@ load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 exports_files(["tools.lock.json"])
 
 pkg_tar(
-    name = "host_install",
-    out = "zot-host-install.tar",
+    name = "runtime_artifact",
+    out = "zot-runtime.tar",
     files = {
-        "@zot_tools//tools/zot": "opt/verself/profile/bin/zot",
-        "//src/infrastructure-components/zot/cmd/zot-htpasswd:zot-htpasswd": "opt/verself/profile/bin/zot-htpasswd",
+        "@zot_tools//tools/zot": "bin/zot",
+        "//src/infrastructure-components/zot/cmd/zot-htpasswd:zot-htpasswd": "bin/zot-htpasswd",
     },
     modes = {
-        "opt/verself/profile/bin/zot": "0755",
-        "opt/verself/profile/bin/zot-htpasswd": "0755",
+        "bin/zot": "0755",
+        "bin/zot-htpasswd": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -40,9 +40,11 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        ":runtime_artifact": "zot-runtime",
+    },
     component = "zot",
     deploy_phase = "platform",
-    digest_inputs = [":host_install"],
     job_id = "zot",
     job_spec = "nomad.hcl",
     provides = ["zot:http"],

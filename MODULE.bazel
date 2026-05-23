@@ -21,6 +21,7 @@ bazel_dep(name = "rules_zig", version = "0.13.0")
 include("//src/tools/dev/binaries:dev_tools.MODULE.bazel")
 include("//src/substrate/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
 include("//src/infrastructure-components/forgejo:forgejo.MODULE.bazel")
+include("//src/infrastructure-components/grafana:grafana.MODULE.bazel")
 include("//src/infrastructure-components/haproxy:haproxy.MODULE.bazel")
 include("//src/infrastructure-components/openbao:openbao.MODULE.bazel")
 include("//src/infrastructure-components/postgresql:postgresql.MODULE.bazel")
@@ -40,6 +41,10 @@ component_tools.hub(
 component_tools.hub(
     hub_name = "forgejo_tools",
     lockfile = "//src/infrastructure-components/forgejo:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "grafana_tools",
+    lockfile = "//src/infrastructure-components/grafana:tools.lock.json",
 )
 component_tools.hub(
     hub_name = "garage_tools",
@@ -91,6 +96,7 @@ use_repo(
     "electric_tools",
     "forgejo_tools",
     "garage_tools",
+    "grafana_tools",
     "haproxy_tools",
     "multitool",
     "nats_tools",
@@ -109,6 +115,8 @@ register_toolchains("@clickhouse_tools//toolchains:all")
 register_toolchains("@electric_tools//toolchains:all")
 
 register_toolchains("@forgejo_tools//toolchains:all")
+
+register_toolchains("@grafana_tools//toolchains:all")
 
 register_toolchains("@garage_tools//toolchains:all")
 

@@ -4,13 +4,13 @@ load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 exports_files(["tools.lock.json"])
 
 pkg_tar(
-    name = "host_install",
-    out = "garage-host-install.tar",
+    name = "runtime_artifact",
+    out = "garage-runtime.tar",
     files = {
-        "@garage_tools//tools/garage": "opt/verself/profile/bin/garage",
+        "@garage_tools//tools/garage": "bin/garage",
     },
     modes = {
-        "opt/verself/profile/bin/garage": "0755",
+        "bin/garage": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -36,9 +36,11 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        ":runtime_artifact": "garage-runtime",
+    },
     component = "garage",
     deploy_phase = "pre_artifact",
-    digest_inputs = [":host_install"],
     job_id = "garage",
     job_spec = "nomad.hcl",
     provides = ["garage:replica-0"],
@@ -47,9 +49,11 @@ nomad_component(
 
 nomad_component(
     name = "nomad_component_1",
+    artifacts = {
+        ":runtime_artifact": "garage-runtime",
+    },
     component = "garage",
     deploy_phase = "pre_artifact",
-    digest_inputs = [":host_install"],
     job_id = "garage-1",
     job_spec = "nomad-1.hcl",
     provides = ["garage:replica-1"],
@@ -59,9 +63,11 @@ nomad_component(
 
 nomad_component(
     name = "nomad_component_2",
+    artifacts = {
+        ":runtime_artifact": "garage-runtime",
+    },
     component = "garage",
     deploy_phase = "pre_artifact",
-    digest_inputs = [":host_install"],
     job_id = "garage-2",
     job_spec = "nomad-2.hcl",
     provides = [

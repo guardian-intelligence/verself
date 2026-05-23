@@ -4,13 +4,13 @@ load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 exports_files(["tools.lock.json"])
 
 pkg_tar(
-    name = "host_install",
-    out = "zitadel-host-install.tar",
+    name = "runtime_artifact",
+    out = "zitadel-runtime.tar",
     files = {
-        "@zitadel_tools//tools/zitadel": "opt/verself/profile/bin/zitadel",
+        "@zitadel_tools//tools/zitadel": "bin/zitadel",
     },
     modes = {
-        "opt/verself/profile/bin/zitadel": "0755",
+        "bin/zitadel": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -38,14 +38,12 @@ filegroup(
 nomad_component(
     name = "nomad_component",
     artifacts = {
+        ":runtime_artifact": "zitadel-runtime",
         "//src/infrastructure-components/zitadel/cmd/zitadel-setup-apply:zitadel-setup-apply_nomad_artifact": "zitadel-setup-apply",
     },
     component = "zitadel",
     deploy_phase = "platform",
-    digest_inputs = [
-        ":host_install",
-        ":role_sources",
-    ],
+    digest_inputs = [":role_sources"],
     job_id = "zitadel",
     job_spec = "nomad.hcl",
     provides = ["zitadel:http"],

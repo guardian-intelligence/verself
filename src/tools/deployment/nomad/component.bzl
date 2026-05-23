@@ -10,6 +10,7 @@ NomadComponentInfo = provider(
         "digest_inputs": "Files whose content must participate in the Nomad job spec digest without being downloaded as runtime artifacts.",
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
+        "pre_artifacts": "label_keyed_string_dict of artifact targets to release output names that deploy extracts onto the host before this job is submitted.",
         "provides": "Logical resources this component provides.",
         "requires": "Logical resources this component requires.",
         "test_targets": "Bazel test targets that must pass before this component is deployed.",
@@ -85,6 +86,18 @@ def _nomad_component_impl(ctx):
             "output": output,
             "path": artifact_file.path,
         })
+    pre_artifacts = []
+    for artifact_target, output in ctx.attr.pre_artifacts.items():
+        if output in artifact_outputs:
+            fail("duplicate Nomad artifact output %s in %s" % (output, ctx.label))
+        artifact_outputs[output] = True
+        artifact_file = _single_file(artifact_target, "pre-artifact")
+        inputs.append(artifact_file)
+        pre_artifacts.append({
+            "label": _repo_label(artifact_target.label),
+            "output": output,
+            "path": artifact_file.path,
+        })
     digest_input_files, digest_inputs = _digest_input_records(ctx.attr.digest_inputs)
     inputs.extend(digest_input_files)
 
@@ -104,6 +117,7 @@ def _nomad_component_impl(ctx):
         "job_spec": job_spec.short_path,
         "job_spec_path": job_spec.path,
         "label": _repo_label(ctx.label),
+        "pre_artifacts": pre_artifacts,
         "provides": provides,
         "requires": requires,
         "sites": ctx.attr.sites,
@@ -122,6 +136,7 @@ def _nomad_component_impl(ctx):
             digest_inputs = ctx.attr.digest_inputs,
             job_id = ctx.attr.job_id,
             job_spec = job_spec,
+            pre_artifacts = ctx.attr.pre_artifacts,
             provides = provides,
             requires = requires,
             test_targets = ctx.attr.test_targets,
@@ -134,6 +149,10 @@ nomad_component = rule(
         "artifacts": attr.label_keyed_string_dict(
             allow_files = True,
             doc = "Map of component-owned artifact targets to release output names.",
+        ),
+        "pre_artifacts": attr.label_keyed_string_dict(
+            allow_files = True,
+            doc = "Artifact targets deploy extracts onto the host before this job is submitted. Authored Nomad specs must reference these through task env placeholders, not Nomad artifact stanzas.",
         ),
         "component": attr.string(
             mandatory = True,

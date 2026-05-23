@@ -20,15 +20,16 @@ job "postgresql" {
       user = "postgres"
 
       config {
-        command = "/opt/verself/profile/bin/postgres"
+        command = "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/usr/lib/postgresql/16/bin/postgres"
         args = ["-D", "/var/lib/postgresql/16/verself", "-c", "config_file=/etc/postgresql/verself/postgresql.conf"]
       }
 
       env {
-        LD_LIBRARY_PATH = "/opt/verself/postgresql/usr/lib/x86_64-linux-gnu:/opt/verself/postgresql/usr/lib/postgresql/16/lib"
+        LD_LIBRARY_PATH = "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/usr/lib/x86_64-linux-gnu:$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/usr/lib/postgresql/16/lib"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "postgresql"
+        VERSELF_POSTGRESQL_RUNTIME = "verself-artifact://postgresql-runtime"
         VERSELF_SUPERVISOR = "nomad"
       }
 

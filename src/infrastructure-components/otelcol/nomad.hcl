@@ -25,30 +25,6 @@ job "otelcol" {
       }
     }
 
-    task "setup" {
-      driver = "raw_exec"
-      user = "root"
-
-      lifecycle {
-        hook = "prestart"
-        sidecar = false
-      }
-
-      artifact {
-        source = "verself-artifact://otelcol-setup"
-        destination = "local"
-      }
-
-      config {
-        command = "local/bin/otelcol-setup"
-      }
-
-      resources {
-        cpu = 50
-        memory = 64
-      }
-    }
-
     task "clickhouse-spiffe-helper" {
       driver = "raw_exec"
       user = "otelcol"
@@ -64,8 +40,14 @@ job "otelcol" {
         chown = true
       }
 
+      artifact {
+        source = "verself-artifact://otelcol-runtime"
+        destination = "local"
+        chown = true
+      }
+
       config {
-        command = "/opt/verself/profile/bin/spiffe-helper"
+        command = "local/bin/spiffe-helper"
         args = ["-config", "local/config/clickhouse-spiffe-helper.conf"]
       }
 
@@ -85,8 +67,14 @@ job "otelcol" {
         chown = true
       }
 
+      artifact {
+        source = "verself-artifact://otelcol-runtime"
+        destination = "local"
+        chown = true
+      }
+
       config {
-        command = "/opt/verself/profile/bin/otelcol-contrib"
+        command = "local/bin/otelcol-contrib"
         args = ["--config", "local/config/config.yaml"]
       }
 

@@ -17,11 +17,16 @@ job "zot" {
 
     task "server" {
       driver = "raw_exec"
-      user = "zot"
+      user = "root"
+
+      artifact {
+        source = "verself-artifact://zot-runtime"
+        destination = "local"
+      }
 
       config {
-        command = "/opt/verself/profile/bin/zot"
-        args = ["serve", "/etc/zot/config.json"]
+        command = "/bin/sh"
+        args = ["-ec", "getent group zot >/dev/null || groupadd --system zot\nid -u zot >/dev/null 2>&1 || useradd --system --gid zot --home-dir /var/lib/zot --shell /usr/sbin/nologin --no-create-home zot\ninstall -d -o zot -g zot -m 0750 /var/lib/zot\nif [ ! -s /etc/zot/htpasswd ] && [ -s /etc/zot/publisher-password ]; then\n  local/bin/zot-htpasswd --username artifact-publisher --password-file /etc/zot/publisher-password >/tmp/zot-htpasswd\n  install -o root -g zot -m 0640 /tmp/zot-htpasswd /etc/zot/htpasswd\nfi\nlocal/bin/zot verify /etc/zot/config.json\nexec /usr/sbin/runuser -u zot --preserve-environment -- local/bin/zot serve /etc/zot/config.json\n"]
       }
 
       env {

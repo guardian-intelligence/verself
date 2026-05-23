@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,37 +17,20 @@ import (
 	"github.com/verself/deployment-tools/internal/sshtun"
 )
 
+const preArtifactRemoteRoot = "/opt/verself/nomad-pre-artifacts"
+
 func bindNomadArtifacts(repoRoot string, policy artifactDeliveryPolicy, components []nomadComponentDescriptor) (map[string]artifactBinding, []deploymodel.Artifact, error) {
 	bindings := map[string]artifactBinding{}
 	for _, component := range components {
 		for _, declared := range component.Artifacts {
-			if prior, exists := bindings[declared.Output]; exists {
-				if prior.Label != declared.Label || prior.Path != declared.Path {
-					return nil, nil, fmt.Errorf("nomad artifact output %q is provided by both %s and %s", declared.Output, prior.Label, declared.Label)
-				}
-				continue
+			pre := component.DeployPhase == deployPhasePreArtifact
+			if err := bindNomadArtifact(repoRoot, policy, declared, pre, bindings); err != nil {
+				return nil, nil, err
 			}
-			artifactPath := resolveWorkspacePath(repoRoot, declared.Path)
-			body, err := os.ReadFile(artifactPath)
-			if err != nil {
-				return nil, nil, fmt.Errorf("read artifact %s: %w", declared.Path, err)
-			}
-			digest := deploymodel.SHA256(body)
-			key := strings.Trim(policy.KeyPrefix, "/") + "/" + digest + "/" + declared.Output + ".tar"
-			artifact := deploymodel.Artifact{
-				Output:        declared.Output,
-				LocalPath:     artifactPath,
-				SHA256:        digest,
-				Bucket:        policy.Bucket,
-				Key:           key,
-				GetterSource:  strings.TrimRight(policy.GetterSourcePrefix, "/") + "/" + key,
-				GetterOptions: policy.GetterOptions,
-			}
-			bindings[declared.Output] = artifactBinding{
-				Artifact: artifact,
-				Checksum: policy.ChecksumAlgorithm + ":" + digest,
-				Label:    declared.Label,
-				Path:     declared.Path,
+		}
+		for _, declared := range component.PreArtifacts {
+			if err := bindNomadArtifact(repoRoot, policy, declared, true, bindings); err != nil {
+				return nil, nil, err
 			}
 		}
 	}
@@ -65,6 +50,58 @@ func bindNomadArtifacts(repoRoot string, policy artifactDeliveryPolicy, componen
 	return bindings, artifacts, nil
 }
 
+func bindNomadArtifact(repoRoot string, policy artifactDeliveryPolicy, declared nomadDescriptorArtifact, pre bool, bindings map[string]artifactBinding) error {
+	if prior, exists := bindings[declared.Output]; exists {
+		if prior.Label != declared.Label || prior.Path != declared.Path || prior.Pre != pre {
+			return fmt.Errorf("nomad artifact output %q is provided by both %s and %s", declared.Output, prior.Label, declared.Label)
+		}
+		return nil
+	}
+	artifactPath := resolveWorkspacePath(repoRoot, declared.Path)
+	body, err := os.ReadFile(artifactPath)
+	if err != nil {
+		return fmt.Errorf("read artifact %s: %w", declared.Path, err)
+	}
+	digest := deploymodel.SHA256(body)
+	key := artifactKey(policy, digest, declared.Output, pre)
+	getterSource := artifactGetterSource(policy, key, pre)
+	getterOptions := policy.GetterOptions
+	if pre {
+		getterOptions = nil
+	}
+	artifact := deploymodel.Artifact{
+		Output:        declared.Output,
+		LocalPath:     artifactPath,
+		SHA256:        digest,
+		Bucket:        policy.Bucket,
+		Key:           key,
+		GetterSource:  getterSource,
+		GetterOptions: getterOptions,
+	}
+	bindings[declared.Output] = artifactBinding{
+		Artifact: artifact,
+		Checksum: policy.ChecksumAlgorithm + ":" + digest,
+		Label:    declared.Label,
+		Path:     declared.Path,
+		Pre:      pre,
+	}
+	return nil
+}
+
+func artifactKey(policy artifactDeliveryPolicy, digest, output string, pre bool) string {
+	if pre {
+		return path.Join(preArtifactRemoteRoot, digest, output)
+	}
+	return strings.Trim(policy.KeyPrefix, "/") + "/" + digest + "/" + output + ".tar"
+}
+
+func artifactGetterSource(policy artifactDeliveryPolicy, key string, pre bool) string {
+	if pre {
+		return key
+	}
+	return strings.TrimRight(policy.GetterSourcePrefix, "/") + "/" + key
+}
+
 func publishArtifacts(ctx context.Context, rt *runtime.Runtime, delivery deploymodel.ArtifactDelivery, artifacts []deploymodel.Artifact) error {
 	if len(artifacts) == 0 {
 		return nil
@@ -74,6 +111,59 @@ func publishArtifacts(ctx context.Context, rt *runtime.Runtime, delivery deploym
 		return err
 	}
 	return pub.PublishAll(ctx, artifacts, rt.RepoRoot)
+}
+
+func publishPreArtifacts(ctx context.Context, rt *runtime.Runtime, artifacts []deploymodel.Artifact) error {
+	for _, artifact := range artifacts {
+		if !strings.HasPrefix(artifact.Key, preArtifactRemoteRoot+"/") {
+			return fmt.Errorf("%s: pre-artifact key must live under %s", artifact.Output, preArtifactRemoteRoot)
+		}
+		local, err := os.Open(artifact.ResolveLocalPath(rt.RepoRoot))
+		if err != nil {
+			return fmt.Errorf("%s: open artifact: %w", artifact.Output, err)
+		}
+		if err := uploadPreArtifact(ctx, rt.SSH, artifact.Key, local); err != nil {
+			_ = local.Close()
+			return fmt.Errorf("%s: %w", artifact.Output, err)
+		}
+		if err := local.Close(); err != nil {
+			return fmt.Errorf("%s: close artifact: %w", artifact.Output, err)
+		}
+	}
+	return nil
+}
+
+func uploadPreArtifact(ctx context.Context, sshClient *sshtun.Client, remotePath string, body io.Reader) error {
+	remoteDir := remotePath
+	remoteTar := remotePath + ".tar"
+	quotedDir, err := shellQuote(remoteDir)
+	if err != nil {
+		return err
+	}
+	quotedTar, err := shellQuote(remoteTar)
+	if err != nil {
+		return err
+	}
+	if _, err := sshClient.Exec(ctx, "sudo /usr/bin/install -d -m 0755 "+quotedDir); err != nil {
+		return fmt.Errorf("prepare remote artifact directory: %w", err)
+	}
+	if err := sshClient.Run(ctx, "sudo /usr/bin/tee "+quotedTar+" >/dev/null", body); err != nil {
+		return fmt.Errorf("write remote artifact: %w", err)
+	}
+	if _, err := sshClient.Exec(ctx, "sudo /bin/rm -rf "+quotedDir+" && sudo /usr/bin/install -d -m 0755 "+quotedDir+" && sudo /bin/tar -xf "+quotedTar+" -C "+quotedDir+" && sudo /bin/chmod -R a+rX "+quotedDir+" && sudo /bin/rm -f "+quotedTar); err != nil {
+		return fmt.Errorf("extract remote artifact: %w", err)
+	}
+	return nil
+}
+
+func shellQuote(value string) (string, error) {
+	if value == "" {
+		return "", errors.New("shell quote: value is empty")
+	}
+	if strings.Contains(value, "\x00") {
+		return "", fmt.Errorf("shell quote: value contains NUL: %q", value)
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'", nil
 }
 
 func newGaragePublisher(ctx context.Context, sshClient *sshtun.Client, delivery deploymodel.ArtifactDelivery) (*garage.Publisher, error) {
