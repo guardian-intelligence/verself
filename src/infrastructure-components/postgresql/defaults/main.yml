@@ -16,5 +16,7 @@ postgresql_max_connections: 300
 postgresql_superuser_reserved_connections: 10
 
 postgresql_service_databases: []
+postgresql_replication_roles: []
+postgresql_logical_publications: []
 postgresql_peer_mappings:
   - { system_user: postgres, pg_user: postgres }

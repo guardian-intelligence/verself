@@ -52,3 +52,21 @@ argument_specs:
         type: path
         required: true
         description: "Path to the server binary directory."
+
+      postgresql_service_databases:
+        type: list
+        elements: dict
+        default: []
+        description: "Owner-local service database declarations."
+
+      postgresql_replication_roles:
+        type: list
+        elements: dict
+        default: []
+        description: "Owner-local logical replication role declarations."
+
+      postgresql_logical_publications:
+        type: list
+        elements: dict
+        default: []
+        description: "Owner-local logical replication publication declarations."

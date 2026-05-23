@@ -16,6 +16,7 @@ const shutdownGrace = 25 * time.Second
 
 type config struct {
 	ctrBin              string
+	containerdAddress   string
 	image               string
 	envFile             string
 	storageDir          string
@@ -45,6 +46,7 @@ func parseConfig(args []string) (config, error) {
 
 	cfg := config{}
 	fs.StringVar(&cfg.ctrBin, "ctr", "", "absolute path to ctr")
+	fs.StringVar(&cfg.containerdAddress, "containerd-address", "", "containerd socket address")
 	fs.StringVar(&cfg.image, "image", "", "container image reference")
 	fs.StringVar(&cfg.envFile, "env-file", "", "runtime env file containing Electric secrets")
 	fs.StringVar(&cfg.storageDir, "storage-dir", "", "host storage directory mounted at /data")
@@ -62,6 +64,7 @@ func parseConfig(args []string) (config, error) {
 
 	for name, value := range map[string]string{
 		"ctr":                   cfg.ctrBin,
+		"containerd-address":    cfg.containerdAddress,
 		"image":                 cfg.image,
 		"env-file":              cfg.envFile,
 		"storage-dir":           cfg.storageDir,
@@ -91,7 +94,7 @@ func run(cfg config) error {
 
 	_ = cleanup(cfg)
 
-	cmd := exec.Command(cfg.ctrBin, ctrRunArgs(cfg, port)...)
+	cmd := exec.Command(cfg.ctrBin, ctrArgs(cfg, ctrRunArgs(cfg, port)...)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -175,7 +178,7 @@ func cleanup(cfg config) error {
 }
 
 func ctr(cfg config, args ...string) error {
-	cmd := exec.Command(cfg.ctrBin, args...)
+	cmd := exec.Command(cfg.ctrBin, ctrArgs(cfg, args...)...)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
 		if len(output) > 0 {
@@ -190,6 +193,15 @@ func ctr(cfg config, args ...string) error {
 		_, _ = os.Stderr.Write(output)
 	}
 	return fmt.Errorf("ctr %s: %w", strings.Join(args, " "), err)
+}
+
+func ctrArgs(cfg config, args ...string) []string {
+	if cfg.containerdAddress == "" {
+		return args
+	}
+	out := []string{"--address", cfg.containerdAddress}
+	out = append(out, args...)
+	return out
 }
 
 func isMissingContainerOutput(output []byte) bool {

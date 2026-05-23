@@ -2,3 +2,14 @@ postgresql_service_databases:
   - { name: sandbox_rental, owner: sandbox_rental }
 postgresql_peer_mappings:
   - { system_user: sandbox_rental, pg_user: sandbox_rental }
+postgresql_logical_publications:
+  - database: sandbox_rental
+    publication: electric_publication_default
+    publication_owner: electric
+    table_owner: sandbox_rental
+    replication_role: electric
+    tables:
+      - console_flight_jobs
+      - execution_logs
+      - executions
+      - runner_provider_repositories

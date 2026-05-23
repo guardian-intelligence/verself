@@ -190,3 +190,123 @@
   loop: "{{ postgresql_service_databases }}"
   loop_control:
     label: "{{ item.name }}"
+
+# --- Owner-local logical replication publications ---
+
+- name: Read logical replication PostgreSQL role password files
+  ansible.builtin.slurp:
+    src: "{{ item.password_file }}"
+  loop: "{{ postgresql_replication_roles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: postgresql_replication_role_password_reads
+  no_log: true
+
+- name: Ensure logical replication PostgreSQL roles exist
+  community.postgresql.postgresql_user:
+    name: "{{ item.item.name }}"
+    password: "{{ item.content | b64decode | trim }}"
+    role_attr_flags: LOGIN,REPLICATION
+    conn_limit: "{{ item.item.connection_limit | default(15) }}"
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+  loop: "{{ postgresql_replication_role_password_reads.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  no_log: true
+
+- name: Ensure published table ownership stays with service owner
+  community.postgresql.postgresql_owner:
+    login_db: "{{ item.0.database }}"
+    obj_name: "{{ item.1 }}"
+    obj_type: table
+    new_owner: "{{ item.0.table_owner }}"
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+  loop: "{{ postgresql_logical_publications | subelements('tables') }}"
+  loop_control:
+    label: "{{ item.0.database }}.{{ item.1 }}"
+
+- name: Ensure published tables use full replica identity
+  community.postgresql.postgresql_query:
+    login_db: "{{ item.0.database }}"
+    query: ALTER TABLE public."{{ item.1 }}" REPLICA IDENTITY FULL
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+  loop: "{{ postgresql_logical_publications | subelements('tables') }}"
+  loop_control:
+    label: "{{ item.0.database }}.{{ item.1 }}"
+  changed_when: false
+
+- name: Grant replication roles database connect access
+  community.postgresql.postgresql_privs:
+    login_db: "{{ item.database }}"
+    type: database
+    objs: "{{ item.database }}"
+    privs: CONNECT
+    roles: "{{ item.replication_role }}"
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+  loop: "{{ postgresql_logical_publications }}"
+  loop_control:
+    label: "{{ item.database }}:{{ item.replication_role }}"
+
+- name: Grant replication roles usage on public schema
+  community.postgresql.postgresql_privs:
+    login_db: "{{ item.database }}"
+    type: schema
+    objs: public
+    privs: USAGE
+    roles: "{{ item.replication_role }}"
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+  loop: "{{ postgresql_logical_publications }}"
+  loop_control:
+    label: "{{ item.database }}:{{ item.replication_role }}"
+
+- name: Grant replication roles read access to published tables
+  community.postgresql.postgresql_privs:
+    login_db: "{{ item.0.database }}"
+    type: table
+    schema: public
+    objs: "{{ item.1 }}"
+    privs: SELECT
+    roles: "{{ item.0.replication_role }}"
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+  loop: "{{ postgresql_logical_publications | subelements('tables') }}"
+  loop_control:
+    label: "{{ item.0.database }}.{{ item.1 }}:{{ item.0.replication_role }}"
+
+- name: Ensure owner-local logical replication publications exist
+  community.postgresql.postgresql_publication:
+    login_db: "{{ item.database }}"
+    name: "{{ item.publication }}"
+    owner: "{{ item.publication_owner }}"
+    tables: "{{ item.tables | map('regex_replace', '^', 'public.') | list }}"
+    login_unix_socket: /var/run/postgresql
+    login_user: postgres
+    trust_input: false
+  become: true
+  become_user: postgres
+  loop: "{{ postgresql_logical_publications }}"
+  loop_control:
+    label: "{{ item.database }}:{{ item.publication }}"

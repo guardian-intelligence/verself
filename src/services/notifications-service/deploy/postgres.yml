@@ -2,3 +2,11 @@ postgresql_service_databases:
   - { name: notifications_service, owner: notifications_service }
 postgresql_peer_mappings:
   - { system_user: notifications_service, pg_user: notifications_service }
+postgresql_logical_publications:
+  - database: notifications_service
+    publication: electric_publication_notifications
+    publication_owner: electric_notifications
+    table_owner: notifications_service
+    replication_role: electric_notifications
+    tables:
+      - notification_inbox_state
