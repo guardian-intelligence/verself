@@ -19,8 +19,10 @@ const (
 	chronycBin       = "/usr/bin/chronyc"
 	chronyConfigPath = "/etc/chrony/chrony.conf"
 	chronyPTPDevice  = "/dev/ptp0"
+	chronySocketPath = "/run/chrony/chronyd.sock"
 
-	chronyStartGrace   = 200 * time.Millisecond
+	chronyReadyTimeout = 5 * time.Second
+	chronyReadyPoll    = 50 * time.Millisecond
 	chronycCommandWait = 15 * time.Second
 	clockMaxOffsetNS   = int64(10 * time.Millisecond)
 	clockMaxSkewPPM    = 100.0
@@ -39,13 +41,11 @@ func startChrony() error {
 	if err != nil {
 		return err
 	}
-	for _, dir := range []string{"/run/chrony", "/var/lib/chrony"} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("create %s: %w", dir, err)
-		}
-		if err := os.Chown(dir, chronyUID, chronyGID); err != nil {
-			return fmt.Errorf("chown %s: %w", dir, err)
-		}
+	if err := ensureChronyDir("/run/chrony", 0o750, chronyUID, chronyGID); err != nil {
+		return err
+	}
+	if err := ensureChronyDir("/var/lib/chrony", 0o755, chronyUID, chronyGID); err != nil {
+		return err
 	}
 	if err := os.Chown(chronyPTPDevice, chronyUID, chronyGID); err != nil {
 		return fmt.Errorf("chown %s: %w", chronyPTPDevice, err)
@@ -61,16 +61,11 @@ func startChrony() error {
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 
-	select {
-	case err := <-done:
-		if err == nil {
-			return errors.New("chronyd exited during startup")
-		}
-		return fmt.Errorf("chronyd exited during startup: %w", err)
-	case <-time.After(chronyStartGrace):
+	if err := waitForChronyCommand(done); err != nil {
+		return err
 	}
 
-	_, _ = fmt.Fprintf(os.Stdout, "%s chronyd started (pid=%d source=%s)\n", logPrefix, cmd.Process.Pid, chronyPTPDevice)
+	_, _ = fmt.Fprintf(os.Stdout, "%s chronyd started (pid=%d source=%s socket=%s)\n", logPrefix, cmd.Process.Pid, chronyPTPDevice, chronySocketPath)
 	go func() {
 		err := <-done
 		if err != nil {
@@ -81,6 +76,44 @@ func startChrony() error {
 		os.Exit(1)
 	}()
 	return nil
+}
+
+func ensureChronyDir(dir string, mode os.FileMode, uid, gid int) error {
+	if err := os.MkdirAll(dir, mode); err != nil {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	if err := os.Chown(dir, uid, gid); err != nil {
+		return fmt.Errorf("chown %s: %w", dir, err)
+	}
+	if err := os.Chmod(dir, mode); err != nil {
+		return fmt.Errorf("chmod %s: %w", dir, err)
+	}
+	return nil
+}
+
+func waitForChronyCommand(done <-chan error) error {
+	deadline := time.Now().Add(chronyReadyTimeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-done:
+			if err == nil {
+				return errors.New("chronyd exited during startup")
+			}
+			return fmt.Errorf("chronyd exited during startup: %w", err)
+		default:
+		}
+		if _, err := runChronycWithTimeout(time.Second, "tracking"); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		time.Sleep(chronyReadyPoll)
+	}
+	if lastErr == nil {
+		return errors.New("chronyd command socket not ready")
+	}
+	return fmt.Errorf("chronyd command socket not ready: %w", lastErr)
 }
 
 func syncClockWithChrony() (vmproto.ClockSyncResult, error) {
@@ -157,9 +190,13 @@ func requirePTPDevice() error {
 }
 
 func runChronyc(args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), chronycCommandWait)
+	return runChronycWithTimeout(chronycCommandWait, args...)
+}
+
+func runChronycWithTimeout(timeout time.Duration, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	allArgs := append([]string{"-n"}, args...)
+	allArgs := chronycArgs(args...)
 	cmd := exec.CommandContext(ctx, chronycBin, allArgs...)
 	out, err := cmd.CombinedOutput()
 	text := string(out)
@@ -170,6 +207,10 @@ func runChronyc(args ...string) (string, error) {
 		return text, fmt.Errorf("%s %s: %s: %w", chronycBin, strings.Join(allArgs, " "), strings.TrimSpace(text), err)
 	}
 	return text, nil
+}
+
+func chronycArgs(args ...string) []string {
+	return append([]string{"-h", chronySocketPath, "-n"}, args...)
 }
 
 func parseChronyTracking(out string) (vmproto.ClockSyncResult, error) {

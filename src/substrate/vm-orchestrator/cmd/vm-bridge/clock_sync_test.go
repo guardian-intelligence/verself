@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -62,5 +63,13 @@ Leap status     : Normal
 func TestChronyReferenceNameTreatsLocalFallbackAsUnsynchronized(t *testing.T) {
 	if got := chronyReferenceName("7F7F0101 ()"); got != "" {
 		t.Fatalf("source = %q, want empty", got)
+	}
+}
+
+func TestChronycArgsUseLocalCommandSocket(t *testing.T) {
+	got := chronycArgs("tracking")
+	want := []string{"-h", chronySocketPath, "-n", "tracking"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("chronyc args = %#v, want %#v", got, want)
 	}
 }
