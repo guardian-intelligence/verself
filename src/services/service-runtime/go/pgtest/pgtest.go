@@ -31,7 +31,7 @@ import (
 const port = "55432"
 
 const (
-	postgresqlRuntimeRunfile       = "src/host/binaries/postgresql_runtime.tar"
+	postgresqlRuntimeRunfile       = "src/infrastructure-components/postgresql/postgresql_runtime.tar"
 	postgresqlRuntimeRelativeBin   = "opt/verself/postgresql/usr/lib/postgresql/16/bin"
 	postgresqlRuntimeRelativeLib   = "opt/verself/postgresql/usr/lib/x86_64-linux-gnu"
 	postgresqlRuntimeRelativePgLib = "opt/verself/postgresql/usr/lib/postgresql/16/lib"

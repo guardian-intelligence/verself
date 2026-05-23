@@ -1,5 +1,9 @@
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
+POSTGRESQL_RUNTIME_ROOT = "opt/verself/postgresql"
+
+POSTGRESQL_MAJOR_VERSION = "16"
+
 filegroup(
     name = "role_sources",
     srcs = glob(
@@ -19,11 +23,50 @@ filegroup(
     visibility = ["//src/infrastructure-components:__pkg__"],
 )
 
+genrule(
+    name = "postgresql_runtime",
+    srcs = [
+        "@postgresql_tool_libpq5//file",
+        "@postgresql_tool_libxml2//file",
+        "@postgresql_tool_postgresql_16//file",
+        "@postgresql_tool_postgresql_client_16//file",
+    ],
+    outs = ["postgresql_runtime.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_libpq5//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_libxml2//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_postgresql_client_16//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_postgresql_16//file)" "$$tmp/extract"
+mkdir -p \
+  "$$tmp/{root}/usr/lib/postgresql" \
+  "$$tmp/{root}/usr/share/postgresql" \
+  "$$tmp/{root}/usr/lib/x86_64-linux-gnu"
+cp -a "$$tmp/extract/usr/lib/postgresql/{major}" "$$tmp/{root}/usr/lib/postgresql/{major}"
+cp -a "$$tmp/extract/usr/share/postgresql/{major}" "$$tmp/{root}/usr/share/postgresql/{major}"
+cp -a "$$tmp/extract/usr/lib/x86_64-linux-gnu"/libpq.so.* "$$tmp/{root}/usr/lib/x86_64-linux-gnu/"
+cp -a "$$tmp/extract/usr/lib/x86_64-linux-gnu"/libxml2.so.* "$$tmp/{root}/usr/lib/x86_64-linux-gnu/"
+rm -rf "$$tmp/extract"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .
+""".format(
+        major = POSTGRESQL_MAJOR_VERSION,
+        root = POSTGRESQL_RUNTIME_ROOT,
+    ),
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 nomad_component(
     name = "nomad_component",
     component = "postgresql",
     deploy_phase = "pre_artifact",
-    digest_inputs = ["//src/host/binaries:host_profile_archives"],
+    digest_inputs = [":postgresql_runtime"],
     job_id = "postgresql",
     job_spec = "nomad.hcl",
     provides = ["postgres:server"],

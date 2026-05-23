@@ -186,7 +186,7 @@
       - (grafana_clickhouse_plugin_marker.content | b64decode | trim) == grafana_clickhouse_datasource_version
     quiet: true
     fail_msg: >-
-      Grafana ClickHouse datasource plugin is missing or stale. Run substrate_profile so Bazel unpacks server_tools.tar.zst.
+      Grafana ClickHouse datasource plugin is missing or stale.
 
 - name: Set ClickHouse datasource plugin ownership
   ansible.builtin.file:

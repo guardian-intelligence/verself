@@ -1,6 +1,5 @@
 ---
 # PostgreSQL database server.
-# Binary and shared-library runtime provided by the Bazel-built server tools archive.
 
 - name: Capture PostgreSQL version
   ansible.builtin.command:

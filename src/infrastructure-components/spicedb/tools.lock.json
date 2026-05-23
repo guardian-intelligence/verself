@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "spicedb": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/authzed/spicedb/releases/download/v1.51.1/spicedb_1.51.1_linux_amd64.tar.gz",
+        "sha256": "b9c3d13e7861a321a3a00c846d4670889fe539551ac57c2ff61e5bfb837ccfe5",
+        "type": "tar.gz",
+        "file": "spicedb",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "zed": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/authzed/zed/releases/download/v0.36.1/zed_0.36.1_linux_amd64_gnu.tar.gz",
+        "sha256": "588d50910eead6917c4aad416850a8553f3b334060ef67c63d45efd0e06a174a",
+        "type": "tar.gz",
+        "file": "zed",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

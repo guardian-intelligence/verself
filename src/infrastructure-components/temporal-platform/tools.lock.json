@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "temporal-server": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/temporalio/temporal/releases/download/v1.30.4/temporal_1.30.4_linux_amd64.tar.gz",
+        "sha256": "83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177",
+        "type": "tar.gz",
+        "file": "temporal-server",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "temporal-sql-tool": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/temporalio/temporal/releases/download/v1.30.4/temporal_1.30.4_linux_amd64.tar.gz",
+        "sha256": "83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177",
+        "type": "tar.gz",
+        "file": "temporal-sql-tool",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "tdbg": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/temporalio/temporal/releases/download/v1.30.4/temporal_1.30.4_linux_amd64.tar.gz",
+        "sha256": "83f900fe8f9fd23c0e6369041355d2edbd768a91667dd6bc22a98d8316632177",
+        "type": "tar.gz",
+        "file": "tdbg",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

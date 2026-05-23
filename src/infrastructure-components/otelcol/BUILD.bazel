@@ -5,6 +5,20 @@ load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 deploy_declarations(visibility = ["//visibility:public"])
 
+exports_files(["tools.lock.json"])
+
+pkg_tar(
+    name = "host_install",
+    out = "otelcol-host-install.tar",
+    files = {
+        "@otelcol_tools//tools/otelcol-contrib": "opt/verself/profile/bin/otelcol-contrib",
+    },
+    modes = {
+        "opt/verself/profile/bin/otelcol-contrib": "0755",
+    },
+    visibility = ["//visibility:public"],
+)
+
 pkg_tar(
     name = "config_artifact",
     out = "otelcol-config.tar",
@@ -38,8 +52,8 @@ nomad_component(
     component = "otelcol",
     deploy_phase = "platform",
     digest_inputs = [
+        ":host_install",
         ":deploy_declarations",
-        "//src/host/binaries:host_profile_archives",
     ],
     job_id = "otelcol",
     job_spec = "nomad.hcl",

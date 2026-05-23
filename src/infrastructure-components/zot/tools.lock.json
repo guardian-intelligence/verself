@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "zot": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/project-zot/zot/releases/download/v2.1.16/zot-linux-amd64",
+        "sha256": "f9b7e805056db94c97d34bcff4eab77ec8e7cdc2cb76fd6db3d7ad7143605dba",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

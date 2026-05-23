@@ -1,6 +1,40 @@
 # gazelle:prefix github.com/verself/infrastructure-components/haproxy
 
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+exports_files(["tools.lock.json"])
+
+genrule(
+    name = "haproxy_bin",
+    srcs = ["@haproxy_tool_haproxy_deb//file"],
+    outs = ["haproxy"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+dpkg-deb -x "$(location @haproxy_tool_haproxy_deb//file)" "$$tmp"
+install -m 0755 "$$tmp/usr/sbin/haproxy" "$@"
+""",
+)
+
+pkg_tar(
+    name = "host_install",
+    out = "haproxy-host-install.tar",
+    files = {
+        ":haproxy_bin": "opt/verself/profile/bin/haproxy",
+        "@haproxy_tools//tools/lego": "opt/verself/profile/bin/lego",
+        "//src/infrastructure-components/haproxy/cmd/haproxy-lego-renew:haproxy-lego-renew": "opt/verself/profile/bin/haproxy-lego-renew",
+        "//src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply": "opt/verself/profile/bin/haproxy-upstreams-apply",
+    },
+    modes = {
+        "opt/verself/profile/bin/haproxy": "0755",
+        "opt/verself/profile/bin/haproxy-lego-renew": "0755",
+        "opt/verself/profile/bin/haproxy-upstreams-apply": "0755",
+        "opt/verself/profile/bin/lego": "0755",
+    },
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "role_sources",
@@ -57,9 +91,9 @@ nomad_component(
     component = "haproxy_upstreams",
     deploy_phase = "platform",
     digest_inputs = [
+        ":host_install",
         ":public_route_declarations",
         ":role_sources",
-        "//src/host/binaries:host_profile_archives",
     ],
     job_id = "haproxy-upstreams",
     job_spec = "nomad.hcl",

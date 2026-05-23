@@ -16,11 +16,11 @@ filegroup(
 
 genrule(
     name = "zed_cli_binary",
-    srcs = ["@server_tools//tools/zed"],
     outs = ["zed.bin"],
     cmd = """
-install -m 0755 "$(location @server_tools//tools/zed)" "$@"
+install -m 0755 "$(location @spicedb_tools//tools/zed)" "$@"
 """,
+    tools = ["@spicedb_tools//tools/zed"],
 )
 
 go_test(

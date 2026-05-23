@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "garage": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://garagehq.deuxfleurs.fr/_releases/v2.3.0/x86_64-unknown-linux-musl/garage",
+        "sha256": "f98d317942bb341151a2775162016bb50cf86b865d0108de03eb5db16e2120cd",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

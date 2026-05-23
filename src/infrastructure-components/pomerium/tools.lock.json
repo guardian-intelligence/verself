@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "pomerium": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/pomerium/pomerium/releases/download/v0.32.6/pomerium-linux-amd64.tar.gz",
+        "sha256": "817b4c13788800f1b3a79d4ad96aeb20ba97c55490690040dc9956150b8d1151",
+        "type": "tar.gz",
+        "file": "pomerium",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

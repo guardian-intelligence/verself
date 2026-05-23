@@ -1,6 +1,5 @@
 ---
 # Zitadel identity provider.
-# Binary provided by substrate_profile role (pinned static binary).
 # Requires a running PostgreSQL instance (meta/main.yml dependency).
 
 # --- System user ---

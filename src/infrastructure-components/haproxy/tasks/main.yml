@@ -1,6 +1,5 @@
 ---
 # HAProxy public edge with lego-managed DNS-01 certificates.
-# Binary provided by substrate_profile role via server_tools.tar.zst.
 
 - name: Create HAProxy system group
   ansible.builtin.group:

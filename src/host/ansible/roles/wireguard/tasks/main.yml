@@ -4,9 +4,8 @@
 # private substrate access). Driven by `wireguard_tunnels`, a list of
 # tunnel definitions sourced from the site bootstrap vars.
 #
-# Bazel supplies the `wg` binary in verself_bin. The apt package remains for
-# the distribution's wg-quick systemd unit; the kernel module is built in on
-# Linux 6.8+.
+# The kernel module is built-in on Linux 6.8+, so the role only needs to manage
+# userspace config + systemd units.
 
 - name: Validate wireguard_tunnels input
   ansible.builtin.assert:

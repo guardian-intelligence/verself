@@ -1,7 +1,0 @@
----
-# Bring controller-local operating-system prerequisites up to date.
-# Repository tools are resolved through Bazel by the Aspect task that invokes
-# them; this role does not install developer binaries into /usr/local/bin.
-
-- name: Install system packages
-  ansible.builtin.include_tasks: system_packages.yml

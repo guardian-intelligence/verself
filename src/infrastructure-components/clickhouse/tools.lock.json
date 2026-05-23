@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "clickhouse": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.3.2.3-amd64.tgz",
+        "sha256": "2b0ccdc84bc3cc624408a8a490181c6eed6b8df4e090f9b4ed7e647e46093278",
+        "type": "tgz",
+        "file": "clickhouse-common-static-26.3.2.3/usr/bin/clickhouse",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

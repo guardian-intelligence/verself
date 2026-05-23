@@ -20,15 +20,110 @@ bazel_dep(name = "rules_zig", version = "0.13.0")
 
 include("//src/tools/dev/binaries:dev_tools.MODULE.bazel")
 include("//src/substrate/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
+include("//src/infrastructure-components/forgejo:forgejo.MODULE.bazel")
+include("//src/infrastructure-components/haproxy:haproxy.MODULE.bazel")
+include("//src/infrastructure-components/openbao:openbao.MODULE.bazel")
+include("//src/infrastructure-components/postgresql:postgresql.MODULE.bazel")
+include("//src/infrastructure-components/stalwart:stalwart.MODULE.bazel")
+include("//src/infrastructure-components/verdaccio:verdaccio.MODULE.bazel")
+include("//src/websites:website_tools.MODULE.bazel")
 
-server_tools = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
-server_tools.hub(
-    hub_name = "server_tools",
-    lockfile = "//src/host/binaries:server_tools.lock.json",
+component_tools = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
+component_tools.hub(
+    hub_name = "clickhouse_tools",
+    lockfile = "//src/infrastructure-components/clickhouse:tools.lock.json",
 )
-use_repo(server_tools, "multitool", "server_tools")
+component_tools.hub(
+    hub_name = "forgejo_tools",
+    lockfile = "//src/infrastructure-components/forgejo:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "garage_tools",
+    lockfile = "//src/infrastructure-components/garage:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "haproxy_tools",
+    lockfile = "//src/infrastructure-components/haproxy:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "nats_tools",
+    lockfile = "//src/infrastructure-components/nats:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "otelcol_tools",
+    lockfile = "//src/infrastructure-components/otelcol:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "pomerium_tools",
+    lockfile = "//src/infrastructure-components/pomerium:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "spicedb_tools",
+    lockfile = "//src/infrastructure-components/spicedb:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "stalwart_tools",
+    lockfile = "//src/infrastructure-components/stalwart:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "temporal_tools",
+    lockfile = "//src/infrastructure-components/temporal-platform:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "tigerbeetle_tools",
+    lockfile = "//src/infrastructure-components/tigerbeetle:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "zitadel_tools",
+    lockfile = "//src/infrastructure-components/zitadel:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "zot_tools",
+    lockfile = "//src/infrastructure-components/zot:tools.lock.json",
+)
+use_repo(
+    component_tools,
+    "clickhouse_tools",
+    "forgejo_tools",
+    "garage_tools",
+    "haproxy_tools",
+    "multitool",
+    "nats_tools",
+    "otelcol_tools",
+    "pomerium_tools",
+    "spicedb_tools",
+    "stalwart_tools",
+    "temporal_tools",
+    "tigerbeetle_tools",
+    "zitadel_tools",
+    "zot_tools",
+)
 
-register_toolchains("@server_tools//toolchains:all")
+register_toolchains("@clickhouse_tools//toolchains:all")
+
+register_toolchains("@forgejo_tools//toolchains:all")
+
+register_toolchains("@garage_tools//toolchains:all")
+
+register_toolchains("@haproxy_tools//toolchains:all")
+
+register_toolchains("@nats_tools//toolchains:all")
+
+register_toolchains("@otelcol_tools//toolchains:all")
+
+register_toolchains("@pomerium_tools//toolchains:all")
+
+register_toolchains("@spicedb_tools//toolchains:all")
+
+register_toolchains("@stalwart_tools//toolchains:all")
+
+register_toolchains("@temporal_tools//toolchains:all")
+
+register_toolchains("@tigerbeetle_tools//toolchains:all")
+
+register_toolchains("@zitadel_tools//toolchains:all")
+
+register_toolchains("@zot_tools//toolchains:all")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(

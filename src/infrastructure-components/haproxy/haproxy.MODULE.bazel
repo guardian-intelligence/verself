@@ -1,0 +1,8 @@
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "haproxy_tool_haproxy_deb",
+    downloaded_file_path = "haproxy-awslc_3.3.7-0+ha33+ubuntu24.04u1_amd64.deb",
+    sha256 = "02dff22237bb600d947de302ae21d5463ebffbee302e18e423fd417cb4064bdf",
+    url = "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/h/haproxy-awslc/haproxy-awslc_3.3.7-0+ha33+ubuntu24.04u1_amd64.deb",
+)

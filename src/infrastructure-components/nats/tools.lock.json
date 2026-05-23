@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "nats-server": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/nats-io/nats-server/releases/download/v2.12.7/nats-server-v2.12.7-linux-amd64.tar.gz",
+        "sha256": "570d2d627db111e679cc1e6bc57ba78f373ed1769acd8dc9c21c8f62d15b3c52",
+        "type": "tar.gz",
+        "file": "nats-server-v2.12.7-linux-amd64/nats-server",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

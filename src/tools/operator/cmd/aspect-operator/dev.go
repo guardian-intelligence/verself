@@ -70,7 +70,7 @@ func cmdDevVerselfWeb(args []string) error {
 	printEnv := fs.Bool("print-env", false, "Print resolved env and exit before starting HMR")
 	stateFile := fs.String("state-file", envOr("VERSELF_WEB_DEV_STATE_FILE", "/tmp/verself-web-dev.env"), "State env file path")
 	// The Vite+ toolchain is resolved by the caller (`aspect dev verself-web`)
-	// so the dev server runs the same server_tools-pinned Node + lockfile-pinned
+	// so the dev server runs the same Bazel-pinned Node + lockfile-pinned
 	// vite-plus as the Bazel build. There is no PATH `vp`.
 	nodeBin := fs.String("node-bin", "", "Vendored Node binary (set by `aspect dev verself-web`)")
 	vpScript := fs.String("vp-script", "", "Lockfile-pinned vite-plus launcher (set by `aspect dev verself-web`)")

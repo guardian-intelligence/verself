@@ -40,7 +40,6 @@ nomad_component(
     deploy_phase = "platform",
     digest_inputs = [
         ":deploy_declarations",
-        "//src/host/binaries:host_profile_archives",
     ],
     job_id = "grafana",
     job_spec = "nomad.hcl",

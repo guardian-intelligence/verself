@@ -54,9 +54,6 @@ def _ansible_local(ctx, playbook, extra_args = None, tool_shims = None, include_
     )
 
 def _install_impl(ctx):
-    rc = _ansible_local(ctx, "playbooks/setup-dev.yml", include_collections = False)
-    if rc != 0:
-        return rc
     if ctx.args.install_shims or ctx.args.print_path:
         bin_dir = install_bazel_tool_shims(ctx, DEV_CONVENIENCE_SHIMS, ctx.args.bin_dir)
         if bin_dir == "":

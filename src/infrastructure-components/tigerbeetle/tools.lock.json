@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "tigerbeetle": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/tigerbeetle/tigerbeetle/releases/download/0.17.1/tigerbeetle-x86_64-linux.zip",
+        "sha256": "0071b5a86876afffea067851f26a90b1e6bb60968fe8afbf8121ea55d4a7af19",
+        "type": "zip",
+        "file": "tigerbeetle",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

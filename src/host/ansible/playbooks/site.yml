@@ -33,10 +33,6 @@
     - bootstrap
     - foundation
   roles:
-    - role: substrate_profile
-      tags:
-        - profile
-        - packages
     - role: base
       tags:
         - base

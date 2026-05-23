@@ -1,6 +1,5 @@
 ---
 # Stalwart Mail Server — receive-only SMTP + JMAP.
-# Binary provided by substrate_profile role (Bazel server tools archive).
 
 # --- System user ---
 
@@ -32,8 +31,8 @@
 
 # --- Bootstrap resources ---
 # Stalwart v0.15.5 blocks startup while fetching these resources if they are
-# missing from local storage. substrate_profile stages them from the Bazel
-# server-tools archive so the service never reaches GitHub during boot.
+# missing from local storage. The component host install artifact stages them
+# so the service never reaches GitHub during boot.
 
 - name: Check Stalwart webadmin bundle
   ansible.builtin.stat:
@@ -47,7 +46,7 @@
     checksum_algorithm: sha256
   register: stalwart_spam_filter_resource
 
-- name: Assert Stalwart resources were staged by substrate_profile
+- name: Assert Stalwart resources were staged
   ansible.builtin.assert:
     that:
       - stalwart_webadmin_resource.stat.exists
@@ -55,9 +54,7 @@
       - stalwart_spam_filter_resource.stat.exists
       - stalwart_spam_filter_resource.stat.checksum == stalwart_spam_filter_sha256
     fail_msg: >-
-      Stalwart bootstrap resources are missing or stale. Run substrate_profile
-      so the admitted server-tools archive stages webadmin.zip and
-      spam-filter.toml.
+      Stalwart bootstrap resources are missing or stale.
 
 # --- Self-signed TLS placeholder ---
 # Stalwart needs a cert at startup for STARTTLS. Generate a self-signed one

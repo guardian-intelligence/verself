@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "stalwart": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "b2042dbcf0a110a4a756a5288de013649fd1f7ee84fa002bb3d2e6ec1e5f1f0b",
+        "type": "tar.gz",
+        "file": "stalwart",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "stalwart-cli": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/stalwartlabs/stalwart/releases/download/v0.15.5/stalwart-cli-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "8fbe74206bed46974c272623e184b11d6c8362eb606dddc155fdb6ae9df7b3e9",
+        "type": "tar.gz",
+        "file": "stalwart-cli",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

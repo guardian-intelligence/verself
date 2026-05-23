@@ -1,4 +1,30 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+genrule(
+    name = "bao_bin",
+    srcs = ["@openbao_tool_bao_deb//file"],
+    outs = ["bao"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+dpkg-deb -x "$(location @openbao_tool_bao_deb//file)" "$$tmp"
+install -m 0755 "$$tmp/usr/bin/bao" "$@"
+""",
+)
+
+pkg_tar(
+    name = "host_install",
+    out = "openbao-host-install.tar",
+    files = {
+        ":bao_bin": "opt/verself/profile/bin/bao",
+    },
+    modes = {
+        "opt/verself/profile/bin/bao": "0755",
+    },
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "role_sources",
@@ -23,7 +49,7 @@ nomad_component(
     name = "nomad_component",
     component = "openbao",
     deploy_phase = "platform",
-    digest_inputs = ["//src/host/binaries:host_profile_archives"],
+    digest_inputs = [":host_install"],
     job_id = "openbao",
     job_spec = "nomad.hcl",
     provides = ["openbao:api"],

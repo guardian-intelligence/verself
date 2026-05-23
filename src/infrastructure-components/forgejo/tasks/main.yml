@@ -1,6 +1,5 @@
 ---
 # Forgejo git server configuration.
-# Binaries provided by substrate_profile role (pinned static binaries).
 
 - name: Create Forgejo user
   ansible.builtin.user:

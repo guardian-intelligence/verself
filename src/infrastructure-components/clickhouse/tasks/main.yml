@@ -1,6 +1,5 @@
 ---
 # ClickHouse configuration.
-# Binary provided by substrate_profile role (pinned static binary).
 
 - name: Create ClickHouse system group
   ansible.builtin.group:
