@@ -357,7 +357,7 @@ func (c *guestControl) awaitHello(ctx context.Context) (vmproto.Hello, error) {
 }
 
 func (c *guestControl) initLease(ctx context.Context, leaseID string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount, activationMode ActivationMode) ([]vmproto.FilesystemMountResult, error) {
-	_, endSpan := startStepSpan(ctx, "vmorchestrator.guest.lease_init",
+	spanCtx, endSpan := startStepSpan(ctx, "vmorchestrator.guest.lease_init",
 		attribute.String("lease.id", leaseID),
 		attribute.Int("filesystem.mount_count", len(filesystems)),
 		attribute.String("firecracker.activation_mode", string(activationMode)),
@@ -375,7 +375,7 @@ func (c *guestControl) initLease(ctx context.Context, leaseID string, network vm
 		return nil, retErr
 	}
 	results, timings, err := c.awaitLeaseInitResult(leaseID, filesystems)
-	recordLeaseInitTimingAttrs(ctx, timings)
+	recordLeaseInitTimingAttrs(spanCtx, timings)
 	if err != nil {
 		retErr = err
 		return results, err
@@ -384,7 +384,7 @@ func (c *guestControl) initLease(ctx context.Context, leaseID string, network vm
 }
 
 func (c *guestControl) afterRestore(ctx context.Context, leaseID string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount, activationMode ActivationMode) ([]vmproto.FilesystemMountResult, error) {
-	_, endSpan := startStepSpan(ctx, "vmorchestrator.guest.after_restore",
+	spanCtx, endSpan := startStepSpan(ctx, "vmorchestrator.guest.after_restore",
 		attribute.String("lease.id", leaseID),
 		attribute.Int("filesystem.mount_count", len(filesystems)),
 		attribute.String("firecracker.activation_mode", string(activationMode)),
@@ -402,7 +402,7 @@ func (c *guestControl) afterRestore(ctx context.Context, leaseID string, network
 		return nil, retErr
 	}
 	results, timings, err := c.awaitAfterRestoreResult(leaseID, filesystems)
-	recordLeaseInitTimingAttrs(ctx, timings)
+	recordLeaseInitTimingAttrs(spanCtx, timings)
 	if err != nil {
 		retErr = err
 		return results, err

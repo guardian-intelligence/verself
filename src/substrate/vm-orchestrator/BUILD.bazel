@@ -152,6 +152,9 @@ go_test(
     deps = [
         "//src/substrate/vm-orchestrator/vmproto",
         "//src/substrate/vm-orchestrator/zfs",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_sdk//trace",
+        "@io_opentelemetry_go_otel_sdk//trace/tracetest",
     ],
 )
 
