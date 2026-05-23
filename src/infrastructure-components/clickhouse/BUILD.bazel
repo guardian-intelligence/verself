@@ -7,22 +7,22 @@ load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 exports_files(["tools.lock.json"])
 
 pkg_tar(
-    name = "runtime_artifact",
-    out = "clickhouse-runtime.tar",
+    name = "host_install_artifact",
+    out = "clickhouse-host-install.tar",
     files = {
-        "@clickhouse_tools//tools/clickhouse": "bin/clickhouse",
-        "//src/infrastructure-components/clickhouse/cmd/clickhouse-spiffe-bundle-reload:clickhouse-spiffe-bundle-reload": "bin/clickhouse-spiffe-bundle-reload",
+        "@clickhouse_tools//tools/clickhouse": "opt/verself/profile/bin/clickhouse",
+        "//src/infrastructure-components/clickhouse/cmd/clickhouse-spiffe-bundle-reload:clickhouse-spiffe-bundle-reload": "opt/verself/profile/bin/clickhouse-spiffe-bundle-reload",
     },
     modes = {
-        "bin/clickhouse": "0755",
-        "bin/clickhouse-spiffe-bundle-reload": "0755",
+        "opt/verself/profile/bin/clickhouse": "0755",
+        "opt/verself/profile/bin/clickhouse-spiffe-bundle-reload": "0755",
     },
     symlinks = {
-        "bin/clickhouse-benchmark": "clickhouse",
-        "bin/clickhouse-client": "clickhouse",
-        "bin/clickhouse-keeper": "clickhouse",
-        "bin/clickhouse-local": "clickhouse",
-        "bin/clickhouse-server": "clickhouse",
+        "opt/verself/profile/bin/clickhouse-benchmark": "/opt/verself/profile/bin/clickhouse",
+        "opt/verself/profile/bin/clickhouse-client": "/opt/verself/profile/bin/clickhouse",
+        "opt/verself/profile/bin/clickhouse-keeper": "/opt/verself/profile/bin/clickhouse",
+        "opt/verself/profile/bin/clickhouse-local": "/opt/verself/profile/bin/clickhouse",
+        "opt/verself/profile/bin/clickhouse-server": "/opt/verself/profile/bin/clickhouse",
     },
     visibility = ["//visibility:public"],
 )
@@ -58,16 +58,29 @@ pkg_tar(
 )
 
 nomad_component(
+    name = "host_install_nomad_component",
+    artifacts = {
+        ":host_install_artifact": "clickhouse-host-install",
+    },
+    component = "clickhouse_host_install",
+    deploy_phase = "pre_artifact",
+    job_id = "clickhouse-host-install",
+    job_spec = "host-install.nomad.hcl",
+    provides = ["clickhouse:host-tools"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+nomad_component(
     name = "nomad_component",
     artifacts = {
         ":migration_artifact": "clickhouse-migrations",
-        ":runtime_artifact": "clickhouse-runtime",
     },
     component = "clickhouse_migrations",
     deploy_phase = "platform",
     job_id = "clickhouse-migrations",
     job_spec = "nomad.hcl",
     provides = ["clickhouse:migrations"],
+    requires = ["clickhouse:host-tools"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 
