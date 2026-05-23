@@ -4,13 +4,13 @@ load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 exports_files(["tools.lock.json"])
 
 pkg_tar(
-    name = "host_install",
-    out = "tigerbeetle-host-install.tar",
+    name = "runtime_artifact",
+    out = "tigerbeetle-runtime.tar",
     files = {
-        "@tigerbeetle_tools//tools/tigerbeetle": "opt/verself/profile/bin/tigerbeetle",
+        "@tigerbeetle_tools//tools/tigerbeetle": "bin/tigerbeetle",
     },
     modes = {
-        "opt/verself/profile/bin/tigerbeetle": "0755",
+        "bin/tigerbeetle": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -36,9 +36,11 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        ":runtime_artifact": "tigerbeetle-runtime",
+    },
     component = "tigerbeetle",
     deploy_phase = "platform",
-    digest_inputs = [":host_install"],
     job_id = "tigerbeetle",
     job_spec = "nomad.hcl",
     provides = ["tigerbeetle:client"],

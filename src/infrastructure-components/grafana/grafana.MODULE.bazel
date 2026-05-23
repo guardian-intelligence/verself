@@ -1,0 +1,15 @@
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "grafana_tool_grafana_oss",
+    downloaded_file_path = "grafana-12.4.2.linux-amd64.tar.gz",
+    sha256 = "f240b200a803bf64592fae645331750c2681df5f07496743d714db12393a591f",
+    url = "https://dl.grafana.com/oss/release/grafana-12.4.2.linux-amd64.tar.gz",
+)
+
+http_file(
+    name = "grafana_tool_clickhouse_datasource",
+    downloaded_file_path = "grafana-clickhouse-datasource-4.17.0.linux-amd64.zip",
+    sha256 = "bda7a9ee29dbaedc8301f9779813d69f896bd91351a74669ee98a39beb370530",
+    url = "https://grafana.com/api/plugins/grafana-clickhouse-datasource/versions/4.17.0/download?os=linux&arch=amd64",
+)

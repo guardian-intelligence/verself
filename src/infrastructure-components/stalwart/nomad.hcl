@@ -23,11 +23,16 @@ job "stalwart" {
 
     task "server" {
       driver = "raw_exec"
-      user = "stalwart"
+      user = "root"
+
+      artifact {
+        source = "verself-artifact://stalwart-runtime"
+        destination = "local"
+      }
 
       config {
-        command = "/opt/verself/profile/bin/stalwart"
-        args = ["--config", "$${NOMAD_TASK_DIR}/config.toml"]
+        command = "/bin/sh"
+        args = ["-ec", "getent group stalwart >/dev/null || groupadd --system stalwart\nid -u stalwart >/dev/null 2>&1 || useradd --system --gid stalwart --home-dir /var/lib/stalwart --shell /usr/sbin/nologin --no-create-home stalwart\ninstall -d -o stalwart -g stalwart -m 0750 /var/lib/stalwart\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/webadmin.zip /var/lib/stalwart/webadmin.zip\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/spam-filter.toml /var/lib/stalwart/spam-filter.toml\n/usr/sbin/setcap cap_net_bind_service+ep local/bin/stalwart\nexec /usr/sbin/runuser -u stalwart --preserve-environment -- local/bin/stalwart --config \"$${NOMAD_TASK_DIR}/config.toml\"\n"]
       }
 
       env {
@@ -42,12 +47,8 @@ job "stalwart" {
         memory = 1024
       }
 
-      # Stalwart configuration. Owned here so changes ride `aspect deploy`:
-      # the rendered body is part of the job spec digest, so a config edit
-      # resubmits the job and restarts Stalwart. Bootstrap/host concerns
-      # (OS user, cap_net_bind_service, PG database, TLS material, DNS,
-      # credentials, post-start Settings API + domain) remain in the
-      # stalwart Ansible role. Receive-only: no outbound relay.
+      # Stalwart configuration. Owned here so changes ride `aspect deploy`.
+      # Receive-only: no outbound relay.
       template {
         change_mode = "restart"
         destination = "local/config.toml"
@@ -138,12 +139,6 @@ store = "postgresql"
 user = "admin"
 secret = "%%{file:/etc/credstore/stalwart/admin-password}%"
 
-# session.*, remote.*, queue.*, metrics.* are pushed via the Settings API
-# after startup by the stalwart Ansible role (tasks/settings.yml); Stalwart
-# v0.15+ enforces the local/database split. http.* keys are pinned locally
-# via config.local-keys because JMAP session URL generation parses them at
-# startup. https://stalw.art/docs/configuration/overview/
-
 [tracer."otel"]
 type = "open-telemetry"
 transport = "grpc"
@@ -167,6 +162,32 @@ EOT
         port = "smtp"
         provider = "nomad"
         address_mode = "auto"
+      }
+    }
+
+    task "settings" {
+      driver = "raw_exec"
+      user = "stalwart"
+
+      lifecycle {
+        hook = "poststart"
+        sidecar = false
+      }
+
+      artifact {
+        source = "verself-artifact://stalwart-runtime"
+        destination = "local"
+        chown = true
+      }
+
+      config {
+        command = "/bin/sh"
+        args = ["-ec", "credentials=\"admin:$(tr -d '\\n' </etc/credstore/stalwart/admin-password)\"\nlast_status=1\nfor attempt in $(seq 1 30); do\n  if CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config session.rcpt.relay false && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config asn.type disabled && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config metrics.open-telemetry.transport grpc && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config metrics.open-telemetry.endpoint http://127.0.0.1:4317 && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config metrics.open-telemetry.interval 30s && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server reload-config; then\n    exit 0\n  fi\n  last_status=$?\n  sleep 1\ndone\nexit \"$last_status\"\n"]
+      }
+
+      resources {
+        cpu = 100
+        memory = 64
       }
     }
   }

@@ -29,6 +29,12 @@ job "zitadel" {
         chown = true
       }
 
+      artifact {
+        source = "verself-artifact://zitadel-runtime"
+        destination = "local"
+        chown = true
+      }
+
       config {
         command = "local/bin/zitadel-setup-apply"
       }
@@ -38,6 +44,7 @@ job "zitadel" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "zitadel-setup-apply"
+        VERSELF_ZITADEL_BIN = "local/bin/zitadel"
         VERSELF_ZITADEL_EXTERNAL_DOMAIN = "verself.sh"
         VERSELF_SUPERVISOR = "nomad"
       }
@@ -52,8 +59,14 @@ job "zitadel" {
       driver = "raw_exec"
       user = "zitadel"
 
+      artifact {
+        source = "verself-artifact://zitadel-runtime"
+        destination = "local"
+        chown = true
+      }
+
       config {
-        command = "/opt/verself/profile/bin/zitadel"
+        command = "local/bin/zitadel"
         args = ["start", "--masterkeyFile", "/etc/credstore/zitadel/masterkey", "--config", "/etc/zitadel/config.yaml"]
       }
 

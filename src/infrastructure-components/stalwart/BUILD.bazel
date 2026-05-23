@@ -7,19 +7,19 @@ deploy_declarations(visibility = ["//visibility:public"])
 exports_files(["tools.lock.json"])
 
 pkg_tar(
-    name = "host_install",
-    out = "stalwart-host-install.tar",
+    name = "runtime_artifact",
+    out = "stalwart-runtime.tar",
     files = {
-        "@stalwart_tools//tools/stalwart": "opt/verself/profile/bin/stalwart",
-        "@stalwart_tools//tools/stalwart-cli": "opt/verself/profile/bin/stalwart-cli",
-        "@stalwart_tool_spam_filter//file": "var/lib/stalwart/spam-filter.toml",
-        "@stalwart_tool_webadmin//file": "var/lib/stalwart/webadmin.zip",
+        "@stalwart_tools//tools/stalwart": "bin/stalwart",
+        "@stalwart_tools//tools/stalwart-cli": "bin/stalwart-cli",
+        "@stalwart_tool_spam_filter//file": "share/stalwart/spam-filter.toml",
+        "@stalwart_tool_webadmin//file": "share/stalwart/webadmin.zip",
     },
     modes = {
-        "opt/verself/profile/bin/stalwart": "0755",
-        "opt/verself/profile/bin/stalwart-cli": "0755",
-        "var/lib/stalwart/spam-filter.toml": "0644",
-        "var/lib/stalwart/webadmin.zip": "0644",
+        "bin/stalwart": "0755",
+        "bin/stalwart-cli": "0755",
+        "share/stalwart/spam-filter.toml": "0644",
+        "share/stalwart/webadmin.zip": "0644",
     },
     visibility = ["//visibility:public"],
 )
@@ -45,12 +45,12 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        ":runtime_artifact": "stalwart-runtime",
+    },
     component = "stalwart",
     deploy_phase = "platform",
-    digest_inputs = [
-        ":host_install",
-        ":deploy_declarations",
-    ],
+    digest_inputs = [":deploy_declarations"],
     job_id = "stalwart",
     job_spec = "nomad.hcl",
     provides = [

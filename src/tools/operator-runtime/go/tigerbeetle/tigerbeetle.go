@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DefaultRemotePath = "/opt/verself/profile/bin/tigerbeetle"
+	DefaultRemotePath = ""
 	DefaultRunAsUser  = "tigerbeetle"
 	DefaultClusterID  = "0"
 	DefaultAddresses  = "127.0.0.1:3320"
@@ -56,6 +56,9 @@ func (c Config) normalizedShell() (Config, error) {
 	}
 	if !safeUnixUser(c.RunAsUser) {
 		return Config{}, fmt.Errorf("tigerbeetle: invalid run-as user %q", c.RunAsUser)
+	}
+	if c.RemotePath == "" {
+		return Config{}, errors.New("tigerbeetle: remote path is required")
 	}
 	if !strings.HasPrefix(c.RemotePath, "/") {
 		return Config{}, fmt.Errorf("tigerbeetle: remote path must be absolute: %q", c.RemotePath)

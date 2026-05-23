@@ -184,6 +184,10 @@
       ansible.builtin.include_role:
         name: postgresql
 
+    - name: Converge OTel collector host state
+      ansible.builtin.include_role:
+        name: otelcol
+
     - name: Load owner-local ClickHouse client declarations
       ansible.builtin.set_fact:
         clickhouse_client_ca_credentials: >-

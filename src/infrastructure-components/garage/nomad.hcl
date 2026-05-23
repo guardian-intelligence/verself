@@ -27,17 +27,18 @@ job "garage" {
 
     task "server" {
       driver = "raw_exec"
-      user = "garage"
+      user = "root"
 
       config {
-        command = "/opt/verself/profile/bin/garage"
-        args = ["-c", "/etc/garage/garage-0.toml", "server"]
+        command = "/bin/sh"
+        args = ["-ec", "getent group garage >/dev/null || groupadd --system garage\nid -u garage >/dev/null 2>&1 || useradd --system --gid garage --home-dir /var/lib/garage-0 --shell /usr/sbin/nologin --no-create-home garage\ninstall -d -o garage -g garage -m 0750 /var/lib/garage-0 /var/lib/garage-0/data /var/lib/garage-0/meta /var/lib/garage-0/snapshots\nexec /usr/sbin/runuser -u garage --preserve-environment -- \"$${VERSELF_GARAGE_RUNTIME}/bin/garage\" -c /etc/garage/garage-0.toml server\n"]
       }
 
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "garage"
+        VERSELF_GARAGE_RUNTIME = "verself-artifact://garage-runtime"
         VERSELF_SUPERVISOR = "nomad"
       }
 

@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	defaultZitadelBin       = "/opt/verself/profile/bin/zitadel"
+	defaultZitadelBin       = "local/bin/zitadel"
 	defaultZitadelConfig    = "/etc/zitadel/config.yaml"
 	defaultZitadelSteps     = "/etc/zitadel/steps.yaml"
 	defaultZitadelMasterkey = "/etc/credstore/zitadel/masterkey"
@@ -106,14 +106,14 @@ func run(args []string, stdout, stderr io.Writer) error {
 func (cfg config) validate() error {
 	missing := []string{}
 	for name, value := range map[string]string{
-		"--external-domain":  cfg.domain,
-		"--zitadel-bin":      cfg.zitadelBin,
-		"--config":           cfg.zitadelConfigPath,
-		"--steps":            cfg.zitadelStepsPath,
-		"--masterkey":        cfg.zitadelMasterkey,
-		"--discovery-hosts":  cfg.discoveryHostsPath,
-		"--zitadel-user":     cfg.zitadelUser,
-		"--zitadel-group":    cfg.zitadelGroup,
+		"--external-domain": cfg.domain,
+		"--zitadel-bin":     cfg.zitadelBin,
+		"--config":          cfg.zitadelConfigPath,
+		"--steps":           cfg.zitadelStepsPath,
+		"--masterkey":       cfg.zitadelMasterkey,
+		"--discovery-hosts": cfg.discoveryHostsPath,
+		"--zitadel-user":    cfg.zitadelUser,
+		"--zitadel-group":   cfg.zitadelGroup,
 	} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)

@@ -7,14 +7,40 @@ deploy_declarations(visibility = ["//visibility:public"])
 
 exports_files(["tools.lock.json"])
 
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "defaults/**",
+            "deploy/**",
+            "files/**",
+            "handlers/**",
+            "meta/**",
+            "migrations/**",
+            "tasks/**",
+            "templates/**",
+            "vars/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//src/infrastructure-components:__pkg__"],
+)
+
 pkg_tar(
-    name = "host_install",
-    out = "otelcol-host-install.tar",
+    name = "runtime_artifact",
+    out = "otelcol-runtime.tar",
     files = {
-        "@otelcol_tools//tools/otelcol-contrib": "opt/verself/profile/bin/otelcol-contrib",
+        "@clickhouse_tools//tools/clickhouse": "bin/clickhouse",
+        "@otelcol_tools//tools/otelcol-contrib": "bin/otelcol-contrib",
+        "@otelcol_tools//tools/spiffe-helper": "bin/spiffe-helper",
     },
     modes = {
-        "opt/verself/profile/bin/otelcol-contrib": "0755",
+        "bin/clickhouse": "0755",
+        "bin/otelcol-contrib": "0755",
+        "bin/spiffe-helper": "0755",
+    },
+    symlinks = {
+        "bin/clickhouse-client": "clickhouse",
     },
     visibility = ["//visibility:public"],
 )
@@ -47,14 +73,11 @@ nomad_component(
     name = "nomad_component",
     artifacts = {
         ":config_artifact": "otelcol-config",
-        "//src/infrastructure-components/otelcol/cmd/otelcol-setup:otelcol-setup_nomad_artifact": "otelcol-setup",
+        ":runtime_artifact": "otelcol-runtime",
     },
     component = "otelcol",
     deploy_phase = "platform",
-    digest_inputs = [
-        ":host_install",
-        ":deploy_declarations",
-    ],
+    digest_inputs = [":deploy_declarations"],
     job_id = "otelcol",
     job_spec = "nomad.hcl",
     provides = ["otelcol:otlp"],

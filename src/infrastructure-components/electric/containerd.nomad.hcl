@@ -20,7 +20,7 @@ job "electric-containerd" {
 
       config {
         command = "/bin/sh"
-        args = ["-ec", "rm -f /run/electric-containerd/containerd.sock\nrm -rf /run/electric-containerd/state\ninstall -d -m 0755 /run/electric-containerd/state /var/lib/electric-containerd/root\nexec env PATH=\"$PWD/local/bin:$PATH\" local/bin/containerd \\\n  --address /run/electric-containerd/containerd.sock \\\n  --root /var/lib/electric-containerd/root \\\n  --state /run/electric-containerd/state\n"]
+        args = ["-ec", "rm -f /run/electric-containerd/containerd.sock\ninstall -d -m 0755 /run/electric-containerd/state /var/lib/electric-containerd/root\nexec env PATH=\"$PWD/local/bin:$PATH\" local/bin/containerd \\\n  --address /run/electric-containerd/containerd.sock \\\n  --root /var/lib/electric-containerd/root \\\n  --state /run/electric-containerd/state\n"]
       }
 
       resources {

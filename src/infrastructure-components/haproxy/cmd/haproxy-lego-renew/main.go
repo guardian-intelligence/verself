@@ -70,8 +70,8 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("haproxy-lego-renew", flag.ContinueOnError)
-	fs.StringVar(&cfg.legoBin, "lego-bin", "/opt/verself/profile/bin/lego", "Path to the lego binary.")
-	fs.StringVar(&cfg.haproxyBin, "haproxy-bin", "/opt/verself/profile/bin/haproxy", "Path to the HAProxy binary.")
+	fs.StringVar(&cfg.legoBin, "lego-bin", "lego", "Path to the lego binary.")
+	fs.StringVar(&cfg.haproxyBin, "haproxy-bin", "haproxy", "Path to the HAProxy binary.")
 	fs.Var(&cfg.haproxyConfigs, "haproxy-config", "HAProxy config to validate; repeat in HAProxy load order.")
 	fs.StringVar(&cfg.haproxyLDLibraryPath, "haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "LD_LIBRARY_PATH used when invoking HAProxy.")
 	fs.StringVar(&cfg.legoPath, "lego-path", "/var/lib/lego", "lego state directory.")

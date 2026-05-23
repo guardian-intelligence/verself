@@ -57,6 +57,9 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 				if !ok {
 					return nil, fmt.Errorf("artifact %q is referenced by authored spec but not declared by nomad_component", output)
 				}
+				if binding.Pre {
+					return nil, fmt.Errorf("pre_artifact %q must be referenced through a task env placeholder, not a Nomad artifact stanza", output)
+				}
 				getterOptions := map[string]string{}
 				for key, value := range binding.Artifact.GetterOptions {
 					getterOptions[key] = value
@@ -64,6 +67,18 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 				getterOptions["checksum"] = binding.Checksum
 				artifact.GetterSource = &binding.Artifact.GetterSource
 				artifact.GetterOptions = getterOptions
+				seen[output] = true
+			}
+			for key, value := range task.Env {
+				if !strings.HasPrefix(value, artifactSourcePrefix) {
+					continue
+				}
+				output := strings.TrimPrefix(value, artifactSourcePrefix)
+				binding, ok := bindings[output]
+				if !ok {
+					return nil, fmt.Errorf("artifact %q is referenced by authored spec but not declared by nomad_component", output)
+				}
+				task.Env[key] = binding.Artifact.Key
 				seen[output] = true
 			}
 		}
@@ -152,12 +167,9 @@ func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) 
 	}
 	for _, phase := range deployPhaseOrder {
 		phaseIntents := intentsByPhase[phase]
-		var artifacts []deploymodel.Artifact
-		if phase != deployPhasePreArtifact {
-			artifacts, err = artifactsForChangedJobs(plan, phaseIntents)
-			if err != nil {
-				return applyResults(intents), err
-			}
+		artifacts, err := artifactsForIntents(plan, phaseIntents, phase != deployPhasePreArtifact)
+		if err != nil {
+			return applyResults(intents), err
 		}
 		if err := applyNomadWave(ctx, rt, client, phase, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, phaseIntents, artifacts); err != nil {
 			return applyResults(intents), err
@@ -182,14 +194,23 @@ func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 	defer span.End()
 	started := time.Now()
 	recordDeployWaveStarted(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started)
-	if wave != deployPhasePreArtifact && len(artifacts) > 0 {
+	preArtifacts, garageArtifacts := splitArtifactsByDelivery(artifacts)
+	if len(preArtifacts) > 0 {
+		if err := publishPreArtifacts(ctx, rt, preArtifacts); err != nil {
+			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+	}
+	if len(garageArtifacts) > 0 {
 		if err := ensureArtifactOriginAvailable(ctx, rt, client); err != nil {
 			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
-		if err := publishArtifacts(ctx, rt, delivery, artifacts); err != nil {
+		if err := publishArtifacts(ctx, rt, delivery, garageArtifacts); err != nil {
 			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -299,11 +320,6 @@ func groupIntentsByPhase(intents []jobApplyIntent) (map[string][]jobApplyIntent,
 		if !validDeployPhase(intent.Job.DeployPhase) {
 			return nil, fmt.Errorf("%s: unsupported deploy phase %q", intent.Job.JobID, intent.Job.DeployPhase)
 		}
-		if intent.Job.DeployPhase == deployPhasePreArtifact {
-			if len(intent.Job.ArtifactOutputs) > 0 {
-				return nil, fmt.Errorf("%s: %s jobs cannot reference artifacts", intent.Job.JobID, deployPhasePreArtifact)
-			}
-		}
 		byPhase[intent.Job.DeployPhase] = append(byPhase[intent.Job.DeployPhase], intent)
 	}
 	return byPhase, nil
@@ -354,10 +370,10 @@ func applyResults(intents []jobApplyIntent) []jobApplyResult {
 	return results
 }
 
-func artifactsForChangedJobs(plan *deployPlan, intents []jobApplyIntent) ([]deploymodel.Artifact, error) {
+func artifactsForIntents(plan *deployPlan, intents []jobApplyIntent, changedOnly bool) ([]deploymodel.Artifact, error) {
 	outputs := map[string]bool{}
 	for _, intent := range intents {
-		if !intent.Changed {
+		if changedOnly && !intent.Changed {
 			continue
 		}
 		for _, output := range intent.Job.ArtifactOutputs {
@@ -381,9 +397,22 @@ func artifactsForChangedJobs(plan *deployPlan, intents []jobApplyIntent) ([]depl
 			missing = append(missing, output)
 		}
 		sortStrings(missing)
-		return nil, fmt.Errorf("changed jobs reference unknown artifacts: %s", strings.Join(missing, ", "))
+		return nil, fmt.Errorf("nomad jobs reference unknown artifacts: %s", strings.Join(missing, ", "))
 	}
 	return artifacts, nil
+}
+
+func splitArtifactsByDelivery(artifacts []deploymodel.Artifact) ([]deploymodel.Artifact, []deploymodel.Artifact) {
+	preArtifacts := []deploymodel.Artifact{}
+	garageArtifacts := []deploymodel.Artifact{}
+	for _, artifact := range artifacts {
+		if strings.HasPrefix(artifact.Key, preArtifactRemoteRoot+"/") {
+			preArtifacts = append(preArtifacts, artifact)
+			continue
+		}
+		garageArtifacts = append(garageArtifacts, artifact)
+	}
+	return preArtifacts, garageArtifacts
 }
 
 func sortStrings(values []string) {

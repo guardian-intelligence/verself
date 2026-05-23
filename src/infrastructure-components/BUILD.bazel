@@ -24,6 +24,7 @@ filegroup(
         "//src/infrastructure-components/nats:role_sources",
         "//src/infrastructure-components/nomad-observer:role_sources",
         "//src/infrastructure-components/openbao:role_sources",
+        "//src/infrastructure-components/otelcol:role_sources",
         "//src/infrastructure-components/pomerium:role_sources",
         "//src/infrastructure-components/postgresql:role_sources",
         "//src/infrastructure-components/spicedb:role_sources",

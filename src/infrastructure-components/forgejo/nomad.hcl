@@ -15,18 +15,46 @@ job "forgejo" {
       }
     }
 
+    task "setup" {
+      driver = "raw_exec"
+      user = "forgejo"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      artifact {
+        source = "verself-artifact://forgejo-runtime"
+        destination = "local"
+        chown = true
+      }
+
+      config {
+        command = "/bin/sh"
+        args = ["-ec", "export HOME=/var/lib/forgejo\nexport FORGEJO_WORK_DIR=/var/lib/forgejo\nexport PATH=\"$PWD/local/bin:/usr/bin:/bin\"\nlocal/bin/forgejo migrate --config /etc/forgejo/app.ini --work-path /var/lib/forgejo\nlocal/bin/forgejo admin regenerate keys --config /etc/forgejo/app.ini\n"]
+      }
+    }
+
     task "server" {
       driver = "raw_exec"
       user = "forgejo"
 
+      artifact {
+        source = "verself-artifact://forgejo-runtime"
+        destination = "local"
+        chown = true
+      }
+
       config {
-        command = "/opt/verself/profile/bin/forgejo"
+        command = "local/bin/forgejo"
         args = ["web", "--config", "/etc/forgejo/app.ini"]
       }
 
       env {
+        HOME = "/var/lib/forgejo"
         FORGEJO_WORK_DIR = "/var/lib/forgejo"
-        PATH = "/opt/verself/profile/bin:/usr/bin:/bin"
+        PATH = "$${NOMAD_TASK_DIR}/local/bin:/usr/bin:/bin"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "forgejo"

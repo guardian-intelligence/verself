@@ -1,0 +1,2 @@
+clickhouse_client_ca_credentials:
+  - { path: /etc/otelcol/clickhouse-server-ca.pem, group: otelcol }

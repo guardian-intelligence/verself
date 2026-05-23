@@ -1,0 +1,12 @@
+---
+otelcol_system_user: otelcol
+otelcol_system_group: otelcol
+otelcol_data_dir: /var/lib/otelcol
+otelcol_config_dir: /etc/otelcol
+otelcol_storage_dir: "{{ otelcol_data_dir }}/storage"
+otelcol_clickhouse_spiffe_dir: "{{ otelcol_data_dir }}/clickhouse-spiffe"
+otelcol_postgresql_user: otelcol
+otelcol_clickhouse_user: otelcol
+otelcol_clickhouse_operator_user: clickhouse_operator
+otelcol_clickhouse_operator_config_path: /etc/clickhouse-client/operator.xml
+otelcol_clickhouse_spiffe_id: "spiffe://{{ spire_trust_domain }}/svc/otelcol"

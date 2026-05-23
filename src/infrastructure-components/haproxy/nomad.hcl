@@ -11,13 +11,12 @@ job "haproxy-upstreams" {
       kill_timeout = "5s"
 
       artifact {
-        source = "verself-artifact://haproxy-upstreams-apply"
+        source = "verself-artifact://haproxy-runtime"
         destination = "local"
-        chown = true
       }
 
       config {
-        args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "/opt/verself/profile/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "--reload-unit", "haproxy.service", "--auth-edge-domain", "verself.sh", "--auth-edge-haproxy-config", "/etc/haproxy/haproxy.cfg", "--auth-edge-public-hosts-map", "/etc/haproxy/maps/public-hosts.map", "--auth-edge-discovery-manifest", "/var/www/verself/.well-known/verself", "--auth-edge-cli-client-id-path", "/etc/credstore/iam-service/oidc-cli-client-id", "--auth-edge-product-audience-path", "/etc/credstore/iam-service/auth-audience", "--daemon"]
+        args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "local/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "--reload-unit", "haproxy.service", "--auth-edge-domain", "verself.sh", "--auth-edge-haproxy-config", "/etc/haproxy/haproxy.cfg", "--auth-edge-public-hosts-map", "/etc/haproxy/maps/public-hosts.map", "--auth-edge-discovery-manifest", "/var/www/verself/.well-known/verself", "--auth-edge-cli-client-id-path", "/etc/credstore/iam-service/oidc-cli-client-id", "--auth-edge-product-audience-path", "/etc/credstore/iam-service/auth-audience", "--daemon"]
         command = "local/bin/haproxy-upstreams-apply"
       }
       env {
@@ -616,7 +615,7 @@ EOT
         }
         change_script {
           command = "local/bin/haproxy-upstreams-apply"
-          args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "/opt/verself/profile/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "--reload-unit", "haproxy.service", "--auth-edge-domain", "verself.sh", "--auth-edge-haproxy-config", "/etc/haproxy/haproxy.cfg", "--auth-edge-public-hosts-map", "/etc/haproxy/maps/public-hosts.map", "--auth-edge-discovery-manifest", "/var/www/verself/.well-known/verself", "--auth-edge-cli-client-id-path", "/etc/credstore/iam-service/oidc-cli-client-id", "--auth-edge-product-audience-path", "/etc/credstore/iam-service/auth-audience"]
+          args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "local/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "--reload-unit", "haproxy.service", "--auth-edge-domain", "verself.sh", "--auth-edge-haproxy-config", "/etc/haproxy/haproxy.cfg", "--auth-edge-public-hosts-map", "/etc/haproxy/maps/public-hosts.map", "--auth-edge-discovery-manifest", "/var/www/verself/.well-known/verself", "--auth-edge-cli-client-id-path", "/etc/credstore/iam-service/oidc-cli-client-id", "--auth-edge-product-audience-path", "/etc/credstore/iam-service/auth-audience"]
           timeout = "5s"
           fail_on_error = true
         }

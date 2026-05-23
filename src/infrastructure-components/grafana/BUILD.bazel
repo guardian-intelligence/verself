@@ -1,8 +1,48 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 deploy_declarations(visibility = ["//visibility:public"])
+
+exports_files(["tools.lock.json"])
+
+genrule(
+    name = "grafana_tree",
+    srcs = [
+        "@grafana_tool_clickhouse_datasource//file",
+        "@grafana_tool_grafana_oss//file",
+        "@grafana_tools//tools/spiffe-helper",
+    ],
+    outs = ["grafana-tree.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/extract" "$$tmp/runtime/bin" "$$tmp/runtime/grafana" "$$tmp/runtime/plugins"
+tar -xzf "$(location @grafana_tool_grafana_oss//file)" -C "$$tmp/extract"
+grafana_root="$$(find "$$tmp/extract" -mindepth 1 -maxdepth 1 -type d | sort | head -n1)"
+test -n "$$grafana_root"
+cp -a "$$grafana_root/." "$$tmp/runtime/grafana/"
+unzip -q "$(location @grafana_tool_clickhouse_datasource//file)" -d "$$tmp/plugin"
+test -d "$$tmp/plugin/grafana-clickhouse-datasource"
+cp -a "$$tmp/plugin/grafana-clickhouse-datasource" "$$tmp/runtime/plugins/grafana-clickhouse-datasource"
+printf '4.17.0\\n' > "$$tmp/runtime/plugins/.grafana-clickhouse-datasource-version"
+install -m 0755 "$(location @grafana_tools//tools/spiffe-helper)" "$$tmp/runtime/bin/spiffe-helper"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
+""",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+pkg_tar(
+    name = "runtime_artifact",
+    out = "grafana-runtime.tar",
+    visibility = ["//visibility:public"],
+    deps = [":grafana_tree"],
+)
 
 filegroup(
     name = "role_sources",
@@ -43,6 +83,9 @@ nomad_component(
     ],
     job_id = "grafana",
     job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "grafana-runtime",
+    },
     provides = ["grafana:http"],
     requires = [
         "clickhouse:migrations",

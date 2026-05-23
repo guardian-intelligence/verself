@@ -316,6 +316,35 @@ func (c *Client) Exec(ctx context.Context, command string) ([]byte, error) {
 	return out, nil
 }
 
+// Run streams stdin into a remote command and returns when the command exits.
+func (c *Client) Run(ctx context.Context, command string, stdin io.Reader) error {
+	_, span := c.tracer.Start(ctx, "verself_deploy.ssh.run",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("ssh.command", command)),
+	)
+	defer span.End()
+
+	session, err := c.conn.NewSession()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("ssh new session: %w", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	var stderr bytes.Buffer
+	session.Stdin = stdin
+	session.Stderr = &stderr
+	if err := session.Run(command); err != nil {
+		err = fmt.Errorf("ssh run %q: %w (stderr: %s)", command, err, strings.TrimSpace(stderr.String()))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetStatus(codes.Ok, "")
+	return nil
+}
+
 // Close tears down every registered forward, the SSH connection, and
 // the SSH-agent handle. Idempotent; safe to defer.
 func (c *Client) Close() error {

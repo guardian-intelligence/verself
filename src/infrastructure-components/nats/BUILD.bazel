@@ -5,13 +5,15 @@ load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 exports_files(["tools.lock.json"])
 
 pkg_tar(
-    name = "host_install",
-    out = "nats-host-install.tar",
+    name = "runtime_artifact",
+    out = "nats-runtime.tar",
     files = {
-        "@nats_tools//tools/nats-server": "opt/verself/profile/bin/nats-server",
+        "@nats_tools//tools/nats-server": "bin/nats-server",
+        "@nats_tools//tools/spiffe-helper": "bin/spiffe-helper",
     },
     modes = {
-        "opt/verself/profile/bin/nats-server": "0755",
+        "bin/nats-server": "0755",
+        "bin/spiffe-helper": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -48,9 +50,11 @@ spire_identity(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        ":runtime_artifact": "nats-runtime",
+    },
     component = "nats",
     deploy_phase = "platform",
-    digest_inputs = [":host_install"],
     job_id = "nats",
     job_spec = "nomad.hcl",
     provides = ["nats:client"],

@@ -33,17 +33,17 @@ install -m 0755 "$$tmp/usr/bin/sqlite3" "$@"
 )
 
 pkg_tar(
-    name = "host_install",
-    out = "forgejo-host-install.tar",
+    name = "runtime_artifact",
+    out = "forgejo-runtime.tar",
     files = {
-        "@forgejo_tools//tools/forgejo": "opt/verself/profile/bin/forgejo",
-        ":git_bin": "opt/verself/profile/bin/git",
-        ":sqlite3_bin": "opt/verself/profile/bin/sqlite3",
+        "@forgejo_tools//tools/forgejo": "bin/forgejo",
+        ":git_bin": "bin/git",
+        ":sqlite3_bin": "bin/sqlite3",
     },
     modes = {
-        "opt/verself/profile/bin/forgejo": "0755",
-        "opt/verself/profile/bin/git": "0755",
-        "opt/verself/profile/bin/sqlite3": "0755",
+        "bin/forgejo": "0755",
+        "bin/git": "0755",
+        "bin/sqlite3": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -69,12 +69,12 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
+    artifacts = {
+        ":runtime_artifact": "forgejo-runtime",
+    },
     component = "forgejo",
     deploy_phase = "platform",
-    digest_inputs = [
-        ":deploy_declarations",
-        ":host_install",
-    ],
+    digest_inputs = [":deploy_declarations"],
     job_id = "forgejo",
     job_spec = "nomad.hcl",
     provides = ["forgejo:http"],
