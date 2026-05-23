@@ -696,7 +696,7 @@ SELECT
   MetricName AS metric,
   CurrentValue AS value,
   SampledAt AS sampled_at
-FROM default.mail_metrics_latest
+FROM default.email_metrics_latest
 ORDER BY metric_group, metric
 LIMIT {row_limit:UInt32}`
 

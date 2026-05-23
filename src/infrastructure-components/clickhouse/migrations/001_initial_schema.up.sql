@@ -1064,6 +1064,7 @@ WHERE Status >= 400;
 DROP VIEW IF EXISTS default.mail_events;
 DROP VIEW IF EXISTS default.email_events;
 DROP VIEW IF EXISTS default.mail_metrics_latest;
+DROP VIEW IF EXISTS default.email_metrics_latest;
 
 CREATE VIEW default.email_events AS
 SELECT
@@ -1076,9 +1077,9 @@ SELECT
         Body = 'email-service: provider accepted', 'provider_accepted',
         Body = 'email-service: provider send failed', 'provider_send_failed',
         Body = 'email-service: send_as denied', 'send_as_denied',
-        Body = 'email-service: email changes applied', 'mailbox_sync_email_changes',
-        Body = 'email-service: sync worker bootstrap completed', 'mailbox_sync_bootstrap_completed',
-        Body = 'email-service: sync worker eventsource connected', 'mailbox_sync_eventsource_connected',
+        Body = 'email-service: email changes applied', 'email_sync_email_changes',
+        Body = 'email-service: sync worker bootstrap completed', 'email_sync_bootstrap_completed',
+        Body = 'email-service: sync worker eventsource connected', 'email_sync_eventsource_connected',
         'email_service_log'
     ) AS EventType,
     multiIf(
@@ -1163,7 +1164,7 @@ FROM default.otel_traces
 WHERE ServiceName = 'stalwart'
   AND SpanName = 'delivery.attempt-start';
 
-CREATE VIEW default.mail_metrics_latest AS
+CREATE VIEW default.email_metrics_latest AS
 SELECT
     ServiceName,
     multiIf(
