@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { useEffect, useId, useState } from "react";
-import { Menu, X } from "lucide-react";
+import { useId, useState } from "react";
+import { Menu } from "lucide-react";
 
 // TopNav — the single masthead nav surfaced on every Guardian treatment.
 // Three rooms: Home (Workshop) · Letters · Newsroom. The same component
@@ -9,11 +9,9 @@ import { Menu, X } from "lucide-react";
 // from `var(--treatment-ink)` so the indicator repaints per treatment
 // (graphite on Iron, ink on Argent/Paper) without per-room logic.
 //
-// Mobile fallback is a same-tree disclosure (no Portal). Keeping the
-// dialog inside the layout's data-treatment subtree means treatment
-// tokens (--treatment-ground / --treatment-ink / --treatment-muted)
-// cascade naturally; a portaled Sheet would re-root under <body> and
-// lose the scope.
+// Mobile uses the platform Popover API: the menu belongs to the top layer,
+// auto-dismisses on outside click/Escape, and only takes the space its links
+// need instead of opening a full-screen disclosure.
 
 interface NavItem {
   readonly to: "/" | "/letters" | "/newsroom";
@@ -35,27 +33,6 @@ export function TopNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [open, setOpen] = useState(false);
   const panelId = useId();
-
-  // Close the mobile panel when the route flips (so tapping a link
-  // dismisses without us reading internal Link events).
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
-  // Escape closes; body scroll locks while the panel covers the page.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [open]);
 
   return (
     <>
@@ -86,16 +63,15 @@ export function TopNav() {
         aria-label="Open menu"
         aria-expanded={open}
         aria-controls={panelId}
-        onClick={() => setOpen(true)}
-        className="inline-flex h-[22px] w-[22px] items-center justify-center md:hidden"
+        popoverTarget={panelId}
+        popoverTargetAction="toggle"
+        className="-mx-[11px] -my-[11px] inline-flex h-11 w-11 items-center justify-center md:hidden"
         style={{ color: "var(--treatment-ink)" }}
       >
         <Menu size={17} aria-hidden="true" />
       </button>
 
-      {open ? (
-        <MobileNavPanel id={panelId} pathname={pathname} onClose={() => setOpen(false)} />
-      ) : null}
+      <MobileNavPanel id={panelId} pathname={pathname} onToggle={setOpen} />
     </>
   );
 }
@@ -103,55 +79,36 @@ export function TopNav() {
 function MobileNavPanel({
   id,
   pathname,
-  onClose,
+  onToggle,
 }: {
   id: string;
   pathname: string;
-  onClose: () => void;
+  onToggle: (open: boolean) => void;
 }) {
   return (
-    <div
+    <nav
       id={id}
-      role="dialog"
-      aria-modal="true"
+      popover="auto"
       aria-label="Site navigation"
-      className="fixed inset-0 z-50 md:hidden"
+      onToggle={(event) => onToggle(event.newState === "open")}
+      className="fixed inset-auto top-[calc(var(--header-h)+var(--chrome-edge-gap))] right-[var(--chrome-inline-gap)] bottom-auto left-[var(--chrome-inline-gap)] z-50 m-0 w-auto max-w-none border-0 px-4 py-4 text-right shadow-[0_12px_30px_rgba(0,0,0,0.14)] md:hidden"
+      style={{
+        background: "var(--treatment-ground)",
+        color: "var(--treatment-ink)",
+      }}
     >
-      <button
-        type="button"
-        aria-label="Close menu"
-        onClick={onClose}
-        className="absolute inset-0 block h-full w-full"
-        style={{ background: "rgba(11, 11, 11, 0.55)" }}
-      />
-      <div
-        className="absolute inset-x-0 top-0 flex flex-col gap-8 px-6 py-6"
-        style={{
-          background: "var(--treatment-ground)",
-          color: "var(--treatment-ink)",
-        }}
-      >
-        <div className="flex items-center justify-end">
-          <button
-            type="button"
-            aria-label="Close menu"
-            onClick={onClose}
-            className="-mr-2 inline-flex items-center justify-center p-2"
-            style={{ color: "var(--treatment-ink)" }}
-          >
-            <X size={22} aria-hidden="true" />
-          </button>
-        </div>
-        <nav className="flex flex-col gap-1 pb-2">
-          {ITEMS.map((item) => {
-            const isActive = item.match(pathname);
-            return (
+      <ul className="m-0 flex list-none flex-col items-end gap-3 p-0">
+        {ITEMS.map((item) => {
+          const isActive = item.match(pathname);
+          return (
+            <li key={item.to}>
               <Link
-                key={item.to}
                 to={item.to}
                 aria-current={isActive ? "page" : undefined}
-                onClick={onClose}
-                className="py-2 font-mono text-[14px] font-medium uppercase tracking-[0.16em]"
+                onClick={() => {
+                  document.getElementById(id)?.hidePopover();
+                }}
+                className="py-2 text-right font-mono text-[11px] font-medium uppercase tracking-[0.16em]"
                 style={{
                   color: isActive ? "var(--treatment-ink)" : "var(--treatment-muted)",
                   textDecoration: isActive ? "underline" : undefined,
@@ -161,18 +118,10 @@ function MobileNavPanel({
               >
                 {item.label}
               </Link>
-            );
-          })}
-        </nav>
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 transition-[height,background-color] duration-300 ease-out"
-          style={{
-            height: "var(--treatment-rule-thickness)",
-            background: "var(--treatment-rule-color)",
-          }}
-        />
-      </div>
-    </div>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }
