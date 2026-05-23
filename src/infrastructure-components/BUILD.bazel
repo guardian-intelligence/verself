@@ -30,7 +30,6 @@ filegroup(
         "//src/infrastructure-components/stalwart:role_sources",
         "//src/infrastructure-components/temporal-platform:role_sources",
         "//src/infrastructure-components/tigerbeetle:role_sources",
-        "//src/infrastructure-components/verdaccio:role_sources",
         "//src/infrastructure-components/zitadel:role_sources",
         "//src/infrastructure-components/zot:role_sources",
     ],
