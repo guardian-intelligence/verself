@@ -1,17 +1,35 @@
 import { defineConfig } from "vite-plus";
 
+const generatedIgnorePatterns = [
+  "**/__generated/**",
+  "**/__generated_sources/**",
+  "**/routeTree.gen.ts",
+] as const;
+
+const buildOutputIgnorePatterns = [
+  "**/dist/**",
+  "**/dist-ssr/**",
+  "**/.output/**",
+  "**/.tanstack/**",
+  "**/.vinxi/**",
+  "**/coverage/**",
+  "**/test-results/**",
+  "**/playwright-report/**",
+  "**/blob-report/**",
+] as const;
+
+const toolIgnorePatterns = [
+  "**/node_modules/**",
+  ...buildOutputIgnorePatterns,
+  ...generatedIgnorePatterns,
+] as const;
+
 export default defineConfig({
   fmt: {
-    ignorePatterns: ["**/__generated/**", "**/routeTree.gen.ts"],
+    ignorePatterns: [...toolIgnorePatterns],
   },
   lint: {
-    ignorePatterns: [
-      "**/dist/**",
-      "**/.output/**",
-      "**/node_modules/**",
-      "**/__generated/**",
-      "**/routeTree.gen.ts",
-    ],
+    ignorePatterns: [...toolIgnorePatterns],
     options: { typeAware: true, typeCheck: true },
     rules: {
       "no-console": ["error", { allow: ["error"] }],
@@ -32,7 +50,7 @@ export default defineConfig({
       "packages/**/*.test.ts",
       "packages/**/*.test.tsx",
     ],
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.output/**"],
+    exclude: ["**/node_modules/**", ...buildOutputIgnorePatterns],
     environment: "node",
   },
   run: {
