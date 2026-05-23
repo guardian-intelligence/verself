@@ -384,10 +384,12 @@ func (c *guestControl) initLease(ctx context.Context, leaseID string, network vm
 }
 
 func (c *guestControl) afterRestore(ctx context.Context, leaseID string, network vmproto.NetworkConfig, filesystems []vmproto.FilesystemMount, activationMode ActivationMode) ([]vmproto.FilesystemMountResult, error) {
+	hostUnixNano := time.Now().UTC().UnixNano()
 	spanCtx, endSpan := startStepSpan(ctx, "vmorchestrator.guest.after_restore",
 		attribute.String("lease.id", leaseID),
 		attribute.Int("filesystem.mount_count", len(filesystems)),
 		attribute.String("firecracker.activation_mode", string(activationMode)),
+		attribute.Int64("host.wall_unix_nano", hostUnixNano),
 	)
 	var retErr error
 	defer func() { endSpan(retErr) }()
@@ -397,6 +399,7 @@ func (c *guestControl) afterRestore(ctx context.Context, leaseID string, network
 		Filesystems:     filesystems,
 		ProtocolVersion: vmproto.ProtocolVersion,
 		ActivationMode:  string(activationMode),
+		HostUnixNano:    hostUnixNano,
 	}); err != nil {
 		retErr = fmt.Errorf("send after restore: %w", err)
 		return nil, retErr
@@ -508,6 +511,12 @@ func recordLeaseInitTimingAttrs(ctx context.Context, timings *vmproto.LeaseInitT
 			attribute.Float64("guest.clock_sync.skew_ppm", timings.ClockSync.SkewPPM),
 			attribute.String("guest.clock_sync.leap_status", timings.ClockSync.LeapStatus),
 			attribute.Int64("guest.clock_sync.waitsync_ms", timings.ClockSync.WaitSyncMS),
+			attribute.Int64("guest.clock_sync.host_unix_nano", timings.ClockSync.HostUnixNano),
+			attribute.Int64("guest.clock_sync.guest_unix_nano", timings.ClockSync.GuestUnixNano),
+			attribute.Int64("guest.clock_sync.wall_offset_ns", timings.ClockSync.WallOffsetNS),
+			attribute.Int64("guest.clock_sync.pre_step_wall_offset_ns", timings.ClockSync.PreStepWallOffsetNS),
+			attribute.Int64("guest.clock_sync.post_step_wall_offset_ns", timings.ClockSync.PostStepWallOffsetNS),
+			attribute.Bool("guest.clock_sync.host_step_applied", timings.ClockSync.HostStepApplied),
 		)
 	}
 }

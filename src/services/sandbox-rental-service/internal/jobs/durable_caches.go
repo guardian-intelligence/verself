@@ -47,7 +47,7 @@ const (
 	durablePoolHardWatermarkPermille = 850
 
 	goldenVMFirecrackerABIHash        = "firecracker-v1.15.0"
-	goldenVMAfterRestoreHookVersion   = "after_restore.chrony_v1"
+	goldenVMAfterRestoreHookVersion   = "after_restore.host_wall_clock_v1"
 	goldenVMBeforeSnapshotHookVersion = "before_golden_snapshot.v1"
 )
 
@@ -2596,7 +2596,7 @@ func goldenVMVsockModelHash() string {
 }
 
 func goldenVMClockModelHash() string {
-	return stableHex("kvm-ptp", "chrony", "firecracker-v1.15-load-snapshot-schema", "after-restore-waitsync-v1")
+	return stableHex("kvm-ptp", "chrony", "host-wall-clock-step", "firecracker-v1.15-load-snapshot-schema", "after-restore-wall-clock-v1")
 }
 
 func goldenVMSourceGenerationSetHash(staticMounts []vmorchestrator.FilesystemMount, ops []durableCacheOperation) string {

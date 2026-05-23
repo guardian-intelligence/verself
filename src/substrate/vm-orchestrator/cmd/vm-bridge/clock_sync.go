@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/verself/vm-orchestrator/vmproto"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -26,6 +27,12 @@ const (
 	chronycCommandWait = 15 * time.Second
 	clockMaxOffsetNS   = int64(10 * time.Millisecond)
 	clockMaxSkewPPM    = 100.0
+	clockMaxWallOffset = 5 * time.Second
+)
+
+var (
+	wallClockNow        = time.Now
+	setRealtimeUnixNano = realSetRealtimeUnixNano
 )
 
 func startChrony() error {
@@ -176,6 +183,62 @@ func syncClockWithChrony() (vmproto.ClockSyncResult, error) {
 	}
 	tracking.Status = "synchronized"
 	return tracking, nil
+}
+
+func syncRestoredClockWithChrony(hostUnixNano int64) (vmproto.ClockSyncResult, error) {
+	result, err := syncClockWithChrony()
+	if err != nil {
+		return result, err
+	}
+	if err := verifyRestoredWallClock(&result, hostUnixNano); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func verifyRestoredWallClock(result *vmproto.ClockSyncResult, hostUnixNano int64) error {
+	if hostUnixNano <= 0 {
+		result.Status = "host_time_missing"
+		return errors.New("after_restore host_unix_nano is required")
+	}
+	result.HostUnixNano = hostUnixNano
+	guestUnixNano := wallClockNow().UnixNano()
+	preOffset := guestUnixNano - hostUnixNano
+	result.GuestUnixNano = guestUnixNano
+	result.WallOffsetNS = preOffset
+	if wallOffsetWithinLimit(preOffset) {
+		return nil
+	}
+
+	result.PreStepWallOffsetNS = preOffset
+	if err := setRealtimeUnixNano(hostUnixNano); err != nil {
+		result.Status = "host_step_failed"
+		return fmt.Errorf("step restored realtime clock: %w", err)
+	}
+	result.HostStepApplied = true
+
+	guestUnixNano = wallClockNow().UnixNano()
+	postOffset := guestUnixNano - hostUnixNano
+	result.GuestUnixNano = guestUnixNano
+	result.WallOffsetNS = postOffset
+	result.PostStepWallOffsetNS = postOffset
+	if !wallOffsetWithinLimit(postOffset) {
+		result.Status = "host_step_offset_exceeded"
+		return fmt.Errorf("restored wall clock offset %dns exceeds %dns after host step", postOffset, clockMaxWallOffset.Nanoseconds())
+	}
+	return nil
+}
+
+func wallOffsetWithinLimit(offsetNS int64) bool {
+	return math.Abs(float64(offsetNS)) <= float64(clockMaxWallOffset.Nanoseconds())
+}
+
+func realSetRealtimeUnixNano(unixNano int64) error {
+	ts := unix.NsecToTimespec(unixNano)
+	if err := unix.ClockSettime(unix.CLOCK_REALTIME, &ts); err != nil {
+		return fmt.Errorf("clock_settime(CLOCK_REALTIME): %w", err)
+	}
+	return nil
 }
 
 func requirePTPDevice() error {

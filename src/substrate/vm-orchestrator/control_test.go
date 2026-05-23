@@ -141,6 +141,98 @@ func TestInitLeaseRecordsClockSyncOnLeaseInitSpan(t *testing.T) {
 	assertSpanAttr(t, attrs, "guest.lease_init.sync_clock_ms", int64(123))
 }
 
+func TestAfterRestoreSendsHostWallClockAndRecordsClockGate(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	oldTracer := tracer
+	tracer = provider.Tracer("vm-orchestrator")
+	t.Cleanup(func() {
+		tracer = oldTracer
+		_ = provider.Shutdown(context.Background())
+	})
+
+	hostConn, guestConn := net.Pipe()
+	control := &guestControl{conn: hostConn, reader: hostConn, codec: vmproto.NewCodec(hostConn, hostConn)}
+	t.Cleanup(func() { _ = control.close() })
+
+	beforeSend := time.Now().UTC().UnixNano()
+	serverDone := make(chan error, 1)
+	go func() {
+		defer func() { _ = guestConn.Close() }()
+		codec := vmproto.NewCodec(guestConn, guestConn)
+		env, err := codec.ReadEnvelope()
+		if err != nil {
+			serverDone <- fmt.Errorf("read after restore: %w", err)
+			return
+		}
+		if env.Type != vmproto.TypeAfterRestore {
+			serverDone <- fmt.Errorf("message type = %s, want %s", env.Type, vmproto.TypeAfterRestore)
+			return
+		}
+		msg, err := vmproto.DecodePayload[vmproto.AfterRestore](env)
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if msg.HostUnixNano < beforeSend {
+			serverDone <- fmt.Errorf("host_unix_nano = %d, before send bound %d", msg.HostUnixNano, beforeSend)
+			return
+		}
+		if msg.HostUnixNano > time.Now().UTC().Add(time.Second).UnixNano() {
+			serverDone <- fmt.Errorf("host_unix_nano = %d is in the future", msg.HostUnixNano)
+			return
+		}
+		result, err := vmproto.NewEnvelope(vmproto.TypeAfterRestoreResult, 1, time.Now().UnixNano(), vmproto.AfterRestoreResult{
+			LeaseID:         msg.LeaseID,
+			ProtocolVersion: vmproto.ProtocolVersion,
+			Timings: &vmproto.LeaseInitTimings{
+				SyncClockMS:      77,
+				TotalLeaseInitMS: 88,
+				ClockSync: &vmproto.ClockSyncResult{
+					Status:               "synchronized",
+					Source:               "KVM",
+					OffsetNS:             22,
+					SkewPPM:              0.005,
+					LeapStatus:           "Normal",
+					WaitSyncMS:           42,
+					HostUnixNano:         msg.HostUnixNano,
+					GuestUnixNano:        msg.HostUnixNano + int64(25*time.Millisecond),
+					WallOffsetNS:         int64(25 * time.Millisecond),
+					PreStepWallOffsetNS:  int64(-25 * time.Minute),
+					PostStepWallOffsetNS: int64(25 * time.Millisecond),
+					HostStepApplied:      true,
+				},
+			},
+		})
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		serverDone <- codec.WriteEnvelope(result)
+	}()
+
+	ctx, parent := tracer.Start(context.Background(), "test.parent")
+	results, err := control.afterRestore(ctx, "lease-a", vmproto.NetworkConfig{}, nil, ActivationModeSnapshotRestore)
+	parent.End()
+	if err != nil {
+		t.Fatalf("after restore: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %d, want 0", len(results))
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+
+	span := findRecordedSpan(t, recorder.Ended(), "vmorchestrator.guest.after_restore")
+	attrs := span.Attributes()
+	assertSpanAttr(t, attrs, "guest.clock_sync.status", "synchronized")
+	assertSpanAttr(t, attrs, "guest.clock_sync.wall_offset_ns", int64(25*time.Millisecond))
+	assertSpanAttr(t, attrs, "guest.clock_sync.pre_step_wall_offset_ns", int64(-25*time.Minute))
+	assertSpanAttr(t, attrs, "guest.clock_sync.post_step_wall_offset_ns", int64(25*time.Millisecond))
+	assertSpanAttr(t, attrs, "guest.clock_sync.host_step_applied", true)
+}
+
 func findRecordedSpan(t *testing.T, spans []sdktrace.ReadOnlySpan, name string) sdktrace.ReadOnlySpan {
 	t.Helper()
 	for _, span := range spans {

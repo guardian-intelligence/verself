@@ -532,7 +532,7 @@ func (s *agentSession) handleAfterRestoreRequest(env vmproto.Envelope) error {
 	results := s.verifyRestoredFilesystems(req.Filesystems)
 	timings.MountFilesystemsMS = time.Since(stepStarted).Milliseconds()
 	stepStarted = time.Now()
-	clockSync, err := syncClockWithChrony()
+	clockSync, err := syncRestoredClockWithChrony(req.HostUnixNano)
 	timings.SyncClockMS = time.Since(stepStarted).Milliseconds()
 	timings.ClockSync = &clockSync
 	if err != nil {

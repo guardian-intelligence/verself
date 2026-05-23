@@ -126,6 +126,7 @@ type AfterRestore struct {
 	Filesystems     []FilesystemMount `json:"filesystems,omitempty"`
 	ProtocolVersion int               `json:"protocol_version"`
 	ActivationMode  string            `json:"activation_mode,omitempty"`
+	HostUnixNano    int64             `json:"host_unix_nano,omitempty"`
 }
 
 type AfterRestoreResult struct {
@@ -147,13 +148,19 @@ type LeaseInitTimings struct {
 }
 
 type ClockSyncResult struct {
-	Status      string  `json:"status"`
-	Source      string  `json:"source,omitempty"`
-	OffsetNS    int64   `json:"offset_ns,omitempty"`
-	SkewPPM     float64 `json:"skew_ppm,omitempty"`
-	LeapStatus  string  `json:"leap_status,omitempty"`
-	WaitSyncMS  int64   `json:"waitsync_ms,omitempty"`
-	TrackingRaw string  `json:"tracking_raw,omitempty"`
+	Status               string  `json:"status"`
+	Source               string  `json:"source,omitempty"`
+	OffsetNS             int64   `json:"offset_ns,omitempty"`
+	SkewPPM              float64 `json:"skew_ppm,omitempty"`
+	LeapStatus           string  `json:"leap_status,omitempty"`
+	WaitSyncMS           int64   `json:"waitsync_ms,omitempty"`
+	TrackingRaw          string  `json:"tracking_raw,omitempty"`
+	HostUnixNano         int64   `json:"host_unix_nano,omitempty"`
+	GuestUnixNano        int64   `json:"guest_unix_nano,omitempty"`
+	WallOffsetNS         int64   `json:"wall_offset_ns,omitempty"`
+	PreStepWallOffsetNS  int64   `json:"pre_step_wall_offset_ns,omitempty"`
+	PostStepWallOffsetNS int64   `json:"post_step_wall_offset_ns,omitempty"`
+	HostStepApplied      bool    `json:"host_step_applied,omitempty"`
 }
 
 type FilesystemMount struct {

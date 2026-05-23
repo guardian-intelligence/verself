@@ -54,7 +54,8 @@ lease.
 
 - Fresh lease identity, attempt identity, runner identity, and provider runtime
   metadata.
-- Chrony/KVM PTP synchronization before customer exec.
+- Host wall-clock step from the lease control plane, followed by Chrony/KVM PTP
+  synchronization before customer exec.
 - Network rebinding for the fresh TAP address, gateway, DNS, and neighbor
   state.
 - Host control socket reconnection.
@@ -137,9 +138,9 @@ the Verself manifest contract:
 - Firecracker writes the VM state file and guest memory file; block-device
   contents are caller-managed and must be snapshotted by vm-orchestrator.
 - The pinned Firecracker `LoadSnapshot` request receives per-lease TAP
-  rebinding through `network_overrides`. vm-bridge restore hooks require
-  chrony synchronization through `/dev/ptp0` before host control exposes
-  customer exec.
+  rebinding through `network_overrides`. vm-bridge restore hooks step restored
+  guest realtime from the host lease-control timestamp and require chrony
+  synchronization through `/dev/ptp0` before host control exposes customer exec.
 - Guest network connections and open vsock connections are not reusable across
   a restored Firecracker process. `AfterRestore` reconnects host control and
   rebinds per-lease network state.

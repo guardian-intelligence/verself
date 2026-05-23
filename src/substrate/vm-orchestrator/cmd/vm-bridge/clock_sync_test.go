@@ -4,6 +4,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/verself/vm-orchestrator/vmproto"
 )
 
 func TestParseChronyTracking(t *testing.T) {
@@ -71,5 +74,62 @@ func TestChronycArgsUseLocalCommandSocket(t *testing.T) {
 	want := []string{"-h", chronySocketPath, "-n", "tracking"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("chronyc args = %#v, want %#v", got, want)
+	}
+}
+
+func TestVerifyRestoredWallClockStepsStaleClock(t *testing.T) {
+	oldNow := wallClockNow
+	oldSetRealtime := setRealtimeUnixNano
+	t.Cleanup(func() {
+		wallClockNow = oldNow
+		setRealtimeUnixNano = oldSetRealtime
+	})
+
+	hostTime := time.Unix(0, 1_800_000_000_000)
+	nowCalls := 0
+	wallClockNow = func() time.Time {
+		nowCalls++
+		switch nowCalls {
+		case 1:
+			return hostTime.Add(-25 * time.Minute)
+		default:
+			return hostTime.Add(25 * time.Millisecond)
+		}
+	}
+	var steppedTo int64
+	setRealtimeUnixNano = func(unixNano int64) error {
+		steppedTo = unixNano
+		return nil
+	}
+
+	result := vmproto.ClockSyncResult{Status: "synchronized"}
+	if err := verifyRestoredWallClock(&result, hostTime.UnixNano()); err != nil {
+		t.Fatalf("verify restored wall clock: %v", err)
+	}
+	if steppedTo != hostTime.UnixNano() {
+		t.Fatalf("stepped to %d, want %d", steppedTo, hostTime.UnixNano())
+	}
+	if !result.HostStepApplied {
+		t.Fatal("host step was not recorded")
+	}
+	if result.PreStepWallOffsetNS != int64(-25*time.Minute) {
+		t.Fatalf("pre-step offset = %d, want %d", result.PreStepWallOffsetNS, int64(-25*time.Minute))
+	}
+	if result.PostStepWallOffsetNS != int64(25*time.Millisecond) {
+		t.Fatalf("post-step offset = %d, want %d", result.PostStepWallOffsetNS, int64(25*time.Millisecond))
+	}
+	if result.WallOffsetNS != int64(25*time.Millisecond) {
+		t.Fatalf("wall offset = %d, want %d", result.WallOffsetNS, int64(25*time.Millisecond))
+	}
+}
+
+func TestVerifyRestoredWallClockRequiresHostTime(t *testing.T) {
+	result := vmproto.ClockSyncResult{Status: "synchronized"}
+	err := verifyRestoredWallClock(&result, 0)
+	if err == nil {
+		t.Fatal("verify restored wall clock returned nil error")
+	}
+	if result.Status != "host_time_missing" {
+		t.Fatalf("status = %q, want host_time_missing", result.Status)
 	}
 }
