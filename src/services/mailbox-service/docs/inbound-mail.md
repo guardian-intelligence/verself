@@ -69,7 +69,7 @@ There are now two mail-adjacent PostgreSQL databases:
 
 ## Mailbox scheme and address policy
 
-Company address policy lives in [company-address-policy.md](company-address-policy.md). It excludes title aliases such as `ceo@<domain>`, `founder@<domain>`, and `founders@<domain>`. Personal mailboxes use durable human addresses, and company functions use role addresses such as `hello@<domain>`, `security@<domain>`, `sales@<domain>`, and `postmaster@<domain>`.
+Company address policy lives in [company-address-policy.md](company-address-policy.md). It excludes title aliases such as `ceo@<domain>`, `founder@<domain>`, and `founders@<domain>`. The target email-service model provisions exactly one org-scoped Verself email identity per address. Personal mailboxes use durable named human addresses, and company functions use managed role addresses such as `hello@<domain>`, `security@<domain>`, `sales@<domain>`, and `postmaster@<domain>`.
 
 Current implementation state:
 
