@@ -1,5 +1,4 @@
-# Authored substrate host file.
-# Source: src/host/ansible/host-files
+# Owner-local nftables file.
 # nftables ruleset openbao.
 table inet verself_openbao
 delete table inet verself_openbao

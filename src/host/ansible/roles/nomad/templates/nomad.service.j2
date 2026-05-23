@@ -2,8 +2,7 @@
 [Unit]
 Description=Nomad
 Documentation=https://developer.hashicorp.com/nomad/docs
-After=verself-firewall.target network.target
-Requires=verself-firewall.target
+After=network.target
 
 [Service]
 Type=notify

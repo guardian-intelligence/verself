@@ -1,0 +1,78 @@
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "nftables_tool_nftables_deb",
+    downloaded_file_path = "nftables.deb",
+    sha256 = "d648859fccde3c17b8b9b89993427564f91f394a39306db1f67bd5ea3ac42c6e",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/n/nftables/nftables_1.0.9-1ubuntu0.1_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libnftables1_deb",
+    downloaded_file_path = "libnftables1.deb",
+    sha256 = "fcaee001747a6adaa0cd9337fef437b3aa7a7a6d5246b62fbd4784d3d6a5009e",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/n/nftables/libnftables1_1.0.9-1ubuntu0.1_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libnftnl11_deb",
+    downloaded_file_path = "libnftnl11.deb",
+    sha256 = "e5bde5c9cbb95082700011f0b7ef2c0a41900b0a9fd7434f6e90448e2a7b4e50",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/libn/libnftnl/libnftnl11_1.2.6-2build1_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libmnl0_deb",
+    downloaded_file_path = "libmnl0.deb",
+    sha256 = "5170658bf0eaf54a8c7d53061ca6b47a6cf33a83543a75fa521de7046cb7197a",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/libm/libmnl/libmnl0_1.0.5-2build1_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libjansson4_deb",
+    downloaded_file_path = "libjansson4.deb",
+    sha256 = "0cf79113f5d193ce9af2be2ff4b2c3b30dd4e55a0b6c47f7d28f6c849ff3aa60",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/j/jansson/libjansson4_2.14-2build2_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libedit2_deb",
+    downloaded_file_path = "libedit2.deb",
+    sha256 = "3afbc8ddf835049dd4d88275b9d13680e4c4cdd59e191cbd63424152cc08e00e",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/libe/libedit/libedit2_3.1-20230828-1build1_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libbsd0_deb",
+    downloaded_file_path = "libbsd0.deb",
+    sha256 = "f3857b0863ac5cfd4263e9bf6cfb1d4be88d5321e4070d5bc2b62b0949e6c86f",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/libb/libbsd/libbsd0_0.12.1-1build1.1_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libmd0_deb",
+    downloaded_file_path = "libmd0.deb",
+    sha256 = "e5ba01d3c41f256aaf57ec59aa0554857162e3e7f97cdfbff1ed2c0e8d720ee7",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/libm/libmd/libmd0_1.1.0-2build1.1_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libgmp10_deb",
+    downloaded_file_path = "libgmp10.deb",
+    sha256 = "285f8a505dfa8e1b33f357a9d8d3477ad35bf18c0b34771a6df4c25923f3ae0d",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/g/gmp/libgmp10_6.3.0+dfsg-2ubuntu6.1_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libxtables12_deb",
+    downloaded_file_path = "libxtables12.deb",
+    sha256 = "c94063499d1b0b336f39607107efb7de95d52a5d4e7e6a9368a5f7308f05b714",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/i/iptables/libxtables12_1.8.10-3ubuntu2_amd64.deb",
+)
+
+http_file(
+    name = "nftables_tool_libtinfo6_deb",
+    downloaded_file_path = "libtinfo6.deb",
+    sha256 = "53e1e1753729d04cf65b05e6e58abe06e2bb76cc07eff0e1b2a638a638ca209b",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/n/ncurses/libtinfo6_6.4+20240113-1ubuntu2_amd64.deb",
+)

@@ -14,7 +14,7 @@ bind_addr = "{{ nomad_host }}"
 # HTTP is the only host-bootstrap Nomad port — operators connect here
 # over wg-ops or SSH-forwarded loopback. RPC (4647) and Serf (4648) stay
 # on Nomad's defaults; both are loopback-only on a single-node deploy
-# and the host firewall already drops non-loopback ingress.
+# and the nftables component drops non-loopback ingress.
 ports {
   http = {{ nomad_http_port }}
 }

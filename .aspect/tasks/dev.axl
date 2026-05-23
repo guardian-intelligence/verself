@@ -3,13 +3,11 @@
 load(
     ".aspect/lib/helpers.axl",
     "ASPECT_OPERATOR_TARGET",
-    "HOST_CONFIGURATION_DIR",
     "SOPS_SHIM",
     "VITEPLUS_VP_SCRIPT",
+    "bazel_output_file",
     "bazel_run",
     "checked_spawn",
-    "host_ansible_env",
-    "host_ansible_playbook",
     "install_bazel_tool_shims",
     "inventory_check",
     "viteplus_node",
@@ -35,24 +33,6 @@ DEV_CONVENIENCE_SHIMS = [
     ("uvx", "//src/tools/dev/binaries:uvx"),
 ]
 
-def _ansible_local(ctx, playbook, extra_args = None, tool_shims = None, include_collections = True):
-    ansible_playbook = host_ansible_playbook(ctx)
-    if ansible_playbook == "":
-        return 1
-    env = host_ansible_env(ctx, tool_shims = tool_shims, include_collections = include_collections)
-    if env == None:
-        return 1
-    extra = extra_args if extra_args != None else []
-    args_list = [playbook] + list(extra)
-    return checked_spawn(
-        ctx,
-        ansible_playbook,
-        args_list,
-        cwd = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
-        env = env,
-        label = "ansible-playbook " + " ".join(args_list),
-    )
-
 def _install_impl(ctx):
     if ctx.args.install_shims or ctx.args.print_path:
         bin_dir = install_bazel_tool_shims(ctx, DEV_CONVENIENCE_SHIMS, ctx.args.bin_dir)
@@ -63,26 +43,27 @@ def _install_impl(ctx):
     return 0
 
 def _sops_init_impl(ctx):
-    bin_dir = install_bazel_tool_shims(
-        ctx,
-        [
-            ("age-keygen", "//src/tools/dev/binaries:age-keygen"),
-            SOPS_SHIM,
-        ],
-        ".verself/tools/host/bin",
-    )
-    if bin_dir == "":
+    age_keygen = bazel_output_file(ctx, "//src/tools/dev/binaries:age-keygen")
+    if age_keygen == "":
         return 1
-    return _ansible_local(
+    sops = bazel_output_file(ctx, "//src/tools/dev/binaries:sops")
+    if sops == "":
+        return 1
+    return bazel_run(
         ctx,
-        "playbooks/setup-sops.yml",
-        extra_args = [
-            "-e",
-            "age_keygen_bin=" + bin_dir + "/age-keygen",
-            "-e",
-            "sops_bin=" + bin_dir + "/sops",
+        "//src/tools/dev/cmd/sops-init:sops-init",
+        [
+            "--repo-root",
+            ws_path(ctx),
+            "--site",
+            "prod",
+            "--age-keygen-bin",
+            age_keygen,
+            "--sops-bin",
+            sops,
         ],
-        tool_shims = [SOPS_SHIM],
+        cwd = ws_path(ctx),
+        label = "sops-init",
     )
 
 def _hooks_install_impl(ctx):

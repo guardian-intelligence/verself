@@ -1,7 +1,0 @@
----
-argument_specs:
-  main:
-    short_description: "Host firewall via nftables (default-deny ingress)"
-    description:
-      - "Copies bootstrap host nftables files."
-    options: {}

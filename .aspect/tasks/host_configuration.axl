@@ -1,4 +1,4 @@
-"""aspect host edit-secrets | firewall | service-foundation | operator-access-handoff
+"""aspect host edit-secrets | service-foundation | operator-access-handoff
 
 Bootstrap convergence and Nomad deployments do not own the operator-access
 handoff. Pomerium is a manual host action because a bad change can move SSH
@@ -11,8 +11,8 @@ load(
     "HOST_CONFIGURATION_DIR",
     "SOPS_SHIM",
     "SPIRE_IDENTITY_REGISTRY_TARGET",
-    "bazel_run",
     "bazel_output_file",
+    "bazel_run",
     "checked_spawn",
     "host_ansible_env",
     "host_ansible_playbook",
@@ -64,24 +64,6 @@ def _host_playbook(ctx, site, playbook, extra_vars = None):
         env = env,
         label = "ansible-playbook " + playbook + " --site " + site,
     )
-
-def _firewall_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
-    return _host_playbook(
-        ctx,
-        site,
-        "nftables.yml",
-    )
-
-firewall = task(
-    implementation = _firewall_impl,
-    name = "firewall",
-    group = ["host"],
-    summary = "Converge bootstrap host nftables rulesets.",
-    args = {
-        "site": args.string(default = "prod", description = "Deployment site."),
-    },
-)
 
 def _service_foundation_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE

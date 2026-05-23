@@ -1,21 +1,10 @@
 ---
 profile: production
 use_default_rules: true
-rulesdir:
-  - rules/
 
 exclude_paths:
   - .cache/
   - group_vars/all/secrets.sops.yml
-
-enable_list:
-  - no-default-ports
-  - no-execstart-secrets
-  - no-masterkey-cli
-  - no-secret-without-no-log
-  - no-validate-certs-false
-  - site-orchestrates-only
-  - services-registry-contract
 
 warn_list:
   - experimental

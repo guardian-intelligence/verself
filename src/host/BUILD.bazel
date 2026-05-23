@@ -42,10 +42,7 @@ filegroup(
         "ansible/uv.lock",
     ] + glob(
         [
-            "ansible/group_vars/**",
-            "ansible/host-files/**",
             "ansible/playbooks/**",
-            "ansible/rules/**",
             "ansible/roles/**",
         ],
         allow_empty = False,

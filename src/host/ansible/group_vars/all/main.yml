@@ -1,8 +1,0 @@
----
-# Global variables for all nodes. Site-specific bootstrap facts live under
-# src/host/sites/<site>/vars.yml.
-
-# Host file contracts are authored under src/host/ansible/host-files.
-# playbook_dir is <repo>/src/host/ansible/playbooks during convergence.
-platform_host_files_dir: "{{ playbook_dir }}/../host-files"
-postgresql_log_dir: /var/log/postgresql

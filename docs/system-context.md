@@ -13,11 +13,13 @@ The platform itself is open-source and self-hostable. The bootstrap CLI (`docs/v
 
 ## Service Architecture
 
-Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall foundation files are authored in `src/host/ansible/host-files/`; component, service, frontend, and privileged-substrate nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages.
+Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall foundation files are authored in `src/infrastructure-components/nftables/`; component, service, frontend, and privileged-substrate nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages.
 
-The bootstrap ring contains OS/package hardening, nftables foundation, Nomad
-agent state, operator-recovery SSH, and SPIRE server/agent state required
-before Nomad workloads can receive SVIDs. `aspect host service-foundation`
+The bootstrap ring contains OS/package hardening, Nomad agent state,
+operator-recovery SSH, and SPIRE server/agent state required before Nomad
+workloads can receive SVIDs. The nftables foundation is a pre-artifact Nomad
+component so firewall changes use the same deployment evidence and rollback
+path as other host-owned platform components. `aspect host service-foundation`
 converges SPIRE entries, local database declarations, runtime-secret
 declarations, and HAProxy public routing from owner-local deploy files. Runtime
 versions, component binaries, service binaries, ClickHouse migrations, and

@@ -18,7 +18,7 @@ While everyone was over for dinner yesterday, he got really quiet and walked pas
 
 I asked him why. “They beg me to ask you all the time. Ever since school ended” and he gave me permission to skip math if that would make it easier for me. I couldn’t argue. “But now I want it, too" he continued. "I wish the house was this full all the time.”
 
-He shows me every day that love and curiosity are two halves of a bigger thing that I don't have a word for yet. I cherish the way his eyes go wide flipping over rocks and seeing the worms underneath, and when he tells me his dreams about being a bird searching for a cloud that looks like you.
+He shows me every day that love and curiosity are two halves of something bigger that I don't have a word for yet. I cherish the way his eyes go wide flipping over rocks and seeing the worms underneath, and when he tells me his dreams about being a bird searching for a cloud that looks like you.
 
 Last night before bed, I was making sure he brushed his teeth and do you remember how it took years to get him to stop spitting out his toothpaste? He called it “spicy ice cream” one time and then decided he wants to try every flavor.
 

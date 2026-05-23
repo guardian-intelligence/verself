@@ -1,5 +1,4 @@
-# Authored substrate host file.
-# Source: src/host/ansible/host-files
+# Managed by Verself nftables component.
 #!/usr/sbin/nft -f
 # Host firewall: default-deny ingress with allowlisted services.
 

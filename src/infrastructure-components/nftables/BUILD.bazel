@@ -1,0 +1,93 @@
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+NFTABLES_RUNTIME_ROOT = "opt/verself/nftables"
+
+filegroup(
+    name = "config_files",
+    srcs = glob(["files/**"]),
+)
+
+filegroup(
+    name = "role_sources",
+    srcs = glob(["files/**"]),
+    visibility = ["//src/infrastructure-components:__pkg__"],
+)
+
+genrule(
+    name = "runtime_artifact",
+    srcs = [
+        ":config_files",
+        "//src/infrastructure-components/nftables/cmd/nftables-apply",
+        "@nftables_tool_libbsd0_deb//file",
+        "@nftables_tool_libedit2_deb//file",
+        "@nftables_tool_libgmp10_deb//file",
+        "@nftables_tool_libjansson4_deb//file",
+        "@nftables_tool_libmd0_deb//file",
+        "@nftables_tool_libmnl0_deb//file",
+        "@nftables_tool_libnftables1_deb//file",
+        "@nftables_tool_libnftnl11_deb//file",
+        "@nftables_tool_libtinfo6_deb//file",
+        "@nftables_tool_libxtables12_deb//file",
+        "@nftables_tool_nftables_deb//file",
+    ],
+    outs = ["nftables-runtime.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/extract"
+for deb in \
+  "$(location @nftables_tool_libbsd0_deb//file)" \
+  "$(location @nftables_tool_libedit2_deb//file)" \
+  "$(location @nftables_tool_libgmp10_deb//file)" \
+  "$(location @nftables_tool_libjansson4_deb//file)" \
+  "$(location @nftables_tool_libmd0_deb//file)" \
+  "$(location @nftables_tool_libmnl0_deb//file)" \
+  "$(location @nftables_tool_libnftables1_deb//file)" \
+  "$(location @nftables_tool_libnftnl11_deb//file)" \
+  "$(location @nftables_tool_libtinfo6_deb//file)" \
+  "$(location @nftables_tool_libxtables12_deb//file)" \
+  "$(location @nftables_tool_nftables_deb//file)"; do
+  dpkg-deb -x "$$deb" "$$tmp/extract"
+done
+mkdir -p \
+  "$$tmp/{root}/bin" \
+  "$$tmp/{root}/etc/nftables.d" \
+  "$$tmp/{root}/lib/x86_64-linux-gnu" \
+  "$$tmp/{root}/systemd"
+install -m 0755 "$$tmp/extract/usr/sbin/nft" "$$tmp/{root}/bin/nft"
+for libdir in "$$tmp/extract/lib/x86_64-linux-gnu" "$$tmp/extract/usr/lib/x86_64-linux-gnu"; do
+  if [ -d "$$libdir" ]; then
+    find "$$libdir" -maxdepth 1 -name 'lib*.so*' -exec cp -a {{}} "$$tmp/{root}/lib/x86_64-linux-gnu/" \\;
+  fi
+done
+install -m 0644 src/infrastructure-components/nftables/files/etc/nftables.conf "$$tmp/{root}/etc/nftables.conf"
+for rule in src/infrastructure-components/nftables/files/etc/nftables.d/*.nft; do
+  install -m 0644 "$$rule" "$$tmp/{root}/etc/nftables.d/$$(basename "$$rule")"
+done
+install -m 0644 src/infrastructure-components/nftables/files/systemd/verself-firewall.target "$$tmp/{root}/systemd/verself-firewall.target"
+install -m 0755 "$(location //src/infrastructure-components/nftables/cmd/nftables-apply:nftables-apply)" "$$tmp/{root}/bin/nftables-apply"
+chmod -R a+rX "$$tmp/{root}"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .
+""".format(
+        root = NFTABLES_RUNTIME_ROOT,
+    ),
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        ":runtime_artifact": "nftables-runtime",
+    },
+    component = "nftables",
+    deploy_phase = "pre_artifact",
+    job_id = "nftables",
+    job_spec = "nomad.hcl",
+    provides = ["host:firewall"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

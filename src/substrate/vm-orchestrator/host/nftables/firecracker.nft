@@ -1,5 +1,4 @@
-# Authored substrate host file.
-# Source: src/host/ansible/host-files
+# Owner-local nftables file.
 #!/usr/sbin/nft -f
 # Firecracker guest networking: NAT + forwarding for the guest pool.
 # The uplink interface placeholder below is substituted by the firecracker

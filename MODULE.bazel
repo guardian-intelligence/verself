@@ -23,6 +23,7 @@ include("//src/substrate/vm-orchestrator/guest-images:guest_images.MODULE.bazel"
 include("//src/infrastructure-components/forgejo:forgejo.MODULE.bazel")
 include("//src/infrastructure-components/grafana:grafana.MODULE.bazel")
 include("//src/infrastructure-components/haproxy:haproxy.MODULE.bazel")
+include("//src/infrastructure-components/nftables:nftables.MODULE.bazel")
 include("//src/infrastructure-components/openbao:openbao.MODULE.bazel")
 include("//src/infrastructure-components/postgresql:postgresql.MODULE.bazel")
 include("//src/infrastructure-components/stalwart:stalwart.MODULE.bazel")

@@ -1,5 +1,4 @@
-# Authored substrate host file.
-# Source: src/host/ansible/host-files
+# Owner-local nftables file.
 # nftables ruleset garage.
 table inet verself_garage
 delete table inet verself_garage

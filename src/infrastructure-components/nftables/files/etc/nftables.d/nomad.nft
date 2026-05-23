@@ -1,5 +1,4 @@
-# Authored substrate host file.
-# Source: src/host/ansible/host-files
+# Managed by Verself nftables component.
 # nftables ruleset nomad.
 table inet verself_nomad
 delete table inet verself_nomad
@@ -10,5 +9,4 @@ table inet verself_nomad {
 
         tcp dport 4646 iifname != "lo" drop
     }
-
 }
