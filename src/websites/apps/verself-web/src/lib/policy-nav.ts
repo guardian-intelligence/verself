@@ -99,6 +99,7 @@ const SECURITY_SECTIONS: readonly PolicyNavChild[] = [
 const SLA_SECTIONS: readonly PolicyNavChild[] = [
   { id: "summary", label: "Summary" },
   { id: "current-tier", label: "Current tier" },
+  { id: "time-sync", label: "Time sync" },
   { id: "maintenance", label: "Maintenance" },
   { id: "support", label: "Support" },
   { id: "future-tier", label: "Three-node tier" },
