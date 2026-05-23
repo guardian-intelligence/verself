@@ -79,6 +79,11 @@ cd "{package_name}"
 {package_setup}
 export GOFLAGS="-mod=readonly"
 export GOTOOLCHAIN=local
+packages="$$("$$go_tool" list ./...)"
+if [ -z "$$packages" ]; then
+  touch "$$out"
+  exit 0
+fi
 {invocation}
 touch "$$out"
 """.format(

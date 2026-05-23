@@ -1,27 +1,27 @@
-job "garage" {
-  name = "garage"
+job "garage-1" {
+  name = "garage-1"
   datacenters = ["dc1"]
   type = "service"
 
-  group "garage-0" {
+  group "garage-1" {
     count = 1
 
     network {
       mode = "host"
       port "s3" {
         host_network = "loopback"
-        static = 3900
-        to = 3900
+        static = 3910
+        to = 3910
       }
       port "rpc" {
         host_network = "loopback"
-        static = 3901
-        to = 3901
+        static = 3911
+        to = 3911
       }
       port "admin" {
         host_network = "loopback"
-        static = 3903
-        to = 3903
+        static = 3913
+        to = 3913
       }
     }
 
@@ -31,7 +31,7 @@ job "garage" {
 
       config {
         command = "/opt/verself/profile/bin/garage"
-        args = ["-c", "/etc/garage/garage-0.toml", "server"]
+        args = ["-c", "/etc/garage/garage-1.toml", "server"]
       }
 
       env {

@@ -41,10 +41,35 @@ nomad_component(
     digest_inputs = [":host_install"],
     job_id = "garage",
     job_spec = "nomad.hcl",
+    provides = ["garage:replica-0"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component_1",
+    component = "garage",
+    deploy_phase = "pre_artifact",
+    digest_inputs = [":host_install"],
+    job_id = "garage-1",
+    job_spec = "nomad-1.hcl",
+    provides = ["garage:replica-1"],
+    requires = ["garage:replica-0"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component_2",
+    component = "garage",
+    deploy_phase = "pre_artifact",
+    digest_inputs = [":host_install"],
+    job_id = "garage-2",
+    job_spec = "nomad-2.hcl",
     provides = [
         "artifact-origin",
+        "garage:replica-2",
         "garage:s3",
         "garage:admin",
     ],
+    requires = ["garage:replica-1"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
