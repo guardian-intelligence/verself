@@ -34,6 +34,10 @@ component_tools.hub(
     lockfile = "//src/infrastructure-components/clickhouse:tools.lock.json",
 )
 component_tools.hub(
+    hub_name = "electric_tools",
+    lockfile = "//src/infrastructure-components/electric:tools.lock.json",
+)
+component_tools.hub(
     hub_name = "forgejo_tools",
     lockfile = "//src/infrastructure-components/forgejo:tools.lock.json",
 )
@@ -84,6 +88,7 @@ component_tools.hub(
 use_repo(
     component_tools,
     "clickhouse_tools",
+    "electric_tools",
     "forgejo_tools",
     "garage_tools",
     "haproxy_tools",
@@ -100,6 +105,8 @@ use_repo(
 )
 
 register_toolchains("@clickhouse_tools//toolchains:all")
+
+register_toolchains("@electric_tools//toolchains:all")
 
 register_toolchains("@forgejo_tools//toolchains:all")
 

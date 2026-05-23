@@ -42,6 +42,8 @@
     - name: Initialize owner-local foundation declarations
       ansible.builtin.set_fact:
         postgresql_service_databases: []
+        postgresql_replication_roles: []
+        postgresql_logical_publications: []
         postgresql_peer_mappings:
           - { system_user: postgres, pg_user: postgres }
         clickhouse_client_ca_credentials: []
@@ -110,6 +112,16 @@
             postgresql_peer_mappings
             + ((lookup('ansible.builtin.file', item) | from_yaml).postgresql_peer_mappings | default([]))
           }}
+        postgresql_replication_roles: >-
+          {{
+            postgresql_replication_roles
+            + ((lookup('ansible.builtin.file', item) | from_yaml).postgresql_replication_roles | default([]))
+          }}
+        postgresql_logical_publications: >-
+          {{
+            postgresql_logical_publications
+            + ((lookup('ansible.builtin.file', item) | from_yaml).postgresql_logical_publications | default([]))
+          }}
       loop: "{{ postgresql_declaration_files }}"
       loop_control:
         label: "{{ item }}"
@@ -124,7 +136,49 @@
           - postgresql_peer_mappings | selectattr('system_user', 'defined') | list | length == postgresql_peer_mappings | length
           - postgresql_peer_mappings | selectattr('pg_user', 'defined') | list | length == postgresql_peer_mappings | length
           - postgresql_service_databases | map(attribute='name') | unique | list | length == postgresql_service_databases | length
+          - postgresql_replication_roles | selectattr('name', 'defined') | list | length == postgresql_replication_roles | length
+          - postgresql_replication_roles | selectattr('password_file', 'defined') | list | length == postgresql_replication_roles | length
+          - postgresql_replication_roles | map(attribute='name') | unique | list | length == postgresql_replication_roles | length
+          - postgresql_logical_publications | selectattr('database', 'defined') | list | length == postgresql_logical_publications | length
+          - postgresql_logical_publications | selectattr('publication', 'defined') | list | length == postgresql_logical_publications | length
+          - postgresql_logical_publications | selectattr('publication_owner', 'defined') | list | length == postgresql_logical_publications | length
+          - postgresql_logical_publications | selectattr('table_owner', 'defined') | list | length == postgresql_logical_publications | length
+          - postgresql_logical_publications | selectattr('replication_role', 'defined') | list | length == postgresql_logical_publications | length
+          - postgresql_logical_publications | selectattr('tables', 'defined') | list | length == postgresql_logical_publications | length
+          - >-
+            (postgresql_logical_publications
+            | map(attribute='replication_role')
+            | list
+            | difference(postgresql_replication_roles | map(attribute='name') | list)
+            | length) == 0
         fail_msg: "Owner-local PostgreSQL deploy declarations are missing or malformed."
+
+    - name: Assert owner-local PostgreSQL replication role declarations are well formed
+      ansible.builtin.assert:
+        that:
+          - item.name is match('^[a-z][a-z0-9_]*$')
+          - item.password_file is match('^/')
+          - item.connection_limit | default(15) | int > 0
+        fail_msg: "Owner-local PostgreSQL replication role declaration is malformed."
+      loop: "{{ postgresql_replication_roles }}"
+      loop_control:
+        label: "{{ item.name | default('unnamed-replication-role') }}"
+
+    - name: Assert owner-local PostgreSQL logical publication declarations are well formed
+      ansible.builtin.assert:
+        that:
+          - item.database is match('^[a-z][a-z0-9_]*$')
+          - item.publication is match('^[a-z][a-z0-9_]*$')
+          - item.publication_owner is match('^[a-z][a-z0-9_]*$')
+          - item.table_owner is match('^[a-z][a-z0-9_]*$')
+          - item.replication_role is match('^[a-z][a-z0-9_]*$')
+          - item.publication_owner == item.replication_role
+          - item.tables | length > 0
+          - item.tables | select('match', '^[a-z][a-z0-9_]*$') | list | length == item.tables | length
+        fail_msg: "Owner-local PostgreSQL logical publication declaration is malformed."
+      loop: "{{ postgresql_logical_publications }}"
+      loop_control:
+        label: "{{ item.publication | default('unnamed-publication') }}"
 
     - name: Converge PostgreSQL local service databases
       ansible.builtin.include_role:
@@ -199,13 +253,11 @@
         that:
           - item.name | length > 0
           - >-
-            {{
-              [
-                item.site_secret is defined,
-                item.value is defined,
-                item.file is defined
-              ] | select('equalto', true) | list | length == 1
-            }}
+            ([
+              item.site_secret is defined,
+              item.value is defined,
+              item.file is defined
+            ] | select('equalto', true) | list | length) == 1
         fail_msg: "Owner-local OpenBao runtime-secret deploy declarations must set exactly one of site_secret, value, or file."
       loop: "{{ openbao_runtime_secret_seed_declarations }}"
       loop_control:

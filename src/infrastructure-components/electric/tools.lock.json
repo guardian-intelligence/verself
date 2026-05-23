@@ -1,0 +1,53 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "containerd": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.3.1/containerd-static-2.3.1-linux-amd64.tar.gz",
+        "sha256": "3e7da6f4eaab072e11fc2e88f5a2eaf6da6ffff2c6c2a8f262d3856df8e2be35",
+        "type": "tar.gz",
+        "file": "bin/containerd",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "containerd-shim-runc-v2": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.3.1/containerd-static-2.3.1-linux-amd64.tar.gz",
+        "sha256": "3e7da6f4eaab072e11fc2e88f5a2eaf6da6ffff2c6c2a8f262d3856df8e2be35",
+        "type": "tar.gz",
+        "file": "bin/containerd-shim-runc-v2",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "ctr": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/containerd/containerd/releases/download/v2.3.1/containerd-static-2.3.1-linux-amd64.tar.gz",
+        "sha256": "3e7da6f4eaab072e11fc2e88f5a2eaf6da6ffff2c6c2a8f262d3856df8e2be35",
+        "type": "tar.gz",
+        "file": "bin/ctr",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  },
+  "runc": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/opencontainers/runc/releases/download/v1.4.2/runc.amd64",
+        "sha256": "ac8a90f9e225bb9322189937b230cdc5478d5753f0e31e1bda98a5cf06bd9539",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

@@ -11,27 +11,42 @@ job "electric" {
         host_network = "loopback"
       }
     }
+
+    task "electric-default-image" {
+      driver = "raw_exec"
+      user = "root"
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+      artifact {
+        source = "verself-artifact://electric-runtime"
+        destination = "local"
+        chown = true
+      }
+      config {
+        command = "/bin/sh"
+        args = ["-ec", "image='docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176'\nsocket=/run/electric-containerd/containerd.sock\nfor _ in $(seq 1 60); do\n  if local/bin/ctr --address \"$socket\" version >/dev/null 2>&1; then\n    break\n  fi\n  sleep 1\ndone\nlocal/bin/ctr --address \"$socket\" version >/dev/null\nif ! local/bin/ctr --address \"$socket\" images inspect \"$image\" >/dev/null 2>&1; then\n  local/bin/ctr --address \"$socket\" images pull --platform linux/amd64 \"$image\"\nfi\n"]
+      }
+      resources {
+        cpu = 200
+        memory = 256
+      }
+    }
+
     task "electric-default" {
       driver = "raw_exec"
       user = "root"
       kill_signal = "SIGTERM"
       kill_timeout = "45s"
       artifact {
-        source = "verself-artifact://electric-nomad-runner"
+        source = "verself-artifact://electric-runtime"
         destination = "local"
         chown = true
       }
       config {
-        command = "local/bin/electric-nomad-runner"
-        args = [
-          "--ctr=/opt/verself/profile/bin/ctr",
-          "--image=docker.io/electricsql/electric:1.5.0",
-          "--env-file=/etc/credstore/electric/runtime.env",
-          "--storage-dir=/var/lib/electric",
-          "--instance-id=electric",
-          "--replication-stream-id=default",
-          "--db-pool-size=15",
-        ]
+        command = "/bin/sh"
+        args = ["-ec", "pg_password=\"$(tr -d '\\n' </etc/credstore/electric/pg-password)\"\napi_secret=\"$(tr -d '\\n' </etc/credstore/electric/api-secret)\"\ninstall -d -m 0700 secrets\nprintf 'DATABASE_URL=postgresql://electric:%s@127.0.0.1:5432/sandbox_rental\\nELECTRIC_SECRET=%s\\n' \"$pg_password\" \"$api_secret\" > secrets/electric.env\nchmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric \\\n  --instance-id=electric \\\n  --replication-stream-id=default \\\n  --db-pool-size=15 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
       }
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -81,27 +96,42 @@ job "electric" {
         host_network = "loopback"
       }
     }
+
+    task "electric-notifications-image" {
+      driver = "raw_exec"
+      user = "root"
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+      artifact {
+        source = "verself-artifact://electric-runtime"
+        destination = "local"
+        chown = true
+      }
+      config {
+        command = "/bin/sh"
+        args = ["-ec", "image='docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176'\nsocket=/run/electric-containerd/containerd.sock\nfor _ in $(seq 1 60); do\n  if local/bin/ctr --address \"$socket\" version >/dev/null 2>&1; then\n    break\n  fi\n  sleep 1\ndone\nlocal/bin/ctr --address \"$socket\" version >/dev/null\nif ! local/bin/ctr --address \"$socket\" images inspect \"$image\" >/dev/null 2>&1; then\n  local/bin/ctr --address \"$socket\" images pull --platform linux/amd64 \"$image\"\nfi\n"]
+      }
+      resources {
+        cpu = 200
+        memory = 256
+      }
+    }
+
     task "electric-notifications" {
       driver = "raw_exec"
       user = "root"
       kill_signal = "SIGTERM"
       kill_timeout = "45s"
       artifact {
-        source = "verself-artifact://electric-nomad-runner"
+        source = "verself-artifact://electric-runtime"
         destination = "local"
         chown = true
       }
       config {
-        command = "local/bin/electric-nomad-runner"
-        args = [
-          "--ctr=/opt/verself/profile/bin/ctr",
-          "--image=docker.io/electricsql/electric:1.5.0",
-          "--env-file=/etc/credstore/electric-notifications/runtime.env",
-          "--storage-dir=/var/lib/electric-notifications",
-          "--instance-id=electric-notifications",
-          "--replication-stream-id=notifications",
-          "--db-pool-size=8",
-        ]
+        command = "/bin/sh"
+        args = ["-ec", "pg_password=\"$(tr -d '\\n' </etc/credstore/electric-notifications/pg-password)\"\napi_secret=\"$(tr -d '\\n' </etc/credstore/electric-notifications/api-secret)\"\ninstall -d -m 0700 secrets\nprintf 'DATABASE_URL=postgresql://electric_notifications:%s@127.0.0.1:5432/notifications_service\\nELECTRIC_SECRET=%s\\n' \"$pg_password\" \"$api_secret\" > secrets/electric.env\nchmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric-notifications \\\n  --instance-id=electric-notifications \\\n  --replication-stream-id=notifications \\\n  --db-pool-size=8 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
       }
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
