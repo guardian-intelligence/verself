@@ -14,6 +14,28 @@ type InventoryTarget struct {
 	Host  string
 	User  string
 	Port  int
+
+	// Recovery* describe the out-of-band WireGuard recovery SSH path declared
+	// by verself_recovery_ssh_* host vars. It reaches sshd directly over the
+	// recovery mesh and authenticates with an ordinary SSH key, bypassing the
+	// Pomerium native-SSH device sign-in.
+	RecoveryHost string
+	RecoveryUser string
+	RecoveryPort int
+}
+
+// Recovery returns the WireGuard recovery target declared by the
+// verself_recovery_ssh_* host vars, if a recovery host is present.
+func (t InventoryTarget) Recovery() (InventoryTarget, bool) {
+	if t.RecoveryHost == "" {
+		return InventoryTarget{}, false
+	}
+	return InventoryTarget{
+		Alias: t.Alias,
+		Host:  t.RecoveryHost,
+		User:  t.RecoveryUser,
+		Port:  t.RecoveryPort,
+	}, true
 }
 
 func (t InventoryTarget) SSHPorts() []int {
@@ -86,6 +108,16 @@ func LoadInfraTarget(path string) (InventoryTarget, error) {
 					return InventoryTarget{}, fmt.Errorf("inventory %s has invalid ansible_port for %s: %w", path, target.Alias, err)
 				}
 				target.Port = port
+			case "verself_recovery_ssh_host":
+				target.RecoveryHost = value
+			case "verself_recovery_ssh_user":
+				target.RecoveryUser = value
+			case "verself_recovery_ssh_port":
+				port, err := parseInventoryPort(value)
+				if err != nil {
+					return InventoryTarget{}, fmt.Errorf("inventory %s has invalid verself_recovery_ssh_port for %s: %w", path, target.Alias, err)
+				}
+				target.RecoveryPort = port
 			}
 		}
 		first = &target

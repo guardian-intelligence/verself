@@ -40,6 +40,18 @@ type Options struct {
 	InfraHost string
 	InfraUser string
 
+	// UseRecovery selects the out-of-band WireGuard recovery SSH transport
+	// (the verself_recovery_ssh_* inventory facts) instead of the default
+	// Pomerium native-SSH path. It bypasses the interactive device sign-in so
+	// unattended commands reach the host without a browser, at the cost of
+	// Pomerium identity-aware access.
+	UseRecovery bool
+
+	// Interactive marks a run that can complete a Pomerium browser sign-in (a
+	// human at a terminal). Non-interactive runs fail fast with the sign-in
+	// URL instead of blocking on the device-code window.
+	Interactive bool
+
 	NeedSSH  bool
 	NeedOTel bool
 }
@@ -99,23 +111,9 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 
 	sshPorts := []int{}
 	if opts.NeedSSH || opts.NeedOTel {
-		target := InventoryTarget{}
-		if opts.InfraHost != "" || opts.InfraUser != "" {
-			target.Host = opts.InfraHost
-			target.User = opts.InfraUser
-		}
-		if target.Host == "" || target.User == "" {
-			loaded, err := LoadInfraTarget(InventoryPath(repoRoot, site))
-			if err != nil {
-				return nil, err
-			}
-			target = loaded
-			if opts.InfraHost != "" {
-				target.Host = opts.InfraHost
-			}
-			if opts.InfraUser != "" {
-				target.User = opts.InfraUser
-			}
+		target, err := resolveInfraTarget(repoRoot, site, opts)
+		if err != nil {
+			return nil, err
 		}
 		if err := validateSSHHost(target.Host); err != nil {
 			return nil, fmt.Errorf("operator runtime: invalid SSH host %q: %w", target.Host, err)
@@ -128,6 +126,7 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 			User:           target.User,
 			Host:           target.Host,
 			PortCandidates: sshPorts,
+			Interactive:    opts.Interactive,
 		})
 		if err != nil {
 			return nil, err
@@ -176,6 +175,34 @@ func Init(ctx context.Context, opts Options) (*Runtime, error) {
 		rt.commandSpan = span
 	}
 	return rt, nil
+}
+
+// resolveInfraTarget picks the SSH target a command should reach. Explicit
+// InfraHost+InfraUser bypass the inventory; otherwise the [infra] host is
+// loaded, the recovery transport is selected when requested, and any partial
+// InfraHost/InfraUser override is applied on top.
+func resolveInfraTarget(repoRoot, site string, opts Options) (InventoryTarget, error) {
+	if opts.InfraHost != "" && opts.InfraUser != "" && !opts.UseRecovery {
+		return InventoryTarget{Host: opts.InfraHost, User: opts.InfraUser}, nil
+	}
+	target, err := LoadInfraTarget(InventoryPath(repoRoot, site))
+	if err != nil {
+		return InventoryTarget{}, err
+	}
+	if opts.UseRecovery {
+		recovery, ok := target.Recovery()
+		if !ok {
+			return InventoryTarget{}, fmt.Errorf("operator runtime: site %q inventory declares no verself_recovery_ssh_host for the recovery transport", site)
+		}
+		target = recovery
+	}
+	if opts.InfraHost != "" {
+		target.Host = opts.InfraHost
+	}
+	if opts.InfraUser != "" {
+		target.User = opts.InfraUser
+	}
+	return target, nil
 }
 
 // Finish records err on the command span and closes all resources.

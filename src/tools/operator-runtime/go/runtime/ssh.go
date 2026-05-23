@@ -32,6 +32,11 @@ type SSHOptions struct {
 	User           string
 	Host           string
 	PortCandidates []int
+
+	// Interactive marks a run that can complete a Pomerium browser sign-in.
+	// When false, the keyboard-interactive device-code prompt fails fast with
+	// the sign-in URL instead of blocking until the device window expires.
+	Interactive bool
 }
 
 type SSHClient struct {
@@ -51,7 +56,7 @@ func DialSSH(ctx context.Context, opts SSHOptions) (*SSHClient, error) {
 	if opts.Host == "" {
 		return nil, errors.New("operator ssh: Host is required")
 	}
-	authMethods, authClosers, authMethod, err := operatorSSHAuthMethods(opts.User)
+	authMethods, authClosers, authMethod, err := operatorSSHAuthMethods(opts.User, opts.Interactive)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +460,7 @@ func ShellWord(s string) (string, error) {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'", nil
 }
 
-func operatorSSHAuthMethods(user string) ([]ssh.AuthMethod, []io.Closer, string, error) {
+func operatorSSHAuthMethods(user string, interactive bool) ([]ssh.AuthMethod, []io.Closer, string, error) {
 	var (
 		methods           []ssh.AuthMethod
 		closers           []io.Closer
@@ -507,7 +512,7 @@ func operatorSSHAuthMethods(user string) ([]ssh.AuthMethod, []io.Closer, string,
 	}
 
 	if len(methods) > 0 {
-		methods = append(methods, ssh.KeyboardInteractive(operatorKeyboardInteractiveChallenge))
+		methods = append(methods, ssh.KeyboardInteractive(keyboardInteractiveChallenge(interactive)))
 		labels = append(labels, "keyboard-interactive")
 	}
 	if len(methods) == 0 {
@@ -588,20 +593,43 @@ func loadSSHAgentSigners() ([]ssh.Signer, io.Closer, error) {
 	return nil, nil, nil
 }
 
-func operatorKeyboardInteractiveChallenge(name, instruction string, questions []string, _ []bool) ([]string, error) {
-	for _, line := range []string{name, instruction} {
-		if line = strings.TrimSpace(line); line != "" {
-			_, _ = fmt.Fprintln(os.Stderr, line)
+// keyboardInteractiveChallenge returns the Pomerium native-SSH device sign-in
+// handler. Pomerium uses keyboard-interactive after public-key partial auth to
+// surface a browser sign-in URL; completion happens out-of-band. An interactive
+// run prints the prompt and waits for that completion. A non-interactive run
+// prints the prompt and fails fast instead of blocking until the device-code
+// window expires, pointing the operator at the recovery transport.
+func keyboardInteractiveChallenge(interactive bool) ssh.KeyboardInteractiveChallenge {
+	return func(name, instruction string, questions []string, _ []bool) ([]string, error) {
+		lines := append([]string{name, instruction}, questions...)
+		for _, line := range lines {
+			if line = strings.TrimSpace(line); line != "" {
+				_, _ = fmt.Fprintln(os.Stderr, line)
+			}
+		}
+		if interactive {
+			return make([]string, len(questions)), nil
+		}
+		_, _ = fmt.Fprintln(os.Stderr, "operator: non-interactive run; not waiting for browser sign-in.")
+		if url := findSignInURL(lines...); url != "" {
+			_, _ = fmt.Fprintf(os.Stderr, "  complete sign-in at %s then re-run, or\n", url)
+		} else {
+			_, _ = fmt.Fprintln(os.Stderr, "  complete the sign-in shown above then re-run, or")
+		}
+		_, _ = fmt.Fprintln(os.Stderr, "  set VERSELF_OPERATOR_SSH_TRANSPORT=recovery to read over the WireGuard recovery path.")
+		return nil, errors.New("operator ssh: interactive Pomerium sign-in required for a non-interactive run; complete the sign-in shown above or set VERSELF_OPERATOR_SSH_TRANSPORT=recovery")
+	}
+}
+
+func findSignInURL(parts ...string) string {
+	for _, part := range parts {
+		for _, field := range strings.Fields(part) {
+			if strings.HasPrefix(field, "https://") {
+				return field
+			}
 		}
 	}
-	for _, question := range questions {
-		if question = strings.TrimSpace(question); question != "" {
-			_, _ = fmt.Fprintln(os.Stderr, question)
-		}
-	}
-	// Pomerium native SSH uses keyboard-interactive to show a browser/device
-	// sign-in URL after public-key partial auth; answers are out-of-band.
-	return make([]string, len(questions)), nil
+	return ""
 }
 
 func acceptNewKnownHostsCallback() (ssh.HostKeyCallback, error) {
