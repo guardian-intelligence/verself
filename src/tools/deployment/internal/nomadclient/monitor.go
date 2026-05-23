@@ -186,7 +186,16 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 	}).WithContext(ctx)
 
 	evalID := sub.EvalID
+	seenEvalIDs := map[string]struct{}{}
 	for {
+		if _, seen := seenEvalIDs[evalID]; seen {
+			err := fmt.Errorf("batch evaluation chain for job %s cycled at %s", sub.JobID, evalID)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return MonitorResult{TerminalStatus: "eval_cycle"}, err
+		}
+		seenEvalIDs[evalID] = struct{}{}
+
 		ev, meta, err := c.api.Evaluations().Info(evalID, q)
 		if err != nil {
 			span.RecordError(err)
@@ -207,6 +216,11 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 
 		switch ev.Status {
 		case api.EvalStatusComplete:
+			if next := nextBatchEvaluationID(ev); next != "" {
+				evalID = next
+				q.WaitIndex = 0
+				continue
+			}
 			result, err := c.monitorBatchAllocations(ctx, span, evalID)
 			if err != nil {
 				return result, err
@@ -223,8 +237,8 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 			return MonitorResult{TerminalStatus: ev.Status, StatusDescription: ev.StatusDescription}, err
 		}
 
-		if ev.NextEval != "" {
-			evalID = ev.NextEval
+		if next := nextBatchEvaluationID(ev); next != "" {
+			evalID = next
 			q.WaitIndex = 0
 			continue
 		}
@@ -235,6 +249,13 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 			return MonitorResult{TerminalStatus: ev.Status, StatusDescription: ev.StatusDescription}, err
 		}
 	}
+}
+
+func nextBatchEvaluationID(ev *api.Evaluation) string {
+	if ev.NextEval != "" {
+		return ev.NextEval
+	}
+	return ev.BlockedEval
 }
 
 func (c *Client) monitorBatchAllocations(ctx context.Context, span trace.Span, evalID string) (MonitorResult, error) {
