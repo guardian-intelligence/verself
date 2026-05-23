@@ -93,7 +93,7 @@ func TestVerifyRestoredWallClockStepsStaleClock(t *testing.T) {
 		case 1:
 			return hostTime.Add(-25 * time.Minute)
 		default:
-			return hostTime.Add(25 * time.Millisecond)
+			return hostTime.Add(25 * time.Microsecond)
 		}
 	}
 	var steppedTo int64
@@ -115,11 +115,47 @@ func TestVerifyRestoredWallClockStepsStaleClock(t *testing.T) {
 	if result.PreStepWallOffsetNS != int64(-25*time.Minute) {
 		t.Fatalf("pre-step offset = %d, want %d", result.PreStepWallOffsetNS, int64(-25*time.Minute))
 	}
-	if result.PostStepWallOffsetNS != int64(25*time.Millisecond) {
-		t.Fatalf("post-step offset = %d, want %d", result.PostStepWallOffsetNS, int64(25*time.Millisecond))
+	if result.PostStepWallOffsetNS != int64(25*time.Microsecond) {
+		t.Fatalf("post-step offset = %d, want %d", result.PostStepWallOffsetNS, int64(25*time.Microsecond))
 	}
-	if result.WallOffsetNS != int64(25*time.Millisecond) {
-		t.Fatalf("wall offset = %d, want %d", result.WallOffsetNS, int64(25*time.Millisecond))
+	if result.WallOffsetNS != int64(25*time.Microsecond) {
+		t.Fatalf("wall offset = %d, want %d", result.WallOffsetNS, int64(25*time.Microsecond))
+	}
+}
+
+func TestVerifyRestoredWallClockRejectsPostStepBeyondSLA(t *testing.T) {
+	oldNow := wallClockNow
+	oldSetRealtime := setRealtimeUnixNano
+	t.Cleanup(func() {
+		wallClockNow = oldNow
+		setRealtimeUnixNano = oldSetRealtime
+	})
+
+	hostTime := time.Unix(0, 1_800_000_000_000)
+	nowCalls := 0
+	wallClockNow = func() time.Time {
+		nowCalls++
+		switch nowCalls {
+		case 1:
+			return hostTime.Add(-25 * time.Minute)
+		default:
+			return hostTime.Add(2 * time.Millisecond)
+		}
+	}
+	setRealtimeUnixNano = func(int64) error {
+		return nil
+	}
+
+	result := vmproto.ClockSyncResult{Status: "synchronized"}
+	err := verifyRestoredWallClock(&result, hostTime.UnixNano())
+	if err == nil {
+		t.Fatal("verify restored wall clock returned nil error")
+	}
+	if result.Status != "host_step_offset_exceeded" {
+		t.Fatalf("status = %q, want host_step_offset_exceeded", result.Status)
+	}
+	if result.PostStepWallOffsetNS != int64(2*time.Millisecond) {
+		t.Fatalf("post-step offset = %d, want %d", result.PostStepWallOffsetNS, int64(2*time.Millisecond))
 	}
 }
 

@@ -196,10 +196,10 @@ func TestAfterRestoreSendsHostWallClockAndRecordsClockGate(t *testing.T) {
 					LeapStatus:           "Normal",
 					WaitSyncMS:           42,
 					HostUnixNano:         msg.HostUnixNano,
-					GuestUnixNano:        msg.HostUnixNano + int64(25*time.Millisecond),
-					WallOffsetNS:         int64(25 * time.Millisecond),
+					GuestUnixNano:        msg.HostUnixNano + int64(25*time.Microsecond),
+					WallOffsetNS:         int64(25 * time.Microsecond),
 					PreStepWallOffsetNS:  int64(-25 * time.Minute),
-					PostStepWallOffsetNS: int64(25 * time.Millisecond),
+					PostStepWallOffsetNS: int64(25 * time.Microsecond),
 					HostStepApplied:      true,
 				},
 			},
@@ -227,9 +227,9 @@ func TestAfterRestoreSendsHostWallClockAndRecordsClockGate(t *testing.T) {
 	span := findRecordedSpan(t, recorder.Ended(), "vmorchestrator.guest.after_restore")
 	attrs := span.Attributes()
 	assertSpanAttr(t, attrs, "guest.clock_sync.status", "synchronized")
-	assertSpanAttr(t, attrs, "guest.clock_sync.wall_offset_ns", int64(25*time.Millisecond))
+	assertSpanAttr(t, attrs, "guest.clock_sync.wall_offset_ns", int64(25*time.Microsecond))
 	assertSpanAttr(t, attrs, "guest.clock_sync.pre_step_wall_offset_ns", int64(-25*time.Minute))
-	assertSpanAttr(t, attrs, "guest.clock_sync.post_step_wall_offset_ns", int64(25*time.Millisecond))
+	assertSpanAttr(t, attrs, "guest.clock_sync.post_step_wall_offset_ns", int64(25*time.Microsecond))
 	assertSpanAttr(t, attrs, "guest.clock_sync.host_step_applied", true)
 }
 

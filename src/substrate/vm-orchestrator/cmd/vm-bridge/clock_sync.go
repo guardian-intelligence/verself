@@ -25,9 +25,9 @@ const (
 	chronyReadyTimeout = 5 * time.Second
 	chronyReadyPoll    = 50 * time.Millisecond
 	chronycCommandWait = 15 * time.Second
-	clockMaxOffsetNS   = int64(10 * time.Millisecond)
+	clockMaxOffsetNS   = int64(time.Millisecond)
 	clockMaxSkewPPM    = 100.0
-	clockMaxWallOffset = 5 * time.Second
+	clockMaxWallOffset = time.Millisecond
 )
 
 var (
@@ -144,7 +144,8 @@ func syncClockWithChrony() (vmproto.ClockSyncResult, error) {
 		result.WaitSyncMS = time.Since(started).Milliseconds()
 		return result, fmt.Errorf("chrony makestep: %w", err)
 	}
-	if out, err := runChronyc("waitsync", "10", "0.010", strconv.FormatFloat(clockMaxSkewPPM, 'f', 0, 64), "1"); err != nil {
+	maxOffsetSeconds := strconv.FormatFloat(float64(clockMaxOffsetNS)/float64(time.Second), 'f', 3, 64)
+	if out, err := runChronyc("waitsync", "10", maxOffsetSeconds, strconv.FormatFloat(clockMaxSkewPPM, 'f', 0, 64), "1"); err != nil {
 		result.Status = "sync_wait_failed"
 		result.TrackingRaw = strings.TrimSpace(out)
 		result.WaitSyncMS = time.Since(started).Milliseconds()

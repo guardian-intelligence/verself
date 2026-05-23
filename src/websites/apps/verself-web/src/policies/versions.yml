@@ -1,4 +1,9 @@
 entries:
+  - date: 2026-05-23
+    version: "2026.05.23"
+    policies:
+      - sla
+    summary: Added the compute time synchronization commitment for Verself-managed microVMs.
   - date: 2026-04-17
     version: "2026.04.17"
     policies:

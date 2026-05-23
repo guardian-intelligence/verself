@@ -20,7 +20,7 @@ export const Route = createFileRoute("/_workshop/policy/sla")({
       {
         name: "description",
         content:
-          "Availability commitments and service credits for the Verself platform, and the deployment topology on which they apply.",
+          "Availability and compute time synchronization commitments for the Verself platform, and the deployment topology on which they apply.",
       },
     ],
   }),
@@ -33,6 +33,7 @@ function SLA() {
       <PolicyHeader title="Service Level Agreement" policyId="sla" />
       <Summary />
       <CurrentTier />
+      <TimeSync />
       <Maintenance />
       <Support />
       <FutureTier />
@@ -50,6 +51,10 @@ function Summary() {
         <SummaryItem term="Current tier">
           <em>No availability SLA.</em> The single-node deployment does not carry an availability
           commitment; we aim to operate it reliably but do not promise credits for outages.
+        </SummaryItem>
+        <SummaryItem term="Compute time sync">
+          Customer microVMs must pass a 1ms host time-source gate before customer workload steps
+          start.
         </SummaryItem>
         <SummaryItem term="Operator transparency">
           We publish incident notices on the changelog and in the organization audit trail.
@@ -88,6 +93,29 @@ function CurrentTier() {
           <a href="/policy/security#logging">Security Overview</a>. Material incidents are posted on
           the <a href="/policy/changelog">changelog</a> and mirrored into each affected
           organization's audit trail.
+        </p>
+      </Prose>
+    </section>
+  );
+}
+
+function TimeSync() {
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading id="time-sync">Compute time synchronization</SectionHeading>
+      <Prose>
+        <p>
+          Customer microVMs must prove their wall clock is within 1ms of the platform host time
+          source before customer workload steps start. Cold boots prove Chrony/KVM PTP
+          synchronization during lease initialization with at most 1ms source offset. Warm restores
+          additionally compare the restored guest wall clock to the host timestamp carried by the
+          lease control plane, step the guest clock when needed, and fail the lease before customer
+          code runs if the post-step offset remains above 1ms.
+        </p>
+        <p>
+          This commitment applies to the pre-workload readiness gate for Verself-managed microVMs.
+          It does not change the single-node availability tier or create service credits for
+          outages.
         </p>
       </Prose>
     </section>

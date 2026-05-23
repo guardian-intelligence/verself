@@ -147,10 +147,10 @@ provides mounted directories, not tool-specific cache APIs.
 6. On a golden VM hit, vm-orchestrator restores Firecracker from the manifest
    and vm-bridge runs `AfterRestore` to rebind lease identity, network, host
    control, runner bootstrap material, and chrony/KVM PTP clock
-   synchronization.
+   synchronization with a 1ms time-sync gate.
 7. On a golden VM miss, vm-orchestrator cold boots the VM and vm-bridge runs
    `LeaseInit` to mount filesystems, apply lease state, and prove chrony/KVM
-   PTP clock synchronization.
+   PTP clock synchronization with a 1ms source-offset gate.
 8. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
 9. Customer steps execute normally and read or write cached paths as ordinary
    directories.
