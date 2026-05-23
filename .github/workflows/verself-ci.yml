@@ -73,15 +73,25 @@ jobs:
       - name: Bootstrap toolchain
         run: src/tools/dev/bootstrap/bootstrap-linux-amd64
 
-      - name: Start deploy SSH agent
+      - name: Detect deploy SSH key
+        id: deploy_ssh_key
         env:
           VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY:-}" ]; then
-            echo "::error::Missing VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY secret for prod deployment"
-            exit 1
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice title=Prod deploy skipped::VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY is not configured"
+          else
+            echo "available=true" >> "${GITHUB_OUTPUT}"
           fi
+
+      - name: Start deploy SSH agent
+        if: ${{ steps.deploy_ssh_key.outputs.available == 'true' }}
+        env:
+          VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
           eval "$(ssh-agent -s)"
           printf '%s\n' "${VERSELF_PROD_DEPLOY_SSH_PRIVATE_KEY}" | ssh-add - >/dev/null
           {
@@ -90,6 +100,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Deploy prod
+        if: ${{ steps.deploy_ssh_key.outputs.available == 'true' }}
         run: |
           set -euo pipefail
           if [ -n "${RUNNER_TRACKING_ID:-}" ]; then
@@ -102,7 +113,7 @@ jobs:
           echo "::notice title=Verself deploy timing::site=prod sha=${GITHUB_SHA} duration_ms=$((finished_ms - started_ms))"
 
       - name: Stop deploy SSH agent
-        if: always()
+        if: ${{ always() && steps.deploy_ssh_key.outputs.available == 'true' }}
         run: |
           set -euo pipefail
           if [ -n "${SSH_AGENT_PID:-}" ]; then
