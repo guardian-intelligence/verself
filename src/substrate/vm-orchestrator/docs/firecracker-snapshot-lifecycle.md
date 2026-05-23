@@ -32,7 +32,7 @@ flowchart TD
     jail --> tap["fresh TAP lease + socket paths"]
     tap --> fc{"activation mode"}
 
-    fc -->|snapshot| load["LoadSnapshot with network_overrides"]
+    fc -->|snapshot| load["LoadSnapshot with network_overrides + clock_realtime"]
     fc -->|cold| boot["cold boot Firecracker"]
 
     load --> resume["resume microVM"]
@@ -54,7 +54,7 @@ lease.
 
 - Fresh lease identity, attempt identity, runner identity, and provider runtime
   metadata.
-- Guest wall-clock correction.
+- Chrony/KVM PTP synchronization before customer exec.
 - Network rebinding for the fresh TAP address, gateway, DNS, and neighbor
   state.
 - Host control socket reconnection.
@@ -78,9 +78,9 @@ sequenceDiagram
     SR->>VMO: AcquireLease(job shape, mount plan, golden manifest)
     VMO->>VMO: clone exact root/workspace/durable zvol generations
     VMO->>FC: prepare jailer + staged drives + TAP
-    VMO->>FC: LoadSnapshot(vmstate, memory, network_overrides)
+    VMO->>FC: LoadSnapshot(vmstate, memory, network_overrides, clock_realtime)
     VMO->>FC: Resume
-    VMO->>VB: AfterRestore(lease, network, clock, runner bootstrap)
+    VMO->>VB: AfterRestore(lease, network, chrony/PTP gate, runner bootstrap)
     VB-->>VMO: AfterRestoreResult
     VMO-->>SR: LeaseStateReady
     SR->>VB: Start runner exec
@@ -137,8 +137,9 @@ the Verself manifest contract:
 - Firecracker writes the VM state file and guest memory file; block-device
   contents are caller-managed and must be snapshotted by vm-orchestrator.
 - The pinned Firecracker `LoadSnapshot` request receives per-lease TAP
-  rebinding through `network_overrides`; vm-bridge restore hooks own clock
-  correction and host control reconnection.
+  rebinding through `network_overrides` and `clock_realtime=true`;
+  vm-bridge restore hooks require chrony synchronization through `/dev/ptp0`
+  before host control exposes customer exec.
 - Guest network connections and open vsock connections are not reusable across
   a restored Firecracker process. `AfterRestore` reconnects host control and
   rebinds per-lease network state.

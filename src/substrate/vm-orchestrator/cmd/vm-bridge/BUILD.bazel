@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "agent.go",
         "cli.go",
+        "clock_sync.go",
         "fault_injection_off.go",
         "local_control.go",
         "main.go",
@@ -41,7 +42,10 @@ go_cross_binary(
 
 go_test(
     name = "vm-bridge_test",
-    srcs = ["filesystem_mounts_test.go"],
+    srcs = [
+        "clock_sync_test.go",
+        "filesystem_mounts_test.go",
+    ],
     embed = [":vm-bridge_lib"],
     deps = ["//src/substrate/vm-orchestrator/vmproto"],
 )

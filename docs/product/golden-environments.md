@@ -145,10 +145,12 @@ provides mounted directories, not tool-specific cache APIs.
 5. vm-orchestrator prepares the static block-device graph for the root disk,
    platform toolchains, workspace cache, and manifest caches.
 6. On a golden VM hit, vm-orchestrator restores Firecracker from the manifest
-   and vm-bridge runs `AfterRestore` to rebind lease identity, clock, network,
-   host control, and runner bootstrap material.
+   and vm-bridge runs `AfterRestore` to rebind lease identity, network, host
+   control, runner bootstrap material, and chrony/KVM PTP clock
+   synchronization.
 7. On a golden VM miss, vm-orchestrator cold boots the VM and vm-bridge runs
-   `LeaseInit` to mount filesystems and apply lease state.
+   `LeaseInit` to mount filesystems, apply lease state, and prove chrony/KVM
+   PTP clock synchronization.
 8. The Verself checkout action updates `GITHUB_WORKSPACE` to the event commit.
 9. Customer steps execute normally and read or write cached paths as ordinary
    directories.

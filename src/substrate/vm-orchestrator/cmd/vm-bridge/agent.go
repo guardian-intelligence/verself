@@ -156,6 +156,7 @@ func (session *agentSession) runInitial(sigCh <-chan os.Signal, bootTimings vmpr
 			LeaseID:         initReq.LeaseID,
 			Filesystems:     mountResults,
 			Timings:         &timings,
+			Error:           err.Error(),
 			ProtocolVersion: vmproto.ProtocolVersion,
 		}); resultErr != nil {
 			return resultErr
@@ -163,10 +164,22 @@ func (session *agentSession) runInitial(sigCh <-chan os.Signal, bootTimings vmpr
 		return session.fail(err)
 	}
 	stepStarted = time.Now()
-	if err := setWallClock(initReq.HostWallclockUnixNS); err != nil {
-		session.sendLogString("", "system", fmt.Sprintf("%s warning: set wall clock: %v\n", logPrefix, err))
+	clockSync, err := syncClockWithChrony()
+	timings.SyncClockMS = time.Since(stepStarted).Milliseconds()
+	timings.ClockSync = &clockSync
+	if err != nil {
+		timings.TotalLeaseInitMS = time.Since(leaseInitStarted).Milliseconds()
+		if resultErr := session.sendControlSync(vmproto.TypeLeaseInitResult, vmproto.LeaseInitResult{
+			LeaseID:         initReq.LeaseID,
+			Filesystems:     mountResults,
+			Timings:         &timings,
+			Error:           err.Error(),
+			ProtocolVersion: vmproto.ProtocolVersion,
+		}); resultErr != nil {
+			return resultErr
+		}
+		return session.fail(err)
 	}
-	timings.SetWallClockMS = time.Since(stepStarted).Milliseconds()
 
 	localControlCtx, localControlCancel := context.WithCancel(ctx)
 	stepStarted = time.Now()
@@ -519,10 +532,13 @@ func (s *agentSession) handleAfterRestoreRequest(env vmproto.Envelope) error {
 	results := s.verifyRestoredFilesystems(req.Filesystems)
 	timings.MountFilesystemsMS = time.Since(stepStarted).Milliseconds()
 	stepStarted = time.Now()
-	if err := setWallClock(req.HostWallclockUnixNS); err != nil {
-		s.sendLogString("", "system", fmt.Sprintf("%s warning: set wall clock after restore: %v\n", logPrefix, err))
+	clockSync, err := syncClockWithChrony()
+	timings.SyncClockMS = time.Since(stepStarted).Milliseconds()
+	timings.ClockSync = &clockSync
+	if err != nil {
+		timings.TotalLeaseInitMS = time.Since(started).Milliseconds()
+		return s.sendAfterRestoreResult(req, results, &timings, err)
 	}
-	timings.SetWallClockMS = time.Since(stepStarted).Milliseconds()
 	timings.TotalLeaseInitMS = time.Since(started).Milliseconds()
 	return s.sendAfterRestoreResult(req, results, &timings, nil)
 }
@@ -539,6 +555,7 @@ func (s *agentSession) sendAfterRestoreResult(req vmproto.AfterRestore, results 
 		LeaseID:         req.LeaseID,
 		Filesystems:     results,
 		Timings:         timings,
+		Error:           errorString(err),
 		ProtocolVersion: vmproto.ProtocolVersion,
 	}); resultErr != nil {
 		return resultErr
@@ -1203,14 +1220,6 @@ func waitForBlockDevice(path string, timeout time.Duration) error {
 	}
 }
 
-func setWallClock(unixNS int64) error {
-	if unixNS <= 0 {
-		return nil
-	}
-	tv := syscall.NsecToTimeval(unixNS)
-	return syscall.Settimeofday(&tv)
-}
-
 type commandSpec struct {
 	Path    string
 	Args    []string
@@ -1407,4 +1416,11 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

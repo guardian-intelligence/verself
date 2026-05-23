@@ -94,6 +94,7 @@ type snapshotLoadReq struct {
 	ResumeVM         bool                 `json:"resume_vm"`
 	NetworkOverrides []networkOverrideReq `json:"network_overrides,omitempty"`
 	TrackDirtyPages  bool                 `json:"track_dirty_pages,omitempty"`
+	ClockRealtime    bool                 `json:"clock_realtime,omitempty"`
 }
 
 type snapshotCreateReq struct {
@@ -167,6 +168,7 @@ func (c *apiClient) loadSnapshot(ctx context.Context, snapshotPath, memFilePath 
 		MemBackend:       memBackendReq{BackendPath: memFilePath, BackendType: "File"},
 		ResumeVM:         resume,
 		NetworkOverrides: networkOverrides,
+		ClockRealtime:    true,
 	})
 }
 

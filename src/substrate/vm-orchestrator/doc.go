@@ -18,7 +18,7 @@
 //     one matches the prepared zvol layout and runtime ABI, otherwise cold boot.
 //  5. Initialize vm-bridge over a deterministic vsock control stream;
 //     AfterRestore or LeaseInit applies per-lease network state, filesystem
-//     mounts, runner bootstrap material, and wall clock.
+//     mounts, runner bootstrap material, and chrony/KVM PTP clock sync.
 //  6. Mark the lease ready; StartExec waits for LeaseStateReady before sending
 //     guest work and then enforces the lease runtime concurrency cap.
 //  7. Stream guest logs, filesystem lifecycle events, and telemetry as host facts.

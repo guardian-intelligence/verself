@@ -45,6 +45,10 @@ const (
 	goldenVMPaidSnapshotRingSize     = 2
 	durablePoolLowWatermarkPermille  = 700
 	durablePoolHardWatermarkPermille = 850
+
+	goldenVMFirecrackerABIHash        = "firecracker-v1.15.0"
+	goldenVMAfterRestoreHookVersion   = "after_restore.chrony_v1"
+	goldenVMBeforeSnapshotHookVersion = "before_golden_snapshot.v1"
 )
 
 const (
@@ -641,15 +645,23 @@ func (s *Service) prepareGoldenVMPlan(ctx context.Context, item executionWorkIte
 		LookupReason:            "current_snapshot_missing",
 	}
 	current, err := s.storeQueries().GetCurrentGoldenVMActivation(ctx, store.GetCurrentGoldenVMActivationParams{
-		OrgID:                identity.OrgID,
-		RepositoryID:         identity.ProviderRepositoryID,
-		Provider:             identity.Provider,
-		ProviderRepositoryID: identity.ProviderRepositoryID,
-		ScopeKind:            durableScopeKindBranch,
-		ScopeRef:             spec.ScopeRef,
-		JobShapeID:           spec.JobShapeID,
-		TrustClass:           spec.TrustClass,
-		GenerationSetHash:    sourceHash,
+		OrgID:                     identity.OrgID,
+		RepositoryID:              identity.ProviderRepositoryID,
+		Provider:                  identity.Provider,
+		ProviderRepositoryID:      identity.ProviderRepositoryID,
+		ScopeKind:                 durableScopeKindBranch,
+		ScopeRef:                  spec.ScopeRef,
+		JobShapeID:                spec.JobShapeID,
+		TrustClass:                spec.TrustClass,
+		GenerationSetHash:         sourceHash,
+		FirecrackerAbiHash:        goldenVMFirecrackerABIHash,
+		HostAbiHash:               durableGuestArch,
+		NetworkModelHash:          goldenVMNetworkModelHash(),
+		VsockModelHash:            goldenVMVsockModelHash(),
+		ClockModelHash:            goldenVMClockModelHash(),
+		VmprotoVersion:            int32(vmproto.ProtocolVersion),
+		AfterRestoreHookVersion:   goldenVMAfterRestoreHookVersion,
+		BeforeSnapshotHookVersion: goldenVMBeforeSnapshotHookVersion,
 	})
 	if err == nil {
 		plan.LookupResult = "hit"
@@ -1203,14 +1215,14 @@ func (s *Service) publishGoldenVMSnapshot(ctx context.Context, item executionWor
 		MemoryBytes:               memoryBytes,
 		DriveManifestHash:         goldenVMDriveManifestHash(checkpoint),
 		MountManifestHash:         generationSetHash,
-		FirecrackerAbiHash:        "firecracker-v1.15.0",
+		FirecrackerAbiHash:        goldenVMFirecrackerABIHash,
 		HostAbiHash:               durableGuestArch,
-		NetworkModelHash:          stableHex("nat", durableGuestArch, "host-service-plane-v1"),
-		VsockModelHash:            stableHex("vm-bridge", strconv.Itoa(vmproto.ProtocolVersion), "single-control-vsock"),
-		ClockModelHash:            stableHex("clock-realtime", "after-restore-settime-v1"),
+		NetworkModelHash:          goldenVMNetworkModelHash(),
+		VsockModelHash:            goldenVMVsockModelHash(),
+		ClockModelHash:            goldenVMClockModelHash(),
 		VmprotoVersion:            int32(vmproto.ProtocolVersion),
-		AfterRestoreHookVersion:   "after_restore.v1",
-		BeforeSnapshotHookVersion: "before_golden_snapshot.v1",
+		AfterRestoreHookVersion:   goldenVMAfterRestoreHookVersion,
+		BeforeSnapshotHookVersion: goldenVMBeforeSnapshotHookVersion,
 		WarmProfileHash:           plan.GoldenVM.SourceGenerationSetHash,
 		Vcpus:                     int32FromUint32(item.Resources.VCPUs, "golden VM vcpus"),
 		MemoryMib:                 int32FromUint32(item.Resources.MemoryMiB, "golden VM memory mib"),
@@ -2573,6 +2585,18 @@ func stableUUID(parts ...string) uuid.UUID {
 func stableHex(parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:])
+}
+
+func goldenVMNetworkModelHash() string {
+	return stableHex("nat", durableGuestArch, "host-service-plane-v1")
+}
+
+func goldenVMVsockModelHash() string {
+	return stableHex("vm-bridge", strconv.Itoa(vmproto.ProtocolVersion), "single-control-vsock")
+}
+
+func goldenVMClockModelHash() string {
+	return stableHex("kvm-ptp", "chrony", "clock-realtime-load-snapshot", "after-restore-waitsync-v1")
 }
 
 func goldenVMSourceGenerationSetHash(staticMounts []vmorchestrator.FilesystemMount, ops []durableCacheOperation) string {

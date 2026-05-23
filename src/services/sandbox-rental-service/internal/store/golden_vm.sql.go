@@ -35,19 +35,35 @@ WHERE p.org_id = $1
   AND p.job_shape_id = $7
   AND p.trust_class = $8
   AND vm.generation_set_hash = $9
+  AND vm.firecracker_abi_hash = $10
+  AND vm.host_abi_hash = $11
+  AND vm.network_model_hash = $12
+  AND vm.vsock_model_hash = $13
+  AND vm.clock_model_hash = $14
+  AND vm.vmproto_version = $15
+  AND vm.after_restore_hook_version = $16
+  AND vm.before_snapshot_hook_version = $17
   AND vm.state = 'current'
 `
 
 type GetCurrentGoldenVMActivationParams struct {
-	OrgID                string
-	RepositoryID         int64
-	Provider             string
-	ProviderRepositoryID int64
-	ScopeKind            string
-	ScopeRef             string
-	JobShapeID           uuid.UUID
-	TrustClass           string
-	GenerationSetHash    string
+	OrgID                     string
+	RepositoryID              int64
+	Provider                  string
+	ProviderRepositoryID      int64
+	ScopeKind                 string
+	ScopeRef                  string
+	JobShapeID                uuid.UUID
+	TrustClass                string
+	GenerationSetHash         string
+	FirecrackerAbiHash        string
+	HostAbiHash               string
+	NetworkModelHash          string
+	VsockModelHash            string
+	ClockModelHash            string
+	VmprotoVersion            int32
+	AfterRestoreHookVersion   string
+	BeforeSnapshotHookVersion string
 }
 
 type GetCurrentGoldenVMActivationRow struct {
@@ -73,6 +89,14 @@ func (q *Queries) GetCurrentGoldenVMActivation(ctx context.Context, arg GetCurre
 		arg.JobShapeID,
 		arg.TrustClass,
 		arg.GenerationSetHash,
+		arg.FirecrackerAbiHash,
+		arg.HostAbiHash,
+		arg.NetworkModelHash,
+		arg.VsockModelHash,
+		arg.ClockModelHash,
+		arg.VmprotoVersion,
+		arg.AfterRestoreHookVersion,
+		arg.BeforeSnapshotHookVersion,
 	)
 	var i GetCurrentGoldenVMActivationRow
 	err := row.Scan(

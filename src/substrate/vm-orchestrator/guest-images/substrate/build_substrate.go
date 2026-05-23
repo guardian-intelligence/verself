@@ -31,6 +31,7 @@ var substratePackages = []string{
 	"bash",
 	"build-essential",
 	"ca-certificates",
+	"chrony=4.5-1ubuntu4.2",
 	"curl",
 	"git",
 	"iproute2",
@@ -48,6 +49,14 @@ var substratePackages = []string{
 	"zlib1g",
 	"zstd",
 }
+
+const chronyConf = `refclock PHC /dev/ptp0 poll 0 dpoll -2 offset 0 refid KVM
+driftfile /var/lib/chrony/drift
+makestep 0.1 3
+port 0
+cmdport 0
+noclientlog
+`
 
 func main() {
 	if err := run(); err != nil {
@@ -187,6 +196,14 @@ func run() error {
 	fmt.Println("-> installing vm-guest-telemetry")
 	if err := copyFile(requiredInputs["vm-guest-telemetry"], filepath.Join(rootfs, "usr/local/bin/vm-guest-telemetry"), 0o755); err != nil {
 		return err
+	}
+
+	fmt.Println("-> configuring chrony for KVM PTP")
+	if err := writeFile(filepath.Join(rootfs, "etc/chrony/chrony.conf"), chronyConf, 0o644); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(rootfs, "var/lib/chrony"), 0o755); err != nil {
+		return fmt.Errorf("create chrony drift dir: %w", err)
 	}
 
 	fmt.Println("-> creating substrate write targets")
@@ -374,6 +391,8 @@ func validateKernelConfig(path string) error {
 	required := []string{
 		"CONFIG_VIRTIO_VSOCKETS=y",
 		"CONFIG_HW_RANDOM_VIRTIO=y",
+		"CONFIG_PTP_1588_CLOCK=y",
+		"CONFIG_PTP_1588_CLOCK_KVM=y",
 		"# CONFIG_CRYPTO_USER_API_AEAD is not set",
 	}
 	for _, line := range required {

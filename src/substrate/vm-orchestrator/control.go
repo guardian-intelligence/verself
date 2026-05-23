@@ -365,22 +365,21 @@ func (c *guestControl) initLease(ctx context.Context, leaseID string, network vm
 	var retErr error
 	defer func() { endSpan(retErr) }()
 	if err := c.send(vmproto.TypeLeaseInit, vmproto.LeaseInit{
-		LeaseID:             leaseID,
-		Network:             network,
-		Filesystems:         filesystems,
-		HostWallclockUnixNS: time.Now().UnixNano(),
-		ProtocolVersion:     vmproto.ProtocolVersion,
-		ActivationMode:      string(activationMode),
+		LeaseID:         leaseID,
+		Network:         network,
+		Filesystems:     filesystems,
+		ProtocolVersion: vmproto.ProtocolVersion,
+		ActivationMode:  string(activationMode),
 	}); err != nil {
 		retErr = fmt.Errorf("send lease init: %w", err)
 		return nil, retErr
 	}
 	results, timings, err := c.awaitLeaseInitResult(leaseID, filesystems)
+	recordLeaseInitTimingAttrs(ctx, timings)
 	if err != nil {
 		retErr = err
 		return results, err
 	}
-	recordLeaseInitTimingAttrs(ctx, timings)
 	return results, nil
 }
 
@@ -393,22 +392,21 @@ func (c *guestControl) afterRestore(ctx context.Context, leaseID string, network
 	var retErr error
 	defer func() { endSpan(retErr) }()
 	if err := c.send(vmproto.TypeAfterRestore, vmproto.AfterRestore{
-		LeaseID:             leaseID,
-		Network:             network,
-		Filesystems:         filesystems,
-		HostWallclockUnixNS: time.Now().UnixNano(),
-		ProtocolVersion:     vmproto.ProtocolVersion,
-		ActivationMode:      string(activationMode),
+		LeaseID:         leaseID,
+		Network:         network,
+		Filesystems:     filesystems,
+		ProtocolVersion: vmproto.ProtocolVersion,
+		ActivationMode:  string(activationMode),
 	}); err != nil {
 		retErr = fmt.Errorf("send after restore: %w", err)
 		return nil, retErr
 	}
 	results, timings, err := c.awaitAfterRestoreResult(leaseID, filesystems)
+	recordLeaseInitTimingAttrs(ctx, timings)
 	if err != nil {
 		retErr = err
 		return results, err
 	}
-	recordLeaseInitTimingAttrs(ctx, timings)
 	return results, nil
 }
 
@@ -432,6 +430,9 @@ func (c *guestControl) awaitLeaseInitResult(leaseID string, filesystems []vmprot
 			}
 			if err := validateLeaseInitMountResults(filesystems, msg.Filesystems); err != nil {
 				return msg.Filesystems, msg.Timings, err
+			}
+			if strings.TrimSpace(msg.Error) != "" {
+				return msg.Filesystems, msg.Timings, guestProtocolError("await_lease_init_result", "%s", strings.TrimSpace(msg.Error))
 			}
 			return msg.Filesystems, msg.Timings, nil
 		case vmproto.TypeHeartbeat:
@@ -469,6 +470,9 @@ func (c *guestControl) awaitAfterRestoreResult(leaseID string, filesystems []vmp
 			if err := validateLeaseInitMountResults(filesystems, msg.Filesystems); err != nil {
 				return msg.Filesystems, msg.Timings, err
 			}
+			if strings.TrimSpace(msg.Error) != "" {
+				return msg.Filesystems, msg.Timings, guestProtocolError("await_after_restore_result", "%s", strings.TrimSpace(msg.Error))
+			}
 			return msg.Filesystems, msg.Timings, nil
 		case vmproto.TypeHeartbeat:
 			continue
@@ -492,10 +496,20 @@ func recordLeaseInitTimingAttrs(ctx context.Context, timings *vmproto.LeaseInitT
 		attribute.Int64("guest.lease_init.wait_for_lease_init_ms", timings.WaitForLeaseInitMS),
 		attribute.Int64("guest.lease_init.apply_network_ms", timings.ApplyNetworkMS),
 		attribute.Int64("guest.lease_init.mount_filesystems_ms", timings.MountFilesystemsMS),
-		attribute.Int64("guest.lease_init.set_wall_clock_ms", timings.SetWallClockMS),
+		attribute.Int64("guest.lease_init.sync_clock_ms", timings.SyncClockMS),
 		attribute.Int64("guest.lease_init.start_local_control_ms", timings.StartLocalControlMS),
 		attribute.Int64("guest.lease_init.total_ms", timings.TotalLeaseInitMS),
 	)
+	if timings.ClockSync != nil {
+		trace.SpanFromContext(ctx).SetAttributes(
+			attribute.String("guest.clock_sync.status", timings.ClockSync.Status),
+			attribute.String("guest.clock_sync.source", timings.ClockSync.Source),
+			attribute.Int64("guest.clock_sync.offset_ns", timings.ClockSync.OffsetNS),
+			attribute.Float64("guest.clock_sync.skew_ppm", timings.ClockSync.SkewPPM),
+			attribute.String("guest.clock_sync.leap_status", timings.ClockSync.LeapStatus),
+			attribute.Int64("guest.clock_sync.waitsync_ms", timings.ClockSync.WaitSyncMS),
+		)
+	}
 }
 
 func validateLeaseInitMountResults(requested []vmproto.FilesystemMount, results []vmproto.FilesystemMountResult) error {

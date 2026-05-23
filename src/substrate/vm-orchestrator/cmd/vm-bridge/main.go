@@ -84,6 +84,9 @@ func runInit() error {
 		fmt.Fprintf(os.Stderr, "%s warning: prctl PR_SET_CHILD_SUBREAPER: %v\n", logPrefix, errno)
 	}
 	bootTimings.SetSubreaperDoneMS = elapsedBootMS(bootStart)
+	if err := startChrony(); err != nil {
+		return fmt.Errorf("start chrony: %w", err)
+	}
 	// Telemetry start used to live here, before the vsock listen. Moved to
 	// after listener.Accept() below so the fork+exec does not steal CPU
 	// from the kernel_boot_to_hello_enqueue window. The StartTelemetry*

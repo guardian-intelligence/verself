@@ -14,7 +14,7 @@ const (
 	// JSON fields on existing messages do not bump it; the deployed guest
 	// substrate is staged separately from the Nomad daemon artifact, so an
 	// unnecessary bump strands live hosts on an otherwise compatible image.
-	ProtocolVersion          = 8
+	ProtocolVersion          = 9
 	GuestPreControlReadyPort = 10788
 	GuestPort                = 10789
 	PreControlReadyMessage   = "READY vm-bridge-precontrol-v1"
@@ -105,44 +105,55 @@ type NetworkConfig struct {
 }
 
 type LeaseInit struct {
-	LeaseID             string            `json:"lease_id"`
-	Network             NetworkConfig     `json:"network"`
-	Filesystems         []FilesystemMount `json:"filesystems,omitempty"`
-	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
-	ProtocolVersion     int               `json:"protocol_version"`
-	ActivationMode      string            `json:"activation_mode,omitempty"`
+	LeaseID         string            `json:"lease_id"`
+	Network         NetworkConfig     `json:"network"`
+	Filesystems     []FilesystemMount `json:"filesystems,omitempty"`
+	ProtocolVersion int               `json:"protocol_version"`
+	ActivationMode  string            `json:"activation_mode,omitempty"`
 }
 
 type LeaseInitResult struct {
 	LeaseID         string                  `json:"lease_id"`
 	Filesystems     []FilesystemMountResult `json:"filesystems,omitempty"`
 	Timings         *LeaseInitTimings       `json:"timings,omitempty"`
+	Error           string                  `json:"error,omitempty"`
 	ProtocolVersion int                     `json:"protocol_version"`
 }
 
 type AfterRestore struct {
-	LeaseID             string            `json:"lease_id"`
-	Network             NetworkConfig     `json:"network"`
-	Filesystems         []FilesystemMount `json:"filesystems,omitempty"`
-	HostWallclockUnixNS int64             `json:"host_wallclock_unix_ns"`
-	ProtocolVersion     int               `json:"protocol_version"`
-	ActivationMode      string            `json:"activation_mode,omitempty"`
+	LeaseID         string            `json:"lease_id"`
+	Network         NetworkConfig     `json:"network"`
+	Filesystems     []FilesystemMount `json:"filesystems,omitempty"`
+	ProtocolVersion int               `json:"protocol_version"`
+	ActivationMode  string            `json:"activation_mode,omitempty"`
 }
 
 type AfterRestoreResult struct {
 	LeaseID         string                  `json:"lease_id"`
 	Filesystems     []FilesystemMountResult `json:"filesystems,omitempty"`
 	Timings         *LeaseInitTimings       `json:"timings,omitempty"`
+	Error           string                  `json:"error,omitempty"`
 	ProtocolVersion int                     `json:"protocol_version"`
 }
 
 type LeaseInitTimings struct {
-	WaitForLeaseInitMS  int64 `json:"wait_for_lease_init_ms,omitempty"`
-	ApplyNetworkMS      int64 `json:"apply_network_ms,omitempty"`
-	MountFilesystemsMS  int64 `json:"mount_filesystems_ms,omitempty"`
-	SetWallClockMS      int64 `json:"set_wall_clock_ms,omitempty"`
-	StartLocalControlMS int64 `json:"start_local_control_ms,omitempty"`
-	TotalLeaseInitMS    int64 `json:"total_lease_init_ms,omitempty"`
+	WaitForLeaseInitMS  int64            `json:"wait_for_lease_init_ms,omitempty"`
+	ApplyNetworkMS      int64            `json:"apply_network_ms,omitempty"`
+	MountFilesystemsMS  int64            `json:"mount_filesystems_ms,omitempty"`
+	SyncClockMS         int64            `json:"sync_clock_ms,omitempty"`
+	StartLocalControlMS int64            `json:"start_local_control_ms,omitempty"`
+	TotalLeaseInitMS    int64            `json:"total_lease_init_ms,omitempty"`
+	ClockSync           *ClockSyncResult `json:"clock_sync,omitempty"`
+}
+
+type ClockSyncResult struct {
+	Status      string  `json:"status"`
+	Source      string  `json:"source,omitempty"`
+	OffsetNS    int64   `json:"offset_ns,omitempty"`
+	SkewPPM     float64 `json:"skew_ppm,omitempty"`
+	LeapStatus  string  `json:"leap_status,omitempty"`
+	WaitSyncMS  int64   `json:"waitsync_ms,omitempty"`
+	TrackingRaw string  `json:"tracking_raw,omitempty"`
 }
 
 type FilesystemMount struct {

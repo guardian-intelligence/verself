@@ -262,6 +262,14 @@ WHERE p.org_id = sqlc.arg(org_id)
   AND p.job_shape_id = sqlc.arg(job_shape_id)
   AND p.trust_class = sqlc.arg(trust_class)
   AND vm.generation_set_hash = sqlc.arg(generation_set_hash)
+  AND vm.firecracker_abi_hash = sqlc.arg(firecracker_abi_hash)
+  AND vm.host_abi_hash = sqlc.arg(host_abi_hash)
+  AND vm.network_model_hash = sqlc.arg(network_model_hash)
+  AND vm.vsock_model_hash = sqlc.arg(vsock_model_hash)
+  AND vm.clock_model_hash = sqlc.arg(clock_model_hash)
+  AND vm.vmproto_version = sqlc.arg(vmproto_version)
+  AND vm.after_restore_hook_version = sqlc.arg(after_restore_hook_version)
+  AND vm.before_snapshot_hook_version = sqlc.arg(before_snapshot_hook_version)
   AND vm.state = 'current';
 
 -- name: TouchGoldenVMSnapshotLastUsed :exec
