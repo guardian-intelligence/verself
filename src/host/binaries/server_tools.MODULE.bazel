@@ -195,3 +195,24 @@ http_file(
     sha256 = "f9b7e805056db94c97d34bcff4eab77ec8e7cdc2cb76fd6db3d7ad7143605dba",
     url = "https://github.com/project-zot/zot/releases/download/v2.1.16/zot-linux-amd64",
 )
+
+http_file(
+    name = "server_tool_postgresql_16",
+    downloaded_file_path = "postgresql-16_16.14-0ubuntu0.24.04.1_amd64.deb",
+    sha256 = "13e35dd2bf70ecbc0bdb699313aaa5fa518b45dd5695111a753a1e6e0274e8fa",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/p/postgresql-16/postgresql-16_16.14-0ubuntu0.24.04.1_amd64.deb",
+)
+
+http_file(
+    name = "server_tool_postgresql_client_16",
+    downloaded_file_path = "postgresql-client-16_16.14-0ubuntu0.24.04.1_amd64.deb",
+    sha256 = "8d25751b2b7ff568da1aee1c77880e56559e1f3710dea9f87ae00ec5afea9f39",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/p/postgresql-16/postgresql-client-16_16.14-0ubuntu0.24.04.1_amd64.deb",
+)
+
+http_file(
+    name = "server_tool_libpq5",
+    downloaded_file_path = "libpq5_16.14-0ubuntu0.24.04.1_amd64.deb",
+    sha256 = "a7000b8261d2139cb4a34dcb1e5a04e53ccea175e68499088401e40d5ae3c609",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/p/postgresql-16/libpq5_16.14-0ubuntu0.24.04.1_amd64.deb",
+)

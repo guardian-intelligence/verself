@@ -20,11 +20,12 @@ job "postgresql" {
       user = "postgres"
 
       config {
-        command = "/opt/verself/profile/bin/postgres"
+        command = "/opt/verself/postgresql/usr/lib/postgresql/16/bin/postgres"
         args = ["-D", "/var/lib/postgresql/16/verself", "-c", "config_file=/etc/postgresql/verself/postgresql.conf"]
       }
 
       env {
+        LD_LIBRARY_PATH = "/opt/verself/postgresql/usr/lib/x86_64-linux-gnu"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "postgresql"

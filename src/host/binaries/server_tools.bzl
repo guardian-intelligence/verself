@@ -1,15 +1,18 @@
-"""Catalog of server-tool binaries packaged into the bare-metal node archive.
+"""Catalog of server-tool runtimes packaged into the bare-metal node archive.
 
-Each spec list maps an upstream artifact (`@server_tool_*//file`) to the
-install location under `opt/verself/profile/bin/`. `server_tools_archive()`
-fans the specs out into per-tool genrules and one `pkg_tar` that the host
-configuration playbook unpacks during convergence.
+Most spec lists map an upstream artifact (`@server_tool_*//file`) to an install
+location under `opt/verself/profile/bin/`; runtimes that need a fixed internal
+directory layout are packaged under `opt/verself/<runtime>/`. The
+`server_tools_archive()` macro fans the specs out into per-tool genrules and
+one `pkg_tar` that the host configuration playbook unpacks during convergence.
 """
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 PROFILE_BIN = "opt/verself/profile/bin"
 GRAFANA_CLICKHOUSE_DATASOURCE_VERSION = "4.14.1"
+POSTGRESQL_RUNTIME_ROOT = "opt/verself/postgresql"
+POSTGRESQL_MAJOR_VERSION = "16"
 
 TAR_SINGLE_BINARIES = [
     ("clickhouse", "@server_tool_clickhouse//file", "z", "clickhouse-common-static-*/usr/bin/clickhouse", "clickhouse"),
@@ -85,6 +88,7 @@ SERVER_TOOL_DEPS = [
     ":openbao",
     ":otelcol_contrib",
     ":pomerium",
+    ":postgresql_runtime",
     ":runc",
     ":spicedb",
     ":spiffe_helper",
@@ -262,6 +266,42 @@ unzip -q "$(location {src})" -d "$$tmp/{dest}"
         ),
     )
 
+def _postgresql_runtime():
+    native.genrule(
+        name = "postgresql_runtime",
+        srcs = [
+            "@server_tool_libpq5//file",
+            "@server_tool_postgresql_16//file",
+            "@server_tool_postgresql_client_16//file",
+        ],
+        outs = ["postgresql_runtime.tar"],
+        target_compatible_with = [
+            "@platforms//cpu:x86_64",
+            "@platforms//os:linux",
+        ],
+        cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/extract"
+dpkg-deb -x "$(location @server_tool_libpq5//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @server_tool_postgresql_client_16//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @server_tool_postgresql_16//file)" "$$tmp/extract"
+mkdir -p \
+  "$$tmp/{root}/usr/lib/postgresql" \
+  "$$tmp/{root}/usr/share/postgresql" \
+  "$$tmp/{root}/usr/lib/x86_64-linux-gnu"
+cp -a "$$tmp/extract/usr/lib/postgresql/{major}" "$$tmp/{root}/usr/lib/postgresql/{major}"
+cp -a "$$tmp/extract/usr/share/postgresql/{major}" "$$tmp/{root}/usr/share/postgresql/{major}"
+cp -a "$$tmp/extract/usr/lib/x86_64-linux-gnu"/libpq.so.* "$$tmp/{root}/usr/lib/x86_64-linux-gnu/"
+rm -rf "$$tmp/extract"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .
+""".format(
+            major = POSTGRESQL_MAJOR_VERSION,
+            root = POSTGRESQL_RUNTIME_ROOT,
+        ),
+    )
+
 def _grafana_clickhouse_datasource_version():
     _tar_fragment(
         name = "grafana_clickhouse_datasource_version",
@@ -339,6 +379,7 @@ def server_tools_archive(name = "server_tools_archive"):
         dest = "var/lib/grafana/plugins",
     )
     _grafana_clickhouse_datasource_version()
+    _postgresql_runtime()
 
     pkg_tar(
         name = name,

@@ -1,10 +1,12 @@
 ---
 # PostgreSQL database server.
-# Binary provided by substrate_profile role (apt from PGDG repo).
+# Runtime provided by substrate_profile through Bazel-owned server_tools.tar.zst.
 
 - name: Capture PostgreSQL version
   ansible.builtin.command:
-    cmd: "{{ verself_bin }}/postgres --version"
+    cmd: "{{ postgresql_bin_dir }}/postgres --version"
+  environment:
+    LD_LIBRARY_PATH: "{{ postgresql_lib_dir }}"
   register: postgresql_version_output
   changed_when: false
 
@@ -82,16 +84,18 @@
 - name: Initialize PostgreSQL data directory
   ansible.builtin.command:
     cmd: >-
-      {{ verself_bin }}/initdb
+      {{ postgresql_bin_dir }}/initdb
       --pgdata={{ postgresql_data_dir }}
       --auth=scram-sha-256
       --encoding=UTF8
       --locale=C.UTF-8
       --pwfile=/tmp/.pg_initdb_pw
+      -L {{ postgresql_share_dir }}
   become: true
   become_user: postgres
   environment:
     HOME: /tmp
+    LD_LIBRARY_PATH: "{{ postgresql_lib_dir }}"
   changed_when: true
   when: not postgresql_data_stat.stat.exists
 

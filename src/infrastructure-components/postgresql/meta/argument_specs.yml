@@ -23,7 +23,17 @@ argument_specs:
         default: /var/log/postgresql
         description: "PostgreSQL log directory."
 
-      verself_bin:
+      postgresql_bin_dir:
         type: path
-        required: true
-        description: "Path to the server binary directory."
+        default: /opt/verself/postgresql/usr/lib/postgresql/16/bin
+        description: "Path to the Bazel-owned PostgreSQL binary directory."
+
+      postgresql_share_dir:
+        type: path
+        default: /opt/verself/postgresql/usr/share/postgresql/16
+        description: "Path to the Bazel-owned PostgreSQL share directory."
+
+      postgresql_lib_dir:
+        type: path
+        default: /opt/verself/postgresql/usr/lib/x86_64-linux-gnu
+        description: "Path to the Bazel-owned PostgreSQL library directory."

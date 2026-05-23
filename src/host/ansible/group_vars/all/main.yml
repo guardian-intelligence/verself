@@ -6,3 +6,7 @@
 # playbook_dir is <repo>/src/host/ansible/playbooks during convergence.
 platform_host_files_dir: "{{ playbook_dir }}/../host-files"
 postgresql_log_dir: /var/log/postgresql
+postgresql_runtime_dir: /opt/verself/postgresql
+postgresql_bin_dir: "{{ postgresql_runtime_dir }}/usr/lib/postgresql/16/bin"
+postgresql_share_dir: "{{ postgresql_runtime_dir }}/usr/share/postgresql/16"
+postgresql_lib_dir: "{{ postgresql_runtime_dir }}/usr/lib/x86_64-linux-gnu"

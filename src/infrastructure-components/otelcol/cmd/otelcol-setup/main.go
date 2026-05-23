@@ -27,7 +27,8 @@ const (
 
 	postgresDataDir     = "/var/lib/postgresql/16/verself"
 	postgresIdentPath   = "/etc/postgresql/verself/pg_ident.conf"
-	postgresqlClient    = "/opt/verself/profile/bin/psql"
+	postgresqlClient    = "/opt/verself/postgresql/usr/lib/postgresql/16/bin/psql"
+	postgresqlLibDir    = "/opt/verself/postgresql/usr/lib/x86_64-linux-gnu"
 	postgresPeerMapLine = "verself_services      otelcol            otelcol"
 )
 
@@ -168,6 +169,7 @@ GRANT pg_monitor TO otelcol;
 		"-d", "postgres",
 		"-v", "ON_ERROR_STOP=1",
 	)
+	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+postgresqlLibDir)
 	cmd.Stdin = strings.NewReader(sql)
 	return runPrepared(cmd)
 }
