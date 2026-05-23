@@ -123,3 +123,12 @@ WHERE ServiceName = 'stalwart'
     OR MetricName LIKE 'smtp.%'
   )
 GROUP BY ServiceName, MetricGroup, MetricName;
+
+SELECT throwIf(
+    countIf(name IN ('email_events', 'email_metrics_latest')) != 2
+    OR countIf(name IN ('mail_events', 'mail_metrics_latest')) != 0,
+    'email observability view convergence failed'
+)
+FROM system.tables
+WHERE database = 'default'
+  AND name IN ('email_events', 'email_metrics_latest', 'mail_events', 'mail_metrics_latest');

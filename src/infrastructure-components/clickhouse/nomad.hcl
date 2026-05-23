@@ -26,7 +26,7 @@ job "clickhouse-migrations" {
 
       config {
         command = "/bin/sh"
-        args = ["-ec", "for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do\n  local/bin/clickhouse-client \\\n    --config-file /etc/clickhouse-client/operator.xml \\\n    --user clickhouse_operator \\\n    --database verself \\\n    --multiquery \\\n    --queries-file \"$migration\"\ndone\n"]
+        args = ["-euc", "applied=0\nfor migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do\n  if [ ! -f \"$migration\" ]; then\n    echo \"clickhouse-migrations: no migration files matched local/migrations/[0-9][0-9][0-9]_*.up.sql\" >&2\n    exit 66\n  fi\n  applied=$((applied + 1))\n  echo \"clickhouse-migrations: applying $migration\" >&2\n  local/bin/clickhouse-client \\\n    --config-file /etc/clickhouse-client/operator.xml \\\n    --user clickhouse_operator \\\n    --database verself \\\n    --multiquery \\\n    --queries-file \"$migration\"\ndone\necho \"clickhouse-migrations: applied $applied migration files\" >&2\n"]
       }
 
       env {
