@@ -38,6 +38,12 @@ func TestNativeOIDCConfigSupportsDeviceCodeWithoutClientSecret(t *testing.T) {
 	}
 }
 
+func TestRootOwnerDisplayNameComesFromAddressLocalPart(t *testing.T) {
+	if got := rootOwnerDisplayName("anveio@verself.sh"); got != "Anveio" {
+		t.Fatalf("root owner display name = %q", got)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

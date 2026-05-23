@@ -408,7 +408,7 @@ func (r *platformRunner) seed() (platformReport, error) {
 	if _, err := r.ensurePlatformOwner(); err != nil {
 		return platformReport{}, err
 	}
-	rootOwner, err := r.resolvePlatformRootOwner()
+	rootOwner, err := r.ensurePlatformRootOwner()
 	if err != nil {
 		return platformReport{}, err
 	}

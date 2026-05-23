@@ -154,9 +154,9 @@ func (r *platformRunner) ensurePlatformOwner() (platformZitadelUser, error) {
 	return owner, err
 }
 
-func (r *platformRunner) resolvePlatformRootOwner() (platformZitadelUser, error) {
+func (r *platformRunner) ensurePlatformRootOwner() (platformZitadelUser, error) {
 	var owner platformZitadelUser
-	err := r.withSpan("platform.zitadel_root_owner.resolve", []attribute.KeyValue{
+	err := r.withSpan("platform.zitadel_root_owner.ensure", []attribute.KeyValue{
 		attribute.String("zitadel.host", r.cfg.ZitadelHost),
 		attribute.String("verself.org_id", r.cfg.OrgIDText),
 		attribute.String("verself.root_owner_email", r.cfg.RootOwnerEmail),
@@ -171,11 +171,22 @@ func (r *platformRunner) resolvePlatformRootOwner() (platformZitadelUser, error)
 		if err != nil {
 			return err
 		}
-		if !found {
-			return fmt.Errorf("platform root owner: %s is missing from Zitadel", r.cfg.RootOwnerEmail)
-		}
 		if user.ResourceOwner != "" && user.ResourceOwner != r.cfg.OrgIDText {
 			return fmt.Errorf("platform root owner: %s belongs to Zitadel org %s, expected %s", r.cfg.RootOwnerEmail, user.ResourceOwner, r.cfg.OrgIDText)
+		}
+		if !found {
+			displayName := rootOwnerDisplayName(r.cfg.RootOwnerEmail)
+			user, err = client.CreateHumanInvite(ctx, r.cfg.OrgIDText, platformHumanInvite{
+				Email:       r.cfg.RootOwnerEmail,
+				Username:    r.cfg.RootOwnerEmail,
+				DisplayName: displayName,
+				GivenName:   ownerGivenName(displayName, rootOwnerLocalPart(r.cfg.RootOwnerEmail)),
+				FamilyName:  ownerFamilyName(displayName),
+			})
+			if err != nil {
+				return err
+			}
+			r.markChanged("zitadel.root_owner.created")
 		}
 		owner = user
 		return nil
@@ -220,6 +231,15 @@ func (r *platformRunner) checkPlatformOwner(issues *[]string) platformBoundaryRo
 		}
 		if user.ResourceOwner != "" && user.ResourceOwner != r.cfg.OrgIDText {
 			mismatches = append(mismatches, fmt.Sprintf("owner.resource_owner=%q", user.ResourceOwner))
+		}
+		rootOwner, found, err := client.FindHumanByEmail(ctx, r.cfg.RootOwnerEmail)
+		if err != nil {
+			return err
+		}
+		if !found {
+			mismatches = append(mismatches, "root_owner.missing")
+		} else if rootOwner.ResourceOwner != "" && rootOwner.ResourceOwner != r.cfg.OrgIDText {
+			mismatches = append(mismatches, fmt.Sprintf("root_owner.resource_owner=%q", rootOwner.ResourceOwner))
 		}
 		project, err := client.ProjectByName(ctx, platformProductAPIProjectName)
 		if err != nil {
@@ -1180,4 +1200,35 @@ func ownerFamilyName(name string) string {
 		return "Owner"
 	}
 	return strings.Join(parts[1:], " ")
+}
+
+func rootOwnerDisplayName(email string) string {
+	local := rootOwnerLocalPart(email)
+	if local == "" {
+		return strings.TrimSpace(email)
+	}
+	return uppercaseASCIIHead(local)
+}
+
+func rootOwnerLocalPart(email string) string {
+	local, _, found := strings.Cut(strings.TrimSpace(email), "@")
+	if !found {
+		return strings.TrimSpace(email)
+	}
+	local = strings.ReplaceAll(local, ".", " ")
+	local = strings.ReplaceAll(local, "_", " ")
+	local = strings.ReplaceAll(local, "-", " ")
+	return strings.TrimSpace(local)
+}
+
+func uppercaseASCIIHead(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	first := value[0]
+	if first >= 'a' && first <= 'z' {
+		first -= 'a' - 'A'
+	}
+	return string(first) + value[1:]
 }
