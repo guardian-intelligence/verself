@@ -67,8 +67,7 @@ load(
 )
 load(
     ".aspect/tasks/mail.axl",
-    mail_passwords = "passwords",
-    mail_send = "send",
+    mail_addresses = "addresses",
 )
 load(".aspect/tasks/observe.axl", "observe")
 load(
@@ -162,8 +161,7 @@ def config(ctx):
     ctx.tasks.add(detect_intrusions)
 
     # aspect mail ...
-    ctx.tasks.add(mail_send)
-    ctx.tasks.add(mail_passwords)
+    ctx.tasks.add(mail_addresses)
 
     # aspect canary ...
     ctx.tasks.add(canary_service_discovery)

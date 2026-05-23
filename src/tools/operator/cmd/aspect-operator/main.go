@@ -15,8 +15,8 @@
 //	aspect-operator persona assume|user-state
 //	    Operator persona credential and fixture tooling.
 //
-//	aspect-operator mail send|passwords
-//	    Operator mail helpers.
+//	aspect-operator mail addresses
+//	    Operator email inventory helpers.
 //
 //	aspect-operator dev verself-web
 //	    Operator local-development tunnel helpers.
