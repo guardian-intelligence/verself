@@ -18,9 +18,6 @@
 //	aspect-operator mail addresses
 //	    Operator email inventory helpers.
 //
-//	aspect-operator dev verself-web
-//	    Operator local-development tunnel helpers.
-//
 //	aspect-operator device
 //	    Configure this checkout/device to reach the operator access plane.
 //
@@ -76,8 +73,6 @@ func run(args []string) error {
 		return cmdPersona(rest)
 	case "mail":
 		return cmdMail(rest)
-	case "dev":
-		return cmdDev(rest)
 	case "device":
 		return cmdDevice(rest)
 	case "platform":
@@ -106,7 +101,6 @@ Subcommands:
   billing           Billing fixture and inspection tooling
   persona           Persona credential and fixture tooling
   mail              Mail operator helpers
-  dev               Local development helpers
   device            Configure this device for operator access
   platform          Platform org/project/source convergence
   service-discovery-canary  Drive billing -> IAM traffic through the resolver

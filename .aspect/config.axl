@@ -53,7 +53,6 @@ load(
     dev_hooks_install = "hooks_install",
     dev_install = "install",
     dev_sops_init = "sops_init",
-    dev_verself_web = "verself_web",
 )
 load(
     ".aspect/tasks/host_configuration.axl",
@@ -138,7 +137,6 @@ def config(ctx):
     ctx.tasks.add(dev_install)
     ctx.tasks.add(dev_sops_init)
     ctx.tasks.add(dev_hooks_install)
-    ctx.tasks.add(dev_verself_web)
 
     # aspect persona ...
     ctx.tasks.add(persona_assume)

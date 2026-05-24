@@ -1,7 +1,7 @@
 import type { FlightRow } from "./collection";
 import { toFlights, type Flight } from "./model";
 
-// Deterministic mock states for `aspect dev verself-web` + agent-browser +
+// Deterministic mock states for local dev + agent-browser +
 // design review. Named fixtures push raw string rows through model.ts (so the
 // data contract is exercised); `?flight=debug` seeds one card straight from
 // query params. No backend, no "cold"/"diverted"/"landed" — only the phases
