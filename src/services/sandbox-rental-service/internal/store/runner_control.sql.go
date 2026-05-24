@@ -18,16 +18,18 @@ SET execution_id = $1,
     attempt_id = $2,
     state = 'vm_submitted',
     vm_submitted_by = $3,
+    runner_listening_by = $4,
     updated_at = $3
-WHERE allocation_id = $4
+WHERE allocation_id = $5
   AND state IN ('jit_created', 'pending', 'jit_creating', 'bootstrap_created', 'bootstrap_creating')
 `
 
 type AttachRunnerAllocationExecutionParams struct {
-	ExecutionID  *uuid.UUID
-	AttemptID    *uuid.UUID
-	UpdatedAt    pgtype.Timestamptz
-	AllocationID uuid.UUID
+	ExecutionID       *uuid.UUID
+	AttemptID         *uuid.UUID
+	UpdatedAt         pgtype.Timestamptz
+	RunnerListeningBy pgtype.Timestamptz
+	AllocationID      uuid.UUID
 }
 
 func (q *Queries) AttachRunnerAllocationExecution(ctx context.Context, arg AttachRunnerAllocationExecutionParams) (int64, error) {
@@ -35,6 +37,7 @@ func (q *Queries) AttachRunnerAllocationExecution(ctx context.Context, arg Attac
 		arg.ExecutionID,
 		arg.AttemptID,
 		arg.UpdatedAt,
+		arg.RunnerListeningBy,
 		arg.AllocationID,
 	)
 	if err != nil {
@@ -964,17 +967,19 @@ func (q *Queries) MarkRunnerAllocationCleaned(ctx context.Context, arg MarkRunne
 const markRunnerAllocationConfigFetched = `-- name: MarkRunnerAllocationConfigFetched :exec
 UPDATE runner_allocations
 SET state = CASE WHEN state = 'vm_submitted' THEN 'runner_config_fetched' ELSE state END,
-    updated_at = $1
-WHERE allocation_id = $2
+    assignment_by = CASE WHEN state = 'vm_submitted' THEN $1 ELSE assignment_by END,
+    updated_at = $2
+WHERE allocation_id = $3
 `
 
 type MarkRunnerAllocationConfigFetchedParams struct {
+	AssignmentBy pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	AllocationID uuid.UUID
 }
 
 func (q *Queries) MarkRunnerAllocationConfigFetched(ctx context.Context, arg MarkRunnerAllocationConfigFetchedParams) error {
-	_, err := q.db.Exec(ctx, markRunnerAllocationConfigFetched, arg.UpdatedAt, arg.AllocationID)
+	_, err := q.db.Exec(ctx, markRunnerAllocationConfigFetched, arg.AssignmentBy, arg.UpdatedAt, arg.AllocationID)
 	return err
 }
 

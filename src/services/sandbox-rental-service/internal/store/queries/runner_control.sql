@@ -260,6 +260,7 @@ SET execution_id = sqlc.arg(execution_id),
     attempt_id = sqlc.arg(attempt_id),
     state = 'vm_submitted',
     vm_submitted_by = sqlc.arg(updated_at),
+    runner_listening_by = sqlc.arg(runner_listening_by),
     updated_at = sqlc.arg(updated_at)
 WHERE allocation_id = sqlc.arg(allocation_id)
   AND state IN ('jit_created', 'pending', 'jit_creating', 'bootstrap_created', 'bootstrap_creating');
@@ -293,6 +294,7 @@ WHERE allocation_id = sqlc.arg(allocation_id);
 -- name: MarkRunnerAllocationConfigFetched :exec
 UPDATE runner_allocations
 SET state = CASE WHEN state = 'vm_submitted' THEN 'runner_config_fetched' ELSE state END,
+    assignment_by = CASE WHEN state = 'vm_submitted' THEN sqlc.arg(assignment_by) ELSE assignment_by END,
     updated_at = sqlc.arg(updated_at)
 WHERE allocation_id = sqlc.arg(allocation_id);
 
