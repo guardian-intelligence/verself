@@ -50,6 +50,27 @@ func TestAccessibleOrganizationsUsesAuthorizationGraph(t *testing.T) {
 	}
 }
 
+func TestAccessibleOrganizationsIgnoresMissingMetadata(t *testing.T) {
+	svc := &Service{
+		Store: partialMetadataStore{
+			available: map[string]OrganizationMetadata{
+				"org_live": {OrgID: "org_live", IdentityProviderOrgID: "42", DisplayName: "Live", Slug: "live", Version: 1},
+			},
+		},
+		AuthorizationGraph: fakeMembersAuthz{
+			orgIDs: []string{"org_missing", "org_live"},
+		},
+	}
+
+	got, err := svc.AccessibleOrganizations(context.Background(), AuthorizationSubject{Kind: AuthorizationSubjectKindUser, ID: "user-1"})
+	if err != nil {
+		t.Fatalf("AccessibleOrganizations: %v", err)
+	}
+	if len(got) != 1 || got[0].OrgID != "org_live" {
+		t.Fatalf("unexpected organizations: %#v", got)
+	}
+}
+
 func TestServiceCreateOrganizationCreatesDirectoryOrgAndProfile(t *testing.T) {
 	store := &fakeSignupStore{}
 	directory := &fakeMembersDirectory{}
@@ -192,9 +213,24 @@ func (a fakeMembersAuthz) TestOrganizationPermissions(context.Context, string, A
 
 type fakeMembersStore struct{}
 
+type partialMetadataStore struct {
+	fakeMembersStore
+	available map[string]OrganizationMetadata
+}
+
 type fakeSignupStore struct {
 	fakeMembersStore
 	created CreateOrganizationRequest
+}
+
+func (s partialMetadataStore) ListOrganizationMetadataByOrgIDs(_ context.Context, orgIDs []string) ([]OrganizationMetadata, error) {
+	out := make([]OrganizationMetadata, 0, len(orgIDs))
+	for _, orgID := range orgIDs {
+		if organization, ok := s.available[orgID]; ok {
+			out = append(out, organization)
+		}
+	}
+	return out, nil
 }
 
 func (s *fakeSignupStore) CreateOrganizationProfile(_ context.Context, input CreateOrganizationRequest) (OrganizationProfile, error) {

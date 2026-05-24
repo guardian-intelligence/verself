@@ -1414,16 +1414,36 @@ func (a *BrowserAuth) publicOrganizationContexts(ctx context.Context, subject st
 	if err != nil {
 		return nil, fmt.Errorf("map browser organization contexts: %w", err)
 	}
+	out, missing := browserOrganizationContextsFromMetadata(orgIDs, rows)
+	if len(missing) > 0 {
+		trace.SpanFromContext(ctx).AddEvent("iam.browser_auth.organization_metadata_missing", trace.WithAttributes(
+			attribute.Int("iam.organization.missing_count", len(missing)),
+		))
+		if a.logger != nil {
+			a.logger.WarnContext(ctx, "browser auth organization metadata missing", "missing_org_ids", missing)
+		}
+	}
+	return out, nil
+}
+
+func browserOrganizationContextsFromMetadata(orgIDs []string, rows []identitystore.ListOrganizationMetadataByOrgIDsRow) ([]authOrganizationContext, []string) {
 	seen := map[string]struct{}{}
 	out := make([]authOrganizationContext, 0, len(rows))
 	for _, row := range rows {
 		seen[row.OrgID] = struct{}{}
 		out = append(out, authOrganizationContext{OrgID: row.OrgID, IdentityProviderOrgID: row.IdentityProviderOrgID})
 	}
-	if len(seen) != len(orgIDs) {
-		return nil, errors.New("browser organization context missing IAM metadata")
+	return out, missingOrganizationMetadataIDs(orgIDs, seen)
+}
+
+func missingOrganizationMetadataIDs(orgIDs []string, seen map[string]struct{}) []string {
+	missing := []string{}
+	for _, orgID := range orgIDs {
+		if _, ok := seen[orgID]; !ok {
+			missing = append(missing, orgID)
+		}
 	}
-	return out, nil
+	return missing
 }
 
 func publicOrgIDForProviderOrgID(contexts []authOrganizationContext, providerOrgID *string) *string {

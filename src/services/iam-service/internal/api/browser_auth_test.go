@@ -3,6 +3,8 @@ package api
 import (
 	"testing"
 	"time"
+
+	identitystore "github.com/verself/iam-service/internal/store"
 )
 
 func TestVerifySelectedOrganizationClaimsAllowsNoOrganizationContext(t *testing.T) {
@@ -38,5 +40,22 @@ func TestSnapshotForSessionAllowsSignedInUserWithoutOrganization(t *testing.T) {
 	}
 	if snapshot.User == nil || snapshot.User.SelectedOrgID != nil || snapshot.User.OrgID != nil {
 		t.Fatalf("user snapshot should not invent organization context: %#v", snapshot.User)
+	}
+}
+
+func TestBrowserOrganizationContextsIgnoreMissingMetadata(t *testing.T) {
+	contexts, missing := browserOrganizationContextsFromMetadata(
+		[]string{"org_missing", "org_live"},
+		[]identitystore.ListOrganizationMetadataByOrgIDsRow{{
+			OrgID:                 "org_live",
+			IdentityProviderOrgID: "provider-live",
+		}},
+	)
+
+	if len(contexts) != 1 || contexts[0].OrgID != "org_live" || contexts[0].IdentityProviderOrgID != "provider-live" {
+		t.Fatalf("unexpected contexts: %#v", contexts)
+	}
+	if len(missing) != 1 || missing[0] != "org_missing" {
+		t.Fatalf("unexpected missing org ids: %#v", missing)
 	}
 }

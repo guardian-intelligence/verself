@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"sort"
 	"strings"
@@ -104,10 +105,24 @@ func (s *Service) AccessibleOrganizations(ctx context.Context, subject Authoriza
 	if err != nil {
 		return nil, err
 	}
-	if len(organizations) != len(orgIDs) {
-		return nil, fmt.Errorf("%w: organization metadata is missing for one or more policy grants", ErrOrganizationMissing)
+	if missing := missingOrganizationMetadataIDs(orgIDs, organizations); len(missing) > 0 {
+		slog.Default().WarnContext(ctx, "organization metadata missing for authorization graph result", "missing_org_ids", missing)
 	}
 	return organizations, nil
+}
+
+func missingOrganizationMetadataIDs(orgIDs []string, organizations []OrganizationMetadata) []string {
+	seen := map[string]struct{}{}
+	for _, organization := range organizations {
+		seen[organization.OrgID] = struct{}{}
+	}
+	missing := []string{}
+	for _, orgID := range orgIDs {
+		if _, ok := seen[orgID]; !ok {
+			missing = append(missing, orgID)
+		}
+	}
+	return missing
 }
 
 func (s *Service) CreateOrganization(ctx context.Context, subjectID string, input PublicCreateOrganizationRequest) (Organization, error) {
