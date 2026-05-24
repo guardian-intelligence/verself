@@ -100,7 +100,7 @@ func (o *Orchestrator) prepareLeaseFilesystems(ctx context.Context, plan leaseBo
 		attribute.String("org.id", plan.Spec.StorageNamespace.OrgID),
 		attribute.Int("filesystem.mount_count", len(plan.Spec.FilesystemMounts)),
 	)
-	mounts, mountErr := o.prepareFilesystemMounts(mountsCtx, plan.Lease, plan.Spec.FilesystemMounts, plan.Runtime.ImageSnapshots)
+	mounts, mountErr := o.prepareFilesystemMounts(mountsCtx, plan.Lease, plan.Spec.StorageNamespace.QuotaBytes, plan.Spec.FilesystemMounts, plan.Runtime.ImageSnapshots)
 	endMountsSpan(mountErr)
 	return mounts, mountErr
 }

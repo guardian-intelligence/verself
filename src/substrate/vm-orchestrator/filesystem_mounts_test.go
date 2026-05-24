@@ -136,7 +136,7 @@ func TestPrepareFilesystemMountsFallsBackToEmptyMountWhenGenerationSnapshotIsMis
 		t.Fatal(err)
 	}
 	const sourceRef = "pool/orgs/org_a/goldens/scope-a/generations/gen-a@sealed"
-	mounts, err := o.prepareFilesystemMounts(context.Background(), lease, []FilesystemMount{{
+	mounts, err := o.prepareFilesystemMounts(context.Background(), lease, 10<<30, []FilesystemMount{{
 		Name:        "workspace",
 		OperationID: "op-a",
 		SourceRef:   sourceRef,

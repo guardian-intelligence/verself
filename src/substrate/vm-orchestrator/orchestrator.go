@@ -632,9 +632,12 @@ func (o *Orchestrator) cleanupLeaseDatasets(runtime *LeaseRuntime, lease zfs.Lea
 	}
 }
 
-func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Lease, mounts []FilesystemMount, imageSnapshots map[string]zfs.Snapshot) ([]preparedFilesystemMount, error) {
+func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Lease, storageQuotaBytes uint64, mounts []FilesystemMount, imageSnapshots map[string]zfs.Snapshot) ([]preparedFilesystemMount, error) {
 	if len(mounts) == 0 {
 		return nil, nil
+	}
+	if storageQuotaBytes == 0 {
+		return nil, fmt.Errorf("storage namespace quota is required")
 	}
 	type mountResult struct {
 		mount preparedFilesystemMount
@@ -654,7 +657,7 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			prepared, err := o.prepareFilesystemMount(ctx, lease, idx, mount, imageSnapshots)
+			prepared, err := o.prepareFilesystemMount(ctx, lease, storageQuotaBytes, idx, mount, imageSnapshots)
 			results[idx] = mountResult{mount: prepared, err: err}
 		}()
 	}
@@ -669,7 +672,7 @@ func (o *Orchestrator) prepareFilesystemMounts(ctx context.Context, lease zfs.Le
 	return prepared, nil
 }
 
-func (o *Orchestrator) prepareFilesystemMount(ctx context.Context, lease zfs.Lease, idx int, mount FilesystemMount, imageSnapshots map[string]zfs.Snapshot) (preparedFilesystemMount, error) {
+func (o *Orchestrator) prepareFilesystemMount(ctx context.Context, lease zfs.Lease, storageQuotaBytes uint64, idx int, mount FilesystemMount, imageSnapshots map[string]zfs.Snapshot) (preparedFilesystemMount, error) {
 	var (
 		clone   zfs.MountClone
 		prepErr error
@@ -697,7 +700,7 @@ func (o *Orchestrator) prepareFilesystemMount(ctx context.Context, lease zfs.Lea
 		SourceDatasetRef: mount.SourceRef,
 	})
 	if mount.SourceRef == "" {
-		clone, prepErr = o.volumes.PrepareEmptyMount(mountCtx, lease, idx, mount.Name, operationID)
+		clone, prepErr = o.volumes.PrepareEmptyMount(mountCtx, lease, idx, mount.Name, operationID, storageQuotaBytes)
 	} else if strings.Contains(mount.SourceRef, "@") {
 		gen, genErr := zfs.ParseGeneration(o.roots, mount.SourceRef)
 		if genErr != nil {
@@ -733,7 +736,7 @@ func (o *Orchestrator) prepareFilesystemMount(ctx context.Context, lease zfs.Lea
 				SourceDatasetRef: mount.SourceRef,
 				ErrorMessage:     prepErr.Error(),
 			})
-			clone, prepErr = o.volumes.PrepareEmptyMount(mountCtx, lease, idx, mount.Name, operationID)
+			clone, prepErr = o.volumes.PrepareEmptyMount(mountCtx, lease, idx, mount.Name, operationID, storageQuotaBytes)
 		}
 	} else {
 		image, imgErr := zfs.NewImage(o.roots, mount.SourceRef)

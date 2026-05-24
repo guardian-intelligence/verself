@@ -357,7 +357,7 @@ func TestPrepareFilesystemMountsEnsureMountParent(t *testing.T) {
 	if !containsString(ops.ensures, "pool/orgs/org_a/workloads/lease-a/mounts") {
 		t.Fatalf("cloned mount parent was not ensured: %#v", ops.ensures)
 	}
-	if _, err := lifecycle.PrepareEmptyMount(context.Background(), lease, 1, "workspace", "op-b"); err != nil {
+	if _, err := lifecycle.PrepareEmptyMount(context.Background(), lease, 1, "workspace", "op-b", 10<<30); err != nil {
 		t.Fatal(err)
 	}
 	if !containsString(ops.ensures, "pool/orgs/org_a/workloads/lease-a/mounts") {

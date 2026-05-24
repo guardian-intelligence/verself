@@ -465,7 +465,7 @@ func (DirectPrivOps) ZFSMkfs(ctx context.Context, devicePath, fsType, label stri
 	}
 	switch fsType {
 	case "ext4":
-		args := []string{"-F", "-E", "lazy_itable_init=1,lazy_journal_init=1"}
+		args := []string{"-F", "-m", "0", "-E", "lazy_itable_init=1,lazy_journal_init=1,nodiscard"}
 		if label != "" {
 			args = append(args, "-L", label)
 		}
@@ -474,6 +474,9 @@ func (DirectPrivOps) ZFSMkfs(ctx context.Context, devicePath, fsType, label stri
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("mkfs.ext4 %s: %s: %w", devicePath, strings.TrimSpace(string(out)), err)
+		}
+		if err := (DirectPrivOps{}).FlushBlockDevice(ctx, devicePath); err != nil {
+			return fmt.Errorf("flush mkfs.ext4 device %s: %w", devicePath, err)
 		}
 		return nil
 	}
@@ -584,6 +587,16 @@ func (DirectPrivOps) ZFSEnsureVolumeSizeExt4(ctx context.Context, dataset string
 		return err
 	}
 	endResizeSpan(nil)
+
+	flushCtx, endFlushSpan := startStepSpan(ctx, "vmorchestrator.zfs.ext4.flush",
+		attribute.String("zfs.dataset", dataset),
+		attribute.String("device.path", devicePath),
+	)
+	err = (DirectPrivOps{}).FlushBlockDevice(flushCtx, devicePath)
+	endFlushSpan(err)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

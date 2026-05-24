@@ -22,9 +22,8 @@ import (
 )
 
 const (
-	Timeout                   = 30 * time.Second
-	DurableVolumeNominalBytes = uint64(1 << 40)
-	sourceDigestProperty      = "vs:source_digest"
+	Timeout              = 30 * time.Second
+	sourceDigestProperty = "vs:source_digest"
 )
 
 type StorageNamespace struct {
@@ -493,14 +492,17 @@ func (l *VolumeLifecycle) PrepareMountFromSnapshot(ctx context.Context, lease Le
 	return MountClone{lease: lease, dataset: target, name: name}, nil
 }
 
-func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, index int, name string, operationID string) (clone MountClone, err error) {
+func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, index int, name string, operationID string, sizeBytes uint64) (clone MountClone, err error) {
+	if sizeBytes == 0 {
+		return MountClone{}, fmt.Errorf("empty mount size is required")
+	}
 	ctx, span, endSpan := startLifecycleSpan(ctx, "vmorchestrator.zfs.mount.prepare_empty",
 		attribute.String("lease.id", lease.ID()),
 		attribute.String("org.id", lease.OrgID()),
 		attribute.String("filesystem.name", name),
 		attribute.Int("filesystem.sort_order", index),
 		attribute.String("filesystem.operation_id", firstNonEmpty(operationID, lease.ID())),
-		uint64LifecycleAttribute("zfs.size_bytes", DurableVolumeNominalBytes),
+		uint64LifecycleAttribute("zfs.size_bytes", sizeBytes),
 	)
 	defer func() { endSpan(err) }()
 	target, err := lease.MountDataset(index, name)
@@ -525,10 +527,10 @@ func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, in
 		attribute.String("org.id", lease.OrgID()),
 		attribute.String("filesystem.name", name),
 		attribute.String("zfs.dataset", target),
-		uint64LifecycleAttribute("zfs.size_bytes", DurableVolumeNominalBytes),
+		uint64LifecycleAttribute("zfs.size_bytes", sizeBytes),
 		attribute.String("zfs.volblocksize", "16K"),
 	)
-	createErr := l.ops.ZFSCreateSparseVolume(createCtx, target, DurableVolumeNominalBytes, "16K")
+	createErr := l.ops.ZFSCreateSparseVolume(createCtx, target, sizeBytes, "16K")
 	endCreateSpan(createErr)
 	if createErr != nil {
 		return MountClone{}, createErr
