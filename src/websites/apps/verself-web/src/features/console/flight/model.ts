@@ -1,10 +1,28 @@
-import type { FlightRow } from "./collection";
+export type FlightRow = {
+  readonly provider: string;
+  readonly provider_job_id: string;
+  readonly org_id: string;
+  readonly provider_run_id: string;
+  readonly provider_run_attempt: string;
+  readonly repository_full_name: string;
+  readonly workflow_name: string;
+  readonly job_name: string;
+  readonly head_branch: string;
+  readonly head_sha: string;
+  readonly pr_number: string;
+  readonly base_branch: string;
+  readonly actor_login: string;
+  readonly commit_count: string | null;
+  readonly status: string;
+  readonly predicted_baseline_ms: string | null;
+  readonly created_at: string;
+  readonly started_at: string | null;
+};
 
-// DATA CONTRACT ONLY. This module shapes Electric-delivered rows into the
+// DATA CONTRACT ONLY. This module shapes raw flight rows into the
 // `Flight` value the widget renders. It holds no presentation, no clock, no
-// phase logic — those live in phase.ts so the state machine stays pure and
-// independently auditable. The Electric shape syncs only *active* jobs, so
-// every `Flight` is, by construction, in flight.
+// phase logic; those live in phase.ts so the state machine stays pure and
+// independently auditable.
 export type Flight = {
   readonly key: string;
   readonly providerRunId: string;

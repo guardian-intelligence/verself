@@ -1,18 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-// Thin per-shape route. The proxy module is dynamically imported so its
-// node:fs / secret code never reaches the client bundle.
 export const Route = createFileRoute("/api/sync/flights")({
   server: {
     handlers: {
-      GET: ({ request }) => proxyFlightsShape(request),
-      POST: ({ request }) => proxyFlightsShape(request),
+      GET: () => flightsSyncDisabled(),
+      POST: () => flightsSyncDisabled(),
     },
   },
 });
 
-async function proxyFlightsShape(request: Request): Promise<Response> {
-  const { electricShapeDefinitions, proxyElectricShape } =
-    await import("~/server-fns/electric-proxy.server");
-  return proxyElectricShape(request, electricShapeDefinitions.flights);
+function flightsSyncDisabled(): Response {
+  return new Response("flight sync disabled; console uses fixtures", {
+    status: 404,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
 }

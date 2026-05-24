@@ -21,11 +21,10 @@ function frameKind(value: unknown): FrameKind | undefined {
   return value === "iphone17" ? "iphone17" : undefined;
 }
 
-// The signed-in surface is exactly this widget: a live departures board of
-// in-flight CI. Reads come only from the Electric `flights` shape; there is no
-// loader and no polling. `?flight=` swaps in synthetic states for QA /
-// agent-browser / design review (opt-in, auth-gated, default is live):
-//   ?flight=building-on-time | running-late | no-history | no-build
+// The signed-in surface is exactly this widget. Until the CI flight data model
+// is real, the default state uses the same synthetic fixtures as QA /
+// agent-browser / design review:
+//   ?flight=building-on-time | running-late | boarding | no-build
 //   ?flight=debug&actor=ash&src=PR47&dst=MAIN&state=ontime&remaining=12&commits=4
 //            (state = ontime | late | cold)
 export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/")({

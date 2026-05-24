@@ -41,8 +41,9 @@ const (
 	durableRetainedGenerationTTL     = 7 * 24 * time.Hour
 	durableReapBatchSize             = 32
 	durableEvictionMaxBatches        = 8
-	goldenVMFreeSnapshotRingSize     = 1
-	goldenVMPaidSnapshotRingSize     = 2
+	goldenVMFreeRetainedSnapshotMax  = 0
+	goldenVMProRetainedSnapshotMax   = 2
+	goldenVMEnterpriseRetainedMax    = 6
 	durablePoolLowWatermarkPermille  = 700
 	durablePoolHardWatermarkPermille = 850
 
@@ -1604,6 +1605,7 @@ type goldenVMReapCandidate struct {
 	StateBytes              int64
 	MemoryBytes             int64
 	Reason                  string
+	RingOverflow            bool
 	RingRetainCount         int32
 }
 
@@ -1662,6 +1664,7 @@ func ringOverflowGoldenVMReapCandidates(rows []store.ListGoldenVMSnapshotRingOve
 			StateBytes:              row.StateBytes,
 			MemoryBytes:             row.MemoryBytes,
 			Reason:                  "snapshot_ring_limit_exceeded",
+			RingOverflow:            true,
 			RingRetainCount:         retainCount,
 		})
 	}
@@ -1674,7 +1677,7 @@ func (s *Service) reapGoldenVMSnapshotCandidates(ctx context.Context, now time.T
 	for _, row := range rows {
 		var changed int64
 		var err error
-		if row.RingRetainCount > 0 {
+		if row.RingOverflow {
 			changed, err = s.storeQueries().MarkGoldenVMSnapshotRingReaping(ctx, store.MarkGoldenVMSnapshotRingReapingParams{
 				OrgID:              row.OrgID,
 				GoldenVmSnapshotID: row.GoldenVmSnapshotID,
@@ -1739,9 +1742,19 @@ func goldenVMSnapshotRetentionLimitForPlan(planTier, planID string) (int32, erro
 	}
 	switch key {
 	case "free", "sandbox-free", "starter":
-		return goldenVMFreeSnapshotRingSize, nil
+		return goldenVMFreeRetainedSnapshotMax, nil
+	case "pro", "sandbox-pro", "sandbox-default", "default", "payg", "metered":
+		return goldenVMProRetainedSnapshotMax, nil
+	case "enterprise", "sandbox-enterprise":
+		return goldenVMEnterpriseRetainedMax, nil
 	default:
-		return goldenVMPaidSnapshotRingSize, nil
+		if strings.Contains(key, "enterprise") {
+			return goldenVMEnterpriseRetainedMax, nil
+		}
+		if strings.Contains(key, "pro") || strings.Contains(key, "default") || strings.Contains(key, "payg") || strings.Contains(key, "metered") {
+			return goldenVMProRetainedSnapshotMax, nil
+		}
+		return goldenVMFreeRetainedSnapshotMax, nil
 	}
 }
 

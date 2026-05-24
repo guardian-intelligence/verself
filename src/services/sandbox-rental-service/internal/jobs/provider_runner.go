@@ -327,15 +327,6 @@ func (s *Service) upsertProviderRunnerJob(ctx context.Context, obs ProviderRunne
 	}); err != nil {
 		return err
 	}
-	if obs.Provider == RunnerProviderGitHub && isActiveFlightStatus(obs.Status) {
-		orgID, err := projectFlightJob(ctx, s.storeQueries(), obs, now)
-		if err != nil {
-			return err
-		}
-		if orgID != "" {
-			go s.refreshFlightBaseline(context.WithoutCancel(ctx), obs.ProviderJobID, orgID, obs.RepositoryFullName, obs.WorkflowName, obs.JobName)
-		}
-	}
 	return nil
 }
 

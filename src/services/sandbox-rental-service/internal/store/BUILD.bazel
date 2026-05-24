@@ -3,7 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "store",
     srcs = [
-        "console_flight.sql.go",
         "db.go",
         "durable.sql.go",
         "executions.sql.go",
