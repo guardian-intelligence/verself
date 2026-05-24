@@ -413,6 +413,14 @@ func (r *Runtime) Stop(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runtime) StopAndCancel(ctx context.Context) error {
+	if err := r.client.StopAndCancel(ctx); err != nil {
+		return fmt.Errorf("stop and cancel river client: %w", err)
+	}
+	r.logger.InfoContext(ctx, "scheduler runtime stopped with worker cancellation")
+	return nil
+}
+
 func queueConfig(cfg Config) map[string]river.QueueConfig {
 	return map[string]river.QueueConfig{
 		QueueExecution:    {MaxWorkers: normalizeMaxWorkers(cfg.ExecutionMaxWorkers, DefaultExecutionMaxWorkers)},

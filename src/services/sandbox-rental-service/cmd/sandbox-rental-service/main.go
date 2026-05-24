@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
@@ -45,6 +48,7 @@ const (
 
 	sandboxAPIRequestBodyLimit  = 1 << 20
 	sandboxInternalWriteTimeout = 60 * time.Second
+	defaultShutdownDrainTimeout = 4 * time.Hour
 )
 
 func main() {
@@ -69,10 +73,10 @@ func runMigrationCLI(ctx context.Context) (bool, error) {
 }
 
 func run() error {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	signalCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: "sandbox-rental-service", ServiceVersion: "1.0.0"})
+	otelShutdown, logger, err := verselfotel.Init(signalCtx, verselfotel.Config{ServiceName: "sandbox-rental-service", ServiceVersion: "1.0.0"})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -104,6 +108,7 @@ func run() error {
 	pgConnMaxIdle := cfg.Int("VERSELF_PG_CONN_MAX_IDLE_SECONDS", 300)
 	workloadTimeout := cfg.Int("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)
 	executionMaxWorkers := cfg.Int("SANDBOX_EXECUTION_MAX_WORKERS", scheduler.DefaultExecutionMaxWorkers)
+	shutdownDrainTimeout := cfg.Duration("SANDBOX_DRAIN_TIMEOUT", defaultShutdownDrainTimeout)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	if err := cfg.Err(); err != nil {
@@ -113,7 +118,7 @@ func run() error {
 		return fmt.Errorf("SANDBOX_PUBLIC_BASE_URL: %w", err)
 	}
 
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(signalCtx, spiffeEndpoint)
 	if err != nil {
 		return fmt.Errorf("spiffe workload source: %w", err)
 	}
@@ -135,18 +140,18 @@ func run() error {
 	pgxConfig.MinConns = int32FromInt(pgMinConns, "SANDBOX_PG_MIN_CONNS")
 	pgxConfig.MaxConnLifetime = time.Duration(pgConnMaxLifetime) * time.Second
 	pgxConfig.MaxConnIdleTime = time.Duration(pgConnMaxIdle) * time.Second
-	pgxPool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
+	pgxPool, err := pgxpool.NewWithConfig(signalCtx, pgxConfig)
 	if err != nil {
 		return fmt.Errorf("open postgres pool: %w", err)
 	}
 	defer pgxPool.Close()
-	pgxPingCtx, cancelPGXPing := context.WithTimeout(ctx, 5*time.Second)
+	pgxPingCtx, cancelPGXPing := context.WithTimeout(signalCtx, 5*time.Second)
 	defer cancelPGXPing()
 	if err := pgxPool.Ping(pgxPingCtx); err != nil {
 		return fmt.Errorf("ping postgres pool: %w", err)
 	}
 
-	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(signalCtx, spiffeSource, chCACertPath)
 	if err != nil {
 		return fmt.Errorf("sandbox-rental clickhouse tls: %w", err)
 	}
@@ -162,7 +167,7 @@ func run() error {
 		return fmt.Errorf("open clickhouse: %w", err)
 	}
 	defer func() { _ = chConn.Close() }()
-	chPingCtx, cancelCHPing := context.WithTimeout(ctx, 5*time.Second)
+	chPingCtx, cancelCHPing := context.WithTimeout(signalCtx, 5*time.Second)
 	defer cancelCHPing()
 	var chProbe uint8
 	if err := chConn.QueryRow(chPingCtx, "SELECT 1").Scan(&chProbe); err != nil {
@@ -171,7 +176,7 @@ func run() error {
 
 	// --- vm-orchestrator client ---
 
-	orchestrator, err := vmorchestrator.NewClient(ctx, vmOrchestratorSocket)
+	orchestrator, err := vmorchestrator.NewClient(signalCtx, vmOrchestratorSocket)
 	if err != nil {
 		return fmt.Errorf("connect vm-orchestrator: %w", err)
 	}
@@ -181,7 +186,7 @@ func run() error {
 	// default VMResourceBounds applied to intake when an org has no explicit
 	// row, clamped to what the host can actually
 	// schedule. Org-specific overrides live in the vm_resource_bounds table.
-	capacityCtx, cancelCapacity := context.WithTimeout(ctx, 5*time.Second)
+	capacityCtx, cancelCapacity := context.WithTimeout(signalCtx, 5*time.Second)
 	defer cancelCapacity()
 	capacity, err := orchestrator.GetCapacity(capacityCtx)
 	if err != nil {
@@ -281,20 +286,17 @@ func run() error {
 	}
 	jobService.Scheduler = schedulerRuntime
 
-	if err := schedulerRuntime.Start(ctx); err != nil {
+	workerCtx, cancelWorkers := context.WithCancel(context.Background())
+	defer cancelWorkers()
+	if err := schedulerRuntime.Start(workerCtx); err != nil {
 		return fmt.Errorf("start scheduler runtime: %w", err)
 	}
-	defer func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := schedulerRuntime.Stop(stopCtx); err != nil {
-			logger.ErrorContext(context.Background(), "sandbox-rental: stop scheduler runtime", "error", err)
-		}
-	}()
 
 	// --- Huma API ---
 
+	drain := &drainState{}
 	rootMux := http.NewServeMux()
+	registerStatusRoutes(rootMux, drain)
 	privateMux := http.NewServeMux()
 	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, recurringService, sandboxapi.PublicAPIConfig{
 		PublicBaseURL:  publicBaseURL,
@@ -343,6 +345,7 @@ func run() error {
 		return fmt.Errorf("sandbox-rental spiffe internal tls: %w", err)
 	}
 	internalMux := http.NewServeMux()
+	registerStatusRoutes(internalMux, drain)
 	sandboxapi.NewInternalAPI(internalMux, "1.0.0", "https://"+internalListenAddr, jobService)
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
@@ -354,24 +357,107 @@ func run() error {
 	})
 	internalSrv.TLSConfig = internalTLSConfig
 
+	reconcileCtx, stopReconcile := context.WithCancel(context.Background())
+	defer stopReconcile()
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-reconcileCtx.Done():
 				return
 			case <-ticker.C:
-				reconcileCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				if err := jobService.Reconcile(reconcileCtx); err != nil {
-					logger.ErrorContext(reconcileCtx, "sandbox-rental: reconcile", "error", err)
+				runCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				if err := jobService.Reconcile(runCtx); err != nil {
+					logger.ErrorContext(runCtx, "sandbox-rental: reconcile", "error", err)
 				}
 				cancel()
 			}
 		}
 	}()
 
-	return httpserver.RunPair(ctx, logger, srv, internalSrv)
+	serverCtx, stopServers := context.WithCancel(context.Background())
+	defer stopServers()
+	serverErrCh := make(chan error, 1)
+	go func() {
+		serverErrCh <- httpserver.RunPair(serverCtx, logger, srv, internalSrv)
+	}()
+
+	select {
+	case err := <-serverErrCh:
+		stopReconcile()
+		cancelWorkers()
+		stopCtx, cancel := context.WithTimeout(context.Background(), httpserver.ShutdownTimeout)
+		defer cancel()
+		stopErr := schedulerRuntime.StopAndCancel(stopCtx)
+		if err != nil {
+			return err
+		}
+		return stopErr
+	case <-signalCtx.Done():
+	}
+
+	stop()
+	drain.Begin()
+	stopReconcile()
+	stopServers()
+	waitForHTTPShutdown(logger, serverErrCh)
+
+	drainCtx, span := otel.Tracer("sandbox-rental-service").Start(context.Background(), "sandbox.shutdown.drain")
+	span.SetAttributes(attribute.String("sandbox.drain.timeout", shutdownDrainTimeout.String()))
+	logger.InfoContext(drainCtx, "sandbox-rental: drain started", "timeout", shutdownDrainTimeout.String())
+
+	drainCtx, cancelDrain := context.WithTimeout(drainCtx, shutdownDrainTimeout)
+	defer cancelDrain()
+	err = schedulerRuntime.Stop(drainCtx)
+	if err != nil {
+		span.RecordError(err)
+		cancelWorkers()
+		span.End()
+		return fmt.Errorf("drain scheduler runtime: %w", err)
+	}
+	span.SetAttributes(attribute.String("sandbox.drain.result", "succeeded"))
+	span.End()
+	logger.InfoContext(context.Background(), "sandbox-rental: drain completed")
+	return nil
+}
+
+type drainState struct {
+	draining atomic.Bool
+}
+
+func (s *drainState) Begin() {
+	s.draining.Store(true)
+}
+
+func (s *drainState) Draining() bool {
+	return s != nil && s.draining.Load()
+}
+
+func registerStatusRoutes(mux *http.ServeMux, drain *drainState) {
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if drain.Draining() {
+			http.Error(w, "draining", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ready\n"))
+	})
+}
+
+func waitForHTTPShutdown(logger *slog.Logger, serverErrCh <-chan error) {
+	select {
+	case err := <-serverErrCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.ErrorContext(context.Background(), "sandbox-rental: http shutdown", "error", err)
+		}
+	case <-time.After(httpserver.ShutdownTimeout + time.Second):
+		logger.WarnContext(context.Background(), "sandbox-rental: http shutdown wait timed out")
+	}
 }
 
 func int32FromInt(value int, field string) int32 {
