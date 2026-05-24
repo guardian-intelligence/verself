@@ -542,12 +542,40 @@ func (DirectPrivOps) ZFSEnsureVolumeSizeExt4(ctx context.Context, dataset string
 	if err != nil {
 		return err
 	}
+	checkCtx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	checkCtx, endCheckSpan := startStepSpan(checkCtx, "vmorchestrator.zfs.ext4.e2fsck",
+		attribute.String("zfs.dataset", dataset),
+		attribute.String("device.path", devicePath),
+	)
+	checkSpan := trace.SpanFromContext(checkCtx)
+	cmd := exec.CommandContext(checkCtx, "e2fsck", "-fy", devicePath)
+	out, checkErr := cmd.CombinedOutput()
+	cancel()
+	if checkErr != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(checkErr, &exitErr) || exitErr.ExitCode() != 1 {
+			err = fmt.Errorf("e2fsck %s: %s: %w", devicePath, strings.TrimSpace(string(out)), checkErr)
+			endCheckSpan(err)
+			return err
+		}
+		checkSpan.SetAttributes(
+			attribute.Int("ext4.fsck_exit_code", exitErr.ExitCode()),
+			attribute.Bool("ext4.fsck_repaired", true),
+		)
+	} else {
+		checkSpan.SetAttributes(
+			attribute.Int("ext4.fsck_exit_code", 0),
+			attribute.Bool("ext4.fsck_repaired", false),
+		)
+	}
+	endCheckSpan(nil)
+
 	resizeCtx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	resizeCtx, endResizeSpan := startStepSpan(resizeCtx, "vmorchestrator.zfs.ext4.resize2fs",
 		attribute.String("zfs.dataset", dataset),
 		attribute.String("device.path", devicePath),
 	)
-	cmd := exec.CommandContext(resizeCtx, "resize2fs", "-f", devicePath)
+	cmd = exec.CommandContext(resizeCtx, "resize2fs", "-f", devicePath)
 	out, resizeErr := cmd.CombinedOutput()
 	cancel()
 	if resizeErr != nil {
