@@ -18,7 +18,7 @@ sandbox execution policy.
 IAM is the customer authorization boundary, not the provider authenticity
 boundary.
 
-- Require Verself bearer auth plus IAM for future customer-visible configuration mutations: connect/disconnect an installation, sync repository access, change runner policy, and customer-initiated cancellation or disablement actions. The current production cut keeps onboarding and repo management out of this service and uses preconfigured app credentials.
+- Require Verself bearer auth plus IAM for customer-visible configuration mutations: connect/disconnect an installation, sync repository access, change runner policy, and customer-initiated cancellation or disablement actions.
 - Require IAM read permissions for customer-visible inventory and diagnostics: installation lists, repository lists, runner policy views, and terminal evidence views when exposed outside internal service calls.
 - Do not use IAM to authenticate GitHub itself. GitHub provider ingress is authenticated by provider-specific controls: webhook HMAC for webhooks and GitHub API re-reads for terminal job truth.
 - Use governance audit events for all externally meaningful state transitions, including provider webhook accepted/rejected, runner registration created, runner assignment observed, cancellation observed, and terminal job evidence emitted.
@@ -34,11 +34,221 @@ GitHub webhook validation:
 - Enforce event and action allowlists. Unknown events are recorded as ignored provider evidence; they are not silently dropped.
 - Before a webhook can drive sandbox state, reconcile the payload to persisted installation/repository/job identity and, for terminal jobs, re-read the exact GitHub run/job attempt through the GitHub API.
 
-App onboarding and repository management are intentionally descoped from the
-current service surface. When they are added, they must use the standard GitHub
-setup callback state machine: mint state only after Verself IAM passes, treat
-`installation_id` from the setup URL as spoofable evidence, verify the user and
-installation through GitHub APIs, then bind the installation to the Verself org.
+App onboarding and repository management live in this service. They use the
+standard GitHub setup callback state machine: mint state only after Verself IAM
+passes, treat `installation_id` from the setup URL as spoofable evidence,
+verify the user and installation through GitHub APIs, then bind the
+installation to the Verself org. The onboarding data model, API surface, and
+package boundaries are in
+`src/services/github-integration-service/docs/github-app-onboarding.md`.
+
+## Onboarding Service Change Packet
+
+Customer-visible onboarding operations follow
+`docs/architecture/service-change-reference-architecture.md`: start from the
+curated SDK shape, then land the Smithy contract, IAM story, product lifecycle,
+storage, workers, observability, audit, deployability, failure testing, and live
+release evidence in the same cutover. Do not add handler-only routes that bypass
+Smithy, IAM, idempotency, governance audit, or ClickHouse evidence.
+
+Required customer SDK module:
+
+```text
+verself.integrations.github
+```
+
+Required customer-visible operations:
+
+| Operation | SDK method | Lifecycle object | Required waiter |
+| --- | --- | --- | --- |
+| `StartGithubAppSetup` | `github.setup.start` | `github_setup_session` | none |
+| `CompleteGithubAppSetup` | `github.setup.complete` | `github_setup_session`, `github_installation_binding` | `waitUntilGithubInstallationSynced` when sync is async |
+| `GetGithubSetupSession` | `github.setup.get` | `github_setup_session` | none |
+| `StartGithubUserAuthorization` | `github.userAuthorizations.start` | `github_user_authorization_session` | none |
+| `CompleteGithubUserAuthorization` | `github.userAuthorizations.complete` | `github_user_authorization` | none |
+| `ListGithubInstallations` | `github.installations.list` | `github_installation_binding` | cursor pagination required |
+| `GetGithubInstallation` | `github.installations.get` | `github_installation_binding` | none |
+| `SyncGithubInstallation` | `github.installations.sync` | `github_provider_reconciliation` | `waitUntilGithubInstallationSynced` |
+| `DisconnectGithubInstallation` | `github.installations.disconnect` | `github_installation_binding` | `waitUntilGithubInstallationDisconnected` |
+| `ListGithubRepositories` | `github.repositories.list` | `github_repository_binding` plus provider access projection | cursor pagination required |
+| `GetGithubRepository` | `github.repositories.get` | `github_repository_binding` | none |
+| `EnableGithubRepository` | `github.repositories.enable` | `github_repository_binding` | none unless policy sync is async |
+| `DisableGithubRepository` | `github.repositories.disable` | `github_repository_binding` | `waitUntilGithubRepositoryDisabled` if runner cleanup is async |
+
+Smithy contract requirements:
+
+- Add public resources for `GithubSetupSession`,
+  `GithubUserAuthorization`, `GithubInstallationBinding`,
+  `GithubRepositoryBinding`, and `GithubProviderReconciliation`.
+- Add input/output DTOs with resource ids, `resource_name`, display fields,
+  state enums, `org_id`, `trace_id`, `request_id`, provider health, retry
+  metadata, `configuration_url` when GitHub action is required, and redacted
+  credential metadata only.
+- Add stable problem errors for expired setup state, consumed setup state,
+  provider verification failure, installation already bound, missing provider
+  access, provider permission drift, stale observed version, user
+  reauthorization required, and provider rate limited.
+- Add idempotency tokens to every mutation. Reusing an idempotency key with a
+  different payload must return an idempotency payload mismatch.
+- Add cursor pagination to list operations from the first version. Lists default
+  to active resources and expose explicit state filters for blocked,
+  disconnected, deleted, and tombstoned history.
+- Add Smithy auth traits: public customer operations use Zitadel bearer auth;
+  provider webhooks keep `provider_webhook`; internal operations use SPIFFE
+  mTLS only.
+- Add Smithy audit, permission, rate-limit, request-budget, SDK, and waiter
+  metadata before adding handlers.
+
+IAM requirements:
+
+- Add explicit permission names:
+  `github:installation:read`, `github:installation:write`,
+  `github:repository:read`, `github:repository:write`, and
+  `github:runtime:read`.
+- Add SpiceDB/Zanzibar resource definitions for customer-visible GitHub
+  installation and repository binding resources, or explicitly document why
+  the initial cut is org-scoped only. If org-scoped, the Smithy authz trait
+  still names the GitHub permission and maps it to the org parent edge.
+- Write IAM relationships through the iam-service typed client when a durable
+  customer-visible GitHub resource is created. Do not write SpiceDB directly.
+- Organization switching must be explicit: setup sessions are bound to the org
+  selected before redirect; callback completion cannot silently switch to the
+  browser's current org.
+- Denied requests must emit governance audit evidence with the requested
+  permission and no provider side effect.
+
+Persistence requirements:
+
+- Add migrations and sqlc queries for `github_accounts`,
+  `github_installation_bindings`, `github_installation_repositories`,
+  `github_repository_bindings`, `github_user_authorizations`,
+  `github_user_authorization_sessions`, `github_setup_sessions`, and
+  `github_provider_reconciliations`.
+- Keep provider truth separate from product enablement. `github_installations`
+  and `github_repositories` may denormalize `org_id`, but the active ownership
+  source is `github_installation_bindings` and `github_repository_bindings`.
+- Enforce partial unique indexes for one active binding per GitHub
+  installation, one active repository binding per org/provider repository, and
+  one live setup session per hashed state value.
+- Store setup and OAuth state as hashes. Never store raw state, OAuth code,
+  access token, refresh token, webhook secret, private key, runner token, JIT
+  config, or checkout credential in PostgreSQL or ClickHouse.
+- Add observed-version or state precondition fields for disconnect, repository
+  enable/disable, and policy mutation so stale browser tabs fail loudly.
+- Add reaper/reconciliation queries for expired setup sessions, expired OAuth
+  sessions, disconnected bindings, provider-blocked repositories, and stuck
+  reconciliation jobs.
+
+Secrets and provider-client requirements:
+
+- Store GitHub App client secret and user-to-server token material behind
+  secrets-service opaque credential references. PostgreSQL stores only
+  credential metadata and expiry.
+- Keep installation tokens in memory only, keyed by installation id plus
+  permission/repository narrowing, and expire them before GitHub expiry.
+- Centralize all GitHub REST and GraphQL calls in one provider client that owns
+  API version headers, app JWT creation, installation token lookup, OAuth token
+  refresh, pagination, conditional requests, retry/backoff, redirect behavior,
+  primary and secondary rate-limit handling, and ClickHouse API telemetry.
+- The setup commit path must verify the observed setup URL `installation_id`
+  by listing installations accessible to the GitHub App user token and reading
+  the installation with app authentication before any binding row is activated.
+
+Frontend/facade requirements:
+
+- The GitHub setup URL and OAuth callback terminate in the web/auth facade,
+  then call Smithy-modeled service operations. The service should not depend on
+  browser cookies or frontend session internals.
+- If the user returns from GitHub without a Verself session, the UI must show an
+  authentication-required state and resume the setup session after login. Do
+  not redirect to a blank or unexplained screen.
+- Selected-repository changes are performed in GitHub's UI via the installation
+  `configuration_url`; Verself observes the webhook or runs
+  `SyncGithubInstallation`.
+
+Worker requirements:
+
+- Add a provider reconciliation worker with installation, user-authorization,
+  repository, and workflow-run scopes. It repairs missed webhooks, out-of-order
+  deliveries, token expiry, selected-repository changes, permission drift,
+  repository rename/transfer/archive/delete, and runtime API 401/403/404
+  observations.
+- Long-running customer mutations return a durable reconciliation or disconnect
+  operation handle. The resource remains readable while work is pending,
+  retryable, failed, or terminal.
+- Cleanup on disconnect/provider revocation stops new demand, removes or
+  invalidates live runner registrations, emits sandbox cancellation commands
+  through the outbox when needed, and retains product history.
+
+Quota, billing, and capacity decisions:
+
+- Setup, user authorization, installation binding, repository binding, and
+  manual sync are non-billable control-plane operations. Mark billing
+  `not_applicable` with this reason in the Service Change Packet.
+- Repository enablement should check product entitlement and any per-plan
+  limits before activation. Runtime job execution remains admitted and billed
+  by sandbox-rental-service; github-integration-service must not charge money
+  directly.
+- Capacity planning must state PostgreSQL rows per installation/repository/job,
+  ClickHouse rows per setup/sync/webhook/API call, worker queue bounds,
+  provider API request fanout, maximum webhook and callback payload sizes, and
+  per-installation/repository concurrency limits.
+- GitHub API fanout is the limiting external capacity. Constrain work queues by
+  installation and repository and honor provider rate-limit headers.
+
+Retention and recovery decisions:
+
+- Setup and OAuth authorization sessions are short-lived operational state and
+  should be reaped after a declared terminal retention window.
+- Installation bindings, repository bindings, provider delivery ledgers,
+  terminal evidence, and customer-visible disconnect/block history are product
+  history. `Get` can expose disconnected or blocked resources during retention;
+  `List` filters them by default.
+- Raw webhook bodies should not live forever in hot PostgreSQL. Keep the body
+  hash and indexed envelope in PostgreSQL; if raw body retention is required,
+  put it behind a retention-governed evidence store and document the policy.
+- `/recoveryz` must report PostgreSQL migration state, ClickHouse write health,
+  secrets-service credential reachability, provider reconciler lag, and outbox
+  backlog for this service's recoverable sources.
+
+Observability and audit requirements:
+
+- Every customer operation emits spans, structured logs, governance audit rows,
+  and ClickHouse events joined by `org_id`, resource id, request id, trace id,
+  installation binding id, provider installation id, repository binding id, and
+  provider repository id when known.
+- Required ClickHouse events include setup session created/consumed/expired,
+  user authorization started/completed/revoked/refreshed, installation binding
+  verified/activated/blocked/disconnected, repository binding
+  enabled/disabled/provider_access_removed, provider sync
+  started/succeeded/retryable/failed, and permission drift detected/resolved.
+- Audit events must include actor, organization, resource name, permission,
+  request outcome, provider account metadata, credential metadata without
+  secret material, and denied-request evidence.
+- Provider API telemetry records endpoint family, method, status code,
+  installation id, retry count, `retry-after`, rate-limit remaining/reset,
+  secondary-rate-limit classification, and error class.
+
+Deployability and release evidence:
+
+- Update `src/smithy/models/verself/github_integration.smithy`, generated route
+  catalogs, OpenAPI projection targets, service-local clients, migrations,
+  sqlc queries, Bazel targets, Nomad config, runtime secrets, and HAProxy public
+  API route declarations in one cutover.
+- Register any new public API surface in
+  `src/infrastructure-components/haproxy/templates/verself-discovery.json.j2`
+  when the service discovery manifest needs a new entry. Existing host-level
+  `/api/v1` routing is not enough if discovery metadata changes.
+- Load and failure tests must cover duplicate idempotency keys, stale observed
+  versions, spoofed setup `installation_id`, revoked GitHub user auth, deleted
+  installation, selected repository removed, repository rename/transfer,
+  provider 401/403/404, secondary rate limit, process death during sync, and
+  outbox retry after sandbox rejection.
+- Release evidence is live evidence: run `aspect deploy`, exercise the setup,
+  repository enablement, out-of-band revocation, and runtime webhook paths, then
+  query ClickHouse, PostgreSQL, governance audit rows, and relevant host
+  metrics. Unit tests, generated OpenAPI, and successful Bazel builds are
+  supporting evidence only.
 
 Runner and workload bootstrap:
 

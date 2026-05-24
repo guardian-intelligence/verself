@@ -4,11 +4,13 @@ go 1.25.8
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
+	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
+	github.com/verself/iam-service v0.0.0
 	github.com/verself/observability v0.0.0
 	github.com/verself/sandbox-rental-service v0.0.0
 	github.com/verself/secrets-service v0.0.0
@@ -65,6 +67,8 @@ require (
 )
 
 replace github.com/verself/observability => ../../tools/observability/go
+
+replace github.com/verself/iam-service => ../iam-service
 
 replace github.com/verself/sandbox-rental-service => ../sandbox-rental-service
 

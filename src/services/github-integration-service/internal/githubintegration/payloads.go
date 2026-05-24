@@ -7,30 +7,34 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/verself/github-integration-service/internal/store"
 	sandboxrentalclient "github.com/verself/sandbox-rental-service/client"
 )
 
 type webhookMetadata struct {
-	EventName          string
-	DeliveryID         string
-	PayloadSHA256      string
-	Action             string
-	InstallationID     int64
-	RepositoryID       int64
-	RepositoryFullName string
-	RunID              int64
-	RunAttempt         int64
-	JobID              int64
-	RunnerID           int64
-	RunnerName         string
-	RunnerClass        string
-	JobShapeID         string
-	TrustClass         string
-	AllocationID       uuidLike
-	ExecutionID        uuidLike
-	AttemptID          uuidLike
+	EventName             string
+	DeliveryID            string
+	PayloadSHA256         string
+	Action                string
+	OrgID                 string
+	InstallationBindingID uuid.UUID
+	RepositoryBindingID   uuid.UUID
+	InstallationID        int64
+	RepositoryID          int64
+	RepositoryFullName    string
+	RunID                 int64
+	RunAttempt            int64
+	JobID                 int64
+	RunnerID              int64
+	RunnerName            string
+	RunnerClass           string
+	JobShapeID            string
+	TrustClass            string
+	AllocationID          uuidLike
+	ExecutionID           uuidLike
+	AttemptID             uuidLike
 }
 
 type uuidLike interface {
@@ -38,8 +42,11 @@ type uuidLike interface {
 }
 
 type workflowJobWebhook struct {
-	Action       string `json:"action"`
-	Installation struct {
+	OrgID                 string
+	InstallationBindingID uuid.UUID
+	RepositoryBindingID   uuid.UUID
+	Action                string `json:"action"`
+	Installation          struct {
 		ID int64 `json:"id"`
 	} `json:"installation"`
 	Repository struct {
@@ -66,7 +73,37 @@ type workflowJobPayload struct {
 	CompletedAt  time.Time `json:"completed_at"`
 }
 
+type installationWebhook struct {
+	Action       string                     `json:"action"`
+	Installation githubInstallationResponse `json:"installation"`
+	Repositories []githubRepositoryResponse `json:"repositories"`
+}
+
+type installationRepositoriesWebhook struct {
+	Action              string                     `json:"action"`
+	Installation        githubInstallationResponse `json:"installation"`
+	RepositoriesAdded   []githubRepositoryResponse `json:"repositories_added"`
+	RepositoriesRemoved []githubRepositoryResponse `json:"repositories_removed"`
+}
+
+type githubAppAuthorizationWebhook struct {
+	Action string `json:"action"`
+	Sender struct {
+		ID    int64  `json:"id"`
+		Login string `json:"login"`
+	} `json:"sender"`
+}
+
+type repositoryWebhook struct {
+	Action       string                     `json:"action"`
+	Installation githubInstallationResponse `json:"installation"`
+	Repository   githubRepositoryResponse   `json:"repository"`
+}
+
 type workflowObservation struct {
+	OrgID                  string
+	InstallationBindingID  uuid.UUID
+	RepositoryBindingID    uuid.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	ProviderRunID          int64
@@ -115,17 +152,20 @@ func parseWebhookMetadata(payload []byte) (webhookMetadata, error) {
 
 func metadataFromWorkflowJob(deliveryID string, event workflowJobWebhook) webhookMetadata {
 	return webhookMetadata{
-		EventName:          "workflow_job",
-		DeliveryID:         deliveryID,
-		Action:             event.Action,
-		InstallationID:     event.Installation.ID,
-		RepositoryID:       event.Repository.ID,
-		RepositoryFullName: event.Repository.FullName,
-		RunID:              event.WorkflowJob.RunID,
-		RunAttempt:         event.WorkflowJob.RunAttempt,
-		JobID:              event.WorkflowJob.ID,
-		RunnerID:           event.WorkflowJob.RunnerID,
-		RunnerName:         event.WorkflowJob.RunnerName,
+		EventName:             "workflow_job",
+		DeliveryID:            deliveryID,
+		Action:                event.Action,
+		OrgID:                 event.OrgID,
+		InstallationBindingID: event.InstallationBindingID,
+		RepositoryBindingID:   event.RepositoryBindingID,
+		InstallationID:        event.Installation.ID,
+		RepositoryID:          event.Repository.ID,
+		RepositoryFullName:    event.Repository.FullName,
+		RunID:                 event.WorkflowJob.RunID,
+		RunAttempt:            event.WorkflowJob.RunAttempt,
+		JobID:                 event.WorkflowJob.ID,
+		RunnerID:              event.WorkflowJob.RunnerID,
+		RunnerName:            event.WorkflowJob.RunnerName,
 	}
 }
 
@@ -155,6 +195,9 @@ func (s *Service) persistWorkflowJob(ctx context.Context, event workflowJobWebho
 	status := firstNonEmpty(event.WorkflowJob.Status, event.Action)
 	return s.queries.UpsertWorkflowJob(ctx, store.UpsertWorkflowJobParams{
 		ProviderJobID:          event.WorkflowJob.ID,
+		OrgID:                  event.OrgID,
+		InstallationBindingID:  pgUUID(event.InstallationBindingID),
+		RepositoryBindingID:    pgUUID(event.RepositoryBindingID),
 		ProviderInstallationID: event.Installation.ID,
 		ProviderRepositoryID:   event.Repository.ID,
 		RepositoryFullName:     event.Repository.FullName,
@@ -177,13 +220,16 @@ func (s *Service) persistWorkflowJob(ctx context.Context, event workflowJobWebho
 	})
 }
 
-func (s *Service) persistWorkflowJobFromAPI(ctx context.Context, installationID, repositoryID int64, repositoryFullName string, job githubWorkflowJob, deliveryID string, now time.Time) error {
+func (s *Service) persistWorkflowJobFromAPI(ctx context.Context, binding runtimeBinding, installationID, repositoryID int64, repositoryFullName string, job githubWorkflowJob, deliveryID string, now time.Time) error {
 	labels, err := json.Marshal(job.Labels)
 	if err != nil {
 		return err
 	}
 	return s.queries.UpsertWorkflowJob(ctx, store.UpsertWorkflowJobParams{
 		ProviderJobID:          job.ID,
+		OrgID:                  binding.OrgID,
+		InstallationBindingID:  pgUUID(binding.InstallationBindingID),
+		RepositoryBindingID:    pgUUID(binding.RepositoryBindingID),
 		ProviderInstallationID: installationID,
 		ProviderRepositoryID:   repositoryID,
 		RepositoryFullName:     repositoryFullName,
@@ -235,6 +281,9 @@ func (s *Service) persistInstallationRepository(ctx context.Context, event workf
 
 func (s *Service) persistWorkflowRun(ctx context.Context, workflow workflowObservation, deliveryID string, observedFromAPI bool, now time.Time) error {
 	return s.queries.UpsertWorkflowRun(ctx, store.UpsertWorkflowRunParams{
+		OrgID:                  workflow.OrgID,
+		InstallationBindingID:  pgUUID(workflow.InstallationBindingID),
+		RepositoryBindingID:    pgUUID(workflow.RepositoryBindingID),
 		ProviderInstallationID: workflow.ProviderInstallationID,
 		ProviderRepositoryID:   workflow.ProviderRepositoryID,
 		ProviderRunID:          workflow.ProviderRunID,

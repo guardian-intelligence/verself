@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build:
     name: Build with warm VM (Verself runner, durable workspace)
-    runs-on: verself-4vcpu-ubuntu-2404
+    runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     timeout-minutes: 30
     steps:
       - name: Check out repository
@@ -56,7 +56,7 @@ jobs:
     name: Deploy prod
     needs: build
     if: ${{ github.repository == 'guardian-intelligence/verself' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    runs-on: verself-4vcpu-ubuntu-2404
+    runs-on: [self-hosted, linux, x64, verself-4vcpu-ubuntu-2404]
     timeout-minutes: 60
     environment:
       name: prod

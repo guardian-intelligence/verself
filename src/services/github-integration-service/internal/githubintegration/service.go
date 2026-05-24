@@ -1,7 +1,6 @@
 package githubintegration
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rsa"
@@ -28,6 +27,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/verself/github-integration-service/internal/store"
 	sandboxrentalclient "github.com/verself/sandbox-rental-service/client"
+	secretsclient "github.com/verself/secrets-service/client"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -53,16 +53,26 @@ var (
 	ErrDeliveryReplay        = errors.New("github delivery replay with different payload")
 	ErrSandboxRejected       = errors.New("sandbox-rental-service rejected github provider evidence")
 	ErrUnsupportedWebhook    = errors.New("github webhook event is unsupported")
+	ErrRepositoryNotEnabled  = errors.New("github repository is not enabled")
 	ErrRunnerClassUnresolved = errors.New("github runner class is unresolved")
+	ErrIdempotencyMismatch   = errors.New("idempotency key reused with a different payload")
 )
 
 var tracer = otel.Tracer("github-integration-service")
 
 type Config struct {
 	AppID                            int64
+	AppSlug                          string
+	AppSetupURL                      string
 	PrivateKeyPEM                    string
 	WebhookSecret                    string
 	APIBaseURL                       string
+	OAuthClientID                    string
+	OAuthClientSecret                string
+	OAuthAuthorizeURL                string
+	OAuthTokenURL                    string
+	OAuthRedirectURL                 string
+	UserTokenSecretPrefix            string
 	RunnerGroupID                    int64
 	RunnerClassPrefix                string
 	RepositoryRunnerClassActiveLimit int32
@@ -73,6 +83,7 @@ type Config struct {
 	PG                               *pgxpool.Pool
 	CH                               chdriver.Conn
 	Sandbox                          *sandboxrentalclient.Client
+	Secrets                          *secretsclient.Client
 	HTTPClient                       *http.Client
 }
 
@@ -91,12 +102,27 @@ type githubInstallationToken struct {
 	ExpiresAt time.Time
 }
 
+type runtimeBinding struct {
+	OrgID                 string
+	InstallationBindingID uuid.UUID
+	RepositoryBindingID   uuid.UUID
+}
+
 func NewService(cfg Config) (*Service, error) {
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = http.DefaultClient
 	}
 	if cfg.APIBaseURL == "" {
 		cfg.APIBaseURL = defaultAPIBaseURL
+	}
+	if cfg.OAuthAuthorizeURL == "" {
+		cfg.OAuthAuthorizeURL = "https://github.com/login/oauth/authorize"
+	}
+	if cfg.OAuthTokenURL == "" {
+		cfg.OAuthTokenURL = "https://github.com/login/oauth/access_token"
+	}
+	if cfg.UserTokenSecretPrefix == "" {
+		cfg.UserTokenSecretPrefix = "github-integration-service.github-user-token."
 	}
 	if cfg.WorkerInterval <= 0 {
 		cfg.WorkerInterval = 500 * time.Millisecond
@@ -420,11 +446,8 @@ func runnerClassLockKey(providerRepositoryID int64, runnerClass string) (int32, 
 }
 
 func bigEndianInt32(raw []byte) int32 {
-	var out int32
-	if err := binary.Read(bytes.NewReader(raw), binary.BigEndian, &out); err != nil {
-		panic(err)
-	}
-	return out
+	const maxPgAdvisoryLockKey = uint32(1<<31 - 1)
+	return int32(binary.BigEndian.Uint32(raw) & maxPgAdvisoryLockKey)
 }
 
 func (s *Service) processLockedDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
@@ -448,7 +471,7 @@ func (s *Service) processLockedDelivery(ctx context.Context, row store.LockReady
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.processed", "succeeded", "", started, time.Now().UTC()))
 		return nil
 	}
-	if errors.Is(err, ErrUnsupportedWebhook) {
+	if errors.Is(err, ErrUnsupportedWebhook) || errors.Is(err, ErrRepositoryNotEnabled) {
 		if markErr := s.queries.MarkDeliveryIgnored(ctx, store.MarkDeliveryIgnoredParams{
 			DeliveryID:    row.DeliveryID,
 			FailureReason: err.Error(),
@@ -484,9 +507,23 @@ func (s *Service) processLockedDelivery(ctx context.Context, row store.LockReady
 }
 
 func (s *Service) handleDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
-	if row.EventName != "workflow_job" {
+	switch row.EventName {
+	case "workflow_job":
+		return s.handleWorkflowJobDelivery(ctx, row)
+	case "installation":
+		return s.handleInstallationDelivery(ctx, row)
+	case "installation_repositories":
+		return s.handleInstallationRepositoriesDelivery(ctx, row)
+	case "github_app_authorization":
+		return s.handleGitHubAppAuthorizationDelivery(ctx, row)
+	case "repository":
+		return s.handleRepositoryDelivery(ctx, row)
+	default:
 		return fmt.Errorf("%w: %s", ErrUnsupportedWebhook, row.EventName)
 	}
+}
+
+func (s *Service) handleWorkflowJobDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
 	var event workflowJobWebhook
 	if err := json.Unmarshal(row.PayloadJson, &event); err != nil {
 		return err
@@ -501,6 +538,13 @@ func (s *Service) handleDelivery(ctx context.Context, row store.LockReadyDeliver
 	if event.Repository.FullName == "" {
 		return fmt.Errorf("%w: repository full_name missing", ErrWebhookRejected)
 	}
+	binding, err := s.lookupRuntimeBinding(ctx, event.Installation.ID, event.Repository.ID)
+	if err != nil {
+		return err
+	}
+	event.OrgID = binding.OrgID
+	event.InstallationBindingID = binding.InstallationBindingID
+	event.RepositoryBindingID = binding.RepositoryBindingID
 	now := time.Now().UTC()
 	if err := s.persistWorkflowJob(ctx, event, row.DeliveryID, false, now); err != nil {
 		return err
@@ -511,10 +555,214 @@ func (s *Service) handleDelivery(ctx context.Context, row store.LockReadyDeliver
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.recorded", "succeeded", "", now, now))
 		return s.submitQueuedJob(ctx, event, row.DeliveryID)
 	case "in_progress", "completed":
-		return s.refreshRunAndJobs(ctx, event.Installation.ID, event.Repository.ID, event.Repository.FullName, event.WorkflowJob.RunID, event.WorkflowJob.RunAttempt, row.DeliveryID)
+		return s.refreshRunAndJobs(ctx, runtimeBinding{
+			OrgID:                 event.OrgID,
+			InstallationBindingID: event.InstallationBindingID,
+			RepositoryBindingID:   event.RepositoryBindingID,
+		}, event.Installation.ID, event.Repository.ID, event.Repository.FullName, event.WorkflowJob.RunID, event.WorkflowJob.RunAttempt, row.DeliveryID)
 	default:
 		return nil
 	}
+}
+
+func (s *Service) handleInstallationDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
+	var event installationWebhook
+	if err := json.Unmarshal(row.PayloadJson, &event); err != nil {
+		return err
+	}
+	event.Action = firstNonEmpty(event.Action, row.Action)
+	now := time.Now().UTC()
+	if event.Installation.ID <= 0 {
+		return fmt.Errorf("%w: missing installation id", ErrWebhookRejected)
+	}
+	installationState := ""
+	if event.Action == "deleted" {
+		installationState = "deleted"
+	}
+	if event.Action == "suspend" {
+		installationState = "suspended"
+	}
+	if err := s.persistInstallationDetailsWithState(ctx, event.Installation, row.DeliveryID, now, installationState); err != nil {
+		return err
+	}
+	if event.Action == "deleted" || event.Action == "suspend" {
+		if err := s.queries.MarkInstallationBindingsRevokedByProvider(ctx, store.MarkInstallationBindingsRevokedByProviderParams{
+			RevokedAt:              pgTime(now),
+			ProviderInstallationID: event.Installation.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	for _, repo := range event.Repositories {
+		if err := s.persistRepositoryDetails(ctx, event.Installation.ID, repo, now); err != nil {
+			return err
+		}
+	}
+	s.writeEvent(ctx, githubEvent{
+		EventName:              "github.installation.webhook.processed",
+		Result:                 "succeeded",
+		DeliveryID:             row.DeliveryID,
+		Action:                 event.Action,
+		ProviderInstallationID: uint64FromInt64(event.Installation.ID),
+		StartedAt:              now,
+		CompletedAt:            time.Now().UTC(),
+		AttributesJSON: mustJSON(map[string]string{
+			"account_login": event.Installation.Account.Login,
+		}),
+	})
+	return nil
+}
+
+func (s *Service) handleInstallationRepositoriesDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
+	var event installationRepositoriesWebhook
+	if err := json.Unmarshal(row.PayloadJson, &event); err != nil {
+		return err
+	}
+	event.Action = firstNonEmpty(event.Action, row.Action)
+	now := time.Now().UTC()
+	if event.Installation.ID <= 0 {
+		return fmt.Errorf("%w: missing installation id", ErrWebhookRejected)
+	}
+	if err := s.persistInstallationDetails(ctx, event.Installation, row.DeliveryID, now); err != nil {
+		return err
+	}
+	for _, repo := range event.RepositoriesAdded {
+		if err := s.persistRepositoryDetails(ctx, event.Installation.ID, repo, now); err != nil {
+			return err
+		}
+	}
+	for _, repo := range event.RepositoriesRemoved {
+		if err := s.persistRepositoryDetails(ctx, event.Installation.ID, repo, now); err != nil {
+			return err
+		}
+		if err := s.queries.UpsertInstallationRepository(ctx, store.UpsertInstallationRepositoryParams{
+			ProviderInstallationID: event.Installation.ID,
+			ProviderRepositoryID:   repo.ID,
+			State:                  "removed",
+			ObservedFromApiAt:      pgTime(now),
+			UpdatedAt:              pgTime(now),
+		}); err != nil {
+			return err
+		}
+		if err := s.queries.MarkRepositoryBindingUnavailableByProvider(ctx, store.MarkRepositoryBindingUnavailableByProviderParams{
+			UpdatedAt:              pgTime(now),
+			ProviderInstallationID: event.Installation.ID,
+			ProviderRepositoryID:   repo.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	s.writeEvent(ctx, githubEvent{
+		EventName:              "github.installation.repositories.webhook.processed",
+		Result:                 "succeeded",
+		DeliveryID:             row.DeliveryID,
+		Action:                 event.Action,
+		ProviderInstallationID: uint64FromInt64(event.Installation.ID),
+		StartedAt:              now,
+		CompletedAt:            time.Now().UTC(),
+		AttributesJSON: mustJSON(map[string]string{
+			"repositories_added":   strconv.Itoa(len(event.RepositoriesAdded)),
+			"repositories_removed": strconv.Itoa(len(event.RepositoriesRemoved)),
+		}),
+	})
+	return nil
+}
+
+func (s *Service) handleGitHubAppAuthorizationDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
+	var event githubAppAuthorizationWebhook
+	if err := json.Unmarshal(row.PayloadJson, &event); err != nil {
+		return err
+	}
+	event.Action = firstNonEmpty(event.Action, row.Action)
+	now := time.Now().UTC()
+	if event.Action == "revoked" && event.Sender.ID > 0 {
+		if err := s.queries.RevokeUserAuthorizationsByGitHubUser(ctx, store.RevokeUserAuthorizationsByGitHubUserParams{
+			RevokedAt:      pgTime(now),
+			ProviderUserID: event.Sender.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	s.writeEvent(ctx, githubEvent{
+		EventName:   "github.user_authorization.webhook.processed",
+		Result:      "succeeded",
+		DeliveryID:  row.DeliveryID,
+		Action:      event.Action,
+		StartedAt:   now,
+		CompletedAt: time.Now().UTC(),
+		AttributesJSON: mustJSON(map[string]string{
+			"provider_user_id": strconv.FormatInt(event.Sender.ID, 10),
+			"github_login":     event.Sender.Login,
+		}),
+	})
+	return nil
+}
+
+func (s *Service) handleRepositoryDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
+	var event repositoryWebhook
+	if err := json.Unmarshal(row.PayloadJson, &event); err != nil {
+		return err
+	}
+	event.Action = firstNonEmpty(event.Action, row.Action)
+	now := time.Now().UTC()
+	if event.Repository.ID <= 0 {
+		return fmt.Errorf("%w: missing repository id", ErrWebhookRejected)
+	}
+	if event.Installation.ID > 0 {
+		if err := s.persistInstallationDetails(ctx, event.Installation, row.DeliveryID, now); err != nil {
+			return err
+		}
+	}
+	repositoryState := ""
+	if event.Action == "deleted" {
+		event.Repository.Archived = true
+		repositoryState = "deleted"
+	}
+	if event.Action == "transferred" {
+		repositoryState = "transferred"
+	}
+	if err := s.persistRepositoryDetailsWithState(ctx, event.Installation.ID, event.Repository, now, repositoryState); err != nil {
+		return err
+	}
+	if event.Action == "deleted" || event.Action == "transferred" {
+		if err := s.queries.MarkRepositoryBindingUnavailableByProvider(ctx, store.MarkRepositoryBindingUnavailableByProviderParams{
+			UpdatedAt:              pgTime(now),
+			ProviderInstallationID: event.Installation.ID,
+			ProviderRepositoryID:   event.Repository.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	s.writeEvent(ctx, githubEvent{
+		EventName:              "github.repository.webhook.processed",
+		Result:                 "succeeded",
+		DeliveryID:             row.DeliveryID,
+		Action:                 event.Action,
+		ProviderInstallationID: uint64FromInt64(event.Installation.ID),
+		ProviderRepositoryID:   uint64FromInt64(event.Repository.ID),
+		RepositoryFullName:     event.Repository.FullName,
+		StartedAt:              now,
+		CompletedAt:            time.Now().UTC(),
+	})
+	return nil
+}
+
+func (s *Service) lookupRuntimeBinding(ctx context.Context, installationID, repositoryID int64) (runtimeBinding, error) {
+	row, err := s.queries.LookupRuntimeBinding(ctx, store.LookupRuntimeBindingParams{
+		ProviderInstallationID: installationID,
+		ProviderRepositoryID:   repositoryID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return runtimeBinding{}, fmt.Errorf("%w: provider_installation_id=%d provider_repository_id=%d", ErrRepositoryNotEnabled, installationID, repositoryID)
+	}
+	if err != nil {
+		return runtimeBinding{}, err
+	}
+	return runtimeBinding{
+		OrgID:                 row.OrgID,
+		InstallationBindingID: uuidFromPG(row.InstallationBindingID),
+		RepositoryBindingID:   uuidFromPG(row.RepositoryBindingID),
+	}, nil
 }
 
 func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook, deliveryID string) error {
@@ -534,6 +782,9 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		return fmt.Errorf("%w: repository full_name must be owner/name", ErrWebhookRejected)
 	}
 	workflow := workflowObservation{
+		OrgID:                  event.OrgID,
+		InstallationBindingID:  event.InstallationBindingID,
+		RepositoryBindingID:    event.RepositoryBindingID,
 		ProviderInstallationID: event.Installation.ID,
 		ProviderRepositoryID:   event.Repository.ID,
 		ProviderRunID:          event.WorkflowJob.RunID,
@@ -549,6 +800,9 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 			return err
 		}
 		workflow = workflowObservationFromRun(event.Installation.ID, event.Repository.ID, event.Repository.FullName, run)
+		workflow.OrgID = event.OrgID
+		workflow.InstallationBindingID = event.InstallationBindingID
+		workflow.RepositoryBindingID = event.RepositoryBindingID
 		if workflow.ProviderRunAttempt == 0 {
 			workflow.ProviderRunAttempt = event.WorkflowJob.RunAttempt
 		}
@@ -571,7 +825,11 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		if !ok {
 			return fmt.Errorf("%w: workflow job %d not found in provider run %d attempt %d", ErrWebhookRejected, event.WorkflowJob.ID, event.WorkflowJob.RunID, workflow.ProviderRunAttempt)
 		}
-		if err := s.persistWorkflowJobFromAPI(ctx, event.Installation.ID, event.Repository.ID, event.Repository.FullName, job, deliveryID, time.Now().UTC()); err != nil {
+		if err := s.persistWorkflowJobFromAPI(ctx, runtimeBinding{
+			OrgID:                 event.OrgID,
+			InstallationBindingID: event.InstallationBindingID,
+			RepositoryBindingID:   event.RepositoryBindingID,
+		}, event.Installation.ID, event.Repository.ID, event.Repository.FullName, job, deliveryID, time.Now().UTC()); err != nil {
 			return err
 		}
 		if job.Status != "queued" {
@@ -597,6 +855,9 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	}
 	if err := s.queries.UpsertJobShape(ctx, store.UpsertJobShapeParams{
 		JobShapeID:             shape.JobShapeID,
+		OrgID:                  event.OrgID,
+		InstallationBindingID:  pgUUID(event.InstallationBindingID),
+		RepositoryBindingID:    pgUUID(event.RepositoryBindingID),
 		ProviderInstallationID: event.Installation.ID,
 		ProviderRepositoryID:   event.Repository.ID,
 		RepositoryFullName:     event.Repository.FullName,
@@ -616,6 +877,9 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	demand, err := s.queries.EnsureProviderDemand(ctx, store.EnsureProviderDemandParams{
 		DemandID:               pgUUID(uuid.New()),
 		ProviderJobID:          event.WorkflowJob.ID,
+		OrgID:                  event.OrgID,
+		InstallationBindingID:  pgUUID(event.InstallationBindingID),
+		RepositoryBindingID:    pgUUID(event.RepositoryBindingID),
 		ProviderInstallationID: event.Installation.ID,
 		ProviderRepositoryID:   event.Repository.ID,
 		RepositoryFullName:     event.Repository.FullName,
@@ -705,6 +969,9 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	if err := s.queries.UpsertRunnerRegistration(ctx, store.UpsertRunnerRegistrationParams{
 		ProviderJobID:          event.WorkflowJob.ID,
 		DemandID:               claim.DemandID,
+		OrgID:                  event.OrgID,
+		InstallationBindingID:  pgUUID(event.InstallationBindingID),
+		RepositoryBindingID:    pgUUID(event.RepositoryBindingID),
 		ProviderInstallationID: event.Installation.ID,
 		ProviderRepositoryID:   event.Repository.ID,
 		RunnerID:               runnerID,
@@ -890,6 +1157,9 @@ func (s *Service) recordSandboxSubmitOutbox(ctx context.Context, event workflowJ
 	if err := s.queries.UpsertProviderOutboxCommand(ctx, store.UpsertProviderOutboxCommandParams{
 		OutboxID:               pgUUID(uuid.New()),
 		CommandKind:            "sandbox_submit_runner_job",
+		OrgID:                  event.OrgID,
+		InstallationBindingID:  pgUUID(event.InstallationBindingID),
+		RepositoryBindingID:    pgUUID(event.RepositoryBindingID),
 		ProviderJobID:          event.WorkflowJob.ID,
 		ProviderRunID:          event.WorkflowJob.RunID,
 		ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
@@ -955,13 +1225,16 @@ func workflowJobPayloadFromAPI(job githubWorkflowJob) workflowJobPayload {
 	}
 }
 
-func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, repositoryID int64, repositoryFullName string, runID, runAttempt int64, deliveryID string) error {
+func (s *Service) refreshRunAndJobs(ctx context.Context, binding runtimeBinding, installationID, repositoryID int64, repositoryFullName string, runID, runAttempt int64, deliveryID string) error {
 	started := time.Now().UTC()
 	s.writeEvent(ctx, githubEvent{
 		ObservedAt:             started,
 		EventName:              "github.provider.refresh.started",
 		Result:                 "started",
 		DeliveryID:             deliveryID,
+		OrgID:                  binding.OrgID,
+		InstallationBindingID:  binding.InstallationBindingID,
+		RepositoryBindingID:    binding.RepositoryBindingID,
 		ProviderInstallationID: uint64FromInt64(installationID),
 		ProviderRepositoryID:   uint64FromInt64(repositoryID),
 		ProviderRunID:          uint64FromInt64(runID),
@@ -975,6 +1248,9 @@ func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, reposit
 		return err
 	}
 	workflow := workflowObservationFromRun(installationID, repositoryID, repositoryFullName, run)
+	workflow.OrgID = binding.OrgID
+	workflow.InstallationBindingID = binding.InstallationBindingID
+	workflow.RepositoryBindingID = binding.RepositoryBindingID
 	if workflow.ProviderRunAttempt == 0 {
 		workflow.ProviderRunAttempt = runAttempt
 	}
@@ -998,10 +1274,10 @@ func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, reposit
 		if job.RunAttempt == 0 {
 			job.RunAttempt = workflow.ProviderRunAttempt
 		}
-		if err := s.persistWorkflowJobFromAPI(ctx, installationID, repositoryID, repositoryFullName, job, deliveryID, time.Now().UTC()); err != nil {
+		if err := s.persistWorkflowJobFromAPI(ctx, binding, installationID, repositoryID, repositoryFullName, job, deliveryID, time.Now().UTC()); err != nil {
 			return err
 		}
-		if err := s.recordRunnerAssignment(ctx, installationID, repositoryID, repositoryFullName, job, deliveryID, started); err != nil {
+		if err := s.recordRunnerAssignment(ctx, binding, installationID, repositoryID, repositoryFullName, job, deliveryID, started); err != nil {
 			return err
 		}
 		obs := sandboxObservationFromAPI(installationID, repositoryID, repositoryFullName, job, deliveryID)
@@ -1009,6 +1285,9 @@ func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, reposit
 			return err
 		}
 		meta := metadataFromAPIJob(deliveryID, installationID, repositoryID, repositoryFullName, job)
+		meta.OrgID = binding.OrgID
+		meta.InstallationBindingID = binding.InstallationBindingID
+		meta.RepositoryBindingID = binding.RepositoryBindingID
 		if job.RunnerID != 0 || job.RunnerName != "" {
 			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.assignment.observed", "succeeded", "", started, time.Now().UTC()))
 		}
@@ -1028,6 +1307,9 @@ func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, reposit
 		EventName:              "github.provider.refresh.completed",
 		Result:                 "succeeded",
 		DeliveryID:             deliveryID,
+		OrgID:                  binding.OrgID,
+		InstallationBindingID:  binding.InstallationBindingID,
+		RepositoryBindingID:    binding.RepositoryBindingID,
 		ProviderInstallationID: uint64FromInt64(installationID),
 		ProviderRepositoryID:   uint64FromInt64(repositoryID),
 		ProviderRunID:          uint64FromInt64(runID),
@@ -1039,7 +1321,7 @@ func (s *Service) refreshRunAndJobs(ctx context.Context, installationID, reposit
 	return nil
 }
 
-func (s *Service) recordRunnerAssignment(ctx context.Context, installationID, repositoryID int64, repositoryFullName string, job githubWorkflowJob, deliveryID string, started time.Time) error {
+func (s *Service) recordRunnerAssignment(ctx context.Context, binding runtimeBinding, installationID, repositoryID int64, repositoryFullName string, job githubWorkflowJob, deliveryID string, started time.Time) error {
 	runnerName := strings.TrimSpace(job.RunnerName)
 	if runnerName == "" {
 		return nil
@@ -1069,6 +1351,9 @@ func (s *Service) recordRunnerAssignment(ctx context.Context, installationID, re
 		Result:                 "corrected",
 		Reason:                 reason,
 		DeliveryID:             deliveryID,
+		OrgID:                  binding.OrgID,
+		InstallationBindingID:  binding.InstallationBindingID,
+		RepositoryBindingID:    binding.RepositoryBindingID,
 		ProviderInstallationID: uint64FromInt64(installationID),
 		ProviderRepositoryID:   uint64FromInt64(repositoryID),
 		ProviderRunID:          uint64FromInt64(job.RunID),
@@ -1425,6 +1710,9 @@ func workflowJobWebhookFromQueuedRow(row store.ListQueuedWorkflowJobsForRunnerSu
 	}
 	var event workflowJobWebhook
 	event.Action = "queued"
+	event.OrgID = row.OrgID
+	event.InstallationBindingID = uuidFromPG(row.InstallationBindingID)
+	event.RepositoryBindingID = uuidFromPG(row.RepositoryBindingID)
 	event.Installation.ID = row.ProviderInstallationID
 	event.Repository.ID = row.ProviderRepositoryID
 	event.Repository.FullName = row.RepositoryFullName

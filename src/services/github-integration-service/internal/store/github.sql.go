@@ -82,7 +82,8 @@ WHERE github_provider_demands.provider_job_id = $2
               AND active_job.status = 'completed'
         )
   ) < $3
-RETURNING demand_id, provider_job_id, provider_installation_id, provider_repository_id,
+RETURNING demand_id, provider_job_id, org_id, installation_binding_id, repository_binding_id,
+          provider_installation_id, provider_repository_id,
           repository_full_name, provider_run_id, provider_run_attempt, runner_name,
           runner_class, job_shape_id, trust_class, state
 `
@@ -96,6 +97,9 @@ type ClaimProviderDemandForJITParams struct {
 type ClaimProviderDemandForJITRow struct {
 	DemandID               pgtype.UUID
 	ProviderJobID          int64
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
@@ -114,6 +118,9 @@ func (q *Queries) ClaimProviderDemandForJIT(ctx context.Context, arg ClaimProvid
 	err := row.Scan(
 		&i.DemandID,
 		&i.ProviderJobID,
+		&i.OrgID,
+		&i.InstallationBindingID,
+		&i.RepositoryBindingID,
 		&i.ProviderInstallationID,
 		&i.ProviderRepositoryID,
 		&i.RepositoryFullName,
@@ -124,6 +131,168 @@ func (q *Queries) ClaimProviderDemandForJIT(ctx context.Context, arg ClaimProvid
 		&i.JobShapeID,
 		&i.TrustClass,
 		&i.State,
+	)
+	return i, err
+}
+
+const completeOAuthSession = `-- name: CompleteOAuthSession :one
+UPDATE github_oauth_sessions
+SET session_state = 'completed',
+    github_user_authorization_id = $1,
+    completed_at = $2,
+    updated_at = $2
+WHERE oauth_session_id = $3
+  AND org_id = $4
+  AND state_hash = $5
+  AND session_state = 'pending'
+  AND expires_at > $2
+RETURNING oauth_session_id, org_id, actor_id, session_state, authorization_url,
+          callback_url, github_user_authorization_id, expires_at, completed_at,
+          created_at, updated_at
+`
+
+type CompleteOAuthSessionParams struct {
+	GithubUserAuthorizationID pgtype.UUID
+	CompletedAt               pgtype.Timestamptz
+	OauthSessionID            pgtype.UUID
+	OrgID                     string
+	StateHash                 string
+}
+
+type CompleteOAuthSessionRow struct {
+	OauthSessionID            pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+	SessionState              string
+	AuthorizationUrl          string
+	CallbackUrl               string
+	GithubUserAuthorizationID pgtype.UUID
+	ExpiresAt                 pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+}
+
+func (q *Queries) CompleteOAuthSession(ctx context.Context, arg CompleteOAuthSessionParams) (CompleteOAuthSessionRow, error) {
+	row := q.db.QueryRow(ctx, completeOAuthSession,
+		arg.GithubUserAuthorizationID,
+		arg.CompletedAt,
+		arg.OauthSessionID,
+		arg.OrgID,
+		arg.StateHash,
+	)
+	var i CompleteOAuthSessionRow
+	err := row.Scan(
+		&i.OauthSessionID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.SessionState,
+		&i.AuthorizationUrl,
+		&i.CallbackUrl,
+		&i.GithubUserAuthorizationID,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const completeProviderReconciliation = `-- name: CompleteProviderReconciliation :exec
+UPDATE github_provider_reconciliations
+SET state = $1,
+    failure_reason = $2,
+    completed_at = $3,
+    updated_at = $3
+WHERE reconciliation_id = $4
+`
+
+type CompleteProviderReconciliationParams struct {
+	State            string
+	FailureReason    string
+	CompletedAt      pgtype.Timestamptz
+	ReconciliationID pgtype.UUID
+}
+
+func (q *Queries) CompleteProviderReconciliation(ctx context.Context, arg CompleteProviderReconciliationParams) error {
+	_, err := q.db.Exec(ctx, completeProviderReconciliation,
+		arg.State,
+		arg.FailureReason,
+		arg.CompletedAt,
+		arg.ReconciliationID,
+	)
+	return err
+}
+
+const completeSetupSession = `-- name: CompleteSetupSession :one
+UPDATE github_setup_sessions
+SET session_state = 'completed',
+    provider_installation_id = $1,
+    github_user_authorization_id = $2,
+    installation_binding_id = $3,
+    completed_at = $4,
+    updated_at = $4
+WHERE setup_session_id = $5
+  AND org_id = $6
+  AND state_hash = $7
+  AND session_state IN ('pending_setup', 'awaiting_user_authorization')
+  AND expires_at > $4
+RETURNING setup_session_id, org_id, actor_id, session_state, installation_url,
+          callback_url, provider_installation_id, github_user_authorization_id,
+          installation_binding_id, expires_at, completed_at, created_at, updated_at
+`
+
+type CompleteSetupSessionParams struct {
+	ProviderInstallationID    int64
+	GithubUserAuthorizationID pgtype.UUID
+	InstallationBindingID     pgtype.UUID
+	CompletedAt               pgtype.Timestamptz
+	SetupSessionID            pgtype.UUID
+	OrgID                     string
+	StateHash                 string
+}
+
+type CompleteSetupSessionRow struct {
+	SetupSessionID            pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+	SessionState              string
+	InstallationUrl           string
+	CallbackUrl               string
+	ProviderInstallationID    int64
+	GithubUserAuthorizationID pgtype.UUID
+	InstallationBindingID     pgtype.UUID
+	ExpiresAt                 pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+}
+
+func (q *Queries) CompleteSetupSession(ctx context.Context, arg CompleteSetupSessionParams) (CompleteSetupSessionRow, error) {
+	row := q.db.QueryRow(ctx, completeSetupSession,
+		arg.ProviderInstallationID,
+		arg.GithubUserAuthorizationID,
+		arg.InstallationBindingID,
+		arg.CompletedAt,
+		arg.SetupSessionID,
+		arg.OrgID,
+		arg.StateHash,
+	)
+	var i CompleteSetupSessionRow
+	err := row.Scan(
+		&i.SetupSessionID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.SessionState,
+		&i.InstallationUrl,
+		&i.CallbackUrl,
+		&i.ProviderInstallationID,
+		&i.GithubUserAuthorizationID,
+		&i.InstallationBindingID,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -154,10 +323,364 @@ func (q *Queries) CountActiveRunnerRegistrationsForRunnerClass(ctx context.Conte
 	return column_1, err
 }
 
+const createOAuthSession = `-- name: CreateOAuthSession :one
+INSERT INTO github_oauth_sessions (
+    oauth_session_id,
+    org_id,
+    actor_id,
+    state_hash,
+    session_state,
+    authorization_url,
+    callback_url,
+    expires_at,
+    created_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    'pending',
+    $5,
+    $6,
+    $7,
+    $8,
+    $8
+)
+RETURNING oauth_session_id, org_id, actor_id, session_state, authorization_url,
+          callback_url, github_user_authorization_id, expires_at, completed_at,
+          created_at, updated_at
+`
+
+type CreateOAuthSessionParams struct {
+	OauthSessionID   pgtype.UUID
+	OrgID            string
+	ActorID          string
+	StateHash        string
+	AuthorizationUrl string
+	CallbackUrl      string
+	ExpiresAt        pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+}
+
+type CreateOAuthSessionRow struct {
+	OauthSessionID            pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+	SessionState              string
+	AuthorizationUrl          string
+	CallbackUrl               string
+	GithubUserAuthorizationID pgtype.UUID
+	ExpiresAt                 pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+}
+
+func (q *Queries) CreateOAuthSession(ctx context.Context, arg CreateOAuthSessionParams) (CreateOAuthSessionRow, error) {
+	row := q.db.QueryRow(ctx, createOAuthSession,
+		arg.OauthSessionID,
+		arg.OrgID,
+		arg.ActorID,
+		arg.StateHash,
+		arg.AuthorizationUrl,
+		arg.CallbackUrl,
+		arg.ExpiresAt,
+		arg.CreatedAt,
+	)
+	var i CreateOAuthSessionRow
+	err := row.Scan(
+		&i.OauthSessionID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.SessionState,
+		&i.AuthorizationUrl,
+		&i.CallbackUrl,
+		&i.GithubUserAuthorizationID,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createSetupSession = `-- name: CreateSetupSession :one
+INSERT INTO github_setup_sessions (
+    setup_session_id,
+    org_id,
+    actor_id,
+    state_hash,
+    session_state,
+    installation_url,
+    callback_url,
+    expires_at,
+    created_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    'pending_setup',
+    $5,
+    $6,
+    $7,
+    $8,
+    $8
+)
+RETURNING setup_session_id, org_id, actor_id, session_state, installation_url,
+          callback_url, provider_installation_id, github_user_authorization_id,
+          installation_binding_id, expires_at, completed_at, created_at, updated_at
+`
+
+type CreateSetupSessionParams struct {
+	SetupSessionID  pgtype.UUID
+	OrgID           string
+	ActorID         string
+	StateHash       string
+	InstallationUrl string
+	CallbackUrl     string
+	ExpiresAt       pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+}
+
+type CreateSetupSessionRow struct {
+	SetupSessionID            pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+	SessionState              string
+	InstallationUrl           string
+	CallbackUrl               string
+	ProviderInstallationID    int64
+	GithubUserAuthorizationID pgtype.UUID
+	InstallationBindingID     pgtype.UUID
+	ExpiresAt                 pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+}
+
+func (q *Queries) CreateSetupSession(ctx context.Context, arg CreateSetupSessionParams) (CreateSetupSessionRow, error) {
+	row := q.db.QueryRow(ctx, createSetupSession,
+		arg.SetupSessionID,
+		arg.OrgID,
+		arg.ActorID,
+		arg.StateHash,
+		arg.InstallationUrl,
+		arg.CallbackUrl,
+		arg.ExpiresAt,
+		arg.CreatedAt,
+	)
+	var i CreateSetupSessionRow
+	err := row.Scan(
+		&i.SetupSessionID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.SessionState,
+		&i.InstallationUrl,
+		&i.CallbackUrl,
+		&i.ProviderInstallationID,
+		&i.GithubUserAuthorizationID,
+		&i.InstallationBindingID,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const disableRepositoryBinding = `-- name: DisableRepositoryBinding :one
+UPDATE github_repository_bindings
+SET state = 'disabled',
+    disabled_by_actor_id = $1,
+    disabled_at = $2,
+    updated_at = $2
+WHERE repository_binding_id = $3
+  AND org_id = $4
+RETURNING repository_binding_id, org_id, installation_binding_id, provider_installation_id,
+          provider_repository_id, state, enabled_by_actor_id, disabled_by_actor_id,
+          enabled_at, disabled_at, created_at, updated_at
+`
+
+type DisableRepositoryBindingParams struct {
+	ActorID             string
+	DisabledAt          pgtype.Timestamptz
+	RepositoryBindingID pgtype.UUID
+	OrgID               string
+}
+
+func (q *Queries) DisableRepositoryBinding(ctx context.Context, arg DisableRepositoryBindingParams) (GithubRepositoryBinding, error) {
+	row := q.db.QueryRow(ctx, disableRepositoryBinding,
+		arg.ActorID,
+		arg.DisabledAt,
+		arg.RepositoryBindingID,
+		arg.OrgID,
+	)
+	var i GithubRepositoryBinding
+	err := row.Scan(
+		&i.RepositoryBindingID,
+		&i.OrgID,
+		&i.InstallationBindingID,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.State,
+		&i.EnabledByActorID,
+		&i.DisabledByActorID,
+		&i.EnabledAt,
+		&i.DisabledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const disconnectInstallationBinding = `-- name: DisconnectInstallationBinding :one
+UPDATE github_installation_bindings
+SET state = 'disconnected',
+    disconnected_by_actor_id = $1,
+    disconnected_at = $2,
+    updated_at = $2
+WHERE installation_binding_id = $3
+  AND org_id = $4
+RETURNING installation_binding_id, org_id, provider_installation_id, provider_account_id,
+          setup_session_id, connected_by_actor_id, state, connected_at,
+          disconnected_at, last_synced_at, created_at, updated_at
+`
+
+type DisconnectInstallationBindingParams struct {
+	ActorID               string
+	DisconnectedAt        pgtype.Timestamptz
+	InstallationBindingID pgtype.UUID
+	OrgID                 string
+}
+
+type DisconnectInstallationBindingRow struct {
+	InstallationBindingID  pgtype.UUID
+	OrgID                  string
+	ProviderInstallationID int64
+	ProviderAccountID      int64
+	SetupSessionID         pgtype.UUID
+	ConnectedByActorID     string
+	State                  string
+	ConnectedAt            pgtype.Timestamptz
+	DisconnectedAt         pgtype.Timestamptz
+	LastSyncedAt           pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) DisconnectInstallationBinding(ctx context.Context, arg DisconnectInstallationBindingParams) (DisconnectInstallationBindingRow, error) {
+	row := q.db.QueryRow(ctx, disconnectInstallationBinding,
+		arg.ActorID,
+		arg.DisconnectedAt,
+		arg.InstallationBindingID,
+		arg.OrgID,
+	)
+	var i DisconnectInstallationBindingRow
+	err := row.Scan(
+		&i.InstallationBindingID,
+		&i.OrgID,
+		&i.ProviderInstallationID,
+		&i.ProviderAccountID,
+		&i.SetupSessionID,
+		&i.ConnectedByActorID,
+		&i.State,
+		&i.ConnectedAt,
+		&i.DisconnectedAt,
+		&i.LastSyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const enableRepositoryBinding = `-- name: EnableRepositoryBinding :one
+INSERT INTO github_repository_bindings (
+    repository_binding_id,
+    org_id,
+    installation_binding_id,
+    provider_installation_id,
+    provider_repository_id,
+    state,
+    enabled_by_actor_id,
+    enabled_at,
+    updated_at
+)
+SELECT
+    $1,
+    ib.org_id,
+    ib.installation_binding_id,
+    ib.provider_installation_id,
+    ir.provider_repository_id,
+    'enabled',
+    $2,
+    $3,
+    $3
+FROM github_installation_bindings ib
+JOIN github_installation_repositories ir
+  ON ir.provider_installation_id = ib.provider_installation_id
+WHERE ib.installation_binding_id = $4
+  AND ib.org_id = $5
+  AND ib.state = 'active'
+  AND ir.provider_repository_id = $6
+  AND ir.state = 'selected'
+ON CONFLICT (installation_binding_id, provider_repository_id) DO UPDATE SET
+    state = 'enabled',
+    enabled_by_actor_id = EXCLUDED.enabled_by_actor_id,
+    enabled_at = EXCLUDED.enabled_at,
+    disabled_by_actor_id = '',
+    disabled_at = NULL,
+    updated_at = EXCLUDED.updated_at
+RETURNING repository_binding_id, org_id, installation_binding_id, provider_installation_id,
+          provider_repository_id, state, enabled_by_actor_id, disabled_by_actor_id,
+          enabled_at, disabled_at, created_at, updated_at
+`
+
+type EnableRepositoryBindingParams struct {
+	RepositoryBindingID   pgtype.UUID
+	ActorID               string
+	EnabledAt             pgtype.Timestamptz
+	InstallationBindingID pgtype.UUID
+	OrgID                 string
+	ProviderRepositoryID  int64
+}
+
+func (q *Queries) EnableRepositoryBinding(ctx context.Context, arg EnableRepositoryBindingParams) (GithubRepositoryBinding, error) {
+	row := q.db.QueryRow(ctx, enableRepositoryBinding,
+		arg.RepositoryBindingID,
+		arg.ActorID,
+		arg.EnabledAt,
+		arg.InstallationBindingID,
+		arg.OrgID,
+		arg.ProviderRepositoryID,
+	)
+	var i GithubRepositoryBinding
+	err := row.Scan(
+		&i.RepositoryBindingID,
+		&i.OrgID,
+		&i.InstallationBindingID,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.State,
+		&i.EnabledByActorID,
+		&i.DisabledByActorID,
+		&i.EnabledAt,
+		&i.DisabledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const ensureProviderDemand = `-- name: EnsureProviderDemand :one
 INSERT INTO github_provider_demands (
     demand_id,
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     repository_full_name,
@@ -183,12 +706,18 @@ INSERT INTO github_provider_demands (
     $9,
     $10,
     $11,
-    'demand_recorded',
     $12,
     $13,
-    $13
+    $14,
+    'demand_recorded',
+    $15,
+    $16,
+    $16
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_provider_demands.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_provider_demands.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_provider_demands.repository_binding_id),
     provider_installation_id = EXCLUDED.provider_installation_id,
     provider_repository_id = EXCLUDED.provider_repository_id,
     repository_full_name = EXCLUDED.repository_full_name,
@@ -199,13 +728,16 @@ ON CONFLICT (provider_job_id) DO UPDATE SET
     runner_class = COALESCE(NULLIF(EXCLUDED.runner_class, ''), github_provider_demands.runner_class),
     last_delivery_id = COALESCE(NULLIF(EXCLUDED.last_delivery_id, ''), github_provider_demands.last_delivery_id),
     updated_at = EXCLUDED.updated_at
-RETURNING demand_id, provider_job_id, runner_name, runner_id, runner_class, job_shape_id, trust_class,
+RETURNING demand_id, provider_job_id, org_id, installation_binding_id, repository_binding_id, runner_name, runner_id, runner_class, job_shape_id, trust_class,
           state, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id
 `
 
 type EnsureProviderDemandParams struct {
 	DemandID               pgtype.UUID
 	ProviderJobID          int64
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
@@ -220,24 +752,30 @@ type EnsureProviderDemandParams struct {
 }
 
 type EnsureProviderDemandRow struct {
-	DemandID            pgtype.UUID
-	ProviderJobID       int64
-	RunnerName          string
-	RunnerID            int64
-	RunnerClass         string
-	JobShapeID          string
-	TrustClass          string
-	State               string
-	JitConfigSha256     string
-	SandboxAllocationID pgtype.UUID
-	SandboxExecutionID  pgtype.UUID
-	SandboxAttemptID    pgtype.UUID
+	DemandID              pgtype.UUID
+	ProviderJobID         int64
+	OrgID                 string
+	InstallationBindingID pgtype.UUID
+	RepositoryBindingID   pgtype.UUID
+	RunnerName            string
+	RunnerID              int64
+	RunnerClass           string
+	JobShapeID            string
+	TrustClass            string
+	State                 string
+	JitConfigSha256       string
+	SandboxAllocationID   pgtype.UUID
+	SandboxExecutionID    pgtype.UUID
+	SandboxAttemptID      pgtype.UUID
 }
 
 func (q *Queries) EnsureProviderDemand(ctx context.Context, arg EnsureProviderDemandParams) (EnsureProviderDemandRow, error) {
 	row := q.db.QueryRow(ctx, ensureProviderDemand,
 		arg.DemandID,
 		arg.ProviderJobID,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.RepositoryBindingID,
 		arg.ProviderInstallationID,
 		arg.ProviderRepositoryID,
 		arg.RepositoryFullName,
@@ -254,6 +792,9 @@ func (q *Queries) EnsureProviderDemand(ctx context.Context, arg EnsureProviderDe
 	err := row.Scan(
 		&i.DemandID,
 		&i.ProviderJobID,
+		&i.OrgID,
+		&i.InstallationBindingID,
+		&i.RepositoryBindingID,
 		&i.RunnerName,
 		&i.RunnerID,
 		&i.RunnerClass,
@@ -268,8 +809,156 @@ func (q *Queries) EnsureProviderDemand(ctx context.Context, arg EnsureProviderDe
 	return i, err
 }
 
+const getIdempotencyRecord = `-- name: GetIdempotencyRecord :one
+SELECT org_id, actor_id, operation, key_hash, request_hash, result_payload, created_at
+FROM github_idempotency_records
+WHERE org_id = $1
+  AND actor_id = $2
+  AND operation = $3
+  AND key_hash = $4
+`
+
+type GetIdempotencyRecordParams struct {
+	OrgID     string
+	ActorID   string
+	Operation string
+	KeyHash   string
+}
+
+func (q *Queries) GetIdempotencyRecord(ctx context.Context, arg GetIdempotencyRecordParams) (GithubIdempotencyRecord, error) {
+	row := q.db.QueryRow(ctx, getIdempotencyRecord,
+		arg.OrgID,
+		arg.ActorID,
+		arg.Operation,
+		arg.KeyHash,
+	)
+	var i GithubIdempotencyRecord
+	err := row.Scan(
+		&i.OrgID,
+		&i.ActorID,
+		&i.Operation,
+		&i.KeyHash,
+		&i.RequestHash,
+		&i.ResultPayload,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getInstallationBinding = `-- name: GetInstallationBinding :one
+SELECT b.installation_binding_id, b.org_id, b.provider_installation_id, b.provider_account_id,
+       b.setup_session_id, b.connected_by_actor_id, b.state, b.connected_at,
+       b.disconnected_at, b.last_synced_at, b.created_at, b.updated_at,
+       i.account_login, i.account_type, i.app_slug, i.repository_selection,
+       i.configuration_url
+FROM github_installation_bindings b
+JOIN github_installations i ON i.provider_installation_id = b.provider_installation_id
+WHERE b.installation_binding_id = $1
+  AND b.org_id = $2
+`
+
+type GetInstallationBindingParams struct {
+	InstallationBindingID pgtype.UUID
+	OrgID                 string
+}
+
+type GetInstallationBindingRow struct {
+	InstallationBindingID  pgtype.UUID
+	OrgID                  string
+	ProviderInstallationID int64
+	ProviderAccountID      int64
+	SetupSessionID         pgtype.UUID
+	ConnectedByActorID     string
+	State                  string
+	ConnectedAt            pgtype.Timestamptz
+	DisconnectedAt         pgtype.Timestamptz
+	LastSyncedAt           pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	AccountLogin           string
+	AccountType            string
+	AppSlug                string
+	RepositorySelection    string
+	ConfigurationUrl       string
+}
+
+func (q *Queries) GetInstallationBinding(ctx context.Context, arg GetInstallationBindingParams) (GetInstallationBindingRow, error) {
+	row := q.db.QueryRow(ctx, getInstallationBinding, arg.InstallationBindingID, arg.OrgID)
+	var i GetInstallationBindingRow
+	err := row.Scan(
+		&i.InstallationBindingID,
+		&i.OrgID,
+		&i.ProviderInstallationID,
+		&i.ProviderAccountID,
+		&i.SetupSessionID,
+		&i.ConnectedByActorID,
+		&i.State,
+		&i.ConnectedAt,
+		&i.DisconnectedAt,
+		&i.LastSyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AccountLogin,
+		&i.AccountType,
+		&i.AppSlug,
+		&i.RepositorySelection,
+		&i.ConfigurationUrl,
+	)
+	return i, err
+}
+
+const getOAuthSessionForCompletion = `-- name: GetOAuthSessionForCompletion :one
+SELECT oauth_session_id, org_id, actor_id, state_hash, session_state, authorization_url,
+       callback_url, github_user_authorization_id, expires_at, completed_at,
+       created_at, updated_at
+FROM github_oauth_sessions
+WHERE oauth_session_id = $1
+  AND org_id = $2
+`
+
+type GetOAuthSessionForCompletionParams struct {
+	OauthSessionID pgtype.UUID
+	OrgID          string
+}
+
+type GetOAuthSessionForCompletionRow struct {
+	OauthSessionID            pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+	StateHash                 string
+	SessionState              string
+	AuthorizationUrl          string
+	CallbackUrl               string
+	GithubUserAuthorizationID pgtype.UUID
+	ExpiresAt                 pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+}
+
+func (q *Queries) GetOAuthSessionForCompletion(ctx context.Context, arg GetOAuthSessionForCompletionParams) (GetOAuthSessionForCompletionRow, error) {
+	row := q.db.QueryRow(ctx, getOAuthSessionForCompletion, arg.OauthSessionID, arg.OrgID)
+	var i GetOAuthSessionForCompletionRow
+	err := row.Scan(
+		&i.OauthSessionID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.StateHash,
+		&i.SessionState,
+		&i.AuthorizationUrl,
+		&i.CallbackUrl,
+		&i.GithubUserAuthorizationID,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getProviderDemandForJob = `-- name: GetProviderDemandForJob :one
-SELECT demand_id, provider_job_id, provider_installation_id, provider_repository_id,
+SELECT demand_id, provider_job_id, org_id, installation_binding_id, repository_binding_id,
+       provider_installation_id, provider_repository_id,
        repository_full_name, provider_run_id, provider_run_attempt, runner_name,
        runner_id, runner_class, job_shape_id, trust_class, state, sandbox_allocation_id,
        sandbox_execution_id, sandbox_attempt_id
@@ -284,6 +973,9 @@ type GetProviderDemandForJobParams struct {
 type GetProviderDemandForJobRow struct {
 	DemandID               pgtype.UUID
 	ProviderJobID          int64
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
@@ -306,6 +998,9 @@ func (q *Queries) GetProviderDemandForJob(ctx context.Context, arg GetProviderDe
 	err := row.Scan(
 		&i.DemandID,
 		&i.ProviderJobID,
+		&i.OrgID,
+		&i.InstallationBindingID,
+		&i.RepositoryBindingID,
 		&i.ProviderInstallationID,
 		&i.ProviderRepositoryID,
 		&i.RepositoryFullName,
@@ -320,6 +1015,71 @@ func (q *Queries) GetProviderDemandForJob(ctx context.Context, arg GetProviderDe
 		&i.SandboxAllocationID,
 		&i.SandboxExecutionID,
 		&i.SandboxAttemptID,
+	)
+	return i, err
+}
+
+const getRepositoryBinding = `-- name: GetRepositoryBinding :one
+SELECT rb.repository_binding_id, rb.org_id, rb.installation_binding_id,
+       rb.provider_installation_id, rb.provider_repository_id, rb.state,
+       rb.enabled_by_actor_id, rb.disabled_by_actor_id, rb.enabled_at,
+       rb.disabled_at, rb.created_at, rb.updated_at,
+       r.owner_login, r.repository_name, r.repository_full_name,
+       r.default_branch, r.private, r.observed_from_api_at
+FROM github_repository_bindings rb
+JOIN github_repositories r ON r.provider_repository_id = rb.provider_repository_id
+WHERE rb.repository_binding_id = $1
+  AND rb.org_id = $2
+`
+
+type GetRepositoryBindingParams struct {
+	RepositoryBindingID pgtype.UUID
+	OrgID               string
+}
+
+type GetRepositoryBindingRow struct {
+	RepositoryBindingID    pgtype.UUID
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	State                  string
+	EnabledByActorID       string
+	DisabledByActorID      string
+	EnabledAt              pgtype.Timestamptz
+	DisabledAt             pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	OwnerLogin             string
+	RepositoryName         string
+	RepositoryFullName     string
+	DefaultBranch          string
+	Private                bool
+	ObservedFromApiAt      pgtype.Timestamptz
+}
+
+func (q *Queries) GetRepositoryBinding(ctx context.Context, arg GetRepositoryBindingParams) (GetRepositoryBindingRow, error) {
+	row := q.db.QueryRow(ctx, getRepositoryBinding, arg.RepositoryBindingID, arg.OrgID)
+	var i GetRepositoryBindingRow
+	err := row.Scan(
+		&i.RepositoryBindingID,
+		&i.OrgID,
+		&i.InstallationBindingID,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.State,
+		&i.EnabledByActorID,
+		&i.DisabledByActorID,
+		&i.EnabledAt,
+		&i.DisabledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerLogin,
+		&i.RepositoryName,
+		&i.RepositoryFullName,
+		&i.DefaultBranch,
+		&i.Private,
+		&i.ObservedFromApiAt,
 	)
 	return i, err
 }
@@ -414,10 +1174,192 @@ func (q *Queries) GetRunnerRegistrationForJob(ctx context.Context, arg GetRunner
 	return i, err
 }
 
+const getSetupSession = `-- name: GetSetupSession :one
+SELECT setup_session_id, org_id, actor_id, state_hash, session_state, installation_url,
+       callback_url, provider_installation_id, github_user_authorization_id,
+       installation_binding_id, expires_at, completed_at, created_at, updated_at
+FROM github_setup_sessions
+WHERE setup_session_id = $1
+  AND org_id = $2
+`
+
+type GetSetupSessionParams struct {
+	SetupSessionID pgtype.UUID
+	OrgID          string
+}
+
+type GetSetupSessionRow struct {
+	SetupSessionID            pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+	StateHash                 string
+	SessionState              string
+	InstallationUrl           string
+	CallbackUrl               string
+	ProviderInstallationID    int64
+	GithubUserAuthorizationID pgtype.UUID
+	InstallationBindingID     pgtype.UUID
+	ExpiresAt                 pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+}
+
+func (q *Queries) GetSetupSession(ctx context.Context, arg GetSetupSessionParams) (GetSetupSessionRow, error) {
+	row := q.db.QueryRow(ctx, getSetupSession, arg.SetupSessionID, arg.OrgID)
+	var i GetSetupSessionRow
+	err := row.Scan(
+		&i.SetupSessionID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.StateHash,
+		&i.SessionState,
+		&i.InstallationUrl,
+		&i.CallbackUrl,
+		&i.ProviderInstallationID,
+		&i.GithubUserAuthorizationID,
+		&i.InstallationBindingID,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserAuthorization = `-- name: GetUserAuthorization :one
+SELECT github_user_authorization_id, org_id, actor_id, provider_user_id,
+       github_login, scopes_json, credential_ref, state, authorized_at,
+       last_verified_at, revoked_at, created_at, updated_at
+FROM github_user_authorizations
+WHERE github_user_authorization_id = $1
+  AND org_id = $2
+  AND actor_id = $3
+  AND state = 'active'
+`
+
+type GetUserAuthorizationParams struct {
+	GithubUserAuthorizationID pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+}
+
+func (q *Queries) GetUserAuthorization(ctx context.Context, arg GetUserAuthorizationParams) (GithubUserAuthorization, error) {
+	row := q.db.QueryRow(ctx, getUserAuthorization, arg.GithubUserAuthorizationID, arg.OrgID, arg.ActorID)
+	var i GithubUserAuthorization
+	err := row.Scan(
+		&i.GithubUserAuthorizationID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.ProviderUserID,
+		&i.GithubLogin,
+		&i.ScopesJson,
+		&i.CredentialRef,
+		&i.State,
+		&i.AuthorizedAt,
+		&i.LastVerifiedAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const insertIdempotencyRecord = `-- name: InsertIdempotencyRecord :exec
+INSERT INTO github_idempotency_records (
+    org_id,
+    actor_id,
+    operation,
+    key_hash,
+    request_hash,
+    result_payload,
+    created_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7
+)
+`
+
+type InsertIdempotencyRecordParams struct {
+	OrgID         string
+	ActorID       string
+	Operation     string
+	KeyHash       string
+	RequestHash   string
+	ResultPayload []byte
+	CreatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) InsertIdempotencyRecord(ctx context.Context, arg InsertIdempotencyRecordParams) error {
+	_, err := q.db.Exec(ctx, insertIdempotencyRecord,
+		arg.OrgID,
+		arg.ActorID,
+		arg.Operation,
+		arg.KeyHash,
+		arg.RequestHash,
+		arg.ResultPayload,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertProviderReconciliation = `-- name: InsertProviderReconciliation :exec
+INSERT INTO github_provider_reconciliations (
+    reconciliation_id,
+    org_id,
+    installation_binding_id,
+    provider_installation_id,
+    reason,
+    state,
+    started_at,
+    created_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    'processing',
+    $6,
+    $6,
+    $6
+)
+`
+
+type InsertProviderReconciliationParams struct {
+	ReconciliationID       pgtype.UUID
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	ProviderInstallationID int64
+	Reason                 string
+	StartedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) InsertProviderReconciliation(ctx context.Context, arg InsertProviderReconciliationParams) error {
+	_, err := q.db.Exec(ctx, insertProviderReconciliation,
+		arg.ReconciliationID,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.ProviderInstallationID,
+		arg.Reason,
+		arg.StartedAt,
+	)
+	return err
+}
+
 const insertTerminalJobEvidence = `-- name: InsertTerminalJobEvidence :one
 INSERT INTO github_terminal_job_evidence (
     terminal_evidence_id,
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     provider_run_id,
@@ -452,9 +1394,15 @@ INSERT INTO github_terminal_job_evidence (
     $15,
     $16,
     $17,
-    $18
+    $18,
+    $19,
+    $20,
+    $21
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_terminal_job_evidence.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_terminal_job_evidence.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_terminal_job_evidence.repository_binding_id),
     provider_installation_id = EXCLUDED.provider_installation_id,
     provider_repository_id = EXCLUDED.provider_repository_id,
     status = EXCLUDED.status,
@@ -475,6 +1423,9 @@ RETURNING terminal_evidence_id
 type InsertTerminalJobEvidenceParams struct {
 	TerminalEvidenceID     pgtype.UUID
 	ProviderJobID          int64
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	ProviderRunID          int64
@@ -497,6 +1448,9 @@ func (q *Queries) InsertTerminalJobEvidence(ctx context.Context, arg InsertTermi
 	row := q.db.QueryRow(ctx, insertTerminalJobEvidence,
 		arg.TerminalEvidenceID,
 		arg.ProviderJobID,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.RepositoryBindingID,
 		arg.ProviderInstallationID,
 		arg.ProviderRepositoryID,
 		arg.ProviderRunID,
@@ -519,10 +1473,92 @@ func (q *Queries) InsertTerminalJobEvidence(ctx context.Context, arg InsertTermi
 	return terminal_evidence_id, err
 }
 
+const listInstallationBindings = `-- name: ListInstallationBindings :many
+SELECT b.installation_binding_id, b.org_id, b.provider_installation_id, b.provider_account_id,
+       b.setup_session_id, b.connected_by_actor_id, b.state, b.connected_at,
+       b.disconnected_at, b.last_synced_at, b.created_at, b.updated_at,
+       i.account_login, i.account_type, i.app_slug, i.repository_selection,
+       i.configuration_url
+FROM github_installation_bindings b
+JOIN github_installations i ON i.provider_installation_id = b.provider_installation_id
+WHERE b.org_id = $1
+  AND b.state = 'active'
+ORDER BY b.connected_at DESC, b.installation_binding_id DESC
+LIMIT $3
+OFFSET $2
+`
+
+type ListInstallationBindingsParams struct {
+	OrgID       string
+	OffsetCount int32
+	LimitCount  int32
+}
+
+type ListInstallationBindingsRow struct {
+	InstallationBindingID  pgtype.UUID
+	OrgID                  string
+	ProviderInstallationID int64
+	ProviderAccountID      int64
+	SetupSessionID         pgtype.UUID
+	ConnectedByActorID     string
+	State                  string
+	ConnectedAt            pgtype.Timestamptz
+	DisconnectedAt         pgtype.Timestamptz
+	LastSyncedAt           pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	AccountLogin           string
+	AccountType            string
+	AppSlug                string
+	RepositorySelection    string
+	ConfigurationUrl       string
+}
+
+func (q *Queries) ListInstallationBindings(ctx context.Context, arg ListInstallationBindingsParams) ([]ListInstallationBindingsRow, error) {
+	rows, err := q.db.Query(ctx, listInstallationBindings, arg.OrgID, arg.OffsetCount, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInstallationBindingsRow{}
+	for rows.Next() {
+		var i ListInstallationBindingsRow
+		if err := rows.Scan(
+			&i.InstallationBindingID,
+			&i.OrgID,
+			&i.ProviderInstallationID,
+			&i.ProviderAccountID,
+			&i.SetupSessionID,
+			&i.ConnectedByActorID,
+			&i.State,
+			&i.ConnectedAt,
+			&i.DisconnectedAt,
+			&i.LastSyncedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AccountLogin,
+			&i.AccountType,
+			&i.AppSlug,
+			&i.RepositorySelection,
+			&i.ConfigurationUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listQueuedWorkflowJobsForRunnerSubmission = `-- name: ListQueuedWorkflowJobsForRunnerSubmission :many
 WITH candidates AS (
     SELECT
         j.provider_job_id,
+        ib.org_id,
+        ib.installation_binding_id,
+        rb.repository_binding_id,
         j.provider_installation_id,
         j.provider_repository_id,
         j.repository_full_name,
@@ -547,6 +1583,13 @@ WITH candidates AS (
             LIMIT 1
         ), '')::text AS runner_class
     FROM github_workflow_jobs j
+    JOIN github_installation_bindings ib
+      ON ib.provider_installation_id = j.provider_installation_id
+     AND ib.state = 'active'
+    JOIN github_repository_bindings rb
+      ON rb.installation_binding_id = ib.installation_binding_id
+     AND rb.provider_repository_id = j.provider_repository_id
+     AND rb.state = 'enabled'
     LEFT JOIN github_provider_demands d ON d.provider_job_id = j.provider_job_id
     WHERE j.status = 'queued'
       AND (
@@ -568,6 +1611,9 @@ WITH candidates AS (
 )
 SELECT DISTINCT ON (provider_repository_id, runner_class)
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     repository_full_name,
@@ -597,6 +1643,9 @@ type ListQueuedWorkflowJobsForRunnerSubmissionParams struct {
 
 type ListQueuedWorkflowJobsForRunnerSubmissionRow struct {
 	ProviderJobID          int64
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
@@ -626,6 +1675,9 @@ func (q *Queries) ListQueuedWorkflowJobsForRunnerSubmission(ctx context.Context,
 		var i ListQueuedWorkflowJobsForRunnerSubmissionRow
 		if err := rows.Scan(
 			&i.ProviderJobID,
+			&i.OrgID,
+			&i.InstallationBindingID,
+			&i.RepositoryBindingID,
 			&i.ProviderInstallationID,
 			&i.ProviderRepositoryID,
 			&i.RepositoryFullName,
@@ -651,6 +1703,98 @@ func (q *Queries) ListQueuedWorkflowJobsForRunnerSubmission(ctx context.Context,
 		return nil, err
 	}
 	return items, nil
+}
+
+const listRepositoryCandidates = `-- name: ListRepositoryCandidates :many
+SELECT ir.provider_installation_id, r.provider_repository_id, r.owner_login,
+       r.repository_name, r.repository_full_name, r.default_branch, r.private,
+       r.observed_from_api_at, ir.state AS installation_repository_state,
+       rb.repository_binding_id, COALESCE(rb.state, '')::text AS repository_binding_state,
+       rb.org_id
+FROM github_installation_repositories ir
+JOIN github_repositories r ON r.provider_repository_id = ir.provider_repository_id
+JOIN github_installation_bindings ib ON ib.provider_installation_id = ir.provider_installation_id
+LEFT JOIN github_repository_bindings rb
+  ON rb.installation_binding_id = ib.installation_binding_id
+ AND rb.provider_repository_id = r.provider_repository_id
+WHERE ib.installation_binding_id = $1
+  AND ib.org_id = $2
+ORDER BY r.repository_full_name ASC
+LIMIT $4
+OFFSET $3
+`
+
+type ListRepositoryCandidatesParams struct {
+	InstallationBindingID pgtype.UUID
+	OrgID                 string
+	OffsetCount           int32
+	LimitCount            int32
+}
+
+type ListRepositoryCandidatesRow struct {
+	ProviderInstallationID      int64
+	ProviderRepositoryID        int64
+	OwnerLogin                  string
+	RepositoryName              string
+	RepositoryFullName          string
+	DefaultBranch               string
+	Private                     bool
+	ObservedFromApiAt           pgtype.Timestamptz
+	InstallationRepositoryState string
+	RepositoryBindingID         pgtype.UUID
+	RepositoryBindingState      string
+	OrgID                       pgtype.Text
+}
+
+func (q *Queries) ListRepositoryCandidates(ctx context.Context, arg ListRepositoryCandidatesParams) ([]ListRepositoryCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listRepositoryCandidates,
+		arg.InstallationBindingID,
+		arg.OrgID,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRepositoryCandidatesRow{}
+	for rows.Next() {
+		var i ListRepositoryCandidatesRow
+		if err := rows.Scan(
+			&i.ProviderInstallationID,
+			&i.ProviderRepositoryID,
+			&i.OwnerLogin,
+			&i.RepositoryName,
+			&i.RepositoryFullName,
+			&i.DefaultBranch,
+			&i.Private,
+			&i.ObservedFromApiAt,
+			&i.InstallationRepositoryState,
+			&i.RepositoryBindingID,
+			&i.RepositoryBindingState,
+			&i.OrgID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockIdempotencyKey = `-- name: LockIdempotencyKey :exec
+SELECT pg_advisory_xact_lock(hashtextextended($1, 0::bigint))
+`
+
+type LockIdempotencyKeyParams struct {
+	LockKey string
+}
+
+func (q *Queries) LockIdempotencyKey(ctx context.Context, arg LockIdempotencyKeyParams) error {
+	_, err := q.db.Exec(ctx, lockIdempotencyKey, arg.LockKey)
+	return err
 }
 
 const lockReadyDeliveries = `-- name: LockReadyDeliveries :many
@@ -724,6 +1868,35 @@ func (q *Queries) LockReadyDeliveries(ctx context.Context, arg LockReadyDeliveri
 		return nil, err
 	}
 	return items, nil
+}
+
+const lookupRuntimeBinding = `-- name: LookupRuntimeBinding :one
+SELECT ib.org_id, ib.installation_binding_id, rb.repository_binding_id
+FROM github_installation_bindings ib
+JOIN github_repository_bindings rb
+  ON rb.installation_binding_id = ib.installation_binding_id
+WHERE ib.provider_installation_id = $1
+  AND ib.state = 'active'
+  AND rb.provider_repository_id = $2
+  AND rb.state = 'enabled'
+`
+
+type LookupRuntimeBindingParams struct {
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+}
+
+type LookupRuntimeBindingRow struct {
+	OrgID                 string
+	InstallationBindingID pgtype.UUID
+	RepositoryBindingID   pgtype.UUID
+}
+
+func (q *Queries) LookupRuntimeBinding(ctx context.Context, arg LookupRuntimeBindingParams) (LookupRuntimeBindingRow, error) {
+	row := q.db.QueryRow(ctx, lookupRuntimeBinding, arg.ProviderInstallationID, arg.ProviderRepositoryID)
+	var i LookupRuntimeBindingRow
+	err := row.Scan(&i.OrgID, &i.InstallationBindingID, &i.RepositoryBindingID)
+	return i, err
 }
 
 const markDeliveryFailed = `-- name: MarkDeliveryFailed :exec
@@ -863,6 +2036,25 @@ func (q *Queries) MarkDeliveryRetryable(ctx context.Context, arg MarkDeliveryRet
 		arg.UpdatedAt,
 		arg.DeliveryID,
 	)
+	return err
+}
+
+const markInstallationBindingsRevokedByProvider = `-- name: MarkInstallationBindingsRevokedByProvider :exec
+UPDATE github_installation_bindings
+SET state = 'revoked',
+    disconnected_at = $1,
+    updated_at = $1
+WHERE provider_installation_id = $2
+  AND state = 'active'
+`
+
+type MarkInstallationBindingsRevokedByProviderParams struct {
+	RevokedAt              pgtype.Timestamptz
+	ProviderInstallationID int64
+}
+
+func (q *Queries) MarkInstallationBindingsRevokedByProvider(ctx context.Context, arg MarkInstallationBindingsRevokedByProviderParams) error {
+	_, err := q.db.Exec(ctx, markInstallationBindingsRevokedByProvider, arg.RevokedAt, arg.ProviderInstallationID)
 	return err
 }
 
@@ -1018,6 +2210,44 @@ func (q *Queries) MarkProviderOutboxProcessed(ctx context.Context, arg MarkProvi
 	return err
 }
 
+const markRepositoryBindingUnavailableByProvider = `-- name: MarkRepositoryBindingUnavailableByProvider :exec
+UPDATE github_repository_bindings
+SET state = 'unavailable',
+    updated_at = $1
+WHERE provider_installation_id = $2
+  AND provider_repository_id = $3
+  AND state = 'enabled'
+`
+
+type MarkRepositoryBindingUnavailableByProviderParams struct {
+	UpdatedAt              pgtype.Timestamptz
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+}
+
+func (q *Queries) MarkRepositoryBindingUnavailableByProvider(ctx context.Context, arg MarkRepositoryBindingUnavailableByProviderParams) error {
+	_, err := q.db.Exec(ctx, markRepositoryBindingUnavailableByProvider, arg.UpdatedAt, arg.ProviderInstallationID, arg.ProviderRepositoryID)
+	return err
+}
+
+const markRepositoryBindingsUnavailableForInstallation = `-- name: MarkRepositoryBindingsUnavailableForInstallation :exec
+UPDATE github_repository_bindings
+SET state = 'unavailable',
+    updated_at = $1
+WHERE installation_binding_id = $2
+  AND state = 'enabled'
+`
+
+type MarkRepositoryBindingsUnavailableForInstallationParams struct {
+	UpdatedAt             pgtype.Timestamptz
+	InstallationBindingID pgtype.UUID
+}
+
+func (q *Queries) MarkRepositoryBindingsUnavailableForInstallation(ctx context.Context, arg MarkRepositoryBindingsUnavailableForInstallationParams) error {
+	_, err := q.db.Exec(ctx, markRepositoryBindingsUnavailableForInstallation, arg.UpdatedAt, arg.InstallationBindingID)
+	return err
+}
+
 const markRunnerRegistrationCleaned = `-- name: MarkRunnerRegistrationCleaned :exec
 UPDATE github_runner_registrations
 SET state = 'cleaned',
@@ -1088,6 +2318,68 @@ func (q *Queries) MarkRunnerRegistrationSubmitted(ctx context.Context, arg MarkR
 		arg.ProviderJobID,
 	)
 	return err
+}
+
+const markSetupSessionAwaitingAuthorization = `-- name: MarkSetupSessionAwaitingAuthorization :one
+UPDATE github_setup_sessions
+SET session_state = 'awaiting_user_authorization',
+    failure_reason = $1,
+    updated_at = $2
+WHERE setup_session_id = $3
+  AND org_id = $4
+  AND session_state = 'pending_setup'
+RETURNING setup_session_id, org_id, actor_id, session_state, installation_url,
+          callback_url, provider_installation_id, github_user_authorization_id,
+          installation_binding_id, expires_at, completed_at, created_at, updated_at
+`
+
+type MarkSetupSessionAwaitingAuthorizationParams struct {
+	FailureReason  string
+	UpdatedAt      pgtype.Timestamptz
+	SetupSessionID pgtype.UUID
+	OrgID          string
+}
+
+type MarkSetupSessionAwaitingAuthorizationRow struct {
+	SetupSessionID            pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+	SessionState              string
+	InstallationUrl           string
+	CallbackUrl               string
+	ProviderInstallationID    int64
+	GithubUserAuthorizationID pgtype.UUID
+	InstallationBindingID     pgtype.UUID
+	ExpiresAt                 pgtype.Timestamptz
+	CompletedAt               pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+}
+
+func (q *Queries) MarkSetupSessionAwaitingAuthorization(ctx context.Context, arg MarkSetupSessionAwaitingAuthorizationParams) (MarkSetupSessionAwaitingAuthorizationRow, error) {
+	row := q.db.QueryRow(ctx, markSetupSessionAwaitingAuthorization,
+		arg.FailureReason,
+		arg.UpdatedAt,
+		arg.SetupSessionID,
+		arg.OrgID,
+	)
+	var i MarkSetupSessionAwaitingAuthorizationRow
+	err := row.Scan(
+		&i.SetupSessionID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.SessionState,
+		&i.InstallationUrl,
+		&i.CallbackUrl,
+		&i.ProviderInstallationID,
+		&i.GithubUserAuthorizationID,
+		&i.InstallationBindingID,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const recordWebhookDelivery = `-- name: RecordWebhookDelivery :one
@@ -1267,6 +2559,25 @@ func (q *Queries) ResetProviderDemandAfterRunnerReassignment(ctx context.Context
 	return result.RowsAffected(), nil
 }
 
+const revokeUserAuthorizationsByGitHubUser = `-- name: RevokeUserAuthorizationsByGitHubUser :exec
+UPDATE github_user_authorizations
+SET state = 'revoked',
+    revoked_at = $1,
+    updated_at = $1
+WHERE provider_user_id = $2
+  AND state = 'active'
+`
+
+type RevokeUserAuthorizationsByGitHubUserParams struct {
+	RevokedAt      pgtype.Timestamptz
+	ProviderUserID int64
+}
+
+func (q *Queries) RevokeUserAuthorizationsByGitHubUser(ctx context.Context, arg RevokeUserAuthorizationsByGitHubUserParams) error {
+	_, err := q.db.Exec(ctx, revokeUserAuthorizationsByGitHubUser, arg.RevokedAt, arg.ProviderUserID)
+	return err
+}
+
 const swapProviderDemandRunnerAssignments = `-- name: SwapProviderDemandRunnerAssignments :execrows
 WITH source AS (
     SELECT runner_id, runner_name, jit_config_sha256, sandbox_allocation_id,
@@ -1319,7 +2630,7 @@ WITH target AS (
     WHERE github_runner_registrations.provider_job_id = $3
       AND github_runner_registrations.runner_name <> $4
       AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
-    RETURNING provider_job_id, demand_id, provider_installation_id, provider_repository_id, runner_id, runner_name, runner_class, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id, state, failure_reason, created_at, updated_at
+    RETURNING provider_job_id, demand_id, org_id, installation_binding_id, repository_binding_id, provider_installation_id, provider_repository_id, runner_id, runner_name, runner_class, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id, state, failure_reason, created_at, updated_at
 ), moved_source AS (
     UPDATE github_runner_registrations
     SET provider_job_id = $3,
@@ -1333,7 +2644,7 @@ WITH target AS (
         updated_at = $2
     WHERE github_runner_registrations.provider_job_id = $1
       AND github_runner_registrations.runner_name = $4
-    RETURNING provider_job_id, demand_id, provider_installation_id, provider_repository_id, runner_id, runner_name, runner_class, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id, state, failure_reason, created_at, updated_at
+    RETURNING provider_job_id, demand_id, org_id, installation_binding_id, repository_binding_id, provider_installation_id, provider_repository_id, runner_id, runner_name, runner_class, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id, state, failure_reason, created_at, updated_at
 )
 INSERT INTO github_runner_registrations (
     provider_job_id,
@@ -1437,11 +2748,74 @@ func (q *Queries) TransferRunnerRegistrationToJob(ctx context.Context, arg Trans
 	return result.RowsAffected(), nil
 }
 
+const upsertGithubAccount = `-- name: UpsertGithubAccount :exec
+INSERT INTO github_accounts (
+    provider_account_id,
+    login,
+    account_type,
+    avatar_url,
+    html_url,
+    state,
+    last_event_delivery_id,
+    observed_from_api_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9
+)
+ON CONFLICT (provider_account_id) DO UPDATE SET
+    login = COALESCE(NULLIF(EXCLUDED.login, ''), github_accounts.login),
+    account_type = COALESCE(NULLIF(EXCLUDED.account_type, ''), github_accounts.account_type),
+    avatar_url = COALESCE(NULLIF(EXCLUDED.avatar_url, ''), github_accounts.avatar_url),
+    html_url = COALESCE(NULLIF(EXCLUDED.html_url, ''), github_accounts.html_url),
+    state = EXCLUDED.state,
+    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_accounts.last_event_delivery_id),
+    observed_from_api_at = COALESCE(EXCLUDED.observed_from_api_at, github_accounts.observed_from_api_at),
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertGithubAccountParams struct {
+	ProviderAccountID   int64
+	Login               string
+	AccountType         string
+	AvatarUrl           string
+	HtmlUrl             string
+	State               string
+	LastEventDeliveryID string
+	ObservedFromApiAt   pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertGithubAccount(ctx context.Context, arg UpsertGithubAccountParams) error {
+	_, err := q.db.Exec(ctx, upsertGithubAccount,
+		arg.ProviderAccountID,
+		arg.Login,
+		arg.AccountType,
+		arg.AvatarUrl,
+		arg.HtmlUrl,
+		arg.State,
+		arg.LastEventDeliveryID,
+		arg.ObservedFromApiAt,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const upsertGoldenSnapshotBarrier = `-- name: UpsertGoldenSnapshotBarrier :exec
 INSERT INTO github_golden_snapshot_barriers (
     barrier_id,
     terminal_evidence_id,
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_run_id,
     provider_run_attempt,
     sandbox_execution_id,
@@ -1465,9 +2839,15 @@ INSERT INTO github_golden_snapshot_barriers (
     $10,
     $11,
     $12,
-    $12
+    $13,
+    $14,
+    $15,
+    $15
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_golden_snapshot_barriers.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_golden_snapshot_barriers.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_golden_snapshot_barriers.repository_binding_id),
     terminal_evidence_id = EXCLUDED.terminal_evidence_id,
     provider_run_id = EXCLUDED.provider_run_id,
     provider_run_attempt = EXCLUDED.provider_run_attempt,
@@ -1482,18 +2862,21 @@ ON CONFLICT (provider_job_id) DO UPDATE SET
 `
 
 type UpsertGoldenSnapshotBarrierParams struct {
-	BarrierID          pgtype.UUID
-	TerminalEvidenceID pgtype.UUID
-	ProviderJobID      int64
-	ProviderRunID      int64
-	ProviderRunAttempt int64
-	SandboxExecutionID pgtype.UUID
-	SandboxAttemptID   pgtype.UUID
-	JobShapeID         string
-	TrustClass         string
-	State              string
-	FailureReason      string
-	RequestedAt        pgtype.Timestamptz
+	BarrierID             pgtype.UUID
+	TerminalEvidenceID    pgtype.UUID
+	ProviderJobID         int64
+	OrgID                 string
+	InstallationBindingID pgtype.UUID
+	RepositoryBindingID   pgtype.UUID
+	ProviderRunID         int64
+	ProviderRunAttempt    int64
+	SandboxExecutionID    pgtype.UUID
+	SandboxAttemptID      pgtype.UUID
+	JobShapeID            string
+	TrustClass            string
+	State                 string
+	FailureReason         string
+	RequestedAt           pgtype.Timestamptz
 }
 
 func (q *Queries) UpsertGoldenSnapshotBarrier(ctx context.Context, arg UpsertGoldenSnapshotBarrierParams) error {
@@ -1501,6 +2884,9 @@ func (q *Queries) UpsertGoldenSnapshotBarrier(ctx context.Context, arg UpsertGol
 		arg.BarrierID,
 		arg.TerminalEvidenceID,
 		arg.ProviderJobID,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.RepositoryBindingID,
 		arg.ProviderRunID,
 		arg.ProviderRunAttempt,
 		arg.SandboxExecutionID,
@@ -1549,9 +2935,227 @@ func (q *Queries) UpsertInstallation(ctx context.Context, arg UpsertInstallation
 	return err
 }
 
+const upsertInstallationBinding = `-- name: UpsertInstallationBinding :one
+INSERT INTO github_installation_bindings (
+    installation_binding_id,
+    org_id,
+    provider_installation_id,
+    provider_account_id,
+    setup_session_id,
+    connected_by_actor_id,
+    state,
+    connected_at,
+    last_synced_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    'active',
+    $7,
+    $7,
+    $7
+)
+ON CONFLICT (provider_installation_id) WHERE state = 'active' DO UPDATE SET
+    org_id = CASE
+        WHEN github_installation_bindings.org_id = EXCLUDED.org_id THEN github_installation_bindings.org_id
+        ELSE github_installation_bindings.org_id
+    END,
+    provider_account_id = EXCLUDED.provider_account_id,
+    setup_session_id = COALESCE(EXCLUDED.setup_session_id, github_installation_bindings.setup_session_id),
+    connected_by_actor_id = CASE
+        WHEN github_installation_bindings.org_id = EXCLUDED.org_id THEN EXCLUDED.connected_by_actor_id
+        ELSE github_installation_bindings.connected_by_actor_id
+    END,
+    last_synced_at = EXCLUDED.last_synced_at,
+    updated_at = EXCLUDED.updated_at
+WHERE github_installation_bindings.org_id = EXCLUDED.org_id
+RETURNING installation_binding_id, org_id, provider_installation_id, provider_account_id,
+          setup_session_id, connected_by_actor_id, state, connected_at,
+          disconnected_at, last_synced_at, created_at, updated_at
+`
+
+type UpsertInstallationBindingParams struct {
+	InstallationBindingID  pgtype.UUID
+	OrgID                  string
+	ProviderInstallationID int64
+	ProviderAccountID      int64
+	SetupSessionID         pgtype.UUID
+	ConnectedByActorID     string
+	ConnectedAt            pgtype.Timestamptz
+}
+
+type UpsertInstallationBindingRow struct {
+	InstallationBindingID  pgtype.UUID
+	OrgID                  string
+	ProviderInstallationID int64
+	ProviderAccountID      int64
+	SetupSessionID         pgtype.UUID
+	ConnectedByActorID     string
+	State                  string
+	ConnectedAt            pgtype.Timestamptz
+	DisconnectedAt         pgtype.Timestamptz
+	LastSyncedAt           pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertInstallationBinding(ctx context.Context, arg UpsertInstallationBindingParams) (UpsertInstallationBindingRow, error) {
+	row := q.db.QueryRow(ctx, upsertInstallationBinding,
+		arg.InstallationBindingID,
+		arg.OrgID,
+		arg.ProviderInstallationID,
+		arg.ProviderAccountID,
+		arg.SetupSessionID,
+		arg.ConnectedByActorID,
+		arg.ConnectedAt,
+	)
+	var i UpsertInstallationBindingRow
+	err := row.Scan(
+		&i.InstallationBindingID,
+		&i.OrgID,
+		&i.ProviderInstallationID,
+		&i.ProviderAccountID,
+		&i.SetupSessionID,
+		&i.ConnectedByActorID,
+		&i.State,
+		&i.ConnectedAt,
+		&i.DisconnectedAt,
+		&i.LastSyncedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertInstallationDetails = `-- name: UpsertInstallationDetails :exec
+INSERT INTO github_installations (
+    provider_installation_id,
+    provider_account_id,
+    account_login,
+    account_type,
+    app_slug,
+    target_type,
+    repository_selection,
+    configuration_url,
+    permissions_json,
+    state,
+    last_event_delivery_id,
+    observed_from_api_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13
+)
+ON CONFLICT (provider_installation_id) DO UPDATE SET
+    provider_account_id = CASE WHEN EXCLUDED.provider_account_id > 0 THEN EXCLUDED.provider_account_id ELSE github_installations.provider_account_id END,
+    account_login = COALESCE(NULLIF(EXCLUDED.account_login, ''), github_installations.account_login),
+    account_type = COALESCE(NULLIF(EXCLUDED.account_type, ''), github_installations.account_type),
+    app_slug = COALESCE(NULLIF(EXCLUDED.app_slug, ''), github_installations.app_slug),
+    target_type = COALESCE(NULLIF(EXCLUDED.target_type, ''), github_installations.target_type),
+    repository_selection = COALESCE(NULLIF(EXCLUDED.repository_selection, ''), github_installations.repository_selection),
+    configuration_url = COALESCE(NULLIF(EXCLUDED.configuration_url, ''), github_installations.configuration_url),
+    permissions_json = EXCLUDED.permissions_json,
+    state = EXCLUDED.state,
+    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_installations.last_event_delivery_id),
+    observed_from_api_at = COALESCE(EXCLUDED.observed_from_api_at, github_installations.observed_from_api_at),
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertInstallationDetailsParams struct {
+	ProviderInstallationID int64
+	ProviderAccountID      int64
+	AccountLogin           string
+	AccountType            string
+	AppSlug                string
+	TargetType             string
+	RepositorySelection    string
+	ConfigurationUrl       string
+	PermissionsJson        []byte
+	State                  string
+	LastEventDeliveryID    string
+	ObservedFromApiAt      pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertInstallationDetails(ctx context.Context, arg UpsertInstallationDetailsParams) error {
+	_, err := q.db.Exec(ctx, upsertInstallationDetails,
+		arg.ProviderInstallationID,
+		arg.ProviderAccountID,
+		arg.AccountLogin,
+		arg.AccountType,
+		arg.AppSlug,
+		arg.TargetType,
+		arg.RepositorySelection,
+		arg.ConfigurationUrl,
+		arg.PermissionsJson,
+		arg.State,
+		arg.LastEventDeliveryID,
+		arg.ObservedFromApiAt,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
+const upsertInstallationRepository = `-- name: UpsertInstallationRepository :exec
+INSERT INTO github_installation_repositories (
+    provider_installation_id,
+    provider_repository_id,
+    state,
+    observed_from_api_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5
+)
+ON CONFLICT (provider_installation_id, provider_repository_id) DO UPDATE SET
+    state = EXCLUDED.state,
+    observed_from_api_at = COALESCE(EXCLUDED.observed_from_api_at, github_installation_repositories.observed_from_api_at),
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertInstallationRepositoryParams struct {
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	State                  string
+	ObservedFromApiAt      pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertInstallationRepository(ctx context.Context, arg UpsertInstallationRepositoryParams) error {
+	_, err := q.db.Exec(ctx, upsertInstallationRepository,
+		arg.ProviderInstallationID,
+		arg.ProviderRepositoryID,
+		arg.State,
+		arg.ObservedFromApiAt,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const upsertJobShape = `-- name: UpsertJobShape :exec
 INSERT INTO github_job_shapes (
     job_shape_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     repository_full_name,
@@ -1579,9 +3183,15 @@ INSERT INTO github_job_shapes (
     $11,
     $12,
     $13,
-    $14
+    $14,
+    $15,
+    $16,
+    $17
 )
 ON CONFLICT (job_shape_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_job_shapes.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_job_shapes.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_job_shapes.repository_binding_id),
     provider_installation_id = EXCLUDED.provider_installation_id,
     provider_repository_id = EXCLUDED.provider_repository_id,
     repository_full_name = EXCLUDED.repository_full_name,
@@ -1599,6 +3209,9 @@ ON CONFLICT (job_shape_id) DO UPDATE SET
 
 type UpsertJobShapeParams struct {
 	JobShapeID             string
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
@@ -1617,6 +3230,9 @@ type UpsertJobShapeParams struct {
 func (q *Queries) UpsertJobShape(ctx context.Context, arg UpsertJobShapeParams) error {
 	_, err := q.db.Exec(ctx, upsertJobShape,
 		arg.JobShapeID,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.RepositoryBindingID,
 		arg.ProviderInstallationID,
 		arg.ProviderRepositoryID,
 		arg.RepositoryFullName,
@@ -1638,6 +3254,9 @@ const upsertProviderOutboxCommand = `-- name: UpsertProviderOutboxCommand :exec
 INSERT INTO github_provider_outbox (
     outbox_id,
     command_kind,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_job_id,
     provider_run_id,
     provider_run_attempt,
@@ -1657,12 +3276,15 @@ INSERT INTO github_provider_outbox (
     $5,
     $6,
     $7,
-    'pending',
     $8,
     $9,
     $10,
+    'pending',
     $11,
-    $11
+    $12,
+    $13,
+    $14,
+    $14
 )
 ON CONFLICT (command_kind, command_sha256) DO UPDATE SET
     state = CASE
@@ -1677,6 +3299,9 @@ ON CONFLICT (command_kind, command_sha256) DO UPDATE SET
 type UpsertProviderOutboxCommandParams struct {
 	OutboxID               pgtype.UUID
 	CommandKind            string
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderJobID          int64
 	ProviderRunID          int64
 	ProviderRunAttempt     int64
@@ -1692,6 +3317,9 @@ func (q *Queries) UpsertProviderOutboxCommand(ctx context.Context, arg UpsertPro
 	_, err := q.db.Exec(ctx, upsertProviderOutboxCommand,
 		arg.OutboxID,
 		arg.CommandKind,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.RepositoryBindingID,
 		arg.ProviderJobID,
 		arg.ProviderRunID,
 		arg.ProviderRunAttempt,
@@ -1706,14 +3334,93 @@ func (q *Queries) UpsertProviderOutboxCommand(ctx context.Context, arg UpsertPro
 }
 
 const upsertRepository = `-- name: UpsertRepository :exec
+WITH upserted_repository AS (
+    INSERT INTO github_repositories (
+        provider_repository_id,
+        owner_login,
+        repository_name,
+        repository_full_name,
+        state,
+        last_event_delivery_id,
+        updated_at
+    ) VALUES (
+        $4,
+        $5,
+        $6,
+        $7,
+        $8,
+        $2,
+        $3
+    )
+    ON CONFLICT (provider_repository_id) DO UPDATE SET
+        owner_login = COALESCE(NULLIF(EXCLUDED.owner_login, ''), github_repositories.owner_login),
+        repository_name = COALESCE(NULLIF(EXCLUDED.repository_name, ''), github_repositories.repository_name),
+        repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_repositories.repository_full_name),
+        state = EXCLUDED.state,
+        last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_repositories.last_event_delivery_id),
+        updated_at = EXCLUDED.updated_at
+    RETURNING provider_repository_id
+)
+INSERT INTO github_installation_repositories (
+    provider_installation_id,
+    provider_repository_id,
+    state,
+    last_event_delivery_id,
+    updated_at
+)
+SELECT
+    $1::bigint,
+    provider_repository_id,
+    'selected',
+    $2,
+    $3
+FROM upserted_repository
+WHERE $1::bigint > 0
+ON CONFLICT (provider_installation_id, provider_repository_id) DO UPDATE SET
+    state = EXCLUDED.state,
+    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_installation_repositories.last_event_delivery_id),
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertRepositoryParams struct {
+	ProviderInstallationID int64
+	LastEventDeliveryID    string
+	UpdatedAt              pgtype.Timestamptz
+	ProviderRepositoryID   int64
+	OwnerLogin             string
+	RepositoryName         string
+	RepositoryFullName     string
+	State                  string
+}
+
+func (q *Queries) UpsertRepository(ctx context.Context, arg UpsertRepositoryParams) error {
+	_, err := q.db.Exec(ctx, upsertRepository,
+		arg.ProviderInstallationID,
+		arg.LastEventDeliveryID,
+		arg.UpdatedAt,
+		arg.ProviderRepositoryID,
+		arg.OwnerLogin,
+		arg.RepositoryName,
+		arg.RepositoryFullName,
+		arg.State,
+	)
+	return err
+}
+
+const upsertRepositoryDetails = `-- name: UpsertRepositoryDetails :exec
 INSERT INTO github_repositories (
     provider_repository_id,
-    provider_installation_id,
+    provider_account_id,
     owner_login,
     repository_name,
     repository_full_name,
+    default_branch,
+    private,
+    archived,
+    visibility,
+    html_url,
     state,
-    last_event_delivery_id,
+    observed_from_api_at,
     updated_at
 ) VALUES (
     $1,
@@ -1723,38 +3430,58 @@ INSERT INTO github_repositories (
     $5,
     $6,
     $7,
-    $8
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13
 )
 ON CONFLICT (provider_repository_id) DO UPDATE SET
-    provider_installation_id = CASE WHEN EXCLUDED.provider_installation_id <> 0 THEN EXCLUDED.provider_installation_id ELSE github_repositories.provider_installation_id END,
+    provider_account_id = CASE WHEN EXCLUDED.provider_account_id > 0 THEN EXCLUDED.provider_account_id ELSE github_repositories.provider_account_id END,
     owner_login = COALESCE(NULLIF(EXCLUDED.owner_login, ''), github_repositories.owner_login),
     repository_name = COALESCE(NULLIF(EXCLUDED.repository_name, ''), github_repositories.repository_name),
     repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_repositories.repository_full_name),
+    default_branch = COALESCE(NULLIF(EXCLUDED.default_branch, ''), github_repositories.default_branch),
+    private = EXCLUDED.private,
+    archived = EXCLUDED.archived,
+    visibility = COALESCE(NULLIF(EXCLUDED.visibility, ''), github_repositories.visibility),
+    html_url = COALESCE(NULLIF(EXCLUDED.html_url, ''), github_repositories.html_url),
     state = EXCLUDED.state,
-    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_repositories.last_event_delivery_id),
+    observed_from_api_at = COALESCE(EXCLUDED.observed_from_api_at, github_repositories.observed_from_api_at),
     updated_at = EXCLUDED.updated_at
 `
 
-type UpsertRepositoryParams struct {
-	ProviderRepositoryID   int64
-	ProviderInstallationID int64
-	OwnerLogin             string
-	RepositoryName         string
-	RepositoryFullName     string
-	State                  string
-	LastEventDeliveryID    string
-	UpdatedAt              pgtype.Timestamptz
+type UpsertRepositoryDetailsParams struct {
+	ProviderRepositoryID int64
+	ProviderAccountID    int64
+	OwnerLogin           string
+	RepositoryName       string
+	RepositoryFullName   string
+	DefaultBranch        string
+	Private              bool
+	Archived             bool
+	Visibility           string
+	HtmlUrl              string
+	State                string
+	ObservedFromApiAt    pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
 }
 
-func (q *Queries) UpsertRepository(ctx context.Context, arg UpsertRepositoryParams) error {
-	_, err := q.db.Exec(ctx, upsertRepository,
+func (q *Queries) UpsertRepositoryDetails(ctx context.Context, arg UpsertRepositoryDetailsParams) error {
+	_, err := q.db.Exec(ctx, upsertRepositoryDetails,
 		arg.ProviderRepositoryID,
-		arg.ProviderInstallationID,
+		arg.ProviderAccountID,
 		arg.OwnerLogin,
 		arg.RepositoryName,
 		arg.RepositoryFullName,
+		arg.DefaultBranch,
+		arg.Private,
+		arg.Archived,
+		arg.Visibility,
+		arg.HtmlUrl,
 		arg.State,
-		arg.LastEventDeliveryID,
+		arg.ObservedFromApiAt,
 		arg.UpdatedAt,
 	)
 	return err
@@ -1764,6 +3491,9 @@ const upsertRunnerRegistration = `-- name: UpsertRunnerRegistration :exec
 INSERT INTO github_runner_registrations (
     provider_job_id,
     demand_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     runner_id,
@@ -1782,10 +3512,16 @@ INSERT INTO github_runner_registrations (
     $7,
     $8,
     $9,
-    $10
+    $10,
+    $11,
+    $12,
+    $13
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
     demand_id = COALESCE(EXCLUDED.demand_id, github_runner_registrations.demand_id),
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_runner_registrations.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_runner_registrations.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_runner_registrations.repository_binding_id),
     runner_id = EXCLUDED.runner_id,
     runner_name = EXCLUDED.runner_name,
     runner_class = EXCLUDED.runner_class,
@@ -1798,6 +3534,9 @@ ON CONFLICT (provider_job_id) DO UPDATE SET
 type UpsertRunnerRegistrationParams struct {
 	ProviderJobID          int64
 	DemandID               pgtype.UUID
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RunnerID               int64
@@ -1812,6 +3551,9 @@ func (q *Queries) UpsertRunnerRegistration(ctx context.Context, arg UpsertRunner
 	_, err := q.db.Exec(ctx, upsertRunnerRegistration,
 		arg.ProviderJobID,
 		arg.DemandID,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.RepositoryBindingID,
 		arg.ProviderInstallationID,
 		arg.ProviderRepositoryID,
 		arg.RunnerID,
@@ -1824,9 +3566,90 @@ func (q *Queries) UpsertRunnerRegistration(ctx context.Context, arg UpsertRunner
 	return err
 }
 
+const upsertUserAuthorization = `-- name: UpsertUserAuthorization :one
+INSERT INTO github_user_authorizations (
+    github_user_authorization_id,
+    org_id,
+    actor_id,
+    provider_user_id,
+    github_login,
+    scopes_json,
+    credential_ref,
+    state,
+    authorized_at,
+    last_verified_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    'active',
+    $8,
+    $8,
+    $8
+)
+ON CONFLICT (org_id, actor_id, provider_user_id) WHERE state = 'active' DO UPDATE SET
+    github_login = EXCLUDED.github_login,
+    scopes_json = EXCLUDED.scopes_json,
+    credential_ref = EXCLUDED.credential_ref,
+    last_verified_at = EXCLUDED.last_verified_at,
+    updated_at = EXCLUDED.updated_at
+RETURNING github_user_authorization_id, org_id, actor_id, provider_user_id,
+          github_login, scopes_json, credential_ref, state, authorized_at,
+          last_verified_at, revoked_at, created_at, updated_at
+`
+
+type UpsertUserAuthorizationParams struct {
+	GithubUserAuthorizationID pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+	ProviderUserID            int64
+	GithubLogin               string
+	ScopesJson                []byte
+	CredentialRef             string
+	AuthorizedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertUserAuthorization(ctx context.Context, arg UpsertUserAuthorizationParams) (GithubUserAuthorization, error) {
+	row := q.db.QueryRow(ctx, upsertUserAuthorization,
+		arg.GithubUserAuthorizationID,
+		arg.OrgID,
+		arg.ActorID,
+		arg.ProviderUserID,
+		arg.GithubLogin,
+		arg.ScopesJson,
+		arg.CredentialRef,
+		arg.AuthorizedAt,
+	)
+	var i GithubUserAuthorization
+	err := row.Scan(
+		&i.GithubUserAuthorizationID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.ProviderUserID,
+		&i.GithubLogin,
+		&i.ScopesJson,
+		&i.CredentialRef,
+		&i.State,
+		&i.AuthorizedAt,
+		&i.LastVerifiedAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const upsertWorkflowJob = `-- name: UpsertWorkflowJob :exec
 INSERT INTO github_workflow_jobs (
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     repository_full_name,
@@ -1866,9 +3689,15 @@ INSERT INTO github_workflow_jobs (
     $17,
     $18,
     $19,
-    $20
+    $20,
+    $21,
+    $22,
+    $23
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_workflow_jobs.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_workflow_jobs.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_workflow_jobs.repository_binding_id),
     provider_installation_id = EXCLUDED.provider_installation_id,
     provider_repository_id = EXCLUDED.provider_repository_id,
     repository_full_name = EXCLUDED.repository_full_name,
@@ -1892,6 +3721,9 @@ ON CONFLICT (provider_job_id) DO UPDATE SET
 
 type UpsertWorkflowJobParams struct {
 	ProviderJobID          int64
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	RepositoryFullName     string
@@ -1916,6 +3748,9 @@ type UpsertWorkflowJobParams struct {
 func (q *Queries) UpsertWorkflowJob(ctx context.Context, arg UpsertWorkflowJobParams) error {
 	_, err := q.db.Exec(ctx, upsertWorkflowJob,
 		arg.ProviderJobID,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.RepositoryBindingID,
 		arg.ProviderInstallationID,
 		arg.ProviderRepositoryID,
 		arg.RepositoryFullName,
@@ -1941,6 +3776,9 @@ func (q *Queries) UpsertWorkflowJob(ctx context.Context, arg UpsertWorkflowJobPa
 
 const upsertWorkflowRun = `-- name: UpsertWorkflowRun :exec
 INSERT INTO github_workflow_runs (
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     provider_run_id,
@@ -1975,9 +3813,15 @@ INSERT INTO github_workflow_runs (
     $14,
     $15,
     $16,
-    $17
+    $17,
+    $18,
+    $19,
+    $20
 )
 ON CONFLICT (provider_installation_id, provider_repository_id, provider_run_id, provider_run_attempt) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_workflow_runs.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_workflow_runs.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_workflow_runs.repository_binding_id),
     repository_full_name = EXCLUDED.repository_full_name,
     event_name = EXCLUDED.event_name,
     head_sha = EXCLUDED.head_sha,
@@ -1994,6 +3838,9 @@ ON CONFLICT (provider_installation_id, provider_repository_id, provider_run_id, 
 `
 
 type UpsertWorkflowRunParams struct {
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
 	ProviderInstallationID int64
 	ProviderRepositoryID   int64
 	ProviderRunID          int64
@@ -2015,6 +3862,9 @@ type UpsertWorkflowRunParams struct {
 
 func (q *Queries) UpsertWorkflowRun(ctx context.Context, arg UpsertWorkflowRunParams) error {
 	_, err := q.db.Exec(ctx, upsertWorkflowRun,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.RepositoryBindingID,
 		arg.ProviderInstallationID,
 		arg.ProviderRepositoryID,
 		arg.ProviderRunID,

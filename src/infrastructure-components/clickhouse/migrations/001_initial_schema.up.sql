@@ -1627,6 +1627,8 @@ CREATE TABLE IF NOT EXISTS verself.github_integration_events
     delivery_id String DEFAULT '' CODEC(ZSTD(3)),
     action LowCardinality(String) DEFAULT '',
     org_id LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
+    installation_binding_id UUID,
+    repository_binding_id UUID,
     provider_installation_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
     provider_repository_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
     provider_run_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
@@ -1651,6 +1653,12 @@ CREATE TABLE IF NOT EXISTS verself.github_integration_events
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(observed_at)
 ORDER BY (event_name, result, org_id, provider_repository_id, provider_run_id, provider_job_id, observed_at);
+
+ALTER TABLE verself.github_integration_events
+    ADD COLUMN IF NOT EXISTS installation_binding_id UUID AFTER org_id;
+
+ALTER TABLE verself.github_integration_events
+    ADD COLUMN IF NOT EXISTS repository_binding_id UUID AFTER installation_binding_id;
 
 GRANT SELECT, INSERT ON verself.github_integration_events TO github_integration_service;
 

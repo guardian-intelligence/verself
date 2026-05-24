@@ -21,15 +21,12 @@ CREATE TABLE github_webhook_deliveries (
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE github_installations (
-    provider_installation_id BIGINT      PRIMARY KEY CHECK (provider_installation_id > 0),
-    org_id                   TEXT        NOT NULL DEFAULT '',
-    account_id               BIGINT      NOT NULL DEFAULT 0,
-    account_login            TEXT        NOT NULL DEFAULT '',
-    account_type             TEXT        NOT NULL DEFAULT '',
-    app_slug                 TEXT        NOT NULL DEFAULT '',
-    repository_selection     TEXT        NOT NULL DEFAULT '',
-    permissions_json         JSONB       NOT NULL DEFAULT '{}'::jsonb,
+CREATE TABLE github_accounts (
+    provider_account_id      BIGINT      PRIMARY KEY CHECK (provider_account_id > 0),
+    login                    TEXT        NOT NULL CHECK (login <> ''),
+    account_type             TEXT        NOT NULL CHECK (account_type <> ''),
+    avatar_url               TEXT        NOT NULL DEFAULT '',
+    html_url                 TEXT        NOT NULL DEFAULT '',
     state                    TEXT        NOT NULL CHECK (state <> ''),
     last_event_delivery_id   TEXT        NOT NULL DEFAULT '',
     observed_from_api_at     TIMESTAMPTZ,
@@ -37,15 +34,133 @@ CREATE TABLE github_installations (
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE github_installations (
+    provider_installation_id BIGINT      PRIMARY KEY CHECK (provider_installation_id > 0),
+    provider_account_id      BIGINT      NOT NULL DEFAULT 0,
+    account_login            TEXT        NOT NULL DEFAULT '',
+    account_type             TEXT        NOT NULL DEFAULT '',
+    app_slug                 TEXT        NOT NULL DEFAULT '',
+    target_type              TEXT        NOT NULL DEFAULT '',
+    repository_selection     TEXT        NOT NULL DEFAULT '',
+    configuration_url        TEXT        NOT NULL DEFAULT '',
+    permissions_json         JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    suspended_by             TEXT        NOT NULL DEFAULT '',
+    suspended_at             TIMESTAMPTZ,
+    state                    TEXT        NOT NULL CHECK (state <> ''),
+    last_event_delivery_id   TEXT        NOT NULL DEFAULT '',
+    observed_from_api_at     TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_github_installations_account
+    ON github_installations (provider_account_id, state, updated_at DESC);
+
+CREATE TABLE github_setup_sessions (
+    setup_session_id         UUID        PRIMARY KEY,
+    org_id                   TEXT        NOT NULL CHECK (org_id <> ''),
+    actor_id                 TEXT        NOT NULL CHECK (actor_id <> ''),
+    state_hash               TEXT        NOT NULL UNIQUE CHECK (state_hash <> ''),
+    session_state            TEXT        NOT NULL CHECK (session_state <> ''),
+    installation_url         TEXT        NOT NULL DEFAULT '',
+    callback_url             TEXT        NOT NULL DEFAULT '',
+    provider_installation_id BIGINT      NOT NULL DEFAULT 0,
+    github_user_authorization_id UUID,
+    installation_binding_id  UUID,
+    failure_reason           TEXT        NOT NULL DEFAULT '',
+    expires_at               TIMESTAMPTZ NOT NULL,
+    completed_at             TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_github_setup_sessions_org_state
+    ON github_setup_sessions (org_id, session_state, updated_at DESC);
+
+CREATE TABLE github_oauth_sessions (
+    oauth_session_id         UUID        PRIMARY KEY,
+    org_id                   TEXT        NOT NULL CHECK (org_id <> ''),
+    actor_id                 TEXT        NOT NULL CHECK (actor_id <> ''),
+    state_hash               TEXT        NOT NULL UNIQUE CHECK (state_hash <> ''),
+    session_state            TEXT        NOT NULL CHECK (session_state <> ''),
+    authorization_url        TEXT        NOT NULL DEFAULT '',
+    callback_url             TEXT        NOT NULL DEFAULT '',
+    github_user_authorization_id UUID,
+    failure_reason           TEXT        NOT NULL DEFAULT '',
+    expires_at               TIMESTAMPTZ NOT NULL,
+    completed_at             TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_github_oauth_sessions_org_state
+    ON github_oauth_sessions (org_id, session_state, updated_at DESC);
+
+CREATE TABLE github_idempotency_records (
+    org_id                   TEXT        NOT NULL CHECK (org_id <> ''),
+    actor_id                 TEXT        NOT NULL CHECK (actor_id <> ''),
+    operation                TEXT        NOT NULL CHECK (operation <> ''),
+    key_hash                 TEXT        NOT NULL CHECK (key_hash ~ '^[a-f0-9]{64}$'),
+    request_hash             TEXT        NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'),
+    result_payload           JSONB       NOT NULL,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (org_id, actor_id, operation, key_hash)
+);
+
+CREATE TABLE github_user_authorizations (
+    github_user_authorization_id UUID    PRIMARY KEY,
+    org_id                   TEXT        NOT NULL CHECK (org_id <> ''),
+    actor_id                 TEXT        NOT NULL CHECK (actor_id <> ''),
+    provider_user_id         BIGINT      NOT NULL CHECK (provider_user_id > 0),
+    github_login             TEXT        NOT NULL CHECK (github_login <> ''),
+    scopes_json              JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    credential_ref           TEXT        NOT NULL CHECK (credential_ref <> ''),
+    state                    TEXT        NOT NULL CHECK (state <> ''),
+    authorized_at            TIMESTAMPTZ NOT NULL,
+    last_verified_at         TIMESTAMPTZ,
+    revoked_at               TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_github_user_authorizations_active
+    ON github_user_authorizations (org_id, actor_id, provider_user_id)
+    WHERE state = 'active';
+
+CREATE TABLE github_installation_bindings (
+    installation_binding_id  UUID        PRIMARY KEY,
+    org_id                   TEXT        NOT NULL CHECK (org_id <> ''),
+    provider_installation_id BIGINT      NOT NULL REFERENCES github_installations(provider_installation_id) ON DELETE CASCADE,
+    provider_account_id      BIGINT      NOT NULL DEFAULT 0,
+    setup_session_id         UUID        REFERENCES github_setup_sessions(setup_session_id) ON DELETE SET NULL,
+    connected_by_actor_id    TEXT        NOT NULL CHECK (connected_by_actor_id <> ''),
+    disconnected_by_actor_id TEXT        NOT NULL DEFAULT '',
+    state                    TEXT        NOT NULL CHECK (state <> ''),
+    connected_at             TIMESTAMPTZ NOT NULL,
+    disconnected_at          TIMESTAMPTZ,
+    last_synced_at           TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_github_installation_bindings_active_installation
+    ON github_installation_bindings (provider_installation_id)
+    WHERE state = 'active';
+
+CREATE INDEX idx_github_installation_bindings_org
+    ON github_installation_bindings (org_id, state, updated_at DESC);
+
 CREATE TABLE github_repositories (
     provider_repository_id   BIGINT      PRIMARY KEY CHECK (provider_repository_id > 0),
-    provider_installation_id BIGINT      NOT NULL DEFAULT 0,
-    org_id                   TEXT        NOT NULL DEFAULT '',
+    provider_account_id      BIGINT      NOT NULL DEFAULT 0,
     owner_login              TEXT        NOT NULL DEFAULT '',
     repository_name          TEXT        NOT NULL DEFAULT '',
     repository_full_name     TEXT        NOT NULL CHECK (repository_full_name <> ''),
     default_branch           TEXT        NOT NULL DEFAULT '',
     private                  BOOLEAN     NOT NULL DEFAULT false,
+    archived                 BOOLEAN     NOT NULL DEFAULT false,
+    visibility               TEXT        NOT NULL DEFAULT '',
+    html_url                 TEXT        NOT NULL DEFAULT '',
     state                    TEXT        NOT NULL CHECK (state <> ''),
     last_event_delivery_id   TEXT        NOT NULL DEFAULT '',
     observed_from_api_at     TIMESTAMPTZ,
@@ -53,8 +168,67 @@ CREATE TABLE github_repositories (
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_github_repositories_installation
-    ON github_repositories (provider_installation_id, state, updated_at DESC);
+CREATE INDEX idx_github_repositories_owner
+    ON github_repositories (owner_login, repository_name);
+
+CREATE TABLE github_installation_repositories (
+    provider_installation_id BIGINT      NOT NULL REFERENCES github_installations(provider_installation_id) ON DELETE CASCADE,
+    provider_repository_id   BIGINT      NOT NULL REFERENCES github_repositories(provider_repository_id) ON DELETE CASCADE,
+    state                    TEXT        NOT NULL CHECK (state <> ''),
+    last_event_delivery_id   TEXT        NOT NULL DEFAULT '',
+    observed_from_api_at     TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (provider_installation_id, provider_repository_id)
+);
+
+CREATE INDEX idx_github_installation_repositories_installation
+    ON github_installation_repositories (provider_installation_id, state, updated_at DESC);
+
+CREATE TABLE github_repository_bindings (
+    repository_binding_id    UUID        PRIMARY KEY,
+    org_id                   TEXT        NOT NULL CHECK (org_id <> ''),
+    installation_binding_id  UUID        NOT NULL REFERENCES github_installation_bindings(installation_binding_id) ON DELETE CASCADE,
+    provider_installation_id BIGINT      NOT NULL,
+    provider_repository_id   BIGINT      NOT NULL REFERENCES github_repositories(provider_repository_id) ON DELETE CASCADE,
+    state                    TEXT        NOT NULL CHECK (state <> ''),
+    enabled_by_actor_id      TEXT        NOT NULL DEFAULT '',
+    disabled_by_actor_id     TEXT        NOT NULL DEFAULT '',
+    enabled_at               TIMESTAMPTZ,
+    disabled_at              TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_github_repository_bindings_enabled_repo
+    ON github_repository_bindings (org_id, provider_repository_id)
+    WHERE state = 'enabled';
+
+CREATE UNIQUE INDEX idx_github_repository_bindings_installation_repo
+    ON github_repository_bindings (installation_binding_id, provider_repository_id);
+
+CREATE INDEX idx_github_repository_bindings_org
+    ON github_repository_bindings (org_id, state, updated_at DESC);
+
+CREATE TABLE github_provider_reconciliations (
+    reconciliation_id        UUID        PRIMARY KEY,
+    org_id                   TEXT        NOT NULL DEFAULT '',
+    installation_binding_id  UUID,
+    provider_installation_id BIGINT      NOT NULL DEFAULT 0,
+    reason                   TEXT        NOT NULL CHECK (reason <> ''),
+    state                    TEXT        NOT NULL CHECK (state <> ''),
+    attempt_count            INTEGER     NOT NULL DEFAULT 0,
+    failure_reason           TEXT        NOT NULL DEFAULT '',
+    started_at               TIMESTAMPTZ,
+    completed_at             TIMESTAMPTZ,
+    next_attempt_at          TIMESTAMPTZ,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_github_provider_reconciliations_ready
+    ON github_provider_reconciliations (next_attempt_at NULLS FIRST, created_at)
+    WHERE state IN ('pending', 'retryable');
 
 CREATE INDEX idx_github_webhook_deliveries_pending
     ON github_webhook_deliveries (next_attempt_at NULLS FIRST, received_at)
@@ -62,6 +236,9 @@ CREATE INDEX idx_github_webhook_deliveries_pending
 
 CREATE TABLE github_workflow_jobs (
     provider_job_id          BIGINT      PRIMARY KEY,
+    org_id                   TEXT        NOT NULL DEFAULT '',
+    installation_binding_id  UUID,
+    repository_binding_id    UUID,
     provider_installation_id BIGINT      NOT NULL DEFAULT 0,
     provider_repository_id   BIGINT      NOT NULL DEFAULT 0,
     repository_full_name     TEXT        NOT NULL DEFAULT '',
@@ -89,6 +266,9 @@ CREATE INDEX idx_github_workflow_jobs_run
 
 CREATE TABLE github_job_shapes (
     job_shape_id             TEXT        PRIMARY KEY CHECK (job_shape_id <> ''),
+    org_id                   TEXT        NOT NULL DEFAULT '',
+    installation_binding_id  UUID,
+    repository_binding_id    UUID,
     provider_installation_id BIGINT      NOT NULL DEFAULT 0,
     provider_repository_id   BIGINT      NOT NULL DEFAULT 0,
     repository_full_name     TEXT        NOT NULL DEFAULT '',
@@ -109,6 +289,9 @@ CREATE INDEX idx_github_job_shapes_repository
     ON github_job_shapes (provider_repository_id, runner_class, updated_at DESC);
 
 CREATE TABLE github_workflow_runs (
+    org_id                       TEXT        NOT NULL DEFAULT '',
+    installation_binding_id      UUID,
+    repository_binding_id        UUID,
     provider_installation_id     BIGINT      NOT NULL DEFAULT 0,
     provider_repository_id       BIGINT      NOT NULL,
     provider_run_id              BIGINT      NOT NULL,
@@ -133,6 +316,9 @@ CREATE TABLE github_workflow_runs (
 CREATE TABLE github_provider_demands (
     demand_id                UUID        PRIMARY KEY,
     provider_job_id          BIGINT      NOT NULL UNIQUE REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
+    org_id                   TEXT        NOT NULL DEFAULT '',
+    installation_binding_id  UUID,
+    repository_binding_id    UUID,
     provider_installation_id BIGINT      NOT NULL DEFAULT 0,
     provider_repository_id   BIGINT      NOT NULL DEFAULT 0,
     repository_full_name     TEXT        NOT NULL DEFAULT '',
@@ -161,6 +347,9 @@ CREATE INDEX idx_github_provider_demands_state
 CREATE TABLE github_provider_outbox (
     outbox_id                UUID        PRIMARY KEY,
     command_kind             TEXT        NOT NULL CHECK (command_kind <> ''),
+    org_id                   TEXT        NOT NULL DEFAULT '',
+    installation_binding_id  UUID,
+    repository_binding_id    UUID,
     provider_job_id          BIGINT      NOT NULL DEFAULT 0,
     provider_run_id          BIGINT      NOT NULL DEFAULT 0,
     provider_run_attempt     BIGINT      NOT NULL DEFAULT 0,
@@ -187,6 +376,9 @@ CREATE INDEX idx_github_provider_outbox_ready
 CREATE TABLE github_runner_registrations (
     provider_job_id          BIGINT      PRIMARY KEY REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
     demand_id                UUID        REFERENCES github_provider_demands(demand_id) ON DELETE SET NULL,
+    org_id                   TEXT        NOT NULL DEFAULT '',
+    installation_binding_id  UUID,
+    repository_binding_id    UUID,
     provider_installation_id BIGINT      NOT NULL DEFAULT 0,
     provider_repository_id   BIGINT      NOT NULL DEFAULT 0,
     runner_id                BIGINT      NOT NULL DEFAULT 0,
@@ -212,6 +404,9 @@ CREATE UNIQUE INDEX idx_github_runner_registrations_runner_name
 CREATE TABLE github_terminal_job_evidence (
     terminal_evidence_id     UUID        PRIMARY KEY,
     provider_job_id          BIGINT      NOT NULL UNIQUE REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
+    org_id                   TEXT        NOT NULL DEFAULT '',
+    installation_binding_id  UUID,
+    repository_binding_id    UUID,
     provider_installation_id BIGINT      NOT NULL DEFAULT 0,
     provider_repository_id   BIGINT      NOT NULL DEFAULT 0,
     provider_run_id          BIGINT      NOT NULL DEFAULT 0,
@@ -235,6 +430,9 @@ CREATE TABLE github_golden_snapshot_barriers (
     barrier_id               UUID        PRIMARY KEY,
     terminal_evidence_id     UUID        NOT NULL REFERENCES github_terminal_job_evidence(terminal_evidence_id) ON DELETE CASCADE,
     provider_job_id          BIGINT      NOT NULL UNIQUE,
+    org_id                   TEXT        NOT NULL DEFAULT '',
+    installation_binding_id  UUID,
+    repository_binding_id    UUID,
     provider_run_id          BIGINT      NOT NULL DEFAULT 0,
     provider_run_attempt     BIGINT      NOT NULL DEFAULT 0,
     sandbox_execution_id     UUID,

@@ -17,6 +17,8 @@ type githubEvent struct {
 	DeliveryID             string    `ch:"delivery_id"`
 	Action                 string    `ch:"action"`
 	OrgID                  string    `ch:"org_id"`
+	InstallationBindingID  uuid.UUID `ch:"installation_binding_id"`
+	RepositoryBindingID    uuid.UUID `ch:"repository_binding_id"`
 	ProviderInstallationID uint64    `ch:"provider_installation_id"`
 	ProviderRepositoryID   uint64    `ch:"provider_repository_id"`
 	ProviderRunID          uint64    `ch:"provider_run_id"`
@@ -94,6 +96,9 @@ func githubEventFromMetadata(meta webhookMetadata, eventName string, result stri
 		Reason:                 truncate(reason, 1024),
 		DeliveryID:             meta.DeliveryID,
 		Action:                 meta.Action,
+		OrgID:                  meta.OrgID,
+		InstallationBindingID:  meta.InstallationBindingID,
+		RepositoryBindingID:    meta.RepositoryBindingID,
 		ProviderInstallationID: uint64FromInt64(meta.InstallationID),
 		ProviderRepositoryID:   uint64FromInt64(meta.RepositoryID),
 		ProviderRunID:          uint64FromInt64(meta.RunID),

@@ -178,6 +178,9 @@ func run() error {
 			{Service: workloadauth.ServiceGitHubIntegration, SecretNames: []string{
 				secretsclient.GitHubIntegrationPrivateKeyName,
 				secretsclient.GitHubIntegrationWebhookSecretName,
+				secretsclient.GitHubIntegrationOAuthClientSecretName,
+			}, SecretNamePrefixes: []string{
+				secretsclient.GitHubIntegrationUserTokenSecretPrefix,
 			}},
 			{Service: workloadauth.ServiceIAM, SecretNames: []string{
 				secretsclient.IAMSpiceDBPresharedKeyName,
@@ -200,6 +203,9 @@ func run() error {
 		RuntimeSecretWritePolicies: []secretsapi.RuntimeSecretPolicy{
 			{Service: workloadauth.ServiceSandboxRental, SecretNamePrefixes: []string{
 				secretsclient.SandboxRunnerBootstrapSecretPrefix,
+			}},
+			{Service: workloadauth.ServiceGitHubIntegration, SecretNamePrefixes: []string{
+				secretsclient.GitHubIntegrationUserTokenSecretPrefix,
 			}},
 		},
 	})

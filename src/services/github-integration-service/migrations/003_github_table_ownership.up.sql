@@ -1,0 +1,22 @@
+ALTER TABLE IF EXISTS public.github_accounts OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_golden_snapshot_barriers OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_idempotency_records OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_installation_bindings OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_installation_repositories OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_installations OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_job_shapes OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_oauth_sessions OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_provider_demands OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_provider_outbox OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_provider_reconciliations OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_repositories OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_repository_bindings OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_runner_registrations OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_setup_sessions OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_terminal_job_evidence OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_user_authorizations OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_webhook_deliveries OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_workflow_jobs OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_workflow_runs OWNER TO github_integration_service;
+
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO github_integration_service;
