@@ -163,12 +163,12 @@ WHERE provider = sqlc.arg(provider)
 -- name: InsertProviderRunnerAllocation :execrows
 INSERT INTO runner_allocations (
     allocation_id, provider, provider_installation_id, provider_repository_id, runner_class, runner_name,
-    provider_runner_id, state, requested_for_provider_job_id, allocate_by, jit_by, vm_submitted_by,
+    provider_runner_id, state, origin_provider_job_id, allocate_by, jit_by, vm_submitted_by,
     runner_listening_by, assignment_by, vm_exit_by, cleanup_by, created_at, updated_at
 ) VALUES (
     sqlc.arg(allocation_id), sqlc.arg(provider), sqlc.arg(provider_installation_id),
     sqlc.arg(provider_repository_id), sqlc.arg(runner_class), sqlc.arg(runner_name),
-    sqlc.arg(provider_runner_id), sqlc.arg(state), sqlc.arg(requested_for_provider_job_id),
+    sqlc.arg(provider_runner_id), sqlc.arg(state), sqlc.arg(origin_provider_job_id),
     sqlc.arg(allocate_by), sqlc.arg(jit_by), sqlc.arg(vm_submitted_by),
     sqlc.arg(runner_listening_by), sqlc.arg(assignment_by), sqlc.arg(vm_exit_by),
     sqlc.arg(cleanup_by), sqlc.arg(created_at), sqlc.arg(created_at)
@@ -202,7 +202,7 @@ SELECT
     COALESCE(inv.base_branch, '')::text AS run_base_branch,
     COALESCE(inv.workflow_path, '')::text AS workflow_path,
     COALESCE(inv.pull_request_number, 0)::bigint AS pull_request_number,
-    COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
+    COALESCE(b.provider_job_id, a.origin_provider_job_id)::bigint AS provider_job_id,
     e.runner_class,
     a.runner_name
 FROM runner_allocations a
@@ -212,7 +212,7 @@ JOIN runner_provider_repositories p ON p.provider = a.provider
     AND p.active
 LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
 LEFT JOIN runner_jobs j ON j.provider = a.provider
-    AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+    AND j.provider_job_id = COALESCE(b.provider_job_id, a.origin_provider_job_id)
 LEFT JOIN LATERAL (
     SELECT run.event_name, run.head_sha, run.head_branch, run.head_repository_full_name,
            run.base_sha, run.base_branch, run.workflow_path, run.pull_request_number
@@ -239,7 +239,7 @@ SELECT
     COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
     COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
     COALESCE(j.head_branch, '')::text AS head_branch,
-    COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
+    COALESCE(b.provider_job_id, a.origin_provider_job_id)::bigint AS provider_job_id,
     e.runner_class,
     a.runner_name
 FROM runner_allocations a
@@ -249,7 +249,7 @@ JOIN runner_provider_repositories p ON p.provider = a.provider
     AND p.active
 LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
 LEFT JOIN runner_jobs j ON j.provider = a.provider
-    AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+    AND j.provider_job_id = COALESCE(b.provider_job_id, a.origin_provider_job_id)
 WHERE a.provider = sqlc.arg(provider)
   AND a.execution_id = sqlc.arg(execution_id)
   AND a.attempt_id = sqlc.arg(attempt_id);
@@ -353,7 +353,7 @@ WHERE allocation_id = sqlc.arg(allocation_id);
 SELECT allocation_id
 FROM runner_allocations
 WHERE provider = sqlc.arg(provider)
-  AND requested_for_provider_job_id = sqlc.arg(provider_job_id)
+  AND origin_provider_job_id = sqlc.arg(provider_job_id)
   AND state IN (
         'pending',
         'jit_creating',
@@ -361,8 +361,7 @@ WHERE provider = sqlc.arg(provider)
         'bootstrap_creating',
         'bootstrap_created',
         'vm_submitted',
-        'runner_config_fetched',
-        'assigned'
+        'runner_config_fetched'
       )
 ORDER BY created_at DESC
 LIMIT 1;
@@ -426,7 +425,7 @@ ORDER BY
 LIMIT 1;
 
 -- name: FindAllocationForRunner :one
-SELECT allocation_id, requested_for_provider_job_id
+SELECT allocation_id, origin_provider_job_id
 FROM runner_allocations
 WHERE provider = sqlc.arg(provider)
   AND ((sqlc.arg(provider_runner_id)::bigint <> 0 AND provider_runner_id = sqlc.arg(provider_runner_id))

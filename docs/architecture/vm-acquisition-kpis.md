@@ -120,7 +120,7 @@ correct boundary is too narrow after the slow substep has been identified.
 | `lease_accept_to_ready_ms` on golden VM hit | p50 <= 250 ms, p99 <= 1 s | Restore and after-restore hooks should trend toward zero. Seconds-grade values require substep attribution. |
 | `lease_accept_to_ready_ms` on cold boot | tracked separately | Cold boot is fallback evidence, not a reason to widen lease acceptance. |
 | `ready_to_exec_started_ms` | p99 <= 250 ms | Guest control is ready; dispatch should be protocol overhead only. |
-| `bootstrap_to_assignment_ms` | p99 <= provider assignment deadline | Slow values usually point to runner registration, GitHub assignment, or webhook delivery. |
+| `bootstrap_to_assignment_ms` | p99 <= provider assignment deadline | Slow values usually point to runner JIT capacity, GitHub assignment, or webhook delivery. |
 
 ## Cache Hit Dimensions
 

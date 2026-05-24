@@ -114,24 +114,20 @@ func TestGitHubCacheManifestRef(t *testing.T) {
 	}
 }
 
-func TestGitHubRunnerNameIsDeterministic(t *testing.T) {
-	first, err := githubRunnerName(456, 111, 2, 789)
+func TestGitHubRunnerNameIsUniquePerCapacityInstance(t *testing.T) {
+	first, err := githubRunnerName(789)
 	if err != nil {
 		t.Fatalf("githubRunnerName: %v", err)
 	}
-	second, err := githubRunnerName(456, 111, 2, 789)
+	second, err := githubRunnerName(789)
 	if err != nil {
 		t.Fatalf("githubRunnerName second call: %v", err)
 	}
-	if first != second {
-		t.Fatalf("runner name not deterministic: %q != %q", first, second)
+	if first == second {
+		t.Fatalf("runner name reused for distinct capacity instances: %q", first)
 	}
-	otherAttempt, err := githubRunnerName(456, 111, 3, 789)
-	if err != nil {
-		t.Fatalf("githubRunnerName other attempt: %v", err)
-	}
-	if otherAttempt == first {
-		t.Fatalf("runner name did not include run attempt: %q", first)
+	if !strings.HasPrefix(first, "verself-789-") || !strings.HasPrefix(second, "verself-789-") {
+		t.Fatalf("runner names do not preserve provider job prefix: %q %q", first, second)
 	}
 }
 

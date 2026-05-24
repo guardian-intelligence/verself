@@ -11,7 +11,8 @@ ALTER TABLE IF EXISTS public.github_provider_outbox OWNER TO github_integration_
 ALTER TABLE IF EXISTS public.github_provider_reconciliations OWNER TO github_integration_service;
 ALTER TABLE IF EXISTS public.github_repositories OWNER TO github_integration_service;
 ALTER TABLE IF EXISTS public.github_repository_bindings OWNER TO github_integration_service;
-ALTER TABLE IF EXISTS public.github_runner_registrations OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_job_assignments OWNER TO github_integration_service;
+ALTER TABLE IF EXISTS public.github_runner_instances OWNER TO github_integration_service;
 ALTER TABLE IF EXISTS public.github_setup_sessions OWNER TO github_integration_service;
 ALTER TABLE IF EXISTS public.github_terminal_job_evidence OWNER TO github_integration_service;
 ALTER TABLE IF EXISTS public.github_user_authorizations OWNER TO github_integration_service;

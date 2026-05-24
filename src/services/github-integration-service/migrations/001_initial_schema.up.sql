@@ -350,14 +350,8 @@ CREATE TABLE github_provider_demands (
     job_shape_id             TEXT        NOT NULL DEFAULT '',
     trust_class              TEXT        NOT NULL DEFAULT '',
     runner_class             TEXT        NOT NULL DEFAULT '',
-    runner_name              TEXT        NOT NULL CHECK (runner_name <> ''),
-    runner_id                BIGINT      NOT NULL DEFAULT 0,
     state                    TEXT        NOT NULL CHECK (state <> ''),
     failure_reason           TEXT        NOT NULL DEFAULT '',
-    jit_config_sha256        TEXT        NOT NULL DEFAULT '',
-    sandbox_allocation_id    UUID,
-    sandbox_execution_id     UUID,
-    sandbox_attempt_id       UUID,
     last_delivery_id         TEXT        NOT NULL DEFAULT '',
     claimed_at               TIMESTAMPTZ,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -396,16 +390,16 @@ CREATE INDEX idx_github_provider_outbox_ready
     ON github_provider_outbox (next_attempt_at NULLS FIRST, created_at)
     WHERE state IN ('pending', 'retryable');
 
-CREATE TABLE github_runner_registrations (
-    provider_job_id          BIGINT      PRIMARY KEY REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
-    demand_id                UUID        REFERENCES github_provider_demands(demand_id) ON DELETE SET NULL,
+CREATE TABLE github_runner_instances (
+    runner_name              TEXT        PRIMARY KEY CHECK (runner_name <> ''),
+    origin_provider_job_id   BIGINT      NOT NULL REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
+    origin_demand_id         UUID        REFERENCES github_provider_demands(demand_id) ON DELETE SET NULL,
     org_id                   TEXT        NOT NULL DEFAULT '',
     installation_binding_id  UUID,
     repository_binding_id    UUID,
     provider_installation_id BIGINT      NOT NULL DEFAULT 0,
     provider_repository_id   BIGINT      NOT NULL DEFAULT 0,
     runner_id                BIGINT      NOT NULL DEFAULT 0,
-    runner_name              TEXT        NOT NULL CHECK (runner_name <> ''),
     runner_class             TEXT        NOT NULL DEFAULT '',
     jit_config_sha256        TEXT        NOT NULL DEFAULT '',
     sandbox_allocation_id    UUID,
@@ -417,12 +411,30 @@ CREATE TABLE github_runner_registrations (
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- GitHub can assign a JIT runner to a different queued job with the same
--- labels. Once that registration is cleaned or failed, the runner name must be
--- reusable for the original demand's replacement runner.
-CREATE UNIQUE INDEX idx_github_runner_registrations_runner_name
-    ON github_runner_registrations (runner_name)
-    WHERE state IN ('jit_created', 'sandbox_submitted');
+CREATE UNIQUE INDEX idx_github_runner_instances_runner_id
+    ON github_runner_instances (provider_installation_id, provider_repository_id, runner_id)
+    WHERE runner_id <> 0;
+CREATE INDEX idx_github_runner_instances_origin
+    ON github_runner_instances (origin_provider_job_id, updated_at);
+CREATE INDEX idx_github_runner_instances_capacity
+    ON github_runner_instances (provider_repository_id, runner_class, state, updated_at);
+
+CREATE TABLE github_job_assignments (
+    provider_job_id          BIGINT      PRIMARY KEY REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
+    runner_name              TEXT        NOT NULL CHECK (runner_name <> ''),
+    runner_id                BIGINT      NOT NULL DEFAULT 0,
+    observed_from            TEXT        NOT NULL CHECK (observed_from <> ''),
+    delivery_id              TEXT        NOT NULL DEFAULT '',
+    observed_at              TIMESTAMPTZ NOT NULL,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_github_job_assignments_runner_name
+    ON github_job_assignments (runner_name);
+CREATE INDEX idx_github_job_assignments_runner_id
+    ON github_job_assignments (runner_id)
+    WHERE runner_id <> 0;
 
 CREATE TABLE github_terminal_job_evidence (
     terminal_evidence_id     UUID        PRIMARY KEY,
