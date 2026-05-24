@@ -20,6 +20,7 @@ type Config struct {
 	Service        *identity.Service
 	Authz          *authz.Service
 	InviteNotifier InviteNotifier
+	SignupNotifier SignupNotifier
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -45,7 +46,7 @@ func NewAuthPublicAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	config := humaapi.DefaultConfig("IAM Browser Auth API", version)
 	api := humago.New(mux, config)
-	RegisterAuthPublicRoutes(api, cfg.Service, cfg.Authz, cfg.InstallationID, cfg.ProductBaseURL)
+	RegisterAuthPublicRoutes(api, cfg.Service, cfg.Authz, cfg.InstallationID, cfg.ProductBaseURL, cfg.SignupNotifier)
 	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }

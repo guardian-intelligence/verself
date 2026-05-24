@@ -5,10 +5,13 @@ go_library(
     srcs = [
         "catalog.go",
         "errors.go",
+        "events.go",
         "member_invites_store.go",
         "operation_catalog.go",
         "organization_store.go",
         "service.go",
+        "signup.go",
+        "signup_store.go",
         "store.go",
         "types.go",
     ],

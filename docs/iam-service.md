@@ -113,6 +113,35 @@ invite acceptance, when the target org and actor are known. Unverified intents
 and invalid token attempts still emit security telemetry with request
 attribution, but they do not produce customer-visible IAM state.
 
+## Organization Seeding And Promotion
+
+Organization seeding must go through service APIs rather than direct writes to
+Zitadel, SpiceDB, IAM PostgreSQL, or billing PostgreSQL. The self-serve path is
+`StartSignup` followed by `VerifySignup`; verification materializes the Zitadel
+organization, Zitadel human, IAM organization row, SpiceDB owner policy, and
+billing organization. Operator-created organizations with an existing actor use
+the authenticated `CreateOrganization` path, which performs the same IAM,
+SpiceDB, and billing provisioning steps.
+
+Billing posture is adjusted through billing-service internal APIs after the IAM
+organization exists:
+
+```text
+POST /internal/billing/v1/orgs
+POST /internal/billing/v1/orgs/{org_id}/trust-tier
+POST /internal/billing/v1/orgs/{org_id}/plan-promotions
+POST /internal/billing/v1/orgs/{org_id}/plan-promotions:cancel
+```
+
+`EnsureBillingOrganization` is an idempotent create/provision operation. It may
+refresh display metadata and current free-tier accounting, but it must not
+overwrite an existing org's trust tier, overage policy, or overage consent.
+Trust tier promotion and demotion use `SetOrganizationTrustTier` with values
+such as `platform` or `new`. Billing promotion to a paid plan with a 100%
+internal discount uses `ApplyBillingPlanPromotion`; demotion back to free-tier
+behavior uses `CancelBillingPlanPromotion`, which schedules the internal
+contract cancellation through the normal contract state machine.
+
 ## Substrate
 
 The current deployment uses a Nomad-managed SpiceDB process backed by

@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -75,8 +76,10 @@ func TestServiceCreateOrganizationCreatesDirectoryOrgAndProfile(t *testing.T) {
 	store := &fakeSignupStore{}
 	directory := &fakeMembersDirectory{}
 	svc := &Service{
-		Store:     store,
-		Directory: directory,
+		Store:        store,
+		Directory:    directory,
+		PolicyWriter: fakeOwnerPolicyWriter{},
+		Billing:      fakeBillingProvisioner{},
 	}
 
 	got, err := svc.CreateOrganization(context.Background(), "user-1", PublicCreateOrganizationRequest{
@@ -95,6 +98,67 @@ func TestServiceCreateOrganizationCreatesDirectoryOrgAndProfile(t *testing.T) {
 	}
 	if store.created.OrgID != got.OrgID || store.created.IdentityProviderOrgID != "43" || store.created.ActorID != "user-1" {
 		t.Fatalf("unexpected stored profile input: %#v", store.created)
+	}
+}
+
+func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.T) {
+	now := time.Date(2026, 5, 24, 18, 0, 0, 0, time.UTC)
+	store := newFakeSignupLifecycleStore()
+	directory := &fakeMembersDirectory{}
+	policy := &recordingOwnerPolicyWriter{}
+	billing := &recordingBillingProvisioner{}
+	svc := &Service{
+		Store:        store,
+		Directory:    directory,
+		PolicyWriter: policy,
+		Billing:      billing,
+		Now:          func() time.Time { return now },
+	}
+
+	start, err := svc.StartSignup(context.Background(), StartSignupRequest{
+		Email:            " Founder@Example.Test ",
+		OrganizationName: "  Acme   Labs  ",
+		OrganizationSlug: "Acme_Labs",
+		GivenName:        "Ada",
+		FamilyName:       "Lovelace",
+		IdempotencyKey:   "signup-start-1",
+	})
+	if err != nil {
+		t.Fatalf("StartSignup: %v", err)
+	}
+	if start.VerificationToken == "" || start.Intent.Email != "founder@example.test" || start.Intent.RequestedOrganizationSlug != "acme-labs" {
+		t.Fatalf("unexpected signup start result: %#v", start)
+	}
+
+	got, err := svc.VerifySignup(context.Background(), VerifySignupRequest{
+		SignupIntentID:    start.Intent.SignupIntentID,
+		VerificationToken: start.VerificationToken,
+		Password:          "correct horse battery",
+		IdempotencyKey:    "signup-verify-1",
+	})
+	if err != nil {
+		t.Fatalf("VerifySignup: %v", err)
+	}
+	if got.Organization.OrgID != start.Intent.OrgID || got.Organization.Slug != "acme-labs" {
+		t.Fatalf("unexpected materialized organization: %#v", got.Organization)
+	}
+	if directory.signupInput.OrgID != "43" || directory.signupInput.Email != "founder@example.test" || directory.signupInput.Password != "correct horse battery" {
+		t.Fatalf("unexpected signup user request: %#v", directory.signupInput)
+	}
+	if got := strings.Join(store.steps, ","); got != "zitadel_organization,zitadel_user,iam_organization,spicedb_owner_policy,billing_organization" {
+		t.Fatalf("materialization steps = %s", got)
+	}
+	if policy.input.OrgID != got.Organization.OrgID || policy.input.OwnerUserID != "signup-user" {
+		t.Fatalf("unexpected owner policy request: %#v", policy.input)
+	}
+	if billing.input.OrgID != got.Organization.OrgID || billing.input.DisplayName != "Acme Labs" || billing.input.TrustTier != "new" {
+		t.Fatalf("unexpected billing provisioning request: %#v", billing.input)
+	}
+	if !store.completed {
+		t.Fatalf("signup intent was not completed")
+	}
+	if event := store.lastEvent("iam.signup_intent.completed"); event.Step != "completed" || event.State != SignupIntentStateCompleted || event.OrgID != got.Organization.OrgID {
+		t.Fatalf("unexpected completion event: %#v", event)
 	}
 }
 
@@ -152,6 +216,7 @@ func TestServiceCompleteMemberInviteReturnsAcceptedMember(t *testing.T) {
 type fakeMembersDirectory struct {
 	members             []Member
 	createInput         DirectoryCreateOrganizationRequest
+	signupInput         DirectoryCreateSignupUserRequest
 	inviteProviderOrgID string
 	inviteInput         InviteMemberRequest
 	completeInput       DirectoryCompleteMemberInviteRequest
@@ -172,6 +237,11 @@ func (d *fakeMembersDirectory) InviteMember(_ context.Context, providerOrgID str
 	d.inviteProviderOrgID = providerOrgID
 	d.inviteInput = input
 	return DirectoryInviteMemberResult{UserID: "user-invite", Email: input.Email, Status: "invited", EmailVerificationCode: "email-code", PasswordResetCode: "password-code"}, nil
+}
+
+func (d *fakeMembersDirectory) CreateSignupUser(_ context.Context, input DirectoryCreateSignupUserRequest) (DirectoryCreateSignupUserResult, error) {
+	d.signupInput = input
+	return DirectoryCreateSignupUserResult{UserID: "signup-user"}, nil
 }
 
 func (d *fakeMembersDirectory) CompleteMemberInvite(_ context.Context, input DirectoryCompleteMemberInviteRequest) error {
@@ -211,6 +281,36 @@ func (a fakeMembersAuthz) TestOrganizationPermissions(context.Context, string, A
 	return nil, "zed-token", nil
 }
 
+type fakeOwnerPolicyWriter struct{}
+
+func (fakeOwnerPolicyWriter) SetOrganizationOwner(context.Context, OrganizationOwnerPolicyRequest) error {
+	return nil
+}
+
+type recordingOwnerPolicyWriter struct {
+	input OrganizationOwnerPolicyRequest
+}
+
+func (w *recordingOwnerPolicyWriter) SetOrganizationOwner(_ context.Context, input OrganizationOwnerPolicyRequest) error {
+	w.input = input
+	return nil
+}
+
+type fakeBillingProvisioner struct{}
+
+func (fakeBillingProvisioner) EnsureBillingOrganization(context.Context, BillingOrganizationProvisioningRequest) error {
+	return nil
+}
+
+type recordingBillingProvisioner struct {
+	input BillingOrganizationProvisioningRequest
+}
+
+func (p *recordingBillingProvisioner) EnsureBillingOrganization(_ context.Context, input BillingOrganizationProvisioningRequest) error {
+	p.input = input
+	return nil
+}
+
 type fakeMembersStore struct{}
 
 type partialMetadataStore struct {
@@ -221,6 +321,25 @@ type partialMetadataStore struct {
 type fakeSignupStore struct {
 	fakeMembersStore
 	created CreateOrganizationRequest
+}
+
+type fakeSignupLifecycleStore struct {
+	fakeMembersStore
+	intents        map[string]SignupIntent
+	idempotency    map[string]string
+	profileCreated bool
+	profile        OrganizationProfile
+	created        CreateOrganizationRequest
+	steps          []string
+	events         []IAMEvent
+	completed      bool
+}
+
+func newFakeSignupLifecycleStore() *fakeSignupLifecycleStore {
+	return &fakeSignupLifecycleStore{
+		intents:     map[string]SignupIntent{},
+		idempotency: map[string]string{},
+	}
 }
 
 func (s partialMetadataStore) ListOrganizationMetadataByOrgIDs(_ context.Context, orgIDs []string) ([]OrganizationMetadata, error) {
@@ -236,6 +355,130 @@ func (s partialMetadataStore) ListOrganizationMetadataByOrgIDs(_ context.Context
 func (s *fakeSignupStore) CreateOrganizationProfile(_ context.Context, input CreateOrganizationRequest) (OrganizationProfile, error) {
 	s.created = input
 	return OrganizationProfile{OrgID: input.OrgID, IdentityProviderOrgID: input.IdentityProviderOrgID, DisplayName: input.DisplayName, Slug: input.Slug, State: OrganizationProfileStateActive, Version: 1}, nil
+}
+
+func (s *fakeSignupLifecycleStore) CreateSignupIntent(_ context.Context, intent SignupIntent) (SignupIntent, bool, error) {
+	if existingID := s.idempotency[intent.IdempotencyKey]; existingID != "" {
+		existing := s.intents[existingID]
+		if !bytes.Equal(existing.RequestHash, intent.RequestHash) {
+			return SignupIntent{}, false, ErrIdempotencyConflict
+		}
+		return existing, false, nil
+	}
+	s.idempotency[intent.IdempotencyKey] = intent.SignupIntentID
+	s.intents[intent.SignupIntentID] = intent
+	return intent, true, nil
+}
+
+func (s *fakeSignupLifecycleStore) DeletePendingSignupIntent(_ context.Context, signupIntentID string) error {
+	intent := s.intents[signupIntentID]
+	if intent.State == SignupIntentStatePendingVerification {
+		delete(s.intents, signupIntentID)
+	}
+	return nil
+}
+
+func (s *fakeSignupLifecycleStore) ClaimSignupIntentForVerification(_ context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error) {
+	intent, ok := s.intents[signupIntentID]
+	if !ok || !bytes.Equal(intent.VerificationTokenHash, verificationTokenHash) {
+		return SignupIntent{}, ErrSignupIntentMissing
+	}
+	if now.After(intent.VerificationExpiresAt) {
+		return SignupIntent{}, ErrSignupIntentExpired
+	}
+	intent.State = SignupIntentStateMaterializing
+	intent.VerifyIdempotencyKey = idempotencyKey
+	intent.VerifyRequestHash = append([]byte(nil), verifyRequestHash...)
+	intent.MaterializationAttempts++
+	intent.MaterializationLeaseExpires = &leaseExpiresAt
+	intent.VerifiedAt = &now
+	s.intents[signupIntentID] = intent
+	return intent, nil
+}
+
+func (s *fakeSignupLifecycleStore) RecordSignupIntentStep(_ context.Context, signupIntentID, step string, leaseExpiresAt time.Time) error {
+	intent := s.intents[signupIntentID]
+	intent.MaterializationStep = step
+	intent.MaterializationLeaseExpires = &leaseExpiresAt
+	s.intents[signupIntentID] = intent
+	s.steps = append(s.steps, step)
+	return nil
+}
+
+func (s *fakeSignupLifecycleStore) RecordSignupIntentProviderOrg(_ context.Context, signupIntentID, providerOrgID string) error {
+	intent := s.intents[signupIntentID]
+	intent.IdentityProviderOrgID = providerOrgID
+	s.intents[signupIntentID] = intent
+	return nil
+}
+
+func (s *fakeSignupLifecycleStore) RecordSignupIntentProviderUser(_ context.Context, signupIntentID, providerUserID string) error {
+	intent := s.intents[signupIntentID]
+	intent.IdentityProviderUserID = providerUserID
+	s.intents[signupIntentID] = intent
+	return nil
+}
+
+func (s *fakeSignupLifecycleStore) RecordSignupIntentOrganization(_ context.Context, signupIntentID, orgID, organizationSlug string) error {
+	intent := s.intents[signupIntentID]
+	intent.OrgID = orgID
+	intent.OrganizationSlug = organizationSlug
+	s.intents[signupIntentID] = intent
+	return nil
+}
+
+func (s *fakeSignupLifecycleStore) MarkSignupIntentFailed(_ context.Context, signupIntentID string, state SignupIntentState, message string) error {
+	intent := s.intents[signupIntentID]
+	intent.State = state
+	intent.MaterializationLastError = message
+	s.intents[signupIntentID] = intent
+	return nil
+}
+
+func (s *fakeSignupLifecycleStore) CompleteSignupIntent(_ context.Context, signupIntentID string, completedAt time.Time) (SignupIntent, error) {
+	intent := s.intents[signupIntentID]
+	intent.State = SignupIntentStateCompleted
+	intent.MaterializationStep = "completed"
+	intent.CompletedAt = &completedAt
+	intent.MaterializationLeaseExpires = nil
+	s.intents[signupIntentID] = intent
+	s.completed = true
+	return intent, nil
+}
+
+func (s *fakeSignupLifecycleStore) AppendIAMEvent(_ context.Context, event IAMEvent) error {
+	s.events = append(s.events, event)
+	return nil
+}
+
+func (s *fakeSignupLifecycleStore) GetOrganizationProfile(_ context.Context, orgID, _ string) (OrganizationProfile, error) {
+	if !s.profileCreated {
+		return OrganizationProfile{}, ErrOrganizationMissing
+	}
+	if s.profile.OrgID != orgID {
+		return OrganizationProfile{}, ErrOrganizationMissing
+	}
+	return s.profile, nil
+}
+
+func (s *fakeSignupLifecycleStore) OrganizationSlugAvailable(context.Context, string) (bool, error) {
+	return true, nil
+}
+
+func (s *fakeSignupLifecycleStore) CreateOrganizationProfile(_ context.Context, input CreateOrganizationRequest) (OrganizationProfile, error) {
+	s.created = input
+	s.profileCreated = true
+	s.profile = OrganizationProfile{OrgID: input.OrgID, IdentityProviderOrgID: input.IdentityProviderOrgID, DisplayName: input.DisplayName, Slug: input.Slug, State: OrganizationProfileStateActive, Version: 1}
+	return s.profile, nil
+}
+
+func (s *fakeSignupLifecycleStore) lastEvent(eventType string) IAMEvent {
+	for i := len(s.events) - 1; i >= 0; i-- {
+		if s.events[i].EventType == eventType {
+			return s.events[i]
+		}
+	}
+	return IAMEvent{}
 }
 
 func (fakeMembersStore) GetOrganizationProfile(context.Context, string, string) (OrganizationProfile, error) {

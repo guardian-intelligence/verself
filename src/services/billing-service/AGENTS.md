@@ -25,3 +25,16 @@ The 3-node evolution should introduce NATS JetStream or Kafka + Debezium for pro
 Live in `migrations/`. Platform provisions PostgreSQL database `billing` and
 role `billing`; deploy-time migration orchestration is owned by the deployment
 surface, not host reset playbooks.
+
+## Internal Organization Operations
+
+Organization provisioning enters billing through `EnsureBillingOrganization`.
+That operation is idempotent and create-oriented: it refreshes display metadata
+and current free-tier accounting, but existing trust tier, overage policy, and
+overage consent are changed only by explicit mutation APIs.
+
+Internal trust promotion/demotion uses `SetOrganizationTrustTier`. Internal
+paid-plan promotion uses `ApplyBillingPlanPromotion` with `percent_off = 100`;
+demotion back to free-tier behavior uses `CancelBillingPlanPromotion`, which
+schedules the internal contract cancellation through the normal contract state
+machine and preserves billing events for ClickHouse verification.

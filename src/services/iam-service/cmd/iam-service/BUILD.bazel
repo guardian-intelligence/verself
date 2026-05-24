@@ -7,6 +7,7 @@ go_library(
     importpath = "github.com/verself/iam-service/cmd/iam-service",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/services/billing-service/client",
         "//src/services/iam-service/internal/api",
         "//src/services/iam-service/internal/authz",
         "//src/services/iam-service/internal/identity",

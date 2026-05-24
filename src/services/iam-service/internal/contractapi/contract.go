@@ -90,6 +90,14 @@ type AccountPassword string
 
 type MemberInviteAcceptanceToken string
 
+type SignupIntentID string
+
+type SignupIntentResourceName string
+
+type SignupIntentStatus string
+
+type SignupVerificationToken string
+
 type LoginURL string
 
 type GivenName string
@@ -346,6 +354,30 @@ type AcceptMemberInviteInput struct {
 	Body           AcceptMemberInviteInputBody
 }
 
+type StartSignupInputBody struct {
+	Email                   EmailAddress `json:"email" required:"true" minLength:"3" maxLength:"320"`
+	OrganizationDisplayName DisplayName  `json:"organizationDisplayName" required:"true" minLength:"1" maxLength:"120"`
+	OrganizationSlug        *OrgSlug     `json:"organizationSlug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
+	GivenName               *GivenName   `json:"givenName,omitempty" minLength:"1" maxLength:"100"`
+	FamilyName              *FamilyName  `json:"familyName,omitempty" minLength:"1" maxLength:"100"`
+}
+
+type StartSignupInput struct {
+	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+	Body           StartSignupInputBody
+}
+
+type VerifySignupInputBody struct {
+	VerificationToken SignupVerificationToken `json:"verificationToken" required:"true" minLength:"32" maxLength:"512"`
+	Credential        AccountCredential       `json:"credential" required:"true"`
+}
+
+type VerifySignupInput struct {
+	SignupIntentID SignupIntentID `path:"signupIntentId" required:"true" pattern:"^signup_[0-9A-HJKMNP-TV-Z]{26}$"`
+	IdempotencyKey IdempotencyKey `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+	Body           VerifySignupInputBody
+}
+
 type ListOrganizationsOutputBody struct {
 	Organizations Organizations `json:"organizations" required:"true"`
 	NextPageToken *PageToken    `json:"nextPageToken,omitempty" minLength:"1" maxLength:"4096"`
@@ -388,6 +420,28 @@ type AcceptMemberInviteOutput struct {
 	Body MemberInviteAcceptanceSummary
 }
 
+type SignupIntentSummary struct {
+	SignupIntentID          SignupIntentID           `json:"signupIntentId" required:"true" pattern:"^signup_[0-9A-HJKMNP-TV-Z]{26}$"`
+	ResourceName            SignupIntentResourceName `json:"resourceName" required:"true" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:signup-intents/signup_[0-9A-HJKMNP-TV-Z]{26}$"`
+	OrganizationDisplayName DisplayName              `json:"organizationDisplayName" required:"true" minLength:"1" maxLength:"120"`
+	OrganizationSlug        *OrgSlug                 `json:"organizationSlug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
+	Status                  SignupIntentStatus       `json:"status" required:"true" minLength:"1" maxLength:"64"`
+	VerificationExpiresAt   string                   `json:"verificationExpiresAt" required:"true"`
+}
+
+type StartSignupOutput struct {
+	Body SignupIntentSummary
+}
+
+type VerifySignupResult struct {
+	Organization OrganizationSummary `json:"organization" required:"true"`
+	LoginURL     LoginURL            `json:"loginUrl" required:"true" minLength:"1" maxLength:"2048"`
+}
+
+type VerifySignupOutput struct {
+	Body VerifySignupResult
+}
+
 type MemberInviteAcceptanceSummary struct {
 	OrgID        OrgID              `json:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	MemberID     MemberID           `json:"memberId" required:"true" pattern:"^member_[0-9A-HJKMNP-TV-Z]{26}$"`
@@ -413,6 +467,8 @@ type TestIamPermissionsOutputBody struct {
 
 var Operations = []OperationDescriptor{
 	AcceptMemberInvite.Descriptor,
+	StartSignup.Descriptor,
+	VerifySignup.Descriptor,
 	ListOrganizations.Descriptor,
 	CreateOrganization.Descriptor,
 	GetOrganization.Descriptor,
@@ -441,6 +497,58 @@ var AcceptMemberInvite = Operation[AcceptMemberInviteInput, AcceptMemberInviteOu
 		RequestBodyMaxBytes: 16384,
 		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
 		SDK:                 SDKDescriptor{Module: "auth", Method: "acceptMemberInvite", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+var StartSignup = Operation[StartSignupInput, StartSignupOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.iam.v1#StartSignup",
+		OperationID:         "start-signup",
+		Method:              "POST",
+		Path:                "/api/v1/signup-intents",
+		DefaultStatus:       202,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "public", Audience: "verself-api", Principals: []string{"browser", "cli", "anonymous"}},
+		Authorization:       AuthorizationDescriptor{Permission: "iam:signup_intent:create", OrganizationSource: "installation", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "iam.signup_intent.create", Resource: "signup_intent", Action: "create"},
+		RateLimitBucket:     "signup_mutation",
+		RequestBodyMaxBytes: 16384,
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "signup", Method: "start", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
+			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+var VerifySignup = Operation[VerifySignupInput, VerifySignupOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.iam.v1#VerifySignup",
+		OperationID:         "verify-signup",
+		Method:              "POST",
+		Path:                "/api/v1/signup-intents/{signupIntentId}/verification",
+		DefaultStatus:       201,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "public", Audience: "verself-api", Principals: []string{"browser", "cli", "anonymous"}},
+		Authorization:       AuthorizationDescriptor{Permission: "iam:signup_intent:verify", OrganizationSource: "installation", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "iam.signup_intent.verify", Resource: "signup_intent", Action: "verify"},
+		RateLimitBucket:     "signup_mutation",
+		RequestBodyMaxBytes: 16384,
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "signup", Method: "verify", Paginated: false, Retryable: false},
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
 			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
@@ -727,6 +835,8 @@ type Handlers = PublicHandlers
 
 type PublicHandlers interface {
 	AcceptMemberInvite(context.Context, *AcceptMemberInviteInput) (*AcceptMemberInviteOutput, error)
+	StartSignup(context.Context, *StartSignupInput) (*StartSignupOutput, error)
+	VerifySignup(context.Context, *VerifySignupInput) (*VerifySignupOutput, error)
 	ListOrganizations(context.Context, *ListOrganizationsInput) (*ListOrganizationsOutput, error)
 	CreateOrganization(context.Context, *CreateOrganizationInput) (*CreateOrganizationOutput, error)
 	GetOrganization(context.Context, *GetOrganizationInput) (*GetOrganizationOutput, error)
@@ -742,6 +852,10 @@ type PublicHandlers interface {
 type ListOrganizationsHandler = Handler[ListOrganizationsInput, ListOrganizationsOutput]
 
 type AcceptMemberInviteHandler = Handler[AcceptMemberInviteInput, AcceptMemberInviteOutput]
+
+type StartSignupHandler = Handler[StartSignupInput, StartSignupOutput]
+
+type VerifySignupHandler = Handler[VerifySignupInput, VerifySignupOutput]
 
 type CreateOrganizationHandler = Handler[CreateOrganizationInput, CreateOrganizationOutput]
 

@@ -39,6 +39,19 @@ type Store interface {
 	AcceptMemberInviteAcceptance(ctx context.Context, tokenHash string, now time.Time) error
 }
 
+type SignupStore interface {
+	CreateSignupIntent(ctx context.Context, intent SignupIntent) (SignupIntent, bool, error)
+	DeletePendingSignupIntent(ctx context.Context, signupIntentID string) error
+	ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error)
+	RecordSignupIntentStep(ctx context.Context, signupIntentID, step string, leaseExpiresAt time.Time) error
+	RecordSignupIntentProviderOrg(ctx context.Context, signupIntentID, providerOrgID string) error
+	RecordSignupIntentProviderUser(ctx context.Context, signupIntentID, providerUserID string) error
+	RecordSignupIntentOrganization(ctx context.Context, signupIntentID, orgID, organizationSlug string) error
+	MarkSignupIntentFailed(ctx context.Context, signupIntentID string, state SignupIntentState, message string) error
+	CompleteSignupIntent(ctx context.Context, signupIntentID string, completedAt time.Time) (SignupIntent, error)
+	AppendIAMEvent(ctx context.Context, event IAMEvent) error
+}
+
 type Directory interface {
 	CreateOrganization(ctx context.Context, input DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error)
 	ListMembers(ctx context.Context, orgID string) ([]Member, error)
@@ -51,15 +64,30 @@ type Directory interface {
 	DeactivateServiceAccount(ctx context.Context, subjectID string) error
 }
 
+type SignupDirectory interface {
+	CreateOrganization(ctx context.Context, input DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error)
+	CreateSignupUser(ctx context.Context, input DirectoryCreateSignupUserRequest) (DirectoryCreateSignupUserResult, error)
+}
+
 type AuthorizationGraph interface {
 	LookupOrganizations(ctx context.Context, subject AuthorizationSubject, permission, minZedToken string) ([]string, string, error)
 	TestOrganizationPermissions(ctx context.Context, orgID string, subject AuthorizationSubject, permissions []string, minZedToken string) ([]string, string, error)
+}
+
+type OrganizationOwnerPolicyWriter interface {
+	SetOrganizationOwner(ctx context.Context, input OrganizationOwnerPolicyRequest) error
+}
+
+type BillingProvisioner interface {
+	EnsureBillingOrganization(ctx context.Context, input BillingOrganizationProvisioningRequest) error
 }
 
 type Service struct {
 	Store              Store
 	Directory          Directory
 	AuthorizationGraph AuthorizationGraph
+	PolicyWriter       OrganizationOwnerPolicyWriter
+	Billing            BillingProvisioner
 	ProjectID          string
 	Now                func() time.Time
 }
@@ -165,6 +193,28 @@ func (s *Service) CreateOrganization(ctx context.Context, subjectID string, inpu
 		ActorID:               subjectID,
 	})
 	if err != nil {
+		return Organization{}, err
+	}
+	policyWriter, err := s.policyWriter()
+	if err != nil {
+		return Organization{}, err
+	}
+	if err := policyWriter.SetOrganizationOwner(ctx, OrganizationOwnerPolicyRequest{
+		OrgID:       profile.OrgID,
+		OwnerUserID: subjectID,
+		OperationID: "create-organization",
+	}); err != nil {
+		return Organization{}, err
+	}
+	billing, err := s.billing()
+	if err != nil {
+		return Organization{}, err
+	}
+	if err := billing.EnsureBillingOrganization(ctx, BillingOrganizationProvisioningRequest{
+		OrgID:       profile.OrgID,
+		DisplayName: profile.DisplayName,
+		TrustTier:   "new",
+	}); err != nil {
 		return Organization{}, err
 	}
 	return Organization{

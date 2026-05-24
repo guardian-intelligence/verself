@@ -16,6 +16,10 @@ type InviteNotifier interface {
 	SendMemberInvite(ctx context.Context, input MemberInviteNotification) error
 }
 
+type SignupNotifier interface {
+	SendSignupVerification(ctx context.Context, input SignupVerificationNotification) error
+}
+
 type MemberInviteNotification struct {
 	OrgID          string
 	OrgSlug        string
@@ -24,6 +28,14 @@ type MemberInviteNotification struct {
 	Email          string
 	ActionURL      string
 	ResourceName   string
+}
+
+type SignupVerificationNotification struct {
+	SignupIntentID          string
+	Email                   string
+	OrganizationDisplayName string
+	ActionURL               string
+	ResourceName            string
 }
 
 func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string, inviteNotifier InviteNotifier) {
@@ -47,15 +59,18 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 	registerPublicOperation(api, runtime, contractapi.TestIamPermissions, handlers.TestIamPermissions, "Test IAM permissions")
 }
 
-func RegisterAuthPublicRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string) {
+func RegisterAuthPublicRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string, signupNotifier SignupNotifier) {
 	runtime := publicRuntime{service: svc, authz: authzSvc, installationID: installationID}
 	handlers := publicHandlers{
 		service:        svc,
 		authz:          authzSvc,
 		installationID: installationID,
 		productBaseURL: productBaseURL,
+		signupNotifier: signupNotifier,
 	}
 	registerPublicOperation(api, runtime, contractapi.AcceptMemberInvite, handlers.AcceptMemberInvite, "Accept member invite")
+	registerPublicOperation(api, runtime, contractapi.StartSignup, handlers.StartSignup, "Start signup")
+	registerPublicOperation(api, runtime, contractapi.VerifySignup, handlers.VerifySignup, "Verify signup")
 }
 
 func registerPublicOperation[Input any, Output any](

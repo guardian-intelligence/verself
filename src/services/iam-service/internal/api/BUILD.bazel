@@ -59,6 +59,7 @@ go_test(
         "//src/services/iam-service/internal/contractapi",
         "//src/services/iam-service/internal/identity",
         "//src/services/iam-service/internal/spicedb",
+        "//src/services/iam-service/internal/store",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/iam",
         "@com_github_danielgtaylor_huma_v2//:huma",

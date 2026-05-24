@@ -923,6 +923,86 @@ func (c *Client) activateCatalogContract(ctx context.Context, orgID OrgID, produ
 	return err
 }
 
+func (c *Client) activateInternalPromotionalContract(ctx context.Context, orgID OrgID, productID, planID, contractID, phaseID string, effectiveAt time.Time, lineActiveFrom time.Time) (bool, error) {
+	policies, err := c.planEntitlementPolicies(ctx, planID)
+	if err != nil {
+		return false, err
+	}
+	var freeFinalizationID string
+	activated := false
+	err = c.WithTx(ctx, "billing.contract.internal_promotion.activate", func(ctx context.Context, tx pgx.Tx, q *store.Queries) error {
+		if err := c.lockOrgProductTx(ctx, tx, orgID, productID); err != nil {
+			return err
+		}
+		alreadyActive, err := q.ContractPhaseAlreadyActive(ctx, store.ContractPhaseAlreadyActiveParams{PhaseID: phaseID, ContractID: contractID})
+		if err != nil {
+			return fmt.Errorf("check active promotional contract phase: %w", err)
+		}
+		if !alreadyActive {
+			_, finalizationID, err := c.splitCycleForContractActivationTx(ctx, tx, q, orgID, productID, effectiveAt)
+			if err != nil {
+				return err
+			}
+			freeFinalizationID = finalizationID
+			phases, err := q.ListCancelableContractPhasesForUpdate(ctx, store.ListCancelableContractPhasesForUpdateParams{
+				ContractID:           contractID,
+				OrgID:                orgIDText(orgID),
+				ProductID:            productID,
+				EffectiveStartBefore: timestamptz(effectiveAt),
+			})
+			if err != nil {
+				return fmt.Errorf("load active phases before internal promotion: %w", err)
+			}
+			for _, phase := range phases {
+				if phase.PhaseID == phaseID {
+					continue
+				}
+				closed, err := q.CloseContractPhase(ctx, store.CloseContractPhaseParams{
+					PhaseID:      phase.PhaseID,
+					ContractID:   contractID,
+					EffectiveEnd: timestamptz(effectiveAt),
+				})
+				if err != nil {
+					return fmt.Errorf("close phase before internal promotion: %w", err)
+				}
+				if closed > 0 {
+					if err := appendEvent(ctx, tx, q, eventFact{EventType: "contract_phase_closed", AggregateType: "contract_phase", AggregateID: phase.PhaseID, OrgID: orgID, ProductID: productID, OccurredAt: effectiveAt, Payload: map[string]any{"contract_id": contractID, "pricing_phase_id": phase.PhaseID, "pricing_plan_id": phase.PlanID, "effective_at": effectiveAt.Format(time.RFC3339Nano), "reason": "internal_promotion"}}); err != nil {
+						return err
+					}
+				}
+			}
+			if err := q.CancelScheduledContractChangesForResume(ctx, store.CancelScheduledContractChangesForResumeParams{
+				ContractID: contractID,
+				OrgID:      orgIDText(orgID),
+				ProductID:  productID,
+			}); err != nil {
+				return fmt.Errorf("cancel scheduled changes before internal promotion: %w", err)
+			}
+		}
+		if err := c.insertInternalContractTx(ctx, tx, orgID, productID, contractID, planID, effectiveAt); err != nil {
+			return err
+		}
+		if err := c.insertInternalPromotionalContractPhaseTx(ctx, tx, orgID, productID, contractID, phaseID, planID, effectiveAt); err != nil {
+			return err
+		}
+		if err := c.copyPlanEntitlementLinesTx(ctx, tx, orgID, productID, contractID, phaseID, policies, lineActiveFrom); err != nil {
+			return err
+		}
+		if alreadyActive {
+			return nil
+		}
+		activated = true
+		return appendEvent(ctx, tx, q, eventFact{EventType: "contract_activated", AggregateType: "contract", AggregateID: contractID, OrgID: orgID, ProductID: productID, OccurredAt: effectiveAt, Payload: map[string]any{"contract_id": contractID, "pricing_phase_id": phaseID, "pricing_plan_id": planID, "contract_kind": "internal", "promotion_percent_off": 100}})
+	})
+	if err != nil {
+		return false, err
+	}
+	if freeFinalizationID != "" && c.runtime == nil {
+		_, err = c.FinalizeBillingFinalization(ctx, freeFinalizationID)
+	}
+	return activated, err
+}
+
 func (c *Client) insertContractTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID, contractID, planID string, startsAt time.Time) error {
 	if err := c.queries.WithTx(tx).UpsertContract(ctx, store.UpsertContractParams{
 		ContractID:  contractID,
@@ -932,6 +1012,19 @@ func (c *Client) insertContractTx(ctx context.Context, tx pgx.Tx, orgID OrgID, p
 		StartsAt:    timestamptz(startsAt),
 	}); err != nil {
 		return fmt.Errorf("upsert contract: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) insertInternalContractTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID, contractID, planID string, startsAt time.Time) error {
+	if err := c.queries.WithTx(tx).UpsertInternalContract(ctx, store.UpsertInternalContractParams{
+		ContractID:  contractID,
+		OrgID:       orgIDText(orgID),
+		ProductID:   productID,
+		DisplayName: planID,
+		StartsAt:    timestamptz(startsAt),
+	}); err != nil {
+		return fmt.Errorf("upsert internal contract: %w", err)
 	}
 	return nil
 }
@@ -958,6 +1051,25 @@ func (c *Client) insertContractPhaseTx(ctx context.Context, tx pgx.Tx, orgID Org
 		EffectiveStart:       timestamptz(effectiveAt),
 	}); err != nil {
 		return fmt.Errorf("insert contract phase: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) insertInternalPromotionalContractPhaseTx(ctx context.Context, tx pgx.Tx, orgID OrgID, productID, contractID, phaseID, planID string, effectiveAt time.Time) error {
+	plan, err := c.loadPlan(ctx, planID)
+	if err != nil {
+		return err
+	}
+	if err := c.queries.WithTx(tx).UpsertInternalContractPhase(ctx, store.UpsertInternalContractPhaseParams{
+		PhaseID:        phaseID,
+		ContractID:     contractID,
+		OrgID:          orgIDText(orgID),
+		ProductID:      productID,
+		PlanID:         pgTextValue(planID),
+		Currency:       plan.Currency,
+		EffectiveStart: timestamptz(effectiveAt),
+	}); err != nil {
+		return fmt.Errorf("insert internal promotional contract phase: %w", err)
 	}
 	return nil
 }

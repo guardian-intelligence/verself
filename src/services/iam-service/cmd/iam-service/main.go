@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	billingclient "github.com/verself/billing-service/client"
 	"github.com/verself/iam-service/internal/api"
 	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
@@ -293,11 +294,21 @@ func run() error {
 	}
 	logger.InfoContext(ctx, "iam-service spicedb schema reconciled", "zed_token", schemaToken)
 	authzService := authz.New(spice)
+	billingHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceBilling, nil)
+	if err != nil {
+		return fmt.Errorf("iam billing mtls: %w", err)
+	}
+	billingClient, err := billingclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceBilling), billingclient.WithHTTPClient(billingHTTPClient))
+	if err != nil {
+		return fmt.Errorf("iam billing client: %w", err)
+	}
 	store := identity.SQLStore{PG: pg, CH: chConn}
 	identityService := &identity.Service{
 		Store:              store,
 		Directory:          zitadelClient,
 		AuthorizationGraph: authzService,
+		PolicyWriter:       organizationOwnerPolicyWriter{authz: authzService},
+		Billing:            billingOrganizationProvisioner{client: billingClient},
 		ProjectID:          authAudience,
 	}
 	api.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
@@ -310,6 +321,7 @@ func run() error {
 		return fmt.Errorf("iam notifications client: %w", err)
 	}
 	inviteNotifier := notificationInviteSender{client: notificationsClient}
+	signupNotifier := notificationSignupSender{client: notificationsClient}
 	browserAuth, err := api.NewBrowserAuth(ctx, api.BrowserAuthConfig{
 		PG:              pg,
 		Logger:          logger,
@@ -353,6 +365,7 @@ func run() error {
 		Authz:          authzService,
 		InstallationID: installationID,
 		ProductBaseURL: browserAuthPublicBaseURL,
+		SignupNotifier: signupNotifier,
 	})
 
 	privateMux := http.NewServeMux()
@@ -473,6 +486,62 @@ type notificationInviteSender struct {
 	client *notificationsinternalclient.Client
 }
 
+type organizationOwnerPolicyWriter struct {
+	authz *authz.Service
+}
+
+func (w organizationOwnerPolicyWriter) SetOrganizationOwner(ctx context.Context, input identity.OrganizationOwnerPolicyRequest) error {
+	if w.authz == nil {
+		return identity.ErrAuthzUnavailable
+	}
+	ownerMember := "user:" + strings.TrimSpace(input.OwnerUserID)
+	current, err := w.authz.GetOrganizationPolicy(ctx, strings.TrimSpace(input.OrgID))
+	if err != nil {
+		return fmt.Errorf("%w: read organization policy: %v", identity.ErrAuthzUnavailable, err)
+	}
+	if policyHasMember(current, "roles/owner", ownerMember) {
+		return nil
+	}
+	next := current
+	next.Bindings = appendOwnerBinding(next.Bindings, ownerMember)
+	if _, err := w.authz.SetOrganizationPolicy(ctx, strings.TrimSpace(input.OrgID), next, strings.TrimSpace(input.OperationID)); err != nil {
+		return fmt.Errorf("%w: set organization owner policy: %v", identity.ErrAuthzUnavailable, err)
+	}
+	return nil
+}
+
+type billingOrganizationProvisioner struct {
+	client *billingclient.Client
+}
+
+func (p billingOrganizationProvisioner) EnsureBillingOrganization(ctx context.Context, input identity.BillingOrganizationProvisioningRequest) error {
+	if p.client == nil {
+		return identity.ErrBillingUnavailable
+	}
+	var trustTier *billingclient.BillingTrustTier
+	if trimmed := strings.TrimSpace(input.TrustTier); trimmed != "" {
+		value := billingclient.BillingTrustTier(trimmed)
+		trustTier = &value
+	}
+	resp, err := p.client.EnsureBillingOrganization(ctx, billingclient.EnsureBillingOrganizationRequest{
+		Body: billingclient.EnsureBillingOrganizationInputBody{
+			OrgID:       billingclient.OrgId(strings.TrimSpace(input.OrgID)),
+			DisplayName: strings.TrimSpace(input.DisplayName),
+			TrustTier:   trustTier,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("%w: ensure billing organization: %v", identity.ErrBillingUnavailable, err)
+	}
+	if resp == nil {
+		return fmt.Errorf("%w: ensure billing organization returned no response", identity.ErrBillingUnavailable)
+	}
+	if resp.StatusCode != http.StatusOK || resp.Result == nil {
+		return fmt.Errorf("%w: ensure billing organization status %d: %s", identity.ErrBillingUnavailable, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+	}
+	return nil
+}
+
 func (s notificationInviteSender) SendMemberInvite(ctx context.Context, input api.MemberInviteNotification) error {
 	if s.client == nil {
 		return fmt.Errorf("notifications client is required")
@@ -506,6 +575,54 @@ func (s notificationInviteSender) SendMemberInvite(ctx context.Context, input ap
 			Body:               body,
 			Data:               &data,
 			OrgID:              notificationsinternalclient.OrgId(strings.TrimSpace(input.OrgID)),
+			Priority:           &priority,
+			Recipients:         notificationsinternalclient.WorkflowRecipients{{Email: &email}},
+			TargetResourceName: resourceName,
+			Title:              &title,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return fmt.Errorf("notifications workflow returned no response")
+	}
+	if resp.StatusCode != http.StatusAccepted || resp.Result == nil {
+		return fmt.Errorf("notifications workflow status %d: %s", resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+	}
+	return nil
+}
+
+type notificationSignupSender struct {
+	client *notificationsinternalclient.Client
+}
+
+func (s notificationSignupSender) SendSignupVerification(ctx context.Context, input api.SignupVerificationNotification) error {
+	if s.client == nil {
+		return fmt.Errorf("notifications client is required")
+	}
+	title := notificationsinternalclient.NotificationTitle("Verify your Verself signup")
+	priority := notificationsinternalclient.NotificationPriorityNORMAL
+	actionURL := notificationsinternalclient.ActionURL(strings.TrimSpace(input.ActionURL))
+	email := notificationsinternalclient.EmailAddress(strings.TrimSpace(input.Email))
+	var resourceName *notificationsinternalclient.ResourceName
+	if trimmed := strings.TrimSpace(input.ResourceName); trimmed != "" {
+		value := notificationsinternalclient.ResourceName(trimmed)
+		resourceName = &value
+	}
+	data := map[string]any{
+		"signup_intent_id": strings.TrimSpace(input.SignupIntentID),
+	}
+	body := notificationsinternalclient.RequiredNotificationBody(
+		fmt.Sprintf("Verify your email to finish creating %s on Verself.\n\nVerify signup: %s\n\nIf you did not start this signup, ignore this email.", strings.TrimSpace(input.OrganizationDisplayName), actionURL),
+	)
+	resp, err := s.client.TriggerNotificationWorkflow(ctx, notificationsinternalclient.TriggerNotificationWorkflowRequest{
+		WorkflowKey:    notificationsinternalclient.WorkflowKey("iam.signup.verify"),
+		IdempotencyKey: notificationsinternalclient.IdempotencyKey("iam:signup_verify:" + strings.TrimSpace(input.SignupIntentID)),
+		Body: notificationsinternalclient.TriggerNotificationWorkflowInputBody{
+			ActionURL:          &actionURL,
+			Body:               body,
+			Data:               &data,
 			Priority:           &priority,
 			Recipients:         notificationsinternalclient.WorkflowRecipients{{Email: &email}},
 			TargetResourceName: resourceName,

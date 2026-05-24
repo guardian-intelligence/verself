@@ -67,6 +67,8 @@ service Iam {
         LogoutBrowserSession
         ListBrowserSessions
         RevokeBrowserSession
+        StartSignup
+        VerifySignup
         AcceptMemberInvite
         InviteMember
     ]
@@ -432,23 +434,7 @@ resource Organization {
     resources: [Member]
 }
 
-resource SignupIntent {
-    identifiers: {
-        signupIntentId: SignupIntentId
-    }
-    properties: {
-        resourceName: SignupIntentResourceName
-        email: EmailAddress
-        organizationDisplayName: DisplayName
-        organizationSlug: OrgSlug
-        status: SignupIntentStatus
-        verificationExpiresAt: DateTime
-    }
-    create: StartSignup
-    operations: [
-        VerifySignup
-    ]
-}
+resource SignupIntent {}
 
 resource Member {
     identifiers: {
@@ -470,26 +456,25 @@ resource HumanProfile {
 resource Authorization {
 }
 
-structure SignupIntentSummary for SignupIntent {
+structure SignupIntentSummary {
     @required
-    @resourceIdentifier("signupIntentId")
     @protoField(number: 1)
-    $signupIntentId
+    signupIntentId: SignupIntentId
 
     @required
     @protoField(number: 2)
-    $resourceName
+    resourceName: SignupIntentResourceName
 
     @required
     @protoField(number: 3)
-    $organizationDisplayName
+    organizationDisplayName: DisplayName
 
     @protoField(number: 4)
-    $organizationSlug
+    organizationSlug: OrgSlug
 
     @required
     @protoField(number: 5)
-    $status
+    status: SignupIntentStatus
 
     @required
     @protoField(number: 6)

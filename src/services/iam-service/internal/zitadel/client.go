@@ -91,14 +91,14 @@ func (c *Client) ListMembers(ctx context.Context, orgID string) ([]identity.Memb
 func (c *Client) CreateOrganization(ctx context.Context, input identity.DirectoryCreateOrganizationRequest) (identity.DirectoryCreateOrganizationResult, error) {
 	name := strings.TrimSpace(input.Name)
 	adminUserID := strings.TrimSpace(input.AdminUserID)
-	if name == "" || adminUserID == "" {
-		return identity.DirectoryCreateOrganizationResult{}, fmt.Errorf("%w: organization name and admin user id are required", identity.ErrInvalidInput)
+	if name == "" {
+		return identity.DirectoryCreateOrganizationResult{}, fmt.Errorf("%w: organization name is required", identity.ErrInvalidInput)
 	}
 	body := map[string]any{
 		"name": name,
-		"admins": []map[string]any{{
-			"userId": adminUserID,
-		}},
+	}
+	if adminUserID != "" {
+		body["admins"] = []map[string]any{{"userId": adminUserID}}
 	}
 	var out struct {
 		OrganizationID string `json:"organizationId"`
@@ -113,6 +113,32 @@ func (c *Client) CreateOrganization(ctx context.Context, input identity.Director
 		return identity.DirectoryCreateOrganizationResult{}, fmt.Errorf("%w: create organization returned no organization id", identity.ErrZitadelUnavailable)
 	}
 	return identity.DirectoryCreateOrganizationResult{OrganizationID: orgID}, nil
+}
+
+func (c *Client) CreateSignupUser(ctx context.Context, input identity.DirectoryCreateSignupUserRequest) (identity.DirectoryCreateSignupUserResult, error) {
+	orgID := strings.TrimSpace(input.OrgID)
+	if orgID == "" || strings.TrimSpace(input.Email) == "" || strings.TrimSpace(input.Password) == "" {
+		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: org_id, email, and password are required", identity.ErrInvalidInput)
+	}
+	created, err := c.createHumanUser(ctx, orgID, identity.InviteMemberRequest{
+		Email:      strings.TrimSpace(input.Email),
+		GivenName:  strings.TrimSpace(input.GivenName),
+		FamilyName: strings.TrimSpace(input.FamilyName),
+	})
+	if err != nil {
+		return identity.DirectoryCreateSignupUserResult{}, err
+	}
+	passwordResetCode, err := c.createPasswordResetCode(ctx, created.UserID)
+	if err != nil {
+		return identity.DirectoryCreateSignupUserResult{}, err
+	}
+	if err := c.setPassword(ctx, created.UserID, passwordResetCode, input.Password); err != nil {
+		return identity.DirectoryCreateSignupUserResult{}, err
+	}
+	if err := c.verifyEmail(ctx, created.UserID, created.EmailVerificationCode); err != nil {
+		return identity.DirectoryCreateSignupUserResult{}, err
+	}
+	return identity.DirectoryCreateSignupUserResult{UserID: created.UserID}, nil
 }
 
 func (c *Client) InviteMember(ctx context.Context, orgID string, input identity.InviteMemberRequest) (identity.DirectoryInviteMemberResult, error) {
