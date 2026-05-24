@@ -4,7 +4,12 @@ This project is using Vite+, a unified toolchain built on top of Vite, Rolldown,
 
 ## Vite+ Workflow
 
-**`vp` is not a global binary.** It is the lockfile-pinned `node_modules/vite-plus`, run under the Bazel-resolved host Node — the exact controller-side toolchain the Bazel frontend build uses — and the only way to invoke it is `aspect vp -- <vp args>`. There is no `~/.vite-plus`, no PATH `vp`, and no `vp upgrade` (the version is the `pnpm-lock.yaml` entry; bump it like any other dependency). Every `vp <command>` below is run as `aspect vp -- <command>` (e.g. `aspect vp -- fmt . --write`, `aspect vp -- check .`, `aspect vp -- install --frozen-lockfile`). `aspect tidy` and `aspect dev verself-web` route through this same toolchain. Run `aspect vp -- help` for the command list and `aspect vp -- <command> --help` for a specific command.
+Run Vite+ directly from the frontend workspace. For workspace-wide maintenance,
+cd to `src/websites` and run commands such as `vp install --frozen-lockfile`,
+`vp check .`, and `vp test run`. For app development, cd to the app package and
+run its local command, for example `cd src/websites/apps/verself-web && vp dev`.
+The Vite+ version is pinned by the workspace `pnpm-lock.yaml`; bump it like any
+other dependency. There is no `vp upgrade`.
 
 ### Build
 
@@ -28,7 +33,11 @@ Vite+ automatically detects and wraps the underlying package manager such as pnp
 - `vp pm` - Forward a command to the package manager
 - `vp fmt . --write ` - Format the monorepo with Oxfmt
 
-These commands map to their corresponding tools. For example, `aspect vp -- dev --port 3000` runs Vite's dev server and works the same as Vite. `aspect vp -- test` runs JavaScript tests through the bundled Vitest. The version of all tools can be checked with `aspect vp -- --version`. This is useful when researching documentation, features, and bugs.
+These commands map to their corresponding tools. For example, `vp dev --port
+3000` runs Vite's dev server and works the same as Vite. `vp test` runs
+JavaScript tests through the bundled Vitest. The version of all tools can be
+checked with `vp --version`. This is useful when researching documentation,
+features, and bugs.
 
 ## Common Pitfalls
 
@@ -43,8 +52,8 @@ These commands map to their corresponding tools. For example, `aspect vp -- dev 
 
 ## Review Checklist for Agents
 
-- [ ] Run `aspect vp -- install --frozen-lockfile` after pulling remote changes and before getting started.
-- [ ] Run `aspect vp -- check .` and `aspect vp -- test run` to validate changes.
+- [ ] Run `vp install --frozen-lockfile` after pulling remote changes and before getting started.
+- [ ] Run `vp check .` and `vp test run` to validate changes.
 <!--VITE PLUS END-->
 
 ## Quickstart After Pull
@@ -54,7 +63,8 @@ Run the frontend setup from a clean checkout before trusting TypeScript output:
 ```bash
 # repo root
 git pull --ff-only
-aspect vp -- install --frozen-lockfile
+cd src/websites
+vp install --frozen-lockfile
 bazelisk run //src/websites/apps/company:dev_update
 bazelisk run //src/websites/apps/verself-web:dev_update
 ```
@@ -77,7 +87,15 @@ run the owning `dev_update` target. See
 
 ## Local Frontend Development
 
-Frontend apps (TanStack Start) run locally via `aspect dev verself-web` (which drives `aspect vp -- run @verself/verself-web#dev`) with HMR. They talk to remote services over SSH tunnels. Auth goes through real Zitadel (HTTPS, external).
+Frontend apps (TanStack Start) run locally from their package directory with
+Vite+ HMR:
+
+```bash
+cd src/websites/apps/verself-web
+vp dev
+```
+
+Auth goes through real Zitadel (HTTPS, external).
 
 Avoid `as` assertions. Prefer `satisfies`.
 
@@ -109,30 +127,16 @@ We start from clean build root
 ### Running a frontend locally
 
 ```bash
-# run verself-web locally against the deployed services
-aspect dev verself-web
-
-# print the resolved env without starting HMR
-aspect dev verself-web --print-env
+# run verself-web locally
+cd src/websites/apps/verself-web
+vp dev
 ```
 
-`aspect dev verself-web` opens the required SSH tunnels, reads the rendered
-Nomad job env for production facts, and exports the current runtime env for the
-local server:
-
-- `VERSELF_DOMAIN`
-- `IAM_SERVICE_BASE_URL`
-- `SANDBOX_RENTAL_SERVICE_BASE_URL`
-- service auth audiences for iam-service token exchange
-
-Open the `app:` URL printed by `aspect dev verself-web`. The launcher prefers
-`http://127.0.0.1:4244` but will move to a higher local port if that one is
-busy, then records the chosen URL in `/tmp/verself-web-dev.env`. Vite HMR gives
-sub-second feedback on every file save. API calls, Electric shapes, and OTLP
-traces all flow through the SSH tunnels to the deployed single-node stack.
-Interactive browser login is owned by iam-service and the public apex
-route; the frontend does not create local OIDC apps or local auth-session
-databases.
+Open the URL printed by Vite; the verself-web dev server defaults to
+`http://127.0.0.1:4244`. Set `VERSELF_WEB_DEV_LOCAL_APP_PORT` when that port is
+already in use. Vite HMR gives sub-second feedback on every file save.
+Interactive browser login is owned by iam-service and the public apex route;
+the frontend does not create local OIDC apps or local auth-session databases.
 
 Remote frontend deploys go through `aspect deploy`; Nomad supervises the
 Bazel-built node-app artifacts.

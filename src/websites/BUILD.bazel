@@ -16,10 +16,9 @@ exports_files([
 
 npm_link_all_packages()
 
-# The vendored Node the controller-side frontend build runs on.
-# `aspect vp`, `aspect tidy`, and `aspect dev verself-web` resolve `vp` through
-# this exact binary + the lockfile-pinned `node_modules/vite-plus`, so there is
-# one Vite+ toolchain shared by the build and the controller — no `~/.vite-plus`.
+# The vendored Node the controller-side frontend build runs on. Bazel and
+# Aspect-owned frontend checks resolve `vp` through this exact binary plus the
+# lockfile-pinned `node_modules/vite-plus`.
 genrule(
     name = "vp_node",
     srcs = ["@rules_nodejs//nodejs:current_node_runtime"],

@@ -2,15 +2,11 @@
 
 load(
     ".aspect/lib/helpers.axl",
-    "ASPECT_OPERATOR_TARGET",
     "SOPS_SHIM",
-    "VITEPLUS_VP_SCRIPT",
     "bazel_output_file",
     "bazel_run",
     "checked_spawn",
     "install_bazel_tool_shims",
-    "inventory_check",
-    "viteplus_node",
     "ws_path",
 )
 
@@ -83,23 +79,6 @@ def _hooks_install_impl(ctx):
         label = "uv tool run pre-commit install",
     )
 
-def _verself_web_impl(ctx):
-    if inventory_check(ctx) != 0:
-        return 1
-    node = viteplus_node(ctx)
-    if node == "":
-        return 1
-    cli_args = ["--node-bin", node, "--vp-script", ws_path(ctx, VITEPLUS_VP_SCRIPT)]
-    if ctx.args.print_env:
-        cli_args.append("--print-env")
-    return bazel_run(
-        ctx,
-        ASPECT_OPERATOR_TARGET,
-        ["dev", "verself-web", "--repo-root", ws_path(ctx)] + cli_args,
-        cwd = ws_path(ctx),
-        label = "aspect-operator dev verself-web",
-    )
-
 install = task(
     implementation = _install_impl,
     name = "install",
@@ -124,14 +103,4 @@ hooks_install = task(
     name = "hooks-install",
     group = ["dev"],
     summary = "Install repo git hooks via pre-commit.",
-)
-
-verself_web = task(
-    implementation = _verself_web_impl,
-    name = "verself-web",
-    group = ["dev"],
-    summary = "Start local verself-web dev tunnels and HMR server (console + docs + policy).",
-    args = {
-        "print_env": args.boolean(default = False, description = "Print resolved env and exit before starting HMR."),
-    },
 )

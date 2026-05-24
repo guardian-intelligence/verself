@@ -56,10 +56,9 @@ SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
 DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 SOPS_SHIM = ("sops", "//src/tools/dev/binaries:sops")
 
-# Single Vite+ toolchain, shared by the frontend build and the controller.
-# `vp` is the lockfile-pinned `node_modules/vite-plus` run under the
-# Bazel-resolved host Node used by `viteplus_rules.bzl` for controller actions.
-# There is no `~/.vite-plus` and no PATH `vp`.
+# Aspect-owned Vite+ toolchain, shared by the frontend build and controller
+# checks. This bypasses any shell `vp` so Bazel/Aspect actions use the
+# lockfile-pinned package under the Bazel-resolved host Node.
 VITEPLUS_NODE_TARGET = "//src/websites:vp_node"
 VITEPLUS_WORKSPACE_INSTALL_TARGET = "//src/websites:workspace_install"
 VITEPLUS_VP_SCRIPT = "src/websites/node_modules/vite-plus/bin/vp"
