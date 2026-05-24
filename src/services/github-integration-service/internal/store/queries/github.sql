@@ -1120,9 +1120,7 @@ SET failure_reason = '',
     claimed_at = @claimed_at,
     updated_at = @claimed_at
 WHERE github_provider_demands.provider_job_id = @provider_job_id
-  AND (
-        github_provider_demands.state IN ('demand_recorded', 'capacity_requested', 'capacity_failed', 'jit_failed', 'sandbox_failed')
-  )
+  AND github_provider_demands.state = 'demand_recorded'
   AND NOT EXISTS (
       SELECT 1
       FROM github_job_assignments assigned
@@ -1166,7 +1164,7 @@ SET state = 'capacity_requested',
     failure_reason = '',
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id
-  AND state IN ('demand_recorded', 'capacity_requested', 'capacity_failed', 'jit_failed', 'sandbox_failed');
+  AND state IN ('demand_recorded', 'capacity_requested');
 
 -- name: MarkProviderDemandAssigned :exec
 UPDATE github_provider_demands
@@ -1546,7 +1544,7 @@ WITH candidates AS (
       )
       AND (
             d.provider_job_id IS NULL
-         OR d.state IN ('demand_recorded', 'capacity_failed', 'jit_failed', 'sandbox_failed')
+         OR d.state = 'demand_recorded'
          OR (
                 d.state = 'capacity_requested'
             AND NOT EXISTS (

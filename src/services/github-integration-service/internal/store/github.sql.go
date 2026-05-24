@@ -93,9 +93,7 @@ SET failure_reason = '',
     claimed_at = $1,
     updated_at = $1
 WHERE github_provider_demands.provider_job_id = $2
-  AND (
-        github_provider_demands.state IN ('demand_recorded', 'capacity_requested', 'capacity_failed', 'jit_failed', 'sandbox_failed')
-  )
+  AND github_provider_demands.state = 'demand_recorded'
   AND NOT EXISTS (
       SELECT 1
       FROM github_job_assignments assigned
@@ -1681,7 +1679,7 @@ WITH candidates AS (
       )
       AND (
             d.provider_job_id IS NULL
-         OR d.state IN ('demand_recorded', 'capacity_failed', 'jit_failed', 'sandbox_failed')
+         OR d.state = 'demand_recorded'
          OR (
                 d.state = 'capacity_requested'
             AND NOT EXISTS (
@@ -2252,7 +2250,7 @@ SET state = 'capacity_requested',
     failure_reason = '',
     updated_at = $1
 WHERE provider_job_id = $2
-  AND state IN ('demand_recorded', 'capacity_requested', 'capacity_failed', 'jit_failed', 'sandbox_failed')
+  AND state IN ('demand_recorded', 'capacity_requested')
 `
 
 type MarkProviderDemandCapacityRequestedParams struct {

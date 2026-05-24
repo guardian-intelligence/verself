@@ -477,7 +477,28 @@ func (s *Service) markRunnerCapacityFailed(ctx context.Context, row store.ListSu
 		AttemptID:             uuidFromPG(row.SandboxAttemptID),
 	}
 	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.capacity.failed", "failed", reason, now, now))
+	s.cancelWorkflowRunAfterInternalCapacityFailure(ctx, meta, row, reason)
 	return nil
+}
+
+func (s *Service) cancelWorkflowRunAfterInternalCapacityFailure(ctx context.Context, meta webhookMetadata, row store.ListSubmittedRunnerInstancesForSandboxReconcileRow, reason string) {
+	if row.ProviderInstallationID == 0 || row.ProviderRunID == 0 || strings.TrimSpace(row.RepositoryFullName) == "" {
+		return
+	}
+	started := time.Now().UTC()
+	result := "succeeded"
+	cancelReason := reason
+	if err := s.cancelWorkflowRun(ctx, row.ProviderInstallationID, row.RepositoryFullName, row.ProviderRunID); err != nil {
+		result = "failed"
+		cancelReason = err.Error()
+		if s.cfg.Logger != nil {
+			s.cfg.Logger.WarnContext(ctx, "cancel failed github workflow run after internal capacity failure",
+				"provider_run_id", row.ProviderRunID,
+				"provider_job_id", row.OriginProviderJobID,
+				"error", err)
+		}
+	}
+	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.workflow_run.cancel_requested", result, truncate(cancelReason, 1024), started, time.Now().UTC()))
 }
 
 func sandboxRunnerCapacityTerminalWithoutAssignment(status sandboxrentalclient.RunnerAllocationStatus) bool {

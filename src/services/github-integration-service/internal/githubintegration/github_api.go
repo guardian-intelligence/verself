@@ -157,6 +157,22 @@ func (s *Service) fetchWorkflowRun(ctx context.Context, installationID int64, re
 	return out, nil
 }
 
+func (s *Service) cancelWorkflowRun(ctx context.Context, installationID int64, repositoryFullName string, runID int64) error {
+	owner, repo, ok := strings.Cut(strings.TrimSpace(repositoryFullName), "/")
+	if !ok || owner == "" || repo == "" {
+		return fmt.Errorf("github repository must be owner/name")
+	}
+	if runID <= 0 {
+		return fmt.Errorf("github run id is required")
+	}
+	token, err := s.installationToken(ctx, installationID)
+	if err != nil {
+		return err
+	}
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/cancel", url.PathEscape(owner), url.PathEscape(repo), runID)
+	return s.githubRequest(ctx, installationID, http.MethodPost, path, token, nil, nil, http.StatusAccepted, http.StatusConflict)
+}
+
 func (s *Service) fetchWorkflowRunJobs(ctx context.Context, installationID, repositoryID int64, repositoryFullName string, runID, runAttempt int64) ([]githubWorkflowJob, error) {
 	owner, repo, ok := strings.Cut(strings.TrimSpace(repositoryFullName), "/")
 	if !ok || owner == "" || repo == "" {

@@ -262,6 +262,36 @@ func TestSandboxObservationFromWebhookUsesOnlyProviderObservedRunner(t *testing.
 	}
 }
 
+func TestCancelWorkflowRunUsesRepositoryEndpoint(t *testing.T) {
+	var gotMethod, gotPath, gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+	svc := &Service{
+		cfg:    Config{APIBaseURL: server.URL},
+		client: server.Client(),
+		tokens: map[int64]githubInstallationToken{
+			42: {Token: "cached-token", ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		},
+	}
+	if err := svc.cancelWorkflowRun(context.Background(), 42, "guardian-intelligence/verself", 123); err != nil {
+		t.Fatalf("cancelWorkflowRun: %v", err)
+	}
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method = %s, want POST", gotMethod)
+	}
+	if gotPath != "/repos/guardian-intelligence/verself/actions/runs/123/cancel" {
+		t.Fatalf("path = %s", gotPath)
+	}
+	if gotAuth != "Bearer cached-token" {
+		t.Fatalf("authorization = %s", gotAuth)
+	}
+}
+
 func TestSandboxRunnerCapacityTerminalWithoutAssignment(t *testing.T) {
 	if !sandboxRunnerCapacityTerminalWithoutAssignment(sandboxrentalclient.RunnerAllocationStatus{State: "failed"}) {
 		t.Fatal("failed unassigned allocation was not terminal capacity")
