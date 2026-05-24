@@ -567,6 +567,54 @@ func (q *Queries) CreateSetupSession(ctx context.Context, arg CreateSetupSession
 	return i, err
 }
 
+const deleteRunnerRegistrationForSwap = `-- name: DeleteRunnerRegistrationForSwap :one
+DELETE FROM github_runner_registrations
+WHERE github_runner_registrations.provider_job_id = $1
+  AND github_runner_registrations.runner_name <> $2
+  AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
+RETURNING provider_installation_id, provider_repository_id, runner_id,
+          runner_name, runner_class, jit_config_sha256, sandbox_allocation_id,
+          sandbox_execution_id, sandbox_attempt_id, state, created_at
+`
+
+type DeleteRunnerRegistrationForSwapParams struct {
+	ToProviderJobID int64
+	RunnerName      string
+}
+
+type DeleteRunnerRegistrationForSwapRow struct {
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RunnerID               int64
+	RunnerName             string
+	RunnerClass            string
+	JitConfigSha256        string
+	SandboxAllocationID    pgtype.UUID
+	SandboxExecutionID     pgtype.UUID
+	SandboxAttemptID       pgtype.UUID
+	State                  string
+	CreatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) DeleteRunnerRegistrationForSwap(ctx context.Context, arg DeleteRunnerRegistrationForSwapParams) (DeleteRunnerRegistrationForSwapRow, error) {
+	row := q.db.QueryRow(ctx, deleteRunnerRegistrationForSwap, arg.ToProviderJobID, arg.RunnerName)
+	var i DeleteRunnerRegistrationForSwapRow
+	err := row.Scan(
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.RunnerID,
+		&i.RunnerName,
+		&i.RunnerClass,
+		&i.JitConfigSha256,
+		&i.SandboxAllocationID,
+		&i.SandboxExecutionID,
+		&i.SandboxAttemptID,
+		&i.State,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const disableRepositoryBinding = `-- name: DisableRepositoryBinding :one
 UPDATE github_repository_bindings
 SET state = 'disabled',
@@ -1425,6 +1473,89 @@ func (q *Queries) InsertProviderReconciliation(ctx context.Context, arg InsertPr
 		arg.ProviderInstallationID,
 		arg.Reason,
 		arg.StartedAt,
+	)
+	return err
+}
+
+const insertSwappedRunnerRegistration = `-- name: InsertSwappedRunnerRegistration :exec
+WITH demand AS (
+    SELECT demand_id, org_id, installation_binding_id, repository_binding_id
+    FROM github_provider_demands
+    WHERE provider_job_id = $1
+)
+INSERT INTO github_runner_registrations (
+    provider_job_id,
+    demand_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
+    provider_installation_id,
+    provider_repository_id,
+    runner_id,
+    runner_name,
+    runner_class,
+    jit_config_sha256,
+    sandbox_allocation_id,
+    sandbox_execution_id,
+    sandbox_attempt_id,
+    state,
+    failure_reason,
+    created_at,
+    updated_at
+)
+SELECT
+    $1,
+    demand.demand_id,
+    demand.org_id,
+    demand.installation_binding_id,
+    demand.repository_binding_id,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    '',
+    $12,
+    $13
+FROM demand
+`
+
+type InsertSwappedRunnerRegistrationParams struct {
+	ProviderJobID          int64
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RunnerID               int64
+	RunnerName             string
+	RunnerClass            string
+	JitConfigSha256        string
+	SandboxAllocationID    pgtype.UUID
+	SandboxExecutionID     pgtype.UUID
+	SandboxAttemptID       pgtype.UUID
+	State                  string
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) InsertSwappedRunnerRegistration(ctx context.Context, arg InsertSwappedRunnerRegistrationParams) error {
+	_, err := q.db.Exec(ctx, insertSwappedRunnerRegistration,
+		arg.ProviderJobID,
+		arg.ProviderInstallationID,
+		arg.ProviderRepositoryID,
+		arg.RunnerID,
+		arg.RunnerName,
+		arg.RunnerClass,
+		arg.JitConfigSha256,
+		arg.SandboxAllocationID,
+		arg.SandboxExecutionID,
+		arg.SandboxAttemptID,
+		arg.State,
+		arg.CreatedAt,
+		arg.UpdatedAt,
 	)
 	return err
 }
@@ -2699,89 +2830,6 @@ func (q *Queries) SwapProviderDemandRunnerAssignments(ctx context.Context, arg S
 		arg.FromProviderJobID,
 		arg.FailureReason,
 		arg.UpdatedAt,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const swapRunnerRegistrationJobs = `-- name: SwapRunnerRegistrationJobs :execrows
-WITH target AS (
-    DELETE FROM github_runner_registrations
-    WHERE github_runner_registrations.provider_job_id = $3
-      AND github_runner_registrations.runner_name <> $4
-      AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
-    RETURNING provider_job_id, demand_id, org_id, installation_binding_id, repository_binding_id, provider_installation_id, provider_repository_id, runner_id, runner_name, runner_class, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id, state, failure_reason, created_at, updated_at
-), moved_source AS (
-    UPDATE github_runner_registrations
-    SET provider_job_id = $3,
-        demand_id = (
-            SELECT demand_id
-            FROM github_provider_demands
-            WHERE github_provider_demands.provider_job_id = $3
-        ),
-        state = 'sandbox_submitted',
-        failure_reason = '',
-        updated_at = $2
-    WHERE github_runner_registrations.provider_job_id = $1
-      AND github_runner_registrations.runner_name = $4
-    RETURNING provider_job_id, demand_id, org_id, installation_binding_id, repository_binding_id, provider_installation_id, provider_repository_id, runner_id, runner_name, runner_class, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id, state, failure_reason, created_at, updated_at
-)
-INSERT INTO github_runner_registrations (
-    provider_job_id,
-    demand_id,
-    provider_installation_id,
-    provider_repository_id,
-    runner_id,
-    runner_name,
-    runner_class,
-    jit_config_sha256,
-    sandbox_allocation_id,
-    sandbox_execution_id,
-    sandbox_attempt_id,
-    state,
-    failure_reason,
-    created_at,
-    updated_at
-)
-SELECT
-    $1,
-    (
-        SELECT demand_id
-        FROM github_provider_demands
-        WHERE github_provider_demands.provider_job_id = $1
-    ),
-    target.provider_installation_id,
-    target.provider_repository_id,
-    target.runner_id,
-    target.runner_name,
-    target.runner_class,
-    target.jit_config_sha256,
-    target.sandbox_allocation_id,
-    target.sandbox_execution_id,
-    target.sandbox_attempt_id,
-    target.state,
-    '',
-    target.created_at,
-    $2
-FROM target
-WHERE EXISTS (SELECT 1 FROM moved_source)
-`
-
-type SwapRunnerRegistrationJobsParams struct {
-	FromProviderJobID int64
-	UpdatedAt         pgtype.Timestamptz
-	ToProviderJobID   int64
-	RunnerName        string
-}
-
-func (q *Queries) SwapRunnerRegistrationJobs(ctx context.Context, arg SwapRunnerRegistrationJobsParams) (int64, error) {
-	result, err := q.db.Exec(ctx, swapRunnerRegistrationJobs,
-		arg.FromProviderJobID,
-		arg.UpdatedAt,
-		arg.ToProviderJobID,
-		arg.RunnerName,
 	)
 	if err != nil {
 		return 0, err

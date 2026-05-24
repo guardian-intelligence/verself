@@ -1405,31 +1405,27 @@ SET provider_job_id = @to_provider_job_id,
 WHERE github_runner_registrations.provider_job_id = @from_provider_job_id
   AND github_runner_registrations.runner_name = @runner_name;
 
--- name: SwapRunnerRegistrationJobs :execrows
-WITH target AS (
-    DELETE FROM github_runner_registrations
-    WHERE github_runner_registrations.provider_job_id = @to_provider_job_id
-      AND github_runner_registrations.runner_name <> @runner_name
-      AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
-    RETURNING *
-), moved_source AS (
-    UPDATE github_runner_registrations
-    SET provider_job_id = @to_provider_job_id,
-        demand_id = (
-            SELECT demand_id
-            FROM github_provider_demands
-            WHERE github_provider_demands.provider_job_id = @to_provider_job_id
-        ),
-        state = 'sandbox_submitted',
-        failure_reason = '',
-        updated_at = @updated_at
-    WHERE github_runner_registrations.provider_job_id = @from_provider_job_id
-      AND github_runner_registrations.runner_name = @runner_name
-    RETURNING *
+-- name: DeleteRunnerRegistrationForSwap :one
+DELETE FROM github_runner_registrations
+WHERE github_runner_registrations.provider_job_id = @to_provider_job_id
+  AND github_runner_registrations.runner_name <> @runner_name
+  AND github_runner_registrations.state IN ('jit_created', 'sandbox_submitted')
+RETURNING provider_installation_id, provider_repository_id, runner_id,
+          runner_name, runner_class, jit_config_sha256, sandbox_allocation_id,
+          sandbox_execution_id, sandbox_attempt_id, state, created_at;
+
+-- name: InsertSwappedRunnerRegistration :exec
+WITH demand AS (
+    SELECT demand_id, org_id, installation_binding_id, repository_binding_id
+    FROM github_provider_demands
+    WHERE provider_job_id = @provider_job_id
 )
 INSERT INTO github_runner_registrations (
     provider_job_id,
     demand_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     runner_id,
@@ -1445,27 +1441,25 @@ INSERT INTO github_runner_registrations (
     updated_at
 )
 SELECT
-    @from_provider_job_id,
-    (
-        SELECT demand_id
-        FROM github_provider_demands
-        WHERE github_provider_demands.provider_job_id = @from_provider_job_id
-    ),
-    target.provider_installation_id,
-    target.provider_repository_id,
-    target.runner_id,
-    target.runner_name,
-    target.runner_class,
-    target.jit_config_sha256,
-    target.sandbox_allocation_id,
-    target.sandbox_execution_id,
-    target.sandbox_attempt_id,
-    target.state,
+    @provider_job_id,
+    demand.demand_id,
+    demand.org_id,
+    demand.installation_binding_id,
+    demand.repository_binding_id,
+    @provider_installation_id,
+    @provider_repository_id,
+    @runner_id,
+    @runner_name,
+    @runner_class,
+    @jit_config_sha256,
+    @sandbox_allocation_id,
+    @sandbox_execution_id,
+    @sandbox_attempt_id,
+    @state,
     '',
-    target.created_at,
+    @created_at,
     @updated_at
-FROM target
-WHERE EXISTS (SELECT 1 FROM moved_source);
+FROM demand;
 
 -- name: GetRunnerRegistrationForJob :one
 SELECT provider_job_id, provider_installation_id, provider_repository_id, runner_id,

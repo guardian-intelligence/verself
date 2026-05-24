@@ -1489,17 +1489,41 @@ func (s *Service) reassignRunnerRegistration(ctx context.Context, fromProviderJo
 		if swappedDemands != 2 {
 			return "", fmt.Errorf("github runner demand swap failed: from_provider_job_id=%d to_provider_job_id=%d rows=%d", fromProviderJobID, toProviderJobID, swappedDemands)
 		}
-		swappedRegistrations, err := qtx.SwapRunnerRegistrationJobs(ctx, store.SwapRunnerRegistrationJobsParams{
-			ToProviderJobID:   toProviderJobID,
-			RunnerName:        runnerName,
-			UpdatedAt:         pgTime(at),
-			FromProviderJobID: fromProviderJobID,
+		replaced, err := qtx.DeleteRunnerRegistrationForSwap(ctx, store.DeleteRunnerRegistrationForSwapParams{
+			ToProviderJobID: toProviderJobID,
+			RunnerName:      runnerName,
 		})
 		if err != nil {
 			return "", err
 		}
-		if swappedRegistrations == 0 {
-			return "", fmt.Errorf("github runner registration swap failed: from_provider_job_id=%d to_provider_job_id=%d runner_name=%s", fromProviderJobID, toProviderJobID, runnerName)
+		transferred, err := qtx.TransferRunnerRegistrationToJob(ctx, store.TransferRunnerRegistrationToJobParams{
+			FromProviderJobID: fromProviderJobID,
+			ToProviderJobID:   toProviderJobID,
+			RunnerName:        runnerName,
+			UpdatedAt:         pgTime(at),
+		})
+		if err != nil {
+			return "", err
+		}
+		if transferred == 0 {
+			return "", fmt.Errorf("github runner registration missing for swap: from_provider_job_id=%d runner_name=%s", fromProviderJobID, runnerName)
+		}
+		if err := qtx.InsertSwappedRunnerRegistration(ctx, store.InsertSwappedRunnerRegistrationParams{
+			ProviderJobID:          fromProviderJobID,
+			ProviderInstallationID: replaced.ProviderInstallationID,
+			ProviderRepositoryID:   replaced.ProviderRepositoryID,
+			RunnerID:               replaced.RunnerID,
+			RunnerName:             replaced.RunnerName,
+			RunnerClass:            replaced.RunnerClass,
+			JitConfigSha256:        replaced.JitConfigSha256,
+			SandboxAllocationID:    replaced.SandboxAllocationID,
+			SandboxExecutionID:     replaced.SandboxExecutionID,
+			SandboxAttemptID:       replaced.SandboxAttemptID,
+			State:                  replaced.State,
+			CreatedAt:              replaced.CreatedAt,
+			UpdatedAt:              pgTime(at),
+		}); err != nil {
+			return "", err
 		}
 		return runnerAssignmentCorrectionSwap, tx.Commit(ctx)
 	}
