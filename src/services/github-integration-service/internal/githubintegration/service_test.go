@@ -6,7 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	sandboxrentalclient "github.com/verself/sandbox-rental-service/client"
 )
 
 func TestServiceReady(t *testing.T) {
@@ -40,6 +47,51 @@ func TestVerifyGitHubSignature(t *testing.T) {
 	}
 }
 
+func TestWebhookHandlerReportsMultipleHeaderProblems(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/github/webhooks", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+
+	(&Service{}).WebhookHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	var doc webhookProblemDocument
+	if err := json.NewDecoder(rec.Body).Decode(&doc); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if doc.Code != "provider_webhook.header_invalid" {
+		t.Fatalf("code = %q, want provider_webhook.header_invalid", doc.Code)
+	}
+	if len(doc.Errors) != 3 {
+		t.Fatalf("len(errors) = %d, want 3: %+v", len(doc.Errors), doc.Errors)
+	}
+}
+
+func TestWebhookHandlerReportsSignatureProblem(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/github/webhooks", strings.NewReader(`{"zen":"practicality"}`))
+	req.Header.Set("X-GitHub-Event", "ping")
+	req.Header.Set("X-GitHub-Delivery", "delivery-1")
+	req.Header.Set("X-Hub-Signature-256", "sha256=00")
+	rec := httptest.NewRecorder()
+
+	(&Service{cfg: Config{WebhookSecret: "webhook-secret"}}).WebhookHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	var doc webhookProblemDocument
+	if err := json.NewDecoder(rec.Body).Decode(&doc); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if doc.Code != "provider_webhook.signature_invalid" {
+		t.Fatalf("code = %q, want provider_webhook.signature_invalid", doc.Code)
+	}
+	if len(doc.Errors) != 1 || doc.Errors[0].Pointer != "header:X-Hub-Signature-256" {
+		t.Fatalf("unexpected errors: %+v", doc.Errors)
+	}
+}
+
 func TestRunnerClassForLabels(t *testing.T) {
 	svc := &Service{cfg: Config{RunnerClassPrefix: "verself-"}}
 	got, err := svc.runnerClassForLabels([]string{"self-hosted", "linux", "verself-ci-large"})
@@ -66,24 +118,20 @@ func TestGitHubCacheManifestRef(t *testing.T) {
 	}
 }
 
-func TestGitHubRunnerNameIsDeterministic(t *testing.T) {
-	first, err := githubRunnerName(456, 111, 2, 789)
+func TestGitHubRunnerNameIsUniquePerCapacityInstance(t *testing.T) {
+	first, err := githubRunnerName(789)
 	if err != nil {
 		t.Fatalf("githubRunnerName: %v", err)
 	}
-	second, err := githubRunnerName(456, 111, 2, 789)
+	second, err := githubRunnerName(789)
 	if err != nil {
 		t.Fatalf("githubRunnerName second call: %v", err)
 	}
-	if first != second {
-		t.Fatalf("runner name not deterministic: %q != %q", first, second)
+	if first == second {
+		t.Fatalf("runner name reused for distinct capacity instances: %q", first)
 	}
-	otherAttempt, err := githubRunnerName(456, 111, 3, 789)
-	if err != nil {
-		t.Fatalf("githubRunnerName other attempt: %v", err)
-	}
-	if otherAttempt == first {
-		t.Fatalf("runner name did not include run attempt: %q", first)
+	if !strings.HasPrefix(first, "verself-789-") || !strings.HasPrefix(second, "verself-789-") {
+		t.Fatalf("runner names do not preserve provider job prefix: %q %q", first, second)
 	}
 }
 
@@ -211,5 +259,68 @@ func TestSandboxObservationFromWebhookUsesOnlyProviderObservedRunner(t *testing.
 	}
 	if assigned.RunnerName == nil || string(*assigned.RunnerName) != "verself-789-abcdef1234" {
 		t.Fatalf("assigned observation runner_name = %v", assigned.RunnerName)
+	}
+}
+
+func TestCancelWorkflowRunUsesRepositoryEndpoint(t *testing.T) {
+	var gotMethod, gotPath, gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+	svc := &Service{
+		cfg:    Config{APIBaseURL: server.URL},
+		client: server.Client(),
+		tokens: map[int64]githubInstallationToken{
+			42: {Token: "cached-token", ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		},
+	}
+	if err := svc.cancelWorkflowRun(context.Background(), 42, "guardian-intelligence/verself", 123); err != nil {
+		t.Fatalf("cancelWorkflowRun: %v", err)
+	}
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method = %s, want POST", gotMethod)
+	}
+	if gotPath != "/repos/guardian-intelligence/verself/actions/runs/123/cancel" {
+		t.Fatalf("path = %s", gotPath)
+	}
+	if gotAuth != "Bearer cached-token" {
+		t.Fatalf("authorization = %s", gotAuth)
+	}
+}
+
+func TestSandboxRunnerCapacityTerminalWithoutAssignment(t *testing.T) {
+	if !sandboxRunnerCapacityTerminalWithoutAssignment(sandboxrentalclient.RunnerAllocationStatus{State: "failed"}) {
+		t.Fatal("failed unassigned allocation was not terminal capacity")
+	}
+	assignedJob := sandboxrentalclient.DecimalUint64("42")
+	if sandboxRunnerCapacityTerminalWithoutAssignment(sandboxrentalclient.RunnerAllocationStatus{
+		State:                 "failed",
+		AssignedProviderJobID: &assignedJob,
+	}) {
+		t.Fatal("assigned allocation should not be treated as failed capacity for origin demand")
+	}
+	attemptState := "lost"
+	if !sandboxRunnerCapacityTerminalWithoutAssignment(sandboxrentalclient.RunnerAllocationStatus{State: "vm_submitted", AttemptState: &attemptState}) {
+		t.Fatal("lost attempt did not fail unassigned capacity")
+	}
+}
+
+func TestRunnerCapacityAssignmentDeadlineExceeded(t *testing.T) {
+	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	if !runnerCapacityAssignmentDeadlineExceeded(pgTime(now), now) {
+		t.Fatal("deadline at now should be expired")
+	}
+	if !runnerCapacityAssignmentDeadlineExceeded(pgTime(now.Add(-time.Second)), now) {
+		t.Fatal("past deadline should be expired")
+	}
+	if runnerCapacityAssignmentDeadlineExceeded(pgTime(now.Add(time.Second)), now) {
+		t.Fatal("future deadline should not be expired")
+	}
+	if runnerCapacityAssignmentDeadlineExceeded(pgtype.Timestamptz{}, now) {
+		t.Fatal("missing deadline should not be expired")
 	}
 }

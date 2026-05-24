@@ -58,10 +58,11 @@ func TestDurableStorageQuotaBytesForPlan(t *testing.T) {
 		tier   string
 		want   uint64
 	}{
-		{name: "default tier", planID: "sandbox-default", tier: "default", want: durableStorageDefaultQuotaBytes},
-		{name: "team tier", tier: "team", want: durableStorageTeamQuotaBytes},
-		{name: "business tier", tier: "business", want: durableStorageBusinessQuotaBytes},
 		{name: "free tier", tier: "free", want: durableStorageFreeQuotaBytes},
+		{name: "sandbox free plan", planID: "sandbox-free", want: durableStorageFreeQuotaBytes},
+		{name: "pro tier", tier: "pro", want: durableStorageProQuotaBytes},
+		{name: "default dogfood plan", planID: "sandbox-default", tier: "default", want: durableStorageProQuotaBytes},
+		{name: "enterprise tier", tier: "enterprise", want: durableStorageEnterpriseQuotaBytes},
 	}
 
 	for _, tt := range tests {

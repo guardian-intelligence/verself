@@ -3,7 +3,12 @@ CREATE TABLE github_webhook_deliveries (
     event_name               TEXT        NOT NULL CHECK (event_name <> ''),
     action                   TEXT        NOT NULL DEFAULT '',
     state                    TEXT        NOT NULL CHECK (state <> ''),
-    failure_reason           TEXT        NOT NULL DEFAULT '',
+    primary_problem_type     TEXT        NOT NULL DEFAULT '',
+    primary_problem_code     TEXT        NOT NULL DEFAULT '',
+    primary_problem_status   INTEGER     NOT NULL DEFAULT 0 CHECK (primary_problem_status BETWEEN 0 AND 599),
+    primary_problem_title    TEXT        NOT NULL DEFAULT '',
+    primary_problem_detail   TEXT        NOT NULL DEFAULT '',
+    problem_count            INTEGER     NOT NULL DEFAULT 0 CHECK (problem_count >= 0),
     payload_sha256           TEXT        NOT NULL CHECK (payload_sha256 <> ''),
     payload_json             JSONB       NOT NULL,
     attempt_count            INTEGER     NOT NULL DEFAULT 0,
@@ -20,6 +25,24 @@ CREATE TABLE github_webhook_deliveries (
     processed_at             TIMESTAMPTZ,
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE github_webhook_delivery_problems (
+    delivery_id              TEXT        NOT NULL REFERENCES github_webhook_deliveries(delivery_id) ON DELETE CASCADE,
+    problem_seq              INTEGER     NOT NULL CHECK (problem_seq > 0),
+    phase                    TEXT        NOT NULL CHECK (phase <> ''),
+    problem_type             TEXT        NOT NULL CHECK (problem_type <> ''),
+    problem_code             TEXT        NOT NULL CHECK (problem_code <> ''),
+    title                    TEXT        NOT NULL CHECK (title <> ''),
+    detail                   TEXT        NOT NULL DEFAULT '',
+    status                   INTEGER     NOT NULL DEFAULT 0 CHECK (status BETWEEN 0 AND 599),
+    retryable                BOOLEAN     NOT NULL DEFAULT false,
+    pointer                  TEXT        NOT NULL DEFAULT '',
+    observed_at              TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (delivery_id, problem_seq)
+);
+
+CREATE INDEX idx_github_webhook_delivery_problems_delivery
+    ON github_webhook_delivery_problems (delivery_id, observed_at);
 
 CREATE TABLE github_accounts (
     provider_account_id      BIGINT      PRIMARY KEY CHECK (provider_account_id > 0),
@@ -232,7 +255,7 @@ CREATE INDEX idx_github_provider_reconciliations_ready
 
 CREATE INDEX idx_github_webhook_deliveries_pending
     ON github_webhook_deliveries (next_attempt_at NULLS FIRST, received_at)
-    WHERE state IN ('verified', 'retryable');
+    WHERE state IN ('accepted', 'retryable');
 
 CREATE TABLE github_workflow_jobs (
     provider_job_id          BIGINT      PRIMARY KEY,
@@ -327,14 +350,8 @@ CREATE TABLE github_provider_demands (
     job_shape_id             TEXT        NOT NULL DEFAULT '',
     trust_class              TEXT        NOT NULL DEFAULT '',
     runner_class             TEXT        NOT NULL DEFAULT '',
-    runner_name              TEXT        NOT NULL CHECK (runner_name <> ''),
-    runner_id                BIGINT      NOT NULL DEFAULT 0,
     state                    TEXT        NOT NULL CHECK (state <> ''),
     failure_reason           TEXT        NOT NULL DEFAULT '',
-    jit_config_sha256        TEXT        NOT NULL DEFAULT '',
-    sandbox_allocation_id    UUID,
-    sandbox_execution_id     UUID,
-    sandbox_attempt_id       UUID,
     last_delivery_id         TEXT        NOT NULL DEFAULT '',
     claimed_at               TIMESTAMPTZ,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -373,33 +390,52 @@ CREATE INDEX idx_github_provider_outbox_ready
     ON github_provider_outbox (next_attempt_at NULLS FIRST, created_at)
     WHERE state IN ('pending', 'retryable');
 
-CREATE TABLE github_runner_registrations (
-    provider_job_id          BIGINT      PRIMARY KEY REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
-    demand_id                UUID        REFERENCES github_provider_demands(demand_id) ON DELETE SET NULL,
+CREATE TABLE github_runner_instances (
+    runner_name              TEXT        PRIMARY KEY CHECK (runner_name <> ''),
+    origin_provider_job_id   BIGINT      NOT NULL REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
+    origin_demand_id         UUID        REFERENCES github_provider_demands(demand_id) ON DELETE SET NULL,
     org_id                   TEXT        NOT NULL DEFAULT '',
     installation_binding_id  UUID,
     repository_binding_id    UUID,
     provider_installation_id BIGINT      NOT NULL DEFAULT 0,
     provider_repository_id   BIGINT      NOT NULL DEFAULT 0,
     runner_id                BIGINT      NOT NULL DEFAULT 0,
-    runner_name              TEXT        NOT NULL CHECK (runner_name <> ''),
     runner_class             TEXT        NOT NULL DEFAULT '',
     jit_config_sha256        TEXT        NOT NULL DEFAULT '',
     sandbox_allocation_id    UUID,
     sandbox_execution_id     UUID,
     sandbox_attempt_id       UUID,
+    assignment_deadline_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     state                    TEXT        NOT NULL CHECK (state <> ''),
     failure_reason           TEXT        NOT NULL DEFAULT '',
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- GitHub can assign a JIT runner to a different queued job with the same
--- labels. Once that registration is cleaned or failed, the runner name must be
--- reusable for the original demand's replacement runner.
-CREATE UNIQUE INDEX idx_github_runner_registrations_runner_name
-    ON github_runner_registrations (runner_name)
-    WHERE state IN ('jit_created', 'sandbox_submitted');
+CREATE UNIQUE INDEX idx_github_runner_instances_runner_id
+    ON github_runner_instances (provider_installation_id, provider_repository_id, runner_id)
+    WHERE runner_id <> 0;
+CREATE INDEX idx_github_runner_instances_origin
+    ON github_runner_instances (origin_provider_job_id, updated_at);
+CREATE INDEX idx_github_runner_instances_capacity
+    ON github_runner_instances (provider_repository_id, runner_class, state, assignment_deadline_at, updated_at);
+
+CREATE TABLE github_job_assignments (
+    provider_job_id          BIGINT      PRIMARY KEY REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
+    runner_name              TEXT        NOT NULL CHECK (runner_name <> ''),
+    runner_id                BIGINT      NOT NULL DEFAULT 0,
+    observed_from            TEXT        NOT NULL CHECK (observed_from <> ''),
+    delivery_id              TEXT        NOT NULL DEFAULT '',
+    observed_at              TIMESTAMPTZ NOT NULL,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX idx_github_job_assignments_runner_name
+    ON github_job_assignments (runner_name);
+CREATE INDEX idx_github_job_assignments_runner_id
+    ON github_job_assignments (runner_id)
+    WHERE runner_id <> 0;
 
 CREATE TABLE github_terminal_job_evidence (
     terminal_evidence_id     UUID        PRIMARY KEY,

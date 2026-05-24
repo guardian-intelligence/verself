@@ -77,7 +77,7 @@ LEFT JOIN LATERAL (
         j.head_sha
     FROM runner_allocations ga
     LEFT JOIN runner_job_bindings gb ON gb.allocation_id = ga.allocation_id
-    LEFT JOIN runner_jobs j ON j.provider = ga.provider AND j.provider_job_id = COALESCE(gb.provider_job_id, ga.requested_for_provider_job_id)
+    LEFT JOIN runner_jobs j ON j.provider = ga.provider AND j.provider_job_id = COALESCE(gb.provider_job_id, ga.origin_provider_job_id)
     WHERE ga.execution_id = e.execution_id
     ORDER BY j.updated_at DESC, j.provider_job_id DESC
     LIMIT 1
@@ -184,7 +184,7 @@ LEFT JOIN LATERAL (
         j.head_sha
     FROM runner_allocations ga
     LEFT JOIN runner_job_bindings gb ON gb.allocation_id = ga.allocation_id
-    LEFT JOIN runner_jobs j ON j.provider = ga.provider AND j.provider_job_id = COALESCE(gb.provider_job_id, ga.requested_for_provider_job_id)
+    LEFT JOIN runner_jobs j ON j.provider = ga.provider AND j.provider_job_id = COALESCE(gb.provider_job_id, ga.origin_provider_job_id)
     WHERE ga.execution_id = e.execution_id
     ORDER BY j.updated_at DESC, j.provider_job_id DESC
     LIMIT 1

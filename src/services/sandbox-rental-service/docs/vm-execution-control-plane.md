@@ -32,8 +32,10 @@ State model:
 - `runner_provider_repositories` binds provider repository IDs to Verself
   org/source repository ownership.
 - `runner_jobs` are provider demand facts from GitHub webhooks.
-- `runner_allocations` are Verself capacity records for runner VMs.
+- `runner_allocations` are Verself capacity records for runner VMs. Their
+  `origin_provider_job_id` records the demand that caused capacity creation.
 - `runner_job_bindings` are the authoritative job-to-runner assignment records.
+  Their `provider_job_id` records the actual job observed on that runner.
 - Golden artifact state belongs beside executions: cache declarations, stable
   job shape rows, scoped immutable durable generation rows, golden VM manifests,
   current pointers, and durable operations.

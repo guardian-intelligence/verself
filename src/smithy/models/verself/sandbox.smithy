@@ -84,6 +84,7 @@ service SandboxRentalInternal {
     operations: [
         InternalRegisterRunnerRepository,
         InternalSubmitRunnerJob,
+        InternalGetRunnerAllocation,
         InternalObserveRunnerJob,
         InternalObserveRunnerWorkflowRun,
         InternalRequestGoldenSnapshotBarrier
@@ -1593,6 +1594,20 @@ operation InternalSubmitRunnerJob {
     errors: [ValidationFailedError, PermissionDeniedError, ConflictError, ServiceUnavailableError]
 }
 
+@readonly
+@http(method: "GET", uri: "/internal/v1/runner/allocations/{allocation_id}", code: 200)
+@identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
+@authz(permission: RunnerJobObservePermission, organization: {source: "request_id"})
+@audit(event: RunnerJobObserveAuditEvent, resource: RunnerRepository, action: "read")
+@rateLimit(bucket: "internal_read")
+@requestBudget(maxBytes: 1024)
+@sdk(module: "sandboxInternal.runnerAllocations", method: "get", paginated: false, retryable: true)
+operation InternalGetRunnerAllocation {
+    input: InternalGetRunnerAllocationInput
+    output: InternalGetRunnerAllocationOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ResourceNotFoundError, ServiceUnavailableError]
+}
+
 @http(method: "POST", uri: "/internal/v1/runner/jobs/observations", code: 202)
 @identity(mode: "spiffe_mtls", audience: "sandbox-rental-service", principals: ["workload"])
 @authz(permission: RunnerJobObservePermission, organization: {source: "request_id"})
@@ -1765,6 +1780,44 @@ structure InternalSubmitRunnerJobOutput {
 
     @required
     created: Boolean
+}
+
+structure InternalGetRunnerAllocationInput {
+    @required
+    @httpLabel
+    allocation_id: AttemptId
+}
+
+structure RunnerAllocationStatus {
+    @required
+    allocation_id: AttemptId
+
+    @required
+    provider: Provider
+
+    @required
+    provider_repository_id: ProviderRepositoryId
+
+    provider_installation_id: DecimalUint64
+    runner_class: RunnerLabel
+    runner_name: RunnerName
+    runner_id: DecimalUint64
+    origin_provider_job_id: DecimalUint64
+    assigned_provider_job_id: DecimalUint64
+    execution_id: ExecutionId
+    attempt_id: AttemptId
+
+    @required
+    state: String
+
+    failure_reason: String
+    execution_state: String
+    attempt_state: String
+}
+
+structure InternalGetRunnerAllocationOutput {
+    @required
+    allocation: RunnerAllocationStatus
 }
 
 structure InternalObserveRunnerJobInput {

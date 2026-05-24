@@ -90,6 +90,24 @@ type ProviderRunnerJobObservationResult struct {
 	AttemptID    uuid.UUID
 }
 
+type ProviderRunnerAllocationStatus struct {
+	AllocationID           uuid.UUID
+	Provider               string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RunnerClass            string
+	RunnerName             string
+	RunnerID               int64
+	OriginProviderJobID    int64
+	AssignedProviderJobID  int64
+	ExecutionID            uuid.UUID
+	AttemptID              uuid.UUID
+	State                  string
+	FailureReason          string
+	ExecutionState         string
+	AttemptState           string
+}
+
 func (s *Service) SubmitProviderRunnerJob(ctx context.Context, req ProviderRunnerJobSubmission) (ProviderRunnerJobSubmissionResult, error) {
 	ctx, span := tracer.Start(ctx, "sandbox-rental.runner_job.submit")
 	defer span.End()
@@ -162,23 +180,23 @@ func (s *Service) SubmitProviderRunnerJob(ctx context.Context, req ProviderRunne
 	allocationID := uuid.New()
 	now := time.Now().UTC()
 	rows, err := s.storeQueries().InsertProviderRunnerAllocation(ctx, store.InsertProviderRunnerAllocationParams{
-		AllocationID:              allocationID,
-		Provider:                  req.Observation.Provider,
-		ProviderInstallationID:    job.ProviderInstallationID,
-		ProviderRepositoryID:      job.ProviderRepositoryID,
-		RunnerClass:               runnerClass,
-		RunnerName:                req.RunnerName,
-		ProviderRunnerID:          req.RunnerID,
-		State:                     "jit_created",
-		RequestedForProviderJobID: job.ProviderJobID,
-		AllocateBy:                pgTime(now.Add(runnerAllocateDeadline)),
-		JitBy:                     pgTime(now.Add(runnerBootstrapDeadline)),
-		VmSubmittedBy:             pgTime(now.Add(runnerSubmitDeadline)),
-		RunnerListeningBy:         pgTime(now.Add(runnerListeningDeadline)),
-		AssignmentBy:              pgTime(now.Add(runnerAssignmentDeadline)),
-		VmExitBy:                  pgTime(now.Add(3 * time.Hour)),
-		CleanupBy:                 pgTime(now.Add(3 * time.Hour)),
-		CreatedAt:                 pgTime(now),
+		AllocationID:           allocationID,
+		Provider:               req.Observation.Provider,
+		ProviderInstallationID: job.ProviderInstallationID,
+		ProviderRepositoryID:   job.ProviderRepositoryID,
+		RunnerClass:            runnerClass,
+		RunnerName:             req.RunnerName,
+		ProviderRunnerID:       req.RunnerID,
+		State:                  "jit_created",
+		OriginProviderJobID:    job.ProviderJobID,
+		AllocateBy:             pgTime(now.Add(runnerAllocateDeadline)),
+		JitBy:                  pgTime(now.Add(runnerBootstrapDeadline)),
+		VmSubmittedBy:          pgTime(now.Add(runnerSubmitDeadline)),
+		RunnerListeningBy:      pgTime(now.Add(runnerListeningDeadline)),
+		AssignmentBy:           pgTime(now.Add(runnerAssignmentDeadline)),
+		VmExitBy:               pgTime(now.Add(3 * time.Hour)),
+		CleanupBy:              pgTime(now.Add(3 * time.Hour)),
+		CreatedAt:              pgTime(now),
 	})
 	if err != nil {
 		return ProviderRunnerJobSubmissionResult{}, err
@@ -327,15 +345,6 @@ func (s *Service) upsertProviderRunnerJob(ctx context.Context, obs ProviderRunne
 	}); err != nil {
 		return err
 	}
-	if obs.Provider == RunnerProviderGitHub && isActiveFlightStatus(obs.Status) {
-		orgID, err := projectFlightJob(ctx, s.storeQueries(), obs, now)
-		if err != nil {
-			return err
-		}
-		if orgID != "" {
-			go s.refreshFlightBaseline(context.WithoutCancel(ctx), obs.ProviderJobID, orgID, obs.RepositoryFullName, obs.WorkflowName, obs.JobName)
-		}
-	}
 	return nil
 }
 
@@ -416,6 +425,36 @@ func (s *Service) bindProviderRunnerJob(ctx context.Context, provider string, pr
 		AllocationID: allocationID,
 		ExecutionID:  uuidFromPtr(submission.ExecutionID),
 		AttemptID:    uuidFromPtr(submission.AttemptID),
+	}, nil
+}
+
+func (s *Service) GetProviderRunnerAllocationStatus(ctx context.Context, allocationID uuid.UUID) (ProviderRunnerAllocationStatus, error) {
+	if s == nil || s.PGX == nil {
+		return ProviderRunnerAllocationStatus{}, ErrRunnerUnavailable
+	}
+	if allocationID == uuid.Nil {
+		return ProviderRunnerAllocationStatus{}, fmt.Errorf("%w: allocation_id is required", ErrRunnerUnavailable)
+	}
+	row, err := s.storeQueries().GetRunnerAllocationStatus(ctx, store.GetRunnerAllocationStatusParams{AllocationID: allocationID})
+	if err != nil {
+		return ProviderRunnerAllocationStatus{}, err
+	}
+	return ProviderRunnerAllocationStatus{
+		AllocationID:           row.AllocationID,
+		Provider:               row.Provider,
+		ProviderInstallationID: row.ProviderInstallationID,
+		ProviderRepositoryID:   row.ProviderRepositoryID,
+		RunnerClass:            row.RunnerClass,
+		RunnerName:             row.RunnerName,
+		RunnerID:               row.ProviderRunnerID,
+		OriginProviderJobID:    row.OriginProviderJobID,
+		AssignedProviderJobID:  row.AssignedProviderJobID,
+		ExecutionID:            uuidFromPtr(row.ExecutionID),
+		AttemptID:              uuidFromPtr(row.AttemptID),
+		State:                  row.State,
+		FailureReason:          row.FailureReason,
+		ExecutionState:         row.ExecutionState,
+		AttemptState:           row.AttemptState,
 	}, nil
 }
 

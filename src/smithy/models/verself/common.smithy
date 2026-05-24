@@ -105,6 +105,15 @@ string ProblemType
 @length(max: 4096)
 string ProblemDetail
 
+/// Stable phase name for a problem that occurred inside a multi-step operation.
+@length(min: 1, max: 160)
+@pattern("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$")
+string ProblemPhase
+
+/// JSON pointer, HTTP binding pointer, or provider field path for a problem occurrence.
+@length(min: 1, max: 512)
+string ProblemPointer
+
 /// Marks a string shape as the declaration site for a product permission.
 @trait(selector: "string")
 structure permission {
@@ -386,6 +395,50 @@ structure ProblemDetails {
     traceparent: TraceParent
 }
 
+/// One typed problem found while accepting or processing a multi-step operation.
+structure ProblemOccurrence {
+    @required
+    @protoField(number: 1)
+    type: ProblemType
+
+    @required
+    @protoField(number: 2)
+    code: ProblemCode
+
+    @required
+    @protoField(number: 3)
+    title: String
+
+    @protoField(number: 4)
+    detail: ProblemDetail
+
+    @protoField(number: 5)
+    status: Integer
+
+    @protoField(number: 6)
+    phase: ProblemPhase
+
+    @protoField(number: 7)
+    retryable: Boolean
+
+    @protoField(number: 8)
+    pointer: ProblemPointer
+
+    @protoField(number: 9)
+    observed_at: DateTime
+}
+
+list ProblemOccurrences {
+    member: ProblemOccurrence
+}
+
+/// RFC 9457 problem document that can carry multiple typed problem occurrences.
+@mixin
+structure MultiProblemDetails with [ProblemDetails] {
+    @protoField(number: 100)
+    errors: ProblemOccurrences
+}
+
 @error("client")
 @httpError(400)
 @problem(type: "urn:verself:problem:request:validation_failed", code: "request.validation_failed")
@@ -430,3 +483,23 @@ structure RateLimitedError with [ProblemDetails] {}
 @httpError(503)
 @problem(type: "urn:verself:problem:service:unavailable", code: "service.unavailable")
 structure ServiceUnavailableError with [ProblemDetails] {}
+
+@error("client")
+@httpError(400)
+@problem(type: "urn:verself:problem:provider_webhook:invalid_request", code: "provider_webhook.invalid_request")
+structure ProviderWebhookInvalidRequestError with [MultiProblemDetails] {}
+
+@error("client")
+@httpError(401)
+@problem(type: "urn:verself:problem:provider_webhook:signature_invalid", code: "provider_webhook.signature_invalid")
+structure ProviderWebhookSignatureInvalidError with [MultiProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "urn:verself:problem:provider_webhook:delivery_replay_conflict", code: "provider_webhook.delivery_replay_conflict")
+structure ProviderWebhookDeliveryReplayConflictError with [MultiProblemDetails] {}
+
+@error("server")
+@httpError(503)
+@problem(type: "urn:verself:problem:provider_webhook:inbox_unavailable", code: "provider_webhook.inbox_unavailable")
+structure ProviderWebhookInboxUnavailableError with [MultiProblemDetails] {}

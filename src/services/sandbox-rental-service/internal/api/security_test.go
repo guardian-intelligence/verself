@@ -138,6 +138,7 @@ func TestOpenAPIInternalProjectionIsMutualTLSOnly(t *testing.T) {
 	expected := map[string]internalPolicyExpectation{
 		"internal-register-runner-repository":      {auditEvent: "sandbox.runner_repository.register", orgScope: "body_org_id"},
 		"internal-submit-runner-job":               {auditEvent: "sandbox.runner_job.submit", orgScope: "request_id"},
+		"internal-get-runner-allocation":           {auditEvent: "sandbox.runner_job.observe", orgScope: "request_id"},
 		"internal-observe-runner-job":              {auditEvent: "sandbox.runner_job.observe", orgScope: "request_id"},
 		"internal-observe-runner-workflow-run":     {auditEvent: "sandbox.runner_job.observe", orgScope: "request_id"},
 		"internal-request-golden-snapshot-barrier": {auditEvent: "sandbox.golden_snapshot_barrier.request", orgScope: "request_id"},

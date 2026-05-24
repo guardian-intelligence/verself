@@ -27,7 +27,7 @@ var tracer = otel.Tracer("vm-orchestrator")
 
 const (
 	defaultTrustClass       = "trusted"
-	defaultJailerRoot       = "/vspool/jailer"
+	defaultJailerRoot       = "/vspool/checkpoints/jailer"
 	defaultSnapshotCacheDir = "/vspool/checkpoints/firecracker-snapshot-cache"
 	leaseBootTimeout        = 45 * time.Second
 	firecrackerStepTimeout  = 5 * time.Second
@@ -333,7 +333,7 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 		base.JailerRoot = defaultJailerRoot
 	}
 	if base.SnapshotCacheDir == "" {
-		base.SnapshotCacheDir = defaultSnapshotCacheDir
+		base.SnapshotCacheDir = snapshotCacheDirForJailerRoot(base.JailerRoot)
 	}
 	o := &Orchestrator{cfg: base, logger: logger, ops: DirectPrivOps{}}
 	o.roots = zfs.Roots{
@@ -349,6 +349,14 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	}
 	o.volumes = zfs.NewVolumeLifecycle(o.roots, o.ops, logger)
 	return o
+}
+
+func snapshotCacheDirForJailerRoot(jailerRoot string) string {
+	jailerRoot = filepath.Clean(strings.TrimSpace(jailerRoot))
+	if jailerRoot == "" || jailerRoot == "." {
+		return defaultSnapshotCacheDir
+	}
+	return filepath.Join(filepath.Dir(jailerRoot), "firecracker-snapshot-cache")
 }
 
 // normalizeLeaseSpec fills in defaults and re-validates the VM shape

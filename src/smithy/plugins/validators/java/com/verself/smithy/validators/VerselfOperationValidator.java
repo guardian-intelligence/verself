@@ -30,6 +30,16 @@ public final class VerselfOperationValidator extends AbstractValidator {
   private static final ShapeId AUTHZ = ShapeId.from("verself.common.v1#authz");
   private static final ShapeId IDENTITY = ShapeId.from("verself.common.v1#identity");
   private static final ShapeId PROBLEM = ShapeId.from("verself.common.v1#problem");
+  private static final ShapeId MULTI_PROBLEM_DETAILS =
+      ShapeId.from("verself.common.v1#MultiProblemDetails");
+  private static final ShapeId PROVIDER_WEBHOOK_INVALID_REQUEST =
+      ShapeId.from("verself.common.v1#ProviderWebhookInvalidRequestError");
+  private static final ShapeId PROVIDER_WEBHOOK_SIGNATURE_INVALID =
+      ShapeId.from("verself.common.v1#ProviderWebhookSignatureInvalidError");
+  private static final ShapeId PROVIDER_WEBHOOK_DELIVERY_REPLAY_CONFLICT =
+      ShapeId.from("verself.common.v1#ProviderWebhookDeliveryReplayConflictError");
+  private static final ShapeId PROVIDER_WEBHOOK_INBOX_UNAVAILABLE =
+      ShapeId.from("verself.common.v1#ProviderWebhookInboxUnavailableError");
   private static final ShapeId RATE_LIMIT = ShapeId.from("verself.common.v1#rateLimit");
   private static final ShapeId REQUEST_BUDGET = ShapeId.from("verself.common.v1#requestBudget");
   private static final ShapeId SDK = ShapeId.from("verself.common.v1#sdk");
@@ -70,7 +80,7 @@ public final class VerselfOperationValidator extends AbstractValidator {
   private void validateOperation(
       Model model, OperationShape operation, List<ValidationEvent> events) {
     requireTrait(operation, HTTP, "@http", events);
-    requireTrait(operation, IDENTITY, "@identity", events);
+    ObjectNode identity = requireObjectTrait(operation, IDENTITY, "@identity", events).orElse(null);
     ObjectNode authz = requireObjectTrait(operation, AUTHZ, "@authz", events).orElse(null);
     requireTrait(operation, AUDIT, "@audit", events);
     requireTrait(operation, RATE_LIMIT, "@rateLimit", events);
@@ -92,6 +102,8 @@ public final class VerselfOperationValidator extends AbstractValidator {
     input.ifPresent(shape -> validateIdempotency(operation, shape, events));
     input.ifPresent(shape -> validateOrganizationBinding(model, operation, authz, shape, events));
     input.ifPresent(shape -> validateRequestBudget(operation, requestBudget, shape, events));
+    input.ifPresent(
+        shape -> validateProviderWebhookOperation(model, operation, identity, shape, events));
     validateSdk(operation, sdk, events);
   }
 
@@ -305,6 +317,60 @@ public final class VerselfOperationValidator extends AbstractValidator {
             });
   }
 
+  private void validateProviderWebhookOperation(
+      Model model,
+      OperationShape operation,
+      ObjectNode identity,
+      StructureShape input,
+      List<ValidationEvent> events) {
+    if (identity == null || !stringMember(identity, "mode").orElse("").equals("provider_webhook")) {
+      return;
+    }
+
+    long payloads =
+        input.getAllMembers().values().stream()
+            .filter(member -> member.hasTrait(HTTP_PAYLOAD))
+            .count();
+    if (payloads != 1) {
+      events.add(error(operation, "Provider webhook operations must bind one raw @httpPayload."));
+    }
+    requireSignatureHeader(input, operation, events);
+
+    for (ShapeId errorId :
+        List.of(
+            PROVIDER_WEBHOOK_INVALID_REQUEST,
+            PROVIDER_WEBHOOK_SIGNATURE_INVALID,
+            PROVIDER_WEBHOOK_DELIVERY_REPLAY_CONFLICT,
+            PROVIDER_WEBHOOK_INBOX_UNAVAILABLE)) {
+      if (!operation.getErrorsSet().contains(errorId)) {
+        events.add(
+            error(
+                operation, "Provider webhook operations must declare " + errorId.getName() + "."));
+      }
+      boolean hasMultiProblemDetails =
+          model
+              .getShape(errorId)
+              .flatMap(Shape::asStructureShape)
+              .filter(shape -> hasMixin(shape, MULTI_PROBLEM_DETAILS))
+              .isPresent();
+      if (!hasMultiProblemDetails) {
+        events.add(error(operation, errorId.getName() + " must include MultiProblemDetails."));
+      }
+    }
+  }
+
+  private void requireSignatureHeader(
+      StructureShape input, OperationShape operation, List<ValidationEvent> events) {
+    boolean found =
+        input.getAllMembers().values().stream()
+            .map(member -> stringTrait(member, HTTP_HEADER).orElse(""))
+            .anyMatch(header -> header.toLowerCase().contains("signature"));
+    if (!found) {
+      events.add(
+          error(operation, "Provider webhook operations must bind a provider signature header."));
+    }
+  }
+
   private static boolean hasRequestBody(StructureShape input) {
     for (MemberShape member : input.getAllMembers().values()) {
       if (member.hasTrait(HTTP_PAYLOAD) || !isNonDocumentRequestBinding(member)) {
@@ -340,6 +406,10 @@ public final class VerselfOperationValidator extends AbstractValidator {
     return false;
   }
 
+  private static boolean hasMixin(StructureShape shape, ShapeId mixinId) {
+    return shape.getMixins().contains(mixinId);
+  }
+
   private static boolean isVerselfShape(Shape shape) {
     String namespace = shape.getId().getNamespace();
     return namespace.startsWith(VERSELF_NAMESPACE_PREFIX) && !namespace.equals("verself.common.v1");
@@ -351,6 +421,14 @@ public final class VerselfOperationValidator extends AbstractValidator {
 
   private static Optional<String> stringMember(ObjectNode node, String member) {
     return node.getStringMember(member).map(string -> string.getValue());
+  }
+
+  private static Optional<String> stringTrait(Shape shape, ShapeId traitId) {
+    return shape
+        .findTrait(traitId)
+        .map(Trait::toNode)
+        .flatMap(Node::asStringNode)
+        .map(string -> string.getValue());
   }
 
   private static Optional<Long> longMember(ObjectNode node, String member) {

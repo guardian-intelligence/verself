@@ -199,8 +199,8 @@ the arc to zero, so the band heights are computed px, padding inside):
 
 The widget tracks only what the product tracks: a run's elapsed time against
 the repository's historical p50 for the critical-path job. There is no cold,
-diverted, or landed phase. A finished run leaves the active Electric shape and
-its card unmounts; completion is never rendered.
+diverted, or landed phase. The current console uses fixtures until the flight
+data model is real; completion is still not rendered as a separate phase.
 
 Pipeline:
 
@@ -363,8 +363,8 @@ to perturb the marker.
 
 ## Mocking
 
-No backend. All states are reachable through the console index search params,
-auth-gated and opt-in (live is the default):
+No backend. The default console state is a fixture, and all states are
+reachable through the console index search params:
 
 - `?flight=no-build | boarding | building-on-time | running-late` — named
   fixtures pushed through `model.ts` as raw string rows, exercising the data
@@ -381,7 +381,7 @@ auth-gated and opt-in (live is the default):
 
 | Concern                                                                    | Module              | Pure |
 | -------------------------------------------------------------------------- | ------------------- | ---- |
-| Electric row → `Flight`                                                    | `model.ts`          | yes  |
+| Raw flight row → `Flight`                                                  | `model.ts`          | yes  |
 | classify `Phase`, `project` → `Projection`, `MORPH` table, monotone gate   | `phase.ts`          | yes  |
 | conflating cell, sampler, FSM driver (`useFlightMachine`)                  | `machine.ts`        | no   |
 | bezier point/tangent/split                                                 | `geometry.ts`       | yes  |

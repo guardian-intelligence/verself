@@ -83,7 +83,7 @@ job "vm-orchestrator" {
           "--kernel-path", "/var/lib/verself/guest-images/vmlinux",
           "--firecracker-bin", "/usr/local/bin/firecracker",
           "--jailer-bin", "/usr/local/bin/jailer",
-          "--jailer-root", "/vspool/jailer",
+          "--jailer-root", "/vspool/checkpoints/jailer",
           "--snapshot-cache-dir", "/vspool/checkpoints/firecracker-snapshot-cache",
           "--firecracker-snapshots", "true",
           "--jailer-uid", "10000",

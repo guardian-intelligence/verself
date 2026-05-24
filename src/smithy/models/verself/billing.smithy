@@ -23,6 +23,10 @@ use verself.common.v1#IdempotencyKey
 use verself.common.v1#IdempotencyPayloadMismatchError
 use verself.common.v1#PaymentRequiredError
 use verself.common.v1#PermissionDeniedError
+use verself.common.v1#ProviderWebhookDeliveryReplayConflictError
+use verself.common.v1#ProviderWebhookInboxUnavailableError
+use verself.common.v1#ProviderWebhookInvalidRequestError
+use verself.common.v1#ProviderWebhookSignatureInvalidError
 use verself.common.v1#RateLimitedError
 use verself.common.v1#ResourceName
 use verself.common.v1#ResourceNotFoundError
@@ -1379,7 +1383,13 @@ structure VoidWindowOutput {
 operation StripeWebhook {
     input: StripeWebhookInput
     output: StripeWebhookOutput
-    errors: [ValidationFailedError, ServiceUnavailableError]
+    errors: [
+        ProviderWebhookInvalidRequestError,
+        ProviderWebhookSignatureInvalidError,
+        ProviderWebhookDeliveryReplayConflictError,
+        ProviderWebhookInboxUnavailableError,
+        ServiceUnavailableError
+    ]
 }
 
 structure StripeWebhookInput {

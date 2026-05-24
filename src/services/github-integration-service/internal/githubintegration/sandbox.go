@@ -16,29 +16,29 @@ import (
 
 func (s *Service) insertTerminalEvidence(ctx context.Context, job githubWorkflowJob, deliveryID string) error {
 	evidenceID := uuid.New()
-	demand, err := s.queries.GetProviderDemandForJob(ctx, store.GetProviderDemandForJobParams{ProviderJobID: job.ID})
+	assignment, err := s.queries.GetJobAssignmentContext(ctx, store.GetJobAssignmentContextParams{ProviderJobID: job.ID})
 	if errors.Is(err, pgx.ErrNoRows) {
-		demand = store.GetProviderDemandForJobRow{}
+		assignment = store.GetJobAssignmentContextRow{}
 	} else if err != nil {
 		return err
 	}
-	trustClass := demand.TrustClass
+	trustClass := assignment.TrustClass
 	terminalEvidenceID, err := s.queries.InsertTerminalJobEvidence(ctx, store.InsertTerminalJobEvidenceParams{
 		TerminalEvidenceID:     pgUUID(evidenceID),
 		ProviderJobID:          job.ID,
-		OrgID:                  demand.OrgID,
-		InstallationBindingID:  demand.InstallationBindingID,
-		RepositoryBindingID:    demand.RepositoryBindingID,
-		ProviderInstallationID: demand.ProviderInstallationID,
-		ProviderRepositoryID:   demand.ProviderRepositoryID,
+		OrgID:                  assignment.OrgID,
+		InstallationBindingID:  assignment.InstallationBindingID,
+		RepositoryBindingID:    assignment.RepositoryBindingID,
+		ProviderInstallationID: assignment.ProviderInstallationID,
+		ProviderRepositoryID:   assignment.ProviderRepositoryID,
 		ProviderRunID:          job.RunID,
 		ProviderRunAttempt:     job.RunAttempt,
-		SandboxAllocationID:    demand.SandboxAllocationID,
-		SandboxExecutionID:     demand.SandboxExecutionID,
-		SandboxAttemptID:       demand.SandboxAttemptID,
-		RunnerID:               demand.RunnerID,
-		RunnerName:             demand.RunnerName,
-		JobShapeID:             demand.JobShapeID,
+		SandboxAllocationID:    assignment.SandboxAllocationID,
+		SandboxExecutionID:     assignment.SandboxExecutionID,
+		SandboxAttemptID:       assignment.SandboxAttemptID,
+		RunnerID:               assignment.RunnerID,
+		RunnerName:             assignment.RunnerName,
+		JobShapeID:             assignment.JobShapeID,
 		TrustClass:             trustClass,
 		Status:                 job.Status,
 		Conclusion:             job.Conclusion,
@@ -49,37 +49,43 @@ func (s *Service) insertTerminalEvidence(ctx context.Context, job githubWorkflow
 	if err != nil {
 		return err
 	}
+	if err := s.queries.MarkProviderDemandTerminal(ctx, store.MarkProviderDemandTerminalParams{
+		ProviderJobID: job.ID,
+		UpdatedAt:     pgTime(time.Now().UTC()),
+	}); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	evidenceMeta := webhookMetadata{
 		EventName:             "workflow_job",
 		DeliveryID:            deliveryID,
-		OrgID:                 demand.OrgID,
-		InstallationBindingID: uuidFromPG(demand.InstallationBindingID),
-		RepositoryBindingID:   uuidFromPG(demand.RepositoryBindingID),
-		InstallationID:        demand.ProviderInstallationID,
-		RepositoryID:          demand.ProviderRepositoryID,
-		RepositoryFullName:    demand.RepositoryFullName,
+		OrgID:                 assignment.OrgID,
+		InstallationBindingID: uuidFromPG(assignment.InstallationBindingID),
+		RepositoryBindingID:   uuidFromPG(assignment.RepositoryBindingID),
+		InstallationID:        assignment.ProviderInstallationID,
+		RepositoryID:          assignment.ProviderRepositoryID,
+		RepositoryFullName:    assignment.RepositoryFullName,
 		RunID:                 job.RunID,
 		RunAttempt:            job.RunAttempt,
 		JobID:                 job.ID,
-		RunnerID:              demand.RunnerID,
-		RunnerName:            demand.RunnerName,
-		RunnerClass:           demand.RunnerClass,
-		JobShapeID:            demand.JobShapeID,
+		RunnerID:              assignment.RunnerID,
+		RunnerName:            assignment.RunnerName,
+		RunnerClass:           assignment.RunnerClass,
+		JobShapeID:            assignment.JobShapeID,
 		TrustClass:            trustClass,
-		ExecutionID:           uuidFromPG(demand.SandboxExecutionID),
-		AttemptID:             uuidFromPG(demand.SandboxAttemptID),
+		ExecutionID:           uuidFromPG(assignment.SandboxExecutionID),
+		AttemptID:             uuidFromPG(assignment.SandboxAttemptID),
 	}
 	s.writeEvent(ctx, githubEventFromMetadata(evidenceMeta, "github.terminal_evidence.emitted", job.Conclusion, "", now, now))
 	if strings.TrimSpace(job.Conclusion) != "success" {
 		return nil
 	}
 	var state, reason string
-	if !demand.SandboxExecutionID.Valid || !demand.SandboxAttemptID.Valid || demand.ProviderRepositoryID == 0 || demand.ProviderRunAttempt == 0 {
+	if !assignment.SandboxExecutionID.Valid || !assignment.SandboxAttemptID.Valid || assignment.ProviderRepositoryID == 0 || assignment.ProviderRunAttempt == 0 {
 		state = "blocked"
 		reason = "sandbox_identity_missing"
 	} else {
-		sandboxState, sandboxReason := s.requestSandboxGoldenSnapshotBarrier(ctx, job, demand)
+		sandboxState, sandboxReason := s.requestSandboxGoldenSnapshotBarrier(ctx, job, assignment)
 		state = sandboxState
 		reason = sandboxReason
 	}
@@ -87,14 +93,14 @@ func (s *Service) insertTerminalEvidence(ctx context.Context, job githubWorkflow
 		BarrierID:             pgUUID(uuid.New()),
 		TerminalEvidenceID:    terminalEvidenceID,
 		ProviderJobID:         job.ID,
-		OrgID:                 demand.OrgID,
-		InstallationBindingID: demand.InstallationBindingID,
-		RepositoryBindingID:   demand.RepositoryBindingID,
+		OrgID:                 assignment.OrgID,
+		InstallationBindingID: assignment.InstallationBindingID,
+		RepositoryBindingID:   assignment.RepositoryBindingID,
 		ProviderRunID:         job.RunID,
 		ProviderRunAttempt:    job.RunAttempt,
-		SandboxExecutionID:    demand.SandboxExecutionID,
-		SandboxAttemptID:      demand.SandboxAttemptID,
-		JobShapeID:            demand.JobShapeID,
+		SandboxExecutionID:    assignment.SandboxExecutionID,
+		SandboxAttemptID:      assignment.SandboxAttemptID,
+		JobShapeID:            assignment.JobShapeID,
 		TrustClass:            trustClass,
 		State:                 state,
 		FailureReason:         reason,
@@ -107,27 +113,27 @@ func (s *Service) insertTerminalEvidence(ctx context.Context, job githubWorkflow
 	return nil
 }
 
-func (s *Service) requestSandboxGoldenSnapshotBarrier(ctx context.Context, job githubWorkflowJob, demand store.GetProviderDemandForJobRow) (string, string) {
-	executionID := uuidFromPG(demand.SandboxExecutionID)
-	attemptID := uuidFromPG(demand.SandboxAttemptID)
+func (s *Service) requestSandboxGoldenSnapshotBarrier(ctx context.Context, job githubWorkflowJob, assignment store.GetJobAssignmentContextRow) (string, string) {
+	executionID := uuidFromPG(assignment.SandboxExecutionID)
+	attemptID := uuidFromPG(assignment.SandboxAttemptID)
 	resp, err := s.cfg.Sandbox.InternalRequestGoldenSnapshotBarrier(ctx, sandboxrentalclient.InternalRequestGoldenSnapshotBarrierRequest{
 		Body: sandboxrentalclient.InternalRequestGoldenSnapshotBarrierInputBody{
 			Evidence: sandboxrentalclient.GoldenSnapshotBarrierEvidence{
 				Provider:               "github",
-				ProviderInstallationID: decimalPtr(demand.ProviderInstallationID),
-				ProviderRepositoryID:   sandboxrentalclient.ProviderRepositoryId(fmt.Sprintf("%d", demand.ProviderRepositoryID)),
+				ProviderInstallationID: decimalPtr(assignment.ProviderInstallationID),
+				ProviderRepositoryID:   sandboxrentalclient.ProviderRepositoryId(fmt.Sprintf("%d", assignment.ProviderRepositoryID)),
 				ProviderRunID:          sandboxrentalclient.DecimalUint64(fmt.Sprintf("%d", job.RunID)),
 				ProviderRunAttempt:     sandboxrentalclient.DecimalUint64(fmt.Sprintf("%d", job.RunAttempt)),
 				ProviderJobID:          sandboxrentalclient.DecimalUint64(fmt.Sprintf("%d", job.ID)),
-				RepositoryFullName:     stringPtr[sandboxrentalclient.RepositoryFullName](demand.RepositoryFullName),
+				RepositoryFullName:     stringPtr[sandboxrentalclient.RepositoryFullName](assignment.RepositoryFullName),
 				HeadSHA:                stringPtr[sandboxrentalclient.HeadSha](job.HeadSHA),
 				Conclusion:             stringPtr[string](job.Conclusion),
-				RunnerID:               decimalPtr(demand.RunnerID),
-				RunnerName:             stringPtr[sandboxrentalclient.RunnerName](demand.RunnerName),
+				RunnerID:               decimalPtr(assignment.RunnerID),
+				RunnerName:             stringPtr[sandboxrentalclient.RunnerName](assignment.RunnerName),
 				ExecutionID:            sandboxrentalclient.ExecutionId(executionID.String()),
 				AttemptID:              sandboxrentalclient.AttemptId(attemptID.String()),
-				JobShapeID:             stringPtr[sandboxrentalclient.JobShapeId](demand.JobShapeID),
-				TrustClass:             stringPtr[sandboxrentalclient.TrustClass](demand.TrustClass),
+				JobShapeID:             stringPtr[sandboxrentalclient.JobShapeId](assignment.JobShapeID),
+				TrustClass:             stringPtr[sandboxrentalclient.TrustClass](assignment.TrustClass),
 				PromotionPolicy:        stringPtr[sandboxrentalclient.PromotionPolicy]("protected_branch_success"),
 			},
 		},
@@ -148,6 +154,8 @@ func (s *Service) requestSandboxGoldenSnapshotBarrier(ctx context.Context, job g
 func sandboxProblem(resp any) string {
 	switch value := resp.(type) {
 	case *sandboxrentalclient.InternalSubmitRunnerJobResponse:
+		return sandboxProblemDetail(value.StatusCode, value.Problem, value.Body)
+	case *sandboxrentalclient.InternalGetRunnerAllocationResponse:
 		return sandboxProblemDetail(value.StatusCode, value.Problem, value.Body)
 	case *sandboxrentalclient.InternalObserveRunnerJobResponse:
 		return sandboxProblemDetail(value.StatusCode, value.Problem, value.Body)

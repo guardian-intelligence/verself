@@ -18,16 +18,18 @@ SET execution_id = $1,
     attempt_id = $2,
     state = 'vm_submitted',
     vm_submitted_by = $3,
+    runner_listening_by = $4,
     updated_at = $3
-WHERE allocation_id = $4
+WHERE allocation_id = $5
   AND state IN ('jit_created', 'pending', 'jit_creating', 'bootstrap_created', 'bootstrap_creating')
 `
 
 type AttachRunnerAllocationExecutionParams struct {
-	ExecutionID  *uuid.UUID
-	AttemptID    *uuid.UUID
-	UpdatedAt    pgtype.Timestamptz
-	AllocationID uuid.UUID
+	ExecutionID       *uuid.UUID
+	AttemptID         *uuid.UUID
+	UpdatedAt         pgtype.Timestamptz
+	RunnerListeningBy pgtype.Timestamptz
+	AllocationID      uuid.UUID
 }
 
 func (q *Queries) AttachRunnerAllocationExecution(ctx context.Context, arg AttachRunnerAllocationExecutionParams) (int64, error) {
@@ -35,6 +37,7 @@ func (q *Queries) AttachRunnerAllocationExecution(ctx context.Context, arg Attac
 		arg.ExecutionID,
 		arg.AttemptID,
 		arg.UpdatedAt,
+		arg.RunnerListeningBy,
 		arg.AllocationID,
 	)
 	if err != nil {
@@ -58,7 +61,7 @@ func (q *Queries) DeleteRunnerBootstrapConfig(ctx context.Context, arg DeleteRun
 }
 
 const findAllocationForRunner = `-- name: FindAllocationForRunner :one
-SELECT allocation_id, requested_for_provider_job_id
+SELECT allocation_id, origin_provider_job_id
 FROM runner_allocations
 WHERE provider = $1
   AND (($2::bigint <> 0 AND provider_runner_id = $2)
@@ -74,14 +77,14 @@ type FindAllocationForRunnerParams struct {
 }
 
 type FindAllocationForRunnerRow struct {
-	AllocationID              uuid.UUID
-	RequestedForProviderJobID int64
+	AllocationID        uuid.UUID
+	OriginProviderJobID int64
 }
 
 func (q *Queries) FindAllocationForRunner(ctx context.Context, arg FindAllocationForRunnerParams) (FindAllocationForRunnerRow, error) {
 	row := q.db.QueryRow(ctx, findAllocationForRunner, arg.Provider, arg.ProviderRunnerID, arg.RunnerName)
 	var i FindAllocationForRunnerRow
-	err := row.Scan(&i.AllocationID, &i.RequestedForProviderJobID)
+	err := row.Scan(&i.AllocationID, &i.OriginProviderJobID)
 	return i, err
 }
 
@@ -89,7 +92,7 @@ const getActiveAllocationForRunnerJob = `-- name: GetActiveAllocationForRunnerJo
 SELECT allocation_id
 FROM runner_allocations
 WHERE provider = $1
-  AND requested_for_provider_job_id = $2
+  AND origin_provider_job_id = $2
   AND state IN (
         'pending',
         'jit_creating',
@@ -97,8 +100,7 @@ WHERE provider = $1
         'bootstrap_creating',
         'bootstrap_created',
         'vm_submitted',
-        'runner_config_fetched',
-        'assigned'
+        'runner_config_fetched'
       )
 ORDER BY created_at DESC
 LIMIT 1
@@ -125,7 +127,7 @@ SELECT
     COALESCE(NULLIF(j.repository_full_name, ''), p.repository_full_name, '')::text AS repository_full_name,
     COALESCE(j.provider_run_id, 0)::bigint AS provider_run_id,
     COALESCE(j.head_branch, '')::text AS head_branch,
-    COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
+    COALESCE(b.provider_job_id, a.origin_provider_job_id)::bigint AS provider_job_id,
     e.runner_class,
     a.runner_name
 FROM runner_allocations a
@@ -135,7 +137,7 @@ JOIN runner_provider_repositories p ON p.provider = a.provider
     AND p.active
 LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
 LEFT JOIN runner_jobs j ON j.provider = a.provider
-    AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+    AND j.provider_job_id = COALESCE(b.provider_job_id, a.origin_provider_job_id)
 WHERE a.provider = $1
   AND a.execution_id = $2
   AND a.attempt_id = $3
@@ -367,6 +369,80 @@ func (q *Queries) GetRunnerAllocationProvider(ctx context.Context, arg GetRunner
 	return provider, err
 }
 
+const getRunnerAllocationStatus = `-- name: GetRunnerAllocationStatus :one
+SELECT
+    a.allocation_id,
+    a.provider,
+    a.provider_installation_id,
+    a.provider_repository_id,
+    a.runner_class,
+    a.runner_name,
+    a.provider_runner_id,
+    a.origin_provider_job_id,
+    COALESCE((
+        SELECT b.provider_job_id
+        FROM runner_job_bindings b
+        WHERE b.allocation_id = a.allocation_id
+        ORDER BY b.bound_at DESC
+        LIMIT 1
+    ), 0)::bigint AS assigned_provider_job_id,
+    a.execution_id,
+    a.attempt_id,
+    a.state,
+    a.failure_reason,
+    COALESCE(e.state, '')::text AS execution_state,
+    COALESCE(attempt.state, '')::text AS attempt_state
+FROM runner_allocations a
+LEFT JOIN executions e ON e.execution_id = a.execution_id
+LEFT JOIN execution_attempts attempt ON attempt.attempt_id = a.attempt_id
+WHERE a.allocation_id = $1
+`
+
+type GetRunnerAllocationStatusParams struct {
+	AllocationID uuid.UUID
+}
+
+type GetRunnerAllocationStatusRow struct {
+	AllocationID           uuid.UUID
+	Provider               string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RunnerClass            string
+	RunnerName             string
+	ProviderRunnerID       int64
+	OriginProviderJobID    int64
+	AssignedProviderJobID  int64
+	ExecutionID            *uuid.UUID
+	AttemptID              *uuid.UUID
+	State                  string
+	FailureReason          string
+	ExecutionState         string
+	AttemptState           string
+}
+
+func (q *Queries) GetRunnerAllocationStatus(ctx context.Context, arg GetRunnerAllocationStatusParams) (GetRunnerAllocationStatusRow, error) {
+	row := q.db.QueryRow(ctx, getRunnerAllocationStatus, arg.AllocationID)
+	var i GetRunnerAllocationStatusRow
+	err := row.Scan(
+		&i.AllocationID,
+		&i.Provider,
+		&i.ProviderInstallationID,
+		&i.ProviderRepositoryID,
+		&i.RunnerClass,
+		&i.RunnerName,
+		&i.ProviderRunnerID,
+		&i.OriginProviderJobID,
+		&i.AssignedProviderJobID,
+		&i.ExecutionID,
+		&i.AttemptID,
+		&i.State,
+		&i.FailureReason,
+		&i.ExecutionState,
+		&i.AttemptState,
+	)
+	return i, err
+}
+
 const getRunnerAllocationSubmission = `-- name: GetRunnerAllocationSubmission :one
 SELECT
     allocation_id,
@@ -442,7 +518,7 @@ SELECT
     COALESCE(inv.base_branch, '')::text AS run_base_branch,
     COALESCE(inv.workflow_path, '')::text AS workflow_path,
     COALESCE(inv.pull_request_number, 0)::bigint AS pull_request_number,
-    COALESCE(b.provider_job_id, a.requested_for_provider_job_id)::bigint AS provider_job_id,
+    COALESCE(b.provider_job_id, a.origin_provider_job_id)::bigint AS provider_job_id,
     e.runner_class,
     a.runner_name
 FROM runner_allocations a
@@ -452,7 +528,7 @@ JOIN runner_provider_repositories p ON p.provider = a.provider
     AND p.active
 LEFT JOIN runner_job_bindings b ON b.allocation_id = a.allocation_id
 LEFT JOIN runner_jobs j ON j.provider = a.provider
-    AND j.provider_job_id = COALESCE(b.provider_job_id, a.requested_for_provider_job_id)
+    AND j.provider_job_id = COALESCE(b.provider_job_id, a.origin_provider_job_id)
 LEFT JOIN LATERAL (
     SELECT run.event_name, run.head_sha, run.head_branch, run.head_repository_full_name,
            run.base_sha, run.base_branch, run.workflow_path, run.pull_request_number
@@ -616,7 +692,7 @@ func (q *Queries) GetRunnerJobTerminalResult(ctx context.Context, arg GetRunnerJ
 const insertProviderRunnerAllocation = `-- name: InsertProviderRunnerAllocation :execrows
 INSERT INTO runner_allocations (
     allocation_id, provider, provider_installation_id, provider_repository_id, runner_class, runner_name,
-    provider_runner_id, state, requested_for_provider_job_id, allocate_by, jit_by, vm_submitted_by,
+    provider_runner_id, state, origin_provider_job_id, allocate_by, jit_by, vm_submitted_by,
     runner_listening_by, assignment_by, vm_exit_by, cleanup_by, created_at, updated_at
 ) VALUES (
     $1, $2, $3,
@@ -630,23 +706,23 @@ ON CONFLICT DO NOTHING
 `
 
 type InsertProviderRunnerAllocationParams struct {
-	AllocationID              uuid.UUID
-	Provider                  string
-	ProviderInstallationID    int64
-	ProviderRepositoryID      int64
-	RunnerClass               string
-	RunnerName                string
-	ProviderRunnerID          int64
-	State                     string
-	RequestedForProviderJobID int64
-	AllocateBy                pgtype.Timestamptz
-	JitBy                     pgtype.Timestamptz
-	VmSubmittedBy             pgtype.Timestamptz
-	RunnerListeningBy         pgtype.Timestamptz
-	AssignmentBy              pgtype.Timestamptz
-	VmExitBy                  pgtype.Timestamptz
-	CleanupBy                 pgtype.Timestamptz
-	CreatedAt                 pgtype.Timestamptz
+	AllocationID           uuid.UUID
+	Provider               string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RunnerClass            string
+	RunnerName             string
+	ProviderRunnerID       int64
+	State                  string
+	OriginProviderJobID    int64
+	AllocateBy             pgtype.Timestamptz
+	JitBy                  pgtype.Timestamptz
+	VmSubmittedBy          pgtype.Timestamptz
+	RunnerListeningBy      pgtype.Timestamptz
+	AssignmentBy           pgtype.Timestamptz
+	VmExitBy               pgtype.Timestamptz
+	CleanupBy              pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
 }
 
 func (q *Queries) InsertProviderRunnerAllocation(ctx context.Context, arg InsertProviderRunnerAllocationParams) (int64, error) {
@@ -659,7 +735,7 @@ func (q *Queries) InsertProviderRunnerAllocation(ctx context.Context, arg Insert
 		arg.RunnerName,
 		arg.ProviderRunnerID,
 		arg.State,
-		arg.RequestedForProviderJobID,
+		arg.OriginProviderJobID,
 		arg.AllocateBy,
 		arg.JitBy,
 		arg.VmSubmittedBy,
@@ -964,17 +1040,19 @@ func (q *Queries) MarkRunnerAllocationCleaned(ctx context.Context, arg MarkRunne
 const markRunnerAllocationConfigFetched = `-- name: MarkRunnerAllocationConfigFetched :exec
 UPDATE runner_allocations
 SET state = CASE WHEN state = 'vm_submitted' THEN 'runner_config_fetched' ELSE state END,
-    updated_at = $1
-WHERE allocation_id = $2
+    assignment_by = CASE WHEN state = 'vm_submitted' THEN $1 ELSE assignment_by END,
+    updated_at = $2
+WHERE allocation_id = $3
 `
 
 type MarkRunnerAllocationConfigFetchedParams struct {
+	AssignmentBy pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
 	AllocationID uuid.UUID
 }
 
 func (q *Queries) MarkRunnerAllocationConfigFetched(ctx context.Context, arg MarkRunnerAllocationConfigFetchedParams) error {
-	_, err := q.db.Exec(ctx, markRunnerAllocationConfigFetched, arg.UpdatedAt, arg.AllocationID)
+	_, err := q.db.Exec(ctx, markRunnerAllocationConfigFetched, arg.AssignmentBy, arg.UpdatedAt, arg.AllocationID)
 	return err
 }
 

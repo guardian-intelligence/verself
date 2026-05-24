@@ -25,6 +25,11 @@ use verself.common.v1#IdempotencyPayloadMismatchError
 use verself.common.v1#PageRequest
 use verself.common.v1#PageResponse
 use verself.common.v1#PermissionDeniedError
+use verself.common.v1#ProblemOccurrences
+use verself.common.v1#ProviderWebhookDeliveryReplayConflictError
+use verself.common.v1#ProviderWebhookInboxUnavailableError
+use verself.common.v1#ProviderWebhookInvalidRequestError
+use verself.common.v1#ProviderWebhookSignatureInvalidError
 use verself.common.v1#RateLimitedError
 use verself.common.v1#ResourceName
 use verself.common.v1#ResourceNotFoundError
@@ -75,7 +80,8 @@ service GithubIntegration {
         GithubWorkflowJob,
         GithubJobShape,
         GithubProviderDemand,
-        GithubRunnerRegistration,
+        GithubRunnerInstance,
+        GithubJobAssignment,
         GithubTerminalJobEvidence,
         GithubGoldenSnapshotBarrier
     ]
@@ -100,7 +106,8 @@ service GithubIntegrationInternal {
         GithubWorkflowJob,
         GithubJobShape,
         GithubProviderDemand,
-        GithubRunnerRegistration,
+        GithubRunnerInstance,
+        GithubJobAssignment,
         GithubTerminalJobEvidence,
         GithubGoldenSnapshotBarrier
     ]
@@ -311,12 +318,13 @@ resource GithubWorkflowRun {}
 resource GithubWorkflowJob {}
 resource GithubJobShape {}
 resource GithubProviderDemand {}
-resource GithubRunnerRegistration {}
+resource GithubRunnerInstance {}
+resource GithubJobAssignment {}
 resource GithubTerminalJobEvidence {}
 resource GithubGoldenSnapshotBarrier {}
 
 enum GithubWebhookDeliveryState {
-    VERIFIED = "verified"
+    ACCEPTED = "accepted"
     PROCESSING = "processing"
     RETRYABLE = "retryable"
     PROCESSED = "processed"
@@ -343,11 +351,21 @@ enum GithubWorkflowJobConclusion {
 
 enum GithubProviderDemandState {
     DEMAND_RECORDED = "demand_recorded"
-    JIT_REQUESTED = "jit_requested"
-    JIT_CREATED = "jit_created"
+    CAPACITY_REQUESTED = "capacity_requested"
+    CAPACITY_FAILED = "capacity_failed"
     JIT_FAILED = "jit_failed"
     SANDBOX_FAILED = "sandbox_failed"
+    ASSIGNED = "assigned"
+    COMPLETED = "completed"
+}
+
+enum GithubRunnerInstanceState {
+    JIT_CREATED = "jit_created"
     SANDBOX_SUBMITTED = "sandbox_submitted"
+    ASSIGNED = "assigned"
+    JOB_COMPLETED = "job_completed"
+    FAILED = "failed"
+    CLEANED = "cleaned"
 }
 
 enum GithubGoldenSnapshotBarrierState {
@@ -603,7 +621,7 @@ structure GithubWebhookDeliveryRecord {
     provider_run_id: SafeNonNegativeLong
     provider_run_attempt: SafeNonNegativeLong
     provider_job_id: SafeNonNegativeLong
-    failure_reason: String
+    problems: ProblemOccurrences
     received_at: DateTime
     verified_at: DateTime
     processed_at: DateTime
@@ -730,36 +748,50 @@ structure GithubProviderDemandRecord {
     @required
     provider_run_attempt: SafeNonNegativeLong
 
-    @required
-    runner_name: RunnerName
-
-    runner_id: SafeNonNegativeLong
     runner_class: RunnerClass
     job_shape_id: String
     trust_class: String
 
     @required
     state: GithubProviderDemandState
+}
+
+structure GithubRunnerInstanceRecord {
+    @required
+    runner_name: RunnerName
+
+    @required
+    origin_provider_job_id: SafeNonNegativeLong
+
+    runner_id: SafeNonNegativeLong
+    runner_class: RunnerClass
+    jit_config_sha256: String
 
     allocation_id: AllocationId
     execution_id: ExecutionId
     attempt_id: AttemptId
+
+    @required
+    assignment_deadline_at: Timestamp
+
+    @required
+    state: GithubRunnerInstanceState
 }
 
-structure GithubRunnerRegistrationRecord {
+structure GithubJobAssignmentRecord {
     @required
     provider_job_id: SafeNonNegativeLong
 
     @required
     runner_name: RunnerName
 
-    @required
-    runner_class: RunnerClass
+    runner_id: SafeNonNegativeLong
 
-    allocation_id: AllocationId
-    execution_id: ExecutionId
-    attempt_id: AttemptId
-    state: String
+    @required
+    observed_from: String
+
+    @required
+    observed_at: DateTime
 }
 
 structure GithubTerminalJobEvidenceRecord {
@@ -1203,7 +1235,14 @@ structure DisableGithubRepositoryOutput {
 operation ReceiveGithubWebhook {
     input: ReceiveGithubWebhookInput
     output: ReceiveGithubWebhookOutput
-    errors: [ValidationFailedError, RateLimitedError, ServiceUnavailableError]
+    errors: [
+        ProviderWebhookInvalidRequestError,
+        ProviderWebhookSignatureInvalidError,
+        ProviderWebhookDeliveryReplayConflictError,
+        RateLimitedError,
+        ProviderWebhookInboxUnavailableError,
+        ServiceUnavailableError
+    ]
 }
 
 structure ReceiveGithubWebhookInput {

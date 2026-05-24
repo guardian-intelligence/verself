@@ -585,6 +585,42 @@ func (q *Queries) InsertGoldenVMSnapshotGeneration(ctx context.Context, arg Inse
 	return err
 }
 
+const invalidateCurrentGoldenVMSnapshot = `-- name: InvalidateCurrentGoldenVMSnapshot :execrows
+WITH target AS (
+    SELECT vm.golden_vm_snapshot_id
+    FROM golden_vm_snapshot vm
+    WHERE vm.golden_vm_snapshot_id = $2
+      AND vm.state = 'current'
+),
+clear_pointer AS (
+    UPDATE golden_vm_current_pointer p
+    SET current_golden_vm_snapshot_id = NULL
+    WHERE p.current_golden_vm_snapshot_id = $2
+      AND EXISTS (SELECT 1 FROM target)
+    RETURNING 1
+)
+UPDATE golden_vm_snapshot vm
+SET state = 'invalidated',
+    expires_at = COALESCE(vm.expires_at, $1),
+    last_used_at = $1
+FROM target
+WHERE vm.golden_vm_snapshot_id = target.golden_vm_snapshot_id
+  AND (SELECT count(*) FROM clear_pointer) >= 0
+`
+
+type InvalidateCurrentGoldenVMSnapshotParams struct {
+	InvalidatedAt      pgtype.Timestamptz
+	GoldenVmSnapshotID uuid.UUID
+}
+
+func (q *Queries) InvalidateCurrentGoldenVMSnapshot(ctx context.Context, arg InvalidateCurrentGoldenVMSnapshotParams) (int64, error) {
+	result, err := q.db.Exec(ctx, invalidateCurrentGoldenVMSnapshot, arg.InvalidatedAt, arg.GoldenVmSnapshotID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listGoldenVMCreateOperationsForReconcile = `-- name: ListGoldenVMCreateOperationsForReconcile :many
 SELECT operation_id
 FROM golden_vm_operation
@@ -714,7 +750,7 @@ func (q *Queries) ListGoldenVMSnapshotCandidatesForRun(ctx context.Context, arg 
 const listGoldenVMSnapshotRetentionOrgs = `-- name: ListGoldenVMSnapshotRetentionOrgs :many
 SELECT DISTINCT org_id
 FROM golden_vm_snapshot
-WHERE state IN ('candidate', 'current', 'retained')
+WHERE state = 'retained'
 ORDER BY org_id
 LIMIT $1
 `
@@ -770,7 +806,7 @@ SELECT
 FROM golden_vm_snapshot vm
 JOIN golden_vm_operation op ON op.operation_id = vm.operation_id
 WHERE vm.org_id = $1
-  AND vm.state IN ('candidate', 'current', 'retained')
+  AND vm.state = 'retained'
 ORDER BY vm.last_used_at DESC, vm.created_at DESC, vm.golden_vm_snapshot_id DESC
 OFFSET $2
 LIMIT $3
@@ -1261,29 +1297,21 @@ WITH target AS (
     FROM golden_vm_snapshot vm
     WHERE vm.org_id = $2
       AND vm.golden_vm_snapshot_id = $3
-      AND vm.state IN ('candidate', 'current', 'retained')
+      AND vm.state = 'retained'
       AND (
           SELECT count(*)
           FROM golden_vm_snapshot newer
           WHERE newer.org_id = vm.org_id
-            AND newer.state IN ('candidate', 'current', 'retained')
+            AND newer.state = 'retained'
             AND (newer.last_used_at, newer.created_at, newer.golden_vm_snapshot_id) >= (vm.last_used_at, vm.created_at, vm.golden_vm_snapshot_id)
       ) > $4::bigint
-),
-clear_pointer AS (
-    UPDATE golden_vm_current_pointer p
-    SET current_golden_vm_snapshot_id = NULL
-    WHERE p.current_golden_vm_snapshot_id = $3
-      AND EXISTS (SELECT 1 FROM target)
-    RETURNING 1
 )
 UPDATE golden_vm_snapshot vm
 SET state = 'reapable',
     expires_at = COALESCE(vm.expires_at, $1)
 FROM target
 WHERE vm.golden_vm_snapshot_id = target.golden_vm_snapshot_id
-  AND vm.state IN ('candidate', 'current', 'retained')
-  AND (SELECT count(*) FROM clear_pointer) >= 0
+  AND vm.state = 'retained'
 `
 
 type MarkGoldenVMSnapshotRingReapingParams struct {

@@ -48,7 +48,7 @@ runner_jobs(provider=github)
       | submit joins runner_provider_repositories by repository_id
       v
 runner_allocations(provider=github)
-  allocation_id, requested_for_provider_job_id, bootstrap payload
+  allocation_id, origin_provider_job_id, bootstrap payload
       |
       | Service.Submit with allocation.OrgID
       v
@@ -74,6 +74,10 @@ Rules that are easy to get wrong:
 - Provider observations create demand facts. They do not directly create
   billable customer work until the provider-neutral runner submission passes
   repository ownership, runner class, org runtime, and billing gates.
+- `runner_allocations.origin_provider_job_id` is only the provider job that
+  caused capacity creation. `runner_job_bindings.provider_job_id` is the actual
+  provider job observed on the runner and wins for execution identity,
+  terminal evidence, and billing correlation.
 - Billing is keyed to our execution system of record. `billing_windows.source_ref`
   is the Verself `execution_id`; provider job IDs are correlation metadata
   on `executions.external_task_id` and `runner_jobs`.

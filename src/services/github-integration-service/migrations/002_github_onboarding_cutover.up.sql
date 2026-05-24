@@ -240,9 +240,9 @@ ALTER TABLE github_provider_outbox ADD COLUMN IF NOT EXISTS org_id TEXT NOT NULL
 ALTER TABLE github_provider_outbox ADD COLUMN IF NOT EXISTS installation_binding_id UUID;
 ALTER TABLE github_provider_outbox ADD COLUMN IF NOT EXISTS repository_binding_id UUID;
 ALTER TABLE github_provider_outbox ADD COLUMN IF NOT EXISTS repository_full_name TEXT NOT NULL DEFAULT '';
-ALTER TABLE github_runner_registrations ADD COLUMN IF NOT EXISTS org_id TEXT NOT NULL DEFAULT '';
-ALTER TABLE github_runner_registrations ADD COLUMN IF NOT EXISTS installation_binding_id UUID;
-ALTER TABLE github_runner_registrations ADD COLUMN IF NOT EXISTS repository_binding_id UUID;
+ALTER TABLE github_runner_instances ADD COLUMN IF NOT EXISTS org_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE github_runner_instances ADD COLUMN IF NOT EXISTS installation_binding_id UUID;
+ALTER TABLE github_runner_instances ADD COLUMN IF NOT EXISTS repository_binding_id UUID;
 ALTER TABLE github_terminal_job_evidence ADD COLUMN IF NOT EXISTS org_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE github_terminal_job_evidence ADD COLUMN IF NOT EXISTS installation_binding_id UUID;
 ALTER TABLE github_terminal_job_evidence ADD COLUMN IF NOT EXISTS repository_binding_id UUID;

@@ -15,6 +15,7 @@ type lifecycleOps struct {
 	clones   []string
 	creates  []string
 	destroys []string
+	graphs   []string
 	sets     []string
 	mkfs     []string
 	receives []string
@@ -36,7 +37,7 @@ func (o *lifecycleOps) ZFSSnapshot(context.Context, string, string, map[string]s
 
 func (o *lifecycleOps) ZFSDestroy(context.Context, string) error { return nil }
 
-func (o *lifecycleOps) ZFSDestroyRecursive(_ context.Context, dataset string) error {
+func (o *lifecycleOps) ZFSDestroyDatasetTree(_ context.Context, dataset string) error {
 	o.destroys = append(o.destroys, dataset)
 	for child := range o.datasets {
 		if child == dataset || strings.HasPrefix(child, dataset+"/") {
@@ -49,6 +50,11 @@ func (o *lifecycleOps) ZFSDestroyRecursive(_ context.Context, dataset string) er
 		}
 	}
 	return nil
+}
+
+func (o *lifecycleOps) ZFSDestroyDependencyGraph(ctx context.Context, dataset string) error {
+	o.graphs = append(o.graphs, dataset)
+	return o.ZFSDestroyDatasetTree(ctx, dataset)
 }
 
 func (o *lifecycleOps) ZFSCreateEncryptedFilesystem(_ context.Context, dataset string, _ []byte) error {

@@ -9,7 +9,6 @@ postgresql_logical_publications:
     table_owner: sandbox_rental
     replication_role: electric
     tables:
-      - console_flight_jobs
       - execution_logs
       - executions
       - runner_provider_repositories
