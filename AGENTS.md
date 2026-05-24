@@ -1,15 +1,15 @@
 # verself.sh (Verself)
 
-This is a polyglot monorepo structured as a modular monolith. It contains all software for infrastructure, service, and client applications code. It is the only repo for the entire company.
+This is a polyglot monorepo structured as a modular monolith. It contains all code for infrastructure, service, and client applications for a multi-tenant cloud computing company. It is the only repo for the entire company.
 
-console: verself.sh
-auth portal: verself.sh
-services: <service>.api.verself.sh
-company website: guardianintelligence.org
-
-See @README.md for mission and development orientation.
+Console: verself.sh
+Auth portal: verself.sh
+Services: <service>.api.verself.sh
+Company website: guardianintelligence.org
 
 <repo_overview>
+See @README.md for mission and development orientation.
+
 See @src/services/iam-service/schema/verself.zed for Zanzibar policies
 
 The manifest of all discoverable public APIs is in `src/infrastructure-components/haproxy/templates/verself-discovery.json.j2`; all new public services must be registered there.
@@ -34,13 +34,45 @@ Smithy IDL + Verself traits (`src/smithy/models/verself`)
     -> service-local typed clients/adapters for repo-owned calls
     -> public SDK transports through OpenAPI tooling where reliable + curated wrappers
 
+# Topology
+
+Target:
+
+100% bare metal fleet.
+
+Per Region:
+    Sites:
+    - prod: high-availability customer-facing prod
+        - Hosted control plane
+        - Cell: verself-owned bare-metal cell A
+        - Cell: verself-owned bare-metal cell B
+        - Cell: customer BYO-compute pool X
+    - staging: prod clone, internal integration/release rehearsal site, periodic RC generation + release notes. Pomerium-gated.
+    - gamma: prod clone, preview/canary site, Pomerium-gated. Deploys main continuously.
+    - dev: personal/operator development sites, Pomerium-gated
+
+3 control plane nodes per fabric in a single region. Customer workload nodes are global
+Customer workload nodes globally, provided by multi-cloud (Latitude, Equinix)
+Single global writer for TigerBeetle, ClickHouse, and PG (see https://openai.com/index/scaling-postgresql/ for reference)
+
+Current:
+
+100% bare metal fleet
+Single region (ASH)
+Single fabric (prod)
+No cells
+1 control plane node
+Single global writer for TigerBeetle, ClickHouse, and PG
+
+<critical>Make architecture decisions that design for the target</critical>
+
 ## Tech Stack (partial description):
 
 ## Layers:
 
-1. Host layer: machine + OS configuration and bootstrap substrate like vm-orchestrator, guest telemetry staging, HAProxy, nftables, ClickHouse initial schema, ZFS, SPIRE, Nomad, WireGuard, and site/domain facts. Ansible operates on bootstrap host substrate. Nomad manages platform components, services, and frontends beyond that layer. Directories: `src/host`, `src/integrations`
-2. Contract layer: Smithy models under `src/smithy/models/verself` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, generated projections, and conformance cases.
-3. Service API layer: services expose the Smithy-modeled HTTP APIs at <service>.api.<domain>. Go services may use Huma during the cutover, but Huma/OpenAPI output is an implementation/projection artifact rather than the semantic contract.
+1. Host layer: machine + OS configuration and binaries/processes that run directly on our bare metal (see `src/infrastructure-components`, `src/host`, `src/integrations`)
+2. Contract layer: Smithy models under `src/smithy/models/verself` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, data handling.
+3. Service API layer: services expose the Smithy-modeled HTTP APIs at <service>.api.<domain>. Typically Huma because we are an OpenAPI shop, but services can be written in any language.
 4. Client/projection layer: OpenAPI compatibility artifacts are generated from the contract model for docs, ecosystem tooling, and public SDK transport generation where reliable. Repo-owned service calls use service-local typed clients/adapters with caller-owned SPIFFE mTLS transports.
 5. Curated SDK layer: stable hand-written exports that wrap public transport implementations and own auth, idempotency keys, retries, pagination, waiters, error normalization, tracing headers, and DTO conversion.
 6. Facades: the verself-web app and the CLI and, in the future, mobile apps.
@@ -84,9 +116,7 @@ Product service receives request
     -> billing settles, emits events, projects evidence
     -> governance records the API activity/audit trail
 
-The core abstraction is the billing window. Product services should not “charge money”; they should reserve, run, settle, or void bounded windows with SKUs. Fraud and compliance should not “fix money”; they should create explicit business decisions that cause normal billing transitions: deny new reservations, block receivables, suspend a contract, revoke unearned allowance, issue an adjustment, or require operator review.
-
-
+The core abstraction is the billing window. Services never charge money directly; they only request to reserve bounded windows of product abstractions which then are metered and monitored for abuse. Fraud and compliance services (once implemented) should create explicit business decisions that cause normal billing transitions: deny new reservations, block receivables, suspend a contract, revoke unearned allowance or issue an adjustment.
 
 Boundary components that sit outside the usual service shape:
 
@@ -104,6 +134,10 @@ Top-level landmarks:
 Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databases, `aspect observe` opens the telemetry surface, `aspect db ch schemas` lists ClickHouse tables.
 
 </repo_overview>
+
+<operational_runbook>
+Please read @docs/operational-runbook.md for information on Pomerium access, 
+</operational_runbook>
 
 <product_invariants>
 * User interfaces should always indicate when a product requires being authenticated or a minimum billing tier. Never throw a user to a redirect screen without lampshading it.
@@ -129,40 +163,6 @@ Public commitments for Data Processing, Acceptable Use, Security, SLA, and Data 
 - One database per service on a single PG instance.
 </system_context>
 
-<operational_runbook>
-
-SSH access is tied to identity via Pomerium using Zitadel as its OIDC.
-
-If you are doing work that involves pulling logs or interacting with infrastructure you may be presented a URL to log in to Pomerium. If that happens, please pause and present the URL to the user.
-
-```shell
-ssh ubuntu@prod@access.verself.sh
-```
-
-- access.verself.sh: the Pomerium SSH listener.
-- prod: the Pomerium SSH route name.
-- ubuntu: the upstream Linux account Pomerium is allowed to request from sshd.
-
-During first bootstrap before IAM, Zitadel, Pomerium, and WireGuard are healthy,
-use direct host SSH only as the temporary provisioning path. After the operator
-access handoff, public SSH is Pomerium-only and fallback access is WireGuard:
-
-```shell
-ssh -p 2222 ubuntu@10.66.66.1
-```
-
-Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
-
-Before testing the authenticated console against the production website, read the agent-browser login runbook in `src/websites/apps/verself-web/AGENTS.md`.
-
-Nomad deploys are driven directly by the checked-in `nomad_component` targets for the requested SHA:
-
-```shell
-aspect deploy --site=prod --sha=HEAD
-```
-
-`aspect deploy` builds the Bazel-discovered descriptors, uploads missing content-addressed artifacts to the private Garage origin, resolves each `nomad.json`, and submits the resulting payloads to Nomad with ClickHouse evidence for each job decision.
-
 ### High-signal Documents.
 
 @README.md -- map to other documents.
@@ -182,16 +182,15 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 In this repo, "ship" does not just mean merge to main. It means running on real customer devices in production after a thorough release checklist automated by CI.
 
 Place high importance on verifying that software is working correctly through repeatable automated QA.
-</operational_runbook>
 
 <assistant_contract>
-- Ground proposals, plans, API references, and all technical discussion in primary sources. Then think from the perspective of the user of the system: a non-technical startup founder running all services off a single bare-metal box (with upgrade path to a 3-node topology).
-- When beginning an ambiguous task, collect objective information about how the system actually works. There are a lot of technologies stitched together but they are layered. You don't need to worry about viteplus when working on infrastructure or VM orchestration, typically. Keep your reading focused.
-- Act as a dispassionate advisory technical leader with a focus on elegant public APIs and functional programming.
+- Ground proposals, plans, API references, and all technical discussion in relevant primary sources, reference architectures, enterprise case studies, and scientific research.
+- Act as a dispassionate advisory technical leader with a focus on aggressively simple & minimalist public APIs and functional programming.
 - You are not alone in this repo. Expect parallel changes in unrelated files by the user. Leave them alone (don't stash them) and continue with your work. Do not stash parallel work.
 - This software is currently pre-release and serves no customers or users. There is no backwards compatibility to maintain. No compatibility wrappers, no legacy shims, no temporary plumbing. All changes must be performed via a full cutover.
 - It's important to delete old or outdated code when we upgrade technology, abstractions, or logic. Eliminating contradictory approaches must uphold the bar: no trace of a contradicting or legacy implementation can be left in the code base after a change is pushed to main. The reader must not be able to tell the previous implementation ever existed, unless they spelunk through the git history.
-- Details matter such as arcane versioning issues, subtle race conditions, timing-attack vulnerabilities, GC pressure, and abstraction leaks. Simplicity is for code and architecture, not for raw fact gathering and data analysis.
+- Details matter such as arcane versioning issues, subtle race conditions, timing-attack vulnerabilities, GC pressure, and abstraction leaks. Simplicity is for code and architecture, not for raw fact gathering and data analysis. 
+- There is a point in conversation where theory fails and you need to just run some tracer bullets and see what surprises we have in store. You have authority to decrypt the latitude API key and use it to provision a bare metal box for an hour.
 - Some directories have their own `AGENTS.md` file. When working inside those directories, read them — they contain juicy context.
 - Incidental edits from running linters and formatters are expected. Amend your commit with them, it won't be held against you at review time.
 - When in doubt, use the industry-standard pattern. Everything has boring, battle-tested solutions and we should prefer to use those. Don't reinvent the wheel. Open standards and protocols underneath FOSS are the gold standard.
@@ -229,13 +228,42 @@ Before writing code, please read docs/agents/coding-guidelines.md and apply the 
 - When following runbooks, skills, protocols, or user messages that also define instructions in XML tags, treat the instructions as additive, not as overrides.
 </instruction_priority>
 
+
+<mission_overview>
+The immediate goal of Verself is to make CI 10x faster across the industry, and to redefine how CI is thought of. Today, CI execution environments start from a clean slate, throwing out precious build artifacts that in many cases take hours to generate, and the standard GitHub golden path is to start a VM without having the repo even cloned. GitHub wins because CI takes forever and they charge by the minute. Our philosophy is that CI should start from a golden image of the deployed software: all build, lint, compilation, and intermediate artifacts intact. This means teaching developers that their CI VM should begin from a snapshot that preserves the same thing a developer machine preserves: hot Bazel server state plus the filesystem cache layout it expects.
+
+That means:
+* Stop thinking of CI like a sterile one-shot build machine.
+* Focus on making the developer/agent environments as fast as possible, and then CI becomes fast by default.
+* Bazel remote caches, complex S3 uploads and downloads to claw back build artifacts, and CI-specific cache commands all become obsolete.
+
+The challenge then becomes:
+
+* Providing the right security defaults and developer ergonomics to make this approach to CI work seamlessly for any repo of any shape or size.
+* Keeping the developer and CI execution models aligned so agents and humans optimize one environment instead of separate local and CI paths.
+* Communicating to the world why this approach is better for security, reliability, and performance.
+
+This repo is constructed to provide this solution as a suite of layered software products:
+
+* HTTP Services on top of core technological scheduling/networking/compute/storage primitives stitched together from open-source technologies + bare metal that implement those services
+* An SDK that wraps the public APIs of those services for convenient programmatic usage by customers in a variety of languages.
+* Prebuilt clients that call our SDK (website/mobile app/cli)
+* Integrations between other services the user already has entitlements to and our software offerings (GitHub App/VSCode Extensions) usually highly specific to a particular client.
+
+The SDK allows folks to build their own clients and platforms on top of our raw software offerings and to script usage of Verself in whatever language an agent wants to use (currently only Go/TypeScript supported, Python support soon).
+
+Note that the SDK layer today is only 1-2% implemented to the level of rigor it should be.
+
+The objective behind all architectural decisions are to maximize adherence to the following ideas:
+
+* Secure by default - Default deny, defense in depth. 
+* Portable by default - we should minimize the lines of code necessary to ship sweeping changes across websites, embedded applications in third party widgets (e.g. VS Code extensions, once we have one), mobile apps (once we have them)
+* Runnable on-prem (BYO-Compute, not self-host)
+
 Planned Upcoming Projects
 
 * Newsletter Service
 * Analytics Service (PostHog clone) -- we build this ourselves using ClickHouse
 * Readyset for Postgres query-result cache.
 * Invoices + Preview Invoice for Current Billing Period
-
-## Adding a site
-
-Site names are `prod`, `beta`, `gamma`, or `dev-<operator>`. The apex domain, Pomerium route name, Cloudflare zone scope, and allowed Stripe environment are site-level facts in `src/host/sites/<site>/vars.yml`.
+</mission_overview>

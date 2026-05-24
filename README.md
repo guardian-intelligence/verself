@@ -105,33 +105,3 @@ or `bazelisk`.
 
 
 
-<mission_overview>
-The immediate goal of Verself is to make CI 10x faster across the industry, and to redefine how CI is thought of. Today, CI execution environments start from a clean slate, throwing out precious build artifacts that in many cases take hours to generate, and the standard GitHub golden path is to start a VM without having the repo even cloned. GitHub wins because CI takes forever and they charge by the minute. Our philosophy is that CI should start from a golden image of the deployed software: all build, lint, compilation, and intermediate artifacts intact. This means teaching developers that their CI VM should begin from a snapshot that preserves the same thing a developer machine preserves: hot Bazel server state plus the filesystem cache layout it expects.
-
-That means:
-* Stop thinking of CI like a sterile one-shot build machine.
-* Focus on making the developer/agent environments as fast as possible, and then CI becomes fast by default.
-* Bazel remote caches, complex S3 uploads and downloads to claw back build artifacts, and CI-specific cache commands all become obsolete.
-
-The challenge then becomes:
-
-* Providing the right security defaults and developer ergonomics to make this approach to CI work seamlessly for any repo of any shape or size.
-* Keeping the developer and CI execution models aligned so agents and humans optimize one environment instead of separate local and CI paths.
-* Communicating to the world why this approach is better for security, reliability, and performance.
-
-This repo is constructed to provide this solution as a suite of layered software products:
-
-* HTTP Services on top of core technological scheduling/networking/compute/storage primitives stitched together from open-source technologies + bare metal that implement those services
-* An SDK that wraps the public APIs of those services for convenient programmatic usage by customers in a variety of languages.
-* Prebuilt clients that call our SDK (website/mobile app/cli)
-* Integrations between other services the user already has entitlements to and our software offerings (GitHub App/VSCode Extensions) usually highly specific to a particular client.
-
-The SDK allows folks to build their own clients and platforms on top of our raw software offerings and to script usage of Verself in whatever language an agent wants to use (currently only Go/TypeScript supported, Python support soon).
-
-Note that the SDK layer today is only 1-2% implemented to the level of rigor it should be.
-
-The objective behind all architectural decisions are to maximize adherence to the following ideas:
-
-* Secure by default - Default deny, defense in depth. 
-* Portable by default - we should minimize the lines of code necessary to ship sweeping changes across websites, embedded applications in third party widgets (e.g. VS Code extensions, once we have one), mobile apps (once we have them)
-</mission_overview>
