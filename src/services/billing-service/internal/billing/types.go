@@ -32,12 +32,14 @@ func DefaultConfig() Config {
 
 var (
 	ErrInvalidConfig        = errors.New("billing: invalid config")
+	ErrOrgNotFound          = errors.New("billing: org not found")
 	ErrPaymentRequired      = errors.New("billing: payment required")
 	ErrForbidden            = errors.New("billing: forbidden")
 	ErrContractNotFound     = errors.New("billing: contract not found")
 	ErrNoStripeCustomer     = errors.New("billing: no stripe customer")
 	ErrUnsupportedChange    = errors.New("billing: unsupported contract change")
 	ErrUnsupportedCadence   = errors.New("billing: unsupported cadence")
+	ErrUnsupportedTrustTier = errors.New("billing: unsupported trust tier")
 	ErrInsufficientBalance  = errors.New("billing: insufficient balance")
 	ErrOrgSuspended         = errors.New("billing: org suspended")
 	ErrWindowNotFound       = errors.New("billing: window not found")
@@ -161,6 +163,30 @@ type PlanRecord struct {
 	AnnualAmountCents  uint64
 	Active             bool
 	IsDefault          bool
+}
+
+type OrgRecord struct {
+	OrgID       OrgID
+	DisplayName string
+	State       string
+	TrustTier   string
+}
+
+type PlanPromotionRecord struct {
+	OrgID      OrgID
+	ProductID  string
+	PlanID     string
+	ContractID string
+	PercentOff int
+	Reason     string
+}
+
+type PlanPromotionCancellationRecord struct {
+	OrgID      OrgID
+	ProductID  string
+	ContractID string
+	CancelAt   *time.Time
+	Reason     string
 }
 
 type ContractRecord struct {

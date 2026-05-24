@@ -28,3 +28,32 @@ type IamMemberInviteAcceptanceToken struct {
 	ExpiresAt             pgtype.Timestamptz
 	AcceptedAt            pgtype.Timestamptz
 }
+
+type IamSignupIntent struct {
+	SignupIntentID                string
+	IdempotencyKey                string
+	RequestHash                   []byte
+	Email                         string
+	EmailHash                     []byte
+	OrganizationDisplayName       string
+	RequestedOrganizationSlug     string
+	OrganizationSlug              string
+	GivenName                     string
+	FamilyName                    string
+	VerificationTokenHash         []byte
+	State                         string
+	MaterializationStep           string
+	MaterializationAttempts       int32
+	MaterializationLastError      string
+	MaterializationLeaseExpiresAt pgtype.Timestamptz
+	VerifyIdempotencyKey          string
+	VerifyRequestHash             []byte
+	OrgID                         string
+	IdentityProviderOrgID         string
+	IdentityProviderUserID        string
+	CreatedAt                     pgtype.Timestamptz
+	UpdatedAt                     pgtype.Timestamptz
+	VerificationExpiresAt         pgtype.Timestamptz
+	VerifiedAt                    pgtype.Timestamptz
+	CompletedAt                   pgtype.Timestamptz
+}

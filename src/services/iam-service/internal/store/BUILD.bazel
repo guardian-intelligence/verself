@@ -9,6 +9,7 @@ go_library(
         "member_invites.sql.go",
         "models.go",
         "organization.sql.go",
+        "signup.sql.go",
     ],
     importpath = "github.com/verself/iam-service/internal/store",
     visibility = ["//src/services/iam-service:__subpackages__"],

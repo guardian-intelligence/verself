@@ -12,10 +12,34 @@ VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (org_id) DO UPDATE
 SET display_name = EXCLUDED.display_name,
     billing_email = COALESCE(NULLIF(EXCLUDED.billing_email, ''), orgs.billing_email),
-    trust_tier = EXCLUDED.trust_tier,
-    overage_policy = EXCLUDED.overage_policy,
-    overage_consent_at = EXCLUDED.overage_consent_at,
+    trust_tier = orgs.trust_tier,
+    overage_policy = orgs.overage_policy,
+    overage_consent_at = orgs.overage_consent_at,
     updated_at = now();
+
+-- name: UpsertOrgReturning :one
+INSERT INTO orgs (org_id, display_name, billing_email, trust_tier, overage_policy, overage_consent_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (org_id) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    billing_email = COALESCE(NULLIF(EXCLUDED.billing_email, ''), orgs.billing_email),
+    trust_tier = orgs.trust_tier,
+    overage_policy = orgs.overage_policy,
+    overage_consent_at = orgs.overage_consent_at,
+    updated_at = now()
+RETURNING org_id, display_name, state, trust_tier;
+
+-- name: GetOrg :one
+SELECT org_id, display_name, state, trust_tier
+FROM orgs
+WHERE org_id = sqlc.arg(org_id);
+
+-- name: SetOrgTrustTier :one
+UPDATE orgs
+SET trust_tier = sqlc.arg(trust_tier),
+    updated_at = now()
+WHERE org_id = sqlc.arg(org_id)
+RETURNING org_id, display_name, state, trust_tier;
 
 -- name: ListProductIDs :many
 SELECT product_id

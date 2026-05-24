@@ -72,6 +72,10 @@ service Billing {
 service BillingInternal {
     version: "2026-05-13"
     operations: [
+        EnsureBillingOrganization,
+        SetOrganizationTrustTier,
+        ApplyBillingPlanPromotion,
+        CancelBillingPlanPromotion,
         GetStorageEntitlement,
         ReserveWindow,
         ActivateWindow,
@@ -186,6 +190,15 @@ string BillingCadence
 string BillingTier
 
 @length(min: 1, max: 128)
+string BillingTrustTier
+
+@range(min: 0, max: 100)
+integer BillingPromotionPercent
+
+@length(min: 1, max: 512)
+string BillingPromotionReason
+
+@length(min: 1, max: 128)
 string ReservationShape
 
 @length(min: 1, max: 128)
@@ -280,6 +293,12 @@ string BillingCheckoutPermission
 @permission(name: "billing:window:write")
 string BillingWindowWritePermission
 
+@permission(name: "billing:organization:write")
+string BillingOrganizationWritePermission
+
+@permission(name: "billing:promotion:write")
+string BillingPromotionWritePermission
+
 @permission(name: "billing:provider_webhook:receive")
 string BillingProviderWebhookPermission
 
@@ -316,6 +335,18 @@ string BillingContractCancelAuditEvent
 @auditEvent(name: "billing.portal.create")
 string BillingPortalCreateAuditEvent
 
+@auditEvent(name: "billing.organization.ensure")
+string BillingOrganizationEnsureAuditEvent
+
+@auditEvent(name: "billing.organization.trust_tier.set")
+string BillingOrganizationTrustTierSetAuditEvent
+
+@auditEvent(name: "billing.promotion.apply")
+string BillingPromotionApplyAuditEvent
+
+@auditEvent(name: "billing.promotion.cancel")
+string BillingPromotionCancelAuditEvent
+
 @auditEvent(name: "billing.window.reserve")
 string BillingWindowReserveAuditEvent
 
@@ -336,6 +367,8 @@ resource BillingGrantResource {}
 resource BillingPlanResource {}
 resource BillingContractResource {}
 resource BillingDocumentResource {}
+resource BillingOrganizationResource {}
+resource BillingPromotionResource {}
 resource BillingWindow {}
 resource BillingProviderWebhook {}
 
@@ -1003,6 +1036,183 @@ structure BillingURLResponseOutput {
     @httpPayload
     @nestedProperties
     response: BillingURLResponse
+}
+
+@idempotent
+@http(method: "POST", uri: "/internal/billing/v1/orgs")
+@identity(mode: "spiffe_mtls", audience: "billing-service", principals: ["workload"])
+@authz(permission: BillingOrganizationWritePermission, organization: {source: "body_org_id", member: "org_id"})
+@audit(event: BillingOrganizationEnsureAuditEvent, resource: BillingOrganizationResource, action: "create")
+@rateLimit(bucket: "internal_mutation")
+@requestBudget(maxBytes: 65536)
+@sdk(module: "billingInternal.orgs", method: "ensure", paginated: false, retryable: true)
+operation EnsureBillingOrganization {
+    input: EnsureBillingOrganizationInput
+    output: BillingOrganizationOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ServiceUnavailableError]
+}
+
+structure EnsureBillingOrganizationInput {
+    @required
+    org_id: OrgId
+    @required
+    display_name: DisplayName
+    trust_tier: BillingTrustTier
+}
+
+@idempotent
+@http(method: "POST", uri: "/internal/billing/v1/orgs/{org_id}/trust-tier")
+@identity(mode: "spiffe_mtls", audience: "billing-service", principals: ["workload"])
+@authz(permission: BillingOrganizationWritePermission, organization: {source: "input_member", member: "org_id"})
+@audit(event: BillingOrganizationTrustTierSetAuditEvent, resource: BillingOrganizationResource, action: "update")
+@rateLimit(bucket: "internal_mutation")
+@requestBudget(maxBytes: 65536)
+@sdk(module: "billingInternal.orgs", method: "setTrustTier", paginated: false, retryable: false)
+operation SetOrganizationTrustTier {
+    input: SetOrganizationTrustTierInput
+    output: BillingOrganizationOutput
+    errors: [ValidationFailedError, ConflictError, ResourceNotFoundError, PermissionDeniedError, ServiceUnavailableError]
+}
+
+structure SetOrganizationTrustTierInput {
+    @required
+    @httpLabel
+    org_id: OrgId
+
+    @required
+    trust_tier: BillingTrustTier
+
+    @required
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+}
+
+structure BillingOrganizationOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    organization: BillingOrganization
+}
+
+structure BillingOrganization {
+    @required
+    org_id: OrgId
+    @required
+    display_name: DisplayName
+    @required
+    state: BillingState
+    @required
+    trust_tier: BillingTrustTier
+}
+
+@idempotent
+@http(method: "POST", uri: "/internal/billing/v1/orgs/{org_id}/plan-promotions")
+@identity(mode: "spiffe_mtls", audience: "billing-service", principals: ["workload"])
+@authz(permission: BillingPromotionWritePermission, organization: {source: "input_member", member: "org_id"})
+@audit(event: BillingPromotionApplyAuditEvent, resource: BillingPromotionResource, action: "create")
+@rateLimit(bucket: "internal_mutation")
+@requestBudget(maxBytes: 65536)
+@sdk(module: "billingInternal.promotions", method: "applyPlanPromotion", paginated: false, retryable: false)
+operation ApplyBillingPlanPromotion {
+    input: ApplyBillingPlanPromotionInput
+    output: ApplyBillingPlanPromotionOutput
+    errors: [ValidationFailedError, ConflictError, ResourceNotFoundError, PermissionDeniedError, ServiceUnavailableError]
+}
+
+structure ApplyBillingPlanPromotionInput {
+    @required
+    @httpLabel
+    org_id: OrgId
+
+    @required
+    product_id: ProductId
+
+    @required
+    plan_id: PlanId
+
+    @required
+    percent_off: BillingPromotionPercent
+
+    @required
+    reason: BillingPromotionReason
+
+    @required
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+}
+
+structure ApplyBillingPlanPromotionOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    promotion: BillingPlanPromotion
+}
+
+structure BillingPlanPromotion {
+    @required
+    org_id: OrgId
+    @required
+    product_id: ProductId
+    @required
+    plan_id: PlanId
+    @required
+    contract_id: ContractId
+    @required
+    percent_off: BillingPromotionPercent
+    @required
+    reason: BillingPromotionReason
+}
+
+@idempotent
+@http(method: "POST", uri: "/internal/billing/v1/orgs/{org_id}/plan-promotions:cancel")
+@identity(mode: "spiffe_mtls", audience: "billing-service", principals: ["workload"])
+@authz(permission: BillingPromotionWritePermission, organization: {source: "input_member", member: "org_id"})
+@audit(event: BillingPromotionCancelAuditEvent, resource: BillingPromotionResource, action: "update")
+@rateLimit(bucket: "internal_mutation")
+@requestBudget(maxBytes: 65536)
+@sdk(module: "billingInternal.promotions", method: "cancelPlanPromotion", paginated: false, retryable: false)
+operation CancelBillingPlanPromotion {
+    input: CancelBillingPlanPromotionInput
+    output: CancelBillingPlanPromotionOutput
+    errors: [ValidationFailedError, ConflictError, ResourceNotFoundError, PermissionDeniedError, ServiceUnavailableError]
+}
+
+structure CancelBillingPlanPromotionInput {
+    @required
+    @httpLabel
+    org_id: OrgId
+
+    @required
+    product_id: ProductId
+
+    @required
+    reason: BillingPromotionReason
+
+    @required
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+}
+
+structure CancelBillingPlanPromotionOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    cancellation: BillingPlanPromotionCancellation
+}
+
+structure BillingPlanPromotionCancellation {
+    @required
+    org_id: OrgId
+    @required
+    product_id: ProductId
+    @required
+    contract_id: ContractId
+    cancel_at: DateTime
+    @required
+    reason: BillingPromotionReason
 }
 
 @idempotent

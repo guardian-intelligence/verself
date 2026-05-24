@@ -373,6 +373,47 @@ SET state = 'active',
     ends_at = NULL,
     cancel_at = NULL;
 
+-- name: UpsertInternalContract :exec
+INSERT INTO contracts (
+    contract_id, org_id, product_id, display_name, contract_kind, state,
+    payment_state, entitlement_state, overage_policy, starts_at
+) VALUES (
+    sqlc.arg(contract_id), sqlc.arg(org_id), sqlc.arg(product_id), sqlc.arg(display_name),
+    'internal', 'active', 'not_required', 'active', 'block', sqlc.arg(starts_at)
+)
+ON CONFLICT (contract_id) DO UPDATE
+SET state = 'active',
+    payment_state = 'not_required',
+    entitlement_state = 'active',
+    contract_kind = 'internal',
+    display_name = EXCLUDED.display_name,
+    ends_at = NULL,
+    cancel_at = NULL;
+
+-- name: GetContractKind :one
+SELECT contract_kind
+FROM contracts
+WHERE contract_id = sqlc.arg(contract_id)
+  AND org_id = sqlc.arg(org_id);
+
+-- name: UpsertInternalContractPhase :exec
+INSERT INTO contract_phases (
+    phase_id, contract_id, org_id, product_id, plan_id, phase_kind, state, payment_state,
+    entitlement_state, currency, recurring_amount_units, recurring_interval, effective_start,
+    activated_at, created_reason
+) VALUES (
+    sqlc.arg(phase_id), sqlc.arg(contract_id), sqlc.arg(org_id), sqlc.arg(product_id),
+    sqlc.arg(plan_id), 'internal', 'active', 'not_required',
+    'active', sqlc.arg(currency), 0, 'month',
+    sqlc.arg(effective_start), sqlc.arg(effective_start), 'internal_promotion'
+)
+ON CONFLICT (phase_id) DO UPDATE
+SET state = 'active',
+    payment_state = 'not_required',
+    entitlement_state = 'active',
+    effective_end = NULL,
+    activated_at = COALESCE(contract_phases.activated_at, EXCLUDED.activated_at);
+
 -- name: UpsertContractPhase :exec
 INSERT INTO contract_phases (
     phase_id, contract_id, org_id, product_id, plan_id, phase_kind, state, payment_state,

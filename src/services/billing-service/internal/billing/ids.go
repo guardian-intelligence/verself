@@ -81,6 +81,10 @@ func phaseID(contractID string, planID string, effectiveAt time.Time) string {
 	return textID("phase", contractID, planID, effectiveAt.UTC().Format(time.RFC3339Nano))
 }
 
+func internalPromotionPhaseID(contractID string, planID string) string {
+	return textID("phase", contractID, "internal_promotion", planID)
+}
+
 func changeID(contractID, targetPlanID string, effectiveAt time.Time) string {
 	return textID("change", contractID, targetPlanID, effectiveAt.UTC().Format(time.RFC3339Nano))
 }

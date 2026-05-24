@@ -285,6 +285,36 @@ func internalSKURates(input map[string]uint64) internalcontractapi.BillingSKURat
 	return out
 }
 
+func billingOrganizationResponse(org billing.OrgRecord) internalcontractapi.BillingOrganization {
+	return internalcontractapi.BillingOrganization{
+		OrgID:       internalcontractapi.OrgID(billingOrgIDText(org.OrgID)),
+		DisplayName: org.DisplayName,
+		State:       internalcontractapi.BillingState(org.State),
+		TrustTier:   internalcontractapi.BillingTrustTier(org.TrustTier),
+	}
+}
+
+func billingPlanPromotionResponse(record billing.PlanPromotionRecord) internalcontractapi.BillingPlanPromotion {
+	return internalcontractapi.BillingPlanPromotion{
+		OrgID:      internalcontractapi.OrgID(billingOrgIDText(record.OrgID)),
+		ProductID:  internalcontractapi.ProductID(record.ProductID),
+		PlanID:     internalcontractapi.PlanID(record.PlanID),
+		ContractID: internalcontractapi.ContractID(record.ContractID),
+		PercentOff: internalcontractapi.BillingPromotionPercent(record.PercentOff),
+		Reason:     internalcontractapi.BillingPromotionReason(record.Reason),
+	}
+}
+
+func billingPlanPromotionCancellationResponse(record billing.PlanPromotionCancellationRecord) internalcontractapi.BillingPlanPromotionCancellation {
+	return internalcontractapi.BillingPlanPromotionCancellation{
+		OrgID:      internalcontractapi.OrgID(billingOrgIDText(record.OrgID)),
+		ProductID:  internalcontractapi.ProductID(record.ProductID),
+		ContractID: internalcontractapi.ContractID(record.ContractID),
+		CancelAt:   timeStringPtr(record.CancelAt),
+		Reason:     internalcontractapi.BillingPromotionReason(record.Reason),
+	}
+}
+
 func storageEntitlementResponse(entitlement billing.StorageEntitlement) internalcontractapi.BillingStorageEntitlement {
 	return internalcontractapi.BillingStorageEntitlement{
 		DurableStorageQuotaBytes: safeUint64Contract[internalcontractapi.SafeUint64](entitlement.DurableStorageQuotaBytes, "durable storage quota bytes"),

@@ -141,6 +141,35 @@ func (q *Queries) GetBillingEventForProjection(ctx context.Context, arg GetBilli
 	return i, err
 }
 
+const getOrg = `-- name: GetOrg :one
+SELECT org_id, display_name, state, trust_tier
+FROM orgs
+WHERE org_id = $1
+`
+
+type GetOrgParams struct {
+	OrgID string
+}
+
+type GetOrgRow struct {
+	OrgID       string
+	DisplayName string
+	State       string
+	TrustTier   string
+}
+
+func (q *Queries) GetOrg(ctx context.Context, arg GetOrgParams) (GetOrgRow, error) {
+	row := q.db.QueryRow(ctx, getOrg, arg.OrgID)
+	var i GetOrgRow
+	err := row.Scan(
+		&i.OrgID,
+		&i.DisplayName,
+		&i.State,
+		&i.TrustTier,
+	)
+	return i, err
+}
+
 const insertBillingEvent = `-- name: InsertBillingEvent :exec
 INSERT INTO billing_events (
     event_id, event_type, event_version, aggregate_type, aggregate_id,
@@ -329,15 +358,47 @@ func (q *Queries) MarkBillingEventDeliverySucceeded(ctx context.Context, arg Mar
 	return err
 }
 
+const setOrgTrustTier = `-- name: SetOrgTrustTier :one
+UPDATE orgs
+SET trust_tier = $1,
+    updated_at = now()
+WHERE org_id = $2
+RETURNING org_id, display_name, state, trust_tier
+`
+
+type SetOrgTrustTierParams struct {
+	TrustTier string
+	OrgID     string
+}
+
+type SetOrgTrustTierRow struct {
+	OrgID       string
+	DisplayName string
+	State       string
+	TrustTier   string
+}
+
+func (q *Queries) SetOrgTrustTier(ctx context.Context, arg SetOrgTrustTierParams) (SetOrgTrustTierRow, error) {
+	row := q.db.QueryRow(ctx, setOrgTrustTier, arg.TrustTier, arg.OrgID)
+	var i SetOrgTrustTierRow
+	err := row.Scan(
+		&i.OrgID,
+		&i.DisplayName,
+		&i.State,
+		&i.TrustTier,
+	)
+	return i, err
+}
+
 const upsertOrg = `-- name: UpsertOrg :exec
 INSERT INTO orgs (org_id, display_name, billing_email, trust_tier, overage_policy, overage_consent_at)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (org_id) DO UPDATE
 SET display_name = EXCLUDED.display_name,
     billing_email = COALESCE(NULLIF(EXCLUDED.billing_email, ''), orgs.billing_email),
-    trust_tier = EXCLUDED.trust_tier,
-    overage_policy = EXCLUDED.overage_policy,
-    overage_consent_at = EXCLUDED.overage_consent_at,
+    trust_tier = orgs.trust_tier,
+    overage_policy = orgs.overage_policy,
+    overage_consent_at = orgs.overage_consent_at,
     updated_at = now()
 `
 
@@ -360,4 +421,52 @@ func (q *Queries) UpsertOrg(ctx context.Context, arg UpsertOrgParams) error {
 		arg.OverageConsentAt,
 	)
 	return err
+}
+
+const upsertOrgReturning = `-- name: UpsertOrgReturning :one
+INSERT INTO orgs (org_id, display_name, billing_email, trust_tier, overage_policy, overage_consent_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (org_id) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    billing_email = COALESCE(NULLIF(EXCLUDED.billing_email, ''), orgs.billing_email),
+    trust_tier = orgs.trust_tier,
+    overage_policy = orgs.overage_policy,
+    overage_consent_at = orgs.overage_consent_at,
+    updated_at = now()
+RETURNING org_id, display_name, state, trust_tier
+`
+
+type UpsertOrgReturningParams struct {
+	OrgID            string
+	DisplayName      string
+	BillingEmail     string
+	TrustTier        string
+	OveragePolicy    string
+	OverageConsentAt pgtype.Timestamptz
+}
+
+type UpsertOrgReturningRow struct {
+	OrgID       string
+	DisplayName string
+	State       string
+	TrustTier   string
+}
+
+func (q *Queries) UpsertOrgReturning(ctx context.Context, arg UpsertOrgReturningParams) (UpsertOrgReturningRow, error) {
+	row := q.db.QueryRow(ctx, upsertOrgReturning,
+		arg.OrgID,
+		arg.DisplayName,
+		arg.BillingEmail,
+		arg.TrustTier,
+		arg.OveragePolicy,
+		arg.OverageConsentAt,
+	)
+	var i UpsertOrgReturningRow
+	err := row.Scan(
+		&i.OrgID,
+		&i.DisplayName,
+		&i.State,
+		&i.TrustTier,
+	)
+	return i, err
 }

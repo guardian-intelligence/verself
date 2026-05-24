@@ -14,11 +14,15 @@ import (
 const ServiceName = "iam-service"
 
 type (
+	AccountPassword          = string
 	DisplayName              = string
 	EmailAddress             = string
+	GivenName                = string
 	IAMMemberName            = string
 	IAMRoleName              = string
 	IdempotencyKey           = string
+	FamilyName               = string
+	LoginURL                 = string
 	MemberId                 = string
 	MemberResourceName       = string
 	OrgId                    = string
@@ -34,6 +38,10 @@ type (
 	ProblemDetail            = string
 	ProblemType              = string
 	RequestId                = string
+	SignupIntentId           = string
+	SignupIntentResourceName = string
+	SignupIntentStatus       = string
+	SignupVerificationToken  = string
 	TraceParent              = string
 )
 
@@ -80,6 +88,10 @@ type ListOrganizationsOutputBody struct {
 
 type MemberInvitationStatus = string
 
+type AccountCredential struct {
+	Password AccountPassword `json:"password"`
+}
+
 type CreateOrganizationInputBody struct {
 	DisplayName DisplayName `json:"displayName"`
 	Slug        *OrgSlug    `json:"slug,omitempty"`
@@ -108,6 +120,15 @@ type OrganizationSummary struct {
 	Slug         *OrgSlug                 `json:"slug,omitempty"`
 	DisplayName  DisplayName              `json:"displayName"`
 	Version      OrganizationVersion      `json:"version"`
+}
+
+type SignupIntentSummary struct {
+	SignupIntentID          SignupIntentId           `json:"signupIntentId"`
+	ResourceName            SignupIntentResourceName `json:"resourceName"`
+	OrganizationDisplayName DisplayName              `json:"organizationDisplayName"`
+	OrganizationSlug        *OrgSlug                 `json:"organizationSlug,omitempty"`
+	Status                  SignupIntentStatus       `json:"status"`
+	VerificationExpiresAt   string                   `json:"verificationExpiresAt"`
 }
 
 type IAMPolicy struct {
@@ -237,6 +258,27 @@ type CreateOrganizationResponse struct {
 	HTTPResponse *http.Response
 }
 
+type StartSignupInputBody struct {
+	Email                   EmailAddress `json:"email"`
+	OrganizationDisplayName DisplayName  `json:"organizationDisplayName"`
+	OrganizationSlug        *OrgSlug     `json:"organizationSlug,omitempty"`
+	GivenName               *GivenName   `json:"givenName,omitempty"`
+	FamilyName              *FamilyName  `json:"familyName,omitempty"`
+}
+
+type StartSignupRequest struct {
+	IdempotencyKey IdempotencyKey
+	Body           StartSignupInputBody `json:"body"`
+}
+
+type StartSignupResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *SignupIntentSummary
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
 type ListMembersRequest struct {
 	OrgID     OrgId
 	PageSize  *PageSize
@@ -281,6 +323,30 @@ type InviteMemberResponse struct {
 	StatusCode   int
 	Body         []byte
 	Result       *MemberInvitationSummary
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type VerifySignupInputBody struct {
+	VerificationToken SignupVerificationToken `json:"verificationToken"`
+	Credential        AccountCredential       `json:"credential"`
+}
+
+type VerifySignupRequest struct {
+	SignupIntentID SignupIntentId
+	IdempotencyKey IdempotencyKey
+	Body           VerifySignupInputBody `json:"body"`
+}
+
+type VerifySignupResult struct {
+	Organization OrganizationSummary `json:"organization"`
+	LoginURL     LoginURL            `json:"loginUrl"`
+}
+
+type VerifySignupResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *VerifySignupResult
 	Problem      *ErrorModel
 	HTTPResponse *http.Response
 }
@@ -455,6 +521,31 @@ func (c *Client) newCreateOrganizationRequest(ctx context.Context, request Creat
 	return req, nil
 }
 
+func (c *Client) StartSignup(ctx context.Context, request StartSignupRequest, reqEditors ...RequestEditorFn) (*StartSignupResponse, error) {
+	req, err := c.newStartSignupRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[SignupIntentSummary](resp, http.StatusAccepted)
+	if err != nil {
+		return nil, err
+	}
+	return &StartSignupResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newStartSignupRequest(ctx context.Context, request StartSignupRequest) (*http.Request, error) {
+	req, err := c.newRequest(ctx, http.MethodPost, "/api/v1/signup-intents", request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
 func (c *Client) GetOrganization(ctx context.Context, request GetOrganizationRequest, reqEditors ...RequestEditorFn) (*GetOrganizationResponse, error) {
 	req, err := c.newGetOrganizationRequest(ctx, request)
 	if err != nil {
@@ -562,6 +653,33 @@ func (c *Client) InviteMember(ctx context.Context, request InviteMemberRequest, 
 func (c *Client) newInviteMemberRequest(ctx context.Context, request InviteMemberRequest) (*http.Request, error) {
 	path := "/api/v1/orgs/{orgId}/members:invite"
 	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
+	req, err := c.newRequest(ctx, http.MethodPost, path, request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) VerifySignup(ctx context.Context, request VerifySignupRequest, reqEditors ...RequestEditorFn) (*VerifySignupResponse, error) {
+	req, err := c.newVerifySignupRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[VerifySignupResult](resp, http.StatusCreated)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifySignupResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newVerifySignupRequest(ctx context.Context, request VerifySignupRequest) (*http.Request, error) {
+	path := "/api/v1/signup-intents/{signupIntentId}/verification"
+	path = strings.ReplaceAll(path, "{signupIntentId}", url.PathEscape(fmt.Sprint(request.SignupIntentID)))
 	req, err := c.newRequest(ctx, http.MethodPost, path, request.Body)
 	if err != nil {
 		return nil, err
