@@ -11,7 +11,7 @@ INSERT INTO orgs (org_id, display_name, billing_email, trust_tier, overage_polic
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (org_id) DO UPDATE
 SET display_name = EXCLUDED.display_name,
-    billing_email = EXCLUDED.billing_email,
+    billing_email = COALESCE(NULLIF(EXCLUDED.billing_email, ''), orgs.billing_email),
     trust_tier = EXCLUDED.trust_tier,
     overage_policy = EXCLUDED.overage_policy,
     overage_consent_at = EXCLUDED.overage_consent_at,

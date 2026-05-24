@@ -712,6 +712,9 @@ CREATE INDEX idx_golden_vm_snapshot_run
     ON golden_vm_snapshot (provider_run_id, provider_run_attempt, provider_job_id, head_sha);
 CREATE INDEX idx_golden_vm_snapshot_retention
     ON golden_vm_snapshot (state, expires_at, created_at);
+CREATE INDEX idx_golden_vm_snapshot_org_ring_retention
+    ON golden_vm_snapshot (org_id, state, last_used_at DESC, created_at DESC, golden_vm_snapshot_id DESC)
+    WHERE state IN ('candidate', 'current', 'retained');
 
 CREATE TABLE golden_vm_snapshot_generation (
     golden_vm_snapshot_id UUID    NOT NULL REFERENCES golden_vm_snapshot(golden_vm_snapshot_id) ON DELETE CASCADE,

@@ -50,9 +50,11 @@ pkg_tar(
     name = "migration_artifact",
     srcs = glob(
         ["migrations/*.up.sql"],
+        allow_empty = True,
         exclude = ["migrations/001_initial_schema.up.sql"],
     ),
     out = "clickhouse-migrations.tar",
+    empty_files = ["migrations/.collapsed"],
     package_dir = "/",
     strip_prefix = ".",
 )

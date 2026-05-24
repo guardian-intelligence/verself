@@ -201,8 +201,10 @@ SET granted_by = EXCLUDED.granted_by,
 		if _, err := tx.Exec(ctx, `
 INSERT INTO forwarding_destinations (destination_id, org_id, destination_email, status, verified_at)
 VALUES ($1, $2, $3, 'verified', $4)
-ON CONFLICT (org_id, destination_email) DO UPDATE
-SET status = EXCLUDED.status,
+ON CONFLICT (destination_id) DO UPDATE
+SET org_id = EXCLUDED.org_id,
+    destination_email = EXCLUDED.destination_email,
+    status = EXCLUDED.status,
     verified_at = EXCLUDED.verified_at`,
 			destinationID,
 			r.cfg.PublicOrgIDText,

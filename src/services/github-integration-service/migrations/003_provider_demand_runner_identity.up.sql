@@ -1,1 +1,0 @@
-DROP INDEX IF EXISTS idx_github_provider_demands_runner_name;
