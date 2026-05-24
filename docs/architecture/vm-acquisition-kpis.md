@@ -47,7 +47,7 @@ points that only exist as spans should remain queryable from
 | GitHub accepts push/work | GitHub `workflow_run.created_at`, `workflow_job.created_at`, or future `push` webhook row | `github_accept_to_webhook_ms` | provider, repository, head SHA, run ID, job ID. |
 | Webhook reaches Verself edge | `default.http_access_logs` for `/api/v1/github/webhooks` | `edge_receive_to_handler_ms` | delivery ID, event name, path, status. |
 | Webhook handler starts | `github.webhook.receive` span and `verself.github_integration_events` | `webhook_handler_ms` | delivery ID, action, status, run ID, job ID. |
-| Demand persisted | `runner_jobs`, `github_workflow_invocations`, `verself.github_integration_events` | `webhook_to_demand_persist_ms` | delivery ID, job status, labels, runner identity fields. |
+| Demand persisted | `runner_jobs`, `verself.github_integration_events` | `webhook_to_demand_persist_ms` | delivery ID, job status, labels, runner identity fields. |
 | Allocation row inserted | `runner_allocations.created_at`, `github.runner.allocate` | `demand_to_allocation_ms` | allocation ID, deadlines, runner class, repository ownership decision. |
 | GitHub runner capacity requested | `github.runner.allocate`, `github.api.request` | `allocation_to_jit_ms` | API endpoint, status, runner group, provider runner ID. |
 | JIT config persisted | `runner_bootstrap_configs.created_at` | `jit_to_bootstrap_persist_ms` | allocation ID, bootstrap kind, expiry. |

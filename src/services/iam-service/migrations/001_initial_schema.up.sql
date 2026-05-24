@@ -177,10 +177,28 @@ CREATE TABLE IF NOT EXISTS iam_browser_sessions (
     expires_at TIMESTAMPTZ NOT NULL,
     created_client_ip TEXT NOT NULL,
     created_client_ip_trusted BOOLEAN NOT NULL,
+    created_client_ip_source TEXT NOT NULL DEFAULT '',
+    created_edge_peer_ip TEXT NOT NULL DEFAULT '',
     created_user_agent TEXT NOT NULL,
+    created_device_label TEXT NOT NULL DEFAULT '',
+    created_device_kind TEXT NOT NULL DEFAULT '',
+    created_browser_name TEXT NOT NULL DEFAULT '',
+    created_os_name TEXT NOT NULL DEFAULT '',
+    created_geo_country_code TEXT NOT NULL DEFAULT '',
+    created_geo_region TEXT NOT NULL DEFAULT '',
+    created_geo_city TEXT NOT NULL DEFAULT '',
     last_seen_client_ip TEXT NOT NULL,
     last_seen_client_ip_trusted BOOLEAN NOT NULL,
+    last_seen_client_ip_source TEXT NOT NULL DEFAULT '',
+    last_seen_edge_peer_ip TEXT NOT NULL DEFAULT '',
     last_seen_user_agent TEXT NOT NULL,
+    last_seen_device_label TEXT NOT NULL DEFAULT '',
+    last_seen_device_kind TEXT NOT NULL DEFAULT '',
+    last_seen_browser_name TEXT NOT NULL DEFAULT '',
+    last_seen_os_name TEXT NOT NULL DEFAULT '',
+    last_seen_geo_country_code TEXT NOT NULL DEFAULT '',
+    last_seen_geo_region TEXT NOT NULL DEFAULT '',
+    last_seen_geo_city TEXT NOT NULL DEFAULT '',
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -197,6 +215,35 @@ CREATE INDEX IF NOT EXISTS iam_browser_sessions_subject_idx
 
 CREATE INDEX IF NOT EXISTS iam_browser_sessions_expires_at_idx
     ON iam_browser_sessions (expires_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS iam_browser_sessions_session_handle_idx
+    ON iam_browser_sessions (session_handle);
+
+CREATE TABLE IF NOT EXISTS iam_browser_session_observations (
+    observation_id BIGSERIAL PRIMARY KEY,
+    session_hash TEXT NOT NULL,
+    session_handle TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    client_ip TEXT NOT NULL,
+    client_ip_trusted BOOLEAN NOT NULL DEFAULT false,
+    client_ip_source TEXT NOT NULL DEFAULT '',
+    edge_peer_ip TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    device_label TEXT NOT NULL DEFAULT '',
+    device_kind TEXT NOT NULL DEFAULT '',
+    browser_name TEXT NOT NULL DEFAULT '',
+    os_name TEXT NOT NULL DEFAULT '',
+    geo_country_code TEXT NOT NULL DEFAULT '',
+    geo_region TEXT NOT NULL DEFAULT '',
+    geo_city TEXT NOT NULL DEFAULT '',
+    observed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_iam_browser_session_observations_subject_time
+    ON iam_browser_session_observations (subject, observed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_iam_browser_session_observations_session_time
+    ON iam_browser_session_observations (session_hash, observed_at DESC);
 
 CREATE TABLE IF NOT EXISTS iam_browser_resource_tokens (
     session_hash TEXT NOT NULL REFERENCES iam_browser_sessions (session_hash) ON DELETE CASCADE,
@@ -219,3 +266,29 @@ CREATE TABLE IF NOT EXISTS iam_browser_resource_tokens (
 
 CREATE INDEX IF NOT EXISTS iam_browser_resource_tokens_expires_at_idx
     ON iam_browser_resource_tokens (expires_at);
+
+CREATE TABLE IF NOT EXISTS iam_member_invite_acceptance_tokens (
+    token_hash TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES iam_organizations (org_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    email_verification_code TEXT NOT NULL,
+    password_reset_code TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    accepted_at TIMESTAMPTZ,
+    CHECK (token_hash ~ '^sha256:[0-9a-f]{64}$'),
+    CHECK (length(btrim(user_id)) > 0),
+    CHECK (length(btrim(email)) > 0),
+    CHECK (length(btrim(email_verification_code)) > 0),
+    CHECK (length(btrim(password_reset_code)) > 0),
+    CHECK (expires_at > created_at),
+    CHECK (accepted_at IS NULL OR accepted_at >= created_at)
+);
+
+CREATE INDEX IF NOT EXISTS iam_member_invite_acceptance_tokens_user_idx
+    ON iam_member_invite_acceptance_tokens (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS iam_member_invite_acceptance_tokens_expires_idx
+    ON iam_member_invite_acceptance_tokens (expires_at)
+    WHERE accepted_at IS NULL;

@@ -373,7 +373,9 @@ ORDER BY (ServiceName, TimestampTime, Method, Status)
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
 -- MV runs on every insert into otel_logs; rows without http_method are skipped.
-CREATE MATERIALIZED VIEW IF NOT EXISTS default.http_access_logs_mv
+DROP VIEW IF EXISTS default.http_access_logs_mv;
+
+CREATE MATERIALIZED VIEW default.http_access_logs_mv
 TO default.http_access_logs
 AS SELECT
     Timestamp,
@@ -418,6 +420,97 @@ AS SELECT
     Body
 FROM default.otel_logs
 WHERE mapContains(LogAttributes, 'http_method');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- verself: host SSH authentication events
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS verself.host_auth_events
+(
+    recorded_at         DateTime64(9)               CODEC(Delta(8), ZSTD(3)),
+    event_date          Date                        DEFAULT toDate(recorded_at),
+
+    outcome             LowCardinality(String)      CODEC(ZSTD(3)),
+    auth_method         LowCardinality(String)      CODEC(ZSTD(3)),
+    user                LowCardinality(String)      CODEC(ZSTD(3)),
+
+    source_ip           String                      CODEC(ZSTD(3)),
+    source_port         UInt16                      CODEC(T64, ZSTD(3)),
+
+    key_type            LowCardinality(String)      CODEC(ZSTD(3)),
+    key_fingerprint     String                      CODEC(ZSTD(3)),
+
+    cert_serial         String                      CODEC(ZSTD(3)),
+    cert_id             String                      CODEC(ZSTD(3)),
+    ca_fingerprint      String                      CODEC(ZSTD(3)),
+
+    body                String                      CODEC(ZSTD(3)),
+
+    INDEX idx_source_ip       source_ip       TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_cert_serial     cert_serial     TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_user            user            TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toDate(event_date)
+PRIMARY KEY (event_date, outcome, auth_method)
+ORDER BY (event_date, outcome, auth_method, recorded_at)
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
+
+DROP VIEW IF EXISTS verself.host_auth_events_mv;
+
+CREATE MATERIALIZED VIEW verself.host_auth_events_mv
+TO verself.host_auth_events
+AS SELECT
+    Timestamp                                                              AS recorded_at,
+    toDate(Timestamp)                                                      AS event_date,
+    multiIf(
+        match(Body, '^Accepted '),                                          'accepted',
+        match(Body, 'invalid user '),                                       'invalid_user',
+        match(Body, '^Invalid user '),                                      'invalid_user',
+        match(Body, '^Failed password '),                                   'failed_password',
+        match(Body, '^Connection closed by authenticating user '),          'preauth_close',
+        match(Body, '^Disconnected from authenticating user '),             'preauth_close',
+        match(Body, '^Connection closed by '),                              'preauth_close',
+        match(Body, '^Authentication refused'),                             'auth_refused',
+        'other'
+    )                                                                      AS outcome,
+    multiIf(
+        match(Body, ' CA \\S+ SHA256:'),                                    'publickey-cert',
+        match(Body, '^Accepted publickey '),                                'publickey',
+        match(Body, '^Accepted password '),                                 'password',
+        match(Body, '^Failed password '),                                   'password',
+        match(Body, '\\[preauth\\]'),                                       'preauth',
+        'other'
+    )                                                                      AS auth_method,
+    if(
+        length(extract(
+            Body,
+            '(?:Accepted (?:publickey|password) for|Invalid user|Failed password for invalid user|Failed password for|Connection closed by invalid user|Disconnected from invalid user|Connection closed by authenticating user|Disconnected from authenticating user) (\\S+)'
+        )) > 32,
+        '__truncated__',
+        extract(
+            Body,
+            '(?:Accepted (?:publickey|password) for|Invalid user|Failed password for invalid user|Failed password for|Connection closed by invalid user|Disconnected from invalid user|Connection closed by authenticating user|Disconnected from authenticating user) (\\S+)'
+        )
+    )                                                                      AS user,
+    multiIf(
+        match(Body, 'from \\S+ port \\d+'), extract(Body, 'from (\\S+) port \\d+'),
+        match(Body, 'user \\S+ \\S+ port \\d+'), extract(Body, 'user \\S+ (\\S+) port \\d+'),
+        ''
+    )                                                                      AS source_ip,
+    toUInt16OrZero(extract(Body, ' port (\\d+)'))                           AS source_port,
+    extract(Body, 'ssh2: (\\w+) SHA256:')                                   AS key_type,
+    extract(Body, 'ssh2: \\w+ SHA256:(\\S+)')                               AS key_fingerprint,
+    extract(Body, '\\(serial (\\d+)\\)')                                    AS cert_serial,
+    multiIf(
+        match(Body, ' ID "[^"]+"'), extract(Body, ' ID "([^"]+)"'),
+        match(Body, ' ID [^ ]+'),   extract(Body, ' ID ([^ ]+)'),
+        ''
+    )                                                                      AS cert_id,
+    extract(Body, ' CA \\w+ SHA256:(\\S+)')                                 AS ca_fingerprint,
+    Body                                                                    AS body
+FROM default.otel_logs
+WHERE ServiceName = 'sshd';
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- verself: sandbox execution logs and wide events
@@ -511,19 +604,11 @@ ORDER BY (org_id, source_kind, runner_class, repository_full_name, created_at, e
 TTL toDateTime(created_at) + INTERVAL 1 YEAR
 SETTINGS index_granularity = 8192;
 
-ALTER TABLE verself.job_events
-    ADD COLUMN IF NOT EXISTS provider_installation_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER head_sha;
-ALTER TABLE verself.job_events
-    ADD COLUMN IF NOT EXISTS provider_run_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER provider_installation_id;
-ALTER TABLE verself.job_events
-    ADD COLUMN IF NOT EXISTS provider_job_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)) AFTER provider_run_id;
 -- ═══════════════════════════════════════════════════════════════════════════
 -- verself: billing ledger and windowed metering
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP TABLE IF EXISTS verself.metering;
-
-CREATE TABLE verself.metering (
+CREATE TABLE IF NOT EXISTS verself.metering (
     window_id                   String                               CODEC(ZSTD(3)),
     org_id                      LowCardinality(String)               CODEC(ZSTD(3)),
     actor_id                    String DEFAULT ''                    CODEC(ZSTD(3)),
@@ -572,9 +657,7 @@ CREATE TABLE verself.metering (
 ENGINE = MergeTree()
 ORDER BY (org_id, product_id, started_at, source_ref, window_seq, window_id);
 
-DROP TABLE IF EXISTS verself.billing_events;
-
-CREATE TABLE verself.billing_events (
+CREATE TABLE IF NOT EXISTS verself.billing_events (
     event_id           String                 CODEC(ZSTD(3)),
     event_type         LowCardinality(String) CODEC(ZSTD(3)),
     event_version      UInt16                 DEFAULT 1 CODEC(T64, ZSTD(3)),
@@ -605,9 +688,7 @@ ORDER BY (event_id, occurred_at, aggregate_type, aggregate_id);
 -- verself: notification delivery ledger
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP TABLE IF EXISTS verself.notification_events;
-
-CREATE TABLE verself.notification_events
+CREATE TABLE IF NOT EXISTS verself.notification_events
 (
     recorded_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
     occurred_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
@@ -636,49 +717,6 @@ ORDER BY (event_type, org_id, kind, status, recipient_subject_id, occurred_at, l
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- verself: domain update ledger
--- ═══════════════════════════════════════════════════════════════════════════
-
-DROP TABLE IF EXISTS verself.domain_update_ledger;
-
-CREATE TABLE verself.domain_update_ledger
-(
-    recorded_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
-    occurred_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
-    schema_version LowCardinality(String) CODEC(ZSTD(3)),
-    event_id UUID,
-    event_type LowCardinality(String) CODEC(ZSTD(3)),
-    service_name LowCardinality(String) CODEC(ZSTD(3)),
-    org_id LowCardinality(String) CODEC(ZSTD(3)),
-    actor_id String CODEC(ZSTD(3)),
-    operation_id LowCardinality(String) CODEC(ZSTD(3)),
-    command_id UUID,
-    idempotency_key_hash FixedString(64) CODEC(ZSTD(3)),
-    aggregate_kind LowCardinality(String) CODEC(ZSTD(3)),
-    aggregate_id String CODEC(ZSTD(3)),
-    aggregate_version UInt32 CODEC(T64, ZSTD(3)),
-    target_type LowCardinality(String) CODEC(ZSTD(3)),
-    target_id String CODEC(ZSTD(3)),
-    result LowCardinality(String) CODEC(ZSTD(3)),
-    reason LowCardinality(String) CODEC(ZSTD(3)),
-    conflict_policy LowCardinality(String) CODEC(ZSTD(3)),
-    expected_version UInt32 CODEC(T64, ZSTD(3)),
-    actual_version UInt32 CODEC(T64, ZSTD(3)),
-    expected_hash FixedString(64) CODEC(ZSTD(3)),
-    actual_hash FixedString(64) CODEC(ZSTD(3)),
-    requested_hash FixedString(64) CODEC(ZSTD(3)),
-    changed_fields Array(LowCardinality(String)) CODEC(ZSTD(3)),
-    payload_json String CODEC(ZSTD(3)),
-    trace_id String CODEC(ZSTD(3)),
-    span_id String CODEC(ZSTD(3)),
-    traceparent String CODEC(ZSTD(3))
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(toDate(recorded_at))
-ORDER BY (service_name, event_type, org_id, aggregate_kind, result, occurred_at, event_id)
-SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
-
--- ═══════════════════════════════════════════════════════════════════════════
 -- verself: vm-orchestrator lease evidence projection
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Typed projection of lease lifecycle, exec starts, and telemetry diagnostics.
@@ -688,6 +726,14 @@ CREATE TABLE IF NOT EXISTS verself.vm_lease_evidence
     `evidence_time`                 DateTime64(9)            CODEC(Delta(8), ZSTD(3)),
     `evidence_date`                 Date                      DEFAULT toDate(evidence_time),
     `service_name`                  LowCardinality(String)   CODEC(ZSTD(3)),
+    `org_id`                        String                    CODEC(ZSTD(3)),
+    `storage_key_version`           String                    CODEC(ZSTD(3)),
+    `storage_key_ref_count`         UInt32                    CODEC(T64, ZSTD(3)),
+    `image_ref`                     String                    CODEC(ZSTD(3)),
+    `zfs_dataset`                   String                    CODEC(ZSTD(3)),
+    `source_snapshot_ref`           String                    CODEC(ZSTD(3)),
+    `target_snapshot_ref`           String                    CODEC(ZSTD(3)),
+    `mount_name`                    String                    CODEC(ZSTD(3)),
     `lease_id`                      String                    CODEC(ZSTD(3)),
     `exec_id`                       String                    CODEC(ZSTD(3)),
     `evidence_type`                 LowCardinality(String)   CODEC(ZSTD(3)),
@@ -717,6 +763,14 @@ AS
 SELECT
     Timestamp AS evidence_time,
     ServiceName AS service_name,
+    LogAttributes['org_id'] AS org_id,
+    LogAttributes['key_version'] AS storage_key_version,
+    toUInt32OrZero(LogAttributes['ref_count']) AS storage_key_ref_count,
+    LogAttributes['image_ref'] AS image_ref,
+    LogAttributes['dataset'] AS zfs_dataset,
+    LogAttributes['source_snapshot'] AS source_snapshot_ref,
+    LogAttributes['target_snapshot'] AS target_snapshot_ref,
+    LogAttributes['mount_name'] AS mount_name,
     LogAttributes['lease_id'] AS lease_id,
     LogAttributes['exec_id'] AS exec_id,
     multiIf(
@@ -725,6 +779,12 @@ SELECT
         Body = 'guest telemetry hello received', 'telemetry_hello',
         Body = 'guest telemetry stream diagnostic', 'telemetry_diagnostic',
         Body = 'lease runtime cleaned up', 'lease_cleanup',
+        Body = 'storage key acquired', 'storage_key_acquired',
+        Body = 'storage key released', 'storage_key_released',
+        Body = 'storage namespace key unloaded', 'storage_key_unloaded',
+        Body = 'idle storage namespace key unloaded', 'storage_key_idle_unloaded',
+        Body = 'org image materialized', 'org_image_materialized',
+        Body = 'filesystem mount source snapshot missing', 'filesystem_mount_cache_miss',
         'other'
     ) AS evidence_type,
     if(Body = 'guest telemetry stream diagnostic', LogAttributes['kind'], '') AS diagnostic_kind,
@@ -734,6 +794,12 @@ SELECT
         Body = 'lease ready', 'lease_ready',
         Body = 'guest exec started', 'exec_started',
         Body = 'lease runtime cleaned up', 'lease_cleanup',
+        Body = 'storage key acquired', 'storage_key_acquired',
+        Body = 'storage key released', 'storage_key_released',
+        Body = 'storage namespace key unloaded', 'storage_key_unloaded',
+        Body = 'idle storage namespace key unloaded', 'storage_key_idle_unloaded',
+        Body = 'org image materialized', 'org_image_materialized',
+        Body = 'filesystem mount source snapshot missing', 'filesystem_mount_cache_miss',
         'other'
     ) AS reason_code,
     LogAttributes['reason'] AS reason,
@@ -751,19 +817,20 @@ WHERE ServiceName = 'vm-orchestrator'
     'guest exec started',
     'guest telemetry hello received',
     'guest telemetry stream diagnostic',
-    'lease runtime cleaned up'
-  )
-  AND LogAttributes['lease_id'] != '';
+    'lease runtime cleaned up',
+    'storage key acquired',
+    'storage key released',
+    'storage namespace key unloaded',
+    'idle storage namespace key unloaded',
+    'org image materialized',
+    'filesystem mount source snapshot missing'
+  );
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- verself: governance OCSF API Activity ledger
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP TABLE IF EXISTS verself.api_activity_resources;
-DROP TABLE IF EXISTS verself.api_activity_payloads;
-DROP TABLE IF EXISTS verself.api_activity_events;
-
-CREATE TABLE verself.api_activity_events
+CREATE TABLE IF NOT EXISTS verself.api_activity_events
 (
     time DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
     event_date Date DEFAULT toDate(time),
@@ -821,7 +888,7 @@ PARTITION BY toYYYYMM(event_date)
 ORDER BY (org_id, event_date, api_service, status_id, time, sequence, metadata_uid)
 SETTINGS index_granularity = 8192;
 
-CREATE TABLE verself.api_activity_payloads
+CREATE TABLE IF NOT EXISTS verself.api_activity_payloads
 (
     metadata_uid UUID,
     org_id LowCardinality(String),
@@ -834,7 +901,7 @@ PARTITION BY toYYYYMM(event_date)
 ORDER BY (org_id, event_date, metadata_uid)
 SETTINGS index_granularity = 8192;
 
-CREATE TABLE verself.api_activity_resources
+CREATE TABLE IF NOT EXISTS verself.api_activity_resources
 (
     metadata_uid UUID,
     org_id LowCardinality(String),
@@ -856,9 +923,7 @@ SETTINGS index_granularity = 8192;
 -- verself: object-storage access events
 -- ═══════════════════════════════════════════════════════════════════════════
 
-DROP TABLE IF EXISTS verself.object_access_events;
-
-CREATE TABLE verself.object_access_events
+CREATE TABLE IF NOT EXISTS verself.object_access_events
 (
     recorded_at DateTime64(6, 'UTC'),
     event_date Date DEFAULT toDate(recorded_at),
@@ -897,6 +962,697 @@ PARTITION BY toYYYYMM(event_date)
 ORDER BY (org_id, operation, auth_mode, status, event_date, recorded_at, bucket_id)
 TTL toDateTime(recorded_at) + INTERVAL 30 DAY
 SETTINGS index_granularity = 8192;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- verself: operator command evidence
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS verself.operator_command_runs
+(
+    `event_at`        DateTime64(3)             CODEC(Delta(8), ZSTD(3)),
+    `run_id`          String                    CODEC(ZSTD(3)),
+    `site`            LowCardinality(String)    CODEC(ZSTD(3)),
+    `command`         LowCardinality(String)    CODEC(ZSTD(3)),
+    `ssh_auth_method` LowCardinality(String)    CODEC(ZSTD(3)),
+    `target_host`     String                    CODEC(ZSTD(3)),
+    `target_user`     LowCardinality(String)    CODEC(ZSTD(3)),
+    `status`          LowCardinality(String)    CODEC(ZSTD(3)),
+    `duration_ms`     UInt32                    CODEC(T64, ZSTD(3)),
+    `error_kind`      LowCardinality(String)    DEFAULT '' CODEC(ZSTD(3)),
+    `error_message`   String                    DEFAULT '' CODEC(ZSTD(3)),
+    `trace_id`        String                    DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+ORDER BY (site, command, event_at, run_id)
+SETTINGS index_granularity = 8192;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- verself: sandbox-rental append-only observability
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE USER IF NOT EXISTS sandbox_rental IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/sandbox-rental-service' HOST LOCAL;
+ALTER USER sandbox_rental IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/sandbox-rental-service' HOST LOCAL;
+
+CREATE TABLE IF NOT EXISTS verself.durable_events
+(
+    observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
+    repository_id UInt64 CODEC(T64, ZSTD(3)),
+    provider LowCardinality(String),
+    provider_repository_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_run_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_run_attempt UInt64 CODEC(T64, ZSTD(3)),
+    provider_job_id UInt64 CODEC(T64, ZSTD(3)),
+    execution_id UUID,
+    attempt_id UUID,
+    operation_id UUID,
+    durable_scope_id UUID,
+    durable_generation_id UUID,
+    cache_name LowCardinality(String),
+    event_name LowCardinality(String),
+    result LowCardinality(String),
+    reason String DEFAULT '' CODEC(ZSTD(3)),
+    mount_name LowCardinality(String),
+    source_generation_id UUID,
+    candidate_generation_id UUID,
+    current_generation_id UUID,
+    zfs_snapshot_ref String DEFAULT '' CODEC(ZSTD(3)),
+    used_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    written_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    pool_size_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    pool_allocated_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    pool_free_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    org_quota_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    org_used_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    org_available_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    trace_id String DEFAULT '' CODEC(ZSTD(3)),
+    span_id String DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (event_name, provider, org_id, repository_id, cache_name, observed_at, operation_id);
+
+GRANT SELECT, INSERT ON verself.durable_events TO sandbox_rental;
+
+CREATE TABLE IF NOT EXISTS verself.bazel_invocations
+(
+    observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
+    provider LowCardinality(String),
+    provider_repository_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_run_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_job_id UInt64 CODEC(T64, ZSTD(3)),
+    execution_id UUID,
+    attempt_id UUID,
+    invocation_id String CODEC(ZSTD(3)),
+    command LowCardinality(String),
+    args Array(String),
+    target_patterns Array(String),
+    working_directory String DEFAULT '' CODEC(ZSTD(3)),
+    github_workflow LowCardinality(String) DEFAULT '',
+    github_job LowCardinality(String) DEFAULT '',
+    github_ref String DEFAULT '' CODEC(ZSTD(3)),
+    github_sha String DEFAULT '' CODEC(ZSTD(3)),
+    exit_code Int32 CODEC(ZSTD(3)),
+    duration_ms Int64 CODEC(Delta(8), ZSTD(3)),
+    profile_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    bep_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    execution_log_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    profile_span_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    package_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    spawn_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    target_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    failed_target_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    started_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    completed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    trace_id String DEFAULT '' CODEC(ZSTD(3)),
+    span_id String DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (command, provider, org_id, provider_repository_id, provider_run_id, provider_job_id, observed_at, invocation_id)
+TTL toDateTime(observed_at) + INTERVAL 1 YEAR
+SETTINGS index_granularity = 8192;
+
+CREATE TABLE IF NOT EXISTS verself.bazel_events
+(
+    observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
+    provider LowCardinality(String),
+    provider_repository_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_run_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_job_id UInt64 CODEC(T64, ZSTD(3)),
+    execution_id UUID,
+    attempt_id UUID,
+    invocation_id String CODEC(ZSTD(3)),
+    command LowCardinality(String),
+    event_name LowCardinality(String),
+    result LowCardinality(String),
+    reason String DEFAULT '' CODEC(ZSTD(3)),
+    exit_code Int32 CODEC(ZSTD(3)),
+    duration_ms Int64 CODEC(Delta(8), ZSTD(3)),
+    profile_span_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    package_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    spawn_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    target_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    trace_id String DEFAULT '' CODEC(ZSTD(3)),
+    span_id String DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (event_name, result, command, provider, org_id, provider_repository_id, provider_run_id, observed_at, invocation_id)
+TTL toDateTime(observed_at) + INTERVAL 1 YEAR
+SETTINGS index_granularity = 8192;
+
+CREATE TABLE IF NOT EXISTS verself.bazel_profile_spans
+(
+    observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
+    provider LowCardinality(String),
+    provider_repository_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_run_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_job_id UInt64 CODEC(T64, ZSTD(3)),
+    execution_id UUID,
+    attempt_id UUID,
+    invocation_id String CODEC(ZSTD(3)),
+    command LowCardinality(String),
+    span_kind LowCardinality(String),
+    category LowCardinality(String),
+    event_name String CODEC(ZSTD(3)),
+    package_name String DEFAULT '' CODEC(ZSTD(3)),
+    build_file String DEFAULT '' CODEC(ZSTD(3)),
+    external_repo LowCardinality(String) DEFAULT '',
+    started_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    duration_ms Int64 CODEC(Delta(8), ZSTD(3)),
+    trace_id String DEFAULT '' CODEC(ZSTD(3)),
+    span_id String DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (span_kind, command, provider, org_id, provider_repository_id, provider_run_id, build_file, started_at, invocation_id)
+TTL toDateTime(observed_at) + INTERVAL 1 YEAR
+SETTINGS index_granularity = 8192;
+
+CREATE TABLE IF NOT EXISTS verself.bazel_spawns
+(
+    observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
+    provider LowCardinality(String),
+    provider_repository_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_run_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_job_id UInt64 CODEC(T64, ZSTD(3)),
+    execution_id UUID,
+    attempt_id UUID,
+    invocation_id String CODEC(ZSTD(3)),
+    command LowCardinality(String),
+    target_label String CODEC(ZSTD(3)),
+    package_name String DEFAULT '' CODEC(ZSTD(3)),
+    build_file String DEFAULT '' CODEC(ZSTD(3)),
+    rule_name LowCardinality(String) DEFAULT '',
+    mnemonic LowCardinality(String) DEFAULT '',
+    runner LowCardinality(String) DEFAULT '',
+    cache_hit UInt8 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    exit_code Int32 CODEC(ZSTD(3)),
+    status String DEFAULT '' CODEC(ZSTD(3)),
+    output_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    output_first String DEFAULT '' CODEC(ZSTD(3)),
+    started_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    duration_ms Int64 CODEC(Delta(8), ZSTD(3)),
+    trace_id String DEFAULT '' CODEC(ZSTD(3)),
+    span_id String DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (command, mnemonic, runner, cache_hit, provider, org_id, provider_repository_id, provider_run_id, build_file, started_at, invocation_id)
+TTL toDateTime(observed_at) + INTERVAL 1 YEAR
+SETTINGS index_granularity = 8192;
+
+CREATE TABLE IF NOT EXISTS verself.bazel_targets
+(
+    observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
+    provider LowCardinality(String),
+    provider_repository_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_run_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_job_id UInt64 CODEC(T64, ZSTD(3)),
+    execution_id UUID,
+    attempt_id UUID,
+    invocation_id String CODEC(ZSTD(3)),
+    command LowCardinality(String),
+    label String CODEC(ZSTD(3)),
+    package_name String DEFAULT '' CODEC(ZSTD(3)),
+    build_file String DEFAULT '' CODEC(ZSTD(3)),
+    rule_name LowCardinality(String) DEFAULT '',
+    success UInt8 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    output_group_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    output_file_count UInt32 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    trace_id String DEFAULT '' CODEC(ZSTD(3)),
+    span_id String DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (command, success, provider, org_id, provider_repository_id, provider_run_id, build_file, observed_at, invocation_id)
+TTL toDateTime(observed_at) + INTERVAL 1 YEAR
+SETTINGS index_granularity = 8192;
+
+GRANT SELECT, INSERT ON verself.bazel_invocations TO sandbox_rental;
+GRANT SELECT, INSERT ON verself.bazel_events TO sandbox_rental;
+GRANT SELECT, INSERT ON verself.bazel_profile_spans TO sandbox_rental;
+GRANT SELECT, INSERT ON verself.bazel_spawns TO sandbox_rental;
+GRANT SELECT, INSERT ON verself.bazel_targets TO sandbox_rental;
+
+CREATE TABLE IF NOT EXISTS verself.golden_vm_events
+(
+    observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    org_id LowCardinality(String) CODEC(ZSTD(3)),
+    repository_id UInt64 CODEC(T64, ZSTD(3)),
+    provider LowCardinality(String),
+    provider_repository_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_run_id UInt64 CODEC(T64, ZSTD(3)),
+    provider_run_attempt UInt64 CODEC(T64, ZSTD(3)),
+    provider_job_id UInt64 CODEC(T64, ZSTD(3)),
+    execution_id UUID,
+    attempt_id UUID,
+    operation_id UUID,
+    golden_vm_snapshot_id UUID,
+    job_shape_id UUID,
+    event_name LowCardinality(String),
+    result LowCardinality(String),
+    reason String DEFAULT '' CODEC(ZSTD(3)),
+    from_state LowCardinality(String) DEFAULT '',
+    to_state LowCardinality(String) DEFAULT '',
+    lease_id String DEFAULT '' CODEC(ZSTD(3)),
+    exec_id String DEFAULT '' CODEC(ZSTD(3)),
+    river_job_id Int64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    generation_set_hash String DEFAULT '' CODEC(ZSTD(3)),
+    source_generation_set_hash String DEFAULT '' CODEC(ZSTD(3)),
+    snapshot_key String DEFAULT '' CODEC(ZSTD(3)),
+    activation_mode LowCardinality(String),
+    vmstate_artifact_ref String DEFAULT '' CODEC(ZSTD(3)),
+    memory_artifact_ref String DEFAULT '' CODEC(ZSTD(3)),
+    root_snapshot_ref String DEFAULT '' CODEC(ZSTD(3)),
+    root_snapshot_guid String DEFAULT '' CODEC(ZSTD(3)),
+    state_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    memory_bytes UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    trace_id String DEFAULT '' CODEC(ZSTD(3)),
+    span_id String DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (event_name, provider, org_id, repository_id, observed_at, operation_id, golden_vm_snapshot_id);
+
+GRANT SELECT, INSERT ON verself.golden_vm_events TO sandbox_rental;
+
+CREATE TABLE IF NOT EXISTS verself.sandbox_phase_events
+(
+    observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    event_source LowCardinality(String),
+    phase_group LowCardinality(String),
+    phase_name LowCardinality(String),
+    phase_order UInt16 CODEC(T64, ZSTD(3)),
+    result LowCardinality(String),
+    reason String DEFAULT '' CODEC(ZSTD(3)),
+    org_id LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
+    execution_id UUID,
+    attempt_id UUID,
+    allocation_id UUID,
+    provider LowCardinality(String) DEFAULT '',
+    external_provider LowCardinality(String) DEFAULT '',
+    provider_installation_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    provider_repository_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    provider_run_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    provider_run_attempt UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    provider_job_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    repository_full_name LowCardinality(String) DEFAULT '',
+    workflow_name LowCardinality(String) DEFAULT '',
+    job_name LowCardinality(String) DEFAULT '',
+    head_branch LowCardinality(String) DEFAULT '',
+    head_sha String DEFAULT '' CODEC(ZSTD(3)),
+    runner_class LowCardinality(String) DEFAULT '',
+    runner_name String DEFAULT '' CODEC(ZSTD(3)),
+    lease_id String DEFAULT '' CODEC(ZSTD(3)),
+    exec_id String DEFAULT '' CODEC(ZSTD(3)),
+    correlation_id String DEFAULT '' CODEC(ZSTD(3)),
+    started_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    completed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    duration_ms Int64 CODEC(Delta(8), ZSTD(3)),
+    attributes_json String DEFAULT '' CODEC(ZSTD(3)),
+    trace_id String DEFAULT '' CODEC(ZSTD(3)),
+    span_id String DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (phase_group, phase_name, result, provider, org_id, provider_repository_id, provider_run_id, provider_job_id, execution_id, started_at)
+TTL toDateTime(observed_at) + INTERVAL 1 YEAR
+SETTINGS index_granularity = 8192;
+
+DROP VIEW IF EXISTS verself.sandbox_execution_phase_timeline;
+DROP VIEW IF EXISTS verself.sandbox_phase_timeline;
+
+CREATE VIEW verself.sandbox_phase_timeline AS
+SELECT
+    observed_at,
+    event_source,
+    phase_group,
+    phase_name,
+    phase_order,
+    result,
+    reason,
+    org_id,
+    execution_id,
+    attempt_id,
+    allocation_id,
+    provider,
+    external_provider,
+    provider_installation_id,
+    provider_repository_id,
+    provider_run_id,
+    provider_run_attempt,
+    provider_job_id,
+    repository_full_name,
+    workflow_name,
+    job_name,
+    head_branch,
+    head_sha,
+    runner_class,
+    runner_name,
+    lease_id,
+    exec_id,
+    correlation_id,
+    started_at,
+    completed_at,
+    duration_ms,
+    attributes_json,
+    trace_id,
+    span_id
+FROM verself.sandbox_phase_events
+
+UNION ALL
+
+SELECT
+    toDateTime64(Timestamp, 6, 'UTC') AS observed_at,
+    'vm-orchestrator-otel' AS event_source,
+    multiIf(
+        startsWith(SpanName, 'vmorchestrator.guest.boot.'), 'vm.guest.boot',
+        startsWith(SpanName, 'vmorchestrator.guest.kernel_'), 'vm.guest.kernel',
+        startsWith(SpanName, 'vmorchestrator.guest.exec_'), 'vm.guest.exec',
+        startsWith(SpanName, 'vmorchestrator.guest.'), 'vm.guest',
+        startsWith(SpanName, 'vmorchestrator.firecracker.'), 'vm.firecracker',
+        startsWith(SpanName, 'vmorchestrator.zfs.'), 'vm.zfs',
+        startsWith(SpanName, 'vmorchestrator.zvol.'), 'vm.zvol',
+        startsWith(SpanName, 'vmorchestrator.network.'), 'vm.network',
+        startsWith(SpanName, 'vmorchestrator.jailer.'), 'vm.jailer',
+        startsWith(SpanName, 'vmorchestrator.jail.'), 'vm.jail',
+        SpanName = 'vmorchestrator.lease.boot', 'vm.lease',
+        startsWith(SpanName, 'rpc.'), 'vm.rpc',
+        'vm.orchestrator'
+    ) AS phase_group,
+    multiIf(
+        SpanName = 'rpc.AcquireLease', 'vm.rpc.acquire_lease',
+        SpanName = 'rpc.StartExec', 'vm.rpc.start_exec',
+        SpanName = 'rpc.WaitExec', 'vm.rpc.wait_exec',
+        SpanName = 'rpc.ReleaseLease', 'vm.rpc.release_lease',
+        concat('vm.', replaceOne(SpanName, 'vmorchestrator.', ''))
+    ) AS phase_name,
+    toUInt16(multiIf(
+        SpanName = 'rpc.AcquireLease', 88,
+        SpanName = 'vmorchestrator.lease.boot', 91,
+        SpanName = 'vmorchestrator.org_runtime.require_ready_check', 92,
+        SpanName = 'vmorchestrator.zfs.root_clone', 93,
+        SpanName = 'vmorchestrator.zfs.root_resize_ext4', 94,
+        SpanName = 'vmorchestrator.zfs.mounts_prepare', 95,
+        SpanName = 'vmorchestrator.zfs.mount_prepare', 96,
+        SpanName = 'vmorchestrator.zvol.wait_device', 97,
+        SpanName = 'vmorchestrator.zvol.mount_wait_device', 98,
+        SpanName = 'vmorchestrator.jail.setup', 99,
+        SpanName = 'vmorchestrator.network.setup', 100,
+        SpanName = 'vmorchestrator.jailer.start', 101,
+        SpanName = 'vmorchestrator.firecracker.api_socket_wait', 102,
+        SpanName = 'vmorchestrator.firecracker.golden_snapshot_lookup', 103,
+        SpanName = 'vmorchestrator.firecracker.snapshot_stage', 104,
+        SpanName = 'vmorchestrator.firecracker.restore_metrics', 105,
+        SpanName = 'vmorchestrator.firecracker.snapshot_load', 106,
+        SpanName = 'vmorchestrator.firecracker.snapshot_resume', 107,
+        SpanName = 'vmorchestrator.firecracker.configure_all', 108,
+        SpanName = 'vmorchestrator.firecracker.configure', 109,
+        SpanName = 'vmorchestrator.firecracker.instance_start', 110,
+        SpanName = 'vmorchestrator.guest.control_socket_wait', 111,
+        SpanName = 'vmorchestrator.guest.control_connect', 112,
+        SpanName = 'vmorchestrator.guest.after_restore', 113,
+        SpanName = 'vmorchestrator.guest.hello', 114,
+        SpanName = 'vmorchestrator.guest.lease_init', 115,
+        startsWith(SpanName, 'vmorchestrator.guest.kernel_'), 116,
+        SpanName = 'vmorchestrator.guest.boot_report', 117,
+        startsWith(SpanName, 'vmorchestrator.guest.boot.'), 118,
+        SpanName = 'rpc.StartExec', 121,
+        SpanName = 'vmorchestrator.guest.exec_dispatch', 122,
+        SpanName = 'vmorchestrator.guest.exec_workload', 170,
+        SpanName = 'vmorchestrator.guest.exec_teardown', 181,
+        SpanName = 'rpc.WaitExec', 191,
+        SpanName = 'rpc.ReleaseLease', 241,
+        1000
+    )) AS phase_order,
+    if(StatusCode IN ('Error', 'STATUS_CODE_ERROR'), 'failed', 'succeeded') AS result,
+    StatusMessage AS reason,
+    SpanAttributes['org.id'] AS org_id,
+    toUUID('00000000-0000-0000-0000-000000000000') AS execution_id,
+    toUUID('00000000-0000-0000-0000-000000000000') AS attempt_id,
+    toUUID('00000000-0000-0000-0000-000000000000') AS allocation_id,
+    '' AS provider,
+    '' AS external_provider,
+    toUInt64(0) AS provider_installation_id,
+    toUInt64(0) AS provider_repository_id,
+    toUInt64(0) AS provider_run_id,
+    toUInt64(0) AS provider_run_attempt,
+    toUInt64(0) AS provider_job_id,
+    '' AS repository_full_name,
+    '' AS workflow_name,
+    '' AS job_name,
+    '' AS head_branch,
+    '' AS head_sha,
+    '' AS runner_class,
+    '' AS runner_name,
+    SpanAttributes['lease.id'] AS lease_id,
+    SpanAttributes['exec.id'] AS exec_id,
+    '' AS correlation_id,
+    toDateTime64(Timestamp, 6, 'UTC') AS started_at,
+    toDateTime64(Timestamp + toIntervalNanosecond(Duration), 6, 'UTC') AS completed_at,
+    toInt64(intDiv(Duration, 1000000)) AS duration_ms,
+    toJSONString(SpanAttributes) AS attributes_json,
+    TraceId AS trace_id,
+    SpanId AS span_id
+FROM default.otel_traces
+WHERE ServiceName = 'vm-orchestrator'
+  AND SpanAttributes['lease.id'] != ''
+  AND (startsWith(SpanName, 'vmorchestrator.') OR SpanName IN ('rpc.AcquireLease', 'rpc.StartExec', 'rpc.WaitExec', 'rpc.ReleaseLease'));
+
+CREATE VIEW verself.sandbox_execution_phase_timeline AS
+WITH toUUID('00000000-0000-0000-0000-000000000000') AS zero_uuid
+SELECT
+    t.observed_at AS observed_at,
+    t.event_source AS event_source,
+    t.phase_group AS phase_group,
+    t.phase_name AS phase_name,
+    t.phase_order AS phase_order,
+    t.result AS result,
+    t.reason AS reason,
+    multiIf(t.org_id != '', t.org_id, l.org_id != '', l.org_id, p.org_id) AS org_id,
+    if(t.execution_id != zero_uuid, t.execution_id, if(l.execution_id != zero_uuid, l.execution_id, p.execution_id)) AS execution_id,
+    if(t.attempt_id != zero_uuid, t.attempt_id, if(l.attempt_id != zero_uuid, l.attempt_id, p.attempt_id)) AS attempt_id,
+    if(t.allocation_id != zero_uuid, t.allocation_id, if(l.allocation_id != zero_uuid, l.allocation_id, p.allocation_id)) AS allocation_id,
+    multiIf(t.provider != '', t.provider, l.provider != '', l.provider, p.provider) AS provider,
+    multiIf(t.external_provider != '', t.external_provider, l.external_provider != '', l.external_provider, p.external_provider) AS external_provider,
+    if(t.provider_installation_id != 0, t.provider_installation_id, if(l.provider_installation_id != 0, l.provider_installation_id, p.provider_installation_id)) AS provider_installation_id,
+    if(t.provider_repository_id != 0, t.provider_repository_id, if(l.provider_repository_id != 0, l.provider_repository_id, p.provider_repository_id)) AS provider_repository_id,
+    if(t.provider_run_id != 0, t.provider_run_id, if(l.provider_run_id != 0, l.provider_run_id, p.provider_run_id)) AS provider_run_id,
+    if(t.provider_run_attempt != 0, t.provider_run_attempt, if(l.provider_run_attempt != 0, l.provider_run_attempt, p.provider_run_attempt)) AS provider_run_attempt,
+    if(t.provider_job_id != 0, t.provider_job_id, if(l.provider_job_id != 0, l.provider_job_id, p.provider_job_id)) AS provider_job_id,
+    multiIf(t.repository_full_name != '', t.repository_full_name, l.repository_full_name != '', l.repository_full_name, p.repository_full_name) AS repository_full_name,
+    multiIf(t.workflow_name != '', t.workflow_name, l.workflow_name != '', l.workflow_name, p.workflow_name) AS workflow_name,
+    multiIf(t.job_name != '', t.job_name, l.job_name != '', l.job_name, p.job_name) AS job_name,
+    multiIf(t.head_branch != '', t.head_branch, l.head_branch != '', l.head_branch, p.head_branch) AS head_branch,
+    multiIf(t.head_sha != '', t.head_sha, l.head_sha != '', l.head_sha, p.head_sha) AS head_sha,
+    multiIf(t.runner_class != '', t.runner_class, l.runner_class != '', l.runner_class, p.runner_class) AS runner_class,
+    multiIf(t.runner_name != '', t.runner_name, l.runner_name != '', l.runner_name, p.runner_name) AS runner_name,
+    t.lease_id AS lease_id,
+    t.exec_id AS exec_id,
+    multiIf(t.correlation_id != '', t.correlation_id, l.correlation_id != '', l.correlation_id, p.correlation_id) AS correlation_id,
+    t.started_at AS started_at,
+    t.completed_at AS completed_at,
+    t.duration_ms AS duration_ms,
+    t.attributes_json AS attributes_json,
+    t.trace_id AS trace_id,
+    t.span_id AS span_id
+FROM verself.sandbox_phase_timeline AS t
+LEFT JOIN
+(
+    SELECT
+        lease_id,
+        anyLast(e.org_id) AS org_id,
+        anyLast(e.execution_id) AS execution_id,
+        anyLast(e.attempt_id) AS attempt_id,
+        anyLast(e.allocation_id) AS allocation_id,
+        anyLast(e.provider) AS provider,
+        anyLast(e.external_provider) AS external_provider,
+        max(e.provider_installation_id) AS provider_installation_id,
+        max(e.provider_repository_id) AS provider_repository_id,
+        max(e.provider_run_id) AS provider_run_id,
+        max(e.provider_run_attempt) AS provider_run_attempt,
+        max(e.provider_job_id) AS provider_job_id,
+        anyLast(e.repository_full_name) AS repository_full_name,
+        anyLast(e.workflow_name) AS workflow_name,
+        anyLast(e.job_name) AS job_name,
+        anyLast(e.head_branch) AS head_branch,
+        anyLast(e.head_sha) AS head_sha,
+        anyLast(e.runner_class) AS runner_class,
+        anyLast(e.runner_name) AS runner_name,
+        anyLast(e.correlation_id) AS correlation_id
+    FROM verself.sandbox_phase_events AS e
+    WHERE e.lease_id != ''
+      AND e.execution_id != toUUID('00000000-0000-0000-0000-000000000000')
+    GROUP BY lease_id
+) AS l ON t.lease_id = l.lease_id
+LEFT JOIN
+(
+    SELECT
+        e.provider_job_id AS provider_job_id,
+        anyLast(e.org_id) AS org_id,
+        anyLast(e.execution_id) AS execution_id,
+        anyLast(e.attempt_id) AS attempt_id,
+        anyLast(e.allocation_id) AS allocation_id,
+        anyLast(e.provider) AS provider,
+        anyLast(e.external_provider) AS external_provider,
+        max(e.provider_installation_id) AS provider_installation_id,
+        max(e.provider_repository_id) AS provider_repository_id,
+        max(e.provider_run_id) AS provider_run_id,
+        max(e.provider_run_attempt) AS provider_run_attempt,
+        anyLast(e.repository_full_name) AS repository_full_name,
+        anyLast(e.workflow_name) AS workflow_name,
+        anyLast(e.job_name) AS job_name,
+        anyLast(e.head_branch) AS head_branch,
+        anyLast(e.head_sha) AS head_sha,
+        anyLast(e.runner_class) AS runner_class,
+        anyLast(e.runner_name) AS runner_name,
+        anyLast(e.correlation_id) AS correlation_id
+    FROM verself.sandbox_phase_events AS e
+    WHERE e.provider_job_id != 0
+    GROUP BY e.provider_job_id
+) AS p ON t.provider_job_id = p.provider_job_id;
+
+GRANT SELECT, INSERT ON verself.sandbox_phase_events TO sandbox_rental;
+GRANT SELECT ON verself.sandbox_phase_timeline TO sandbox_rental;
+GRANT SELECT ON verself.sandbox_execution_phase_timeline TO sandbox_rental;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- verself: project analytics events
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS verself.analytics_events
+(
+    `event_date`              Date                                      DEFAULT toDate(observed_at) CODEC(Delta(2), ZSTD(3)),
+    `observed_at`             DateTime64(6, 'UTC')                      CODEC(DoubleDelta, ZSTD(3)),
+    `timestamp`               DateTime64(6, 'UTC')                      CODEC(DoubleDelta, ZSTD(3)),
+    `event_id`                String                                    CODEC(ZSTD(3)),
+    `org_id`                  LowCardinality(String)                    CODEC(ZSTD(3)),
+    `project_id`              String                                    CODEC(ZSTD(3)),
+    `dataset_id`              String                                    CODEC(ZSTD(3)),
+    `environment`             LowCardinality(String)                    CODEC(ZSTD(3)),
+    `signal_kind`             LowCardinality(String)                    CODEC(ZSTD(3)),
+    `event_name`              LowCardinality(String)                    CODEC(ZSTD(3)),
+    `source_kind`             LowCardinality(String)                    CODEC(ZSTD(3)),
+    `source_subject`          String                                    CODEC(ZSTD(3)),
+    `service_name`            LowCardinality(String)                    CODEC(ZSTD(3)),
+    `service_version`         LowCardinality(String)                    CODEC(ZSTD(3)),
+    `severity_text`           LowCardinality(String)                    CODEC(ZSTD(3)),
+    `status`                  LowCardinality(String)                    CODEC(ZSTD(3)),
+    `trace_id`                String                                    CODEC(ZSTD(3)),
+    `span_id`                 String                                    CODEC(ZSTD(3)),
+    `parent_span_id`          String                                    CODEC(ZSTD(3)),
+    `duration_ms`             UInt64                                    CODEC(T64, ZSTD(3)),
+    `body`                    String                                    CODEC(ZSTD(3)),
+    `body_redaction_status`   LowCardinality(String)                    CODEC(ZSTD(3)),
+    `string_attributes`       Map(LowCardinality(String), String)       CODEC(ZSTD(3)),
+    `int_attributes`          Map(LowCardinality(String), Int64)        CODEC(ZSTD(3)),
+    `float_attributes`        Map(LowCardinality(String), Float64)      CODEC(ZSTD(3)),
+    `bool_attributes`         Map(LowCardinality(String), UInt8)        CODEC(ZSTD(3)),
+    INDEX idx_trace_id trace_id TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_string_attr_key mapKeys(string_attributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+    INDEX idx_string_attr_value mapValues(string_attributes) TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(event_date)
+ORDER BY (org_id, project_id, dataset_id, environment, signal_kind, event_name, service_name, observed_at, event_id)
+TTL toDateTime(observed_at) + INTERVAL 180 DAY
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
+
+CREATE TABLE IF NOT EXISTS verself.analytics_ingest_events
+(
+    `event_date`       Date                         DEFAULT toDate(recorded_at) CODEC(Delta(2), ZSTD(3)),
+    `recorded_at`      DateTime64(6, 'UTC')         CODEC(DoubleDelta, ZSTD(3)),
+    `org_id`           LowCardinality(String)       CODEC(ZSTD(3)),
+    `project_id`       String                       CODEC(ZSTD(3)),
+    `dataset_id`       String                       CODEC(ZSTD(3)),
+    `environment`      LowCardinality(String)       CODEC(ZSTD(3)),
+    `source_kind`      LowCardinality(String)       CODEC(ZSTD(3)),
+    `source_subject`   String                       CODEC(ZSTD(3)),
+    `request_kind`     LowCardinality(String)       CODEC(ZSTD(3)),
+    `outcome`          LowCardinality(String)       CODEC(ZSTD(3)),
+    `accepted_records` UInt32                       CODEC(T64, ZSTD(3)),
+    `rejected_records` UInt32                       CODEC(T64, ZSTD(3)),
+    `error_code`       LowCardinality(String)       CODEC(ZSTD(3)),
+    `trace_id`         String                       CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(event_date)
+ORDER BY (org_id, project_id, dataset_id, environment, outcome, recorded_at)
+TTL toDateTime(recorded_at) + INTERVAL 90 DAY
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
+
+CREATE TABLE IF NOT EXISTS verself.analytics_access_events
+(
+    `event_date`            Date                   DEFAULT toDate(recorded_at) CODEC(Delta(2), ZSTD(3)),
+    `recorded_at`           DateTime64(6, 'UTC')   CODEC(DoubleDelta, ZSTD(3)),
+    `org_id`                LowCardinality(String) CODEC(ZSTD(3)),
+    `project_id`            String                 CODEC(ZSTD(3)),
+    `dataset_id`            String                 CODEC(ZSTD(3)),
+    `environment`           LowCardinality(String) CODEC(ZSTD(3)),
+    `subject_type`          LowCardinality(String) CODEC(ZSTD(3)),
+    `subject_id`            String                 CODEC(ZSTD(3)),
+    `operation_permission`  LowCardinality(String) CODEC(ZSTD(3)),
+    `resource_permission`   LowCardinality(String) CODEC(ZSTD(3)),
+    `outcome`               LowCardinality(String) CODEC(ZSTD(3)),
+    `result_count`          UInt32                 CODEC(T64, ZSTD(3)),
+    `error_code`            LowCardinality(String) CODEC(ZSTD(3)),
+    `trace_id`              String                 CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(event_date)
+ORDER BY (org_id, project_id, dataset_id, resource_permission, outcome, recorded_at)
+TTL toDateTime(recorded_at) + INTERVAL 90 DAY
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- verself: GitHub integration events
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE USER IF NOT EXISTS github_integration_service IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/github-integration-service' HOST LOCAL;
+ALTER USER github_integration_service IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/github-integration-service' HOST LOCAL;
+
+CREATE TABLE IF NOT EXISTS verself.github_integration_events
+(
+    observed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    event_name LowCardinality(String),
+    result LowCardinality(String),
+    reason String DEFAULT '' CODEC(ZSTD(3)),
+    delivery_id String DEFAULT '' CODEC(ZSTD(3)),
+    action LowCardinality(String) DEFAULT '',
+    org_id LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
+    provider_installation_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    provider_repository_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    provider_run_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    provider_run_attempt UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    provider_job_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    repository_full_name LowCardinality(String) DEFAULT '',
+    runner_id UInt64 DEFAULT 0 CODEC(T64, ZSTD(3)),
+    runner_name String DEFAULT '' CODEC(ZSTD(3)),
+    runner_class LowCardinality(String) DEFAULT '',
+    job_shape_id String DEFAULT '' CODEC(ZSTD(3)),
+    trust_class LowCardinality(String) DEFAULT '',
+    allocation_id UUID,
+    execution_id UUID,
+    attempt_id UUID,
+    started_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    completed_at DateTime64(6, 'UTC') CODEC(DoubleDelta, ZSTD(3)),
+    duration_ms Int64 CODEC(Delta(8), ZSTD(3)),
+    attributes_json String DEFAULT '' CODEC(ZSTD(3)),
+    trace_id String DEFAULT '' CODEC(ZSTD(3)),
+    span_id String DEFAULT '' CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (event_name, result, org_id, provider_repository_id, provider_run_id, provider_job_id, observed_at);
+
+GRANT SELECT, INSERT ON verself.github_integration_events TO github_integration_service;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Operator observability views (database: default)
