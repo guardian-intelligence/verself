@@ -1,3 +1,4 @@
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load(
     "@npm//src/websites/apps/verself-web:@hey-api/openapi-ts/package_json.bzl",
@@ -10,6 +11,11 @@ load("//src/websites:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_art
 package(default_visibility = ["//visibility:public"])
 
 deploy_declarations(visibility = ["//visibility:public"])
+
+DOT_MATRIX_SHADER_SRC_MAP = [
+    ("dot-matrix.vert", "src/features/landing/dot-matrix/shader-src/dot-matrix.vert"),
+    ("dot-matrix.frag", "src/features/landing/dot-matrix/shader-src/dot-matrix.frag"),
+]
 
 nomad_component(
     name = "nomad_component",
@@ -43,12 +49,37 @@ viteplus_node_app_artifact(
         ":route_tree_generated_sources",
         ":openapi_clients_generated_sources",
         ":openapi_spec_copies_generated_sources",
+        ":dot_matrix_shader_generated_sources",
         "//src/websites/packages/sdk:openapi_clients_generated_sources",
     ],
     output = "verself-web",
 )
 
 viteplus_route_tree(name = "route_tree")
+
+js_run_binary(
+    name = "dot_matrix_shader_gen",
+    srcs = [src for _, src in DOT_MATRIX_SHADER_SRC_MAP],
+    outs = ["__generated_sources/src/features/landing/dot-matrix/shader/dot-matrix.generated.ts"],
+    args = [
+        "--vertex=dot-matrix.vert",
+        "--fragment=dot-matrix.frag",
+        "--symbol-prefix=dotMatrix",
+        "--out=__generated_sources/src/features/landing/dot-matrix/shader/dot-matrix.generated.ts",
+    ] + [
+        "--source=%s=$(location %s)" % (module, src)
+        for module, src in DOT_MATRIX_SHADER_SRC_MAP
+    ],
+    chdir = package_name(),
+    mnemonic = "GlslModuleGen",
+    progress_message = "Generating landing dot matrix GLSL module",
+    tool = "//src/websites/scripts:generate_glsl_module",
+)
+
+filegroup(
+    name = "dot_matrix_shader_generated_sources",
+    srcs = [":dot_matrix_shader_gen"],
+)
 
 # Customer-facing OpenAPI client SDKs for every service the verself-web app
 # talks to. Outputs are written to bazel-out, projected into src/__generated
@@ -82,6 +113,7 @@ test_suite(
     name = "dev_check",
     tags = ["manual"],
     tests = [
+        ":dot_matrix_shader_tests",
         ":openapi_clients_tests",
         ":openapi_spec_copies_tests",
         ":route_tree_tests",
@@ -89,8 +121,17 @@ test_suite(
 )
 
 write_source_files(
+    name = "dot_matrix_shader",
+    files = {
+        "src/features/landing/dot-matrix/shader/dot-matrix.generated.ts": ":dot_matrix_shader_gen",
+    },
+    tags = ["manual"],
+)
+
+write_source_files(
     name = "dev_update",
     additional_update_targets = [
+        ":dot_matrix_shader",
         ":route_tree",
         ":openapi_clients",
         ":openapi_spec_copies",
