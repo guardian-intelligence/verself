@@ -49,6 +49,32 @@ func TestReserveWindowQuantity(t *testing.T) {
 	}
 }
 
+func TestDurableStorageQuotaBytesForPlan(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		planID string
+		tier   string
+		want   uint64
+	}{
+		{name: "default tier", planID: "sandbox-default", tier: "default", want: durableStorageDefaultQuotaBytes},
+		{name: "team tier", tier: "team", want: durableStorageTeamQuotaBytes},
+		{name: "business tier", tier: "business", want: durableStorageBusinessQuotaBytes},
+		{name: "free tier", tier: "free", want: durableStorageFreeQuotaBytes},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := durableStorageQuotaBytesForPlan(tt.planID, tt.tier); got != tt.want {
+				t.Fatalf("durableStorageQuotaBytesForPlan(%q, %q) = %d, want %d", tt.planID, tt.tier, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReserveWindowTimingUsesChosenQuantity(t *testing.T) {
 	t.Parallel()
 

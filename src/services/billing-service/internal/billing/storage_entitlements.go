@@ -3,6 +3,8 @@ package billing
 import (
 	"context"
 	"strings"
+
+	"github.com/verself/billing-service/internal/store"
 )
 
 const (
@@ -28,31 +30,32 @@ func (c *Client) GetStorageEntitlement(ctx context.Context, orgID OrgID, product
 	if productID == "" {
 		productID = SandboxProductID
 	}
-	entitlement := StorageEntitlement{
-		OrgID:                    orgID,
-		ProductID:                productID,
-		PlanID:                   "free",
-		PlanTier:                 "free",
-		DurableStorageQuotaBytes: durableStorageFreeQuotaBytes,
+	if _, err := c.ApplyDueBillingWork(ctx, orgID, productID); err != nil {
+		return StorageEntitlement{}, err
 	}
-	contracts, err := c.ListContracts(ctx, orgID)
+	now, err := c.BusinessNow(ctx, c.queries, orgID, productID)
 	if err != nil {
 		return StorageEntitlement{}, err
 	}
-	for _, contract := range contracts {
-		if contract.ProductID != productID || contract.PlanID == "" {
-			continue
-		}
-		plan, err := c.loadPlan(ctx, contract.PlanID)
-		if err != nil {
-			return StorageEntitlement{}, err
-		}
-		entitlement.PlanID = plan.PlanID
-		entitlement.PlanTier = firstNonEmptyStoragePlanValue(plan.Tier, plan.PlanID)
-		entitlement.DurableStorageQuotaBytes = durableStorageQuotaBytesForPlan(plan.PlanID, plan.Tier)
-		return entitlement, nil
+	pricing, err := c.queries.LoadPricingContext(ctx, store.LoadPricingContextParams{
+		OrgID:     orgIDText(orgID),
+		ProductID: productID,
+		Now:       timestamptz(now),
+	})
+	if err != nil {
+		return StorageEntitlement{}, err
 	}
-	return entitlement, nil
+	plan, err := c.loadPlan(ctx, pricing.PlanID)
+	if err != nil {
+		return StorageEntitlement{}, err
+	}
+	return StorageEntitlement{
+		OrgID:                    orgID,
+		ProductID:                productID,
+		PlanID:                   plan.PlanID,
+		PlanTier:                 firstNonEmptyStoragePlanValue(plan.Tier, plan.PlanID),
+		DurableStorageQuotaBytes: durableStorageQuotaBytesForPlan(plan.PlanID, plan.Tier),
+	}, nil
 }
 
 func durableStorageQuotaBytesForPlan(planID, tier string) uint64 {
