@@ -224,6 +224,16 @@ FROM notification_delivery_attempts
 WHERE delivery_attempt_id = $1
 FOR UPDATE;
 
+-- name: ListDueDeliveryAttempts :many
+SELECT delivery_attempt_id
+FROM notification_delivery_attempts
+WHERE status IN ('queued', 'failed')
+  AND workflow_key LIKE 'iam.%'
+  AND attempt_count < sqlc.arg(max_attempts)
+  AND next_attempt_at <= now()
+ORDER BY next_attempt_at ASC, queued_at ASC
+LIMIT sqlc.arg(limit_count);
+
 -- name: MarkDeliverySending :exec
 UPDATE notification_delivery_attempts
 SET status = 'sending',

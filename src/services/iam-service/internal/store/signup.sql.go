@@ -308,17 +308,19 @@ UPDATE iam_signup_intents
 SET state = 'materializing',
     verify_idempotency_key = $1,
     verify_request_hash = $2,
-    verified_at = COALESCE(verified_at, $3),
-    materialization_lease_expires_at = $4,
+    organization_display_name = COALESCE(NULLIF($3::text, ''), organization_display_name),
+    verified_at = COALESCE(verified_at, $4),
+    materialization_lease_expires_at = $5,
     materialization_attempts = materialization_attempts + 1,
     materialization_last_error = '',
     updated_at = now()
-WHERE signup_intent_id = $5
+WHERE signup_intent_id = $6
 `
 
 type MarkSignupIntentMaterializingParams struct {
 	VerifyIdempotencyKey          string
 	VerifyRequestHash             []byte
+	OrganizationDisplayName       string
 	VerifiedAt                    pgtype.Timestamptz
 	MaterializationLeaseExpiresAt pgtype.Timestamptz
 	SignupIntentID                string
@@ -328,6 +330,7 @@ func (q *Queries) MarkSignupIntentMaterializing(ctx context.Context, arg MarkSig
 	_, err := q.db.Exec(ctx, markSignupIntentMaterializing,
 		arg.VerifyIdempotencyKey,
 		arg.VerifyRequestHash,
+		arg.OrganizationDisplayName,
 		arg.VerifiedAt,
 		arg.MaterializationLeaseExpiresAt,
 		arg.SignupIntentID,

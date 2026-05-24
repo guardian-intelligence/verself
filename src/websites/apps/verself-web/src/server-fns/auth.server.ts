@@ -22,8 +22,28 @@ const resourceTokenResponseSchema = v.object({
   accessToken: v.pipe(v.string(), v.nonEmpty()),
 });
 
+const organizationSummarySchema = v.object({
+  orgId: v.pipe(v.string(), v.nonEmpty()),
+  resourceName: v.pipe(v.string(), v.nonEmpty()),
+  slug: v.optional(v.pipe(v.string(), v.nonEmpty())),
+  displayName: v.pipe(v.string(), v.nonEmpty()),
+  version: v.number(),
+});
+
+const signupVerificationResultSchema = v.object({
+  organization: organizationSummarySchema,
+  loginUrl: v.pipe(v.string(), v.nonEmpty()),
+});
+
+export type SignupVerificationResult = v.InferOutput<typeof signupVerificationResultSchema>;
+
 function identityAuthURL(path: string): string {
   return new URL(`/api/v1/auth/${path}`, IAM_SERVICE_BASE_URL).toString();
+}
+
+function identityAPIURL(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/api/v1/${path}`;
+  return new URL(normalized, IAM_SERVICE_BASE_URL).toString();
 }
 
 function forwardSetCookie(headers: Headers): void {
@@ -36,8 +56,8 @@ function forwardSetCookie(headers: Headers): void {
   }
 }
 
-async function identityAuthFetch(
-  path: string,
+async function identityFetch(
+  url: string,
   init: RequestInit = {},
   options: {
     cookieHeader?: string | undefined;
@@ -55,7 +75,7 @@ async function identityAuthFetch(
   if (cookie) {
     headers.set("Cookie", cookie);
   }
-  const response = await fetch(identityAuthURL(path), {
+  const response = await fetch(url, {
     ...init,
     headers,
   });
@@ -63,6 +83,30 @@ async function identityAuthFetch(
     forwardSetCookie(response.headers);
   }
   return response;
+}
+
+async function identityAuthFetch(
+  path: string,
+  init: RequestInit = {},
+  options: {
+    cookieHeader?: string | undefined;
+    forwardCookies?: boolean;
+    sourceHeaders?: Headers | undefined;
+  } = {},
+): Promise<Response> {
+  return identityFetch(identityAuthURL(path), init, options);
+}
+
+async function identityAPIFetch(
+  path: string,
+  init: RequestInit = {},
+  options: {
+    cookieHeader?: string | undefined;
+    forwardCookies?: boolean;
+    sourceHeaders?: Headers | undefined;
+  } = {},
+): Promise<Response> {
+  return identityFetch(identityAPIURL(path), init, options);
 }
 
 export async function readAuthSnapshot(): Promise<AuthSnapshot> {
@@ -159,6 +203,60 @@ export async function acceptIdentityMemberInvite(data: {
 function inviteAcceptanceIdempotencyKey(token: string): string {
   const digest = createHash("sha256").update(token).digest("base64url").slice(0, 48);
   return `invite-${digest}`;
+}
+
+export async function verifyIdentitySignup(data: {
+  signupIntentId: string;
+  verificationToken: string;
+  organizationDisplayName: string;
+  password: string;
+}): Promise<SignupVerificationResult> {
+  const organizationDisplayName = normalizeHumanText(data.organizationDisplayName);
+  const response = await identityAPIFetch(
+    `signup-intents/${encodeURIComponent(data.signupIntentId)}/verification`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": signupVerificationIdempotencyKey({
+          ...data,
+          organizationDisplayName,
+        }),
+      },
+      body: JSON.stringify({
+        verificationToken: data.verificationToken,
+        organizationDisplayName,
+        credential: { password: data.password },
+      }),
+    },
+    { cookieHeader: undefined, forwardCookies: false },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `identity signup verification failed: ${response.status} ${await response.text()}`,
+    );
+  }
+  return v.parse(signupVerificationResultSchema, await response.json());
+}
+
+function signupVerificationIdempotencyKey(data: {
+  signupIntentId: string;
+  verificationToken: string;
+  organizationDisplayName: string;
+}): string {
+  const digest = createHash("sha256")
+    .update(data.signupIntentId)
+    .update("\x00")
+    .update(data.verificationToken)
+    .update("\x00")
+    .update(data.organizationDisplayName)
+    .digest("base64url")
+    .slice(0, 48);
+  return `signup-${digest}`;
+}
+
+function normalizeHumanText(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
 }
 
 export async function getIdentityProductAccessToken(

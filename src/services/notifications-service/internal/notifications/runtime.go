@@ -169,12 +169,19 @@ func (r *Runtime) EnqueueEmailDeliveryTx(ctx context.Context, tx pgx.Tx, deliver
 		DeliveryAttemptID: strings.TrimSpace(deliveryAttemptID),
 		TraceParent:       strings.TrimSpace(traceparent),
 		SubmittedAt:       time.Now().UTC().Format(time.RFC3339Nano),
-	}, &river.InsertOpts{
-		MaxAttempts: 5,
-		Queue:       QueueDelivery,
-		Tags:        []string{"delivery", "email"},
-		UniqueOpts:  river.UniqueOpts{ByArgs: true, ByQueue: true},
-	})
+	}, deliveryInsertOpts())
+	if err != nil {
+		return fmt.Errorf("enqueue notification email delivery: %w", err)
+	}
+	return nil
+}
+
+func (r *Runtime) EnqueueEmailDelivery(ctx context.Context, deliveryAttemptID string, traceparent string) error {
+	_, err := r.client.Insert(ctx, EmailDeliveryArgs{
+		DeliveryAttemptID: strings.TrimSpace(deliveryAttemptID),
+		TraceParent:       strings.TrimSpace(traceparent),
+		SubmittedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+	}, deliveryInsertOpts())
 	if err != nil {
 		return fmt.Errorf("enqueue notification email delivery: %w", err)
 	}
@@ -210,6 +217,25 @@ func (r *Runtime) EnqueueMaintenance(ctx context.Context, cadence time.Duration)
 		}
 	}
 	return nil
+}
+
+func deliveryInsertOpts() *river.InsertOpts {
+	return &river.InsertOpts{
+		MaxAttempts: 5,
+		Queue:       QueueDelivery,
+		Tags:        []string{"delivery", "email"},
+		UniqueOpts: river.UniqueOpts{
+			ByArgs:  true,
+			ByQueue: true,
+			ByState: []rivertype.JobState{
+				rivertype.JobStateAvailable,
+				rivertype.JobStatePending,
+				rivertype.JobStateRetryable,
+				rivertype.JobStateRunning,
+				rivertype.JobStateScheduled,
+			},
+		},
+	}
 }
 
 func scannerInsertOpts(queue string, tag string, cadence time.Duration) *river.InsertOpts {

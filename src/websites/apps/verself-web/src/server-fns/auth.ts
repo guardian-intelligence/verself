@@ -15,6 +15,13 @@ const acceptMemberInviteInputSchema = v.object({
   password: v.pipe(v.string(), v.minLength(15)),
 });
 
+const verifySignupInputSchema = v.object({
+  signupIntentId: v.pipe(v.string(), v.nonEmpty()),
+  verificationToken: v.pipe(v.string(), v.nonEmpty()),
+  organizationDisplayName: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
+  password: v.pipe(v.string(), v.minLength(15)),
+});
+
 export type ConsoleAuthContext = {
   auth?: AuthenticatedAuthSnapshot;
 };
@@ -70,6 +77,13 @@ export const acceptMemberInvite = createServerFn({ method: "POST" })
     const { acceptIdentityMemberInvite } = await import("./auth.server");
     await acceptIdentityMemberInvite(data);
     return { accepted: true };
+  });
+
+export const verifySignup = createServerFn({ method: "POST" })
+  .inputValidator(verifySignupInputSchema)
+  .handler(async ({ data }) => {
+    const { verifyIdentitySignup } = await import("./auth.server");
+    return verifyIdentitySignup(data);
   });
 
 export const getProductAccessToken = createServerOnlyFn(async function getProductAccessToken(

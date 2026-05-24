@@ -32,6 +32,7 @@ type MemberInviteNotification struct {
 
 type SignupVerificationNotification struct {
 	SignupIntentID          string
+	OrgID                   string
 	Email                   string
 	OrganizationDisplayName string
 	ActionURL               string

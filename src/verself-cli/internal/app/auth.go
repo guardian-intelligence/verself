@@ -55,6 +55,8 @@ func (c CLI) runAuth(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "login":
 		return c.authLogin(ctx, args[1:])
+	case "signup":
+		return c.authSignup(ctx, args[1:])
 	case "logout":
 		return c.authLogout(args[1:])
 	case "whoami":

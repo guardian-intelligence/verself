@@ -688,6 +688,9 @@ ORDER BY (event_id, occurred_at, aggregate_type, aggregate_id);
 -- verself: IAM lifecycle events
 -- ═══════════════════════════════════════════════════════════════════════════
 
+CREATE USER IF NOT EXISTS iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/iam-service' HOST LOCAL;
+ALTER USER iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/iam-service' HOST LOCAL;
+
 CREATE TABLE IF NOT EXISTS verself.iam_events
 (
     event_id                 String                 CODEC(ZSTD(3)),
@@ -717,6 +720,8 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(toDate(recorded_at))
 ORDER BY (event_type, org_id, signup_intent_id, occurred_at, event_id)
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
+
+GRANT INSERT ON verself.iam_events TO iam_service;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- verself: notification delivery ledger

@@ -131,10 +131,11 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 	}
 
 	got, err := svc.VerifySignup(context.Background(), VerifySignupRequest{
-		SignupIntentID:    start.Intent.SignupIntentID,
-		VerificationToken: start.VerificationToken,
-		Password:          "correct horse battery",
-		IdempotencyKey:    "signup-verify-1",
+		SignupIntentID:          start.Intent.SignupIntentID,
+		VerificationToken:       start.VerificationToken,
+		Password:                "correct horse battery",
+		OrganizationDisplayName: "  Acme Production  ",
+		IdempotencyKey:          "signup-verify-1",
 	})
 	if err != nil {
 		t.Fatalf("VerifySignup: %v", err)
@@ -151,7 +152,13 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 	if policy.input.OrgID != got.Organization.OrgID || policy.input.OwnerUserID != "signup-user" {
 		t.Fatalf("unexpected owner policy request: %#v", policy.input)
 	}
-	if billing.input.OrgID != got.Organization.OrgID || billing.input.DisplayName != "Acme Labs" || billing.input.TrustTier != "new" {
+	if directory.createInput.Name == "" || !strings.Contains(directory.createInput.Name, "acme-labs") {
+		t.Fatalf("unexpected provider organization request: %#v", directory.createInput)
+	}
+	if store.created.DisplayName != "Acme Production" || got.Organization.DisplayName != "Acme Production" {
+		t.Fatalf("finalized organization display name was not materialized: created=%#v got=%#v", store.created, got.Organization)
+	}
+	if billing.input.OrgID != got.Organization.OrgID || billing.input.DisplayName != "Acme Production" || billing.input.TrustTier != "new" {
 		t.Fatalf("unexpected billing provisioning request: %#v", billing.input)
 	}
 	if !store.completed {
@@ -378,7 +385,7 @@ func (s *fakeSignupLifecycleStore) DeletePendingSignupIntent(_ context.Context, 
 	return nil
 }
 
-func (s *fakeSignupLifecycleStore) ClaimSignupIntentForVerification(_ context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error) {
+func (s *fakeSignupLifecycleStore) ClaimSignupIntentForVerification(_ context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, organizationDisplayName string, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error) {
 	intent, ok := s.intents[signupIntentID]
 	if !ok || !bytes.Equal(intent.VerificationTokenHash, verificationTokenHash) {
 		return SignupIntent{}, ErrSignupIntentMissing
@@ -389,6 +396,9 @@ func (s *fakeSignupLifecycleStore) ClaimSignupIntentForVerification(_ context.Co
 	intent.State = SignupIntentStateMaterializing
 	intent.VerifyIdempotencyKey = idempotencyKey
 	intent.VerifyRequestHash = append([]byte(nil), verifyRequestHash...)
+	if organizationDisplayName != "" {
+		intent.OrganizationDisplayName = organizationDisplayName
+	}
 	intent.MaterializationAttempts++
 	intent.MaterializationLeaseExpires = &leaseExpiresAt
 	intent.VerifiedAt = &now

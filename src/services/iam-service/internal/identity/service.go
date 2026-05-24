@@ -42,7 +42,7 @@ type Store interface {
 type SignupStore interface {
 	CreateSignupIntent(ctx context.Context, intent SignupIntent) (SignupIntent, bool, error)
 	DeletePendingSignupIntent(ctx context.Context, signupIntentID string) error
-	ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error)
+	ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, organizationDisplayName string, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error)
 	RecordSignupIntentStep(ctx context.Context, signupIntentID, step string, leaseExpiresAt time.Time) error
 	RecordSignupIntentProviderOrg(ctx context.Context, signupIntentID, providerOrgID string) error
 	RecordSignupIntentProviderUser(ctx context.Context, signupIntentID, providerUserID string) error

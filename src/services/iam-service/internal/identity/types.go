@@ -125,10 +125,11 @@ type StartSignupResult struct {
 }
 
 type VerifySignupRequest struct {
-	SignupIntentID    string
-	VerificationToken string
-	Password          string
-	IdempotencyKey    string
+	SignupIntentID          string
+	VerificationToken       string
+	Password                string
+	OrganizationDisplayName string
+	IdempotencyKey          string
 }
 
 type VerifySignupResult struct {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -212,6 +213,37 @@ func TestPublicContractOperationDoesNotRequireBearerIdentity(t *testing.T) {
 	}
 	if publicIdentity.Auth != nil || len(publicIdentity.PublicOrgIDs) != 1 || publicIdentity.PublicOrgIDs[0] != "inst_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
 		t.Fatalf("unexpected public identity scope: %#v", publicIdentity)
+	}
+}
+
+func TestAuthPublicSignupRoutePrecedesProtectedCatchAll(t *testing.T) {
+	rootMux := http.NewServeMux()
+	NewAuthPublicAPI(rootMux, Config{InstallationID: "inst_01J8QJ4P1R7S9W2X5M6N8P0Q2"})
+
+	protectedMux := http.NewServeMux()
+	protectedMux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "protected route reached", http.StatusTeapot)
+	})
+	protected := auth.Middleware(auth.Config{IssuerURL: "https://issuer.example", Audience: "verself-api"})(protectedMux)
+	rootMux.Handle("/", protected)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/signup-intents", strings.NewReader(`{
+		"email": "operator@example.test",
+		"organizationDisplayName": "Operator"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	rootMux.ServeHTTP(resp, req)
+
+	if resp.Code == http.StatusUnauthorized {
+		t.Fatalf("public signup route fell through to bearer auth middleware: %s", resp.Body.String())
+	}
+	if resp.Code == http.StatusTeapot {
+		t.Fatalf("public signup route fell through to protected mux")
+	}
+	if resp.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("public signup without idempotency key status = %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

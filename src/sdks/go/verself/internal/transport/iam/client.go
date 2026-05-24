@@ -328,8 +328,9 @@ type InviteMemberResponse struct {
 }
 
 type VerifySignupInputBody struct {
-	VerificationToken SignupVerificationToken `json:"verificationToken"`
-	Credential        AccountCredential       `json:"credential"`
+	VerificationToken       SignupVerificationToken `json:"verificationToken"`
+	Credential              AccountCredential       `json:"credential"`
+	OrganizationDisplayName *DisplayName            `json:"organizationDisplayName,omitempty"`
 }
 
 type VerifySignupRequest struct {

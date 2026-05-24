@@ -64,7 +64,7 @@ func (s SQLStore) DeletePendingSignupIntent(ctx context.Context, signupIntentID 
 	return nil
 }
 
-func (s SQLStore) ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error) {
+func (s SQLStore) ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, organizationDisplayName string, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error) {
 	if s.PG == nil {
 		return SignupIntent{}, ErrStoreUnavailable
 	}
@@ -118,6 +118,7 @@ func (s SQLStore) ClaimSignupIntentForVerification(ctx context.Context, signupIn
 	if err := q.MarkSignupIntentMaterializing(ctx, identitystore.MarkSignupIntentMaterializingParams{
 		VerifyIdempotencyKey:          idempotencyKey,
 		VerifyRequestHash:             append([]byte(nil), verifyRequestHash...),
+		OrganizationDisplayName:       organizationDisplayName,
 		VerifiedAt:                    timestamptz(now),
 		MaterializationLeaseExpiresAt: timestamptz(leaseExpiresAt),
 		SignupIntentID:                signupIntentID,
@@ -130,6 +131,9 @@ func (s SQLStore) ClaimSignupIntentForVerification(ctx context.Context, signupIn
 	intent.State = SignupIntentStateMaterializing
 	intent.VerifyIdempotencyKey = idempotencyKey
 	intent.VerifyRequestHash = append([]byte(nil), verifyRequestHash...)
+	if organizationDisplayName != "" {
+		intent.OrganizationDisplayName = organizationDisplayName
+	}
 	intent.MaterializationAttempts++
 	intent.MaterializationLastError = ""
 	intent.MaterializationLeaseExpires = &leaseExpiresAt

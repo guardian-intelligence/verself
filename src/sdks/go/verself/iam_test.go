@@ -168,10 +168,11 @@ func TestIAMSignupUsesPublicAPI(t *testing.T) {
 		t.Fatalf("unexpected signup intent: %#v", intent)
 	}
 	result, err := client.IAM.VerifySignup(context.Background(), VerifySignupInput{
-		SignupIntentID:    testSignupID,
-		VerificationToken: "signup-verification-token-0000000001",
-		Credential:        AccountCredential{Password: "correct horse battery staple"},
-		IdempotencyKey:    "iam:verify-signup",
+		SignupIntentID:          testSignupID,
+		VerificationToken:       "signup-verification-token-0000000001",
+		Credential:              AccountCredential{Password: "correct horse battery staple"},
+		OrganizationDisplayName: ptrString("Guardian Labs"),
+		IdempotencyKey:          "iam:verify-signup",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -181,6 +182,9 @@ func TestIAMSignupUsesPublicAPI(t *testing.T) {
 	}
 	if verifyBody["verificationToken"] != "signup-verification-token-0000000001" {
 		t.Fatalf("unexpected verify body: %#v", verifyBody)
+	}
+	if verifyBody["organizationDisplayName"] != "Guardian Labs" {
+		t.Fatalf("unexpected verify organization display name: %#v", verifyBody)
 	}
 	credential, ok := verifyBody["credential"].(map[string]any)
 	if !ok || credential["password"] != "correct horse battery staple" {

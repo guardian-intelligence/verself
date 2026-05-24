@@ -26,6 +26,11 @@ import (
 	notificationstore "github.com/verself/notifications-service/internal/store"
 )
 
+const (
+	maxEmailDeliveryAttempts = int32(5)
+	staleEmailSendingAfter   = 15 * time.Minute
+)
+
 type listCursorPayload struct {
 	Version           int   `json:"v"`
 	RecipientSequence int64 `json:"recipient_sequence"`
@@ -843,8 +848,9 @@ func (s *Service) SendEmailDelivery(ctx context.Context, deliveryAttemptID strin
 	)
 	if s.Email == nil {
 		err := fmt.Errorf("%w: email sender is unavailable", ErrStoreUnavailable)
-		_ = s.failEmailDelivery(ctx, delivery, err)
-		return err
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return s.failEmailDelivery(ctx, delivery, err)
 	}
 	providerMessage, err := s.Email.Send(ctx, EmailMessage{
 		OrgID:          delivery.OrgID,
@@ -856,9 +862,11 @@ func (s *Service) SendEmailDelivery(ctx context.Context, deliveryAttemptID strin
 		WorkflowRunID:  delivery.WorkflowRunID.String(),
 	})
 	if err != nil {
-		_ = s.failEmailDelivery(ctx, delivery, err)
-		return err
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return s.failEmailDelivery(ctx, delivery, err)
 	}
+	span.SetAttributes(attribute.String("notification.delivery_result", "sent"))
 	return s.completeEmailDelivery(ctx, delivery, providerMessage)
 }
 
@@ -874,6 +882,7 @@ type claimedEmailDelivery struct {
 	Body               string
 	ContentSHA256      string
 	Traceparent        string
+	AttemptCount       int32
 }
 
 func (s *Service) claimEmailDelivery(ctx context.Context, deliveryID uuid.UUID) (claimedEmailDelivery, bool, error) {
@@ -890,13 +899,42 @@ func (s *Service) claimEmailDelivery(ctx context.Context, deliveryID uuid.UUID) 
 	if err != nil {
 		return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
-	if row.Status != "queued" && row.Status != "failed" && row.Status != "sending" {
+	now := s.now()
+	switch row.Status {
+	case "queued", "failed":
+		if row.AttemptCount >= maxEmailDeliveryAttempts {
+			if err := tx.Commit(ctx); err != nil {
+				return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+			}
+			return claimedEmailDelivery{}, false, nil
+		}
+		nextAttempt, err := requiredTime(row.NextAttemptAt)
+		if err != nil {
+			return claimedEmailDelivery{}, false, err
+		}
+		if nextAttempt.After(now) {
+			if err := tx.Commit(ctx); err != nil {
+				return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+			}
+			return claimedEmailDelivery{}, false, nil
+		}
+	case "sending":
+		updatedAt, err := requiredTime(row.UpdatedAt)
+		if err != nil {
+			return claimedEmailDelivery{}, false, err
+		}
+		if row.AttemptCount >= maxEmailDeliveryAttempts || now.Sub(updatedAt) < staleEmailSendingAfter {
+			if err := tx.Commit(ctx); err != nil {
+				return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+			}
+			return claimedEmailDelivery{}, false, nil
+		}
+	default:
 		if err := tx.Commit(ctx); err != nil {
 			return claimedEmailDelivery{}, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 		}
 		return claimedEmailDelivery{}, false, nil
 	}
-	now := s.now()
 	if err := q.MarkDeliverySending(ctx, notificationstore.MarkDeliverySendingParams{
 		DeliveryAttemptID: deliveryID,
 		UpdatedAt:         timestamptz(now),
@@ -918,6 +956,7 @@ func (s *Service) claimEmailDelivery(ctx context.Context, deliveryID uuid.UUID) 
 		Body:               row.Body,
 		ContentSHA256:      row.ContentSha256,
 		Traceparent:        row.Traceparent,
+		AttemptCount:       row.AttemptCount,
 	}, true, nil
 }
 
@@ -971,11 +1010,12 @@ func (s *Service) failEmailDelivery(ctx context.Context, delivery claimedEmailDe
 	defer rollback(ctx, tx)
 	q := notificationstore.New(tx)
 	now := s.now()
+	attempts := delivery.AttemptCount + 1
 	if err := q.MarkDeliveryFailed(ctx, notificationstore.MarkDeliveryFailedParams{
 		DeliveryAttemptID: delivery.DeliveryAttemptID,
 		FailureReason:     truncateReason(cause),
 		FailedAt:          timestamptz(now),
-		NextAttemptAt:     timestamptz(now.Add(5 * time.Second)),
+		NextAttemptAt:     timestamptz(nextEmailDeliveryAttemptAt(now, attempts, cause)),
 	}); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
@@ -1005,6 +1045,27 @@ func (s *Service) failEmailDelivery(ctx context.Context, delivery claimedEmailDe
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return nil
+}
+
+func nextEmailDeliveryAttemptAt(now time.Time, attempts int32, cause error) time.Time {
+	if attempts >= maxEmailDeliveryAttempts {
+		return now.Add(24 * time.Hour)
+	}
+	if cause != nil && strings.Contains(strings.ToLower(cause.Error()), "daily_quota_exceeded") {
+		return now.Add(24 * time.Hour)
+	}
+	switch attempts {
+	case 0, 1:
+		return now.Add(time.Minute)
+	case 2:
+		return now.Add(5 * time.Minute)
+	case 3:
+		return now.Add(15 * time.Minute)
+	case 4:
+		return now.Add(time.Hour)
+	default:
+		return now.Add(6 * time.Hour)
+	}
 }
 
 func (s *Service) AcceptEvent(ctx context.Context, event DomainEvent) (bool, error) {
@@ -1316,7 +1377,44 @@ func (s *Service) Reconcile(ctx context.Context, limit int) error {
 	ctx, span := tracer.Start(ctx, "notifications.reconcile")
 	defer span.End()
 	span.SetAttributes(attribute.Int("notification.limit", limit))
-	return s.ProjectPendingLedger(ctx, limit)
+	var errs []error
+	if err := s.ProjectPendingLedger(ctx, limit); err != nil {
+		errs = append(errs, err)
+	}
+	enqueued, err := s.EnqueueDueEmailDeliveries(ctx, limit)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	span.SetAttributes(attribute.Int("notification.email_deliveries_enqueued", enqueued))
+	return errors.Join(errs...)
+}
+
+func (s *Service) EnqueueDueEmailDeliveries(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	if s.PG == nil {
+		return 0, fmt.Errorf("%w: postgres unavailable", ErrStoreUnavailable)
+	}
+	if s.Runtime == nil {
+		return 0, nil
+	}
+	q := notificationstore.New(s.PG)
+	deliveryIDs, err := q.ListDueDeliveryAttempts(ctx, notificationstore.ListDueDeliveryAttemptsParams{
+		MaxAttempts: maxEmailDeliveryAttempts,
+		LimitCount:  int32FromInt(limit, "notification due delivery limit"),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	enqueued := 0
+	for _, deliveryID := range deliveryIDs {
+		if err := s.Runtime.EnqueueEmailDelivery(ctx, deliveryID.String(), ""); err != nil {
+			return enqueued, err
+		}
+		enqueued++
+	}
+	return enqueued, nil
 }
 
 func (s *Service) loadEventForUpdate(ctx context.Context, q *notificationstore.Queries, eventSource string, eventID uuid.UUID) (DomainEvent, error) {

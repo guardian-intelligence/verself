@@ -612,6 +612,7 @@ func (s notificationSignupSender) SendSignupVerification(ctx context.Context, in
 	}
 	data := map[string]any{
 		"signup_intent_id": strings.TrimSpace(input.SignupIntentID),
+		"org_id":           strings.TrimSpace(input.OrgID),
 	}
 	body := notificationsinternalclient.RequiredNotificationBody(
 		fmt.Sprintf("Verify your email to finish creating %s on Verself.\n\nVerify signup: %s\n\nIf you did not start this signup, ignore this email.", strings.TrimSpace(input.OrganizationDisplayName), actionURL),
@@ -623,6 +624,7 @@ func (s notificationSignupSender) SendSignupVerification(ctx context.Context, in
 			ActionURL:          &actionURL,
 			Body:               body,
 			Data:               &data,
+			OrgID:              notificationsinternalclient.OrgId(strings.TrimSpace(input.OrgID)),
 			Priority:           &priority,
 			Recipients:         notificationsinternalclient.WorkflowRecipients{{Email: &email}},
 			TargetResourceName: resourceName,
