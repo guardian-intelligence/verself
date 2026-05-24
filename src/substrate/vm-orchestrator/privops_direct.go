@@ -92,7 +92,15 @@ func (DirectPrivOps) ZFSDestroy(ctx context.Context, dataset string) error {
 	return finishZFSDestroy("zfs destroy", dataset, out, err)
 }
 
-func (DirectPrivOps) ZFSDestroyRecursive(ctx context.Context, dataset string) error {
+func (DirectPrivOps) ZFSDestroyDatasetTree(ctx context.Context, dataset string) error {
+	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "zfs", "destroy", "-r", dataset)
+	out, err := cmd.CombinedOutput()
+	return finishZFSDestroy("zfs destroy -r", dataset, out, err)
+}
+
+func (DirectPrivOps) ZFSDestroyDependencyGraph(ctx context.Context, dataset string) error {
 	ctx, cancel := context.WithTimeout(ctx, zfs.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "zfs", "destroy", "-R", dataset)

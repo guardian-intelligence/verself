@@ -277,6 +277,28 @@ UPDATE golden_vm_snapshot
 SET last_used_at = sqlc.arg(last_used_at)
 WHERE golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id);
 
+-- name: InvalidateCurrentGoldenVMSnapshot :execrows
+WITH target AS (
+    SELECT vm.golden_vm_snapshot_id
+    FROM golden_vm_snapshot vm
+    WHERE vm.golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id)
+      AND vm.state = 'current'
+),
+clear_pointer AS (
+    UPDATE golden_vm_current_pointer p
+    SET current_golden_vm_snapshot_id = NULL
+    WHERE p.current_golden_vm_snapshot_id = sqlc.arg(golden_vm_snapshot_id)
+      AND EXISTS (SELECT 1 FROM target)
+    RETURNING 1
+)
+UPDATE golden_vm_snapshot vm
+SET state = 'invalidated',
+    expires_at = COALESCE(vm.expires_at, sqlc.arg(invalidated_at)),
+    last_used_at = sqlc.arg(invalidated_at)
+FROM target
+WHERE vm.golden_vm_snapshot_id = target.golden_vm_snapshot_id
+  AND (SELECT count(*) FROM clear_pointer) >= 0;
+
 -- name: InsertGoldenVMSnapshot :one
 INSERT INTO golden_vm_snapshot (
     golden_vm_snapshot_id, operation_id, org_id, repository_id, provider,

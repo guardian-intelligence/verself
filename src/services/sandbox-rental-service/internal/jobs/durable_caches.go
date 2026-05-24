@@ -75,6 +75,7 @@ const (
 	goldenVMEventCheckpoint         = "golden.vm.checkpoint"
 	goldenVMEventPublish            = "golden.vm.publish"
 	goldenVMEventPromote            = "golden.vm.promote"
+	goldenVMEventInvalidate         = "golden.vm.invalidate"
 	goldenVMEventReap               = "golden.vm.reap"
 )
 

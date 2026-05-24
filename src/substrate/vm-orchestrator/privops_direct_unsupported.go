@@ -25,8 +25,12 @@ func (DirectPrivOps) ZFSDestroy(context.Context, string) error {
 	return unsupportedHostMutation("zfs destroy")
 }
 
-func (DirectPrivOps) ZFSDestroyRecursive(context.Context, string) error {
-	return unsupportedHostMutation("zfs destroy recursive")
+func (DirectPrivOps) ZFSDestroyDatasetTree(context.Context, string) error {
+	return unsupportedHostMutation("zfs destroy dataset tree")
+}
+
+func (DirectPrivOps) ZFSDestroyDependencyGraph(context.Context, string) error {
+	return unsupportedHostMutation("zfs destroy dependency graph")
 }
 
 func (DirectPrivOps) ZFSCreateEncryptedFilesystem(context.Context, string, []byte) error {

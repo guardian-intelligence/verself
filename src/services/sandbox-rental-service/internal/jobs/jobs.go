@@ -628,62 +628,18 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		s.failDurableCaches(ctx, durablePlan, "durable_storage_entitlement_failed", err)
 		return s.failAttempt(ctx, item, "durable_storage_entitlement_failed", err)
 	}
-	acquireCtx, cancelAcquire := context.WithTimeout(ctx, leaseAcquireTimeout)
-	leaseStarted := time.Now().UTC()
-	lease, err := s.Orchestrator.AcquireLease(acquireCtx, item.AttemptID.String()+":lease", vmorchestrator.LeaseSpec{
-		Resources:   vmResourcesForLease(item.Resources),
-		TTLSeconds:  leaseTTLSeconds(item, s.WorkloadTimeout),
-		TrustClass:  "trusted",
-		NetworkMode: "nat",
-		StorageNamespace: vmorchestrator.StorageNamespace{
-			OrgID:      item.OrgID,
-			QuotaBytes: storageQuotaBytes,
-		},
-		FilesystemMounts: item.FilesystemMounts,
-		GoldenVM:         durablePlan.GoldenVM.Activation,
-	})
-	leaseCompleted := time.Now().UTC()
-	cancelAcquire()
-	if err == nil {
-		item.LeaseID = lease.LeaseID
+	lease, failureReason, err := s.acquireReadyLeaseForExecution(ctx, &item, storageQuotaBytes, durablePlan.GoldenVM.Activation, item.AttemptID.String()+":lease")
+	if err != nil && s.invalidateGoldenVMActivationAfterMissingRoot(ctx, item, durablePlan, err) {
+		durablePlan.GoldenVM.Activation = vmorchestrator.GoldenVMActivation{}
+		lease, failureReason, err = s.acquireReadyLeaseForExecution(ctx, &item, storageQuotaBytes, durablePlan.GoldenVM.Activation, item.AttemptID.String()+":lease-after-stale-golden")
 	}
-	result, reason = sandboxPhaseResult(err)
-	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.lease.acquire", result, reason, leaseStarted, leaseCompleted, sandboxPhaseAttrs{
-		"activation_mode": string(lease.Activation.Mode),
-		"snapshot_key":    lease.Activation.SnapshotKey,
-	})
 	if err != nil {
 		cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
 		defer cancel()
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
-		reason := "lease_acquire_failed"
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			reason = "lease_acquire_timeout"
-		}
-		s.failDurableCaches(ctx, durablePlan, reason, err)
-		return s.failAttempt(ctx, item, reason, err)
-	}
-	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, "")
-	if lease.State != vmorchestrator.LeaseStateReady {
-		readyStarted := time.Now().UTC()
-		lease, err = s.waitLeaseReady(ctx, lease.LeaseID, leaseReadyTimeout)
-		readyCompleted := time.Now().UTC()
-		result, reason = sandboxPhaseResult(err)
-		s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.lease.ready_wait", result, reason, readyStarted, readyCompleted, nil)
-		if err != nil {
-			cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
-			defer cancel()
-			_ = s.Orchestrator.ReleaseLease(cleanupCtx, item.LeaseID, item.AttemptID.String()+":ready-timeout-release")
-			_ = s.voidBillingWindow(cleanupCtx, reservation)
-			_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
-			reason := "lease_ready_failed"
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				reason = "lease_ready_timeout"
-			}
-			s.failDurableCaches(ctx, durablePlan, reason, err)
-			return s.failAttempt(ctx, item, reason, err)
-		}
+		s.failDurableCaches(ctx, durablePlan, failureReason, err)
+		return s.failAttempt(ctx, item, failureReason, err)
 	}
 	span.SetAttributes(
 		attribute.Int("filesystem.requested_mount_count", len(item.FilesystemMounts)),
@@ -775,6 +731,121 @@ func (s *Service) resumeRunningExecution(ctx context.Context, span trace.Span, i
 		return err
 	}
 	return s.monitorExecution(ctx, span, item, reservation, durablePlan)
+}
+
+func (s *Service) acquireReadyLeaseForExecution(ctx context.Context, item *executionWorkItem, storageQuotaBytes uint64, activation vmorchestrator.GoldenVMActivation, idempotencyKey string) (vmorchestrator.LeaseRecord, string, error) {
+	acquireCtx, cancelAcquire := context.WithTimeout(ctx, leaseAcquireTimeout)
+	leaseStarted := time.Now().UTC()
+	lease, err := s.Orchestrator.AcquireLease(acquireCtx, idempotencyKey, vmorchestrator.LeaseSpec{
+		Resources:   vmResourcesForLease(item.Resources),
+		TTLSeconds:  leaseTTLSeconds(*item, s.WorkloadTimeout),
+		TrustClass:  "trusted",
+		NetworkMode: "nat",
+		StorageNamespace: vmorchestrator.StorageNamespace{
+			OrgID:      item.OrgID,
+			QuotaBytes: storageQuotaBytes,
+		},
+		FilesystemMounts: item.FilesystemMounts,
+		GoldenVM:         activation,
+	})
+	leaseCompleted := time.Now().UTC()
+	cancelAcquire()
+	if err == nil {
+		item.LeaseID = lease.LeaseID
+	}
+	result, reason := sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, *item, "sandbox-rental", "vm.lease.acquire", result, reason, leaseStarted, leaseCompleted, sandboxPhaseAttrs{
+		"activation_mode": string(lease.Activation.Mode),
+		"snapshot_key":    lease.Activation.SnapshotKey,
+	})
+	if err != nil {
+		reason := "lease_acquire_failed"
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			reason = "lease_acquire_timeout"
+		}
+		return vmorchestrator.LeaseRecord{}, reason, err
+	}
+	_ = s.setAttemptLeaseExec(ctx, item.AttemptID, lease.LeaseID, "")
+	if lease.State == vmorchestrator.LeaseStateReady {
+		return lease, "", nil
+	}
+	readyStarted := time.Now().UTC()
+	lease, err = s.waitLeaseReady(ctx, lease.LeaseID, leaseReadyTimeout)
+	readyCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, *item, "sandbox-rental", "vm.lease.ready_wait", result, reason, readyStarted, readyCompleted, nil)
+	if err == nil {
+		return lease, "", nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(detachedContext(ctx), 5*time.Second)
+	defer cancel()
+	_ = s.Orchestrator.ReleaseLease(cleanupCtx, item.LeaseID, idempotencyKey+":ready-failed-release")
+	reason = "lease_ready_failed"
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		reason = "lease_ready_timeout"
+	}
+	return vmorchestrator.LeaseRecord{}, reason, err
+}
+
+func (s *Service) invalidateGoldenVMActivationAfterMissingRoot(ctx context.Context, item executionWorkItem, plan durableCachePlan, cause error) bool {
+	if !plan.GoldenVM.Enabled || !plan.GoldenVM.Activation.Requested() || !goldenVMRootSnapshotMissing(cause) {
+		return false
+	}
+	snapshotID, err := uuid.Parse(plan.GoldenVM.Activation.SnapshotID)
+	if err != nil {
+		if s.Logger != nil {
+			s.Logger.WarnContext(ctx, "golden VM activation had invalid snapshot id", "snapshot_id", plan.GoldenVM.Activation.SnapshotID, "error", err)
+		}
+		return false
+	}
+	now := time.Now().UTC()
+	rows, err := s.storeQueries().InvalidateCurrentGoldenVMSnapshot(ctx, store.InvalidateCurrentGoldenVMSnapshotParams{
+		InvalidatedAt:      pgTime(now),
+		GoldenVmSnapshotID: snapshotID,
+	})
+	result := "succeeded"
+	reason := "root_snapshot_missing"
+	if err != nil {
+		result = "failed"
+		reason = err.Error()
+		if s.Logger != nil {
+			s.Logger.WarnContext(ctx, "invalidate missing golden VM snapshot failed", "snapshot_id", snapshotID, "error", err)
+		}
+	} else if rows == 0 {
+		result = "skipped"
+		reason = "root_snapshot_missing_not_current"
+	}
+	event := goldenVMEvent{
+		OperationID:             &plan.GoldenVM.OperationID,
+		SnapshotID:              &snapshotID,
+		JobShapeID:              &plan.GoldenVM.JobShapeID,
+		ExecutionID:             &item.ExecutionID,
+		AttemptID:               &item.AttemptID,
+		Identity:                plan.Identity,
+		Name:                    goldenVMEventInvalidate,
+		Result:                  result,
+		Reason:                  reason,
+		GenerationSetHash:       plan.GoldenVM.SourceGenerationSetHash,
+		SourceGenerationSetHash: plan.GoldenVM.SourceGenerationSetHash,
+		SnapshotKey:             plan.GoldenVM.Activation.SnapshotKey,
+		ActivationMode:          string(vmorchestrator.ActivationModeSnapshotRestore),
+		VMStateArtifactRef:      plan.GoldenVM.Activation.VMStateArtifactRef,
+		MemoryArtifactRef:       plan.GoldenVM.Activation.MemoryArtifactRef,
+		RootSnapshotRef:         plan.GoldenVM.Activation.RootSnapshotRef,
+		RootSnapshotGUID:        plan.GoldenVM.Activation.RootSnapshotGUID,
+	}
+	_ = s.appendGoldenVMEvent(ctx, event)
+	return true
+}
+
+func goldenVMRootSnapshotMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "zfs source snapshot not found") ||
+		strings.Contains(msg, "source snapshot not found") ||
+		(strings.Contains(msg, "goldens/vmroot-") && strings.Contains(msg, "dataset does not exist"))
 }
 
 func (s *Service) waitLeaseReady(ctx context.Context, leaseID string, timeout time.Duration) (vmorchestrator.LeaseRecord, error) {
