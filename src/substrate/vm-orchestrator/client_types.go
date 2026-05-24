@@ -62,20 +62,12 @@ type GoldenVMCheckpointRecord struct {
 	MountSnapshots     []GoldenVMMountCheckpoint
 }
 
-type GoldenVMPruneRecord struct {
-	OperationID        string
-	GoldenVMSnapshotID string
-	SnapshotKey        string
-	RootSnapshotRef    string
-	PrunedAt           time.Time
-}
-
-type FilesystemPruneRecord struct {
+type SnapshotDestroyRecord struct {
 	OperationID         string
-	DurableGenerationID string
 	VolumeID            string
 	SnapshotRef         string
-	PrunedAt            time.Time
+	SnapshotArtifactKey string
+	DestroyedAt         time.Time
 }
 
 type OrgRuntimeShape struct {

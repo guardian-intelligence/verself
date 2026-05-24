@@ -746,99 +746,31 @@ func (s *APIServer) CheckpointGoldenVM(ctx context.Context, req *vmrpc.Checkpoin
 	return resp, nil
 }
 
-func (s *APIServer) PruneGoldenVMSnapshot(ctx context.Context, req *vmrpc.PruneGoldenVMSnapshotRequest) (*vmrpc.PruneGoldenVMSnapshotResponse, error) {
-	ctx, span := tracer.Start(ctx, "rpc.PruneGoldenVMSnapshot")
+func (s *APIServer) DestroySnapshot(ctx context.Context, req *vmrpc.DestroySnapshotRequest) (*vmrpc.DestroySnapshotResponse, error) {
+	ctx, span := tracer.Start(ctx, "rpc.DestroySnapshot")
 	defer span.End()
 	key := strings.TrimSpace(req.GetIdempotencyKey())
 	operationID := strings.TrimSpace(req.GetOperationId())
-	snapshotID := strings.TrimSpace(req.GetGoldenVmSnapshotId())
-	snapshotKey := strings.TrimSpace(req.GetSnapshotKey())
-	rootSnapshotRef := strings.TrimSpace(req.GetRootSnapshotRef())
+	volumeID := strings.TrimSpace(req.GetVolumeId())
+	snapshotRef := strings.TrimSpace(req.GetSnapshotRef())
 	orgID := strings.TrimSpace(req.GetOrgId())
-	if key == "" || operationID == "" || snapshotID == "" || snapshotKey == "" || rootSnapshotRef == "" || orgID == "" {
-		return nil, status.Error(codes.InvalidArgument, "idempotency_key, operation_id, golden_vm_snapshot_id, snapshot_key, root_snapshot_ref, and org_id are required")
+	artifactKey := strings.TrimSpace(req.GetSnapshotArtifactKey())
+	if key == "" || operationID == "" || volumeID == "" || snapshotRef == "" || orgID == "" {
+		return nil, status.Error(codes.InvalidArgument, "idempotency_key, operation_id, volume_id, snapshot_ref, and org_id are required")
 	}
-	for field, value := range map[string]string{"operation_id": operationID, "golden_vm_snapshot_id": snapshotID, "snapshot_key": snapshotKey, "org_id": orgID} {
+	for field, value := range map[string]string{"operation_id": operationID, "volume_id": volumeID, "org_id": orgID} {
 		if !zfs.IsValidRef(value) {
 			return nil, status.Errorf(codes.InvalidArgument, "%s is invalid", field)
 		}
 	}
-	scope := "prune_golden_vm_snapshot"
+	if artifactKey != "" && (strings.Contains(artifactKey, "/") || strings.Contains(artifactKey, "..")) {
+		return nil, status.Error(codes.InvalidArgument, "snapshot_artifact_key is invalid")
+	}
+	scope := "destroy_snapshot"
 	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	} else if ok {
-		resp := &vmrpc.PruneGoldenVMSnapshotResponse{}
-		if err := json.Unmarshal([]byte(prior), resp); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		return resp, nil
-	}
-	generation, err := zfs.ParseGeneration(s.roots, rootSnapshotRef)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	if generation.Volume().OrgID() != orgID || generation.Volume().ID() != "vmroot-"+snapshotID {
-		return nil, status.Error(codes.InvalidArgument, "root_snapshot_ref does not belong to golden VM snapshot")
-	}
-	span.SetAttributes(
-		attribute.String("golden_vm.operation_id", operationID),
-		attribute.String("golden_vm.snapshot_id", snapshotID),
-		attribute.String("firecracker.snapshot_key", snapshotKey),
-		attribute.String("golden_vm.root_snapshot_ref", rootSnapshotRef),
-	)
-	if err := s.newOrchestrator().snapshotStore().Delete(ctx, SnapshotKey{value: snapshotKey}); err != nil {
-		span.RecordError(err)
-		span.SetStatus(otelcodes.Error, err.Error())
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	volumes := zfs.NewVolumeLifecycle(s.roots, DirectPrivOps{}, s.logger)
-	if err := volumes.DestroyGeneration(ctx, generation); err != nil {
-		span.RecordError(err)
-		span.SetStatus(otelcodes.Error, err.Error())
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	prunedAt := time.Now().UTC()
-	resp := &vmrpc.PruneGoldenVMSnapshotResponse{
-		OperationId:        operationID,
-		GoldenVmSnapshotId: snapshotID,
-		SnapshotKey:        snapshotKey,
-		RootSnapshotRef:    rootSnapshotRef,
-		PrunedAtUnixNs:     unixNs(prunedAt),
-	}
-	data, _ := json.Marshal(resp)
-	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))
-	return resp, nil
-}
-
-func (s *APIServer) PruneFilesystemGeneration(ctx context.Context, req *vmrpc.PruneFilesystemGenerationRequest) (*vmrpc.PruneFilesystemGenerationResponse, error) {
-	ctx, span := tracer.Start(ctx, "rpc.PruneFilesystemGeneration")
-	defer span.End()
-	key := strings.TrimSpace(req.GetIdempotencyKey())
-	operationID := strings.TrimSpace(req.GetOperationId())
-	durableGenerationID := strings.TrimSpace(req.GetDurableGenerationId())
-	volumeID := strings.TrimSpace(req.GetVolumeId())
-	snapshotRef := strings.TrimSpace(req.GetSnapshotRef())
-	orgID := strings.TrimSpace(req.GetOrgId())
-	if key == "" || operationID == "" || durableGenerationID == "" || volumeID == "" || snapshotRef == "" || orgID == "" {
-		return nil, status.Error(codes.InvalidArgument, "idempotency_key, operation_id, durable_generation_id, volume_id, snapshot_ref, and org_id are required")
-	}
-	if !zfs.IsValidRef(operationID) {
-		return nil, status.Error(codes.InvalidArgument, "operation_id is invalid")
-	}
-	if !zfs.IsValidRef(durableGenerationID) {
-		return nil, status.Error(codes.InvalidArgument, "durable_generation_id is invalid")
-	}
-	if !zfs.IsValidRef(volumeID) {
-		return nil, status.Error(codes.InvalidArgument, "volume_id is invalid")
-	}
-	if !zfs.IsValidRef(orgID) {
-		return nil, status.Error(codes.InvalidArgument, "org_id is invalid")
-	}
-	scope := "prune_filesystem_generation"
-	if prior, ok, err := s.state.getIdempotency(ctx, scope, key); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	} else if ok {
-		resp := &vmrpc.PruneFilesystemGenerationResponse{}
+		resp := &vmrpc.DestroySnapshotResponse{}
 		if err := json.Unmarshal([]byte(prior), resp); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
@@ -852,24 +784,31 @@ func (s *APIServer) PruneFilesystemGeneration(ctx context.Context, req *vmrpc.Pr
 		return nil, status.Error(codes.InvalidArgument, "snapshot_ref does not belong to volume_id")
 	}
 	span.SetAttributes(
-		attribute.String("filesystem.operation_id", operationID),
-		attribute.String("filesystem.generation_id", durableGenerationID),
-		attribute.String("filesystem.volume_id", volumeID),
-		attribute.String("filesystem.snapshot_ref", snapshotRef),
+		attribute.String("snapshot.operation_id", operationID),
+		attribute.String("snapshot.volume_id", volumeID),
+		attribute.String("snapshot.ref", snapshotRef),
+		attribute.String("snapshot.artifact_key", artifactKey),
 	)
+	if artifactKey != "" {
+		if err := s.newOrchestrator().snapshotStore().Delete(ctx, SnapshotKey{value: artifactKey}); err != nil {
+			span.RecordError(err)
+			span.SetStatus(otelcodes.Error, err.Error())
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
 	volumes := zfs.NewVolumeLifecycle(s.roots, DirectPrivOps{}, s.logger)
 	if err := volumes.DestroyGeneration(ctx, generation); err != nil {
 		span.RecordError(err)
 		span.SetStatus(otelcodes.Error, err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	prunedAt := time.Now().UTC()
-	resp := &vmrpc.PruneFilesystemGenerationResponse{
+	destroyedAt := time.Now().UTC()
+	resp := &vmrpc.DestroySnapshotResponse{
 		OperationId:         operationID,
-		DurableGenerationId: durableGenerationID,
 		VolumeId:            volumeID,
 		SnapshotRef:         snapshotRef,
-		PrunedAtUnixNs:      unixNs(prunedAt),
+		SnapshotArtifactKey: artifactKey,
+		DestroyedAtUnixNs:   unixNs(destroyedAt),
 	}
 	data, _ := json.Marshal(resp)
 	_ = s.state.putIdempotency(context.Background(), scope, key, string(data))

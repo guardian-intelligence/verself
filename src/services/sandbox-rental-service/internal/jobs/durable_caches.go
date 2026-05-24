@@ -1699,7 +1699,7 @@ func (s *Service) reapGoldenVMSnapshotCandidates(ctx context.Context, now time.T
 			ProviderRunAttempt:   row.ProviderRunAttempt,
 			ProviderJobID:        row.ProviderJobID,
 		}
-		_, err = s.Orchestrator.PruneGoldenVMSnapshot(ctx, row.GoldenVmSnapshotID.String()+":reap", row.OperationID.String(), row.GoldenVmSnapshotID.String(), row.SnapshotKey, row.RootSnapshotRef, row.OrgID)
+		_, err = s.Orchestrator.DestroySnapshot(ctx, row.GoldenVmSnapshotID.String()+":reap", row.OperationID.String(), "vmroot-"+row.GoldenVmSnapshotID.String(), row.RootSnapshotRef, row.OrgID, row.SnapshotKey)
 		if err != nil {
 			event := goldenVMEvent{OperationID: &row.OperationID, SnapshotID: &row.GoldenVmSnapshotID, JobShapeID: &row.JobShapeID, Identity: identity, Name: goldenVMEventReap, Result: "failed", Reason: err.Error(), GenerationSetHash: row.GenerationSetHash, SourceGenerationSetHash: row.SourceGenerationSetHash, SnapshotKey: row.SnapshotKey, VMStateArtifactRef: row.VmstateArtifactRef, MemoryArtifactRef: row.MemoryArtifactRef, RootSnapshotRef: row.RootSnapshotRef, RootSnapshotGUID: row.RootSnapshotGuid, StateBytes: uint64FromInt64(row.StateBytes, "golden VM state bytes"), MemoryBytes: uint64FromInt64(row.MemoryBytes, "golden VM memory bytes")}
 			_ = s.appendGoldenVMEvent(ctx, event)
@@ -1832,7 +1832,7 @@ func (s *Service) reapDurableGenerationCandidates(ctx context.Context, now time.
 			ProviderRunAttempt:   row.ProviderRunAttempt,
 			ProviderJobID:        row.ProviderJobID,
 		}
-		_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, row.DurableGenerationID.String()+":reap", row.OperationID.String(), row.DurableGenerationID.String(), row.DurableScopeID.String(), row.ZFSSnapshotRef, row.OrgID)
+		_, err = s.Orchestrator.DestroySnapshot(ctx, row.DurableGenerationID.String()+":reap", row.OperationID.String(), row.DurableScopeID.String(), row.ZFSSnapshotRef, row.OrgID, "")
 		if err != nil {
 			event := durableEvent{OperationID: &row.OperationID, ScopeID: &row.DurableScopeID, GenerationID: &row.DurableGenerationID, ExecutionID: &row.ExecutionID, AttemptID: &row.AttemptID, Identity: identity, CacheName: row.CacheName, Name: eventName, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: row.ZFSSnapshotRef, UsedBytes: uint64FromInt64(row.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(row.WrittenBytes, "durable written bytes")}
 			_ = s.appendDurableEvent(ctx, event.withStorageCapacity(storage.Capacity, row.OrgID))

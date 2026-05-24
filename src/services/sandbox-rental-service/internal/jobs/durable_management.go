@@ -328,7 +328,7 @@ func (s *Service) reapUserDurableCacheGeneration(ctx context.Context, candidate 
 		ProviderRunAttempt:   candidate.ProviderRunAttempt,
 		ProviderJobID:        candidate.ProviderJobID,
 	}
-	_, err = s.Orchestrator.PruneFilesystemGeneration(ctx, candidate.DurableGenerationID.String()+":user-reap", candidate.OperationID.String(), candidate.DurableGenerationID.String(), candidate.DurableScopeID.String(), candidate.ZFSSnapshotRef, candidate.OrgID)
+	_, err = s.Orchestrator.DestroySnapshot(ctx, candidate.DurableGenerationID.String()+":user-reap", candidate.OperationID.String(), candidate.DurableScopeID.String(), candidate.ZFSSnapshotRef, candidate.OrgID, "")
 	if err != nil {
 		event := durableEvent{OperationID: &candidate.OperationID, ScopeID: &candidate.DurableScopeID, GenerationID: &candidate.DurableGenerationID, ExecutionID: &candidate.ExecutionID, AttemptID: &candidate.AttemptID, Identity: identity, CacheName: candidate.CacheName, Name: durableEventReap, Result: "failed", Reason: err.Error(), ZFSSnapshotRef: candidate.ZFSSnapshotRef, UsedBytes: uint64FromInt64(candidate.UsedBytes, "durable used bytes"), WrittenBytes: uint64FromInt64(candidate.WrittenBytes, "durable written bytes")}
 		if storageKnown {

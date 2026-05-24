@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -48,7 +47,7 @@ const (
 
 	sandboxAPIRequestBodyLimit  = 1 << 20
 	sandboxInternalWriteTimeout = 60 * time.Second
-	defaultShutdownDrainTimeout = 4 * time.Hour
+	schedulerShutdownTimeout    = 10 * time.Second
 )
 
 func main() {
@@ -108,7 +107,6 @@ func run() error {
 	pgConnMaxIdle := cfg.Int("VERSELF_PG_CONN_MAX_IDLE_SECONDS", 300)
 	workloadTimeout := cfg.Int("SANDBOX_WORKLOAD_TIMEOUT_SECONDS", 7200)
 	executionMaxWorkers := cfg.Int("SANDBOX_EXECUTION_MAX_WORKERS", scheduler.DefaultExecutionMaxWorkers)
-	shutdownDrainTimeout := cfg.Duration("SANDBOX_DRAIN_TIMEOUT", defaultShutdownDrainTimeout)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	if err := cfg.Err(); err != nil {
@@ -294,9 +292,8 @@ func run() error {
 
 	// --- Huma API ---
 
-	drain := &drainState{}
 	rootMux := http.NewServeMux()
-	registerStatusRoutes(rootMux, drain)
+	registerStatusRoutes(rootMux)
 	privateMux := http.NewServeMux()
 	sandboxapi.NewAPI(privateMux, "1.0.0", listenAddr, jobService, recurringService, sandboxapi.PublicAPIConfig{
 		PublicBaseURL:  publicBaseURL,
@@ -345,7 +342,7 @@ func run() error {
 		return fmt.Errorf("sandbox-rental spiffe internal tls: %w", err)
 	}
 	internalMux := http.NewServeMux()
-	registerStatusRoutes(internalMux, drain)
+	registerStatusRoutes(internalMux)
 	sandboxapi.NewInternalAPI(internalMux, "1.0.0", "https://"+internalListenAddr, jobService)
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
@@ -387,7 +384,7 @@ func run() error {
 	case err := <-serverErrCh:
 		stopReconcile()
 		cancelWorkers()
-		stopCtx, cancel := context.WithTimeout(context.Background(), httpserver.ShutdownTimeout)
+		stopCtx, cancel := context.WithTimeout(context.Background(), schedulerShutdownTimeout)
 		defer cancel()
 		stopErr := schedulerRuntime.StopAndCancel(stopCtx)
 		if err != nil {
@@ -398,52 +395,33 @@ func run() error {
 	}
 
 	stop()
-	drain.Begin()
 	stopReconcile()
 	stopServers()
 	waitForHTTPShutdown(logger, serverErrCh)
 
-	drainCtx, span := otel.Tracer("sandbox-rental-service").Start(context.Background(), "sandbox.shutdown.drain")
-	span.SetAttributes(attribute.String("sandbox.drain.timeout", shutdownDrainTimeout.String()))
-	logger.InfoContext(drainCtx, "sandbox-rental: drain started", "timeout", shutdownDrainTimeout.String())
-
-	drainCtx, cancelDrain := context.WithTimeout(drainCtx, shutdownDrainTimeout)
-	defer cancelDrain()
-	err = schedulerRuntime.Stop(drainCtx)
+	stopCtx, span := otel.Tracer("sandbox-rental-service").Start(context.Background(), "sandbox.shutdown")
+	span.SetAttributes(attribute.String("sandbox.scheduler_shutdown.timeout", schedulerShutdownTimeout.String()))
+	stopCtx, cancelScheduler := context.WithTimeout(stopCtx, schedulerShutdownTimeout)
+	defer cancelScheduler()
+	err = schedulerRuntime.StopAndCancel(stopCtx)
 	if err != nil {
 		span.RecordError(err)
 		cancelWorkers()
 		span.End()
-		return fmt.Errorf("drain scheduler runtime: %w", err)
+		return fmt.Errorf("stop scheduler runtime: %w", err)
 	}
-	span.SetAttributes(attribute.String("sandbox.drain.result", "succeeded"))
+	span.SetAttributes(attribute.String("sandbox.scheduler_shutdown.result", "succeeded"))
 	span.End()
-	logger.InfoContext(context.Background(), "sandbox-rental: drain completed")
+	logger.InfoContext(context.Background(), "sandbox-rental: shutdown completed")
 	return nil
 }
 
-type drainState struct {
-	draining atomic.Bool
-}
-
-func (s *drainState) Begin() {
-	s.draining.Store(true)
-}
-
-func (s *drainState) Draining() bool {
-	return s != nil && s.draining.Load()
-}
-
-func registerStatusRoutes(mux *http.ServeMux, drain *drainState) {
+func registerStatusRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if drain.Draining() {
-			http.Error(w, "draining", http.StatusServiceUnavailable)
-			return
-		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready\n"))
 	})

@@ -84,23 +84,15 @@ func TestValidatePublicBaseURL(t *testing.T) {
 	}
 }
 
-func TestStatusRoutesExposeDrainReadiness(t *testing.T) {
-	drain := &drainState{}
+func TestStatusRoutesExposeReadiness(t *testing.T) {
 	mux := http.NewServeMux()
-	registerStatusRoutes(mux, drain)
+	registerStatusRoutes(mux)
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("ready status = %d, want %d", rec.Code, http.StatusOK)
-	}
-
-	drain.Begin()
-	rec = httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("draining ready status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 
 	rec = httptest.NewRecorder()

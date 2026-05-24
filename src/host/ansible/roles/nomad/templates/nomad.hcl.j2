@@ -38,8 +38,6 @@ client {
   enabled = true
   min_dynamic_port = 20000
   max_dynamic_port = 32000
-  # Nomad caps per-task kill_timeout at the client cap; sandbox runner drains need hours.
-  max_kill_timeout = "{{ nomad_max_kill_timeout }}"
 
   # Single-node: server is co-resident on loopback. Setting servers
   # explicitly skips Consul discovery (we don't run Consul).

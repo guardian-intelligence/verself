@@ -59,6 +59,7 @@ type ExecutionAdvanceRequest struct {
 	ActorID       string
 	CorrelationID string
 	TraceParent   string
+	RunAfter      time.Duration
 }
 
 type ExecutionAdvanceResult struct {
@@ -271,7 +272,7 @@ func (r *Runtime) EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req 
 		TraceParent:   strings.TrimSpace(req.TraceParent),
 		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 	}
-	result, err := r.client.InsertTx(ctx, tx, args, nil)
+	result, err := r.client.InsertTx(ctx, tx, args, executionInsertOpts(req))
 	if err != nil {
 		return ExecutionAdvanceResult{}, fmt.Errorf("enqueue execution advance: %w", err)
 	}
@@ -282,6 +283,36 @@ func (r *Runtime) EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req 
 		Queue:  job.Queue,
 		Status: string(job.State),
 	}, nil
+}
+
+func (r *Runtime) EnqueueExecutionAdvance(ctx context.Context, req ExecutionAdvanceRequest) (ExecutionAdvanceResult, error) {
+	args := ExecutionAdvanceArgs{
+		ExecutionID:   strings.TrimSpace(req.ExecutionID),
+		AttemptID:     strings.TrimSpace(req.AttemptID),
+		OrgID:         req.OrgID,
+		ActorID:       strings.TrimSpace(req.ActorID),
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		TraceParent:   strings.TrimSpace(req.TraceParent),
+		SubmittedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	result, err := r.client.Insert(ctx, args, executionInsertOpts(req))
+	if err != nil {
+		return ExecutionAdvanceResult{}, fmt.Errorf("enqueue execution advance: %w", err)
+	}
+	job := result.Job
+	return ExecutionAdvanceResult{
+		JobID:  job.ID,
+		Kind:   job.Kind,
+		Queue:  job.Queue,
+		Status: string(job.State),
+	}, nil
+}
+
+func executionInsertOpts(req ExecutionAdvanceRequest) *river.InsertOpts {
+	if req.RunAfter <= 0 {
+		return nil
+	}
+	return &river.InsertOpts{ScheduledAt: time.Now().UTC().Add(req.RunAfter)}
 }
 
 func (r *Runtime) EnqueueRunnerJobBindTx(ctx context.Context, tx pgx.Tx, req RunnerJobBindRequest) (ProbeResult, error) {

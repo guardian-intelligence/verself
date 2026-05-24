@@ -19,8 +19,7 @@ type ExecutionAdvanceWorker struct {
 }
 
 func (w *ExecutionAdvanceWorker) Timeout(*river.Job[scheduler.ExecutionAdvanceArgs]) time.Duration {
-	// vm-orchestrator enforces exec max_wall; River's default one-minute timeout kills GitHub runners before they can report completion.
-	return -1
+	return 5 * time.Minute
 }
 
 type RunnerJobBindWorker struct {

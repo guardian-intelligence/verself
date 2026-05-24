@@ -1077,3 +1077,19 @@ func (q *Queries) SetExecutionState(ctx context.Context, arg SetExecutionStatePa
 	_, err := q.db.Exec(ctx, setExecutionState, arg.State, arg.UpdatedAt, arg.ExecutionID)
 	return err
 }
+
+const touchExecutionAttempt = `-- name: TouchExecutionAttempt :exec
+UPDATE execution_attempts
+SET updated_at = $1
+WHERE attempt_id = $2
+`
+
+type TouchExecutionAttemptParams struct {
+	UpdatedAt pgtype.Timestamptz
+	AttemptID uuid.UUID
+}
+
+func (q *Queries) TouchExecutionAttempt(ctx context.Context, arg TouchExecutionAttemptParams) error {
+	_, err := q.db.Exec(ctx, touchExecutionAttempt, arg.UpdatedAt, arg.AttemptID)
+	return err
+}

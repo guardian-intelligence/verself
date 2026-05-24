@@ -301,8 +301,14 @@ func sandboxPhaseOrder(phaseName string) uint16 {
 		return 170
 	case "github.runner.post_job_exit":
 		return 180
-	case "vm.exec.wait":
-		return 190
+	case "vm.exec.observe":
+		return 185
+	case "vm.lease.renew":
+		return 186
+	case "sandbox.execution.monitor_enqueue":
+		return 187
+	case "vm.exec.output":
+		return 195
 	case "github.job.result_wait":
 		return 200
 	case "sandbox.durable.seal":

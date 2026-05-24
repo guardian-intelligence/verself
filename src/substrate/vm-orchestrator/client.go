@@ -159,45 +159,24 @@ func (c *Client) CheckpointGoldenVM(ctx context.Context, leaseID, key, operation
 	return goldenVMCheckpointRecordFromProto(resp), nil
 }
 
-func (c *Client) PruneGoldenVMSnapshot(ctx context.Context, key, operationID, snapshotID, snapshotKey, rootSnapshotRef, orgID string) (GoldenVMPruneRecord, error) {
-	resp, err := c.client.PruneGoldenVMSnapshot(ctx, &vmrpc.PruneGoldenVMSnapshotRequest{
-		IdempotencyKey:     key,
-		OperationId:        operationID,
-		GoldenVmSnapshotId: snapshotID,
-		SnapshotKey:        snapshotKey,
-		RootSnapshotRef:    rootSnapshotRef,
-		OrgId:              orgID,
-	})
-	if err != nil {
-		return GoldenVMPruneRecord{}, fmt.Errorf("prune golden VM snapshot %s: %w", snapshotID, err)
-	}
-	return GoldenVMPruneRecord{
-		OperationID:        resp.GetOperationId(),
-		GoldenVMSnapshotID: resp.GetGoldenVmSnapshotId(),
-		SnapshotKey:        resp.GetSnapshotKey(),
-		RootSnapshotRef:    resp.GetRootSnapshotRef(),
-		PrunedAt:           timeFromUnixNs(resp.GetPrunedAtUnixNs()),
-	}, nil
-}
-
-func (c *Client) PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, volumeID, snapshotRef, orgID string) (FilesystemPruneRecord, error) {
-	resp, err := c.client.PruneFilesystemGeneration(ctx, &vmrpc.PruneFilesystemGenerationRequest{
+func (c *Client) DestroySnapshot(ctx context.Context, key, operationID, volumeID, snapshotRef, orgID, snapshotArtifactKey string) (SnapshotDestroyRecord, error) {
+	resp, err := c.client.DestroySnapshot(ctx, &vmrpc.DestroySnapshotRequest{
 		IdempotencyKey:      key,
 		OperationId:         operationID,
-		DurableGenerationId: durableGenerationID,
 		VolumeId:            volumeID,
 		SnapshotRef:         snapshotRef,
 		OrgId:               orgID,
+		SnapshotArtifactKey: snapshotArtifactKey,
 	})
 	if err != nil {
-		return FilesystemPruneRecord{}, fmt.Errorf("prune filesystem generation %s: %w", durableGenerationID, err)
+		return SnapshotDestroyRecord{}, fmt.Errorf("destroy snapshot %s: %w", snapshotRef, err)
 	}
-	return FilesystemPruneRecord{
+	return SnapshotDestroyRecord{
 		OperationID:         resp.GetOperationId(),
-		DurableGenerationID: resp.GetDurableGenerationId(),
 		VolumeID:            resp.GetVolumeId(),
 		SnapshotRef:         resp.GetSnapshotRef(),
-		PrunedAt:            timeFromUnixNs(resp.GetPrunedAtUnixNs()),
+		SnapshotArtifactKey: resp.GetSnapshotArtifactKey(),
+		DestroyedAt:         timeFromUnixNs(resp.GetDestroyedAtUnixNs()),
 	}, nil
 }
 

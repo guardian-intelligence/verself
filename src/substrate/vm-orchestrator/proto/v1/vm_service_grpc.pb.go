@@ -19,23 +19,22 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VMService_AcquireLease_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/AcquireLease"
-	VMService_RenewLease_FullMethodName                = "/verself.vm_orchestrator.v1.VMService/RenewLease"
-	VMService_ReleaseLease_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/ReleaseLease"
-	VMService_GetLease_FullMethodName                  = "/verself.vm_orchestrator.v1.VMService/GetLease"
-	VMService_ListLeases_FullMethodName                = "/verself.vm_orchestrator.v1.VMService/ListLeases"
-	VMService_StreamLeaseEvents_FullMethodName         = "/verself.vm_orchestrator.v1.VMService/StreamLeaseEvents"
-	VMService_StartExec_FullMethodName                 = "/verself.vm_orchestrator.v1.VMService/StartExec"
-	VMService_CancelExec_FullMethodName                = "/verself.vm_orchestrator.v1.VMService/CancelExec"
-	VMService_GetExec_FullMethodName                   = "/verself.vm_orchestrator.v1.VMService/GetExec"
-	VMService_WaitExec_FullMethodName                  = "/verself.vm_orchestrator.v1.VMService/WaitExec"
-	VMService_CommitFilesystemMount_FullMethodName     = "/verself.vm_orchestrator.v1.VMService/CommitFilesystemMount"
-	VMService_CheckpointGoldenVM_FullMethodName        = "/verself.vm_orchestrator.v1.VMService/CheckpointGoldenVM"
-	VMService_PruneGoldenVMSnapshot_FullMethodName     = "/verself.vm_orchestrator.v1.VMService/PruneGoldenVMSnapshot"
-	VMService_PruneFilesystemGeneration_FullMethodName = "/verself.vm_orchestrator.v1.VMService/PruneFilesystemGeneration"
-	VMService_EnsureOrgRuntime_FullMethodName          = "/verself.vm_orchestrator.v1.VMService/EnsureOrgRuntime"
-	VMService_GetCapacity_FullMethodName               = "/verself.vm_orchestrator.v1.VMService/GetCapacity"
-	VMService_SeedImage_FullMethodName                 = "/verself.vm_orchestrator.v1.VMService/SeedImage"
+	VMService_AcquireLease_FullMethodName          = "/verself.vm_orchestrator.v1.VMService/AcquireLease"
+	VMService_RenewLease_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/RenewLease"
+	VMService_ReleaseLease_FullMethodName          = "/verself.vm_orchestrator.v1.VMService/ReleaseLease"
+	VMService_GetLease_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/GetLease"
+	VMService_ListLeases_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/ListLeases"
+	VMService_StreamLeaseEvents_FullMethodName     = "/verself.vm_orchestrator.v1.VMService/StreamLeaseEvents"
+	VMService_StartExec_FullMethodName             = "/verself.vm_orchestrator.v1.VMService/StartExec"
+	VMService_CancelExec_FullMethodName            = "/verself.vm_orchestrator.v1.VMService/CancelExec"
+	VMService_GetExec_FullMethodName               = "/verself.vm_orchestrator.v1.VMService/GetExec"
+	VMService_WaitExec_FullMethodName              = "/verself.vm_orchestrator.v1.VMService/WaitExec"
+	VMService_CommitFilesystemMount_FullMethodName = "/verself.vm_orchestrator.v1.VMService/CommitFilesystemMount"
+	VMService_CheckpointGoldenVM_FullMethodName    = "/verself.vm_orchestrator.v1.VMService/CheckpointGoldenVM"
+	VMService_DestroySnapshot_FullMethodName       = "/verself.vm_orchestrator.v1.VMService/DestroySnapshot"
+	VMService_EnsureOrgRuntime_FullMethodName      = "/verself.vm_orchestrator.v1.VMService/EnsureOrgRuntime"
+	VMService_GetCapacity_FullMethodName           = "/verself.vm_orchestrator.v1.VMService/GetCapacity"
+	VMService_SeedImage_FullMethodName             = "/verself.vm_orchestrator.v1.VMService/SeedImage"
 )
 
 // VMServiceClient is the client API for VMService service.
@@ -54,8 +53,7 @@ type VMServiceClient interface {
 	WaitExec(ctx context.Context, in *WaitExecRequest, opts ...grpc.CallOption) (*WaitExecResponse, error)
 	CommitFilesystemMount(ctx context.Context, in *CommitFilesystemMountRequest, opts ...grpc.CallOption) (*CommitFilesystemMountResponse, error)
 	CheckpointGoldenVM(ctx context.Context, in *CheckpointGoldenVMRequest, opts ...grpc.CallOption) (*CheckpointGoldenVMResponse, error)
-	PruneGoldenVMSnapshot(ctx context.Context, in *PruneGoldenVMSnapshotRequest, opts ...grpc.CallOption) (*PruneGoldenVMSnapshotResponse, error)
-	PruneFilesystemGeneration(ctx context.Context, in *PruneFilesystemGenerationRequest, opts ...grpc.CallOption) (*PruneFilesystemGenerationResponse, error)
+	DestroySnapshot(ctx context.Context, in *DestroySnapshotRequest, opts ...grpc.CallOption) (*DestroySnapshotResponse, error)
 	EnsureOrgRuntime(ctx context.Context, in *EnsureOrgRuntimeRequest, opts ...grpc.CallOption) (*EnsureOrgRuntimeResponse, error)
 	GetCapacity(ctx context.Context, in *GetCapacityRequest, opts ...grpc.CallOption) (*GetCapacityResponse, error)
 	// SeedImage is the privileged image-seeding entry point used by deploy-time
@@ -203,20 +201,10 @@ func (c *vMServiceClient) CheckpointGoldenVM(ctx context.Context, in *Checkpoint
 	return out, nil
 }
 
-func (c *vMServiceClient) PruneGoldenVMSnapshot(ctx context.Context, in *PruneGoldenVMSnapshotRequest, opts ...grpc.CallOption) (*PruneGoldenVMSnapshotResponse, error) {
+func (c *vMServiceClient) DestroySnapshot(ctx context.Context, in *DestroySnapshotRequest, opts ...grpc.CallOption) (*DestroySnapshotResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PruneGoldenVMSnapshotResponse)
-	err := c.cc.Invoke(ctx, VMService_PruneGoldenVMSnapshot_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *vMServiceClient) PruneFilesystemGeneration(ctx context.Context, in *PruneFilesystemGenerationRequest, opts ...grpc.CallOption) (*PruneFilesystemGenerationResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PruneFilesystemGenerationResponse)
-	err := c.cc.Invoke(ctx, VMService_PruneFilesystemGeneration_FullMethodName, in, out, cOpts...)
+	out := new(DestroySnapshotResponse)
+	err := c.cc.Invoke(ctx, VMService_DestroySnapshot_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -269,8 +257,7 @@ type VMServiceServer interface {
 	WaitExec(context.Context, *WaitExecRequest) (*WaitExecResponse, error)
 	CommitFilesystemMount(context.Context, *CommitFilesystemMountRequest) (*CommitFilesystemMountResponse, error)
 	CheckpointGoldenVM(context.Context, *CheckpointGoldenVMRequest) (*CheckpointGoldenVMResponse, error)
-	PruneGoldenVMSnapshot(context.Context, *PruneGoldenVMSnapshotRequest) (*PruneGoldenVMSnapshotResponse, error)
-	PruneFilesystemGeneration(context.Context, *PruneFilesystemGenerationRequest) (*PruneFilesystemGenerationResponse, error)
+	DestroySnapshot(context.Context, *DestroySnapshotRequest) (*DestroySnapshotResponse, error)
 	EnsureOrgRuntime(context.Context, *EnsureOrgRuntimeRequest) (*EnsureOrgRuntimeResponse, error)
 	GetCapacity(context.Context, *GetCapacityRequest) (*GetCapacityResponse, error)
 	// SeedImage is the privileged image-seeding entry point used by deploy-time
@@ -325,11 +312,8 @@ func (UnimplementedVMServiceServer) CommitFilesystemMount(context.Context, *Comm
 func (UnimplementedVMServiceServer) CheckpointGoldenVM(context.Context, *CheckpointGoldenVMRequest) (*CheckpointGoldenVMResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckpointGoldenVM not implemented")
 }
-func (UnimplementedVMServiceServer) PruneGoldenVMSnapshot(context.Context, *PruneGoldenVMSnapshotRequest) (*PruneGoldenVMSnapshotResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method PruneGoldenVMSnapshot not implemented")
-}
-func (UnimplementedVMServiceServer) PruneFilesystemGeneration(context.Context, *PruneFilesystemGenerationRequest) (*PruneFilesystemGenerationResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method PruneFilesystemGeneration not implemented")
+func (UnimplementedVMServiceServer) DestroySnapshot(context.Context, *DestroySnapshotRequest) (*DestroySnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DestroySnapshot not implemented")
 }
 func (UnimplementedVMServiceServer) EnsureOrgRuntime(context.Context, *EnsureOrgRuntimeRequest) (*EnsureOrgRuntimeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnsureOrgRuntime not implemented")
@@ -570,38 +554,20 @@ func _VMService_CheckpointGoldenVM_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _VMService_PruneGoldenVMSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PruneGoldenVMSnapshotRequest)
+func _VMService_DestroySnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DestroySnapshotRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(VMServiceServer).PruneGoldenVMSnapshot(ctx, in)
+		return srv.(VMServiceServer).DestroySnapshot(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: VMService_PruneGoldenVMSnapshot_FullMethodName,
+		FullMethod: VMService_DestroySnapshot_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).PruneGoldenVMSnapshot(ctx, req.(*PruneGoldenVMSnapshotRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _VMService_PruneFilesystemGeneration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PruneFilesystemGenerationRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(VMServiceServer).PruneFilesystemGeneration(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: VMService_PruneFilesystemGeneration_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VMServiceServer).PruneFilesystemGeneration(ctx, req.(*PruneFilesystemGenerationRequest))
+		return srv.(VMServiceServer).DestroySnapshot(ctx, req.(*DestroySnapshotRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -712,12 +678,8 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _VMService_CheckpointGoldenVM_Handler,
 		},
 		{
-			MethodName: "PruneGoldenVMSnapshot",
-			Handler:    _VMService_PruneGoldenVMSnapshot_Handler,
-		},
-		{
-			MethodName: "PruneFilesystemGeneration",
-			Handler:    _VMService_PruneFilesystemGeneration_Handler,
+			MethodName: "DestroySnapshot",
+			Handler:    _VMService_DestroySnapshot_Handler,
 		},
 		{
 			MethodName: "EnsureOrgRuntime",

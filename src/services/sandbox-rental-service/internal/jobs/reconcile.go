@@ -179,6 +179,11 @@ func (s *Service) reconcileLeasedAttempts(ctx context.Context) error {
 			continue
 		}
 		if !lease.State.Terminal() {
+			if (item.AttemptState == StateRunning || item.AttemptState == StateFinalizing) && s.Scheduler != nil {
+				if err := s.enqueueExecutionMonitor(ctx, item.executionWorkItem, 0); err != nil {
+					return fmt.Errorf("enqueue stale execution monitor %s: %w", item.AttemptID, err)
+				}
+			}
 			continue
 		}
 		if item.windowID != "" {

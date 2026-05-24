@@ -132,6 +132,11 @@ SET lease_id = NULLIF(sqlc.arg(lease_id)::text, ''),
     updated_at = sqlc.arg(updated_at)
 WHERE attempt_id = sqlc.arg(attempt_id);
 
+-- name: TouchExecutionAttempt :exec
+UPDATE execution_attempts
+SET updated_at = sqlc.arg(updated_at)
+WHERE attempt_id = sqlc.arg(attempt_id);
+
 -- name: CompleteAttemptCAS :execrows
 UPDATE execution_attempts
 SET state = sqlc.arg(state),

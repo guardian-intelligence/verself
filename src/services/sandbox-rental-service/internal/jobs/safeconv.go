@@ -2,16 +2,14 @@ package jobs
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/verself/vm-orchestrator"
 )
 
 const (
-	maxInt32AsInt64    = int64(1<<31 - 1)
-	minInt32AsInt64    = -1 << 31
-	maxInt64AsUint64   = uint64(1<<63 - 1)
-	maxDurationSeconds = maxInt64AsUint64 / uint64(time.Second)
+	maxInt32AsInt64  = int64(1<<31 - 1)
+	minInt32AsInt64  = -1 << 31
+	maxInt64AsUint64 = uint64(1<<63 - 1)
 )
 
 func mustInt64FromUint64(value uint64, field string) int64 {
@@ -54,13 +52,6 @@ func int32FromInt64(value int64, field string) int32 {
 		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
 	}
 	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
-}
-
-func durationFromSeconds(value uint64, field string) time.Duration {
-	if value > maxDurationSeconds {
-		panic(fmt.Sprintf("%s exceeds max duration seconds %d: %d", field, maxDurationSeconds, value))
-	}
-	return time.Duration(value) * time.Second // #nosec G115 -- value is checked against the duration range above.
 }
 
 func vmResourcesForLease(resources VMResources) vmorchestrator.VMResources {

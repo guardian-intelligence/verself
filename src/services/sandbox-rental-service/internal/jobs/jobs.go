@@ -70,6 +70,9 @@ const (
 	leaseAcquireTimeout  = 500 * time.Millisecond
 	leaseReadyTimeout    = 45 * time.Second
 	execStartTimeout     = 2 * time.Second
+	leaseRenewSeconds    = 5 * 60
+	leaseRenewTimeout    = 5 * time.Second
+	execMonitorDelay     = 15 * time.Second
 
 	runnerAllocateDeadline   = 2 * time.Second
 	runnerBootstrapDeadline  = 5 * time.Second
@@ -107,13 +110,13 @@ type Runner interface {
 	WaitExec(ctx context.Context, leaseID, execID string, includeOutput bool) (vmorchestrator.ExecRecord, error)
 	CancelExec(ctx context.Context, leaseID, execID, key, reason string) (bool, error)
 	CheckpointGoldenVM(ctx context.Context, leaseID, key, operationID, checkpointID string) (vmorchestrator.GoldenVMCheckpointRecord, error)
-	PruneGoldenVMSnapshot(ctx context.Context, key, operationID, snapshotID, snapshotKey, rootSnapshotRef, orgID string) (vmorchestrator.GoldenVMPruneRecord, error)
 	CommitFilesystemMount(ctx context.Context, leaseID, key, operationID, mountName, scopeID, parentSnapshotRef, newGenerationName string) (vmorchestrator.FilesystemCommitRecord, error)
-	PruneFilesystemGeneration(ctx context.Context, key, operationID, durableGenerationID, scopeID, snapshotRef, orgID string) (vmorchestrator.FilesystemPruneRecord, error)
+	DestroySnapshot(ctx context.Context, key, operationID, volumeID, snapshotRef, orgID, snapshotArtifactKey string) (vmorchestrator.SnapshotDestroyRecord, error)
 }
 
 type SchedulerRuntime interface {
 	EnqueueExecutionAdvanceTx(ctx context.Context, tx pgx.Tx, req scheduler.ExecutionAdvanceRequest) (scheduler.ExecutionAdvanceResult, error)
+	EnqueueExecutionAdvance(ctx context.Context, req scheduler.ExecutionAdvanceRequest) (scheduler.ExecutionAdvanceResult, error)
 	EnqueueRunnerJobBindTx(ctx context.Context, tx pgx.Tx, req scheduler.RunnerJobBindRequest) (scheduler.ProbeResult, error)
 	EnqueueRunnerCleanup(ctx context.Context, req scheduler.RunnerCleanupRequest) (scheduler.ProbeResult, error)
 	EnqueueGoldenVMCreateTx(ctx context.Context, tx pgx.Tx, req scheduler.GoldenVMCreateRequest) (scheduler.ProbeResult, error)
@@ -569,7 +572,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.execution.load_work", "succeeded", "", loadStarted, time.Now().UTC(), nil)
 	switch item.AttemptState {
 	case StateQueued:
-	case StateRunning:
+	case StateRunning, StateFinalizing:
 		return s.resumeRunningExecution(ctx, span, item)
 	case StateSucceeded, StateFailed, StateCanceled, StateLost:
 		return nil
@@ -756,19 +759,12 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 	}
 	item.AttemptState = StateRunning
 	item.StartedAt = &execRecord.StartedAt
-	return s.waitForExecutionAndFinalize(ctx, span, item, lease.LeaseID, execRecord, reservation, durablePlan)
+	return s.monitorExecution(ctx, span, item, reservation, durablePlan)
 }
 
 func (s *Service) resumeRunningExecution(ctx context.Context, span trace.Span, item executionWorkItem) error {
 	if item.LeaseID == "" || item.ExecID == "" {
 		return fmt.Errorf("execution attempt %s is running without lease or exec identity", item.AttemptID)
-	}
-	execRecord, err := s.Orchestrator.GetExec(ctx, item.LeaseID, item.ExecID, false)
-	if err != nil {
-		return fmt.Errorf("resume running execution get exec: %w", err)
-	}
-	if execRecord.StartedAt.IsZero() && item.StartedAt != nil {
-		execRecord.StartedAt = *item.StartedAt
 	}
 	reservation, err := s.latestBillingReservation(ctx, item)
 	if err != nil {
@@ -778,7 +774,7 @@ func (s *Service) resumeRunningExecution(ctx context.Context, span trace.Span, i
 	if err != nil {
 		return err
 	}
-	return s.waitForExecutionAndFinalize(ctx, span, item, item.LeaseID, execRecord, reservation, durablePlan)
+	return s.monitorExecution(ctx, span, item, reservation, durablePlan)
 }
 
 func (s *Service) waitLeaseReady(ctx context.Context, leaseID string, timeout time.Duration) (vmorchestrator.LeaseRecord, error) {
@@ -814,52 +810,86 @@ func (s *Service) waitLeaseReady(ctx context.Context, leaseID string, timeout ti
 	}
 }
 
-func (s *Service) waitForExecutionAndFinalize(ctx context.Context, span trace.Span, item executionWorkItem, leaseID string, execRecord vmorchestrator.ExecRecord, reservation billingclient.BillingWindowReservation, durablePlan durableCachePlan) error {
-	renewCtx, stopRenew := context.WithCancel(detachedContext(ctx))
-	defer stopRenew()
-	go s.renewLeaseLoop(renewCtx, leaseID, item.AttemptID.String())
-	waitCtx := ctx
-	if timeout := workloadTimeout(item, s.WorkloadTimeout); timeout > 0 {
-		var cancel context.CancelFunc
-		waitCtx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
+func (s *Service) monitorExecution(ctx context.Context, span trace.Span, item executionWorkItem, reservation billingclient.BillingWindowReservation, durablePlan durableCachePlan) error {
+	observeStarted := time.Now().UTC()
+	execRecord, err := s.Orchestrator.GetExec(ctx, item.LeaseID, item.ExecID, false)
+	observeCompleted := time.Now().UTC()
+	result, reason := sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.exec.observe", result, reason, observeStarted, observeCompleted, sandboxPhaseAttrs{
+		"attempt_state": item.AttemptState,
+	})
+	if err != nil {
+		return fmt.Errorf("observe exec %s/%s: %w", item.LeaseID, item.ExecID, err)
 	}
-	waitStarted := time.Now().UTC()
-	finalExec, waitErr := s.Orchestrator.WaitExec(waitCtx, leaseID, execRecord.ExecID, true)
-	waitCompleted := time.Now().UTC()
-	result, reason := sandboxPhaseResult(waitErr)
-	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.exec.wait", result, reason, waitStarted, waitCompleted, nil)
-	if waitErr != nil {
-		span.RecordError(waitErr)
-		span.SetStatus(codes.Error, waitErr.Error())
-		if ctx.Err() != nil {
-			if s.Logger != nil {
-				s.Logger.WarnContext(ctx, "execution wait interrupted by worker context",
-					"execution_id", item.ExecutionID,
-					"attempt_id", item.AttemptID,
-					"lease_id", leaseID,
-					"exec_id", execRecord.ExecID,
-					"error", waitErr,
-				)
-			}
-			return fmt.Errorf("execution wait interrupted: %w", waitErr)
-		}
-		terminalCtx := detachedContext(ctx)
-		_, _ = s.Orchestrator.CancelExec(terminalCtx, leaseID, execRecord.ExecID, item.AttemptID.String()+":timeout", "execution_wait_failed")
-		s.failDurableCaches(terminalCtx, durablePlan, "exec_wait_failed", waitErr)
-		failErr := s.failAttempt(terminalCtx, item, "exec_wait_failed", waitErr)
-		s.cleanupLeaseAndReservation(terminalCtx, leaseID, reservation)
-		_ = s.markBillingWindow(terminalCtx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
-		if failErr != nil {
-			return failErr
-		}
-		return nil
+	if execRecord.StartedAt.IsZero() && item.StartedAt != nil {
+		execRecord.StartedAt = *item.StartedAt
 	}
+	if !execRecord.State.Terminal() {
+		return s.deferRunningExecution(ctx, item)
+	}
+	finalExecStarted := time.Now().UTC()
+	finalExec, err := s.Orchestrator.GetExec(ctx, item.LeaseID, item.ExecID, true)
+	finalExecCompleted := time.Now().UTC()
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.exec.output", result, reason, finalExecStarted, finalExecCompleted, nil)
+	if err != nil {
+		return fmt.Errorf("load terminal exec output %s/%s: %w", item.LeaseID, item.ExecID, err)
+	}
+	if finalExec.StartedAt.IsZero() {
+		finalExec.StartedAt = execRecord.StartedAt
+	}
+	return s.finalizeTerminalExecution(ctx, span, item, item.LeaseID, execRecord, finalExec, reservation, durablePlan)
+}
+
+func (s *Service) deferRunningExecution(ctx context.Context, item executionWorkItem) error {
+	renewStarted := time.Now().UTC()
+	renewCtx, cancel := context.WithTimeout(ctx, leaseRenewTimeout)
+	_, err := s.Orchestrator.RenewLease(renewCtx, item.LeaseID, item.AttemptID.String()+":renew:"+time.Now().UTC().Format(time.RFC3339Nano), leaseRenewSeconds, nil)
+	cancel()
+	renewCompleted := time.Now().UTC()
+	result, reason := sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "vm.lease.renew", result, reason, renewStarted, renewCompleted, nil)
+	if err != nil {
+		return fmt.Errorf("renew lease %s: %w", item.LeaseID, err)
+	}
+	if err := s.touchAttempt(ctx, item.AttemptID); err != nil {
+		return err
+	}
+	enqueueStarted := time.Now().UTC()
+	err = s.enqueueExecutionMonitor(ctx, item, execMonitorDelay)
+	result, reason = sandboxPhaseResult(err)
+	s.recordExecutionPhase(ctx, item, "sandbox-rental", "sandbox.execution.monitor_enqueue", result, reason, enqueueStarted, time.Now().UTC(), sandboxPhaseAttrs{
+		"delay_ms": strconv.FormatInt(execMonitorDelay.Milliseconds(), 10),
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) enqueueExecutionMonitor(ctx context.Context, item executionWorkItem, delay time.Duration) error {
+	if s.Scheduler == nil {
+		return fmt.Errorf("scheduler runtime unavailable")
+	}
+	_, err := s.Scheduler.EnqueueExecutionAdvance(ctx, scheduler.ExecutionAdvanceRequest{
+		ExecutionID:   item.ExecutionID.String(),
+		AttemptID:     item.AttemptID.String(),
+		OrgID:         item.OrgID,
+		ActorID:       item.ActorID,
+		CorrelationID: item.CorrelationID,
+		TraceParent:   traceParent(ctx),
+		RunAfter:      delay,
+	})
+	return err
+}
+
+func (s *Service) finalizeTerminalExecution(ctx context.Context, span trace.Span, item executionWorkItem, leaseID string, execRecord, finalExec vmorchestrator.ExecRecord, reservation billingclient.BillingWindowReservation, durablePlan durableCachePlan) error {
 	if item.AttemptState == StateRunning {
 		if err := s.transition(ctx, item, StateRunning, StateFinalizing, "exec_finished", nil); err != nil {
 			return err
 		}
 	}
+	var result, reason string
 	outcome, outcomeErr := s.executionTerminalOutcome(ctx, item, finalExec)
 	if outcomeErr != nil {
 		span.RecordError(outcomeErr)
@@ -1370,6 +1400,13 @@ func (s *Service) setAttemptLeaseExec(ctx context.Context, attemptID uuid.UUID, 
 	})
 }
 
+func (s *Service) touchAttempt(ctx context.Context, attemptID uuid.UUID) error {
+	return s.storeQueries().TouchExecutionAttempt(ctx, store.TouchExecutionAttemptParams{
+		UpdatedAt: pgTime(time.Now().UTC()),
+		AttemptID: attemptID,
+	})
+}
+
 func (s *Service) completeAttempt(ctx context.Context, item executionWorkItem, state, reason string, exec vmorchestrator.ExecRecord, durationMs int64, completedAt time.Time) error {
 	now := time.Now().UTC()
 	metrics := exec.Metrics
@@ -1824,16 +1861,6 @@ func vmMetricUint64(metrics *vmorchestrator.VMMetrics, pick func(*vmorchestrator
 		return 0
 	}
 	return mustInt64FromUint64(pick(metrics), "vm metric")
-}
-
-func workloadTimeout(item executionWorkItem, configured time.Duration) time.Duration {
-	if item.MaxWallSeconds > 0 {
-		return durationFromSeconds(item.MaxWallSeconds, "max wall seconds")
-	}
-	if configured > 0 {
-		return configured
-	}
-	return 2 * time.Hour
 }
 
 func maxWallSeconds(item executionWorkItem, configured time.Duration) uint64 {

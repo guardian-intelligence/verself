@@ -66,8 +66,7 @@ job "sandbox-rental" {
       driver = "raw_exec"
       user = "sandbox_rental"
       kill_signal = "SIGTERM"
-      # Active GitHub runner executions can legitimately run for three hours.
-      kill_timeout = "245m"
+      kill_timeout = "30s"
       shutdown_delay = "5s"
       artifact {
         source = "verself-artifact://sandbox-rental-service"
@@ -82,7 +81,6 @@ job "sandbox-rental" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-service"
         SANDBOX_EXECUTION_MAX_WORKERS = "4"
-        SANDBOX_DRAIN_TIMEOUT = "4h"
         SANDBOX_GITHUB_CHECKOUT_BUNDLE_STORE_DIR = "/var/lib/verself/sandbox-rental/github-checkout-bundles"
         SANDBOX_GITHUB_WEB_BASE_URL = "https://github.com"
         SANDBOX_PUBLIC_BASE_URL = "https://sandbox.api.verself.sh"
@@ -158,7 +156,7 @@ EOT
       health_check = "checks"
       min_healthy_time = "3s"
       healthy_deadline = "300s"
-      progress_deadline = "5h"
+      progress_deadline = "600s"
       canary = 1
       auto_revert = true
       auto_promote = true
