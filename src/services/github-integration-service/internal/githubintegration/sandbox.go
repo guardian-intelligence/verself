@@ -155,6 +155,8 @@ func sandboxProblem(resp any) string {
 	switch value := resp.(type) {
 	case *sandboxrentalclient.InternalSubmitRunnerJobResponse:
 		return sandboxProblemDetail(value.StatusCode, value.Problem, value.Body)
+	case *sandboxrentalclient.InternalGetRunnerAllocationResponse:
+		return sandboxProblemDetail(value.StatusCode, value.Problem, value.Body)
 	case *sandboxrentalclient.InternalObserveRunnerJobResponse:
 		return sandboxProblemDetail(value.StatusCode, value.Problem, value.Body)
 	case *sandboxrentalclient.InternalObserveRunnerWorkflowRunResponse:

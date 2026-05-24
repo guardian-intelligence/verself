@@ -1122,17 +1122,6 @@ SET failure_reason = '',
 WHERE github_provider_demands.provider_job_id = @provider_job_id
   AND (
         github_provider_demands.state IN ('demand_recorded', 'capacity_requested', 'capacity_failed', 'jit_failed', 'sandbox_failed')
-        -- If the process dies after capacity was marked live but before the
-        -- runner instance is persisted, retry instead of leaving GitHub queued.
-     OR (
-            github_provider_demands.state = 'capacity_live'
-        AND NOT EXISTS (
-                SELECT 1
-                FROM github_runner_instances own_instance
-                WHERE own_instance.origin_provider_job_id = github_provider_demands.provider_job_id
-                  AND own_instance.state IN ('jit_created', 'sandbox_submitted', 'assigned')
-            )
-        )
   )
   AND NOT EXISTS (
       SELECT 1
@@ -1159,9 +1148,9 @@ RETURNING demand_id, provider_job_id, org_id, installation_binding_id, repositor
           repository_full_name, provider_run_id, provider_run_attempt,
           runner_class, job_shape_id, trust_class, state;
 
--- name: MarkProviderDemandCapacityLive :exec
+-- name: MarkProviderDemandCapacityRequested :exec
 UPDATE github_provider_demands
-SET state = 'capacity_live',
+SET state = 'capacity_requested',
     failure_reason = '',
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id
@@ -1188,7 +1177,7 @@ SET state = 'demand_recorded',
     failure_reason = @failure_reason,
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id
-  AND state IN ('capacity_requested', 'capacity_live');
+  AND state = 'capacity_requested';
 
 -- name: MarkProviderDemandFailed :exec
 UPDATE github_provider_demands
@@ -1325,6 +1314,32 @@ SET state = 'failed',
     updated_at = @updated_at
 WHERE runner_name = @runner_name;
 
+-- name: FailRunnerInstanceCapacity :execrows
+WITH failed_instance AS (
+    UPDATE github_runner_instances ri
+    SET state = 'failed',
+        failure_reason = @failure_reason,
+        updated_at = @updated_at
+    FROM github_provider_demands d
+    WHERE ri.runner_name = @runner_name
+      AND d.provider_job_id = ri.origin_provider_job_id
+      AND d.state NOT IN ('assigned', 'completed')
+      AND ri.state IN ('jit_created', 'sandbox_submitted')
+      AND NOT EXISTS (
+          SELECT 1
+          FROM github_job_assignments assigned
+          WHERE assigned.runner_name = ri.runner_name
+      )
+    RETURNING ri.origin_provider_job_id
+)
+UPDATE github_provider_demands d
+SET state = 'sandbox_failed',
+    failure_reason = @failure_reason,
+    updated_at = @updated_at
+FROM failed_instance
+WHERE d.provider_job_id = failed_instance.origin_provider_job_id
+  AND d.state NOT IN ('assigned', 'completed');
+
 -- name: MarkRunnerInstanceCleaned :exec
 UPDATE github_runner_instances
 SET state = 'cleaned',
@@ -1376,6 +1391,39 @@ SELECT runner_name, origin_provider_job_id, origin_demand_id,
        sandbox_execution_id, sandbox_attempt_id, state
 FROM github_runner_instances
 WHERE runner_name = @runner_name;
+
+-- name: ListSubmittedRunnerInstancesForSandboxReconcile :many
+SELECT
+    ri.runner_name,
+    ri.origin_provider_job_id,
+    ri.org_id,
+    ri.installation_binding_id,
+    ri.repository_binding_id,
+    ri.provider_installation_id,
+    ri.provider_repository_id,
+    COALESCE(d.repository_full_name, '')::text AS repository_full_name,
+    COALESCE(d.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(d.provider_run_attempt, 0)::bigint AS provider_run_attempt,
+    ri.runner_id,
+    ri.runner_class,
+    ri.sandbox_allocation_id,
+    ri.sandbox_execution_id,
+    ri.sandbox_attempt_id,
+    ri.state,
+    ri.updated_at
+FROM github_runner_instances ri
+LEFT JOIN github_provider_demands d ON d.provider_job_id = ri.origin_provider_job_id
+WHERE (
+        (ri.state = 'sandbox_submitted' AND ri.sandbox_allocation_id IS NOT NULL)
+     OR (ri.state = 'jit_created' AND ri.updated_at < now() - interval '30 seconds')
+      )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM github_job_assignments assigned
+      WHERE assigned.runner_name = ri.runner_name
+  )
+ORDER BY ri.updated_at ASC
+LIMIT @limit_count;
 
 -- name: GetJobAssignmentContext :one
 SELECT
@@ -1469,7 +1517,7 @@ WITH candidates AS (
             d.provider_job_id IS NULL
          OR d.state IN ('demand_recorded', 'capacity_failed', 'jit_failed', 'sandbox_failed')
          OR (
-                d.state = 'capacity_live'
+                d.state = 'capacity_requested'
             AND NOT EXISTS (
                     SELECT 1
                     FROM github_runner_instances own_instance

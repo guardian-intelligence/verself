@@ -1,10 +1,3 @@
-ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS runner_name;
-ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS runner_id;
-ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS jit_config_sha256;
-ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS sandbox_allocation_id;
-ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS sandbox_execution_id;
-ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS sandbox_attempt_id;
-
 CREATE TABLE IF NOT EXISTS github_runner_instances (
     runner_name              TEXT        PRIMARY KEY CHECK (runner_name <> ''),
     origin_provider_job_id   BIGINT      NOT NULL REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
@@ -50,6 +43,81 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_github_job_assignments_runner_name
 CREATE INDEX IF NOT EXISTS idx_github_job_assignments_runner_id
     ON github_job_assignments (runner_id)
     WHERE runner_id <> 0;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'github_provider_demands'
+          AND column_name = 'runner_name'
+    ) THEN
+        EXECUTE $sql$
+            INSERT INTO github_runner_instances (
+                runner_name,
+                origin_provider_job_id,
+                origin_demand_id,
+                org_id,
+                installation_binding_id,
+                repository_binding_id,
+                provider_installation_id,
+                provider_repository_id,
+                runner_id,
+                runner_class,
+                jit_config_sha256,
+                sandbox_allocation_id,
+                sandbox_execution_id,
+                sandbox_attempt_id,
+                state,
+                failure_reason,
+                created_at,
+                updated_at
+            )
+            SELECT
+                runner_name,
+                provider_job_id,
+                demand_id,
+                org_id,
+                installation_binding_id,
+                repository_binding_id,
+                provider_installation_id,
+                provider_repository_id,
+                runner_id,
+                runner_class,
+                jit_config_sha256,
+                sandbox_allocation_id,
+                sandbox_execution_id,
+                sandbox_attempt_id,
+                CASE
+                    WHEN state IN ('sandbox_submitted', 'capacity_live') THEN 'sandbox_submitted'
+                    WHEN state IN ('assigned', 'completed') THEN state
+                    WHEN state IN ('jit_failed', 'sandbox_failed', 'capacity_failed', 'failed') THEN 'failed'
+                    ELSE 'jit_created'
+                END,
+                failure_reason,
+                created_at,
+                updated_at
+            FROM github_provider_demands
+            WHERE runner_name <> ''
+            ON CONFLICT (runner_name) DO NOTHING
+        $sql$;
+    END IF;
+END $$;
+
+UPDATE github_provider_demands
+SET state = CASE
+        WHEN state IN ('sandbox_submitted', 'capacity_live') THEN 'capacity_requested'
+        WHEN state IN ('runner_registered', 'runner_assigned') THEN 'assigned'
+        ELSE state
+    END;
+
+ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS runner_name;
+ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS runner_id;
+ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS jit_config_sha256;
+ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS sandbox_allocation_id;
+ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS sandbox_execution_id;
+ALTER TABLE github_provider_demands DROP COLUMN IF EXISTS sandbox_attempt_id;
 
 DROP INDEX IF EXISTS idx_github_runner_registrations_runner_name;
 DROP TABLE IF EXISTS github_runner_registrations;

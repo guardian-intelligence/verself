@@ -11,6 +11,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/verself/sandbox-rental-service/internal/internalcontractapi"
 	"github.com/verself/sandbox-rental-service/internal/jobs"
 	workloadauth "github.com/verself/service-runtime/workload"
@@ -26,6 +27,7 @@ const maxRunnerCacheManifestBytes = 64 << 10
 func RegisterInternalRoutes(api huma.API, svc *jobs.Service) {
 	registerInternalSandboxContractRoute(api, internalcontractapi.InternalRegisterRunnerRepository, "Register a repository with the runner product", internalRegisterRunnerRepository(svc))
 	registerInternalSandboxContractRoute(api, internalcontractapi.InternalSubmitRunnerJob, "Submit a provider runner job", internalSubmitRunnerJob(svc))
+	registerInternalSandboxContractRoute(api, internalcontractapi.InternalGetRunnerAllocation, "Get runner allocation status", internalGetRunnerAllocation(svc))
 	registerInternalSandboxContractRoute(api, internalcontractapi.InternalObserveRunnerJob, "Observe a provider runner job", internalObserveRunnerJob(svc))
 	registerInternalSandboxContractRoute(api, internalcontractapi.InternalObserveRunnerWorkflowRun, "Observe a provider workflow run", internalObserveRunnerWorkflowRun(svc))
 	registerInternalSandboxContractRoute(api, internalcontractapi.InternalRequestGoldenSnapshotBarrier, "Request a golden snapshot barrier", internalRequestGoldenSnapshotBarrier(svc))
@@ -101,6 +103,31 @@ func internalRegisterRunnerRepository(svc *jobs.Service) func(context.Context, *
 				SourceRepositoryID:   sourceRepositoryIDOut,
 				State:                "registered",
 			},
+		}}, nil
+	}
+}
+
+func internalGetRunnerAllocation(svc *jobs.Service) func(context.Context, *internalcontractapi.InternalGetRunnerAllocationInput) (*internalcontractapi.InternalGetRunnerAllocationOutput, error) {
+	return func(ctx context.Context, input *internalcontractapi.InternalGetRunnerAllocationInput) (*internalcontractapi.InternalGetRunnerAllocationOutput, error) {
+		if _, ok := workloadauth.PeerIDFromContext(ctx); !ok {
+			return nil, unauthorized(ctx)
+		}
+		if svc == nil {
+			return nil, serviceUnavailable(ctx, "sandbox-service-unavailable", "sandbox job service is unavailable", jobs.ErrRunnerUnavailable)
+		}
+		allocationID, err := uuid.Parse(string(input.AllocationID))
+		if err != nil {
+			return nil, badRequest(ctx, "invalid-allocation-id", "allocation_id must be a UUID", err)
+		}
+		status, err := svc.GetProviderRunnerAllocationStatus(ctx, allocationID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, notFound(ctx, "runner-allocation-not-found", "runner allocation was not found")
+			}
+			return nil, runnerJobMutationError(ctx, err)
+		}
+		return &internalcontractapi.InternalGetRunnerAllocationOutput{Body: internalcontractapi.InternalGetRunnerAllocationOutputBody{
+			Allocation: runnerAllocationStatusOutput(status),
 		}}, nil
 	}
 }
@@ -463,6 +490,53 @@ func runnerJobObservationOutput(result jobs.ProviderRunnerJobObservationResult) 
 	if result.AttemptID != uuid.Nil {
 		value := internalcontractapi.AttemptID(result.AttemptID.String())
 		out.AttemptID = &value
+	}
+	return out
+}
+
+func runnerAllocationStatusOutput(status jobs.ProviderRunnerAllocationStatus) internalcontractapi.RunnerAllocationStatus {
+	out := internalcontractapi.RunnerAllocationStatus{
+		AllocationID:         internalcontractapi.AttemptID(status.AllocationID.String()),
+		Provider:             internalcontractapi.Provider(status.Provider),
+		ProviderRepositoryID: internalcontractapi.ProviderRepositoryID(strconv.FormatInt(status.ProviderRepositoryID, 10)),
+		State:                status.State,
+	}
+	if status.ProviderInstallationID != 0 {
+		out.ProviderInstallationID = decimalPtr(status.ProviderInstallationID)
+	}
+	if status.RunnerClass != "" {
+		value := status.RunnerClass
+		out.RunnerClass = &value
+	}
+	if status.RunnerName != "" {
+		value := internalcontractapi.RunnerName(status.RunnerName)
+		out.RunnerName = &value
+	}
+	if status.RunnerID != 0 {
+		out.RunnerID = decimalPtr(status.RunnerID)
+	}
+	if status.OriginProviderJobID != 0 {
+		out.OriginProviderJobID = decimalPtr(status.OriginProviderJobID)
+	}
+	if status.AssignedProviderJobID != 0 {
+		out.AssignedProviderJobID = decimalPtr(status.AssignedProviderJobID)
+	}
+	if status.ExecutionID != uuid.Nil {
+		value := internalcontractapi.ExecutionID(status.ExecutionID.String())
+		out.ExecutionID = &value
+	}
+	if status.AttemptID != uuid.Nil {
+		value := internalcontractapi.AttemptID(status.AttemptID.String())
+		out.AttemptID = &value
+	}
+	if status.FailureReason != "" {
+		out.FailureReason = &status.FailureReason
+	}
+	if status.ExecutionState != "" {
+		out.ExecutionState = &status.ExecutionState
+	}
+	if status.AttemptState != "" {
+		out.AttemptState = &status.AttemptState
 	}
 	return out
 }

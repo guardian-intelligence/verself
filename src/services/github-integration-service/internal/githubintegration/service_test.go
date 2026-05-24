@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	sandboxrentalclient "github.com/verself/sandbox-rental-service/client"
 )
 
 func TestServiceReady(t *testing.T) {
@@ -255,5 +257,22 @@ func TestSandboxObservationFromWebhookUsesOnlyProviderObservedRunner(t *testing.
 	}
 	if assigned.RunnerName == nil || string(*assigned.RunnerName) != "verself-789-abcdef1234" {
 		t.Fatalf("assigned observation runner_name = %v", assigned.RunnerName)
+	}
+}
+
+func TestSandboxRunnerCapacityTerminalWithoutAssignment(t *testing.T) {
+	if !sandboxRunnerCapacityTerminalWithoutAssignment(sandboxrentalclient.RunnerAllocationStatus{State: "failed"}) {
+		t.Fatal("failed unassigned allocation was not terminal capacity")
+	}
+	assignedJob := sandboxrentalclient.DecimalUint64("42")
+	if sandboxRunnerCapacityTerminalWithoutAssignment(sandboxrentalclient.RunnerAllocationStatus{
+		State:                 "failed",
+		AssignedProviderJobID: &assignedJob,
+	}) {
+		t.Fatal("assigned allocation should not be treated as failed capacity for origin demand")
+	}
+	attemptState := "lost"
+	if !sandboxRunnerCapacityTerminalWithoutAssignment(sandboxrentalclient.RunnerAllocationStatus{State: "vm_submitted", AttemptState: &attemptState}) {
+		t.Fatal("lost attempt did not fail unassigned capacity")
 	}
 }

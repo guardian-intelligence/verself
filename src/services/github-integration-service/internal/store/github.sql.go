@@ -95,17 +95,6 @@ SET failure_reason = '',
 WHERE github_provider_demands.provider_job_id = $2
   AND (
         github_provider_demands.state IN ('demand_recorded', 'capacity_requested', 'capacity_failed', 'jit_failed', 'sandbox_failed')
-        -- If the process dies after capacity was marked live but before the
-        -- runner instance is persisted, retry instead of leaving GitHub queued.
-     OR (
-            github_provider_demands.state = 'capacity_live'
-        AND NOT EXISTS (
-                SELECT 1
-                FROM github_runner_instances own_instance
-                WHERE own_instance.origin_provider_job_id = github_provider_demands.provider_job_id
-                  AND own_instance.state IN ('jit_created', 'sandbox_submitted', 'assigned')
-            )
-        )
   )
   AND NOT EXISTS (
       SELECT 1
@@ -848,6 +837,47 @@ func (q *Queries) EnsureProviderDemand(ctx context.Context, arg EnsureProviderDe
 		&i.State,
 	)
 	return i, err
+}
+
+const failRunnerInstanceCapacity = `-- name: FailRunnerInstanceCapacity :execrows
+WITH failed_instance AS (
+    UPDATE github_runner_instances ri
+    SET state = 'failed',
+        failure_reason = $1,
+        updated_at = $2
+    FROM github_provider_demands d
+    WHERE ri.runner_name = $3
+      AND d.provider_job_id = ri.origin_provider_job_id
+      AND d.state NOT IN ('assigned', 'completed')
+      AND ri.state IN ('jit_created', 'sandbox_submitted')
+      AND NOT EXISTS (
+          SELECT 1
+          FROM github_job_assignments assigned
+          WHERE assigned.runner_name = ri.runner_name
+      )
+    RETURNING ri.origin_provider_job_id
+)
+UPDATE github_provider_demands d
+SET state = 'sandbox_failed',
+    failure_reason = $1,
+    updated_at = $2
+FROM failed_instance
+WHERE d.provider_job_id = failed_instance.origin_provider_job_id
+  AND d.state NOT IN ('assigned', 'completed')
+`
+
+type FailRunnerInstanceCapacityParams struct {
+	FailureReason string
+	UpdatedAt     pgtype.Timestamptz
+	RunnerName    string
+}
+
+func (q *Queries) FailRunnerInstanceCapacity(ctx context.Context, arg FailRunnerInstanceCapacityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, failRunnerInstanceCapacity, arg.FailureReason, arg.UpdatedAt, arg.RunnerName)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getIdempotencyRecord = `-- name: GetIdempotencyRecord :one
@@ -1628,7 +1658,7 @@ WITH candidates AS (
             d.provider_job_id IS NULL
          OR d.state IN ('demand_recorded', 'capacity_failed', 'jit_failed', 'sandbox_failed')
          OR (
-                d.state = 'capacity_live'
+                d.state = 'capacity_requested'
             AND NOT EXISTS (
                     SELECT 1
                     FROM github_runner_instances own_instance
@@ -1802,6 +1832,102 @@ func (q *Queries) ListRepositoryCandidates(ctx context.Context, arg ListReposito
 			&i.RepositoryBindingID,
 			&i.RepositoryBindingState,
 			&i.OrgID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSubmittedRunnerInstancesForSandboxReconcile = `-- name: ListSubmittedRunnerInstancesForSandboxReconcile :many
+SELECT
+    ri.runner_name,
+    ri.origin_provider_job_id,
+    ri.org_id,
+    ri.installation_binding_id,
+    ri.repository_binding_id,
+    ri.provider_installation_id,
+    ri.provider_repository_id,
+    COALESCE(d.repository_full_name, '')::text AS repository_full_name,
+    COALESCE(d.provider_run_id, 0)::bigint AS provider_run_id,
+    COALESCE(d.provider_run_attempt, 0)::bigint AS provider_run_attempt,
+    ri.runner_id,
+    ri.runner_class,
+    ri.sandbox_allocation_id,
+    ri.sandbox_execution_id,
+    ri.sandbox_attempt_id,
+    ri.state,
+    ri.updated_at
+FROM github_runner_instances ri
+LEFT JOIN github_provider_demands d ON d.provider_job_id = ri.origin_provider_job_id
+WHERE (
+        (ri.state = 'sandbox_submitted' AND ri.sandbox_allocation_id IS NOT NULL)
+     OR (ri.state = 'jit_created' AND ri.updated_at < now() - interval '30 seconds')
+      )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM github_job_assignments assigned
+      WHERE assigned.runner_name = ri.runner_name
+  )
+ORDER BY ri.updated_at ASC
+LIMIT $1
+`
+
+type ListSubmittedRunnerInstancesForSandboxReconcileParams struct {
+	LimitCount int32
+}
+
+type ListSubmittedRunnerInstancesForSandboxReconcileRow struct {
+	RunnerName             string
+	OriginProviderJobID    int64
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	RunnerID               int64
+	RunnerClass            string
+	SandboxAllocationID    pgtype.UUID
+	SandboxExecutionID     pgtype.UUID
+	SandboxAttemptID       pgtype.UUID
+	State                  string
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) ListSubmittedRunnerInstancesForSandboxReconcile(ctx context.Context, arg ListSubmittedRunnerInstancesForSandboxReconcileParams) ([]ListSubmittedRunnerInstancesForSandboxReconcileRow, error) {
+	rows, err := q.db.Query(ctx, listSubmittedRunnerInstancesForSandboxReconcile, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSubmittedRunnerInstancesForSandboxReconcileRow{}
+	for rows.Next() {
+		var i ListSubmittedRunnerInstancesForSandboxReconcileRow
+		if err := rows.Scan(
+			&i.RunnerName,
+			&i.OriginProviderJobID,
+			&i.OrgID,
+			&i.InstallationBindingID,
+			&i.RepositoryBindingID,
+			&i.ProviderInstallationID,
+			&i.ProviderRepositoryID,
+			&i.RepositoryFullName,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.RunnerID,
+			&i.RunnerClass,
+			&i.SandboxAllocationID,
+			&i.SandboxExecutionID,
+			&i.SandboxAttemptID,
+			&i.State,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2092,22 +2218,22 @@ func (q *Queries) MarkProviderDemandAssigned(ctx context.Context, arg MarkProvid
 	return err
 }
 
-const markProviderDemandCapacityLive = `-- name: MarkProviderDemandCapacityLive :exec
+const markProviderDemandCapacityRequested = `-- name: MarkProviderDemandCapacityRequested :exec
 UPDATE github_provider_demands
-SET state = 'capacity_live',
+SET state = 'capacity_requested',
     failure_reason = '',
     updated_at = $1
 WHERE provider_job_id = $2
   AND state IN ('demand_recorded', 'capacity_requested', 'capacity_failed', 'jit_failed', 'sandbox_failed')
 `
 
-type MarkProviderDemandCapacityLiveParams struct {
+type MarkProviderDemandCapacityRequestedParams struct {
 	UpdatedAt     pgtype.Timestamptz
 	ProviderJobID int64
 }
 
-func (q *Queries) MarkProviderDemandCapacityLive(ctx context.Context, arg MarkProviderDemandCapacityLiveParams) error {
-	_, err := q.db.Exec(ctx, markProviderDemandCapacityLive, arg.UpdatedAt, arg.ProviderJobID)
+func (q *Queries) MarkProviderDemandCapacityRequested(ctx context.Context, arg MarkProviderDemandCapacityRequestedParams) error {
+	_, err := q.db.Exec(ctx, markProviderDemandCapacityRequested, arg.UpdatedAt, arg.ProviderJobID)
 	return err
 }
 
@@ -2570,7 +2696,7 @@ SET state = 'demand_recorded',
     failure_reason = $1,
     updated_at = $2
 WHERE provider_job_id = $3
-  AND state IN ('capacity_requested', 'capacity_live')
+  AND state = 'capacity_requested'
 `
 
 type ResetProviderDemandAfterCapacityDisplacedParams struct {

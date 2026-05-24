@@ -345,6 +345,9 @@ func (s *Service) RunWorker(ctx context.Context) error {
 		if err := s.ProcessReadyDeliveries(ctx); err != nil && s.cfg.Logger != nil {
 			s.cfg.Logger.WarnContext(ctx, "github delivery processing failed", "error", err)
 		}
+		if err := s.ProcessRunnerCapacityFailures(ctx); err != nil && s.cfg.Logger != nil {
+			s.cfg.Logger.WarnContext(ctx, "github runner capacity failure reconciliation failed", "error", err)
+		}
 		if err := s.ProcessQueuedJobs(ctx); err != nil && s.cfg.Logger != nil {
 			s.cfg.Logger.WarnContext(ctx, "github queued job reconciliation failed", "error", err)
 		}
@@ -370,6 +373,125 @@ func (s *Service) ProcessReadyDeliveries(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Service) ProcessRunnerCapacityFailures(ctx context.Context) error {
+	if s == nil || s.cfg.Sandbox == nil {
+		return nil
+	}
+	rows, err := s.queries.ListSubmittedRunnerInstancesForSandboxReconcile(ctx, store.ListSubmittedRunnerInstancesForSandboxReconcileParams{
+		LimitCount: s.cfg.WorkerBatchSize,
+	})
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, row := range rows {
+		if err := s.reconcileRunnerInstanceWithSandbox(ctx, row); err != nil {
+			firstErr = errors.Join(firstErr, err)
+		}
+	}
+	return firstErr
+}
+
+func (s *Service) reconcileRunnerInstanceWithSandbox(ctx context.Context, row store.ListSubmittedRunnerInstancesForSandboxReconcileRow) error {
+	allocationID := uuidFromPG(row.SandboxAllocationID)
+	if allocationID == uuid.Nil {
+		if row.State == "jit_created" {
+			return s.markRunnerCapacityFailed(ctx, row, "sandbox_submit_not_observed")
+		}
+		return nil
+	}
+	resp, err := s.cfg.Sandbox.InternalGetRunnerAllocation(ctx, sandboxrentalclient.InternalGetRunnerAllocationRequest{
+		AllocationID: sandboxrentalclient.AttemptId(allocationID.String()),
+	})
+	if err != nil {
+		return err
+	}
+	if resp.Result == nil || resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return s.markRunnerCapacityFailed(ctx, row, "sandbox_allocation_not_found")
+		}
+		return fmt.Errorf("%w: %s", ErrSandboxRejected, sandboxProblem(resp))
+	}
+	status := resp.Result.Allocation
+	if !sandboxRunnerCapacityTerminalWithoutAssignment(status) {
+		return nil
+	}
+	reason := firstNonEmpty(stringFromPtr(status.FailureReason), "sandbox_runner_allocation_terminal:"+status.State)
+	return s.markRunnerCapacityFailed(ctx, row, reason)
+}
+
+func (s *Service) markRunnerCapacityFailed(ctx context.Context, row store.ListSubmittedRunnerInstancesForSandboxReconcileRow, reason string) error {
+	reason = truncate(reason, 1024)
+	now := time.Now().UTC()
+	rows, err := s.queries.FailRunnerInstanceCapacity(ctx, store.FailRunnerInstanceCapacityParams{
+		FailureReason: reason,
+		UpdatedAt:     pgTime(now),
+		RunnerName:    row.RunnerName,
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return nil
+	}
+	if owner, _, ok := strings.Cut(row.RepositoryFullName, "/"); ok && owner != "" {
+		if row.RunnerID != 0 {
+			if err := s.deleteRunner(ctx, row.ProviderInstallationID, owner, row.RunnerID); err != nil && s.cfg.Logger != nil {
+				s.cfg.Logger.WarnContext(ctx, "delete failed github runner capacity",
+					"runner_name", row.RunnerName,
+					"runner_id", row.RunnerID,
+					"error", err)
+			}
+		} else if row.RunnerName != "" {
+			if err := s.deleteRunnerByName(ctx, row.ProviderInstallationID, owner, row.RunnerName); err != nil && s.cfg.Logger != nil {
+				s.cfg.Logger.WarnContext(ctx, "delete failed github runner capacity by name",
+					"runner_name", row.RunnerName,
+					"error", err)
+			}
+		}
+	}
+	meta := webhookMetadata{
+		EventName:             "workflow_job",
+		DeliveryID:            fmt.Sprintf("runner-capacity:%s", row.RunnerName),
+		OrgID:                 row.OrgID,
+		InstallationBindingID: uuidFromPG(row.InstallationBindingID),
+		RepositoryBindingID:   uuidFromPG(row.RepositoryBindingID),
+		InstallationID:        row.ProviderInstallationID,
+		RepositoryID:          row.ProviderRepositoryID,
+		RepositoryFullName:    row.RepositoryFullName,
+		RunID:                 row.ProviderRunID,
+		RunAttempt:            row.ProviderRunAttempt,
+		JobID:                 row.OriginProviderJobID,
+		RunnerID:              row.RunnerID,
+		RunnerName:            row.RunnerName,
+		RunnerClass:           row.RunnerClass,
+		AllocationID:          uuidFromPG(row.SandboxAllocationID),
+		ExecutionID:           uuidFromPG(row.SandboxExecutionID),
+		AttemptID:             uuidFromPG(row.SandboxAttemptID),
+	}
+	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.capacity.failed", "failed", reason, now, now))
+	return nil
+}
+
+func sandboxRunnerCapacityTerminalWithoutAssignment(status sandboxrentalclient.RunnerAllocationStatus) bool {
+	if decimalPtrValue(status.AssignedProviderJobID) != 0 {
+		return false
+	}
+	switch strings.TrimSpace(status.State) {
+	case "failed", "vm_exited", "cleaned":
+		return true
+	}
+	switch strings.TrimSpace(stringFromPtr(status.AttemptState)) {
+	case "failed", "canceled", "lost":
+		return true
+	}
+	switch strings.TrimSpace(stringFromPtr(status.ExecutionState)) {
+	case "failed", "canceled", "lost":
+		return true
+	}
+	return false
 }
 
 func (s *Service) ProcessQueuedJobs(ctx context.Context) error {
@@ -983,7 +1105,7 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	meta.JobShapeID = demand.JobShapeID
 	meta.TrustClass = demand.TrustClass
 	switch demand.State {
-	case "capacity_live", "assigned", "completed":
+	case "assigned", "completed":
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_deferred", "deferred", "provider_demand:"+demand.State, started, time.Now().UTC()))
 		return nil
 	}
@@ -1183,7 +1305,7 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	}); err != nil {
 		return err
 	}
-	if err := qtx.MarkProviderDemandCapacityLive(ctx, store.MarkProviderDemandCapacityLiveParams{
+	if err := qtx.MarkProviderDemandCapacityRequested(ctx, store.MarkProviderDemandCapacityRequestedParams{
 		ProviderJobID: event.WorkflowJob.ID,
 		UpdatedAt:     pgTime(time.Now().UTC()),
 	}); err != nil {
@@ -1786,6 +1908,21 @@ func decimalPtr(value int64) *sandboxrentalclient.DecimalUint64 {
 	}
 	out := sandboxrentalclient.DecimalUint64(fmt.Sprintf("%d", value))
 	return &out
+}
+
+func decimalPtrValue[T ~string](value *T) int64 {
+	if value == nil {
+		return 0
+	}
+	parsed, _ := strconv.ParseInt(strings.TrimSpace(string(*value)), 10, 64)
+	return parsed
+}
+
+func stringFromPtr[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(*value))
 }
 
 func stringPtr[T ~string](value string) *T {

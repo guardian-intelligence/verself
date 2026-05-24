@@ -376,6 +376,34 @@ SELECT
 FROM runner_allocations
 WHERE allocation_id = sqlc.arg(allocation_id);
 
+-- name: GetRunnerAllocationStatus :one
+SELECT
+    a.allocation_id,
+    a.provider,
+    a.provider_installation_id,
+    a.provider_repository_id,
+    a.runner_class,
+    a.runner_name,
+    a.provider_runner_id,
+    a.origin_provider_job_id,
+    COALESCE((
+        SELECT b.provider_job_id
+        FROM runner_job_bindings b
+        WHERE b.allocation_id = a.allocation_id
+        ORDER BY b.bound_at DESC
+        LIMIT 1
+    ), 0)::bigint AS assigned_provider_job_id,
+    a.execution_id,
+    a.attempt_id,
+    a.state,
+    a.failure_reason,
+    COALESCE(e.state, '')::text AS execution_state,
+    COALESCE(attempt.state, '')::text AS attempt_state
+FROM runner_allocations a
+LEFT JOIN executions e ON e.execution_id = a.execution_id
+LEFT JOIN execution_attempts attempt ON attempt.attempt_id = a.attempt_id
+WHERE a.allocation_id = sqlc.arg(allocation_id);
+
 -- name: GetRunnerJobForBinding :one
 SELECT runner_id, runner_name, status
 FROM runner_jobs
