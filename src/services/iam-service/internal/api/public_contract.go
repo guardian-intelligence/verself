@@ -423,10 +423,11 @@ func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.Ver
 		return nil, badRequest(ctx, "invalid-signup-verification", "signup verification request is invalid", nil)
 	}
 	result, err := h.service.VerifySignup(ctx, identity.VerifySignupRequest{
-		SignupIntentID:    string(input.SignupIntentID),
-		VerificationToken: string(input.Body.VerificationToken),
-		Password:          string(input.Body.Credential.Password),
-		IdempotencyKey:    string(input.IdempotencyKey),
+		SignupIntentID:          string(input.SignupIntentID),
+		VerificationToken:       string(input.Body.VerificationToken),
+		Password:                string(input.Body.Credential.Password),
+		OrganizationDisplayName: contractString(input.Body.OrganizationDisplayName),
+		IdempotencyKey:          string(input.IdempotencyKey),
 	})
 	if err != nil {
 		return nil, identityError(ctx, err)
@@ -819,6 +820,7 @@ func (h publicHandlers) signupVerificationActionURL(intent identity.SignupIntent
 	query := base.Query()
 	query.Set("signup_intent_id", strings.TrimSpace(intent.SignupIntentID))
 	query.Set("verification_token", verificationToken)
+	query.Set("organization_display_name", intent.OrganizationDisplayName)
 	base.RawQuery = query.Encode()
 	return base.String(), nil
 }

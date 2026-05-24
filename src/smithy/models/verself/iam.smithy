@@ -624,6 +624,9 @@ structure VerifySignupInput {
     @notProperty
     credential: AccountCredential
 
+    @protoField(number: 4)
+    organizationDisplayName: DisplayName
+
     @required
     @notProperty
     @httpHeader("Idempotency-Key")

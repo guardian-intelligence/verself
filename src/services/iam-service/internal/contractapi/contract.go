@@ -368,8 +368,9 @@ type StartSignupInput struct {
 }
 
 type VerifySignupInputBody struct {
-	VerificationToken SignupVerificationToken `json:"verificationToken" required:"true" minLength:"32" maxLength:"512"`
-	Credential        AccountCredential       `json:"credential" required:"true"`
+	VerificationToken       SignupVerificationToken `json:"verificationToken" required:"true" minLength:"32" maxLength:"512"`
+	Credential              AccountCredential       `json:"credential" required:"true"`
+	OrganizationDisplayName *DisplayName            `json:"organizationDisplayName,omitempty" minLength:"1" maxLength:"120"`
 }
 
 type VerifySignupInput struct {

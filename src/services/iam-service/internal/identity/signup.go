@@ -111,7 +111,7 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 		return VerifySignupResult{}, err
 	}
 	now := s.now()
-	intent, err := signupStore.ClaimSignupIntentForVerification(ctx, input.SignupIntentID, tokenHash, input.IdempotencyKey, verifyHash, now, now.Add(signupIntentLeaseDuration))
+	intent, err := signupStore.ClaimSignupIntentForVerification(ctx, input.SignupIntentID, tokenHash, input.IdempotencyKey, verifyHash, input.OrganizationDisplayName, now, now.Add(signupIntentLeaseDuration))
 	if err != nil {
 		return VerifySignupResult{}, err
 	}
@@ -413,6 +413,7 @@ func normalizeStartSignup(input StartSignupRequest) (StartSignupRequest, error) 
 func normalizeVerifySignup(input VerifySignupRequest) (VerifySignupRequest, error) {
 	input.SignupIntentID = strings.TrimSpace(input.SignupIntentID)
 	input.VerificationToken = strings.TrimSpace(input.VerificationToken)
+	input.OrganizationDisplayName = normalizeHumanText(input.OrganizationDisplayName)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	if !strings.HasPrefix(input.SignupIntentID, signupIntentPublicIDPrefix) || len(input.SignupIntentID) != len(signupIntentPublicIDPrefix)+26 {
 		return VerifySignupRequest{}, fmt.Errorf("%w: signup_intent_id is invalid", ErrInvalidInput)
@@ -431,6 +432,11 @@ func normalizeVerifySignup(input VerifySignupRequest) (VerifySignupRequest, erro
 	}
 	if len(input.Password) > 1024 {
 		return VerifySignupRequest{}, fmt.Errorf("%w: password is too long", ErrInvalidInput)
+	}
+	if input.OrganizationDisplayName != "" {
+		if err := validateHumanText("organization_display_name", input.OrganizationDisplayName, 1, 120, 240); err != nil {
+			return VerifySignupRequest{}, err
+		}
 	}
 	return input, nil
 }
@@ -455,9 +461,10 @@ func signupStartRequestHash(input StartSignupRequest) ([]byte, error) {
 
 func signupVerifyRequestHash(input VerifySignupRequest, tokenHash []byte) ([]byte, error) {
 	return canonicalHash(struct {
-		SignupIntentID        string `json:"signup_intent_id"`
-		VerificationTokenHash string `json:"verification_token_hash"`
-	}{input.SignupIntentID, base64.RawURLEncoding.EncodeToString(tokenHash)})
+		SignupIntentID          string `json:"signup_intent_id"`
+		OrganizationDisplayName string `json:"organization_display_name"`
+		VerificationTokenHash   string `json:"verification_token_hash"`
+	}{input.SignupIntentID, input.OrganizationDisplayName, base64.RawURLEncoding.EncodeToString(tokenHash)})
 }
 
 func canonicalHash(value any) ([]byte, error) {

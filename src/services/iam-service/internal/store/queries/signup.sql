@@ -49,6 +49,7 @@ UPDATE iam_signup_intents
 SET state = 'materializing',
     verify_idempotency_key = sqlc.arg(verify_idempotency_key),
     verify_request_hash = sqlc.arg(verify_request_hash),
+    organization_display_name = COALESCE(NULLIF(sqlc.arg(organization_display_name)::text, ''), organization_display_name),
     verified_at = COALESCE(verified_at, sqlc.arg(verified_at)),
     materialization_lease_expires_at = sqlc.arg(materialization_lease_expires_at),
     materialization_attempts = materialization_attempts + 1,

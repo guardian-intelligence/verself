@@ -103,10 +103,11 @@ type AccountCredential struct {
 }
 
 type VerifySignupInput struct {
-	SignupIntentID    string
-	VerificationToken string
-	Credential        AccountCredential
-	IdempotencyKey    string
+	SignupIntentID          string
+	VerificationToken       string
+	Credential              AccountCredential
+	OrganizationDisplayName *string
+	IdempotencyKey          string
 }
 
 type SignupVerificationResult struct {
@@ -272,6 +273,7 @@ func (c *IAMClient) VerifySignup(ctx context.Context, input VerifySignupInput) (
 			Credential: iamcore.AccountCredential{
 				Password: iamcore.AccountPassword(password),
 			},
+			OrganizationDisplayName: optionalCoreString[iamcore.DisplayName](input.OrganizationDisplayName),
 		},
 	})
 	if err != nil {
@@ -650,4 +652,15 @@ func stringValue[T ~string](input *T) string {
 		return ""
 	}
 	return string(*input)
+}
+
+func optionalCoreString[T ~string](input *string) *T {
+	if input == nil {
+		return nil
+	}
+	value := T(strings.TrimSpace(*input))
+	if value == "" {
+		return nil
+	}
+	return &value
 }
