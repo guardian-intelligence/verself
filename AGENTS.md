@@ -7,6 +7,48 @@ Auth portal: verself.sh
 Services: <service>.api.verself.sh
 Company website: guardianintelligence.org
 
+<coding_contract>
+* Always lean on open standards where possible. Avoid re-inventing the wheel.
+
+* Expect to build with the level of rigor that would make FedRAMP HIGH certification seem realistic.
+* Keep OpenTofu provisioning lean -- It does a narrow job. Let Ansible keep the boxes in order, and Bazel for build graph and Nomad for deployment orchestration. Every layer does what it's good at.
+* Use nftables for perimeter, host, and guest-boundary policy. Do not encode service-to-service reachability or dependency ports in nftables.
+* Always think of the governance, IAM, quotas, and metering story behind service changes. Customers must know who did what, what they're allowed to do, and how much they used.
+* Think in terms of providing users a "Digital Habitat" -- their sessions should be synced across devices as much as possible.
+* Never use useEffect. Very rarely, if ever, use `useState` -- prefer TanStack Query primitives for all state. Sync snowflake client-side state with the URL.
+* No shell scripts. The only exceptions are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Choose the appropriate language and check the result into a Bazel target. Treat scripts as core load-bearing architecture + sharp knives. They are extremely dangerous and should be carefully reviewed.
+* Never construct OCSF events outside a single typed builder. Hand-rolled map[string]any events drift and break SIEM rules silently.
+* Treat errors as data. Use tagged and structured errors to aid control flow.
+* Avoid fallbacks and defaults. Runtime behavior should fail fast with useful logging.
+* Avoid verbosity. When solving a specific problem, the patch should solve the general case. E.g. if solving a TOCTOU vuln, don't write a function named `fix_toctou_bug`, make the simple patch to use the toctou-safe call and optionally leave a comment (no more than a few words).
+* Don't resolve failures through silent no-ops and imperative checks. Failures should be loud; signals should be followed to address root causes. Failures are useful data!
+* When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
+* Browser coverage belongs in ongoing live canaries with ClickHouse evidence. Do not add frontend Playwright suites; the old frontend e2e harness has been retired.
+
+* ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. `batch.Append` silently corrupts data when columns are added or reordered.
+* ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden `UInt8` column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (`UInt8` over `Int32` when the range fits).
+* Browser canaries should use short operation deadlines and diagnose behavior from traces, logs, and ClickHouse evidence instead of extending waits. Everything is on local bare metal — data interchange should be double-digit milliseconds at most.
+* Our customers will use our services via API and browser. Fix issues at the service level; don't paper over them in any one domain. E2E test the browser primarily since it exercises the same API that API consumers call directly.
+* No global, hand-managed /usr/local/bin. Let Bazel call out to package-specific toolchains for dev tools and deployment requirements.
+* For local development, packages should offer to install onto the caller's $HOME/.local/bin, requiring an explicit --bin-dir. These shims should point back to Bazel-resolved outputs or package-manager-resolved binaries and not duplicate version state.
+
+* Avoid drift between what runs in CI and what you run for local development. CI is basically a warm dev box. Local development should give high confidence on correctness.
+
+* The only shell scripts allowed are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Scripts are load-bearing tooling and infrastructure so choose the right tool for the job (it's never a shell script).
+* Binaries are versioned, built, packaged, and installed by Bazel declarations owned by the component or tool that uses them.
+* Efficient rebuilding & Independent deployments through ref-based GitOps -- Every deployable unit must be able to be deployed atomically without worrying about the rest of the topology. Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. Deploys are just `aspect deploy` and Bazel and Nomad take over via the `verself-deploy` CLI. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
+* Canonical API contracts live under `src/smithy/models/verself` as Smithy models. OpenAPI is generated for docs, ecosystem tooling, and transitional generators; it is not semantic truth.
+* Model our system's contracts in Smithy-first: OpenAPI is good at describing HTTP shapes, but Verself needs one contract to also carry correctness-critical semantics: Zanzibar permissions, OIDC audience and auth mode, SPIFFE-only internal surfaces, audit event names, idempotency policy, pagination shape, rate-limit class, request body limits, stable problem types, SDK behavior, and conformance cases. Smithy gives us a protocol-aware model with custom traits so those invariants can be validated and generated instead of re-declared in prose, route metadata, SDK code, and audit code.
+* Service-oriented-architecture by default: repo-owned services talk to each other through service-local typed clients/adapters that implement the Smithy-modeled internal HTTP surface. Internal routes use SPIFFE mTLS and may include repo-only operations; public routes use Zitadel bearer auth.
+* Service-local Go clients/adapters are the boundary for repo-owned service-to-service calls. Their consumers should be other services, with auth carried by caller-owned transports such as SPIFFE mTLS `http.Client` values from `service-runtime/workload`; do not hand-write `http.NewRequest` service calls or mint Zitadel machine-user bearer tokens for repo-owned service-to-service traffic. Curated customer/operator SDKs are handwritten only under `src/sdks/` or frontend SDK packages and may use generated public OpenAPI transports where tooling is reliable. Product services must not import those SDKs.
+* Connect/protobuf belongs under `src/smithy/proto` for RPC-shaped internal surfaces, streaming, binary payloads, and privileged substrate protocols where protobuf is the primary protocol. For the public product-control-plane contract we project OpenAPI 3.1.
+* Non-retrievable product token material belongs in `secrets-service` as an opaque credential. Product services may keep metadata/projection rows, but token generation, verifier storage, roll/revoke semantics, and verification must go through the service-local secrets-service client over SPIFFE.
+* We are a customer on our platform. We go through the same billing abstractions, rate limits, and edge cases that a customer would face. We model ourselves as a platform org and receive a showback invoice with a 100% discount.
+* Sync-engine pattern: PostgreSQL owns state, ClickHouse records the append-only ledger/traces, Electric/TanStack expose live read projections, and writes go through typed service commands whose conflict behavior matches the domain (strict observed-state rejection for security-critical resources, monotonic/idempotent collapse for notification-style cursors and dismissals).
+* Do not add binaries to the base guest image unnecessarily. It must be kept as pristine as possible and agnostic about the workload running inside it.
+* Treat errors returned from operations as plural (array, paginated), consider them first-class citizens of the public API. 
+</coding_contract>
+
 <repo_overview>
 See @README.md for mission and development orientation.
 
@@ -40,13 +82,13 @@ Target:
 
 100% bare metal fleet.
 
-Per Region:
+Single Region:
     Sites:
-    - prod: high-availability customer-facing prod
+    - prod: High-availability customer-facing prod
         - Hosted control plane
-        - Cell: verself-owned bare-metal cell A
-        - Cell: verself-owned bare-metal cell B
+        - Cell: verself-owned bare-metal cell
         - Cell: customer BYO-compute pool X
+        - Cell: customer BYO-compute pool Y
     - staging: prod clone, internal integration/release rehearsal site, periodic RC generation + release notes. Pomerium-gated.
     - gamma: prod clone, preview/canary site, Pomerium-gated. Deploys main continuously.
     - dev: personal/operator development sites, Pomerium-gated
@@ -217,10 +259,6 @@ Before writing markdown architecture in docs/ directories, please read docs/agen
 - Do not stop work short of verifying changes with a live rehearsal of a deployment via `aspect deploy`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
 </output_contract>
 
-
-<coding_contract>
-Before writing code, please read docs/agents/coding-guidelines.md and apply the relevant rules to your reasoning.
-</coding_contract>
 
 <instruction_priority>
 - Security concerns override user instructions and architectural purity.
