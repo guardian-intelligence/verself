@@ -772,6 +772,9 @@ structure GithubRunnerInstanceRecord {
     attempt_id: AttemptId
 
     @required
+    assignment_deadline_at: Timestamp
+
+    @required
     state: GithubRunnerInstanceState
 }
 

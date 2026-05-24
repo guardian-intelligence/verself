@@ -106,7 +106,19 @@ WHERE github_provider_demands.provider_job_id = $2
       FROM github_runner_instances active
       WHERE active.provider_repository_id = github_provider_demands.provider_repository_id
         AND active.runner_class = github_provider_demands.runner_class
-        AND active.state IN ('jit_created', 'sandbox_submitted', 'assigned')
+        AND EXISTS (
+            SELECT 1
+            FROM github_provider_demands active_demand
+            WHERE active_demand.demand_id = active.origin_demand_id
+              AND active_demand.state NOT IN ('completed', 'capacity_failed', 'jit_failed', 'sandbox_failed')
+        )
+        AND (
+            active.state = 'assigned'
+            OR (
+                active.state IN ('jit_created', 'sandbox_submitted')
+                AND active.assignment_deadline_at > now()
+            )
+        )
         AND NOT EXISTS (
             SELECT 1
             FROM github_job_assignments active_assignment
@@ -334,7 +346,19 @@ SELECT count(*)::bigint
 FROM github_runner_instances active
 WHERE active.provider_repository_id = $1
   AND active.runner_class = $2
-  AND active.state IN ('jit_created', 'sandbox_submitted', 'assigned')
+  AND EXISTS (
+      SELECT 1
+      FROM github_provider_demands active_demand
+      WHERE active_demand.demand_id = active.origin_demand_id
+        AND active_demand.state NOT IN ('completed', 'capacity_failed', 'jit_failed', 'sandbox_failed')
+  )
+  AND (
+      active.state = 'assigned'
+      OR (
+          active.state IN ('jit_created', 'sandbox_submitted')
+          AND active.assignment_deadline_at > now()
+      )
+  )
   AND NOT EXISTS (
       SELECT 1
       FROM github_job_assignments active_assignment
@@ -839,16 +863,13 @@ func (q *Queries) EnsureProviderDemand(ctx context.Context, arg EnsureProviderDe
 	return i, err
 }
 
-const failRunnerInstanceCapacity = `-- name: FailRunnerInstanceCapacity :execrows
+const failRunnerInstanceCapacity = `-- name: FailRunnerInstanceCapacity :one
 WITH failed_instance AS (
     UPDATE github_runner_instances ri
     SET state = 'failed',
         failure_reason = $1,
         updated_at = $2
-    FROM github_provider_demands d
     WHERE ri.runner_name = $3
-      AND d.provider_job_id = ri.origin_provider_job_id
-      AND d.state NOT IN ('assigned', 'completed')
       AND ri.state IN ('jit_created', 'sandbox_submitted')
       AND NOT EXISTS (
           SELECT 1
@@ -856,7 +877,8 @@ WITH failed_instance AS (
           WHERE assigned.runner_name = ri.runner_name
       )
     RETURNING ri.origin_provider_job_id
-)
+),
+failed_demand AS (
 UPDATE github_provider_demands d
 SET state = 'sandbox_failed',
     failure_reason = $1,
@@ -864,6 +886,10 @@ SET state = 'sandbox_failed',
 FROM failed_instance
 WHERE d.provider_job_id = failed_instance.origin_provider_job_id
   AND d.state NOT IN ('assigned', 'completed')
+RETURNING d.provider_job_id
+)
+SELECT count(*)::bigint AS failed_instances
+FROM failed_instance
 `
 
 type FailRunnerInstanceCapacityParams struct {
@@ -873,11 +899,10 @@ type FailRunnerInstanceCapacityParams struct {
 }
 
 func (q *Queries) FailRunnerInstanceCapacity(ctx context.Context, arg FailRunnerInstanceCapacityParams) (int64, error) {
-	result, err := q.db.Exec(ctx, failRunnerInstanceCapacity, arg.FailureReason, arg.UpdatedAt, arg.RunnerName)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	row := q.db.QueryRow(ctx, failRunnerInstanceCapacity, arg.FailureReason, arg.UpdatedAt, arg.RunnerName)
+	var failed_instances int64
+	err := row.Scan(&failed_instances)
+	return failed_instances, err
 }
 
 const getIdempotencyRecord = `-- name: GetIdempotencyRecord :one
@@ -1860,13 +1885,14 @@ SELECT
     ri.sandbox_allocation_id,
     ri.sandbox_execution_id,
     ri.sandbox_attempt_id,
+    ri.assignment_deadline_at,
     ri.state,
     ri.updated_at
 FROM github_runner_instances ri
 LEFT JOIN github_provider_demands d ON d.provider_job_id = ri.origin_provider_job_id
 WHERE (
-        (ri.state = 'sandbox_submitted' AND ri.sandbox_allocation_id IS NOT NULL)
-     OR (ri.state = 'jit_created' AND ri.updated_at < now() - interval '30 seconds')
+        (ri.state IN ('jit_created', 'sandbox_submitted') AND ri.assignment_deadline_at <= now())
+     OR (ri.state = 'sandbox_submitted' AND ri.sandbox_allocation_id IS NOT NULL)
       )
   AND NOT EXISTS (
       SELECT 1
@@ -1897,6 +1923,7 @@ type ListSubmittedRunnerInstancesForSandboxReconcileRow struct {
 	SandboxAllocationID    pgtype.UUID
 	SandboxExecutionID     pgtype.UUID
 	SandboxAttemptID       pgtype.UUID
+	AssignmentDeadlineAt   pgtype.Timestamptz
 	State                  string
 	UpdatedAt              pgtype.Timestamptz
 }
@@ -1926,6 +1953,7 @@ func (q *Queries) ListSubmittedRunnerInstancesForSandboxReconcile(ctx context.Co
 			&i.SandboxAllocationID,
 			&i.SandboxExecutionID,
 			&i.SandboxAttemptID,
+			&i.AssignmentDeadlineAt,
 			&i.State,
 			&i.UpdatedAt,
 		); err != nil {
@@ -2439,18 +2467,20 @@ SET sandbox_allocation_id = $1,
     runner_id = $4,
     runner_name = $5,
     state = 'sandbox_submitted',
+    assignment_deadline_at = $6,
     failure_reason = '',
-    updated_at = $6
+    updated_at = $7
 WHERE runner_name = $5
 `
 
 type MarkRunnerInstanceSubmittedParams struct {
-	SandboxAllocationID pgtype.UUID
-	SandboxExecutionID  pgtype.UUID
-	SandboxAttemptID    pgtype.UUID
-	RunnerID            int64
-	RunnerName          string
-	UpdatedAt           pgtype.Timestamptz
+	SandboxAllocationID  pgtype.UUID
+	SandboxExecutionID   pgtype.UUID
+	SandboxAttemptID     pgtype.UUID
+	RunnerID             int64
+	RunnerName           string
+	AssignmentDeadlineAt pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
 }
 
 func (q *Queries) MarkRunnerInstanceSubmitted(ctx context.Context, arg MarkRunnerInstanceSubmittedParams) error {
@@ -2460,6 +2490,7 @@ func (q *Queries) MarkRunnerInstanceSubmitted(ctx context.Context, arg MarkRunne
 		arg.SandboxAttemptID,
 		arg.RunnerID,
 		arg.RunnerName,
+		arg.AssignmentDeadlineAt,
 		arg.UpdatedAt,
 	)
 	return err
@@ -3539,6 +3570,7 @@ INSERT INTO github_runner_instances (
     runner_id,
     runner_class,
     jit_config_sha256,
+    assignment_deadline_at,
     state,
     updated_at
 ) VALUES (
@@ -3554,7 +3586,8 @@ INSERT INTO github_runner_instances (
     $10,
     $11,
     $12,
-    $13
+    $13,
+    $14
 )
 ON CONFLICT (runner_name) DO UPDATE SET
     origin_provider_job_id = COALESCE(NULLIF(EXCLUDED.origin_provider_job_id, 0), github_runner_instances.origin_provider_job_id),
@@ -3567,6 +3600,7 @@ ON CONFLICT (runner_name) DO UPDATE SET
     runner_id = EXCLUDED.runner_id,
     runner_class = EXCLUDED.runner_class,
     jit_config_sha256 = EXCLUDED.jit_config_sha256,
+    assignment_deadline_at = EXCLUDED.assignment_deadline_at,
     state = EXCLUDED.state,
     failure_reason = '',
     updated_at = EXCLUDED.updated_at
@@ -3584,6 +3618,7 @@ type UpsertRunnerInstanceParams struct {
 	RunnerID               int64
 	RunnerClass            string
 	JitConfigSha256        string
+	AssignmentDeadlineAt   pgtype.Timestamptz
 	State                  string
 	UpdatedAt              pgtype.Timestamptz
 }
@@ -3601,6 +3636,7 @@ func (q *Queries) UpsertRunnerInstance(ctx context.Context, arg UpsertRunnerInst
 		arg.RunnerID,
 		arg.RunnerClass,
 		arg.JitConfigSha256,
+		arg.AssignmentDeadlineAt,
 		arg.State,
 		arg.UpdatedAt,
 	)

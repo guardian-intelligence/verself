@@ -1133,7 +1133,19 @@ WHERE github_provider_demands.provider_job_id = @provider_job_id
       FROM github_runner_instances active
       WHERE active.provider_repository_id = github_provider_demands.provider_repository_id
         AND active.runner_class = github_provider_demands.runner_class
-        AND active.state IN ('jit_created', 'sandbox_submitted', 'assigned')
+        AND EXISTS (
+            SELECT 1
+            FROM github_provider_demands active_demand
+            WHERE active_demand.demand_id = active.origin_demand_id
+              AND active_demand.state NOT IN ('completed', 'capacity_failed', 'jit_failed', 'sandbox_failed')
+        )
+        AND (
+            active.state = 'assigned'
+            OR (
+                active.state IN ('jit_created', 'sandbox_submitted')
+                AND active.assignment_deadline_at > now()
+            )
+        )
         AND NOT EXISTS (
             SELECT 1
             FROM github_job_assignments active_assignment
@@ -1263,6 +1275,7 @@ INSERT INTO github_runner_instances (
     runner_id,
     runner_class,
     jit_config_sha256,
+    assignment_deadline_at,
     state,
     updated_at
 ) VALUES (
@@ -1277,6 +1290,7 @@ INSERT INTO github_runner_instances (
     @runner_id,
     @runner_class,
     @jit_config_sha256,
+    @assignment_deadline_at,
     @state,
     @updated_at
 )
@@ -1291,6 +1305,7 @@ ON CONFLICT (runner_name) DO UPDATE SET
     runner_id = EXCLUDED.runner_id,
     runner_class = EXCLUDED.runner_class,
     jit_config_sha256 = EXCLUDED.jit_config_sha256,
+    assignment_deadline_at = EXCLUDED.assignment_deadline_at,
     state = EXCLUDED.state,
     failure_reason = '',
     updated_at = EXCLUDED.updated_at;
@@ -1303,6 +1318,7 @@ SET sandbox_allocation_id = @sandbox_allocation_id,
     runner_id = @runner_id,
     runner_name = @runner_name,
     state = 'sandbox_submitted',
+    assignment_deadline_at = @assignment_deadline_at,
     failure_reason = '',
     updated_at = @updated_at
 WHERE runner_name = @runner_name;
@@ -1314,16 +1330,13 @@ SET state = 'failed',
     updated_at = @updated_at
 WHERE runner_name = @runner_name;
 
--- name: FailRunnerInstanceCapacity :execrows
+-- name: FailRunnerInstanceCapacity :one
 WITH failed_instance AS (
     UPDATE github_runner_instances ri
     SET state = 'failed',
         failure_reason = @failure_reason,
         updated_at = @updated_at
-    FROM github_provider_demands d
     WHERE ri.runner_name = @runner_name
-      AND d.provider_job_id = ri.origin_provider_job_id
-      AND d.state NOT IN ('assigned', 'completed')
       AND ri.state IN ('jit_created', 'sandbox_submitted')
       AND NOT EXISTS (
           SELECT 1
@@ -1331,14 +1344,19 @@ WITH failed_instance AS (
           WHERE assigned.runner_name = ri.runner_name
       )
     RETURNING ri.origin_provider_job_id
-)
+),
+failed_demand AS (
 UPDATE github_provider_demands d
 SET state = 'sandbox_failed',
     failure_reason = @failure_reason,
     updated_at = @updated_at
 FROM failed_instance
 WHERE d.provider_job_id = failed_instance.origin_provider_job_id
-  AND d.state NOT IN ('assigned', 'completed');
+  AND d.state NOT IN ('assigned', 'completed')
+RETURNING d.provider_job_id
+)
+SELECT count(*)::bigint AS failed_instances
+FROM failed_instance;
 
 -- name: MarkRunnerInstanceCleaned :exec
 UPDATE github_runner_instances
@@ -1409,13 +1427,14 @@ SELECT
     ri.sandbox_allocation_id,
     ri.sandbox_execution_id,
     ri.sandbox_attempt_id,
+    ri.assignment_deadline_at,
     ri.state,
     ri.updated_at
 FROM github_runner_instances ri
 LEFT JOIN github_provider_demands d ON d.provider_job_id = ri.origin_provider_job_id
 WHERE (
-        (ri.state = 'sandbox_submitted' AND ri.sandbox_allocation_id IS NOT NULL)
-     OR (ri.state = 'jit_created' AND ri.updated_at < now() - interval '30 seconds')
+        (ri.state IN ('jit_created', 'sandbox_submitted') AND ri.assignment_deadline_at <= now())
+     OR (ri.state = 'sandbox_submitted' AND ri.sandbox_allocation_id IS NOT NULL)
       )
   AND NOT EXISTS (
       SELECT 1
@@ -1458,7 +1477,19 @@ SELECT count(*)::bigint
 FROM github_runner_instances active
 WHERE active.provider_repository_id = @provider_repository_id
   AND active.runner_class = @runner_class
-  AND active.state IN ('jit_created', 'sandbox_submitted', 'assigned')
+  AND EXISTS (
+      SELECT 1
+      FROM github_provider_demands active_demand
+      WHERE active_demand.demand_id = active.origin_demand_id
+        AND active_demand.state NOT IN ('completed', 'capacity_failed', 'jit_failed', 'sandbox_failed')
+  )
+  AND (
+      active.state = 'assigned'
+      OR (
+          active.state IN ('jit_created', 'sandbox_submitted')
+          AND active.assignment_deadline_at > now()
+      )
+  )
   AND NOT EXISTS (
       SELECT 1
       FROM github_job_assignments active_assignment

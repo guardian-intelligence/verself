@@ -10,7 +10,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	sandboxrentalclient "github.com/verself/sandbox-rental-service/client"
 )
 
@@ -274,5 +276,21 @@ func TestSandboxRunnerCapacityTerminalWithoutAssignment(t *testing.T) {
 	attemptState := "lost"
 	if !sandboxRunnerCapacityTerminalWithoutAssignment(sandboxrentalclient.RunnerAllocationStatus{State: "vm_submitted", AttemptState: &attemptState}) {
 		t.Fatal("lost attempt did not fail unassigned capacity")
+	}
+}
+
+func TestRunnerCapacityAssignmentDeadlineExceeded(t *testing.T) {
+	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	if !runnerCapacityAssignmentDeadlineExceeded(pgTime(now), now) {
+		t.Fatal("deadline at now should be expired")
+	}
+	if !runnerCapacityAssignmentDeadlineExceeded(pgTime(now.Add(-time.Second)), now) {
+		t.Fatal("past deadline should be expired")
+	}
+	if runnerCapacityAssignmentDeadlineExceeded(pgTime(now.Add(time.Second)), now) {
+		t.Fatal("future deadline should not be expired")
+	}
+	if runnerCapacityAssignmentDeadlineExceeded(pgtype.Timestamptz{}, now) {
+		t.Fatal("missing deadline should not be expired")
 	}
 }

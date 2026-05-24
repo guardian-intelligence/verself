@@ -41,6 +41,8 @@ const (
 	defaultRunnerWorkFolder                 = "_work"
 	defaultRunnerPrefix                     = "verself-"
 	defaultRepositoryRunnerClassActiveLimit = 15
+	runnerCapacitySubmitDeadline            = 30 * time.Second
+	runnerCapacityAssignmentDeadline        = 2 * time.Minute
 	maxWebhookBytes                         = 1 << 20
 )
 
@@ -395,6 +397,9 @@ func (s *Service) ProcessRunnerCapacityFailures(ctx context.Context) error {
 }
 
 func (s *Service) reconcileRunnerInstanceWithSandbox(ctx context.Context, row store.ListSubmittedRunnerInstancesForSandboxReconcileRow) error {
+	if runnerCapacityAssignmentDeadlineExceeded(row.AssignmentDeadlineAt, time.Now().UTC()) {
+		return s.markRunnerCapacityFailed(ctx, row, "assignment_deadline_exceeded")
+	}
 	allocationID := uuidFromPG(row.SandboxAllocationID)
 	if allocationID == uuid.Nil {
 		if row.State == "jit_created" {
@@ -492,6 +497,10 @@ func sandboxRunnerCapacityTerminalWithoutAssignment(status sandboxrentalclient.R
 		return true
 	}
 	return false
+}
+
+func runnerCapacityAssignmentDeadlineExceeded(deadline pgtype.Timestamptz, now time.Time) bool {
+	return deadline.Valid && !timeFromPG(deadline).After(now.UTC())
 }
 
 func (s *Service) ProcessQueuedJobs(ctx context.Context) error {
@@ -1174,6 +1183,7 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		RunnerID:               runnerID,
 		RunnerClass:            runnerClass,
 		JitConfigSha256:        jitHash,
+		AssignmentDeadlineAt:   pgTime(now.Add(runnerCapacitySubmitDeadline)),
 		State:                  "jit_created",
 		UpdatedAt:              pgTime(now),
 	}); err != nil {
@@ -1286,13 +1296,15 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := store.New(tx)
+	now = time.Now().UTC()
 	if err := qtx.MarkRunnerInstanceSubmitted(ctx, store.MarkRunnerInstanceSubmittedParams{
-		SandboxAllocationID: pgUUID(submission.AllocationID),
-		SandboxExecutionID:  pgUUID(submission.ExecutionID),
-		SandboxAttemptID:    pgUUID(submission.AttemptID),
-		RunnerID:            runnerID,
-		RunnerName:          runnerName,
-		UpdatedAt:           pgTime(time.Now().UTC()),
+		SandboxAllocationID:  pgUUID(submission.AllocationID),
+		SandboxExecutionID:   pgUUID(submission.ExecutionID),
+		SandboxAttemptID:     pgUUID(submission.AttemptID),
+		RunnerID:             runnerID,
+		RunnerName:           runnerName,
+		AssignmentDeadlineAt: pgTime(now.Add(runnerCapacityAssignmentDeadline)),
+		UpdatedAt:            pgTime(now),
 	}); err != nil {
 		return err
 	}

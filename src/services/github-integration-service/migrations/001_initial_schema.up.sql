@@ -405,6 +405,7 @@ CREATE TABLE github_runner_instances (
     sandbox_allocation_id    UUID,
     sandbox_execution_id     UUID,
     sandbox_attempt_id       UUID,
+    assignment_deadline_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     state                    TEXT        NOT NULL CHECK (state <> ''),
     failure_reason           TEXT        NOT NULL DEFAULT '',
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -417,7 +418,7 @@ CREATE UNIQUE INDEX idx_github_runner_instances_runner_id
 CREATE INDEX idx_github_runner_instances_origin
     ON github_runner_instances (origin_provider_job_id, updated_at);
 CREATE INDEX idx_github_runner_instances_capacity
-    ON github_runner_instances (provider_repository_id, runner_class, state, updated_at);
+    ON github_runner_instances (provider_repository_id, runner_class, state, assignment_deadline_at, updated_at);
 
 CREATE TABLE github_job_assignments (
     provider_job_id          BIGINT      PRIMARY KEY REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
