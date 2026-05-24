@@ -405,6 +405,7 @@ func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.Star
 		}
 		if err := h.signupNotifier.SendSignupVerification(ctx, SignupVerificationNotification{
 			SignupIntentID:          result.Intent.SignupIntentID,
+			OrgID:                   result.Intent.OrgID,
 			Email:                   result.Intent.Email,
 			OrganizationDisplayName: result.Intent.OrganizationDisplayName,
 			ActionURL:               actionURL,

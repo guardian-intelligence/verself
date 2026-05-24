@@ -591,15 +591,19 @@ func writeEnvironment(w io.Writer, environment verself.ProjectEnvironment) error
 }
 
 func readTokenFile(path string) (string, error) {
+	return readOwnerOnlySecretFile(path, "token file")
+}
+
+func readOwnerOnlySecretFile(path, label string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("token file %s must be a regular file", path)
+		return "", fmt.Errorf("%s %s must be a regular file", label, path)
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		return "", fmt.Errorf("token file %s must be owner-only", path)
+		return "", fmt.Errorf("%s %s must be owner-only", label, path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -607,7 +611,7 @@ func readTokenFile(path string) (string, error) {
 	}
 	token := strings.TrimSpace(string(data))
 	if token == "" {
-		return "", fmt.Errorf("token file %s is empty", path)
+		return "", fmt.Errorf("%s %s is empty", label, path)
 	}
 	return token, nil
 }

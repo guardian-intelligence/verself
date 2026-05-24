@@ -875,6 +875,42 @@ func (q *Queries) InsertWorkflowRun(ctx context.Context, arg InsertWorkflowRunPa
 	return result.RowsAffected(), nil
 }
 
+const listDueDeliveryAttempts = `-- name: ListDueDeliveryAttempts :many
+SELECT delivery_attempt_id
+FROM notification_delivery_attempts
+WHERE status IN ('queued', 'failed')
+  AND workflow_key LIKE 'iam.%'
+  AND attempt_count < $1
+  AND next_attempt_at <= now()
+ORDER BY next_attempt_at ASC, queued_at ASC
+LIMIT $2
+`
+
+type ListDueDeliveryAttemptsParams struct {
+	MaxAttempts int32
+	LimitCount  int32
+}
+
+func (q *Queries) ListDueDeliveryAttempts(ctx context.Context, arg ListDueDeliveryAttemptsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listDueDeliveryAttempts, arg.MaxAttempts, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var delivery_attempt_id uuid.UUID
+		if err := rows.Scan(&delivery_attempt_id); err != nil {
+			return nil, err
+		}
+		items = append(items, delivery_attempt_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNotifications = `-- name: ListNotifications :many
 SELECT notification_id, org_id, recipient_subject_id, recipient_sequence, kind, priority, title, body,
        action_url, resource_kind, resource_id, created_at, expires_at, read_at, dismissed_at

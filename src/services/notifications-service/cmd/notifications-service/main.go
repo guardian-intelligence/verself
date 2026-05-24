@@ -85,6 +85,7 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "notifications_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	emailFromAddress := cfg.String("NOTIFICATIONS_EMAIL_FROM_ADDRESS", "noreply@notify.verself.sh")
+	emailFromOrgID := cfg.RequireString("NOTIFICATIONS_EMAIL_FROM_ORG_ID")
 	platformAlertOrgID := cfg.RequireString("NOTIFICATIONS_PLATFORM_ALERT_ORG_ID")
 	platformAlertEmail := cfg.RequireString("NOTIFICATIONS_PLATFORM_ALERT_EMAIL")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
@@ -167,7 +168,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("notifications email-service client: %w", err)
 	}
-	emailSender, err := notifications.NewEmailServiceSender(emailClient, emailFromAddress)
+	emailSender, err := notifications.NewEmailServiceSender(emailClient, emailFromAddress, emailFromOrgID)
 	if err != nil {
 		return fmt.Errorf("notifications email sender: %w", err)
 	}

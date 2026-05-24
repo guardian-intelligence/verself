@@ -146,6 +146,147 @@ func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 	}
 }
 
+func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
+	const (
+		signupIntentID    = "signup_01J8QJ4P1R7S9W2X5M6N8P0Q2"
+		verificationToken = "signup-verification-token-0000000001"
+		orgID             = "org_01J8QJ4P1R7S9W2X5M6N8P0Q2"
+		traceparent       = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"
+	)
+	startAuths := map[string]string{}
+	startBodies := map[string]map[string]any{}
+	startTraceparents := map[string]string{}
+	var verifyKey string
+	var verifyAuth string
+	var verifyBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/signup-intents":
+			startKey := r.Header.Get("Idempotency-Key")
+			startTraceparents[startKey] = r.Header.Get("Traceparent")
+			startAuths[startKey] = r.Header.Get("Authorization")
+			var startBody map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&startBody); err != nil {
+				t.Fatal(err)
+			}
+			startBodies[startKey] = startBody
+			orgName, _ := startBody["organizationDisplayName"].(string)
+			orgSlug, _ := startBody["organizationSlug"].(string)
+			w.WriteHeader(http.StatusAccepted)
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"signupIntentId":          signupIntentID,
+				"resourceName":            "urn:verself:iam:signup_intent:" + signupIntentID,
+				"organizationDisplayName": orgName,
+				"organizationSlug":        orgSlug,
+				"status":                  "verification_pending",
+				"verificationExpiresAt":   "2026-05-25T00:00:00Z",
+			}); err != nil {
+				t.Fatal(err)
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/signup-intents/"+signupIntentID+"/verification":
+			verifyKey = r.Header.Get("Idempotency-Key")
+			verifyAuth = r.Header.Get("Authorization")
+			if err := json.NewDecoder(r.Body).Decode(&verifyBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"organization":{"orgId":"` + orgID + `","resourceName":"urn:verself:iam:organization:` + orgID + `","displayName":"Guardian Intelligence","slug":"guardian-intelligence","version":1},"loginUrl":"https://verself.sh/login"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("VERSELF_IAM_API_URL", server.URL)
+
+	var defaultStartOut bytes.Buffer
+	runCLI(t, &defaultStartOut,
+		"auth", "signup",
+		"--email", "my-email@email.com",
+		"--idempotency-key", "iam:start-default",
+	)
+	if startBodies["iam:start-default"]["organizationDisplayName"] != "My Email" {
+		t.Fatalf("default signup organization display name = %#v", startBodies["iam:start-default"])
+	}
+	var defaultStarted signupStartOutput
+	if err := json.Unmarshal(defaultStartOut.Bytes(), &defaultStarted); err != nil {
+		t.Fatalf("decode default start output: %v\n%s", err, defaultStartOut.String())
+	}
+	if defaultStarted.OrganizationDisplayName != "My Email" {
+		t.Fatalf("unexpected default start output: %#v", defaultStarted)
+	}
+
+	var startOut bytes.Buffer
+	runCLI(t, &startOut,
+		"auth", "signup",
+		"--email", "operator@example.test",
+		"--org", "Guardian Intelligence",
+		"--slug", "guardian-intelligence",
+		"--given-name", "Operator",
+		"--family-name", "Example",
+		"--idempotency-key", "iam:start-signup",
+		"--traceparent", traceparent,
+	)
+	if startAuths["iam:start-signup"] != "" {
+		t.Fatalf("start Authorization = %q", startAuths["iam:start-signup"])
+	}
+	if startTraceparents["iam:start-signup"] != traceparent {
+		t.Fatalf("unexpected start traceparent=%q", startTraceparents["iam:start-signup"])
+	}
+	startBody := startBodies["iam:start-signup"]
+	if startBody["email"] != "operator@example.test" ||
+		startBody["organizationDisplayName"] != "Guardian Intelligence" ||
+		startBody["organizationSlug"] != "guardian-intelligence" ||
+		startBody["givenName"] != "Operator" ||
+		startBody["familyName"] != "Example" {
+		t.Fatalf("unexpected start body: %#v", startBody)
+	}
+	var started signupStartOutput
+	if err := json.Unmarshal(startOut.Bytes(), &started); err != nil {
+		t.Fatalf("decode start output: %v\n%s", err, startOut.String())
+	}
+	if started.Message != "Signup started for operator@example.test; verification email delivery is queued and valid until 2026-05-25T00:00:00Z." ||
+		started.SignupIntentID != signupIntentID ||
+		started.Status != "verification_pending" {
+		t.Fatalf("unexpected start output: %#v", started)
+	}
+
+	t.Setenv("VERSELF_SIGNUP_PASSWORD", "correct horse battery staple")
+	verifyURL := "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID + "&verification_token=" + verificationToken
+	var verifyOut bytes.Buffer
+	runCLI(t, &verifyOut,
+		"auth", "signup", "verify",
+		"--url", verifyURL,
+		"--password-env", "VERSELF_SIGNUP_PASSWORD",
+		"--idempotency-key", "iam:verify-signup",
+	)
+	if verifyAuth != "" {
+		t.Fatalf("verify Authorization = %q", verifyAuth)
+	}
+	if verifyKey != "iam:verify-signup" {
+		t.Fatalf("verify idempotency key = %q", verifyKey)
+	}
+	if verifyBody["verificationToken"] != verificationToken {
+		t.Fatalf("unexpected verification token body: %#v", verifyBody)
+	}
+	credential, ok := verifyBody["credential"].(map[string]any)
+	if !ok || credential["password"] != "correct horse battery staple" {
+		t.Fatalf("unexpected credential body: %#v", verifyBody)
+	}
+	var verified signupVerifyOutput
+	if err := json.Unmarshal(verifyOut.Bytes(), &verified); err != nil {
+		t.Fatalf("decode verify output: %v\n%s", err, verifyOut.String())
+	}
+	if verified.Organization.OrgID != orgID ||
+		verified.Organization.DisplayName != "Guardian Intelligence" ||
+		verified.LoginURL != "https://verself.sh/login" ||
+		!strings.Contains(verified.Message, "verself auth login") {
+		t.Fatalf("unexpected verify output: %#v", verified)
+	}
+}
+
 func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
 	var createIDKey string
 	var createAuth string

@@ -2,121 +2,302 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
+	"io"
+	"net/url"
 	"strings"
+	"unicode"
 
 	verself "github.com/verself/verself-go"
 )
 
-func (c CLI) runSignup(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("signup", flag.ContinueOnError)
-	fs.SetOutput(c.err)
-	profileName := fs.String("profile", "default", "profile name")
-	tokenFile := fs.String("token-file", "", "read bearer token from owner-only file")
-	issuerURL := fs.String("issuer", "", "OIDC issuer URL")
-	clientID := fs.String("client-id", "", "OIDC public client ID")
-	audience := fs.String("audience", "", "Verself product API audience ID")
-	iamURL := fs.String("iam-url", "", "IAM service base URL")
-	projectsURL := fs.String("projects-url", "", "Projects service base URL")
-	notificationsURL := fs.String("notifications-url", "", "Notifications service base URL")
-	billingURL := fs.String("billing-url", "", "Billing service base URL")
-	governanceURL := fs.String("governance-url", "", "Governance service base URL")
-	sandboxURL := fs.String("sandbox-url", "", "Sandbox rental service base URL")
-	secretsURL := fs.String("secrets-url", "", "Secrets service base URL")
-	sourceURL := fs.String("source-url", "", "Source service base URL")
-	displayName := fs.String("display-name", "", "organization display name")
+type signupStartOutput struct {
+	Message                 string `json:"message"`
+	SignupIntentID          string `json:"signupIntentId"`
+	ResourceName            string `json:"resourceName"`
+	OrganizationDisplayName string `json:"organizationDisplayName"`
+	OrganizationSlug        string `json:"organizationSlug,omitempty"`
+	Status                  string `json:"status"`
+	VerificationExpiresAt   string `json:"verificationExpiresAt"`
+}
+
+type signupVerifyOutput struct {
+	Message      string               `json:"message"`
+	Organization verself.Organization `json:"organization"`
+	LoginURL     string               `json:"loginUrl"`
+}
+
+type publicIAMFlags struct {
+	iamURL      string
+	traceparent string
+}
+
+func (c CLI) authSignup(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "verify" {
+		return c.authSignupVerify(ctx, args[1:])
+	}
+	return c.authSignupStart(ctx, args)
+}
+
+func (c CLI) authSignupStart(ctx context.Context, args []string) error {
+	fs, iamFlags := publicIAMFlagSet("auth signup", c.err)
+	email := fs.String("email", "", "email address to verify")
+	org := fs.String("org", "", "organization display name")
 	slug := fs.String("slug", "", "organization slug")
+	givenName := fs.String("given-name", "", "account given name")
+	familyName := fs.String("family-name", "", "account family name")
 	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
-	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: signup --display-name NAME [--slug SLUG]")
+		return errors.New("usage: auth signup --email EMAIL [--org NAME] [--slug SLUG]")
 	}
-	if strings.TrimSpace(*displayName) == "" {
-		return errors.New("signup requires --display-name")
+	emailValue := strings.TrimSpace(*email)
+	if emailValue == "" {
+		return errors.New("auth signup requires --email")
 	}
-	profile := ProfileRecord{
-		Version:          1,
-		Name:             strings.TrimSpace(*profileName),
-		IAMURL:           strings.TrimSpace(firstNonEmpty(*iamURL, c.getenv("VERSELF_IAM_API_URL"))),
-		ProjectsURL:      strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"))),
-		NotificationsURL: strings.TrimSpace(firstNonEmpty(*notificationsURL, c.getenv("VERSELF_NOTIFICATIONS_API_URL"))),
-		BillingURL:       strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"))),
-		GovernanceURL:    strings.TrimSpace(firstNonEmpty(*governanceURL, c.getenv("VERSELF_GOVERNANCE_API_URL"))),
-		SandboxURL:       strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"))),
-		SecretsURL:       strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"))),
-		SourceURL:        strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"))),
+	orgDisplayName := strings.TrimSpace(*org)
+	if orgDisplayName == "" {
+		orgDisplayName = defaultSignupOrganizationDisplayName(emailValue)
 	}
-	if profile.Name == "" {
-		return errors.New("signup profile name is required")
+	if orgDisplayName == "" {
+		return errors.New("auth signup requires --org when the organization name cannot be derived from --email")
 	}
-	credential, err := c.loginCredential(ctx, loginCredentialOptions{
-		TokenFile: strings.TrimSpace(*tokenFile),
-		IssuerURL: firstNonEmpty(*issuerURL, c.getenv("VERSELF_AUTH_ISSUER_URL")),
-		ClientID:  firstNonEmpty(*clientID, c.getenv("VERSELF_CLI_CLIENT_ID")),
-		Audience:  firstNonEmpty(*audience, c.getenv("VERSELF_PRODUCT_API_AUTH_AUDIENCE")),
+	client, err := c.publicIAMClient(*iamFlags)
+	if err != nil {
+		return err
+	}
+	intent, err := client.IAM.StartSignup(ctx, verself.StartSignupInput{
+		Email:                   emailValue,
+		OrganizationDisplayName: orgDisplayName,
+		OrganizationSlug:        trimOptionalString(*slug),
+		GivenName:               trimOptionalString(*givenName),
+		FamilyName:              trimOptionalString(*familyName),
+		IdempotencyKey:          *idempotencyKey,
 	})
 	if err != nil {
 		return err
 	}
-	sdk, err := verself.New(verself.Options{
-		BearerToken:      credential.AccessToken,
-		IAMURL:           profile.IAMURL,
-		ProjectsURL:      profile.ProjectsURL,
-		NotificationsURL: profile.NotificationsURL,
-		BillingURL:       profile.BillingURL,
-		GovernanceURL:    profile.GovernanceURL,
-		SandboxURL:       profile.SandboxURL,
-		SecretsURL:       profile.SecretsURL,
-		SourceURL:        profile.SourceURL,
+	return writeJSON(c.out, signupStartOutputFromIntent(emailValue, intent))
+}
+
+func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
+	fs, iamFlags := publicIAMFlagSet("auth signup verify", c.err)
+	actionURL := fs.String("url", "", "signup verification URL")
+	signupIntentID := fs.String("signup-intent-id", "", "signup intent id")
+	verificationToken := fs.String("verification-token", "", "signup verification token")
+	passwordEnv := fs.String("password-env", "", "environment variable containing the account password")
+	passwordFile := fs.String("password-file", "", "owner-only file containing the account password")
+	passwordStdin := fs.Bool("password-stdin", false, "read the account password from stdin")
+	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: auth signup verify --url URL --password-env NAME")
+	}
+	intentID, token, err := signupVerificationCredentials(*actionURL, *signupIntentID, *verificationToken)
+	if err != nil {
+		return err
+	}
+	password, err := c.signupVerificationPassword(signupPasswordOptions{
+		Env:   *passwordEnv,
+		File:  *passwordFile,
+		Stdin: *passwordStdin,
 	})
 	if err != nil {
 		return err
 	}
-	var slugPtr *string
-	if strings.TrimSpace(*slug) != "" {
-		value := strings.TrimSpace(*slug)
-		slugPtr = &value
+	client, err := c.publicIAMClient(*iamFlags)
+	if err != nil {
+		return err
 	}
-	org, err := sdk.IAM.CreateOrganization(ctx, verself.CreateOrganizationInput{
-		DisplayName:    strings.TrimSpace(*displayName),
-		Slug:           slugPtr,
-		IdempotencyKey: *idempotencyKey,
+	result, err := client.IAM.VerifySignup(ctx, verself.VerifySignupInput{
+		SignupIntentID:    intentID,
+		VerificationToken: token,
+		Credential:        verself.AccountCredential{Password: password},
+		IdempotencyKey:    *idempotencyKey,
 	})
 	if err != nil {
 		return err
 	}
-	profile.SelectedOrg = orgRefFromSDK(org)
-	store, err := newStore(c.getenv)
+	return writeJSON(c.out, signupVerifyOutputFromResult(result))
+}
+
+func publicIAMFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *publicIAMFlags) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	flags := &publicIAMFlags{}
+	fs.StringVar(&flags.iamURL, "iam-url", "", "IAM service base URL")
+	fs.StringVar(&flags.traceparent, "traceparent", "", "trace context to join")
+	return fs, flags
+}
+
+func (c CLI) publicIAMClient(flags publicIAMFlags) (*verself.Client, error) {
+	iamURL := strings.TrimSpace(flags.iamURL)
+	if iamURL == "" {
+		iamURL = strings.TrimSpace(c.getenv("VERSELF_IAM_API_URL"))
+	}
+	return verself.New(verself.Options{
+		IAMURL:      iamURL,
+		Traceparent: flags.traceparent,
+	})
+}
+
+func signupStartOutputFromIntent(email string, intent verself.SignupIntent) signupStartOutput {
+	message := fmt.Sprintf("Signup started for %s; verification email delivery is queued.", email)
+	if strings.TrimSpace(intent.VerificationExpiresAt) != "" {
+		message = fmt.Sprintf("Signup started for %s; verification email delivery is queued and valid until %s.", email, intent.VerificationExpiresAt)
+	}
+	return signupStartOutput{
+		Message:                 message,
+		SignupIntentID:          intent.SignupIntentID,
+		ResourceName:            intent.ResourceName,
+		OrganizationDisplayName: intent.OrganizationDisplayName,
+		OrganizationSlug:        intent.OrganizationSlug,
+		Status:                  intent.Status,
+		VerificationExpiresAt:   intent.VerificationExpiresAt,
+	}
+}
+
+func signupVerifyOutputFromResult(result verself.SignupVerificationResult) signupVerifyOutput {
+	message := fmt.Sprintf("Organization %s is ready. Run `verself auth login` to create a local session.", result.Organization.DisplayName)
+	if strings.TrimSpace(result.LoginURL) != "" {
+		message = fmt.Sprintf("Organization %s is ready. Sign in at %s or run `verself auth login` to create a local session.", result.Organization.DisplayName, result.LoginURL)
+	}
+	return signupVerifyOutput{
+		Message:      message,
+		Organization: result.Organization,
+		LoginURL:     result.LoginURL,
+	}
+}
+
+func signupVerificationCredentials(actionURL, signupIntentID, verificationToken string) (string, string, error) {
+	intentID := strings.TrimSpace(signupIntentID)
+	token := strings.TrimSpace(verificationToken)
+	if strings.TrimSpace(actionURL) != "" {
+		urlIntentID, urlToken, err := signupVerificationCredentialsFromURL(actionURL)
+		if err != nil {
+			return "", "", err
+		}
+		if intentID != "" && intentID != urlIntentID {
+			return "", "", errors.New("--signup-intent-id does not match --url")
+		}
+		if token != "" && token != urlToken {
+			return "", "", errors.New("--verification-token does not match --url")
+		}
+		intentID = urlIntentID
+		token = urlToken
+	}
+	if intentID == "" || token == "" {
+		return "", "", errors.New("auth signup verify requires --url or both --signup-intent-id and --verification-token")
+	}
+	return intentID, token, nil
+}
+
+func signupVerificationCredentialsFromURL(raw string) (string, string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return err
+		return "", "", fmt.Errorf("parse signup verification URL: %w", err)
 	}
-	credentialJSON, err := json.Marshal(credential)
-	if err != nil {
-		return err
+	query := parsed.Query()
+	intentID := firstNonEmpty(
+		query.Get("signup_intent_id"),
+		query.Get("signupIntentId"),
+		query.Get("signup_intent"),
+	)
+	token := firstNonEmpty(
+		query.Get("verification_token"),
+		query.Get("verificationToken"),
+		query.Get("token"),
+	)
+	if intentID == "" || token == "" {
+		return "", "", errors.New("signup verification URL must include signup_intent_id and verification_token")
 	}
-	ref, err := store.SaveCredential(string(credentialJSON))
-	if err != nil {
-		return err
+	return intentID, token, nil
+}
+
+type signupPasswordOptions struct {
+	Env   string
+	File  string
+	Stdin bool
+}
+
+func (c CLI) signupVerificationPassword(opts signupPasswordOptions) (string, error) {
+	sources := 0
+	if strings.TrimSpace(opts.Env) != "" {
+		sources++
 	}
-	profile.TokenRef = ref
-	if err := store.SaveProfile(profile); err != nil {
-		return err
+	if strings.TrimSpace(opts.File) != "" {
+		sources++
 	}
-	cfg, err := store.LoadConfig()
-	if err != nil {
-		return err
+	if opts.Stdin {
+		sources++
 	}
-	cfg.ActiveProfile = profile.Name
-	if err := store.SaveConfig(cfg); err != nil {
-		return err
+	if sources != 1 {
+		return "", errors.New("auth signup verify requires exactly one of --password-env, --password-file, or --password-stdin")
 	}
-	if *jsonOut {
-		return writeJSON(c.out, profile)
+	var password string
+	switch {
+	case strings.TrimSpace(opts.Env) != "":
+		password = c.getenv(strings.TrimSpace(opts.Env))
+	case strings.TrimSpace(opts.File) != "":
+		secret, err := readOwnerOnlySecretFile(strings.TrimSpace(opts.File), "password file")
+		if err != nil {
+			return "", err
+		}
+		password = secret
+	case opts.Stdin:
+		data, err := io.ReadAll(c.in)
+		if err != nil {
+			return "", err
+		}
+		password = string(data)
 	}
-	return writef(c.out, "signed up for %s\n", org.DisplayName)
+	password = strings.TrimSpace(password)
+	if password == "" {
+		return "", errors.New("signup verification password is empty")
+	}
+	return password, nil
+}
+
+func trimOptionalString(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func defaultSignupOrganizationDisplayName(email string) string {
+	local, _, ok := strings.Cut(strings.TrimSpace(email), "@")
+	if !ok {
+		return ""
+	}
+	local = strings.TrimSpace(local)
+	if local == "" {
+		return ""
+	}
+	var b strings.Builder
+	lastWasSpace := true
+	for _, r := range local {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r):
+			if lastWasSpace {
+				b.WriteRune(unicode.ToUpper(r))
+			} else {
+				b.WriteRune(r)
+			}
+			lastWasSpace = false
+		default:
+			if !lastWasSpace {
+				b.WriteByte(' ')
+				lastWasSpace = true
+			}
+		}
+	}
+	return strings.TrimSpace(b.String())
 }

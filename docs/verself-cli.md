@@ -410,17 +410,20 @@ and refresh token bundle is stored behind `credential_ref`; profile files store
 only non-secret references and selected org metadata.
 
 ```text
-verself signup --email owner@example.com --org "Acme"
+verself auth signup --email owner@example.com --org "Acme"
+verself auth signup verify --url "$SIGNUP_URL" --password-env VERSELF_SIGNUP_PASSWORD
 verself auth login
 verself auth whoami
 verself auth logout
 ```
 
-`verself signup` starts an unauthenticated IAM signup intent. IAM sends a
+`verself auth signup` starts an unauthenticated IAM signup intent. IAM sends a
 verification email and creates no Zitadel user, organization, SpiceDB
-relationship, or product account until the verification token is submitted with
-an initial credential. After verification, the user signs in through the same
-OIDC login path as any existing user.
+relationship, or product account until `verself auth signup verify` submits the
+verification token with an initial credential. Signup commands emit JSON by
+default; the `message` field is the human-readable status line. After
+verification, the user signs in through the same OIDC login path as any existing
+user.
 
 Organization invites use the authenticated IAM member invite API and the public
 invite acceptance API:
@@ -452,7 +455,8 @@ environments, source resources, credentials, billing, logs, and sandbox
 workloads.
 
 ```text
-verself signup
+verself auth signup
+verself auth signup verify
 verself profiles list|add|use|inspect|refresh|remove
 verself auth login|whoami|logout
 verself credentials list|create|inspect|rotate|revoke

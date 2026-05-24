@@ -31,11 +31,22 @@ func TestCrossServiceFailureWorkflow(t *testing.T) {
 	if workflow.WorkflowKey != crossServiceFailureWorkflowKey {
 		t.Fatalf("workflow key = %q", workflow.WorkflowKey)
 	}
-	if workflow.IdempotencyKey != "platform:cross_service_call_failed:"+failure.TraceID+":"+failure.SpanID {
+	if !strings.HasPrefix(workflow.IdempotencyKey, "platform:cross_service_call_failed:") {
 		t.Fatalf("idempotency key = %q", workflow.IdempotencyKey)
 	}
 	if len(workflow.IdempotencyKey) > 128 {
 		t.Fatalf("idempotency key too long: %d", len(workflow.IdempotencyKey))
+	}
+	secondFailure := failure
+	secondFailure.TraceID = "425de96c5561ed22076f46c02997ccf7"
+	secondFailure.SpanID = "97a61a258bec6599"
+	if got := crossServiceFailureDedupeKey(secondFailure); got != workflow.IdempotencyKey {
+		t.Fatalf("same hourly failure dedupe key = %q, want %q", got, workflow.IdempotencyKey)
+	}
+	nextHourFailure := failure
+	nextHourFailure.Timestamp = nextHourFailure.Timestamp.Add(time.Hour)
+	if got := crossServiceFailureDedupeKey(nextHourFailure); got == workflow.IdempotencyKey {
+		t.Fatalf("next-hour failure reused dedupe key %q", got)
 	}
 	if workflow.Traceparent != "00-"+failure.TraceID+"-"+failure.SpanID+"-01" {
 		t.Fatalf("traceparent = %q", workflow.Traceparent)
