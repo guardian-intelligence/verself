@@ -69,3 +69,21 @@ func TestSnapshotStorePublishLookupStage(t *testing.T) {
 		t.Fatalf("staged memory = %q", memData)
 	}
 }
+
+func TestDefaultJailerArtifactsLiveOnZFSPool(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.JailerRoot != defaultJailerRoot {
+		t.Fatalf("default jailer root = %q, want %q", cfg.JailerRoot, defaultJailerRoot)
+	}
+	if cfg.SnapshotCacheDir != defaultSnapshotCacheDir {
+		t.Fatalf("default snapshot cache dir = %q, want %q", cfg.SnapshotCacheDir, defaultSnapshotCacheDir)
+	}
+
+	orchestrator := New(Config{Pool: "vspool"}, nil)
+	if orchestrator.cfg.JailerRoot != defaultJailerRoot {
+		t.Fatalf("normalized jailer root = %q, want %q", orchestrator.cfg.JailerRoot, defaultJailerRoot)
+	}
+	if orchestrator.cfg.SnapshotCacheDir != defaultSnapshotCacheDir {
+		t.Fatalf("normalized snapshot cache dir = %q, want %q", orchestrator.cfg.SnapshotCacheDir, defaultSnapshotCacheDir)
+	}
+}

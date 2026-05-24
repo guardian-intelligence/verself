@@ -5,7 +5,7 @@ firecracker_monorepo_root: "{{ playbook_dir }}/../../../.."
 firecracker_bazelisk: bazelisk
 firecracker_release_bazel_label: "@guest_image_firecracker_release//file"
 firecracker_release_remote_tmp: /tmp
-firecracker_jailer_root: /srv/jailer
+firecracker_jailer_root: /vspool/jailer
 firecracker_jailer_uid: 10000
 firecracker_jailer_gid: 10000
 firecracker_jailer_user: firecracker

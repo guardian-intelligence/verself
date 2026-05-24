@@ -26,13 +26,15 @@ import (
 var tracer = otel.Tracer("vm-orchestrator")
 
 const (
-	defaultTrustClass      = "trusted"
-	leaseBootTimeout       = 45 * time.Second
-	firecrackerStepTimeout = 5 * time.Second
-	snapshotCreateTimeout  = 2 * time.Minute
-	maxBufferedGuestLogs   = 10 * 1024 * 1024
-	maxFilesystemMounts    = 99
-	maxParallelMounts      = 8
+	defaultTrustClass       = "trusted"
+	defaultJailerRoot       = "/vspool/jailer"
+	defaultSnapshotCacheDir = "/vspool/checkpoints/firecracker-snapshot-cache"
+	leaseBootTimeout        = 45 * time.Second
+	firecrackerStepTimeout  = 5 * time.Second
+	snapshotCreateTimeout   = 2 * time.Minute
+	maxBufferedGuestLogs    = 10 * 1024 * 1024
+	maxFilesystemMounts     = 99
+	maxParallelMounts       = 8
 )
 
 // firecrackerStep is one PUT against the Firecracker API socket. The
@@ -85,8 +87,8 @@ func DefaultConfig() Config {
 		KernelPath:                  "/var/lib/verself/guest-images/vmlinux",
 		FirecrackerBin:              "/usr/local/bin/firecracker",
 		JailerBin:                   "/usr/local/bin/jailer",
-		JailerRoot:                  "/srv/jailer",
-		SnapshotCacheDir:            "/srv/jailer/firecracker-snapshot-cache",
+		JailerRoot:                  defaultJailerRoot,
+		SnapshotCacheDir:            defaultSnapshotCacheDir,
 		FirecrackerSnapshotsEnabled: true,
 		JailerUID:                   10000,
 		JailerGID:                   10000,
@@ -327,8 +329,11 @@ func New(cfg Config, logger *slog.Logger, opts ...Option) *Orchestrator {
 	if base.DefaultSubstrateRef == "" {
 		base.DefaultSubstrateRef = "substrate"
 	}
+	if base.JailerRoot == "" {
+		base.JailerRoot = defaultJailerRoot
+	}
 	if base.SnapshotCacheDir == "" {
-		base.SnapshotCacheDir = filepath.Join(base.JailerRoot, "firecracker-snapshot-cache")
+		base.SnapshotCacheDir = defaultSnapshotCacheDir
 	}
 	o := &Orchestrator{cfg: base, logger: logger, ops: DirectPrivOps{}}
 	o.roots = zfs.Roots{

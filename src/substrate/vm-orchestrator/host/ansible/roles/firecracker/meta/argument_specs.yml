@@ -10,7 +10,7 @@ argument_specs:
     options:
       firecracker_jailer_root:
         type: path
-        default: /srv/jailer
+        default: /vspool/jailer
         description: "Root directory for Firecracker jailer chroots."
 
       firecracker_jailer_uid:

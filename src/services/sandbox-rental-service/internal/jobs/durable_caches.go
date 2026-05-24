@@ -945,7 +945,10 @@ func (s *Service) finalizeDurableCaches(ctx context.Context, item executionWorkI
 	)
 	checkpoint, checkpointErr := s.checkpointGoldenVMForDurable(ctx, item, leaseID, plan, sealDecision)
 	if checkpointErr != nil {
-		errs = append(errs, checkpointErr)
+		span.RecordError(checkpointErr)
+		if s.Logger != nil {
+			s.Logger.WarnContext(ctx, "golden VM checkpoint failed; committing durable caches without snapshot", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "operation_id", plan.GoldenVM.OperationID, "error", checkpointErr)
+		}
 	}
 	if commitSkipReason != "" {
 		now := time.Now().UTC()

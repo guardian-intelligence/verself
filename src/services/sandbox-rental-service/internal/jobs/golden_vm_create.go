@@ -158,6 +158,12 @@ func (s *Service) CreateGoldenVM(ctx context.Context, operationID uuid.UUID, riv
 			if ctx.Err() != nil {
 				return err
 			}
+			if fallbackErr := s.finalizeDurableCachesWithoutGoldenVM(ctx, item, op.LeaseID, plan); fallbackErr != nil {
+				span.RecordError(fallbackErr)
+				if s.Logger != nil {
+					s.Logger.WarnContext(ctx, "durable cache fallback after golden VM checkpoint failure failed", "execution_id", item.ExecutionID, "attempt_id", item.AttemptID, "operation_id", op.OperationID, "error", fallbackErr)
+				}
+			}
 			terminal = true
 			s.failGoldenVMCreate(ctx, item, plan, op, "checkpoint_failed", err)
 			return nil
@@ -212,6 +218,12 @@ func (s *Service) CreateGoldenVM(ctx context.Context, operationID uuid.UUID, riv
 	}
 	terminal = true
 	return nil
+}
+
+func (s *Service) finalizeDurableCachesWithoutGoldenVM(ctx context.Context, item executionWorkItem, leaseID string, plan durableCachePlan) error {
+	commitPlan := plan
+	commitPlan.GoldenVM = goldenVMPlan{}
+	return s.finalizeDurableCaches(ctx, item, leaseID, commitPlan, durableSealDecision{Commit: true})
 }
 
 func (s *Service) createGoldenVMCheckpoint(ctx context.Context, item executionWorkItem, plan durableCachePlan, op store.GoldenVmOperation, riverJobID int64) (*vmorchestrator.GoldenVMCheckpointRecord, error) {
