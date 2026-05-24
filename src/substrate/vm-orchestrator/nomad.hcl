@@ -61,7 +61,7 @@ job "vm-orchestrator" {
       driver = "raw_exec"
       user = "root"
       kill_signal = "SIGTERM"
-      kill_timeout = "10s"
+      kill_timeout = "75m"
 
       artifact {
         source = "verself-artifact://vm-orchestrator"
@@ -185,7 +185,7 @@ EOT
       health_check = "task_states"
       min_healthy_time = "5s"
       healthy_deadline = "900s"
-      progress_deadline = "1800s"
+      progress_deadline = "75m"
       auto_revert = true
     }
   }

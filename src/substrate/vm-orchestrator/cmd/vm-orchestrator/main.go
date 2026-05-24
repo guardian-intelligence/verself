@@ -22,7 +22,11 @@ import (
 	"google.golang.org/grpc"
 )
 
-const maxMessageSize = 32 << 20
+const (
+	maxMessageSize              = 32 << 20
+	defaultShutdownDrainTimeout = 70 * time.Minute
+	shutdownDrainPollInterval   = 5 * time.Second
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -35,12 +39,14 @@ func run() error {
 	cfg := vmorchestrator.DefaultConfig()
 
 	var (
-		listenUnix  string
-		socketGroup string
+		listenUnix           string
+		socketGroup          string
+		shutdownDrainTimeout time.Duration
 	)
 
 	flag.StringVar(&listenUnix, "listen-unix", vmorchestrator.DefaultSocketPath, "Unix socket path for the vm-orchestrator API")
 	flag.StringVar(&socketGroup, "socket-group", "vm-clients", "Group that should own the Unix API socket")
+	flag.DurationVar(&shutdownDrainTimeout, "shutdown-drain-timeout", defaultShutdownDrainTimeout, "Maximum time to keep serving existing leases after SIGTERM before shutdown")
 	flag.StringVar(&cfg.Pool, "pool", cfg.Pool, "ZFS pool used for VM datasets")
 	flag.StringVar(&cfg.ImageDataset, "image-dataset", cfg.ImageDataset, "ZFS dataset under the pool containing composable image zvol snapshots")
 	flag.StringVar(&cfg.GoldenDataset, "golden-dataset", cfg.GoldenDataset, "ZFS dataset under the pool containing immutable durable zvol generations")
@@ -129,8 +135,17 @@ func run() error {
 	select {
 	case <-ctx.Done():
 		shutdownCtx, shutdownSpan := otel.Tracer("vm-orchestrator").Start(context.Background(), "daemon.shutdown")
-		slog.InfoContext(shutdownCtx, "vm-orchestrator stopping")
+		activeLeases, drainErr := vmService.StartDrain(shutdownCtx)
+		if drainErr != nil {
+			shutdownSpan.RecordError(drainErr)
+			slog.WarnContext(shutdownCtx, "vm-orchestrator drain state unavailable", "error", drainErr)
+		}
+		slog.InfoContext(shutdownCtx, "vm-orchestrator draining", "active_leases", activeLeases, "timeout", shutdownDrainTimeout.String())
 		shutdownSpan.End()
+
+		if err := waitForLeaseDrain(context.Background(), vmService, shutdownDrainTimeout, shutdownDrainPollInterval); err != nil {
+			slog.WarnContext(context.Background(), "vm-orchestrator drain timeout", "error", err)
+		}
 
 		drainDone := make(chan struct{})
 		go func() {
@@ -146,6 +161,35 @@ func run() error {
 		return nil
 	case err := <-errCh:
 		return err
+	}
+}
+
+func waitForLeaseDrain(ctx context.Context, server *vmorchestrator.APIServer, timeout, interval time.Duration) error {
+	if timeout <= 0 {
+		timeout = defaultShutdownDrainTimeout
+	}
+	if interval <= 0 {
+		interval = shutdownDrainPollInterval
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		active, err := server.ActiveLeaseCount(waitCtx)
+		if err != nil {
+			return err
+		}
+		if active == 0 {
+			slog.InfoContext(waitCtx, "vm-orchestrator lease drain complete")
+			return nil
+		}
+		slog.InfoContext(waitCtx, "vm-orchestrator waiting for active leases", "active_leases", active)
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("active leases did not drain before shutdown deadline: %w", waitCtx.Err())
+		case <-ticker.C:
+		}
 	}
 }
 

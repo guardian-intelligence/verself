@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -23,11 +24,12 @@ import (
 type APIServer struct {
 	vmrpc.UnimplementedVMServiceServer
 
-	cfg     Config
-	roots   zfs.Roots
-	logger  *slog.Logger
-	state   *hostStateStore
-	runtime *OrgRuntimeManager
+	cfg      Config
+	roots    zfs.Roots
+	logger   *slog.Logger
+	state    *hostStateStore
+	runtime  *OrgRuntimeManager
+	draining atomic.Bool
 
 	mu     sync.RWMutex
 	actors map[string]*vmActor
@@ -250,6 +252,21 @@ func (s *APIServer) Close() error {
 	return nil
 }
 
+func (s *APIServer) StartDrain(ctx context.Context) (int, error) {
+	if s == nil {
+		return 0, nil
+	}
+	s.draining.Store(true)
+	return s.ActiveLeaseCount(ctx)
+}
+
+func (s *APIServer) ActiveLeaseCount(ctx context.Context) (int, error) {
+	if s == nil || s.state == nil {
+		return 0, nil
+	}
+	return s.state.countActiveLeases(ctx)
+}
+
 func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseRequest) (*vmrpc.AcquireLeaseResponse, error) {
 	ctx, span := tracer.Start(ctx, "rpc.AcquireLease")
 	defer span.End()
@@ -265,6 +282,9 @@ func (s *APIServer) AcquireLease(ctx context.Context, req *vmrpc.AcquireLeaseReq
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		return resp, nil
+	}
+	if s.draining.Load() {
+		return nil, status.Error(codes.Unavailable, "vm-orchestrator is draining")
 	}
 
 	spec, specErr := leaseSpecFromProto(req.GetSpec(), s.cfg)

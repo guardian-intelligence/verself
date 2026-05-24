@@ -116,6 +116,49 @@ func TestLeaseReadyPersistsFilesystemMountResults(t *testing.T) {
 	}
 }
 
+func TestAPIServerDrainCountsActiveLeases(t *testing.T) {
+	ctx := context.Background()
+	store, err := openHostStateStore(":memory:", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.close() }()
+
+	acquiredAt := time.Now().UTC()
+	if err := store.createLease(ctx, leaseSnapshot{
+		LeaseID:    "lease-drain",
+		State:      LeaseStateReady,
+		Spec:       LeaseSpec{Resources: VMResources{VCPUs: 2, MemoryMiB: 2048, RootDiskGiB: 8}},
+		TrustClass: "trusted",
+		AcquiredAt: acquiredAt,
+		ReadyAt:    acquiredAt,
+		ExpiresAt:  acquiredAt.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server := &APIServer{state: store}
+	active, err := server.StartDrain(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !server.draining.Load() {
+		t.Fatal("server did not enter drain mode")
+	}
+	if active != 1 {
+		t.Fatalf("active leases = %d, want 1", active)
+	}
+	if err := store.finishLease(ctx, "lease-drain", LeaseStateReleased, "test_release", LeaseEventLeaseReleased); err != nil {
+		t.Fatal(err)
+	}
+	active, err = server.ActiveLeaseCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != 0 {
+		t.Fatalf("active leases after release = %d, want 0", active)
+	}
+}
+
 func TestOrgRuntimeStateRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store, err := openHostStateStore(":memory:", nil)
