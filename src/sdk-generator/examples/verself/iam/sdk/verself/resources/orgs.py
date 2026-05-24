@@ -163,8 +163,8 @@ class OrgsResource(SyncAPIResource):
             raise ValueError(
                 f"Expected a non-empty value for `org_id` but received {org_id!r}"
             )
-        return self._post(
-            f"/api/v1/orgs/{org_id}/iamPolicy:get",
+        return self._get(
+            f"/api/v1/orgs/{org_id}/iamPolicy",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,
@@ -376,8 +376,8 @@ class AsyncOrgsResource(AsyncAPIResource):
             raise ValueError(
                 f"Expected a non-empty value for `org_id` but received {org_id!r}"
             )
-        return await self._post(
-            f"/api/v1/orgs/{org_id}/iamPolicy:get",
+        return await self._get(
+            f"/api/v1/orgs/{org_id}/iamPolicy",
             options=make_request_options(
                 extra_headers=extra_headers,
                 extra_query=extra_query,

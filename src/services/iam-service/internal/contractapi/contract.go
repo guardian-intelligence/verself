@@ -644,8 +644,8 @@ var GetIamPolicy = Operation[GetIamPolicyInput, GetIamPolicyOutput]{
 	Descriptor: OperationDescriptor{
 		ShapeID:             "verself.iam.v1#GetIamPolicy",
 		OperationID:         "get-iam-policy",
-		Method:              "POST",
-		Path:                "/api/v1/orgs/{orgId}/iamPolicy:get",
+		Method:              "GET",
+		Path:                "/api/v1/orgs/{orgId}/iamPolicy",
 		DefaultStatus:       200,
 		Readonly:            true,
 		Paginated:           false,

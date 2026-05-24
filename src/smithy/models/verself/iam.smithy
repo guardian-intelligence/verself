@@ -43,6 +43,7 @@ use verself.common.v1#audit
 use verself.common.v1#auditEvent
 use verself.common.v1#authz
 use verself.common.v1#identity
+use verself.common.v1#operationSemantics
 use verself.common.v1#permission
 use verself.common.v1#protoField
 use verself.common.v1#rateLimit
@@ -1620,7 +1621,7 @@ list IAMMembers {
 }
 
 @readonly
-@http(method: "POST", uri: "/api/v1/orgs/{orgId}/iamPolicy:get")
+@http(method: "GET", uri: "/api/v1/orgs/{orgId}/iamPolicy")
 @identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: IAMPolicyGetPermission, organization: {source: "input_member", member: "orgId"})
 @audit(event: IAMPolicyGetAuditEvent, resource: Organization, action: "read")
@@ -1709,8 +1710,8 @@ structure SetIamPolicyOutput {
     policy: IAMPolicy
 }
 
-@readonly
 @http(method: "POST", uri: "/api/v1/orgs/{orgId}/iamPolicy:testPermissions")
+@operationSemantics(effect: "read")
 @identity(mode: "bearer", audience: "verself-api", principals: ["browser", "cli", "workload"])
 @authz(permission: IAMPolicyTestPermission, organization: {source: "input_member", member: "orgId"})
 @audit(event: IAMPolicyTestAuditEvent, resource: Organization, action: "test")

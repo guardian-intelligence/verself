@@ -402,9 +402,9 @@ func (c *Client) GetIamPolicy(ctx context.Context, request GetIamPolicyRequest, 
 }
 
 func (c *Client) newGetIamPolicyRequest(ctx context.Context, request GetIamPolicyRequest) (*http.Request, error) {
-	path := "/api/v1/orgs/{orgId}/iamPolicy:get"
+	path := "/api/v1/orgs/{orgId}/iamPolicy"
 	path = strings.ReplaceAll(path, "{orgId}", url.PathEscape(fmt.Sprint(request.OrgID)))
-	return c.newRequest(ctx, http.MethodPost, path, nil)
+	return c.newRequest(ctx, http.MethodGet, path, nil)
 }
 
 func (c *Client) GetMember(ctx context.Context, request GetMemberRequest, reqEditors ...RequestEditorFn) (*GetMemberResponse, error) {

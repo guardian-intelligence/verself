@@ -39,7 +39,7 @@ resources:
       update:
         endpoint: patch /api/v1/orgs/{orgId}
       get_iam_policy:
-        endpoint: post /api/v1/orgs/{orgId}/iamPolicy:get
+        endpoint: get /api/v1/orgs/{orgId}/iamPolicy
       set_iam_policy:
         endpoint: post /api/v1/orgs/{orgId}/iamPolicy:set
       test_permissions:

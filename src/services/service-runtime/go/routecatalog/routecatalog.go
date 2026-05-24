@@ -34,7 +34,7 @@ type Operation struct {
 	DefaultStatus int           `json:"default_status"`
 	InputShape    string        `json:"input_shape"`
 	OutputShape   string        `json:"output_shape"`
-	Readonly      bool          `json:"readonly"`
+	Effect        string        `json:"effect"`
 	Paginated     bool          `json:"paginated"`
 	Identity      Identity      `json:"identity"`
 	Authorization Authorization `json:"authorization"`
@@ -170,6 +170,9 @@ func (o Operation) Validate() error {
 	}
 	if o.DefaultStatus < 100 || o.DefaultStatus > 599 {
 		return fmt.Errorf("%s: default_status must be an HTTP status code", operationID)
+	}
+	if o.Effect != "read" && o.Effect != "write" {
+		return fmt.Errorf("%s: effect must be read or write", operationID)
 	}
 	if strings.TrimSpace(o.Identity.Mode) == "" {
 		return fmt.Errorf("%s: identity.mode is required", operationID)

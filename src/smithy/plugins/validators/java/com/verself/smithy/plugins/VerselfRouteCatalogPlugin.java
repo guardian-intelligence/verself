@@ -32,6 +32,8 @@ public final class VerselfRouteCatalogPlugin implements SmithyBuildPlugin {
   private static final ShapeId AUDIT_EVENT = ShapeId.from("verself.common.v1#auditEvent");
   private static final ShapeId AUTHZ = ShapeId.from("verself.common.v1#authz");
   private static final ShapeId IDENTITY = ShapeId.from("verself.common.v1#identity");
+  private static final ShapeId OPERATION_SEMANTICS =
+      ShapeId.from("verself.common.v1#operationSemantics");
   private static final ShapeId PERMISSION = ShapeId.from("verself.common.v1#permission");
   private static final ShapeId PROBLEM = ShapeId.from("verself.common.v1#problem");
   private static final ShapeId RATE_LIMIT = ShapeId.from("verself.common.v1#rateLimit");
@@ -117,7 +119,7 @@ public final class VerselfRouteCatalogPlugin implements SmithyBuildPlugin {
     result.put("default_status", longMember(http, "code").orElse(200L));
     result.put("input_shape", operation.getInput().map(ShapeId::toString).orElse(""));
     result.put("output_shape", operation.getOutput().map(ShapeId::toString).orElse(""));
-    result.put("readonly", operation.hasTrait(READONLY));
+    result.put("effect", operationEffect(operation));
     result.put("paginated", operation.hasTrait(PAGINATED));
     result.put("identity", identityCatalog(identity));
     result.put("authorization", authorizationCatalog(model, authz));
@@ -238,6 +240,15 @@ public final class VerselfRouteCatalogPlugin implements SmithyBuildPlugin {
   private static boolean isVerselfService(ServiceShape service) {
     String namespace = service.getId().getNamespace();
     return namespace.startsWith(VERSELF_NAMESPACE_PREFIX) && !namespace.equals(COMMON_NAMESPACE);
+  }
+
+  private static String operationEffect(OperationShape operation) {
+    if (operation.hasTrait(READONLY)) {
+      return "read";
+    }
+    return objectTrait(operation, OPERATION_SEMANTICS)
+        .flatMap(node -> stringMember(node, "effect"))
+        .orElse("write");
   }
 
   private static Optional<ObjectNode> objectTrait(Shape shape, ShapeId traitId) {
