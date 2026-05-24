@@ -6,6 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -37,6 +40,51 @@ func TestVerifyGitHubSignature(t *testing.T) {
 	}
 	if err := verifyGitHubSignature(secret, payload, hex.EncodeToString(mac.Sum(nil))); err == nil {
 		t.Fatal("verifyGitHubSignature accepted signature without sha256 prefix")
+	}
+}
+
+func TestWebhookHandlerReportsMultipleHeaderProblems(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/github/webhooks", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+
+	(&Service{}).WebhookHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	var doc webhookProblemDocument
+	if err := json.NewDecoder(rec.Body).Decode(&doc); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if doc.Code != "provider_webhook.header_invalid" {
+		t.Fatalf("code = %q, want provider_webhook.header_invalid", doc.Code)
+	}
+	if len(doc.Errors) != 3 {
+		t.Fatalf("len(errors) = %d, want 3: %+v", len(doc.Errors), doc.Errors)
+	}
+}
+
+func TestWebhookHandlerReportsSignatureProblem(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/github/webhooks", strings.NewReader(`{"zen":"practicality"}`))
+	req.Header.Set("X-GitHub-Event", "ping")
+	req.Header.Set("X-GitHub-Delivery", "delivery-1")
+	req.Header.Set("X-Hub-Signature-256", "sha256=00")
+	rec := httptest.NewRecorder()
+
+	(&Service{cfg: Config{WebhookSecret: "webhook-secret"}}).WebhookHandler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	var doc webhookProblemDocument
+	if err := json.NewDecoder(rec.Body).Decode(&doc); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if doc.Code != "provider_webhook.signature_invalid" {
+		t.Fatalf("code = %q, want provider_webhook.signature_invalid", doc.Code)
+	}
+	if len(doc.Errors) != 1 || doc.Errors[0].Pointer != "header:X-Hub-Signature-256" {
+		t.Fatalf("unexpected errors: %+v", doc.Errors)
 	}
 }
 

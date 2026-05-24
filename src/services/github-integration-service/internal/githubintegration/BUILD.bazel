@@ -11,6 +11,7 @@ go_library(
         "payloads.go",
         "sandbox.go",
         "service.go",
+        "webhook_problem.go",
     ],
     importpath = "github.com/verself/github-integration-service/internal/githubintegration",
     visibility = ["//src/services/github-integration-service:__subpackages__"],

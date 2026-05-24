@@ -199,34 +199,50 @@ func (s *Service) WebhookHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeWebhookProblem(w, newWebhookProblemSet(webhookProblem{
+				Type:      "urn:verself:problem:provider_webhook:invalid_request",
+				Code:      "provider_webhook.method_not_allowed",
+				Title:     "Method not allowed",
+				Detail:    "GitHub webhooks must use POST.",
+				Status:    http.StatusMethodNotAllowed,
+				Phase:     "method_validation",
+				Retryable: false,
+			}))
 			return
 		}
 		ctx, span := tracer.Start(r.Context(), "github.webhook.receive")
 		defer span.End()
 
 		started := time.Now().UTC()
-		eventName, ok := singleHeader(r.Header, "X-GitHub-Event")
-		if !ok {
-			http.Error(w, "missing github event", http.StatusBadRequest)
-			return
-		}
-		deliveryID, ok := singleHeader(r.Header, "X-GitHub-Delivery")
-		if !ok {
-			http.Error(w, "missing github delivery id", http.StatusBadRequest)
-			return
-		}
-		signature, ok := singleHeader(r.Header, "X-Hub-Signature-256")
-		if !ok {
-			http.Error(w, "missing github signature", http.StatusBadRequest)
-			return
-		}
+		var requestProblems webhookProblemSet
+		eventName := requiredWebhookHeader(r.Header, "X-GitHub-Event", &requestProblems)
+		deliveryID := requiredWebhookHeader(r.Header, "X-GitHub-Delivery", &requestProblems)
+		signature := requiredWebhookHeader(r.Header, "X-Hub-Signature-256", &requestProblems)
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBytes))
+		payloadSHA := sha256Hex(body)
 		if err != nil {
-			http.Error(w, "invalid webhook body", http.StatusBadRequest)
+			requestProblems.add(providerWebhookBodyProblem("GitHub webhook body could not be read within the configured request budget."))
+		}
+		if !requestProblems.empty() {
+			if strings.TrimSpace(deliveryID) != "" {
+				s.recordRejectedDelivery(ctx, deliveryID, firstNonEmpty(eventName, "unknown"), "", payloadSHA, requestProblems, started)
+			}
+			s.writeEvent(ctx, githubEvent{
+				ObservedAt:  time.Now().UTC(),
+				EventName:   "github.webhook.rejected",
+				Result:      "failed",
+				Reason:      requestProblems.reason(),
+				DeliveryID:  deliveryID,
+				Action:      eventName,
+				StartedAt:   started,
+				CompletedAt: time.Now().UTC(),
+				AttributesJSON: mustJSON(map[string]string{
+					"payload_sha256": payloadSHA,
+				}),
+			})
+			writeWebhookProblem(w, requestProblems)
 			return
 		}
-		payloadSHA := sha256Hex(body)
 		receivedAt := time.Now().UTC()
 		s.writeEvent(ctx, githubEvent{
 			ObservedAt:  receivedAt,
@@ -246,22 +262,32 @@ func (s *Service) WebhookHandler() http.Handler {
 			attribute.String("github.webhook.payload_sha256", payloadSHA),
 		)
 		if err := verifyGitHubSignature(s.cfg.WebhookSecret, body, signature); err != nil {
-			s.recordRejectedDelivery(ctx, deliveryID, eventName, "", payloadSHA, "signature_invalid", started)
+			problems := newWebhookProblemSet(providerWebhookSignatureProblem())
+			s.recordRejectedDelivery(ctx, deliveryID, eventName, "", payloadSHA, problems, started)
 			s.writeEvent(ctx, githubEvent{
 				ObservedAt: started,
 				EventName:  "github.webhook.rejected",
 				Result:     "failed",
-				Reason:     "signature_invalid",
+				Reason:     problems.reason(),
 				DeliveryID: deliveryID,
 			})
-			http.Error(w, "invalid signature", http.StatusUnauthorized)
+			writeWebhookProblem(w, problems)
 			return
 		}
 
 		meta, err := parseWebhookMetadata(body)
 		if err != nil {
-			s.recordRejectedDelivery(ctx, deliveryID, eventName, "", payloadSHA, "payload_invalid", started)
-			http.Error(w, "invalid webhook payload", http.StatusBadRequest)
+			problems := newWebhookProblemSet(providerWebhookPayloadProblem("GitHub webhook payload could not be parsed."))
+			s.recordRejectedDelivery(ctx, deliveryID, eventName, "", payloadSHA, problems, started)
+			s.writeEvent(ctx, githubEvent{
+				ObservedAt: started,
+				EventName:  "github.webhook.rejected",
+				Result:     "failed",
+				Reason:     problems.reason(),
+				DeliveryID: deliveryID,
+				Action:     eventName,
+			})
+			writeWebhookProblem(w, problems)
 			return
 		}
 		meta.EventName = eventName
@@ -283,26 +309,31 @@ func (s *Service) WebhookHandler() http.Handler {
 			VerifiedAt:             pgTime(time.Now().UTC()),
 		})
 		if err != nil {
-			status := http.StatusInternalServerError
+			problems := newWebhookProblemSet(providerWebhookInboxProblem())
 			if errors.Is(err, pgx.ErrNoRows) {
-				status = http.StatusConflict
-				err = ErrDeliveryReplay
+				problems = newWebhookProblemSet(providerWebhookReplayProblem())
 			}
-			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.webhook.received", "failed", err.Error(), started, time.Now().UTC()))
-			http.Error(w, "delivery rejected", status)
+			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.webhook.received", "failed", problems.reason(), started, time.Now().UTC()))
+			writeWebhookProblem(w, problems)
 			return
 		}
 		result := "accepted"
-		if row.State == "processed" || row.State == "ignored" {
+		if row.State != "accepted" && row.State != "retryable" {
 			result = "duplicate"
 		}
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.webhook.verified", result, "", started, time.Now().UTC()))
-		if row.State == "verified" || row.State == "retryable" {
+		if row.State == "accepted" || row.State == "retryable" {
 			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.enqueued", "succeeded", "", started, time.Now().UTC()))
 		}
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte("accepted\n"))
+		_ = json.NewEncoder(w).Encode(map[string]map[string]string{
+			"accepted": {
+				"status":      result,
+				"delivery_id": deliveryID,
+			},
+		})
 	})
 }
 
@@ -472,38 +503,97 @@ func (s *Service) processLockedDelivery(ctx context.Context, row store.LockReady
 		return nil
 	}
 	if errors.Is(err, ErrUnsupportedWebhook) || errors.Is(err, ErrRepositoryNotEnabled) {
-		if markErr := s.queries.MarkDeliveryIgnored(ctx, store.MarkDeliveryIgnoredParams{
-			DeliveryID:    row.DeliveryID,
-			FailureReason: err.Error(),
-			ProcessedAt:   pgTime(time.Now().UTC()),
+		problems := problemSetForDeliveryError(err, false)
+		if markErr := s.updateDeliveryWithProblems(ctx, row.DeliveryID, problems, func(q *store.Queries) error {
+			return q.MarkDeliveryIgnored(ctx, store.MarkDeliveryIgnoredParams{
+				DeliveryID:  row.DeliveryID,
+				ProcessedAt: pgTime(time.Now().UTC()),
+			})
 		}); markErr != nil {
 			return markErr
 		}
-		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.ignored", "ignored", err.Error(), started, time.Now().UTC()))
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.ignored", "ignored", problems.reason(), started, time.Now().UTC()))
 		return nil
 	}
-	if row.AttemptCount >= s.cfg.MaxDeliveryTries {
-		if markErr := s.queries.MarkDeliveryFailed(ctx, store.MarkDeliveryFailedParams{
-			DeliveryID:    row.DeliveryID,
-			FailureReason: truncate(err.Error(), 1024),
-			FailedAt:      pgTime(time.Now().UTC()),
+	terminalFailure := terminalDeliveryError(err)
+	if terminalFailure || row.AttemptCount >= s.cfg.MaxDeliveryTries {
+		problems := problemSetForDeliveryError(err, false)
+		if !terminalFailure {
+			problems.add(providerWebhookAttemptsExhaustedProblem())
+		}
+		if markErr := s.updateDeliveryWithProblems(ctx, row.DeliveryID, problems, func(q *store.Queries) error {
+			return q.MarkDeliveryFailed(ctx, store.MarkDeliveryFailedParams{
+				DeliveryID: row.DeliveryID,
+				FailedAt:   pgTime(time.Now().UTC()),
+			})
 		}); markErr != nil {
 			return markErr
 		}
-		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.failed", "failed", err.Error(), started, time.Now().UTC()))
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.failed", "failed", problems.reason(), started, time.Now().UTC()))
 		return err
 	}
 	delay := retryDelay(row.AttemptCount)
-	if markErr := s.queries.MarkDeliveryRetryable(ctx, store.MarkDeliveryRetryableParams{
-		DeliveryID:    row.DeliveryID,
-		FailureReason: truncate(err.Error(), 1024),
-		NextAttemptAt: pgTime(time.Now().UTC().Add(delay)),
-		UpdatedAt:     pgTime(time.Now().UTC()),
+	problems := problemSetForDeliveryError(err, true)
+	if markErr := s.updateDeliveryWithProblems(ctx, row.DeliveryID, problems, func(q *store.Queries) error {
+		return q.MarkDeliveryRetryable(ctx, store.MarkDeliveryRetryableParams{
+			DeliveryID:    row.DeliveryID,
+			NextAttemptAt: pgTime(time.Now().UTC().Add(delay)),
+			UpdatedAt:     pgTime(time.Now().UTC()),
+		})
 	}); markErr != nil {
 		return markErr
 	}
-	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.retryable", "retryable", err.Error(), started, time.Now().UTC()))
+	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.retryable", "retryable", problems.reason(), started, time.Now().UTC()))
 	return err
+}
+
+func terminalDeliveryError(err error) bool {
+	return errors.Is(err, ErrWebhookRejected)
+}
+
+func (s *Service) updateDeliveryWithProblems(ctx context.Context, deliveryID string, problems webhookProblemSet, update func(*store.Queries) error) error {
+	if s == nil || s.cfg.PG == nil {
+		return ErrConfiguration
+	}
+	if problems.empty() {
+		problems.add(providerWebhookProcessingProblem("Webhook delivery processing failed.", false))
+	}
+	tx, err := s.cfg.PG.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	q := s.queries.WithTx(tx)
+	if err := appendWebhookDeliveryProblems(ctx, q, deliveryID, problems); err != nil {
+		return err
+	}
+	if err := update(q); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func appendWebhookDeliveryProblems(ctx context.Context, q *store.Queries, deliveryID string, problems webhookProblemSet) error {
+	for _, problem := range problems.problems {
+		if problem.ObservedAt.IsZero() {
+			problem.ObservedAt = time.Now().UTC()
+		}
+		if err := q.AppendWebhookDeliveryProblem(ctx, store.AppendWebhookDeliveryProblemParams{
+			DeliveryID:  deliveryID,
+			Phase:       problem.Phase,
+			ProblemType: problem.Type,
+			ProblemCode: problem.Code,
+			Title:       problem.Title,
+			Detail:      problem.Detail,
+			Status:      problem.Status,
+			Retryable:   problem.Retryable,
+			Pointer:     problem.Pointer,
+			ObservedAt:  pgTime(problem.ObservedAt),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) handleDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
@@ -1505,19 +1595,42 @@ func (s *Service) cleanupRunnerForJob(ctx context.Context, installationID int64,
 	})
 }
 
-func (s *Service) recordRejectedDelivery(ctx context.Context, deliveryID, eventName, action, payloadSHA, reason string, at time.Time) {
-	if s == nil || s.queries == nil || strings.TrimSpace(deliveryID) == "" {
-		return
+func (s *Service) recordRejectedDelivery(ctx context.Context, deliveryID, eventName, action, payloadSHA string, problems webhookProblemSet, at time.Time) {
+	if err := s.persistRejectedDelivery(ctx, deliveryID, eventName, action, payloadSHA, problems, at); err != nil && s != nil && s.cfg.Logger != nil {
+		s.cfg.Logger.WarnContext(ctx, "github rejected delivery record failed", "delivery_id", deliveryID, "error", err)
 	}
-	_ = s.queries.MarkDeliveryRejected(ctx, store.MarkDeliveryRejectedParams{
+}
+
+func (s *Service) persistRejectedDelivery(ctx context.Context, deliveryID, eventName, action, payloadSHA string, problems webhookProblemSet, at time.Time) error {
+	if s == nil || s.queries == nil || strings.TrimSpace(deliveryID) == "" {
+		return nil
+	}
+	if problems.empty() {
+		problems.add(providerWebhookProcessingProblem("Webhook delivery was rejected.", false))
+	}
+	if s.cfg.PG == nil {
+		return ErrConfiguration
+	}
+	tx, err := s.cfg.PG.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	q := s.queries.WithTx(tx)
+	if _, err := q.MarkDeliveryRejected(ctx, store.MarkDeliveryRejectedParams{
 		DeliveryID:    deliveryID,
 		EventName:     firstNonEmpty(eventName, "unknown"),
 		Action:        action,
-		FailureReason: reason,
 		PayloadSha256: firstNonEmpty(payloadSHA, sha256Hex(nil)),
 		PayloadJson:   []byte(`{}`),
 		ReceivedAt:    pgTime(at),
-	})
+	}); err != nil {
+		return err
+	}
+	if err := appendWebhookDeliveryProblems(ctx, q, deliveryID, problems); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Service) runnerClassForLabels(labels []string) (string, error) {
@@ -1551,6 +1664,14 @@ func singleHeader(header http.Header, name string) (string, bool) {
 	}
 	value := strings.TrimSpace(values[0])
 	return value, value != ""
+}
+
+func requiredWebhookHeader(header http.Header, name string, problems *webhookProblemSet) string {
+	value, ok := singleHeader(header, name)
+	if !ok && problems != nil {
+		problems.add(providerWebhookHeaderProblem(name))
+	}
+	return value
 }
 
 func verifyGitHubSignature(secret string, payload []byte, signature string) error {

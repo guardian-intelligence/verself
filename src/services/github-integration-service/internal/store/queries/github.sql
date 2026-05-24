@@ -20,7 +20,7 @@ INSERT INTO github_webhook_deliveries (
     @delivery_id,
     @event_name,
     @action,
-    'verified',
+    'accepted',
     @payload_sha256,
     @payload_json,
     @provider_installation_id,
@@ -47,9 +47,29 @@ ON CONFLICT (delivery_id) DO UPDATE SET
         WHEN github_webhook_deliveries.state = 'rejected' THEN EXCLUDED.action
         ELSE github_webhook_deliveries.action
     END,
-    failure_reason = CASE
+    primary_problem_type = CASE
         WHEN github_webhook_deliveries.state = 'rejected' THEN ''
-        ELSE github_webhook_deliveries.failure_reason
+        ELSE github_webhook_deliveries.primary_problem_type
+    END,
+    primary_problem_code = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN ''
+        ELSE github_webhook_deliveries.primary_problem_code
+    END,
+    primary_problem_status = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN 0
+        ELSE github_webhook_deliveries.primary_problem_status
+    END,
+    primary_problem_title = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN ''
+        ELSE github_webhook_deliveries.primary_problem_title
+    END,
+    primary_problem_detail = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN ''
+        ELSE github_webhook_deliveries.primary_problem_detail
+    END,
+    problem_count = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN 0
+        ELSE github_webhook_deliveries.problem_count
     END,
     payload_json = CASE
         WHEN github_webhook_deliveries.state = 'rejected' THEN EXCLUDED.payload_json
@@ -91,13 +111,12 @@ ON CONFLICT (delivery_id) DO UPDATE SET
 WHERE github_webhook_deliveries.payload_sha256 = EXCLUDED.payload_sha256
 RETURNING delivery_id, state, attempt_count, payload_sha256;
 
--- name: MarkDeliveryRejected :exec
+-- name: MarkDeliveryRejected :one
 INSERT INTO github_webhook_deliveries (
     delivery_id,
     event_name,
     action,
     state,
-    failure_reason,
     payload_sha256,
     payload_json,
     received_at,
@@ -108,7 +127,6 @@ INSERT INTO github_webhook_deliveries (
     @event_name,
     @action,
     'rejected',
-    @failure_reason,
     @payload_sha256,
     @payload_json,
     @received_at,
@@ -117,10 +135,56 @@ INSERT INTO github_webhook_deliveries (
 )
 ON CONFLICT (delivery_id) DO UPDATE SET
     state = 'rejected',
-    failure_reason = EXCLUDED.failure_reason,
     updated_at = EXCLUDED.updated_at
 WHERE github_webhook_deliveries.state = 'rejected'
-  AND github_webhook_deliveries.payload_sha256 = EXCLUDED.payload_sha256;
+  AND github_webhook_deliveries.payload_sha256 = EXCLUDED.payload_sha256
+RETURNING delivery_id;
+
+-- name: AppendWebhookDeliveryProblem :exec
+WITH next_problem AS (
+    SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
+    FROM github_webhook_delivery_problems
+    WHERE delivery_id = @delivery_id
+),
+inserted AS (
+    INSERT INTO github_webhook_delivery_problems (
+        delivery_id,
+        problem_seq,
+        phase,
+        problem_type,
+        problem_code,
+        title,
+        detail,
+        status,
+        retryable,
+        pointer,
+        observed_at
+    )
+    SELECT
+        @delivery_id,
+        next_problem.problem_seq,
+        @phase,
+        @problem_type,
+        @problem_code,
+        @title,
+        @detail,
+        @status,
+        @retryable,
+        @pointer,
+        @observed_at
+    FROM next_problem
+    RETURNING delivery_id
+)
+UPDATE github_webhook_deliveries
+SET
+    primary_problem_type = CASE WHEN problem_count = 0 THEN @problem_type ELSE primary_problem_type END,
+    primary_problem_code = CASE WHEN problem_count = 0 THEN @problem_code ELSE primary_problem_code END,
+    primary_problem_status = CASE WHEN problem_count = 0 THEN @status ELSE primary_problem_status END,
+    primary_problem_title = CASE WHEN problem_count = 0 THEN @title ELSE primary_problem_title END,
+    primary_problem_detail = CASE WHEN problem_count = 0 THEN @detail ELSE primary_problem_detail END,
+    problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
+    updated_at = @observed_at
+WHERE github_webhook_deliveries.delivery_id = @delivery_id;
 
 -- name: LockReadyDeliveries :many
 UPDATE github_webhook_deliveries AS d
@@ -132,7 +196,7 @@ SET
 FROM (
     SELECT delivery_id
     FROM github_webhook_deliveries
-    WHERE state IN ('verified', 'retryable')
+    WHERE state IN ('accepted', 'retryable')
       AND (next_attempt_at IS NULL OR next_attempt_at <= @locked_at)
     ORDER BY received_at
     LIMIT @limit_count
@@ -146,7 +210,6 @@ RETURNING d.delivery_id, d.event_name, d.action, d.payload_json, d.provider_inst
 -- name: MarkDeliveryProcessed :exec
 UPDATE github_webhook_deliveries
 SET state = 'processed',
-    failure_reason = '',
     processed_at = @processed_at,
     updated_at = @processed_at
 WHERE delivery_id = @delivery_id;
@@ -154,7 +217,6 @@ WHERE delivery_id = @delivery_id;
 -- name: MarkDeliveryIgnored :exec
 UPDATE github_webhook_deliveries
 SET state = 'ignored',
-    failure_reason = @failure_reason,
     processed_at = @processed_at,
     updated_at = @processed_at
 WHERE delivery_id = @delivery_id;
@@ -162,7 +224,6 @@ WHERE delivery_id = @delivery_id;
 -- name: MarkDeliveryRetryable :exec
 UPDATE github_webhook_deliveries
 SET state = 'retryable',
-    failure_reason = @failure_reason,
     next_attempt_at = @next_attempt_at,
     updated_at = @updated_at
 WHERE delivery_id = @delivery_id;
@@ -170,7 +231,6 @@ WHERE delivery_id = @delivery_id;
 -- name: MarkDeliveryFailed :exec
 UPDATE github_webhook_deliveries
 SET state = 'failed',
-    failure_reason = @failure_reason,
     processed_at = @failed_at,
     updated_at = @failed_at
 WHERE delivery_id = @delivery_id;

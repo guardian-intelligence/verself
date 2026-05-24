@@ -11,6 +11,82 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const appendWebhookDeliveryProblem = `-- name: AppendWebhookDeliveryProblem :exec
+WITH next_problem AS (
+    SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
+    FROM github_webhook_delivery_problems
+    WHERE delivery_id = $7
+),
+inserted AS (
+    INSERT INTO github_webhook_delivery_problems (
+        delivery_id,
+        problem_seq,
+        phase,
+        problem_type,
+        problem_code,
+        title,
+        detail,
+        status,
+        retryable,
+        pointer,
+        observed_at
+    )
+    SELECT
+        $7,
+        next_problem.problem_seq,
+        $8,
+        $1,
+        $2,
+        $4,
+        $5,
+        $3,
+        $9,
+        $10,
+        $6
+    FROM next_problem
+    RETURNING delivery_id
+)
+UPDATE github_webhook_deliveries
+SET
+    primary_problem_type = CASE WHEN problem_count = 0 THEN $1 ELSE primary_problem_type END,
+    primary_problem_code = CASE WHEN problem_count = 0 THEN $2 ELSE primary_problem_code END,
+    primary_problem_status = CASE WHEN problem_count = 0 THEN $3 ELSE primary_problem_status END,
+    primary_problem_title = CASE WHEN problem_count = 0 THEN $4 ELSE primary_problem_title END,
+    primary_problem_detail = CASE WHEN problem_count = 0 THEN $5 ELSE primary_problem_detail END,
+    problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
+    updated_at = $6
+WHERE github_webhook_deliveries.delivery_id = $7
+`
+
+type AppendWebhookDeliveryProblemParams struct {
+	ProblemType string
+	ProblemCode string
+	Status      int32
+	Title       string
+	Detail      string
+	ObservedAt  pgtype.Timestamptz
+	DeliveryID  string
+	Phase       string
+	Retryable   bool
+	Pointer     string
+}
+
+func (q *Queries) AppendWebhookDeliveryProblem(ctx context.Context, arg AppendWebhookDeliveryProblemParams) error {
+	_, err := q.db.Exec(ctx, appendWebhookDeliveryProblem,
+		arg.ProblemType,
+		arg.ProblemCode,
+		arg.Status,
+		arg.Title,
+		arg.Detail,
+		arg.ObservedAt,
+		arg.DeliveryID,
+		arg.Phase,
+		arg.Retryable,
+		arg.Pointer,
+	)
+	return err
+}
+
 const assignProviderDemandToRunnerFromDemand = `-- name: AssignProviderDemandToRunnerFromDemand :execrows
 WITH source AS (
     SELECT runner_id, runner_name, jit_config_sha256, sandbox_allocation_id,
@@ -1807,7 +1883,7 @@ SET
 FROM (
     SELECT delivery_id
     FROM github_webhook_deliveries
-    WHERE state IN ('verified', 'retryable')
+    WHERE state IN ('accepted', 'retryable')
       AND (next_attempt_at IS NULL OR next_attempt_at <= $1)
     ORDER BY received_at
     LIMIT $2
@@ -1902,47 +1978,42 @@ func (q *Queries) LookupRuntimeBinding(ctx context.Context, arg LookupRuntimeBin
 const markDeliveryFailed = `-- name: MarkDeliveryFailed :exec
 UPDATE github_webhook_deliveries
 SET state = 'failed',
-    failure_reason = $1,
-    processed_at = $2,
-    updated_at = $2
-WHERE delivery_id = $3
+    processed_at = $1,
+    updated_at = $1
+WHERE delivery_id = $2
 `
 
 type MarkDeliveryFailedParams struct {
-	FailureReason string
-	FailedAt      pgtype.Timestamptz
-	DeliveryID    string
+	FailedAt   pgtype.Timestamptz
+	DeliveryID string
 }
 
 func (q *Queries) MarkDeliveryFailed(ctx context.Context, arg MarkDeliveryFailedParams) error {
-	_, err := q.db.Exec(ctx, markDeliveryFailed, arg.FailureReason, arg.FailedAt, arg.DeliveryID)
+	_, err := q.db.Exec(ctx, markDeliveryFailed, arg.FailedAt, arg.DeliveryID)
 	return err
 }
 
 const markDeliveryIgnored = `-- name: MarkDeliveryIgnored :exec
 UPDATE github_webhook_deliveries
 SET state = 'ignored',
-    failure_reason = $1,
-    processed_at = $2,
-    updated_at = $2
-WHERE delivery_id = $3
+    processed_at = $1,
+    updated_at = $1
+WHERE delivery_id = $2
 `
 
 type MarkDeliveryIgnoredParams struct {
-	FailureReason string
-	ProcessedAt   pgtype.Timestamptz
-	DeliveryID    string
+	ProcessedAt pgtype.Timestamptz
+	DeliveryID  string
 }
 
 func (q *Queries) MarkDeliveryIgnored(ctx context.Context, arg MarkDeliveryIgnoredParams) error {
-	_, err := q.db.Exec(ctx, markDeliveryIgnored, arg.FailureReason, arg.ProcessedAt, arg.DeliveryID)
+	_, err := q.db.Exec(ctx, markDeliveryIgnored, arg.ProcessedAt, arg.DeliveryID)
 	return err
 }
 
 const markDeliveryProcessed = `-- name: MarkDeliveryProcessed :exec
 UPDATE github_webhook_deliveries
 SET state = 'processed',
-    failure_reason = '',
     processed_at = $1,
     updated_at = $1
 WHERE delivery_id = $2
@@ -1958,13 +2029,12 @@ func (q *Queries) MarkDeliveryProcessed(ctx context.Context, arg MarkDeliveryPro
 	return err
 }
 
-const markDeliveryRejected = `-- name: MarkDeliveryRejected :exec
+const markDeliveryRejected = `-- name: MarkDeliveryRejected :one
 INSERT INTO github_webhook_deliveries (
     delivery_id,
     event_name,
     action,
     state,
-    failure_reason,
     payload_sha256,
     payload_json,
     received_at,
@@ -1978,64 +2048,56 @@ INSERT INTO github_webhook_deliveries (
     $4,
     $5,
     $6,
-    $7,
-    $7,
-    $7
+    $6,
+    $6
 )
 ON CONFLICT (delivery_id) DO UPDATE SET
     state = 'rejected',
-    failure_reason = EXCLUDED.failure_reason,
     updated_at = EXCLUDED.updated_at
 WHERE github_webhook_deliveries.state = 'rejected'
   AND github_webhook_deliveries.payload_sha256 = EXCLUDED.payload_sha256
+RETURNING delivery_id
 `
 
 type MarkDeliveryRejectedParams struct {
 	DeliveryID    string
 	EventName     string
 	Action        string
-	FailureReason string
 	PayloadSha256 string
 	PayloadJson   []byte
 	ReceivedAt    pgtype.Timestamptz
 }
 
-func (q *Queries) MarkDeliveryRejected(ctx context.Context, arg MarkDeliveryRejectedParams) error {
-	_, err := q.db.Exec(ctx, markDeliveryRejected,
+func (q *Queries) MarkDeliveryRejected(ctx context.Context, arg MarkDeliveryRejectedParams) (string, error) {
+	row := q.db.QueryRow(ctx, markDeliveryRejected,
 		arg.DeliveryID,
 		arg.EventName,
 		arg.Action,
-		arg.FailureReason,
 		arg.PayloadSha256,
 		arg.PayloadJson,
 		arg.ReceivedAt,
 	)
-	return err
+	var delivery_id string
+	err := row.Scan(&delivery_id)
+	return delivery_id, err
 }
 
 const markDeliveryRetryable = `-- name: MarkDeliveryRetryable :exec
 UPDATE github_webhook_deliveries
 SET state = 'retryable',
-    failure_reason = $1,
-    next_attempt_at = $2,
-    updated_at = $3
-WHERE delivery_id = $4
+    next_attempt_at = $1,
+    updated_at = $2
+WHERE delivery_id = $3
 `
 
 type MarkDeliveryRetryableParams struct {
-	FailureReason string
 	NextAttemptAt pgtype.Timestamptz
 	UpdatedAt     pgtype.Timestamptz
 	DeliveryID    string
 }
 
 func (q *Queries) MarkDeliveryRetryable(ctx context.Context, arg MarkDeliveryRetryableParams) error {
-	_, err := q.db.Exec(ctx, markDeliveryRetryable,
-		arg.FailureReason,
-		arg.NextAttemptAt,
-		arg.UpdatedAt,
-		arg.DeliveryID,
-	)
+	_, err := q.db.Exec(ctx, markDeliveryRetryable, arg.NextAttemptAt, arg.UpdatedAt, arg.DeliveryID)
 	return err
 }
 
@@ -2404,7 +2466,7 @@ INSERT INTO github_webhook_deliveries (
     $1,
     $2,
     $3,
-    'verified',
+    'accepted',
     $4,
     $5,
     $6,
@@ -2431,9 +2493,29 @@ ON CONFLICT (delivery_id) DO UPDATE SET
         WHEN github_webhook_deliveries.state = 'rejected' THEN EXCLUDED.action
         ELSE github_webhook_deliveries.action
     END,
-    failure_reason = CASE
+    primary_problem_type = CASE
         WHEN github_webhook_deliveries.state = 'rejected' THEN ''
-        ELSE github_webhook_deliveries.failure_reason
+        ELSE github_webhook_deliveries.primary_problem_type
+    END,
+    primary_problem_code = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN ''
+        ELSE github_webhook_deliveries.primary_problem_code
+    END,
+    primary_problem_status = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN 0
+        ELSE github_webhook_deliveries.primary_problem_status
+    END,
+    primary_problem_title = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN ''
+        ELSE github_webhook_deliveries.primary_problem_title
+    END,
+    primary_problem_detail = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN ''
+        ELSE github_webhook_deliveries.primary_problem_detail
+    END,
+    problem_count = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN 0
+        ELSE github_webhook_deliveries.problem_count
     END,
     payload_json = CASE
         WHEN github_webhook_deliveries.state = 'rejected' THEN EXCLUDED.payload_json

@@ -3,7 +3,12 @@ CREATE TABLE github_webhook_deliveries (
     event_name               TEXT        NOT NULL CHECK (event_name <> ''),
     action                   TEXT        NOT NULL DEFAULT '',
     state                    TEXT        NOT NULL CHECK (state <> ''),
-    failure_reason           TEXT        NOT NULL DEFAULT '',
+    primary_problem_type     TEXT        NOT NULL DEFAULT '',
+    primary_problem_code     TEXT        NOT NULL DEFAULT '',
+    primary_problem_status   INTEGER     NOT NULL DEFAULT 0 CHECK (primary_problem_status BETWEEN 0 AND 599),
+    primary_problem_title    TEXT        NOT NULL DEFAULT '',
+    primary_problem_detail   TEXT        NOT NULL DEFAULT '',
+    problem_count            INTEGER     NOT NULL DEFAULT 0 CHECK (problem_count >= 0),
     payload_sha256           TEXT        NOT NULL CHECK (payload_sha256 <> ''),
     payload_json             JSONB       NOT NULL,
     attempt_count            INTEGER     NOT NULL DEFAULT 0,
@@ -20,6 +25,24 @@ CREATE TABLE github_webhook_deliveries (
     processed_at             TIMESTAMPTZ,
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE github_webhook_delivery_problems (
+    delivery_id              TEXT        NOT NULL REFERENCES github_webhook_deliveries(delivery_id) ON DELETE CASCADE,
+    problem_seq              INTEGER     NOT NULL CHECK (problem_seq > 0),
+    phase                    TEXT        NOT NULL CHECK (phase <> ''),
+    problem_type             TEXT        NOT NULL CHECK (problem_type <> ''),
+    problem_code             TEXT        NOT NULL CHECK (problem_code <> ''),
+    title                    TEXT        NOT NULL CHECK (title <> ''),
+    detail                   TEXT        NOT NULL DEFAULT '',
+    status                   INTEGER     NOT NULL DEFAULT 0 CHECK (status BETWEEN 0 AND 599),
+    retryable                BOOLEAN     NOT NULL DEFAULT false,
+    pointer                  TEXT        NOT NULL DEFAULT '',
+    observed_at              TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (delivery_id, problem_seq)
+);
+
+CREATE INDEX idx_github_webhook_delivery_problems_delivery
+    ON github_webhook_delivery_problems (delivery_id, observed_at);
 
 CREATE TABLE github_accounts (
     provider_account_id      BIGINT      PRIMARY KEY CHECK (provider_account_id > 0),
@@ -232,7 +255,7 @@ CREATE INDEX idx_github_provider_reconciliations_ready
 
 CREATE INDEX idx_github_webhook_deliveries_pending
     ON github_webhook_deliveries (next_attempt_at NULLS FIRST, received_at)
-    WHERE state IN ('verified', 'retryable');
+    WHERE state IN ('accepted', 'retryable');
 
 CREATE TABLE github_workflow_jobs (
     provider_job_id          BIGINT      PRIMARY KEY,

@@ -25,6 +25,11 @@ use verself.common.v1#IdempotencyPayloadMismatchError
 use verself.common.v1#PageRequest
 use verself.common.v1#PageResponse
 use verself.common.v1#PermissionDeniedError
+use verself.common.v1#ProblemOccurrences
+use verself.common.v1#ProviderWebhookDeliveryReplayConflictError
+use verself.common.v1#ProviderWebhookInboxUnavailableError
+use verself.common.v1#ProviderWebhookInvalidRequestError
+use verself.common.v1#ProviderWebhookSignatureInvalidError
 use verself.common.v1#RateLimitedError
 use verself.common.v1#ResourceName
 use verself.common.v1#ResourceNotFoundError
@@ -316,7 +321,7 @@ resource GithubTerminalJobEvidence {}
 resource GithubGoldenSnapshotBarrier {}
 
 enum GithubWebhookDeliveryState {
-    VERIFIED = "verified"
+    ACCEPTED = "accepted"
     PROCESSING = "processing"
     RETRYABLE = "retryable"
     PROCESSED = "processed"
@@ -603,7 +608,7 @@ structure GithubWebhookDeliveryRecord {
     provider_run_id: SafeNonNegativeLong
     provider_run_attempt: SafeNonNegativeLong
     provider_job_id: SafeNonNegativeLong
-    failure_reason: String
+    problems: ProblemOccurrences
     received_at: DateTime
     verified_at: DateTime
     processed_at: DateTime
@@ -1203,7 +1208,14 @@ structure DisableGithubRepositoryOutput {
 operation ReceiveGithubWebhook {
     input: ReceiveGithubWebhookInput
     output: ReceiveGithubWebhookOutput
-    errors: [ValidationFailedError, RateLimitedError, ServiceUnavailableError]
+    errors: [
+        ProviderWebhookInvalidRequestError,
+        ProviderWebhookSignatureInvalidError,
+        ProviderWebhookDeliveryReplayConflictError,
+        RateLimitedError,
+        ProviderWebhookInboxUnavailableError,
+        ServiceUnavailableError
+    ]
 }
 
 structure ReceiveGithubWebhookInput {
