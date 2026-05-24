@@ -442,7 +442,7 @@ export class IAM {
   async getIamPolicy(): Promise<IAMPolicy> {
     const client = createIAMClient(this.#options);
     const org = await this.currentOrganization(client);
-    const path = `/api/v1/orgs/${org.org_id}/iamPolicy:get`;
+    const path = `/api/v1/orgs/${org.org_id}/iamPolicy`;
     const result = await getIamPolicy({
       client,
       path: { orgId: org.org_id },

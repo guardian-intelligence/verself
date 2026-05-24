@@ -193,36 +193,623 @@ ON CONFLICT (provider_installation_id) DO UPDATE SET
     updated_at = EXCLUDED.updated_at;
 
 -- name: UpsertRepository :exec
-INSERT INTO github_repositories (
-    provider_repository_id,
+WITH upserted_repository AS (
+    INSERT INTO github_repositories (
+        provider_repository_id,
+        owner_login,
+        repository_name,
+        repository_full_name,
+        state,
+        last_event_delivery_id,
+        updated_at
+    ) VALUES (
+        @provider_repository_id,
+        @owner_login,
+        @repository_name,
+        @repository_full_name,
+        @state,
+        @last_event_delivery_id,
+        @updated_at
+    )
+    ON CONFLICT (provider_repository_id) DO UPDATE SET
+        owner_login = COALESCE(NULLIF(EXCLUDED.owner_login, ''), github_repositories.owner_login),
+        repository_name = COALESCE(NULLIF(EXCLUDED.repository_name, ''), github_repositories.repository_name),
+        repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_repositories.repository_full_name),
+        state = EXCLUDED.state,
+        last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_repositories.last_event_delivery_id),
+        updated_at = EXCLUDED.updated_at
+    RETURNING provider_repository_id
+)
+INSERT INTO github_installation_repositories (
     provider_installation_id,
-    owner_login,
-    repository_name,
-    repository_full_name,
+    provider_repository_id,
     state,
     last_event_delivery_id,
     updated_at
+)
+SELECT
+    sqlc.arg(provider_installation_id)::bigint,
+    provider_repository_id,
+    'selected',
+    @last_event_delivery_id,
+    @updated_at
+FROM upserted_repository
+WHERE sqlc.arg(provider_installation_id)::bigint > 0
+ON CONFLICT (provider_installation_id, provider_repository_id) DO UPDATE SET
+    state = EXCLUDED.state,
+    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_installation_repositories.last_event_delivery_id),
+    updated_at = EXCLUDED.updated_at;
+
+-- name: LockIdempotencyKey :exec
+SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(lock_key), 0::bigint));
+
+-- name: GetIdempotencyRecord :one
+SELECT org_id, actor_id, operation, key_hash, request_hash, result_payload, created_at
+FROM github_idempotency_records
+WHERE org_id = @org_id
+  AND actor_id = @actor_id
+  AND operation = @operation
+  AND key_hash = @key_hash;
+
+-- name: InsertIdempotencyRecord :exec
+INSERT INTO github_idempotency_records (
+    org_id,
+    actor_id,
+    operation,
+    key_hash,
+    request_hash,
+    result_payload,
+    created_at
+) VALUES (
+    @org_id,
+    @actor_id,
+    @operation,
+    @key_hash,
+    @request_hash,
+    @result_payload,
+    @created_at
+);
+
+-- name: CreateSetupSession :one
+INSERT INTO github_setup_sessions (
+    setup_session_id,
+    org_id,
+    actor_id,
+    state_hash,
+    session_state,
+    installation_url,
+    callback_url,
+    expires_at,
+    created_at,
+    updated_at
+) VALUES (
+    @setup_session_id,
+    @org_id,
+    @actor_id,
+    @state_hash,
+    'pending_setup',
+    @installation_url,
+    @callback_url,
+    @expires_at,
+    @created_at,
+    @created_at
+)
+RETURNING setup_session_id, org_id, actor_id, session_state, installation_url,
+          callback_url, provider_installation_id, github_user_authorization_id,
+          installation_binding_id, expires_at, completed_at, created_at, updated_at;
+
+-- name: GetSetupSession :one
+SELECT setup_session_id, org_id, actor_id, state_hash, session_state, installation_url,
+       callback_url, provider_installation_id, github_user_authorization_id,
+       installation_binding_id, expires_at, completed_at, created_at, updated_at
+FROM github_setup_sessions
+WHERE setup_session_id = @setup_session_id
+  AND org_id = @org_id;
+
+-- name: CompleteSetupSession :one
+UPDATE github_setup_sessions
+SET session_state = 'completed',
+    provider_installation_id = @provider_installation_id,
+    github_user_authorization_id = @github_user_authorization_id,
+    installation_binding_id = @installation_binding_id,
+    completed_at = @completed_at,
+    updated_at = @completed_at
+WHERE setup_session_id = @setup_session_id
+  AND org_id = @org_id
+  AND state_hash = @state_hash
+  AND session_state IN ('pending_setup', 'awaiting_user_authorization')
+  AND expires_at > @completed_at
+RETURNING setup_session_id, org_id, actor_id, session_state, installation_url,
+          callback_url, provider_installation_id, github_user_authorization_id,
+          installation_binding_id, expires_at, completed_at, created_at, updated_at;
+
+-- name: MarkSetupSessionAwaitingAuthorization :one
+UPDATE github_setup_sessions
+SET session_state = 'awaiting_user_authorization',
+    failure_reason = @failure_reason,
+    updated_at = @updated_at
+WHERE setup_session_id = @setup_session_id
+  AND org_id = @org_id
+  AND session_state = 'pending_setup'
+RETURNING setup_session_id, org_id, actor_id, session_state, installation_url,
+          callback_url, provider_installation_id, github_user_authorization_id,
+          installation_binding_id, expires_at, completed_at, created_at, updated_at;
+
+-- name: CreateOAuthSession :one
+INSERT INTO github_oauth_sessions (
+    oauth_session_id,
+    org_id,
+    actor_id,
+    state_hash,
+    session_state,
+    authorization_url,
+    callback_url,
+    expires_at,
+    created_at,
+    updated_at
+) VALUES (
+    @oauth_session_id,
+    @org_id,
+    @actor_id,
+    @state_hash,
+    'pending',
+    @authorization_url,
+    @callback_url,
+    @expires_at,
+    @created_at,
+    @created_at
+)
+RETURNING oauth_session_id, org_id, actor_id, session_state, authorization_url,
+          callback_url, github_user_authorization_id, expires_at, completed_at,
+          created_at, updated_at;
+
+-- name: CompleteOAuthSession :one
+UPDATE github_oauth_sessions
+SET session_state = 'completed',
+    github_user_authorization_id = @github_user_authorization_id,
+    completed_at = @completed_at,
+    updated_at = @completed_at
+WHERE oauth_session_id = @oauth_session_id
+  AND org_id = @org_id
+  AND state_hash = @state_hash
+  AND session_state = 'pending'
+  AND expires_at > @completed_at
+RETURNING oauth_session_id, org_id, actor_id, session_state, authorization_url,
+          callback_url, github_user_authorization_id, expires_at, completed_at,
+          created_at, updated_at;
+
+-- name: GetOAuthSessionForCompletion :one
+SELECT oauth_session_id, org_id, actor_id, state_hash, session_state, authorization_url,
+       callback_url, github_user_authorization_id, expires_at, completed_at,
+       created_at, updated_at
+FROM github_oauth_sessions
+WHERE oauth_session_id = @oauth_session_id
+  AND org_id = @org_id;
+
+-- name: UpsertGithubAccount :exec
+INSERT INTO github_accounts (
+    provider_account_id,
+    login,
+    account_type,
+    avatar_url,
+    html_url,
+    state,
+    last_event_delivery_id,
+    observed_from_api_at,
+    updated_at
+) VALUES (
+    @provider_account_id,
+    @login,
+    @account_type,
+    @avatar_url,
+    @html_url,
+    @state,
+    @last_event_delivery_id,
+    @observed_from_api_at,
+    @updated_at
+)
+ON CONFLICT (provider_account_id) DO UPDATE SET
+    login = COALESCE(NULLIF(EXCLUDED.login, ''), github_accounts.login),
+    account_type = COALESCE(NULLIF(EXCLUDED.account_type, ''), github_accounts.account_type),
+    avatar_url = COALESCE(NULLIF(EXCLUDED.avatar_url, ''), github_accounts.avatar_url),
+    html_url = COALESCE(NULLIF(EXCLUDED.html_url, ''), github_accounts.html_url),
+    state = EXCLUDED.state,
+    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_accounts.last_event_delivery_id),
+    observed_from_api_at = COALESCE(EXCLUDED.observed_from_api_at, github_accounts.observed_from_api_at),
+    updated_at = EXCLUDED.updated_at;
+
+-- name: UpsertInstallationDetails :exec
+INSERT INTO github_installations (
+    provider_installation_id,
+    provider_account_id,
+    account_login,
+    account_type,
+    app_slug,
+    target_type,
+    repository_selection,
+    configuration_url,
+    permissions_json,
+    state,
+    last_event_delivery_id,
+    observed_from_api_at,
+    updated_at
+) VALUES (
+    @provider_installation_id,
+    @provider_account_id,
+    @account_login,
+    @account_type,
+    @app_slug,
+    @target_type,
+    @repository_selection,
+    @configuration_url,
+    @permissions_json,
+    @state,
+    @last_event_delivery_id,
+    @observed_from_api_at,
+    @updated_at
+)
+ON CONFLICT (provider_installation_id) DO UPDATE SET
+    provider_account_id = CASE WHEN EXCLUDED.provider_account_id > 0 THEN EXCLUDED.provider_account_id ELSE github_installations.provider_account_id END,
+    account_login = COALESCE(NULLIF(EXCLUDED.account_login, ''), github_installations.account_login),
+    account_type = COALESCE(NULLIF(EXCLUDED.account_type, ''), github_installations.account_type),
+    app_slug = COALESCE(NULLIF(EXCLUDED.app_slug, ''), github_installations.app_slug),
+    target_type = COALESCE(NULLIF(EXCLUDED.target_type, ''), github_installations.target_type),
+    repository_selection = COALESCE(NULLIF(EXCLUDED.repository_selection, ''), github_installations.repository_selection),
+    configuration_url = COALESCE(NULLIF(EXCLUDED.configuration_url, ''), github_installations.configuration_url),
+    permissions_json = EXCLUDED.permissions_json,
+    state = EXCLUDED.state,
+    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_installations.last_event_delivery_id),
+    observed_from_api_at = COALESCE(EXCLUDED.observed_from_api_at, github_installations.observed_from_api_at),
+    updated_at = EXCLUDED.updated_at;
+
+-- name: UpsertUserAuthorization :one
+INSERT INTO github_user_authorizations (
+    github_user_authorization_id,
+    org_id,
+    actor_id,
+    provider_user_id,
+    github_login,
+    scopes_json,
+    credential_ref,
+    state,
+    authorized_at,
+    last_verified_at,
+    updated_at
+) VALUES (
+    @github_user_authorization_id,
+    @org_id,
+    @actor_id,
+    @provider_user_id,
+    @github_login,
+    @scopes_json,
+    @credential_ref,
+    'active',
+    @authorized_at,
+    @authorized_at,
+    @authorized_at
+)
+ON CONFLICT (org_id, actor_id, provider_user_id) WHERE state = 'active' DO UPDATE SET
+    github_login = EXCLUDED.github_login,
+    scopes_json = EXCLUDED.scopes_json,
+    credential_ref = EXCLUDED.credential_ref,
+    last_verified_at = EXCLUDED.last_verified_at,
+    updated_at = EXCLUDED.updated_at
+RETURNING github_user_authorization_id, org_id, actor_id, provider_user_id,
+          github_login, scopes_json, credential_ref, state, authorized_at,
+          last_verified_at, revoked_at, created_at, updated_at;
+
+-- name: GetUserAuthorization :one
+SELECT github_user_authorization_id, org_id, actor_id, provider_user_id,
+       github_login, scopes_json, credential_ref, state, authorized_at,
+       last_verified_at, revoked_at, created_at, updated_at
+FROM github_user_authorizations
+WHERE github_user_authorization_id = @github_user_authorization_id
+  AND org_id = @org_id
+  AND actor_id = @actor_id
+  AND state = 'active';
+
+-- name: RevokeUserAuthorizationsByGitHubUser :exec
+UPDATE github_user_authorizations
+SET state = 'revoked',
+    revoked_at = @revoked_at,
+    updated_at = @revoked_at
+WHERE provider_user_id = @provider_user_id
+  AND state = 'active';
+
+-- name: UpsertInstallationBinding :one
+INSERT INTO github_installation_bindings (
+    installation_binding_id,
+    org_id,
+    provider_installation_id,
+    provider_account_id,
+    setup_session_id,
+    connected_by_actor_id,
+    state,
+    connected_at,
+    last_synced_at,
+    updated_at
+) VALUES (
+    @installation_binding_id,
+    @org_id,
+    @provider_installation_id,
+    @provider_account_id,
+    @setup_session_id,
+    @connected_by_actor_id,
+    'active',
+    @connected_at,
+    @connected_at,
+    @connected_at
+)
+ON CONFLICT (provider_installation_id) WHERE state = 'active' DO UPDATE SET
+    org_id = CASE
+        WHEN github_installation_bindings.org_id = EXCLUDED.org_id THEN github_installation_bindings.org_id
+        ELSE github_installation_bindings.org_id
+    END,
+    provider_account_id = EXCLUDED.provider_account_id,
+    setup_session_id = COALESCE(EXCLUDED.setup_session_id, github_installation_bindings.setup_session_id),
+    connected_by_actor_id = CASE
+        WHEN github_installation_bindings.org_id = EXCLUDED.org_id THEN EXCLUDED.connected_by_actor_id
+        ELSE github_installation_bindings.connected_by_actor_id
+    END,
+    last_synced_at = EXCLUDED.last_synced_at,
+    updated_at = EXCLUDED.updated_at
+WHERE github_installation_bindings.org_id = EXCLUDED.org_id
+RETURNING installation_binding_id, org_id, provider_installation_id, provider_account_id,
+          setup_session_id, connected_by_actor_id, state, connected_at,
+          disconnected_at, last_synced_at, created_at, updated_at;
+
+-- name: GetInstallationBinding :one
+SELECT b.installation_binding_id, b.org_id, b.provider_installation_id, b.provider_account_id,
+       b.setup_session_id, b.connected_by_actor_id, b.state, b.connected_at,
+       b.disconnected_at, b.last_synced_at, b.created_at, b.updated_at,
+       i.account_login, i.account_type, i.app_slug, i.repository_selection,
+       i.configuration_url
+FROM github_installation_bindings b
+JOIN github_installations i ON i.provider_installation_id = b.provider_installation_id
+WHERE b.installation_binding_id = @installation_binding_id
+  AND b.org_id = @org_id;
+
+-- name: ListInstallationBindings :many
+SELECT b.installation_binding_id, b.org_id, b.provider_installation_id, b.provider_account_id,
+       b.setup_session_id, b.connected_by_actor_id, b.state, b.connected_at,
+       b.disconnected_at, b.last_synced_at, b.created_at, b.updated_at,
+       i.account_login, i.account_type, i.app_slug, i.repository_selection,
+       i.configuration_url
+FROM github_installation_bindings b
+JOIN github_installations i ON i.provider_installation_id = b.provider_installation_id
+WHERE b.org_id = @org_id
+  AND b.state = 'active'
+ORDER BY b.connected_at DESC, b.installation_binding_id DESC
+LIMIT @limit_count
+OFFSET @offset_count;
+
+-- name: DisconnectInstallationBinding :one
+UPDATE github_installation_bindings
+SET state = 'disconnected',
+    disconnected_by_actor_id = @actor_id,
+    disconnected_at = @disconnected_at,
+    updated_at = @disconnected_at
+WHERE installation_binding_id = @installation_binding_id
+  AND org_id = @org_id
+RETURNING installation_binding_id, org_id, provider_installation_id, provider_account_id,
+          setup_session_id, connected_by_actor_id, state, connected_at,
+          disconnected_at, last_synced_at, created_at, updated_at;
+
+-- name: MarkRepositoryBindingsUnavailableForInstallation :exec
+UPDATE github_repository_bindings
+SET state = 'unavailable',
+    updated_at = @updated_at
+WHERE installation_binding_id = @installation_binding_id
+  AND state = 'enabled';
+
+-- name: MarkInstallationBindingsRevokedByProvider :exec
+UPDATE github_installation_bindings
+SET state = 'revoked',
+    disconnected_at = @revoked_at,
+    updated_at = @revoked_at
+WHERE provider_installation_id = @provider_installation_id
+  AND state = 'active';
+
+-- name: MarkRepositoryBindingUnavailableByProvider :exec
+UPDATE github_repository_bindings
+SET state = 'unavailable',
+    updated_at = @updated_at
+WHERE provider_installation_id = @provider_installation_id
+  AND provider_repository_id = @provider_repository_id
+  AND state = 'enabled';
+
+-- name: UpsertInstallationRepository :exec
+INSERT INTO github_installation_repositories (
+    provider_installation_id,
+    provider_repository_id,
+    state,
+    observed_from_api_at,
+    updated_at
+) VALUES (
+    @provider_installation_id,
+    @provider_repository_id,
+    @state,
+    @observed_from_api_at,
+    @updated_at
+)
+ON CONFLICT (provider_installation_id, provider_repository_id) DO UPDATE SET
+    state = EXCLUDED.state,
+    observed_from_api_at = COALESCE(EXCLUDED.observed_from_api_at, github_installation_repositories.observed_from_api_at),
+    updated_at = EXCLUDED.updated_at;
+
+-- name: UpsertRepositoryDetails :exec
+INSERT INTO github_repositories (
+    provider_repository_id,
+    provider_account_id,
+    owner_login,
+    repository_name,
+    repository_full_name,
+    default_branch,
+    private,
+    archived,
+    visibility,
+    html_url,
+    state,
+    observed_from_api_at,
+    updated_at
 ) VALUES (
     @provider_repository_id,
-    @provider_installation_id,
+    @provider_account_id,
     @owner_login,
     @repository_name,
     @repository_full_name,
+    @default_branch,
+    @private,
+    @archived,
+    @visibility,
+    @html_url,
     @state,
-    @last_event_delivery_id,
+    @observed_from_api_at,
     @updated_at
 )
 ON CONFLICT (provider_repository_id) DO UPDATE SET
-    provider_installation_id = CASE WHEN EXCLUDED.provider_installation_id <> 0 THEN EXCLUDED.provider_installation_id ELSE github_repositories.provider_installation_id END,
+    provider_account_id = CASE WHEN EXCLUDED.provider_account_id > 0 THEN EXCLUDED.provider_account_id ELSE github_repositories.provider_account_id END,
     owner_login = COALESCE(NULLIF(EXCLUDED.owner_login, ''), github_repositories.owner_login),
     repository_name = COALESCE(NULLIF(EXCLUDED.repository_name, ''), github_repositories.repository_name),
     repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_repositories.repository_full_name),
+    default_branch = COALESCE(NULLIF(EXCLUDED.default_branch, ''), github_repositories.default_branch),
+    private = EXCLUDED.private,
+    archived = EXCLUDED.archived,
+    visibility = COALESCE(NULLIF(EXCLUDED.visibility, ''), github_repositories.visibility),
+    html_url = COALESCE(NULLIF(EXCLUDED.html_url, ''), github_repositories.html_url),
     state = EXCLUDED.state,
-    last_event_delivery_id = COALESCE(NULLIF(EXCLUDED.last_event_delivery_id, ''), github_repositories.last_event_delivery_id),
+    observed_from_api_at = COALESCE(EXCLUDED.observed_from_api_at, github_repositories.observed_from_api_at),
     updated_at = EXCLUDED.updated_at;
+
+-- name: ListRepositoryCandidates :many
+SELECT ir.provider_installation_id, r.provider_repository_id, r.owner_login,
+       r.repository_name, r.repository_full_name, r.default_branch, r.private,
+       r.observed_from_api_at, ir.state AS installation_repository_state,
+       rb.repository_binding_id, COALESCE(rb.state, '')::text AS repository_binding_state,
+       rb.org_id
+FROM github_installation_repositories ir
+JOIN github_repositories r ON r.provider_repository_id = ir.provider_repository_id
+JOIN github_installation_bindings ib ON ib.provider_installation_id = ir.provider_installation_id
+LEFT JOIN github_repository_bindings rb
+  ON rb.installation_binding_id = ib.installation_binding_id
+ AND rb.provider_repository_id = r.provider_repository_id
+WHERE ib.installation_binding_id = @installation_binding_id
+  AND ib.org_id = @org_id
+ORDER BY r.repository_full_name ASC
+LIMIT @limit_count
+OFFSET @offset_count;
+
+-- name: EnableRepositoryBinding :one
+INSERT INTO github_repository_bindings (
+    repository_binding_id,
+    org_id,
+    installation_binding_id,
+    provider_installation_id,
+    provider_repository_id,
+    state,
+    enabled_by_actor_id,
+    enabled_at,
+    updated_at
+)
+SELECT
+    @repository_binding_id,
+    ib.org_id,
+    ib.installation_binding_id,
+    ib.provider_installation_id,
+    ir.provider_repository_id,
+    'enabled',
+    @actor_id,
+    @enabled_at,
+    @enabled_at
+FROM github_installation_bindings ib
+JOIN github_installation_repositories ir
+  ON ir.provider_installation_id = ib.provider_installation_id
+WHERE ib.installation_binding_id = @installation_binding_id
+  AND ib.org_id = @org_id
+  AND ib.state = 'active'
+  AND ir.provider_repository_id = @provider_repository_id
+  AND ir.state = 'selected'
+ON CONFLICT (installation_binding_id, provider_repository_id) DO UPDATE SET
+    state = 'enabled',
+    enabled_by_actor_id = EXCLUDED.enabled_by_actor_id,
+    enabled_at = EXCLUDED.enabled_at,
+    disabled_by_actor_id = '',
+    disabled_at = NULL,
+    updated_at = EXCLUDED.updated_at
+RETURNING repository_binding_id, org_id, installation_binding_id, provider_installation_id,
+          provider_repository_id, state, enabled_by_actor_id, disabled_by_actor_id,
+          enabled_at, disabled_at, created_at, updated_at;
+
+-- name: DisableRepositoryBinding :one
+UPDATE github_repository_bindings
+SET state = 'disabled',
+    disabled_by_actor_id = @actor_id,
+    disabled_at = @disabled_at,
+    updated_at = @disabled_at
+WHERE repository_binding_id = @repository_binding_id
+  AND org_id = @org_id
+RETURNING repository_binding_id, org_id, installation_binding_id, provider_installation_id,
+          provider_repository_id, state, enabled_by_actor_id, disabled_by_actor_id,
+          enabled_at, disabled_at, created_at, updated_at;
+
+-- name: GetRepositoryBinding :one
+SELECT rb.repository_binding_id, rb.org_id, rb.installation_binding_id,
+       rb.provider_installation_id, rb.provider_repository_id, rb.state,
+       rb.enabled_by_actor_id, rb.disabled_by_actor_id, rb.enabled_at,
+       rb.disabled_at, rb.created_at, rb.updated_at,
+       r.owner_login, r.repository_name, r.repository_full_name,
+       r.default_branch, r.private, r.observed_from_api_at
+FROM github_repository_bindings rb
+JOIN github_repositories r ON r.provider_repository_id = rb.provider_repository_id
+WHERE rb.repository_binding_id = @repository_binding_id
+  AND rb.org_id = @org_id;
+
+-- name: LookupRuntimeBinding :one
+SELECT ib.org_id, ib.installation_binding_id, rb.repository_binding_id
+FROM github_installation_bindings ib
+JOIN github_repository_bindings rb
+  ON rb.installation_binding_id = ib.installation_binding_id
+WHERE ib.provider_installation_id = @provider_installation_id
+  AND ib.state = 'active'
+  AND rb.provider_repository_id = @provider_repository_id
+  AND rb.state = 'enabled';
+
+-- name: InsertProviderReconciliation :exec
+INSERT INTO github_provider_reconciliations (
+    reconciliation_id,
+    org_id,
+    installation_binding_id,
+    provider_installation_id,
+    reason,
+    state,
+    started_at,
+    created_at,
+    updated_at
+) VALUES (
+    @reconciliation_id,
+    @org_id,
+    @installation_binding_id,
+    @provider_installation_id,
+    @reason,
+    'processing',
+    @started_at,
+    @started_at,
+    @started_at
+);
+
+-- name: CompleteProviderReconciliation :exec
+UPDATE github_provider_reconciliations
+SET state = @state,
+    failure_reason = @failure_reason,
+    completed_at = @completed_at,
+    updated_at = @completed_at
+WHERE reconciliation_id = @reconciliation_id;
 
 -- name: UpsertWorkflowRun :exec
 INSERT INTO github_workflow_runs (
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     provider_run_id,
@@ -241,6 +828,9 @@ INSERT INTO github_workflow_runs (
     observed_from_api_at,
     updated_at
 ) VALUES (
+    @org_id,
+    @installation_binding_id,
+    @repository_binding_id,
     @provider_installation_id,
     @provider_repository_id,
     @provider_run_id,
@@ -260,6 +850,9 @@ INSERT INTO github_workflow_runs (
     @updated_at
 )
 ON CONFLICT (provider_installation_id, provider_repository_id, provider_run_id, provider_run_attempt) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_workflow_runs.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_workflow_runs.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_workflow_runs.repository_binding_id),
     repository_full_name = EXCLUDED.repository_full_name,
     event_name = EXCLUDED.event_name,
     head_sha = EXCLUDED.head_sha,
@@ -277,6 +870,9 @@ ON CONFLICT (provider_installation_id, provider_repository_id, provider_run_id, 
 -- name: UpsertWorkflowJob :exec
 INSERT INTO github_workflow_jobs (
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     repository_full_name,
@@ -298,6 +894,9 @@ INSERT INTO github_workflow_jobs (
     updated_at
 ) VALUES (
     @provider_job_id,
+    @org_id,
+    @installation_binding_id,
+    @repository_binding_id,
     @provider_installation_id,
     @provider_repository_id,
     @repository_full_name,
@@ -319,6 +918,9 @@ INSERT INTO github_workflow_jobs (
     @updated_at
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_workflow_jobs.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_workflow_jobs.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_workflow_jobs.repository_binding_id),
     provider_installation_id = EXCLUDED.provider_installation_id,
     provider_repository_id = EXCLUDED.provider_repository_id,
     repository_full_name = EXCLUDED.repository_full_name,
@@ -342,6 +944,9 @@ ON CONFLICT (provider_job_id) DO UPDATE SET
 -- name: UpsertJobShape :exec
 INSERT INTO github_job_shapes (
     job_shape_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     repository_full_name,
@@ -357,6 +962,9 @@ INSERT INTO github_job_shapes (
     updated_at
 ) VALUES (
     @job_shape_id,
+    @org_id,
+    @installation_binding_id,
+    @repository_binding_id,
     @provider_installation_id,
     @provider_repository_id,
     @repository_full_name,
@@ -372,6 +980,9 @@ INSERT INTO github_job_shapes (
     @updated_at
 )
 ON CONFLICT (job_shape_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_job_shapes.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_job_shapes.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_job_shapes.repository_binding_id),
     provider_installation_id = EXCLUDED.provider_installation_id,
     provider_repository_id = EXCLUDED.provider_repository_id,
     repository_full_name = EXCLUDED.repository_full_name,
@@ -390,6 +1001,9 @@ ON CONFLICT (job_shape_id) DO UPDATE SET
 INSERT INTO github_provider_demands (
     demand_id,
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     repository_full_name,
@@ -406,6 +1020,9 @@ INSERT INTO github_provider_demands (
 ) VALUES (
     @demand_id,
     @provider_job_id,
+    @org_id,
+    @installation_binding_id,
+    @repository_binding_id,
     @provider_installation_id,
     @provider_repository_id,
     @repository_full_name,
@@ -421,6 +1038,9 @@ INSERT INTO github_provider_demands (
     @updated_at
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_provider_demands.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_provider_demands.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_provider_demands.repository_binding_id),
     provider_installation_id = EXCLUDED.provider_installation_id,
     provider_repository_id = EXCLUDED.provider_repository_id,
     repository_full_name = EXCLUDED.repository_full_name,
@@ -431,7 +1051,7 @@ ON CONFLICT (provider_job_id) DO UPDATE SET
     runner_class = COALESCE(NULLIF(EXCLUDED.runner_class, ''), github_provider_demands.runner_class),
     last_delivery_id = COALESCE(NULLIF(EXCLUDED.last_delivery_id, ''), github_provider_demands.last_delivery_id),
     updated_at = EXCLUDED.updated_at
-RETURNING demand_id, provider_job_id, runner_name, runner_id, runner_class, job_shape_id, trust_class,
+RETURNING demand_id, provider_job_id, org_id, installation_binding_id, repository_binding_id, runner_name, runner_id, runner_class, job_shape_id, trust_class,
           state, jit_config_sha256, sandbox_allocation_id, sandbox_execution_id, sandbox_attempt_id;
 
 -- name: ClaimProviderDemandForJIT :one
@@ -470,7 +1090,8 @@ WHERE github_provider_demands.provider_job_id = @provider_job_id
               AND active_job.status = 'completed'
         )
   ) < @repository_runner_class_active_limit
-RETURNING demand_id, provider_job_id, provider_installation_id, provider_repository_id,
+RETURNING demand_id, provider_job_id, org_id, installation_binding_id, repository_binding_id,
+          provider_installation_id, provider_repository_id,
           repository_full_name, provider_run_id, provider_run_attempt, runner_name,
           runner_class, job_shape_id, trust_class, state;
 
@@ -564,7 +1185,8 @@ SET state = @state,
 WHERE provider_job_id = @provider_job_id;
 
 -- name: GetProviderDemandForJob :one
-SELECT demand_id, provider_job_id, provider_installation_id, provider_repository_id,
+SELECT demand_id, provider_job_id, org_id, installation_binding_id, repository_binding_id,
+       provider_installation_id, provider_repository_id,
        repository_full_name, provider_run_id, provider_run_attempt, runner_name,
        runner_id, runner_class, job_shape_id, trust_class, state, sandbox_allocation_id,
        sandbox_execution_id, sandbox_attempt_id
@@ -575,6 +1197,9 @@ WHERE provider_job_id = @provider_job_id;
 INSERT INTO github_provider_outbox (
     outbox_id,
     command_kind,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_job_id,
     provider_run_id,
     provider_run_attempt,
@@ -589,6 +1214,9 @@ INSERT INTO github_provider_outbox (
 ) VALUES (
     @outbox_id,
     @command_kind,
+    @org_id,
+    @installation_binding_id,
+    @repository_binding_id,
     @provider_job_id,
     @provider_run_id,
     @provider_run_attempt,
@@ -633,6 +1261,9 @@ WHERE command_kind = @command_kind
 INSERT INTO github_runner_registrations (
     provider_job_id,
     demand_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     runner_id,
@@ -644,6 +1275,9 @@ INSERT INTO github_runner_registrations (
 ) VALUES (
     @provider_job_id,
     @demand_id,
+    @org_id,
+    @installation_binding_id,
+    @repository_binding_id,
     @provider_installation_id,
     @provider_repository_id,
     @runner_id,
@@ -655,6 +1289,9 @@ INSERT INTO github_runner_registrations (
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
     demand_id = COALESCE(EXCLUDED.demand_id, github_runner_registrations.demand_id),
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_runner_registrations.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_runner_registrations.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_runner_registrations.repository_binding_id),
     runner_id = EXCLUDED.runner_id,
     runner_name = EXCLUDED.runner_name,
     runner_class = EXCLUDED.runner_class,
@@ -805,6 +1442,9 @@ WHERE github_runner_registrations.provider_repository_id = @provider_repository_
 WITH candidates AS (
     SELECT
         j.provider_job_id,
+        ib.org_id,
+        ib.installation_binding_id,
+        rb.repository_binding_id,
         j.provider_installation_id,
         j.provider_repository_id,
         j.repository_full_name,
@@ -829,6 +1469,13 @@ WITH candidates AS (
             LIMIT 1
         ), '')::text AS runner_class
     FROM github_workflow_jobs j
+    JOIN github_installation_bindings ib
+      ON ib.provider_installation_id = j.provider_installation_id
+     AND ib.state = 'active'
+    JOIN github_repository_bindings rb
+      ON rb.installation_binding_id = ib.installation_binding_id
+     AND rb.provider_repository_id = j.provider_repository_id
+     AND rb.state = 'enabled'
     LEFT JOIN github_provider_demands d ON d.provider_job_id = j.provider_job_id
     WHERE j.status = 'queued'
       AND (
@@ -850,6 +1497,9 @@ WITH candidates AS (
 )
 SELECT DISTINCT ON (provider_repository_id, runner_class)
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     repository_full_name,
@@ -875,6 +1525,9 @@ LIMIT @limit_count;
 INSERT INTO github_terminal_job_evidence (
     terminal_evidence_id,
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_installation_id,
     provider_repository_id,
     provider_run_id,
@@ -894,6 +1547,9 @@ INSERT INTO github_terminal_job_evidence (
 ) VALUES (
     @terminal_evidence_id,
     @provider_job_id,
+    @org_id,
+    @installation_binding_id,
+    @repository_binding_id,
     @provider_installation_id,
     @provider_repository_id,
     @provider_run_id,
@@ -912,6 +1568,9 @@ INSERT INTO github_terminal_job_evidence (
     @observed_at
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_terminal_job_evidence.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_terminal_job_evidence.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_terminal_job_evidence.repository_binding_id),
     provider_installation_id = EXCLUDED.provider_installation_id,
     provider_repository_id = EXCLUDED.provider_repository_id,
     status = EXCLUDED.status,
@@ -933,6 +1592,9 @@ INSERT INTO github_golden_snapshot_barriers (
     barrier_id,
     terminal_evidence_id,
     provider_job_id,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
     provider_run_id,
     provider_run_attempt,
     sandbox_execution_id,
@@ -947,6 +1609,9 @@ INSERT INTO github_golden_snapshot_barriers (
     @barrier_id,
     @terminal_evidence_id,
     @provider_job_id,
+    @org_id,
+    @installation_binding_id,
+    @repository_binding_id,
     @provider_run_id,
     @provider_run_attempt,
     @sandbox_execution_id,
@@ -959,6 +1624,9 @@ INSERT INTO github_golden_snapshot_barriers (
     @requested_at
 )
 ON CONFLICT (provider_job_id) DO UPDATE SET
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_golden_snapshot_barriers.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_golden_snapshot_barriers.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_golden_snapshot_barriers.repository_binding_id),
     terminal_evidence_id = EXCLUDED.terminal_evidence_id,
     provider_run_id = EXCLUDED.provider_run_id,
     provider_run_attempt = EXCLUDED.provider_run_attempt,

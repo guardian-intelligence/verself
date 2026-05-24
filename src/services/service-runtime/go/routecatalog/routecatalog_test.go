@@ -15,7 +15,7 @@ func TestParseProfileLikeOperationPolicy(t *testing.T) {
 			"default_status":200,
 			"input_shape":"verself.profile.v1#PatchProfileIdentityInput",
 			"output_shape":"verself.profile.v1#ProfileOutput",
-			"readonly":false,
+			"effect":"write",
 			"paginated":false,
 			"identity":{"mode":"bearer","audience":"verself-api","principals":["browser","cli"]},
 			"authorization":{"permission":"profile:self:identity:write","organization_source":"request_subject","organization_member":""},

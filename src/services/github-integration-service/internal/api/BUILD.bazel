@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "api",
+    srcs = [
+        "dto.go",
+        "openapi.go",
+        "policy.go",
+        "routes.go",
+    ],
+    importpath = "github.com/verself/github-integration-service/internal/api",
+    visibility = ["//src/services/github-integration-service:__subpackages__"],
+    deps = [
+        "//src/services/github-integration-service/internal/githubintegration",
+        "//src/services/github-integration-service/internal/routecatalog",
+        "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/humaapi",
+        "//src/services/service-runtime/go/iam",
+        "//src/services/service-runtime/go/routecatalog",
+        "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_danielgtaylor_huma_v2//adapters/humago",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jackc_pgx_v5//:pgx",
+    ],
+)

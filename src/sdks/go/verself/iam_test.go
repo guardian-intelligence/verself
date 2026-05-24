@@ -195,7 +195,7 @@ func TestIAMPoliciesUsePublicAPI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/"+testOrgID+"/iamPolicy:get":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/orgs/"+testOrgID+"/iamPolicy":
 			_, _ = w.Write([]byte(policyJSON("etag-1")))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/"+testOrgID+"/iamPolicy:set":
 			setIDKey = r.Header.Get("Idempotency-Key")

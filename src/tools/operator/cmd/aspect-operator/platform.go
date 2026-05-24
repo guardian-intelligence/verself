@@ -179,6 +179,18 @@ type platformForgejoHook struct {
 	Config map[string]string `json:"config"`
 }
 
+type platformGitHubDogfoodProviderTruth struct {
+	ProviderInstallationID int64
+	ProviderAccountID      int64
+	OwnerLogin             string
+	RepositoryName         string
+	RepositoryFullName     string
+}
+
+type platformPGQuerier interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
 type forgejoStatusError struct {
 	Method string
 	Path   string
@@ -434,6 +446,9 @@ func (r *platformRunner) seed() (platformReport, error) {
 	if err := r.ensureGitHubDogfoodRunnerRepository(); err != nil {
 		return platformReport{}, err
 	}
+	if err := r.ensureGitHubDogfoodIntegrationBindings(); err != nil {
+		return platformReport{}, err
+	}
 	report, err := r.check()
 	report.Changed = append([]string{}, r.changes...)
 	return report, err
@@ -490,6 +505,7 @@ func (r *platformRunner) check() (platformReport, error) {
 	report.BoundaryResults = append(report.BoundaryResults, r.checkSourceRepository(forgejoRepoID, &issues))
 	if r.cfg.githubDogfoodConfigured() {
 		report.BoundaryResults = append(report.BoundaryResults, r.checkGitHubDogfoodRunnerRepository(&issues))
+		report.BoundaryResults = append(report.BoundaryResults, r.checkGitHubDogfoodIntegrationBindings(&issues))
 	}
 	if len(issues) > 0 {
 		sort.Strings(issues)
@@ -1144,6 +1160,213 @@ ON CONFLICT (provider, provider_repository_id) DO UPDATE SET
 	})
 }
 
+func (r *platformRunner) ensureGitHubDogfoodIntegrationBindings() error {
+	if !r.cfg.githubDogfoodConfigured() {
+		return nil
+	}
+	return r.withSpan("platform.github_integration.bindings.ensure", []attribute.KeyValue{
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.name", "github_integration_service"),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
+		attribute.Int64("github.repository_id", r.cfg.GitHubRepositoryID),
+	}, func(ctx context.Context) error {
+		conn, err := r.openPG(ctx, "github_integration_service")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = conn.Close(context.Background()) }()
+		tx, err := conn.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback(context.Background()) }()
+		truth, err := r.githubDogfoodProviderTruth(ctx, tx)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("github dogfood: active provider installation for repository %d has not been observed", r.cfg.GitHubRepositoryID)
+		}
+		if err != nil {
+			return err
+		}
+		expectedFullName := r.cfg.CompanySlug + "/" + r.cfg.RepoSlug
+		if truth.RepositoryFullName != expectedFullName || truth.OwnerLogin != r.cfg.CompanySlug || truth.RepositoryName != r.cfg.RepoSlug {
+			return fmt.Errorf("github dogfood: repository %d is %s, expected %s", r.cfg.GitHubRepositoryID, truth.RepositoryFullName, expectedFullName)
+		}
+		now := time.Now().UTC()
+		installationBindingID := stableUUID("github-installation-binding", r.cfg.PublicOrgIDText, strconv.FormatInt(truth.ProviderInstallationID, 10))
+		var storedInstallationBindingID uuid.UUID
+		err = tx.QueryRow(ctx, `
+UPDATE github_installation_bindings
+SET provider_account_id = $4,
+    connected_by_actor_id = CASE
+        WHEN state = 'active' THEN connected_by_actor_id
+        ELSE $5
+    END,
+    disconnected_by_actor_id = '',
+    state = 'active',
+    connected_at = CASE
+        WHEN state = 'active' THEN connected_at
+        ELSE $6
+    END,
+    disconnected_at = NULL,
+    last_synced_at = $6,
+    updated_at = $6
+WHERE installation_binding_id = $1
+  AND org_id = $2
+  AND provider_installation_id = $3
+RETURNING installation_binding_id`,
+			installationBindingID,
+			r.cfg.PublicOrgIDText,
+			truth.ProviderInstallationID,
+			truth.ProviderAccountID,
+			platformActor,
+			now,
+		).Scan(&storedInstallationBindingID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = tx.QueryRow(ctx, `
+INSERT INTO github_installation_bindings (
+    installation_binding_id,
+    org_id,
+    provider_installation_id,
+    provider_account_id,
+    connected_by_actor_id,
+    state,
+    connected_at,
+    last_synced_at,
+    updated_at
+)
+VALUES ($1, $2, $3, $4, $5, 'active', $6, $6, $6)
+ON CONFLICT (provider_installation_id) WHERE state = 'active' DO UPDATE SET
+    provider_account_id = EXCLUDED.provider_account_id,
+    disconnected_by_actor_id = '',
+    disconnected_at = NULL,
+    last_synced_at = EXCLUDED.last_synced_at,
+    updated_at = EXCLUDED.updated_at
+WHERE github_installation_bindings.org_id = EXCLUDED.org_id
+RETURNING installation_binding_id`,
+				installationBindingID,
+				r.cfg.PublicOrgIDText,
+				truth.ProviderInstallationID,
+				truth.ProviderAccountID,
+				platformActor,
+				now,
+			).Scan(&storedInstallationBindingID)
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("github dogfood: active installation %d is already bound to another org", truth.ProviderInstallationID)
+		}
+		if err != nil {
+			return fmt.Errorf("github dogfood: upsert installation binding: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+UPDATE github_repository_bindings
+SET state = 'disabled',
+    disabled_by_actor_id = $1,
+    disabled_at = $2,
+    updated_at = $2
+WHERE org_id = $3
+  AND provider_repository_id = $4
+  AND state = 'enabled'
+  AND installation_binding_id <> $5`,
+			platformActor,
+			now,
+			r.cfg.PublicOrgIDText,
+			r.cfg.GitHubRepositoryID,
+			storedInstallationBindingID,
+		); err != nil {
+			return fmt.Errorf("github dogfood: disable stale repository binding: %w", err)
+		}
+		repositoryBindingID := stableUUID("github-repository-binding", r.cfg.PublicOrgIDText, storedInstallationBindingID.String(), strconv.FormatInt(r.cfg.GitHubRepositoryID, 10))
+		if _, err := tx.Exec(ctx, `
+INSERT INTO github_repository_bindings (
+    repository_binding_id,
+    org_id,
+    installation_binding_id,
+    provider_installation_id,
+    provider_repository_id,
+    state,
+    enabled_by_actor_id,
+    enabled_at,
+    updated_at
+)
+VALUES ($1, $2, $3, $4, $5, 'enabled', $6, $7, $7)
+ON CONFLICT (installation_binding_id, provider_repository_id) DO UPDATE SET
+    state = 'enabled',
+    enabled_by_actor_id = CASE
+        WHEN github_repository_bindings.enabled_by_actor_id = '' THEN EXCLUDED.enabled_by_actor_id
+        ELSE github_repository_bindings.enabled_by_actor_id
+    END,
+    disabled_by_actor_id = '',
+    enabled_at = COALESCE(github_repository_bindings.enabled_at, EXCLUDED.enabled_at),
+    disabled_at = NULL,
+    updated_at = EXCLUDED.updated_at`,
+			repositoryBindingID,
+			r.cfg.PublicOrgIDText,
+			storedInstallationBindingID,
+			truth.ProviderInstallationID,
+			r.cfg.GitHubRepositoryID,
+			platformActor,
+			now,
+		); err != nil {
+			return fmt.Errorf("github dogfood: upsert repository binding: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("github dogfood: commit integration bindings: %w", err)
+		}
+		r.markChanged("github_integration.dogfood_bindings.upserted")
+		return nil
+	})
+}
+
+func (r *platformRunner) githubDogfoodProviderTruth(ctx context.Context, q platformPGQuerier) (platformGitHubDogfoodProviderTruth, error) {
+	rows, err := q.Query(ctx, `
+SELECT
+    i.provider_installation_id,
+    i.provider_account_id,
+    r.owner_login,
+    r.repository_name,
+    r.repository_full_name
+FROM github_installation_repositories ir
+JOIN github_installations i ON i.provider_installation_id = ir.provider_installation_id
+JOIN github_repositories r ON r.provider_repository_id = ir.provider_repository_id
+WHERE ir.provider_repository_id = $1
+  AND i.state = 'active'
+  AND ir.state = 'selected'
+  AND r.state = 'active'
+ORDER BY i.updated_at DESC, ir.updated_at DESC
+LIMIT 2`,
+		r.cfg.GitHubRepositoryID,
+	)
+	if err != nil {
+		return platformGitHubDogfoodProviderTruth{}, fmt.Errorf("github dogfood: query provider truth: %w", err)
+	}
+	defer rows.Close()
+	matches := make([]platformGitHubDogfoodProviderTruth, 0, 2)
+	for rows.Next() {
+		var match platformGitHubDogfoodProviderTruth
+		if err := rows.Scan(
+			&match.ProviderInstallationID,
+			&match.ProviderAccountID,
+			&match.OwnerLogin,
+			&match.RepositoryName,
+			&match.RepositoryFullName,
+		); err != nil {
+			return platformGitHubDogfoodProviderTruth{}, fmt.Errorf("github dogfood: scan provider truth: %w", err)
+		}
+		matches = append(matches, match)
+	}
+	if err := rows.Err(); err != nil {
+		return platformGitHubDogfoodProviderTruth{}, fmt.Errorf("github dogfood: read provider truth: %w", err)
+	}
+	switch len(matches) {
+	case 0:
+		return platformGitHubDogfoodProviderTruth{}, pgx.ErrNoRows
+	case 1:
+		return matches[0], nil
+	default:
+		return platformGitHubDogfoodProviderTruth{}, fmt.Errorf("github dogfood: repository %d has multiple active selected installations", r.cfg.GitHubRepositoryID)
+	}
+}
+
 func (r *platformRunner) checkIdentityOrganization(issues *[]string) platformBoundaryRow {
 	row := platformBoundaryRow{Boundary: "iam_service.iam_organizations", Status: "ok"}
 	err := r.withSpan("platform.iam.check", []attribute.KeyValue{
@@ -1615,6 +1838,81 @@ WHERE rpr.provider = 'github'
 		}
 		if len(mismatches) > 0 {
 			*issues = append(*issues, "github dogfood runner repository mismatch: "+strings.Join(mismatches, ", "))
+			row.Status = "mismatch"
+			row.Detail = strings.Join(mismatches, ", ")
+		}
+		return nil
+	})
+	if err != nil {
+		row.Status = "error"
+		row.Detail = err.Error()
+		*issues = append(*issues, err.Error())
+	}
+	return row
+}
+
+func (r *platformRunner) checkGitHubDogfoodIntegrationBindings(issues *[]string) platformBoundaryRow {
+	row := platformBoundaryRow{Boundary: "github_integration.github_repository_bindings", Status: "ok"}
+	err := r.withSpan("platform.github_integration.bindings.check", []attribute.KeyValue{
+		attribute.String("db.system", "postgresql"),
+		attribute.String("db.name", "github_integration_service"),
+		attribute.String("verself.org_id", r.cfg.PublicOrgIDText),
+		attribute.Int64("github.repository_id", r.cfg.GitHubRepositoryID),
+	}, func(ctx context.Context) error {
+		conn, err := r.openPG(ctx, "github_integration_service")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = conn.Close(context.Background()) }()
+		truth, err := r.githubDogfoodProviderTruth(ctx, conn)
+		if errors.Is(err, pgx.ErrNoRows) {
+			*issues = append(*issues, "github dogfood provider truth is missing")
+			row.Status = "missing"
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		expectedFullName := r.cfg.CompanySlug + "/" + r.cfg.RepoSlug
+		if truth.RepositoryFullName != expectedFullName || truth.OwnerLogin != r.cfg.CompanySlug || truth.RepositoryName != r.cfg.RepoSlug {
+			*issues = append(*issues, fmt.Sprintf("github dogfood provider repository is %s, expected %s", truth.RepositoryFullName, expectedFullName))
+			row.Status = "mismatch"
+			row.Detail = fmt.Sprintf("repository_full_name=%q", truth.RepositoryFullName)
+			return nil
+		}
+		var installationBindingID, repositoryBindingID uuid.UUID
+		var installationState, repositoryBindingState string
+		err = conn.QueryRow(ctx, `
+SELECT ib.installation_binding_id, rb.repository_binding_id, ib.state, rb.state
+FROM github_installation_bindings ib
+JOIN github_repository_bindings rb
+  ON rb.installation_binding_id = ib.installation_binding_id
+WHERE ib.org_id = $1
+  AND ib.provider_installation_id = $2
+  AND rb.provider_repository_id = $3
+ORDER BY rb.updated_at DESC
+LIMIT 1`,
+			r.cfg.PublicOrgIDText,
+			truth.ProviderInstallationID,
+			r.cfg.GitHubRepositoryID,
+		).Scan(&installationBindingID, &repositoryBindingID, &installationState, &repositoryBindingState)
+		if errors.Is(err, pgx.ErrNoRows) {
+			*issues = append(*issues, "github dogfood integration repository binding is missing")
+			row.Status = "missing"
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("github dogfood: query integration bindings: %w", err)
+		}
+		var mismatches []string
+		if installationState != "active" {
+			mismatches = append(mismatches, fmt.Sprintf("installation_binding.state=%q", installationState))
+		}
+		if repositoryBindingState != "enabled" {
+			mismatches = append(mismatches, fmt.Sprintf("repository_binding.state=%q", repositoryBindingState))
+		}
+		if len(mismatches) > 0 {
+			*issues = append(*issues, "github dogfood integration binding mismatch: "+strings.Join(mismatches, ", "))
 			row.Status = "mismatch"
 			row.Detail = strings.Join(mismatches, ", ")
 		}

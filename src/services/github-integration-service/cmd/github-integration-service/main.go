@@ -15,11 +15,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	githubapi "github.com/verself/github-integration-service/internal/api"
 	"github.com/verself/github-integration-service/internal/githubintegration"
 	"github.com/verself/github-integration-service/migrations"
+	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
 	sandboxrentalclient "github.com/verself/sandbox-rental-service/client"
 	secretsclient "github.com/verself/secrets-service/client"
+	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
 	workloadauth "github.com/verself/service-runtime/workload"
@@ -65,8 +68,16 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "github_integration_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	authAudience := cfg.RequireCredential("auth-audience")
 	appID := cfg.Int64("GITHUB_APP_ID", 0)
+	appSlug := cfg.String("GITHUB_APP_SLUG", "")
+	appSetupURL := cfg.String("GITHUB_APP_SETUP_URL", "")
 	apiBaseURL := cfg.URL("GITHUB_API_BASE_URL", "https://api.github.com")
+	oauthClientID := cfg.String("GITHUB_OAUTH_CLIENT_ID", "")
+	oauthAuthorizeURL := cfg.String("GITHUB_OAUTH_AUTHORIZE_URL", "https://github.com/login/oauth/authorize")
+	oauthTokenURL := cfg.String("GITHUB_OAUTH_TOKEN_URL", "https://github.com/login/oauth/access_token")
+	oauthRedirectURL := cfg.String("GITHUB_OAUTH_REDIRECT_URL", "")
 	runnerGroupID := cfg.Int64("GITHUB_RUNNER_GROUP_ID", 1)
 	runnerClassPrefix := cfg.String("GITHUB_RUNNER_CLASS_PREFIX", "verself-")
 	repositoryRunnerClassActiveLimit := int32FromInt(cfg.Int("GITHUB_REPOSITORY_RUNNER_CLASS_ACTIVE_LIMIT", 15), "GITHUB_REPOSITORY_RUNNER_CLASS_ACTIVE_LIMIT")
@@ -137,6 +148,18 @@ func run() error {
 	}
 	privateKey := strings.TrimSpace(providerSecrets[secretsclient.GitHubIntegrationPrivateKeyName])
 	webhookSecret := strings.TrimSpace(providerSecrets[secretsclient.GitHubIntegrationWebhookSecretName])
+	oauthClientSecret, err := readOptionalRuntimeSecret(ctx, secretsClient, secretsclient.GitHubIntegrationOAuthClientSecretName)
+	if err != nil {
+		logger.WarnContext(ctx, "github integration oauth client secret unavailable", "error", err)
+	}
+	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
+	if err != nil {
+		return fmt.Errorf("github integration iam mtls: %w", err)
+	}
+	iamClient, err := iamclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceIAM), iamclient.WithHTTPClient(iamHTTPClient))
+	if err != nil {
+		return fmt.Errorf("github integration iam client: %w", err)
+	}
 	sandboxHTTPClient, err := workloadauth.MTLSClientForServiceWithTimeouts(spiffeSource, workloadauth.ServiceSandboxRental, nil, workloadauth.ServiceClientTimeouts{
 		ResponseHeader: sandboxRunnerSubmissionTimeout,
 		Total:          sandboxRunnerSubmissionTimeout,
@@ -167,9 +190,17 @@ func run() error {
 
 	svc, err := githubintegration.NewService(githubintegration.Config{
 		AppID:                            appID,
+		AppSlug:                          appSlug,
+		AppSetupURL:                      appSetupURL,
 		PrivateKeyPEM:                    privateKey,
 		WebhookSecret:                    webhookSecret,
 		APIBaseURL:                       apiBaseURL,
+		OAuthClientID:                    oauthClientID,
+		OAuthClientSecret:                strings.TrimSpace(oauthClientSecret),
+		OAuthAuthorizeURL:                oauthAuthorizeURL,
+		OAuthTokenURL:                    oauthTokenURL,
+		OAuthRedirectURL:                 oauthRedirectURL,
+		UserTokenSecretPrefix:            secretsclient.GitHubIntegrationUserTokenSecretPrefix,
 		RunnerGroupID:                    runnerGroupID,
 		RunnerClassPrefix:                runnerClassPrefix,
 		RepositoryRunnerClassActiveLimit: repositoryRunnerClassActiveLimit,
@@ -180,6 +211,7 @@ func run() error {
 		PG:                               pgPool,
 		CH:                               chConn,
 		Sandbox:                          sandboxClient,
+		Secrets:                          secretsClient,
 		HTTPClient:                       http.DefaultClient,
 	})
 	if err != nil {
@@ -213,6 +245,18 @@ func run() error {
 		_, _ = w.Write([]byte("ready\n"))
 	})
 	mux.Handle("/api/v1/github/webhooks", svc.WebhookHandler())
+	privateMux := http.NewServeMux()
+	githubapi.NewAPI(privateMux, githubapi.Config{
+		Version:    serviceVersion,
+		ListenAddr: listenAddr,
+		Service:    svc,
+		Authorizer: iamclient.NewAuthorizer(iamClient),
+	})
+	authenticated := auth.Middleware(auth.Config{
+		IssuerURL: authIssuerURL,
+		Audience:  authAudience,
+	})(privateMux)
+	mux.Handle("/", authenticated)
 
 	server := httpserver.New(listenAddr, otelhttp.NewHandler(mux, serviceName))
 	return httpserver.Run(ctx, logger, server)
@@ -236,6 +280,14 @@ func readRuntimeSecrets(ctx context.Context, client *secretsclient.Client, secre
 		values[secretName] = string(resp.Result.Value)
 	}
 	return values, nil
+}
+
+func readOptionalRuntimeSecret(ctx context.Context, client *secretsclient.Client, secretName string) (string, error) {
+	values, err := readRuntimeSecrets(ctx, client, secretName)
+	if err != nil {
+		return "", err
+	}
+	return values[secretName], nil
 }
 
 func int32FromInt(value int, field string) int32 {

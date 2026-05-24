@@ -3,3 +3,48 @@
 //   sqlc v1.30.0
 
 package store
+
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type GithubIdempotencyRecord struct {
+	OrgID         string
+	ActorID       string
+	Operation     string
+	KeyHash       string
+	RequestHash   string
+	ResultPayload []byte
+	CreatedAt     pgtype.Timestamptz
+}
+
+type GithubRepositoryBinding struct {
+	RepositoryBindingID    pgtype.UUID
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	State                  string
+	EnabledByActorID       string
+	DisabledByActorID      string
+	EnabledAt              pgtype.Timestamptz
+	DisabledAt             pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+type GithubUserAuthorization struct {
+	GithubUserAuthorizationID pgtype.UUID
+	OrgID                     string
+	ActorID                   string
+	ProviderUserID            int64
+	GithubLogin               string
+	ScopesJson                []byte
+	CredentialRef             string
+	State                     string
+	AuthorizedAt              pgtype.Timestamptz
+	LastVerifiedAt            pgtype.Timestamptz
+	RevokedAt                 pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+	UpdatedAt                 pgtype.Timestamptz
+}

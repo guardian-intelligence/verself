@@ -7,10 +7,13 @@ go_library(
     importpath = "github.com/verself/github-integration-service/cmd/github-integration-service",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/services/github-integration-service/internal/api",
         "//src/services/github-integration-service/internal/githubintegration",
         "//src/services/github-integration-service/migrations",
+        "//src/services/iam-service/client",
         "//src/services/sandbox-rental-service/client",
         "//src/services/secrets-service/client",
+        "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",
         "//src/services/service-runtime/go/workload",

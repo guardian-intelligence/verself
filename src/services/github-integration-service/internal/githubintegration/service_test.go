@@ -164,6 +164,26 @@ func TestParseWebhookMetadata(t *testing.T) {
 	}
 }
 
+func TestOffsetPageTokenRoundTrip(t *testing.T) {
+	token := encodeOffsetPageToken(250)
+	if token == "" {
+		t.Fatal("empty token")
+	}
+	offset, err := decodeOffsetPageToken(token)
+	if err != nil {
+		t.Fatalf("decodeOffsetPageToken: %v", err)
+	}
+	if offset != 250 {
+		t.Fatalf("offset = %d, want 250", offset)
+	}
+}
+
+func TestOffsetPageTokenRejectsMalformedInput(t *testing.T) {
+	if _, err := decodeOffsetPageToken("not-valid-base64"); err == nil {
+		t.Fatal("decodeOffsetPageToken accepted malformed token")
+	}
+}
+
 func TestSandboxObservationFromWebhookUsesOnlyProviderObservedRunner(t *testing.T) {
 	var event workflowJobWebhook
 	event.Action = "queued"

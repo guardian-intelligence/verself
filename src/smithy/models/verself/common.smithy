@@ -300,6 +300,18 @@ structure sdk {
     retryable: Boolean
 }
 
+enum OperationEffect {
+    READ = "read"
+    WRITE = "write"
+}
+
+/// Product-side operation effect when HTTP method semantics are too coarse.
+@trait(selector: "operation")
+structure operationSemantics {
+    @required
+    effect: OperationEffect
+}
+
 @range(min: 1, max: 536870911)
 integer ProtoFieldNumber
 

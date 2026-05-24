@@ -26,6 +26,9 @@ func (s *Service) insertTerminalEvidence(ctx context.Context, job githubWorkflow
 	terminalEvidenceID, err := s.queries.InsertTerminalJobEvidence(ctx, store.InsertTerminalJobEvidenceParams{
 		TerminalEvidenceID:     pgUUID(evidenceID),
 		ProviderJobID:          job.ID,
+		OrgID:                  demand.OrgID,
+		InstallationBindingID:  demand.InstallationBindingID,
+		RepositoryBindingID:    demand.RepositoryBindingID,
 		ProviderInstallationID: demand.ProviderInstallationID,
 		ProviderRepositoryID:   demand.ProviderRepositoryID,
 		ProviderRunID:          job.RunID,
@@ -48,21 +51,24 @@ func (s *Service) insertTerminalEvidence(ctx context.Context, job githubWorkflow
 	}
 	now := time.Now().UTC()
 	evidenceMeta := webhookMetadata{
-		EventName:          "workflow_job",
-		DeliveryID:         deliveryID,
-		InstallationID:     demand.ProviderInstallationID,
-		RepositoryID:       demand.ProviderRepositoryID,
-		RepositoryFullName: demand.RepositoryFullName,
-		RunID:              job.RunID,
-		RunAttempt:         job.RunAttempt,
-		JobID:              job.ID,
-		RunnerID:           demand.RunnerID,
-		RunnerName:         demand.RunnerName,
-		RunnerClass:        demand.RunnerClass,
-		JobShapeID:         demand.JobShapeID,
-		TrustClass:         trustClass,
-		ExecutionID:        uuidFromPG(demand.SandboxExecutionID),
-		AttemptID:          uuidFromPG(demand.SandboxAttemptID),
+		EventName:             "workflow_job",
+		DeliveryID:            deliveryID,
+		OrgID:                 demand.OrgID,
+		InstallationBindingID: uuidFromPG(demand.InstallationBindingID),
+		RepositoryBindingID:   uuidFromPG(demand.RepositoryBindingID),
+		InstallationID:        demand.ProviderInstallationID,
+		RepositoryID:          demand.ProviderRepositoryID,
+		RepositoryFullName:    demand.RepositoryFullName,
+		RunID:                 job.RunID,
+		RunAttempt:            job.RunAttempt,
+		JobID:                 job.ID,
+		RunnerID:              demand.RunnerID,
+		RunnerName:            demand.RunnerName,
+		RunnerClass:           demand.RunnerClass,
+		JobShapeID:            demand.JobShapeID,
+		TrustClass:            trustClass,
+		ExecutionID:           uuidFromPG(demand.SandboxExecutionID),
+		AttemptID:             uuidFromPG(demand.SandboxAttemptID),
 	}
 	s.writeEvent(ctx, githubEventFromMetadata(evidenceMeta, "github.terminal_evidence.emitted", job.Conclusion, "", now, now))
 	if strings.TrimSpace(job.Conclusion) != "success" {
@@ -78,18 +84,21 @@ func (s *Service) insertTerminalEvidence(ctx context.Context, job githubWorkflow
 		reason = sandboxReason
 	}
 	if err := s.queries.UpsertGoldenSnapshotBarrier(ctx, store.UpsertGoldenSnapshotBarrierParams{
-		BarrierID:          pgUUID(uuid.New()),
-		TerminalEvidenceID: terminalEvidenceID,
-		ProviderJobID:      job.ID,
-		ProviderRunID:      job.RunID,
-		ProviderRunAttempt: job.RunAttempt,
-		SandboxExecutionID: demand.SandboxExecutionID,
-		SandboxAttemptID:   demand.SandboxAttemptID,
-		JobShapeID:         demand.JobShapeID,
-		TrustClass:         trustClass,
-		State:              state,
-		FailureReason:      reason,
-		RequestedAt:        pgTime(time.Now().UTC()),
+		BarrierID:             pgUUID(uuid.New()),
+		TerminalEvidenceID:    terminalEvidenceID,
+		ProviderJobID:         job.ID,
+		OrgID:                 demand.OrgID,
+		InstallationBindingID: demand.InstallationBindingID,
+		RepositoryBindingID:   demand.RepositoryBindingID,
+		ProviderRunID:         job.RunID,
+		ProviderRunAttempt:    job.RunAttempt,
+		SandboxExecutionID:    demand.SandboxExecutionID,
+		SandboxAttemptID:      demand.SandboxAttemptID,
+		JobShapeID:            demand.JobShapeID,
+		TrustClass:            trustClass,
+		State:                 state,
+		FailureReason:         reason,
+		RequestedAt:           pgTime(time.Now().UTC()),
 	}); err != nil {
 		return err
 	}
