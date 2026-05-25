@@ -89,6 +89,7 @@ type Service struct {
 	PolicyWriter       OrganizationOwnerPolicyWriter
 	Billing            BillingProvisioner
 	ProjectID          string
+	EmailIdentityKey   []byte
 	Now                func() time.Time
 }
 
@@ -791,7 +792,7 @@ func (s *Service) availableOrganizationSlug(ctx context.Context, store Store, re
 			return "", err
 		}
 		if !available {
-			return "", fmt.Errorf("%w: organization slug is unavailable", ErrOrganizationConflict)
+			return "", fmt.Errorf("%w: organization slug is unavailable", ErrOrganizationSlugUnavailable)
 		}
 		return base, nil
 	}
@@ -812,7 +813,7 @@ func (s *Service) availableOrganizationSlug(ctx context.Context, store Store, re
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("%w: organization slug is unavailable", ErrOrganizationConflict)
+	return "", fmt.Errorf("%w: organization slug is unavailable", ErrOrganizationSlugUnavailable)
 }
 
 func trimSlugBase(value string, max int) string {

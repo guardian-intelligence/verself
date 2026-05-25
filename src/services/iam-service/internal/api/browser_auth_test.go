@@ -59,6 +59,18 @@ func TestBrowserLoginPromptAllowsAccountSelectionPromptOnly(t *testing.T) {
 	}
 }
 
+func TestSameEmailIdentityAllowsSubaddressAndIDNVariants(t *testing.T) {
+	if !sameEmailIdentity("Founder+signup@Bücher.Example", "founder@xn--bcher-kva.example") {
+		t.Fatal("expected plus-address and IDN variants to match")
+	}
+	if sameEmailIdentity("founder@example.test", "founder+tag@other.example") {
+		t.Fatal("expected different domains to mismatch")
+	}
+	if sameEmailIdentity("Founder <founder@example.test>", "founder@example.test") {
+		t.Fatal("expected display-name mailbox syntax to mismatch")
+	}
+}
+
 func TestBrowserOrganizationContextsIgnoreMissingMetadata(t *testing.T) {
 	contexts, missing := browserOrganizationContextsFromMetadata(
 		[]string{"org_missing", "org_live"},

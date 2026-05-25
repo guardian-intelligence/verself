@@ -226,6 +226,72 @@ type ValidationFailedError struct {
 	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
 }
 
+type SignupVerificationInvalidError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type SignupVerificationExpiredError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type SignupVerificationAlreadyUsedError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type SignupMaterializingError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type SignupStateConflictError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
+type OrganizationSlugUnavailableError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
 type GetMemberInput struct {
 	OrgID    OrgID    `path:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
 	MemberID MemberID `path:"memberId" required:"true" pattern:"^member_[0-9A-HJKMNP-TV-Z]{26}$"`
@@ -566,7 +632,6 @@ var StartSignup = Operation[StartSignupInput, StartSignupOutput]{
 		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
 		SDK:                 SDKDescriptor{Module: "signup", Method: "start", Paginated: false, Retryable: false},
 		Problems: []ProblemDescriptor{
-			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
 			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
@@ -592,10 +657,15 @@ var VerifySignup = Operation[VerifySignupInput, VerifySignupOutput]{
 		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
 		SDK:                 SDKDescriptor{Module: "signup", Method: "verify", Paginated: false, Retryable: false},
 		Problems: []ProblemDescriptor{
-			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
 			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
+			{ShapeID: "verself.iam.v1#OrganizationSlugUnavailableError", Type: "urn:verself:problem:iam:organization_slug_unavailable", Code: "iam.organization_slug.unavailable", Status: 409},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.iam.v1#SignupMaterializingError", Type: "urn:verself:problem:iam:signup_materializing", Code: "iam.signup.materializing", Status: 409},
+			{ShapeID: "verself.iam.v1#SignupStateConflictError", Type: "urn:verself:problem:iam:signup_state_conflict", Code: "iam.signup.state_conflict", Status: 409},
+			{ShapeID: "verself.iam.v1#SignupVerificationAlreadyUsedError", Type: "urn:verself:problem:iam:signup_verification_already_used", Code: "iam.signup.verification.already_used", Status: 409},
+			{ShapeID: "verself.iam.v1#SignupVerificationExpiredError", Type: "urn:verself:problem:iam:signup_verification_expired", Code: "iam.signup.verification.expired", Status: 400},
+			{ShapeID: "verself.iam.v1#SignupVerificationInvalidError", Type: "urn:verself:problem:iam:signup_verification_invalid", Code: "iam.signup.verification.invalid", Status: 400},
 			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
 		},
 	},

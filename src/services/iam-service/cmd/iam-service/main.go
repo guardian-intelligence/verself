@@ -240,6 +240,13 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("iam spicedb provider secret: %w", err)
 	}
+	emailIdentityHMACKey, err := readRuntimeSecret(ctx, secretsClient, secretsclient.IAMEmailIdentityHMACKeyName)
+	if err != nil {
+		return fmt.Errorf("iam email identity secret: %w", err)
+	}
+	if len(emailIdentityHMACKey) < 32 {
+		return fmt.Errorf("iam email identity secret must be at least 32 bytes")
+	}
 
 	zitadelClient, err := zitadel.New(zitadel.Config{
 		BaseURL:    zitadelBaseURL,
@@ -310,6 +317,7 @@ func run() error {
 		PolicyWriter:       organizationOwnerPolicyWriter{authz: authzService},
 		Billing:            billingOrganizationProvisioner{client: billingClient},
 		ProjectID:          authAudience,
+		EmailIdentityKey:   []byte(emailIdentityHMACKey),
 	}
 	api.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	notificationsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceNotifications, nil)

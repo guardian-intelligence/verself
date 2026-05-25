@@ -183,6 +183,7 @@ func run() error {
 				secretsclient.GitHubIntegrationUserTokenSecretPrefix,
 			}},
 			{Service: workloadauth.ServiceIAM, SecretNames: []string{
+				secretsclient.IAMEmailIdentityHMACKeyName,
 				secretsclient.IAMSpiceDBPresharedKeyName,
 				secretsclient.IAMZitadelAdminTokenName,
 			}},

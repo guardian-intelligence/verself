@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"time"
@@ -84,8 +85,9 @@ type SignupIntent struct {
 	SignupIntentID              string
 	IdempotencyKey              string
 	RequestHash                 []byte
-	Email                       string
-	EmailHash                   []byte
+	EmailDelivery               string
+	EmailIdentityHash           []byte
+	EmailIdentityHashKeyID      string
 	OrganizationDisplayName     string
 	RequestedOrganizationSlug   string
 	OrganizationSlug            string
@@ -469,4 +471,11 @@ type ResolveAPICredentialClaimsResult struct {
 func SecretHash(secret string) (fingerprint string, raw []byte) {
 	sum := sha256.Sum256([]byte(secret))
 	return "sha256:" + hex.EncodeToString(sum[:]), sum[:]
+}
+
+func HMACSHA256(key []byte, value string) (fingerprint string, raw []byte) {
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(value))
+	sum := mac.Sum(nil)
+	return "hmac-sha256:" + hex.EncodeToString(sum), sum
 }

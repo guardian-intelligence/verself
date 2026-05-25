@@ -64,6 +64,7 @@ func stringSliceContains(values []string, target string) bool {
 type operationRequestInfoKey struct{}
 
 type operationRequestInfo struct {
+	RequestID      string
 	ClientIP       string
 	UserAgent      string
 	IdempotencyKey string
@@ -74,6 +75,7 @@ type operationRequestInfo struct {
 func operationRequestMiddleware(ctx huma.Context, next func(huma.Context)) {
 	attribution := requestmeta.FromValues(ctx.Header, ctx.RemoteAddr())
 	info := operationRequestInfo{
+		RequestID:      strings.TrimSpace(ctx.Header("X-Request-ID")),
 		ClientIP:       attribution.ClientIP,
 		UserAgent:      strings.TrimSpace(ctx.Header("User-Agent")),
 		IdempotencyKey: strings.TrimSpace(ctx.Header("Idempotency-Key")),

@@ -331,9 +331,7 @@ func (a *BrowserAuth) enforceLoginConstraints(ctx context.Context, pending ident
 		return errors.New("required subject mismatch")
 	}
 	if pending.RequiredEmail.Valid && pending.RequiredEmail.String != "" {
-		actual := normalizeEmailHint(stringValue(user.Email))
-		required := normalizeEmailHint(pending.RequiredEmail.String)
-		if actual == "" || subtle.ConstantTimeCompare([]byte(actual), []byte(required)) != 1 {
+		if !sameEmailIdentity(pending.RequiredEmail.String, stringValue(user.Email)) {
 			return errors.New("required email mismatch")
 		}
 	}
@@ -2262,6 +2260,21 @@ func browserHandle(prefix string, parts ...string) string {
 
 func normalizeEmailHint(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func sameEmailIdentity(required, actual string) bool {
+	requiredEmail, err := identity.ParseEmailAddress(required)
+	if err != nil {
+		return false
+	}
+	actualEmail, err := identity.ParseEmailAddress(actual)
+	if err != nil {
+		return false
+	}
+	if len(requiredEmail.IdentityKey) != len(actualEmail.IdentityKey) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(requiredEmail.IdentityKey), []byte(actualEmail.IdentityKey)) == 1
 }
 
 type browserTokenVault struct {

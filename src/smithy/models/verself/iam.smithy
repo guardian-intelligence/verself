@@ -6,8 +6,10 @@ use aws.protocols#restJson1
 
 use smithy.api#auth
 use smithy.api#enumValue
+use smithy.api#error
 use smithy.api#http
 use smithy.api#httpBearerAuth
+use smithy.api#httpError
 use smithy.api#httpHeader
 use smithy.api#httpLabel
 use smithy.api#httpPayload
@@ -34,6 +36,7 @@ use verself.common.v1#IdempotencyPayloadMismatchError
 use verself.common.v1#PageRequest
 use verself.common.v1#PageResponse
 use verself.common.v1#PermissionDeniedError
+use verself.common.v1#ProblemDetails
 use verself.common.v1#RateLimitedError
 use verself.common.v1#ResourceNotFoundError
 use verself.common.v1#ServiceUnavailableError
@@ -45,6 +48,7 @@ use verself.common.v1#authz
 use verself.common.v1#identity
 use verself.common.v1#operationSemantics
 use verself.common.v1#permission
+use verself.common.v1#problem
 use verself.common.v1#protoField
 use verself.common.v1#rateLimit
 use verself.common.v1#requestBudget
@@ -266,6 +270,36 @@ enum SignupStartStatus {
     @enumValue("accepted")
     ACCEPTED
 }
+
+@error("client")
+@httpError(400)
+@problem(type: "urn:verself:problem:iam:signup_verification_invalid", code: "iam.signup.verification.invalid")
+structure SignupVerificationInvalidError with [ProblemDetails] {}
+
+@error("client")
+@httpError(400)
+@problem(type: "urn:verself:problem:iam:signup_verification_expired", code: "iam.signup.verification.expired")
+structure SignupVerificationExpiredError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "urn:verself:problem:iam:signup_verification_already_used", code: "iam.signup.verification.already_used")
+structure SignupVerificationAlreadyUsedError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "urn:verself:problem:iam:signup_materializing", code: "iam.signup.materializing")
+structure SignupMaterializingError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "urn:verself:problem:iam:signup_state_conflict", code: "iam.signup.state_conflict")
+structure SignupStateConflictError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "urn:verself:problem:iam:organization_slug_unavailable", code: "iam.organization_slug.unavailable")
+structure OrganizationSlugUnavailableError with [ProblemDetails] {}
 
 @permission(name: "iam:signup_intent:create")
 string SignupIntentCreatePermission
@@ -579,7 +613,6 @@ operation StartSignup {
     output: StartSignupOutput
     errors: [
         ValidationFailedError
-        ConflictError
         IdempotencyPayloadMismatchError
         RateLimitedError
         ServiceUnavailableError
@@ -651,7 +684,12 @@ operation VerifySignup {
     output: VerifySignupOutput
     errors: [
         ValidationFailedError
-        ConflictError
+        SignupVerificationInvalidError
+        SignupVerificationExpiredError
+        SignupVerificationAlreadyUsedError
+        SignupMaterializingError
+        SignupStateConflictError
+        OrganizationSlugUnavailableError
         IdempotencyPayloadMismatchError
         RateLimitedError
         ServiceUnavailableError

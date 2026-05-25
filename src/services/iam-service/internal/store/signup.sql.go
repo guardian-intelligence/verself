@@ -31,34 +31,35 @@ func (q *Queries) DeletePendingSignupIntent(ctx context.Context, arg DeletePendi
 	return result.RowsAffected(), nil
 }
 
-const getCompletedSignupIntentByEmailHashForUpdate = `-- name: GetCompletedSignupIntentByEmailHashForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+const getCompletedSignupIntentByEmailIdentityHashForUpdate = `-- name: GetCompletedSignupIntentByEmailIdentityHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
        created_at, updated_at, verification_expires_at, verified_at, completed_at
 FROM iam_signup_intents
-WHERE email_hash = $1
+WHERE email_identity_hash = $1
   AND state = 'completed'
 ORDER BY completed_at DESC
 LIMIT 1
 FOR UPDATE
 `
 
-type GetCompletedSignupIntentByEmailHashForUpdateParams struct {
-	EmailHash []byte
+type GetCompletedSignupIntentByEmailIdentityHashForUpdateParams struct {
+	EmailIdentityHash []byte
 }
 
-func (q *Queries) GetCompletedSignupIntentByEmailHashForUpdate(ctx context.Context, arg GetCompletedSignupIntentByEmailHashForUpdateParams) (IamSignupIntent, error) {
-	row := q.db.QueryRow(ctx, getCompletedSignupIntentByEmailHashForUpdate, arg.EmailHash)
+func (q *Queries) GetCompletedSignupIntentByEmailIdentityHashForUpdate(ctx context.Context, arg GetCompletedSignupIntentByEmailIdentityHashForUpdateParams) (IamSignupIntent, error) {
+	row := q.db.QueryRow(ctx, getCompletedSignupIntentByEmailIdentityHashForUpdate, arg.EmailIdentityHash)
 	var i IamSignupIntent
 	err := row.Scan(
 		&i.SignupIntentID,
 		&i.IdempotencyKey,
 		&i.RequestHash,
-		&i.Email,
-		&i.EmailHash,
+		&i.EmailDelivery,
+		&i.EmailIdentityHash,
+		&i.EmailIdentityHashKeyID,
 		&i.OrganizationDisplayName,
 		&i.RequestedOrganizationSlug,
 		&i.OrganizationSlug,
@@ -84,34 +85,35 @@ func (q *Queries) GetCompletedSignupIntentByEmailHashForUpdate(ctx context.Conte
 	return i, err
 }
 
-const getInFlightSignupIntentByEmailHashForUpdate = `-- name: GetInFlightSignupIntentByEmailHashForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+const getInFlightSignupIntentByEmailIdentityHashForUpdate = `-- name: GetInFlightSignupIntentByEmailIdentityHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
        created_at, updated_at, verification_expires_at, verified_at, completed_at
 FROM iam_signup_intents
-WHERE email_hash = $1
+WHERE email_identity_hash = $1
   AND state IN ('materializing', 'failed_retryable', 'failed_terminal')
 ORDER BY created_at DESC
 LIMIT 1
 FOR UPDATE
 `
 
-type GetInFlightSignupIntentByEmailHashForUpdateParams struct {
-	EmailHash []byte
+type GetInFlightSignupIntentByEmailIdentityHashForUpdateParams struct {
+	EmailIdentityHash []byte
 }
 
-func (q *Queries) GetInFlightSignupIntentByEmailHashForUpdate(ctx context.Context, arg GetInFlightSignupIntentByEmailHashForUpdateParams) (IamSignupIntent, error) {
-	row := q.db.QueryRow(ctx, getInFlightSignupIntentByEmailHashForUpdate, arg.EmailHash)
+func (q *Queries) GetInFlightSignupIntentByEmailIdentityHashForUpdate(ctx context.Context, arg GetInFlightSignupIntentByEmailIdentityHashForUpdateParams) (IamSignupIntent, error) {
+	row := q.db.QueryRow(ctx, getInFlightSignupIntentByEmailIdentityHashForUpdate, arg.EmailIdentityHash)
 	var i IamSignupIntent
 	err := row.Scan(
 		&i.SignupIntentID,
 		&i.IdempotencyKey,
 		&i.RequestHash,
-		&i.Email,
-		&i.EmailHash,
+		&i.EmailDelivery,
+		&i.EmailIdentityHash,
+		&i.EmailIdentityHashKeyID,
 		&i.OrganizationDisplayName,
 		&i.RequestedOrganizationSlug,
 		&i.OrganizationSlug,
@@ -137,34 +139,43 @@ func (q *Queries) GetInFlightSignupIntentByEmailHashForUpdate(ctx context.Contex
 	return i, err
 }
 
-const getReusableSignupIntentByEmailHashForUpdate = `-- name: GetReusableSignupIntentByEmailHashForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+const getReusableSignupIntentByEmailIdentityHashForUpdate = `-- name: GetReusableSignupIntentByEmailIdentityHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
        created_at, updated_at, verification_expires_at, verified_at, completed_at
 FROM iam_signup_intents
-WHERE email_hash = $1
-  AND state IN ('pending_verification', 'expired')
+WHERE email_identity_hash = $1
+  AND (
+    state IN ('pending_verification', 'expired')
+    OR (
+      state = 'failed_retryable'
+      AND identity_provider_org_id = ''
+      AND identity_provider_user_id = ''
+      AND organization_slug = ''
+    )
+  )
 ORDER BY created_at DESC
 LIMIT 1
 FOR UPDATE
 `
 
-type GetReusableSignupIntentByEmailHashForUpdateParams struct {
-	EmailHash []byte
+type GetReusableSignupIntentByEmailIdentityHashForUpdateParams struct {
+	EmailIdentityHash []byte
 }
 
-func (q *Queries) GetReusableSignupIntentByEmailHashForUpdate(ctx context.Context, arg GetReusableSignupIntentByEmailHashForUpdateParams) (IamSignupIntent, error) {
-	row := q.db.QueryRow(ctx, getReusableSignupIntentByEmailHashForUpdate, arg.EmailHash)
+func (q *Queries) GetReusableSignupIntentByEmailIdentityHashForUpdate(ctx context.Context, arg GetReusableSignupIntentByEmailIdentityHashForUpdateParams) (IamSignupIntent, error) {
+	row := q.db.QueryRow(ctx, getReusableSignupIntentByEmailIdentityHashForUpdate, arg.EmailIdentityHash)
 	var i IamSignupIntent
 	err := row.Scan(
 		&i.SignupIntentID,
 		&i.IdempotencyKey,
 		&i.RequestHash,
-		&i.Email,
-		&i.EmailHash,
+		&i.EmailDelivery,
+		&i.EmailIdentityHash,
+		&i.EmailIdentityHashKeyID,
 		&i.OrganizationDisplayName,
 		&i.RequestedOrganizationSlug,
 		&i.OrganizationSlug,
@@ -191,7 +202,7 @@ func (q *Queries) GetReusableSignupIntentByEmailHashForUpdate(ctx context.Contex
 }
 
 const getSignupIntentByIdempotencyKey = `-- name: GetSignupIntentByIdempotencyKey :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
@@ -212,8 +223,9 @@ func (q *Queries) GetSignupIntentByIdempotencyKey(ctx context.Context, arg GetSi
 		&i.SignupIntentID,
 		&i.IdempotencyKey,
 		&i.RequestHash,
-		&i.Email,
-		&i.EmailHash,
+		&i.EmailDelivery,
+		&i.EmailIdentityHash,
+		&i.EmailIdentityHashKeyID,
 		&i.OrganizationDisplayName,
 		&i.RequestedOrganizationSlug,
 		&i.OrganizationSlug,
@@ -240,7 +252,7 @@ func (q *Queries) GetSignupIntentByIdempotencyKey(ctx context.Context, arg GetSi
 }
 
 const getSignupIntentForUpdate = `-- name: GetSignupIntentForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
@@ -262,8 +274,9 @@ func (q *Queries) GetSignupIntentForUpdate(ctx context.Context, arg GetSignupInt
 		&i.SignupIntentID,
 		&i.IdempotencyKey,
 		&i.RequestHash,
-		&i.Email,
-		&i.EmailHash,
+		&i.EmailDelivery,
+		&i.EmailIdentityHash,
+		&i.EmailIdentityHashKeyID,
 		&i.OrganizationDisplayName,
 		&i.RequestedOrganizationSlug,
 		&i.OrganizationSlug,
@@ -291,16 +304,16 @@ func (q *Queries) GetSignupIntentForUpdate(ctx context.Context, arg GetSignupInt
 
 const insertSignupIntent = `-- name: InsertSignupIntent :one
 INSERT INTO iam_signup_intents (
-    signup_intent_id, idempotency_key, request_hash, email, email_hash,
+    signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
     organization_display_name, requested_organization_slug, given_name, family_name,
     verification_token_hash, state, org_id, verification_expires_at
 ) VALUES (
-    $1, $2, $3, $4, $5,
-    $6, $7, $8, $9,
-    $10, 'pending_verification', $11, $12
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10,
+    $11, 'pending_verification', $12, $13
 )
 ON CONFLICT (idempotency_key) DO NOTHING
-RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
+RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
           organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
@@ -312,8 +325,9 @@ type InsertSignupIntentParams struct {
 	SignupIntentID            string
 	IdempotencyKey            string
 	RequestHash               []byte
-	Email                     string
-	EmailHash                 []byte
+	EmailDelivery             string
+	EmailIdentityHash         []byte
+	EmailIdentityHashKeyID    string
 	OrganizationDisplayName   string
 	RequestedOrganizationSlug string
 	GivenName                 string
@@ -328,8 +342,9 @@ func (q *Queries) InsertSignupIntent(ctx context.Context, arg InsertSignupIntent
 		arg.SignupIntentID,
 		arg.IdempotencyKey,
 		arg.RequestHash,
-		arg.Email,
-		arg.EmailHash,
+		arg.EmailDelivery,
+		arg.EmailIdentityHash,
+		arg.EmailIdentityHashKeyID,
 		arg.OrganizationDisplayName,
 		arg.RequestedOrganizationSlug,
 		arg.GivenName,
@@ -343,8 +358,9 @@ func (q *Queries) InsertSignupIntent(ctx context.Context, arg InsertSignupIntent
 		&i.SignupIntentID,
 		&i.IdempotencyKey,
 		&i.RequestHash,
-		&i.Email,
-		&i.EmailHash,
+		&i.EmailDelivery,
+		&i.EmailIdentityHash,
+		&i.EmailIdentityHashKeyID,
 		&i.OrganizationDisplayName,
 		&i.RequestedOrganizationSlug,
 		&i.OrganizationSlug,
@@ -378,7 +394,7 @@ SET state = 'completed',
     materialization_lease_expires_at = NULL,
     updated_at = now()
 WHERE signup_intent_id = $2
-RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
+RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
           organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
@@ -398,8 +414,9 @@ func (q *Queries) MarkSignupIntentCompleted(ctx context.Context, arg MarkSignupI
 		&i.SignupIntentID,
 		&i.IdempotencyKey,
 		&i.RequestHash,
-		&i.Email,
-		&i.EmailHash,
+		&i.EmailDelivery,
+		&i.EmailIdentityHash,
+		&i.EmailIdentityHashKeyID,
 		&i.OrganizationDisplayName,
 		&i.RequestedOrganizationSlug,
 		&i.OrganizationSlug,
@@ -578,11 +595,12 @@ func (q *Queries) RecordSignupIntentProviderUser(ctx context.Context, arg Record
 const rotateReusableSignupIntentVerification = `-- name: RotateReusableSignupIntentVerification :one
 UPDATE iam_signup_intents
 SET request_hash = $1,
-    organization_display_name = $2,
-    requested_organization_slug = $3,
-    given_name = $4,
-    family_name = $5,
-    verification_token_hash = $6,
+    email_delivery = $2,
+    organization_display_name = $3,
+    requested_organization_slug = $4,
+    given_name = $5,
+    family_name = $6,
+    verification_token_hash = $7,
     state = 'pending_verification',
     materialization_step = '',
     materialization_last_error = '',
@@ -590,11 +608,19 @@ SET request_hash = $1,
     verify_idempotency_key = '',
     verify_request_hash = NULL,
     verified_at = NULL,
-    verification_expires_at = $7,
+    verification_expires_at = $8,
     updated_at = now()
-WHERE signup_intent_id = $8
-  AND state IN ('pending_verification', 'expired')
-RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
+WHERE signup_intent_id = $9
+  AND (
+    state IN ('pending_verification', 'expired')
+    OR (
+      state = 'failed_retryable'
+      AND identity_provider_org_id = ''
+      AND identity_provider_user_id = ''
+      AND organization_slug = ''
+    )
+  )
+RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
           organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
@@ -604,6 +630,7 @@ RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
 
 type RotateReusableSignupIntentVerificationParams struct {
 	RequestHash               []byte
+	EmailDelivery             string
 	OrganizationDisplayName   string
 	RequestedOrganizationSlug string
 	GivenName                 string
@@ -616,6 +643,7 @@ type RotateReusableSignupIntentVerificationParams struct {
 func (q *Queries) RotateReusableSignupIntentVerification(ctx context.Context, arg RotateReusableSignupIntentVerificationParams) (IamSignupIntent, error) {
 	row := q.db.QueryRow(ctx, rotateReusableSignupIntentVerification,
 		arg.RequestHash,
+		arg.EmailDelivery,
 		arg.OrganizationDisplayName,
 		arg.RequestedOrganizationSlug,
 		arg.GivenName,
@@ -629,8 +657,9 @@ func (q *Queries) RotateReusableSignupIntentVerification(ctx context.Context, ar
 		&i.SignupIntentID,
 		&i.IdempotencyKey,
 		&i.RequestHash,
-		&i.Email,
-		&i.EmailHash,
+		&i.EmailDelivery,
+		&i.EmailIdentityHash,
+		&i.EmailIdentityHashKeyID,
 		&i.OrganizationDisplayName,
 		&i.RequestedOrganizationSlug,
 		&i.OrganizationSlug,
