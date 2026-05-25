@@ -24,6 +24,7 @@ export function SignedOut({ children }: { children: ReactNode }) {
 
 export interface SignInButtonProps {
   readonly children?: ReactNode;
+  readonly promptLogin?: boolean;
   readonly redirectTo?: string;
   readonly variant?: ButtonVariant;
   readonly className?: string;
@@ -31,6 +32,7 @@ export interface SignInButtonProps {
 
 export function SignInButton({
   children = "Sign in",
+  promptLogin = false,
   redirectTo,
   variant = "default",
   className,
@@ -42,7 +44,10 @@ export function SignInButton({
       variant={variant}
       className={className}
       onClick={() => {
-        void redirectToSignIn(redirectTo ? { redirectTo } : undefined);
+        void redirectToSignIn({
+          ...(promptLogin ? { promptLogin: true } : {}),
+          ...(redirectTo ? { redirectTo } : {}),
+        });
       }}
     >
       {children}

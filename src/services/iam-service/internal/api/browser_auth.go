@@ -251,11 +251,21 @@ func (a *BrowserAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setLoginCookie(w, stateHash)
-	http.Redirect(w, r, a.oauth.AuthCodeURL(
-		state,
+	authCodeOptions := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("nonce", nonce),
 		oauth2.S256ChallengeOption(verifier),
-	), http.StatusSeeOther)
+	}
+	if prompt := browserLoginPrompt(r.URL.Query().Get("prompt")); prompt != "" {
+		authCodeOptions = append(authCodeOptions, oauth2.SetAuthURLParam("prompt", prompt))
+	}
+	http.Redirect(w, r, a.oauth.AuthCodeURL(state, authCodeOptions...), http.StatusSeeOther)
+}
+
+func browserLoginPrompt(value string) string {
+	if strings.TrimSpace(value) == "login" {
+		return "login"
+	}
+	return ""
 }
 
 func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {

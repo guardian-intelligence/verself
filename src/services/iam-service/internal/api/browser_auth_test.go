@@ -43,6 +43,18 @@ func TestSnapshotForSessionAllowsSignedInUserWithoutOrganization(t *testing.T) {
 	}
 }
 
+func TestBrowserLoginPromptAllowsAccountSelectionPromptOnly(t *testing.T) {
+	if got := browserLoginPrompt("login"); got != "login" {
+		t.Fatalf("browserLoginPrompt(login) = %q", got)
+	}
+	if got := browserLoginPrompt("none"); got != "" {
+		t.Fatalf("browserLoginPrompt(none) = %q", got)
+	}
+	if got := browserLoginPrompt(" login "); got != "login" {
+		t.Fatalf("browserLoginPrompt trims login = %q", got)
+	}
+}
+
 func TestBrowserOrganizationContextsIgnoreMissingMetadata(t *testing.T) {
 	contexts, missing := browserOrganizationContextsFromMetadata(
 		[]string{"org_missing", "org_live"},

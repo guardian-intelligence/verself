@@ -259,14 +259,14 @@ export function LandingTopBar() {
       <div className="ml-auto flex items-center gap-2">
         <Link
           to="/login"
-          search={{ redirect: undefined }}
+          search={{}}
           className="rounded-md px-3 py-2 text-white/80 transition-colors hover:text-white"
         >
           Sign in
         </Link>
         <Link
           to="/login"
-          search={{ redirect: undefined }}
+          search={{}}
           className="rounded-md bg-white px-3 py-2 font-medium text-black transition-colors hover:bg-white/90"
         >
           Get started

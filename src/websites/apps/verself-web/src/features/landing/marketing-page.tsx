@@ -334,7 +334,7 @@ function TopNavigation() {
       </Link>
       <Link
         to="/login"
-        search={{ redirect: undefined }}
+        search={{}}
         className="inline-flex h-9 items-center gap-2 rounded-md border border-stone-950/10 bg-white/62 px-3 text-sm font-semibold text-stone-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_10px_24px_-20px_rgba(20,24,31,0.8)] backdrop-blur transition-colors hover:bg-white"
       >
         Sign in

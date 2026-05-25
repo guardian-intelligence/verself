@@ -30,6 +30,7 @@ export {
 export interface AuthNavigationClient {
   getSignInRedirectURL?: (input: {
     data: {
+      promptLogin?: boolean | null;
       redirectTo?: string | null;
     };
   }) => Promise<string>;
@@ -192,7 +193,7 @@ export function useClerk() {
   const { client } = useAuthContextValue();
 
   return {
-    redirectToSignIn: async (options?: { redirectTo?: string }) => {
+    redirectToSignIn: async (options?: { promptLogin?: boolean; redirectTo?: string }) => {
       if (!client?.getSignInRedirectURL) {
         throw new Error("AuthProvider is missing getSignInRedirectURL()");
       }
@@ -200,7 +201,10 @@ export function useClerk() {
       const location = getBrowserLocation();
       const redirectTo = options?.redirectTo ?? location.href;
       const href = await client.getSignInRedirectURL({
-        data: redirectTo ? { redirectTo } : {},
+        data: {
+          ...(options?.promptLogin ? { promptLogin: true } : {}),
+          ...(redirectTo ? { redirectTo } : {}),
+        },
       });
       location.assign(href);
     },
