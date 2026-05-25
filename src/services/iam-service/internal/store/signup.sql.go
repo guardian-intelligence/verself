@@ -31,6 +31,165 @@ func (q *Queries) DeletePendingSignupIntent(ctx context.Context, arg DeletePendi
 	return result.RowsAffected(), nil
 }
 
+const getCompletedSignupIntentByEmailHashForUpdate = `-- name: GetCompletedSignupIntentByEmailHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+       organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
+       verification_token_hash, state, materialization_step, materialization_attempts,
+       materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
+       org_id, identity_provider_org_id, identity_provider_user_id,
+       created_at, updated_at, verification_expires_at, verified_at, completed_at
+FROM iam_signup_intents
+WHERE email_hash = $1
+  AND state = 'completed'
+ORDER BY completed_at DESC
+LIMIT 1
+FOR UPDATE
+`
+
+type GetCompletedSignupIntentByEmailHashForUpdateParams struct {
+	EmailHash []byte
+}
+
+func (q *Queries) GetCompletedSignupIntentByEmailHashForUpdate(ctx context.Context, arg GetCompletedSignupIntentByEmailHashForUpdateParams) (IamSignupIntent, error) {
+	row := q.db.QueryRow(ctx, getCompletedSignupIntentByEmailHashForUpdate, arg.EmailHash)
+	var i IamSignupIntent
+	err := row.Scan(
+		&i.SignupIntentID,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.Email,
+		&i.EmailHash,
+		&i.OrganizationDisplayName,
+		&i.RequestedOrganizationSlug,
+		&i.OrganizationSlug,
+		&i.GivenName,
+		&i.FamilyName,
+		&i.VerificationTokenHash,
+		&i.State,
+		&i.MaterializationStep,
+		&i.MaterializationAttempts,
+		&i.MaterializationLastError,
+		&i.MaterializationLeaseExpiresAt,
+		&i.VerifyIdempotencyKey,
+		&i.VerifyRequestHash,
+		&i.OrgID,
+		&i.IdentityProviderOrgID,
+		&i.IdentityProviderUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.VerificationExpiresAt,
+		&i.VerifiedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const getInFlightSignupIntentByEmailHashForUpdate = `-- name: GetInFlightSignupIntentByEmailHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+       organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
+       verification_token_hash, state, materialization_step, materialization_attempts,
+       materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
+       org_id, identity_provider_org_id, identity_provider_user_id,
+       created_at, updated_at, verification_expires_at, verified_at, completed_at
+FROM iam_signup_intents
+WHERE email_hash = $1
+  AND state IN ('materializing', 'failed_retryable', 'failed_terminal')
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE
+`
+
+type GetInFlightSignupIntentByEmailHashForUpdateParams struct {
+	EmailHash []byte
+}
+
+func (q *Queries) GetInFlightSignupIntentByEmailHashForUpdate(ctx context.Context, arg GetInFlightSignupIntentByEmailHashForUpdateParams) (IamSignupIntent, error) {
+	row := q.db.QueryRow(ctx, getInFlightSignupIntentByEmailHashForUpdate, arg.EmailHash)
+	var i IamSignupIntent
+	err := row.Scan(
+		&i.SignupIntentID,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.Email,
+		&i.EmailHash,
+		&i.OrganizationDisplayName,
+		&i.RequestedOrganizationSlug,
+		&i.OrganizationSlug,
+		&i.GivenName,
+		&i.FamilyName,
+		&i.VerificationTokenHash,
+		&i.State,
+		&i.MaterializationStep,
+		&i.MaterializationAttempts,
+		&i.MaterializationLastError,
+		&i.MaterializationLeaseExpiresAt,
+		&i.VerifyIdempotencyKey,
+		&i.VerifyRequestHash,
+		&i.OrgID,
+		&i.IdentityProviderOrgID,
+		&i.IdentityProviderUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.VerificationExpiresAt,
+		&i.VerifiedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const getReusableSignupIntentByEmailHashForUpdate = `-- name: GetReusableSignupIntentByEmailHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+       organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
+       verification_token_hash, state, materialization_step, materialization_attempts,
+       materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
+       org_id, identity_provider_org_id, identity_provider_user_id,
+       created_at, updated_at, verification_expires_at, verified_at, completed_at
+FROM iam_signup_intents
+WHERE email_hash = $1
+  AND state IN ('pending_verification', 'expired')
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE
+`
+
+type GetReusableSignupIntentByEmailHashForUpdateParams struct {
+	EmailHash []byte
+}
+
+func (q *Queries) GetReusableSignupIntentByEmailHashForUpdate(ctx context.Context, arg GetReusableSignupIntentByEmailHashForUpdateParams) (IamSignupIntent, error) {
+	row := q.db.QueryRow(ctx, getReusableSignupIntentByEmailHashForUpdate, arg.EmailHash)
+	var i IamSignupIntent
+	err := row.Scan(
+		&i.SignupIntentID,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.Email,
+		&i.EmailHash,
+		&i.OrganizationDisplayName,
+		&i.RequestedOrganizationSlug,
+		&i.OrganizationSlug,
+		&i.GivenName,
+		&i.FamilyName,
+		&i.VerificationTokenHash,
+		&i.State,
+		&i.MaterializationStep,
+		&i.MaterializationAttempts,
+		&i.MaterializationLastError,
+		&i.MaterializationLeaseExpiresAt,
+		&i.VerifyIdempotencyKey,
+		&i.VerifyRequestHash,
+		&i.OrgID,
+		&i.IdentityProviderOrgID,
+		&i.IdentityProviderUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.VerificationExpiresAt,
+		&i.VerifiedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const getSignupIntentByIdempotencyKey = `-- name: GetSignupIntentByIdempotencyKey :one
 SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
@@ -309,18 +468,20 @@ SET state = 'materializing',
     verify_idempotency_key = $1,
     verify_request_hash = $2,
     organization_display_name = COALESCE(NULLIF($3::text, ''), organization_display_name),
-    verified_at = COALESCE(verified_at, $4),
-    materialization_lease_expires_at = $5,
+    requested_organization_slug = COALESCE(NULLIF($4::text, ''), requested_organization_slug),
+    verified_at = COALESCE(verified_at, $5),
+    materialization_lease_expires_at = $6,
     materialization_attempts = materialization_attempts + 1,
     materialization_last_error = '',
     updated_at = now()
-WHERE signup_intent_id = $6
+WHERE signup_intent_id = $7
 `
 
 type MarkSignupIntentMaterializingParams struct {
 	VerifyIdempotencyKey          string
 	VerifyRequestHash             []byte
 	OrganizationDisplayName       string
+	RequestedOrganizationSlug     string
 	VerifiedAt                    pgtype.Timestamptz
 	MaterializationLeaseExpiresAt pgtype.Timestamptz
 	SignupIntentID                string
@@ -331,6 +492,7 @@ func (q *Queries) MarkSignupIntentMaterializing(ctx context.Context, arg MarkSig
 		arg.VerifyIdempotencyKey,
 		arg.VerifyRequestHash,
 		arg.OrganizationDisplayName,
+		arg.RequestedOrganizationSlug,
 		arg.VerifiedAt,
 		arg.MaterializationLeaseExpiresAt,
 		arg.SignupIntentID,
@@ -411,4 +573,85 @@ type RecordSignupIntentProviderUserParams struct {
 func (q *Queries) RecordSignupIntentProviderUser(ctx context.Context, arg RecordSignupIntentProviderUserParams) error {
 	_, err := q.db.Exec(ctx, recordSignupIntentProviderUser, arg.IdentityProviderUserID, arg.SignupIntentID)
 	return err
+}
+
+const rotateReusableSignupIntentVerification = `-- name: RotateReusableSignupIntentVerification :one
+UPDATE iam_signup_intents
+SET request_hash = $1,
+    organization_display_name = $2,
+    requested_organization_slug = $3,
+    given_name = $4,
+    family_name = $5,
+    verification_token_hash = $6,
+    state = 'pending_verification',
+    materialization_step = '',
+    materialization_last_error = '',
+    materialization_lease_expires_at = NULL,
+    verify_idempotency_key = '',
+    verify_request_hash = NULL,
+    verified_at = NULL,
+    verification_expires_at = $7,
+    updated_at = now()
+WHERE signup_intent_id = $8
+  AND state IN ('pending_verification', 'expired')
+RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
+          organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
+          verification_token_hash, state, materialization_step, materialization_attempts,
+          materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
+          org_id, identity_provider_org_id, identity_provider_user_id,
+          created_at, updated_at, verification_expires_at, verified_at, completed_at
+`
+
+type RotateReusableSignupIntentVerificationParams struct {
+	RequestHash               []byte
+	OrganizationDisplayName   string
+	RequestedOrganizationSlug string
+	GivenName                 string
+	FamilyName                string
+	VerificationTokenHash     []byte
+	VerificationExpiresAt     pgtype.Timestamptz
+	SignupIntentID            string
+}
+
+func (q *Queries) RotateReusableSignupIntentVerification(ctx context.Context, arg RotateReusableSignupIntentVerificationParams) (IamSignupIntent, error) {
+	row := q.db.QueryRow(ctx, rotateReusableSignupIntentVerification,
+		arg.RequestHash,
+		arg.OrganizationDisplayName,
+		arg.RequestedOrganizationSlug,
+		arg.GivenName,
+		arg.FamilyName,
+		arg.VerificationTokenHash,
+		arg.VerificationExpiresAt,
+		arg.SignupIntentID,
+	)
+	var i IamSignupIntent
+	err := row.Scan(
+		&i.SignupIntentID,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.Email,
+		&i.EmailHash,
+		&i.OrganizationDisplayName,
+		&i.RequestedOrganizationSlug,
+		&i.OrganizationSlug,
+		&i.GivenName,
+		&i.FamilyName,
+		&i.VerificationTokenHash,
+		&i.State,
+		&i.MaterializationStep,
+		&i.MaterializationAttempts,
+		&i.MaterializationLastError,
+		&i.MaterializationLeaseExpiresAt,
+		&i.VerifyIdempotencyKey,
+		&i.VerifyRequestHash,
+		&i.OrgID,
+		&i.IdentityProviderOrgID,
+		&i.IdentityProviderUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.VerificationExpiresAt,
+		&i.VerifiedAt,
+		&i.CompletedAt,
+	)
+	return i, err
 }

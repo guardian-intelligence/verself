@@ -619,7 +619,7 @@ func (s notificationSignupSender) SendSignupVerification(ctx context.Context, in
 	)
 	resp, err := s.client.TriggerNotificationWorkflow(ctx, notificationsinternalclient.TriggerNotificationWorkflowRequest{
 		WorkflowKey:    notificationsinternalclient.WorkflowKey("iam.signup.verify"),
-		IdempotencyKey: notificationsinternalclient.IdempotencyKey("iam:signup_verify:" + strings.TrimSpace(input.SignupIntentID)),
+		IdempotencyKey: notificationsinternalclient.IdempotencyKey("iam:signup_verify:" + strings.TrimSpace(input.SignupIntentID) + ":" + strings.TrimSpace(input.VerificationFingerprint)),
 		Body: notificationsinternalclient.TriggerNotificationWorkflowInputBody{
 			ActionURL:          &actionURL,
 			Body:               body,

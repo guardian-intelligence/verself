@@ -14,13 +14,9 @@ import (
 )
 
 type signupStartOutput struct {
-	Message                 string `json:"message"`
-	SignupIntentID          string `json:"signupIntentId"`
-	ResourceName            string `json:"resourceName"`
-	OrganizationDisplayName string `json:"organizationDisplayName"`
-	OrganizationSlug        string `json:"organizationSlug,omitempty"`
-	Status                  string `json:"status"`
-	VerificationExpiresAt   string `json:"verificationExpiresAt"`
+	Message               string `json:"message"`
+	Status                string `json:"status"`
+	VerificationExpiresAt string `json:"verificationExpiresAt"`
 }
 
 type signupVerifyOutput struct {
@@ -48,7 +44,6 @@ func (c CLI) authSignupStart(ctx context.Context, args []string) error {
 	slug := fs.String("slug", "", "organization slug")
 	givenName := fs.String("given-name", "", "account given name")
 	familyName := fs.String("family-name", "", "account family name")
-	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
@@ -70,18 +65,17 @@ func (c CLI) authSignupStart(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	intent, err := client.IAM.StartSignup(ctx, verself.StartSignupInput{
+	result, err := client.IAM.StartSignup(ctx, verself.StartSignupInput{
 		Email:                   emailValue,
 		OrganizationDisplayName: orgDisplayName,
 		OrganizationSlug:        trimOptionalString(*slug),
 		GivenName:               trimOptionalString(*givenName),
 		FamilyName:              trimOptionalString(*familyName),
-		IdempotencyKey:          *idempotencyKey,
 	})
 	if err != nil {
 		return err
 	}
-	return writeJSON(c.out, signupStartOutputFromIntent(emailValue, intent))
+	return writeJSON(c.out, signupStartOutputFromResult(result))
 }
 
 func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
@@ -89,25 +83,33 @@ func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
 	actionURL := fs.String("url", "", "signup verification URL")
 	signupIntentID := fs.String("signup-intent-id", "", "signup intent id")
 	verificationToken := fs.String("verification-token", "", "signup verification token")
-	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
+	organizationDisplayName := fs.String("org", "", "organization display name")
+	organizationSlug := fs.String("slug", "", "organization slug")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
 		return errors.New("usage: auth signup verify --url URL")
 	}
-	intentID, token, err := signupVerificationCredentials(*actionURL, *signupIntentID, *verificationToken)
+	credentials, err := signupVerificationCredentials(*actionURL, *signupIntentID, *verificationToken)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(*organizationDisplayName) != "" {
+		credentials.organizationDisplayName = strings.TrimSpace(*organizationDisplayName)
+	}
+	if strings.TrimSpace(*organizationSlug) != "" {
+		credentials.organizationSlug = strings.TrimSpace(*organizationSlug)
 	}
 	client, err := c.publicIAMClient(*iamFlags)
 	if err != nil {
 		return err
 	}
 	result, err := client.IAM.VerifySignup(ctx, verself.VerifySignupInput{
-		SignupIntentID:    intentID,
-		VerificationToken: token,
-		IdempotencyKey:    *idempotencyKey,
+		SignupIntentID:          credentials.signupIntentID,
+		VerificationToken:       credentials.verificationToken,
+		OrganizationDisplayName: trimOptionalString(credentials.organizationDisplayName),
+		OrganizationSlug:        trimOptionalString(credentials.organizationSlug),
 	})
 	if err != nil {
 		return err
@@ -135,19 +137,11 @@ func (c CLI) publicIAMClient(flags publicIAMFlags) (*verself.Client, error) {
 	})
 }
 
-func signupStartOutputFromIntent(email string, intent verself.SignupIntent) signupStartOutput {
-	message := fmt.Sprintf("Signup started for %s; verification email delivery is queued.", email)
-	if strings.TrimSpace(intent.VerificationExpiresAt) != "" {
-		message = fmt.Sprintf("Signup started for %s; verification email delivery is queued and valid until %s.", email, intent.VerificationExpiresAt)
-	}
+func signupStartOutputFromResult(result verself.SignupStartResult) signupStartOutput {
 	return signupStartOutput{
-		Message:                 message,
-		SignupIntentID:          intent.SignupIntentID,
-		ResourceName:            intent.ResourceName,
-		OrganizationDisplayName: intent.OrganizationDisplayName,
-		OrganizationSlug:        intent.OrganizationSlug,
-		Status:                  intent.Status,
-		VerificationExpiresAt:   intent.VerificationExpiresAt,
+		Message:               result.Message,
+		Status:                result.Status,
+		VerificationExpiresAt: result.VerificationExpiresAt,
 	}
 }
 
@@ -163,33 +157,44 @@ func signupVerifyOutputFromResult(result verself.SignupVerificationResult) signu
 	}
 }
 
-func signupVerificationCredentials(actionURL, signupIntentID, verificationToken string) (string, string, error) {
-	intentID := strings.TrimSpace(signupIntentID)
-	token := strings.TrimSpace(verificationToken)
-	if strings.TrimSpace(actionURL) != "" {
-		urlIntentID, urlToken, err := signupVerificationCredentialsFromURL(actionURL)
-		if err != nil {
-			return "", "", err
-		}
-		if intentID != "" && intentID != urlIntentID {
-			return "", "", errors.New("--signup-intent-id does not match --url")
-		}
-		if token != "" && token != urlToken {
-			return "", "", errors.New("--verification-token does not match --url")
-		}
-		intentID = urlIntentID
-		token = urlToken
-	}
-	if intentID == "" || token == "" {
-		return "", "", errors.New("auth signup verify requires --url or both --signup-intent-id and --verification-token")
-	}
-	return intentID, token, nil
+type signupVerificationCredentialSet struct {
+	signupIntentID          string
+	verificationToken       string
+	organizationDisplayName string
+	organizationSlug        string
 }
 
-func signupVerificationCredentialsFromURL(raw string) (string, string, error) {
+func signupVerificationCredentials(actionURL, signupIntentID, verificationToken string) (signupVerificationCredentialSet, error) {
+	intentID := strings.TrimSpace(signupIntentID)
+	token := strings.TrimSpace(verificationToken)
+	credentials := signupVerificationCredentialSet{}
+	if strings.TrimSpace(actionURL) != "" {
+		urlCredentials, err := signupVerificationCredentialsFromURL(actionURL)
+		if err != nil {
+			return signupVerificationCredentialSet{}, err
+		}
+		if intentID != "" && intentID != urlCredentials.signupIntentID {
+			return signupVerificationCredentialSet{}, errors.New("--signup-intent-id does not match --url")
+		}
+		if token != "" && token != urlCredentials.verificationToken {
+			return signupVerificationCredentialSet{}, errors.New("--verification-token does not match --url")
+		}
+		credentials = urlCredentials
+		intentID = urlCredentials.signupIntentID
+		token = urlCredentials.verificationToken
+	}
+	if intentID == "" || token == "" {
+		return signupVerificationCredentialSet{}, errors.New("auth signup verify requires --url or both --signup-intent-id and --verification-token")
+	}
+	credentials.signupIntentID = intentID
+	credentials.verificationToken = token
+	return credentials, nil
+}
+
+func signupVerificationCredentialsFromURL(raw string) (signupVerificationCredentialSet, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return "", "", fmt.Errorf("parse signup verification URL: %w", err)
+		return signupVerificationCredentialSet{}, fmt.Errorf("parse signup verification URL: %w", err)
 	}
 	query := parsed.Query()
 	intentID := firstNonEmpty(
@@ -203,9 +208,14 @@ func signupVerificationCredentialsFromURL(raw string) (string, string, error) {
 		query.Get("token"),
 	)
 	if intentID == "" || token == "" {
-		return "", "", errors.New("signup verification URL must include signup_intent_id and verification_token")
+		return signupVerificationCredentialSet{}, errors.New("signup verification URL must include signup_intent_id and verification_token")
 	}
-	return intentID, token, nil
+	return signupVerificationCredentialSet{
+		signupIntentID:          intentID,
+		verificationToken:       token,
+		organizationDisplayName: firstNonEmpty(query.Get("organization_display_name"), query.Get("organizationDisplayName")),
+		organizationSlug:        firstNonEmpty(query.Get("organization_slug"), query.Get("organizationSlug")),
+	}, nil
 }
 
 func trimOptionalString(value string) *string {

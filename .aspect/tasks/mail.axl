@@ -25,3 +25,80 @@ addresses = task(
         "site": args.string(default = "prod", description = "Deployment site."),
     },
 )
+
+def _test_accounts_args(ctx, action):
+    argv = [
+        "mail",
+        "test-accounts",
+        action,
+        "--repo-root",
+        ws_path(ctx),
+        "--site",
+        ctx.args.site,
+        "--format",
+        ctx.args.format,
+    ]
+    if action == "ensure" and ctx.args.reset_secrets:
+        argv.append("--reset-secrets")
+    return argv
+
+def _test_accounts_ensure_impl(ctx):
+    return bazel_run(
+        ctx,
+        ASPECT_OPERATOR_TARGET,
+        _test_accounts_args(ctx, "ensure"),
+        cwd = ws_path(ctx),
+        label = "aspect-operator mail test-accounts ensure",
+    )
+
+def _test_accounts_list_impl(ctx):
+    return bazel_run(
+        ctx,
+        ASPECT_OPERATOR_TARGET,
+        _test_accounts_args(ctx, "list"),
+        cwd = ws_path(ctx),
+        label = "aspect-operator mail test-accounts list",
+    )
+
+def _test_accounts_delete_impl(ctx):
+    return bazel_run(
+        ctx,
+        ASPECT_OPERATOR_TARGET,
+        _test_accounts_args(ctx, "delete"),
+        cwd = ws_path(ctx),
+        label = "aspect-operator mail test-accounts delete",
+    )
+
+test_accounts_ensure = task(
+    implementation = _test_accounts_ensure_impl,
+    name = "ensure",
+    group = ["mail", "test-accounts"],
+    summary = "Provision standalone signup-flow test mailboxes.",
+    args = {
+        "format": args.string(default = "table", description = "Output format: table, json, csv, or tsv."),
+        "reset_secrets": args.boolean(default = False, description = "Rotate mailbox passwords even when JMAP auth succeeds."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+test_accounts_list = task(
+    implementation = _test_accounts_list_impl,
+    name = "list",
+    group = ["mail", "test-accounts"],
+    summary = "List standalone signup-flow test mailbox status.",
+    args = {
+        "format": args.string(default = "table", description = "Output format: table, json, csv, or tsv."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+test_accounts_delete = task(
+    implementation = _test_accounts_delete_impl,
+    name = "delete",
+    group = ["mail", "test-accounts"],
+    summary = "Delete signup-flow test mailboxes and associated product data.",
+    args = {
+        "format": args.string(default = "table", description = "Output format: table, json, csv, or tsv."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)

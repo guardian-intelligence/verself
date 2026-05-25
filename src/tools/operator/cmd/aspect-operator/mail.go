@@ -19,12 +19,14 @@ type mailMainVars struct {
 
 func cmdMail(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("mail: missing subcommand (try `addresses`)")
+		return fmt.Errorf("mail: missing subcommand (try `addresses` or `test-accounts`)")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
 	case "addresses":
 		return cmdMailAddresses(rest)
+	case "test-accounts":
+		return cmdMailTestAccounts(rest)
 	default:
 		return fmt.Errorf("mail: unknown subcommand: %s", sub)
 	}

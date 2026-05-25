@@ -156,6 +156,7 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 	)
 	startAuths := map[string]string{}
 	startBodies := map[string]map[string]any{}
+	startIdempotencyKeys := map[string]string{}
 	startTraceparents := map[string]string{}
 	var verifyKey string
 	var verifyAuth string
@@ -166,23 +167,20 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/signup-intents":
 			startKey := r.Header.Get("Idempotency-Key")
-			startTraceparents[startKey] = r.Header.Get("Traceparent")
-			startAuths[startKey] = r.Header.Get("Authorization")
 			var startBody map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&startBody); err != nil {
 				t.Fatal(err)
 			}
-			startBodies[startKey] = startBody
-			orgName, _ := startBody["organizationDisplayName"].(string)
-			orgSlug, _ := startBody["organizationSlug"].(string)
+			email, _ := startBody["email"].(string)
+			startTraceparents[email] = r.Header.Get("Traceparent")
+			startAuths[email] = r.Header.Get("Authorization")
+			startIdempotencyKeys[email] = startKey
+			startBodies[email] = startBody
 			w.WriteHeader(http.StatusAccepted)
 			if err := json.NewEncoder(w).Encode(map[string]any{
-				"signupIntentId":          signupIntentID,
-				"resourceName":            "urn:verself:iam:signup_intent:" + signupIntentID,
-				"organizationDisplayName": orgName,
-				"organizationSlug":        orgSlug,
-				"status":                  "verification_pending",
-				"verificationExpiresAt":   "2026-05-25T00:00:00Z",
+				"message":               "Check your email to continue.",
+				"status":                "accepted",
+				"verificationExpiresAt": "2026-05-25T00:00:00Z",
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -206,16 +204,15 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 	runCLI(t, &defaultStartOut,
 		"auth", "signup",
 		"--email", "my-email@email.com",
-		"--idempotency-key", "iam:start-default",
 	)
-	if startBodies["iam:start-default"]["organizationDisplayName"] != "My Email" {
-		t.Fatalf("default signup organization display name = %#v", startBodies["iam:start-default"])
+	if startBodies["my-email@email.com"]["organizationDisplayName"] != "My Email" {
+		t.Fatalf("default signup organization display name = %#v", startBodies["my-email@email.com"])
 	}
 	var defaultStarted signupStartOutput
 	if err := json.Unmarshal(defaultStartOut.Bytes(), &defaultStarted); err != nil {
 		t.Fatalf("decode default start output: %v\n%s", err, defaultStartOut.String())
 	}
-	if defaultStarted.OrganizationDisplayName != "My Email" {
+	if defaultStarted.Status != "accepted" || defaultStarted.VerificationExpiresAt != "2026-05-25T00:00:00Z" {
 		t.Fatalf("unexpected default start output: %#v", defaultStarted)
 	}
 
@@ -227,16 +224,18 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 		"--slug", "guardian-intelligence",
 		"--given-name", "Operator",
 		"--family-name", "Example",
-		"--idempotency-key", "iam:start-signup",
 		"--traceparent", traceparent,
 	)
-	if startAuths["iam:start-signup"] != "" {
-		t.Fatalf("start Authorization = %q", startAuths["iam:start-signup"])
+	if startAuths["operator@example.test"] != "" {
+		t.Fatalf("start Authorization = %q", startAuths["operator@example.test"])
 	}
-	if startTraceparents["iam:start-signup"] != traceparent {
-		t.Fatalf("unexpected start traceparent=%q", startTraceparents["iam:start-signup"])
+	if startTraceparents["operator@example.test"] != traceparent {
+		t.Fatalf("unexpected start traceparent=%q", startTraceparents["operator@example.test"])
 	}
-	startBody := startBodies["iam:start-signup"]
+	if startIdempotencyKeys["operator@example.test"] == "" {
+		t.Fatalf("start idempotency key was not derived")
+	}
+	startBody := startBodies["operator@example.test"]
 	if startBody["email"] != "operator@example.test" ||
 		startBody["organizationDisplayName"] != "Guardian Intelligence" ||
 		startBody["organizationSlug"] != "guardian-intelligence" ||
@@ -248,27 +247,29 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 	if err := json.Unmarshal(startOut.Bytes(), &started); err != nil {
 		t.Fatalf("decode start output: %v\n%s", err, startOut.String())
 	}
-	if started.Message != "Signup started for operator@example.test; verification email delivery is queued and valid until 2026-05-25T00:00:00Z." ||
-		started.SignupIntentID != signupIntentID ||
-		started.Status != "verification_pending" {
+	if started.Message != "Check your email to continue." ||
+		started.Status != "accepted" ||
+		started.VerificationExpiresAt != "2026-05-25T00:00:00Z" {
 		t.Fatalf("unexpected start output: %#v", started)
 	}
 
-	verifyURL := "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID + "&verification_token=" + verificationToken
+	verifyURL := "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID + "&verification_token=" + verificationToken + "&organization_display_name=Guardian+Intelligence&organization_slug=guardian-intelligence"
 	var verifyOut bytes.Buffer
 	runCLI(t, &verifyOut,
 		"auth", "signup", "verify",
 		"--url", verifyURL,
-		"--idempotency-key", "iam:verify-signup",
 	)
 	if verifyAuth != "" {
 		t.Fatalf("verify Authorization = %q", verifyAuth)
 	}
-	if verifyKey != "iam:verify-signup" {
-		t.Fatalf("verify idempotency key = %q", verifyKey)
+	if verifyKey == "" {
+		t.Fatalf("verify idempotency key was not derived")
 	}
 	if verifyBody["verificationToken"] != verificationToken {
 		t.Fatalf("unexpected verification token body: %#v", verifyBody)
+	}
+	if verifyBody["organizationDisplayName"] != "Guardian Intelligence" || verifyBody["organizationSlug"] != "guardian-intelligence" {
+		t.Fatalf("unexpected verification organization body: %#v", verifyBody)
 	}
 	var verified signupVerifyOutput
 	if err := json.Unmarshal(verifyOut.Bytes(), &verified); err != nil {

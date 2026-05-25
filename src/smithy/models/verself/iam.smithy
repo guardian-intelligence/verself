@@ -65,6 +65,7 @@ service Iam {
         SelectBrowserOrganization
         CreateBrowserResourceToken
         LogoutBrowserSession
+        CheckOrganizationSlugAvailability
         StartSignup
         VerifySignup
         AcceptMemberInvite
@@ -106,9 +107,6 @@ string SignupIntentId
 
 @pattern("^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}$")
 string OrganizationResourceName
-
-@pattern("^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:signup-intents/signup_[0-9A-HJKMNP-TV-Z]{26}$")
-string SignupIntentResourceName
 
 @pattern("^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}/members/member_[0-9A-HJKMNP-TV-Z]{26}$")
 string MemberResourceName
@@ -264,15 +262,9 @@ enum IAMAuthorizationSubjectType {
     WORKLOAD
 }
 
-enum SignupIntentStatus {
-    @enumValue("verification_pending")
-    VERIFICATION_PENDING
-
-    @enumValue("verified")
-    VERIFIED
-
-    @enumValue("expired")
-    EXPIRED
+enum SignupStartStatus {
+    @enumValue("accepted")
+    ACCEPTED
 }
 
 @permission(name: "iam:signup_intent:create")
@@ -280,6 +272,9 @@ string SignupIntentCreatePermission
 
 @permission(name: "iam:signup_intent:verify")
 string SignupIntentVerifyPermission
+
+@permission(name: "iam:organization_slug:check")
+string OrganizationSlugCheckPermission
 
 @permission(name: "iam:member_invite:accept")
 string MemberInviteAcceptPermission
@@ -349,6 +344,9 @@ string SignupIntentCreateAuditEvent
 
 @auditEvent(name: "iam.signup_intent.verify")
 string SignupIntentVerifyAuditEvent
+
+@auditEvent(name: "iam.organization_slug.check")
+string OrganizationSlugCheckAuditEvent
 
 @auditEvent(name: "iam.member_invite.accept")
 string MemberInviteAcceptAuditEvent
@@ -476,31 +474,6 @@ resource HumanProfile {
 resource Authorization {
 }
 
-structure SignupIntentSummary {
-    @required
-    @protoField(number: 1)
-    signupIntentId: SignupIntentId
-
-    @required
-    @protoField(number: 2)
-    resourceName: SignupIntentResourceName
-
-    @required
-    @protoField(number: 3)
-    organizationDisplayName: DisplayName
-
-    @protoField(number: 4)
-    organizationSlug: OrgSlug
-
-    @required
-    @protoField(number: 5)
-    status: SignupIntentStatus
-
-    @required
-    @protoField(number: 6)
-    verificationExpiresAt: DateTime
-}
-
 structure OrganizationSummary for Organization {
     @required
     @resourceIdentifier("orgId")
@@ -546,6 +519,51 @@ structure MemberSummary for Member {
     @protoField(number: 5)
     $displayName
 
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/organization-slugs/{slug}/availability", code: 200)
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "cli", "anonymous"])
+@authz(permission: OrganizationSlugCheckPermission, organization: {source: "installation"})
+@audit(event: OrganizationSlugCheckAuditEvent, resource: Organization, action: "read")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "orgs", method: "checkSlugAvailability", paginated: false, retryable: true)
+operation CheckOrganizationSlugAvailability {
+    input: CheckOrganizationSlugAvailabilityInput
+    output: CheckOrganizationSlugAvailabilityOutput
+    errors: [
+        ValidationFailedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure CheckOrganizationSlugAvailabilityInput {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    slug: OrgSlug
+}
+
+@output
+structure CheckOrganizationSlugAvailabilityOutput {
+    @required
+    @httpPayload
+    @notProperty
+    @protoField(number: 1)
+    result: OrganizationSlugAvailability
+}
+
+structure OrganizationSlugAvailability {
+    @required
+    @protoField(number: 1)
+    slug: OrgSlug
+
+    @required
+    @protoField(number: 2)
+    available: Boolean
 }
 
 @idempotent
@@ -601,10 +619,23 @@ structure StartSignupInput {
 structure StartSignupOutput {
     @required
     @httpPayload
-    @nestedProperties
     @notProperty
     @protoField(number: 1)
-    signupIntent: SignupIntentSummary
+    result: SignupStartResult
+}
+
+structure SignupStartResult {
+    @required
+    @protoField(number: 1)
+    message: String
+
+    @required
+    @protoField(number: 2)
+    status: SignupStartStatus
+
+    @required
+    @protoField(number: 3)
+    verificationExpiresAt: DateTime
 }
 
 @idempotent
@@ -641,6 +672,9 @@ structure VerifySignupInput {
 
     @protoField(number: 4)
     organizationDisplayName: DisplayName
+
+    @protoField(number: 5)
+    organizationSlug: OrgSlug
 
     @required
     @notProperty

@@ -76,10 +76,16 @@ passes.
 Public signup is an installation-scoped intent state machine. `StartSignup`
 records a pending intent with a hashed verification token and sends
 notification; it must not create Zitadel, IAM, SpiceDB, or billing state.
-`VerifySignup` is the only public path that materializes a new organization:
-create the Zitadel org, create and verify the Zitadel human, create the IAM org
-profile, bind the human as `roles/owner`, ensure the billing org, mark the
-intent completed, and emit ClickHouse evidence for each materialization step.
+Reusable starts for the same email rotate the verification token and resend the
+same intent after the per-email cooldown. Rapid repeats, completed emails, and
+in-flight product state return the generic accepted response without sending
+mail or creating new state.
+`CheckOrganizationSlugAvailability` is a public UX check; `VerifySignup` must
+repeat slug validation before any Zitadel side effect. `VerifySignup` is the
+only public path that materializes a new organization: create the Zitadel org,
+create and verify the Zitadel human, create the IAM org profile, bind the human
+as `roles/owner`, ensure the billing org, mark the intent completed, and emit
+ClickHouse evidence for each materialization step.
 
 Use contract DTOs for public request/response payloads. Handwritten
 DTOs remain appropriate for internal-only data structures that do not cross the

@@ -22,6 +22,23 @@ const verifySignupInputSchema = v.object({
   signupIntentId: v.pipe(v.string(), v.nonEmpty()),
   verificationToken: v.pipe(v.string(), v.nonEmpty()),
   organizationDisplayName: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
+  organizationSlug: v.pipe(
+    v.string(),
+    v.trim(),
+    v.minLength(1),
+    v.maxLength(80),
+    v.regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/),
+  ),
+});
+
+const checkOrganizationSlugInputSchema = v.object({
+  slug: v.pipe(
+    v.string(),
+    v.trim(),
+    v.minLength(1),
+    v.maxLength(80),
+    v.regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/),
+  ),
 });
 
 export type ConsoleAuthContext = {
@@ -100,6 +117,13 @@ export const verifySignup = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { verifyIdentitySignup } = await import("./auth.server");
     return verifyIdentitySignup(data);
+  });
+
+export const checkOrganizationSlug = createServerFn({ method: "GET" })
+  .inputValidator(checkOrganizationSlugInputSchema)
+  .handler(async ({ data }) => {
+    const { checkIdentityOrganizationSlugAvailability } = await import("./auth.server");
+    return checkIdentityOrganizationSlugAvailability(data.slug);
   });
 
 export const getProductAccessToken = createServerOnlyFn(async function getProductAccessToken(

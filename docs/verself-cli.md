@@ -427,7 +427,7 @@ then active account, then selected organization. This keeps multiple accounts
 for one Verself site explicit for humans and agents.
 
 ```text
-verself auth signup --email owner@example.com --org "Acme"
+verself auth signup --email owner@example.com --org "Acme" --slug acme
 verself auth signup verify --url "$SIGNUP_URL"
 verself auth login
 verself auth accounts list
@@ -440,11 +440,29 @@ verself auth logout
 `verself auth signup` starts an unauthenticated IAM signup intent. IAM sends a
 verification email and creates no Zitadel user, organization, SpiceDB
 relationship, or product account until `verself auth signup verify` submits the
-verification token. Signup commands emit JSON by default; the `message` field is
-the human-readable status line. After verification, the user signs in through the
-same OIDC login path as any existing user. Verification responses include a
+verification token. The SDK derives mutation idempotency keys; CLI users and
+forms do not provide them for signup. Signup starts always emit a generic JSON
+`message` so the command does not reveal whether an email already exists.
+Repeated starts for an address with a reusable pending intent send the newest
+link for the same intent after a short per-email cooldown; rapid repeats return
+the same accepted response without another email. After verification, the user
+signs in through the same OIDC login path as any existing user. Verification
+responses include a
 constrained login URL so a browser already signed into a different account is
 asked to select the intended account.
+
+Signup-flow mailboxes are provisioned and cleaned up through operator tasks:
+
+```text
+aspect mail test-accounts ensure
+aspect mail test-accounts list
+aspect mail test-accounts delete
+```
+
+The test-account set includes ordinary and uncommon spec-compliant local parts
+such as plus tags, dotted names, quoted-safe punctuation, percent signs, and
+question marks. `delete` removes the Stalwart principals, local mailbox
+credentials, and product rows associated with those test emails.
 
 Organization invites use the authenticated IAM member invite API and the public
 invite acceptance API:

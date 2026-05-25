@@ -49,6 +49,13 @@ const signupVerificationResultSchema = v.object({
 
 export type SignupVerificationResult = v.InferOutput<typeof signupVerificationResultSchema>;
 
+const organizationSlugAvailabilitySchema = v.object({
+  slug: v.pipe(v.string(), v.nonEmpty()),
+  available: v.boolean(),
+});
+
+export type OrganizationSlugAvailability = v.InferOutput<typeof organizationSlugAvailabilitySchema>;
+
 const memberInviteAcceptanceResultSchema = v.object({
   orgId: v.pipe(v.string(), v.nonEmpty()),
   memberId: v.pipe(v.string(), v.nonEmpty()),
@@ -259,8 +266,10 @@ export async function verifyIdentitySignup(data: {
   signupIntentId: string;
   verificationToken: string;
   organizationDisplayName: string;
+  organizationSlug: string;
 }): Promise<SignupVerificationResult> {
   const organizationDisplayName = normalizeHumanText(data.organizationDisplayName);
+  const organizationSlug = normalizeSlug(data.organizationSlug);
   const response = await identityAPIFetch(
     `signup-intents/${encodeURIComponent(data.signupIntentId)}/verification`,
     {
@@ -270,27 +279,55 @@ export async function verifyIdentitySignup(data: {
         "Idempotency-Key": signupVerificationIdempotencyKey({
           ...data,
           organizationDisplayName,
+          organizationSlug,
         }),
       },
       body: JSON.stringify({
         verificationToken: data.verificationToken,
         organizationDisplayName,
+        organizationSlug,
       }),
     },
     { cookieHeader: undefined, forwardCookies: false },
   );
   if (!response.ok) {
-    throw new Error(
-      `identity signup verification failed: ${response.status} ${await response.text()}`,
-    );
+    throw new Error(signupVerificationProblemMessage(response.status, await response.text()));
   }
   return v.parse(signupVerificationResultSchema, await response.json());
+}
+
+function signupVerificationProblemMessage(status: number, body: string): string {
+  let code = "";
+  try {
+    const problem = JSON.parse(body) as { code?: unknown };
+    code = typeof problem.code === "string" ? problem.code : "";
+  } catch {
+    code = "";
+  }
+  switch (code) {
+    case "signup_intent_expired":
+    case "signup-intent-expired":
+      return "This signup link has expired. Request a new signup email.";
+    case "signup_verification_invalid":
+    case "signup-verification-invalid":
+      return "This signup link is no longer valid. Use the newest signup email.";
+    case "organization_profile_version_conflict":
+    case "organization-profile-version-conflict":
+    case "conflict.state":
+      return "That organization URL is already taken.";
+    default:
+      if (status === 409) {
+        return "That organization URL is already taken.";
+      }
+      return "Signup could not be completed. Use the newest signup email and try again.";
+  }
 }
 
 function signupVerificationIdempotencyKey(data: {
   signupIntentId: string;
   verificationToken: string;
   organizationDisplayName: string;
+  organizationSlug: string;
 }): string {
   const digest = createHash("sha256")
     .update(data.signupIntentId)
@@ -298,13 +335,39 @@ function signupVerificationIdempotencyKey(data: {
     .update(data.verificationToken)
     .update("\x00")
     .update(data.organizationDisplayName)
+    .update("\x00")
+    .update(data.organizationSlug)
     .digest("base64url")
     .slice(0, 48);
   return `signup-${digest}`;
 }
 
+export async function checkIdentityOrganizationSlugAvailability(
+  slug: string,
+): Promise<OrganizationSlugAvailability> {
+  const normalized = normalizeSlug(slug);
+  const response = await identityAPIFetch(
+    `organization-slugs/${encodeURIComponent(normalized)}/availability`,
+    {},
+    { cookieHeader: undefined, forwardCookies: false },
+  );
+  if (!response.ok) {
+    throw new Error(`identity organization slug check failed: ${response.status}`);
+  }
+  return v.parse(organizationSlugAvailabilitySchema, await response.json());
+}
+
 function normalizeHumanText(value: string): string {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function normalizeSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
 }
 
 export async function getIdentityProductAccessToken(

@@ -26,6 +26,7 @@ func TestNotificationSignupSenderIncludesProvisionalOrgID(t *testing.T) {
 		OrgID:                   orgID,
 		Email:                   "operator@example.test",
 		OrganizationDisplayName: "Operator",
+		VerificationFingerprint: "sha256:verification",
 		ActionURL:               "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID,
 		ResourceName:            "urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:signup-intents/" + signupIntentID,
 	})
@@ -36,7 +37,7 @@ func TestNotificationSignupSenderIncludesProvisionalOrgID(t *testing.T) {
 	if capture.path != "/internal/v1/workflows/iam.signup.verify/trigger" {
 		t.Fatalf("notification path = %q", capture.path)
 	}
-	if capture.idempotencyKey != "iam:signup_verify:"+signupIntentID {
+	if capture.idempotencyKey != "iam:signup_verify:"+signupIntentID+":sha256:verification" {
 		t.Fatalf("idempotency key = %q", capture.idempotencyKey)
 	}
 	if got, _ := capture.body["org_id"].(string); got != orgID {

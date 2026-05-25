@@ -5,6 +5,7 @@ const (
 	PermissionOrganizationCreate            = "iam:organization:create"
 	PermissionOrganizationRead              = "iam:organization:read"
 	PermissionOrganizationUpdate            = "iam:organization:update"
+	PermissionOrganizationSlugCheck         = "iam:organization_slug:check"
 	PermissionSignupIntentCreate            = "iam:signup_intent:create"
 	PermissionSignupIntentVerify            = "iam:signup_intent:verify"
 	PermissionMemberList                    = "iam:member:list"

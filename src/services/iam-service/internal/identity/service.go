@@ -40,9 +40,9 @@ type Store interface {
 }
 
 type SignupStore interface {
-	CreateSignupIntent(ctx context.Context, intent SignupIntent) (SignupIntent, bool, error)
+	StartSignupIntent(ctx context.Context, intent SignupIntent, now time.Time) (SignupStartDecision, error)
 	DeletePendingSignupIntent(ctx context.Context, signupIntentID string) error
-	ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, organizationDisplayName string, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error)
+	ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, organizationDisplayName string, requestedOrganizationSlug string, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error)
 	RecordSignupIntentStep(ctx context.Context, signupIntentID, step string, leaseExpiresAt time.Time) error
 	RecordSignupIntentProviderOrg(ctx context.Context, signupIntentID, providerOrgID string) error
 	RecordSignupIntentProviderUser(ctx context.Context, signupIntentID, providerUserID string) error
@@ -248,6 +248,18 @@ func (s *Service) ResolveOrganization(ctx context.Context, input ResolveOrganiza
 		return OrganizationProfile{}, err
 	}
 	return store.ResolveOrganizationProfile(ctx, input)
+}
+
+func (s *Service) OrganizationSlugAvailability(ctx context.Context, slug string) (bool, error) {
+	slug = normalizeSlug(slug)
+	if err := validateSlug("slug", slug); err != nil {
+		return false, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return false, err
+	}
+	return store.OrganizationSlugAvailable(ctx, slug)
 }
 
 func (s *Service) Members(ctx context.Context, principal Principal) ([]Member, error) {

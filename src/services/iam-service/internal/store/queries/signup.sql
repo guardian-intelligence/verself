@@ -26,6 +26,48 @@ SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
 FROM iam_signup_intents
 WHERE idempotency_key = sqlc.arg(idempotency_key);
 
+-- name: GetReusableSignupIntentByEmailHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+       organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
+       verification_token_hash, state, materialization_step, materialization_attempts,
+       materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
+       org_id, identity_provider_org_id, identity_provider_user_id,
+       created_at, updated_at, verification_expires_at, verified_at, completed_at
+FROM iam_signup_intents
+WHERE email_hash = sqlc.arg(email_hash)
+  AND state IN ('pending_verification', 'expired')
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE;
+
+-- name: GetCompletedSignupIntentByEmailHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+       organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
+       verification_token_hash, state, materialization_step, materialization_attempts,
+       materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
+       org_id, identity_provider_org_id, identity_provider_user_id,
+       created_at, updated_at, verification_expires_at, verified_at, completed_at
+FROM iam_signup_intents
+WHERE email_hash = sqlc.arg(email_hash)
+  AND state = 'completed'
+ORDER BY completed_at DESC
+LIMIT 1
+FOR UPDATE;
+
+-- name: GetInFlightSignupIntentByEmailHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+       organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
+       verification_token_hash, state, materialization_step, materialization_attempts,
+       materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
+       org_id, identity_provider_org_id, identity_provider_user_id,
+       created_at, updated_at, verification_expires_at, verified_at, completed_at
+FROM iam_signup_intents
+WHERE email_hash = sqlc.arg(email_hash)
+  AND state IN ('materializing', 'failed_retryable', 'failed_terminal')
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE;
+
 -- name: GetSignupIntentForUpdate :one
 SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
@@ -36,6 +78,32 @@ SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
 FROM iam_signup_intents
 WHERE signup_intent_id = sqlc.arg(signup_intent_id)
 FOR UPDATE;
+
+-- name: RotateReusableSignupIntentVerification :one
+UPDATE iam_signup_intents
+SET request_hash = sqlc.arg(request_hash),
+    organization_display_name = sqlc.arg(organization_display_name),
+    requested_organization_slug = sqlc.arg(requested_organization_slug),
+    given_name = sqlc.arg(given_name),
+    family_name = sqlc.arg(family_name),
+    verification_token_hash = sqlc.arg(verification_token_hash),
+    state = 'pending_verification',
+    materialization_step = '',
+    materialization_last_error = '',
+    materialization_lease_expires_at = NULL,
+    verify_idempotency_key = '',
+    verify_request_hash = NULL,
+    verified_at = NULL,
+    verification_expires_at = sqlc.arg(verification_expires_at),
+    updated_at = now()
+WHERE signup_intent_id = sqlc.arg(signup_intent_id)
+  AND state IN ('pending_verification', 'expired')
+RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
+          organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
+          verification_token_hash, state, materialization_step, materialization_attempts,
+          materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
+          org_id, identity_provider_org_id, identity_provider_user_id,
+          created_at, updated_at, verification_expires_at, verified_at, completed_at;
 
 -- name: DeletePendingSignupIntent :execrows
 DELETE FROM iam_signup_intents
@@ -50,6 +118,7 @@ SET state = 'materializing',
     verify_idempotency_key = sqlc.arg(verify_idempotency_key),
     verify_request_hash = sqlc.arg(verify_request_hash),
     organization_display_name = COALESCE(NULLIF(sqlc.arg(organization_display_name)::text, ''), organization_display_name),
+    requested_organization_slug = COALESCE(NULLIF(sqlc.arg(requested_organization_slug)::text, ''), requested_organization_slug),
     verified_at = COALESCE(verified_at, sqlc.arg(verified_at)),
     materialization_lease_expires_at = sqlc.arg(materialization_lease_expires_at),
     materialization_attempts = materialization_attempts + 1,
