@@ -529,14 +529,48 @@ func runnerAllocationStatusOutput(status jobs.ProviderRunnerAllocationStatus) in
 		value := internalcontractapi.AttemptID(status.AttemptID.String())
 		out.AttemptID = &value
 	}
-	if status.FailureReason != "" {
-		out.FailureReason = &status.FailureReason
-	}
+	out.Problems = runnerProblemOccurrences(status.Problems)
 	if status.ExecutionState != "" {
 		out.ExecutionState = &status.ExecutionState
 	}
 	if status.AttemptState != "" {
 		out.AttemptState = &status.AttemptState
+	}
+	return out
+}
+
+func runnerProblemOccurrences(problems []jobs.RunnerProblem) internalcontractapi.ProblemOccurrences {
+	out := make(internalcontractapi.ProblemOccurrences, 0, len(problems))
+	for _, problem := range problems {
+		item := internalcontractapi.ProblemOccurrence{
+			Type:  internalcontractapi.ProblemType(problem.Type),
+			Code:  internalcontractapi.ProblemCode(problem.Code),
+			Title: problem.Title,
+		}
+		if problem.Detail != "" {
+			value := internalcontractapi.ProblemDetail(problem.Detail)
+			item.Detail = &value
+		}
+		if problem.Status != 0 {
+			value := int(problem.Status)
+			item.Status = &value
+		}
+		if problem.Phase != "" {
+			value := internalcontractapi.ProblemPhase(problem.Phase)
+			item.Phase = &value
+		}
+		if problem.Retryable {
+			item.Retryable = &problem.Retryable
+		}
+		if problem.Pointer != "" {
+			value := internalcontractapi.ProblemPointer(problem.Pointer)
+			item.Pointer = &value
+		}
+		if !problem.ObservedAt.IsZero() {
+			value := timestamp(problem.ObservedAt)
+			item.ObservedAt = &value
+		}
+		out = append(out, item)
 	}
 	return out
 }

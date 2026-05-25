@@ -307,6 +307,17 @@ func TestSandboxRunnerCapacityTerminalWithoutAssignment(t *testing.T) {
 	if !sandboxRunnerCapacityTerminalWithoutAssignment(sandboxrentalclient.RunnerAllocationStatus{State: "vm_submitted", AttemptState: &attemptState}) {
 		t.Fatal("lost attempt did not fail unassigned capacity")
 	}
+	detail := sandboxrentalclient.ProblemDetail("lease_ready_timeout")
+	status := sandboxrentalclient.RunnerAllocationStatus{
+		State: "failed",
+		Problems: sandboxrentalclient.ProblemOccurrences{{
+			Code:   sandboxrentalclient.ProblemCode("runner_allocation.runner_listening_deadline_exceeded"),
+			Detail: &detail,
+		}},
+	}
+	if got := sandboxRunnerAllocationProblemReason(status); got != "runner_allocation.runner_listening_deadline_exceeded:lease_ready_timeout" {
+		t.Fatalf("problem reason = %q", got)
+	}
 }
 
 func TestRunnerCapacityAssignmentDeadlineExceeded(t *testing.T) {

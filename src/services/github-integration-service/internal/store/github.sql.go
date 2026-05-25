@@ -11,6 +11,158 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const appendProviderDemandProblem = `-- name: AppendProviderDemandProblem :exec
+WITH next_problem AS (
+    SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
+    FROM github_provider_demand_problems
+    WHERE provider_job_id = $7
+),
+inserted AS (
+    INSERT INTO github_provider_demand_problems (
+        provider_job_id,
+        problem_seq,
+        phase,
+        problem_type,
+        problem_code,
+        title,
+        detail,
+        status,
+        retryable,
+        pointer,
+        observed_at
+    )
+    SELECT
+        $7,
+        next_problem.problem_seq,
+        $8,
+        $1,
+        $2,
+        $4,
+        $5,
+        $3,
+        $9,
+        $10,
+        $6
+    FROM next_problem
+    RETURNING provider_job_id
+)
+UPDATE github_provider_demands AS d
+SET
+    primary_problem_type = CASE WHEN problem_count = 0 THEN $1 ELSE primary_problem_type END,
+    primary_problem_code = CASE WHEN problem_count = 0 THEN $2 ELSE primary_problem_code END,
+    primary_problem_status = CASE WHEN problem_count = 0 THEN $3 ELSE primary_problem_status END,
+    primary_problem_title = CASE WHEN problem_count = 0 THEN $4 ELSE primary_problem_title END,
+    primary_problem_detail = CASE WHEN problem_count = 0 THEN $5 ELSE primary_problem_detail END,
+    problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
+    updated_at = $6
+WHERE d.provider_job_id = $7
+`
+
+type AppendProviderDemandProblemParams struct {
+	ProblemType   string
+	ProblemCode   string
+	Status        int32
+	Title         string
+	Detail        string
+	ObservedAt    pgtype.Timestamptz
+	ProviderJobID int64
+	Phase         string
+	Retryable     bool
+	Pointer       string
+}
+
+func (q *Queries) AppendProviderDemandProblem(ctx context.Context, arg AppendProviderDemandProblemParams) error {
+	_, err := q.db.Exec(ctx, appendProviderDemandProblem,
+		arg.ProblemType,
+		arg.ProblemCode,
+		arg.Status,
+		arg.Title,
+		arg.Detail,
+		arg.ObservedAt,
+		arg.ProviderJobID,
+		arg.Phase,
+		arg.Retryable,
+		arg.Pointer,
+	)
+	return err
+}
+
+const appendRunnerInstanceProblem = `-- name: AppendRunnerInstanceProblem :exec
+WITH next_problem AS (
+    SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
+    FROM github_runner_instance_problems
+    WHERE runner_name = $7
+),
+inserted AS (
+    INSERT INTO github_runner_instance_problems (
+        runner_name,
+        problem_seq,
+        phase,
+        problem_type,
+        problem_code,
+        title,
+        detail,
+        status,
+        retryable,
+        pointer,
+        observed_at
+    )
+    SELECT
+        $7,
+        next_problem.problem_seq,
+        $8,
+        $1,
+        $2,
+        $4,
+        $5,
+        $3,
+        $9,
+        $10,
+        $6
+    FROM next_problem
+    RETURNING runner_name
+)
+UPDATE github_runner_instances AS ri
+SET
+    primary_problem_type = CASE WHEN problem_count = 0 THEN $1 ELSE primary_problem_type END,
+    primary_problem_code = CASE WHEN problem_count = 0 THEN $2 ELSE primary_problem_code END,
+    primary_problem_status = CASE WHEN problem_count = 0 THEN $3 ELSE primary_problem_status END,
+    primary_problem_title = CASE WHEN problem_count = 0 THEN $4 ELSE primary_problem_title END,
+    primary_problem_detail = CASE WHEN problem_count = 0 THEN $5 ELSE primary_problem_detail END,
+    problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
+    updated_at = $6
+WHERE ri.runner_name = $7
+`
+
+type AppendRunnerInstanceProblemParams struct {
+	ProblemType string
+	ProblemCode string
+	Status      int32
+	Title       string
+	Detail      string
+	ObservedAt  pgtype.Timestamptz
+	RunnerName  string
+	Phase       string
+	Retryable   bool
+	Pointer     string
+}
+
+func (q *Queries) AppendRunnerInstanceProblem(ctx context.Context, arg AppendRunnerInstanceProblemParams) error {
+	_, err := q.db.Exec(ctx, appendRunnerInstanceProblem,
+		arg.ProblemType,
+		arg.ProblemCode,
+		arg.Status,
+		arg.Title,
+		arg.Detail,
+		arg.ObservedAt,
+		arg.RunnerName,
+		arg.Phase,
+		arg.Retryable,
+		arg.Pointer,
+	)
+	return err
+}
+
 const appendWebhookDeliveryProblem = `-- name: AppendWebhookDeliveryProblem :exec
 WITH next_problem AS (
     SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
@@ -89,8 +241,7 @@ func (q *Queries) AppendWebhookDeliveryProblem(ctx context.Context, arg AppendWe
 
 const claimProviderDemandForCapacity = `-- name: ClaimProviderDemandForCapacity :one
 UPDATE github_provider_demands
-SET failure_reason = '',
-    claimed_at = $1,
+SET claimed_at = $1,
     updated_at = $1
 WHERE github_provider_demands.provider_job_id = $2
   AND github_provider_demands.state = 'demand_recorded'
@@ -859,48 +1010,6 @@ func (q *Queries) EnsureProviderDemand(ctx context.Context, arg EnsureProviderDe
 		&i.State,
 	)
 	return i, err
-}
-
-const failRunnerInstanceCapacity = `-- name: FailRunnerInstanceCapacity :one
-WITH failed_instance AS (
-    UPDATE github_runner_instances ri
-    SET state = 'failed',
-        failure_reason = $1,
-        updated_at = $2
-    WHERE ri.runner_name = $3
-      AND ri.state IN ('jit_created', 'sandbox_submitted')
-      AND NOT EXISTS (
-          SELECT 1
-          FROM github_job_assignments assigned
-          WHERE assigned.runner_name = ri.runner_name
-      )
-    RETURNING ri.origin_provider_job_id
-),
-failed_demand AS (
-UPDATE github_provider_demands d
-SET state = 'sandbox_failed',
-    failure_reason = $1,
-    updated_at = $2
-FROM failed_instance
-WHERE d.provider_job_id = failed_instance.origin_provider_job_id
-  AND d.state NOT IN ('assigned', 'completed')
-RETURNING d.provider_job_id
-)
-SELECT count(*)::bigint AS failed_instances
-FROM failed_instance
-`
-
-type FailRunnerInstanceCapacityParams struct {
-	FailureReason string
-	UpdatedAt     pgtype.Timestamptz
-	RunnerName    string
-}
-
-func (q *Queries) FailRunnerInstanceCapacity(ctx context.Context, arg FailRunnerInstanceCapacityParams) (int64, error) {
-	row := q.db.QueryRow(ctx, failRunnerInstanceCapacity, arg.FailureReason, arg.UpdatedAt, arg.RunnerName)
-	var failed_instances int64
-	err := row.Scan(&failed_instances)
-	return failed_instances, err
 }
 
 const getIdempotencyRecord = `-- name: GetIdempotencyRecord :one
@@ -2228,7 +2337,6 @@ func (q *Queries) MarkInstallationBindingsRevokedByProvider(ctx context.Context,
 const markProviderDemandAssigned = `-- name: MarkProviderDemandAssigned :exec
 UPDATE github_provider_demands
 SET state = 'assigned',
-    failure_reason = '',
     updated_at = $1
 WHERE provider_job_id = $2
   AND state <> 'completed'
@@ -2247,7 +2355,6 @@ func (q *Queries) MarkProviderDemandAssigned(ctx context.Context, arg MarkProvid
 const markProviderDemandCapacityRequested = `-- name: MarkProviderDemandCapacityRequested :exec
 UPDATE github_provider_demands
 SET state = 'capacity_requested',
-    failure_reason = '',
     updated_at = $1
 WHERE provider_job_id = $2
   AND state IN ('demand_recorded', 'capacity_requested')
@@ -2263,35 +2370,31 @@ func (q *Queries) MarkProviderDemandCapacityRequested(ctx context.Context, arg M
 	return err
 }
 
-const markProviderDemandFailed = `-- name: MarkProviderDemandFailed :exec
+const markProviderDemandFailed = `-- name: MarkProviderDemandFailed :execrows
 UPDATE github_provider_demands
 SET state = $1,
-    failure_reason = $2,
-    updated_at = $3
-WHERE provider_job_id = $4
+    updated_at = $2
+WHERE provider_job_id = $3
+  AND state NOT IN ('assigned', 'completed')
 `
 
 type MarkProviderDemandFailedParams struct {
 	State         string
-	FailureReason string
 	UpdatedAt     pgtype.Timestamptz
 	ProviderJobID int64
 }
 
-func (q *Queries) MarkProviderDemandFailed(ctx context.Context, arg MarkProviderDemandFailedParams) error {
-	_, err := q.db.Exec(ctx, markProviderDemandFailed,
-		arg.State,
-		arg.FailureReason,
-		arg.UpdatedAt,
-		arg.ProviderJobID,
-	)
-	return err
+func (q *Queries) MarkProviderDemandFailed(ctx context.Context, arg MarkProviderDemandFailedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markProviderDemandFailed, arg.State, arg.UpdatedAt, arg.ProviderJobID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const markProviderDemandTerminal = `-- name: MarkProviderDemandTerminal :exec
 UPDATE github_provider_demands
 SET state = 'completed',
-    failure_reason = '',
     updated_at = $1
 WHERE provider_job_id = $2
 `
@@ -2438,23 +2541,30 @@ func (q *Queries) MarkRunnerInstanceCleaned(ctx context.Context, arg MarkRunnerI
 	return err
 }
 
-const markRunnerInstanceFailed = `-- name: MarkRunnerInstanceFailed :exec
+const markRunnerInstanceFailed = `-- name: MarkRunnerInstanceFailed :execrows
 UPDATE github_runner_instances
 SET state = 'failed',
-    failure_reason = $1,
-    updated_at = $2
-WHERE runner_name = $3
+    updated_at = $1
+WHERE github_runner_instances.runner_name = $2
+  AND state IN ('jit_created', 'sandbox_submitted')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM github_job_assignments assigned
+      WHERE assigned.runner_name = github_runner_instances.runner_name
+  )
 `
 
 type MarkRunnerInstanceFailedParams struct {
-	FailureReason string
-	UpdatedAt     pgtype.Timestamptz
-	RunnerName    string
+	UpdatedAt  pgtype.Timestamptz
+	RunnerName string
 }
 
-func (q *Queries) MarkRunnerInstanceFailed(ctx context.Context, arg MarkRunnerInstanceFailedParams) error {
-	_, err := q.db.Exec(ctx, markRunnerInstanceFailed, arg.FailureReason, arg.UpdatedAt, arg.RunnerName)
-	return err
+func (q *Queries) MarkRunnerInstanceFailed(ctx context.Context, arg MarkRunnerInstanceFailedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markRunnerInstanceFailed, arg.UpdatedAt, arg.RunnerName)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const markRunnerInstanceSubmitted = `-- name: MarkRunnerInstanceSubmitted :exec
@@ -2466,9 +2576,8 @@ SET sandbox_allocation_id = $1,
     runner_name = $5,
     state = 'sandbox_submitted',
     assignment_deadline_at = $6,
-    failure_reason = '',
     updated_at = $7
-WHERE runner_name = $5
+WHERE github_runner_instances.runner_name = $5
 `
 
 type MarkRunnerInstanceSubmittedParams struct {
@@ -2722,20 +2831,18 @@ func (q *Queries) RecordWebhookDelivery(ctx context.Context, arg RecordWebhookDe
 const resetProviderDemandAfterCapacityDisplaced = `-- name: ResetProviderDemandAfterCapacityDisplaced :execrows
 UPDATE github_provider_demands
 SET state = 'demand_recorded',
-    failure_reason = $1,
-    updated_at = $2
-WHERE provider_job_id = $3
+    updated_at = $1
+WHERE provider_job_id = $2
   AND state = 'capacity_requested'
 `
 
 type ResetProviderDemandAfterCapacityDisplacedParams struct {
-	FailureReason string
 	UpdatedAt     pgtype.Timestamptz
 	ProviderJobID int64
 }
 
 func (q *Queries) ResetProviderDemandAfterCapacityDisplaced(ctx context.Context, arg ResetProviderDemandAfterCapacityDisplacedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, resetProviderDemandAfterCapacityDisplaced, arg.FailureReason, arg.UpdatedAt, arg.ProviderJobID)
+	result, err := q.db.Exec(ctx, resetProviderDemandAfterCapacityDisplaced, arg.UpdatedAt, arg.ProviderJobID)
 	if err != nil {
 		return 0, err
 	}
@@ -3600,7 +3707,6 @@ ON CONFLICT (runner_name) DO UPDATE SET
     jit_config_sha256 = EXCLUDED.jit_config_sha256,
     assignment_deadline_at = EXCLUDED.assignment_deadline_at,
     state = EXCLUDED.state,
-    failure_reason = '',
     updated_at = EXCLUDED.updated_at
 `
 

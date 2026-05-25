@@ -23,6 +23,7 @@ use verself.common.v1#DisplayName
 use verself.common.v1#IdempotencyKey
 use verself.common.v1#IdempotencyPayloadMismatchError
 use verself.common.v1#PermissionDeniedError
+use verself.common.v1#ProblemOccurrences
 use verself.common.v1#RateLimitedError
 use verself.common.v1#ResourceName
 use verself.common.v1#ResourceNotFoundError
@@ -1810,7 +1811,7 @@ structure RunnerAllocationStatus {
     @required
     state: String
 
-    failure_reason: String
+    problems: ProblemOccurrences
     execution_state: String
     attempt_state: String
 }

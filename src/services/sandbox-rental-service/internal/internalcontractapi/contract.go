@@ -88,7 +88,25 @@ type ProblemCode string
 
 type ProblemDetail string
 
+type ProblemPhase string
+
+type ProblemPointer string
+
 type ProblemType string
+
+type ProblemOccurrence struct {
+	Type       ProblemType     `json:"type" required:"true"`
+	Code       ProblemCode     `json:"code" required:"true"`
+	Title      string          `json:"title" required:"true"`
+	Detail     *ProblemDetail  `json:"detail,omitempty"`
+	Status     *int            `json:"status,omitempty"`
+	Phase      *ProblemPhase   `json:"phase,omitempty"`
+	Retryable  *bool           `json:"retryable,omitempty"`
+	Pointer    *ProblemPointer `json:"pointer,omitempty"`
+	ObservedAt *string         `json:"observed_at,omitempty"`
+}
+
+type ProblemOccurrences []ProblemOccurrence
 
 type RequestID string
 
@@ -312,7 +330,7 @@ type RunnerAllocationStatus struct {
 	ExecutionID            *ExecutionID         `json:"execution_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
 	AttemptID              *AttemptID           `json:"attempt_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
 	State                  string               `json:"state" required:"true"`
-	FailureReason          *string              `json:"failure_reason,omitempty"`
+	Problems               ProblemOccurrences   `json:"problems,omitempty"`
 	ExecutionState         *string              `json:"execution_state,omitempty"`
 	AttemptState           *string              `json:"attempt_state,omitempty"`
 }

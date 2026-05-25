@@ -351,7 +351,12 @@ CREATE TABLE github_provider_demands (
     trust_class              TEXT        NOT NULL DEFAULT '',
     runner_class             TEXT        NOT NULL DEFAULT '',
     state                    TEXT        NOT NULL CHECK (state <> ''),
-    failure_reason           TEXT        NOT NULL DEFAULT '',
+    primary_problem_type     TEXT        NOT NULL DEFAULT '',
+    primary_problem_code     TEXT        NOT NULL DEFAULT '',
+    primary_problem_status   INTEGER     NOT NULL DEFAULT 0 CHECK (primary_problem_status BETWEEN 0 AND 599),
+    primary_problem_title    TEXT        NOT NULL DEFAULT '',
+    primary_problem_detail   TEXT        NOT NULL DEFAULT '',
+    problem_count            INTEGER     NOT NULL DEFAULT 0 CHECK (problem_count >= 0),
     last_delivery_id         TEXT        NOT NULL DEFAULT '',
     claimed_at               TIMESTAMPTZ,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -360,6 +365,24 @@ CREATE TABLE github_provider_demands (
 
 CREATE INDEX idx_github_provider_demands_state
     ON github_provider_demands (state, updated_at);
+
+CREATE TABLE github_provider_demand_problems (
+    provider_job_id          BIGINT      NOT NULL REFERENCES github_provider_demands(provider_job_id) ON DELETE CASCADE,
+    problem_seq              INTEGER     NOT NULL CHECK (problem_seq > 0),
+    phase                    TEXT        NOT NULL CHECK (phase <> ''),
+    problem_type             TEXT        NOT NULL CHECK (problem_type <> ''),
+    problem_code             TEXT        NOT NULL CHECK (problem_code <> ''),
+    title                    TEXT        NOT NULL CHECK (title <> ''),
+    detail                   TEXT        NOT NULL DEFAULT '',
+    status                   INTEGER     NOT NULL DEFAULT 0 CHECK (status BETWEEN 0 AND 599),
+    retryable                BOOLEAN     NOT NULL DEFAULT false,
+    pointer                  TEXT        NOT NULL DEFAULT '',
+    observed_at              TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (provider_job_id, problem_seq)
+);
+
+CREATE INDEX idx_github_provider_demand_problems_demand
+    ON github_provider_demand_problems (provider_job_id, observed_at);
 
 CREATE TABLE github_provider_outbox (
     outbox_id                UUID        PRIMARY KEY,
@@ -407,7 +430,12 @@ CREATE TABLE github_runner_instances (
     sandbox_attempt_id       UUID,
     assignment_deadline_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     state                    TEXT        NOT NULL CHECK (state <> ''),
-    failure_reason           TEXT        NOT NULL DEFAULT '',
+    primary_problem_type     TEXT        NOT NULL DEFAULT '',
+    primary_problem_code     TEXT        NOT NULL DEFAULT '',
+    primary_problem_status   INTEGER     NOT NULL DEFAULT 0 CHECK (primary_problem_status BETWEEN 0 AND 599),
+    primary_problem_title    TEXT        NOT NULL DEFAULT '',
+    primary_problem_detail   TEXT        NOT NULL DEFAULT '',
+    problem_count            INTEGER     NOT NULL DEFAULT 0 CHECK (problem_count >= 0),
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -419,6 +447,24 @@ CREATE INDEX idx_github_runner_instances_origin
     ON github_runner_instances (origin_provider_job_id, updated_at);
 CREATE INDEX idx_github_runner_instances_capacity
     ON github_runner_instances (provider_repository_id, runner_class, state, assignment_deadline_at, updated_at);
+
+CREATE TABLE github_runner_instance_problems (
+    runner_name              TEXT        NOT NULL REFERENCES github_runner_instances(runner_name) ON DELETE CASCADE,
+    problem_seq              INTEGER     NOT NULL CHECK (problem_seq > 0),
+    phase                    TEXT        NOT NULL CHECK (phase <> ''),
+    problem_type             TEXT        NOT NULL CHECK (problem_type <> ''),
+    problem_code             TEXT        NOT NULL CHECK (problem_code <> ''),
+    title                    TEXT        NOT NULL CHECK (title <> ''),
+    detail                   TEXT        NOT NULL DEFAULT '',
+    status                   INTEGER     NOT NULL DEFAULT 0 CHECK (status BETWEEN 0 AND 599),
+    retryable                BOOLEAN     NOT NULL DEFAULT false,
+    pointer                  TEXT        NOT NULL DEFAULT '',
+    observed_at              TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (runner_name, problem_seq)
+);
+
+CREATE INDEX idx_github_runner_instance_problems_runner
+    ON github_runner_instance_problems (runner_name, observed_at);
 
 CREATE TABLE github_job_assignments (
     provider_job_id          BIGINT      PRIMARY KEY REFERENCES github_workflow_jobs(provider_job_id) ON DELETE CASCADE,
