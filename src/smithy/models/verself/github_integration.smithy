@@ -18,6 +18,7 @@ use smithy.api#range
 use smithy.api#readonly
 use smithy.api#required
 use smithy.api#sensitive
+use smithy.api#trait
 use verself.common.v1#ConflictError
 use verself.common.v1#DateTime
 use verself.common.v1#IdempotencyKey
@@ -25,7 +26,10 @@ use verself.common.v1#IdempotencyPayloadMismatchError
 use verself.common.v1#PageRequest
 use verself.common.v1#PageResponse
 use verself.common.v1#PermissionDeniedError
+use verself.common.v1#ProblemDetail
+use verself.common.v1#ProblemDocsURL
 use verself.common.v1#ProblemOccurrences
+use verself.common.v1#ProblemType
 use verself.common.v1#ProviderWebhookDeliveryReplayConflictError
 use verself.common.v1#ProviderWebhookInboxUnavailableError
 use verself.common.v1#ProviderWebhookInvalidRequestError
@@ -81,6 +85,7 @@ service GithubIntegration {
         GithubJobShape,
         GithubProviderDemand,
         GithubRunnerInstance,
+        GithubProviderSurfaceCommand,
         GithubJobAssignment,
         GithubTerminalJobEvidence,
         GithubGoldenSnapshotBarrier
@@ -107,6 +112,7 @@ service GithubIntegrationInternal {
         GithubJobShape,
         GithubProviderDemand,
         GithubRunnerInstance,
+        GithubProviderSurfaceCommand,
         GithubJobAssignment,
         GithubTerminalJobEvidence,
         GithubGoldenSnapshotBarrier
@@ -319,9 +325,217 @@ resource GithubWorkflowJob {}
 resource GithubJobShape {}
 resource GithubProviderDemand {}
 resource GithubRunnerInstance {}
+resource GithubProviderSurfaceCommand {}
 resource GithubJobAssignment {}
 resource GithubTerminalJobEvidence {}
 resource GithubGoldenSnapshotBarrier {}
+
+/// Stable metadata for a github-integration-service lifecycle problem code.
+@trait(selector: "enum > member")
+structure githubIntegrationProblem {
+    @required
+    type: ProblemType
+
+    @required
+    title: String
+
+    @required
+    status: Integer
+
+    @required
+    phase: GithubIntegrationProblemPhase
+
+    @required
+    retryable: Boolean
+
+    @required
+    detail: ProblemDetail
+
+    @required
+    docs_url: ProblemDocsURL
+}
+
+enum GithubIntegrationProblemPhase {
+    METHOD_VALIDATION = "method_validation"
+    HEADER_VALIDATION = "header_validation"
+    BODY_READ = "body_read"
+    SIGNATURE_VERIFICATION = "signature_verification"
+    PAYLOAD_PARSE = "payload_parse"
+    INBOX_PERSIST = "inbox_persist"
+    DELIVERY_DISPATCH = "delivery_dispatch"
+    DELIVERY_PROCESSING = "delivery_processing"
+    REPOSITORY_BINDING = "repository_binding"
+    PROVIDER_REFRESH = "provider_refresh"
+    PROVIDER_DEMAND = "provider_demand"
+    CACHE_MANIFEST = "cache_manifest"
+    JOB_SHAPE = "job_shape"
+    RUNNER_CLASS_LOCK = "runner_class_lock"
+    RUNNER_CLASS_CAPACITY = "runner_class_capacity"
+    RUNNER_NAME = "runner_name"
+    JIT_CONFIG = "jit_config"
+    RUNNER_INSTANCE = "runner_instance"
+    SANDBOX_OBSERVE_WORKFLOW = "sandbox_observe_workflow"
+    SANDBOX_OUTBOX = "sandbox_outbox"
+    SANDBOX_DISPATCH = "sandbox_dispatch"
+    SANDBOX_SUBMIT = "sandbox_submit"
+    SANDBOX_RECONCILE = "sandbox_reconcile"
+    ASSIGNMENT_WAIT = "assignment_wait"
+    ASSIGNMENT = "assignment"
+    PROVIDER_SURFACE = "provider_surface"
+    RUNNER_CAPACITY = "runner_capacity"
+}
+
+enum GithubIntegrationProblemCode {
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:invalid_request", title: "Method not allowed", status: 405, phase: "method_validation", retryable: false, detail: "GitHub webhooks must use POST.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-method-not-allowed")
+    PROVIDER_WEBHOOK_METHOD_NOT_ALLOWED = "provider_webhook.method_not_allowed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:invalid_request", title: "Invalid webhook header", status: 400, phase: "header_validation", retryable: false, detail: "A required GitHub webhook header is missing, duplicated, or malformed.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-header-invalid")
+    PROVIDER_WEBHOOK_HEADER_INVALID = "provider_webhook.header_invalid"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:invalid_request", title: "Invalid webhook body", status: 400, phase: "body_read", retryable: false, detail: "The GitHub webhook body could not be read.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-body-invalid")
+    PROVIDER_WEBHOOK_BODY_INVALID = "provider_webhook.body_invalid"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:signature_invalid", title: "Invalid webhook signature", status: 401, phase: "signature_verification", retryable: false, detail: "The GitHub webhook signature did not validate against the configured secret.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-signature-invalid")
+    PROVIDER_WEBHOOK_SIGNATURE_INVALID = "provider_webhook.signature_invalid"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:invalid_request", title: "Invalid webhook payload", status: 400, phase: "payload_parse", retryable: false, detail: "The GitHub webhook payload could not be parsed or is missing required identity.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-payload-invalid")
+    PROVIDER_WEBHOOK_PAYLOAD_INVALID = "provider_webhook.payload_invalid"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:delivery_replay_conflict", title: "Webhook delivery replay conflict", status: 409, phase: "inbox_persist", retryable: false, detail: "GitHub reused a delivery id with a different payload hash.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-delivery-replay-conflict")
+    PROVIDER_WEBHOOK_DELIVERY_REPLAY_CONFLICT = "provider_webhook.delivery_replay_conflict"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:inbox_unavailable", title: "Webhook inbox unavailable", status: 503, phase: "inbox_persist", retryable: true, detail: "Verself could not durably record the GitHub webhook delivery.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-inbox-unavailable")
+    PROVIDER_WEBHOOK_INBOX_UNAVAILABLE = "provider_webhook.inbox_unavailable"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:unsupported_event", title: "Unsupported webhook event", status: 422, phase: "delivery_dispatch", retryable: false, detail: "Verself does not process this GitHub webhook event or action.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-unsupported-event")
+    PROVIDER_WEBHOOK_UNSUPPORTED_EVENT = "provider_webhook.unsupported_event"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:processing_failed", title: "Webhook delivery processing failed", status: 503, phase: "delivery_processing", retryable: true, detail: "Verself could not process a durable GitHub webhook delivery.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-processing-failed")
+    PROVIDER_WEBHOOK_PROCESSING_FAILED = "provider_webhook.processing_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:processing_stale", title: "Webhook delivery processing was abandoned", status: 503, phase: "delivery_processing", retryable: true, detail: "A worker left this GitHub webhook delivery in processing past its deadline.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-processing-stale")
+    PROVIDER_WEBHOOK_PROCESSING_STALE = "provider_webhook.processing_stale"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:provider_webhook:processing_attempts_exhausted", title: "Webhook delivery retry budget exhausted", status: 503, phase: "delivery_processing", retryable: false, detail: "The GitHub webhook delivery exceeded its processing retry budget.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#provider-webhook-processing-attempts-exhausted")
+    PROVIDER_WEBHOOK_PROCESSING_ATTEMPTS_EXHAUSTED = "provider_webhook.processing_attempts_exhausted"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github:repository_not_enabled", title: "GitHub repository is not enabled", status: 409, phase: "repository_binding", retryable: false, detail: "This repository is not enabled for Verself CI in the owning organization.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-repository-not-enabled")
+    GITHUB_REPOSITORY_NOT_ENABLED = "github.repository_not_enabled"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github:sandbox_dispatch_failed", title: "Sandbox dispatch failed", status: 503, phase: "sandbox_dispatch", retryable: true, detail: "Verself could not dispatch the GitHub job to sandbox-rental-service.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-sandbox-dispatch-failed")
+    GITHUB_SANDBOX_DISPATCH_FAILED = "github.sandbox_dispatch_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:capacity_failed", title: "GitHub runner capacity failed", status: 0, phase: "runner_capacity", retryable: false, detail: "Verself could not create runner capacity for the queued GitHub job.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-capacity-failed")
+    GITHUB_RUNNER_CAPACITY_FAILED = "github_runner.capacity_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:demand_record_failed", title: "GitHub provider demand record failed", status: 0, phase: "provider_demand", retryable: true, detail: "Verself could not persist GitHub job demand before allocating runner capacity.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-demand-record-failed")
+    GITHUB_RUNNER_DEMAND_RECORD_FAILED = "github_runner.demand_record_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:workflow_run_fetch_failed", title: "GitHub workflow run refresh failed", status: 0, phase: "provider_refresh", retryable: true, detail: "Verself could not refresh the GitHub workflow run before allocating runner capacity.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-workflow-run-fetch-failed")
+    GITHUB_RUNNER_WORKFLOW_RUN_FETCH_FAILED = "github_runner.workflow_run_fetch_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:workflow_run_persist_failed", title: "GitHub workflow run persist failed", status: 0, phase: "provider_refresh", retryable: true, detail: "Verself could not persist refreshed GitHub workflow run evidence.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-workflow-run-persist-failed")
+    GITHUB_RUNNER_WORKFLOW_RUN_PERSIST_FAILED = "github_runner.workflow_run_persist_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:workflow_job_fetch_failed", title: "GitHub workflow job refresh failed", status: 0, phase: "provider_refresh", retryable: true, detail: "Verself could not refresh the GitHub workflow job before allocating runner capacity.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-workflow-job-fetch-failed")
+    GITHUB_RUNNER_WORKFLOW_JOB_FETCH_FAILED = "github_runner.workflow_job_fetch_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:workflow_job_not_found", title: "GitHub workflow job was not found", status: 0, phase: "provider_refresh", retryable: false, detail: "GitHub did not return the queued workflow job for the expected run attempt.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-workflow-job-not-found")
+    GITHUB_RUNNER_WORKFLOW_JOB_NOT_FOUND = "github_runner.workflow_job_not_found"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:workflow_job_persist_failed", title: "GitHub workflow job persist failed", status: 0, phase: "provider_refresh", retryable: true, detail: "Verself could not persist refreshed GitHub workflow job evidence.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-workflow-job-persist-failed")
+    GITHUB_RUNNER_WORKFLOW_JOB_PERSIST_FAILED = "github_runner.workflow_job_persist_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:cache_manifest_fetch_failed", title: "GitHub cache manifest fetch failed", status: 0, phase: "cache_manifest", retryable: true, detail: "Verself could not fetch the repository cache manifest for this workflow.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-cache-manifest-fetch-failed")
+    GITHUB_RUNNER_CACHE_MANIFEST_FETCH_FAILED = "github_runner.cache_manifest_fetch_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:job_shape_build_failed", title: "GitHub job shape build failed", status: 0, phase: "job_shape", retryable: false, detail: "Verself could not derive a stable job shape for this GitHub job.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-job-shape-build-failed")
+    GITHUB_RUNNER_JOB_SHAPE_BUILD_FAILED = "github_runner.job_shape_build_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:job_shape_persist_failed", title: "GitHub job shape persist failed", status: 0, phase: "job_shape", retryable: true, detail: "Verself could not persist the derived GitHub job shape.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-job-shape-persist-failed")
+    GITHUB_RUNNER_JOB_SHAPE_PERSIST_FAILED = "github_runner.job_shape_persist_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:demand_update_failed", title: "GitHub provider demand update failed", status: 0, phase: "provider_demand", retryable: true, detail: "Verself could not update GitHub provider demand state.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-demand-update-failed")
+    GITHUB_RUNNER_DEMAND_UPDATE_FAILED = "github_runner.demand_update_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:runner_class_lock_failed", title: "GitHub runner class lock failed", status: 0, phase: "runner_class_lock", retryable: true, detail: "Verself could not acquire the repository runner-class scheduling lock.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-runner-class-lock-failed")
+    GITHUB_RUNNER_RUNNER_CLASS_LOCK_FAILED = "github_runner.runner_class_lock_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:runner_class_capacity_count_failed", title: "GitHub runner class capacity count failed", status: 0, phase: "runner_class_capacity", retryable: true, detail: "Verself could not count active runner capacity for this repository runner class.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-runner-class-capacity-count-failed")
+    GITHUB_RUNNER_RUNNER_CLASS_CAPACITY_COUNT_FAILED = "github_runner.runner_class_capacity_count_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:demand_claim_failed", title: "GitHub provider demand claim failed", status: 0, phase: "provider_demand", retryable: true, detail: "Verself could not claim the GitHub job demand for runner capacity allocation.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-demand-claim-failed")
+    GITHUB_RUNNER_DEMAND_CLAIM_FAILED = "github_runner.demand_claim_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:runner_name_failed", title: "GitHub runner name generation failed", status: 0, phase: "runner_name", retryable: false, detail: "Verself could not generate a valid GitHub runner name.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-runner-name-failed")
+    GITHUB_RUNNER_RUNNER_NAME_FAILED = "github_runner.runner_name_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:jit_config_failed", title: "GitHub runner JIT config failed", status: 0, phase: "jit_config", retryable: false, detail: "Verself could not create a GitHub JIT runner configuration.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-jit-config-failed")
+    GITHUB_RUNNER_JIT_CONFIG_FAILED = "github_runner.jit_config_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:jit_config_invalid", title: "GitHub runner JIT config was incomplete", status: 0, phase: "jit_config", retryable: false, detail: "GitHub returned an incomplete JIT runner configuration.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-jit-config-invalid")
+    GITHUB_RUNNER_JIT_CONFIG_INVALID = "github_runner.jit_config_invalid"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:instance_persist_failed", title: "GitHub runner instance persist failed", status: 0, phase: "runner_instance", retryable: false, detail: "Verself could not persist the GitHub runner instance.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-instance-persist-failed")
+    GITHUB_RUNNER_INSTANCE_PERSIST_FAILED = "github_runner.instance_persist_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_workflow_observe_failed", title: "Sandbox workflow observation failed", status: 0, phase: "sandbox_observe_workflow", retryable: true, detail: "Verself could not send workflow-run evidence to sandbox-rental-service.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-workflow-observe-failed")
+    GITHUB_RUNNER_SANDBOX_WORKFLOW_OBSERVE_FAILED = "github_runner.sandbox_workflow_observe_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_outbox_failed", title: "Sandbox runner submit outbox failed", status: 0, phase: "sandbox_outbox", retryable: false, detail: "Verself could not record the sandbox submit outbox command.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-outbox-failed")
+    GITHUB_RUNNER_SANDBOX_OUTBOX_FAILED = "github_runner.sandbox_outbox_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_submit_failed", title: "Sandbox runner submit failed", status: 0, phase: "sandbox_submit", retryable: false, detail: "Verself could not submit the GitHub runner job to sandbox-rental-service.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-submit-failed")
+    GITHUB_RUNNER_SANDBOX_SUBMIT_FAILED = "github_runner.sandbox_submit_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_rejected", title: "Sandbox runner submit was rejected", status: 0, phase: "sandbox_submit", retryable: false, detail: "sandbox-rental-service rejected the GitHub runner job submission.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-rejected")
+    GITHUB_RUNNER_SANDBOX_REJECTED = "github_runner.sandbox_rejected"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_response_invalid", title: "Sandbox runner submit response was invalid", status: 0, phase: "sandbox_submit", retryable: false, detail: "sandbox-rental-service returned an invalid runner submission response.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-response-invalid")
+    GITHUB_RUNNER_SANDBOX_RESPONSE_INVALID = "github_runner.sandbox_response_invalid"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:submission_persist_failed", title: "Sandbox runner submission persist failed", status: 0, phase: "sandbox_submit", retryable: false, detail: "Verself could not persist sandbox runner submission evidence.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-submission-persist-failed")
+    GITHUB_RUNNER_SUBMISSION_PERSIST_FAILED = "github_runner.submission_persist_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_outbox_complete_failed", title: "Sandbox runner submit outbox completion failed", status: 0, phase: "sandbox_outbox", retryable: false, detail: "Verself could not mark the sandbox submit outbox command complete.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-outbox-complete-failed")
+    GITHUB_RUNNER_SANDBOX_OUTBOX_COMPLETE_FAILED = "github_runner.sandbox_outbox_complete_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:submission_commit_failed", title: "Sandbox runner submission commit failed", status: 0, phase: "sandbox_submit", retryable: true, detail: "Verself could not commit sandbox runner submission state.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-submission-commit-failed")
+    GITHUB_RUNNER_SUBMISSION_COMMIT_FAILED = "github_runner.submission_commit_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_allocation_terminal", title: "GitHub runner capacity failed before assignment", status: 0, phase: "sandbox_reconcile", retryable: false, detail: "The sandbox allocation became terminal before GitHub assigned the runner.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-allocation-terminal")
+    GITHUB_RUNNER_SANDBOX_ALLOCATION_TERMINAL = "github_runner.sandbox_allocation_terminal"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_allocation_not_found", title: "GitHub runner capacity failed before assignment", status: 0, phase: "sandbox_reconcile", retryable: false, detail: "sandbox-rental-service no longer has the expected runner allocation.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-allocation-not-found")
+    GITHUB_RUNNER_SANDBOX_ALLOCATION_NOT_FOUND = "github_runner.sandbox_allocation_not_found"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_submit_not_observed", title: "GitHub runner capacity failed before assignment", status: 0, phase: "sandbox_submit", retryable: false, detail: "Verself did not observe sandbox submission before the runner assignment deadline.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-submit-not-observed")
+    GITHUB_RUNNER_SANDBOX_SUBMIT_NOT_OBSERVED = "github_runner.sandbox_submit_not_observed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:assignment_deadline_exceeded", title: "GitHub runner capacity failed before assignment", status: 0, phase: "assignment_wait", retryable: false, detail: "GitHub did not assign the runner before the assignment deadline.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-assignment-deadline-exceeded")
+    GITHUB_RUNNER_ASSIGNMENT_DEADLINE_EXCEEDED = "github_runner.assignment_deadline_exceeded"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:runner_capacity_displaced", title: "Created GitHub runner capacity was displaced", status: 0, phase: "sandbox_submit", retryable: false, detail: "The runner capacity created by Verself was displaced by an existing sandbox runner.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-runner-capacity-displaced")
+    GITHUB_RUNNER_RUNNER_CAPACITY_DISPLACED = "github_runner.runner_capacity_displaced"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:capacity_displaced", title: "GitHub runner capacity was assigned to a different job", status: 0, phase: "assignment", retryable: true, detail: "GitHub assigned runner capacity to a different compatible job.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-capacity-displaced")
+    GITHUB_RUNNER_CAPACITY_DISPLACED = "github_runner.capacity_displaced"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:provider_surface_failed", title: "Failed to surface runner failure to GitHub", status: 0, phase: "provider_surface", retryable: true, detail: "Verself could not surface the runner failure back to GitHub.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-provider-surface-failed")
+    GITHUB_RUNNER_PROVIDER_SURFACE_FAILED = "github_runner.provider_surface_failed"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:provider_surface_worker_lost", title: "GitHub provider surface worker lost command", status: 0, phase: "provider_surface", retryable: true, detail: "A provider-surface worker left a command running past its deadline.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-provider-surface-worker-lost")
+    GITHUB_RUNNER_PROVIDER_SURFACE_WORKER_LOST = "github_runner.provider_surface_worker_lost"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:provider_surface_attempts_exhausted", title: "GitHub provider surface retry budget exhausted", status: 0, phase: "provider_surface", retryable: false, detail: "The provider-surface command exceeded its retry budget.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-provider-surface-attempts-exhausted")
+    GITHUB_RUNNER_PROVIDER_SURFACE_ATTEMPTS_EXHAUSTED = "github_runner.provider_surface_attempts_exhausted"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:provider_surface_command_unsupported", title: "Unsupported GitHub provider surface command", status: 0, phase: "provider_surface", retryable: false, detail: "Verself encountered an unsupported provider-surface command kind.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-provider-surface-command-unsupported")
+    GITHUB_RUNNER_PROVIDER_SURFACE_COMMAND_UNSUPPORTED = "github_runner.provider_surface_command_unsupported"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:provider_surface_target_missing", title: "GitHub provider surface target missing", status: 0, phase: "provider_surface", retryable: false, detail: "The provider-surface command is missing the GitHub workflow-run identity needed to update GitHub.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-provider-surface-target-missing")
+    GITHUB_RUNNER_PROVIDER_SURFACE_TARGET_MISSING = "github_runner.provider_surface_target_missing"
+}
 
 enum GithubWebhookDeliveryState {
     ACCEPTED = "accepted"
@@ -366,6 +580,18 @@ enum GithubRunnerInstanceState {
     JOB_COMPLETED = "job_completed"
     FAILED = "failed"
     CLEANED = "cleaned"
+}
+
+enum GithubProviderSurfaceCommandKind {
+    CANCEL_WORKFLOW_RUN = "cancel_workflow_run"
+}
+
+enum GithubProviderSurfaceCommandState {
+    PENDING = "pending"
+    RUNNING = "running"
+    RETRYABLE = "retryable"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
 }
 
 enum GithubGoldenSnapshotBarrierState {
@@ -779,6 +1005,40 @@ structure GithubRunnerInstanceRecord {
 
     @required
     state: GithubRunnerInstanceState
+}
+
+structure GithubProviderSurfaceCommandRecord {
+    @required
+    surface_id: String
+
+    @required
+    command_key: String
+
+    @required
+    command_kind: GithubProviderSurfaceCommandKind
+
+    @required
+    state: GithubProviderSurfaceCommandState
+
+    org_id: OrgId
+    installation_binding_id: GithubInstallationBindingId
+    repository_binding_id: GithubRepositoryBindingId
+    provider_installation_id: SafeNonNegativeLong
+    provider_repository_id: ProviderRepositoryId
+    repository_full_name: RepositoryFullName
+    provider_run_id: SafeNonNegativeLong
+    provider_run_attempt: SafeNonNegativeLong
+    provider_job_id: SafeNonNegativeLong
+    runner_id: SafeNonNegativeLong
+    runner_name: RunnerName
+    runner_class: RunnerClass
+    problems: ProblemOccurrences
+    attempt_count: SafeNonNegativeLong
+    next_attempt_at: DateTime
+    completed_at: DateTime
+    failed_at: DateTime
+    created_at: DateTime
+    updated_at: DateTime
 }
 
 structure GithubJobAssignmentRecord {

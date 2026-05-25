@@ -4,6 +4,7 @@ ALTER TABLE github_provider_demands
     ADD COLUMN IF NOT EXISTS primary_problem_status INTEGER NOT NULL DEFAULT 0 CHECK (primary_problem_status BETWEEN 0 AND 599),
     ADD COLUMN IF NOT EXISTS primary_problem_title TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS primary_problem_detail TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS primary_problem_docs_url TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS problem_count INTEGER NOT NULL DEFAULT 0 CHECK (problem_count >= 0);
 
 CREATE TABLE IF NOT EXISTS github_provider_demand_problems (
@@ -14,6 +15,7 @@ CREATE TABLE IF NOT EXISTS github_provider_demand_problems (
     problem_code             TEXT        NOT NULL CHECK (problem_code <> ''),
     title                    TEXT        NOT NULL CHECK (title <> ''),
     detail                   TEXT        NOT NULL DEFAULT '',
+    docs_url                 TEXT        NOT NULL DEFAULT '',
     status                   INTEGER     NOT NULL DEFAULT 0 CHECK (status BETWEEN 0 AND 599),
     retryable                BOOLEAN     NOT NULL DEFAULT false,
     pointer                  TEXT        NOT NULL DEFAULT '',
@@ -30,6 +32,7 @@ ALTER TABLE github_runner_instances
     ADD COLUMN IF NOT EXISTS primary_problem_status INTEGER NOT NULL DEFAULT 0 CHECK (primary_problem_status BETWEEN 0 AND 599),
     ADD COLUMN IF NOT EXISTS primary_problem_title TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS primary_problem_detail TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS primary_problem_docs_url TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS problem_count INTEGER NOT NULL DEFAULT 0 CHECK (problem_count >= 0);
 
 CREATE TABLE IF NOT EXISTS github_runner_instance_problems (
@@ -40,6 +43,7 @@ CREATE TABLE IF NOT EXISTS github_runner_instance_problems (
     problem_code             TEXT        NOT NULL CHECK (problem_code <> ''),
     title                    TEXT        NOT NULL CHECK (title <> ''),
     detail                   TEXT        NOT NULL DEFAULT '',
+    docs_url                 TEXT        NOT NULL DEFAULT '',
     status                   INTEGER     NOT NULL DEFAULT 0 CHECK (status BETWEEN 0 AND 599),
     retryable                BOOLEAN     NOT NULL DEFAULT false,
     pointer                  TEXT        NOT NULL DEFAULT '',
@@ -67,6 +71,7 @@ BEGIN
             problem_code,
             title,
             detail,
+            docs_url,
             status,
             retryable,
             pointer,
@@ -80,6 +85,7 @@ BEGIN
             'github_runner.capacity_failed',
             'GitHub runner capacity failed',
             failure_reason,
+            'https://verself.sh/docs/reference/github-integration/errors#github-runner-capacity-failed',
             0,
             false,
             '',
@@ -95,6 +101,7 @@ BEGIN
             primary_problem_status = 0,
             primary_problem_title = 'GitHub runner capacity failed',
             primary_problem_detail = failure_reason,
+            primary_problem_docs_url = 'https://verself.sh/docs/reference/github-integration/errors#github-runner-capacity-failed',
             problem_count = 1
         WHERE failure_reason <> ''
           AND problem_count = 0;
@@ -120,6 +127,7 @@ BEGIN
             problem_code,
             title,
             detail,
+            docs_url,
             status,
             retryable,
             pointer,
@@ -133,6 +141,7 @@ BEGIN
             'github_runner.capacity_failed',
             'GitHub runner capacity failed',
             failure_reason,
+            'https://verself.sh/docs/reference/github-integration/errors#github-runner-capacity-failed',
             0,
             false,
             '',
@@ -148,6 +157,7 @@ BEGIN
             primary_problem_status = 0,
             primary_problem_title = 'GitHub runner capacity failed',
             primary_problem_detail = failure_reason,
+            primary_problem_docs_url = 'https://verself.sh/docs/reference/github-integration/errors#github-runner-capacity-failed',
             problem_count = 1
         WHERE failure_reason <> ''
           AND problem_count = 0;

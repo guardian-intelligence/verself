@@ -60,8 +60,8 @@ func TestWebhookHandlerReportsMultipleHeaderProblems(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&doc); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
-	if doc.Code != "provider_webhook.header_invalid" {
-		t.Fatalf("code = %q, want provider_webhook.header_invalid", doc.Code)
+	if doc.Code != string(problemProviderWebhookHeaderInvalid) {
+		t.Fatalf("code = %q, want %s", doc.Code, problemProviderWebhookHeaderInvalid)
 	}
 	if len(doc.Errors) != 3 {
 		t.Fatalf("len(errors) = %d, want 3: %+v", len(doc.Errors), doc.Errors)
@@ -84,8 +84,8 @@ func TestWebhookHandlerReportsSignatureProblem(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&doc); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
-	if doc.Code != "provider_webhook.signature_invalid" {
-		t.Fatalf("code = %q, want provider_webhook.signature_invalid", doc.Code)
+	if doc.Code != string(problemProviderWebhookSignatureInvalid) {
+		t.Fatalf("code = %q, want %s", doc.Code, problemProviderWebhookSignatureInvalid)
 	}
 	if len(doc.Errors) != 1 || doc.Errors[0].Pointer != "header:X-Hub-Signature-256" {
 		t.Fatalf("unexpected errors: %+v", doc.Errors)
@@ -371,7 +371,7 @@ func TestWebhookStaleProblemPreservedAsRunnerProblem(t *testing.T) {
 		t.Fatalf("len(runnerProblems) = %d, want 1", len(runnerProblems.problems))
 	}
 	problem := runnerProblems.problems[0]
-	if problem.Code != "provider_webhook.processing_stale" {
+	if problem.Code != string(problemProviderWebhookProcessingStale) {
 		t.Fatalf("runner problem code = %q", problem.Code)
 	}
 	if problem.Type != "urn:verself:problem:provider_webhook:processing_stale" {

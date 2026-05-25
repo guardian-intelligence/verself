@@ -185,6 +185,21 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
     description: "Isolation, workload identity, auditability, and data-retention commitments.",
   },
   {
+    id: "github-integration-errors",
+    label: "GitHub CI Errors",
+    to: "/docs/reference/github-integration/errors",
+    matchPrefix: "/docs/reference/github-integration/errors",
+    status: "available",
+    description: "Stable github-integration-service lifecycle problem codes and remediation links.",
+    children: [
+      { id: "shape", label: "Shape" },
+      { id: "webhook-ingress", label: "Webhook ingress" },
+      { id: "delivery-processing", label: "Delivery processing" },
+      { id: "runner-capacity", label: "Runner capacity" },
+      { id: "provider-surface", label: "Provider surface" },
+    ],
+  },
+  {
     id: "reference",
     label: "API Reference",
     to: "/docs/reference",

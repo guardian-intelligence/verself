@@ -15,7 +15,7 @@ const appendProviderDemandProblem = `-- name: AppendProviderDemandProblem :exec
 WITH next_problem AS (
     SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
     FROM github_provider_demand_problems
-    WHERE provider_job_id = $7
+    WHERE provider_job_id = $8
 ),
 inserted AS (
     INSERT INTO github_provider_demand_problems (
@@ -26,28 +26,30 @@ inserted AS (
         problem_code,
         title,
         detail,
+        docs_url,
         status,
         retryable,
         pointer,
         observed_at
     )
     SELECT
-        $7,
-        next_problem.problem_seq,
         $8,
+        next_problem.problem_seq,
+        $9,
         $1,
         $2,
         $4,
         $5,
+        $6,
         $3,
-        $9,
         $10,
-        $6
+        $11,
+        $7
     FROM next_problem
     WHERE EXISTS (
         SELECT 1
         FROM github_provider_demands d
-        WHERE d.provider_job_id = $7
+        WHERE d.provider_job_id = $8
     )
     RETURNING provider_job_id
 )
@@ -58,9 +60,10 @@ SET
     primary_problem_status = CASE WHEN problem_count = 0 THEN $3 ELSE primary_problem_status END,
     primary_problem_title = CASE WHEN problem_count = 0 THEN $4 ELSE primary_problem_title END,
     primary_problem_detail = CASE WHEN problem_count = 0 THEN $5 ELSE primary_problem_detail END,
+    primary_problem_docs_url = CASE WHEN problem_count = 0 THEN $6 ELSE primary_problem_docs_url END,
     problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
-    updated_at = $6
-WHERE d.provider_job_id = $7
+    updated_at = $7
+WHERE d.provider_job_id = $8
 `
 
 type AppendProviderDemandProblemParams struct {
@@ -69,6 +72,7 @@ type AppendProviderDemandProblemParams struct {
 	Status        int32
 	Title         string
 	Detail        string
+	DocsUrl       string
 	ObservedAt    pgtype.Timestamptz
 	ProviderJobID int64
 	Phase         string
@@ -83,6 +87,7 @@ func (q *Queries) AppendProviderDemandProblem(ctx context.Context, arg AppendPro
 		arg.Status,
 		arg.Title,
 		arg.Detail,
+		arg.DocsUrl,
 		arg.ObservedAt,
 		arg.ProviderJobID,
 		arg.Phase,
@@ -96,7 +101,7 @@ const appendProviderSurfaceProblem = `-- name: AppendProviderSurfaceProblem :exe
 WITH next_problem AS (
     SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
     FROM github_provider_surface_problems
-    WHERE surface_id = $7
+    WHERE surface_id = $8
 ),
 inserted AS (
     INSERT INTO github_provider_surface_problems (
@@ -107,23 +112,25 @@ inserted AS (
         problem_code,
         title,
         detail,
+        docs_url,
         status,
         retryable,
         pointer,
         observed_at
     )
     SELECT
-        $7,
-        next_problem.problem_seq,
         $8,
+        next_problem.problem_seq,
+        $9,
         $1,
         $2,
         $4,
         $5,
+        $6,
         $3,
-        $9,
         $10,
-        $6
+        $11,
+        $7
     FROM next_problem
     RETURNING surface_id
 )
@@ -134,9 +141,10 @@ SET
     primary_problem_status = CASE WHEN problem_count = 0 THEN $3 ELSE primary_problem_status END,
     primary_problem_title = CASE WHEN problem_count = 0 THEN $4 ELSE primary_problem_title END,
     primary_problem_detail = CASE WHEN problem_count = 0 THEN $5 ELSE primary_problem_detail END,
+    primary_problem_docs_url = CASE WHEN problem_count = 0 THEN $6 ELSE primary_problem_docs_url END,
     problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
-    updated_at = $6
-WHERE c.surface_id = $7
+    updated_at = $7
+WHERE c.surface_id = $8
 `
 
 type AppendProviderSurfaceProblemParams struct {
@@ -145,6 +153,7 @@ type AppendProviderSurfaceProblemParams struct {
 	Status      int32
 	Title       string
 	Detail      string
+	DocsUrl     string
 	ObservedAt  pgtype.Timestamptz
 	SurfaceID   pgtype.UUID
 	Phase       string
@@ -159,6 +168,7 @@ func (q *Queries) AppendProviderSurfaceProblem(ctx context.Context, arg AppendPr
 		arg.Status,
 		arg.Title,
 		arg.Detail,
+		arg.DocsUrl,
 		arg.ObservedAt,
 		arg.SurfaceID,
 		arg.Phase,
@@ -172,7 +182,7 @@ const appendRunnerInstanceProblem = `-- name: AppendRunnerInstanceProblem :exec
 WITH next_problem AS (
     SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
     FROM github_runner_instance_problems
-    WHERE runner_name = $7
+    WHERE runner_name = $8
 ),
 inserted AS (
     INSERT INTO github_runner_instance_problems (
@@ -183,28 +193,30 @@ inserted AS (
         problem_code,
         title,
         detail,
+        docs_url,
         status,
         retryable,
         pointer,
         observed_at
     )
     SELECT
-        $7,
-        next_problem.problem_seq,
         $8,
+        next_problem.problem_seq,
+        $9,
         $1,
         $2,
         $4,
         $5,
+        $6,
         $3,
-        $9,
         $10,
-        $6
+        $11,
+        $7
     FROM next_problem
     WHERE EXISTS (
         SELECT 1
         FROM github_runner_instances ri
-        WHERE ri.runner_name = $7
+        WHERE ri.runner_name = $8
     )
     RETURNING runner_name
 )
@@ -215,9 +227,10 @@ SET
     primary_problem_status = CASE WHEN problem_count = 0 THEN $3 ELSE primary_problem_status END,
     primary_problem_title = CASE WHEN problem_count = 0 THEN $4 ELSE primary_problem_title END,
     primary_problem_detail = CASE WHEN problem_count = 0 THEN $5 ELSE primary_problem_detail END,
+    primary_problem_docs_url = CASE WHEN problem_count = 0 THEN $6 ELSE primary_problem_docs_url END,
     problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
-    updated_at = $6
-WHERE ri.runner_name = $7
+    updated_at = $7
+WHERE ri.runner_name = $8
 `
 
 type AppendRunnerInstanceProblemParams struct {
@@ -226,6 +239,7 @@ type AppendRunnerInstanceProblemParams struct {
 	Status      int32
 	Title       string
 	Detail      string
+	DocsUrl     string
 	ObservedAt  pgtype.Timestamptz
 	RunnerName  string
 	Phase       string
@@ -240,6 +254,7 @@ func (q *Queries) AppendRunnerInstanceProblem(ctx context.Context, arg AppendRun
 		arg.Status,
 		arg.Title,
 		arg.Detail,
+		arg.DocsUrl,
 		arg.ObservedAt,
 		arg.RunnerName,
 		arg.Phase,
@@ -253,7 +268,7 @@ const appendWebhookDeliveryProblem = `-- name: AppendWebhookDeliveryProblem :exe
 WITH next_problem AS (
     SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
     FROM github_webhook_delivery_problems
-    WHERE delivery_id = $7
+    WHERE delivery_id = $8
 ),
 inserted AS (
     INSERT INTO github_webhook_delivery_problems (
@@ -264,23 +279,25 @@ inserted AS (
         problem_code,
         title,
         detail,
+        docs_url,
         status,
         retryable,
         pointer,
         observed_at
     )
     SELECT
-        $7,
-        next_problem.problem_seq,
         $8,
+        next_problem.problem_seq,
+        $9,
         $1,
         $2,
         $4,
         $5,
+        $6,
         $3,
-        $9,
         $10,
-        $6
+        $11,
+        $7
     FROM next_problem
     RETURNING delivery_id
 )
@@ -291,9 +308,10 @@ SET
     primary_problem_status = CASE WHEN problem_count = 0 THEN $3 ELSE primary_problem_status END,
     primary_problem_title = CASE WHEN problem_count = 0 THEN $4 ELSE primary_problem_title END,
     primary_problem_detail = CASE WHEN problem_count = 0 THEN $5 ELSE primary_problem_detail END,
+    primary_problem_docs_url = CASE WHEN problem_count = 0 THEN $6 ELSE primary_problem_docs_url END,
     problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
-    updated_at = $6
-WHERE github_webhook_deliveries.delivery_id = $7
+    updated_at = $7
+WHERE github_webhook_deliveries.delivery_id = $8
 `
 
 type AppendWebhookDeliveryProblemParams struct {
@@ -302,6 +320,7 @@ type AppendWebhookDeliveryProblemParams struct {
 	Status      int32
 	Title       string
 	Detail      string
+	DocsUrl     string
 	ObservedAt  pgtype.Timestamptz
 	DeliveryID  string
 	Phase       string
@@ -316,6 +335,7 @@ func (q *Queries) AppendWebhookDeliveryProblem(ctx context.Context, arg AppendWe
 		arg.Status,
 		arg.Title,
 		arg.Detail,
+		arg.DocsUrl,
 		arg.ObservedAt,
 		arg.DeliveryID,
 		arg.Phase,
@@ -3122,6 +3142,10 @@ ON CONFLICT (delivery_id) DO UPDATE SET
     primary_problem_detail = CASE
         WHEN github_webhook_deliveries.state = 'rejected' THEN ''
         ELSE github_webhook_deliveries.primary_problem_detail
+    END,
+    primary_problem_docs_url = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN ''
+        ELSE github_webhook_deliveries.primary_problem_docs_url
     END,
     problem_count = CASE
         WHEN github_webhook_deliveries.state = 'rejected' THEN 0

@@ -67,10 +67,10 @@ func (s *Service) ProcessStaleProviderSurfaceCommands(ctx context.Context) error
 	for _, row := range rows {
 		cmd := providerSurfaceCommandFromStale(row)
 		problems := runnerProblemSet{}
-		problems.add(githubRunnerProblem("provider_surface", "github_runner.provider_surface_worker_lost", "GitHub provider surface worker lost command", "provider surface command was left running past its deadline", true))
+		problems.add(githubRunnerProblemFromCatalog(problemGithubRunnerProviderSurfaceWorkerLost))
 		terminal := cmd.AttemptCount >= s.cfg.MaxProviderSurfaceTries
 		if terminal {
-			problems.add(githubRunnerProblem("provider_surface", "github_runner.provider_surface_attempts_exhausted", "GitHub provider surface retry budget exhausted", "provider surface command exceeded its retry budget", false))
+			problems.add(githubRunnerProblemFromCatalog(problemGithubRunnerProviderSurfaceAttemptsExhausted))
 		}
 		if err := s.recordProviderSurfaceCommandFailure(ctx, cmd, problems, terminal); err != nil {
 			firstErr = errors.Join(firstErr, err)
@@ -95,10 +95,10 @@ func (s *Service) processProviderSurfaceCommand(ctx context.Context, cmd provide
 			return nil
 		}
 		problems := runnerProblemSet{}
-		problems.add(githubRunnerProblemFromError("provider_surface", "github_runner.provider_surface_failed", "Failed to surface runner failure to GitHub", err, true))
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerProviderSurfaceFailed, err))
 		terminal := cmd.AttemptCount >= s.cfg.MaxProviderSurfaceTries
 		if terminal {
-			problems.add(githubRunnerProblem("provider_surface", "github_runner.provider_surface_attempts_exhausted", "GitHub provider surface retry budget exhausted", "provider surface command exceeded its retry budget", false))
+			problems.add(githubRunnerProblemFromCatalog(problemGithubRunnerProviderSurfaceAttemptsExhausted))
 		}
 		if recordErr := s.recordProviderSurfaceCommandFailure(ctx, cmd, problems, terminal); recordErr != nil {
 			return recordErr
@@ -107,7 +107,10 @@ func (s *Service) processProviderSurfaceCommand(ctx context.Context, cmd provide
 		return err
 	default:
 		problems := runnerProblemSet{}
-		problems.add(githubRunnerProblem("provider_surface", "github_runner.provider_surface_command_unsupported", "Unsupported GitHub provider surface command", "unsupported provider surface command kind: "+cmd.CommandKind, false))
+		problems.add(githubRunnerProblemFromCatalog(
+			problemGithubRunnerProviderSurfaceCommandUnsupported,
+			withProblemDiagnostic("unsupported provider surface command kind: "+cmd.CommandKind),
+		))
 		if err := s.recordProviderSurfaceCommandFailure(ctx, cmd, problems, true); err != nil {
 			return err
 		}
@@ -211,6 +214,7 @@ func appendProviderSurfaceProblems(ctx context.Context, q *store.Queries, surfac
 			ProblemCode: problem.Code,
 			Title:       problem.Title,
 			Detail:      problem.Detail,
+			DocsUrl:     problem.DocsURL,
 			Status:      problem.Status,
 			Retryable:   problem.Retryable,
 			Pointer:     problem.Pointer,

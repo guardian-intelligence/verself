@@ -67,6 +67,10 @@ ON CONFLICT (delivery_id) DO UPDATE SET
         WHEN github_webhook_deliveries.state = 'rejected' THEN ''
         ELSE github_webhook_deliveries.primary_problem_detail
     END,
+    primary_problem_docs_url = CASE
+        WHEN github_webhook_deliveries.state = 'rejected' THEN ''
+        ELSE github_webhook_deliveries.primary_problem_docs_url
+    END,
     problem_count = CASE
         WHEN github_webhook_deliveries.state = 'rejected' THEN 0
         ELSE github_webhook_deliveries.problem_count
@@ -155,6 +159,7 @@ inserted AS (
         problem_code,
         title,
         detail,
+        docs_url,
         status,
         retryable,
         pointer,
@@ -168,6 +173,7 @@ inserted AS (
         @problem_code,
         @title,
         @detail,
+        @docs_url,
         @status,
         @retryable,
         @pointer,
@@ -182,6 +188,7 @@ SET
     primary_problem_status = CASE WHEN problem_count = 0 THEN @status ELSE primary_problem_status END,
     primary_problem_title = CASE WHEN problem_count = 0 THEN @title ELSE primary_problem_title END,
     primary_problem_detail = CASE WHEN problem_count = 0 THEN @detail ELSE primary_problem_detail END,
+    primary_problem_docs_url = CASE WHEN problem_count = 0 THEN @docs_url ELSE primary_problem_docs_url END,
     problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
     updated_at = @observed_at
 WHERE github_webhook_deliveries.delivery_id = @delivery_id;
@@ -1225,6 +1232,7 @@ inserted AS (
         problem_code,
         title,
         detail,
+        docs_url,
         status,
         retryable,
         pointer,
@@ -1238,6 +1246,7 @@ inserted AS (
         @problem_code,
         @title,
         @detail,
+        @docs_url,
         @status,
         @retryable,
         @pointer,
@@ -1257,6 +1266,7 @@ SET
     primary_problem_status = CASE WHEN problem_count = 0 THEN @status ELSE primary_problem_status END,
     primary_problem_title = CASE WHEN problem_count = 0 THEN @title ELSE primary_problem_title END,
     primary_problem_detail = CASE WHEN problem_count = 0 THEN @detail ELSE primary_problem_detail END,
+    primary_problem_docs_url = CASE WHEN problem_count = 0 THEN @docs_url ELSE primary_problem_docs_url END,
     problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
     updated_at = @observed_at
 WHERE d.provider_job_id = @provider_job_id;
@@ -1407,6 +1417,7 @@ inserted AS (
         problem_code,
         title,
         detail,
+        docs_url,
         status,
         retryable,
         pointer,
@@ -1420,6 +1431,7 @@ inserted AS (
         @problem_code,
         @title,
         @detail,
+        @docs_url,
         @status,
         @retryable,
         @pointer,
@@ -1434,6 +1446,7 @@ SET
     primary_problem_status = CASE WHEN problem_count = 0 THEN @status ELSE primary_problem_status END,
     primary_problem_title = CASE WHEN problem_count = 0 THEN @title ELSE primary_problem_title END,
     primary_problem_detail = CASE WHEN problem_count = 0 THEN @detail ELSE primary_problem_detail END,
+    primary_problem_docs_url = CASE WHEN problem_count = 0 THEN @docs_url ELSE primary_problem_docs_url END,
     problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
     updated_at = @observed_at
 WHERE c.surface_id = @surface_id;
@@ -1588,6 +1601,7 @@ inserted AS (
         problem_code,
         title,
         detail,
+        docs_url,
         status,
         retryable,
         pointer,
@@ -1601,6 +1615,7 @@ inserted AS (
         @problem_code,
         @title,
         @detail,
+        @docs_url,
         @status,
         @retryable,
         @pointer,
@@ -1620,6 +1635,7 @@ SET
     primary_problem_status = CASE WHEN problem_count = 0 THEN @status ELSE primary_problem_status END,
     primary_problem_title = CASE WHEN problem_count = 0 THEN @title ELSE primary_problem_title END,
     primary_problem_detail = CASE WHEN problem_count = 0 THEN @detail ELSE primary_problem_detail END,
+    primary_problem_docs_url = CASE WHEN problem_count = 0 THEN @docs_url ELSE primary_problem_docs_url END,
     problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
     updated_at = @observed_at
 WHERE ri.runner_name = @runner_name;

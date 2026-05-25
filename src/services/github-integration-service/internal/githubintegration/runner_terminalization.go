@@ -89,9 +89,9 @@ func providerDemandTerminalForCapacity(state string) bool {
 	}
 }
 
-func (s *Service) terminalizeQueuedJobFailure(ctx context.Context, ref runnerCapacityRef, demandState string, phase string, code string, title string, err error, retryable bool) error {
+func (s *Service) terminalizeQueuedJobFailure(ctx context.Context, ref runnerCapacityRef, demandState string, code githubProblemCode, err error, retryable bool) error {
 	problems := runnerProblemSet{}
-	problems.add(githubRunnerProblemFromError(phase, code, title, err, retryable))
+	problems.add(githubRunnerProblemFromError(code, err, withProblemRetryable(retryable)))
 	if terminalizeErr := s.terminalizeRunnerCapacity(ctx, ref, runnerCapacityFailure{
 		DemandState:       demandState,
 		Problems:          problems,
@@ -107,7 +107,7 @@ func (s *Service) terminalizeRunnerCapacity(ctx context.Context, ref runnerCapac
 		return ErrConfiguration
 	}
 	if failure.Problems.empty() {
-		failure.Problems.add(githubRunnerProblem("runner_capacity", "github_runner.capacity_failed", "GitHub runner capacity failed", "", false))
+		failure.Problems.add(githubRunnerProblemFromCatalog(problemGithubRunnerCapacityFailed))
 	}
 	if strings.TrimSpace(failure.DemandState) == "" {
 		failure.DemandState = "capacity_failed"

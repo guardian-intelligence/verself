@@ -10,6 +10,7 @@ go_library(
         "job_shape.go",
         "onboarding.go",
         "payloads.go",
+        "problem_catalog.go",
         "provider_surface.go",
         "runner_problem.go",
         "runner_terminalization.go",
@@ -37,7 +38,11 @@ go_library(
 
 go_test(
     name = "githubintegration_test",
-    srcs = ["service_test.go"],
+    srcs = [
+        "problem_catalog_test.go",
+        "service_test.go",
+    ],
+    data = ["//src/smithy/models/verself:github_integration.smithy"],
     embed = [":githubintegration"],
     deps = [
         "//src/services/sandbox-rental-service/client",

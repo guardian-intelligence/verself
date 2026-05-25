@@ -165,7 +165,7 @@ func runnerProblemSetFromWebhookProblems(problems webhookProblemSet) runnerProbl
 func deliveryDemandFailureState(problems webhookProblemSet) string {
 	primary := problems.primary()
 	switch primary.Code {
-	case "github.sandbox_dispatch_failed":
+	case string(problemGithubSandboxDispatchFailed):
 		return "sandbox_failed"
 	default:
 		return "capacity_failed"
