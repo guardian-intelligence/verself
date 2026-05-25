@@ -2,12 +2,15 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -63,6 +66,8 @@ func (c CLI) runAuth(ctx context.Context, args []string) error {
 		return c.authWhoami(ctx, args[1:])
 	case "token":
 		return c.authToken(args[1:])
+	case "accounts":
+		return c.authAccounts(args[1:])
 	case "profiles":
 		return c.authProfiles(args[1:])
 	default:
@@ -93,21 +98,32 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	if fs.NArg() != 0 {
 		return errors.New("usage: auth login --token-file PATH [--profile NAME]")
 	}
-	profile := ProfileRecord{
-		Version:          1,
-		Name:             strings.TrimSpace(*profileName),
-		IAMURL:           strings.TrimSpace(firstNonEmpty(*iamURL, c.getenv("VERSELF_IAM_API_URL"))),
-		ProjectsURL:      strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"))),
-		NotificationsURL: strings.TrimSpace(firstNonEmpty(*notificationsURL, c.getenv("VERSELF_NOTIFICATIONS_API_URL"))),
-		BillingURL:       strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"))),
-		GovernanceURL:    strings.TrimSpace(firstNonEmpty(*governanceURL, c.getenv("VERSELF_GOVERNANCE_API_URL"))),
-		SandboxURL:       strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"))),
-		SecretsURL:       strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"))),
-		SourceURL:        strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"))),
+	store, err := newStore(c.getenv)
+	if err != nil {
+		return err
 	}
-	if profile.Name == "" {
+	name := strings.TrimSpace(*profileName)
+	if name == "" {
 		return errors.New("auth login profile name is required")
 	}
+	profile := ProfileRecord{
+		Version: 1,
+		Name:    name,
+	}
+	if existing, err := store.LoadProfile(name); err == nil {
+		profile = existing
+		profile.Name = name
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	profile.IAMURL = strings.TrimSpace(firstNonEmpty(*iamURL, c.getenv("VERSELF_IAM_API_URL"), profile.IAMURL))
+	profile.ProjectsURL = strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"), profile.ProjectsURL))
+	profile.NotificationsURL = strings.TrimSpace(firstNonEmpty(*notificationsURL, c.getenv("VERSELF_NOTIFICATIONS_API_URL"), profile.NotificationsURL))
+	profile.BillingURL = strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"), profile.BillingURL))
+	profile.GovernanceURL = strings.TrimSpace(firstNonEmpty(*governanceURL, c.getenv("VERSELF_GOVERNANCE_API_URL"), profile.GovernanceURL))
+	profile.SandboxURL = strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"), profile.SandboxURL))
+	profile.SecretsURL = strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"), profile.SecretsURL))
+	profile.SourceURL = strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"), profile.SourceURL))
 	credential, err := c.loginCredential(ctx, loginCredentialOptions{
 		TokenFile: strings.TrimSpace(*tokenFile),
 		IssuerURL: firstNonEmpty(*issuerURL, c.getenv("VERSELF_AUTH_ISSUER_URL")),
@@ -137,10 +153,27 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	}
 	if len(orgs.Organizations) > 0 {
 		org := orgs.Organizations[0]
-		profile.SelectedOrg = orgRefFromSDK(org)
+		profile.Account = &AccountRecord{SelectedOrg: orgRefFromSDK(org)}
 	}
-	store, err := newStore(c.getenv)
-	if err != nil {
+	identity := accountIdentityFromCredential(credential)
+	account := AccountRecord{
+		Version:     1,
+		ProfileName: profile.Name,
+		Handle:      cliAccountHandle(profile.Name, identity.Subject, credential.AccessToken),
+		Subject:     identity.Subject,
+		Email:       identity.Email,
+		SelectedOrg: nil,
+	}
+	if profile.Account != nil {
+		account.SelectedOrg = profile.Account.SelectedOrg
+	}
+	var previousTokenRef string
+	if existing, err := store.LoadAccount(account.ProfileName, account.Handle); err == nil {
+		previousTokenRef = existing.TokenRef
+		if account.SelectedOrg == nil {
+			account.SelectedOrg = existing.SelectedOrg
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	credentialJSON, err := json.Marshal(credential)
@@ -151,7 +184,16 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	profile.TokenRef = ref
+	account.TokenRef = ref
+	if err := store.SaveAccount(account); err != nil {
+		_ = store.DeleteCredential(ref)
+		return err
+	}
+	if previousTokenRef != "" && previousTokenRef != ref {
+		_ = store.DeleteCredential(previousTokenRef)
+	}
+	profile.ActiveAccount = account.Handle
+	profile.Account = nil
 	if err := store.SaveProfile(profile); err != nil {
 		return err
 	}
@@ -164,12 +206,12 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		return err
 	}
 	if *jsonOut {
-		return writeJSON(c.out, profile)
+		return writeJSON(c.out, map[string]any{"profile": profile, "account": account})
 	}
-	if profile.SelectedOrg == nil {
+	if account.SelectedOrg == nil {
 		return writeln(c.out, "logged in; no organizations available")
 	}
-	return writef(c.out, "logged in for %s\n", profile.SelectedOrg.DisplayName)
+	return writef(c.out, "logged in for %s\n", account.SelectedOrg.DisplayName)
 }
 
 type loginCredentialOptions struct {
@@ -375,6 +417,53 @@ func parseStoredAuthCredential(value string) (authCredential, bool) {
 	return credential, strings.TrimSpace(credential.AccessToken) != ""
 }
 
+type cliAccountIdentity struct {
+	Subject string
+	Email   string
+}
+
+func accountIdentityFromCredential(credential authCredential) cliAccountIdentity {
+	claims, err := decodeJWTClaims(credential.AccessToken)
+	if err != nil {
+		return cliAccountIdentity{}
+	}
+	return cliAccountIdentity{
+		Subject: stringClaimValue(claims, "sub"),
+		Email:   stringClaimValue(claims, "email"),
+	}
+}
+
+func cliAccountHandle(profileName, subject, token string) string {
+	seed := strings.TrimSpace(subject)
+	if seed == "" {
+		sum := sha256.Sum256([]byte(token))
+		seed = base64.RawURLEncoding.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256([]byte("verself cli account v1\x00" + strings.TrimSpace(profileName) + "\x00" + seed))
+	return "acct_" + base64.RawURLEncoding.EncodeToString(sum[:])[:24]
+}
+
+func decodeJWTClaims(token string) (map[string]any, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil, errors.New("token is not a jwt")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
+}
+
+func stringClaimValue(claims map[string]any, name string) string {
+	value, _ := claims[name].(string)
+	return strings.TrimSpace(value)
+}
+
 func (c CLI) authLogout(args []string) error {
 	fs := flag.NewFlagSet("auth logout", flag.ContinueOnError)
 	fs.SetOutput(c.err)
@@ -448,6 +537,152 @@ func (c CLI) authToken(args []string) error {
 		})
 	}
 	return writef(c.out, "%s\n", token)
+}
+
+func (c CLI) authAccounts(args []string) error {
+	if len(args) == 0 {
+		return errors.New("auth accounts command is required")
+	}
+	switch args[0] {
+	case "list", "ls":
+		return c.authAccountsList(args[1:])
+	case "use":
+		return c.authAccountsUse(args[1:])
+	case "logout", "remove", "rm":
+		return c.authAccountsLogout(args[1:])
+	default:
+		return fmt.Errorf("unknown auth accounts command %q", args[0])
+	}
+}
+
+func (c CLI) authAccountsList(args []string) error {
+	fs := flag.NewFlagSet("auth accounts list", flag.ContinueOnError)
+	fs.SetOutput(c.err)
+	profileName := fs.String("profile", "", "profile name")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: auth accounts list [--profile NAME]")
+	}
+	_, profile, accounts, err := c.loadProfileAccounts(*profileName)
+	if err != nil {
+		return err
+	}
+	return writeJSON(c.out, map[string]any{
+		"profile":       profile.Name,
+		"activeAccount": profile.ActiveAccount,
+		"accounts":      accounts,
+	})
+}
+
+func (c CLI) authAccountsUse(args []string) error {
+	fs := flag.NewFlagSet("auth accounts use", flag.ContinueOnError)
+	fs.SetOutput(c.err)
+	profileName := fs.String("profile", "", "profile name")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: auth accounts use <handle|email|subject> [--profile NAME]")
+	}
+	store, profile, accounts, err := c.loadProfileAccounts(*profileName)
+	if err != nil {
+		return err
+	}
+	account, err := matchCLIAccount(accounts, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	profile.ActiveAccount = account.Handle
+	if err := store.SaveProfile(profile); err != nil {
+		return err
+	}
+	return writeJSON(c.out, map[string]any{
+		"profile": profile.Name,
+		"account": account,
+		"message": "active account selected",
+	})
+}
+
+func (c CLI) authAccountsLogout(args []string) error {
+	fs := flag.NewFlagSet("auth accounts logout", flag.ContinueOnError)
+	fs.SetOutput(c.err)
+	profileName := fs.String("profile", "", "profile name")
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() > 1 {
+		return errors.New("usage: auth accounts logout [handle|email|subject] [--profile NAME]")
+	}
+	store, profile, accounts, err := c.loadProfileAccounts(*profileName)
+	if err != nil {
+		return err
+	}
+	var account AccountRecord
+	if fs.NArg() == 0 {
+		if profile.ActiveAccount == "" {
+			return errors.New("profile has no active account")
+		}
+		account, err = matchCLIAccount(accounts, profile.ActiveAccount)
+	} else {
+		account, err = matchCLIAccount(accounts, fs.Arg(0))
+	}
+	if err != nil {
+		return err
+	}
+	if err := store.DeleteAccount(profile.Name, account.Handle); err != nil {
+		return err
+	}
+	if profile.ActiveAccount == account.Handle {
+		profile.ActiveAccount = ""
+		if err := store.SaveProfile(profile); err != nil {
+			return err
+		}
+	}
+	return writeJSON(c.out, map[string]any{
+		"profile": profile.Name,
+		"account": account.Handle,
+		"message": "account logged out",
+	})
+}
+
+func (c CLI) loadProfileAccounts(profileName string) (*Store, ProfileRecord, []AccountRecord, error) {
+	store, err := newStore(c.getenv)
+	if err != nil {
+		return nil, ProfileRecord{}, nil, err
+	}
+	profile, err := store.LoadProfile(strings.TrimSpace(profileName))
+	if err != nil {
+		return nil, ProfileRecord{}, nil, err
+	}
+	accounts, err := store.ListAccounts(profile.Name)
+	if err != nil {
+		return nil, ProfileRecord{}, nil, err
+	}
+	return store, profile, accounts, nil
+}
+
+func matchCLIAccount(accounts []AccountRecord, value string) (AccountRecord, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return AccountRecord{}, errors.New("account selector is required")
+	}
+	var matched *AccountRecord
+	for i := range accounts {
+		account := accounts[i]
+		if account.Handle != value && account.Email != value && account.Subject != value {
+			continue
+		}
+		if matched != nil {
+			return AccountRecord{}, fmt.Errorf("account selector %q is ambiguous", value)
+		}
+		matched = &account
+	}
+	if matched == nil {
+		return AccountRecord{}, fmt.Errorf("account %q was not found", value)
+	}
+	return *matched, nil
 }
 
 func (c CLI) authProfiles(args []string) error {

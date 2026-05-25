@@ -2,6 +2,7 @@ import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@ta
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type {
   AuthenticatedAuth,
+  BrowserAccountSummary,
   BrowserLocation,
   BrowserSessionSummary,
 } from "@verself/auth-web/isomorphic";
@@ -19,9 +20,15 @@ import {
 } from "@verself/ui/components/ui/table";
 import { ArrowLeft, KeyRound, Laptop, MapPin, ShieldCheck, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
-import { getClientAuthSessions, revokeClientAuthSession } from "~/server-fns/auth";
+import {
+  getClientAuthAccounts,
+  getClientAuthSessions,
+  revokeClientAuthSession,
+  selectActiveAccount,
+} from "~/server-fns/auth";
 
 const accountSessionsPart = "browser-sessions" as const;
+const browserAccountsPart = "browser-accounts" as const;
 
 function browserSessionsQuery(auth: AuthenticatedAuth) {
   return queryOptions({
@@ -30,8 +37,20 @@ function browserSessionsQuery(auth: AuthenticatedAuth) {
   });
 }
 
+function browserAccountsQuery(auth: AuthenticatedAuth) {
+  return queryOptions({
+    queryKey: authQueryKey(auth, browserAccountsPart),
+    queryFn: () => getClientAuthAccounts(),
+  });
+}
+
 export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/account/security")({
-  loader: ({ context }) => context.queryClient.ensureQueryData(browserSessionsQuery(context.auth)),
+  loader: async ({ context }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData(browserSessionsQuery(context.auth)),
+      context.queryClient.ensureQueryData(browserAccountsQuery(context.auth)),
+    ]);
+  },
   component: AccountSecurity,
 });
 
@@ -39,13 +58,23 @@ function AccountSecurity() {
   const { orgSlug } = Route.useParams();
   const { auth } = Route.useRouteContext();
   const session = useSession();
-  const { data } = useSuspenseQuery(browserSessionsQuery(auth));
+  const { data: sessionsData } = useSuspenseQuery(browserSessionsQuery(auth));
+  const { data: accountsData } = useSuspenseQuery(browserAccountsQuery(auth));
   const queryClient = useQueryClient();
+  const selectAccount = useMutation({
+    mutationFn: (input: { readonly accountHandle: string }) =>
+      selectActiveAccount({ data: { accountHandle: input.accountHandle } }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: authQueryKey(auth, browserAccountsPart) });
+      window.location.assign("/");
+    },
+  });
   const revoke = useMutation({
     mutationFn: (input: { readonly sessionHandle: string; readonly isCurrent: boolean }) =>
       revokeClientAuthSession({ data: { sessionHandle: input.sessionHandle } }),
     onSuccess: async (_result, input) => {
       await queryClient.invalidateQueries({ queryKey: authQueryKey(auth, accountSessionsPart) });
+      await queryClient.invalidateQueries({ queryKey: authQueryKey(auth, browserAccountsPart) });
       if (input.isCurrent) {
         window.location.assign("/login");
       }
@@ -84,7 +113,7 @@ function AccountSecurity() {
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <ShieldCheck className="size-4" aria-hidden="true" />
-            <span>{data.sessions.length} active sessions</span>
+            <span>{accountsData.accounts.length} browser accounts</span>
           </div>
         </header>
 
@@ -92,12 +121,12 @@ function AccountSecurity() {
           <Metric
             icon={<Laptop className="size-4" />}
             label="Current device"
-            value={currentDevice(data.sessions)}
+            value={currentDevice(sessionsData.sessions)}
           />
           <Metric
             icon={<MapPin className="size-4" />}
             label="Location"
-            value={currentLocation(data.sessions)}
+            value={currentLocation(sessionsData.sessions)}
           />
           <Metric
             icon={<KeyRound className="size-4" />}
@@ -114,6 +143,32 @@ function AccountSecurity() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Account</TableHead>
+                <TableHead>Selected org</TableHead>
+                <TableHead>Last seen</TableHead>
+                <TableHead className="w-28 text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {accountsData.accounts.map((account) => (
+                <AccountRow
+                  key={account.accountHandle}
+                  account={account}
+                  isSwitching={
+                    selectAccount.isPending &&
+                    selectAccount.variables?.accountHandle === account.accountHandle
+                  }
+                  onSelect={() => selectAccount.mutate({ accountHandle: account.accountHandle })}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </section>
+
+        <section className="overflow-x-auto border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
                 <TableHead>Device</TableHead>
                 <TableHead>IP</TableHead>
                 <TableHead>Location</TableHead>
@@ -123,7 +178,7 @@ function AccountSecurity() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.sessions.map((session) => (
+              {sessionsData.sessions.map((session) => (
                 <SessionRow
                   key={session.sessionHandle}
                   session={session}
@@ -143,6 +198,41 @@ function AccountSecurity() {
         </section>
       </div>
     </div>
+  );
+}
+
+function AccountRow({
+  account,
+  isSwitching,
+  onSelect,
+}: {
+  readonly account: BrowserAccountSummary;
+  readonly isSwitching: boolean;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <TableRow>
+      <TableCell className="min-w-64 whitespace-normal">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">
+              {account.displayName ?? account.email ?? account.subject}
+            </span>
+            {account.isCurrent ? <Badge variant="success">Current</Badge> : null}
+          </div>
+          <p className="max-w-96 truncate text-xs text-muted-foreground">
+            {account.email ?? account.subject}
+          </p>
+        </div>
+      </TableCell>
+      <TableCell className="font-mono text-xs">{account.selectedOrgID ?? "none"}</TableCell>
+      <TableCell>{dateTimeLabel(account.lastSeenAt)}</TableCell>
+      <TableCell className="text-right">
+        <Button size="sm" disabled={account.isCurrent || isSwitching} onClick={onSelect}>
+          <span>{isSwitching ? "Switching" : "Use"}</span>
+        </Button>
+      </TableCell>
+    </TableRow>
   );
 }
 

@@ -14,7 +14,7 @@ func browserAuthExternalRoute(r *http.Request) string {
 	return "/api/v1/auth" + r.URL.Path
 }
 
-func sendBrowserAuthActivity(ctx context.Context, user browserUser, sessionHandle, operation, eventCode, action, permission, method, route string, status uint16) {
+func sendBrowserAuthActivity(ctx context.Context, user browserUser, accountHandle, operation, eventCode, action, permission, method, route string, status uint16) {
 	traceID, spanID := traceIDsFromContext(ctx)
 	info := browserRequestInfoFromContext(ctx)
 	orgID := firstNonEmpty(stringValue(user.SelectedOrgID), stringValue(user.HomeOrgID), stringValue(user.OrgID))
@@ -29,9 +29,9 @@ func sendBrowserAuthActivity(ctx context.Context, user browserUser, sessionHandl
 		ActorName:             firstNonEmpty(stringValue(user.Name), stringValue(user.PreferredUsername), user.Sub),
 		ActorEmail:            stringValue(user.Email),
 		Permission:            permission,
-		ResourceType:          "browser_session",
-		ResourceUID:           sessionHandle,
-		ResourceName:          sessionHandle,
+		ResourceType:          "browser_account",
+		ResourceUID:           accountHandle,
+		ResourceName:          accountHandle,
 		HTTPMethod:            method,
 		HTTPRoute:             route,
 		HTTPUserAgent:         info.UserAgent,

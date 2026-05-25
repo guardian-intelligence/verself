@@ -14,14 +14,40 @@ const authNavigationClient = {
   getSignInRedirectURL: async ({
     data,
   }: {
-    data: { promptLogin?: boolean | null; redirectTo?: string | null };
+    data: {
+      promptLogin?: boolean | null;
+      promptSelectAccount?: boolean | null;
+      redirectTo?: string | null;
+      purpose?: string | null;
+      loginHint?: string | null;
+      requiredSubject?: string | null;
+      requiredEmail?: string | null;
+      requiredOrgId?: string | null;
+    };
   }) => {
     const params = new URLSearchParams();
     if (data.redirectTo) {
       params.set("redirect_to", data.redirectTo);
     }
+    if (data.purpose) {
+      params.set("purpose", data.purpose);
+    }
+    if (data.loginHint) {
+      params.set("login_hint", data.loginHint);
+    }
+    if (data.requiredSubject) {
+      params.set("required_subject", data.requiredSubject);
+    }
+    if (data.requiredEmail) {
+      params.set("required_email", data.requiredEmail);
+    }
+    if (data.requiredOrgId) {
+      params.set("required_org_id", data.requiredOrgId);
+    }
     if (data.promptLogin) {
       params.set("prompt", "login");
+    } else if (data.promptSelectAccount) {
+      params.set("prompt", "select_account");
     }
     const query = params.toString();
     return `/api/v1/auth/login${query ? `?${query}` : ""}`;

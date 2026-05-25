@@ -3,10 +3,12 @@ import { setResponseHeader } from "@tanstack/react-start/server";
 import * as v from "valibot";
 import { requireURLFromEnv } from "@verself/web-env";
 import {
+  browserAccountsResponseSchema,
   browserSessionsResponseSchema,
   parseAuthSnapshot,
   type AuthenticatedAuthSnapshot,
   type AuthSnapshot,
+  type BrowserAccountsResponse,
   type BrowserSessionsResponse,
 } from "@verself/auth-web/isomorphic";
 import type { ConsoleAuthContext } from "./auth";
@@ -33,9 +35,38 @@ const organizationSummarySchema = v.object({
 const signupVerificationResultSchema = v.object({
   organization: organizationSummarySchema,
   loginUrl: v.pipe(v.string(), v.nonEmpty()),
+  loginIntent: v.optional(
+    v.object({
+      loginUrl: v.pipe(v.string(), v.nonEmpty()),
+      purpose: v.pipe(v.string(), v.nonEmpty()),
+      requiredSubject: v.pipe(v.string(), v.nonEmpty()),
+      requiredEmail: v.pipe(v.string(), v.nonEmpty()),
+      requiredOrgId: v.pipe(v.string(), v.nonEmpty()),
+      redirectTo: v.optional(v.pipe(v.string(), v.nonEmpty())),
+    }),
+  ),
 });
 
 export type SignupVerificationResult = v.InferOutput<typeof signupVerificationResultSchema>;
+
+const memberInviteAcceptanceResultSchema = v.object({
+  orgId: v.pipe(v.string(), v.nonEmpty()),
+  memberId: v.pipe(v.string(), v.nonEmpty()),
+  resourceName: v.pipe(v.string(), v.nonEmpty()),
+  loginUrl: v.pipe(v.string(), v.nonEmpty()),
+  loginIntent: v.optional(
+    v.object({
+      loginUrl: v.pipe(v.string(), v.nonEmpty()),
+      purpose: v.pipe(v.string(), v.nonEmpty()),
+      requiredSubject: v.pipe(v.string(), v.nonEmpty()),
+      requiredEmail: v.pipe(v.string(), v.nonEmpty()),
+      requiredOrgId: v.pipe(v.string(), v.nonEmpty()),
+      redirectTo: v.optional(v.pipe(v.string(), v.nonEmpty())),
+    }),
+  ),
+});
+
+export type MemberInviteAcceptanceResult = v.InferOutput<typeof memberInviteAcceptanceResultSchema>;
 
 function identityAuthURL(path: string): string {
   return new URL(`/api/v1/auth/${path}`, IAM_SERVICE_BASE_URL).toString();
@@ -167,6 +198,26 @@ export async function listIdentityBrowserSessions(): Promise<BrowserSessionsResp
   return v.parse(browserSessionsResponseSchema, await response.json());
 }
 
+export async function listIdentityBrowserAccounts(): Promise<BrowserAccountsResponse> {
+  const response = await identityAuthFetch("accounts");
+  if (!response.ok) {
+    throw new Error(`identity accounts failed: ${response.status} ${await response.text()}`);
+  }
+  return v.parse(browserAccountsResponseSchema, await response.json());
+}
+
+export async function selectIdentityBrowserAccount(accountHandle: string): Promise<AuthSnapshot> {
+  const response = await identityAuthFetch("accounts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accountHandle }),
+  });
+  if (!response.ok) {
+    throw new Error(`identity account switch failed: ${response.status} ${await response.text()}`);
+  }
+  return parseAuthSnapshot(await response.json());
+}
+
 export async function revokeIdentityBrowserSession(sessionHandle: string): Promise<void> {
   const response = await identityAuthFetch(`sessions/${encodeURIComponent(sessionHandle)}`, {
     method: "DELETE",
@@ -176,7 +227,9 @@ export async function revokeIdentityBrowserSession(sessionHandle: string): Promi
   }
 }
 
-export async function acceptIdentityMemberInvite(data: { token: string }): Promise<void> {
+export async function acceptIdentityMemberInvite(data: {
+  token: string;
+}): Promise<MemberInviteAcceptanceResult> {
   const response = await identityAuthFetch(
     "invites/accept",
     {
@@ -194,6 +247,7 @@ export async function acceptIdentityMemberInvite(data: { token: string }): Promi
   if (!response.ok) {
     throw new Error(`identity invite acceptance failed: ${response.status}`);
   }
+  return v.parse(memberInviteAcceptanceResultSchema, await response.json());
 }
 
 function inviteAcceptanceIdempotencyKey(token: string): string {

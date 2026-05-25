@@ -17,20 +17,32 @@ type Config struct {
 }
 
 type ProfileRecord struct {
-	Version          int       `json:"version"`
-	Name             string    `json:"name"`
-	TokenRef         string    `json:"token_ref"`
-	IAMURL           string    `json:"iam_url,omitempty"`
-	ProjectsURL      string    `json:"projects_url,omitempty"`
-	NotificationsURL string    `json:"notifications_url,omitempty"`
-	BillingURL       string    `json:"billing_url,omitempty"`
-	GovernanceURL    string    `json:"governance_url,omitempty"`
-	SandboxURL       string    `json:"sandbox_url,omitempty"`
-	SecretsURL       string    `json:"secrets_url,omitempty"`
-	SourceURL        string    `json:"source_url,omitempty"`
-	SelectedOrg      *OrgRef   `json:"selected_org,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	Version          int            `json:"version"`
+	Name             string         `json:"name"`
+	ActiveAccount    string         `json:"active_account,omitempty"`
+	IAMURL           string         `json:"iam_url,omitempty"`
+	ProjectsURL      string         `json:"projects_url,omitempty"`
+	NotificationsURL string         `json:"notifications_url,omitempty"`
+	BillingURL       string         `json:"billing_url,omitempty"`
+	GovernanceURL    string         `json:"governance_url,omitempty"`
+	SandboxURL       string         `json:"sandbox_url,omitempty"`
+	SecretsURL       string         `json:"secrets_url,omitempty"`
+	SourceURL        string         `json:"source_url,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
+	Account          *AccountRecord `json:"-"`
+}
+
+type AccountRecord struct {
+	Version     int       `json:"version"`
+	ProfileName string    `json:"profile_name"`
+	Handle      string    `json:"handle"`
+	Subject     string    `json:"subject,omitempty"`
+	Email       string    `json:"email,omitempty"`
+	TokenRef    string    `json:"token_ref"`
+	SelectedOrg *OrgRef   `json:"selected_org,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type OrgRef struct {

@@ -31,6 +31,21 @@ talks to frontend server functions, and those server functions call
 `iam-service` with server-owned Zitadel access tokens. Browser code must not
 read or persist Zitadel bearer tokens.
 
+Browser auth state is account-aware. The HTTP-only `verself_client` cookie
+selects one browser client; the client owns zero or more browser accounts; the
+active account owns the encrypted Zitadel token bundle and selected product
+organization. Product-facing auth snapshots and resource-token exchanges must
+resolve through `(browser client, active account, selected organization)`.
+Account handles and client handles are selectors, not secrets. Browser
+JavaScript may receive handles and metadata, but not Zitadel refresh tokens,
+OIDC token bundles, product resource tokens, service credentials, or admin
+credentials.
+
+Signup and invite completion must produce constrained login URLs when the flow
+requires a specific account. The login transaction stores required subject,
+email, and org constraints and the callback enforces them server-side.
+`prompt=select_account` and `login_hint` are usability hints only.
+
 Do not model this as an iframe, a Zitadel console extension, or a dedicated shell
 app unless the product surface later needs to stand alone. The product contract
 is the shared component plus service-local clients, not a specific hosting

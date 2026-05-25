@@ -504,7 +504,14 @@ func (c CLI) bearerTokenWithProfile(tokenFile string) (string, *ProfileRecord, e
 	if err != nil {
 		return "", nil, errors.New("VERSELF_TOKEN, VERSELF_TOKEN_FILE, --token-file, or auth profile is required")
 	}
-	tokenValue, err := store.ReadCredential(profile.TokenRef)
+	if strings.TrimSpace(profile.ActiveAccount) == "" {
+		return "", nil, errors.New("active auth profile has no selected account; run `verself auth accounts use`")
+	}
+	account, err := store.LoadAccount(profile.Name, profile.ActiveAccount)
+	if err != nil {
+		return "", nil, err
+	}
+	tokenValue, err := store.ReadCredential(account.TokenRef)
 	if err != nil {
 		return "", nil, err
 	}
@@ -515,6 +522,7 @@ func (c CLI) bearerTokenWithProfile(tokenFile string) (string, *ProfileRecord, e
 	if tokenValue == "" {
 		return "", nil, errors.New("active auth profile token is empty")
 	}
+	profile.Account = &account
 	return tokenValue, &profile, nil
 }
 

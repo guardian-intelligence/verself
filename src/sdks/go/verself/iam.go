@@ -106,8 +106,18 @@ type VerifySignupInput struct {
 }
 
 type SignupVerificationResult struct {
-	Organization Organization `json:"organization"`
-	LoginURL     string       `json:"loginUrl"`
+	Organization Organization                `json:"organization"`
+	LoginURL     string                      `json:"loginUrl"`
+	LoginIntent  *RequiredAccountLoginIntent `json:"loginIntent,omitempty"`
+}
+
+type RequiredAccountLoginIntent struct {
+	LoginURL        string  `json:"loginUrl"`
+	Purpose         string  `json:"purpose"`
+	RequiredSubject string  `json:"requiredSubject"`
+	RequiredEmail   string  `json:"requiredEmail"`
+	RequiredOrgID   string  `json:"requiredOrgId"`
+	RedirectTo      *string `json:"redirectTo,omitempty"`
 }
 
 type UpdateOrganizationInput struct {
@@ -539,6 +549,21 @@ func signupVerificationResultFromGenerated(input iamcore.VerifySignupResult) Sig
 	return SignupVerificationResult{
 		Organization: organizationFromGenerated(input.Organization),
 		LoginURL:     string(input.LoginURL),
+		LoginIntent:  requiredAccountLoginIntentFromGenerated(input.LoginIntent),
+	}
+}
+
+func requiredAccountLoginIntentFromGenerated(input *iamcore.RequiredAccountLoginIntent) *RequiredAccountLoginIntent {
+	if input == nil {
+		return nil
+	}
+	return &RequiredAccountLoginIntent{
+		LoginURL:        string(input.LoginURL),
+		Purpose:         input.Purpose,
+		RequiredSubject: input.RequiredSubject,
+		RequiredEmail:   input.RequiredEmail,
+		RequiredOrgID:   string(input.RequiredOrgID),
+		RedirectTo:      input.RedirectTo,
 	}
 }
 

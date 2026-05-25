@@ -94,6 +94,7 @@ trap 'rm -f "$$npm_userconfig"' EXIT
 chmod 0600 "$$npm_userconfig"
 printf 'registry=https://npm.verself.sh/\\n' > "$$npm_userconfig"
 export NPM_CONFIG_USERCONFIG="$$npm_userconfig"
+export CI=true
 cd "src/websites"
 "$$node" "$$vp" install --frozen-lockfile --prefer-offline
 lockfile_hash="$$(hash_file pnpm-lock.yaml)"
