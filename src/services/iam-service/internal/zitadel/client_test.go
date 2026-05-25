@@ -13,7 +13,6 @@ import (
 
 func TestInviteMemberCreatesReturnCodes(t *testing.T) {
 	var createUserBody map[string]any
-	var passwordResetBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v2/users/new":
@@ -21,11 +20,6 @@ func TestInviteMemberCreatesReturnCodes(t *testing.T) {
 				t.Fatalf("decode user body: %v", err)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "user-1", "emailCode": "email-code"})
-		case "/v2/users/user-1/password_reset":
-			if err := json.NewDecoder(r.Body).Decode(&passwordResetBody); err != nil {
-				t.Fatalf("decode password reset body: %v", err)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"verificationCode": "password-code"})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -47,24 +41,15 @@ func TestInviteMemberCreatesReturnCodes(t *testing.T) {
 	if _, ok := email["returnCode"].(map[string]any); !ok {
 		t.Fatalf("expected email.returnCode object in %#v", createUserBody)
 	}
-	if _, ok := passwordResetBody["returnCode"].(map[string]any); !ok {
-		t.Fatalf("expected password reset returnCode object in %#v", passwordResetBody)
-	}
-	if got.UserID != "user-1" || got.EmailVerificationCode != "email-code" || got.PasswordResetCode != "password-code" {
+	if got.UserID != "user-1" || got.EmailVerificationCode != "email-code" {
 		t.Fatalf("unexpected invite result %#v", got)
 	}
 }
 
-func TestCompleteMemberInviteSetsPasswordAndVerifiesEmail(t *testing.T) {
-	var passwordBody map[string]any
+func TestCompleteMemberInviteVerifiesEmail(t *testing.T) {
 	var verifyBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v2/users/user-1/password":
-			if err := json.NewDecoder(r.Body).Decode(&passwordBody); err != nil {
-				t.Fatalf("decode password body: %v", err)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{})
 		case "/v2/users/user-1/email/verify":
 			if err := json.NewDecoder(r.Body).Decode(&verifyBody); err != nil {
 				t.Fatalf("decode verify body: %v", err)
@@ -82,19 +67,10 @@ func TestCompleteMemberInviteSetsPasswordAndVerifiesEmail(t *testing.T) {
 	}
 	err = client.CompleteMemberInvite(context.Background(), identity.DirectoryCompleteMemberInviteRequest{
 		UserID:                "user-1",
-		PasswordResetCode:     "password-code",
 		EmailVerificationCode: "email-code",
-		Password:              "correct horse battery staple",
 	})
 	if err != nil {
 		t.Fatalf("complete invite: %v", err)
-	}
-	if passwordBody["verificationCode"] != "password-code" {
-		t.Fatalf("unexpected password body %#v", passwordBody)
-	}
-	newPassword, _ := passwordBody["newPassword"].(map[string]any)
-	if newPassword["password"] != "correct horse battery staple" || newPassword["changeRequired"] != false {
-		t.Fatalf("unexpected password body %#v", passwordBody)
 	}
 	if verifyBody["verificationCode"] != "email-code" {
 		t.Fatalf("unexpected verify body %#v", verifyBody)

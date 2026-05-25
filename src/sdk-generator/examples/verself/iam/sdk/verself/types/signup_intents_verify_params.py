@@ -14,10 +14,5 @@ from .._core._types import FileTypes  # noqa: F401
 from .._utils import PropertyInfo  # noqa: F401
 
 
-class SignupIntentVerifyParamsCredentialVariant0(BaseModel):
-    password: str
-
-
 class SignupIntentVerifyParams(TypedDict, total=False):
     verification_token: Annotated[str, PropertyInfo(alias="verificationToken")]
-    credential: SignupIntentVerifyParamsCredentialVariant0

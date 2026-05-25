@@ -411,7 +411,7 @@ only non-secret references and selected org metadata.
 
 ```text
 verself auth signup --email owner@example.com --org "Acme"
-verself auth signup verify --url "$SIGNUP_URL" --password-env VERSELF_SIGNUP_PASSWORD
+verself auth signup verify --url "$SIGNUP_URL"
 verself auth login
 verself auth whoami
 verself auth logout
@@ -420,10 +420,9 @@ verself auth logout
 `verself auth signup` starts an unauthenticated IAM signup intent. IAM sends a
 verification email and creates no Zitadel user, organization, SpiceDB
 relationship, or product account until `verself auth signup verify` submits the
-verification token with an initial credential. Signup commands emit JSON by
-default; the `message` field is the human-readable status line. After
-verification, the user signs in through the same OIDC login path as any existing
-user.
+verification token. Signup commands emit JSON by default; the `message` field is
+the human-readable status line. After verification, the user signs in through the
+same OIDC login path as any existing user.
 
 Organization invites use the authenticated IAM member invite API and the public
 invite acceptance API:

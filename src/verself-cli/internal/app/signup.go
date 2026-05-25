@@ -89,25 +89,14 @@ func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
 	actionURL := fs.String("url", "", "signup verification URL")
 	signupIntentID := fs.String("signup-intent-id", "", "signup intent id")
 	verificationToken := fs.String("verification-token", "", "signup verification token")
-	passwordEnv := fs.String("password-env", "", "environment variable containing the account password")
-	passwordFile := fs.String("password-file", "", "owner-only file containing the account password")
-	passwordStdin := fs.Bool("password-stdin", false, "read the account password from stdin")
 	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth signup verify --url URL --password-env NAME")
+		return errors.New("usage: auth signup verify --url URL")
 	}
 	intentID, token, err := signupVerificationCredentials(*actionURL, *signupIntentID, *verificationToken)
-	if err != nil {
-		return err
-	}
-	password, err := c.signupVerificationPassword(signupPasswordOptions{
-		Env:   *passwordEnv,
-		File:  *passwordFile,
-		Stdin: *passwordStdin,
-	})
 	if err != nil {
 		return err
 	}
@@ -118,7 +107,6 @@ func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
 	result, err := client.IAM.VerifySignup(ctx, verself.VerifySignupInput{
 		SignupIntentID:    intentID,
 		VerificationToken: token,
-		Credential:        verself.AccountCredential{Password: password},
 		IdempotencyKey:    *idempotencyKey,
 	})
 	if err != nil {
@@ -218,50 +206,6 @@ func signupVerificationCredentialsFromURL(raw string) (string, string, error) {
 		return "", "", errors.New("signup verification URL must include signup_intent_id and verification_token")
 	}
 	return intentID, token, nil
-}
-
-type signupPasswordOptions struct {
-	Env   string
-	File  string
-	Stdin bool
-}
-
-func (c CLI) signupVerificationPassword(opts signupPasswordOptions) (string, error) {
-	sources := 0
-	if strings.TrimSpace(opts.Env) != "" {
-		sources++
-	}
-	if strings.TrimSpace(opts.File) != "" {
-		sources++
-	}
-	if opts.Stdin {
-		sources++
-	}
-	if sources != 1 {
-		return "", errors.New("auth signup verify requires exactly one of --password-env, --password-file, or --password-stdin")
-	}
-	var password string
-	switch {
-	case strings.TrimSpace(opts.Env) != "":
-		password = c.getenv(strings.TrimSpace(opts.Env))
-	case strings.TrimSpace(opts.File) != "":
-		secret, err := readOwnerOnlySecretFile(strings.TrimSpace(opts.File), "password file")
-		if err != nil {
-			return "", err
-		}
-		password = secret
-	case opts.Stdin:
-		data, err := io.ReadAll(c.in)
-		if err != nil {
-			return "", err
-		}
-		password = string(data)
-	}
-	password = strings.TrimSpace(password)
-	if password == "" {
-		return "", errors.New("signup verification password is empty")
-	}
-	return password, nil
 }
 
 func trimOptionalString(value string) *string {

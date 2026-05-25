@@ -12,14 +12,12 @@ const revokeSessionInputSchema = v.object({
 
 const acceptMemberInviteInputSchema = v.object({
   token: v.pipe(v.string(), v.nonEmpty()),
-  password: v.pipe(v.string(), v.minLength(15)),
 });
 
 const verifySignupInputSchema = v.object({
   signupIntentId: v.pipe(v.string(), v.nonEmpty()),
   verificationToken: v.pipe(v.string(), v.nonEmpty()),
   organizationDisplayName: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
-  password: v.pipe(v.string(), v.minLength(15)),
 });
 
 export type ConsoleAuthContext = {

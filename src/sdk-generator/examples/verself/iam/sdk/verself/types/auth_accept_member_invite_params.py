@@ -14,10 +14,5 @@ from .._core._types import FileTypes  # noqa: F401
 from .._utils import PropertyInfo  # noqa: F401
 
 
-class AuthAcceptMemberInviteParamsCredentialVariant0(BaseModel):
-    password: str
-
-
 class AuthAcceptMemberInviteParams(TypedDict, total=False):
     acceptance_token: Annotated[str, PropertyInfo(alias="acceptanceToken")]
-    credential: AuthAcceptMemberInviteParamsCredentialVariant0

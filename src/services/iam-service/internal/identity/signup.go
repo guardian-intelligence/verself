@@ -145,7 +145,7 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 	if err != nil {
 		return VerifySignupResult{}, err
 	}
-	result, err := s.materializeSignup(ctx, store, signupStore, &intent, input.Password, input.IdempotencyKey)
+	result, err := s.materializeSignup(ctx, store, signupStore, &intent, input.IdempotencyKey)
 	if err != nil {
 		failureState := SignupIntentStateFailedRetryable
 		retryable := true
@@ -178,7 +178,7 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 	return result, nil
 }
 
-func (s *Service) materializeSignup(ctx context.Context, store Store, signupStore SignupStore, intent *SignupIntent, password string, idempotencyKey string) (VerifySignupResult, error) {
+func (s *Service) materializeSignup(ctx context.Context, store Store, signupStore SignupStore, intent *SignupIntent, idempotencyKey string) (VerifySignupResult, error) {
 	directory, err := s.signupDirectory()
 	if err != nil {
 		return VerifySignupResult{}, err
@@ -215,7 +215,6 @@ func (s *Service) materializeSignup(ctx context.Context, store Store, signupStor
 			Email:      intent.Email,
 			GivenName:  intent.GivenName,
 			FamilyName: intent.FamilyName,
-			Password:   password,
 		})
 		if err != nil {
 			return VerifySignupResult{}, err
@@ -423,15 +422,6 @@ func normalizeVerifySignup(input VerifySignupRequest) (VerifySignupRequest, erro
 	}
 	if input.IdempotencyKey == "" {
 		return VerifySignupRequest{}, fmt.Errorf("%w: idempotency_key is required", ErrInvalidInput)
-	}
-	if strings.TrimSpace(input.Password) == "" {
-		return VerifySignupRequest{}, fmt.Errorf("%w: password is required", ErrInvalidInput)
-	}
-	if len(input.Password) < 15 {
-		return VerifySignupRequest{}, fmt.Errorf("%w: password must be at least 15 characters", ErrInvalidInput)
-	}
-	if len(input.Password) > 1024 {
-		return VerifySignupRequest{}, fmt.Errorf("%w: password is too long", ErrInvalidInput)
 	}
 	if input.OrganizationDisplayName != "" {
 		if err := validateHumanText("organization_display_name", input.OrganizationDisplayName, 1, 120, 240); err != nil {
