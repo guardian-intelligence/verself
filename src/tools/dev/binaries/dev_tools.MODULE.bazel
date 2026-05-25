@@ -1,73 +1,95 @@
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-http_file(
+controller_http_file = use_repo_rule("//src/tools/dev/binaries:controller_http_file.bzl", "controller_http_file")
+
+controller_http_file(
     name = "dev_tool_go",
-    downloaded_file_path = "go1.25.8.linux-amd64.tar.gz",
-    sha256 = "ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6",
-    url = "https://go.dev/dl/go1.25.8.linux-amd64.tar.gz",
+    darwin_arm64_downloaded_file_path = "go1.25.8.darwin-arm64.tar.gz",
+    darwin_arm64_sha256 = "c6547959f5dbe8440bf3da972bd65ba900168de5e7ab01464fbdc7ac8375c21c",
+    darwin_arm64_url = "https://go.dev/dl/go1.25.8.darwin-arm64.tar.gz",
+    linux_amd64_downloaded_file_path = "go1.25.8.linux-amd64.tar.gz",
+    linux_amd64_sha256 = "ceb5e041bbc3893846bd1614d76cb4681c91dadee579426cf21a63f2d7e03be6",
+    linux_amd64_url = "https://go.dev/dl/go1.25.8.linux-amd64.tar.gz",
 )
 
-http_file(
+controller_http_file(
     name = "dev_tool_tofu",
-    downloaded_file_path = "tofu_1.11.5_linux_amd64.zip",
-    sha256 = "901121681e751574d739de5208cad059eddf9bd739b575745cf9e3c961b28a13",
-    url = "https://github.com/opentofu/opentofu/releases/download/v1.11.5/tofu_1.11.5_linux_amd64.zip",
+    darwin_arm64_downloaded_file_path = "tofu_1.11.5_darwin_arm64.zip",
+    darwin_arm64_sha256 = "ce81702643dcdea497259b4de4639d9ee73746560683b9d2b778aae8f7d62827",
+    darwin_arm64_url = "https://github.com/opentofu/opentofu/releases/download/v1.11.5/tofu_1.11.5_darwin_arm64.zip",
+    linux_amd64_downloaded_file_path = "tofu_1.11.5_linux_amd64.zip",
+    linux_amd64_sha256 = "901121681e751574d739de5208cad059eddf9bd739b575745cf9e3c961b28a13",
+    linux_amd64_url = "https://github.com/opentofu/opentofu/releases/download/v1.11.5/tofu_1.11.5_linux_amd64.zip",
 )
 
-http_file(
+controller_http_file(
     name = "dev_tool_buildifier",
-    downloaded_file_path = "buildifier-linux-amd64",
-    sha256 = "887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7",
-    url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64",
+    darwin_arm64_downloaded_file_path = "buildifier-darwin-arm64",
+    darwin_arm64_sha256 = "62836a9667fa0db309b0d91e840f0a3f2813a9c8ea3e44b9cd58187c90bc88ba",
+    darwin_arm64_url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-darwin-arm64",
+    linux_amd64_downloaded_file_path = "buildifier-linux-amd64",
+    linux_amd64_sha256 = "887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7",
+    linux_amd64_url = "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64",
 )
 
-http_file(
+controller_http_file(
     name = "dev_tool_cdxgen",
-    downloaded_file_path = "cdxgen-linux-amd64",
-    sha256 = "958452e45f621a1f31f382e03445a8871ec3b897453b5188a2cfa107a768a771",
-    url = "https://github.com/cdxgen/cdxgen/releases/download/v12.2.0/cdxgen-linux-amd64",
+    darwin_arm64_downloaded_file_path = "cdxgen-darwin-arm64",
+    darwin_arm64_sha256 = "d93e85cc91a048de97e9193c56147a711b2779cc00232b23597000601419c7ca",
+    darwin_arm64_url = "https://github.com/cdxgen/cdxgen/releases/download/v12.2.0/cdxgen-darwin-arm64",
+    linux_amd64_downloaded_file_path = "cdxgen-linux-amd64",
+    linux_amd64_sha256 = "958452e45f621a1f31f382e03445a8871ec3b897453b5188a2cfa107a768a771",
+    linux_amd64_url = "https://github.com/cdxgen/cdxgen/releases/download/v12.2.0/cdxgen-linux-amd64",
 )
 
-http_file(
+controller_http_file(
     name = "dev_tool_jq",
-    downloaded_file_path = "jq-linux-amd64",
-    sha256 = "020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d",
-    url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64",
+    darwin_arm64_downloaded_file_path = "jq-macos-arm64",
+    darwin_arm64_sha256 = "a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603",
+    darwin_arm64_url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64",
+    linux_amd64_downloaded_file_path = "jq-linux-amd64",
+    linux_amd64_sha256 = "020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d",
+    linux_amd64_url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64",
 )
 
-http_file(
+controller_http_file(
     name = "dev_tool_sops",
-    downloaded_file_path = "sops-v3.12.2.linux.amd64",
-    sha256 = "14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998",
-    url = "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64",
+    darwin_arm64_downloaded_file_path = "sops-v3.12.2.darwin.arm64",
+    darwin_arm64_sha256 = "284edc64acf91ca249f227ffa2b444632656e4e1ac02baa26bed7051a7d51ce5",
+    darwin_arm64_url = "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.darwin.arm64",
+    linux_amd64_downloaded_file_path = "sops-v3.12.2.linux.amd64",
+    linux_amd64_sha256 = "14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998",
+    linux_amd64_url = "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64",
 )
 
-http_file(
+controller_http_file(
     name = "dev_tool_age",
-    downloaded_file_path = "age-v1.3.1-linux-amd64.tar.gz",
-    sha256 = "bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377",
-    url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz",
+    darwin_arm64_downloaded_file_path = "age-v1.3.1-darwin-arm64.tar.gz",
+    darwin_arm64_sha256 = "01120ea2cbf0463d4c6bd767f99f3271bbed1cdc8a9aa718a76ba1fe4f01998b",
+    darwin_arm64_url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-darwin-arm64.tar.gz",
+    linux_amd64_downloaded_file_path = "age-v1.3.1-linux-amd64.tar.gz",
+    linux_amd64_sha256 = "bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377",
+    linux_amd64_url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz",
 )
 
-http_file(
+controller_http_file(
     name = "dev_tool_uv",
-    downloaded_file_path = "uv-x86_64-unknown-linux-gnu.tar.gz",
-    sha256 = "c0f3236f146e55472663cfbcc9be3042a9f1092275bbe3fe2a56a6cbfd3da5ce",
-    url = "https://github.com/astral-sh/uv/releases/download/0.11.3/uv-x86_64-unknown-linux-gnu.tar.gz",
+    darwin_arm64_downloaded_file_path = "uv-aarch64-apple-darwin.tar.gz",
+    darwin_arm64_sha256 = "2bc3d0c7bf2bd08325b1e170abac6f7e5b3346e1d4eab3370d17cefec934996f",
+    darwin_arm64_url = "https://github.com/astral-sh/uv/releases/download/0.11.3/uv-aarch64-apple-darwin.tar.gz",
+    linux_amd64_downloaded_file_path = "uv-x86_64-unknown-linux-gnu.tar.gz",
+    linux_amd64_sha256 = "c0f3236f146e55472663cfbcc9be3042a9f1092275bbe3fe2a56a6cbfd3da5ce",
+    linux_amd64_url = "https://github.com/astral-sh/uv/releases/download/0.11.3/uv-x86_64-unknown-linux-gnu.tar.gz",
 )
 
-http_file(
-    name = "dev_tool_ruby",
-    downloaded_file_path = "ruby-4.0.5.tar.gz",
-    sha256 = "7d6149079a63f8ae1d326c9fa65c6019ba2dc3155eae7b39159817911c88958e",
-    url = "https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.5.tar.gz",
-)
-
-http_file(
+controller_http_file(
     name = "dev_tool_syft",
-    downloaded_file_path = "syft_1.43.0_linux_amd64.tar.gz",
-    sha256 = "7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a",
-    url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_linux_amd64.tar.gz",
+    darwin_arm64_downloaded_file_path = "syft_1.43.0_darwin_arm64.tar.gz",
+    darwin_arm64_sha256 = "3640e2181c8be7a56377f3c96e520d5380c924dbafd115ee3c8d45fcbc89cac2",
+    darwin_arm64_url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_darwin_arm64.tar.gz",
+    linux_amd64_downloaded_file_path = "syft_1.43.0_linux_amd64.tar.gz",
+    linux_amd64_sha256 = "7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a",
+    linux_amd64_url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_linux_amd64.tar.gz",
 )
 
 http_file(

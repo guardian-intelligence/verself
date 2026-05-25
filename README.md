@@ -61,7 +61,7 @@ Choose the controller platform that is running the repo commands.
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
 bazelisk mod tidy
 aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
-export PATH="${HOME}/.local/bin:${HOME}/.local/share/verself/ruby/4.0.5/bin:${PATH}"
+export PATH="${HOME}/.local/bin:${PATH}"
 ```
 
 ### macOS Apple Silicon controller
@@ -71,6 +71,8 @@ export PATH="${HOME}/.local/bin:${HOME}/.local/share/verself/ruby/4.0.5/bin:${PA
 ./src/tools/dev/bootstrap/bootstrap-darwin-arm64
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
 bazelisk mod tidy
+aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
+export PATH="${HOME}/.local/bin:${PATH}"
 ```
 
 ### (optional) Cloning this repo onto your own infrastructure
@@ -102,6 +104,5 @@ automatically add that directory to GitHub Actions via `GITHUB_PATH` when that
 file is present. Set `BOOTSTRAP_INSTALL_DIR` to opt into a different install
 directory. Local shells need that directory on `PATH` before invoking `aspect`
 or `bazelisk`.
-
 
 
