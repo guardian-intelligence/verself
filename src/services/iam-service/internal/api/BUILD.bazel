@@ -60,8 +60,11 @@ go_test(
         "//src/services/iam-service/internal/identity",
         "//src/services/iam-service/internal/spicedb",
         "//src/services/iam-service/internal/store",
+        "//src/services/iam-service/migrations",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/iam",
+        "//src/services/service-runtime/go/pgtest",
         "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_jackc_pgx_v5//pgxpool",
     ],
 )

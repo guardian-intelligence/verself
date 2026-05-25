@@ -89,6 +89,13 @@ type browserAuthRequestInfo struct {
 	UserAgent   string
 }
 
+type browserAuthObservationMode uint8
+
+const (
+	browserAuthObserveRequest browserAuthObservationMode = iota
+	browserAuthObserveNone
+)
+
 func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, error) {
 	if cfg.PG == nil {
 		return nil, errors.New("identity browser auth postgres pool is required")
@@ -203,6 +210,8 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.route(w, r, http.MethodGet, "browser-callback", rateLimitSignup, 0, a.handleCallback)
 	case "/session":
 		a.route(w, r, http.MethodGet, "browser-session-read", rateLimitRead, 0, a.handleSession)
+	case "/sync-session":
+		a.route(w, r, http.MethodGet, "browser-sync-session-read", rateLimitRead, 0, a.handleSyncSession)
 	case "/organization":
 		a.route(w, r, http.MethodPost, "browser-organization-select", rateLimitIAMMutation, browserAuthJSONBodyMax, a.handleOrganization)
 	case "/resource-token":
@@ -473,6 +482,24 @@ func (a *BrowserAuth) handleSession(w http.ResponseWriter, r *http.Request) {
 		sendBrowserAuthActivity(r.Context(), session.User, session.AccountHandle, "browserAuth.readAccount", "iam.browser_account.read", "read", "iam.browser_account.read", r.Method, browserAuthExternalRoute(r), http.StatusOK)
 	}
 	a.writeJSON(w, http.StatusOK, snapshotForSession(session))
+}
+
+func (a *BrowserAuth) handleSyncSession(w http.ResponseWriter, r *http.Request) {
+	client, err := a.browserClientFromRequestMode(w, r, browserAuthObserveNone)
+	if err != nil {
+		a.serverError(w, "validate browser client", err)
+		return
+	}
+	if client == nil {
+		a.writeProblem(w, r, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if _, err := a.accountSessionForClient(r.Context(), client.ClientHash, browserAuthObserveNone); err != nil {
+		a.serverError(w, "validate browser account", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request) {
@@ -938,13 +965,19 @@ func (a *BrowserAuth) touchBrowserClientSeen(ctx context.Context, clientHash str
 }
 
 func (a *BrowserAuth) browserClientFromRequest(w http.ResponseWriter, r *http.Request) (*identitystore.IamBrowserClient, error) {
+	return a.browserClientFromRequestMode(w, r, browserAuthObserveRequest)
+}
+
+func (a *BrowserAuth) browserClientFromRequestMode(w http.ResponseWriter, r *http.Request, mode browserAuthObservationMode) (*identitystore.IamBrowserClient, error) {
 	clientSecret, ok := browserClientSecretFromRequest(r)
 	if !ok {
 		return nil, nil
 	}
 	clientHash := hashToken(clientSecret)
-	if err := a.touchBrowserClientSeen(r.Context(), clientHash); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
+	if mode == browserAuthObserveRequest {
+		if err := a.touchBrowserClientSeen(r.Context(), clientHash); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
 	}
 	client, err := a.q.GetBrowserClient(r.Context(), identitystore.GetBrowserClientParams{ClientHash: clientHash})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -1003,7 +1036,11 @@ func (a *BrowserAuth) accountSessionFromRequest(w http.ResponseWriter, r *http.R
 	if client == nil {
 		return nil, nil
 	}
-	session, err := a.readActiveAccount(r.Context(), client.ClientHash)
+	return a.accountSessionForClient(r.Context(), client.ClientHash, browserAuthObserveRequest)
+}
+
+func (a *BrowserAuth) accountSessionForClient(ctx context.Context, clientHash string, mode browserAuthObservationMode) (*browserSession, error) {
+	session, err := a.readActiveAccount(ctx, clientHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -1011,17 +1048,19 @@ func (a *BrowserAuth) accountSessionFromRequest(w http.ResponseWriter, r *http.R
 		return nil, err
 	}
 	if time.Until(session.ExpiresAt) > browserAuthRefreshLeeway {
-		if err := a.touchAccountSeen(r.Context(), session); err != nil {
-			return nil, err
+		if mode == browserAuthObserveRequest {
+			if err := a.touchAccountSeen(ctx, session); err != nil {
+				return nil, err
+			}
 		}
 		return session, nil
 	}
-	refreshed, err := a.refreshSession(r.Context(), session)
+	refreshed, err := a.refreshSession(ctx, session)
 	if err != nil {
 		if a.logger != nil {
-			a.logger.WarnContext(r.Context(), "browser auth token refresh failed", "error", err, "subject", session.User.Sub)
+			a.logger.WarnContext(ctx, "browser auth token refresh failed", "error", err, "subject", session.User.Sub)
 		}
-		if err := a.q.DeleteBrowserAccountByHandle(r.Context(), identitystore.DeleteBrowserAccountByHandleParams{ClientHash: session.ClientHash, AccountHandle: session.AccountHandle}); err != nil {
+		if err := a.q.DeleteBrowserAccountByHandle(ctx, identitystore.DeleteBrowserAccountByHandleParams{ClientHash: session.ClientHash, AccountHandle: session.AccountHandle}); err != nil {
 			return nil, err
 		}
 		return nil, nil

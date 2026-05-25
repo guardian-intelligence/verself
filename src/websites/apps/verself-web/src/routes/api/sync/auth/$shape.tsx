@@ -23,7 +23,7 @@ const authCookieName = "verself_client";
 const browserAuthClientPrefix = "bc_";
 const browserHandleDomain = "verself browser handle v1";
 const identityAuthSessionURL = new URL(
-  "/api/v1/auth/session",
+  "/api/v1/auth/sync-session",
   requireURLFromEnv("IAM_SERVICE_BASE_URL"),
 ).toString();
 const electricShapeURL = new URL(
