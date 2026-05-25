@@ -23,7 +23,6 @@ type IamMemberInviteAcceptanceToken struct {
 	UserID                string
 	Email                 string
 	EmailVerificationCode string
-	PasswordResetCode     string
 	CreatedAt             pgtype.Timestamptz
 	ExpiresAt             pgtype.Timestamptz
 	AcceptedAt            pgtype.Timestamptz

@@ -18,7 +18,7 @@ from .._core._response import (
 from .._core._sentinels import NotGiven, not_given
 from .._core._types import Body, FileTypes, Headers, Query  # noqa: F401
 from .._core._models import to_jsonable
-from ..types import AuthAcceptMemberInviteParamsCredentialVariant0, AuthAcceptMemberInviteResponse, AuthCreateResourceTokenResponse, AuthGetSessionResponse, AuthListSessionsResponse, AuthSelectOrganizationResponse
+from ..types import AuthAcceptMemberInviteResponse, AuthCreateResourceTokenResponse, AuthGetSessionResponse, AuthListSessionsResponse, AuthSelectOrganizationResponse
 
 __all__ = ["AuthResource", "AsyncAuthResource"]
 
@@ -68,7 +68,6 @@ class AuthResource(SyncAPIResource):
         self,
         *,
         acceptance_token: str,
-        credential: AuthAcceptMemberInviteParamsCredentialVariant0,
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
@@ -77,7 +76,6 @@ class AuthResource(SyncAPIResource):
         """"""
         _body = {
             "acceptanceToken": acceptance_token,
-            "credential": credential,
         }
         _body = {k: v for k, v in _body.items() if v is not not_given}
         return self._post(
@@ -295,7 +293,6 @@ class AsyncAuthResource(AsyncAPIResource):
         self,
         *,
         acceptance_token: str,
-        credential: AuthAcceptMemberInviteParamsCredentialVariant0,
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
@@ -304,7 +301,6 @@ class AsyncAuthResource(AsyncAPIResource):
         """"""
         _body = {
             "acceptanceToken": acceptance_token,
-            "credential": credential,
         }
         _body = {k: v for k, v in _body.items() if v is not not_given}
         return await self._post(

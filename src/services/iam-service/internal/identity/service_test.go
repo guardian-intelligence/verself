@@ -133,7 +133,6 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 	got, err := svc.VerifySignup(context.Background(), VerifySignupRequest{
 		SignupIntentID:          start.Intent.SignupIntentID,
 		VerificationToken:       start.VerificationToken,
-		Password:                "correct horse battery",
 		OrganizationDisplayName: "  Acme Production  ",
 		IdempotencyKey:          "signup-verify-1",
 	})
@@ -143,7 +142,7 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 	if got.Organization.OrgID != start.Intent.OrgID || got.Organization.Slug != "acme-labs" {
 		t.Fatalf("unexpected materialized organization: %#v", got.Organization)
 	}
-	if directory.signupInput.OrgID != "43" || directory.signupInput.Email != "founder@example.test" || directory.signupInput.Password != "correct horse battery" {
+	if directory.signupInput.OrgID != "43" || directory.signupInput.Email != "founder@example.test" {
 		t.Fatalf("unexpected signup user request: %#v", directory.signupInput)
 	}
 	if got := strings.Join(store.steps, ","); got != "zitadel_organization,zitadel_user,iam_organization,spicedb_owner_policy,billing_organization" {
@@ -207,12 +206,11 @@ func TestServiceCompleteMemberInviteReturnsAcceptedMember(t *testing.T) {
 
 	got, err := svc.CompleteMemberInvite(context.Background(), CompleteMemberInviteRequest{
 		AcceptanceToken: strings.Repeat("a", 32),
-		Password:        "correct horse pass",
 	})
 	if err != nil {
 		t.Fatalf("CompleteMemberInvite: %v", err)
 	}
-	if directory.completeInput.UserID != "user-invite" || directory.completeInput.Password != "correct horse pass" {
+	if directory.completeInput.UserID != "user-invite" || directory.completeInput.EmailVerificationCode != "email-code" {
 		t.Fatalf("unexpected directory completion input: %#v", directory.completeInput)
 	}
 	if got.OrgID != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" || got.UserID != "user-invite" || got.AcceptedAt == nil {
@@ -243,7 +241,7 @@ func (d *fakeMembersDirectory) CreateOrganization(_ context.Context, input Direc
 func (d *fakeMembersDirectory) InviteMember(_ context.Context, providerOrgID string, input InviteMemberRequest) (DirectoryInviteMemberResult, error) {
 	d.inviteProviderOrgID = providerOrgID
 	d.inviteInput = input
-	return DirectoryInviteMemberResult{UserID: "user-invite", Email: input.Email, Status: "invited", EmailVerificationCode: "email-code", PasswordResetCode: "password-code"}, nil
+	return DirectoryInviteMemberResult{UserID: "user-invite", Email: input.Email, Status: "invited", EmailVerificationCode: "email-code"}, nil
 }
 
 func (d *fakeMembersDirectory) CreateSignupUser(_ context.Context, input DirectoryCreateSignupUserRequest) (DirectoryCreateSignupUserResult, error) {
@@ -505,7 +503,6 @@ func (fakeMembersStore) GetMemberInviteAcceptance(context.Context, string, time.
 		UserID:                "user-invite",
 		Email:                 "invited@example.test",
 		EmailVerificationCode: "email-code",
-		PasswordResetCode:     "password-code",
 	}, nil
 }
 

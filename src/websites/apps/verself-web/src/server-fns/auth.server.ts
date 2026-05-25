@@ -176,10 +176,7 @@ export async function revokeIdentityBrowserSession(sessionHandle: string): Promi
   }
 }
 
-export async function acceptIdentityMemberInvite(data: {
-  token: string;
-  password: string;
-}): Promise<void> {
+export async function acceptIdentityMemberInvite(data: { token: string }): Promise<void> {
   const response = await identityAuthFetch(
     "invites/accept",
     {
@@ -190,7 +187,6 @@ export async function acceptIdentityMemberInvite(data: {
       },
       body: JSON.stringify({
         acceptanceToken: data.token,
-        credential: { password: data.password },
       }),
     },
     { cookieHeader: undefined, forwardCookies: false },
@@ -209,7 +205,6 @@ export async function verifyIdentitySignup(data: {
   signupIntentId: string;
   verificationToken: string;
   organizationDisplayName: string;
-  password: string;
 }): Promise<SignupVerificationResult> {
   const organizationDisplayName = normalizeHumanText(data.organizationDisplayName);
   const response = await identityAPIFetch(
@@ -226,7 +221,6 @@ export async function verifyIdentitySignup(data: {
       body: JSON.stringify({
         verificationToken: data.verificationToken,
         organizationDisplayName,
-        credential: { password: data.password },
       }),
     },
     { cookieHeader: undefined, forwardCookies: false },

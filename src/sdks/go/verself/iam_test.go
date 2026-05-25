@@ -170,7 +170,6 @@ func TestIAMSignupUsesPublicAPI(t *testing.T) {
 	result, err := client.IAM.VerifySignup(context.Background(), VerifySignupInput{
 		SignupIntentID:          testSignupID,
 		VerificationToken:       "signup-verification-token-0000000001",
-		Credential:              AccountCredential{Password: "correct horse battery staple"},
 		OrganizationDisplayName: ptrString("Guardian Labs"),
 		IdempotencyKey:          "iam:verify-signup",
 	})
@@ -185,10 +184,6 @@ func TestIAMSignupUsesPublicAPI(t *testing.T) {
 	}
 	if verifyBody["organizationDisplayName"] != "Guardian Labs" {
 		t.Fatalf("unexpected verify organization display name: %#v", verifyBody)
-	}
-	credential, ok := verifyBody["credential"].(map[string]any)
-	if !ok || credential["password"] != "correct horse battery staple" {
-		t.Fatalf("unexpected credential body: %#v", verifyBody)
 	}
 	if result.Organization.OrgID != testOrgID || result.LoginURL == "" {
 		t.Fatalf("unexpected signup verification result: %#v", result)

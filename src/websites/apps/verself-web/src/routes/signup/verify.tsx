@@ -1,6 +1,6 @@
 import { useForm } from "@tanstack/react-form";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { Building2, KeyRound, MailPlus } from "lucide-react";
+import { Building2, CheckCircle2, MailPlus } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
@@ -53,21 +53,11 @@ function SignupVerificationPage() {
     defaultValues: {
       organizationDisplayName: organizationDisplayName ?? "",
       inviteLink: "",
-      password: "",
-      confirmPassword: "",
     },
     onSubmit: async ({ value }) => {
-      const password = formString(value.password);
-      const confirmPassword = formString(value.confirmPassword);
-      if (password.length < 15) {
-        throw new Error("Password must be at least 15 characters.");
-      }
-      if (password !== confirmPassword) {
-        throw new Error("Passwords do not match.");
-      }
       if (mode === "join") {
         const invite = inviteCredentialsFromInput(formString(value.inviteLink));
-        await acceptMemberInvite({ data: { token: invite.token, password } });
+        await acceptMemberInvite({ data: { token: invite.token } });
         assignLogin(invite.org);
         return;
       }
@@ -83,7 +73,6 @@ function SignupVerificationPage() {
           signupIntentId,
           verificationToken,
           organizationDisplayName: displayName,
-          password,
         },
       });
       assignLogin(result.organization.slug);
@@ -96,9 +85,9 @@ function SignupVerificationPage() {
         <div className="mb-5 flex size-10 items-center justify-center rounded-md border border-border bg-muted text-sm font-semibold">
           VS
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight">Finish signup</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Done</h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Create a password and choose where this account should land.
+          Choose where this account should land.
         </p>
         <div className="mt-6 grid grid-cols-2 rounded-md border border-border bg-muted p-1">
           <ModeLink
@@ -165,38 +154,6 @@ function SignupVerificationPage() {
               )}
             </form.Field>
           )}
-          <form.Field name="password">
-            {(field) => (
-              <div className="space-y-1.5">
-                <Label htmlFor={field.name}>Password</Label>
-                <Input
-                  id={field.name}
-                  type="password"
-                  autoComplete="new-password"
-                  value={formString(field.state.value)}
-                  onBlur={field.handleBlur}
-                  onChange={(event) => field.handleChange(event.target.value)}
-                  disabled={mode === "create" && (!signupIntentId || !verificationToken)}
-                />
-              </div>
-            )}
-          </form.Field>
-          <form.Field name="confirmPassword">
-            {(field) => (
-              <div className="space-y-1.5">
-                <Label htmlFor={field.name}>Confirm password</Label>
-                <Input
-                  id={field.name}
-                  type="password"
-                  autoComplete="new-password"
-                  value={formString(field.state.value)}
-                  onBlur={field.handleBlur}
-                  onChange={(event) => field.handleChange(event.target.value)}
-                  disabled={mode === "create" && (!signupIntentId || !verificationToken)}
-                />
-              </div>
-            )}
-          </form.Field>
           <form.Subscribe selector={(state) => [state.isSubmitting, state.errorMap.onSubmit]}>
             {([isSubmitting, submitError]) => {
               const missingSignupLink =
@@ -208,8 +165,8 @@ function SignupVerificationPage() {
                     aria-busy={isSubmitting}
                     disabled={missingSignupLink || isSubmitting}
                   >
-                    <KeyRound aria-hidden="true" />
-                    <span>{isSubmitting ? "Finishing..." : "Finish signup"}</span>
+                    <CheckCircle2 aria-hidden="true" />
+                    <span>{isSubmitting ? "Finishing..." : "Done"}</span>
                   </Button>
                   {missingSignupLink ? (
                     <p className="text-sm font-medium text-destructive">

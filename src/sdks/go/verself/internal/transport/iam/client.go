@@ -14,7 +14,6 @@ import (
 const ServiceName = "iam-service"
 
 type (
-	AccountPassword          = string
 	DisplayName              = string
 	EmailAddress             = string
 	GivenName                = string
@@ -87,10 +86,6 @@ type ListOrganizationsOutputBody struct {
 }
 
 type MemberInvitationStatus = string
-
-type AccountCredential struct {
-	Password AccountPassword `json:"password"`
-}
 
 type CreateOrganizationInputBody struct {
 	DisplayName DisplayName `json:"displayName"`
@@ -329,7 +324,6 @@ type InviteMemberResponse struct {
 
 type VerifySignupInputBody struct {
 	VerificationToken       SignupVerificationToken `json:"verificationToken"`
-	Credential              AccountCredential       `json:"credential"`
 	OrganizationDisplayName *DisplayName            `json:"organizationDisplayName,omitempty"`
 }
 

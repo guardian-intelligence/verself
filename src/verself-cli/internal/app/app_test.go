@@ -253,13 +253,11 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 		t.Fatalf("unexpected start output: %#v", started)
 	}
 
-	t.Setenv("VERSELF_SIGNUP_PASSWORD", "correct horse battery staple")
 	verifyURL := "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID + "&verification_token=" + verificationToken
 	var verifyOut bytes.Buffer
 	runCLI(t, &verifyOut,
 		"auth", "signup", "verify",
 		"--url", verifyURL,
-		"--password-env", "VERSELF_SIGNUP_PASSWORD",
 		"--idempotency-key", "iam:verify-signup",
 	)
 	if verifyAuth != "" {
@@ -270,10 +268,6 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 	}
 	if verifyBody["verificationToken"] != verificationToken {
 		t.Fatalf("unexpected verification token body: %#v", verifyBody)
-	}
-	credential, ok := verifyBody["credential"].(map[string]any)
-	if !ok || credential["password"] != "correct horse battery staple" {
-		t.Fatalf("unexpected credential body: %#v", verifyBody)
 	}
 	var verified signupVerifyOutput
 	if err := json.Unmarshal(verifyOut.Bytes(), &verified); err != nil {

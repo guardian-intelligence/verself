@@ -21,7 +21,6 @@ func (s SQLStore) CreateMemberInviteAcceptance(ctx context.Context, invite Membe
 		UserID:                invite.UserID,
 		Email:                 invite.Email,
 		EmailVerificationCode: invite.EmailVerificationCode,
-		PasswordResetCode:     invite.PasswordResetCode,
 		CreatedAt:             timestamptz(invite.CreatedAt),
 		ExpiresAt:             timestamptz(invite.ExpiresAt),
 	}); err != nil {
@@ -79,7 +78,6 @@ func memberInviteAcceptanceFromRow(row identitystore.IamMemberInviteAcceptanceTo
 		UserID:                row.UserID,
 		Email:                 row.Email,
 		EmailVerificationCode: row.EmailVerificationCode,
-		PasswordResetCode:     row.PasswordResetCode,
 		CreatedAt:             createdAt,
 		ExpiresAt:             expiresAt,
 		AcceptedAt:            nullableTime(row.AcceptedAt),

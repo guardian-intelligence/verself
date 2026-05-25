@@ -87,12 +87,12 @@ metadata, request attribution, and delivery state. The operation returns a
 generic accepted response and queues email verification. The response must not
 reveal whether the email already belongs to a user or pending invite.
 
-`VerifySignup` consumes the verification token and initial account credential.
-Only this operation may create the Zitadel human, create the Zitadel
-organization, insert `iam_organizations`, bind the user as `roles/owner`, and
-emit governance API activity for the materialized organization. The credential
-payload is a Smithy union with a password member today and a stable envelope for
-later OIDC-provider branches.
+`VerifySignup` consumes the verification token. Only this operation may create
+the Zitadel human, create the Zitadel organization, verify the Zitadel email,
+insert `iam_organizations`, bind the user as `roles/owner`, and emit governance
+API activity for the materialized organization. Password setup, password change,
+passkey setup, social login, MFA, and other authentication-method lifecycle work
+remain Zitadel-owned flows outside onboarding finalization.
 
 Invites are split across authenticated and public operations:
 
@@ -105,7 +105,7 @@ POST /api/v1/auth/invites/accept
 target org. It creates a pending directory user, writes a hashed invite
 acceptance token, reconciles role bindings, and sends the invite email.
 `AcceptMemberInvite` is public, rate-limited as signup traffic, idempotent, and
-uses the same account credential envelope as signup verification.
+consumes only the invite acceptance token.
 
 Public signup and invite acceptance are installation-scoped for rate limiting,
 audit, and bot-defense decisions. Org-scoped audit begins at verification or

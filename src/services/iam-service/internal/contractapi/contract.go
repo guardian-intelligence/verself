@@ -86,8 +86,6 @@ type TraceParent string
 
 type EmailAddress string
 
-type AccountPassword string
-
 type MemberInviteAcceptanceToken string
 
 type SignupIntentID string
@@ -137,10 +135,6 @@ type IAMPolicyBindings []IAMPolicyBinding
 type InviteMemberRoles []IAMRoleName
 
 type MemberInvitationStatus string
-
-type AccountCredential struct {
-	Password AccountPassword `json:"password" required:"true" minLength:"15" maxLength:"1024"`
-}
 
 type ConflictError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
@@ -346,7 +340,6 @@ type InviteMemberInput struct {
 
 type AcceptMemberInviteInputBody struct {
 	AcceptanceToken MemberInviteAcceptanceToken `json:"acceptanceToken" required:"true" minLength:"32" maxLength:"512"`
-	Credential      AccountCredential           `json:"credential" required:"true"`
 }
 
 type AcceptMemberInviteInput struct {
@@ -369,7 +362,6 @@ type StartSignupInput struct {
 
 type VerifySignupInputBody struct {
 	VerificationToken       SignupVerificationToken `json:"verificationToken" required:"true" minLength:"32" maxLength:"512"`
-	Credential              AccountCredential       `json:"credential" required:"true"`
 	OrganizationDisplayName *DisplayName            `json:"organizationDisplayName,omitempty" minLength:"1" maxLength:"120"`
 }
 

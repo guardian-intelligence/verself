@@ -129,10 +129,6 @@ string SignupVerificationToken
 @sensitive
 string MemberInviteAcceptanceToken
 
-@length(min: 15, max: 1024)
-@sensitive
-string AccountPassword
-
 @length(min: 1, max: 2048)
 string LoginURL
 
@@ -262,10 +258,6 @@ enum SignupIntentStatus {
 
     @enumValue("expired")
     EXPIRED
-}
-
-union AccountCredential {
-    password: AccountPassword
 }
 
 @permission(name: "iam:signup_intent:create")
@@ -618,11 +610,6 @@ structure VerifySignupInput {
     @protoField(number: 2)
     @notProperty
     verificationToken: SignupVerificationToken
-
-    @required
-    @protoField(number: 3)
-    @notProperty
-    credential: AccountCredential
 
     @protoField(number: 4)
     organizationDisplayName: DisplayName
@@ -1166,10 +1153,6 @@ structure AcceptMemberInviteInput {
     @required
     @protoField(number: 1)
     acceptanceToken: MemberInviteAcceptanceToken
-
-    @required
-    @protoField(number: 2)
-    credential: AccountCredential
 
     @required
     @notProperty

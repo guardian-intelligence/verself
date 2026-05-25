@@ -127,7 +127,6 @@ type StartSignupResult struct {
 type VerifySignupRequest struct {
 	SignupIntentID          string
 	VerificationToken       string
-	Password                string
 	OrganizationDisplayName string
 	IdempotencyKey          string
 }
@@ -173,7 +172,6 @@ type DirectoryCreateSignupUserRequest struct {
 	Email      string
 	GivenName  string
 	FamilyName string
-	Password   string
 }
 
 type DirectoryCreateSignupUserResult struct {
@@ -274,19 +272,15 @@ type DirectoryInviteMemberResult struct {
 	Email                 string
 	Status                string
 	EmailVerificationCode string
-	PasswordResetCode     string
 }
 
 type CompleteMemberInviteRequest struct {
 	AcceptanceToken string
-	Password        string
 }
 
 type DirectoryCompleteMemberInviteRequest struct {
 	UserID                string
-	PasswordResetCode     string
 	EmailVerificationCode string
-	Password              string
 }
 
 type MemberInviteAcceptance struct {
@@ -295,7 +289,6 @@ type MemberInviteAcceptance struct {
 	UserID                string
 	Email                 string
 	EmailVerificationCode string
-	PasswordResetCode     string
 	CreatedAt             time.Time
 	ExpiresAt             time.Time
 	AcceptedAt            *time.Time

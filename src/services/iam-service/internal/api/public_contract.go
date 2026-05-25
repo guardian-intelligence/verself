@@ -362,7 +362,6 @@ func (h publicHandlers) AcceptMemberInvite(ctx context.Context, input *contracta
 	}
 	acceptance, err := h.service.CompleteMemberInvite(ctx, identity.CompleteMemberInviteRequest{
 		AcceptanceToken: string(input.Body.AcceptanceToken),
-		Password:        string(input.Body.Credential.Password),
 	})
 	if err != nil {
 		return nil, inviteAcceptanceContractError(ctx, err)
@@ -425,7 +424,6 @@ func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.Ver
 	result, err := h.service.VerifySignup(ctx, identity.VerifySignupRequest{
 		SignupIntentID:          string(input.SignupIntentID),
 		VerificationToken:       string(input.Body.VerificationToken),
-		Password:                string(input.Body.Credential.Password),
 		OrganizationDisplayName: contractString(input.Body.OrganizationDisplayName),
 		IdempotencyKey:          string(input.IdempotencyKey),
 	})

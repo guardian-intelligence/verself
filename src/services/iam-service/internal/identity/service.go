@@ -303,7 +303,6 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 		UserID:                directoryResult.UserID,
 		Email:                 directoryResult.Email,
 		EmailVerificationCode: directoryResult.EmailVerificationCode,
-		PasswordResetCode:     directoryResult.PasswordResetCode,
 		CreatedAt:             now,
 		ExpiresAt:             expiresAt,
 	}); err != nil {
@@ -340,9 +339,7 @@ func (s *Service) CompleteMemberInvite(ctx context.Context, input CompleteMember
 	}
 	if err := directory.CompleteMemberInvite(ctx, DirectoryCompleteMemberInviteRequest{
 		UserID:                acceptance.UserID,
-		PasswordResetCode:     acceptance.PasswordResetCode,
 		EmailVerificationCode: acceptance.EmailVerificationCode,
-		Password:              input.Password,
 	}); err != nil {
 		return MemberInviteAcceptance{}, err
 	}
@@ -918,17 +915,8 @@ func normalizeCompleteMemberInvite(input CompleteMemberInviteRequest) (CompleteM
 	if input.AcceptanceToken == "" {
 		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: invite token is required", ErrInvalidInput)
 	}
-	if strings.TrimSpace(input.Password) == "" {
-		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password is required", ErrInvalidInput)
-	}
 	if len(input.AcceptanceToken) > 512 {
 		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: invite token is invalid", ErrInvalidInput)
-	}
-	if len(input.Password) < 15 {
-		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password must be at least 15 characters", ErrInvalidInput)
-	}
-	if len(input.Password) > 1024 {
-		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password is too long", ErrInvalidInput)
 	}
 	return input, nil
 }

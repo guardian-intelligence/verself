@@ -33,7 +33,7 @@ func (q *Queries) AcceptMemberInviteAcceptanceToken(ctx context.Context, arg Acc
 }
 
 const getActiveMemberInviteAcceptanceToken = `-- name: GetActiveMemberInviteAcceptanceToken :one
-SELECT token_hash, org_id, user_id, email, email_verification_code, password_reset_code, created_at, expires_at, accepted_at
+SELECT token_hash, org_id, user_id, email, email_verification_code, created_at, expires_at, accepted_at
 FROM iam_member_invite_acceptance_tokens
 WHERE token_hash = $1
   AND accepted_at IS NULL
@@ -54,7 +54,6 @@ func (q *Queries) GetActiveMemberInviteAcceptanceToken(ctx context.Context, arg 
 		&i.UserID,
 		&i.Email,
 		&i.EmailVerificationCode,
-		&i.PasswordResetCode,
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.AcceptedAt,
@@ -69,7 +68,6 @@ INSERT INTO iam_member_invite_acceptance_tokens (
     user_id,
     email,
     email_verification_code,
-    password_reset_code,
     created_at,
     expires_at
 ) VALUES (
@@ -79,8 +77,7 @@ INSERT INTO iam_member_invite_acceptance_tokens (
     $4,
     $5,
     $6,
-    $7,
-    $8
+    $7
 )
 `
 
@@ -90,7 +87,6 @@ type InsertMemberInviteAcceptanceTokenParams struct {
 	UserID                string
 	Email                 string
 	EmailVerificationCode string
-	PasswordResetCode     string
 	CreatedAt             pgtype.Timestamptz
 	ExpiresAt             pgtype.Timestamptz
 }
@@ -102,7 +98,6 @@ func (q *Queries) InsertMemberInviteAcceptanceToken(ctx context.Context, arg Ins
 		arg.UserID,
 		arg.Email,
 		arg.EmailVerificationCode,
-		arg.PasswordResetCode,
 		arg.CreatedAt,
 		arg.ExpiresAt,
 	)
