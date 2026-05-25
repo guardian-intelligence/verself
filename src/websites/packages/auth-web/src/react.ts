@@ -116,6 +116,12 @@ export interface AuthProviderProps {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+type AuthProviderInnerProps = {
+  children?: ReactNode;
+  client?: AuthNavigationClient | undefined;
+  snapshot: AuthSnapshot;
+};
+
 function authHas(auth: Auth): boolean {
   return auth.isAuthenticated;
 }
@@ -129,27 +135,49 @@ function useAuthContextValue(): AuthContextValue {
 }
 
 export function AuthProvider({ children, client, live = false, snapshot }: AuthProviderProps) {
-  const queryClient = useQueryClient();
-  const hydrated = useHydrated();
   const parsedSnapshot = parseAuthSnapshot(snapshot);
+  if (!live) {
+    return createElement(StaticAuthProvider, {
+      children,
+      client,
+      snapshot: parsedSnapshot,
+    });
+  }
+  return createElement(LiveAuthProvider, {
+    children,
+    client,
+    snapshot: parsedSnapshot,
+  });
+}
+
+function StaticAuthProvider({ children, client, snapshot }: AuthProviderInnerProps) {
+  return createElement(
+    AuthContext.Provider,
+    { value: { client: client ?? null, collections: null, snapshot } },
+    children,
+  );
+}
+
+function LiveAuthProvider({ children, client, snapshot }: AuthProviderInnerProps) {
+  const hydrated = useHydrated();
+  if (!hydrated) {
+    return createElement(StaticAuthProvider, { children, client, snapshot });
+  }
+  return createElement(HydratedLiveAuthProvider, { children, client, snapshot });
+}
+
+function HydratedLiveAuthProvider({ children, client, snapshot }: AuthProviderInnerProps) {
+  const queryClient = useQueryClient();
   const collections = useMemo(
     () =>
-      live
-        ? createLiveAuthCollections(() => {
-            queryClient.clear();
-          })
-        : null,
-    [live, queryClient],
+      createLiveAuthCollections(() => {
+        queryClient.clear();
+      }),
+    [queryClient],
   );
 
-  const clientQuery = useLiveQuery(
-    () => (collections && hydrated ? collections.client : undefined),
-    [collections, hydrated],
-  );
-  const sessionsQuery = useLiveQuery(
-    () => (collections && hydrated ? collections.sessions : undefined),
-    [collections, hydrated],
-  );
+  const clientQuery = useLiveQuery(() => collections.client, [collections]);
+  const sessionsQuery = useLiveQuery(() => collections.sessions, [collections]);
 
   const liveClient =
     clientQuery.isReady && !clientQuery.isError ? clientQuery.data?.[0] : undefined;
@@ -159,20 +187,16 @@ export function AuthProvider({ children, client, live = false, snapshot }: AuthP
       : undefined;
 
   const liveSnapshot =
-    collections && hydrated
-      ? clientQuery.isError || sessionsQuery.isError
-        ? anonymousSnapshot
-        : clientQuery.isReady
-          ? snapshotFromLiveAuth(liveClient, currentSession)
-          : parsedSnapshot
-      : parsedSnapshot;
+    clientQuery.isError || sessionsQuery.isError
+      ? anonymousSnapshot
+      : clientQuery.isReady
+        ? snapshotFromLiveAuth(liveClient, currentSession)
+        : snapshot;
 
   return createElement(
     AuthContext.Provider,
     { value: { client: client ?? null, collections, snapshot: liveSnapshot } },
-    collections && hydrated
-      ? createElement(AuthPartitionSync, { collections }, children)
-      : children,
+    createElement(AuthPartitionSync, { collections }, children),
   );
 }
 
