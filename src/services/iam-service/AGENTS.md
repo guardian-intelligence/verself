@@ -31,6 +31,21 @@ talks to frontend server functions, and those server functions call
 `iam-service` with server-owned Zitadel access tokens. Browser code must not
 read or persist Zitadel bearer tokens.
 
+Browser auth state is account-aware. The HTTP-only `verself_client` cookie
+selects one browser client; the client owns zero or more browser accounts; the
+active account owns the encrypted Zitadel token bundle and selected product
+organization. Product-facing auth snapshots and resource-token exchanges must
+resolve through `(browser client, active account, selected organization)`.
+Account handles and client handles are selectors, not secrets. Browser
+JavaScript may receive handles and metadata, but not Zitadel refresh tokens,
+OIDC token bundles, product resource tokens, service credentials, or admin
+credentials.
+
+Signup and invite completion must produce constrained login URLs when the flow
+requires a specific account. The login transaction stores required subject,
+email, and org constraints and the callback enforces them server-side.
+`prompt=select_account` and `login_hint` are usability hints only.
+
 Do not model this as an iframe, a Zitadel console extension, or a dedicated shell
 app unless the product surface later needs to stand alone. The product contract
 is the shared component plus service-local clients, not a specific hosting
@@ -57,6 +72,20 @@ the Verself public `org_id` claim. Do not trust request-body org IDs, user IDs,
 or customer IDs as evidence of authority. Handlers must still validate resource
 ownership against Verself-owned storage after the operation permission check
 passes.
+
+Public signup is an installation-scoped intent state machine. `StartSignup`
+records a pending intent with a hashed verification token and sends
+notification; it must not create Zitadel, IAM, SpiceDB, or billing state.
+Reusable starts for the same email rotate the verification token and resend the
+same intent after the per-email cooldown. Rapid repeats, completed emails, and
+in-flight product state return the generic accepted response without sending
+mail or creating new state.
+`CheckOrganizationSlugAvailability` is a public UX check; `VerifySignup` must
+repeat slug validation before any Zitadel side effect. `VerifySignup` is the
+only public path that materializes a new organization: create the Zitadel org,
+create and verify the Zitadel human, create the IAM org profile, bind the human
+as `roles/owner`, ensure the billing org, mark the intent completed, and emit
+ClickHouse evidence for each materialization step.
 
 Use contract DTOs for public request/response payloads. Handwritten
 DTOs remain appropriate for internal-only data structures that do not cross the

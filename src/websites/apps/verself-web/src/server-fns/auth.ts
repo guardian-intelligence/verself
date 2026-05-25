@@ -10,9 +10,35 @@ const revokeSessionInputSchema = v.object({
   sessionHandle: v.pipe(v.string(), v.nonEmpty()),
 });
 
+const selectAccountInputSchema = v.object({
+  accountHandle: v.pipe(v.string(), v.nonEmpty()),
+});
+
 const acceptMemberInviteInputSchema = v.object({
   token: v.pipe(v.string(), v.nonEmpty()),
-  password: v.pipe(v.string(), v.minLength(15)),
+});
+
+const verifySignupInputSchema = v.object({
+  signupIntentId: v.pipe(v.string(), v.nonEmpty()),
+  verificationToken: v.pipe(v.string(), v.nonEmpty()),
+  organizationDisplayName: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
+  organizationSlug: v.pipe(
+    v.string(),
+    v.trim(),
+    v.minLength(1),
+    v.maxLength(80),
+    v.regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/),
+  ),
+});
+
+const checkOrganizationSlugInputSchema = v.object({
+  slug: v.pipe(
+    v.string(),
+    v.trim(),
+    v.minLength(1),
+    v.maxLength(80),
+    v.regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/),
+  ),
 });
 
 export type ConsoleAuthContext = {
@@ -55,6 +81,21 @@ export const getClientAuthSessions = createServerFn({ method: "GET" })
     return listIdentityBrowserSessions();
   });
 
+export const getClientAuthAccounts = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .handler(async () => {
+    const { listIdentityBrowserAccounts } = await import("./auth.server");
+    return listIdentityBrowserAccounts();
+  });
+
+export const selectActiveAccount = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(selectAccountInputSchema)
+  .handler(async ({ data }) => {
+    const { selectIdentityBrowserAccount } = await import("./auth.server");
+    return selectIdentityBrowserAccount(data.accountHandle);
+  });
+
 export const revokeClientAuthSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(revokeSessionInputSchema)
@@ -68,8 +109,21 @@ export const acceptMemberInvite = createServerFn({ method: "POST" })
   .inputValidator(acceptMemberInviteInputSchema)
   .handler(async ({ data }) => {
     const { acceptIdentityMemberInvite } = await import("./auth.server");
-    await acceptIdentityMemberInvite(data);
-    return { accepted: true };
+    return acceptIdentityMemberInvite(data);
+  });
+
+export const verifySignup = createServerFn({ method: "POST" })
+  .inputValidator(verifySignupInputSchema)
+  .handler(async ({ data }) => {
+    const { verifyIdentitySignup } = await import("./auth.server");
+    return verifyIdentitySignup(data);
+  });
+
+export const checkOrganizationSlug = createServerFn({ method: "GET" })
+  .inputValidator(checkOrganizationSlugInputSchema)
+  .handler(async ({ data }) => {
+    const { checkIdentityOrganizationSlugAvailability } = await import("./auth.server");
+    return checkIdentityOrganizationSlugAvailability(data.slug);
   });
 
 export const getProductAccessToken = createServerOnlyFn(async function getProductAccessToken(

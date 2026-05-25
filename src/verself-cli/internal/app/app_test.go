@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -143,6 +144,142 @@ func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 	runCLI(t, &companyJSON, "company", "inspect", "guardian", "--json")
 	if strings.Contains(companyJSON.String(), `"value": "DFW"`) {
 		t.Fatalf("one-run bootstrap override persisted into company record:\n%s", companyJSON.String())
+	}
+}
+
+func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
+	const (
+		signupIntentID    = "signup_01J8QJ4P1R7S9W2X5M6N8P0Q2"
+		verificationToken = "signup-verification-token-0000000001"
+		orgID             = "org_01J8QJ4P1R7S9W2X5M6N8P0Q2"
+		traceparent       = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"
+	)
+	startAuths := map[string]string{}
+	startBodies := map[string]map[string]any{}
+	startIdempotencyKeys := map[string]string{}
+	startTraceparents := map[string]string{}
+	var verifyKey string
+	var verifyAuth string
+	var verifyBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/signup-intents":
+			startKey := r.Header.Get("Idempotency-Key")
+			var startBody map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&startBody); err != nil {
+				t.Fatal(err)
+			}
+			email, _ := startBody["email"].(string)
+			startTraceparents[email] = r.Header.Get("Traceparent")
+			startAuths[email] = r.Header.Get("Authorization")
+			startIdempotencyKeys[email] = startKey
+			startBodies[email] = startBody
+			w.WriteHeader(http.StatusAccepted)
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"message":               "Check your email to continue.",
+				"status":                "accepted",
+				"verificationExpiresAt": "2026-05-25T00:00:00Z",
+			}); err != nil {
+				t.Fatal(err)
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/signup-intents/"+signupIntentID+"/verification":
+			verifyKey = r.Header.Get("Idempotency-Key")
+			verifyAuth = r.Header.Get("Authorization")
+			if err := json.NewDecoder(r.Body).Decode(&verifyBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"organization":{"orgId":"` + orgID + `","resourceName":"urn:verself:iam:organization:` + orgID + `","displayName":"Guardian Intelligence","slug":"guardian-intelligence","version":1},"loginUrl":"https://verself.sh/login"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("VERSELF_IAM_API_URL", server.URL)
+
+	var defaultStartOut bytes.Buffer
+	runCLI(t, &defaultStartOut,
+		"auth", "signup",
+		"--email", "my-email@email.com",
+	)
+	if startBodies["my-email@email.com"]["organizationDisplayName"] != "My Email" {
+		t.Fatalf("default signup organization display name = %#v", startBodies["my-email@email.com"])
+	}
+	var defaultStarted signupStartOutput
+	if err := json.Unmarshal(defaultStartOut.Bytes(), &defaultStarted); err != nil {
+		t.Fatalf("decode default start output: %v\n%s", err, defaultStartOut.String())
+	}
+	if defaultStarted.Status != "accepted" || defaultStarted.VerificationExpiresAt != "2026-05-25T00:00:00Z" {
+		t.Fatalf("unexpected default start output: %#v", defaultStarted)
+	}
+
+	var startOut bytes.Buffer
+	runCLI(t, &startOut,
+		"auth", "signup",
+		"--email", "operator@example.test",
+		"--org", "Guardian Intelligence",
+		"--slug", "guardian-intelligence",
+		"--given-name", "Operator",
+		"--family-name", "Example",
+		"--traceparent", traceparent,
+	)
+	if startAuths["operator@example.test"] != "" {
+		t.Fatalf("start Authorization = %q", startAuths["operator@example.test"])
+	}
+	if startTraceparents["operator@example.test"] != traceparent {
+		t.Fatalf("unexpected start traceparent=%q", startTraceparents["operator@example.test"])
+	}
+	if startIdempotencyKeys["operator@example.test"] == "" {
+		t.Fatalf("start idempotency key was not derived")
+	}
+	startBody := startBodies["operator@example.test"]
+	if startBody["email"] != "operator@example.test" ||
+		startBody["organizationDisplayName"] != "Guardian Intelligence" ||
+		startBody["organizationSlug"] != "guardian-intelligence" ||
+		startBody["givenName"] != "Operator" ||
+		startBody["familyName"] != "Example" {
+		t.Fatalf("unexpected start body: %#v", startBody)
+	}
+	var started signupStartOutput
+	if err := json.Unmarshal(startOut.Bytes(), &started); err != nil {
+		t.Fatalf("decode start output: %v\n%s", err, startOut.String())
+	}
+	if started.Message != "Check your email to continue." ||
+		started.Status != "accepted" ||
+		started.VerificationExpiresAt != "2026-05-25T00:00:00Z" {
+		t.Fatalf("unexpected start output: %#v", started)
+	}
+
+	verifyURL := "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID + "&verification_token=" + verificationToken + "&organization_display_name=Guardian+Intelligence&organization_slug=guardian-intelligence"
+	var verifyOut bytes.Buffer
+	runCLI(t, &verifyOut,
+		"auth", "signup", "verify",
+		"--url", verifyURL,
+	)
+	if verifyAuth != "" {
+		t.Fatalf("verify Authorization = %q", verifyAuth)
+	}
+	if verifyKey == "" {
+		t.Fatalf("verify idempotency key was not derived")
+	}
+	if verifyBody["verificationToken"] != verificationToken {
+		t.Fatalf("unexpected verification token body: %#v", verifyBody)
+	}
+	if verifyBody["organizationDisplayName"] != "Guardian Intelligence" || verifyBody["organizationSlug"] != "guardian-intelligence" {
+		t.Fatalf("unexpected verification organization body: %#v", verifyBody)
+	}
+	var verified signupVerifyOutput
+	if err := json.Unmarshal(verifyOut.Bytes(), &verified); err != nil {
+		t.Fatalf("decode verify output: %v\n%s", err, verifyOut.String())
+	}
+	if verified.Organization.OrgID != orgID ||
+		verified.Organization.DisplayName != "Guardian Intelligence" ||
+		verified.LoginURL != "https://verself.sh/login" ||
+		!strings.Contains(verified.Message, "verself auth login") {
+		t.Fatalf("unexpected verify output: %#v", verified)
 	}
 }
 
@@ -938,8 +1075,20 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", filepath.Join(xdgRoot, "state"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(xdgRoot, "cache"))
 
+	iamToken := unsignedJWT(t, map[string]any{
+		"sub":   "user_iam_test",
+		"email": "operator@example.test",
+	})
+	secondToken := unsignedJWT(t, map[string]any{
+		"sub":   "user_second_test",
+		"email": "second@example.test",
+	})
 	tokenPath := filepath.Join(xdgRoot, "token")
-	if err := os.WriteFile(tokenPath, []byte("tok_iam_test\n"), 0o600); err != nil {
+	if err := os.WriteFile(tokenPath, []byte(iamToken+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	secondTokenPath := filepath.Join(xdgRoot, "second-token")
+	if err := os.WriteFile(secondTokenPath, []byte(secondToken+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	orgJSON := func(version string) string {
@@ -956,7 +1105,9 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	var inviteBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.Header.Get("Authorization") != "Bearer tok_iam_test" {
+		switch r.Header.Get("Authorization") {
+		case "Bearer " + iamToken, "Bearer " + secondToken:
+		default:
 			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
 		}
 		switch {
@@ -994,9 +1145,48 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	runCLI(t, nil, "auth", "login", "--token-file", tokenPath)
 	profilePath := filepath.Join(xdgRoot, "data", "verself", "profiles", "default.json")
 	profile := readFile(t, profilePath)
-	if strings.Contains(profile, "tok_iam_test") {
+	if strings.Contains(profile, iamToken) {
 		t.Fatalf("profile stored plaintext token:\n%s", profile)
 	}
+	if strings.Contains(profile, "token_ref") || strings.Contains(profile, "selected_org") {
+		t.Fatalf("profile stored account-owned fields:\n%s", profile)
+	}
+	var accountsOut bytes.Buffer
+	runCLI(t, &accountsOut, "auth", "accounts", "list")
+	var accounts struct {
+		Profile       string          `json:"profile"`
+		ActiveAccount string          `json:"activeAccount"`
+		Accounts      []AccountRecord `json:"accounts"`
+	}
+	if err := json.Unmarshal(accountsOut.Bytes(), &accounts); err != nil {
+		t.Fatalf("decode accounts output: %v\n%s", err, accountsOut.String())
+	}
+	if accounts.Profile != "default" || accounts.ActiveAccount == "" || len(accounts.Accounts) != 1 {
+		t.Fatalf("unexpected accounts output: %#v", accounts)
+	}
+	if account := accounts.Accounts[0]; account.Email != "operator@example.test" ||
+		account.Subject != "user_iam_test" ||
+		account.TokenRef == "" ||
+		account.SelectedOrg == nil ||
+		account.SelectedOrg.OrgID != "org_01J8QK0M2A7W4H3P9FQ6G1R8ZT" {
+		t.Fatalf("unexpected account record: %#v", account)
+	}
+	runCLI(t, nil, "auth", "accounts", "use", "operator@example.test")
+	t.Setenv("VERSELF_IAM_API_URL", "")
+	runCLI(t, nil, "auth", "login", "--token-file", secondTokenPath)
+	profile = readFile(t, profilePath)
+	if !strings.Contains(profile, server.URL) {
+		t.Fatalf("profile did not preserve IAM URL:\n%s", profile)
+	}
+	accountsOut.Reset()
+	runCLI(t, &accountsOut, "auth", "accounts", "list")
+	if err := json.Unmarshal(accountsOut.Bytes(), &accounts); err != nil {
+		t.Fatalf("decode accounts output after second login: %v\n%s", err, accountsOut.String())
+	}
+	if len(accounts.Accounts) != 2 {
+		t.Fatalf("expected two accounts after second login: %#v", accounts)
+	}
+	runCLI(t, nil, "auth", "accounts", "use", "operator@example.test")
 
 	var whoami bytes.Buffer
 	runCLI(t, &whoami, "auth", "whoami")
@@ -1036,6 +1226,12 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	}
 	if !strings.Contains(inviteOut.String(), "invited@example.test\tmember_01J8QK4M5N6P7Q8R9S0T1V2W3X\tinvited") {
 		t.Fatalf("invite output:\n%s", inviteOut.String())
+	}
+
+	var accountLogout bytes.Buffer
+	runCLI(t, &accountLogout, "auth", "accounts", "logout", "operator@example.test")
+	if !strings.Contains(accountLogout.String(), `"message": "account logged out"`) {
+		t.Fatalf("account logout output:\n%s", accountLogout.String())
 	}
 }
 
@@ -1101,6 +1297,20 @@ func runCLI(t *testing.T, out *bytes.Buffer, args ...string) {
 	if err := cli.Run(context.Background(), args); err != nil {
 		t.Fatalf("verself %s: %v", strings.Join(args, " "), err)
 	}
+}
+
+func unsignedJWT(t *testing.T, claims map[string]any) string {
+	t.Helper()
+	header, err := json.Marshal(map[string]string{"alg": "none", "typ": "JWT"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(header) + "." +
+		base64.RawURLEncoding.EncodeToString(payload) + ".signature"
 }
 
 func requireTool(t *testing.T, name string) {

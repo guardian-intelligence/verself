@@ -105,6 +105,10 @@ func RegisterPublicRoutes(api huma.API, cfg Config) {
 
 func RegisterInternalRoutes(api huma.API, cfg Config) {
 	h := &Handler{client: cfg.Client, logger: cfg.Logger, internalPeers: cfg.InternalPeers, stripeWebhookSecret: cfg.StripeWebhookSecret, billingReturnOrigins: cfg.BillingReturnOrigins, installationID: cfg.InstallationID}
+	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.EnsureBillingOrganization.Descriptor, "Ensure billing organization", h.ensureBillingOrganization)
+	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.SetOrganizationTrustTier.Descriptor, "Set organization trust tier", h.setOrganizationTrustTier)
+	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.ApplyBillingPlanPromotion.Descriptor, "Apply billing plan promotion", h.applyBillingPlanPromotion)
+	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.CancelBillingPlanPromotion.Descriptor, "Cancel billing plan promotion", h.cancelBillingPlanPromotion)
 	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.GetStorageEntitlement.Descriptor, "Get storage entitlement", h.getStorageEntitlement)
 	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.ReserveWindow.Descriptor, "Reserve billing window", h.reserveWindow)
 	registerInternalBillingContractRoute(api, h.internalPeers, internalcontractapi.ActivateWindow.Descriptor, "Activate billing window", h.activateWindow)
@@ -267,6 +271,42 @@ func (h *Handler) createPortal(ctx context.Context, orgID billing.OrgID, input *
 	return &contractapi.BillingURLResponseOutput{Body: contractapi.BillingURLResponse{URL: contractapi.URL(url)}}, nil
 }
 
+func (h *Handler) ensureBillingOrganization(ctx context.Context, input *internalcontractapi.EnsureBillingOrganizationInput) (*internalcontractapi.BillingOrganizationOutput, error) {
+	trustTier := ""
+	if input.Body.TrustTier != nil {
+		trustTier = string(*input.Body.TrustTier)
+	}
+	org, err := h.client.EnsureOrgRecord(ctx, billing.OrgID(input.Body.OrgID), input.Body.DisplayName, trustTier)
+	if err != nil {
+		return nil, h.billingOrgMutationError(ctx, "ensure billing organization", err)
+	}
+	return &internalcontractapi.BillingOrganizationOutput{Body: internalcontractapi.BillingOrganizationOutputBody{Organization: billingOrganizationResponse(org)}}, nil
+}
+
+func (h *Handler) setOrganizationTrustTier(ctx context.Context, input *internalcontractapi.SetOrganizationTrustTierInput) (*internalcontractapi.BillingOrganizationOutput, error) {
+	org, err := h.client.SetOrganizationTrustTier(ctx, billing.OrgID(input.OrgID), string(input.Body.TrustTier))
+	if err != nil {
+		return nil, h.billingOrgMutationError(ctx, "set organization trust tier", err)
+	}
+	return &internalcontractapi.BillingOrganizationOutput{Body: internalcontractapi.BillingOrganizationOutputBody{Organization: billingOrganizationResponse(org)}}, nil
+}
+
+func (h *Handler) applyBillingPlanPromotion(ctx context.Context, input *internalcontractapi.ApplyBillingPlanPromotionInput) (*internalcontractapi.ApplyBillingPlanPromotionOutput, error) {
+	record, err := h.client.ApplyPlanPromotion(ctx, billing.OrgID(input.OrgID), string(input.Body.ProductID), string(input.Body.PlanID), int(input.Body.PercentOff), string(input.Body.Reason))
+	if err != nil {
+		return nil, h.billingOrgMutationError(ctx, "apply billing plan promotion", err)
+	}
+	return &internalcontractapi.ApplyBillingPlanPromotionOutput{Body: internalcontractapi.ApplyBillingPlanPromotionOutputBody{Promotion: billingPlanPromotionResponse(record)}}, nil
+}
+
+func (h *Handler) cancelBillingPlanPromotion(ctx context.Context, input *internalcontractapi.CancelBillingPlanPromotionInput) (*internalcontractapi.CancelBillingPlanPromotionOutput, error) {
+	record, err := h.client.CancelPlanPromotion(ctx, billing.OrgID(input.OrgID), string(input.Body.ProductID), string(input.Body.Reason))
+	if err != nil {
+		return nil, h.billingOrgMutationError(ctx, "cancel billing plan promotion", err)
+	}
+	return &internalcontractapi.CancelBillingPlanPromotionOutput{Body: internalcontractapi.CancelBillingPlanPromotionOutputBody{Cancellation: billingPlanPromotionCancellationResponse(record)}}, nil
+}
+
 func (h *Handler) getStorageEntitlement(ctx context.Context, input *internalcontractapi.GetStorageEntitlementInput) (*internalcontractapi.GetStorageEntitlementOutput, error) {
 	orgID, err := billingOrgIDFromWire(input.Body.OrgID)
 	if err != nil {
@@ -375,6 +415,19 @@ func writePlainError(ctx huma.Context, status int, message string) {
 	ctx.SetStatus(status)
 	ctx.SetHeader("Content-Type", "text/plain; charset=utf-8")
 	_, _ = ctx.BodyWriter().Write([]byte(message))
+}
+
+func (h *Handler) billingOrgMutationError(ctx context.Context, operation string, err error) error {
+	switch {
+	case errors.Is(err, billing.ErrOrgNotFound):
+		return huma.Error404NotFound("billing organization not found", err)
+	case errors.Is(err, billing.ErrContractNotFound):
+		return huma.Error404NotFound("billing contract not found", err)
+	case errors.Is(err, billing.ErrUnsupportedTrustTier), errors.Is(err, billing.ErrUnsupportedChange):
+		return huma.Error400BadRequest(operation, err)
+	default:
+		return h.internalError(ctx, operation, err)
+	}
 }
 
 func (h *Handler) windowError(ctx context.Context, op string, err error) error {

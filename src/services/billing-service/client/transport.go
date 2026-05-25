@@ -21,6 +21,8 @@ type BillingSourceType = string
 
 type BillingTier = string
 
+type BillingTrustTier = string
+
 type BillingWindowId = string
 
 type DecimalUint64 = string
@@ -28,6 +30,12 @@ type DecimalUint64 = string
 type OrgId = string
 
 type PlanId = string
+
+type BillingPromotionPercent = int
+
+type BillingPromotionReason = string
+
+type ContractId = string
 
 type PricingPhase = string
 
@@ -63,6 +71,30 @@ type BillingStorageEntitlement struct {
 	PlanID                   PlanId      `json:"plan_id"`
 	PlanTier                 BillingTier `json:"plan_tier"`
 	ProductID                ProductId   `json:"product_id"`
+}
+
+type BillingOrganization struct {
+	OrgID       OrgId            `json:"org_id"`
+	DisplayName string           `json:"display_name"`
+	State       string           `json:"state"`
+	TrustTier   BillingTrustTier `json:"trust_tier"`
+}
+
+type BillingPlanPromotion struct {
+	OrgID      OrgId                   `json:"org_id"`
+	ProductID  ProductId               `json:"product_id"`
+	PlanID     PlanId                  `json:"plan_id"`
+	ContractID ContractId              `json:"contract_id"`
+	PercentOff BillingPromotionPercent `json:"percent_off"`
+	Reason     BillingPromotionReason  `json:"reason"`
+}
+
+type BillingPlanPromotionCancellation struct {
+	OrgID      OrgId                  `json:"org_id"`
+	ProductID  ProductId              `json:"product_id"`
+	ContractID ContractId             `json:"contract_id"`
+	CancelAt   *string                `json:"cancel_at,omitempty"`
+	Reason     BillingPromotionReason `json:"reason"`
 }
 
 type BillingSettleResult struct {
@@ -170,6 +202,28 @@ type GetStorageEntitlementRequest struct {
 	Body GetStorageEntitlementInputBody `json:"body"`
 }
 
+type EnsureBillingOrganizationInputBody struct {
+	OrgID       OrgId             `json:"org_id"`
+	DisplayName string            `json:"display_name"`
+	TrustTier   *BillingTrustTier `json:"trust_tier,omitempty"`
+}
+
+type EnsureBillingOrganizationRequest struct {
+	Body EnsureBillingOrganizationInputBody `json:"body"`
+}
+
+type BillingOrganizationOutputBody struct {
+	Organization BillingOrganization `json:"organization"`
+}
+
+type EnsureBillingOrganizationResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *BillingOrganizationOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
 type GetStorageEntitlementOutputBody struct {
 	Entitlement BillingStorageEntitlement `json:"entitlement"`
 }
@@ -216,6 +270,72 @@ type ReserveWindowResponse struct {
 	StatusCode   int
 	Body         []byte
 	Result       *ReserveWindowOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type SetOrganizationTrustTierInputBody struct {
+	TrustTier BillingTrustTier `json:"trust_tier"`
+}
+
+type SetOrganizationTrustTierRequest struct {
+	OrgID          OrgId                             `json:"org_id"`
+	IdempotencyKey string                            `json:"idempotency_key"`
+	Body           SetOrganizationTrustTierInputBody `json:"body"`
+}
+
+type SetOrganizationTrustTierResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *BillingOrganizationOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type ApplyBillingPlanPromotionInputBody struct {
+	ProductID  ProductId               `json:"product_id"`
+	PlanID     PlanId                  `json:"plan_id"`
+	PercentOff BillingPromotionPercent `json:"percent_off"`
+	Reason     BillingPromotionReason  `json:"reason"`
+}
+
+type ApplyBillingPlanPromotionRequest struct {
+	OrgID          OrgId                              `json:"org_id"`
+	IdempotencyKey string                             `json:"idempotency_key"`
+	Body           ApplyBillingPlanPromotionInputBody `json:"body"`
+}
+
+type ApplyBillingPlanPromotionOutputBody struct {
+	Promotion BillingPlanPromotion `json:"promotion"`
+}
+
+type ApplyBillingPlanPromotionResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *ApplyBillingPlanPromotionOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type CancelBillingPlanPromotionInputBody struct {
+	ProductID ProductId              `json:"product_id"`
+	Reason    BillingPromotionReason `json:"reason"`
+}
+
+type CancelBillingPlanPromotionRequest struct {
+	OrgID          OrgId                               `json:"org_id"`
+	IdempotencyKey string                              `json:"idempotency_key"`
+	Body           CancelBillingPlanPromotionInputBody `json:"body"`
+}
+
+type CancelBillingPlanPromotionOutputBody struct {
+	Cancellation BillingPlanPromotionCancellation `json:"cancellation"`
+}
+
+type CancelBillingPlanPromotionResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *CancelBillingPlanPromotionOutputBody
 	Problem      *ErrorModel
 	HTTPResponse *http.Response
 }
@@ -372,6 +492,52 @@ func (c *Client) GetStorageEntitlement(ctx context.Context, request GetStorageEn
 	return parseGetStorageEntitlementResponse(resp)
 }
 
+func (c *Client) EnsureBillingOrganization(ctx context.Context, request EnsureBillingOrganizationRequest, reqEditors ...RequestEditorFn) (*EnsureBillingOrganizationResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newEnsureBillingOrganizationRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseEnsureBillingOrganizationResponse(resp)
+}
+
+func (c *Client) newEnsureBillingOrganizationRequest(ctx context.Context, request EnsureBillingOrganizationRequest) (*http.Request, error) {
+	path := "/internal/billing/v1/orgs"
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
+
 func (c *Client) newGetStorageEntitlementRequest(ctx context.Context, request GetStorageEntitlementRequest) (*http.Request, error) {
 	path := "/internal/billing/v1/storage-entitlement"
 	endpoint, err := url.Parse(c.server + path)
@@ -434,6 +600,153 @@ func (c *Client) newReserveWindowRequest(ctx context.Context, request ReserveWin
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
+
+func (c *Client) SetOrganizationTrustTier(ctx context.Context, request SetOrganizationTrustTierRequest, reqEditors ...RequestEditorFn) (*SetOrganizationTrustTierResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newSetOrganizationTrustTierRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseSetOrganizationTrustTierResponse(resp)
+}
+
+func (c *Client) newSetOrganizationTrustTierRequest(ctx context.Context, request SetOrganizationTrustTierRequest) (*http.Request, error) {
+	path := "/internal/billing/v1/orgs/" + url.PathEscape(string(request.OrgID)) + "/trust-tier"
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(request.IdempotencyKey) != "" {
+		req.Header.Set("Idempotency-Key", strings.TrimSpace(request.IdempotencyKey))
+	}
+	return req, nil
+}
+
+func (c *Client) ApplyBillingPlanPromotion(ctx context.Context, request ApplyBillingPlanPromotionRequest, reqEditors ...RequestEditorFn) (*ApplyBillingPlanPromotionResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newApplyBillingPlanPromotionRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseApplyBillingPlanPromotionResponse(resp)
+}
+
+func (c *Client) newApplyBillingPlanPromotionRequest(ctx context.Context, request ApplyBillingPlanPromotionRequest) (*http.Request, error) {
+	path := "/internal/billing/v1/orgs/" + url.PathEscape(string(request.OrgID)) + "/plan-promotions"
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(request.IdempotencyKey) != "" {
+		req.Header.Set("Idempotency-Key", strings.TrimSpace(request.IdempotencyKey))
+	}
+	return req, nil
+}
+
+func (c *Client) CancelBillingPlanPromotion(ctx context.Context, request CancelBillingPlanPromotionRequest, reqEditors ...RequestEditorFn) (*CancelBillingPlanPromotionResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newCancelBillingPlanPromotionRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseCancelBillingPlanPromotionResponse(resp)
+}
+
+func (c *Client) newCancelBillingPlanPromotionRequest(ctx context.Context, request CancelBillingPlanPromotionRequest) (*http.Request, error) {
+	path := "/internal/billing/v1/orgs/" + url.PathEscape(string(request.OrgID)) + "/plan-promotions:cancel"
+	endpoint, err := url.Parse(c.server + path)
+	if err != nil {
+		return nil, err
+	}
+	requestBody, err := json.Marshal(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(request.IdempotencyKey) != "" {
+		req.Header.Set("Idempotency-Key", strings.TrimSpace(request.IdempotencyKey))
+	}
 	return req, nil
 }
 
@@ -580,6 +893,90 @@ func parseGetStorageEntitlementResponse(resp *http.Response) (*GetStorageEntitle
 	result := &GetStorageEntitlementResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 200 {
 		var decoded GetStorageEntitlementOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseEnsureBillingOrganizationResponse(resp *http.Response) (*EnsureBillingOrganizationResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &EnsureBillingOrganizationResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded BillingOrganizationOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseSetOrganizationTrustTierResponse(resp *http.Response) (*SetOrganizationTrustTierResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &SetOrganizationTrustTierResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded BillingOrganizationOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseApplyBillingPlanPromotionResponse(resp *http.Response) (*ApplyBillingPlanPromotionResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &ApplyBillingPlanPromotionResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 || resp.StatusCode == 201 {
+		var decoded ApplyBillingPlanPromotionOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseCancelBillingPlanPromotionResponse(resp *http.Response) (*CancelBillingPlanPromotionResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &CancelBillingPlanPromotionResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded CancelBillingPlanPromotionOutputBody
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &decoded); err != nil {
 				return nil, err

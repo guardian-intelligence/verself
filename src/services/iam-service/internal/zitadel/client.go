@@ -91,14 +91,14 @@ func (c *Client) ListMembers(ctx context.Context, orgID string) ([]identity.Memb
 func (c *Client) CreateOrganization(ctx context.Context, input identity.DirectoryCreateOrganizationRequest) (identity.DirectoryCreateOrganizationResult, error) {
 	name := strings.TrimSpace(input.Name)
 	adminUserID := strings.TrimSpace(input.AdminUserID)
-	if name == "" || adminUserID == "" {
-		return identity.DirectoryCreateOrganizationResult{}, fmt.Errorf("%w: organization name and admin user id are required", identity.ErrInvalidInput)
+	if name == "" {
+		return identity.DirectoryCreateOrganizationResult{}, fmt.Errorf("%w: organization name is required", identity.ErrInvalidInput)
 	}
 	body := map[string]any{
 		"name": name,
-		"admins": []map[string]any{{
-			"userId": adminUserID,
-		}},
+	}
+	if adminUserID != "" {
+		body["admins"] = []map[string]any{{"userId": adminUserID}}
 	}
 	var out struct {
 		OrganizationID string `json:"organizationId"`
@@ -115,12 +115,27 @@ func (c *Client) CreateOrganization(ctx context.Context, input identity.Director
 	return identity.DirectoryCreateOrganizationResult{OrganizationID: orgID}, nil
 }
 
+func (c *Client) CreateSignupUser(ctx context.Context, input identity.DirectoryCreateSignupUserRequest) (identity.DirectoryCreateSignupUserResult, error) {
+	orgID := strings.TrimSpace(input.OrgID)
+	if orgID == "" || strings.TrimSpace(input.Email) == "" {
+		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: org_id and email are required", identity.ErrInvalidInput)
+	}
+	created, err := c.createHumanUser(ctx, orgID, identity.InviteMemberRequest{
+		Email:      strings.TrimSpace(input.Email),
+		GivenName:  strings.TrimSpace(input.GivenName),
+		FamilyName: strings.TrimSpace(input.FamilyName),
+	})
+	if err != nil {
+		return identity.DirectoryCreateSignupUserResult{}, err
+	}
+	if err := c.verifyEmail(ctx, created.UserID, created.EmailVerificationCode); err != nil {
+		return identity.DirectoryCreateSignupUserResult{}, err
+	}
+	return identity.DirectoryCreateSignupUserResult{UserID: created.UserID}, nil
+}
+
 func (c *Client) InviteMember(ctx context.Context, orgID string, input identity.InviteMemberRequest) (identity.DirectoryInviteMemberResult, error) {
 	created, err := c.createHumanUser(ctx, orgID, input)
-	if err != nil {
-		return identity.DirectoryInviteMemberResult{}, err
-	}
-	passwordResetCode, err := c.createPasswordResetCode(ctx, created.UserID)
 	if err != nil {
 		return identity.DirectoryInviteMemberResult{}, err
 	}
@@ -129,19 +144,14 @@ func (c *Client) InviteMember(ctx context.Context, orgID string, input identity.
 		Email:                 input.Email,
 		Status:                "invited",
 		EmailVerificationCode: created.EmailVerificationCode,
-		PasswordResetCode:     passwordResetCode,
 	}, nil
 }
 
 func (c *Client) CompleteMemberInvite(ctx context.Context, input identity.DirectoryCompleteMemberInviteRequest) error {
 	userID := strings.TrimSpace(input.UserID)
-	passwordResetCode := strings.TrimSpace(input.PasswordResetCode)
 	emailVerificationCode := strings.TrimSpace(input.EmailVerificationCode)
-	if userID == "" || passwordResetCode == "" || emailVerificationCode == "" || strings.TrimSpace(input.Password) == "" {
-		return fmt.Errorf("%w: user_id, invite codes, and password are required", identity.ErrInvalidInput)
-	}
-	if err := c.setPassword(ctx, userID, passwordResetCode, input.Password); err != nil {
-		return err
+	if userID == "" || emailVerificationCode == "" {
+		return fmt.Errorf("%w: user_id and email verification code are required", identity.ErrInvalidInput)
 	}
 	if err := c.verifyEmail(ctx, userID, emailVerificationCode); err != nil {
 		return err
@@ -374,50 +384,6 @@ func (c *Client) createHumanUser(ctx context.Context, orgID string, input identi
 		return createdHumanUser{}, fmt.Errorf("%w: create user returned no email verification code", identity.ErrZitadelUnavailable)
 	}
 	return createdHumanUser{UserID: userID, EmailVerificationCode: strings.TrimSpace(out.EmailCode)}, nil
-}
-
-type passwordResetResponse struct {
-	VerificationCode string `json:"verificationCode"`
-}
-
-func (c *Client) createPasswordResetCode(ctx context.Context, userID string) (string, error) {
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return "", fmt.Errorf("%w: user_id is required", identity.ErrInvalidInput)
-	}
-	var out passwordResetResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/password_reset", map[string]any{"returnCode": map[string]any{}}, &out); err != nil {
-		if zitadelRequestInvalid(err) {
-			return "", fmt.Errorf("%w: create password reset code: %v", identity.ErrInvalidInput, err)
-		}
-		return "", fmt.Errorf("%w: create password reset code: %v", identity.ErrZitadelUnavailable, err)
-	}
-	if strings.TrimSpace(out.VerificationCode) == "" {
-		return "", fmt.Errorf("%w: create password reset returned no verification code", identity.ErrZitadelUnavailable)
-	}
-	return strings.TrimSpace(out.VerificationCode), nil
-}
-
-func (c *Client) setPassword(ctx context.Context, userID, verificationCode, password string) error {
-	userID = strings.TrimSpace(userID)
-	verificationCode = strings.TrimSpace(verificationCode)
-	if userID == "" || verificationCode == "" || strings.TrimSpace(password) == "" {
-		return fmt.Errorf("%w: user_id, verification_code, and password are required", identity.ErrInvalidInput)
-	}
-	body := map[string]any{
-		"newPassword": map[string]any{
-			"password":       password,
-			"changeRequired": false,
-		},
-		"verificationCode": verificationCode,
-	}
-	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/password", body, nil); err != nil {
-		if zitadelRequestInvalid(err) {
-			return fmt.Errorf("%w: set password: %v", identity.ErrInvalidInput, err)
-		}
-		return fmt.Errorf("%w: set password: %v", identity.ErrZitadelUnavailable, err)
-	}
-	return nil
 }
 
 func (c *Client) verifyEmail(ctx context.Context, userID, verificationCode string) error {

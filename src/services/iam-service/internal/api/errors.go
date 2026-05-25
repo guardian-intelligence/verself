@@ -63,6 +63,16 @@ func identityError(ctx context.Context, err error) error {
 	switch {
 	case identity.IsInvalid(err):
 		return badRequest(ctx, "invalid-request", "invalid identity request", err)
+	case errors.Is(err, identity.ErrIdempotencyConflict):
+		return conflict(ctx, "idempotency-payload-mismatch", "idempotency key was already used with a different request", err)
+	case errors.Is(err, identity.ErrSignupIntentExpired):
+		return badRequest(ctx, "signup-intent-expired", "signup verification expired", err)
+	case errors.Is(err, identity.ErrSignupIntentMissing):
+		return badRequest(ctx, "signup-verification-invalid", "signup verification is invalid", err)
+	case errors.Is(err, identity.ErrSignupMaterializing):
+		return conflict(ctx, "signup-materializing", "signup verification is already being materialized", err)
+	case errors.Is(err, identity.ErrSignupIntentConflict):
+		return conflict(ctx, "signup-state-conflict", "signup state cannot accept this operation", err)
 	case errors.Is(err, identity.ErrMemberMissing):
 		return notFound(ctx, "member-not-found", "organization member not found")
 	case errors.Is(err, identity.ErrOrganizationConflict):
@@ -73,6 +83,10 @@ func identityError(ctx context.Context, err error) error {
 		return notFound(ctx, "api-credential-not-found", "API credential not found")
 	case errors.Is(err, identity.ErrZitadelUnavailable):
 		return upstreamFailure(ctx, "zitadel-unavailable", "identity provider unavailable", err)
+	case errors.Is(err, identity.ErrBillingUnavailable):
+		return upstreamFailure(ctx, "billing-unavailable", "billing service unavailable", err)
+	case errors.Is(err, identity.ErrAuthzUnavailable):
+		return internalFailure(ctx, "iam-authz-unavailable", "authorization graph unavailable", err)
 	case errors.Is(err, identity.ErrStoreUnavailable):
 		return internalFailure(ctx, "iam-store-unavailable", "iam store unavailable", err)
 	default:

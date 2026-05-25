@@ -69,6 +69,98 @@ type Organization struct {
 	Version     int32
 }
 
+type SignupIntentState string
+
+const (
+	SignupIntentStatePendingVerification SignupIntentState = "pending_verification"
+	SignupIntentStateMaterializing       SignupIntentState = "materializing"
+	SignupIntentStateCompleted           SignupIntentState = "completed"
+	SignupIntentStateExpired             SignupIntentState = "expired"
+	SignupIntentStateFailedRetryable     SignupIntentState = "failed_retryable"
+	SignupIntentStateFailedTerminal      SignupIntentState = "failed_terminal"
+)
+
+type SignupIntent struct {
+	SignupIntentID              string
+	IdempotencyKey              string
+	RequestHash                 []byte
+	Email                       string
+	EmailHash                   []byte
+	OrganizationDisplayName     string
+	RequestedOrganizationSlug   string
+	OrganizationSlug            string
+	GivenName                   string
+	FamilyName                  string
+	VerificationTokenHash       []byte
+	State                       SignupIntentState
+	MaterializationStep         string
+	MaterializationAttempts     int32
+	MaterializationLastError    string
+	MaterializationLeaseExpires *time.Time
+	VerifyIdempotencyKey        string
+	VerifyRequestHash           []byte
+	OrgID                       string
+	IdentityProviderOrgID       string
+	IdentityProviderUserID      string
+	CreatedAt                   time.Time
+	UpdatedAt                   time.Time
+	VerificationExpiresAt       time.Time
+	VerifiedAt                  *time.Time
+	CompletedAt                 *time.Time
+}
+
+type SignupStartOutcome string
+
+const (
+	SignupStartOutcomeCreated                   SignupStartOutcome = "created"
+	SignupStartOutcomeVerificationResent        SignupStartOutcome = "verification_resent"
+	SignupStartOutcomeVerificationRecentlySent  SignupStartOutcome = "verification_recently_sent"
+	SignupStartOutcomeExistingAccountSuppressed SignupStartOutcome = "existing_account_suppressed"
+	SignupStartOutcomeInFlightSuppressed        SignupStartOutcome = "inflight_suppressed"
+)
+
+type SignupStartDecision struct {
+	Intent  SignupIntent
+	Outcome SignupStartOutcome
+}
+
+type StartSignupRequest struct {
+	Email            string
+	OrganizationName string
+	OrganizationSlug string
+	GivenName        string
+	FamilyName       string
+	IdempotencyKey   string
+}
+
+type StartSignupResult struct {
+	Intent            SignupIntent
+	VerificationToken string
+	Outcome           SignupStartOutcome
+	ResponseExpiresAt time.Time
+}
+
+func (r StartSignupResult) SendVerificationEmail() bool {
+	return r.Outcome == SignupStartOutcomeCreated || r.Outcome == SignupStartOutcomeVerificationResent
+}
+
+func (r StartSignupResult) CreatedIntent() bool {
+	return r.Outcome == SignupStartOutcomeCreated
+}
+
+type VerifySignupRequest struct {
+	SignupIntentID          string
+	VerificationToken       string
+	OrganizationDisplayName string
+	OrganizationSlug        string
+	IdempotencyKey          string
+}
+
+type VerifySignupResult struct {
+	Intent       SignupIntent
+	Organization Organization
+}
+
 type OrganizationMetadata struct {
 	OrgID                 string
 	IdentityProviderOrgID string
@@ -98,6 +190,53 @@ type DirectoryCreateOrganizationRequest struct {
 
 type DirectoryCreateOrganizationResult struct {
 	OrganizationID string
+}
+
+type DirectoryCreateSignupUserRequest struct {
+	OrgID      string
+	Email      string
+	GivenName  string
+	FamilyName string
+}
+
+type DirectoryCreateSignupUserResult struct {
+	UserID string
+}
+
+type OrganizationOwnerPolicyRequest struct {
+	OrgID       string
+	OwnerUserID string
+	OperationID string
+}
+
+type BillingOrganizationProvisioningRequest struct {
+	OrgID       string
+	DisplayName string
+	TrustTier   string
+}
+
+type IAMEvent struct {
+	EventID                string
+	EventType              string
+	EventVersion           uint16
+	AggregateType          string
+	AggregateID            string
+	SignupIntentID         string
+	OrgID                  string
+	IdentityProviderOrgID  string
+	IdentityProviderUserID string
+	Step                   string
+	State                  SignupIntentState
+	Outcome                string
+	Retryable              bool
+	Attempt                uint32
+	ErrorKind              string
+	ErrorMessage           string
+	OccurredAt             time.Time
+	Payload                map[string]any
+	IdempotencyKeyHash     string
+	CorrelationID          string
+	TraceID                string
 }
 
 type UpdateOrganizationRequest struct {
@@ -158,19 +297,15 @@ type DirectoryInviteMemberResult struct {
 	Email                 string
 	Status                string
 	EmailVerificationCode string
-	PasswordResetCode     string
 }
 
 type CompleteMemberInviteRequest struct {
 	AcceptanceToken string
-	Password        string
 }
 
 type DirectoryCompleteMemberInviteRequest struct {
 	UserID                string
-	PasswordResetCode     string
 	EmailVerificationCode string
-	Password              string
 }
 
 type MemberInviteAcceptance struct {
@@ -179,7 +314,6 @@ type MemberInviteAcceptance struct {
 	UserID                string
 	Email                 string
 	EmailVerificationCode string
-	PasswordResetCode     string
 	CreatedAt             time.Time
 	ExpiresAt             time.Time
 	AcceptedAt            *time.Time

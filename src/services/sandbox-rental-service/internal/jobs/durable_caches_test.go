@@ -163,11 +163,12 @@ func TestGoldenVMSnapshotRetentionLimitForPlan(t *testing.T) {
 		want     int32
 		wantErr  bool
 	}{
-		{name: "free tier", planTier: "free", want: 1},
-		{name: "sandbox free plan", planID: "sandbox-free", want: 1},
-		{name: "starter", planTier: "starter", want: 1},
-		{name: "default paid", planTier: "default", want: 2},
-		{name: "team paid", planTier: "team", want: 2},
+		{name: "free tier", planTier: "free", want: 0},
+		{name: "sandbox free plan", planID: "sandbox-free", want: 0},
+		{name: "starter", planTier: "starter", want: 0},
+		{name: "default dogfood plan", planTier: "default", want: 2},
+		{name: "sandbox pro plan", planID: "sandbox-pro", want: 2},
+		{name: "enterprise tier", planTier: "enterprise", want: 6},
 		{name: "missing plan", wantErr: true},
 	}
 	for _, tt := range tests {

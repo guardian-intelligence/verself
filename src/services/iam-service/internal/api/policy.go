@@ -222,7 +222,7 @@ func compactAPIActivityUnmapped(values map[string]any) map[string]any {
 
 func targetFromValue(input any) (string, string) {
 	value := reflectValue(input)
-	for _, fieldName := range []string{"MemberID", "CredentialID", "UserID", "OrgID", "ID"} {
+	for _, fieldName := range []string{"SignupIntentID", "MemberID", "CredentialID", "UserID", "OrgID", "ID"} {
 		if text := stringField(value, fieldName); text != "" {
 			return text, text
 		}
@@ -233,7 +233,7 @@ func targetFromValue(input any) (string, string) {
 	body := value.FieldByName("Body")
 	if body.IsValid() {
 		body = reflectValue(body.Interface())
-		for _, fieldName := range []string{"MemberID", "CredentialID", "UserID", "OrgID", "ID"} {
+		for _, fieldName := range []string{"SignupIntentID", "MemberID", "CredentialID", "UserID", "OrgID", "ID"} {
 			if text := stringField(body, fieldName); text != "" {
 				return text, text
 			}

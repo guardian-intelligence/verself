@@ -8,13 +8,54 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type IamBrowserClient struct {
+	ClientHash              string
+	ClientHandle            string
+	ActiveAccountHandle     pgtype.Text
+	ClientCachePartition    string
+	ExpiresAt               pgtype.Timestamptz
+	CreatedClientIp         string
+	CreatedClientIpTrusted  bool
+	CreatedClientIpSource   string
+	CreatedEdgePeerIp       string
+	CreatedUserAgent        string
+	CreatedDeviceLabel      string
+	CreatedDeviceKind       string
+	CreatedBrowserName      string
+	CreatedOsName           string
+	CreatedGeoCountryCode   string
+	CreatedGeoRegion        string
+	CreatedGeoCity          string
+	LastSeenClientIp        string
+	LastSeenClientIpTrusted bool
+	LastSeenClientIpSource  string
+	LastSeenEdgePeerIp      string
+	LastSeenUserAgent       string
+	LastSeenDeviceLabel     string
+	LastSeenDeviceKind      string
+	LastSeenBrowserName     string
+	LastSeenOsName          string
+	LastSeenGeoCountryCode  string
+	LastSeenGeoRegion       string
+	LastSeenGeoCity         string
+	LastSeenAt              pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+}
+
 type IamBrowserLoginTransaction struct {
-	StateHash    string
-	Nonce        string
-	CodeVerifier string
-	RedirectTo   string
-	ExpiresAt    pgtype.Timestamptz
-	CreatedAt    pgtype.Timestamptz
+	StateHash       string
+	ClientHash      string
+	Nonce           string
+	CodeVerifier    string
+	RedirectTo      string
+	Purpose         string
+	LoginHint       pgtype.Text
+	RequiredSubject pgtype.Text
+	RequiredEmail   pgtype.Text
+	RequiredOrgID   pgtype.Text
+	ExpiresAt       pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
 }
 
 type IamMemberInviteAcceptanceToken struct {
@@ -23,8 +64,36 @@ type IamMemberInviteAcceptanceToken struct {
 	UserID                string
 	Email                 string
 	EmailVerificationCode string
-	PasswordResetCode     string
 	CreatedAt             pgtype.Timestamptz
 	ExpiresAt             pgtype.Timestamptz
 	AcceptedAt            pgtype.Timestamptz
+}
+
+type IamSignupIntent struct {
+	SignupIntentID                string
+	IdempotencyKey                string
+	RequestHash                   []byte
+	Email                         string
+	EmailHash                     []byte
+	OrganizationDisplayName       string
+	RequestedOrganizationSlug     string
+	OrganizationSlug              string
+	GivenName                     string
+	FamilyName                    string
+	VerificationTokenHash         []byte
+	State                         string
+	MaterializationStep           string
+	MaterializationAttempts       int32
+	MaterializationLastError      string
+	MaterializationLeaseExpiresAt pgtype.Timestamptz
+	VerifyIdempotencyKey          string
+	VerifyRequestHash             []byte
+	OrgID                         string
+	IdentityProviderOrgID         string
+	IdentityProviderUserID        string
+	CreatedAt                     pgtype.Timestamptz
+	UpdatedAt                     pgtype.Timestamptz
+	VerificationExpiresAt         pgtype.Timestamptz
+	VerifiedAt                    pgtype.Timestamptz
+	CompletedAt                   pgtype.Timestamptz
 }

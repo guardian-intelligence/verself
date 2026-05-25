@@ -27,6 +27,8 @@ export const anonymousAuthSchema = v.object({
   orgId: v.null_(),
   selectedOrgId: v.null_(),
   cachePartition: v.null_(),
+  clientHandle: v.null_(),
+  accountHandle: v.null_(),
 });
 
 export type AnonymousAuth = v.InferOutput<typeof anonymousAuthSchema>;
@@ -37,6 +39,8 @@ export const authenticatedAuthSchema = v.object({
   orgId: v.nullable(v.string()),
   selectedOrgId: v.nullable(v.string()),
   cachePartition: v.string(),
+  clientHandle: v.string(),
+  accountHandle: v.string(),
 });
 
 export type AuthenticatedAuth = v.InferOutput<typeof authenticatedAuthSchema>;
@@ -76,6 +80,8 @@ export type BrowserLocation = v.InferOutput<typeof browserLocationSchema>;
 
 export const sessionInfoSchema = v.object({
   sessionHandle: v.string(),
+  clientHandle: v.string(),
+  accountHandle: v.string(),
   createdAt: sessionDateSchema,
   lastSeenAt: sessionDateSchema,
   expiresAt: sessionDateSchema,
@@ -121,6 +127,43 @@ export const browserSessionsResponseSchema = v.object({
 
 export type BrowserSessionsResponse = v.InferOutput<typeof browserSessionsResponseSchema>;
 
+export const browserAccountSummarySchema = v.object({
+  accountHandle: v.string(),
+  isCurrent: v.boolean(),
+  subject: v.string(),
+  email: v.nullable(v.string()),
+  displayName: v.nullable(v.string()),
+  preferredUsername: v.nullable(v.string()),
+  homeOrgID: v.nullable(v.string()),
+  selectedOrgID: v.nullable(v.string()),
+  availableOrganizations: v.array(authOrganizationContextSchema),
+  createdAt: sessionDateSchema,
+  lastSeenAt: sessionDateSchema,
+  expiresAt: sessionDateSchema,
+  createdClientIP: v.string(),
+  createdClientIPTrusted: v.boolean(),
+  createdClientIPSource: v.string(),
+  createdEdgePeerIP: v.string(),
+  createdUserAgent: v.string(),
+  createdDevice: browserDeviceSchema,
+  createdLocation: browserLocationSchema,
+  lastSeenClientIP: v.string(),
+  lastSeenClientIPTrusted: v.boolean(),
+  lastSeenClientIPSource: v.string(),
+  lastSeenEdgePeerIP: v.string(),
+  lastSeenUserAgent: v.string(),
+  lastSeenDevice: browserDeviceSchema,
+  lastSeenLocation: browserLocationSchema,
+});
+
+export type BrowserAccountSummary = v.InferOutput<typeof browserAccountSummarySchema>;
+
+export const browserAccountsResponseSchema = v.object({
+  accounts: v.array(browserAccountSummarySchema),
+});
+
+export type BrowserAccountsResponse = v.InferOutput<typeof browserAccountsResponseSchema>;
+
 export const anonymousAuthSnapshotSchema = v.object({
   isSignedIn: v.literal(false),
   auth: anonymousAuthSchema,
@@ -152,6 +195,8 @@ export const anonymousAuth: AnonymousAuth = {
   orgId: null,
   selectedOrgId: null,
   cachePartition: null,
+  clientHandle: null,
+  accountHandle: null,
 };
 
 export function parseAuthSnapshot(input: unknown): AuthSnapshot {

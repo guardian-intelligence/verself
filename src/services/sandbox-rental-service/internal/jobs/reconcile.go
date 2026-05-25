@@ -267,26 +267,26 @@ func (s *Service) reconcileExpiredRunnerAllocations(ctx context.Context) error {
 	}
 	for _, row := range rows {
 		reason := failureReasonForExpiredAllocation(row.State)
-		if err := s.storeQueries().SetRunnerAllocationState(ctx, store.SetRunnerAllocationStateParams{
-			State:         "failed",
-			FailureReason: reason,
-			UpdatedAt:     pgTime(time.Now().UTC()),
-			Provider:      row.Provider,
-			AllocationID:  row.AllocationID,
+		problems := runnerProblemSet{}
+		problems.add(runnerAllocationProblem(deadlineProblemPhase(row.State), deadlineProblemCode(row.State), "Runner allocation deadline expired", reason, false))
+		if err := s.terminalizeRunnerAllocation(ctx, runnerAllocationRef{
+			Provider:     row.Provider,
+			AllocationID: row.AllocationID,
+			ExecutionID:  uuidFromPtr(row.ExecutionID),
+			AttemptID:    uuidFromPtr(row.AttemptID),
+			RunnerName:   row.RunnerName,
+		}, runnerAllocationFailure{
+			Problems:       problems,
+			EnqueueCleanup: true,
+			FailAttempt:    true,
 		}); err != nil {
 			return fmt.Errorf("fail expired runner allocation %s: %w", row.AllocationID, err)
-		}
-		if s.Scheduler != nil {
-			if _, err := s.Scheduler.EnqueueRunnerCleanup(ctx, schedulerCleanupRequest(ctx, row.AllocationID)); err != nil {
-				s.Logger.WarnContext(ctx, "enqueue runner cleanup after deadline expiry",
-					"allocation_id", row.AllocationID.String(), "error", err)
-			}
 		}
 		s.Logger.WarnContext(ctx, "runner allocation deadline expired",
 			"allocation_id", row.AllocationID.String(),
 			"provider", row.Provider,
 			"prior_state", row.State,
-			"failure_reason", reason,
+			"problem", reason,
 		)
 	}
 	return nil
@@ -311,6 +311,31 @@ func failureReasonForExpiredAllocation(state string) string {
 	default:
 		return "deadline_exceeded"
 	}
+}
+
+func deadlineProblemPhase(state string) string {
+	switch state {
+	case "pending":
+		return "allocation"
+	case "jit_creating", "bootstrap_creating":
+		return "jit_config"
+	case "jit_created", "bootstrap_created":
+		return "execution_submit"
+	case "vm_submitted":
+		return "runner_listening"
+	case "runner_config_fetched":
+		return "assignment_wait"
+	case "assigned":
+		return "vm_exit_wait"
+	case "vm_exited":
+		return "cleanup"
+	default:
+		return "deadline"
+	}
+}
+
+func deadlineProblemCode(state string) string {
+	return "runner_allocation." + failureReasonForExpiredAllocation(state)
 }
 
 func orchestratorLeaseMissing(err error) bool {

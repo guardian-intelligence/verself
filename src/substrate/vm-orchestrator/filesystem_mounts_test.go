@@ -196,8 +196,11 @@ func TestCleanupLeaseDatasetsDestroysLeaseTreeOnce(t *testing.T) {
 	o.cleanupLeaseDatasets(&LeaseRuntime{LeaseID: lease.ID()}, lease, lease.RootDataset(), mounts)
 
 	wantDestroys := []string{"pool/orgs/org_a/workloads/lease-a"}
-	if !reflect.DeepEqual(ops.destroys, wantDestroys) {
-		t.Fatalf("destroyed datasets mismatch\n got: %#v\nwant: %#v", ops.destroys, wantDestroys)
+	if !reflect.DeepEqual(ops.destroyTrees, wantDestroys) {
+		t.Fatalf("destroyed datasets mismatch\n got: %#v\nwant: %#v", ops.destroyTrees, wantDestroys)
+	}
+	if len(ops.destroyGraphs) != 0 {
+		t.Fatalf("destroyed dependency graphs during lease cleanup: %#v", ops.destroyGraphs)
 	}
 	if got, want := countJournalPhase(journal, "destroy_started"), len(mounts); got != want {
 		t.Fatalf("destroy_started journal count = %d, want %d", got, want)
@@ -208,14 +211,15 @@ func TestCleanupLeaseDatasetsDestroysLeaseTreeOnce(t *testing.T) {
 }
 
 type filesystemMountTestPrivOps struct {
-	clones     []string
-	creates    []string
-	ensures    []string
-	sets       []string
-	mkfs       []string
-	destroys   []string
-	properties map[string]map[string]string
-	cloneErr   error
+	clones        []string
+	creates       []string
+	ensures       []string
+	sets          []string
+	mkfs          []string
+	destroyTrees  []string
+	destroyGraphs []string
+	properties    map[string]map[string]string
+	cloneErr      error
 }
 
 func (o *filesystemMountTestPrivOps) ZFSClone(_ context.Context, snapshot, target, _ string) error {
@@ -229,8 +233,13 @@ func (*filesystemMountTestPrivOps) ZFSSnapshot(context.Context, string, string, 
 
 func (*filesystemMountTestPrivOps) ZFSDestroy(context.Context, string) error { return nil }
 
-func (o *filesystemMountTestPrivOps) ZFSDestroyRecursive(_ context.Context, dataset string) error {
-	o.destroys = append(o.destroys, dataset)
+func (o *filesystemMountTestPrivOps) ZFSDestroyDatasetTree(_ context.Context, dataset string) error {
+	o.destroyTrees = append(o.destroyTrees, dataset)
+	return nil
+}
+
+func (o *filesystemMountTestPrivOps) ZFSDestroyDependencyGraph(_ context.Context, dataset string) error {
+	o.destroyGraphs = append(o.destroyGraphs, dataset)
 	return nil
 }
 

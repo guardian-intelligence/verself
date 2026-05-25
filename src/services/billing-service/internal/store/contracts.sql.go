@@ -324,6 +324,25 @@ func (q *Queries) GetContractChangeStatus(ctx context.Context, arg GetContractCh
 	return i, err
 }
 
+const getContractKind = `-- name: GetContractKind :one
+SELECT contract_kind
+FROM contracts
+WHERE contract_id = $1
+  AND org_id = $2
+`
+
+type GetContractKindParams struct {
+	ContractID string
+	OrgID      string
+}
+
+func (q *Queries) GetContractKind(ctx context.Context, arg GetContractKindParams) (string, error) {
+	row := q.db.QueryRow(ctx, getContractKind, arg.ContractID, arg.OrgID)
+	var contract_kind string
+	err := row.Scan(&contract_kind)
+	return contract_kind, err
+}
+
 const getCurrentContractPhase = `-- name: GetCurrentContractPhase :one
 SELECT phase_id,
        COALESCE(plan_id, '') AS plan_id,
@@ -1456,6 +1475,85 @@ func (q *Queries) UpsertContractPhase(ctx context.Context, arg UpsertContractPha
 		arg.PaymentState,
 		arg.Currency,
 		arg.RecurringAmountUnits,
+		arg.EffectiveStart,
+	)
+	return err
+}
+
+const upsertInternalContract = `-- name: UpsertInternalContract :exec
+INSERT INTO contracts (
+    contract_id, org_id, product_id, display_name, contract_kind, state,
+    payment_state, entitlement_state, overage_policy, starts_at
+) VALUES (
+    $1, $2, $3, $4,
+    'internal', 'active', 'not_required', 'active', 'block', $5
+)
+ON CONFLICT (contract_id) DO UPDATE
+SET state = 'active',
+    payment_state = 'not_required',
+    entitlement_state = 'active',
+    contract_kind = 'internal',
+    display_name = EXCLUDED.display_name,
+    ends_at = NULL,
+    cancel_at = NULL
+`
+
+type UpsertInternalContractParams struct {
+	ContractID  string
+	OrgID       string
+	ProductID   string
+	DisplayName string
+	StartsAt    pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertInternalContract(ctx context.Context, arg UpsertInternalContractParams) error {
+	_, err := q.db.Exec(ctx, upsertInternalContract,
+		arg.ContractID,
+		arg.OrgID,
+		arg.ProductID,
+		arg.DisplayName,
+		arg.StartsAt,
+	)
+	return err
+}
+
+const upsertInternalContractPhase = `-- name: UpsertInternalContractPhase :exec
+INSERT INTO contract_phases (
+    phase_id, contract_id, org_id, product_id, plan_id, phase_kind, state, payment_state,
+    entitlement_state, currency, recurring_amount_units, recurring_interval, effective_start,
+    activated_at, created_reason
+) VALUES (
+    $1, $2, $3, $4,
+    $5, 'internal', 'active', 'not_required',
+    'active', $6, 0, 'month',
+    $7, $7, 'internal_promotion'
+)
+ON CONFLICT (phase_id) DO UPDATE
+SET state = 'active',
+    payment_state = 'not_required',
+    entitlement_state = 'active',
+    effective_end = NULL,
+    activated_at = COALESCE(contract_phases.activated_at, EXCLUDED.activated_at)
+`
+
+type UpsertInternalContractPhaseParams struct {
+	PhaseID        string
+	ContractID     string
+	OrgID          string
+	ProductID      string
+	PlanID         pgtype.Text
+	Currency       string
+	EffectiveStart pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertInternalContractPhase(ctx context.Context, arg UpsertInternalContractPhaseParams) error {
+	_, err := q.db.Exec(ctx, upsertInternalContractPhase,
+		arg.PhaseID,
+		arg.ContractID,
+		arg.OrgID,
+		arg.ProductID,
+		arg.PlanID,
+		arg.Currency,
 		arg.EffectiveStart,
 	)
 	return err

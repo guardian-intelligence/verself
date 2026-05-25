@@ -11,6 +11,7 @@ import (
 const (
 	testOrgID    = "org_01J8QK0M2A7W4H3P9FQ6G1R8ZT"
 	testMemberID = "member_01J8QK4M5N6P7Q8R9S0T1V2W3X"
+	testSignupID = "signup_01J8QK4M5N6P7Q8R9S0T1V2W3X"
 )
 
 func TestIAMOrganizationsUsePublicAPI(t *testing.T) {
@@ -111,6 +112,97 @@ func TestIAMOrganizationsUsePublicAPI(t *testing.T) {
 	}
 	if updated.Version != 2 {
 		t.Fatalf("unexpected updated organization: %#v", updated)
+	}
+}
+
+func TestIAMSignupUsesPublicAPI(t *testing.T) {
+	var startIDKey string
+	var startBody map[string]any
+	var checkSlugPath string
+	var verifyIDKey string
+	var verifyBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/signup-intents":
+			startIDKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&startBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"message":"Check your email to continue.","status":"accepted","verificationExpiresAt":"2026-05-24T12:00:00Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/organization-slugs/guardian-intelligence/availability":
+			checkSlugPath = r.URL.Path
+			_, _ = w.Write([]byte(`{"slug":"guardian-intelligence","available":true}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/signup-intents/"+testSignupID+"/verification":
+			verifyIDKey = r.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(r.Body).Decode(&verifyBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"organization":` + organizationJSON("1") + `,"loginUrl":"https://verself.sh/api/v1/auth/login"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client, err := New(Options{IAMURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slug := "guardian-intelligence"
+	availability, err := client.IAM.CheckOrganizationSlugAvailability(context.Background(), slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkSlugPath == "" || !availability.Available || availability.Slug != slug {
+		t.Fatalf("unexpected slug availability: path=%q result=%#v", checkSlugPath, availability)
+	}
+	started, err := client.IAM.StartSignup(context.Background(), StartSignupInput{
+		Email:                   "operator@example.test",
+		OrganizationDisplayName: "Guardian Intelligence",
+		OrganizationSlug:        &slug,
+		IdempotencyKey:          "iam:start-signup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if startIDKey != "iam:start-signup" {
+		t.Fatalf("start idempotency key = %q", startIDKey)
+	}
+	if startBody["email"] != "operator@example.test" || startBody["organizationDisplayName"] != "Guardian Intelligence" || startBody["organizationSlug"] != slug {
+		t.Fatalf("unexpected start body: %#v", startBody)
+	}
+	if started.Status != "accepted" || started.VerificationExpiresAt != "2026-05-24T12:00:00Z" {
+		t.Fatalf("unexpected signup start result: %#v", started)
+	}
+	verifySlug := "guardian-labs"
+	result, err := client.IAM.VerifySignup(context.Background(), VerifySignupInput{
+		SignupIntentID:          testSignupID,
+		VerificationToken:       "signup-verification-token-0000000001",
+		OrganizationDisplayName: ptrString("Guardian Labs"),
+		OrganizationSlug:        &verifySlug,
+		IdempotencyKey:          "iam:verify-signup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verifyIDKey != "iam:verify-signup" {
+		t.Fatalf("verify idempotency key = %q", verifyIDKey)
+	}
+	if verifyBody["verificationToken"] != "signup-verification-token-0000000001" {
+		t.Fatalf("unexpected verify body: %#v", verifyBody)
+	}
+	if verifyBody["organizationDisplayName"] != "Guardian Labs" {
+		t.Fatalf("unexpected verify organization display name: %#v", verifyBody)
+	}
+	if verifyBody["organizationSlug"] != "guardian-labs" {
+		t.Fatalf("unexpected verify organization slug: %#v", verifyBody)
+	}
+	if result.Organization.OrgID != testOrgID || result.LoginURL == "" {
+		t.Fatalf("unexpected signup verification result: %#v", result)
 	}
 }
 

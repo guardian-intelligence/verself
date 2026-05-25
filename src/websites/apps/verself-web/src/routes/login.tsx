@@ -5,34 +5,42 @@ import { Button } from "@verself/ui/components/ui/button";
 import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
 import { getClientAuthSnapshot } from "~/server-fns/auth";
 
-const defaultSignedInRedirect = "/login";
+type LoginSearch = {
+  readonly prompt?: "login" | "select_account";
+  readonly redirect?: string;
+  readonly purpose?: string;
+  readonly login_hint?: string;
+  readonly required_subject?: string;
+  readonly required_email?: string;
+  readonly required_org_id?: string;
+};
 
-function signedInRedirectTarget(redirectTo: string | undefined): string {
-  if (!redirectTo) return defaultSignedInRedirect;
-  try {
-    const base = new URL("https://console.invalid");
-    const parsed = new URL(redirectTo, base);
-    if (parsed.origin !== base.origin) return defaultSignedInRedirect;
-    if (["/login", "/api/v1/auth/callback", "/logout"].includes(parsed.pathname)) {
-      return defaultSignedInRedirect;
-    }
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  } catch {
-    return defaultSignedInRedirect;
-  }
+function loginSearch(search: Record<string, unknown>): LoginSearch {
+  return {
+    ...(search.prompt === "login" || search.prompt === "select_account"
+      ? { prompt: search.prompt }
+      : {}),
+    ...(typeof search.redirect === "string" ? { redirect: search.redirect } : {}),
+    ...(typeof search.purpose === "string" ? { purpose: search.purpose } : {}),
+    ...(typeof search.login_hint === "string" ? { login_hint: search.login_hint } : {}),
+    ...(typeof search.required_subject === "string"
+      ? { required_subject: search.required_subject }
+      : {}),
+    ...(typeof search.required_email === "string" ? { required_email: search.required_email } : {}),
+    ...(typeof search.required_org_id === "string"
+      ? { required_org_id: search.required_org_id }
+      : {}),
+  };
 }
 
 export const Route = createFileRoute("/login")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
-  }),
+  validateSearch: loginSearch,
   beforeLoad: async ({ context, search }) => {
     const snapshot = await getClientAuthSnapshot();
-    if (snapshot.auth.isAuthenticated) {
+    if (snapshot.auth.isAuthenticated && !search.prompt) {
       const fallback = await resolveDefaultSignedInPath(context.queryClient, snapshot.auth);
-      const target = search.redirect ? signedInRedirectTarget(search.redirect) : fallback;
       throw redirect({
-        href: target === defaultSignedInRedirect ? fallback : target,
+        href: fallback,
         replace: true,
       });
     }
@@ -41,7 +49,15 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { redirect } = Route.useSearch();
+  const {
+    prompt,
+    redirect,
+    purpose,
+    login_hint,
+    required_subject,
+    required_email,
+    required_org_id,
+  } = Route.useSearch();
   const hydrated = useHydrated();
   const buttonContent = (
     <>
@@ -61,7 +77,17 @@ function LoginPage() {
           Use your Verself account to continue.
         </p>
         {hydrated ? (
-          <SignInButton {...(redirect ? { redirectTo: redirect } : {})} className="mt-6">
+          <SignInButton
+            {...(prompt === "login" ? { promptLogin: true } : {})}
+            {...(prompt === "select_account" ? { promptSelectAccount: true } : {})}
+            {...(redirect ? { redirectTo: redirect } : {})}
+            {...(purpose ? { purpose } : {})}
+            {...(login_hint ? { loginHint: login_hint } : {})}
+            {...(required_subject ? { requiredSubject: required_subject } : {})}
+            {...(required_email ? { requiredEmail: required_email } : {})}
+            {...(required_org_id ? { requiredOrgId: required_org_id } : {})}
+            className="mt-6"
+          >
             {buttonContent}
           </SignInButton>
         ) : (

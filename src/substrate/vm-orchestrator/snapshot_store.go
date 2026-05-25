@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -120,13 +123,21 @@ func (s *SnapshotStore) StageForJail(ctx context.Context, artifact SnapshotArtif
 		StateJailPath: "/snapshots/" + base + ".vmstate",
 		MemJailPath:   "/snapshots/" + base + ".mem",
 	}
-	if err := replaceLinkedOrCopiedFile(ctx, artifact.StatePath, paths.StateHostPath, s.uid, s.gid); err != nil {
+	stateBytes, err := replaceHardLinkedFile(ctx, artifact.StatePath, paths.StateHostPath, s.uid, s.gid)
+	if err != nil {
 		return JailSnapshotPaths{}, nil, fmt.Errorf("stage snapshot state: %w", err)
 	}
-	if err := replaceLinkedOrCopiedFile(ctx, artifact.MemPath, paths.MemHostPath, s.uid, s.gid); err != nil {
+	memoryBytes, err := replaceHardLinkedFile(ctx, artifact.MemPath, paths.MemHostPath, s.uid, s.gid)
+	if err != nil {
 		_ = os.Remove(paths.StateHostPath)
 		return JailSnapshotPaths{}, nil, fmt.Errorf("stage snapshot memory: %w", err)
 	}
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.String("firecracker.snapshot_state_stage_method", "hardlink"),
+		attribute.Int64("firecracker.snapshot_state_bytes", stateBytes),
+		attribute.String("firecracker.snapshot_memory_stage_method", "hardlink"),
+		attribute.Int64("firecracker.snapshot_memory_bytes", memoryBytes),
+	)
 	cleanup := func() {
 		_ = os.Remove(paths.StateHostPath)
 		_ = os.Remove(paths.MemHostPath)
@@ -270,6 +281,32 @@ func replaceLinkedOrCopiedFile(ctx context.Context, src, dst string, uid, gid in
 		return fmt.Errorf("chown %s: %w", dst, err)
 	}
 	return nil
+}
+
+func replaceHardLinkedFile(ctx context.Context, src, dst string, uid, gid int) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if strings.TrimSpace(src) == "" || strings.TrimSpace(dst) == "" {
+		return 0, fmt.Errorf("source and destination paths are required")
+	}
+	info, err := os.Stat(src)
+	if err != nil {
+		return 0, fmt.Errorf("stat %s: %w", src, err)
+	}
+	_ = os.Remove(dst)
+	if err := os.Link(src, dst); err != nil {
+		return 0, fmt.Errorf("hardlink %s -> %s: %w; snapshot cache and jail root must share a filesystem", src, dst, err)
+	}
+	if err := os.Chmod(dst, 0o644); err != nil {
+		_ = os.Remove(dst)
+		return 0, fmt.Errorf("chmod %s: %w", dst, err)
+	}
+	if err := os.Chown(dst, uid, gid); err != nil {
+		_ = os.Remove(dst)
+		return 0, fmt.Errorf("chown %s: %w", dst, err)
+	}
+	return info.Size(), nil
 }
 
 func copyFileContents(ctx context.Context, src, dst string) error {

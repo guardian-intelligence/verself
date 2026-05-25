@@ -89,14 +89,14 @@ function Inventory() {
           </thead>
           <tbody>
             <tr className="border-b border-border [&_td]:px-4 [&_td]:py-3 [&_td]:align-top">
-              <td className="font-mono text-xs">verself_session</td>
+              <td className="font-mono text-xs">verself_client</td>
               <td className="text-muted-foreground">Strictly necessary</td>
               <td className="text-muted-foreground">
-                HTTP-only, SameSite=Lax session cookie backing the server-owned single sign-on
-                session. Its value is an opaque server identifier that resolves to the session
-                record in our server-side session store.
+                HTTP-only, SameSite=Lax cookie backing the server-owned browser client. Its value
+                resolves to account handles and selected organization state in our server-side auth
+                store.
               </td>
-              <td className="text-muted-foreground">Session; rotated on sign-in</td>
+              <td className="text-muted-foreground">30 days; refreshed on sign-in</td>
             </tr>
             <tr className="border-b border-border last:border-b-0 [&_td]:px-4 [&_td]:py-3 [&_td]:align-top">
               <td className="font-mono text-xs">verself_csrf</td>

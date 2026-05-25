@@ -2,6 +2,8 @@ package notifications
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -157,7 +159,7 @@ func crossServiceFailureWorkflow(cfg CrossServiceFailureAlertConfig, failure cro
 		WorkflowKey:    crossServiceFailureWorkflowKey,
 		OrgID:          cfg.OrgID,
 		TriggeredBy:    crossServiceFailureActor,
-		IdempotencyKey: "platform:cross_service_call_failed:" + failure.TraceID + ":" + failure.SpanID,
+		IdempotencyKey: crossServiceFailureDedupeKey(failure),
 		Recipients: []WorkflowRecipient{
 			{Email: cfg.Email},
 		},
@@ -169,6 +171,18 @@ func crossServiceFailureWorkflow(cfg CrossServiceFailureAlertConfig, failure cro
 		Data:         data,
 		Traceparent:  failure.traceparent(),
 	}
+}
+
+func crossServiceFailureDedupeKey(failure crossServiceFailure) string {
+	bucket := failure.Timestamp.UTC().Truncate(time.Hour).Format(time.RFC3339)
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		bucket,
+		failure.ServiceName,
+		failure.targetService(),
+		failure.Method,
+		failure.endpoint(),
+	}, "\x00")))
+	return "platform:cross_service_call_failed:" + hex.EncodeToString(sum[:8])
 }
 
 func (f crossServiceFailure) targetService() string {

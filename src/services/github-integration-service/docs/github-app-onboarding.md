@@ -14,7 +14,7 @@ The onboarding model separates four concerns:
   activity, and non-billable control-plane setup state.
 - Product enablement: installation bindings, repository bindings, runner
   policy, trust policy, and golden snapshot eligibility.
-- Runtime evidence: workflow runs, workflow jobs, runner registrations,
+- Runtime evidence: workflow runs, workflow jobs, runner capacity instances,
   sandbox execution bindings, terminal evidence, and golden barrier inputs.
 
 Provider rows do not authorize runtime. Runtime must resolve an active
@@ -114,7 +114,7 @@ reason.
 The runtime tables retain GitHub workflow and runner truth:
 `github_webhook_deliveries`, `github_workflow_runs`, `github_workflow_jobs`,
 `github_job_shapes`, `github_provider_demands`,
-`github_runner_registrations`, `github_provider_outbox`,
+`github_runner_instances`, `github_job_assignments`, `github_provider_outbox`,
 `github_terminal_job_evidence`, and `github_golden_snapshot_barriers`.
 
 Runtime rows carry `org_id`, `installation_binding_id`, and

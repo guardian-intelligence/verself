@@ -84,6 +84,7 @@ func run() error {
 	workerInterval := cfg.Duration("GITHUB_WORKER_INTERVAL", 500*time.Millisecond)
 	workerBatchSize := int32FromInt(cfg.Int("GITHUB_WORKER_BATCH_SIZE", 16), "GITHUB_WORKER_BATCH_SIZE")
 	maxDeliveryTries := int32FromInt(cfg.Int("GITHUB_MAX_DELIVERY_TRIES", 8), "GITHUB_MAX_DELIVERY_TRIES")
+	maxProviderSurfaceTries := int32FromInt(cfg.Int("GITHUB_MAX_PROVIDER_SURFACE_TRIES", 8), "GITHUB_MAX_PROVIDER_SURFACE_TRIES")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
 	pgMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -207,6 +208,7 @@ func run() error {
 		WorkerInterval:                   workerInterval,
 		WorkerBatchSize:                  workerBatchSize,
 		MaxDeliveryTries:                 maxDeliveryTries,
+		MaxProviderSurfaceTries:          maxProviderSurfaceTries,
 		Logger:                           logger,
 		PG:                               pgPool,
 		CH:                               chConn,

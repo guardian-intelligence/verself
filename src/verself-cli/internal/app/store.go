@@ -57,6 +57,85 @@ func (s *Store) SaveProfile(p ProfileRecord) error {
 	return writeJSONFile(s.paths.profilePath(p.Name), p, 0o600)
 }
 
+func (s *Store) SaveAccount(a AccountRecord) error {
+	if a.Version == 0 {
+		a.Version = 1
+	}
+	a.ProfileName = strings.TrimSpace(a.ProfileName)
+	a.Handle = strings.TrimSpace(a.Handle)
+	if a.ProfileName == "" {
+		return errors.New("account profile name is required")
+	}
+	if a.Handle == "" || strings.ContainsAny(a.Handle, `/\`) {
+		return errors.New("account handle is invalid")
+	}
+	now := time.Now().UTC()
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = now
+	}
+	a.UpdatedAt = now
+	return writeJSONFile(s.paths.accountPath(a.ProfileName, a.Handle), a, 0o600)
+}
+
+func (s *Store) LoadAccount(profileName, handle string) (AccountRecord, error) {
+	profileName = strings.TrimSpace(profileName)
+	handle = strings.TrimSpace(handle)
+	if profileName == "" || handle == "" || strings.ContainsAny(handle, `/\`) {
+		return AccountRecord{}, errors.New("account handle is required")
+	}
+	var account AccountRecord
+	if err := readJSONFile(s.paths.accountPath(profileName, handle), &account); err != nil {
+		return AccountRecord{}, err
+	}
+	if account.Version == 0 {
+		account.Version = 1
+	}
+	return account, nil
+}
+
+func (s *Store) ListAccounts(profileName string) ([]AccountRecord, error) {
+	profileName = strings.TrimSpace(profileName)
+	if profileName == "" {
+		return nil, errors.New("profile name is required")
+	}
+	entries, err := os.ReadDir(s.paths.accountDir(profileName))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	accounts := make([]AccountRecord, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		handle := strings.TrimSuffix(entry.Name(), ".json")
+		account, err := s.LoadAccount(profileName, handle)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, account)
+	}
+	return accounts, nil
+}
+
+func (s *Store) DeleteAccount(profileName, handle string) error {
+	account, err := s.LoadAccount(profileName, handle)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err == nil && account.TokenRef != "" {
+		if deleteErr := s.DeleteCredential(account.TokenRef); deleteErr != nil {
+			return deleteErr
+		}
+	}
+	if err := os.Remove(s.paths.accountPath(strings.TrimSpace(profileName), strings.TrimSpace(handle))); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 func (s *Store) LoadProfile(name string) (ProfileRecord, error) {
 	if name == "" {
 		cfg, err := s.LoadConfig()
@@ -66,7 +145,7 @@ func (s *Store) LoadProfile(name string) (ProfileRecord, error) {
 		name = cfg.ActiveProfile
 	}
 	if name == "" {
-		return ProfileRecord{}, errors.New("profile is required; run `verself auth login` or `verself signup`")
+		return ProfileRecord{}, errors.New("profile is required; run `verself auth login`")
 	}
 	var p ProfileRecord
 	if err := readJSONFile(s.paths.profilePath(name), &p); err != nil {
@@ -112,9 +191,15 @@ func (s *Store) DeleteProfile(name string) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err == nil && profile.TokenRef != "" {
-		if deleteErr := s.DeleteCredential(profile.TokenRef); deleteErr != nil {
-			return deleteErr
+	if err == nil {
+		accounts, listErr := s.ListAccounts(profile.Name)
+		if listErr != nil {
+			return listErr
+		}
+		for _, account := range accounts {
+			if deleteErr := s.DeleteAccount(profile.Name, account.Handle); deleteErr != nil {
+				return deleteErr
+			}
 		}
 	}
 	if err := os.Remove(s.paths.profilePath(name)); err != nil && !errors.Is(err, os.ErrNotExist) {

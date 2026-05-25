@@ -11,11 +11,59 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteBrowserAccountByHandle = `-- name: DeleteBrowserAccountByHandle :exec
+UPDATE iam_browser_accounts
+SET state = 'removed',
+    updated_at = now()
+WHERE client_hash = $1
+  AND account_handle = $2
+`
+
+type DeleteBrowserAccountByHandleParams struct {
+	ClientHash    string
+	AccountHandle string
+}
+
+func (q *Queries) DeleteBrowserAccountByHandle(ctx context.Context, arg DeleteBrowserAccountByHandleParams) error {
+	_, err := q.db.Exec(ctx, deleteBrowserAccountByHandle, arg.ClientHash, arg.AccountHandle)
+	return err
+}
+
+const deleteBrowserAccountsForClient = `-- name: DeleteBrowserAccountsForClient :exec
+UPDATE iam_browser_accounts
+SET state = 'removed',
+    updated_at = now()
+WHERE client_hash = $1
+`
+
+type DeleteBrowserAccountsForClientParams struct {
+	ClientHash string
+}
+
+func (q *Queries) DeleteBrowserAccountsForClient(ctx context.Context, arg DeleteBrowserAccountsForClientParams) error {
+	_, err := q.db.Exec(ctx, deleteBrowserAccountsForClient, arg.ClientHash)
+	return err
+}
+
+const deleteBrowserClient = `-- name: DeleteBrowserClient :exec
+DELETE FROM iam_browser_clients
+WHERE client_hash = $1
+`
+
+type DeleteBrowserClientParams struct {
+	ClientHash string
+}
+
+func (q *Queries) DeleteBrowserClient(ctx context.Context, arg DeleteBrowserClientParams) error {
+	_, err := q.db.Exec(ctx, deleteBrowserClient, arg.ClientHash)
+	return err
+}
+
 const deleteBrowserLoginTransaction = `-- name: DeleteBrowserLoginTransaction :one
 DELETE FROM iam_browser_login_transactions
 WHERE state_hash = $1
   AND expires_at > now()
-RETURNING state_hash, nonce, code_verifier, redirect_to, expires_at, created_at
+RETURNING state_hash, client_hash, nonce, code_verifier, redirect_to, purpose, login_hint, required_subject, required_email, required_org_id, expires_at, created_at
 `
 
 type DeleteBrowserLoginTransactionParams struct {
@@ -27,9 +75,15 @@ func (q *Queries) DeleteBrowserLoginTransaction(ctx context.Context, arg DeleteB
 	var i IamBrowserLoginTransaction
 	err := row.Scan(
 		&i.StateHash,
+		&i.ClientHash,
 		&i.Nonce,
 		&i.CodeVerifier,
 		&i.RedirectTo,
+		&i.Purpose,
+		&i.LoginHint,
+		&i.RequiredSubject,
+		&i.RequiredEmail,
+		&i.RequiredOrgID,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 	)
@@ -38,45 +92,15 @@ func (q *Queries) DeleteBrowserLoginTransaction(ctx context.Context, arg DeleteB
 
 const deleteBrowserResourceTokens = `-- name: DeleteBrowserResourceTokens :exec
 DELETE FROM iam_browser_resource_tokens
-WHERE session_hash = $1
+WHERE account_handle = $1
 `
 
 type DeleteBrowserResourceTokensParams struct {
-	SessionHash string
+	AccountHandle string
 }
 
 func (q *Queries) DeleteBrowserResourceTokens(ctx context.Context, arg DeleteBrowserResourceTokensParams) error {
-	_, err := q.db.Exec(ctx, deleteBrowserResourceTokens, arg.SessionHash)
-	return err
-}
-
-const deleteBrowserSession = `-- name: DeleteBrowserSession :exec
-DELETE FROM iam_browser_sessions
-WHERE session_hash = $1
-`
-
-type DeleteBrowserSessionParams struct {
-	SessionHash string
-}
-
-func (q *Queries) DeleteBrowserSession(ctx context.Context, arg DeleteBrowserSessionParams) error {
-	_, err := q.db.Exec(ctx, deleteBrowserSession, arg.SessionHash)
-	return err
-}
-
-const deleteBrowserSessionByHandle = `-- name: DeleteBrowserSessionByHandle :exec
-DELETE FROM iam_browser_sessions
-WHERE session_handle = $1
-  AND subject = $2
-`
-
-type DeleteBrowserSessionByHandleParams struct {
-	SessionHandle string
-	Subject       string
-}
-
-func (q *Queries) DeleteBrowserSessionByHandle(ctx context.Context, arg DeleteBrowserSessionByHandleParams) error {
-	_, err := q.db.Exec(ctx, deleteBrowserSessionByHandle, arg.SessionHandle, arg.Subject)
+	_, err := q.db.Exec(ctx, deleteBrowserResourceTokens, arg.AccountHandle)
 	return err
 }
 
@@ -90,98 +114,73 @@ func (q *Queries) DeleteExpiredBrowserLoginTransactions(ctx context.Context) err
 	return err
 }
 
-const getBrowserResourceToken = `-- name: GetBrowserResourceToken :one
-SELECT access_token, token_scope, expires_at
-FROM iam_browser_resource_tokens
-WHERE session_hash = $1
-  AND audience = $2
-  AND selected_org_id = $3
-  AND scope_hash = $4
-`
-
-type GetBrowserResourceTokenParams struct {
-	SessionHash   string
-	Audience      string
-	SelectedOrgID string
-	ScopeHash     string
-}
-
-type GetBrowserResourceTokenRow struct {
-	AccessToken string
-	TokenScope  pgtype.Text
-	ExpiresAt   pgtype.Timestamptz
-}
-
-func (q *Queries) GetBrowserResourceToken(ctx context.Context, arg GetBrowserResourceTokenParams) (GetBrowserResourceTokenRow, error) {
-	row := q.db.QueryRow(ctx, getBrowserResourceToken,
-		arg.SessionHash,
-		arg.Audience,
-		arg.SelectedOrgID,
-		arg.ScopeHash,
-	)
-	var i GetBrowserResourceTokenRow
-	err := row.Scan(&i.AccessToken, &i.TokenScope, &i.ExpiresAt)
-	return i, err
-}
-
-const getBrowserSession = `-- name: GetBrowserSession :one
+const getActiveBrowserAccount = `-- name: GetActiveBrowserAccount :one
 SELECT
-  session_hash,
-  session_handle,
-  client_cache_partition,
-  subject,
-  email,
-  display_name,
-  preferred_username,
-  org_id,
-  home_org_id,
-  selected_org_id,
-  available_org_contexts::text AS available_org_contexts_json,
-  user_claims::text AS user_claims_json,
-  id_token,
-  access_token,
-  refresh_token,
-  token_scope,
-  expires_at,
-  created_client_ip,
-  created_client_ip_trusted,
-  created_client_ip_source,
-  created_edge_peer_ip,
-  created_user_agent,
-  created_device_label,
-  created_device_kind,
-  created_browser_name,
-  created_os_name,
-  created_geo_country_code,
-  created_geo_region,
-  created_geo_city,
-  last_seen_client_ip,
-  last_seen_client_ip_trusted,
-  last_seen_client_ip_source,
-  last_seen_edge_peer_ip,
-  last_seen_user_agent,
-  last_seen_device_label,
-  last_seen_device_kind,
-  last_seen_browser_name,
-  last_seen_os_name,
-  last_seen_geo_country_code,
-  last_seen_geo_region,
-  last_seen_geo_city,
-  last_seen_at,
-  created_at,
-  updated_at
-FROM iam_browser_sessions
-WHERE session_hash = $1
+  c.client_handle,
+  c.client_cache_partition,
+  a.account_handle,
+  a.client_hash,
+  a.state,
+  a.subject,
+  a.email,
+  a.display_name,
+  a.preferred_username,
+  a.org_id,
+  a.home_org_id,
+  a.selected_org_id,
+  a.available_org_contexts::text AS available_org_contexts_json,
+  a.user_claims::text AS user_claims_json,
+  a.id_token_ciphertext,
+  a.access_token_ciphertext,
+  a.refresh_token_ciphertext,
+  a.token_scope,
+  a.expires_at,
+  a.created_client_ip,
+  a.created_client_ip_trusted,
+  a.created_client_ip_source,
+  a.created_edge_peer_ip,
+  a.created_user_agent,
+  a.created_device_label,
+  a.created_device_kind,
+  a.created_browser_name,
+  a.created_os_name,
+  a.created_geo_country_code,
+  a.created_geo_region,
+  a.created_geo_city,
+  a.last_seen_client_ip,
+  a.last_seen_client_ip_trusted,
+  a.last_seen_client_ip_source,
+  a.last_seen_edge_peer_ip,
+  a.last_seen_user_agent,
+  a.last_seen_device_label,
+  a.last_seen_device_kind,
+  a.last_seen_browser_name,
+  a.last_seen_os_name,
+  a.last_seen_geo_country_code,
+  a.last_seen_geo_region,
+  a.last_seen_geo_city,
+  a.last_seen_at,
+  a.created_at,
+  a.updated_at
+FROM iam_browser_clients c
+JOIN iam_browser_accounts a
+  ON a.client_hash = c.client_hash
+ AND a.account_handle = c.active_account_handle
+WHERE c.client_hash = $1
+  AND c.expires_at > now()
+  AND a.state = 'active'
 `
 
-type GetBrowserSessionParams struct {
-	SessionHash string
+type GetActiveBrowserAccountParams struct {
+	ClientHash string
 }
 
-type GetBrowserSessionRow struct {
-	SessionHash              string
-	SessionHandle            string
+type GetActiveBrowserAccountRow struct {
+	ClientHandle             string
 	ClientCachePartition     string
+	AccountHandle            string
+	ClientHash               string
+	State                    string
 	Subject                  string
 	Email                    pgtype.Text
 	DisplayName              pgtype.Text
@@ -191,9 +190,9 @@ type GetBrowserSessionRow struct {
 	SelectedOrgID            pgtype.Text
 	AvailableOrgContextsJson string
 	UserClaimsJson           string
-	IDToken                  pgtype.Text
-	AccessToken              string
-	RefreshToken             pgtype.Text
+	IDTokenCiphertext        pgtype.Text
+	AccessTokenCiphertext    string
+	RefreshTokenCiphertext   pgtype.Text
 	TokenScope               pgtype.Text
 	ExpiresAt                pgtype.Timestamptz
 	CreatedClientIp          string
@@ -225,13 +224,15 @@ type GetBrowserSessionRow struct {
 	UpdatedAt                pgtype.Timestamptz
 }
 
-func (q *Queries) GetBrowserSession(ctx context.Context, arg GetBrowserSessionParams) (GetBrowserSessionRow, error) {
-	row := q.db.QueryRow(ctx, getBrowserSession, arg.SessionHash)
-	var i GetBrowserSessionRow
+func (q *Queries) GetActiveBrowserAccount(ctx context.Context, arg GetActiveBrowserAccountParams) (GetActiveBrowserAccountRow, error) {
+	row := q.db.QueryRow(ctx, getActiveBrowserAccount, arg.ClientHash)
+	var i GetActiveBrowserAccountRow
 	err := row.Scan(
-		&i.SessionHash,
-		&i.SessionHandle,
+		&i.ClientHandle,
 		&i.ClientCachePartition,
+		&i.AccountHandle,
+		&i.ClientHash,
+		&i.State,
 		&i.Subject,
 		&i.Email,
 		&i.DisplayName,
@@ -241,9 +242,9 @@ func (q *Queries) GetBrowserSession(ctx context.Context, arg GetBrowserSessionPa
 		&i.SelectedOrgID,
 		&i.AvailableOrgContextsJson,
 		&i.UserClaimsJson,
-		&i.IDToken,
-		&i.AccessToken,
-		&i.RefreshToken,
+		&i.IDTokenCiphertext,
+		&i.AccessTokenCiphertext,
+		&i.RefreshTokenCiphertext,
 		&i.TokenScope,
 		&i.ExpiresAt,
 		&i.CreatedClientIp,
@@ -277,45 +278,283 @@ func (q *Queries) GetBrowserSession(ctx context.Context, arg GetBrowserSessionPa
 	return i, err
 }
 
-const insertBrowserLoginTransaction = `-- name: InsertBrowserLoginTransaction :exec
-INSERT INTO iam_browser_login_transactions (
-  state_hash,
-  nonce,
-  code_verifier,
-  redirect_to,
-  expires_at
-) VALUES (
-  $1,
-  $2,
-  $3,
-  $4,
-  $5
-)
+const getBrowserAccount = `-- name: GetBrowserAccount :one
+SELECT
+  account_handle,
+  client_hash,
+  state,
+  subject,
+  email,
+  display_name,
+  preferred_username,
+  org_id,
+  home_org_id,
+  selected_org_id,
+  available_org_contexts::text AS available_org_contexts_json,
+  user_claims::text AS user_claims_json,
+  id_token_ciphertext,
+  access_token_ciphertext,
+  refresh_token_ciphertext,
+  token_scope,
+  expires_at,
+  created_client_ip,
+  created_client_ip_trusted,
+  created_client_ip_source,
+  created_edge_peer_ip,
+  created_user_agent,
+  created_device_label,
+  created_device_kind,
+  created_browser_name,
+  created_os_name,
+  created_geo_country_code,
+  created_geo_region,
+  created_geo_city,
+  last_seen_client_ip,
+  last_seen_client_ip_trusted,
+  last_seen_client_ip_source,
+  last_seen_edge_peer_ip,
+  last_seen_user_agent,
+  last_seen_device_label,
+  last_seen_device_kind,
+  last_seen_browser_name,
+  last_seen_os_name,
+  last_seen_geo_country_code,
+  last_seen_geo_region,
+  last_seen_geo_city,
+  last_seen_at,
+  created_at,
+  updated_at
+FROM iam_browser_accounts
+WHERE account_handle = $1
+  AND client_hash = $2
+  AND state = 'active'
 `
 
-type InsertBrowserLoginTransactionParams struct {
-	StateHash    string
-	Nonce        string
-	CodeVerifier string
-	RedirectTo   string
-	ExpiresAt    pgtype.Timestamptz
+type GetBrowserAccountParams struct {
+	AccountHandle string
+	ClientHash    string
 }
 
-func (q *Queries) InsertBrowserLoginTransaction(ctx context.Context, arg InsertBrowserLoginTransactionParams) error {
-	_, err := q.db.Exec(ctx, insertBrowserLoginTransaction,
-		arg.StateHash,
-		arg.Nonce,
-		arg.CodeVerifier,
-		arg.RedirectTo,
-		arg.ExpiresAt,
+type GetBrowserAccountRow struct {
+	AccountHandle            string
+	ClientHash               string
+	State                    string
+	Subject                  string
+	Email                    pgtype.Text
+	DisplayName              pgtype.Text
+	PreferredUsername        pgtype.Text
+	OrgID                    pgtype.Text
+	HomeOrgID                pgtype.Text
+	SelectedOrgID            pgtype.Text
+	AvailableOrgContextsJson string
+	UserClaimsJson           string
+	IDTokenCiphertext        pgtype.Text
+	AccessTokenCiphertext    string
+	RefreshTokenCiphertext   pgtype.Text
+	TokenScope               pgtype.Text
+	ExpiresAt                pgtype.Timestamptz
+	CreatedClientIp          string
+	CreatedClientIpTrusted   bool
+	CreatedClientIpSource    string
+	CreatedEdgePeerIp        string
+	CreatedUserAgent         string
+	CreatedDeviceLabel       string
+	CreatedDeviceKind        string
+	CreatedBrowserName       string
+	CreatedOsName            string
+	CreatedGeoCountryCode    string
+	CreatedGeoRegion         string
+	CreatedGeoCity           string
+	LastSeenClientIp         string
+	LastSeenClientIpTrusted  bool
+	LastSeenClientIpSource   string
+	LastSeenEdgePeerIp       string
+	LastSeenUserAgent        string
+	LastSeenDeviceLabel      string
+	LastSeenDeviceKind       string
+	LastSeenBrowserName      string
+	LastSeenOsName           string
+	LastSeenGeoCountryCode   string
+	LastSeenGeoRegion        string
+	LastSeenGeoCity          string
+	LastSeenAt               pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
+}
+
+func (q *Queries) GetBrowserAccount(ctx context.Context, arg GetBrowserAccountParams) (GetBrowserAccountRow, error) {
+	row := q.db.QueryRow(ctx, getBrowserAccount, arg.AccountHandle, arg.ClientHash)
+	var i GetBrowserAccountRow
+	err := row.Scan(
+		&i.AccountHandle,
+		&i.ClientHash,
+		&i.State,
+		&i.Subject,
+		&i.Email,
+		&i.DisplayName,
+		&i.PreferredUsername,
+		&i.OrgID,
+		&i.HomeOrgID,
+		&i.SelectedOrgID,
+		&i.AvailableOrgContextsJson,
+		&i.UserClaimsJson,
+		&i.IDTokenCiphertext,
+		&i.AccessTokenCiphertext,
+		&i.RefreshTokenCiphertext,
+		&i.TokenScope,
+		&i.ExpiresAt,
+		&i.CreatedClientIp,
+		&i.CreatedClientIpTrusted,
+		&i.CreatedClientIpSource,
+		&i.CreatedEdgePeerIp,
+		&i.CreatedUserAgent,
+		&i.CreatedDeviceLabel,
+		&i.CreatedDeviceKind,
+		&i.CreatedBrowserName,
+		&i.CreatedOsName,
+		&i.CreatedGeoCountryCode,
+		&i.CreatedGeoRegion,
+		&i.CreatedGeoCity,
+		&i.LastSeenClientIp,
+		&i.LastSeenClientIpTrusted,
+		&i.LastSeenClientIpSource,
+		&i.LastSeenEdgePeerIp,
+		&i.LastSeenUserAgent,
+		&i.LastSeenDeviceLabel,
+		&i.LastSeenDeviceKind,
+		&i.LastSeenBrowserName,
+		&i.LastSeenOsName,
+		&i.LastSeenGeoCountryCode,
+		&i.LastSeenGeoRegion,
+		&i.LastSeenGeoCity,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
-	return err
+	return i, err
 }
 
-const insertBrowserSessionObservation = `-- name: InsertBrowserSessionObservation :exec
-INSERT INTO iam_browser_session_observations (
-  session_hash,
-  session_handle,
+const getBrowserClient = `-- name: GetBrowserClient :one
+SELECT
+  client_hash,
+  client_handle,
+  active_account_handle,
+  client_cache_partition,
+  expires_at,
+  created_client_ip,
+  created_client_ip_trusted,
+  created_client_ip_source,
+  created_edge_peer_ip,
+  created_user_agent,
+  created_device_label,
+  created_device_kind,
+  created_browser_name,
+  created_os_name,
+  created_geo_country_code,
+  created_geo_region,
+  created_geo_city,
+  last_seen_client_ip,
+  last_seen_client_ip_trusted,
+  last_seen_client_ip_source,
+  last_seen_edge_peer_ip,
+  last_seen_user_agent,
+  last_seen_device_label,
+  last_seen_device_kind,
+  last_seen_browser_name,
+  last_seen_os_name,
+  last_seen_geo_country_code,
+  last_seen_geo_region,
+  last_seen_geo_city,
+  last_seen_at,
+  created_at,
+  updated_at
+FROM iam_browser_clients
+WHERE client_hash = $1
+  AND expires_at > now()
+`
+
+type GetBrowserClientParams struct {
+	ClientHash string
+}
+
+func (q *Queries) GetBrowserClient(ctx context.Context, arg GetBrowserClientParams) (IamBrowserClient, error) {
+	row := q.db.QueryRow(ctx, getBrowserClient, arg.ClientHash)
+	var i IamBrowserClient
+	err := row.Scan(
+		&i.ClientHash,
+		&i.ClientHandle,
+		&i.ActiveAccountHandle,
+		&i.ClientCachePartition,
+		&i.ExpiresAt,
+		&i.CreatedClientIp,
+		&i.CreatedClientIpTrusted,
+		&i.CreatedClientIpSource,
+		&i.CreatedEdgePeerIp,
+		&i.CreatedUserAgent,
+		&i.CreatedDeviceLabel,
+		&i.CreatedDeviceKind,
+		&i.CreatedBrowserName,
+		&i.CreatedOsName,
+		&i.CreatedGeoCountryCode,
+		&i.CreatedGeoRegion,
+		&i.CreatedGeoCity,
+		&i.LastSeenClientIp,
+		&i.LastSeenClientIpTrusted,
+		&i.LastSeenClientIpSource,
+		&i.LastSeenEdgePeerIp,
+		&i.LastSeenUserAgent,
+		&i.LastSeenDeviceLabel,
+		&i.LastSeenDeviceKind,
+		&i.LastSeenBrowserName,
+		&i.LastSeenOsName,
+		&i.LastSeenGeoCountryCode,
+		&i.LastSeenGeoRegion,
+		&i.LastSeenGeoCity,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getBrowserResourceToken = `-- name: GetBrowserResourceToken :one
+SELECT access_token_ciphertext, token_scope, expires_at
+FROM iam_browser_resource_tokens
+WHERE account_handle = $1
+  AND audience = $2
+  AND selected_org_id = $3
+  AND scope_hash = $4
+`
+
+type GetBrowserResourceTokenParams struct {
+	AccountHandle string
+	Audience      string
+	SelectedOrgID string
+	ScopeHash     string
+}
+
+type GetBrowserResourceTokenRow struct {
+	AccessTokenCiphertext string
+	TokenScope            pgtype.Text
+	ExpiresAt             pgtype.Timestamptz
+}
+
+func (q *Queries) GetBrowserResourceToken(ctx context.Context, arg GetBrowserResourceTokenParams) (GetBrowserResourceTokenRow, error) {
+	row := q.db.QueryRow(ctx, getBrowserResourceToken,
+		arg.AccountHandle,
+		arg.Audience,
+		arg.SelectedOrgID,
+		arg.ScopeHash,
+	)
+	var i GetBrowserResourceTokenRow
+	err := row.Scan(&i.AccessTokenCiphertext, &i.TokenScope, &i.ExpiresAt)
+	return i, err
+}
+
+const insertBrowserAccountObservation = `-- name: InsertBrowserAccountObservation :exec
+INSERT INTO iam_browser_account_observations (
+  client_hash,
+  account_handle,
   subject,
   client_ip,
   client_ip_trusted,
@@ -348,9 +587,9 @@ INSERT INTO iam_browser_session_observations (
 )
 `
 
-type InsertBrowserSessionObservationParams struct {
-	SessionHash     string
-	SessionHandle   string
+type InsertBrowserAccountObservationParams struct {
+	ClientHash      string
+	AccountHandle   string
 	Subject         string
 	ClientIp        string
 	ClientIpTrusted bool
@@ -366,10 +605,10 @@ type InsertBrowserSessionObservationParams struct {
 	GeoCity         string
 }
 
-func (q *Queries) InsertBrowserSessionObservation(ctx context.Context, arg InsertBrowserSessionObservationParams) error {
-	_, err := q.db.Exec(ctx, insertBrowserSessionObservation,
-		arg.SessionHash,
-		arg.SessionHandle,
+func (q *Queries) InsertBrowserAccountObservation(ctx context.Context, arg InsertBrowserAccountObservationParams) error {
+	_, err := q.db.Exec(ctx, insertBrowserAccountObservation,
+		arg.ClientHash,
+		arg.AccountHandle,
 		arg.Subject,
 		arg.ClientIp,
 		arg.ClientIpTrusted,
@@ -387,11 +626,78 @@ func (q *Queries) InsertBrowserSessionObservation(ctx context.Context, arg Inser
 	return err
 }
 
-const listBrowserSessionsForSubject = `-- name: ListBrowserSessionsForSubject :many
+const insertBrowserLoginTransaction = `-- name: InsertBrowserLoginTransaction :exec
+INSERT INTO iam_browser_login_transactions (
+  state_hash,
+  client_hash,
+  nonce,
+  code_verifier,
+  redirect_to,
+  purpose,
+  login_hint,
+  required_subject,
+  required_email,
+  required_org_id,
+  expires_at
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6,
+  $7,
+  $8,
+  $9,
+  $10,
+  $11
+)
+`
+
+type InsertBrowserLoginTransactionParams struct {
+	StateHash       string
+	ClientHash      string
+	Nonce           string
+	CodeVerifier    string
+	RedirectTo      string
+	Purpose         string
+	LoginHint       pgtype.Text
+	RequiredSubject pgtype.Text
+	RequiredEmail   pgtype.Text
+	RequiredOrgID   pgtype.Text
+	ExpiresAt       pgtype.Timestamptz
+}
+
+func (q *Queries) InsertBrowserLoginTransaction(ctx context.Context, arg InsertBrowserLoginTransactionParams) error {
+	_, err := q.db.Exec(ctx, insertBrowserLoginTransaction,
+		arg.StateHash,
+		arg.ClientHash,
+		arg.Nonce,
+		arg.CodeVerifier,
+		arg.RedirectTo,
+		arg.Purpose,
+		arg.LoginHint,
+		arg.RequiredSubject,
+		arg.RequiredEmail,
+		arg.RequiredOrgID,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
+const listBrowserAccountsForClient = `-- name: ListBrowserAccountsForClient :many
 SELECT
-  session_hash,
-  session_handle,
+  account_handle,
+  client_hash,
+  state,
   subject,
+  email,
+  display_name,
+  preferred_username,
+  org_id,
+  home_org_id,
+  selected_org_id,
+  available_org_contexts::text AS available_org_contexts_json,
   expires_at,
   created_client_ip,
   created_client_ip_trusted,
@@ -420,63 +726,79 @@ SELECT
   last_seen_at,
   created_at,
   updated_at
-FROM iam_browser_sessions
-WHERE subject = $1
-  AND expires_at > now()
+FROM iam_browser_accounts
+WHERE client_hash = $1
+  AND state = 'active'
 ORDER BY last_seen_at DESC, created_at DESC
 `
 
-type ListBrowserSessionsForSubjectParams struct {
-	Subject string
+type ListBrowserAccountsForClientParams struct {
+	ClientHash string
 }
 
-type ListBrowserSessionsForSubjectRow struct {
-	SessionHash             string
-	SessionHandle           string
-	Subject                 string
-	ExpiresAt               pgtype.Timestamptz
-	CreatedClientIp         string
-	CreatedClientIpTrusted  bool
-	CreatedClientIpSource   string
-	CreatedEdgePeerIp       string
-	CreatedUserAgent        string
-	CreatedDeviceLabel      string
-	CreatedDeviceKind       string
-	CreatedBrowserName      string
-	CreatedOsName           string
-	CreatedGeoCountryCode   string
-	CreatedGeoRegion        string
-	CreatedGeoCity          string
-	LastSeenClientIp        string
-	LastSeenClientIpTrusted bool
-	LastSeenClientIpSource  string
-	LastSeenEdgePeerIp      string
-	LastSeenUserAgent       string
-	LastSeenDeviceLabel     string
-	LastSeenDeviceKind      string
-	LastSeenBrowserName     string
-	LastSeenOsName          string
-	LastSeenGeoCountryCode  string
-	LastSeenGeoRegion       string
-	LastSeenGeoCity         string
-	LastSeenAt              pgtype.Timestamptz
-	CreatedAt               pgtype.Timestamptz
-	UpdatedAt               pgtype.Timestamptz
+type ListBrowserAccountsForClientRow struct {
+	AccountHandle            string
+	ClientHash               string
+	State                    string
+	Subject                  string
+	Email                    pgtype.Text
+	DisplayName              pgtype.Text
+	PreferredUsername        pgtype.Text
+	OrgID                    pgtype.Text
+	HomeOrgID                pgtype.Text
+	SelectedOrgID            pgtype.Text
+	AvailableOrgContextsJson string
+	ExpiresAt                pgtype.Timestamptz
+	CreatedClientIp          string
+	CreatedClientIpTrusted   bool
+	CreatedClientIpSource    string
+	CreatedEdgePeerIp        string
+	CreatedUserAgent         string
+	CreatedDeviceLabel       string
+	CreatedDeviceKind        string
+	CreatedBrowserName       string
+	CreatedOsName            string
+	CreatedGeoCountryCode    string
+	CreatedGeoRegion         string
+	CreatedGeoCity           string
+	LastSeenClientIp         string
+	LastSeenClientIpTrusted  bool
+	LastSeenClientIpSource   string
+	LastSeenEdgePeerIp       string
+	LastSeenUserAgent        string
+	LastSeenDeviceLabel      string
+	LastSeenDeviceKind       string
+	LastSeenBrowserName      string
+	LastSeenOsName           string
+	LastSeenGeoCountryCode   string
+	LastSeenGeoRegion        string
+	LastSeenGeoCity          string
+	LastSeenAt               pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
 }
 
-func (q *Queries) ListBrowserSessionsForSubject(ctx context.Context, arg ListBrowserSessionsForSubjectParams) ([]ListBrowserSessionsForSubjectRow, error) {
-	rows, err := q.db.Query(ctx, listBrowserSessionsForSubject, arg.Subject)
+func (q *Queries) ListBrowserAccountsForClient(ctx context.Context, arg ListBrowserAccountsForClientParams) ([]ListBrowserAccountsForClientRow, error) {
+	rows, err := q.db.Query(ctx, listBrowserAccountsForClient, arg.ClientHash)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListBrowserSessionsForSubjectRow{}
+	items := []ListBrowserAccountsForClientRow{}
 	for rows.Next() {
-		var i ListBrowserSessionsForSubjectRow
+		var i ListBrowserAccountsForClientRow
 		if err := rows.Scan(
-			&i.SessionHash,
-			&i.SessionHandle,
+			&i.AccountHandle,
+			&i.ClientHash,
+			&i.State,
 			&i.Subject,
+			&i.Email,
+			&i.DisplayName,
+			&i.PreferredUsername,
+			&i.OrgID,
+			&i.HomeOrgID,
+			&i.SelectedOrgID,
+			&i.AvailableOrgContextsJson,
 			&i.ExpiresAt,
 			&i.CreatedClientIp,
 			&i.CreatedClientIpTrusted,
@@ -516,28 +838,27 @@ func (q *Queries) ListBrowserSessionsForSubject(ctx context.Context, arg ListBro
 	return items, nil
 }
 
-const updateBrowserSessionOrganization = `-- name: UpdateBrowserSessionOrganization :exec
-UPDATE iam_browser_sessions
-SET org_id = $1,
-    selected_org_id = $1,
+const setBrowserClientActiveAccount = `-- name: SetBrowserClientActiveAccount :exec
+UPDATE iam_browser_clients
+SET active_account_handle = $1,
     client_cache_partition = $2,
     updated_at = now()
-WHERE session_hash = $3
+WHERE client_hash = $3
 `
 
-type UpdateBrowserSessionOrganizationParams struct {
-	SelectedOrgID        pgtype.Text
+type SetBrowserClientActiveAccountParams struct {
+	AccountHandle        pgtype.Text
 	ClientCachePartition string
-	SessionHash          string
+	ClientHash           string
 }
 
-func (q *Queries) UpdateBrowserSessionOrganization(ctx context.Context, arg UpdateBrowserSessionOrganizationParams) error {
-	_, err := q.db.Exec(ctx, updateBrowserSessionOrganization, arg.SelectedOrgID, arg.ClientCachePartition, arg.SessionHash)
+func (q *Queries) SetBrowserClientActiveAccount(ctx context.Context, arg SetBrowserClientActiveAccountParams) error {
+	_, err := q.db.Exec(ctx, setBrowserClientActiveAccount, arg.AccountHandle, arg.ClientCachePartition, arg.ClientHash)
 	return err
 }
 
-const updateBrowserSessionSeen = `-- name: UpdateBrowserSessionSeen :exec
-UPDATE iam_browser_sessions
+const touchBrowserClientSeen = `-- name: TouchBrowserClientSeen :exec
+UPDATE iam_browser_clients
 SET last_seen_client_ip = $1,
     last_seen_client_ip_trusted = $2,
     last_seen_client_ip_source = $3,
@@ -552,10 +873,10 @@ SET last_seen_client_ip = $1,
     last_seen_geo_city = $12,
     last_seen_at = now(),
     updated_at = now()
-WHERE session_hash = $13
+WHERE client_hash = $13
 `
 
-type UpdateBrowserSessionSeenParams struct {
+type TouchBrowserClientSeenParams struct {
 	ClientIp        string
 	ClientIpTrusted bool
 	ClientIpSource  string
@@ -568,11 +889,11 @@ type UpdateBrowserSessionSeenParams struct {
 	GeoCountryCode  string
 	GeoRegion       string
 	GeoCity         string
-	SessionHash     string
+	ClientHash      string
 }
 
-func (q *Queries) UpdateBrowserSessionSeen(ctx context.Context, arg UpdateBrowserSessionSeenParams) error {
-	_, err := q.db.Exec(ctx, updateBrowserSessionSeen,
+func (q *Queries) TouchBrowserClientSeen(ctx context.Context, arg TouchBrowserClientSeenParams) error {
+	_, err := q.db.Exec(ctx, touchBrowserClientSeen,
 		arg.ClientIp,
 		arg.ClientIpTrusted,
 		arg.ClientIpSource,
@@ -585,64 +906,93 @@ func (q *Queries) UpdateBrowserSessionSeen(ctx context.Context, arg UpdateBrowse
 		arg.GeoCountryCode,
 		arg.GeoRegion,
 		arg.GeoCity,
-		arg.SessionHash,
+		arg.ClientHash,
 	)
 	return err
 }
 
-const upsertBrowserResourceToken = `-- name: UpsertBrowserResourceToken :exec
-INSERT INTO iam_browser_resource_tokens (
-  session_hash,
-  audience,
-  selected_org_id,
-  scope_hash,
-  access_token,
-  token_scope,
-  expires_at
-) VALUES (
-  $1,
-  $2,
-  $3,
-  $4,
-  $5,
-  $6,
-  $7
-)
-ON CONFLICT (session_hash, audience, selected_org_id, scope_hash) DO UPDATE SET
-  access_token = EXCLUDED.access_token,
-  token_scope = EXCLUDED.token_scope,
-  expires_at = EXCLUDED.expires_at,
-  updated_at = now()
+const updateBrowserAccountOrganization = `-- name: UpdateBrowserAccountOrganization :exec
+UPDATE iam_browser_accounts
+SET org_id = $1,
+    selected_org_id = $1,
+    updated_at = now()
+WHERE account_handle = $2
+  AND client_hash = $3
 `
 
-type UpsertBrowserResourceTokenParams struct {
-	SessionHash   string
-	Audience      string
-	SelectedOrgID string
-	ScopeHash     string
-	AccessToken   string
-	TokenScope    pgtype.Text
-	ExpiresAt     pgtype.Timestamptz
+type UpdateBrowserAccountOrganizationParams struct {
+	SelectedOrgID pgtype.Text
+	AccountHandle string
+	ClientHash    string
 }
 
-func (q *Queries) UpsertBrowserResourceToken(ctx context.Context, arg UpsertBrowserResourceTokenParams) error {
-	_, err := q.db.Exec(ctx, upsertBrowserResourceToken,
-		arg.SessionHash,
-		arg.Audience,
-		arg.SelectedOrgID,
-		arg.ScopeHash,
-		arg.AccessToken,
-		arg.TokenScope,
-		arg.ExpiresAt,
+func (q *Queries) UpdateBrowserAccountOrganization(ctx context.Context, arg UpdateBrowserAccountOrganizationParams) error {
+	_, err := q.db.Exec(ctx, updateBrowserAccountOrganization, arg.SelectedOrgID, arg.AccountHandle, arg.ClientHash)
+	return err
+}
+
+const updateBrowserAccountSeen = `-- name: UpdateBrowserAccountSeen :exec
+UPDATE iam_browser_accounts
+SET last_seen_client_ip = $1,
+    last_seen_client_ip_trusted = $2,
+    last_seen_client_ip_source = $3,
+    last_seen_edge_peer_ip = $4,
+    last_seen_user_agent = $5,
+    last_seen_device_label = $6,
+    last_seen_device_kind = $7,
+    last_seen_browser_name = $8,
+    last_seen_os_name = $9,
+    last_seen_geo_country_code = $10,
+    last_seen_geo_region = $11,
+    last_seen_geo_city = $12,
+    last_seen_at = now(),
+    updated_at = now()
+WHERE account_handle = $13
+  AND client_hash = $14
+`
+
+type UpdateBrowserAccountSeenParams struct {
+	ClientIp        string
+	ClientIpTrusted bool
+	ClientIpSource  string
+	EdgePeerIp      string
+	UserAgent       string
+	DeviceLabel     string
+	DeviceKind      string
+	BrowserName     string
+	OsName          string
+	GeoCountryCode  string
+	GeoRegion       string
+	GeoCity         string
+	AccountHandle   string
+	ClientHash      string
+}
+
+func (q *Queries) UpdateBrowserAccountSeen(ctx context.Context, arg UpdateBrowserAccountSeenParams) error {
+	_, err := q.db.Exec(ctx, updateBrowserAccountSeen,
+		arg.ClientIp,
+		arg.ClientIpTrusted,
+		arg.ClientIpSource,
+		arg.EdgePeerIp,
+		arg.UserAgent,
+		arg.DeviceLabel,
+		arg.DeviceKind,
+		arg.BrowserName,
+		arg.OsName,
+		arg.GeoCountryCode,
+		arg.GeoRegion,
+		arg.GeoCity,
+		arg.AccountHandle,
+		arg.ClientHash,
 	)
 	return err
 }
 
-const upsertBrowserSession = `-- name: UpsertBrowserSession :exec
-INSERT INTO iam_browser_sessions (
-  session_hash,
-  session_handle,
-  client_cache_partition,
+const upsertBrowserAccount = `-- name: UpsertBrowserAccount :exec
+INSERT INTO iam_browser_accounts (
+  account_handle,
+  client_hash,
+  state,
   subject,
   email,
   display_name,
@@ -652,9 +1002,9 @@ INSERT INTO iam_browser_sessions (
   selected_org_id,
   available_org_contexts,
   user_claims,
-  id_token,
-  access_token,
-  refresh_token,
+  id_token_ciphertext,
+  access_token_ciphertext,
+  refresh_token_ciphertext,
   token_scope,
   expires_at,
   created_client_ip,
@@ -726,9 +1076,8 @@ INSERT INTO iam_browser_sessions (
   $29,
   now()
 )
-ON CONFLICT (session_hash) DO UPDATE SET
-  client_cache_partition = EXCLUDED.client_cache_partition,
-  subject = EXCLUDED.subject,
+ON CONFLICT (client_hash, subject) DO UPDATE SET
+  state = EXCLUDED.state,
   email = EXCLUDED.email,
   display_name = EXCLUDED.display_name,
   preferred_username = EXCLUDED.preferred_username,
@@ -737,9 +1086,9 @@ ON CONFLICT (session_hash) DO UPDATE SET
   selected_org_id = EXCLUDED.selected_org_id,
   available_org_contexts = EXCLUDED.available_org_contexts,
   user_claims = EXCLUDED.user_claims,
-  id_token = EXCLUDED.id_token,
-  access_token = EXCLUDED.access_token,
-  refresh_token = EXCLUDED.refresh_token,
+  id_token_ciphertext = EXCLUDED.id_token_ciphertext,
+  access_token_ciphertext = EXCLUDED.access_token_ciphertext,
+  refresh_token_ciphertext = EXCLUDED.refresh_token_ciphertext,
   token_scope = EXCLUDED.token_scope,
   expires_at = EXCLUDED.expires_at,
   last_seen_client_ip = EXCLUDED.last_seen_client_ip,
@@ -758,10 +1107,10 @@ ON CONFLICT (session_hash) DO UPDATE SET
   updated_at = now()
 `
 
-type UpsertBrowserSessionParams struct {
-	SessionHash              string
-	SessionHandle            string
-	ClientCachePartition     string
+type UpsertBrowserAccountParams struct {
+	AccountHandle            string
+	ClientHash               string
+	State                    string
 	Subject                  string
 	Email                    pgtype.Text
 	DisplayName              pgtype.Text
@@ -771,9 +1120,9 @@ type UpsertBrowserSessionParams struct {
 	SelectedOrgID            pgtype.Text
 	AvailableOrgContextsJson []byte
 	UserClaimsJson           []byte
-	IDToken                  pgtype.Text
-	AccessToken              string
-	RefreshToken             pgtype.Text
+	IDTokenCiphertext        pgtype.Text
+	AccessTokenCiphertext    string
+	RefreshTokenCiphertext   pgtype.Text
 	TokenScope               pgtype.Text
 	ExpiresAt                pgtype.Timestamptz
 	ClientIp                 string
@@ -790,11 +1139,11 @@ type UpsertBrowserSessionParams struct {
 	GeoCity                  string
 }
 
-func (q *Queries) UpsertBrowserSession(ctx context.Context, arg UpsertBrowserSessionParams) error {
-	_, err := q.db.Exec(ctx, upsertBrowserSession,
-		arg.SessionHash,
-		arg.SessionHandle,
-		arg.ClientCachePartition,
+func (q *Queries) UpsertBrowserAccount(ctx context.Context, arg UpsertBrowserAccountParams) error {
+	_, err := q.db.Exec(ctx, upsertBrowserAccount,
+		arg.AccountHandle,
+		arg.ClientHash,
+		arg.State,
 		arg.Subject,
 		arg.Email,
 		arg.DisplayName,
@@ -804,9 +1153,9 @@ func (q *Queries) UpsertBrowserSession(ctx context.Context, arg UpsertBrowserSes
 		arg.SelectedOrgID,
 		arg.AvailableOrgContextsJson,
 		arg.UserClaimsJson,
-		arg.IDToken,
-		arg.AccessToken,
-		arg.RefreshToken,
+		arg.IDTokenCiphertext,
+		arg.AccessTokenCiphertext,
+		arg.RefreshTokenCiphertext,
 		arg.TokenScope,
 		arg.ExpiresAt,
 		arg.ClientIp,
@@ -821,6 +1170,180 @@ func (q *Queries) UpsertBrowserSession(ctx context.Context, arg UpsertBrowserSes
 		arg.GeoCountryCode,
 		arg.GeoRegion,
 		arg.GeoCity,
+	)
+	return err
+}
+
+const upsertBrowserClient = `-- name: UpsertBrowserClient :exec
+INSERT INTO iam_browser_clients (
+  client_hash,
+  client_handle,
+  active_account_handle,
+  client_cache_partition,
+  expires_at,
+  created_client_ip,
+  created_client_ip_trusted,
+  created_client_ip_source,
+  created_edge_peer_ip,
+  created_user_agent,
+  created_device_label,
+  created_device_kind,
+  created_browser_name,
+  created_os_name,
+  created_geo_country_code,
+  created_geo_region,
+  created_geo_city,
+  last_seen_client_ip,
+  last_seen_client_ip_trusted,
+  last_seen_client_ip_source,
+  last_seen_edge_peer_ip,
+  last_seen_user_agent,
+  last_seen_device_label,
+  last_seen_device_kind,
+  last_seen_browser_name,
+  last_seen_os_name,
+  last_seen_geo_country_code,
+  last_seen_geo_region,
+  last_seen_geo_city,
+  last_seen_at
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6,
+  $7,
+  $8,
+  $9,
+  $10,
+  $11,
+  $12,
+  $13,
+  $14,
+  $15,
+  $16,
+  $17,
+  $6,
+  $7,
+  $8,
+  $9,
+  $10,
+  $11,
+  $12,
+  $13,
+  $14,
+  $15,
+  $16,
+  $17,
+  now()
+)
+ON CONFLICT (client_hash) DO UPDATE SET
+  client_cache_partition = EXCLUDED.client_cache_partition,
+  expires_at = EXCLUDED.expires_at,
+  last_seen_client_ip = EXCLUDED.last_seen_client_ip,
+  last_seen_client_ip_trusted = EXCLUDED.last_seen_client_ip_trusted,
+  last_seen_client_ip_source = EXCLUDED.last_seen_client_ip_source,
+  last_seen_edge_peer_ip = EXCLUDED.last_seen_edge_peer_ip,
+  last_seen_user_agent = EXCLUDED.last_seen_user_agent,
+  last_seen_device_label = EXCLUDED.last_seen_device_label,
+  last_seen_device_kind = EXCLUDED.last_seen_device_kind,
+  last_seen_browser_name = EXCLUDED.last_seen_browser_name,
+  last_seen_os_name = EXCLUDED.last_seen_os_name,
+  last_seen_geo_country_code = EXCLUDED.last_seen_geo_country_code,
+  last_seen_geo_region = EXCLUDED.last_seen_geo_region,
+  last_seen_geo_city = EXCLUDED.last_seen_geo_city,
+  last_seen_at = EXCLUDED.last_seen_at,
+  updated_at = now()
+`
+
+type UpsertBrowserClientParams struct {
+	ClientHash           string
+	ClientHandle         string
+	ActiveAccountHandle  pgtype.Text
+	ClientCachePartition string
+	ExpiresAt            pgtype.Timestamptz
+	ClientIp             string
+	ClientIpTrusted      bool
+	ClientIpSource       string
+	EdgePeerIp           string
+	UserAgent            string
+	DeviceLabel          string
+	DeviceKind           string
+	BrowserName          string
+	OsName               string
+	GeoCountryCode       string
+	GeoRegion            string
+	GeoCity              string
+}
+
+func (q *Queries) UpsertBrowserClient(ctx context.Context, arg UpsertBrowserClientParams) error {
+	_, err := q.db.Exec(ctx, upsertBrowserClient,
+		arg.ClientHash,
+		arg.ClientHandle,
+		arg.ActiveAccountHandle,
+		arg.ClientCachePartition,
+		arg.ExpiresAt,
+		arg.ClientIp,
+		arg.ClientIpTrusted,
+		arg.ClientIpSource,
+		arg.EdgePeerIp,
+		arg.UserAgent,
+		arg.DeviceLabel,
+		arg.DeviceKind,
+		arg.BrowserName,
+		arg.OsName,
+		arg.GeoCountryCode,
+		arg.GeoRegion,
+		arg.GeoCity,
+	)
+	return err
+}
+
+const upsertBrowserResourceToken = `-- name: UpsertBrowserResourceToken :exec
+INSERT INTO iam_browser_resource_tokens (
+  account_handle,
+  audience,
+  selected_org_id,
+  scope_hash,
+  access_token_ciphertext,
+  token_scope,
+  expires_at
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6,
+  $7
+)
+ON CONFLICT (account_handle, audience, selected_org_id, scope_hash) DO UPDATE SET
+  access_token_ciphertext = EXCLUDED.access_token_ciphertext,
+  token_scope = EXCLUDED.token_scope,
+  expires_at = EXCLUDED.expires_at,
+  updated_at = now()
+`
+
+type UpsertBrowserResourceTokenParams struct {
+	AccountHandle         string
+	Audience              string
+	SelectedOrgID         string
+	ScopeHash             string
+	AccessTokenCiphertext string
+	TokenScope            pgtype.Text
+	ExpiresAt             pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertBrowserResourceToken(ctx context.Context, arg UpsertBrowserResourceTokenParams) error {
+	_, err := q.db.Exec(ctx, upsertBrowserResourceToken,
+		arg.AccountHandle,
+		arg.Audience,
+		arg.SelectedOrgID,
+		arg.ScopeHash,
+		arg.AccessTokenCiphertext,
+		arg.TokenScope,
+		arg.ExpiresAt,
 	)
 	return err
 }

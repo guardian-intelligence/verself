@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  accountSelectionLoginPath,
   resolveAuthenticatedShellFallbackPath,
   resolveShellFallbackPath,
   shellNotFoundFallbackData,
@@ -35,6 +36,8 @@ describe("route boundary fallback links", () => {
       resolveAuthenticatedShellFallbackPath(
         {
           cachePartition: "user:1",
+          clientHandle: "bc_1",
+          accountHandle: "ba_1",
           isAuthenticated: true,
           orgId: "org_1",
           selectedOrgId: "org_1",
@@ -50,6 +53,8 @@ describe("route boundary fallback links", () => {
       resolveAuthenticatedShellFallbackPath(
         {
           cachePartition: "user:1",
+          clientHandle: "bc_1",
+          accountHandle: "ba_1",
           isAuthenticated: true,
           orgId: null,
           selectedOrgId: null,
@@ -58,5 +63,11 @@ describe("route boundary fallback links", () => {
         new Map(),
       ),
     ).toBe("/onboarding");
+  });
+
+  it("preserves org route intent when asking the browser to select an account", () => {
+    expect(accountSelectionLoginPath("/acme-corp")).toBe(
+      "/login?prompt=select_account&redirect=%2Facme-corp",
+    );
   });
 });

@@ -20,7 +20,7 @@ export function PublicTopBar() {
           </Link>
           <Link
             to="/login"
-            search={{ redirect: undefined }}
+            search={{}}
             className="flex h-9 items-center rounded-md border border-white/15 px-3 text-sm font-medium text-white/90 transition-colors hover:bg-white/10"
           >
             Console

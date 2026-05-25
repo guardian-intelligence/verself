@@ -607,6 +607,7 @@ If a receivable was created under consent and a later correction proves the cust
 Showback is an operator accounting projection over the same customer-facing machinery. It is not a separate usage path.
 
 - Internal/dogfood usage uses internal contracts, contract grants, and the same reservation and settlement flow as customer usage. The billing document nets to zero through explicit adjustments rather than bypassing the billing service.
+- Operator seeding starts from an IAM-created organization, then calls billing internal APIs. `EnsureBillingOrganization` creates/provisions billing state without changing existing trust tier or overage policy. `SetOrganizationTrustTier` promotes or demotes trust posture. `ApplyBillingPlanPromotion` creates an internal 100% off paid-plan contract. `CancelBillingPlanPromotion` schedules that internal contract for cancellation through the normal period-end contract state machine.
 - Free-tier usage drains `operator_free_tier_expense`-funded grants and reports consumed value by product, bucket, SKU, org, and period.
 - No-consent leaked usage creates `invoice_adjustments` with `cost_center`, `expense_category`, `recoverable = false`, and `affects_customer_balance = false`; optional TigerBeetle showback transfers mirror the adjustment total.
 - Promo campaigns create promo grants from `operator_promo_expense`, not ad hoc balance edits.

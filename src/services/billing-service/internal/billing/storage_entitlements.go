@@ -10,11 +10,9 @@ import (
 const (
 	SandboxProductID = "sandbox"
 
-	durableStorageFreeQuotaBytes       = uint64(10 << 30)
-	durableStorageDefaultQuotaBytes    = uint64(256 << 30)
-	durableStorageTeamQuotaBytes       = uint64(512 << 30)
-	durableStorageBusinessQuotaBytes   = uint64(1 << 40)
-	durableStorageEnterpriseQuotaBytes = uint64(4 << 40)
+	durableStorageFreeQuotaBytes       = uint64(20 << 30)
+	durableStorageProQuotaBytes        = uint64(200 << 30)
+	durableStorageEnterpriseQuotaBytes = uint64(500 << 30)
 )
 
 type StorageEntitlement struct {
@@ -63,26 +61,16 @@ func durableStorageQuotaBytesForPlan(planID, tier string) uint64 {
 	switch key {
 	case "free", "sandbox-free", "starter":
 		return durableStorageFreeQuotaBytes
-	case "sandbox-default", "default", "payg", "metered":
-		return durableStorageDefaultQuotaBytes
-	case "team":
-		return durableStorageTeamQuotaBytes
-	case "pro", "business":
-		return durableStorageBusinessQuotaBytes
-	case "enterprise":
+	case "pro", "sandbox-pro", "sandbox-default", "default", "payg", "metered":
+		return durableStorageProQuotaBytes
+	case "enterprise", "sandbox-enterprise":
 		return durableStorageEnterpriseQuotaBytes
 	}
 	if strings.Contains(key, "enterprise") {
 		return durableStorageEnterpriseQuotaBytes
 	}
-	if strings.Contains(key, "business") || strings.Contains(key, "pro") {
-		return durableStorageBusinessQuotaBytes
-	}
-	if strings.Contains(key, "team") {
-		return durableStorageTeamQuotaBytes
-	}
-	if strings.Contains(key, "default") || strings.Contains(key, "payg") {
-		return durableStorageDefaultQuotaBytes
+	if strings.Contains(key, "pro") || strings.Contains(key, "default") || strings.Contains(key, "payg") || strings.Contains(key, "metered") {
+		return durableStorageProQuotaBytes
 	}
 	return durableStorageFreeQuotaBytes
 }

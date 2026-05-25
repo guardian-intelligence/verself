@@ -504,7 +504,14 @@ func (c CLI) bearerTokenWithProfile(tokenFile string) (string, *ProfileRecord, e
 	if err != nil {
 		return "", nil, errors.New("VERSELF_TOKEN, VERSELF_TOKEN_FILE, --token-file, or auth profile is required")
 	}
-	tokenValue, err := store.ReadCredential(profile.TokenRef)
+	if strings.TrimSpace(profile.ActiveAccount) == "" {
+		return "", nil, errors.New("active auth profile has no selected account; run `verself auth accounts use`")
+	}
+	account, err := store.LoadAccount(profile.Name, profile.ActiveAccount)
+	if err != nil {
+		return "", nil, err
+	}
+	tokenValue, err := store.ReadCredential(account.TokenRef)
 	if err != nil {
 		return "", nil, err
 	}
@@ -515,6 +522,7 @@ func (c CLI) bearerTokenWithProfile(tokenFile string) (string, *ProfileRecord, e
 	if tokenValue == "" {
 		return "", nil, errors.New("active auth profile token is empty")
 	}
+	profile.Account = &account
 	return tokenValue, &profile, nil
 }
 
@@ -591,15 +599,19 @@ func writeEnvironment(w io.Writer, environment verself.ProjectEnvironment) error
 }
 
 func readTokenFile(path string) (string, error) {
+	return readOwnerOnlySecretFile(path, "token file")
+}
+
+func readOwnerOnlySecretFile(path, label string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("token file %s must be a regular file", path)
+		return "", fmt.Errorf("%s %s must be a regular file", label, path)
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		return "", fmt.Errorf("token file %s must be owner-only", path)
+		return "", fmt.Errorf("%s %s must be owner-only", label, path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -607,7 +619,7 @@ func readTokenFile(path string) (string, error) {
 	}
 	token := strings.TrimSpace(string(data))
 	if token == "" {
-		return "", fmt.Errorf("token file %s is empty", path)
+		return "", fmt.Errorf("%s %s is empty", label, path)
 	}
 	return token, nil
 }

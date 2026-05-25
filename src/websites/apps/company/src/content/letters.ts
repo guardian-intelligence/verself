@@ -71,9 +71,9 @@ function parseLetter(path: string, mod: unknown): Letter {
 
 const RAW_LETTERS = import.meta.glob<unknown>("./letters/*.md", { eager: true });
 
-export const LETTERS: readonly Letter[] = Object.entries(RAW_LETTERS).map(([path, mod]) =>
-  parseLetter(path, mod),
-);
+export const LETTERS: readonly Letter[] = Object.entries(RAW_LETTERS)
+  .map(([path, mod]) => parseLetter(path, mod))
+  .filter((letter) => letter.summary.trim() !== "");
 
 export function letterBySlug(slug: string): Letter | undefined {
   return LETTERS.find((letter) => letter.slug === slug);

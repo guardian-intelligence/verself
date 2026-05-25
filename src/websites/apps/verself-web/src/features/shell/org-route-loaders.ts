@@ -8,6 +8,7 @@ import { type AuthenticatedAuth } from "@verself/auth-web/isomorphic";
 import { iamApiClient } from "~/lib/iam-api-client";
 import { selectActiveOrganization } from "~/server-fns/auth";
 import {
+  accountSelectionLoginPath,
   resolveAuthenticatedShellFallbackPath,
   shellNotFoundFallbackData,
 } from "./fallback-routing";
@@ -44,6 +45,9 @@ export async function loadActiveOrganizationRoute({
     ([, organization]) => organization.slug === orgSlug,
   );
   if (!match) {
+    if (organizations.size === 0) {
+      throw redirect({ href: accountSelectionLoginPath(href), replace: true });
+    }
     throw notFound({
       data: shellNotFoundFallbackData(resolveAuthenticatedShellFallbackPath(auth, organizations)),
     });

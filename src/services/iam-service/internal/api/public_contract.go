@@ -353,6 +353,7 @@ type publicHandlers struct {
 	installationID string
 	productBaseURL string
 	inviteNotifier InviteNotifier
+	signupNotifier SignupNotifier
 }
 
 func (h publicHandlers) AcceptMemberInvite(ctx context.Context, input *contractapi.AcceptMemberInviteInput) (*contractapi.AcceptMemberInviteOutput, error) {
@@ -361,18 +362,131 @@ func (h publicHandlers) AcceptMemberInvite(ctx context.Context, input *contracta
 	}
 	acceptance, err := h.service.CompleteMemberInvite(ctx, identity.CompleteMemberInviteRequest{
 		AcceptanceToken: string(input.Body.AcceptanceToken),
-		Password:        string(input.Body.Credential.Password),
 	})
 	if err != nil {
 		return nil, inviteAcceptanceContractError(ctx, err)
 	}
 	publicOrgID := contractapi.OrgID(acceptance.OrgID)
 	publicMemberID := publicMemberID(acceptance.UserID)
+	loginURL := h.requiredAccountLoginURL(requiredAccountLogin{
+		Purpose:         "invite",
+		RequiredSubject: acceptance.UserID,
+		RequiredEmail:   acceptance.Email,
+		RequiredOrgID:   acceptance.OrgID,
+	})
 	return &contractapi.AcceptMemberInviteOutput{Body: contractapi.MemberInviteAcceptanceSummary{
 		OrgID:        publicOrgID,
 		MemberID:     publicMemberID,
 		ResourceName: publicMemberResourceName(h.installationID, publicOrgID, publicMemberID),
-		LoginURL:     h.loginURL(),
+		LoginURL:     loginURL,
+		LoginIntent: &contractapi.RequiredAccountLoginIntent{
+			LoginURL:        loginURL,
+			Purpose:         "invite",
+			RequiredSubject: contractapi.SubjectId(acceptance.UserID),
+			RequiredEmail:   contractapi.EmailAddress(acceptance.Email),
+			RequiredOrgID:   contractapi.OrgID(acceptance.OrgID),
+		},
+	}}, nil
+}
+
+func (h publicHandlers) CheckOrganizationSlugAvailability(ctx context.Context, input *contractapi.CheckOrganizationSlugAvailabilityInput) (*contractapi.CheckOrganizationSlugAvailabilityOutput, error) {
+	if input == nil {
+		return nil, badRequest(ctx, "invalid-organization-slug", "organization slug request is invalid", nil)
+	}
+	available, err := h.service.OrganizationSlugAvailability(ctx, string(input.Slug))
+	if err != nil {
+		return nil, identityError(ctx, err)
+	}
+	return &contractapi.CheckOrganizationSlugAvailabilityOutput{Body: contractapi.OrganizationSlugAvailability{
+		Slug:      contractapi.OrgSlug(strings.TrimSpace(string(input.Slug))),
+		Available: available,
+	}}, nil
+}
+
+func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.StartSignupInput) (*contractapi.StartSignupOutput, error) {
+	if input == nil {
+		return nil, badRequest(ctx, "invalid-signup", "signup request is invalid", nil)
+	}
+	result, err := h.service.StartSignup(ctx, identity.StartSignupRequest{
+		Email:            string(input.Body.Email),
+		OrganizationName: string(input.Body.OrganizationDisplayName),
+		OrganizationSlug: contractString(input.Body.OrganizationSlug),
+		GivenName:        contractString(input.Body.GivenName),
+		FamilyName:       contractString(input.Body.FamilyName),
+		IdempotencyKey:   string(input.IdempotencyKey),
+	})
+	if err != nil {
+		return nil, identityError(ctx, err)
+	}
+	if result.SendVerificationEmail() {
+		if h.signupNotifier == nil {
+			if result.CreatedIntent() {
+				_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
+			}
+			return nil, internalFailure(ctx, "signup-notifier-unavailable", "signup notification delivery is unavailable", nil)
+		}
+		actionURL, err := h.signupVerificationActionURL(result.Intent, result.VerificationToken)
+		if err != nil {
+			if result.CreatedIntent() {
+				_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
+			}
+			return nil, internalFailure(ctx, "signup-url-invalid", "signup verification URL could not be built", err)
+		}
+		if err := h.signupNotifier.SendSignupVerification(ctx, SignupVerificationNotification{
+			SignupIntentID:          result.Intent.SignupIntentID,
+			OrgID:                   result.Intent.OrgID,
+			Email:                   result.Intent.Email,
+			OrganizationDisplayName: result.Intent.OrganizationDisplayName,
+			VerificationFingerprint: signupVerificationFingerprint(result.VerificationToken),
+			ActionURL:               actionURL,
+			ResourceName:            publicSignupIntentResourceName(h.installationID, result.Intent.SignupIntentID),
+		}); err != nil {
+			if result.CreatedIntent() {
+				_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
+			}
+			return nil, upstreamFailure(ctx, "signup-notification-failed", "signup notification could not be queued", err)
+		}
+	}
+	return &contractapi.StartSignupOutput{Body: contractapi.SignupStartResult{
+		Message:               signupStartMessage(result.ResponseExpiresAt),
+		Status:                "accepted",
+		VerificationExpiresAt: result.ResponseExpiresAt.UTC().Format(time.RFC3339Nano),
+	}}, nil
+}
+
+func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.VerifySignupInput) (*contractapi.VerifySignupOutput, error) {
+	if input == nil {
+		return nil, badRequest(ctx, "invalid-signup-verification", "signup verification request is invalid", nil)
+	}
+	result, err := h.service.VerifySignup(ctx, identity.VerifySignupRequest{
+		SignupIntentID:          string(input.SignupIntentID),
+		VerificationToken:       string(input.Body.VerificationToken),
+		OrganizationDisplayName: contractString(input.Body.OrganizationDisplayName),
+		OrganizationSlug:        contractString(input.Body.OrganizationSlug),
+		IdempotencyKey:          string(input.IdempotencyKey),
+	})
+	if err != nil {
+		return nil, identityError(ctx, err)
+	}
+	loginURL := h.requiredAccountLoginURL(requiredAccountLogin{
+		Purpose:         "signup",
+		LoginHint:       result.Intent.Email,
+		RequiredSubject: result.Intent.IdentityProviderUserID,
+		RequiredEmail:   result.Intent.Email,
+		RequiredOrgID:   result.Intent.OrgID,
+		RedirectTo:      "/" + result.Organization.Slug,
+	})
+	return &contractapi.VerifySignupOutput{Body: contractapi.VerifySignupResult{
+		Organization: h.organizationSummary(result.Organization),
+		LoginURL:     loginURL,
+		LoginIntent: &contractapi.RequiredAccountLoginIntent{
+			LoginURL:        loginURL,
+			Purpose:         "signup",
+			RequiredSubject: contractapi.SubjectId(result.Intent.IdentityProviderUserID),
+			RequiredEmail:   contractapi.EmailAddress(result.Intent.Email),
+			RequiredOrgID:   contractapi.OrgID(result.Intent.OrgID),
+			RedirectTo:      contractapi.BrowserRedirectPath("/" + result.Organization.Slug),
+		},
 	}}, nil
 }
 
@@ -404,19 +518,6 @@ func (h publicHandlers) CreateOrganization(ctx context.Context, input *contracta
 	})
 	if err != nil {
 		return nil, identityError(ctx, err)
-	}
-	if h.authz == nil {
-		return nil, authzError(ctx, authz.ErrUnavailable)
-	}
-	_, err = h.authz.SetOrganizationPolicy(ctx, org.OrgID, authz.Policy{
-		Version: 1,
-		Bindings: []authz.PolicyBinding{{
-			Role:    "roles/owner",
-			Members: []string{"user:" + authIdentity.Subject},
-		}},
-	}, contractapi.CreateOrganization.Descriptor.OperationID)
-	if err != nil {
-		return nil, authzError(ctx, err)
 	}
 	return &contractapi.CreateOrganizationOutput{Body: h.organizationSummary(org)}, nil
 }
@@ -703,6 +804,15 @@ func (h publicHandlers) memberInvitationSummary(orgID string, invitation identit
 	}
 }
 
+func signupStartMessage(expiresAt time.Time) string {
+	return fmt.Sprintf("Check your email to continue. If signup is available for this address, the newest signup link is valid until %s.", expiresAt.UTC().Format(time.RFC3339Nano))
+}
+
+func signupVerificationFingerprint(token string) string {
+	fingerprint, _ := identity.SecretHash(token)
+	return fingerprint
+}
+
 func (h publicHandlers) memberInviteActionURL(org identity.Organization, invitation identity.InviteMemberResult) (string, error) {
 	if strings.TrimSpace(invitation.AcceptanceToken) == "" {
 		return "", fmt.Errorf("invite acceptance token is required")
@@ -728,14 +838,73 @@ func (h publicHandlers) memberInviteActionURL(org identity.Organization, invitat
 	return base.String(), nil
 }
 
-func (h publicHandlers) loginURL() contractapi.LoginURL {
+func (h publicHandlers) signupVerificationActionURL(intent identity.SignupIntent, verificationToken string) (string, error) {
+	if strings.TrimSpace(verificationToken) == "" {
+		return "", fmt.Errorf("verification token is required")
+	}
+	base, err := url.Parse(strings.TrimSpace(h.productBaseURL))
+	if err != nil {
+		return "", err
+	}
+	if base.Scheme == "" || base.Host == "" {
+		return "", fmt.Errorf("product base URL must be absolute")
+	}
+	base.Path = "/signup/verify"
+	base.RawPath = ""
+	base.RawQuery = ""
+	base.Fragment = ""
+	query := base.Query()
+	query.Set("signup_intent_id", strings.TrimSpace(intent.SignupIntentID))
+	query.Set("verification_token", verificationToken)
+	query.Set("organization_display_name", intent.OrganizationDisplayName)
+	if strings.TrimSpace(intent.RequestedOrganizationSlug) != "" {
+		query.Set("organization_slug", strings.TrimSpace(intent.RequestedOrganizationSlug))
+	}
+	base.RawQuery = query.Encode()
+	return base.String(), nil
+}
+
+type requiredAccountLogin struct {
+	Purpose         string
+	LoginHint       string
+	RequiredSubject string
+	RequiredEmail   string
+	RequiredOrgID   string
+	RedirectTo      string
+}
+
+func (h publicHandlers) requiredAccountLoginURL(input requiredAccountLogin) contractapi.LoginURL {
+	query := url.Values{}
+	query.Set("prompt", "select_account")
+	if strings.TrimSpace(input.Purpose) != "" {
+		query.Set("purpose", strings.TrimSpace(input.Purpose))
+	}
+	if strings.TrimSpace(input.LoginHint) != "" {
+		query.Set("login_hint", strings.TrimSpace(input.LoginHint))
+	}
+	if strings.TrimSpace(input.RequiredSubject) != "" {
+		query.Set("required_subject", strings.TrimSpace(input.RequiredSubject))
+	}
+	if strings.TrimSpace(input.RequiredEmail) != "" {
+		query.Set("required_email", strings.TrimSpace(input.RequiredEmail))
+	}
+	if strings.TrimSpace(input.RequiredOrgID) != "" {
+		query.Set("required_org_id", strings.TrimSpace(input.RequiredOrgID))
+	}
+	if strings.TrimSpace(input.RedirectTo) != "" {
+		query.Set("redirect", strings.TrimSpace(input.RedirectTo))
+	}
+	return h.loginURLWithQuery(query)
+}
+
+func (h publicHandlers) loginURLWithQuery(query url.Values) contractapi.LoginURL {
 	base, err := url.Parse(strings.TrimSpace(h.productBaseURL))
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return contractapi.LoginURL("/login")
 	}
 	base.Path = "/login"
 	base.RawPath = ""
-	base.RawQuery = ""
+	base.RawQuery = query.Encode()
 	base.Fragment = ""
 	return contractapi.LoginURL(base.String())
 }
@@ -872,6 +1041,10 @@ func authzPolicy(policy contractapi.IAMPolicy) (authz.Policy, error) {
 
 func publicOrganizationResourceName(installationID string, orgID contractapi.OrgID) contractapi.OrganizationResourceName {
 	return contractapi.OrganizationResourceName(fmt.Sprintf("urn:verself:%s:orgs/%s", strings.TrimSpace(installationID), orgID))
+}
+
+func publicSignupIntentResourceName(installationID string, signupIntentID string) string {
+	return fmt.Sprintf("urn:verself:%s:signup-intents/%s", strings.TrimSpace(installationID), signupIntentID)
 }
 
 func publicMemberResourceName(installationID string, orgID contractapi.OrgID, memberID contractapi.MemberID) contractapi.MemberResourceName {

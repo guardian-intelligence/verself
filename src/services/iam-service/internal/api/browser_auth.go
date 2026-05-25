@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -28,18 +30,21 @@ import (
 	"github.com/verself/iam-service/internal/authz"
 	"github.com/verself/iam-service/internal/identity"
 	identitystore "github.com/verself/iam-service/internal/store"
+	runtimeiam "github.com/verself/service-runtime/iam"
 	"github.com/verself/service-runtime/requestmeta"
 )
 
 const (
-	browserAuthCookieName      = "verself_session"
+	browserAuthCookieName      = "verself_client"
 	browserAuthLoginCookieName = "verself_login"
 	browserAuthSessionTTL      = 30 * 24 * time.Hour
 	browserAuthLoginTTL        = 5 * time.Minute
 	browserAuthRefreshLeeway   = 60 * time.Second
-	browserAuthSessionPrefix   = "bs_"
+	browserAuthClientPrefix    = "bc_"
+	browserAuthAccountPrefix   = "ba_"
 	browserAuthCallbackPath    = "/api/v1/auth/callback"
 	browserAuthDefaultRedirect = "/"
+	browserAuthJSONBodyMax     = 4096
 	zitadelResourceOwnerID     = "urn:zitadel:iam:user:resourceowner:id"
 )
 
@@ -70,6 +75,7 @@ type BrowserAuth struct {
 	publicBaseURL      *url.URL
 	postLogoutURL      string
 	endSessionEndpoint string
+	tokenVault         browserTokenVault
 }
 
 type browserAuthProviderMetadata struct {
@@ -119,6 +125,10 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	if err := provider.Claims(&metadata); err != nil {
 		return nil, fmt.Errorf("identity browser auth oidc provider metadata: %w", err)
 	}
+	tokenVault, err := newBrowserTokenVault(cfg.ClientSecret)
+	if err != nil {
+		return nil, fmt.Errorf("identity browser auth token vault: %w", err)
+	}
 	scopes := []string{
 		"openid",
 		"profile",
@@ -151,6 +161,7 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		publicBaseURL:      publicBaseURL,
 		postLogoutURL:      postLogoutURL,
 		endSessionEndpoint: strings.TrimSpace(metadata.EndSessionEndpoint),
+		tokenVault:         tokenVault,
 	}, nil
 }
 
@@ -187,33 +198,53 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch r.URL.Path {
 	case "/login":
-		a.requireMethod(w, r, http.MethodGet, a.handleLogin)
+		a.route(w, r, http.MethodGet, "browser-login", rateLimitSignup, 0, a.handleLogin)
 	case "/callback":
-		a.requireMethod(w, r, http.MethodGet, a.handleCallback)
+		a.route(w, r, http.MethodGet, "browser-callback", rateLimitSignup, 0, a.handleCallback)
 	case "/session":
-		a.requireMethod(w, r, http.MethodGet, a.handleSession)
+		a.route(w, r, http.MethodGet, "browser-session-read", rateLimitRead, 0, a.handleSession)
 	case "/organization":
-		a.requireMethod(w, r, http.MethodPost, a.handleOrganization)
+		a.route(w, r, http.MethodPost, "browser-organization-select", rateLimitIAMMutation, browserAuthJSONBodyMax, a.handleOrganization)
 	case "/resource-token":
-		a.requireMethod(w, r, http.MethodPost, a.handleResourceToken)
+		a.route(w, r, http.MethodPost, "browser-resource-token-create", rateLimitIAMMutation, 0, a.handleResourceToken)
 	case "/logout":
-		a.requireMethod(w, r, http.MethodGet, a.handleLogout)
+		a.route(w, r, http.MethodGet, "browser-logout", rateLimitIAMMutation, 0, a.handleLogout)
+	case "/accounts":
+		switch r.Method {
+		case http.MethodGet:
+			a.route(w, r, http.MethodGet, "browser-accounts-list", rateLimitRead, 0, a.handleAccounts)
+		case http.MethodPost:
+			a.route(w, r, http.MethodPost, "browser-account-select", rateLimitIAMMutation, browserAuthJSONBodyMax, a.handleAccountSelect)
+		default:
+			w.Header().Set("Allow", "GET, POST")
+			a.writeProblem(w, r, http.StatusMethodNotAllowed, "method-not-allowed", "method not allowed")
+		}
 	case "/sessions":
-		a.requireMethod(w, r, http.MethodGet, a.handleSessions)
+		a.route(w, r, http.MethodGet, "browser-sessions-list", rateLimitRead, 0, a.handleSessions)
 	default:
-		if strings.HasPrefix(r.URL.Path, "/sessions/") {
-			a.requireMethod(w, r, http.MethodDelete, a.handleSessionRevoke)
+		if strings.HasPrefix(r.URL.Path, "/accounts/") {
+			a.route(w, r, http.MethodDelete, "browser-account-remove", rateLimitIAMMutation, 0, a.handleAccountRemove)
 			return
 		}
-		http.NotFound(w, r)
+		if strings.HasPrefix(r.URL.Path, "/sessions/") {
+			a.route(w, r, http.MethodDelete, "browser-session-revoke", rateLimitIAMMutation, 0, a.handleSessionRevoke)
+			return
+		}
+		a.writeProblem(w, r, http.StatusNotFound, "not-found", "auth route not found")
 	}
 }
 
-func (a *BrowserAuth) requireMethod(w http.ResponseWriter, r *http.Request, method string, next http.HandlerFunc) {
+func (a *BrowserAuth) route(w http.ResponseWriter, r *http.Request, method string, operation string, class runtimeiam.RateLimitClass, maxBodyBytes int64, next http.HandlerFunc) {
 	if r.Method != method {
 		w.Header().Set("Allow", method)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		a.writeProblem(w, r, http.StatusMethodNotAllowed, "method-not-allowed", "method not allowed")
 		return
+	}
+	if !a.allowBrowserAuthRequest(w, r, operation, class) {
+		return
+	}
+	if maxBodyBytes > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	}
 	next(w, r)
 }
@@ -221,6 +252,11 @@ func (a *BrowserAuth) requireMethod(w http.ResponseWriter, r *http.Request, meth
 func (a *BrowserAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := a.q.DeleteExpiredBrowserLoginTransactions(r.Context()); err != nil {
 		a.serverError(w, "cleanup login transactions", err)
+		return
+	}
+	client, clientSecret, err := a.ensureBrowserClient(w, r)
+	if err != nil {
+		a.serverError(w, "ensure browser client", err)
 		return
 	}
 	state, err := randomToken(32)
@@ -241,21 +277,87 @@ func (a *BrowserAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
 	redirectTo := a.sanitizeRedirectTarget(r.URL.Query().Get("redirect_to"))
 	stateHash := hashToken(state)
 	if err := a.q.InsertBrowserLoginTransaction(r.Context(), identitystore.InsertBrowserLoginTransactionParams{
-		StateHash:    stateHash,
-		Nonce:        nonce,
-		CodeVerifier: verifier,
-		RedirectTo:   redirectTo,
-		ExpiresAt:    timestamptz(time.Now().UTC().Add(browserAuthLoginTTL)),
+		StateHash:       stateHash,
+		ClientHash:      client.ClientHash,
+		Nonce:           nonce,
+		CodeVerifier:    verifier,
+		RedirectTo:      redirectTo,
+		Purpose:         browserLoginPurpose(r.URL.Query().Get("purpose")),
+		LoginHint:       nullableText(normalizeEmailHint(r.URL.Query().Get("login_hint"))),
+		RequiredSubject: nullableText(strings.TrimSpace(r.URL.Query().Get("required_subject"))),
+		RequiredEmail:   nullableText(normalizeEmailHint(r.URL.Query().Get("required_email"))),
+		RequiredOrgID:   nullableText(strings.TrimSpace(r.URL.Query().Get("required_org_id"))),
+		ExpiresAt:       timestamptz(time.Now().UTC().Add(browserAuthLoginTTL)),
 	}); err != nil {
 		a.serverError(w, "persist login transaction", err)
 		return
 	}
 	a.setLoginCookie(w, stateHash)
-	http.Redirect(w, r, a.oauth.AuthCodeURL(
-		state,
+	authCodeOptions := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("nonce", nonce),
 		oauth2.S256ChallengeOption(verifier),
-	), http.StatusSeeOther)
+	}
+	if prompt := browserLoginPrompt(r.URL.Query().Get("prompt")); prompt != "" {
+		authCodeOptions = append(authCodeOptions, oauth2.SetAuthURLParam("prompt", prompt))
+	}
+	if hint := normalizeEmailHint(r.URL.Query().Get("login_hint")); hint != "" {
+		authCodeOptions = append(authCodeOptions, oauth2.SetAuthURLParam("login_hint", hint))
+	}
+	a.setClientCookie(w, clientSecret)
+	http.Redirect(w, r, a.oauth.AuthCodeURL(state, authCodeOptions...), http.StatusSeeOther)
+}
+
+func browserLoginPrompt(value string) string {
+	switch strings.TrimSpace(value) {
+	case "login":
+		return "login"
+	case "select_account":
+		return "select_account"
+	}
+	return ""
+}
+
+func browserLoginPurpose(value string) string {
+	switch strings.TrimSpace(value) {
+	case "signup", "invite", "reauth":
+		return strings.TrimSpace(value)
+	default:
+		return "login"
+	}
+}
+
+func (a *BrowserAuth) enforceLoginConstraints(ctx context.Context, pending identitystore.IamBrowserLoginTransaction, user browserUser) error {
+	if pending.RequiredSubject.Valid && pending.RequiredSubject.String != "" && user.Sub != pending.RequiredSubject.String {
+		return errors.New("required subject mismatch")
+	}
+	if pending.RequiredEmail.Valid && pending.RequiredEmail.String != "" {
+		actual := normalizeEmailHint(stringValue(user.Email))
+		required := normalizeEmailHint(pending.RequiredEmail.String)
+		if actual == "" || subtle.ConstantTimeCompare([]byte(actual), []byte(required)) != 1 {
+			return errors.New("required email mismatch")
+		}
+	}
+	if pending.RequiredOrgID.Valid && pending.RequiredOrgID.String != "" {
+		if _, ok := user.organization(pending.RequiredOrgID.String); !ok {
+			return errors.New("required organization is unavailable to account")
+		}
+	}
+	return nil
+}
+
+func (a *BrowserAuth) recordLoginConstraintFailure(ctx context.Context, pending identitystore.IamBrowserLoginTransaction, user browserUser, cause error) {
+	trace.SpanFromContext(ctx).AddEvent("iam.browser_login.constraint_failed", trace.WithAttributes(
+		attribute.String("auth.client_handle", browserClientHandle(pending.ClientHash)),
+		attribute.String("auth.login_purpose", pending.Purpose),
+		attribute.Bool("auth.required_subject", pending.RequiredSubject.Valid && pending.RequiredSubject.String != ""),
+		attribute.Bool("auth.required_email", pending.RequiredEmail.Valid && pending.RequiredEmail.String != ""),
+		attribute.Bool("auth.required_org", pending.RequiredOrgID.Valid && pending.RequiredOrgID.String != ""),
+		attribute.String("enduser.id", user.Sub),
+		attribute.String("error.type", cause.Error()),
+	))
+	if a.logger != nil {
+		a.logger.WarnContext(ctx, "browser auth login constraint failed", "subject", user.Sub, "purpose", pending.Purpose, "error", cause)
+	}
 }
 
 func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
@@ -263,33 +365,38 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if oauthErr := r.URL.Query().Get("error"); oauthErr != "" {
 		description := r.URL.Query().Get("error_description")
 		if description != "" {
-			http.Error(w, oauthErr+": "+description, http.StatusBadRequest)
+			a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-error", oauthErr+": "+description)
 			return
 		}
-		http.Error(w, oauthErr, http.StatusBadRequest)
+		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-error", oauthErr)
 		return
 	}
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	if code == "" || state == "" {
-		http.Error(w, "OIDC callback is missing code or state", http.StatusBadRequest)
+		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-invalid", "OIDC callback is missing code or state")
 		return
 	}
 	stateHash := hashToken(state)
 	loginStateHash, ok := loginStateHashFromRequest(r)
 	if !ok || subtle.ConstantTimeCompare([]byte(loginStateHash), []byte(stateHash)) != 1 {
-		http.Error(w, "OIDC callback state did not originate from this browser", http.StatusBadRequest)
+		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-state-mismatch", "OIDC callback state did not originate from this browser")
 		return
 	}
 	pending, err := a.q.DeleteBrowserLoginTransaction(r.Context(), identitystore.DeleteBrowserLoginTransactionParams{
 		StateHash: stateHash,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		http.Error(w, "OIDC callback state is missing or expired", http.StatusBadRequest)
+		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-state-expired", "OIDC callback state is missing or expired")
 		return
 	}
 	if err != nil {
 		a.serverError(w, "load login transaction", err)
+		return
+	}
+	clientSecret, ok := browserClientSecretFromRequest(r)
+	if !ok || subtle.ConstantTimeCompare([]byte(hashToken(clientSecret)), []byte(pending.ClientHash)) != 1 {
+		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-client-mismatch", "OIDC callback client did not originate from this browser")
 		return
 	}
 	tokens, err := a.exchangeToken(r.Context(), url.Values{
@@ -303,12 +410,12 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(tokens.IDToken) == "" {
-		http.Error(w, "OIDC callback returned no id_token", http.StatusBadGateway)
+		a.writeProblem(w, r, http.StatusBadGateway, "oidc-callback-id-token-missing", "OIDC callback returned no id_token")
 		return
 	}
 	verified, err := a.verifier.Verify(a.oidcContext(r.Context()), tokens.IDToken)
 	if err != nil {
-		http.Error(w, "OIDC callback returned an invalid id_token", http.StatusBadGateway)
+		a.writeProblem(w, r, http.StatusBadGateway, "oidc-callback-id-token-invalid", "OIDC callback returned an invalid id_token")
 		return
 	}
 	var idClaims map[string]any
@@ -317,7 +424,7 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if nonce, _ := idClaims["nonce"].(string); nonce != pending.Nonce {
-		http.Error(w, "OIDC callback nonce mismatch", http.StatusBadRequest)
+		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-nonce-mismatch", "OIDC callback nonce mismatch")
 		return
 	}
 	user, err := a.userSnapshot(r.Context(), tokens, idClaims, nil)
@@ -325,9 +432,9 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, "build browser auth session", err)
 		return
 	}
-	sessionID, err := randomToken(32)
-	if err != nil {
-		a.serverError(w, "generate browser session", err)
+	if err := a.enforceLoginConstraints(r.Context(), pending, user); err != nil {
+		a.recordLoginConstraintFailure(r.Context(), pending, user, err)
+		a.writeProblem(w, r, http.StatusForbidden, "login-constraint-failed", "login did not match the required account")
 		return
 	}
 	cachePartition, err := randomToken(24)
@@ -335,55 +442,64 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 		a.serverError(w, "generate browser cache partition", err)
 		return
 	}
-	sessionHandle, err := randomSessionHandle()
-	if err != nil {
-		a.serverError(w, "generate browser session handle", err)
+	accountHandle := browserAccountHandle(pending.ClientHash, user.Sub)
+	if err := a.writeAccount(r.Context(), pending.ClientHash, accountHandle, tokens, user); err != nil {
+		a.serverError(w, "persist browser account", err)
 		return
 	}
-	sessionHash := hashToken(sessionID)
-	if err := a.writeSession(r.Context(), sessionHash, sessionHandle, cachePartition, tokens, user); err != nil {
-		a.serverError(w, "persist browser session", err)
+	if err := a.q.SetBrowserClientActiveAccount(r.Context(), identitystore.SetBrowserClientActiveAccountParams{
+		AccountHandle:        nullableText(accountHandle),
+		ClientCachePartition: cachePartition,
+		ClientHash:           pending.ClientHash,
+	}); err != nil {
+		a.serverError(w, "select browser account", err)
 		return
 	}
-	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_session.created", trace.WithAttributes(
-		attribute.String("auth.session_handle", sessionHandle),
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_account.created", trace.WithAttributes(
+		attribute.String("auth.account_handle", accountHandle),
+		attribute.String("auth.client_handle", browserClientHandle(pending.ClientHash)),
 		attribute.String("enduser.id", user.Sub),
 	))
-	sendBrowserAuthActivity(r.Context(), user, sessionHandle, "browserAuth.createSession", "iam.browser_session.created", "create", "iam.browser_session.create", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
-	a.setSessionCookie(w, sessionID)
+	sendBrowserAuthActivity(r.Context(), user, accountHandle, "browserAuth.createAccount", "iam.browser_account.created", "create", "iam.browser_account.create", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
+	a.setClientCookie(w, clientSecret)
 	http.Redirect(w, r, a.absoluteRedirectTarget(pending.RedirectTo), http.StatusSeeOther)
 }
 
 func (a *BrowserAuth) handleSession(w http.ResponseWriter, r *http.Request) {
-	session, err := a.sessionFromRequest(w, r)
+	session, err := a.accountSessionFromRequest(w, r)
 	if err != nil {
-		a.serverError(w, "load browser session", err)
+		a.serverError(w, "load browser account", err)
 		return
 	}
 	if session != nil {
-		sendBrowserAuthActivity(r.Context(), session.User, session.SessionHandle, "browserAuth.readSession", "iam.browser_session.read", "read", "iam.browser_session.read", r.Method, browserAuthExternalRoute(r), http.StatusOK)
+		sendBrowserAuthActivity(r.Context(), session.User, session.AccountHandle, "browserAuth.readAccount", "iam.browser_account.read", "read", "iam.browser_account.read", r.Method, browserAuthExternalRoute(r), http.StatusOK)
 	}
 	a.writeJSON(w, http.StatusOK, snapshotForSession(session))
 }
 
 func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		http.Error(w, "origin not allowed", http.StatusForbidden)
+		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
 		return
 	}
 	var input struct {
 		OrgID string `json:"orgID"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid organization payload", http.StatusBadRequest)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, "request-body-too-large", "request body is too large")
+			return
+		}
+		a.writeProblem(w, r, http.StatusBadRequest, "invalid-organization-payload", "invalid organization payload")
 		return
 	}
 	orgID := strings.TrimSpace(input.OrgID)
 	if orgID == "" {
-		http.Error(w, "orgID is required", http.StatusBadRequest)
+		a.writeProblem(w, r, http.StatusBadRequest, "organization-required", "orgID is required")
 		return
 	}
-	session, err := a.requireSession(w, r)
+	session, err := a.requireAccount(w, r)
 	if err != nil {
 		return
 	}
@@ -395,7 +511,7 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 		}
 		session.User.AvailableOrganizations = organizations
 		if _, ok := session.User.organization(orgID); !ok {
-			http.Error(w, "selected organization is not available to this session", http.StatusForbidden)
+			a.writeProblem(w, r, http.StatusForbidden, "organization-unavailable", "selected organization is not available to this account")
 			return
 		}
 	}
@@ -404,21 +520,29 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 		a.serverError(w, "generate browser cache partition", err)
 		return
 	}
-	if err := a.q.UpdateBrowserSessionOrganization(r.Context(), identitystore.UpdateBrowserSessionOrganizationParams{
-		SelectedOrgID:        textValue(orgID),
-		ClientCachePartition: cachePartition,
-		SessionHash:          session.SessionHash,
+	if err := a.q.UpdateBrowserAccountOrganization(r.Context(), identitystore.UpdateBrowserAccountOrganizationParams{
+		SelectedOrgID: textValue(orgID),
+		AccountHandle: session.AccountHandle,
+		ClientHash:    session.ClientHash,
 	}); err != nil {
 		a.serverError(w, "update selected organization", err)
 		return
 	}
-	if err := a.q.DeleteBrowserResourceTokens(r.Context(), identitystore.DeleteBrowserResourceTokensParams{SessionHash: session.SessionHash}); err != nil {
+	if err := a.q.DeleteBrowserResourceTokens(r.Context(), identitystore.DeleteBrowserResourceTokensParams{AccountHandle: session.AccountHandle}); err != nil {
 		a.serverError(w, "delete browser resource tokens", err)
+		return
+	}
+	if err := a.q.SetBrowserClientActiveAccount(r.Context(), identitystore.SetBrowserClientActiveAccountParams{
+		AccountHandle:        nullableText(session.AccountHandle),
+		ClientCachePartition: cachePartition,
+		ClientHash:           session.ClientHash,
+	}); err != nil {
+		a.serverError(w, "rotate browser cache partition", err)
 		return
 	}
 	session.User.SelectedOrgID = &orgID
 	session.User.OrgID = &orgID
-	if err := a.writeSession(r.Context(), session.SessionHash, session.SessionHandle, cachePartition, tokenResponse{
+	if err := a.writeAccount(r.Context(), session.ClientHash, session.AccountHandle, tokenResponse{
 		AccessToken:  session.AccessToken,
 		RefreshToken: session.RefreshToken,
 		IDToken:      session.IDToken,
@@ -428,21 +552,21 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 		a.serverError(w, "persist selected organization context", err)
 		return
 	}
-	next, err := a.readSession(r.Context(), session.SessionHash)
+	next, err := a.readActiveAccount(r.Context(), session.ClientHash)
 	if err != nil {
-		a.serverError(w, "reload browser session", err)
+		a.serverError(w, "reload browser account", err)
 		return
 	}
-	sendBrowserAuthActivity(r.Context(), next.User, next.SessionHandle, "browserAuth.selectOrganization", "iam.browser_session.organization_selected", "update", "iam.browser_session.update", r.Method, browserAuthExternalRoute(r), http.StatusOK)
+	sendBrowserAuthActivity(r.Context(), next.User, next.AccountHandle, "browserAuth.selectOrganization", "iam.browser_org.selected", "update", "iam.browser_org.select", r.Method, browserAuthExternalRoute(r), http.StatusOK)
 	a.writeJSON(w, http.StatusOK, snapshotForSession(next))
 }
 
 func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		http.Error(w, "origin not allowed", http.StatusForbidden)
+		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
 		return
 	}
-	session, err := a.requireSession(w, r)
+	session, err := a.requireAccount(w, r)
 	if err != nil {
 		return
 	}
@@ -452,13 +576,14 @@ func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request
 		return
 	}
 	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_resource_token.created", trace.WithAttributes(
-		attribute.String("auth.session_handle", session.SessionHandle),
+		attribute.String("auth.account_handle", session.AccountHandle),
+		attribute.String("auth.client_handle", session.ClientHandle),
 		attribute.String("enduser.id", session.User.Sub),
 	))
 	sendBrowserAuthActivity(
 		r.Context(),
 		session.User,
-		session.SessionHandle,
+		session.AccountHandle,
 		"browserAuth.createResourceToken",
 		"iam.browser_resource_token.created",
 		"create",
@@ -471,20 +596,20 @@ func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request
 }
 
 func (a *BrowserAuth) handleSessions(w http.ResponseWriter, r *http.Request) {
-	session, err := a.requireSession(w, r)
+	session, err := a.requireAccount(w, r)
 	if err != nil {
 		return
 	}
-	rows, err := a.q.ListBrowserSessionsForSubject(r.Context(), identitystore.ListBrowserSessionsForSubjectParams{Subject: session.User.Sub})
+	rows, err := a.q.ListBrowserAccountsForClient(r.Context(), identitystore.ListBrowserAccountsForClientParams{ClientHash: session.ClientHash})
 	if err != nil {
-		a.serverError(w, "list browser sessions", err)
+		a.serverError(w, "list browser accounts", err)
 		return
 	}
 	sessions := make([]browserSessionSummary, 0, len(rows))
 	for _, row := range rows {
 		sessions = append(sessions, browserSessionSummary{
-			SessionHandle:          row.SessionHandle,
-			IsCurrent:              row.SessionHash == session.SessionHash,
+			SessionHandle:          row.AccountHandle,
+			IsCurrent:              row.AccountHandle == session.AccountHandle,
 			CreatedAt:              requiredTime(row.CreatedAt),
 			LastSeenAt:             requiredTime(row.LastSeenAt),
 			ExpiresAt:              requiredTime(row.ExpiresAt),
@@ -522,64 +647,204 @@ func (a *BrowserAuth) handleSessions(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 	}
-	sendBrowserAuthActivity(r.Context(), session.User, session.SessionHandle, "browserAuth.listSessions", "iam.browser_sessions.listed", "read", "iam.browser_session.read", r.Method, browserAuthExternalRoute(r), http.StatusOK)
+	sendBrowserAuthActivity(r.Context(), session.User, session.AccountHandle, "browserAuth.listAccountsAsSessions", "iam.browser_accounts.listed", "read", "iam.browser_account.read", r.Method, browserAuthExternalRoute(r), http.StatusOK)
 	a.writeJSON(w, http.StatusOK, browserSessionsResponse{Sessions: sessions})
+}
+
+func (a *BrowserAuth) handleAccounts(w http.ResponseWriter, r *http.Request) {
+	client, err := a.requireBrowserClient(w, r)
+	if err != nil {
+		return
+	}
+	currentAccountHandle := stringValue(stringFromText(client.ActiveAccountHandle))
+	accounts, err := a.browserAccountSummaries(r.Context(), client.ClientHash, currentAccountHandle)
+	if err != nil {
+		a.serverError(w, "list browser accounts", err)
+		return
+	}
+	if currentAccountHandle != "" {
+		if session, err := a.readActiveAccount(r.Context(), client.ClientHash); err == nil {
+			sendBrowserAuthActivity(r.Context(), session.User, session.AccountHandle, "browserAuth.listAccounts", "iam.browser_accounts.listed", "read", "iam.browser_account.read", r.Method, browserAuthExternalRoute(r), http.StatusOK)
+		}
+	}
+	a.writeJSON(w, http.StatusOK, browserAccountsResponse{Accounts: accounts})
+}
+
+func (a *BrowserAuth) handleAccountSelect(w http.ResponseWriter, r *http.Request) {
+	if !a.sameOrigin(r) {
+		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		return
+	}
+	client, err := a.requireBrowserClient(w, r)
+	if err != nil {
+		return
+	}
+	var input struct {
+		AccountHandle string `json:"accountHandle"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, "request-body-too-large", "request body is too large")
+			return
+		}
+		a.writeProblem(w, r, http.StatusBadRequest, "invalid-account-payload", "invalid account payload")
+		return
+	}
+	accountHandle := strings.TrimSpace(input.AccountHandle)
+	if accountHandle == "" {
+		a.writeProblem(w, r, http.StatusBadRequest, "account-required", "accountHandle is required")
+		return
+	}
+	account, err := a.readAccount(r.Context(), client.ClientHash, accountHandle)
+	if errors.Is(err, pgx.ErrNoRows) {
+		a.writeProblem(w, r, http.StatusForbidden, "account-unavailable", "account is not available to this browser")
+		return
+	}
+	if err != nil {
+		a.serverError(w, "load browser account", err)
+		return
+	}
+	cachePartition, err := randomToken(24)
+	if err != nil {
+		a.serverError(w, "generate browser cache partition", err)
+		return
+	}
+	if err := a.q.SetBrowserClientActiveAccount(r.Context(), identitystore.SetBrowserClientActiveAccountParams{
+		AccountHandle:        nullableText(account.AccountHandle),
+		ClientCachePartition: cachePartition,
+		ClientHash:           client.ClientHash,
+	}); err != nil {
+		a.serverError(w, "select browser account", err)
+		return
+	}
+	if err := a.q.DeleteBrowserResourceTokens(r.Context(), identitystore.DeleteBrowserResourceTokensParams{AccountHandle: account.AccountHandle}); err != nil {
+		a.serverError(w, "delete browser resource tokens", err)
+		return
+	}
+	next, err := a.readActiveAccount(r.Context(), client.ClientHash)
+	if err != nil {
+		a.serverError(w, "reload browser account", err)
+		return
+	}
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_account.selected", trace.WithAttributes(
+		attribute.String("auth.account_handle", account.AccountHandle),
+		attribute.String("auth.client_handle", client.ClientHandle),
+		attribute.String("enduser.id", account.User.Sub),
+	))
+	sendBrowserAuthActivity(r.Context(), next.User, next.AccountHandle, "browserAuth.selectAccount", "iam.browser_account.selected", "update", "iam.browser_account.select", r.Method, browserAuthExternalRoute(r), http.StatusOK)
+	a.writeJSON(w, http.StatusOK, snapshotForSession(next))
+}
+
+func (a *BrowserAuth) handleAccountRemove(w http.ResponseWriter, r *http.Request) {
+	if !a.sameOrigin(r) {
+		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		return
+	}
+	client, err := a.requireBrowserClient(w, r)
+	if err != nil {
+		return
+	}
+	accountHandle := strings.Trim(strings.TrimPrefix(r.URL.Path, "/accounts/"), "/")
+	if accountHandle == "" {
+		a.writeProblem(w, r, http.StatusBadRequest, "account-required", "account handle is required")
+		return
+	}
+	removed, err := a.readAccount(r.Context(), client.ClientHash, accountHandle)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		a.serverError(w, "load browser account", err)
+		return
+	}
+	if err := a.q.DeleteBrowserAccountByHandle(r.Context(), identitystore.DeleteBrowserAccountByHandleParams{
+		ClientHash:    client.ClientHash,
+		AccountHandle: accountHandle,
+	}); err != nil {
+		a.serverError(w, "delete browser account", err)
+		return
+	}
+	activeAccountHandle := stringValue(stringFromText(client.ActiveAccountHandle))
+	if accountHandle == activeAccountHandle {
+		if err := a.selectFallbackBrowserAccount(r.Context(), client.ClientHash); err != nil {
+			a.serverError(w, "select fallback browser account", err)
+			return
+		}
+	}
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_account.removed", trace.WithAttributes(
+		attribute.String("auth.account_handle", accountHandle),
+		attribute.String("auth.client_handle", client.ClientHandle),
+		attribute.Bool("auth.current_account", accountHandle == activeAccountHandle),
+	))
+	if removed != nil {
+		sendBrowserAuthActivity(r.Context(), removed.User, accountHandle, "browserAuth.removeAccount", "iam.browser_account.removed", "delete", "iam.browser_account.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *BrowserAuth) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		http.Error(w, "origin not allowed", http.StatusForbidden)
+		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
 		return
 	}
-	session, err := a.requireSession(w, r)
+	client, err := a.requireBrowserClient(w, r)
 	if err != nil {
 		return
 	}
 	sessionHandle := strings.Trim(strings.TrimPrefix(r.URL.Path, "/sessions/"), "/")
 	if sessionHandle == "" {
-		http.Error(w, "session handle is required", http.StatusBadRequest)
+		a.writeProblem(w, r, http.StatusBadRequest, "session-required", "session handle is required")
 		return
 	}
-	if err := a.q.DeleteBrowserSessionByHandle(r.Context(), identitystore.DeleteBrowserSessionByHandleParams{
-		SessionHandle: sessionHandle,
-		Subject:       session.User.Sub,
+	removed, err := a.readAccount(r.Context(), client.ClientHash, sessionHandle)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		a.serverError(w, "load browser account", err)
+		return
+	}
+	if err := a.q.DeleteBrowserAccountByHandle(r.Context(), identitystore.DeleteBrowserAccountByHandleParams{
+		AccountHandle: sessionHandle,
+		ClientHash:    client.ClientHash,
 	}); err != nil {
-		a.serverError(w, "delete browser session", err)
+		a.serverError(w, "delete browser account", err)
 		return
 	}
-	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_session.revoked", trace.WithAttributes(
-		attribute.String("auth.session_handle", sessionHandle),
-		attribute.Bool("auth.current_session", sessionHandle == session.SessionHandle),
-		attribute.String("enduser.id", session.User.Sub),
+	activeAccountHandle := stringValue(stringFromText(client.ActiveAccountHandle))
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_account.removed", trace.WithAttributes(
+		attribute.String("auth.account_handle", sessionHandle),
+		attribute.String("auth.client_handle", client.ClientHandle),
+		attribute.Bool("auth.current_account", sessionHandle == activeAccountHandle),
 	))
-	sendBrowserAuthActivity(r.Context(), session.User, sessionHandle, "browserAuth.revokeSession", "iam.browser_session.revoked", "delete", "iam.browser_session.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
-	if sessionHandle == session.SessionHandle {
-		a.clearSessionCookie(w)
+	if removed != nil {
+		sendBrowserAuthActivity(r.Context(), removed.User, sessionHandle, "browserAuth.removeAccount", "iam.browser_account.removed", "delete", "iam.browser_account.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
+	}
+	if sessionHandle == activeAccountHandle {
+		if err := a.selectFallbackBrowserAccount(r.Context(), client.ClientHash); err != nil {
+			a.serverError(w, "select fallback browser account", err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *BrowserAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := sessionIDFromRequest(r)
+	clientSecret, ok := browserClientSecretFromRequest(r)
 	var idToken string
 	var logoutSession *browserSession
 	if ok {
-		sessionHash := hashToken(sessionID)
-		if session, err := a.readSession(r.Context(), sessionHash); err == nil {
+		clientHash := hashToken(clientSecret)
+		if session, err := a.readActiveAccount(r.Context(), clientHash); err == nil {
 			logoutSession = session
 			if session.IDToken != "" {
 				idToken = session.IDToken
 			}
 		}
-		if err := a.q.DeleteBrowserSession(r.Context(), identitystore.DeleteBrowserSessionParams{SessionHash: sessionHash}); err != nil {
-			a.serverError(w, "delete browser session", err)
+		if err := a.q.DeleteBrowserClient(r.Context(), identitystore.DeleteBrowserClientParams{ClientHash: clientHash}); err != nil {
+			a.serverError(w, "delete browser client", err)
 			return
 		}
 	}
-	a.clearSessionCookie(w)
+	a.clearClientCookie(w)
 	a.clearLoginCookie(w)
 	if logoutSession != nil {
-		sendBrowserAuthActivity(r.Context(), logoutSession.User, logoutSession.SessionHandle, "browserAuth.logout", "iam.browser_session.logged_out", "delete", "iam.browser_session.delete", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
+		sendBrowserAuthActivity(r.Context(), logoutSession.User, logoutSession.AccountHandle, "browserAuth.logout", "iam.browser_client.logged_out", "delete", "iam.browser_client.delete", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
 	}
 	if idToken == "" || a.endSessionEndpoint == "" {
 		http.Redirect(w, r, a.postLogoutURL, http.StatusSeeOther)
@@ -597,21 +862,158 @@ func (a *BrowserAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, logoutURL.String(), http.StatusSeeOther)
 }
 
-func (a *BrowserAuth) sessionFromRequest(w http.ResponseWriter, r *http.Request) (*browserSession, error) {
-	sessionID, ok := sessionIDFromRequest(r)
+func (a *BrowserAuth) ensureBrowserClient(w http.ResponseWriter, r *http.Request) (identitystore.IamBrowserClient, string, error) {
+	if clientSecret, ok := browserClientSecretFromRequest(r); ok {
+		clientHash := hashToken(clientSecret)
+		client, err := a.q.GetBrowserClient(r.Context(), identitystore.GetBrowserClientParams{ClientHash: clientHash})
+		if err == nil {
+			if err := a.touchBrowserClientSeen(r.Context(), clientHash); err != nil {
+				return identitystore.IamBrowserClient{}, "", err
+			}
+			a.setClientCookie(w, clientSecret)
+			return client, clientSecret, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return identitystore.IamBrowserClient{}, "", err
+		}
+	}
+
+	clientSecret, err := randomToken(32)
+	if err != nil {
+		return identitystore.IamBrowserClient{}, "", err
+	}
+	clientHash := hashToken(clientSecret)
+	cachePartition, err := randomToken(24)
+	if err != nil {
+		return identitystore.IamBrowserClient{}, "", err
+	}
+	observation := browserSessionObservationFromContext(r.Context())
+	if err := a.q.UpsertBrowserClient(r.Context(), identitystore.UpsertBrowserClientParams{
+		ClientHash:           clientHash,
+		ClientHandle:         browserClientHandle(clientHash),
+		ClientCachePartition: cachePartition,
+		ExpiresAt:            timestamptz(time.Now().UTC().Add(browserAuthSessionTTL)),
+		ClientIp:             observation.ClientIP,
+		ClientIpTrusted:      observation.ClientIPTrusted,
+		ClientIpSource:       observation.ClientIPSource,
+		EdgePeerIp:           observation.EdgePeerIP,
+		UserAgent:            observation.UserAgent,
+		DeviceLabel:          observation.Device.Label,
+		DeviceKind:           observation.Device.Kind,
+		BrowserName:          observation.Device.BrowserName,
+		OsName:               observation.Device.OSName,
+		GeoCountryCode:       observation.Location.CountryCode,
+		GeoRegion:            observation.Location.Region,
+		GeoCity:              observation.Location.City,
+	}); err != nil {
+		return identitystore.IamBrowserClient{}, "", err
+	}
+	client, err := a.q.GetBrowserClient(r.Context(), identitystore.GetBrowserClientParams{ClientHash: clientHash})
+	if err != nil {
+		return identitystore.IamBrowserClient{}, "", err
+	}
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_client.created", trace.WithAttributes(
+		attribute.String("auth.client_handle", client.ClientHandle),
+		attribute.String("verself.request.client_ip_source", observation.ClientIPSource),
+		attribute.String("auth.device_label", observation.Device.Label),
+	))
+	return client, clientSecret, nil
+}
+
+func (a *BrowserAuth) touchBrowserClientSeen(ctx context.Context, clientHash string) error {
+	observation := browserSessionObservationFromContext(ctx)
+	return a.q.TouchBrowserClientSeen(ctx, identitystore.TouchBrowserClientSeenParams{
+		ClientHash:      clientHash,
+		ClientIp:        observation.ClientIP,
+		ClientIpTrusted: observation.ClientIPTrusted,
+		ClientIpSource:  observation.ClientIPSource,
+		EdgePeerIp:      observation.EdgePeerIP,
+		UserAgent:       observation.UserAgent,
+		DeviceLabel:     observation.Device.Label,
+		DeviceKind:      observation.Device.Kind,
+		BrowserName:     observation.Device.BrowserName,
+		OsName:          observation.Device.OSName,
+		GeoCountryCode:  observation.Location.CountryCode,
+		GeoRegion:       observation.Location.Region,
+		GeoCity:         observation.Location.City,
+	})
+}
+
+func (a *BrowserAuth) browserClientFromRequest(w http.ResponseWriter, r *http.Request) (*identitystore.IamBrowserClient, error) {
+	clientSecret, ok := browserClientSecretFromRequest(r)
 	if !ok {
 		return nil, nil
 	}
-	session, err := a.readSession(r.Context(), hashToken(sessionID))
+	clientHash := hashToken(clientSecret)
+	if err := a.touchBrowserClientSeen(r.Context(), clientHash); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	client, err := a.q.GetBrowserClient(r.Context(), identitystore.GetBrowserClientParams{ClientHash: clientHash})
 	if errors.Is(err, pgx.ErrNoRows) {
-		a.clearSessionCookie(w)
+		a.clearClientCookie(w)
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &client, nil
+}
+
+func (a *BrowserAuth) requireBrowserClient(w http.ResponseWriter, r *http.Request) (*identitystore.IamBrowserClient, error) {
+	client, err := a.browserClientFromRequest(w, r)
+	if err != nil {
+		a.serverError(w, "load browser client", err)
+		return nil, err
+	}
+	if client == nil {
+		a.writeProblem(w, r, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return nil, errors.New("authentication required")
+	}
+	return client, nil
+}
+
+func (a *BrowserAuth) selectFallbackBrowserAccount(ctx context.Context, clientHash string) error {
+	rows, err := a.q.ListBrowserAccountsForClient(ctx, identitystore.ListBrowserAccountsForClientParams{ClientHash: clientHash})
+	if err != nil {
+		return err
+	}
+	accountHandle := ""
+	if len(rows) > 0 {
+		accountHandle = rows[0].AccountHandle
+	}
+	cachePartition, err := randomToken(24)
+	if err != nil {
+		return err
+	}
+	if accountHandle != "" {
+		if err := a.q.DeleteBrowserResourceTokens(ctx, identitystore.DeleteBrowserResourceTokensParams{AccountHandle: accountHandle}); err != nil {
+			return err
+		}
+	}
+	return a.q.SetBrowserClientActiveAccount(ctx, identitystore.SetBrowserClientActiveAccountParams{
+		AccountHandle:        nullableText(accountHandle),
+		ClientCachePartition: cachePartition,
+		ClientHash:           clientHash,
+	})
+}
+
+func (a *BrowserAuth) accountSessionFromRequest(w http.ResponseWriter, r *http.Request) (*browserSession, error) {
+	client, err := a.browserClientFromRequest(w, r)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, nil
+	}
+	session, err := a.readActiveAccount(r.Context(), client.ClientHash)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	if time.Until(session.ExpiresAt) > browserAuthRefreshLeeway {
-		if err := a.touchSessionSeen(r.Context(), session); err != nil {
+		if err := a.touchAccountSeen(r.Context(), session); err != nil {
 			return nil, err
 		}
 		return session, nil
@@ -621,23 +1023,22 @@ func (a *BrowserAuth) sessionFromRequest(w http.ResponseWriter, r *http.Request)
 		if a.logger != nil {
 			a.logger.WarnContext(r.Context(), "browser auth token refresh failed", "error", err, "subject", session.User.Sub)
 		}
-		if err := a.q.DeleteBrowserSession(r.Context(), identitystore.DeleteBrowserSessionParams{SessionHash: session.SessionHash}); err != nil {
+		if err := a.q.DeleteBrowserAccountByHandle(r.Context(), identitystore.DeleteBrowserAccountByHandleParams{ClientHash: session.ClientHash, AccountHandle: session.AccountHandle}); err != nil {
 			return nil, err
 		}
-		a.clearSessionCookie(w)
 		return nil, nil
 	}
 	return refreshed, nil
 }
 
-func (a *BrowserAuth) requireSession(w http.ResponseWriter, r *http.Request) (*browserSession, error) {
-	session, err := a.sessionFromRequest(w, r)
+func (a *BrowserAuth) requireAccount(w http.ResponseWriter, r *http.Request) (*browserSession, error) {
+	session, err := a.accountSessionFromRequest(w, r)
 	if err != nil {
-		a.serverError(w, "load browser session", err)
+		a.serverError(w, "load browser account", err)
 		return nil, err
 	}
 	if session == nil {
-		http.Error(w, "authentication required", http.StatusUnauthorized)
+		a.writeProblem(w, r, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return nil, errors.New("authentication required")
 	}
 	return session, nil
@@ -645,7 +1046,7 @@ func (a *BrowserAuth) requireSession(w http.ResponseWriter, r *http.Request) (*b
 
 func (a *BrowserAuth) refreshSession(ctx context.Context, session *browserSession) (*browserSession, error) {
 	if session.RefreshToken == "" {
-		return nil, errors.New("browser session has no refresh token")
+		return nil, errors.New("browser account has no refresh token")
 	}
 	tokens, err := a.exchangeToken(ctx, url.Values{
 		"grant_type":    {"refresh_token"},
@@ -675,23 +1076,30 @@ func (a *BrowserAuth) refreshSession(ctx context.Context, session *browserSessio
 	}
 	cachePartition := session.ClientCachePartition
 	if stringValue(previousSelectedOrgID) != stringValue(user.SelectedOrgID) {
-		var err error
 		cachePartition, err = randomToken(24)
 		if err != nil {
 			return nil, err
 		}
-		if err := a.q.DeleteBrowserResourceTokens(ctx, identitystore.DeleteBrowserResourceTokensParams{SessionHash: session.SessionHash}); err != nil {
+		if err := a.q.DeleteBrowserResourceTokens(ctx, identitystore.DeleteBrowserResourceTokensParams{AccountHandle: session.AccountHandle}); err != nil {
 			return nil, err
 		}
 	}
-	if err := a.writeSession(ctx, session.SessionHash, session.SessionHandle, cachePartition, tokens, user); err != nil {
+	if err := a.writeAccount(ctx, session.ClientHash, session.AccountHandle, tokens, user); err != nil {
 		return nil, err
 	}
-	trace.SpanFromContext(ctx).AddEvent("iam.browser_session.refreshed", trace.WithAttributes(
-		attribute.String("auth.session_handle", session.SessionHandle),
+	if err := a.q.SetBrowserClientActiveAccount(ctx, identitystore.SetBrowserClientActiveAccountParams{
+		AccountHandle:        nullableText(session.AccountHandle),
+		ClientCachePartition: cachePartition,
+		ClientHash:           session.ClientHash,
+	}); err != nil {
+		return nil, err
+	}
+	trace.SpanFromContext(ctx).AddEvent("iam.browser_account.refreshed", trace.WithAttributes(
+		attribute.String("auth.account_handle", session.AccountHandle),
+		attribute.String("auth.client_handle", session.ClientHandle),
 		attribute.String("enduser.id", user.Sub),
 	))
-	return a.readSession(ctx, session.SessionHash)
+	return a.readActiveAccount(ctx, session.ClientHash)
 }
 
 func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession) (string, error) {
@@ -736,16 +1144,17 @@ func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession
 		attribute.String("auth.scope_hash", scopeHash),
 	)
 	cached, err := a.q.GetBrowserResourceToken(ctx, identitystore.GetBrowserResourceTokenParams{
-		SessionHash:   session.SessionHash,
+		AccountHandle: session.AccountHandle,
 		Audience:      audience,
 		SelectedOrgID: selectedOrgID,
 		ScopeHash:     scopeHash,
 	})
 	if err == nil && time.Until(requiredTime(cached.ExpiresAt)) > browserAuthRefreshLeeway {
-		if err := a.verifyAccessToken(ctx, cached.AccessToken, audience, providerOrgID); err == nil {
+		cachedAccessToken, decryptErr := a.tokenVault.open(cached.AccessTokenCiphertext, session.AccountHandle, "resource_access")
+		if decryptErr == nil && a.verifyAccessToken(ctx, cachedAccessToken, audience, providerOrgID) == nil {
 			span.SetAttributes(attribute.Bool("auth.cache_hit", true))
 			span.SetStatus(codes.Ok, "")
-			return cached.AccessToken, nil
+			return cachedAccessToken, nil
 		}
 	}
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -779,14 +1188,20 @@ func (a *BrowserAuth) resourceToken(ctx context.Context, session *browserSession
 		span.SetStatus(codes.Error, err.Error())
 		return "", err
 	}
+	resourceAccessToken, err := a.tokenVault.seal(tokens.AccessToken, session.AccountHandle, "resource_access")
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
+	}
 	if err := a.q.UpsertBrowserResourceToken(ctx, identitystore.UpsertBrowserResourceTokenParams{
-		SessionHash:   session.SessionHash,
-		Audience:      audience,
-		SelectedOrgID: selectedOrgID,
-		ScopeHash:     scopeHash,
-		AccessToken:   tokens.AccessToken,
-		TokenScope:    nullableText(tokens.Scope),
-		ExpiresAt:     timestamptz(expiresAt),
+		AccountHandle:         session.AccountHandle,
+		Audience:              audience,
+		SelectedOrgID:         selectedOrgID,
+		ScopeHash:             scopeHash,
+		AccessTokenCiphertext: resourceAccessToken,
+		TokenScope:            nullableText(tokens.Scope),
+		ExpiresAt:             timestamptz(expiresAt),
 	}); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -924,11 +1339,27 @@ func (a *BrowserAuth) exchangeToken(ctx context.Context, params url.Values) (tok
 	return tokens, nil
 }
 
-func (a *BrowserAuth) readSession(ctx context.Context, sessionHash string) (*browserSession, error) {
-	row, err := a.q.GetBrowserSession(ctx, identitystore.GetBrowserSessionParams{SessionHash: sessionHash})
+func (a *BrowserAuth) readActiveAccount(ctx context.Context, clientHash string) (*browserSession, error) {
+	row, err := a.q.GetActiveBrowserAccount(ctx, identitystore.GetActiveBrowserAccountParams{ClientHash: clientHash})
 	if err != nil {
 		return nil, err
 	}
+	return a.browserSessionFromAccountRecord(browserAccountRecordFromActive(row))
+}
+
+func (a *BrowserAuth) readAccount(ctx context.Context, clientHash, accountHandle string) (*browserSession, error) {
+	client, err := a.q.GetBrowserClient(ctx, identitystore.GetBrowserClientParams{ClientHash: clientHash})
+	if err != nil {
+		return nil, err
+	}
+	row, err := a.q.GetBrowserAccount(ctx, identitystore.GetBrowserAccountParams{ClientHash: clientHash, AccountHandle: accountHandle})
+	if err != nil {
+		return nil, err
+	}
+	return a.browserSessionFromAccountRecord(browserAccountRecordFromAccount(client.ClientHandle, client.ClientCachePartition, row))
+}
+
+func (a *BrowserAuth) browserSessionFromAccountRecord(row browserAccountRecord) (*browserSession, error) {
 	var organizations []authOrganizationContext
 	if err := json.Unmarshal([]byte(row.AvailableOrgContextsJson), &organizations); err != nil {
 		return nil, err
@@ -936,6 +1367,18 @@ func (a *BrowserAuth) readSession(ctx context.Context, sessionHash string) (*bro
 	var claims map[string]any
 	if err := json.Unmarshal([]byte(row.UserClaimsJson), &claims); err != nil {
 		return nil, err
+	}
+	accessToken, err := a.tokenVault.open(row.AccessTokenCiphertext, row.AccountHandle, "access")
+	if err != nil {
+		return nil, fmt.Errorf("open browser account access token: %w", err)
+	}
+	refreshToken, err := a.tokenVault.openNullable(row.RefreshTokenCiphertext, row.AccountHandle, "refresh")
+	if err != nil {
+		return nil, fmt.Errorf("open browser account refresh token: %w", err)
+	}
+	idToken, err := a.tokenVault.openNullable(row.IDTokenCiphertext, row.AccountHandle, "id")
+	if err != nil {
+		return nil, fmt.Errorf("open browser account id token: %w", err)
 	}
 	user := browserUser{
 		Sub:                    row.Subject,
@@ -949,54 +1392,37 @@ func (a *BrowserAuth) readSession(ctx context.Context, sessionHash string) (*bro
 		Claims:                 claims,
 	}
 	return &browserSession{
-		SessionHash:           row.SessionHash,
-		SessionHandle:         row.SessionHandle,
-		ClientCachePartition:  row.ClientCachePartition,
-		AccessToken:           row.AccessToken,
-		RefreshToken:          stringValue(stringFromText(row.RefreshToken)),
-		IDToken:               stringValue(stringFromText(row.IDToken)),
-		TokenScope:            stringFromText(row.TokenScope),
-		ExpiresAt:             requiredTime(row.ExpiresAt),
-		CreatedClientIP:       row.CreatedClientIp,
-		CreatedIPTrusted:      row.CreatedClientIpTrusted,
-		CreatedClientIPSource: row.CreatedClientIpSource,
-		CreatedEdgePeerIP:     row.CreatedEdgePeerIp,
-		CreatedUserAgent:      row.CreatedUserAgent,
-		CreatedDevice: browserDevice{
-			Label:       row.CreatedDeviceLabel,
-			Kind:        row.CreatedDeviceKind,
-			BrowserName: row.CreatedBrowserName,
-			OSName:      row.CreatedOsName,
-		},
-		CreatedLocation: browserLocation{
-			CountryCode: row.CreatedGeoCountryCode,
-			Region:      row.CreatedGeoRegion,
-			City:        row.CreatedGeoCity,
-		},
+		ClientHash:             row.ClientHash,
+		ClientHandle:           row.ClientHandle,
+		AccountHandle:          row.AccountHandle,
+		ClientCachePartition:   row.ClientCachePartition,
+		AccessToken:            accessToken,
+		RefreshToken:           refreshToken,
+		IDToken:                idToken,
+		TokenScope:             stringFromText(row.TokenScope),
+		ExpiresAt:              requiredTime(row.ExpiresAt),
+		CreatedClientIP:        row.CreatedClientIp,
+		CreatedIPTrusted:       row.CreatedClientIpTrusted,
+		CreatedClientIPSource:  row.CreatedClientIpSource,
+		CreatedEdgePeerIP:      row.CreatedEdgePeerIp,
+		CreatedUserAgent:       row.CreatedUserAgent,
+		CreatedDevice:          browserDevice{Label: row.CreatedDeviceLabel, Kind: row.CreatedDeviceKind, BrowserName: row.CreatedBrowserName, OSName: row.CreatedOsName},
+		CreatedLocation:        browserLocation{CountryCode: row.CreatedGeoCountryCode, Region: row.CreatedGeoRegion, City: row.CreatedGeoCity},
 		LastSeenClientIP:       row.LastSeenClientIp,
 		LastSeenIPTrusted:      row.LastSeenClientIpTrusted,
 		LastSeenClientIPSource: row.LastSeenClientIpSource,
 		LastSeenEdgePeerIP:     row.LastSeenEdgePeerIp,
 		LastSeenUserAgent:      row.LastSeenUserAgent,
-		LastSeenDevice: browserDevice{
-			Label:       row.LastSeenDeviceLabel,
-			Kind:        row.LastSeenDeviceKind,
-			BrowserName: row.LastSeenBrowserName,
-			OSName:      row.LastSeenOsName,
-		},
-		LastSeenLocation: browserLocation{
-			CountryCode: row.LastSeenGeoCountryCode,
-			Region:      row.LastSeenGeoRegion,
-			City:        row.LastSeenGeoCity,
-		},
-		LastSeenAt: requiredTime(row.LastSeenAt),
-		CreatedAt:  requiredTime(row.CreatedAt),
-		UpdatedAt:  requiredTime(row.UpdatedAt),
-		User:       user,
+		LastSeenDevice:         browserDevice{Label: row.LastSeenDeviceLabel, Kind: row.LastSeenDeviceKind, BrowserName: row.LastSeenBrowserName, OSName: row.LastSeenOsName},
+		LastSeenLocation:       browserLocation{CountryCode: row.LastSeenGeoCountryCode, Region: row.LastSeenGeoRegion, City: row.LastSeenGeoCity},
+		LastSeenAt:             requiredTime(row.LastSeenAt),
+		CreatedAt:              requiredTime(row.CreatedAt),
+		UpdatedAt:              requiredTime(row.UpdatedAt),
+		User:                   user,
 	}, nil
 }
 
-func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, sessionHandle, cachePartition string, tokens tokenResponse, user browserUser) error {
+func (a *BrowserAuth) writeAccount(ctx context.Context, clientHash, accountHandle string, tokens tokenResponse, user browserUser) error {
 	organizations, err := json.Marshal(user.AvailableOrganizations)
 	if err != nil {
 		return err
@@ -1005,11 +1431,23 @@ func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, sessionHand
 	if err != nil {
 		return err
 	}
+	accessToken, err := a.tokenVault.seal(tokens.AccessToken, accountHandle, "access")
+	if err != nil {
+		return err
+	}
+	idToken, err := a.tokenVault.sealOptional(tokens.IDToken, accountHandle, "id")
+	if err != nil {
+		return err
+	}
+	refreshToken, err := a.tokenVault.sealOptional(tokens.RefreshToken, accountHandle, "refresh")
+	if err != nil {
+		return err
+	}
 	observation := browserSessionObservationFromContext(ctx)
-	if err := a.q.UpsertBrowserSession(ctx, identitystore.UpsertBrowserSessionParams{
-		SessionHash:              sessionHash,
-		SessionHandle:            sessionHandle,
-		ClientCachePartition:     cachePartition,
+	if err := a.q.UpsertBrowserAccount(ctx, identitystore.UpsertBrowserAccountParams{
+		AccountHandle:            accountHandle,
+		ClientHash:               clientHash,
+		State:                    "active",
 		Subject:                  user.Sub,
 		Email:                    nullableTextPtr(user.Email),
 		DisplayName:              nullableTextPtr(user.Name),
@@ -1019,9 +1457,9 @@ func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, sessionHand
 		SelectedOrgID:            nullableTextPtr(user.SelectedOrgID),
 		AvailableOrgContextsJson: organizations,
 		UserClaimsJson:           claims,
-		IDToken:                  nullableText(tokens.IDToken),
-		AccessToken:              tokens.AccessToken,
-		RefreshToken:             nullableText(tokens.RefreshToken),
+		IDTokenCiphertext:        nullableText(idToken),
+		AccessTokenCiphertext:    accessToken,
+		RefreshTokenCiphertext:   nullableText(refreshToken),
 		TokenScope:               nullableText(tokens.Scope),
 		ExpiresAt:                timestamptz(tokens.ExpiresAt),
 		ClientIp:                 observation.ClientIP,
@@ -1039,13 +1477,13 @@ func (a *BrowserAuth) writeSession(ctx context.Context, sessionHash, sessionHand
 	}); err != nil {
 		return err
 	}
-	return a.insertSessionObservation(ctx, sessionHash, sessionHandle, user.Sub, observation)
+	return a.insertAccountObservation(ctx, clientHash, accountHandle, user.Sub, observation)
 }
 
-func (a *BrowserAuth) insertSessionObservation(ctx context.Context, sessionHash, sessionHandle, subject string, observation browserSessionObservation) error {
-	return a.q.InsertBrowserSessionObservation(ctx, identitystore.InsertBrowserSessionObservationParams{
-		SessionHash:     sessionHash,
-		SessionHandle:   sessionHandle,
+func (a *BrowserAuth) insertAccountObservation(ctx context.Context, clientHash, accountHandle, subject string, observation browserSessionObservation) error {
+	return a.q.InsertBrowserAccountObservation(ctx, identitystore.InsertBrowserAccountObservationParams{
+		ClientHash:      clientHash,
+		AccountHandle:   accountHandle,
 		Subject:         subject,
 		ClientIp:        observation.ClientIP,
 		ClientIpTrusted: observation.ClientIPTrusted,
@@ -1062,14 +1500,15 @@ func (a *BrowserAuth) insertSessionObservation(ctx context.Context, sessionHash,
 	})
 }
 
-func (a *BrowserAuth) touchSessionSeen(ctx context.Context, session *browserSession) error {
+func (a *BrowserAuth) touchAccountSeen(ctx context.Context, session *browserSession) error {
 	if session == nil {
 		return nil
 	}
 	observation := browserSessionObservationFromContext(ctx)
 	seenAt := time.Now().UTC()
-	if err := a.q.UpdateBrowserSessionSeen(ctx, identitystore.UpdateBrowserSessionSeenParams{
-		SessionHash:     session.SessionHash,
+	if err := a.q.UpdateBrowserAccountSeen(ctx, identitystore.UpdateBrowserAccountSeenParams{
+		AccountHandle:   session.AccountHandle,
+		ClientHash:      session.ClientHash,
 		ClientIp:        observation.ClientIP,
 		ClientIpTrusted: observation.ClientIPTrusted,
 		ClientIpSource:  observation.ClientIPSource,
@@ -1085,7 +1524,7 @@ func (a *BrowserAuth) touchSessionSeen(ctx context.Context, session *browserSess
 	}); err != nil {
 		return err
 	}
-	if err := a.insertSessionObservation(ctx, session.SessionHash, session.SessionHandle, session.User.Sub, observation); err != nil {
+	if err := a.insertAccountObservation(ctx, session.ClientHash, session.AccountHandle, session.User.Sub, observation); err != nil {
 		return err
 	}
 	session.LastSeenClientIP = observation.ClientIP
@@ -1096,8 +1535,9 @@ func (a *BrowserAuth) touchSessionSeen(ctx context.Context, session *browserSess
 	session.LastSeenDevice = observation.Device
 	session.LastSeenLocation = observation.Location
 	session.LastSeenAt = seenAt
-	trace.SpanFromContext(ctx).AddEvent("iam.browser_session.seen", trace.WithAttributes(
-		attribute.String("auth.session_handle", session.SessionHandle),
+	trace.SpanFromContext(ctx).AddEvent("iam.browser_account.seen", trace.WithAttributes(
+		attribute.String("auth.account_handle", session.AccountHandle),
+		attribute.String("auth.client_handle", session.ClientHandle),
 		attribute.String("enduser.id", session.User.Sub),
 		attribute.String("verself.request.client_ip_source", observation.ClientIPSource),
 		attribute.String("auth.device_label", observation.Device.Label),
@@ -1144,6 +1584,31 @@ func (a *BrowserAuth) sameOrigin(r *http.Request) bool {
 	return err == nil && parsed.Scheme == a.publicBaseURL.Scheme && parsed.Host == a.publicBaseURL.Host
 }
 
+func (a *BrowserAuth) allowBrowserAuthRequest(w http.ResponseWriter, r *http.Request, operation string, class runtimeiam.RateLimitClass) bool {
+	key := browserAuthRateLimitKey(r, operation, class)
+	decision := apiOperationRateLimiter.Allow(class, key, time.Now())
+	if decision.Allowed {
+		return true
+	}
+	if decision.RetryAfter > 0 {
+		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", decision.RetryAfter.Seconds()))
+	}
+	a.writeProblem(w, r, http.StatusTooManyRequests, "rate-limit-exceeded", "rate limit exceeded")
+	return false
+}
+
+func browserAuthRateLimitKey(r *http.Request, operation string, class runtimeiam.RateLimitClass) string {
+	principal := ""
+	if clientSecret, ok := browserClientSecretFromRequest(r); ok {
+		principal = "client:" + hashToken(clientSecret)
+	} else if info := browserRequestInfoFromContext(r.Context()); strings.TrimSpace(info.Attribution.ClientIP) != "" {
+		principal = "ip:" + info.Attribution.ClientIP
+	} else {
+		principal = "ip:" + r.RemoteAddr
+	}
+	return strings.Join([]string{"browser-auth", string(class), operation, principal}, ":")
+}
+
 func (a *BrowserAuth) oidcContext(ctx context.Context) context.Context {
 	return oidc.ClientContext(ctx, a.httpClient)
 }
@@ -1155,6 +1620,24 @@ func (a *BrowserAuth) writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+func (a *BrowserAuth) writeProblem(w http.ResponseWriter, r *http.Request, status int, code, detail string) {
+	instance := ""
+	if spanContext := trace.SpanContextFromContext(r.Context()); spanContext.HasTraceID() {
+		instance = "urn:verself:trace:" + spanContext.TraceID().String()
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"type":     problemTypePrefix + code,
+		"title":    http.StatusText(status),
+		"status":   status,
+		"detail":   detail,
+		"instance": instance,
+		"code":     code,
+	})
+}
+
 func (a *BrowserAuth) serverError(w http.ResponseWriter, operation string, err error) {
 	if a.logger != nil {
 		a.logger.Error("browser auth failed", "operation", operation, "error", err)
@@ -1162,10 +1645,10 @@ func (a *BrowserAuth) serverError(w http.ResponseWriter, operation string, err e
 	http.Error(w, operation+" failed", http.StatusInternalServerError)
 }
 
-func (a *BrowserAuth) setSessionCookie(w http.ResponseWriter, sessionID string) {
+func (a *BrowserAuth) setClientCookie(w http.ResponseWriter, clientSecret string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     browserAuthCookieName,
-		Value:    sessionID,
+		Value:    clientSecret,
 		Path:     "/",
 		Expires:  time.Now().UTC().Add(browserAuthSessionTTL),
 		MaxAge:   int(browserAuthSessionTTL.Seconds()),
@@ -1175,7 +1658,7 @@ func (a *BrowserAuth) setSessionCookie(w http.ResponseWriter, sessionID string) 
 	})
 }
 
-func (a *BrowserAuth) clearSessionCookie(w http.ResponseWriter) {
+func (a *BrowserAuth) clearClientCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     browserAuthCookieName,
 		Value:    "",
@@ -1214,7 +1697,7 @@ func (a *BrowserAuth) clearLoginCookie(w http.ResponseWriter) {
 	})
 }
 
-func sessionIDFromRequest(r *http.Request) (string, bool) {
+func browserClientSecretFromRequest(r *http.Request) (string, bool) {
 	cookie, err := r.Cookie(browserAuthCookieName)
 	if err != nil || strings.TrimSpace(cookie.Value) == "" {
 		return "", false
@@ -1241,8 +1724,9 @@ type tokenResponse struct {
 }
 
 type browserSession struct {
-	SessionHash            string
-	SessionHandle          string
+	ClientHash             string
+	ClientHandle           string
+	AccountHandle          string
 	ClientCachePartition   string
 	AccessToken            string
 	RefreshToken           string
@@ -1267,6 +1751,157 @@ type browserSession struct {
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 	User                   browserUser
+}
+
+type browserAccountRecord struct {
+	ClientHandle             string
+	ClientCachePartition     string
+	AccountHandle            string
+	ClientHash               string
+	State                    string
+	Subject                  string
+	Email                    pgtype.Text
+	DisplayName              pgtype.Text
+	PreferredUsername        pgtype.Text
+	OrgID                    pgtype.Text
+	HomeOrgID                pgtype.Text
+	SelectedOrgID            pgtype.Text
+	AvailableOrgContextsJson string
+	UserClaimsJson           string
+	IDTokenCiphertext        pgtype.Text
+	AccessTokenCiphertext    string
+	RefreshTokenCiphertext   pgtype.Text
+	TokenScope               pgtype.Text
+	ExpiresAt                pgtype.Timestamptz
+	CreatedClientIp          string
+	CreatedClientIpTrusted   bool
+	CreatedClientIpSource    string
+	CreatedEdgePeerIp        string
+	CreatedUserAgent         string
+	CreatedDeviceLabel       string
+	CreatedDeviceKind        string
+	CreatedBrowserName       string
+	CreatedOsName            string
+	CreatedGeoCountryCode    string
+	CreatedGeoRegion         string
+	CreatedGeoCity           string
+	LastSeenClientIp         string
+	LastSeenClientIpTrusted  bool
+	LastSeenClientIpSource   string
+	LastSeenEdgePeerIp       string
+	LastSeenUserAgent        string
+	LastSeenDeviceLabel      string
+	LastSeenDeviceKind       string
+	LastSeenBrowserName      string
+	LastSeenOsName           string
+	LastSeenGeoCountryCode   string
+	LastSeenGeoRegion        string
+	LastSeenGeoCity          string
+	LastSeenAt               pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
+}
+
+func browserAccountRecordFromActive(row identitystore.GetActiveBrowserAccountRow) browserAccountRecord {
+	return browserAccountRecord{
+		ClientHandle:             row.ClientHandle,
+		ClientCachePartition:     row.ClientCachePartition,
+		AccountHandle:            row.AccountHandle,
+		ClientHash:               row.ClientHash,
+		State:                    row.State,
+		Subject:                  row.Subject,
+		Email:                    row.Email,
+		DisplayName:              row.DisplayName,
+		PreferredUsername:        row.PreferredUsername,
+		OrgID:                    row.OrgID,
+		HomeOrgID:                row.HomeOrgID,
+		SelectedOrgID:            row.SelectedOrgID,
+		AvailableOrgContextsJson: row.AvailableOrgContextsJson,
+		UserClaimsJson:           row.UserClaimsJson,
+		IDTokenCiphertext:        row.IDTokenCiphertext,
+		AccessTokenCiphertext:    row.AccessTokenCiphertext,
+		RefreshTokenCiphertext:   row.RefreshTokenCiphertext,
+		TokenScope:               row.TokenScope,
+		ExpiresAt:                row.ExpiresAt,
+		CreatedClientIp:          row.CreatedClientIp,
+		CreatedClientIpTrusted:   row.CreatedClientIpTrusted,
+		CreatedClientIpSource:    row.CreatedClientIpSource,
+		CreatedEdgePeerIp:        row.CreatedEdgePeerIp,
+		CreatedUserAgent:         row.CreatedUserAgent,
+		CreatedDeviceLabel:       row.CreatedDeviceLabel,
+		CreatedDeviceKind:        row.CreatedDeviceKind,
+		CreatedBrowserName:       row.CreatedBrowserName,
+		CreatedOsName:            row.CreatedOsName,
+		CreatedGeoCountryCode:    row.CreatedGeoCountryCode,
+		CreatedGeoRegion:         row.CreatedGeoRegion,
+		CreatedGeoCity:           row.CreatedGeoCity,
+		LastSeenClientIp:         row.LastSeenClientIp,
+		LastSeenClientIpTrusted:  row.LastSeenClientIpTrusted,
+		LastSeenClientIpSource:   row.LastSeenClientIpSource,
+		LastSeenEdgePeerIp:       row.LastSeenEdgePeerIp,
+		LastSeenUserAgent:        row.LastSeenUserAgent,
+		LastSeenDeviceLabel:      row.LastSeenDeviceLabel,
+		LastSeenDeviceKind:       row.LastSeenDeviceKind,
+		LastSeenBrowserName:      row.LastSeenBrowserName,
+		LastSeenOsName:           row.LastSeenOsName,
+		LastSeenGeoCountryCode:   row.LastSeenGeoCountryCode,
+		LastSeenGeoRegion:        row.LastSeenGeoRegion,
+		LastSeenGeoCity:          row.LastSeenGeoCity,
+		LastSeenAt:               row.LastSeenAt,
+		CreatedAt:                row.CreatedAt,
+		UpdatedAt:                row.UpdatedAt,
+	}
+}
+
+func browserAccountRecordFromAccount(clientHandle, cachePartition string, row identitystore.GetBrowserAccountRow) browserAccountRecord {
+	return browserAccountRecord{
+		ClientHandle:             clientHandle,
+		ClientCachePartition:     cachePartition,
+		AccountHandle:            row.AccountHandle,
+		ClientHash:               row.ClientHash,
+		State:                    row.State,
+		Subject:                  row.Subject,
+		Email:                    row.Email,
+		DisplayName:              row.DisplayName,
+		PreferredUsername:        row.PreferredUsername,
+		OrgID:                    row.OrgID,
+		HomeOrgID:                row.HomeOrgID,
+		SelectedOrgID:            row.SelectedOrgID,
+		AvailableOrgContextsJson: row.AvailableOrgContextsJson,
+		UserClaimsJson:           row.UserClaimsJson,
+		IDTokenCiphertext:        row.IDTokenCiphertext,
+		AccessTokenCiphertext:    row.AccessTokenCiphertext,
+		RefreshTokenCiphertext:   row.RefreshTokenCiphertext,
+		TokenScope:               row.TokenScope,
+		ExpiresAt:                row.ExpiresAt,
+		CreatedClientIp:          row.CreatedClientIp,
+		CreatedClientIpTrusted:   row.CreatedClientIpTrusted,
+		CreatedClientIpSource:    row.CreatedClientIpSource,
+		CreatedEdgePeerIp:        row.CreatedEdgePeerIp,
+		CreatedUserAgent:         row.CreatedUserAgent,
+		CreatedDeviceLabel:       row.CreatedDeviceLabel,
+		CreatedDeviceKind:        row.CreatedDeviceKind,
+		CreatedBrowserName:       row.CreatedBrowserName,
+		CreatedOsName:            row.CreatedOsName,
+		CreatedGeoCountryCode:    row.CreatedGeoCountryCode,
+		CreatedGeoRegion:         row.CreatedGeoRegion,
+		CreatedGeoCity:           row.CreatedGeoCity,
+		LastSeenClientIp:         row.LastSeenClientIp,
+		LastSeenClientIpTrusted:  row.LastSeenClientIpTrusted,
+		LastSeenClientIpSource:   row.LastSeenClientIpSource,
+		LastSeenEdgePeerIp:       row.LastSeenEdgePeerIp,
+		LastSeenUserAgent:        row.LastSeenUserAgent,
+		LastSeenDeviceLabel:      row.LastSeenDeviceLabel,
+		LastSeenDeviceKind:       row.LastSeenDeviceKind,
+		LastSeenBrowserName:      row.LastSeenBrowserName,
+		LastSeenOsName:           row.LastSeenOsName,
+		LastSeenGeoCountryCode:   row.LastSeenGeoCountryCode,
+		LastSeenGeoRegion:        row.LastSeenGeoRegion,
+		LastSeenGeoCity:          row.LastSeenGeoCity,
+		LastSeenAt:               row.LastSeenAt,
+		CreatedAt:                row.CreatedAt,
+		UpdatedAt:                row.UpdatedAt,
+	}
 }
 
 type browserUser struct {
@@ -1301,10 +1936,14 @@ type authState struct {
 	OrgID           *string `json:"orgId"`
 	SelectedOrgID   *string `json:"selectedOrgId"`
 	CachePartition  *string `json:"cachePartition"`
+	ClientHandle    *string `json:"clientHandle"`
+	AccountHandle   *string `json:"accountHandle"`
 }
 
 type sessionInfo struct {
 	SessionHandle   string          `json:"sessionHandle"`
+	ClientHandle    string          `json:"clientHandle"`
+	AccountHandle   string          `json:"accountHandle"`
 	CreatedAt       time.Time       `json:"createdAt"`
 	LastSeenAt      time.Time       `json:"lastSeenAt"`
 	ExpiresAt       time.Time       `json:"expiresAt"`
@@ -1351,12 +1990,47 @@ type browserSessionsResponse struct {
 	Sessions []browserSessionSummary `json:"sessions"`
 }
 
+type browserAccountSummary struct {
+	AccountHandle           string                    `json:"accountHandle"`
+	IsCurrent               bool                      `json:"isCurrent"`
+	Subject                 string                    `json:"subject"`
+	Email                   *string                   `json:"email"`
+	DisplayName             *string                   `json:"displayName"`
+	PreferredUsername       *string                   `json:"preferredUsername"`
+	HomeOrgID               *string                   `json:"homeOrgID"`
+	SelectedOrgID           *string                   `json:"selectedOrgID"`
+	AvailableOrganizations  []authOrganizationContext `json:"availableOrganizations"`
+	CreatedAt               time.Time                 `json:"createdAt"`
+	LastSeenAt              time.Time                 `json:"lastSeenAt"`
+	ExpiresAt               time.Time                 `json:"expiresAt"`
+	CreatedClientIP         string                    `json:"createdClientIP"`
+	CreatedClientIPTrusted  bool                      `json:"createdClientIPTrusted"`
+	CreatedClientIPSource   string                    `json:"createdClientIPSource"`
+	CreatedEdgePeerIP       string                    `json:"createdEdgePeerIP"`
+	CreatedUserAgent        string                    `json:"createdUserAgent"`
+	CreatedDevice           browserDevice             `json:"createdDevice"`
+	CreatedLocation         browserLocation           `json:"createdLocation"`
+	LastSeenClientIP        string                    `json:"lastSeenClientIP"`
+	LastSeenClientIPTrusted bool                      `json:"lastSeenClientIPTrusted"`
+	LastSeenClientIPSource  string                    `json:"lastSeenClientIPSource"`
+	LastSeenEdgePeerIP      string                    `json:"lastSeenEdgePeerIP"`
+	LastSeenUserAgent       string                    `json:"lastSeenUserAgent"`
+	LastSeenDevice          browserDevice             `json:"lastSeenDevice"`
+	LastSeenLocation        browserLocation           `json:"lastSeenLocation"`
+}
+
+type browserAccountsResponse struct {
+	Accounts []browserAccountSummary `json:"accounts"`
+}
+
 func snapshotForSession(session *browserSession) authSnapshot {
 	if session == nil {
 		return authSnapshot{
 			IsSignedIn: false,
 			Auth: authState{
 				IsAuthenticated: false,
+				ClientHandle:    nil,
+				AccountHandle:   nil,
 			},
 		}
 	}
@@ -1370,6 +2044,8 @@ func snapshotForSession(session *browserSession) authSnapshot {
 			OrgID:           session.User.SelectedOrgID,
 			SelectedOrgID:   session.User.SelectedOrgID,
 			CachePartition:  &cachePartition,
+			ClientHandle:    &session.ClientHandle,
+			AccountHandle:   &session.AccountHandle,
 		},
 		User: &browserUser{
 			Sub:                    session.User.Sub,
@@ -1382,7 +2058,9 @@ func snapshotForSession(session *browserSession) authSnapshot {
 			AvailableOrganizations: session.User.AvailableOrganizations,
 		},
 		Session: &sessionInfo{
-			SessionHandle:   session.SessionHandle,
+			SessionHandle:   session.AccountHandle,
+			ClientHandle:    session.ClientHandle,
+			AccountHandle:   session.AccountHandle,
 			CreatedAt:       session.CreatedAt,
 			LastSeenAt:      session.LastSeenAt,
 			ExpiresAt:       session.ExpiresAt,
@@ -1396,6 +2074,49 @@ func snapshotForSession(session *browserSession) authSnapshot {
 			Location:        session.LastSeenLocation,
 		},
 	}
+}
+
+func (a *BrowserAuth) browserAccountSummaries(ctx context.Context, clientHash, currentAccountHandle string) ([]browserAccountSummary, error) {
+	rows, err := a.q.ListBrowserAccountsForClient(ctx, identitystore.ListBrowserAccountsForClientParams{ClientHash: clientHash})
+	if err != nil {
+		return nil, err
+	}
+	accounts := make([]browserAccountSummary, 0, len(rows))
+	for _, row := range rows {
+		var organizations []authOrganizationContext
+		if err := json.Unmarshal([]byte(row.AvailableOrgContextsJson), &organizations); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, browserAccountSummary{
+			AccountHandle:           row.AccountHandle,
+			IsCurrent:               row.AccountHandle == currentAccountHandle,
+			Subject:                 row.Subject,
+			Email:                   stringFromText(row.Email),
+			DisplayName:             stringFromText(row.DisplayName),
+			PreferredUsername:       stringFromText(row.PreferredUsername),
+			HomeOrgID:               stringFromText(row.HomeOrgID),
+			SelectedOrgID:           stringFromText(row.SelectedOrgID),
+			AvailableOrganizations:  organizations,
+			CreatedAt:               requiredTime(row.CreatedAt),
+			LastSeenAt:              requiredTime(row.LastSeenAt),
+			ExpiresAt:               requiredTime(row.ExpiresAt),
+			CreatedClientIP:         row.CreatedClientIp,
+			CreatedClientIPTrusted:  row.CreatedClientIpTrusted,
+			CreatedClientIPSource:   row.CreatedClientIpSource,
+			CreatedEdgePeerIP:       row.CreatedEdgePeerIp,
+			CreatedUserAgent:        row.CreatedUserAgent,
+			CreatedDevice:           browserDevice{Label: row.CreatedDeviceLabel, Kind: row.CreatedDeviceKind, BrowserName: row.CreatedBrowserName, OSName: row.CreatedOsName},
+			CreatedLocation:         browserLocation{CountryCode: row.CreatedGeoCountryCode, Region: row.CreatedGeoRegion, City: row.CreatedGeoCity},
+			LastSeenClientIP:        row.LastSeenClientIp,
+			LastSeenClientIPTrusted: row.LastSeenClientIpTrusted,
+			LastSeenClientIPSource:  row.LastSeenClientIpSource,
+			LastSeenEdgePeerIP:      row.LastSeenEdgePeerIp,
+			LastSeenUserAgent:       row.LastSeenUserAgent,
+			LastSeenDevice:          browserDevice{Label: row.LastSeenDeviceLabel, Kind: row.LastSeenDeviceKind, BrowserName: row.LastSeenBrowserName, OSName: row.LastSeenOsName},
+			LastSeenLocation:        browserLocation{CountryCode: row.LastSeenGeoCountryCode, Region: row.LastSeenGeoRegion, City: row.LastSeenGeoCity},
+		})
+	}
+	return accounts, nil
 }
 
 func (a *BrowserAuth) publicOrganizationContexts(ctx context.Context, subject string) ([]authOrganizationContext, error) {
@@ -1516,17 +2237,101 @@ func randomToken(bytes int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-func randomSessionHandle() (string, error) {
-	token, err := randomToken(18)
-	if err != nil {
-		return "", err
-	}
-	return browserAuthSessionPrefix + token, nil
-}
-
 func hashToken(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func browserClientHandle(clientHash string) string {
+	return browserHandle(browserAuthClientPrefix, clientHash)
+}
+
+func browserAccountHandle(clientHash, subject string) string {
+	return browserHandle(browserAuthAccountPrefix, clientHash, subject)
+}
+
+func browserHandle(prefix string, parts ...string) string {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("verself browser handle v1"))
+	for _, part := range parts {
+		_, _ = hash.Write([]byte{0})
+		_, _ = hash.Write([]byte(part))
+	}
+	return prefix + base64.RawURLEncoding.EncodeToString(hash.Sum(nil))[:32]
+}
+
+func normalizeEmailHint(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+type browserTokenVault struct {
+	aead cipher.AEAD
+}
+
+func newBrowserTokenVault(secret string) (browserTokenVault, error) {
+	key := sha256.Sum256([]byte("verself browser token vault v1\x00" + secret))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return browserTokenVault{}, err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return browserTokenVault{}, err
+	}
+	return browserTokenVault{aead: aead}, nil
+}
+
+func (v browserTokenVault) sealOptional(plaintext, accountHandle, kind string) (string, error) {
+	if strings.TrimSpace(plaintext) == "" {
+		return "", nil
+	}
+	return v.seal(plaintext, accountHandle, kind)
+}
+
+func (v browserTokenVault) seal(plaintext, accountHandle, kind string) (string, error) {
+	if strings.TrimSpace(plaintext) == "" {
+		return "", errors.New("browser token vault cannot seal an empty token")
+	}
+	nonce := make([]byte, v.aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	ciphertext := v.aead.Seal(nil, nonce, []byte(plaintext), browserTokenVaultAAD(accountHandle, kind))
+	payload := make([]byte, 0, len(nonce)+len(ciphertext))
+	payload = append(payload, nonce...)
+	payload = append(payload, ciphertext...)
+	return "v1." + base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func (v browserTokenVault) openNullable(value pgtype.Text, accountHandle, kind string) (string, error) {
+	if !value.Valid || strings.TrimSpace(value.String) == "" {
+		return "", nil
+	}
+	return v.open(value.String, accountHandle, kind)
+}
+
+func (v browserTokenVault) open(encoded, accountHandle, kind string) (string, error) {
+	payload, ok := strings.CutPrefix(encoded, "v1.")
+	if !ok {
+		return "", errors.New("unsupported browser token ciphertext version")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return "", err
+	}
+	nonceSize := v.aead.NonceSize()
+	if len(raw) <= nonceSize {
+		return "", errors.New("browser token ciphertext is too short")
+	}
+	plaintext, err := v.aead.Open(nil, raw[:nonceSize], raw[nonceSize:], browserTokenVaultAAD(accountHandle, kind))
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
+}
+
+func browserTokenVaultAAD(accountHandle, kind string) []byte {
+	return []byte("verself browser token vault aad v1\x00" + accountHandle + "\x00" + kind)
 }
 
 func browserRequestInfoFromContext(ctx context.Context) browserAuthRequestInfo {

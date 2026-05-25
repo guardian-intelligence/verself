@@ -39,6 +39,19 @@ type Store interface {
 	AcceptMemberInviteAcceptance(ctx context.Context, tokenHash string, now time.Time) error
 }
 
+type SignupStore interface {
+	StartSignupIntent(ctx context.Context, intent SignupIntent, now time.Time) (SignupStartDecision, error)
+	DeletePendingSignupIntent(ctx context.Context, signupIntentID string) error
+	ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, organizationDisplayName string, requestedOrganizationSlug string, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error)
+	RecordSignupIntentStep(ctx context.Context, signupIntentID, step string, leaseExpiresAt time.Time) error
+	RecordSignupIntentProviderOrg(ctx context.Context, signupIntentID, providerOrgID string) error
+	RecordSignupIntentProviderUser(ctx context.Context, signupIntentID, providerUserID string) error
+	RecordSignupIntentOrganization(ctx context.Context, signupIntentID, orgID, organizationSlug string) error
+	MarkSignupIntentFailed(ctx context.Context, signupIntentID string, state SignupIntentState, message string) error
+	CompleteSignupIntent(ctx context.Context, signupIntentID string, completedAt time.Time) (SignupIntent, error)
+	AppendIAMEvent(ctx context.Context, event IAMEvent) error
+}
+
 type Directory interface {
 	CreateOrganization(ctx context.Context, input DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error)
 	ListMembers(ctx context.Context, orgID string) ([]Member, error)
@@ -51,15 +64,30 @@ type Directory interface {
 	DeactivateServiceAccount(ctx context.Context, subjectID string) error
 }
 
+type SignupDirectory interface {
+	CreateOrganization(ctx context.Context, input DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error)
+	CreateSignupUser(ctx context.Context, input DirectoryCreateSignupUserRequest) (DirectoryCreateSignupUserResult, error)
+}
+
 type AuthorizationGraph interface {
 	LookupOrganizations(ctx context.Context, subject AuthorizationSubject, permission, minZedToken string) ([]string, string, error)
 	TestOrganizationPermissions(ctx context.Context, orgID string, subject AuthorizationSubject, permissions []string, minZedToken string) ([]string, string, error)
+}
+
+type OrganizationOwnerPolicyWriter interface {
+	SetOrganizationOwner(ctx context.Context, input OrganizationOwnerPolicyRequest) error
+}
+
+type BillingProvisioner interface {
+	EnsureBillingOrganization(ctx context.Context, input BillingOrganizationProvisioningRequest) error
 }
 
 type Service struct {
 	Store              Store
 	Directory          Directory
 	AuthorizationGraph AuthorizationGraph
+	PolicyWriter       OrganizationOwnerPolicyWriter
+	Billing            BillingProvisioner
 	ProjectID          string
 	Now                func() time.Time
 }
@@ -167,6 +195,28 @@ func (s *Service) CreateOrganization(ctx context.Context, subjectID string, inpu
 	if err != nil {
 		return Organization{}, err
 	}
+	policyWriter, err := s.policyWriter()
+	if err != nil {
+		return Organization{}, err
+	}
+	if err := policyWriter.SetOrganizationOwner(ctx, OrganizationOwnerPolicyRequest{
+		OrgID:       profile.OrgID,
+		OwnerUserID: subjectID,
+		OperationID: "create-organization",
+	}); err != nil {
+		return Organization{}, err
+	}
+	billing, err := s.billing()
+	if err != nil {
+		return Organization{}, err
+	}
+	if err := billing.EnsureBillingOrganization(ctx, BillingOrganizationProvisioningRequest{
+		OrgID:       profile.OrgID,
+		DisplayName: profile.DisplayName,
+		TrustTier:   "new",
+	}); err != nil {
+		return Organization{}, err
+	}
 	return Organization{
 		OrgID:       profile.OrgID,
 		DisplayName: profile.DisplayName,
@@ -198,6 +248,18 @@ func (s *Service) ResolveOrganization(ctx context.Context, input ResolveOrganiza
 		return OrganizationProfile{}, err
 	}
 	return store.ResolveOrganizationProfile(ctx, input)
+}
+
+func (s *Service) OrganizationSlugAvailability(ctx context.Context, slug string) (bool, error) {
+	slug = normalizeSlug(slug)
+	if err := validateSlug("slug", slug); err != nil {
+		return false, err
+	}
+	store, err := s.store()
+	if err != nil {
+		return false, err
+	}
+	return store.OrganizationSlugAvailable(ctx, slug)
 }
 
 func (s *Service) Members(ctx context.Context, principal Principal) ([]Member, error) {
@@ -253,7 +315,6 @@ func (s *Service) InviteMember(ctx context.Context, principal Principal, input I
 		UserID:                directoryResult.UserID,
 		Email:                 directoryResult.Email,
 		EmailVerificationCode: directoryResult.EmailVerificationCode,
-		PasswordResetCode:     directoryResult.PasswordResetCode,
 		CreatedAt:             now,
 		ExpiresAt:             expiresAt,
 	}); err != nil {
@@ -290,9 +351,7 @@ func (s *Service) CompleteMemberInvite(ctx context.Context, input CompleteMember
 	}
 	if err := directory.CompleteMemberInvite(ctx, DirectoryCompleteMemberInviteRequest{
 		UserID:                acceptance.UserID,
-		PasswordResetCode:     acceptance.PasswordResetCode,
 		EmailVerificationCode: acceptance.EmailVerificationCode,
-		Password:              input.Password,
 	}); err != nil {
 		return MemberInviteAcceptance{}, err
 	}
@@ -868,17 +927,8 @@ func normalizeCompleteMemberInvite(input CompleteMemberInviteRequest) (CompleteM
 	if input.AcceptanceToken == "" {
 		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: invite token is required", ErrInvalidInput)
 	}
-	if strings.TrimSpace(input.Password) == "" {
-		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password is required", ErrInvalidInput)
-	}
 	if len(input.AcceptanceToken) > 512 {
 		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: invite token is invalid", ErrInvalidInput)
-	}
-	if len(input.Password) < 15 {
-		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password must be at least 15 characters", ErrInvalidInput)
-	}
-	if len(input.Password) > 1024 {
-		return CompleteMemberInviteRequest{}, fmt.Errorf("%w: password is too long", ErrInvalidInput)
 	}
 	return input, nil
 }

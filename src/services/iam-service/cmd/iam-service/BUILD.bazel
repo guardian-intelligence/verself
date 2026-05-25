@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
@@ -7,6 +7,7 @@ go_library(
     importpath = "github.com/verself/iam-service/cmd/iam-service",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/services/billing-service/client",
         "//src/services/iam-service/internal/api",
         "//src/services/iam-service/internal/authz",
         "//src/services/iam-service/internal/identity",
@@ -31,6 +32,16 @@ go_binary(
     name = "iam-service",
     embed = [":iam-service_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "iam-service_test",
+    srcs = ["main_test.go"],
+    embed = [":iam-service_lib"],
+    deps = [
+        "//src/services/iam-service/internal/api",
+        "//src/services/notifications-service/internalclient",
+    ],
 )
 
 nomad_binary_artifact(

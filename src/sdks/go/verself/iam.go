@@ -2,6 +2,8 @@ package verself
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -34,6 +36,17 @@ type Organization struct {
 type OrganizationList struct {
 	Organizations []Organization `json:"organizations"`
 	NextPageToken string         `json:"nextPageToken,omitempty"`
+}
+
+type OrganizationSlugAvailability struct {
+	Slug      string `json:"slug"`
+	Available bool   `json:"available"`
+}
+
+type SignupStartResult struct {
+	Message               string `json:"message"`
+	Status                string `json:"status"`
+	VerificationExpiresAt string `json:"verificationExpiresAt"`
 }
 
 type Member struct {
@@ -78,6 +91,38 @@ type CreateOrganizationInput struct {
 	DisplayName    string
 	Slug           *string
 	IdempotencyKey string
+}
+
+type StartSignupInput struct {
+	Email                   string
+	OrganizationDisplayName string
+	OrganizationSlug        *string
+	GivenName               *string
+	FamilyName              *string
+	IdempotencyKey          string
+}
+
+type VerifySignupInput struct {
+	SignupIntentID          string
+	VerificationToken       string
+	OrganizationDisplayName *string
+	OrganizationSlug        *string
+	IdempotencyKey          string
+}
+
+type SignupVerificationResult struct {
+	Organization Organization                `json:"organization"`
+	LoginURL     string                      `json:"loginUrl"`
+	LoginIntent  *RequiredAccountLoginIntent `json:"loginIntent,omitempty"`
+}
+
+type RequiredAccountLoginIntent struct {
+	LoginURL        string  `json:"loginUrl"`
+	Purpose         string  `json:"purpose"`
+	RequiredSubject string  `json:"requiredSubject"`
+	RequiredEmail   string  `json:"requiredEmail"`
+	RequiredOrgID   string  `json:"requiredOrgId"`
+	RedirectTo      *string `json:"redirectTo,omitempty"`
 }
 
 type UpdateOrganizationInput struct {
@@ -175,6 +220,101 @@ func (c *IAMClient) CreateOrganization(ctx context.Context, input CreateOrganiza
 		return Organization{}, iamAPIError("create organization", response.StatusCode, response.Problem, response.Body)
 	}
 	return organizationFromGenerated(*response.Result), nil
+}
+
+func (c *IAMClient) CheckOrganizationSlugAvailability(ctx context.Context, slug string) (OrganizationSlugAvailability, error) {
+	if c == nil || c.client == nil {
+		return OrganizationSlugAvailability{}, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return OrganizationSlugAvailability{}, fmt.Errorf("verself sdk: organization slug is required")
+	}
+	response, err := c.client.CheckOrganizationSlugAvailability(ctx, iamcore.CheckOrganizationSlugAvailabilityRequest{Slug: iamcore.OrgSlug(slug)})
+	if err != nil {
+		return OrganizationSlugAvailability{}, err
+	}
+	if response.Result == nil {
+		return OrganizationSlugAvailability{}, iamAPIError("check organization slug availability", response.StatusCode, response.Problem, response.Body)
+	}
+	return OrganizationSlugAvailability{
+		Slug:      string(response.Result.Slug),
+		Available: response.Result.Available,
+	}, nil
+}
+
+func (c *IAMClient) StartSignup(ctx context.Context, input StartSignupInput) (SignupStartResult, error) {
+	if c == nil || c.client == nil {
+		return SignupStartResult{}, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	email := strings.TrimSpace(input.Email)
+	displayName := strings.TrimSpace(input.OrganizationDisplayName)
+	if email == "" || displayName == "" {
+		return SignupStartResult{}, fmt.Errorf("verself sdk: email and organization display name are required")
+	}
+	key, err := deterministicMutationKey("iam-signup-start", input.IdempotencyKey, email, displayName, stringPointerValue(input.OrganizationSlug), stringPointerValue(input.GivenName), stringPointerValue(input.FamilyName))
+	if err != nil {
+		return SignupStartResult{}, err
+	}
+	body := iamcore.StartSignupInputBody{
+		Email:                   iamcore.EmailAddress(email),
+		OrganizationDisplayName: iamcore.DisplayName(displayName),
+	}
+	if input.OrganizationSlug != nil {
+		body.OrganizationSlug = trimStringPointer(input.OrganizationSlug)
+	}
+	if input.GivenName != nil {
+		body.GivenName = trimStringPointer(input.GivenName)
+	}
+	if input.FamilyName != nil {
+		body.FamilyName = trimStringPointer(input.FamilyName)
+	}
+	response, err := c.client.StartSignup(ctx, iamcore.StartSignupRequest{
+		IdempotencyKey: iamcore.IdempotencyKey(key),
+		Body:           body,
+	})
+	if err != nil {
+		return SignupStartResult{}, err
+	}
+	if response.Result == nil {
+		return SignupStartResult{}, iamAPIError("start signup", response.StatusCode, response.Problem, response.Body)
+	}
+	return SignupStartResult{
+		Message:               response.Result.Message,
+		Status:                string(response.Result.Status),
+		VerificationExpiresAt: response.Result.VerificationExpiresAt,
+	}, nil
+}
+
+func (c *IAMClient) VerifySignup(ctx context.Context, input VerifySignupInput) (SignupVerificationResult, error) {
+	if c == nil || c.client == nil {
+		return SignupVerificationResult{}, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	signupIntentID := strings.TrimSpace(input.SignupIntentID)
+	verificationToken := strings.TrimSpace(input.VerificationToken)
+	if signupIntentID == "" || verificationToken == "" {
+		return SignupVerificationResult{}, fmt.Errorf("verself sdk: signup intent id and verification token are required")
+	}
+	key, err := deterministicMutationKey("iam-signup-verify", input.IdempotencyKey, signupIntentID, verificationToken, stringPointerValue(input.OrganizationDisplayName), stringPointerValue(input.OrganizationSlug))
+	if err != nil {
+		return SignupVerificationResult{}, err
+	}
+	response, err := c.client.VerifySignup(ctx, iamcore.VerifySignupRequest{
+		SignupIntentID: iamcore.SignupIntentId(signupIntentID),
+		IdempotencyKey: iamcore.IdempotencyKey(key),
+		Body: iamcore.VerifySignupInputBody{
+			VerificationToken:       iamcore.SignupVerificationToken(verificationToken),
+			OrganizationDisplayName: optionalCoreString[iamcore.DisplayName](input.OrganizationDisplayName),
+			OrganizationSlug:        optionalCoreString[iamcore.OrgSlug](input.OrganizationSlug),
+		},
+	})
+	if err != nil {
+		return SignupVerificationResult{}, err
+	}
+	if response.Result == nil {
+		return SignupVerificationResult{}, iamAPIError("verify signup", response.StatusCode, response.Problem, response.Body)
+	}
+	return signupVerificationResultFromGenerated(*response.Result), nil
 }
 
 func (c *IAMClient) GetOrganization(ctx context.Context, orgID string) (Organization, error) {
@@ -425,6 +565,49 @@ func organizationFromGenerated(input iamcore.OrganizationSummary) Organization {
 	}
 }
 
+func deterministicMutationKey(namespace, explicit string, parts ...string) (string, error) {
+	if strings.TrimSpace(explicit) != "" {
+		return mutationKey(namespace, explicit)
+	}
+	digest := sha256.New()
+	_, _ = digest.Write([]byte(namespace))
+	for _, part := range parts {
+		_, _ = digest.Write([]byte{0})
+		_, _ = digest.Write([]byte(strings.TrimSpace(part)))
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(digest.Sum(nil))
+	return namespace + ":" + encoded[:32], nil
+}
+
+func stringPointerValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func signupVerificationResultFromGenerated(input iamcore.VerifySignupResult) SignupVerificationResult {
+	return SignupVerificationResult{
+		Organization: organizationFromGenerated(input.Organization),
+		LoginURL:     string(input.LoginURL),
+		LoginIntent:  requiredAccountLoginIntentFromGenerated(input.LoginIntent),
+	}
+}
+
+func requiredAccountLoginIntentFromGenerated(input *iamcore.RequiredAccountLoginIntent) *RequiredAccountLoginIntent {
+	if input == nil {
+		return nil
+	}
+	return &RequiredAccountLoginIntent{
+		LoginURL:        string(input.LoginURL),
+		Purpose:         input.Purpose,
+		RequiredSubject: input.RequiredSubject,
+		RequiredEmail:   input.RequiredEmail,
+		RequiredOrgID:   string(input.RequiredOrgID),
+		RedirectTo:      input.RedirectTo,
+	}
+}
+
 func memberListFromGenerated(input iamcore.ListMembersOutputBody) MemberList {
 	out := MemberList{}
 	if input.NextPageToken != nil {
@@ -526,4 +709,15 @@ func stringValue[T ~string](input *T) string {
 		return ""
 	}
 	return string(*input)
+}
+
+func optionalCoreString[T ~string](input *string) *T {
+	if input == nil {
+		return nil
+	}
+	value := T(strings.TrimSpace(*input))
+	if value == "" {
+		return nil
+	}
+	return &value
 }

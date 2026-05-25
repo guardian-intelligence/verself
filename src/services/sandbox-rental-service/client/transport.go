@@ -19,7 +19,25 @@ type ProblemCode = string
 
 type ProblemDetail = string
 
+type ProblemPhase = string
+
+type ProblemPointer = string
+
 type ProblemType = string
+
+type ProblemOccurrence struct {
+	Type       ProblemType     `json:"type"`
+	Code       ProblemCode     `json:"code"`
+	Title      string          `json:"title"`
+	Detail     *ProblemDetail  `json:"detail,omitempty"`
+	Status     *int            `json:"status,omitempty"`
+	Phase      *ProblemPhase   `json:"phase,omitempty"`
+	Retryable  *bool           `json:"retryable,omitempty"`
+	Pointer    *ProblemPointer `json:"pointer,omitempty"`
+	ObservedAt *string         `json:"observed_at,omitempty"`
+}
+
+type ProblemOccurrences []ProblemOccurrence
 
 type ProjectId = string
 
@@ -232,6 +250,40 @@ type InternalSubmitRunnerJobResponse struct {
 	HTTPResponse *http.Response
 }
 
+type InternalGetRunnerAllocationRequest struct {
+	AllocationID AttemptId `json:"allocation_id"`
+}
+
+type RunnerAllocationStatus struct {
+	AllocationID           AttemptId            `json:"allocation_id"`
+	Provider               Provider             `json:"provider"`
+	ProviderRepositoryID   ProviderRepositoryId `json:"provider_repository_id"`
+	ProviderInstallationID *DecimalUint64       `json:"provider_installation_id,omitempty"`
+	RunnerClass            *string              `json:"runner_class,omitempty"`
+	RunnerName             *RunnerName          `json:"runner_name,omitempty"`
+	RunnerID               *DecimalUint64       `json:"runner_id,omitempty"`
+	OriginProviderJobID    *DecimalUint64       `json:"origin_provider_job_id,omitempty"`
+	AssignedProviderJobID  *DecimalUint64       `json:"assigned_provider_job_id,omitempty"`
+	ExecutionID            *ExecutionId         `json:"execution_id,omitempty"`
+	AttemptID              *AttemptId           `json:"attempt_id,omitempty"`
+	State                  string               `json:"state"`
+	Problems               ProblemOccurrences   `json:"problems,omitempty"`
+	ExecutionState         *string              `json:"execution_state,omitempty"`
+	AttemptState           *string              `json:"attempt_state,omitempty"`
+}
+
+type InternalGetRunnerAllocationOutputBody struct {
+	Allocation RunnerAllocationStatus `json:"allocation"`
+}
+
+type InternalGetRunnerAllocationResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *InternalGetRunnerAllocationOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
 type InternalObserveRunnerJobInputBody struct {
 	Observation RunnerJobObservation          `json:"observation"`
 	WorkflowRun *RunnerWorkflowRunObservation `json:"workflow_run,omitempty"`
@@ -404,6 +456,25 @@ func (c *Client) InternalSubmitRunnerJob(ctx context.Context, request InternalSu
 	return parseInternalSubmitRunnerJobResponse(resp)
 }
 
+func (c *Client) InternalGetRunnerAllocation(ctx context.Context, request InternalGetRunnerAllocationRequest, reqEditors ...RequestEditorFn) (*InternalGetRunnerAllocationResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	path := "/internal/v1/runner/allocations/" + url.PathEscape(string(request.AllocationID))
+	req, err := c.newRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.applyEditors(ctx, req, reqEditors...); err != nil {
+		return nil, err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseInternalGetRunnerAllocationResponse(resp)
+}
+
 func (c *Client) InternalObserveRunnerJob(ctx context.Context, request InternalObserveRunnerJobRequest, reqEditors ...RequestEditorFn) (*InternalObserveRunnerJobResponse, error) {
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
@@ -463,20 +534,30 @@ func (c *Client) newInternalRegisterRunnerRepositoryRequest(ctx context.Context,
 }
 
 func (c *Client) newJSONRequest(ctx context.Context, method string, path string, body any) (*http.Request, error) {
+	return c.newRequest(ctx, method, path, body)
+}
+
+func (c *Client) newRequest(ctx context.Context, method string, path string, body any) (*http.Request, error) {
 	endpoint, err := url.Parse(c.server + path)
 	if err != nil {
 		return nil, err
 	}
-	requestBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
+	var reader io.Reader
+	if body != nil {
+		requestBody, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(requestBody)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), bytes.NewReader(requestBody))
+	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), reader)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	return req, nil
 }
 
@@ -529,6 +610,27 @@ func parseInternalSubmitRunnerJobResponse(resp *http.Response) (*InternalSubmitR
 	result := &InternalSubmitRunnerJobResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 201 {
 		var decoded InternalSubmitRunnerJobOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseInternalGetRunnerAllocationResponse(resp *http.Response) (*InternalGetRunnerAllocationResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &InternalGetRunnerAllocationResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded InternalGetRunnerAllocationOutputBody
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &decoded); err != nil {
 				return nil, err

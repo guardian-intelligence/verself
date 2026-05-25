@@ -375,7 +375,12 @@ CREATE TABLE runner_allocations (
     assignment_by                  TIMESTAMPTZ,
     vm_exit_by                     TIMESTAMPTZ,
     cleanup_by                     TIMESTAMPTZ,
-    failure_reason                 TEXT        NOT NULL DEFAULT '',
+    primary_problem_type           TEXT        NOT NULL DEFAULT '',
+    primary_problem_code           TEXT        NOT NULL DEFAULT '',
+    primary_problem_status         INTEGER     NOT NULL DEFAULT 0 CHECK (primary_problem_status BETWEEN 0 AND 599),
+    primary_problem_title          TEXT        NOT NULL DEFAULT '',
+    primary_problem_detail         TEXT        NOT NULL DEFAULT '',
+    problem_count                  INTEGER     NOT NULL DEFAULT 0 CHECK (problem_count >= 0),
     created_at                     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -392,6 +397,24 @@ CREATE UNIQUE INDEX idx_runner_allocations_active_job
     ON runner_allocations (provider, requested_for_provider_job_id)
     WHERE requested_for_provider_job_id <> 0
       AND state IN ('pending', 'jit_creating', 'jit_created', 'vm_submitted', 'runner_config_fetched');
+
+CREATE TABLE runner_allocation_problems (
+    allocation_id      UUID        NOT NULL REFERENCES runner_allocations(allocation_id) ON DELETE CASCADE,
+    problem_seq        INTEGER     NOT NULL CHECK (problem_seq > 0),
+    phase              TEXT        NOT NULL CHECK (phase <> ''),
+    problem_type       TEXT        NOT NULL CHECK (problem_type <> ''),
+    problem_code       TEXT        NOT NULL CHECK (problem_code <> ''),
+    title              TEXT        NOT NULL CHECK (title <> ''),
+    detail             TEXT        NOT NULL DEFAULT '',
+    status             INTEGER     NOT NULL DEFAULT 0 CHECK (status BETWEEN 0 AND 599),
+    retryable          BOOLEAN     NOT NULL DEFAULT false,
+    pointer            TEXT        NOT NULL DEFAULT '',
+    observed_at        TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (allocation_id, problem_seq)
+);
+
+CREATE INDEX idx_runner_allocation_problems_allocation
+    ON runner_allocation_problems (allocation_id, observed_at);
 
 CREATE TABLE runner_bootstrap_configs (
     allocation_id      UUID        PRIMARY KEY REFERENCES runner_allocations(allocation_id) ON DELETE CASCADE,
@@ -714,7 +737,7 @@ CREATE INDEX idx_golden_vm_snapshot_retention
     ON golden_vm_snapshot (state, expires_at, created_at);
 CREATE INDEX idx_golden_vm_snapshot_org_ring_retention
     ON golden_vm_snapshot (org_id, state, last_used_at DESC, created_at DESC, golden_vm_snapshot_id DESC)
-    WHERE state IN ('candidate', 'current', 'retained');
+    WHERE state = 'retained';
 
 CREATE TABLE golden_vm_snapshot_generation (
     golden_vm_snapshot_id UUID    NOT NULL REFERENCES golden_vm_snapshot(golden_vm_snapshot_id) ON DELETE CASCADE,

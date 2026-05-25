@@ -50,7 +50,12 @@ type PrivZFS interface {
 	ZFSClone(ctx context.Context, snapshot, target, operationID string) error
 	ZFSSnapshot(ctx context.Context, dataset, snapshotName string, properties map[string]string) error
 	ZFSDestroy(ctx context.Context, dataset string) error
-	ZFSDestroyRecursive(ctx context.Context, dataset string) error
+	// ZFSDestroyDatasetTree destroys only the named dataset tree. It must not
+	// follow clone dependencies outside that owned subtree.
+	ZFSDestroyDatasetTree(ctx context.Context, dataset string) error
+	// ZFSDestroyDependencyGraph may follow clone dependencies outside the named
+	// tree and is only valid for explicit host/image replacement operations.
+	ZFSDestroyDependencyGraph(ctx context.Context, dataset string) error
 	ZFSCreateEncryptedFilesystem(ctx context.Context, dataset string, rawKey []byte) error
 	ZFSEnsureFilesystem(ctx context.Context, dataset string) error
 	ZFSLoadKey(ctx context.Context, dataset string, rawKey []byte) error
@@ -222,7 +227,7 @@ func (l *VolumeLifecycle) EnsureEncryptedStorageNamespace(ctx context.Context, n
 		if encryption == "" || encryption == "off" {
 			span.SetAttributes(attribute.Bool("zfs.namespace_recreated_unencrypted", true))
 			l.logger.WarnContext(ctx, "unencrypted storage namespace replaced", "org_id", namespace.OrgID, "dataset", orgRoot)
-			if err := l.ops.ZFSDestroyRecursive(ctx, orgRoot); err != nil {
+			if err := l.ops.ZFSDestroyDependencyGraph(ctx, orgRoot); err != nil {
 				return fmt.Errorf("destroy unencrypted storage namespace %s: %w", orgRoot, err)
 			}
 			exists = false
@@ -395,7 +400,7 @@ func (l *VolumeLifecycle) PrepareSubstrateCloneFromSnapshot(ctx context.Context,
 		return cloneErr
 	}
 	if err := l.AssertEncryptedDataset(ctx, lease.RootDataset(), l.roots.orgRoot(lease.OrgID())); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), lease.RootDataset())
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), lease.RootDataset())
 		return err
 	}
 	return nil
@@ -414,7 +419,7 @@ func (l *VolumeLifecycle) ResizeLeaseRootExt4(ctx context.Context, lease Lease, 
 
 func (l *VolumeLifecycle) DestroyLeaseRoot(ctx context.Context, lease Lease) error {
 	_, _ = l.ops.UnmountStaleZvolMounts(ctx, l.roots.Pool)
-	return l.ops.ZFSDestroyRecursive(ctx, lease.Dataset())
+	return l.ops.ZFSDestroyDatasetTree(ctx, lease.Dataset())
 }
 
 func (l *VolumeLifecycle) PrepareMount(ctx context.Context, lease Lease, image Image, index int, name, operationID string) (clone MountClone, err error) {
@@ -486,7 +491,7 @@ func (l *VolumeLifecycle) PrepareMountFromSnapshot(ctx context.Context, lease Le
 		return MountClone{}, cloneErr
 	}
 	if err := l.AssertEncryptedDataset(ctx, target, l.roots.orgRoot(lease.OrgID())); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), target)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), target)
 		return MountClone{}, err
 	}
 	return MountClone{lease: lease, dataset: target, name: name}, nil
@@ -536,11 +541,11 @@ func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, in
 		return MountClone{}, createErr
 	}
 	if err := l.ops.ZFSSetProperty(ctx, target, "vs:operation_id", firstNonEmpty(operationID, lease.ID())); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), target)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), target)
 		return MountClone{}, err
 	}
 	if err := l.AssertEncryptedDataset(ctx, target, l.roots.orgRoot(lease.OrgID())); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), target)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), target)
 		return MountClone{}, err
 	}
 	devicePath := zvolDevicePath(target)
@@ -555,7 +560,7 @@ func (l *VolumeLifecycle) PrepareEmptyMount(ctx context.Context, lease Lease, in
 	mkfsErr := l.ops.ZFSMkfs(mkfsCtx, devicePath, "ext4", safeExt4Label(name))
 	endMkfsSpan(mkfsErr)
 	if mkfsErr != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), target)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), target)
 		return MountClone{}, mkfsErr
 	}
 	return MountClone{lease: lease, dataset: target, name: name}, nil
@@ -680,14 +685,14 @@ func (l *VolumeLifecycle) EnsureOrgImageStatus(ctx context.Context, orgID string
 			return OrgImageStatus{ImageRef: image.Ref(), SourceSnapshot: source, SourceDigest: sourceDigest, Snapshot: target}, nil
 		}
 		span.SetAttributes(attribute.Bool("zfs.image_cache_stale", true))
-		if err := l.ops.ZFSDestroyRecursive(ctx, dataset); err != nil {
+		if err := l.ops.ZFSDestroyDatasetTree(ctx, dataset); err != nil {
 			return OrgImageStatus{}, fmt.Errorf("destroy stale org image %s: %w", dataset, err)
 		}
 	} else if exists, err := l.ops.ZFSDatasetExists(ctx, dataset); err != nil {
 		return OrgImageStatus{}, err
 	} else if exists {
 		span.SetAttributes(attribute.Bool("zfs.partial_org_image_removed", true))
-		if err := l.ops.ZFSDestroyRecursive(ctx, dataset); err != nil {
+		if err := l.ops.ZFSDestroyDatasetTree(ctx, dataset); err != nil {
 			return OrgImageStatus{}, fmt.Errorf("destroy partial org image %s: %w", dataset, err)
 		}
 	}
@@ -704,19 +709,19 @@ func (l *VolumeLifecycle) EnsureOrgImageStatus(ctx context.Context, orgID string
 	receiveErr := l.ops.ZFSReceiveSnapshot(receiveCtx, source.String(), dataset)
 	endReceiveSpan(receiveErr)
 	if receiveErr != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), dataset)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), dataset)
 		return OrgImageStatus{}, receiveErr
 	}
 	if err := l.ops.ZFSSetProperty(ctx, target.String(), "vs:image_ref", image.Ref()); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), dataset)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), dataset)
 		return OrgImageStatus{}, err
 	}
 	if err := l.ops.ZFSSetProperty(ctx, target.String(), sourceDigestProperty, sourceDigest); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), dataset)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), dataset)
 		return OrgImageStatus{}, err
 	}
 	if err := l.AssertEncryptedDataset(ctx, dataset, l.roots.orgRoot(orgID)); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), dataset)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), dataset)
 		return OrgImageStatus{}, err
 	}
 	l.logger.InfoContext(ctx, "org image materialized",
@@ -730,7 +735,7 @@ func (l *VolumeLifecycle) EnsureOrgImageStatus(ctx context.Context, orgID string
 
 func (l *VolumeLifecycle) DestroyMount(ctx context.Context, clone MountClone) error {
 	_, _ = l.ops.UnmountStaleZvolMounts(ctx, l.roots.Pool)
-	return l.ops.ZFSDestroyRecursive(ctx, clone.Dataset())
+	return l.ops.ZFSDestroyDatasetTree(ctx, clone.Dataset())
 }
 
 type CommitResult struct {
@@ -813,26 +818,26 @@ func (l *VolumeLifecycle) commitSnapshot(ctx context.Context, source Snapshot, v
 		return CommitResult{}, err
 	}
 	if err := l.ops.ZFSPromote(ctx, genDataset); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), genDataset)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), genDataset)
 		return CommitResult{}, err
 	}
 	expectedEncryptionRoot := l.roots.orgRoot(volume.OrgID())
 	if err := l.AssertEncryptedDataset(ctx, genDataset, expectedEncryptionRoot); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), genDataset)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), genDataset)
 		return CommitResult{}, err
 	}
 	if err := l.ops.ZFSSnapshot(ctx, genDataset, sealedSnapshot, map[string]string{
 		"vs:operation_id": firstNonEmpty(operationID, generationName),
 		"vs:generation":   generationName,
 	}); err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), genDataset)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), genDataset)
 		return CommitResult{}, err
 	}
 	now := time.Now().UTC()
 	snap := Snapshot{dataset: genDataset, name: sealedSnapshot}
 	guid, err := l.ops.ZFSGetProperty(ctx, snap.String(), "guid")
 	if err != nil {
-		_ = l.ops.ZFSDestroyRecursive(context.Background(), genDataset)
+		_ = l.ops.ZFSDestroyDatasetTree(context.Background(), genDataset)
 		return CommitResult{}, fmt.Errorf("read sealed snapshot guid: %w", err)
 	}
 	guid = strings.TrimSpace(guid)
@@ -854,11 +859,11 @@ func (l *VolumeLifecycle) commitSnapshot(ctx context.Context, source Snapshot, v
 }
 
 func (l *VolumeLifecycle) DestroyGeneration(ctx context.Context, generation Generation) error {
-	return l.ops.ZFSDestroyRecursive(ctx, generation.Snapshot().Dataset())
+	return l.ops.ZFSDestroyDatasetTree(ctx, generation.Snapshot().Dataset())
 }
 
 func (l *VolumeLifecycle) DestroyVolume(ctx context.Context, volume Volume) error {
-	return l.ops.ZFSDestroyRecursive(ctx, volume.Dataset())
+	return l.ops.ZFSDestroyDatasetTree(ctx, volume.Dataset())
 }
 
 type SeedStrategy string
@@ -920,7 +925,7 @@ func (l *VolumeLifecycle) Seed(ctx context.Context, image Image, spec SeedSpec) 
 	cleanup := true
 	defer func() {
 		if cleanup {
-			_ = l.ops.ZFSDestroyRecursive(context.Background(), staging)
+			_ = l.ops.ZFSDestroyDatasetTree(context.Background(), staging)
 		}
 	}()
 	var seededBytes uint64
@@ -953,12 +958,12 @@ func (l *VolumeLifecycle) Seed(ctx context.Context, image Image, spec SeedSpec) 
 			children, _ := l.ops.ZFSListChildren(ctx, l.roots.workloadRoot(orgID))
 			for _, child := range children {
 				if strings.Contains(child, image.Ref()) {
-					_ = l.ops.ZFSDestroyRecursive(ctx, child)
+					_ = l.ops.ZFSDestroyDependencyGraph(ctx, child)
 					dependents++
 				}
 			}
 		}
-		if err := l.ops.ZFSDestroyRecursive(ctx, image.Dataset()); err != nil {
+		if err := l.ops.ZFSDestroyDependencyGraph(ctx, image.Dataset()); err != nil {
 			return SeedResult{}, err
 		}
 	}

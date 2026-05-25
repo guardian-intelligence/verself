@@ -1,5 +1,4 @@
-import type { FlightRow } from "./collection";
-import { toFlights, type Flight } from "./model";
+import { toFlights, type Flight, type FlightRow } from "./model";
 
 // Deterministic mock states for local dev + agent-browser +
 // design review. Named fixtures push raw string rows through model.ts (so the

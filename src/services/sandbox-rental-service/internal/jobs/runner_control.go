@@ -160,10 +160,11 @@ func (s *Service) attachRunnerAllocationExecutionTx(ctx context.Context, tx pgx.
 	}()
 	now := time.Now().UTC()
 	rows, err := store.New(tx).AttachRunnerAllocationExecution(ctx, store.AttachRunnerAllocationExecutionParams{
-		ExecutionID:  &executionID,
-		AttemptID:    &attemptID,
-		UpdatedAt:    pgTime(now),
-		AllocationID: allocationID,
+		ExecutionID:       &executionID,
+		AttemptID:         &attemptID,
+		UpdatedAt:         pgTime(now),
+		RunnerListeningBy: pgTime(now.Add(runnerListeningDeadline)),
+		AllocationID:      allocationID,
 	})
 	if err != nil {
 		return "", err
@@ -365,7 +366,11 @@ func (s *Service) ConsumeRunnerBootstrapConfig(ctx context.Context, token, expec
 	if err := qtx.MarkRunnerBootstrapConsumed(ctx, store.MarkRunnerBootstrapConsumedParams{ConsumedAt: pgTime(now), AllocationID: allocationID}); err != nil {
 		return "", err
 	}
-	if err := qtx.MarkRunnerAllocationConfigFetched(ctx, store.MarkRunnerAllocationConfigFetchedParams{UpdatedAt: pgTime(now), AllocationID: allocationID}); err != nil {
+	if err := qtx.MarkRunnerAllocationConfigFetched(ctx, store.MarkRunnerAllocationConfigFetchedParams{
+		UpdatedAt:    pgTime(now),
+		AssignmentBy: pgTime(now.Add(runnerAssignmentDeadline)),
+		AllocationID: allocationID,
+	}); err != nil {
 		return "", err
 	}
 	if err := tx.Commit(ctx); err != nil {

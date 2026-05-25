@@ -41,8 +41,9 @@ const (
 	defaultRunnerWorkFolder                 = "_work"
 	defaultRunnerPrefix                     = "verself-"
 	defaultRepositoryRunnerClassActiveLimit = 15
-	runnerAssignmentCorrectionSwap          = "pairwise_swap"
-	runnerAssignmentCorrectionTransfer      = "single_rebind"
+	defaultMaxProviderSurfaceTries          = 8
+	runnerCapacitySubmitDeadline            = 30 * time.Second
+	runnerCapacityAssignmentDeadline        = 2 * time.Minute
 	maxWebhookBytes                         = 1 << 20
 )
 
@@ -79,6 +80,7 @@ type Config struct {
 	WorkerInterval                   time.Duration
 	WorkerBatchSize                  int32
 	MaxDeliveryTries                 int32
+	MaxProviderSurfaceTries          int32
 	Logger                           *slog.Logger
 	PG                               *pgxpool.Pool
 	CH                               chdriver.Conn
@@ -132,6 +134,9 @@ func NewService(cfg Config) (*Service, error) {
 	}
 	if cfg.MaxDeliveryTries <= 0 {
 		cfg.MaxDeliveryTries = 8
+	}
+	if cfg.MaxProviderSurfaceTries <= 0 {
+		cfg.MaxProviderSurfaceTries = defaultMaxProviderSurfaceTries
 	}
 	if cfg.RunnerClassPrefix == "" {
 		cfg.RunnerClassPrefix = defaultRunnerPrefix
@@ -199,34 +204,42 @@ func (s *Service) WebhookHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeWebhookProblem(w, newWebhookProblemSet(githubWebhookProblem(problemProviderWebhookMethodNotAllowed)))
 			return
 		}
 		ctx, span := tracer.Start(r.Context(), "github.webhook.receive")
 		defer span.End()
 
 		started := time.Now().UTC()
-		eventName, ok := singleHeader(r.Header, "X-GitHub-Event")
-		if !ok {
-			http.Error(w, "missing github event", http.StatusBadRequest)
-			return
-		}
-		deliveryID, ok := singleHeader(r.Header, "X-GitHub-Delivery")
-		if !ok {
-			http.Error(w, "missing github delivery id", http.StatusBadRequest)
-			return
-		}
-		signature, ok := singleHeader(r.Header, "X-Hub-Signature-256")
-		if !ok {
-			http.Error(w, "missing github signature", http.StatusBadRequest)
-			return
-		}
+		var requestProblems webhookProblemSet
+		eventName := requiredWebhookHeader(r.Header, "X-GitHub-Event", &requestProblems)
+		deliveryID := requiredWebhookHeader(r.Header, "X-GitHub-Delivery", &requestProblems)
+		signature := requiredWebhookHeader(r.Header, "X-Hub-Signature-256", &requestProblems)
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBytes))
+		payloadSHA := sha256Hex(body)
 		if err != nil {
-			http.Error(w, "invalid webhook body", http.StatusBadRequest)
+			requestProblems.add(providerWebhookBodyProblem("GitHub webhook body could not be read within the configured request budget."))
+		}
+		if !requestProblems.empty() {
+			if strings.TrimSpace(deliveryID) != "" {
+				s.recordRejectedDelivery(ctx, deliveryID, firstNonEmpty(eventName, "unknown"), "", payloadSHA, requestProblems, started)
+			}
+			s.writeEvent(ctx, githubEvent{
+				ObservedAt:  time.Now().UTC(),
+				EventName:   "github.webhook.rejected",
+				Result:      "failed",
+				Reason:      requestProblems.reason(),
+				DeliveryID:  deliveryID,
+				Action:      eventName,
+				StartedAt:   started,
+				CompletedAt: time.Now().UTC(),
+				AttributesJSON: mustJSON(map[string]string{
+					"payload_sha256": payloadSHA,
+				}),
+			})
+			writeWebhookProblem(w, requestProblems)
 			return
 		}
-		payloadSHA := sha256Hex(body)
 		receivedAt := time.Now().UTC()
 		s.writeEvent(ctx, githubEvent{
 			ObservedAt:  receivedAt,
@@ -246,22 +259,32 @@ func (s *Service) WebhookHandler() http.Handler {
 			attribute.String("github.webhook.payload_sha256", payloadSHA),
 		)
 		if err := verifyGitHubSignature(s.cfg.WebhookSecret, body, signature); err != nil {
-			s.recordRejectedDelivery(ctx, deliveryID, eventName, "", payloadSHA, "signature_invalid", started)
+			problems := newWebhookProblemSet(providerWebhookSignatureProblem())
+			s.recordRejectedDelivery(ctx, deliveryID, eventName, "", payloadSHA, problems, started)
 			s.writeEvent(ctx, githubEvent{
 				ObservedAt: started,
 				EventName:  "github.webhook.rejected",
 				Result:     "failed",
-				Reason:     "signature_invalid",
+				Reason:     problems.reason(),
 				DeliveryID: deliveryID,
 			})
-			http.Error(w, "invalid signature", http.StatusUnauthorized)
+			writeWebhookProblem(w, problems)
 			return
 		}
 
 		meta, err := parseWebhookMetadata(body)
 		if err != nil {
-			s.recordRejectedDelivery(ctx, deliveryID, eventName, "", payloadSHA, "payload_invalid", started)
-			http.Error(w, "invalid webhook payload", http.StatusBadRequest)
+			problems := newWebhookProblemSet(providerWebhookPayloadProblem("GitHub webhook payload could not be parsed."))
+			s.recordRejectedDelivery(ctx, deliveryID, eventName, "", payloadSHA, problems, started)
+			s.writeEvent(ctx, githubEvent{
+				ObservedAt: started,
+				EventName:  "github.webhook.rejected",
+				Result:     "failed",
+				Reason:     problems.reason(),
+				DeliveryID: deliveryID,
+				Action:     eventName,
+			})
+			writeWebhookProblem(w, problems)
 			return
 		}
 		meta.EventName = eventName
@@ -283,26 +306,31 @@ func (s *Service) WebhookHandler() http.Handler {
 			VerifiedAt:             pgTime(time.Now().UTC()),
 		})
 		if err != nil {
-			status := http.StatusInternalServerError
+			problems := newWebhookProblemSet(providerWebhookInboxProblem())
 			if errors.Is(err, pgx.ErrNoRows) {
-				status = http.StatusConflict
-				err = ErrDeliveryReplay
+				problems = newWebhookProblemSet(providerWebhookReplayProblem())
 			}
-			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.webhook.received", "failed", err.Error(), started, time.Now().UTC()))
-			http.Error(w, "delivery rejected", status)
+			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.webhook.received", "failed", problems.reason(), started, time.Now().UTC()))
+			writeWebhookProblem(w, problems)
 			return
 		}
 		result := "accepted"
-		if row.State == "processed" || row.State == "ignored" {
+		if row.State != "accepted" && row.State != "retryable" {
 			result = "duplicate"
 		}
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.webhook.verified", result, "", started, time.Now().UTC()))
-		if row.State == "verified" || row.State == "retryable" {
+		if row.State == "accepted" || row.State == "retryable" {
 			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.enqueued", "succeeded", "", started, time.Now().UTC()))
 		}
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte("accepted\n"))
+		_ = json.NewEncoder(w).Encode(map[string]map[string]string{
+			"accepted": {
+				"status":      result,
+				"delivery_id": deliveryID,
+			},
+		})
 	})
 }
 
@@ -313,11 +341,23 @@ func (s *Service) RunWorker(ctx context.Context) error {
 	ticker := time.NewTicker(s.cfg.WorkerInterval)
 	defer ticker.Stop()
 	for {
+		if err := s.ProcessStaleDeliveries(ctx); err != nil && s.cfg.Logger != nil {
+			s.cfg.Logger.WarnContext(ctx, "github stale delivery reconciliation failed", "error", err)
+		}
 		if err := s.ProcessReadyDeliveries(ctx); err != nil && s.cfg.Logger != nil {
 			s.cfg.Logger.WarnContext(ctx, "github delivery processing failed", "error", err)
 		}
+		if err := s.ProcessRunnerCapacityFailures(ctx); err != nil && s.cfg.Logger != nil {
+			s.cfg.Logger.WarnContext(ctx, "github runner capacity failure reconciliation failed", "error", err)
+		}
 		if err := s.ProcessQueuedJobs(ctx); err != nil && s.cfg.Logger != nil {
 			s.cfg.Logger.WarnContext(ctx, "github queued job reconciliation failed", "error", err)
+		}
+		if err := s.ProcessStaleProviderSurfaceCommands(ctx); err != nil && s.cfg.Logger != nil {
+			s.cfg.Logger.WarnContext(ctx, "github provider surface stale command reconciliation failed", "error", err)
+		}
+		if err := s.ProcessProviderSurfaceCommands(ctx); err != nil && s.cfg.Logger != nil {
+			s.cfg.Logger.WarnContext(ctx, "github provider surface processing failed", "error", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -341,6 +381,140 @@ func (s *Service) ProcessReadyDeliveries(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Service) ProcessRunnerCapacityFailures(ctx context.Context) error {
+	if s == nil || s.cfg.Sandbox == nil {
+		return nil
+	}
+	rows, err := s.queries.ListSubmittedRunnerInstancesForSandboxReconcile(ctx, store.ListSubmittedRunnerInstancesForSandboxReconcileParams{
+		LimitCount: s.cfg.WorkerBatchSize,
+	})
+	if err != nil {
+		return err
+	}
+	var firstErr error
+	for _, row := range rows {
+		if err := s.reconcileRunnerInstanceWithSandbox(ctx, row); err != nil {
+			firstErr = errors.Join(firstErr, err)
+		}
+	}
+	return firstErr
+}
+
+func (s *Service) reconcileRunnerInstanceWithSandbox(ctx context.Context, row store.ListSubmittedRunnerInstancesForSandboxReconcileRow) error {
+	if runnerCapacityAssignmentDeadlineExceeded(row.AssignmentDeadlineAt, time.Now().UTC()) {
+		return s.markRunnerCapacityFailed(ctx, row, "assignment_deadline_exceeded")
+	}
+	allocationID := uuidFromPG(row.SandboxAllocationID)
+	if allocationID == uuid.Nil {
+		if row.State == "jit_created" {
+			return s.markRunnerCapacityFailed(ctx, row, "sandbox_submit_not_observed")
+		}
+		return nil
+	}
+	resp, err := s.cfg.Sandbox.InternalGetRunnerAllocation(ctx, sandboxrentalclient.InternalGetRunnerAllocationRequest{
+		AllocationID: sandboxrentalclient.AttemptId(allocationID.String()),
+	})
+	if err != nil {
+		return err
+	}
+	if resp.Result == nil || resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return s.markRunnerCapacityFailed(ctx, row, "sandbox_allocation_not_found")
+		}
+		return fmt.Errorf("%w: %s", ErrSandboxRejected, sandboxProblem(resp))
+	}
+	status := resp.Result.Allocation
+	if !sandboxRunnerCapacityTerminalWithoutAssignment(status) {
+		return nil
+	}
+	reason := firstNonEmpty(sandboxRunnerAllocationProblemReason(status), "sandbox_runner_allocation_terminal:"+status.State)
+	return s.markRunnerCapacityFailed(ctx, row, reason)
+}
+
+func (s *Service) markRunnerCapacityFailed(ctx context.Context, row store.ListSubmittedRunnerInstancesForSandboxReconcileRow, reason string) error {
+	problems := runnerProblemSet{}
+	phase := "sandbox_reconcile"
+	code := problemGithubRunnerSandboxAllocationTerminal
+	state := "sandbox_failed"
+	if strings.Contains(reason, "assignment_deadline") {
+		phase = "assignment_wait"
+		code = problemGithubRunnerAssignmentDeadlineExceeded
+		state = "capacity_failed"
+	}
+	if strings.Contains(reason, "sandbox_submit_not_observed") {
+		phase = "sandbox_submit"
+		code = problemGithubRunnerSandboxSubmitNotObserved
+		state = "sandbox_failed"
+	}
+	if strings.Contains(reason, "sandbox_allocation_not_found") {
+		code = problemGithubRunnerSandboxAllocationNotFound
+	}
+	problems.add(githubRunnerProblemFromCatalog(
+		code,
+		withProblemDiagnostic(reason),
+		withProblemPhase(phase),
+	))
+	return s.terminalizeRunnerCapacity(ctx, runnerCapacityRef{
+		OrgID:                  row.OrgID,
+		InstallationBindingID:  uuidFromPG(row.InstallationBindingID),
+		RepositoryBindingID:    uuidFromPG(row.RepositoryBindingID),
+		ProviderInstallationID: row.ProviderInstallationID,
+		ProviderRepositoryID:   row.ProviderRepositoryID,
+		RepositoryFullName:     row.RepositoryFullName,
+		ProviderRunID:          row.ProviderRunID,
+		ProviderRunAttempt:     row.ProviderRunAttempt,
+		ProviderJobID:          row.OriginProviderJobID,
+		RunnerID:               row.RunnerID,
+		RunnerName:             row.RunnerName,
+		RunnerClass:            row.RunnerClass,
+		AllocationID:           uuidFromPG(row.SandboxAllocationID),
+		ExecutionID:            uuidFromPG(row.SandboxExecutionID),
+		AttemptID:              uuidFromPG(row.SandboxAttemptID),
+	}, runnerCapacityFailure{
+		DemandState:          state,
+		Problems:             problems,
+		RequireRunnerFailure: true,
+		DeleteRunner:         true,
+		SurfaceToProvider:    true,
+	})
+}
+
+func sandboxRunnerCapacityTerminalWithoutAssignment(status sandboxrentalclient.RunnerAllocationStatus) bool {
+	if decimalPtrValue(status.AssignedProviderJobID) != 0 {
+		return false
+	}
+	switch strings.TrimSpace(status.State) {
+	case "failed", "vm_exited", "cleaned":
+		return true
+	}
+	switch strings.TrimSpace(stringFromPtr(status.AttemptState)) {
+	case "failed", "canceled", "lost":
+		return true
+	}
+	switch strings.TrimSpace(stringFromPtr(status.ExecutionState)) {
+	case "failed", "canceled", "lost":
+		return true
+	}
+	return false
+}
+
+func sandboxRunnerAllocationProblemReason(status sandboxrentalclient.RunnerAllocationStatus) string {
+	for _, problem := range status.Problems {
+		if strings.TrimSpace(problem.Code) == "" {
+			continue
+		}
+		if problem.Detail != nil && strings.TrimSpace(*problem.Detail) != "" {
+			return problem.Code + ":" + *problem.Detail
+		}
+		return problem.Code
+	}
+	return ""
+}
+
+func runnerCapacityAssignmentDeadlineExceeded(deadline pgtype.Timestamptz, now time.Time) bool {
+	return deadline.Valid && !timeFromPG(deadline).After(now.UTC())
 }
 
 func (s *Service) ProcessQueuedJobs(ctx context.Context) error {
@@ -378,12 +552,12 @@ func (s *Service) processQueuedJob(ctx context.Context, row store.ListQueuedWork
 	started := time.Now().UTC()
 	meta := metadataFromWorkflowJob(deliveryID, event)
 	meta.RunnerClass = runnerClass
-	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "started", row.RegistrationState, started, started))
+	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "started", row.DemandState, started, started))
 	if err := s.submitQueuedJob(ctx, event, deliveryID); err != nil {
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_failed", "failed", err.Error(), started, time.Now().UTC()))
 		return fmt.Errorf("submit queued github job %d: %w", event.WorkflowJob.ID, err)
 	}
-	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "succeeded", row.RegistrationState, started, time.Now().UTC()))
+	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconciled", "succeeded", row.DemandState, started, time.Now().UTC()))
 	return nil
 }
 
@@ -472,38 +646,106 @@ func (s *Service) processLockedDelivery(ctx context.Context, row store.LockReady
 		return nil
 	}
 	if errors.Is(err, ErrUnsupportedWebhook) || errors.Is(err, ErrRepositoryNotEnabled) {
-		if markErr := s.queries.MarkDeliveryIgnored(ctx, store.MarkDeliveryIgnoredParams{
-			DeliveryID:    row.DeliveryID,
-			FailureReason: err.Error(),
-			ProcessedAt:   pgTime(time.Now().UTC()),
+		problems := problemSetForDeliveryError(err, false)
+		if errors.Is(err, ErrRepositoryNotEnabled) {
+			if terminalizeErr := s.terminalizeWorkflowJobDeliveryFailure(ctx, deliveryFailureRefFromLocked(row), problems); terminalizeErr != nil {
+				return terminalizeErr
+			}
+		}
+		if markErr := s.updateDeliveryWithProblems(ctx, row.DeliveryID, problems, func(q *store.Queries) error {
+			return q.MarkDeliveryIgnored(ctx, store.MarkDeliveryIgnoredParams{
+				DeliveryID:  row.DeliveryID,
+				ProcessedAt: pgTime(time.Now().UTC()),
+			})
 		}); markErr != nil {
 			return markErr
 		}
-		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.ignored", "ignored", err.Error(), started, time.Now().UTC()))
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.ignored", "ignored", problems.reason(), started, time.Now().UTC()))
 		return nil
 	}
-	if row.AttemptCount >= s.cfg.MaxDeliveryTries {
-		if markErr := s.queries.MarkDeliveryFailed(ctx, store.MarkDeliveryFailedParams{
-			DeliveryID:    row.DeliveryID,
-			FailureReason: truncate(err.Error(), 1024),
-			FailedAt:      pgTime(time.Now().UTC()),
+	terminalFailure := terminalDeliveryError(err)
+	if terminalFailure || row.AttemptCount >= s.cfg.MaxDeliveryTries {
+		problems := problemSetForDeliveryError(err, false)
+		if !terminalFailure {
+			problems.add(providerWebhookAttemptsExhaustedProblem())
+		}
+		if terminalizeErr := s.terminalizeWorkflowJobDeliveryFailure(ctx, deliveryFailureRefFromLocked(row), problems); terminalizeErr != nil {
+			return terminalizeErr
+		}
+		if markErr := s.updateDeliveryWithProblems(ctx, row.DeliveryID, problems, func(q *store.Queries) error {
+			return q.MarkDeliveryFailed(ctx, store.MarkDeliveryFailedParams{
+				DeliveryID: row.DeliveryID,
+				FailedAt:   pgTime(time.Now().UTC()),
+			})
 		}); markErr != nil {
 			return markErr
 		}
-		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.failed", "failed", err.Error(), started, time.Now().UTC()))
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.failed", "failed", problems.reason(), started, time.Now().UTC()))
 		return err
 	}
 	delay := retryDelay(row.AttemptCount)
-	if markErr := s.queries.MarkDeliveryRetryable(ctx, store.MarkDeliveryRetryableParams{
-		DeliveryID:    row.DeliveryID,
-		FailureReason: truncate(err.Error(), 1024),
-		NextAttemptAt: pgTime(time.Now().UTC().Add(delay)),
-		UpdatedAt:     pgTime(time.Now().UTC()),
+	problems := problemSetForDeliveryError(err, true)
+	if markErr := s.updateDeliveryWithProblems(ctx, row.DeliveryID, problems, func(q *store.Queries) error {
+		return q.MarkDeliveryRetryable(ctx, store.MarkDeliveryRetryableParams{
+			DeliveryID:    row.DeliveryID,
+			NextAttemptAt: pgTime(time.Now().UTC().Add(delay)),
+			UpdatedAt:     pgTime(time.Now().UTC()),
+		})
 	}); markErr != nil {
 		return markErr
 	}
-	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.retryable", "retryable", err.Error(), started, time.Now().UTC()))
+	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.delivery.retryable", "retryable", problems.reason(), started, time.Now().UTC()))
 	return err
+}
+
+func terminalDeliveryError(err error) bool {
+	return errors.Is(err, ErrWebhookRejected)
+}
+
+func (s *Service) updateDeliveryWithProblems(ctx context.Context, deliveryID string, problems webhookProblemSet, update func(*store.Queries) error) error {
+	if s == nil || s.cfg.PG == nil {
+		return ErrConfiguration
+	}
+	if problems.empty() {
+		problems.add(providerWebhookProcessingProblem("Webhook delivery processing failed.", false))
+	}
+	tx, err := s.cfg.PG.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	q := s.queries.WithTx(tx)
+	if err := appendWebhookDeliveryProblems(ctx, q, deliveryID, problems); err != nil {
+		return err
+	}
+	if err := update(q); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func appendWebhookDeliveryProblems(ctx context.Context, q *store.Queries, deliveryID string, problems webhookProblemSet) error {
+	for _, problem := range problems.problems {
+		if problem.ObservedAt.IsZero() {
+			problem.ObservedAt = time.Now().UTC()
+		}
+		if err := q.AppendWebhookDeliveryProblem(ctx, store.AppendWebhookDeliveryProblemParams{
+			DeliveryID:  deliveryID,
+			Phase:       problem.Phase,
+			ProblemType: problem.Type,
+			ProblemCode: problem.Code,
+			Title:       problem.Title,
+			Detail:      problem.Detail,
+			DocsUrl:     problem.DocsURL,
+			Status:      problem.Status,
+			Retryable:   problem.Retryable,
+			Pointer:     problem.Pointer,
+			ObservedAt:  pgTime(problem.ObservedAt),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) handleDelivery(ctx context.Context, row store.LockReadyDeliveriesRow) error {
@@ -773,10 +1015,6 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.ignored", "ignored", err.Error(), started, time.Now().UTC()))
 		return nil
 	}
-	runnerName, err := githubRunnerName(event.Repository.ID, event.WorkflowJob.RunID, event.WorkflowJob.RunAttempt, event.WorkflowJob.ID)
-	if err != nil {
-		return err
-	}
 	owner, _, ok := strings.Cut(event.Repository.FullName, "/")
 	if !ok || owner == "" {
 		return fmt.Errorf("%w: repository full_name must be owner/name", ErrWebhookRejected)
@@ -794,10 +1032,23 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		HeadBranch:             event.WorkflowJob.HeadBranch,
 		HeadRepositoryFullName: event.Repository.FullName,
 	}
+	capacityRef := queuedJobCapacityRef(event, runnerClass)
+	meta := metadataFromWorkflowJob(deliveryID, event)
+	meta.RunnerClass = runnerClass
+	demand, err := s.ensureQueuedProviderDemand(ctx, event, deliveryID, runnerClass, "", "")
+	if err != nil {
+		return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerDemandRecordFailed, err, true)
+	}
+	if providerDemandTerminalForCapacity(demand.State) {
+		meta.JobShapeID = demand.JobShapeID
+		meta.TrustClass = demand.TrustClass
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_deferred", "deferred", "provider_demand:"+demand.State, started, time.Now().UTC()))
+		return nil
+	}
 	if event.WorkflowJob.RunID > 0 {
 		run, err := s.fetchWorkflowRun(ctx, event.Installation.ID, event.Repository.FullName, event.WorkflowJob.RunID)
 		if err != nil {
-			return err
+			return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerWorkflowRunFetchFailed, err, true)
 		}
 		workflow = workflowObservationFromRun(event.Installation.ID, event.Repository.ID, event.Repository.FullName, run)
 		workflow.OrgID = event.OrgID
@@ -812,46 +1063,72 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		if workflow.HeadRepositoryFullName == "" {
 			workflow.HeadRepositoryFullName = workflow.RepositoryFullName
 		}
+		capacityRef.ProviderRunID = workflow.ProviderRunID
+		capacityRef.ProviderRunAttempt = workflow.ProviderRunAttempt
 		if err := s.persistWorkflowRun(ctx, workflow, deliveryID, true, time.Now().UTC()); err != nil {
-			return err
+			return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerWorkflowRunPersistFailed, err, true)
 		}
 		if err := s.observeSandboxWorkflowRun(ctx, workflow); err != nil {
-			return err
+			return s.terminalizeQueuedJobFailure(ctx, capacityRef, "sandbox_failed", problemGithubRunnerSandboxWorkflowObserveFailed, err, true)
 		}
 		job, ok, err := s.fetchWorkflowRunJob(ctx, event.Installation.ID, event.Repository.ID, event.Repository.FullName, event.WorkflowJob.RunID, workflow.ProviderRunAttempt, event.WorkflowJob.ID)
 		if err != nil {
-			return err
+			return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerWorkflowJobFetchFailed, err, true)
 		}
 		if !ok {
-			return fmt.Errorf("%w: workflow job %d not found in provider run %d attempt %d", ErrWebhookRejected, event.WorkflowJob.ID, event.WorkflowJob.RunID, workflow.ProviderRunAttempt)
+			err := fmt.Errorf("%w: workflow job %d not found in provider run %d attempt %d", ErrWebhookRejected, event.WorkflowJob.ID, event.WorkflowJob.RunID, workflow.ProviderRunAttempt)
+			return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerWorkflowJobNotFound, err, false)
 		}
 		if err := s.persistWorkflowJobFromAPI(ctx, runtimeBinding{
 			OrgID:                 event.OrgID,
 			InstallationBindingID: event.InstallationBindingID,
 			RepositoryBindingID:   event.RepositoryBindingID,
 		}, event.Installation.ID, event.Repository.ID, event.Repository.FullName, job, deliveryID, time.Now().UTC()); err != nil {
-			return err
+			return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerWorkflowJobPersistFailed, err, true)
 		}
 		if job.Status != "queued" {
+			binding := runtimeBinding{
+				OrgID:                 event.OrgID,
+				InstallationBindingID: event.InstallationBindingID,
+				RepositoryBindingID:   event.RepositoryBindingID,
+			}
+			if err := s.recordRunnerAssignment(ctx, binding, event.Installation.ID, event.Repository.ID, event.Repository.FullName, job, deliveryID, started); err != nil {
+				return err
+			}
 			if err := s.observeSandboxJob(ctx, sandboxObservationFromAPI(event.Installation.ID, event.Repository.ID, event.Repository.FullName, job, deliveryID), workflow); err != nil {
 				return err
 			}
 			meta := metadataFromAPIJob(deliveryID, event.Installation.ID, event.Repository.ID, event.Repository.FullName, job)
+			meta.OrgID = event.OrgID
+			meta.InstallationBindingID = event.InstallationBindingID
+			meta.RepositoryBindingID = event.RepositoryBindingID
+			if job.Status == "completed" {
+				if err := s.insertTerminalEvidence(ctx, job, deliveryID); err != nil {
+					return err
+				}
+				s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.terminal.observed", "succeeded", job.Conclusion, started, time.Now().UTC()))
+				if err := s.cleanupRunnerForJob(ctx, event.Installation.ID, event.Repository.FullName, job.ID); err != nil {
+					return err
+				}
+			}
 			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.ignored", "ignored", "provider_status:"+job.Status, started, time.Now().UTC()))
 			return nil
 		}
 		event.WorkflowJob = workflowJobPayloadFromAPI(job)
+		capacityRef = queuedJobCapacityRef(event, runnerClass)
+		meta = metadataFromWorkflowJob(deliveryID, event)
+		meta.RunnerClass = runnerClass
 	}
 	cacheManifest, err := s.cacheManifestForWorkflow(ctx, event.Installation.ID, event.Repository.FullName, workflow)
 	if err != nil {
-		return err
+		return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerCacheManifestFetchFailed, err, true)
 	}
 	if cacheManifest != nil {
 		s.writeEvent(ctx, githubEventFromMetadata(metadataFromWorkflowJob(deliveryID, event), "github.cache_manifest.fetched", "succeeded", "", started, time.Now().UTC()))
 	}
 	shape, err := buildGitHubJobShape(event, workflow, runnerClass, cacheManifestContentSHA(cacheManifest))
 	if err != nil {
-		return err
+		return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerJobShapeBuildFailed, err, false)
 	}
 	if err := s.queries.UpsertJobShape(ctx, store.UpsertJobShapeParams{
 		JobShapeID:             shape.JobShapeID,
@@ -872,64 +1149,40 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		CanonicalJson:          shape.CanonicalJSON,
 		UpdatedAt:              pgTime(time.Now().UTC()),
 	}); err != nil {
-		return err
+		return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerJobShapePersistFailed, err, true)
 	}
-	demand, err := s.queries.EnsureProviderDemand(ctx, store.EnsureProviderDemandParams{
-		DemandID:               pgUUID(uuid.New()),
-		ProviderJobID:          event.WorkflowJob.ID,
-		OrgID:                  event.OrgID,
-		InstallationBindingID:  pgUUID(event.InstallationBindingID),
-		RepositoryBindingID:    pgUUID(event.RepositoryBindingID),
-		ProviderInstallationID: event.Installation.ID,
-		ProviderRepositoryID:   event.Repository.ID,
-		RepositoryFullName:     event.Repository.FullName,
-		ProviderRunID:          event.WorkflowJob.RunID,
-		ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
-		JobShapeID:             shape.JobShapeID,
-		TrustClass:             shape.Shape.TrustClass,
-		RunnerClass:            runnerClass,
-		RunnerName:             runnerName,
-		LastDeliveryID:         deliveryID,
-		UpdatedAt:              pgTime(time.Now().UTC()),
-	})
+	demand, err = s.ensureQueuedProviderDemand(ctx, event, deliveryID, runnerClass, shape.JobShapeID, shape.Shape.TrustClass)
 	if err != nil {
-		return err
+		return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerDemandUpdateFailed, err, true)
 	}
-	meta := metadataFromWorkflowJob(deliveryID, event)
-	meta.RunnerClass = runnerClass
 	meta.JobShapeID = demand.JobShapeID
 	meta.TrustClass = demand.TrustClass
-	if demand.State == "sandbox_submitted" {
-		meta.RunnerID = demand.RunnerID
-		meta.RunnerName = demand.RunnerName
-		meta.AllocationID = uuidFromPG(demand.SandboxAllocationID)
-		meta.ExecutionID = uuidFromPG(demand.SandboxExecutionID)
-		meta.AttemptID = uuidFromPG(demand.SandboxAttemptID)
-		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.sandbox.submit.reused", "succeeded", "provider_demand:"+demand.State, started, time.Now().UTC()))
+	if providerDemandTerminalForCapacity(demand.State) {
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_deferred", "deferred", "provider_demand:"+demand.State, started, time.Now().UTC()))
 		return nil
 	}
 	unlockRunnerClass, locked, err := s.tryRunnerClassLock(ctx, event.Repository.ID, runnerClass)
 	if err != nil {
-		return err
+		return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerRunnerClassLockFailed, err, true)
 	}
 	if !locked {
 		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.job.demand.reconcile_deferred", "deferred", "runner_class_lock_busy", started, time.Now().UTC()))
 		return nil
 	}
 	defer unlockRunnerClass()
-	claim, err := s.queries.ClaimProviderDemandForJIT(ctx, store.ClaimProviderDemandForJITParams{
+	claim, err := s.queries.ClaimProviderDemandForCapacity(ctx, store.ClaimProviderDemandForCapacityParams{
 		ClaimedAt:                        pgTime(time.Now().UTC()),
 		ProviderJobID:                    event.WorkflowJob.ID,
 		RepositoryRunnerClassActiveLimit: int64(s.cfg.RepositoryRunnerClassActiveLimit),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		reason := "provider_demand:" + demand.State
-		active, activeErr := s.queries.CountActiveRunnerRegistrationsForRunnerClass(ctx, store.CountActiveRunnerRegistrationsForRunnerClassParams{
+		active, activeErr := s.queries.CountActiveRunnerInstancesForRunnerClass(ctx, store.CountActiveRunnerInstancesForRunnerClassParams{
 			ProviderRepositoryID: event.Repository.ID,
 			RunnerClass:          runnerClass,
 		})
 		if activeErr != nil {
-			return activeErr
+			return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerRunnerClassCapacityCountFailed, activeErr, true)
 		}
 		if active >= int64(s.cfg.RepositoryRunnerClassActiveLimit) {
 			reason = fmt.Sprintf("runner_class_capacity_full:%d/%d", active, s.cfg.RepositoryRunnerClassActiveLimit)
@@ -938,65 +1191,73 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 		return nil
 	}
 	if err != nil {
-		return err
+		return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerDemandClaimFailed, err, true)
 	}
-	jit, err := s.createJITConfig(ctx, event.Installation.ID, owner, claim.RunnerName, runnerClass)
+	runnerName, err := githubRunnerName(event.WorkflowJob.ID)
 	if err != nil {
-		_ = s.queries.MarkProviderDemandFailed(ctx, store.MarkProviderDemandFailedParams{
-			ProviderJobID: event.WorkflowJob.ID,
-			State:         "jit_failed",
-			FailureReason: truncate(err.Error(), 1024),
-			UpdatedAt:     pgTime(time.Now().UTC()),
+		return s.terminalizeQueuedJobFailure(ctx, capacityRef, "capacity_failed", problemGithubRunnerRunnerNameFailed, err, false)
+	}
+	capacityRef.RunnerName = runnerName
+	jitCtx, cancelJIT := context.WithTimeout(ctx, runnerJITConfigTimeout)
+	jit, err := s.createJITConfig(jitCtx, event.Installation.ID, owner, runnerName, runnerClass)
+	cancelJIT()
+	if err != nil {
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerJITConfigFailed, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:       "jit_failed",
+			Problems:          problems,
+			SurfaceToProvider: true,
 		})
 		return err
 	}
 	runnerID := jit.Runner.ID
 	if runnerID == 0 {
-		return fmt.Errorf("github jit config response missing runner id")
-	}
-	runnerName = firstNonEmpty(jit.Runner.Name, claim.RunnerName)
-	jitHash := sha256Hex([]byte(jit.EncodedJITConfig))
-	now := time.Now().UTC()
-	if err := s.queries.MarkProviderDemandJITCreated(ctx, store.MarkProviderDemandJITCreatedParams{
-		ProviderJobID:   event.WorkflowJob.ID,
-		RunnerID:        runnerID,
-		RunnerName:      runnerName,
-		JitConfigSha256: jitHash,
-		UpdatedAt:       pgTime(now),
-	}); err != nil {
+		err := fmt.Errorf("github jit config response missing runner id")
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerJITConfigInvalid, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:       "jit_failed",
+			Problems:          problems,
+			SurfaceToProvider: true,
+		})
 		return err
 	}
-	if err := s.queries.UpsertRunnerRegistration(ctx, store.UpsertRunnerRegistrationParams{
-		ProviderJobID:          event.WorkflowJob.ID,
-		DemandID:               claim.DemandID,
+	runnerName = firstNonEmpty(jit.Runner.Name, runnerName)
+	capacityRef.RunnerID = runnerID
+	capacityRef.RunnerName = runnerName
+	jitHash := sha256Hex([]byte(jit.EncodedJITConfig))
+	now := time.Now().UTC()
+	if err := s.queries.UpsertRunnerInstance(ctx, store.UpsertRunnerInstanceParams{
+		RunnerName:             runnerName,
+		OriginProviderJobID:    event.WorkflowJob.ID,
+		OriginDemandID:         claim.DemandID,
 		OrgID:                  event.OrgID,
 		InstallationBindingID:  pgUUID(event.InstallationBindingID),
 		RepositoryBindingID:    pgUUID(event.RepositoryBindingID),
 		ProviderInstallationID: event.Installation.ID,
 		ProviderRepositoryID:   event.Repository.ID,
 		RunnerID:               runnerID,
-		RunnerName:             runnerName,
 		RunnerClass:            runnerClass,
 		JitConfigSha256:        jitHash,
+		AssignmentDeadlineAt:   pgTime(now.Add(runnerCapacitySubmitDeadline)),
 		State:                  "jit_created",
 		UpdatedAt:              pgTime(now),
 	}); err != nil {
-		// A runner name collision here usually means GitHub rebound a previous
-		// runner to a different queued job. Delete this newly minted runner and
-		// return demand to a retryable state so the job does not stay queued.
-		_ = s.deleteRunner(ctx, event.Installation.ID, owner, runnerID)
-		_ = s.queries.MarkProviderDemandFailed(ctx, store.MarkProviderDemandFailedParams{
-			ProviderJobID: event.WorkflowJob.ID,
-			State:         "jit_failed",
-			FailureReason: truncate(err.Error(), 1024),
-			UpdatedAt:     pgTime(time.Now().UTC()),
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerInstancePersistFailed, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:       "jit_failed",
+			Problems:          problems,
+			DeleteRunner:      true,
+			SurfaceToProvider: true,
 		})
 		return err
 	}
 	meta.RunnerID = runnerID
 	meta.RunnerName = runnerName
 	meta.RunnerClass = runnerClass
-	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.registration.created", "succeeded", "", started, now))
+	s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.instance.created", "succeeded", "", started, now))
 
 	req := sandboxrentalclient.InternalSubmitRunnerJobRequest{Body: sandboxrentalclient.InternalSubmitRunnerJobInputBody{
 		Observation:      sandboxObservationFromWebhook(event, deliveryID),
@@ -1009,95 +1270,194 @@ func (s *Service) submitQueuedJob(ctx context.Context, event workflowJobWebhook,
 	}}
 	outboxHash, err := s.recordSandboxSubmitOutbox(ctx, event, runnerName, runnerID, runnerClass, jitHash, shape.JobShapeID)
 	if err != nil {
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerSandboxOutboxFailed, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:          "sandbox_failed",
+			Problems:             problems,
+			RequireRunnerFailure: true,
+			DeleteRunner:         true,
+			SurfaceToProvider:    true,
+		})
 		return err
 	}
-	resp, err := s.cfg.Sandbox.InternalSubmitRunnerJob(ctx, req)
+	createdRunnerName := runnerName
+	submitCtx, cancelSubmit := context.WithTimeout(ctx, runnerSandboxSubmitTimeout)
+	resp, err := s.cfg.Sandbox.InternalSubmitRunnerJob(submitCtx, req)
+	cancelSubmit()
 	if err != nil {
-		_ = s.deleteRunner(ctx, event.Installation.ID, owner, runnerID)
-		_ = s.queries.MarkProviderOutboxFailed(ctx, store.MarkProviderOutboxFailedParams{
-			CommandKind:   "sandbox_submit_runner_job",
-			CommandSha256: outboxHash,
-			State:         "retryable",
-			FailureReason: truncate(err.Error(), 1024),
-			UpdatedAt:     pgTime(time.Now().UTC()),
-		})
-		_ = s.queries.MarkProviderDemandFailed(ctx, store.MarkProviderDemandFailedParams{
-			ProviderJobID: event.WorkflowJob.ID,
-			State:         "sandbox_failed",
-			FailureReason: truncate(err.Error(), 1024),
-			UpdatedAt:     pgTime(time.Now().UTC()),
-		})
-		_ = s.queries.MarkRunnerRegistrationFailed(ctx, store.MarkRunnerRegistrationFailedParams{
-			ProviderJobID: event.WorkflowJob.ID,
-			FailureReason: truncate(err.Error(), 1024),
-			UpdatedAt:     pgTime(time.Now().UTC()),
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerSandboxSubmitFailed, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:          "sandbox_failed",
+			Problems:             problems,
+			RequireRunnerFailure: true,
+			DeleteRunner:         true,
+			SurfaceToProvider:    true,
+			OutboxCommandSHA256:  outboxHash,
+			OutboxState:          "failed",
 		})
 		return err
 	}
 	if resp.Result == nil || resp.StatusCode != http.StatusCreated {
-		_ = s.deleteRunner(ctx, event.Installation.ID, owner, runnerID)
 		reason := sandboxProblem(resp)
-		_ = s.queries.MarkProviderOutboxFailed(ctx, store.MarkProviderOutboxFailedParams{
-			CommandKind:   "sandbox_submit_runner_job",
-			CommandSha256: outboxHash,
-			State:         "failed",
-			FailureReason: truncate(reason, 1024),
-			UpdatedAt:     pgTime(time.Now().UTC()),
-		})
-		_ = s.queries.MarkProviderDemandFailed(ctx, store.MarkProviderDemandFailedParams{
-			ProviderJobID: event.WorkflowJob.ID,
-			State:         "sandbox_failed",
-			FailureReason: truncate(reason, 1024),
-			UpdatedAt:     pgTime(time.Now().UTC()),
-		})
-		_ = s.queries.MarkRunnerRegistrationFailed(ctx, store.MarkRunnerRegistrationFailedParams{
-			ProviderJobID: event.WorkflowJob.ID,
-			FailureReason: truncate(reason, 1024),
-			UpdatedAt:     pgTime(time.Now().UTC()),
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromCatalog(
+			problemGithubRunnerSandboxRejected,
+			withProblemDiagnostic(reason),
+		))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:          "sandbox_failed",
+			Problems:             problems,
+			RequireRunnerFailure: true,
+			DeleteRunner:         true,
+			SurfaceToProvider:    true,
+			OutboxCommandSHA256:  outboxHash,
+			OutboxState:          "failed",
 		})
 		return fmt.Errorf("%w: %s", ErrSandboxRejected, reason)
 	}
 	submission, err := sandboxSubmission(resp.Result)
 	if err != nil {
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerSandboxResponseInvalid, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:          "sandbox_failed",
+			Problems:             problems,
+			RequireRunnerFailure: true,
+			DeleteRunner:         true,
+			SurfaceToProvider:    true,
+			OutboxCommandSHA256:  outboxHash,
+			OutboxState:          "failed",
+		})
 		return err
 	}
 	if !submission.Created && (runnerID != submission.RunnerID || runnerName != submission.RunnerName) {
 		_ = s.deleteRunner(ctx, event.Installation.ID, owner, runnerID)
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromCatalog(
+			problemGithubRunnerRunnerCapacityDisplaced,
+			withProblemDiagnostic("sandbox returned existing runner capacity"),
+		))
+		_ = s.terminalizeRunnerCapacity(ctx, runnerCapacityRef{
+			OrgID:                  event.OrgID,
+			InstallationBindingID:  event.InstallationBindingID,
+			RepositoryBindingID:    event.RepositoryBindingID,
+			ProviderInstallationID: event.Installation.ID,
+			ProviderRepositoryID:   event.Repository.ID,
+			RepositoryFullName:     event.Repository.FullName,
+			ProviderRunID:          event.WorkflowJob.RunID,
+			ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
+			RunnerID:               runnerID,
+			RunnerName:             createdRunnerName,
+			RunnerClass:            runnerClass,
+		}, runnerCapacityFailure{
+			Problems:             problems,
+			RequireRunnerFailure: true,
+		})
 		runnerID = submission.RunnerID
 		runnerName = firstNonEmpty(submission.RunnerName, runnerName)
 		meta.RunnerID = runnerID
 		meta.RunnerName = runnerName
-		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.registration.reused", "succeeded", "", started, time.Now().UTC()))
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.instance.reused", "succeeded", "", started, time.Now().UTC()))
 	}
-	if err := s.queries.MarkProviderDemandSandboxSubmitted(ctx, store.MarkProviderDemandSandboxSubmittedParams{
-		ProviderJobID:       event.WorkflowJob.ID,
-		SandboxAllocationID: pgUUID(submission.AllocationID),
-		SandboxExecutionID:  pgUUID(submission.ExecutionID),
-		SandboxAttemptID:    pgUUID(submission.AttemptID),
-		RunnerID:            runnerID,
-		RunnerName:          runnerName,
-		UpdatedAt:           pgTime(time.Now().UTC()),
-	}); err != nil {
+	capacityRef.RunnerID = runnerID
+	capacityRef.RunnerName = runnerName
+	capacityRef.AllocationID = submission.AllocationID
+	capacityRef.ExecutionID = submission.ExecutionID
+	capacityRef.AttemptID = submission.AttemptID
+	tx, err := s.cfg.PG.Begin(ctx)
+	if err != nil {
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerSubmissionPersistFailed, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:          "sandbox_failed",
+			Problems:             problems,
+			RequireRunnerFailure: true,
+			DeleteRunner:         true,
+			SurfaceToProvider:    true,
+			OutboxCommandSHA256:  outboxHash,
+			OutboxState:          "failed",
+		})
 		return err
 	}
-	if err := s.queries.MarkProviderOutboxProcessed(ctx, store.MarkProviderOutboxProcessedParams{
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := store.New(tx)
+	now = time.Now().UTC()
+	if err := qtx.MarkRunnerInstanceSubmitted(ctx, store.MarkRunnerInstanceSubmittedParams{
+		SandboxAllocationID:  pgUUID(submission.AllocationID),
+		SandboxExecutionID:   pgUUID(submission.ExecutionID),
+		SandboxAttemptID:     pgUUID(submission.AttemptID),
+		RunnerID:             runnerID,
+		RunnerName:           runnerName,
+		AssignmentDeadlineAt: pgTime(now.Add(runnerCapacityAssignmentDeadline)),
+		UpdatedAt:            pgTime(now),
+	}); err != nil {
+		_ = tx.Rollback(ctx)
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerSubmissionPersistFailed, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:          "sandbox_failed",
+			Problems:             problems,
+			RequireRunnerFailure: true,
+			DeleteRunner:         true,
+			SurfaceToProvider:    true,
+			OutboxCommandSHA256:  outboxHash,
+			OutboxState:          "failed",
+		})
+		return err
+	}
+	if err := qtx.MarkProviderOutboxProcessed(ctx, store.MarkProviderOutboxProcessedParams{
 		CommandKind:        "sandbox_submit_runner_job",
 		CommandSha256:      outboxHash,
 		SandboxExecutionID: pgUUID(submission.ExecutionID),
 		SandboxAttemptID:   pgUUID(submission.AttemptID),
 		ProcessedAt:        pgTime(time.Now().UTC()),
 	}); err != nil {
+		_ = tx.Rollback(ctx)
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerSandboxOutboxCompleteFailed, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:          "sandbox_failed",
+			Problems:             problems,
+			RequireRunnerFailure: true,
+			DeleteRunner:         true,
+			SurfaceToProvider:    true,
+			OutboxCommandSHA256:  outboxHash,
+			OutboxState:          "failed",
+		})
 		return err
 	}
-	if err := s.queries.MarkRunnerRegistrationSubmitted(ctx, store.MarkRunnerRegistrationSubmittedParams{
-		ProviderJobID:       event.WorkflowJob.ID,
-		SandboxAllocationID: pgUUID(submission.AllocationID),
-		SandboxExecutionID:  pgUUID(submission.ExecutionID),
-		SandboxAttemptID:    pgUUID(submission.AttemptID),
-		RunnerID:            runnerID,
-		RunnerName:          runnerName,
-		UpdatedAt:           pgTime(time.Now().UTC()),
+	if err := qtx.MarkProviderDemandCapacityRequested(ctx, store.MarkProviderDemandCapacityRequestedParams{
+		ProviderJobID: event.WorkflowJob.ID,
+		UpdatedAt:     pgTime(time.Now().UTC()),
 	}); err != nil {
+		_ = tx.Rollback(ctx)
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerDemandUpdateFailed, err, withProblemRetryable(false)))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:          "sandbox_failed",
+			Problems:             problems,
+			RequireRunnerFailure: true,
+			DeleteRunner:         true,
+			SurfaceToProvider:    true,
+			OutboxCommandSHA256:  outboxHash,
+			OutboxState:          "failed",
+		})
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		problems := runnerProblemSet{}
+		problems.add(githubRunnerProblemFromError(problemGithubRunnerSubmissionCommitFailed, err))
+		_ = s.terminalizeRunnerCapacity(ctx, capacityRef, runnerCapacityFailure{
+			DemandState:          "sandbox_failed",
+			Problems:             problems,
+			RequireRunnerFailure: true,
+			DeleteRunner:         true,
+			SurfaceToProvider:    true,
+			OutboxCommandSHA256:  outboxHash,
+			OutboxState:          "failed",
+		})
 		return err
 	}
 	meta.AllocationID = submission.AllocationID
@@ -1288,9 +1648,6 @@ func (s *Service) refreshRunAndJobs(ctx context.Context, binding runtimeBinding,
 		meta.OrgID = binding.OrgID
 		meta.InstallationBindingID = binding.InstallationBindingID
 		meta.RepositoryBindingID = binding.RepositoryBindingID
-		if job.RunnerID != 0 || job.RunnerName != "" {
-			s.writeEvent(ctx, githubEventFromMetadata(meta, "github.runner.assignment.observed", "succeeded", "", started, time.Now().UTC()))
-		}
 		if job.Status == "completed" {
 			if err := s.insertTerminalEvidence(ctx, job, deliveryID); err != nil {
 				return err
@@ -1326,30 +1683,109 @@ func (s *Service) recordRunnerAssignment(ctx context.Context, binding runtimeBin
 	if runnerName == "" {
 		return nil
 	}
-	reg, err := s.queries.GetRunnerRegistrationByRunnerName(ctx, store.GetRunnerRegistrationByRunnerNameParams{RunnerName: runnerName})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if reg.State == "cleaned" || reg.State == "failed" {
-		return nil
-	}
-	if reg.ProviderJobID == job.ID {
-		return nil
-	}
 	now := time.Now().UTC()
-	reason := fmt.Sprintf("runner moved from provider job %d to provider job %d", reg.ProviderJobID, job.ID)
-	correctionKind, err := s.reassignRunnerRegistration(ctx, reg.ProviderJobID, job.ID, runnerName, reason, now)
+	tx, err := s.cfg.PG.Begin(ctx)
 	if err != nil {
 		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := store.New(tx)
+	instance, err := qtx.GetRunnerInstanceByRunnerName(ctx, store.GetRunnerInstanceByRunnerNameParams{RunnerName: runnerName})
+	instanceFound := true
+	if errors.Is(err, pgx.ErrNoRows) {
+		instanceFound = false
+	} else if err != nil {
+		return err
+	}
+	if err := qtx.UpsertJobAssignment(ctx, store.UpsertJobAssignmentParams{
+		ProviderJobID: job.ID,
+		RunnerName:    runnerName,
+		RunnerID:      job.RunnerID,
+		ObservedFrom:  "github-api",
+		DeliveryID:    deliveryID,
+		ObservedAt:    pgTime(now),
+		UpdatedAt:     pgTime(now),
+	}); err != nil {
+		return err
+	}
+	if err := qtx.MarkProviderDemandAssigned(ctx, store.MarkProviderDemandAssignedParams{
+		ProviderJobID: job.ID,
+		UpdatedAt:     pgTime(now),
+	}); err != nil {
+		return err
+	}
+	var reason string
+	originProviderJobID := int64(0)
+	runnerClass := ""
+	runnerState := "unmatched"
+	if instanceFound {
+		originProviderJobID = instance.OriginProviderJobID
+		runnerClass = instance.RunnerClass
+		runnerState = instance.State
+		nextState := "assigned"
+		if job.Status == "completed" {
+			nextState = "job_completed"
+		}
+		if err := qtx.MarkRunnerInstanceAssigned(ctx, store.MarkRunnerInstanceAssignedParams{
+			State:      nextState,
+			UpdatedAt:  pgTime(now),
+			RunnerName: runnerName,
+		}); err != nil {
+			return err
+		}
+		if originProviderJobID != 0 && originProviderJobID != job.ID {
+			reason = fmt.Sprintf("runner capacity created for provider job %d was assigned to provider job %d", originProviderJobID, job.ID)
+			if _, err := qtx.ResetProviderDemandAfterCapacityDisplaced(ctx, store.ResetProviderDemandAfterCapacityDisplacedParams{
+				ProviderJobID: originProviderJobID,
+				UpdatedAt:     pgTime(now),
+			}); err != nil {
+				return err
+			}
+			problems := runnerProblemSet{}
+			problems.add(githubRunnerProblemFromCatalog(
+				problemGithubRunnerCapacityDisplaced,
+				withProblemDiagnostic(reason),
+			))
+			if err := appendProviderDemandProblems(ctx, qtx, originProviderJobID, problems); err != nil {
+				return err
+			}
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if reason != "" {
+		s.writeEvent(ctx, githubEvent{
+			ObservedAt:             now,
+			EventName:              "github.runner.capacity.displaced",
+			Result:                 "observed",
+			Reason:                 reason,
+			DeliveryID:             deliveryID,
+			OrgID:                  binding.OrgID,
+			InstallationBindingID:  binding.InstallationBindingID,
+			RepositoryBindingID:    binding.RepositoryBindingID,
+			ProviderInstallationID: uint64FromInt64(installationID),
+			ProviderRepositoryID:   uint64FromInt64(repositoryID),
+			ProviderRunID:          uint64FromInt64(job.RunID),
+			ProviderRunAttempt:     uint64FromInt64(job.RunAttempt),
+			ProviderJobID:          uint64FromInt64(job.ID),
+			RepositoryFullName:     repositoryFullName,
+			RunnerID:               uint64FromInt64(job.RunnerID),
+			RunnerName:             runnerName,
+			RunnerClass:            runnerClass,
+			StartedAt:              started,
+			CompletedAt:            now,
+			AttributesJSON: mustJSON(map[string]string{
+				"actual_provider_job_id": strconv.FormatInt(job.ID, 10),
+				"origin_provider_job_id": strconv.FormatInt(originProviderJobID, 10),
+				"runner_state":           runnerState,
+			}),
+		})
 	}
 	s.writeEvent(ctx, githubEvent{
 		ObservedAt:             now,
-		EventName:              "github.runner.assignment.mismatch.corrected",
-		Result:                 "corrected",
-		Reason:                 reason,
+		EventName:              "github.runner.assignment.observed",
+		Result:                 "succeeded",
 		DeliveryID:             deliveryID,
 		OrgID:                  binding.OrgID,
 		InstallationBindingID:  binding.InstallationBindingID,
@@ -1362,93 +1798,16 @@ func (s *Service) recordRunnerAssignment(ctx context.Context, binding runtimeBin
 		RepositoryFullName:     repositoryFullName,
 		RunnerID:               uint64FromInt64(job.RunnerID),
 		RunnerName:             runnerName,
-		RunnerClass:            reg.RunnerClass,
+		RunnerClass:            runnerClass,
 		StartedAt:              started,
 		CompletedAt:            now,
 		AttributesJSON: mustJSON(map[string]string{
-			"actual_provider_job_id":  strconv.FormatInt(job.ID, 10),
-			"assumed_provider_job_id": strconv.FormatInt(reg.ProviderJobID, 10),
-			"correction_kind":         correctionKind,
-			"registration_state":      reg.State,
+			"actual_provider_job_id": strconv.FormatInt(job.ID, 10),
+			"origin_provider_job_id": strconv.FormatInt(originProviderJobID, 10),
+			"runner_state":           runnerState,
 		}),
 	})
 	return nil
-}
-
-func (s *Service) reassignRunnerRegistration(ctx context.Context, fromProviderJobID, toProviderJobID int64, runnerName string, reason string, at time.Time) (string, error) {
-	tx, err := s.cfg.PG.Begin(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	qtx := store.New(tx)
-	target, err := qtx.GetRunnerRegistrationForJob(ctx, store.GetRunnerRegistrationForJobParams{ProviderJobID: toProviderJobID})
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return "", err
-	}
-	if err == nil && target.RunnerName != "" && target.RunnerName != runnerName && target.State != "cleaned" && target.State != "failed" {
-		swappedDemands, err := qtx.SwapProviderDemandRunnerAssignments(ctx, store.SwapProviderDemandRunnerAssignmentsParams{
-			FromProviderJobID: fromProviderJobID,
-			ToProviderJobID:   toProviderJobID,
-			FailureReason:     truncate(reason, 1024),
-			UpdatedAt:         pgTime(at),
-		})
-		if err != nil {
-			return "", err
-		}
-		if swappedDemands != 2 {
-			return "", fmt.Errorf("github runner demand swap failed: from_provider_job_id=%d to_provider_job_id=%d rows=%d", fromProviderJobID, toProviderJobID, swappedDemands)
-		}
-		swappedRegistrations, err := qtx.SwapRunnerRegistrationJobs(ctx, store.SwapRunnerRegistrationJobsParams{
-			ToProviderJobID:   toProviderJobID,
-			RunnerName:        runnerName,
-			UpdatedAt:         pgTime(at),
-			FromProviderJobID: fromProviderJobID,
-		})
-		if err != nil {
-			return "", err
-		}
-		if swappedRegistrations == 0 {
-			return "", fmt.Errorf("github runner registration swap failed: from_provider_job_id=%d to_provider_job_id=%d runner_name=%s", fromProviderJobID, toProviderJobID, runnerName)
-		}
-		return runnerAssignmentCorrectionSwap, tx.Commit(ctx)
-	}
-	assigned, err := qtx.AssignProviderDemandToRunnerFromDemand(ctx, store.AssignProviderDemandToRunnerFromDemandParams{
-		FromProviderJobID: fromProviderJobID,
-		ToProviderJobID:   toProviderJobID,
-		UpdatedAt:         pgTime(at),
-	})
-	if err != nil {
-		return "", err
-	}
-	if assigned == 0 {
-		return "", fmt.Errorf("github runner assignment target demand missing: from_provider_job_id=%d to_provider_job_id=%d", fromProviderJobID, toProviderJobID)
-	}
-	transferred, err := qtx.TransferRunnerRegistrationToJob(ctx, store.TransferRunnerRegistrationToJobParams{
-		FromProviderJobID: fromProviderJobID,
-		ToProviderJobID:   toProviderJobID,
-		RunnerName:        runnerName,
-		UpdatedAt:         pgTime(at),
-	})
-	if err != nil {
-		return "", err
-	}
-	if transferred == 0 {
-		return "", fmt.Errorf("github runner registration missing for reassignment: from_provider_job_id=%d runner_name=%s", fromProviderJobID, runnerName)
-	}
-	if _, err := qtx.ResetProviderDemandAfterRunnerReassignment(ctx, store.ResetProviderDemandAfterRunnerReassignmentParams{
-		ProviderJobID: fromProviderJobID,
-		RunnerName:    replacementGitHubRunnerName(fromProviderJobID),
-		FailureReason: truncate(reason, 1024),
-		UpdatedAt:     pgTime(at),
-	}); err != nil {
-		return "", err
-	}
-	return runnerAssignmentCorrectionTransfer, tx.Commit(ctx)
-}
-
-func replacementGitHubRunnerName(jobID int64) string {
-	return fmt.Sprintf("verself-%d-%s", jobID, strings.ReplaceAll(uuid.NewString(), "-", "")[:10])
 }
 
 func (s *Service) observeSandboxWorkflowRun(ctx context.Context, workflow workflowObservation) error {
@@ -1479,7 +1838,7 @@ func (s *Service) observeSandboxJob(ctx context.Context, obs sandboxrentalclient
 }
 
 func (s *Service) cleanupRunnerForJob(ctx context.Context, installationID int64, repositoryFullName string, jobID int64) error {
-	reg, err := s.queries.GetRunnerRegistrationForJob(ctx, store.GetRunnerRegistrationForJobParams{ProviderJobID: jobID})
+	assignment, err := s.queries.GetJobAssignmentContext(ctx, store.GetJobAssignmentContextParams{ProviderJobID: jobID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -1490,34 +1849,60 @@ func (s *Service) cleanupRunnerForJob(ctx context.Context, installationID int64,
 	if !ok || owner == "" {
 		return fmt.Errorf("%w: repository full_name must be owner/name", ErrWebhookRejected)
 	}
-	if reg.RunnerID != 0 {
-		if err := s.deleteRunner(ctx, installationID, owner, reg.RunnerID); err != nil {
+	if assignment.RunnerID != 0 {
+		if err := s.deleteRunner(ctx, installationID, owner, assignment.RunnerID); err != nil {
 			return err
 		}
-	} else if reg.RunnerName != "" {
-		if err := s.deleteRunnerByName(ctx, installationID, owner, reg.RunnerName); err != nil {
+	} else if assignment.RunnerName != "" {
+		if err := s.deleteRunnerByName(ctx, installationID, owner, assignment.RunnerName); err != nil {
 			return err
 		}
 	}
-	return s.queries.MarkRunnerRegistrationCleaned(ctx, store.MarkRunnerRegistrationCleanedParams{
-		ProviderJobID: jobID,
-		UpdatedAt:     pgTime(time.Now().UTC()),
+	if assignment.RunnerName == "" {
+		return nil
+	}
+	return s.queries.MarkRunnerInstanceCleaned(ctx, store.MarkRunnerInstanceCleanedParams{
+		RunnerName: assignment.RunnerName,
+		UpdatedAt:  pgTime(time.Now().UTC()),
 	})
 }
 
-func (s *Service) recordRejectedDelivery(ctx context.Context, deliveryID, eventName, action, payloadSHA, reason string, at time.Time) {
-	if s == nil || s.queries == nil || strings.TrimSpace(deliveryID) == "" {
-		return
+func (s *Service) recordRejectedDelivery(ctx context.Context, deliveryID, eventName, action, payloadSHA string, problems webhookProblemSet, at time.Time) {
+	if err := s.persistRejectedDelivery(ctx, deliveryID, eventName, action, payloadSHA, problems, at); err != nil && s != nil && s.cfg.Logger != nil {
+		s.cfg.Logger.WarnContext(ctx, "github rejected delivery record failed", "delivery_id", deliveryID, "error", err)
 	}
-	_ = s.queries.MarkDeliveryRejected(ctx, store.MarkDeliveryRejectedParams{
+}
+
+func (s *Service) persistRejectedDelivery(ctx context.Context, deliveryID, eventName, action, payloadSHA string, problems webhookProblemSet, at time.Time) error {
+	if s == nil || s.queries == nil || strings.TrimSpace(deliveryID) == "" {
+		return nil
+	}
+	if problems.empty() {
+		problems.add(providerWebhookProcessingProblem("Webhook delivery was rejected.", false))
+	}
+	if s.cfg.PG == nil {
+		return ErrConfiguration
+	}
+	tx, err := s.cfg.PG.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	q := s.queries.WithTx(tx)
+	if _, err := q.MarkDeliveryRejected(ctx, store.MarkDeliveryRejectedParams{
 		DeliveryID:    deliveryID,
 		EventName:     firstNonEmpty(eventName, "unknown"),
 		Action:        action,
-		FailureReason: reason,
 		PayloadSha256: firstNonEmpty(payloadSHA, sha256Hex(nil)),
 		PayloadJson:   []byte(`{}`),
 		ReceivedAt:    pgTime(at),
-	})
+	}); err != nil {
+		return err
+	}
+	if err := appendWebhookDeliveryProblems(ctx, q, deliveryID, problems); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Service) runnerClassForLabels(labels []string) (string, error) {
@@ -1553,6 +1938,14 @@ func singleHeader(header http.Header, name string) (string, bool) {
 	return value, value != ""
 }
 
+func requiredWebhookHeader(header http.Header, name string, problems *webhookProblemSet) string {
+	value, ok := singleHeader(header, name)
+	if !ok && problems != nil {
+		problems.add(providerWebhookHeaderProblem(name))
+	}
+	return value
+}
+
 func verifyGitHubSignature(secret string, payload []byte, signature string) error {
 	secret = strings.TrimSpace(secret)
 	signature = strings.TrimSpace(signature)
@@ -1575,12 +1968,11 @@ func verifyGitHubSignature(secret string, payload []byte, signature string) erro
 	return nil
 }
 
-func githubRunnerName(repositoryID, runID, runAttempt, jobID int64) (string, error) {
+func githubRunnerName(jobID int64) (string, error) {
 	if jobID <= 0 {
 		return "", fmt.Errorf("%w: provider job id is required", ErrWebhookRejected)
 	}
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%d:%d", repositoryID, runID, runAttempt, jobID)))
-	return fmt.Sprintf("verself-%d-%s", jobID, hex.EncodeToString(sum[:])[:10]), nil
+	return fmt.Sprintf("verself-%d-%s", jobID, strings.ReplaceAll(uuid.NewString(), "-", "")[:10]), nil
 }
 
 func createAppJWT(appID int64, key *rsa.PrivateKey) (string, error) {
@@ -1669,6 +2061,21 @@ func decimalPtr(value int64) *sandboxrentalclient.DecimalUint64 {
 	}
 	out := sandboxrentalclient.DecimalUint64(fmt.Sprintf("%d", value))
 	return &out
+}
+
+func decimalPtrValue[T ~string](value *T) int64 {
+	if value == nil {
+		return 0
+	}
+	parsed, _ := strconv.ParseInt(strings.TrimSpace(string(*value)), 10, 64)
+	return parsed
+}
+
+func stringFromPtr[T ~string](value *T) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(*value))
 }
 
 func stringPtr[T ~string](value string) *T {

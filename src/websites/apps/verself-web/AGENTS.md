@@ -173,10 +173,11 @@ user:b64_<base64(zitadelUserId)>`. Discover `<ORG>` / subject form from
 
 ### Flight widget QA states (no backend needed)
 
-The console index renders synthetic states from `?flight=` (opt-in,
-auth-gated; live Electric is the default). Useful once logged in:
+The console index renders synthetic states from `?flight=`. Until the flight
+data model is real, the default console state is also a fixture. Useful once
+logged in:
 
-- `?flight=building-on-time | running-late | no-history | no-build`
+- `?flight=building-on-time | running-late | boarding | no-build`
 - `?flight=debug&actor=ash&src=PR47&dst=MAIN&state=ontime&remaining=12&commits=4`
   — `state` ∈ `ontime|late|cold`; vary `actor/src/dst/remaining/commits`
   (`commits=none` hides the pill). Seeds one card entirely from query params.

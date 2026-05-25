@@ -60,9 +60,6 @@ type Client struct {
 
 func New(options Options) (*Client, error) {
 	token := strings.TrimSpace(options.BearerToken)
-	if token == "" {
-		return nil, errors.New("verself sdk: bearer token is required")
-	}
 	iamURL, err := serviceURL(options.IAMURL, options.ServerURL, "iam")
 	if err != nil {
 		return nil, err
@@ -235,7 +232,9 @@ func editBearerRequest(ctx context.Context, req *http.Request, token, traceparen
 	if req.Header.Get("Accept") == "" {
 		req.Header.Set("Accept", "application/json")
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	if strings.TrimSpace(token) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	}
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 	if strings.TrimSpace(traceparent) != "" {
 		req.Header.Set("Traceparent", strings.TrimSpace(traceparent))

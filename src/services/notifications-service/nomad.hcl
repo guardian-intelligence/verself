@@ -31,6 +31,7 @@ job "notifications-service" {
       }
       env {
         NOTIFICATIONS_EMAIL_FROM_ADDRESS = "noreply@notify.verself.sh"
+        NOTIFICATIONS_EMAIL_FROM_ORG_ID = "org_B7HWGKW0SH7G4EXW9XT8TCT60C"
         NOTIFICATIONS_PLATFORM_ALERT_EMAIL = "integrations.anveio@gmail.com"
         NOTIFICATIONS_PLATFORM_ALERT_ORG_ID = "371564185181576922"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -81,6 +82,7 @@ EOT
       }
       env {
         NOTIFICATIONS_EMAIL_FROM_ADDRESS = "noreply@notify.verself.sh"
+        NOTIFICATIONS_EMAIL_FROM_ORG_ID = "org_B7HWGKW0SH7G4EXW9XT8TCT60C"
         NOTIFICATIONS_PLATFORM_ALERT_EMAIL = "integrations.anveio@gmail.com"
         NOTIFICATIONS_PLATFORM_ALERT_ORG_ID = "371564185181576922"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"

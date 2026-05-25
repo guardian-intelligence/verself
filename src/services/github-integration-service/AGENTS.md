@@ -7,7 +7,7 @@ sandbox execution policy.
 
 ## Boundary
 
-- Owns webhook HMAC verification, webhook delivery idempotency, workflow/job/run-attempt refresh, GitHub runner registration/JIT config, runner assignment, cancellation semantics, provider terminal evidence, and GitHub-specific job shape normalization.
+- Owns webhook HMAC verification, webhook delivery idempotency, workflow/job/run-attempt refresh, GitHub runner JIT capacity, observed runner assignment, cancellation semantics, provider terminal evidence, and GitHub-specific job shape normalization.
 - Calls sandbox-rental-service for provider-neutral sandbox primitives: execution submission, lease and attempt identity, durable mount plans, golden VM activation, GoldenSnapshotBarrier evaluation, checkpoint, publishing, and promotion.
 - Treats GitHub as provider-truth authority only. The control plane remains the snapshot authority because only Verself knows lease identity, durable generation identity, trust class, Firecracker compatibility, hook profile, and promotion policy.
 - Does not call vm-orchestrator directly. All VM and ZFS work goes through sandbox-rental-service, which owns the product policy boundary above the privileged host daemon.
@@ -21,7 +21,7 @@ boundary.
 - Require Verself bearer auth plus IAM for customer-visible configuration mutations: connect/disconnect an installation, sync repository access, change runner policy, and customer-initiated cancellation or disablement actions.
 - Require IAM read permissions for customer-visible inventory and diagnostics: installation lists, repository lists, runner policy views, and terminal evidence views when exposed outside internal service calls.
 - Do not use IAM to authenticate GitHub itself. GitHub provider ingress is authenticated by provider-specific controls: webhook HMAC for webhooks and GitHub API re-reads for terminal job truth.
-- Use governance audit events for all externally meaningful state transitions, including provider webhook accepted/rejected, runner registration created, runner assignment observed, cancellation observed, and terminal job evidence emitted.
+- Use governance audit events for all externally meaningful state transitions, including provider webhook accepted/rejected, runner capacity created, runner assignment observed, cancellation observed, and terminal job evidence emitted.
 - Internal calls use SPIFFE mTLS allowlists plus typed Smithy operations. The internal permission traits are contract metadata and audit inputs; they are not a substitute for peer service identity.
 
 GitHub webhook validation:
@@ -177,7 +177,7 @@ Worker requirements:
   operation handle. The resource remains readable while work is pending,
   retryable, failed, or terminal.
 - Cleanup on disconnect/provider revocation stops new demand, removes or
-  invalidates live runner registrations, emits sandbox cancellation commands
+  invalidates live runner capacity, emits sandbox cancellation commands
   through the outbox when needed, and retains product history.
 
 Quota, billing, and capacity decisions:
@@ -259,13 +259,13 @@ Runner and workload bootstrap:
 
 ## Architecture Highlights
 
-- Smithy is the source of truth for the service data model and interfaces. Keep resource identity, provider evidence, runner registration, and sandbox binding shapes there instead of repeating schema descriptions in prose.
+- Smithy is the source of truth for the service data model and interfaces. Keep resource identity, provider evidence, runner capacity, observed assignment, and sandbox binding shapes there instead of repeating schema descriptions in prose.
 - Public routes are for GitHub provider webhooks. Customer-visible routes stay out until onboarding/repo management is intentionally in scope. Internal routes are SPIFFE mTLS only and exist to exchange provider evidence with repo-owned services.
 - Provider IDs are evidence, not reusable sandbox identity. Use GitHub `run_id`, `run_attempt`, `job_id`, repository id, runner id/name, webhook delivery id, and observed API timestamps to prove what GitHub said happened.
 - Cache compatibility is based on normalized facts, not raw Actions YAML bytes. Reordering non-semantic YAML keys must not produce a new job shape.
 - Terminal evidence must be exact-attempt scoped. A successful job for the wrong `run_attempt`, repository, runner binding, or sandbox execution cannot pass a GoldenSnapshotBarrier.
 - Cancellation is a first-class provider state. This service translates GitHub cancellation and force-cancellation semantics into explicit sandbox commands; sandbox-rental-service decides how those commands affect attempts, leases, billing, and snapshot promotion.
-- ClickHouse events should preserve the provider/control-plane sequence: webhook received, provider state refreshed, demand recorded, runner registration created, sandbox execution requested, runner assigned, provider job terminal, terminal evidence emitted.
+- ClickHouse events should preserve the provider/control-plane sequence: webhook received, provider state refreshed, demand recorded, runner capacity created, sandbox execution requested, runner assigned, provider job terminal, terminal evidence emitted.
 
 ## Reference Patterns
 
@@ -280,10 +280,10 @@ patterns before inventing service-local variants.
 - Single GitHub API client boundary: all REST and GraphQL calls go through one typed client that owns installation token lookup, token cache expiry, API version headers, retries, redirects, conditional requests, pagination, and rate-limit telemetry.
 - API budget queue: GitHub recommends avoiding concurrent REST requests and pausing between mutative requests to avoid secondary rate limits. Model this as per-installation and per-repository work queues, not as ad hoc sleeps in handlers.
 - Installation callback state machine, when introduced: begin installation only after Verself IAM allows the actor, mint single-use state, consume that state once on callback, exchange the OAuth code, verify the installing user's association with the installation, then bind the GitHub installation to the Verself org.
-- Runner issuance service: create JIT runner config or registration tokens only from persisted job demand. Tokens and JIT config are attempt scoped, short-lived, redacted in logs, and unusable as snapshot authority.
+- Runner issuance service: create JIT runner config only from persisted job demand. JIT config is attempt scoped, short-lived, redacted in logs, and unusable as snapshot authority.
 - Runner assignment is not a deterministic GitHub binding. If multiple queued jobs share the same `runs-on` labels, GitHub may assign any matching runner to any job. This is a GitHub integration quirk and must not leak into sandbox-rental-service. Production JIT issuance is gated per repository runner class by a configured active-runner slot limit, never by a global customer queue. The retry reconciler must also select distinct repository/class candidates instead of replaying one saturated repo as a FIFO. This gate is an issuance throttle only; demand that exceeds host capacity will need an explicit provider queue later.
-- Runner assignment mismatch correction is blocking and local. When GitHub reports that runner `R` is executing job `B` but the persisted expectation was job `A`, github-integration-service immediately corrects its provider truth before forwarding the observation to sandbox-rental-service. If job `B` already had another live runner/sandbox assignment, the service performs a pairwise control-plane swap of the provider-demand and runner-registration rows. If job `B` had no live assignment, it transfers `R` to `B` and returns `A` to demand-recorded state with a fresh runner name. The VM is not moved underneath a running GitHub runner process; the provider-to-sandbox identity is realigned to match the runner GitHub already selected, and sandbox-rental binds the actual job by observed runner id/name.
-- Assignment mismatches are product signals. Emit `github.runner.assignment.mismatch.corrected` with `correction_kind`, `assumed_provider_job_id`, `actual_provider_job_id`, and registration state so operators can quantify repositories whose workflow labels do not play well with warm CI assumptions and notify customers out of band.
+- Runner assignment is observed provider truth, not a local expectation to repair. `github_provider_demands.provider_job_id` is the origin job that caused capacity creation. `github_runner_instances.origin_provider_job_id` records the runner capacity's origin. `github_job_assignments.provider_job_id` records the actual job GitHub assigned to that runner. If GitHub assigns runner `R` created for origin job `A` to actual job `B`, persist that assignment, mark `A` demand-recorded again if it still needs capacity, and let sandbox-rental bind the actual job by observed runner id/name. Do not synthesize reciprocal assignments or move VM identity between jobs.
+- Assignment displacements are product signals. Emit `github.runner.capacity.displaced` with `origin_provider_job_id`, `actual_provider_job_id`, and runner state so operators can quantify repositories whose workflow labels do not play well with warm CI assumptions and notify customers out of band.
 - Trust classifier: classify every run/job before it can allocate a sandbox or request golden promotion. Forks, pull requests, reusable workflows, environment protection, repository visibility, app permission drift, and org policy all feed the trust class.
 - Provider outbox to sandbox-rental-service: GitHub-specific state changes become idempotent provider-neutral commands. The outbox row, not an HTTP handler stack frame, is the durable proof that sandbox-rental-service should be called.
 - ClickHouse wide events: each provider/control-plane transition should emit one wide event with stable ids for org, installation, repo, run id, run attempt, job id, delivery id, execution id, attempt id, lease id, runner id/name, trust class, and decision. Prefer more events over overloading one event with hidden phases.
@@ -295,10 +295,10 @@ Expected high-level ClickHouse sequence for a successful CI job:
 3. `github.delivery.enqueued`
 4. `github.provider.refresh.started`
 5. `github.job.demand.recorded`
-6. `github.runner.registration.created`
+6. `github.runner.instance.created`
 7. `github.sandbox.submit.requested`
 8. `github.runner.assignment.observed`
-9. `github.runner.assignment.mismatch.corrected` when GitHub selected a  different compatible runner/job pairing than the service expected
+9. `github.runner.capacity.displaced` when GitHub selected a compatible runner created for a different origin job
 10. `github.job.terminal.observed`
 11. `github.terminal_evidence.emitted`
 12. `github.golden_snapshot_barrier.requested`
@@ -312,7 +312,7 @@ Expected high-level ClickHouse sequence for a successful CI job:
 - Treating a webhook terminal payload as promotable terminal truth creates stale attempt and replay risks. Always re-read the exact run attempt and job.
 - Ignoring `run_attempt` makes retry jobs indistinguishable from the original attempt. Snapshot promotion must be exact-attempt scoped.
 - Accepting duplicate delivery ids without comparing body hash hides replay or storage corruption. Same id plus same body hash is idempotency; same id plus different body hash is suspicious.
-- Logging webhook bodies, installation tokens, runner registration tokens, JIT config, OAuth codes, state values, checkout credentials, or provider secrets turns observability into credential exfiltration.
+- Logging webhook bodies, installation tokens, runner JIT config, OAuth codes, state values, checkout credentials, or provider secrets turns observability into credential exfiltration.
 - Letting app permissions drift silently makes failures look like provider flakiness. Store expected permission sets and emit explicit drift events.
 - Using one global GitHub App credential path for every tenant makes blast radius analysis harder. Tenant binding, credential reference, and app installation id need to be explicit in every sensitive row and event.
 - Letting runner callbacks prove completion leaks GitHub runner process quirks into snapshot authority. Runner state is useful evidence, not the promotion authority.

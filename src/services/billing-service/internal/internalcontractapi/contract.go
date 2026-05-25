@@ -90,9 +90,19 @@ type BillingSourceRef string
 
 type BillingSourceType string
 
+type BillingState string
+
 type BillingTier string
 
+type BillingTrustTier string
+
 type BillingWindowID string
+
+type BillingPromotionPercent int
+
+type BillingPromotionReason string
+
+type ContractID string
 
 type DecimalUint64 string
 
@@ -175,6 +185,74 @@ type BillingStorageEntitlement struct {
 	PlanID                   PlanID      `json:"plan_id" required:"true" minLength:"1" maxLength:"255"`
 	PlanTier                 BillingTier `json:"plan_tier" required:"true" minLength:"1" maxLength:"128"`
 	ProductID                ProductID   `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
+}
+
+type BillingOrganization struct {
+	OrgID       OrgID            `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	DisplayName string           `json:"display_name" required:"true" minLength:"1" maxLength:"120"`
+	State       BillingState     `json:"state" required:"true" minLength:"1" maxLength:"128"`
+	TrustTier   BillingTrustTier `json:"trust_tier" required:"true" minLength:"1" maxLength:"128"`
+}
+
+type BillingPlanPromotion struct {
+	OrgID      OrgID                   `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	ProductID  ProductID               `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
+	PlanID     PlanID                  `json:"plan_id" required:"true" minLength:"1" maxLength:"255"`
+	ContractID ContractID              `json:"contract_id" required:"true" minLength:"1" maxLength:"255"`
+	PercentOff BillingPromotionPercent `json:"percent_off" required:"true" minimum:"0" maximum:"100"`
+	Reason     BillingPromotionReason  `json:"reason" required:"true" minLength:"1" maxLength:"512"`
+}
+
+type BillingPlanPromotionCancellation struct {
+	OrgID      OrgID                  `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	ProductID  ProductID              `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
+	ContractID ContractID             `json:"contract_id" required:"true" minLength:"1" maxLength:"255"`
+	CancelAt   *string                `json:"cancel_at,omitempty"`
+	Reason     BillingPromotionReason `json:"reason" required:"true" minLength:"1" maxLength:"512"`
+}
+
+type EnsureBillingOrganizationInputBody struct {
+	OrgID       OrgID             `json:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	DisplayName string            `json:"display_name" required:"true" minLength:"1" maxLength:"120"`
+	TrustTier   *BillingTrustTier `json:"trust_tier,omitempty" minLength:"1" maxLength:"128"`
+}
+
+type EnsureBillingOrganizationInput struct {
+	Body EnsureBillingOrganizationInputBody
+}
+
+type SetOrganizationTrustTierInputBody struct {
+	TrustTier BillingTrustTier `json:"trust_tier" required:"true" minLength:"1" maxLength:"128"`
+}
+
+type SetOrganizationTrustTierInput struct {
+	OrgID          OrgID  `path:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+	Body           SetOrganizationTrustTierInputBody
+}
+
+type ApplyBillingPlanPromotionInputBody struct {
+	ProductID  ProductID               `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
+	PlanID     PlanID                  `json:"plan_id" required:"true" minLength:"1" maxLength:"255"`
+	PercentOff BillingPromotionPercent `json:"percent_off" required:"true" minimum:"0" maximum:"100"`
+	Reason     BillingPromotionReason  `json:"reason" required:"true" minLength:"1" maxLength:"512"`
+}
+
+type ApplyBillingPlanPromotionInput struct {
+	OrgID          OrgID  `path:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+	Body           ApplyBillingPlanPromotionInputBody
+}
+
+type CancelBillingPlanPromotionInputBody struct {
+	ProductID ProductID              `json:"product_id" required:"true" minLength:"1" maxLength:"255"`
+	Reason    BillingPromotionReason `json:"reason" required:"true" minLength:"1" maxLength:"512"`
+}
+
+type CancelBillingPlanPromotionInput struct {
+	OrgID          OrgID  `path:"org_id" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	IdempotencyKey string `header:"Idempotency-Key" required:"true" minLength:"8" maxLength:"128"`
+	Body           CancelBillingPlanPromotionInputBody
 }
 
 type GetStorageEntitlementInputBody struct {
@@ -293,6 +371,30 @@ type GetStorageEntitlementOutput struct {
 	Body GetStorageEntitlementOutputBody
 }
 
+type BillingOrganizationOutputBody struct {
+	Organization BillingOrganization `json:"organization" required:"true"`
+}
+
+type BillingOrganizationOutput struct {
+	Body BillingOrganizationOutputBody
+}
+
+type ApplyBillingPlanPromotionOutputBody struct {
+	Promotion BillingPlanPromotion `json:"promotion" required:"true"`
+}
+
+type ApplyBillingPlanPromotionOutput struct {
+	Body ApplyBillingPlanPromotionOutputBody
+}
+
+type CancelBillingPlanPromotionOutputBody struct {
+	Cancellation BillingPlanPromotionCancellation `json:"cancellation" required:"true"`
+}
+
+type CancelBillingPlanPromotionOutput struct {
+	Body CancelBillingPlanPromotionOutputBody
+}
+
 type SettleWindowOutput struct {
 	Body BillingSettleResult
 }
@@ -307,10 +409,125 @@ type VoidWindowOutput struct {
 
 var Operations = []OperationDescriptor{
 	ActivateWindow.Descriptor,
+	EnsureBillingOrganization.Descriptor,
+	SetOrganizationTrustTier.Descriptor,
+	ApplyBillingPlanPromotion.Descriptor,
+	CancelBillingPlanPromotion.Descriptor,
 	GetStorageEntitlement.Descriptor,
 	ReserveWindow.Descriptor,
 	SettleWindow.Descriptor,
 	VoidWindow.Descriptor,
+}
+
+var EnsureBillingOrganization = Operation[EnsureBillingOrganizationInput, BillingOrganizationOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.billing.v1#EnsureBillingOrganization",
+		OperationID:         "ensure-billing-organization",
+		Method:              "POST",
+		Path:                "/internal/billing/v1/orgs",
+		DefaultStatus:       200,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "billing-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "billing:organization:write", OrganizationSource: "body_org_id", OrganizationMember: "org_id"},
+		Audit:               AuditDescriptor{Event: "billing.organization.ensure", Resource: "billing_organization_resource", Action: "create"},
+		RateLimitBucket:     "internal_mutation",
+		RequestBodyMaxBytes: 65536,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotent", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "billingInternal.orgs", Method: "ensure", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+var SetOrganizationTrustTier = Operation[SetOrganizationTrustTierInput, BillingOrganizationOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.billing.v1#SetOrganizationTrustTier",
+		OperationID:         "set-organization-trust-tier",
+		Method:              "POST",
+		Path:                "/internal/billing/v1/orgs/{org_id}/trust-tier",
+		DefaultStatus:       200,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "billing-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "billing:organization:write", OrganizationSource: "input_member", OrganizationMember: "org_id"},
+		Audit:               AuditDescriptor{Event: "billing.organization.trust_tier.set", Resource: "billing_organization_resource", Action: "update"},
+		RateLimitBucket:     "internal_mutation",
+		RequestBodyMaxBytes: 65536,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "billingInternal.orgs", Method: "setTrustTier", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+var ApplyBillingPlanPromotion = Operation[ApplyBillingPlanPromotionInput, ApplyBillingPlanPromotionOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.billing.v1#ApplyBillingPlanPromotion",
+		OperationID:         "apply-billing-plan-promotion",
+		Method:              "POST",
+		Path:                "/internal/billing/v1/orgs/{org_id}/plan-promotions",
+		DefaultStatus:       200,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "billing-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "billing:promotion:write", OrganizationSource: "input_member", OrganizationMember: "org_id"},
+		Audit:               AuditDescriptor{Event: "billing.promotion.apply", Resource: "billing_promotion_resource", Action: "create"},
+		RateLimitBucket:     "internal_mutation",
+		RequestBodyMaxBytes: 65536,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "billingInternal.promotions", Method: "applyPlanPromotion", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+var CancelBillingPlanPromotion = Operation[CancelBillingPlanPromotionInput, CancelBillingPlanPromotionOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.billing.v1#CancelBillingPlanPromotion",
+		OperationID:         "cancel-billing-plan-promotion",
+		Method:              "POST",
+		Path:                "/internal/billing/v1/orgs/{org_id}/plan-promotions:cancel",
+		DefaultStatus:       200,
+		Readonly:            false,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "billing-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "billing:promotion:write", OrganizationSource: "input_member", OrganizationMember: "org_id"},
+		Audit:               AuditDescriptor{Event: "billing.promotion.cancel", Resource: "billing_promotion_resource", Action: "update"},
+		RateLimitBucket:     "internal_mutation",
+		RequestBodyMaxBytes: 65536,
+		RequestPayload:      PayloadDescriptor{},
+		ResponsePayload:     PayloadDescriptor{},
+		ResponseHeaders:     []HeaderDescriptor{},
+		Idempotency:         IdempotencyDescriptor{Policy: "idempotency_key_header", Header: "Idempotency-Key", Member: "idempotencyKey"},
+		SDK:                 SDKDescriptor{Module: "billingInternal.promotions", Method: "cancelPlanPromotion", Paginated: false, Retryable: false},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
 }
 
 var GetStorageEntitlement = Operation[GetStorageEntitlementInput, GetStorageEntitlementOutput]{
@@ -456,6 +673,10 @@ type Handlers = PublicHandlers
 
 type PublicHandlers interface {
 	ActivateWindow(context.Context, *ActivateWindowInput) (*ReserveWindowOutput, error)
+	EnsureBillingOrganization(context.Context, *EnsureBillingOrganizationInput) (*BillingOrganizationOutput, error)
+	SetOrganizationTrustTier(context.Context, *SetOrganizationTrustTierInput) (*BillingOrganizationOutput, error)
+	ApplyBillingPlanPromotion(context.Context, *ApplyBillingPlanPromotionInput) (*ApplyBillingPlanPromotionOutput, error)
+	CancelBillingPlanPromotion(context.Context, *CancelBillingPlanPromotionInput) (*CancelBillingPlanPromotionOutput, error)
 	GetStorageEntitlement(context.Context, *GetStorageEntitlementInput) (*GetStorageEntitlementOutput, error)
 	ReserveWindow(context.Context, *ReserveWindowInput) (*ReserveWindowOutput, error)
 	SettleWindow(context.Context, *SettleWindowInput) (*SettleWindowOutput, error)
@@ -463,6 +684,14 @@ type PublicHandlers interface {
 }
 
 type ActivateWindowHandler = Handler[ActivateWindowInput, ReserveWindowOutput]
+
+type EnsureBillingOrganizationHandler = Handler[EnsureBillingOrganizationInput, BillingOrganizationOutput]
+
+type SetOrganizationTrustTierHandler = Handler[SetOrganizationTrustTierInput, BillingOrganizationOutput]
+
+type ApplyBillingPlanPromotionHandler = Handler[ApplyBillingPlanPromotionInput, ApplyBillingPlanPromotionOutput]
+
+type CancelBillingPlanPromotionHandler = Handler[CancelBillingPlanPromotionInput, CancelBillingPlanPromotionOutput]
 
 type GetStorageEntitlementHandler = Handler[GetStorageEntitlementInput, GetStorageEntitlementOutput]
 

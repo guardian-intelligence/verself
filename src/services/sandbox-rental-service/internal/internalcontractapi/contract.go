@@ -88,7 +88,25 @@ type ProblemCode string
 
 type ProblemDetail string
 
+type ProblemPhase string
+
+type ProblemPointer string
+
 type ProblemType string
+
+type ProblemOccurrence struct {
+	Type       ProblemType     `json:"type" required:"true"`
+	Code       ProblemCode     `json:"code" required:"true"`
+	Title      string          `json:"title" required:"true"`
+	Detail     *ProblemDetail  `json:"detail,omitempty"`
+	Status     *int            `json:"status,omitempty"`
+	Phase      *ProblemPhase   `json:"phase,omitempty"`
+	Retryable  *bool           `json:"retryable,omitempty"`
+	Pointer    *ProblemPointer `json:"pointer,omitempty"`
+	ObservedAt *string         `json:"observed_at,omitempty"`
+}
+
+type ProblemOccurrences []ProblemOccurrence
 
 type RequestID string
 
@@ -295,6 +313,36 @@ type InternalSubmitRunnerJobOutput struct {
 	Body InternalSubmitRunnerJobOutputBody
 }
 
+type InternalGetRunnerAllocationInput struct {
+	AllocationID AttemptID `path:"allocation_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+}
+
+type RunnerAllocationStatus struct {
+	AllocationID           AttemptID            `json:"allocation_id" required:"true" pattern:"^[0-9a-fA-F-]{36}$"`
+	Provider               Provider             `json:"provider" required:"true" minLength:"1" maxLength:"64"`
+	ProviderRepositoryID   ProviderRepositoryID `json:"provider_repository_id" required:"true" pattern:"^[0-9]+$"`
+	ProviderInstallationID *DecimalUint64       `json:"provider_installation_id,omitempty" pattern:"^[0-9]+$"`
+	RunnerClass            *string              `json:"runner_class,omitempty" minLength:"1" maxLength:"255"`
+	RunnerName             *RunnerName          `json:"runner_name,omitempty" minLength:"1" maxLength:"512"`
+	RunnerID               *DecimalUint64       `json:"runner_id,omitempty" pattern:"^[0-9]+$"`
+	OriginProviderJobID    *DecimalUint64       `json:"origin_provider_job_id,omitempty" pattern:"^[0-9]+$"`
+	AssignedProviderJobID  *DecimalUint64       `json:"assigned_provider_job_id,omitempty" pattern:"^[0-9]+$"`
+	ExecutionID            *ExecutionID         `json:"execution_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
+	AttemptID              *AttemptID           `json:"attempt_id,omitempty" pattern:"^[0-9a-fA-F-]{36}$"`
+	State                  string               `json:"state" required:"true"`
+	Problems               ProblemOccurrences   `json:"problems,omitempty"`
+	ExecutionState         *string              `json:"execution_state,omitempty"`
+	AttemptState           *string              `json:"attempt_state,omitempty"`
+}
+
+type InternalGetRunnerAllocationOutputBody struct {
+	Allocation RunnerAllocationStatus `json:"allocation" required:"true"`
+}
+
+type InternalGetRunnerAllocationOutput struct {
+	Body InternalGetRunnerAllocationOutputBody
+}
+
 type InternalObserveRunnerJobInputBody struct {
 	Observation RunnerJobObservation          `json:"observation" required:"true"`
 	WorkflowRun *RunnerWorkflowRunObservation `json:"workflow_run,omitempty"`
@@ -372,6 +420,7 @@ type InternalRequestGoldenSnapshotBarrierOutput struct {
 var Operations = []OperationDescriptor{
 	InternalRegisterRunnerRepository.Descriptor,
 	InternalSubmitRunnerJob.Descriptor,
+	InternalGetRunnerAllocation.Descriptor,
 	InternalObserveRunnerJob.Descriptor,
 	InternalObserveRunnerWorkflowRun.Descriptor,
 	InternalRequestGoldenSnapshotBarrier.Descriptor,
@@ -423,6 +472,30 @@ var InternalSubmitRunnerJob = Operation[InternalSubmitRunnerJobInput, InternalSu
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#ConflictError", Type: "urn:verself:problem:conflict:state", Code: "conflict.state", Status: 409},
 			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
+}
+
+var InternalGetRunnerAllocation = Operation[InternalGetRunnerAllocationInput, InternalGetRunnerAllocationOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.sandbox.v1#InternalGetRunnerAllocation",
+		OperationID:         "internal-get-runner-allocation",
+		Method:              "GET",
+		Path:                "/internal/v1/runner/allocations/{allocation_id}",
+		DefaultStatus:       200,
+		Readonly:            true,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "spiffe_mtls", Audience: "sandbox-rental-service", Principals: []string{"workload"}},
+		Authorization:       AuthorizationDescriptor{Permission: "sandbox:runner_job:observe", OrganizationSource: "request_id"},
+		Audit:               AuditDescriptor{Event: "sandbox.runner_job.observe", Resource: "runner_repository", Action: "read"},
+		RateLimitBucket:     "internal_read",
+		RequestBodyMaxBytes: 1024,
+		SDK:                 SDKDescriptor{Module: "sandboxInternal.runnerAllocations", Method: "get", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
+			{ShapeID: "verself.common.v1#ResourceNotFoundError", Type: "urn:verself:problem:resource:not_found", Code: "resource.not_found", Status: 404},
 			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
 			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
 		},
@@ -506,6 +579,7 @@ type Handlers = PublicHandlers
 type PublicHandlers interface {
 	InternalRegisterRunnerRepository(context.Context, *InternalRegisterRunnerRepositoryInput) (*InternalRegisterRunnerRepositoryOutput, error)
 	InternalSubmitRunnerJob(context.Context, *InternalSubmitRunnerJobInput) (*InternalSubmitRunnerJobOutput, error)
+	InternalGetRunnerAllocation(context.Context, *InternalGetRunnerAllocationInput) (*InternalGetRunnerAllocationOutput, error)
 	InternalObserveRunnerJob(context.Context, *InternalObserveRunnerJobInput) (*InternalObserveRunnerJobOutput, error)
 	InternalObserveRunnerWorkflowRun(context.Context, *InternalObserveRunnerWorkflowRunInput) (*InternalObserveRunnerWorkflowRunOutput, error)
 	InternalRequestGoldenSnapshotBarrier(context.Context, *InternalRequestGoldenSnapshotBarrierInput) (*InternalRequestGoldenSnapshotBarrierOutput, error)
@@ -514,6 +588,7 @@ type PublicHandlers interface {
 type (
 	InternalRegisterRunnerRepositoryHandler     = Handler[InternalRegisterRunnerRepositoryInput, InternalRegisterRunnerRepositoryOutput]
 	InternalSubmitRunnerJobHandler              = Handler[InternalSubmitRunnerJobInput, InternalSubmitRunnerJobOutput]
+	InternalGetRunnerAllocationHandler          = Handler[InternalGetRunnerAllocationInput, InternalGetRunnerAllocationOutput]
 	InternalObserveRunnerJobHandler             = Handler[InternalObserveRunnerJobInput, InternalObserveRunnerJobOutput]
 	InternalObserveRunnerWorkflowRunHandler     = Handler[InternalObserveRunnerWorkflowRunInput, InternalObserveRunnerWorkflowRunOutput]
 	InternalRequestGoldenSnapshotBarrierHandler = Handler[InternalRequestGoldenSnapshotBarrierInput, InternalRequestGoldenSnapshotBarrierOutput]

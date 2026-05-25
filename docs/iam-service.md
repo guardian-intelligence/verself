@@ -78,6 +78,7 @@ Signup is modeled as an installation-scoped public flow:
 
 ```text
 POST /api/v1/signup-intents
+GET /api/v1/organization-slugs/{slug}/availability
 POST /api/v1/signup-intents/{signupIntentId}/verification
 ```
 
@@ -86,13 +87,25 @@ organization display name, optional org slug, verification expiry, idempotency
 metadata, request attribution, and delivery state. The operation returns a
 generic accepted response and queues email verification. The response must not
 reveal whether the email already belongs to a user or pending invite.
+Repeated starts for the same address reuse the current reusable intent. After a
+short per-email cooldown, IAM rotates the verification token and sends a fresh
+email for the same signup intent ID; within the cooldown it returns the generic
+accepted response without another delivery. Completed signup addresses and
+in-flight materialization states return the same generic accepted response
+without creating a second organization or sending an email.
 
-`VerifySignup` consumes the verification token and initial account credential.
-Only this operation may create the Zitadel human, create the Zitadel
-organization, insert `iam_organizations`, bind the user as `roles/owner`, and
-emit governance API activity for the materialized organization. The credential
-payload is a Smithy union with a password member today and a stable envelope for
-later OIDC-provider branches.
+`CheckOrganizationSlugAvailability` is a public read used by signup UI and
+automation. It is a convenience check; `VerifySignup` repeats the slug
+availability check before Zitadel side effects and the `iam_organizations`
+insert remains the final authority under race.
+
+`VerifySignup` consumes the verification token and final organization display
+name and slug. Only this operation may create the Zitadel human, create the
+Zitadel organization, verify the Zitadel email, insert `iam_organizations`, bind
+the user as `roles/owner`, and emit governance API activity for the materialized
+organization. Password setup, password change, passkey setup, social login, MFA,
+and other authentication-method lifecycle work remain Zitadel-owned flows
+outside onboarding finalization.
 
 Invites are split across authenticated and public operations:
 
@@ -105,13 +118,42 @@ POST /api/v1/auth/invites/accept
 target org. It creates a pending directory user, writes a hashed invite
 acceptance token, reconciles role bindings, and sends the invite email.
 `AcceptMemberInvite` is public, rate-limited as signup traffic, idempotent, and
-uses the same account credential envelope as signup verification.
+consumes only the invite acceptance token.
 
 Public signup and invite acceptance are installation-scoped for rate limiting,
 audit, and bot-defense decisions. Org-scoped audit begins at verification or
 invite acceptance, when the target org and actor are known. Unverified intents
 and invalid token attempts still emit security telemetry with request
 attribution, but they do not produce customer-visible IAM state.
+
+## Organization Seeding And Promotion
+
+Organization seeding must go through service APIs rather than direct writes to
+Zitadel, SpiceDB, IAM PostgreSQL, or billing PostgreSQL. The self-serve path is
+`StartSignup` followed by `VerifySignup`; verification materializes the Zitadel
+organization, Zitadel human, IAM organization row, SpiceDB owner policy, and
+billing organization. Operator-created organizations with an existing actor use
+the authenticated `CreateOrganization` path, which performs the same IAM,
+SpiceDB, and billing provisioning steps.
+
+Billing posture is adjusted through billing-service internal APIs after the IAM
+organization exists:
+
+```text
+POST /internal/billing/v1/orgs
+POST /internal/billing/v1/orgs/{org_id}/trust-tier
+POST /internal/billing/v1/orgs/{org_id}/plan-promotions
+POST /internal/billing/v1/orgs/{org_id}/plan-promotions:cancel
+```
+
+`EnsureBillingOrganization` is an idempotent create/provision operation. It may
+refresh display metadata and current free-tier accounting, but it must not
+overwrite an existing org's trust tier, overage policy, or overage consent.
+Trust tier promotion and demotion use `SetOrganizationTrustTier` with values
+such as `platform` or `new`. Billing promotion to a paid plan with a 100%
+internal discount uses `ApplyBillingPlanPromotion`; demotion back to free-tier
+behavior uses `CancelBillingPlanPromotion`, which schedules the internal
+contract cancellation through the normal contract state machine.
 
 ## Substrate
 
@@ -506,6 +548,23 @@ Authentication flows remain standard OIDC/OAuth:
 Refresh tokens are issued and refreshed by Zitadel's token endpoint. They are
 never sent to product resource APIs and are not represented in IAM policy DTOs.
 
+Browser auth has three separate pieces of state:
+
+- browser client: the HTTP-only `verself_client` cookie and server row that
+  identify one browser install;
+- browser account: one Zitadel subject, encrypted token bundle, and available
+  Verself organizations under that browser client;
+- selected organization: the product org context for the active browser
+  account.
+
+Every browser product request resolves through browser client, active browser
+account, and selected organization. Browser JavaScript receives only handles,
+user/org metadata, and a cache partition. It never receives Zitadel refresh
+tokens or persisted product bearer tokens. Signup and invite completion return
+constrained login URLs with required subject, email, and org metadata; the
+callback enforces those constraints server-side because `prompt=select_account`
+and `login_hint` are OIDC hints, not authorization facts.
+
 
 ## Feature Parity Surface
 
@@ -514,8 +573,8 @@ surface:
 
 | Surface | Owning package | Notes |
 | --- | --- | --- |
-| Browser login, callback, logout, session read, selected org update | `internal/browser` | Owns cookie/session state and OIDC token exchange. Does not perform product authorization decisions directly. |
-| Browser resource tokens | `internal/browser` plus `internal/authz` | Resource token issuance requires a typed authorization plan and records token audience, org, scope, and freshness. |
+| Browser login, callback, logout, account read/switch/remove, selected org update | `internal/browser` | Owns browser-client and browser-account state plus OIDC token exchange. Does not perform product authorization decisions directly. |
+| Browser resource tokens | `internal/browser` plus `internal/authz` | Resource token issuance is scoped to active account and selected org, and records token audience, org, scope, and freshness. |
 | Available organizations for the caller | `internal/orgs` | Uses token role assignments and directory-backed org metadata; returns only orgs the token proves. |
 | Organization profile read/update/resolve | `internal/orgs` | Profile state lives in IAM PostgreSQL; authorization is checked through typed decisions. |
 | Organization members | `internal/members` | Directory-backed read model for humans. Service accounts are listed and governed through their own resource surface. |

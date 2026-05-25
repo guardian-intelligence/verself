@@ -30,7 +30,14 @@ export {
 export interface AuthNavigationClient {
   getSignInRedirectURL?: (input: {
     data: {
+      promptLogin?: boolean | null;
+      promptSelectAccount?: boolean | null;
       redirectTo?: string | null;
+      purpose?: string | null;
+      loginHint?: string | null;
+      requiredSubject?: string | null;
+      requiredEmail?: string | null;
+      requiredOrgId?: string | null;
     };
   }) => Promise<string>;
   getSignOutRedirectURL?: () => Promise<string>;
@@ -192,7 +199,16 @@ export function useClerk() {
   const { client } = useAuthContextValue();
 
   return {
-    redirectToSignIn: async (options?: { redirectTo?: string }) => {
+    redirectToSignIn: async (options?: {
+      promptLogin?: boolean;
+      promptSelectAccount?: boolean;
+      redirectTo?: string;
+      purpose?: string;
+      loginHint?: string;
+      requiredSubject?: string;
+      requiredEmail?: string;
+      requiredOrgId?: string;
+    }) => {
       if (!client?.getSignInRedirectURL) {
         throw new Error("AuthProvider is missing getSignInRedirectURL()");
       }
@@ -200,7 +216,16 @@ export function useClerk() {
       const location = getBrowserLocation();
       const redirectTo = options?.redirectTo ?? location.href;
       const href = await client.getSignInRedirectURL({
-        data: redirectTo ? { redirectTo } : {},
+        data: {
+          ...(options?.promptLogin ? { promptLogin: true } : {}),
+          ...(options?.promptSelectAccount ? { promptSelectAccount: true } : {}),
+          ...(redirectTo ? { redirectTo } : {}),
+          ...(options?.purpose ? { purpose: options.purpose } : {}),
+          ...(options?.loginHint ? { loginHint: options.loginHint } : {}),
+          ...(options?.requiredSubject ? { requiredSubject: options.requiredSubject } : {}),
+          ...(options?.requiredEmail ? { requiredEmail: options.requiredEmail } : {}),
+          ...(options?.requiredOrgId ? { requiredOrgId: options.requiredOrgId } : {}),
+        },
       });
       location.assign(href);
     },
