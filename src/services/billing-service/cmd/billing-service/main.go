@@ -208,8 +208,7 @@ func run() error {
 
 	internalPeerIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
-		workloadauth.ServiceSandboxRental,
-		workloadauth.ServiceSecrets,
+		billingInternalPeerServices()...,
 	)
 	if err != nil {
 		return err
@@ -239,6 +238,14 @@ func run() error {
 	internal.TLSConfig = internalTLSConfig
 
 	return httpserver.RunPair(ctx, logger, public, internal)
+}
+
+func billingInternalPeerServices() []string {
+	return []string{
+		workloadauth.ServiceIAM,
+		workloadauth.ServiceSandboxRental,
+		workloadauth.ServiceSecrets,
+	}
 }
 
 func int32FromInt(value int, field string) int32 {
