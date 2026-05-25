@@ -33,6 +33,45 @@ func TestTestMailboxDeliveryPrincipals(t *testing.T) {
 	}
 }
 
+func TestTestMailboxPrincipalEmails(t *testing.T) {
+	tests := map[string]struct {
+		principal string
+		email     string
+		want      []string
+	}{
+		"same": {
+			principal: "signup-e2e@verself.sh",
+			email:     "signup-e2e@verself.sh",
+			want:      []string{"signup-e2e@verself.sh"},
+		},
+		"plus alias": {
+			principal: "signup@verself.sh",
+			email:     "signup+agent@verself.sh",
+			want:      []string{"signup@verself.sh", "signup+agent@verself.sh"},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := testMailboxPrincipalEmails(tt.principal, tt.email); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("testMailboxPrincipalEmails() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTestMailboxPrincipalHasEmails(t *testing.T) {
+	principal := stalwartPrincipal{Emails: []string{"signup@verself.sh", "signup+agent@verself.sh"}}
+	if !testMailboxPrincipalHasEmails(principal, []string{"signup@verself.sh"}) {
+		t.Fatalf("expected base address to be present")
+	}
+	if !testMailboxPrincipalHasEmails(principal, []string{"signup@verself.sh", "signup+agent@verself.sh"}) {
+		t.Fatalf("expected plus alias to be present")
+	}
+	if testMailboxPrincipalHasEmails(principal, []string{"signup+other@verself.sh"}) {
+		t.Fatalf("unexpected plus alias reported present")
+	}
+}
+
 func TestTestMailboxCleanupPrincipals(t *testing.T) {
 	got := testMailboxCleanupPrincipals([]string{
 		"signup+agent@verself.sh",
