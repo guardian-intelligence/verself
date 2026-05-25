@@ -33,6 +33,38 @@ function loginSearch(search: Record<string, unknown>): LoginSearch {
   };
 }
 
+function rawParam(params: URLSearchParams, key: string): string | undefined {
+  const value = params.get(key)?.trim();
+  return value ? value : undefined;
+}
+
+function loginSearchParams(params: URLSearchParams): LoginSearch {
+  const prompt = rawParam(params, "prompt");
+  const redirect = rawParam(params, "redirect");
+  const purpose = rawParam(params, "purpose");
+  const loginHint = rawParam(params, "login_hint");
+  const requiredSubject = rawParam(params, "required_subject");
+  const requiredEmail = rawParam(params, "required_email");
+  const requiredOrgId = rawParam(params, "required_org_id");
+  return {
+    ...(prompt === "login" || prompt === "select_account" ? { prompt } : {}),
+    ...(redirect ? { redirect } : {}),
+    ...(purpose ? { purpose } : {}),
+    ...(loginHint ? { login_hint: loginHint } : {}),
+    ...(requiredSubject ? { required_subject: requiredSubject } : {}),
+    ...(requiredEmail ? { required_email: requiredEmail } : {}),
+    ...(requiredOrgId ? { required_org_id: requiredOrgId } : {}),
+  };
+}
+
+function hydratedLoginSearch(fallback: LoginSearch): LoginSearch {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+  // TanStack's search parser can coerce numeric-looking IDs before validation.
+  return loginSearchParams(new URLSearchParams(window.location.search));
+}
+
 export const Route = createFileRoute("/login")({
   validateSearch: loginSearch,
   beforeLoad: async ({ context, search }) => {
@@ -49,6 +81,8 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
+  const hydrated = useHydrated();
+  const routeSearch = Route.useSearch();
   const {
     prompt,
     redirect,
@@ -57,8 +91,7 @@ function LoginPage() {
     required_subject,
     required_email,
     required_org_id,
-  } = Route.useSearch();
-  const hydrated = useHydrated();
+  } = hydrated ? hydratedLoginSearch(routeSearch) : routeSearch;
   const buttonContent = (
     <>
       <LogIn aria-hidden="true" />
