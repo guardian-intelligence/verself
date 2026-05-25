@@ -18,13 +18,7 @@ export const Route = createFileRoute("/")({
   },
   component: LandingPage,
   head: () => ({
-    meta: [
-      { title: "Verself CI runners" },
-      {
-        name: "description",
-        content: "Warm GitHub Actions runners with durable ZFS build state.",
-      },
-    ],
+    meta: [{ title: "Verself" }],
   }),
 });
 
