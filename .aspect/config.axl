@@ -67,6 +67,9 @@ load(
 load(
     ".aspect/tasks/mail.axl",
     mail_addresses = "addresses",
+    mail_test_accounts_delete = "test_accounts_delete",
+    mail_test_accounts_ensure = "test_accounts_ensure",
+    mail_test_accounts_list = "test_accounts_list",
 )
 load(".aspect/tasks/observe.axl", "observe")
 load(
@@ -160,6 +163,9 @@ def config(ctx):
 
     # aspect mail ...
     ctx.tasks.add(mail_addresses)
+    ctx.tasks.add(mail_test_accounts_ensure)
+    ctx.tasks.add(mail_test_accounts_list)
+    ctx.tasks.add(mail_test_accounts_delete)
 
     # aspect canary ...
     ctx.tasks.add(canary_service_discovery)
