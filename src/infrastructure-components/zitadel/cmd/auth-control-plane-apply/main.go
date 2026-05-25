@@ -37,6 +37,8 @@ const (
 	defaultZitadelAdminPATPath             = "/etc/zitadel/admin.pat"
 	defaultIAMCredstoreDir                 = "/etc/credstore/iam-service"
 	defaultIAMCredstoreGroup               = "iam_service"
+	desiredPasswordMinLength              = 15
+	desiredPasswordLockoutAttempts        = 10
 	credentialMode             os.FileMode = 0o640
 )
 
@@ -94,6 +96,24 @@ type audienceSpec struct {
 	ComponentName  string
 	CredentialPath string
 	Group          string
+}
+
+type passwordComplexityPolicy struct {
+	MinLength    int  `json:"minLength"`
+	HasUppercase bool `json:"hasUppercase"`
+	HasLowercase bool `json:"hasLowercase"`
+	HasNumber    bool `json:"hasNumber"`
+	HasSymbol    bool `json:"hasSymbol"`
+}
+
+type passwordAgePolicy struct {
+	MaxAgeDays     int `json:"maxAgeDays"`
+	ExpireWarnDays int `json:"expireWarnDays"`
+}
+
+type lockoutPolicy struct {
+	MaxPasswordAttempts int `json:"maxPasswordAttempts"`
+	MaxOTPAttempts      int `json:"maxOtpAttempts"`
 }
 
 func (e statusError) Error() string {
@@ -224,6 +244,11 @@ func apply(ctx context.Context, cfg config) error {
 		token:      token,
 		client:     &http.Client{Timeout: 5 * time.Second},
 	}
+	if err := client.EnsurePasswordPolicies(ctx); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	project, err := client.EnsureProject(ctx, cfg.projectName)
 	if err != nil {
 		span.RecordError(err)
@@ -310,6 +335,115 @@ func runtimeAudienceSpecs(cfg config) []audienceSpec {
 		{ComponentName: "sandbox-rental", CredentialPath: "/etc/credstore/sandbox-rental/auth-audience", Group: "sandbox_rental"},
 		{ComponentName: "secrets-service", CredentialPath: "/etc/credstore/secrets-service/auth-audience", Group: "secrets_service"},
 		{ComponentName: "email-service", CredentialPath: "/etc/credstore/email-service/auth-audience", Group: "email_service"},
+	}
+}
+
+func (c zitadelClient) EnsurePasswordPolicies(ctx context.Context) error {
+	if err := c.EnsurePasswordComplexityPolicy(ctx); err != nil {
+		return err
+	}
+	if err := c.EnsurePasswordAgePolicy(ctx); err != nil {
+		return err
+	}
+	if err := c.EnsureLockoutPolicy(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c zitadelClient) EnsurePasswordComplexityPolicy(ctx context.Context) error {
+	var out struct {
+		Policy passwordComplexityPolicy `json:"policy"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/admin/v1/policies/password/complexity", nil, &out); err != nil {
+		return fmt.Errorf("read Zitadel password complexity policy: %w", err)
+	}
+	desired := desiredPasswordComplexityPolicy()
+	if out.Policy == desired {
+		return nil
+	}
+	if err := c.doJSON(ctx, http.MethodPut, "/admin/v1/policies/password/complexity", desiredPasswordComplexityPolicyBody(), nil); err != nil && !isNoChanges(err) {
+		return fmt.Errorf("update Zitadel password complexity policy: %w", err)
+	}
+	return nil
+}
+
+func (c zitadelClient) EnsurePasswordAgePolicy(ctx context.Context) error {
+	var out struct {
+		Policy passwordAgePolicy `json:"policy"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/admin/v1/policies/password/age", nil, &out); err != nil {
+		return fmt.Errorf("read Zitadel password age policy: %w", err)
+	}
+	desired := desiredPasswordAgePolicy()
+	if out.Policy == desired {
+		return nil
+	}
+	if err := c.doJSON(ctx, http.MethodPut, "/admin/v1/policies/password/age", desiredPasswordAgePolicyBody(), nil); err != nil && !isNoChanges(err) {
+		return fmt.Errorf("update Zitadel password age policy: %w", err)
+	}
+	return nil
+}
+
+func (c zitadelClient) EnsureLockoutPolicy(ctx context.Context) error {
+	var out struct {
+		Policy lockoutPolicy `json:"policy"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/admin/v1/policies/lockout", nil, &out); err != nil {
+		return fmt.Errorf("read Zitadel lockout policy: %w", err)
+	}
+	desired := desiredLockoutPolicy()
+	if out.Policy == desired {
+		return nil
+	}
+	if err := c.doJSON(ctx, http.MethodPut, "/admin/v1/policies/password/lockout", desiredLockoutPolicyBody(), nil); err != nil && !isNoChanges(err) {
+		return fmt.Errorf("update Zitadel lockout policy: %w", err)
+	}
+	return nil
+}
+
+func desiredPasswordComplexityPolicy() passwordComplexityPolicy {
+	return passwordComplexityPolicy{
+		MinLength:    desiredPasswordMinLength,
+		HasUppercase: false,
+		HasLowercase: false,
+		HasNumber:    false,
+		HasSymbol:    false,
+	}
+}
+
+func desiredPasswordAgePolicy() passwordAgePolicy {
+	return passwordAgePolicy{MaxAgeDays: 0, ExpireWarnDays: 0}
+}
+
+func desiredLockoutPolicy() lockoutPolicy {
+	return lockoutPolicy{MaxPasswordAttempts: desiredPasswordLockoutAttempts, MaxOTPAttempts: desiredPasswordLockoutAttempts}
+}
+
+func desiredPasswordComplexityPolicyBody() map[string]any {
+	policy := desiredPasswordComplexityPolicy()
+	return map[string]any{
+		"minLength":    policy.MinLength,
+		"hasUppercase": policy.HasUppercase,
+		"hasLowercase": policy.HasLowercase,
+		"hasNumber":    policy.HasNumber,
+		"hasSymbol":    policy.HasSymbol,
+	}
+}
+
+func desiredPasswordAgePolicyBody() map[string]any {
+	policy := desiredPasswordAgePolicy()
+	return map[string]any{
+		"maxAgeDays":     policy.MaxAgeDays,
+		"expireWarnDays": policy.ExpireWarnDays,
+	}
+}
+
+func desiredLockoutPolicyBody() map[string]any {
+	policy := desiredLockoutPolicy()
+	return map[string]any{
+		"maxPasswordAttempts": policy.MaxPasswordAttempts,
+		"maxOtpAttempts":      policy.MaxOTPAttempts,
 	}
 }
 

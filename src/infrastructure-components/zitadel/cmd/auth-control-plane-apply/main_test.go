@@ -1,6 +1,13 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"testing"
+)
 
 func TestOIDCConfigBodies(t *testing.T) {
 	browser := browserOIDCConfigBody([]string{"https://verself.sh/api/v1/auth/callback"}, []string{"https://verself.sh"})
@@ -29,5 +36,90 @@ func TestProductTokenClaimsTargetBody(t *testing.T) {
 	}
 	if body["timeout"] != "1s" {
 		t.Fatalf("timeout = %v", body["timeout"])
+	}
+}
+
+func TestPasswordPolicyBodies(t *testing.T) {
+	complexity := desiredPasswordComplexityPolicyBody()
+	if complexity["minLength"] != 15 {
+		t.Fatalf("minLength = %v", complexity["minLength"])
+	}
+	for _, key := range []string{"hasUppercase", "hasLowercase", "hasNumber", "hasSymbol"} {
+		if complexity[key] != false {
+			t.Fatalf("%s = %v", key, complexity[key])
+		}
+	}
+	age := desiredPasswordAgePolicyBody()
+	if age["maxAgeDays"] != 0 || age["expireWarnDays"] != 0 {
+		t.Fatalf("age body = %#v", age)
+	}
+	lockout := desiredLockoutPolicyBody()
+	if lockout["maxPasswordAttempts"] != 10 || lockout["maxOtpAttempts"] != 10 {
+		t.Fatalf("lockout body = %#v", lockout)
+	}
+}
+
+func TestEnsurePasswordPoliciesUpdatesDrift(t *testing.T) {
+	var gotRequests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequests = append(gotRequests, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "GET /admin/v1/policies/password/complexity":
+			writeJSON(t, w, map[string]any{"policy": map[string]any{"minLength": 8, "hasUppercase": true, "hasLowercase": true, "hasNumber": true, "hasSymbol": true}})
+		case "PUT /admin/v1/policies/password/complexity":
+			assertJSONBody(t, r, desiredPasswordComplexityPolicyBody())
+			writeJSON(t, w, map[string]any{"details": map[string]any{}})
+		case "GET /admin/v1/policies/password/age":
+			writeJSON(t, w, map[string]any{"policy": desiredPasswordAgePolicyBody()})
+		case "GET /admin/v1/policies/lockout":
+			writeJSON(t, w, map[string]any{"policy": map[string]any{"maxPasswordAttempts": 3, "maxOtpAttempts": 3}})
+		case "PUT /admin/v1/policies/password/lockout":
+			assertJSONBody(t, r, desiredLockoutPolicyBody())
+			writeJSON(t, w, map[string]any{"details": map[string]any{}})
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client := zitadelClient{baseURL: server.URL, token: "token", client: server.Client()}
+	if err := client.EnsurePasswordPolicies(context.Background()); err != nil {
+		t.Fatalf("EnsurePasswordPolicies: %v", err)
+	}
+	wantRequests := []string{
+		"GET /admin/v1/policies/password/complexity",
+		"PUT /admin/v1/policies/password/complexity",
+		"GET /admin/v1/policies/password/age",
+		"GET /admin/v1/policies/lockout",
+		"PUT /admin/v1/policies/password/lockout",
+	}
+	if !reflect.DeepEqual(gotRequests, wantRequests) {
+		t.Fatalf("requests = %#v, want %#v", gotRequests, wantRequests)
+	}
+}
+
+func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		t.Fatalf("encode response: %v", err)
+	}
+}
+
+func assertJSONBody(t *testing.T, r *http.Request, want map[string]any) {
+	t.Helper()
+	var got map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		t.Fatalf("decode request body: %v", err)
+	}
+	wantJSON, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("encode wanted body: %v", err)
+	}
+	var normalizedWant map[string]any
+	if err := json.Unmarshal(wantJSON, &normalizedWant); err != nil {
+		t.Fatalf("normalize wanted body: %v", err)
+	}
+	if !reflect.DeepEqual(got, normalizedWant) {
+		t.Fatalf("body = %#v, want %#v", got, normalizedWant)
 	}
 }
