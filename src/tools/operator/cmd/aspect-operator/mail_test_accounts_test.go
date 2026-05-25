@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestTestMailboxCleanupEmailCandidatesIncludesSubaddressPrincipal(t *testing.T) {
+	got := testMailboxCleanupEmailCandidates([]string{
+		"signup+agent@verself.sh",
+		"signup-e2e@verself.sh",
+	})
+	want := []string{
+		"signup+agent@verself.sh",
+		"signup-e2e@verself.sh",
+		"signup@verself.sh",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleanup candidates = %#v, want %#v", got, want)
+	}
+}
+
 func TestTestMailboxDeliveryPrincipal(t *testing.T) {
 	tests := map[string]string{
 		"signup+agent@verself.sh":      "signup@verself.sh",
