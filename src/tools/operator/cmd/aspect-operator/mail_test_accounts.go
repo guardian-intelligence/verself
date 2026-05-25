@@ -320,13 +320,20 @@ func ensureTestMailbox(ctx context.Context, client stalwartClient, domain, email
 		return "", "", "", errors.New("test mailbox email is empty")
 	}
 	principal := testMailboxDeliveryPrincipal(email)
+	principalEmails := testMailboxPrincipalEmails(principal, email)
 	credentialPath := testMailboxCredentialPath(email)
 	credential, credentialErr := readTestMailboxCredential(credentialPath)
-	_, found, err := client.GetPrincipal(ctx, principal)
+	record, found, err := client.GetPrincipal(ctx, principal)
 	if err != nil {
 		return "", "", "", err
 	}
 	status := "unchanged"
+	if found && !testMailboxPrincipalHasEmails(record, principalEmails) {
+		if err := client.SetPrincipalEmails(ctx, principal, principalEmails); err != nil {
+			return "", "", "", err
+		}
+		status = "updated_addresses"
+	}
 	needsSecret := resetSecret || credentialErr != nil || !strings.EqualFold(credential.Principal, principal)
 	if found && !needsSecret {
 		if err := verifyJMAPCredential(ctx, domain, credential); err != nil {
@@ -340,7 +347,7 @@ func ensureTestMailbox(ctx context.Context, client stalwartClient, domain, email
 		}
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		if !found {
-			if err := client.CreatePrincipal(ctx, testStalwartPrincipal(principal, password)); err != nil {
+			if err := client.CreatePrincipal(ctx, testStalwartPrincipal(principal, principalEmails, password)); err != nil {
 				return "", "", "", err
 			}
 			if err := client.SetPrincipalPassword(ctx, principal, password); err != nil {
@@ -390,13 +397,43 @@ func testMailboxDeliveryPrincipal(email string) string {
 	return local + "@" + domain
 }
 
-func testStalwartPrincipal(principal, password string) stalwartPrincipal {
+func testMailboxPrincipalEmails(principal, email string) []string {
+	seen := make(map[string]struct{}, 2)
+	emails := make([]string, 0, 2)
+	for _, value := range []string{principal, email} {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		emails = append(emails, value)
+	}
+	return emails
+}
+
+func testMailboxPrincipalHasEmails(principal stalwartPrincipal, want []string) bool {
+	got := make(map[string]struct{}, len(principal.Emails))
+	for _, email := range principal.Emails {
+		got[strings.ToLower(strings.TrimSpace(email))] = struct{}{}
+	}
+	for _, email := range want {
+		if _, ok := got[strings.ToLower(strings.TrimSpace(email))]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func testStalwartPrincipal(principal string, emails []string, password string) stalwartPrincipal {
 	return stalwartPrincipal{
 		Type:        "individual",
 		Name:        principal,
 		Description: "Standalone signup E2E mailbox; not backed by a Verself/Zitadel user",
 		Secrets:     []string{password},
-		Emails:      []string{principal},
+		Emails:      emails,
 		Roles:       []string{"user"},
 	}
 }
@@ -432,6 +469,15 @@ func (c stalwartClient) SetPrincipalPassword(ctx context.Context, principal, pas
 		"action": "set",
 		"field":  "secrets",
 		"value":  password,
+	}}
+	return c.doJSON(ctx, http.MethodPatch, "/api/principal/"+url.PathEscape(strings.TrimSpace(principal)), body, nil)
+}
+
+func (c stalwartClient) SetPrincipalEmails(ctx context.Context, principal string, emails []string) error {
+	body := []map[string]any{{
+		"action": "set",
+		"field":  "emails",
+		"value":  emails,
 	}}
 	return c.doJSON(ctx, http.MethodPatch, "/api/principal/"+url.PathEscape(strings.TrimSpace(principal)), body, nil)
 }
