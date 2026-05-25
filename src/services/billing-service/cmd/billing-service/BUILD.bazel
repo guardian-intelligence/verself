@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
@@ -32,6 +32,13 @@ go_binary(
     name = "billing-service",
     embed = [":billing-service_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "billing-service_test",
+    srcs = ["main_test.go"],
+    embed = [":billing-service_lib"],
+    deps = ["//src/services/service-runtime/go/workload"],
 )
 
 nomad_binary_artifact(
