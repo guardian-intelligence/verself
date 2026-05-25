@@ -282,6 +282,9 @@ func processExists(pid int) bool {
 }
 
 func localRoot() (string, error) {
+	if root := strings.TrimSpace(os.Getenv("VERSELF_PGTEST_ROOT")); root != "" {
+		return root, nil
+	}
 	if current, err := osuser.Current(); err == nil && strings.TrimSpace(current.HomeDir) != "" {
 		return filepath.Join(current.HomeDir, ".cache", "verself", "pgtest"), nil
 	}
