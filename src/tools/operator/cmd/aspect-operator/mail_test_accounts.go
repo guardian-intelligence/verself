@@ -185,6 +185,7 @@ func cmdMailTestAccountsDelete(args []string) error {
 			return err
 		}
 		emails := testMailAccountEmails(cfg.VerselfDomain)
+		emailCandidates := testMailboxCleanupEmailCandidates(emails)
 		targets, err := discoverTestAccountCleanupTargets(ctx, rt, opts, emails)
 		if err != nil {
 			return err
@@ -200,12 +201,12 @@ func cmdMailTestAccountsDelete(args []string) error {
 		record := func(surface string, count int64) {
 			rows.Rows = append(rows.Rows, []string{surface, fmt.Sprintf("%d", count)})
 		}
-		if n, err := cleanupNotificationsDB(ctx, rt, opts, emails, targets); err != nil {
+		if n, err := cleanupNotificationsDB(ctx, rt, opts, emailCandidates, targets); err != nil {
 			return err
 		} else {
 			record("notifications.postgres", n)
 		}
-		if n, err := cleanupEmailServiceDB(ctx, rt, opts, emails, targets); err != nil {
+		if n, err := cleanupEmailServiceDB(ctx, rt, opts, emailCandidates, targets); err != nil {
 			return err
 		} else {
 			record("email_service.postgres", n)
@@ -225,7 +226,7 @@ func cmdMailTestAccountsDelete(args []string) error {
 		} else {
 			record("zitadel.api", n)
 		}
-		if n, err := cleanupIAMDB(ctx, rt, opts, emails, targets); err != nil {
+		if n, err := cleanupIAMDB(ctx, rt, opts, emailCandidates, targets); err != nil {
 			return err
 		} else {
 			record("iam_service.postgres", n)
@@ -670,11 +671,20 @@ func discoverTestAccountCleanupTargets(ctx context.Context, rt *opruntime.Runtim
 		return testAccountCleanupTargets{}, err
 	}
 	defer func() { _ = iam.Close(context.Background()) }()
+	emailCandidates := testMailboxCleanupEmailCandidates(emails)
+	deliveryPrincipals := testMailboxDeliveryPrincipals(emails)
 	targets := testAccountCleanupTargets{}
 	rows, err := iam.Query(ctx, `
 SELECT signup_intent_id, org_id, identity_provider_org_id, identity_provider_user_id
 FROM iam_signup_intents
-WHERE lower(email) = ANY($1::text[])`, emails)
+WHERE lower(email_delivery) = ANY($1::text[])
+   OR (
+      CASE
+        WHEN position('+' in split_part(lower(email_delivery), '@', 1)) > 0
+        THEN split_part(split_part(lower(email_delivery), '@', 1), '+', 1) || '@' || split_part(lower(email_delivery), '@', 2)
+        ELSE lower(email_delivery)
+      END
+   ) = ANY($2::text[])`, emailCandidates, deliveryPrincipals)
 	if err != nil {
 		return testAccountCleanupTargets{}, fmt.Errorf("query signup cleanup targets: %w", err)
 	}
@@ -696,7 +706,7 @@ WHERE lower(email) = ANY($1::text[])`, emails)
 	accountRows, err := iam.Query(ctx, `
 SELECT DISTINCT subject, coalesce(selected_org_id, '')
 FROM iam_browser_accounts
-WHERE lower(coalesce(email, '')) = ANY($1::text[])`, emails)
+WHERE lower(coalesce(email, '')) = ANY($1::text[])`, emailCandidates)
 	if err != nil {
 		return testAccountCleanupTargets{}, fmt.Errorf("query browser account cleanup targets: %w", err)
 	}
@@ -718,7 +728,7 @@ WHERE lower(coalesce(email, '')) = ANY($1::text[])`, emails)
 		return testAccountCleanupTargets{}, err
 	}
 	defer closeZitadel()
-	for _, email := range emails {
+	for _, email := range emailCandidates {
 		user, found, err := zitadel.FindHumanByEmail(ctx, email)
 		if err != nil {
 			return testAccountCleanupTargets{}, fmt.Errorf("zitadel find %s: %w", email, err)
@@ -826,7 +836,17 @@ func cleanupIAMDB(ctx context.Context, rt *opruntime.Runtime, opts *mailTestAcco
 		{`DELETE FROM iam_browser_login_transactions WHERE lower(coalesce(required_email, '')) = ANY($1::text[]) OR coalesce(required_subject, '') = ANY($2::text[]) OR coalesce(required_org_id, '') = ANY($3::text[])`, []any{emails, targets.ProviderUserIDs, targets.OrgIDs}},
 		{`DELETE FROM iam_member_invite_acceptance_tokens WHERE lower(email) = ANY($1::text[]) OR user_id = ANY($2::text[]) OR org_id = ANY($3::text[])`, []any{emails, targets.ProviderUserIDs, targets.OrgIDs}},
 		{`DELETE FROM iam_service_accounts WHERE org_id = ANY($1::text[]) OR subject_id = ANY($2::text[])`, []any{targets.OrgIDs, targets.ProviderUserIDs}},
-		{`DELETE FROM iam_signup_intents WHERE lower(email) = ANY($1::text[]) OR org_id = ANY($2::text[]) OR identity_provider_user_id = ANY($3::text[])`, []any{emails, targets.OrgIDs, targets.ProviderUserIDs}},
+		{`DELETE FROM iam_signup_intents
+WHERE lower(email_delivery) = ANY($1::text[])
+   OR (
+      CASE
+        WHEN position('+' in split_part(lower(email_delivery), '@', 1)) > 0
+        THEN split_part(split_part(lower(email_delivery), '@', 1), '+', 1) || '@' || split_part(lower(email_delivery), '@', 2)
+        ELSE lower(email_delivery)
+      END
+   ) = ANY($2::text[])
+   OR org_id = ANY($3::text[])
+   OR identity_provider_user_id = ANY($4::text[])`, []any{emails, testMailboxDeliveryPrincipals(emails), targets.OrgIDs, targets.ProviderUserIDs}},
 		{`DELETE FROM iam_organizations WHERE org_id = ANY($1::text[]) OR identity_provider_org_id = ANY($2::text[])`, []any{targets.OrgIDs, targets.ProviderOrgIDs}},
 	} {
 		if err := addDeletedRows(&total, execDelete(ctx, conn, statement.query, statement.args...)); err != nil {
@@ -922,6 +942,10 @@ func testMailboxCleanupPrincipals(emails []string) []string {
 	}
 	sort.Strings(principals)
 	return principals
+}
+
+func testMailboxCleanupEmailCandidates(emails []string) []string {
+	return compactNonEmpty(append(append([]string{}, emails...), testMailboxDeliveryPrincipals(emails)...))
 }
 
 func testMailboxDeliveryPrincipals(emails []string) []string {

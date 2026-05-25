@@ -58,6 +58,7 @@ go_binary(
 go_test(
     name = "aspect-operator_test",
     srcs = [
+        "mail_test_accounts_test.go",
         "platform_zitadel_test.go",
         "release_test.go",
     ],
