@@ -253,11 +253,13 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 		t.Fatalf("unexpected start output: %#v", started)
 	}
 
-	verifyURL := "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID + "&verification_token=" + verificationToken + "&organization_display_name=Guardian+Intelligence&organization_slug=guardian-intelligence"
+	verifyURL := "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID + "&verification_token=" + verificationToken
 	var verifyOut bytes.Buffer
 	runCLI(t, &verifyOut,
 		"auth", "signup", "verify",
 		"--url", verifyURL,
+		"--org", "Guardian Intelligence",
+		"--slug", "guardian-intelligence",
 	)
 	if verifyAuth != "" {
 		t.Fatalf("verify Authorization = %q", verifyAuth)

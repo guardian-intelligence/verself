@@ -356,7 +356,7 @@ func TestIAMNormalizesProblemDetails(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusConflict)
-		_, _ = w.Write([]byte(`{"type":"urn:verself:problem:iam:version-conflict","title":"Version conflict","status":409,"detail":"Organization version is stale."}`))
+		_, _ = w.Write([]byte(`{"type":"urn:verself:problem:iam:version-conflict","title":"Version conflict","status":409,"detail":"Organization version is stale.","code":"iam.organization.version_conflict","requestId":"req_test","traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}`))
 	}))
 	defer server.Close()
 
@@ -371,6 +371,9 @@ func TestIAMNormalizesProblemDetails(t *testing.T) {
 	}
 	if apiErr.StatusCode != http.StatusConflict || apiErr.Title != "Version conflict" || apiErr.Detail != "Organization version is stale." {
 		t.Fatalf("unexpected api error: %#v", apiErr)
+	}
+	if apiErr.Code != "iam.organization.version_conflict" || apiErr.RequestID != "req_test" || apiErr.Traceparent == "" {
+		t.Fatalf("problem metadata was not preserved: %#v", apiErr)
 	}
 }
 

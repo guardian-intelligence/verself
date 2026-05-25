@@ -82,17 +82,21 @@ GET /api/v1/organization-slugs/{slug}/availability
 POST /api/v1/signup-intents/{signupIntentId}/verification
 ```
 
-`StartSignup` records a pending signup intent with normalized email, draft
-organization display name, optional org slug, verification expiry, idempotency
-metadata, request attribution, and delivery state. The operation returns a
-generic accepted response and queues email verification. The response must not
-reveal whether the email already belongs to a user or pending invite.
-Repeated starts for the same address reuse the current reusable intent. After a
-short per-email cooldown, IAM rotates the verification token and sends a fresh
-email for the same signup intent ID; within the cooldown it returns the generic
-accepted response without another delivery. Completed signup addresses and
-in-flight materialization states return the same generic accepted response
-without creating a second organization or sending an email.
+`StartSignup` records a pending signup intent with a delivery email, canonical
+email identity fingerprint, draft organization display name, optional org slug,
+verification expiry, idempotency metadata, request attribution, and delivery
+state. Signup accepts a single mailbox address. Domains are canonicalized with
+IDNA, Unicode local parts are normalized to NFC, and `+` subaddress detail is
+preserved for delivery while excluded from the identity fingerprint.
+The operation returns a generic accepted response and queues email
+verification. The response must not reveal whether the email identity already
+belongs to a user or pending invite. Repeated starts for the same email
+identity reuse the current reusable intent. After a short per-email cooldown,
+IAM rotates the verification token and sends a fresh email for the same signup
+intent ID; within the cooldown it returns the generic accepted response without
+another delivery. Completed signup identities and in-flight materialization
+states return the same generic accepted response without creating a second
+organization or sending an email.
 
 `CheckOrganizationSlugAvailability` is a public read used by signup UI and
 automation. It is a convenience check; `VerifySignup` repeats the slug
@@ -105,7 +109,12 @@ Zitadel organization, verify the Zitadel email, insert `iam_organizations`, bind
 the user as `roles/owner`, and emit governance API activity for the materialized
 organization. Password setup, password change, passkey setup, social login, MFA,
 and other authentication-method lifecycle work remain Zitadel-owned flows
-outside onboarding finalization.
+outside onboarding finalization. Local password authentication is production
+eligible only when the Zitadel-owned password path enforces NIST length,
+throttling, no-routine-rotation, no-composition-rule, and breached-password
+requirements. The HIBP Pwned Passwords range protocol integration under
+`src/integrations/hibp` is the repo-owned breached-password checking primitive;
+it sends only the SHA-1 prefix and compares suffixes locally.
 
 Invites are split across authenticated and public operations:
 
@@ -125,6 +134,14 @@ audit, and bot-defense decisions. Org-scoped audit begins at verification or
 invite acceptance, when the target org and actor are known. Unverified intents
 and invalid token attempts still emit security telemetry with request
 attribution, but they do not produce customer-visible IAM state.
+
+Signup verification failures use RFC 9457 problem details with stable problem
+codes. Invalid and expired verification links are client-correctable 400
+responses. Reused links, concurrent materialization, signup state conflicts, and
+unavailable organization slugs are 409 responses. A slug conflict before
+provider side effects remains retryable with the same verification code until
+expiry. `StartSignup` keeps account existence private by returning the generic
+accepted response for reusable, completed, and in-flight email identities.
 
 ## Organization Seeding And Promotion
 

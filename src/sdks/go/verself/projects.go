@@ -139,12 +139,15 @@ type ProjectEnvironmentLifecycleInput struct {
 }
 
 type APIError struct {
-	Service    string
-	Operation  string
-	StatusCode int
-	Title      string
-	Detail     string
-	Body       string
+	Service     string
+	Operation   string
+	StatusCode  int
+	Title       string
+	Detail      string
+	Code        string
+	RequestID   string
+	Traceparent string
+	Body        string
 }
 
 func (e *APIError) Error() string {
@@ -162,6 +165,12 @@ func (e *APIError) Error() string {
 		detail = http.StatusText(e.StatusCode)
 	}
 	return fmt.Sprintf("%s %s failed with HTTP %d: %s", e.Service, e.Operation, e.StatusCode, detail)
+}
+
+type apiErrorMetadata struct {
+	Code        string
+	RequestID   string
+	Traceparent string
 }
 
 type ProjectsClient struct {
@@ -562,12 +571,17 @@ func apiError(service, operation string, statusCode int, model *projectscore.Err
 	return apiErrorFields(service, operation, statusCode, title, detail, body)
 }
 
-func apiErrorFields(service, operation string, statusCode int, title *string, detail *string, body []byte) error {
+func apiErrorFields(service, operation string, statusCode int, title *string, detail *string, body []byte, metadata ...apiErrorMetadata) error {
 	err := &APIError{
 		Service:    service,
 		Operation:  operation,
 		StatusCode: statusCode,
 		Body:       strings.TrimSpace(string(body)),
+	}
+	if len(metadata) > 0 {
+		err.Code = strings.TrimSpace(metadata[0].Code)
+		err.RequestID = strings.TrimSpace(metadata[0].RequestID)
+		err.Traceparent = strings.TrimSpace(metadata[0].Traceparent)
 	}
 	if title != nil {
 		err.Title = *title

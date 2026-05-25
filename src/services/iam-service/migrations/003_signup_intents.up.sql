@@ -2,8 +2,9 @@ CREATE TABLE IF NOT EXISTS iam_signup_intents (
     signup_intent_id                 TEXT        PRIMARY KEY CHECK (signup_intent_id ~ '^signup_[0-9A-HJKMNP-TV-Z]{26}$'),
     idempotency_key                  TEXT        NOT NULL CHECK (idempotency_key <> ''),
     request_hash                     BYTEA       NOT NULL CHECK (octet_length(request_hash) = 32),
-    email                            TEXT        NOT NULL CHECK (email <> ''),
-    email_hash                       BYTEA       NOT NULL CHECK (octet_length(email_hash) = 32),
+    email_delivery                   TEXT        NOT NULL CHECK (email_delivery <> ''),
+    email_identity_hash              BYTEA       NOT NULL CHECK (octet_length(email_identity_hash) = 32),
+    email_identity_hash_key_id       TEXT        NOT NULL CHECK (email_identity_hash_key_id <> ''),
     organization_display_name        TEXT        NOT NULL CHECK (organization_display_name <> ''),
     requested_organization_slug      TEXT        NOT NULL DEFAULT '',
     organization_slug                TEXT        NOT NULL DEFAULT '',
@@ -31,8 +32,8 @@ CREATE TABLE IF NOT EXISTS iam_signup_intents (
     UNIQUE (idempotency_key)
 );
 
-CREATE INDEX IF NOT EXISTS iam_signup_intents_email_hash_idx
-    ON iam_signup_intents (email_hash, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS iam_signup_intents_email_identity_hash_idx
+    ON iam_signup_intents (email_identity_hash);
 
 CREATE INDEX IF NOT EXISTS iam_signup_intents_state_due_idx
     ON iam_signup_intents (state, verification_expires_at, materialization_lease_expires_at, created_at)

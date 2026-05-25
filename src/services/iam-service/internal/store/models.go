@@ -73,8 +73,9 @@ type IamSignupIntent struct {
 	SignupIntentID                string
 	IdempotencyKey                string
 	RequestHash                   []byte
-	Email                         string
-	EmailHash                     []byte
+	EmailDelivery                 string
+	EmailIdentityHash             []byte
+	EmailIdentityHashKeyID        string
 	OrganizationDisplayName       string
 	RequestedOrganizationSlug     string
 	OrganizationSlug              string

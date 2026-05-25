@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "pwned_passwords",
+    srcs = ["client.go"],
+    importpath = "github.com/verself/integrations/hibp/pwned-passwords",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "pwned_passwords_test",
+    srcs = ["client_test.go"],
+    embed = [":pwned_passwords"],
+)

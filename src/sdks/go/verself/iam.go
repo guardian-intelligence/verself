@@ -697,11 +697,17 @@ func policyToGenerated(input IAMPolicy) iamcore.IAMPolicy {
 func iamAPIError(operation string, statusCode int, model *iamcore.ErrorModel, body []byte) error {
 	var title *string
 	var detail *string
+	var metadata apiErrorMetadata
 	if model != nil {
 		title = model.Title
 		detail = model.Detail
+		metadata = apiErrorMetadata{
+			Code:        stringValue(model.Code),
+			RequestID:   stringValue(model.RequestID),
+			Traceparent: stringValue(model.Traceparent),
+		}
 	}
-	return apiErrorFields("IAM API", operation, statusCode, title, detail, body)
+	return apiErrorFields("IAM API", operation, statusCode, title, detail, body, metadata)
 }
 
 func stringValue[T ~string](input *T) string {

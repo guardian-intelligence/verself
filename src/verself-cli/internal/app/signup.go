@@ -95,12 +95,8 @@ func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(*organizationDisplayName) != "" {
-		credentials.organizationDisplayName = strings.TrimSpace(*organizationDisplayName)
-	}
-	if strings.TrimSpace(*organizationSlug) != "" {
-		credentials.organizationSlug = strings.TrimSpace(*organizationSlug)
-	}
+	verifyOrganizationDisplayName := trimOptionalString(*organizationDisplayName)
+	verifyOrganizationSlug := trimOptionalString(*organizationSlug)
 	client, err := c.publicIAMClient(*iamFlags)
 	if err != nil {
 		return err
@@ -108,8 +104,8 @@ func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
 	result, err := client.IAM.VerifySignup(ctx, verself.VerifySignupInput{
 		SignupIntentID:          credentials.signupIntentID,
 		VerificationToken:       credentials.verificationToken,
-		OrganizationDisplayName: trimOptionalString(credentials.organizationDisplayName),
-		OrganizationSlug:        trimOptionalString(credentials.organizationSlug),
+		OrganizationDisplayName: verifyOrganizationDisplayName,
+		OrganizationSlug:        verifyOrganizationSlug,
 	})
 	if err != nil {
 		return err
@@ -158,10 +154,8 @@ func signupVerifyOutputFromResult(result verself.SignupVerificationResult) signu
 }
 
 type signupVerificationCredentialSet struct {
-	signupIntentID          string
-	verificationToken       string
-	organizationDisplayName string
-	organizationSlug        string
+	signupIntentID    string
+	verificationToken string
 }
 
 func signupVerificationCredentials(actionURL, signupIntentID, verificationToken string) (signupVerificationCredentialSet, error) {
@@ -211,10 +205,8 @@ func signupVerificationCredentialsFromURL(raw string) (signupVerificationCredent
 		return signupVerificationCredentialSet{}, errors.New("signup verification URL must include signup_intent_id and verification_token")
 	}
 	return signupVerificationCredentialSet{
-		signupIntentID:          intentID,
-		verificationToken:       token,
-		organizationDisplayName: firstNonEmpty(query.Get("organization_display_name"), query.Get("organizationDisplayName")),
-		organizationSlug:        firstNonEmpty(query.Get("organization_slug"), query.Get("organizationSlug")),
+		signupIntentID:    intentID,
+		verificationToken: token,
 	}, nil
 }
 

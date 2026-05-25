@@ -305,19 +305,19 @@ function signupVerificationProblemMessage(status: number, body: string): string 
     code = "";
   }
   switch (code) {
-    case "signup_intent_expired":
-    case "signup-intent-expired":
+    case "iam.signup.verification.expired":
       return "This signup link has expired. Request a new signup email.";
-    case "signup_verification_invalid":
-    case "signup-verification-invalid":
+    case "iam.signup.verification.invalid":
       return "This signup link is no longer valid. Use the newest signup email.";
-    case "organization_profile_version_conflict":
-    case "organization-profile-version-conflict":
-    case "conflict.state":
+    case "iam.signup.verification.already_used":
+      return "This signup link has already been used. Sign in with the account that completed signup.";
+    case "iam.signup.materializing":
+      return "Signup is still being finalized. Wait a moment and try again.";
+    case "iam.organization_slug.unavailable":
       return "That organization URL is already taken.";
     default:
       if (status === 409) {
-        return "That organization URL is already taken.";
+        return "Signup could not be completed because the request state changed. Use the newest signup email and try again.";
       }
       return "Signup could not be completed. Use the newest signup email and try again.";
   }

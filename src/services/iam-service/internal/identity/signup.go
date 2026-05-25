@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/mail"
 	"strings"
 	"time"
 
@@ -16,12 +15,13 @@ import (
 )
 
 const (
-	signupIntentPublicIDPrefix = "signup_"
-	signupIntentLeaseDuration  = 5 * time.Minute
+	signupIntentPublicIDPrefix   = "signup_"
+	signupIntentLeaseDuration    = 5 * time.Minute
+	signupEmailIdentityHashKeyID = "iam_email_identity_hmac_v1"
 )
 
 func (s *Service) StartSignup(ctx context.Context, input StartSignupRequest) (StartSignupResult, error) {
-	input, err := normalizeStartSignup(input)
+	input, email, err := normalizeStartSignup(input)
 	if err != nil {
 		return StartSignupResult{}, err
 	}
@@ -45,15 +45,19 @@ func (s *Service) StartSignup(ctx context.Context, input StartSignupRequest) (St
 	if err != nil {
 		return StartSignupResult{}, err
 	}
-	_, emailHash := SecretHash(input.Email)
+	emailFingerprint, emailIdentityHash, err := s.emailIdentityHash(email.IdentityKey)
+	if err != nil {
+		return StartSignupResult{}, err
+	}
 	now := s.now()
 	responseExpiresAt := now.Add(24 * time.Hour)
 	decision, err := store.StartSignupIntent(ctx, SignupIntent{
 		SignupIntentID:            signupIntentID,
 		IdempotencyKey:            input.IdempotencyKey,
 		RequestHash:               requestHash,
-		Email:                     input.Email,
-		EmailHash:                 emailHash,
+		EmailDelivery:             email.DeliveryAddress,
+		EmailIdentityHash:         emailIdentityHash,
+		EmailIdentityHashKeyID:    signupEmailIdentityHashKeyID,
 		OrganizationDisplayName:   input.OrganizationName,
 		RequestedOrganizationSlug: input.OrganizationSlug,
 		GivenName:                 input.GivenName,
@@ -83,7 +87,7 @@ func (s *Service) StartSignup(ctx context.Context, input StartSignupRequest) (St
 			State:          decision.Intent.State,
 			Outcome:        "suppressed",
 			OccurredAt:     now,
-			Payload:        map[string]any{"email_fingerprint": hashText(input.Email)},
+			Payload:        map[string]any{"email_fingerprint": emailFingerprint},
 		}); err != nil {
 			return StartSignupResult{}, err
 		}
@@ -99,7 +103,7 @@ func (s *Service) StartSignup(ctx context.Context, input StartSignupRequest) (St
 			State:          decision.Intent.State,
 			Outcome:        "suppressed",
 			OccurredAt:     now,
-			Payload:        map[string]any{"email_fingerprint": hashText(input.Email)},
+			Payload:        map[string]any{"email_fingerprint": emailFingerprint},
 		}); err != nil {
 			return StartSignupResult{}, err
 		}
@@ -295,7 +299,7 @@ func (s *Service) materializeSignup(ctx context.Context, store Store, signupStor
 		}
 		user, err := directory.CreateSignupUser(ctx, DirectoryCreateSignupUserRequest{
 			OrgID:      intent.IdentityProviderOrgID,
-			Email:      intent.Email,
+			Email:      intent.EmailDelivery,
 			GivenName:  intent.GivenName,
 			FamilyName: intent.FamilyName,
 		})
@@ -454,35 +458,35 @@ func (s *Service) signupDirectory() (SignupDirectory, error) {
 	return directory, nil
 }
 
-func normalizeStartSignup(input StartSignupRequest) (StartSignupRequest, error) {
-	email, err := normalizeEmail(input.Email)
+func normalizeStartSignup(input StartSignupRequest) (StartSignupRequest, EmailAddress, error) {
+	email, err := ParseEmailAddress(input.Email)
 	if err != nil {
-		return StartSignupRequest{}, err
+		return StartSignupRequest{}, EmailAddress{}, err
 	}
-	input.Email = email
+	input.Email = email.DeliveryAddress
 	input.OrganizationName = normalizeHumanText(input.OrganizationName)
 	input.OrganizationSlug = normalizeSlug(input.OrganizationSlug)
 	input.GivenName = strings.TrimSpace(input.GivenName)
 	input.FamilyName = strings.TrimSpace(input.FamilyName)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	if err := validateHumanText("organization_display_name", input.OrganizationName, 1, 120, 240); err != nil {
-		return StartSignupRequest{}, err
+		return StartSignupRequest{}, EmailAddress{}, err
 	}
 	if input.OrganizationSlug != "" {
 		if err := validateSlug("organization_slug", input.OrganizationSlug); err != nil {
-			return StartSignupRequest{}, err
+			return StartSignupRequest{}, EmailAddress{}, err
 		}
 	}
 	if input.GivenName != "" && len(input.GivenName) > 100 {
-		return StartSignupRequest{}, fmt.Errorf("%w: given_name is too long", ErrInvalidInput)
+		return StartSignupRequest{}, EmailAddress{}, fmt.Errorf("%w: given_name is too long", ErrInvalidInput)
 	}
 	if input.FamilyName != "" && len(input.FamilyName) > 100 {
-		return StartSignupRequest{}, fmt.Errorf("%w: family_name is too long", ErrInvalidInput)
+		return StartSignupRequest{}, EmailAddress{}, fmt.Errorf("%w: family_name is too long", ErrInvalidInput)
 	}
 	if input.IdempotencyKey == "" {
-		return StartSignupRequest{}, fmt.Errorf("%w: idempotency_key is required", ErrInvalidInput)
+		return StartSignupRequest{}, EmailAddress{}, fmt.Errorf("%w: idempotency_key is required", ErrInvalidInput)
 	}
-	return input, nil
+	return input, email, nil
 }
 
 func normalizeVerifySignup(input VerifySignupRequest) (VerifySignupRequest, error) {
@@ -511,14 +515,6 @@ func normalizeVerifySignup(input VerifySignupRequest) (VerifySignupRequest, erro
 		}
 	}
 	return input, nil
-}
-
-func normalizeEmail(value string) (string, error) {
-	parsed, err := mail.ParseAddress(strings.TrimSpace(value))
-	if err != nil {
-		return "", fmt.Errorf("%w: email is invalid", ErrInvalidInput)
-	}
-	return strings.ToLower(strings.TrimSpace(parsed.Address)), nil
 }
 
 func signupStartRequestHash(input StartSignupRequest) ([]byte, error) {
@@ -567,6 +563,14 @@ func randomSignupVerificationToken() (token string, hash []byte, err error) {
 	return token, hash, nil
 }
 
+func (s *Service) emailIdentityHash(identityKey string) (string, []byte, error) {
+	if len(s.EmailIdentityKey) < 32 {
+		return "", nil, fmt.Errorf("%w: email identity key is required", ErrConfiguration)
+	}
+	fingerprint, raw := HMACSHA256(s.EmailIdentityKey, strings.TrimSpace(identityKey))
+	return fingerprint + ":" + signupEmailIdentityHashKeyID, raw, nil
+}
+
 func signupProviderOrganizationName(intent SignupIntent) string {
 	base := normalizeSlug(firstNonEmpty(intent.RequestedOrganizationSlug, intent.OrganizationDisplayName, "organization"))
 	if base == "" {
@@ -603,6 +607,8 @@ func signupErrorKind(err error) string {
 		return "store_unavailable"
 	case errors.Is(err, ErrOrganizationConflict):
 		return "organization_conflict"
+	case errors.Is(err, ErrOrganizationSlugUnavailable):
+		return "organization_slug_unavailable"
 	case errors.Is(err, ErrInvalidInput):
 		return "invalid_input"
 	default:

@@ -252,13 +252,13 @@ func requireContractIdempotency(ctx context.Context, desc contractapi.OperationD
 	value := operationRequestInfoFromContext(ctx).IdempotencyKey
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return badRequest(ctx, "idempotency-key-required", "Idempotency-Key is required for this operation", nil)
+		return badRequest(ctx, "request.validation_failed", "Idempotency-Key is required for this operation", nil)
 	}
 	if len(value) > maxIdempotencyKeyLength {
-		return badRequest(ctx, "idempotency-key-too-long", "Idempotency-Key is too long", nil)
+		return badRequest(ctx, "request.validation_failed", "Idempotency-Key is too long", nil)
 	}
 	if strings.ContainsAny(value, "\x00\r\n\t") {
-		return badRequest(ctx, "idempotency-key-invalid", "Idempotency-Key contains unsupported characters", nil)
+		return badRequest(ctx, "request.validation_failed", "Idempotency-Key contains unsupported characters", nil)
 	}
 	return nil
 }
@@ -391,7 +391,7 @@ func (h publicHandlers) AcceptMemberInvite(ctx context.Context, input *contracta
 
 func (h publicHandlers) CheckOrganizationSlugAvailability(ctx context.Context, input *contractapi.CheckOrganizationSlugAvailabilityInput) (*contractapi.CheckOrganizationSlugAvailabilityOutput, error) {
 	if input == nil {
-		return nil, badRequest(ctx, "invalid-organization-slug", "organization slug request is invalid", nil)
+		return nil, badRequest(ctx, "request.validation_failed", "organization slug request is invalid", nil)
 	}
 	available, err := h.service.OrganizationSlugAvailability(ctx, string(input.Slug))
 	if err != nil {
@@ -405,7 +405,7 @@ func (h publicHandlers) CheckOrganizationSlugAvailability(ctx context.Context, i
 
 func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.StartSignupInput) (*contractapi.StartSignupOutput, error) {
 	if input == nil {
-		return nil, badRequest(ctx, "invalid-signup", "signup request is invalid", nil)
+		return nil, badRequest(ctx, "request.validation_failed", "signup request is invalid", nil)
 	}
 	result, err := h.service.StartSignup(ctx, identity.StartSignupRequest{
 		Email:            string(input.Body.Email),
@@ -423,19 +423,19 @@ func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.Star
 			if result.CreatedIntent() {
 				_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
 			}
-			return nil, internalFailure(ctx, "signup-notifier-unavailable", "signup notification delivery is unavailable", nil)
+			return nil, internalFailure(ctx, "service.unavailable", "signup notification delivery is unavailable", nil)
 		}
 		actionURL, err := h.signupVerificationActionURL(result.Intent, result.VerificationToken)
 		if err != nil {
 			if result.CreatedIntent() {
 				_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
 			}
-			return nil, internalFailure(ctx, "signup-url-invalid", "signup verification URL could not be built", err)
+			return nil, internalFailure(ctx, "service.unavailable", "signup verification URL could not be built", err)
 		}
 		if err := h.signupNotifier.SendSignupVerification(ctx, SignupVerificationNotification{
 			SignupIntentID:          result.Intent.SignupIntentID,
 			OrgID:                   result.Intent.OrgID,
-			Email:                   result.Intent.Email,
+			Email:                   result.Intent.EmailDelivery,
 			OrganizationDisplayName: result.Intent.OrganizationDisplayName,
 			VerificationFingerprint: signupVerificationFingerprint(result.VerificationToken),
 			ActionURL:               actionURL,
@@ -444,7 +444,7 @@ func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.Star
 			if result.CreatedIntent() {
 				_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
 			}
-			return nil, upstreamFailure(ctx, "signup-notification-failed", "signup notification could not be queued", err)
+			return nil, upstreamFailure(ctx, "service.unavailable", "signup notification could not be queued", err)
 		}
 	}
 	return &contractapi.StartSignupOutput{Body: contractapi.SignupStartResult{
@@ -456,7 +456,7 @@ func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.Star
 
 func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.VerifySignupInput) (*contractapi.VerifySignupOutput, error) {
 	if input == nil {
-		return nil, badRequest(ctx, "invalid-signup-verification", "signup verification request is invalid", nil)
+		return nil, badRequest(ctx, "request.validation_failed", "signup verification request is invalid", nil)
 	}
 	result, err := h.service.VerifySignup(ctx, identity.VerifySignupRequest{
 		SignupIntentID:          string(input.SignupIntentID),
@@ -470,9 +470,9 @@ func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.Ver
 	}
 	loginURL := h.requiredAccountLoginURL(requiredAccountLogin{
 		Purpose:         "signup",
-		LoginHint:       result.Intent.Email,
+		LoginHint:       result.Intent.EmailDelivery,
 		RequiredSubject: result.Intent.IdentityProviderUserID,
-		RequiredEmail:   result.Intent.Email,
+		RequiredEmail:   result.Intent.EmailDelivery,
 		RequiredOrgID:   result.Intent.OrgID,
 		RedirectTo:      "/" + result.Organization.Slug,
 	})
@@ -483,7 +483,7 @@ func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.Ver
 			LoginURL:        loginURL,
 			Purpose:         "signup",
 			RequiredSubject: contractapi.SubjectId(result.Intent.IdentityProviderUserID),
-			RequiredEmail:   contractapi.EmailAddress(result.Intent.Email),
+			RequiredEmail:   contractapi.EmailAddress(result.Intent.EmailDelivery),
 			RequiredOrgID:   contractapi.OrgID(result.Intent.OrgID),
 			RedirectTo:      contractapi.BrowserRedirectPath("/" + result.Organization.Slug),
 		},
@@ -856,10 +856,6 @@ func (h publicHandlers) signupVerificationActionURL(intent identity.SignupIntent
 	query := base.Query()
 	query.Set("signup_intent_id", strings.TrimSpace(intent.SignupIntentID))
 	query.Set("verification_token", verificationToken)
-	query.Set("organization_display_name", intent.OrganizationDisplayName)
-	if strings.TrimSpace(intent.RequestedOrganizationSlug) != "" {
-		query.Set("organization_slug", strings.TrimSpace(intent.RequestedOrganizationSlug))
-	}
 	base.RawQuery = query.Encode()
 	return base.String(), nil
 }

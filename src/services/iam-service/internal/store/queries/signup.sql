@@ -1,15 +1,15 @@
 -- name: InsertSignupIntent :one
 INSERT INTO iam_signup_intents (
-    signup_intent_id, idempotency_key, request_hash, email, email_hash,
+    signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
     organization_display_name, requested_organization_slug, given_name, family_name,
     verification_token_hash, state, org_id, verification_expires_at
 ) VALUES (
-    sqlc.arg(signup_intent_id), sqlc.arg(idempotency_key), sqlc.arg(request_hash), sqlc.arg(email), sqlc.arg(email_hash),
+    sqlc.arg(signup_intent_id), sqlc.arg(idempotency_key), sqlc.arg(request_hash), sqlc.arg(email_delivery), sqlc.arg(email_identity_hash), sqlc.arg(email_identity_hash_key_id),
     sqlc.arg(organization_display_name), sqlc.arg(requested_organization_slug), sqlc.arg(given_name), sqlc.arg(family_name),
     sqlc.arg(verification_token_hash), 'pending_verification', sqlc.arg(org_id), sqlc.arg(verification_expires_at)
 )
 ON CONFLICT (idempotency_key) DO NOTHING
-RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
+RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
           organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
@@ -17,7 +17,7 @@ RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
           created_at, updated_at, verification_expires_at, verified_at, completed_at;
 
 -- name: GetSignupIntentByIdempotencyKey :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
@@ -26,50 +26,58 @@ SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
 FROM iam_signup_intents
 WHERE idempotency_key = sqlc.arg(idempotency_key);
 
--- name: GetReusableSignupIntentByEmailHashForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+-- name: GetReusableSignupIntentByEmailIdentityHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
        created_at, updated_at, verification_expires_at, verified_at, completed_at
 FROM iam_signup_intents
-WHERE email_hash = sqlc.arg(email_hash)
-  AND state IN ('pending_verification', 'expired')
+WHERE email_identity_hash = sqlc.arg(email_identity_hash)
+  AND (
+    state IN ('pending_verification', 'expired')
+    OR (
+      state = 'failed_retryable'
+      AND identity_provider_org_id = ''
+      AND identity_provider_user_id = ''
+      AND organization_slug = ''
+    )
+  )
 ORDER BY created_at DESC
 LIMIT 1
 FOR UPDATE;
 
--- name: GetCompletedSignupIntentByEmailHashForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+-- name: GetCompletedSignupIntentByEmailIdentityHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
        created_at, updated_at, verification_expires_at, verified_at, completed_at
 FROM iam_signup_intents
-WHERE email_hash = sqlc.arg(email_hash)
+WHERE email_identity_hash = sqlc.arg(email_identity_hash)
   AND state = 'completed'
 ORDER BY completed_at DESC
 LIMIT 1
 FOR UPDATE;
 
--- name: GetInFlightSignupIntentByEmailHashForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+-- name: GetInFlightSignupIntentByEmailIdentityHashForUpdate :one
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
        created_at, updated_at, verification_expires_at, verified_at, completed_at
 FROM iam_signup_intents
-WHERE email_hash = sqlc.arg(email_hash)
+WHERE email_identity_hash = sqlc.arg(email_identity_hash)
   AND state IN ('materializing', 'failed_retryable', 'failed_terminal')
 ORDER BY created_at DESC
 LIMIT 1
 FOR UPDATE;
 
 -- name: GetSignupIntentForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email, email_hash,
+SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
@@ -82,6 +90,7 @@ FOR UPDATE;
 -- name: RotateReusableSignupIntentVerification :one
 UPDATE iam_signup_intents
 SET request_hash = sqlc.arg(request_hash),
+    email_delivery = sqlc.arg(email_delivery),
     organization_display_name = sqlc.arg(organization_display_name),
     requested_organization_slug = sqlc.arg(requested_organization_slug),
     given_name = sqlc.arg(given_name),
@@ -97,8 +106,16 @@ SET request_hash = sqlc.arg(request_hash),
     verification_expires_at = sqlc.arg(verification_expires_at),
     updated_at = now()
 WHERE signup_intent_id = sqlc.arg(signup_intent_id)
-  AND state IN ('pending_verification', 'expired')
-RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
+  AND (
+    state IN ('pending_verification', 'expired')
+    OR (
+      state = 'failed_retryable'
+      AND identity_provider_org_id = ''
+      AND identity_provider_user_id = ''
+      AND organization_slug = ''
+    )
+  )
+RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
           organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
@@ -178,7 +195,7 @@ SET state = 'completed',
     materialization_lease_expires_at = NULL,
     updated_at = now()
 WHERE signup_intent_id = sqlc.arg(signup_intent_id)
-RETURNING signup_intent_id, idempotency_key, request_hash, email, email_hash,
+RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
           organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,

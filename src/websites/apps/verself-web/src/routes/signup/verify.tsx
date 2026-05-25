@@ -112,8 +112,6 @@ function SignupVerificationPage() {
             mode="create"
             signupIntentId={signupIntentId}
             verificationToken={verificationToken}
-            organizationDisplayName={organizationDisplayName}
-            organizationSlug={organizationSlug}
           >
             <Building2 aria-hidden="true" />
             <span>Create org</span>
@@ -123,8 +121,6 @@ function SignupVerificationPage() {
             mode="join"
             signupIntentId={signupIntentId}
             verificationToken={verificationToken}
-            organizationDisplayName={organizationDisplayName}
-            organizationSlug={organizationSlug}
           >
             <MailPlus aria-hidden="true" />
             <span>Join org</span>
@@ -267,20 +263,12 @@ function ModeLink(props: {
   mode: SignupMode;
   signupIntentId: string | undefined;
   verificationToken: string | undefined;
-  organizationDisplayName: string | undefined;
-  organizationSlug: string | undefined;
   children: ReactNode;
 }) {
   return (
     <Link
       to="/signup/verify"
-      search={{
-        mode: props.mode,
-        signup_intent_id: props.signupIntentId,
-        verification_token: props.verificationToken,
-        organization_display_name: props.organizationDisplayName,
-        organization_slug: props.organizationSlug,
-      }}
+      search={() => modeLinkSearch(props)}
       className={cn(
         "flex h-9 items-center justify-center gap-2 rounded-sm px-3 text-sm font-medium text-muted-foreground transition-colors",
         props.active && "bg-background text-foreground shadow-xs",
@@ -290,6 +278,20 @@ function ModeLink(props: {
       {props.children}
     </Link>
   );
+}
+
+function modeLinkSearch(props: {
+  mode: SignupMode;
+  signupIntentId: string | undefined;
+  verificationToken: string | undefined;
+}) {
+  return {
+    signup_intent_id: props.signupIntentId,
+    verification_token: props.verificationToken,
+    organization_display_name: undefined,
+    organization_slug: undefined,
+    mode: props.mode === "join" ? ("join" as const) : undefined,
+  };
 }
 
 function slugify(value: string): string {
