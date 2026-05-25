@@ -82,36 +82,37 @@ void main() {
 
   float jitter = hash12(cell + vec2(uSeed * 97.0, 11.0));
   float slowTwinkle = 0.5 + 0.5 * sin(uPhase * 1.7 + jitter * 6.28318);
-  float dormant = base * mix(0.76, 1.18, slowTwinkle * 0.22);
+  float dormant = base * mix(0.82, 1.08, slowTwinkle * 0.18);
 
-  float cluster = smoothstep(0.18, 0.92, hash12(cell * 0.73 + floor(uPhase * 8.0)));
+  float cluster = smoothstep(0.18, 0.92, hash12(cell * 0.73 + vec2(uSeed * 13.0, 4.0)));
   vec4 waveState = texture(uWaveState, worldUv);
   float height = waveState.r;
   float velocity = height - waveState.g;
-  float energy = clamp(abs(height) * 3.1 + abs(velocity) * 10.5, 0.0, 1.6);
+  float energy = clamp(abs(height) * 7.2 + abs(velocity) * 16.0, 0.0, 1.15);
   float waveEnergy =
-    energy * dotFade * mix(0.62, 1.18, cluster) * (0.78 + 0.58 * uAmbient);
+    energy * dotFade * mix(0.78, 1.08, cluster) * (0.82 + 0.42 * uAmbient);
 
-  mask = dotMask(localPixel, stepPx * (0.212 + energy * 0.122 * dotFade));
+  mask = dotMask(localPixel, stepPx * (0.212 + waveEnergy * 0.104));
   if (mask <= 0.001) {
     discard;
   }
 
-  float waveHighlight = smoothstep(0.06, 0.42, waveEnergy);
-  float luminance = dormant * mix(0.76, 1.0, uAmbient) + waveEnergy * 2.35;
+  float waveHighlight = smoothstep(0.08, 0.52, waveEnergy);
+  float luminance = dormant * mix(0.78, 0.94, uAmbient) + waveEnergy * 1.85;
   luminance *= dotFade;
   luminance *= uContrast;
-  luminance = clamp(luminance, 0.0, 2.6);
+  luminance = clamp(luminance, 0.0, 1.9);
 
   vec3 baseTone = vec3(0.42);
   vec3 troughTone = vec3(0.50, 0.78, 0.72);
   vec3 crestTone = vec3(1.0);
   vec3 hotTone = mix(troughTone, crestTone, smoothstep(-0.14, 0.14, height));
-  vec3 color = mix(baseTone, hotTone, smoothstep(0.05, 0.46, waveEnergy));
-  color = mix(color, vec3(1.0), waveHighlight * 0.88);
-  color += vec3(0.12, 0.20, 0.22) * waveEnergy * 0.2;
+  vec3 color = mix(baseTone, hotTone, smoothstep(0.06, 0.44, waveEnergy));
+  color = mix(color, vec3(1.0), waveHighlight * 0.56);
+  color += vec3(0.08, 0.14, 0.16) * waveEnergy * 0.16;
 
-  float alpha = mask * mix(0.3 + 0.62 * clamp(luminance, 0.0, 1.0), 1.0, waveHighlight * 0.95);
+  float alpha =
+    mask * mix(0.34 + 0.5 * clamp(luminance, 0.0, 1.0), 0.94, waveHighlight * 0.55);
   alpha *= dotFade;
   alpha *= mix(0.72, 1.0, uActive);
 

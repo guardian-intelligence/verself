@@ -58,6 +58,7 @@ export function MarketingLandingPage() {
           </p>
           <h1
             className="mx-auto mt-[5.8cqw] max-w-[90cqw] text-[10.2cqw] font-semibold leading-[1.02] text-white"
+            data-wave-focus=""
             data-wave-shadow=""
           >
             Verself

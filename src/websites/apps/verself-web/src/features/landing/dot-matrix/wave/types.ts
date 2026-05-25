@@ -2,7 +2,7 @@ import type { Texture } from "three";
 
 export const DOT_MATRIX_MAX_WAVE_IMPULSES = 6;
 export const DOT_MATRIX_WAVE_FIXED_STEP_SECONDS = 1 / 60;
-export const DOT_MATRIX_WAVE_TRAVEL_SPEED_SCALE = 5;
+export const DOT_MATRIX_WAVE_TRAVEL_SPEED_SCALE = 2.8;
 
 export interface WaveImpulse {
   readonly frontLength?: number;
@@ -50,9 +50,9 @@ export interface DotMatrixWaveSimulation {
 }
 
 export const DOT_MATRIX_WAVE_SIMULATION_CONFIG = {
-  damping: 0.9967,
-  gridLongEdge: 160,
-  maxGridEdge: 192,
-  minGridEdge: 72,
-  waveSpeed: 0.24,
+  damping: 0.9935,
+  gridLongEdge: 192,
+  maxGridEdge: 240,
+  minGridEdge: 90,
+  waveSpeed: 0.3,
 } satisfies WaveSimulationConfig;

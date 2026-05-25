@@ -22,7 +22,7 @@ import { drainDotMatrixClicks, recordSyntheticDotMatrixClick } from "./interacti
 import { createCompiledWaveScene } from "./scene/compile";
 import { collectShadowRegions, DOT_SHADOW_MASK_SELECTOR } from "./scene/dom-regions";
 import { createLandingWaveScene } from "./scene/model";
-import type { DomainRect, WaveSceneModel } from "./scene/types";
+import type { DomainRect, Vec2, WaveSceneModel } from "./scene/types";
 import { sampleDotMatrixTimeline } from "./timeline";
 import {
   DOT_MATRIX_DOT_SPACING_CSS_PX,
@@ -49,6 +49,7 @@ interface DotMatrixCanvasProps {
 }
 
 const DOT_MATRIX_MAX_SHADOW_MASKS = 32;
+const DOT_MATRIX_WAVE_FOCUS_SELECTOR = "[data-wave-focus]";
 
 export function DotMatrixCanvas({ active, frame, onDegraded, onReady }: DotMatrixCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -150,6 +151,9 @@ export function DotMatrixCanvas({ active, frame, onDegraded, onReady }: DotMatri
     document
       .querySelectorAll<HTMLElement>(DOT_SHADOW_MASK_SELECTOR)
       .forEach((element) => readableResizeObserver?.observe(element));
+    document
+      .querySelectorAll<HTMLElement>(DOT_MATRIX_WAVE_FOCUS_SELECTOR)
+      .forEach((element) => readableResizeObserver?.observe(element));
     let disposed = false;
     document.fonts?.ready
       .then(() => {
@@ -222,6 +226,7 @@ export function DotMatrixCanvas({ active, frame, onDegraded, onReady }: DotMatri
     let nextSceneRefresh = Number.POSITIVE_INFINITY;
     let simulationSeconds = 0;
     let timelineSeconds = 0;
+    let waveFocusPoint = resolveWaveFocusPoint(host, frameRef.current.viewport);
 
     const markDegraded = (reason: DotMatrixDegradedReason, error?: unknown) => {
       if (degraded) return;
@@ -299,6 +304,7 @@ export function DotMatrixCanvas({ active, frame, onDegraded, onReady }: DotMatri
         compiledScene.update(createSceneModel());
         uniforms.uCameraRect.value.copy(cameraRectVector(compiledScene.cameraRect));
         waveSimulation.setFieldTexture(compiledScene.texture);
+        waveFocusPoint = resolveWaveFocusPoint(host, current.viewport);
         lastSceneKey = sceneKey;
         nextSceneRefresh = Number.POSITIVE_INFINITY;
       }
@@ -331,9 +337,9 @@ export function DotMatrixCanvas({ active, frame, onDegraded, onReady }: DotMatri
             ambient: timeline.ambient,
             cameraRect: compiledScene.cameraRect,
             fields: compiledScene.fields,
+            focusPoint: waveFocusPoint,
             ignition: timeline.ignition,
             nowSeconds: timelineSeconds,
-            scene: compiledScene.model,
             viewport: frameRef.current.viewport,
           })
         : [];
@@ -430,6 +436,34 @@ function cameraRectVector(rect: DomainRect): Vector4 {
   return new Vector4(rect.x, rect.y, rect.width, rect.height);
 }
 
+function resolveWaveFocusPoint(
+  host: HTMLElement,
+  viewport: { readonly h: number; readonly w: number },
+): Vec2 {
+  const focusElement = document.querySelector<HTMLElement>(DOT_MATRIX_WAVE_FOCUS_SELECTOR);
+  if (focusElement === null) {
+    return resolveFallbackWaveFocusPoint(viewport);
+  }
+
+  const hostBox = host.getBoundingClientRect();
+  const focusBox = focusElement.getBoundingClientRect();
+  if (hostBox.width <= 0 || hostBox.height <= 0 || focusBox.width <= 0 || focusBox.height <= 0) {
+    return resolveFallbackWaveFocusPoint(viewport);
+  }
+
+  return {
+    x: clamp01((focusBox.left + focusBox.width * 0.5 - hostBox.left) / hostBox.width),
+    y: clamp01(1 - (focusBox.top + focusBox.height * 0.5 - hostBox.top) / hostBox.height),
+  };
+}
+
+function resolveFallbackWaveFocusPoint(_viewport: {
+  readonly h: number;
+  readonly w: number;
+}): Vec2 {
+  return { x: 0.5, y: 0.62 };
+}
+
 function rendererGeometryKey(frame: DotMatrixFrame, dpr: number): string {
   return `${frame.viewport.w}:${frame.viewport.h}:${dpr}`;
 }
@@ -461,4 +495,8 @@ function resolveAutoClickRate(search: URLSearchParams): number | undefined {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 3;
   return Math.min(parsed, 12);
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }

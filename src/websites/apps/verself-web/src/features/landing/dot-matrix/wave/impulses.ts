@@ -56,14 +56,14 @@ function clampImpulse(impulse: WaveImpulse): WaveImpulse {
       y: impulse.normalY ?? 0,
     });
     return {
-      frontLength: Math.min(0.72, Math.max(0.05, impulse.frontLength ?? impulse.radius)),
+      frontLength: Math.min(2.2, Math.max(0.05, impulse.frontLength ?? impulse.radius)),
       kind: "front",
       normalX: normal.x,
       normalY: normal.y,
-      radius: Math.min(0.08, Math.max(0.006, impulse.radius)),
+      radius: Math.min(0.08, Math.max(0.004, impulse.radius)),
       strength: Math.min(0.2, Math.max(-0.2, impulse.strength)),
-      x: clamp01(impulse.x),
-      y: clamp01(impulse.y),
+      x: clampRange(impulse.x, -0.75, 1.75),
+      y: clampRange(impulse.y, -0.75, 1.75),
     };
   }
 
@@ -76,7 +76,11 @@ function clampImpulse(impulse: WaveImpulse): WaveImpulse {
 }
 
 function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
+  return clampRange(value, 0, 1);
+}
+
+function clampRange(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function normalize(vector: { readonly x: number; readonly y: number }) {
