@@ -437,6 +437,9 @@ importers:
 
   packages/auth-web:
     dependencies:
+      '@tanstack/react-db':
+        specifier: 'catalog:'
+        version: 0.1.82(react@19.2.4)(typescript@5.9.3)
       '@tanstack/react-form':
         specifier: 'catalog:'
         version: 1.28.6(@tanstack/react-start@1.167.16(@voidzero-dev/vite-plus-core@0.1.19(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3))(crossws@0.4.4(srvx@0.11.15(patch_hash=e450cdeceba3af7174a2090936d3dcdbfc6167ccde9cc891efb8c96e90522a57)))(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -449,6 +452,9 @@ importers:
       '@verself/ui':
         specifier: workspace:*
         version: link:../ui
+      '@verself/web-env':
+        specifier: workspace:*
+        version: link:../web-env
       lucide-react:
         specifier: 'catalog:'
         version: 1.8.0(react@19.2.4)

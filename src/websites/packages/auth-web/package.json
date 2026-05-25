@@ -32,10 +32,12 @@
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@tanstack/react-db": "catalog:",
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
     "@verself/ui": "workspace:*",
+    "@verself/web-env": "workspace:*",
     "lucide-react": "catalog:",
     "valibot": "catalog:"
   },

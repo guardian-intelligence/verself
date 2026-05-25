@@ -5,3 +5,6 @@ postgresql_replication_roles:
   - name: electric_notifications
     connection_limit: 15
     password_file: /etc/credstore/electric-notifications/pg-password
+  - name: electric_iam
+    connection_limit: 15
+    password_file: /etc/credstore/electric-iam/pg-password

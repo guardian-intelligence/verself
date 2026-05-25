@@ -74,20 +74,6 @@ export const selectActiveOrganization = createServerFn({ method: "POST" })
     return selectIdentityOrganization(data);
   });
 
-export const getClientAuthSessions = createServerFn({ method: "GET" })
-  .middleware([consoleAuthMiddleware])
-  .handler(async () => {
-    const { listIdentityBrowserSessions } = await import("./auth.server");
-    return listIdentityBrowserSessions();
-  });
-
-export const getClientAuthAccounts = createServerFn({ method: "GET" })
-  .middleware([consoleAuthMiddleware])
-  .handler(async () => {
-    const { listIdentityBrowserAccounts } = await import("./auth.server");
-    return listIdentityBrowserAccounts();
-  });
-
 export const selectActiveAccount = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(selectAccountInputSchema)

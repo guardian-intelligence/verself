@@ -72,7 +72,7 @@ function ShellLayout() {
   const partitionKey = `auth:${snapshot.auth.cachePartition ?? "anonymous"}`;
 
   return (
-    <AuthProvider client={authNavigationClient} snapshot={snapshot}>
+    <AuthProvider client={authNavigationClient} live snapshot={snapshot}>
       <IAMApiProvider key={partitionKey} client={iamApiClient}>
         <AppShell />
       </IAMApiProvider>

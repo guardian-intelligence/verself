@@ -1,13 +1,8 @@
-import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useLiveQuery } from "@tanstack/react-db";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import type {
-  AuthenticatedAuth,
-  BrowserAccountSummary,
-  BrowserLocation,
-  BrowserSessionSummary,
-} from "@verself/auth-web/isomorphic";
-import { authQueryKey } from "@verself/auth-web/isomorphic";
-import { useSession } from "@verself/auth-web/react";
+import type { BrowserLocation, WebAuthAccount, WebAuthSession } from "@verself/auth-web/isomorphic";
+import { useAuthCollections } from "@verself/auth-web/react";
 import { Badge } from "@verself/ui/components/ui/badge";
 import { Button } from "@verself/ui/components/ui/button";
 import {
@@ -18,67 +13,28 @@ import {
   TableHeader,
   TableRow,
 } from "@verself/ui/components/ui/table";
-import { ArrowLeft, KeyRound, Laptop, MapPin, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, Laptop, MapPin, ShieldCheck, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
-import {
-  getClientAuthAccounts,
-  getClientAuthSessions,
-  revokeClientAuthSession,
-  selectActiveAccount,
-} from "~/server-fns/auth";
-
-const accountSessionsPart = "browser-sessions" as const;
-const browserAccountsPart = "browser-accounts" as const;
-
-function browserSessionsQuery(auth: AuthenticatedAuth) {
-  return queryOptions({
-    queryKey: authQueryKey(auth, accountSessionsPart),
-    queryFn: () => getClientAuthSessions(),
-  });
-}
-
-function browserAccountsQuery(auth: AuthenticatedAuth) {
-  return queryOptions({
-    queryKey: authQueryKey(auth, browserAccountsPart),
-    queryFn: () => getClientAuthAccounts(),
-  });
-}
+import { revokeClientAuthSession, selectActiveAccount } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/account/security")({
-  loader: async ({ context }) => {
-    await Promise.all([
-      context.queryClient.ensureQueryData(browserSessionsQuery(context.auth)),
-      context.queryClient.ensureQueryData(browserAccountsQuery(context.auth)),
-    ]);
-  },
   component: AccountSecurity,
 });
 
 function AccountSecurity() {
   const { orgSlug } = Route.useParams();
-  const { auth } = Route.useRouteContext();
-  const session = useSession();
-  const { data: sessionsData } = useSuspenseQuery(browserSessionsQuery(auth));
-  const { data: accountsData } = useSuspenseQuery(browserAccountsQuery(auth));
-  const queryClient = useQueryClient();
+  const collections = useAuthCollections();
+  const { data: accountRows = [] } = useLiveQuery(collections.accounts);
+  const { data: sessionRows = [] } = useLiveQuery(collections.sessions);
+  const accounts = accountRows.map(accountRowModel);
+  const sessions = sessionRows.map(sessionRowModel);
   const selectAccount = useMutation({
     mutationFn: (input: { readonly accountHandle: string }) =>
       selectActiveAccount({ data: { accountHandle: input.accountHandle } }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: authQueryKey(auth, browserAccountsPart) });
-      window.location.assign("/");
-    },
   });
   const revoke = useMutation({
-    mutationFn: (input: { readonly sessionHandle: string; readonly isCurrent: boolean }) =>
+    mutationFn: (input: { readonly sessionHandle: string }) =>
       revokeClientAuthSession({ data: { sessionHandle: input.sessionHandle } }),
-    onSuccess: async (_result, input) => {
-      await queryClient.invalidateQueries({ queryKey: authQueryKey(auth, accountSessionsPart) });
-      await queryClient.invalidateQueries({ queryKey: authQueryKey(auth, browserAccountsPart) });
-      if (input.isCurrent) {
-        window.location.assign("/login");
-      }
-    },
   });
 
   return (
@@ -113,29 +69,20 @@ function AccountSecurity() {
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <ShieldCheck className="size-4" aria-hidden="true" />
-            <span>{accountsData.accounts.length} browser accounts</span>
+            <span>{accounts.length} browser accounts</span>
           </div>
         </header>
 
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section className="grid gap-3 sm:grid-cols-2">
           <Metric
             icon={<Laptop className="size-4" />}
             label="Current device"
-            value={currentDevice(sessionsData.sessions)}
+            value={currentDevice(sessions)}
           />
           <Metric
             icon={<MapPin className="size-4" />}
             label="Location"
-            value={currentLocation(sessionsData.sessions)}
-          />
-          <Metric
-            icon={<KeyRound className="size-4" />}
-            label="Auth method"
-            value={
-              session.isSignedIn
-                ? authMethodLabel(session.session.authMethods)
-                : "Identity provider"
-            }
+            value={currentLocation(sessions)}
           />
         </section>
 
@@ -150,7 +97,7 @@ function AccountSecurity() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {accountsData.accounts.map((account) => (
+              {accounts.map((account) => (
                 <AccountRow
                   key={account.accountHandle}
                   account={account}
@@ -178,7 +125,7 @@ function AccountSecurity() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sessionsData.sessions.map((session) => (
+              {sessions.map((session) => (
                 <SessionRow
                   key={session.sessionHandle}
                   session={session}
@@ -188,7 +135,6 @@ function AccountSecurity() {
                   onRevoke={() =>
                     revoke.mutate({
                       sessionHandle: session.sessionHandle,
-                      isCurrent: session.isCurrent,
                     })
                   }
                 />
@@ -206,7 +152,7 @@ function AccountRow({
   isSwitching,
   onSelect,
 }: {
-  readonly account: BrowserAccountSummary;
+  readonly account: AccountRowModel;
   readonly isSwitching: boolean;
   readonly onSelect: () => void;
 }) {
@@ -216,16 +162,16 @@ function AccountRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">
-              {account.displayName ?? account.email ?? account.subject}
+              {account.displayName || account.email || account.subject}
             </span>
             {account.isCurrent ? <Badge variant="success">Current</Badge> : null}
           </div>
           <p className="max-w-96 truncate text-xs text-muted-foreground">
-            {account.email ?? account.subject}
+            {account.email || account.subject}
           </p>
         </div>
       </TableCell>
-      <TableCell className="font-mono text-xs">{account.selectedOrgID ?? "none"}</TableCell>
+      <TableCell className="font-mono text-xs">{account.selectedOrgID || "none"}</TableCell>
       <TableCell>{dateTimeLabel(account.lastSeenAt)}</TableCell>
       <TableCell className="text-right">
         <Button size="sm" disabled={account.isCurrent || isSwitching} onClick={onSelect}>
@@ -234,6 +180,68 @@ function AccountRow({
       </TableCell>
     </TableRow>
   );
+}
+
+type AccountRowModel = {
+  readonly accountHandle: string;
+  readonly isCurrent: boolean;
+  readonly subject: string;
+  readonly email: string;
+  readonly displayName: string;
+  readonly selectedOrgID: string;
+  readonly lastSeenAt: Date;
+};
+
+type SessionRowModel = {
+  readonly sessionHandle: string;
+  readonly isCurrent: boolean;
+  readonly clientIP: string;
+  readonly clientIPSource: string;
+  readonly userAgent: string;
+  readonly device: {
+    readonly label: string;
+    readonly kind: string;
+    readonly browserName: string;
+    readonly osName: string;
+  };
+  readonly location: BrowserLocation;
+  readonly createdAt: Date;
+  readonly lastSeenAt: Date;
+};
+
+function accountRowModel(account: WebAuthAccount): AccountRowModel {
+  return {
+    accountHandle: account.account_handle,
+    isCurrent: account.is_current,
+    subject: account.subject,
+    email: account.email,
+    displayName: account.display_name,
+    selectedOrgID: account.selected_org_id,
+    lastSeenAt: account.last_seen_at,
+  };
+}
+
+function sessionRowModel(session: WebAuthSession): SessionRowModel {
+  return {
+    sessionHandle: session.session_handle,
+    isCurrent: session.is_current,
+    clientIP: session.client_ip,
+    clientIPSource: session.client_ip_source,
+    userAgent: session.user_agent,
+    device: {
+      label: session.device_label,
+      kind: session.device_kind,
+      browserName: session.browser_name,
+      osName: session.os_name,
+    },
+    location: {
+      countryCode: session.location_country_code,
+      region: session.location_region,
+      city: session.location_city,
+    },
+    createdAt: session.created_at,
+    lastSeenAt: session.last_seen_at,
+  };
 }
 
 function Metric({
@@ -261,7 +269,7 @@ function SessionRow({
   isRevoking,
   onRevoke,
 }: {
-  readonly session: BrowserSessionSummary;
+  readonly session: SessionRowModel;
   readonly isRevoking: boolean;
   readonly onRevoke: () => void;
 }) {
@@ -302,36 +310,13 @@ function SessionRow({
   );
 }
 
-function currentDevice(sessions: readonly BrowserSessionSummary[]): string {
+function currentDevice(sessions: readonly SessionRowModel[]): string {
   const session = sessions.find((candidate) => candidate.isCurrent);
   return session ? deviceLabel(session) : "Unknown device";
 }
 
-function currentLocation(sessions: readonly BrowserSessionSummary[]): string {
+function currentLocation(sessions: readonly SessionRowModel[]): string {
   return locationLabel(sessions.find((session) => session.isCurrent)?.location);
-}
-
-function authMethodLabel(methods: readonly string[]): string {
-  if (methods.length === 0) {
-    return "Identity provider";
-  }
-  return methods.map(authMethodDisplayName).join(", ");
-}
-
-function authMethodDisplayName(method: string): string {
-  switch (method.toLowerCase()) {
-    case "pwd":
-    case "password":
-      return "Password";
-    case "otp":
-    case "totp":
-      return "Authenticator app";
-    case "webauthn":
-    case "passkey":
-      return "Passkey";
-    default:
-      return method;
-  }
 }
 
 function locationLabel(location: BrowserLocation | undefined): string {
@@ -342,8 +327,8 @@ function locationLabel(location: BrowserLocation | undefined): string {
   return parts.length > 0 ? parts.join(", ") : "Unknown";
 }
 
-function deviceLabel(session: BrowserSessionSummary): string {
-  return session.device.label || session.createdDevice.label || "Unknown device";
+function deviceLabel(session: SessionRowModel): string {
+  return session.device.label || "Unknown device";
 }
 
 function dateTimeLabel(value: Date | string): string {

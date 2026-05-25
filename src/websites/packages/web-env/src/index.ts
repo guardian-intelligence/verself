@@ -241,11 +241,13 @@ export function createElectricShapeCollection<
   TSchema extends StandardSchemaLike<Record<string, unknown>, Record<string, unknown>>,
 >({
   id,
+  onError,
   schema,
   getKey,
   shapePath,
 }: {
   id: string;
+  onError?: (error: Error) => void;
   schema: TSchema;
   getKey: (item: InferSchemaOutput<TSchema>) => string | number;
   shapePath: string;
@@ -261,6 +263,7 @@ export function createElectricShapeCollection<
     shapeOptions: {
       url: electricShapeURL(shapePath),
       params: {},
+      ...(onError ? { onError } : {}),
       subsetMethod: "POST",
     },
     getKey,

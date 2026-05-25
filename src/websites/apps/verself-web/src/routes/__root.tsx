@@ -2,7 +2,7 @@ import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanst
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { type ReactNode } from "react";
 import { AuthProvider } from "@verself/auth-web/react";
-import { type Auth, type AuthSnapshot, anonymousAuth } from "@verself/auth-web/isomorphic";
+import { type Auth, anonymousSnapshot } from "@verself/auth-web/isomorphic";
 import { BrandTelemetryProvider } from "@verself/brand";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
@@ -59,13 +59,6 @@ const authNavigationClient = {
 // /login) render without a server round-trip. Routes that need the real
 // snapshot (the signed-in shell, /login's redirect-if-already-signed-in
 // guard) fetch it themselves and re-wrap their subtree in `AuthProvider`.
-const anonymousSnapshot: AuthSnapshot = {
-  isSignedIn: false,
-  auth: anonymousAuth,
-  user: null,
-  session: null,
-};
-
 export const Route = createRootRouteWithContext<{
   auth: Auth;
   queryClient: QueryClient;
@@ -118,15 +111,15 @@ export const Route = createRootRouteWithContext<{
 function RootComponent() {
   const routeContext = Route.useRouteContext();
   return (
-    <AuthProvider client={authNavigationClient} snapshot={anonymousSnapshot}>
-      <QueryClientProvider client={routeContext.queryClient}>
+    <QueryClientProvider client={routeContext.queryClient}>
+      <AuthProvider client={authNavigationClient} snapshot={anonymousSnapshot}>
         <BrandTelemetryProvider emitSpan={emitSpan}>
           <RootDocument>
             <Outlet />
           </RootDocument>
         </BrandTelemetryProvider>
-      </QueryClientProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 
