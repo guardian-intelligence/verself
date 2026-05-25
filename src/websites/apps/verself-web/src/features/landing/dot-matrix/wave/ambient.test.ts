@@ -9,9 +9,7 @@ describe("ambient wave scheduler", () => {
 
   it("emits one cohesive bounded logo-bound wave train per scheduled wave", () => {
     const scheduler = createAmbientWaveScheduler({ seed: 1234 });
-    const scene = createLandingWaveScene({
-      viewport: { h: 900, w: 1440 },
-    });
+    const scene = createLandingWaveScene({ h: 900, w: 1440 });
     const compiledScene = createCompiledWaveScene(scene, { height: 16, width: 16 });
 
     expect(
@@ -60,9 +58,7 @@ describe("ambient wave scheduler", () => {
 
   it("does not backfill multiple waves after a long frame", () => {
     const scheduler = createAmbientWaveScheduler({ seed: 4321 });
-    const scene = createLandingWaveScene({
-      viewport: { h: 900, w: 1440 },
-    });
+    const scene = createLandingWaveScene({ h: 900, w: 1440 });
     const compiledScene = createCompiledWaveScene(scene, { height: 16, width: 16 });
 
     const impulses = scheduler.collect({
@@ -80,9 +76,7 @@ describe("ambient wave scheduler", () => {
   });
 
   it("keeps fronts screen-spanning while scaling wave thickness down for small screens", () => {
-    const scene = createLandingWaveScene({
-      viewport: { h: 900, w: 1440 },
-    });
+    const scene = createLandingWaveScene({ h: 900, w: 1440 });
     const compiledScene = createCompiledWaveScene(scene, { height: 16, width: 16 });
     const desktopScheduler = createAmbientWaveScheduler({ seed: 2468 });
     const mobileScheduler = createAmbientWaveScheduler({ seed: 2468 });
@@ -125,9 +119,7 @@ describe("ambient wave scheduler", () => {
 
   it("varies approach angles around the logo halo", () => {
     const scheduler = createAmbientWaveScheduler({ seed: 97531 });
-    const scene = createLandingWaveScene({
-      viewport: { h: 900, w: 1440 },
-    });
+    const scene = createLandingWaveScene({ h: 900, w: 1440 });
     const compiledScene = createCompiledWaveScene(scene, { height: 16, width: 16 });
     const baseInput = {
       ambient: 0.8,

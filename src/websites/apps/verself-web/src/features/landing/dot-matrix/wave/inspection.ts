@@ -10,12 +10,6 @@ export interface DotMatrixWaveInspectionRecord {
   readonly ambientImpulses: number;
   readonly clickImpulses: number;
   readonly droppedSeconds: number;
-  readonly fieldRegionCounts: {
-    readonly absorption: number;
-    readonly readability: number;
-    readonly spawn: number;
-    readonly visibility: number;
-  };
   readonly frameDeltaSeconds: number;
   readonly queuedImpulses: number;
   readonly simulationSeconds: number;

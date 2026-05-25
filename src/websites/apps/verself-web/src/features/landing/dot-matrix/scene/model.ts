@@ -1,92 +1,62 @@
-import type { DomainRect, WaveFieldRegion, WaveSceneModel } from "./types";
+import type { CompiledWaveFields, DomainRect, LandingWaveScene, Vec2 } from "./types";
 
 interface LandingWaveSceneInput {
-  readonly viewport: {
-    readonly h: number;
-    readonly w: number;
-  };
+  readonly h: number;
+  readonly w: number;
 }
 
-const simulationDomain: DomainRect = {
+const UNIT_DOMAIN: DomainRect = {
   height: 1,
   width: 1,
   x: 0,
   y: 0,
 };
 
-export function createLandingWaveScene(input: LandingWaveSceneInput): WaveSceneModel {
-  const cameraRect = resolveLandingWaveCameraRect(input.viewport);
+const SPAWN_BAND = 0.064;
+const SPAWN_FEATHER = 0.02;
+
+export function createLandingWaveScene(_viewport: LandingWaveSceneInput): LandingWaveScene {
   return {
-    regions: [
-      sceneRect("simulation", "simulation-domain", simulationDomain),
-      sceneRect("camera", "primary-camera-rect", cameraRect),
-      ...baseRegions(cameraRect),
-    ],
+    cameraRect: UNIT_DOMAIN,
+    fields: createLandingWaveFields(),
   };
 }
 
-export function resolveLandingWaveCameraRect(
-  _viewport: LandingWaveSceneInput["viewport"],
-): DomainRect {
-  return simulationDomain;
-}
+function createLandingWaveFields(): CompiledWaveFields {
+  const spawnAt = (point: Vec2) => sampleSpawn(point);
+  const visibilityAt = (point: Vec2) => (containsUnitPoint(point) ? 1 : 0);
+  const zero = () => 0;
 
-function baseRegions(cameraRect: DomainRect): readonly WaveFieldRegion[] {
-  const spawnBand = 0.064;
-
-  return [
-    ...visibilityRegions(cameraRect),
-    spawnRect("left", {
-      height: 1,
-      width: spawnBand,
-      x: 0,
-      y: 0,
-    }),
-    spawnRect("right", { height: 1, width: spawnBand, x: 1 - spawnBand, y: 0 }),
-    spawnRect("bottom", {
-      height: spawnBand,
-      width: 1,
-      x: 0,
-      y: 0,
-    }),
-    spawnRect("top", { height: spawnBand, width: 1, x: 0, y: 1 - spawnBand }),
-  ];
-}
-
-function visibilityRegions(cameraRect: DomainRect): readonly WaveFieldRegion[] {
-  return [
-    {
-      combine: "max",
-      feather: 0,
-      field: "visibility",
-      id: "full-screen-dot-visibility",
-      shape: {
-        kind: "rect",
-        rect: cameraRect,
-      },
-      weight: 1,
+  return {
+    absorptionAt: zero,
+    at(point) {
+      return {
+        absorption: 0,
+        readability: 0,
+        spawn: spawnAt(point),
+        visibility: visibilityAt(point),
+      };
     },
-  ];
-}
-
-function spawnRect(id: string, rect: DomainRect): WaveFieldRegion {
-  return {
-    combine: "max",
-    feather: 0.02,
-    field: "spawn",
-    id: `hero-spawn-${id}-halo`,
-    shape: { kind: "rect", rect },
-    weight: 1,
+    readabilityAt: zero,
+    spawnAt,
+    visibilityAt,
   };
 }
 
-function sceneRect(field: "camera" | "simulation", id: string, rect: DomainRect): WaveFieldRegion {
-  return {
-    combine: "max",
-    feather: 0,
-    field,
-    id,
-    shape: { kind: "rect", rect },
-    weight: 1,
-  };
+function sampleSpawn(point: Vec2): number {
+  if (!containsUnitPoint(point)) return 0;
+
+  const edgeDistance = Math.min(point.x, 1 - point.x, point.y, 1 - point.y);
+  if (edgeDistance <= SPAWN_BAND) return 1;
+  if (edgeDistance >= SPAWN_BAND + SPAWN_FEATHER) return 0;
+  return 1 - smoothstep(SPAWN_BAND, SPAWN_BAND + SPAWN_FEATHER, edgeDistance);
+}
+
+function containsUnitPoint(point: Vec2): boolean {
+  return point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
+}
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
 }

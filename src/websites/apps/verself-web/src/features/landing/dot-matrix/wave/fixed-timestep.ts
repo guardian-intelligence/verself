@@ -1,6 +1,5 @@
 export interface FixedTimestepAdvance {
   readonly droppedSeconds: number;
-  readonly interpolationAlpha: number;
   readonly stepSeconds: number;
   readonly steps: number;
 }
@@ -20,7 +19,6 @@ export function createFixedTimestepLoop(options: FixedTimestepOptions) {
         accumulator = 0;
         return {
           droppedSeconds: 0,
-          interpolationAlpha: 0,
           stepSeconds: options.stepSeconds,
           steps: 0,
         };
@@ -42,7 +40,6 @@ export function createFixedTimestepLoop(options: FixedTimestepOptions) {
 
       return {
         droppedSeconds,
-        interpolationAlpha: accumulator / options.stepSeconds,
         stepSeconds: options.stepSeconds,
         steps,
       };
