@@ -32,3 +32,20 @@ func TestTestMailboxDeliveryPrincipals(t *testing.T) {
 		t.Fatalf("testMailboxDeliveryPrincipals() = %#v, want %#v", got, want)
 	}
 }
+
+func TestTestMailboxCleanupPrincipals(t *testing.T) {
+	got := testMailboxCleanupPrincipals([]string{
+		"signup+agent@verself.sh",
+		"signup+other@verself.sh",
+		"signup-e2e@verself.sh",
+	})
+	want := []string{
+		"signup+agent@verself.sh",
+		"signup+other@verself.sh",
+		"signup-e2e@verself.sh",
+		"signup@verself.sh",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("testMailboxCleanupPrincipals() = %#v, want %#v", got, want)
+	}
+}
