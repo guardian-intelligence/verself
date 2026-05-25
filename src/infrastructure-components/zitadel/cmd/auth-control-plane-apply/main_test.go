@@ -65,14 +65,14 @@ func TestEnsurePasswordPoliciesUpdatesDrift(t *testing.T) {
 		gotRequests = append(gotRequests, r.Method+" "+r.URL.Path)
 		switch r.Method + " " + r.URL.Path {
 		case "GET /admin/v1/policies/password/complexity":
-			writeJSON(t, w, map[string]any{"policy": map[string]any{"minLength": 8, "hasUppercase": true, "hasLowercase": true, "hasNumber": true, "hasSymbol": true}})
+			writeJSON(t, w, map[string]any{"policy": map[string]any{"details": map[string]any{"sequence": "12"}, "minLength": "8", "hasUppercase": true, "hasLowercase": true, "hasNumber": true, "hasSymbol": true, "isDefault": true}})
 		case "PUT /admin/v1/policies/password/complexity":
 			assertJSONBody(t, r, desiredPasswordComplexityPolicyBody())
 			writeJSON(t, w, map[string]any{"details": map[string]any{}})
 		case "GET /admin/v1/policies/password/age":
-			writeJSON(t, w, map[string]any{"policy": desiredPasswordAgePolicyBody()})
+			writeJSON(t, w, map[string]any{"policy": map[string]any{"details": map[string]any{"sequence": "13"}, "isDefault": true}})
 		case "GET /admin/v1/policies/lockout":
-			writeJSON(t, w, map[string]any{"policy": map[string]any{"maxPasswordAttempts": 3, "maxOtpAttempts": 3}})
+			writeJSON(t, w, map[string]any{"policy": map[string]any{"details": map[string]any{"sequence": "21"}, "maxPasswordAttempts": "3", "maxOtpAttempts": "3", "isDefault": true}})
 		case "PUT /admin/v1/policies/password/lockout":
 			assertJSONBody(t, r, desiredLockoutPolicyBody())
 			writeJSON(t, w, map[string]any{"details": map[string]any{}})
@@ -94,6 +94,29 @@ func TestEnsurePasswordPoliciesUpdatesDrift(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotRequests, wantRequests) {
 		t.Fatalf("requests = %#v, want %#v", gotRequests, wantRequests)
+	}
+}
+
+func TestPolicyIntUnmarshal(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		raw  string
+		want policyInt
+	}{
+		{name: "proto json string", raw: `"15"`, want: 15},
+		{name: "plain json number", raw: `15`, want: 15},
+		{name: "empty string", raw: `""`, want: 0},
+		{name: "null", raw: `null`, want: 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var got policyInt
+			if err := got.UnmarshalJSON([]byte(tt.raw)); err != nil {
+				t.Fatalf("UnmarshalJSON: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 

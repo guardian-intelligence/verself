@@ -98,26 +98,50 @@ type audienceSpec struct {
 	Group          string
 }
 
+type policyInt int
+
 type passwordComplexityPolicy struct {
-	MinLength    int  `json:"minLength"`
-	HasUppercase bool `json:"hasUppercase"`
-	HasLowercase bool `json:"hasLowercase"`
-	HasNumber    bool `json:"hasNumber"`
-	HasSymbol    bool `json:"hasSymbol"`
+	MinLength    policyInt `json:"minLength"`
+	HasUppercase bool      `json:"hasUppercase"`
+	HasLowercase bool      `json:"hasLowercase"`
+	HasNumber    bool      `json:"hasNumber"`
+	HasSymbol    bool      `json:"hasSymbol"`
 }
 
 type passwordAgePolicy struct {
-	MaxAgeDays     int `json:"maxAgeDays"`
-	ExpireWarnDays int `json:"expireWarnDays"`
+	MaxAgeDays     policyInt `json:"maxAgeDays"`
+	ExpireWarnDays policyInt `json:"expireWarnDays"`
 }
 
 type lockoutPolicy struct {
-	MaxPasswordAttempts int `json:"maxPasswordAttempts"`
-	MaxOTPAttempts      int `json:"maxOtpAttempts"`
+	MaxPasswordAttempts policyInt `json:"maxPasswordAttempts"`
+	MaxOTPAttempts      policyInt `json:"maxOtpAttempts"`
 }
 
 func (e statusError) Error() string {
 	return fmt.Sprintf("zitadel %s %s status %d: %s", e.Method, e.Path, e.Status, e.Body)
+}
+
+func (v *policyInt) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		*v = 0
+		return nil
+	}
+	var quoted string
+	if err := json.Unmarshal(data, &quoted); err == nil {
+		raw = strings.TrimSpace(quoted)
+		if raw == "" {
+			*v = 0
+			return nil
+		}
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return fmt.Errorf("parse policy integer %q: %w", raw, err)
+	}
+	*v = policyInt(n)
+	return nil
 }
 
 func main() {
@@ -423,7 +447,7 @@ func desiredLockoutPolicy() lockoutPolicy {
 func desiredPasswordComplexityPolicyBody() map[string]any {
 	policy := desiredPasswordComplexityPolicy()
 	return map[string]any{
-		"minLength":    policy.MinLength,
+		"minLength":    int(policy.MinLength),
 		"hasUppercase": policy.HasUppercase,
 		"hasLowercase": policy.HasLowercase,
 		"hasNumber":    policy.HasNumber,
@@ -434,16 +458,16 @@ func desiredPasswordComplexityPolicyBody() map[string]any {
 func desiredPasswordAgePolicyBody() map[string]any {
 	policy := desiredPasswordAgePolicy()
 	return map[string]any{
-		"maxAgeDays":     policy.MaxAgeDays,
-		"expireWarnDays": policy.ExpireWarnDays,
+		"maxAgeDays":     int(policy.MaxAgeDays),
+		"expireWarnDays": int(policy.ExpireWarnDays),
 	}
 }
 
 func desiredLockoutPolicyBody() map[string]any {
 	policy := desiredLockoutPolicy()
 	return map[string]any{
-		"maxPasswordAttempts": policy.MaxPasswordAttempts,
-		"maxOtpAttempts":      policy.MaxOTPAttempts,
+		"maxPasswordAttempts": int(policy.MaxPasswordAttempts),
+		"maxOtpAttempts":      int(policy.MaxOTPAttempts),
 	}
 }
 
