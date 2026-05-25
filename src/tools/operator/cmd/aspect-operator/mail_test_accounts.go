@@ -846,7 +846,7 @@ func cleanupStalwart(ctx context.Context, rt *opruntime.Runtime, emails []string
 		return 0, err
 	}
 	var total int64
-	for _, principal := range testMailboxDeliveryPrincipals(emails) {
+	for _, principal := range testMailboxCleanupPrincipals(emails) {
 		deleted, err := client.DeletePrincipal(ctx, principal)
 		if err != nil {
 			return total, err
@@ -856,6 +856,26 @@ func cleanupStalwart(ctx context.Context, rt *opruntime.Runtime, emails []string
 		}
 	}
 	return total, nil
+}
+
+func testMailboxCleanupPrincipals(emails []string) []string {
+	seen := make(map[string]struct{}, len(emails)*2)
+	principals := make([]string, 0, len(emails)*2)
+	for _, email := range emails {
+		for _, principal := range []string{email, testMailboxDeliveryPrincipal(email)} {
+			principal = strings.ToLower(strings.TrimSpace(principal))
+			if principal == "" {
+				continue
+			}
+			if _, ok := seen[principal]; ok {
+				continue
+			}
+			seen[principal] = struct{}{}
+			principals = append(principals, principal)
+		}
+	}
+	sort.Strings(principals)
+	return principals
 }
 
 func testMailboxDeliveryPrincipals(emails []string) []string {
