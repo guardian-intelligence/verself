@@ -319,14 +319,15 @@ func ensureTestMailbox(ctx context.Context, client stalwartClient, domain, email
 	if email == "" {
 		return "", "", "", errors.New("test mailbox email is empty")
 	}
+	principal := testMailboxDeliveryPrincipal(email)
 	credentialPath := testMailboxCredentialPath(email)
 	credential, credentialErr := readTestMailboxCredential(credentialPath)
-	_, found, err := client.GetPrincipal(ctx, email)
+	_, found, err := client.GetPrincipal(ctx, principal)
 	if err != nil {
 		return "", "", "", err
 	}
 	status := "unchanged"
-	needsSecret := resetSecret || credentialErr != nil
+	needsSecret := resetSecret || credentialErr != nil || !strings.EqualFold(credential.Principal, principal)
 	if found && !needsSecret {
 		if err := verifyJMAPCredential(ctx, domain, credential); err != nil {
 			needsSecret = true
@@ -339,22 +340,22 @@ func ensureTestMailbox(ctx context.Context, client stalwartClient, domain, email
 		}
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		if !found {
-			if err := client.CreatePrincipal(ctx, testStalwartPrincipal(email, password)); err != nil {
+			if err := client.CreatePrincipal(ctx, testStalwartPrincipal(principal, password)); err != nil {
 				return "", "", "", err
 			}
-			if err := client.SetPrincipalPassword(ctx, email, password); err != nil {
+			if err := client.SetPrincipalPassword(ctx, principal, password); err != nil {
 				return "", "", "", err
 			}
 			status = "created"
 		} else {
-			if err := client.SetPrincipalPassword(ctx, email, password); err != nil {
+			if err := client.SetPrincipalPassword(ctx, principal, password); err != nil {
 				return "", "", "", err
 			}
 			status = "rotated_secret"
 		}
 		credential = testMailboxCredential{
 			Email:          email,
-			Principal:      email,
+			Principal:      principal,
 			JMAPSessionURL: "https://mail." + strings.TrimSpace(domain) + "/jmap/session",
 			Password:       password,
 			CreatedAt:      now,
@@ -378,13 +379,24 @@ func ensureTestMailbox(ctx context.Context, client stalwartClient, domain, email
 	return status, credentialPath, jmapStatus, nil
 }
 
-func testStalwartPrincipal(email, password string) stalwartPrincipal {
+func testMailboxDeliveryPrincipal(email string) string {
+	local, domain, ok := strings.Cut(strings.ToLower(strings.TrimSpace(email)), "@")
+	if !ok {
+		return strings.ToLower(strings.TrimSpace(email))
+	}
+	if base, _, found := strings.Cut(local, "+"); found && strings.TrimSpace(base) != "" {
+		local = base
+	}
+	return local + "@" + domain
+}
+
+func testStalwartPrincipal(principal, password string) stalwartPrincipal {
 	return stalwartPrincipal{
 		Type:        "individual",
-		Name:        email,
+		Name:        principal,
 		Description: "Standalone signup E2E mailbox; not backed by a Verself/Zitadel user",
 		Secrets:     []string{password},
-		Emails:      []string{email},
+		Emails:      []string{principal},
 		Roles:       []string{"user"},
 	}
 }
@@ -483,7 +495,11 @@ func verifyJMAPCredential(ctx context.Context, domain string, credential testMai
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(strings.TrimSpace(credential.Email), credential.Password)
+	username := strings.TrimSpace(credential.Principal)
+	if username == "" {
+		username = strings.TrimSpace(credential.Email)
+	}
+	req.SetBasicAuth(username, credential.Password)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("jmap session: %w", err)
@@ -830,8 +846,8 @@ func cleanupStalwart(ctx context.Context, rt *opruntime.Runtime, emails []string
 		return 0, err
 	}
 	var total int64
-	for _, email := range emails {
-		deleted, err := client.DeletePrincipal(ctx, email)
+	for _, principal := range testMailboxDeliveryPrincipals(emails) {
+		deleted, err := client.DeletePrincipal(ctx, principal)
 		if err != nil {
 			return total, err
 		}
@@ -840,6 +856,24 @@ func cleanupStalwart(ctx context.Context, rt *opruntime.Runtime, emails []string
 		}
 	}
 	return total, nil
+}
+
+func testMailboxDeliveryPrincipals(emails []string) []string {
+	seen := make(map[string]struct{}, len(emails))
+	principals := make([]string, 0, len(emails))
+	for _, email := range emails {
+		principal := testMailboxDeliveryPrincipal(email)
+		if principal == "" {
+			continue
+		}
+		if _, ok := seen[principal]; ok {
+			continue
+		}
+		seen[principal] = struct{}{}
+		principals = append(principals, principal)
+	}
+	sort.Strings(principals)
+	return principals
 }
 
 func newMailZitadelClient(ctx context.Context, rt *opruntime.Runtime, opts *mailTestAccountsOptions) (platformZitadelClient, func(), error) {

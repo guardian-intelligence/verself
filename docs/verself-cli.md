@@ -461,7 +461,9 @@ aspect mail test-accounts delete
 
 The test-account set includes ordinary and uncommon spec-compliant local parts
 such as plus tags, dotted names, quoted-safe punctuation, percent signs, and
-question marks. `delete` removes the Stalwart principals, local mailbox
+question marks. Plus-tagged test addresses use the base Stalwart delivery
+principal because Stalwart subaddressing delivers `user+tag@domain` to
+`user@domain`. `delete` removes the Stalwart principals, local mailbox
 credentials, and product rows associated with those test emails.
 
 Organization invites use the authenticated IAM member invite API and the public
