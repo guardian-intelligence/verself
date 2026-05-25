@@ -162,9 +162,9 @@ for generated in {generated_locations}; do
   rm -rf "$$generated_dest"
   mkdir -p "$$generated_dest_parent"
   if [ -d "$$generated_abs" ]; then
-    cp -R -L --no-preserve=mode,ownership,timestamps "$$generated_abs" "$$generated_dest"
+    cp -R -L "$$generated_abs" "$$generated_dest"
   else
-    cp -L --no-preserve=mode,ownership,timestamps "$$generated_abs" "$$generated_dest"
+    cp -L "$$generated_abs" "$$generated_dest"
   fi
   chmod -R u+w "$$generated_dest"
 done

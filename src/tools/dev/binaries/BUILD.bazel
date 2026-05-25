@@ -1,17 +1,8 @@
-load(":ruby_tool.bzl", "ruby_tool")
-
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "dev_tools.MODULE.bazel",
 ])
-
-ruby_tool(
-    name = "ruby",
-    src = "@dev_tool_ruby//file",
-    ruby_api_version = "4.0.0",
-    version = "4.0.5",
-)
 
 genrule(
     name = "age_tools",
