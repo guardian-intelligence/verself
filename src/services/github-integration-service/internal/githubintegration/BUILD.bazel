@@ -9,6 +9,8 @@ go_library(
         "job_shape.go",
         "onboarding.go",
         "payloads.go",
+        "runner_problem.go",
+        "runner_terminalization.go",
         "sandbox.go",
         "service.go",
         "webhook_problem.go",
@@ -35,4 +37,8 @@ go_test(
     name = "githubintegration_test",
     srcs = ["service_test.go"],
     embed = [":githubintegration"],
+    deps = [
+        "//src/services/sandbox-rental-service/client",
+        "@com_github_jackc_pgx_v5//pgtype",
+    ],
 )

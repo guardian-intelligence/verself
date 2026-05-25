@@ -103,7 +103,7 @@ type ProviderRunnerAllocationStatus struct {
 	ExecutionID            uuid.UUID
 	AttemptID              uuid.UUID
 	State                  string
-	FailureReason          string
+	Problems               []RunnerProblem
 	ExecutionState         string
 	AttemptState           string
 }
@@ -204,7 +204,8 @@ func (s *Service) SubmitProviderRunnerJob(ctx context.Context, req ProviderRunne
 	if rows == 0 {
 		return ProviderRunnerJobSubmissionResult{}, fmt.Errorf("%w: runner allocation insert conflicted", ErrRunnerUnavailable)
 	}
-	executionID, attemptID, err := s.Submit(WithCorrelationID(ctx, CorrelationIDFromContext(ctx)), orgIDFromDB(job.OrgID), req.Observation.Provider+"-integration:"+strconv.FormatInt(req.Observation.ProviderInstallationID, 10), SubmitRequest{
+	submitCtx, cancelSubmit := context.WithTimeout(ctx, runnerSubmitDeadline)
+	executionID, attemptID, err := s.Submit(WithCorrelationID(submitCtx, CorrelationIDFromContext(ctx)), orgIDFromDB(job.OrgID), req.Observation.Provider+"-integration:"+strconv.FormatInt(req.Observation.ProviderInstallationID, 10), SubmitRequest{
 		Kind:                   KindDirect,
 		SourceKind:             sourceKindForProvider(req.Observation.Provider),
 		WorkloadKind:           WorkloadKindRunner,
@@ -222,13 +223,18 @@ func (s *Service) SubmitProviderRunnerJob(ctx context.Context, req ProviderRunne
 		RunnerBootstrapKind:    req.BootstrapKind,
 		RunnerBootstrapPayload: req.BootstrapPayload,
 	})
+	cancelSubmit()
 	if err != nil {
-		_ = s.storeQueries().SetRunnerAllocationState(ctx, store.SetRunnerAllocationStateParams{
-			State:         "failed",
-			FailureReason: "execution_submit_failed",
-			UpdatedAt:     pgTime(time.Now().UTC()),
-			Provider:      req.Observation.Provider,
-			AllocationID:  allocationID,
+		problems := runnerProblemSet{}
+		problems.add(runnerExecutionSubmitProblem(err))
+		_ = s.terminalizeRunnerAllocation(ctx, runnerAllocationRef{
+			Provider:     req.Observation.Provider,
+			AllocationID: allocationID,
+			RunnerName:   req.RunnerName,
+		}, runnerAllocationFailure{
+			Problems:       problems,
+			EnqueueCleanup: true,
+			Cause:          err,
 		})
 		return ProviderRunnerJobSubmissionResult{}, err
 	}
@@ -240,6 +246,13 @@ func (s *Service) SubmitProviderRunnerJob(ctx context.Context, req ProviderRunne
 		attribute.String("attempt.id", attemptID.String()),
 	)
 	return ProviderRunnerJobSubmissionResult{AllocationID: allocationID, ExecutionID: executionID, AttemptID: attemptID, RunnerName: req.RunnerName, RunnerID: req.RunnerID, Created: true}, nil
+}
+
+func runnerExecutionSubmitProblem(err error) RunnerProblem {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return runnerAllocationProblemFromError("execution_submit", "runner_allocation.execution_submit_deadline_exceeded", "Runner execution submit deadline exceeded", err, false)
+	}
+	return runnerAllocationProblemFromError("execution_submit", "runner_allocation.execution_submit_failed", "Runner execution submit failed", err, false)
 }
 
 func (s *Service) upsertProviderCacheManifest(ctx context.Context, provider string, providerJobID int64, manifest ProviderCacheManifest) error {
@@ -439,6 +452,10 @@ func (s *Service) GetProviderRunnerAllocationStatus(ctx context.Context, allocat
 	if err != nil {
 		return ProviderRunnerAllocationStatus{}, err
 	}
+	problems, err := s.runnerAllocationProblems(ctx, allocationID)
+	if err != nil {
+		return ProviderRunnerAllocationStatus{}, err
+	}
 	return ProviderRunnerAllocationStatus{
 		AllocationID:           row.AllocationID,
 		Provider:               row.Provider,
@@ -452,10 +469,32 @@ func (s *Service) GetProviderRunnerAllocationStatus(ctx context.Context, allocat
 		ExecutionID:            uuidFromPtr(row.ExecutionID),
 		AttemptID:              uuidFromPtr(row.AttemptID),
 		State:                  row.State,
-		FailureReason:          row.FailureReason,
+		Problems:               problems,
 		ExecutionState:         row.ExecutionState,
 		AttemptState:           row.AttemptState,
 	}, nil
+}
+
+func (s *Service) runnerAllocationProblems(ctx context.Context, allocationID uuid.UUID) ([]RunnerProblem, error) {
+	rows, err := s.storeQueries().ListRunnerAllocationProblems(ctx, store.ListRunnerAllocationProblemsParams{AllocationID: allocationID})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RunnerProblem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, RunnerProblem{
+			Type:       row.ProblemType,
+			Code:       row.ProblemCode,
+			Title:      row.Title,
+			Detail:     row.Detail,
+			Status:     row.Status,
+			Phase:      row.Phase,
+			Retryable:  row.Retryable,
+			Pointer:    row.Pointer,
+			ObservedAt: timeFromPG(row.ObservedAt),
+		})
+	}
+	return out, nil
 }
 
 func uuidFromPtr(value *uuid.UUID) uuid.UUID {

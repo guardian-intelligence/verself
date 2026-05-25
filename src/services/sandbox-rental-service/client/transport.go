@@ -19,7 +19,25 @@ type ProblemCode = string
 
 type ProblemDetail = string
 
+type ProblemPhase = string
+
+type ProblemPointer = string
+
 type ProblemType = string
+
+type ProblemOccurrence struct {
+	Type       ProblemType     `json:"type"`
+	Code       ProblemCode     `json:"code"`
+	Title      string          `json:"title"`
+	Detail     *ProblemDetail  `json:"detail,omitempty"`
+	Status     *int            `json:"status,omitempty"`
+	Phase      *ProblemPhase   `json:"phase,omitempty"`
+	Retryable  *bool           `json:"retryable,omitempty"`
+	Pointer    *ProblemPointer `json:"pointer,omitempty"`
+	ObservedAt *string         `json:"observed_at,omitempty"`
+}
+
+type ProblemOccurrences []ProblemOccurrence
 
 type ProjectId = string
 
@@ -249,7 +267,7 @@ type RunnerAllocationStatus struct {
 	ExecutionID            *ExecutionId         `json:"execution_id,omitempty"`
 	AttemptID              *AttemptId           `json:"attempt_id,omitempty"`
 	State                  string               `json:"state"`
-	FailureReason          *string              `json:"failure_reason,omitempty"`
+	Problems               ProblemOccurrences   `json:"problems,omitempty"`
 	ExecutionState         *string              `json:"execution_state,omitempty"`
 	AttemptState           *string              `json:"attempt_state,omitempty"`
 }

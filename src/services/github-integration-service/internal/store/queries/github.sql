@@ -1116,8 +1116,7 @@ RETURNING demand_id, provider_job_id, org_id, installation_binding_id, repositor
 
 -- name: ClaimProviderDemandForCapacity :one
 UPDATE github_provider_demands
-SET failure_reason = '',
-    claimed_at = @claimed_at,
+SET claimed_at = @claimed_at,
     updated_at = @claimed_at
 WHERE github_provider_demands.provider_job_id = @provider_job_id
   AND github_provider_demands.state = 'demand_recorded'
@@ -1161,7 +1160,6 @@ RETURNING demand_id, provider_job_id, org_id, installation_binding_id, repositor
 -- name: MarkProviderDemandCapacityRequested :exec
 UPDATE github_provider_demands
 SET state = 'capacity_requested',
-    failure_reason = '',
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id
   AND state IN ('demand_recorded', 'capacity_requested');
@@ -1169,7 +1167,6 @@ WHERE provider_job_id = @provider_job_id
 -- name: MarkProviderDemandAssigned :exec
 UPDATE github_provider_demands
 SET state = 'assigned',
-    failure_reason = '',
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id
   AND state <> 'completed';
@@ -1177,24 +1174,68 @@ WHERE provider_job_id = @provider_job_id
 -- name: MarkProviderDemandTerminal :exec
 UPDATE github_provider_demands
 SET state = 'completed',
-    failure_reason = '',
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id;
 
 -- name: ResetProviderDemandAfterCapacityDisplaced :execrows
 UPDATE github_provider_demands
 SET state = 'demand_recorded',
-    failure_reason = @failure_reason,
     updated_at = @updated_at
 WHERE provider_job_id = @provider_job_id
   AND state = 'capacity_requested';
 
--- name: MarkProviderDemandFailed :exec
+-- name: MarkProviderDemandFailed :execrows
 UPDATE github_provider_demands
 SET state = @state,
-    failure_reason = @failure_reason,
     updated_at = @updated_at
-WHERE provider_job_id = @provider_job_id;
+WHERE provider_job_id = @provider_job_id
+  AND state NOT IN ('assigned', 'completed');
+
+-- name: AppendProviderDemandProblem :exec
+WITH next_problem AS (
+    SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
+    FROM github_provider_demand_problems
+    WHERE provider_job_id = @provider_job_id
+),
+inserted AS (
+    INSERT INTO github_provider_demand_problems (
+        provider_job_id,
+        problem_seq,
+        phase,
+        problem_type,
+        problem_code,
+        title,
+        detail,
+        status,
+        retryable,
+        pointer,
+        observed_at
+    )
+    SELECT
+        @provider_job_id,
+        next_problem.problem_seq,
+        @phase,
+        @problem_type,
+        @problem_code,
+        @title,
+        @detail,
+        @status,
+        @retryable,
+        @pointer,
+        @observed_at
+    FROM next_problem
+    RETURNING provider_job_id
+)
+UPDATE github_provider_demands AS d
+SET
+    primary_problem_type = CASE WHEN problem_count = 0 THEN @problem_type ELSE primary_problem_type END,
+    primary_problem_code = CASE WHEN problem_count = 0 THEN @problem_code ELSE primary_problem_code END,
+    primary_problem_status = CASE WHEN problem_count = 0 THEN @status ELSE primary_problem_status END,
+    primary_problem_title = CASE WHEN problem_count = 0 THEN @title ELSE primary_problem_title END,
+    primary_problem_detail = CASE WHEN problem_count = 0 THEN @detail ELSE primary_problem_detail END,
+    problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
+    updated_at = @observed_at
+WHERE d.provider_job_id = @provider_job_id;
 
 -- name: UpsertProviderOutboxCommand :exec
 INSERT INTO github_provider_outbox (
@@ -1305,7 +1346,6 @@ ON CONFLICT (runner_name) DO UPDATE SET
     jit_config_sha256 = EXCLUDED.jit_config_sha256,
     assignment_deadline_at = EXCLUDED.assignment_deadline_at,
     state = EXCLUDED.state,
-    failure_reason = '',
     updated_at = EXCLUDED.updated_at;
 
 -- name: MarkRunnerInstanceSubmitted :exec
@@ -1317,44 +1357,66 @@ SET sandbox_allocation_id = @sandbox_allocation_id,
     runner_name = @runner_name,
     state = 'sandbox_submitted',
     assignment_deadline_at = @assignment_deadline_at,
-    failure_reason = '',
     updated_at = @updated_at
-WHERE runner_name = @runner_name;
+WHERE github_runner_instances.runner_name = @runner_name;
 
--- name: MarkRunnerInstanceFailed :exec
+-- name: MarkRunnerInstanceFailed :execrows
 UPDATE github_runner_instances
 SET state = 'failed',
-    failure_reason = @failure_reason,
     updated_at = @updated_at
-WHERE runner_name = @runner_name;
+WHERE github_runner_instances.runner_name = @runner_name
+  AND state IN ('jit_created', 'sandbox_submitted')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM github_job_assignments assigned
+      WHERE assigned.runner_name = github_runner_instances.runner_name
+  );
 
--- name: FailRunnerInstanceCapacity :one
-WITH failed_instance AS (
-    UPDATE github_runner_instances ri
-    SET state = 'failed',
-        failure_reason = @failure_reason,
-        updated_at = @updated_at
-    WHERE ri.runner_name = @runner_name
-      AND ri.state IN ('jit_created', 'sandbox_submitted')
-      AND NOT EXISTS (
-          SELECT 1
-          FROM github_job_assignments assigned
-          WHERE assigned.runner_name = ri.runner_name
-      )
-    RETURNING ri.origin_provider_job_id
+-- name: AppendRunnerInstanceProblem :exec
+WITH next_problem AS (
+    SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
+    FROM github_runner_instance_problems
+    WHERE runner_name = @runner_name
 ),
-failed_demand AS (
-UPDATE github_provider_demands d
-SET state = 'sandbox_failed',
-    failure_reason = @failure_reason,
-    updated_at = @updated_at
-FROM failed_instance
-WHERE d.provider_job_id = failed_instance.origin_provider_job_id
-  AND d.state NOT IN ('assigned', 'completed')
-RETURNING d.provider_job_id
+inserted AS (
+    INSERT INTO github_runner_instance_problems (
+        runner_name,
+        problem_seq,
+        phase,
+        problem_type,
+        problem_code,
+        title,
+        detail,
+        status,
+        retryable,
+        pointer,
+        observed_at
+    )
+    SELECT
+        @runner_name,
+        next_problem.problem_seq,
+        @phase,
+        @problem_type,
+        @problem_code,
+        @title,
+        @detail,
+        @status,
+        @retryable,
+        @pointer,
+        @observed_at
+    FROM next_problem
+    RETURNING runner_name
 )
-SELECT count(*)::bigint AS failed_instances
-FROM failed_instance;
+UPDATE github_runner_instances AS ri
+SET
+    primary_problem_type = CASE WHEN problem_count = 0 THEN @problem_type ELSE primary_problem_type END,
+    primary_problem_code = CASE WHEN problem_count = 0 THEN @problem_code ELSE primary_problem_code END,
+    primary_problem_status = CASE WHEN problem_count = 0 THEN @status ELSE primary_problem_status END,
+    primary_problem_title = CASE WHEN problem_count = 0 THEN @title ELSE primary_problem_title END,
+    primary_problem_detail = CASE WHEN problem_count = 0 THEN @detail ELSE primary_problem_detail END,
+    problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
+    updated_at = @observed_at
+WHERE ri.runner_name = @runner_name;
 
 -- name: MarkRunnerInstanceCleaned :exec
 UPDATE github_runner_instances

@@ -1,6 +1,6 @@
 -- name: MarkRunnerExecutionExited :many
 UPDATE runner_allocations
-SET state = CASE WHEN state = 'cleaned' THEN state ELSE 'vm_exited' END,
+SET state = CASE WHEN state IN ('cleaned', 'failed', 'job_completed') THEN state ELSE 'vm_exited' END,
     vm_exit_by = sqlc.arg(updated_at),
     updated_at = sqlc.arg(updated_at)
 WHERE execution_id = sqlc.arg(execution_id)
@@ -334,13 +334,59 @@ FROM runner_allocations a
 WHERE a.execution_id = e.execution_id
   AND a.allocation_id = sqlc.arg(allocation_id);
 
--- name: SetRunnerAllocationState :exec
+-- name: FailRunnerAllocation :execrows
 UPDATE runner_allocations
-SET state = sqlc.arg(state),
-    failure_reason = sqlc.arg(failure_reason),
+SET state = 'failed',
     updated_at = sqlc.arg(updated_at)
 WHERE provider = sqlc.arg(provider)
-  AND allocation_id = sqlc.arg(allocation_id);
+  AND allocation_id = sqlc.arg(allocation_id)
+  AND state NOT IN ('failed', 'cleaned', 'job_completed');
+
+-- name: AppendRunnerAllocationProblem :exec
+WITH next_problem AS (
+    SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
+    FROM runner_allocation_problems
+    WHERE allocation_id = sqlc.arg(allocation_id)
+),
+inserted AS (
+    INSERT INTO runner_allocation_problems (
+        allocation_id,
+        problem_seq,
+        phase,
+        problem_type,
+        problem_code,
+        title,
+        detail,
+        status,
+        retryable,
+        pointer,
+        observed_at
+    )
+    SELECT
+        sqlc.arg(allocation_id),
+        next_problem.problem_seq,
+        sqlc.arg(phase),
+        sqlc.arg(problem_type),
+        sqlc.arg(problem_code),
+        sqlc.arg(title),
+        sqlc.arg(detail),
+        sqlc.arg(status),
+        sqlc.arg(retryable),
+        sqlc.arg(pointer),
+        sqlc.arg(observed_at)
+    FROM next_problem
+    RETURNING allocation_id
+)
+UPDATE runner_allocations AS a
+SET
+    primary_problem_type = CASE WHEN problem_count = 0 THEN sqlc.arg(problem_type) ELSE primary_problem_type END,
+    primary_problem_code = CASE WHEN problem_count = 0 THEN sqlc.arg(problem_code) ELSE primary_problem_code END,
+    primary_problem_status = CASE WHEN problem_count = 0 THEN sqlc.arg(status) ELSE primary_problem_status END,
+    primary_problem_title = CASE WHEN problem_count = 0 THEN sqlc.arg(title) ELSE primary_problem_title END,
+    primary_problem_detail = CASE WHEN problem_count = 0 THEN sqlc.arg(detail) ELSE primary_problem_detail END,
+    problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
+    updated_at = sqlc.arg(observed_at)
+WHERE a.allocation_id = sqlc.arg(allocation_id);
 
 -- name: MarkRunnerAllocationCleaned :exec
 UPDATE runner_allocations
@@ -396,13 +442,33 @@ SELECT
     a.execution_id,
     a.attempt_id,
     a.state,
-    a.failure_reason,
+    a.primary_problem_type,
+    a.primary_problem_code,
+    a.primary_problem_status,
+    a.primary_problem_title,
+    a.primary_problem_detail,
+    a.problem_count,
     COALESCE(e.state, '')::text AS execution_state,
     COALESCE(attempt.state, '')::text AS attempt_state
 FROM runner_allocations a
 LEFT JOIN executions e ON e.execution_id = a.execution_id
 LEFT JOIN execution_attempts attempt ON attempt.attempt_id = a.attempt_id
 WHERE a.allocation_id = sqlc.arg(allocation_id);
+
+-- name: ListRunnerAllocationProblems :many
+SELECT
+    phase,
+    problem_type,
+    problem_code,
+    title,
+    detail,
+    status,
+    retryable,
+    pointer,
+    observed_at
+FROM runner_allocation_problems
+WHERE allocation_id = sqlc.arg(allocation_id)
+ORDER BY problem_seq;
 
 -- name: GetRunnerJobForBinding :one
 SELECT runner_id, runner_name, status

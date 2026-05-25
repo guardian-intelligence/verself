@@ -751,6 +751,7 @@ structure GithubProviderDemandRecord {
     runner_class: RunnerClass
     job_shape_id: String
     trust_class: String
+    problems: ProblemOccurrences
 
     @required
     state: GithubProviderDemandState
@@ -773,6 +774,8 @@ structure GithubRunnerInstanceRecord {
 
     @required
     assignment_deadline_at: Timestamp
+
+    problems: ProblemOccurrences
 
     @required
     state: GithubRunnerInstanceState
