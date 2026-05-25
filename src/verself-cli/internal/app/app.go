@@ -37,10 +37,30 @@ func MainWithBinary(binary string) int {
 		getenv: os.Getenv,
 	}
 	if err := cli.Run(context.Background(), os.Args[1:]); err != nil {
-		_, _ = fmt.Fprintln(cli.err, "error:", err)
+		_, _ = fmt.Fprintln(cli.err, "error:", cliErrorMessage(err))
 		return 1
 	}
 	return 0
+}
+
+func cliErrorMessage(err error) string {
+	var apiErr *verself.APIError
+	if errors.As(err, &apiErr) {
+		metadata := make([]string, 0, 3)
+		if strings.TrimSpace(apiErr.Code) != "" {
+			metadata = append(metadata, "code="+strings.TrimSpace(apiErr.Code))
+		}
+		if strings.TrimSpace(apiErr.RequestID) != "" {
+			metadata = append(metadata, "requestId="+strings.TrimSpace(apiErr.RequestID))
+		}
+		if strings.TrimSpace(apiErr.Traceparent) != "" {
+			metadata = append(metadata, "traceparent="+strings.TrimSpace(apiErr.Traceparent))
+		}
+		if len(metadata) > 0 {
+			return apiErr.Error() + " (" + strings.Join(metadata, " ") + ")"
+		}
+	}
+	return err.Error()
 }
 
 func (c CLI) Run(ctx context.Context, args []string) error {

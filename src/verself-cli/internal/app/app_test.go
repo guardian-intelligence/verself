@@ -13,7 +13,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	verself "github.com/verself/verself-go"
 )
+
+func TestCLIErrorMessageIncludesAPIProblemMetadata(t *testing.T) {
+	got := cliErrorMessage(&verself.APIError{
+		Service:     "IAM API",
+		Operation:   "verify signup",
+		StatusCode:  http.StatusConflict,
+		Detail:      "signup verification was already used",
+		Code:        "iam.signup.verification.already_used",
+		RequestID:   "req_test",
+		Traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+	})
+	for _, want := range []string{
+		"IAM API verify signup failed with HTTP 409: signup verification was already used",
+		"code=iam.signup.verification.already_used",
+		"requestId=req_test",
+		"traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("cli error message missing %q: %s", want, got)
+		}
+	}
+}
 
 func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 	requireTool(t, "age-keygen")
