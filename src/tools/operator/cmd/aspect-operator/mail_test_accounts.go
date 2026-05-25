@@ -147,7 +147,7 @@ func cmdMailTestAccountsList(args []string) error {
 		}
 		rows := opruntime.Table{Headers: []string{"email", "stalwart", "credential", "jmap", "credential_path"}}
 		for _, email := range testMailAccountEmails(cfg.VerselfDomain) {
-			_, found, err := client.GetPrincipal(rt.Ctx, email)
+			_, found, err := client.GetPrincipal(rt.Ctx, testMailboxDeliveryPrincipal(email))
 			if err != nil {
 				return err
 			}
