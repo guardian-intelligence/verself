@@ -3,12 +3,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "githubintegration",
     srcs = [
+        "delivery_failure.go",
         "events.go",
         "github_api.go",
         "idempotency.go",
         "job_shape.go",
         "onboarding.go",
         "payloads.go",
+        "provider_surface.go",
         "runner_problem.go",
         "runner_terminalization.go",
         "sandbox.go",

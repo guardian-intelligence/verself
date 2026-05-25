@@ -267,6 +267,18 @@ func providerWebhookProcessingProblem(detail string, retryable bool) webhookProb
 	}
 }
 
+func providerWebhookProcessingStaleProblem() webhookProblem {
+	return webhookProblem{
+		Type:      "urn:verself:problem:provider_webhook:processing_stale",
+		Code:      "provider_webhook.processing_stale",
+		Title:     "Webhook delivery processing was abandoned",
+		Detail:    "Webhook delivery was left in processing past its deadline.",
+		Status:    http.StatusServiceUnavailable,
+		Phase:     "delivery_processing",
+		Retryable: true,
+	}
+}
+
 func providerWebhookAttemptsExhaustedProblem() webhookProblem {
 	return webhookProblem{
 		Type:      "urn:verself:problem:provider_webhook:processing_attempts_exhausted",

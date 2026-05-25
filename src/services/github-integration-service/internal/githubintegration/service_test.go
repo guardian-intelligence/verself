@@ -335,3 +335,59 @@ func TestRunnerCapacityAssignmentDeadlineExceeded(t *testing.T) {
 		t.Fatal("missing deadline should not be expired")
 	}
 }
+
+func TestProviderSurfaceCommandKeyCancelsWorkflowRunOnce(t *testing.T) {
+	ref := runnerCapacityRef{
+		ProviderInstallationID: 42,
+		ProviderRepositoryID:   99,
+		ProviderRunID:          123,
+		ProviderJobID:          1001,
+	}
+	sameRun := ref
+	sameRun.ProviderJobID = 1002
+	if providerSurfaceCommandKey(ref) != providerSurfaceCommandKey(sameRun) {
+		t.Fatal("provider surface key should dedupe jobs in the same workflow run")
+	}
+	otherRun := ref
+	otherRun.ProviderRunID = 124
+	if providerSurfaceCommandKey(ref) == providerSurfaceCommandKey(otherRun) {
+		t.Fatal("provider surface key collapsed distinct workflow runs")
+	}
+}
+
+func TestProviderSurfaceFailureResult(t *testing.T) {
+	if got := providerSurfaceFailureResult(false); got != "retryable" {
+		t.Fatalf("nonterminal result = %q, want retryable", got)
+	}
+	if got := providerSurfaceFailureResult(true); got != "failed" {
+		t.Fatalf("terminal result = %q, want failed", got)
+	}
+}
+
+func TestWebhookStaleProblemPreservedAsRunnerProblem(t *testing.T) {
+	webhookProblems := newWebhookProblemSet(providerWebhookProcessingStaleProblem())
+	runnerProblems := runnerProblemSetFromWebhookProblems(webhookProblems)
+	if len(runnerProblems.problems) != 1 {
+		t.Fatalf("len(runnerProblems) = %d, want 1", len(runnerProblems.problems))
+	}
+	problem := runnerProblems.problems[0]
+	if problem.Code != "provider_webhook.processing_stale" {
+		t.Fatalf("runner problem code = %q", problem.Code)
+	}
+	if problem.Type != "urn:verself:problem:provider_webhook:processing_stale" {
+		t.Fatalf("runner problem type = %q", problem.Type)
+	}
+}
+
+func TestProviderDemandTerminalForCapacity(t *testing.T) {
+	for _, state := range []string{"assigned", "completed", "capacity_failed", "jit_failed", "sandbox_failed"} {
+		if !providerDemandTerminalForCapacity(state) {
+			t.Fatalf("%s should be terminal for capacity", state)
+		}
+	}
+	for _, state := range []string{"", "demand_recorded", "capacity_requested"} {
+		if providerDemandTerminalForCapacity(state) {
+			t.Fatalf("%s should remain eligible for capacity", state)
+		}
+	}
+}

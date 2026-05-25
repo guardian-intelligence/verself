@@ -44,6 +44,11 @@ inserted AS (
         $10,
         $6
     FROM next_problem
+    WHERE EXISTS (
+        SELECT 1
+        FROM github_provider_demands d
+        WHERE d.provider_job_id = $7
+    )
     RETURNING provider_job_id
 )
 UPDATE github_provider_demands AS d
@@ -87,6 +92,82 @@ func (q *Queries) AppendProviderDemandProblem(ctx context.Context, arg AppendPro
 	return err
 }
 
+const appendProviderSurfaceProblem = `-- name: AppendProviderSurfaceProblem :exec
+WITH next_problem AS (
+    SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
+    FROM github_provider_surface_problems
+    WHERE surface_id = $7
+),
+inserted AS (
+    INSERT INTO github_provider_surface_problems (
+        surface_id,
+        problem_seq,
+        phase,
+        problem_type,
+        problem_code,
+        title,
+        detail,
+        status,
+        retryable,
+        pointer,
+        observed_at
+    )
+    SELECT
+        $7,
+        next_problem.problem_seq,
+        $8,
+        $1,
+        $2,
+        $4,
+        $5,
+        $3,
+        $9,
+        $10,
+        $6
+    FROM next_problem
+    RETURNING surface_id
+)
+UPDATE github_provider_surface_commands AS c
+SET
+    primary_problem_type = CASE WHEN problem_count = 0 THEN $1 ELSE primary_problem_type END,
+    primary_problem_code = CASE WHEN problem_count = 0 THEN $2 ELSE primary_problem_code END,
+    primary_problem_status = CASE WHEN problem_count = 0 THEN $3 ELSE primary_problem_status END,
+    primary_problem_title = CASE WHEN problem_count = 0 THEN $4 ELSE primary_problem_title END,
+    primary_problem_detail = CASE WHEN problem_count = 0 THEN $5 ELSE primary_problem_detail END,
+    problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
+    updated_at = $6
+WHERE c.surface_id = $7
+`
+
+type AppendProviderSurfaceProblemParams struct {
+	ProblemType string
+	ProblemCode string
+	Status      int32
+	Title       string
+	Detail      string
+	ObservedAt  pgtype.Timestamptz
+	SurfaceID   pgtype.UUID
+	Phase       string
+	Retryable   bool
+	Pointer     string
+}
+
+func (q *Queries) AppendProviderSurfaceProblem(ctx context.Context, arg AppendProviderSurfaceProblemParams) error {
+	_, err := q.db.Exec(ctx, appendProviderSurfaceProblem,
+		arg.ProblemType,
+		arg.ProblemCode,
+		arg.Status,
+		arg.Title,
+		arg.Detail,
+		arg.ObservedAt,
+		arg.SurfaceID,
+		arg.Phase,
+		arg.Retryable,
+		arg.Pointer,
+	)
+	return err
+}
+
 const appendRunnerInstanceProblem = `-- name: AppendRunnerInstanceProblem :exec
 WITH next_problem AS (
     SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
@@ -120,6 +201,11 @@ inserted AS (
         $10,
         $6
     FROM next_problem
+    WHERE EXISTS (
+        SELECT 1
+        FROM github_runner_instances ri
+        WHERE ri.runner_name = $7
+    )
     RETURNING runner_name
 )
 UPDATE github_runner_instances AS ri
@@ -1975,6 +2061,150 @@ func (q *Queries) ListRepositoryCandidates(ctx context.Context, arg ListReposito
 	return items, nil
 }
 
+const listStaleProcessingDeliveries = `-- name: ListStaleProcessingDeliveries :many
+SELECT delivery_id, event_name, action, provider_installation_id,
+       provider_repository_id, repository_full_name, provider_run_id,
+       provider_run_attempt, provider_job_id, attempt_count, processing_started_at
+FROM github_webhook_deliveries
+WHERE state = 'processing'
+  AND processing_started_at IS NOT NULL
+  AND processing_started_at <= $1
+ORDER BY processing_started_at ASC
+LIMIT $2
+`
+
+type ListStaleProcessingDeliveriesParams struct {
+	StaleBefore pgtype.Timestamptz
+	LimitCount  int32
+}
+
+type ListStaleProcessingDeliveriesRow struct {
+	DeliveryID             string
+	EventName              string
+	Action                 string
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	ProviderJobID          int64
+	AttemptCount           int32
+	ProcessingStartedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) ListStaleProcessingDeliveries(ctx context.Context, arg ListStaleProcessingDeliveriesParams) ([]ListStaleProcessingDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, listStaleProcessingDeliveries, arg.StaleBefore, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListStaleProcessingDeliveriesRow{}
+	for rows.Next() {
+		var i ListStaleProcessingDeliveriesRow
+		if err := rows.Scan(
+			&i.DeliveryID,
+			&i.EventName,
+			&i.Action,
+			&i.ProviderInstallationID,
+			&i.ProviderRepositoryID,
+			&i.RepositoryFullName,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.ProviderJobID,
+			&i.AttemptCount,
+			&i.ProcessingStartedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStaleProviderSurfaceCommands = `-- name: ListStaleProviderSurfaceCommands :many
+SELECT surface_id, command_key, command_kind, org_id, installation_binding_id,
+       repository_binding_id, provider_installation_id, provider_repository_id,
+       repository_full_name, provider_run_id, provider_run_attempt,
+       provider_job_id, runner_id, runner_name, runner_class,
+       primary_problem_code, primary_problem_detail, attempt_count, locked_at
+FROM github_provider_surface_commands
+WHERE state = 'running'
+  AND locked_at IS NOT NULL
+  AND locked_at <= $1
+ORDER BY locked_at ASC
+LIMIT $2
+`
+
+type ListStaleProviderSurfaceCommandsParams struct {
+	StaleBefore pgtype.Timestamptz
+	LimitCount  int32
+}
+
+type ListStaleProviderSurfaceCommandsRow struct {
+	SurfaceID              pgtype.UUID
+	CommandKey             string
+	CommandKind            string
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	ProviderJobID          int64
+	RunnerID               int64
+	RunnerName             string
+	RunnerClass            string
+	PrimaryProblemCode     string
+	PrimaryProblemDetail   string
+	AttemptCount           int32
+	LockedAt               pgtype.Timestamptz
+}
+
+func (q *Queries) ListStaleProviderSurfaceCommands(ctx context.Context, arg ListStaleProviderSurfaceCommandsParams) ([]ListStaleProviderSurfaceCommandsRow, error) {
+	rows, err := q.db.Query(ctx, listStaleProviderSurfaceCommands, arg.StaleBefore, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListStaleProviderSurfaceCommandsRow{}
+	for rows.Next() {
+		var i ListStaleProviderSurfaceCommandsRow
+		if err := rows.Scan(
+			&i.SurfaceID,
+			&i.CommandKey,
+			&i.CommandKind,
+			&i.OrgID,
+			&i.InstallationBindingID,
+			&i.RepositoryBindingID,
+			&i.ProviderInstallationID,
+			&i.ProviderRepositoryID,
+			&i.RepositoryFullName,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.ProviderJobID,
+			&i.RunnerID,
+			&i.RunnerName,
+			&i.RunnerClass,
+			&i.PrimaryProblemCode,
+			&i.PrimaryProblemDetail,
+			&i.AttemptCount,
+			&i.LockedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSubmittedRunnerInstancesForSandboxReconcile = `-- name: ListSubmittedRunnerInstancesForSandboxReconcile :many
 SELECT
     ri.runner_name,
@@ -2160,6 +2390,96 @@ func (q *Queries) LockReadyDeliveries(ctx context.Context, arg LockReadyDeliveri
 	return items, nil
 }
 
+const lockReadyProviderSurfaceCommands = `-- name: LockReadyProviderSurfaceCommands :many
+UPDATE github_provider_surface_commands AS c
+SET
+    state = 'running',
+    attempt_count = c.attempt_count + 1,
+    locked_at = $1,
+    updated_at = $1
+FROM (
+    SELECT surface_id
+    FROM github_provider_surface_commands
+    WHERE state IN ('pending', 'retryable')
+      AND (next_attempt_at IS NULL OR next_attempt_at <= $1)
+    ORDER BY created_at
+    LIMIT $2
+    FOR UPDATE SKIP LOCKED
+) AS ready
+WHERE c.surface_id = ready.surface_id
+RETURNING c.surface_id, c.command_key, c.command_kind, c.org_id,
+          c.installation_binding_id, c.repository_binding_id,
+          c.provider_installation_id, c.provider_repository_id,
+          c.repository_full_name, c.provider_run_id, c.provider_run_attempt,
+          c.provider_job_id, c.runner_id, c.runner_name, c.runner_class,
+          c.primary_problem_code, c.primary_problem_detail, c.attempt_count
+`
+
+type LockReadyProviderSurfaceCommandsParams struct {
+	LockedAt   pgtype.Timestamptz
+	LimitCount int32
+}
+
+type LockReadyProviderSurfaceCommandsRow struct {
+	SurfaceID              pgtype.UUID
+	CommandKey             string
+	CommandKind            string
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	ProviderJobID          int64
+	RunnerID               int64
+	RunnerName             string
+	RunnerClass            string
+	PrimaryProblemCode     string
+	PrimaryProblemDetail   string
+	AttemptCount           int32
+}
+
+func (q *Queries) LockReadyProviderSurfaceCommands(ctx context.Context, arg LockReadyProviderSurfaceCommandsParams) ([]LockReadyProviderSurfaceCommandsRow, error) {
+	rows, err := q.db.Query(ctx, lockReadyProviderSurfaceCommands, arg.LockedAt, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockReadyProviderSurfaceCommandsRow{}
+	for rows.Next() {
+		var i LockReadyProviderSurfaceCommandsRow
+		if err := rows.Scan(
+			&i.SurfaceID,
+			&i.CommandKey,
+			&i.CommandKind,
+			&i.OrgID,
+			&i.InstallationBindingID,
+			&i.RepositoryBindingID,
+			&i.ProviderInstallationID,
+			&i.ProviderRepositoryID,
+			&i.RepositoryFullName,
+			&i.ProviderRunID,
+			&i.ProviderRunAttempt,
+			&i.ProviderJobID,
+			&i.RunnerID,
+			&i.RunnerName,
+			&i.RunnerClass,
+			&i.PrimaryProblemCode,
+			&i.PrimaryProblemDetail,
+			&i.AttemptCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lookupRuntimeBinding = `-- name: LookupRuntimeBinding :one
 SELECT ib.org_id, ib.installation_binding_id, rb.repository_binding_id
 FROM github_installation_bindings ib
@@ -2193,8 +2513,10 @@ const markDeliveryFailed = `-- name: MarkDeliveryFailed :exec
 UPDATE github_webhook_deliveries
 SET state = 'failed',
     processed_at = $1,
+    processing_started_at = NULL,
     updated_at = $1
 WHERE delivery_id = $2
+  AND state = 'processing'
 `
 
 type MarkDeliveryFailedParams struct {
@@ -2211,8 +2533,10 @@ const markDeliveryIgnored = `-- name: MarkDeliveryIgnored :exec
 UPDATE github_webhook_deliveries
 SET state = 'ignored',
     processed_at = $1,
+    processing_started_at = NULL,
     updated_at = $1
 WHERE delivery_id = $2
+  AND state = 'processing'
 `
 
 type MarkDeliveryIgnoredParams struct {
@@ -2229,8 +2553,10 @@ const markDeliveryProcessed = `-- name: MarkDeliveryProcessed :exec
 UPDATE github_webhook_deliveries
 SET state = 'processed',
     processed_at = $1,
+    processing_started_at = NULL,
     updated_at = $1
 WHERE delivery_id = $2
+  AND state = 'processing'
 `
 
 type MarkDeliveryProcessedParams struct {
@@ -2300,8 +2626,10 @@ const markDeliveryRetryable = `-- name: MarkDeliveryRetryable :exec
 UPDATE github_webhook_deliveries
 SET state = 'retryable',
     next_attempt_at = $1,
+    processing_started_at = NULL,
     updated_at = $2
 WHERE delivery_id = $3
+  AND state = 'processing'
 `
 
 type MarkDeliveryRetryableParams struct {
@@ -2465,6 +2793,67 @@ func (q *Queries) MarkProviderOutboxProcessed(ctx context.Context, arg MarkProvi
 		arg.CommandKind,
 		arg.CommandSha256,
 	)
+	return err
+}
+
+const markProviderSurfaceCommandFailed = `-- name: MarkProviderSurfaceCommandFailed :exec
+UPDATE github_provider_surface_commands
+SET state = 'failed',
+    locked_at = NULL,
+    failed_at = $1,
+    updated_at = $1
+WHERE surface_id = $2
+  AND state = 'running'
+`
+
+type MarkProviderSurfaceCommandFailedParams struct {
+	FailedAt  pgtype.Timestamptz
+	SurfaceID pgtype.UUID
+}
+
+func (q *Queries) MarkProviderSurfaceCommandFailed(ctx context.Context, arg MarkProviderSurfaceCommandFailedParams) error {
+	_, err := q.db.Exec(ctx, markProviderSurfaceCommandFailed, arg.FailedAt, arg.SurfaceID)
+	return err
+}
+
+const markProviderSurfaceCommandRetryable = `-- name: MarkProviderSurfaceCommandRetryable :exec
+UPDATE github_provider_surface_commands
+SET state = 'retryable',
+    locked_at = NULL,
+    next_attempt_at = $1,
+    updated_at = $2
+WHERE surface_id = $3
+  AND state = 'running'
+`
+
+type MarkProviderSurfaceCommandRetryableParams struct {
+	NextAttemptAt pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+	SurfaceID     pgtype.UUID
+}
+
+func (q *Queries) MarkProviderSurfaceCommandRetryable(ctx context.Context, arg MarkProviderSurfaceCommandRetryableParams) error {
+	_, err := q.db.Exec(ctx, markProviderSurfaceCommandRetryable, arg.NextAttemptAt, arg.UpdatedAt, arg.SurfaceID)
+	return err
+}
+
+const markProviderSurfaceCommandSucceeded = `-- name: MarkProviderSurfaceCommandSucceeded :exec
+UPDATE github_provider_surface_commands
+SET state = 'succeeded',
+    locked_at = NULL,
+    completed_at = $1,
+    updated_at = $1
+WHERE surface_id = $2
+  AND state = 'running'
+`
+
+type MarkProviderSurfaceCommandSucceededParams struct {
+	CompletedAt pgtype.Timestamptz
+	SurfaceID   pgtype.UUID
+}
+
+func (q *Queries) MarkProviderSurfaceCommandSucceeded(ctx context.Context, arg MarkProviderSurfaceCommandSucceededParams) error {
+	_, err := q.db.Exec(ctx, markProviderSurfaceCommandSucceeded, arg.CompletedAt, arg.SurfaceID)
 	return err
 }
 
@@ -3506,6 +3895,131 @@ func (q *Queries) UpsertProviderOutboxCommand(ctx context.Context, arg UpsertPro
 		arg.UpdatedAt,
 	)
 	return err
+}
+
+const upsertProviderSurfaceCommand = `-- name: UpsertProviderSurfaceCommand :one
+INSERT INTO github_provider_surface_commands (
+    surface_id,
+    command_key,
+    command_kind,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
+    provider_installation_id,
+    provider_repository_id,
+    repository_full_name,
+    provider_run_id,
+    provider_run_attempt,
+    provider_job_id,
+    runner_id,
+    runner_name,
+    runner_class,
+    state,
+    next_attempt_at,
+    created_at,
+    updated_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    'pending',
+    $16,
+    $17,
+    $17
+)
+ON CONFLICT (command_key) DO UPDATE SET
+    command_kind = EXCLUDED.command_kind,
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_provider_surface_commands.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_provider_surface_commands.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_provider_surface_commands.repository_binding_id),
+    provider_installation_id = CASE WHEN EXCLUDED.provider_installation_id <> 0 THEN EXCLUDED.provider_installation_id ELSE github_provider_surface_commands.provider_installation_id END,
+    provider_repository_id = CASE WHEN EXCLUDED.provider_repository_id <> 0 THEN EXCLUDED.provider_repository_id ELSE github_provider_surface_commands.provider_repository_id END,
+    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_provider_surface_commands.repository_full_name),
+    provider_run_id = CASE WHEN EXCLUDED.provider_run_id <> 0 THEN EXCLUDED.provider_run_id ELSE github_provider_surface_commands.provider_run_id END,
+    provider_run_attempt = CASE WHEN EXCLUDED.provider_run_attempt <> 0 THEN EXCLUDED.provider_run_attempt ELSE github_provider_surface_commands.provider_run_attempt END,
+    provider_job_id = CASE WHEN EXCLUDED.provider_job_id <> 0 THEN EXCLUDED.provider_job_id ELSE github_provider_surface_commands.provider_job_id END,
+    runner_id = CASE WHEN EXCLUDED.runner_id <> 0 THEN EXCLUDED.runner_id ELSE github_provider_surface_commands.runner_id END,
+    runner_name = COALESCE(NULLIF(EXCLUDED.runner_name, ''), github_provider_surface_commands.runner_name),
+    runner_class = COALESCE(NULLIF(EXCLUDED.runner_class, ''), github_provider_surface_commands.runner_class),
+    state = CASE
+        WHEN github_provider_surface_commands.state = 'succeeded' THEN github_provider_surface_commands.state
+        ELSE 'pending'
+    END,
+    next_attempt_at = CASE
+        WHEN github_provider_surface_commands.state = 'succeeded' THEN github_provider_surface_commands.next_attempt_at
+        ELSE EXCLUDED.next_attempt_at
+    END,
+    updated_at = EXCLUDED.updated_at
+RETURNING surface_id, command_key, command_kind, state
+`
+
+type UpsertProviderSurfaceCommandParams struct {
+	SurfaceID              pgtype.UUID
+	CommandKey             string
+	CommandKind            string
+	OrgID                  string
+	InstallationBindingID  pgtype.UUID
+	RepositoryBindingID    pgtype.UUID
+	ProviderInstallationID int64
+	ProviderRepositoryID   int64
+	RepositoryFullName     string
+	ProviderRunID          int64
+	ProviderRunAttempt     int64
+	ProviderJobID          int64
+	RunnerID               int64
+	RunnerName             string
+	RunnerClass            string
+	NextAttemptAt          pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+type UpsertProviderSurfaceCommandRow struct {
+	SurfaceID   pgtype.UUID
+	CommandKey  string
+	CommandKind string
+	State       string
+}
+
+func (q *Queries) UpsertProviderSurfaceCommand(ctx context.Context, arg UpsertProviderSurfaceCommandParams) (UpsertProviderSurfaceCommandRow, error) {
+	row := q.db.QueryRow(ctx, upsertProviderSurfaceCommand,
+		arg.SurfaceID,
+		arg.CommandKey,
+		arg.CommandKind,
+		arg.OrgID,
+		arg.InstallationBindingID,
+		arg.RepositoryBindingID,
+		arg.ProviderInstallationID,
+		arg.ProviderRepositoryID,
+		arg.RepositoryFullName,
+		arg.ProviderRunID,
+		arg.ProviderRunAttempt,
+		arg.ProviderJobID,
+		arg.RunnerID,
+		arg.RunnerName,
+		arg.RunnerClass,
+		arg.NextAttemptAt,
+		arg.UpdatedAt,
+	)
+	var i UpsertProviderSurfaceCommandRow
+	err := row.Scan(
+		&i.SurfaceID,
+		&i.CommandKey,
+		&i.CommandKind,
+		&i.State,
+	)
+	return i, err
 }
 
 const upsertRepository = `-- name: UpsertRepository :exec

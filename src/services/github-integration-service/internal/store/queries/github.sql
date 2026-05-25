@@ -211,29 +211,48 @@ RETURNING d.delivery_id, d.event_name, d.action, d.payload_json, d.provider_inst
 UPDATE github_webhook_deliveries
 SET state = 'processed',
     processed_at = @processed_at,
+    processing_started_at = NULL,
     updated_at = @processed_at
-WHERE delivery_id = @delivery_id;
+WHERE delivery_id = @delivery_id
+  AND state = 'processing';
 
 -- name: MarkDeliveryIgnored :exec
 UPDATE github_webhook_deliveries
 SET state = 'ignored',
     processed_at = @processed_at,
+    processing_started_at = NULL,
     updated_at = @processed_at
-WHERE delivery_id = @delivery_id;
+WHERE delivery_id = @delivery_id
+  AND state = 'processing';
 
 -- name: MarkDeliveryRetryable :exec
 UPDATE github_webhook_deliveries
 SET state = 'retryable',
     next_attempt_at = @next_attempt_at,
+    processing_started_at = NULL,
     updated_at = @updated_at
-WHERE delivery_id = @delivery_id;
+WHERE delivery_id = @delivery_id
+  AND state = 'processing';
 
 -- name: MarkDeliveryFailed :exec
 UPDATE github_webhook_deliveries
 SET state = 'failed',
     processed_at = @failed_at,
+    processing_started_at = NULL,
     updated_at = @failed_at
-WHERE delivery_id = @delivery_id;
+WHERE delivery_id = @delivery_id
+  AND state = 'processing';
+
+-- name: ListStaleProcessingDeliveries :many
+SELECT delivery_id, event_name, action, provider_installation_id,
+       provider_repository_id, repository_full_name, provider_run_id,
+       provider_run_attempt, provider_job_id, attempt_count, processing_started_at
+FROM github_webhook_deliveries
+WHERE state = 'processing'
+  AND processing_started_at IS NOT NULL
+  AND processing_started_at <= @stale_before
+ORDER BY processing_started_at ASC
+LIMIT @limit_count;
 
 -- name: UpsertInstallation :exec
 INSERT INTO github_installations (
@@ -1224,6 +1243,11 @@ inserted AS (
         @pointer,
         @observed_at
     FROM next_problem
+    WHERE EXISTS (
+        SELECT 1
+        FROM github_provider_demands d
+        WHERE d.provider_job_id = @provider_job_id
+    )
     RETURNING provider_job_id
 )
 UPDATE github_provider_demands AS d
@@ -1300,6 +1324,183 @@ SET state = @state,
     updated_at = @updated_at
 WHERE command_kind = @command_kind
   AND command_sha256 = @command_sha256;
+
+-- name: UpsertProviderSurfaceCommand :one
+INSERT INTO github_provider_surface_commands (
+    surface_id,
+    command_key,
+    command_kind,
+    org_id,
+    installation_binding_id,
+    repository_binding_id,
+    provider_installation_id,
+    provider_repository_id,
+    repository_full_name,
+    provider_run_id,
+    provider_run_attempt,
+    provider_job_id,
+    runner_id,
+    runner_name,
+    runner_class,
+    state,
+    next_attempt_at,
+    created_at,
+    updated_at
+) VALUES (
+    @surface_id,
+    @command_key,
+    @command_kind,
+    @org_id,
+    @installation_binding_id,
+    @repository_binding_id,
+    @provider_installation_id,
+    @provider_repository_id,
+    @repository_full_name,
+    @provider_run_id,
+    @provider_run_attempt,
+    @provider_job_id,
+    @runner_id,
+    @runner_name,
+    @runner_class,
+    'pending',
+    @next_attempt_at,
+    @updated_at,
+    @updated_at
+)
+ON CONFLICT (command_key) DO UPDATE SET
+    command_kind = EXCLUDED.command_kind,
+    org_id = COALESCE(NULLIF(EXCLUDED.org_id, ''), github_provider_surface_commands.org_id),
+    installation_binding_id = COALESCE(EXCLUDED.installation_binding_id, github_provider_surface_commands.installation_binding_id),
+    repository_binding_id = COALESCE(EXCLUDED.repository_binding_id, github_provider_surface_commands.repository_binding_id),
+    provider_installation_id = CASE WHEN EXCLUDED.provider_installation_id <> 0 THEN EXCLUDED.provider_installation_id ELSE github_provider_surface_commands.provider_installation_id END,
+    provider_repository_id = CASE WHEN EXCLUDED.provider_repository_id <> 0 THEN EXCLUDED.provider_repository_id ELSE github_provider_surface_commands.provider_repository_id END,
+    repository_full_name = COALESCE(NULLIF(EXCLUDED.repository_full_name, ''), github_provider_surface_commands.repository_full_name),
+    provider_run_id = CASE WHEN EXCLUDED.provider_run_id <> 0 THEN EXCLUDED.provider_run_id ELSE github_provider_surface_commands.provider_run_id END,
+    provider_run_attempt = CASE WHEN EXCLUDED.provider_run_attempt <> 0 THEN EXCLUDED.provider_run_attempt ELSE github_provider_surface_commands.provider_run_attempt END,
+    provider_job_id = CASE WHEN EXCLUDED.provider_job_id <> 0 THEN EXCLUDED.provider_job_id ELSE github_provider_surface_commands.provider_job_id END,
+    runner_id = CASE WHEN EXCLUDED.runner_id <> 0 THEN EXCLUDED.runner_id ELSE github_provider_surface_commands.runner_id END,
+    runner_name = COALESCE(NULLIF(EXCLUDED.runner_name, ''), github_provider_surface_commands.runner_name),
+    runner_class = COALESCE(NULLIF(EXCLUDED.runner_class, ''), github_provider_surface_commands.runner_class),
+    state = CASE
+        WHEN github_provider_surface_commands.state = 'succeeded' THEN github_provider_surface_commands.state
+        ELSE 'pending'
+    END,
+    next_attempt_at = CASE
+        WHEN github_provider_surface_commands.state = 'succeeded' THEN github_provider_surface_commands.next_attempt_at
+        ELSE EXCLUDED.next_attempt_at
+    END,
+    updated_at = EXCLUDED.updated_at
+RETURNING surface_id, command_key, command_kind, state;
+
+-- name: AppendProviderSurfaceProblem :exec
+WITH next_problem AS (
+    SELECT COALESCE(MAX(problem_seq), 0) + 1 AS problem_seq
+    FROM github_provider_surface_problems
+    WHERE surface_id = @surface_id
+),
+inserted AS (
+    INSERT INTO github_provider_surface_problems (
+        surface_id,
+        problem_seq,
+        phase,
+        problem_type,
+        problem_code,
+        title,
+        detail,
+        status,
+        retryable,
+        pointer,
+        observed_at
+    )
+    SELECT
+        @surface_id,
+        next_problem.problem_seq,
+        @phase,
+        @problem_type,
+        @problem_code,
+        @title,
+        @detail,
+        @status,
+        @retryable,
+        @pointer,
+        @observed_at
+    FROM next_problem
+    RETURNING surface_id
+)
+UPDATE github_provider_surface_commands AS c
+SET
+    primary_problem_type = CASE WHEN problem_count = 0 THEN @problem_type ELSE primary_problem_type END,
+    primary_problem_code = CASE WHEN problem_count = 0 THEN @problem_code ELSE primary_problem_code END,
+    primary_problem_status = CASE WHEN problem_count = 0 THEN @status ELSE primary_problem_status END,
+    primary_problem_title = CASE WHEN problem_count = 0 THEN @title ELSE primary_problem_title END,
+    primary_problem_detail = CASE WHEN problem_count = 0 THEN @detail ELSE primary_problem_detail END,
+    problem_count = problem_count + (SELECT COUNT(*) FROM inserted),
+    updated_at = @observed_at
+WHERE c.surface_id = @surface_id;
+
+-- name: LockReadyProviderSurfaceCommands :many
+UPDATE github_provider_surface_commands AS c
+SET
+    state = 'running',
+    attempt_count = c.attempt_count + 1,
+    locked_at = @locked_at,
+    updated_at = @locked_at
+FROM (
+    SELECT surface_id
+    FROM github_provider_surface_commands
+    WHERE state IN ('pending', 'retryable')
+      AND (next_attempt_at IS NULL OR next_attempt_at <= @locked_at)
+    ORDER BY created_at
+    LIMIT @limit_count
+    FOR UPDATE SKIP LOCKED
+) AS ready
+WHERE c.surface_id = ready.surface_id
+RETURNING c.surface_id, c.command_key, c.command_kind, c.org_id,
+          c.installation_binding_id, c.repository_binding_id,
+          c.provider_installation_id, c.provider_repository_id,
+          c.repository_full_name, c.provider_run_id, c.provider_run_attempt,
+          c.provider_job_id, c.runner_id, c.runner_name, c.runner_class,
+          c.primary_problem_code, c.primary_problem_detail, c.attempt_count;
+
+-- name: ListStaleProviderSurfaceCommands :many
+SELECT surface_id, command_key, command_kind, org_id, installation_binding_id,
+       repository_binding_id, provider_installation_id, provider_repository_id,
+       repository_full_name, provider_run_id, provider_run_attempt,
+       provider_job_id, runner_id, runner_name, runner_class,
+       primary_problem_code, primary_problem_detail, attempt_count, locked_at
+FROM github_provider_surface_commands
+WHERE state = 'running'
+  AND locked_at IS NOT NULL
+  AND locked_at <= @stale_before
+ORDER BY locked_at ASC
+LIMIT @limit_count;
+
+-- name: MarkProviderSurfaceCommandSucceeded :exec
+UPDATE github_provider_surface_commands
+SET state = 'succeeded',
+    locked_at = NULL,
+    completed_at = @completed_at,
+    updated_at = @completed_at
+WHERE surface_id = @surface_id
+  AND state = 'running';
+
+-- name: MarkProviderSurfaceCommandRetryable :exec
+UPDATE github_provider_surface_commands
+SET state = 'retryable',
+    locked_at = NULL,
+    next_attempt_at = @next_attempt_at,
+    updated_at = @updated_at
+WHERE surface_id = @surface_id
+  AND state = 'running';
+
+-- name: MarkProviderSurfaceCommandFailed :exec
+UPDATE github_provider_surface_commands
+SET state = 'failed',
+    locked_at = NULL,
+    failed_at = @failed_at,
+    updated_at = @failed_at
+WHERE surface_id = @surface_id
+  AND state = 'running';
 
 -- name: UpsertRunnerInstance :exec
 INSERT INTO github_runner_instances (
@@ -1405,6 +1606,11 @@ inserted AS (
         @pointer,
         @observed_at
     FROM next_problem
+    WHERE EXISTS (
+        SELECT 1
+        FROM github_runner_instances ri
+        WHERE ri.runner_name = @runner_name
+    )
     RETURNING runner_name
 )
 UPDATE github_runner_instances AS ri
