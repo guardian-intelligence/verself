@@ -11,10 +11,17 @@ import { PRODUCT_DOMAIN_META_NAME, readProductDomain } from "~/lib/product-domai
 import "~/styles/app.css";
 
 const authNavigationClient = {
-  getSignInRedirectURL: async ({ data }: { data: { redirectTo?: string | null } }) => {
+  getSignInRedirectURL: async ({
+    data,
+  }: {
+    data: { promptLogin?: boolean | null; redirectTo?: string | null };
+  }) => {
     const params = new URLSearchParams();
     if (data.redirectTo) {
       params.set("redirect_to", data.redirectTo);
+    }
+    if (data.promptLogin) {
+      params.set("prompt", "login");
     }
     const query = params.toString();
     return `/api/v1/auth/login${query ? `?${query}` : ""}`;

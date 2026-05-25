@@ -7,10 +7,17 @@ import { AppShell } from "~/features/shell/app-shell";
 import { getClientAuthSnapshot } from "~/server-fns/auth";
 
 const authNavigationClient = {
-  getSignInRedirectURL: async ({ data }: { data: { redirectTo?: string | null } }) => {
+  getSignInRedirectURL: async ({
+    data,
+  }: {
+    data: { promptLogin?: boolean | null; redirectTo?: string | null };
+  }) => {
     const params = new URLSearchParams();
     if (data.redirectTo) {
       params.set("redirect_to", data.redirectTo);
+    }
+    if (data.promptLogin) {
+      params.set("prompt", "login");
     }
     const query = params.toString();
     return `/api/v1/auth/login${query ? `?${query}` : ""}`;

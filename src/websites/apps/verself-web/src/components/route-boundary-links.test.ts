@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  accountSelectionLoginPath,
   resolveAuthenticatedShellFallbackPath,
   resolveShellFallbackPath,
   shellNotFoundFallbackData,
@@ -58,5 +59,11 @@ describe("route boundary fallback links", () => {
         new Map(),
       ),
     ).toBe("/onboarding");
+  });
+
+  it("preserves org route intent when asking the browser to select an account", () => {
+    expect(accountSelectionLoginPath("/acme-corp")).toBe(
+      "/login?prompt=login&redirect=%2Facme-corp",
+    );
   });
 });

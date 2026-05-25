@@ -236,6 +236,7 @@ function inviteCredentialsFromInput(raw: string): { token: string; org?: string 
 
 function assignLogin(orgSlug: string | undefined): void {
   const login = new URL("/login", window.location.origin);
+  login.searchParams.set("prompt", "login");
   if (orgSlug) {
     login.searchParams.set("redirect", `/${orgSlug}`);
   }
