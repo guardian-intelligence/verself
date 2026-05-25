@@ -1,6 +1,2 @@
-export {
-  captureDotMatrixPointer,
-  releaseDotMatrixPointer,
-  type DotMatrixSignals,
-} from "./interaction";
+export { recordDotMatrixClick, type DotMatrixClick } from "./interaction";
 export { DotMatrixField } from "./DotMatrixField";

@@ -14,7 +14,6 @@ import {
 import { cn } from "@verself/ui/lib/utils";
 
 import { emitSpan } from "~/lib/telemetry/browser";
-import { DotMatrixFallback } from "./DotMatrixFallback";
 import type { DotMatrixDegradedReason, DotMatrixFrame, DotMatrixRendererBackend } from "./types";
 
 const DotMatrixCanvas = lazy(() =>
@@ -26,7 +25,7 @@ type RuntimeState =
   | { readonly backend: DotMatrixRendererBackend; readonly kind: "ready" }
   | {
       readonly backend: DotMatrixRendererBackend;
-      readonly kind: "fallback";
+      readonly kind: "disabled";
       readonly reason: DotMatrixDegradedReason;
     };
 
@@ -63,7 +62,6 @@ export function DotMatrixField({ className, motion = true }: DotMatrixFieldProps
       aria-hidden="true"
       className={cn("pointer-events-none absolute inset-0 overflow-hidden", className)}
     >
-      <DotMatrixFallback />
       {live ? (
         <div
           className={cn(
@@ -111,11 +109,15 @@ function useDotMatrixRuntime(motion: boolean): RuntimeState {
       });
 
       if (reducedMotion) {
-        setState({ backend, kind: "fallback", reason: "reduced_motion" });
+        setState({ backend, kind: "disabled", reason: "reduced_motion" });
         return;
       }
       if (backend === "none") {
-        setState({ backend, kind: "fallback", reason: "no_renderer" });
+        setState({ backend, kind: "disabled", reason: "no_renderer" });
+        return;
+      }
+      if (backend === "webgl2_no_float_render_target") {
+        setState({ backend, kind: "disabled", reason: "float_render_target_unsupported" });
         return;
       }
       setState({ backend, kind: "ready" });
@@ -215,7 +217,9 @@ function useDotMatrixActive(hostRef: RefObject<HTMLElement | null>): boolean {
 function detectRendererBackend(): DotMatrixRendererBackend {
   const canvas = document.createElement("canvas");
   const gl = canvas.getContext("webgl2", { alpha: true, antialias: false });
-  return gl ? "webgl2" : "none";
+  if (!gl) return "none";
+  if (!gl.getExtension("EXT_color_buffer_float")) return "webgl2_no_float_render_target";
+  return "webgl2";
 }
 
 function errorAttrs(error: unknown): Record<string, string> {

@@ -141,6 +141,8 @@ viteplus_workspace_check(
     generated_srcs = [
         "//src/websites/apps/company:first_light_shader_generated_sources",
         "//src/websites/apps/company:route_tree_generated_sources",
+        "//src/websites/apps/verself-web:dot_matrix_shader_generated_sources",
+        "//src/websites/apps/verself-web:dot_matrix_wave_shader_generated_sources",
         "//src/websites/apps/verself-web:openapi_clients_generated_sources",
         "//src/websites/apps/verself-web:openapi_spec_copies_generated_sources",
         "//src/websites/apps/verself-web:route_tree_generated_sources",
@@ -153,6 +155,8 @@ viteplus_workspace_test(
     generated_srcs = [
         "//src/websites/apps/company:first_light_shader_generated_sources",
         "//src/websites/apps/company:route_tree_generated_sources",
+        "//src/websites/apps/verself-web:dot_matrix_shader_generated_sources",
+        "//src/websites/apps/verself-web:dot_matrix_wave_shader_generated_sources",
         "//src/websites/apps/verself-web:openapi_clients_generated_sources",
         "//src/websites/apps/verself-web:openapi_spec_copies_generated_sources",
         "//src/websites/apps/verself-web:route_tree_generated_sources",
