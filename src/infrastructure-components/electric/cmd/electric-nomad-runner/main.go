@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -61,6 +62,9 @@ func parseConfig(args []string) (config, error) {
 	if fs.NArg() != 0 {
 		return config{}, fmt.Errorf("unexpected positional arguments: %s", strings.Join(fs.Args(), " "))
 	}
+	if !filepath.IsAbs(cfg.storageDir) {
+		return config{}, errors.New("--storage-dir must be absolute")
+	}
 
 	for name, value := range map[string]string{
 		"ctr":                   cfg.ctrBin,
@@ -90,6 +94,9 @@ func run(cfg config) error {
 	port := strings.TrimSpace(os.Getenv(cfg.portEnv))
 	if port == "" {
 		return fmt.Errorf("%s is required", cfg.portEnv)
+	}
+	if err := os.MkdirAll(cfg.storageDir, 0o750); err != nil {
+		return fmt.Errorf("create storage dir %s: %w", cfg.storageDir, err)
 	}
 
 	_ = cleanup(cfg)
