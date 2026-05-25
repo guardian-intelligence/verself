@@ -57,8 +57,8 @@ function SignupVerificationPage() {
     onSubmit: async ({ value }) => {
       if (mode === "join") {
         const invite = inviteCredentialsFromInput(formString(value.inviteLink));
-        await acceptMemberInvite({ data: { token: invite.token } });
-        assignLogin(invite.org);
+        const result = await acceptMemberInvite({ data: { token: invite.token } });
+        assignLogin(result.loginIntent?.loginUrl ?? result.loginUrl, invite.org);
         return;
       }
       if (!signupIntentId || !verificationToken) {
@@ -75,7 +75,7 @@ function SignupVerificationPage() {
           organizationDisplayName: displayName,
         },
       });
-      assignLogin(result.organization.slug);
+      assignLogin(result.loginIntent?.loginUrl ?? result.loginUrl, result.organization.slug);
     },
   });
 
@@ -234,7 +234,13 @@ function inviteCredentialsFromInput(raw: string): { token: string; org?: string 
   return { token: value };
 }
 
-function assignLogin(orgSlug: string | undefined): void {
+function assignLogin(loginURLOrOrgSlug: string | undefined, fallbackOrgSlug?: string): void {
+  if (loginURLOrOrgSlug?.startsWith("http") || loginURLOrOrgSlug?.startsWith("/login")) {
+    const login = new URL(loginURLOrOrgSlug, window.location.origin);
+    window.location.assign(`${login.pathname}${login.search}`);
+    return;
+  }
+  const orgSlug = fallbackOrgSlug ?? loginURLOrOrgSlug;
   const login = new URL("/login", window.location.origin);
   login.searchParams.set("prompt", "login");
   if (orgSlug) {

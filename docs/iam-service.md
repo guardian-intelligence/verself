@@ -535,6 +535,23 @@ Authentication flows remain standard OIDC/OAuth:
 Refresh tokens are issued and refreshed by Zitadel's token endpoint. They are
 never sent to product resource APIs and are not represented in IAM policy DTOs.
 
+Browser auth has three separate pieces of state:
+
+- browser client: the HTTP-only `verself_client` cookie and server row that
+  identify one browser install;
+- browser account: one Zitadel subject, encrypted token bundle, and available
+  Verself organizations under that browser client;
+- selected organization: the product org context for the active browser
+  account.
+
+Every browser product request resolves through browser client, active browser
+account, and selected organization. Browser JavaScript receives only handles,
+user/org metadata, and a cache partition. It never receives Zitadel refresh
+tokens or persisted product bearer tokens. Signup and invite completion return
+constrained login URLs with required subject, email, and org metadata; the
+callback enforces those constraints server-side because `prompt=select_account`
+and `login_hint` are OIDC hints, not authorization facts.
+
 
 ## Feature Parity Surface
 
@@ -543,8 +560,8 @@ surface:
 
 | Surface | Owning package | Notes |
 | --- | --- | --- |
-| Browser login, callback, logout, session read, selected org update | `internal/browser` | Owns cookie/session state and OIDC token exchange. Does not perform product authorization decisions directly. |
-| Browser resource tokens | `internal/browser` plus `internal/authz` | Resource token issuance requires a typed authorization plan and records token audience, org, scope, and freshness. |
+| Browser login, callback, logout, account read/switch/remove, selected org update | `internal/browser` | Owns browser-client and browser-account state plus OIDC token exchange. Does not perform product authorization decisions directly. |
+| Browser resource tokens | `internal/browser` plus `internal/authz` | Resource token issuance is scoped to active account and selected org, and records token audience, org, scope, and freshness. |
 | Available organizations for the caller | `internal/orgs` | Uses token role assignments and directory-backed org metadata; returns only orgs the token proves. |
 | Organization profile read/update/resolve | `internal/orgs` | Profile state lives in IAM PostgreSQL; authorization is checked through typed decisions. |
 | Organization members | `internal/members` | Directory-backed read model for humans. Service accounts are listed and governed through their own resource surface. |

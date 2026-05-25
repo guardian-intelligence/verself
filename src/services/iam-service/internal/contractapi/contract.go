@@ -98,6 +98,10 @@ type SignupVerificationToken string
 
 type LoginURL string
 
+type SubjectId string
+
+type BrowserRedirectPath string
+
 type GivenName string
 
 type FamilyName string
@@ -427,19 +431,30 @@ type StartSignupOutput struct {
 }
 
 type VerifySignupResult struct {
-	Organization OrganizationSummary `json:"organization" required:"true"`
-	LoginURL     LoginURL            `json:"loginUrl" required:"true" minLength:"1" maxLength:"2048"`
+	Organization OrganizationSummary         `json:"organization" required:"true"`
+	LoginURL     LoginURL                    `json:"loginUrl" required:"true" minLength:"1" maxLength:"2048"`
+	LoginIntent  *RequiredAccountLoginIntent `json:"loginIntent,omitempty"`
 }
 
 type VerifySignupOutput struct {
 	Body VerifySignupResult
 }
 
+type RequiredAccountLoginIntent struct {
+	LoginURL        LoginURL            `json:"loginUrl" required:"true" minLength:"1" maxLength:"2048"`
+	Purpose         string              `json:"purpose" required:"true" minLength:"1" maxLength:"64"`
+	RequiredSubject SubjectId           `json:"requiredSubject" required:"true" minLength:"1" maxLength:"512"`
+	RequiredEmail   EmailAddress        `json:"requiredEmail" required:"true" minLength:"3" maxLength:"320"`
+	RequiredOrgID   OrgID               `json:"requiredOrgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	RedirectTo      BrowserRedirectPath `json:"redirectTo,omitempty" minLength:"1" maxLength:"2048"`
+}
+
 type MemberInviteAcceptanceSummary struct {
-	OrgID        OrgID              `json:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
-	MemberID     MemberID           `json:"memberId" required:"true" pattern:"^member_[0-9A-HJKMNP-TV-Z]{26}$"`
-	ResourceName MemberResourceName `json:"resourceName" required:"true" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}/members/member_[0-9A-HJKMNP-TV-Z]{26}$"`
-	LoginURL     LoginURL           `json:"loginUrl" required:"true" minLength:"1" maxLength:"2048"`
+	OrgID        OrgID                       `json:"orgId" required:"true" pattern:"^org_[0-9A-HJKMNP-TV-Z]{26}$"`
+	MemberID     MemberID                    `json:"memberId" required:"true" pattern:"^member_[0-9A-HJKMNP-TV-Z]{26}$"`
+	ResourceName MemberResourceName          `json:"resourceName" required:"true" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:orgs/org_[0-9A-HJKMNP-TV-Z]{26}/members/member_[0-9A-HJKMNP-TV-Z]{26}$"`
+	LoginURL     LoginURL                    `json:"loginUrl" required:"true" minLength:"1" maxLength:"2048"`
+	LoginIntent  *RequiredAccountLoginIntent `json:"loginIntent,omitempty"`
 }
 
 type GetIamPolicyOutput struct {

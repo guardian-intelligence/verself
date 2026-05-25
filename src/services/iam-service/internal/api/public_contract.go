@@ -368,11 +368,24 @@ func (h publicHandlers) AcceptMemberInvite(ctx context.Context, input *contracta
 	}
 	publicOrgID := contractapi.OrgID(acceptance.OrgID)
 	publicMemberID := publicMemberID(acceptance.UserID)
+	loginURL := h.requiredAccountLoginURL(requiredAccountLogin{
+		Purpose:         "invite",
+		RequiredSubject: acceptance.UserID,
+		RequiredEmail:   acceptance.Email,
+		RequiredOrgID:   acceptance.OrgID,
+	})
 	return &contractapi.AcceptMemberInviteOutput{Body: contractapi.MemberInviteAcceptanceSummary{
 		OrgID:        publicOrgID,
 		MemberID:     publicMemberID,
 		ResourceName: publicMemberResourceName(h.installationID, publicOrgID, publicMemberID),
-		LoginURL:     h.loginURL(),
+		LoginURL:     loginURL,
+		LoginIntent: &contractapi.RequiredAccountLoginIntent{
+			LoginURL:        loginURL,
+			Purpose:         "invite",
+			RequiredSubject: contractapi.SubjectId(acceptance.UserID),
+			RequiredEmail:   contractapi.EmailAddress(acceptance.Email),
+			RequiredOrgID:   contractapi.OrgID(acceptance.OrgID),
+		},
 	}}, nil
 }
 
@@ -430,9 +443,25 @@ func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.Ver
 	if err != nil {
 		return nil, identityError(ctx, err)
 	}
+	loginURL := h.requiredAccountLoginURL(requiredAccountLogin{
+		Purpose:         "signup",
+		LoginHint:       result.Intent.Email,
+		RequiredSubject: result.Intent.IdentityProviderUserID,
+		RequiredEmail:   result.Intent.Email,
+		RequiredOrgID:   result.Intent.OrgID,
+		RedirectTo:      "/" + result.Organization.Slug,
+	})
 	return &contractapi.VerifySignupOutput{Body: contractapi.VerifySignupResult{
 		Organization: h.organizationSummary(result.Organization),
-		LoginURL:     h.loginURL(),
+		LoginURL:     loginURL,
+		LoginIntent: &contractapi.RequiredAccountLoginIntent{
+			LoginURL:        loginURL,
+			Purpose:         "signup",
+			RequiredSubject: contractapi.SubjectId(result.Intent.IdentityProviderUserID),
+			RequiredEmail:   contractapi.EmailAddress(result.Intent.Email),
+			RequiredOrgID:   contractapi.OrgID(result.Intent.OrgID),
+			RedirectTo:      contractapi.BrowserRedirectPath("/" + result.Organization.Slug),
+		},
 	}}, nil
 }
 
@@ -823,14 +852,47 @@ func (h publicHandlers) signupVerificationActionURL(intent identity.SignupIntent
 	return base.String(), nil
 }
 
-func (h publicHandlers) loginURL() contractapi.LoginURL {
+type requiredAccountLogin struct {
+	Purpose         string
+	LoginHint       string
+	RequiredSubject string
+	RequiredEmail   string
+	RequiredOrgID   string
+	RedirectTo      string
+}
+
+func (h publicHandlers) requiredAccountLoginURL(input requiredAccountLogin) contractapi.LoginURL {
+	query := url.Values{}
+	query.Set("prompt", "select_account")
+	if strings.TrimSpace(input.Purpose) != "" {
+		query.Set("purpose", strings.TrimSpace(input.Purpose))
+	}
+	if strings.TrimSpace(input.LoginHint) != "" {
+		query.Set("login_hint", strings.TrimSpace(input.LoginHint))
+	}
+	if strings.TrimSpace(input.RequiredSubject) != "" {
+		query.Set("required_subject", strings.TrimSpace(input.RequiredSubject))
+	}
+	if strings.TrimSpace(input.RequiredEmail) != "" {
+		query.Set("required_email", strings.TrimSpace(input.RequiredEmail))
+	}
+	if strings.TrimSpace(input.RequiredOrgID) != "" {
+		query.Set("required_org_id", strings.TrimSpace(input.RequiredOrgID))
+	}
+	if strings.TrimSpace(input.RedirectTo) != "" {
+		query.Set("redirect", strings.TrimSpace(input.RedirectTo))
+	}
+	return h.loginURLWithQuery(query)
+}
+
+func (h publicHandlers) loginURLWithQuery(query url.Values) contractapi.LoginURL {
 	base, err := url.Parse(strings.TrimSpace(h.productBaseURL))
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return contractapi.LoginURL("/login")
 	}
 	base.Path = "/login"
 	base.RawPath = ""
-	base.RawQuery = ""
+	base.RawQuery = query.Encode()
 	base.Fragment = ""
 	return contractapi.LoginURL(base.String())
 }

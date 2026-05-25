@@ -93,12 +93,15 @@ func (c CLI) orgsCreate(ctx context.Context, args []string) error {
 		return err
 	}
 	if profile != nil {
-		profile.SelectedOrg = orgRefFromSDK(org)
+		if profile.Account == nil {
+			return errors.New("active auth profile has no selected account; run `verself auth accounts use`")
+		}
+		profile.Account.SelectedOrg = orgRefFromSDK(org)
 		store, err := newStore(c.getenv)
 		if err != nil {
 			return err
 		}
-		if err := store.SaveProfile(*profile); err != nil {
+		if err := store.SaveAccount(*profile.Account); err != nil {
 			return err
 		}
 	}
@@ -143,8 +146,15 @@ func (c CLI) orgsUse(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	profile.SelectedOrg = orgRefFromSDK(selected)
-	if err := store.SaveProfile(profile); err != nil {
+	if strings.TrimSpace(profile.ActiveAccount) == "" {
+		return errors.New("active auth profile has no selected account; run `verself auth accounts use`")
+	}
+	account, err := store.LoadAccount(profile.Name, profile.ActiveAccount)
+	if err != nil {
+		return err
+	}
+	account.SelectedOrg = orgRefFromSDK(selected)
+	if err := store.SaveAccount(account); err != nil {
 		return err
 	}
 	return writef(c.out, "active org %s\n", selected.Slug)
@@ -317,8 +327,8 @@ func (c CLI) orgsMembersInvite(ctx context.Context, args []string) error {
 }
 
 func selectedOrganization(ctx context.Context, client *verself.Client, profile *ProfileRecord) (verself.Organization, error) {
-	if profile != nil && profile.SelectedOrg != nil && strings.TrimSpace(profile.SelectedOrg.OrgID) != "" {
-		return client.IAM.GetOrganization(ctx, profile.SelectedOrg.OrgID)
+	if profile != nil && profile.Account != nil && profile.Account.SelectedOrg != nil && strings.TrimSpace(profile.Account.SelectedOrg.OrgID) != "" {
+		return client.IAM.GetOrganization(ctx, profile.Account.SelectedOrg.OrgID)
 	}
 	page, err := client.IAM.ListOrganizations(ctx, verself.ListOrganizationsOptions{PageSize: 1})
 	if err != nil {

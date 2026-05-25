@@ -10,6 +10,10 @@ const revokeSessionInputSchema = v.object({
   sessionHandle: v.pipe(v.string(), v.nonEmpty()),
 });
 
+const selectAccountInputSchema = v.object({
+  accountHandle: v.pipe(v.string(), v.nonEmpty()),
+});
+
 const acceptMemberInviteInputSchema = v.object({
   token: v.pipe(v.string(), v.nonEmpty()),
 });
@@ -60,6 +64,21 @@ export const getClientAuthSessions = createServerFn({ method: "GET" })
     return listIdentityBrowserSessions();
   });
 
+export const getClientAuthAccounts = createServerFn({ method: "GET" })
+  .middleware([consoleAuthMiddleware])
+  .handler(async () => {
+    const { listIdentityBrowserAccounts } = await import("./auth.server");
+    return listIdentityBrowserAccounts();
+  });
+
+export const selectActiveAccount = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(selectAccountInputSchema)
+  .handler(async ({ data }) => {
+    const { selectIdentityBrowserAccount } = await import("./auth.server");
+    return selectIdentityBrowserAccount(data.accountHandle);
+  });
+
 export const revokeClientAuthSession = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(revokeSessionInputSchema)
@@ -73,8 +92,7 @@ export const acceptMemberInvite = createServerFn({ method: "POST" })
   .inputValidator(acceptMemberInviteInputSchema)
   .handler(async ({ data }) => {
     const { acceptIdentityMemberInvite } = await import("./auth.server");
-    await acceptIdentityMemberInvite(data);
-    return { accepted: true };
+    return acceptIdentityMemberInvite(data);
   });
 
 export const verifySignup = createServerFn({ method: "POST" })

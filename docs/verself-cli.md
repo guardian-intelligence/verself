@@ -145,7 +145,8 @@ operator checkout
 | Domain | DNS/resource | A DNS name attached to a company, organization, or service origin. `product_domain` names the hosted Verself product root; `company_domain` names the business. |
 | Project | Product workspace | An organization-scoped workspace for source, deployments, workloads, environments, and product resources. |
 | Repository | Source resource | A source-code-hosting-service repository attached to a project and exposed through Git HTTP, tree/blob APIs, and checkout grants. |
-| Profile | Local CLI state | A local XDG-backed pointer to hosted Verself account context, credential reference, and optional default organization/project. |
+| Profile | Local CLI state | A local XDG-backed pointer to a Verself site and service origins. |
+| Account | Local CLI state | A credential reference, subject metadata, and selected organization under one profile. |
 | Company option | Local intent | A secret reference, non-secret config value, or structured provider field set owned by a company record and rendered into bootstrap artifacts when needed. |
 | Bootstrap manifest | Render input | A resolved snapshot produced from the company store plus one-run public option overrides. |
 
@@ -316,8 +317,8 @@ stateDiagram-v2
   OperatorEvidence --> [*]
 ```
 
-Durable local state is append-or-replace by resource kind: profiles and active
-context update XDG config, company records live under XDG data, run records
+Durable local state is append-or-replace by resource kind: profiles, accounts,
+and active context update XDG config/data, company records live under XDG data, run records
 append under XDG state, cached discovery is rebuildable under XDG cache, and
 secret material is stored by reference in the credential store or rendered into
 site SOPS bags. Public bootstrap option overrides affect the current run unless
@@ -325,7 +326,7 @@ the user also writes them through `verself company`.
 
 ## Profile Model
 
-A profile represents one hosted Verself account context.
+A profile represents one hosted Verself site context.
 Profiles are named with `[A-Za-z0-9_.-]+` and contain no path separators.
 The default hosted profile points at `https://verself.sh` and refreshes
 `https://verself.sh/.well-known/verself` before the first auth or API command.
@@ -345,15 +346,31 @@ The default hosted profile points at `https://verself.sh` and refreshes
       "installation_id": "inst_5NZSEA08R8P3HN566DNH8D301M",
       "auth_issuer": "https://verself.sh",
       "console_url": "https://verself.sh",
-      "credential_ref": "verself://profiles/guardian-prod/oauth",
-      "default_org": "guardianintelligence.org",
-      "default_project": "verself"
+      "active_account": "acct_JAAJQjCf6N2hFf9vAnf9m8PL"
     },
     "local-bootstrap": {
       "kind": "bootstrap-local",
       "repo_root": "/home/ubuntu/Projects/verself-sh",
       "site": "prod"
     }
+  }
+}
+```
+
+`$XDG_DATA_HOME/verself/accounts/guardian-prod/acct_JAAJQjCf6N2hFf9vAnf9m8PL.json`:
+
+```json
+{
+  "version": 1,
+  "profile_name": "guardian-prod",
+  "handle": "acct_JAAJQjCf6N2hFf9vAnf9m8PL",
+  "subject": "287000000000000000",
+  "email": "owner@example.com",
+  "token_ref": "verself-cred://9f3c8cfd46e0d7d70c7567f11f1a0d78",
+  "selected_org": {
+    "org_id": "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
+    "slug": "guardian-intelligence",
+    "display_name": "Guardian Intelligence"
   }
 }
 ```
@@ -403,16 +420,19 @@ deployment linkage. User-specific overrides belong in XDG profile config.
 
 ## Auth UX
 
-Hosted auth is profile-first. `verself auth login` loads the active profile,
-fetches its discovery manifest, reads `auth.issuer_url`, `auth.cli_client_id`,
-and `auth.product_api_audience`, and runs OAuth device authorization. The access
-and refresh token bundle is stored behind `credential_ref`; profile files store
-only non-secret references and selected org metadata.
+Hosted auth resolves in two steps. A profile stores site and service discovery
+state. An account under that profile stores the credential reference, subject
+metadata, and selected organization. Product commands resolve active profile,
+then active account, then selected organization. This keeps multiple accounts
+for one Verself site explicit for humans and agents.
 
 ```text
 verself auth signup --email owner@example.com --org "Acme"
 verself auth signup verify --url "$SIGNUP_URL"
 verself auth login
+verself auth accounts list
+verself auth accounts use <handle|email|subject>
+verself auth accounts logout [handle|email|subject]
 verself auth whoami
 verself auth logout
 ```
@@ -422,7 +442,9 @@ verification email and creates no Zitadel user, organization, SpiceDB
 relationship, or product account until `verself auth signup verify` submits the
 verification token. Signup commands emit JSON by default; the `message` field is
 the human-readable status line. After verification, the user signs in through the
-same OIDC login path as any existing user.
+same OIDC login path as any existing user. Verification responses include a
+constrained login URL so a browser already signed into a different account is
+asked to select the intended account.
 
 Organization invites use the authenticated IAM member invite API and the public
 invite acceptance API:
@@ -440,9 +462,9 @@ Workload trust is the preferred path for CI, Verself runners, agents, and
 self-hosted runtimes that can present their own identity. Credential files are
 the fallback for runtimes without an identity provider. Credential files must be
 regular files with owner-only permissions; the CLI refuses world-readable files.
-SDK-backed commands read the active auth profile by default. Command-level
-credential-source and service-origin overrides exist for diagnostics and isolated
-CI jobs.
+SDK-backed commands read the active auth profile and active account by default.
+Command-level credential-source and service-origin overrides exist for
+diagnostics and isolated CI jobs.
 
 ## Public Command Surface
 
@@ -973,8 +995,9 @@ than normal organization membership.
 
 ## Security Controls
 
-- Profile config stores no bearer tokens, refresh tokens, provider tokens, or
-  admin credentials.
+- Profile and account config store no bearer tokens, refresh tokens, provider
+  tokens, or admin credentials. Account config stores only a credential
+  reference and non-secret subject/org metadata.
 - Provider tokens enter company options through stdin, environment variables, OS
   credential stores, or encrypted SOPS bags.
 - Generated secrets use cryptographic randomness and are written to encrypted

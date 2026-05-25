@@ -18,8 +18,9 @@ func TestVerifySelectedOrganizationClaimsAllowsNoOrganizationContext(t *testing.
 func TestSnapshotForSessionAllowsSignedInUserWithoutOrganization(t *testing.T) {
 	now := time.Now().UTC()
 	session := &browserSession{
-		SessionHash:          "hash",
-		SessionHandle:        "bs_handle",
+		ClientHash:           "client-hash",
+		ClientHandle:         "bc_handle",
+		AccountHandle:        "ba_handle",
 		ClientCachePartition: "partition",
 		AccessToken:          "access-token",
 		ExpiresAt:            now.Add(time.Hour),
@@ -52,6 +53,9 @@ func TestBrowserLoginPromptAllowsAccountSelectionPromptOnly(t *testing.T) {
 	}
 	if got := browserLoginPrompt(" login "); got != "login" {
 		t.Fatalf("browserLoginPrompt trims login = %q", got)
+	}
+	if got := browserLoginPrompt("select_account"); got != "select_account" {
+		t.Fatalf("browserLoginPrompt(select_account) = %q", got)
 	}
 }
 

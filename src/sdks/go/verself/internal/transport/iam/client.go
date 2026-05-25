@@ -334,8 +334,18 @@ type VerifySignupRequest struct {
 }
 
 type VerifySignupResult struct {
-	Organization OrganizationSummary `json:"organization"`
-	LoginURL     LoginURL            `json:"loginUrl"`
+	Organization OrganizationSummary         `json:"organization"`
+	LoginURL     LoginURL                    `json:"loginUrl"`
+	LoginIntent  *RequiredAccountLoginIntent `json:"loginIntent,omitempty"`
+}
+
+type RequiredAccountLoginIntent struct {
+	LoginURL        LoginURL `json:"loginUrl"`
+	Purpose         string   `json:"purpose"`
+	RequiredSubject string   `json:"requiredSubject"`
+	RequiredEmail   string   `json:"requiredEmail"`
+	RequiredOrgID   OrgId    `json:"requiredOrgId"`
+	RedirectTo      *string  `json:"redirectTo,omitempty"`
 }
 
 type VerifySignupResponse struct {

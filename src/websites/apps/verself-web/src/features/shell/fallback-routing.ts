@@ -11,7 +11,7 @@ export function shellNotFoundFallbackData(fallbackPath: string): ShellNotFoundFa
 }
 
 export function accountSelectionLoginPath(redirectTo: string): string {
-  const search = new URLSearchParams({ prompt: "login", redirect: redirectTo });
+  const search = new URLSearchParams({ prompt: "select_account", redirect: redirectTo });
   return `/login?${search.toString()}`;
 }
 
