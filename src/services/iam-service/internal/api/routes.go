@@ -35,6 +35,7 @@ type SignupVerificationNotification struct {
 	OrgID                   string
 	Email                   string
 	OrganizationDisplayName string
+	VerificationFingerprint string
 	ActionURL               string
 	ResourceName            string
 }
@@ -70,6 +71,7 @@ func RegisterAuthPublicRoutes(api huma.API, svc *identity.Service, authzSvc *aut
 		signupNotifier: signupNotifier,
 	}
 	registerPublicOperation(api, runtime, contractapi.AcceptMemberInvite, handlers.AcceptMemberInvite, "Accept member invite")
+	registerPublicOperation(api, runtime, contractapi.CheckOrganizationSlugAvailability, handlers.CheckOrganizationSlugAvailability, "Check organization slug availability")
 	registerPublicOperation(api, runtime, contractapi.StartSignup, handlers.StartSignup, "Start signup")
 	registerPublicOperation(api, runtime, contractapi.VerifySignup, handlers.VerifySignup, "Verify signup")
 }

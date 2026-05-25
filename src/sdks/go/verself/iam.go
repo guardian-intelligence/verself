@@ -2,6 +2,8 @@ package verself
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -36,13 +38,15 @@ type OrganizationList struct {
 	NextPageToken string         `json:"nextPageToken,omitempty"`
 }
 
-type SignupIntent struct {
-	SignupIntentID          string `json:"signupIntentId"`
-	ResourceName            string `json:"resourceName"`
-	OrganizationDisplayName string `json:"organizationDisplayName"`
-	OrganizationSlug        string `json:"organizationSlug,omitempty"`
-	Status                  string `json:"status"`
-	VerificationExpiresAt   string `json:"verificationExpiresAt"`
+type OrganizationSlugAvailability struct {
+	Slug      string `json:"slug"`
+	Available bool   `json:"available"`
+}
+
+type SignupStartResult struct {
+	Message               string `json:"message"`
+	Status                string `json:"status"`
+	VerificationExpiresAt string `json:"verificationExpiresAt"`
 }
 
 type Member struct {
@@ -102,6 +106,7 @@ type VerifySignupInput struct {
 	SignupIntentID          string
 	VerificationToken       string
 	OrganizationDisplayName *string
+	OrganizationSlug        *string
 	IdempotencyKey          string
 }
 
@@ -217,18 +222,39 @@ func (c *IAMClient) CreateOrganization(ctx context.Context, input CreateOrganiza
 	return organizationFromGenerated(*response.Result), nil
 }
 
-func (c *IAMClient) StartSignup(ctx context.Context, input StartSignupInput) (SignupIntent, error) {
+func (c *IAMClient) CheckOrganizationSlugAvailability(ctx context.Context, slug string) (OrganizationSlugAvailability, error) {
 	if c == nil || c.client == nil {
-		return SignupIntent{}, fmt.Errorf("verself sdk: iam client is not initialized")
+		return OrganizationSlugAvailability{}, fmt.Errorf("verself sdk: iam client is not initialized")
+	}
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return OrganizationSlugAvailability{}, fmt.Errorf("verself sdk: organization slug is required")
+	}
+	response, err := c.client.CheckOrganizationSlugAvailability(ctx, iamcore.CheckOrganizationSlugAvailabilityRequest{Slug: iamcore.OrgSlug(slug)})
+	if err != nil {
+		return OrganizationSlugAvailability{}, err
+	}
+	if response.Result == nil {
+		return OrganizationSlugAvailability{}, iamAPIError("check organization slug availability", response.StatusCode, response.Problem, response.Body)
+	}
+	return OrganizationSlugAvailability{
+		Slug:      string(response.Result.Slug),
+		Available: response.Result.Available,
+	}, nil
+}
+
+func (c *IAMClient) StartSignup(ctx context.Context, input StartSignupInput) (SignupStartResult, error) {
+	if c == nil || c.client == nil {
+		return SignupStartResult{}, fmt.Errorf("verself sdk: iam client is not initialized")
 	}
 	email := strings.TrimSpace(input.Email)
 	displayName := strings.TrimSpace(input.OrganizationDisplayName)
 	if email == "" || displayName == "" {
-		return SignupIntent{}, fmt.Errorf("verself sdk: email and organization display name are required")
+		return SignupStartResult{}, fmt.Errorf("verself sdk: email and organization display name are required")
 	}
-	key, err := mutationKey("iam-signup-start", input.IdempotencyKey)
+	key, err := deterministicMutationKey("iam-signup-start", input.IdempotencyKey, email, displayName, stringPointerValue(input.OrganizationSlug), stringPointerValue(input.GivenName), stringPointerValue(input.FamilyName))
 	if err != nil {
-		return SignupIntent{}, err
+		return SignupStartResult{}, err
 	}
 	body := iamcore.StartSignupInputBody{
 		Email:                   iamcore.EmailAddress(email),
@@ -248,12 +274,16 @@ func (c *IAMClient) StartSignup(ctx context.Context, input StartSignupInput) (Si
 		Body:           body,
 	})
 	if err != nil {
-		return SignupIntent{}, err
+		return SignupStartResult{}, err
 	}
 	if response.Result == nil {
-		return SignupIntent{}, iamAPIError("start signup", response.StatusCode, response.Problem, response.Body)
+		return SignupStartResult{}, iamAPIError("start signup", response.StatusCode, response.Problem, response.Body)
 	}
-	return signupIntentFromGenerated(*response.Result), nil
+	return SignupStartResult{
+		Message:               response.Result.Message,
+		Status:                string(response.Result.Status),
+		VerificationExpiresAt: response.Result.VerificationExpiresAt,
+	}, nil
 }
 
 func (c *IAMClient) VerifySignup(ctx context.Context, input VerifySignupInput) (SignupVerificationResult, error) {
@@ -265,7 +295,7 @@ func (c *IAMClient) VerifySignup(ctx context.Context, input VerifySignupInput) (
 	if signupIntentID == "" || verificationToken == "" {
 		return SignupVerificationResult{}, fmt.Errorf("verself sdk: signup intent id and verification token are required")
 	}
-	key, err := mutationKey("iam-signup-verify", input.IdempotencyKey)
+	key, err := deterministicMutationKey("iam-signup-verify", input.IdempotencyKey, signupIntentID, verificationToken, stringPointerValue(input.OrganizationDisplayName), stringPointerValue(input.OrganizationSlug))
 	if err != nil {
 		return SignupVerificationResult{}, err
 	}
@@ -275,6 +305,7 @@ func (c *IAMClient) VerifySignup(ctx context.Context, input VerifySignupInput) (
 		Body: iamcore.VerifySignupInputBody{
 			VerificationToken:       iamcore.SignupVerificationToken(verificationToken),
 			OrganizationDisplayName: optionalCoreString[iamcore.DisplayName](input.OrganizationDisplayName),
+			OrganizationSlug:        optionalCoreString[iamcore.OrgSlug](input.OrganizationSlug),
 		},
 	})
 	if err != nil {
@@ -534,15 +565,25 @@ func organizationFromGenerated(input iamcore.OrganizationSummary) Organization {
 	}
 }
 
-func signupIntentFromGenerated(input iamcore.SignupIntentSummary) SignupIntent {
-	return SignupIntent{
-		SignupIntentID:          input.SignupIntentID,
-		ResourceName:            input.ResourceName,
-		OrganizationDisplayName: input.OrganizationDisplayName,
-		OrganizationSlug:        stringValue(input.OrganizationSlug),
-		Status:                  string(input.Status),
-		VerificationExpiresAt:   input.VerificationExpiresAt,
+func deterministicMutationKey(namespace, explicit string, parts ...string) (string, error) {
+	if strings.TrimSpace(explicit) != "" {
+		return mutationKey(namespace, explicit)
 	}
+	digest := sha256.New()
+	_, _ = digest.Write([]byte(namespace))
+	for _, part := range parts {
+		_, _ = digest.Write([]byte{0})
+		_, _ = digest.Write([]byte(strings.TrimSpace(part)))
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(digest.Sum(nil))
+	return namespace + ":" + encoded[:32], nil
+}
+
+func stringPointerValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func signupVerificationResultFromGenerated(input iamcore.VerifySignupResult) SignupVerificationResult {

@@ -3,6 +3,7 @@ package identity
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -12,11 +13,81 @@ import (
 	identitystore "github.com/verself/iam-service/internal/store"
 )
 
-func (s SQLStore) CreateSignupIntent(ctx context.Context, intent SignupIntent) (SignupIntent, bool, error) {
+const signupVerificationResendInterval = time.Minute
+
+func (s SQLStore) StartSignupIntent(ctx context.Context, intent SignupIntent, now time.Time) (SignupStartDecision, error) {
 	if s.PG == nil {
-		return SignupIntent{}, false, ErrStoreUnavailable
+		return SignupStartDecision{}, ErrStoreUnavailable
 	}
-	row, err := s.q().InsertSignupIntent(ctx, identitystore.InsertSignupIntentParams{
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return SignupStartDecision{}, fmt.Errorf("%w: begin signup start: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	if err := lockSignupEmailHash(ctx, tx, intent.EmailHash); err != nil {
+		return SignupStartDecision{}, err
+	}
+	q := identitystore.New(tx)
+	if completed, err := q.GetCompletedSignupIntentByEmailHashForUpdate(ctx, identitystore.GetCompletedSignupIntentByEmailHashForUpdateParams{EmailHash: append([]byte(nil), intent.EmailHash...)}); err == nil {
+		converted, err := signupIntentFromRow(completed)
+		if err != nil {
+			return SignupStartDecision{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return SignupStartDecision{}, fmt.Errorf("%w: commit completed signup start: %v", ErrStoreUnavailable, err)
+		}
+		return SignupStartDecision{Intent: converted, Outcome: SignupStartOutcomeExistingAccountSuppressed}, nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return SignupStartDecision{}, fmt.Errorf("%w: load completed signup intent by email: %v", ErrStoreUnavailable, err)
+	}
+	if reusable, err := q.GetReusableSignupIntentByEmailHashForUpdate(ctx, identitystore.GetReusableSignupIntentByEmailHashForUpdateParams{EmailHash: append([]byte(nil), intent.EmailHash...)}); err == nil {
+		if reusable.State == string(SignupIntentStatePendingVerification) && now.Before(reusable.UpdatedAt.Time.Add(signupVerificationResendInterval)) {
+			converted, err := signupIntentFromRow(reusable)
+			if err != nil {
+				return SignupStartDecision{}, err
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return SignupStartDecision{}, fmt.Errorf("%w: commit signup resend throttle: %v", ErrStoreUnavailable, err)
+			}
+			return SignupStartDecision{Intent: converted, Outcome: SignupStartOutcomeVerificationRecentlySent}, nil
+		}
+		rotated, err := q.RotateReusableSignupIntentVerification(ctx, identitystore.RotateReusableSignupIntentVerificationParams{
+			SignupIntentID:            reusable.SignupIntentID,
+			RequestHash:               append([]byte(nil), intent.RequestHash...),
+			OrganizationDisplayName:   intent.OrganizationDisplayName,
+			RequestedOrganizationSlug: intent.RequestedOrganizationSlug,
+			GivenName:                 intent.GivenName,
+			FamilyName:                intent.FamilyName,
+			VerificationTokenHash:     append([]byte(nil), intent.VerificationTokenHash...),
+			VerificationExpiresAt:     timestamptz(intent.VerificationExpiresAt),
+		})
+		if err != nil {
+			return SignupStartDecision{}, fmt.Errorf("%w: rotate signup verification token: %v", ErrStoreUnavailable, err)
+		}
+		converted, err := signupIntentFromRow(rotated)
+		if err != nil {
+			return SignupStartDecision{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return SignupStartDecision{}, fmt.Errorf("%w: commit signup verification resend: %v", ErrStoreUnavailable, err)
+		}
+		return SignupStartDecision{Intent: converted, Outcome: SignupStartOutcomeVerificationResent}, nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return SignupStartDecision{}, fmt.Errorf("%w: load reusable signup intent by email: %v", ErrStoreUnavailable, err)
+	}
+	if inflight, err := q.GetInFlightSignupIntentByEmailHashForUpdate(ctx, identitystore.GetInFlightSignupIntentByEmailHashForUpdateParams{EmailHash: append([]byte(nil), intent.EmailHash...)}); err == nil {
+		converted, err := signupIntentFromRow(inflight)
+		if err != nil {
+			return SignupStartDecision{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return SignupStartDecision{}, fmt.Errorf("%w: commit inflight signup start: %v", ErrStoreUnavailable, err)
+		}
+		return SignupStartDecision{Intent: converted, Outcome: SignupStartOutcomeInFlightSuppressed}, nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return SignupStartDecision{}, fmt.Errorf("%w: load inflight signup intent by email: %v", ErrStoreUnavailable, err)
+	}
+	row, err := q.InsertSignupIntent(ctx, identitystore.InsertSignupIntentParams{
 		SignupIntentID:            intent.SignupIntentID,
 		IdempotencyKey:            intent.IdempotencyKey,
 		RequestHash:               append([]byte(nil), intent.RequestHash...),
@@ -32,26 +103,49 @@ func (s SQLStore) CreateSignupIntent(ctx context.Context, intent SignupIntent) (
 	})
 	if err == nil {
 		created, convErr := signupIntentFromRow(row)
-		return created, true, convErr
+		if convErr != nil {
+			return SignupStartDecision{}, convErr
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return SignupStartDecision{}, fmt.Errorf("%w: commit signup intent create: %v", ErrStoreUnavailable, err)
+		}
+		return SignupStartDecision{Intent: created, Outcome: SignupStartOutcomeCreated}, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return SignupIntent{}, false, fmt.Errorf("%w: create signup intent: %v", ErrStoreUnavailable, err)
+		return SignupStartDecision{}, fmt.Errorf("%w: create signup intent: %v", ErrStoreUnavailable, err)
 	}
-	existing, err := s.q().GetSignupIntentByIdempotencyKey(ctx, identitystore.GetSignupIntentByIdempotencyKeyParams{IdempotencyKey: intent.IdempotencyKey})
+	existing, err := q.GetSignupIntentByIdempotencyKey(ctx, identitystore.GetSignupIntentByIdempotencyKeyParams{IdempotencyKey: intent.IdempotencyKey})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return SignupIntent{}, false, ErrSignupIntentMissing
+		return SignupStartDecision{}, ErrSignupIntentMissing
 	}
 	if err != nil {
-		return SignupIntent{}, false, fmt.Errorf("%w: load signup intent by idempotency key: %v", ErrStoreUnavailable, err)
+		return SignupStartDecision{}, fmt.Errorf("%w: load signup intent by idempotency key: %v", ErrStoreUnavailable, err)
 	}
 	converted, err := signupIntentFromRow(existing)
 	if err != nil {
-		return SignupIntent{}, false, err
+		return SignupStartDecision{}, err
 	}
 	if !bytes.Equal(converted.RequestHash, intent.RequestHash) {
-		return SignupIntent{}, false, ErrIdempotencyConflict
+		return SignupStartDecision{}, ErrIdempotencyConflict
 	}
-	return converted, false, nil
+	if err := tx.Commit(ctx); err != nil {
+		return SignupStartDecision{}, fmt.Errorf("%w: commit signup idempotent replay: %v", ErrStoreUnavailable, err)
+	}
+	return SignupStartDecision{Intent: converted, Outcome: SignupStartOutcomeInFlightSuppressed}, nil
+}
+
+func lockSignupEmailHash(ctx context.Context, tx pgx.Tx, emailHash []byte) error {
+	if len(emailHash) < 8 {
+		return fmt.Errorf("%w: signup email hash is invalid", ErrInvalidInput)
+	}
+	var lockKey int64
+	if err := binary.Read(bytes.NewReader(emailHash[:8]), binary.BigEndian, &lockKey); err != nil {
+		return fmt.Errorf("%w: decode signup email lock hash: %v", ErrInvalidInput, err)
+	}
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
+		return fmt.Errorf("%w: lock signup email hash: %v", ErrStoreUnavailable, err)
+	}
+	return nil
 }
 
 func (s SQLStore) DeletePendingSignupIntent(ctx context.Context, signupIntentID string) error {
@@ -64,7 +158,7 @@ func (s SQLStore) DeletePendingSignupIntent(ctx context.Context, signupIntentID 
 	return nil
 }
 
-func (s SQLStore) ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, organizationDisplayName string, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error) {
+func (s SQLStore) ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, organizationDisplayName string, requestedOrganizationSlug string, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error) {
 	if s.PG == nil {
 		return SignupIntent{}, ErrStoreUnavailable
 	}
@@ -119,6 +213,7 @@ func (s SQLStore) ClaimSignupIntentForVerification(ctx context.Context, signupIn
 		VerifyIdempotencyKey:          idempotencyKey,
 		VerifyRequestHash:             append([]byte(nil), verifyRequestHash...),
 		OrganizationDisplayName:       organizationDisplayName,
+		RequestedOrganizationSlug:     requestedOrganizationSlug,
 		VerifiedAt:                    timestamptz(now),
 		MaterializationLeaseExpiresAt: timestamptz(leaseExpiresAt),
 		SignupIntentID:                signupIntentID,
@@ -133,6 +228,9 @@ func (s SQLStore) ClaimSignupIntentForVerification(ctx context.Context, signupIn
 	intent.VerifyRequestHash = append([]byte(nil), verifyRequestHash...)
 	if organizationDisplayName != "" {
 		intent.OrganizationDisplayName = organizationDisplayName
+	}
+	if requestedOrganizationSlug != "" {
+		intent.RequestedOrganizationSlug = requestedOrganizationSlug
 	}
 	intent.MaterializationAttempts++
 	intent.MaterializationLastError = ""

@@ -389,6 +389,20 @@ func (h publicHandlers) AcceptMemberInvite(ctx context.Context, input *contracta
 	}}, nil
 }
 
+func (h publicHandlers) CheckOrganizationSlugAvailability(ctx context.Context, input *contractapi.CheckOrganizationSlugAvailabilityInput) (*contractapi.CheckOrganizationSlugAvailabilityOutput, error) {
+	if input == nil {
+		return nil, badRequest(ctx, "invalid-organization-slug", "organization slug request is invalid", nil)
+	}
+	available, err := h.service.OrganizationSlugAvailability(ctx, string(input.Slug))
+	if err != nil {
+		return nil, identityError(ctx, err)
+	}
+	return &contractapi.CheckOrganizationSlugAvailabilityOutput{Body: contractapi.OrganizationSlugAvailability{
+		Slug:      contractapi.OrgSlug(strings.TrimSpace(string(input.Slug))),
+		Available: available,
+	}}, nil
+}
+
 func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.StartSignupInput) (*contractapi.StartSignupOutput, error) {
 	if input == nil {
 		return nil, badRequest(ctx, "invalid-signup", "signup request is invalid", nil)
@@ -404,15 +418,18 @@ func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.Star
 	if err != nil {
 		return nil, identityError(ctx, err)
 	}
-	summary := h.signupIntentSummary(result.Intent)
-	if result.Created {
+	if result.SendVerificationEmail() {
 		if h.signupNotifier == nil {
-			_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
+			if result.CreatedIntent() {
+				_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
+			}
 			return nil, internalFailure(ctx, "signup-notifier-unavailable", "signup notification delivery is unavailable", nil)
 		}
 		actionURL, err := h.signupVerificationActionURL(result.Intent, result.VerificationToken)
 		if err != nil {
-			_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
+			if result.CreatedIntent() {
+				_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
+			}
 			return nil, internalFailure(ctx, "signup-url-invalid", "signup verification URL could not be built", err)
 		}
 		if err := h.signupNotifier.SendSignupVerification(ctx, SignupVerificationNotification{
@@ -420,14 +437,21 @@ func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.Star
 			OrgID:                   result.Intent.OrgID,
 			Email:                   result.Intent.Email,
 			OrganizationDisplayName: result.Intent.OrganizationDisplayName,
+			VerificationFingerprint: signupVerificationFingerprint(result.VerificationToken),
 			ActionURL:               actionURL,
-			ResourceName:            string(summary.ResourceName),
+			ResourceName:            publicSignupIntentResourceName(h.installationID, result.Intent.SignupIntentID),
 		}); err != nil {
-			_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
+			if result.CreatedIntent() {
+				_ = h.service.DeletePendingSignupIntent(ctx, result.Intent.SignupIntentID)
+			}
 			return nil, upstreamFailure(ctx, "signup-notification-failed", "signup notification could not be queued", err)
 		}
 	}
-	return &contractapi.StartSignupOutput{Body: summary}, nil
+	return &contractapi.StartSignupOutput{Body: contractapi.SignupStartResult{
+		Message:               signupStartMessage(result.ResponseExpiresAt),
+		Status:                "accepted",
+		VerificationExpiresAt: result.ResponseExpiresAt.UTC().Format(time.RFC3339Nano),
+	}}, nil
 }
 
 func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.VerifySignupInput) (*contractapi.VerifySignupOutput, error) {
@@ -438,6 +462,7 @@ func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.Ver
 		SignupIntentID:          string(input.SignupIntentID),
 		VerificationToken:       string(input.Body.VerificationToken),
 		OrganizationDisplayName: contractString(input.Body.OrganizationDisplayName),
+		OrganizationSlug:        contractString(input.Body.OrganizationSlug),
 		IdempotencyKey:          string(input.IdempotencyKey),
 	})
 	if err != nil {
@@ -779,29 +804,13 @@ func (h publicHandlers) memberInvitationSummary(orgID string, invitation identit
 	}
 }
 
-func (h publicHandlers) signupIntentSummary(intent identity.SignupIntent) contractapi.SignupIntentSummary {
-	publicSignupIntentID := contractapi.SignupIntentID(intent.SignupIntentID)
-	return contractapi.SignupIntentSummary{
-		SignupIntentID:          publicSignupIntentID,
-		ResourceName:            publicSignupIntentResourceName(h.installationID, publicSignupIntentID),
-		OrganizationDisplayName: contractapi.DisplayName(intent.OrganizationDisplayName),
-		OrganizationSlug:        optionalContractValue[contractapi.OrgSlug](firstNonEmpty(intent.OrganizationSlug, intent.RequestedOrganizationSlug)),
-		Status:                  publicSignupIntentStatus(intent.State),
-		VerificationExpiresAt:   intent.VerificationExpiresAt.Format(time.RFC3339Nano),
-	}
+func signupStartMessage(expiresAt time.Time) string {
+	return fmt.Sprintf("Check your email to continue. If signup is available for this address, the newest signup link is valid until %s.", expiresAt.UTC().Format(time.RFC3339Nano))
 }
 
-func publicSignupIntentStatus(state identity.SignupIntentState) contractapi.SignupIntentStatus {
-	switch state {
-	case identity.SignupIntentStatePendingVerification:
-		return contractapi.SignupIntentStatus("verification_pending")
-	case identity.SignupIntentStateCompleted:
-		return contractapi.SignupIntentStatus("verified")
-	case identity.SignupIntentStateExpired:
-		return contractapi.SignupIntentStatus("expired")
-	default:
-		return contractapi.SignupIntentStatus("verification_pending")
-	}
+func signupVerificationFingerprint(token string) string {
+	fingerprint, _ := identity.SecretHash(token)
+	return fingerprint
 }
 
 func (h publicHandlers) memberInviteActionURL(org identity.Organization, invitation identity.InviteMemberResult) (string, error) {
@@ -848,6 +857,9 @@ func (h publicHandlers) signupVerificationActionURL(intent identity.SignupIntent
 	query.Set("signup_intent_id", strings.TrimSpace(intent.SignupIntentID))
 	query.Set("verification_token", verificationToken)
 	query.Set("organization_display_name", intent.OrganizationDisplayName)
+	if strings.TrimSpace(intent.RequestedOrganizationSlug) != "" {
+		query.Set("organization_slug", strings.TrimSpace(intent.RequestedOrganizationSlug))
+	}
 	base.RawQuery = query.Encode()
 	return base.String(), nil
 }
@@ -1031,8 +1043,8 @@ func publicOrganizationResourceName(installationID string, orgID contractapi.Org
 	return contractapi.OrganizationResourceName(fmt.Sprintf("urn:verself:%s:orgs/%s", strings.TrimSpace(installationID), orgID))
 }
 
-func publicSignupIntentResourceName(installationID string, signupIntentID contractapi.SignupIntentID) contractapi.SignupIntentResourceName {
-	return contractapi.SignupIntentResourceName(fmt.Sprintf("urn:verself:%s:signup-intents/%s", strings.TrimSpace(installationID), signupIntentID))
+func publicSignupIntentResourceName(installationID string, signupIntentID string) string {
+	return fmt.Sprintf("urn:verself:%s:signup-intents/%s", strings.TrimSpace(installationID), signupIntentID)
 }
 
 func publicMemberResourceName(installationID string, orgID contractapi.OrgID, memberID contractapi.MemberID) contractapi.MemberResourceName {

@@ -47,7 +47,8 @@ func (s *Service) StartSignup(ctx context.Context, input StartSignupRequest) (St
 	}
 	_, emailHash := SecretHash(input.Email)
 	now := s.now()
-	intent, created, err := store.CreateSignupIntent(ctx, SignupIntent{
+	responseExpiresAt := now.Add(24 * time.Hour)
+	decision, err := store.StartSignupIntent(ctx, SignupIntent{
 		SignupIntentID:            signupIntentID,
 		IdempotencyKey:            input.IdempotencyKey,
 		RequestHash:               requestHash,
@@ -62,30 +63,100 @@ func (s *Service) StartSignup(ctx context.Context, input StartSignupRequest) (St
 		OrgID:                     orgID,
 		CreatedAt:                 now,
 		UpdatedAt:                 now,
-		VerificationExpiresAt:     now.Add(24 * time.Hour),
-	})
+		VerificationExpiresAt:     responseExpiresAt,
+	}, now)
 	if err != nil {
 		return StartSignupResult{}, err
 	}
-	if err := s.emitSignupEvent(ctx, store, IAMEvent{
-		EventType:          "iam.signup_intent.started",
-		AggregateType:      "signup_intent",
-		AggregateID:        intent.SignupIntentID,
-		SignupIntentID:     intent.SignupIntentID,
-		OrgID:              intent.OrgID,
-		State:              intent.State,
-		Outcome:            eventOutcome(created, "created", "idempotent_replay"),
-		OccurredAt:         now,
-		IdempotencyKeyHash: hashText(input.IdempotencyKey),
-		CorrelationID:      input.IdempotencyKey,
-		Payload:            map[string]any{"organization_display_name": intent.OrganizationDisplayName, "requested_organization_slug": intent.RequestedOrganizationSlug},
-	}); err != nil {
-		return StartSignupResult{}, err
+	if decision.Intent.VerificationExpiresAt.After(now) {
+		responseExpiresAt = decision.Intent.VerificationExpiresAt
 	}
-	if !created {
+	switch decision.Outcome {
+	case SignupStartOutcomeExistingAccountSuppressed:
+		responseExpiresAt = now.Add(24 * time.Hour)
+		if err := s.emitSignupEvent(ctx, store, IAMEvent{
+			EventType:      "iam.signup_intent.existing_account_suppressed",
+			AggregateType:  "signup_intent",
+			AggregateID:    decision.Intent.SignupIntentID,
+			SignupIntentID: decision.Intent.SignupIntentID,
+			OrgID:          decision.Intent.OrgID,
+			State:          decision.Intent.State,
+			Outcome:        "suppressed",
+			OccurredAt:     now,
+			Payload:        map[string]any{"email_fingerprint": hashText(input.Email)},
+		}); err != nil {
+			return StartSignupResult{}, err
+		}
+		token = ""
+	case SignupStartOutcomeInFlightSuppressed:
+		responseExpiresAt = now.Add(24 * time.Hour)
+		if err := s.emitSignupEvent(ctx, store, IAMEvent{
+			EventType:      "iam.signup_intent.inflight_suppressed",
+			AggregateType:  "signup_intent",
+			AggregateID:    decision.Intent.SignupIntentID,
+			SignupIntentID: decision.Intent.SignupIntentID,
+			OrgID:          decision.Intent.OrgID,
+			State:          decision.Intent.State,
+			Outcome:        "suppressed",
+			OccurredAt:     now,
+			Payload:        map[string]any{"email_fingerprint": hashText(input.Email)},
+		}); err != nil {
+			return StartSignupResult{}, err
+		}
+		token = ""
+	case SignupStartOutcomeVerificationRecentlySent:
+		if err := s.emitSignupEvent(ctx, store, IAMEvent{
+			EventType:          "iam.signup_intent.verification_recently_sent",
+			AggregateType:      "signup_intent",
+			AggregateID:        decision.Intent.SignupIntentID,
+			SignupIntentID:     decision.Intent.SignupIntentID,
+			OrgID:              decision.Intent.OrgID,
+			State:              decision.Intent.State,
+			Outcome:            "throttled",
+			OccurredAt:         now,
+			IdempotencyKeyHash: hashText(input.IdempotencyKey),
+			CorrelationID:      input.IdempotencyKey,
+			Payload:            map[string]any{"organization_display_name": decision.Intent.OrganizationDisplayName, "requested_organization_slug": decision.Intent.RequestedOrganizationSlug},
+		}); err != nil {
+			return StartSignupResult{}, err
+		}
+		token = ""
+	case SignupStartOutcomeVerificationResent:
+		if err := s.emitSignupEvent(ctx, store, IAMEvent{
+			EventType:          "iam.signup_intent.verification_resent",
+			AggregateType:      "signup_intent",
+			AggregateID:        decision.Intent.SignupIntentID,
+			SignupIntentID:     decision.Intent.SignupIntentID,
+			OrgID:              decision.Intent.OrgID,
+			State:              decision.Intent.State,
+			Outcome:            "resent",
+			OccurredAt:         now,
+			IdempotencyKeyHash: hashText(input.IdempotencyKey),
+			CorrelationID:      input.IdempotencyKey,
+			Payload:            map[string]any{"organization_display_name": decision.Intent.OrganizationDisplayName, "requested_organization_slug": decision.Intent.RequestedOrganizationSlug},
+		}); err != nil {
+			return StartSignupResult{}, err
+		}
+	case SignupStartOutcomeCreated:
+		if err := s.emitSignupEvent(ctx, store, IAMEvent{
+			EventType:          "iam.signup_intent.started",
+			AggregateType:      "signup_intent",
+			AggregateID:        decision.Intent.SignupIntentID,
+			SignupIntentID:     decision.Intent.SignupIntentID,
+			OrgID:              decision.Intent.OrgID,
+			State:              decision.Intent.State,
+			Outcome:            "created",
+			OccurredAt:         now,
+			IdempotencyKeyHash: hashText(input.IdempotencyKey),
+			CorrelationID:      input.IdempotencyKey,
+			Payload:            map[string]any{"organization_display_name": decision.Intent.OrganizationDisplayName, "requested_organization_slug": decision.Intent.RequestedOrganizationSlug},
+		}); err != nil {
+			return StartSignupResult{}, err
+		}
+	default:
 		token = ""
 	}
-	return StartSignupResult{Intent: intent, VerificationToken: token, Created: created}, nil
+	return StartSignupResult{Intent: decision.Intent, VerificationToken: token, Outcome: decision.Outcome, ResponseExpiresAt: responseExpiresAt}, nil
 }
 
 func (s *Service) DeletePendingSignupIntent(ctx context.Context, signupIntentID string) error {
@@ -111,7 +182,7 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 		return VerifySignupResult{}, err
 	}
 	now := s.now()
-	intent, err := signupStore.ClaimSignupIntentForVerification(ctx, input.SignupIntentID, tokenHash, input.IdempotencyKey, verifyHash, input.OrganizationDisplayName, now, now.Add(signupIntentLeaseDuration))
+	intent, err := signupStore.ClaimSignupIntentForVerification(ctx, input.SignupIntentID, tokenHash, input.IdempotencyKey, verifyHash, input.OrganizationDisplayName, input.OrganizationSlug, now, now.Add(signupIntentLeaseDuration))
 	if err != nil {
 		return VerifySignupResult{}, err
 	}
@@ -191,6 +262,18 @@ func (s *Service) materializeSignup(ctx context.Context, store Store, signupStor
 	if err != nil {
 		return VerifySignupResult{}, err
 	}
+	profile, err := store.GetOrganizationProfile(ctx, intent.OrgID, "system:signup")
+	createProfile := false
+	profileSlug := ""
+	if errors.Is(err, ErrOrganizationMissing) {
+		createProfile = true
+		profileSlug, err = s.availableOrganizationSlug(ctx, store, intent.RequestedOrganizationSlug, intent.OrganizationDisplayName)
+		if err != nil {
+			return VerifySignupResult{}, err
+		}
+	} else if err != nil {
+		return VerifySignupResult{}, err
+	}
 	lease := s.now().Add(signupIntentLeaseDuration)
 	if strings.TrimSpace(intent.IdentityProviderOrgID) == "" {
 		if err := s.recordSignupStep(ctx, signupStore, intent, "zitadel_organization", lease, idempotencyKey); err != nil {
@@ -224,21 +307,16 @@ func (s *Service) materializeSignup(ctx context.Context, store Store, signupStor
 			return VerifySignupResult{}, err
 		}
 	}
-	profile, err := store.GetOrganizationProfile(ctx, intent.OrgID, "system:signup")
-	if errors.Is(err, ErrOrganizationMissing) {
+	if createProfile {
 		lease = s.now().Add(signupIntentLeaseDuration)
 		if err := s.recordSignupStep(ctx, signupStore, intent, "iam_organization", lease, idempotencyKey); err != nil {
-			return VerifySignupResult{}, err
-		}
-		slug, err := s.availableOrganizationSlug(ctx, store, intent.RequestedOrganizationSlug, intent.OrganizationDisplayName)
-		if err != nil {
 			return VerifySignupResult{}, err
 		}
 		profile, err = store.CreateOrganizationProfile(ctx, CreateOrganizationRequest{
 			OrgID:                 intent.OrgID,
 			IdentityProviderOrgID: intent.IdentityProviderOrgID,
 			DisplayName:           intent.OrganizationDisplayName,
-			Slug:                  slug,
+			Slug:                  profileSlug,
 			ActorID:               intent.IdentityProviderUserID,
 		})
 		if err != nil {
@@ -247,8 +325,6 @@ func (s *Service) materializeSignup(ctx context.Context, store Store, signupStor
 		if err := signupStore.RecordSignupIntentOrganization(ctx, intent.SignupIntentID, profile.OrgID, profile.Slug); err != nil {
 			return VerifySignupResult{}, err
 		}
-	} else if err != nil {
-		return VerifySignupResult{}, err
 	}
 	intent.OrganizationSlug = profile.Slug
 	if err := s.recordSignupStep(ctx, signupStore, intent, "spicedb_owner_policy", s.now().Add(signupIntentLeaseDuration), idempotencyKey); err != nil {
@@ -413,6 +489,7 @@ func normalizeVerifySignup(input VerifySignupRequest) (VerifySignupRequest, erro
 	input.SignupIntentID = strings.TrimSpace(input.SignupIntentID)
 	input.VerificationToken = strings.TrimSpace(input.VerificationToken)
 	input.OrganizationDisplayName = normalizeHumanText(input.OrganizationDisplayName)
+	input.OrganizationSlug = normalizeSlug(input.OrganizationSlug)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	if !strings.HasPrefix(input.SignupIntentID, signupIntentPublicIDPrefix) || len(input.SignupIntentID) != len(signupIntentPublicIDPrefix)+26 {
 		return VerifySignupRequest{}, fmt.Errorf("%w: signup_intent_id is invalid", ErrInvalidInput)
@@ -425,6 +502,11 @@ func normalizeVerifySignup(input VerifySignupRequest) (VerifySignupRequest, erro
 	}
 	if input.OrganizationDisplayName != "" {
 		if err := validateHumanText("organization_display_name", input.OrganizationDisplayName, 1, 120, 240); err != nil {
+			return VerifySignupRequest{}, err
+		}
+	}
+	if input.OrganizationSlug != "" {
+		if err := validateSlug("organization_slug", input.OrganizationSlug); err != nil {
 			return VerifySignupRequest{}, err
 		}
 	}
@@ -453,8 +535,9 @@ func signupVerifyRequestHash(input VerifySignupRequest, tokenHash []byte) ([]byt
 	return canonicalHash(struct {
 		SignupIntentID          string `json:"signup_intent_id"`
 		OrganizationDisplayName string `json:"organization_display_name"`
+		OrganizationSlug        string `json:"organization_slug"`
 		VerificationTokenHash   string `json:"verification_token_hash"`
-	}{input.SignupIntentID, input.OrganizationDisplayName, base64.RawURLEncoding.EncodeToString(tokenHash)})
+	}{input.SignupIntentID, input.OrganizationDisplayName, input.OrganizationSlug, base64.RawURLEncoding.EncodeToString(tokenHash)})
 }
 
 func canonicalHash(value any) ([]byte, error) {
@@ -490,13 +573,6 @@ func signupProviderOrganizationName(intent SignupIntent) string {
 		base = "organization"
 	}
 	return trimSlugBase(base, 52) + "-" + strings.TrimPrefix(intent.OrgID, organizationPublicIDPrefix)
-}
-
-func eventOutcome(flag bool, yes string, no string) string {
-	if flag {
-		return yes
-	}
-	return no
 }
 
 func signupEventAttempt(value int32) uint32 {

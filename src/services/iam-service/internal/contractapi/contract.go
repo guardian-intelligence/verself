@@ -90,9 +90,7 @@ type MemberInviteAcceptanceToken string
 
 type SignupIntentID string
 
-type SignupIntentResourceName string
-
-type SignupIntentStatus string
+type SignupStartStatus string
 
 type SignupVerificationToken string
 
@@ -351,6 +349,10 @@ type AcceptMemberInviteInput struct {
 	Body           AcceptMemberInviteInputBody
 }
 
+type CheckOrganizationSlugAvailabilityInput struct {
+	Slug OrgSlug `path:"slug" required:"true" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
+}
+
 type StartSignupInputBody struct {
 	Email                   EmailAddress `json:"email" required:"true" minLength:"3" maxLength:"320"`
 	OrganizationDisplayName DisplayName  `json:"organizationDisplayName" required:"true" minLength:"1" maxLength:"120"`
@@ -367,6 +369,7 @@ type StartSignupInput struct {
 type VerifySignupInputBody struct {
 	VerificationToken       SignupVerificationToken `json:"verificationToken" required:"true" minLength:"32" maxLength:"512"`
 	OrganizationDisplayName *DisplayName            `json:"organizationDisplayName,omitempty" minLength:"1" maxLength:"120"`
+	OrganizationSlug        *OrgSlug                `json:"organizationSlug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
 }
 
 type VerifySignupInput struct {
@@ -417,17 +420,23 @@ type AcceptMemberInviteOutput struct {
 	Body MemberInviteAcceptanceSummary
 }
 
-type SignupIntentSummary struct {
-	SignupIntentID          SignupIntentID           `json:"signupIntentId" required:"true" pattern:"^signup_[0-9A-HJKMNP-TV-Z]{26}$"`
-	ResourceName            SignupIntentResourceName `json:"resourceName" required:"true" pattern:"^urn:verself:inst_[0-9A-HJKMNP-TV-Z]{26}:signup-intents/signup_[0-9A-HJKMNP-TV-Z]{26}$"`
-	OrganizationDisplayName DisplayName              `json:"organizationDisplayName" required:"true" minLength:"1" maxLength:"120"`
-	OrganizationSlug        *OrgSlug                 `json:"organizationSlug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
-	Status                  SignupIntentStatus       `json:"status" required:"true" minLength:"1" maxLength:"64"`
-	VerificationExpiresAt   string                   `json:"verificationExpiresAt" required:"true"`
+type OrganizationSlugAvailability struct {
+	Slug      OrgSlug `json:"slug" required:"true" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
+	Available bool    `json:"available" required:"true"`
+}
+
+type CheckOrganizationSlugAvailabilityOutput struct {
+	Body OrganizationSlugAvailability
+}
+
+type SignupStartResult struct {
+	Message               string            `json:"message" required:"true"`
+	Status                SignupStartStatus `json:"status" required:"true" minLength:"1" maxLength:"64"`
+	VerificationExpiresAt string            `json:"verificationExpiresAt" required:"true"`
 }
 
 type StartSignupOutput struct {
-	Body SignupIntentSummary
+	Body SignupStartResult
 }
 
 type VerifySignupResult struct {
@@ -475,6 +484,7 @@ type TestIamPermissionsOutputBody struct {
 
 var Operations = []OperationDescriptor{
 	AcceptMemberInvite.Descriptor,
+	CheckOrganizationSlugAvailability.Descriptor,
 	StartSignup.Descriptor,
 	VerifySignup.Descriptor,
 	ListOrganizations.Descriptor,
@@ -487,6 +497,30 @@ var Operations = []OperationDescriptor{
 	GetIamPolicy.Descriptor,
 	SetIamPolicy.Descriptor,
 	TestIamPermissions.Descriptor,
+}
+
+var CheckOrganizationSlugAvailability = Operation[CheckOrganizationSlugAvailabilityInput, CheckOrganizationSlugAvailabilityOutput]{
+	Descriptor: OperationDescriptor{
+		ShapeID:             "verself.iam.v1#CheckOrganizationSlugAvailability",
+		OperationID:         "check-organization-slug-availability",
+		Method:              "GET",
+		Path:                "/api/v1/organization-slugs/{slug}/availability",
+		DefaultStatus:       200,
+		Readonly:            true,
+		Paginated:           false,
+		Identity:            IdentityDescriptor{Mode: "public", Audience: "verself-api", Principals: []string{"browser", "cli", "anonymous"}},
+		Authorization:       AuthorizationDescriptor{Permission: "iam:organization_slug:check", OrganizationSource: "installation", OrganizationMember: ""},
+		Audit:               AuditDescriptor{Event: "iam.organization_slug.check", Resource: "organization", Action: "read"},
+		RateLimitBucket:     "read",
+		RequestBodyMaxBytes: 0,
+		Idempotency:         IdempotencyDescriptor{Policy: "", Header: "", Member: ""},
+		SDK:                 SDKDescriptor{Module: "orgs", Method: "checkSlugAvailability", Paginated: false, Retryable: true},
+		Problems: []ProblemDescriptor{
+			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
+			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
+		},
+	},
 }
 
 var AcceptMemberInvite = Operation[AcceptMemberInviteInput, AcceptMemberInviteOutput]{

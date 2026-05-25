@@ -1,4 +1,5 @@
 import { useForm } from "@tanstack/react-form";
+import { useMutation } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { Building2, CheckCircle2, MailPlus } from "lucide-react";
 import type { ReactNode } from "react";
@@ -6,7 +7,7 @@ import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
 import { cn } from "@verself/ui/lib/utils";
-import { acceptMemberInvite, verifySignup } from "~/server-fns/auth";
+import { acceptMemberInvite, checkOrganizationSlug, verifySignup } from "~/server-fns/auth";
 
 type SignupMode = "create" | "join";
 
@@ -38,6 +39,8 @@ export const Route = createFileRoute("/signup/verify")({
     organization_display_name:
       searchString(search.organizationDisplayName) ??
       searchString(search.organization_display_name),
+    organization_slug:
+      safeOrgSlug(search.organizationSlug) ?? safeOrgSlug(search.organization_slug),
     mode: search.mode === "join" ? "join" : undefined,
   }),
   component: SignupVerificationPage,
@@ -48,10 +51,15 @@ function SignupVerificationPage() {
   const signupIntentId = search.signup_intent_id;
   const verificationToken = search.verification_token;
   const organizationDisplayName = search.organization_display_name;
+  const organizationSlug = search.organization_slug;
   const mode = signupMode(search.mode);
+  const slugCheck = useMutation({
+    mutationFn: (slug: string) => checkOrganizationSlug({ data: { slug } }),
+  });
   const form = useForm({
     defaultValues: {
       organizationDisplayName: organizationDisplayName ?? "",
+      organizationSlug: organizationSlug ?? slugify(organizationDisplayName ?? ""),
       inviteLink: "",
     },
     onSubmit: async ({ value }) => {
@@ -68,11 +76,20 @@ function SignupVerificationPage() {
       if (!displayName) {
         throw new Error("Organization name is required.");
       }
+      const slug = slugify(formString(value.organizationSlug));
+      if (!slug) {
+        throw new Error("Organization URL is required.");
+      }
+      const availability = await checkOrganizationSlug({ data: { slug } });
+      if (!availability.available) {
+        throw new Error("That organization URL is already taken.");
+      }
       const result = await verifySignup({
         data: {
           signupIntentId,
           verificationToken,
           organizationDisplayName: displayName,
+          organizationSlug: slug,
         },
       });
       assignLogin(result.loginIntent?.loginUrl ?? result.loginUrl, result.organization.slug);
@@ -96,6 +113,7 @@ function SignupVerificationPage() {
             signupIntentId={signupIntentId}
             verificationToken={verificationToken}
             organizationDisplayName={organizationDisplayName}
+            organizationSlug={organizationSlug}
           >
             <Building2 aria-hidden="true" />
             <span>Create org</span>
@@ -106,6 +124,7 @@ function SignupVerificationPage() {
             signupIntentId={signupIntentId}
             verificationToken={verificationToken}
             organizationDisplayName={organizationDisplayName}
+            organizationSlug={organizationSlug}
           >
             <MailPlus aria-hidden="true" />
             <span>Join org</span>
@@ -120,22 +139,80 @@ function SignupVerificationPage() {
           className="mt-6 grid gap-4"
         >
           {mode === "create" ? (
-            <form.Field name="organizationDisplayName">
-              {(field) => (
-                <div className="space-y-1.5">
-                  <Label htmlFor={field.name}>Organization name</Label>
-                  <Input
-                    id={field.name}
-                    type="text"
-                    autoComplete="organization"
-                    value={formString(field.state.value)}
-                    onBlur={field.handleBlur}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    disabled={!signupIntentId || !verificationToken}
-                  />
-                </div>
-              )}
-            </form.Field>
+            <>
+              <form.Field name="organizationDisplayName">
+                {(field) => (
+                  <div className="space-y-1.5">
+                    <Label htmlFor={field.name}>Organization name</Label>
+                    <Input
+                      id={field.name}
+                      type="text"
+                      autoComplete="organization"
+                      value={formString(field.state.value)}
+                      onBlur={field.handleBlur}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      disabled={!signupIntentId || !verificationToken}
+                    />
+                  </div>
+                )}
+              </form.Field>
+              <form.Field name="organizationSlug">
+                {(field) => {
+                  const slug = slugify(formString(field.state.value));
+                  const checked = slugCheck.data?.slug === slug ? slugCheck.data : undefined;
+                  return (
+                    <div className="space-y-1.5">
+                      <Label htmlFor={field.name}>Organization URL</Label>
+                      <div className="flex gap-2">
+                        <div className="relative min-w-0 flex-1">
+                          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                            verself.sh/
+                          </span>
+                          <Input
+                            id={field.name}
+                            type="text"
+                            autoComplete="off"
+                            value={formString(field.state.value)}
+                            onBlur={field.handleBlur}
+                            onChange={(event) => field.handleChange(slugify(event.target.value))}
+                            className="pl-[5.75rem]"
+                            disabled={!signupIntentId || !verificationToken}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={!slug || slugCheck.isPending}
+                          aria-busy={slugCheck.isPending}
+                          onClick={() => slugCheck.mutate(slug)}
+                        >
+                          {slugCheck.isPending ? "Checking..." : "Check"}
+                        </Button>
+                      </div>
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        You can change this later.
+                      </p>
+                      {checked ? (
+                        <p
+                          className={cn(
+                            "text-sm font-medium",
+                            checked.available ? "text-emerald-700" : "text-destructive",
+                          )}
+                        >
+                          {checked.available
+                            ? "This organization URL is available."
+                            : "That organization URL is already taken."}
+                        </p>
+                      ) : slugCheck.error ? (
+                        <p className="text-sm font-medium text-destructive">
+                          Could not check that organization URL.
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                }}
+              </form.Field>
+            </>
           ) : (
             <form.Field name="inviteLink">
               {(field) => (
@@ -191,6 +268,7 @@ function ModeLink(props: {
   signupIntentId: string | undefined;
   verificationToken: string | undefined;
   organizationDisplayName: string | undefined;
+  organizationSlug: string | undefined;
   children: ReactNode;
 }) {
   return (
@@ -201,6 +279,7 @@ function ModeLink(props: {
         signup_intent_id: props.signupIntentId,
         verification_token: props.verificationToken,
         organization_display_name: props.organizationDisplayName,
+        organization_slug: props.organizationSlug,
       }}
       className={cn(
         "flex h-9 items-center justify-center gap-2 rounded-sm px-3 text-sm font-medium text-muted-foreground transition-colors",
@@ -211,6 +290,17 @@ function ModeLink(props: {
       {props.children}
     </Link>
   );
+}
+
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-")
+    .slice(0, 80)
+    .replace(/-+$/g, "");
 }
 
 function inviteCredentialsFromInput(raw: string): { token: string; org?: string } {

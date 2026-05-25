@@ -109,6 +109,21 @@ type SignupIntent struct {
 	CompletedAt                 *time.Time
 }
 
+type SignupStartOutcome string
+
+const (
+	SignupStartOutcomeCreated                   SignupStartOutcome = "created"
+	SignupStartOutcomeVerificationResent        SignupStartOutcome = "verification_resent"
+	SignupStartOutcomeVerificationRecentlySent  SignupStartOutcome = "verification_recently_sent"
+	SignupStartOutcomeExistingAccountSuppressed SignupStartOutcome = "existing_account_suppressed"
+	SignupStartOutcomeInFlightSuppressed        SignupStartOutcome = "inflight_suppressed"
+)
+
+type SignupStartDecision struct {
+	Intent  SignupIntent
+	Outcome SignupStartOutcome
+}
+
 type StartSignupRequest struct {
 	Email            string
 	OrganizationName string
@@ -121,13 +136,23 @@ type StartSignupRequest struct {
 type StartSignupResult struct {
 	Intent            SignupIntent
 	VerificationToken string
-	Created           bool
+	Outcome           SignupStartOutcome
+	ResponseExpiresAt time.Time
+}
+
+func (r StartSignupResult) SendVerificationEmail() bool {
+	return r.Outcome == SignupStartOutcomeCreated || r.Outcome == SignupStartOutcomeVerificationResent
+}
+
+func (r StartSignupResult) CreatedIntent() bool {
+	return r.Outcome == SignupStartOutcomeCreated
 }
 
 type VerifySignupRequest struct {
 	SignupIntentID          string
 	VerificationToken       string
 	OrganizationDisplayName string
+	OrganizationSlug        string
 	IdempotencyKey          string
 }
 

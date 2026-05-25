@@ -78,6 +78,7 @@ Signup is modeled as an installation-scoped public flow:
 
 ```text
 POST /api/v1/signup-intents
+GET /api/v1/organization-slugs/{slug}/availability
 POST /api/v1/signup-intents/{signupIntentId}/verification
 ```
 
@@ -86,13 +87,25 @@ organization display name, optional org slug, verification expiry, idempotency
 metadata, request attribution, and delivery state. The operation returns a
 generic accepted response and queues email verification. The response must not
 reveal whether the email already belongs to a user or pending invite.
+Repeated starts for the same address reuse the current reusable intent. After a
+short per-email cooldown, IAM rotates the verification token and sends a fresh
+email for the same signup intent ID; within the cooldown it returns the generic
+accepted response without another delivery. Completed signup addresses and
+in-flight materialization states return the same generic accepted response
+without creating a second organization or sending an email.
 
-`VerifySignup` consumes the verification token. Only this operation may create
-the Zitadel human, create the Zitadel organization, verify the Zitadel email,
-insert `iam_organizations`, bind the user as `roles/owner`, and emit governance
-API activity for the materialized organization. Password setup, password change,
-passkey setup, social login, MFA, and other authentication-method lifecycle work
-remain Zitadel-owned flows outside onboarding finalization.
+`CheckOrganizationSlugAvailability` is a public read used by signup UI and
+automation. It is a convenience check; `VerifySignup` repeats the slug
+availability check before Zitadel side effects and the `iam_organizations`
+insert remains the final authority under race.
+
+`VerifySignup` consumes the verification token and final organization display
+name and slug. Only this operation may create the Zitadel human, create the
+Zitadel organization, verify the Zitadel email, insert `iam_organizations`, bind
+the user as `roles/owner`, and emit governance API activity for the materialized
+organization. Password setup, password change, passkey setup, social login, MFA,
+and other authentication-method lifecycle work remain Zitadel-owned flows
+outside onboarding finalization.
 
 Invites are split across authenticated and public operations:
 

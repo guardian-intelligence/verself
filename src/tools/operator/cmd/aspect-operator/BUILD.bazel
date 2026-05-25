@@ -17,6 +17,7 @@ go_library(
         "discovery_canary.go",
         "files.go",
         "mail.go",
+        "mail_test_accounts.go",
         "main.go",
         "operator_common.go",
         "output.go",

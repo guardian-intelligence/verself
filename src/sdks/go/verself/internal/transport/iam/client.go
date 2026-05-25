@@ -38,8 +38,7 @@ type (
 	ProblemType              = string
 	RequestId                = string
 	SignupIntentId           = string
-	SignupIntentResourceName = string
-	SignupIntentStatus       = string
+	SignupStartStatus        = string
 	SignupVerificationToken  = string
 	TraceParent              = string
 )
@@ -117,13 +116,15 @@ type OrganizationSummary struct {
 	Version      OrganizationVersion      `json:"version"`
 }
 
-type SignupIntentSummary struct {
-	SignupIntentID          SignupIntentId           `json:"signupIntentId"`
-	ResourceName            SignupIntentResourceName `json:"resourceName"`
-	OrganizationDisplayName DisplayName              `json:"organizationDisplayName"`
-	OrganizationSlug        *OrgSlug                 `json:"organizationSlug,omitempty"`
-	Status                  SignupIntentStatus       `json:"status"`
-	VerificationExpiresAt   string                   `json:"verificationExpiresAt"`
+type OrganizationSlugAvailability struct {
+	Slug      OrgSlug `json:"slug"`
+	Available bool    `json:"available"`
+}
+
+type SignupStartResult struct {
+	Message               string            `json:"message"`
+	Status                SignupStartStatus `json:"status"`
+	VerificationExpiresAt string            `json:"verificationExpiresAt"`
 }
 
 type IAMPolicy struct {
@@ -253,6 +254,18 @@ type CreateOrganizationResponse struct {
 	HTTPResponse *http.Response
 }
 
+type CheckOrganizationSlugAvailabilityRequest struct {
+	Slug OrgSlug
+}
+
+type CheckOrganizationSlugAvailabilityResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *OrganizationSlugAvailability
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
 type StartSignupInputBody struct {
 	Email                   EmailAddress `json:"email"`
 	OrganizationDisplayName DisplayName  `json:"organizationDisplayName"`
@@ -269,7 +282,7 @@ type StartSignupRequest struct {
 type StartSignupResponse struct {
 	StatusCode   int
 	Body         []byte
-	Result       *SignupIntentSummary
+	Result       *SignupStartResult
 	Problem      *ErrorModel
 	HTTPResponse *http.Response
 }
@@ -325,6 +338,7 @@ type InviteMemberResponse struct {
 type VerifySignupInputBody struct {
 	VerificationToken       SignupVerificationToken `json:"verificationToken"`
 	OrganizationDisplayName *DisplayName            `json:"organizationDisplayName,omitempty"`
+	OrganizationSlug        *OrgSlug                `json:"organizationSlug,omitempty"`
 }
 
 type VerifySignupRequest struct {
@@ -526,6 +540,28 @@ func (c *Client) newCreateOrganizationRequest(ctx context.Context, request Creat
 	return req, nil
 }
 
+func (c *Client) CheckOrganizationSlugAvailability(ctx context.Context, request CheckOrganizationSlugAvailabilityRequest, reqEditors ...RequestEditorFn) (*CheckOrganizationSlugAvailabilityResponse, error) {
+	req, err := c.newCheckOrganizationSlugAvailabilityRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[OrganizationSlugAvailability](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &CheckOrganizationSlugAvailabilityResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newCheckOrganizationSlugAvailabilityRequest(ctx context.Context, request CheckOrganizationSlugAvailabilityRequest) (*http.Request, error) {
+	path := "/api/v1/organization-slugs/{slug}/availability"
+	path = strings.ReplaceAll(path, "{slug}", url.PathEscape(fmt.Sprint(request.Slug)))
+	return c.newRequest(ctx, http.MethodGet, path, nil)
+}
+
 func (c *Client) StartSignup(ctx context.Context, request StartSignupRequest, reqEditors ...RequestEditorFn) (*StartSignupResponse, error) {
 	req, err := c.newStartSignupRequest(ctx, request)
 	if err != nil {
@@ -535,7 +571,7 @@ func (c *Client) StartSignup(ctx context.Context, request StartSignupRequest, re
 	if err != nil {
 		return nil, err
 	}
-	status, body, result, problem, err := decodeResponse[SignupIntentSummary](resp, http.StatusAccepted)
+	status, body, result, problem, err := decodeResponse[SignupStartResult](resp, http.StatusAccepted)
 	if err != nil {
 		return nil, err
 	}
