@@ -3,13 +3,9 @@ import { setResponseHeader } from "@tanstack/react-start/server";
 import * as v from "valibot";
 import { requireURLFromEnv } from "@verself/web-env";
 import {
-  browserAccountsResponseSchema,
-  browserSessionsResponseSchema,
   parseAuthSnapshot,
   type AuthenticatedAuthSnapshot,
   type AuthSnapshot,
-  type BrowserAccountsResponse,
-  type BrowserSessionsResponse,
 } from "@verself/auth-web/isomorphic";
 import type { ConsoleAuthContext } from "./auth";
 import {
@@ -195,22 +191,6 @@ export async function selectIdentityOrganization(data: { orgID: string }): Promi
     );
   }
   return parseAuthSnapshot(await response.json());
-}
-
-export async function listIdentityBrowserSessions(): Promise<BrowserSessionsResponse> {
-  const response = await identityAuthFetch("sessions");
-  if (!response.ok) {
-    throw new Error(`identity sessions failed: ${response.status} ${await response.text()}`);
-  }
-  return v.parse(browserSessionsResponseSchema, await response.json());
-}
-
-export async function listIdentityBrowserAccounts(): Promise<BrowserAccountsResponse> {
-  const response = await identityAuthFetch("accounts");
-  if (!response.ok) {
-    throw new Error(`identity accounts failed: ${response.status} ${await response.text()}`);
-  }
-  return v.parse(browserAccountsResponseSchema, await response.json());
 }
 
 export async function selectIdentityBrowserAccount(accountHandle: string): Promise<AuthSnapshot> {

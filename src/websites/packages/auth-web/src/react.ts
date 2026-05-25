@@ -1,11 +1,25 @@
-import { createContext, createElement, type ReactNode, useContext } from "react";
-import { parseAuthSnapshot } from "./isomorphic.ts";
+import { useQueryClient } from "@tanstack/react-query";
+import { useHydrated } from "@tanstack/react-router";
+import { useLiveQuery, useLiveQueryEffect } from "@tanstack/react-db";
+import { Fragment, createContext, createElement, type ReactNode, useContext, useMemo } from "react";
+import {
+  clearLiveAuthCollections,
+  createLiveAuthCollections,
+  type LiveAuthCollections,
+} from "./live.ts";
+import {
+  anonymousSnapshot,
+  parseAuthSnapshot,
+  snapshotFromLiveAuth,
+  syncAuthPartitionedCache,
+} from "./isomorphic.ts";
 import type {
   Auth,
   AuthSnapshot,
   AuthenticatedAuth,
   ClientUser,
   SessionInfo,
+  WebAuthClient,
 } from "./isomorphic.ts";
 
 export type {
@@ -14,10 +28,16 @@ export type {
   AuthSnapshot,
   AuthenticatedAuth,
   AuthOrganizationContext,
+  BrowserDevice,
+  BrowserLocation,
   ClientUser,
   SessionInfo,
+  WebAuthAccount,
+  WebAuthClient,
+  WebAuthSession,
 } from "./isomorphic.ts";
 export {
+  anonymousSnapshot,
   authCacheKey,
   authCollectionId,
   authQueryKey,
@@ -45,6 +65,7 @@ export interface AuthNavigationClient {
 
 interface AuthContextValue {
   client: AuthNavigationClient | null;
+  collections: LiveAuthCollections | null;
   snapshot: AuthSnapshot;
 }
 
@@ -89,6 +110,7 @@ export type UseSessionReturn =
 export interface AuthProviderProps {
   children?: ReactNode;
   client?: AuthNavigationClient;
+  live?: boolean;
   snapshot: AuthSnapshot;
 }
 
@@ -106,13 +128,79 @@ function useAuthContextValue(): AuthContextValue {
   return value;
 }
 
-export function AuthProvider({ children, client, snapshot }: AuthProviderProps) {
+export function AuthProvider({ children, client, live = false, snapshot }: AuthProviderProps) {
+  const queryClient = useQueryClient();
+  const hydrated = useHydrated();
   const parsedSnapshot = parseAuthSnapshot(snapshot);
+  const collections = useMemo(
+    () =>
+      live
+        ? createLiveAuthCollections(() => {
+            queryClient.clear();
+          })
+        : null,
+    [live, queryClient],
+  );
+
+  const clientQuery = useLiveQuery(
+    () => (collections && hydrated ? collections.client : undefined),
+    [collections, hydrated],
+  );
+  const sessionsQuery = useLiveQuery(
+    () => (collections && hydrated ? collections.sessions : undefined),
+    [collections, hydrated],
+  );
+
+  const liveClient =
+    clientQuery.isReady && !clientQuery.isError ? clientQuery.data?.[0] : undefined;
+  const currentSession =
+    sessionsQuery.isReady && !sessionsQuery.isError
+      ? sessionsQuery.data?.find((session) => session.is_current)
+      : undefined;
+
+  const liveSnapshot =
+    collections && hydrated
+      ? clientQuery.isError || sessionsQuery.isError
+        ? anonymousSnapshot
+        : clientQuery.isReady
+          ? snapshotFromLiveAuth(liveClient, currentSession)
+          : parsedSnapshot
+      : parsedSnapshot;
+
   return createElement(
     AuthContext.Provider,
-    { value: { client: client ?? null, snapshot: parsedSnapshot } },
-    children,
+    { value: { client: client ?? null, collections, snapshot: liveSnapshot } },
+    collections && hydrated
+      ? createElement(AuthPartitionSync, { collections }, children)
+      : children,
   );
+}
+
+function AuthPartitionSync({
+  children,
+  collections,
+}: {
+  children?: ReactNode;
+  collections: LiveAuthCollections;
+}) {
+  const queryClient = useQueryClient();
+  useLiveQueryEffect<WebAuthClient, string>(
+    {
+      query: (q) => q.from({ client: collections.client }),
+      skipInitial: false,
+      onEnter: ({ value }) =>
+        syncAuthPartitionedCache(queryClient, snapshotFromLiveAuth(value, undefined)),
+      onUpdate: ({ value }) =>
+        syncAuthPartitionedCache(queryClient, snapshotFromLiveAuth(value, undefined)),
+      onExit: () => syncAuthPartitionedCache(queryClient, anonymousSnapshot),
+      onSourceError: () => {
+        void clearLiveAuthCollections(collections);
+        queryClient.clear();
+      },
+    },
+    [collections, queryClient],
+  );
+  return createElement(Fragment, null, children);
 }
 
 export function useAuth(): UseAuthReturn {
@@ -176,6 +264,14 @@ export function useSession(): UseSessionReturn {
     isSignedIn: true,
     session: snapshot.session,
   };
+}
+
+export function useAuthCollections(): LiveAuthCollections {
+  const { collections } = useAuthContextValue();
+  if (!collections) {
+    throw new Error("Live auth collections are not enabled");
+  }
+  return collections;
 }
 
 function getBrowserLocation() {
