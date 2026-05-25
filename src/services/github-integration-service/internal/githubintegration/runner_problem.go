@@ -17,6 +17,7 @@ type runnerProblem struct {
 	Phase      string
 	Retryable  bool
 	Pointer    string
+	DocsURL    string
 	ObservedAt time.Time
 }
 
@@ -32,13 +33,16 @@ func (s *runnerProblemSet) add(problem runnerProblem) {
 	problem.Phase = strings.TrimSpace(problem.Phase)
 	problem.Pointer = strings.TrimSpace(problem.Pointer)
 	if problem.Type == "" {
-		problem.Type = "urn:verself:problem:github-runner:capacity_failed"
+		problem.Type = githubRunnerProblemType(problemGithubRunnerCapacityFailed)
 	}
 	if problem.Code == "" {
-		problem.Code = "github_runner.capacity_failed"
+		problem.Code = string(problemGithubRunnerCapacityFailed)
 	}
 	if problem.Title == "" {
 		problem.Title = "GitHub runner capacity failed"
+	}
+	if problem.DocsURL == "" {
+		problem.DocsURL = githubProblemDocsURL(problemGithubRunnerCapacityFailed)
 	}
 	if problem.Phase == "" {
 		problem.Phase = "runner_capacity"
@@ -55,33 +59,13 @@ func (s runnerProblemSet) empty() bool {
 
 func (s runnerProblemSet) reason() string {
 	if len(s.problems) == 0 {
-		return "github_runner.capacity_failed"
+		return string(problemGithubRunnerCapacityFailed)
 	}
 	first := s.problems[0]
 	if first.Detail != "" {
 		return first.Code + ":" + truncate(first.Detail, 512)
 	}
 	return first.Code
-}
-
-func githubRunnerProblem(phase, code, title, detail string, retryable bool) runnerProblem {
-	code = strings.TrimSpace(code)
-	return runnerProblem{
-		Type:      "urn:verself:problem:github-runner:" + strings.TrimPrefix(strings.ReplaceAll(code, ".", "_"), "github_runner_"),
-		Code:      code,
-		Title:     title,
-		Detail:    detail,
-		Phase:     phase,
-		Retryable: retryable,
-	}
-}
-
-func githubRunnerProblemFromError(phase, code, title string, err error, retryable bool) runnerProblem {
-	detail := ""
-	if err != nil {
-		detail = err.Error()
-	}
-	return githubRunnerProblem(phase, code, title, detail, retryable)
 }
 
 func appendProviderDemandProblems(ctx context.Context, q *store.Queries, providerJobID int64, problems runnerProblemSet) error {
@@ -99,6 +83,7 @@ func appendProviderDemandProblems(ctx context.Context, q *store.Queries, provide
 			ProblemCode:   problem.Code,
 			Title:         problem.Title,
 			Detail:        problem.Detail,
+			DocsUrl:       problem.DocsURL,
 			Status:        problem.Status,
 			Retryable:     problem.Retryable,
 			Pointer:       problem.Pointer,
@@ -126,6 +111,7 @@ func appendRunnerInstanceProblems(ctx context.Context, q *store.Queries, runnerN
 			ProblemCode: problem.Code,
 			Title:       problem.Title,
 			Detail:      problem.Detail,
+			DocsUrl:     problem.DocsURL,
 			Status:      problem.Status,
 			Retryable:   problem.Retryable,
 			Pointer:     problem.Pointer,

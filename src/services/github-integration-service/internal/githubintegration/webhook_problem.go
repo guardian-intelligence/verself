@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-const providerWebhookProblemTypePrefix = "urn:verself:problem:"
-
 type webhookProblem struct {
 	Type       string
 	Code       string
@@ -19,6 +17,7 @@ type webhookProblem struct {
 	Phase      string
 	Retryable  bool
 	Pointer    string
+	DocsURL    string
 	ObservedAt time.Time
 }
 
@@ -27,12 +26,13 @@ type webhookProblemSet struct {
 }
 
 type webhookProblemDocument struct {
-	Type   string                  `json:"type"`
-	Title  string                  `json:"title"`
-	Status int32                   `json:"status"`
-	Detail string                  `json:"detail,omitempty"`
-	Code   string                  `json:"code"`
-	Errors []webhookProblemPayload `json:"errors,omitempty"`
+	Type    string                  `json:"type"`
+	Title   string                  `json:"title"`
+	Status  int32                   `json:"status"`
+	Detail  string                  `json:"detail,omitempty"`
+	Code    string                  `json:"code"`
+	DocsURL string                  `json:"docs_url,omitempty"`
+	Errors  []webhookProblemPayload `json:"errors,omitempty"`
 }
 
 type webhookProblemPayload struct {
@@ -44,6 +44,7 @@ type webhookProblemPayload struct {
 	Phase      string `json:"phase,omitempty"`
 	Retryable  bool   `json:"retryable,omitempty"`
 	Pointer    string `json:"pointer,omitempty"`
+	DocsURL    string `json:"docs_url,omitempty"`
 	ObservedAt string `json:"observed_at,omitempty"`
 }
 
@@ -58,9 +59,6 @@ func newWebhookProblemSet(problems ...webhookProblem) webhookProblemSet {
 func (s *webhookProblemSet) add(problem webhookProblem) {
 	if problem.ObservedAt.IsZero() {
 		problem.ObservedAt = time.Now().UTC()
-	}
-	if problem.Type == "" && problem.Code != "" {
-		problem.Type = providerWebhookProblemTypePrefix + strings.ReplaceAll(problem.Code, ".", ":")
 	}
 	if problem.Title == "" {
 		problem.Title = http.StatusText(int(problem.Status))
@@ -77,16 +75,7 @@ func (s webhookProblemSet) empty() bool {
 
 func (s webhookProblemSet) primary() webhookProblem {
 	if len(s.problems) == 0 {
-		return webhookProblem{
-			Type:       providerWebhookProblemTypePrefix + "provider_webhook:processing_failed",
-			Code:       "provider_webhook.processing_failed",
-			Title:      "Webhook delivery processing failed",
-			Detail:     "Webhook delivery processing failed.",
-			Status:     http.StatusInternalServerError,
-			Phase:      "webhook",
-			Retryable:  true,
-			ObservedAt: time.Now().UTC(),
-		}
+		return githubWebhookProblem(problemProviderWebhookProcessingFailed)
 	}
 	return s.problems[0]
 }
@@ -110,12 +99,13 @@ func (s webhookProblemSet) httpStatus() int {
 func (s webhookProblemSet) document() webhookProblemDocument {
 	primary := s.primary()
 	doc := webhookProblemDocument{
-		Type:   primary.Type,
-		Title:  primary.Title,
-		Status: primary.Status,
-		Detail: primary.Detail,
-		Code:   primary.Code,
-		Errors: make([]webhookProblemPayload, 0, len(s.problems)),
+		Type:    primary.Type,
+		Title:   primary.Title,
+		Status:  primary.Status,
+		Detail:  primary.Detail,
+		Code:    primary.Code,
+		DocsURL: primary.DocsURL,
+		Errors:  make([]webhookProblemPayload, 0, len(s.problems)),
 	}
 	for _, problem := range s.problems {
 		payload := webhookProblemPayload{
@@ -127,6 +117,7 @@ func (s webhookProblemSet) document() webhookProblemDocument {
 			Phase:     problem.Phase,
 			Retryable: problem.Retryable,
 			Pointer:   problem.Pointer,
+			DocsURL:   problem.DocsURL,
 		}
 		if !problem.ObservedAt.IsZero() {
 			payload.ObservedAt = problem.ObservedAt.UTC().Format(time.RFC3339Nano)
@@ -144,139 +135,79 @@ func writeWebhookProblem(w http.ResponseWriter, problems webhookProblemSet) {
 }
 
 func providerWebhookHeaderProblem(headerName string) webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:provider_webhook:invalid_request",
-		Code:      "provider_webhook.header_invalid",
-		Title:     "Invalid webhook header",
-		Detail:    "GitHub webhook request is missing a required singular header.",
-		Status:    http.StatusBadRequest,
-		Phase:     "header_validation",
-		Retryable: false,
-		Pointer:   "header:" + headerName,
-	}
+	return githubWebhookProblem(
+		problemProviderWebhookHeaderInvalid,
+		withProblemPointer("header:"+headerName),
+	)
 }
 
 func providerWebhookBodyProblem(detail string) webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:provider_webhook:invalid_request",
-		Code:      "provider_webhook.body_invalid",
-		Title:     "Invalid webhook body",
-		Detail:    detail,
-		Status:    http.StatusBadRequest,
-		Phase:     "body_read",
-		Retryable: false,
-		Pointer:   "body",
-	}
+	return githubWebhookProblem(
+		problemProviderWebhookBodyInvalid,
+		withProblemDiagnostic(detail),
+		withProblemPointer("body"),
+	)
 }
 
 func providerWebhookSignatureProblem() webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:provider_webhook:signature_invalid",
-		Code:      "provider_webhook.signature_invalid",
-		Title:     "Invalid webhook signature",
-		Detail:    "GitHub webhook signature verification failed.",
-		Status:    http.StatusUnauthorized,
-		Phase:     "signature_verification",
-		Retryable: false,
-		Pointer:   "header:X-Hub-Signature-256",
-	}
+	return githubWebhookProblem(
+		problemProviderWebhookSignatureInvalid,
+		withProblemPointer("header:X-Hub-Signature-256"),
+	)
 }
 
 func providerWebhookPayloadProblem(detail string) webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:provider_webhook:invalid_request",
-		Code:      "provider_webhook.payload_invalid",
-		Title:     "Invalid webhook payload",
-		Detail:    detail,
-		Status:    http.StatusBadRequest,
-		Phase:     "payload_parse",
-		Retryable: false,
-		Pointer:   "body",
-	}
+	return githubWebhookProblem(
+		problemProviderWebhookPayloadInvalid,
+		withProblemDiagnostic(detail),
+		withProblemPointer("body"),
+	)
 }
 
 func providerWebhookReplayProblem() webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:provider_webhook:delivery_replay_conflict",
-		Code:      "provider_webhook.delivery_replay_conflict",
-		Title:     "Webhook delivery replay conflict",
-		Detail:    "GitHub delivery id was reused with a different payload.",
-		Status:    http.StatusConflict,
-		Phase:     "inbox_persist",
-		Retryable: false,
-	}
+	return githubWebhookProblem(problemProviderWebhookDeliveryReplayConflict)
 }
 
 func providerWebhookInboxProblem() webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:provider_webhook:inbox_unavailable",
-		Code:      "provider_webhook.inbox_unavailable",
-		Title:     "Webhook inbox unavailable",
-		Detail:    "Webhook delivery could not be durably recorded.",
-		Status:    http.StatusServiceUnavailable,
-		Phase:     "inbox_persist",
-		Retryable: true,
-	}
+	return githubWebhookProblem(problemProviderWebhookInboxUnavailable)
 }
 
 func providerWebhookUnsupportedProblem(detail string) webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:provider_webhook:unsupported_event",
-		Code:      "provider_webhook.unsupported_event",
-		Title:     "Unsupported webhook event",
-		Detail:    detail,
-		Status:    http.StatusUnprocessableEntity,
-		Phase:     "delivery_dispatch",
-		Retryable: false,
-	}
+	return githubWebhookProblem(
+		problemProviderWebhookUnsupportedEvent,
+		withProblemDiagnostic(detail),
+	)
 }
 
 func githubRepositoryNotEnabledProblem(detail string) webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:github:repository_not_enabled",
-		Code:      "github.repository_not_enabled",
-		Title:     "GitHub repository is not enabled",
-		Detail:    detail,
-		Status:    http.StatusConflict,
-		Phase:     "repository_binding",
-		Retryable: false,
-	}
+	return githubWebhookProblem(
+		problemGithubRepositoryNotEnabled,
+		withProblemDiagnostic(detail),
+	)
 }
 
 func githubSandboxDispatchProblem(detail string, retryable bool) webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:github:sandbox_dispatch_failed",
-		Code:      "github.sandbox_dispatch_failed",
-		Title:     "Sandbox dispatch failed",
-		Detail:    detail,
-		Status:    http.StatusServiceUnavailable,
-		Phase:     "sandbox_dispatch",
-		Retryable: retryable,
-	}
+	return githubWebhookProblem(
+		problemGithubSandboxDispatchFailed,
+		withProblemDiagnostic(detail),
+		withProblemRetryable(retryable),
+	)
 }
 
 func providerWebhookProcessingProblem(detail string, retryable bool) webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:provider_webhook:processing_failed",
-		Code:      "provider_webhook.processing_failed",
-		Title:     "Webhook delivery processing failed",
-		Detail:    detail,
-		Status:    http.StatusServiceUnavailable,
-		Phase:     "delivery_processing",
-		Retryable: retryable,
-	}
+	return githubWebhookProblem(
+		problemProviderWebhookProcessingFailed,
+		withProblemDiagnostic(detail),
+		withProblemRetryable(retryable),
+	)
+}
+
+func providerWebhookProcessingStaleProblem() webhookProblem {
+	return githubWebhookProblem(problemProviderWebhookProcessingStale)
 }
 
 func providerWebhookAttemptsExhaustedProblem() webhookProblem {
-	return webhookProblem{
-		Type:      "urn:verself:problem:provider_webhook:processing_attempts_exhausted",
-		Code:      "provider_webhook.processing_attempts_exhausted",
-		Title:     "Webhook delivery retry budget exhausted",
-		Detail:    "Webhook delivery processing exceeded its retry budget.",
-		Status:    http.StatusServiceUnavailable,
-		Phase:     "delivery_processing",
-		Retryable: false,
-	}
+	return githubWebhookProblem(problemProviderWebhookProcessingAttemptsExhausted)
 }
 
 func problemSetForDeliveryError(err error, retryable bool) webhookProblemSet {

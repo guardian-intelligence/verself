@@ -60,8 +60,8 @@ func TestWebhookHandlerReportsMultipleHeaderProblems(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&doc); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
-	if doc.Code != "provider_webhook.header_invalid" {
-		t.Fatalf("code = %q, want provider_webhook.header_invalid", doc.Code)
+	if doc.Code != string(problemProviderWebhookHeaderInvalid) {
+		t.Fatalf("code = %q, want %s", doc.Code, problemProviderWebhookHeaderInvalid)
 	}
 	if len(doc.Errors) != 3 {
 		t.Fatalf("len(errors) = %d, want 3: %+v", len(doc.Errors), doc.Errors)
@@ -84,8 +84,8 @@ func TestWebhookHandlerReportsSignatureProblem(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&doc); err != nil {
 		t.Fatalf("decode problem: %v", err)
 	}
-	if doc.Code != "provider_webhook.signature_invalid" {
-		t.Fatalf("code = %q, want provider_webhook.signature_invalid", doc.Code)
+	if doc.Code != string(problemProviderWebhookSignatureInvalid) {
+		t.Fatalf("code = %q, want %s", doc.Code, problemProviderWebhookSignatureInvalid)
 	}
 	if len(doc.Errors) != 1 || doc.Errors[0].Pointer != "header:X-Hub-Signature-256" {
 		t.Fatalf("unexpected errors: %+v", doc.Errors)
@@ -333,5 +333,61 @@ func TestRunnerCapacityAssignmentDeadlineExceeded(t *testing.T) {
 	}
 	if runnerCapacityAssignmentDeadlineExceeded(pgtype.Timestamptz{}, now) {
 		t.Fatal("missing deadline should not be expired")
+	}
+}
+
+func TestProviderSurfaceCommandKeyCancelsWorkflowRunOnce(t *testing.T) {
+	ref := runnerCapacityRef{
+		ProviderInstallationID: 42,
+		ProviderRepositoryID:   99,
+		ProviderRunID:          123,
+		ProviderJobID:          1001,
+	}
+	sameRun := ref
+	sameRun.ProviderJobID = 1002
+	if providerSurfaceCommandKey(ref) != providerSurfaceCommandKey(sameRun) {
+		t.Fatal("provider surface key should dedupe jobs in the same workflow run")
+	}
+	otherRun := ref
+	otherRun.ProviderRunID = 124
+	if providerSurfaceCommandKey(ref) == providerSurfaceCommandKey(otherRun) {
+		t.Fatal("provider surface key collapsed distinct workflow runs")
+	}
+}
+
+func TestProviderSurfaceFailureResult(t *testing.T) {
+	if got := providerSurfaceFailureResult(false); got != "retryable" {
+		t.Fatalf("nonterminal result = %q, want retryable", got)
+	}
+	if got := providerSurfaceFailureResult(true); got != "failed" {
+		t.Fatalf("terminal result = %q, want failed", got)
+	}
+}
+
+func TestWebhookStaleProblemPreservedAsRunnerProblem(t *testing.T) {
+	webhookProblems := newWebhookProblemSet(providerWebhookProcessingStaleProblem())
+	runnerProblems := runnerProblemSetFromWebhookProblems(webhookProblems)
+	if len(runnerProblems.problems) != 1 {
+		t.Fatalf("len(runnerProblems) = %d, want 1", len(runnerProblems.problems))
+	}
+	problem := runnerProblems.problems[0]
+	if problem.Code != string(problemProviderWebhookProcessingStale) {
+		t.Fatalf("runner problem code = %q", problem.Code)
+	}
+	if problem.Type != "urn:verself:problem:provider_webhook:processing_stale" {
+		t.Fatalf("runner problem type = %q", problem.Type)
+	}
+}
+
+func TestProviderDemandTerminalForCapacity(t *testing.T) {
+	for _, state := range []string{"assigned", "completed", "capacity_failed", "jit_failed", "sandbox_failed"} {
+		if !providerDemandTerminalForCapacity(state) {
+			t.Fatalf("%s should be terminal for capacity", state)
+		}
+	}
+	for _, state := range []string{"", "demand_recorded", "capacity_requested"} {
+		if providerDemandTerminalForCapacity(state) {
+			t.Fatalf("%s should remain eligible for capacity", state)
+		}
 	}
 }

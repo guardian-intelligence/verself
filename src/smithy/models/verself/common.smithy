@@ -114,6 +114,11 @@ string ProblemPhase
 @length(min: 1, max: 512)
 string ProblemPointer
 
+/// Human-readable remediation documentation for a stable problem code.
+@length(min: 1, max: 2048)
+@pattern("^https://.+$")
+string ProblemDocsURL
+
 /// Marks a string shape as the declaration site for a product permission.
 @trait(selector: "string")
 structure permission {
@@ -393,6 +398,9 @@ structure ProblemDetails {
 
     @protoField(number: 8)
     traceparent: TraceParent
+
+    @protoField(number: 9)
+    docs_url: ProblemDocsURL
 }
 
 /// One typed problem found while accepting or processing a multi-step operation.
@@ -426,6 +434,9 @@ structure ProblemOccurrence {
 
     @protoField(number: 9)
     observed_at: DateTime
+
+    @protoField(number: 10)
+    docs_url: ProblemDocsURL
 }
 
 list ProblemOccurrences {

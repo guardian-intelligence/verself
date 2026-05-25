@@ -2,6 +2,7 @@ package githubintegration
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -44,12 +45,69 @@ type runnerCapacityFailure struct {
 	OutboxState          string
 }
 
+func queuedJobCapacityRef(event workflowJobWebhook, runnerClass string) runnerCapacityRef {
+	return runnerCapacityRef{
+		OrgID:                  event.OrgID,
+		InstallationBindingID:  event.InstallationBindingID,
+		RepositoryBindingID:    event.RepositoryBindingID,
+		ProviderInstallationID: event.Installation.ID,
+		ProviderRepositoryID:   event.Repository.ID,
+		RepositoryFullName:     event.Repository.FullName,
+		ProviderRunID:          event.WorkflowJob.RunID,
+		ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
+		ProviderJobID:          event.WorkflowJob.ID,
+		RunnerClass:            runnerClass,
+	}
+}
+
+func (s *Service) ensureQueuedProviderDemand(ctx context.Context, event workflowJobWebhook, deliveryID string, runnerClass string, jobShapeID string, trustClass string) (store.EnsureProviderDemandRow, error) {
+	return s.queries.EnsureProviderDemand(ctx, store.EnsureProviderDemandParams{
+		DemandID:               pgUUID(uuid.New()),
+		ProviderJobID:          event.WorkflowJob.ID,
+		OrgID:                  event.OrgID,
+		InstallationBindingID:  pgUUID(event.InstallationBindingID),
+		RepositoryBindingID:    pgUUID(event.RepositoryBindingID),
+		ProviderInstallationID: event.Installation.ID,
+		ProviderRepositoryID:   event.Repository.ID,
+		RepositoryFullName:     event.Repository.FullName,
+		ProviderRunID:          event.WorkflowJob.RunID,
+		ProviderRunAttempt:     event.WorkflowJob.RunAttempt,
+		JobShapeID:             jobShapeID,
+		TrustClass:             trustClass,
+		RunnerClass:            runnerClass,
+		LastDeliveryID:         deliveryID,
+		UpdatedAt:              pgTime(time.Now().UTC()),
+	})
+}
+
+func providerDemandTerminalForCapacity(state string) bool {
+	switch strings.TrimSpace(state) {
+	case "assigned", "completed", "capacity_failed", "jit_failed", "sandbox_failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) terminalizeQueuedJobFailure(ctx context.Context, ref runnerCapacityRef, demandState string, code githubProblemCode, err error, retryable bool) error {
+	problems := runnerProblemSet{}
+	problems.add(githubRunnerProblemFromError(code, err, withProblemRetryable(retryable)))
+	if terminalizeErr := s.terminalizeRunnerCapacity(ctx, ref, runnerCapacityFailure{
+		DemandState:       demandState,
+		Problems:          problems,
+		SurfaceToProvider: true,
+	}); terminalizeErr != nil {
+		return errors.Join(err, terminalizeErr)
+	}
+	return err
+}
+
 func (s *Service) terminalizeRunnerCapacity(ctx context.Context, ref runnerCapacityRef, failure runnerCapacityFailure) error {
 	if s == nil || s.cfg.PG == nil {
 		return ErrConfiguration
 	}
 	if failure.Problems.empty() {
-		failure.Problems.add(githubRunnerProblem("runner_capacity", "github_runner.capacity_failed", "GitHub runner capacity failed", "", false))
+		failure.Problems.add(githubRunnerProblemFromCatalog(problemGithubRunnerCapacityFailed))
 	}
 	if strings.TrimSpace(failure.DemandState) == "" {
 		failure.DemandState = "capacity_failed"
@@ -110,6 +168,14 @@ func (s *Service) terminalizeRunnerCapacity(ctx context.Context, ref runnerCapac
 			return err
 		}
 	}
+	surfaceQueued := false
+	if failure.SurfaceToProvider && demandFailed {
+		queued, err := enqueueProviderSurfaceCommandTx(ctx, qtx, ref, failure.Problems, now)
+		if err != nil {
+			return err
+		}
+		surfaceQueued = queued
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
@@ -122,8 +188,8 @@ func (s *Service) terminalizeRunnerCapacity(ctx context.Context, ref runnerCapac
 	if failure.DeleteRunner {
 		s.deleteRunnerCapacity(ctx, ref)
 	}
-	if failure.SurfaceToProvider && demandFailed {
-		s.surfaceRunnerCapacityFailureToProvider(ctx, ref, failure.Problems.reason())
+	if surfaceQueued {
+		s.writeEvent(ctx, githubEventFromMetadata(meta, "github.provider_surface.enqueued", "pending", failure.Problems.reason(), now, time.Now().UTC()))
 	}
 	return nil
 }
@@ -149,47 +215,6 @@ func (s *Service) deleteRunnerCapacity(ctx context.Context, ref runnerCapacityRe
 				"error", err)
 		}
 	}
-}
-
-func (s *Service) surfaceRunnerCapacityFailureToProvider(ctx context.Context, ref runnerCapacityRef, reason string) {
-	if ref.ProviderInstallationID == 0 || ref.ProviderRunID == 0 || strings.TrimSpace(ref.RepositoryFullName) == "" {
-		return
-	}
-	started := time.Now().UTC()
-	result := "succeeded"
-	cancelReason := reason
-	cancelCtx, cancel := context.WithTimeout(ctx, runnerProviderSurfaceTimeout)
-	defer cancel()
-	if err := s.cancelWorkflowRun(cancelCtx, ref.ProviderInstallationID, ref.RepositoryFullName, ref.ProviderRunID); err != nil {
-		result = "failed"
-		cancelReason = err.Error()
-		if s.cfg.Logger != nil {
-			s.cfg.Logger.WarnContext(ctx, "cancel failed github workflow run after internal capacity failure",
-				"provider_run_id", ref.ProviderRunID,
-				"provider_job_id", ref.ProviderJobID,
-				"error", err)
-		}
-		s.recordRunnerProviderSurfaceProblem(ctx, ref, err)
-	}
-	s.writeEvent(ctx, githubEventFromMetadata(runnerCapacityMetadata(ref), "github.workflow_run.cancel_requested", result, truncate(cancelReason, 1024), started, time.Now().UTC()))
-}
-
-func (s *Service) recordRunnerProviderSurfaceProblem(ctx context.Context, ref runnerCapacityRef, cause error) {
-	problems := runnerProblemSet{}
-	problems.add(githubRunnerProblemFromError("provider_surface", "github_runner.provider_surface_failed", "Failed to surface runner failure to GitHub", cause, true))
-	tx, err := s.cfg.PG.Begin(ctx)
-	if err != nil {
-		return
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	qtx := store.New(tx)
-	if err := appendProviderDemandProblems(ctx, qtx, ref.ProviderJobID, problems); err != nil {
-		return
-	}
-	if err := appendRunnerInstanceProblems(ctx, qtx, ref.RunnerName, problems); err != nil {
-		return
-	}
-	_ = tx.Commit(ctx)
 }
 
 func runnerCapacityMetadata(ref runnerCapacityRef) webhookMetadata {
