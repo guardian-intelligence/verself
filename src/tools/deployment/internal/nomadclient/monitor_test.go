@@ -6,6 +6,25 @@ import (
 	"github.com/hashicorp/nomad/api"
 )
 
+func TestSpecExecutionMode(t *testing.T) {
+	tests := []struct {
+		name string
+		spec *Spec
+		want ExecutionMode
+	}{
+		{name: "default service", spec: &Spec{Job: &api.Job{}}, want: ExecutionModeServiceRollout},
+		{name: "batch run", spec: &Spec{Job: &api.Job{Type: stringPtr("batch")}}, want: ExecutionModeBatchRun},
+		{name: "dispatch template", spec: &Spec{Job: &api.Job{Type: stringPtr("batch"), ParameterizedJob: &api.ParameterizedJobConfig{}}}, want: ExecutionModeDispatchTemplate},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.spec.ExecutionMode(); got != tt.want {
+				t.Fatalf("ExecutionMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNextBatchEvaluationID(t *testing.T) {
 	tests := []struct {
 		name string
@@ -39,4 +58,8 @@ func TestNextBatchEvaluationID(t *testing.T) {
 			}
 		})
 	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

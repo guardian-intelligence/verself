@@ -150,11 +150,12 @@ func (c *Client) ParseJobHCL(ctx context.Context, body []byte, source string) (*
 
 // SubmitResult is the handle returned from a successful Register call.
 // DeploymentID may be empty if the job has no update stanza. Monitor watches
-// batch jobs through their eval allocations and treats non-batch jobs without
-// deployments as successfully registered.
+// executable batch jobs through their eval allocations and treats dispatch
+// templates as successfully registered once Nomad confirms the stored parent job.
 type SubmitResult struct {
 	JobID          string
 	JobType        string
+	ExecutionMode  ExecutionMode
 	EvalID         string
 	JobModifyIndex uint64
 	DeploymentID   string
@@ -175,6 +176,7 @@ func (c *Client) Submit(ctx context.Context, spec *Spec, priorModifyIndex uint64
 	return &SubmitResult{
 		JobID:          spec.JobID(),
 		JobType:        spec.JobType(),
+		ExecutionMode:  spec.ExecutionMode(),
 		EvalID:         regResp.EvalID,
 		JobModifyIndex: regResp.JobModifyIndex,
 		DeploymentID:   c.findDeploymentID(ctx, spec.JobID(), regResp.JobModifyIndex),
@@ -232,6 +234,7 @@ func (c *Client) Revert(ctx context.Context, jobID, jobType string, targetVersio
 	sub := &SubmitResult{
 		JobID:          jobID,
 		JobType:        jobType,
+		ExecutionMode:  executionModeFromJobType(jobType),
 		EvalID:         resp.EvalID,
 		JobModifyIndex: resp.JobModifyIndex,
 		DeploymentID:   c.findDeploymentID(ctx, jobID, resp.JobModifyIndex),
@@ -261,9 +264,10 @@ func (c *Client) Deregister(ctx context.Context, jobID, jobType string) (*Submit
 		return nil, fmt.Errorf("deregister %s: %w", jobID, err)
 	}
 	sub := &SubmitResult{
-		JobID:   jobID,
-		JobType: jobType,
-		EvalID:  evalID,
+		JobID:         jobID,
+		JobType:       jobType,
+		ExecutionMode: executionModeFromJobType(jobType),
+		EvalID:        evalID,
 	}
 	span.SetAttributes(attribute.String("nomad.eval_id", evalID))
 	span.SetStatus(codes.Ok, "")

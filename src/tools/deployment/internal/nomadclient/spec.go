@@ -25,6 +25,14 @@ type Spec struct {
 	SpecDigest     string
 }
 
+type ExecutionMode string
+
+const (
+	ExecutionModeServiceRollout   ExecutionMode = "service_rollout"
+	ExecutionModeBatchRun         ExecutionMode = "batch_run"
+	ExecutionModeDispatchTemplate ExecutionMode = "dispatch_template"
+)
+
 // LoadSpec reads a resolved Nomad JSON file and validates stamped metadata.
 // Errors here surface the contract between resolver and submitter.
 func LoadSpec(path string) (*Spec, error) {
@@ -77,6 +85,20 @@ func (s *Spec) JobType() string {
 		return "service"
 	}
 	return *s.Job.Type
+}
+
+func (s *Spec) ExecutionMode() ExecutionMode {
+	if s != nil && s.Job != nil && s.Job.IsParameterized() {
+		return ExecutionModeDispatchTemplate
+	}
+	return executionModeFromJobType(s.JobType())
+}
+
+func executionModeFromJobType(jobType string) ExecutionMode {
+	if jobType == "batch" {
+		return ExecutionModeBatchRun
+	}
+	return ExecutionModeServiceRollout
 }
 
 // shortDigest is the operator-friendly tail used in log lines and span

@@ -40,14 +40,15 @@ type MonitorResult struct {
 }
 
 // Monitor mirrors the upstream `nomad deployment status -monitor`
-// blocking-query loop on Deployments.Info. Batch jobs have no deployment row,
-// so they are gated on eval-scoped allocation completion.
+// blocking-query loop on Deployments.Info. Executable batch jobs have no
+// deployment row, so they are gated on eval-scoped allocation completion.
 func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) (MonitorResult, error) {
 	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.deployment_monitor",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("nomad.job_id", sub.JobID),
 			attribute.String("nomad.eval_id", sub.EvalID),
+			attribute.String("nomad.execution_mode", string(sub.ExecutionMode)),
 			attribute.Int64("nomad.job_modify_index", int64FromUint64(sub.JobModifyIndex, "job modify index")),
 		),
 	)
@@ -59,7 +60,8 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) (MonitorResult,
 		sub.DeploymentID = c.findDeploymentID(ctx, sub.JobID, sub.JobModifyIndex)
 	}
 	if sub.DeploymentID == "" {
-		if sub.JobType == "batch" {
+		switch sub.ExecutionMode {
+		case ExecutionModeBatchRun, ExecutionModeDispatchTemplate:
 			return c.monitorBatchEvaluation(ctx, sub)
 		}
 		span.SetAttributes(attribute.Bool("nomad.deployment.exists", false))
@@ -208,12 +210,22 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 		trace.WithAttributes(
 			attribute.String("nomad.job_id", sub.JobID),
 			attribute.String("nomad.eval_id", sub.EvalID),
+			attribute.String("nomad.execution_mode", string(sub.ExecutionMode)),
 			attribute.Int64("nomad.job_modify_index", int64FromUint64(sub.JobModifyIndex, "job modify index")),
 		),
 	)
 	defer span.End()
 
 	if sub.EvalID == "" {
+		if sub.ExecutionMode == ExecutionModeDispatchTemplate {
+			if err := c.confirmRegisteredParameterizedJob(ctx, sub); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return MonitorResult{TerminalStatus: "registration_unconfirmed"}, err
+			}
+			span.SetStatus(codes.Ok, "")
+			return MonitorResult{TerminalStatus: "registered", StatusDescription: "parameterized job registered"}, nil
+		}
 		err := fmt.Errorf("batch job %s register response did not include eval_id", sub.JobID)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -289,6 +301,23 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 			return MonitorResult{TerminalStatus: ev.Status, StatusDescription: ev.StatusDescription}, err
 		}
 	}
+}
+
+func (c *Client) confirmRegisteredParameterizedJob(ctx context.Context, sub *SubmitResult) error {
+	job, _, err := c.api.Jobs().Info(sub.JobID, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("confirm parameterized job %s: %w", sub.JobID, err)
+	}
+	if job == nil {
+		return fmt.Errorf("confirm parameterized job %s: empty job response", sub.JobID)
+	}
+	if !job.IsParameterized() {
+		return fmt.Errorf("confirm parameterized job %s: registered job is not parameterized", sub.JobID)
+	}
+	if modify := derefUint64(job.JobModifyIndex); modify < sub.JobModifyIndex {
+		return fmt.Errorf("confirm parameterized job %s: job_modify_index=%d before submitted index %d", sub.JobID, modify, sub.JobModifyIndex)
+	}
+	return nil
 }
 
 func nextBatchEvaluationID(ev *api.Evaluation) string {
