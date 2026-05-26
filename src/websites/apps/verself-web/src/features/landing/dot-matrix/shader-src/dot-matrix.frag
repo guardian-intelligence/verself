@@ -7,12 +7,20 @@ uniform float uAmbient;
 uniform float uContrast;
 uniform float uDpr;
 uniform float uDotSpacingPx;
+uniform float uLightAmbient;
 uniform float uPhase;
+uniform float uPostExposure;
 uniform float uSeed;
+uniform float uSurfaceDepth;
 uniform int uShadowMaskCount;
+uniform sampler2D uFieldState;
 uniform sampler2D uWaveState;
 uniform vec4 uCameraRect;
 uniform vec2 uResolution;
+uniform vec3 uKeyLightColor;
+uniform vec3 uKeyLightDirection;
+uniform vec3 uRimLightColor;
+uniform vec3 uRimLightDirection;
 uniform vec4 uShadowMaskFalloff[MAX_SHADOW_MASKS];
 uniform vec4 uShadowMaskParams[MAX_SHADOW_MASKS];
 uniform vec4 uShadowMaskRects[MAX_SHADOW_MASKS];
@@ -74,8 +82,11 @@ void main() {
   vec2 dotCenterPx = (cell + 0.5) * stepPx;
   vec2 localPixel = fract(fragCoord / stepPx) * stepPx - stepPx * 0.5;
 
+  vec4 fields = texture(uFieldState, worldUv);
   float shadow = dotShadowAt(dotCenterPx);
-  float dotFade = 1.0 - shadow;
+  float sceneVisibility = fields.r;
+  float readableProtection = 1.0 - max(shadow, fields.a);
+  float dotFade = sceneVisibility * readableProtection;
 
   float mask = dotMask(localPixel, stepPx * 0.225);
   float base = 0.34;
@@ -88,33 +99,57 @@ void main() {
   vec4 waveState = texture(uWaveState, worldUv);
   float height = waveState.r;
   float velocity = height - waveState.g;
-  float energy = clamp(abs(height) * 7.2 + abs(velocity) * 16.0, 0.0, 1.15);
+  float energy = clamp(abs(height) * 5.4 + abs(velocity) * 10.5, 0.0, 0.95);
   float waveEnergy =
-    energy * dotFade * mix(0.78, 1.08, cluster) * (0.82 + 0.42 * uAmbient);
+    energy * dotFade * mix(0.78, 1.04, cluster) * (0.76 + 0.28 * uAmbient);
 
-  mask = dotMask(localPixel, stepPx * (0.212 + waveEnergy * 0.104));
+  vec2 waveTexel = 1.0 / max(cellCount, vec2(1.0));
+  float heightWest = texture(uWaveState, worldUv - vec2(waveTexel.x, 0.0)).r;
+  float heightEast = texture(uWaveState, worldUv + vec2(waveTexel.x, 0.0)).r;
+  float heightSouth = texture(uWaveState, worldUv - vec2(0.0, waveTexel.y)).r;
+  float heightNorth = texture(uWaveState, worldUv + vec2(0.0, waveTexel.y)).r;
+  vec2 waveSlope =
+    vec2(heightEast - heightWest, heightNorth - heightSouth) * uSurfaceDepth;
+
+  mask = dotMask(localPixel, stepPx * (0.212 + waveEnergy * 0.082));
   if (mask <= 0.001) {
     discard;
   }
 
   float waveHighlight = smoothstep(0.08, 0.52, waveEnergy);
-  float luminance = dormant * mix(0.78, 0.94, uAmbient) + waveEnergy * 1.85;
+  vec2 dotUnit = localPixel / max(stepPx * 0.5, 0.001);
+  float capZ = sqrt(max(0.0, 1.0 - dot(dotUnit, dotUnit)));
+  vec3 capNormal = normalize(vec3(dotUnit * 0.42, capZ));
+  vec3 fieldNormal = normalize(vec3(-waveSlope.x, -waveSlope.y, 1.0));
+  vec3 normal = normalize(mix(capNormal, fieldNormal, clamp(0.32 + waveEnergy * 0.22, 0.0, 0.68)));
+  vec3 keyDirection = normalize(uKeyLightDirection);
+  vec3 rimDirection = normalize(uRimLightDirection);
+  float keyLight = max(dot(normal, keyDirection), 0.0);
+  float rimLight = pow(max(dot(normal, rimDirection), 0.0), 2.35);
+  float grazingLight = pow(1.0 - clamp(normal.z, 0.0, 1.0), 1.8);
+
+  float luminance = dormant * mix(0.78, 0.92, uAmbient) + waveEnergy * 1.22;
   luminance *= dotFade;
   luminance *= uContrast;
-  luminance = clamp(luminance, 0.0, 1.9);
+  luminance = clamp(luminance, 0.0, 1.42);
 
   vec3 baseTone = vec3(0.42);
   vec3 troughTone = vec3(0.50, 0.78, 0.72);
   vec3 crestTone = vec3(1.0);
   vec3 hotTone = mix(troughTone, crestTone, smoothstep(-0.14, 0.14, height));
   vec3 color = mix(baseTone, hotTone, smoothstep(0.06, 0.44, waveEnergy));
-  color = mix(color, vec3(1.0), waveHighlight * 0.56);
-  color += vec3(0.08, 0.14, 0.16) * waveEnergy * 0.16;
+  color = mix(color, vec3(1.0), waveHighlight * 0.42);
+  color += vec3(0.08, 0.14, 0.16) * waveEnergy * 0.1;
+  vec3 light =
+    vec3(uLightAmbient) +
+    uKeyLightColor * keyLight * 0.72 +
+    uRimLightColor * rimLight * (0.14 + waveHighlight * 0.26) +
+    uRimLightColor * grazingLight * waveEnergy * 0.1;
 
   float alpha =
-    mask * mix(0.34 + 0.5 * clamp(luminance, 0.0, 1.0), 0.94, waveHighlight * 0.55);
+    mask * mix(0.34 + 0.44 * clamp(luminance, 0.0, 1.0), 0.84, waveHighlight * 0.48);
   alpha *= dotFade;
   alpha *= mix(0.72, 1.0, uActive);
 
-  fragColor = vec4(min(color * luminance, vec3(1.0)), alpha);
+  fragColor = vec4(min(color * light * luminance * uPostExposure, vec3(1.0)), alpha);
 }
