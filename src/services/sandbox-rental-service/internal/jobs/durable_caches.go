@@ -2616,6 +2616,7 @@ func goldenVMClockModelHash() string {
 	return stableHex(
 		"kvm-ptp",
 		"chrony-source-offset-max-1ms",
+		"chrony-phc-fast-selection-v1",
 		"host-wall-clock-step",
 		"restored-wall-clock-max-offset-1ms",
 		"firecracker-v1.15-load-snapshot-schema",

@@ -50,7 +50,8 @@ var substratePackages = []string{
 	"zstd",
 }
 
-const chronyConf = `refclock PHC /dev/ptp0 poll 0 dpoll -2 offset 0 refid KVM
+// Restore gates on PHC source selection; sub-second polling keeps resume latency bounded.
+const chronyConf = `refclock PHC /dev/ptp0 poll -4 dpoll -4 offset 0 refid KVM filter 1 maxsamples 1 prefer
 makestep 0.1 3
 bindcmdaddress /run/chrony/chronyd.sock
 port 0
