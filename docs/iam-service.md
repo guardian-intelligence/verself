@@ -1,10 +1,11 @@
 # IAM Service
 
-`iam-service` is the product authorization control plane. Zitadel remains the
-authority for human, organization, and customer credential authentication.
-SPIRE remains the authority for repo-owned workload identity. SpiceDB is the
-relationship authorization database. `iam-service` owns the product semantics
-layer over SpiceDB: schemas, relationship writes, consistency policy,
+`iam-service` is the product account and authorization control plane. Zitadel is
+the OIDC provider and identity broker for human authentication, external IdPs,
+GitHub, passkeys, MFA, password lifecycle, and authentication-layer account
+linking. SPIRE remains the authority for repo-owned workload identity. SpiceDB is
+the relationship authorization database. `iam-service` owns the relying-party
+account graph, organization membership, device/session registry, product
 authorization APIs, projection invalidation, audit, and reconciliation.
 
 Product services remain enforcement points. They enforce by calling the
@@ -17,7 +18,9 @@ consistency modes directly, or infer product authorization from browser state.
 
 | Concern | Authority |
 | --- | --- |
-| Human authentication, org directory, OIDC, MFA, passkeys, service-account credential authentication | Zitadel |
+| Human authentication, external IdP brokering, OIDC, MFA, passkeys, password lifecycle, auth-layer account linking | Zitadel |
+| Product account graph, org membership projection, device/session registry, auth-context APIs | `iam-service` |
+| Service-account credential authentication and directory profile source | Zitadel through `iam-service/internal/directory` |
 | Repo-owned workload authentication | SPIRE |
 | Product authorization graph | SpiceDB |
 | Product authorization API, schema lifecycle, relationship writes, audit, revocation epochs | `iam-service` |
@@ -65,9 +68,19 @@ several SpiceDB processes.
 - OAuth refresh tokens, device-code login, and PKCE remain Zitadel/OIDC
   concerns. `iam-service` validates access tokens and manages product
   authorization state; it does not become an OAuth authorization server.
-- Public signup creates a signup intent and sends a verification email. It does
-  not create a Zitadel user, Zitadel organization, IAM organization row, SpiceDB
-  relationship, service account, or billing customer until verification succeeds.
+- OIDC issuer and subject identify an authenticated human subject. Email address
+  matches are collision signals and account-linking inputs. Account merges
+  require explicit linking.
+- Linking a new provider identity to an existing Verself account requires recent
+  proof of the existing account and policy checks for the target connection.
+- Browser, CLI, and SDK channels initiate authentication and select account/org
+  context. Product services enforce authorization at service and data boundaries.
+- Public signup creates a signup intent and sends a verification email only for
+  new-account or reusable-intent flows. Existing account emails receive an
+  account-exists notice without creating intent state. Signup does not create a
+  Zitadel user, Zitadel organization, IAM organization row, SpiceDB
+  relationship, product account, service account, or billing customer until
+  verification succeeds.
 - Invite acceptance activates an invited directory user through the public IAM
   acceptance API. Member invitation remains an authenticated org-scoped
   mutation.
@@ -88,15 +101,50 @@ verification expiry, idempotency metadata, request attribution, and delivery
 state. Signup accepts a single mailbox address. Domains are canonicalized with
 IDNA, Unicode local parts are normalized to NFC, and `+` subaddress detail is
 preserved for delivery while excluded from the identity fingerprint.
-The operation returns a generic accepted response and queues email
-verification. The response must not reveal whether the email identity already
-belongs to a user or pending invite. Repeated starts for the same email
-identity reuse the current reusable intent. After a short per-email cooldown,
-IAM rotates the verification token and sends a fresh email for the same signup
-intent ID; within the cooldown it returns the generic accepted response without
-another delivery. Completed signup identities and in-flight materialization
-states return the same generic accepted response without creating a second
-organization or sending an email.
+The operation returns a generic accepted response. The response must not reveal
+whether the email identity already belongs to a user or pending invite. When the
+canonical email identity is already attached to an account, IAM does not create a
+signup intent; it queues an account-exists notice to the mailbox and returns the
+generic accepted response. Repeated starts for the same email identity reuse the
+current reusable intent. After a short per-email cooldown, IAM rotates the
+verification token and sends a fresh email for the same signup intent ID; within
+the cooldown it returns the generic accepted response without another delivery.
+In-flight materialization states return the same generic accepted response
+without creating a second organization or sending an email.
+
+```mermaid
+stateDiagram-v2
+  [*] --> StartSignup
+
+  StartSignup --> ExistingAccountEmail: iam_account_emails match
+  ExistingAccountEmail --> AccountExistsNotice: queue mailbox notice
+  AccountExistsNotice --> AcceptedResponse: generic 202
+
+  StartSignup --> CreateIntent: no account email or reusable intent
+  CreateIntent --> PendingVerification: insert iam_signup_intents
+  PendingVerification --> VerificationEmail: queue verification link
+  VerificationEmail --> AcceptedResponse: generic 202
+
+  StartSignup --> ReusableIntent: pending or expired reusable intent
+  ReusableIntent --> RotateVerification: cooldown elapsed
+  RotateVerification --> PendingVerification
+  ReusableIntent --> AcceptedResponse: cooldown active
+
+  StartSignup --> AcceptedResponse: materialization in flight
+
+  PendingVerification --> VerifySignup: token submitted
+  VerifySignup --> Expired: token expired
+  VerifySignup --> AlreadyUsed: intent already completed
+  VerifySignup --> DuplicateEmailGuard: token and idempotency accepted
+  DuplicateEmailGuard --> AccountExistsProblem: account email now exists
+  DuplicateEmailGuard --> Materializing: account email still absent
+
+  Materializing --> RetryableFailure: dependency unavailable
+  RetryableFailure --> Materializing: worker retry
+  Materializing --> FailedTerminal: invalid request or conflict
+  Materializing --> Completed: product account and org committed
+  Completed --> ConstrainedLogin
+```
 
 `CheckOrganizationSlugAvailability` is a public read used by signup UI and
 automation. It is a convenience check; `VerifySignup` repeats the slug
@@ -140,8 +188,10 @@ codes. Invalid and expired verification links are client-correctable 400
 responses. Reused links, concurrent materialization, signup state conflicts, and
 unavailable organization slugs are 409 responses. A slug conflict before
 provider side effects remains retryable with the same verification code until
-expiry. `StartSignup` keeps account existence private by returning the generic
-accepted response for reusable, completed, and in-flight email identities.
+expiry. Account-exists collisions return the generic accepted response on
+`StartSignup` and are explained only by email to the mailbox owner. `VerifySignup`
+re-checks the durable account email projection before provider side effects so a
+race cannot create a duplicate Zitadel human or product account.
 
 ## Organization Seeding And Promotion
 
@@ -555,43 +605,173 @@ HTTP error responses use RFC 9457 Problem Details with stable Verself problem
 types and trace-backed `instance` values. The SDK maps those problem documents
 to language-native typed errors.
 
-Authentication flows remain standard OIDC/OAuth:
+## Authentication, Account Graph, and Sessions
 
-- console: authorization code with PKCE and server-side sessions;
-- CLI: device authorization flow or authorization code with PKCE;
-- SDK workloads: bearer access token or customer API credential;
+Authentication flows use standard OIDC/OAuth channel profiles:
+
+- console: authorization code with PKCE and server-side browser session state;
+- interactive CLI: OAuth device authorization grant against the hosted issuer;
+- optional native-app CLI profile: authorization code with PKCE through the
+  system browser;
+- SDK workloads and CLI automation: workload identity or customer API
+  credential;
 - repo-owned service calls: SPIFFE mTLS on internal clients.
 
-Refresh tokens are issued and refreshed by Zitadel's token endpoint. They are
-never sent to product resource APIs and are not represented in IAM policy DTOs.
+Refresh tokens are issued and refreshed by Zitadel's token endpoint. Product
+resource APIs receive access tokens or resource tokens and validate them against
+the product account graph, org context, session state, and IAM policy.
 
-Browser auth has three separate pieces of state:
+Target account state is split by responsibility:
+
+| State | Owner | Purpose |
+| --- | --- | --- |
+| `iam_accounts` | `iam-service` | Stable Verself human account, risk state, lifecycle state, created/disabled timestamps. |
+| `iam_account_subjects` | `iam-service` | Issuer-scoped OIDC subjects linked to a Verself account. Unique on `(issuer, subject)`. |
+| `iam_account_connections` | `iam-service` | External provider identities observed through Zitadel, keyed by provider and external subject. Email claims are metadata. |
+| `iam_account_emails` | `iam-service` | Verified mailbox identities, delivery address, canonical identity hash, login/recovery flags. |
+| `iam_device_sessions` | `iam-service` | Browser, CLI, and SDK session/device registry, revocation state, last-seen evidence, auth freshness. |
+| `iam_signup_intents` | `iam-service` | Installation-scoped signup state machine before product account materialization. |
+
+Email identity deduplication protects signup and linking workflows from duplicate
+materialization. Account merges require explicit linking. A provider login with
+a new issuer/subject and an email already attached to a Verself account enters a
+link-required state. Linking requires recent proof of the existing account and a
+policy decision; the new provider subject is denied if it is already linked to a
+different account.
+
+```mermaid
+stateDiagram-v2
+  [*] --> AuthIntent
+
+  AuthIntent --> ExistingSession: browser or CLI has active account
+  AuthIntent --> StartLogin: no usable account
+  AuthIntent --> SwitchAccount: user chooses another known account
+  AuthIntent --> Reauth: action requires freshness or AAL
+
+  ExistingSession --> ProductContext: subject maps to Verself account
+  ExistingSession --> Reauth: expired, revoked, stale, or higher assurance
+  ExistingSession --> StartLogin: refresh unavailable
+
+  StartLogin --> IdPAuth: Zitadel hosted auth or device flow
+  IdPAuth --> ProviderSelection: password, passkey, GitHub, or OIDC
+  ProviderSelection --> ResolveIdentity
+
+  ResolveIdentity --> ExistingAccount: issuer and subject linked
+  ResolveIdentity --> LinkRequired: provider identity new and email collides
+  ResolveIdentity --> NewAccount: no subject or email collision
+  ResolveIdentity --> Denied: email unverified or policy blocked
+
+  LinkRequired --> ReauthExisting: prove existing Verself account
+  ReauthExisting --> Linked: recent auth and policy satisfied
+  ReauthExisting --> Denied
+
+  ExistingAccount --> ProductContext
+  Linked --> ProductContext
+  NewAccount --> Onboarding
+  ProductContext --> OrgSelection
+  ProductContext --> NoAccessibleOrg: no orgs
+  NoAccessibleOrg --> Onboarding
+  OrgSelection --> Ready
+  OrgSelection --> Denied: required org unavailable
+```
+
+Browser auth is a projection of that account state:
 
 - browser client: the HTTP-only `verself_client` cookie and server row that
   identify one browser install;
-- browser account: one Zitadel subject, encrypted token bundle, and available
-  Verself organizations under that browser client;
-- selected organization: the product org context for the active browser
-  account.
+- browser account: one issuer/subject under that browser client, encrypted token
+  bundle, linked Verself account metadata, and available organizations;
+- selected organization: the product org context for the active browser account.
 
 Every browser product request resolves through browser client, active browser
-account, and selected organization. Browser JavaScript receives only handles,
-user/org metadata, and a cache partition. It never receives Zitadel refresh
-tokens or persisted product bearer tokens. Signup and invite completion return
-constrained login URLs with required subject, email, and org metadata; the
-callback enforces those constraints server-side because `prompt=select_account`
-and `login_hint` are OIDC hints, not authorization facts.
+account, selected organization, account session state, and authorization policy.
+Browser JavaScript receives handles, user/org metadata, and a cache partition.
+Zitadel refresh tokens and persisted product bearer tokens remain server-side.
+Signup and invite completion return constrained login URLs with required subject,
+email, and org metadata; the callback enforces those constraints server-side
+because `prompt=select_account` and `login_hint` are OIDC hints.
 
+```mermaid
+stateDiagram-v2
+  [*] --> VisitLogin
+
+  VisitLogin --> SignedInDefault: session valid and no prompt
+  SignedInDefault --> ContinueToConsole
+
+  VisitLogin --> AccountChooser: multiple browser accounts
+  AccountChooser --> ContinueToConsole: choose active valid account
+  AccountChooser --> Reauth: chosen account stale or revoked
+  AccountChooser --> AddAccount: user chooses add account
+
+  VisitLogin --> AddAccount: no valid browser account
+  AddAccount --> HostedLogin
+  Reauth --> HostedLogin: constrained subject, org, email, freshness
+
+  HostedLogin --> ProviderChoice
+  ProviderChoice --> GitHub
+  ProviderChoice --> PasswordOrPasskey
+  ProviderChoice --> FutureOIDC
+
+  GitHub --> Callback
+  PasswordOrPasskey --> Callback
+  FutureOIDC --> Callback
+
+  Callback --> LoginRejected: state, nonce, PKCE, or constraint failure
+  Callback --> LinkExisting: same email and different subject/provider
+  Callback --> OrgPicker: valid account and multiple orgs
+  Callback --> ContinueToConsole: valid account and single org
+  Callback --> NoOrg: valid account and no org
+  Callback --> SignupComplete: signup or invite constrained flow
+
+  LinkExisting --> ReauthExistingAccount
+  ReauthExistingAccount --> OrgPicker
+  ReauthExistingAccount --> LoginRejected
+
+  OrgPicker --> ContinueToConsole
+  OrgPicker --> LoginRejected: required org unavailable
+  NoOrg --> Onboarding
+```
+
+The console surface implied by the state machine includes login/account chooser,
+provider choice, device/session-aware reauth, provider collision/link account,
+org picker, signup/invite completion, rejected-login problem display, and a
+security page for linked providers, emails, passkeys, MFA, and sessions.
+
+Required implementation cases:
+
+- no prior account;
+- one valid prior account;
+- multiple prior accounts on the same device;
+- active account expired but refreshable;
+- active account revoked remotely;
+- switching to a stale account requires reauth;
+- signup completion requires the exact created subject;
+- invite acceptance requires the exact invited subject;
+- GitHub login returns an already linked subject;
+- GitHub login returns a new subject with an existing email and requires linking;
+- provider email is missing or unverified;
+- same provider subject is linked to another account;
+- same email appears on multiple accounts and requires an explicit selector plus
+  recent auth;
+- user has no accessible org;
+- user has multiple orgs;
+- high-risk action requires fresh auth, passkey, or higher AAL;
+- session is revoked from another device;
+- back-channel logout invalidates browser/CLI session evidence;
+- non-interactive CLI has no workload credential and receives a typed auth error.
 
 ## Feature Parity Surface
 
-The first implementation covers the complete product IAM and browser-auth
-surface:
+The target product IAM and auth-context surface is:
 
 | Surface | Owning package | Notes |
 | --- | --- | --- |
 | Browser login, callback, logout, account read/switch/remove, selected org update | `internal/browser` | Owns browser-client and browser-account state plus OIDC token exchange. Does not perform product authorization decisions directly. |
 | Browser resource tokens | `internal/browser` plus `internal/authz` | Resource token issuance is scoped to active account and selected org, and records token audience, org, scope, and freshness. |
+| Product account graph | `internal/accounts` plus `internal/directory` | Maps issuer subjects, external provider connections, verified email identities, and Verself account lifecycle. |
+| Device/session registry | `internal/sessions` | Records browser and CLI sessions, auth freshness, revocation state, back-channel logout evidence, and last-seen telemetry. |
+| Account connections | `internal/accounts` plus `internal/directory` | Links and removes GitHub/OIDC/provider connections after recent proof of the existing account. |
+| Reauth/login intents | `internal/browser` plus `internal/accounts` | Enforces required subject, email, org, freshness, and assurance constraints server-side. |
 | Available organizations for the caller | `internal/orgs` | Uses token role assignments and directory-backed org metadata; returns only orgs the token proves. |
 | Organization profile read/update/resolve | `internal/orgs` | Profile state lives in IAM PostgreSQL; authorization is checked through typed decisions. |
 | Organization members | `internal/members` | Directory-backed read model for humans. Service accounts are listed and governed through their own resource surface. |
@@ -1104,13 +1284,16 @@ secret ownership should be represented as relationships.
 
 ## API Surface
 
-Public APIs cover installation-scoped signup activation and organization IAM
-management by authenticated users and customer credentials. The public surface is
-intentionally conventional:
+Public APIs cover installation-scoped signup activation, account context,
+device/session management, and organization IAM management by authenticated users
+and customer credentials. The public surface is intentionally conventional:
 
 | Resource | Operations |
 | --- | --- |
 | Signup intents | start signup, verify signup. |
+| Account context | get current actor/account, list available org contexts, select org context. |
+| Device sessions | list sessions, revoke session, observe back-channel logout. |
+| Account connections | list linked providers/emails, link provider, remove provider, set primary email. |
 | IAM policy | `getIamPolicy`, `setIamPolicy`, `testIamPermissions` on supported resources. |
 | Roles | list predefined roles, list org roles, create org role, update org role, delete org role. |
 | Members | list members, invite member, accept invite, update member role bindings, remove member. |
@@ -1320,9 +1503,23 @@ deployment failure.
   <https://google.aip.dev/193>.
 - RFC 9457 Problem Details:
   <https://www.rfc-editor.org/rfc/rfc9457>.
+- OpenID Connect Core 1.0:
+  <https://openid.net/specs/openid-connect-core-1_0-18.html>.
 - OAuth 2.0 refresh tokens:
   <https://www.rfc-editor.org/rfc/rfc6749>.
 - OAuth 2.0 Device Authorization Grant:
   <https://www.rfc-editor.org/rfc/rfc8628>.
+- OAuth 2.0 for Native Apps:
+  <https://www.rfc-editor.org/rfc/rfc8252>.
+- OAuth 2.0 Security Best Current Practice:
+  <https://www.rfc-editor.org/rfc/rfc9700.html>.
+- OpenID Connect Back-Channel Logout:
+  <https://openid.net/specs/openid-connect-backchannel-1_0.html>.
+- NIST SP 800-63C federation:
+  <https://pages.nist.gov/800-63-4/sp800-63c.html>.
+- WebAuthn Level 3:
+  <https://www.w3.org/TR/webauthn-3/>.
+- Zitadel external identity provider and account linking:
+  <https://zitadel.com/docs/guides/integrate/identity-providers/introduction>.
 - SCIM 2.0 protocol:
   <https://www.rfc-editor.org/rfc/rfc7644>.

@@ -5,7 +5,7 @@ above curated SDKs, which wrap public transport implementations for product serv
 Browser server functions, the CLI, and customer automation use the same service
 contracts with different auth flows and local state handling.
 
-CLI borrows the Vercel command grammar where it fits: `verself auth login`, `verself orgs use`, `verself env pull`. Semantics are different because Verself does not deploy customer applications. `verself deploy` is an operator-local checkout command for deploying this Verself installation, not a customer app deploy. We'll dogfood the CLI by using it to seed our organization and run automations. Auth context decides which surface a given command targets.
+CLI borrows the Vercel command grammar where it fits: `verself orgs use`, `verself env pull`, and `whoami`. Semantics are different because Verself does not deploy customer applications. `verself deploy` is an operator-local checkout command for deploying this Verself installation, not a customer app deploy. We'll dogfood the CLI by using it to seed our organization and run automations. Auth context decides which surface a given command targets.
 
 `aspect` remains the repo task runner for contributors and agents. `verself`
 is the public product CLI. Operator-local commands can wrap selected `aspect`
@@ -262,7 +262,7 @@ are unset, but the logical layout remains stable.
 | State | `$XDG_STATE_HOME/verself` | `~/.local/state/verself` | Mutable command state, selected org/project history, bootstrap run records. |
 | Data | `$XDG_DATA_HOME/verself` | `~/.local/share/verself` | Durable non-secret company records, downloaded discovery manifests, and plugin metadata. |
 | Cache | `$XDG_CACHE_HOME/verself` | `~/.cache/verself` | Rebuildable caches: API discovery, org/project display-name cache, SDK schema cache. |
-| Runtime | `$XDG_RUNTIME_DIR/verself` | process-local `0700` temp dir when unset | Locks, auth callback sockets, PKCE state, nonce files, and short-lived IPC. |
+| Runtime | `$XDG_RUNTIME_DIR/verself` | process-local `0700` temp dir when unset | Locks, device-flow polling state, optional PKCE callback sockets, nonce files, and short-lived IPC. |
 
 Directories are created with mode `0700`. Config and state files are written
 with mode `0600` through an atomic write, fsync, and rename sequence. Commands
@@ -424,38 +424,106 @@ deployment linkage. User-specific overrides belong in XDG profile config.
 
 ## Auth UX
 
-Hosted auth resolves in two steps. A profile stores site and service discovery
-state. An account under that profile stores the credential reference, subject
-metadata, and selected organization. Product commands resolve active profile,
-then active account, then selected organization. This keeps multiple accounts
-for one Verself site explicit for humans and agents.
+Hosted auth resolves through profile, account, session, and organization
+context. A profile stores site and service discovery state. An account under that
+profile stores issuer/subject metadata, the display name, the Verself account
+id, a credential reference, the device session id, and selected organization.
+Product commands resolve active profile, active account, active session, then selected
+organization. Multiple accounts for one Verself site remain explicit local state.
+
+```mermaid
+stateDiagram-v2
+  [*] --> CommandNeedsAuth
+
+  CommandNeedsAuth --> UseActiveAccount: active credential exists
+  UseActiveAccount --> Ready: token fresh or refresh succeeds
+  UseActiveAccount --> ReauthRequired: refresh fails, stale, revoked, or high-risk command
+
+  CommandNeedsAuth --> AccountList: multiple historical accounts
+  AccountList --> UseActiveAccount: selected account valid
+  AccountList --> ReauthRequired: selected account needs proof
+
+  CommandNeedsAuth --> LoginRequired: no account
+  ReauthRequired --> DeviceCode: interactive TTY
+  LoginRequired --> DeviceCode: interactive TTY
+  LoginRequired --> NonInteractiveDenied: no TTY and no workload credential
+
+  DeviceCode --> ShowVerificationURI
+  ShowVerificationURI --> Polling
+  Polling --> Ready: authorized
+  Polling --> Expired: device code expires
+  Polling --> Denied: user or provider policy denies
+  Polling --> SlowDown: authorization server asks slower polling
+  SlowDown --> Polling
+
+  Ready --> PersistAccount
+  PersistAccount --> OrgContext
+  OrgContext --> CommandRuns: selected org valid
+  OrgContext --> OrgPicker: interactive and multiple orgs
+  OrgPicker --> CommandRuns
+  OrgContext --> TypedAuthError: no org or ambiguous non-interactive
+
+  NonInteractiveDenied --> TypedAuthError
+```
 
 ```text
+verself auth login
 verself auth signup --email owner@example.com --org "Acme" --slug acme
 verself auth signup verify --url "$SIGNUP_URL"
-verself auth login
+verself auth whoami
 verself auth accounts list
 verself auth accounts use <handle|email|subject>
 verself auth accounts logout [handle|email|subject]
 verself auth sessions list
 verself auth sessions revoke <session-id>
-verself auth whoami
 verself auth logout
 ```
 
+```mermaid
+stateDiagram-v2
+  [*] --> AuthSignup
+  AuthSignup --> AcceptedResponse: generic JSON
+
+  AcceptedResponse --> VerificationEmail: new or reusable intent
+  AcceptedResponse --> AccountExistsEmail: account email exists
+  AcceptedResponse --> NoEmail: cooldown active or materializing
+
+  VerificationEmail --> AuthSignupVerify: newest link submitted
+  AccountExistsEmail --> AuthLogin: mailbox owner signs in
+  NoEmail --> [*]
+
+  AuthSignupVerify --> ConstrainedLoginURL: signup completed
+  AuthSignupVerify --> TypedAuthError: expired, used, account exists, slug conflict
+  ConstrainedLoginURL --> AuthLogin
+```
+
 `verself auth signup` starts an unauthenticated IAM signup intent. IAM sends a
-verification email and creates no Zitadel user, organization, SpiceDB
-relationship, or product account until `verself auth signup verify` submits the
-verification token. The SDK derives mutation idempotency keys; CLI users and
-forms do not provide them for signup. Signup starts always emit a generic JSON
-`message` so the command does not reveal whether an email already exists.
+verification email only for new or reusable signup intents and creates no
+Zitadel user, organization, SpiceDB relationship, or product account until
+`verself auth signup verify` submits the verification token. The SDK derives
+mutation idempotency keys; CLI users and forms do not provide them for signup.
+Signup starts always emit a generic JSON `message` so the command does not
+reveal whether an email already exists. When the mailbox already belongs to an
+account, IAM sends an account-exists notice instead of a verification link.
 Repeated starts for an address with a reusable pending intent send the newest
 link for the same intent after a short per-email cooldown; rapid repeats return
-the same accepted response without another email. After verification, the user
-signs in through the same OIDC login path as any existing user. Verification
-responses include a
-constrained login URL so a browser already signed into a different account is
-asked to select the intended account.
+the same accepted response without another email. After verification, the
+response includes a constrained browser login URL so a browser already signed
+into a different account is asked to select the intended account.
+
+`verself auth login` is an interactive human login command. It discovers the
+hosted issuer from the active profile, starts the OAuth device authorization
+grant, prints the verification URI and user code, polls with server-provided
+intervals, persists the resulting account/session in the credential store, and
+selects an accessible organization when the choice is unambiguous.
+Non-interactive invocations fail with a typed auth error unless a workload
+credential or customer API credential is configured.
+
+`verself auth accounts use` validates the selected account before switching. A
+stale, revoked, or higher-assurance account enters the reauth path instead of
+becoming active. `verself auth logout` and `verself auth sessions revoke` revoke
+remote session evidence before deleting local references when the issuer exposes
+revocation metadata.
 
 Signup-flow mailboxes are provisioned and cleaned up through operator tasks:
 
@@ -478,7 +546,6 @@ invite acceptance API:
 
 ```text
 verself orgs members invite teammate@example.com --role roles/admin
-verself auth login
 ```
 
 The invite email points at the console invite page. CLI automation can consume
@@ -487,27 +554,30 @@ controls the mailbox used for testing.
 
 Workload trust is the preferred path for CI, Verself runners, agents, and
 self-hosted runtimes that can present their own identity. Interactive CLI login
-uses OAuth device code, then mints a Verself device session. SDK-backed commands
-read the active auth profile, active account, and device session by default.
-Command-level service-origin overrides exist for diagnostics and isolated local
-development.
+uses OAuth device code, then mints a Verself device session. Customer API
+credentials are the portable automation path for runtimes without workload
+identity. SDK-backed commands read the active auth profile, active account, and
+device session by default. Command-level service-origin overrides exist for
+diagnostics and isolated local development.
 
 ## Public Command Surface
 
 The CLI borrows command grammar from Vercel where it fits: `whoami`, `link`,
-`env pull`, and `orgs use`. The public v0 surface targets hosted Verself APIs
-and sandbox-compute product resources. Verself sells sandbox compute rather than
-application hosting, so hosted public commands manage organizations, projects,
-environments, source resources, credentials, billing, logs, and sandbox
-workloads.
+`env pull`, and `orgs use`. The target public surface targets hosted Verself
+APIs and sandbox-compute product resources. Verself sells sandbox compute rather
+than application hosting, so hosted public commands manage organizations,
+projects, environments, source resources, credentials, billing, logs, and
+sandbox workloads.
 
 ```text
+verself auth login
 verself auth signup
 verself auth signup verify
 verself profiles list|add|use|inspect|refresh|remove
 verself auth login|whoami|logout
 verself auth accounts list|use|logout
 verself auth sessions list|revoke
+verself auth connections list|link|remove
 verself credentials list|create|inspect|rotate|revoke
 verself credentials trust list|create|inspect|delete
 verself orgs list|create|use|inspect|update
@@ -520,6 +590,9 @@ verself notifications list|summary|dismiss|clear|preferences
 verself audit api-activities|exports
 verself billing entitlements|plans|contracts|statement
 ```
+
+`auth connections` is the target account-linking surface for GitHub and future
+OIDC providers after the device-login and session-registry work lands.
 
 `teams` can be accepted as an alias for `orgs` for migration ergonomics:
 
@@ -1000,10 +1073,10 @@ A seeding request creates a pending claim:
 }
 ```
 
-During browser or CLI auth callback, IAM verifies:
+During constrained login or owner-claim completion, IAM verifies:
 
 - the OIDC token issuer and audience;
-- the nonce and PKCE state;
+- the browser nonce and PKCE state, or the issuer-confirmed device grant result;
 - `email_verified == true`;
 - the normalized email matches a pending claim;
 - the claim is active, unexpired, and unclaimed.
@@ -1042,7 +1115,8 @@ than normal organization membership.
 - Interactive commands refuse ambiguous org/project selection.
 - Non-interactive commands fail when required profile, org, or project context
   is missing.
-- Token files require owner-only permissions and are opened as regular files.
+- If token-file ingestion is retained, token files require owner-only
+  permissions and are opened as regular files.
 - CLI logs and errors redact tokens, authorization headers, cookies, signed
   URLs, and webhook secrets.
 - Runtime files are created under a `0700` directory and removed after the
