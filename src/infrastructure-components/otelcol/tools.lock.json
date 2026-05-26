@@ -17,7 +17,7 @@
     "binaries": [
       {
         "kind": "archive",
-        "url": "https://github.com/spiffe/spiffe-helper/releases/download/v0.11.0/spiffe-helper-v0.11.0-linux-amd64.tar.gz",
+        "url": "https://github.com/spiffe/spiffe-helper/releases/download/v0.11.0/spiffe-helper_v0.11.0_Linux-x86_64.tar.gz",
         "sha256": "7fba909574320d6a656e2e7d7f0657890fefad08a2abecd86c7bafe62d6d9134",
         "type": "tar.gz",
         "file": "spiffe-helper",
