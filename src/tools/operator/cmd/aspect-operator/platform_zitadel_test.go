@@ -1,6 +1,35 @@
 package main
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestPlatformCompanyEmailLocalParts(t *testing.T) {
+	want := []string{
+		"anveio",
+		"hello",
+		"feedback",
+		"sales",
+		"support",
+		"security",
+		"abuse",
+		"privacy",
+		"legal",
+		"billing",
+		"careers",
+		"press",
+		"postmaster",
+		"hostmaster",
+		"webmaster",
+		"noreply",
+		"updates",
+		"agents",
+	}
+	if got := platformCompanyEmailLocalParts(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("platform company email local parts = %#v, want %#v", got, want)
+	}
+}
 
 func TestPlatformRuntimeAuthAudienceSpecsUseProductAudience(t *testing.T) {
 	credentialPaths := map[string]string{}
