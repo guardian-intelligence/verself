@@ -14,6 +14,7 @@ var (
 	ErrSignupIntentConflict          = errors.New("signup intent conflict")
 	ErrSignupVerificationAlreadyUsed = errors.New("signup verification already used")
 	ErrSignupMaterializing           = errors.New("signup intent materializing")
+	ErrSignupAccountExists           = errors.New("signup account email exists")
 	ErrIdempotencyConflict           = errors.New("idempotency payload mismatch")
 	ErrConfiguration                 = errors.New("iam configuration invalid")
 	ErrStoreUnavailable              = errors.New("iam store unavailable")

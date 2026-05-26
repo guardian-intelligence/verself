@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -29,17 +30,24 @@ func (s SQLStore) StartSignupIntent(ctx context.Context, intent SignupIntent, no
 		return SignupStartDecision{}, err
 	}
 	q := identitystore.New(tx)
-	if completed, err := q.GetCompletedSignupIntentByEmailIdentityHashForUpdate(ctx, identitystore.GetCompletedSignupIntentByEmailIdentityHashForUpdateParams{EmailIdentityHash: append([]byte(nil), intent.EmailIdentityHash...)}); err == nil {
-		converted, err := signupIntentFromRow(completed)
-		if err != nil {
-			return SignupStartDecision{}, err
+	if strings.TrimSpace(intent.EmailIdentityKey) == "" {
+		return SignupStartDecision{}, fmt.Errorf("%w: signup email identity key is required", ErrInvalidInput)
+	}
+	if err := q.LockAccountEmailIdentityKey(ctx, identitystore.LockAccountEmailIdentityKeyParams{EmailIdentityKey: intent.EmailIdentityKey}); err != nil {
+		return SignupStartDecision{}, fmt.Errorf("%w: lock signup account email: %v", ErrStoreUnavailable, err)
+	}
+	if accountEmail, err := q.GetAccountEmailByIdentityKeyForUpdate(ctx, identitystore.GetAccountEmailByIdentityKeyForUpdateParams{EmailIdentityKey: intent.EmailIdentityKey}); err == nil {
+		converted := signupAccountEmailFromRow(accountEmail)
+		outcome := SignupStartOutcomeAccountExistsNotice
+		if converted.AccountState == AccountStateProvisioning {
+			outcome = SignupStartOutcomeInFlightSuppressed
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return SignupStartDecision{}, fmt.Errorf("%w: commit completed signup start: %v", ErrStoreUnavailable, err)
+			return SignupStartDecision{}, fmt.Errorf("%w: commit account email signup start: %v", ErrStoreUnavailable, err)
 		}
-		return SignupStartDecision{Intent: converted, Outcome: SignupStartOutcomeExistingAccountSuppressed}, nil
+		return SignupStartDecision{AccountEmail: converted, Outcome: outcome}, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return SignupStartDecision{}, fmt.Errorf("%w: load completed signup intent by email: %v", ErrStoreUnavailable, err)
+		return SignupStartDecision{}, fmt.Errorf("%w: load account email by identity: %v", ErrStoreUnavailable, err)
 	}
 	if reusable, err := q.GetReusableSignupIntentByEmailIdentityHashForUpdate(ctx, identitystore.GetReusableSignupIntentByEmailIdentityHashForUpdateParams{EmailIdentityHash: append([]byte(nil), intent.EmailIdentityHash...)}); err == nil {
 		if reusable.State != string(SignupIntentStateExpired) && now.Before(reusable.UpdatedAt.Time.Add(signupVerificationResendInterval)) {
@@ -207,7 +215,7 @@ func (s SQLStore) ClaimSignupIntentForVerification(ctx context.Context, signupIn
 		}
 		if sameVerifyRequest && intent.State == SignupIntentStateCompleted {
 			if err := tx.Commit(ctx); err != nil {
-				return SignupIntent{}, fmt.Errorf("%w: commit completed signup intent read: %v", ErrStoreUnavailable, err)
+				return SignupIntent{}, fmt.Errorf("%w: commit completed verification read: %v", ErrStoreUnavailable, err)
 			}
 			return intent, nil
 		}
@@ -272,6 +280,82 @@ func (s SQLStore) RecordSignupIntentStep(ctx context.Context, signupIntentID, st
 	return nil
 }
 
+func (s SQLStore) RecordSignupIntentAccount(ctx context.Context, signupIntentID, accountID string) error {
+	if s.PG == nil {
+		return ErrStoreUnavailable
+	}
+	if err := s.q().RecordSignupIntentAccount(ctx, identitystore.RecordSignupIntentAccountParams{
+		SignupIntentID: signupIntentID,
+		AccountID:      accountID,
+	}); err != nil {
+		return fmt.Errorf("%w: record signup account: %v", ErrStoreUnavailable, err)
+	}
+	return nil
+}
+
+func (s SQLStore) ReserveSignupAccountEmail(ctx context.Context, input SignupAccountEmailReservation) (SignupAccountEmail, error) {
+	if s.PG == nil {
+		return SignupAccountEmail{}, ErrStoreUnavailable
+	}
+	input.AccountID = strings.TrimSpace(input.AccountID)
+	input.EmailDelivery = strings.TrimSpace(input.EmailDelivery)
+	input.EmailIdentityKey = strings.TrimSpace(input.EmailIdentityKey)
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	if input.AccountID == "" || input.EmailDelivery == "" || input.EmailIdentityKey == "" || input.DisplayName == "" {
+		return SignupAccountEmail{}, fmt.Errorf("%w: account_id, email, email identity key, and display name are required", ErrInvalidInput)
+	}
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return SignupAccountEmail{}, fmt.Errorf("%w: begin signup account reservation: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	q := identitystore.New(tx)
+	if err := q.LockAccountEmailIdentityKey(ctx, identitystore.LockAccountEmailIdentityKeyParams{EmailIdentityKey: input.EmailIdentityKey}); err != nil {
+		return SignupAccountEmail{}, fmt.Errorf("%w: lock signup account email: %v", ErrStoreUnavailable, err)
+	}
+	existing, err := q.GetAccountEmailByIdentityKeyForUpdate(ctx, identitystore.GetAccountEmailByIdentityKeyForUpdateParams{EmailIdentityKey: input.EmailIdentityKey})
+	if err == nil {
+		email := signupAccountEmailFromRow(existing)
+		if email.AccountID != input.AccountID {
+			return SignupAccountEmail{}, ErrSignupAccountExists
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return SignupAccountEmail{}, fmt.Errorf("%w: commit existing signup account reservation: %v", ErrStoreUnavailable, err)
+		}
+		return email, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return SignupAccountEmail{}, fmt.Errorf("%w: load signup account email: %v", ErrStoreUnavailable, err)
+	}
+	rows, err := q.CreateSignupAccountReservation(ctx, identitystore.CreateSignupAccountReservationParams{
+		AccountID:    input.AccountID,
+		PrimaryEmail: input.EmailDelivery,
+		DisplayName:  input.DisplayName,
+	})
+	if err != nil {
+		return SignupAccountEmail{}, fmt.Errorf("%w: create signup account reservation: %v", ErrStoreUnavailable, err)
+	}
+	if rows == 0 {
+		return SignupAccountEmail{}, ErrSignupAccountExists
+	}
+	if err := q.InsertSignupAccountEmail(ctx, identitystore.InsertSignupAccountEmailParams{
+		AccountID:        input.AccountID,
+		Email:            input.EmailDelivery,
+		EmailIdentityKey: input.EmailIdentityKey,
+	}); err != nil {
+		return SignupAccountEmail{}, fmt.Errorf("%w: insert signup account email: %v", ErrStoreUnavailable, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return SignupAccountEmail{}, fmt.Errorf("%w: commit signup account reservation: %v", ErrStoreUnavailable, err)
+	}
+	return SignupAccountEmail{
+		AccountID:        input.AccountID,
+		EmailDelivery:    input.EmailDelivery,
+		EmailIdentityKey: input.EmailIdentityKey,
+		AccountState:     AccountStateProvisioning,
+	}, nil
+}
+
 func (s SQLStore) RecordSignupIntentProviderOrg(ctx context.Context, signupIntentID, providerOrgID string) error {
 	if s.PG == nil {
 		return ErrStoreUnavailable
@@ -298,6 +382,102 @@ func (s SQLStore) RecordSignupIntentOrganization(ctx context.Context, signupInte
 	}
 	if err := s.q().RecordSignupIntentOrganization(ctx, identitystore.RecordSignupIntentOrganizationParams{SignupIntentID: signupIntentID, OrgID: orgID, OrganizationSlug: organizationSlug}); err != nil {
 		return fmt.Errorf("%w: record signup organization: %v", ErrStoreUnavailable, err)
+	}
+	return nil
+}
+
+func (s SQLStore) CompleteSignupAccount(ctx context.Context, input SignupAccountCompletion) error {
+	if s.PG == nil {
+		return ErrStoreUnavailable
+	}
+	input.AccountID = strings.TrimSpace(input.AccountID)
+	input.Issuer = strings.TrimSpace(input.Issuer)
+	input.Subject = strings.TrimSpace(input.Subject)
+	input.EmailDelivery = strings.TrimSpace(input.EmailDelivery)
+	input.EmailIdentityKey = strings.TrimSpace(input.EmailIdentityKey)
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	input.ConnectionID = strings.TrimSpace(input.ConnectionID)
+	if input.AccountID == "" || input.Issuer == "" || input.Subject == "" || input.EmailDelivery == "" || input.EmailIdentityKey == "" || input.DisplayName == "" || input.ConnectionID == "" {
+		return fmt.Errorf("%w: account completion fields are required", ErrInvalidInput)
+	}
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("%w: begin signup account completion: %v", ErrStoreUnavailable, err)
+	}
+	defer rollback(ctx, tx)
+	q := identitystore.New(tx)
+	if err := q.LockAccountEmailIdentityKey(ctx, identitystore.LockAccountEmailIdentityKeyParams{EmailIdentityKey: input.EmailIdentityKey}); err != nil {
+		return fmt.Errorf("%w: lock signup account email completion: %v", ErrStoreUnavailable, err)
+	}
+	existing, err := q.GetAccountEmailByIdentityKeyForUpdate(ctx, identitystore.GetAccountEmailByIdentityKeyForUpdateParams{EmailIdentityKey: input.EmailIdentityKey})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrSignupIntentConflict
+	}
+	if err != nil {
+		return fmt.Errorf("%w: load signup account email completion: %v", ErrStoreUnavailable, err)
+	}
+	if existing.AccountID != input.AccountID {
+		return ErrSignupAccountExists
+	}
+	connection, err := q.GetAccountConnectionByProviderSubject(ctx, identitystore.GetAccountConnectionByProviderSubjectParams{Issuer: input.Issuer, Subject: input.Subject})
+	if err == nil && connection.AccountID != input.AccountID {
+		return ErrSignupAccountExists
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("%w: load signup account connection: %v", ErrStoreUnavailable, err)
+	}
+	rows, err := q.ActivateSignupAccount(ctx, identitystore.ActivateSignupAccountParams{
+		AccountID:    input.AccountID,
+		PrimaryEmail: input.EmailDelivery,
+		DisplayName:  input.DisplayName,
+	})
+	if err != nil {
+		return fmt.Errorf("%w: activate signup account: %v", ErrStoreUnavailable, err)
+	}
+	if rows == 0 {
+		return ErrSignupIntentConflict
+	}
+	claimsJSON := []byte("{}")
+	rows, err = q.UpsertAccountSubject(ctx, identitystore.UpsertAccountSubjectParams{
+		Issuer:        input.Issuer,
+		Subject:       input.Subject,
+		AccountID:     input.AccountID,
+		Email:         input.EmailDelivery,
+		EmailVerified: true,
+		DisplayName:   input.DisplayName,
+		ClaimsJson:    claimsJSON,
+	})
+	if err != nil {
+		return fmt.Errorf("%w: link signup account subject: %v", ErrStoreUnavailable, err)
+	}
+	if rows == 0 {
+		return ErrSignupAccountExists
+	}
+	if err := q.UpsertAccountEmail(ctx, identitystore.UpsertAccountEmailParams{
+		AccountID:        input.AccountID,
+		Email:            input.EmailDelivery,
+		EmailIdentityKey: input.EmailIdentityKey,
+		Verified:         true,
+		Source:           "signup",
+	}); err != nil {
+		return fmt.Errorf("%w: update signup account email: %v", ErrStoreUnavailable, err)
+	}
+	rows, err = q.UpsertAccountConnection(ctx, identitystore.UpsertAccountConnectionParams{
+		ConnectionID:  input.ConnectionID,
+		AccountID:     input.AccountID,
+		Issuer:        input.Issuer,
+		Subject:       input.Subject,
+		Email:         input.EmailDelivery,
+		EmailVerified: true,
+	})
+	if err != nil {
+		return fmt.Errorf("%w: link signup account connection: %v", ErrStoreUnavailable, err)
+	}
+	if rows == 0 {
+		return ErrSignupAccountExists
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("%w: commit signup account completion: %v", ErrStoreUnavailable, err)
 	}
 	return nil
 }
@@ -367,6 +547,7 @@ func signupIntentFromRow(row identitystore.IamSignupIntent) (SignupIntent, error
 		VerifyIdempotencyKey:        row.VerifyIdempotencyKey,
 		VerifyRequestHash:           append([]byte(nil), row.VerifyRequestHash...),
 		OrgID:                       row.OrgID,
+		AccountID:                   row.AccountID,
 		IdentityProviderOrgID:       row.IdentityProviderOrgID,
 		IdentityProviderUserID:      row.IdentityProviderUserID,
 		CreatedAt:                   createdAt,
@@ -375,4 +556,13 @@ func signupIntentFromRow(row identitystore.IamSignupIntent) (SignupIntent, error
 		VerifiedAt:                  nullableTime(row.VerifiedAt),
 		CompletedAt:                 nullableTime(row.CompletedAt),
 	}, nil
+}
+
+func signupAccountEmailFromRow(row identitystore.GetAccountEmailByIdentityKeyForUpdateRow) SignupAccountEmail {
+	return SignupAccountEmail{
+		AccountID:        row.AccountID,
+		EmailDelivery:    row.Email,
+		EmailIdentityKey: row.EmailIdentityKey,
+		AccountState:     AccountState(row.AccountState),
+	}
 }

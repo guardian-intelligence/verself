@@ -56,6 +56,7 @@ func (s *Service) StartSignup(ctx context.Context, input StartSignupRequest) (St
 		IdempotencyKey:            input.IdempotencyKey,
 		RequestHash:               requestHash,
 		EmailDelivery:             email.DeliveryAddress,
+		EmailIdentityKey:          email.IdentityKey,
 		EmailIdentityHash:         emailIdentityHash,
 		EmailIdentityHashKeyID:    signupEmailIdentityHashKeyID,
 		OrganizationDisplayName:   input.OrganizationName,
@@ -76,28 +77,38 @@ func (s *Service) StartSignup(ctx context.Context, input StartSignupRequest) (St
 		responseExpiresAt = decision.Intent.VerificationExpiresAt
 	}
 	switch decision.Outcome {
-	case SignupStartOutcomeExistingAccountSuppressed:
+	case SignupStartOutcomeAccountExistsNotice:
 		responseExpiresAt = now.Add(24 * time.Hour)
 		if err := s.emitSignupEvent(ctx, store, IAMEvent{
-			EventType:      "iam.signup_intent.existing_account_suppressed",
-			AggregateType:  "signup_intent",
-			AggregateID:    decision.Intent.SignupIntentID,
-			SignupIntentID: decision.Intent.SignupIntentID,
-			OrgID:          decision.Intent.OrgID,
-			State:          decision.Intent.State,
-			Outcome:        "suppressed",
-			OccurredAt:     now,
-			Payload:        map[string]any{"email_fingerprint": emailFingerprint},
+			EventType:     "iam.signup.account_exists_notice",
+			AggregateType: "account_email",
+			AggregateID:   emailFingerprint,
+			Outcome:       "suppressed",
+			OccurredAt:    now,
+			Payload:       map[string]any{"email_fingerprint": emailFingerprint},
 		}); err != nil {
 			return StartSignupResult{}, err
 		}
-		token = ""
+		return StartSignupResult{
+			Intent:            decision.Intent,
+			AccountNotice:     SignupAccountNotice{EmailDelivery: email.DeliveryAddress, IdempotencyKey: signupAccountNoticeIdempotencyKey(emailFingerprint, now)},
+			Outcome:           decision.Outcome,
+			ResponseExpiresAt: responseExpiresAt,
+		}, nil
 	case SignupStartOutcomeInFlightSuppressed:
 		responseExpiresAt = now.Add(24 * time.Hour)
+		eventType := "iam.signup_intent.inflight_suppressed"
+		aggregateType := "signup_intent"
+		aggregateID := decision.Intent.SignupIntentID
+		if aggregateID == "" {
+			eventType = "iam.signup.account_email_inflight_suppressed"
+			aggregateType = "account_email"
+			aggregateID = emailFingerprint
+		}
 		if err := s.emitSignupEvent(ctx, store, IAMEvent{
-			EventType:      "iam.signup_intent.inflight_suppressed",
-			AggregateType:  "signup_intent",
-			AggregateID:    decision.Intent.SignupIntentID,
+			EventType:      eventType,
+			AggregateType:  aggregateType,
+			AggregateID:    aggregateID,
 			SignupIntentID: decision.Intent.SignupIntentID,
 			OrgID:          decision.Intent.OrgID,
 			State:          decision.Intent.State,
@@ -266,6 +277,14 @@ func (s *Service) materializeSignup(ctx context.Context, store Store, signupStor
 	if err != nil {
 		return VerifySignupResult{}, err
 	}
+	issuer, err := s.identityIssuer()
+	if err != nil {
+		return VerifySignupResult{}, err
+	}
+	email, err := ParseEmailAddress(intent.EmailDelivery)
+	if err != nil {
+		return VerifySignupResult{}, err
+	}
 	profile, err := store.GetOrganizationProfile(ctx, intent.OrgID, "system:signup")
 	createProfile := false
 	profileSlug := ""
@@ -279,6 +298,27 @@ func (s *Service) materializeSignup(ctx context.Context, store Store, signupStor
 		return VerifySignupResult{}, err
 	}
 	lease := s.now().Add(signupIntentLeaseDuration)
+	if strings.TrimSpace(intent.AccountID) == "" {
+		accountID, err := randomAccountID()
+		if err != nil {
+			return VerifySignupResult{}, err
+		}
+		intent.AccountID = accountID
+		if err := signupStore.RecordSignupIntentAccount(ctx, intent.SignupIntentID, intent.AccountID); err != nil {
+			return VerifySignupResult{}, err
+		}
+	}
+	if err := s.recordSignupStep(ctx, signupStore, intent, "account_email_guard", lease, idempotencyKey); err != nil {
+		return VerifySignupResult{}, err
+	}
+	if _, err := signupStore.ReserveSignupAccountEmail(ctx, SignupAccountEmailReservation{
+		AccountID:        intent.AccountID,
+		EmailDelivery:    email.DeliveryAddress,
+		EmailIdentityKey: email.IdentityKey,
+		DisplayName:      intent.OrganizationDisplayName,
+	}); err != nil {
+		return VerifySignupResult{}, err
+	}
 	if strings.TrimSpace(intent.IdentityProviderOrgID) == "" {
 		if err := s.recordSignupStep(ctx, signupStore, intent, "zitadel_organization", lease, idempotencyKey); err != nil {
 			return VerifySignupResult{}, err
@@ -348,6 +388,24 @@ func (s *Service) materializeSignup(ctx context.Context, store Store, signupStor
 		OrgID:       profile.OrgID,
 		DisplayName: profile.DisplayName,
 		TrustTier:   "new",
+	}); err != nil {
+		return VerifySignupResult{}, err
+	}
+	if err := s.recordSignupStep(ctx, signupStore, intent, "account_graph", s.now().Add(signupIntentLeaseDuration), idempotencyKey); err != nil {
+		return VerifySignupResult{}, err
+	}
+	connectionID, err := randomConnectionID()
+	if err != nil {
+		return VerifySignupResult{}, err
+	}
+	if err := signupStore.CompleteSignupAccount(ctx, SignupAccountCompletion{
+		AccountID:        intent.AccountID,
+		Issuer:           issuer,
+		Subject:          intent.IdentityProviderUserID,
+		EmailDelivery:    email.DeliveryAddress,
+		EmailIdentityKey: email.IdentityKey,
+		DisplayName:      intent.OrganizationDisplayName,
+		ConnectionID:     connectionID,
 	}); err != nil {
 		return VerifySignupResult{}, err
 	}
@@ -458,6 +516,13 @@ func (s *Service) signupDirectory() (SignupDirectory, error) {
 	return directory, nil
 }
 
+func (s *Service) identityIssuer() (string, error) {
+	if s == nil || strings.TrimSpace(s.IdentityIssuer) == "" {
+		return "", ErrConfiguration
+	}
+	return strings.TrimSpace(s.IdentityIssuer), nil
+}
+
 func normalizeStartSignup(input StartSignupRequest) (StartSignupRequest, EmailAddress, error) {
 	email, err := ParseEmailAddress(input.Email)
 	if err != nil {
@@ -553,6 +618,22 @@ func randomSignupIntentID() (string, error) {
 	return signupIntentPublicIDPrefix + payload, nil
 }
 
+func randomAccountID() (string, error) {
+	payload, err := randomCrockfordText(26)
+	if err != nil {
+		return "", err
+	}
+	return "acct_" + payload, nil
+}
+
+func randomConnectionID() (string, error) {
+	payload, err := randomCrockfordText(26)
+	if err != nil {
+		return "", err
+	}
+	return "conn_" + payload, nil
+}
+
 func randomSignupVerificationToken() (token string, hash []byte, err error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -569,6 +650,10 @@ func (s *Service) emailIdentityHash(identityKey string) (string, []byte, error) 
 	}
 	fingerprint, raw := HMACSHA256(s.EmailIdentityKey, strings.TrimSpace(identityKey))
 	return fingerprint + ":" + signupEmailIdentityHashKeyID, raw, nil
+}
+
+func signupAccountNoticeIdempotencyKey(emailFingerprint string, now time.Time) string {
+	return "iam:signup_exists:" + hashText(strings.TrimSpace(emailFingerprint)+":"+now.UTC().Format("20060102"))
 }
 
 func signupProviderOrganizationName(intent SignupIntent) string {
@@ -592,7 +677,7 @@ func hashText(value string) string {
 }
 
 func signupFailureTerminal(err error) bool {
-	return errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrOrganizationConflict) || errors.Is(err, ErrIdempotencyConflict)
+	return errors.Is(err, ErrInvalidInput) || errors.Is(err, ErrOrganizationConflict) || errors.Is(err, ErrIdempotencyConflict) || errors.Is(err, ErrSignupAccountExists)
 }
 
 func signupErrorKind(err error) string {
@@ -609,6 +694,8 @@ func signupErrorKind(err error) string {
 		return "organization_conflict"
 	case errors.Is(err, ErrOrganizationSlugUnavailable):
 		return "organization_slug_unavailable"
+	case errors.Is(err, ErrSignupAccountExists):
+		return "account_exists"
 	case errors.Is(err, ErrInvalidInput):
 		return "invalid_input"
 	default:

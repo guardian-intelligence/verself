@@ -123,6 +123,8 @@ func identityError(ctx context.Context, err error) error {
 		return badRequest(ctx, "iam.signup.verification.invalid", "signup verification is invalid", err)
 	case errors.Is(err, identity.ErrSignupMaterializing):
 		return conflict(ctx, "iam.signup.materializing", "signup verification is already being materialized", err)
+	case errors.Is(err, identity.ErrSignupAccountExists):
+		return conflict(ctx, "iam.signup.account_exists", "signup email already belongs to an account", err)
 	case errors.Is(err, identity.ErrSignupIntentConflict):
 		return conflict(ctx, "iam.signup.state_conflict", "signup state cannot accept this operation", err)
 	case errors.Is(err, identity.ErrOrganizationSlugUnavailable):

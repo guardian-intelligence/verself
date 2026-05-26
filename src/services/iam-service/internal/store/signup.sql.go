@@ -31,67 +31,13 @@ func (q *Queries) DeletePendingSignupIntent(ctx context.Context, arg DeletePendi
 	return result.RowsAffected(), nil
 }
 
-const getCompletedSignupIntentByEmailIdentityHashForUpdate = `-- name: GetCompletedSignupIntentByEmailIdentityHashForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
-       organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
-       verification_token_hash, state, materialization_step, materialization_attempts,
-       materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
-       org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
-FROM iam_signup_intents
-WHERE email_identity_hash = $1
-  AND state = 'completed'
-ORDER BY completed_at DESC
-LIMIT 1
-FOR UPDATE
-`
-
-type GetCompletedSignupIntentByEmailIdentityHashForUpdateParams struct {
-	EmailIdentityHash []byte
-}
-
-func (q *Queries) GetCompletedSignupIntentByEmailIdentityHashForUpdate(ctx context.Context, arg GetCompletedSignupIntentByEmailIdentityHashForUpdateParams) (IamSignupIntent, error) {
-	row := q.db.QueryRow(ctx, getCompletedSignupIntentByEmailIdentityHashForUpdate, arg.EmailIdentityHash)
-	var i IamSignupIntent
-	err := row.Scan(
-		&i.SignupIntentID,
-		&i.IdempotencyKey,
-		&i.RequestHash,
-		&i.EmailDelivery,
-		&i.EmailIdentityHash,
-		&i.EmailIdentityHashKeyID,
-		&i.OrganizationDisplayName,
-		&i.RequestedOrganizationSlug,
-		&i.OrganizationSlug,
-		&i.GivenName,
-		&i.FamilyName,
-		&i.VerificationTokenHash,
-		&i.State,
-		&i.MaterializationStep,
-		&i.MaterializationAttempts,
-		&i.MaterializationLastError,
-		&i.MaterializationLeaseExpiresAt,
-		&i.VerifyIdempotencyKey,
-		&i.VerifyRequestHash,
-		&i.OrgID,
-		&i.IdentityProviderOrgID,
-		&i.IdentityProviderUserID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.VerificationExpiresAt,
-		&i.VerifiedAt,
-		&i.CompletedAt,
-	)
-	return i, err
-}
-
 const getInFlightSignupIntentByEmailIdentityHashForUpdate = `-- name: GetInFlightSignupIntentByEmailIdentityHashForUpdate :one
 SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
+       created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 FROM iam_signup_intents
 WHERE email_identity_hash = $1
   AND state IN ('materializing', 'failed_retryable', 'failed_terminal')
@@ -135,6 +81,7 @@ func (q *Queries) GetInFlightSignupIntentByEmailIdentityHashForUpdate(ctx contex
 		&i.VerificationExpiresAt,
 		&i.VerifiedAt,
 		&i.CompletedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -145,7 +92,7 @@ SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_id
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
+       created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 FROM iam_signup_intents
 WHERE email_identity_hash = $1
   AND (
@@ -197,6 +144,7 @@ func (q *Queries) GetReusableSignupIntentByEmailIdentityHashForUpdate(ctx contex
 		&i.VerificationExpiresAt,
 		&i.VerifiedAt,
 		&i.CompletedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -207,7 +155,7 @@ SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_id
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
+       created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 FROM iam_signup_intents
 WHERE idempotency_key = $1
 `
@@ -247,6 +195,7 @@ func (q *Queries) GetSignupIntentByIdempotencyKey(ctx context.Context, arg GetSi
 		&i.VerificationExpiresAt,
 		&i.VerifiedAt,
 		&i.CompletedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -257,7 +206,7 @@ SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_id
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
+       created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 FROM iam_signup_intents
 WHERE signup_intent_id = $1
 FOR UPDATE
@@ -298,6 +247,7 @@ func (q *Queries) GetSignupIntentForUpdate(ctx context.Context, arg GetSignupInt
 		&i.VerificationExpiresAt,
 		&i.VerifiedAt,
 		&i.CompletedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -318,7 +268,7 @@ RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
           org_id, identity_provider_org_id, identity_provider_user_id,
-          created_at, updated_at, verification_expires_at, verified_at, completed_at
+          created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 `
 
 type InsertSignupIntentParams struct {
@@ -382,6 +332,7 @@ func (q *Queries) InsertSignupIntent(ctx context.Context, arg InsertSignupIntent
 		&i.VerificationExpiresAt,
 		&i.VerifiedAt,
 		&i.CompletedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -399,7 +350,7 @@ RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
           org_id, identity_provider_org_id, identity_provider_user_id,
-          created_at, updated_at, verification_expires_at, verified_at, completed_at
+          created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 `
 
 type MarkSignupIntentCompletedParams struct {
@@ -438,6 +389,7 @@ func (q *Queries) MarkSignupIntentCompleted(ctx context.Context, arg MarkSignupI
 		&i.VerificationExpiresAt,
 		&i.VerifiedAt,
 		&i.CompletedAt,
+		&i.AccountID,
 	)
 	return i, err
 }
@@ -536,6 +488,24 @@ func (q *Queries) MarkSignupIntentStep(ctx context.Context, arg MarkSignupIntent
 	return err
 }
 
+const recordSignupIntentAccount = `-- name: RecordSignupIntentAccount :exec
+UPDATE iam_signup_intents
+SET account_id = $1,
+    materialization_step = 'account_email_guard',
+    updated_at = now()
+WHERE signup_intent_id = $2
+`
+
+type RecordSignupIntentAccountParams struct {
+	AccountID      string
+	SignupIntentID string
+}
+
+func (q *Queries) RecordSignupIntentAccount(ctx context.Context, arg RecordSignupIntentAccountParams) error {
+	_, err := q.db.Exec(ctx, recordSignupIntentAccount, arg.AccountID, arg.SignupIntentID)
+	return err
+}
+
 const recordSignupIntentOrganization = `-- name: RecordSignupIntentOrganization :exec
 UPDATE iam_signup_intents
 SET org_id = $1,
@@ -625,7 +595,7 @@ RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
           org_id, identity_provider_org_id, identity_provider_user_id,
-          created_at, updated_at, verification_expires_at, verified_at, completed_at
+          created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 `
 
 type RotateReusableSignupIntentVerificationParams struct {
@@ -681,6 +651,7 @@ func (q *Queries) RotateReusableSignupIntentVerification(ctx context.Context, ar
 		&i.VerificationExpiresAt,
 		&i.VerifiedAt,
 		&i.CompletedAt,
+		&i.AccountID,
 	)
 	return i, err
 }

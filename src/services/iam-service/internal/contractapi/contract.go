@@ -281,6 +281,17 @@ type SignupStateConflictError struct {
 	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
 }
 
+type SignupAccountExistsError struct {
+	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Title       string         `json:"title" required:"true"`
+	Status      int            `json:"status" required:"true"`
+	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Instance    *string        `json:"instance,omitempty"`
+	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
+	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
+	Traceparent *TraceParent   `json:"traceparent,omitempty" minLength:"55" maxLength:"255"`
+}
+
 type OrganizationSlugUnavailableError struct {
 	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
 	Title       string         `json:"title" required:"true"`
@@ -667,6 +678,7 @@ var VerifySignup = Operation[VerifySignupInput, VerifySignupOutput]{
 			{ShapeID: "verself.iam.v1#OrganizationSlugUnavailableError", Type: "urn:verself:problem:iam:organization_slug_unavailable", Code: "iam.organization_slug.unavailable", Status: 409},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
+			{ShapeID: "verself.iam.v1#SignupAccountExistsError", Type: "urn:verself:problem:iam:signup_account_exists", Code: "iam.signup.account_exists", Status: 409},
 			{ShapeID: "verself.iam.v1#SignupMaterializingError", Type: "urn:verself:problem:iam:signup_materializing", Code: "iam.signup.materializing", Status: 409},
 			{ShapeID: "verself.iam.v1#SignupStateConflictError", Type: "urn:verself:problem:iam:signup_state_conflict", Code: "iam.signup.state_conflict", Status: 409},
 			{ShapeID: "verself.iam.v1#SignupVerificationAlreadyUsedError", Type: "urn:verself:problem:iam:signup_verification_already_used", Code: "iam.signup.verification.already_used", Status: 409},

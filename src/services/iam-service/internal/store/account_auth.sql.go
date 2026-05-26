@@ -11,6 +11,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activateSignupAccount = `-- name: ActivateSignupAccount :execrows
+UPDATE iam_accounts
+SET state = 'active',
+    primary_email = $1,
+    display_name = $2,
+    updated_at = now()
+WHERE account_id = $3
+  AND state IN ('provisioning', 'active')
+`
+
+type ActivateSignupAccountParams struct {
+	PrimaryEmail string
+	DisplayName  string
+	AccountID    string
+}
+
+func (q *Queries) ActivateSignupAccount(ctx context.Context, arg ActivateSignupAccountParams) (int64, error) {
+	result, err := q.db.Exec(ctx, activateSignupAccount, arg.PrimaryEmail, arg.DisplayName, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countVerifiedAccountEmailsByIdentityKey = `-- name: CountVerifiedAccountEmailsByIdentityKey :one
 SELECT count(DISTINCT account_id)::bigint AS account_count
 FROM iam_account_emails
@@ -56,6 +80,39 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) er
 	return err
 }
 
+const createSignupAccountReservation = `-- name: CreateSignupAccountReservation :execrows
+INSERT INTO iam_accounts (
+  account_id,
+  state,
+  primary_email,
+  display_name
+) VALUES (
+  $1,
+  'provisioning',
+  $2,
+  $3
+)
+ON CONFLICT (account_id) DO UPDATE SET
+  primary_email = CASE WHEN iam_accounts.primary_email = '' THEN EXCLUDED.primary_email ELSE iam_accounts.primary_email END,
+  display_name = CASE WHEN iam_accounts.display_name = '' THEN EXCLUDED.display_name ELSE iam_accounts.display_name END,
+  updated_at = now()
+WHERE iam_accounts.state = 'provisioning'
+`
+
+type CreateSignupAccountReservationParams struct {
+	AccountID    string
+	PrimaryEmail string
+	DisplayName  string
+}
+
+func (q *Queries) CreateSignupAccountReservation(ctx context.Context, arg CreateSignupAccountReservationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, createSignupAccountReservation, arg.AccountID, arg.PrimaryEmail, arg.DisplayName)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAccountConnectionByProviderSubject = `-- name: GetAccountConnectionByProviderSubject :one
 SELECT connection_id, account_id, issuer, subject, state, email, email_verified, created_at, last_seen_at, updated_at
 FROM iam_account_connections
@@ -82,6 +139,59 @@ func (q *Queries) GetAccountConnectionByProviderSubject(ctx context.Context, arg
 		&i.CreatedAt,
 		&i.LastSeenAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getAccountEmailByIdentityKeyForUpdate = `-- name: GetAccountEmailByIdentityKeyForUpdate :one
+SELECT
+  e.account_id,
+  e.email,
+  e.email_identity_key,
+  e.verified,
+  e.source,
+  e.first_seen_at,
+  e.last_seen_at,
+  a.state AS account_state,
+  a.primary_email,
+  a.display_name
+FROM iam_account_emails e
+JOIN iam_accounts a ON a.account_id = e.account_id
+WHERE e.email_identity_key = $1
+FOR UPDATE OF e, a
+`
+
+type GetAccountEmailByIdentityKeyForUpdateParams struct {
+	EmailIdentityKey string
+}
+
+type GetAccountEmailByIdentityKeyForUpdateRow struct {
+	AccountID        string
+	Email            string
+	EmailIdentityKey string
+	Verified         bool
+	Source           string
+	FirstSeenAt      pgtype.Timestamptz
+	LastSeenAt       pgtype.Timestamptz
+	AccountState     string
+	PrimaryEmail     string
+	DisplayName      string
+}
+
+func (q *Queries) GetAccountEmailByIdentityKeyForUpdate(ctx context.Context, arg GetAccountEmailByIdentityKeyForUpdateParams) (GetAccountEmailByIdentityKeyForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getAccountEmailByIdentityKeyForUpdate, arg.EmailIdentityKey)
+	var i GetAccountEmailByIdentityKeyForUpdateRow
+	err := row.Scan(
+		&i.AccountID,
+		&i.Email,
+		&i.EmailIdentityKey,
+		&i.Verified,
+		&i.Source,
+		&i.FirstSeenAt,
+		&i.LastSeenAt,
+		&i.AccountState,
+		&i.PrimaryEmail,
+		&i.DisplayName,
 	)
 	return i, err
 }
@@ -195,6 +305,37 @@ func (q *Queries) GetDeviceSession(ctx context.Context, arg GetDeviceSessionPara
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const insertSignupAccountEmail = `-- name: InsertSignupAccountEmail :exec
+INSERT INTO iam_account_emails (
+  account_id,
+  email,
+  email_identity_key,
+  verified,
+  source,
+  first_seen_at,
+  last_seen_at
+) VALUES (
+  $1,
+  $2,
+  $3,
+  true,
+  'signup',
+  now(),
+  now()
+)
+`
+
+type InsertSignupAccountEmailParams struct {
+	AccountID        string
+	Email            string
+	EmailIdentityKey string
+}
+
+func (q *Queries) InsertSignupAccountEmail(ctx context.Context, arg InsertSignupAccountEmailParams) error {
+	_, err := q.db.Exec(ctx, insertSignupAccountEmail, arg.AccountID, arg.Email, arg.EmailIdentityKey)
+	return err
 }
 
 const listAccountConnections = `-- name: ListAccountConnections :many
@@ -417,7 +558,7 @@ func (q *Queries) TouchDeviceSession(ctx context.Context, arg TouchDeviceSession
 	return i, err
 }
 
-const upsertAccountConnection = `-- name: UpsertAccountConnection :exec
+const upsertAccountConnection = `-- name: UpsertAccountConnection :execrows
 INSERT INTO iam_account_connections (
   connection_id,
   account_id,
@@ -442,12 +583,12 @@ INSERT INTO iam_account_connections (
   now()
 )
 ON CONFLICT (issuer, subject) DO UPDATE SET
-  account_id = EXCLUDED.account_id,
   state = 'linked',
   email = EXCLUDED.email,
   email_verified = EXCLUDED.email_verified,
   last_seen_at = now(),
   updated_at = now()
+WHERE iam_account_connections.account_id = EXCLUDED.account_id
 `
 
 type UpsertAccountConnectionParams struct {
@@ -459,8 +600,8 @@ type UpsertAccountConnectionParams struct {
 	EmailVerified bool
 }
 
-func (q *Queries) UpsertAccountConnection(ctx context.Context, arg UpsertAccountConnectionParams) error {
-	_, err := q.db.Exec(ctx, upsertAccountConnection,
+func (q *Queries) UpsertAccountConnection(ctx context.Context, arg UpsertAccountConnectionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertAccountConnection,
 		arg.ConnectionID,
 		arg.AccountID,
 		arg.Issuer,
@@ -468,7 +609,10 @@ func (q *Queries) UpsertAccountConnection(ctx context.Context, arg UpsertAccount
 		arg.Email,
 		arg.EmailVerified,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertAccountEmail = `-- name: UpsertAccountEmail :exec
@@ -515,7 +659,7 @@ func (q *Queries) UpsertAccountEmail(ctx context.Context, arg UpsertAccountEmail
 	return err
 }
 
-const upsertAccountSubject = `-- name: UpsertAccountSubject :exec
+const upsertAccountSubject = `-- name: UpsertAccountSubject :execrows
 INSERT INTO iam_account_subjects (
   issuer,
   subject,
@@ -542,7 +686,6 @@ INSERT INTO iam_account_subjects (
   now()
 )
 ON CONFLICT (issuer, subject) DO UPDATE SET
-  account_id = EXCLUDED.account_id,
   state = 'linked',
   email = EXCLUDED.email,
   email_verified = EXCLUDED.email_verified,
@@ -550,6 +693,7 @@ ON CONFLICT (issuer, subject) DO UPDATE SET
   claims = EXCLUDED.claims,
   last_seen_at = now(),
   updated_at = now()
+WHERE iam_account_subjects.account_id = EXCLUDED.account_id
 `
 
 type UpsertAccountSubjectParams struct {
@@ -562,8 +706,8 @@ type UpsertAccountSubjectParams struct {
 	ClaimsJson    []byte
 }
 
-func (q *Queries) UpsertAccountSubject(ctx context.Context, arg UpsertAccountSubjectParams) error {
-	_, err := q.db.Exec(ctx, upsertAccountSubject,
+func (q *Queries) UpsertAccountSubject(ctx context.Context, arg UpsertAccountSubjectParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertAccountSubject,
 		arg.Issuer,
 		arg.Subject,
 		arg.AccountID,
@@ -572,7 +716,10 @@ func (q *Queries) UpsertAccountSubject(ctx context.Context, arg UpsertAccountSub
 		arg.DisplayName,
 		arg.ClaimsJson,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertDeviceSession = `-- name: UpsertDeviceSession :one

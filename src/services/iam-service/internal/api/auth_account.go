@@ -384,7 +384,7 @@ func (h publicHandlers) resolveAccount(ctx context.Context, q *identitystore.Que
 	if err != nil {
 		return productAccount{}, internalFailure(ctx, "service.unavailable", "encode identity claims failed", err)
 	}
-	if err := q.UpsertAccountSubject(ctx, identitystore.UpsertAccountSubjectParams{
+	rows, err := q.UpsertAccountSubject(ctx, identitystore.UpsertAccountSubjectParams{
 		Issuer:        issuer,
 		Subject:       subject,
 		AccountID:     accountID,
@@ -392,8 +392,12 @@ func (h publicHandlers) resolveAccount(ctx context.Context, q *identitystore.Que
 		EmailVerified: emailVerified,
 		DisplayName:   displayName,
 		ClaimsJson:    claimsJSON,
-	}); err != nil {
+	})
+	if err != nil {
 		return productAccount{}, internalFailure(ctx, "service.unavailable", "link account subject failed", err)
+	}
+	if rows == 0 {
+		return productAccount{}, conflict(ctx, "auth.provider_subject_already_linked", "provider subject is already linked to another Verself account", nil)
 	}
 	if err := q.UpsertAccountEmail(ctx, identitystore.UpsertAccountEmailParams{
 		AccountID:        accountID,
@@ -404,15 +408,19 @@ func (h publicHandlers) resolveAccount(ctx context.Context, q *identitystore.Que
 	}); err != nil {
 		return productAccount{}, internalFailure(ctx, "service.unavailable", "record account email failed", err)
 	}
-	if err := q.UpsertAccountConnection(ctx, identitystore.UpsertAccountConnectionParams{
+	rows, err = q.UpsertAccountConnection(ctx, identitystore.UpsertAccountConnectionParams{
 		ConnectionID:  stablePublicID(connectionIDPrefix, issuer, subject),
 		AccountID:     accountID,
 		Issuer:        issuer,
 		Subject:       subject,
 		Email:         parsedEmail.DeliveryAddress,
 		EmailVerified: emailVerified,
-	}); err != nil {
+	})
+	if err != nil {
 		return productAccount{}, internalFailure(ctx, "service.unavailable", "record account connection failed", err)
+	}
+	if rows == 0 {
+		return productAccount{}, conflict(ctx, "auth.provider_subject_already_linked", "provider subject is already linked to another Verself account", nil)
 	}
 	row, err = q.GetAccountSubject(ctx, identitystore.GetAccountSubjectParams{Issuer: issuer, Subject: subject})
 	if err != nil {

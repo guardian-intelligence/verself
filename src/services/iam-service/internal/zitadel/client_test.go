@@ -3,6 +3,7 @@ package zitadel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -43,6 +44,29 @@ func TestInviteMemberCreatesReturnCodes(t *testing.T) {
 	}
 	if got.UserID != "user-1" || got.EmailVerificationCode != "email-code" {
 		t.Fatalf("unexpected invite result %#v", got)
+	}
+}
+
+func TestCreateSignupUserMapsDuplicateUserToAccountExists(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/users/new" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": "user already exists"})
+	}))
+	defer server.Close()
+
+	client, err := New(Config{BaseURL: server.URL, AdminToken: "admin-token"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	_, err = client.CreateSignupUser(context.Background(), identity.DirectoryCreateSignupUserRequest{
+		OrgID: "42",
+		Email: "existing@example.test",
+	})
+	if !errors.Is(err, identity.ErrSignupAccountExists) {
+		t.Fatalf("CreateSignupUser err = %v, want ErrSignupAccountExists", err)
 	}
 }
 

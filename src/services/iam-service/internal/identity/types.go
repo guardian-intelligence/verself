@@ -86,6 +86,7 @@ type SignupIntent struct {
 	IdempotencyKey              string
 	RequestHash                 []byte
 	EmailDelivery               string
+	EmailIdentityKey            string
 	EmailIdentityHash           []byte
 	EmailIdentityHashKeyID      string
 	OrganizationDisplayName     string
@@ -102,6 +103,7 @@ type SignupIntent struct {
 	VerifyIdempotencyKey        string
 	VerifyRequestHash           []byte
 	OrgID                       string
+	AccountID                   string
 	IdentityProviderOrgID       string
 	IdentityProviderUserID      string
 	CreatedAt                   time.Time
@@ -114,16 +116,32 @@ type SignupIntent struct {
 type SignupStartOutcome string
 
 const (
-	SignupStartOutcomeCreated                   SignupStartOutcome = "created"
-	SignupStartOutcomeVerificationResent        SignupStartOutcome = "verification_resent"
-	SignupStartOutcomeVerificationRecentlySent  SignupStartOutcome = "verification_recently_sent"
-	SignupStartOutcomeExistingAccountSuppressed SignupStartOutcome = "existing_account_suppressed"
-	SignupStartOutcomeInFlightSuppressed        SignupStartOutcome = "inflight_suppressed"
+	SignupStartOutcomeCreated                  SignupStartOutcome = "created"
+	SignupStartOutcomeVerificationResent       SignupStartOutcome = "verification_resent"
+	SignupStartOutcomeVerificationRecentlySent SignupStartOutcome = "verification_recently_sent"
+	SignupStartOutcomeAccountExistsNotice      SignupStartOutcome = "account_exists_notice"
+	SignupStartOutcomeInFlightSuppressed       SignupStartOutcome = "inflight_suppressed"
 )
 
+type AccountState string
+
+const (
+	AccountStateProvisioning AccountState = "provisioning"
+	AccountStateActive       AccountState = "active"
+	AccountStateDisabled     AccountState = "disabled"
+)
+
+type SignupAccountEmail struct {
+	AccountID        string
+	EmailDelivery    string
+	EmailIdentityKey string
+	AccountState     AccountState
+}
+
 type SignupStartDecision struct {
-	Intent  SignupIntent
-	Outcome SignupStartOutcome
+	Intent       SignupIntent
+	AccountEmail SignupAccountEmail
+	Outcome      SignupStartOutcome
 }
 
 type StartSignupRequest struct {
@@ -138,6 +156,7 @@ type StartSignupRequest struct {
 type StartSignupResult struct {
 	Intent            SignupIntent
 	VerificationToken string
+	AccountNotice     SignupAccountNotice
 	Outcome           SignupStartOutcome
 	ResponseExpiresAt time.Time
 }
@@ -146,8 +165,17 @@ func (r StartSignupResult) SendVerificationEmail() bool {
 	return r.Outcome == SignupStartOutcomeCreated || r.Outcome == SignupStartOutcomeVerificationResent
 }
 
+func (r StartSignupResult) SendAccountExistsEmail() bool {
+	return r.Outcome == SignupStartOutcomeAccountExistsNotice
+}
+
 func (r StartSignupResult) CreatedIntent() bool {
 	return r.Outcome == SignupStartOutcomeCreated
+}
+
+type SignupAccountNotice struct {
+	EmailDelivery  string
+	IdempotencyKey string
 }
 
 type VerifySignupRequest struct {
@@ -215,6 +243,23 @@ type BillingOrganizationProvisioningRequest struct {
 	OrgID       string
 	DisplayName string
 	TrustTier   string
+}
+
+type SignupAccountEmailReservation struct {
+	AccountID        string
+	EmailDelivery    string
+	EmailIdentityKey string
+	DisplayName      string
+}
+
+type SignupAccountCompletion struct {
+	AccountID        string
+	Issuer           string
+	Subject          string
+	EmailDelivery    string
+	EmailIdentityKey string
+	DisplayName      string
+	ConnectionID     string
 }
 
 type IAMEvent struct {

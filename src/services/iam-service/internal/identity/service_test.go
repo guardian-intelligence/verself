@@ -115,6 +115,7 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 		Directory:        directory,
 		PolicyWriter:     policy,
 		Billing:          billing,
+		IdentityIssuer:   "https://auth.example.test",
 		EmailIdentityKey: testEmailIdentityKey,
 		Now:              func() time.Time { return now },
 	}
@@ -150,7 +151,7 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 	if directory.signupInput.OrgID != "43" || directory.signupInput.Email != "Founder@example.test" {
 		t.Fatalf("unexpected signup user request: %#v", directory.signupInput)
 	}
-	if got := strings.Join(store.steps, ","); got != "zitadel_organization,zitadel_user,iam_organization,spicedb_owner_policy,billing_organization" {
+	if got := strings.Join(store.steps, ","); got != "account_email_guard,zitadel_organization,zitadel_user,iam_organization,spicedb_owner_policy,billing_organization,account_graph" {
 		t.Fatalf("materialization steps = %s", got)
 	}
 	if policy.input.OrgID != got.Organization.OrgID || policy.input.OwnerUserID != "signup-user" {
@@ -167,6 +168,9 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 	}
 	if !store.completed {
 		t.Fatalf("signup intent was not completed")
+	}
+	if store.completedAccount.Subject != "signup-user" || store.completedAccount.Issuer != "https://auth.example.test" {
+		t.Fatalf("signup account graph was not completed: %#v", store.completedAccount)
 	}
 	if event := store.lastEvent("iam.signup_intent.completed"); event.Step != "completed" || event.State != SignupIntentStateCompleted || event.OrgID != got.Organization.OrgID {
 		t.Fatalf("unexpected completion event: %#v", event)
@@ -304,7 +308,7 @@ func TestServiceStartSignupSuppressesRapidPendingResend(t *testing.T) {
 	}
 }
 
-func TestServiceStartSignupSuppressesCompletedEmail(t *testing.T) {
+func TestServiceStartSignupSendsAccountExistsNoticeWithoutIntent(t *testing.T) {
 	now := time.Date(2026, 5, 24, 18, 0, 0, 0, time.UTC)
 	store := newFakeSignupLifecycleStore()
 	svc := &Service{
@@ -312,19 +316,16 @@ func TestServiceStartSignupSuppressesCompletedEmail(t *testing.T) {
 		EmailIdentityKey: testEmailIdentityKey,
 		Now:              func() time.Time { return now },
 	}
-	completed, err := svc.StartSignup(context.Background(), StartSignupRequest{
-		Email:            "founder@example.test",
-		OrganizationName: "Acme Labs",
-		IdempotencyKey:   "signup-start-1",
-	})
+	email, err := ParseEmailAddress("founder@example.test")
 	if err != nil {
-		t.Fatalf("StartSignup completed seed: %v", err)
+		t.Fatalf("ParseEmailAddress: %v", err)
 	}
-	intent := store.intents[completed.Intent.SignupIntentID]
-	intent.State = SignupIntentStateCompleted
-	intent.CompletedAt = &now
-	intent.OrganizationSlug = "acme"
-	store.intents[completed.Intent.SignupIntentID] = intent
+	store.accountEmails[email.IdentityKey] = SignupAccountEmail{
+		AccountID:        "acct_0123456789ABCDEFGHJKMNPQRS",
+		EmailDelivery:    email.DeliveryAddress,
+		EmailIdentityKey: email.IdentityKey,
+		AccountState:     AccountStateActive,
+	}
 
 	got, err := svc.StartSignup(context.Background(), StartSignupRequest{
 		Email:            "founder@example.test",
@@ -332,16 +333,19 @@ func TestServiceStartSignupSuppressesCompletedEmail(t *testing.T) {
 		IdempotencyKey:   "signup-start-2",
 	})
 	if err != nil {
-		t.Fatalf("StartSignup duplicate completed: %v", err)
+		t.Fatalf("StartSignup duplicate account: %v", err)
 	}
-	if got.Outcome != SignupStartOutcomeExistingAccountSuppressed || got.SendVerificationEmail() || got.VerificationToken != "" {
-		t.Fatalf("completed account should be suppressed without a verification email: %#v", got)
+	if got.Outcome != SignupStartOutcomeAccountExistsNotice || !got.SendAccountExistsEmail() || got.SendVerificationEmail() || got.VerificationToken != "" {
+		t.Fatalf("existing account should send an account-exists notice without verification: %#v", got)
 	}
-	if got.Intent.SignupIntentID != completed.Intent.SignupIntentID {
-		t.Fatalf("unexpected completed intent returned: %#v", got.Intent)
+	if len(store.intents) != 0 {
+		t.Fatalf("existing account should not create signup intents: %#v", store.intents)
 	}
-	if event := store.lastEvent("iam.signup_intent.existing_account_suppressed"); event.Outcome != "suppressed" {
-		t.Fatalf("missing suppression event: %#v", event)
+	if got.AccountNotice.EmailDelivery != "founder@example.test" || got.AccountNotice.IdempotencyKey == "" {
+		t.Fatalf("missing account notice metadata: %#v", got.AccountNotice)
+	}
+	if event := store.lastEvent("iam.signup.account_exists_notice"); event.Outcome != "suppressed" {
+		t.Fatalf("missing account exists event: %#v", event)
 	}
 }
 
@@ -355,6 +359,7 @@ func TestServiceVerifySignupRejectsUnavailableSlugBeforeDirectorySideEffects(t *
 		Directory:        directory,
 		PolicyWriter:     fakeOwnerPolicyWriter{},
 		Billing:          fakeBillingProvisioner{},
+		IdentityIssuer:   "https://auth.example.test",
 		EmailIdentityKey: testEmailIdentityKey,
 		Now:              func() time.Time { return now },
 	}
@@ -402,6 +407,54 @@ func TestServiceVerifySignupRejectsUnavailableSlugBeforeDirectorySideEffects(t *
 	}
 	if verified.Organization.Slug != "acme-prod-2" || directory.signupInput.Email != "founder@example.test" {
 		t.Fatalf("unexpected retry result: org=%#v user=%#v", verified.Organization, directory.signupInput)
+	}
+}
+
+func TestServiceVerifySignupRejectsDuplicateEmailBeforeDirectorySideEffects(t *testing.T) {
+	now := time.Date(2026, 5, 24, 18, 0, 0, 0, time.UTC)
+	store := newFakeSignupLifecycleStore()
+	directory := &fakeMembersDirectory{}
+	svc := &Service{
+		Store:            store,
+		Directory:        directory,
+		PolicyWriter:     fakeOwnerPolicyWriter{},
+		Billing:          fakeBillingProvisioner{},
+		IdentityIssuer:   "https://auth.example.test",
+		EmailIdentityKey: testEmailIdentityKey,
+		Now:              func() time.Time { return now },
+	}
+	start, err := svc.StartSignup(context.Background(), StartSignupRequest{
+		Email:            "founder@example.test",
+		OrganizationName: "Acme Labs",
+		IdempotencyKey:   "signup-start-1",
+	})
+	if err != nil {
+		t.Fatalf("StartSignup: %v", err)
+	}
+	email, err := ParseEmailAddress("founder@example.test")
+	if err != nil {
+		t.Fatalf("ParseEmailAddress: %v", err)
+	}
+	store.accountEmails[email.IdentityKey] = SignupAccountEmail{
+		AccountID:        "acct_0123456789ABCDEFGHJKMNPQRS",
+		EmailDelivery:    email.DeliveryAddress,
+		EmailIdentityKey: email.IdentityKey,
+		AccountState:     AccountStateActive,
+	}
+
+	_, err = svc.VerifySignup(context.Background(), VerifySignupRequest{
+		SignupIntentID:    start.Intent.SignupIntentID,
+		VerificationToken: start.VerificationToken,
+		IdempotencyKey:    "signup-verify-1",
+	})
+	if !errors.Is(err, ErrSignupAccountExists) {
+		t.Fatalf("VerifySignup err = %v, want ErrSignupAccountExists", err)
+	}
+	if directory.createInput.Name != "" || directory.signupInput.Email != "" {
+		t.Fatalf("duplicate email should happen before Zitadel side effects: org=%#v user=%#v", directory.createInput, directory.signupInput)
+	}
+	if event := store.lastEvent("iam.signup_intent.materialization_failed"); event.ErrorKind != "account_exists" || event.Retryable {
+		t.Fatalf("unexpected duplicate email failure event: %#v", event)
 	}
 }
 
@@ -569,10 +622,12 @@ type fakeSignupLifecycleStore struct {
 	fakeMembersStore
 	intents          map[string]SignupIntent
 	idempotency      map[string]string
+	accountEmails    map[string]SignupAccountEmail
 	unavailableSlugs map[string]bool
 	profileCreated   bool
 	profile          OrganizationProfile
 	created          CreateOrganizationRequest
+	completedAccount SignupAccountCompletion
 	steps            []string
 	events           []IAMEvent
 	completed        bool
@@ -580,8 +635,9 @@ type fakeSignupLifecycleStore struct {
 
 func newFakeSignupLifecycleStore() *fakeSignupLifecycleStore {
 	return &fakeSignupLifecycleStore{
-		intents:     map[string]SignupIntent{},
-		idempotency: map[string]string{},
+		intents:       map[string]SignupIntent{},
+		idempotency:   map[string]string{},
+		accountEmails: map[string]SignupAccountEmail{},
 	}
 }
 
@@ -601,10 +657,12 @@ func (s *fakeSignupStore) CreateOrganizationProfile(_ context.Context, input Cre
 }
 
 func (s *fakeSignupLifecycleStore) StartSignupIntent(_ context.Context, intent SignupIntent, now time.Time) (SignupStartDecision, error) {
-	for _, existing := range s.intents {
-		if bytes.Equal(existing.EmailIdentityHash, intent.EmailIdentityHash) && existing.State == SignupIntentStateCompleted {
-			return SignupStartDecision{Intent: existing, Outcome: SignupStartOutcomeExistingAccountSuppressed}, nil
+	if existing, ok := s.accountEmails[intent.EmailIdentityKey]; ok {
+		outcome := SignupStartOutcomeAccountExistsNotice
+		if existing.AccountState == AccountStateProvisioning {
+			outcome = SignupStartOutcomeInFlightSuppressed
 		}
+		return SignupStartDecision{AccountEmail: existing, Outcome: outcome}, nil
 	}
 	for _, existing := range s.intents {
 		if bytes.Equal(existing.EmailIdentityHash, intent.EmailIdentityHash) && (existing.State == SignupIntentStatePendingVerification || existing.State == SignupIntentStateExpired || signupRetryCanChangeRequest(existing)) {
@@ -701,6 +759,30 @@ func (s *fakeSignupLifecycleStore) RecordSignupIntentStep(_ context.Context, sig
 	return nil
 }
 
+func (s *fakeSignupLifecycleStore) RecordSignupIntentAccount(_ context.Context, signupIntentID, accountID string) error {
+	intent := s.intents[signupIntentID]
+	intent.AccountID = accountID
+	s.intents[signupIntentID] = intent
+	return nil
+}
+
+func (s *fakeSignupLifecycleStore) ReserveSignupAccountEmail(_ context.Context, input SignupAccountEmailReservation) (SignupAccountEmail, error) {
+	if existing, ok := s.accountEmails[input.EmailIdentityKey]; ok {
+		if existing.AccountID != input.AccountID {
+			return SignupAccountEmail{}, ErrSignupAccountExists
+		}
+		return existing, nil
+	}
+	email := SignupAccountEmail{
+		AccountID:        input.AccountID,
+		EmailDelivery:    input.EmailDelivery,
+		EmailIdentityKey: input.EmailIdentityKey,
+		AccountState:     AccountStateProvisioning,
+	}
+	s.accountEmails[input.EmailIdentityKey] = email
+	return email, nil
+}
+
 func (s *fakeSignupLifecycleStore) RecordSignupIntentProviderOrg(_ context.Context, signupIntentID, providerOrgID string) error {
 	intent := s.intents[signupIntentID]
 	intent.IdentityProviderOrgID = providerOrgID
@@ -720,6 +802,17 @@ func (s *fakeSignupLifecycleStore) RecordSignupIntentOrganization(_ context.Cont
 	intent.OrgID = orgID
 	intent.OrganizationSlug = organizationSlug
 	s.intents[signupIntentID] = intent
+	return nil
+}
+
+func (s *fakeSignupLifecycleStore) CompleteSignupAccount(_ context.Context, input SignupAccountCompletion) error {
+	existing := s.accountEmails[input.EmailIdentityKey]
+	if existing.AccountID != input.AccountID {
+		return ErrSignupAccountExists
+	}
+	existing.AccountState = AccountStateActive
+	s.accountEmails[input.EmailIdentityKey] = existing
+	s.completedAccount = input
 	return nil
 }
 

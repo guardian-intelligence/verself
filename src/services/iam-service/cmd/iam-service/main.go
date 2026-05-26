@@ -317,6 +317,7 @@ func run() error {
 		PolicyWriter:       organizationOwnerPolicyWriter{authz: authzService},
 		Billing:            billingOrganizationProvisioner{client: billingClient},
 		ProjectID:          authAudience,
+		IdentityIssuer:     authIssuerURL,
 		EmailIdentityKey:   []byte(emailIdentityHMACKey),
 	}
 	api.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
@@ -630,6 +631,51 @@ func (s notificationSignupSender) SendSignupVerification(ctx context.Context, in
 	resp, err := s.client.TriggerNotificationWorkflow(ctx, notificationsinternalclient.TriggerNotificationWorkflowRequest{
 		WorkflowKey:    notificationsinternalclient.WorkflowKey("iam.signup.verify"),
 		IdempotencyKey: notificationsinternalclient.IdempotencyKey("iam:signup_verify:" + strings.TrimSpace(input.SignupIntentID) + ":" + strings.TrimSpace(input.VerificationFingerprint)),
+		Body: notificationsinternalclient.TriggerNotificationWorkflowInputBody{
+			ActionURL:          &actionURL,
+			Body:               body,
+			Data:               &data,
+			OrgID:              notificationsinternalclient.OrgId(strings.TrimSpace(input.OrgID)),
+			Priority:           &priority,
+			Recipients:         notificationsinternalclient.WorkflowRecipients{{Email: &email}},
+			TargetResourceName: resourceName,
+			Title:              &title,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return fmt.Errorf("notifications workflow returned no response")
+	}
+	if resp.StatusCode != http.StatusAccepted || resp.Result == nil {
+		return fmt.Errorf("notifications workflow status %d: %s", resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+	}
+	return nil
+}
+
+func (s notificationSignupSender) SendSignupAccountExists(ctx context.Context, input api.SignupAccountExistsNotification) error {
+	if s.client == nil {
+		return fmt.Errorf("notifications client is required")
+	}
+	title := notificationsinternalclient.NotificationTitle("Your Verself account already exists")
+	priority := notificationsinternalclient.NotificationPriorityNORMAL
+	actionURL := notificationsinternalclient.ActionURL(strings.TrimSpace(input.LoginURL))
+	email := notificationsinternalclient.EmailAddress(strings.TrimSpace(input.Email))
+	var resourceName *notificationsinternalclient.ResourceName
+	if trimmed := strings.TrimSpace(input.ResourceName); trimmed != "" {
+		value := notificationsinternalclient.ResourceName(trimmed)
+		resourceName = &value
+	}
+	data := map[string]any{
+		"notice": "signup_account_exists",
+	}
+	body := notificationsinternalclient.RequiredNotificationBody(
+		fmt.Sprintf("A Verself signup was requested for this email address, but an account already exists.\n\nSign in: %s\n\nIf you did not request this, no action is required.", actionURL),
+	)
+	resp, err := s.client.TriggerNotificationWorkflow(ctx, notificationsinternalclient.TriggerNotificationWorkflowRequest{
+		WorkflowKey:    notificationsinternalclient.WorkflowKey("iam.signup.account_exists"),
+		IdempotencyKey: notificationsinternalclient.IdempotencyKey(strings.TrimSpace(input.IdempotencyKey)),
 		Body: notificationsinternalclient.TriggerNotificationWorkflowInputBody{
 			ActionURL:          &actionURL,
 			Body:               body,

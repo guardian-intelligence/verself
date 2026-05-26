@@ -44,9 +44,12 @@ type SignupStore interface {
 	DeletePendingSignupIntent(ctx context.Context, signupIntentID string) error
 	ClaimSignupIntentForVerification(ctx context.Context, signupIntentID string, verificationTokenHash []byte, idempotencyKey string, verifyRequestHash []byte, organizationDisplayName string, requestedOrganizationSlug string, now time.Time, leaseExpiresAt time.Time) (SignupIntent, error)
 	RecordSignupIntentStep(ctx context.Context, signupIntentID, step string, leaseExpiresAt time.Time) error
+	RecordSignupIntentAccount(ctx context.Context, signupIntentID, accountID string) error
+	ReserveSignupAccountEmail(ctx context.Context, input SignupAccountEmailReservation) (SignupAccountEmail, error)
 	RecordSignupIntentProviderOrg(ctx context.Context, signupIntentID, providerOrgID string) error
 	RecordSignupIntentProviderUser(ctx context.Context, signupIntentID, providerUserID string) error
 	RecordSignupIntentOrganization(ctx context.Context, signupIntentID, orgID, organizationSlug string) error
+	CompleteSignupAccount(ctx context.Context, input SignupAccountCompletion) error
 	MarkSignupIntentFailed(ctx context.Context, signupIntentID string, state SignupIntentState, message string) error
 	CompleteSignupIntent(ctx context.Context, signupIntentID string, completedAt time.Time) (SignupIntent, error)
 	AppendIAMEvent(ctx context.Context, event IAMEvent) error
@@ -89,6 +92,7 @@ type Service struct {
 	PolicyWriter       OrganizationOwnerPolicyWriter
 	Billing            BillingProvisioner
 	ProjectID          string
+	IdentityIssuer     string
 	EmailIdentityKey   []byte
 	Now                func() time.Time
 }
