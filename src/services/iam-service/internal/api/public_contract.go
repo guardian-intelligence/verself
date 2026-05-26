@@ -348,12 +348,13 @@ func runtimeOrgScopeFromContract(source string) string {
 }
 
 type publicHandlers struct {
-	service        *identity.Service
-	authz          *authz.Service
-	installationID string
-	productBaseURL string
-	inviteNotifier InviteNotifier
-	signupNotifier SignupNotifier
+	service         *identity.Service
+	authz           *authz.Service
+	installationID  string
+	productBaseURL  string
+	inviteNotifier  InviteNotifier
+	signupNotifier  SignupNotifier
+	providerSession ProviderSessionRevoker
 }
 
 func (h publicHandlers) AcceptMemberInvite(ctx context.Context, input *contractapi.AcceptMemberInviteInput) (*contractapi.AcceptMemberInviteOutput, error) {

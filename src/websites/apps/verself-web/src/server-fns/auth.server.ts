@@ -205,12 +205,12 @@ export async function selectIdentityBrowserAccount(accountHandle: string): Promi
   return parseAuthSnapshot(await response.json());
 }
 
-export async function revokeIdentityBrowserSession(sessionHandle: string): Promise<void> {
+export async function revokeIdentityBrowserDevice(sessionHandle: string): Promise<void> {
   const response = await identityAuthFetch(`sessions/${encodeURIComponent(sessionHandle)}`, {
     method: "DELETE",
   });
   if (!response.ok) {
-    throw new Error(`identity session revoke failed: ${response.status} ${await response.text()}`);
+    throw new Error(`identity device revoke failed: ${response.status} ${await response.text()}`);
   }
 }
 

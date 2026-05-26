@@ -44,6 +44,40 @@ func TestCreateDeviceSessionRejectsUnverifiedProviderEmail(t *testing.T) {
 	assertProblem(t, err, http.StatusForbidden, "auth.provider_email_unverified")
 }
 
+func TestRevokeDeviceSessionRevokesProviderSessionBeforeLocalSession(t *testing.T) {
+	ctx, handlers := newAuthAccountTestHandlers(t)
+	identity := authIdentity("https://issuer.example", "subject-session", "session@example.test", true)
+	first, err := handlers.CreateDeviceSession(auth.WithIdentity(ctx, identity), createDeviceSessionInput("current"))
+	if err != nil {
+		t.Fatalf("create current device session: %v", err)
+	}
+	second, err := handlers.CreateDeviceSession(auth.WithIdentity(ctx, identity), createDeviceSessionInput("target"))
+	if err != nil {
+		t.Fatalf("create target device session: %v", err)
+	}
+
+	_, err = handlers.RevokeDeviceSession(auth.WithIdentity(ctx, identity), &contractapi.RevokeDeviceSessionInput{
+		SessionID:        second.Body.Session.SessionID,
+		CurrentSessionID: first.Body.Session.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("revoke device session: %v", err)
+	}
+	revoker := handlers.providerSession.(*recordingProviderSessionRevoker)
+	if len(revoker.sessionIDs) != 1 || revoker.sessionIDs[0] != "sid-subject-session" {
+		t.Fatalf("provider session revokes = %#v", revoker.sessionIDs)
+	}
+}
+
+func TestCreateDeviceSessionRequiresProviderSessionForHumanChannels(t *testing.T) {
+	ctx, handlers := newAuthAccountTestHandlers(t)
+	identity := authIdentity("https://issuer.example", "subject-nosid", "nosid@example.test", true)
+	delete(identity.Raw, "sid")
+
+	_, err := handlers.CreateDeviceSession(auth.WithIdentity(ctx, identity), createDeviceSessionInput("missing-sid"))
+	assertProblem(t, err, http.StatusForbidden, "auth.reauthentication_required")
+}
+
 func newAuthAccountTestHandlers(t *testing.T) (context.Context, publicHandlers) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -70,8 +104,9 @@ func newAuthAccountTestHandlers(t *testing.T) (context.Context, publicHandlers) 
 	}
 	t.Cleanup(pg.Close)
 	return ctx, publicHandlers{
-		service: &identity.Service{Store: identity.SQLStore{PG: pg}},
-		authz:   authz.New(staticAuthzBackend{}),
+		service:         &identity.Service{Store: identity.SQLStore{PG: pg}},
+		authz:           authz.New(staticAuthzBackend{}),
+		providerSession: &recordingProviderSessionRevoker{},
 	}
 }
 
@@ -96,6 +131,7 @@ func authIdentity(issuer, subject, email string, emailVerified bool) *auth.Ident
 			"email_verified": emailVerified,
 			"name":           email,
 			"iat":            float64(time.Now().UTC().Unix()),
+			"sid":            "sid-" + subject,
 		},
 	}
 }

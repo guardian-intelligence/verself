@@ -40,14 +40,15 @@ type SignupVerificationNotification struct {
 	ResourceName            string
 }
 
-func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string, inviteNotifier InviteNotifier) {
+func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string, inviteNotifier InviteNotifier, providerSession ProviderSessionRevoker) {
 	runtime := publicRuntime{service: svc, authz: authzSvc, installationID: installationID}
 	handlers := publicHandlers{
-		service:        svc,
-		authz:          authzSvc,
-		installationID: installationID,
-		productBaseURL: productBaseURL,
-		inviteNotifier: inviteNotifier,
+		service:         svc,
+		authz:           authzSvc,
+		installationID:  installationID,
+		productBaseURL:  productBaseURL,
+		inviteNotifier:  inviteNotifier,
+		providerSession: providerSession,
 	}
 	registerPublicOperation(api, runtime, contractapi.GetAuthContext, handlers.GetAuthContext, "Get auth context")
 	registerPublicOperation(api, runtime, contractapi.CreateDeviceSession, handlers.CreateDeviceSession, "Create device session")

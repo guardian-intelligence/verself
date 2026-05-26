@@ -39,6 +39,7 @@ func authProblemAnchor(code string) string {
 
 type authCredential struct {
 	AccessToken  string    `json:"access_token"`
+	IDToken      string    `json:"id_token,omitempty"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
 	TokenType    string    `json:"token_type,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at,omitempty"`
@@ -74,6 +75,7 @@ type deviceAuthorizationResponse struct {
 
 type tokenEndpointResponse struct {
 	AccessToken  string `json:"access_token"`
+	IDToken      string `json:"id_token"`
 	RefreshToken string `json:"refresh_token"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int64  `json:"expires_in"`
@@ -91,7 +93,7 @@ func (c CLI) runAuth(ctx context.Context, args []string) error {
 	case "signup":
 		return c.authSignup(ctx, args[1:])
 	case "logout":
-		return c.authLogout(args[1:])
+		return c.authLogout(ctx, args[1:])
 	case "whoami":
 		return c.authWhoami(ctx, args[1:])
 	case "accounts":
@@ -176,7 +178,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		return err
 	}
 	sdk, err := verself.New(verself.Options{
-		BearerToken:      credential.AccessToken,
+		BearerToken:      credential.IDToken,
 		ServerURL:        profile.ServerURL,
 		IAMURL:           profile.IAMURL,
 		ProjectsURL:      profile.ProjectsURL,
@@ -342,8 +344,12 @@ func (c CLI) deviceLogin(ctx context.Context, opts loginCredentialOptions) (auth
 	if token.ExpiresIn > 0 {
 		expiresAt = time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
 	}
+	if strings.TrimSpace(token.IDToken) == "" {
+		return authCredential{}, errors.New("token endpoint returned no id_token")
+	}
 	return authCredential{
 		AccessToken:  token.AccessToken,
+		IDToken:      token.IDToken,
 		RefreshToken: token.RefreshToken,
 		TokenType:    token.TokenType,
 		ExpiresAt:    expiresAt,
@@ -474,6 +480,9 @@ func pollDeviceToken(ctx context.Context, tokenURL, clientID string, device devi
 		case "":
 			if strings.TrimSpace(token.AccessToken) == "" {
 				return tokenEndpointResponse{}, errors.New("token endpoint returned no access_token")
+			}
+			if strings.TrimSpace(token.IDToken) == "" {
+				return tokenEndpointResponse{}, errors.New("token endpoint returned no id_token")
 			}
 			return token, nil
 		case "authorization_pending":
@@ -615,6 +624,9 @@ func refreshAuthCredential(ctx context.Context, credential authCredential) (auth
 		return authCredential{}, errors.New("refresh token response returned no access_token")
 	}
 	credential.AccessToken = token.AccessToken
+	if strings.TrimSpace(token.IDToken) != "" {
+		credential.IDToken = token.IDToken
+	}
 	credential.TokenType = firstNonEmpty(token.TokenType, credential.TokenType, "Bearer")
 	if strings.TrimSpace(token.RefreshToken) != "" {
 		credential.RefreshToken = token.RefreshToken
@@ -625,7 +637,7 @@ func refreshAuthCredential(ctx context.Context, credential authCredential) (auth
 	return credential, nil
 }
 
-func (c CLI) authLogout(args []string) error {
+func (c CLI) authLogout(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("auth logout", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	profileName := fs.String("profile", "", "profile name")
@@ -635,18 +647,16 @@ func (c CLI) authLogout(args []string) error {
 	if fs.NArg() != 0 {
 		return errors.New("usage: auth logout [--profile NAME]")
 	}
-	store, err := newStore(c.getenv)
+	store, profile, accounts, err := c.loadProfileAccounts(*profileName)
 	if err != nil {
 		return err
 	}
-	name := strings.TrimSpace(*profileName)
-	if name == "" {
-		cfg, err := store.LoadConfig()
-		if err != nil {
+	for _, account := range accounts {
+		if err := c.revokeStoredAccountDevice(ctx, store, profile, account); err != nil {
 			return err
 		}
-		name = cfg.ActiveProfile
 	}
+	name := profile.Name
 	if err := store.DeleteProfile(name); err != nil {
 		return err
 	}
@@ -767,7 +777,7 @@ func (c CLI) authAccounts(ctx context.Context, args []string) error {
 	case "use":
 		return c.authAccountsUse(ctx, args[1:])
 	case "logout", "remove", "rm":
-		return c.authAccountsLogout(args[1:])
+		return c.authAccountsLogout(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown auth accounts command %q", args[0])
 	}
@@ -838,7 +848,7 @@ func (c CLI) authAccountsUse(ctx context.Context, args []string) error {
 	})
 }
 
-func (c CLI) authAccountsLogout(args []string) error {
+func (c CLI) authAccountsLogout(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("auth accounts logout", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	profileName := fs.String("profile", "", "profile name")
@@ -864,6 +874,9 @@ func (c CLI) authAccountsLogout(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := c.revokeStoredAccountDevice(ctx, store, profile, account); err != nil {
+		return err
+	}
 	if err := store.DeleteAccount(profile.Name, account.Handle); err != nil {
 		return err
 	}
@@ -877,6 +890,49 @@ func (c CLI) authAccountsLogout(args []string) error {
 		"profile": profile.Name,
 		"account": account.Handle,
 		"message": "account logged out",
+	})
+}
+
+func (c CLI) revokeStoredAccountDevice(ctx context.Context, store *Store, profile ProfileRecord, account AccountRecord) error {
+	sessionID := strings.TrimSpace(account.DeviceSessionID)
+	if sessionID == "" {
+		return authCommandError("auth.reauthentication_required", "stored account has no device session; sign in again before logout")
+	}
+	client, err := c.serviceClientForStoredAccount(store, profile, account)
+	if err != nil {
+		return err
+	}
+	if err := client.Auth.RevokeDeviceSession(ctx, sessionID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c CLI) serviceClientForStoredAccount(store *Store, profile ProfileRecord, account AccountRecord) (*verself.Client, error) {
+	if store == nil {
+		return nil, errors.New("auth credential store is required")
+	}
+	profileName := strings.TrimSpace(profile.Name)
+	accountHandle := strings.TrimSpace(account.Handle)
+	if profileName == "" || accountHandle == "" {
+		return nil, errors.New("stored account identity is incomplete")
+	}
+	return verself.New(verself.Options{
+		CredentialSource: &profileCredentialSource{
+			store:         store,
+			profileName:   profileName,
+			accountHandle: accountHandle,
+		},
+		DeviceSessionID:  strings.TrimSpace(account.DeviceSessionID),
+		ServerURL:        profile.ServerURL,
+		IAMURL:           profile.IAMURL,
+		ProjectsURL:      profile.ProjectsURL,
+		NotificationsURL: profile.NotificationsURL,
+		BillingURL:       profile.BillingURL,
+		GovernanceURL:    profile.GovernanceURL,
+		SandboxURL:       profile.SandboxURL,
+		SecretsURL:       profile.SecretsURL,
+		SourceURL:        profile.SourceURL,
 	})
 }
 

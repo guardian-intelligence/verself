@@ -80,6 +80,7 @@ type IamDeviceSession struct {
 	State                   string
 	DeviceLabel             string
 	CredentialFingerprint   string
+	ProviderSessionID       string
 	AuthTime                pgtype.Timestamptz
 	AuthMethods             []string
 	ExpiresAt               pgtype.Timestamptz

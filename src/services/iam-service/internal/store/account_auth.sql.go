@@ -155,7 +155,7 @@ func (q *Queries) GetAccountSubject(ctx context.Context, arg GetAccountSubjectPa
 }
 
 const getDeviceSession = `-- name: GetDeviceSession :one
-SELECT session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
+SELECT session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, provider_session_id, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
 FROM iam_device_sessions
 WHERE session_id = $1
 `
@@ -176,6 +176,7 @@ func (q *Queries) GetDeviceSession(ctx context.Context, arg GetDeviceSessionPara
 		&i.State,
 		&i.DeviceLabel,
 		&i.CredentialFingerprint,
+		&i.ProviderSessionID,
 		&i.AuthTime,
 		&i.AuthMethods,
 		&i.ExpiresAt,
@@ -240,7 +241,7 @@ func (q *Queries) ListAccountConnections(ctx context.Context, arg ListAccountCon
 }
 
 const listDeviceSessionsForAccount = `-- name: ListDeviceSessionsForAccount :many
-SELECT session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
+SELECT session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, provider_session_id, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
 FROM iam_device_sessions
 WHERE account_id = $1
 ORDER BY
@@ -271,6 +272,7 @@ func (q *Queries) ListDeviceSessionsForAccount(ctx context.Context, arg ListDevi
 			&i.State,
 			&i.DeviceLabel,
 			&i.CredentialFingerprint,
+			&i.ProviderSessionID,
 			&i.AuthTime,
 			&i.AuthMethods,
 			&i.ExpiresAt,
@@ -363,7 +365,7 @@ WHERE session_id = $5
   AND account_id = $6
   AND state = 'active'
   AND expires_at > now()
-RETURNING session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
+RETURNING session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, provider_session_id, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
 `
 
 type TouchDeviceSessionParams struct {
@@ -394,6 +396,7 @@ func (q *Queries) TouchDeviceSession(ctx context.Context, arg TouchDeviceSession
 		&i.State,
 		&i.DeviceLabel,
 		&i.CredentialFingerprint,
+		&i.ProviderSessionID,
 		&i.AuthTime,
 		&i.AuthMethods,
 		&i.ExpiresAt,
@@ -582,6 +585,7 @@ INSERT INTO iam_device_sessions (
   state,
   device_label,
   credential_fingerprint,
+  provider_session_id,
   auth_time,
   auth_methods,
   expires_at,
@@ -606,16 +610,17 @@ INSERT INTO iam_device_sessions (
   $6,
   $7,
   $8,
-  $9::text[],
-  $10,
+  $9,
+  $10::text[],
   $11,
   $12,
   $13,
   $14,
-  $11,
+  $15,
   $12,
   $13,
   $14,
+  $15,
   now(),
   now(),
   now()
@@ -624,6 +629,7 @@ ON CONFLICT (session_id) DO UPDATE SET
   state = 'active',
   device_label = EXCLUDED.device_label,
   credential_fingerprint = EXCLUDED.credential_fingerprint,
+  provider_session_id = EXCLUDED.provider_session_id,
   auth_time = EXCLUDED.auth_time,
   auth_methods = EXCLUDED.auth_methods,
   expires_at = EXCLUDED.expires_at,
@@ -633,7 +639,7 @@ ON CONFLICT (session_id) DO UPDATE SET
   last_seen_user_agent = EXCLUDED.last_seen_user_agent,
   last_seen_at = now(),
   updated_at = now()
-RETURNING session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
+RETURNING session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, provider_session_id, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
 `
 
 type UpsertDeviceSessionParams struct {
@@ -644,6 +650,7 @@ type UpsertDeviceSessionParams struct {
 	Channel               string
 	DeviceLabel           string
 	CredentialFingerprint string
+	ProviderSessionID     string
 	AuthTime              pgtype.Timestamptz
 	AuthMethods           []string
 	ExpiresAt             pgtype.Timestamptz
@@ -662,6 +669,7 @@ func (q *Queries) UpsertDeviceSession(ctx context.Context, arg UpsertDeviceSessi
 		arg.Channel,
 		arg.DeviceLabel,
 		arg.CredentialFingerprint,
+		arg.ProviderSessionID,
 		arg.AuthTime,
 		arg.AuthMethods,
 		arg.ExpiresAt,
@@ -680,6 +688,7 @@ func (q *Queries) UpsertDeviceSession(ctx context.Context, arg UpsertDeviceSessi
 		&i.State,
 		&i.DeviceLabel,
 		&i.CredentialFingerprint,
+		&i.ProviderSessionID,
 		&i.AuthTime,
 		&i.AuthMethods,
 		&i.ExpiresAt,
