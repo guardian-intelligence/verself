@@ -1,34 +1,9 @@
 # distribution-service
 
-Deferred service split. release-service records release artifacts and install
-options until this boundary is extracted.
-
 The future distribution-service owns artifact admission, channel resolution,
 signed update metadata, retention, and edge replication over Zot-hosted OCI
 artifacts. It does not build artifacts, publish to external package providers,
 or replace Zot as the byte store.
-
-## Boundary
-
-- Do not implement this service while release-service is the active release
-  control plane. Treat this file as the target boundary for the later
-  extraction.
-- Owns the product-neutral distribution plane for release artifacts: artifact
-  admission, channel pointers, TUF metadata, edge replication intent, retention
-  policy, quarantine, and resolver APIs.
-- Uses Zot and the OCI Distribution/Image specs for bytes, manifests, digests,
-  and referrers. Do not invent a parallel artifact store or release ledger.
-- Uses in-toto statements as the attestation envelope for SLSA provenance,
-  SBOMs, verification summaries, and other supply-chain evidence.
-- Uses TUF metadata for client-facing update/channel trust: root, timestamp,
-  snapshot, targets, and delegated package roles.
-- Calls publishing-service only when a distribution decision should trigger an
-  external provider action. Distribution remains valid without external
-  publication.
-- Does not call npm, GitHub Releases, newsroom, package indexes, or other
-  external providers directly.
-- Does not build or sign build provenance. CI owns build execution, artifact
-  upload, artifact signatures, and SLSA provenance.
 
 ## Standards
 
@@ -147,38 +122,3 @@ SLSA target:
 
 distribution-service may sign a SLSA VSA for its verification decision. It must
 not sign build provenance.
-
-## IAM, Governance, and Metering
-
-- IAM controls package/channel mutation, artifact quarantine, retention changes,
-  and replication administration.
-- Resolver reads can be anonymous only for channels explicitly configured as
-  public. Private/internal channels require auth and entitlement checks.
-- Every admission, verification, promotion, rollback, quarantine, retention, and
-  replication decision emits governance audit evidence.
-- ClickHouse events must include `org_id`, package, channel, artifact digest,
-  OCI repository, source commit, SLSA builder id, policy id, request id, trace
-  id, and actor.
-- Distribution operations are control-plane operations. They are not product
-  usage charges unless a future plan explicitly meters artifact egress or
-  private retention.
-
-## Retention and Recovery
-
-- Bytes remain in Zot until retention and quarantine policy allow garbage
-  collection. Never delete evidence before all policy windows expire.
-- Nightlies should default to short retention and high churn.
-- RCs should retain through the stable release and incident-response window.
-- Stable releases should retain for the published support/data-retention period.
-- `/recoveryz` must report PostgreSQL migration state, Zot reachability,
-  referrer query health, TUF signing key availability, TUF metadata freshness,
-  replication lag, and ClickHouse write health.
-
-## Non-goals
-
-- No provider fan-out.
-- No npm/GitHub/newsroom credentials.
-- No build execution.
-- No Nomad release orchestration.
-- No package-manager-specific release semantics beyond channel metadata and
-  artifact resolution.

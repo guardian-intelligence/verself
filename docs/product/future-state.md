@@ -24,4 +24,12 @@ In order to be powerful, we must integrate as much as possible with the outside 
 
 Fun Idea:
 
-Deep GitHub integration so we can see rich PR metadata.
+Deep GitHub integration so we can see rich PR metadata in realtime like PRs going stuck, getting merged
+
+Fun Idea:
+
+
+
+Core Idea:
+
+The agents treat passing CI as high confidence in their work. So let's actually make that true.

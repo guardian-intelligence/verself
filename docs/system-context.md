@@ -11,6 +11,10 @@ Verself does not run customer-authored applications as managed long-lived servic
 
 The platform itself is open-source and self-hostable. The bootstrap CLI (`docs/verself-cli.md`) renders site artifacts for operator-supplied Latitude.sh bare metal. This surface is operator/internal while public product, SDK, and CLI docs lead with hosted `verself.sh` APIs. A rendered self-hosted installation owns its own substrate, identity, data, billing, and operations.
 
+BYOC on-prem compute remains an extension of the hosted installation through
+org-scoped compute pools and cells; see
+[`docs/architecture/byoc-on-prem-cells.md`](architecture/byoc-on-prem-cells.md).
+
 ## Service Architecture
 
 Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall foundation files are authored in `src/infrastructure-components/nftables/`; component, service, frontend, and privileged-substrate nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages.
