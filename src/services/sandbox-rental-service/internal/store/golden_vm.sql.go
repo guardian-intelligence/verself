@@ -1416,7 +1416,16 @@ func (q *Queries) MarkOpenGoldenVMOperationsFailedByAttempt(ctx context.Context,
 
 const promoteGoldenVMSnapshotCAS = `-- name: PromoteGoldenVMSnapshotCAS :one
 WITH candidate AS (
-    SELECT g.golden_vm_snapshot_id
+    SELECT
+        g.golden_vm_snapshot_id,
+        g.firecracker_abi_hash,
+        g.host_abi_hash,
+        g.network_model_hash,
+        g.vsock_model_hash,
+        g.clock_model_hash,
+        g.vmproto_version,
+        g.after_restore_hook_version,
+        g.before_snapshot_hook_version
     FROM golden_vm_snapshot g
     WHERE g.golden_vm_snapshot_id = $1
       AND g.state = 'candidate'
@@ -1453,7 +1462,17 @@ promote_existing AS (
       AND p.trust_class = $9
       AND (
           prior.prior_snapshot_id IS NULL
+          OR current_snapshot.golden_vm_snapshot_id IS NULL
+          OR current_snapshot.state <> 'current'
           OR current_snapshot.generation_set_hash = $12
+          OR current_snapshot.firecracker_abi_hash <> candidate.firecracker_abi_hash
+          OR current_snapshot.host_abi_hash <> candidate.host_abi_hash
+          OR current_snapshot.network_model_hash <> candidate.network_model_hash
+          OR current_snapshot.vsock_model_hash <> candidate.vsock_model_hash
+          OR current_snapshot.clock_model_hash <> candidate.clock_model_hash
+          OR current_snapshot.vmproto_version <> candidate.vmproto_version
+          OR current_snapshot.after_restore_hook_version <> candidate.after_restore_hook_version
+          OR current_snapshot.before_snapshot_hook_version <> candidate.before_snapshot_hook_version
       )
     RETURNING prior.prior_snapshot_id
 ),
