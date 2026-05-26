@@ -48,13 +48,6 @@ interface DomShadowPreset {
 
 export const DOT_SHADOW_MASK_SELECTOR = "[data-wave-shadow], [data-wave-mask]";
 
-const VIEWPORT_BORDER_FEATHER_PX = 3;
-const VIEWPORT_BORDER_FALLOFF_POWER = 0.72;
-const VIEWPORT_BORDER_INSET_X_PX = 15;
-const VIEWPORT_BORDER_INSET_Y_PX = 15;
-const VIEWPORT_BORDER_RADIUS_PX = 5;
-const VIEWPORT_BORDER_STRENGTH = 1;
-
 const TEXT_SHADOW_PRESET: DomShadowPreset = {
   featherPx: 16,
   mode: "inside",
@@ -77,7 +70,7 @@ export function collectShadowRegions(input: CollectShadowRegionsInput): readonly
   if (typeof document === "undefined") return [];
 
   const hostSpace = resolveHostCoordinateSpace(input.host);
-  const regions: ShadowRegion[] = [createViewportBorderRegion(hostSpace, input.dpr)];
+  const regions: ShadowRegion[] = [];
   document.querySelectorAll<HTMLElement>(DOT_SHADOW_MASK_SELECTOR).forEach((element) => {
     const preset = element.hasAttribute("data-wave-mask") ? LINK_MASK_PRESET : TEXT_SHADOW_PRESET;
     for (const rect of elementTextRectsToHostRects(element, hostSpace)) {
@@ -86,32 +79,6 @@ export function collectShadowRegions(input: CollectShadowRegionsInput): readonly
     }
   });
   return regions;
-}
-
-function createViewportBorderRegion(hostSpace: HostCoordinateSpace, dpr: number): ShadowRegion {
-  const scale = Math.max(dpr, 1);
-  const insetX = Math.min(VIEWPORT_BORDER_INSET_X_PX, hostSpace.width * 0.25);
-  const insetY = Math.min(VIEWPORT_BORDER_INSET_Y_PX, hostSpace.height * 0.25);
-  const rect = {
-    height: Math.max(hostSpace.height - insetY * 2, 1),
-    width: Math.max(hostSpace.width - insetX * 2, 1),
-    x: insetX,
-    y: insetY,
-  };
-
-  return {
-    featherPx: VIEWPORT_BORDER_FEATHER_PX * scale,
-    falloffPower: VIEWPORT_BORDER_FALLOFF_POWER,
-    mode: "outside",
-    radiusPx: VIEWPORT_BORDER_RADIUS_PX * scale,
-    rectPx: {
-      height: rect.height * scale,
-      width: rect.width * scale,
-      x: rect.x * scale,
-      y: rect.y * scale,
-    },
-    strength: VIEWPORT_BORDER_STRENGTH,
-  };
 }
 
 function elementTextRectsToHostRects(
