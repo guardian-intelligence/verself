@@ -208,7 +208,12 @@ func runMkskPrepareRoot(args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, dir := range []string{filepath.Dir(artifactRoot), artifactRoot, filepath.Dir(home), home} {
+	for _, dir := range []string{"/artifacts", "/artifacts/releases"} {
+		if err := ensureDir(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	for _, dir := range []string{"/artifacts/releases/mksk", artifactRoot, "/tmp/distribution-release-mksk", filepath.Dir(home), home} {
 		if err := ensureOwnedDir(dir, 0o750, uid, gid); err != nil {
 			return err
 		}
@@ -971,6 +976,16 @@ func lookupOwner(userName, groupName string) (int, int, error) {
 		return 0, 0, fmt.Errorf("parse gid for %s: %w", groupName, err)
 	}
 	return uid, gid, nil
+}
+
+func ensureDir(path string, mode fs.FileMode) error {
+	if err := os.MkdirAll(path, mode); err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		return fmt.Errorf("chmod %s: %w", path, err)
+	}
+	return nil
 }
 
 func ensureOwnedDir(path string, mode fs.FileMode, uid, gid int) error {
