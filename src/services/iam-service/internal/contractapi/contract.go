@@ -549,6 +549,12 @@ type TestIamPermissionsOutputBody struct {
 }
 
 var Operations = []OperationDescriptor{
+	GetAuthContext.Descriptor,
+	CreateDeviceSession.Descriptor,
+	ListDeviceSessions.Descriptor,
+	RevokeDeviceSession.Descriptor,
+	ListAccountConnections.Descriptor,
+	RemoveAccountConnection.Descriptor,
 	AcceptMemberInvite.Descriptor,
 	CheckOrganizationSlugAvailability.Descriptor,
 	StartSignup.Descriptor,

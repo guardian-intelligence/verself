@@ -8,6 +8,7 @@ go_module_checks()
 go_library(
     name = "verself",
     srcs = [
+        "auth.go",
         "billing.go",
         "client.go",
         "governance.go",

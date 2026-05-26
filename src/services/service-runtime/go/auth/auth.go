@@ -15,7 +15,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const verifierInitTimeout = 5 * time.Second
+const (
+	verifierInitTimeout = 5 * time.Second
+	authProblemDocsURL  = "https://verself.sh/docs/reference/iam/errors#"
+)
 
 type contextKey struct{}
 
@@ -62,7 +65,7 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token, err := bearerToken(r.Header.Get("Authorization"))
 			if err != nil {
-				writeJSONError(w, http.StatusUnauthorized, "unauthorized", err.Error())
+				writeProblem(w, r, http.StatusUnauthorized, "auth.unauthenticated", err.Error())
 				return
 			}
 
@@ -74,19 +77,19 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 					cache.cfg.Audience,
 					err,
 				)
-				writeJSONError(w, http.StatusServiceUnavailable, "auth_unavailable", "token verification unavailable")
+				writeProblem(w, r, http.StatusServiceUnavailable, "service.unavailable", "token verification unavailable")
 				return
 			}
 
 			idToken, err := verifier.Verify(r.Context(), token)
 			if err != nil {
-				writeJSONError(w, http.StatusUnauthorized, "unauthorized", "invalid bearer token")
+				writeProblem(w, r, http.StatusUnauthorized, "auth.unauthenticated", "invalid bearer token")
 				return
 			}
 
 			rawClaims := map[string]any{}
 			if err := idToken.Claims(&rawClaims); err != nil {
-				writeJSONError(w, http.StatusUnauthorized, "unauthorized", "invalid token claims")
+				writeProblem(w, r, http.StatusUnauthorized, "auth.unauthenticated", "invalid token claims")
 				return
 			}
 
@@ -172,16 +175,50 @@ func bearerToken(header string) (string, error) {
 	return parts[1], nil
 }
 
-func writeJSONError(w http.ResponseWriter, status int, code, message string) {
+type problemDetails struct {
+	Type        string `json:"type"`
+	Title       string `json:"title"`
+	Status      int    `json:"status"`
+	Detail      string `json:"detail"`
+	Code        string `json:"code"`
+	Instance    string `json:"instance,omitempty"`
+	Traceparent string `json:"traceparent,omitempty"`
+}
+
+func writeProblem(w http.ResponseWriter, r *http.Request, status int, code, detail string) {
 	if status == http.StatusUnauthorized {
 		w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"error":   code,
-		"message": message,
-	})
+
+	problem := problemDetails{
+		Type:   problemType(code),
+		Title:  http.StatusText(status),
+		Status: status,
+		Detail: detail,
+		Code:   code,
+	}
+	if spanContext := trace.SpanContextFromContext(r.Context()); spanContext.HasTraceID() {
+		problem.Instance = "urn:verself:trace:" + spanContext.TraceID().String()
+		if spanContext.HasSpanID() {
+			problem.Traceparent = "00-" + spanContext.TraceID().String() + "-" + spanContext.SpanID().String() + "-" + spanContext.TraceFlags().String()
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(problem)
+}
+
+func problemType(code string) string {
+	code = strings.TrimSpace(code)
+	switch {
+	case strings.HasPrefix(code, "auth."):
+		return authProblemDocsURL + strings.NewReplacer(".", "-", "_", "-").Replace(code)
+	case strings.HasPrefix(code, "service."):
+		return "urn:verself:problem:service:" + strings.ReplaceAll(strings.TrimPrefix(code, "service."), ".", "_")
+	default:
+		return "urn:verself:problem:" + strings.ReplaceAll(strings.ReplaceAll(code, "-", "_"), ".", "_")
+	}
 }
 
 func stringClaim(claims map[string]any, key string) string {

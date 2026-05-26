@@ -63,6 +63,12 @@ use verself.common.v1#DateTime
 service Iam {
     version: "2026-05-12"
     operations: [
+        GetAuthContext
+        CreateDeviceSession
+        ListDeviceSessions
+        RevokeDeviceSession
+        ListAccountConnections
+        RemoveAccountConnection
         BrowserLogin
         BrowserAuthCallback
         GetBrowserSession
@@ -76,6 +82,9 @@ service Iam {
         InviteMember
     ]
     resources: [
+        Account
+        DeviceSession
+        AccountConnection
         BrowserAccount
         BrowserSession
         SignupIntent
@@ -163,6 +172,41 @@ string IAMMemberName
 
 @length(min: 1, max: 512)
 string SubjectId
+
+@length(min: 31, max: 31)
+@pattern("^acct_[0-9A-HJKMNP-TV-Z]{26}$")
+string AccountId
+
+@length(min: 31, max: 31)
+@pattern("^sess_[0-9A-HJKMNP-TV-Z]{26}$")
+string DeviceSessionId
+
+@length(min: 31, max: 31)
+@pattern("^conn_[0-9A-HJKMNP-TV-Z]{26}$")
+string AccountConnectionId
+
+@length(min: 1, max: 2048)
+string IdentityIssuer
+
+@length(min: 1, max: 128)
+@pattern("^(browser|cli|sdk|mobile|workload)$")
+string AuthChannel
+
+@length(min: 1, max: 128)
+@pattern("^[A-Za-z0-9._:-]+$")
+string AuthMethod
+
+list AuthMethods {
+    member: AuthMethod
+}
+
+@length(min: 1, max: 80)
+@pattern("^(active|revoked|expired)$")
+string DeviceSessionState
+
+@length(min: 1, max: 80)
+@pattern("^(linked|removed)$")
+string AccountConnectionState
 
 @length(min: 35, max: 35)
 @pattern("^ba_[A-Za-z0-9_-]{32}$")
@@ -301,6 +345,56 @@ structure SignupStateConflictError with [ProblemDetails] {}
 @problem(type: "urn:verself:problem:iam:organization_slug_unavailable", code: "iam.organization_slug.unavailable")
 structure OrganizationSlugUnavailableError with [ProblemDetails] {}
 
+@error("client")
+@httpError(401)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-reauthentication-required", code: "auth.reauthentication_required")
+structure ReauthenticationRequiredError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-account-link-required", code: "auth.account_link_required")
+structure AccountLinkRequiredError with [ProblemDetails] {}
+
+@error("client")
+@httpError(403)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-provider-email-unverified", code: "auth.provider_email_unverified")
+structure ProviderEmailUnverifiedError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-provider-subject-already-linked", code: "auth.provider_subject_already_linked")
+structure ProviderSubjectAlreadyLinkedError with [ProblemDetails] {}
+
+@error("client")
+@httpError(401)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-session-revoked", code: "auth.session_revoked")
+structure SessionRevokedError with [ProblemDetails] {}
+
+@error("client")
+@httpError(403)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-no-accessible-organization", code: "auth.no_accessible_organization")
+structure NoAccessibleOrganizationError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-org-selection-required", code: "auth.org_selection_required")
+structure OrgSelectionRequiredError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-account-selection-required", code: "auth.account_selection_required")
+structure AccountSelectionRequiredError with [ProblemDetails] {}
+
+@error("client")
+@httpError(403)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-insufficient-assurance", code: "auth.insufficient_assurance")
+structure InsufficientAssuranceError with [ProblemDetails] {}
+
+@error("client")
+@httpError(401)
+@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-device-session-required", code: "auth.device_session_required")
+structure DeviceSessionRequiredError with [ProblemDetails] {}
+
 @permission(name: "iam:signup_intent:create")
 string SignupIntentCreatePermission
 
@@ -312,6 +406,24 @@ string OrganizationSlugCheckPermission
 
 @permission(name: "iam:member_invite:accept")
 string MemberInviteAcceptPermission
+
+@permission(name: "iam:account:read")
+string AccountReadPermission
+
+@permission(name: "iam:device_session:create")
+string DeviceSessionCreatePermission
+
+@permission(name: "iam:device_session:read")
+string DeviceSessionReadPermission
+
+@permission(name: "iam:device_session:delete")
+string DeviceSessionDeletePermission
+
+@permission(name: "iam:account_connection:read")
+string AccountConnectionReadPermission
+
+@permission(name: "iam:account_connection:delete")
+string AccountConnectionDeletePermission
 
 @permission(name: "iam:browser_account:create")
 string BrowserSessionCreatePermission
@@ -384,6 +496,24 @@ string OrganizationSlugCheckAuditEvent
 
 @auditEvent(name: "iam.member_invite.accept")
 string MemberInviteAcceptAuditEvent
+
+@auditEvent(name: "iam.account_context.read")
+string AccountContextReadAuditEvent
+
+@auditEvent(name: "iam.device_session.create")
+string DeviceSessionCreateAuditEvent
+
+@auditEvent(name: "iam.device_session.read")
+string DeviceSessionReadAuditEvent
+
+@auditEvent(name: "iam.device_session.delete")
+string DeviceSessionDeleteAuditEvent
+
+@auditEvent(name: "iam.account_connection.read")
+string AccountConnectionReadAuditEvent
+
+@auditEvent(name: "iam.account_connection.delete")
+string AccountConnectionDeleteAuditEvent
 
 @auditEvent(name: "iam.browser_account.create")
 string BrowserSessionCreateAuditEvent
@@ -508,6 +638,24 @@ resource HumanProfile {
 resource Authorization {
 }
 
+resource Account {
+    identifiers: {
+        accountId: AccountId
+    }
+}
+
+resource DeviceSession {
+    identifiers: {
+        sessionId: DeviceSessionId
+    }
+}
+
+resource AccountConnection {
+    identifiers: {
+        connectionId: AccountConnectionId
+    }
+}
+
 structure OrganizationSummary for Organization {
     @required
     @resourceIdentifier("orgId")
@@ -554,6 +702,418 @@ structure MemberSummary for Member {
     $displayName
 
 }
+
+structure AccountSummary for Account {
+    @required
+    @resourceIdentifier("accountId")
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    accountId: AccountId
+
+    @required
+    @protoField(number: 2)
+    issuer: IdentityIssuer
+
+    @required
+    @protoField(number: 3)
+    subject: SubjectId
+
+    @required
+    @protoField(number: 4)
+    email: EmailAddress
+
+    @required
+    @protoField(number: 5)
+    emailVerified: Boolean
+
+    @required
+    @protoField(number: 6)
+    displayName: DisplayName
+
+    @required
+    @protoField(number: 7)
+    createdAt: DateTime
+}
+
+structure AuthOrganizationContext {
+    @required
+    @resourceIdentifier("orgId")
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    orgId: OrgId
+
+    @required
+    @protoField(number: 2)
+    displayName: DisplayName
+
+    @protoField(number: 3)
+    slug: OrgSlug
+
+    @required
+    @protoField(number: 4)
+    selected: Boolean
+}
+
+list AuthOrganizationContexts {
+    member: AuthOrganizationContext
+}
+
+structure DeviceSessionSummary for DeviceSession {
+    @required
+    @resourceIdentifier("sessionId")
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    sessionId: DeviceSessionId
+
+    @required
+    @resourceIdentifier("accountId")
+    @protoField(number: 2)
+    @suppress(["MemberShouldReferenceResource"])
+    accountId: AccountId
+
+    @required
+    @protoField(number: 3)
+    channel: AuthChannel
+
+    @required
+    @protoField(number: 4)
+    state: DeviceSessionState
+
+    @required
+    @protoField(number: 5)
+    current: Boolean
+
+    @required
+    @protoField(number: 6)
+    deviceLabel: DeviceLabel
+
+    @required
+    @protoField(number: 7)
+    createdAt: DateTime
+
+    @required
+    @protoField(number: 8)
+    lastSeenAt: DateTime
+
+    @required
+    @protoField(number: 9)
+    expiresAt: DateTime
+}
+
+list DeviceSessionSummaries {
+    member: DeviceSessionSummary
+}
+
+structure AccountConnectionSummary for AccountConnection {
+    @required
+    @resourceIdentifier("connectionId")
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    connectionId: AccountConnectionId
+
+    @required
+    @resourceIdentifier("accountId")
+    @protoField(number: 2)
+    @suppress(["MemberShouldReferenceResource"])
+    accountId: AccountId
+
+    @required
+    @protoField(number: 3)
+    issuer: IdentityIssuer
+
+    @required
+    @protoField(number: 4)
+    subject: SubjectId
+
+    @required
+    @protoField(number: 5)
+    state: AccountConnectionState
+
+    @required
+    @protoField(number: 6)
+    email: EmailAddress
+
+    @required
+    @protoField(number: 7)
+    emailVerified: Boolean
+
+    @required
+    @protoField(number: 8)
+    createdAt: DateTime
+
+    @required
+    @protoField(number: 9)
+    lastSeenAt: DateTime
+}
+
+list AccountConnectionSummaries {
+    member: AccountConnectionSummary
+}
+
+structure AuthContext {
+    @required
+    @protoField(number: 1)
+    account: AccountSummary
+
+    @required
+    @protoField(number: 2)
+    session: DeviceSessionSummary
+
+    @required
+    @protoField(number: 3)
+    organizations: AuthOrganizationContexts
+
+    @protoField(number: 4)
+    selectedOrgId: OrgId
+
+    @required
+    @protoField(number: 5)
+    authTime: DateTime
+
+    @required
+    @protoField(number: 6)
+    authMethods: AuthMethods
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/auth-context")
+@identity(mode: "bearer", audience: "verself-api", principals: ["cli", "browser", "workload"])
+@authz(permission: AccountReadPermission, organization: {source: "request_subject"})
+@audit(event: AccountContextReadAuditEvent, resource: Account, action: "read")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "getContext", paginated: false, retryable: true)
+operation GetAuthContext {
+    input: GetAuthContextInput
+    output: GetAuthContextOutput
+    errors: [
+        UnauthenticatedError
+        DeviceSessionRequiredError
+        SessionRevokedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure GetAuthContextInput {
+    @httpHeader("X-Verself-Device-Session")
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    sessionId: DeviceSessionId
+}
+
+@output
+structure GetAuthContextOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    @notProperty
+    @protoField(number: 1)
+    context: AuthContext
+}
+
+@idempotent
+@http(method: "POST", uri: "/api/v1/device-sessions", code: 201)
+@identity(mode: "bearer", audience: "verself-api", principals: ["cli", "browser", "workload"])
+@authz(permission: DeviceSessionCreatePermission, organization: {source: "request_subject"})
+@audit(event: DeviceSessionCreateAuditEvent, resource: DeviceSession, action: "create")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 4096)
+@sdk(module: "auth", method: "createDeviceSession", paginated: false, retryable: false)
+operation CreateDeviceSession {
+    input: CreateDeviceSessionInput
+    output: CreateDeviceSessionOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        AccountLinkRequiredError
+        ProviderEmailUnverifiedError
+        ProviderSubjectAlreadyLinkedError
+        IdempotencyPayloadMismatchError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure CreateDeviceSessionInput {
+    @required
+    @notProperty
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    @protoField(number: 100)
+    idempotencyKey: IdempotencyKey
+
+    @required
+    @protoField(number: 1)
+    channel: AuthChannel
+
+    @required
+    @protoField(number: 2)
+    deviceLabel: DeviceLabel
+}
+
+@output
+structure CreateDeviceSessionOutput {
+    @required
+    @httpPayload
+    @nestedProperties
+    @notProperty
+    @protoField(number: 1)
+    context: AuthContext
+}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/device-sessions")
+@identity(mode: "bearer", audience: "verself-api", principals: ["cli", "browser", "workload"])
+@authz(permission: DeviceSessionReadPermission, organization: {source: "request_subject"})
+@audit(event: DeviceSessionReadAuditEvent, resource: DeviceSession, action: "read")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "listDeviceSessions", paginated: false, retryable: true)
+operation ListDeviceSessions {
+    input: ListDeviceSessionsInput
+    output: ListDeviceSessionsOutput
+    errors: [
+        UnauthenticatedError
+        DeviceSessionRequiredError
+        SessionRevokedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure ListDeviceSessionsInput {
+    @httpHeader("X-Verself-Device-Session")
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    sessionId: DeviceSessionId
+}
+
+@output
+structure ListDeviceSessionsOutput {
+    @required
+    @protoField(number: 1)
+    sessions: DeviceSessionSummaries
+}
+
+@http(method: "DELETE", uri: "/api/v1/device-sessions/{sessionId}", code: 204)
+@idempotent
+@identity(mode: "bearer", audience: "verself-api", principals: ["cli", "browser", "workload"])
+@authz(permission: DeviceSessionDeletePermission, organization: {source: "request_subject"})
+@audit(event: DeviceSessionDeleteAuditEvent, resource: DeviceSession, action: "delete")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 1)
+@sdk(module: "auth", method: "revokeDeviceSession", paginated: false, retryable: false)
+@suppress(["ServiceBoundResourceOperation"])
+operation RevokeDeviceSession {
+    input: RevokeDeviceSessionInput
+    output: RevokeDeviceSessionOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        PermissionDeniedError
+        DeviceSessionRequiredError
+        SessionRevokedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure RevokeDeviceSessionInput {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    sessionId: DeviceSessionId
+
+    @required
+    @httpHeader("X-Verself-Device-Session")
+    @protoField(number: 2)
+    currentSessionId: DeviceSessionId
+}
+
+@output
+structure RevokeDeviceSessionOutput {}
+
+@readonly
+@http(method: "GET", uri: "/api/v1/account-connections")
+@identity(mode: "bearer", audience: "verself-api", principals: ["cli", "browser", "workload"])
+@authz(permission: AccountConnectionReadPermission, organization: {source: "request_subject"})
+@audit(event: AccountConnectionReadAuditEvent, resource: AccountConnection, action: "read")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "auth", method: "listAccountConnections", paginated: false, retryable: true)
+operation ListAccountConnections {
+    input: ListAccountConnectionsInput
+    output: ListAccountConnectionsOutput
+    errors: [
+        UnauthenticatedError
+        DeviceSessionRequiredError
+        SessionRevokedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure ListAccountConnectionsInput {
+    @httpHeader("X-Verself-Device-Session")
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    sessionId: DeviceSessionId
+}
+
+@output
+structure ListAccountConnectionsOutput {
+    @required
+    @protoField(number: 1)
+    connections: AccountConnectionSummaries
+}
+
+@http(method: "DELETE", uri: "/api/v1/account-connections/{connectionId}", code: 204)
+@idempotent
+@identity(mode: "bearer", audience: "verself-api", principals: ["cli", "browser", "workload"])
+@authz(permission: AccountConnectionDeletePermission, organization: {source: "request_subject"})
+@audit(event: AccountConnectionDeleteAuditEvent, resource: AccountConnection, action: "delete")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 1)
+@sdk(module: "auth", method: "removeAccountConnection", paginated: false, retryable: false)
+@suppress(["ServiceBoundResourceOperation"])
+operation RemoveAccountConnection {
+    input: RemoveAccountConnectionInput
+    output: RemoveAccountConnectionOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        PermissionDeniedError
+        DeviceSessionRequiredError
+        SessionRevokedError
+        ReauthenticationRequiredError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure RemoveAccountConnectionInput {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    connectionId: AccountConnectionId
+
+    @required
+    @httpHeader("X-Verself-Device-Session")
+    @protoField(number: 2)
+    currentSessionId: DeviceSessionId
+}
+
+@output
+structure RemoveAccountConnectionOutput {}
 
 @readonly
 @http(method: "GET", uri: "/api/v1/organization-slugs/{slug}/availability", code: 200)

@@ -49,6 +49,12 @@ func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service
 		productBaseURL: productBaseURL,
 		inviteNotifier: inviteNotifier,
 	}
+	registerPublicOperation(api, runtime, contractapi.GetAuthContext, handlers.GetAuthContext, "Get auth context")
+	registerPublicOperation(api, runtime, contractapi.CreateDeviceSession, handlers.CreateDeviceSession, "Create device session")
+	registerPublicOperation(api, runtime, contractapi.ListDeviceSessions, handlers.ListDeviceSessions, "List device sessions")
+	registerPublicOperation(api, runtime, contractapi.RevokeDeviceSession, handlers.RevokeDeviceSession, "Revoke device session")
+	registerPublicOperation(api, runtime, contractapi.ListAccountConnections, handlers.ListAccountConnections, "List account connections")
+	registerPublicOperation(api, runtime, contractapi.RemoveAccountConnection, handlers.RemoveAccountConnection, "Remove account connection")
 	registerPublicOperation(api, runtime, contractapi.ListOrganizations, handlers.ListOrganizations, "List organizations")
 	registerPublicOperation(api, runtime, contractapi.CreateOrganization, handlers.CreateOrganization, "Create organization")
 	registerPublicOperation(api, runtime, contractapi.GetOrganization, handlers.GetOrganization, "Get organization")

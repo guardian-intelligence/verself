@@ -185,6 +185,21 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
     description: "Isolation, workload identity, auditability, and data-retention commitments.",
   },
   {
+    id: "iam-auth-errors",
+    label: "IAM Auth Errors",
+    to: "/docs/reference/iam/errors",
+    matchPrefix: "/docs/reference/iam/errors",
+    status: "available",
+    description: "Stable account, provider-linking, device-session, and device-code auth errors.",
+    children: [
+      { id: "shape", label: "Shape" },
+      { id: "authentication", label: "Authentication" },
+      { id: "account-linking", label: "Account linking" },
+      { id: "organization-context", label: "Organization context" },
+      { id: "device-code", label: "Device code" },
+    ],
+  },
+  {
     id: "github-integration-errors",
     label: "GitHub CI Errors",
     to: "/docs/reference/github-integration/errors",

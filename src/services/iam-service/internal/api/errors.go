@@ -13,7 +13,10 @@ import (
 	"github.com/verself/iam-service/internal/identity"
 )
 
-const problemTypePrefix = "urn:verself:problem:"
+const (
+	problemTypePrefix  = "urn:verself:problem:"
+	authProblemDocsURL = "https://verself.sh/docs/reference/iam/errors#"
+)
 
 type verselfProblem struct {
 	huma.ErrorModel
@@ -58,7 +61,7 @@ func problemType(code string) string {
 	case strings.HasPrefix(code, "request."):
 		return problemTypePrefix + "request:" + strings.ReplaceAll(strings.TrimPrefix(code, "request."), ".", "_")
 	case strings.HasPrefix(code, "auth."):
-		return problemTypePrefix + "auth:" + strings.ReplaceAll(strings.TrimPrefix(code, "auth."), ".", "_")
+		return authProblemDocsURL + authProblemAnchor(code)
 	case strings.HasPrefix(code, "conflict."):
 		return problemTypePrefix + "conflict:" + strings.ReplaceAll(strings.TrimPrefix(code, "conflict."), ".", "_")
 	case strings.HasPrefix(code, "quota."):
@@ -72,6 +75,10 @@ func problemType(code string) string {
 	default:
 		return problemTypePrefix + "iam:" + strings.ReplaceAll(strings.ReplaceAll(code, "-", "_"), ".", "_")
 	}
+}
+
+func authProblemAnchor(code string) string {
+	return strings.NewReplacer(".", "-", "_", "-").Replace(strings.TrimSpace(code))
 }
 
 func badRequest(ctx context.Context, code, detail string, cause error) error {

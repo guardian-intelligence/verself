@@ -20,6 +20,7 @@ type ProfileRecord struct {
 	Version          int            `json:"version"`
 	Name             string         `json:"name"`
 	ActiveAccount    string         `json:"active_account,omitempty"`
+	ServerURL        string         `json:"server_url,omitempty"`
 	IAMURL           string         `json:"iam_url,omitempty"`
 	ProjectsURL      string         `json:"projects_url,omitempty"`
 	NotificationsURL string         `json:"notifications_url,omitempty"`
@@ -34,15 +35,19 @@ type ProfileRecord struct {
 }
 
 type AccountRecord struct {
-	Version     int       `json:"version"`
-	ProfileName string    `json:"profile_name"`
-	Handle      string    `json:"handle"`
-	Subject     string    `json:"subject,omitempty"`
-	Email       string    `json:"email,omitempty"`
-	TokenRef    string    `json:"token_ref"`
-	SelectedOrg *OrgRef   `json:"selected_org,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Version         int       `json:"version"`
+	ProfileName     string    `json:"profile_name"`
+	Handle          string    `json:"handle"`
+	AccountID       string    `json:"account_id"`
+	Issuer          string    `json:"issuer"`
+	Subject         string    `json:"subject"`
+	Email           string    `json:"email"`
+	DisplayName     string    `json:"display_name"`
+	DeviceSessionID string    `json:"device_session_id"`
+	CredentialRef   string    `json:"credential_ref"`
+	SelectedOrg     *OrgRef   `json:"selected_org,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type OrgRef struct {

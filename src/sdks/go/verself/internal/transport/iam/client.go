@@ -14,6 +14,13 @@ import (
 const ServiceName = "iam-service"
 
 type (
+	AccountConnectionId      = string
+	AccountConnectionState   = string
+	AccountId                = string
+	AuthChannel              = string
+	AuthMethod               = string
+	DeviceSessionId          = string
+	DeviceSessionState       = string
 	DisplayName              = string
 	EmailAddress             = string
 	GivenName                = string
@@ -36,6 +43,7 @@ type (
 	ProblemCode              = string
 	ProblemDetail            = string
 	ProblemType              = string
+	IdentityIssuer           = string
 	RequestId                = string
 	SignupIntentId           = string
 	SignupStartStatus        = string
@@ -44,13 +52,67 @@ type (
 )
 
 type (
-	IAMMembers        []IAMMemberName
-	IAMPolicyBindings []IAMPolicyBinding
-	InviteMemberRoles []IAMRoleName
-	Members           []MemberSummary
-	Organizations     []OrganizationSummary
-	Permissions       []PermissionName
+	AccountConnectionSummaries []AccountConnectionSummary
+	AuthMethods                []AuthMethod
+	AuthOrganizationContexts   []AuthOrganizationContext
+	DeviceSessionSummaries     []DeviceSessionSummary
+	IAMMembers                 []IAMMemberName
+	IAMPolicyBindings          []IAMPolicyBinding
+	InviteMemberRoles          []IAMRoleName
+	Members                    []MemberSummary
+	Organizations              []OrganizationSummary
+	Permissions                []PermissionName
 )
+
+type AccountSummary struct {
+	AccountID     AccountId      `json:"accountId"`
+	Issuer        IdentityIssuer `json:"issuer"`
+	Subject       string         `json:"subject"`
+	Email         EmailAddress   `json:"email"`
+	EmailVerified bool           `json:"emailVerified"`
+	DisplayName   DisplayName    `json:"displayName"`
+	CreatedAt     string         `json:"createdAt"`
+}
+
+type AuthOrganizationContext struct {
+	OrgID       OrgId       `json:"orgId"`
+	DisplayName DisplayName `json:"displayName"`
+	Slug        *OrgSlug    `json:"slug,omitempty"`
+	Selected    bool        `json:"selected"`
+}
+
+type DeviceSessionSummary struct {
+	SessionID   DeviceSessionId    `json:"sessionId"`
+	AccountID   AccountId          `json:"accountId"`
+	Channel     AuthChannel        `json:"channel"`
+	State       DeviceSessionState `json:"state"`
+	Current     bool               `json:"current"`
+	DeviceLabel DisplayName        `json:"deviceLabel"`
+	CreatedAt   string             `json:"createdAt"`
+	LastSeenAt  string             `json:"lastSeenAt"`
+	ExpiresAt   string             `json:"expiresAt"`
+}
+
+type AccountConnectionSummary struct {
+	ConnectionID  AccountConnectionId    `json:"connectionId"`
+	AccountID     AccountId              `json:"accountId"`
+	Issuer        IdentityIssuer         `json:"issuer"`
+	Subject       string                 `json:"subject"`
+	State         AccountConnectionState `json:"state"`
+	Email         EmailAddress           `json:"email"`
+	EmailVerified bool                   `json:"emailVerified"`
+	CreatedAt     string                 `json:"createdAt"`
+	LastSeenAt    string                 `json:"lastSeenAt"`
+}
+
+type AuthContext struct {
+	Account       AccountSummary           `json:"account"`
+	Session       DeviceSessionSummary     `json:"session"`
+	Organizations AuthOrganizationContexts `json:"organizations"`
+	SelectedOrgID *OrgId                   `json:"selectedOrgId,omitempty"`
+	AuthTime      string                   `json:"authTime"`
+	AuthMethods   AuthMethods              `json:"authMethods"`
+}
 
 type ConflictError struct {
 	Type        ProblemType    `json:"type"`
@@ -202,6 +264,94 @@ type ValidationFailedError struct {
 	Code        ProblemCode    `json:"code"`
 	RequestID   *RequestId     `json:"requestId,omitempty"`
 	Traceparent *TraceParent   `json:"traceparent,omitempty"`
+}
+
+type GetAuthContextRequest struct {
+	SessionID *DeviceSessionId
+}
+
+type GetAuthContextResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *AuthContext
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type CreateDeviceSessionInputBody struct {
+	Channel     AuthChannel `json:"channel"`
+	DeviceLabel DisplayName `json:"deviceLabel"`
+}
+
+type CreateDeviceSessionRequest struct {
+	IdempotencyKey IdempotencyKey
+	Body           CreateDeviceSessionInputBody `json:"body"`
+}
+
+type CreateDeviceSessionResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *AuthContext
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type ListDeviceSessionsRequest struct {
+	SessionID *DeviceSessionId
+}
+
+type ListDeviceSessionsOutputBody struct {
+	Sessions DeviceSessionSummaries `json:"sessions"`
+}
+
+type ListDeviceSessionsResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *ListDeviceSessionsOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type RevokeDeviceSessionRequest struct {
+	SessionID        DeviceSessionId
+	CurrentSessionID *DeviceSessionId
+}
+
+type RevokeDeviceSessionResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *struct{}
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type ListAccountConnectionsRequest struct {
+	SessionID *DeviceSessionId
+}
+
+type ListAccountConnectionsOutputBody struct {
+	Connections AccountConnectionSummaries `json:"connections"`
+}
+
+type ListAccountConnectionsResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *ListAccountConnectionsOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type RemoveAccountConnectionRequest struct {
+	ConnectionID     AccountConnectionId
+	CurrentSessionID *DeviceSessionId
+}
+
+type RemoveAccountConnectionResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *struct{}
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
 }
 
 type GetIamPolicyRequest struct {
@@ -468,6 +618,170 @@ func WithRequestEditorFn(editor RequestEditorFn) ClientOption {
 			c.requestEditors = append(c.requestEditors, editor)
 		}
 	}
+}
+
+func (c *Client) GetAuthContext(ctx context.Context, request GetAuthContextRequest, reqEditors ...RequestEditorFn) (*GetAuthContextResponse, error) {
+	req, err := c.newGetAuthContextRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[AuthContext](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &GetAuthContextResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newGetAuthContextRequest(ctx context.Context, request GetAuthContextRequest) (*http.Request, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, "/api/v1/auth-context", nil)
+	if err != nil {
+		return nil, err
+	}
+	if request.SessionID != nil && strings.TrimSpace(string(*request.SessionID)) != "" {
+		req.Header.Set("X-Verself-Device-Session", strings.TrimSpace(string(*request.SessionID)))
+	}
+	return req, nil
+}
+
+func (c *Client) CreateDeviceSession(ctx context.Context, request CreateDeviceSessionRequest, reqEditors ...RequestEditorFn) (*CreateDeviceSessionResponse, error) {
+	req, err := c.newCreateDeviceSessionRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[AuthContext](resp, http.StatusCreated)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateDeviceSessionResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newCreateDeviceSessionRequest(ctx context.Context, request CreateDeviceSessionRequest) (*http.Request, error) {
+	req, err := c.newRequest(ctx, http.MethodPost, "/api/v1/device-sessions", request.Body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Idempotency-Key", fmt.Sprint(request.IdempotencyKey))
+	return req, nil
+}
+
+func (c *Client) ListDeviceSessions(ctx context.Context, request ListDeviceSessionsRequest, reqEditors ...RequestEditorFn) (*ListDeviceSessionsResponse, error) {
+	req, err := c.newListDeviceSessionsRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[ListDeviceSessionsOutputBody](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &ListDeviceSessionsResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newListDeviceSessionsRequest(ctx context.Context, request ListDeviceSessionsRequest) (*http.Request, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, "/api/v1/device-sessions", nil)
+	if err != nil {
+		return nil, err
+	}
+	if request.SessionID != nil && strings.TrimSpace(string(*request.SessionID)) != "" {
+		req.Header.Set("X-Verself-Device-Session", strings.TrimSpace(string(*request.SessionID)))
+	}
+	return req, nil
+}
+
+func (c *Client) RevokeDeviceSession(ctx context.Context, request RevokeDeviceSessionRequest, reqEditors ...RequestEditorFn) (*RevokeDeviceSessionResponse, error) {
+	req, err := c.newRevokeDeviceSessionRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[struct{}](resp, http.StatusNoContent)
+	if err != nil {
+		return nil, err
+	}
+	return &RevokeDeviceSessionResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newRevokeDeviceSessionRequest(ctx context.Context, request RevokeDeviceSessionRequest) (*http.Request, error) {
+	path := "/api/v1/device-sessions/{sessionId}"
+	path = strings.ReplaceAll(path, "{sessionId}", url.PathEscape(fmt.Sprint(request.SessionID)))
+	req, err := c.newRequest(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if request.CurrentSessionID != nil && strings.TrimSpace(string(*request.CurrentSessionID)) != "" {
+		req.Header.Set("X-Verself-Device-Session", strings.TrimSpace(string(*request.CurrentSessionID)))
+	}
+	return req, nil
+}
+
+func (c *Client) ListAccountConnections(ctx context.Context, request ListAccountConnectionsRequest, reqEditors ...RequestEditorFn) (*ListAccountConnectionsResponse, error) {
+	req, err := c.newListAccountConnectionsRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[ListAccountConnectionsOutputBody](resp, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	return &ListAccountConnectionsResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newListAccountConnectionsRequest(ctx context.Context, request ListAccountConnectionsRequest) (*http.Request, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, "/api/v1/account-connections", nil)
+	if err != nil {
+		return nil, err
+	}
+	if request.SessionID != nil && strings.TrimSpace(string(*request.SessionID)) != "" {
+		req.Header.Set("X-Verself-Device-Session", strings.TrimSpace(string(*request.SessionID)))
+	}
+	return req, nil
+}
+
+func (c *Client) RemoveAccountConnection(ctx context.Context, request RemoveAccountConnectionRequest, reqEditors ...RequestEditorFn) (*RemoveAccountConnectionResponse, error) {
+	req, err := c.newRemoveAccountConnectionRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	status, body, result, problem, err := decodeResponse[struct{}](resp, http.StatusNoContent)
+	if err != nil {
+		return nil, err
+	}
+	return &RemoveAccountConnectionResponse{StatusCode: status, Body: body, Result: result, Problem: problem, HTTPResponse: resp}, nil
+}
+
+func (c *Client) newRemoveAccountConnectionRequest(ctx context.Context, request RemoveAccountConnectionRequest) (*http.Request, error) {
+	path := "/api/v1/account-connections/{connectionId}"
+	path = strings.ReplaceAll(path, "{connectionId}", url.PathEscape(fmt.Sprint(request.ConnectionID)))
+	req, err := c.newRequest(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if request.CurrentSessionID != nil && strings.TrimSpace(string(*request.CurrentSessionID)) != "" {
+		req.Header.Set("X-Verself-Device-Session", strings.TrimSpace(string(*request.CurrentSessionID)))
+	}
+	return req, nil
 }
 
 func (c *Client) GetIamPolicy(ctx context.Context, request GetIamPolicyRequest, reqEditors ...RequestEditorFn) (*GetIamPolicyResponse, error) {

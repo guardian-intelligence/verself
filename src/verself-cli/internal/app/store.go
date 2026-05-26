@@ -125,8 +125,8 @@ func (s *Store) DeleteAccount(profileName, handle string) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err == nil && account.TokenRef != "" {
-		if deleteErr := s.DeleteCredential(account.TokenRef); deleteErr != nil {
+	if err == nil && account.CredentialRef != "" {
+		if deleteErr := s.DeleteCredential(account.CredentialRef); deleteErr != nil {
 			return deleteErr
 		}
 	}
@@ -278,26 +278,42 @@ func (s *Store) SaveCredential(value string) (string, error) {
 }
 
 func (s *Store) ReadCredential(ref string) (string, error) {
-	id, ok := strings.CutPrefix(ref, "verself-cred://")
-	if !ok || id == "" || strings.ContainsAny(id, `/\`) {
-		return "", fmt.Errorf("credential ref invalid: %s", ref)
+	path, err := s.credentialPath(ref)
+	if err != nil {
+		return "", err
 	}
-	data, err := os.ReadFile(filepath.Join(s.paths.credentialDir(), id+".secret"))
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
 	return string(data), nil
 }
 
-func (s *Store) DeleteCredential(ref string) error {
-	id, ok := strings.CutPrefix(ref, "verself-cred://")
-	if !ok || id == "" || strings.ContainsAny(id, `/\`) {
-		return fmt.Errorf("credential ref invalid: %s", ref)
+func (s *Store) UpdateCredential(ref string, value string) error {
+	path, err := s.credentialPath(ref)
+	if err != nil {
+		return err
 	}
-	if err := os.Remove(filepath.Join(s.paths.credentialDir(), id+".secret")); err != nil && !errors.Is(err, os.ErrNotExist) {
+	return atomicWriteFile(path, []byte(value), 0o600)
+}
+
+func (s *Store) DeleteCredential(ref string) error {
+	path, err := s.credentialPath(ref)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
+}
+
+func (s *Store) credentialPath(ref string) (string, error) {
+	id, ok := strings.CutPrefix(ref, "verself-cred://")
+	if !ok || id == "" || strings.ContainsAny(id, `/\`) {
+		return "", fmt.Errorf("credential ref invalid: %s", ref)
+	}
+	return filepath.Join(s.paths.credentialDir(), id+".secret"), nil
 }
 
 func (s *Store) LoadEnv(scope EnvScope) (EnvStore, error) {

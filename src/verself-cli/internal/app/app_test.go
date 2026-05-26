@@ -3,7 +3,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -36,6 +35,14 @@ func TestCLIErrorMessageIncludesAPIProblemMetadata(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("cli error message missing %q: %s", want, got)
 		}
+	}
+}
+
+func TestAuthCommandErrorLinksPublicDocsAnchor(t *testing.T) {
+	got := authCommandError("auth.session_revoked", "device session is expired or revoked").Error()
+	want := "https://verself.sh/docs/reference/iam/errors#auth-session-revoked"
+	if !strings.Contains(got, want) {
+		t.Fatalf("auth error missing docs link %q: %s", want, got)
 	}
 }
 
@@ -1101,24 +1108,19 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", filepath.Join(xdgRoot, "state"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(xdgRoot, "cache"))
 
-	iamToken := unsignedJWT(t, map[string]any{
-		"sub":   "user_iam_test",
-		"email": "operator@example.test",
-	})
-	secondToken := unsignedJWT(t, map[string]any{
-		"sub":   "user_second_test",
-		"email": "second@example.test",
-	})
-	tokenPath := filepath.Join(xdgRoot, "token")
-	if err := os.WriteFile(tokenPath, []byte(iamToken+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	secondTokenPath := filepath.Join(xdgRoot, "second-token")
-	if err := os.WriteFile(secondTokenPath, []byte(secondToken+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	const (
+		iamToken      = "tok_iam"
+		secondToken   = "tok_second"
+		sessionID     = "sess_01J8QK4M5N6P7Q8R9S0T1V2W3X"
+		secondSession = "sess_01J8QK4M5N6P7Q8R9S0T1V2W3Y"
+		accountID     = "acct_01J8QK4M5N6P7Q8R9S0T1V2W3X"
+		secondAccount = "acct_01J8QK4M5N6P7Q8R9S0T1V2W3Y"
+	)
 	orgJSON := func(version string) string {
 		return `{"orgId":"org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","resourceName":"urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","displayName":"Guardian Intelligence","slug":"guardian","version":` + version + `}`
+	}
+	authContextJSON := func(account, session, email, subject string) string {
+		return `{"account":{"accountId":"` + account + `","issuer":"https://verself.sh","subject":"` + subject + `","email":"` + email + `","emailVerified":true,"displayName":"Operator","createdAt":"2026-05-25T00:00:00Z"},"session":{"sessionId":"` + session + `","accountId":"` + account + `","channel":"cli","state":"active","current":true,"deviceLabel":"CLI","createdAt":"2026-05-25T00:00:00Z","lastSeenAt":"2026-05-25T00:00:00Z","expiresAt":"2026-05-26T00:00:00Z"},"organizations":[{"orgId":"org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","displayName":"Guardian Intelligence","slug":"guardian","selected":true}],"selectedOrgId":"org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","authTime":"2026-05-25T00:00:00Z","authMethods":["pwd"]}`
 	}
 	invitationJSON := func() string {
 		return `{"orgId":"org_01J8QK0M2A7W4H3P9FQ6G1R8ZT","memberId":"member_01J8QK4M5N6P7Q8R9S0T1V2W3X","resourceName":"urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:orgs/org_01J8QK0M2A7W4H3P9FQ6G1R8ZT/members/member_01J8QK4M5N6P7Q8R9S0T1V2W3X","email":"invited@example.test","status":"invited","roles":["roles/admin"]}`
@@ -1129,6 +1131,7 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	var updateBody map[string]any
 	var inviteKey string
 	var inviteBody map[string]any
+	var revokedSession string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Header.Get("Authorization") {
@@ -1136,7 +1139,31 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 		default:
 			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
 		}
+		if r.URL.Path != "/api/v1/auth-context" && r.URL.Path != "/api/v1/device-sessions/"+secondSession && r.Header.Get("X-Verself-Device-Session") != sessionID {
+			t.Fatalf("%s %s X-Verself-Device-Session = %q", r.Method, r.URL.Path, r.Header.Get("X-Verself-Device-Session"))
+		}
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth-context":
+			switch r.Header.Get("Authorization") {
+			case "Bearer " + iamToken:
+				if r.Header.Get("X-Verself-Device-Session") != sessionID {
+					t.Fatalf("auth context session header = %q", r.Header.Get("X-Verself-Device-Session"))
+				}
+				_, _ = w.Write([]byte(authContextJSON(accountID, sessionID, "operator@example.test", "user_iam_test")))
+			case "Bearer " + secondToken:
+				if r.Header.Get("X-Verself-Device-Session") != secondSession {
+					t.Fatalf("second auth context session header = %q", r.Header.Get("X-Verself-Device-Session"))
+				}
+				_, _ = w.Write([]byte(authContextJSON(secondAccount, secondSession, "second@example.test", "user_second_test")))
+			}
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/device-sessions":
+			_, _ = w.Write([]byte(`{"sessions":[{"sessionId":"` + sessionID + `","accountId":"` + accountID + `","channel":"cli","state":"active","current":true,"deviceLabel":"CLI","createdAt":"2026-05-25T00:00:00Z","lastSeenAt":"2026-05-25T00:00:00Z","expiresAt":"2026-05-26T00:00:00Z"},{"sessionId":"` + secondSession + `","accountId":"` + accountID + `","channel":"browser","state":"active","current":false,"deviceLabel":"Browser","createdAt":"2026-05-25T00:00:00Z","lastSeenAt":"2026-05-25T00:00:00Z","expiresAt":"2026-05-26T00:00:00Z"}]}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/device-sessions/"+secondSession:
+			if r.Header.Get("X-Verself-Device-Session") != sessionID {
+				t.Fatalf("revoke session header = %q", r.Header.Get("X-Verself-Device-Session"))
+			}
+			revokedSession = secondSession
+			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs":
 			createKey = r.Header.Get("Idempotency-Key")
 			if err := json.NewDecoder(r.Body).Decode(&createBody); err != nil {
@@ -1166,16 +1193,68 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	t.Setenv("VERSELF_IAM_API_URL", server.URL)
 
-	runCLI(t, nil, "auth", "login", "--token-file", tokenPath)
-	profilePath := filepath.Join(xdgRoot, "data", "verself", "profiles", "default.json")
-	profile := readFile(t, profilePath)
-	if strings.Contains(profile, iamToken) {
-		t.Fatalf("profile stored plaintext token:\n%s", profile)
+	store, err := newStore(os.Getenv)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(profile, "token_ref") || strings.Contains(profile, "selected_org") {
-		t.Fatalf("profile stored account-owned fields:\n%s", profile)
+	firstRef, err := store.SaveCredential(`{"access_token":"` + iamToken + `","token_type":"Bearer"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRef, err := store.SaveCredential(`{"access_token":"` + secondToken + `","token_type":"Bearer"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := ProfileRecord{Version: 1, Name: "default", ActiveAccount: accountID, IAMURL: server.URL}
+	if err := store.SaveProfile(profile); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ActiveProfile = "default"
+	if err := store.SaveConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveAccount(AccountRecord{
+		Version:         1,
+		ProfileName:     "default",
+		Handle:          accountID,
+		AccountID:       accountID,
+		Issuer:          "https://verself.sh",
+		Subject:         "user_iam_test",
+		Email:           "operator@example.test",
+		DisplayName:     "Operator",
+		DeviceSessionID: sessionID,
+		CredentialRef:   firstRef,
+		SelectedOrg:     &OrgRef{OrgID: "org_01J8QK0M2A7W4H3P9FQ6G1R8ZT", Slug: "guardian", DisplayName: "Guardian Intelligence"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveAccount(AccountRecord{
+		Version:         1,
+		ProfileName:     "default",
+		Handle:          secondAccount,
+		AccountID:       secondAccount,
+		Issuer:          "https://verself.sh",
+		Subject:         "user_second_test",
+		Email:           "second@example.test",
+		DisplayName:     "Second",
+		DeviceSessionID: secondSession,
+		CredentialRef:   secondRef,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	profilePath := filepath.Join(xdgRoot, "data", "verself", "profiles", "default.json")
+	profileJSON := readFile(t, profilePath)
+	if strings.Contains(profileJSON, iamToken) {
+		t.Fatalf("profile stored plaintext token:\n%s", profileJSON)
+	}
+	if strings.Contains(profileJSON, "credential_ref") || strings.Contains(profileJSON, "selected_org") {
+		t.Fatalf("profile stored account-owned fields:\n%s", profileJSON)
 	}
 	var accountsOut bytes.Buffer
 	runCLI(t, &accountsOut, "auth", "accounts", "list")
@@ -1187,37 +1266,36 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	if err := json.Unmarshal(accountsOut.Bytes(), &accounts); err != nil {
 		t.Fatalf("decode accounts output: %v\n%s", err, accountsOut.String())
 	}
-	if accounts.Profile != "default" || accounts.ActiveAccount == "" || len(accounts.Accounts) != 1 {
+	if accounts.Profile != "default" || accounts.ActiveAccount == "" || len(accounts.Accounts) != 2 {
 		t.Fatalf("unexpected accounts output: %#v", accounts)
 	}
-	if account := accounts.Accounts[0]; account.Email != "operator@example.test" ||
+	account, err := matchCLIAccount(accounts.Accounts, "operator@example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Email != "operator@example.test" ||
 		account.Subject != "user_iam_test" ||
-		account.TokenRef == "" ||
+		account.CredentialRef == "" ||
+		account.DeviceSessionID != sessionID ||
 		account.SelectedOrg == nil ||
 		account.SelectedOrg.OrgID != "org_01J8QK0M2A7W4H3P9FQ6G1R8ZT" {
 		t.Fatalf("unexpected account record: %#v", account)
 	}
 	runCLI(t, nil, "auth", "accounts", "use", "operator@example.test")
-	t.Setenv("VERSELF_IAM_API_URL", "")
-	runCLI(t, nil, "auth", "login", "--token-file", secondTokenPath)
-	profile = readFile(t, profilePath)
-	if !strings.Contains(profile, server.URL) {
-		t.Fatalf("profile did not preserve IAM URL:\n%s", profile)
-	}
-	accountsOut.Reset()
-	runCLI(t, &accountsOut, "auth", "accounts", "list")
-	if err := json.Unmarshal(accountsOut.Bytes(), &accounts); err != nil {
-		t.Fatalf("decode accounts output after second login: %v\n%s", err, accountsOut.String())
-	}
-	if len(accounts.Accounts) != 2 {
-		t.Fatalf("expected two accounts after second login: %#v", accounts)
-	}
-	runCLI(t, nil, "auth", "accounts", "use", "operator@example.test")
 
 	var whoami bytes.Buffer
 	runCLI(t, &whoami, "auth", "whoami")
-	if !strings.Contains(whoami.String(), "org_01J8QK0M2A7W4H3P9FQ6G1R8ZT\tGuardian Intelligence") {
+	if !strings.Contains(whoami.String(), accountID+"\toperator@example.test\torg_01J8QK0M2A7W4H3P9FQ6G1R8ZT\tGuardian Intelligence") {
 		t.Fatalf("auth whoami output:\n%s", whoami.String())
+	}
+	var sessions bytes.Buffer
+	runCLI(t, &sessions, "auth", "sessions", "list")
+	if !strings.Contains(sessions.String(), sessionID+"\tactive\tcli\tCLI\tcurrent") {
+		t.Fatalf("auth sessions output:\n%s", sessions.String())
+	}
+	runCLI(t, nil, "auth", "sessions", "revoke", secondSession)
+	if revokedSession != secondSession {
+		t.Fatalf("revoked session = %q", revokedSession)
 	}
 
 	runCLI(t, nil, "orgs", "use", "guardian")
@@ -1323,20 +1401,6 @@ func runCLI(t *testing.T, out *bytes.Buffer, args ...string) {
 	if err := cli.Run(context.Background(), args); err != nil {
 		t.Fatalf("verself %s: %v", strings.Join(args, " "), err)
 	}
-}
-
-func unsignedJWT(t *testing.T, claims map[string]any) string {
-	t.Helper()
-	header, err := json.Marshal(map[string]string{"alg": "none", "typ": "JWT"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload, err := json.Marshal(claims)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return base64.RawURLEncoding.EncodeToString(header) + "." +
-		base64.RawURLEncoding.EncodeToString(payload) + ".signature"
 }
 
 func requireTool(t *testing.T, name string) {

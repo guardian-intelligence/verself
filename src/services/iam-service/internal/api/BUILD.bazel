@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "actions.go",
         "api_activity_sink.go",
+        "auth_account.go",
         "browser_auth.go",
         "browser_auth_activity.go",
         "browser_auth_devices.go",
@@ -50,7 +51,9 @@ go_test(
     name = "api_test",
     srcs = [
         "actions_test.go",
+        "auth_account_test.go",
         "browser_auth_test.go",
+        "errors_test.go",
         "security_test.go",
     ],
     embed = [":api"],

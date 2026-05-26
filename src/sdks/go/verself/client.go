@@ -34,6 +34,8 @@ const (
 
 type Options struct {
 	BearerToken      string
+	CredentialSource CredentialSource
+	DeviceSessionID  string
 	ServerURL        string
 	IAMURL           string
 	ProjectsURL      string
@@ -47,7 +49,27 @@ type Options struct {
 	Traceparent      string
 }
 
+type CredentialSource interface {
+	BearerToken(context.Context) (string, error)
+}
+
+type CredentialSourceFunc func(context.Context) (string, error)
+
+func (f CredentialSourceFunc) BearerToken(ctx context.Context) (string, error) {
+	if f == nil {
+		return "", nil
+	}
+	return f(ctx)
+}
+
+func StaticBearerToken(token string) CredentialSource {
+	return CredentialSourceFunc(func(context.Context) (string, error) {
+		return strings.TrimSpace(token), nil
+	})
+}
+
 type Client struct {
+	Auth          *AuthClient
 	IAM           *IAMClient
 	Projects      *ProjectsClient
 	Notifications *NotificationsClient
@@ -59,7 +81,10 @@ type Client struct {
 }
 
 func New(options Options) (*Client, error) {
-	token := strings.TrimSpace(options.BearerToken)
+	credentials := options.CredentialSource
+	if credentials == nil && strings.TrimSpace(options.BearerToken) != "" {
+		credentials = StaticBearerToken(options.BearerToken)
+	}
 	iamURL, err := serviceURL(options.IAMURL, options.ServerURL, "iam")
 	if err != nil {
 		return nil, err
@@ -96,7 +121,7 @@ func New(options Options) (*Client, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	iamEditor := iamRequestEditor(token, options.Traceparent)
+	iamEditor := iamRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
 	generatedIAM, err := iamcore.NewClient(
 		iamURL,
 		iamcore.WithHTTPClient(httpClient),
@@ -105,7 +130,7 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	projectsEditor := projectsRequestEditor(token, options.Traceparent)
+	projectsEditor := projectsRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
 	generatedProjects, err := projectscore.NewClient(
 		projectsURL,
 		projectscore.WithHTTPClient(httpClient),
@@ -114,7 +139,7 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	notificationsEditor := notificationsRequestEditor(token, options.Traceparent)
+	notificationsEditor := notificationsRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
 	generatedNotifications, err := notificationscore.NewClient(
 		notificationsURL,
 		notificationscore.WithHTTPClient(httpClient),
@@ -123,7 +148,7 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	billingEditor := billingRequestEditor(token, options.Traceparent)
+	billingEditor := billingRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
 	generatedBilling, err := billingcore.NewClient(
 		billingURL,
 		billingcore.WithHTTPClient(httpClient),
@@ -132,7 +157,7 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	governanceEditor := governanceRequestEditor(token, options.Traceparent)
+	governanceEditor := governanceRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
 	generatedGovernance, err := governancecore.NewClient(
 		governanceURL,
 		governancecore.WithHTTPClient(httpClient),
@@ -141,7 +166,7 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	sourceEditor := sourceRequestEditor(token, options.Traceparent)
+	sourceEditor := sourceRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
 	generatedSource, err := sourcecore.NewClient(
 		sourceURL,
 		sourcecore.WithHTTPClient(httpClient),
@@ -150,7 +175,7 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	sandboxEditor := sandboxRequestEditor(token, options.Traceparent)
+	sandboxEditor := sandboxRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
 	generatedSandbox, err := sandboxcore.NewClient(
 		sandboxURL,
 		sandboxcore.WithHTTPClient(httpClient),
@@ -159,7 +184,7 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	secretsEditor := secretsRequestEditor(token, options.Traceparent)
+	secretsEditor := secretsRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
 	generatedSecrets, err := secretscore.NewClient(
 		secretsURL,
 		secretscore.WithHTTPClient(httpClient),
@@ -169,6 +194,7 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
+		Auth:          &AuthClient{client: generatedIAM},
 		IAM:           &IAMClient{client: generatedIAM},
 		Projects:      &ProjectsClient{client: generatedProjects},
 		Notifications: &NotificationsClient{client: generatedNotifications},
@@ -180,60 +206,71 @@ func New(options Options) (*Client, error) {
 	}, nil
 }
 
-func iamRequestEditor(token, traceparent string) iamcore.RequestEditorFn {
+func iamRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) iamcore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
-		return editBearerRequest(ctx, req, token, traceparent)
+		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
 	}
 }
 
-func projectsRequestEditor(token, traceparent string) projectscore.RequestEditorFn {
+func projectsRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) projectscore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
-		return editBearerRequest(ctx, req, token, traceparent)
+		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
 	}
 }
 
-func notificationsRequestEditor(token, traceparent string) notificationscore.RequestEditorFn {
+func notificationsRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) notificationscore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
-		return editBearerRequest(ctx, req, token, traceparent)
+		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
 	}
 }
 
-func billingRequestEditor(token, traceparent string) billingcore.RequestEditorFn {
+func billingRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) billingcore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
-		return editBearerRequest(ctx, req, token, traceparent)
+		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
 	}
 }
 
-func governanceRequestEditor(token, traceparent string) governancecore.RequestEditorFn {
+func governanceRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) governancecore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
-		return editBearerRequest(ctx, req, token, traceparent)
+		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
 	}
 }
 
-func sourceRequestEditor(token, traceparent string) sourcecore.RequestEditorFn {
+func sourceRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) sourcecore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
-		return editBearerRequest(ctx, req, token, traceparent)
+		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
 	}
 }
 
-func sandboxRequestEditor(token, traceparent string) sandboxcore.RequestEditorFn {
+func sandboxRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) sandboxcore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
-		return editBearerRequest(ctx, req, token, traceparent)
+		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
 	}
 }
 
-func secretsRequestEditor(token, traceparent string) secretscore.RequestEditorFn {
+func secretsRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) secretscore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
-		return editBearerRequest(ctx, req, token, traceparent)
+		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
 	}
 }
 
-func editBearerRequest(ctx context.Context, req *http.Request, token, traceparent string) error {
+func editBearerRequest(ctx context.Context, req *http.Request, credentials CredentialSource, deviceSessionID, traceparent string) error {
 	if req.Header.Get("Accept") == "" {
 		req.Header.Set("Accept", "application/json")
 	}
+	token := ""
+	if credentials != nil {
+		value, err := credentials.BearerToken(ctx)
+		if err != nil {
+			return err
+		}
+		token = value
+	}
 	if strings.TrimSpace(token) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	}
+	if strings.TrimSpace(deviceSessionID) != "" && req.Header.Get("X-Verself-Device-Session") == "" {
+		req.Header.Set("X-Verself-Device-Session", strings.TrimSpace(deviceSessionID))
 	}
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 	if strings.TrimSpace(traceparent) != "" {

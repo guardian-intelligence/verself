@@ -34,6 +34,19 @@ func TestMiddlewareRejectsMissingBearerToken(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}
+	if contentType := rec.Header().Get("Content-Type"); contentType != "application/problem+json" {
+		t.Fatalf("expected problem content type, got %q", contentType)
+	}
+	problem := decodeProblem(t, rec)
+	if problem.Type != "https://verself.sh/docs/reference/iam/errors#auth-unauthenticated" {
+		t.Fatalf("unexpected problem type: %q", problem.Type)
+	}
+	if problem.Code != "auth.unauthenticated" {
+		t.Fatalf("unexpected problem code: %q", problem.Code)
+	}
+	if problem.Detail != "missing bearer token" {
+		t.Fatalf("unexpected problem detail: %q", problem.Detail)
+	}
 }
 
 func TestMiddlewareAttachesIdentity(t *testing.T) {
@@ -192,6 +205,23 @@ func TestMiddlewareRejectsWrongAudience(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}
+	problem := decodeProblem(t, rec)
+	if problem.Code != "auth.unauthenticated" {
+		t.Fatalf("unexpected problem code: %q", problem.Code)
+	}
+	if problem.Detail != "invalid bearer token" {
+		t.Fatalf("unexpected problem detail: %q", problem.Detail)
+	}
+}
+
+func decodeProblem(t *testing.T, rec *httptest.ResponseRecorder) problemDetails {
+	t.Helper()
+
+	var problem problemDetails
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decode problem body: %v body=%q", err, rec.Body.String())
+	}
+	return problem
 }
 
 type testProvider struct {

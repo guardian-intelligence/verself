@@ -6,14 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	verself "github.com/verself/verself-go"
 )
 
 type serviceClientFlags struct {
-	tokenFile        string
+	serverURL        string
 	iamURL           string
 	projectsURL      string
 	notificationsURL string
@@ -386,7 +385,7 @@ func serviceFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *serviceClien
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	flags := &serviceClientFlags{}
-	fs.StringVar(&flags.tokenFile, "token-file", "", "read bearer token from owner-only file")
+	fs.StringVar(&flags.serverURL, "server-url", "", "Verself installation URL")
 	fs.StringVar(&flags.iamURL, "iam-url", "", "IAM service base URL")
 	fs.StringVar(&flags.projectsURL, "projects-url", "", "projects service base URL")
 	fs.StringVar(&flags.notificationsURL, "notifications-url", "", "notifications service base URL")
@@ -405,9 +404,16 @@ func (c CLI) serviceClient(flags serviceClientFlags) (*verself.Client, error) {
 }
 
 func (c CLI) serviceClientWithProfile(flags serviceClientFlags) (*verself.Client, *ProfileRecord, error) {
-	token, profile, err := c.bearerTokenWithProfile(flags.tokenFile)
+	credentials, profile, account, err := c.credentialSourceWithProfile()
 	if err != nil {
 		return nil, nil, err
+	}
+	serverURL := strings.TrimSpace(flags.serverURL)
+	if serverURL == "" {
+		serverURL = strings.TrimSpace(c.getenv("VERSELF_SERVER_URL"))
+	}
+	if serverURL == "" && profile != nil {
+		serverURL = profile.ServerURL
 	}
 	iamURL := strings.TrimSpace(flags.iamURL)
 	if iamURL == "" {
@@ -466,7 +472,9 @@ func (c CLI) serviceClientWithProfile(flags serviceClientFlags) (*verself.Client
 		sourceURL = profile.SourceURL
 	}
 	client, err := verself.New(verself.Options{
-		BearerToken:      token,
+		CredentialSource: credentials,
+		DeviceSessionID:  accountDeviceSessionID(account),
+		ServerURL:        serverURL,
 		IAMURL:           iamURL,
 		ProjectsURL:      projectsURL,
 		NotificationsURL: notificationsURL,
@@ -483,47 +491,36 @@ func (c CLI) serviceClientWithProfile(flags serviceClientFlags) (*verself.Client
 	return client, profile, nil
 }
 
-func (c CLI) bearerTokenWithProfile(tokenFile string) (string, *ProfileRecord, error) {
-	if strings.TrimSpace(tokenFile) != "" {
-		token, err := readTokenFile(tokenFile)
-		return token, nil, err
-	}
-	if envFile := strings.TrimSpace(c.getenv("VERSELF_TOKEN_FILE")); envFile != "" {
-		token, err := readTokenFile(envFile)
-		return token, nil, err
-	}
+func (c CLI) credentialSourceWithProfile() (verself.CredentialSource, *ProfileRecord, *AccountRecord, error) {
 	token := strings.TrimSpace(c.getenv("VERSELF_TOKEN"))
 	if token != "" {
-		return token, nil, nil
+		return verself.StaticBearerToken(token), nil, nil, nil
 	}
 	store, err := newStore(c.getenv)
 	if err != nil {
-		return "", nil, err
+		return nil, nil, nil, err
 	}
 	profile, err := store.LoadProfile("")
 	if err != nil {
-		return "", nil, errors.New("VERSELF_TOKEN, VERSELF_TOKEN_FILE, --token-file, or auth profile is required")
+		return nil, nil, nil, errors.New("VERSELF_TOKEN or auth profile is required")
 	}
 	if strings.TrimSpace(profile.ActiveAccount) == "" {
-		return "", nil, errors.New("active auth profile has no selected account; run `verself auth accounts use`")
+		return nil, nil, nil, errors.New("active auth profile has no selected account; run `verself auth accounts use`")
 	}
 	account, err := store.LoadAccount(profile.Name, profile.ActiveAccount)
 	if err != nil {
-		return "", nil, err
-	}
-	tokenValue, err := store.ReadCredential(account.TokenRef)
-	if err != nil {
-		return "", nil, err
-	}
-	tokenValue = strings.TrimSpace(tokenValue)
-	if credential, ok := parseStoredAuthCredential(tokenValue); ok {
-		tokenValue = strings.TrimSpace(credential.AccessToken)
-	}
-	if tokenValue == "" {
-		return "", nil, errors.New("active auth profile token is empty")
+		return nil, nil, nil, err
 	}
 	profile.Account = &account
-	return tokenValue, &profile, nil
+	source := &profileCredentialSource{store: store, profileName: profile.Name, accountHandle: account.Handle}
+	return source, &profile, &account, nil
+}
+
+func accountDeviceSessionID(account *AccountRecord) string {
+	if account == nil {
+		return ""
+	}
+	return strings.TrimSpace(account.DeviceSessionID)
 }
 
 type optionalStringFlag struct {
@@ -596,30 +593,4 @@ func writeProject(w io.Writer, project verself.Project) error {
 
 func writeEnvironment(w io.Writer, environment verself.ProjectEnvironment) error {
 	return writef(w, "%s\t%s\t%s\t%s\n", environment.Slug, environment.EnvironmentID, environment.Kind, environment.DisplayName)
-}
-
-func readTokenFile(path string) (string, error) {
-	return readOwnerOnlySecretFile(path, "token file")
-}
-
-func readOwnerOnlySecretFile(path, label string) (string, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("%s %s must be a regular file", label, path)
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return "", fmt.Errorf("%s %s must be owner-only", label, path)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		return "", fmt.Errorf("%s %s is empty", label, path)
-	}
-	return token, nil
 }

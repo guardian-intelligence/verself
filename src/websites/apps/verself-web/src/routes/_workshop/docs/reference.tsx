@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   Page,
   PageDescription,
@@ -22,6 +22,12 @@ export const Route = createFileRoute("/_workshop/docs/reference")({
 });
 
 function ApiReference() {
+  const path = useRouterState({ select: (s) => s.location.pathname });
+
+  if (path !== "/docs/reference") {
+    return <Outlet />;
+  }
+
   return (
     <Page variant="full">
       <PageHeader>
@@ -33,6 +39,24 @@ function ApiReference() {
         </PageHeaderContent>
       </PageHeader>
       <PageSections>
+        <PageSection id="iam-auth-errors">
+          <SectionHeader>
+            <SectionHeaderContent>
+              <SectionTitle>IAM Auth Errors</SectionTitle>
+              <SectionDescription>
+                Stable problem codes for account resolution, device sessions, provider linking, and
+                device-code login.
+              </SectionDescription>
+            </SectionHeaderContent>
+          </SectionHeader>
+          <Link
+            className="w-fit text-sm font-medium underline underline-offset-4"
+            to="/docs/reference/iam/errors"
+          >
+            Open the error catalog
+          </Link>
+        </PageSection>
+
         <PageSection id="github-integration-errors">
           <SectionHeader>
             <SectionHeaderContent>
