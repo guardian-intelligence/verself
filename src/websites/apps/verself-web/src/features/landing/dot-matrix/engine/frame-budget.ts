@@ -1,0 +1,15 @@
+import {
+  DOT_MATRIX_WAVE_FIXED_STEP_SECONDS,
+  DOT_MATRIX_WAVE_TRAVEL_SPEED_SCALE,
+} from "../wave/types";
+
+export const DOT_MATRIX_DOT_SPACING_CSS_PX = 7.75;
+export const DOT_MATRIX_RENDER_DPR_CAP = 1.5;
+export const DOT_MATRIX_RENDER_DPR_RANGE: [number, number] = [1, DOT_MATRIX_RENDER_DPR_CAP];
+
+export const DOT_MATRIX_FRAME_BUDGET = {
+  fixedStepSeconds: DOT_MATRIX_WAVE_FIXED_STEP_SECONDS,
+  maxFrameSeconds: 0.1 * DOT_MATRIX_WAVE_TRAVEL_SPEED_SCALE,
+  maxSubSteps: Math.ceil(2 * DOT_MATRIX_WAVE_TRAVEL_SPEED_SCALE),
+  travelSpeedScale: DOT_MATRIX_WAVE_TRAVEL_SPEED_SCALE,
+} as const;

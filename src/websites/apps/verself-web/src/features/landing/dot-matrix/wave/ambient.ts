@@ -35,11 +35,11 @@ interface AmbientWaveCollectInput {
 
 const REFERENCE_SHORT_EDGE_CSS_PX = 462;
 const WAVE_INTERVAL_SECONDS = {
-  max: 7.2,
-  min: 3.2,
+  max: 8.8,
+  min: 4.4,
 };
 const AMBIENT_FRONT_THICKNESS_SCALE = 0.1;
-const AMBIENT_STRENGTH_SCALE = 4.2;
+const AMBIENT_STRENGTH_SCALE = 2.6;
 const FULL_SCREEN_FRONT_LENGTH_SCALE = { max: 1.24, min: 1.05 };
 const HALO_FOCUS_AIM_JITTER = 0.055;
 const HALO_SOURCE_MIN_OFFSET = 0.035;
@@ -102,9 +102,9 @@ function createAmbientWave(
     input.fields,
   );
   const baseStrength =
-    randomRange(random, 0.026, 0.052) *
+    randomRange(random, 0.018, 0.04) *
     AMBIENT_STRENGTH_SCALE *
-    (0.82 + input.ambient * 0.54 + input.ignition * 0.34) *
+    (0.78 + input.ambient * 0.42 + input.ignition * 0.22) *
     Math.max(projectedVisibility, 0.45);
 
   return {

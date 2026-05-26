@@ -42,8 +42,8 @@ export function createClickWaveImpulse(
   cameraRect: DomainRect,
 ): WaveImpulse {
   return {
-    radius: 0.044,
-    strength: 0.115,
+    radius: 0.034,
+    strength: 0.064,
     x: cameraRect.x + point.x * cameraRect.width,
     y: cameraRect.y + point.y * cameraRect.height,
   };

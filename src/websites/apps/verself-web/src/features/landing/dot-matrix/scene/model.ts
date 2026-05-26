@@ -14,6 +14,8 @@ const UNIT_DOMAIN: DomainRect = {
 
 const SPAWN_BAND = 0.064;
 const SPAWN_FEATHER = 0.02;
+const EDGE_ABSORPTION_BAND = 0.018;
+const EDGE_ABSORPTION_FEATHER = 0.055;
 
 export function createLandingWaveScene(_viewport: LandingWaveSceneInput): LandingWaveScene {
   return {
@@ -23,15 +25,16 @@ export function createLandingWaveScene(_viewport: LandingWaveSceneInput): Landin
 }
 
 function createLandingWaveFields(): CompiledWaveFields {
+  const absorptionAt = (point: Vec2) => sampleAbsorption(point);
   const spawnAt = (point: Vec2) => sampleSpawn(point);
   const visibilityAt = (point: Vec2) => (containsUnitPoint(point) ? 1 : 0);
   const zero = () => 0;
 
   return {
-    absorptionAt: zero,
+    absorptionAt,
     at(point) {
       return {
-        absorption: 0,
+        absorption: absorptionAt(point),
         readability: 0,
         spawn: spawnAt(point),
         visibility: visibilityAt(point),
@@ -41,6 +44,18 @@ function createLandingWaveFields(): CompiledWaveFields {
     spawnAt,
     visibilityAt,
   };
+}
+
+function sampleAbsorption(point: Vec2): number {
+  if (!containsUnitPoint(point)) return 1;
+
+  const edgeDistance = Math.min(point.x, 1 - point.x, point.y, 1 - point.y);
+  if (edgeDistance <= EDGE_ABSORPTION_BAND) return 1;
+  if (edgeDistance >= EDGE_ABSORPTION_BAND + EDGE_ABSORPTION_FEATHER) return 0;
+  return (
+    1 -
+    smoothstep(EDGE_ABSORPTION_BAND, EDGE_ABSORPTION_BAND + EDGE_ABSORPTION_FEATHER, edgeDistance)
+  );
 }
 
 function sampleSpawn(point: Vec2): number {

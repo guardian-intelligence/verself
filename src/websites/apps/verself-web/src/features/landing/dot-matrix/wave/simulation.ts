@@ -1,10 +1,10 @@
 import {
+  type BufferGeometry,
+  type Camera,
   GLSL3,
   HalfFloatType,
   Mesh,
   NearestFilter,
-  OrthographicCamera,
-  PlaneGeometry,
   RGBAFormat,
   Scene,
   ShaderMaterial,
@@ -25,7 +25,6 @@ import {
   type DotMatrixWaveSimulation,
   type WaveSimulationConfig,
   type WaveSimulationStep,
-  type WaveTextureStats,
 } from "./types";
 
 interface WaveTargets {
@@ -37,8 +36,8 @@ interface WaveTargets {
 
 export function createDotMatrixWaveSimulation(
   renderer: WebGLRenderer,
-  camera: OrthographicCamera,
-  geometry: PlaneGeometry,
+  camera: Camera,
+  geometry: BufferGeometry,
   fieldTexture: Texture,
   config: WaveSimulationConfig = DOT_MATRIX_WAVE_SIMULATION_CONFIG,
 ): DotMatrixWaveSimulation {
@@ -86,9 +85,6 @@ export function createDotMatrixWaveSimulation(
       material.dispose();
       targets.read.dispose();
       targets.write.dispose();
-    },
-    inspect() {
-      return inspectWaveTarget(renderer, targets.read, targets.width, targets.height);
     },
     resize(viewportWidth: number, viewportHeight: number) {
       const nextSize = resolveWaveSimulationSize(viewportWidth, viewportHeight, config);
@@ -196,62 +192,6 @@ function resolveWaveSimulationSize(
     height: clampInteger(size.height, config.minGridEdge, config.maxGridEdge),
     width: clampInteger(size.width, config.minGridEdge, config.maxGridEdge),
   };
-}
-
-function inspectWaveTarget(
-  renderer: WebGLRenderer,
-  target: WebGLRenderTarget,
-  width: number,
-  height: number,
-): WaveTextureStats | undefined {
-  const pixels = new Uint16Array(width * height * 4);
-
-  try {
-    renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
-  } catch {
-    return undefined;
-  }
-
-  let heightTotal = 0;
-  let velocityTotal = 0;
-  let maxAbsHeight = 0;
-  let maxAbsVelocity = 0;
-  const sampleCount = width * height;
-
-  for (let index = 0; index < pixels.length; index += 4) {
-    const heightValue = halfFloatToNumber(pixels[index] ?? 0);
-    const previousHeightValue = halfFloatToNumber(pixels[index + 1] ?? 0);
-    const absHeight = Math.abs(heightValue);
-    const absVelocity = Math.abs(heightValue - previousHeightValue);
-    heightTotal += absHeight;
-    velocityTotal += absVelocity;
-    maxAbsHeight = Math.max(maxAbsHeight, absHeight);
-    maxAbsVelocity = Math.max(maxAbsVelocity, absVelocity);
-  }
-
-  return {
-    averageAbsHeight: heightTotal / sampleCount,
-    averageAbsVelocity: velocityTotal / sampleCount,
-    height,
-    maxAbsHeight,
-    maxAbsVelocity,
-    sampleCount,
-    width,
-  };
-}
-
-function halfFloatToNumber(value: number): number {
-  const sign = value & 0x8000 ? -1 : 1;
-  const exponent = (value >> 10) & 0x1f;
-  const fraction = value & 0x03ff;
-
-  if (exponent === 0) {
-    return sign * 2 ** -14 * (fraction / 1024);
-  }
-  if (exponent === 0x1f) {
-    return fraction === 0 ? sign * Infinity : Number.NaN;
-  }
-  return sign * 2 ** (exponent - 15) * (1 + fraction / 1024);
 }
 
 function clampInteger(value: number, min: number, max: number): number {

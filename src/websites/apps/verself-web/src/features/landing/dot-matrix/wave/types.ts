@@ -30,19 +30,8 @@ export interface WaveSimulationStep {
   readonly impulses: ReadonlyArray<WaveImpulse>;
 }
 
-export interface WaveTextureStats {
-  readonly averageAbsHeight: number;
-  readonly averageAbsVelocity: number;
-  readonly height: number;
-  readonly maxAbsHeight: number;
-  readonly maxAbsVelocity: number;
-  readonly sampleCount: number;
-  readonly width: number;
-}
-
 export interface DotMatrixWaveSimulation {
   readonly dispose: () => void;
-  readonly inspect: () => WaveTextureStats | undefined;
   readonly resize: (viewportWidth: number, viewportHeight: number) => void;
   readonly setFieldTexture: (texture: Texture) => void;
   readonly step: (input: WaveSimulationStep) => Texture;
