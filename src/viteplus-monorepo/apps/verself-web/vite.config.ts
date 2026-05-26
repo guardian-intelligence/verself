@@ -5,6 +5,7 @@ import viteReact from "@vitejs/plugin-react";
 import { rewriteCjsRequireOnCompiled } from "@verself/nitro-plugins/rewrite-cjs-require";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite-plus";
+import { dotMatrixShaderGeneration } from "./dot-matrix-shader-plugin";
 
 const observabilityPlugin = fileURLToPath(
   import.meta.resolve("@verself/nitro-plugins/observability-plugin"),
@@ -21,6 +22,7 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   plugins: [
+    dotMatrixShaderGeneration(),
     tailwindcss(),
     tanstackStart({ srcDirectory: "src" }),
     viteReact(),
