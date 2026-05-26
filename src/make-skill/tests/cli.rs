@@ -1,8 +1,8 @@
 //! End-to-end tests against the real `mksk` binary.
 //!
 //! We spawn the compiled artifact rather than calling library code, so the
-//! tests exercise exactly what a user runs. No dependencies: Cargo injects the
-//! binary path and a per-crate scratch dir via env vars.
+//! tests exercise exactly what a user runs. Cargo and Bazel provide the binary
+//! path differently, so the helper below accepts both forms.
 
 use std::env;
 use std::path::PathBuf;
