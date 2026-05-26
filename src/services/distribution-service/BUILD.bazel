@@ -22,9 +22,11 @@ pkg_tar(
         "@distribution_release_tools//tools/oras": "bin/oras",
         "@distribution_release_tools//tools/release-plz": "bin/release-plz",
         "@distribution_release_tools//tools/syft": "bin/syft",
+        "@rules_rust//rust/toolchain:current_cargo_files": "bin/cargo",
     },
     modes = {
         "bin/bazelisk": "0755",
+        "bin/cargo": "0755",
         "bin/cargo-about": "0755",
         "bin/cosign": "0755",
         "bin/oras": "0755",
@@ -46,9 +48,11 @@ pkg_tar(
         "@distribution_release_tools//tools/oras": "bin/oras",
         "@distribution_release_tools//tools/release-plz": "bin/release-plz",
         "@distribution_release_tools//tools/syft": "bin/syft",
+        "@rules_rust//rust/toolchain:current_cargo_files": "bin/cargo",
     },
     modes = {
         "bin/bazelisk": "0755",
+        "bin/cargo": "0755",
         "bin/cargo-about": "0755",
         "bin/cosign": "0755",
         "bin/distribution-release": "0755",

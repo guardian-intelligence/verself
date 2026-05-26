@@ -131,6 +131,18 @@ func TestBazelCommandArgsUseAllocationCacheHome(t *testing.T) {
 	}
 }
 
+func TestReleaseToolEnvIncludesToolBinAndCargoHome(t *testing.T) {
+	t.Setenv("HOME", "/tmp/release-home")
+	t.Setenv("PATH", "/usr/bin")
+	env := releaseToolEnv("/tmp/tools")
+	if env["PATH"] != "/tmp/tools/bin:/usr/bin" {
+		t.Fatalf("PATH = %q", env["PATH"])
+	}
+	if env["CARGO_HOME"] != "/tmp/release-home/.cargo" {
+		t.Fatalf("CARGO_HOME = %q", env["CARGO_HOME"])
+	}
+}
+
 func TestSafeJoinRejectsTraversal(t *testing.T) {
 	for _, name := range []string{"../x", "/tmp/x"} {
 		if _, err := safeJoin("/tmp/root", name); err == nil {

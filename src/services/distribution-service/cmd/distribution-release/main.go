@@ -576,7 +576,7 @@ func generateSBOMs(ctx context.Context, sourceRoot, toolsDir, artifactPath, vers
 func generateLicenses(ctx context.Context, sourceRoot, toolsDir string, paths releasePaths) error {
 	cargoAbout := filepath.Join(toolsDir, "bin", "cargo-about")
 	out := filepath.Join(paths.root, paths.licenses, "make-skill.cargo-about.json")
-	_, err := runCommand(ctx, sourceRoot, cargoAbout, "generate", "--config", mkskCargoAbout, "--manifest-path", mkskCargoManifest, "--workspace", "--frozen", "--format", "json", "--output-file", out)
+	_, err := runCommandEnv(ctx, sourceRoot, cargoAbout, []string{"generate", "--config", mkskCargoAbout, "--manifest-path", mkskCargoManifest, "--workspace", "--frozen", "--format", "json", "--output-file", out}, releaseToolEnv(toolsDir))
 	return err
 }
 
@@ -953,7 +953,7 @@ func resolveTools(cfg mkskConfig) (string, func(), error) {
 }
 
 func verifyReleaseTools(dir string) error {
-	for _, tool := range []string{"bazelisk", "cargo-about", "cosign", "oras", "release-plz", "syft"} {
+	for _, tool := range []string{"bazelisk", "cargo", "cargo-about", "cosign", "oras", "release-plz", "syft"} {
 		path := filepath.Join(dir, "bin", tool)
 		if st, err := os.Stat(path); err != nil {
 			return fmt.Errorf("release tool %s: %w", tool, err)
@@ -962,6 +962,16 @@ func verifyReleaseTools(dir string) error {
 		}
 	}
 	return nil
+}
+
+func releaseToolEnv(toolsDir string) map[string]string {
+	env := map[string]string{
+		"PATH": filepath.Join(toolsDir, "bin") + string(os.PathListSeparator) + os.Getenv("PATH"),
+	}
+	if home := releaseHome(); home != "" {
+		env["CARGO_HOME"] = filepath.Join(home, ".cargo")
+	}
+	return env
 }
 
 func extractPlainTar(path, dest string) error {
