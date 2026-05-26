@@ -272,6 +272,7 @@ func publishOCI(ctx context.Context, cfg publishConfig, out releaseOutput) (ociP
 	target := registryHost + "/" + cfg.ociRepository + ":" + tag
 	pushArgs := []string{
 		"push",
+		"--disable-path-validation",
 		"--format", "json",
 		"--annotation", "org.opencontainers.image.title=make-skill",
 		"--annotation", "org.opencontainers.image.version=" + out.version,
@@ -445,7 +446,7 @@ func attachEvidenceFile(ctx context.Context, oras string, env map[string]string,
 }
 
 func attachEvidenceFiles(ctx context.Context, oras string, env map[string]string, subjectRef string, plainHTTP bool, paths []string, artifactType, mediaType, kind, predicate, subjectDigest string) (distributioninternalclient.Evidence, error) {
-	args := []string{"attach", "--format", "json", "--artifact-type", artifactType, subjectRef}
+	args := []string{"attach", "--disable-path-validation", "--format", "json", "--artifact-type", artifactType, subjectRef}
 	if plainHTTP {
 		args = append([]string{"attach", "--plain-http"}, args[1:]...)
 	}
