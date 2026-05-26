@@ -39,6 +39,7 @@ const (
 	releaseMetadataBase = "https://oci.verself.sh/releases/mksk"
 	sourceRepositoryURL = "https://github.com/guardian-intelligence/verself.git"
 	repoURL             = "https://github.com/guardian-intelligence/verself"
+	errorReportDirEnv   = "DISTRIBUTION_RELEASE_ERROR_DIR"
 )
 
 var (
@@ -115,9 +116,32 @@ type prepareRootConfig struct {
 
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
+		writeReleaseErrorReport(err)
 		fmt.Fprintln(os.Stderr, "distribution-release: "+err.Error())
 		os.Exit(1)
 	}
+}
+
+func writeReleaseErrorReport(err error) {
+	if err == nil {
+		return
+	}
+	dir := strings.TrimSpace(os.Getenv(errorReportDirEnv))
+	if dir == "" {
+		return
+	}
+	if mkErr := os.MkdirAll(dir, 0o750); mkErr != nil {
+		return
+	}
+	cwd, _ := os.Getwd()
+	lines := []string{
+		"distribution-release failed",
+		"occurred_at=" + time.Now().UTC().Format(time.RFC3339Nano),
+		"cwd=" + cwd,
+		"args=" + strings.Join(os.Args[1:], " "),
+		"error=" + err.Error(),
+	}
+	_ = os.WriteFile(filepath.Join(dir, "distribution-release-error.txt"), []byte(strings.Join(lines, "\n")+"\n"), 0o640)
 }
 
 func run(ctx context.Context, args []string) error {

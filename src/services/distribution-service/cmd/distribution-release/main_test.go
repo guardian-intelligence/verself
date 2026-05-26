@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -71,6 +72,26 @@ func TestReleaseMetadataURL(t *testing.T) {
 	want := "https://oci.verself.sh/releases/mksk/0.2.0-rc.1"
 	if got != want {
 		t.Fatalf("releaseMetadataURL() = %q, want %q", got, want)
+	}
+}
+
+func TestWriteReleaseErrorReport(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(errorReportDirEnv, dir)
+	writeReleaseErrorReport(os.ErrNotExist)
+	body, err := os.ReadFile(filepath.Join(dir, "distribution-release-error.txt"))
+	if err != nil {
+		t.Fatalf("read error report: %v", err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"distribution-release failed\n",
+		"occurred_at=",
+		"error=file does not exist",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("error report missing %q in:\n%s", want, text)
+		}
 	}
 }
 

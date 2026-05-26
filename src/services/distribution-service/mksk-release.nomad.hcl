@@ -61,6 +61,7 @@ job "distribution-release-mksk" {
       }
       env {
         DISTRIBUTION_RELEASE_COSIGN_KEY = "/etc/credstore/distribution-service/release-cosign-key"
+        DISTRIBUTION_RELEASE_ERROR_DIR = "/artifacts/releases/mksk/$${NOMAD_ALLOC_ID}/errors"
         DISTRIBUTION_RELEASE_ORIGIN_REGISTRY_URL = "http://127.0.0.1:5080"
         DISTRIBUTION_RELEASE_PUBLIC_REGISTRY_URL = "https://oci.verself.sh"
         DISTRIBUTION_RELEASE_SIGNER_ID = "spiffe://prod.verself.sh/svc/distribution-release"
