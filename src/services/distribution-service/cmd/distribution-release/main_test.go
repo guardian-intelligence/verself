@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +110,21 @@ func TestAbsolutePath(t *testing.T) {
 	}
 	if got != "/tmp" {
 		t.Fatalf("absolutePath(abs) = %q, want /tmp", got)
+	}
+}
+
+func TestBazelCommandArgsUseAllocationCacheHome(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", "/tmp/release-home/.cache")
+	args := bazelCommandArgs("test", "//src/make-skill:cli_test")
+	want := []string{
+		"--output_user_root=/tmp/release-home/.cache/bazel",
+		"test",
+		"--disk_cache=/tmp/release-home/.cache/bazel-disk",
+		"--repository_cache=/tmp/release-home/.cache/bazel-repo",
+		"//src/make-skill:cli_test",
+	}
+	if !slices.Equal(args, want) {
+		t.Fatalf("bazelCommandArgs() = %#v, want %#v", args, want)
 	}
 }
 

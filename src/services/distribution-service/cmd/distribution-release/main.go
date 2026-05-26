@@ -398,12 +398,12 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) (releaseOutpu
 	started := time.Now().UTC()
 	bazelReleaseVersionFlag := rustReleaseVersionFlag(version)
 	testArgs := []string{
-		"test",
 		bazelReleaseVersionFlag,
 		"//src/make-skill:core_test",
 		"//src/make-skill:exec_test",
 		"//src/make-skill:cli_test",
 	}
+	testArgs = bazelCommandArgs("test", testArgs...)
 	if _, err := runCommand(ctx, source.root, bazelisk, testArgs...); err != nil {
 		return releaseOutput{}, err
 	}
@@ -800,12 +800,13 @@ func gitOutput(ctx context.Context, repoRoot string, args ...string) (string, er
 }
 
 func bazelOutputFile(ctx context.Context, bazelisk, repoRoot, target string, buildOptions ...string) (string, error) {
-	buildArgs := append([]string{"build"}, buildOptions...)
+	buildArgs := bazelCommandArgs("build", buildOptions...)
 	buildArgs = append(buildArgs, target)
 	if _, err := runCommand(ctx, repoRoot, bazelisk, buildArgs...); err != nil {
 		return "", err
 	}
-	cqueryArgs := append([]string{"cquery", "--output=files"}, buildOptions...)
+	cqueryOptions := append([]string{"--output=files"}, buildOptions...)
+	cqueryArgs := bazelCommandArgs("cquery", cqueryOptions...)
 	cqueryArgs = append(cqueryArgs, target)
 	files, err := runCommand(ctx, repoRoot, bazelisk, cqueryArgs...)
 	if err != nil {
@@ -815,7 +816,8 @@ func bazelOutputFile(ctx context.Context, bazelisk, repoRoot, target string, bui
 	if len(lines) != 1 {
 		return "", fmt.Errorf("expected one output for %s, got %d", target, len(lines))
 	}
-	execroot, err := runCommand(ctx, repoRoot, bazelisk, "info", "execution_root")
+	infoArgs := append(bazelStartupOptions(), "info", "execution_root")
+	execroot, err := runCommand(ctx, repoRoot, bazelisk, infoArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -824,6 +826,44 @@ func bazelOutputFile(ctx context.Context, bazelisk, repoRoot, target string, bui
 		return "", fmt.Errorf("bazel output %s: %w", out, err)
 	}
 	return out, nil
+}
+
+func bazelCommandArgs(command string, commandOptions ...string) []string {
+	args := append([]string{}, bazelStartupOptions()...)
+	args = append(args, command)
+	args = append(args, bazelCacheBuildOptions()...)
+	args = append(args, commandOptions...)
+	return args
+}
+
+func bazelStartupOptions() []string {
+	cacheHome := releaseCacheHome()
+	if cacheHome == "" {
+		return nil
+	}
+	return []string{"--output_user_root=" + filepath.Join(cacheHome, "bazel")}
+}
+
+func bazelCacheBuildOptions() []string {
+	cacheHome := releaseCacheHome()
+	if cacheHome == "" {
+		return nil
+	}
+	// Bazel expands ~/.cache from the passwd home under raw_exec, so pin release caches.
+	return []string{
+		"--disk_cache=" + filepath.Join(cacheHome, "bazel-disk"),
+		"--repository_cache=" + filepath.Join(cacheHome, "bazel-repo"),
+	}
+}
+
+func releaseCacheHome() string {
+	if value := strings.TrimSpace(os.Getenv("XDG_CACHE_HOME")); value != "" {
+		return filepath.Clean(value)
+	}
+	if value := strings.TrimSpace(os.Getenv("HOME")); value != "" {
+		return filepath.Join(filepath.Clean(value), ".cache")
+	}
+	return ""
 }
 
 func runCommand(ctx context.Context, cwd, program string, args ...string) (commandResult, error) {
