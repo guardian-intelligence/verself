@@ -35,7 +35,6 @@ stainful generate --spec openapi.yml --config stainless.yml --out ./sdk
 Or from source (and to run the conformance harness):
 
 ```bash
-git clone https://github.com/stainlu/stainful && cd stainful
 uv venv && uv pip install -e ".[dev,generated-runtime]"
 uv run stainful generate \
   --spec   examples/onebusaway/openapi.yml \
