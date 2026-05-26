@@ -114,10 +114,13 @@ func TestAbsolutePath(t *testing.T) {
 }
 
 func TestBazelCommandArgsUseAllocationCacheHome(t *testing.T) {
+	t.Setenv("HOME", "/tmp/release-home")
 	t.Setenv("XDG_CACHE_HOME", "/tmp/release-home/.cache")
 	args := bazelCommandArgs("test", "//src/make-skill:cli_test")
 	want := []string{
+		"--nohome_rc",
 		"--output_user_root=/tmp/release-home/.cache/bazel",
+		"--host_jvm_args=-Duser.home=/tmp/release-home",
 		"test",
 		"--disk_cache=/tmp/release-home/.cache/bazel-disk",
 		"--repository_cache=/tmp/release-home/.cache/bazel-repo",

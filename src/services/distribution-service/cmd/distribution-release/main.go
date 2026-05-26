@@ -841,7 +841,14 @@ func bazelStartupOptions() []string {
 	if cacheHome == "" {
 		return nil
 	}
-	return []string{"--output_user_root=" + filepath.Join(cacheHome, "bazel")}
+	args := []string{
+		"--nohome_rc",
+		"--output_user_root=" + filepath.Join(cacheHome, "bazel"),
+	}
+	if home := releaseHome(); home != "" {
+		args = append(args, "--host_jvm_args=-Duser.home="+home)
+	}
+	return args
 }
 
 func bazelCacheBuildOptions() []string {
@@ -860,8 +867,15 @@ func releaseCacheHome() string {
 	if value := strings.TrimSpace(os.Getenv("XDG_CACHE_HOME")); value != "" {
 		return filepath.Clean(value)
 	}
+	if home := releaseHome(); home != "" {
+		return filepath.Join(home, ".cache")
+	}
+	return ""
+}
+
+func releaseHome() string {
 	if value := strings.TrimSpace(os.Getenv("HOME")); value != "" {
-		return filepath.Join(filepath.Clean(value), ".cache")
+		return filepath.Clean(value)
 	}
 	return ""
 }
