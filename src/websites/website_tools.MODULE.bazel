@@ -1,8 +1,0 @@
-http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
-
-http_file(
-    name = "website_tool_nodejs",
-    downloaded_file_path = "node-v22.22.2-linux-x64.tar.xz",
-    sha256 = "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a",
-    url = "https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.xz",
-)

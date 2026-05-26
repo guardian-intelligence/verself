@@ -78,8 +78,8 @@ filegroup(
         "//src/services/sandbox-rental-service:deploy_declarations",
         "//src/services/secrets-service:deploy_declarations",
         "//src/services/source-code-hosting-service:deploy_declarations",
-        "//src/websites/apps/company:deploy_declarations",
-        "//src/websites/apps/verself-web:deploy_declarations",
+        "//src/viteplus-monorepo/apps/company:deploy_declarations",
+        "//src/viteplus-monorepo/apps/verself-web:deploy_declarations",
     ],
 )
 

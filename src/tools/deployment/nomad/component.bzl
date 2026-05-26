@@ -107,7 +107,8 @@ def _nomad_component_impl(ctx):
     if ctx.attr.deploy_phase not in _ALLOWED_DEPLOY_PHASES:
         fail("deploy_phase must be one of %s" % ", ".join(_ALLOWED_DEPLOY_PHASES))
 
-    inputs = [job_spec]
+    descriptor_inputs = [job_spec]
+    default_outputs = []
     artifacts = []
     artifact_outputs = {}
     for artifact_target, output in ctx.attr.artifacts.items():
@@ -115,7 +116,7 @@ def _nomad_component_impl(ctx):
             fail("duplicate Nomad artifact output %s in %s" % (output, ctx.label))
         artifact_outputs[output] = True
         artifact_file = _single_file(artifact_target, "artifact")
-        inputs.append(artifact_file)
+        default_outputs.append(artifact_file)
         artifacts.append({
             "label": _repo_label(artifact_target.label),
             "output": output,
@@ -127,14 +128,14 @@ def _nomad_component_impl(ctx):
             fail("duplicate Nomad artifact output %s in %s" % (output, ctx.label))
         artifact_outputs[output] = True
         artifact_file = _single_file(artifact_target, "pre-artifact")
-        inputs.append(artifact_file)
+        default_outputs.append(artifact_file)
         pre_artifacts.append({
             "label": _repo_label(artifact_target.label),
             "output": output,
             "path": artifact_file.path,
         })
     digest_input_files, digest_inputs = _digest_input_records(ctx.attr.digest_inputs)
-    inputs.extend(digest_input_files)
+    descriptor_inputs.extend(digest_input_files)
 
     requires = list(ctx.attr.requires)
     provides = list(ctx.attr.provides)
@@ -165,10 +166,10 @@ def _nomad_component_impl(ctx):
         "test_targets": ctx.attr.test_targets,
         "unit_id": ctx.attr.job_id,
     }
-    _write_descriptor(ctx, descriptor, json.encode(descriptor_data) + "\n", inputs)
+    _write_descriptor(ctx, descriptor, json.encode(descriptor_data) + "\n", descriptor_inputs)
 
     return [
-        DefaultInfo(files = depset([descriptor], transitive = [depset(inputs)])),
+        DefaultInfo(files = depset([descriptor] + default_outputs)),
         NomadComponentInfo(
             artifacts = ctx.attr.artifacts,
             component = ctx.attr.component,

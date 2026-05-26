@@ -21,7 +21,7 @@ ssh -p 2222 ubuntu@10.66.66.1
 
 Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
 
-Before testing the authenticated console against the production website, read the agent-browser login runbook in `src/websites/apps/verself-web/AGENTS.md`.
+Before testing the authenticated console against the production website, read the agent-browser login runbook in `src/viteplus-monorepo/apps/verself-web/AGENTS.md`.
 
 Nomad deploys are driven directly by the checked-in `nomad_component` targets for the requested SHA:
 

@@ -42,14 +42,14 @@ rg -n "(@tanstack/setup|github:tanstack/router#79ac49eedf774dd4b0cfa308722bc463c
 Scan lockfiles for advisory versions:
 
 ```bash
-rg -n "(@tanstack/(history@1\\.161\\.(9|12)|react-router@1\\.169\\.(5|8)|react-start@1\\.167\\.(68|71)|react-start-client@1\\.166\\.(51|54)|react-start-server@1\\.166\\.(55|58)|router-core@1\\.169\\.(5|8)|router-generator@1\\.166\\.(45|48)|router-plugin@1\\.167\\.(38|41)|router-utils@1\\.161\\.(11|14)|start-client-core@1\\.168\\.(5|8)|start-fn-stubs@1\\.161\\.(9|12)|start-plugin-core@1\\.169\\.(23|26)|start-server-core@1\\.167\\.(33|36)|start-storage-context@1\\.166\\.(38|41)|virtual-file-routes@1\\.161\\.(10|13)|zod-adapter@1\\.166\\.(12|15))|@draftauth/(client@0\\.2\\.1|core@0\\.13\\.1)|@draftlab/(auth@0\\.24\\.1|auth-router@0\\.5\\.1|db@0\\.16\\.1)|@taskflow-corp/cli@0\\.1\\.(26|27)|@tolka/cli@1\\.0\\.2)" src/websites/pnpm-lock.yaml src/infrastructure-components/verdaccio/runtime/package-lock.json
+rg -n "(@tanstack/(history@1\\.161\\.(9|12)|react-router@1\\.169\\.(5|8)|react-start@1\\.167\\.(68|71)|react-start-client@1\\.166\\.(51|54)|react-start-server@1\\.166\\.(55|58)|router-core@1\\.169\\.(5|8)|router-generator@1\\.166\\.(45|48)|router-plugin@1\\.167\\.(38|41)|router-utils@1\\.161\\.(11|14)|start-client-core@1\\.168\\.(5|8)|start-fn-stubs@1\\.161\\.(9|12)|start-plugin-core@1\\.169\\.(23|26)|start-server-core@1\\.167\\.(33|36)|start-storage-context@1\\.166\\.(38|41)|virtual-file-routes@1\\.161\\.(10|13)|zod-adapter@1\\.166\\.(12|15))|@draftauth/(client@0\\.2\\.1|core@0\\.13\\.1)|@draftlab/(auth@0\\.24\\.1|auth-router@0\\.5\\.1|db@0\\.16\\.1)|@taskflow-corp/cli@0\\.1\\.(26|27)|@tolka/cli@1\\.0\\.2)" src/viteplus-monorepo/pnpm-lock.yaml src/infrastructure-components/verdaccio/runtime/package-lock.json
 ```
 
 Scan installed trees without executing package manager code:
 
 ```bash
-find src/websites/node_modules -name router_init.js -o -name tanstack_runner.js 2>/dev/null
-rg -n "@tanstack/setup|github:tanstack/router#79ac49eedf774dd4b0cfa308722bc463cfe5885c" src/websites/node_modules 2>/dev/null
+find src/viteplus-monorepo/node_modules -name router_init.js -o -name tanstack_runner.js 2>/dev/null
+rg -n "@tanstack/setup|github:tanstack/router#79ac49eedf774dd4b0cfa308722bc463cfe5885c" src/viteplus-monorepo/node_modules 2>/dev/null
 ```
 
 Classify the environment:

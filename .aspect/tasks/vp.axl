@@ -2,7 +2,7 @@
 
 This bypasses any shell `vp` and runs the lockfile-pinned
 `node_modules/vite-plus` under the Bazel-resolved host Node, against the
-`src/websites` source tree. It is the exact toolchain the Bazel frontend build
+`src/viteplus-monorepo` source tree. It is the exact toolchain the Bazel frontend build
 uses for controller-side checks. For local app development, cd into the app
 package and run `vp dev`.
 

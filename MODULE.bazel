@@ -29,7 +29,7 @@ include("//src/infrastructure-components/openbao:openbao.MODULE.bazel")
 include("//src/infrastructure-components/postgresql:postgresql.MODULE.bazel")
 include("//src/infrastructure-components/stalwart:stalwart.MODULE.bazel")
 include("//src/infrastructure-components/verdaccio:verdaccio.MODULE.bazel")
-include("//src/websites:website_tools.MODULE.bazel")
+include("//src/viteplus-monorepo:website_tools.MODULE.bazel")
 
 component_tools = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
 component_tools.hub(
@@ -214,7 +214,7 @@ node.toolchain(
 use_repo(node, "nodejs_toolchains")
 
 pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
-pnpm.pnpm(pnpm_version_from = "//src/websites:package.json")
+pnpm.pnpm(pnpm_version_from = "//src/viteplus-monorepo:package.json")
 use_repo(pnpm, "pnpm")
 
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
@@ -223,8 +223,8 @@ npm.npm_translate_lock(
     bins = {
         "@hey-api/openapi-ts": ["openapi-ts=./bin/index.cjs"],
     },
-    npmrc = "//src/websites:.npmrc",
-    pnpm_lock = "//src/websites:pnpm-lock.yaml",
+    npmrc = "//src/viteplus-monorepo:.npmrc",
+    pnpm_lock = "//src/viteplus-monorepo:pnpm-lock.yaml",
 )
 use_repo(npm, "npm")
 

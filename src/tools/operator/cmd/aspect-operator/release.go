@@ -73,7 +73,7 @@ func cmdRelease(args []string) error {
 
 func cmdReleaseNPMProbe(args []string) error {
 	fs := flagSet("release npm-probe")
-	packageJSONPath := fs.String("package-json", "src/websites/packages/sdk/package.json", "Package manifest to inspect")
+	packageJSONPath := fs.String("package-json", "src/viteplus-monorepo/packages/sdk/package.json", "Package manifest to inspect")
 	registry := fs.String("registry", defaultNPMRegistry, "npm registry base URL")
 	githubRepository := fs.String("github-repository", defaultGitHubRepository, "GitHub owner/repo expected by npm trusted publishing")
 	format := fs.String("format", "table", "Output format: table | json | csv | tsv")
