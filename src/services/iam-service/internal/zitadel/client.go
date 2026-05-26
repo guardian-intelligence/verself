@@ -124,7 +124,7 @@ func (c *Client) CreateSignupUser(ctx context.Context, input identity.DirectoryC
 		Email:      strings.TrimSpace(input.Email),
 		GivenName:  strings.TrimSpace(input.GivenName),
 		FamilyName: strings.TrimSpace(input.FamilyName),
-	})
+	}, identity.ErrSignupAccountExists)
 	if err != nil {
 		return identity.DirectoryCreateSignupUserResult{}, err
 	}
@@ -135,7 +135,7 @@ func (c *Client) CreateSignupUser(ctx context.Context, input identity.DirectoryC
 }
 
 func (c *Client) InviteMember(ctx context.Context, orgID string, input identity.InviteMemberRequest) (identity.DirectoryInviteMemberResult, error) {
-	created, err := c.createHumanUser(ctx, orgID, input)
+	created, err := c.createHumanUser(ctx, orgID, input, identity.ErrInvalidInput)
 	if err != nil {
 		return identity.DirectoryInviteMemberResult{}, err
 	}
@@ -369,7 +369,7 @@ type createdHumanUser struct {
 	EmailVerificationCode string
 }
 
-func (c *Client) createHumanUser(ctx context.Context, orgID string, input identity.InviteMemberRequest) (createdHumanUser, error) {
+func (c *Client) createHumanUser(ctx context.Context, orgID string, input identity.InviteMemberRequest, duplicateUserErr error) (createdHumanUser, error) {
 	body := map[string]any{
 		"organizationId": orgID,
 		"username":       input.Email,
@@ -386,6 +386,9 @@ func (c *Client) createHumanUser(ctx context.Context, orgID string, input identi
 	}
 	var out createUserResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out); err != nil {
+		if zitadelUserAlreadyExists(err) {
+			return createdHumanUser{}, fmt.Errorf("%w: create user: %v", duplicateUserErr, err)
+		}
 		if zitadelRequestInvalid(err) {
 			return createdHumanUser{}, fmt.Errorf("%w: create user: %v", identity.ErrInvalidInput, err)
 		}
@@ -505,6 +508,14 @@ func zitadelRequestInvalid(err error) bool {
 	default:
 		return false
 	}
+}
+
+func zitadelUserAlreadyExists(err error) bool {
+	var statusErr zitadelStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	return statusErr.StatusCode == http.StatusConflict && strings.Contains(strings.ToLower(statusErr.Body), "user already exists")
 }
 
 func zitadelResourceAlreadyGone(err error) bool {

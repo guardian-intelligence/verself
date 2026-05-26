@@ -448,6 +448,24 @@ func (h publicHandlers) StartSignup(ctx context.Context, input *contractapi.Star
 			return nil, upstreamFailure(ctx, "service.unavailable", "signup notification could not be queued", err)
 		}
 	}
+	if result.SendAccountExistsEmail() {
+		if h.signupNotifier == nil {
+			return nil, internalFailure(ctx, "service.unavailable", "signup notification delivery is unavailable", nil)
+		}
+		loginURL, err := h.signupAccountExistsLoginURL(result.AccountNotice.EmailDelivery)
+		if err != nil {
+			return nil, internalFailure(ctx, "service.unavailable", "signup account login URL could not be built", err)
+		}
+		if err := h.signupNotifier.SendSignupAccountExists(ctx, SignupAccountExistsNotification{
+			OrgID:          h.installationID,
+			Email:          result.AccountNotice.EmailDelivery,
+			IdempotencyKey: result.AccountNotice.IdempotencyKey,
+			LoginURL:       loginURL,
+			ResourceName:   publicAccountEmailResourceName(h.installationID, result.AccountNotice.IdempotencyKey),
+		}); err != nil {
+			return nil, upstreamFailure(ctx, "service.unavailable", "signup account notice could not be queued", err)
+		}
+	}
 	return &contractapi.StartSignupOutput{Body: contractapi.SignupStartResult{
 		Message:               signupStartMessage(result.ResponseExpiresAt),
 		Status:                "accepted",
@@ -861,6 +879,22 @@ func (h publicHandlers) signupVerificationActionURL(intent identity.SignupIntent
 	return base.String(), nil
 }
 
+func (h publicHandlers) signupAccountExistsLoginURL(email string) (string, error) {
+	base, err := url.Parse(strings.TrimSpace(h.productBaseURL))
+	if err != nil {
+		return "", err
+	}
+	base.Path = "/login"
+	base.RawPath = ""
+	query := base.Query()
+	query.Set("prompt", "login")
+	if strings.TrimSpace(email) != "" {
+		query.Set("login_hint", strings.TrimSpace(email))
+	}
+	base.RawQuery = query.Encode()
+	return base.String(), nil
+}
+
 type requiredAccountLogin struct {
 	Purpose         string
 	LoginHint       string
@@ -1042,6 +1076,11 @@ func publicOrganizationResourceName(installationID string, orgID contractapi.Org
 
 func publicSignupIntentResourceName(installationID string, signupIntentID string) string {
 	return fmt.Sprintf("urn:verself:%s:signup-intents/%s", strings.TrimSpace(installationID), signupIntentID)
+}
+
+func publicAccountEmailResourceName(installationID string, idempotencyKey string) string {
+	sum := sha256.Sum256([]byte("iam-account-email\x00" + strings.TrimSpace(idempotencyKey)))
+	return fmt.Sprintf("urn:verself:%s:account-emails/aem_%s", strings.TrimSpace(installationID), crockfordEncodeBytes(sum[:])[:publicIDPayloadLength])
 }
 
 func publicMemberResourceName(installationID string, orgID contractapi.OrgID, memberID contractapi.MemberID) contractapi.MemberResourceName {

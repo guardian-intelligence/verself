@@ -18,6 +18,7 @@ type InviteNotifier interface {
 
 type SignupNotifier interface {
 	SendSignupVerification(ctx context.Context, input SignupVerificationNotification) error
+	SendSignupAccountExists(ctx context.Context, input SignupAccountExistsNotification) error
 }
 
 type MemberInviteNotification struct {
@@ -38,6 +39,14 @@ type SignupVerificationNotification struct {
 	VerificationFingerprint string
 	ActionURL               string
 	ResourceName            string
+}
+
+type SignupAccountExistsNotification struct {
+	OrgID          string
+	Email          string
+	IdempotencyKey string
+	LoginURL       string
+	ResourceName   string
 }
 
 func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string, inviteNotifier InviteNotifier, providerSession ProviderSessionRevoker) {

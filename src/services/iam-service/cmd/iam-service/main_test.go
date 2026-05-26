@@ -49,6 +49,33 @@ func TestNotificationSignupSenderIncludesProvisionalOrgID(t *testing.T) {
 	}
 }
 
+func TestNotificationSignupSenderQueuesAccountExistsNotice(t *testing.T) {
+	capture := &captureNotificationWorkflowDoer{t: t}
+	client, err := notificationsinternalclient.NewClient("https://notifications.internal", notificationsinternalclient.WithHTTPClient(capture))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	err = (notificationSignupSender{client: client}).SendSignupAccountExists(context.Background(), iamapi.SignupAccountExistsNotification{
+		OrgID:          "inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A",
+		Email:          "operator@example.test",
+		IdempotencyKey: "iam:signup_exists:sha256:notice",
+		LoginURL:       "https://verself.sh/login?prompt=login",
+		ResourceName:   "urn:verself:inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A:account-emails/aem_0123456789ABCDEFGHJKMNPQRS",
+	})
+	if err != nil {
+		t.Fatalf("SendSignupAccountExists: %v", err)
+	}
+	if capture.path != "/internal/v1/workflows/iam.signup.account_exists/trigger" {
+		t.Fatalf("notification path = %q", capture.path)
+	}
+	if capture.idempotencyKey != "iam:signup_exists:sha256:notice" {
+		t.Fatalf("idempotency key = %q", capture.idempotencyKey)
+	}
+	if got, _ := capture.body["org_id"].(string); got != "inst_01J8QJ4P1R7S9W2X5M6N8P0Q2A" {
+		t.Fatalf("body org_id = %q", got)
+	}
+}
+
 type captureNotificationWorkflowDoer struct {
 	t              *testing.T
 	path           string

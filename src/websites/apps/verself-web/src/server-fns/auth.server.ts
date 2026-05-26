@@ -293,6 +293,8 @@ function signupVerificationProblemMessage(status: number, body: string): string 
       return "This signup link has already been used. Sign in with the account that completed signup.";
     case "iam.signup.materializing":
       return "Signup is still being finalized. Wait a moment and try again.";
+    case "iam.signup.account_exists":
+      return "This email already has a Verself account. Sign in instead.";
     case "iam.organization_slug.unavailable":
       return "That organization URL is already taken.";
     default:

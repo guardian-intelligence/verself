@@ -342,6 +342,11 @@ structure SignupStateConflictError with [ProblemDetails] {}
 
 @error("client")
 @httpError(409)
+@problem(type: "urn:verself:problem:iam:signup_account_exists", code: "iam.signup.account_exists")
+structure SignupAccountExistsError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
 @problem(type: "urn:verself:problem:iam:organization_slug_unavailable", code: "iam.organization_slug.unavailable")
 structure OrganizationSlugUnavailableError with [ProblemDetails] {}
 
@@ -1249,6 +1254,7 @@ operation VerifySignup {
         SignupVerificationAlreadyUsedError
         SignupMaterializingError
         SignupStateConflictError
+        SignupAccountExistsError
         OrganizationSlugUnavailableError
         IdempotencyPayloadMismatchError
         RateLimitedError

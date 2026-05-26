@@ -14,7 +14,7 @@ RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
           org_id, identity_provider_org_id, identity_provider_user_id,
-          created_at, updated_at, verification_expires_at, verified_at, completed_at;
+          created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id;
 
 -- name: GetSignupIntentByIdempotencyKey :one
 SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
@@ -22,7 +22,7 @@ SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_id
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
+       created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 FROM iam_signup_intents
 WHERE idempotency_key = sqlc.arg(idempotency_key);
 
@@ -32,7 +32,7 @@ SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_id
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
+       created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 FROM iam_signup_intents
 WHERE email_identity_hash = sqlc.arg(email_identity_hash)
   AND (
@@ -48,27 +48,13 @@ ORDER BY created_at DESC
 LIMIT 1
 FOR UPDATE;
 
--- name: GetCompletedSignupIntentByEmailIdentityHashForUpdate :one
-SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
-       organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
-       verification_token_hash, state, materialization_step, materialization_attempts,
-       materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
-       org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
-FROM iam_signup_intents
-WHERE email_identity_hash = sqlc.arg(email_identity_hash)
-  AND state = 'completed'
-ORDER BY completed_at DESC
-LIMIT 1
-FOR UPDATE;
-
 -- name: GetInFlightSignupIntentByEmailIdentityHashForUpdate :one
 SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_identity_hash, email_identity_hash_key_id,
        organization_display_name, requested_organization_slug, organization_slug, given_name, family_name,
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
+       created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 FROM iam_signup_intents
 WHERE email_identity_hash = sqlc.arg(email_identity_hash)
   AND state IN ('materializing', 'failed_retryable', 'failed_terminal')
@@ -82,7 +68,7 @@ SELECT signup_intent_id, idempotency_key, request_hash, email_delivery, email_id
        verification_token_hash, state, materialization_step, materialization_attempts,
        materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
        org_id, identity_provider_org_id, identity_provider_user_id,
-       created_at, updated_at, verification_expires_at, verified_at, completed_at
+       created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id
 FROM iam_signup_intents
 WHERE signup_intent_id = sqlc.arg(signup_intent_id)
 FOR UPDATE;
@@ -120,7 +106,7 @@ RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
           org_id, identity_provider_org_id, identity_provider_user_id,
-          created_at, updated_at, verification_expires_at, verified_at, completed_at;
+          created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id;
 
 -- name: DeletePendingSignupIntent :execrows
 DELETE FROM iam_signup_intents
@@ -164,6 +150,13 @@ SET identity_provider_org_id = sqlc.arg(identity_provider_org_id),
     updated_at = now()
 WHERE signup_intent_id = sqlc.arg(signup_intent_id);
 
+-- name: RecordSignupIntentAccount :exec
+UPDATE iam_signup_intents
+SET account_id = sqlc.arg(account_id),
+    materialization_step = 'account_email_guard',
+    updated_at = now()
+WHERE signup_intent_id = sqlc.arg(signup_intent_id);
+
 -- name: RecordSignupIntentProviderUser :exec
 UPDATE iam_signup_intents
 SET identity_provider_user_id = sqlc.arg(identity_provider_user_id),
@@ -200,4 +193,4 @@ RETURNING signup_intent_id, idempotency_key, request_hash, email_delivery, email
           verification_token_hash, state, materialization_step, materialization_attempts,
           materialization_last_error, materialization_lease_expires_at, verify_idempotency_key, verify_request_hash,
           org_id, identity_provider_org_id, identity_provider_user_id,
-          created_at, updated_at, verification_expires_at, verified_at, completed_at;
+          created_at, updated_at, verification_expires_at, verified_at, completed_at, account_id;

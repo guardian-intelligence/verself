@@ -138,4 +138,5 @@ type IamSignupIntent struct {
 	VerificationExpiresAt         pgtype.Timestamptz
 	VerifiedAt                    pgtype.Timestamptz
 	CompletedAt                   pgtype.Timestamptz
+	AccountID                     string
 }
