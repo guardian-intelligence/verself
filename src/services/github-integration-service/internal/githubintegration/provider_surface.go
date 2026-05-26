@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	providerSurfaceCancelWorkflowRun = "cancel_workflow_run"
-	providerSurfaceStaleAfter        = 2 * time.Minute
+	providerSurfaceCreateFailureCheckRun = "create_failure_check_run"
+	providerSurfaceStaleAfter            = 2 * time.Minute
 )
 
 type providerSurfaceCommand struct {
@@ -82,8 +82,8 @@ func (s *Service) ProcessStaleProviderSurfaceCommands(ctx context.Context) error
 func (s *Service) processProviderSurfaceCommand(ctx context.Context, cmd providerSurfaceCommand) error {
 	started := time.Now().UTC()
 	switch cmd.CommandKind {
-	case providerSurfaceCancelWorkflowRun:
-		err := s.executeCancelWorkflowRunSurface(ctx, cmd)
+	case providerSurfaceCreateFailureCheckRun:
+		err := s.executeCreateFailureCheckRunSurface(ctx, cmd)
 		if err == nil {
 			if markErr := s.queries.MarkProviderSurfaceCommandSucceeded(ctx, store.MarkProviderSurfaceCommandSucceededParams{
 				SurfaceID:   pgUUID(cmd.SurfaceID),
@@ -118,13 +118,20 @@ func (s *Service) processProviderSurfaceCommand(ctx context.Context, cmd provide
 	}
 }
 
-func (s *Service) executeCancelWorkflowRunSurface(ctx context.Context, cmd providerSurfaceCommand) error {
+func (s *Service) executeCreateFailureCheckRunSurface(ctx context.Context, cmd providerSurfaceCommand) error {
 	if cmd.ProviderInstallationID == 0 || cmd.ProviderRunID == 0 || strings.TrimSpace(cmd.RepositoryFullName) == "" {
 		return fmt.Errorf("provider surface command missing workflow run target")
 	}
-	cancelCtx, cancel := context.WithTimeout(ctx, runnerProviderSurfaceTimeout)
+	surfaceCtx, cancel := context.WithTimeout(ctx, runnerProviderSurfaceTimeout)
 	defer cancel()
-	return s.cancelWorkflowRun(cancelCtx, cmd.ProviderInstallationID, cmd.RepositoryFullName, cmd.ProviderRunID)
+	run, err := s.fetchWorkflowRun(surfaceCtx, cmd.ProviderInstallationID, cmd.RepositoryFullName, cmd.ProviderRunID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(run.HeadSHA) == "" {
+		return fmt.Errorf("provider surface workflow run missing head_sha")
+	}
+	return s.createFailureCheckRun(surfaceCtx, cmd.ProviderInstallationID, cmd.RepositoryFullName, run.HeadSHA, cmd.CommandKey, providerSurfaceCheckSummary(cmd), providerSurfaceCheckText(cmd))
 }
 
 func (s *Service) recordProviderSurfaceCommandFailure(ctx context.Context, cmd providerSurfaceCommand, problems runnerProblemSet, terminal bool) error {
@@ -171,7 +178,7 @@ func enqueueProviderSurfaceCommandTx(ctx context.Context, q *store.Queries, ref 
 	row, err := q.UpsertProviderSurfaceCommand(ctx, store.UpsertProviderSurfaceCommandParams{
 		SurfaceID:              pgUUID(uuid.New()),
 		CommandKey:             commandKey,
-		CommandKind:            providerSurfaceCancelWorkflowRun,
+		CommandKind:            providerSurfaceCreateFailureCheckRun,
 		OrgID:                  ref.OrgID,
 		InstallationBindingID:  pgUUID(ref.InstallationBindingID),
 		RepositoryBindingID:    pgUUID(ref.RepositoryBindingID),
@@ -230,7 +237,7 @@ func providerSurfaceCommandKey(ref runnerCapacityRef) string {
 	if ref.ProviderRunID != 0 {
 		return strings.Join([]string{
 			providerGitHub,
-			providerSurfaceCancelWorkflowRun,
+			providerSurfaceCreateFailureCheckRun,
 			strconv.FormatInt(ref.ProviderInstallationID, 10),
 			strconv.FormatInt(ref.ProviderRepositoryID, 10),
 			strconv.FormatInt(ref.ProviderRunID, 10),
@@ -238,7 +245,7 @@ func providerSurfaceCommandKey(ref runnerCapacityRef) string {
 	}
 	return strings.Join([]string{
 		providerGitHub,
-		providerSurfaceCancelWorkflowRun,
+		providerSurfaceCreateFailureCheckRun,
 		strconv.FormatInt(ref.ProviderInstallationID, 10),
 		strconv.FormatInt(ref.ProviderRepositoryID, 10),
 		"job",
@@ -321,4 +328,30 @@ func providerSurfaceFailureResult(terminal bool) string {
 		return "failed"
 	}
 	return "retryable"
+}
+
+func providerSurfaceCheckSummary(cmd providerSurfaceCommand) string {
+	reason := strings.TrimSpace(cmd.PrimaryProblemReason())
+	if reason == "" {
+		return "Verself could not start the requested runner capacity."
+	}
+	return "Verself could not start the requested runner capacity: " + truncate(reason, 160)
+}
+
+func providerSurfaceCheckText(cmd providerSurfaceCommand) string {
+	parts := []string{
+		"Verself could not start the self-hosted runner capacity for this workflow run.",
+		"repository=" + cmd.RepositoryFullName,
+		"run_id=" + strconv.FormatInt(cmd.ProviderRunID, 10),
+	}
+	if cmd.ProviderJobID != 0 {
+		parts = append(parts, "job_id="+strconv.FormatInt(cmd.ProviderJobID, 10))
+	}
+	if strings.TrimSpace(cmd.RunnerClass) != "" {
+		parts = append(parts, "runner_class="+cmd.RunnerClass)
+	}
+	if reason := strings.TrimSpace(cmd.PrimaryProblemReason()); reason != "" {
+		parts = append(parts, "problem="+truncate(reason, 512))
+	}
+	return strings.Join(parts, "\n")
 }

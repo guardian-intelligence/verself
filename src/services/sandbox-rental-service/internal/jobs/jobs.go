@@ -628,8 +628,10 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		s.failDurableCaches(ctx, durablePlan, "durable_storage_entitlement_failed", err)
 		return s.failAttempt(ctx, item, "durable_storage_entitlement_failed", err)
 	}
+	restoreActivationRequested := durablePlan.GoldenVM.Activation.Requested()
 	lease, failureReason, err := s.acquireReadyLeaseForExecution(ctx, &item, storageQuotaBytes, durablePlan.GoldenVM.Activation, item.AttemptID.String()+":lease")
 	if err != nil && s.invalidateGoldenVMActivationAfterMissingRoot(ctx, item, durablePlan, err) {
+		restoreActivationRequested = false
 		durablePlan.GoldenVM.Activation = vmorchestrator.GoldenVMActivation{}
 		lease, failureReason, err = s.acquireReadyLeaseForExecution(ctx, &item, storageQuotaBytes, durablePlan.GoldenVM.Activation, item.AttemptID.String()+":lease-after-stale-golden")
 	}
@@ -639,6 +641,18 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		_ = s.voidBillingWindow(cleanupCtx, reservation)
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
 		s.failDurableCaches(ctx, durablePlan, failureReason, err)
+		if restoreActivationRequested && goldenVMRestoreFailureReason(failureReason) {
+			handled, terminalErr := s.failRunnerAttemptWithProblem(ctx, item, failureReason, runnerAllocationProblemFromError(
+				"snapshot_restore",
+				"runner_allocation.snapshot_restore_failed",
+				"Runner snapshot restore failed",
+				err,
+				false,
+			), err)
+			if handled {
+				return terminalErr
+			}
+		}
 		return s.failAttempt(ctx, item, failureReason, err)
 	}
 	span.SetAttributes(
@@ -846,6 +860,15 @@ func goldenVMRootSnapshotMissing(err error) bool {
 	return strings.Contains(msg, "zfs source snapshot not found") ||
 		strings.Contains(msg, "source snapshot not found") ||
 		(strings.Contains(msg, "goldens/vmroot-") && strings.Contains(msg, "dataset does not exist"))
+}
+
+func goldenVMRestoreFailureReason(reason string) bool {
+	switch reason {
+	case "lease_ready_failed", "lease_ready_timeout":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) waitLeaseReady(ctx context.Context, leaseID string, timeout time.Duration) (vmorchestrator.LeaseRecord, error) {
@@ -1573,6 +1596,37 @@ func (s *Service) failAttempt(ctx context.Context, item executionWorkItem, reaso
 		}
 	}
 	return err
+}
+
+func (s *Service) failRunnerAttemptWithProblem(ctx context.Context, item executionWorkItem, reason string, problem RunnerProblem, cause error) (bool, error) {
+	if item.WorkloadKind != WorkloadKindRunner {
+		return false, nil
+	}
+	row, err := s.storeQueries().GetRunnerAllocationByExecution(ctx, store.GetRunnerAllocationByExecutionParams{
+		ExecutionID: &item.ExecutionID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	if strings.TrimSpace(problem.Detail) == "" {
+		problem.Detail = reason
+	}
+	problems := runnerProblemSet{}
+	problems.add(problem)
+	return true, s.terminalizeRunnerAllocation(ctx, runnerAllocationRef{
+		Provider:     row.Provider,
+		AllocationID: row.AllocationID,
+		ExecutionID:  item.ExecutionID,
+		AttemptID:    item.AttemptID,
+	}, runnerAllocationFailure{
+		Problems:       problems,
+		EnqueueCleanup: true,
+		FailAttempt:    true,
+		Cause:          cause,
+	})
 }
 
 func (s *Service) cleanupLeaseAndReservation(ctx context.Context, leaseID string, reservation billingclient.BillingWindowReservation) {

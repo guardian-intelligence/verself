@@ -53,11 +53,14 @@ func (s *Service) terminalizeRunnerAllocation(ctx context.Context, ref runnerAll
 	if err != nil {
 		return err
 	}
-	if rows == 0 {
+	allocationFailed := rows > 0
+	if !allocationFailed && !failure.FailAttempt {
 		return nil
 	}
-	if err := appendRunnerAllocationProblems(ctx, qtx, ref.AllocationID, failure.Problems); err != nil {
-		return err
+	if allocationFailed {
+		if err := appendRunnerAllocationProblems(ctx, qtx, ref.AllocationID, failure.Problems); err != nil {
+			return err
+		}
 	}
 	attemptFailed := false
 	if failure.FailAttempt && ref.ExecutionID != uuid.Nil && ref.AttemptID != uuid.Nil {
@@ -109,7 +112,7 @@ func (s *Service) terminalizeRunnerAllocation(ctx context.Context, ref runnerAll
 			s.MarkRunnerExecutionExited(detachedContext(ctx), item.ExecutionID)
 		}
 	}
-	if failure.EnqueueCleanup && s.Scheduler != nil {
+	if failure.EnqueueCleanup && allocationFailed && s.Scheduler != nil {
 		if _, err := s.Scheduler.EnqueueRunnerCleanup(ctx, schedulerCleanupRequest(ctx, ref.AllocationID)); err != nil && s.Logger != nil {
 			s.Logger.WarnContext(ctx, "enqueue runner cleanup after allocation terminalization",
 				"allocation_id", ref.AllocationID.String(), "error", err)

@@ -48,8 +48,8 @@ const (
 	durablePoolHardWatermarkPermille = 850
 
 	goldenVMFirecrackerABIHash        = "firecracker-v1.15.0"
-	goldenVMAfterRestoreHookVersion   = "after_restore.host_wall_clock_1ms_v1"
-	goldenVMBeforeSnapshotHookVersion = "before_golden_snapshot.v1"
+	goldenVMAfterRestoreHookVersion   = vmorchestrator.GoldenVMRestoreHookVersion
+	goldenVMBeforeSnapshotHookVersion = vmorchestrator.GoldenVMBeforeSnapshotHookVersion
 )
 
 const (

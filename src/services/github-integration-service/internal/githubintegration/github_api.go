@@ -95,6 +95,22 @@ type githubWorkflowJob struct {
 	CompletedAt  time.Time `json:"completed_at"`
 }
 
+type githubCheckRunRequest struct {
+	Name        string               `json:"name"`
+	HeadSHA     string               `json:"head_sha"`
+	Status      string               `json:"status"`
+	Conclusion  string               `json:"conclusion"`
+	CompletedAt string               `json:"completed_at"`
+	ExternalID  string               `json:"external_id,omitempty"`
+	Output      githubCheckRunOutput `json:"output"`
+}
+
+type githubCheckRunOutput struct {
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	Text    string `json:"text,omitempty"`
+}
+
 func (s *Service) installationToken(ctx context.Context, installationID int64) (string, error) {
 	s.tokenMu.Lock()
 	cached, ok := s.tokens[installationID]
@@ -157,20 +173,34 @@ func (s *Service) fetchWorkflowRun(ctx context.Context, installationID int64, re
 	return out, nil
 }
 
-func (s *Service) cancelWorkflowRun(ctx context.Context, installationID int64, repositoryFullName string, runID int64) error {
+func (s *Service) createFailureCheckRun(ctx context.Context, installationID int64, repositoryFullName, headSHA, externalID, summary, text string) error {
 	owner, repo, ok := strings.Cut(strings.TrimSpace(repositoryFullName), "/")
 	if !ok || owner == "" || repo == "" {
 		return fmt.Errorf("github repository must be owner/name")
 	}
-	if runID <= 0 {
-		return fmt.Errorf("github run id is required")
+	headSHA = strings.TrimSpace(headSHA)
+	if headSHA == "" {
+		return fmt.Errorf("github check run head_sha is required")
 	}
 	token, err := s.installationToken(ctx, installationID)
 	if err != nil {
 		return err
 	}
-	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/cancel", url.PathEscape(owner), url.PathEscape(repo), runID)
-	return s.githubRequest(ctx, installationID, http.MethodPost, path, token, nil, nil, http.StatusAccepted, http.StatusConflict)
+	body := githubCheckRunRequest{
+		Name:        "Verself runner",
+		HeadSHA:     headSHA,
+		Status:      "completed",
+		Conclusion:  "failure",
+		CompletedAt: time.Now().UTC().Format(time.RFC3339),
+		ExternalID:  strings.TrimSpace(externalID),
+		Output: githubCheckRunOutput{
+			Title:   "Verself runner allocation failed",
+			Summary: firstNonEmpty(strings.TrimSpace(summary), "Verself could not start the requested runner capacity."),
+			Text:    strings.TrimSpace(text),
+		},
+	}
+	path := fmt.Sprintf("/repos/%s/%s/check-runs", url.PathEscape(owner), url.PathEscape(repo))
+	return s.githubRequest(ctx, installationID, http.MethodPost, path, token, body, nil, http.StatusCreated)
 }
 
 func (s *Service) fetchWorkflowRunJobs(ctx context.Context, installationID, repositoryID int64, repositoryFullName string, runID, runAttempt int64) ([]githubWorkflowJob, error) {
