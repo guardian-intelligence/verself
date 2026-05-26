@@ -20,9 +20,10 @@ import (
 const deployScope = "nomad"
 
 type runOptions struct {
-	Site     string
-	SHA      string
-	RepoRoot string
+	Site             string
+	SHA              string
+	RepoRoot         string
+	PostDeployChecks string
 }
 
 func runRun(args []string) int {
@@ -30,6 +31,7 @@ func runRun(args []string) int {
 	site := fs.String("site", "prod", "deployment site")
 	sha := fs.String("sha", "", "git SHA being deployed")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root")
+	postDeployChecks := fs.String("post-deploy-checks", canarySizeMedium, "post-deploy canary size to run: none, medium, large, or all")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -42,7 +44,7 @@ func runRun(args []string) int {
 		}
 		rr = cwd
 	}
-	if err := run(context.Background(), runOptions{Site: *site, SHA: *sha, RepoRoot: rr}); err != nil {
+	if err := run(context.Background(), runOptions{Site: *site, SHA: *sha, RepoRoot: rr, PostDeployChecks: *postDeployChecks}); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: %v\n", err)
 		return 1
 	}
@@ -55,6 +57,9 @@ func run(ctx context.Context, opts runOptions) error {
 	}
 	if opts.RepoRoot == "" {
 		return fmt.Errorf("repo root is required")
+	}
+	if !validCanarySelection(opts.PostDeployChecks) {
+		return fmt.Errorf("post-deploy-checks must be one of %s", canarySelectionUsage())
 	}
 	snap, err := identity.Generate(identity.GenerateOptions{
 		Site:  opts.Site,
@@ -104,9 +109,11 @@ func run(ctx context.Context, opts runOptions) error {
 		recordDeployFailed(span, nil, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
 		return err
 	}
+	plan.PostDeployChecks = opts.PostDeployChecks
 	span.SetAttributes(
 		attribute.Int("verself.artifact_count", len(plan.Artifacts)),
 		attribute.Int("verself.nomad_job_count", len(plan.Jobs)),
+		attribute.String("verself.post_deploy_checks", opts.PostDeployChecks),
 	)
 
 	results, err := applyNomadPlan(runCtx, rt, plan)

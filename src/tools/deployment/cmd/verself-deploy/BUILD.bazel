@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "artifacts.go",
         "bazel.go",
+        "canary.go",
         "evidence.go",
         "main.go",
         "nomad.go",

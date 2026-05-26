@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/nomad/api"
+	"github.com/verself/deployment-tools/internal/deploymodel"
 )
 
 func TestComponentInputDigestUsesContentAndStableOrdering(t *testing.T) {
@@ -93,5 +94,73 @@ func TestStampNomadSpecMetaIncludesInputDigest(t *testing.T) {
 	}
 	if firstSpec == secondSpec {
 		t.Fatalf("spec digest did not change after input digest changed: %s", firstSpec)
+	}
+}
+
+func TestPostDeployCanarySelectionAndExpansion(t *testing.T) {
+	canaries := []deploymodel.PostDeployCanary{
+		{
+			Label:  "//src/example:cli_medium",
+			Target: "//src/example:canary",
+			Kind:   "cli",
+			Size:   "medium",
+			Args:   []string{"--site={site}", "--job={job_id}"},
+		},
+		{
+			Label:  "//src/example:browser_large",
+			Target: "//src/example:browser_canary",
+			Kind:   "browser",
+			Size:   "large",
+		},
+	}
+
+	medium := selectPostDeployCanaries(canaries, canarySizeMedium)
+	if len(medium) != 1 || medium[0].Label != "//src/example:cli_medium" {
+		t.Fatalf("medium selection = %+v", medium)
+	}
+	all := selectPostDeployCanaries(canaries, canarySizeAll)
+	if len(all) != 2 {
+		t.Fatalf("all selection count = %d, want 2", len(all))
+	}
+	none := selectPostDeployCanaries(canaries, canarySizeNone)
+	if len(none) != 0 {
+		t.Fatalf("none selection count = %d, want 0", len(none))
+	}
+
+	expanded := expandCanaryValues(canaries[0].Args, map[string]string{
+		"job_id": "iam-service",
+		"site":   "prod",
+	})
+	want := []string{"--site=prod", "--job=iam-service"}
+	if len(expanded) != len(want) {
+		t.Fatalf("expanded count = %d, want %d: %v", len(expanded), len(want), expanded)
+	}
+	for i := range want {
+		if expanded[i] != want[i] {
+			t.Fatalf("expanded[%d] = %q, want %q", i, expanded[i], want[i])
+		}
+	}
+}
+
+func TestValidatePostDeployCanary(t *testing.T) {
+	valid := deploymodel.PostDeployCanary{
+		Label:   "//src/example:canary",
+		Target:  "//src/example:runner",
+		Kind:    "browser",
+		Size:    "large",
+		Timeout: "10m",
+	}
+	if err := validatePostDeployCanary(valid); err != nil {
+		t.Fatalf("valid canary rejected: %v", err)
+	}
+	invalid := valid
+	invalid.Size = "small"
+	if err := validatePostDeployCanary(invalid); err == nil {
+		t.Fatalf("invalid size was accepted")
+	}
+	invalid = valid
+	invalid.Timeout = "eventually"
+	if err := validatePostDeployCanary(invalid); err == nil {
+		t.Fatalf("invalid timeout was accepted")
 	}
 }

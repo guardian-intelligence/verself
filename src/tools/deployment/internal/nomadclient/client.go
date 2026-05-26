@@ -49,6 +49,7 @@ func New(addr string) (*Client, error) {
 // and is not stopped — we exit successfully without burning an eval.
 type Decision struct {
 	NoOp                bool
+	PriorExists         bool
 	PriorJobModifyIndex uint64
 	PriorVersion        uint64
 	PriorStopped        bool
@@ -78,7 +79,7 @@ func (c *Client) Decide(ctx context.Context, spec *Spec) (Decision, error) {
 		if isNotFound(err) {
 			span.SetAttributes(attribute.Bool("nomad.job.exists", false))
 			span.SetStatus(codes.Ok, "")
-			return Decision{}, nil
+			return Decision{PriorExists: false}, nil
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -102,6 +103,7 @@ func (c *Client) Decide(ctx context.Context, spec *Spec) (Decision, error) {
 	span.SetStatus(codes.Ok, "")
 	return Decision{
 		NoOp:                noop,
+		PriorExists:         true,
 		PriorJobModifyIndex: prevModify,
 		PriorVersion:        prevVersion,
 		PriorStopped:        stopped,
@@ -177,6 +179,95 @@ func (c *Client) Submit(ctx context.Context, spec *Spec, priorModifyIndex uint64
 		JobModifyIndex: regResp.JobModifyIndex,
 		DeploymentID:   c.findDeploymentID(ctx, spec.JobID(), regResp.JobModifyIndex),
 	}, nil
+}
+
+// CurrentJobVersion returns the currently-registered Nomad job version. It is
+// used as the CAS fence for post-canary rollback after a submit has already
+// produced and monitored a new job version.
+func (c *Client) CurrentJobVersion(ctx context.Context, jobID string) (uint64, error) {
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.current_version",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.job_id", jobID)),
+	)
+	defer span.End()
+
+	cur, _, err := c.api.Jobs().Info(jobID, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return 0, fmt.Errorf("inspect %s: %w", jobID, err)
+	}
+	if cur == nil {
+		err := fmt.Errorf("inspect %s: empty Nomad job response", jobID)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return 0, err
+	}
+	version := derefUint64(cur.Version)
+	span.SetAttributes(attribute.Int64("nomad.version", int64FromUint64(version, "job version")))
+	span.SetStatus(codes.Ok, "")
+	return version, nil
+}
+
+// Revert rolls a job back to a prior Nomad version and returns a submit handle
+// that can be monitored using the same deployment monitor path as normal
+// submits.
+func (c *Client) Revert(ctx context.Context, jobID, jobType string, targetVersion, enforceCurrentVersion uint64) (*SubmitResult, error) {
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.revert",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("nomad.job_id", jobID),
+			attribute.Int64("nomad.target_version", int64FromUint64(targetVersion, "target job version")),
+			attribute.Int64("nomad.enforce_version", int64FromUint64(enforceCurrentVersion, "enforce job version")),
+		),
+	)
+	defer span.End()
+
+	resp, _, err := c.api.Jobs().Revert(jobID, targetVersion, &enforceCurrentVersion, (&api.WriteOptions{}).WithContext(ctx), "", "")
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("revert %s to version %d: %w", jobID, targetVersion, err)
+	}
+	sub := &SubmitResult{
+		JobID:          jobID,
+		JobType:        jobType,
+		EvalID:         resp.EvalID,
+		JobModifyIndex: resp.JobModifyIndex,
+		DeploymentID:   c.findDeploymentID(ctx, jobID, resp.JobModifyIndex),
+	}
+	span.SetAttributes(
+		attribute.String("nomad.eval_id", sub.EvalID),
+		attribute.String("nomad.deployment_id", sub.DeploymentID),
+		attribute.Int64("nomad.job_modify_index", int64FromUint64(sub.JobModifyIndex, "job modify index")),
+	)
+	span.SetStatus(codes.Ok, "")
+	return sub, nil
+}
+
+// Deregister stops a newly-created job when a first deployment has no prior
+// version to revert to.
+func (c *Client) Deregister(ctx context.Context, jobID, jobType string) (*SubmitResult, error) {
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.deregister",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.job_id", jobID)),
+	)
+	defer span.End()
+
+	evalID, _, err := c.api.Jobs().Deregister(jobID, false, (&api.WriteOptions{}).WithContext(ctx))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("deregister %s: %w", jobID, err)
+	}
+	sub := &SubmitResult{
+		JobID:   jobID,
+		JobType: jobType,
+		EvalID:  evalID,
+	}
+	span.SetAttributes(attribute.String("nomad.eval_id", evalID))
+	span.SetStatus(codes.Ok, "")
+	return sub, nil
 }
 
 func (c *Client) plan(ctx context.Context, spec *Spec) (*api.JobPlanResponse, error) {

@@ -148,6 +148,46 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) (MonitorResult,
 	}
 }
 
+// WaitStopped blocks until a deregistered service job is marked stopped or is
+// no longer queryable. Deregister does not return a deployment id, so the
+// regular deployment monitor cannot distinguish a stop evaluation from the
+// just-rolled-out failed version.
+func (c *Client) WaitStopped(ctx context.Context, jobID string) error {
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.wait_stopped",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.job_id", jobID)),
+	)
+	defer span.End()
+
+	q := (&api.QueryOptions{
+		AllowStale: true,
+		WaitTime:   MonitorWaitTime,
+	}).WithContext(ctx)
+
+	for {
+		job, meta, err := c.api.Jobs().Info(jobID, q)
+		if err != nil {
+			if isNotFound(err) {
+				span.SetStatus(codes.Ok, "")
+				return nil
+			}
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return fmt.Errorf("job info %s: %w", jobID, err)
+		}
+		if job == nil || derefBool(job.Stop) {
+			span.SetStatus(codes.Ok, "")
+			return nil
+		}
+		q.WaitIndex = meta.LastIndex
+		if err := ctx.Err(); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+	}
+}
+
 func monitorResult(dep *api.Deployment, status string) MonitorResult {
 	desired, healthy, unhealthy, placed := tgTotals(dep)
 	return MonitorResult{

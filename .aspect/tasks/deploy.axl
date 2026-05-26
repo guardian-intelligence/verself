@@ -31,6 +31,7 @@ def _deploy_one(ctx, site, sha):
         "--site=" + site,
         "--sha=" + sha,
         "--repo-root=" + ws_path(ctx),
+        "--post-deploy-checks=" + (ctx.args.post_deploy_checks or "medium"),
     ]
     deploy_rc = bazel_run(
         ctx,
@@ -94,6 +95,7 @@ def _deploy_in_worktree(ctx, site, sha):
         "--site=" + site,
         "--sha=" + sha,
         "--repo-root=" + wt,
+        "--post-deploy-checks=" + (ctx.args.post_deploy_checks or "medium"),
     ]
     deploy_rc = bazel_run(
         ctx,
@@ -129,5 +131,6 @@ deploy = task(
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
+        "post_deploy_checks": args.string(default = "medium", description = "Post-deploy checks to run: medium, large, all, or none."),
     },
 )

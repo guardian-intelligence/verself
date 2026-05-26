@@ -21,6 +21,8 @@ import (
 const (
 	artifactSourcePrefix = "verself-artifact://"
 
+	nomadComponentSchemaVersion = 5
+
 	deployPhasePreArtifact = "pre_artifact"
 	deployPhasePlatform    = "platform"
 	deployPhaseProduct     = "product"
@@ -42,12 +44,13 @@ var deployPhaseRank = map[string]int{
 }
 
 type deployPlan struct {
-	Identity  identity.Snapshot
-	SHA       string
-	Site      string
-	SiteCfg   siteConfig
-	Artifacts []deploymodel.Artifact
-	Jobs      []deploymodel.NomadJob
+	Identity         identity.Snapshot
+	SHA              string
+	Site             string
+	SiteCfg          siteConfig
+	PostDeployChecks string
+	Artifacts        []deploymodel.Artifact
+	Jobs             []deploymodel.NomadJob
 }
 
 type siteConfig struct {
@@ -68,21 +71,22 @@ type rawSiteConfig struct {
 }
 
 type nomadComponentDescriptor struct {
-	SchemaVersion int                       `json:"schema_version"`
-	Label         string                    `json:"label"`
-	Component     string                    `json:"component"`
-	DeployPhase   string                    `json:"deploy_phase"`
-	JobID         string                    `json:"job_id"`
-	JobSpec       string                    `json:"job_spec"`
-	JobSpecPath   string                    `json:"job_spec_path"`
-	Provides      []string                  `json:"provides"`
-	Requires      []string                  `json:"requires"`
-	Sites         []string                  `json:"sites"`
-	TestTargets   []string                  `json:"test_targets"`
-	UnitID        string                    `json:"unit_id"`
-	Artifacts     []nomadDescriptorArtifact `json:"artifacts"`
-	PreArtifacts  []nomadDescriptorArtifact `json:"pre_artifacts"`
-	DigestInputs  []nomadDescriptorInput    `json:"digest_inputs"`
+	SchemaVersion      int                            `json:"schema_version"`
+	Label              string                         `json:"label"`
+	Component          string                         `json:"component"`
+	DeployPhase        string                         `json:"deploy_phase"`
+	JobID              string                         `json:"job_id"`
+	JobSpec            string                         `json:"job_spec"`
+	JobSpecPath        string                         `json:"job_spec_path"`
+	Provides           []string                       `json:"provides"`
+	Requires           []string                       `json:"requires"`
+	Sites              []string                       `json:"sites"`
+	TestTargets        []string                       `json:"test_targets"`
+	UnitID             string                         `json:"unit_id"`
+	Artifacts          []nomadDescriptorArtifact      `json:"artifacts"`
+	PreArtifacts       []nomadDescriptorArtifact      `json:"pre_artifacts"`
+	DigestInputs       []nomadDescriptorInput         `json:"digest_inputs"`
+	PostDeployCanaries []deploymodel.PostDeployCanary `json:"post_deploy_canaries"`
 }
 
 type nomadDescriptorArtifact struct {
@@ -196,7 +200,7 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 		if err := json.Unmarshal(body, &component); err != nil {
 			return nil, fmt.Errorf("decode %s: %w", path, err)
 		}
-		if component.SchemaVersion != 4 {
+		if component.SchemaVersion != nomadComponentSchemaVersion {
 			return nil, fmt.Errorf("%s: unsupported nomad_component schema_version=%d", path, component.SchemaVersion)
 		}
 		if !componentInSite(component.Sites, site) {
@@ -231,6 +235,17 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 		for _, input := range component.DigestInputs {
 			if input.Label == "" || input.Path == "" || input.ShortPath == "" {
 				return nil, fmt.Errorf("%s: digest_inputs entries require label, path, and short_path", path)
+			}
+		}
+		for i, canary := range component.PostDeployCanaries {
+			if err := validatePostDeployCanary(canary); err != nil {
+				return nil, fmt.Errorf("%s: post_deploy_canaries[%d]: %w", path, i, err)
+			}
+			if canary.Env == nil {
+				component.PostDeployCanaries[i].Env = map[string]string{}
+			}
+			if canary.Args == nil {
+				component.PostDeployCanaries[i].Args = []string{}
 			}
 		}
 		components = append(components, component)
@@ -365,15 +380,16 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 			return nil, fmt.Errorf("%s: encode bound Nomad spec: %w", component.JobID, err)
 		}
 		jobs = append(jobs, deploymodel.NomadJob{
-			JobID:           component.JobID,
-			Component:       component.Component,
-			DeployPhase:     component.DeployPhase,
-			DependsOn:       append([]string(nil), component.Requires...),
-			ArtifactOutputs: artifactOutputs,
-			InputSHA256:     inputDigest,
-			SpecSHA256:      specSHA,
-			ArtifactSHA256:  artifactDigest,
-			Spec:            specBody,
+			JobID:              component.JobID,
+			Component:          component.Component,
+			DeployPhase:        component.DeployPhase,
+			DependsOn:          append([]string(nil), component.Requires...),
+			ArtifactOutputs:    artifactOutputs,
+			PostDeployCanaries: append([]deploymodel.PostDeployCanary(nil), component.PostDeployCanaries...),
+			InputSHA256:        inputDigest,
+			SpecSHA256:         specSHA,
+			ArtifactSHA256:     artifactDigest,
+			Spec:               specBody,
 		})
 	}
 	for output := range bindings {

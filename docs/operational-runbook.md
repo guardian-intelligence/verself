@@ -29,4 +29,29 @@ Nomad deploys are driven directly by the checked-in `nomad_component` targets fo
 aspect deploy --site=prod --sha=HEAD
 ```
 
-`aspect deploy` builds the Bazel-discovered descriptors, uploads missing content-addressed artifacts to the private Garage origin, resolves each `nomad.json`, and submits the resulting payloads to Nomad with ClickHouse evidence for each job decision.
+`aspect deploy` builds the Bazel-discovered descriptors, uploads missing
+content-addressed artifacts to the private Garage origin, resolves each Nomad
+job, submits the resulting payloads to Nomad, and emits ClickHouse evidence for
+each job decision. Changed jobs are not reported healthy until Nomad rollout
+health and the selected component-owned post-deploy canaries pass.
+
+Medium canaries run by default:
+
+```shell
+aspect deploy --site=prod --sha=HEAD --post-deploy-checks=medium
+```
+
+Use `--post-deploy-checks=large` or `--post-deploy-checks=all` when a release
+requires deeper browser/CLI checks in the deploy rollback window. Use
+`--post-deploy-checks=none` only for bootstrap or incident procedures where the
+canary dependency is known to be unavailable. If a canary fails after a changed
+Nomad job becomes healthy, `verself-deploy` reverts the job to the prior Nomad
+version; first deploys with no prior version are deregistered.
+
+Declared canaries can also be run against the current site without submitting
+jobs:
+
+```shell
+aspect canary post-deploy --site=prod --size=medium
+aspect canary post-deploy --site=prod --size=large
+```

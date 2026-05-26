@@ -17,6 +17,8 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "canary":
+		os.Exit(runCanary(os.Args[2:]))
 	case "run":
 		os.Exit(runRun(os.Args[2:]))
 	case "-h", "--help", "help":
@@ -33,11 +35,16 @@ func usage() {
 	fmt.Fprint(os.Stderr, `verself-deploy
 
 usage:
+  verself-deploy canary --site=<site> --size=medium|large|all [--repo-root=<path>]
   verself-deploy run --site=<site> [--sha=<rev>] [--repo-root=<path>]
 
 The run command assumes host bootstrap is complete. It discovers Bazel
 nomad_component targets, runs component-owned tests, builds their artifacts,
 publishes missing artifacts, submits changed Nomad jobs by deploy wave,
-monitors deployments, and emits deploy spans.
+monitors deployments, runs selected post-deploy canaries, reverts changed jobs
+when canaries fail, and emits deploy spans.
+
+The canary command runs declared post-deploy checks against the current site
+without submitting or reverting Nomad jobs.
 `)
 }
