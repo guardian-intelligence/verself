@@ -108,7 +108,7 @@ func (c CLI) runAuth(ctx context.Context, args []string) error {
 }
 
 func (c CLI) authLogin(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("auth login", flag.ContinueOnError)
+	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	profileName := fs.String("profile", "default", "profile name")
 	serverURL := fs.String("server-url", "", "Verself installation URL")
@@ -128,7 +128,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth login [--server-url URL] [--profile NAME]")
+		return errors.New("usage: login [--server-url URL] [--profile NAME]")
 	}
 	if !c.interactiveTTY() {
 		return authCommandError("auth.non_interactive_login_required", "interactive device login requires a TTY; use VERSELF_TOKEN or a future workload credential for non-interactive runs")
@@ -139,7 +139,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	}
 	name := strings.TrimSpace(*profileName)
 	if name == "" {
-		return errors.New("auth login profile name is required")
+		return errors.New("login profile name is required")
 	}
 	profile := ProfileRecord{
 		Version: 1,
@@ -309,11 +309,11 @@ func orgRefFromAuthOrganization(org verself.AuthOrganization) *OrgRef {
 func (c CLI) deviceLogin(ctx context.Context, opts loginCredentialOptions) (authCredential, error) {
 	issuer := strings.TrimRight(strings.TrimSpace(opts.IssuerURL), "/")
 	if issuer == "" {
-		return authCredential{}, errors.New("auth login requires --issuer or VERSELF_AUTH_ISSUER_URL")
+		return authCredential{}, errors.New("login requires --issuer or VERSELF_AUTH_ISSUER_URL")
 	}
 	clientID := strings.TrimSpace(opts.ClientID)
 	if clientID == "" {
-		return authCredential{}, errors.New("auth login requires --client-id or VERSELF_CLI_CLIENT_ID")
+		return authCredential{}, errors.New("login requires --client-id or VERSELF_CLI_CLIENT_ID")
 	}
 	discovery, err := fetchOIDCDiscovery(ctx, issuer)
 	if err != nil {
@@ -638,14 +638,14 @@ func refreshAuthCredential(ctx context.Context, credential authCredential) (auth
 }
 
 func (c CLI) authLogout(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("auth logout", flag.ContinueOnError)
+	fs := flag.NewFlagSet("logout", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	profileName := fs.String("profile", "", "profile name")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth logout [--profile NAME]")
+		return errors.New("usage: logout [--profile NAME]")
 	}
 	store, profile, accounts, err := c.loadProfileAccounts(*profileName)
 	if err != nil {
@@ -667,13 +667,13 @@ func (c CLI) authLogout(ctx context.Context, args []string) error {
 }
 
 func (c CLI) authWhoami(ctx context.Context, args []string) error {
-	fs, serviceFlags := serviceFlagSet("auth whoami", c.err)
+	fs, serviceFlags := serviceFlagSet("whoami", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth whoami [--json]")
+		return errors.New("usage: whoami [--json]")
 	}
 	client, _, err := c.serviceClientWithProfile(*serviceFlags)
 	if err != nil {
@@ -705,7 +705,7 @@ func selectedOrgLabel(context verself.AuthContext) string {
 
 func (c CLI) authSessions(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("auth sessions command is required")
+		return errors.New("sessions command is required")
 	}
 	switch args[0] {
 	case "list", "ls":
@@ -713,18 +713,18 @@ func (c CLI) authSessions(ctx context.Context, args []string) error {
 	case "revoke", "rm":
 		return c.authSessionsRevoke(ctx, args[1:])
 	default:
-		return fmt.Errorf("unknown auth sessions command %q", args[0])
+		return fmt.Errorf("unknown sessions command %q", args[0])
 	}
 }
 
 func (c CLI) authSessionsList(ctx context.Context, args []string) error {
-	fs, serviceFlags := serviceFlagSet("auth sessions list", c.err)
+	fs, serviceFlags := serviceFlagSet("sessions list", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth sessions list [--json]")
+		return errors.New("usage: sessions list [--json]")
 	}
 	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
@@ -750,12 +750,12 @@ func (c CLI) authSessionsList(ctx context.Context, args []string) error {
 }
 
 func (c CLI) authSessionsRevoke(ctx context.Context, args []string) error {
-	fs, serviceFlags := serviceFlagSet("auth sessions revoke", c.err)
+	fs, serviceFlags := serviceFlagSet("sessions revoke", c.err)
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: auth sessions revoke <session-id>")
+		return errors.New("usage: sessions revoke <session-id>")
 	}
 	client, err := c.serviceClient(*serviceFlags)
 	if err != nil {
@@ -769,7 +769,7 @@ func (c CLI) authSessionsRevoke(ctx context.Context, args []string) error {
 
 func (c CLI) authAccounts(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("auth accounts command is required")
+		return errors.New("accounts command is required")
 	}
 	switch args[0] {
 	case "list", "ls":
@@ -779,19 +779,19 @@ func (c CLI) authAccounts(ctx context.Context, args []string) error {
 	case "logout", "remove", "rm":
 		return c.authAccountsLogout(ctx, args[1:])
 	default:
-		return fmt.Errorf("unknown auth accounts command %q", args[0])
+		return fmt.Errorf("unknown accounts command %q", args[0])
 	}
 }
 
 func (c CLI) authAccountsList(args []string) error {
-	fs := flag.NewFlagSet("auth accounts list", flag.ContinueOnError)
+	fs := flag.NewFlagSet("accounts list", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	profileName := fs.String("profile", "", "profile name")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth accounts list [--profile NAME]")
+		return errors.New("usage: accounts list [--profile NAME]")
 	}
 	_, profile, accounts, err := c.loadProfileAccounts(*profileName)
 	if err != nil {
@@ -805,14 +805,14 @@ func (c CLI) authAccountsList(args []string) error {
 }
 
 func (c CLI) authAccountsUse(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("auth accounts use", flag.ContinueOnError)
+	fs := flag.NewFlagSet("accounts use", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	profileName := fs.String("profile", "", "profile name")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: auth accounts use <handle|email|subject> [--profile NAME]")
+		return errors.New("usage: accounts use <handle|email|subject> [--profile NAME]")
 	}
 	store, profile, accounts, err := c.loadProfileAccounts(*profileName)
 	if err != nil {
@@ -839,7 +839,7 @@ func (c CLI) authAccountsUse(ctx context.Context, args []string) error {
 		return err
 	}
 	if _, err := client.Auth.GetContext(ctx); err != nil {
-		return fmt.Errorf("%w; run `verself auth login --profile %s` to refresh this account", err, profile.Name)
+		return fmt.Errorf("%w; run `verself login --profile %s` to refresh this account", err, profile.Name)
 	}
 	return writeJSON(c.out, map[string]any{
 		"profile": profile.Name,
@@ -849,14 +849,14 @@ func (c CLI) authAccountsUse(ctx context.Context, args []string) error {
 }
 
 func (c CLI) authAccountsLogout(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("auth accounts logout", flag.ContinueOnError)
+	fs := flag.NewFlagSet("accounts logout", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	profileName := fs.String("profile", "", "profile name")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() > 1 {
-		return errors.New("usage: auth accounts logout [handle|email|subject] [--profile NAME]")
+		return errors.New("usage: accounts logout [handle|email|subject] [--profile NAME]")
 	}
 	store, profile, accounts, err := c.loadProfileAccounts(*profileName)
 	if err != nil {
@@ -975,14 +975,14 @@ func matchCLIAccount(accounts []AccountRecord, value string) (AccountRecord, err
 }
 
 func (c CLI) authProfiles(args []string) error {
-	fs := flag.NewFlagSet("auth profiles", flag.ContinueOnError)
+	fs := flag.NewFlagSet("profiles", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth profiles [--json]")
+		return errors.New("usage: profiles [--json]")
 	}
 	store, err := newStore(c.getenv)
 	if err != nil {

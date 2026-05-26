@@ -145,7 +145,7 @@ func (s *Store) LoadProfile(name string) (ProfileRecord, error) {
 		name = cfg.ActiveProfile
 	}
 	if name == "" {
-		return ProfileRecord{}, errors.New("profile is required; run `verself auth login`")
+		return ProfileRecord{}, errors.New("profile is required; run `verself login`")
 	}
 	var p ProfileRecord
 	if err := readJSONFile(s.paths.profilePath(name), &p); err != nil {

@@ -505,7 +505,7 @@ func (c CLI) credentialSourceWithProfile() (verself.CredentialSource, *ProfileRe
 		return nil, nil, nil, errors.New("VERSELF_TOKEN or auth profile is required")
 	}
 	if strings.TrimSpace(profile.ActiveAccount) == "" {
-		return nil, nil, nil, errors.New("active auth profile has no selected account; run `verself auth accounts use`")
+		return nil, nil, nil, errors.New("active auth profile has no selected account; run `verself accounts use`")
 	}
 	account, err := store.LoadAccount(profile.Name, profile.ActiveAccount)
 	if err != nil {

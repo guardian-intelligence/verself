@@ -94,7 +94,7 @@ func (c CLI) orgsCreate(ctx context.Context, args []string) error {
 	}
 	if profile != nil {
 		if profile.Account == nil {
-			return errors.New("active auth profile has no selected account; run `verself auth accounts use`")
+			return errors.New("active auth profile has no selected account; run `verself accounts use`")
 		}
 		profile.Account.SelectedOrg = orgRefFromSDK(org)
 		store, err := newStore(c.getenv)
@@ -147,7 +147,7 @@ func (c CLI) orgsUse(ctx context.Context, args []string) error {
 		return err
 	}
 	if strings.TrimSpace(profile.ActiveAccount) == "" {
-		return errors.New("active auth profile has no selected account; run `verself auth accounts use`")
+		return errors.New("active auth profile has no selected account; run `verself accounts use`")
 	}
 	account, err := store.LoadAccount(profile.Name, profile.ActiveAccount)
 	if err != nil {
