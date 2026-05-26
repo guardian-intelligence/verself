@@ -21,7 +21,8 @@ curl -fsS --retry 3 --retry-delay 1 --config "$header_file" "${VERSELF_HOST_SERV
 phase runner.bootstrap.jit_fetched
 unset VERSELF_TRACEPARENT
 unset VERSELF_RUNNER_BOOTSTRAP_TOKEN
-export PATH="/opt/actions-runner/externals/node20/bin:$PATH"
+toolchain_dir="` + githubRunnerToolchainDir + `"
+export PATH="$toolchain_dir/externals/node20/bin:$PATH"
 runtime_dir="` + githubRunnerRuntimeDir + `"
 durable_work_dir="` + githubRunnerDurableWorkDir + `"
 # GitHub only accepts work_folder relative to the runner install dir.
@@ -29,9 +30,9 @@ tool_cache="` + runnerToolCacheDir + `"
 [ -d "$durable_work_dir" ] || { echo "durable GitHub work dir is not mounted: $durable_work_dir" >&2; exit 1; }
 rm -rf "$runtime_dir"
 mkdir -p "$runtime_dir" "$tool_cache"
-cp -a /opt/actions-runner/bin "$runtime_dir/bin"
-cp -a /opt/actions-runner/run.sh /opt/actions-runner/run-helper.sh.template "$runtime_dir/"
-for entry in /opt/actions-runner/* /opt/actions-runner/.[!.]* /opt/actions-runner/..?*; do
+cp -a "$toolchain_dir/bin" "$runtime_dir/bin"
+cp -a "$toolchain_dir/run.sh" "$toolchain_dir/run-helper.sh.template" "$runtime_dir/"
+for entry in "$toolchain_dir"/* "$toolchain_dir"/.[!.]* "$toolchain_dir"/..?*; do
   [ -e "$entry" ] || continue
   base="$(basename "$entry")"
   case "$base" in

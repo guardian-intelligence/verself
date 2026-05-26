@@ -8,10 +8,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 )
+
+var etcRoot = "/etc"
 
 const (
 	// Overlay contract files at the root of a read-only toolchain image.
@@ -33,8 +34,6 @@ const (
 //	                                      (refusing to overwrite
 //	                                      anything previously
 //	                                      overlaid by a sibling image).
-//	<mount>/etc-overlay/passwd            new user entries trigger
-//	                                      mkdir + chown of $HOME.
 //
 // Any failure short-circuits and propagates up — overlays are
 // load-bearing for runner exec credentials, so a partial application
@@ -82,7 +81,10 @@ func (s *agentSession) applyEtcOverlay(imageName, mountPath string) error {
 		if rel == "." {
 			return nil
 		}
-		dest := filepath.Join("/etc", rel)
+		if isGlobalIdentityOverlay(rel) {
+			return fmt.Errorf("etc-overlay %s is not allowed: global identity files are substrate-owned", rel)
+		}
+		dest := filepath.Join(etcRoot, rel)
 		if fi.IsDir() {
 			if err := os.MkdirAll(dest, 0o755); err != nil {
 				return fmt.Errorf("mkdir %s: %w", dest, err)
@@ -95,11 +97,9 @@ func (s *agentSession) applyEtcOverlay(imageName, mountPath string) error {
 		}
 		if prior, ok := s.etcOverlayApplied[rel]; ok {
 			if prior.sha256 == digest {
-				// Same bytes from a second image (typically because
-				// both toolchains pulled this file from the shared
-				// runner-overlay-common filegroup). Skip the rewrite;
-				// re-recording the entry as the second image would
-				// erase the chronological "first writer wins" trail.
+				// Same bytes from a second image. Skip the rewrite;
+				// re-recording the entry as the second image would erase
+				// the chronological "first writer wins" trail.
 				return nil
 			}
 			return fmt.Errorf("etc-overlay collision: %s previously written by %s with digest %s; %s wants to overwrite with digest %s",
@@ -113,66 +113,6 @@ func (s *agentSession) applyEtcOverlay(imageName, mountPath string) error {
 	})
 	if walkErr != nil {
 		return walkErr
-	}
-
-	// passwd is the only overlay file that drives further side effects:
-	// new user entries get their HOME materialised. Walk it once, after
-	// the bulk copy, so the on-disk /etc/passwd is the authoritative
-	// source even if the same image overlaid both passwd and a profile.d
-	// hook.
-	if _, ok := s.etcOverlayApplied["passwd"]; ok {
-		if err := s.materializeHomeDirsFromOverlay(filepath.Join(overlayRoot, "passwd")); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// materializeHomeDirsFromOverlay parses <overlay>/etc-overlay/passwd
-// and creates+chowns each entry's home directory. We don't try to
-// reconcile against /etc/passwd's pre-existing entries — the overlay
-// owns those rows and any conflict was caught by applyEtcOverlay's
-// collision check.
-func (s *agentSession) materializeHomeDirsFromOverlay(passwdPath string) error {
-	f, err := os.Open(passwdPath)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", passwdPath, err)
-	}
-	defer func() { _ = f.Close() }()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		// Standard /etc/passwd format:
-		//   name:x:UID:GID:gecos:HOME:SHELL
-		fields := strings.Split(line, ":")
-		if len(fields) < 7 {
-			return fmt.Errorf("malformed passwd entry: %q", line)
-		}
-		uid, err := strconv.Atoi(fields[2])
-		if err != nil {
-			return fmt.Errorf("passwd entry %q: parse uid: %w", fields[0], err)
-		}
-		gid, err := strconv.Atoi(fields[3])
-		if err != nil {
-			return fmt.Errorf("passwd entry %q: parse gid: %w", fields[0], err)
-		}
-		home := strings.TrimSpace(fields[5])
-		if home == "" || home == "/" || home == "/nonexistent" {
-			continue
-		}
-		if err := os.MkdirAll(home, 0o755); err != nil {
-			return fmt.Errorf("mkdir home %s: %w", home, err)
-		}
-		if err := os.Chown(home, uid, gid); err != nil {
-			return fmt.Errorf("chown home %s: %w", home, err)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("read %s: %w", passwdPath, err)
 	}
 	return nil
 }
@@ -223,11 +163,19 @@ func (s *agentSession) applyWritableOverlays(mountPath string) error {
 	return nil
 }
 
+func isGlobalIdentityOverlay(rel string) bool {
+	switch filepath.ToSlash(filepath.Clean(rel)) {
+	case "passwd", "group", "shadow", "gshadow":
+		return true
+	default:
+		return false
+	}
+}
+
 // overlayFileDigest returns the sha256 hex digest of an overlay source
 // file. Used so two toolchain images writing the same /etc/<rel> path
-// with byte-identical content (e.g. both consuming the
-// runner-overlay-common Bazel filegroup) compose cleanly while a true
-// content collision still hard-errors at lease boot.
+// with byte-identical content compose cleanly while a true content
+// collision still hard-errors at lease boot.
 func overlayFileDigest(path string) (string, error) {
 	in, err := os.Open(path)
 	if err != nil {

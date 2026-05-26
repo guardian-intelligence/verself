@@ -53,6 +53,12 @@ function DocsOverview() {
             >
               GitHub integration error catalog
             </Link>
+            <Link
+              className="font-medium underline underline-offset-4"
+              to="/docs/reference/hosted-runners/runtime"
+            >
+              Hosted runner runtime
+            </Link>
           </div>
         </PageSection>
       </PageSections>

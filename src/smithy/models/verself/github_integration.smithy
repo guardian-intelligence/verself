@@ -583,7 +583,7 @@ enum GithubRunnerInstanceState {
 }
 
 enum GithubProviderSurfaceCommandKind {
-    CANCEL_WORKFLOW_RUN = "cancel_workflow_run"
+    CREATE_FAILURE_CHECK_RUN = "create_failure_check_run"
 }
 
 enum GithubProviderSurfaceCommandState {

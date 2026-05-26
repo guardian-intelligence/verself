@@ -7,15 +7,10 @@ genrule(
 )
 
 # gh-actions-runner.ext4 — toolchain image mounted read-only at
-# /opt/actions-runner inside the guest. Carries the upstream GitHub
-# Actions runner tarball plus an etc-overlay/ tree that vm-bridge
-# copies into /etc at lease boot:
+# /opt/verself/toolchains/github-actions-runner inside the guest.
+# Carries the upstream GitHub Actions runner tarball plus an
+# etc-overlay/ tree that vm-bridge copies into /etc at lease boot:
 #
-#   etc-overlay/passwd|group|shadow         add the runner@1000 user
-#                                           (sourced from the shared
-#                                            //runner-overlay-common
-#                                            filegroup)
-#   etc-overlay/sudoers.d/runner-nopasswd   NOPASSWD sudo for runner
 #   etc-overlay/profile.d/...               toolcache + tools env vars
 #                                           (RUNNER_TOOL_CACHE,
 #                                            AGENT_TOOLSDIRECTORY)
@@ -35,10 +30,6 @@ toolchain_ext4_image(
         "_work",
     ],
     files = {
-        "etc-overlay/passwd": "//src/substrate/vm-orchestrator/guest-images/runner-overlay-common:passwd",
-        "etc-overlay/group": "//src/substrate/vm-orchestrator/guest-images/runner-overlay-common:group",
-        "etc-overlay/shadow": "//src/substrate/vm-orchestrator/guest-images/runner-overlay-common:shadow",
-        "etc-overlay/sudoers.d/runner-nopasswd": "//src/substrate/vm-orchestrator/guest-images/runner-overlay-common:sudoers-runner-nopasswd",
         "etc-overlay/profile.d/verself-actions-runner.sh": ":profile-actions-runner",
         ".verself-writable-overlays": ":writable-overlays",
     },

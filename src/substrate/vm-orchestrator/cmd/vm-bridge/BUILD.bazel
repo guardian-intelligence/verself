@@ -45,6 +45,7 @@ go_test(
     srcs = [
         "clock_sync_test.go",
         "filesystem_mounts_test.go",
+        "overlays_test.go",
     ],
     embed = [":vm-bridge_lib"],
     deps = ["//src/substrate/vm-orchestrator/vmproto"],

@@ -20,17 +20,17 @@ clones keep their existing origin.
 - **Substrate** (`/var/lib/verself/guest-images/substrate.ext4`):
   kernel + minimal Ubuntu userland + vm-bridge as `/sbin/init` +
   vm-guest-telemetry + a few apt deps the runners need at runtime.
-  No Go, no Node.js, no GitHub Actions runner, no
-  `runner` user. Refreshes only when the kernel, vm-bridge,
+  No Go, no Node.js, no GitHub Actions runner. Owns the `runner`
+  user ABI. Refreshes only when the kernel, vm-bridge,
   vm-guest-telemetry, or Ubuntu base move. Built by
   `//src/substrate/vm-orchestrator/guest-images/substrate:build_substrate`,
   through the Nomad prestart staging task on the deploy host.
 - **Toolchain images** (`/var/lib/verself/guest-images/toolchains/<ref>.ext4`):
   Bazel-built ext4 artefacts under
   `//src/substrate/vm-orchestrator/guest-images/<ref>:`. Today: `gh-actions-runner`
-  (mounted at `/opt/actions-runner`).
+  (mounted at `/opt/verself/toolchains/github-actions-runner`).
   Each carries `etc-overlay/` (vm-bridge copies into `/etc/` at lease
-  boot — adds `runner@1000`, NOPASSWD sudo, profile.d hooks) and
+  boot for non-identity configuration such as profile.d hooks) and
   `.verself-writable-overlays` (vm-bridge tmpfs-mounts each listed scratch path
   on top of the read-only base).
 - **Bazel macro** `toolchain_ext4_image` in

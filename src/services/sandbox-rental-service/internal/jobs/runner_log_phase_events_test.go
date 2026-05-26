@@ -69,8 +69,9 @@ func TestGitHubRunnerCommandBuildsWritableRuntimeWithoutSudo(t *testing.T) {
 		}
 	}
 	for _, required := range []string{
-		"cp -a /opt/actions-runner/bin",
-		"cp -a /opt/actions-runner/run.sh /opt/actions-runner/run-helper.sh.template",
+		`toolchain_dir="` + githubRunnerToolchainDir + `"`,
+		`cp -a "$toolchain_dir/bin" "$runtime_dir/bin"`,
+		`cp -a "$toolchain_dir/run.sh" "$toolchain_dir/run-helper.sh.template" "$runtime_dir/"`,
 		"ln -s \"$entry\" \"$runtime_dir/$base\"",
 		"ln -s \"$durable_work_dir\" \"$runtime_dir/_work\"",
 		"./run.sh --jitconfig",

@@ -58,6 +58,13 @@ cmdport 0
 noclientlog
 `
 
+const (
+	runnerUser    = "runner"
+	runnerUID     = "1000"
+	runnerGID     = "1000"
+	runnerHomeDir = "/home/runner"
+)
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "build-substrate: "+err.Error())
@@ -179,6 +186,9 @@ func run() error {
 	installArgs := aptGet("install", "-y", "--no-install-recommends")
 	installArgs = append(installArgs, substratePackages...)
 	if err := runChroot(rootfs, installArgs...); err != nil {
+		return err
+	}
+	if err := configureRunnerIdentity(rootfs); err != nil {
 		return err
 	}
 
@@ -440,6 +450,31 @@ func seedChrootCABundle(rootfs string) error {
 		return err
 	}
 	return copyFile(src, filepath.Join(rootfs, "etc/ssl/certs/ca-certificates.crt"), 0o644)
+}
+
+func configureRunnerIdentity(rootfs string) error {
+	fmt.Println("-> configuring substrate runner identity")
+	if err := runChroot(rootfs, "/usr/sbin/groupadd", "--gid", runnerGID, runnerUser); err != nil {
+		return err
+	}
+	if err := runChroot(rootfs, "/usr/sbin/useradd",
+		"--uid", runnerUID,
+		"--gid", runnerGID,
+		"--create-home",
+		"--home-dir", runnerHomeDir,
+		"--shell", "/bin/bash",
+		"--comment", "verself runner",
+		runnerUser); err != nil {
+		return err
+	}
+	sudoersPath := filepath.Join(rootfs, "etc/sudoers.d/runner-nopasswd")
+	if err := writeFile(sudoersPath, "runner ALL=(ALL) NOPASSWD:ALL\n", 0o440); err != nil {
+		return err
+	}
+	if err := runChroot(rootfs, "/usr/sbin/visudo", "-cf", "/etc/sudoers.d/runner-nopasswd"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func aptGet(args ...string) []string {
