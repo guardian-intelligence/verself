@@ -14,6 +14,9 @@ exports_files(["tools.lock.json"])
 
 pkg_tar(
     name = "release_tools_artifact",
+    srcs = [
+        "@rules_rust//rust/toolchain:current_rustc_lib_files",
+    ],
     out = "distribution-release-tools.tar",
     files = {
         "@distribution_release_tools//tools/bazelisk": "bin/bazelisk",
@@ -23,6 +26,7 @@ pkg_tar(
         "@distribution_release_tools//tools/release-plz": "bin/release-plz",
         "@distribution_release_tools//tools/syft": "bin/syft",
         "@rules_rust//rust/toolchain:current_cargo_files": "bin/cargo",
+        "@rules_rust//rust/toolchain:current_rustc_files": "bin/rustc",
     },
     modes = {
         "bin/bazelisk": "0755",
@@ -31,13 +35,20 @@ pkg_tar(
         "bin/cosign": "0755",
         "bin/oras": "0755",
         "bin/release-plz": "0755",
+        "bin/rustc": "0755",
         "bin/syft": "0755",
+    },
+    remap_paths = {
+        "external/rules_rust++rust+rust_linux_x86_64__x86_64-unknown-linux-gnu__stable_tools/rust_toolchain/": "",
     },
     visibility = ["//visibility:public"],
 )
 
 pkg_tar(
     name = "runtime_artifact",
+    srcs = [
+        "@rules_rust//rust/toolchain:current_rustc_lib_files",
+    ],
     out = "distribution-service.tar",
     files = {
         "//src/services/distribution-service/cmd/distribution-release:distribution-release": "bin/distribution-release",
@@ -49,6 +60,7 @@ pkg_tar(
         "@distribution_release_tools//tools/release-plz": "bin/release-plz",
         "@distribution_release_tools//tools/syft": "bin/syft",
         "@rules_rust//rust/toolchain:current_cargo_files": "bin/cargo",
+        "@rules_rust//rust/toolchain:current_rustc_files": "bin/rustc",
     },
     modes = {
         "bin/bazelisk": "0755",
@@ -59,7 +71,11 @@ pkg_tar(
         "bin/distribution-service": "0755",
         "bin/oras": "0755",
         "bin/release-plz": "0755",
+        "bin/rustc": "0755",
         "bin/syft": "0755",
+    },
+    remap_paths = {
+        "external/rules_rust++rust+rust_linux_x86_64__x86_64-unknown-linux-gnu__stable_tools/rust_toolchain/": "",
     },
     visibility = ["//visibility:public"],
 )

@@ -953,7 +953,7 @@ func resolveTools(cfg mkskConfig) (string, func(), error) {
 }
 
 func verifyReleaseTools(dir string) error {
-	for _, tool := range []string{"bazelisk", "cargo", "cargo-about", "cosign", "oras", "release-plz", "syft"} {
+	for _, tool := range []string{"bazelisk", "cargo", "cargo-about", "cosign", "oras", "release-plz", "rustc", "syft"} {
 		path := filepath.Join(dir, "bin", tool)
 		if st, err := os.Stat(path); err != nil {
 			return fmt.Errorf("release tool %s: %w", tool, err)
@@ -965,8 +965,15 @@ func verifyReleaseTools(dir string) error {
 }
 
 func releaseToolEnv(toolsDir string) map[string]string {
+	libPath := toolsDir
+	if current := os.Getenv("LD_LIBRARY_PATH"); current != "" {
+		libPath += string(os.PathListSeparator) + current
+	}
 	env := map[string]string{
-		"PATH": filepath.Join(toolsDir, "bin") + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"CARGO":           filepath.Join(toolsDir, "bin", "cargo"),
+		"LD_LIBRARY_PATH": libPath,
+		"PATH":            filepath.Join(toolsDir, "bin") + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"RUSTC":           filepath.Join(toolsDir, "bin", "rustc"),
 	}
 	if home := releaseHome(); home != "" {
 		env["CARGO_HOME"] = filepath.Join(home, ".cargo")

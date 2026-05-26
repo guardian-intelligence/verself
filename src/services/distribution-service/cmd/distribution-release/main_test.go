@@ -133,10 +133,20 @@ func TestBazelCommandArgsUseAllocationCacheHome(t *testing.T) {
 
 func TestReleaseToolEnvIncludesToolBinAndCargoHome(t *testing.T) {
 	t.Setenv("HOME", "/tmp/release-home")
+	t.Setenv("LD_LIBRARY_PATH", "/host/lib")
 	t.Setenv("PATH", "/usr/bin")
 	env := releaseToolEnv("/tmp/tools")
 	if env["PATH"] != "/tmp/tools/bin:/usr/bin" {
 		t.Fatalf("PATH = %q", env["PATH"])
+	}
+	if env["CARGO"] != "/tmp/tools/bin/cargo" {
+		t.Fatalf("CARGO = %q", env["CARGO"])
+	}
+	if env["RUSTC"] != "/tmp/tools/bin/rustc" {
+		t.Fatalf("RUSTC = %q", env["RUSTC"])
+	}
+	if env["LD_LIBRARY_PATH"] != "/tmp/tools:/host/lib" {
+		t.Fatalf("LD_LIBRARY_PATH = %q", env["LD_LIBRARY_PATH"])
 	}
 	if env["CARGO_HOME"] != "/tmp/release-home/.cargo" {
 		t.Fatalf("CARGO_HOME = %q", env["CARGO_HOME"])
