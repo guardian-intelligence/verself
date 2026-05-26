@@ -406,7 +406,14 @@ SELECT
 FROM golden_vm_snapshot vm
 JOIN golden_vm_operation op ON op.operation_id = vm.operation_id
 WHERE (
-      vm.state IN ('invalidated', 'reapable')
+      vm.state = 'invalidated'
+      OR (
+          vm.state = 'reapable'
+          AND (
+              vm.expires_at IS NULL
+              OR vm.expires_at <= sqlc.arg(now_at)
+          )
+      )
       OR (
           vm.expires_at IS NOT NULL
           AND vm.expires_at <= sqlc.arg(now_at)
