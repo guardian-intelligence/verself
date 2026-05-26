@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,7 +15,27 @@ import (
 	verself "github.com/verself/verself-go"
 )
 
-const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+const (
+	deviceGrantType  = "urn:ietf:params:oauth:grant-type:device_code"
+	iamAuthErrorsURL = "https://verself.sh/docs/reference/iam/errors#"
+)
+
+type authCLIError struct {
+	Code   string
+	Detail string
+}
+
+func (e authCLIError) Error() string {
+	return e.Code + ": " + e.Detail + "; see " + iamAuthErrorsURL + authProblemAnchor(e.Code)
+}
+
+func authCommandError(code, detail string) error {
+	return authCLIError{Code: strings.TrimSpace(code), Detail: strings.TrimSpace(detail)}
+}
+
+func authProblemAnchor(code string) string {
+	return strings.NewReplacer(".", "-", "_", "-").Replace(strings.TrimSpace(code))
+}
 
 type authCredential struct {
 	AccessToken  string    `json:"access_token"`
@@ -31,6 +49,18 @@ type authCredential struct {
 type oidcDiscovery struct {
 	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
 	TokenEndpoint               string `json:"token_endpoint"`
+}
+
+type verselfDiscovery struct {
+	SchemaVersion int `json:"schema_version"`
+	Auth          struct {
+		IssuerURL          string `json:"issuer_url"`
+		CLIClientID        string `json:"cli_client_id"`
+		ProductAPIAudience string `json:"product_api_audience"`
+	} `json:"auth"`
+	PublicAPIs map[string]struct {
+		BaseURL string `json:"base_url"`
+	} `json:"public_apis"`
 }
 
 type deviceAuthorizationResponse struct {
@@ -64,10 +94,10 @@ func (c CLI) runAuth(ctx context.Context, args []string) error {
 		return c.authLogout(args[1:])
 	case "whoami":
 		return c.authWhoami(ctx, args[1:])
-	case "token":
-		return c.authToken(args[1:])
 	case "accounts":
-		return c.authAccounts(args[1:])
+		return c.authAccounts(ctx, args[1:])
+	case "sessions":
+		return c.authSessions(ctx, args[1:])
 	case "profiles":
 		return c.authProfiles(args[1:])
 	default:
@@ -79,7 +109,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("auth login", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	profileName := fs.String("profile", "default", "profile name")
-	tokenFile := fs.String("token-file", "", "read bearer token from owner-only file")
+	serverURL := fs.String("server-url", "", "Verself installation URL")
 	issuerURL := fs.String("issuer", "", "OIDC issuer URL")
 	clientID := fs.String("client-id", "", "OIDC public client ID")
 	audience := fs.String("audience", "", "Verself product API audience ID")
@@ -96,7 +126,10 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth login --token-file PATH [--profile NAME]")
+		return errors.New("usage: auth login [--server-url URL] [--profile NAME]")
+	}
+	if !c.interactiveTTY() {
+		return authCommandError("auth.non_interactive_login_required", "interactive device login requires a TTY; use VERSELF_TOKEN or a future workload credential for non-interactive runs")
 	}
 	store, err := newStore(c.getenv)
 	if err != nil {
@@ -116,25 +149,35 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	profile.IAMURL = strings.TrimSpace(firstNonEmpty(*iamURL, c.getenv("VERSELF_IAM_API_URL"), profile.IAMURL))
-	profile.ProjectsURL = strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"), profile.ProjectsURL))
-	profile.NotificationsURL = strings.TrimSpace(firstNonEmpty(*notificationsURL, c.getenv("VERSELF_NOTIFICATIONS_API_URL"), profile.NotificationsURL))
-	profile.BillingURL = strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"), profile.BillingURL))
-	profile.GovernanceURL = strings.TrimSpace(firstNonEmpty(*governanceURL, c.getenv("VERSELF_GOVERNANCE_API_URL"), profile.GovernanceURL))
-	profile.SandboxURL = strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"), profile.SandboxURL))
-	profile.SecretsURL = strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"), profile.SecretsURL))
-	profile.SourceURL = strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"), profile.SourceURL))
+	profile.ServerURL = strings.TrimSpace(firstNonEmpty(*serverURL, c.getenv("VERSELF_SERVER_URL"), profile.ServerURL, verself.DefaultServerURL))
+	discovery, err := fetchVerselfDiscovery(ctx, profile.ServerURL)
+	if err != nil {
+		if firstNonEmpty(*issuerURL, c.getenv("VERSELF_AUTH_ISSUER_URL")) == "" || firstNonEmpty(*clientID, c.getenv("VERSELF_CLI_CLIENT_ID")) == "" {
+			return err
+		}
+	}
+	profile.IAMURL = strings.TrimSpace(firstNonEmpty(*iamURL, c.getenv("VERSELF_IAM_API_URL"), discoveryAPIBaseURL(discovery, "iam"), profile.IAMURL))
+	profile.ProjectsURL = strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"), discoveryAPIBaseURL(discovery, "projects"), profile.ProjectsURL))
+	profile.NotificationsURL = strings.TrimSpace(firstNonEmpty(*notificationsURL, c.getenv("VERSELF_NOTIFICATIONS_API_URL"), discoveryAPIBaseURL(discovery, "notifications"), profile.NotificationsURL))
+	profile.BillingURL = strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"), discoveryAPIBaseURL(discovery, "billing"), profile.BillingURL))
+	profile.GovernanceURL = strings.TrimSpace(firstNonEmpty(*governanceURL, c.getenv("VERSELF_GOVERNANCE_API_URL"), discoveryAPIBaseURL(discovery, "governance"), profile.GovernanceURL))
+	profile.SandboxURL = strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"), discoveryAPIBaseURL(discovery, "sandbox"), profile.SandboxURL))
+	profile.SecretsURL = strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"), discoveryAPIBaseURL(discovery, "secrets"), profile.SecretsURL))
+	profile.SourceURL = strings.TrimSpace(firstNonEmpty(*sourceURL, c.getenv("VERSELF_SOURCE_API_URL"), discoveryAPIBaseURL(discovery, "source"), profile.SourceURL))
+	issuer := firstNonEmpty(*issuerURL, c.getenv("VERSELF_AUTH_ISSUER_URL"), discovery.Auth.IssuerURL)
+	cliClientID := firstNonEmpty(*clientID, c.getenv("VERSELF_CLI_CLIENT_ID"), discovery.Auth.CLIClientID)
+	productAudience := firstNonEmpty(*audience, c.getenv("VERSELF_PRODUCT_API_AUTH_AUDIENCE"), discovery.Auth.ProductAPIAudience)
 	credential, err := c.loginCredential(ctx, loginCredentialOptions{
-		TokenFile: strings.TrimSpace(*tokenFile),
-		IssuerURL: firstNonEmpty(*issuerURL, c.getenv("VERSELF_AUTH_ISSUER_URL")),
-		ClientID:  firstNonEmpty(*clientID, c.getenv("VERSELF_CLI_CLIENT_ID")),
-		Audience:  firstNonEmpty(*audience, c.getenv("VERSELF_PRODUCT_API_AUTH_AUDIENCE")),
+		IssuerURL: issuer,
+		ClientID:  cliClientID,
+		Audience:  productAudience,
 	})
 	if err != nil {
 		return err
 	}
 	sdk, err := verself.New(verself.Options{
 		BearerToken:      credential.AccessToken,
+		ServerURL:        profile.ServerURL,
 		IAMURL:           profile.IAMURL,
 		ProjectsURL:      profile.ProjectsURL,
 		NotificationsURL: profile.NotificationsURL,
@@ -147,29 +190,29 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	orgs, err := sdk.IAM.ListOrganizations(ctx, verself.ListOrganizationsOptions{PageSize: 1})
+	authContext, err := sdk.Auth.CreateDeviceSession(ctx, verself.CreateDeviceSessionInput{
+		Channel:     verself.AuthChannelCLI,
+		DeviceLabel: cliDeviceLabel(),
+	})
 	if err != nil {
 		return err
 	}
-	if len(orgs.Organizations) > 0 {
-		org := orgs.Organizations[0]
-		profile.Account = &AccountRecord{SelectedOrg: orgRefFromSDK(org)}
-	}
-	identity := accountIdentityFromCredential(credential)
+	selectedOrg := selectedOrgFromAuthContext(authContext)
 	account := AccountRecord{
-		Version:     1,
-		ProfileName: profile.Name,
-		Handle:      cliAccountHandle(profile.Name, identity.Subject, credential.AccessToken),
-		Subject:     identity.Subject,
-		Email:       identity.Email,
-		SelectedOrg: nil,
+		Version:         1,
+		ProfileName:     profile.Name,
+		Handle:          authContext.Account.AccountID,
+		AccountID:       authContext.Account.AccountID,
+		Issuer:          authContext.Account.Issuer,
+		Subject:         authContext.Account.Subject,
+		Email:           authContext.Account.Email,
+		DisplayName:     authContext.Account.DisplayName,
+		DeviceSessionID: authContext.Session.SessionID,
+		SelectedOrg:     selectedOrg,
 	}
-	if profile.Account != nil {
-		account.SelectedOrg = profile.Account.SelectedOrg
-	}
-	var previousTokenRef string
+	var previousCredentialRef string
 	if existing, err := store.LoadAccount(account.ProfileName, account.Handle); err == nil {
-		previousTokenRef = existing.TokenRef
+		previousCredentialRef = existing.CredentialRef
 		if account.SelectedOrg == nil {
 			account.SelectedOrg = existing.SelectedOrg
 		}
@@ -184,13 +227,13 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	account.TokenRef = ref
+	account.CredentialRef = ref
 	if err := store.SaveAccount(account); err != nil {
 		_ = store.DeleteCredential(ref)
 		return err
 	}
-	if previousTokenRef != "" && previousTokenRef != ref {
-		_ = store.DeleteCredential(previousTokenRef)
+	if previousCredentialRef != "" && previousCredentialRef != ref {
+		_ = store.DeleteCredential(previousCredentialRef)
 	}
 	profile.ActiveAccount = account.Handle
 	profile.Account = nil
@@ -215,21 +258,50 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 }
 
 type loginCredentialOptions struct {
-	TokenFile string
 	IssuerURL string
 	ClientID  string
 	Audience  string
 }
 
 func (c CLI) loginCredential(ctx context.Context, opts loginCredentialOptions) (authCredential, error) {
-	if opts.TokenFile != "" {
-		token, err := readTokenFile(opts.TokenFile)
-		if err != nil {
-			return authCredential{}, err
-		}
-		return authCredential{AccessToken: token, TokenType: "Bearer"}, nil
-	}
 	return c.deviceLogin(ctx, opts)
+}
+
+func (c CLI) interactiveTTY() bool {
+	file, ok := c.in.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func cliDeviceLabel() string {
+	host, err := os.Hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		return "Verself CLI"
+	}
+	return "Verself CLI on " + strings.TrimSpace(host)
+}
+
+func selectedOrgFromAuthContext(context verself.AuthContext) *OrgRef {
+	for _, org := range context.Organizations {
+		if org.Selected {
+			return orgRefFromAuthOrganization(org)
+		}
+	}
+	if len(context.Organizations) == 1 {
+		return orgRefFromAuthOrganization(context.Organizations[0])
+	}
+	return nil
+}
+
+func orgRefFromAuthOrganization(org verself.AuthOrganization) *OrgRef {
+	return &OrgRef{
+		OrgID:       org.OrgID,
+		Slug:        org.Slug,
+		DisplayName: org.DisplayName,
+	}
 }
 
 func (c CLI) deviceLogin(ctx context.Context, opts loginCredentialOptions) (authCredential, error) {
@@ -314,6 +386,45 @@ func fetchOIDCDiscovery(ctx context.Context, issuer string) (oidcDiscovery, erro
 	return discovery, nil
 }
 
+func fetchVerselfDiscovery(ctx context.Context, serverURL string) (verselfDiscovery, error) {
+	base := strings.TrimRight(strings.TrimSpace(serverURL), "/")
+	if base == "" {
+		return verselfDiscovery{}, errors.New("verself server URL is required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/.well-known/verself", nil)
+	if err != nil {
+		return verselfDiscovery{}, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return verselfDiscovery{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return verselfDiscovery{}, fmt.Errorf("verself discovery failed with HTTP %d", resp.StatusCode)
+	}
+	var discovery verselfDiscovery
+	if err := json.NewDecoder(resp.Body).Decode(&discovery); err != nil {
+		return verselfDiscovery{}, err
+	}
+	if discovery.SchemaVersion != 1 {
+		return verselfDiscovery{}, fmt.Errorf("unsupported Verself discovery schema version %d", discovery.SchemaVersion)
+	}
+	return discovery, nil
+}
+
+func discoveryAPIBaseURL(discovery verselfDiscovery, service string) string {
+	if discovery.PublicAPIs == nil {
+		return ""
+	}
+	entry, ok := discovery.PublicAPIs[service]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(entry.BaseURL)
+}
+
 func startDeviceAuthorization(ctx context.Context, endpoint, clientID, scope string) (deviceAuthorizationResponse, error) {
 	values := url.Values{
 		"client_id": {clientID},
@@ -348,7 +459,7 @@ func pollDeviceToken(ctx context.Context, tokenURL, clientID string, device devi
 	expiresAt := time.Now().UTC().Add(time.Duration(device.ExpiresIn) * time.Second)
 	for {
 		if !expiresAt.IsZero() && time.Now().UTC().After(expiresAt) {
-			return tokenEndpointResponse{}, errors.New("device authorization expired")
+			return tokenEndpointResponse{}, authCommandError("auth.device_code_expired", "device authorization expired")
 		}
 		select {
 		case <-ctx.Done():
@@ -370,6 +481,10 @@ func pollDeviceToken(ctx context.Context, tokenURL, clientID string, device devi
 		case "slow_down":
 			interval += 5 * time.Second
 			continue
+		case "access_denied":
+			return tokenEndpointResponse{}, authCommandError("auth.device_authorization_denied", "device authorization was denied")
+		case "expired_token":
+			return tokenEndpointResponse{}, authCommandError("auth.device_code_expired", "device authorization expired")
 		default:
 			if token.ErrorDesc != "" {
 				return tokenEndpointResponse{}, fmt.Errorf("%s: %s", token.Error, token.ErrorDesc)
@@ -417,51 +532,97 @@ func parseStoredAuthCredential(value string) (authCredential, bool) {
 	return credential, strings.TrimSpace(credential.AccessToken) != ""
 }
 
-type cliAccountIdentity struct {
-	Subject string
-	Email   string
+type profileCredentialSource struct {
+	store         *Store
+	profileName   string
+	accountHandle string
 }
 
-func accountIdentityFromCredential(credential authCredential) cliAccountIdentity {
-	claims, err := decodeJWTClaims(credential.AccessToken)
+func (s *profileCredentialSource) BearerToken(ctx context.Context) (string, error) {
+	if s == nil || s.store == nil {
+		return "", errors.New("auth credential source is not initialized")
+	}
+	account, err := s.store.LoadAccount(s.profileName, s.accountHandle)
 	if err != nil {
-		return cliAccountIdentity{}
+		return "", err
 	}
-	return cliAccountIdentity{
-		Subject: stringClaimValue(claims, "sub"),
-		Email:   stringClaimValue(claims, "email"),
-	}
-}
-
-func cliAccountHandle(profileName, subject, token string) string {
-	seed := strings.TrimSpace(subject)
-	if seed == "" {
-		sum := sha256.Sum256([]byte(token))
-		seed = base64.RawURLEncoding.EncodeToString(sum[:])
-	}
-	sum := sha256.Sum256([]byte("verself cli account v1\x00" + strings.TrimSpace(profileName) + "\x00" + seed))
-	return "acct_" + base64.RawURLEncoding.EncodeToString(sum[:])[:24]
-}
-
-func decodeJWTClaims(token string) (map[string]any, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return nil, errors.New("token is not a jwt")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	value, err := s.store.ReadCredential(account.CredentialRef)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	var claims map[string]any
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, err
+	credential, ok := parseStoredAuthCredential(value)
+	if !ok {
+		return "", errors.New("active auth profile credential is invalid")
 	}
-	return claims, nil
+	if credentialRefreshDue(credential) {
+		refreshed, err := refreshAuthCredential(ctx, credential)
+		if err != nil {
+			return "", err
+		}
+		credential = refreshed
+		encoded, err := json.Marshal(credential)
+		if err != nil {
+			return "", err
+		}
+		if err := s.store.UpdateCredential(account.CredentialRef, string(encoded)); err != nil {
+			return "", err
+		}
+	}
+	if strings.TrimSpace(credential.AccessToken) == "" {
+		return "", errors.New("active auth profile credential is empty")
+	}
+	return strings.TrimSpace(credential.AccessToken), nil
 }
 
-func stringClaimValue(claims map[string]any, name string) string {
-	value, _ := claims[name].(string)
-	return strings.TrimSpace(value)
+func credentialRefreshDue(credential authCredential) bool {
+	return !credential.ExpiresAt.IsZero() && time.Now().UTC().Add(2*time.Minute).After(credential.ExpiresAt)
+}
+
+func refreshAuthCredential(ctx context.Context, credential authCredential) (authCredential, error) {
+	refreshToken := strings.TrimSpace(credential.RefreshToken)
+	tokenURL := strings.TrimSpace(credential.TokenURL)
+	clientID := strings.TrimSpace(credential.ClientID)
+	if refreshToken == "" || tokenURL == "" || clientID == "" {
+		return authCredential{}, authCommandError("auth.reauthentication_required", "stored credential cannot be refreshed")
+	}
+	values := url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {clientID},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(values.Encode()))
+	if err != nil {
+		return authCredential{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return authCredential{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var token tokenEndpointResponse
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+		return authCredential{}, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || strings.TrimSpace(token.Error) != "" {
+		if strings.TrimSpace(token.Error) != "" {
+			return authCredential{}, authCommandError("auth.reauthentication_required", firstNonEmpty(token.ErrorDesc, token.Error))
+		}
+		return authCredential{}, fmt.Errorf("refresh token request failed with HTTP %d", resp.StatusCode)
+	}
+	if strings.TrimSpace(token.AccessToken) == "" {
+		return authCredential{}, errors.New("refresh token response returned no access_token")
+	}
+	credential.AccessToken = token.AccessToken
+	credential.TokenType = firstNonEmpty(token.TokenType, credential.TokenType, "Bearer")
+	if strings.TrimSpace(token.RefreshToken) != "" {
+		credential.RefreshToken = token.RefreshToken
+	}
+	if token.ExpiresIn > 0 {
+		credential.ExpiresAt = time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
+	}
+	return credential, nil
 }
 
 func (c CLI) authLogout(args []string) error {
@@ -504,42 +665,99 @@ func (c CLI) authWhoami(ctx context.Context, args []string) error {
 	if fs.NArg() != 0 {
 		return errors.New("usage: auth whoami [--json]")
 	}
-	client, profile, err := c.serviceClientWithProfile(*serviceFlags)
+	client, _, err := c.serviceClientWithProfile(*serviceFlags)
 	if err != nil {
 		return err
 	}
-	org, err := selectedOrganization(ctx, client, profile)
+	authContext, err := client.Auth.GetContext(ctx)
 	if err != nil {
 		return err
 	}
 	if *jsonOut {
-		return writeJSON(c.out, org)
+		return writeJSON(c.out, authContext)
 	}
-	return writef(c.out, "%s\t%s\n", org.OrgID, org.DisplayName)
+	selected := selectedOrgLabel(authContext)
+	return writef(c.out, "%s\t%s\t%s\n", authContext.Account.AccountID, authContext.Account.Email, selected)
 }
 
-func (c CLI) authToken(args []string) error {
-	fs, serviceFlags := serviceFlagSet("auth token", c.err)
+func selectedOrgLabel(context verself.AuthContext) string {
+	for _, org := range context.Organizations {
+		if org.Selected {
+			return org.OrgID + "\t" + org.DisplayName
+		}
+	}
+	if len(context.Organizations) == 1 {
+		org := context.Organizations[0]
+		return org.OrgID + "\t" + org.DisplayName
+	}
+	return "no-org\t"
+}
+
+func (c CLI) authSessions(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("auth sessions command is required")
+	}
+	switch args[0] {
+	case "list", "ls":
+		return c.authSessionsList(ctx, args[1:])
+	case "revoke", "rm":
+		return c.authSessionsRevoke(ctx, args[1:])
+	default:
+		return fmt.Errorf("unknown auth sessions command %q", args[0])
+	}
+}
+
+func (c CLI) authSessionsList(ctx context.Context, args []string) error {
+	fs, serviceFlags := serviceFlagSet("auth sessions list", c.err)
 	jsonOut := fs.Bool("json", false, "json output")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth token")
+		return errors.New("usage: auth sessions list [--json]")
 	}
-	token, _, err := c.bearerTokenWithProfile(serviceFlags.tokenFile)
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	sessions, err := client.Auth.ListDeviceSessions(ctx)
 	if err != nil {
 		return err
 	}
 	if *jsonOut {
-		return writeJSON(c.out, map[string]string{
-			"access_token": token,
-		})
+		return writeJSON(c.out, sessions)
 	}
-	return writef(c.out, "%s\n", token)
+	for _, session := range sessions {
+		current := ""
+		if session.Current {
+			current = "current"
+		}
+		if err := writef(c.out, "%s\t%s\t%s\t%s\t%s\n", session.SessionID, session.State, session.Channel, session.DeviceLabel, current); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (c CLI) authAccounts(args []string) error {
+func (c CLI) authSessionsRevoke(ctx context.Context, args []string) error {
+	fs, serviceFlags := serviceFlagSet("auth sessions revoke", c.err)
+	if err := parseInterspersed(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: auth sessions revoke <session-id>")
+	}
+	client, err := c.serviceClient(*serviceFlags)
+	if err != nil {
+		return err
+	}
+	if err := client.Auth.RevokeDeviceSession(ctx, fs.Arg(0)); err != nil {
+		return err
+	}
+	return writef(c.out, "revoked session %s\n", strings.TrimSpace(fs.Arg(0)))
+}
+
+func (c CLI) authAccounts(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("auth accounts command is required")
 	}
@@ -547,7 +765,7 @@ func (c CLI) authAccounts(args []string) error {
 	case "list", "ls":
 		return c.authAccountsList(args[1:])
 	case "use":
-		return c.authAccountsUse(args[1:])
+		return c.authAccountsUse(ctx, args[1:])
 	case "logout", "remove", "rm":
 		return c.authAccountsLogout(args[1:])
 	default:
@@ -576,7 +794,7 @@ func (c CLI) authAccountsList(args []string) error {
 	})
 }
 
-func (c CLI) authAccountsUse(args []string) error {
+func (c CLI) authAccountsUse(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("auth accounts use", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	profileName := fs.String("profile", "", "profile name")
@@ -597,6 +815,21 @@ func (c CLI) authAccountsUse(args []string) error {
 	profile.ActiveAccount = account.Handle
 	if err := store.SaveProfile(profile); err != nil {
 		return err
+	}
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		return err
+	}
+	cfg.ActiveProfile = profile.Name
+	if err := store.SaveConfig(cfg); err != nil {
+		return err
+	}
+	client, _, err := c.serviceClientWithProfile(serviceClientFlags{})
+	if err != nil {
+		return err
+	}
+	if _, err := client.Auth.GetContext(ctx); err != nil {
+		return fmt.Errorf("%w; run `verself auth login --profile %s` to refresh this account", err, profile.Name)
 	}
 	return writeJSON(c.out, map[string]any{
 		"profile": profile.Name,
@@ -671,7 +904,7 @@ func matchCLIAccount(accounts []AccountRecord, value string) (AccountRecord, err
 	var matched *AccountRecord
 	for i := range accounts {
 		account := accounts[i]
-		if account.Handle != value && account.Email != value && account.Subject != value {
+		if account.Handle != value && account.AccountID != value && account.Email != value && account.Subject != value {
 			continue
 		}
 		if matched != nil {

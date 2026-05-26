@@ -8,6 +8,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type IamAccountConnection struct {
+	ConnectionID  string
+	AccountID     string
+	Issuer        string
+	Subject       string
+	State         string
+	Email         string
+	EmailVerified bool
+	CreatedAt     pgtype.Timestamptz
+	LastSeenAt    pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
 type IamBrowserClient struct {
 	ClientHash              string
 	ClientHandle            string
@@ -56,6 +69,33 @@ type IamBrowserLoginTransaction struct {
 	RequiredOrgID   pgtype.Text
 	ExpiresAt       pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
+}
+
+type IamDeviceSession struct {
+	SessionID               string
+	AccountID               string
+	Issuer                  string
+	Subject                 string
+	Channel                 string
+	State                   string
+	DeviceLabel             string
+	CredentialFingerprint   string
+	AuthTime                pgtype.Timestamptz
+	AuthMethods             []string
+	ExpiresAt               pgtype.Timestamptz
+	RevokedAt               pgtype.Timestamptz
+	RevokedReason           string
+	CreatedClientIp         string
+	CreatedClientIpTrusted  bool
+	CreatedClientIpSource   string
+	CreatedUserAgent        string
+	LastSeenClientIp        string
+	LastSeenClientIpTrusted bool
+	LastSeenClientIpSource  string
+	LastSeenUserAgent       string
+	CreatedAt               pgtype.Timestamptz
+	LastSeenAt              pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
 }
 
 type IamMemberInviteAcceptanceToken struct {

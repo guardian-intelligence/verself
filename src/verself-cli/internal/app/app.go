@@ -101,14 +101,15 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 
 func (c CLI) usage() error {
 	return writef(c.out, `Usage:
-  %[1]s auth login [--token-file PATH|--issuer URL --client-id ID] [--profile NAME]
+  %[1]s auth login [--server-url URL|--issuer URL --client-id ID] [--profile NAME]
   %[1]s auth signup --email EMAIL [--org NAME] [--slug SLUG]
   %[1]s auth signup verify --url URL
   %[1]s auth accounts list
   %[1]s auth accounts use <handle|email|subject>
   %[1]s auth accounts logout [handle|email|subject]
+  %[1]s auth sessions list
+  %[1]s auth sessions revoke <session-id>
   %[1]s auth whoami [--json]
-  %[1]s auth token
   %[1]s orgs list [--json]
   %[1]s orgs create --display-name NAME [--slug SLUG] [--json]
   %[1]s orgs use <org-id|slug>

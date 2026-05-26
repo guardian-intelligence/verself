@@ -43,6 +43,12 @@ function DocsOverview() {
             </Link>
             <Link
               className="font-medium underline underline-offset-4"
+              to="/docs/reference/iam/errors"
+            >
+              IAM auth error catalog
+            </Link>
+            <Link
+              className="font-medium underline underline-offset-4"
               to="/docs/reference/github-integration/errors"
             >
               GitHub integration error catalog

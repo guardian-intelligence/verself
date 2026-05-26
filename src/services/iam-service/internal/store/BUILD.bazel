@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "store",
     srcs = [
+        "account_auth.sql.go",
         "api_credentials.sql.go",
         "browser_auth.sql.go",
         "db.go",

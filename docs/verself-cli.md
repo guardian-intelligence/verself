@@ -364,9 +364,13 @@ The default hosted profile points at `https://verself.sh` and refreshes
   "version": 1,
   "profile_name": "guardian-prod",
   "handle": "acct_JAAJQjCf6N2hFf9vAnf9m8PL",
+  "account_id": "acct_JAAJQjCf6N2hFf9vAnf9m8PL",
+  "issuer": "https://verself.sh",
   "subject": "287000000000000000",
   "email": "owner@example.com",
-  "token_ref": "verself-cred://9f3c8cfd46e0d7d70c7567f11f1a0d78",
+  "display_name": "Owner",
+  "device_session_id": "sess_01J8QJ4P1R7S9W2X5M6N8P0Q2A",
+  "credential_ref": "verself-cred://9f3c8cfd46e0d7d70c7567f11f1a0d78",
   "selected_org": {
     "org_id": "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
     "slug": "guardian-intelligence",
@@ -433,6 +437,8 @@ verself auth login
 verself auth accounts list
 verself auth accounts use <handle|email|subject>
 verself auth accounts logout [handle|email|subject]
+verself auth sessions list
+verself auth sessions revoke <session-id>
 verself auth whoami
 verself auth logout
 ```
@@ -480,12 +486,11 @@ the same acceptance token through the Smithy-modeled IAM operation when an agent
 controls the mailbox used for testing.
 
 Workload trust is the preferred path for CI, Verself runners, agents, and
-self-hosted runtimes that can present their own identity. Credential files are
-the fallback for runtimes without an identity provider. Credential files must be
-regular files with owner-only permissions; the CLI refuses world-readable files.
-SDK-backed commands read the active auth profile and active account by default.
-Command-level credential-source and service-origin overrides exist for
-diagnostics and isolated CI jobs.
+self-hosted runtimes that can present their own identity. Interactive CLI login
+uses OAuth device code, then mints a Verself device session. SDK-backed commands
+read the active auth profile, active account, and device session by default.
+Command-level service-origin overrides exist for diagnostics and isolated local
+development.
 
 ## Public Command Surface
 
@@ -501,6 +506,8 @@ verself auth signup
 verself auth signup verify
 verself profiles list|add|use|inspect|refresh|remove
 verself auth login|whoami|logout
+verself auth accounts list|use|logout
+verself auth sessions list|revoke
 verself credentials list|create|inspect|rotate|revoke
 verself credentials trust list|create|inspect|delete
 verself orgs list|create|use|inspect|update
