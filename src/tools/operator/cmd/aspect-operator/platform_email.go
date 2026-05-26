@@ -27,6 +27,7 @@ func platformCompanyEmailLocalParts() []string {
 	return []string{
 		"anveio",
 		"hello",
+		"feedback",
 		"sales",
 		"support",
 		"security",

@@ -31,6 +31,7 @@ The platform seed creates one identity per address under the platform org:
 
 - `anveio@verself.sh`
 - `hello@verself.sh`
+- `feedback@verself.sh`
 - `sales@verself.sh`
 - `support@verself.sh`
 - `security@verself.sh`
