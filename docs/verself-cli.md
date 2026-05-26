@@ -467,16 +467,16 @@ stateDiagram-v2
 ```
 
 ```text
-verself auth login
-verself auth signup --email owner@example.com --org "Acme" --slug acme
-verself auth signup verify --url "$SIGNUP_URL"
-verself auth whoami
-verself auth accounts list
-verself auth accounts use <handle|email|subject>
-verself auth accounts logout [handle|email|subject]
-verself auth sessions list
-verself auth sessions revoke <session-id>
-verself auth logout
+verself login
+verself signup owner@example.com --org "Acme" --slug acme
+verself signup verify --url "$SIGNUP_URL"
+verself whoami
+verself accounts list
+verself accounts use <handle|email|subject>
+verself accounts logout [handle|email|subject]
+verself sessions list
+verself sessions revoke <session-id>
+verself logout
 ```
 
 ```mermaid
@@ -497,10 +497,10 @@ stateDiagram-v2
   ConstrainedLoginURL --> AuthLogin
 ```
 
-`verself auth signup` starts an unauthenticated IAM signup intent. IAM sends a
+`verself signup` starts an unauthenticated IAM signup intent. IAM sends a
 verification email only for new or reusable signup intents and creates no
 Zitadel user, organization, SpiceDB relationship, or product account until
-`verself auth signup verify` submits the verification token. The SDK derives
+`verself signup verify` submits the verification token. The SDK derives
 mutation idempotency keys; CLI users and forms do not provide them for signup.
 Signup starts always emit a generic JSON `message` so the command does not
 reveal whether an email already exists. When the mailbox already belongs to an
@@ -511,7 +511,7 @@ the same accepted response without another email. After verification, the
 response includes a constrained browser login URL so a browser already signed
 into a different account is asked to select the intended account.
 
-`verself auth login` is an interactive human login command. It discovers the
+`verself login` is an interactive human login command. It discovers the
 hosted issuer from the active profile, starts the OAuth device authorization
 grant, prints the verification URI and user code, polls with server-provided
 intervals, persists the resulting account/session in the credential store, and
@@ -519,9 +519,9 @@ selects an accessible organization when the choice is unambiguous.
 Non-interactive invocations fail with a typed auth error unless a workload
 credential or customer API credential is configured.
 
-`verself auth accounts use` validates the selected account before switching. A
+`verself accounts use` validates the selected account before switching. A
 stale, revoked, or higher-assurance account enters the reauth path instead of
-becoming active. `verself auth logout` and `verself auth sessions revoke` revoke
+becoming active. `verself logout` and `verself sessions revoke` revoke
 remote session evidence before deleting local references when the issuer exposes
 revocation metadata.
 
@@ -570,14 +570,14 @@ projects, environments, source resources, credentials, billing, logs, and
 sandbox workloads.
 
 ```text
-verself auth login
-verself auth signup
-verself auth signup verify
+verself login
+verself signup
+verself signup verify
 verself profiles list|add|use|inspect|refresh|remove
-verself auth login|whoami|logout
-verself auth accounts list|use|logout
-verself auth sessions list|revoke
-verself auth connections list|link|remove
+verself login|whoami|logout
+verself accounts list|use|logout
+verself sessions list|revoke
+verself connections list|link|remove
 verself credentials list|create|inspect|rotate|revoke
 verself credentials trust list|create|inspect|delete
 verself orgs list|create|use|inspect|update

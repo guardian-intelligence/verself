@@ -233,8 +233,8 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 
 	var defaultStartOut bytes.Buffer
 	runCLI(t, &defaultStartOut,
-		"auth", "signup",
-		"--email", "my-email@email.com",
+		"signup",
+		"my-email@email.com",
 	)
 	if startBodies["my-email@email.com"]["organizationDisplayName"] != "My Email" {
 		t.Fatalf("default signup organization display name = %#v", startBodies["my-email@email.com"])
@@ -287,7 +287,7 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 	verifyURL := "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID + "&verification_token=" + verificationToken
 	var verifyOut bytes.Buffer
 	runCLI(t, &verifyOut,
-		"auth", "signup", "verify",
+		"signup", "verify",
 		"--url", verifyURL,
 		"--org", "Guardian Intelligence",
 		"--slug", "guardian-intelligence",
@@ -311,7 +311,7 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 	if verified.Organization.OrgID != orgID ||
 		verified.Organization.DisplayName != "Guardian Intelligence" ||
 		verified.LoginURL != "https://verself.sh/login" ||
-		!strings.Contains(verified.Message, "verself auth login") {
+		!strings.Contains(verified.Message, "verself login") {
 		t.Fatalf("unexpected verify output: %#v", verified)
 	}
 }
@@ -1262,7 +1262,7 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 		t.Fatalf("profile stored account-owned fields:\n%s", profileJSON)
 	}
 	var accountsOut bytes.Buffer
-	runCLI(t, &accountsOut, "auth", "accounts", "list")
+	runCLI(t, &accountsOut, "accounts", "list")
 	var accounts struct {
 		Profile       string          `json:"profile"`
 		ActiveAccount string          `json:"activeAccount"`
@@ -1286,19 +1286,19 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 		account.SelectedOrg.OrgID != "org_01J8QK0M2A7W4H3P9FQ6G1R8ZT" {
 		t.Fatalf("unexpected account record: %#v", account)
 	}
-	runCLI(t, nil, "auth", "accounts", "use", "operator@example.test")
+	runCLI(t, nil, "accounts", "use", "operator@example.test")
 
 	var whoami bytes.Buffer
-	runCLI(t, &whoami, "auth", "whoami")
+	runCLI(t, &whoami, "whoami")
 	if !strings.Contains(whoami.String(), accountID+"\toperator@example.test\torg_01J8QK0M2A7W4H3P9FQ6G1R8ZT\tGuardian Intelligence") {
-		t.Fatalf("auth whoami output:\n%s", whoami.String())
+		t.Fatalf("whoami output:\n%s", whoami.String())
 	}
 	var sessions bytes.Buffer
-	runCLI(t, &sessions, "auth", "sessions", "list")
+	runCLI(t, &sessions, "sessions", "list")
 	if !strings.Contains(sessions.String(), sessionID+"\tactive\tcli\tCLI\tcurrent") {
-		t.Fatalf("auth sessions output:\n%s", sessions.String())
+		t.Fatalf("sessions output:\n%s", sessions.String())
 	}
-	runCLI(t, nil, "auth", "sessions", "revoke", secondSession)
+	runCLI(t, nil, "sessions", "revoke", secondSession)
 	if revokedSessions[secondSession] != 1 {
 		t.Fatalf("revoked sessions = %#v", revokedSessions)
 	}
@@ -1338,7 +1338,7 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	}
 
 	var accountLogout bytes.Buffer
-	runCLI(t, &accountLogout, "auth", "accounts", "logout", "operator@example.test")
+	runCLI(t, &accountLogout, "accounts", "logout", "operator@example.test")
 	if !strings.Contains(accountLogout.String(), `"message": "account logged out"`) {
 		t.Fatalf("account logout output:\n%s", accountLogout.String())
 	}
@@ -1346,7 +1346,7 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 		t.Fatalf("account logout did not revoke device session; revoked sessions = %#v", revokedSessions)
 	}
 
-	runCLI(t, nil, "auth", "logout", "--profile", "default")
+	runCLI(t, nil, "logout", "--profile", "default")
 	if revokedSessions[secondSession] != 2 {
 		t.Fatalf("profile logout did not revoke remaining device session; revoked sessions = %#v", revokedSessions)
 	}

@@ -38,7 +38,7 @@ func (c CLI) authSignup(ctx context.Context, args []string) error {
 }
 
 func (c CLI) authSignupStart(ctx context.Context, args []string) error {
-	fs, iamFlags := publicIAMFlagSet("auth signup", c.err)
+	fs, iamFlags := publicIAMFlagSet("signup", c.err)
 	email := fs.String("email", "", "email address to verify")
 	org := fs.String("org", "", "organization display name")
 	slug := fs.String("slug", "", "organization slug")
@@ -47,19 +47,16 @@ func (c CLI) authSignupStart(ctx context.Context, args []string) error {
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
-	if fs.NArg() != 0 {
-		return errors.New("usage: auth signup --email EMAIL [--org NAME] [--slug SLUG]")
-	}
-	emailValue := strings.TrimSpace(*email)
-	if emailValue == "" {
-		return errors.New("auth signup requires --email")
+	emailValue, err := signupStartEmail(*email, fs.Args())
+	if err != nil {
+		return err
 	}
 	orgDisplayName := strings.TrimSpace(*org)
 	if orgDisplayName == "" {
 		orgDisplayName = defaultSignupOrganizationDisplayName(emailValue)
 	}
 	if orgDisplayName == "" {
-		return errors.New("auth signup requires --org when the organization name cannot be derived from --email")
+		return errors.New("signup requires --org when the organization name cannot be derived from EMAIL")
 	}
 	client, err := c.publicIAMClient(*iamFlags)
 	if err != nil {
@@ -79,7 +76,7 @@ func (c CLI) authSignupStart(ctx context.Context, args []string) error {
 }
 
 func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
-	fs, iamFlags := publicIAMFlagSet("auth signup verify", c.err)
+	fs, iamFlags := publicIAMFlagSet("signup verify", c.err)
 	actionURL := fs.String("url", "", "signup verification URL")
 	signupIntentID := fs.String("signup-intent-id", "", "signup intent id")
 	verificationToken := fs.String("verification-token", "", "signup verification token")
@@ -89,7 +86,7 @@ func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: auth signup verify --url URL")
+		return errors.New("usage: signup verify --url URL")
 	}
 	credentials, err := signupVerificationCredentials(*actionURL, *signupIntentID, *verificationToken)
 	if err != nil {
@@ -142,9 +139,9 @@ func signupStartOutputFromResult(result verself.SignupStartResult) signupStartOu
 }
 
 func signupVerifyOutputFromResult(result verself.SignupVerificationResult) signupVerifyOutput {
-	message := fmt.Sprintf("Organization %s is ready. Run `verself auth login` to create a local session.", result.Organization.DisplayName)
+	message := fmt.Sprintf("Organization %s is ready. Run `verself login` to create a local session.", result.Organization.DisplayName)
 	if strings.TrimSpace(result.LoginURL) != "" {
-		message = fmt.Sprintf("Organization %s is ready. Sign in at %s or run `verself auth login` to create a local session.", result.Organization.DisplayName, result.LoginURL)
+		message = fmt.Sprintf("Organization %s is ready. Sign in at %s or run `verself login` to create a local session.", result.Organization.DisplayName, result.LoginURL)
 	}
 	return signupVerifyOutput{
 		Message:      message,
@@ -178,11 +175,29 @@ func signupVerificationCredentials(actionURL, signupIntentID, verificationToken 
 		token = urlCredentials.verificationToken
 	}
 	if intentID == "" || token == "" {
-		return signupVerificationCredentialSet{}, errors.New("auth signup verify requires --url or both --signup-intent-id and --verification-token")
+		return signupVerificationCredentialSet{}, errors.New("signup verify requires --url or both --signup-intent-id and --verification-token")
 	}
 	credentials.signupIntentID = intentID
 	credentials.verificationToken = token
 	return credentials, nil
+}
+
+func signupStartEmail(flagValue string, args []string) (string, error) {
+	email := strings.TrimSpace(flagValue)
+	switch len(args) {
+	case 0:
+	case 1:
+		if email != "" {
+			return "", errors.New("signup accepts email either as an argument or --email, not both")
+		}
+		email = strings.TrimSpace(args[0])
+	default:
+		return "", errors.New("usage: signup EMAIL [--org NAME] [--slug SLUG]")
+	}
+	if email == "" {
+		return "", errors.New("signup requires EMAIL")
+	}
+	return email, nil
 }
 
 func signupVerificationCredentialsFromURL(raw string) (signupVerificationCredentialSet, error) {
