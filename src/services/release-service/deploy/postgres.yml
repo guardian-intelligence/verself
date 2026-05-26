@@ -1,0 +1,4 @@
+postgresql_service_databases:
+  - { name: release_service, owner: release_service }
+postgresql_peer_mappings:
+  - { system_user: release_service, pg_user: release_service }
