@@ -82,6 +82,25 @@ func TestSafeJoinRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestCleanRootUnder(t *testing.T) {
+	got, err := cleanRootUnder("/artifacts/releases/mksk/alloc-1", "/artifacts/releases/mksk")
+	if err != nil {
+		t.Fatalf("cleanRootUnder() error = %v", err)
+	}
+	if got != "/artifacts/releases/mksk/alloc-1" {
+		t.Fatalf("cleanRootUnder() = %q", got)
+	}
+	for _, path := range []string{
+		"artifacts/releases/mksk/alloc-1",
+		"/artifacts/releases/mksk",
+		"/artifacts/releases/mksk-other/alloc-1",
+	} {
+		if _, err := cleanRootUnder(path, "/artifacts/releases/mksk"); err == nil {
+			t.Fatalf("cleanRootUnder accepted %q", path)
+		}
+	}
+}
+
 func TestValidateDispatchVersion(t *testing.T) {
 	if err := validateDispatchVersion("nightly", ""); err != nil {
 		t.Fatalf("nightly derived version error = %v", err)

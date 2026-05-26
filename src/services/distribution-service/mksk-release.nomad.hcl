@@ -16,9 +16,19 @@ job "distribution-release-mksk" {
         hook = "prestart"
         sidecar = false
       }
+      artifact {
+        source = "verself-artifact://distribution-service"
+        destination = "local"
+        chown = true
+      }
       config {
-        command = "/bin/sh"
-        args = ["-ec", "install -d -m 0750 -o distribution_release -g zot /artifacts/releases/mksk/$${NOMAD_ALLOC_ID} /tmp/distribution-release-home"]
+        command = "local/bin/distribution-release"
+        args = [
+          "mksk",
+          "prepare-root",
+          "--artifact-root", "/artifacts/releases/mksk/$${NOMAD_ALLOC_ID}",
+          "--home", "/tmp/distribution-release-mksk/$${NOMAD_ALLOC_ID}/home",
+        ]
       }
       resources {
         cpu = 50
@@ -40,8 +50,14 @@ job "distribution-release-mksk" {
         file = "release-payload.json"
       }
       config {
-        command = "/bin/sh"
-        args = ["-ec", "exec local/bin/distribution-release mksk publish --payload local/release-payload.json --artifact-root /artifacts/releases/mksk/$${NOMAD_ALLOC_ID} --tools-dir local"]
+        command = "local/bin/distribution-release"
+        args = [
+          "mksk",
+          "publish",
+          "--payload", "local/release-payload.json",
+          "--artifact-root", "/artifacts/releases/mksk/$${NOMAD_ALLOC_ID}",
+          "--tools-dir", "local",
+        ]
       }
       env {
         DISTRIBUTION_RELEASE_COSIGN_KEY = "/etc/credstore/distribution-service/release-cosign-key"
@@ -51,12 +67,12 @@ job "distribution-release-mksk" {
         DISTRIBUTION_RELEASE_SOURCE_REPOSITORY_URL = "https://github.com/guardian-intelligence/verself.git"
         DISTRIBUTION_RELEASE_ZOT_PASSWORD_FILE = "/etc/zot/publisher-password"
         DISTRIBUTION_RELEASE_ZOT_USERNAME = "artifact-publisher"
-        HOME = "/tmp/distribution-release-home"
+        HOME = "/tmp/distribution-release-mksk/$${NOMAD_ALLOC_ID}/home"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "distribution-release-mksk"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        XDG_CACHE_HOME = "/tmp/distribution-release-home/.cache"
+        XDG_CACHE_HOME = "/tmp/distribution-release-mksk/$${NOMAD_ALLOC_ID}/home/.cache"
       }
       resources {
         cpu = 4000

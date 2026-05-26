@@ -14,9 +14,11 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,6 +31,8 @@ const (
 	mkskBinaryTarget    = "//src/make-skill:mksk"
 	mkskBazelTarget     = "//src/make-skill:release_tar"
 	mkskReleaseVersion  = "MKSK_RELEASE_VERSION"
+	defaultReleaseUser  = "distribution_release"
+	defaultReleaseGroup = "zot"
 	defaultBuilderID    = "spiffe://prod.verself.sh/svc/distribution-release"
 	defaultOutDir       = "artifacts/releases"
 	defaultSourceRef    = "HEAD"
@@ -102,6 +106,13 @@ type buildSource struct {
 	cleanup func()
 }
 
+type prepareRootConfig struct {
+	artifactRoot string
+	home         string
+	userName     string
+	groupName    string
+}
+
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "distribution-release: "+err.Error())
@@ -137,6 +148,8 @@ func runMksk(ctx context.Context, args []string) error {
 		switch args[0] {
 		case "publish":
 			return runMkskPublish(ctx, args[1:])
+		case "prepare-root":
+			return runMkskPrepareRoot(args[1:])
 		case "local":
 			return runMkskLocal(ctx, args[1:], true)
 		case "dispatch":
@@ -152,11 +165,55 @@ func runMksk(ctx context.Context, args []string) error {
 func printMkskUsage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `distribution-release mksk [flags]
 distribution-release mksk local [flags]
+distribution-release mksk prepare-root [flags]
 distribution-release mksk publish [flags]
 
 Default mksk mode dispatches a deployed Nomad release job. Use --local for
 inspection artifacts without publication.
 `)
+}
+
+func runMkskPrepareRoot(args []string) error {
+	cfg := prepareRootConfig{
+		userName:  defaultReleaseUser,
+		groupName: defaultReleaseGroup,
+	}
+	fs := flag.NewFlagSet("distribution-release mksk prepare-root", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.StringVar(&cfg.artifactRoot, "artifact-root", "", "Exact output root for release artifacts.")
+	fs.StringVar(&cfg.home, "home", "", "Per-allocation home directory for release tooling.")
+	fs.StringVar(&cfg.userName, "user", defaultReleaseUser, "Unix user that owns release directories.")
+	fs.StringVar(&cfg.groupName, "group", defaultReleaseGroup, "Unix group that owns release directories.")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("unexpected positional args: %s", strings.Join(fs.Args(), " "))
+	}
+	if strings.TrimSpace(cfg.artifactRoot) == "" {
+		return fmt.Errorf("--artifact-root is required")
+	}
+	if strings.TrimSpace(cfg.home) == "" {
+		return fmt.Errorf("--home is required")
+	}
+	artifactRoot, err := cleanRootUnder(cfg.artifactRoot, "/artifacts/releases/mksk")
+	if err != nil {
+		return err
+	}
+	home, err := cleanRootUnder(cfg.home, "/tmp/distribution-release-mksk")
+	if err != nil {
+		return err
+	}
+	uid, gid, err := lookupOwner(cfg.userName, cfg.groupName)
+	if err != nil {
+		return err
+	}
+	for _, dir := range []string{filepath.Dir(artifactRoot), artifactRoot, filepath.Dir(home), home} {
+		if err := ensureOwnedDir(dir, 0o750, uid, gid); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runMkskLocal(ctx context.Context, args []string, forceLocal bool) error {
@@ -882,6 +939,51 @@ func tarPermissionMode(header *tar.Header) (fs.FileMode, error) {
 func stdoutf(format string, args ...any) error {
 	_, err := fmt.Fprintf(os.Stdout, format, args...)
 	return err
+}
+
+func cleanRootUnder(path, prefix string) (string, error) {
+	cleanPath := filepath.Clean(path)
+	cleanPrefix := filepath.Clean(prefix)
+	if !filepath.IsAbs(cleanPath) {
+		return "", fmt.Errorf("%s must be absolute", path)
+	}
+	if cleanPath == cleanPrefix || !strings.HasPrefix(cleanPath, cleanPrefix+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s must be under %s", cleanPath, cleanPrefix)
+	}
+	return cleanPath, nil
+}
+
+func lookupOwner(userName, groupName string) (int, int, error) {
+	u, err := user.Lookup(userName)
+	if err != nil {
+		return 0, 0, fmt.Errorf("lookup user %s: %w", userName, err)
+	}
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse uid for %s: %w", userName, err)
+	}
+	g, err := user.LookupGroup(groupName)
+	if err != nil {
+		return 0, 0, fmt.Errorf("lookup group %s: %w", groupName, err)
+	}
+	gid, err := strconv.Atoi(g.Gid)
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse gid for %s: %w", groupName, err)
+	}
+	return uid, gid, nil
+}
+
+func ensureOwnedDir(path string, mode fs.FileMode, uid, gid int) error {
+	if err := os.MkdirAll(path, mode); err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	if err := os.Chown(path, uid, gid); err != nil {
+		return fmt.Errorf("chown %s: %w", path, err)
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		return fmt.Errorf("chmod %s: %w", path, err)
+	}
+	return nil
 }
 
 func safeJoin(root, name string) (string, error) {
