@@ -5,9 +5,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitCode;
 
-use make_skill_core::{create_skill, CreateSkillRequest, SkillTarget};
+use make_skill_core::{CreateSkillRequest, SkillTarget, create_skill};
 
-const USAGE: &str = "usage: mksk <skill-name>\n       mksk upgrade [--channel CHANNEL] [--json]";
+const CARGO_MANIFEST: &str = include_str!("../../../Cargo.toml");
+const RELEASE_METADATA_BASE_URL: &str = "https://oci.verself.sh/releases/mksk";
+const USAGE: &str = "usage: mksk <skill-name>\n       mksk --version\n       mksk version\n       mksk upgrade [--channel CHANNEL] [--json]";
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ExitStatus {
@@ -68,6 +70,15 @@ where
     let Some(target) = args.next().filter(|arg| !arg.is_empty()) else {
         return ExecOutput::failure(format!("{USAGE}\n"));
     };
+    if target == "--version" {
+        return run_version();
+    }
+    if target == "version" {
+        if let Some(extra) = args.next() {
+            return ExecOutput::failure(format!("error: unexpected argument {extra:?}\n{USAGE}\n"));
+        }
+        return run_version();
+    }
     if target == "upgrade" {
         return run_upgrade(args.collect());
     }
@@ -87,6 +98,75 @@ where
         )),
         Err(err) => ExecOutput::failure(format!("error: {err}\n")),
     }
+}
+
+fn run_version() -> ExecOutput {
+    match release_metadata() {
+        Ok(metadata) => ExecOutput::success(format!(
+            "mksk {}\nrelease: {}\n",
+            metadata.version, metadata.url
+        )),
+        Err(err) => ExecOutput::failure(format!("error: {err}\n")),
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ReleaseMetadata {
+    version: &'static str,
+    url: String,
+}
+
+fn release_metadata() -> Result<ReleaseMetadata, String> {
+    let version = release_version()?;
+    Ok(ReleaseMetadata {
+        version,
+        url: release_metadata_url(version),
+    })
+}
+
+fn release_version() -> Result<&'static str, String> {
+    if let Some(version) = option_env!("MKSK_RELEASE_VERSION") {
+        if version.trim().is_empty() {
+            return Err("MKSK_RELEASE_VERSION must not be empty".to_string());
+        }
+        return Ok(version);
+    }
+    workspace_package_version(CARGO_MANIFEST).ok_or_else(|| {
+        "src/make-skill/Cargo.toml must define [workspace.package] version".to_string()
+    })
+}
+
+fn release_metadata_url(version: &str) -> String {
+    format!("{RELEASE_METADATA_BASE_URL}/{version}")
+}
+
+fn workspace_package_version(manifest: &str) -> Option<&str> {
+    let mut in_workspace_package = false;
+    for line in manifest.lines() {
+        let line = line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            in_workspace_package = line == "[workspace.package]";
+            continue;
+        }
+        if !in_workspace_package {
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("version") else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(value) = rest.strip_prefix('=') else {
+            continue;
+        };
+        return toml_string(value.trim_start());
+    }
+    None
+}
+
+fn toml_string(value: &str) -> Option<&str> {
+    let body = value.strip_prefix('"')?;
+    let end = body.find('"')?;
+    Some(&body[..end])
 }
 
 fn run_upgrade(args: Vec<String>) -> ExecOutput {
@@ -151,7 +231,7 @@ fn find_verself_updater() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::upgrade_command_args;
+    use super::{release_metadata_url, upgrade_command_args, workspace_package_version};
     use std::ffi::OsString;
     use std::path::Path;
 
@@ -172,5 +252,27 @@ mod tests {
                 OsString::from("canary")
             ]
         );
+    }
+
+    #[test]
+    fn release_metadata_url_is_derived_from_version() {
+        assert_eq!(
+            release_metadata_url("0.2.0-rc.1"),
+            "https://oci.verself.sh/releases/mksk/0.2.0-rc.1"
+        );
+    }
+
+    #[test]
+    fn workspace_version_comes_from_workspace_package_section() {
+        let manifest = r#"
+[package]
+version = "9.9.9"
+
+[workspace.package]
+license = "MIT"
+version = "0.2.0"
+"#;
+
+        assert_eq!(workspace_package_version(manifest), Some("0.2.0"));
     }
 }

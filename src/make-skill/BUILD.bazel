@@ -13,6 +13,7 @@ rust_library(
 rust_library(
     name = "exec",
     srcs = ["crates/exec/src/lib.rs"],
+    compile_data = ["Cargo.toml"],
     crate_name = "make_skill_exec",
     edition = "2024",
     deps = [":core"],

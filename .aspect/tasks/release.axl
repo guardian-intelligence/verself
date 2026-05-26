@@ -1,6 +1,9 @@
 """aspect release — release publication checks and helpers."""
 
-load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "ws_path")
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_output_file", "bazel_run", "ws_path")
+
+DISTRIBUTION_RELEASE_TARGET = "//src/services/distribution-service/cmd/distribution-release:distribution-release"
+DISTRIBUTION_RELEASE_TOOLS_TARGET = "//src/services/distribution-service:release_tools_artifact"
 
 def _workspace_or_absolute(ctx, path):
     if path.startswith("/"):
@@ -24,6 +27,33 @@ def _npm_probe_impl(ctx):
         cli_args.append("--require-publishable")
     return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator release npm-probe")
 
+def _mksk_impl(ctx):
+    tools_tar = bazel_output_file(ctx, DISTRIBUTION_RELEASE_TOOLS_TARGET)
+    if tools_tar == "":
+        return 1
+    cli_args = [
+        "mksk",
+        "--repo-root",
+        ws_path(ctx),
+        "--tools-tar",
+        tools_tar,
+        "--out-dir",
+        _workspace_or_absolute(ctx, ctx.args.out_dir),
+        "--source-ref",
+        ctx.args.source_ref,
+        "--builder-id",
+        ctx.args.builder_id,
+        "--platform",
+        ctx.args.platform,
+    ]
+    if ctx.args.version_pr:
+        cli_args.append("--version-pr")
+    if ctx.args.channel != "":
+        cli_args.extend(["--channel", ctx.args.channel])
+    if ctx.args.version != "":
+        cli_args.extend(["--version", ctx.args.version])
+    return bazel_run(ctx, DISTRIBUTION_RELEASE_TARGET, cli_args, label = "distribution-release mksk")
+
 npm_probe = task(
     implementation = _npm_probe_impl,
     name = "npm-probe",
@@ -35,5 +65,21 @@ npm_probe = task(
         "github_repository": args.string(default = "guardian-intelligence/verself-sh", description = "GitHub owner/repo expected by npm trusted publishing."),
         "format": args.string(default = "table", description = "Output format: table | json | csv | tsv."),
         "require_publishable": args.boolean(default = False, description = "Fail when local manifest fields block publishing."),
+    },
+)
+
+mksk = task(
+    implementation = _mksk_impl,
+    name = "mksk",
+    group = ["release"],
+    summary = "Generate make-skill release inspection artifacts.",
+    args = {
+        "version_pr": args.boolean(default = False, description = "Generate an inspectable release-plz version PR patch."),
+        "channel": args.string(default = "", description = "Release channel: nightly, rc, or stable."),
+        "version": args.string(default = "", description = "Explicit version. Required for rc/stable; optional for nightly."),
+        "source_ref": args.string(default = "HEAD", description = "Git ref recorded as the source revision."),
+        "out_dir": args.string(default = "artifacts/releases", description = "Directory for inspectable release outputs."),
+        "builder_id": args.string(default = "spiffe://prod.verself.sh/svc/distribution-service", description = "SLSA builder id recorded in local provenance."),
+        "platform": args.string(default = "linux/amd64", description = "Release platform recorded in provenance."),
     },
 )

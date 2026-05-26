@@ -19,10 +19,6 @@ func digestFromRef(ref string) string {
 	return strings.Replace(clean(ref), "-", ":", 1)
 }
 
-func digestHex(digest string) string {
-	return strings.TrimPrefix(clean(digest), "sha256:")
-}
-
 func pgTime(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value.UTC(), Valid: true}
 }
