@@ -95,6 +95,23 @@ func TestWriteReleaseErrorReport(t *testing.T) {
 	}
 }
 
+func TestAbsolutePath(t *testing.T) {
+	got, err := absolutePath("local")
+	if err != nil {
+		t.Fatalf("absolutePath() error = %v", err)
+	}
+	if !filepath.IsAbs(got) {
+		t.Fatalf("absolutePath() = %q, want absolute path", got)
+	}
+	got, err = absolutePath("/tmp/../tmp")
+	if err != nil {
+		t.Fatalf("absolutePath(abs) error = %v", err)
+	}
+	if got != "/tmp" {
+		t.Fatalf("absolutePath(abs) = %q, want /tmp", got)
+	}
+}
+
 func TestSafeJoinRejectsTraversal(t *testing.T) {
 	for _, name := range []string{"../x", "/tmp/x"} {
 		if _, err := safeJoin("/tmp/root", name); err == nil {

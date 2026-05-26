@@ -102,6 +102,14 @@ func runMkskPublish(ctx context.Context, args []string) error {
 	if err := validatePublishConfig(cfg, payload); err != nil {
 		return err
 	}
+	cfg.artifactRoot, err = absolutePath(cfg.artifactRoot)
+	if err != nil {
+		return err
+	}
+	cfg.toolsDir, err = absolutePath(cfg.toolsDir)
+	if err != nil {
+		return err
+	}
 	sourceRoot, cleanup, err := checkoutSourceCommit(ctx, cfg.sourceRepository, payload.SourceCommit)
 	if err != nil {
 		return err
@@ -595,6 +603,17 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func absolutePath(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return abs, nil
 }
 
 func sanitizeOCITag(value string) string {
