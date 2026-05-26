@@ -15,7 +15,6 @@ var (
 	ErrSourcePolicyFailure  = errors.New("distribution source policy failure")
 	ErrChannelPolicyFailure = errors.New("distribution channel policy failure")
 	ErrQuarantined          = errors.New("distribution artifact quarantined")
-	ErrTUFSigning           = errors.New("distribution tuf signing failure")
 	ErrReplication          = errors.New("distribution replication failure")
 	ErrStoreUnavailable     = errors.New("distribution store unavailable")
 	ErrRegistryUnavailable  = errors.New("distribution registry unavailable")

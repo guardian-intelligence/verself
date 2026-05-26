@@ -105,29 +105,25 @@ type Artifact struct {
 }
 
 type Target struct {
-	TargetID            string
-	PackageName         string
-	ChannelName         string
-	PlatformOS          string
-	PlatformArch        string
-	ArtifactID          string
-	ArtifactDigest      string
-	PackageVersion      string
-	State               string
-	PublicOCIReference  string
-	DownloadURL         string
-	TUFMetadataURL      string
-	TUFTargetsVersion   int64
-	TUFSnapshotVersion  int64
-	TUFTimestampVersion int64
-	PolicyRef           string
-	PromotedBy          string
-	Reason              string
-	PublishedAt         time.Time
-	SupersededAt        time.Time
-	SupersededByDigest  string
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	TargetID           string
+	PackageName        string
+	ChannelName        string
+	PlatformOS         string
+	PlatformArch       string
+	ArtifactID         string
+	ArtifactDigest     string
+	PackageVersion     string
+	State              string
+	PublicOCIReference string
+	DownloadURL        string
+	PolicyRef          string
+	PromotedBy         string
+	Reason             string
+	PublishedAt        time.Time
+	SupersededAt       time.Time
+	SupersededByDigest string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type AdmitArtifactRequest struct {
@@ -204,15 +200,4 @@ type UpgradeVerificationRequest struct {
 	ArtifactDigest   string
 	LayerDigest      string
 	InstalledVersion string
-}
-
-type TUFMetadata struct {
-	PackageName string
-	Role        string
-	Version     int64
-	Body        []byte
-	BodySHA256  string
-	BodyLength  int64
-	SignedAt    time.Time
-	ExpiresAt   time.Time
 }

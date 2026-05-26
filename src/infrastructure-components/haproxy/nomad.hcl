@@ -260,7 +260,7 @@ backend be_route_product_distribution_api_distribution_service_public_api
   http-response set-header X-Content-Type-Options nosniff
   http-response set-header X-Frame-Options DENY
   acl distribution_allowed path -i /v2/
-  acl distribution_allowed path_beg /api/v1 /tuf/ /v2/
+  acl distribution_allowed path_beg /api/v1 /v2/
   http-request return status 404 unless distribution_allowed
   acl has_content_length req.hdr(content-length) -m found
   acl has_transfer_encoding req.hdr(transfer-encoding) -m found

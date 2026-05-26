@@ -80,7 +80,6 @@ type TargetRecord struct {
 	PackageVersion     string `json:"package_version"`
 	PublicOCIReference string `json:"public_oci_reference"`
 	DownloadURL        string `json:"download_url"`
-	TUFMetadataURL     string `json:"tuf_metadata_url"`
 	State              string `json:"state"`
 }
 

@@ -129,9 +129,6 @@ string RegistryURL
 string DownloadURL
 
 @length(min: 1, max: 4096)
-string TUFMetadataURL
-
-@length(min: 1, max: 4096)
 string SourceRepository
 
 @length(min: 1, max: 128)
@@ -183,9 +180,6 @@ string ReplicationState
 
 @length(min: 1, max: 4096)
 string ActorId
-
-@range(min: 1, max: 9223372036854775807)
-long TUFVersion
 
 @range(min: 1, max: 9223372036854775807)
 long ByteLength
@@ -450,36 +444,20 @@ structure DistributionTargetRecord {
 
     @required
     @protoField(number: 10)
-    tuf_targets_version: TUFVersion
-
-    @required
-    @protoField(number: 11)
-    tuf_snapshot_version: TUFVersion
-
-    @required
-    @protoField(number: 12)
-    tuf_timestamp_version: TUFVersion
-
-    @required
-    @protoField(number: 13)
     public_oci_reference: OCIReference
 
     @required
-    @protoField(number: 14)
+    @protoField(number: 11)
     download_url: DownloadURL
 
     @required
-    @protoField(number: 15)
-    tuf_metadata_url: TUFMetadataURL
-
-    @required
-    @protoField(number: 16)
+    @protoField(number: 12)
     published_at: DateTime
 
-    @protoField(number: 17)
+    @protoField(number: 13)
     superseded_at: DateTime
 
-    @protoField(number: 18)
+    @protoField(number: 14)
     superseded_by_digest: OCIDigest
 }
 
@@ -904,11 +882,6 @@ structure ChannelPolicyFailureError {}
 
 @error("server")
 @httpError(503)
-@problem(type: "urn:verself:problem:distribution:tuf_signing_failure", code: "distribution.tuf_signing_failure")
-structure TUFSigningFailureError {}
-
-@error("server")
-@httpError(503)
 @problem(type: "urn:verself:problem:distribution:replication_failure", code: "distribution.replication_failure")
 structure DistributionReplicationFailureError {}
 
@@ -1033,7 +1006,6 @@ operation PromoteDistributionTarget {
         ConflictError,
         IdempotencyPayloadMismatchError,
         ChannelPolicyFailureError,
-        TUFSigningFailureError,
         QuarantinedArtifactError,
         RateLimitedError,
         ServiceUnavailableError,

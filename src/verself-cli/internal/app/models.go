@@ -151,8 +151,6 @@ type InstallReceipt struct {
 	ArtifactDigest     string    `json:"artifact_digest"`
 	LayerDigest        string    `json:"layer_digest"`
 	PublicOCIReference string    `json:"public_oci_reference"`
-	TUFMetadataURL     string    `json:"tuf_metadata_url"`
-	TUFRootSHA256      string    `json:"tuf_root_sha256"`
 	InstalledPath      string    `json:"installed_path"`
 	Traceparent        string    `json:"traceparent,omitempty"`
 	InstalledAt        time.Time `json:"installed_at"`

@@ -75,9 +75,6 @@ func run() error {
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
-	publicBaseURL := cfg.RequireURL("DISTRIBUTION_PUBLIC_BASE_URL")
-	tufKeyID := cfg.RequireString("DISTRIBUTION_TUF_KEY_ID")
-	tufPrivateKey := cfg.RequireCredential("tuf-ed25519-private-key")
 	trustedBuilders := setFromCSV(cfg.RequireString("DISTRIBUTION_TRUSTED_BUILDERS"))
 	trustedSigners := setFromCSV(cfg.RequireString("DISTRIBUTION_TRUSTED_SIGNERS"))
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
@@ -130,19 +127,13 @@ func run() error {
 		return fmt.Errorf("ping clickhouse: %w", err)
 	}
 
-	signer, err := distribution.NewTUFSigner(tufKeyID, tufPrivateKey)
-	if err != nil {
-		return err
-	}
 	svc := &distribution.Service{
 		Store:           distribution.SQLStore{PG: pg},
 		CH:              chConn,
 		Logger:          logger,
-		Signer:          signer,
 		TrustedBuilders: trustedBuilders,
 		TrustedSigners:  trustedSigners,
 		InstallationID:  installationID,
-		PublicBaseURL:   publicBaseURL,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("distribution readiness: %w", err)
@@ -170,12 +161,10 @@ func run() error {
 	authenticated := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience})(publicMux)
 	rootMux.Handle("/api/v1/distribution/", publicMux)
 	rootMux.Handle("/api/", authenticated)
-	rootMux.Handle("/tuf/", publicMux)
 	rootMux.Handle("/v2/", publicMux)
 
 	internalPeerIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
-		workloadauth.ServiceRelease,
 		workloadauth.ServiceGovernance,
 	)
 	if err != nil {
@@ -247,19 +236,14 @@ func recoveryz(svc *distribution.Service) http.HandlerFunc {
 	type status struct {
 		PostgreSQL string `json:"postgresql"`
 		ClickHouse string `json:"clickhouse"`
-		TUFSigner  string `json:"tuf_signer"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		out := status{PostgreSQL: "ok", ClickHouse: "ok", TUFSigner: "ok"}
+		out := status{PostgreSQL: "ok", ClickHouse: "ok"}
 		code := http.StatusOK
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := svc.Store.Ready(ctx); err != nil {
 			out.PostgreSQL = err.Error()
-			code = http.StatusServiceUnavailable
-		}
-		if err := svc.Signer.Ready(); err != nil {
-			out.TUFSigner = err.Error()
 			code = http.StatusServiceUnavailable
 		}
 		w.Header().Set("Content-Type", "application/json")

@@ -37,7 +37,6 @@ GO_DIRS = [
     "src/tools/operator-runtime/go",
     "src/services/profile-service",
     "src/services/projects-service",
-    "src/services/release-service",
     "src/services/github-integration-service",
     "src/services/sandbox-rental-service",
     "src/services/secrets-service",

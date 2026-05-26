@@ -64,7 +64,7 @@ func TestDistributionResolvesTargetsAndChecksUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target.PublicOCIReference != "oci.verself.sh/verself/mksk@"+digest || target.TUFMetadataURL == "" {
+	if target.PublicOCIReference != "oci.verself.sh/verself/mksk@"+digest {
 		t.Fatalf("unexpected target: %#v", target)
 	}
 	if len(authHeaders) != 2 || authHeaders[0] != "Bearer tok_test" || authHeaders[1] != "Bearer tok_test" {
@@ -142,7 +142,7 @@ func TestDistributionErrorsNormalizeProblemDetails(t *testing.T) {
 
 func distributionTargetJSON(digest string) string {
 	ref := strings.Replace(digest, ":", "-", 1)
-	return `{"resourceName":"urn:verself:test:distribution/packages/mksk/channels/canary/targets/` + ref + `","package_name":"mksk","channel_name":"canary","platform_os":"linux","platform_arch":"amd64","artifact_digest":"` + digest + `","artifact_digest_ref":"` + ref + `","package_version":"0.1.0","state":"published","tuf_targets_version":1,"tuf_snapshot_version":1,"tuf_timestamp_version":1,"public_oci_reference":"oci.verself.sh/verself/mksk@` + digest + `","download_url":"https://oci.verself.sh/v2/verself/mksk/manifests/` + digest + `","tuf_metadata_url":"https://distribution.api.verself.sh/tuf/mksk","published_at":"2026-05-25T12:00:00Z"}`
+	return `{"resourceName":"urn:verself:test:distribution/packages/mksk/channels/canary/targets/` + ref + `","package_name":"mksk","channel_name":"canary","platform_os":"linux","platform_arch":"amd64","artifact_digest":"` + digest + `","artifact_digest_ref":"` + ref + `","package_version":"0.1.0","state":"published","public_oci_reference":"oci.verself.sh/verself/mksk@` + digest + `","download_url":"https://oci.verself.sh/v2/verself/mksk/manifests/` + digest + `","published_at":"2026-05-25T12:00:00Z"}`
 }
 
 func distributionArtifactJSON(digest string) string {

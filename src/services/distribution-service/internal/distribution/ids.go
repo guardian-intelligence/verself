@@ -48,7 +48,3 @@ func publicRegistryHost(publicRegistryURL string) string {
 	registry := strings.TrimSuffix(clean(publicRegistryURL), "/")
 	return strings.TrimPrefix(registry, "https://")
 }
-
-func tufMetadataURL(publicBaseURL, packageName string) string {
-	return strings.TrimSuffix(clean(publicBaseURL), "/") + "/tuf/" + clean(packageName)
-}

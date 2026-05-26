@@ -3,7 +3,6 @@ package app
 import (
 	"archive/tar"
 	"context"
-	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -19,7 +18,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"strings"
 	"time"
 
@@ -71,7 +69,6 @@ type UpgradeResult struct {
 	ArtifactDigest     string    `json:"artifact_digest,omitempty"`
 	LayerDigest        string    `json:"layer_digest,omitempty"`
 	PublicOCIReference string    `json:"public_oci_reference,omitempty"`
-	TUFMetadataURL     string    `json:"tuf_metadata_url,omitempty"`
 	ReceiptPath        string    `json:"receipt_path,omitempty"`
 	Traceparent        string    `json:"traceparent,omitempty"`
 	InstalledAt        time.Time `json:"installed_at,omitempty"`
@@ -153,7 +150,7 @@ func (c CLI) upgradeProduct(ctx context.Context, options upgradeOptions) (Upgrad
 	if channel == "" {
 		channel = defaultUpgradeChannel
 	}
-	client, err := c.distributionUpgradeClient(options.ServerURL, options.DistributionURL, options.Traceparent)
+	client, distributionAPIBase, err := c.distributionUpgradeClient(options.ServerURL, options.DistributionURL, options.Traceparent)
 	if err != nil {
 		return UpgradeResult{}, err
 	}
@@ -185,7 +182,6 @@ func (c CLI) upgradeProduct(ctx context.Context, options upgradeOptions) (Upgrad
 		InstalledVersion:   target.PackageVersion,
 		ArtifactDigest:     target.ArtifactDigest,
 		PublicOCIReference: target.PublicOCIReference,
-		TUFMetadataURL:     target.TUFMetadataURL,
 		ReceiptPath:        store.paths.installReceiptPath(product.ProductName),
 		Traceparent:        firstNonEmpty(check.Traceparent, options.Traceparent),
 	}
@@ -195,27 +191,11 @@ func (c CLI) upgradeProduct(ctx context.Context, options upgradeOptions) (Upgrad
 	if target.ArtifactDigest == "" || target.PublicOCIReference == "" {
 		return UpgradeResult{}, errors.New("distribution target is missing immutable OCI reference")
 	}
-	previousRoot := ""
-	if receiptErr == nil {
-		previousRoot = receipt.TUFRootSHA256
-	}
-	verified, err := verifyUpgradeMetadata(ctx, http.DefaultClient, verifyUpgradeMetadataInput{
-		MetadataBaseURL: target.TUFMetadataURL,
-		PackageName:     product.PackageName,
-		ChannelName:     channel,
-		PlatformOS:      runtime.GOOS,
-		PlatformArch:    runtime.GOARCH,
-		ArtifactDigest:  target.ArtifactDigest,
-		PreviousRoot:    previousRoot,
-	})
-	if err != nil {
-		return UpgradeResult{}, err
-	}
 	layerDigest, err := downloadAndInstallOCI(ctx, http.DefaultClient, store.paths.upgradeCacheDir(product.ProductName), product.BinaryName, binaryPath, target)
 	if err != nil {
 		return UpgradeResult{}, err
 	}
-	if err := recordUpgradeDownloadVerified(ctx, http.DefaultClient, target, product.PackageName, channel, layerDigest, result.Traceparent); err != nil {
+	if err := recordUpgradeDownloadVerified(ctx, http.DefaultClient, distributionAPIBase, target, product.PackageName, channel, layerDigest, result.Traceparent); err != nil {
 		return UpgradeResult{}, err
 	}
 	receipt = InstallReceipt{
@@ -229,8 +209,6 @@ func (c CLI) upgradeProduct(ctx context.Context, options upgradeOptions) (Upgrad
 		ArtifactDigest:     target.ArtifactDigest,
 		LayerDigest:        layerDigest,
 		PublicOCIReference: target.PublicOCIReference,
-		TUFMetadataURL:     target.TUFMetadataURL,
-		TUFRootSHA256:      verified.RootSHA256,
 		InstalledPath:      binaryPath,
 		Traceparent:        result.Traceparent,
 		InstalledAt:        time.Now().UTC(),
@@ -243,7 +221,7 @@ func (c CLI) upgradeProduct(ctx context.Context, options upgradeOptions) (Upgrad
 	return result, nil
 }
 
-func (c CLI) distributionUpgradeClient(serverURL string, distributionURL string, traceparent string) (*verself.Client, error) {
+func (c CLI) distributionUpgradeClient(serverURL string, distributionURL string, traceparent string) (*verself.Client, string, error) {
 	serverURL = strings.TrimSpace(firstNonEmpty(serverURL, c.getenv("VERSELF_SERVER_URL")))
 	distributionURL = strings.TrimSpace(firstNonEmpty(distributionURL, c.getenv("VERSELF_DISTRIBUTION_API_URL")))
 	if store, err := newStore(c.getenv); err == nil {
@@ -252,200 +230,19 @@ func (c CLI) distributionUpgradeClient(serverURL string, distributionURL string,
 			distributionURL = strings.TrimSpace(firstNonEmpty(distributionURL, profile.DistributionURL))
 		}
 	}
-	return verself.New(verself.Options{
+	distributionAPIBase, err := distributionServiceURL(distributionURL, serverURL)
+	if err != nil {
+		return nil, "", err
+	}
+	client, err := verself.New(verself.Options{
 		ServerURL:       serverURL,
-		DistributionURL: distributionURL,
+		DistributionURL: distributionAPIBase,
 		Traceparent:     traceparent,
 	})
-}
-
-type verifyUpgradeMetadataInput struct {
-	MetadataBaseURL string
-	PackageName     string
-	ChannelName     string
-	PlatformOS      string
-	PlatformArch    string
-	ArtifactDigest  string
-	PreviousRoot    string
-}
-
-type verifiedUpgradeMetadata struct {
-	RootSHA256 string
-}
-
-func verifyUpgradeMetadata(ctx context.Context, client *http.Client, input verifyUpgradeMetadataInput) (verifiedUpgradeMetadata, error) {
-	base := strings.TrimRight(strings.TrimSpace(input.MetadataBaseURL), "/")
-	if base == "" {
-		return verifiedUpgradeMetadata{}, errors.New("TUF metadata URL is required")
-	}
-	rootBody, rootEnvelope, err := fetchTUFEnvelope(ctx, client, base, "root")
 	if err != nil {
-		return verifiedUpgradeMetadata{}, err
+		return nil, "", err
 	}
-	rootSHA := sha256Digest(rootBody)
-	// The first receipt pins online root metadata; later updates reject silent root drift.
-	if strings.TrimSpace(input.PreviousRoot) != "" && input.PreviousRoot != rootSHA {
-		return verifiedUpgradeMetadata{}, fmt.Errorf("TUF root changed from %s to %s; explicit reinstall is required", input.PreviousRoot, rootSHA)
-	}
-	var root tufRootSigned
-	if err := json.Unmarshal(rootEnvelope.Signed, &root); err != nil {
-		return verifiedUpgradeMetadata{}, fmt.Errorf("decode TUF root: %w", err)
-	}
-	if err := verifyTUFRole("root", rootEnvelope, root); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	if err := requireNotExpired("root", root.Expires); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	timestampBody, timestampEnvelope, err := fetchTUFEnvelope(ctx, client, base, "timestamp")
-	if err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	if err := verifyTUFRole("timestamp", timestampEnvelope, root); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	var timestamp tufTimestampSigned
-	if err := json.Unmarshal(timestampEnvelope.Signed, &timestamp); err != nil {
-		return verifiedUpgradeMetadata{}, fmt.Errorf("decode TUF timestamp: %w", err)
-	}
-	if err := requireNotExpired("timestamp", timestamp.Expires); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	snapshotBody, snapshotEnvelope, err := fetchTUFEnvelope(ctx, client, base, "snapshot")
-	if err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	if err := verifyTUFMeta("timestamp snapshot", timestamp.Meta["snapshot.json"], snapshotBody); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	if err := verifyTUFRole("snapshot", snapshotEnvelope, root); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	var snapshot tufSnapshotSigned
-	if err := json.Unmarshal(snapshotEnvelope.Signed, &snapshot); err != nil {
-		return verifiedUpgradeMetadata{}, fmt.Errorf("decode TUF snapshot: %w", err)
-	}
-	if err := requireNotExpired("snapshot", snapshot.Expires); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	targetsBody, targetsEnvelope, err := fetchTUFEnvelope(ctx, client, base, "targets")
-	if err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	if err := verifyTUFMeta("snapshot targets", snapshot.Meta["targets.json"], targetsBody); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	if err := verifyTUFRole("targets", targetsEnvelope, root); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	var targets tufTargetsSigned
-	if err := json.Unmarshal(targetsEnvelope.Signed, &targets); err != nil {
-		return verifiedUpgradeMetadata{}, fmt.Errorf("decode TUF targets: %w", err)
-	}
-	if err := requireNotExpired("targets", targets.Expires); err != nil {
-		return verifiedUpgradeMetadata{}, err
-	}
-	targetPath := input.ChannelName + "/" + input.PlatformOS + "/" + input.PlatformArch + "/" + input.PackageName
-	file, ok := targets.Targets[targetPath]
-	if !ok {
-		return verifiedUpgradeMetadata{}, fmt.Errorf("TUF targets missing %s", targetPath)
-	}
-	if file.Hashes["sha256"] != digestHex(input.ArtifactDigest) {
-		return verifiedUpgradeMetadata{}, fmt.Errorf("TUF target digest %s does not match distribution digest %s", file.Hashes["sha256"], input.ArtifactDigest)
-	}
-	if file.Custom.Package != input.PackageName || file.Custom.Channel != input.ChannelName || file.Custom.PlatformOS != input.PlatformOS || file.Custom.PlatformArch != input.PlatformArch {
-		return verifiedUpgradeMetadata{}, errors.New("TUF target custom metadata does not match requested product target")
-	}
-	_ = timestampBody
-	return verifiedUpgradeMetadata{RootSHA256: rootSHA}, nil
-}
-
-func fetchTUFEnvelope(ctx context.Context, client *http.Client, base string, role string) ([]byte, tufEnvelope, error) {
-	if client == nil {
-		client = http.DefaultClient
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/"+role+".json", nil)
-	if err != nil {
-		return nil, tufEnvelope{}, err
-	}
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, tufEnvelope{}, fmt.Errorf("fetch TUF %s: %w", role, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, tufEnvelope{}, fmt.Errorf("read TUF %s: %w", role, err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, tufEnvelope{}, fmt.Errorf("fetch TUF %s failed with HTTP %d", role, resp.StatusCode)
-	}
-	var envelope tufEnvelope
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, tufEnvelope{}, fmt.Errorf("decode TUF %s envelope: %w", role, err)
-	}
-	if len(envelope.Signatures) == 0 || len(envelope.Signed) == 0 {
-		return nil, tufEnvelope{}, fmt.Errorf("TUF %s envelope is unsigned", role)
-	}
-	return body, envelope, nil
-}
-
-func verifyTUFRole(role string, envelope tufEnvelope, root tufRootSigned) error {
-	roleDescription, ok := root.Roles[role]
-	if !ok {
-		return fmt.Errorf("TUF root has no %s role", role)
-	}
-	if roleDescription.Threshold <= 0 {
-		return fmt.Errorf("TUF %s threshold is invalid", role)
-	}
-	verified := map[string]struct{}{}
-	for _, signature := range envelope.Signatures {
-		if !slices.Contains(roleDescription.KeyIDs, signature.KeyID) {
-			continue
-		}
-		key, ok := root.Keys[signature.KeyID]
-		if !ok || key.KeyType != "ed25519" || key.Scheme != "ed25519" {
-			continue
-		}
-		publicHex := key.KeyVal["public"]
-		publicKey, err := hex.DecodeString(publicHex)
-		if err != nil || len(publicKey) != ed25519.PublicKeySize {
-			return fmt.Errorf("TUF %s key %s is invalid", role, signature.KeyID)
-		}
-		sig, err := hex.DecodeString(signature.Signature)
-		if err != nil || len(sig) != ed25519.SignatureSize {
-			return fmt.Errorf("TUF %s signature for key %s is invalid", role, signature.KeyID)
-		}
-		if ed25519.Verify(ed25519.PublicKey(publicKey), envelope.Signed, sig) {
-			verified[signature.KeyID] = struct{}{}
-		}
-	}
-	if len(verified) < roleDescription.Threshold {
-		return fmt.Errorf("TUF %s has %d valid signatures, threshold %d", role, len(verified), roleDescription.Threshold)
-	}
-	return nil
-}
-
-func verifyTUFMeta(label string, meta tufMetaFile, body []byte) error {
-	if meta.Length <= 0 || meta.Length != int64(len(body)) {
-		return fmt.Errorf("TUF %s length mismatch", label)
-	}
-	if meta.Hashes["sha256"] != digestHex(sha256Digest(body)) {
-		return fmt.Errorf("TUF %s sha256 mismatch", label)
-	}
-	return nil
-}
-
-func requireNotExpired(role string, expires string) error {
-	expiresAt, err := time.Parse(time.RFC3339, strings.TrimSpace(expires))
-	if err != nil {
-		return fmt.Errorf("TUF %s expires timestamp is invalid: %w", role, err)
-	}
-	if !time.Now().UTC().Before(expiresAt) {
-		return fmt.Errorf("TUF %s metadata expired at %s", role, expiresAt.Format(time.RFC3339))
-	}
-	return nil
+	return client, distributionAPIBase, nil
 }
 
 func downloadAndInstallOCI(ctx context.Context, client *http.Client, cacheDir string, binaryName string, binaryPath string, target verself.DistributionTarget) (string, error) {
@@ -498,10 +295,10 @@ func downloadAndInstallOCI(ctx context.Context, client *http.Client, cacheDir st
 	return layer.Digest, nil
 }
 
-func recordUpgradeDownloadVerified(ctx context.Context, client *http.Client, target verself.DistributionTarget, packageName string, channelName string, layerDigest string, traceparent string) error {
-	apiBase, err := distributionAPIBaseFromTUF(target.TUFMetadataURL)
-	if err != nil {
-		return err
+func recordUpgradeDownloadVerified(ctx context.Context, client *http.Client, distributionAPIBase string, target verself.DistributionTarget, packageName string, channelName string, layerDigest string, traceparent string) error {
+	apiBase := strings.TrimRight(strings.TrimSpace(distributionAPIBase), "/")
+	if apiBase == "" {
+		return errors.New("distribution API URL is required")
 	}
 	body, err := json.Marshal(map[string]string{
 		"package_name":      packageName,
@@ -535,21 +332,6 @@ func recordUpgradeDownloadVerified(ctx context.Context, client *http.Client, tar
 		return fmt.Errorf("record upgrade verification failed with HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
 	}
 	return nil
-}
-
-func distributionAPIBaseFromTUF(tufMetadataURL string) (string, error) {
-	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(tufMetadataURL), "/"))
-	if err != nil {
-		return "", err
-	}
-	idx := strings.LastIndex(parsed.Path, "/tuf/")
-	if idx < 0 {
-		return "", fmt.Errorf("TUF metadata URL is not under /tuf: %s", tufMetadataURL)
-	}
-	parsed.Path = parsed.Path[:idx]
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
 func httpGetBytes(ctx context.Context, client *http.Client, rawURL string, accept string) ([]byte, error) {
@@ -744,13 +526,61 @@ func blobURLForManifest(manifestURL string, digest string) (string, error) {
 	return parsed.String(), nil
 }
 
+func distributionServiceURL(distributionURL string, serverURL string) (string, error) {
+	if strings.TrimSpace(distributionURL) != "" {
+		return normalizeUpgradeURL(distributionURL)
+	}
+	if strings.TrimSpace(serverURL) == "" {
+		return verself.DefaultDistributionURL, nil
+	}
+	normalized, err := normalizeUpgradeURL(serverURL)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(normalized)
+	if err != nil {
+		return "", err
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return "", errors.New("distribution URL host is empty")
+	}
+	const prefix = "distribution.api."
+	if strings.HasPrefix(host, prefix) {
+		parsed.Path = ""
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return strings.TrimRight(parsed.String(), "/"), nil
+	}
+	if strings.Contains(host, ".api.") {
+		return "", errors.New("server URL must be the installation apex; pass --distribution-url for service API hosts")
+	}
+	serviceHost := prefix + host
+	if port := parsed.Port(); port != "" {
+		serviceHost += ":" + port
+	}
+	parsed.Host = serviceHost
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
+
+func normalizeUpgradeURL(value string) (string, error) {
+	trimmed := strings.TrimRight(strings.TrimSpace(value), "/")
+	if trimmed == "" {
+		return "", errors.New("distribution URL is empty")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("distribution URL must be absolute")
+	}
+	return trimmed, nil
+}
+
 func sha256Digest(body []byte) string {
 	sum := sha256.Sum256(body)
 	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-func digestHex(digest string) string {
-	return strings.TrimPrefix(strings.TrimSpace(digest), "sha256:")
 }
 
 type ociManifest struct {
@@ -764,81 +594,4 @@ type ociDescriptor struct {
 	Digest      string            `json:"digest"`
 	Size        int64             `json:"size"`
 	Annotations map[string]string `json:"annotations,omitempty"`
-}
-
-type tufEnvelope struct {
-	Signatures []tufSignature  `json:"signatures"`
-	Signed     json.RawMessage `json:"signed"`
-}
-
-type tufSignature struct {
-	KeyID     string `json:"keyid"`
-	Signature string `json:"sig"`
-}
-
-type tufRootSigned struct {
-	Type               string             `json:"_type"`
-	SpecVersion        string             `json:"spec_version"`
-	Version            int64              `json:"version"`
-	Expires            string             `json:"expires"`
-	ConsistentSnapshot bool               `json:"consistent_snapshot"`
-	Keys               map[string]tufKey  `json:"keys"`
-	Roles              map[string]tufRole `json:"roles"`
-}
-
-type tufKey struct {
-	KeyType string            `json:"keytype"`
-	Scheme  string            `json:"scheme"`
-	KeyVal  map[string]string `json:"keyval"`
-}
-
-type tufRole struct {
-	KeyIDs    []string `json:"keyids"`
-	Threshold int      `json:"threshold"`
-}
-
-type tufTargetsSigned struct {
-	Type        string                   `json:"_type"`
-	SpecVersion string                   `json:"spec_version"`
-	Version     int64                    `json:"version"`
-	Expires     string                   `json:"expires"`
-	Targets     map[string]tufTargetFile `json:"targets"`
-}
-
-type tufTargetFile struct {
-	Length int64             `json:"length"`
-	Hashes map[string]string `json:"hashes"`
-	Custom tufTargetCustom   `json:"custom"`
-}
-
-type tufTargetCustom struct {
-	OCIReference string `json:"oci_reference"`
-	Package      string `json:"package"`
-	Version      string `json:"version"`
-	Channel      string `json:"channel"`
-	PlatformOS   string `json:"platform_os"`
-	PlatformArch string `json:"platform_arch"`
-	SourceCommit string `json:"source_commit"`
-}
-
-type tufSnapshotSigned struct {
-	Type        string                 `json:"_type"`
-	SpecVersion string                 `json:"spec_version"`
-	Version     int64                  `json:"version"`
-	Expires     string                 `json:"expires"`
-	Meta        map[string]tufMetaFile `json:"meta"`
-}
-
-type tufTimestampSigned struct {
-	Type        string                 `json:"_type"`
-	SpecVersion string                 `json:"spec_version"`
-	Version     int64                  `json:"version"`
-	Expires     string                 `json:"expires"`
-	Meta        map[string]tufMetaFile `json:"meta"`
-}
-
-type tufMetaFile struct {
-	Version int64             `json:"version"`
-	Length  int64             `json:"length"`
-	Hashes  map[string]string `json:"hashes"`
 }

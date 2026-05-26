@@ -294,77 +294,6 @@ func (q *Queries) CreateIdempotencyKey(ctx context.Context, arg CreateIdempotenc
 	return i, err
 }
 
-const createTUFMetadata = `-- name: CreateTUFMetadata :one
-INSERT INTO distribution_tuf_metadata (
-    tuf_metadata_id,
-    package_name,
-    role,
-    version,
-    body,
-    body_sha256,
-    body_length,
-    signed_at,
-    expires_at
-) VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6,
-    $7,
-    $8,
-    $9
-)
-ON CONFLICT (package_name, role, version) DO UPDATE
-SET
-    body = EXCLUDED.body,
-    body_sha256 = EXCLUDED.body_sha256,
-    body_length = EXCLUDED.body_length,
-    signed_at = EXCLUDED.signed_at,
-    expires_at = EXCLUDED.expires_at
-RETURNING tuf_metadata_id, package_name, role, version, body, body_sha256, body_length, signed_at, expires_at
-`
-
-type CreateTUFMetadataParams struct {
-	TufMetadataID uuid.UUID
-	PackageName   string
-	Role          string
-	Version       int64
-	Body          []byte
-	BodySha256    string
-	BodyLength    int64
-	SignedAt      pgtype.Timestamptz
-	ExpiresAt     pgtype.Timestamptz
-}
-
-func (q *Queries) CreateTUFMetadata(ctx context.Context, arg CreateTUFMetadataParams) (DistributionTufMetadatum, error) {
-	row := q.db.QueryRow(ctx, createTUFMetadata,
-		arg.TufMetadataID,
-		arg.PackageName,
-		arg.Role,
-		arg.Version,
-		arg.Body,
-		arg.BodySha256,
-		arg.BodyLength,
-		arg.SignedAt,
-		arg.ExpiresAt,
-	)
-	var i DistributionTufMetadatum
-	err := row.Scan(
-		&i.TufMetadataID,
-		&i.PackageName,
-		&i.Role,
-		&i.Version,
-		&i.Body,
-		&i.BodySha256,
-		&i.BodyLength,
-		&i.SignedAt,
-		&i.ExpiresAt,
-	)
-	return i, err
-}
-
 const ensureArtifactReplication = `-- name: EnsureArtifactReplication :one
 UPDATE distribution_artifacts
 SET
@@ -522,7 +451,7 @@ func (q *Queries) GetArtifactByRepositoryDigest(ctx context.Context, arg GetArti
 }
 
 const getCurrentTarget = `-- name: GetCurrentTarget :one
-SELECT target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, tuf_metadata_url, tuf_targets_version, tuf_snapshot_version, tuf_timestamp_version, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
+SELECT target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
 FROM distribution_channel_targets
 WHERE package_name = $1
   AND channel_name = $2
@@ -560,10 +489,6 @@ func (q *Queries) GetCurrentTarget(ctx context.Context, arg GetCurrentTargetPara
 		&i.State,
 		&i.PublicOciReference,
 		&i.DownloadUrl,
-		&i.TufMetadataUrl,
-		&i.TufTargetsVersion,
-		&i.TufSnapshotVersion,
-		&i.TufTimestampVersion,
 		&i.PolicyRef,
 		&i.PromotedBy,
 		&i.Reason,
@@ -601,56 +526,8 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, arg GetIdempotencyKeyPa
 	return i, err
 }
 
-const getLatestTUFMetadata = `-- name: GetLatestTUFMetadata :one
-SELECT tuf_metadata_id, package_name, role, version, body, body_sha256, body_length, signed_at, expires_at
-FROM distribution_tuf_metadata
-WHERE package_name = $1 AND role = $2
-ORDER BY version DESC
-LIMIT 1
-`
-
-type GetLatestTUFMetadataParams struct {
-	PackageName string
-	Role        string
-}
-
-func (q *Queries) GetLatestTUFMetadata(ctx context.Context, arg GetLatestTUFMetadataParams) (DistributionTufMetadatum, error) {
-	row := q.db.QueryRow(ctx, getLatestTUFMetadata, arg.PackageName, arg.Role)
-	var i DistributionTufMetadatum
-	err := row.Scan(
-		&i.TufMetadataID,
-		&i.PackageName,
-		&i.Role,
-		&i.Version,
-		&i.Body,
-		&i.BodySha256,
-		&i.BodyLength,
-		&i.SignedAt,
-		&i.ExpiresAt,
-	)
-	return i, err
-}
-
-const latestTUFVersion = `-- name: LatestTUFVersion :one
-SELECT coalesce(max(version), 0)::bigint
-FROM distribution_tuf_metadata
-WHERE package_name = $1 AND role = $2
-`
-
-type LatestTUFVersionParams struct {
-	PackageName string
-	Role        string
-}
-
-func (q *Queries) LatestTUFVersion(ctx context.Context, arg LatestTUFVersionParams) (int64, error) {
-	row := q.db.QueryRow(ctx, latestTUFVersion, arg.PackageName, arg.Role)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const listChannelTargets = `-- name: ListChannelTargets :many
-SELECT target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, tuf_metadata_url, tuf_targets_version, tuf_snapshot_version, tuf_timestamp_version, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
+SELECT target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
 FROM distribution_channel_targets
 WHERE package_name = $1
   AND channel_name = $2
@@ -695,10 +572,6 @@ func (q *Queries) ListChannelTargets(ctx context.Context, arg ListChannelTargets
 			&i.State,
 			&i.PublicOciReference,
 			&i.DownloadUrl,
-			&i.TufMetadataUrl,
-			&i.TufTargetsVersion,
-			&i.TufSnapshotVersion,
-			&i.TufTimestampVersion,
 			&i.PolicyRef,
 			&i.PromotedBy,
 			&i.Reason,
@@ -884,10 +757,6 @@ INSERT INTO distribution_channel_targets (
     state,
     public_oci_reference,
     download_url,
-    tuf_metadata_url,
-    tuf_targets_version,
-    tuf_snapshot_version,
-    tuf_timestamp_version,
     policy_ref,
     promoted_by,
     reason,
@@ -911,21 +780,13 @@ INSERT INTO distribution_channel_targets (
     $14,
     $15,
     $16,
-    $17,
-    $18,
-    $19,
-    $20,
-    $21
+    $17
 )
 ON CONFLICT (package_name, channel_name, platform_os, platform_arch, artifact_digest) DO UPDATE
 SET
     state = EXCLUDED.state,
     public_oci_reference = EXCLUDED.public_oci_reference,
     download_url = EXCLUDED.download_url,
-    tuf_metadata_url = EXCLUDED.tuf_metadata_url,
-    tuf_targets_version = EXCLUDED.tuf_targets_version,
-    tuf_snapshot_version = EXCLUDED.tuf_snapshot_version,
-    tuf_timestamp_version = EXCLUDED.tuf_timestamp_version,
     policy_ref = EXCLUDED.policy_ref,
     promoted_by = EXCLUDED.promoted_by,
     reason = EXCLUDED.reason,
@@ -933,31 +794,27 @@ SET
     superseded_at = NULL,
     superseded_by_digest = '',
     updated_at = EXCLUDED.updated_at
-RETURNING target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, tuf_metadata_url, tuf_targets_version, tuf_snapshot_version, tuf_timestamp_version, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
+RETURNING target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
 `
 
 type UpsertPublishedTargetParams struct {
-	TargetID            uuid.UUID
-	PackageName         string
-	ChannelName         string
-	PlatformOs          string
-	PlatformArch        string
-	ArtifactID          uuid.UUID
-	ArtifactDigest      string
-	PackageVersion      string
-	State               string
-	PublicOciReference  string
-	DownloadUrl         string
-	TufMetadataUrl      string
-	TufTargetsVersion   int64
-	TufSnapshotVersion  int64
-	TufTimestampVersion int64
-	PolicyRef           string
-	PromotedBy          string
-	Reason              string
-	PublishedAt         pgtype.Timestamptz
-	CreatedAt           pgtype.Timestamptz
-	UpdatedAt           pgtype.Timestamptz
+	TargetID           uuid.UUID
+	PackageName        string
+	ChannelName        string
+	PlatformOs         string
+	PlatformArch       string
+	ArtifactID         uuid.UUID
+	ArtifactDigest     string
+	PackageVersion     string
+	State              string
+	PublicOciReference string
+	DownloadUrl        string
+	PolicyRef          string
+	PromotedBy         string
+	Reason             string
+	PublishedAt        pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
 }
 
 func (q *Queries) UpsertPublishedTarget(ctx context.Context, arg UpsertPublishedTargetParams) (DistributionChannelTarget, error) {
@@ -973,10 +830,6 @@ func (q *Queries) UpsertPublishedTarget(ctx context.Context, arg UpsertPublished
 		arg.State,
 		arg.PublicOciReference,
 		arg.DownloadUrl,
-		arg.TufMetadataUrl,
-		arg.TufTargetsVersion,
-		arg.TufSnapshotVersion,
-		arg.TufTimestampVersion,
 		arg.PolicyRef,
 		arg.PromotedBy,
 		arg.Reason,
@@ -997,10 +850,6 @@ func (q *Queries) UpsertPublishedTarget(ctx context.Context, arg UpsertPublished
 		&i.State,
 		&i.PublicOciReference,
 		&i.DownloadUrl,
-		&i.TufMetadataUrl,
-		&i.TufTargetsVersion,
-		&i.TufSnapshotVersion,
-		&i.TufTimestampVersion,
 		&i.PolicyRef,
 		&i.PromotedBy,
 		&i.Reason,

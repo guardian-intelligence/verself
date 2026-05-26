@@ -2,8 +2,6 @@ package distribution
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -20,7 +18,7 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 	ctx, svc := newTestService(t)
 	req := admitRequest("a")
 
-	artifact, err := svc.AdmitArtifact(ctx, Principal{Actor: "release-service"}, req)
+	artifact, err := svc.AdmitArtifact(ctx, Principal{Actor: "distribution-rehearsal"}, req)
 	if err != nil {
 		t.Fatalf("admit artifact: %v", err)
 	}
@@ -31,7 +29,7 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		t.Fatalf("retention class = %s, want %s", artifact.RetentionClass, RetentionStable)
 	}
 
-	duplicate, err := svc.AdmitArtifact(ctx, Principal{Actor: "release-service"}, req)
+	duplicate, err := svc.AdmitArtifact(ctx, Principal{Actor: "distribution-rehearsal"}, req)
 	if err != nil {
 		t.Fatalf("admit duplicate artifact: %v", err)
 	}
@@ -39,14 +37,14 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		t.Fatalf("duplicate artifact id = %s, want %s", duplicate.ArtifactID, artifact.ArtifactID)
 	}
 
-	target, err := svc.PromoteTarget(ctx, Principal{Actor: "release-service"}, PromoteTargetRequest{
+	target, err := svc.PromoteTarget(ctx, Principal{Actor: "distribution-rehearsal"}, PromoteTargetRequest{
 		PackageName:    req.PackageName,
 		ChannelName:    req.ChannelName,
 		ArtifactDigest: req.OCIDigest,
 		PlatformOS:     req.PlatformOS,
 		PlatformArch:   req.PlatformArch,
 		PolicyRef:      req.PolicyRef,
-		PromotedBy:     "release-service",
+		PromotedBy:     "distribution-rehearsal",
 		Reason:         "release rehearsal",
 		IdempotencyKey: "promote-1",
 	})
@@ -56,18 +54,15 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 	if target.State != TargetStatePublished {
 		t.Fatalf("target state = %s, want %s", target.State, TargetStatePublished)
 	}
-	if target.TUFTargetsVersion != 1 || target.TUFSnapshotVersion != 1 || target.TUFTimestampVersion != 1 {
-		t.Fatalf("tuf versions = %d/%d/%d, want 1/1/1", target.TUFTargetsVersion, target.TUFSnapshotVersion, target.TUFTimestampVersion)
-	}
 
-	replayed, err := svc.PromoteTarget(ctx, Principal{Actor: "release-service"}, PromoteTargetRequest{
+	replayed, err := svc.PromoteTarget(ctx, Principal{Actor: "distribution-rehearsal"}, PromoteTargetRequest{
 		PackageName:    req.PackageName,
 		ChannelName:    req.ChannelName,
 		ArtifactDigest: req.OCIDigest,
 		PlatformOS:     req.PlatformOS,
 		PlatformArch:   req.PlatformArch,
 		PolicyRef:      req.PolicyRef,
-		PromotedBy:     "release-service",
+		PromotedBy:     "distribution-rehearsal",
 		Reason:         "release rehearsal",
 		IdempotencyKey: "promote-1",
 	})
@@ -76,13 +71,6 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 	}
 	if replayed.TargetID != target.TargetID {
 		t.Fatalf("replayed target id = %s, want %s", replayed.TargetID, target.TargetID)
-	}
-	meta, err := svc.TUFMetadata(ctx, req.PackageName, "targets")
-	if err != nil {
-		t.Fatalf("load tuf targets: %v", err)
-	}
-	if meta.Version != 1 {
-		t.Fatalf("replayed promote advanced TUF version to %d, want 1", meta.Version)
 	}
 
 	resolved, err := svc.ResolveTarget(ctx, Principal{Actor: "cli"}, ResolveTargetRequest{
@@ -142,7 +130,7 @@ func TestAdmissionRequiresCompleteTrustedEvidence(t *testing.T) {
 	req := admitRequest("b")
 	req.Evidence = req.Evidence[:2]
 
-	_, err := svc.AdmitArtifact(context.Background(), Principal{Actor: "release-service"}, req)
+	_, err := svc.AdmitArtifact(context.Background(), Principal{Actor: "distribution-rehearsal"}, req)
 	if !errors.Is(err, ErrMissingReferrers) {
 		t.Fatalf("admit missing evidence error = %v, want %v", err, ErrMissingReferrers)
 	}
@@ -166,17 +154,8 @@ func newTestService(t *testing.T) (context.Context, *Service) {
 	}
 	t.Cleanup(pg.Close)
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-	seed := make([]byte, ed25519.SeedSize)
-	for i := range seed {
-		seed[i] = byte(i + 1)
-	}
-	signer, err := NewTUFSigner("test-key", base64.StdEncoding.EncodeToString(seed))
-	if err != nil {
-		t.Fatalf("create tuf signer: %v", err)
-	}
 	return ctx, &Service{
-		Store:  SQLStore{PG: pg},
-		Signer: signer,
+		Store: SQLStore{PG: pg},
 		TrustedBuilders: map[string]struct{}{
 			"spiffe://prod.verself.sh/svc/release-builder": {},
 		},
@@ -184,7 +163,6 @@ func newTestService(t *testing.T) (context.Context, *Service) {
 			"https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main": {},
 		},
 		InstallationID: "test",
-		PublicBaseURL:  "https://distribution.api.verself.sh",
 		Now: func() time.Time {
 			now = now.Add(time.Second)
 			return now
@@ -219,7 +197,7 @@ func admitRequest(digestFill string) AdmitArtifactRequest {
 			evidence(EvidenceSBOM, "https://spdx.dev/Document", digest, "e"),
 			evidence(EvidenceTest, "https://verself.sh/test-evidence/v1", digest, "f"),
 		},
-		SubmittedBy:    "release-service",
+		SubmittedBy:    "distribution-rehearsal",
 		IdempotencyKey: "admit-" + digestFill,
 	}
 }

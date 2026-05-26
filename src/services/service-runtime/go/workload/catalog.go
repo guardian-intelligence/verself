@@ -20,7 +20,6 @@ const (
 	ServiceOTelCollector      = "otelcol"
 	ServiceProfile            = "profile-service"
 	ServiceProjects           = "projects-service"
-	ServiceRelease            = "release-service"
 	ServiceSandboxRental      = "sandbox-rental-service"
 	ServiceSecrets            = "secrets-service"
 	ServiceSourceCodeHosting  = "source-code-hosting-service"

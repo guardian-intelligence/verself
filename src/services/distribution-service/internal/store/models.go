@@ -56,29 +56,25 @@ type DistributionArtifactEvidence struct {
 }
 
 type DistributionChannelTarget struct {
-	TargetID            uuid.UUID
-	PackageName         string
-	ChannelName         string
-	PlatformOs          string
-	PlatformArch        string
-	ArtifactID          uuid.UUID
-	ArtifactDigest      string
-	PackageVersion      string
-	State               string
-	PublicOciReference  string
-	DownloadUrl         string
-	TufMetadataUrl      string
-	TufTargetsVersion   int64
-	TufSnapshotVersion  int64
-	TufTimestampVersion int64
-	PolicyRef           string
-	PromotedBy          string
-	Reason              string
-	PublishedAt         pgtype.Timestamptz
-	SupersededAt        pgtype.Timestamptz
-	SupersededByDigest  string
-	CreatedAt           pgtype.Timestamptz
-	UpdatedAt           pgtype.Timestamptz
+	TargetID           uuid.UUID
+	PackageName        string
+	ChannelName        string
+	PlatformOs         string
+	PlatformArch       string
+	ArtifactID         uuid.UUID
+	ArtifactDigest     string
+	PackageVersion     string
+	State              string
+	PublicOciReference string
+	DownloadUrl        string
+	PolicyRef          string
+	PromotedBy         string
+	Reason             string
+	PublishedAt        pgtype.Timestamptz
+	SupersededAt       pgtype.Timestamptz
+	SupersededByDigest string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
 }
 
 type DistributionIdempotencyKey struct {
@@ -88,16 +84,4 @@ type DistributionIdempotencyKey struct {
 	ResourceKind   string
 	ResourceID     string
 	CreatedAt      pgtype.Timestamptz
-}
-
-type DistributionTufMetadatum struct {
-	TufMetadataID uuid.UUID
-	PackageName   string
-	Role          string
-	Version       int64
-	Body          []byte
-	BodySha256    string
-	BodyLength    int64
-	SignedAt      pgtype.Timestamptz
-	ExpiresAt     pgtype.Timestamptz
 }

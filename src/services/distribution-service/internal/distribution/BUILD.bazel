@@ -8,7 +8,6 @@ go_library(
         "ids.go",
         "service.go",
         "sql_store.go",
-        "tuf.go",
         "types.go",
         "validate.go",
     ],

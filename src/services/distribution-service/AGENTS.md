@@ -1,9 +1,9 @@
 # distribution-service
 
-distribution-service owns artifact admission, channel resolution,
-signed update metadata, retention, and edge replication over Zot-hosted OCI
-artifacts. It does not build artifacts, publish to external package providers,
-or replace Zot as the byte store.
+distribution-service owns artifact admission, channel resolution, retention,
+and edge replication over Zot-hosted OCI artifacts. It does not build
+artifacts, publish to external package providers, own updater metadata, or
+replace Zot as the byte store.
 
 ## Standards
 
@@ -17,10 +17,9 @@ Use open standards as the durable contract surface:
 - SLSA provenance `https://slsa.dev/provenance/v1` for build provenance.
 - SLSA Verification Summary Attestation `https://slsa.dev/verification_summary/v1`
   when distribution-service records a policy verification decision.
-- TUF for signed channel/update metadata and rollback protection.
 
 Do not add a repo-specific "release ledger" abstraction. If extra state is
-needed, model it as distribution state over standard OCI/TUF/in-toto objects.
+needed, model it as distribution state over standard OCI/in-toto objects.
 
 ## API Contract
 
@@ -30,12 +29,12 @@ service calls use SPIFFE mTLS and service-local typed clients.
 
 Initial operations:
 
-- `AdmitArtifact`: register an immutable Zot OCI digest after CI pushed bytes,
-  signature, provenance, SBOM, and required referrers.
+- `AdmitArtifact`: register an immutable Zot OCI digest after an authorized
+  builder pushed bytes, signature, provenance, SBOM, and required referrers.
 - `GetArtifact`: return artifact state, verification result, retention class,
   quarantine state, and relevant OCI descriptor data.
 - `PromoteTarget`: advance a package channel to a verified immutable digest and
-  publish signed TUF metadata.
+  make it available through channel resolution.
 - `ResolveTarget`: resolve package, channel, platform, audience, and policy to
   an immutable OCI digest and download endpoint.
 - `ListChannelTargets`: return channel history with signed target metadata
@@ -44,7 +43,6 @@ Initial operations:
   bytes or evidence.
 - `EnsureReplication`: request or repair artifact and referrer replication to
   edge mirrors.
-- `GetTUFMetadata`: serve TUF metadata for clients and mirrors.
 
 Required resource names:
 
@@ -57,7 +55,7 @@ Required resource names:
 
 Use stable problem types for missing OCI referrers, digest mismatch, untrusted
 builder, untrusted signer, source policy failure, channel policy failure,
-TUF signing failure, replication failure, and quarantined artifact resolution.
+replication failure, and quarantined artifact resolution.
 
 ## State Machines
 
@@ -85,7 +83,6 @@ Channel target state:
 ```text
 draft_target
   -> policy_checked
-  -> tuf_signed
   -> published
   -> superseded
 
@@ -109,13 +106,14 @@ from any channel:
   package and channel.
 - The source repository, source commit, Bazel target, package name, version, and
   channel are authorized by package policy.
-- The artifact was produced by CI, not by distribution-service.
+- The artifact was produced by an authorized builder, not by
+  distribution-service.
 - Required SBOM and test evidence are present before stable or RC promotion.
 - Nightly policy may be weaker, but the channel must make that visible.
 
 SLSA target:
 
-- Near term: Build L2 for CI-produced artifacts with signed provenance from a
+- Near term: Build L2 for artifacts with signed provenance from a
   hosted/hardened Verself builder mode.
 - Longer term: Build L3 only after build steps cannot access signing material or
   tamper with provenance generation.

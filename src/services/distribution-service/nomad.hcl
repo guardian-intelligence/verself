@@ -30,10 +30,8 @@ job "distribution-service" {
         command = "local/bin/distribution-service"
       }
       env {
-        DISTRIBUTION_PUBLIC_BASE_URL = "https://distribution.api.verself.sh"
         DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/release-builder"
         DISTRIBUTION_TRUSTED_SIGNERS = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
-        DISTRIBUTION_TUF_KEY_ID = "verself-distribution-ed25519-v1"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "distribution-service-migration"
@@ -43,7 +41,6 @@ job "distribution-service" {
         VERSELF_CLICKHOUSE_USER = "distribution_service"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/distribution-service/auth-audience"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/distribution-service/clickhouse-ca-cert"
-        VERSELF_CRED_TUF_ED25519_PRIVATE_KEY = "/etc/credstore/distribution-service/tuf-ed25519-private-key"
         VERSELF_INSTALLATION_ID = "inst_5NZSEA08R8P3HN566DNH8D301M"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -71,10 +68,8 @@ job "distribution-service" {
         command = "local/bin/distribution-service"
       }
       env {
-        DISTRIBUTION_PUBLIC_BASE_URL = "https://distribution.api.verself.sh"
         DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/release-builder"
         DISTRIBUTION_TRUSTED_SIGNERS = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
-        DISTRIBUTION_TUF_KEY_ID = "verself-distribution-ed25519-v1"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "distribution-service"
@@ -84,7 +79,6 @@ job "distribution-service" {
         VERSELF_CLICKHOUSE_USER = "distribution_service"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/distribution-service/auth-audience"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/distribution-service/clickhouse-ca-cert"
-        VERSELF_CRED_TUF_ED25519_PRIVATE_KEY = "/etc/credstore/distribution-service/tuf-ed25519-private-key"
         VERSELF_INSTALLATION_ID = "inst_5NZSEA08R8P3HN566DNH8D301M"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"

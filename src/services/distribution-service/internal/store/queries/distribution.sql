@@ -189,10 +189,6 @@ INSERT INTO distribution_channel_targets (
     state,
     public_oci_reference,
     download_url,
-    tuf_metadata_url,
-    tuf_targets_version,
-    tuf_snapshot_version,
-    tuf_timestamp_version,
     policy_ref,
     promoted_by,
     reason,
@@ -211,10 +207,6 @@ INSERT INTO distribution_channel_targets (
     @state,
     @public_oci_reference,
     @download_url,
-    @tuf_metadata_url,
-    @tuf_targets_version,
-    @tuf_snapshot_version,
-    @tuf_timestamp_version,
     @policy_ref,
     @promoted_by,
     @reason,
@@ -227,10 +219,6 @@ SET
     state = EXCLUDED.state,
     public_oci_reference = EXCLUDED.public_oci_reference,
     download_url = EXCLUDED.download_url,
-    tuf_metadata_url = EXCLUDED.tuf_metadata_url,
-    tuf_targets_version = EXCLUDED.tuf_targets_version,
-    tuf_snapshot_version = EXCLUDED.tuf_snapshot_version,
-    tuf_timestamp_version = EXCLUDED.tuf_timestamp_version,
     policy_ref = EXCLUDED.policy_ref,
     promoted_by = EXCLUDED.promoted_by,
     reason = EXCLUDED.reason,
@@ -249,46 +237,3 @@ WHERE package_name = @package_name
   AND (@platform_arch::text = '' OR platform_arch = @platform_arch)
 ORDER BY published_at DESC, target_id DESC
 LIMIT @limit_count;
-
--- name: LatestTUFVersion :one
-SELECT coalesce(max(version), 0)::bigint
-FROM distribution_tuf_metadata
-WHERE package_name = @package_name AND role = @role;
-
--- name: CreateTUFMetadata :one
-INSERT INTO distribution_tuf_metadata (
-    tuf_metadata_id,
-    package_name,
-    role,
-    version,
-    body,
-    body_sha256,
-    body_length,
-    signed_at,
-    expires_at
-) VALUES (
-    @tuf_metadata_id,
-    @package_name,
-    @role,
-    @version,
-    @body,
-    @body_sha256,
-    @body_length,
-    @signed_at,
-    @expires_at
-)
-ON CONFLICT (package_name, role, version) DO UPDATE
-SET
-    body = EXCLUDED.body,
-    body_sha256 = EXCLUDED.body_sha256,
-    body_length = EXCLUDED.body_length,
-    signed_at = EXCLUDED.signed_at,
-    expires_at = EXCLUDED.expires_at
-RETURNING *;
-
--- name: GetLatestTUFMetadata :one
-SELECT *
-FROM distribution_tuf_metadata
-WHERE package_name = @package_name AND role = @role
-ORDER BY version DESC
-LIMIT 1;

@@ -62,13 +62,9 @@ CREATE TABLE distribution_channel_targets (
     artifact_id UUID NOT NULL REFERENCES distribution_artifacts (artifact_id),
     artifact_digest TEXT NOT NULL CHECK (artifact_digest ~ '^sha256:[a-f0-9]{64}$'),
     package_version TEXT NOT NULL CHECK (length(btrim(package_version)) > 0),
-    state TEXT NOT NULL CHECK (state IN ('draft_target', 'policy_checked', 'tuf_signed', 'published', 'superseded', 'denied', 'rollback_target_published')),
+    state TEXT NOT NULL CHECK (state IN ('draft_target', 'policy_checked', 'published', 'superseded', 'denied', 'rollback_target_published')),
     public_oci_reference TEXT NOT NULL CHECK (length(btrim(public_oci_reference)) > 0),
     download_url TEXT NOT NULL CHECK (length(btrim(download_url)) > 0),
-    tuf_metadata_url TEXT NOT NULL CHECK (length(btrim(tuf_metadata_url)) > 0),
-    tuf_targets_version BIGINT NOT NULL CHECK (tuf_targets_version > 0),
-    tuf_snapshot_version BIGINT NOT NULL CHECK (tuf_snapshot_version > 0),
-    tuf_timestamp_version BIGINT NOT NULL CHECK (tuf_timestamp_version > 0),
     policy_ref TEXT NOT NULL CHECK (length(btrim(policy_ref)) > 0),
     promoted_by TEXT NOT NULL CHECK (length(btrim(promoted_by)) > 0),
     reason TEXT NOT NULL CHECK (length(btrim(reason)) > 0),
@@ -86,22 +82,6 @@ CREATE UNIQUE INDEX distribution_channel_targets_current_idx
 
 CREATE INDEX distribution_channel_targets_history_idx
     ON distribution_channel_targets (package_name, channel_name, platform_os, platform_arch, published_at DESC);
-
-CREATE TABLE distribution_tuf_metadata (
-    tuf_metadata_id UUID PRIMARY KEY,
-    package_name TEXT NOT NULL CHECK (package_name ~ '^[a-z0-9][a-z0-9._-]*[a-z0-9]$'),
-    role TEXT NOT NULL CHECK (role IN ('root', 'timestamp', 'snapshot', 'targets')),
-    version BIGINT NOT NULL CHECK (version > 0),
-    body BYTEA NOT NULL,
-    body_sha256 TEXT NOT NULL CHECK (body_sha256 ~ '^sha256:[a-f0-9]{64}$'),
-    body_length BIGINT NOT NULL CHECK (body_length > 0),
-    signed_at TIMESTAMPTZ NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL,
-    UNIQUE (package_name, role, version)
-);
-
-CREATE INDEX distribution_tuf_metadata_latest_idx
-    ON distribution_tuf_metadata (package_name, role, version DESC);
 
 CREATE TABLE distribution_idempotency_keys (
     scope TEXT NOT NULL CHECK (length(btrim(scope)) > 0),

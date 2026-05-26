@@ -257,19 +257,7 @@ func (s SQLStore) EnsureReplication(ctx context.Context, req EnsureReplicationRe
 	return artifact, nil
 }
 
-func (s SQLStore) LatestTUFVersion(ctx context.Context, packageName, role string) (int64, error) {
-	q, err := s.queries()
-	if err != nil {
-		return 0, err
-	}
-	version, err := q.LatestTUFVersion(ctx, distributionstore.LatestTUFVersionParams{PackageName: packageName, Role: role})
-	if err != nil {
-		return 0, storeError(err)
-	}
-	return version, nil
-}
-
-func (s SQLStore) PublishTarget(ctx context.Context, req PromoteTargetRequest, artifact Artifact, metadata []TUFMetadata, publicBaseURL string, payloadDigest string, now time.Time) (Target, error) {
+func (s SQLStore) PublishTarget(ctx context.Context, req PromoteTargetRequest, artifact Artifact, payloadDigest string, now time.Time) (Target, error) {
 	tx, q, err := s.begin(ctx)
 	if err != nil {
 		return Target{}, err
@@ -286,21 +274,6 @@ func (s SQLStore) PublishTarget(ctx context.Context, req PromoteTargetRequest, a
 		}
 		return Target{}, err
 	}
-	for _, meta := range metadata {
-		if _, err := q.CreateTUFMetadata(ctx, distributionstore.CreateTUFMetadataParams{
-			TufMetadataID: uuid.New(),
-			PackageName:   meta.PackageName,
-			Role:          meta.Role,
-			Version:       meta.Version,
-			Body:          meta.Body,
-			BodySha256:    meta.BodySHA256,
-			BodyLength:    meta.BodyLength,
-			SignedAt:      pgTime(meta.SignedAt),
-			ExpiresAt:     pgTime(meta.ExpiresAt),
-		}); err != nil {
-			return Target{}, storeError(err)
-		}
-	}
 	if err := q.SupersedeCurrentTargets(ctx, distributionstore.SupersedeCurrentTargetsParams{
 		PackageName:        req.PackageName,
 		ChannelName:        req.ChannelName,
@@ -312,29 +285,24 @@ func (s SQLStore) PublishTarget(ctx context.Context, req PromoteTargetRequest, a
 	}); err != nil {
 		return Target{}, storeError(err)
 	}
-	versions := tufVersionsFromMetadata(metadata)
 	row, err := q.UpsertPublishedTarget(ctx, distributionstore.UpsertPublishedTargetParams{
-		TargetID:            uuid.New(),
-		PackageName:         req.PackageName,
-		ChannelName:         req.ChannelName,
-		PlatformOs:          req.PlatformOS,
-		PlatformArch:        req.PlatformArch,
-		ArtifactID:          uuid.MustParse(artifact.ArtifactID),
-		ArtifactDigest:      artifact.OCIDigest,
-		PackageVersion:      artifact.PackageVersion,
-		State:               TargetStatePublished,
-		PublicOciReference:  artifact.PublicOCIReference,
-		DownloadUrl:         downloadURL(artifact.PublicRegistryURL, artifact.OCIRepository, artifact.OCIDigest),
-		TufMetadataUrl:      tufMetadataURL(publicBaseURL, artifact.PackageName),
-		TufTargetsVersion:   versions.Targets,
-		TufSnapshotVersion:  versions.Snapshot,
-		TufTimestampVersion: versions.Timestamp,
-		PolicyRef:           req.PolicyRef,
-		PromotedBy:          req.PromotedBy,
-		Reason:              req.Reason,
-		PublishedAt:         pgTime(now),
-		CreatedAt:           pgTime(now),
-		UpdatedAt:           pgTime(now),
+		TargetID:           uuid.New(),
+		PackageName:        req.PackageName,
+		ChannelName:        req.ChannelName,
+		PlatformOs:         req.PlatformOS,
+		PlatformArch:       req.PlatformArch,
+		ArtifactID:         uuid.MustParse(artifact.ArtifactID),
+		ArtifactDigest:     artifact.OCIDigest,
+		PackageVersion:     artifact.PackageVersion,
+		State:              TargetStatePublished,
+		PublicOciReference: artifact.PublicOCIReference,
+		DownloadUrl:        downloadURL(artifact.PublicRegistryURL, artifact.OCIRepository, artifact.OCIDigest),
+		PolicyRef:          req.PolicyRef,
+		PromotedBy:         req.PromotedBy,
+		Reason:             req.Reason,
+		PublishedAt:        pgTime(now),
+		CreatedAt:          pgTime(now),
+		UpdatedAt:          pgTime(now),
 	})
 	if err != nil {
 		return Target{}, storeError(err)
@@ -382,27 +350,6 @@ func (s SQLStore) ListTargets(ctx context.Context, packageName, channelName, pla
 		targets = append(targets, targetFromStore(row))
 	}
 	return targets, nil
-}
-
-func (s SQLStore) LatestTUFMetadata(ctx context.Context, packageName, role string) (TUFMetadata, error) {
-	q, err := s.queries()
-	if err != nil {
-		return TUFMetadata{}, err
-	}
-	row, err := q.GetLatestTUFMetadata(ctx, distributionstore.GetLatestTUFMetadataParams{PackageName: packageName, Role: role})
-	if err != nil {
-		return TUFMetadata{}, storeError(err)
-	}
-	return TUFMetadata{
-		PackageName: row.PackageName,
-		Role:        row.Role,
-		Version:     row.Version,
-		Body:        row.Body,
-		BodySHA256:  row.BodySha256,
-		BodyLength:  row.BodyLength,
-		SignedAt:    timeFromPG(row.SignedAt),
-		ExpiresAt:   timeFromPG(row.ExpiresAt),
-	}, nil
 }
 
 func (s SQLStore) artifactWithEvidence(ctx context.Context, q *distributionstore.Queries, row distributionstore.DistributionArtifact) (Artifact, error) {
@@ -552,51 +499,26 @@ func artifactFromStore(row distributionstore.DistributionArtifact, evidence []Ev
 
 func targetFromStore(row distributionstore.DistributionChannelTarget) Target {
 	return Target{
-		TargetID:            row.TargetID.String(),
-		PackageName:         row.PackageName,
-		ChannelName:         row.ChannelName,
-		PlatformOS:          row.PlatformOs,
-		PlatformArch:        row.PlatformArch,
-		ArtifactID:          row.ArtifactID.String(),
-		ArtifactDigest:      row.ArtifactDigest,
-		PackageVersion:      row.PackageVersion,
-		State:               row.State,
-		PublicOCIReference:  row.PublicOciReference,
-		DownloadURL:         row.DownloadUrl,
-		TUFMetadataURL:      row.TufMetadataUrl,
-		TUFTargetsVersion:   row.TufTargetsVersion,
-		TUFSnapshotVersion:  row.TufSnapshotVersion,
-		TUFTimestampVersion: row.TufTimestampVersion,
-		PolicyRef:           row.PolicyRef,
-		PromotedBy:          row.PromotedBy,
-		Reason:              row.Reason,
-		PublishedAt:         timeFromPG(row.PublishedAt),
-		SupersededAt:        timeFromPG(row.SupersededAt),
-		SupersededByDigest:  row.SupersededByDigest,
-		CreatedAt:           timeFromPG(row.CreatedAt),
-		UpdatedAt:           timeFromPG(row.UpdatedAt),
+		TargetID:           row.TargetID.String(),
+		PackageName:        row.PackageName,
+		ChannelName:        row.ChannelName,
+		PlatformOS:         row.PlatformOs,
+		PlatformArch:       row.PlatformArch,
+		ArtifactID:         row.ArtifactID.String(),
+		ArtifactDigest:     row.ArtifactDigest,
+		PackageVersion:     row.PackageVersion,
+		State:              row.State,
+		PublicOCIReference: row.PublicOciReference,
+		DownloadURL:        row.DownloadUrl,
+		PolicyRef:          row.PolicyRef,
+		PromotedBy:         row.PromotedBy,
+		Reason:             row.Reason,
+		PublishedAt:        timeFromPG(row.PublishedAt),
+		SupersededAt:       timeFromPG(row.SupersededAt),
+		SupersededByDigest: row.SupersededByDigest,
+		CreatedAt:          timeFromPG(row.CreatedAt),
+		UpdatedAt:          timeFromPG(row.UpdatedAt),
 	}
-}
-
-type tufVersions struct {
-	Targets   int64
-	Snapshot  int64
-	Timestamp int64
-}
-
-func tufVersionsFromMetadata(metadata []TUFMetadata) tufVersions {
-	versions := tufVersions{}
-	for _, item := range metadata {
-		switch item.Role {
-		case "targets":
-			versions.Targets = item.Version
-		case "snapshot":
-			versions.Snapshot = item.Version
-		case "timestamp":
-			versions.Timestamp = item.Version
-		}
-	}
-	return versions
 }
 
 func retentionClass(channel string) string {

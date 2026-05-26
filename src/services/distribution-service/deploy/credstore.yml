@@ -1,4 +1,0 @@
-credstore_secret_files:
-  - path: /etc/credstore/distribution-service/tuf-ed25519-private-key
-    group: distribution_service
-    site_secret: distribution_service_tuf_ed25519_seed

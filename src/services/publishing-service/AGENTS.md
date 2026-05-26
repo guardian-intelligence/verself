@@ -1,7 +1,8 @@
 # publishing-service
 
-Deferred service split. release-service owns provider fan-out until this
-boundary is extracted.
+Deferred service split. Do not implement this service until package-owned
+release tooling and distribution-service admission require external provider
+fan-out.
 
 The future publishing-service owns external publication fan-out for artifacts
 that distribution-service has already admitted. It translates verified immutable
@@ -10,9 +11,7 @@ Release creation, newsroom publication, docs updates, and package-index updates.
 
 ## Boundary
 
-- Do not implement this service while release-service is the active release
-  control plane. Treat this file as the target boundary for the later
-  extraction.
+- Treat this file as the target boundary for the later extraction.
 - Owns provider-specific publication workflows, credentials, idempotency,
   provider receipts, reconciliation, and provider audit evidence.
 - Consumes immutable artifact digests and verification state from
@@ -23,8 +22,9 @@ Release creation, newsroom publication, docs updates, and package-index updates.
   credentials or arbitrary publish code.
 - Treats external providers as separate systems of record. Every publication
   must reconcile provider ground truth after dispatch.
-- Does not mutate TUF channel metadata directly. Stable, RC, nightly, and other
-  channels are distribution-service state.
+- Does not mutate channel pointers directly. Stable, RC, nightly, and other
+  channels are distribution-service state exposed through OCI admission and
+  read gating.
 - Does not sign SLSA build provenance. It may sign provider receipt attestations
   or request distribution-service verification summaries when needed.
 
@@ -152,7 +152,8 @@ Release candidate:
 Nightly:
 
 - Default to no external provider publication. Nightlies should usually be
-  distributed through Zot/TUF only.
+  distributed through the internal OCI registry and distribution-service
+  channel resolution only.
 - If public nightlies are required, publish immutable prerelease versions with a
   clear nightly version scheme and provider tag such as `nightly`.
 - Never overwrite or reuse a provider version. Provider history is append-only
@@ -218,7 +219,7 @@ a provider-specific predicate URI until a stronger ecosystem standard exists.
 
 - No build execution.
 - No Zot byte storage ownership.
-- No TUF channel pointer mutation.
+- No distribution channel pointer mutation.
 - No Nomad release orchestration.
 - No arbitrary package-owned provider plugin execution with privileged
   credentials.

@@ -70,24 +70,20 @@ type DistributionArtifact struct {
 }
 
 type DistributionTarget struct {
-	ResourceName        string     `json:"resourceName"`
-	PackageName         string     `json:"package_name"`
-	ChannelName         string     `json:"channel_name"`
-	PlatformOS          string     `json:"platform_os"`
-	PlatformArch        string     `json:"platform_arch"`
-	ArtifactDigest      string     `json:"artifact_digest"`
-	ArtifactDigestRef   string     `json:"artifact_digest_ref"`
-	PackageVersion      string     `json:"package_version"`
-	State               string     `json:"state"`
-	TUFTargetsVersion   int64      `json:"tuf_targets_version"`
-	TUFSnapshotVersion  int64      `json:"tuf_snapshot_version"`
-	TUFTimestampVersion int64      `json:"tuf_timestamp_version"`
-	PublicOCIReference  string     `json:"public_oci_reference"`
-	DownloadURL         string     `json:"download_url"`
-	TUFMetadataURL      string     `json:"tuf_metadata_url"`
-	PublishedAt         time.Time  `json:"published_at"`
-	SupersededAt        *time.Time `json:"superseded_at,omitempty"`
-	SupersededByDigest  string     `json:"superseded_by_digest,omitempty"`
+	ResourceName       string     `json:"resourceName"`
+	PackageName        string     `json:"package_name"`
+	ChannelName        string     `json:"channel_name"`
+	PlatformOS         string     `json:"platform_os"`
+	PlatformArch       string     `json:"platform_arch"`
+	ArtifactDigest     string     `json:"artifact_digest"`
+	ArtifactDigestRef  string     `json:"artifact_digest_ref"`
+	PackageVersion     string     `json:"package_version"`
+	State              string     `json:"state"`
+	PublicOCIReference string     `json:"public_oci_reference"`
+	DownloadURL        string     `json:"download_url"`
+	PublishedAt        time.Time  `json:"published_at"`
+	SupersededAt       *time.Time `json:"superseded_at,omitempty"`
+	SupersededByDigest string     `json:"superseded_by_digest,omitempty"`
 }
 
 type DistributionUpdateCheck struct {
@@ -226,24 +222,20 @@ func (c *DistributionClient) ListTargets(ctx context.Context, options Distributi
 
 func distributionTargetFromCore(input distributioncore.TargetRecord) DistributionTarget {
 	return DistributionTarget{
-		ResourceName:        input.ResourceName,
-		PackageName:         input.PackageName,
-		ChannelName:         input.ChannelName,
-		PlatformOS:          input.PlatformOS,
-		PlatformArch:        input.PlatformArch,
-		ArtifactDigest:      input.ArtifactDigest,
-		ArtifactDigestRef:   input.ArtifactDigestRef,
-		PackageVersion:      input.PackageVersion,
-		State:               input.State,
-		TUFTargetsVersion:   input.TUFTargetsVersion,
-		TUFSnapshotVersion:  input.TUFSnapshotVersion,
-		TUFTimestampVersion: input.TUFTimestampVersion,
-		PublicOCIReference:  input.PublicOCIReference,
-		DownloadURL:         input.DownloadURL,
-		TUFMetadataURL:      input.TUFMetadataURL,
-		PublishedAt:         parseSDKTime(input.PublishedAt),
-		SupersededAt:        parseSDKTimePointer(input.SupersededAt),
-		SupersededByDigest:  stringFromPointer(input.SupersededByDigest),
+		ResourceName:       input.ResourceName,
+		PackageName:        input.PackageName,
+		ChannelName:        input.ChannelName,
+		PlatformOS:         input.PlatformOS,
+		PlatformArch:       input.PlatformArch,
+		ArtifactDigest:     input.ArtifactDigest,
+		ArtifactDigestRef:  input.ArtifactDigestRef,
+		PackageVersion:     input.PackageVersion,
+		State:              input.State,
+		PublicOCIReference: input.PublicOCIReference,
+		DownloadURL:        input.DownloadURL,
+		PublishedAt:        parseSDKTime(input.PublishedAt),
+		SupersededAt:       parseSDKTimePointer(input.SupersededAt),
+		SupersededByDigest: stringFromPointer(input.SupersededByDigest),
 	}
 }
 

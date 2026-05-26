@@ -113,24 +113,20 @@ type artifactRecord struct {
 }
 
 type targetRecord struct {
-	ResourceName        string  `json:"resourceName"`
-	PackageName         string  `json:"package_name"`
-	ChannelName         string  `json:"channel_name"`
-	PlatformOS          string  `json:"platform_os"`
-	PlatformArch        string  `json:"platform_arch"`
-	ArtifactDigest      string  `json:"artifact_digest"`
-	ArtifactDigestRef   string  `json:"artifact_digest_ref"`
-	PackageVersion      string  `json:"package_version"`
-	State               string  `json:"state"`
-	TUFTargetsVersion   int64   `json:"tuf_targets_version"`
-	TUFSnapshotVersion  int64   `json:"tuf_snapshot_version"`
-	TUFTimestampVersion int64   `json:"tuf_timestamp_version"`
-	PublicOCIReference  string  `json:"public_oci_reference"`
-	DownloadURL         string  `json:"download_url"`
-	TUFMetadataURL      string  `json:"tuf_metadata_url"`
-	PublishedAt         string  `json:"published_at"`
-	SupersededAt        *string `json:"superseded_at,omitempty"`
-	SupersededByDigest  *string `json:"superseded_by_digest,omitempty"`
+	ResourceName       string  `json:"resourceName"`
+	PackageName        string  `json:"package_name"`
+	ChannelName        string  `json:"channel_name"`
+	PlatformOS         string  `json:"platform_os"`
+	PlatformArch       string  `json:"platform_arch"`
+	ArtifactDigest     string  `json:"artifact_digest"`
+	ArtifactDigestRef  string  `json:"artifact_digest_ref"`
+	PackageVersion     string  `json:"package_version"`
+	State              string  `json:"state"`
+	PublicOCIReference string  `json:"public_oci_reference"`
+	DownloadURL        string  `json:"download_url"`
+	PublishedAt        string  `json:"published_at"`
+	SupersededAt       *string `json:"superseded_at,omitempty"`
+	SupersededByDigest *string `json:"superseded_by_digest,omitempty"`
 }
 
 func evidenceFromDTO(input []evidenceRecord) []distribution.Evidence {
@@ -204,22 +200,18 @@ func artifactDTO(installationID string, artifact distribution.Artifact) artifact
 
 func targetDTO(installationID string, target distribution.Target) targetRecord {
 	out := targetRecord{
-		ResourceName:        targetResourceName(installationID, target),
-		PackageName:         target.PackageName,
-		ChannelName:         target.ChannelName,
-		PlatformOS:          target.PlatformOS,
-		PlatformArch:        target.PlatformArch,
-		ArtifactDigest:      target.ArtifactDigest,
-		ArtifactDigestRef:   digestRef(target.ArtifactDigest),
-		PackageVersion:      target.PackageVersion,
-		State:               target.State,
-		TUFTargetsVersion:   target.TUFTargetsVersion,
-		TUFSnapshotVersion:  target.TUFSnapshotVersion,
-		TUFTimestampVersion: target.TUFTimestampVersion,
-		PublicOCIReference:  target.PublicOCIReference,
-		DownloadURL:         target.DownloadURL,
-		TUFMetadataURL:      target.TUFMetadataURL,
-		PublishedAt:         formatTime(target.PublishedAt),
+		ResourceName:       targetResourceName(installationID, target),
+		PackageName:        target.PackageName,
+		ChannelName:        target.ChannelName,
+		PlatformOS:         target.PlatformOS,
+		PlatformArch:       target.PlatformArch,
+		ArtifactDigest:     target.ArtifactDigest,
+		ArtifactDigestRef:  digestRef(target.ArtifactDigest),
+		PackageVersion:     target.PackageVersion,
+		State:              target.State,
+		PublicOCIReference: target.PublicOCIReference,
+		DownloadURL:        target.DownloadURL,
+		PublishedAt:        formatTime(target.PublishedAt),
 	}
 	if !target.SupersededAt.IsZero() {
 		out.SupersededAt = stringPtr(formatTime(target.SupersededAt))

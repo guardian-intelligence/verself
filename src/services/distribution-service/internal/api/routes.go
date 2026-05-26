@@ -29,7 +29,6 @@ func RegisterPublicRoutes(mux *http.ServeMux, cfg Config) {
 	mux.HandleFunc("GET /api/v1/distribution/packages/{package_name}/channels/{channel_name}/resolve", api.resolveTarget)
 	mux.HandleFunc("GET /api/v1/distribution/artifacts/{artifact_digest_ref}", api.getArtifact)
 	mux.HandleFunc("GET /api/v1/distribution/packages/{package_name}/channels/{channel_name}/targets", api.listTargets)
-	mux.HandleFunc("GET /tuf/{package}/{role}", api.getTUF)
 	mux.HandleFunc("GET /v2/{name...}", api.registryRead)
 }
 
@@ -135,21 +134,6 @@ func (a publicAPI) listTargets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"targets": out, "traceparent": traceparent(r.Context())})
 }
 
-func (a publicAPI) getTUF(w http.ResponseWriter, r *http.Request) {
-	role := strings.TrimSuffix(r.PathValue("role"), ".json")
-	meta, err := a.cfg.Service.TUFMetadata(r.Context(), r.PathValue("package"), role)
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Digest", meta.BodySHA256)
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(meta.Body)
-	a.cfg.Service.RecordTUFMetadataServed(r.Context(), meta)
-}
-
 func (a publicAPI) registryPing(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
 	w.WriteHeader(http.StatusOK)
@@ -167,7 +151,7 @@ func (a publicAPI) registryRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if kind == "manifests" && !strings.HasPrefix(reference, "sha256:") {
-		writeProblem(w, r, http.StatusForbidden, "distribution.oci.mutable_reference_denied", "mutable OCI references must resolve through TUF metadata")
+		writeProblem(w, r, http.StatusForbidden, "distribution.oci.mutable_reference_denied", "mutable OCI references must resolve through the distribution API")
 		return
 	}
 	if !strings.HasPrefix(reference, "sha256:") {
@@ -433,8 +417,6 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeProblem(w, r, http.StatusForbidden, "distribution.channel_policy_failure", err.Error())
 	case errors.Is(err, distribution.ErrQuarantined):
 		writeProblem(w, r, http.StatusForbidden, "distribution.artifact_quarantined", err.Error())
-	case errors.Is(err, distribution.ErrTUFSigning):
-		writeProblem(w, r, http.StatusServiceUnavailable, "distribution.tuf_signing_failure", err.Error())
 	case errors.Is(err, distribution.ErrReplication):
 		writeProblem(w, r, http.StatusServiceUnavailable, "distribution.replication_failure", err.Error())
 	default:

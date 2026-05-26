@@ -22,23 +22,15 @@ type Service struct {
 	Store           SQLStore
 	CH              driver.Conn
 	Logger          *slog.Logger
-	Signer          TUFSigner
 	TrustedBuilders map[string]struct{}
 	TrustedSigners  map[string]struct{}
 	InstallationID  string
-	PublicBaseURL   string
 	Now             func() time.Time
 }
 
 func (s *Service) Ready(ctx context.Context) error {
 	if err := s.Store.Ready(ctx); err != nil {
 		return err
-	}
-	if err := s.Signer.Ready(); err != nil {
-		return err
-	}
-	if clean(s.PublicBaseURL) == "" {
-		return fmt.Errorf("%w: public base URL is required", ErrInvalid)
 	}
 	if len(s.TrustedBuilders) == 0 {
 		return fmt.Errorf("%w: at least one trusted builder is required", ErrUntrustedBuilder)
@@ -96,16 +88,7 @@ func (s *Service) PromoteTarget(ctx context.Context, principal Principal, req Pr
 		return Target{}, fmt.Errorf("%w: artifact does not match requested package/platform", ErrChannelPolicyFailure)
 	}
 	s.emit(ctx, event{EventType: "distribution.target.policy_allowed", Decision: "allowed", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.ArtifactDigest, Actor: principal.Actor})
-	versions, err := s.nextTUFVersions(ctx, req.PackageName)
-	if err != nil {
-		return Target{}, err
-	}
-	metadata, err := s.Signer.buildSet(req.PackageName, artifact, versions, s.now())
-	if err != nil {
-		return Target{}, err
-	}
-	s.emit(ctx, event{EventType: "distribution.target.tuf_signed", Decision: "signed", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.ArtifactDigest, Actor: principal.Actor})
-	target, err = s.Store.PublishTarget(ctx, req, artifact, metadata, s.PublicBaseURL, requestDigest(req), s.now())
+	target, err = s.Store.PublishTarget(ctx, req, artifact, requestDigest(req), s.now())
 	if err == nil {
 		s.emit(ctx, event{EventType: "distribution.target.published", Decision: "published", PackageName: target.PackageName, ChannelName: target.ChannelName, PlatformOS: target.PlatformOS, PlatformArch: target.PlatformArch, ArtifactDigest: target.ArtifactDigest, Actor: principal.Actor})
 	}
@@ -215,14 +198,6 @@ func (s *Service) EnsureReplication(ctx context.Context, principal Principal, re
 	return artifact, err
 }
 
-func (s *Service) TUFMetadata(ctx context.Context, packageName, role string) (TUFMetadata, error) {
-	return s.Store.LatestTUFMetadata(ctx, clean(packageName), clean(role))
-}
-
-func (s *Service) RecordTUFMetadataServed(ctx context.Context, meta TUFMetadata) {
-	s.emit(ctx, event{EventType: "distribution.tuf.metadata_served", Decision: "served", PackageName: meta.PackageName, ArtifactDigest: meta.BodySHA256, Actor: "distribution-service", Reason: "role=" + meta.Role})
-}
-
 func (s *Service) RecordOCIServed(ctx context.Context, artifact Artifact, kind string, reference string) {
 	eventType := "distribution.oci.referrers_served"
 	switch kind {
@@ -232,22 +207,6 @@ func (s *Service) RecordOCIServed(ctx context.Context, artifact Artifact, kind s
 		eventType = "distribution.oci.blob_served"
 	}
 	s.emit(ctx, event{EventType: eventType, Decision: "served", PackageName: artifact.PackageName, ChannelName: artifact.ChannelName, PlatformOS: artifact.PlatformOS, PlatformArch: artifact.PlatformArch, ArtifactDigest: artifact.OCIDigest, Actor: "distribution-service", Reason: "reference=" + reference})
-}
-
-func (s *Service) nextTUFVersions(ctx context.Context, packageName string) (tufVersions, error) {
-	targets, err := s.Store.LatestTUFVersion(ctx, packageName, "targets")
-	if err != nil {
-		return tufVersions{}, err
-	}
-	snapshot, err := s.Store.LatestTUFVersion(ctx, packageName, "snapshot")
-	if err != nil {
-		return tufVersions{}, err
-	}
-	timestamp, err := s.Store.LatestTUFVersion(ctx, packageName, "timestamp")
-	if err != nil {
-		return tufVersions{}, err
-	}
-	return tufVersions{Targets: targets + 1, Snapshot: snapshot + 1, Timestamp: timestamp + 1}, nil
 }
 
 func (s *Service) now() time.Time {
