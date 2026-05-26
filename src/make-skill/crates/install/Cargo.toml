@@ -1,0 +1,14 @@
+[package]
+name = "make-skill-install"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Bazel-owned local shim installer for make-skill."
+license.workspace = true
+
+[[bin]]
+name = "make-skill-install"
+path = "src/main.rs"
+
+[lints]
+workspace = true

@@ -1,19 +1,37 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
+rust_library(
+    name = "core",
+    srcs = ["crates/core/src/lib.rs"],
+    crate_name = "make_skill_core",
+    edition = "2024",
+)
+
+rust_library(
+    name = "exec",
+    srcs = ["crates/exec/src/lib.rs"],
+    crate_name = "make_skill_exec",
+    edition = "2024",
+    deps = [":core"],
+)
+
 rust_binary(
     name = "mksk",
-    srcs = ["src/main.rs"],
+    srcs = ["crates/cli/src/main.rs"],
+    crate_name = "mksk",
     edition = "2024",
     stamp = 0,
     version = "0.1.0",
+    deps = [":exec"],
 )
 
 rust_binary(
     name = "install",
-    srcs = ["src/install.rs"],
+    srcs = ["crates/install/src/main.rs"],
+    crate_name = "make_skill_install",
     data = [":mksk"],
     edition = "2024",
     env = {
@@ -23,8 +41,22 @@ rust_binary(
 )
 
 rust_test(
+    name = "core_test",
+    srcs = ["crates/core/tests/core.rs"],
+    edition = "2024",
+    deps = [":core"],
+)
+
+rust_test(
+    name = "exec_test",
+    srcs = ["crates/exec/tests/exec.rs"],
+    edition = "2024",
+    deps = [":exec"],
+)
+
+rust_test(
     name = "cli_test",
-    srcs = ["tests/cli.rs"],
+    srcs = ["crates/cli/tests/cli.rs"],
     data = [":mksk"],
     edition = "2024",
     env = {

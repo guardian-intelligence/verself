@@ -1,12 +1,17 @@
-[package]
-name = "make-skill"
+[workspace]
+members = [
+    "crates/cli",
+    "crates/core",
+    "crates/exec",
+    "crates/install",
+]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95.0"
-description = "Scaffold a new agent skill in one command. Zero dependencies, zero config."
 license = "MIT"
 
-# The crate is `make-skill`; the binary people actually run is `mksk`.
-[[bin]]
-name = "mksk"
-path = "src/main.rs"
+[workspace.lints.rust]
+unsafe_code = "forbid"

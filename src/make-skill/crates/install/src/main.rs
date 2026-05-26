@@ -27,8 +27,7 @@ fn run() -> Result<PathBuf, String> {
         &env::var("MKSK_BINARY").map_err(|_| "MKSK_BINARY is missing".to_string())?,
     )?;
 
-    fs::create_dir_all(&bin_dir)
-        .map_err(|err| format!("create '{}': {err}", bin_dir.display()))?;
+    fs::create_dir_all(&bin_dir).map_err(|err| format!("create '{}': {err}", bin_dir.display()))?;
 
     let link = bin_dir.join("mksk");
     install_symlink(&mksk, &link)?;
@@ -47,7 +46,9 @@ fn parse_bin_dir() -> Result<PathBuf, String> {
             }
             continue;
         }
-        return Err(format!("unexpected argument {arg}; usage: install --bin-dir=<dir>"));
+        return Err(format!(
+            "unexpected argument {arg}; usage: install --bin-dir=<dir>"
+        ));
     }
 
     bin_dir.ok_or_else(|| "usage: install --bin-dir=<dir>".to_string())
@@ -117,12 +118,19 @@ fn install_symlink(target: &Path, link: &Path) -> Result<(), String> {
 
     let tmp = link.with_file_name(format!(
         ".{}.tmp.{}",
-        link.file_name().and_then(|name| name.to_str()).unwrap_or("mksk"),
+        link.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("mksk"),
         std::process::id()
     ));
     let _ = fs::remove_file(&tmp);
-    unix_fs::symlink(target, &tmp)
-        .map_err(|err| format!("symlink '{}' -> '{}': {err}", tmp.display(), target.display()))?;
+    unix_fs::symlink(target, &tmp).map_err(|err| {
+        format!(
+            "symlink '{}' -> '{}': {err}",
+            tmp.display(),
+            target.display()
+        )
+    })?;
     fs::rename(&tmp, link).map_err(|err| {
         let _ = fs::remove_file(&tmp);
         format!("rename '{}' -> '{}': {err}", tmp.display(), link.display())

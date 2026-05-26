@@ -3,5 +3,23 @@
 version = 4
 
 [[package]]
-name = "make-skill"
+name = "make-skill-cli"
+version = "0.1.0"
+dependencies = [
+ "make-skill-exec",
+]
+
+[[package]]
+name = "make-skill-core"
+version = "0.1.0"
+
+[[package]]
+name = "make-skill-exec"
+version = "0.1.0"
+dependencies = [
+ "make-skill-core",
+]
+
+[[package]]
+name = "make-skill-install"
 version = "0.1.0"
