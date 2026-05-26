@@ -17,6 +17,7 @@ type serviceClientFlags struct {
 	projectsURL      string
 	notificationsURL string
 	billingURL       string
+	distributionURL  string
 	governanceURL    string
 	sandboxURL       string
 	secretsURL       string
@@ -390,6 +391,7 @@ func serviceFlagSet(name string, stderr io.Writer) (*flag.FlagSet, *serviceClien
 	fs.StringVar(&flags.projectsURL, "projects-url", "", "projects service base URL")
 	fs.StringVar(&flags.notificationsURL, "notifications-url", "", "notifications service base URL")
 	fs.StringVar(&flags.billingURL, "billing-url", "", "billing service base URL")
+	fs.StringVar(&flags.distributionURL, "distribution-url", "", "distribution service base URL")
 	fs.StringVar(&flags.governanceURL, "governance-url", "", "governance service base URL")
 	fs.StringVar(&flags.sandboxURL, "sandbox-url", "", "sandbox rental service base URL")
 	fs.StringVar(&flags.secretsURL, "secrets-url", "", "secrets service base URL")
@@ -443,6 +445,13 @@ func (c CLI) serviceClientWithProfile(flags serviceClientFlags) (*verself.Client
 	if billingURL == "" && profile != nil {
 		billingURL = profile.BillingURL
 	}
+	distributionURL := strings.TrimSpace(flags.distributionURL)
+	if distributionURL == "" {
+		distributionURL = strings.TrimSpace(c.getenv("VERSELF_DISTRIBUTION_API_URL"))
+	}
+	if distributionURL == "" && profile != nil {
+		distributionURL = profile.DistributionURL
+	}
 	governanceURL := strings.TrimSpace(flags.governanceURL)
 	if governanceURL == "" {
 		governanceURL = strings.TrimSpace(c.getenv("VERSELF_GOVERNANCE_API_URL"))
@@ -479,6 +488,7 @@ func (c CLI) serviceClientWithProfile(flags serviceClientFlags) (*verself.Client
 		ProjectsURL:      projectsURL,
 		NotificationsURL: notificationsURL,
 		BillingURL:       billingURL,
+		DistributionURL:  distributionURL,
 		GovernanceURL:    governanceURL,
 		SandboxURL:       sandboxURL,
 		SecretsURL:       secretsURL,

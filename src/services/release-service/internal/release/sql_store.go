@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -397,7 +396,7 @@ func (s SQLStore) CreatePublication(ctx context.Context, req CreatePublicationRe
 	return publicationFromCreateStore(row), nil
 }
 
-func (s SQLStore) DispatchPublication(ctx context.Context, publicationID uuid.UUID, registry Registry, now time.Time) (Publication, error) {
+func (s SQLStore) DispatchPublication(ctx context.Context, publicationID uuid.UUID, distribution Distribution, actor string, now time.Time) (Publication, error) {
 	tx, q, err := s.begin(ctx)
 	if err != nil {
 		return Publication{}, err
@@ -410,8 +409,8 @@ func (s SQLStore) DispatchPublication(ctx context.Context, publicationID uuid.UU
 	if pubctx.ReleaseState != StateApproved && pubctx.ReleaseState != StatePublished {
 		return Publication{}, fmt.Errorf("%w: release must be approved before publication dispatch", ErrStateConflict)
 	}
-	if pubctx.ProviderKind == ProviderOCI && registry == nil {
-		return Publication{}, fmt.Errorf("%w: OCI registry client is required", ErrRegistry)
+	if pubctx.ProviderKind == ProviderOCI && distribution == nil {
+		return Publication{}, fmt.Errorf("%w: distribution client is required", ErrDistribution)
 	}
 	if pubctx.PublicationState == StateComplete {
 		row, err := q.GetPublication(ctx, releasestore.GetPublicationParams{PublicationID: publicationID})
@@ -431,7 +430,22 @@ func (s SQLStore) DispatchPublication(ctx context.Context, publicationID uuid.UU
 		return Publication{}, storeError(err)
 	}
 	if pubctx.ProviderKind == ProviderOCI {
-		if err := registry.ManifestExists(ctx, artifact.RegistryUrl, artifact.OciRepository, artifact.OciDigest); err != nil {
+		check, err := q.LatestAllowedPolicyCheck(ctx, releasestore.LatestAllowedPolicyCheckParams{ReleaseVersionID: pubctx.ReleaseVersionID})
+		if err != nil {
+			return Publication{}, storeError(err)
+		}
+		target, err := distribution.PromoteTarget(ctx, DistributionPromoteTargetRequest{
+			PackageName:    pubctx.PackageName,
+			ChannelName:    pubctx.ProviderChannel,
+			ArtifactDigest: artifact.OciDigest,
+			PlatformOS:     artifact.PlatformOs,
+			PlatformArch:   artifact.PlatformArch,
+			PolicyRef:      check.PolicyRef,
+			PromotedBy:     actor,
+			Reason:         "release publication dispatch",
+			IdempotencyKey: "release-publication-" + publicationID.String(),
+		})
+		if err != nil {
 			row, updateErr := q.UpdatePublicationState(ctx, releasestore.UpdatePublicationStateParams{PublicationID: publicationID, State: StateRetryableFailed, UpdatedAt: pgTime(now)})
 			if updateErr != nil {
 				return Publication{}, storeError(updateErr)
@@ -441,31 +455,14 @@ func (s SQLStore) DispatchPublication(ctx context.Context, publicationID uuid.UU
 			}
 			return publicationFromStore(row), err
 		}
-		if _, err := q.CreateInstallOption(ctx, releasestore.CreateInstallOptionParams{
-			InstallOptionID:      uuid.New(),
-			ReleaseVersionID:     pubctx.ReleaseVersionID,
-			OptionKind:           "oci",
-			Status:               "active",
-			DisplayOrder:         2,
-			CommandTemplate:      ociInstallCommand(artifact.RegistryUrl, artifact.OciRepository, artifact.OciDigest),
-			VerificationTemplate: ociVerificationCommand(artifact.RegistryUrl, artifact.OciRepository, artifact.OciDigest),
-			OciRepository:        artifact.OciRepository,
-			OciDigest:            artifact.OciDigest,
-			ProviderKind:         ProviderOCI,
-			ProviderRef:          pubctx.ProviderPackage + ":" + pubctx.ProviderChannel,
-			CreatedAt:            pgTime(now),
-			UpdatedAt:            pgTime(now),
-		}); err != nil {
-			return Publication{}, storeError(err)
-		}
 		if _, err := q.CreatePublicationReceipt(ctx, releasestore.CreatePublicationReceiptParams{
 			ReceiptID:           uuid.New(),
 			PublicationID:       publicationID,
 			ProviderKind:        pubctx.ProviderKind,
-			ProviderResourceUrl: strings.TrimRight(artifact.RegistryUrl, "/") + "/" + artifact.OciRepository + "@" + artifact.OciDigest,
+			ProviderResourceUrl: distributionProviderResourceURL(target),
 			ProviderVersion:     pubctx.CanonicalVersion,
-			ProviderDigest:      artifact.OciDigest,
-			ReceiptDigest:       artifact.OciDigest,
+			ProviderDigest:      target.ArtifactDigest,
+			ReceiptDigest:       target.ArtifactDigest,
 			ReconciledAt:        pgTime(now),
 			CreatedAt:           pgTime(now),
 		}); err != nil {
@@ -615,49 +612,11 @@ func createDefaultInstallOptions(ctx context.Context, q *releasestore.Queries, p
 	return nil
 }
 
-func ociInstallCommand(registryURL string, repository string, digest string) string {
-	ref := ociReference(registryURL, repository, digest)
-	out := "$HOME/.cache/verself/oci/" + strings.ReplaceAll(digest, ":", "-")
-	return "oras pull" + orasTransportFlag(registryURL) + " " + ref + " --output " + out + " && install -Dm755 " + out + "/bin/mksk $HOME/.local/bin/mksk"
-}
-
-func ociVerificationCommand(registryURL string, repository string, digest string) string {
-	return "cosign verify" + cosignTransportFlag(registryURL) + " --certificate-identity-regexp='.*' --certificate-oidc-issuer-regexp='.*' " + ociReference(registryURL, repository, digest)
-}
-
-func ociReference(registryURL string, repository string, digest string) string {
-	return ociRegistryHost(registryURL) + "/" + strings.Trim(repository, "/") + "@" + digest
-}
-
-func orasTransportFlag(registryURL string) string {
-	if ociRegistryScheme(registryURL) == "http" {
-		return " --plain-http"
+func distributionProviderResourceURL(target DistributionTarget) string {
+	if strings.TrimSpace(target.DownloadURL) != "" {
+		return strings.TrimSpace(target.DownloadURL)
 	}
-	return ""
-}
-
-func cosignTransportFlag(registryURL string) string {
-	if ociRegistryScheme(registryURL) == "http" {
-		return " --allow-insecure-registry"
-	}
-	return ""
-}
-
-func ociRegistryHost(registryURL string) string {
-	value := strings.TrimSpace(strings.TrimRight(registryURL, "/"))
-	parsed, err := url.Parse(value)
-	if err == nil && parsed.Host != "" {
-		return parsed.Host
-	}
-	return value
-}
-
-func ociRegistryScheme(registryURL string) string {
-	parsed, err := url.Parse(strings.TrimSpace(registryURL))
-	if err != nil {
-		return ""
-	}
-	return parsed.Scheme
+	return strings.TrimSpace(target.PublicOCIReference)
 }
 
 func rollback(ctx context.Context, tx pgx.Tx) {

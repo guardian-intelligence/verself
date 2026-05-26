@@ -13,6 +13,7 @@ require (
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.34.0
 	github.com/riverqueue/river/rivertype v0.34.0
 	github.com/riverqueue/rivercontrib/otelriver v0.7.0
+	github.com/verself/distribution-service v0.0.0
 	github.com/verself/observability v0.0.0
 	github.com/verself/service-runtime v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
@@ -78,3 +79,5 @@ require (
 replace github.com/verself/service-runtime => ../service-runtime/go
 
 replace github.com/verself/observability => ../../tools/observability/go
+
+replace github.com/verself/distribution-service => ../distribution-service

@@ -7,6 +7,7 @@ const (
 	ServiceAnalytics          = "analytics-service"
 	ServiceBilling            = "billing-service"
 	ServiceClickHouseOperator = "clickhouse-operator"
+	ServiceDistribution       = "distribution-service"
 	ServiceGrafana            = "grafana"
 	ServiceGovernance         = "governance-service"
 	ServiceGitHubIntegration  = "github-integration-service"

@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	distributioninternalclient "github.com/verself/distribution-service/internalclient"
 	verselfotel "github.com/verself/observability/otel"
 	releaseapi "github.com/verself/release-service/internal/api"
 	"github.com/verself/release-service/internal/release"
@@ -80,8 +81,6 @@ func run() error {
 	makeSkillSourceCommit := cfg.String("VERSELF_RELEASE_MAKE_SKILL_SOURCE_COMMIT", "")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
-	registryUsername := cfg.CredentialOr("zot-username", "")
-	registryPassword := cfg.CredentialOr("zot-password", "")
 	if err := cfg.Err(); err != nil {
 		return err
 	}
@@ -97,6 +96,14 @@ func run() error {
 	}()
 	if _, err := workloadauth.CurrentIDForService(spiffeSource, workloadauth.ServiceRelease); err != nil {
 		return err
+	}
+	distributionHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceDistribution, nil)
+	if err != nil {
+		return fmt.Errorf("release distribution mtls: %w", err)
+	}
+	distributionClient, err := distributioninternalclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceDistribution), distributioninternalclient.WithHTTPClient(distributionHTTPClient))
+	if err != nil {
+		return fmt.Errorf("release distribution client: %w", err)
 	}
 
 	pg, err := openPool(ctx, pgDSN, pgMaxConns)
@@ -128,20 +135,17 @@ func run() error {
 	}
 
 	svc := &release.Service{
-		Store: release.SQLStore{PG: pg},
-		Registry: release.OCIRegistry{
-			Username: registryUsername,
-			Password: registryPassword,
-		},
-		CH:     chConn,
-		Logger: logger,
+		Store:        release.SQLStore{PG: pg},
+		Distribution: release.DistributionClient{Client: distributionClient},
+		CH:           chConn,
+		Logger:       logger,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("release readiness: %w", err)
 	}
 	if seedMakeSkill {
-		if err := svc.EnsureMakeSkillSeed(ctx, platformOrgID, makeSkillSourceCommit); err != nil {
-			return fmt.Errorf("seed make-skill release metadata: %w", err)
+		if err := svc.EnsureMkskSeed(ctx, platformOrgID, makeSkillSourceCommit); err != nil {
+			return fmt.Errorf("seed mksk release metadata: %w", err)
 		}
 	}
 	runtime, err := release.NewRuntime(pg, svc, logger)

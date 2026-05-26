@@ -92,6 +92,10 @@ func (c CLI) Run(ctx context.Context, args []string) error {
 		return c.runSchedules(ctx, args[1:])
 	case "billing":
 		return c.runBilling(ctx, args[1:])
+	case "upgrade":
+		return c.runUpgrade(ctx, args[1:])
+	case "internal-upgrade":
+		return c.runInternalUpgrade(ctx, args[1:])
 	case "bootstrap":
 		return c.runBootstrap(args[1:])
 	case "help", "--help", "-h":
@@ -168,6 +172,7 @@ func (c CLI) usage() error {
   %[1]s billing contracts [--json]
   %[1]s billing plans --product-id PRODUCT_ID [--json]
   %[1]s billing statement --product-id PRODUCT_ID [--json]
+  %[1]s upgrade [--channel stable|canary] [--json]
   %[1]s env get <key> --org ORG --project PROJECT --environment ENV
   %[1]s env add <key> --org ORG --project PROJECT --environment ENV --from-env NAME|--from-file PATH|--stdin
   %[1]s env pull [file] --org ORG --project PROJECT --environment ENV

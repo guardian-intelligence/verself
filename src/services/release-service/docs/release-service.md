@@ -6,11 +6,9 @@ what install instructions are visible, and what external providers were asked
 to do. It does not build bytes. CI and Bazel own build execution, upload,
 signing, and provenance generation.
 
-The current recommendation is to build release-service first and defer
-distribution-service and publishing-service as later extractions. That keeps the
-first implementation small while still using the same boundaries: bytes stay in
-Zot as OCI artifacts, evidence is in standard attestation formats, lifecycle
-state is explicit, and provider behavior is recorded as provider-native facts.
+distribution-service owns the first-party update plane. release-service records
+release approval and dispatches an OCI publication request to distribution-service
+over SPIFFE mTLS.
 
 ## Standards
 
@@ -24,7 +22,7 @@ The durable contracts should be open standards or provider-native APIs:
   <https://github.com/in-toto/attestation/tree/main/spec/v1>.
 - SLSA provenance and Verification Summary Attestations for build provenance
   and release verification summaries: <https://slsa.dev/spec/v1.1/>.
-- TUF for a future distribution-service client update plane:
+- TUF for the distribution-service client update plane:
   <https://theupdateframework.github.io/specification/latest/>.
 - SemVer 2.0 as the default canonical version format for Verself CLIs and
   API-bearing packages: <https://semver.org/>.
@@ -57,8 +55,8 @@ release-service owns:
 - signatures, SLSA provenance, SBOMs, test evidence, VSAs, and provider
   receipts;
 - lifecycle overlays such as deprecated, yanked, quarantined, and revoked;
-- install-option read models for source builds, hosted OCI pulls, and deferred
-  third-party package managers;
+- install-option read models for source builds and deferred third-party package
+  managers;
 - internal provider publication orchestration until publishing-service is
   extracted.
 
@@ -71,30 +69,30 @@ release-service does not own:
 - public customer SDKs;
 - package-owned arbitrary provider plugins.
 
-## make-skill
+## mksk
 
 `src/make-skill` is the first tracer package. The release metadata should expose
-three install families:
+two release-service install families:
 
 | Option | Initial status | Notes |
 | --- | --- | --- |
 | Source build | active | Built from the repo with a package-owned Bazel target once the target exists. This is the escape hatch and developer path. |
-| Hosted OCI | active | Pull an immutable build artifact from Zot using ORAS, verify signature and SLSA evidence, then install into an explicit `--bin-dir`. |
 | Third-party package manager | deferred | Future distribution-service/provider work, likely Homebrew first for a CLI. apt can follow when Debian repository metadata and signing are modeled. |
 
-The OCI install option should describe an immutable digest and a channel alias.
-The digest is the thing the installer verifies. The alias is only a convenience
-for discovery.
+The OCI update path is resolved through distribution-service. `mksk upgrade`
+and `verself internal-upgrade mksk` verify signed TUF metadata, pull immutable
+OCI digests, verify bytes, atomically replace `mksk`, and write a local install
+receipt.
 
-Example records for `make-skill`:
+Example records for `mksk`:
 
 ```text
-package_name: make-skill
+package_name: mksk
 source_ref: src/make-skill
 canonical_version: 0.2.0
 rc_version: 0.2.0-rc.1
 nightly_version: 0.2.0-nightly.20260526.1
-oci_repository: admitted/make-skill
+oci_repository: verself/mksk
 artifact_kind: cli
 ```
 
@@ -552,7 +550,7 @@ Build and sign stay in CI:
 - CI attaches SLSA provenance, SBOMs, and required test evidence as OCI
   referrers.
 
-release-service verifies:
+release-service verifies release policy inputs:
 
 - the OCI descriptor digest matches the in-toto subject digest;
 - the signer identity is allowed for the package and channel;
@@ -561,6 +559,11 @@ release-service verifies:
   match package policy;
 - required evidence exists before release approval;
 - lifecycle state allows publication and install-option visibility.
+
+distribution-service verifies distribution admission and channel target
+promotion for first-party OCI artifacts. release-service publication dispatch
+calls distribution-service over SPIFFE mTLS and records the resulting
+install-option read model.
 
 release-service may sign a SLSA Verification Summary Attestation for its
 verification decision. It must not sign build provenance.
@@ -596,7 +599,7 @@ Initial Smithy operations:
 | `ApproveRelease` | Record human or policy approval before irreversible publication. |
 | `PromoteReleaseChannel` | Move a mutable channel alias to a verified immutable release version. |
 | `CreatePublication` | Request provider fan-out for an approved release. |
-| `DispatchPublication` | Worker-only operation that calls provider adapters. |
+| `DispatchPublication` | Worker-only operation that calls provider adapters or distribution-service. |
 | `RecordPublicationReceipt` | Persist provider response and reconciliation evidence. |
 | `ReconcilePublication` | Re-read provider ground truth and repair local state. |
 | `SetReleaseLifecycleStatus` | Add a lifecycle overlay such as deprecated or quarantined. |
@@ -611,13 +614,14 @@ status, and install options. It should not become the semantic API surface.
 
 Stable release:
 
-1. Package-owned Bazel target builds `make-skill`.
-2. CI pushes immutable artifacts to `admitted/make-skill` in Zot.
+1. Package-owned Bazel target builds `mksk` from `src/make-skill`.
+2. CI pushes immutable artifacts to `verself/mksk` in Zot.
 3. CI signs artifacts and attaches SLSA provenance, SBOM, and test evidence.
 4. release-service attaches artifact and evidence records.
 5. `VerifyRelease` checks policy and produces a verification decision.
 6. Approval records the irreversible release decision.
-7. Hosted OCI install option becomes active for the immutable digest.
+7. release-service asks distribution-service to promote the OCI digest for the
+   channel.
 8. Provider publication runs only for providers configured by package policy.
 9. Newsroom publication can be generated from the same release facts, but the
    post authoring model can remain markdown until a better content service

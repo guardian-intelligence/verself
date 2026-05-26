@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,19 +15,19 @@ import (
 	"github.com/verself/service-runtime/pgtest"
 )
 
-func TestMakeSkillPublicationFlow(t *testing.T) {
+func TestMkskPublicationFlow(t *testing.T) {
 	ctx, svc := newTestService(t)
 
 	pkg, err := svc.RegisterPackage(ctx, Principal{Actor: "test"}, RegisterPackageRequest{
 		OrgID:                "371564185181576922",
-		PackageName:          "make-skill",
+		PackageName:          "mksk",
 		PackageKind:          PackageKindCLI,
 		RepoPath:             "src/make-skill",
 		BazelTarget:          "//src/make-skill:mksk",
 		OwnerTeam:            "platform",
 		DefaultVersionScheme: VersionSchemeSemver,
 		Visibility:           VisibilityInternal,
-		PolicyRef:            "release-policies/make-skill/v1",
+		PolicyRef:            "release-policies/mksk/v1",
 	})
 	if err != nil {
 		t.Fatalf("register package: %v", err)
@@ -61,7 +60,7 @@ func TestMakeSkillPublicationFlow(t *testing.T) {
 		ArtifactRole:     ArtifactRoleArchive,
 		PlatformOS:       "linux",
 		PlatformArch:     "amd64",
-		OCIRepository:    "verself/make-skill",
+		OCIRepository:    "verself/mksk",
 		OCIDigest:        artifactDigest,
 		OCIMediaType:     "application/vnd.oci.image.manifest.v1+json",
 		OCISizeBytes:     4096,
@@ -115,7 +114,7 @@ func TestMakeSkillPublicationFlow(t *testing.T) {
 	publication, err := svc.CreatePublication(ctx, Principal{Actor: "test"}, CreatePublicationRequest{
 		ReleaseVersionID: version.ReleaseVersionID,
 		ProviderKind:     ProviderOCI,
-		ProviderPackage:  "verself/make-skill",
+		ProviderPackage:  "verself/mksk",
 		ProviderChannel:  "stable",
 		IdempotencyKey:   "test-oci-publication",
 	})
@@ -125,7 +124,7 @@ func TestMakeSkillPublicationFlow(t *testing.T) {
 	duplicatePublication, err := svc.CreatePublication(ctx, Principal{Actor: "test"}, CreatePublicationRequest{
 		ReleaseVersionID: version.ReleaseVersionID,
 		ProviderKind:     ProviderOCI,
-		ProviderPackage:  "verself/make-skill",
+		ProviderPackage:  "verself/mksk",
 		ProviderChannel:  "stable",
 		IdempotencyKey:   "test-oci-publication",
 	})
@@ -136,21 +135,21 @@ func TestMakeSkillPublicationFlow(t *testing.T) {
 		t.Fatalf("duplicate publication id = %s, want %s", duplicatePublication.PublicationID, publication.PublicationID)
 	}
 
-	svc.Registry = nil
-	if _, err := svc.DispatchPublication(ctx, Principal{Actor: "test"}, publication.PublicationID); !errors.Is(err, ErrRegistry) {
-		t.Fatalf("dispatch without registry error = %v, want %v", err, ErrRegistry)
+	svc.Distribution = nil
+	if _, err := svc.DispatchPublication(ctx, Principal{Actor: "test"}, publication.PublicationID); !errors.Is(err, ErrDistribution) {
+		t.Fatalf("dispatch without distribution error = %v, want %v", err, ErrDistribution)
 	}
 
-	svc.Registry = failingRegistry{}
+	svc.Distribution = failingDistribution{}
 	failedPublication, err := svc.DispatchPublication(ctx, Principal{Actor: "test"}, publication.PublicationID)
 	if err == nil {
-		t.Fatalf("dispatch with missing manifest succeeded")
+		t.Fatalf("dispatch with unavailable distribution succeeded")
 	}
 	if failedPublication.State != StateRetryableFailed {
 		t.Fatalf("failed publication state = %s, want %s", failedPublication.State, StateRetryableFailed)
 	}
 
-	svc.Registry = passingRegistry{}
+	svc.Distribution = passingDistribution{}
 	publication, err = svc.DispatchPublication(ctx, Principal{Actor: "test"}, publication.PublicationID)
 	if err != nil {
 		t.Fatalf("dispatch publication: %v", err)
@@ -163,14 +162,11 @@ func TestMakeSkillPublicationFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list published install options: %v", err)
 	}
-	assertInstallOption(t, options, "oci", "active")
 	assertInstallOption(t, options, "third_party", "deferred")
-	ociOption := installOption(t, options, "oci")
-	if strings.Contains(ociOption.CommandTemplate, "https://") {
-		t.Fatalf("oci install command includes URL scheme: %s", ociOption.CommandTemplate)
-	}
-	if !strings.Contains(ociOption.CommandTemplate, "oci.verself.sh/verself/make-skill@"+artifactDigest) {
-		t.Fatalf("oci install command = %s, want registry reference with digest %s", ociOption.CommandTemplate, artifactDigest)
+	for _, option := range options {
+		if option.OptionKind == "oci" {
+			t.Fatalf("release-service must not create OCI install options after distribution publication: %#v", option)
+		}
 	}
 
 	channel, err := svc.PromoteChannel(ctx, Principal{Actor: "test"}, PromoteChannelRequest{
@@ -179,7 +175,7 @@ func TestMakeSkillPublicationFlow(t *testing.T) {
 		ReleaseVersionID: version.ReleaseVersionID,
 		ChannelKind:      VersionKindStable,
 		Visibility:       VisibilityInternal,
-		PolicyRef:        "release-policies/make-skill/v1",
+		PolicyRef:        "release-policies/mksk/v1",
 		Reason:           "release rehearsal",
 	})
 	if err != nil {
@@ -190,15 +186,15 @@ func TestMakeSkillPublicationFlow(t *testing.T) {
 	}
 }
 
-func TestEnsureMakeSkillSeedIsIdempotent(t *testing.T) {
+func TestEnsureMkskSeedIsIdempotent(t *testing.T) {
 	ctx, svc := newTestService(t)
 
 	for range 2 {
-		if err := svc.EnsureMakeSkillSeed(ctx, "371564185181576922", "0123456789abcdef0123456789abcdef01234567"); err != nil {
-			t.Fatalf("seed make-skill: %v", err)
+		if err := svc.EnsureMkskSeed(ctx, "371564185181576922", "0123456789abcdef0123456789abcdef01234567"); err != nil {
+			t.Fatalf("seed mksk: %v", err)
 		}
 	}
-	pkg, err := svc.Store.GetPackageByName(ctx, "371564185181576922", "make-skill")
+	pkg, err := svc.Store.GetPackageByName(ctx, "371564185181576922", "mksk")
 	if err != nil {
 		t.Fatalf("load seeded package: %v", err)
 	}
@@ -239,8 +235,8 @@ func newTestService(t *testing.T) (context.Context, *Service) {
 	t.Cleanup(pg.Close)
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	return ctx, &Service{
-		Store:    SQLStore{PG: pg},
-		Registry: passingRegistry{},
+		Store:        SQLStore{PG: pg},
+		Distribution: passingDistribution{},
 		Now: func() time.Time {
 			now = now.Add(time.Second)
 			return now
@@ -251,7 +247,7 @@ func newTestService(t *testing.T) (context.Context, *Service) {
 func verifyRequest(releaseVersionID uuid.UUID) VerifyRequest {
 	return VerifyRequest{
 		ReleaseVersionID: releaseVersionID,
-		PolicyRef:        "release-policies/make-skill/v1",
+		PolicyRef:        "release-policies/mksk/v1",
 		PolicyDigest:     "sha256:" + sixtyFour("d"),
 		BuilderID:        "spiffe://prod.verself.sh/svc/release-builder",
 		SignerIdentity:   "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main",
@@ -289,14 +285,19 @@ func sixtyFour(value string) string {
 	return out[:64]
 }
 
-type failingRegistry struct{}
+type failingDistribution struct{}
 
-func (failingRegistry) ManifestExists(context.Context, string, string, string) error {
-	return errors.New("registry unavailable")
+func (failingDistribution) PromoteTarget(context.Context, DistributionPromoteTargetRequest) (DistributionTarget, error) {
+	return DistributionTarget{}, errors.New("distribution unavailable")
 }
 
-type passingRegistry struct{}
+type passingDistribution struct{}
 
-func (passingRegistry) ManifestExists(context.Context, string, string, string) error {
-	return nil
+func (passingDistribution) PromoteTarget(_ context.Context, req DistributionPromoteTargetRequest) (DistributionTarget, error) {
+	return DistributionTarget{
+		ArtifactDigest:     req.ArtifactDigest,
+		PublicOCIReference: "https://oci.verself.sh/verself/mksk@" + req.ArtifactDigest,
+		DownloadURL:        "https://distribution.api.verself.sh/v2/verself/mksk/manifests/" + req.ArtifactDigest,
+		TUFMetadataURL:     "https://distribution.api.verself.sh/tuf/mksk",
+	}, nil
 }

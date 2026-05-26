@@ -1,0 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "distribution",
+    srcs = ["client.go"],
+    importpath = "github.com/verself/verself-go/internal/transport/distribution",
+    visibility = ["//src/sdks/go/verself:__pkg__"],
+)

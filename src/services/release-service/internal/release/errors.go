@@ -9,5 +9,5 @@ var (
 	ErrPolicyDenied     = errors.New("release policy denied")
 	ErrStateConflict    = errors.New("release state conflict")
 	ErrStoreUnavailable = errors.New("release store unavailable")
-	ErrRegistry         = errors.New("release registry unavailable")
+	ErrDistribution     = errors.New("release distribution unavailable")
 )

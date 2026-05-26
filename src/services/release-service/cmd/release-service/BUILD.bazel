@@ -7,6 +7,7 @@ go_library(
     importpath = "github.com/verself/release-service/cmd/release-service",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/services/distribution-service/internalclient",
         "//src/services/release-service/internal/api",
         "//src/services/release-service/internal/release",
         "//src/services/release-service/migrations",

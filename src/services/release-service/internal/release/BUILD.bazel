@@ -3,9 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "release",
     srcs = [
+        "distribution.go",
         "errors.go",
         "evidence.go",
-        "registry.go",
         "runtime.go",
         "service.go",
         "sql_store.go",
@@ -14,6 +14,7 @@ go_library(
     importpath = "github.com/verself/release-service/internal/release",
     visibility = ["//src/services/release-service:__subpackages__"],
     deps = [
+        "//src/services/distribution-service/internalclient",
         "//src/services/release-service/internal/store",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@com_github_google_uuid//:uuid",

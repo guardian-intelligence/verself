@@ -53,8 +53,8 @@ post_deploy_canary(
 
 viteplus_app(
     srcs = [
-        "instrumentation.mts",
         "dot-matrix-shader-plugin.ts",
+        "instrumentation.mts",
         "package.json",
         "public/**/*",
         "src/**/*",

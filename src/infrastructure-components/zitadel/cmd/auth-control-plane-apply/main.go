@@ -348,6 +348,7 @@ func ensureRuntimeAudiences(projectID string, cfg config) error {
 func runtimeAudienceSpecs(cfg config) []audienceSpec {
 	return []audienceSpec{
 		{ComponentName: "analytics-service", CredentialPath: "/etc/credstore/analytics-service/auth-audience", Group: "analytics_service"},
+		{ComponentName: "distribution-service", CredentialPath: "/etc/credstore/distribution-service/auth-audience", Group: "distribution_service"},
 		{ComponentName: "iam-service", CredentialPath: filepath.Join(cfg.iamCredstoreDir, "auth-audience"), Group: cfg.iamCredstoreGroup},
 		{ComponentName: "governance-service", CredentialPath: "/etc/credstore/governance-service/auth-audience", Group: "governance_service"},
 		{ComponentName: "notifications-service", CredentialPath: "/etc/credstore/notifications-service/auth-audience", Group: "notifications_service"},

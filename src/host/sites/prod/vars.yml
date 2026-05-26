@@ -11,6 +11,8 @@ company_domain: guardianintelligence.org
 
 billing_service_subdomain: billing.api
 billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
+distribution_service_subdomain: distribution.api
+distribution_service_domain: "{{ distribution_service_subdomain }}.{{ verself_domain }}"
 forgejo_subdomain: git
 forgejo_domain: "{{ forgejo_subdomain }}.{{ verself_domain }}"
 governance_service_subdomain: governance.api
@@ -56,6 +58,12 @@ cloudflare_dns_records:
     record: billing.api
     zone: product
   - kind: public_api_origin
+    record: distribution.api
+    zone: product
+  - kind: public_api_origin
+    record: oci
+    zone: product
+  - kind: public_api_origin
     record: sandbox.api
     zone: product
   - kind: public_api_origin
@@ -99,6 +107,9 @@ cloudflare_dns_records:
     zone: product
   - kind: protocol_origin
     record: npm
+    zone: product
+  - kind: protocol_origin
+    record: oci
     zone: product
 
 # Host bootstrap substrate. These values are the manual, non-Nomad surface

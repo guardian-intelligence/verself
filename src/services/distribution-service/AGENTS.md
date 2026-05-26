@@ -1,6 +1,6 @@
 # distribution-service
 
-The future distribution-service owns artifact admission, channel resolution,
+distribution-service owns artifact admission, channel resolution,
 signed update metadata, retention, and edge replication over Zot-hosted OCI
 artifacts. It does not build artifacts, publish to external package providers,
 or replace Zot as the byte store.

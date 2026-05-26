@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "distribution-rehearsal_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/distribution-service/cmd/distribution-rehearsal",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/distribution-service/internalclient",
+        "//src/services/service-runtime/go/workload",
+    ],
+)
+
+go_binary(
+    name = "distribution-rehearsal",
+    embed = [":distribution-rehearsal_lib"],
+    visibility = ["//visibility:public"],
+)

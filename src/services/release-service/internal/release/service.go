@@ -23,12 +23,12 @@ var (
 )
 
 type Service struct {
-	Store    SQLStore
-	Runtime  *Runtime
-	Registry Registry
-	CH       driver.Conn
-	Logger   *slog.Logger
-	Now      func() time.Time
+	Store        SQLStore
+	Runtime      *Runtime
+	Distribution Distribution
+	CH           driver.Conn
+	Logger       *slog.Logger
+	Now          func() time.Time
 }
 
 func (s *Service) Ready(ctx context.Context) error {
@@ -249,7 +249,7 @@ func (s *Service) DispatchPublication(ctx context.Context, principal Principal, 
 	if publicationID == uuid.Nil {
 		return Publication{}, fmt.Errorf("%w: publication_id is required", ErrInvalid)
 	}
-	publication, err = s.Store.DispatchPublication(ctx, publicationID, s.Registry, s.now())
+	publication, err = s.Store.DispatchPublication(ctx, publicationID, s.Distribution, principal.Actor, s.now())
 	if err == nil || publication.PublicationID != uuid.Nil {
 		row := releaseDecisionEvent{EventType: "publication_dispatched", Actor: principal.Actor, Decision: publication.State, Reason: "release publication dispatched"}
 		if err != nil {
@@ -324,7 +324,7 @@ func (s *Service) Reconcile(ctx context.Context, limit int) error {
 	return nil
 }
 
-func (s *Service) EnsureMakeSkillSeed(ctx context.Context, orgID string, sourceCommit string) error {
+func (s *Service) EnsureMkskSeed(ctx context.Context, orgID string, sourceCommit string) error {
 	orgID = clean(orgID)
 	sourceCommit = clean(sourceCommit)
 	if orgID == "" {
@@ -333,21 +333,21 @@ func (s *Service) EnsureMakeSkillSeed(ctx context.Context, orgID string, sourceC
 	if sourceCommit == "" {
 		sourceCommit = "unknown"
 	}
-	pkg, err := s.Store.GetPackageByName(ctx, orgID, "make-skill")
+	pkg, err := s.Store.GetPackageByName(ctx, orgID, "mksk")
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
 			return err
 		}
 		pkg, err = s.Store.CreatePackage(ctx, RegisterPackageRequest{
 			OrgID:                orgID,
-			PackageName:          "make-skill",
+			PackageName:          "mksk",
 			PackageKind:          PackageKindCLI,
 			RepoPath:             "src/make-skill",
 			BazelTarget:          "//src/make-skill:mksk",
 			OwnerTeam:            "platform",
 			DefaultVersionScheme: VersionSchemeSemver,
 			Visibility:           VisibilityInternal,
-			PolicyRef:            "release-policies/make-skill/v1",
+			PolicyRef:            "release-policies/mksk/v1",
 		}, s.now())
 		if err != nil {
 			return err

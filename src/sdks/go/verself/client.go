@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	billingcore "github.com/verself/verself-go/internal/transport/billing"
+	distributioncore "github.com/verself/verself-go/internal/transport/distribution"
 	governancecore "github.com/verself/verself-go/internal/transport/governance"
 	iamcore "github.com/verself/verself-go/internal/transport/iam"
 	notificationscore "github.com/verself/verself-go/internal/transport/notifications"
@@ -26,6 +27,7 @@ const (
 	DefaultProjectsURL      = "https://projects.api.verself.sh"
 	DefaultNotificationsURL = "https://notifications.api.verself.sh"
 	DefaultBillingURL       = "https://billing.api.verself.sh"
+	DefaultDistributionURL  = "https://distribution.api.verself.sh"
 	DefaultGovernanceURL    = "https://governance.api.verself.sh"
 	DefaultSandboxURL       = "https://sandbox.api.verself.sh"
 	DefaultSecretsURL       = "https://secrets.api.verself.sh"
@@ -41,6 +43,7 @@ type Options struct {
 	ProjectsURL      string
 	NotificationsURL string
 	BillingURL       string
+	DistributionURL  string
 	GovernanceURL    string
 	SandboxURL       string
 	SecretsURL       string
@@ -74,6 +77,7 @@ type Client struct {
 	Projects      *ProjectsClient
 	Notifications *NotificationsClient
 	Billing       *BillingClient
+	Distribution  *DistributionClient
 	Governance    *GovernanceClient
 	Sandbox       *SandboxClient
 	Secrets       *SecretsClient
@@ -98,6 +102,10 @@ func New(options Options) (*Client, error) {
 		return nil, err
 	}
 	billingURL, err := serviceURL(options.BillingURL, options.ServerURL, "billing")
+	if err != nil {
+		return nil, err
+	}
+	distributionURL, err := serviceURL(options.DistributionURL, options.ServerURL, "distribution")
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +165,15 @@ func New(options Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	distributionEditor := distributionRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
+	generatedDistribution, err := distributioncore.NewClient(
+		distributionURL,
+		distributioncore.WithHTTPClient(httpClient),
+		distributioncore.WithRequestEditorFn(distributionEditor),
+	)
+	if err != nil {
+		return nil, err
+	}
 	governanceEditor := governanceRequestEditor(credentials, options.DeviceSessionID, options.Traceparent)
 	generatedGovernance, err := governancecore.NewClient(
 		governanceURL,
@@ -199,6 +216,7 @@ func New(options Options) (*Client, error) {
 		Projects:      &ProjectsClient{client: generatedProjects},
 		Notifications: &NotificationsClient{client: generatedNotifications},
 		Billing:       &BillingClient{client: generatedBilling},
+		Distribution:  &DistributionClient{client: generatedDistribution},
 		Governance:    &GovernanceClient{client: generatedGovernance},
 		Sandbox:       &SandboxClient{client: generatedSandbox},
 		Secrets:       &SecretsClient{client: generatedSecrets},
@@ -225,6 +243,12 @@ func notificationsRequestEditor(credentials CredentialSource, deviceSessionID, t
 }
 
 func billingRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) billingcore.RequestEditorFn {
+	return func(ctx context.Context, req *http.Request) error {
+		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
+	}
+}
+
+func distributionRequestEditor(credentials CredentialSource, deviceSessionID, traceparent string) distributioncore.RequestEditorFn {
 	return func(ctx context.Context, req *http.Request) error {
 		return editBearerRequest(ctx, req, credentials, deviceSessionID, traceparent)
 	}
@@ -299,6 +323,8 @@ func serviceDefaultURL(service string) string {
 		return DefaultNotificationsURL
 	case "billing":
 		return DefaultBillingURL
+	case "distribution":
+		return DefaultDistributionURL
 	case "governance":
 		return DefaultGovernanceURL
 	case "sandbox":

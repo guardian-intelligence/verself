@@ -24,6 +24,7 @@
       - "{{ verself_repo_root }}/src/infrastructure-components"
       - "{{ verself_repo_root }}/src/viteplus-monorepo/apps"
     postgresql_declaration_suffix: "/deploy/postgres[.]yml$"
+    credstore_secret_declaration_suffix: "/deploy/credstore[.]yml$"
     clickhouse_client_declaration_suffix: "/deploy/clickhouse-client[.]yml$"
     openbao_runtime_secret_declaration_suffix: "/deploy/runtime-secrets[.]yml$"
     haproxy_public_route_declaration_suffix: "/deploy/public-routes[.]yml$"
@@ -50,6 +51,7 @@
         postgresql_logical_publications: []
         postgresql_peer_mappings:
           - { system_user: postgres, pg_user: postgres }
+        credstore_secret_files: []
         clickhouse_client_ca_credentials: []
         openbao_runtime_secret_seed_declarations: []
         haproxy_public_routes: []
@@ -62,6 +64,7 @@
         recurse: true
         patterns:
           - postgres.yml
+          - credstore.yml
           - clickhouse-client.yml
           - runtime-secrets.yml
           - public-routes.yml
@@ -86,6 +89,13 @@
           {{
             owner_local_foundation_declaration_files
             | select('search', clickhouse_client_declaration_suffix)
+            | list
+            | sort
+          }}
+        credstore_secret_declaration_files: >-
+          {{
+            owner_local_foundation_declaration_files
+            | select('search', credstore_secret_declaration_suffix)
             | list
             | sort
           }}
@@ -191,6 +201,130 @@
     - name: Converge OTel collector host state
       ansible.builtin.include_role:
         name: otelcol
+
+    - name: Load owner-local credstore secret declarations
+      ansible.builtin.set_fact:
+        credstore_secret_files: >-
+          {{
+            credstore_secret_files
+            + ((lookup('ansible.builtin.file', item) | from_yaml).credstore_secret_files | default([]))
+          }}
+      loop: "{{ credstore_secret_declaration_files }}"
+      loop_control:
+        label: "{{ item }}"
+      no_log: true
+
+    - name: Assert owner-local credstore secret declarations are well formed
+      ansible.builtin.assert:
+        that:
+          - credstore_secret_files | selectattr('path', 'defined') | list | length == credstore_secret_files | length
+          - credstore_secret_files | selectattr('group', 'defined') | list | length == credstore_secret_files | length
+          - credstore_secret_files | map(attribute='path') | unique | list | length == credstore_secret_files | length
+        fail_msg: "Owner-local credstore secret declarations are malformed."
+      no_log: true
+
+    - name: Assert owner-local credstore secret value sources are well formed
+      ansible.builtin.assert:
+        that:
+          - item.path is match('^/')
+          - item.group is match('^[a-z_][a-z0-9_]*$')
+          - >-
+            ([
+              item.site_secret is defined,
+              item.value is defined,
+              item.file is defined
+            ] | select('equalto', true) | list | length) == 1
+        fail_msg: "Owner-local credstore secret declarations must set an absolute path, group, and exactly one value source."
+      loop: "{{ credstore_secret_files }}"
+      loop_control:
+        label: "{{ item.path | default('unnamed-credstore-secret') }}"
+      no_log: true
+
+    - name: Initialize owner-local credstore secret material
+      ansible.builtin.set_fact:
+        credstore_secret_items: []
+        credstore_secret_file_values: {}
+      no_log: true
+
+    - name: Read owner-local credstore secret source files
+      ansible.builtin.slurp:
+        src: "{{ item.file }}"
+      loop: "{{ credstore_secret_files | selectattr('file', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.path }}"
+      register: credstore_secret_file_reads
+      no_log: true
+
+    - name: Build owner-local credstore secret source file map
+      ansible.builtin.set_fact:
+        credstore_secret_file_values: >-
+          {{
+            credstore_secret_file_values
+            | combine({item.item.file: (item.content | b64decode | trim)})
+          }}
+      loop: "{{ credstore_secret_file_reads.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      no_log: true
+
+    - name: Build owner-local credstore secret material
+      ansible.builtin.set_fact:
+        credstore_secret_items: >-
+          {{
+            credstore_secret_items
+            + [
+              item
+              | combine({
+                  'resolved_value': (
+                    item.value
+                    if item.value is defined
+                    else (
+                      lookup('ansible.builtin.vars', item.site_secret, default='')
+                      if item.site_secret is defined
+                      else credstore_secret_file_values[item.file] | default('')
+                    )
+                  )
+                })
+            ]
+          }}
+      loop: "{{ credstore_secret_files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      no_log: true
+
+    - name: Assert owner-local credstore secret material is present
+      ansible.builtin.assert:
+        that:
+          - item.resolved_value | length > 0
+        fail_msg: "Missing owner-local credstore secret material for {{ item.path }}."
+      loop: "{{ credstore_secret_items }}"
+      loop_control:
+        label: "{{ item.path }}"
+      no_log: true
+
+    - name: Converge owner-local credstore secret directories
+      ansible.builtin.file:
+        path: "{{ item.path | dirname }}"
+        state: directory
+        owner: root
+        group: "{{ item.group }}"
+        mode: "{{ item.dir_mode | default('0750') }}"
+      loop: "{{ credstore_secret_items }}"
+      loop_control:
+        label: "{{ item.path | dirname }}"
+      no_log: true
+
+    - name: Converge owner-local credstore secret files
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ item.resolved_value }}\n"
+        owner: root
+        group: "{{ item.group }}"
+        mode: "{{ item.mode | default('0640') }}"
+      loop: "{{ credstore_secret_items }}"
+      loop_control:
+        label: "{{ item.path }}"
+      no_log: true
 
     - name: Load owner-local ClickHouse client declarations
       ansible.builtin.set_fact:

@@ -19,7 +19,7 @@ func releaseError(ctx context.Context, err error) error {
 		return problem(ctx, http.StatusNotFound, "resource.not_found", "Release resource not found", err)
 	case errors.Is(err, release.ErrConflict), errors.Is(err, release.ErrStateConflict), errors.Is(err, release.ErrPolicyDenied):
 		return problem(ctx, http.StatusConflict, "conflict.state", "Release state conflict", err)
-	case errors.Is(err, release.ErrRegistry), errors.Is(err, release.ErrStoreUnavailable):
+	case errors.Is(err, release.ErrDistribution), errors.Is(err, release.ErrStoreUnavailable):
 		return problem(ctx, http.StatusServiceUnavailable, "service.unavailable", "Release service unavailable", err)
 	default:
 		return problem(ctx, http.StatusInternalServerError, "service.unavailable", "Release service failed", err)

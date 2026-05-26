@@ -1,8 +1,12 @@
 package app
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,8 +14,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	verself "github.com/verself/verself-go"
 )
@@ -43,6 +49,99 @@ func TestAuthCommandErrorLinksPublicDocsAnchor(t *testing.T) {
 	want := "https://verself.sh/docs/reference/iam/errors#auth-session-revoked"
 	if !strings.Contains(got, want) {
 		t.Fatalf("auth error missing docs link %q: %s", want, got)
+	}
+}
+
+func TestUpgradeInstallsVerifiedDistributionArtifact(t *testing.T) {
+	xdgRoot := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(xdgRoot, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(xdgRoot, "data"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(xdgRoot, "state"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(xdgRoot, "cache"))
+
+	binaryPath := filepath.Join(t.TempDir(), "verself")
+	if err := os.WriteFile(binaryPath, []byte("old binary\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	layer := testReleaseTar(t, "verself", "new binary\n")
+	layerDigest := sha256Digest(layer)
+	manifest := ociManifest{
+		MediaType: "application/vnd.oci.image.manifest.v1+json",
+		Config:    ociDescriptor{MediaType: "application/vnd.oci.empty.v1+json", Digest: "sha256:" + strings.Repeat("0", 64), Size: 2},
+		Layers: []ociDescriptor{{
+			MediaType: "application/vnd.oci.image.layer.v1.tar",
+			Digest:    layerDigest,
+			Size:      int64(len(layer)),
+		}},
+	}
+	manifestBody, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestDigest := sha256Digest(manifestBody)
+	tuf := testTUFMetadata(t, "verself-cli", "stable", runtime.GOOS, runtime.GOARCH, manifestDigest, int64(len(manifestBody)))
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/distribution/updates:check":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["package_name"] != "verself-cli" || body["channel_name"] != "stable" {
+				t.Fatalf("unexpected update check body: %#v", body)
+			}
+			_, _ = w.Write([]byte(`{"update_available":true,"target":` + testDistributionTargetJSON(server.URL, "verself-cli", "stable", manifestDigest) + `,"traceparent":"trace-test"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/tuf/verself-cli/root.json":
+			_, _ = w.Write(tuf.Root)
+		case r.Method == http.MethodGet && r.URL.Path == "/tuf/verself-cli/timestamp.json":
+			_, _ = w.Write(tuf.Timestamp)
+		case r.Method == http.MethodGet && r.URL.Path == "/tuf/verself-cli/snapshot.json":
+			_, _ = w.Write(tuf.Snapshot)
+		case r.Method == http.MethodGet && r.URL.Path == "/tuf/verself-cli/targets.json":
+			_, _ = w.Write(tuf.Targets)
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/verself/verself-cli/manifests/"+manifestDigest:
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			_, _ = w.Write(manifestBody)
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/verself/verself-cli/blobs/"+layerDigest:
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(layer)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/distribution/upgrades:recordVerifiedDownload":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["artifact_digest"] != manifestDigest || body["layer_digest"] != layerDigest {
+				t.Fatalf("unexpected verification body: %#v", body)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"traceparent":"trace-test"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	var out bytes.Buffer
+	runCLI(t, &out, "upgrade", "--distribution-url", server.URL, "--binary-path", binaryPath, "--json")
+	if got := readFile(t, binaryPath); got != "new binary\n" {
+		t.Fatalf("installed binary = %q", got)
+	}
+	var result UpgradeResult
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("decode upgrade output: %v\n%s", err, out.String())
+	}
+	if !result.UpdateAvailable || result.ArtifactDigest != manifestDigest || result.LayerDigest != layerDigest || result.Traceparent != "trace-test" {
+		t.Fatalf("unexpected upgrade result: %#v", result)
+	}
+	var receipt InstallReceipt
+	if err := readJSONFile(filepath.Join(xdgRoot, "state", "verself", "install-receipts", "verself-cli.json"), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt.ArtifactDigest != manifestDigest || receipt.LayerDigest != layerDigest || receipt.TUFRootSHA256 != sha256Digest(tuf.Root) {
+		t.Fatalf("unexpected install receipt: %#v", receipt)
 	}
 }
 
@@ -1414,6 +1513,116 @@ func runCLI(t *testing.T, out *bytes.Buffer, args ...string) {
 	if err := cli.Run(context.Background(), args); err != nil {
 		t.Fatalf("verself %s: %v", strings.Join(args, " "), err)
 	}
+}
+
+type testTUFSet struct {
+	Root      []byte
+	Targets   []byte
+	Snapshot  []byte
+	Timestamp []byte
+}
+
+func testReleaseTar(t *testing.T, binaryName string, body string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := tar.NewWriter(&buf)
+	if err := writer.WriteHeader(&tar.Header{Name: "bin/" + binaryName, Mode: 0o755, Size: int64(len(body))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func testTUFMetadata(t *testing.T, packageName, channelName, platformOS, platformArch, artifactDigest string, artifactLength int64) testTUFSet {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyID := "test-key"
+	expires := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+	root := signTestTUF(t, keyID, privateKey, tufRootSigned{
+		Type:               "root",
+		SpecVersion:        "1.0.34",
+		Version:            1,
+		Expires:            expires,
+		ConsistentSnapshot: true,
+		Keys: map[string]tufKey{keyID: {
+			KeyType: "ed25519",
+			Scheme:  "ed25519",
+			KeyVal:  map[string]string{"public": hex.EncodeToString(publicKey)},
+		}},
+		Roles: map[string]tufRole{
+			"root":      {KeyIDs: []string{keyID}, Threshold: 1},
+			"targets":   {KeyIDs: []string{keyID}, Threshold: 1},
+			"snapshot":  {KeyIDs: []string{keyID}, Threshold: 1},
+			"timestamp": {KeyIDs: []string{keyID}, Threshold: 1},
+		},
+	})
+	targets := signTestTUF(t, keyID, privateKey, tufTargetsSigned{
+		Type:        "targets",
+		SpecVersion: "1.0.34",
+		Version:     1,
+		Expires:     expires,
+		Targets: map[string]tufTargetFile{
+			channelName + "/" + platformOS + "/" + platformArch + "/" + packageName: {
+				Length: artifactLength,
+				Hashes: map[string]string{"sha256": digestHex(artifactDigest)},
+				Custom: tufTargetCustom{
+					OCIReference: "oci.verself.sh/verself/" + packageName + "@" + artifactDigest,
+					Package:      packageName,
+					Version:      "0.2.0",
+					Channel:      channelName,
+					PlatformOS:   platformOS,
+					PlatformArch: platformArch,
+				},
+			},
+		},
+	})
+	snapshot := signTestTUF(t, keyID, privateKey, tufSnapshotSigned{
+		Type:        "snapshot",
+		SpecVersion: "1.0.34",
+		Version:     1,
+		Expires:     expires,
+		Meta: map[string]tufMetaFile{
+			"targets.json": {Version: 1, Length: int64(len(targets)), Hashes: map[string]string{"sha256": digestHex(sha256Digest(targets))}},
+		},
+	})
+	timestamp := signTestTUF(t, keyID, privateKey, tufTimestampSigned{
+		Type:        "timestamp",
+		SpecVersion: "1.0.34",
+		Version:     1,
+		Expires:     expires,
+		Meta: map[string]tufMetaFile{
+			"snapshot.json": {Version: 1, Length: int64(len(snapshot)), Hashes: map[string]string{"sha256": digestHex(sha256Digest(snapshot))}},
+		},
+	})
+	return testTUFSet{Root: root, Targets: targets, Snapshot: snapshot, Timestamp: timestamp}
+}
+
+func signTestTUF(t *testing.T, keyID string, privateKey ed25519.PrivateKey, signed any) []byte {
+	t.Helper()
+	signedBytes, err := json.Marshal(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(tufEnvelope{
+		Signatures: []tufSignature{{KeyID: keyID, Signature: hex.EncodeToString(ed25519.Sign(privateKey, signedBytes))}},
+		Signed:     json.RawMessage(signedBytes),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+func testDistributionTargetJSON(serverURL, packageName, channelName, digest string) string {
+	return `{"resourceName":"urn:verself:test:distribution/packages/` + packageName + `/channels/` + channelName + `/targets/` + strings.Replace(digest, ":", "-", 1) + `","package_name":"` + packageName + `","channel_name":"` + channelName + `","platform_os":"` + runtime.GOOS + `","platform_arch":"` + runtime.GOARCH + `","artifact_digest":"` + digest + `","artifact_digest_ref":"` + strings.Replace(digest, ":", "-", 1) + `","package_version":"0.2.0","state":"published","tuf_targets_version":1,"tuf_snapshot_version":1,"tuf_timestamp_version":1,"public_oci_reference":"oci.verself.sh/verself/` + packageName + `@` + digest + `","download_url":"` + serverURL + `/v2/verself/` + packageName + `/manifests/` + digest + `","tuf_metadata_url":"` + serverURL + `/tuf/` + packageName + `","published_at":"2026-05-25T12:00:00Z"}`
 }
 
 func requireTool(t *testing.T, name string) {
