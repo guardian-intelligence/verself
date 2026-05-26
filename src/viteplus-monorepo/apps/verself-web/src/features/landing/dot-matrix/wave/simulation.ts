@@ -97,6 +97,12 @@ export function createDotMatrixWaveSimulation(
       uniforms.uState.value = targets.read.texture;
       uniforms.uTexel.value.set(1 / targets.width, 1 / targets.height);
     },
+    size() {
+      return {
+        height: targets.height,
+        width: targets.width,
+      };
+    },
     step(input: WaveSimulationStep) {
       const impulseCount = Math.min(input.impulses.length, DOT_MATRIX_MAX_WAVE_IMPULSES);
       for (let index = 0; index < DOT_MATRIX_MAX_WAVE_IMPULSES; index += 1) {
