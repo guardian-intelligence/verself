@@ -15,7 +15,7 @@ import {
 } from "@verself/ui/components/ui/table";
 import { ArrowLeft, Laptop, MapPin, ShieldCheck, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
-import { revokeClientAuthSession, selectActiveAccount } from "~/server-fns/auth";
+import { revokeClientAuthDevice, selectActiveAccount } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/account/security")({
   component: AccountSecurity,
@@ -34,7 +34,7 @@ function AccountSecurity() {
   });
   const revoke = useMutation({
     mutationFn: (input: { readonly sessionHandle: string }) =>
-      revokeClientAuthSession({ data: { sessionHandle: input.sessionHandle } }),
+      revokeClientAuthDevice({ data: { sessionHandle: input.sessionHandle } }),
   });
 
   return (
@@ -300,10 +300,10 @@ function SessionRow({
           size="sm"
           disabled={isRevoking}
           onClick={onRevoke}
-          title="Revoke session"
+          title="Revoke device"
         >
           <Trash2 className="size-3.5" aria-hidden="true" />
-          <span>{isRevoking ? "Revoking" : "Revoke"}</span>
+          <span>{isRevoking ? "Revoking" : "Revoke device"}</span>
         </Button>
       </TableCell>
     </TableRow>

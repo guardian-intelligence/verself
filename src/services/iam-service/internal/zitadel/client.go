@@ -159,6 +159,21 @@ func (c *Client) CompleteMemberInvite(ctx context.Context, input identity.Direct
 	return nil
 }
 
+func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return fmt.Errorf("%w: session_id is required", identity.ErrInvalidInput)
+	}
+	path := "/v2/sessions/" + url.PathEscape(sessionID)
+	if err := c.doJSON(ctx, http.MethodDelete, path, map[string]any{}, nil); err != nil {
+		if zitadelSessionAlreadyGone(err) {
+			return nil
+		}
+		return fmt.Errorf("%w: delete session: %v", identity.ErrZitadelUnavailable, err)
+	}
+	return nil
+}
+
 type userSummary struct {
 	Type        identity.MemberType
 	Email       string
@@ -502,6 +517,20 @@ func zitadelResourceAlreadyGone(err error) bool {
 		strings.Contains(text, "Errors.User.Key.NotExisting") ||
 		strings.Contains(text, "Errors.User.Secret.NotExisting") ||
 		strings.Contains(text, "Errors.Key.NotExisting")
+}
+
+func zitadelSessionAlreadyGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	var statusErr zitadelStatusError
+	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
+		return true
+	}
+	text := err.Error()
+	return strings.Contains(text, "Errors.Session.NotExisting") ||
+		strings.Contains(text, "Session could not be found") ||
+		strings.Contains(text, "session.not_found")
 }
 
 func firstNonEmpty(values ...string) string {

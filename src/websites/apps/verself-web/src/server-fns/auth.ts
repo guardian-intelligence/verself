@@ -6,7 +6,7 @@ const selectOrganizationInputSchema = v.object({
   orgID: v.pipe(v.string(), v.nonEmpty()),
 });
 
-const revokeSessionInputSchema = v.object({
+const revokeDeviceInputSchema = v.object({
   sessionHandle: v.pipe(v.string(), v.nonEmpty()),
 });
 
@@ -82,12 +82,12 @@ export const selectActiveAccount = createServerFn({ method: "POST" })
     return selectIdentityBrowserAccount(data.accountHandle);
   });
 
-export const revokeClientAuthSession = createServerFn({ method: "POST" })
+export const revokeClientAuthDevice = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
-  .inputValidator(revokeSessionInputSchema)
+  .inputValidator(revokeDeviceInputSchema)
   .handler(async ({ data }) => {
-    const { revokeIdentityBrowserSession } = await import("./auth.server");
-    await revokeIdentityBrowserSession(data.sessionHandle);
+    const { revokeIdentityBrowserDevice } = await import("./auth.server");
+    await revokeIdentityBrowserDevice(data.sessionHandle);
     return { revoked: true };
   });
 

@@ -1131,7 +1131,7 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	var updateBody map[string]any
 	var inviteKey string
 	var inviteBody map[string]any
-	var revokedSession string
+	revokedSessions := map[string]int{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Header.Get("Authorization") {
@@ -1158,11 +1158,16 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 			}
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/device-sessions":
 			_, _ = w.Write([]byte(`{"sessions":[{"sessionId":"` + sessionID + `","accountId":"` + accountID + `","channel":"cli","state":"active","current":true,"deviceLabel":"CLI","createdAt":"2026-05-25T00:00:00Z","lastSeenAt":"2026-05-25T00:00:00Z","expiresAt":"2026-05-26T00:00:00Z"},{"sessionId":"` + secondSession + `","accountId":"` + accountID + `","channel":"browser","state":"active","current":false,"deviceLabel":"Browser","createdAt":"2026-05-25T00:00:00Z","lastSeenAt":"2026-05-25T00:00:00Z","expiresAt":"2026-05-26T00:00:00Z"}]}`))
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/device-sessions/"+secondSession:
-			if r.Header.Get("X-Verself-Device-Session") != sessionID {
+		case r.Method == http.MethodDelete && (r.URL.Path == "/api/v1/device-sessions/"+sessionID || r.URL.Path == "/api/v1/device-sessions/"+secondSession):
+			targetSession := strings.TrimPrefix(r.URL.Path, "/api/v1/device-sessions/")
+			currentSession := r.Header.Get("X-Verself-Device-Session")
+			if targetSession == sessionID && currentSession != sessionID {
 				t.Fatalf("revoke session header = %q", r.Header.Get("X-Verself-Device-Session"))
 			}
-			revokedSession = secondSession
+			if targetSession == secondSession && currentSession != sessionID && currentSession != secondSession {
+				t.Fatalf("second revoke session header = %q", r.Header.Get("X-Verself-Device-Session"))
+			}
+			revokedSessions[targetSession]++
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs":
 			createKey = r.Header.Get("Idempotency-Key")
@@ -1294,8 +1299,8 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 		t.Fatalf("auth sessions output:\n%s", sessions.String())
 	}
 	runCLI(t, nil, "auth", "sessions", "revoke", secondSession)
-	if revokedSession != secondSession {
-		t.Fatalf("revoked session = %q", revokedSession)
+	if revokedSessions[secondSession] != 1 {
+		t.Fatalf("revoked sessions = %#v", revokedSessions)
 	}
 
 	runCLI(t, nil, "orgs", "use", "guardian")
@@ -1336,6 +1341,14 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	runCLI(t, &accountLogout, "auth", "accounts", "logout", "operator@example.test")
 	if !strings.Contains(accountLogout.String(), `"message": "account logged out"`) {
 		t.Fatalf("account logout output:\n%s", accountLogout.String())
+	}
+	if revokedSessions[sessionID] != 1 {
+		t.Fatalf("account logout did not revoke device session; revoked sessions = %#v", revokedSessions)
+	}
+
+	runCLI(t, nil, "auth", "logout", "--profile", "default")
+	if revokedSessions[secondSession] != 2 {
+		t.Fatalf("profile logout did not revoke remaining device session; revoked sessions = %#v", revokedSessions)
 	}
 }
 

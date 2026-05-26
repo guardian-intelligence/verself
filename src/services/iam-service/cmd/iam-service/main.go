@@ -339,6 +339,7 @@ func run() error {
 		PublicBaseURL:   browserAuthPublicBaseURL,
 		ProductAudience: authAudience,
 		Authz:           authzService,
+		ProviderSession: zitadelClient,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 			Timeout:   5 * time.Second,
@@ -378,13 +379,14 @@ func run() error {
 
 	privateMux := http.NewServeMux()
 	api.NewAPI(privateMux, api.Config{
-		Version:        serviceVersion,
-		ListenAddr:     listenAddr,
-		Service:        identityService,
-		Authz:          authzService,
-		InstallationID: installationID,
-		ProductBaseURL: browserAuthPublicBaseURL,
-		InviteNotifier: inviteNotifier,
+		Version:         serviceVersion,
+		ListenAddr:      listenAddr,
+		Service:         identityService,
+		Authz:           authzService,
+		InstallationID:  installationID,
+		ProductBaseURL:  browserAuthPublicBaseURL,
+		InviteNotifier:  inviteNotifier,
+		ProviderSession: zitadelClient,
 	})
 	authConfig := auth.Config{
 		IssuerURL: authIssuerURL,

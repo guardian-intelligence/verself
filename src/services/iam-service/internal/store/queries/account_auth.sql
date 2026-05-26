@@ -167,6 +167,7 @@ INSERT INTO iam_device_sessions (
   state,
   device_label,
   credential_fingerprint,
+  provider_session_id,
   auth_time,
   auth_methods,
   expires_at,
@@ -190,6 +191,7 @@ INSERT INTO iam_device_sessions (
   'active',
   sqlc.arg(device_label),
   sqlc.arg(credential_fingerprint),
+  sqlc.arg(provider_session_id),
   sqlc.arg(auth_time),
   sqlc.arg(auth_methods)::text[],
   sqlc.arg(expires_at),
@@ -209,6 +211,7 @@ ON CONFLICT (session_id) DO UPDATE SET
   state = 'active',
   device_label = EXCLUDED.device_label,
   credential_fingerprint = EXCLUDED.credential_fingerprint,
+  provider_session_id = EXCLUDED.provider_session_id,
   auth_time = EXCLUDED.auth_time,
   auth_methods = EXCLUDED.auth_methods,
   expires_at = EXCLUDED.expires_at,
@@ -218,10 +221,10 @@ ON CONFLICT (session_id) DO UPDATE SET
   last_seen_user_agent = EXCLUDED.last_seen_user_agent,
   last_seen_at = now(),
   updated_at = now()
-RETURNING session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at;
+RETURNING session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, provider_session_id, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at;
 
 -- name: GetDeviceSession :one
-SELECT session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
+SELECT session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, provider_session_id, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
 FROM iam_device_sessions
 WHERE session_id = sqlc.arg(session_id);
 
@@ -237,10 +240,10 @@ WHERE session_id = sqlc.arg(session_id)
   AND account_id = sqlc.arg(account_id)
   AND state = 'active'
   AND expires_at > now()
-RETURNING session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at;
+RETURNING session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, provider_session_id, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at;
 
 -- name: ListDeviceSessionsForAccount :many
-SELECT session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
+SELECT session_id, account_id, issuer, subject, channel, state, device_label, credential_fingerprint, provider_session_id, auth_time, auth_methods, expires_at, revoked_at, revoked_reason, created_client_ip, created_client_ip_trusted, created_client_ip_source, created_user_agent, last_seen_client_ip, last_seen_client_ip_trusted, last_seen_client_ip_source, last_seen_user_agent, created_at, last_seen_at, updated_at
 FROM iam_device_sessions
 WHERE account_id = sqlc.arg(account_id)
 ORDER BY

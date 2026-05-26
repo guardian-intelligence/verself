@@ -82,6 +82,7 @@ CREATE TABLE iam_device_sessions (
     state TEXT NOT NULL DEFAULT 'active',
     device_label TEXT NOT NULL DEFAULT '',
     credential_fingerprint TEXT NOT NULL DEFAULT '',
+    provider_session_id TEXT NOT NULL DEFAULT '',
     auth_time TIMESTAMPTZ NOT NULL DEFAULT 'epoch',
     auth_methods TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     expires_at TIMESTAMPTZ NOT NULL,

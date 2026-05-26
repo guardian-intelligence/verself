@@ -13,14 +13,15 @@ import (
 )
 
 type Config struct {
-	Version        string
-	ListenAddr     string
-	InstallationID string
-	ProductBaseURL string
-	Service        *identity.Service
-	Authz          *authz.Service
-	InviteNotifier InviteNotifier
-	SignupNotifier SignupNotifier
+	Version         string
+	ListenAddr      string
+	InstallationID  string
+	ProductBaseURL  string
+	Service         *identity.Service
+	Authz           *authz.Service
+	InviteNotifier  InviteNotifier
+	SignupNotifier  SignupNotifier
+	ProviderSession ProviderSessionRevoker
 }
 
 func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
@@ -34,7 +35,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	}
 	api := humago.New(mux, config)
 	applyPublicAPISecurityScheme(api)
-	RegisterRoutes(api, cfg.Service, cfg.Authz, cfg.InstallationID, cfg.ProductBaseURL, cfg.InviteNotifier)
+	RegisterRoutes(api, cfg.Service, cfg.Authz, cfg.InstallationID, cfg.ProductBaseURL, cfg.InviteNotifier, cfg.ProviderSession)
 	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }

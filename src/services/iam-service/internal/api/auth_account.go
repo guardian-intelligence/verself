@@ -72,6 +72,10 @@ func (h publicHandlers) CreateDeviceSession(ctx context.Context, input *contract
 	default:
 		return nil, badRequest(ctx, "request.validation_failed", "unsupported auth channel", nil)
 	}
+	providerSessionID := providerSessionIDFromClaims(authIdentity.Raw)
+	if channel != "workload" && providerSessionID == "" {
+		return nil, forbidden(ctx, "auth.reauthentication_required", "provider session proof is required; sign in again")
+	}
 	deviceLabel := firstNonEmpty(string(input.Body.DeviceLabel), channel)
 	pg, err := h.accountPG()
 	if err != nil {
@@ -97,6 +101,7 @@ func (h publicHandlers) CreateDeviceSession(ctx context.Context, input *contract
 		Channel:               channel,
 		DeviceLabel:           deviceLabel,
 		CredentialFingerprint: credentialFingerprint(authIdentity.Raw),
+		ProviderSessionID:     providerSessionID,
 		AuthTime:              timestamptz(authTime(authIdentity.Raw)),
 		AuthMethods:           authMethods(authIdentity.Raw),
 		ExpiresAt:             timestamptz(deviceSessionExpiresAt()),
@@ -148,13 +153,29 @@ func (h publicHandlers) RevokeDeviceSession(ctx context.Context, input *contract
 	if err != nil {
 		return nil, err
 	}
-	q, account, _, err := h.accountAndSession(ctx, authIdentity, string(input.CurrentSessionID))
+	q, account, current, err := h.accountAndSession(ctx, authIdentity, string(input.CurrentSessionID))
 	if err != nil {
 		return nil, err
 	}
 	targetID := strings.TrimSpace(string(input.SessionID))
 	if targetID == "" {
 		return nil, badRequest(ctx, "request.validation_failed", "session id is required", nil)
+	}
+	target, err := q.GetDeviceSession(ctx, identitystore.GetDeviceSessionParams{SessionID: targetID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, notFound(ctx, "resource.not_found", "device session not found")
+	}
+	if err != nil {
+		return nil, internalFailure(ctx, "service.unavailable", "load device session failed", err)
+	}
+	if target.AccountID != account.AccountID {
+		return nil, notFound(ctx, "resource.not_found", "device session not found")
+	}
+	if target.State == "revoked" {
+		return &contractapi.RevokeDeviceSessionOutput{}, nil
+	}
+	if err := h.revokeProviderDeviceSession(ctx, target, current, authIdentity); err != nil {
+		return nil, err
 	}
 	if err := q.RevokeDeviceSession(ctx, identitystore.RevokeDeviceSessionParams{
 		AccountID:     account.AccountID,
@@ -168,6 +189,30 @@ func (h publicHandlers) RevokeDeviceSession(ctx context.Context, input *contract
 		attribute.String("iam.session_id", targetID),
 	))
 	return &contractapi.RevokeDeviceSessionOutput{}, nil
+}
+
+func (h publicHandlers) revokeProviderDeviceSession(ctx context.Context, session identitystore.IamDeviceSession, current identitystore.IamDeviceSession, authIdentity *auth.Identity) error {
+	sessionID := strings.TrimSpace(session.ProviderSessionID)
+	if sessionID == "" && session.SessionID == current.SessionID && authIdentity != nil {
+		sessionID = providerSessionIDFromClaims(authIdentity.Raw)
+	}
+	if sessionID == "" {
+		if session.Channel == "workload" {
+			return nil
+		}
+		return forbidden(ctx, "auth.reauthentication_required", "provider session proof is required; sign in again")
+	}
+	if h.providerSession == nil {
+		return internalFailure(ctx, "service.unavailable", "identity provider session revoker unavailable", nil)
+	}
+	if err := h.providerSession.DeleteSession(ctx, sessionID); err != nil {
+		return identityError(ctx, err)
+	}
+	trace.SpanFromContext(ctx).AddEvent("iam.provider_session.revoked", trace.WithAttributes(
+		attribute.String("iam.session_id", session.SessionID),
+		attribute.String("iam.provider_session_hash", stablePublicID("", sessionID)),
+	))
+	return nil
 }
 
 func (h publicHandlers) ListAccountConnections(ctx context.Context, input *contractapi.ListAccountConnectionsInput) (*contractapi.ListAccountConnectionsOutput, error) {

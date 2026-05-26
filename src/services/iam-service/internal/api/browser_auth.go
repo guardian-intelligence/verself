@@ -60,26 +60,23 @@ type BrowserAuthConfig struct {
 	ProductAudience string
 	HTTPClient      *http.Client
 	Authz           *authz.Service
+	ProviderSession ProviderSessionRevoker
 }
 
 type BrowserAuth struct {
-	q                  *identitystore.Queries
-	store              identity.SQLStore
-	logger             *slog.Logger
-	provider           *oidc.Provider
-	verifier           *oidc.IDTokenVerifier
-	oauth              oauth2.Config
-	httpClient         *http.Client
-	authz              *authz.Service
-	productAudience    string
-	publicBaseURL      *url.URL
-	postLogoutURL      string
-	endSessionEndpoint string
-	tokenVault         browserTokenVault
-}
-
-type browserAuthProviderMetadata struct {
-	EndSessionEndpoint string `json:"end_session_endpoint"`
+	q                *identitystore.Queries
+	store            identity.SQLStore
+	logger           *slog.Logger
+	provider         *oidc.Provider
+	verifier         *oidc.IDTokenVerifier
+	oauth            oauth2.Config
+	httpClient       *http.Client
+	authz            *authz.Service
+	providerSessions ProviderSessionRevoker
+	productAudience  string
+	publicBaseURL    *url.URL
+	postLogoutURL    string
+	tokenVault       browserTokenVault
 }
 
 type browserAuthRequestInfoKey struct{}
@@ -120,6 +117,9 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	if cfg.Authz == nil {
 		return nil, errors.New("identity browser auth authorization graph is required")
 	}
+	if cfg.ProviderSession == nil {
+		return nil, errors.New("identity browser auth provider session revoker is required")
+	}
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -127,10 +127,6 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	provider, err := oidc.NewProvider(oidc.ClientContext(ctx, httpClient), cfg.IssuerURL)
 	if err != nil {
 		return nil, fmt.Errorf("identity browser auth oidc discovery: %w", err)
-	}
-	var metadata browserAuthProviderMetadata
-	if err := provider.Claims(&metadata); err != nil {
-		return nil, fmt.Errorf("identity browser auth oidc provider metadata: %w", err)
 	}
 	tokenVault, err := newBrowserTokenVault(cfg.ClientSecret)
 	if err != nil {
@@ -145,7 +141,6 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		"urn:zitadel:iam:org:project:id:" + productAudience + ":aud",
 	}
 	callbackURL := publicBaseURL.ResolveReference(&url.URL{Path: browserAuthCallbackPath}).String()
-	// Zitadel matches post_logout_redirect_uri against the registered string.
 	postLogoutURL := publicBaseURL.String()
 	return &BrowserAuth{
 		q:        identitystore.New(cfg.PG),
@@ -162,13 +157,13 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 			RedirectURL:  callbackURL,
 			Scopes:       scopes,
 		},
-		httpClient:         httpClient,
-		authz:              cfg.Authz,
-		productAudience:    productAudience,
-		publicBaseURL:      publicBaseURL,
-		postLogoutURL:      postLogoutURL,
-		endSessionEndpoint: strings.TrimSpace(metadata.EndSessionEndpoint),
-		tokenVault:         tokenVault,
+		httpClient:       httpClient,
+		authz:            cfg.Authz,
+		providerSessions: cfg.ProviderSession,
+		productAudience:  productAudience,
+		publicBaseURL:    publicBaseURL,
+		postLogoutURL:    postLogoutURL,
+		tokenVault:       tokenVault,
 	}, nil
 }
 
@@ -232,11 +227,11 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.route(w, r, http.MethodGet, "browser-sessions-list", rateLimitRead, 0, a.handleSessions)
 	default:
 		if strings.HasPrefix(r.URL.Path, "/accounts/") {
-			a.route(w, r, http.MethodDelete, "browser-account-remove", rateLimitIAMMutation, 0, a.handleAccountRemove)
+			a.route(w, r, http.MethodDelete, "browser-device-revoke", rateLimitIAMMutation, 0, a.handleAccountRemove)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/sessions/") {
-			a.route(w, r, http.MethodDelete, "browser-session-revoke", rateLimitIAMMutation, 0, a.handleSessionRevoke)
+			a.route(w, r, http.MethodDelete, "browser-device-revoke", rateLimitIAMMutation, 0, a.handleSessionRevoke)
 			return
 		}
 		a.writeProblem(w, r, http.StatusNotFound, "not-found", "auth route not found")
@@ -776,32 +771,27 @@ func (a *BrowserAuth) handleAccountRemove(w http.ResponseWriter, r *http.Request
 		return
 	}
 	removed, err := a.readAccount(r.Context(), client.ClientHash, accountHandle)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) {
+		a.writeProblem(w, r, http.StatusForbidden, "account-unavailable", "account is not available to this browser")
+		return
+	}
+	if err != nil {
 		a.serverError(w, "load browser account", err)
 		return
 	}
-	if err := a.q.DeleteBrowserAccountByHandle(r.Context(), identitystore.DeleteBrowserAccountByHandleParams{
-		ClientHash:    client.ClientHash,
-		AccountHandle: accountHandle,
-	}); err != nil {
-		a.serverError(w, "delete browser account", err)
+	sessions, err := a.revokeBrowserClient(r.Context(), client.ClientHash, client.ClientHandle, client.ClientCachePartition)
+	if err != nil {
+		a.serverError(w, "revoke browser device", err)
 		return
 	}
-	activeAccountHandle := stringValue(stringFromText(client.ActiveAccountHandle))
-	if accountHandle == activeAccountHandle {
-		if err := a.selectFallbackBrowserAccount(r.Context(), client.ClientHash); err != nil {
-			a.serverError(w, "select fallback browser account", err)
-			return
-		}
-	}
-	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_account.removed", trace.WithAttributes(
+	a.clearClientCookie(w)
+	a.clearLoginCookie(w)
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_client.revoked", trace.WithAttributes(
 		attribute.String("auth.account_handle", accountHandle),
 		attribute.String("auth.client_handle", client.ClientHandle),
-		attribute.Bool("auth.current_account", accountHandle == activeAccountHandle),
+		attribute.Int("auth.account_count", len(sessions)),
 	))
-	if removed != nil {
-		sendBrowserAuthActivity(r.Context(), removed.User, accountHandle, "browserAuth.removeAccount", "iam.browser_account.removed", "delete", "iam.browser_account.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
-	}
+	sendBrowserAuthActivity(r.Context(), removed.User, accountHandle, "browserAuth.revokeDevice", "iam.browser_client.revoked", "delete", "iam.browser_client.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -820,71 +810,57 @@ func (a *BrowserAuth) handleSessionRevoke(w http.ResponseWriter, r *http.Request
 		return
 	}
 	removed, err := a.readAccount(r.Context(), client.ClientHash, sessionHandle)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) {
+		a.writeProblem(w, r, http.StatusForbidden, "session-unavailable", "session is not available to this browser")
+		return
+	}
+	if err != nil {
 		a.serverError(w, "load browser account", err)
 		return
 	}
-	if err := a.q.DeleteBrowserAccountByHandle(r.Context(), identitystore.DeleteBrowserAccountByHandleParams{
-		AccountHandle: sessionHandle,
-		ClientHash:    client.ClientHash,
-	}); err != nil {
-		a.serverError(w, "delete browser account", err)
+	sessions, err := a.revokeBrowserClient(r.Context(), client.ClientHash, client.ClientHandle, client.ClientCachePartition)
+	if err != nil {
+		a.serverError(w, "revoke browser device", err)
 		return
 	}
-	activeAccountHandle := stringValue(stringFromText(client.ActiveAccountHandle))
-	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_account.removed", trace.WithAttributes(
+	a.clearClientCookie(w)
+	a.clearLoginCookie(w)
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_client.revoked", trace.WithAttributes(
 		attribute.String("auth.account_handle", sessionHandle),
 		attribute.String("auth.client_handle", client.ClientHandle),
-		attribute.Bool("auth.current_account", sessionHandle == activeAccountHandle),
+		attribute.Int("auth.account_count", len(sessions)),
 	))
-	if removed != nil {
-		sendBrowserAuthActivity(r.Context(), removed.User, sessionHandle, "browserAuth.removeAccount", "iam.browser_account.removed", "delete", "iam.browser_account.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
-	}
-	if sessionHandle == activeAccountHandle {
-		if err := a.selectFallbackBrowserAccount(r.Context(), client.ClientHash); err != nil {
-			a.serverError(w, "select fallback browser account", err)
-			return
-		}
-	}
+	sendBrowserAuthActivity(r.Context(), removed.User, sessionHandle, "browserAuth.revokeDevice", "iam.browser_client.revoked", "delete", "iam.browser_client.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *BrowserAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
 	clientSecret, ok := browserClientSecretFromRequest(r)
-	var idToken string
-	var logoutSession *browserSession
+	var logoutSessions []*browserSession
 	if ok {
 		clientHash := hashToken(clientSecret)
-		if session, err := a.readActiveAccount(r.Context(), clientHash); err == nil {
-			logoutSession = session
-			if session.IDToken != "" {
-				idToken = session.IDToken
-			}
-		}
-		if err := a.q.DeleteBrowserClient(r.Context(), identitystore.DeleteBrowserClientParams{ClientHash: clientHash}); err != nil {
-			a.serverError(w, "delete browser client", err)
+		clientHandle := browserClientHandle(clientHash)
+		cachePartition := ""
+		if client, err := a.q.GetBrowserClient(r.Context(), identitystore.GetBrowserClientParams{ClientHash: clientHash}); err == nil {
+			clientHandle = client.ClientHandle
+			cachePartition = client.ClientCachePartition
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			a.serverError(w, "load browser client", err)
 			return
 		}
+		sessions, err := a.revokeBrowserClient(r.Context(), clientHash, clientHandle, cachePartition)
+		if err != nil {
+			a.serverError(w, "revoke browser device", err)
+			return
+		}
+		logoutSessions = sessions
 	}
 	a.clearClientCookie(w)
 	a.clearLoginCookie(w)
-	if logoutSession != nil {
-		sendBrowserAuthActivity(r.Context(), logoutSession.User, logoutSession.AccountHandle, "browserAuth.logout", "iam.browser_client.logged_out", "delete", "iam.browser_client.delete", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
+	for _, session := range logoutSessions {
+		sendBrowserAuthActivity(r.Context(), session.User, session.AccountHandle, "browserAuth.logout", "iam.browser_client.logged_out", "delete", "iam.browser_client.delete", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
 	}
-	if idToken == "" || a.endSessionEndpoint == "" {
-		http.Redirect(w, r, a.postLogoutURL, http.StatusSeeOther)
-		return
-	}
-	logoutURL, err := url.Parse(a.endSessionEndpoint)
-	if err != nil {
-		a.serverError(w, "parse oidc end-session endpoint", err)
-		return
-	}
-	query := logoutURL.Query()
-	query.Set("id_token_hint", idToken)
-	query.Set("post_logout_redirect_uri", a.postLogoutURL)
-	logoutURL.RawQuery = query.Encode()
-	http.Redirect(w, r, logoutURL.String(), http.StatusSeeOther)
+	http.Redirect(w, r, a.postLogoutURL, http.StatusSeeOther)
 }
 
 func (a *BrowserAuth) ensureBrowserClient(w http.ResponseWriter, r *http.Request) (identitystore.IamBrowserClient, string, error) {
@@ -1003,29 +979,86 @@ func (a *BrowserAuth) requireBrowserClient(w http.ResponseWriter, r *http.Reques
 	return client, nil
 }
 
-func (a *BrowserAuth) selectFallbackBrowserAccount(ctx context.Context, clientHash string) error {
+func (a *BrowserAuth) revokeBrowserClient(ctx context.Context, clientHash, clientHandle, cachePartition string) ([]*browserSession, error) {
+	sessions, err := a.browserAccountSessionsForClient(ctx, clientHash, clientHandle, cachePartition)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.revokeProviderBrowserSessions(ctx, sessions); err != nil {
+		return nil, err
+	}
+	if err := a.q.DeleteBrowserClient(ctx, identitystore.DeleteBrowserClientParams{ClientHash: clientHash}); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
+func (a *BrowserAuth) browserAccountSessionsForClient(ctx context.Context, clientHash, clientHandle, cachePartition string) ([]*browserSession, error) {
 	rows, err := a.q.ListBrowserAccountsForClient(ctx, identitystore.ListBrowserAccountsForClientParams{ClientHash: clientHash})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	accountHandle := ""
-	if len(rows) > 0 {
-		accountHandle = rows[0].AccountHandle
+	if clientHandle == "" {
+		clientHandle = browserClientHandle(clientHash)
 	}
-	cachePartition, err := randomToken(24)
-	if err != nil {
-		return err
+	sessions := make([]*browserSession, 0, len(rows))
+	for _, row := range rows {
+		session, err := a.readAccountForClient(ctx, clientHash, clientHandle, cachePartition, row.AccountHandle)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, session)
 	}
-	if accountHandle != "" {
-		if err := a.q.DeleteBrowserResourceTokens(ctx, identitystore.DeleteBrowserResourceTokensParams{AccountHandle: accountHandle}); err != nil {
+	return sessions, nil
+}
+
+func (a *BrowserAuth) revokeProviderBrowserSessions(ctx context.Context, sessions []*browserSession) error {
+	if len(sessions) == 0 {
+		return nil
+	}
+	if a.providerSessions == nil {
+		return errors.New("provider session revoker is required")
+	}
+	seen := map[string]struct{}{}
+	for _, session := range sessions {
+		sessionID, err := browserProviderSessionID(session)
+		if err != nil {
 			return err
 		}
+		if _, ok := seen[sessionID]; ok {
+			continue
+		}
+		seen[sessionID] = struct{}{}
+		if err := a.providerSessions.DeleteSession(ctx, sessionID); err != nil {
+			return err
+		}
+		trace.SpanFromContext(ctx).AddEvent("iam.provider_session.revoked", trace.WithAttributes(
+			attribute.String("auth.provider_session_hash", hashToken(sessionID)),
+			attribute.String("auth.client_handle", session.ClientHandle),
+			attribute.String("auth.account_handle", session.AccountHandle),
+			attribute.String("enduser.id", session.User.Sub),
+		))
 	}
-	return a.q.SetBrowserClientActiveAccount(ctx, identitystore.SetBrowserClientActiveAccountParams{
-		AccountHandle:        nullableText(accountHandle),
-		ClientCachePartition: cachePartition,
-		ClientHash:           clientHash,
-	})
+	return nil
+}
+
+func browserProviderSessionID(session *browserSession) (string, error) {
+	if session == nil {
+		return "", errors.New("browser account session is required")
+	}
+	if sessionID := providerSessionIDFromClaims(session.User.Claims); sessionID != "" {
+		return sessionID, nil
+	}
+	if strings.TrimSpace(session.IDToken) != "" {
+		claims, err := decodeJWTPayload(session.IDToken)
+		if err != nil {
+			return "", fmt.Errorf("decode browser id_token provider session id: %w", err)
+		}
+		if sessionID := providerSessionIDFromClaims(claims); sessionID != "" {
+			return sessionID, nil
+		}
+	}
+	return "", errors.New("browser account is missing provider session id")
 }
 
 func (a *BrowserAuth) accountSessionFromRequest(w http.ResponseWriter, r *http.Request) (*browserSession, error) {
@@ -1059,6 +1092,9 @@ func (a *BrowserAuth) accountSessionForClient(ctx context.Context, clientHash st
 	if err != nil {
 		if a.logger != nil {
 			a.logger.WarnContext(ctx, "browser auth token refresh failed", "error", err, "subject", session.User.Sub)
+		}
+		if err := a.revokeProviderBrowserSessions(ctx, []*browserSession{session}); err != nil {
+			return nil, err
 		}
 		if err := a.q.DeleteBrowserAccountByHandle(ctx, identitystore.DeleteBrowserAccountByHandleParams{ClientHash: session.ClientHash, AccountHandle: session.AccountHandle}); err != nil {
 			return nil, err
@@ -1389,11 +1425,15 @@ func (a *BrowserAuth) readAccount(ctx context.Context, clientHash, accountHandle
 	if err != nil {
 		return nil, err
 	}
+	return a.readAccountForClient(ctx, clientHash, client.ClientHandle, client.ClientCachePartition, accountHandle)
+}
+
+func (a *BrowserAuth) readAccountForClient(ctx context.Context, clientHash, clientHandle, cachePartition, accountHandle string) (*browserSession, error) {
 	row, err := a.q.GetBrowserAccount(ctx, identitystore.GetBrowserAccountParams{ClientHash: clientHash, AccountHandle: accountHandle})
 	if err != nil {
 		return nil, err
 	}
-	return a.browserSessionFromAccountRecord(browserAccountRecordFromAccount(client.ClientHandle, client.ClientCachePartition, row))
+	return a.browserSessionFromAccountRecord(browserAccountRecordFromAccount(clientHandle, cachePartition, row))
 }
 
 func (a *BrowserAuth) browserSessionFromAccountRecord(row browserAccountRecord) (*browserSession, error) {
