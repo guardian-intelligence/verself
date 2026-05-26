@@ -32,7 +32,7 @@ job "distribution-release-mksk" {
       }
       resources {
         cpu = 50
-        memory = 32
+        memory = 0
       }
     }
 
@@ -75,8 +75,9 @@ job "distribution-release-mksk" {
         XDG_CACHE_HOME = "/tmp/distribution-release-mksk/$${NOMAD_ALLOC_ID}/home/.cache"
       }
       resources {
-        cpu = 4000
-        memory = 8192
+        cpu = 1000
+        # Single-node prod over-reserves lifecycle-task memory; release workers should get a real reservation once they move to a dedicated node class.
+        memory = 0
       }
     }
   }
