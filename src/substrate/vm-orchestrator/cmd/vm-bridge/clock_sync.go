@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/verself/vm-orchestrator/vmproto"
@@ -21,21 +23,184 @@ const (
 	chronyConfigPath = "/etc/chrony/chrony.conf"
 	chronyPTPDevice  = "/dev/ptp0"
 	chronySocketPath = "/run/chrony/chronyd.sock"
+	chronyDriftPath  = "/var/lib/chrony/drift"
 
 	chronyReadyTimeout = 5 * time.Second
 	chronyReadyPoll    = 50 * time.Millisecond
 	chronycCommandWait = 15 * time.Second
+	chronyStopGrace    = 2 * time.Second
+	chronyKillGrace    = time.Second
 	clockMaxOffsetNS   = int64(time.Millisecond)
 	clockMaxSkewPPM    = 100.0
 	clockMaxWallOffset = time.Millisecond
 )
 
 var (
-	wallClockNow        = time.Now
-	setRealtimeUnixNano = realSetRealtimeUnixNano
+	wallClockNow                    = time.Now
+	setRealtimeUnixNano             = realSetRealtimeUnixNano
+	startChronyDaemon               = startChrony
+	stopChronyDaemonForSnapshot     = stopChronyForSnapshot
+	restartChronyDaemonAfterRestore = restartChronyAfterRestore
+	syncRunningChrony               = syncClockWithChrony
+	guestChrony                     = &chronyDaemon{}
 )
 
+type chronyDaemonState string
+
+const (
+	chronyStopped  chronyDaemonState = "stopped"
+	chronyStarting chronyDaemonState = "starting"
+	chronyRunning  chronyDaemonState = "running"
+	chronyStopping chronyDaemonState = "stopping"
+)
+
+type chronyDaemon struct {
+	mu     sync.Mutex
+	cmd    *exec.Cmd
+	state  chronyDaemonState
+	exited chan error
+}
+
 func startChrony() error {
+	return guestChrony.start()
+}
+
+func stopChronyForSnapshot() error {
+	return guestChrony.stop(true)
+}
+
+func restartChronyAfterRestore() error {
+	if err := guestChrony.stop(false); err != nil {
+		return err
+	}
+	return guestChrony.start()
+}
+
+func (d *chronyDaemon) start() error {
+	if err := ensureChronyRuntime(); err != nil {
+		return err
+	}
+
+	d.mu.Lock()
+	if d.cmd != nil {
+		state := d.state
+		d.mu.Unlock()
+		if state == chronyRunning {
+			return nil
+		}
+		return fmt.Errorf("chronyd is %s", state)
+	}
+	if err := removeChronyRuntimeFiles(false); err != nil {
+		d.mu.Unlock()
+		return err
+	}
+	cmd := exec.Command(chronydBin, "-n", "-f", chronyConfigPath, "-L", "1")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		d.mu.Unlock()
+		return fmt.Errorf("start chronyd: %w", err)
+	}
+	exited := make(chan error, 1)
+	d.cmd = cmd
+	d.state = chronyStarting
+	d.exited = exited
+	d.mu.Unlock()
+
+	go d.wait(cmd, exited)
+
+	if err := waitForChronyCommand(exited); err != nil {
+		if stopErr := d.stop(false); stopErr != nil {
+			return fmt.Errorf("%w; stop chronyd after failed startup: %v", err, stopErr)
+		}
+		return err
+	}
+
+	d.mu.Lock()
+	if d.cmd != cmd {
+		d.mu.Unlock()
+		return errors.New("chronyd exited during startup")
+	}
+	d.state = chronyRunning
+	d.mu.Unlock()
+
+	_, _ = fmt.Fprintf(os.Stdout, "%s chronyd started (pid=%d source=%s socket=%s)\n", logPrefix, cmd.Process.Pid, chronyPTPDevice, chronySocketPath)
+	return nil
+}
+
+func (d *chronyDaemon) wait(cmd *exec.Cmd, exited chan<- error) {
+	err := cmd.Wait()
+	d.mu.Lock()
+	state := d.state
+	if d.cmd == cmd {
+		d.cmd = nil
+		d.state = chronyStopped
+		d.exited = nil
+	}
+	d.mu.Unlock()
+
+	exited <- err
+	close(exited)
+
+	if state == chronyStarting || state == chronyStopping {
+		return
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s FATAL: chronyd exited: %v\n", logPrefix, err)
+	} else {
+		fmt.Fprintf(os.Stderr, "%s FATAL: chronyd exited\n", logPrefix)
+	}
+	os.Exit(1)
+}
+
+func (d *chronyDaemon) stop(removeDrift bool) error {
+	d.mu.Lock()
+	cmd := d.cmd
+	exited := d.exited
+	if cmd != nil {
+		d.state = chronyStopping
+	}
+	d.mu.Unlock()
+
+	if cmd != nil {
+		if _, err := runChronycWithTimeout(time.Second, "shutdown"); err != nil {
+			if signalErr := cmd.Process.Signal(syscall.SIGTERM); signalErr != nil && !errors.Is(signalErr, os.ErrProcessDone) {
+				return fmt.Errorf("signal chronyd: %w", signalErr)
+			}
+		}
+		if err := waitForChronyExit(cmd, exited); err != nil {
+			return err
+		}
+	}
+	if err := removeChronyRuntimeFiles(removeDrift); err != nil {
+		return err
+	}
+	return nil
+}
+
+func waitForChronyExit(cmd *exec.Cmd, exited <-chan error) error {
+	timer := time.NewTimer(chronyStopGrace)
+	defer timer.Stop()
+	select {
+	case <-exited:
+		return nil
+	case <-timer.C:
+		if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			return fmt.Errorf("kill chronyd: %w", err)
+		}
+	}
+
+	killTimer := time.NewTimer(chronyKillGrace)
+	defer killTimer.Stop()
+	select {
+	case <-exited:
+		return nil
+	case <-killTimer.C:
+		return errors.New("chronyd did not exit after SIGKILL")
+	}
+}
+
+func ensureChronyRuntime() error {
 	for _, path := range []string{chronydBin, chronycBin, chronyConfigPath} {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("chrony runtime %s: %w", path, err)
@@ -57,31 +222,18 @@ func startChrony() error {
 	if err := os.Chown(chronyPTPDevice, chronyUID, chronyGID); err != nil {
 		return fmt.Errorf("chown %s: %w", chronyPTPDevice, err)
 	}
+	return nil
+}
 
-	cmd := exec.Command(chronydBin, "-n", "-f", chronyConfigPath, "-L", "1")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start chronyd: %w", err)
+func removeChronyRuntimeFiles(removeDrift bool) error {
+	if err := os.Remove(chronySocketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove %s: %w", chronySocketPath, err)
 	}
-
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-
-	if err := waitForChronyCommand(done); err != nil {
-		return err
-	}
-
-	_, _ = fmt.Fprintf(os.Stdout, "%s chronyd started (pid=%d source=%s socket=%s)\n", logPrefix, cmd.Process.Pid, chronyPTPDevice, chronySocketPath)
-	go func() {
-		err := <-done
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s FATAL: chronyd exited: %v\n", logPrefix, err)
-		} else {
-			fmt.Fprintf(os.Stderr, "%s FATAL: chronyd exited\n", logPrefix)
+	if removeDrift {
+		if err := os.Remove(chronyDriftPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", chronyDriftPath, err)
 		}
-		os.Exit(1)
-	}()
+	}
 	return nil
 }
 
@@ -103,7 +255,10 @@ func waitForChronyCommand(done <-chan error) error {
 	var lastErr error
 	for time.Now().Before(deadline) {
 		select {
-		case err := <-done:
+		case err, ok := <-done:
+			if !ok {
+				return errors.New("chronyd exited during startup")
+			}
 			if err == nil {
 				return errors.New("chronyd exited during startup")
 			}
@@ -134,20 +289,20 @@ func syncClockWithChrony() (vmproto.ClockSyncResult, error) {
 
 	if out, err := runChronyc("waitsync", "10", "0", "0", "1"); err != nil {
 		result.Status = "source_wait_failed"
-		result.TrackingRaw = strings.TrimSpace(out)
+		result.TrackingRaw = collectChronyDiagnostics(out)
 		result.WaitSyncMS = time.Since(started).Milliseconds()
 		return result, fmt.Errorf("chrony source wait: %w", err)
 	}
 	if out, err := runChronyc("makestep"); err != nil {
 		result.Status = "makestep_failed"
-		result.TrackingRaw = strings.TrimSpace(out)
+		result.TrackingRaw = collectChronyDiagnostics(out)
 		result.WaitSyncMS = time.Since(started).Milliseconds()
 		return result, fmt.Errorf("chrony makestep: %w", err)
 	}
 	maxOffsetSeconds := strconv.FormatFloat(float64(clockMaxOffsetNS)/float64(time.Second), 'f', 3, 64)
 	if out, err := runChronyc("waitsync", "10", maxOffsetSeconds, strconv.FormatFloat(clockMaxSkewPPM, 'f', 0, 64), "1"); err != nil {
 		result.Status = "sync_wait_failed"
-		result.TrackingRaw = strings.TrimSpace(out)
+		result.TrackingRaw = collectChronyDiagnostics(out)
 		result.WaitSyncMS = time.Since(started).Milliseconds()
 		return result, fmt.Errorf("chrony sync wait: %w", err)
 	}
@@ -187,14 +342,60 @@ func syncClockWithChrony() (vmproto.ClockSyncResult, error) {
 }
 
 func syncRestoredClockWithChrony(hostUnixNano int64) (vmproto.ClockSyncResult, error) {
-	result, err := syncClockWithChrony()
-	if err != nil {
-		return result, err
-	}
+	result := vmproto.ClockSyncResult{Status: "restoring_host_time"}
 	if err := verifyRestoredWallClock(&result, hostUnixNano); err != nil {
 		return result, err
 	}
-	return result, nil
+	// Snapshotting live chronyd preserves stale source-selection state.
+	if err := restartChronyDaemonAfterRestore(); err != nil {
+		result.Status = "restored_chrony_start_failed"
+		return result, fmt.Errorf("restart restored chrony: %w", err)
+	}
+	syncResult, err := syncRunningChrony()
+	mergeRestoredWallClockFields(&syncResult, result)
+	if err != nil {
+		if strings.TrimSpace(syncResult.Status) == "" {
+			syncResult.Status = "restored_chrony_wait_failed"
+		} else {
+			syncResult.Status = "restored_chrony_" + syncResult.Status
+		}
+		return syncResult, fmt.Errorf("restored chrony sync: %w", err)
+	}
+	return syncResult, nil
+}
+
+func collectChronyDiagnostics(primary string) string {
+	var sections []string
+	if trimmed := strings.TrimSpace(primary); trimmed != "" {
+		sections = append(sections, "primary:\n"+trimmed)
+	}
+	for _, args := range [][]string{
+		{"tracking"},
+		{"sources", "-a", "-v"},
+		{"selectdata", "-a", "-v"},
+		{"sourcestats", "-a", "-v"},
+	} {
+		out, err := runChronycWithTimeout(time.Second, args...)
+		trimmed := strings.TrimSpace(out)
+		if err != nil {
+			if trimmed == "" {
+				trimmed = err.Error()
+			} else {
+				trimmed = trimmed + "\n" + err.Error()
+			}
+		}
+		sections = append(sections, strings.Join(args, " ")+":\n"+trimmed)
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+func mergeRestoredWallClockFields(dst *vmproto.ClockSyncResult, src vmproto.ClockSyncResult) {
+	dst.HostUnixNano = src.HostUnixNano
+	dst.GuestUnixNano = src.GuestUnixNano
+	dst.WallOffsetNS = src.WallOffsetNS
+	dst.PreStepWallOffsetNS = src.PreStepWallOffsetNS
+	dst.PostStepWallOffsetNS = src.PostStepWallOffsetNS
+	dst.HostStepApplied = src.HostStepApplied
 }
 
 func verifyRestoredWallClock(result *vmproto.ClockSyncResult, hostUnixNano int64) error {

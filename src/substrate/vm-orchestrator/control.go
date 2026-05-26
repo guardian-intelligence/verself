@@ -518,6 +518,9 @@ func recordLeaseInitTimingAttrs(ctx context.Context, timings *vmproto.LeaseInitT
 			attribute.Int64("guest.clock_sync.post_step_wall_offset_ns", timings.ClockSync.PostStepWallOffsetNS),
 			attribute.Bool("guest.clock_sync.host_step_applied", timings.ClockSync.HostStepApplied),
 		)
+		if strings.TrimSpace(timings.ClockSync.TrackingRaw) != "" {
+			trace.SpanFromContext(ctx).SetAttributes(attribute.String("guest.clock_sync.tracking_raw", timings.ClockSync.TrackingRaw))
+		}
 	}
 }
 
