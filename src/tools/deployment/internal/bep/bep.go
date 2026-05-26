@@ -154,6 +154,12 @@ func Parse(path string) (*Stream, error) {
 // `bytestream://` URIs instead of `file:///`; this resolver still
 // returns valid local paths for them by composing pathPrefix + name.
 func (s *Stream) ResolveOutputs(label, workspaceRoot string) ([]string, error) {
+	return s.ResolveOutputGroup(label, "default", workspaceRoot)
+}
+
+// ResolveOutputGroup returns the workspace-anchored filesystem paths
+// of the files in one named output group of the given target.
+func (s *Stream) ResolveOutputGroup(label, outputGroup, workspaceRoot string) ([]string, error) {
 	tc, ok := s.Targets[label]
 	if !ok {
 		return nil, fmt.Errorf("bep: no targetCompleted event for %s", label)
@@ -162,7 +168,7 @@ func (s *Stream) ResolveOutputs(label, workspaceRoot string) ([]string, error) {
 		return nil, fmt.Errorf("bep: %s target_completed.success=false", label)
 	}
 	for _, og := range tc.OutputGroups {
-		if og.Name != "default" {
+		if og.Name != outputGroup {
 			continue
 		}
 		seen := make(map[string]struct{})
@@ -171,11 +177,11 @@ func (s *Stream) ResolveOutputs(label, workspaceRoot string) ([]string, error) {
 			s.collectFiles(setID, workspaceRoot, seen, &paths)
 		}
 		if len(paths) == 0 {
-			return nil, fmt.Errorf("bep: %s default output group is empty", label)
+			return nil, fmt.Errorf("bep: %s %s output group is empty", label, outputGroup)
 		}
 		return paths, nil
 	}
-	return nil, fmt.Errorf("bep: %s has no default output group", label)
+	return nil, fmt.Errorf("bep: %s has no %s output group", label, outputGroup)
 }
 
 // FailedTargets returns labels with completed.success=false, suitable

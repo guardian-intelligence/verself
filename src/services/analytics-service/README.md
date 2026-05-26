@@ -11,8 +11,8 @@ Every observation is a labeled event.
 ```ts
 analytics.recordEvent("build.typecheck", {
   "build.tool": "typescript",
-  "build.package": "//src/websites/packages/brand",
-  "build.config_path": "src/websites/packages/brand/tsconfig.json",
+  "build.package": "//src/viteplus-monorepo/packages/brand",
+  "build.config_path": "src/viteplus-monorepo/packages/brand/tsconfig.json",
   "cache.result": "hit",
   "duration_ms": 184,
   "status": "succeeded",
@@ -100,7 +100,7 @@ durable_volume.promoted
 Variable data belongs in attributes:
 
 ```text
-build.package = //src/websites/packages/brand
+build.package = //src/viteplus-monorepo/packages/brand
 deployment.environment.name = prod
 http.route = /api/v1/projects/{project_id}
 ```

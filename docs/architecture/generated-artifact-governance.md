@@ -34,11 +34,11 @@ The concrete incident was in the frontend SDK generation path.
 
 1. A frontend SDK change added a generated IAM transport target:
 
-   - a Bazel generator target under `src/websites/packages/sdk`
+   - a Bazel generator target under `src/viteplus-monorepo/packages/sdk`
    - generated output:
      `__generated_sources/src/__generated/<api>/client.gen.ts`
    - materialized ignored source-tree projection:
-     `src/websites/packages/sdk/src/__generated/<api>/client.gen.ts`
+     `src/viteplus-monorepo/packages/sdk/src/__generated/<api>/client.gen.ts`
 
 2. A later change removed that generator path and deleted:
 
@@ -77,7 +77,7 @@ Relevant repo mechanics:
   `**/routeTree.gen.ts`.
 - `.github/actions/checkout` documents that Verself checkout preserves
   untracked build state instead of running `git clean -ffdx`.
-- `src/websites/viteplus_rules.bzl` materializes generated sources before
+- `src/viteplus-monorepo/viteplus_rules.bzl` materializes generated sources before
   running `vp check`, `vp test`, and `vp build` in the source tree.
 - `write_source_files` and the local generated-source sync remove and replace
   the destinations they currently own, but they do not know about paths whose
@@ -85,7 +85,7 @@ Relevant repo mechanics:
 
 Additional orphan examples observed locally:
 
-- `src/websites/apps/verself-web/src/__generated/openapi-specs/identity-api/openapi-3.1.yaml`
+- `src/viteplus-monorepo/apps/verself-web/src/__generated/openapi-specs/identity-api/openapi-3.1.yaml`
   remained after the catalog moved to `iam-api`.
 - stale generated web app SDK directories such as `projects-api` and
   `notifications-api` can remain even when the current app only declares
@@ -205,7 +205,7 @@ A generator emits a manifest similar to:
 ```json
 {
   "schema": "verself.generated-artifacts.v1",
-  "owner": "//src/websites/packages/sdk:openapi_clients",
+  "owner": "//src/viteplus-monorepo/packages/sdk:openapi_clients",
   "generator": "@hey-api/openapi-ts",
   "inputs": [
     {
@@ -215,7 +215,7 @@ A generator emits a manifest similar to:
   ],
   "outputs": [
     {
-      "path": "src/websites/packages/sdk/src/__generated/iam-api/index.ts",
+      "path": "src/viteplus-monorepo/packages/sdk/src/__generated/iam-api/index.ts",
       "digest": "sha256:...",
       "kind": "source_projection"
     }
@@ -306,12 +306,12 @@ Keep a checked-in or generated registry of source-tree projection roots:
 ```yaml
 version: 1
 generated_roots:
-  - root: src/websites/packages/sdk/src/__generated
+  - root: src/viteplus-monorepo/packages/sdk/src/__generated
     owners:
-      - //src/websites/packages/sdk:openapi_clients
-  - root: src/websites/apps/verself-web/src/__generated/openapi-specs
+      - //src/viteplus-monorepo/packages/sdk:openapi_clients
+  - root: src/viteplus-monorepo/apps/verself-web/src/__generated/openapi-specs
     owners:
-      - //src/websites/apps/verself-web:openapi_spec_copies
+      - //src/viteplus-monorepo/apps/verself-web:openapi_spec_copies
 ```
 
 The registry says who may authorize paths under a root. It does not list every
@@ -365,7 +365,7 @@ reports the invariant.
    infrastructure. Do not fix stale generated imports by deleting cache state.
 
 2. **Repo-local static check.** Add a fast check that scans TypeScript imports
-   under `src/websites` and fails when an import resolves under `__generated`
+   under `src/viteplus-monorepo` and fails when an import resolves under `__generated`
    without a current generated target owner.
 
 3. **Manifest emission for Vite+ generators.** Extend `viteplus_openapi_clients`,

@@ -38,18 +38,25 @@ func queryNomadComponentLabels(ctx context.Context, repoRoot string) ([]string, 
 	return labels, nil
 }
 
-func buildNomadComponentDescriptors(ctx context.Context, repoRoot string) ([]string, []string, error) {
+func buildNomadComponentDescriptors(ctx context.Context, repoRoot string, extraBuildFlags ...string) ([]string, []string, error) {
 	labels, err := queryNomadComponentLabels(ctx, repoRoot)
 	if err != nil {
 		return nil, nil, err
 	}
-	build, err := bazelbuild.Build(ctx, repoRoot, labels)
+	build, err := bazelbuild.Build(ctx, repoRoot, labels, extraBuildFlags...)
 	if err != nil {
 		return nil, nil, err
 	}
 	descriptorPaths := make([]string, 0, len(labels))
+	outputGroup := "default"
+	for _, flag := range extraBuildFlags {
+		if strings.Contains(flag, "nomad_descriptor") {
+			outputGroup = "nomad_descriptor"
+			break
+		}
+	}
 	for _, label := range labels {
-		outputs, err := build.Stream.ResolveOutputs(label, repoRoot)
+		outputs, err := build.Stream.ResolveOutputGroup(label, outputGroup, repoRoot)
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolve %s outputs: %w", label, err)
 		}

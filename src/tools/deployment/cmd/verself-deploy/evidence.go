@@ -70,6 +70,7 @@ func recordNomadDecision(span trace.Span, runKey, site string, job deploymodel.N
 		attribute.String("verself.artifact_sha256", job.ArtifactSHA256),
 		attribute.String("verself.input_sha256", job.InputSHA256),
 		attribute.String("nomad.prior_spec_sha256", decision.PriorSpecDigest),
+		attribute.Bool("nomad.prior_exists", decision.PriorExists),
 		attribute.Int64("nomad.prior_job_modify_index", int64FromUint64(decision.PriorJobModifyIndex, "prior job modify index")),
 		attribute.Int64("nomad.prior_version", int64FromUint64(decision.PriorVersion, "prior version")),
 		attribute.Bool("nomad.prior_stopped", decision.PriorStopped),
@@ -88,6 +89,7 @@ func recordNomadSkipped(span trace.Span, runKey, site string, job deploymodel.No
 		attribute.String("verself.spec_sha256", job.SpecSHA256),
 		attribute.String("verself.input_sha256", job.InputSHA256),
 		attribute.String("nomad.prior_spec_sha256", decision.PriorSpecDigest),
+		attribute.Bool("nomad.prior_exists", decision.PriorExists),
 		attribute.Bool("nomad.decision.noop", true),
 	))
 }
@@ -116,6 +118,7 @@ func recordNomadSubmitFailed(span trace.Span, runKey, site string, job deploymod
 		attribute.String("verself.spec_sha256", job.SpecSHA256),
 		attribute.String("verself.input_sha256", job.InputSHA256),
 		attribute.String("nomad.prior_spec_sha256", decision.PriorSpecDigest),
+		attribute.Bool("nomad.prior_exists", decision.PriorExists),
 		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
 		attribute.String("error.message", truncateError(err)),
 	))
@@ -152,6 +155,57 @@ func recordNomadDeploymentFailed(span trace.Span, runKey, site string, job deplo
 		attribute.Int("nomad.tg.healthy", monitor.HealthyTotal),
 		attribute.Int("nomad.tg.unhealthy", monitor.UnhealthyTotal),
 		attribute.Int("nomad.tg.placed", monitor.PlacedTotal),
+		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
+		attribute.String("error.message", truncateError(err)),
+	))
+}
+
+func recordPostDeployCanariesSucceeded(span trace.Span, runKey, site string, job deploymodel.NomadJob, selection string, duration time.Duration) {
+	count := len(selectPostDeployCanaries(job.PostDeployCanaries, selection))
+	span.AddEvent("verself.canary.succeeded", trace.WithAttributes(
+		attribute.String("verself.deploy_run_key", runKey),
+		attribute.String("verself.site", site),
+		attribute.String("nomad.job_id", job.JobID),
+		attribute.String("verself.component", job.Component),
+		attribute.String("verself.canary_selection", selection),
+		attribute.Int("verself.canary_count", count),
+		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
+	))
+}
+
+func recordPostDeployCanariesFailed(span trace.Span, runKey, site string, job deploymodel.NomadJob, selection string, duration time.Duration, err error) {
+	count := len(selectPostDeployCanaries(job.PostDeployCanaries, selection))
+	span.AddEvent("verself.canary.failed", trace.WithAttributes(
+		attribute.String("verself.deploy_run_key", runKey),
+		attribute.String("verself.site", site),
+		attribute.String("nomad.job_id", job.JobID),
+		attribute.String("verself.component", job.Component),
+		attribute.String("verself.canary_selection", selection),
+		attribute.Int("verself.canary_count", count),
+		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
+		attribute.String("error.message", truncateError(err)),
+	))
+}
+
+func recordNomadRollbackSucceeded(span trace.Span, runKey, site string, job deploymodel.NomadJob, submitted *nomadclient.SubmitResult, monitor nomadclient.MonitorResult, duration time.Duration) {
+	span.AddEvent("verself.nomad.rollback_succeeded", trace.WithAttributes(
+		attribute.String("verself.deploy_run_key", runKey),
+		attribute.String("verself.site", site),
+		attribute.String("nomad.job_id", job.JobID),
+		attribute.String("verself.component", job.Component),
+		attribute.String("nomad.eval_id", submitted.EvalID),
+		attribute.String("nomad.deployment_id", monitor.DeploymentID),
+		attribute.String("nomad.terminal_status", monitor.TerminalStatus),
+		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
+	))
+}
+
+func recordNomadRollbackFailed(span trace.Span, runKey, site string, job deploymodel.NomadJob, duration time.Duration, err error) {
+	span.AddEvent("verself.nomad.rollback_failed", trace.WithAttributes(
+		attribute.String("verself.deploy_run_key", runKey),
+		attribute.String("verself.site", site),
+		attribute.String("nomad.job_id", job.JobID),
+		attribute.String("verself.component", job.Component),
 		attribute.Int64("verself.duration_ms", duration.Milliseconds()),
 		attribute.String("error.message", truncateError(err)),
 	))

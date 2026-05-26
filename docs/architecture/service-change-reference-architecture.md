@@ -285,7 +285,15 @@ Every service remains independently deployable. The packet must confirm:
 - migrations, generated artifacts, and validators;
 - recovery status endpoint for declared recoverable sources;
 - config and secrets source;
-- canary and rollback or full-cutover behavior.
+- post-deploy canary declarations and rollback or full-cutover behavior.
+
+Deployable units declare live checks at the Bazel edge, next to the
+`nomad_component`, with `post_deploy_canary`. Medium checks are the normal
+rollback gate for a deploy. Large checks are deeper browser/CLI canaries for
+release candidates, high-risk migrations, and soak validation. Canary targets
+should exercise product behavior through the same public or service-local
+contracts customers and repo-owned callers use; Nomad allocation health alone is
+not release health.
 
 Release classification is explicit: additive public API, breaking public API,
 internal-only API, policy-only behavior change, operator-only change, runtime

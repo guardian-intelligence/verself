@@ -59,10 +59,10 @@ SOPS_SHIM = ("sops", "//src/tools/dev/binaries:sops")
 # Aspect-owned Vite+ toolchain, shared by the frontend build and controller
 # checks. This bypasses any shell `vp` so Bazel/Aspect actions use the
 # lockfile-pinned package under the Bazel-resolved host Node.
-VITEPLUS_NODE_TARGET = "//src/websites:vp_node"
-VITEPLUS_WORKSPACE_INSTALL_TARGET = "//src/websites:workspace_install"
-VITEPLUS_VP_SCRIPT = "src/websites/node_modules/vite-plus/bin/vp"
-VITEPLUS_WORKSPACE = "src/websites"
+VITEPLUS_NODE_TARGET = "//src/viteplus-monorepo:vp_node"
+VITEPLUS_WORKSPACE_INSTALL_TARGET = "//src/viteplus-monorepo:workspace_install"
+VITEPLUS_VP_SCRIPT = "src/viteplus-monorepo/node_modules/vite-plus/bin/vp"
+VITEPLUS_WORKSPACE = "src/viteplus-monorepo"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -224,7 +224,7 @@ def viteplus_node(ctx):
     return node
 
 def viteplus_vp(ctx, args, env = None, label = None):
-    """Run the lockfile-pinned Vite+ under the vendored Node, in src/websites.
+    """Run the lockfile-pinned Vite+ under the vendored Node, in src/viteplus-monorepo.
 
     The single entry point for `vp` from the controller. `args` is the `vp`
     argv (e.g. ["fmt", ".", "--write"]). Returns the process exit code.

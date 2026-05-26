@@ -1041,7 +1041,7 @@ LIMIT {row_limit:UInt32}`
 // ran for one deploy. The spans are emitted by
 // src/tools/observability/go/cmd/bazel-execlog-to-otel from --execution_log_json_file.
 // Mnemonics come from official Smithy OpenAPI projections, SDK generators, and
-// src/websites/viteplus_rules.bzl. The cache_hit column distinguishes "the action
+// src/viteplus-monorepo/viteplus_rules.bzl. The cache_hit column distinguishes "the action
 // graph correctly invalidated and re-ran" (cache_hit=0) from "every
 // codegen target was already cached" (cache_hit=1) — both are valid
 // outcomes for a deploy, but they answer different operator questions.

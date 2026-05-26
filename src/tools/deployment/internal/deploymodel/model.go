@@ -41,15 +41,26 @@ type Artifact struct {
 }
 
 type NomadJob struct {
-	JobID           string          `json:"job_id"`
-	Component       string          `json:"component"`
-	DeployPhase     string          `json:"deploy_phase"`
-	DependsOn       []string        `json:"depends_on,omitempty"`
-	ArtifactOutputs []string        `json:"artifact_outputs,omitempty"`
-	InputSHA256     string          `json:"input_sha256,omitempty"`
-	SpecSHA256      string          `json:"spec_sha256"`
-	ArtifactSHA256  string          `json:"artifact_sha256"`
-	Spec            json.RawMessage `json:"spec"`
+	JobID              string             `json:"job_id"`
+	Component          string             `json:"component"`
+	DeployPhase        string             `json:"deploy_phase"`
+	DependsOn          []string           `json:"depends_on,omitempty"`
+	ArtifactOutputs    []string           `json:"artifact_outputs,omitempty"`
+	PostDeployCanaries []PostDeployCanary `json:"post_deploy_canaries,omitempty"`
+	InputSHA256        string             `json:"input_sha256,omitempty"`
+	SpecSHA256         string             `json:"spec_sha256"`
+	ArtifactSHA256     string             `json:"artifact_sha256"`
+	Spec               json.RawMessage    `json:"spec"`
+}
+
+type PostDeployCanary struct {
+	Label   string            `json:"label"`
+	Target  string            `json:"target"`
+	Kind    string            `json:"kind"`
+	Size    string            `json:"size"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env,omitempty"`
+	Timeout string            `json:"timeout,omitempty"`
 }
 
 func (a Artifact) ResolveLocalPath(repoRoot string) string {

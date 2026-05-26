@@ -22,7 +22,7 @@
     verself_owner_declaration_roots:
       - "{{ verself_repo_root }}/src/services"
       - "{{ verself_repo_root }}/src/infrastructure-components"
-      - "{{ verself_repo_root }}/src/websites/apps"
+      - "{{ verself_repo_root }}/src/viteplus-monorepo/apps"
     postgresql_declaration_suffix: "/deploy/postgres[.]yml$"
     clickhouse_client_declaration_suffix: "/deploy/clickhouse-client[.]yml$"
     openbao_runtime_secret_declaration_suffix: "/deploy/runtime-secrets[.]yml$"

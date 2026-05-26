@@ -171,7 +171,7 @@ func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) 
 		if err != nil {
 			return applyResults(intents), err
 		}
-		if err := applyNomadWave(ctx, rt, client, phase, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, phaseIntents, artifacts); err != nil {
+		if err := applyNomadWave(ctx, rt, client, plan, phase, phaseIntents, artifacts); err != nil {
 			return applyResults(intents), err
 		}
 	}
@@ -179,7 +179,7 @@ func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) 
 	return results, nil
 }
 
-func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, wave string, delivery deploymodel.ArtifactDelivery, intents []jobApplyIntent, artifacts []deploymodel.Artifact) error {
+func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, plan *deployPlan, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact) error {
 	if len(intents) == 0 {
 		return nil
 	}
@@ -210,7 +210,7 @@ func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
-		if err := publishArtifacts(ctx, rt, delivery, garageArtifacts); err != nil {
+		if err := publishArtifacts(ctx, rt, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, garageArtifacts); err != nil {
 			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -221,7 +221,7 @@ func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 		if !intent.Changed {
 			continue
 		}
-		if err := submitNomadJob(ctx, rt, client, intent); err != nil {
+		if err := submitNomadJob(ctx, rt, client, plan, intent); err != nil {
 			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents[:i+1], artifacts, started, err)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -280,7 +280,7 @@ func prepareNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclie
 	return jobApplyIntent{Job: job, Spec: spec, Decision: decision, Changed: true}, nil
 }
 
-func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, intent jobApplyIntent) error {
+func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, plan *deployPlan, intent jobApplyIntent) error {
 	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.submit",
 		trace.WithAttributes(
 			attribute.String("nomad.job_id", intent.Job.JobID),
@@ -308,9 +308,78 @@ func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 		return err
 	}
 	recordNomadDeploymentSucceeded(span, rt.Identity.RunKey(), rt.Site, intent.Job, submitted, monitor, time.Since(monitorStarted))
-	fmt.Printf("verself-deploy: %s healthy\n", submitted.JobID)
 	span.SetAttributes(attribute.String("nomad.terminal_status", monitor.TerminalStatus))
+	canaryStarted := time.Now()
+	if err := runPostDeployCanaries(ctx, rt, rt.RepoRoot, plan.Site, plan.SHA, intent.Job, plan.PostDeployChecks); err != nil {
+		recordPostDeployCanariesFailed(span, rt.Identity.RunKey(), rt.Site, intent.Job, plan.PostDeployChecks, time.Since(canaryStarted), err)
+		span.RecordError(err)
+		rollbackErr := rollbackNomadJob(ctx, rt, client, intent, err)
+		if rollbackErr != nil {
+			span.RecordError(rollbackErr)
+			span.SetStatus(codes.Error, rollbackErr.Error())
+			return fmt.Errorf("%w; rollback failed: %v", err, rollbackErr)
+		}
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	recordPostDeployCanariesSucceeded(span, rt.Identity.RunKey(), rt.Site, intent.Job, plan.PostDeployChecks, time.Since(canaryStarted))
+	fmt.Printf("verself-deploy: %s healthy\n", submitted.JobID)
 	span.SetStatus(codes.Ok, "")
+	return nil
+}
+
+func rollbackNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, intent jobApplyIntent, cause error) error {
+	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.rollback",
+		trace.WithAttributes(
+			attribute.String("nomad.job_id", intent.Job.JobID),
+			attribute.String("verself.deploy_wave", intent.Job.DeployPhase),
+			attribute.Bool("nomad.prior_exists", intent.Decision.PriorExists),
+			attribute.Int64("nomad.target_version", int64FromUint64(intent.Decision.PriorVersion, "prior job version")),
+			attribute.String("error.message", truncateError(cause)),
+		),
+	)
+	defer span.End()
+	started := time.Now()
+	currentVersion, err := client.CurrentJobVersion(ctx, intent.Job.JobID)
+	if err != nil {
+		recordNomadRollbackFailed(span, rt.Identity.RunKey(), rt.Site, intent.Job, time.Since(started), err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
+	var sub *nomadclient.SubmitResult
+	if !intent.Decision.PriorExists {
+		sub, err = client.Deregister(ctx, intent.Job.JobID, intent.Spec.JobType())
+		if err == nil {
+			err = client.WaitStopped(ctx, intent.Job.JobID)
+		}
+	} else {
+		sub, err = client.Revert(ctx, intent.Job.JobID, intent.Spec.JobType(), intent.Decision.PriorVersion, currentVersion)
+	}
+	if err != nil {
+		recordNomadRollbackFailed(span, rt.Identity.RunKey(), rt.Site, intent.Job, time.Since(started), err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if !intent.Decision.PriorExists {
+		monitor := nomadclient.MonitorResult{TerminalStatus: "deregistered"}
+		recordNomadRollbackSucceeded(span, rt.Identity.RunKey(), rt.Site, intent.Job, sub, monitor, time.Since(started))
+		span.SetStatus(codes.Ok, "")
+		fmt.Printf("verself-deploy: %s deregistered after failed first-deploy canary\n", intent.Job.JobID)
+		return nil
+	}
+	monitor, err := client.Monitor(ctx, sub)
+	if err != nil {
+		recordNomadRollbackFailed(span, rt.Identity.RunKey(), rt.Site, intent.Job, time.Since(started), err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	recordNomadRollbackSucceeded(span, rt.Identity.RunKey(), rt.Site, intent.Job, sub, monitor, time.Since(started))
+	span.SetStatus(codes.Ok, "")
+	fmt.Printf("verself-deploy: %s rolled back after failed canary\n", intent.Job.JobID)
 	return nil
 }
 

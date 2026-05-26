@@ -195,5 +195,5 @@ warn_bootstrap_path "${install_dir}"
 install_pivot aspect "${aspect_version}" "${aspect_sha256}" "${aspect_url}"
 
 # The pivot ends here. The Vite+ toolchain is the lockfile-pinned
-# src/websites/node_modules/vite-plus run under the Bazel-resolved host Node;
+# src/viteplus-monorepo/node_modules/vite-plus run under the Bazel-resolved host Node;
 # it is invoked as `aspect vp -- <args>`, not bootstrapped.

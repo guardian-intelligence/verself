@@ -30,7 +30,7 @@ npm_probe = task(
     group = ["release"],
     summary = "Probe npm registry state for the TypeScript SDK release boundary.",
     args = {
-        "package_json": args.string(default = "src/websites/packages/sdk/package.json", description = "Package manifest to inspect."),
+        "package_json": args.string(default = "src/viteplus-monorepo/packages/sdk/package.json", description = "Package manifest to inspect."),
         "registry": args.string(default = "https://registry.npmjs.org", description = "npm registry base URL."),
         "github_repository": args.string(default = "guardian-intelligence/verself-sh", description = "GitHub owner/repo expected by npm trusted publishing."),
         "format": args.string(default = "table", description = "Output format: table | json | csv | tsv."),
