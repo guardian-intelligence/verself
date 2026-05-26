@@ -1,0 +1,17 @@
+[package]
+name = "make-skill-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Scaffold a new agent skill in one command."
+license.workspace = true
+
+[[bin]]
+name = "mksk"
+path = "src/main.rs"
+
+[dependencies]
+make-skill-exec = { path = "../exec" }
+
+[lints]
+workspace = true

@@ -107,13 +107,15 @@ fn creates_skill_scaffold() {
 fn refuses_to_clobber() {
     let work = workdir("clobber");
     let bin = mksk();
+    let first = Command::new(&bin)
+        .arg("dup")
+        .current_dir(&work)
+        .output()
+        .unwrap_or_else(|err| panic!("run '{}' in '{}': {err}", bin.display(), work.display()));
     assert!(
-        Command::new(&bin)
-            .arg("dup")
-            .current_dir(&work)
-            .status()
-            .unwrap_or_else(|err| panic!("run '{}' in '{}': {err}", bin.display(), work.display()))
-            .success()
+        first.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
     );
 
     let second = Command::new(&bin)
