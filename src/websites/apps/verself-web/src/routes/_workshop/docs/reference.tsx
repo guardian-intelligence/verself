@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   Page,
   PageDescription,
@@ -22,6 +22,12 @@ export const Route = createFileRoute("/_workshop/docs/reference")({
 });
 
 function ApiReference() {
+  const path = useRouterState({ select: (s) => s.location.pathname });
+
+  if (path !== "/docs/reference") {
+    return <Outlet />;
+  }
+
   return (
     <Page variant="full">
       <PageHeader>
