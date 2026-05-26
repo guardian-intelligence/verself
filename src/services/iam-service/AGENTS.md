@@ -74,12 +74,14 @@ ownership against Verself-owned storage after the operation permission check
 passes.
 
 Public signup is an installation-scoped intent state machine. `StartSignup`
-records a pending intent with a hashed verification token and sends
-notification; it must not create Zitadel, IAM, SpiceDB, or billing state.
-Reusable starts for the same email rotate the verification token and resend the
-same intent after the per-email cooldown. Rapid repeats, completed emails, and
-in-flight product state return the generic accepted response without sending
-mail or creating new state.
+records a pending intent with a hashed verification token only when signup can
+produce a new product account; it must not create Zitadel, IAM, SpiceDB, or
+billing state. Reusable starts for the same email rotate the verification token
+and resend the same intent after the per-email cooldown. If the canonical email
+identity already belongs to an account, return the generic accepted response,
+send an account-exists notice to the mailbox, and do not create
+`iam_signup_intents` state. Rapid repeats and in-flight product state return the
+generic accepted response without sending mail or creating new state.
 `CheckOrganizationSlugAvailability` is a public UX check; `VerifySignup` must
 repeat slug validation before any Zitadel side effect. `VerifySignup` is the
 only public path that materializes a new organization: create the Zitadel org,
