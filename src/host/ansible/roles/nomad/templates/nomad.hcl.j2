@@ -32,6 +32,19 @@ advertise {
 server {
   enabled          = true
   bootstrap_expect = 1
+
+  default_scheduler_config {
+    scheduler_algorithm             = "binpack"
+    memory_oversubscription_enabled = true
+    reject_job_registration         = false
+    pause_eval_broker               = false
+    preemption_config {
+      batch_scheduler_enabled    = false
+      system_scheduler_enabled   = true
+      service_scheduler_enabled  = false
+      sysbatch_scheduler_enabled = false
+    }
+  }
 }
 
 client {

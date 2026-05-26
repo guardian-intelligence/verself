@@ -83,3 +83,39 @@
   retries: 30
   delay: 1
   until: nomad_health.status == 200
+
+- name: Read Nomad scheduler configuration
+  ansible.builtin.uri:
+    url: "http://{{ nomad_http_address }}/v1/operator/scheduler/configuration"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: nomad_scheduler_config
+  changed_when: false
+
+- name: Enable Nomad memory oversubscription
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/nomad"
+      - operator
+      - scheduler
+      - set-config
+      - "-address=http://{{ nomad_http_address }}"
+      - "-check-index={{ nomad_scheduler_config.json.SchedulerConfig.ModifyIndex }}"
+      - "-memory-oversubscription=true"
+  when: not nomad_scheduler_config.json.SchedulerConfig.MemoryOversubscriptionEnabled
+  changed_when: true
+
+- name: Verify Nomad memory oversubscription
+  ansible.builtin.uri:
+    url: "http://{{ nomad_http_address }}/v1/operator/scheduler/configuration"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: nomad_scheduler_config_after
+  changed_when: false
+
+- name: Assert Nomad memory oversubscription is enabled
+  ansible.builtin.assert:
+    that: nomad_scheduler_config_after.json.SchedulerConfig.MemoryOversubscriptionEnabled
+    fail_msg: Nomad memory oversubscription must be enabled for memory_max release jobs.

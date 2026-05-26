@@ -55,6 +55,7 @@ job "vm-orchestrator" {
         cpu = 8000
         # Nomad reserves lifecycle-task memory for the whole allocation, even after prestart exits.
         memory = 128
+        memory_max = 8192
       }
     }
 
@@ -153,6 +154,7 @@ job "vm-orchestrator" {
       resources {
         cpu = 100
         memory = 10
+        memory_max = 512
       }
 
       template {
