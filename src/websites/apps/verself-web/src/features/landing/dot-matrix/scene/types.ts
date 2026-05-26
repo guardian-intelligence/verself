@@ -13,7 +13,6 @@ export interface DomainRect {
 }
 
 export interface WaveFieldSample {
-  readonly absorption: number;
   readonly readability: number;
   readonly spawn: number;
   readonly visibility: number;
@@ -22,7 +21,6 @@ export interface WaveFieldSample {
 export type WaveFieldMask = (point: Vec2) => number;
 
 export interface CompiledWaveFields {
-  readonly absorptionAt: WaveFieldMask;
   readonly at: (point: Vec2) => WaveFieldSample;
   readonly readabilityAt: WaveFieldMask;
   readonly spawnAt: WaveFieldMask;

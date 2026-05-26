@@ -306,7 +306,6 @@ export class DotMatrixEngineObject extends Object3D {
         cameraRectVector(resources.compiledScene.cameraRect),
       );
       resources.uniforms.uFieldState.value = resources.compiledScene.texture;
-      resources.waveSimulation.setFieldTexture(resources.compiledScene.texture);
       this.lastSceneKey = sceneKey;
     }
 
@@ -371,7 +370,6 @@ function createReadyResources(input: {
     input.renderer,
     input.camera,
     geometry,
-    compiledScene.texture,
   );
   const shadowUniforms = createShadowUniforms();
   const uniforms = createDisplayUniforms(compiledScene, shadowUniforms, waveSimulation.texture());

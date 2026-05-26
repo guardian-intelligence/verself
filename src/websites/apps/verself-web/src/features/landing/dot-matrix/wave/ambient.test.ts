@@ -7,7 +7,7 @@ import { createAmbientWaveScheduler } from "./ambient.ts";
 describe("ambient wave scheduler", () => {
   const focusPoint = { x: 0.5, y: 0.62 };
 
-  it("emits one cohesive bounded logo-bound wave train per scheduled wave", () => {
+  it("emits one cohesive bounded logo-bound wave per scheduled wave", () => {
     const scheduler = createAmbientWaveScheduler({ seed: 1234 });
     const scene = createLandingWaveScene({ h: 900, w: 1440 });
     const compiledScene = createCompiledWaveScene(scene, { height: 16, width: 16 });
@@ -29,12 +29,11 @@ describe("ambient wave scheduler", () => {
       fields: compiledScene.fields,
       focusPoint,
       ignition: 0.1,
-      nowSeconds: 1.3,
+      nowSeconds: 3.1,
       viewport: { h: 900, w: 1440 },
     });
 
-    expect(impulses.length).toBeGreaterThan(1);
-    expect(impulses.length).toBeLessThanOrEqual(6);
+    expect(impulses.length).toBe(1);
     for (const impulse of impulses) {
       expect(impulse.x).toBeGreaterThanOrEqual(-0.75);
       expect(impulse.x).toBeLessThanOrEqual(1.75);
@@ -100,12 +99,12 @@ describe("ambient wave scheduler", () => {
     });
     const desktopImpulse = desktopScheduler.collect({
       ...baseInput,
-      nowSeconds: 1.3,
+      nowSeconds: 3.1,
       viewport: { h: 900, w: 1440 },
     })[0];
     const mobileImpulse = mobileScheduler.collect({
       ...baseInput,
-      nowSeconds: 1.3,
+      nowSeconds: 3.1,
       viewport: { h: 844, w: 390 },
     })[0];
 
@@ -133,7 +132,7 @@ describe("ambient wave scheduler", () => {
 
     scheduler.collect({ ...baseInput, nowSeconds: 0 });
     for (let index = 0; index < 7; index += 1) {
-      const impulse = scheduler.collect({ ...baseInput, nowSeconds: 2 + index * 8 })[0];
+      const impulse = scheduler.collect({ ...baseInput, nowSeconds: 4 + index * 3.4 })[0];
       if (impulse !== undefined) {
         directions.push(Math.atan2(impulse.normalY ?? 0, impulse.normalX ?? 0));
       }

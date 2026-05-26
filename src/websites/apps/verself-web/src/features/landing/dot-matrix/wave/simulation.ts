@@ -8,7 +8,6 @@ import {
   RGBAFormat,
   Scene,
   ShaderMaterial,
-  type Texture,
   Vector2,
   Vector4,
   WebGLRenderer,
@@ -38,7 +37,6 @@ export function createDotMatrixWaveSimulation(
   renderer: WebGLRenderer,
   camera: Camera,
   geometry: BufferGeometry,
-  fieldTexture: Texture,
   config: WaveSimulationConfig = DOT_MATRIX_WAVE_SIMULATION_CONFIG,
 ): DotMatrixWaveSimulation {
   const scene = new Scene();
@@ -56,7 +54,6 @@ export function createDotMatrixWaveSimulation(
     uAmbient: { value: 0 },
     uDamping: { value: config.damping },
     uDelta: { value: 1 / 60 },
-    uFieldState: { value: fieldTexture },
     uImpulseCount: { value: 0 },
     uImpulseShapes: { value: impulseShapeUniforms },
     uImpulses: { value: impulseUniforms },
@@ -99,9 +96,6 @@ export function createDotMatrixWaveSimulation(
       clearWaveTarget(renderer, targets.write);
       uniforms.uState.value = targets.read.texture;
       uniforms.uTexel.value.set(1 / targets.width, 1 / targets.height);
-    },
-    setFieldTexture(texture: Texture) {
-      uniforms.uFieldState.value = texture;
     },
     step(input: WaveSimulationStep) {
       const impulseCount = Math.min(input.impulses.length, DOT_MATRIX_MAX_WAVE_IMPULSES);
