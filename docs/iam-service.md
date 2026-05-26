@@ -582,6 +582,11 @@ constrained login URLs with required subject, email, and org metadata; the
 callback enforces those constraints server-side because `prompt=select_account`
 and `login_hint` are OIDC hints, not authorization facts.
 
+Current-device revocation is presented as logout in the console. Revoking the
+current browser client invalidates the same cookie that authorizes live auth
+sync, so the UI must navigate through the normal TanStack logout route instead
+of waiting for Electric to observe its own authorization loss. Electric remains
+the convergence path for other-device revocation and remote invalidation.
 
 ## Feature Parity Surface
 
