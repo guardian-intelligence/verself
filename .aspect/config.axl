@@ -91,6 +91,7 @@ load(
 )
 load(
     ".aspect/tasks/release.axl",
+    release_mksk = "mksk",
     release_npm_probe = "npm_probe",
 )
 load(".aspect/tasks/tidy.axl", "tidy")
@@ -117,6 +118,7 @@ def config(ctx):
     ctx.tasks.add(provision_destroy)
 
     # aspect release ...
+    ctx.tasks.add(release_mksk)
     ctx.tasks.add(release_npm_probe)
 
     # aspect host ...

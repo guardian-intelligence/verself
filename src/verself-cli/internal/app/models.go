@@ -25,6 +25,7 @@ type ProfileRecord struct {
 	ProjectsURL      string         `json:"projects_url,omitempty"`
 	NotificationsURL string         `json:"notifications_url,omitempty"`
 	BillingURL       string         `json:"billing_url,omitempty"`
+	DistributionURL  string         `json:"distribution_url,omitempty"`
 	GovernanceURL    string         `json:"governance_url,omitempty"`
 	SandboxURL       string         `json:"sandbox_url,omitempty"`
 	SecretsURL       string         `json:"secrets_url,omitempty"`
@@ -137,6 +138,22 @@ type BootstrapRun struct {
 	RepoRoot     string    `json:"repo_root"`
 	ManifestPath string    `json:"manifest_path"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+type InstallReceipt struct {
+	Version            int       `json:"version"`
+	ProductName        string    `json:"product_name"`
+	BinaryName         string    `json:"binary_name"`
+	ChannelName        string    `json:"channel_name"`
+	PlatformOS         string    `json:"platform_os"`
+	PlatformArch       string    `json:"platform_arch"`
+	PackageVersion     string    `json:"package_version"`
+	ArtifactDigest     string    `json:"artifact_digest"`
+	LayerDigest        string    `json:"layer_digest"`
+	PublicOCIReference string    `json:"public_oci_reference"`
+	InstalledPath      string    `json:"installed_path"`
+	Traceparent        string    `json:"traceparent,omitempty"`
+	InstalledAt        time.Time `json:"installed_at"`
 }
 
 type SecretSpec struct {

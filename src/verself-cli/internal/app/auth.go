@@ -119,6 +119,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	projectsURL := fs.String("projects-url", "", "Projects service base URL")
 	notificationsURL := fs.String("notifications-url", "", "Notifications service base URL")
 	billingURL := fs.String("billing-url", "", "Billing service base URL")
+	distributionURL := fs.String("distribution-url", "", "Distribution service base URL")
 	governanceURL := fs.String("governance-url", "", "Governance service base URL")
 	sandboxURL := fs.String("sandbox-url", "", "Sandbox rental service base URL")
 	secretsURL := fs.String("secrets-url", "", "Secrets service base URL")
@@ -162,6 +163,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 	profile.ProjectsURL = strings.TrimSpace(firstNonEmpty(*projectsURL, c.getenv("VERSELF_PROJECTS_API_URL"), discoveryAPIBaseURL(discovery, "projects"), profile.ProjectsURL))
 	profile.NotificationsURL = strings.TrimSpace(firstNonEmpty(*notificationsURL, c.getenv("VERSELF_NOTIFICATIONS_API_URL"), discoveryAPIBaseURL(discovery, "notifications"), profile.NotificationsURL))
 	profile.BillingURL = strings.TrimSpace(firstNonEmpty(*billingURL, c.getenv("VERSELF_BILLING_API_URL"), discoveryAPIBaseURL(discovery, "billing"), profile.BillingURL))
+	profile.DistributionURL = strings.TrimSpace(firstNonEmpty(*distributionURL, c.getenv("VERSELF_DISTRIBUTION_API_URL"), discoveryAPIBaseURL(discovery, "distribution"), profile.DistributionURL))
 	profile.GovernanceURL = strings.TrimSpace(firstNonEmpty(*governanceURL, c.getenv("VERSELF_GOVERNANCE_API_URL"), discoveryAPIBaseURL(discovery, "governance"), profile.GovernanceURL))
 	profile.SandboxURL = strings.TrimSpace(firstNonEmpty(*sandboxURL, c.getenv("VERSELF_SANDBOX_API_URL"), discoveryAPIBaseURL(discovery, "sandbox"), profile.SandboxURL))
 	profile.SecretsURL = strings.TrimSpace(firstNonEmpty(*secretsURL, c.getenv("VERSELF_SECRETS_API_URL"), discoveryAPIBaseURL(discovery, "secrets"), profile.SecretsURL))
@@ -184,6 +186,7 @@ func (c CLI) authLogin(ctx context.Context, args []string) error {
 		ProjectsURL:      profile.ProjectsURL,
 		NotificationsURL: profile.NotificationsURL,
 		BillingURL:       profile.BillingURL,
+		DistributionURL:  profile.DistributionURL,
 		GovernanceURL:    profile.GovernanceURL,
 		SandboxURL:       profile.SandboxURL,
 		SecretsURL:       profile.SecretsURL,
@@ -929,6 +932,7 @@ func (c CLI) serviceClientForStoredAccount(store *Store, profile ProfileRecord, 
 		ProjectsURL:      profile.ProjectsURL,
 		NotificationsURL: profile.NotificationsURL,
 		BillingURL:       profile.BillingURL,
+		DistributionURL:  profile.DistributionURL,
 		GovernanceURL:    profile.GovernanceURL,
 		SandboxURL:       profile.SandboxURL,
 		SecretsURL:       profile.SecretsURL,

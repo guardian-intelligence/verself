@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "distribution-service_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/distribution-service/cmd/distribution-service",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/distribution-service/internal/api",
+        "//src/services/distribution-service/internal/distribution",
+        "//src/services/distribution-service/migrations",
+        "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/httpserver",
+        "//src/services/service-runtime/go/workload",
+        "//src/tools/observability/go/otel",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
+    ],
+)
+
+go_binary(
+    name = "distribution-service",
+    embed = [":distribution-service_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "distribution-service_nomad_artifact",
+    binary = ":distribution-service",
+    output = "distribution-service",
+)

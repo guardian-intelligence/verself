@@ -72,3 +72,11 @@ func (p XDGPaths) envPath(scope EnvScope) string {
 func (p XDGPaths) bootstrapRunPath(runID string) string {
 	return filepath.Join(p.StateDir, "bootstrap", runID+".json")
 }
+
+func (p XDGPaths) installReceiptPath(product string) string {
+	return filepath.Join(p.StateDir, "install-receipts", product+".json")
+}
+
+func (p XDGPaths) upgradeCacheDir(product string) string {
+	return filepath.Join(p.CacheDir, "upgrades", product)
+}

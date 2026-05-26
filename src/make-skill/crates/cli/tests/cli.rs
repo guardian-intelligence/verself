@@ -133,3 +133,26 @@ fn usage_error_without_arg() {
     assert!(!out.status.success(), "no-arg invocation should fail");
     assert!(String::from_utf8_lossy(&out.stderr).contains("usage:"));
 }
+
+#[test]
+fn version_prints_release_metadata_url() {
+    let out = Command::new(mksk())
+        .arg("--version")
+        .output()
+        .expect("run mksk --version");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8(out.stdout).expect("stdout should be UTF-8");
+    let mut lines = stdout.lines();
+    let version = lines
+        .next()
+        .and_then(|line| line.strip_prefix("mksk "))
+        .expect("first line should contain mksk version");
+    let want_release = format!("release: https://oci.verself.sh/releases/mksk/{version}");
+    assert_eq!(lines.next(), Some(want_release.as_str()));
+    assert_eq!(lines.next(), None);
+}

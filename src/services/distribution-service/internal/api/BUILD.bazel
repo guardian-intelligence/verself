@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "api",
+    srcs = [
+        "dto.go",
+        "routes.go",
+    ],
+    importpath = "github.com/verself/distribution-service/internal/api",
+    visibility = ["//src/services/distribution-service:__subpackages__"],
+    deps = [
+        "//src/services/distribution-service/internal/distribution",
+        "//src/services/service-runtime/go/auth",
+        "//src/services/service-runtime/go/workload",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "api_test",
+    srcs = ["routes_test.go"],
+    embed = [":api"],
+)

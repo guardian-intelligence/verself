@@ -19,6 +19,7 @@ go_library(
         "secrets.go",
         "signup.go",
         "store.go",
+        "upgrade.go",
     ],
     importpath = "github.com/verself/verself-cli/internal/app",
     visibility = ["//visibility:public"],

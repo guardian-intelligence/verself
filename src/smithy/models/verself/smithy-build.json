@@ -4,6 +4,7 @@
     "analytics.smithy",
     "billing.smithy",
     "common.smithy",
+    "distribution.smithy",
     "github_integration.smithy",
     "governance.smithy",
     "iam.smithy",
@@ -12,7 +13,6 @@
     "object_storage.smithy",
     "profile.smithy",
     "projects.smithy",
-    "release.smithy",
     "sandbox.smithy",
     "secrets.smithy",
     "source.smithy"
@@ -97,6 +97,46 @@
             "/servers": [
               {
                 "url": "https://127.0.0.1:4261"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "distribution-public": {
+      "plugins": {
+        "openapi": {
+          "service": "verself.distribution.v1#Distribution",
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://distribution.api.verself.sh"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "distribution-internal": {
+      "plugins": {
+        "openapi": {
+          "service": "verself.distribution.v1#DistributionInternal",
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4281"
               }
             ]
           }
@@ -377,26 +417,6 @@
             "/servers": [
               {
                 "url": "https://127.0.0.1:4265"
-              }
-            ]
-          }
-        }
-      }
-    },
-    "release-internal": {
-      "plugins": {
-        "openapi": {
-          "service": "verself.release.v1#ReleaseInternal",
-          "protocol": "aws.protocols#restJson1",
-          "version": "3.1.0",
-          "tags": true,
-          "useIntegerType": true,
-          "useJsonName": true,
-          "onErrorStatusConflict": "oneOf",
-          "jsonAdd": {
-            "/servers": [
-              {
-                "url": "https://127.0.0.1:4275"
               }
             ]
           }

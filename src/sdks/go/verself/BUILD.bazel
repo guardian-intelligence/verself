@@ -11,6 +11,7 @@ go_library(
         "auth.go",
         "billing.go",
         "client.go",
+        "distribution.go",
         "governance.go",
         "iam.go",
         "notifications.go",
@@ -23,6 +24,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/sdks/go/verself/internal/transport/billing",
+        "//src/sdks/go/verself/internal/transport/distribution",
         "//src/sdks/go/verself/internal/transport/governance",
         "//src/sdks/go/verself/internal/transport/iam",
         "//src/sdks/go/verself/internal/transport/notifications",
@@ -41,6 +43,7 @@ go_test(
     srcs = [
         "billing_test.go",
         "client_test.go",
+        "distribution_test.go",
         "governance_test.go",
         "iam_test.go",
         "notifications_test.go",

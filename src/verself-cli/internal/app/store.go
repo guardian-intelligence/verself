@@ -340,6 +340,32 @@ func (s *Store) SaveEnv(env EnvStore) error {
 	return writeJSONFile(s.paths.envPath(env.Scope), env, 0o600)
 }
 
+func (s *Store) LoadInstallReceipt(product string) (InstallReceipt, error) {
+	product = strings.TrimSpace(product)
+	if product == "" || strings.ContainsAny(product, `/\`) {
+		return InstallReceipt{}, errors.New("install receipt product is required")
+	}
+	var receipt InstallReceipt
+	if err := readJSONFile(s.paths.installReceiptPath(product), &receipt); err != nil {
+		return InstallReceipt{}, err
+	}
+	if receipt.Version == 0 {
+		receipt.Version = 1
+	}
+	return receipt, nil
+}
+
+func (s *Store) SaveInstallReceipt(receipt InstallReceipt) error {
+	receipt.ProductName = strings.TrimSpace(receipt.ProductName)
+	if receipt.ProductName == "" || strings.ContainsAny(receipt.ProductName, `/\`) {
+		return errors.New("install receipt product is required")
+	}
+	if receipt.Version == 0 {
+		receipt.Version = 1
+	}
+	return writeJSONFile(s.paths.installReceiptPath(receipt.ProductName), receipt, 0o600)
+}
+
 func (s *Store) PutEnvSecret(scope EnvScope, key, value string) (string, error) {
 	env, err := s.LoadEnv(scope)
 	if err != nil {

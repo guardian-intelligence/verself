@@ -1,0 +1,9 @@
+load("//src/smithy/build:openapi.bzl", "verself_openapi_specs")
+
+verself_openapi_specs(
+    name = "distribution_openapi",
+    internal_projection = "distribution-internal",
+    internal_service = "DistributionInternal",
+    public_projection = "distribution-public",
+    public_service = "Distribution",
+)

@@ -13,6 +13,7 @@ rust_library(
 rust_library(
     name = "exec",
     srcs = ["crates/exec/src/lib.rs"],
+    compile_data = ["Cargo.toml"],
     crate_name = "make_skill_exec",
     edition = "2024",
     deps = [":core"],
@@ -24,7 +25,6 @@ rust_binary(
     crate_name = "mksk",
     edition = "2024",
     stamp = 0,
-    version = "0.1.0",
     deps = [":exec"],
 )
 
@@ -66,7 +66,7 @@ rust_test(
 
 pkg_tar(
     name = "release_tar",
-    out = "make-skill-0.1.0.tar",
+    out = "make-skill.tar",
     files = {
         ":mksk": "bin/mksk",
         "LICENSE": "LICENSE",

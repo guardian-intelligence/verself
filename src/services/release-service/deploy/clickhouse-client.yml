@@ -1,2 +1,0 @@
-clickhouse_client_ca_credentials:
-  - { path: /etc/credstore/release-service/clickhouse-ca-cert, group: release_service }

@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "distribution",
+    srcs = [
+        "errors.go",
+        "events.go",
+        "ids.go",
+        "service.go",
+        "sql_store.go",
+        "types.go",
+        "validate.go",
+    ],
+    importpath = "github.com/verself/distribution-service/internal/distribution",
+    visibility = ["//src/services/distribution-service:__subpackages__"],
+    deps = [
+        "//src/services/distribution-service/internal/store",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgconn",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "distribution_test",
+    srcs = ["service_test.go"],
+    embed = [":distribution"],
+    deps = [
+        "//src/services/distribution-service/migrations",
+        "//src/services/service-runtime/go/pgtest",
+        "@com_github_jackc_pgx_v5//pgxpool",
+    ],
+)
