@@ -32,7 +32,7 @@ job "distribution-release-mksk" {
       }
       resources {
         cpu = 50
-        memory = 0
+        memory = 10
       }
     }
 
@@ -77,7 +77,7 @@ job "distribution-release-mksk" {
       resources {
         cpu = 1000
         # Single-node prod over-reserves lifecycle-task memory; release workers should get a real reservation once they move to a dedicated node class.
-        memory = 0
+        memory = 10
       }
     }
   }
