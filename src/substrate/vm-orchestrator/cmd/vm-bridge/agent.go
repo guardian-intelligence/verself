@@ -77,9 +77,8 @@ type agentSession struct {
 	// been written by an etc-overlay/ from some toolchain image. A
 	// second image trying to overlay the same path with *different*
 	// content is a hard error; the same content (same sha256) from a
-	// second image is a no-op so toolchain images that share the
-	// runner-overlay-common Bazel filegroup compose cleanly. Either
-	// case surfaces in lease boot logs.
+	// second image is a no-op. Global identity files are rejected by the
+	// overlay walker before they can replace substrate-owned users.
 	etcOverlayApplied map[string]etcOverlayEntry
 }
 
@@ -1038,10 +1037,9 @@ func (s *agentSession) mountFilesystem(fs vmproto.FilesystemMount) vmproto.Files
 	} else {
 		// Read-only toolchain images carry an overlay contract:
 		// /etc-overlay/ is copied into /etc, .verself-writable-overlays
-		// lists paths to tmpfs-mount on top of the read-only base, and
-		// any /etc-overlay/passwd entries get their $HOME materialised.
-		// Substrate-only images and writable mounts skip this; they
-		// don't have somewhere to publish overlay metadata.
+		// lists paths to tmpfs-mount on top of the read-only base.
+		// Substrate-only images and writable mounts skip this; they don't
+		// have somewhere to publish overlay metadata.
 		if err := s.applyToolchainOverlays(fs.Name, fs.MountPath); err != nil {
 			result.Error = fmt.Sprintf("apply overlays for %s: %v", fs.Name, err)
 			return result

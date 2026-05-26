@@ -215,6 +215,18 @@ export const DOCS_NAV: readonly DocsNavEntry[] = [
     ],
   },
   {
+    id: "hosted-runner-runtime",
+    label: "Hosted Runner Runtime",
+    to: "/docs/reference/hosted-runners/runtime",
+    matchPrefix: "/docs/reference/hosted-runners/runtime",
+    status: "available",
+    description: "Guest filesystem paths and writable-state boundaries for hosted CI runners.",
+    children: [
+      { id: "toolchain-mounts", label: "Toolchain mounts" },
+      { id: "writable-state", label: "Writable state" },
+    ],
+  },
+  {
     id: "reference",
     label: "API Reference",
     to: "/docs/reference",

@@ -74,6 +74,23 @@ function ApiReference() {
           </Link>
         </PageSection>
 
+        <PageSection id="hosted-runner-runtime">
+          <SectionHeader>
+            <SectionHeaderContent>
+              <SectionTitle>Hosted Runner Runtime</SectionTitle>
+              <SectionDescription>
+                Guest filesystem paths and writable-state boundaries for hosted CI runners.
+              </SectionDescription>
+            </SectionHeaderContent>
+          </SectionHeader>
+          <Link
+            className="w-fit text-sm font-medium underline underline-offset-4"
+            to="/docs/reference/hosted-runners/runtime"
+          >
+            Open the runtime reference
+          </Link>
+        </PageSection>
+
         <PageSection id="schemas">
           <SectionHeader>
             <SectionHeaderContent>

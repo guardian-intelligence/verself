@@ -235,8 +235,8 @@ CREATE INDEX idx_runner_class_filesystem_mounts_active
 -- not this table.
 INSERT INTO runner_class_filesystem_mounts (runner_class, mount_name, source_ref, mount_path, fs_type, read_only, sort_order)
 VALUES
-    ('verself-4vcpu-ubuntu-2404', 'gh-actions-runner', 'gh-actions-runner', '/opt/actions-runner', 'ext4', true, 10),
-    ('verself-2vcpu-ubuntu-2404', 'gh-actions-runner', 'gh-actions-runner', '/opt/actions-runner', 'ext4', true, 10);
+    ('verself-4vcpu-ubuntu-2404', 'gh-actions-runner', 'gh-actions-runner', '/opt/verself/toolchains/github-actions-runner', 'ext4', true, 10),
+    ('verself-2vcpu-ubuntu-2404', 'gh-actions-runner', 'gh-actions-runner', '/opt/verself/toolchains/github-actions-runner', 'ext4', true, 10);
 
 CREATE TABLE execution_filesystem_mounts (
     execution_id UUID        NOT NULL REFERENCES executions(execution_id) ON DELETE CASCADE,

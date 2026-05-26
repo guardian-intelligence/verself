@@ -278,13 +278,20 @@ durable cache generations. They are only for paths that belong to the
 read-only toolchain image and must be writable for the runner process to
 function.
 
+Verself-managed toolchain images are mounted under `/opt/verself/toolchains/`
+inside customer VMs. The current GitHub Actions runner image is mounted
+read-only at `/opt/verself/toolchains/github-actions-runner`; customer
+workloads should treat that tree as platform-owned runtime material rather
+than durable customer state.
+
 The GitHub Actions runner toolchain currently declares writable overlays in
 `src/substrate/vm-orchestrator/guest-images/gh-actions-runner/writable-overlays`.
-The golden-workspace cutover removes `/opt/actions-runner/_work` from that
-file. The `_work` tree is the built-in `workspace` durable cache, so a
-toolchain tmpfs overlay must not mount over it or hide it. `_diag` and `_temp`
-remain valid tmpfs overlays because they are runner-local diagnostic and
-scratch paths, not reusable customer state.
+The golden-workspace cutover keeps
+`/opt/verself/toolchains/github-actions-runner/_work` out of that file. The
+`_work` tree is the built-in `workspace` durable cache, so a toolchain tmpfs
+overlay must not mount over it or hide it. `_diag` and `_temp` remain valid
+tmpfs overlays because they are runner-local diagnostic and scratch paths, not
+reusable customer state.
 
 The host prepares each writable cache as a ZFS zvol:
 
