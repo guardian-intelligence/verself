@@ -89,7 +89,7 @@ void main() {
   float dotFade = sceneVisibility * readableProtection;
 
   float mask = dotMask(localPixel, stepPx * 0.225);
-  float base = 0.24;
+  float base = 0.12;
 
   float jitter = hash12(cell + vec2(uSeed * 97.0, 11.0));
   float slowTwinkle = 0.5 + 0.5 * sin(uPhase * 1.7 + jitter * 6.28318);
