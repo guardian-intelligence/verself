@@ -21,3 +21,7 @@ World's simplest CLI: make-skill, but completely over-engineered (in a good way:
 Core Pivot:
 
 In order to be powerful, we must integrate as much as possible with the outside world: npm, GitHub, Slack, Twitter. We do not depend on anyone else for our core infrastructure. For everything else, it's compartmentalized non-tier-1 features.
+
+Fun Idea:
+
+Deep GitHub integration so we can see rich PR metadata.
