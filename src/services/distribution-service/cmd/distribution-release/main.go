@@ -29,7 +29,7 @@ const (
 	mkskBinaryTarget    = "//src/make-skill:mksk"
 	mkskBazelTarget     = "//src/make-skill:release_tar"
 	mkskReleaseVersion  = "MKSK_RELEASE_VERSION"
-	defaultBuilderID    = "spiffe://prod.verself.sh/svc/distribution-service"
+	defaultBuilderID    = "spiffe://prod.verself.sh/svc/distribution-release"
 	defaultOutDir       = "artifacts/releases"
 	defaultSourceRef    = "HEAD"
 	releaseMetadataBase = "https://oci.verself.sh/releases/mksk"
@@ -41,18 +41,28 @@ var (
 	finalSemVerRE   = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 	rcSemVerRE      = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-rc\.(0|[1-9][0-9]*)$`)
 	nightlySemVerRE = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-nightly\.[0-9]{8}\.(0|[1-9][0-9]*)$`)
+	gitSHARE        = regexp.MustCompile(`^[a-f0-9]{40}$`)
 )
 
 type mkskConfig struct {
-	repoRoot  string
-	toolsTar  string
-	outRoot   string
-	versionPR bool
-	channel   string
-	version   string
-	sourceRef string
-	builderID string
-	platform  string
+	repoRoot     string
+	toolsTar     string
+	toolsDir     string
+	outRoot      string
+	releaseRoot  string
+	local        bool
+	versionPR    bool
+	channel      string
+	version      string
+	sourceRef    string
+	sourceCommit string
+	builderID    string
+	platform     string
+	site         string
+	nomadAddr    string
+	nomadJobID   string
+	wait         bool
+	waitTimeout  time.Duration
 }
 
 type releasePaths struct {
@@ -62,6 +72,23 @@ type releasePaths struct {
 	licenses string
 	evidence string
 	tests    string
+}
+
+type releaseOutput struct {
+	paths             releasePaths
+	version           string
+	channel           string
+	platform          string
+	platformOS        string
+	platformArch      string
+	sourceRef         string
+	sourceCommit      string
+	artifactPath      string
+	provenancePath    string
+	artifactSBOMPath  string
+	sourceSBOMPath    string
+	licensesPath      string
+	testEvidencePaths []string
 }
 
 type commandResult struct {
@@ -101,28 +128,65 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `distribution-release <subcommand> [flags]
 
 Subcommands:
-  mksk  Generate make-skill release inspection artifacts.
+  mksk  Dispatch, publish, or locally inspect make-skill releases.
 `)
 }
 
 func runMksk(ctx context.Context, args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "publish":
+			return runMkskPublish(ctx, args[1:])
+		case "local":
+			return runMkskLocal(ctx, args[1:], true)
+		case "dispatch":
+			return runMkskLocal(ctx, args[1:], false)
+		case "-h", "--help", "help":
+			printMkskUsage(os.Stdout)
+			return nil
+		}
+	}
+	return runMkskLocal(ctx, args, false)
+}
+
+func printMkskUsage(w io.Writer) {
+	_, _ = fmt.Fprint(w, `distribution-release mksk [flags]
+distribution-release mksk local [flags]
+distribution-release mksk publish [flags]
+
+Default mksk mode dispatches a deployed Nomad release job. Use --local for
+inspection artifacts without publication.
+`)
+}
+
+func runMkskLocal(ctx context.Context, args []string, forceLocal bool) error {
 	cfg := mkskConfig{}
 	fs := flag.NewFlagSet("distribution-release mksk", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.StringVar(&cfg.repoRoot, "repo-root", "", "Repository root. Defaults to git rev-parse --show-toplevel.")
 	fs.StringVar(&cfg.toolsTar, "tools-tar", "", "Bazel-built distribution release tools tar.")
+	fs.StringVar(&cfg.toolsDir, "tools-dir", "", "Directory containing release tools under bin/.")
 	fs.StringVar(&cfg.outRoot, "out-dir", defaultOutDir, "Directory for inspectable release outputs.")
+	fs.BoolVar(&cfg.local, "local", false, "Build locally and emit inspection artifacts instead of dispatching the prod release job.")
 	fs.BoolVar(&cfg.versionPR, "version-pr", false, "Generate an inspectable release-plz version PR patch in a temporary worktree.")
 	fs.StringVar(&cfg.channel, "channel", "", "Release channel: nightly, rc, or stable.")
 	fs.StringVar(&cfg.version, "version", "", "Explicit package version. Required for rc and stable; optional for nightly.")
 	fs.StringVar(&cfg.sourceRef, "source-ref", defaultSourceRef, "Git ref recorded as the source revision.")
 	fs.StringVar(&cfg.builderID, "builder-id", defaultBuilderID, "SLSA builder id to place in local provenance.")
 	fs.StringVar(&cfg.platform, "platform", "linux/amd64", "Release platform recorded in provenance.")
+	fs.StringVar(&cfg.site, "site", "prod", "Deployment site used for Nomad dispatch.")
+	fs.StringVar(&cfg.nomadAddr, "nomad-addr", "", "Nomad HTTP address. Defaults to an SSH tunnel to the selected site.")
+	fs.StringVar(&cfg.nomadJobID, "nomad-job", "distribution-release-mksk", "Parameterized Nomad job ID.")
+	fs.BoolVar(&cfg.wait, "wait", true, "Wait for the dispatched Nomad release job to finish.")
+	fs.DurationVar(&cfg.waitTimeout, "wait-timeout", 2*time.Hour, "Maximum time to wait for the dispatched Nomad release job.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected positional args: %s", strings.Join(fs.Args(), " "))
+	}
+	if forceLocal {
+		cfg.local = true
 	}
 	if strings.TrimSpace(cfg.repoRoot) == "" {
 		root, err := gitOutput(ctx, "", "rev-parse", "--show-toplevel")
@@ -138,7 +202,14 @@ func runMksk(ctx context.Context, args []string) error {
 	if cfg.versionPR {
 		return generateVersionPRPreview(ctx, cfg)
 	}
-	return generateReleaseArtifacts(ctx, cfg)
+	if cfg.local {
+		out, err := generateReleaseArtifacts(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		return stdoutf("release artifacts: %s\n", out.paths.root)
+	}
+	return dispatchMkskRelease(ctx, cfg)
 }
 
 func generateVersionPRPreview(ctx context.Context, cfg mkskConfig) error {
@@ -202,35 +273,41 @@ func generateVersionPRPreview(ctx context.Context, cfg mkskConfig) error {
 	return stdoutf("version PR preview: %s\n", out)
 }
 
-func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
-	if strings.TrimSpace(cfg.toolsTar) == "" {
-		return fmt.Errorf("--tools-tar is required")
-	}
+func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) (releaseOutput, error) {
 	if strings.TrimSpace(cfg.channel) == "" {
-		return fmt.Errorf("--channel is required unless --version-pr is set")
+		return releaseOutput{}, fmt.Errorf("--channel is required unless --version-pr is set")
 	}
-	sourceCommit, err := resolveCommit(ctx, cfg.repoRoot, cfg.sourceRef)
-	if err != nil {
-		return err
+	sourceCommit := strings.TrimSpace(cfg.sourceCommit)
+	var err error
+	if sourceCommit == "" {
+		sourceCommit, err = resolveCommit(ctx, cfg.repoRoot, cfg.sourceRef)
+		if err != nil {
+			return releaseOutput{}, err
+		}
 	}
 	source, err := prepareBuildSource(ctx, cfg, sourceCommit)
 	if err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	defer source.cleanup()
-	toolsDir, cleanup, err := extractTools(cfg.toolsTar)
+	toolsDir, cleanup, err := resolveTools(cfg)
 	if err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	defer cleanup()
+	bazelisk := filepath.Join(toolsDir, "bin", "bazelisk")
 
 	workspace, err := workspaceVersion(filepath.Join(source.root, mkskCargoManifest))
 	if err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	version, err := resolveMkskVersion(cfg.channel, cfg.version, workspace, time.Now().UTC())
 	if err != nil {
-		return err
+		return releaseOutput{}, err
+	}
+	platformOS, platformArch, err := parsePlatform(cfg.platform)
+	if err != nil {
+		return releaseOutput{}, err
 	}
 	started := time.Now().UTC()
 	bazelReleaseVersionFlag := rustReleaseVersionFlag(version)
@@ -241,23 +318,27 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 		"//src/make-skill:exec_test",
 		"//src/make-skill:cli_test",
 	}
-	if _, err := runCommand(ctx, source.root, "bazelisk", testArgs...); err != nil {
-		return err
+	if _, err := runCommand(ctx, source.root, bazelisk, testArgs...); err != nil {
+		return releaseOutput{}, err
 	}
-	mkskBinary, err := bazelOutputFile(ctx, source.root, mkskBinaryTarget, bazelReleaseVersionFlag)
+	mkskBinary, err := bazelOutputFile(ctx, bazelisk, source.root, mkskBinaryTarget, bazelReleaseVersionFlag)
 	if err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	if err := verifyMkskVersion(ctx, mkskBinary, version); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
-	releaseTar, err := bazelOutputFile(ctx, source.root, mkskReleaseTar, bazelReleaseVersionFlag)
+	releaseTar, err := bazelOutputFile(ctx, bazelisk, source.root, mkskReleaseTar, bazelReleaseVersionFlag)
 	if err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	short := shortSHA(sourceCommit)
+	releaseRoot := filepath.Join(cfg.outRoot, mkskPackageName, cfg.channel+"-"+version+"-"+short)
+	if strings.TrimSpace(cfg.releaseRoot) != "" {
+		releaseRoot = filepath.Clean(cfg.releaseRoot)
+	}
 	paths := releasePaths{
-		root:     filepath.Join(cfg.outRoot, mkskPackageName, cfg.channel+"-"+version+"-"+short),
+		root:     releaseRoot,
 		artifact: "artifact",
 		sbom:     "sbom",
 		licenses: "licenses",
@@ -265,30 +346,31 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 		tests:    "tests",
 	}
 	if err := makeReleaseDirs(paths); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	artifactPath := filepath.Join(paths.root, paths.artifact, "make-skill.tar")
 	if err := copyFile(releaseTar, artifactPath, 0o644); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	artifactDigest, artifactBytes, err := fileSHA256(artifactPath)
 	if err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	if err := os.WriteFile(artifactPath+".sha256", []byte(artifactDigest+"  make-skill.tar\n"), 0o644); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	if err := copyTestXML(source.root, paths); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	if err := generateSBOMs(ctx, source.root, toolsDir, artifactPath, version, paths); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	if err := generateLicenses(ctx, source.root, toolsDir, paths); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	finished := time.Now().UTC()
-	if err := writeSLSAProvenance(filepath.Join(paths.root, paths.evidence, "make-skill.provenance.intoto.json"), provenanceInput{
+	provenancePath := filepath.Join(paths.root, paths.evidence, "make-skill.provenance.intoto.json")
+	if err := writeSLSAProvenance(provenancePath, provenanceInput{
 		artifactDigest:  artifactDigest,
 		artifactBytes:   artifactBytes,
 		builderID:       cfg.builderID,
@@ -303,7 +385,7 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 		invocationID:    "local-" + utcStamp(started) + "-" + short,
 		releaseTarLabel: mkskBazelTarget,
 	}); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	if err := writeText(filepath.Join(paths.root, "README.txt"), []string{
 		"make-skill local release inspection artifacts",
@@ -325,12 +407,27 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 		"provenance=evidence/make-skill.provenance.intoto.json",
 		"tests=tests/*.xml",
 	}); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
 	if err := writeChecksums(paths.root); err != nil {
-		return err
+		return releaseOutput{}, err
 	}
-	return stdoutf("release artifacts: %s\n", paths.root)
+	return releaseOutput{
+		paths:             paths,
+		version:           version,
+		channel:           cfg.channel,
+		platform:          cfg.platform,
+		platformOS:        platformOS,
+		platformArch:      platformArch,
+		sourceRef:         cfg.sourceRef,
+		sourceCommit:      sourceCommit,
+		artifactPath:      artifactPath,
+		provenancePath:    provenancePath,
+		artifactSBOMPath:  filepath.Join(paths.root, paths.sbom, "make-skill.artifact.spdx.json"),
+		sourceSBOMPath:    filepath.Join(paths.root, paths.sbom, "make-skill.source.spdx.json"),
+		licensesPath:      filepath.Join(paths.root, paths.licenses, "make-skill.cargo-about.json"),
+		testEvidencePaths: testEvidencePaths(paths),
+	}, nil
 }
 
 func prepareBuildSource(ctx context.Context, cfg mkskConfig, sourceCommit string) (buildSource, error) {
@@ -562,6 +659,15 @@ func rustReleaseVersionFlag(version string) string {
 	return "--@rules_rust//rust/settings:extra_rustc_env=" + mkskReleaseVersion + "=" + version
 }
 
+func parsePlatform(platform string) (string, string, error) {
+	platform = strings.TrimSpace(platform)
+	osPart, archPart, ok := strings.Cut(platform, "/")
+	if !ok || strings.TrimSpace(osPart) == "" || strings.TrimSpace(archPart) == "" || strings.Contains(archPart, "/") {
+		return "", "", fmt.Errorf("--platform must be formatted as os/arch")
+	}
+	return osPart, archPart, nil
+}
+
 func releaseMetadataURL(version string) string {
 	return releaseMetadataBase + "/" + version
 }
@@ -607,15 +713,15 @@ func gitOutput(ctx context.Context, repoRoot string, args ...string) (string, er
 	return strings.TrimSpace(result.stdout), nil
 }
 
-func bazelOutputFile(ctx context.Context, repoRoot, target string, buildOptions ...string) (string, error) {
+func bazelOutputFile(ctx context.Context, bazelisk, repoRoot, target string, buildOptions ...string) (string, error) {
 	buildArgs := append([]string{"build"}, buildOptions...)
 	buildArgs = append(buildArgs, target)
-	if _, err := runCommand(ctx, repoRoot, "bazelisk", buildArgs...); err != nil {
+	if _, err := runCommand(ctx, repoRoot, bazelisk, buildArgs...); err != nil {
 		return "", err
 	}
 	cqueryArgs := append([]string{"cquery", "--output=files"}, buildOptions...)
 	cqueryArgs = append(cqueryArgs, target)
-	files, err := runCommand(ctx, repoRoot, "bazelisk", cqueryArgs...)
+	files, err := runCommand(ctx, repoRoot, bazelisk, cqueryArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -623,7 +729,7 @@ func bazelOutputFile(ctx context.Context, repoRoot, target string, buildOptions 
 	if len(lines) != 1 {
 		return "", fmt.Errorf("expected one output for %s, got %d", target, len(lines))
 	}
-	execroot, err := runCommand(ctx, repoRoot, "bazelisk", "info", "execution_root")
+	execroot, err := runCommand(ctx, repoRoot, bazelisk, "info", "execution_root")
 	if err != nil {
 		return "", err
 	}
@@ -635,9 +741,26 @@ func bazelOutputFile(ctx context.Context, repoRoot, target string, buildOptions 
 }
 
 func runCommand(ctx context.Context, cwd, program string, args ...string) (commandResult, error) {
+	return runCommandInputEnv(ctx, cwd, program, args, nil, nil)
+}
+
+func runCommandEnv(ctx context.Context, cwd, program string, args []string, env map[string]string) (commandResult, error) {
+	return runCommandInputEnv(ctx, cwd, program, args, env, nil)
+}
+
+func runCommandInputEnv(ctx context.Context, cwd, program string, args []string, env map[string]string, stdin io.Reader) (commandResult, error) {
 	cmd := exec.CommandContext(ctx, program, args...)
 	if cwd != "" {
 		cmd.Dir = cwd
+	}
+	if len(env) > 0 {
+		cmd.Env = os.Environ()
+		for key, value := range env {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
+	if stdin != nil {
+		cmd.Stdin = stdin
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -668,17 +791,37 @@ func extractTools(toolsTar string) (string, func(), error) {
 		cleanup()
 		return "", func() {}, err
 	}
-	for _, tool := range []string{"cargo-about", "cosign", "oras", "release-plz", "syft"} {
-		path := filepath.Join(dir, "bin", tool)
-		if st, err := os.Stat(path); err != nil {
-			cleanup()
-			return "", func() {}, fmt.Errorf("release tool %s: %w", tool, err)
-		} else if st.Mode()&0o111 == 0 {
-			cleanup()
-			return "", func() {}, fmt.Errorf("release tool %s is not executable", tool)
-		}
+	if err := verifyReleaseTools(dir); err != nil {
+		cleanup()
+		return "", func() {}, err
 	}
 	return dir, cleanup, nil
+}
+
+func resolveTools(cfg mkskConfig) (string, func(), error) {
+	if strings.TrimSpace(cfg.toolsDir) != "" {
+		dir := filepath.Clean(cfg.toolsDir)
+		if err := verifyReleaseTools(dir); err != nil {
+			return "", func() {}, err
+		}
+		return dir, func() {}, nil
+	}
+	if strings.TrimSpace(cfg.toolsTar) == "" {
+		return "", func() {}, fmt.Errorf("--tools-tar or --tools-dir is required")
+	}
+	return extractTools(cfg.toolsTar)
+}
+
+func verifyReleaseTools(dir string) error {
+	for _, tool := range []string{"bazelisk", "cargo-about", "cosign", "oras", "release-plz", "syft"} {
+		path := filepath.Join(dir, "bin", tool)
+		if st, err := os.Stat(path); err != nil {
+			return fmt.Errorf("release tool %s: %w", tool, err)
+		} else if st.Mode()&0o111 == 0 {
+			return fmt.Errorf("release tool %s is not executable", tool)
+		}
+	}
+	return nil
 }
 
 func extractPlainTar(path, dest string) error {
@@ -815,6 +958,15 @@ func writeChecksums(root string) error {
 
 func writeText(path string, lines []string) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+}
+
+func testEvidencePaths(paths releasePaths) []string {
+	names := []string{"cli_test.xml", "core_test.xml", "exec_test.xml"}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		out = append(out, filepath.Join(paths.root, paths.tests, name))
+	}
+	return out
 }
 
 func nonEmptyLines(value string) []string {

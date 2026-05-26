@@ -29,6 +29,7 @@ func RegisterPublicRoutes(mux *http.ServeMux, cfg Config) {
 	mux.HandleFunc("GET /api/v1/distribution/packages/{package_name}/channels/{channel_name}/resolve", api.resolveTarget)
 	mux.HandleFunc("GET /api/v1/distribution/artifacts/{artifact_digest_ref}", api.getArtifact)
 	mux.HandleFunc("GET /api/v1/distribution/packages/{package_name}/channels/{channel_name}/targets", api.listTargets)
+	mux.HandleFunc("GET /releases/{package_name}/{version}", api.releaseMetadata)
 	mux.HandleFunc("GET /v2/{name...}", api.registryRead)
 }
 
@@ -132,6 +133,28 @@ func (a publicAPI) listTargets(w http.ResponseWriter, r *http.Request) {
 		out = append(out, targetDTO(a.cfg.InstallationID, target))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"targets": out, "traceparent": traceparent(r.Context())})
+}
+
+func (a publicAPI) releaseMetadata(w http.ResponseWriter, r *http.Request) {
+	platformOS := r.URL.Query().Get("platform_os")
+	if strings.TrimSpace(platformOS) == "" {
+		platformOS = "linux"
+	}
+	platformArch := r.URL.Query().Get("platform_arch")
+	if strings.TrimSpace(platformArch) == "" {
+		platformArch = "amd64"
+	}
+	target, err := a.cfg.Service.GetReleaseMetadata(r.Context(), publicPrincipal(r.Context()), distribution.ReleaseMetadataRequest{
+		PackageName:    r.PathValue("package_name"),
+		PackageVersion: r.PathValue("version"),
+		PlatformOS:     platformOS,
+		PlatformArch:   platformArch,
+	})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"target": targetDTO(a.cfg.InstallationID, target), "traceparent": traceparent(r.Context())})
 }
 
 func (a publicAPI) registryPing(w http.ResponseWriter, _ *http.Request) {

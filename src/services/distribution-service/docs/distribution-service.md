@@ -35,6 +35,7 @@ Public operations:
 - `distribution.updates.check`
 - `distribution.upgrades.recordVerifiedDownload`
 - `distribution.targets.resolve`
+- `distribution.releases.get`
 - `distribution.artifacts.get`
 - `distribution.channels.listTargets`
 
@@ -48,6 +49,7 @@ Internal SPIFFE mTLS operations:
 
 Public read-only protocol endpoints:
 
+- `/releases/{package_name}/{version}`
 - `/v2/`
 - `/v2/{name}/manifests/{reference}`
 - `/v2/{name}/blobs/{digest}`
@@ -98,6 +100,8 @@ types such as:
 - `distribution.target.published`
 - `distribution.target.resolve_allowed`
 - `distribution.target.resolve_denied`
+- `distribution.release.metadata_resolved`
+- `distribution.release.metadata_denied`
 - `distribution.oci.manifest_served`
 - `distribution.oci.blob_served`
 - `distribution.upgrade.download_verified`

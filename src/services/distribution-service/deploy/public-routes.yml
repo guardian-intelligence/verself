@@ -10,3 +10,6 @@ haproxy_public_apis:
   - key: oci
     host: '{{ "oci." ~ verself_domain }}'
     path_prefix: /v2
+  - key: oci-releases
+    host: '{{ "oci." ~ verself_domain }}'
+    path_prefix: /releases

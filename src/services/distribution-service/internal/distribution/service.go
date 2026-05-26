@@ -116,6 +116,19 @@ func (s *Service) ResolveTarget(ctx context.Context, principal Principal, req Re
 	return target, nil
 }
 
+func (s *Service) GetReleaseMetadata(ctx context.Context, principal Principal, req ReleaseMetadataRequest) (target Target, err error) {
+	ctx, span := startSpan(ctx, "distribution.release.metadata", principal, attribute.String("distribution.package", req.PackageName), attribute.String("distribution.version", req.PackageVersion))
+	defer finishSpan(span, err)
+	req = normalizeReleaseMetadata(req)
+	target, err = s.Store.GetTargetByPackageVersion(ctx, req)
+	if err != nil {
+		s.emit(ctx, event{EventType: "distribution.release.metadata_denied", Decision: "denied", PackageName: req.PackageName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, Actor: principal.Actor, Reason: err.Error()})
+		return Target{}, err
+	}
+	s.emit(ctx, event{EventType: "distribution.release.metadata_resolved", Decision: "allowed", PackageName: target.PackageName, ChannelName: target.ChannelName, PlatformOS: target.PlatformOS, PlatformArch: target.PlatformArch, ArtifactDigest: target.ArtifactDigest, Actor: principal.Actor})
+	return target, nil
+}
+
 func (s *Service) CheckUpdate(ctx context.Context, principal Principal, req CheckUpdateRequest) (Target, bool, error) {
 	target, err := s.ResolveTarget(ctx, principal, ResolveTargetRequest{PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch})
 	if err != nil {
@@ -269,6 +282,14 @@ func normalizePromote(req PromoteTargetRequest) PromoteTargetRequest {
 func normalizeResolve(req ResolveTargetRequest) ResolveTargetRequest {
 	req.PackageName = clean(req.PackageName)
 	req.ChannelName = clean(req.ChannelName)
+	req.PlatformOS = clean(req.PlatformOS)
+	req.PlatformArch = clean(req.PlatformArch)
+	return req
+}
+
+func normalizeReleaseMetadata(req ReleaseMetadataRequest) ReleaseMetadataRequest {
+	req.PackageName = clean(req.PackageName)
+	req.PackageVersion = clean(req.PackageVersion)
 	req.PlatformOS = clean(req.PlatformOS)
 	req.PlatformArch = clean(req.PlatformArch)
 	return req

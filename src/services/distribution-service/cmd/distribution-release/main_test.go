@@ -1,6 +1,12 @@
 package main
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -73,5 +79,91 @@ func TestSafeJoinRejectsTraversal(t *testing.T) {
 		if _, err := safeJoin("/tmp/root", name); err == nil {
 			t.Fatalf("safeJoin accepted %q", name)
 		}
+	}
+}
+
+func TestValidateDispatchVersion(t *testing.T) {
+	if err := validateDispatchVersion("nightly", ""); err != nil {
+		t.Fatalf("nightly derived version error = %v", err)
+	}
+	if err := validateDispatchVersion("rc", "0.2.0-rc.1"); err != nil {
+		t.Fatalf("rc version error = %v", err)
+	}
+	if err := validateDispatchVersion("stable", "0.2.0-rc.1"); err == nil {
+		t.Fatalf("stable accepted prerelease")
+	}
+}
+
+func TestResolveSiteSSHAccess(t *testing.T) {
+	root := t.TempDir()
+	siteDir := filepath.Join(root, "src", "host", "sites", "prod")
+	if err := os.MkdirAll(siteDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inventory := `[infra]
+vs-dev-w0 ansible_host=access.verself.sh verself_recovery_ssh_host=10.66.66.1 verself_recovery_ssh_port=2222 verself_recovery_ssh_user=ubuntu
+
+[all:vars]
+ansible_user=ubuntu@prod
+`
+	if err := os.WriteFile(filepath.Join(siteDir, "inventory.ini"), []byte(inventory), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	access, err := resolveSiteSSHAccess(root, "prod")
+	if err != nil {
+		t.Fatalf("resolveSiteSSHAccess() error = %v", err)
+	}
+	if len(access.Targets) != 2 {
+		t.Fatalf("targets = %d, want 2", len(access.Targets))
+	}
+	if access.Targets[0].Host != "access.verself.sh" || access.Targets[0].User != "ubuntu@prod" || access.Targets[0].Port != 22 {
+		t.Fatalf("primary target = %+v", access.Targets[0])
+	}
+	if access.Targets[1].Host != "10.66.66.1" || access.Targets[1].User != "ubuntu" || access.Targets[1].Port != 2222 {
+		t.Fatalf("recovery target = %+v", access.Targets[1])
+	}
+}
+
+func TestRemoteRefCandidates(t *testing.T) {
+	got := remoteRefCandidates("main")
+	want := []string{"refs/heads/main", "refs/tags/main^{}", "refs/tags/main"}
+	if len(got) != len(want) {
+		t.Fatalf("remoteRefCandidates length = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("remoteRefCandidates[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	got = remoteRefCandidates("refs/tags/mksk-v0.2.0")
+	if len(got) != 1 || got[0] != "refs/tags/mksk-v0.2.0" {
+		t.Fatalf("remoteRefCandidates refs value = %#v", got)
+	}
+}
+
+func TestDispatchNomadPostsPayload(t *testing.T) {
+	var got nomadDispatchRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/job/distribution-release-mksk/dispatch" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"EvalID":"eval-1","DispatchedJobID":"distribution-release-mksk/dispatch-1"}`))
+	}))
+	defer server.Close()
+	resp, err := dispatchNomad(t.Context(), server.URL, "distribution-release-mksk", []byte(`{"package":"mksk"}`), map[string]string{"channel": "nightly"}, "mksk-nightly")
+	if err != nil {
+		t.Fatalf("dispatchNomad() error = %v", err)
+	}
+	if resp.DispatchedJobID != "distribution-release-mksk/dispatch-1" {
+		t.Fatalf("dispatched job id = %s", resp.DispatchedJobID)
+	}
+	if string(got.Payload) != `{"package":"mksk"}` {
+		t.Fatalf("payload = %s base64=%s", string(got.Payload), base64.StdEncoding.EncodeToString(got.Payload))
+	}
+	if got.Meta["channel"] != "nightly" || got.IdPrefixTemplate != "mksk-nightly" {
+		t.Fatalf("dispatch request = %+v", got)
 	}
 }

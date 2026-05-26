@@ -237,3 +237,20 @@ WHERE package_name = @package_name
   AND (@platform_arch::text = '' OR platform_arch = @platform_arch)
 ORDER BY published_at DESC, target_id DESC
 LIMIT @limit_count;
+
+-- name: GetTargetByPackageVersion :one
+SELECT *
+FROM distribution_channel_targets
+WHERE package_name = @package_name
+  AND package_version = @package_version
+  AND (@platform_os::text = '' OR platform_os = @platform_os)
+  AND (@platform_arch::text = '' OR platform_arch = @platform_arch)
+ORDER BY CASE channel_name
+    WHEN 'stable' THEN 0
+    WHEN 'rc' THEN 1
+    WHEN 'nightly' THEN 2
+    ELSE 3
+  END,
+  published_at DESC,
+  target_id DESC
+LIMIT 1;

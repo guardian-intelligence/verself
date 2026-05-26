@@ -28,17 +28,10 @@ def _npm_probe_impl(ctx):
     return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator release npm-probe")
 
 def _mksk_impl(ctx):
-    tools_tar = bazel_output_file(ctx, DISTRIBUTION_RELEASE_TOOLS_TARGET)
-    if tools_tar == "":
-        return 1
     cli_args = [
         "mksk",
         "--repo-root",
         ws_path(ctx),
-        "--tools-tar",
-        tools_tar,
-        "--out-dir",
-        _workspace_or_absolute(ctx, ctx.args.out_dir),
         "--source-ref",
         ctx.args.source_ref,
         "--builder-id",
@@ -46,12 +39,29 @@ def _mksk_impl(ctx):
         "--platform",
         ctx.args.platform,
     ]
+    if ctx.args.version_pr or ctx.args.local:
+        tools_tar = bazel_output_file(ctx, DISTRIBUTION_RELEASE_TOOLS_TARGET)
+        if tools_tar == "":
+            return 1
+        cli_args.extend([
+            "--local",
+            "--tools-tar",
+            tools_tar,
+            "--out-dir",
+            _workspace_or_absolute(ctx, ctx.args.out_dir),
+        ])
     if ctx.args.version_pr:
         cli_args.append("--version-pr")
     if ctx.args.channel != "":
         cli_args.extend(["--channel", ctx.args.channel])
     if ctx.args.version != "":
         cli_args.extend(["--version", ctx.args.version])
+    if ctx.args.nomad_addr != "":
+        cli_args.extend(["--nomad-addr", ctx.args.nomad_addr])
+    if ctx.args.site != "":
+        cli_args.extend(["--site", ctx.args.site])
+    if not ctx.args.wait:
+        cli_args.extend(["--wait=false"])
     return bazel_run(ctx, DISTRIBUTION_RELEASE_TARGET, cli_args, label = "distribution-release mksk")
 
 npm_probe = task(
@@ -72,14 +82,18 @@ mksk = task(
     implementation = _mksk_impl,
     name = "mksk",
     group = ["release"],
-    summary = "Generate make-skill release inspection artifacts.",
+    summary = "Dispatch or locally inspect make-skill releases.",
     args = {
+        "local": args.boolean(default = False, description = "Build locally and emit inspection artifacts instead of dispatching the prod release job."),
         "version_pr": args.boolean(default = False, description = "Generate an inspectable release-plz version PR patch."),
         "channel": args.string(default = "", description = "Release channel: nightly, rc, or stable."),
         "version": args.string(default = "", description = "Explicit version. Required for rc/stable; optional for nightly."),
         "source_ref": args.string(default = "HEAD", description = "Git ref recorded as the source revision."),
         "out_dir": args.string(default = "artifacts/releases", description = "Directory for inspectable release outputs."),
-        "builder_id": args.string(default = "spiffe://prod.verself.sh/svc/distribution-service", description = "SLSA builder id recorded in local provenance."),
+        "builder_id": args.string(default = "spiffe://prod.verself.sh/svc/distribution-release", description = "SLSA builder id recorded in local provenance."),
         "platform": args.string(default = "linux/amd64", description = "Release platform recorded in provenance."),
+        "site": args.string(default = "prod", description = "Deployment site used for Nomad dispatch."),
+        "nomad_addr": args.string(default = "", description = "Nomad HTTP address. Defaults to an SSH tunnel to the selected site."),
+        "wait": args.boolean(default = True, description = "Wait for the dispatched Nomad release job to finish."),
     },
 )

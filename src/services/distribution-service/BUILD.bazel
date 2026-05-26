@@ -16,6 +16,7 @@ pkg_tar(
     name = "release_tools_artifact",
     out = "distribution-release-tools.tar",
     files = {
+        "@distribution_release_tools//tools/bazelisk": "bin/bazelisk",
         "@distribution_release_tools//tools/cargo-about": "bin/cargo-about",
         "@distribution_release_tools//tools/cosign": "bin/cosign",
         "@distribution_release_tools//tools/oras": "bin/oras",
@@ -23,8 +24,35 @@ pkg_tar(
         "@distribution_release_tools//tools/syft": "bin/syft",
     },
     modes = {
+        "bin/bazelisk": "0755",
         "bin/cargo-about": "0755",
         "bin/cosign": "0755",
+        "bin/oras": "0755",
+        "bin/release-plz": "0755",
+        "bin/syft": "0755",
+    },
+    visibility = ["//visibility:public"],
+)
+
+pkg_tar(
+    name = "runtime_artifact",
+    out = "distribution-service.tar",
+    files = {
+        "//src/services/distribution-service/cmd/distribution-release:distribution-release": "bin/distribution-release",
+        "//src/services/distribution-service/cmd/distribution-service:distribution-service": "bin/distribution-service",
+        "@distribution_release_tools//tools/bazelisk": "bin/bazelisk",
+        "@distribution_release_tools//tools/cargo-about": "bin/cargo-about",
+        "@distribution_release_tools//tools/cosign": "bin/cosign",
+        "@distribution_release_tools//tools/oras": "bin/oras",
+        "@distribution_release_tools//tools/release-plz": "bin/release-plz",
+        "@distribution_release_tools//tools/syft": "bin/syft",
+    },
+    modes = {
+        "bin/bazelisk": "0755",
+        "bin/cargo-about": "0755",
+        "bin/cosign": "0755",
+        "bin/distribution-release": "0755",
+        "bin/distribution-service": "0755",
         "bin/oras": "0755",
         "bin/release-plz": "0755",
         "bin/syft": "0755",
@@ -42,10 +70,21 @@ spire_identity(
     visibility = ["//src/host:__pkg__"],
 )
 
+spire_identity(
+    name = "spiffe_identity_release",
+    component = "distribution_service",
+    entry_id = "verself-distribution-release",
+    group = "zot",
+    key = "distribution_service.release",
+    path = "/svc/distribution-release",
+    user = "distribution_release",
+    visibility = ["//src/host:__pkg__"],
+)
+
 nomad_component(
     name = "nomad_component",
     artifacts = {
-        "//src/services/distribution-service/cmd/distribution-service:distribution-service_nomad_artifact": "distribution-service",
+        ":runtime_artifact": "distribution-service",
     },
     component = "distribution_service",
     digest_inputs = [":deploy_declarations"],
@@ -54,6 +93,22 @@ nomad_component(
     requires = [
         "clickhouse:migrations",
         "postgres:server",
+    ],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+nomad_component(
+    name = "mksk_release_nomad_component",
+    artifacts = {
+        ":runtime_artifact": "distribution-service",
+    },
+    component = "distribution_service",
+    digest_inputs = [":deploy_declarations"],
+    job_id = "distribution-release-mksk",
+    job_spec = "mksk-release.nomad.hcl",
+    requires = [
+        "nomad:job:distribution-service",
+        "zot:http",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

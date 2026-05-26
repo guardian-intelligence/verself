@@ -161,10 +161,12 @@ func run() error {
 	authenticated := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience})(publicMux)
 	rootMux.Handle("/api/v1/distribution/", publicMux)
 	rootMux.Handle("/api/", authenticated)
+	rootMux.Handle("/releases/", publicMux)
 	rootMux.Handle("/v2/", publicMux)
 
 	internalPeerIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
+		workloadauth.ServiceDistributionRelease,
 		workloadauth.ServiceGovernance,
 	)
 	if err != nil {

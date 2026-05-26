@@ -29,6 +29,15 @@
             }
           ]
         },
+        "verself/**": {
+          "anonymousPolicy": ["read"],
+          "policies": [
+            {
+              "users": ["{{ zot_publisher_user }}"],
+              "actions": ["read", "create", "update", "delete"]
+            }
+          ]
+        },
         "**": {
           "anonymousPolicy": ["read"]
         }

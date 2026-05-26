@@ -330,6 +330,23 @@ func (s SQLStore) GetCurrentTarget(ctx context.Context, req ResolveTargetRequest
 	return targetFromStore(row), nil
 }
 
+func (s SQLStore) GetTargetByPackageVersion(ctx context.Context, req ReleaseMetadataRequest) (Target, error) {
+	q, err := s.queries()
+	if err != nil {
+		return Target{}, err
+	}
+	row, err := q.GetTargetByPackageVersion(ctx, distributionstore.GetTargetByPackageVersionParams{
+		PackageName:    req.PackageName,
+		PackageVersion: req.PackageVersion,
+		PlatformOs:     req.PlatformOS,
+		PlatformArch:   req.PlatformArch,
+	})
+	if err != nil {
+		return Target{}, storeError(err)
+	}
+	return targetFromStore(row), nil
+}
+
 func (s SQLStore) ListTargets(ctx context.Context, packageName, channelName, platformOS, platformArch string, limit int32) ([]Target, error) {
 	q, err := s.queries()
 	if err != nil {

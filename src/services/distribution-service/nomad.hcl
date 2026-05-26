@@ -30,8 +30,8 @@ job "distribution-service" {
         command = "local/bin/distribution-service"
       }
       env {
-        DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/release-builder"
-        DISTRIBUTION_TRUSTED_SIGNERS = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
+        DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/distribution-release"
+        DISTRIBUTION_TRUSTED_SIGNERS = "spiffe://prod.verself.sh/svc/distribution-release"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "distribution-service-migration"
@@ -68,8 +68,8 @@ job "distribution-service" {
         command = "local/bin/distribution-service"
       }
       env {
-        DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/release-builder"
-        DISTRIBUTION_TRUSTED_SIGNERS = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
+        DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/distribution-release"
+        DISTRIBUTION_TRUSTED_SIGNERS = "spiffe://prod.verself.sh/svc/distribution-release"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "distribution-service"

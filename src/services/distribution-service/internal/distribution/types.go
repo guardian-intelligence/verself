@@ -183,6 +183,13 @@ type ResolveTargetRequest struct {
 	PlatformArch string
 }
 
+type ReleaseMetadataRequest struct {
+	PackageName    string
+	PackageVersion string
+	PlatformOS     string
+	PlatformArch   string
+}
+
 type CheckUpdateRequest struct {
 	PackageName      string
 	ChannelName      string

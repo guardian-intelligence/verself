@@ -18,7 +18,7 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 	ctx, svc := newTestService(t)
 	req := admitRequest("a")
 
-	artifact, err := svc.AdmitArtifact(ctx, Principal{Actor: "distribution-rehearsal"}, req)
+	artifact, err := svc.AdmitArtifact(ctx, Principal{Actor: "distribution-release"}, req)
 	if err != nil {
 		t.Fatalf("admit artifact: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		t.Fatalf("retention class = %s, want %s", artifact.RetentionClass, RetentionStable)
 	}
 
-	duplicate, err := svc.AdmitArtifact(ctx, Principal{Actor: "distribution-rehearsal"}, req)
+	duplicate, err := svc.AdmitArtifact(ctx, Principal{Actor: "distribution-release"}, req)
 	if err != nil {
 		t.Fatalf("admit duplicate artifact: %v", err)
 	}
@@ -37,15 +37,15 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		t.Fatalf("duplicate artifact id = %s, want %s", duplicate.ArtifactID, artifact.ArtifactID)
 	}
 
-	target, err := svc.PromoteTarget(ctx, Principal{Actor: "distribution-rehearsal"}, PromoteTargetRequest{
+	target, err := svc.PromoteTarget(ctx, Principal{Actor: "distribution-release"}, PromoteTargetRequest{
 		PackageName:    req.PackageName,
 		ChannelName:    req.ChannelName,
 		ArtifactDigest: req.OCIDigest,
 		PlatformOS:     req.PlatformOS,
 		PlatformArch:   req.PlatformArch,
 		PolicyRef:      req.PolicyRef,
-		PromotedBy:     "distribution-rehearsal",
-		Reason:         "release rehearsal",
+		PromotedBy:     "distribution-release",
+		Reason:         "mksk release",
 		IdempotencyKey: "promote-1",
 	})
 	if err != nil {
@@ -55,15 +55,15 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		t.Fatalf("target state = %s, want %s", target.State, TargetStatePublished)
 	}
 
-	replayed, err := svc.PromoteTarget(ctx, Principal{Actor: "distribution-rehearsal"}, PromoteTargetRequest{
+	replayed, err := svc.PromoteTarget(ctx, Principal{Actor: "distribution-release"}, PromoteTargetRequest{
 		PackageName:    req.PackageName,
 		ChannelName:    req.ChannelName,
 		ArtifactDigest: req.OCIDigest,
 		PlatformOS:     req.PlatformOS,
 		PlatformArch:   req.PlatformArch,
 		PolicyRef:      req.PolicyRef,
-		PromotedBy:     "distribution-rehearsal",
-		Reason:         "release rehearsal",
+		PromotedBy:     "distribution-release",
+		Reason:         "mksk release",
 		IdempotencyKey: "promote-1",
 	})
 	if err != nil {
@@ -90,6 +90,19 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 	}
 	if resolved.DownloadURL != "https://oci.verself.sh/v2/verself/mksk/manifests/"+req.OCIDigest {
 		t.Fatalf("resolved download URL = %s", resolved.DownloadURL)
+	}
+
+	metadata, err := svc.GetReleaseMetadata(ctx, Principal{Actor: "cli"}, ReleaseMetadataRequest{
+		PackageName:    req.PackageName,
+		PackageVersion: req.PackageVersion,
+		PlatformOS:     req.PlatformOS,
+		PlatformArch:   req.PlatformArch,
+	})
+	if err != nil {
+		t.Fatalf("get release metadata: %v", err)
+	}
+	if metadata.ArtifactDigest != req.OCIDigest {
+		t.Fatalf("release metadata digest = %s, want %s", metadata.ArtifactDigest, req.OCIDigest)
 	}
 
 	_, updateAvailable, err := svc.CheckUpdate(ctx, Principal{Actor: "cli"}, CheckUpdateRequest{
@@ -130,7 +143,7 @@ func TestAdmissionRequiresCompleteTrustedEvidence(t *testing.T) {
 	req := admitRequest("b")
 	req.Evidence = req.Evidence[:2]
 
-	_, err := svc.AdmitArtifact(context.Background(), Principal{Actor: "distribution-rehearsal"}, req)
+	_, err := svc.AdmitArtifact(context.Background(), Principal{Actor: "distribution-release"}, req)
 	if !errors.Is(err, ErrMissingReferrers) {
 		t.Fatalf("admit missing evidence error = %v, want %v", err, ErrMissingReferrers)
 	}
@@ -157,10 +170,10 @@ func newTestService(t *testing.T) (context.Context, *Service) {
 	return ctx, &Service{
 		Store: SQLStore{PG: pg},
 		TrustedBuilders: map[string]struct{}{
-			"spiffe://prod.verself.sh/svc/release-builder": {},
+			"spiffe://prod.verself.sh/svc/distribution-release": {},
 		},
 		TrustedSigners: map[string]struct{}{
-			"https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main": {},
+			"spiffe://prod.verself.sh/svc/distribution-release": {},
 		},
 		InstallationID: "test",
 		Now: func() time.Time {
@@ -184,8 +197,8 @@ func admitRequest(digestFill string) AdmitArtifactRequest {
 		OCIDigest:         digest,
 		OCIMediaType:      "application/vnd.oci.image.manifest.v1+json",
 		OCISizeBytes:      4096,
-		BuilderID:         "spiffe://prod.verself.sh/svc/release-builder",
-		SignerIdentity:    "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main",
+		BuilderID:         "spiffe://prod.verself.sh/svc/distribution-release",
+		SignerIdentity:    "spiffe://prod.verself.sh/svc/distribution-release",
 		SourceRepository:  "guardian-intelligence/verself",
 		SourceCommit:      "0123456789abcdef0123456789abcdef01234567",
 		SourceRef:         "refs/heads/main",
@@ -197,7 +210,7 @@ func admitRequest(digestFill string) AdmitArtifactRequest {
 			evidence(EvidenceSBOM, "https://spdx.dev/Document", digest, "e"),
 			evidence(EvidenceTest, "https://verself.sh/test-evidence/v1", digest, "f"),
 		},
-		SubmittedBy:    "distribution-rehearsal",
+		SubmittedBy:    "distribution-release",
 		IdempotencyKey: "admit-" + digestFill,
 	}
 }

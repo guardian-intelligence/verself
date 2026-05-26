@@ -51,6 +51,7 @@ service Distribution {
         CheckDistributionUpdate,
         RecordDistributionUpgradeVerification,
         ResolveDistributionTarget,
+        GetDistributionReleaseMetadata,
         GetDistributionArtifact,
         ListDistributionChannelTargets
     ]
@@ -218,6 +219,9 @@ string DistributionUpdateCheckAuditEvent
 
 @auditEvent(name: "distribution.targets.resolve")
 string DistributionTargetResolveAuditEvent
+
+@auditEvent(name: "distribution.releases.get")
+string DistributionReleaseGetAuditEvent
 
 @auditEvent(name: "distribution.artifacts.get")
 string DistributionArtifactGetAuditEvent
@@ -576,6 +580,22 @@ structure ResolveDistributionTargetInput {
     platform_arch: PlatformArch
 }
 
+structure GetDistributionReleaseMetadataInput {
+    @required
+    @httpLabel
+    package_name: PackageName
+
+    @required
+    @httpLabel
+    version: PackageVersion
+
+    @httpQuery("platform_os")
+    platform_os: PlatformOS
+
+    @httpQuery("platform_arch")
+    platform_arch: PlatformArch
+}
+
 structure ResolveDistributionTargetOutputBody {
     @required
     @protoField(number: 1)
@@ -927,6 +947,20 @@ operation RecordDistributionUpgradeVerification {
 @sdk(module: "distribution.targets", method: "resolve", paginated: false, retryable: true)
 operation ResolveDistributionTarget {
     input: ResolveDistributionTargetInput
+    output: ResolveDistributionTargetOutput
+    errors: [ValidationFailedError, PermissionDeniedError, ResourceNotFoundError, QuarantinedArtifactError, RateLimitedError, ServiceUnavailableError, UnauthenticatedError]
+}
+
+@readonly
+@http(method: "GET", uri: "/releases/{package_name}/{version}", code: 200)
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "cli", "workload", "anonymous"])
+@authz(permission: DistributionTargetReadPermission, organization: {source: "installation"})
+@audit(event: DistributionReleaseGetAuditEvent, resource: DistributionTarget, action: "read")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 0)
+@sdk(module: "distribution.releases", method: "get", paginated: false, retryable: true)
+operation GetDistributionReleaseMetadata {
+    input: GetDistributionReleaseMetadataInput
     output: ResolveDistributionTargetOutput
     errors: [ValidationFailedError, PermissionDeniedError, ResourceNotFoundError, QuarantinedArtifactError, RateLimitedError, ServiceUnavailableError, UnauthenticatedError]
 }

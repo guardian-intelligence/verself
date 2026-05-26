@@ -526,6 +526,63 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, arg GetIdempotencyKeyPa
 	return i, err
 }
 
+const getTargetByPackageVersion = `-- name: GetTargetByPackageVersion :one
+SELECT target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
+FROM distribution_channel_targets
+WHERE package_name = $1
+  AND package_version = $2
+  AND ($3::text = '' OR platform_os = $3)
+  AND ($4::text = '' OR platform_arch = $4)
+ORDER BY CASE channel_name
+    WHEN 'stable' THEN 0
+    WHEN 'rc' THEN 1
+    WHEN 'nightly' THEN 2
+    ELSE 3
+  END,
+  published_at DESC,
+  target_id DESC
+LIMIT 1
+`
+
+type GetTargetByPackageVersionParams struct {
+	PackageName    string
+	PackageVersion string
+	PlatformOs     string
+	PlatformArch   string
+}
+
+func (q *Queries) GetTargetByPackageVersion(ctx context.Context, arg GetTargetByPackageVersionParams) (DistributionChannelTarget, error) {
+	row := q.db.QueryRow(ctx, getTargetByPackageVersion,
+		arg.PackageName,
+		arg.PackageVersion,
+		arg.PlatformOs,
+		arg.PlatformArch,
+	)
+	var i DistributionChannelTarget
+	err := row.Scan(
+		&i.TargetID,
+		&i.PackageName,
+		&i.ChannelName,
+		&i.PlatformOs,
+		&i.PlatformArch,
+		&i.ArtifactID,
+		&i.ArtifactDigest,
+		&i.PackageVersion,
+		&i.State,
+		&i.PublicOciReference,
+		&i.DownloadUrl,
+		&i.PolicyRef,
+		&i.PromotedBy,
+		&i.Reason,
+		&i.PublishedAt,
+		&i.SupersededAt,
+		&i.SupersededByDigest,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listChannelTargets = `-- name: ListChannelTargets :many
 SELECT target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
 FROM distribution_channel_targets
