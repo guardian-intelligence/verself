@@ -1,0 +1,46 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "mksk",
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    stamp = 0,
+    version = "0.1.0",
+)
+
+rust_binary(
+    name = "install",
+    srcs = ["src/install.rs"],
+    data = [":mksk"],
+    edition = "2024",
+    env = {
+        "MKSK_BINARY": "$(rootpath :mksk)",
+    },
+    stamp = 0,
+)
+
+rust_test(
+    name = "cli_test",
+    srcs = ["tests/cli.rs"],
+    data = [":mksk"],
+    edition = "2024",
+    env = {
+        "MKSK_UNDER_TEST": "$(rootpath :mksk)",
+    },
+)
+
+pkg_tar(
+    name = "release_tar",
+    out = "make-skill-0.1.0.tar",
+    files = {
+        ":mksk": "bin/mksk",
+        "LICENSE": "LICENSE",
+    },
+    modes = {
+        "LICENSE": "0644",
+        "bin/mksk": "0755",
+    },
+)

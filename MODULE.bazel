@@ -16,6 +16,7 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_rust", version = "0.70.0")
 bazel_dep(name = "rules_zig", version = "0.13.0")
 
 include("//src/tools/dev/binaries:dev_tools.MODULE.bazel")
@@ -111,6 +112,13 @@ use_repo(
     "zot_tools",
 )
 
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    rustfmt_version = "1.95.0",
+    versions = ["1.95.0"],
+)
+use_repo(rust, "rust_toolchains")
+
 register_toolchains("@clickhouse_tools//toolchains:all")
 
 register_toolchains("@electric_tools//toolchains:all")
@@ -140,6 +148,8 @@ register_toolchains("@tigerbeetle_tools//toolchains:all")
 register_toolchains("@zitadel_tools//toolchains:all")
 
 register_toolchains("@zot_tools//toolchains:all")
+
+register_toolchains("@rust_toolchains//:all")
 
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(
