@@ -231,6 +231,8 @@ var errGuestShutdownRequested = errors.New("guest shutdown requested")
 
 var errControlReconnectForSnapshot = errors.New("control reconnect for golden snapshot")
 
+var syncFilesystems = syscall.Sync
+
 func (s *agentSession) runRestoredControlLoop(listener *vsockListener, sigCh <-chan os.Signal) error {
 	for {
 		if s.conn != nil {
@@ -611,15 +613,27 @@ func (s *agentSession) handleBeforeGoldenSnapshotRequest(env vmproto.Envelope) e
 	if req.ProtocolVersion != vmproto.ProtocolVersion {
 		return protocolStateError(bridgeStateAwaitExecRequest, "protocol_version mismatch: got %d want %d", req.ProtocolVersion, vmproto.ProtocolVersion)
 	}
-	syscall.Sync()
+	prepareErr := prepareBeforeGoldenSnapshotClock()
 	result := vmproto.BeforeGoldenSnapshotResult{
 		LeaseID:     req.LeaseID,
 		OperationID: req.OperationID,
-		Ready:       true,
+		Ready:       prepareErr == nil,
+		Error:       errorString(prepareErr),
 	}
 	if err := s.sendControlSync(vmproto.TypeBeforeGoldenSnapshotResult, result); err != nil {
 		return err
 	}
+	if prepareErr != nil {
+		return prepareErr
+	}
+	return nil
+}
+
+func prepareBeforeGoldenSnapshotClock() error {
+	if err := stopChronyDaemonForSnapshot(); err != nil {
+		return fmt.Errorf("snapshot_chrony_stop_failed: %w", err)
+	}
+	syncFilesystems()
 	return nil
 }
 

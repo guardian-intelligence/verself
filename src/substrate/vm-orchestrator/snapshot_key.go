@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	snapshotKeySchema          = "fc-precontrol-chrony-v2"
+	snapshotKeySchema          = "fc-precontrol-chrony-v3"
 	snapshotNetworkModel       = "network-overrides+lease-init-v1"
-	snapshotRestoreHookVersion = "lease-init+after-restore-host-wall-clock-1ms-v1"
+	snapshotRestoreHookVersion = "lease-init+host-clock-first+chrony-restart-v2"
 	snapshotIfaceID            = "eth0"
 	snapshotGuestMAC           = "06:00:00:00:00:01"
 )

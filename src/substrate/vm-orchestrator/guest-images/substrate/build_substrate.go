@@ -51,7 +51,6 @@ var substratePackages = []string{
 }
 
 const chronyConf = `refclock PHC /dev/ptp0 poll 0 dpoll -2 offset 0 refid KVM
-driftfile /var/lib/chrony/drift
 makestep 0.1 3
 bindcmdaddress /run/chrony/chronyd.sock
 port 0
