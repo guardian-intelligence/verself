@@ -139,12 +139,8 @@ function chooseHaloSweep(
       candidate.direction,
       input.fields,
     );
-    const entryPoint = projectToCamera(candidate.origin, candidate.direction, input.cameraRect);
-    const absorption = input.fields.absorptionAt(entryPoint);
     const score =
-      projectedVisibility *
-      (1 - Math.min(absorption, 0.84)) *
-      recentWavePenalty(candidate, recentWaves, minOriginDistance);
+      projectedVisibility * recentWavePenalty(candidate, recentWaves, minOriginDistance);
     if (score > bestScore) {
       bestCandidate = candidate;
       bestScore = score;
@@ -227,38 +223,6 @@ function distanceToRectBoundary(point: Vec2, direction: Vec2, rect: DomainRect):
   return Math.min(...positiveDistances);
 }
 
-function projectToCamera(origin: Vec2, direction: Vec2, cameraRect: DomainRect): Vec2 {
-  if (containsPoint(cameraRect, origin)) return origin;
-
-  const distances: number[] = [];
-  if (origin.x < cameraRect.x && direction.x > 0) {
-    distances.push((cameraRect.x - origin.x) / direction.x);
-  }
-  if (origin.x > cameraRect.x + cameraRect.width && direction.x < 0) {
-    distances.push((cameraRect.x + cameraRect.width - origin.x) / direction.x);
-  }
-  if (origin.y < cameraRect.y && direction.y > 0) {
-    distances.push((cameraRect.y - origin.y) / direction.y);
-  }
-  if (origin.y > cameraRect.y + cameraRect.height && direction.y < 0) {
-    distances.push((cameraRect.y + cameraRect.height - origin.y) / direction.y);
-  }
-
-  const distance = Math.min(...distances.filter((candidate) => candidate >= 0));
-  if (!Number.isFinite(distance)) {
-    return clampPointToRect(origin, cameraRect);
-  }
-
-  return {
-    x: clampRange(origin.x + direction.x * distance, cameraRect.x, cameraRect.x + cameraRect.width),
-    y: clampRange(
-      origin.y + direction.y * distance,
-      cameraRect.y,
-      cameraRect.y + cameraRect.height,
-    ),
-  };
-}
-
 function toImpulse(wave: AmbientWave): WaveImpulse {
   return {
     frontLength: wave.frontLength,
@@ -330,22 +294,6 @@ function interpolate(start: number, end: number, amount: number): number {
 function smoothstep(edge0: number, edge1: number, value: number): number {
   const amount = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
   return amount * amount * (3 - 2 * amount);
-}
-
-function containsPoint(rect: DomainRect, point: Vec2): boolean {
-  return (
-    point.x >= rect.x &&
-    point.x <= rect.x + rect.width &&
-    point.y >= rect.y &&
-    point.y <= rect.y + rect.height
-  );
-}
-
-function clampPointToRect(point: Vec2, rect: DomainRect): Vec2 {
-  return {
-    x: clampRange(point.x, rect.x, rect.x + rect.width),
-    y: clampRange(point.y, rect.y, rect.y + rect.height),
-  };
 }
 
 function clampToRect(point: Vec2, rect: DomainRect, marginScale: number): Vec2 {

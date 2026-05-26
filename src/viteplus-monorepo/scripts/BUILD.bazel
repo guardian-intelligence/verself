@@ -26,6 +26,7 @@ js_binary(
 
 js_binary(
     name = "generate_glsl_module",
+    data = ["glsl-module.ts"],
     entry_point = "generate-glsl-module.ts",
 )
 

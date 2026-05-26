@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
+import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import type { RefObject } from "react";
 import { useMemo, useRef } from "react";
 import { HalfFloatType, NoToneMapping } from "three";
@@ -75,7 +75,6 @@ function DotMatrixPostProcessing() {
   return (
     <EffectComposer autoClear frameBufferType={HalfFloatType} multisampling={0} renderPriority={1}>
       <Bloom intensity={0.1} luminanceSmoothing={0.18} luminanceThreshold={0.82} mipmapBlur />
-      <Vignette darkness={0.18} offset={0.24} />
     </EffectComposer>
   );
 }

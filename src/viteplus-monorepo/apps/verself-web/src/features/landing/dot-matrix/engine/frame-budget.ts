@@ -3,7 +3,7 @@ import {
   DOT_MATRIX_WAVE_TRAVEL_SPEED_SCALE,
 } from "../wave/types";
 
-export const DOT_MATRIX_DOT_SPACING_CSS_PX = 7.75;
+export const DOT_MATRIX_DOT_SPACING_CSS_PX = 15.5;
 export const DOT_MATRIX_RENDER_DPR_CAP = 1.5;
 export const DOT_MATRIX_RENDER_DPR_RANGE: [number, number] = [1, DOT_MATRIX_RENDER_DPR_CAP];
 

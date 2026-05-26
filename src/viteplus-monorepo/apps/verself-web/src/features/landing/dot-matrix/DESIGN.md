@@ -22,10 +22,10 @@ logical scene model
           |
           v
 scene field texture
-R visibility, G spawn, B absorption, A readability
+R visibility, G spawn, A readability
           |
           v
-modulates impulse placement, propagation, damping, and final dot visibility
+modulates impulse placement and final dot visibility
 ```
 
 The wave texture is temporal state. The scene field texture is spatial intent.
@@ -39,7 +39,7 @@ energy is visible through the dot matrix.
    click impulses + ambient wave fronts
 
 2. Step simulation
-   previous wave state + impulses + absorption field
+   previous wave state + impulses
         -> fullscreen compute pass
         -> next wave state texture
 
@@ -93,14 +93,11 @@ simulation artifacts.
 | ------------- | ----------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `visibility`  | Where the dot field should visually exist. This is the stage or lens for the composition. | Display shader, ambient scheduler | Raises baseline dot presence and biases ambient waves toward visible paths.                                                |
 | `spawn`       | Where autonomous ambient waves are allowed to originate.                                  | Ambient scheduler                 | Keeps waves entering from intentional zones, usually edge halos, instead of appearing uniformly across the screen.         |
-| `absorption`  | Where wave energy should decay faster.                                                    | Simulation shader                 | Creates open edges and quiet zones by increasing damping.                                                                  |
 | `readability` | Where foreground content must remain legible.                                             | Display shader                    | Attenuates dot radius, luminance, and alpha around text/navigation without necessarily deleting the underlying wave state. |
 
 These masks layer rather than replace one another. For example, a point can be
-high visibility, high readability, and low absorption: the wave may pass through
-the area, but the final dots are subdued so text remains clear. A boundary band
-can be high spawn and high absorption: waves can originate near the edge while
-old energy is also drained before it reflects.
+high visibility and high readability: the wave may pass through the area, but
+the final dots are subdued so text remains clear.
 
 The usual display combination is:
 
@@ -114,14 +111,6 @@ float readableProtection = 1.0 - readability;
 float visibleEnergy = energy * visibility * readableProtection;
 float radius = baseRadius + visibleEnergy * radiusGain;
 float alpha = baseAlpha * visibility * readableProtection + visibleEnergy * alphaGain;
-```
-
-Absorption is applied in the simulation pass instead:
-
-```glsl
-float absorption = texture(uFieldState, uv).b;
-float localDamping = mix(globalDamping, absorbingDamping, absorption);
-hNext *= localDamping;
 ```
 
 Spawn is normally consumed before the GPU step. The ambient scheduler samples
@@ -187,7 +176,6 @@ The important speed levers are:
 - `travelSpeedScale`: maps wall-clock seconds to simulation seconds.
 - `waveSpeed`: the finite-difference propagation coefficient.
 - `damping`: global energy decay.
-- `absorption`: spatially varying extra damping.
 
 Changing display brightness, radius gain, or contrast should not change wave
 travel speed. Changing frame rate should not change wave travel speed.
@@ -203,10 +191,6 @@ The wave-speed coefficient must remain conservative for the chosen timestep and
 grid size. If speed is raised, damping and timestep should be reviewed together.
 Symptoms of instability include checkerboard artifacts, rapidly growing height
 values, and full-screen flashing after an impulse.
-
-Edges should absorb energy. Reflective boundaries make the hero feel like a
-tank, and wrapping makes wave fronts reappear artificially. Absorption masks
-near the simulation boundary create the intended open-field behavior.
 
 ## Design invariants
 
