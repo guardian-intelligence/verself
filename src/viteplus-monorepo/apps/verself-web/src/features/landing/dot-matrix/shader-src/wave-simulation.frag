@@ -8,7 +8,6 @@ uniform float uDamping;
 uniform float uDelta;
 uniform float uWaveSpeed;
 uniform int uImpulseCount;
-uniform sampler2D uFieldState;
 uniform sampler2D uState;
 uniform vec2 uTexel;
 uniform vec4 uImpulseShapes[MAX_WAVE_IMPULSES];
@@ -62,8 +61,7 @@ void main() {
     2.0 * height - previous + uWaveSpeed * laplacian * stepScale * stepScale;
   nextHeight += impulseAt(uv) * uActive;
 
-  float absorption = texture(uFieldState, uv).b;
-  float damping = mix(uDamping + uAmbient * 0.002, 0.72, absorption);
+  float damping = uDamping + uAmbient * 0.002;
   nextHeight *= pow(clamp(damping, 0.74, 0.995), stepScale);
   nextHeight = clamp(nextHeight, -1.0, 1.0);
 

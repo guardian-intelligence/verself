@@ -46,7 +46,7 @@ export function createCompiledWaveScene(
         const index = (y * size.width + x) * 4;
         data[index] = encodeField(sample.visibility);
         data[index + 1] = encodeField(sample.spawn);
-        data[index + 2] = encodeField(sample.absorption);
+        data[index + 2] = 0;
         data[index + 3] = encodeField(sample.readability);
       }
     }
