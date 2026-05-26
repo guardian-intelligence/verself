@@ -15,11 +15,15 @@ import (
 )
 
 const (
-	snapshotKeySchema          = "fc-precontrol-chrony-v3"
-	snapshotNetworkModel       = "network-overrides+lease-init-v1"
-	snapshotRestoreHookVersion = "lease-init+host-clock-first+chrony-restart-v2"
-	snapshotIfaceID            = "eth0"
-	snapshotGuestMAC           = "06:00:00:00:00:01"
+	GoldenVMSnapshotKeySchema         = "fc-precontrol-chrony-v4"
+	GoldenVMRestoreHookVersion        = "lease-init+host-clock-first+chrony-restart-v2"
+	GoldenVMBeforeSnapshotHookVersion = "before_golden_snapshot.stop_chronyd_v2"
+	snapshotKeySchema                 = GoldenVMSnapshotKeySchema
+	snapshotNetworkModel              = "network-overrides+lease-init-v1"
+	snapshotRestoreHookVersion        = GoldenVMRestoreHookVersion
+	snapshotBeforeSnapshotHookVersion = GoldenVMBeforeSnapshotHookVersion
+	snapshotIfaceID                   = "eth0"
+	snapshotGuestMAC                  = "06:00:00:00:00:01"
 )
 
 var errDatasetOriginMissing = errors.New("zfs dataset origin missing")
@@ -71,14 +75,15 @@ type snapshotDriveKey struct {
 }
 
 type snapshotRuntimeABIKey struct {
-	FirecrackerSHA256 string `json:"firecracker_sha256"`
-	JailerSHA256      string `json:"jailer_sha256"`
-	KernelSHA256      string `json:"kernel_sha256"`
-	KernelCmdline     string `json:"kernel_cmdline"`
-	VMProtoVersion    int    `json:"vmproto_version"`
-	RestoreHook       string `json:"restore_hook"`
-	VCPUs             uint32 `json:"vcpus"`
-	MemoryMiB         uint32 `json:"memory_mib"`
+	FirecrackerSHA256  string `json:"firecracker_sha256"`
+	JailerSHA256       string `json:"jailer_sha256"`
+	KernelSHA256       string `json:"kernel_sha256"`
+	KernelCmdline      string `json:"kernel_cmdline"`
+	VMProtoVersion     int    `json:"vmproto_version"`
+	RestoreHook        string `json:"restore_hook"`
+	BeforeSnapshotHook string `json:"before_snapshot_hook"`
+	VCPUs              uint32 `json:"vcpus"`
+	MemoryMiB          uint32 `json:"memory_mib"`
 }
 
 type snapshotNetworkModelKey struct {
@@ -119,14 +124,15 @@ func (o *Orchestrator) buildSnapshotKey(ctx context.Context, rootDataset string,
 			Drives: make([]snapshotDriveKey, 0, len(mounts)),
 		},
 		RuntimeABI: snapshotRuntimeABIKey{
-			FirecrackerSHA256: fcDigest,
-			JailerSHA256:      jailerDigest,
-			KernelSHA256:      kernelDigest,
-			KernelCmdline:     bootArgs,
-			VMProtoVersion:    vmproto.ProtocolVersion,
-			RestoreHook:       snapshotRestoreHookVersion,
-			VCPUs:             spec.Resources.VCPUs,
-			MemoryMiB:         spec.Resources.MemoryMiB,
+			FirecrackerSHA256:  fcDigest,
+			JailerSHA256:       jailerDigest,
+			KernelSHA256:       kernelDigest,
+			KernelCmdline:      bootArgs,
+			VMProtoVersion:     vmproto.ProtocolVersion,
+			RestoreHook:        snapshotRestoreHookVersion,
+			BeforeSnapshotHook: snapshotBeforeSnapshotHookVersion,
+			VCPUs:              spec.Resources.VCPUs,
+			MemoryMiB:          spec.Resources.MemoryMiB,
 		},
 		NetworkModel: snapshotNetworkModelKey{
 			Model:   snapshotNetworkModel,

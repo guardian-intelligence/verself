@@ -262,13 +262,17 @@ func TestSandboxObservationFromWebhookUsesOnlyProviderObservedRunner(t *testing.
 	}
 }
 
-func TestCancelWorkflowRunUsesRepositoryEndpoint(t *testing.T) {
+func TestCreateFailureCheckRunUsesRepositoryEndpoint(t *testing.T) {
 	var gotMethod, gotPath, gotAuth string
+	var gotBody githubCheckRunRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
-		w.WriteHeader(http.StatusAccepted)
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
 	svc := &Service{
@@ -278,17 +282,76 @@ func TestCancelWorkflowRunUsesRepositoryEndpoint(t *testing.T) {
 			42: {Token: "cached-token", ExpiresAt: time.Now().UTC().Add(time.Hour)},
 		},
 	}
-	if err := svc.cancelWorkflowRun(context.Background(), 42, "guardian-intelligence/verself", 123); err != nil {
-		t.Fatalf("cancelWorkflowRun: %v", err)
+	if err := svc.createFailureCheckRun(context.Background(), 42, "guardian-intelligence/verself", "abc123", "surface-key", "summary", "details"); err != nil {
+		t.Fatalf("createFailureCheckRun: %v", err)
 	}
 	if gotMethod != http.MethodPost {
 		t.Fatalf("method = %s, want POST", gotMethod)
 	}
-	if gotPath != "/repos/guardian-intelligence/verself/actions/runs/123/cancel" {
+	if gotPath != "/repos/guardian-intelligence/verself/check-runs" {
 		t.Fatalf("path = %s", gotPath)
 	}
 	if gotAuth != "Bearer cached-token" {
 		t.Fatalf("authorization = %s", gotAuth)
+	}
+	if gotBody.HeadSHA != "abc123" || gotBody.Status != "completed" || gotBody.Conclusion != "failure" {
+		t.Fatalf("check run body = %+v", gotBody)
+	}
+	if gotBody.ExternalID != "surface-key" || gotBody.Output.Summary != "summary" || gotBody.Output.Text != "details" {
+		t.Fatalf("check run output = %+v", gotBody)
+	}
+}
+
+func TestProviderSurfaceCreatesFailureCheckRunForWorkflowHead(t *testing.T) {
+	var gotBody githubCheckRunRequest
+	calls := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		if r.Header.Get("Authorization") != "Bearer cached-token" {
+			t.Fatalf("authorization = %s", r.Header.Get("Authorization"))
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "GET /repos/guardian-intelligence/verself/actions/runs/123":
+			_, _ = w.Write([]byte(`{"id":123,"head_sha":"abc123"}`))
+		case "POST /repos/guardian-intelligence/verself/check-runs":
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Fatalf("decode check run: %v", err)
+			}
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected GitHub request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	svc := &Service{
+		cfg:    Config{APIBaseURL: server.URL},
+		client: server.Client(),
+		tokens: map[int64]githubInstallationToken{
+			42: {Token: "cached-token", ExpiresAt: time.Now().UTC().Add(time.Hour)},
+		},
+	}
+	cmd := providerSurfaceCommand{
+		CommandKey:             "surface-key",
+		ProviderInstallationID: 42,
+		RepositoryFullName:     "guardian-intelligence/verself",
+		ProviderRunID:          123,
+		ProviderJobID:          456,
+		RunnerClass:            "verself-4vcpu-ubuntu-2404",
+		PrimaryProblemCode:     "runner_allocation.snapshot_restore_failed",
+		PrimaryProblemDetail:   "restored_chrony_source_wait_failed",
+	}
+
+	if err := svc.executeCreateFailureCheckRunSurface(context.Background(), cmd); err != nil {
+		t.Fatalf("executeCreateFailureCheckRunSurface: %v", err)
+	}
+	if len(calls) != 2 || calls[0] != "GET /repos/guardian-intelligence/verself/actions/runs/123" || calls[1] != "POST /repos/guardian-intelligence/verself/check-runs" {
+		t.Fatalf("calls = %v", calls)
+	}
+	if gotBody.HeadSHA != "abc123" || gotBody.ExternalID != "surface-key" || gotBody.Conclusion != "failure" {
+		t.Fatalf("check run body = %+v", gotBody)
+	}
+	if !strings.Contains(gotBody.Output.Text, "runner_class=verself-4vcpu-ubuntu-2404") || !strings.Contains(gotBody.Output.Text, "snapshot_restore_failed") {
+		t.Fatalf("check run text = %q", gotBody.Output.Text)
 	}
 }
 
@@ -336,7 +399,7 @@ func TestRunnerCapacityAssignmentDeadlineExceeded(t *testing.T) {
 	}
 }
 
-func TestProviderSurfaceCommandKeyCancelsWorkflowRunOnce(t *testing.T) {
+func TestProviderSurfaceCommandKeyCreatesFailureCheckRunOnce(t *testing.T) {
 	ref := runnerCapacityRef{
 		ProviderInstallationID: 42,
 		ProviderRepositoryID:   99,

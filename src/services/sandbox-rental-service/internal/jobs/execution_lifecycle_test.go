@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	vmorchestrator "github.com/verself/vm-orchestrator"
 )
 
 func TestLeaseTTLTracksExecutionWallClockBudget(t *testing.T) {
@@ -34,5 +36,27 @@ func TestGoldenVMRootSnapshotMissingIgnoresUnrelatedFailure(t *testing.T) {
 	err := errors.New("lease 01K reached terminal state before ready: guest failed health check")
 	if goldenVMRootSnapshotMissing(err) {
 		t.Fatalf("goldenVMRootSnapshotMissing(%q) = true, want false", err)
+	}
+}
+
+func TestGoldenVMRestoreFailureReasonClassifiesReadyWaitFailures(t *testing.T) {
+	for _, reason := range []string{"lease_ready_failed", "lease_ready_timeout"} {
+		if !goldenVMRestoreFailureReason(reason) {
+			t.Fatalf("goldenVMRestoreFailureReason(%q) = false, want true", reason)
+		}
+	}
+	for _, reason := range []string{"lease_acquire_failed", "lease_acquire_timeout", "durable_cache_prepare_failed"} {
+		if goldenVMRestoreFailureReason(reason) {
+			t.Fatalf("goldenVMRestoreFailureReason(%q) = true, want false", reason)
+		}
+	}
+}
+
+func TestGoldenVMHookVersionsComeFromOrchestratorProtocol(t *testing.T) {
+	if goldenVMAfterRestoreHookVersion != vmorchestrator.GoldenVMRestoreHookVersion {
+		t.Fatalf("after restore hook version = %q, want %q", goldenVMAfterRestoreHookVersion, vmorchestrator.GoldenVMRestoreHookVersion)
+	}
+	if goldenVMBeforeSnapshotHookVersion != vmorchestrator.GoldenVMBeforeSnapshotHookVersion {
+		t.Fatalf("before snapshot hook version = %q, want %q", goldenVMBeforeSnapshotHookVersion, vmorchestrator.GoldenVMBeforeSnapshotHookVersion)
 	}
 }
