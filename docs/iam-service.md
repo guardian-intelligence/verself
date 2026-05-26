@@ -760,6 +760,12 @@ Required implementation cases:
 - back-channel logout invalidates browser/CLI session evidence;
 - non-interactive CLI has no workload credential and receives a typed auth error.
 
+Current-device revocation is presented as logout in the console. Revoking the
+current browser client invalidates the same cookie that authorizes live auth
+sync, so the UI must navigate through the normal TanStack logout route instead
+of waiting for Electric to observe its own authorization loss. Electric remains
+the convergence path for other-device revocation and remote invalidation.
+
 ## Feature Parity Surface
 
 The target product IAM and auth-context surface is:

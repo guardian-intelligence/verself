@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { BrowserLocation, WebAuthAccount, WebAuthSession } from "@verself/auth-web/isomorphic";
 import { useAuthCollections } from "@verself/auth-web/react";
 import { Badge } from "@verself/ui/components/ui/badge";
@@ -13,8 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@verself/ui/components/ui/table";
-import { ArrowLeft, Laptop, MapPin, ShieldCheck, Trash2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { ArrowLeft, Laptop, LogOut, MapPin, ShieldCheck, Trash2 } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { revokeClientAuthDevice, selectActiveAccount } from "~/server-fns/auth";
 
 export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/account/security")({
@@ -23,11 +23,13 @@ export const Route = createFileRoute("/_shell/_authenticated/$orgSlug/account/se
 
 function AccountSecurity() {
   const { orgSlug } = Route.useParams();
+  const navigate = useNavigate();
   const collections = useAuthCollections();
   const { data: accountRows = [] } = useLiveQuery(collections.accounts);
   const { data: sessionRows = [] } = useLiveQuery(collections.sessions);
   const accounts = accountRows.map(accountRowModel);
   const sessions = sessionRows.map(sessionRowModel);
+  const [loggingOutSessionHandle, setLoggingOutSessionHandle] = useState<string | null>(null);
   const selectAccount = useMutation({
     mutationFn: (input: { readonly accountHandle: string }) =>
       selectActiveAccount({ data: { accountHandle: input.accountHandle } }),
@@ -36,6 +38,19 @@ function AccountSecurity() {
     mutationFn: (input: { readonly sessionHandle: string }) =>
       revokeClientAuthDevice({ data: { sessionHandle: input.sessionHandle } }),
   });
+  const actOnSession = (session: SessionRowModel) => {
+    if (session.isCurrent) {
+      setLoggingOutSessionHandle(session.sessionHandle);
+      void navigate({ to: "/logout" }).catch(() => {
+        setLoggingOutSessionHandle(null);
+      });
+      return;
+    }
+
+    revoke.mutate({
+      sessionHandle: session.sessionHandle,
+    });
+  };
 
   return (
     <div className="min-h-svh bg-background text-foreground">
@@ -121,7 +136,7 @@ function AccountSecurity() {
                 <TableHead>Location</TableHead>
                 <TableHead>First seen</TableHead>
                 <TableHead>Last seen</TableHead>
-                <TableHead className="w-24 text-right">Action</TableHead>
+                <TableHead className="w-32 text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -132,11 +147,8 @@ function AccountSecurity() {
                   isRevoking={
                     revoke.isPending && revoke.variables?.sessionHandle === session.sessionHandle
                   }
-                  onRevoke={() =>
-                    revoke.mutate({
-                      sessionHandle: session.sessionHandle,
-                    })
-                  }
+                  isLoggingOut={loggingOutSessionHandle === session.sessionHandle}
+                  onAction={() => actOnSession(session)}
                 />
               ))}
             </TableBody>
@@ -267,12 +279,25 @@ function Metric({
 function SessionRow({
   session,
   isRevoking,
-  onRevoke,
+  isLoggingOut,
+  onAction,
 }: {
   readonly session: SessionRowModel;
   readonly isRevoking: boolean;
-  readonly onRevoke: () => void;
+  readonly isLoggingOut: boolean;
+  readonly onAction: () => void;
 }) {
+  const isWorking = session.isCurrent ? isLoggingOut : isRevoking;
+  const title = session.isCurrent ? "Log Out" : "Revoke Device";
+  const label = session.isCurrent
+    ? isLoggingOut
+      ? "Logging Out"
+      : "Log Out"
+    : isRevoking
+      ? "Revoking"
+      : "Revoke Device";
+  const Icon = session.isCurrent ? LogOut : Trash2;
+
   return (
     <TableRow>
       <TableCell className="min-w-56 whitespace-normal">
@@ -298,12 +323,12 @@ function SessionRow({
         <Button
           variant="destructive"
           size="sm"
-          disabled={isRevoking}
-          onClick={onRevoke}
-          title="Revoke device"
+          disabled={isWorking}
+          onClick={onAction}
+          title={title}
         >
-          <Trash2 className="size-3.5" aria-hidden="true" />
-          <span>{isRevoking ? "Revoking" : "Revoke device"}</span>
+          <Icon className="size-3.5" aria-hidden="true" />
+          <span>{label}</span>
         </Button>
       </TableCell>
     </TableRow>
