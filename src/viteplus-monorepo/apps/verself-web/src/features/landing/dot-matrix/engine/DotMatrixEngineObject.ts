@@ -13,8 +13,7 @@ import {
   type WebGLRenderer,
 } from "three";
 
-import { emitSpan } from "~/lib/telemetry/browser";
-import { drainDotMatrixClicks, recordSyntheticDotMatrixClick } from "../interaction";
+import { drainDotMatrixClicks } from "../interaction";
 import { createCompiledWaveScene } from "../scene/compile";
 import { collectShadowRegions } from "../scene/dom-regions";
 import { createLandingWaveScene } from "../scene/model";
@@ -34,6 +33,12 @@ import { createDotMatrixWaveSimulation } from "../wave/simulation";
 import { DOT_MATRIX_MAX_WAVE_IMPULSES } from "../wave/types";
 import { DOT_MATRIX_DOT_SPACING_CSS_PX, DOT_MATRIX_FRAME_BUDGET } from "./frame-budget";
 import { DOT_MATRIX_LIGHTING } from "./lighting";
+import {
+  createDotMatrixTelemetry,
+  type DotMatrixDegradedReason,
+  type DotMatrixR3FPerformanceTelemetry,
+  type DotMatrixTelemetry,
+} from "./telemetry";
 
 interface DotMatrixEngineOptions {
   readonly camera: Camera;
@@ -45,6 +50,8 @@ interface DotMatrixEngineOptions {
 export interface DotMatrixFrameInput {
   readonly deltaSeconds: number;
   readonly nowSeconds: number;
+  readonly nowMs: number;
+  readonly r3fPerformance: DotMatrixR3FPerformanceTelemetry;
 }
 
 interface DotMatrixViewport {
@@ -53,21 +60,10 @@ interface DotMatrixViewport {
   readonly w: number;
 }
 
-type DotMatrixRendererBackend = "webgl2" | "webgl2_no_float_render_target";
-
-type DotMatrixDegradedReason =
-  | "compile_error"
-  | "float_render_target_unsupported"
-  | "renderer_init_failed";
-
 interface ShadowUniforms {
   readonly falloff: readonly Vector4[];
   readonly params: readonly Vector4[];
   readonly rects: readonly Vector4[];
-}
-
-interface DotMatrixDebugConfig {
-  readonly autoClickRate: number | undefined;
 }
 
 interface DotMatrixUniforms extends Record<string, IUniform> {
@@ -127,7 +123,7 @@ export class DotMatrixEngineObject extends Object3D {
   private readonly renderer: WebGLRenderer;
   private readonly stageRef: RefObject<HTMLElement | null>;
   private readonly resources: DotMatrixEngineResources;
-  private readonly autoClickInterval: number | undefined;
+  private readonly telemetry: DotMatrixTelemetry;
   private degraded = false;
   private disposed = false;
   private firstFrameSent = false;
@@ -147,17 +143,34 @@ export class DotMatrixEngineObject extends Object3D {
     this.renderer = options.renderer;
     this.stageRef = options.stageRef;
 
-    const debug = resolveDotMatrixDebugConfig();
+    const startedAtMs = performance.now();
+    const shaderHash = `${dotMatrixShaderSourceHash}:${dotMatrixWaveShaderSourceHash}`;
     const host = this.hostRef.current ?? undefined;
     if (options.renderer.extensions.get("EXT_color_buffer_float") === null) {
-      emitCapability("webgl2_no_float_render_target", host);
-      emitDegraded("float_render_target_unsupported");
+      this.telemetry = createDotMatrixTelemetry({
+        rendererBackend: "webgl2_no_float_render_target",
+        shaderHash,
+        startedAtMs,
+        viewport:
+          host === undefined ? currentWindowViewport() : currentViewport(host, this.renderer),
+      });
       this.resources = { kind: "degraded" };
-      this.autoClickInterval = undefined;
+      this.telemetry.markDegraded({
+        nowMs: performance.now(),
+        reason: "float_render_target_unsupported",
+        viewport:
+          host === undefined ? currentWindowViewport() : currentViewport(host, this.renderer),
+        waveGrid: { height: 0, width: 0 },
+      });
       return;
     }
 
-    emitCapability("webgl2", host);
+    this.telemetry = createDotMatrixTelemetry({
+      rendererBackend: "webgl2",
+      shaderHash,
+      startedAtMs,
+      viewport: host === undefined ? currentWindowViewport() : currentViewport(host, this.renderer),
+    });
 
     try {
       this.resources = {
@@ -169,11 +182,16 @@ export class DotMatrixEngineObject extends Object3D {
       };
       this.add(this.resources.value.mesh);
     } catch (error) {
-      emitDegraded("renderer_init_failed", error);
       this.resources = { kind: "degraded" };
+      this.telemetry.markDegraded({
+        error,
+        nowMs: performance.now(),
+        reason: "resource_init_failed",
+        viewport:
+          host === undefined ? currentWindowViewport() : currentViewport(host, this.renderer),
+        waveGrid: { height: 0, width: 0 },
+      });
     }
-
-    this.autoClickInterval = startAutoClicks(debug.autoClickRate);
   }
 
   frame(input: DotMatrixFrameInput): void {
@@ -220,6 +238,20 @@ export class DotMatrixEngineObject extends Object3D {
       frameActive,
     );
     this.stepSimulation(resources, fixedFrame, frameActive, timeline.ambient);
+    this.telemetry.recordFrame({
+      active: frameActive,
+      ambientImpulses: ambientImpulses.length,
+      clickImpulses: clickImpulses.length,
+      deltaSeconds: frameDeltaSeconds,
+      droppedSeconds: fixedFrame.droppedSeconds,
+      fixedSteps: fixedFrame.steps,
+      nowMs: input.nowMs,
+      queuedImpulses: resources.impulseQueue.size(),
+      r3fPerformance: input.r3fPerformance,
+      renderer: this.renderer,
+      viewport,
+      waveGrid: resources.waveSimulation.size(),
+    });
 
     if (!this.firstFrameSent) {
       this.firstFrameSent = true;
@@ -228,8 +260,10 @@ export class DotMatrixEngineObject extends Object3D {
         stage.dataset.dotMatrixLive = "";
         stage.style.opacity = "1";
       }
-      emitSpan("verself.landing_dot_matrix.ready", {
-        "shader.hash": `${dotMatrixShaderSourceHash}:${dotMatrixWaveShaderSourceHash}`,
+      this.telemetry.markReady({
+        nowMs: input.nowMs,
+        viewport,
+        waveGrid: resources.waveSimulation.size(),
       });
     }
   }
@@ -237,10 +271,7 @@ export class DotMatrixEngineObject extends Object3D {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-
-    if (this.autoClickInterval !== undefined) {
-      window.clearInterval(this.autoClickInterval);
-    }
+    this.telemetry.dispose();
 
     if (this.resources.kind === "ready") {
       const resources = this.resources.value;
@@ -257,7 +288,17 @@ export class DotMatrixEngineObject extends Object3D {
     this.degraded = true;
     const stage = this.stageRef.current;
     if (stage !== null) stage.style.opacity = "0";
-    emitDegraded(reason, error);
+    const host = this.hostRef.current;
+    this.telemetry.markDegraded({
+      error,
+      nowMs: performance.now(),
+      reason,
+      viewport: host === null ? currentWindowViewport() : currentViewport(host, this.renderer),
+      waveGrid:
+        this.resources.kind === "ready"
+          ? this.resources.value.waveSimulation.size()
+          : { height: 0, width: 0 },
+    });
   }
 
   private stepSimulation(
@@ -467,28 +508,6 @@ function hostIntersectsViewport(host: HTMLElement): boolean {
   );
 }
 
-function startAutoClicks(autoClickRate: number | undefined): number | undefined {
-  if (autoClickRate === undefined) return undefined;
-
-  let autoClickIndex = 0;
-  return window.setInterval(() => {
-    const band = autoClickIndex % 3;
-    autoClickIndex += 1;
-    recordSyntheticDotMatrixClick({
-      timeStamp: performance.now(),
-      x: Math.random(),
-      y: (band + Math.random()) / 3,
-    });
-  }, 1000 / autoClickRate);
-}
-
-function resolveDotMatrixDebugConfig(): DotMatrixDebugConfig {
-  const search = new URLSearchParams(window.location.search);
-  return {
-    autoClickRate: resolveAutoClickRate(search),
-  };
-}
-
 function cameraRectVector(rect: DomainRect): Vector4 {
   return new Vector4(rect.x, rect.y, rect.width, rect.height);
 }
@@ -526,52 +545,6 @@ function createSessionSeed(): number {
   }
   const seed = values[0] ?? 0;
   return seed === 0 ? Math.floor(Math.random() * 0xffffffff) : seed;
-}
-
-function resolveAutoClickRate(search: URLSearchParams): number | undefined {
-  const value = search.get("auto-clicks");
-  if (value === null) return undefined;
-  if (value === "" || value === "1" || value === "true") return 3;
-
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 3;
-  return Math.min(parsed, 12);
-}
-
-function emitCapability(rendererBackend: DotMatrixRendererBackend, host?: HTMLElement): void {
-  const viewport = host === undefined ? currentWindowViewport() : currentViewportFromHost(host);
-  emitSpan("verself.landing_dot_matrix.capability", {
-    device_pixel_ratio: String(window.devicePixelRatio || 1),
-    prefers_reduced_motion: "false",
-    renderer_backend: rendererBackend,
-    "viewport.h": String(viewport.h),
-    "viewport.w": String(viewport.w),
-  });
-}
-
-function currentViewportFromHost(host: HTMLElement): Pick<DotMatrixViewport, "h" | "w"> {
-  const box = host.getBoundingClientRect();
-  return {
-    h: Math.max(box.height, 1),
-    w: Math.max(box.width, 1),
-  };
-}
-
-function emitDegraded(reason: DotMatrixDegradedReason, error?: unknown): void {
-  emitSpan("verself.landing_dot_matrix.degraded", {
-    reason,
-    ...errorAttrs(error),
-  });
-}
-
-function errorAttrs(error: unknown): Record<string, string> {
-  if (!(error instanceof Error)) {
-    return {};
-  }
-  return {
-    "error.message": error.message.slice(0, 256),
-    "error.name": error.name,
-  };
 }
 
 function clamp01(value: number): number {

@@ -33,6 +33,7 @@ export interface WaveSimulationStep {
 export interface DotMatrixWaveSimulation {
   readonly dispose: () => void;
   readonly resize: (viewportWidth: number, viewportHeight: number) => void;
+  readonly size: () => { readonly height: number; readonly width: number };
   readonly step: (input: WaveSimulationStep) => Texture;
   readonly texture: () => Texture;
 }

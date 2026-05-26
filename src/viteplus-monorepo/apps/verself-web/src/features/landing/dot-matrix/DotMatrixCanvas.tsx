@@ -6,6 +6,7 @@ import { HalfFloatType, NoToneMapping } from "three";
 
 import { DotMatrixEngineObject } from "./engine/DotMatrixEngineObject";
 import { DOT_MATRIX_RENDER_DPR_RANGE } from "./engine/frame-budget";
+import { emitDotMatrixSkippedLoad } from "./engine/telemetry";
 
 interface DotMatrixCanvasProps {
   readonly hostRef: RefObject<HTMLElement | null>;
@@ -64,7 +65,13 @@ function DotMatrixScene({ hostRef, stageRef }: DotMatrixSceneProps) {
   useFrame((state, deltaSeconds) => {
     engine.frame({
       deltaSeconds,
+      nowMs: performance.now(),
       nowSeconds: state.clock.elapsedTime,
+      r3fPerformance: {
+        current: state.performance.current,
+        max: state.performance.max,
+        min: state.performance.min,
+      },
     });
   }, -1);
 
@@ -79,7 +86,18 @@ function DotMatrixPostProcessing() {
   );
 }
 
+let reducedMotionSkipReported = false;
+
 function resolveReducedMotion(): boolean {
   if (typeof window === "undefined") return true;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reducedMotion && !reducedMotionSkipReported) {
+    reducedMotionSkipReported = true;
+    emitDotMatrixSkippedLoad("prefers_reduced_motion", {
+      dpr: Math.max(window.devicePixelRatio || 1, 1),
+      h: Math.max(window.innerHeight, 1),
+      w: Math.max(window.innerWidth, 1),
+    });
+  }
+  return reducedMotion;
 }
