@@ -144,13 +144,18 @@ fronts, not random pixel noise:
 seeded random scheduler
   -> choose spawn-field origin
   -> point direction toward the visible camera area
-  -> emit elongated front impulse
+  -> emit one elongated front impulse
 ```
 
 Randomness belongs in source scheduling, source placement, source strength, and
 front length. The propagation equation should stay deterministic once the
 impulses are injected. That gives the scene non-repeating motion while keeping
 the waves coherent.
+
+Ambient waves should not arrive as stacked trains. The scheduler emits at most
+one front per event, spaces events by a bounded random interval, and keeps
+recent origins/directions far enough apart that overlapping fronts do not create
+high-frequency shimmer.
 
 ## Timing
 
