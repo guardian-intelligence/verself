@@ -25,6 +25,7 @@ spire_identity_registry(
         "//src/services/object-storage-service:spiffe_identity_service",
         "//src/services/profile-service:spiffe_identity",
         "//src/services/projects-service:spiffe_identity",
+        "//src/services/release-service:spiffe_identity",
         "//src/services/sandbox-rental-service:spiffe_identity",
         "//src/services/secrets-service:spiffe_identity",
         "//src/services/source-code-hosting-service:spiffe_identity",
