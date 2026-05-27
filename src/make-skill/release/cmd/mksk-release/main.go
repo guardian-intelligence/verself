@@ -756,7 +756,11 @@ func releaseToolEnv(outRoot, channel, version, sourceCommit string) (map[string]
 }
 
 func releaseBazelStartupOptions(env map[string]string) []string {
-	return []string{"--output_user_root=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-output")}
+	return []string{
+		"--output_user_root=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-output"),
+		// Bazel servers inherit captured command pipes; release workers need them to exit.
+		"--max_idle_secs=1",
+	}
 }
 
 func releaseBazelCommandOptions(env map[string]string) []string {

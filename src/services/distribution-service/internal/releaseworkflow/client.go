@@ -239,9 +239,14 @@ func (c *Client) execute(ctx context.Context, workflowID string, workflowName st
 		}
 		return ReleaseRun{}, fmt.Errorf("start temporal release workflow %s: %w", workflowID, err)
 	}
+	var result ReleaseWorkflowResult
+	if err := run.Get(ctx, &result); err != nil {
+		return ReleaseRun{}, fmt.Errorf("wait for temporal release workflow %s: %w", workflowID, err)
+	}
 	return ReleaseRun{
 		WorkflowID: run.GetID(),
 		RunID:      run.GetRunID(),
+		Result:     result,
 	}, nil
 }
 

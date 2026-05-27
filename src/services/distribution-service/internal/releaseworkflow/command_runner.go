@@ -263,7 +263,7 @@ func (r *CommandRunner) releaseToolEnv(input releaseBuild) (map[string]string, e
 }
 
 func (r *CommandRunner) bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[string]string, target string) (string, error) {
-	startupOptions := []string{"--output_user_root=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-output")}
+	startupOptions := releaseBazelStartupOptions(env)
 	commandOptions := []string{
 		"--disk_cache=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-disk"),
 		"--repository_cache=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-repo"),
@@ -300,6 +300,14 @@ func (r *CommandRunner) bazelOutputFile(ctx context.Context, repoRoot, bazelisk 
 		return "", fmt.Errorf("bazel output %s: %w", out, err)
 	}
 	return out, nil
+}
+
+func releaseBazelStartupOptions(env map[string]string) []string {
+	return []string{
+		"--output_user_root=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-output"),
+		// Bazel servers inherit captured command pipes; release workers need them to exit.
+		"--max_idle_secs=1",
+	}
 }
 
 func releaseWorkKey(input releaseBuild) string {

@@ -97,8 +97,13 @@ func TestMergeCommandEnvOverridesHome(t *testing.T) {
 
 func TestReleaseBazelOptionsUseReleaseCache(t *testing.T) {
 	env := map[string]string{"XDG_CACHE_HOME": "/artifacts/releases/work/tool-env/mksk/cache"}
-	if got := releaseBazelStartupOptions(env); strings.Join(got, " ") != "--output_user_root=/artifacts/releases/work/tool-env/mksk/cache/bazel-output" {
-		t.Fatalf("startup options = %#v", got)
+	gotStartup := releaseBazelStartupOptions(env)
+	wantStartup := []string{
+		"--output_user_root=/artifacts/releases/work/tool-env/mksk/cache/bazel-output",
+		"--max_idle_secs=1",
+	}
+	if strings.Join(gotStartup, "\n") != strings.Join(wantStartup, "\n") {
+		t.Fatalf("startup options = %#v", gotStartup)
 	}
 	got := releaseBazelCommandOptions(env)
 	want := []string{

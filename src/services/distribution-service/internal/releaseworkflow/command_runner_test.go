@@ -128,6 +128,21 @@ func TestCommandRunnerBuildNightlyInvokesDistributionRelease(t *testing.T) {
 	}
 }
 
+func TestReleaseBazelStartupOptionsUseShortLivedServer(t *testing.T) {
+	t.Parallel()
+
+	got := releaseBazelStartupOptions(map[string]string{
+		"XDG_CACHE_HOME": "/artifacts/releases/work/tool-env/distribution-release/cache",
+	})
+	want := []string{
+		"--output_user_root=/artifacts/releases/work/tool-env/distribution-release/cache/bazel-output",
+		"--max_idle_secs=1",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("startup options = %#v, want %#v", got, want)
+	}
+}
+
 func TestParseReleaseArtifactRoot(t *testing.T) {
 	t.Parallel()
 
