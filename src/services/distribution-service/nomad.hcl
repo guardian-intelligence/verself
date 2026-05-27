@@ -146,7 +146,7 @@ job "distribution-service" {
       }
       config {
         command = "/bin/sh"
-        args = ["-ec", "install -d -o root -g root -m 0755 /artifacts\ninstall -d -o distribution_service -g distribution_service -m 0750 /artifacts/releases /artifacts/releases/work\n"]
+        args = ["-ec", "install -d -o root -g root -m 0755 /artifacts\ninstall -d -o distribution_service -g distribution_service -m 0750 /artifacts/releases /artifacts/releases/work /artifacts/releases/mksk\n"]
       }
       resources {
         cpu = 50
