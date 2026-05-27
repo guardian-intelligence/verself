@@ -727,6 +727,10 @@ GRANT INSERT ON verself.iam_events TO iam_service;
 -- verself: notification delivery ledger
 -- ═══════════════════════════════════════════════════════════════════════════
 
+CREATE USER IF NOT EXISTS notifications_service IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/notifications-service' HOST LOCAL;
+ALTER USER notifications_service IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/notifications-service' HOST LOCAL;
+GRANT SELECT ON default.otel_traces TO notifications_service;
+
 CREATE TABLE IF NOT EXISTS verself.notification_events
 (
     recorded_at DateTime64(9, 'UTC') CODEC(Delta(8), ZSTD(3)),
@@ -754,6 +758,8 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(toDate(recorded_at))
 ORDER BY (event_type, org_id, kind, status, recipient_subject_id, occurred_at, ledger_event_id)
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
+
+GRANT SELECT, INSERT ON verself.notification_events TO notifications_service;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- verself: vm-orchestrator lease evidence projection
@@ -1072,6 +1078,7 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (event_name, provider, org_id, repository_id, cache_name, observed_at, operation_id);
 
 GRANT SELECT, INSERT ON verself.durable_events TO sandbox_rental;
+GRANT SELECT ON verself.durable_events TO notifications_service;
 
 CREATE TABLE IF NOT EXISTS verself.bazel_invocations
 (
@@ -1281,6 +1288,7 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (event_name, provider, org_id, repository_id, observed_at, operation_id, golden_vm_snapshot_id);
 
 GRANT SELECT, INSERT ON verself.golden_vm_events TO sandbox_rental;
+GRANT SELECT ON verself.golden_vm_events TO notifications_service;
 
 CREATE TABLE IF NOT EXISTS verself.sandbox_phase_events
 (
