@@ -1,4 +1,4 @@
-import { revalidateLogic, useForm, type AnyFieldMeta } from "@tanstack/react-form";
+import { revalidateLogic, useForm, type AnyFieldMeta, type AnyFormApi } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useHydrated } from "@tanstack/react-router";
 import { UserPlus } from "lucide-react";
@@ -107,6 +107,10 @@ function fieldErrorText(meta: AnyFieldMeta): string {
 }
 
 function fieldValidationMessage(error: unknown): string {
+  if (Array.isArray(error)) {
+    const first = error.find(Boolean);
+    return first ? fieldValidationMessage(first) : "";
+  }
   if (error instanceof Error) return error.message;
   if (
     error &&
@@ -137,22 +141,26 @@ function authFormSubmitBusy(state: {
   );
 }
 
-function authFormSubmitDisabled(state: {
-  readonly hydrated: boolean;
-  readonly canSubmit: boolean | undefined;
-  readonly isSubmitting: boolean | undefined;
-  readonly isValidating: boolean | undefined;
-  readonly isPending?: boolean;
-  readonly allowed?: boolean;
-}): boolean {
-  return (
-    !state.hydrated ||
-    state.allowed === false ||
-    !state.canSubmit ||
-    Boolean(state.isSubmitting) ||
-    Boolean(state.isValidating) ||
-    Boolean(state.isPending)
-  );
+function authFormSubmit(form: AnyFormApi): void {
+  if (form.state.isSubmitting || form.state.isValidating) {
+    toast.info("Still working on the last request.");
+    return;
+  }
+  void form.handleSubmit().catch((error: unknown) => {
+    toast.error(fieldValidationMessage(error));
+  });
+}
+
+function authFormSubmitInvalid({ formApi }: { readonly formApi: AnyFormApi }): void {
+  toast.error(firstFormErrorText(formApi) || "Check the highlighted fields.");
+}
+
+function firstFormErrorText(form: AnyFormApi): string {
+  for (const meta of Object.values(form.state.fieldMeta)) {
+    const message = fieldValidationMessage(meta?.errors);
+    if (message) return message;
+  }
+  return fieldValidationMessage(form.state.errors);
 }
 
 function FieldError({ id, meta }: { readonly id: string; readonly meta: AnyFieldMeta }) {
@@ -223,6 +231,8 @@ function OrganizationSettingsSection({
     validators: {
       onDynamic: organizationProfileFormSchema,
     },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       if (!canUpdateOrganization) {
         toast.error("You don't have permission to update the organization.");
@@ -274,7 +284,7 @@ function OrganizationSettingsSection({
         onSubmit={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          void form.handleSubmit();
+          authFormSubmit(form);
         }}
         className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
       >
@@ -327,10 +337,8 @@ function OrganizationSettingsSection({
           }}
         </form.Field>
 
-        <form.Subscribe
-          selector={(state) => [state.canSubmit, state.isSubmitting, state.isValidating]}
-        >
-          {([canSubmit, isSubmitting, isValidating]) => (
+        <form.Subscribe selector={(state) => [state.isSubmitting, state.isValidating]}>
+          {([isSubmitting, isValidating]) => (
             <Button
               type="submit"
               aria-busy={authFormSubmitBusy({
@@ -338,14 +346,6 @@ function OrganizationSettingsSection({
                 isSubmitting,
                 isValidating,
                 isPending: mutation.isPending,
-              })}
-              disabled={authFormSubmitDisabled({
-                hydrated,
-                canSubmit,
-                isSubmitting,
-                isValidating,
-                isPending: mutation.isPending,
-                allowed: canUpdateOrganization,
               })}
               className="sm:shrink-0"
             >
@@ -379,6 +379,8 @@ function MembersSection({
     validators: {
       onDynamic: memberInviteFormSchema,
     },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       if (!canInviteMember) {
         toast.error("You don't have permission to invite members.");
@@ -414,7 +416,7 @@ function MembersSection({
           onSubmit={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            void form.handleSubmit();
+            authFormSubmit(form);
           }}
           className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,14rem)_auto] sm:items-end"
         >
@@ -469,10 +471,8 @@ function MembersSection({
               );
             }}
           </form.Field>
-          <form.Subscribe
-            selector={(state) => [state.canSubmit, state.isSubmitting, state.isValidating]}
-          >
-            {([canSubmit, isSubmitting, isValidating]) => (
+          <form.Subscribe selector={(state) => [state.isSubmitting, state.isValidating]}>
+            {([isSubmitting, isValidating]) => (
               <Button
                 type="submit"
                 aria-busy={authFormSubmitBusy({
@@ -480,14 +480,6 @@ function MembersSection({
                   isSubmitting,
                   isValidating,
                   isPending: mutation.isPending,
-                })}
-                disabled={authFormSubmitDisabled({
-                  hydrated,
-                  canSubmit,
-                  isSubmitting,
-                  isValidating,
-                  isPending: mutation.isPending,
-                  allowed: canInviteMember,
                 })}
                 className="sm:shrink-0"
               >

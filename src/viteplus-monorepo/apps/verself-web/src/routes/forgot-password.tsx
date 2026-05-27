@@ -6,8 +6,9 @@ import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
 import {
   FieldError,
+  authFormSubmit,
   authFormSubmitBusy,
-  authFormSubmitDisabled,
+  authFormSubmitInvalid,
   fieldInvalid,
   submitErrorText,
 } from "~/features/auth/form-primitives";
@@ -47,6 +48,8 @@ function ForgotPasswordPage() {
     validators: {
       onDynamic: forgotPasswordFormSchema,
     },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const email = normalizeEmail(value.email);
       await startPasswordReset({ data: { email } });
@@ -105,7 +108,7 @@ function ForgotPasswordPage() {
                 onSubmit={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  void form.handleSubmit();
+                  authFormSubmit(form);
                 }}
                 className="grid gap-4"
               >
@@ -137,23 +140,16 @@ function ForgotPasswordPage() {
                 </form.Field>
                 <form.Subscribe
                   selector={(state) => [
-                    state.canSubmit,
                     state.isSubmitting,
                     state.isValidating,
                     state.errorMap.onSubmit,
                   ]}
                 >
-                  {([canSubmit, isSubmitting, isValidating, submitError]) => (
+                  {([isSubmitting, isValidating, submitError]) => (
                     <div className="grid gap-3">
                       <Button
                         type="submit"
                         aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
-                        disabled={authFormSubmitDisabled({
-                          hydrated,
-                          canSubmit,
-                          isSubmitting,
-                          isValidating,
-                        })}
                       >
                         <KeyRound aria-hidden="true" />
                         <span>{isSubmitting ? "Sending..." : "Send reset email"}</span>

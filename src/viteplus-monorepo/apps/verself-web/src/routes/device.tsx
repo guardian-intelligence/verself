@@ -9,10 +9,12 @@ import { createElectricShapeCollection } from "@verself/web-env";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
+import { toast } from "@verself/ui/components/ui/sonner";
 import {
   FieldError,
+  authFormSubmit,
   authFormSubmitBusy,
-  authFormSubmitDisabled,
+  authFormSubmitInvalid,
   fieldInvalid,
   submitErrorText,
 } from "~/features/auth/form-primitives";
@@ -123,6 +125,8 @@ function DeviceLoginPage() {
     validators: {
       onDynamic: deviceCodeFormSchema,
     },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const code = normalizeDeviceCode(value.userCode);
       window.location.assign(`/device?user_code=${encodeURIComponent(code)}`);
@@ -161,7 +165,7 @@ function DeviceLoginPage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void form.handleSubmit();
+                authFormSubmit(form);
               }}
               className="grid gap-4"
             >
@@ -193,23 +197,16 @@ function DeviceLoginPage() {
               </form.Field>
               <form.Subscribe
                 selector={(state) => [
-                  state.canSubmit,
                   state.isSubmitting,
                   state.isValidating,
                   state.errorMap.onSubmit,
                 ]}
               >
-                {([canSubmit, isSubmitting, isValidating, submitError]) => (
+                {([isSubmitting, isValidating, submitError]) => (
                   <div className="grid gap-3">
                     <Button
                       type="submit"
                       aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
-                      disabled={authFormSubmitDisabled({
-                        hydrated,
-                        canSubmit,
-                        isSubmitting,
-                        isValidating,
-                      })}
                     >
                       <KeyRound aria-hidden="true" />
                       <span>Continue</span>
@@ -256,8 +253,18 @@ function DeviceLoginDecision({
         <div className="grid grid-cols-2 gap-2">
           <Button
             type="button"
-            onClick={() => approval.mutate()}
-            disabled={approval.isPending || denial.isPending || device.state !== "pending"}
+            aria-busy={approval.isPending}
+            onClick={() => {
+              if (approval.isPending || denial.isPending) {
+                toast.info("Still updating this device request.");
+                return;
+              }
+              if (device.state !== "pending") {
+                toast.error("This device request is no longer pending.");
+                return;
+              }
+              approval.mutate();
+            }}
           >
             <CheckCircle2 aria-hidden="true" />
             <span>Approve</span>
@@ -265,8 +272,18 @@ function DeviceLoginDecision({
           <Button
             type="button"
             variant="outline"
-            onClick={() => denial.mutate()}
-            disabled={approval.isPending || denial.isPending || device.state !== "pending"}
+            aria-busy={denial.isPending}
+            onClick={() => {
+              if (approval.isPending || denial.isPending) {
+                toast.info("Still updating this device request.");
+                return;
+              }
+              if (device.state !== "pending") {
+                toast.error("This device request is no longer pending.");
+                return;
+              }
+              denial.mutate();
+            }}
           >
             <XCircle aria-hidden="true" />
             <span>Deny</span>

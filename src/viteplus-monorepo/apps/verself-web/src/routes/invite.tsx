@@ -3,8 +3,8 @@ import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@verself/ui/components/ui/button";
 import {
+  authFormSubmit,
   authFormSubmitBusy,
-  authFormSubmitDisabled,
   submitErrorText,
 } from "~/features/auth/form-primitives";
 import { acceptMemberInvite } from "~/server-fns/auth";
@@ -75,7 +75,7 @@ function InviteAcceptanceForm({
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        void form.handleSubmit();
+        authFormSubmit(form);
       }}
       className="mt-6 grid gap-4"
     >
@@ -86,12 +86,6 @@ function InviteAcceptanceForm({
               type="submit"
               aria-busy={authFormSubmitBusy({
                 hydrated,
-                isSubmitting,
-                isValidating: false,
-              })}
-              disabled={authFormSubmitDisabled({
-                hydrated,
-                canSubmit: true,
                 isSubmitting,
                 isValidating: false,
               })}

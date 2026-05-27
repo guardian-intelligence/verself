@@ -9,8 +9,9 @@ import { cn } from "@verself/ui/lib/utils";
 import {
   FieldError,
   SubmitError,
+  authFormSubmit,
   authFormSubmitBusy,
-  authFormSubmitDisabled,
+  authFormSubmitInvalid,
   fieldErrorText,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
@@ -88,6 +89,8 @@ function SignupVerificationPage() {
       onDynamic:
         mode === "join" ? signupVerificationJoinFormSchema : signupVerificationCreateFormSchema,
     },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       if (mode === "join") {
         const invite = inviteCredentialsFromInput(formString(value.inviteLink));
@@ -167,7 +170,7 @@ function SignupVerificationPage() {
           onSubmit={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            void form.handleSubmit();
+            authFormSubmit(form);
           }}
           className="mt-6 grid gap-4"
         >
@@ -191,7 +194,6 @@ function SignupVerificationPage() {
                         value={formString(field.state.value)}
                         onBlur={field.handleBlur}
                         onChange={(event) => field.handleChange(event.target.value)}
-                        disabled={!signupIntentId || !verificationToken}
                       />
                       <FieldError id={errorId} meta={field.state.meta} />
                     </div>
@@ -230,7 +232,6 @@ function SignupVerificationPage() {
                           onBlur={field.handleBlur}
                           onChange={(event) => field.handleChange(slugify(event.target.value))}
                           className="pl-[5.75rem]"
-                          disabled={!signupIntentId || !verificationToken}
                         />
                       </div>
                       <FieldError id={errorId} meta={field.state.meta} />
@@ -265,7 +266,6 @@ function SignupVerificationPage() {
                         autoComplete="new-password"
                         visible={passwordVisible}
                         value={formString(field.state.value)}
-                        disabled={!signupIntentId || !verificationToken}
                         onBlur={field.handleBlur}
                         onChange={field.handleChange}
                         onToggle={togglePasswordVisible}
@@ -308,7 +308,6 @@ function SignupVerificationPage() {
                         autoComplete="new-password"
                         visible={passwordVisible}
                         value={formString(field.state.value)}
-                        disabled={!signupIntentId || !verificationToken}
                         onBlur={field.handleBlur}
                         onChange={field.handleChange}
                         onToggle={togglePasswordVisible}
@@ -347,14 +346,9 @@ function SignupVerificationPage() {
             </form.Field>
           )}
           <form.Subscribe
-            selector={(state) => [
-              state.canSubmit,
-              state.isSubmitting,
-              state.isValidating,
-              state.errorMap.onSubmit,
-            ]}
+            selector={(state) => [state.isSubmitting, state.isValidating, state.errorMap.onSubmit]}
           >
-            {([canSubmit, isSubmitting, isValidating, submitError]) => {
+            {([isSubmitting, isValidating, submitError]) => {
               const missingSignupLink =
                 mode === "create" && (!signupIntentId || !verificationToken);
               return (
@@ -362,13 +356,6 @@ function SignupVerificationPage() {
                   <Button
                     type="submit"
                     aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
-                    disabled={authFormSubmitDisabled({
-                      hydrated,
-                      canSubmit,
-                      isSubmitting,
-                      isValidating,
-                      allowed: !missingSignupLink,
-                    })}
                   >
                     <CheckCircle2 aria-hidden="true" />
                     <span>{isSubmitting ? "Finishing..." : "Done"}</span>
@@ -434,7 +421,6 @@ function PasswordInput(props: {
   readonly visible: boolean;
   readonly value: string;
   readonly autoComplete: string;
-  readonly disabled: boolean;
   readonly onBlur: () => void;
   readonly onChange: (value: string) => void;
   readonly onToggle: () => void;
@@ -446,8 +432,7 @@ function PasswordInput(props: {
         aria-describedby={props.ariaDescribedBy}
         aria-invalid={props.invalid || undefined}
         autoComplete={props.autoComplete}
-        className="h-9 min-w-0 bg-transparent px-3 py-1 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={props.disabled}
+        className="h-9 min-w-0 bg-transparent px-3 py-1 text-sm outline-none"
         name={props.name}
         onBlur={props.onBlur}
         onChange={(event) => props.onChange(event.target.value)}
@@ -459,7 +444,6 @@ function PasswordInput(props: {
         variant="ghost"
         size="icon-sm"
         aria-label={props.visible ? "Hide password" : "Show password"}
-        disabled={props.disabled}
         onClick={props.onToggle}
         className="mr-1"
       >

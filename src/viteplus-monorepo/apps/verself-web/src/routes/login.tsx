@@ -3,14 +3,16 @@ import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, redirect, useHydrated } from "@tanstack/react-router";
 import { Eye, EyeOff, KeyRound, LogIn, Trash2, UserRound } from "lucide-react";
 import { useReducer } from "react";
+import * as v from "valibot";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
 import { toast } from "@verself/ui/components/ui/sonner";
 import {
   FieldError,
+  authFormSubmit,
   authFormSubmitBusy,
-  authFormSubmitDisabled,
+  authFormSubmitInvalid,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
 import { passwordLoginErrorMessage } from "~/features/auth/auth-errors";
@@ -43,61 +45,55 @@ type LoginSearch = {
   readonly required_org_id?: string;
 };
 
-function loginSearch(search: Record<string, unknown>): LoginSearch {
-  return {
-    ...(typeof search.authRequest === "string" ? { authRequest: search.authRequest } : {}),
-    ...(typeof search.auth_request === "string" ? { authRequest: search.auth_request } : {}),
-    ...(search.prompt === "login" || search.prompt === "select_account"
-      ? { prompt: search.prompt }
-      : {}),
-    ...(typeof search.redirect === "string" ? { redirect: search.redirect } : {}),
-    ...(typeof search.purpose === "string" ? { purpose: search.purpose } : {}),
-    ...(typeof search.login_hint === "string" ? { login_hint: search.login_hint } : {}),
-    ...(typeof search.required_subject === "string"
-      ? { required_subject: search.required_subject }
-      : {}),
-    ...(typeof search.required_email === "string" ? { required_email: search.required_email } : {}),
-    ...(typeof search.required_org_id === "string"
-      ? { required_org_id: search.required_org_id }
-      : {}),
+const optionalSearchString = v.pipe(
+  v.unknown(),
+  v.transform((value) => (typeof value === "string" && value.trim() ? value.trim() : undefined)),
+);
+
+const loginPromptSearch = v.pipe(
+  v.unknown(),
+  v.transform((value) => (value === "login" || value === "select_account" ? value : undefined)),
+);
+
+const loginSearchSchema = v.pipe(
+  v.object({
+    authRequest: v.optional(optionalSearchString),
+    auth_request: v.optional(optionalSearchString),
+    prompt: v.optional(loginPromptSearch),
+    redirect: v.optional(optionalSearchString),
+    purpose: v.optional(optionalSearchString),
+    login_hint: v.optional(optionalSearchString),
+    required_subject: v.optional(optionalSearchString),
+    required_email: v.optional(optionalSearchString),
+    required_org_id: v.optional(optionalSearchString),
+  }),
+  v.transform(
+    (parsed): LoginSearch =>
+      withoutUndefined({
+        authRequest: parsed.authRequest ?? parsed.auth_request,
+        prompt: parsed.prompt,
+        redirect: parsed.redirect,
+        purpose: parsed.purpose,
+        login_hint: parsed.login_hint,
+        required_subject: parsed.required_subject,
+        required_email: parsed.required_email,
+        required_org_id: parsed.required_org_id,
+      }),
+  ),
+);
+
+function withoutUndefined<T extends Record<string, unknown>>(
+  value: T,
+): {
+  readonly [K in keyof T]?: Exclude<T[K], undefined>;
+} {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as {
+    readonly [K in keyof T]?: Exclude<T[K], undefined>;
   };
-}
-
-function rawParam(params: URLSearchParams, key: string): string | undefined {
-  const value = params.get(key)?.trim();
-  return value ? value : undefined;
-}
-
-function loginSearchParams(params: URLSearchParams): LoginSearch {
-  const authRequest = rawParam(params, "authRequest") ?? rawParam(params, "auth_request");
-  const prompt = rawParam(params, "prompt");
-  const redirect = rawParam(params, "redirect");
-  const purpose = rawParam(params, "purpose");
-  const loginHint = rawParam(params, "login_hint");
-  const requiredSubject = rawParam(params, "required_subject");
-  const requiredEmail = rawParam(params, "required_email");
-  const requiredOrgId = rawParam(params, "required_org_id");
-  return {
-    ...(authRequest ? { authRequest } : {}),
-    ...(prompt === "login" || prompt === "select_account" ? { prompt } : {}),
-    ...(redirect ? { redirect } : {}),
-    ...(purpose ? { purpose } : {}),
-    ...(loginHint ? { login_hint: loginHint } : {}),
-    ...(requiredSubject ? { required_subject: requiredSubject } : {}),
-    ...(requiredEmail ? { required_email: requiredEmail } : {}),
-    ...(requiredOrgId ? { required_org_id: requiredOrgId } : {}),
-  };
-}
-
-function hydratedLoginSearch(fallback: LoginSearch): LoginSearch {
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-  return loginSearchParams(new URLSearchParams(window.location.search));
 }
 
 export const Route = createFileRoute("/login")({
-  validateSearch: loginSearch,
+  validateSearch: loginSearchSchema,
   beforeLoad: async ({ context, search }) => {
     const snapshot = await getClientAuthSnapshot();
     if (
@@ -121,9 +117,8 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const hydrated = useHydrated();
-  const routeSearch = Route.useSearch();
+  const search = Route.useSearch();
   const { accounts } = Route.useLoaderData();
-  const search = hydrated ? hydratedLoginSearch(routeSearch) : routeSearch;
   const [passwordVisible, togglePasswordVisible] = useReducer((value: boolean) => !value, false);
   const constrainedEmail = search.required_email ?? search.login_hint ?? "";
   const accountOptions = search.authRequest
@@ -141,6 +136,8 @@ function LoginPage() {
     validators: {
       onDynamic: loginFormSchema,
     },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const result = await passwordLogin({
         data: {
@@ -213,7 +210,7 @@ function LoginPage() {
             onSubmit={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              void form.handleSubmit();
+              authFormSubmit(form);
             }}
             className="grid gap-4"
           >
@@ -291,20 +288,12 @@ function LoginPage() {
                 Forgot password?
               </a>
             </div>
-            <form.Subscribe
-              selector={(state) => [state.canSubmit, state.isSubmitting, state.isValidating]}
-            >
-              {([canSubmit, isSubmitting, isValidating]) => (
+            <form.Subscribe selector={(state) => [state.isSubmitting, state.isValidating]}>
+              {([isSubmitting, isValidating]) => (
                 <div className="grid gap-3">
                   <Button
                     type="submit"
                     aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
-                    disabled={authFormSubmitDisabled({
-                      hydrated,
-                      canSubmit,
-                      isSubmitting,
-                      isValidating,
-                    })}
                   >
                     {isSubmitting ? <KeyRound aria-hidden="true" /> : <LogIn aria-hidden="true" />}
                     <span>{isSubmitting ? "Signing in..." : "Sign in"}</span>
@@ -359,8 +348,13 @@ function AccountChooser({
             <button
               type="button"
               className="grid min-w-0 grid-cols-[auto_1fr] items-center gap-2 text-left"
-              disabled={choose.isPending || remove.isPending}
-              onClick={() => choose.mutate(account.accountHandle)}
+              onClick={() => {
+                if (choose.isPending || remove.isPending) {
+                  toast.info("Still updating browser accounts.");
+                  return;
+                }
+                choose.mutate(account.accountHandle);
+              }}
             >
               <span className="flex size-8 items-center justify-center rounded-md border border-border bg-background">
                 <UserRound className="size-4" aria-hidden="true" />
@@ -377,8 +371,13 @@ function AccountChooser({
               variant="ghost"
               size="icon-sm"
               aria-label={`Remove ${label} from this browser`}
-              disabled={choose.isPending || remove.isPending}
-              onClick={() => remove.mutate(account.accountHandle)}
+              onClick={() => {
+                if (choose.isPending || remove.isPending) {
+                  toast.info("Still updating browser accounts.");
+                  return;
+                }
+                remove.mutate(account.accountHandle);
+              }}
             >
               <Trash2 aria-hidden="true" />
             </Button>

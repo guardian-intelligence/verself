@@ -6,8 +6,9 @@ import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
 import {
   FieldError,
+  authFormSubmit,
   authFormSubmitBusy,
-  authFormSubmitDisabled,
+  authFormSubmitInvalid,
   fieldErrorText,
   fieldInvalid,
   submitErrorText,
@@ -101,6 +102,8 @@ function SignupForm() {
     validators: {
       onDynamic: signupStartFormSchema,
     },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const email = normalizeEmail(value.email);
       const organizationDisplayName = normalizeHumanText(value.organizationDisplayName);
@@ -133,7 +136,7 @@ function SignupForm() {
         onSubmit={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          void form.handleSubmit();
+          authFormSubmit(form);
         }}
         className="grid gap-4"
       >
@@ -280,24 +283,13 @@ function SignupForm() {
           }}
         </form.Field>
         <form.Subscribe
-          selector={(state) => [
-            state.canSubmit,
-            state.isSubmitting,
-            state.isValidating,
-            state.errorMap.onSubmit,
-          ]}
+          selector={(state) => [state.isSubmitting, state.isValidating, state.errorMap.onSubmit]}
         >
-          {([canSubmit, isSubmitting, isValidating, submitError]) => (
+          {([isSubmitting, isValidating, submitError]) => (
             <div className="grid gap-3">
               <Button
                 type="submit"
                 aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
-                disabled={authFormSubmitDisabled({
-                  hydrated,
-                  canSubmit,
-                  isSubmitting,
-                  isValidating,
-                })}
               >
                 {isSubmitting ? (
                   <CheckCircle2 aria-hidden="true" />
