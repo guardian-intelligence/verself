@@ -227,7 +227,7 @@ EOT
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_SUPERVISOR = "nomad"
         VERSELF_TEMPORAL_CONFIG_PATH = "$${NOMAD_TASK_DIR}/config.yaml"
-        VERSELF_TEMPORAL_NAMESPACE_ROLES = "spiffe://spiffe.verself.sh/svc/sandbox-rental-service|sandbox-rental-service|admin,spiffe://spiffe.verself.sh/svc/billing-service|billing-service|admin"
+        VERSELF_TEMPORAL_NAMESPACE_ROLES = "spiffe://spiffe.verself.sh/svc/sandbox-rental-service|sandbox-rental-service|admin,spiffe://spiffe.verself.sh/svc/billing-service|billing-service|admin,spiffe://spiffe.verself.sh/svc/distribution-service|distribution-service|admin"
         VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS = "spiffe://spiffe.verself.sh/svc/temporal-server"
       }
       resources {
@@ -420,7 +420,7 @@ EOT
         OTEL_SERVICE_NAME = "temporal-bootstrap"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_SUPERVISOR = "nomad"
-        VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACES = "sandbox-rental-service,billing-service"
+        VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACES = "sandbox-rental-service,billing-service,distribution-service"
         VERSELF_TEMPORAL_BOOTSTRAP_NAMESPACE_RETENTION = "24h"
         VERSELF_TEMPORAL_FRONTEND_ADDRESS = "127.0.0.1:$${NOMAD_PORT_frontend_grpc}"
       }

@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "distribution-release-worker_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/distribution-service/cmd/distribution-release-worker",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/infrastructure-components/temporal-platform/sdkclient",
+        "//src/services/distribution-service/internal/releaseworkflow",
+        "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/workload",
+        "//src/tools/observability/go/otel",
+        "@io_temporal_go_sdk//worker",
+    ],
+)
+
+go_binary(
+    name = "distribution-release-worker",
+    embed = [":distribution-release-worker_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -322,6 +322,13 @@ func validateNightlyInput(input NightlyReleaseInput) error {
 	return validatePinnedSource(input.Source)
 }
 
+func validateScheduledNightlyInput(input ScheduledNightlyReleaseInput) error {
+	if err := validatePackage(input.Package); err != nil {
+		return err
+	}
+	return validateSourceRef(input.Source.Ref)
+}
+
 func validateReleaseCandidateInput(input ReleaseCandidateInput) error {
 	if err := validatePackage(input.Package); err != nil {
 		return err
