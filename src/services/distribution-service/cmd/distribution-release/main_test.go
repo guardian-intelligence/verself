@@ -1,6 +1,10 @@
 package main
 
 import (
+	"archive/tar"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -68,10 +72,49 @@ func TestReleaseMetadataURL(t *testing.T) {
 	}
 }
 
+func TestExtractToolsRequiresBazelisk(t *testing.T) {
+	toolsTar := writeReleaseToolsTar(t, []string{"cargo-about", "cosign", "oras", "release-plz", "syft"})
+
+	_, _, err := extractTools(toolsTar)
+	if err == nil {
+		t.Fatal("extractTools() error = nil, want missing bazelisk error")
+	}
+	if !strings.Contains(err.Error(), "bazelisk") {
+		t.Fatalf("extractTools() error = %v, want bazelisk detail", err)
+	}
+}
+
 func TestSafeJoinRejectsTraversal(t *testing.T) {
 	for _, name := range []string{"../x", "/tmp/x"} {
 		if _, err := safeJoin("/tmp/root", name); err == nil {
 			t.Fatalf("safeJoin accepted %q", name)
 		}
 	}
+}
+
+func writeReleaseToolsTar(t *testing.T, tools []string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "tools.tar")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = file.Close() })
+	writer := tar.NewWriter(file)
+	t.Cleanup(func() { _ = writer.Close() })
+	if err := writer.WriteHeader(&tar.Header{Name: "bin", Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range tools {
+		if err := writer.WriteHeader(&tar.Header{Name: "bin/" + tool, Typeflag: tar.TypeReg, Mode: 0o755, Size: 0}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

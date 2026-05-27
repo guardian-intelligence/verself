@@ -31,6 +31,9 @@
 //
 //	aspect-operator release npm-probe
 //	    Probe npm registry state for SDK release publication.
+//
+//	aspect-operator release mksk
+//	    Dispatch make-skill release workflows through distribution-service.
 package main
 
 import (
