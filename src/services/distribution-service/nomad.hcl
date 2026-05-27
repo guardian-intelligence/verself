@@ -183,8 +183,8 @@ job "distribution-service" {
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {
-        cpu = 2000
-        memory = 8192
+        cpu = 1000
+        memory = 2048
       }
       restart {
         attempts = 3
