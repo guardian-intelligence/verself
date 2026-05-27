@@ -5,6 +5,7 @@ import type { BrowserLocation, WebAuthAccount, WebAuthSession } from "@verself/a
 import { useAuthCollections } from "@verself/auth-web/react";
 import { Badge } from "@verself/ui/components/ui/badge";
 import { Button } from "@verself/ui/components/ui/button";
+import { toast } from "@verself/ui/components/ui/sonner";
 import {
   Table,
   TableBody,
@@ -39,6 +40,10 @@ function AccountSecurity() {
       revokeClientAuthDevice({ data: { sessionHandle: input.sessionHandle } }),
   });
   const actOnSession = (session: SessionRowModel) => {
+    if (loggingOutSessionHandle || revoke.isPending) {
+      toast.info("Still updating account sessions.");
+      return;
+    }
     if (session.isCurrent) {
       setLoggingOutSessionHandle(session.sessionHandle);
       void navigate({ to: "/logout" }).catch(() => {
@@ -120,7 +125,17 @@ function AccountSecurity() {
                     selectAccount.isPending &&
                     selectAccount.variables?.accountHandle === account.accountHandle
                   }
-                  onSelect={() => selectAccount.mutate({ accountHandle: account.accountHandle })}
+                  onSelect={() => {
+                    if (account.isCurrent) {
+                      toast.info("This account is already active.");
+                      return;
+                    }
+                    if (selectAccount.isPending) {
+                      toast.info("Still switching accounts.");
+                      return;
+                    }
+                    selectAccount.mutate({ accountHandle: account.accountHandle });
+                  }}
                 />
               ))}
             </TableBody>
@@ -186,7 +201,7 @@ function AccountRow({
       <TableCell className="font-mono text-xs">{account.selectedOrgID || "none"}</TableCell>
       <TableCell>{dateTimeLabel(account.lastSeenAt)}</TableCell>
       <TableCell className="text-right">
-        <Button size="sm" disabled={account.isCurrent || isSwitching} onClick={onSelect}>
+        <Button size="sm" aria-busy={isSwitching} onClick={onSelect}>
           <span>{isSwitching ? "Switching" : "Use"}</span>
         </Button>
       </TableCell>
@@ -323,7 +338,7 @@ function SessionRow({
         <Button
           variant="destructive"
           size="sm"
-          disabled={isWorking}
+          aria-busy={isWorking}
           onClick={onAction}
           title={title}
         >

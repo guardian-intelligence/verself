@@ -7,8 +7,9 @@ import { Label } from "@verself/ui/components/ui/label";
 import {
   FieldError,
   SubmitError,
+  authFormSubmit,
   authFormSubmitBusy,
-  authFormSubmitDisabled,
+  authFormSubmitInvalid,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
 import {
@@ -59,6 +60,8 @@ function ResetPasswordPage() {
     validators: {
       onDynamic: resetPasswordFormSchema,
     },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const password = formString(value.password);
       if (!search.user_id || !search.verification_code) {
@@ -109,7 +112,7 @@ function ResetPasswordPage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void form.handleSubmit();
+                authFormSubmit(form);
               }}
               className="grid gap-4"
             >
@@ -180,23 +183,16 @@ function ResetPasswordPage() {
               </form.Field>
               <form.Subscribe
                 selector={(state) => [
-                  state.canSubmit,
                   state.isSubmitting,
                   state.isValidating,
                   state.errorMap.onSubmit,
                 ]}
               >
-                {([canSubmit, isSubmitting, isValidating, submitError]) => (
+                {([isSubmitting, isValidating, submitError]) => (
                   <div className="grid gap-3">
                     <Button
                       type="submit"
                       aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
-                      disabled={authFormSubmitDisabled({
-                        hydrated,
-                        canSubmit,
-                        isSubmitting,
-                        isValidating,
-                      })}
                     >
                       <KeyRound aria-hidden="true" />
                       <span>{isSubmitting ? "Saving..." : "Save password"}</span>

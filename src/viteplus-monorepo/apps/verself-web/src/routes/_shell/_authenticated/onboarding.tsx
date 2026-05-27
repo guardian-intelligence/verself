@@ -19,8 +19,9 @@ import {
 } from "@verself/ui/components/ui/page";
 import {
   FieldError,
+  authFormSubmit,
   authFormSubmitBusy,
-  authFormSubmitDisabled,
+  authFormSubmitInvalid,
   fieldInvalid,
   submitErrorText,
 } from "~/features/auth/form-primitives";
@@ -61,6 +62,8 @@ function OnboardingPage() {
     validators: {
       onDynamic: onboardingOrganizationFormSchema,
     },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const displayName = normalizeHumanText(value.displayName);
       const slug = slugify(formString(value.slug));
@@ -96,7 +99,7 @@ function OnboardingPage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void form.handleSubmit();
+                authFormSubmit(form);
               }}
               className="grid gap-3"
             >
@@ -149,23 +152,16 @@ function OnboardingPage() {
               </form.Field>
               <form.Subscribe
                 selector={(state) => [
-                  state.canSubmit,
                   state.isSubmitting,
                   state.isValidating,
                   state.errorMap.onSubmit,
                 ]}
               >
-                {([canSubmit, isSubmitting, isValidating, submitError]) => (
+                {([isSubmitting, isValidating, submitError]) => (
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                     <Button
                       type="submit"
                       aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
-                      disabled={authFormSubmitDisabled({
-                        hydrated,
-                        canSubmit,
-                        isSubmitting,
-                        isValidating,
-                      })}
                       className="sm:w-fit"
                     >
                       <Building2 aria-hidden="true" />

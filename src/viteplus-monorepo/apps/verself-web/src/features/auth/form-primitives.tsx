@@ -1,5 +1,6 @@
-import type { AnyFieldMeta } from "@tanstack/react-form";
+import type { AnyFieldMeta, AnyFormApi } from "@tanstack/react-form";
 import type { ReactNode } from "react";
+import { toast } from "@verself/ui/components/ui/sonner";
 import { cn } from "@verself/ui/lib/utils";
 import {
   BREACHED_PASSWORD_MESSAGE,
@@ -56,6 +57,20 @@ export function submitErrorText(error: unknown): string {
   return validationMessage(error);
 }
 
+export function authFormSubmit(form: AnyFormApi): void {
+  if (form.state.isSubmitting || form.state.isValidating) {
+    toast.info("Still working on the last request.");
+    return;
+  }
+  void form.handleSubmit().catch((error: unknown) => {
+    toast.error(validationMessage(error));
+  });
+}
+
+export function authFormSubmitInvalid({ formApi }: { readonly formApi: AnyFormApi }): void {
+  toast.error(firstFormErrorText(formApi) || "Check the highlighted fields.");
+}
+
 export function SubmitError({
   error,
   className,
@@ -106,24 +121,6 @@ export function authFormSubmitBusy(state: {
   );
 }
 
-export function authFormSubmitDisabled(state: {
-  readonly hydrated: boolean;
-  readonly canSubmit: boolean | undefined;
-  readonly isSubmitting: boolean | undefined;
-  readonly isValidating: boolean | undefined;
-  readonly isPending?: boolean;
-  readonly allowed?: boolean;
-}): boolean {
-  return (
-    !state.hydrated ||
-    state.allowed === false ||
-    !state.canSubmit ||
-    Boolean(state.isSubmitting) ||
-    Boolean(state.isValidating) ||
-    Boolean(state.isPending)
-  );
-}
-
 function validationMessage(error: unknown): string {
   if (Array.isArray(error)) {
     const first = error.find(Boolean);
@@ -139,4 +136,12 @@ function validationMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+function firstFormErrorText(form: AnyFormApi): string {
+  for (const meta of Object.values(form.state.fieldMeta)) {
+    const message = validationMessage(meta?.errors);
+    if (message) return message;
+  }
+  return validationMessage(form.state.errors);
 }
