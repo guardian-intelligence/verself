@@ -223,6 +223,7 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 		return err
 	}
 	defer cleanup()
+	bazelisk := filepath.Join(toolsDir, "bin", "bazelisk")
 
 	workspace, err := workspaceVersion(filepath.Join(source.root, mkskCargoManifest))
 	if err != nil {
@@ -241,17 +242,17 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 		"//src/make-skill:exec_test",
 		"//src/make-skill:cli_test",
 	}
-	if _, err := runCommand(ctx, source.root, "bazelisk", testArgs...); err != nil {
+	if _, err := runCommand(ctx, source.root, bazelisk, testArgs...); err != nil {
 		return err
 	}
-	mkskBinary, err := bazelOutputFile(ctx, source.root, mkskBinaryTarget, bazelReleaseVersionFlag)
+	mkskBinary, err := bazelOutputFile(ctx, source.root, bazelisk, mkskBinaryTarget, bazelReleaseVersionFlag)
 	if err != nil {
 		return err
 	}
 	if err := verifyMkskVersion(ctx, mkskBinary, version); err != nil {
 		return err
 	}
-	releaseTar, err := bazelOutputFile(ctx, source.root, mkskReleaseTar, bazelReleaseVersionFlag)
+	releaseTar, err := bazelOutputFile(ctx, source.root, bazelisk, mkskReleaseTar, bazelReleaseVersionFlag)
 	if err != nil {
 		return err
 	}
@@ -607,15 +608,15 @@ func gitOutput(ctx context.Context, repoRoot string, args ...string) (string, er
 	return strings.TrimSpace(result.stdout), nil
 }
 
-func bazelOutputFile(ctx context.Context, repoRoot, target string, buildOptions ...string) (string, error) {
+func bazelOutputFile(ctx context.Context, repoRoot, bazelisk, target string, buildOptions ...string) (string, error) {
 	buildArgs := append([]string{"build"}, buildOptions...)
 	buildArgs = append(buildArgs, target)
-	if _, err := runCommand(ctx, repoRoot, "bazelisk", buildArgs...); err != nil {
+	if _, err := runCommand(ctx, repoRoot, bazelisk, buildArgs...); err != nil {
 		return "", err
 	}
 	cqueryArgs := append([]string{"cquery", "--output=files"}, buildOptions...)
 	cqueryArgs = append(cqueryArgs, target)
-	files, err := runCommand(ctx, repoRoot, "bazelisk", cqueryArgs...)
+	files, err := runCommand(ctx, repoRoot, bazelisk, cqueryArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -623,7 +624,7 @@ func bazelOutputFile(ctx context.Context, repoRoot, target string, buildOptions 
 	if len(lines) != 1 {
 		return "", fmt.Errorf("expected one output for %s, got %d", target, len(lines))
 	}
-	execroot, err := runCommand(ctx, repoRoot, "bazelisk", "info", "execution_root")
+	execroot, err := runCommand(ctx, repoRoot, bazelisk, "info", "execution_root")
 	if err != nil {
 		return "", err
 	}
@@ -668,7 +669,7 @@ func extractTools(toolsTar string) (string, func(), error) {
 		cleanup()
 		return "", func() {}, err
 	}
-	for _, tool := range []string{"cargo-about", "cosign", "oras", "release-plz", "syft"} {
+	for _, tool := range []string{"bazelisk", "cargo-about", "cosign", "oras", "release-plz", "syft"} {
 		path := filepath.Join(dir, "bin", tool)
 		if st, err := os.Stat(path); err != nil {
 			cleanup()
