@@ -127,7 +127,6 @@ export type BrowserAccountSummary = v.InferOutput<typeof browserAccountSummarySc
 const passwordResetResultSchema = v.object({
   status: v.pipe(v.string(), v.nonEmpty()),
   message: v.pipe(v.string(), v.nonEmpty()),
-  warnings: v.optional(v.array(authWarningSchema)),
 });
 
 export type PasswordResetResult = v.InferOutput<typeof passwordResetResultSchema>;
@@ -407,8 +406,11 @@ function passwordResetProblemMessage(status: number, body: string): string {
   } catch {
     code = "";
   }
-  if (code.startsWith("iam.password.")) {
-    return passwordPolicyErrorMessage(passwordPolicyErrorCodeFromProblem(status, body));
+  switch (code) {
+    case "iam.password.too_short":
+    case "iam.password.too_long":
+    case "iam.password.rejected":
+      return passwordPolicyErrorMessage(passwordPolicyErrorCodeFromProblem(status, body));
   }
   if (code === "reset-token-invalid") {
     return "This reset link is invalid or expired.";

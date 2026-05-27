@@ -26,13 +26,9 @@ import {
   signupVerificationJoinFormSchema,
   slugify,
 } from "~/features/auth/form-schemas";
-import {
-  PASSWORD_CHECK_UNAVAILABLE_WARNING_CODE,
-  PASSWORD_GUIDANCE_TEXT,
-} from "~/features/auth/password-policy";
+import { PASSWORD_GUIDANCE_TEXT } from "~/features/auth/password-policy";
 import { organizationSlugAvailabilityError } from "~/features/auth/slug-availability";
 import { acceptMemberInvite, passwordLogin, verifySignup } from "~/server-fns/auth";
-import type { AuthWarning } from "~/server-fns/auth.server";
 
 type SignupMode = "create" | "join";
 
@@ -121,10 +117,7 @@ function SignupVerificationPage() {
         data: {
           email: result.loginIntent.requiredEmail,
           password: initialPassword,
-          redirectTo: redirectPathWithAuthWarnings(
-            result.loginIntent.redirectTo ?? `/${result.organization.slug}`,
-            result.warnings,
-          ),
+          redirectTo: result.loginIntent.redirectTo ?? `/${result.organization.slug}`,
           purpose: result.loginIntent.purpose,
           loginHint: result.loginIntent.requiredEmail,
           requiredSubject: result.loginIntent.requiredSubject,
@@ -395,18 +388,6 @@ function SignupVerificationPage() {
       </section>
     </main>
   );
-}
-
-function redirectPathWithAuthWarnings(
-  redirectTo: string,
-  warnings: Array<AuthWarning> | undefined,
-): string {
-  if (!warnings?.some((warning) => warning.code === PASSWORD_CHECK_UNAVAILABLE_WARNING_CODE)) {
-    return redirectTo;
-  }
-  const url = new URL(redirectTo, window.location.origin);
-  url.searchParams.set("notice", "password_check_unavailable");
-  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 function ModeLink(props: {

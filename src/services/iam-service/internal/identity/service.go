@@ -119,16 +119,23 @@ type PasswordValidationResult struct {
 	Warnings []AuthWarning
 }
 
-func (s *Service) ValidateNewPassword(ctx context.Context, password string) (PasswordValidationResult, error) {
-	return ValidateNewPassword(ctx, password, s.PasswordChecker)
+func (s *Service) ValidateSignupPassword(ctx context.Context, password string) (PasswordValidationResult, error) {
+	return ValidateSignupPassword(ctx, password, s.PasswordChecker)
 }
 
-func ValidateNewPassword(ctx context.Context, password string, checker PasswordBreachChecker) (PasswordValidationResult, error) {
+func ValidatePasswordPolicy(password string) error {
 	if password == "" || utf8.RuneCountInString(password) < PasswordMinRunes {
-		return PasswordValidationResult{}, fmt.Errorf("%w: %w: password must be at least %d characters", ErrPasswordRejected, ErrPasswordTooShort, PasswordMinRunes)
+		return fmt.Errorf("%w: %w: password must be at least %d characters", ErrPasswordRejected, ErrPasswordTooShort, PasswordMinRunes)
 	}
 	if len(password) > passwordMaxBytes {
-		return PasswordValidationResult{}, fmt.Errorf("%w: %w: password is too long", ErrPasswordRejected, ErrPasswordTooLong)
+		return fmt.Errorf("%w: %w: password is too long", ErrPasswordRejected, ErrPasswordTooLong)
+	}
+	return nil
+}
+
+func ValidateSignupPassword(ctx context.Context, password string, checker PasswordBreachChecker) (PasswordValidationResult, error) {
+	if err := ValidatePasswordPolicy(password); err != nil {
+		return PasswordValidationResult{}, err
 	}
 	if checker == nil {
 		slog.WarnContext(ctx, "password breach check unavailable", "reason", "password breach checker is not configured")

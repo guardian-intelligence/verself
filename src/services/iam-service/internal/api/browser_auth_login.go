@@ -48,9 +48,8 @@ type passwordResetCompleteRequest struct {
 }
 
 type passwordResetResponse struct {
-	Status   string               `json:"status"`
-	Message  string               `json:"message"`
-	Warnings []browserAuthWarning `json:"warnings,omitempty"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 type deviceLoginLookupRequest struct {
@@ -325,9 +324,8 @@ func (a *BrowserAuth) handlePasswordResetComplete(w http.ResponseWriter, r *http
 		a.writeProblem(w, r, http.StatusBadRequest, "reset-token-required", "reset token is required")
 		return
 	}
-	passwordValidation, err := identity.ValidateNewPassword(r.Context(), input.Password, a.passwordChecker)
-	if err != nil {
-		if a.writePasswordValidationProblem(w, r, err) {
+	if err := identity.ValidatePasswordPolicy(input.Password); err != nil {
+		if a.writePasswordPolicyProblem(w, r, err) {
 			return
 		}
 		a.serverError(w, "validate reset password", err)
@@ -342,9 +340,8 @@ func (a *BrowserAuth) handlePasswordResetComplete(w http.ResponseWriter, r *http
 		return
 	}
 	a.writeJSON(w, http.StatusOK, passwordResetResponse{
-		Status:   "completed",
-		Message:  "Password reset complete.",
-		Warnings: browserAuthWarnings(passwordValidation.Warnings),
+		Status:  "completed",
+		Message: "Password reset complete.",
 	})
 }
 
@@ -366,36 +363,18 @@ func (a *BrowserAuth) passwordResetURL(userID, verificationCode string) string {
 	return reset.String()
 }
 
-func (a *BrowserAuth) writePasswordValidationProblem(w http.ResponseWriter, r *http.Request, err error) bool {
+func (a *BrowserAuth) writePasswordPolicyProblem(w http.ResponseWriter, r *http.Request, err error) bool {
 	switch {
 	case errors.Is(err, identity.ErrPasswordTooShort):
 		a.writeProblem(w, r, http.StatusBadRequest, "iam.password.too_short", fmt.Sprintf("Password must be at least %d characters.", identity.PasswordMinRunes))
 	case errors.Is(err, identity.ErrPasswordTooLong):
 		a.writeProblem(w, r, http.StatusBadRequest, "iam.password.too_long", "Password is too long.")
-	case errors.Is(err, identity.ErrPasswordBreached):
-		a.writeProblem(w, r, http.StatusBadRequest, "iam.password.breached", "Password has appeared in known breach data.")
 	case errors.Is(err, identity.ErrPasswordRejected):
 		a.writeProblem(w, r, http.StatusBadRequest, "iam.password.rejected", "Password does not meet the current password policy.")
 	default:
 		return false
 	}
 	return true
-}
-
-type browserAuthWarning struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-func browserAuthWarnings(warnings []identity.AuthWarning) []browserAuthWarning {
-	if len(warnings) == 0 {
-		return nil
-	}
-	out := make([]browserAuthWarning, 0, len(warnings))
-	for _, warning := range warnings {
-		out = append(out, browserAuthWarning{Code: warning.Code, Message: warning.Message})
-	}
-	return out
 }
 
 func newOIDCLoginSecrets() (state string, nonce string, verifier string, err error) {
