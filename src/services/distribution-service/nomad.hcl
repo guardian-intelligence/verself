@@ -168,10 +168,8 @@ job "distribution-service" {
       }
       env {
         DISTRIBUTION_RELEASE_ARTIFACT_ROOT = "/artifacts/releases"
-        DISTRIBUTION_RELEASE_BINARY = "local/bin/distribution-release"
         DISTRIBUTION_RELEASE_BUILDER_ID = "spiffe://prod.verself.sh/svc/distribution-service"
         DISTRIBUTION_RELEASE_GIT_BINARY = "git"
-        DISTRIBUTION_RELEASE_SOURCE_REPOSITORY = "https://github.com/guardian-intelligence/verself.git"
         DISTRIBUTION_RELEASE_TEMPORAL_NAMESPACE = "distribution-service"
         DISTRIBUTION_RELEASE_TEMPORAL_TASK_QUEUE = "distribution-service.release-v1"
         DISTRIBUTION_RELEASE_TOOLS_TAR = "local/share/distribution-release-tools.tar"

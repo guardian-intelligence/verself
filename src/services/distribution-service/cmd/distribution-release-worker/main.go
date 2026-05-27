@@ -48,11 +48,9 @@ func run() error {
 	temporalFrontendAddress := cfg.RequireString("VERSELF_TEMPORAL_FRONTEND_ADDRESS")
 	namespace := cfg.String("DISTRIBUTION_RELEASE_TEMPORAL_NAMESPACE", releaseworkflow.DefaultNamespace)
 	taskQueue := cfg.String("DISTRIBUTION_RELEASE_TEMPORAL_TASK_QUEUE", releaseworkflow.DefaultTaskQueue)
-	sourceRepository := cfg.String("DISTRIBUTION_RELEASE_SOURCE_REPOSITORY", releaseworkflow.DefaultSourceRepository)
 	artifactRoot := cfg.String("DISTRIBUTION_RELEASE_ARTIFACT_ROOT", releaseworkflow.DefaultArtifactRoot)
 	workRoot := cfg.String("DISTRIBUTION_RELEASE_WORK_ROOT", releaseworkflow.DefaultWorkRoot)
 	releaseToolsTar := cfg.String("DISTRIBUTION_RELEASE_TOOLS_TAR", releaseworkflow.DefaultReleaseToolsTar)
-	distributionReleaseBinary := cfg.String("DISTRIBUTION_RELEASE_BINARY", releaseworkflow.DefaultDistributionReleaseBin)
 	gitBinary := cfg.String("DISTRIBUTION_RELEASE_GIT_BINARY", releaseworkflow.DefaultGitBin)
 	builderID := cfg.String("DISTRIBUTION_RELEASE_BUILDER_ID", releaseworkflow.DefaultBuilderID)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
@@ -82,13 +80,11 @@ func run() error {
 	defer temporalClient.Close()
 
 	runner, err := releaseworkflow.NewCommandRunner(releaseworkflow.CommandRunnerConfig{
-		SourceRepository:          sourceRepository,
-		ArtifactRoot:              artifactRoot,
-		WorkRoot:                  workRoot,
-		ReleaseToolsTar:           releaseToolsTar,
-		DistributionReleaseBinary: distributionReleaseBinary,
-		GitBinary:                 gitBinary,
-		BuilderID:                 builderID,
+		ArtifactRoot:    artifactRoot,
+		WorkRoot:        workRoot,
+		ReleaseToolsTar: releaseToolsTar,
+		GitBinary:       gitBinary,
+		BuilderID:       builderID,
 	})
 	if err != nil {
 		return err

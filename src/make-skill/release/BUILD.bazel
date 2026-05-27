@@ -1,0 +1,31 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+exports_files(["tools.lock.json"])
+
+alias(
+    name = "mksk-release",
+    actual = "//src/make-skill/release/cmd/mksk-release:mksk-release",
+    visibility = ["//visibility:public"],
+)
+
+pkg_tar(
+    name = "release_tools_artifact",
+    out = "mksk-release-tools.tar",
+    files = {
+        "@mksk_release_tools//tools/bazelisk": "bin/bazelisk",
+        "@mksk_release_tools//tools/cargo-about": "bin/cargo-about",
+        "@mksk_release_tools//tools/cosign": "bin/cosign",
+        "@mksk_release_tools//tools/oras": "bin/oras",
+        "@mksk_release_tools//tools/release-plz": "bin/release-plz",
+        "@mksk_release_tools//tools/syft": "bin/syft",
+    },
+    modes = {
+        "bin/bazelisk": "0755",
+        "bin/cargo-about": "0755",
+        "bin/cosign": "0755",
+        "bin/oras": "0755",
+        "bin/release-plz": "0755",
+        "bin/syft": "0755",
+    },
+    visibility = ["//visibility:public"],
+)

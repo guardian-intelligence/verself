@@ -31,7 +31,6 @@ type mkskConfig struct {
 	channel         string
 	releaseVersion  string
 	sourceRef       string
-	sourceCommit    string
 	temporalAddress string
 	namespace       string
 	taskQueue       string
@@ -45,6 +44,8 @@ type dispatchRecord struct {
 	Version      string `json:"version,omitempty"`
 	SourceRef    string `json:"source_ref"`
 	SourceCommit string `json:"source_commit"`
+	AlreadyDone  bool   `json:"already_done"`
+	ArtifactRoot string `json:"artifact_root,omitempty"`
 	Namespace    string `json:"namespace"`
 	TaskQueue    string `json:"task_queue"`
 	WorkflowID   string `json:"workflow_id"`
@@ -111,7 +112,6 @@ func runMksk(ctx context.Context, args []string) error {
 	fs.StringVar(&cfg.channel, "channel", "", "Release channel: nightly, rc, or stable.")
 	fs.StringVar(&cfg.releaseVersion, "version", "", "Release version. Required for rc and stable.")
 	fs.StringVar(&cfg.sourceRef, "source-ref", "", "Git ref recorded as release source.")
-	fs.StringVar(&cfg.sourceCommit, "source-commit", "", "Resolved 40-character git source commit.")
 	fs.StringVar(&cfg.temporalAddress, "temporal-address", "", "Temporal frontend host:port. Defaults to Nomad service discovery.")
 	fs.StringVar(&cfg.namespace, "temporal-namespace", releaseworkflow.DefaultNamespace, "Temporal namespace.")
 	fs.StringVar(&cfg.taskQueue, "temporal-task-queue", releaseworkflow.DefaultTaskQueue, "Temporal task queue.")
@@ -136,9 +136,11 @@ func runMksk(ctx context.Context, args []string) error {
 }
 
 func dispatchMksk(ctx context.Context, cfg mkskConfig) (dispatchRecord, error) {
-	source := releaseworkflow.PinnedSource{
-		Ref:    strings.TrimSpace(cfg.sourceRef),
-		Commit: strings.TrimSpace(cfg.sourceCommit),
+	source, err := releaseworkflow.ResolvePinnedSource(ctx, releaseworkflow.OSCommandExecutor{}, releaseworkflow.PackageMksk, releaseworkflow.FloatingSource{
+		Ref: strings.TrimSpace(cfg.sourceRef),
+	}, releaseworkflow.DefaultGitBin)
+	if err != nil {
+		return dispatchRecord{}, err
 	}
 	channel := strings.TrimSpace(cfg.channel)
 	releaseVersion := strings.TrimSpace(cfg.releaseVersion)
@@ -211,15 +213,18 @@ func dispatchMksk(ctx context.Context, cfg mkskConfig) (dispatchRecord, error) {
 		"version", releaseVersion,
 		"source_ref", source.Ref,
 		"source_commit", source.Commit,
+		"already_done", run.AlreadyCompleted,
 		"workflow_id", run.WorkflowID,
 		"run_id", run.RunID,
 	)
 	return dispatchRecord{
 		Package:      releaseworkflow.PackageMksk,
 		Channel:      channel,
-		Version:      releaseVersion,
+		Version:      defaultString(run.Result.Version, releaseVersion),
 		SourceRef:    source.Ref,
 		SourceCommit: source.Commit,
+		AlreadyDone:  run.AlreadyCompleted,
+		ArtifactRoot: run.Result.ArtifactRoot,
 		Namespace:    defaultString(cfg.namespace, releaseworkflow.DefaultNamespace),
 		TaskQueue:    defaultString(cfg.taskQueue, releaseworkflow.DefaultTaskQueue),
 		WorkflowID:   run.WorkflowID,
@@ -250,15 +255,28 @@ func printDispatchRecord(w *os.File, format string, record dispatchRecord) error
 	}
 	switch normalized {
 	case "text":
-		_, err := fmt.Fprintf(w, "release workflow: %s\nrun id: %s\nnamespace: %s\ntask queue: %s\nsource: %s@%s\n",
+		if _, err := fmt.Fprintf(w, "release workflow: %s\nrun id: %s\nnamespace: %s\ntask queue: %s\nsource: %s@%s\nalready_done: %t\n",
 			record.WorkflowID,
 			record.RunID,
 			record.Namespace,
 			record.TaskQueue,
 			record.SourceRef,
 			record.SourceCommit,
-		)
-		return err
+			record.AlreadyDone,
+		); err != nil {
+			return err
+		}
+		if record.Version != "" {
+			if _, err := fmt.Fprintf(w, "version: %s\n", record.Version); err != nil {
+				return err
+			}
+		}
+		if record.ArtifactRoot != "" {
+			if _, err := fmt.Fprintf(w, "artifact root: %s\n", record.ArtifactRoot); err != nil {
+				return err
+			}
+		}
+		return nil
 	case "json":
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "  ")

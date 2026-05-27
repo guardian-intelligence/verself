@@ -165,7 +165,7 @@ func TestCommandEnvWithPrependedPath(t *testing.T) {
 }
 
 func TestSafeJoinRejectsTraversal(t *testing.T) {
-	for _, name := range []string{"../x", "/tmp/x"} {
+	for _, name := range []string{"..", "../x", "/tmp/x"} {
 		if _, err := safeJoin("/tmp/root", name); err == nil {
 			t.Fatalf("safeJoin accepted %q", name)
 		}
@@ -179,9 +179,7 @@ func writeReleaseToolsTar(t *testing.T, tools []string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = file.Close() })
 	writer := tar.NewWriter(file)
-	t.Cleanup(func() { _ = writer.Close() })
 	if err := writer.WriteHeader(&tar.Header{Name: "bin", Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
 		t.Fatal(err)
 	}

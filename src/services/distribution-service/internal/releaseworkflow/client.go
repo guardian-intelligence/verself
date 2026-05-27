@@ -11,6 +11,7 @@ import (
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"github.com/verself/temporal-platform/sdkclient"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	tclient "go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 )
@@ -99,8 +100,10 @@ type NightlyScheduleRequest struct {
 }
 
 type ReleaseRun struct {
-	WorkflowID string
-	RunID      string
+	WorkflowID       string
+	RunID            string
+	AlreadyCompleted bool
+	Result           ReleaseWorkflowResult
 }
 
 type ReleaseSchedule struct {
@@ -230,11 +233,36 @@ func (c *Client) execute(ctx context.Context, workflowID string, workflowName st
 		},
 	}, workflowName, input)
 	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return c.completedReleaseRun(ctx, workflowID, alreadyStarted.RunId, err)
+		}
 		return ReleaseRun{}, fmt.Errorf("start temporal release workflow %s: %w", workflowID, err)
 	}
 	return ReleaseRun{
 		WorkflowID: run.GetID(),
 		RunID:      run.GetRunID(),
+	}, nil
+}
+
+func (c *Client) completedReleaseRun(ctx context.Context, workflowID string, runID string, original error) (ReleaseRun, error) {
+	desc, err := c.temporal.DescribeWorkflowExecution(ctx, workflowID, runID)
+	if err != nil {
+		return ReleaseRun{}, fmt.Errorf("describe existing temporal release workflow %s: %w", workflowID, err)
+	}
+	info := desc.GetWorkflowExecutionInfo()
+	if info == nil || info.GetStatus() != enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED {
+		return ReleaseRun{}, fmt.Errorf("start temporal release workflow %s: %w", workflowID, original)
+	}
+	var result ReleaseWorkflowResult
+	if err := c.temporal.GetWorkflow(ctx, workflowID, runID).Get(ctx, &result); err != nil {
+		return ReleaseRun{}, fmt.Errorf("read completed temporal release workflow %s result: %w", workflowID, err)
+	}
+	return ReleaseRun{
+		WorkflowID:       workflowID,
+		RunID:            runID,
+		AlreadyCompleted: true,
+		Result:           result,
 	}, nil
 }
 
@@ -386,14 +414,8 @@ func validateNightlyScheduleRequest(req NightlyScheduleRequest) error {
 }
 
 func validatePackage(packageName string) error {
-	packageName = strings.TrimSpace(packageName)
-	if !packagePattern.MatchString(packageName) {
-		return fmt.Errorf("%w: package name must be lowercase kebab-case", ErrInvalidInput)
-	}
-	if packageName != PackageMksk {
-		return fmt.Errorf("%w: unsupported package %q", ErrInvalidInput, packageName)
-	}
-	return nil
+	_, err := LookupDistributable(packageName)
+	return err
 }
 
 func validateSourceRef(sourceRef string) error {
