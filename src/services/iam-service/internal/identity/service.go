@@ -109,32 +109,47 @@ type Service struct {
 }
 
 const (
-	passwordMinRunes = 15
-	passwordMaxBytes = 4096
+	// PasswordMinRunes is the user-facing memorized secret floor.
+	PasswordMinRunes                      = 8
+	PasswordWarningBreachCheckUnavailable = "iam.password.check_unavailable"
+	passwordMaxBytes                      = 4096
 )
 
-func (s *Service) ValidateNewPassword(ctx context.Context, password string) error {
+type PasswordValidationResult struct {
+	Warnings []AuthWarning
+}
+
+func (s *Service) ValidateNewPassword(ctx context.Context, password string) (PasswordValidationResult, error) {
 	return ValidateNewPassword(ctx, password, s.PasswordChecker)
 }
 
-func ValidateNewPassword(ctx context.Context, password string, checker PasswordBreachChecker) error {
-	if password == "" || utf8.RuneCountInString(password) < passwordMinRunes {
-		return fmt.Errorf("%w: password must be at least %d characters", ErrPasswordRejected, passwordMinRunes)
+func ValidateNewPassword(ctx context.Context, password string, checker PasswordBreachChecker) (PasswordValidationResult, error) {
+	if password == "" || utf8.RuneCountInString(password) < PasswordMinRunes {
+		return PasswordValidationResult{}, fmt.Errorf("%w: %w: password must be at least %d characters", ErrPasswordRejected, ErrPasswordTooShort, PasswordMinRunes)
 	}
 	if len(password) > passwordMaxBytes {
-		return fmt.Errorf("%w: password is too long", ErrPasswordRejected)
+		return PasswordValidationResult{}, fmt.Errorf("%w: %w: password is too long", ErrPasswordRejected, ErrPasswordTooLong)
 	}
 	if checker == nil {
-		return fmt.Errorf("%w: password breach checker is required", ErrConfiguration)
+		slog.WarnContext(ctx, "password breach check unavailable", "reason", "password breach checker is not configured")
+		return PasswordValidationResult{Warnings: []AuthWarning{passwordBreachCheckUnavailableWarning()}}, nil
 	}
 	check, err := checker.CheckPassword(ctx, password)
 	if err != nil {
-		return fmt.Errorf("%w: password breach check: %v", ErrPasswordCheckUnavailable, err)
+		slog.WarnContext(ctx, "password breach check unavailable", "error", err)
+		return PasswordValidationResult{Warnings: []AuthWarning{passwordBreachCheckUnavailableWarning()}}, nil
 	}
 	if check.Breached {
-		return fmt.Errorf("%w: password is known compromised", ErrPasswordRejected)
+		return PasswordValidationResult{}, fmt.Errorf("%w: %w: password is known compromised", ErrPasswordRejected, ErrPasswordBreached)
 	}
-	return nil
+	return PasswordValidationResult{}, nil
+}
+
+func passwordBreachCheckUnavailableWarning() AuthWarning {
+	return AuthWarning{
+		Code:    PasswordWarningBreachCheckUnavailable,
+		Message: "Password breach check is unavailable.",
+	}
 }
 
 func (s *Service) Organization(ctx context.Context, principal Principal) (Organization, error) {

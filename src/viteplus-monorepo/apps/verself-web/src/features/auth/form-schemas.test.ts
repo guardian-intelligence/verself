@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as v from "valibot";
 import {
-  MIN_PASSPHRASE_LENGTH,
+  MIN_PASSWORD_LENGTH,
   deviceCodeFormSchema,
   loginFormSchema,
   normalizeDeviceCode,
@@ -31,10 +31,10 @@ describe("auth form schemas", () => {
   it("validates password setup with passphrase guidance and confirmation forwarding", () => {
     expect(
       issues(resetPasswordFormSchema, {
-        password: "correct horse",
-        confirmPassword: "correct horse",
+        password: "1234567",
+        confirmPassword: "1234567",
       }),
-    ).toContain(`Use a passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+    ).toContain(`Use at least ${MIN_PASSWORD_LENGTH} characters.`);
     expect(
       issues(resetPasswordFormSchema, {
         password: "correct horse battery staple",

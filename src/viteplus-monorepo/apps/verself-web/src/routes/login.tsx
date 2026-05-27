@@ -7,6 +7,7 @@ import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
 import { toast } from "@verself/ui/components/ui/sonner";
+import { Callout } from "~/components/callout";
 import {
   FieldError,
   authFormSubmitBusy,
@@ -21,6 +22,11 @@ import {
   loginFormSchema,
   normalizeEmail,
 } from "~/features/auth/form-schemas";
+import {
+  PASSWORD_BREACH_HELP_TEXT,
+  PASSWORD_BREACH_HELP_URL,
+  PASSWORD_CHECK_UNAVAILABLE_NOTICE,
+} from "~/features/auth/password-policy";
 import { Squircle } from "~/features/console/flight/squircle";
 import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
 import {
@@ -41,6 +47,7 @@ type LoginSearch = {
   readonly required_subject?: string;
   readonly required_email?: string;
   readonly required_org_id?: string;
+  readonly notice?: "password_check_unavailable";
 };
 
 function loginSearch(search: Record<string, unknown>): LoginSearch {
@@ -60,6 +67,7 @@ function loginSearch(search: Record<string, unknown>): LoginSearch {
     ...(typeof search.required_org_id === "string"
       ? { required_org_id: search.required_org_id }
       : {}),
+    ...(search.notice === "password_check_unavailable" ? { notice: search.notice } : {}),
   };
 }
 
@@ -77,6 +85,7 @@ function loginSearchParams(params: URLSearchParams): LoginSearch {
   const requiredSubject = rawParam(params, "required_subject");
   const requiredEmail = rawParam(params, "required_email");
   const requiredOrgId = rawParam(params, "required_org_id");
+  const notice = rawParam(params, "notice");
   return {
     ...(authRequest ? { authRequest } : {}),
     ...(prompt === "login" || prompt === "select_account" ? { prompt } : {}),
@@ -86,6 +95,7 @@ function loginSearchParams(params: URLSearchParams): LoginSearch {
     ...(requiredSubject ? { required_subject: requiredSubject } : {}),
     ...(requiredEmail ? { required_email: requiredEmail } : {}),
     ...(requiredOrgId ? { required_org_id: requiredOrgId } : {}),
+    ...(notice === "password_check_unavailable" ? { notice } : {}),
   };
 }
 
@@ -208,6 +218,19 @@ function LoginPage() {
           </div>
           {accountOptions.length > 0 ? (
             <AccountChooser accounts={accountOptions} search={search} />
+          ) : null}
+          {search.notice === "password_check_unavailable" ? (
+            <Callout tone="warning" className="mb-4" title="Password saved">
+              <span>{PASSWORD_CHECK_UNAVAILABLE_NOTICE}</span>{" "}
+              <a
+                href={PASSWORD_BREACH_HELP_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium underline underline-offset-4"
+              >
+                {PASSWORD_BREACH_HELP_TEXT}
+              </a>
+            </Callout>
           ) : null}
           <form
             onSubmit={(event) => {

@@ -507,6 +507,7 @@ func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.Ver
 			RequiredOrgID:   contractapi.OrgID(result.Intent.OrgID),
 			RedirectTo:      contractapi.BrowserRedirectPath("/" + result.Organization.Slug),
 		},
+		Warnings: authWarningsFromIdentity(result.Warnings),
 	}}, nil
 }
 
@@ -771,6 +772,20 @@ func (h publicHandlers) organizationSummariesFromMetadata(organizations []identi
 			Slug:         optionalContractValue[contractapi.OrgSlug](organization.Slug),
 			DisplayName:  contractapi.DisplayName(organization.DisplayName),
 			Version:      contractapi.OrganizationVersion(organization.Version),
+		})
+	}
+	return out
+}
+
+func authWarningsFromIdentity(warnings []identity.AuthWarning) contractapi.AuthWarnings {
+	if len(warnings) == 0 {
+		return nil
+	}
+	out := make(contractapi.AuthWarnings, 0, len(warnings))
+	for _, warning := range warnings {
+		out = append(out, contractapi.AuthWarning{
+			Code:    contractapi.AuthWarningCode(warning.Code),
+			Message: warning.Message,
 		})
 	}
 	return out

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	iamcore "github.com/verself/verself-go/internal/transport/iam"
 )
@@ -24,6 +25,8 @@ const (
 	IAMRoleSourceViewer    IAMRoleName = "roles/sourceViewer"
 	IAMRoleSecretsUser     IAMRoleName = "roles/secretsUser"
 )
+
+const iamPasswordMinRunes = 8
 
 type Organization struct {
 	OrgID        string `json:"orgId"`
@@ -115,6 +118,12 @@ type SignupVerificationResult struct {
 	Organization Organization                `json:"organization"`
 	LoginURL     string                      `json:"loginUrl"`
 	LoginIntent  *RequiredAccountLoginIntent `json:"loginIntent,omitempty"`
+	Warnings     []AuthWarning               `json:"warnings,omitempty"`
+}
+
+type AuthWarning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type RequiredAccountLoginIntent struct {
@@ -296,6 +305,9 @@ func (c *IAMClient) VerifySignup(ctx context.Context, input VerifySignupInput) (
 	initialPassword := input.InitialPassword
 	if signupIntentID == "" || verificationToken == "" || initialPassword == "" {
 		return SignupVerificationResult{}, fmt.Errorf("verself sdk: signup intent id, verification token, and initial password are required")
+	}
+	if utf8.RuneCountInString(initialPassword) < iamPasswordMinRunes {
+		return SignupVerificationResult{}, fmt.Errorf("verself sdk: initial password must be at least %d characters", iamPasswordMinRunes)
 	}
 	key, err := deterministicMutationKey("iam-signup-verify", input.IdempotencyKey, signupIntentID, verificationToken, stringPointerValue(input.OrganizationDisplayName), stringPointerValue(input.OrganizationSlug))
 	if err != nil {
@@ -594,7 +606,19 @@ func signupVerificationResultFromGenerated(input iamcore.VerifySignupResult) Sig
 		Organization: organizationFromGenerated(input.Organization),
 		LoginURL:     string(input.LoginURL),
 		LoginIntent:  requiredAccountLoginIntentFromGenerated(input.LoginIntent),
+		Warnings:     authWarningsFromGenerated(input.Warnings),
 	}
+}
+
+func authWarningsFromGenerated(input iamcore.AuthWarnings) []AuthWarning {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make([]AuthWarning, 0, len(input))
+	for _, warning := range input {
+		out = append(out, AuthWarning{Code: string(warning.Code), Message: warning.Message})
+	}
+	return out
 }
 
 func requiredAccountLoginIntentFromGenerated(input *iamcore.RequiredAccountLoginIntent) *RequiredAccountLoginIntent {

@@ -9,6 +9,8 @@ import {
 } from "@verself/auth-web/isomorphic";
 import {
   passwordLoginErrorCodeFromProblem,
+  passwordPolicyErrorCodeFromProblem,
+  passwordPolicyErrorMessage,
   type PasswordLoginResult,
 } from "../features/auth/auth-errors";
 import type { ConsoleAuthContext } from "./auth";
@@ -32,6 +34,13 @@ const organizationSummarySchema = v.object({
   version: v.number(),
 });
 
+const authWarningSchema = v.object({
+  code: v.pipe(v.string(), v.nonEmpty()),
+  message: v.pipe(v.string(), v.nonEmpty()),
+});
+
+export type AuthWarning = v.InferOutput<typeof authWarningSchema>;
+
 const signupVerificationResultSchema = v.object({
   organization: organizationSummarySchema,
   loginUrl: v.pipe(v.string(), v.nonEmpty()),
@@ -45,6 +54,7 @@ const signupVerificationResultSchema = v.object({
       redirectTo: v.optional(v.pipe(v.string(), v.nonEmpty())),
     }),
   ),
+  warnings: v.optional(v.array(authWarningSchema)),
 });
 
 export type SignupVerificationResult = v.InferOutput<typeof signupVerificationResultSchema>;
@@ -117,6 +127,7 @@ export type BrowserAccountSummary = v.InferOutput<typeof browserAccountSummarySc
 const passwordResetResultSchema = v.object({
   status: v.pipe(v.string(), v.nonEmpty()),
   message: v.pipe(v.string(), v.nonEmpty()),
+  warnings: v.optional(v.array(authWarningSchema)),
 });
 
 export type PasswordResetResult = v.InferOutput<typeof passwordResetResultSchema>;
@@ -396,8 +407,8 @@ function passwordResetProblemMessage(status: number, body: string): string {
   } catch {
     code = "";
   }
-  if (code === "password-rejected") {
-    return "Use a longer passphrase that has not appeared in a breach.";
+  if (code.startsWith("iam.password.")) {
+    return passwordPolicyErrorMessage(passwordPolicyErrorCodeFromProblem(status, body));
   }
   if (code === "reset-token-invalid") {
     return "This reset link is invalid or expired.";
@@ -619,8 +630,11 @@ function signupVerificationProblemMessage(status: number, body: string): string 
       return "This email already has a Verself account. Sign in instead.";
     case "iam.organization_slug.unavailable":
       return "That organization URL is already taken.";
+    case "iam.password.too_short":
+    case "iam.password.too_long":
+    case "iam.password.breached":
     case "iam.password.rejected":
-      return "Use a longer passphrase that has not appeared in a breach.";
+      return passwordPolicyErrorMessage(passwordPolicyErrorCodeFromProblem(status, body));
     default:
       if (status === 409) {
         return "Signup could not be completed because the request state changed. Use the newest signup email and try again.";

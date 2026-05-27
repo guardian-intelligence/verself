@@ -37,7 +37,7 @@ const (
 	defaultZitadelAdminPATPath                 = "/etc/zitadel/admin.pat"
 	defaultIAMCredstoreDir                     = "/etc/credstore/iam-service"
 	defaultIAMCredstoreGroup                   = "iam_service"
-	desiredPasswordMinLength                   = 15
+	desiredPasswordMinLength                   = 8
 	desiredPasswordLockoutAttempts             = 10
 	credentialMode                 os.FileMode = 0o640
 )

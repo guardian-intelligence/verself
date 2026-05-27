@@ -48,7 +48,7 @@ func TestProductTokenClaimsTargetBody(t *testing.T) {
 
 func TestPasswordPolicyBodies(t *testing.T) {
 	complexity := desiredPasswordComplexityPolicyBody()
-	if complexity["minLength"] != 15 {
+	if complexity["minLength"] != 8 {
 		t.Fatalf("minLength = %v", complexity["minLength"])
 	}
 	for _, key := range []string{"hasUppercase", "hasLowercase", "hasNumber", "hasSymbol"} {

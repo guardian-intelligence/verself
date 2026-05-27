@@ -94,6 +94,8 @@ type SignupStartStatus string
 
 type SignupVerificationToken string
 
+type AuthWarningCode string
+
 type Password string
 
 type LoginURL string
@@ -447,7 +449,7 @@ type StartSignupInput struct {
 
 type VerifySignupInputBody struct {
 	VerificationToken       SignupVerificationToken `json:"verificationToken" required:"true" minLength:"32" maxLength:"512"`
-	InitialPassword         Password                `json:"initialPassword" required:"true" minLength:"1" maxLength:"4096"`
+	InitialPassword         Password                `json:"initialPassword" required:"true" minLength:"8" maxLength:"4096"`
 	OrganizationDisplayName *DisplayName            `json:"organizationDisplayName,omitempty" minLength:"1" maxLength:"120"`
 	OrganizationSlug        *OrgSlug                `json:"organizationSlug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
 }
@@ -523,11 +525,19 @@ type VerifySignupResult struct {
 	Organization OrganizationSummary         `json:"organization" required:"true"`
 	LoginURL     LoginURL                    `json:"loginUrl" required:"true" minLength:"1" maxLength:"2048"`
 	LoginIntent  *RequiredAccountLoginIntent `json:"loginIntent,omitempty"`
+	Warnings     AuthWarnings                `json:"warnings,omitempty"`
 }
 
 type VerifySignupOutput struct {
 	Body VerifySignupResult
 }
+
+type AuthWarning struct {
+	Code    AuthWarningCode `json:"code" required:"true" minLength:"1" maxLength:"128" pattern:"^[a-z][a-z0-9_.]*$"`
+	Message string          `json:"message" required:"true"`
+}
+
+type AuthWarnings []AuthWarning
 
 type RequiredAccountLoginIntent struct {
 	LoginURL        LoginURL            `json:"loginUrl" required:"true" minLength:"1" maxLength:"2048"`
@@ -679,6 +689,9 @@ var VerifySignup = Operation[VerifySignupInput, VerifySignupOutput]{
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
 			{ShapeID: "verself.iam.v1#OrganizationSlugUnavailableError", Type: "urn:verself:problem:iam:organization_slug_unavailable", Code: "iam.organization_slug.unavailable", Status: 409},
+			{ShapeID: "verself.iam.v1#PasswordBreachedError", Type: "urn:verself:problem:iam:password_breached", Code: "iam.password.breached", Status: 400},
+			{ShapeID: "verself.iam.v1#PasswordTooLongError", Type: "urn:verself:problem:iam:password_too_long", Code: "iam.password.too_long", Status: 400},
+			{ShapeID: "verself.iam.v1#PasswordTooShortError", Type: "urn:verself:problem:iam:password_too_short", Code: "iam.password.too_short", Status: 400},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
 			{ShapeID: "verself.iam.v1#SignupAccountExistsError", Type: "urn:verself:problem:iam:signup_account_exists", Code: "iam.signup.account_exists", Status: 409},

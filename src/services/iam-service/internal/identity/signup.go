@@ -187,7 +187,8 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 	if err != nil {
 		return VerifySignupResult{}, err
 	}
-	if err := s.ValidateNewPassword(ctx, input.InitialPassword); err != nil {
+	passwordValidation, err := s.ValidateNewPassword(ctx, input.InitialPassword)
+	if err != nil {
 		return VerifySignupResult{}, err
 	}
 	signupStore, err := s.signupStore()
@@ -213,7 +214,7 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 		if err != nil {
 			return VerifySignupResult{}, err
 		}
-		return VerifySignupResult{Intent: intent, Organization: org}, nil
+		return VerifySignupResult{Intent: intent, Organization: org, Warnings: passwordValidation.Warnings}, nil
 	}
 	if err := s.emitSignupEvent(ctx, signupStore, IAMEvent{
 		EventType:          "iam.signup_intent.verification_accepted",
@@ -264,6 +265,7 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 		})
 		return VerifySignupResult{}, err
 	}
+	result.Warnings = passwordValidation.Warnings
 	return result, nil
 }
 

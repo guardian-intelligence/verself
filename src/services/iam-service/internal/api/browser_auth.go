@@ -142,9 +142,6 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	if cfg.ProviderLogin == nil {
 		return nil, errors.New("identity browser auth provider login client is required")
 	}
-	if cfg.PasswordChecker == nil {
-		return nil, errors.New("identity browser auth password checker is required")
-	}
 	if cfg.PasswordReset == nil {
 		return nil, errors.New("identity browser auth password reset notifier is required")
 	}
