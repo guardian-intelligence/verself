@@ -6,18 +6,20 @@ import { Button } from "@verself/ui/components/ui/button";
 import { Label } from "@verself/ui/components/ui/label";
 import {
   FieldError,
+  SubmitError,
   authFormSubmitBusy,
   authFormSubmitDisabled,
   fieldInvalid,
-  submitErrorText,
 } from "~/features/auth/form-primitives";
 import {
   formString,
   newPasswordSchema,
   resetPasswordFormSchema,
 } from "~/features/auth/form-schemas";
+import { PASSWORD_CHECK_UNAVAILABLE_WARNING_CODE } from "~/features/auth/password-policy";
 import { Squircle } from "~/features/console/flight/squircle";
 import { completePasswordReset } from "~/server-fns/auth";
+import type { AuthWarning } from "~/server-fns/auth.server";
 
 type ResetPasswordSearch = {
   readonly user_id?: string;
@@ -64,14 +66,14 @@ function ResetPasswordPage() {
       if (!search.user_id || !search.verification_code) {
         throw new Error("This reset link is invalid or expired.");
       }
-      await completePasswordReset({
+      const result = await completePasswordReset({
         data: {
           userId: search.user_id,
           verificationCode: search.verification_code,
           password,
         },
       });
-      window.location.assign("/login?prompt=login");
+      window.location.assign(loginPathAfterPasswordReset(result.warnings));
     },
   });
 
@@ -201,9 +203,7 @@ function ResetPasswordPage() {
                       <KeyRound aria-hidden="true" />
                       <span>{isSubmitting ? "Saving..." : "Save password"}</span>
                     </Button>
-                    <p className="min-h-5 text-sm font-medium text-destructive">
-                      {submitErrorText(submitError)}
-                    </p>
+                    <SubmitError error={submitError} />
                   </div>
                 )}
               </form.Subscribe>
@@ -220,6 +220,15 @@ function ResetPasswordPage() {
       </div>
     </main>
   );
+}
+
+function loginPathAfterPasswordReset(warnings: Array<AuthWarning> | undefined): string {
+  const login = new URL("/login", window.location.origin);
+  login.searchParams.set("prompt", "login");
+  if (warnings?.some((warning) => warning.code === PASSWORD_CHECK_UNAVAILABLE_WARNING_CODE)) {
+    login.searchParams.set("notice", "password_check_unavailable");
+  }
+  return `${login.pathname}${login.search}`;
 }
 
 function PasswordInput(props: {

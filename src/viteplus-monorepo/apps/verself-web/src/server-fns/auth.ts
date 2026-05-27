@@ -1,6 +1,7 @@
 import { createMiddleware, createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import * as v from "valibot";
 import type { AuthenticatedAuthSnapshot } from "@verself/auth-web/isomorphic";
+import { MIN_PASSWORD_LENGTH, PASSWORD_LENGTH_MESSAGE } from "../features/auth/password-policy";
 
 const selectOrganizationInputSchema = v.object({
   orgID: v.pipe(v.string(), v.nonEmpty()),
@@ -42,7 +43,11 @@ const passwordResetStartInputSchema = v.object({
 const passwordResetCompleteInputSchema = v.object({
   userId: v.pipe(v.string(), v.trim(), v.nonEmpty()),
   verificationCode: v.pipe(v.string(), v.trim(), v.nonEmpty()),
-  password: v.pipe(v.string(), v.nonEmpty()),
+  password: v.pipe(
+    v.string(),
+    v.nonEmpty(),
+    v.minLength(MIN_PASSWORD_LENGTH, PASSWORD_LENGTH_MESSAGE),
+  ),
 });
 
 const deviceLoginLookupInputSchema = v.object({
@@ -56,7 +61,11 @@ const deviceLoginDecisionInputSchema = v.object({
 const verifySignupInputSchema = v.object({
   signupIntentId: v.pipe(v.string(), v.nonEmpty()),
   verificationToken: v.pipe(v.string(), v.nonEmpty()),
-  initialPassword: v.pipe(v.string(), v.nonEmpty()),
+  initialPassword: v.pipe(
+    v.string(),
+    v.nonEmpty(),
+    v.minLength(MIN_PASSWORD_LENGTH, PASSWORD_LENGTH_MESSAGE),
+  ),
   organizationDisplayName: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
   organizationSlug: v.pipe(
     v.string(),

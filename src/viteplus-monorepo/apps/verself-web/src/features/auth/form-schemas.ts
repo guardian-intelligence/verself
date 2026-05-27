@@ -1,6 +1,7 @@
 import * as v from "valibot";
+import { MIN_PASSWORD_LENGTH, PASSWORD_LENGTH_MESSAGE } from "./password-policy";
 
-export const MIN_PASSPHRASE_LENGTH = 15;
+export { MIN_PASSWORD_LENGTH };
 
 export const organizationSlugPattern = /^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$/;
 
@@ -19,10 +20,7 @@ export const currentPasswordSchema = v.pipe(
 export const newPasswordSchema = v.pipe(
   v.string("Password is required."),
   v.nonEmpty("Password is required."),
-  v.minLength(
-    MIN_PASSPHRASE_LENGTH,
-    `Use a passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters.`,
-  ),
+  v.minLength(MIN_PASSWORD_LENGTH, PASSWORD_LENGTH_MESSAGE),
 );
 
 export const organizationNameSchema = v.pipe(

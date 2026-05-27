@@ -1,3 +1,10 @@
+import {
+  BREACHED_PASSWORD_MESSAGE,
+  PASSWORD_LENGTH_MESSAGE,
+  PASSWORD_REJECTED_MESSAGE,
+  PASSWORD_TOO_LONG_MESSAGE,
+} from "./password-policy";
+
 export const passwordLoginErrorCodes = [
   "invalid_credentials",
   "rate_limited",
@@ -5,6 +12,10 @@ export const passwordLoginErrorCodes = [
 ] as const;
 
 export type PasswordLoginErrorCode = (typeof passwordLoginErrorCodes)[number];
+
+export const passwordPolicyErrorCodes = ["too_short", "too_long", "breached", "rejected"] as const;
+
+export type PasswordPolicyErrorCode = (typeof passwordPolicyErrorCodes)[number];
 
 export type PasswordLoginResult =
   | {
@@ -39,6 +50,36 @@ export function passwordLoginErrorCodeFromProblem(
     return "rate_limited";
   }
   return "unavailable";
+}
+
+export function passwordPolicyErrorMessage(code: PasswordPolicyErrorCode): string {
+  switch (code) {
+    case "too_short":
+      return PASSWORD_LENGTH_MESSAGE;
+    case "too_long":
+      return PASSWORD_TOO_LONG_MESSAGE;
+    case "breached":
+      return BREACHED_PASSWORD_MESSAGE;
+    case "rejected":
+      return PASSWORD_REJECTED_MESSAGE;
+  }
+}
+
+export function passwordPolicyErrorCodeFromProblem(
+  _status: number,
+  body: string,
+): PasswordPolicyErrorCode {
+  const code = problemCode(body);
+  switch (code) {
+    case "iam.password.too_short":
+      return "too_short";
+    case "iam.password.too_long":
+      return "too_long";
+    case "iam.password.breached":
+      return "breached";
+    default:
+      return "rejected";
+  }
 }
 
 function problemCode(body: string): string {

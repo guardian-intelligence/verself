@@ -36,9 +36,10 @@ import (
 )
 
 const (
-	serviceName      = "iam-service"
-	serviceVersion   = "1.0.1"
-	requestBodyLimit = 1 << 20
+	serviceName                        = "iam-service"
+	serviceVersion                     = "1.0.1"
+	defaultPwnedPasswordsRangeEndpoint = "https://api.pwnedpasswords.com"
+	requestBodyLimit                   = 1 << 20
 )
 
 func main() {
@@ -204,7 +205,7 @@ func run() error {
 	authAudience := cfg.RequireCredential("auth-audience")
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	browserAuthPublicBaseURL := cfg.RequireURL("IAM_BROWSER_AUTH_PUBLIC_BASE_URL")
-	pwnedPasswordsRangeEndpoint := cfg.RequireURL("IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT")
+	pwnedPasswordsRangeEndpoint := cfg.URL("IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT", defaultPwnedPasswordsRangeEndpoint)
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IAM_ZITADEL_HOST")
 	spiceDBEndpoint := cfg.RequireString("IAM_SPICEDB_GRPC_ENDPOINT")

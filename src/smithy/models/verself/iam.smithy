@@ -160,6 +160,24 @@ string BrowserLoginPurpose
 @pattern("^(login|select_account)$")
 string BrowserLoginPrompt
 
+@length(min: 1, max: 128)
+@pattern("^[a-z][a-z0-9_.]*$")
+string AuthWarningCode
+
+structure AuthWarning {
+    @required
+    @protoField(number: 1)
+    code: AuthWarningCode
+
+    @required
+    @protoField(number: 2)
+    message: String
+}
+
+list AuthWarnings {
+    member: AuthWarning
+}
+
 @length(min: 1, max: 64)
 @pattern("^[0-9]+$")
 string IdentityProviderOrgId
@@ -236,7 +254,7 @@ string BrowserRedirectPath
 @length(min: 1, max: 2048)
 string BrowserRedirectURL
 
-@length(min: 1, max: 4096)
+@length(min: 8, max: 4096)
 @sensitive
 string Password
 
@@ -386,6 +404,21 @@ structure SignupAccountExistsError with [ProblemDetails] {}
 @httpError(409)
 @problem(type: "urn:verself:problem:iam:organization_slug_unavailable", code: "iam.organization_slug.unavailable")
 structure OrganizationSlugUnavailableError with [ProblemDetails] {}
+
+@error("client")
+@httpError(400)
+@problem(type: "urn:verself:problem:iam:password_too_short", code: "iam.password.too_short")
+structure PasswordTooShortError with [ProblemDetails] {}
+
+@error("client")
+@httpError(400)
+@problem(type: "urn:verself:problem:iam:password_too_long", code: "iam.password.too_long")
+structure PasswordTooLongError with [ProblemDetails] {}
+
+@error("client")
+@httpError(400)
+@problem(type: "urn:verself:problem:iam:password_breached", code: "iam.password.breached")
+structure PasswordBreachedError with [ProblemDetails] {}
 
 @error("client")
 @httpError(401)
@@ -1329,6 +1362,9 @@ operation VerifySignup {
         SignupStateConflictError
         SignupAccountExistsError
         OrganizationSlugUnavailableError
+        PasswordTooShortError
+        PasswordTooLongError
+        PasswordBreachedError
         IdempotencyPayloadMismatchError
         RateLimitedError
         ServiceUnavailableError
@@ -1386,6 +1422,9 @@ structure VerifySignupResult {
 
     @protoField(number: 3)
     loginIntent: RequiredAccountLoginIntent
+
+    @protoField(number: 4)
+    warnings: AuthWarnings
 }
 
 structure RequiredAccountLoginIntent {
@@ -1888,6 +1927,9 @@ operation CompletePasswordReset {
     output: CompletePasswordResetOutput
     errors: [
         ValidationFailedError
+        PasswordTooShortError
+        PasswordTooLongError
+        PasswordBreachedError
         RateLimitedError
         ServiceUnavailableError
     ]
@@ -1911,13 +1953,7 @@ structure CompletePasswordResetInput {
 }
 
 @output
-structure StartPasswordResetOutput with [PasswordResetOutputFields] {}
-
-@output
-structure CompletePasswordResetOutput with [PasswordResetOutputFields] {}
-
-@mixin
-structure PasswordResetOutputFields {
+structure StartPasswordResetOutput {
     @required
     @protoField(number: 1)
     status: String
@@ -1925,6 +1961,20 @@ structure PasswordResetOutputFields {
     @required
     @protoField(number: 2)
     message: String
+}
+
+@output
+structure CompletePasswordResetOutput {
+    @required
+    @protoField(number: 1)
+    status: String
+
+    @required
+    @protoField(number: 2)
+    message: String
+
+    @protoField(number: 3)
+    warnings: AuthWarnings
 }
 
 @http(method: "POST", uri: "/api/v1/auth/device-logins/lookup")

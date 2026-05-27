@@ -190,6 +190,12 @@ type VerifySignupRequest struct {
 type VerifySignupResult struct {
 	Intent       SignupIntent
 	Organization Organization
+	Warnings     []AuthWarning
+}
+
+type AuthWarning struct {
+	Code    string
+	Message string
 }
 
 type OrganizationMetadata struct {

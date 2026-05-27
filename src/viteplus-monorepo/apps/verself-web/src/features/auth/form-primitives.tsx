@@ -1,6 +1,11 @@
 import type { AnyFieldMeta } from "@tanstack/react-form";
 import type { ReactNode } from "react";
 import { cn } from "@verself/ui/lib/utils";
+import {
+  BREACHED_PASSWORD_MESSAGE,
+  PASSWORD_BREACH_HELP_TEXT,
+  PASSWORD_BREACH_HELP_URL,
+} from "./password-policy";
 
 export function fieldErrorText(meta: AnyFieldMeta): string {
   const error = meta.errors.find((item): item is NonNullable<typeof item> => Boolean(item));
@@ -49,6 +54,38 @@ export function FieldHint({
 export function submitErrorText(error: unknown): string {
   if (!error) return "";
   return validationMessage(error);
+}
+
+export function SubmitError({
+  error,
+  className,
+}: {
+  readonly error: unknown;
+  readonly className?: string;
+}) {
+  const message = submitErrorText(error);
+  return (
+    <p
+      role={message ? "alert" : undefined}
+      className={cn("min-h-5 text-sm font-medium text-destructive", className)}
+    >
+      {message === BREACHED_PASSWORD_MESSAGE ? (
+        <>
+          <span>{message}</span>{" "}
+          <a
+            href={PASSWORD_BREACH_HELP_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-4"
+          >
+            {PASSWORD_BREACH_HELP_TEXT}
+          </a>
+        </>
+      ) : (
+        message
+      )}
+    </p>
+  );
 }
 
 export function fieldInvalid(meta: AnyFieldMeta): boolean {

@@ -19,6 +19,7 @@ type (
 	AccountId                = string
 	AuthChannel              = string
 	AuthMethod               = string
+	AuthWarningCode          = string
 	DeviceSessionId          = string
 	DeviceSessionState       = string
 	DisplayName              = string
@@ -56,6 +57,7 @@ type (
 	AccountConnectionSummaries []AccountConnectionSummary
 	AuthMethods                []AuthMethod
 	AuthOrganizationContexts   []AuthOrganizationContext
+	AuthWarnings               []AuthWarning
 	DeviceSessionSummaries     []DeviceSessionSummary
 	IAMMembers                 []IAMMemberName
 	IAMPolicyBindings          []IAMPolicyBinding
@@ -503,6 +505,12 @@ type VerifySignupResult struct {
 	Organization OrganizationSummary         `json:"organization"`
 	LoginURL     LoginURL                    `json:"loginUrl"`
 	LoginIntent  *RequiredAccountLoginIntent `json:"loginIntent,omitempty"`
+	Warnings     AuthWarnings                `json:"warnings,omitempty"`
+}
+
+type AuthWarning struct {
+	Code    AuthWarningCode `json:"code"`
+	Message string          `json:"message"`
 }
 
 type RequiredAccountLoginIntent struct {
