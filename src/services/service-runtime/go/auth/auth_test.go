@@ -61,7 +61,7 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		"aud":                                   []string{"billing-project"},
 		"exp":                                   time.Now().Add(time.Hour).Unix(),
 		"email":                                 "alice@example.com",
-		"org_id":                                "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
+		"org_id":                                "org_00000000000000000000000000",
 		"urn:zitadel:iam:org:id":                "42",
 		"urn:zitadel:iam:user:resourceowner:id": "42",
 		"amr":                                   []string{"pwd", "mfa"},
@@ -78,7 +78,7 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 		if identity.Subject != "user-123" {
 			t.Fatalf("unexpected subject: %q", identity.Subject)
 		}
-		if identity.OrgID != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
+		if identity.OrgID != "org_00000000000000000000000000" {
 			t.Fatalf("unexpected org id: %q", identity.OrgID)
 		}
 		if identity.Email != "alice@example.com" {
@@ -100,7 +100,7 @@ func TestMiddlewareAttachesIdentity(t *testing.T) {
 	}
 }
 
-func TestMiddlewareFallsBackToZitadelOrganizationClaim(t *testing.T) {
+func TestMiddlewareIgnoresZitadelOrganizationClaims(t *testing.T) {
 	t.Parallel()
 
 	provider := newTestProvider(t)
@@ -122,8 +122,8 @@ func TestMiddlewareFallsBackToZitadelOrganizationClaim(t *testing.T) {
 		if identity == nil {
 			t.Fatal("expected identity in context")
 		}
-		if identity.OrgID != "42" {
-			t.Fatalf("resource owner org should be preserved as authn context: %#v", identity)
+		if identity.OrgID != "" {
+			t.Fatalf("provider org leaked into authz context: %#v", identity)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -138,7 +138,7 @@ func TestMiddlewareFallsBackToZitadelOrganizationClaim(t *testing.T) {
 	}
 }
 
-func TestMiddlewarePrefersPublicOrgClaim(t *testing.T) {
+func TestMiddlewareUsesOnlyPublicOrgClaim(t *testing.T) {
 	t.Parallel()
 
 	provider := newTestProvider(t)
@@ -149,7 +149,7 @@ func TestMiddlewarePrefersPublicOrgClaim(t *testing.T) {
 		"sub":                    "user-123",
 		"aud":                    []string{"billing-project"},
 		"exp":                    time.Now().Add(time.Hour).Unix(),
-		"org_id":                 "org_01J8QJ4P1R7S9W2X5M6N8P0Q2",
+		"org_id":                 "org_00000000000000000000000000",
 		"urn:zitadel:iam:org:id": "42",
 	})
 
@@ -161,7 +161,7 @@ func TestMiddlewarePrefersPublicOrgClaim(t *testing.T) {
 		if identity == nil {
 			t.Fatal("expected identity in context")
 		}
-		if identity.OrgID != "org_01J8QJ4P1R7S9W2X5M6N8P0Q2" {
+		if identity.OrgID != "org_00000000000000000000000000" {
 			t.Fatalf("public org claim must be preferred: %q", identity.OrgID)
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -174,6 +174,41 @@ func TestMiddlewarePrefersPublicOrgClaim(t *testing.T) {
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+}
+
+func TestMiddlewareRejectsInvalidOrgIDClaim(t *testing.T) {
+	t.Parallel()
+
+	provider := newTestProvider(t)
+	defer provider.Close()
+
+	token := provider.signToken(t, jwt.MapClaims{
+		"iss":    provider.URL,
+		"sub":    "user-123",
+		"aud":    []string{"billing-project"},
+		"exp":    time.Now().Add(time.Hour).Unix(),
+		"org_id": "42",
+	})
+
+	handler := Middleware(Config{
+		IssuerURL: provider.URL,
+		Audience:  "billing-project",
+	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/private", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+	problem := decodeProblem(t, rec)
+	if problem.Detail != "invalid token claims" {
+		t.Fatalf("unexpected problem detail: %q", problem.Detail)
 	}
 }
 

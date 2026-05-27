@@ -26,7 +26,7 @@ func TestSourceRepositoryCreateUsesBearerAndIdempotency(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"repo_id":"` + repoID + `","org_id":"370200542594579812","org_slug":"guardian","project_id":"` + projectID + `","project_slug":"api","name":"runner","description":"Builds","default_branch":"main","visibility":"private","state":"active","version":1,"backend":"forgejo","git_http_url":"https://git.example/guardian/api-runner.git","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"repo_id":"` + repoID + `","org_id":"org_00000000000000000000000000","org_slug":"guardian","project_id":"` + projectID + `","project_slug":"api","name":"runner","description":"Builds","default_branch":"main","visibility":"private","state":"active","version":1,"backend":"forgejo","git_http_url":"https://git.example/guardian/api-runner.git","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`))
 	}))
 	defer server.Close()
 
@@ -67,7 +67,7 @@ func TestSourceReadOperationsParsePublicShapes(t *testing.T) {
 			if r.URL.Query().Get("project_id") != projectID {
 				t.Fatalf("unexpected list query: %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"repositories":[{"repo_id":"` + repoID + `","org_id":"370200542594579812","org_slug":"guardian","project_id":"` + projectID + `","project_slug":"api","name":"runner","description":"","default_branch":"main","visibility":"private","state":"active","version":1,"backend":"forgejo","git_http_url":"https://git.example/guardian/api-runner.git","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}]}`))
+			_, _ = w.Write([]byte(`{"repositories":[{"repo_id":"` + repoID + `","org_id":"org_00000000000000000000000000","org_slug":"guardian","project_id":"` + projectID + `","project_slug":"api","name":"runner","description":"","default_branch":"main","visibility":"private","state":"active","version":1,"backend":"forgejo","git_http_url":"https://git.example/guardian/api-runner.git","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/"+repoID+"/refs":
 			_, _ = w.Write([]byte(`{"refs":[{"name":"refs/heads/main","commit":"abc123"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/"+repoID+"/tree":
@@ -139,7 +139,7 @@ func TestSourceMutationsUsePublicAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"credential_id":"cred_1","org_id":"370200542594579812","username":"x-access-token","token":"vsrc_test","token_prefix":"vsrc_","scopes":["repo:read"],"expires_at":"2026-05-06T01:00:00Z","created_at":"2026-05-06T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"credential_id":"cred_1","org_id":"org_00000000000000000000000000","username":"x-access-token","token":"vsrc_test","token_prefix":"vsrc_","scopes":["repo:read"],"expires_at":"2026-05-06T01:00:00Z","created_at":"2026-05-06T00:00:00Z"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/repos/"+repoID+"/checkout-grants":
 			checkoutKey = r.Header.Get("Idempotency-Key")
 			if err := json.NewDecoder(r.Body).Decode(&checkoutBody); err != nil {
@@ -153,7 +153,7 @@ func TestSourceMutationsUsePublicAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"workflow_run_id":"` + workflowRunID + `","org_id":"370200542594579812","project_id":"` + projectID + `","repo_id":"` + repoID + `","actor_id":"user_1","backend":"forgejo","workflow_path":".github/workflows/build.yml","ref":"main","inputs":{"target":"linux"},"state":"queued","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"workflow_run_id":"` + workflowRunID + `","org_id":"org_00000000000000000000000000","project_id":"` + projectID + `","repo_id":"` + repoID + `","actor_id":"user_1","backend":"forgejo","workflow_path":".github/workflows/build.yml","ref":"main","inputs":{"target":"linux"},"state":"queued","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}

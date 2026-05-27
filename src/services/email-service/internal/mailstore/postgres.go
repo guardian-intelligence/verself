@@ -131,14 +131,14 @@ func (s *Store) ProvisionAddress(ctx context.Context, spec ProvisionedAddress) e
 				IdentityID: spec.IdentityID,
 				SubjectID:  subjectID,
 				Role:       spec.MembershipRole,
-				GrantedBy:  firstNonEmpty(spec.SendAsGrantedBy, "system:platform-seed"),
+				GrantedBy:  firstNonEmpty(spec.SendAsGrantedBy, "system:company-seed"),
 			}); err != nil {
 				return err
 			}
 			if err := q.UpsertSendAsGrant(ctx, dbstore.UpsertSendAsGrantParams{
 				Address:   address,
 				SubjectID: subjectID,
-				GrantedBy: firstNonEmpty(spec.SendAsGrantedBy, "system:platform-seed"),
+				GrantedBy: firstNonEmpty(spec.SendAsGrantedBy, "system:company-seed"),
 			}); err != nil {
 				return err
 			}

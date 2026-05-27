@@ -36,7 +36,7 @@ job "secrets-service" {
         SECRETS_OPENBAO_SPIFFE_JWT_PREFIX = "spiffe-jwt"
         SECRETS_OPENBAO_TRANSIT_PREFIX = "transit"
         SECRETS_OPENBAO_WORKLOAD_AUDIENCE = "openbao"
-        SECRETS_PLATFORM_ORG_ID = "371564185181576922"
+        SECRETS_RUNTIME_SECRET_NAMESPACE = "runtime"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "https://verself.sh"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/secrets-service/auth-audience"

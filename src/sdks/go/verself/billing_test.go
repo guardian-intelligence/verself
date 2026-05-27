@@ -21,7 +21,7 @@ func TestBillingUsesPublicAPI(t *testing.T) {
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/entitlements":
-			_, _ = w.Write([]byte(`{"org_id":"370200542594579812","universal":{"scope_type":"account","product_id":"","product_display":"","bucket_id":"","bucket_display":"","sku_id":"","sku_display":"","coverage_label":"Account","available_units":"100","pending_units":"0","period_start_units":"100","spent_units":"0","sources":[]},"products":[]}`))
+			_, _ = w.Write([]byte(`{"org_id":"org_00000000000000000000000000","universal":{"scope_type":"account","product_id":"","product_display":"","bucket_id":"","bucket_display":"","sku_id":"","sku_display":"","coverage_label":"Account","available_units":"100","pending_units":"0","period_start_units":"100","spent_units":"0","sources":[]},"products":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/grants":
 			if r.URL.Query().Get("product_id") != "sandbox" || r.URL.Query().Get("active") != "true" {
 				t.Fatalf("grants query = %s", r.URL.RawQuery)
@@ -43,7 +43,7 @@ func TestBillingUsesPublicAPI(t *testing.T) {
 			if r.URL.Query().Get("product_id") != "sandbox" {
 				t.Fatalf("statement query = %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"org_id":"370200542594579812","product_id":"sandbox","period_source":"current","period_start":"2026-05-01T00:00:00Z","period_end":"2026-06-01T00:00:00Z","generated_at":"2026-05-06T00:00:00Z","currency":"USD","unit_label":"credits","totals":{"reserved_units":"0","contract_units":"100","free_tier_units":"0","promo_units":"0","purchase_units":"0","receivable_units":"0","refund_units":"0","charge_units":"5","total_due_units":"0"},"grant_summaries":[],"line_items":[]}`))
+			_, _ = w.Write([]byte(`{"org_id":"org_00000000000000000000000000","product_id":"sandbox","period_source":"current","period_start":"2026-05-01T00:00:00Z","period_end":"2026-06-01T00:00:00Z","generated_at":"2026-05-06T00:00:00Z","currency":"USD","unit_label":"credits","totals":{"reserved_units":"0","contract_units":"100","free_tier_units":"0","promo_units":"0","purchase_units":"0","receivable_units":"0","refund_units":"0","charge_units":"5","total_due_units":"0"},"grant_summaries":[],"line_items":[]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/checkout":
 			checkoutKey = r.Header.Get("Idempotency-Key")
 			_, _ = w.Write([]byte(`{"url":"https://billing.example.test/checkout"}`))

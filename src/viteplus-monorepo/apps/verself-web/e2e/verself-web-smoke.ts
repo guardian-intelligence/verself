@@ -241,7 +241,7 @@ async function thenTheLoginFormIsPasswordManagerReady(page: Page): Promise<void>
   await page.getByLabel("Password", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Sign in" }).waitFor();
   await page.getByRole("link", { name: "Forgot password?" }).waitFor();
-  await waitForEnabledButton(page, "Sign in");
+  await waitForReadyButton(page, "Sign in");
 }
 
 async function thenTheLoginFormSurfacesSubmitValidation(page: Page): Promise<void> {
@@ -251,7 +251,7 @@ async function thenTheLoginFormSurfacesSubmitValidation(page: Page): Promise<voi
   const password = page.getByLabel("Password", { exact: true });
   await password.focus();
   await password.blur();
-  await expectButtonEnabled(page, "Sign in");
+  await waitForReadyButton(page, "Sign in");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByText("Enter a valid email address.").waitFor();
 }
@@ -263,7 +263,7 @@ async function whenTheVisitorSignsInWithIncorrectCredentials(page: Page): Promis
   const password = page.getByLabel("Password", { exact: true });
   await password.fill("not the right password");
   await password.blur();
-  await waitForEnabledButton(page, "Sign in");
+  await waitForReadyButton(page, "Sign in");
   await page.getByRole("button", { name: "Sign in" }).click();
 }
 
@@ -303,14 +303,14 @@ async function thenTheForgotPasswordFlowIsEmailOnly(page: Page): Promise<void> {
   await page.getByRole("heading", { name: "Reset password" }).waitFor();
   await page.getByLabel("Email").waitFor();
   await page.getByRole("button", { name: "Send reset email" }).waitFor();
-  await waitForEnabledButton(page, "Send reset email");
+  await waitForReadyButton(page, "Send reset email");
 }
 
 async function thenTheForgotPasswordFormSurfacesSubmitValidation(page: Page): Promise<void> {
   const email = page.getByLabel("Email");
   await email.fill("invalid");
   await email.blur();
-  await expectButtonEnabled(page, "Send reset email");
+  await waitForReadyButton(page, "Send reset email");
   await page.getByRole("button", { name: "Send reset email" }).click();
   await page.getByText("Enter a valid email address.").waitFor();
 }
@@ -325,7 +325,7 @@ async function thenTheSignupFlowCollectsOrganizationIdentity(page: Page): Promis
   await page.getByLabel("Organization name").waitFor();
   await page.getByText("verself.sh/").waitFor();
   await page.getByRole("button", { name: "Create account" }).waitFor();
-  await waitForEnabledButton(page, "Create account");
+  await waitForReadyButton(page, "Create account");
 }
 
 async function thenTheSignupFormSurfacesSubmitValidation(page: Page): Promise<void> {
@@ -335,7 +335,7 @@ async function thenTheSignupFormSurfacesSubmitValidation(page: Page): Promise<vo
   const organization = page.getByLabel("Organization name");
   await organization.focus();
   await organization.blur();
-  await expectButtonEnabled(page, "Create account");
+  await waitForReadyButton(page, "Create account");
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByText("Enter a valid email address.").waitFor();
 }
@@ -357,11 +357,11 @@ async function thenTheResetFlowOffersFreshRecovery(page: Page): Promise<void> {
 
 async function thenTheResetFormSurfacesPasswordConfirmationValidation(page: Page): Promise<void> {
   await page.getByRole("heading", { name: "Set password" }).waitFor();
-  await waitForEnabledButton(page, "Save password");
+  await waitForReadyButton(page, "Save password");
   await page.getByLabel("New password").fill("correct horse battery staple");
   await page.getByLabel("Confirm password").fill("wrong passphrase value");
   await page.getByLabel("Confirm password").blur();
-  await expectButtonEnabled(page, "Save password");
+  await waitForReadyButton(page, "Save password");
   await page.getByRole("button", { name: "Save password" }).click();
   await page.getByText("Passwords do not match.").waitFor();
 }
@@ -383,35 +383,27 @@ async function thenTheDeviceCodeIsPrefilled(page: Page, userCode: string): Promi
     );
   }
   await page.getByRole("button", { name: "Continue" }).waitFor();
-  await waitForEnabledButton(page, "Continue");
+  await waitForReadyButton(page, "Continue");
 }
 
 async function thenTheDeviceCodeFormSurfacesSubmitValidation(page: Page): Promise<void> {
   const input = page.getByLabel("Device code");
   await input.fill("x");
   await input.blur();
-  await expectButtonEnabled(page, "Continue");
+  await waitForReadyButton(page, "Continue");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByText("Enter the device code from your terminal.").waitFor();
 }
 
-async function waitForEnabledButton(page: Page, name: string): Promise<void> {
+async function waitForReadyButton(page: Page, name: string): Promise<void> {
   const button = page.getByRole("button", { name });
   await button.waitFor();
   const started = performance.now();
-  while (await button.isDisabled()) {
+  while ((await button.getAttribute("aria-busy")) === "true") {
     if (performance.now() - started > assertionTimeoutMs) {
-      throw new Error(`${name} button did not hydrate into an enabled state`);
+      throw new Error(`${name} button stayed busy`);
     }
     await page.waitForTimeout(50);
-  }
-}
-
-async function expectButtonEnabled(page: Page, name: string): Promise<void> {
-  const button = page.getByRole("button", { name });
-  await button.waitFor();
-  if (await button.isDisabled()) {
-    throw new Error(`${name} button is disabled`);
   }
 }
 

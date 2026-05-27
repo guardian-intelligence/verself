@@ -23,15 +23,15 @@ func TestCrossServiceFailureWorkflow(t *testing.T) {
 		StatusMessage:    "context deadline exceeded",
 		Duration:         5001 * time.Millisecond,
 	}
-	workflow := crossServiceFailureWorkflow(PlatformAlertConfig{
-		OrgID: "371564185181576922",
+	workflow := crossServiceFailureWorkflow(OperationsAlertConfig{
+		OrgID: "org_B7HWGKW0SH7G4EXW9XT8TCT60C",
 		Email: "alerts@example.com",
 	}, failure)
 
 	if workflow.WorkflowKey != crossServiceFailureWorkflowKey {
 		t.Fatalf("workflow key = %q", workflow.WorkflowKey)
 	}
-	if !strings.HasPrefix(workflow.IdempotencyKey, "platform:cross_service_call_failed:") {
+	if !strings.HasPrefix(workflow.IdempotencyKey, "operations:cross_service_call_failed:") {
 		t.Fatalf("idempotency key = %q", workflow.IdempotencyKey)
 	}
 	if len(workflow.IdempotencyKey) > 128 {
@@ -72,7 +72,7 @@ func TestCacheMissWorkflowDurableCache(t *testing.T) {
 	miss := cacheMissAlert{
 		Timestamp:            time.Date(2026, 5, 26, 18, 15, 0, 0, time.UTC),
 		Kind:                 "durable_cache",
-		OrgID:                "371564185181576922",
+		OrgID:                "org_B7HWGKW0SH7G4EXW9XT8TCT60C",
 		Provider:             "github",
 		ProviderRepositoryID: 922337,
 		ProviderRunID:        4567,
@@ -89,15 +89,15 @@ func TestCacheMissWorkflowDurableCache(t *testing.T) {
 		SpanID:               "87a61a258bec6599",
 	}
 
-	workflow := cacheMissWorkflow(PlatformAlertConfig{
-		OrgID: "371564185181576922",
+	workflow := cacheMissWorkflow(OperationsAlertConfig{
+		OrgID: "org_B7HWGKW0SH7G4EXW9XT8TCT60C",
 		Email: "alerts@example.com",
 	}, miss)
 
 	if workflow.WorkflowKey != durableCacheMissWorkflowKey {
 		t.Fatalf("workflow key = %q", workflow.WorkflowKey)
 	}
-	if !strings.HasPrefix(workflow.IdempotencyKey, "platform:cache_miss:") {
+	if !strings.HasPrefix(workflow.IdempotencyKey, "operations:cache_miss:") {
 		t.Fatalf("idempotency key = %q", workflow.IdempotencyKey)
 	}
 	if len(workflow.IdempotencyKey) > 128 {
@@ -127,7 +127,7 @@ func TestCacheMissWorkflowFirecrackerSnapshotVM(t *testing.T) {
 	miss := cacheMissAlert{
 		Timestamp:               time.Date(2026, 5, 26, 18, 20, 0, 0, time.UTC),
 		Kind:                    "firecracker_snapshot_vm",
-		OrgID:                   "371564185181576922",
+		OrgID:                   "org_B7HWGKW0SH7G4EXW9XT8TCT60C",
 		Provider:                "github",
 		ProviderRepositoryID:    922337,
 		ProviderRunID:           4568,
@@ -141,8 +141,8 @@ func TestCacheMissWorkflowFirecrackerSnapshotVM(t *testing.T) {
 		SourceGenerationSetHash: "source-generation-set",
 	}
 
-	workflow := cacheMissWorkflow(PlatformAlertConfig{
-		OrgID: "371564185181576922",
+	workflow := cacheMissWorkflow(OperationsAlertConfig{
+		OrgID: "org_B7HWGKW0SH7G4EXW9XT8TCT60C",
 		Email: "alerts@example.com",
 	}, miss)
 

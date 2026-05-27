@@ -1,34 +1,11 @@
-"""aspect operator — operator-side platform helpers.
+"""aspect operator — operator-side operations helpers.
 
-  aspect operator platform --action=check|seed [--format=text|json]
   aspect operator device [--site=prod]
 
 The implementation lives in src/tools/operator/cmd/aspect-operator.
 """
 
 load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "ws_path")
-
-def _platform_impl(ctx):
-    action = ctx.args.action or "check"
-    if action != "check" and action != "seed":
-        ctx.std.io.stderr.write("ERROR: --action must be check or seed\n")
-        return 1
-    fmt = ctx.args.format or "text"
-    if fmt != "text" and fmt != "json":
-        ctx.std.io.stderr.write("ERROR: --format must be text or json\n")
-        return 1
-    cli_args = [
-        "platform",
-        "--action",
-        action,
-        "--repo-root",
-        ws_path(ctx),
-        "--site",
-        ctx.args.site or "prod",
-        "--format",
-        fmt,
-    ]
-    return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator platform " + action)
 
 def _device_impl(ctx):
     site = ctx.args.site or "prod"
@@ -63,18 +40,6 @@ device = task(
         "force": args.boolean(default = False, description = "Overwrite an existing different site inventory."),
         "dry_run": args.boolean(default = False, description = "Print the derived inventory and summary without writing files."),
         "generate_key": args.boolean(default = True, description = "Generate ~/.ssh/id_ed25519 when no default SSH key exists."),
-    },
-)
-
-platform = task(
-    implementation = _platform_impl,
-    name = "platform",
-    group = ["operator"],
-    summary = "Check or seed the dogfooded platform organization and source repository.",
-    args = {
-        "action": args.string(default = "check", description = "check | seed."),
-        "site": args.string(default = "prod", description = "Deployment site."),
-        "format": args.string(default = "text", description = "Output format: text | json."),
     },
 )
 

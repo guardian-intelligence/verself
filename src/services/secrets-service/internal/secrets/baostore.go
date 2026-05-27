@@ -36,7 +36,7 @@ const (
 
 	openBaoRoleInjection = "secrets-injection"
 
-	transitMetadataKind = "_platform"
+	transitMetadataKind = "_transit_metadata"
 	transitMetadataRoot = "transit"
 )
 
@@ -227,7 +227,8 @@ func (s *BaoStore) PutSecret(ctx context.Context, principal Principal, req PutSe
 	if err != nil {
 		return SecretRecord{}, err
 	}
-	mount := s.kvMount(principal.OrgID)
+	namespace := principal.storageNamespace()
+	mount := s.kvMount(namespace)
 	recordOpenBaoAuditInfo(ctx, mount, "", entry.accessorHash, 0)
 	path := secretPath(req.Kind, req.Name, req.Scope)
 	now := time.Now().UTC()
@@ -241,7 +242,7 @@ func (s *BaoStore) PutSecret(ctx context.Context, principal Principal, req PutSe
 	}
 	document := map[string]any{
 		"secret_id":   secretID,
-		"org_id":      principal.OrgID,
+		"org_id":      namespace,
 		"kind":        req.Kind,
 		"name":        req.Name,
 		"scope_level": req.Scope.Level,
@@ -262,7 +263,7 @@ func (s *BaoStore) PutSecret(ctx context.Context, principal Principal, req PutSe
 	}
 	return SecretRecord{
 		SecretID:       secretID,
-		OrgID:          principal.OrgID,
+		OrgID:          namespace,
 		Kind:           req.Kind,
 		Name:           req.Name,
 		Scope:          req.Scope,
@@ -293,7 +294,7 @@ func (s *BaoStore) ReadSecret(ctx context.Context, principal Principal, kind, na
 	if err != nil {
 		return SecretValue{}, err
 	}
-	recordOpenBaoAuditInfo(ctx, s.kvMount(principal.OrgID), "", entry.accessorHash, 0)
+	recordOpenBaoAuditInfo(ctx, s.kvMount(principal.storageNamespace()), "", entry.accessorHash, 0)
 	for _, candidate := range candidates {
 		value, err := s.readExactSecret(ctx, entry, principal, kind, name, candidate)
 		if errors.Is(err, ErrNotFound) {
@@ -330,7 +331,7 @@ func (s *BaoStore) ListSecrets(ctx context.Context, principal Principal, kind st
 	if err != nil {
 		return nil, err
 	}
-	mount := s.kvMount(principal.OrgID)
+	mount := s.kvMount(principal.storageNamespace())
 	recordOpenBaoAuditInfo(ctx, mount, "", entry.accessorHash, 0)
 	paths, err := s.listSecretPaths(ctx, entry, mount, []string{kind})
 	if err != nil {
@@ -384,7 +385,7 @@ func (s *BaoStore) DeleteSecret(ctx context.Context, principal Principal, kind, 
 	if err != nil {
 		return SecretRecord{}, err
 	}
-	mount := s.kvMount(principal.OrgID)
+	mount := s.kvMount(principal.storageNamespace())
 	recordOpenBaoAuditInfo(ctx, mount, "", entry.accessorHash, 0)
 	if _, _, err := s.doBao(ctx, "secrets.bao.kv.delete", http.MethodDelete, mount, "metadata", secretPath(kind, name, scope), entry, nil, http.StatusNoContent); err != nil {
 		return SecretRecord{}, err
@@ -409,8 +410,9 @@ func (s *BaoStore) CreateTransitKey(ctx context.Context, principal Principal, na
 	} else if !errors.Is(err, ErrNotFound) {
 		return TransitKey{}, err
 	}
-	meta := newTransitMetadata(principal.OrgID, name)
-	mount := s.transitMount(principal.OrgID)
+	namespace := principal.storageNamespace()
+	meta := newTransitMetadata(namespace, name)
+	mount := s.transitMount(namespace)
 	recordOpenBaoAuditInfo(ctx, mount, "", entry.accessorHash, 0)
 	if _, _, err := s.doBao(ctx, "secrets.bao.transit.create", http.MethodPost, mount, "keys", []string{meta.EncryptionKey}, entry, map[string]any{"type": "aes256-gcm96"}, http.StatusNoContent, http.StatusOK); err != nil {
 		return TransitKey{}, err
@@ -463,7 +465,7 @@ func (s *BaoStore) RotateTransitKey(ctx context.Context, principal Principal, na
 	if err != nil {
 		return TransitKey{}, err
 	}
-	mount := s.transitMount(principal.OrgID)
+	mount := s.transitMount(principal.storageNamespace())
 	recordOpenBaoAuditInfo(ctx, mount, "", entry.accessorHash, 0)
 	if _, _, err := s.doBao(ctx, "secrets.bao.transit.rotate", http.MethodPost, mount, "keys", []string{meta.EncryptionKey, "rotate"}, entry, nil, http.StatusNoContent, http.StatusOK); err != nil {
 		return TransitKey{}, err
@@ -484,7 +486,7 @@ func (s *BaoStore) TransitEncrypt(ctx context.Context, principal Principal, name
 	if err != nil {
 		return TransitCiphertext{}, TransitKey{}, err
 	}
-	mount := s.transitMount(principal.OrgID)
+	mount := s.transitMount(principal.storageNamespace())
 	body := map[string]any{"plaintext": base64.StdEncoding.EncodeToString(plaintext)}
 	response, _, err := s.doBao(ctx, "secrets.bao.transit.encrypt", http.MethodPost, mount, "encrypt", []string{meta.EncryptionKey}, entry, body, http.StatusOK)
 	if err != nil {
@@ -508,7 +510,7 @@ func (s *BaoStore) TransitDecrypt(ctx context.Context, principal Principal, name
 	if encoded == "" {
 		return nil, TransitKey{}, 0, fmt.Errorf("%w: ciphertext is required", ErrInvalidArgument)
 	}
-	mount := s.transitMount(principal.OrgID)
+	mount := s.transitMount(principal.storageNamespace())
 	version := versionFromVaultValue(encoded)
 	response, _, err := s.doBao(ctx, "secrets.bao.transit.decrypt", http.MethodPost, mount, "decrypt", []string{meta.EncryptionKey}, entry, map[string]any{"ciphertext": encoded}, http.StatusOK)
 	if err != nil {
@@ -527,7 +529,7 @@ func (s *BaoStore) TransitSign(ctx context.Context, principal Principal, name st
 	if err != nil {
 		return "", TransitKey{}, 0, err
 	}
-	mount := s.transitMount(principal.OrgID)
+	mount := s.transitMount(principal.storageNamespace())
 	response, _, err := s.doBao(ctx, "secrets.bao.transit.sign", http.MethodPost, mount, "sign", []string{meta.SigningKey}, entry, map[string]any{"input": base64.StdEncoding.EncodeToString(message)}, http.StatusOK)
 	if err != nil {
 		return "", TransitKey{}, 0, err
@@ -550,7 +552,7 @@ func (s *BaoStore) TransitVerify(ctx context.Context, principal Principal, name 
 	if signature == "" {
 		return false, TransitKey{}, fmt.Errorf("%w: signature is required", ErrInvalidArgument)
 	}
-	mount := s.transitMount(principal.OrgID)
+	mount := s.transitMount(principal.storageNamespace())
 	version := versionFromVaultValue(signature)
 	body := map[string]any{
 		"input":     base64.StdEncoding.EncodeToString(message),
@@ -569,7 +571,8 @@ func (s *BaoStore) readExactSecret(ctx context.Context, entry baoTokenEntry, pri
 }
 
 func (s *BaoStore) readKVPath(ctx context.Context, entry baoTokenEntry, principal Principal, path []string) (SecretValue, error) {
-	mount := s.kvMount(principal.OrgID)
+	namespace := principal.storageNamespace()
+	mount := s.kvMount(namespace)
 	recordOpenBaoAuditInfo(ctx, mount, "", entry.accessorHash, 0)
 	response, _, err := s.doBao(ctx, "secrets.bao.kv.get", http.MethodGet, mount, "data", path, entry, nil, http.StatusOK)
 	if err != nil {
@@ -577,7 +580,7 @@ func (s *BaoStore) readKVPath(ctx context.Context, entry baoTokenEntry, principa
 	}
 	data := responseDataMap(response.Data, "data")
 	metadata := responseDataMap(response.Data, "metadata")
-	document, err := secretDocumentFromKV(principal.OrgID, data, metadata)
+	document, err := secretDocumentFromKV(namespace, data, metadata)
 	if err != nil {
 		return SecretValue{}, err
 	}
@@ -657,7 +660,7 @@ func (s *BaoStore) writeTransitMetadata(ctx context.Context, entry baoTokenEntry
 		"created_at":      meta.CreatedAt.Format(time.RFC3339Nano),
 		"updated_at":      meta.UpdatedAt.Format(time.RFC3339Nano),
 	}
-	_, _, err := s.doBao(ctx, "secrets.bao.kv.put", http.MethodPost, s.kvMount(principal.OrgID), "data", path, entry, map[string]any{"data": document}, http.StatusOK, http.StatusNoContent)
+	_, _, err := s.doBao(ctx, "secrets.bao.kv.put", http.MethodPost, s.kvMount(principal.storageNamespace()), "data", path, entry, map[string]any{"data": document}, http.StatusOK, http.StatusNoContent)
 	return err
 }
 
@@ -704,7 +707,7 @@ func (s *BaoStore) transitKeyFromMetadata(ctx context.Context, entry baoTokenEnt
 }
 
 func (s *BaoStore) readSigningKey(ctx context.Context, entry baoTokenEntry, principal Principal, signingKey string) (string, uint64, error) {
-	mount := s.transitMount(principal.OrgID)
+	mount := s.transitMount(principal.storageNamespace())
 	response, _, err := s.doBao(ctx, "secrets.bao.transit.metadata_read", http.MethodGet, mount, "keys", []string{signingKey}, entry, nil, http.StatusOK)
 	if err != nil {
 		return "", 0, err
@@ -730,16 +733,17 @@ func (s *BaoStore) readSigningKey(ctx context.Context, entry baoTokenEntry, prin
 }
 
 func (s *BaoStore) token(ctx context.Context, principal Principal) (baoTokenEntry, error) {
+	namespace := principal.storageNamespace()
 	role := strings.TrimSpace(principal.OpenBaoRole)
 	raw, ok := RawBearerTokenFromContext(ctx)
-	authMount := s.jwtMount(principal.OrgID)
+	authMount := s.jwtMount(namespace)
 	spanName := "secrets.bao.jwt.login"
 	if principal.UseWorkloadSVID {
-		if principal.OrgID == "" {
-			return baoTokenEntry{}, fmt.Errorf("%w: org id is required for workload OpenBao login", ErrForbidden)
+		if namespace == "" {
+			return baoTokenEntry{}, fmt.Errorf("%w: storage namespace is required for workload OpenBao login", ErrForbidden)
 		}
 		if role == "" {
-			role = openBaoRoleInjection + "-" + principal.OrgID
+			role = openBaoRoleInjection + "-" + namespace
 		}
 		if s.workloadJWT == nil || s.workloadJWTAudience == "" {
 			return baoTokenEntry{}, fmt.Errorf("%w: workload JWT-SVID source is not configured", ErrStore)
@@ -765,7 +769,6 @@ func (s *BaoStore) token(ctx context.Context, principal Principal) (baoTokenEntr
 	if role == "" {
 		return baoTokenEntry{}, fmt.Errorf("%w: openbao role is required", ErrForbidden)
 	}
-	namespace := principal.OrgID
 	jwtID := strings.TrimSpace(principal.JWTID)
 	tokenHash := ""
 	if jwtID == "" {
@@ -827,6 +830,7 @@ func (s *BaoStore) tokenCacheSpan(ctx context.Context, namespace, outcome string
 func (s *BaoStore) jwtLogin(ctx context.Context, principal Principal, role string, jwt RawBearerToken, authMount string, spanName string) (baoTokenEntry, error) {
 	ctx, span := tracer.Start(ctx, spanName)
 	defer span.End()
+	namespace := principal.storageNamespace()
 	body := map[string]any{
 		"role": role,
 		"jwt":  strings.TrimPrefix(jwt.AuthorizationHeader(), "Bearer "),
@@ -850,12 +854,13 @@ func (s *BaoStore) jwtLogin(ctx context.Context, principal Principal, role strin
 		expiresAt:    time.Now().Add(lease).Add(-s.cacheSkew),
 	}
 	span.SetAttributes(
-		attribute.String("bao.namespace", principal.OrgID),
+		attribute.String("bao.namespace", namespace),
 		attribute.String("bao.auth_method", firstNonEmpty(strings.TrimPrefix(spanName, "secrets.bao."), "jwt")),
 		attribute.String("bao.role", role),
 		attribute.String("bao.request_id", response.RequestID),
 		attribute.Int("bao.http_status", status),
 		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.secret_namespace", namespace),
 		attribute.String("verself.cache_outcome", "miss"),
 	)
 	recordOpenBaoAuditInfo(ctx, "", response.RequestID, accessorHash, 0)

@@ -27,12 +27,12 @@ openbao_spiffe_jwt_jwks_ca_pem_path: /etc/spire/bundle-endpoint/ca.pem
 openbao_workload_audience: openbao
 openbao_workload_token_ttl: 15m
 openbao_workload_token_max_ttl: 1h
-openbao_runtime_secret_platform_org_id: "{{ secrets_service_platform_org_id }}"
+openbao_runtime_secret_namespace: runtime
 openbao_runtime_secret_kv_mount_prefix: kv
 openbao_runtime_secret_consumer_subject: "{{ (spire_registrations_spiffe_ids | default({}))['secrets_service.default'] | default('spiffe://' ~ spire_trust_domain ~ '/svc/secrets-service') }}"
 openbao_runtime_secret_force: false
 openbao_credential_org_ids:
-  - "{{ secrets_service_platform_org_id }}"
+  - "{{ dogfood_org_id }}"
 openbao_credential_kv_mount_prefix: kv
 openbao_credential_transit_mount_prefix: transit
 openbao_credential_consumer_subject: "{{ (spire_registrations_spiffe_ids | default({}))['secrets_service.default'] | default('spiffe://' ~ spire_trust_domain ~ '/svc/secrets-service') }}"
