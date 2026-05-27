@@ -940,9 +940,13 @@ are reaped unless explicitly pinned by an operator.
 ### Golden VM Retention
 
 Golden VM snapshots are retained as an organization-level ring buffer. Free
-organizations retain one physical snapshot. Paid organizations retain two
-physical snapshots. The ring is intentionally not per job shape; it is a
-capacity product policy for the customer's rebuildable warm-state artifacts.
+organizations retain the active current snapshot for each compatible scope and
+zero superseded snapshots. Pro, default, pay-as-you-go, and metered
+organizations retain up to two superseded snapshots. Enterprise organizations
+retain up to six superseded snapshots. Superseded and unpromoted candidate
+snapshots are retained for at most seven days. The ring is intentionally not
+per job shape; it is a capacity product policy for the customer's rebuildable
+warm-state artifacts.
 
 Invalidated or tombstoned snapshots are eligible for immediate physical
 reaping. Reaping destroys the Firecracker vmstate and memory artifacts and the
