@@ -84,6 +84,17 @@ func TestExtractToolsRequiresBazelisk(t *testing.T) {
 	}
 }
 
+func TestMergeCommandEnvOverridesHome(t *testing.T) {
+	got := mergeCommandEnv([]string{"PATH=/bin", "HOME=/root", "KEEP=1"}, map[string]string{
+		"HOME":           "/tmp/release-home",
+		"XDG_CACHE_HOME": "/tmp/release-cache",
+	})
+	want := []string{"PATH=/bin", "KEEP=1", "HOME=/tmp/release-home", "XDG_CACHE_HOME=/tmp/release-cache"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("merged env = %#v, want %#v", got, want)
+	}
+}
+
 func TestSafeJoinRejectsTraversal(t *testing.T) {
 	for _, name := range []string{"../x", "/tmp/x"} {
 		if _, err := safeJoin("/tmp/root", name); err == nil {
