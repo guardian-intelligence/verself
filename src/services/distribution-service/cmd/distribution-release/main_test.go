@@ -95,6 +95,21 @@ func TestMergeCommandEnvOverridesHome(t *testing.T) {
 	}
 }
 
+func TestReleaseBazelOptionsUseReleaseCache(t *testing.T) {
+	env := map[string]string{"XDG_CACHE_HOME": "/artifacts/releases/work/tool-env/mksk/cache"}
+	if got := releaseBazelStartupOptions(env); strings.Join(got, " ") != "--output_user_root=/artifacts/releases/work/tool-env/mksk/cache/bazel-output" {
+		t.Fatalf("startup options = %#v", got)
+	}
+	got := releaseBazelCommandOptions(env)
+	want := []string{
+		"--disk_cache=/artifacts/releases/work/tool-env/mksk/cache/bazel-disk",
+		"--repository_cache=/artifacts/releases/work/tool-env/mksk/cache/bazel-repo",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("command options = %#v, want %#v", got, want)
+	}
+}
+
 func TestSafeJoinRejectsTraversal(t *testing.T) {
 	for _, name := range []string{"../x", "/tmp/x"} {
 		if _, err := safeJoin("/tmp/root", name); err == nil {
