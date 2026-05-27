@@ -237,26 +237,30 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 	if err != nil {
 		return err
 	}
+	bazelStartupOptions := releaseBazelStartupOptions(toolEnv)
+	bazelCommandOptions := releaseBazelCommandOptions(toolEnv)
 	started := time.Now().UTC()
 	bazelReleaseVersionFlag := rustReleaseVersionFlag(version)
-	testArgs := []string{
-		"test",
+	testArgs := append([]string{}, bazelStartupOptions...)
+	testArgs = append(testArgs, "test")
+	testArgs = append(testArgs, bazelCommandOptions...)
+	testArgs = append(testArgs,
 		bazelReleaseVersionFlag,
 		"//src/make-skill:core_test",
 		"//src/make-skill:exec_test",
 		"//src/make-skill:cli_test",
-	}
+	)
 	if _, err := runCommandWithEnv(ctx, source.root, bazelisk, toolEnv, testArgs...); err != nil {
 		return err
 	}
-	mkskBinary, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, mkskBinaryTarget, bazelReleaseVersionFlag)
+	mkskBinary, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, bazelStartupOptions, bazelCommandOptions, mkskBinaryTarget, bazelReleaseVersionFlag)
 	if err != nil {
 		return err
 	}
 	if err := verifyMkskVersion(ctx, mkskBinary, version); err != nil {
 		return err
 	}
-	releaseTar, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, mkskReleaseTar, bazelReleaseVersionFlag)
+	releaseTar, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, bazelStartupOptions, bazelCommandOptions, mkskReleaseTar, bazelReleaseVersionFlag)
 	if err != nil {
 		return err
 	}
@@ -612,13 +616,20 @@ func gitOutput(ctx context.Context, repoRoot string, args ...string) (string, er
 	return strings.TrimSpace(result.stdout), nil
 }
 
-func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[string]string, target string, buildOptions ...string) (string, error) {
-	buildArgs := append([]string{"build"}, buildOptions...)
+func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[string]string, startupOptions []string, commandOptions []string, target string, buildOptions ...string) (string, error) {
+	buildArgs := append([]string{}, startupOptions...)
+	buildArgs = append(buildArgs, "build")
+	buildArgs = append(buildArgs, commandOptions...)
+	buildArgs = append(buildArgs, buildOptions...)
 	buildArgs = append(buildArgs, target)
 	if _, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, buildArgs...); err != nil {
 		return "", err
 	}
-	cqueryArgs := append([]string{"cquery", "--output=files"}, buildOptions...)
+	cqueryArgs := append([]string{}, startupOptions...)
+	cqueryArgs = append(cqueryArgs, "cquery")
+	cqueryArgs = append(cqueryArgs, commandOptions...)
+	cqueryArgs = append(cqueryArgs, "--output=files")
+	cqueryArgs = append(cqueryArgs, buildOptions...)
 	cqueryArgs = append(cqueryArgs, target)
 	files, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, cqueryArgs...)
 	if err != nil {
@@ -628,7 +639,11 @@ func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[str
 	if len(lines) != 1 {
 		return "", fmt.Errorf("expected one output for %s, got %d", target, len(lines))
 	}
-	execroot, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, "info", "execution_root")
+	infoArgs := append([]string{}, startupOptions...)
+	infoArgs = append(infoArgs, "info")
+	infoArgs = append(infoArgs, commandOptions...)
+	infoArgs = append(infoArgs, "execution_root")
+	execroot, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, infoArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -684,6 +699,17 @@ func releaseToolEnv(outRoot, channel, version, sourceCommit string) (map[string]
 		}
 	}
 	return dirs, nil
+}
+
+func releaseBazelStartupOptions(env map[string]string) []string {
+	return []string{"--output_user_root=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-output")}
+}
+
+func releaseBazelCommandOptions(env map[string]string) []string {
+	return []string{
+		"--disk_cache=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-disk"),
+		"--repository_cache=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-repo"),
+	}
 }
 
 func mergeCommandEnv(base []string, overrides map[string]string) []string {
