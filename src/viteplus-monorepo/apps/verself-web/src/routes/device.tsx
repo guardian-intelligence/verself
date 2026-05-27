@@ -162,6 +162,7 @@ function DeviceLoginPage() {
           </div>
           {!lookup.result ? (
             <form
+              noValidate
               onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();

@@ -195,7 +195,7 @@ async function runAuthProductScenario(page: Page): Promise<number> {
   await givenTheVisitorCanOpenTheAuthShell(page);
   visited += 1;
   await thenTheLoginFormIsPasswordManagerReady(page);
-  await thenTheLoginFormUsesBlurValidation(page);
+  await thenTheLoginFormSurfacesSubmitValidation(page);
 
   await givenTheVisitorCanOpenTheAuthShell(page);
   await whenTheVisitorSignsInWithIncorrectCredentials(page);
@@ -208,12 +208,12 @@ async function runAuthProductScenario(page: Page): Promise<number> {
   await whenTheVisitorStartsPasswordRecovery(page);
   visited += 1;
   await thenTheForgotPasswordFlowIsEmailOnly(page);
-  await thenTheForgotPasswordFormUsesBlurValidation(page);
+  await thenTheForgotPasswordFormSurfacesSubmitValidation(page);
 
   await whenTheVisitorStartsSignup(page);
   visited += 1;
   await thenTheSignupFlowCollectsOrganizationIdentity(page);
-  await thenTheSignupFormUsesSchemaValidation(page);
+  await thenTheSignupFormSurfacesSubmitValidation(page);
 
   await whenTheVisitorOpensAResetLinkWithoutToken(page);
   visited += 1;
@@ -221,12 +221,12 @@ async function runAuthProductScenario(page: Page): Promise<number> {
 
   await whenTheVisitorOpensAResetLinkWithToken(page);
   visited += 1;
-  await thenTheResetFormValidatesPasswordConfirmation(page);
+  await thenTheResetFormSurfacesPasswordConfirmationValidation(page);
 
   await whenTheVisitorOpensADeviceCodeLink(page, "VERS-ELF1");
   visited += 1;
   await thenTheDeviceCodeIsPrefilled(page, "VERS-ELF1");
-  await thenTheDeviceCodeFormUsesBlurValidation(page);
+  await thenTheDeviceCodeFormSurfacesSubmitValidation(page);
 
   return visited;
 }
@@ -244,18 +244,16 @@ async function thenTheLoginFormIsPasswordManagerReady(page: Page): Promise<void>
   await waitForEnabledButton(page, "Sign in");
 }
 
-async function thenTheLoginFormUsesBlurValidation(page: Page): Promise<void> {
+async function thenTheLoginFormSurfacesSubmitValidation(page: Page): Promise<void> {
   const email = page.getByLabel("Email");
   await email.fill("not-an-email");
   await email.blur();
-  await page.getByText("Enter a valid email address.").waitFor();
   const password = page.getByLabel("Password", { exact: true });
   await password.focus();
   await password.blur();
-  await page.getByText("Password is required.").waitFor();
-  if (!(await page.getByRole("button", { name: "Sign in" }).isDisabled())) {
-    throw new Error("invalid login form left Sign in enabled");
-  }
+  await expectButtonEnabled(page, "Sign in");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByText("Enter a valid email address.").waitFor();
 }
 
 async function whenTheVisitorSignsInWithIncorrectCredentials(page: Page): Promise<void> {
@@ -308,14 +306,13 @@ async function thenTheForgotPasswordFlowIsEmailOnly(page: Page): Promise<void> {
   await waitForEnabledButton(page, "Send reset email");
 }
 
-async function thenTheForgotPasswordFormUsesBlurValidation(page: Page): Promise<void> {
+async function thenTheForgotPasswordFormSurfacesSubmitValidation(page: Page): Promise<void> {
   const email = page.getByLabel("Email");
   await email.fill("invalid");
   await email.blur();
+  await expectButtonEnabled(page, "Send reset email");
+  await page.getByRole("button", { name: "Send reset email" }).click();
   await page.getByText("Enter a valid email address.").waitFor();
-  if (!(await page.getByRole("button", { name: "Send reset email" }).isDisabled())) {
-    throw new Error("invalid forgot-password form left Send reset email enabled");
-  }
 }
 
 async function whenTheVisitorStartsSignup(page: Page): Promise<void> {
@@ -331,18 +328,16 @@ async function thenTheSignupFlowCollectsOrganizationIdentity(page: Page): Promis
   await waitForEnabledButton(page, "Create account");
 }
 
-async function thenTheSignupFormUsesSchemaValidation(page: Page): Promise<void> {
+async function thenTheSignupFormSurfacesSubmitValidation(page: Page): Promise<void> {
   const email = page.getByLabel("Email");
   await email.fill("not-an-email");
   await email.blur();
-  await page.getByText("Enter a valid email address.").waitFor();
   const organization = page.getByLabel("Organization name");
   await organization.focus();
   await organization.blur();
-  await page.getByText("Organization name is required.").waitFor();
-  if (!(await page.getByRole("button", { name: "Create account" }).isDisabled())) {
-    throw new Error("invalid signup form left Create account enabled");
-  }
+  await expectButtonEnabled(page, "Create account");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByText("Enter a valid email address.").waitFor();
 }
 
 async function whenTheVisitorOpensAResetLinkWithoutToken(page: Page): Promise<void> {
@@ -360,16 +355,15 @@ async function thenTheResetFlowOffersFreshRecovery(page: Page): Promise<void> {
   await page.getByRole("link", { name: "Request a new reset email" }).waitFor();
 }
 
-async function thenTheResetFormValidatesPasswordConfirmation(page: Page): Promise<void> {
+async function thenTheResetFormSurfacesPasswordConfirmationValidation(page: Page): Promise<void> {
   await page.getByRole("heading", { name: "Set password" }).waitFor();
   await waitForEnabledButton(page, "Save password");
   await page.getByLabel("New password").fill("correct horse battery staple");
   await page.getByLabel("Confirm password").fill("wrong passphrase value");
   await page.getByLabel("Confirm password").blur();
+  await expectButtonEnabled(page, "Save password");
+  await page.getByRole("button", { name: "Save password" }).click();
   await page.getByText("Passwords do not match.").waitFor();
-  if (!(await page.getByRole("button", { name: "Save password" }).isDisabled())) {
-    throw new Error("invalid reset form left Save password enabled");
-  }
 }
 
 async function whenTheVisitorOpensADeviceCodeLink(page: Page, userCode: string): Promise<void> {
@@ -392,14 +386,13 @@ async function thenTheDeviceCodeIsPrefilled(page: Page, userCode: string): Promi
   await waitForEnabledButton(page, "Continue");
 }
 
-async function thenTheDeviceCodeFormUsesBlurValidation(page: Page): Promise<void> {
+async function thenTheDeviceCodeFormSurfacesSubmitValidation(page: Page): Promise<void> {
   const input = page.getByLabel("Device code");
   await input.fill("x");
   await input.blur();
+  await expectButtonEnabled(page, "Continue");
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.getByText("Enter the device code from your terminal.").waitFor();
-  if (!(await page.getByRole("button", { name: "Continue" }).isDisabled())) {
-    throw new Error("invalid device form left Continue enabled");
-  }
 }
 
 async function waitForEnabledButton(page: Page, name: string): Promise<void> {
@@ -411,6 +404,14 @@ async function waitForEnabledButton(page: Page, name: string): Promise<void> {
       throw new Error(`${name} button did not hydrate into an enabled state`);
     }
     await page.waitForTimeout(50);
+  }
+}
+
+async function expectButtonEnabled(page: Page, name: string): Promise<void> {
+  const button = page.getByRole("button", { name });
+  await button.waitFor();
+  if (await button.isDisabled()) {
+    throw new Error(`${name} button is disabled`);
   }
 }
 

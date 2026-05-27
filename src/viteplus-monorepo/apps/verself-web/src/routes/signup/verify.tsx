@@ -167,6 +167,7 @@ function SignupVerificationPage() {
           </ModeLink>
         </div>
         <form
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             event.stopPropagation();

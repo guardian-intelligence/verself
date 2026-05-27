@@ -109,6 +109,7 @@ function ResetPasswordPage() {
           </div>
           {search.user_id && search.verification_code ? (
             <form
+              noValidate
               onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();

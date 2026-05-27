@@ -96,6 +96,7 @@ function OnboardingPage() {
               </SectionHeaderContent>
             </SectionHeader>
             <form
+              noValidate
               onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
