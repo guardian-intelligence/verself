@@ -110,6 +110,60 @@ func TestReleaseBazelOptionsUseReleaseCache(t *testing.T) {
 	}
 }
 
+func TestReleaseRustToolsBinDir(t *testing.T) {
+	execroot := t.TempDir()
+	bin := filepath.Join(execroot, "external", rulesRustToolsRepo, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"cargo", "rustc"} {
+		if err := os.WriteFile(filepath.Join(bin, tool), nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := releaseRustToolsBinDir(execroot)
+	if err != nil {
+		t.Fatalf("releaseRustToolsBinDir() error = %v", err)
+	}
+	if got != bin {
+		t.Fatalf("releaseRustToolsBinDir() = %q, want %q", got, bin)
+	}
+}
+
+func TestReleaseRustToolsBinDirRequiresRustc(t *testing.T) {
+	execroot := t.TempDir()
+	bin := filepath.Join(execroot, "external", rulesRustToolsRepo, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "cargo"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := releaseRustToolsBinDir(execroot)
+	if err == nil {
+		t.Fatal("releaseRustToolsBinDir() error = nil, want missing rustc error")
+	}
+	if !strings.Contains(err.Error(), "rustc") {
+		t.Fatalf("releaseRustToolsBinDir() error = %v, want rustc detail", err)
+	}
+}
+
+func TestCommandEnvWithPrependedPath(t *testing.T) {
+	got := commandEnvWithPrependedPath(map[string]string{
+		"HOME": "/tmp/home",
+		"PATH": "/usr/bin",
+	}, "/opt/release/bin", "/opt/rust/bin")
+	wantPath := strings.Join([]string{"/opt/release/bin", "/opt/rust/bin", "/usr/bin"}, string(os.PathListSeparator))
+	if got["PATH"] != wantPath {
+		t.Fatalf("PATH = %q, want %q", got["PATH"], wantPath)
+	}
+	if got["HOME"] != "/tmp/home" {
+		t.Fatalf("HOME = %q", got["HOME"])
+	}
+}
+
 func TestSafeJoinRejectsTraversal(t *testing.T) {
 	for _, name := range []string{"../x", "/tmp/x"} {
 		if _, err := safeJoin("/tmp/root", name); err == nil {
