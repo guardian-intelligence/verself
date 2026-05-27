@@ -12,10 +12,12 @@ import (
 
 const (
 	crossServiceFailureWorkflowKey = "platform.cross_service_call.failed"
-	crossServiceFailureActor       = "system:platform-alerts"
+	durableCacheMissWorkflowKey    = "platform.durable_cache.missed"
+	goldenVMMissWorkflowKey        = "platform.firecracker_snapshot_vm.missed"
+	platformAlertActor             = "system:platform-alerts"
 )
 
-type CrossServiceFailureAlertConfig struct {
+type PlatformAlertConfig struct {
 	OrgID    string
 	Email    string
 	Lookback time.Duration
@@ -39,8 +41,30 @@ type crossServiceFailure struct {
 	Duration         time.Duration
 }
 
-func (s *Service) AlertCrossServiceFailures(ctx context.Context, cfg CrossServiceFailureAlertConfig) (int, error) {
-	cfg, err := normalizeCrossServiceFailureAlertConfig(cfg)
+type cacheMissAlert struct {
+	Timestamp               time.Time
+	Kind                    string
+	OrgID                   string
+	Provider                string
+	ProviderRepositoryID    uint64
+	ProviderRunID           uint64
+	ProviderRunAttempt      uint64
+	ProviderJobID           uint64
+	ExecutionID             string
+	AttemptID               string
+	OperationID             string
+	CacheName               string
+	EventName               string
+	Result                  string
+	Reason                  string
+	JobShapeID              string
+	SourceGenerationSetHash string
+	TraceID                 string
+	SpanID                  string
+}
+
+func (s *Service) AlertCrossServiceFailures(ctx context.Context, cfg PlatformAlertConfig) (int, error) {
+	cfg, err := normalizePlatformAlertConfig(cfg)
 	if err != nil {
 		return 0, err
 	}
@@ -56,7 +80,24 @@ func (s *Service) AlertCrossServiceFailures(ctx context.Context, cfg CrossServic
 	return len(failures), nil
 }
 
-func normalizeCrossServiceFailureAlertConfig(cfg CrossServiceFailureAlertConfig) (CrossServiceFailureAlertConfig, error) {
+func (s *Service) AlertCacheMisses(ctx context.Context, cfg PlatformAlertConfig) (int, error) {
+	cfg, err := normalizePlatformAlertConfig(cfg)
+	if err != nil {
+		return 0, err
+	}
+	misses, err := s.queryCacheMisses(ctx, cfg)
+	if err != nil {
+		return 0, err
+	}
+	for _, miss := range misses {
+		if _, err := s.TriggerWorkflow(ctx, cacheMissWorkflow(cfg, miss)); err != nil {
+			return 0, fmt.Errorf("trigger cache miss alert: %w", err)
+		}
+	}
+	return len(misses), nil
+}
+
+func normalizePlatformAlertConfig(cfg PlatformAlertConfig) (PlatformAlertConfig, error) {
 	cfg.OrgID = strings.TrimSpace(cfg.OrgID)
 	cfg.Email = strings.TrimSpace(cfg.Email)
 	if cfg.OrgID == "" {
@@ -74,7 +115,7 @@ func normalizeCrossServiceFailureAlertConfig(cfg CrossServiceFailureAlertConfig)
 	return cfg, nil
 }
 
-func (s *Service) queryCrossServiceFailures(ctx context.Context, cfg CrossServiceFailureAlertConfig) (_ []crossServiceFailure, err error) {
+func (s *Service) queryCrossServiceFailures(ctx context.Context, cfg PlatformAlertConfig) (_ []crossServiceFailure, err error) {
 	if s.CH == nil {
 		return nil, fmt.Errorf("%w: clickhouse unavailable", ErrStoreUnavailable)
 	}
@@ -141,7 +182,130 @@ LIMIT $2`, uint32(cfg.Lookback.Round(time.Second).Seconds()), cfg.Limit)
 	return failures, nil
 }
 
-func crossServiceFailureWorkflow(cfg CrossServiceFailureAlertConfig, failure crossServiceFailure) WorkflowTriggerRequest {
+func (s *Service) queryCacheMisses(ctx context.Context, cfg PlatformAlertConfig) (_ []cacheMissAlert, err error) {
+	if s.CH == nil {
+		return nil, fmt.Errorf("%w: clickhouse unavailable", ErrStoreUnavailable)
+	}
+	rows, err := s.CH.Query(ctx, `
+SELECT
+    observed_at,
+    kind,
+    org_id,
+    provider,
+    provider_repository_id,
+    provider_run_id,
+    provider_run_attempt,
+    provider_job_id,
+    execution_id,
+    attempt_id,
+    operation_id,
+    cache_name,
+    event_name,
+    result,
+    reason,
+    job_shape_id,
+    source_generation_set_hash,
+    trace_id,
+    span_id
+FROM
+(
+    SELECT
+        observed_at,
+        'durable_cache' AS kind,
+        org_id,
+        provider,
+        provider_repository_id,
+        provider_run_id,
+        provider_run_attempt,
+        provider_job_id,
+        toString(execution_id) AS execution_id,
+        toString(attempt_id) AS attempt_id,
+        toString(operation_id) AS operation_id,
+        cache_name,
+        event_name,
+        result,
+        reason,
+        '' AS job_shape_id,
+        '' AS source_generation_set_hash,
+        trace_id,
+        span_id
+    FROM verself.durable_events
+    WHERE observed_at >= now64(6) - toIntervalSecond($1)
+      AND event_name = 'durable.cache.select'
+      AND result = 'miss'
+
+    UNION ALL
+
+    SELECT
+        observed_at,
+        'firecracker_snapshot_vm' AS kind,
+        org_id,
+        provider,
+        provider_repository_id,
+        provider_run_id,
+        provider_run_attempt,
+        provider_job_id,
+        toString(execution_id) AS execution_id,
+        toString(attempt_id) AS attempt_id,
+        toString(operation_id) AS operation_id,
+        '' AS cache_name,
+        event_name,
+        result,
+        reason,
+        toString(job_shape_id) AS job_shape_id,
+        source_generation_set_hash,
+        trace_id,
+        span_id
+    FROM verself.golden_vm_events
+    WHERE observed_at >= now64(6) - toIntervalSecond($1)
+      AND event_name = 'golden.vm.lookup'
+      AND result = 'miss'
+)
+ORDER BY observed_at ASC, kind ASC, operation_id ASC
+LIMIT $2`, uint32(cfg.Lookback.Round(time.Second).Seconds()), cfg.Limit)
+	if err != nil {
+		return nil, fmt.Errorf("%w: query cache miss events: %v", ErrStoreUnavailable, err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("%w: close cache miss rows: %v", ErrStoreUnavailable, closeErr)
+		}
+	}()
+	misses := make([]cacheMissAlert, 0)
+	for rows.Next() {
+		var miss cacheMissAlert
+		if err := rows.Scan(
+			&miss.Timestamp,
+			&miss.Kind,
+			&miss.OrgID,
+			&miss.Provider,
+			&miss.ProviderRepositoryID,
+			&miss.ProviderRunID,
+			&miss.ProviderRunAttempt,
+			&miss.ProviderJobID,
+			&miss.ExecutionID,
+			&miss.AttemptID,
+			&miss.OperationID,
+			&miss.CacheName,
+			&miss.EventName,
+			&miss.Result,
+			&miss.Reason,
+			&miss.JobShapeID,
+			&miss.SourceGenerationSetHash,
+			&miss.TraceID,
+			&miss.SpanID,
+		); err != nil {
+			return nil, fmt.Errorf("%w: scan cache miss event: %v", ErrStoreUnavailable, err)
+		}
+		misses = append(misses, miss)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%w: read cache miss events: %v", ErrStoreUnavailable, err)
+	}
+	return misses, nil
+}
+
+func crossServiceFailureWorkflow(cfg PlatformAlertConfig, failure crossServiceFailure) WorkflowTriggerRequest {
 	data, _ := json.Marshal(map[string]any{
 		"event_time":         failure.Timestamp.UTC().Format(time.RFC3339Nano),
 		"service_name":       failure.ServiceName,
@@ -158,7 +322,7 @@ func crossServiceFailureWorkflow(cfg CrossServiceFailureAlertConfig, failure cro
 	return WorkflowTriggerRequest{
 		WorkflowKey:    crossServiceFailureWorkflowKey,
 		OrgID:          cfg.OrgID,
-		TriggeredBy:    crossServiceFailureActor,
+		TriggeredBy:    platformAlertActor,
 		IdempotencyKey: crossServiceFailureDedupeKey(failure),
 		Recipients: []WorkflowRecipient{
 			{Email: cfg.Email},
@@ -173,6 +337,46 @@ func crossServiceFailureWorkflow(cfg CrossServiceFailureAlertConfig, failure cro
 	}
 }
 
+func cacheMissWorkflow(cfg PlatformAlertConfig, miss cacheMissAlert) WorkflowTriggerRequest {
+	data, _ := json.Marshal(map[string]any{
+		"event_time":                 miss.Timestamp.UTC().Format(time.RFC3339Nano),
+		"kind":                       miss.Kind,
+		"event_name":                 miss.EventName,
+		"result":                     miss.Result,
+		"reason":                     miss.Reason,
+		"org_id":                     miss.OrgID,
+		"provider":                   miss.Provider,
+		"provider_repository_id":     miss.ProviderRepositoryID,
+		"provider_run_id":            miss.ProviderRunID,
+		"provider_run_attempt":       miss.ProviderRunAttempt,
+		"provider_job_id":            miss.ProviderJobID,
+		"execution_id":               miss.ExecutionID,
+		"attempt_id":                 miss.AttemptID,
+		"operation_id":               miss.OperationID,
+		"cache_name":                 miss.CacheName,
+		"job_shape_id":               miss.JobShapeID,
+		"source_generation_set_hash": miss.SourceGenerationSetHash,
+		"trace_id":                   miss.TraceID,
+		"span_id":                    miss.SpanID,
+	})
+	return WorkflowTriggerRequest{
+		WorkflowKey:    miss.workflowKey(),
+		OrgID:          cfg.OrgID,
+		TriggeredBy:    platformAlertActor,
+		IdempotencyKey: cacheMissDedupeKey(miss),
+		Recipients: []WorkflowRecipient{
+			{Email: cfg.Email},
+		},
+		Title:        truncateAlertText(miss.title(), 120),
+		Body:         truncateAlertText(miss.body(), 500),
+		Priority:     PriorityHigh,
+		ResourceKind: miss.resourceKind(),
+		ResourceID:   miss.resourceID(),
+		Data:         data,
+		Traceparent:  miss.traceparent(),
+	}
+}
+
 func crossServiceFailureDedupeKey(failure crossServiceFailure) string {
 	bucket := failure.Timestamp.UTC().Truncate(time.Hour).Format(time.RFC3339)
 	sum := sha256.Sum256([]byte(strings.Join([]string{
@@ -183,6 +387,19 @@ func crossServiceFailureDedupeKey(failure crossServiceFailure) string {
 		failure.endpoint(),
 	}, "\x00")))
 	return "platform:cross_service_call_failed:" + hex.EncodeToString(sum[:8])
+}
+
+func cacheMissDedupeKey(miss cacheMissAlert) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		miss.Kind,
+		miss.EventName,
+		miss.OperationID,
+		miss.ExecutionID,
+		miss.AttemptID,
+		miss.CacheName,
+		miss.Timestamp.UTC().Format(time.RFC3339Nano),
+	}, "\x00")))
+	return "platform:cache_miss:" + hex.EncodeToString(sum[:8])
 }
 
 func (f crossServiceFailure) targetService() string {
@@ -241,6 +458,83 @@ func (f crossServiceFailure) traceparent() string {
 		return ""
 	}
 	return "00-" + f.TraceID + "-" + f.SpanID + "-01"
+}
+
+func (m cacheMissAlert) workflowKey() string {
+	switch m.Kind {
+	case "firecracker_snapshot_vm":
+		return goldenVMMissWorkflowKey
+	default:
+		return durableCacheMissWorkflowKey
+	}
+}
+
+func (m cacheMissAlert) title() string {
+	switch m.Kind {
+	case "firecracker_snapshot_vm":
+		return "Firecracker snapshot VM missed"
+	default:
+		if cache := strings.TrimSpace(m.CacheName); cache != "" {
+			return "Durable storage cache missed: " + cache
+		}
+		return "Durable storage cache missed"
+	}
+}
+
+func (m cacheMissAlert) body() string {
+	parts := []string{m.title()}
+	if reason := strings.TrimSpace(m.Reason); reason != "" {
+		parts = append(parts, "reason="+reason)
+	}
+	if provider := strings.TrimSpace(m.Provider); provider != "" {
+		parts = append(parts, "provider="+provider)
+	}
+	if m.ProviderRepositoryID != 0 {
+		parts = append(parts, fmt.Sprintf("repository_id=%d", m.ProviderRepositoryID))
+	}
+	if m.ProviderRunID != 0 {
+		parts = append(parts, fmt.Sprintf("run_id=%d", m.ProviderRunID))
+	}
+	if m.ProviderRunAttempt != 0 {
+		parts = append(parts, fmt.Sprintf("run_attempt=%d", m.ProviderRunAttempt))
+	}
+	if m.ProviderJobID != 0 {
+		parts = append(parts, fmt.Sprintf("job_id=%d", m.ProviderJobID))
+	}
+	if m.JobShapeID != "" {
+		parts = append(parts, "job_shape_id="+m.JobShapeID)
+	}
+	parts = append(parts, "execution_id="+m.ExecutionID, "attempt_id="+m.AttemptID, "operation_id="+m.OperationID)
+	if m.TraceID != "" {
+		parts = append(parts, "trace_id="+m.TraceID)
+	}
+	if m.SpanID != "" {
+		parts = append(parts, "span_id="+m.SpanID)
+	}
+	return strings.Join(parts, " ")
+}
+
+func (m cacheMissAlert) resourceKind() string {
+	switch m.Kind {
+	case "firecracker_snapshot_vm":
+		return "golden_vm_snapshot"
+	default:
+		return "durable_cache"
+	}
+}
+
+func (m cacheMissAlert) resourceID() string {
+	if m.CacheName == "" {
+		return m.OperationID
+	}
+	return m.OperationID + ":" + m.CacheName
+}
+
+func (m cacheMissAlert) traceparent() string {
+	if len(m.TraceID) != 32 || len(m.SpanID) != 16 {
+		return ""
+	}
+	return "00-" + m.TraceID + "-" + m.SpanID + "-01"
 }
 
 func truncateAlertText(value string, maxRunes int) string {

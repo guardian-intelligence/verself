@@ -194,7 +194,7 @@ func run() error {
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	defer bgCancel()
 	go runBackgroundLoop(bgCtx, logger, runtime)
-	go runCrossServiceFailureAlertLoop(bgCtx, logger, svc, notifications.CrossServiceFailureAlertConfig{
+	go runPlatformAlertLoop(bgCtx, logger, svc, notifications.PlatformAlertConfig{
 		OrgID:    platformAlertOrgID,
 		Email:    platformAlertEmail,
 		Lookback: platformAlertLookback,
@@ -313,18 +313,14 @@ func runBackgroundLoop(ctx context.Context, logger *slog.Logger, runtime *notifi
 	}
 }
 
-func runCrossServiceFailureAlertLoop(ctx context.Context, logger *slog.Logger, svc *notifications.Service, cfg notifications.CrossServiceFailureAlertConfig) {
+func runPlatformAlertLoop(ctx context.Context, logger *slog.Logger, svc *notifications.Service, cfg notifications.PlatformAlertConfig) {
 	poll := func() {
-		pollCtx, cancel := context.WithTimeout(ctx, platformAlertPollTimeout)
-		defer cancel()
-		count, err := svc.AlertCrossServiceFailures(pollCtx, cfg)
-		if err != nil {
-			logger.ErrorContext(ctx, "notifications cross-service failure alert poll", "error", err)
-			return
-		}
-		if count > 0 {
-			logger.WarnContext(ctx, "notifications cross-service failure alerts triggered", "count", count)
-		}
+		pollPlatformAlerts(ctx, logger, "cross-service failure", func(pollCtx context.Context) (int, error) {
+			return svc.AlertCrossServiceFailures(pollCtx, cfg)
+		})
+		pollPlatformAlerts(ctx, logger, "cache miss", func(pollCtx context.Context) (int, error) {
+			return svc.AlertCacheMisses(pollCtx, cfg)
+		})
 	}
 	poll()
 	ticker := time.NewTicker(platformAlertPollInterval)
@@ -336,6 +332,19 @@ func runCrossServiceFailureAlertLoop(ctx context.Context, logger *slog.Logger, s
 		case <-ticker.C:
 			poll()
 		}
+	}
+}
+
+func pollPlatformAlerts(ctx context.Context, logger *slog.Logger, name string, poll func(context.Context) (int, error)) {
+	pollCtx, cancel := context.WithTimeout(ctx, platformAlertPollTimeout)
+	defer cancel()
+	count, err := poll(pollCtx)
+	if err != nil {
+		logger.ErrorContext(ctx, "notifications "+name+" alert poll", "error", err)
+		return
+	}
+	if count > 0 {
+		logger.WarnContext(ctx, "notifications "+name+" alerts triggered", "count", count)
 	}
 }
 
