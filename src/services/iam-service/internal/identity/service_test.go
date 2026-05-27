@@ -86,15 +86,15 @@ func TestAccessibleOrganizationsIgnoresMissingMetadata(t *testing.T) {
 	}
 }
 
-func TestValidateNewPasswordUsesEightCharacterMinimumAndBreachBlocklist(t *testing.T) {
+func TestValidateSignupPasswordUsesEightCharacterMinimumAndBreachBlocklist(t *testing.T) {
 	ctx := context.Background()
-	if _, err := ValidateNewPassword(ctx, "1234567", fakePasswordChecker{}); !errors.Is(err, ErrPasswordTooShort) {
+	if _, err := ValidateSignupPassword(ctx, "1234567", fakePasswordChecker{}); !errors.Is(err, ErrPasswordTooShort) {
 		t.Fatalf("short password err = %v, want ErrPasswordTooShort", err)
 	}
-	if _, err := ValidateNewPassword(ctx, "12345678", fakePasswordChecker{}); err != nil {
+	if _, err := ValidateSignupPassword(ctx, "12345678", fakePasswordChecker{}); err != nil {
 		t.Fatalf("eight character password should pass local policy: %v", err)
 	}
-	_, err := ValidateNewPassword(ctx, "correct horse battery staple", fakePasswordChecker{
+	_, err := ValidateSignupPassword(ctx, "correct horse battery staple", fakePasswordChecker{
 		result: BreachedPasswordCheck{Breached: true, Occurrences: 42},
 	})
 	if !errors.Is(err, ErrPasswordBreached) || !errors.Is(err, ErrPasswordRejected) {
@@ -102,8 +102,8 @@ func TestValidateNewPasswordUsesEightCharacterMinimumAndBreachBlocklist(t *testi
 	}
 }
 
-func TestValidateNewPasswordWarnsWhenBreachCheckUnavailable(t *testing.T) {
-	result, err := ValidateNewPassword(context.Background(), "correct horse battery staple", fakePasswordChecker{
+func TestValidateSignupPasswordWarnsWhenBreachCheckUnavailable(t *testing.T) {
+	result, err := ValidateSignupPassword(context.Background(), "correct horse battery staple", fakePasswordChecker{
 		err: errors.New("hibp unavailable"),
 	})
 	if err != nil {
@@ -114,13 +114,22 @@ func TestValidateNewPasswordWarnsWhenBreachCheckUnavailable(t *testing.T) {
 	}
 }
 
-func TestValidateNewPasswordWarnsWhenBreachCheckerMissing(t *testing.T) {
-	result, err := ValidateNewPassword(context.Background(), "correct horse battery staple", nil)
+func TestValidateSignupPasswordWarnsWhenBreachCheckerMissing(t *testing.T) {
+	result, err := ValidateSignupPassword(context.Background(), "correct horse battery staple", nil)
 	if err != nil {
 		t.Fatalf("missing breach checker should not reject password: %v", err)
 	}
 	if len(result.Warnings) != 1 || result.Warnings[0].Code != PasswordWarningBreachCheckUnavailable {
 		t.Fatalf("warnings = %#v, want breach check unavailable", result.Warnings)
+	}
+}
+
+func TestValidatePasswordPolicyDoesNotCheckBreachBlocklist(t *testing.T) {
+	if err := ValidatePasswordPolicy("1234567"); !errors.Is(err, ErrPasswordTooShort) {
+		t.Fatalf("short password err = %v, want ErrPasswordTooShort", err)
+	}
+	if err := ValidatePasswordPolicy("correct horse battery staple"); err != nil {
+		t.Fatalf("local password policy should not call breach blocklist: %v", err)
 	}
 }
 

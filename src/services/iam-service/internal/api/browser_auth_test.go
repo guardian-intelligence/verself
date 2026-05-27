@@ -288,43 +288,10 @@ func TestPasswordLoginFinalizesIncomingAuthRequest(t *testing.T) {
 	}
 }
 
-func TestPasswordResetCompleteReportsBreachedPasswordProblem(t *testing.T) {
-	auth := &BrowserAuth{
-		passwordChecker: staticPasswordChecker{
-			result: identity.BreachedPasswordCheck{Breached: true, Occurrences: 42},
-		},
-	}
-	req := httptest.NewRequest(http.MethodPost, "/password-reset/complete", strings.NewReader(`{
-		"userId": "user-1",
-		"verificationCode": "code-1",
-		"password": "correct horse battery staple"
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-	res := httptest.NewRecorder()
-
-	auth.handlePasswordResetComplete(res, req)
-
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("password reset status = %d, body = %q", res.Code, res.Body.String())
-	}
-	var body struct {
-		Code string `json:"code"`
-	}
-	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
-		t.Fatalf("decode problem: %v", err)
-	}
-	if body.Code != "iam.password.breached" {
-		t.Fatalf("problem code = %q, want iam.password.breached", body.Code)
-	}
-}
-
-func TestPasswordResetCompleteReturnsWarningWhenBreachCheckUnavailable(t *testing.T) {
+func TestPasswordResetCompleteUsesLocalPasswordPolicyOnly(t *testing.T) {
 	provider := &recordingProviderLogin{}
 	auth := &BrowserAuth{
 		providerLogin: provider,
-		passwordChecker: staticPasswordChecker{
-			err: errors.New("hibp unavailable"),
-		},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/password-reset/complete", strings.NewReader(`{
 		"userId": "user-1",
@@ -343,21 +310,12 @@ func TestPasswordResetCompleteReturnsWarningWhenBreachCheckUnavailable(t *testin
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(body.Warnings) != 1 || body.Warnings[0].Code != identity.PasswordWarningBreachCheckUnavailable {
-		t.Fatalf("warnings = %#v, want breach check unavailable", body.Warnings)
+	if body.Status != "completed" {
+		t.Fatalf("status = %q, want completed", body.Status)
 	}
 	if provider.completedPasswordResetUserID != "user-1" || provider.completedPasswordResetPassword == "" {
 		t.Fatalf("provider password reset was not completed: %#v", provider)
 	}
-}
-
-type staticPasswordChecker struct {
-	result identity.BreachedPasswordCheck
-	err    error
-}
-
-func (c staticPasswordChecker) CheckPassword(context.Context, string) (identity.BreachedPasswordCheck, error) {
-	return c.result, c.err
 }
 
 func TestBrowserProviderSessionIDPrefersStoredSessionID(t *testing.T) {

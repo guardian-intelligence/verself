@@ -62,7 +62,6 @@ type BrowserAuthConfig struct {
 	Authz           *authz.Service
 	ProviderSession ProviderSessionRevoker
 	ProviderLogin   ProviderLoginClient
-	PasswordChecker identity.PasswordBreachChecker
 	PasswordReset   PasswordResetNotifier
 }
 
@@ -77,7 +76,6 @@ type BrowserAuth struct {
 	authz            *authz.Service
 	providerSessions ProviderSessionRevoker
 	providerLogin    ProviderLoginClient
-	passwordChecker  identity.PasswordBreachChecker
 	passwordReset    PasswordResetNotifier
 	productAudience  string
 	publicBaseURL    *url.URL
@@ -186,7 +184,6 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		authz:            cfg.Authz,
 		providerSessions: cfg.ProviderSession,
 		providerLogin:    cfg.ProviderLogin,
-		passwordChecker:  cfg.PasswordChecker,
 		passwordReset:    cfg.PasswordReset,
 		productAudience:  productAudience,
 		publicBaseURL:    publicBaseURL,

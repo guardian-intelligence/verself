@@ -16,10 +16,8 @@ import {
   newPasswordSchema,
   resetPasswordFormSchema,
 } from "~/features/auth/form-schemas";
-import { PASSWORD_CHECK_UNAVAILABLE_WARNING_CODE } from "~/features/auth/password-policy";
 import { Squircle } from "~/features/console/flight/squircle";
 import { completePasswordReset } from "~/server-fns/auth";
-import type { AuthWarning } from "~/server-fns/auth.server";
 
 type ResetPasswordSearch = {
   readonly user_id?: string;
@@ -66,14 +64,14 @@ function ResetPasswordPage() {
       if (!search.user_id || !search.verification_code) {
         throw new Error("This reset link is invalid or expired.");
       }
-      const result = await completePasswordReset({
+      await completePasswordReset({
         data: {
           userId: search.user_id,
           verificationCode: search.verification_code,
           password,
         },
       });
-      window.location.assign(loginPathAfterPasswordReset(result.warnings));
+      window.location.assign("/login?prompt=login");
     },
   });
 
@@ -220,15 +218,6 @@ function ResetPasswordPage() {
       </div>
     </main>
   );
-}
-
-function loginPathAfterPasswordReset(warnings: Array<AuthWarning> | undefined): string {
-  const login = new URL("/login", window.location.origin);
-  login.searchParams.set("prompt", "login");
-  if (warnings?.some((warning) => warning.code === PASSWORD_CHECK_UNAVAILABLE_WARNING_CODE)) {
-    login.searchParams.set("notice", "password_check_unavailable");
-  }
-  return `${login.pathname}${login.search}`;
 }
 
 function PasswordInput(props: {

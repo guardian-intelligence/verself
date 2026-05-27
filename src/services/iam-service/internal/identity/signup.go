@@ -187,7 +187,7 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 	if err != nil {
 		return VerifySignupResult{}, err
 	}
-	passwordValidation, err := s.ValidateNewPassword(ctx, input.InitialPassword)
+	passwordValidation, err := s.ValidateSignupPassword(ctx, input.InitialPassword)
 	if err != nil {
 		return VerifySignupResult{}, err
 	}

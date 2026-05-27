@@ -360,7 +360,6 @@ func run() error {
 		Authz:           authzService,
 		ProviderSession: zitadelClient,
 		ProviderLogin:   zitadelClient,
-		PasswordChecker: passwordChecker,
 		PasswordReset:   signupNotifier,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),

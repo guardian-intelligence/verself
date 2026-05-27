@@ -1929,7 +1929,6 @@ operation CompletePasswordReset {
         ValidationFailedError
         PasswordTooShortError
         PasswordTooLongError
-        PasswordBreachedError
         RateLimitedError
         ServiceUnavailableError
     ]
@@ -1972,9 +1971,6 @@ structure CompletePasswordResetOutput {
     @required
     @protoField(number: 2)
     message: String
-
-    @protoField(number: 3)
-    warnings: AuthWarnings
 }
 
 @http(method: "POST", uri: "/api/v1/auth/device-logins/lookup")
