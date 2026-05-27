@@ -50,6 +50,7 @@ type Service struct {
 
 type Principal struct {
 	OrgID                 string
+	StorageNamespace      string
 	Subject               string
 	Email                 string
 	Type                  string
@@ -63,6 +64,13 @@ type Principal struct {
 	UseWorkloadSVID       bool
 	JWTID                 string
 	TokenExpiresAt        time.Time
+}
+
+func (p Principal) storageNamespace() string {
+	if namespace := strings.TrimSpace(p.StorageNamespace); namespace != "" {
+		return namespace
+	}
+	return strings.TrimSpace(p.OrgID)
 }
 
 type Scope struct {
@@ -145,6 +153,7 @@ func (s *Service) PutSecret(ctx context.Context, principal Principal, req PutSec
 	}
 	span.SetAttributes(
 		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.secret_namespace", principal.storageNamespace()),
 		attribute.String("verself.secret_kind", record.Kind),
 		attribute.String("verself.secret_id", record.SecretID),
 		attribute.Int64("verself.secret_version", int64FromUint64(record.CurrentVersion, "secret version")),
@@ -164,6 +173,7 @@ func (s *Service) ReadSecret(ctx context.Context, principal Principal, kind, nam
 	}
 	span.SetAttributes(
 		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.secret_namespace", principal.storageNamespace()),
 		attribute.String("verself.secret_kind", value.Record.Kind),
 		attribute.String("verself.secret_id", value.Record.SecretID),
 		attribute.Int64("verself.secret_version", int64FromUint64(value.Record.CurrentVersion, "secret version")),
@@ -188,7 +198,11 @@ func (s *Service) ListSecrets(ctx context.Context, principal Principal, kind str
 	if err != nil {
 		return nil, err
 	}
-	span.SetAttributes(attribute.String("verself.org_id", principal.OrgID), attribute.Int("verself.secret_count", len(records)))
+	span.SetAttributes(
+		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.secret_namespace", principal.storageNamespace()),
+		attribute.Int("verself.secret_count", len(records)),
+	)
 	return records, nil
 }
 
@@ -227,6 +241,7 @@ func (s *Service) ResolveSecrets(ctx context.Context, principal Principal, kind 
 	}
 	span.SetAttributes(
 		attribute.String("verself.org_id", principal.OrgID),
+		attribute.String("verself.secret_namespace", principal.storageNamespace()),
 		attribute.String("verself.secret_kind", normalizeKind(kind)),
 		attribute.Int("verself.secret_count", len(values)),
 	)
@@ -339,8 +354,8 @@ func (s *Service) TransitVerify(ctx context.Context, principal Principal, name s
 }
 
 func validatePrincipal(principal Principal) error {
-	if strings.TrimSpace(principal.OrgID) == "" || strings.TrimSpace(principal.Subject) == "" {
-		return fmt.Errorf("%w: principal org and subject are required", ErrInvalidArgument)
+	if principal.storageNamespace() == "" || strings.TrimSpace(principal.Subject) == "" {
+		return fmt.Errorf("%w: principal storage namespace and subject are required", ErrInvalidArgument)
 	}
 	return nil
 }

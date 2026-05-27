@@ -19,8 +19,8 @@ import (
 // promote-org flips an existing organization's billing trust tier. The org is
 // created like any other (normal signup); promotion to the privileged
 // "platform" tier is the one and only special, operator-gated step. Trust tier
-// lives in billing-service Postgres; the DB enforces a single platform org via
-// a partial unique index, so a second promotion fails loudly.
+// lives in billing-service Postgres; the DB enforces a single platform-tier
+// holder via a partial unique index, so a second promotion fails loudly.
 //
 // Scope is deliberately narrow: this sets trust_tier and nothing else. It does
 // not touch overage policy, identity, or SpiceDB policy — those are owned by
@@ -110,7 +110,7 @@ func promoteOrg(rt *opruntime.Runtime, opts *promoteOrgOptions) (err error) {
 	if opts.tier == "platform" {
 		rows, qErr := tx.Query(ctx, `SELECT org_id FROM orgs WHERE trust_tier = 'platform' FOR UPDATE`)
 		if qErr != nil {
-			return fmt.Errorf("promote-org: query platform orgs: %w", qErr)
+			return fmt.Errorf("promote-org: query platform-tier holders: %w", qErr)
 		}
 		var holders []string
 		for rows.Next() {
@@ -123,7 +123,7 @@ func promoteOrg(rt *opruntime.Runtime, opts *promoteOrgOptions) (err error) {
 		}
 		rows.Close()
 		if rows.Err() != nil {
-			return fmt.Errorf("promote-org: scan platform orgs: %w", rows.Err())
+			return fmt.Errorf("promote-org: scan platform-tier holders: %w", rows.Err())
 		}
 		for _, id := range holders {
 			if id != orgID {
@@ -197,4 +197,8 @@ func promoteOpenPG(ctx context.Context, rt *opruntime.Runtime, opts *promoteOrgO
 		RemotePort:   opts.pgRemotePort,
 		PasswordPath: passwordPath,
 	})
+}
+
+func rollbackTx(ctx context.Context, tx pgx.Tx) {
+	_ = tx.Rollback(ctx)
 }

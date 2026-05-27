@@ -21,6 +21,7 @@ import (
 
 const (
 	billingSetUserStateTarget = "//src/services/billing-service/cmd/billing-set-user-state:billing-set-user-state"
+	productAPIProjectName     = "verself-api"
 )
 
 type personaOptions struct {
@@ -154,7 +155,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 			MachineSecretPath:  "/etc/credstore/seed-system/assume-platform-admin-client-secret",
 			EmailLocalPart:     "agents",
 			IncludePlatformOps: true,
-			TokenProjects:      []string{platformProductAPIProjectName, "forgejo"},
+			TokenProjects:      []string{productAPIProjectName, "forgejo"},
 		}, nil
 	case "acme-admin":
 		return personaDefinition{
@@ -163,7 +164,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 			HumanPasswordPath: "/etc/credstore/seed-system/acme-admin-password",
 			MachineUsername:   "assume-acme-admin",
 			MachineSecretPath: "/etc/credstore/seed-system/assume-acme-admin-client-secret",
-			TokenProjects:     []string{platformProductAPIProjectName},
+			TokenProjects:     []string{productAPIProjectName},
 		}, nil
 	case "acme-member":
 		return personaDefinition{
@@ -172,7 +173,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 			HumanPasswordPath: "/etc/credstore/seed-system/acme-user-password",
 			MachineUsername:   "assume-acme-member",
 			MachineSecretPath: "/etc/credstore/seed-system/assume-acme-member-client-secret",
-			TokenProjects:     []string{platformProductAPIProjectName},
+			TokenProjects:     []string{productAPIProjectName},
 		}, nil
 	default:
 		return personaDefinition{}, fmt.Errorf("persona must be one of platform-admin, acme-admin, acme-member")
@@ -264,7 +265,7 @@ func assumePersona(rt *opruntime.Runtime, def personaDefinition, outputPath stri
 	finalized = true
 	fmt.Fprintf(os.Stderr, "persona env written: %s\n", outputPath)
 	fmt.Fprintf(os.Stderr, "source %s\n", shellExportValue(outputPath))
-	return printIdentityMetadata(rt, client, def.Name, projectTokens[platformProductAPIProjectName])
+	return printIdentityMetadata(rt, client, def.Name, projectTokens[productAPIProjectName])
 }
 
 func readRemoteSecretString(rt *opruntime.Runtime, path string) (string, error) {
@@ -321,7 +322,7 @@ func zitadelProjectID(ctx context.Context, client *http.Client, baseURL, adminPA
 }
 
 func zitadelProjectToken(ctx context.Context, client *http.Client, baseURL, username, secret, projectID string) (string, error) {
-	scope := "openid profile urn:zitadel:iam:user:resourceowner urn:zitadel:iam:org:project:id:" + projectID + ":aud"
+	scope := "openid profile urn:zitadel:iam:org:project:id:" + projectID + ":aud"
 	values := url.Values{}
 	values.Set("grant_type", "client_credentials")
 	values.Set("scope", scope)
@@ -367,8 +368,8 @@ func personaEnv(def personaDefinition, domain, authBaseURL, humanPassword string
 		"WEBMAIL_URL":               "https://mail." + domain,
 		"FORGEJO_URL":               "https://git." + domain,
 	}
-	if token := projectTokens[platformProductAPIProjectName]; token != "" {
-		env["VERSELF_PRODUCT_API_AUTH_AUDIENCE"] = projectIDs[platformProductAPIProjectName]
+	if token := projectTokens[productAPIProjectName]; token != "" {
+		env["VERSELF_PRODUCT_API_AUTH_AUDIENCE"] = projectIDs[productAPIProjectName]
 		env["VERSELF_PRODUCT_API_ACCESS_TOKEN"] = token
 		env["IAM_SERVICE_ACCESS_TOKEN"] = token
 		env["IAM_SERVICE_TOKEN"] = token

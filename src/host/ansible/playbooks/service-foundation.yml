@@ -406,7 +406,7 @@
         label: "{{ item.name | default('unnamed-runtime-secret') }}"
       no_log: true
 
-    - name: Converge OpenBao platform runtime secrets
+    - name: Converge OpenBao runtime secrets
       ansible.builtin.import_tasks: tasks/openbao-runtime-secrets.yml
 
     - name: Load owner-local HAProxy public route declarations

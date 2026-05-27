@@ -46,11 +46,34 @@ func cmdMailAddresses(args []string) error {
 		if err != nil {
 			return err
 		}
-		for _, localPart := range platformCompanyEmailLocalParts() {
+		for _, localPart := range companyEmailLocalParts() {
 			_, _ = fmt.Fprintf(os.Stdout, "%s@%s\n", localPart, cfg.VerselfDomain)
 		}
 		return nil
 	})
+}
+
+func companyEmailLocalParts() []string {
+	return []string{
+		"anveio",
+		"hello",
+		"feedback",
+		"sales",
+		"support",
+		"security",
+		"abuse",
+		"privacy",
+		"legal",
+		"billing",
+		"careers",
+		"press",
+		"postmaster",
+		"hostmaster",
+		"webmaster",
+		"noreply",
+		"updates",
+		"agents",
+	}
 }
 
 func loadMailConfig(repoRoot, site string) (mailMainVars, error) {

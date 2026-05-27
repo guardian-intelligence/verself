@@ -29,12 +29,12 @@ import (
 )
 
 const (
-	serviceName               = notifications.ServiceName
-	serviceVersion            = "1.0.0"
-	requestBodyLimit          = 1 << 20
-	platformAlertPollInterval = 15 * time.Second
-	platformAlertPollTimeout  = 5 * time.Second
-	platformAlertLookback     = 2 * time.Minute
+	serviceName                 = notifications.ServiceName
+	serviceVersion              = "1.0.0"
+	requestBodyLimit            = 1 << 20
+	operationsAlertPollInterval = 15 * time.Second
+	operationsAlertPollTimeout  = 5 * time.Second
+	operationsAlertLookback     = 2 * time.Minute
 )
 
 func main() {
@@ -86,8 +86,8 @@ func run() error {
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	emailFromAddress := cfg.String("NOTIFICATIONS_EMAIL_FROM_ADDRESS", "noreply@notify.verself.sh")
 	emailFromOrgID := cfg.RequireString("NOTIFICATIONS_EMAIL_FROM_ORG_ID")
-	platformAlertOrgID := cfg.RequireString("NOTIFICATIONS_PLATFORM_ALERT_ORG_ID")
-	platformAlertEmail := cfg.RequireString("NOTIFICATIONS_PLATFORM_ALERT_EMAIL")
+	operationsAlertOrgID := cfg.RequireString("NOTIFICATIONS_OPERATIONS_ALERT_ORG_ID")
+	operationsAlertEmail := cfg.RequireString("NOTIFICATIONS_OPERATIONS_ALERT_EMAIL")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
 	pgMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
@@ -194,10 +194,10 @@ func run() error {
 	bgCtx, bgCancel := context.WithCancel(ctx)
 	defer bgCancel()
 	go runBackgroundLoop(bgCtx, logger, runtime)
-	go runPlatformAlertLoop(bgCtx, logger, svc, notifications.PlatformAlertConfig{
-		OrgID:    platformAlertOrgID,
-		Email:    platformAlertEmail,
-		Lookback: platformAlertLookback,
+	go runOperationsAlertLoop(bgCtx, logger, svc, notifications.OperationsAlertConfig{
+		OrgID:    operationsAlertOrgID,
+		Email:    operationsAlertEmail,
+		Lookback: operationsAlertLookback,
 		Limit:    100,
 	})
 	go func() {
@@ -250,9 +250,9 @@ func run() error {
 	}
 	internalMux := http.NewServeMux()
 	notificationsapi.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, notificationsapi.InternalConfig{
-		Service:            svc,
-		PlatformAlertOrgID: platformAlertOrgID,
-		PlatformAlertEmail: platformAlertEmail,
+		Service:              svc,
+		OperationsAlertOrgID: operationsAlertOrgID,
+		OperationsAlertEmail: operationsAlertEmail,
 	})
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
@@ -313,17 +313,17 @@ func runBackgroundLoop(ctx context.Context, logger *slog.Logger, runtime *notifi
 	}
 }
 
-func runPlatformAlertLoop(ctx context.Context, logger *slog.Logger, svc *notifications.Service, cfg notifications.PlatformAlertConfig) {
+func runOperationsAlertLoop(ctx context.Context, logger *slog.Logger, svc *notifications.Service, cfg notifications.OperationsAlertConfig) {
 	poll := func() {
-		pollPlatformAlerts(ctx, logger, "cross-service failure", func(pollCtx context.Context) (int, error) {
+		pollOperationsAlerts(ctx, logger, "cross-service failure", func(pollCtx context.Context) (int, error) {
 			return svc.AlertCrossServiceFailures(pollCtx, cfg)
 		})
-		pollPlatformAlerts(ctx, logger, "cache miss", func(pollCtx context.Context) (int, error) {
+		pollOperationsAlerts(ctx, logger, "cache miss", func(pollCtx context.Context) (int, error) {
 			return svc.AlertCacheMisses(pollCtx, cfg)
 		})
 	}
 	poll()
-	ticker := time.NewTicker(platformAlertPollInterval)
+	ticker := time.NewTicker(operationsAlertPollInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -335,8 +335,8 @@ func runPlatformAlertLoop(ctx context.Context, logger *slog.Logger, svc *notific
 	}
 }
 
-func pollPlatformAlerts(ctx context.Context, logger *slog.Logger, name string, poll func(context.Context) (int, error)) {
-	pollCtx, cancel := context.WithTimeout(ctx, platformAlertPollTimeout)
+func pollOperationsAlerts(ctx context.Context, logger *slog.Logger, name string, poll func(context.Context) (int, error)) {
+	pollCtx, cancel := context.WithTimeout(ctx, operationsAlertPollTimeout)
 	defer cancel()
 	count, err := poll(pollCtx)
 	if err != nil {

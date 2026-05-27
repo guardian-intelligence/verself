@@ -1,6 +1,6 @@
 # Email Service
 
-`email-service` owns platform email addresses, inbound mail projection, forwarding policy, and outbound provider delivery. Stalwart remains the inbound mail store and JMAP source. Resend is the initial outbound sender; Cloudflare Email Sending is modeled as a pluggable sender behind the same internal service contract.
+`email-service` owns company email addresses, inbound mail projection, forwarding policy, and outbound provider delivery. Stalwart remains the inbound mail store and JMAP source. Resend is the initial outbound sender; Cloudflare Email Sending is modeled as a pluggable sender behind the same internal service contract.
 
 Primary references:
 
@@ -25,9 +25,10 @@ Core tables:
 - `outbound_messages` and `email_delivery_attempts`: idempotent outbound message ledger and provider attempts.
 - `audience_contacts`, `suppression_entries`, `campaigns`, and `campaign_recipients`: newsletter and waitlist storage sized for high-fanout sends.
 
-## Platform Addresses
+## Company Addresses
 
-The platform seed creates one identity per address under the platform org:
+Company-owned addresses are regular email identities under the owning Verself
+org:
 
 - `anveio@verself.sh`
 - `hello@verself.sh`
@@ -48,7 +49,7 @@ The platform seed creates one identity per address under the platform org:
 - `updates@verself.sh`
 - `agents@verself.sh`
 
-The platform seed creates forwarding policy from every platform address to `integrations.anveio@gmail.com` with local-copy retention enabled. The platform owner receives `owner` membership and `send_as` grants for each address.
+The company seed creates forwarding policy from every company address to `integrations.anveio@gmail.com` with local-copy retention enabled. The owning org receives `owner` membership and `send_as` grants for each address.
 
 The seed also creates `noreply@notify.verself.sh` as a system sender identity because `notify.verself.sh` is the currently verified Resend domain. This address is outbound-only and is not part of the company address inventory.
 
@@ -62,7 +63,7 @@ Notifications uses an internal email-service client and no provider credentials.
 
 ## Receiving And Forwarding
 
-Inbound mail is accepted by Stalwart, projected through JMAP sync workers, and stored in `mailboxes`, `emails`, `email_mailboxes`, `email_bodies`, and `threads`. Sync workers skip provisioned identities that lack a protocol credential; platform role addresses still exist as address and forwarding policy rows.
+Inbound mail is accepted by Stalwart, projected through JMAP sync workers, and stored in `mailboxes`, `emails`, `email_mailboxes`, `email_bodies`, and `threads`. Sync workers skip provisioned identities that lack a protocol credential; company role addresses still exist as address and forwarding policy rows.
 
 Forwarding is represented in database policy first. SMTP/JMAP execution can use Stalwart mailing lists, Sieve, or an email-service delivery worker without changing the address, destination, or grant model.
 

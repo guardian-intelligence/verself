@@ -720,7 +720,7 @@ Out of scope for `verself bootstrap`:
 - infrastructure provisioning;
 - host convergence;
 - service deployment;
-- platform-owner claim preparation;
+- owner claim preparation;
 - IAM/Zitadel grant seeding.
 
 Those actions stay in checked-in repo tooling such as `aspect deploy` and
@@ -764,7 +764,7 @@ Initial option catalog:
 | DNS and TLS | Cloudflare API token, account ID, zone ID, DNS zone intent | DNS reconciliation and host convergence tasks before or during `aspect deploy` |
 | Backups | AWS S3 access key ID, secret access key, region, bucket, prefix, retention policy | Backup verification and scheduled backup jobs |
 | Billing | Stripe secret key, publishable key, webhook signing secret, account mode, price/catalog mapping | Billing service payment and webhook handling |
-| Outbound email | Email-service provider secret, sender domain, default sender address | Email verification, invites, notifications, and platform addresses |
+| Outbound email | Email-service provider secret, sender domain, default sender address | Email verification, invites, notifications, and company addresses |
 | Identity | Zitadel admin bootstrap material, OIDC issuer defaults, post-deploy owner claim | Operator seeding task and Zitadel grant reconciliation after `aspect deploy` |
 
 Adding a third-party integration starts by adding an option schema with
@@ -865,7 +865,7 @@ inputs:
   company_name: Guardian Intelligence
   owner_alias: shovon
   owner_name: Shovon Hasan
-  platform_repo_slug: verself
+  repository_slug: verself
 company_options:
   - name: latitudesh-auth-token
     source: env:LATITUDESH_AUTH_TOKEN
@@ -901,8 +901,8 @@ root_sops_key:
 derived:
   owner_email: shovon@guardianintelligence.org
   organization_name: guardianintelligence.org
-  platform_company_slug: guardian-intelligence
-  platform_company_display_name: Guardian Intelligence
+  company_slug: guardian-intelligence
+  company_display_name: Guardian Intelligence
   zitadel_domain: verself.sh
   iam_service_domain: iam.api.verself.sh
   sandbox_rental_service_domain: sandbox.api.verself.sh
@@ -954,7 +954,7 @@ writes the artifacts the operator's `aspect deploy` will consume:
 | `.verself/bootstrap/manifest.yaml` | Canonical bootstrap manifest with company, owner, CLI, site, domain, and provider capability metadata. |
 | `.sops.yaml` | SOPS creation rules addressed to the root Age recipient. |
 | `src/<cli_name>-cli/` | CLI package or build target that emits the chosen command name. |
-| `src/host/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, company/org defaults, and platform org defaults. |
+| `src/host/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, and canary defaults. |
 | `src/host/sites/<site>/provisioning.tfvars.json.template` | Latitude/OpenTofu input template with provider-specific placeholders. |
 | `src/host/sites/<site>/secrets/*.sops.yml` | Encrypted SOPS bags for generated and supplied secrets. |
 | `README.md` | Operator next commands using `<cli_name>`, owner email, organization name, and selected site. |
@@ -1058,7 +1058,7 @@ safe display identifiers or hashes.
 
 ## Owner Seeding
 
-The platform owner flow belongs to `iam-service` and repo-local operator/seeding
+The owner-claim flow belongs to `iam-service` and repo-local operator/seeding
 logic. It consumes the company record and resolved manifest after services are
 deployed by `aspect deploy`.
 
@@ -1091,8 +1091,8 @@ IAM then:
 
 The member-management API owns invitation and removal. IAM policy APIs own
 authorization bindings for humans, service accounts, workloads, and usersets.
-The platform owner claim command has narrower input and stronger preconditions
-than normal organization membership.
+The owner-claim command has narrower input and stronger preconditions than
+normal organization membership.
 
 ## Security Controls
 

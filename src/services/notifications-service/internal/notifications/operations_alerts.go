@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	crossServiceFailureWorkflowKey = "platform.cross_service_call.failed"
-	durableCacheMissWorkflowKey    = "platform.durable_cache.missed"
-	goldenVMMissWorkflowKey        = "platform.firecracker_snapshot_vm.missed"
-	platformAlertActor             = "system:platform-alerts"
+	crossServiceFailureWorkflowKey = "operations.cross_service_call.failed"
+	durableCacheMissWorkflowKey    = "operations.durable_cache.missed"
+	goldenVMMissWorkflowKey        = "operations.firecracker_snapshot_vm.missed"
+	operationsAlertActor           = "system:operations-alerts"
 )
 
-type PlatformAlertConfig struct {
+type OperationsAlertConfig struct {
 	OrgID    string
 	Email    string
 	Lookback time.Duration
@@ -63,8 +63,8 @@ type cacheMissAlert struct {
 	SpanID                  string
 }
 
-func (s *Service) AlertCrossServiceFailures(ctx context.Context, cfg PlatformAlertConfig) (int, error) {
-	cfg, err := normalizePlatformAlertConfig(cfg)
+func (s *Service) AlertCrossServiceFailures(ctx context.Context, cfg OperationsAlertConfig) (int, error) {
+	cfg, err := normalizeOperationsAlertConfig(cfg)
 	if err != nil {
 		return 0, err
 	}
@@ -80,8 +80,8 @@ func (s *Service) AlertCrossServiceFailures(ctx context.Context, cfg PlatformAle
 	return len(failures), nil
 }
 
-func (s *Service) AlertCacheMisses(ctx context.Context, cfg PlatformAlertConfig) (int, error) {
-	cfg, err := normalizePlatformAlertConfig(cfg)
+func (s *Service) AlertCacheMisses(ctx context.Context, cfg OperationsAlertConfig) (int, error) {
+	cfg, err := normalizeOperationsAlertConfig(cfg)
 	if err != nil {
 		return 0, err
 	}
@@ -97,14 +97,14 @@ func (s *Service) AlertCacheMisses(ctx context.Context, cfg PlatformAlertConfig)
 	return len(misses), nil
 }
 
-func normalizePlatformAlertConfig(cfg PlatformAlertConfig) (PlatformAlertConfig, error) {
+func normalizeOperationsAlertConfig(cfg OperationsAlertConfig) (OperationsAlertConfig, error) {
 	cfg.OrgID = strings.TrimSpace(cfg.OrgID)
 	cfg.Email = strings.TrimSpace(cfg.Email)
 	if cfg.OrgID == "" {
-		return cfg, fmt.Errorf("%w: platform alert org_id is required", ErrInvalidInput)
+		return cfg, fmt.Errorf("%w: operations alert org_id is required", ErrInvalidInput)
 	}
 	if cfg.Email == "" {
-		return cfg, fmt.Errorf("%w: platform alert email is required", ErrInvalidInput)
+		return cfg, fmt.Errorf("%w: operations alert email is required", ErrInvalidInput)
 	}
 	if cfg.Lookback <= 0 {
 		cfg.Lookback = 2 * time.Minute
@@ -115,7 +115,7 @@ func normalizePlatformAlertConfig(cfg PlatformAlertConfig) (PlatformAlertConfig,
 	return cfg, nil
 }
 
-func (s *Service) queryCrossServiceFailures(ctx context.Context, cfg PlatformAlertConfig) (_ []crossServiceFailure, err error) {
+func (s *Service) queryCrossServiceFailures(ctx context.Context, cfg OperationsAlertConfig) (_ []crossServiceFailure, err error) {
 	if s.CH == nil {
 		return nil, fmt.Errorf("%w: clickhouse unavailable", ErrStoreUnavailable)
 	}
@@ -182,7 +182,7 @@ LIMIT $2`, uint32(cfg.Lookback.Round(time.Second).Seconds()), cfg.Limit)
 	return failures, nil
 }
 
-func (s *Service) queryCacheMisses(ctx context.Context, cfg PlatformAlertConfig) (_ []cacheMissAlert, err error) {
+func (s *Service) queryCacheMisses(ctx context.Context, cfg OperationsAlertConfig) (_ []cacheMissAlert, err error) {
 	if s.CH == nil {
 		return nil, fmt.Errorf("%w: clickhouse unavailable", ErrStoreUnavailable)
 	}
@@ -305,7 +305,7 @@ LIMIT $2`, uint32(cfg.Lookback.Round(time.Second).Seconds()), cfg.Limit)
 	return misses, nil
 }
 
-func crossServiceFailureWorkflow(cfg PlatformAlertConfig, failure crossServiceFailure) WorkflowTriggerRequest {
+func crossServiceFailureWorkflow(cfg OperationsAlertConfig, failure crossServiceFailure) WorkflowTriggerRequest {
 	data, _ := json.Marshal(map[string]any{
 		"event_time":         failure.Timestamp.UTC().Format(time.RFC3339Nano),
 		"service_name":       failure.ServiceName,
@@ -322,7 +322,7 @@ func crossServiceFailureWorkflow(cfg PlatformAlertConfig, failure crossServiceFa
 	return WorkflowTriggerRequest{
 		WorkflowKey:    crossServiceFailureWorkflowKey,
 		OrgID:          cfg.OrgID,
-		TriggeredBy:    platformAlertActor,
+		TriggeredBy:    operationsAlertActor,
 		IdempotencyKey: crossServiceFailureDedupeKey(failure),
 		Recipients: []WorkflowRecipient{
 			{Email: cfg.Email},
@@ -337,7 +337,7 @@ func crossServiceFailureWorkflow(cfg PlatformAlertConfig, failure crossServiceFa
 	}
 }
 
-func cacheMissWorkflow(cfg PlatformAlertConfig, miss cacheMissAlert) WorkflowTriggerRequest {
+func cacheMissWorkflow(cfg OperationsAlertConfig, miss cacheMissAlert) WorkflowTriggerRequest {
 	data, _ := json.Marshal(map[string]any{
 		"event_time":                 miss.Timestamp.UTC().Format(time.RFC3339Nano),
 		"kind":                       miss.Kind,
@@ -362,7 +362,7 @@ func cacheMissWorkflow(cfg PlatformAlertConfig, miss cacheMissAlert) WorkflowTri
 	return WorkflowTriggerRequest{
 		WorkflowKey:    miss.workflowKey(),
 		OrgID:          cfg.OrgID,
-		TriggeredBy:    platformAlertActor,
+		TriggeredBy:    operationsAlertActor,
 		IdempotencyKey: cacheMissDedupeKey(miss),
 		Recipients: []WorkflowRecipient{
 			{Email: cfg.Email},
@@ -386,7 +386,7 @@ func crossServiceFailureDedupeKey(failure crossServiceFailure) string {
 		failure.Method,
 		failure.endpoint(),
 	}, "\x00")))
-	return "platform:cross_service_call_failed:" + hex.EncodeToString(sum[:8])
+	return "operations:cross_service_call_failed:" + hex.EncodeToString(sum[:8])
 }
 
 func cacheMissDedupeKey(miss cacheMissAlert) string {
@@ -399,7 +399,7 @@ func cacheMissDedupeKey(miss cacheMissAlert) string {
 		miss.CacheName,
 		miss.Timestamp.UTC().Format(time.RFC3339Nano),
 	}, "\x00")))
-	return "platform:cache_miss:" + hex.EncodeToString(sum[:8])
+	return "operations:cache_miss:" + hex.EncodeToString(sum[:8])
 }
 
 func (f crossServiceFailure) targetService() string {

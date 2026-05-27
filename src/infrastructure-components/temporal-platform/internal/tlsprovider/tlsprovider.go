@@ -51,6 +51,7 @@ func New(ctx context.Context, socketPath string) (*Provider, error) {
 		workloadauth.ServiceTemporalServer,
 		workloadauth.ServiceSandboxRental,
 		workloadauth.ServiceBilling,
+		workloadauth.ServiceDistribution,
 	)
 	if err != nil {
 		_ = source.Close()

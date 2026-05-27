@@ -172,9 +172,9 @@ func TestNotificationsNormalizeProblemDetails(t *testing.T) {
 }
 
 func notificationJSON(notificationID, sequence string) string {
-	return `{"notification_id":"` + notificationID + `","org_id":"370200542594579812","recipient_subject_id":"user_1","recipient_sequence":"` + sequence + `","kind":"test","priority":"normal","title":"Smoke","body":"Body","action_url":"https://verself.sh","resource_kind":"run","resource_id":"run_1","created_at":"2026-05-07T00:00:00Z"}`
+	return `{"notification_id":"` + notificationID + `","org_id":"org_00000000000000000000000000","recipient_subject_id":"user_1","recipient_sequence":"` + sequence + `","kind":"test","priority":"normal","title":"Smoke","body":"Body","action_url":"https://verself.sh","resource_kind":"run","resource_id":"run_1","created_at":"2026-05-07T00:00:00Z"}`
 }
 
 func notificationSummaryJSON(notificationID, readUpTo, latest string) string {
-	return `{"org_id":"370200542594579812","subject_id":"user_1","unread_count":1,"latest_sequence":"` + latest + `","read_up_to_sequence":"` + readUpTo + `","preferences":{"enabled":true,"web_enabled":true,"email_enabled":true,"push_enabled":false,"sms_enabled":false,"version":1,"updated_at":"2026-05-07T00:00:00Z","updated_by":"user_1"},"latest_notification":` + notificationJSON(notificationID, latest) + `}`
+	return `{"org_id":"org_00000000000000000000000000","subject_id":"user_1","unread_count":1,"latest_sequence":"` + latest + `","read_up_to_sequence":"` + readUpTo + `","preferences":{"enabled":true,"web_enabled":true,"email_enabled":true,"push_enabled":false,"sms_enabled":false,"version":1,"updated_at":"2026-05-07T00:00:00Z","updated_by":"user_1"},"latest_notification":` + notificationJSON(notificationID, latest) + `}`
 }

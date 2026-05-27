@@ -20,7 +20,7 @@ func TestEnforceOperationPolicyWritesAPIActivityParentEdgeWithPermissionName(t *
 	}
 	ctx := auth.WithIdentity(context.Background(), &auth.Identity{
 		Subject: "user_123",
-		OrgID:   "371564185181576922",
+		OrgID:   "org_B7HWGKW0SH7G4EXW9XT8TCT60C",
 	})
 
 	if _, err := enforceOperationPolicy(ctx, authorizer, policy); err != nil {

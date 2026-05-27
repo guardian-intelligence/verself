@@ -187,8 +187,7 @@ func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 		`render_targets:`,
 	})
 	assertFileContains(t, filepath.Join(repoRoot, "src", "host", "sites", "prod", "vars.yml"), []string{
-		`platform_owner_email: "shovon@guardianintelligence.org"`,
-		`platform_organization_name: "guardianintelligence.org"`,
+		`service_discovery_canary_org_slug: "guardian"`,
 		`bootstrap_runtime_substrate: customer_latitude_bare_metal`,
 	})
 	assertFileContains(t, filepath.Join(repoRoot, "README.md"), []string{
@@ -419,10 +418,10 @@ func TestProjectsCommandsUseSDKBackedAPI(t *testing.T) {
 	const createdProjectID = "22222222-2222-2222-2222-222222222222"
 	const environmentID = "33333333-3333-3333-3333-333333333333"
 	projectJSON := func(id, slug, displayName, description, state, version string) string {
-		return `{"project_id":"` + id + `","org_id":"370200542594579812","slug":"` + slug + `","display_name":"` + displayName + `","description":"` + description + `","state":"` + state + `","version":"` + version + `","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+		return `{"project_id":"` + id + `","org_id":"org_00000000000000000000000000","slug":"` + slug + `","display_name":"` + displayName + `","description":"` + description + `","state":"` + state + `","version":"` + version + `","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
 	}
 	environmentJSON := func(slug, displayName, kind, state, version string) string {
-		return `{"environment_id":"` + environmentID + `","project_id":"` + projectID + `","org_id":"370200542594579812","slug":"` + slug + `","display_name":"` + displayName + `","kind":"` + kind + `","state":"` + state + `","version":"` + version + `","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+		return `{"environment_id":"` + environmentID + `","project_id":"` + projectID + `","org_id":"org_00000000000000000000000000","slug":"` + slug + `","display_name":"` + displayName + `","kind":"` + kind + `","state":"` + state + `","version":"` + version + `","created_by":"user","updated_by":"user","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -559,8 +558,8 @@ func TestAuditCommandsUseSDKBackedAPI(t *testing.T) {
 	const traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"
 	var createKey string
 	var createBody map[string]any
-	exportJSON := `{"export_id":"` + exportID + `","resourceName":"urn:verself:governance:data_export:` + exportID + `","org_id":"370200542594579812","requested_by":"user_1","scopes":["api_activity"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"governance/ocsf_api_activities.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
-	apiActivityJSON := `{"metadata_uid":"22222222-2222-2222-2222-222222222222","time":"2026-05-07T00:00:01Z","org_id":"370200542594579812","sequence":"1","ocsf_version":"1.5.0","category_uid":6,"category_name":"Application Activity","class_uid":6003,"class_name":"API Activity","type_uid":600301,"activity_id":1,"activity_name":"Create","action_id":1,"action":"Allowed","status_id":1,"status":"Success","status_code":"200","severity_id":1,"severity":"Informational","api_service":"governance-service","api_operation":"create-data-export","actor_type":"user","actor_uid":"user_1","credential_uid":"cred_1","primary_resource_type":"data_export","primary_resource_uid":"` + exportID + `","primary_resource_full_name":"urn:verself:governance:data_export:` + exportID + `","permission":"governance.exports.write","http_method":"POST","http_route":"/api/v1/governance/exports","http_response_code":201,"trace_uid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","span_uid":"bbbbbbbbbbbbbbbb","ocsf_sha256":"hash","prev_hmac":"prev","row_hmac":"row"}`
+	exportJSON := `{"export_id":"` + exportID + `","resourceName":"urn:verself:governance:data_export:` + exportID + `","org_id":"org_00000000000000000000000000","requested_by":"user_1","scopes":["api_activity"],"include_logs":true,"format":"tar.gz","state":"ready","artifact_sha256":"sha256","artifact_bytes":"10","download_url":"/api/v1/governance/exports/` + exportID + `/download","files":[{"path":"governance/ocsf_api_activities.jsonl","content_type":"application/jsonl","rows":"1","bytes":"10","sha256":"file_sha256"}],"created_at":"2026-05-07T00:00:00Z","updated_at":"2026-05-07T00:00:01Z","completed_at":"2026-05-07T00:00:01Z","expires_at":"2026-05-08T00:00:00Z"}`
+	apiActivityJSON := `{"metadata_uid":"22222222-2222-2222-2222-222222222222","time":"2026-05-07T00:00:01Z","org_id":"org_00000000000000000000000000","sequence":"1","ocsf_version":"1.5.0","category_uid":6,"category_name":"Application Activity","class_uid":6003,"class_name":"API Activity","type_uid":600301,"activity_id":1,"activity_name":"Create","action_id":1,"action":"Allowed","status_id":1,"status":"Success","status_code":"200","severity_id":1,"severity":"Informational","api_service":"governance-service","api_operation":"create-data-export","actor_type":"user","actor_uid":"user_1","credential_uid":"cred_1","primary_resource_type":"data_export","primary_resource_uid":"` + exportID + `","primary_resource_full_name":"urn:verself:governance:data_export:` + exportID + `","permission":"governance.exports.write","http_method":"POST","http_route":"/api/v1/governance/exports","http_response_code":201,"trace_uid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","span_uid":"bbbbbbbbbbbbbbbb","ocsf_sha256":"hash","prev_hmac":"prev","row_hmac":"row"}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer tok_governance" {
 			t.Fatalf("%s %s Authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
@@ -637,10 +636,10 @@ func TestAuditCommandsUseSDKBackedAPI(t *testing.T) {
 func TestNotificationsCommandsUseSDKBackedAPI(t *testing.T) {
 	const notificationID = "11111111-1111-1111-1111-111111111111"
 	notificationJSON := func(sequence string) string {
-		return `{"notification_id":"` + notificationID + `","org_id":"370200542594579812","recipient_subject_id":"user_1","recipient_sequence":"` + sequence + `","kind":"test","priority":"normal","title":"Smoke","body":"Body","action_url":"https://verself.sh","resource_kind":"run","resource_id":"run_1","created_at":"2026-05-07T00:00:00Z"}`
+		return `{"notification_id":"` + notificationID + `","org_id":"org_00000000000000000000000000","recipient_subject_id":"user_1","recipient_sequence":"` + sequence + `","kind":"test","priority":"normal","title":"Smoke","body":"Body","action_url":"https://verself.sh","resource_kind":"run","resource_id":"run_1","created_at":"2026-05-07T00:00:00Z"}`
 	}
 	summaryJSON := func(readUpTo, latest string) string {
-		return `{"org_id":"370200542594579812","subject_id":"user_1","unread_count":1,"latest_sequence":"` + latest + `","read_up_to_sequence":"` + readUpTo + `","preferences":{"enabled":true,"web_enabled":true,"email_enabled":false,"push_enabled":false,"sms_enabled":false,"version":1,"updated_at":"2026-05-07T00:00:00Z","updated_by":"user_1"},"latest_notification":` + notificationJSON(latest) + `}`
+		return `{"org_id":"org_00000000000000000000000000","subject_id":"user_1","unread_count":1,"latest_sequence":"` + latest + `","read_up_to_sequence":"` + readUpTo + `","preferences":{"enabled":true,"web_enabled":true,"email_enabled":false,"push_enabled":false,"sms_enabled":false,"version":1,"updated_at":"2026-05-07T00:00:00Z","updated_by":"user_1"},"latest_notification":` + notificationJSON(latest) + `}`
 	}
 	var listTraceparent string
 	var preferencesKey string
@@ -856,8 +855,8 @@ func TestReposCommandsUseSourceSDKBackedAPI(t *testing.T) {
 	const credentialID = "33333333-3333-3333-3333-333333333333"
 	const grantID = "44444444-4444-4444-4444-444444444444"
 	const workflowRunID = "55555555-5555-5555-5555-555555555555"
-	repoJSON := `{"repo_id":"` + repoID + `","org_id":"370200542594579812","org_slug":"guardian","project_id":"` + projectID + `","project_slug":"api","name":"runner","description":"Builds","default_branch":"main","visibility":"private","state":"active","version":1,"backend":"forgejo","git_http_url":"https://git.example/guardian/api-runner.git","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
-	workflowJSON := `{"workflow_run_id":"` + workflowRunID + `","org_id":"370200542594579812","project_id":"` + projectID + `","repo_id":"` + repoID + `","actor_id":"user_1","backend":"forgejo","workflow_path":".github/workflows/build.yml","ref":"main","inputs":{"target":"linux"},"state":"queued","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+	repoJSON := `{"repo_id":"` + repoID + `","org_id":"org_00000000000000000000000000","org_slug":"guardian","project_id":"` + projectID + `","project_slug":"api","name":"runner","description":"Builds","default_branch":"main","visibility":"private","state":"active","version":1,"backend":"forgejo","git_http_url":"https://git.example/guardian/api-runner.git","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+	workflowJSON := `{"workflow_run_id":"` + workflowRunID + `","org_id":"org_00000000000000000000000000","project_id":"` + projectID + `","repo_id":"` + repoID + `","actor_id":"user_1","backend":"forgejo","workflow_path":".github/workflows/build.yml","ref":"main","inputs":{"target":"linux"},"state":"queued","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
 	var createRepoKey string
 	var createRepoBody map[string]any
 	var credentialKey string
@@ -894,7 +893,7 @@ func TestReposCommandsUseSourceSDKBackedAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"credential_id":"` + credentialID + `","org_id":"370200542594579812","username":"x-access-token","token":"vsrc_test","token_prefix":"vsrc_","scopes":["repo:read","repo:write"],"expires_at":"2026-05-06T01:00:00Z","created_at":"2026-05-06T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"credential_id":"` + credentialID + `","org_id":"org_00000000000000000000000000","username":"x-access-token","token":"vsrc_test","token_prefix":"vsrc_","scopes":["repo:read","repo:write"],"expires_at":"2026-05-06T01:00:00Z","created_at":"2026-05-06T00:00:00Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/"+repoID+"/refs":
 			_, _ = w.Write([]byte(`{"refs":[{"name":"refs/heads/main","commit":"abc123"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/"+repoID+"/tree":
@@ -1027,8 +1026,8 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 	const projectID = "33333333-3333-3333-3333-333333333333"
 	const repoID = "44444444-4444-4444-4444-444444444444"
 	const scheduleID = "55555555-5555-5555-5555-555555555555"
-	runJSON := `{"execution_id":"` + executionID + `","run_id":"` + runID + `","org_id":"370200542594579812","actor_id":"user_1","product_id":"sandbox-ci","kind":"ci","status":"succeeded","source_kind":"github","runner_class":"linux-2vcpu","latest_attempt":{"attempt_id":"attempt_1","attempt_seq":1,"state":"succeeded","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:01:00Z"},"created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:01:00Z"}`
-	scheduleJSON := `{"schedule_id":"` + scheduleID + `","org_id":"370200542594579812","project_id":"` + projectID + `","source_repository_id":"` + repoID + `","actor_id":"user_1","display_name":"Nightly","workflow_path":".github/workflows/build.yml","ref":"main","inputs":{"target":"linux"},"interval_seconds":900,"state":"active","task_queue":"sandbox-recurring","temporal_namespace":"default","temporal_schedule_id":"verself-schedule","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
+	runJSON := `{"execution_id":"` + executionID + `","run_id":"` + runID + `","org_id":"org_00000000000000000000000000","actor_id":"user_1","product_id":"sandbox-ci","kind":"ci","status":"succeeded","source_kind":"github","runner_class":"linux-2vcpu","latest_attempt":{"attempt_id":"attempt_1","attempt_seq":1,"state":"succeeded","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:01:00Z"},"created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:01:00Z"}`
+	scheduleJSON := `{"schedule_id":"` + scheduleID + `","org_id":"org_00000000000000000000000000","project_id":"` + projectID + `","source_repository_id":"` + repoID + `","actor_id":"user_1","display_name":"Nightly","workflow_path":".github/workflows/build.yml","ref":"main","inputs":{"target":"linux"},"interval_seconds":900,"state":"active","task_queue":"sandbox-recurring","temporal_namespace":"default","temporal_schedule_id":"verself-schedule","created_at":"2026-05-06T00:00:00Z","updated_at":"2026-05-06T00:00:00Z"}`
 	analyticsWindow := `{"window_start":"2026-05-06T00:00:00Z","window_end":"2026-05-07T00:00:00Z"`
 	logSearchJSON := `{"filters":{"query":"build","run_id":"` + runID + `"},"limit":1,"next_cursor":"logs_cursor","results":[{"execution_id":"` + executionID + `","attempt_id":"attempt_1","seq":1,"stream":"stdout","chunk":"build log\n","created_at":"2026-05-06T00:00:30Z","source_kind":"github"}]}`
 	var createBody map[string]any
@@ -1079,7 +1078,7 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 			resumeKey = r.Header.Get("Idempotency-Key")
 			_, _ = w.Write([]byte(scheduleJSON))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/entitlements":
-			_, _ = w.Write([]byte(`{"org_id":"370200542594579812","universal":{"scope_type":"account","product_id":"","product_display":"","bucket_id":"","bucket_display":"","sku_id":"","sku_display":"","coverage_label":"Account","available_units":"100","pending_units":"0","period_start_units":"100","spent_units":"0","sources":[]},"products":[]}`))
+			_, _ = w.Write([]byte(`{"org_id":"org_00000000000000000000000000","universal":{"scope_type":"account","product_id":"","product_display":"","bucket_id":"","bucket_display":"","sku_id":"","sku_display":"","coverage_label":"Account","available_units":"100","pending_units":"0","period_start_units":"100","spent_units":"0","sources":[]},"products":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/contracts":
 			_, _ = w.Write([]byte(`{"contracts":[{"contract_id":"contract_1","product_id":"sandbox","plan_id":"sandbox-pro","cadence_kind":"monthly","status":"active","payment_state":"current","entitlement_state":"active","phase_id":"phase_1","starts_at":"2026-05-06T00:00:00Z"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/plans":
@@ -1091,7 +1090,7 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 			if r.URL.Query().Get("product_id") != "sandbox" {
 				t.Fatalf("statement query = %s", r.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`{"org_id":"370200542594579812","product_id":"sandbox","period_source":"current","period_start":"2026-05-01T00:00:00Z","period_end":"2026-06-01T00:00:00Z","generated_at":"2026-05-06T00:00:00Z","currency":"USD","unit_label":"credits","totals":{"reserved_units":"0","contract_units":"100","free_tier_units":"0","promo_units":"0","purchase_units":"0","receivable_units":"0","refund_units":"0","charge_units":"5","total_due_units":"0"},"grant_summaries":[],"line_items":[]}`))
+			_, _ = w.Write([]byte(`{"org_id":"org_00000000000000000000000000","product_id":"sandbox","period_source":"current","period_start":"2026-05-01T00:00:00Z","period_end":"2026-06-01T00:00:00Z","generated_at":"2026-05-06T00:00:00Z","currency":"USD","unit_label":"credits","totals":{"reserved_units":"0","contract_units":"100","free_tier_units":"0","promo_units":"0","purchase_units":"0","receivable_units":"0","refund_units":"0","charge_units":"5","total_due_units":"0"},"grant_summaries":[],"line_items":[]}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -1171,7 +1170,7 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 
 	var entitlementsOut bytes.Buffer
 	runCLI(t, &entitlementsOut, "billing", "entitlements")
-	if !strings.Contains(entitlementsOut.String(), "370200542594579812\t100") {
+	if !strings.Contains(entitlementsOut.String(), "org_00000000000000000000000000\t100") {
 		t.Fatalf("billing entitlements output:\n%s", entitlementsOut.String())
 	}
 	var contractsOut bytes.Buffer
@@ -1186,7 +1185,7 @@ func TestSandboxCommandsUseSDKBackedAPI(t *testing.T) {
 	}
 	var statementOut bytes.Buffer
 	runCLI(t, &statementOut, "billing", "statement", "--product-id", "sandbox")
-	if !strings.Contains(statementOut.String(), "370200542594579812\tsandbox\tcurrent\t0") {
+	if !strings.Contains(statementOut.String(), "org_00000000000000000000000000\tsandbox\tcurrent\t0") {
 		t.Fatalf("billing statement output:\n%s", statementOut.String())
 	}
 }
@@ -1472,8 +1471,6 @@ func TestBootstrapOverlaysExistingSiteVars(t *testing.T) {
 verself_site: prod
 bare_metal_host_alias: vs-dev-w0
 verself_domain: old.example
-platform_org_id: "370200542594579812"
-platform_company_display_name: Old Company
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1482,10 +1479,8 @@ platform_company_display_name: Old Company
 
 	assertFileContains(t, siteVarsPath, []string{
 		`bare_metal_host_alias: vs-dev-w0`,
-		`platform_org_id: "370200542594579812"`,
 		`verself_domain: "guardian.example"`,
-		`platform_company_display_name: "Guardian Intelligence"`,
-		`platform_owner_email: "shovon@guardianintelligence.org"`,
+		`service_discovery_canary_org_slug: "guardian"`,
 	})
 }
 

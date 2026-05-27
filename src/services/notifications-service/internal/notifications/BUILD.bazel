@@ -5,7 +5,7 @@ go_library(
     srcs = [
         "email.go",
         "nats.go",
-        "platform_alerts.go",
+        "operations_alerts.go",
         "runtime.go",
         "safeconv.go",
         "service.go",
@@ -42,7 +42,7 @@ go_test(
     name = "notifications_test",
     srcs = [
         "email_test.go",
-        "platform_alerts_test.go",
+        "operations_alerts_test.go",
     ],
     embed = [":notifications"],
     deps = ["//src/services/email-service/internalclient"],

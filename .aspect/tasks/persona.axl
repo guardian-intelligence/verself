@@ -94,7 +94,7 @@ user_state = task(
     summary = "Set billing fixture state for a persona (plan tier, balance, business-time override).",
     args = {
         "email": args.string(default = "", description = "User email."),
-        "org": args.string(default = "", description = "Org slug (e.g. platform)."),
+        "org": args.string(default = "", description = "Org slug (e.g. guardian-intelligence)."),
         "org_id": args.string(default = "", description = "Public org ID (alternative to --org)."),
         "org_name": args.string(default = "", description = "Org display name."),
         "state": args.string(default = "", description = "Billing state (free|hobby|pro|...)."),
