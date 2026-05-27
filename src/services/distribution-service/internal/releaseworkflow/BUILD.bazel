@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "releaseworkflow",
+    srcs = ["client.go"],
+    importpath = "github.com/verself/distribution-service/internal/releaseworkflow",
+    visibility = ["//src/services/distribution-service:__subpackages__"],
+    deps = [
+        "//src/infrastructure-components/temporal-platform/sdkclient",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
+        "@io_temporal_go_api//enums/v1:enums",
+        "@io_temporal_go_sdk//client",
+        "@io_temporal_go_sdk//temporal",
+    ],
+)
+
+go_test(
+    name = "releaseworkflow_test",
+    srcs = ["client_test.go"],
+    embed = [":releaseworkflow"],
+    deps = [
+        "@io_temporal_go_api//enums/v1:enums",
+        "@io_temporal_go_sdk//client",
+    ],
+)
