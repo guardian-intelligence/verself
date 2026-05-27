@@ -62,11 +62,38 @@ func TestCreateSignupUserMapsDuplicateUserToAccountExists(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	_, err = client.CreateSignupUser(context.Background(), identity.DirectoryCreateSignupUserRequest{
-		OrgID: "42",
-		Email: "existing@example.test",
+		OrgID:    "42",
+		Email:    "existing@example.test",
+		Password: "correct horse battery staple",
 	})
 	if !errors.Is(err, identity.ErrSignupAccountExists) {
 		t.Fatalf("CreateSignupUser err = %v, want ErrSignupAccountExists", err)
+	}
+}
+
+func TestStartDeviceAuthorizationMapsInvalidClientToInvalidInput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/oauth/v2/device_authorization" {
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":             "invalid_client",
+			"error_description": "no active client not found",
+		})
+	}))
+	defer server.Close()
+
+	client, err := New(Config{BaseURL: server.URL, AdminToken: "admin-token"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	_, err = client.StartDeviceAuthorization(context.Background(), identity.StartDeviceAuthorizationInput{
+		ClientID: "invalid-client",
+		Scopes:   []string{"openid"},
+	})
+	if !errors.Is(err, identity.ErrInvalidInput) {
+		t.Fatalf("StartDeviceAuthorization err = %v, want ErrInvalidInput", err)
 	}
 }
 

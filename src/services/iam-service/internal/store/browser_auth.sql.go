@@ -63,16 +63,33 @@ const deleteBrowserLoginTransaction = `-- name: DeleteBrowserLoginTransaction :o
 DELETE FROM iam_browser_login_transactions
 WHERE state_hash = $1
   AND expires_at > now()
-RETURNING state_hash, client_hash, nonce, code_verifier, redirect_to, purpose, login_hint, required_subject, required_email, required_org_id, expires_at, created_at
+RETURNING state_hash, client_hash, nonce, code_verifier, redirect_to, purpose, login_hint, required_subject, required_email, required_org_id, provider_session_id, provider_session_token_ciphertext, expires_at, created_at
 `
 
 type DeleteBrowserLoginTransactionParams struct {
 	StateHash string
 }
 
-func (q *Queries) DeleteBrowserLoginTransaction(ctx context.Context, arg DeleteBrowserLoginTransactionParams) (IamBrowserLoginTransaction, error) {
+type DeleteBrowserLoginTransactionRow struct {
+	StateHash                      string
+	ClientHash                     string
+	Nonce                          string
+	CodeVerifier                   string
+	RedirectTo                     string
+	Purpose                        string
+	LoginHint                      pgtype.Text
+	RequiredSubject                pgtype.Text
+	RequiredEmail                  pgtype.Text
+	RequiredOrgID                  pgtype.Text
+	ProviderSessionID              string
+	ProviderSessionTokenCiphertext string
+	ExpiresAt                      pgtype.Timestamptz
+	CreatedAt                      pgtype.Timestamptz
+}
+
+func (q *Queries) DeleteBrowserLoginTransaction(ctx context.Context, arg DeleteBrowserLoginTransactionParams) (DeleteBrowserLoginTransactionRow, error) {
 	row := q.db.QueryRow(ctx, deleteBrowserLoginTransaction, arg.StateHash)
-	var i IamBrowserLoginTransaction
+	var i DeleteBrowserLoginTransactionRow
 	err := row.Scan(
 		&i.StateHash,
 		&i.ClientHash,
@@ -84,6 +101,8 @@ func (q *Queries) DeleteBrowserLoginTransaction(ctx context.Context, arg DeleteB
 		&i.RequiredSubject,
 		&i.RequiredEmail,
 		&i.RequiredOrgID,
+		&i.ProviderSessionID,
+		&i.ProviderSessionTokenCiphertext,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 	)
@@ -133,6 +152,8 @@ SELECT
   a.id_token_ciphertext,
   a.access_token_ciphertext,
   a.refresh_token_ciphertext,
+  a.provider_session_id,
+  a.provider_session_token_ciphertext,
   a.token_scope,
   a.expires_at,
   a.created_client_ip,
@@ -176,52 +197,54 @@ type GetActiveBrowserAccountParams struct {
 }
 
 type GetActiveBrowserAccountRow struct {
-	ClientHandle             string
-	ClientCachePartition     string
-	AccountHandle            string
-	ClientHash               string
-	State                    string
-	Subject                  string
-	Email                    pgtype.Text
-	DisplayName              pgtype.Text
-	PreferredUsername        pgtype.Text
-	OrgID                    pgtype.Text
-	HomeOrgID                pgtype.Text
-	SelectedOrgID            pgtype.Text
-	AvailableOrgContextsJson string
-	UserClaimsJson           string
-	IDTokenCiphertext        pgtype.Text
-	AccessTokenCiphertext    string
-	RefreshTokenCiphertext   pgtype.Text
-	TokenScope               pgtype.Text
-	ExpiresAt                pgtype.Timestamptz
-	CreatedClientIp          string
-	CreatedClientIpTrusted   bool
-	CreatedClientIpSource    string
-	CreatedEdgePeerIp        string
-	CreatedUserAgent         string
-	CreatedDeviceLabel       string
-	CreatedDeviceKind        string
-	CreatedBrowserName       string
-	CreatedOsName            string
-	CreatedGeoCountryCode    string
-	CreatedGeoRegion         string
-	CreatedGeoCity           string
-	LastSeenClientIp         string
-	LastSeenClientIpTrusted  bool
-	LastSeenClientIpSource   string
-	LastSeenEdgePeerIp       string
-	LastSeenUserAgent        string
-	LastSeenDeviceLabel      string
-	LastSeenDeviceKind       string
-	LastSeenBrowserName      string
-	LastSeenOsName           string
-	LastSeenGeoCountryCode   string
-	LastSeenGeoRegion        string
-	LastSeenGeoCity          string
-	LastSeenAt               pgtype.Timestamptz
-	CreatedAt                pgtype.Timestamptz
-	UpdatedAt                pgtype.Timestamptz
+	ClientHandle                   string
+	ClientCachePartition           string
+	AccountHandle                  string
+	ClientHash                     string
+	State                          string
+	Subject                        string
+	Email                          pgtype.Text
+	DisplayName                    pgtype.Text
+	PreferredUsername              pgtype.Text
+	OrgID                          pgtype.Text
+	HomeOrgID                      pgtype.Text
+	SelectedOrgID                  pgtype.Text
+	AvailableOrgContextsJson       string
+	UserClaimsJson                 string
+	IDTokenCiphertext              pgtype.Text
+	AccessTokenCiphertext          string
+	RefreshTokenCiphertext         pgtype.Text
+	ProviderSessionID              string
+	ProviderSessionTokenCiphertext string
+	TokenScope                     pgtype.Text
+	ExpiresAt                      pgtype.Timestamptz
+	CreatedClientIp                string
+	CreatedClientIpTrusted         bool
+	CreatedClientIpSource          string
+	CreatedEdgePeerIp              string
+	CreatedUserAgent               string
+	CreatedDeviceLabel             string
+	CreatedDeviceKind              string
+	CreatedBrowserName             string
+	CreatedOsName                  string
+	CreatedGeoCountryCode          string
+	CreatedGeoRegion               string
+	CreatedGeoCity                 string
+	LastSeenClientIp               string
+	LastSeenClientIpTrusted        bool
+	LastSeenClientIpSource         string
+	LastSeenEdgePeerIp             string
+	LastSeenUserAgent              string
+	LastSeenDeviceLabel            string
+	LastSeenDeviceKind             string
+	LastSeenBrowserName            string
+	LastSeenOsName                 string
+	LastSeenGeoCountryCode         string
+	LastSeenGeoRegion              string
+	LastSeenGeoCity                string
+	LastSeenAt                     pgtype.Timestamptz
+	CreatedAt                      pgtype.Timestamptz
+	UpdatedAt                      pgtype.Timestamptz
 }
 
 func (q *Queries) GetActiveBrowserAccount(ctx context.Context, arg GetActiveBrowserAccountParams) (GetActiveBrowserAccountRow, error) {
@@ -245,6 +268,8 @@ func (q *Queries) GetActiveBrowserAccount(ctx context.Context, arg GetActiveBrow
 		&i.IDTokenCiphertext,
 		&i.AccessTokenCiphertext,
 		&i.RefreshTokenCiphertext,
+		&i.ProviderSessionID,
+		&i.ProviderSessionTokenCiphertext,
 		&i.TokenScope,
 		&i.ExpiresAt,
 		&i.CreatedClientIp,
@@ -295,6 +320,8 @@ SELECT
   id_token_ciphertext,
   access_token_ciphertext,
   refresh_token_ciphertext,
+  provider_session_id,
+  provider_session_token_ciphertext,
   token_scope,
   expires_at,
   created_client_ip,
@@ -336,50 +363,52 @@ type GetBrowserAccountParams struct {
 }
 
 type GetBrowserAccountRow struct {
-	AccountHandle            string
-	ClientHash               string
-	State                    string
-	Subject                  string
-	Email                    pgtype.Text
-	DisplayName              pgtype.Text
-	PreferredUsername        pgtype.Text
-	OrgID                    pgtype.Text
-	HomeOrgID                pgtype.Text
-	SelectedOrgID            pgtype.Text
-	AvailableOrgContextsJson string
-	UserClaimsJson           string
-	IDTokenCiphertext        pgtype.Text
-	AccessTokenCiphertext    string
-	RefreshTokenCiphertext   pgtype.Text
-	TokenScope               pgtype.Text
-	ExpiresAt                pgtype.Timestamptz
-	CreatedClientIp          string
-	CreatedClientIpTrusted   bool
-	CreatedClientIpSource    string
-	CreatedEdgePeerIp        string
-	CreatedUserAgent         string
-	CreatedDeviceLabel       string
-	CreatedDeviceKind        string
-	CreatedBrowserName       string
-	CreatedOsName            string
-	CreatedGeoCountryCode    string
-	CreatedGeoRegion         string
-	CreatedGeoCity           string
-	LastSeenClientIp         string
-	LastSeenClientIpTrusted  bool
-	LastSeenClientIpSource   string
-	LastSeenEdgePeerIp       string
-	LastSeenUserAgent        string
-	LastSeenDeviceLabel      string
-	LastSeenDeviceKind       string
-	LastSeenBrowserName      string
-	LastSeenOsName           string
-	LastSeenGeoCountryCode   string
-	LastSeenGeoRegion        string
-	LastSeenGeoCity          string
-	LastSeenAt               pgtype.Timestamptz
-	CreatedAt                pgtype.Timestamptz
-	UpdatedAt                pgtype.Timestamptz
+	AccountHandle                  string
+	ClientHash                     string
+	State                          string
+	Subject                        string
+	Email                          pgtype.Text
+	DisplayName                    pgtype.Text
+	PreferredUsername              pgtype.Text
+	OrgID                          pgtype.Text
+	HomeOrgID                      pgtype.Text
+	SelectedOrgID                  pgtype.Text
+	AvailableOrgContextsJson       string
+	UserClaimsJson                 string
+	IDTokenCiphertext              pgtype.Text
+	AccessTokenCiphertext          string
+	RefreshTokenCiphertext         pgtype.Text
+	ProviderSessionID              string
+	ProviderSessionTokenCiphertext string
+	TokenScope                     pgtype.Text
+	ExpiresAt                      pgtype.Timestamptz
+	CreatedClientIp                string
+	CreatedClientIpTrusted         bool
+	CreatedClientIpSource          string
+	CreatedEdgePeerIp              string
+	CreatedUserAgent               string
+	CreatedDeviceLabel             string
+	CreatedDeviceKind              string
+	CreatedBrowserName             string
+	CreatedOsName                  string
+	CreatedGeoCountryCode          string
+	CreatedGeoRegion               string
+	CreatedGeoCity                 string
+	LastSeenClientIp               string
+	LastSeenClientIpTrusted        bool
+	LastSeenClientIpSource         string
+	LastSeenEdgePeerIp             string
+	LastSeenUserAgent              string
+	LastSeenDeviceLabel            string
+	LastSeenDeviceKind             string
+	LastSeenBrowserName            string
+	LastSeenOsName                 string
+	LastSeenGeoCountryCode         string
+	LastSeenGeoRegion              string
+	LastSeenGeoCity                string
+	LastSeenAt                     pgtype.Timestamptz
+	CreatedAt                      pgtype.Timestamptz
+	UpdatedAt                      pgtype.Timestamptz
 }
 
 func (q *Queries) GetBrowserAccount(ctx context.Context, arg GetBrowserAccountParams) (GetBrowserAccountRow, error) {
@@ -401,6 +430,8 @@ func (q *Queries) GetBrowserAccount(ctx context.Context, arg GetBrowserAccountPa
 		&i.IDTokenCiphertext,
 		&i.AccessTokenCiphertext,
 		&i.RefreshTokenCiphertext,
+		&i.ProviderSessionID,
+		&i.ProviderSessionTokenCiphertext,
 		&i.TokenScope,
 		&i.ExpiresAt,
 		&i.CreatedClientIp,
@@ -638,6 +669,8 @@ INSERT INTO iam_browser_login_transactions (
   required_subject,
   required_email,
   required_org_id,
+  provider_session_id,
+  provider_session_token_ciphertext,
   expires_at
 ) VALUES (
   $1,
@@ -650,22 +683,26 @@ INSERT INTO iam_browser_login_transactions (
   $8,
   $9,
   $10,
-  $11
+  $11,
+  $12,
+  $13
 )
 `
 
 type InsertBrowserLoginTransactionParams struct {
-	StateHash       string
-	ClientHash      string
-	Nonce           string
-	CodeVerifier    string
-	RedirectTo      string
-	Purpose         string
-	LoginHint       pgtype.Text
-	RequiredSubject pgtype.Text
-	RequiredEmail   pgtype.Text
-	RequiredOrgID   pgtype.Text
-	ExpiresAt       pgtype.Timestamptz
+	StateHash                      string
+	ClientHash                     string
+	Nonce                          string
+	CodeVerifier                   string
+	RedirectTo                     string
+	Purpose                        string
+	LoginHint                      pgtype.Text
+	RequiredSubject                pgtype.Text
+	RequiredEmail                  pgtype.Text
+	RequiredOrgID                  pgtype.Text
+	ProviderSessionID              string
+	ProviderSessionTokenCiphertext string
+	ExpiresAt                      pgtype.Timestamptz
 }
 
 func (q *Queries) InsertBrowserLoginTransaction(ctx context.Context, arg InsertBrowserLoginTransactionParams) error {
@@ -680,6 +717,8 @@ func (q *Queries) InsertBrowserLoginTransaction(ctx context.Context, arg InsertB
 		arg.RequiredSubject,
 		arg.RequiredEmail,
 		arg.RequiredOrgID,
+		arg.ProviderSessionID,
+		arg.ProviderSessionTokenCiphertext,
 		arg.ExpiresAt,
 	)
 	return err
@@ -1005,6 +1044,8 @@ INSERT INTO iam_browser_accounts (
   id_token_ciphertext,
   access_token_ciphertext,
   refresh_token_ciphertext,
+  provider_session_id,
+  provider_session_token_ciphertext,
   token_scope,
   expires_at,
   created_client_ip,
@@ -1062,8 +1103,8 @@ INSERT INTO iam_browser_accounts (
   $27,
   $28,
   $29,
-  $18,
-  $19,
+  $30,
+  $31,
   $20,
   $21,
   $22,
@@ -1074,6 +1115,8 @@ INSERT INTO iam_browser_accounts (
   $27,
   $28,
   $29,
+  $30,
+  $31,
   now()
 )
 ON CONFLICT (client_hash, subject) DO UPDATE SET
@@ -1089,6 +1132,8 @@ ON CONFLICT (client_hash, subject) DO UPDATE SET
   id_token_ciphertext = EXCLUDED.id_token_ciphertext,
   access_token_ciphertext = EXCLUDED.access_token_ciphertext,
   refresh_token_ciphertext = EXCLUDED.refresh_token_ciphertext,
+  provider_session_id = EXCLUDED.provider_session_id,
+  provider_session_token_ciphertext = EXCLUDED.provider_session_token_ciphertext,
   token_scope = EXCLUDED.token_scope,
   expires_at = EXCLUDED.expires_at,
   last_seen_client_ip = EXCLUDED.last_seen_client_ip,
@@ -1108,35 +1153,37 @@ ON CONFLICT (client_hash, subject) DO UPDATE SET
 `
 
 type UpsertBrowserAccountParams struct {
-	AccountHandle            string
-	ClientHash               string
-	State                    string
-	Subject                  string
-	Email                    pgtype.Text
-	DisplayName              pgtype.Text
-	PreferredUsername        pgtype.Text
-	OrgID                    pgtype.Text
-	HomeOrgID                pgtype.Text
-	SelectedOrgID            pgtype.Text
-	AvailableOrgContextsJson []byte
-	UserClaimsJson           []byte
-	IDTokenCiphertext        pgtype.Text
-	AccessTokenCiphertext    string
-	RefreshTokenCiphertext   pgtype.Text
-	TokenScope               pgtype.Text
-	ExpiresAt                pgtype.Timestamptz
-	ClientIp                 string
-	ClientIpTrusted          bool
-	ClientIpSource           string
-	EdgePeerIp               string
-	UserAgent                string
-	DeviceLabel              string
-	DeviceKind               string
-	BrowserName              string
-	OsName                   string
-	GeoCountryCode           string
-	GeoRegion                string
-	GeoCity                  string
+	AccountHandle                  string
+	ClientHash                     string
+	State                          string
+	Subject                        string
+	Email                          pgtype.Text
+	DisplayName                    pgtype.Text
+	PreferredUsername              pgtype.Text
+	OrgID                          pgtype.Text
+	HomeOrgID                      pgtype.Text
+	SelectedOrgID                  pgtype.Text
+	AvailableOrgContextsJson       []byte
+	UserClaimsJson                 []byte
+	IDTokenCiphertext              pgtype.Text
+	AccessTokenCiphertext          string
+	RefreshTokenCiphertext         pgtype.Text
+	ProviderSessionID              string
+	ProviderSessionTokenCiphertext string
+	TokenScope                     pgtype.Text
+	ExpiresAt                      pgtype.Timestamptz
+	ClientIp                       string
+	ClientIpTrusted                bool
+	ClientIpSource                 string
+	EdgePeerIp                     string
+	UserAgent                      string
+	DeviceLabel                    string
+	DeviceKind                     string
+	BrowserName                    string
+	OsName                         string
+	GeoCountryCode                 string
+	GeoRegion                      string
+	GeoCity                        string
 }
 
 func (q *Queries) UpsertBrowserAccount(ctx context.Context, arg UpsertBrowserAccountParams) error {
@@ -1156,6 +1203,8 @@ func (q *Queries) UpsertBrowserAccount(ctx context.Context, arg UpsertBrowserAcc
 		arg.IDTokenCiphertext,
 		arg.AccessTokenCiphertext,
 		arg.RefreshTokenCiphertext,
+		arg.ProviderSessionID,
+		arg.ProviderSessionTokenCiphertext,
 		arg.TokenScope,
 		arg.ExpiresAt,
 		arg.ClientIp,

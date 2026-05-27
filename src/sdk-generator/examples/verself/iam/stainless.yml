@@ -12,8 +12,6 @@ resources:
         endpoint: get /api/v1/auth/callback
       accept_member_invite:
         endpoint: post /api/v1/auth/invites/accept
-      login:
-        endpoint: get /api/v1/auth/login
       logout:
         endpoint: get /api/v1/auth/logout
       select_organization:

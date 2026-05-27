@@ -109,10 +109,13 @@ frontend fe_https
   acl jmap_session path -i /jmap/session
   acl stripe_webhook path -i /webhooks/stripe
   acl stripe_source src {{ haproxy_stripe_webhook_ips | join(' ') }}
+  acl auth_device_authorization_path path -i /oauth/v2/device_authorization
   acl zitadel_oidc_path path -i /.well-known/openid-configuration /.well-known/webfinger /robots.txt
   acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console
-  acl auth_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept
+  acl auth_path path -i /api/v1/auth/password-login /api/v1/auth/password-reset /api/v1/auth/password-reset/complete /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/sync-session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/accounts /api/v1/auth/sessions /api/v1/auth/invites/accept
+  acl auth_accounts_path path_beg /api/v1/auth/accounts/
   acl auth_sessions_path path_beg /api/v1/auth/sessions/
+  acl auth_device_logins_path path_beg /api/v1/auth/device-logins/
   acl verself_discovery path -i /.well-known/verself
   acl source_forgejo_webhook path -i /webhooks/forgejo
   acl edge_public_rate_limited sc_http_req_rate(0,be_edge_public_rates) gt {{ haproxy_public_rate_limit }}
@@ -122,13 +125,19 @@ frontend fe_https
 
   http-request track-sc0 src table be_edge_public_rates unless host_npm
   http-request track-sc1 src table be_edge_auth_rates if host_verself auth_path
+  http-request track-sc1 src table be_edge_auth_rates if host_verself auth_accounts_path
   http-request track-sc1 src table be_edge_auth_rates if host_verself auth_sessions_path
+  http-request track-sc1 src table be_edge_auth_rates if host_verself auth_device_logins_path
+  http-request track-sc1 src table be_edge_auth_rates if host_verself auth_device_authorization_path
   http-request track-sc2 src table be_edge_webhook_rates if host_billing stripe_webhook
   http-request track-sc2 src table be_edge_webhook_rates if host_source source_forgejo_webhook
   http-request track-sc3 src table be_edge_npm_registry_rates if host_npm
   http-request return status 429 content-type text/plain string "rate limit exceeded" if edge_public_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_path edge_auth_rate_limited
+  http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_accounts_path edge_auth_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_sessions_path edge_auth_rate_limited
+  http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_device_logins_path edge_auth_rate_limited
+  http-request return status 429 content-type text/plain string "rate limit exceeded" if host_verself auth_device_authorization_path edge_auth_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_billing stripe_webhook edge_webhook_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_source source_forgejo_webhook edge_webhook_rate_limited
   http-request return status 429 content-type text/plain string "rate limit exceeded" if host_npm edge_npm_registry_rate_limited
@@ -139,21 +148,27 @@ frontend fe_https
   http-request return status 405 if host_verself verself_discovery !well_known_read_method
   http-request return status 200 content-type application/json file {{ haproxy_verself_discovery_manifest_path }} hdr Cache-Control "public, max-age=300" if host_verself verself_discovery well_known_read_method
   http-request return status 405 if host_verself zitadel_product_token_claims !method_post
+  http-request return status 405 if host_verself auth_device_authorization_path !method_post
 
   use_backend be_billing_stripe_webhook if host_billing stripe_webhook method_post stripe_source
   use_backend be_sandbox_execution_submit if host_sandbox method_post { path -i /api/v1/executions }
   use_backend be_sandbox_execution_schedule_create if host_sandbox method_post { path -i /api/v1/execution-schedules }
   use_backend be_source_forgejo_webhook if host_source { path -i /webhooks/forgejo }
   use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims
+  use_backend be_route_product_apex_iam_service_public_api if host_verself method_post auth_device_authorization_path
   use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path
   use_backend be_email_jmap_session if host_mail jmap_session
   use_backend be_route_product_npm_registry_verdaccio if host_npm
 
   acl route_1_host var(txn.host) -m str {{ verself_domain }}
-  acl route_1_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept
+  acl route_1_path path -i /api/v1/auth/password-login /api/v1/auth/password-reset /api/v1/auth/password-reset/complete /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/sync-session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/accounts /api/v1/auth/sessions /api/v1/auth/invites/accept
+  acl route_1_accounts_path path_beg /api/v1/auth/accounts/
   acl route_1_sessions_path path_beg /api/v1/auth/sessions/
+  acl route_1_device_logins_path path_beg /api/v1/auth/device-logins/
   use_backend be_route_product_apex_iam_service_public_api if route_1_host route_1_path
+  use_backend be_route_product_apex_iam_service_public_api if route_1_host route_1_accounts_path
   use_backend be_route_product_apex_iam_service_public_api if route_1_host route_1_sessions_path
+  use_backend be_route_product_apex_iam_service_public_api if route_1_host route_1_device_logins_path
   use_backend %[var(txn.host),map({{ haproxy_map_dir }}/public-hosts.map,be_not_found)]
 
 frontend fe_haproxy_metrics

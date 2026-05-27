@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -85,16 +86,55 @@ type BillingProvisioner interface {
 	EnsureBillingOrganization(ctx context.Context, input BillingOrganizationProvisioningRequest) error
 }
 
+type PasswordBreachChecker interface {
+	CheckPassword(ctx context.Context, password string) (BreachedPasswordCheck, error)
+}
+
+type BreachedPasswordCheck struct {
+	Breached    bool
+	Occurrences uint64
+}
+
 type Service struct {
 	Store              Store
 	Directory          Directory
 	AuthorizationGraph AuthorizationGraph
 	PolicyWriter       OrganizationOwnerPolicyWriter
 	Billing            BillingProvisioner
+	PasswordChecker    PasswordBreachChecker
 	ProjectID          string
 	IdentityIssuer     string
 	EmailIdentityKey   []byte
 	Now                func() time.Time
+}
+
+const (
+	passwordMinRunes = 15
+	passwordMaxBytes = 4096
+)
+
+func (s *Service) ValidateNewPassword(ctx context.Context, password string) error {
+	return ValidateNewPassword(ctx, password, s.PasswordChecker)
+}
+
+func ValidateNewPassword(ctx context.Context, password string, checker PasswordBreachChecker) error {
+	if password == "" || utf8.RuneCountInString(password) < passwordMinRunes {
+		return fmt.Errorf("%w: password must be at least %d characters", ErrPasswordRejected, passwordMinRunes)
+	}
+	if len(password) > passwordMaxBytes {
+		return fmt.Errorf("%w: password is too long", ErrPasswordRejected)
+	}
+	if checker == nil {
+		return fmt.Errorf("%w: password breach checker is required", ErrConfiguration)
+	}
+	check, err := checker.CheckPassword(ctx, password)
+	if err != nil {
+		return fmt.Errorf("%w: password breach check: %v", ErrPasswordCheckUnavailable, err)
+	}
+	if check.Breached {
+		return fmt.Errorf("%w: password is known compromised", ErrPasswordRejected)
+	}
+	return nil
 }
 
 func (s *Service) Organization(ctx context.Context, principal Principal) (Organization, error) {

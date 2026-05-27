@@ -4,6 +4,9 @@ import "errors"
 
 var (
 	ErrInvalidInput                  = errors.New("invalid input")
+	ErrInvalidCredentials            = errors.New("invalid credentials")
+	ErrPasswordRejected              = errors.New("password rejected")
+	ErrPasswordCheckUnavailable      = errors.New("password check unavailable")
 	ErrOrganizationConflict          = errors.New("organization conflict")
 	ErrOrganizationSlugUnavailable   = errors.New("organization slug unavailable")
 	ErrOrganizationMissing           = errors.New("organization missing")

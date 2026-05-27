@@ -1,5 +1,5 @@
-import { useForm } from "@tanstack/react-form";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { revalidateLogic, useForm } from "@tanstack/react-form";
+import { createFileRoute, redirect, useHydrated } from "@tanstack/react-router";
 import { Building2 } from "lucide-react";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
@@ -17,14 +17,25 @@ import {
   SectionHeaderContent,
   SectionTitle,
 } from "@verself/ui/components/ui/page";
+import {
+  FieldError,
+  authFormSubmitBusy,
+  authFormSubmitDisabled,
+  fieldInvalid,
+  submitErrorText,
+} from "~/features/auth/form-primitives";
+import {
+  formString,
+  normalizeHumanText,
+  onboardingOrganizationFormSchema,
+  optionalOrganizationSlugSchema,
+  organizationNameSchema,
+  slugify,
+} from "~/features/auth/form-schemas";
 import { createOrganization } from "~/server-fns/api";
 import { selectActiveOrganization } from "~/server-fns/auth";
 import { orgPath } from "~/features/shell/org-routing";
 import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
-
-function formString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
 
 export const Route = createFileRoute("/_shell/_authenticated/onboarding")({
   beforeLoad: async ({ context }) => {
@@ -37,17 +48,22 @@ export const Route = createFileRoute("/_shell/_authenticated/onboarding")({
 });
 
 function OnboardingPage() {
+  const hydrated = useHydrated();
   const form = useForm({
     defaultValues: {
       displayName: "",
       slug: "",
     },
+    validationLogic: revalidateLogic({
+      mode: "blur",
+      modeAfterSubmission: "change",
+    }),
+    validators: {
+      onDynamic: onboardingOrganizationFormSchema,
+    },
     onSubmit: async ({ value }) => {
-      const displayName = formString(value.displayName).trim();
-      const slug = formString(value.slug).trim().toLowerCase();
-      if (!displayName) {
-        throw new Error("Organization name is required.");
-      }
+      const displayName = normalizeHumanText(value.displayName);
+      const slug = slugify(formString(value.slug));
       const organization = await createOrganization({
         data: {
           display_name: displayName,
@@ -84,41 +100,81 @@ function OnboardingPage() {
               }}
               className="grid gap-3"
             >
-              <form.Field name="displayName">
-                {(field) => (
-                  <div className="space-y-1.5">
-                    <Label htmlFor={field.name}>Name</Label>
-                    <Input
-                      id={field.name}
-                      value={formString(field.state.value)}
-                      onBlur={field.handleBlur}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                    />
-                  </div>
-                )}
+              <form.Field
+                name="displayName"
+                validators={{ onBlur: organizationNameSchema, onChange: organizationNameSchema }}
+              >
+                {(field) => {
+                  const errorId = `${field.name}-error`;
+                  return (
+                    <div className="space-y-1.5">
+                      <Label htmlFor={field.name}>Name</Label>
+                      <Input
+                        id={field.name}
+                        aria-describedby={errorId}
+                        aria-invalid={fieldInvalid(field.state.meta) || undefined}
+                        value={formString(field.state.value)}
+                        onBlur={field.handleBlur}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                      />
+                      <FieldError id={errorId} meta={field.state.meta} />
+                    </div>
+                  );
+                }}
               </form.Field>
-              <form.Field name="slug">
-                {(field) => (
-                  <div className="space-y-1.5">
-                    <Label htmlFor={field.name}>Slug</Label>
-                    <Input
-                      id={field.name}
-                      value={formString(field.state.value)}
-                      onBlur={field.handleBlur}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                    />
-                  </div>
-                )}
+              <form.Field
+                name="slug"
+                validators={{
+                  onBlur: optionalOrganizationSlugSchema,
+                  onChange: optionalOrganizationSlugSchema,
+                }}
+              >
+                {(field) => {
+                  const errorId = `${field.name}-error`;
+                  return (
+                    <div className="space-y-1.5">
+                      <Label htmlFor={field.name}>Slug</Label>
+                      <Input
+                        id={field.name}
+                        aria-describedby={errorId}
+                        aria-invalid={fieldInvalid(field.state.meta) || undefined}
+                        value={formString(field.state.value)}
+                        onBlur={field.handleBlur}
+                        onChange={(event) => field.handleChange(slugify(event.target.value))}
+                      />
+                      <FieldError id={errorId} meta={field.state.meta} />
+                    </div>
+                  );
+                }}
               </form.Field>
-              <form.Subscribe selector={(state) => [state.isSubmitting, state.errorMap.onSubmit]}>
-                {([isSubmitting, submitError]) => (
+              <form.Subscribe
+                selector={(state) => [
+                  state.canSubmit,
+                  state.isSubmitting,
+                  state.isValidating,
+                  state.errorMap.onSubmit,
+                ]}
+              >
+                {([canSubmit, isSubmitting, isValidating, submitError]) => (
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <Button type="submit" aria-busy={isSubmitting} className="sm:w-fit">
+                    <Button
+                      type="submit"
+                      aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
+                      disabled={authFormSubmitDisabled({
+                        hydrated,
+                        canSubmit,
+                        isSubmitting,
+                        isValidating,
+                      })}
+                      className="sm:w-fit"
+                    >
                       <Building2 aria-hidden="true" />
                       <span>{isSubmitting ? "Creating..." : "Create organization"}</span>
                     </Button>
                     {submitError ? (
-                      <p className="text-sm font-medium text-destructive">{String(submitError)}</p>
+                      <p className="text-sm font-medium text-destructive">
+                        {submitErrorText(submitError)}
+                      </p>
                     ) : null}
                   </div>
                 )}

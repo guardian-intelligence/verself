@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { AuthProvider } from "@verself/auth-web/react";
 import { type Auth, anonymousSnapshot } from "@verself/auth-web/isomorphic";
 import { BrandTelemetryProvider } from "@verself/brand";
+import { Toaster } from "@verself/ui/components/ui/sonner";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
@@ -27,7 +28,7 @@ const authNavigationClient = {
   }) => {
     const params = new URLSearchParams();
     if (data.redirectTo) {
-      params.set("redirect_to", data.redirectTo);
+      params.set("redirect", data.redirectTo);
     }
     if (data.purpose) {
       params.set("purpose", data.purpose);
@@ -50,7 +51,7 @@ const authNavigationClient = {
       params.set("prompt", "select_account");
     }
     const query = params.toString();
-    return `/api/v1/auth/login${query ? `?${query}` : ""}`;
+    return `/login${query ? `?${query}` : ""}`;
   },
   getSignOutRedirectURL: async () => "/api/v1/auth/logout",
 };
@@ -131,6 +132,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body className="bg-background text-foreground font-sans antialiased">
         {children}
+        <Toaster />
         <TelemetryProbe />
         <Scripts />
       </body>

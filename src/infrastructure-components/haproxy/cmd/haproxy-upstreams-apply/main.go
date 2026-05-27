@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -53,12 +52,6 @@ type config struct {
 	haproxyLDLibraryPath string
 	reloadUnit           string
 	daemon               bool
-	authEdgeDomain       string
-	authEdgeConfig       string
-	authEdgePublicMap    string
-	authEdgeDiscovery    string
-	cliClientIDPath      string
-	productAudiencePath  string
 }
 
 type fileSwap struct {
@@ -89,12 +82,6 @@ func run(args []string) error {
 	fs.StringVar(&cfg.haproxyLDLibraryPath, "haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "LD_LIBRARY_PATH used when invoking HAProxy.")
 	fs.StringVar(&cfg.reloadUnit, "reload-unit", "haproxy.service", "systemd unit to reload after a valid upstream swap.")
 	fs.BoolVar(&cfg.daemon, "daemon", false, "Apply once, then stay alive until SIGINT or SIGTERM.")
-	fs.StringVar(&cfg.authEdgeDomain, "auth-edge-domain", "", "Product apex domain whose same-origin auth routes should be installed.")
-	fs.StringVar(&cfg.authEdgeConfig, "auth-edge-haproxy-config", "/etc/haproxy/haproxy.cfg", "Static HAProxy config to normalize when --auth-edge-domain is set.")
-	fs.StringVar(&cfg.authEdgePublicMap, "auth-edge-public-hosts-map", "/etc/haproxy/maps/public-hosts.map", "Public host map to normalize when --auth-edge-domain is set.")
-	fs.StringVar(&cfg.authEdgeDiscovery, "auth-edge-discovery-manifest", "/var/www/verself/.well-known/verself", "Verself discovery manifest to normalize when --auth-edge-domain is set.")
-	fs.StringVar(&cfg.cliClientIDPath, "auth-edge-cli-client-id-path", "/etc/credstore/iam-service/oidc-cli-client-id", "CLI OIDC client ID credential path.")
-	fs.StringVar(&cfg.productAudiencePath, "auth-edge-product-audience-path", "/etc/credstore/iam-service/auth-audience", "Product API auth audience credential path.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -184,13 +171,6 @@ func applyOnce(cfg config) (bool, error) {
 	} else if changed {
 		swaps = append(swaps, swap)
 	}
-	if cfg.authEdgeDomain != "" {
-		authSwaps, err := planAuthEdgeSwaps(cfg)
-		if err != nil {
-			return false, err
-		}
-		swaps = append(swaps, authSwaps...)
-	}
 	if len(swaps) == 0 {
 		return false, nil
 	}
@@ -227,41 +207,6 @@ func plannedSwap(path string, content []byte, group string, mode fs.FileMode) (f
 		group:   group,
 		mode:    mode,
 	}, true, nil
-}
-
-func planAuthEdgeSwaps(cfg config) ([]fileSwap, error) {
-	staticConfig, err := os.ReadFile(cfg.authEdgeConfig)
-	if err != nil {
-		return nil, fmt.Errorf("read auth edge HAProxy config %s: %w", cfg.authEdgeConfig, err)
-	}
-	nextStatic, err := normalizeAuthEdgeHAProxy(staticConfig, cfg.authEdgeDomain)
-	if err != nil {
-		return nil, err
-	}
-	publicMap, err := os.ReadFile(cfg.authEdgePublicMap)
-	if err != nil {
-		return nil, fmt.Errorf("read auth edge public host map %s: %w", cfg.authEdgePublicMap, err)
-	}
-	nextPublicMap := normalizeAuthEdgePublicHosts(publicMap, cfg.authEdgeDomain)
-	discovery, err := renderAuthEdgeDiscovery(cfg)
-	if err != nil {
-		return nil, err
-	}
-	swaps := []fileSwap{}
-	for _, candidate := range []fileSwap{
-		{path: cfg.authEdgeConfig, content: nextStatic, group: "haproxy", mode: 0o640},
-		{path: cfg.authEdgePublicMap, content: nextPublicMap, group: "haproxy", mode: 0o640},
-		{path: cfg.authEdgeDiscovery, content: discovery, group: "root", mode: 0o644},
-	} {
-		swap, changed, err := plannedSwap(candidate.path, candidate.content, candidate.group, candidate.mode)
-		if err != nil {
-			return nil, err
-		}
-		if changed {
-			swaps = append(swaps, swap)
-		}
-	}
-	return swaps, nil
 }
 
 func applySwaps(swaps []fileSwap) error {
@@ -327,169 +272,6 @@ func atomicWrite(path string, content []byte, group string, mode fs.FileMode) er
 		return fmt.Errorf("rename %s to %s: %w", tmpName, path, err)
 	}
 	return nil
-}
-
-func normalizeAuthEdgeHAProxy(content []byte, domain string) ([]byte, error) {
-	if strings.TrimSpace(domain) == "" {
-		return nil, errors.New("auth edge domain is required")
-	}
-	text := strings.ReplaceAll(string(content), "\r\n", "\n")
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	out := make([]string, 0, len(lines)+8)
-	hasOIDCExact := hasLine(lines, "acl zitadel_oidc_path path -i /.well-known/openid-configuration /.well-known/webfinger /robots.txt")
-	hasOIDCPrefix := hasLine(lines, "acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console")
-	hasProductClaims405 := hasLine(lines, "http-request return status 405 if host_verself zitadel_product_token_claims !method_post")
-	hasProductClaimsBackend := hasLine(lines, "use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims")
-	hasOIDCBackend := hasLine(lines, "use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path")
-	for _, line := range lines {
-		trim := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(trim, "acl host_zitadel "):
-			continue
-		case strings.HasPrefix(trim, "acl host_zitadel_actions "):
-			continue
-		case trim == "acl forgejo_actions path -i /api/actions":
-			continue
-		case trim == "acl forgejo_actions_prefix path_beg /api/actions/":
-			continue
-		case strings.HasPrefix(trim, "http-request return status 405 if host_zitadel "):
-			continue
-		case strings.HasPrefix(trim, "http-request return status 405 if host_zitadel_actions "):
-			continue
-		case strings.HasPrefix(trim, "use_backend be_zitadel_product_token_claims if host_zitadel "):
-			continue
-		case strings.HasPrefix(trim, "use_backend be_zitadel_product_token_claims if host_zitadel_actions "):
-			continue
-		case strings.Contains(trim, "be_sandbox_forgejo_actions_webhook"):
-			continue
-		case strings.Contains(trim, "be_firecracker_forgejo") && (strings.Contains(trim, "forgejo_actions") || strings.Contains(trim, "forgejo_actions_prefix")):
-			continue
-		case strings.HasPrefix(trim, "acl auth_path path -i "):
-			line = "  acl auth_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept"
-		case strings.HasPrefix(trim, "acl route_1_path path -i "):
-			line = "  acl route_1_path path -i /api/v1/auth/login /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/sessions /api/v1/auth/invites/accept"
-		}
-		trim = strings.TrimSpace(line)
-		if trim == "acl zitadel_oidc_path path -i /.well-known/openid-configuration /.well-known/webfinger /robots.txt" {
-			hasOIDCExact = true
-		}
-		if trim == "acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console" {
-			hasOIDCPrefix = true
-		}
-		if trim == "http-request return status 405 if host_verself zitadel_product_token_claims !method_post" {
-			hasProductClaims405 = true
-		}
-		if trim == "use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims" {
-			hasProductClaimsBackend = true
-		}
-		if trim == "use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path" {
-			hasOIDCBackend = true
-		}
-		out = append(out, line)
-		if strings.HasPrefix(trim, "acl stripe_source src ") {
-			if !hasOIDCExact {
-				out = append(out, "  acl zitadel_oidc_path path -i /.well-known/openid-configuration /.well-known/webfinger /robots.txt")
-				hasOIDCExact = true
-			}
-			if !hasOIDCPrefix {
-				out = append(out, "  acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console")
-				hasOIDCPrefix = true
-			}
-		}
-		if trim == "http-request return status 405 if host_billing stripe_webhook !method_post" && !hasProductClaims405 {
-			out = append(out, "  http-request return status 405 if host_verself zitadel_product_token_claims !method_post")
-			hasProductClaims405 = true
-		}
-		if strings.HasPrefix(trim, "use_backend be_source_forgejo_webhook ") && !hasProductClaimsBackend {
-			out = append(out, "  use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims")
-			hasProductClaimsBackend = true
-			if !hasOIDCBackend {
-				out = append(out, "  use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path")
-				hasOIDCBackend = true
-			}
-		}
-		if trim == "use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims" && !hasOIDCBackend {
-			out = append(out, "  use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path")
-			hasOIDCBackend = true
-		}
-	}
-	if !hasOIDCExact || !hasOIDCPrefix || !hasProductClaims405 || !hasProductClaimsBackend || !hasOIDCBackend {
-		return nil, errors.New("auth edge HAProxy config did not contain expected insertion anchors")
-	}
-	return []byte(strings.Join(out, "\n") + "\n"), nil
-}
-
-func hasLine(lines []string, needle string) bool {
-	for _, line := range lines {
-		if strings.TrimSpace(line) == needle {
-			return true
-		}
-	}
-	return false
-}
-
-func normalizeAuthEdgePublicHosts(content []byte, domain string) []byte {
-	legacyAuth := "auth." + domain
-	legacyActions := "zitadel-actions." + domain
-	lines := strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")
-	out := make([]string, 0, len(lines))
-	for _, line := range lines {
-		trim := strings.TrimSpace(line)
-		if trim == "" {
-			continue
-		}
-		if strings.HasPrefix(trim, legacyAuth+" ") || strings.HasPrefix(trim, legacyActions+" ") {
-			continue
-		}
-		out = append(out, line)
-	}
-	return []byte(strings.Join(out, "\n") + "\n")
-}
-
-func renderAuthEdgeDiscovery(cfg config) ([]byte, error) {
-	raw, err := os.ReadFile(cfg.authEdgeDiscovery)
-	if err != nil {
-		return nil, fmt.Errorf("read discovery manifest %s: %w", cfg.authEdgeDiscovery, err)
-	}
-	var manifest map[string]any
-	if err := json.Unmarshal(raw, &manifest); err != nil {
-		return nil, fmt.Errorf("decode discovery manifest %s: %w", cfg.authEdgeDiscovery, err)
-	}
-	auth, _ := manifest["auth"].(map[string]any)
-	if auth == nil {
-		auth = map[string]any{}
-		manifest["auth"] = auth
-	}
-	cliClientID, err := readTrimmedOptional(cfg.cliClientIDPath)
-	if err != nil {
-		return nil, err
-	}
-	productAudience, err := readTrimmedOptional(cfg.productAudiencePath)
-	if err != nil {
-		return nil, err
-	}
-	auth["issuer_url"] = "https://" + cfg.authEdgeDomain
-	auth["cli_client_id"] = cliClientID
-	auth["product_api_audience"] = productAudience
-	out, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("encode discovery manifest: %w", err)
-	}
-	return append(out, '\n'), nil
-}
-
-func readTrimmedOptional(path string) (string, error) {
-	if strings.TrimSpace(path) == "" {
-		return "", nil
-	}
-	raw, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", path, err)
-	}
-	return strings.TrimSpace(string(raw)), nil
 }
 
 func groupID(group string) (int, error) {

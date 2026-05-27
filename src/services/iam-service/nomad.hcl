@@ -31,6 +31,7 @@ job "iam-service" {
       }
       env {
         IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "https://verself.sh"
+        IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT = "https://api.pwnedpasswords.com"
         IAM_ZITADEL_HOST = "verself.sh"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
@@ -83,6 +84,7 @@ EOT
       }
       env {
         IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "https://verself.sh"
+        IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT = "https://api.pwnedpasswords.com"
         IAM_ZITADEL_HOST = "verself.sh"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"

@@ -105,6 +105,7 @@ type StartSignupInput struct {
 type VerifySignupInput struct {
 	SignupIntentID          string
 	VerificationToken       string
+	InitialPassword         string
 	OrganizationDisplayName *string
 	OrganizationSlug        *string
 	IdempotencyKey          string
@@ -292,8 +293,9 @@ func (c *IAMClient) VerifySignup(ctx context.Context, input VerifySignupInput) (
 	}
 	signupIntentID := strings.TrimSpace(input.SignupIntentID)
 	verificationToken := strings.TrimSpace(input.VerificationToken)
-	if signupIntentID == "" || verificationToken == "" {
-		return SignupVerificationResult{}, fmt.Errorf("verself sdk: signup intent id and verification token are required")
+	initialPassword := input.InitialPassword
+	if signupIntentID == "" || verificationToken == "" || initialPassword == "" {
+		return SignupVerificationResult{}, fmt.Errorf("verself sdk: signup intent id, verification token, and initial password are required")
 	}
 	key, err := deterministicMutationKey("iam-signup-verify", input.IdempotencyKey, signupIntentID, verificationToken, stringPointerValue(input.OrganizationDisplayName), stringPointerValue(input.OrganizationSlug))
 	if err != nil {
@@ -304,6 +306,7 @@ func (c *IAMClient) VerifySignup(ctx context.Context, input VerifySignupInput) (
 		IdempotencyKey: iamcore.IdempotencyKey(key),
 		Body: iamcore.VerifySignupInputBody{
 			VerificationToken:       iamcore.SignupVerificationToken(verificationToken),
+			InitialPassword:         iamcore.Password(initialPassword),
 			OrganizationDisplayName: optionalCoreString[iamcore.DisplayName](input.OrganizationDisplayName),
 			OrganizationSlug:        optionalCoreString[iamcore.OrgSlug](input.OrganizationSlug),
 		},

@@ -37,6 +37,7 @@ type (
 	OrganizationVersion      = int64
 	PageSize                 = int64
 	PageToken                = string
+	Password                 = string
 	PermissionName           = string
 	PolicyEtag               = string
 	PolicyVersion            = int64
@@ -487,6 +488,7 @@ type InviteMemberResponse struct {
 
 type VerifySignupInputBody struct {
 	VerificationToken       SignupVerificationToken `json:"verificationToken"`
+	InitialPassword         Password                `json:"initialPassword"`
 	OrganizationDisplayName *DisplayName            `json:"organizationDisplayName,omitempty"`
 	OrganizationSlug        *OrgSlug                `json:"organizationSlug,omitempty"`
 }

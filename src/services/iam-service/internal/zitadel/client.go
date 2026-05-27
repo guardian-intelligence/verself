@@ -117,13 +117,14 @@ func (c *Client) CreateOrganization(ctx context.Context, input identity.Director
 
 func (c *Client) CreateSignupUser(ctx context.Context, input identity.DirectoryCreateSignupUserRequest) (identity.DirectoryCreateSignupUserResult, error) {
 	orgID := strings.TrimSpace(input.OrgID)
-	if orgID == "" || strings.TrimSpace(input.Email) == "" {
-		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: org_id and email are required", identity.ErrInvalidInput)
+	if orgID == "" || strings.TrimSpace(input.Email) == "" || input.Password == "" {
+		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: org_id, email, and password are required", identity.ErrInvalidInput)
 	}
 	created, err := c.createHumanUser(ctx, orgID, identity.InviteMemberRequest{
 		Email:      strings.TrimSpace(input.Email),
 		GivenName:  strings.TrimSpace(input.GivenName),
 		FamilyName: strings.TrimSpace(input.FamilyName),
+		Password:   input.Password,
 	}, identity.ErrSignupAccountExists)
 	if err != nil {
 		return identity.DirectoryCreateSignupUserResult{}, err
@@ -132,6 +133,83 @@ func (c *Client) CreateSignupUser(ctx context.Context, input identity.DirectoryC
 		return identity.DirectoryCreateSignupUserResult{}, err
 	}
 	return identity.DirectoryCreateSignupUserResult{UserID: created.UserID}, nil
+}
+
+func (c *Client) FindPasswordResetUser(ctx context.Context, email string) (identity.PasswordResetUser, bool, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return identity.PasswordResetUser{}, false, fmt.Errorf("%w: email is required", identity.ErrInvalidInput)
+	}
+	var out usersResponse
+	body := map[string]any{
+		"query": map[string]any{"limit": 2},
+		"queries": []map[string]any{
+			{"inUserEmailsQuery": map[string]any{"userEmails": []string{email}}},
+		},
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users", body, &out); err != nil {
+		return identity.PasswordResetUser{}, false, fmt.Errorf("%w: find password reset user: %v", identity.ErrZitadelUnavailable, err)
+	}
+	for _, item := range out.Result {
+		if item.Human == nil {
+			continue
+		}
+		if !sameEmailIdentity(item.Human.Email.Email, email) {
+			continue
+		}
+		loginName := item.PreferredLoginName
+		if loginName == "" && len(item.LoginNames) > 0 {
+			loginName = item.LoginNames[0]
+		}
+		if loginName == "" {
+			loginName = item.Username
+		}
+		return identity.PasswordResetUser{
+			UserID:    strings.TrimSpace(item.UserID),
+			Email:     strings.TrimSpace(item.Human.Email.Email),
+			LoginName: strings.TrimSpace(loginName),
+		}, true, nil
+	}
+	return identity.PasswordResetUser{}, false, nil
+}
+
+func (c *Client) StartPasswordReset(ctx context.Context, userID string) (string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return "", fmt.Errorf("%w: user_id is required", identity.ErrInvalidInput)
+	}
+	var out struct {
+		VerificationCode string `json:"verificationCode"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/password_reset", map[string]any{"returnCode": map[string]any{}}, &out); err != nil {
+		return "", fmt.Errorf("%w: start password reset: %v", identity.ErrZitadelUnavailable, err)
+	}
+	if strings.TrimSpace(out.VerificationCode) == "" {
+		return "", fmt.Errorf("%w: password reset returned no verification code", identity.ErrZitadelUnavailable)
+	}
+	return strings.TrimSpace(out.VerificationCode), nil
+}
+
+func (c *Client) CompletePasswordReset(ctx context.Context, userID, verificationCode, password string) error {
+	userID = strings.TrimSpace(userID)
+	verificationCode = strings.TrimSpace(verificationCode)
+	if userID == "" || verificationCode == "" || password == "" {
+		return fmt.Errorf("%w: user_id, verification_code, and password are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{
+		"verificationCode": verificationCode,
+		"newPassword": map[string]any{
+			"password":       password,
+			"changeRequired": false,
+		},
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/password", body, nil); err != nil {
+		if zitadelRequestInvalid(err) {
+			return fmt.Errorf("%w: complete password reset", identity.ErrInvalidInput)
+		}
+		return fmt.Errorf("%w: complete password reset: %v", identity.ErrZitadelUnavailable, err)
+	}
+	return nil
 }
 
 func (c *Client) InviteMember(ctx context.Context, orgID string, input identity.InviteMemberRequest) (identity.DirectoryInviteMemberResult, error) {
@@ -172,6 +250,239 @@ func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("%w: delete session: %v", identity.ErrZitadelUnavailable, err)
 	}
 	return nil
+}
+
+func (c *Client) CreatePasswordSession(ctx context.Context, input identity.LoginSessionInput) (identity.LoginSession, error) {
+	loginName := strings.TrimSpace(input.LoginName)
+	password := input.Password
+	if loginName == "" || password == "" {
+		return identity.LoginSession{}, fmt.Errorf("%w: login_name and password are required", identity.ErrInvalidInput)
+	}
+	createBody := map[string]any{
+		"checks": map[string]any{
+			"user": map[string]any{"loginName": loginName},
+		},
+	}
+	if input.Lifetime > 0 {
+		createBody["lifetime"] = protobufDuration(input.Lifetime)
+	}
+	if userAgent := loginSessionUserAgent(input); len(userAgent) > 0 {
+		createBody["userAgent"] = userAgent
+	}
+	var created sessionResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/sessions", createBody, &created); err != nil {
+		return identity.LoginSession{}, mapLoginSessionError("create session", err)
+	}
+	sessionID := strings.TrimSpace(created.SessionID)
+	if sessionID == "" || strings.TrimSpace(created.SessionToken) == "" {
+		return identity.LoginSession{}, fmt.Errorf("%w: create session returned no session token", identity.ErrZitadelUnavailable)
+	}
+	var checked sessionResponse
+	if err := c.doJSON(ctx, http.MethodPatch, "/v2/sessions/"+url.PathEscape(sessionID), map[string]any{
+		"checks": map[string]any{
+			"password": map[string]any{"password": password},
+		},
+	}, &checked); err != nil {
+		_ = c.DeleteSession(context.WithoutCancel(ctx), sessionID)
+		return identity.LoginSession{}, mapLoginSessionError("check password", err)
+	}
+	sessionToken := strings.TrimSpace(checked.SessionToken)
+	if sessionToken == "" {
+		return identity.LoginSession{}, fmt.Errorf("%w: password check returned no session token", identity.ErrZitadelUnavailable)
+	}
+	expiresAt := time.Time{}
+	if input.Lifetime > 0 {
+		expiresAt = time.Now().UTC().Add(input.Lifetime)
+	}
+	return identity.LoginSession{SessionID: sessionID, SessionToken: sessionToken, ExpiresAt: expiresAt}, nil
+}
+
+func (c *Client) GetOIDCAuthRequest(ctx context.Context, authRequestID string) (identity.OIDCAuthRequest, error) {
+	authRequestID = strings.TrimSpace(authRequestID)
+	if authRequestID == "" {
+		return identity.OIDCAuthRequest{}, fmt.Errorf("%w: auth_request_id is required", identity.ErrInvalidInput)
+	}
+	var out struct {
+		AuthRequest struct {
+			ID          string   `json:"id"`
+			ClientID    string   `json:"clientId"`
+			Scope       []string `json:"scope"`
+			RedirectURI string   `json:"redirectUri"`
+			LoginHint   string   `json:"loginHint"`
+		} `json:"authRequest"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/v2/oidc/auth_requests/"+url.PathEscape(authRequestID), nil, &out); err != nil {
+		return identity.OIDCAuthRequest{}, fmt.Errorf("%w: get OIDC auth request: %v", identity.ErrZitadelUnavailable, err)
+	}
+	return identity.OIDCAuthRequest{
+		ID:          strings.TrimSpace(firstNonEmpty(out.AuthRequest.ID, authRequestID)),
+		ClientID:    strings.TrimSpace(out.AuthRequest.ClientID),
+		Scopes:      compactStrings(out.AuthRequest.Scope),
+		RedirectURI: strings.TrimSpace(out.AuthRequest.RedirectURI),
+		LoginHint:   strings.TrimSpace(out.AuthRequest.LoginHint),
+	}, nil
+}
+
+func (c *Client) FinalizeOIDCAuthRequest(ctx context.Context, authRequestID string, session identity.LoginSession) (string, error) {
+	authRequestID = strings.TrimSpace(authRequestID)
+	session.SessionID = strings.TrimSpace(session.SessionID)
+	session.SessionToken = strings.TrimSpace(session.SessionToken)
+	if authRequestID == "" || session.SessionID == "" || session.SessionToken == "" {
+		return "", fmt.Errorf("%w: auth_request_id, session_id, and session_token are required", identity.ErrInvalidInput)
+	}
+	var out struct {
+		CallbackURL string `json:"callbackUrl"`
+	}
+	body := map[string]any{
+		"session": map[string]any{
+			"sessionId":    session.SessionID,
+			"sessionToken": session.SessionToken,
+		},
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/oidc/auth_requests/"+url.PathEscape(authRequestID), body, &out); err != nil {
+		return "", fmt.Errorf("%w: finalize OIDC auth request: %v", identity.ErrZitadelUnavailable, err)
+	}
+	if strings.TrimSpace(out.CallbackURL) == "" {
+		return "", fmt.Errorf("%w: finalize OIDC auth request returned no callback URL", identity.ErrZitadelUnavailable)
+	}
+	return strings.TrimSpace(out.CallbackURL), nil
+}
+
+func (c *Client) StartDeviceAuthorization(ctx context.Context, input identity.StartDeviceAuthorizationInput) (identity.DeviceAuthorization, error) {
+	clientID := strings.TrimSpace(input.ClientID)
+	scopes := compactStrings(input.Scopes)
+	if clientID == "" || len(scopes) == 0 {
+		return identity.DeviceAuthorization{}, fmt.Errorf("%w: client_id and scope are required", identity.ErrInvalidInput)
+	}
+	values := url.Values{
+		"client_id": {clientID},
+		"scope":     {strings.Join(scopes, " ")},
+	}
+	var out struct {
+		DeviceCode              string `json:"device_code"`
+		UserCode                string `json:"user_code"`
+		VerificationURI         string `json:"verification_uri"`
+		VerificationURIComplete string `json:"verification_uri_complete"`
+		ExpiresIn               int64  `json:"expires_in"`
+		Interval                int64  `json:"interval"`
+	}
+	if err := c.doForm(ctx, "/oauth/v2/device_authorization", values, &out); err != nil {
+		if zitadelRequestInvalid(err) {
+			return identity.DeviceAuthorization{}, fmt.Errorf("%w: start device authorization: %v", identity.ErrInvalidInput, err)
+		}
+		return identity.DeviceAuthorization{}, fmt.Errorf("%w: start device authorization: %v", identity.ErrZitadelUnavailable, err)
+	}
+	out.DeviceCode = strings.TrimSpace(out.DeviceCode)
+	out.UserCode = strings.TrimSpace(out.UserCode)
+	if out.DeviceCode == "" || out.UserCode == "" || out.ExpiresIn <= 0 {
+		return identity.DeviceAuthorization{}, fmt.Errorf("%w: device authorization returned incomplete response", identity.ErrZitadelUnavailable)
+	}
+	request, err := c.GetDeviceAuthorizationRequest(ctx, out.UserCode)
+	if err != nil {
+		return identity.DeviceAuthorization{}, err
+	}
+	return identity.DeviceAuthorization{
+		DeviceCode:              out.DeviceCode,
+		UserCode:                out.UserCode,
+		VerificationURI:         strings.TrimSpace(out.VerificationURI),
+		VerificationURIComplete: strings.TrimSpace(out.VerificationURIComplete),
+		ExpiresIn:               time.Duration(out.ExpiresIn) * time.Second,
+		Interval:                time.Duration(out.Interval) * time.Second,
+		Request:                 request,
+	}, nil
+}
+
+func (c *Client) GetDeviceAuthorizationRequest(ctx context.Context, userCode string) (identity.DeviceAuthorizationRequest, error) {
+	userCode = strings.TrimSpace(userCode)
+	if userCode == "" {
+		return identity.DeviceAuthorizationRequest{}, fmt.Errorf("%w: user_code is required", identity.ErrInvalidInput)
+	}
+	var out struct {
+		Request struct {
+			ID          string   `json:"id"`
+			ClientID    string   `json:"clientId"`
+			Scope       []string `json:"scope"`
+			AppName     string   `json:"appName"`
+			ProjectName string   `json:"projectName"`
+		} `json:"deviceAuthorizationRequest"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/v2/oidc/device_authorization/"+url.PathEscape(userCode), nil, &out); err != nil {
+		return identity.DeviceAuthorizationRequest{}, fmt.Errorf("%w: get device authorization request: %v", identity.ErrZitadelUnavailable, err)
+	}
+	if strings.TrimSpace(out.Request.ID) == "" {
+		return identity.DeviceAuthorizationRequest{}, fmt.Errorf("%w: get device authorization request returned no id", identity.ErrZitadelUnavailable)
+	}
+	return identity.DeviceAuthorizationRequest{
+		ID:          strings.TrimSpace(out.Request.ID),
+		ClientID:    strings.TrimSpace(out.Request.ClientID),
+		Scopes:      compactStrings(out.Request.Scope),
+		AppName:     strings.TrimSpace(out.Request.AppName),
+		ProjectName: strings.TrimSpace(out.Request.ProjectName),
+	}, nil
+}
+
+func (c *Client) ApproveDeviceAuthorization(ctx context.Context, deviceAuthorizationID string, session identity.LoginSession) error {
+	deviceAuthorizationID = strings.TrimSpace(deviceAuthorizationID)
+	session.SessionID = strings.TrimSpace(session.SessionID)
+	session.SessionToken = strings.TrimSpace(session.SessionToken)
+	if deviceAuthorizationID == "" || session.SessionID == "" || session.SessionToken == "" {
+		return fmt.Errorf("%w: device_authorization_id, session_id, and session_token are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{
+		"session": map[string]any{
+			"sessionId":    session.SessionID,
+			"sessionToken": session.SessionToken,
+		},
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/oidc/device_authorization/"+url.PathEscape(deviceAuthorizationID), body, nil); err != nil {
+		return fmt.Errorf("%w: approve device authorization: %v", identity.ErrZitadelUnavailable, err)
+	}
+	return nil
+}
+
+func (c *Client) DenyDeviceAuthorization(ctx context.Context, deviceAuthorizationID string) error {
+	deviceAuthorizationID = strings.TrimSpace(deviceAuthorizationID)
+	if deviceAuthorizationID == "" {
+		return fmt.Errorf("%w: device_authorization_id is required", identity.ErrInvalidInput)
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/oidc/device_authorization/"+url.PathEscape(deviceAuthorizationID), map[string]any{"deny": map[string]any{}}, nil); err != nil {
+		return fmt.Errorf("%w: deny device authorization: %v", identity.ErrZitadelUnavailable, err)
+	}
+	return nil
+}
+
+type sessionResponse struct {
+	SessionID    string `json:"sessionId"`
+	SessionToken string `json:"sessionToken"`
+}
+
+func loginSessionUserAgent(input identity.LoginSessionInput) map[string]any {
+	userAgent := map[string]any{}
+	if strings.TrimSpace(input.UserAgent) != "" {
+		userAgent["description"] = strings.TrimSpace(input.UserAgent)
+	}
+	if strings.TrimSpace(input.IP) != "" {
+		userAgent["ip"] = strings.TrimSpace(input.IP)
+	}
+	return userAgent
+}
+
+func protobufDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	seconds := d / time.Second
+	if seconds <= 0 {
+		seconds = 1
+	}
+	return strconv.FormatInt(int64(seconds), 10) + "s"
+}
+
+func mapLoginSessionError(action string, err error) error {
+	if zitadelRequestInvalid(err) {
+		return fmt.Errorf("%w: %s", identity.ErrInvalidCredentials, action)
+	}
+	return fmt.Errorf("%w: %s: %v", identity.ErrZitadelUnavailable, action, err)
 }
 
 type userSummary struct {
@@ -370,19 +681,26 @@ type createdHumanUser struct {
 }
 
 func (c *Client) createHumanUser(ctx context.Context, orgID string, input identity.InviteMemberRequest, duplicateUserErr error) (createdHumanUser, error) {
+	human := map[string]any{
+		"profile": map[string]any{
+			"givenName":  firstNonEmpty(input.GivenName, input.Email),
+			"familyName": firstNonEmpty(input.FamilyName, "Member"),
+		},
+		"email": map[string]any{
+			"email":      input.Email,
+			"returnCode": map[string]any{},
+		},
+	}
+	if input.Password != "" {
+		human["password"] = map[string]any{
+			"password":       input.Password,
+			"changeRequired": false,
+		}
+	}
 	body := map[string]any{
 		"organizationId": orgID,
 		"username":       input.Email,
-		"human": map[string]any{
-			"profile": map[string]any{
-				"givenName":  firstNonEmpty(input.GivenName, input.Email),
-				"familyName": firstNonEmpty(input.FamilyName, "Member"),
-			},
-			"email": map[string]any{
-				"email":      input.Email,
-				"returnCode": map[string]any{},
-			},
-		},
+		"human":          human,
 	}
 	var out createUserResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out); err != nil {
@@ -444,18 +762,24 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 	if c == nil || c.baseURL == nil {
 		return errors.New("zitadel client is nil")
 	}
-	reqBody, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+	var reader io.Reader
+	if body != nil {
+		reqBody, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshal request: %w", err)
+		}
+		reader = bytes.NewReader(reqBody)
 	}
 	reqURL := c.baseURL.ResolveReference(&url.URL{Path: path})
-	req, err := http.NewRequestWithContext(ctx, method, reqURL.String(), bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, method, reqURL.String(), reader)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.adminToken)
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if c.hostHeader != "" {
 		req.Host = c.hostHeader
 	}
@@ -477,6 +801,43 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 		return nil
 	}
 	if len(respBody) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(respBody, out); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) doForm(ctx context.Context, path string, values url.Values, out any) error {
+	if c == nil || c.baseURL == nil {
+		return errors.New("zitadel client is nil")
+	}
+	reqURL := c.baseURL.ResolveReference(&url.URL{Path: path})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL.String(), strings.NewReader(values.Encode()))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if c.hostHeader != "" {
+		req.Host = c.hostHeader
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if readErr != nil {
+		return fmt.Errorf("read response: %w", readErr)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return zitadelStatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(respBody))}
+	}
+	if out == nil || len(respBody) == 0 {
 		return nil
 	}
 	if err := json.Unmarshal(respBody, out); err != nil {
@@ -551,6 +912,18 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func sameEmailIdentity(required, actual string) bool {
+	requiredEmail, err := identity.ParseEmailAddress(required)
+	if err != nil {
+		return false
+	}
+	actualEmail, err := identity.ParseEmailAddress(actual)
+	if err != nil {
+		return false
+	}
+	return requiredEmail.IdentityKey == actualEmail.IdentityKey
 }
 
 func compactStrings(values []string) []string {

@@ -27,19 +27,19 @@ import (
 )
 
 const (
-	defaultProjectName                     = "verself-api"
-	defaultBrowserAppName                  = "verself-web"
-	defaultCLIAppName                      = "verself-cli"
-	defaultClaimsTargetName                = "verself-product-token-claims"
-	defaultClaimsActionPath                = "/internal/zitadel/actions/product-token-claims"
-	productTokenClaimsFunction             = "preaccesstoken"
-	defaultZitadelBaseURL                  = "http://127.0.0.1:8085"
-	defaultZitadelAdminPATPath             = "/etc/zitadel/admin.pat"
-	defaultIAMCredstoreDir                 = "/etc/credstore/iam-service"
-	defaultIAMCredstoreGroup               = "iam_service"
-	desiredPasswordMinLength              = 15
-	desiredPasswordLockoutAttempts        = 10
-	credentialMode             os.FileMode = 0o640
+	defaultProjectName                         = "verself-api"
+	defaultBrowserAppName                      = "verself-web"
+	defaultCLIAppName                          = "verself-cli"
+	defaultClaimsTargetName                    = "verself-product-token-claims"
+	defaultClaimsActionPath                    = "/internal/zitadel/actions/product-token-claims"
+	productTokenClaimsFunction                 = "preaccesstoken"
+	defaultZitadelBaseURL                      = "http://127.0.0.1:8085"
+	defaultZitadelAdminPATPath                 = "/etc/zitadel/admin.pat"
+	defaultIAMCredstoreDir                     = "/etc/credstore/iam-service"
+	defaultIAMCredstoreGroup                   = "iam_service"
+	desiredPasswordMinLength                   = 15
+	desiredPasswordLockoutAttempts             = 10
+	credentialMode                 os.FileMode = 0o640
 )
 
 type config struct {
@@ -487,12 +487,13 @@ func ensureBrowserOIDCApplication(ctx context.Context, client zitadelClient, pro
 	}
 	redirectURIs := []string{"https://" + cfg.verselfDomain + "/api/v1/auth/callback"}
 	postLogout := []string{"https://" + cfg.verselfDomain}
+	loginBaseURI := "https://" + cfg.verselfDomain
 	if !found || strings.TrimSpace(app.ClientID) == "" {
-		app, err = client.CreateBrowserOIDCApp(ctx, projectID, cfg.browserAppName, redirectURIs, postLogout)
+		app, err = client.CreateBrowserOIDCApp(ctx, projectID, cfg.browserAppName, redirectURIs, postLogout, loginBaseURI)
 		if err != nil {
 			return err
 		}
-	} else if err := client.ReconcileBrowserOIDCApp(ctx, projectID, app.ID, cfg.browserAppName, redirectURIs, postLogout); err != nil {
+	} else if err := client.ReconcileBrowserOIDCApp(ctx, projectID, app.ID, cfg.browserAppName, redirectURIs, postLogout, loginBaseURI); err != nil {
 		return err
 	}
 	values := map[string]string{
@@ -520,11 +521,11 @@ func ensureCLIOIDCApplication(ctx context.Context, client zitadelClient, project
 		return err
 	}
 	if !found || strings.TrimSpace(app.ClientID) == "" {
-		app, err = client.CreateNativeOIDCApp(ctx, projectID, cfg.cliAppName)
+		app, err = client.CreateNativeOIDCApp(ctx, projectID, cfg.cliAppName, "https://"+cfg.verselfDomain)
 		if err != nil {
 			return err
 		}
-	} else if err := client.ReconcileNativeOIDCApp(ctx, projectID, app.ID, cfg.cliAppName); err != nil {
+	} else if err := client.ReconcileNativeOIDCApp(ctx, projectID, app.ID, cfg.cliAppName, "https://"+cfg.verselfDomain); err != nil {
 		return err
 	}
 	values := map[string]string{
@@ -632,8 +633,8 @@ func (c zitadelClient) FindOIDCAppByName(ctx context.Context, projectID, name st
 	return zitadelOIDCApp{ID: item.ID, ClientID: item.OIDCConfig.ClientID}, true, nil
 }
 
-func (c zitadelClient) CreateBrowserOIDCApp(ctx context.Context, projectID, name string, redirectURIs, postLogoutRedirectURIs []string) (zitadelOIDCApp, error) {
-	body := browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs)
+func (c zitadelClient) CreateBrowserOIDCApp(ctx context.Context, projectID, name string, redirectURIs, postLogoutRedirectURIs []string, loginBaseURI string) (zitadelOIDCApp, error) {
+	body := browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs, loginBaseURI)
 	body["name"] = strings.TrimSpace(name)
 	var out struct {
 		AppID        string `json:"appId"`
@@ -651,8 +652,8 @@ func (c zitadelClient) CreateBrowserOIDCApp(ctx context.Context, projectID, name
 	return app, nil
 }
 
-func (c zitadelClient) CreateNativeOIDCApp(ctx context.Context, projectID, name string) (zitadelOIDCApp, error) {
-	body := nativeOIDCConfigBody()
+func (c zitadelClient) CreateNativeOIDCApp(ctx context.Context, projectID, name string, loginBaseURI string) (zitadelOIDCApp, error) {
+	body := nativeOIDCConfigBody(loginBaseURI)
 	body["name"] = strings.TrimSpace(name)
 	var out struct {
 		AppID    string `json:"appId"`
@@ -669,8 +670,8 @@ func (c zitadelClient) CreateNativeOIDCApp(ctx context.Context, projectID, name 
 	return app, nil
 }
 
-func (c zitadelClient) ReconcileBrowserOIDCApp(ctx context.Context, projectID, appID, name string, redirectURIs, postLogoutRedirectURIs []string) error {
-	body := browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs)
+func (c zitadelClient) ReconcileBrowserOIDCApp(ctx context.Context, projectID, appID, name string, redirectURIs, postLogoutRedirectURIs []string, loginBaseURI string) error {
+	body := browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs, loginBaseURI)
 	body["accessTokenRoleAssertion"] = false
 	body["idTokenRoleAssertion"] = false
 	body["idTokenUserinfoAssertion"] = true
@@ -681,8 +682,8 @@ func (c zitadelClient) ReconcileBrowserOIDCApp(ctx context.Context, projectID, a
 	return nil
 }
 
-func (c zitadelClient) ReconcileNativeOIDCApp(ctx context.Context, projectID, appID, name string) error {
-	body := nativeOIDCConfigBody()
+func (c zitadelClient) ReconcileNativeOIDCApp(ctx context.Context, projectID, appID, name string, loginBaseURI string) error {
+	body := nativeOIDCConfigBody(loginBaseURI)
 	body["accessTokenRoleAssertion"] = false
 	body["idTokenRoleAssertion"] = false
 	body["idTokenUserinfoAssertion"] = true
@@ -826,7 +827,7 @@ func (c zitadelClient) doJSON(ctx context.Context, method, path string, body any
 	return nil
 }
 
-func browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs []string) map[string]any {
+func browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs []string, loginBaseURI string) map[string]any {
 	return map[string]any{
 		"redirectUris":           redirectURIs,
 		"responseTypes":          []string{"OIDC_RESPONSE_TYPE_CODE"},
@@ -836,10 +837,11 @@ func browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs []string) map[st
 		"postLogoutRedirectUris": postLogoutRedirectURIs,
 		"devMode":                false,
 		"accessTokenType":        "OIDC_TOKEN_TYPE_JWT",
+		"loginVersion":           customLoginVersion(loginBaseURI),
 	}
 }
 
-func nativeOIDCConfigBody() map[string]any {
+func nativeOIDCConfigBody(loginBaseURI string) map[string]any {
 	return map[string]any{
 		"redirectUris":           []string{},
 		"responseTypes":          []string{"OIDC_RESPONSE_TYPE_CODE"},
@@ -849,6 +851,15 @@ func nativeOIDCConfigBody() map[string]any {
 		"postLogoutRedirectUris": []string{},
 		"devMode":                false,
 		"accessTokenType":        "OIDC_TOKEN_TYPE_JWT",
+		"loginVersion":           customLoginVersion(loginBaseURI),
+	}
+}
+
+func customLoginVersion(loginBaseURI string) map[string]any {
+	return map[string]any{
+		"loginV2": map[string]any{
+			"baseUri": strings.TrimRight(strings.TrimSpace(loginBaseURI), "/"),
+		},
 	}
 }
 

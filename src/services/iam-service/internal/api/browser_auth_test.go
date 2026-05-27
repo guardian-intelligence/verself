@@ -10,11 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/verself/iam-service/internal/identity"
 	identitystore "github.com/verself/iam-service/internal/store"
 	"github.com/verself/iam-service/migrations"
 	"github.com/verself/service-runtime/pgtest"
@@ -200,6 +202,108 @@ func TestBrowserDeviceRevokeDoesNotDeleteLocalStateWhenProviderSessionIsMissing(
 	}
 }
 
+func TestBrowserAccountRemoveRemovesOnlyRequestedAccount(t *testing.T) {
+	ctx, _, q := newBrowserAuthTestStore(t)
+	vault, err := newBrowserTokenVault("browser-test-secret")
+	if err != nil {
+		t.Fatalf("browser token vault: %v", err)
+	}
+	revoker := &recordingProviderSessionRevoker{}
+	auth := &BrowserAuth{q: q, tokenVault: vault, providerSessions: revoker}
+	clientSecret := "browser-client-secret"
+	client := seedBrowserClient(t, ctx, q, clientSecret)
+	first := seedBrowserAccount(t, ctx, auth, client.ClientHash, "subject-one", "sid-one", false)
+	second := seedBrowserAccount(t, ctx, auth, client.ClientHash, "subject-two", "sid-two", false)
+	if err := q.SetBrowserClientActiveAccount(ctx, identitystore.SetBrowserClientActiveAccountParams{
+		AccountHandle:        nullableText(first),
+		ClientCachePartition: "partition-active",
+		ClientHash:           client.ClientHash,
+	}); err != nil {
+		t.Fatalf("select active account: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/accounts/"+first, nil)
+	req.AddCookie(&http.Cookie{Name: browserAuthCookieName, Value: clientSecret})
+	res := httptest.NewRecorder()
+	auth.handleAccountRemove(res, req)
+
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("remove status = %d, body = %q", res.Code, res.Body.String())
+	}
+	if len(revoker.sessionIDs) != 1 || revoker.sessionIDs[0] != "sid-one" {
+		t.Fatalf("provider session revokes = %#v, want sid-one", revoker.sessionIDs)
+	}
+	if _, err := q.GetBrowserAccount(ctx, identitystore.GetBrowserAccountParams{ClientHash: client.ClientHash, AccountHandle: first}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("removed account error = %v, want no rows", err)
+	}
+	if _, err := q.GetBrowserAccount(ctx, identitystore.GetBrowserAccountParams{ClientHash: client.ClientHash, AccountHandle: second}); err != nil {
+		t.Fatalf("remaining account error = %v", err)
+	}
+	active, err := q.GetActiveBrowserAccount(ctx, identitystore.GetActiveBrowserAccountParams{ClientHash: client.ClientHash})
+	if err != nil {
+		t.Fatalf("active account: %v", err)
+	}
+	if active.AccountHandle != second {
+		t.Fatalf("active account = %s, want %s", active.AccountHandle, second)
+	}
+	if _, err := q.GetBrowserClient(ctx, identitystore.GetBrowserClientParams{ClientHash: client.ClientHash}); err != nil {
+		t.Fatalf("browser client after account removal: %v", err)
+	}
+}
+
+func TestPasswordLoginFinalizesIncomingAuthRequest(t *testing.T) {
+	provider := &recordingProviderLogin{
+		session: identity.LoginSession{SessionID: "provider-session", SessionToken: "provider-token"},
+	}
+	revoker := &recordingProviderSessionRevoker{}
+	auth := &BrowserAuth{providerLogin: provider, providerSessions: revoker}
+	body := `{"email":"founder@example.test","password":"correct horse battery staple","authRequestId":"V2_123"}`
+	req := httptest.NewRequest(http.MethodPost, "/password-login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+
+	auth.handlePasswordLogin(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("password login status = %d, body = %q", res.Code, res.Body.String())
+	}
+	var out passwordLoginResponse
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatalf("decode password login response: %v", err)
+	}
+	if out.CallbackURL != "https://app.example.test/callback?code=abc&state=xyz" {
+		t.Fatalf("callback url = %q", out.CallbackURL)
+	}
+	if provider.created.LoginName != "founder@example.test" || provider.created.Password == "" {
+		t.Fatalf("provider login input = %#v", provider.created)
+	}
+	if provider.loadedAuthRequestID != "V2_123" || provider.finalizedAuthRequestID != "V2_123" {
+		t.Fatalf("auth request ids loaded=%q finalized=%q", provider.loadedAuthRequestID, provider.finalizedAuthRequestID)
+	}
+	if provider.finalizedSession.SessionID != "provider-session" || provider.finalizedSession.SessionToken != "provider-token" {
+		t.Fatalf("finalized session = %#v", provider.finalizedSession)
+	}
+	if len(revoker.sessionIDs) != 0 {
+		t.Fatalf("provider session revokes = %#v, want none", revoker.sessionIDs)
+	}
+}
+
+func TestBrowserProviderSessionIDPrefersStoredSessionID(t *testing.T) {
+	got, err := browserProviderSessionID(&browserSession{
+		ProviderSessionID: "stored-session",
+		IDToken:           testJWT(map[string]any{"sid": "id-token-session"}),
+		User: browserUser{
+			Claims: map[string]any{"sid": "claim-session"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("browser provider session id: %v", err)
+	}
+	if got != "stored-session" {
+		t.Fatalf("provider session id = %q, want stored-session", got)
+	}
+}
+
 func TestBrowserLoginPromptAllowsAccountSelectionPromptOnly(t *testing.T) {
 	if got := browserLoginPrompt("login"); got != "login" {
 		t.Fatalf("browserLoginPrompt(login) = %q", got)
@@ -325,7 +429,7 @@ func seedBrowserAccount(t *testing.T, ctx context.Context, auth *BrowserAuth, cl
 		Email:                  &email,
 		AvailableOrganizations: []authOrganizationContext{},
 		Claims:                 claims,
-	}); err != nil {
+	}, identity.LoginSession{}); err != nil {
 		t.Fatalf("seed browser account: %v", err)
 	}
 	return accountHandle
@@ -338,4 +442,56 @@ func testJWT(claims map[string]any) string {
 		panic(err)
 	}
 	return header + "." + base64.RawURLEncoding.EncodeToString(payload) + "."
+}
+
+type recordingProviderLogin struct {
+	session                identity.LoginSession
+	created                identity.LoginSessionInput
+	loadedAuthRequestID    string
+	finalizedAuthRequestID string
+	finalizedSession       identity.LoginSession
+}
+
+func (r *recordingProviderLogin) CreatePasswordSession(_ context.Context, input identity.LoginSessionInput) (identity.LoginSession, error) {
+	r.created = input
+	return r.session, nil
+}
+
+func (r *recordingProviderLogin) GetOIDCAuthRequest(_ context.Context, authRequestID string) (identity.OIDCAuthRequest, error) {
+	r.loadedAuthRequestID = authRequestID
+	return identity.OIDCAuthRequest{ID: authRequestID}, nil
+}
+
+func (r *recordingProviderLogin) FinalizeOIDCAuthRequest(_ context.Context, authRequestID string, session identity.LoginSession) (string, error) {
+	r.finalizedAuthRequestID = authRequestID
+	r.finalizedSession = session
+	return "https://app.example.test/callback?code=abc&state=xyz", nil
+}
+
+func (r *recordingProviderLogin) StartDeviceAuthorization(context.Context, identity.StartDeviceAuthorizationInput) (identity.DeviceAuthorization, error) {
+	return identity.DeviceAuthorization{}, errors.New("unexpected StartDeviceAuthorization")
+}
+
+func (r *recordingProviderLogin) GetDeviceAuthorizationRequest(context.Context, string) (identity.DeviceAuthorizationRequest, error) {
+	return identity.DeviceAuthorizationRequest{}, errors.New("unexpected GetDeviceAuthorizationRequest")
+}
+
+func (r *recordingProviderLogin) ApproveDeviceAuthorization(context.Context, string, identity.LoginSession) error {
+	return errors.New("unexpected ApproveDeviceAuthorization")
+}
+
+func (r *recordingProviderLogin) DenyDeviceAuthorization(context.Context, string) error {
+	return errors.New("unexpected DenyDeviceAuthorization")
+}
+
+func (r *recordingProviderLogin) FindPasswordResetUser(context.Context, string) (identity.PasswordResetUser, bool, error) {
+	return identity.PasswordResetUser{}, false, errors.New("unexpected FindPasswordResetUser")
+}
+
+func (r *recordingProviderLogin) StartPasswordReset(context.Context, string) (string, error) {
+	return "", errors.New("unexpected StartPasswordReset")
+}
+
+func (r *recordingProviderLogin) CompletePasswordReset(context.Context, string, string, string) error {
+	return errors.New("unexpected CompletePasswordReset")
 }

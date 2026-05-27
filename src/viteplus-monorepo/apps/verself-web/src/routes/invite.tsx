@@ -1,7 +1,12 @@
 import { useForm } from "@tanstack/react-form";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@verself/ui/components/ui/button";
+import {
+  authFormSubmitBusy,
+  authFormSubmitDisabled,
+  submitErrorText,
+} from "~/features/auth/form-primitives";
 import { acceptMemberInvite } from "~/server-fns/auth";
 
 function searchString(value: unknown): string | undefined {
@@ -23,21 +28,6 @@ export const Route = createFileRoute("/invite")({
 
 function InvitePage() {
   const { token, org } = Route.useSearch();
-  const form = useForm({
-    defaultValues: {},
-    onSubmit: async () => {
-      if (!token) {
-        throw new Error("Invite could not be completed.");
-      }
-      await acceptMemberInvite({ data: { token } });
-      const login = new URL("/login", window.location.origin);
-      if (org) {
-        login.searchParams.set("redirect", `/${org}`);
-      }
-      window.location.assign(`${login.pathname}${login.search}`);
-    },
-  });
-
   return (
     <main className="grid min-h-svh place-items-center px-6 py-16">
       <section className="flex w-full max-w-sm flex-col">
@@ -48,33 +38,73 @@ function InvitePage() {
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           Join{org ? ` ${org}` : " this organization"} with this verified invite.
         </p>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void form.handleSubmit();
-          }}
-          className="mt-6 grid gap-4"
-        >
-          <form.Subscribe selector={(state) => [state.isSubmitting, state.errorMap.onSubmit]}>
-            {([isSubmitting, submitError]) => (
-              <div className="grid gap-3">
-                <Button type="submit" aria-busy={isSubmitting} disabled={!token || isSubmitting}>
-                  <CheckCircle2 aria-hidden="true" />
-                  <span>{isSubmitting ? "Accepting..." : "Accept invite"}</span>
-                </Button>
-                {!token ? (
-                  <p className="text-sm font-medium text-destructive">
-                    Invite could not be completed.
-                  </p>
-                ) : submitError ? (
-                  <p className="text-sm font-medium text-destructive">{String(submitError)}</p>
-                ) : null}
-              </div>
-            )}
-          </form.Subscribe>
-        </form>
+        {token ? (
+          <InviteAcceptanceForm token={token} org={org} />
+        ) : (
+          <p className="mt-6 text-sm font-medium text-destructive">
+            Invite could not be completed.
+          </p>
+        )}
       </section>
     </main>
+  );
+}
+
+function InviteAcceptanceForm({
+  token,
+  org,
+}: {
+  readonly token: string;
+  readonly org: string | undefined;
+}) {
+  const hydrated = useHydrated();
+  const form = useForm({
+    defaultValues: {},
+    onSubmit: async () => {
+      await acceptMemberInvite({ data: { token } });
+      const login = new URL("/login", window.location.origin);
+      if (org) {
+        login.searchParams.set("redirect", `/${org}`);
+      }
+      window.location.assign(`${login.pathname}${login.search}`);
+    },
+  });
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void form.handleSubmit();
+      }}
+      className="mt-6 grid gap-4"
+    >
+      <form.Subscribe selector={(state) => [state.isSubmitting, state.errorMap.onSubmit]}>
+        {([isSubmitting, submitError]) => (
+          <div className="grid gap-3">
+            <Button
+              type="submit"
+              aria-busy={authFormSubmitBusy({
+                hydrated,
+                isSubmitting,
+                isValidating: false,
+              })}
+              disabled={authFormSubmitDisabled({
+                hydrated,
+                canSubmit: true,
+                isSubmitting,
+                isValidating: false,
+              })}
+            >
+              <CheckCircle2 aria-hidden="true" />
+              <span>{isSubmitting ? "Accepting..." : "Accept invite"}</span>
+            </Button>
+            {submitError ? (
+              <p className="text-sm font-medium text-destructive">{submitErrorText(submitError)}</p>
+            ) : null}
+          </div>
+        )}
+      </form.Subscribe>
+    </form>
   );
 }

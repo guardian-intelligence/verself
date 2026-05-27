@@ -120,7 +120,8 @@ here. Bucket-level analytics belong in Grafana, not the customer UI.
 ## agent-browser login runbook (console QA / design review)
 
 The signed-in console (`_shell/_authenticated/*`, including the flight widget)
-is Zitadel-auth-gated. Use the dedicated QA human for automation.
+uses the Verself auth shell backed by Zitadel. Use the dedicated QA human for
+automation.
 
 **QA account (verified working, 2026-05-16):** `qa-flight@verself.sh`, a
 password-only Zitadel human in the platform org `guardian-intelligence`
@@ -137,16 +138,10 @@ element-type-aware, e.g. `snapshot -i | grep -E '(button|textbox) "Login
 Name"'`, never a bare label grep which also matches the `heading "Password"`):
 
 1. `agent-browser close` (env needs `--args "--no-sandbox"`).
-2. `open https://verself.sh/login` → click **"Continue to sign in"** (continues
-   through Zitadel on `verself.sh`).
-3. Login-name page: fill **"Login Name"** textbox = `qa-flight@verself.sh`,
-   click **"Next"**.
-4. Password page: fill the **"Password"** textbox, focus it, then **press
-   Enter**. **Do not click "Next"** — it is under a sticky footer / below the
-   forced-short fold and the click silently no-ops (cost two debug cycles).
-5. If a "set up 2-Factor" page appears, it is the optional prompt (org does
-   not force MFA): `scrollintoview` + click **"Skip"**.
-6. It redirects to `https://verself.sh/<org>`. Append `?flight=…` and
+2. `open https://verself.sh/login`.
+3. Fill **"Email"** textbox = `qa-flight@verself.sh`.
+4. Fill the **"Password"** textbox and submit the **"Sign in"** button.
+5. It redirects to `https://verself.sh/<org>`. Append `?flight=…` and
    `screenshot`.
 
 **Re-provisioning a QA human** (sanctioned path; secrets stay on the host /

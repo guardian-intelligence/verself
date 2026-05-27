@@ -187,6 +187,9 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 	if err != nil {
 		return VerifySignupResult{}, err
 	}
+	if err := s.ValidateNewPassword(ctx, input.InitialPassword); err != nil {
+		return VerifySignupResult{}, err
+	}
 	signupStore, err := s.signupStore()
 	if err != nil {
 		return VerifySignupResult{}, err
@@ -231,7 +234,7 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 	if err != nil {
 		return VerifySignupResult{}, err
 	}
-	result, err := s.materializeSignup(ctx, store, signupStore, &intent, input.IdempotencyKey)
+	result, err := s.materializeSignup(ctx, store, signupStore, &intent, input.IdempotencyKey, input.InitialPassword)
 	if err != nil {
 		failureState := SignupIntentStateFailedRetryable
 		retryable := true
@@ -264,7 +267,7 @@ func (s *Service) VerifySignup(ctx context.Context, input VerifySignupRequest) (
 	return result, nil
 }
 
-func (s *Service) materializeSignup(ctx context.Context, store Store, signupStore SignupStore, intent *SignupIntent, idempotencyKey string) (VerifySignupResult, error) {
+func (s *Service) materializeSignup(ctx context.Context, store Store, signupStore SignupStore, intent *SignupIntent, idempotencyKey, initialPassword string) (VerifySignupResult, error) {
 	directory, err := s.signupDirectory()
 	if err != nil {
 		return VerifySignupResult{}, err
@@ -342,6 +345,7 @@ func (s *Service) materializeSignup(ctx context.Context, store Store, signupStor
 			Email:      intent.EmailDelivery,
 			GivenName:  intent.GivenName,
 			FamilyName: intent.FamilyName,
+			Password:   initialPassword,
 		})
 		if err != nil {
 			return VerifySignupResult{}, err
@@ -565,6 +569,9 @@ func normalizeVerifySignup(input VerifySignupRequest) (VerifySignupRequest, erro
 	}
 	if input.VerificationToken == "" || len(input.VerificationToken) > 512 {
 		return VerifySignupRequest{}, fmt.Errorf("%w: verification token is invalid", ErrInvalidInput)
+	}
+	if input.InitialPassword == "" {
+		return VerifySignupRequest{}, fmt.Errorf("%w: initial password is required", ErrPasswordRejected)
 	}
 	if input.IdempotencyKey == "" {
 		return VerifySignupRequest{}, fmt.Errorf("%w: idempotency_key is required", ErrInvalidInput)

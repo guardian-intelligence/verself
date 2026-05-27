@@ -23,7 +23,7 @@ const authNavigationClient = {
   }) => {
     const params = new URLSearchParams();
     if (data.redirectTo) {
-      params.set("redirect_to", data.redirectTo);
+      params.set("redirect", data.redirectTo);
     }
     if (data.purpose) {
       params.set("purpose", data.purpose);
@@ -46,7 +46,7 @@ const authNavigationClient = {
       params.set("prompt", "select_account");
     }
     const query = params.toString();
-    return `/api/v1/auth/login${query ? `?${query}` : ""}`;
+    return `/login${query ? `?${query}` : ""}`;
   },
   getSignOutRedirectURL: async () => "/api/v1/auth/logout",
 };
