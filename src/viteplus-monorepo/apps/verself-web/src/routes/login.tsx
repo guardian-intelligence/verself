@@ -207,6 +207,7 @@ function LoginPage() {
             <AccountChooser accounts={accountOptions} search={search} />
           ) : null}
           <form
+            noValidate
             onSubmit={(event) => {
               event.preventDefault();
               event.stopPropagation();

@@ -133,6 +133,7 @@ function SignupForm() {
         </div>
       </div>
       <form
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
           event.stopPropagation();

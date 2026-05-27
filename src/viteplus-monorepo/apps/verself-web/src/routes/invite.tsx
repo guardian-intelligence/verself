@@ -72,6 +72,7 @@ function InviteAcceptanceForm({
 
   return (
     <form
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();

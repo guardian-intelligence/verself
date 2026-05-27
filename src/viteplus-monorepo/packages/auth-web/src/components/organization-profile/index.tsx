@@ -281,6 +281,7 @@ function OrganizationSettingsSection({
       ) : null}
 
       <form
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -413,6 +414,7 @@ function MembersSection({
       </SectionHeader>
       {canInviteMember ? (
         <form
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             event.stopPropagation();
