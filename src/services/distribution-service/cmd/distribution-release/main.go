@@ -233,6 +233,10 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 	if err != nil {
 		return err
 	}
+	toolEnv, err := releaseToolEnv(cfg.outRoot, cfg.channel, version, sourceCommit)
+	if err != nil {
+		return err
+	}
 	started := time.Now().UTC()
 	bazelReleaseVersionFlag := rustReleaseVersionFlag(version)
 	testArgs := []string{
@@ -242,17 +246,17 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 		"//src/make-skill:exec_test",
 		"//src/make-skill:cli_test",
 	}
-	if _, err := runCommand(ctx, source.root, bazelisk, testArgs...); err != nil {
+	if _, err := runCommandWithEnv(ctx, source.root, bazelisk, toolEnv, testArgs...); err != nil {
 		return err
 	}
-	mkskBinary, err := bazelOutputFile(ctx, source.root, bazelisk, mkskBinaryTarget, bazelReleaseVersionFlag)
+	mkskBinary, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, mkskBinaryTarget, bazelReleaseVersionFlag)
 	if err != nil {
 		return err
 	}
 	if err := verifyMkskVersion(ctx, mkskBinary, version); err != nil {
 		return err
 	}
-	releaseTar, err := bazelOutputFile(ctx, source.root, bazelisk, mkskReleaseTar, bazelReleaseVersionFlag)
+	releaseTar, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, mkskReleaseTar, bazelReleaseVersionFlag)
 	if err != nil {
 		return err
 	}
@@ -282,10 +286,10 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 	if err := copyTestXML(source.root, paths); err != nil {
 		return err
 	}
-	if err := generateSBOMs(ctx, source.root, toolsDir, artifactPath, version, paths); err != nil {
+	if err := generateSBOMs(ctx, source.root, toolsDir, artifactPath, version, paths, toolEnv); err != nil {
 		return err
 	}
-	if err := generateLicenses(ctx, source.root, toolsDir, paths); err != nil {
+	if err := generateLicenses(ctx, source.root, toolsDir, paths, toolEnv); err != nil {
 		return err
 	}
 	finished := time.Now().UTC()
@@ -377,24 +381,24 @@ func makeReleaseDirs(paths releasePaths) error {
 	return nil
 }
 
-func generateSBOMs(ctx context.Context, sourceRoot, toolsDir, artifactPath, version string, paths releasePaths) error {
+func generateSBOMs(ctx context.Context, sourceRoot, toolsDir, artifactPath, version string, paths releasePaths, env map[string]string) error {
 	syft := filepath.Join(toolsDir, "bin", "syft")
 	artifactOut := filepath.Join(paths.root, paths.sbom, "make-skill.artifact.spdx.json")
 	sourceOut := filepath.Join(paths.root, paths.sbom, "make-skill.source.spdx.json")
-	if _, err := runCommand(ctx, sourceRoot, syft, "scan", "file:"+artifactPath, "-q", "--source-name", mkskPackageName, "--source-version", version, "-o", "spdx-json="+artifactOut); err != nil {
+	if _, err := runCommandWithEnv(ctx, sourceRoot, syft, env, "scan", "file:"+artifactPath, "-q", "--source-name", mkskPackageName, "--source-version", version, "-o", "spdx-json="+artifactOut); err != nil {
 		return err
 	}
 	sourceDir := filepath.Join(sourceRoot, "src", "make-skill")
-	if _, err := runCommand(ctx, sourceRoot, syft, "scan", "dir:"+sourceDir, "--exclude", "**/target/**", "-q", "--source-name", mkskPackageName, "--source-version", version, "-o", "spdx-json="+sourceOut); err != nil {
+	if _, err := runCommandWithEnv(ctx, sourceRoot, syft, env, "scan", "dir:"+sourceDir, "--exclude", "**/target/**", "-q", "--source-name", mkskPackageName, "--source-version", version, "-o", "spdx-json="+sourceOut); err != nil {
 		return err
 	}
 	return nil
 }
 
-func generateLicenses(ctx context.Context, sourceRoot, toolsDir string, paths releasePaths) error {
+func generateLicenses(ctx context.Context, sourceRoot, toolsDir string, paths releasePaths, env map[string]string) error {
 	cargoAbout := filepath.Join(toolsDir, "bin", "cargo-about")
 	out := filepath.Join(paths.root, paths.licenses, "make-skill.cargo-about.json")
-	_, err := runCommand(ctx, sourceRoot, cargoAbout, "generate", "--config", mkskCargoAbout, "--manifest-path", mkskCargoManifest, "--workspace", "--frozen", "--format", "json", "--output-file", out)
+	_, err := runCommandWithEnv(ctx, sourceRoot, cargoAbout, env, "generate", "--config", mkskCargoAbout, "--manifest-path", mkskCargoManifest, "--workspace", "--frozen", "--format", "json", "--output-file", out)
 	return err
 }
 
@@ -608,15 +612,15 @@ func gitOutput(ctx context.Context, repoRoot string, args ...string) (string, er
 	return strings.TrimSpace(result.stdout), nil
 }
 
-func bazelOutputFile(ctx context.Context, repoRoot, bazelisk, target string, buildOptions ...string) (string, error) {
+func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[string]string, target string, buildOptions ...string) (string, error) {
 	buildArgs := append([]string{"build"}, buildOptions...)
 	buildArgs = append(buildArgs, target)
-	if _, err := runCommand(ctx, repoRoot, bazelisk, buildArgs...); err != nil {
+	if _, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, buildArgs...); err != nil {
 		return "", err
 	}
 	cqueryArgs := append([]string{"cquery", "--output=files"}, buildOptions...)
 	cqueryArgs = append(cqueryArgs, target)
-	files, err := runCommand(ctx, repoRoot, bazelisk, cqueryArgs...)
+	files, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, cqueryArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -624,7 +628,7 @@ func bazelOutputFile(ctx context.Context, repoRoot, bazelisk, target string, bui
 	if len(lines) != 1 {
 		return "", fmt.Errorf("expected one output for %s, got %d", target, len(lines))
 	}
-	execroot, err := runCommand(ctx, repoRoot, bazelisk, "info", "execution_root")
+	execroot, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, "info", "execution_root")
 	if err != nil {
 		return "", err
 	}
@@ -636,9 +640,16 @@ func bazelOutputFile(ctx context.Context, repoRoot, bazelisk, target string, bui
 }
 
 func runCommand(ctx context.Context, cwd, program string, args ...string) (commandResult, error) {
+	return runCommandWithEnv(ctx, cwd, program, nil, args...)
+}
+
+func runCommandWithEnv(ctx context.Context, cwd, program string, env map[string]string, args ...string) (commandResult, error) {
 	cmd := exec.CommandContext(ctx, program, args...)
 	if cwd != "" {
 		cmd.Dir = cwd
+	}
+	if len(env) > 0 {
+		cmd.Env = mergeCommandEnv(os.Environ(), env)
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -657,6 +668,45 @@ func runCommand(ctx context.Context, cwd, program string, args ...string) (comma
 		detail = err.Error()
 	}
 	return result, fmt.Errorf("%s %s: %s", program, strings.Join(args, " "), detail)
+}
+
+func releaseToolEnv(outRoot, channel, version, sourceCommit string) (map[string]string, error) {
+	root := filepath.Join(outRoot, "work", "tool-env", mkskPackageName, channel+"-"+version+"-"+shortSHA(sourceCommit))
+	dirs := map[string]string{
+		"HOME":           filepath.Join(root, "home"),
+		"XDG_CACHE_HOME": filepath.Join(root, "cache"),
+		"BAZELISK_HOME":  filepath.Join(root, "bazelisk"),
+		"CARGO_HOME":     filepath.Join(root, "cargo"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create release tool env %s: %w", dir, err)
+		}
+	}
+	return dirs, nil
+}
+
+func mergeCommandEnv(base []string, overrides map[string]string) []string {
+	out := make([]string, 0, len(base)+len(overrides))
+	for _, entry := range base {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok {
+			if _, replace := overrides[key]; replace {
+				continue
+			}
+		}
+		out = append(out, entry)
+	}
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := overrides[key]
+		out = append(out, key+"="+value)
+	}
+	return out
 }
 
 func extractTools(toolsTar string) (string, func(), error) {
