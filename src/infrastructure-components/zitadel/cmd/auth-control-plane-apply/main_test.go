@@ -10,19 +10,26 @@ import (
 )
 
 func TestOIDCConfigBodies(t *testing.T) {
-	browser := browserOIDCConfigBody([]string{"https://verself.sh/api/v1/auth/callback"}, []string{"https://verself.sh"})
+	browser := browserOIDCConfigBody([]string{"https://verself.sh/api/v1/auth/callback"}, []string{"https://verself.sh"}, "https://verself.sh")
 	if got := browser["authMethodType"]; got != "OIDC_AUTH_METHOD_TYPE_POST" {
 		t.Fatalf("browser auth method = %v", got)
 	}
 	if got := browser["appType"]; got != "OIDC_APP_TYPE_WEB" {
 		t.Fatalf("browser app type = %v", got)
 	}
-	native := nativeOIDCConfigBody()
+	wantLogin := map[string]any{"loginV2": map[string]any{"baseUri": "https://verself.sh"}}
+	if !reflect.DeepEqual(browser["loginVersion"], wantLogin) {
+		t.Fatalf("browser login version = %#v", browser["loginVersion"])
+	}
+	native := nativeOIDCConfigBody("https://verself.sh")
 	if got := native["authMethodType"]; got != "OIDC_AUTH_METHOD_TYPE_NONE" {
 		t.Fatalf("native auth method = %v", got)
 	}
 	if got := native["appType"]; got != "OIDC_APP_TYPE_NATIVE" {
 		t.Fatalf("native app type = %v", got)
+	}
+	if !reflect.DeepEqual(native["loginVersion"], wantLogin) {
+		t.Fatalf("native login version = %#v", native["loginVersion"])
 	}
 }
 

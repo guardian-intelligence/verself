@@ -70,7 +70,7 @@ func run() error {
 	format := flag.String("format", "json", "Output format: json | table.")
 	spiffeSocket := flag.String("spiffe-socket", "unix:///run/spire-agent/sockets/agent.sock", "SPIFFE workload API socket address.")
 	authzProbe := flag.Bool("authz-probe", true, "Also call the generated IAM operation authorizer with a typed policy.")
-	authzOrgID := flag.String("authz-org-id", "1", "Organization ID used for the authorization probe.")
+	authzOrgID := flag.String("authz-org-id", "1", "Fallback organization ID used for the authorization probe.")
 	authzSubject := flag.String("authz-subject", "discovery-canary", "Subject ID used for the authorization probe.")
 	authzPermission := flag.String("authz-permission", "iam:organization:read", "Known IAM permission used for the authorization probe.")
 	flag.Parse()
@@ -158,10 +158,11 @@ func run() error {
 				}
 				success.Add(1)
 				if *authzProbe {
+					probeOrgID := authorizationProbeOrgID(*authzOrgID, resp)
 					authzCtx, authzCancel := context.WithTimeout(ctx, *timeout)
 					decision, err := authorizer.AuthorizeOperation(authzCtx, &auth.Identity{
 						Subject: *authzSubject,
-						OrgID:   *authzOrgID,
+						OrgID:   probeOrgID,
 					}, runtimeiam.OperationPolicy{
 						Permission: runtimeiam.Permission(*authzPermission),
 					})
@@ -246,6 +247,15 @@ loop:
 		os.Exit(2)
 	}
 	return nil
+}
+
+func authorizationProbeOrgID(fallback string, resp *iamclient.ResolveOrganizationResponse) string {
+	if resp != nil && resp.Result != nil {
+		if orgID := strings.TrimSpace(string(resp.Result.Organization.OrgID)); orgID != "" {
+			return orgID
+		}
+	}
+	return strings.TrimSpace(fallback)
 }
 
 func printTable(r result) error {

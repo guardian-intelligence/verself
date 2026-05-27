@@ -10,6 +10,8 @@ INSERT INTO iam_browser_login_transactions (
   required_subject,
   required_email,
   required_org_id,
+  provider_session_id,
+  provider_session_token_ciphertext,
   expires_at
 ) VALUES (
   sqlc.arg(state_hash),
@@ -22,6 +24,8 @@ INSERT INTO iam_browser_login_transactions (
   sqlc.narg(required_subject),
   sqlc.narg(required_email),
   sqlc.narg(required_org_id),
+  sqlc.arg(provider_session_id),
+  sqlc.arg(provider_session_token_ciphertext),
   sqlc.arg(expires_at)
 );
 
@@ -29,7 +33,7 @@ INSERT INTO iam_browser_login_transactions (
 DELETE FROM iam_browser_login_transactions
 WHERE state_hash = sqlc.arg(state_hash)
   AND expires_at > now()
-RETURNING state_hash, client_hash, nonce, code_verifier, redirect_to, purpose, login_hint, required_subject, required_email, required_org_id, expires_at, created_at;
+RETURNING state_hash, client_hash, nonce, code_verifier, redirect_to, purpose, login_hint, required_subject, required_email, required_org_id, provider_session_id, provider_session_token_ciphertext, expires_at, created_at;
 
 -- name: DeleteExpiredBrowserLoginTransactions :exec
 DELETE FROM iam_browser_login_transactions
@@ -201,6 +205,8 @@ INSERT INTO iam_browser_accounts (
   id_token_ciphertext,
   access_token_ciphertext,
   refresh_token_ciphertext,
+  provider_session_id,
+  provider_session_token_ciphertext,
   token_scope,
   expires_at,
   created_client_ip,
@@ -244,6 +250,8 @@ INSERT INTO iam_browser_accounts (
   sqlc.narg(id_token_ciphertext),
   sqlc.arg(access_token_ciphertext),
   sqlc.narg(refresh_token_ciphertext),
+  sqlc.arg(provider_session_id),
+  sqlc.arg(provider_session_token_ciphertext),
   sqlc.narg(token_scope),
   sqlc.arg(expires_at),
   sqlc.arg(client_ip),
@@ -285,6 +293,8 @@ ON CONFLICT (client_hash, subject) DO UPDATE SET
   id_token_ciphertext = EXCLUDED.id_token_ciphertext,
   access_token_ciphertext = EXCLUDED.access_token_ciphertext,
   refresh_token_ciphertext = EXCLUDED.refresh_token_ciphertext,
+  provider_session_id = EXCLUDED.provider_session_id,
+  provider_session_token_ciphertext = EXCLUDED.provider_session_token_ciphertext,
   token_scope = EXCLUDED.token_scope,
   expires_at = EXCLUDED.expires_at,
   last_seen_client_ip = EXCLUDED.last_seen_client_ip,
@@ -319,6 +329,8 @@ SELECT
   id_token_ciphertext,
   access_token_ciphertext,
   refresh_token_ciphertext,
+  provider_session_id,
+  provider_session_token_ciphertext,
   token_scope,
   expires_at,
   created_client_ip,
@@ -372,6 +384,8 @@ SELECT
   a.id_token_ciphertext,
   a.access_token_ciphertext,
   a.refresh_token_ciphertext,
+  a.provider_session_id,
+  a.provider_session_token_ciphertext,
   a.token_scope,
   a.expires_at,
   a.created_client_ip,

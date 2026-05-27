@@ -14,13 +14,49 @@ const selectAccountInputSchema = v.object({
   accountHandle: v.pipe(v.string(), v.nonEmpty()),
 });
 
+const removeAccountInputSchema = v.object({
+  accountHandle: v.pipe(v.string(), v.nonEmpty()),
+});
+
 const acceptMemberInviteInputSchema = v.object({
   token: v.pipe(v.string(), v.nonEmpty()),
+});
+
+const passwordLoginInputSchema = v.object({
+  email: v.pipe(v.string(), v.trim(), v.email()),
+  password: v.pipe(v.string(), v.nonEmpty()),
+  authRequestId: v.optional(v.string()),
+  redirectTo: v.optional(v.string()),
+  purpose: v.optional(v.string()),
+  loginHint: v.optional(v.string()),
+  requiredSubject: v.optional(v.string()),
+  requiredEmail: v.optional(v.string()),
+  requiredOrgId: v.optional(v.string()),
+  prompt: v.optional(v.picklist(["login", "select_account"])),
+});
+
+const passwordResetStartInputSchema = v.object({
+  email: v.pipe(v.string(), v.trim(), v.email()),
+});
+
+const passwordResetCompleteInputSchema = v.object({
+  userId: v.pipe(v.string(), v.trim(), v.nonEmpty()),
+  verificationCode: v.pipe(v.string(), v.trim(), v.nonEmpty()),
+  password: v.pipe(v.string(), v.nonEmpty()),
+});
+
+const deviceLoginLookupInputSchema = v.object({
+  userCode: v.pipe(v.string(), v.trim(), v.nonEmpty()),
+});
+
+const deviceLoginDecisionInputSchema = v.object({
+  deviceLoginHandle: v.pipe(v.string(), v.trim(), v.nonEmpty()),
 });
 
 const verifySignupInputSchema = v.object({
   signupIntentId: v.pipe(v.string(), v.nonEmpty()),
   verificationToken: v.pipe(v.string(), v.nonEmpty()),
+  initialPassword: v.pipe(v.string(), v.nonEmpty()),
   organizationDisplayName: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
   organizationSlug: v.pipe(
     v.string(),
@@ -29,6 +65,22 @@ const verifySignupInputSchema = v.object({
     v.maxLength(80),
     v.regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/),
   ),
+});
+
+const startSignupInputSchema = v.object({
+  email: v.pipe(v.string(), v.trim(), v.email()),
+  organizationDisplayName: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120)),
+  organizationSlug: v.optional(
+    v.pipe(
+      v.string(),
+      v.trim(),
+      v.minLength(1),
+      v.maxLength(80),
+      v.regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/),
+    ),
+  ),
+  givenName: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(100))),
+  familyName: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(100))),
 });
 
 const checkOrganizationSlugInputSchema = v.object({
@@ -75,11 +127,23 @@ export const selectActiveOrganization = createServerFn({ method: "POST" })
   });
 
 export const selectActiveAccount = createServerFn({ method: "POST" })
-  .middleware([consoleAuthMiddleware])
   .inputValidator(selectAccountInputSchema)
   .handler(async ({ data }) => {
     const { selectIdentityBrowserAccount } = await import("./auth.server");
     return selectIdentityBrowserAccount(data.accountHandle);
+  });
+
+export const listBrowserAccounts = createServerFn({ method: "GET" }).handler(async () => {
+  const { listIdentityBrowserAccounts } = await import("./auth.server");
+  return listIdentityBrowserAccounts();
+});
+
+export const removeBrowserAccount = createServerFn({ method: "POST" })
+  .inputValidator(removeAccountInputSchema)
+  .handler(async ({ data }) => {
+    const { removeIdentityBrowserAccount } = await import("./auth.server");
+    await removeIdentityBrowserAccount(data.accountHandle);
+    return { removed: true };
   });
 
 export const revokeClientAuthDevice = createServerFn({ method: "POST" })
@@ -98,11 +162,62 @@ export const acceptMemberInvite = createServerFn({ method: "POST" })
     return acceptIdentityMemberInvite(data);
   });
 
+export const passwordLogin = createServerFn({ method: "POST" })
+  .inputValidator(passwordLoginInputSchema)
+  .handler(async ({ data }) => {
+    const { completeIdentityPasswordLogin } = await import("./auth.server");
+    return completeIdentityPasswordLogin(data);
+  });
+
+export const startPasswordReset = createServerFn({ method: "POST" })
+  .inputValidator(passwordResetStartInputSchema)
+  .handler(async ({ data }) => {
+    const { startIdentityPasswordReset } = await import("./auth.server");
+    return startIdentityPasswordReset(data.email);
+  });
+
+export const completePasswordReset = createServerFn({ method: "POST" })
+  .inputValidator(passwordResetCompleteInputSchema)
+  .handler(async ({ data }) => {
+    const { completeIdentityPasswordReset } = await import("./auth.server");
+    return completeIdentityPasswordReset(data);
+  });
+
+export const lookupDeviceLogin = createServerFn({ method: "POST" })
+  .inputValidator(deviceLoginLookupInputSchema)
+  .handler(async ({ data }) => {
+    const { lookupIdentityDeviceLogin } = await import("./auth.server");
+    return lookupIdentityDeviceLogin(data.userCode);
+  });
+
+export const approveDeviceLogin = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(deviceLoginDecisionInputSchema)
+  .handler(async ({ data }) => {
+    const { approveIdentityDeviceLogin } = await import("./auth.server");
+    return approveIdentityDeviceLogin(data.deviceLoginHandle);
+  });
+
+export const denyDeviceLogin = createServerFn({ method: "POST" })
+  .middleware([consoleAuthMiddleware])
+  .inputValidator(deviceLoginDecisionInputSchema)
+  .handler(async ({ data }) => {
+    const { denyIdentityDeviceLogin } = await import("./auth.server");
+    return denyIdentityDeviceLogin(data.deviceLoginHandle);
+  });
+
 export const verifySignup = createServerFn({ method: "POST" })
   .inputValidator(verifySignupInputSchema)
   .handler(async ({ data }) => {
     const { verifyIdentitySignup } = await import("./auth.server");
     return verifyIdentitySignup(data);
+  });
+
+export const startSignup = createServerFn({ method: "POST" })
+  .inputValidator(startSignupInputSchema)
+  .handler(async ({ data }) => {
+    const { startIdentitySignup } = await import("./auth.server");
+    return startIdentitySignup(data);
   });
 
 export const checkOrganizationSlug = createServerFn({ method: "GET" })

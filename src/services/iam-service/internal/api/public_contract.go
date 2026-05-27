@@ -480,6 +480,7 @@ func (h publicHandlers) VerifySignup(ctx context.Context, input *contractapi.Ver
 	result, err := h.service.VerifySignup(ctx, identity.VerifySignupRequest{
 		SignupIntentID:          string(input.SignupIntentID),
 		VerificationToken:       string(input.Body.VerificationToken),
+		InitialPassword:         string(input.Body.InitialPassword),
 		OrganizationDisplayName: contractString(input.Body.OrganizationDisplayName),
 		OrganizationSlug:        contractString(input.Body.OrganizationSlug),
 		IdempotencyKey:          string(input.IdempotencyKey),

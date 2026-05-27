@@ -372,9 +372,10 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 
 	verifyURL := "https://verself.sh/signup/verify?signup_intent_id=" + signupIntentID + "&verification_token=" + verificationToken
 	var verifyOut bytes.Buffer
-	runCLI(t, &verifyOut,
+	runCLIWithInput(t, &verifyOut, "correct horse battery staple\n",
 		"signup", "verify",
 		"--url", verifyURL,
+		"--password-stdin",
 		"--org", "Guardian Intelligence",
 		"--slug", "guardian-intelligence",
 	)
@@ -386,6 +387,9 @@ func TestAuthSignupCommandsUsePublicIAMAPI(t *testing.T) {
 	}
 	if verifyBody["verificationToken"] != verificationToken {
 		t.Fatalf("unexpected verification token body: %#v", verifyBody)
+	}
+	if verifyBody["initialPassword"] != "correct horse battery staple" {
+		t.Fatalf("unexpected initial password body: %#v", verifyBody)
 	}
 	if verifyBody["organizationDisplayName"] != "Guardian Intelligence" || verifyBody["organizationSlug"] != "guardian-intelligence" {
 		t.Fatalf("unexpected verification organization body: %#v", verifyBody)
@@ -1487,12 +1491,17 @@ platform_company_display_name: Old Company
 
 func runCLI(t *testing.T, out *bytes.Buffer, args ...string) {
 	t.Helper()
+	runCLIWithInput(t, out, "", args...)
+}
+
+func runCLIWithInput(t *testing.T, out *bytes.Buffer, input string, args ...string) {
+	t.Helper()
 	if out == nil {
 		out = &bytes.Buffer{}
 	}
 	cli := CLI{
 		binary: "verself",
-		in:     strings.NewReader(""),
+		in:     strings.NewReader(input),
 		out:    out,
 		err:    io.Discard,
 		getenv: os.Getenv,

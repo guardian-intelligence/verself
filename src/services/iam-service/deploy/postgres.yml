@@ -12,3 +12,4 @@ postgresql_logical_publications:
       - iam_web_auth_clients
       - iam_web_auth_accounts
       - iam_web_auth_account_sessions
+      - iam_web_device_login_requests

@@ -9,6 +9,7 @@ go_library(
         "browser_auth.go",
         "browser_auth_activity.go",
         "browser_auth_devices.go",
+        "browser_auth_login.go",
         "errors.go",
         "internal.go",
         "internal_openapi.go",
@@ -70,6 +71,7 @@ go_test(
         "//src/services/service-runtime/go/iam",
         "//src/services/service-runtime/go/pgtest",
         "@com_github_danielgtaylor_huma_v2//:huma",
+        "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgxpool",
     ],
 )

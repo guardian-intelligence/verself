@@ -90,32 +90,6 @@ class AuthResource(SyncAPIResource):
             cast_to=AuthAcceptMemberInviteResponse,
         )
 
-    def login(
-        self,
-        *,
-        redirect_to: str | NotGiven = not_given,
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> object:
-        """"""
-        _params = {
-            "redirect_to": redirect_to,
-        }
-        _params = {k: v for k, v in _params.items() if v is not not_given}
-        return self._get(
-            f"/api/v1/auth/login",
-            options=make_request_options(
-                extra_headers=extra_headers,
-                extra_query=extra_query,
-                extra_body=extra_body,
-                timeout=timeout,
-                params=_params,
-            ),
-            cast_to=object,
-        )
-
     def logout(
         self,
         *,
@@ -315,32 +289,6 @@ class AsyncAuthResource(AsyncAPIResource):
             cast_to=AuthAcceptMemberInviteResponse,
         )
 
-    async def login(
-        self,
-        *,
-        redirect_to: str | NotGiven = not_given,
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = not_given,
-    ) -> object:
-        """"""
-        _params = {
-            "redirect_to": redirect_to,
-        }
-        _params = {k: v for k, v in _params.items() if v is not not_given}
-        return await self._get(
-            f"/api/v1/auth/login",
-            options=make_request_options(
-                extra_headers=extra_headers,
-                extra_query=extra_query,
-                extra_body=extra_body,
-                timeout=timeout,
-                params=_params,
-            ),
-            cast_to=object,
-        )
-
     async def logout(
         self,
         *,
@@ -477,7 +425,6 @@ class AuthResourceWithRawResponse:
     def __init__(self, auth: AuthResource) -> None:
         self.callback = to_raw_response_wrapper(auth.callback)
         self.accept_member_invite = to_raw_response_wrapper(auth.accept_member_invite)
-        self.login = to_raw_response_wrapper(auth.login)
         self.logout = to_raw_response_wrapper(auth.logout)
         self.select_organization = to_raw_response_wrapper(auth.select_organization)
         self.create_resource_token = to_raw_response_wrapper(auth.create_resource_token)
@@ -490,7 +437,6 @@ class AsyncAuthResourceWithRawResponse:
     def __init__(self, auth: AsyncAuthResource) -> None:
         self.callback = async_to_raw_response_wrapper(auth.callback)
         self.accept_member_invite = async_to_raw_response_wrapper(auth.accept_member_invite)
-        self.login = async_to_raw_response_wrapper(auth.login)
         self.logout = async_to_raw_response_wrapper(auth.logout)
         self.select_organization = async_to_raw_response_wrapper(auth.select_organization)
         self.create_resource_token = async_to_raw_response_wrapper(auth.create_resource_token)
@@ -503,7 +449,6 @@ class AuthResourceWithStreamingResponse:
     def __init__(self, auth: AuthResource) -> None:
         self.callback = to_streamed_response_wrapper(auth.callback)
         self.accept_member_invite = to_streamed_response_wrapper(auth.accept_member_invite)
-        self.login = to_streamed_response_wrapper(auth.login)
         self.logout = to_streamed_response_wrapper(auth.logout)
         self.select_organization = to_streamed_response_wrapper(auth.select_organization)
         self.create_resource_token = to_streamed_response_wrapper(auth.create_resource_token)
@@ -516,7 +461,6 @@ class AsyncAuthResourceWithStreamingResponse:
     def __init__(self, auth: AsyncAuthResource) -> None:
         self.callback = async_to_streamed_response_wrapper(auth.callback)
         self.accept_member_invite = async_to_streamed_response_wrapper(auth.accept_member_invite)
-        self.login = async_to_streamed_response_wrapper(auth.login)
         self.logout = async_to_streamed_response_wrapper(auth.logout)
         self.select_organization = async_to_streamed_response_wrapper(auth.select_organization)
         self.create_resource_token = async_to_streamed_response_wrapper(auth.create_resource_token)

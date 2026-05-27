@@ -71,6 +71,7 @@ class SignupIntentsResource(SyncAPIResource):
         signup_intent_id: str,
         *,
         verification_token: str,
+        initial_password: str,
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
@@ -83,6 +84,7 @@ class SignupIntentsResource(SyncAPIResource):
             )
         _body = {
             "verificationToken": verification_token,
+            "initialPassword": initial_password,
         }
         _body = {k: v for k, v in _body.items() if v is not not_given}
         return self._post(
@@ -146,6 +148,7 @@ class AsyncSignupIntentsResource(AsyncAPIResource):
         signup_intent_id: str,
         *,
         verification_token: str,
+        initial_password: str,
         extra_headers: Headers | None = None,
         extra_query: Query | None = None,
         extra_body: Body | None = None,
@@ -158,6 +161,7 @@ class AsyncSignupIntentsResource(AsyncAPIResource):
             )
         _body = {
             "verificationToken": verification_token,
+            "initialPassword": initial_password,
         }
         _body = {k: v for k, v in _body.items() if v is not not_given}
         return await self._post(

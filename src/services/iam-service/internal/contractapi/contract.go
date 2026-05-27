@@ -94,6 +94,8 @@ type SignupStartStatus string
 
 type SignupVerificationToken string
 
+type Password string
+
 type LoginURL string
 
 type SubjectId string
@@ -445,6 +447,7 @@ type StartSignupInput struct {
 
 type VerifySignupInputBody struct {
 	VerificationToken       SignupVerificationToken `json:"verificationToken" required:"true" minLength:"32" maxLength:"512"`
+	InitialPassword         Password                `json:"initialPassword" required:"true" minLength:"1" maxLength:"4096"`
 	OrganizationDisplayName *DisplayName            `json:"organizationDisplayName,omitempty" minLength:"1" maxLength:"120"`
 	OrganizationSlug        *OrgSlug                `json:"organizationSlug,omitempty" minLength:"1" maxLength:"80" pattern:"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"`
 }

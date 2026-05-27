@@ -14,6 +14,7 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.6.0
 	github.com/verself/billing-service v0.0.0
 	github.com/verself/governance-service v0.0.0
+	github.com/verself/integrations/hibp/pwned-passwords v0.0.0
 	github.com/verself/notifications-service v0.0.0
 	github.com/verself/secrets-service v0.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
@@ -92,3 +93,5 @@ replace github.com/verself/secrets-service => ../secrets-service
 replace github.com/verself/service-runtime => ../service-runtime/go
 
 replace github.com/verself/observability => ../../tools/observability/go
+
+replace github.com/verself/integrations/hibp/pwned-passwords => ../../integrations/hibp/pwned-passwords

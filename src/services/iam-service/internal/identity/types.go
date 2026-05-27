@@ -181,6 +181,7 @@ type SignupAccountNotice struct {
 type VerifySignupRequest struct {
 	SignupIntentID          string
 	VerificationToken       string
+	InitialPassword         string
 	OrganizationDisplayName string
 	OrganizationSlug        string
 	IdempotencyKey          string
@@ -227,6 +228,7 @@ type DirectoryCreateSignupUserRequest struct {
 	Email      string
 	GivenName  string
 	FamilyName string
+	Password   string
 }
 
 type DirectoryCreateSignupUserResult struct {
@@ -312,6 +314,7 @@ type InviteMemberRequest struct {
 	Email      string
 	GivenName  string
 	FamilyName string
+	Password   string
 	Roles      []string
 }
 
@@ -467,6 +470,57 @@ type AddServiceAccountCredentialInput struct {
 	ClientID   string
 	AuthMethod APICredentialAuthMethod
 	ExpiresAt  *time.Time
+}
+
+type LoginSessionInput struct {
+	LoginName string
+	Password  string
+	UserAgent string
+	IP        string
+	Lifetime  time.Duration
+}
+
+type LoginSession struct {
+	SessionID    string
+	SessionToken string
+	ExpiresAt    time.Time
+}
+
+type PasswordResetUser struct {
+	UserID    string
+	Email     string
+	LoginName string
+}
+
+type OIDCAuthRequest struct {
+	ID          string
+	ClientID    string
+	Scopes      []string
+	RedirectURI string
+	LoginHint   string
+}
+
+type StartDeviceAuthorizationInput struct {
+	ClientID string
+	Scopes   []string
+}
+
+type DeviceAuthorization struct {
+	DeviceCode              string
+	UserCode                string
+	VerificationURI         string
+	VerificationURIComplete string
+	ExpiresIn               time.Duration
+	Interval                time.Duration
+	Request                 DeviceAuthorizationRequest
+}
+
+type DeviceAuthorizationRequest struct {
+	ID          string
+	ClientID    string
+	Scopes      []string
+	AppName     string
+	ProjectName string
 }
 
 type CreateServiceAccountRequest struct {

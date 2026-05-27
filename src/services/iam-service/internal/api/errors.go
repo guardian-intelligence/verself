@@ -113,6 +113,10 @@ func identityError(ctx context.Context, err error) error {
 	switch {
 	case identity.IsInvalid(err):
 		return badRequest(ctx, "request.validation_failed", "invalid identity request", err)
+	case errors.Is(err, identity.ErrPasswordRejected):
+		return badRequest(ctx, "iam.password.rejected", "password does not meet the current password policy", err)
+	case errors.Is(err, identity.ErrPasswordCheckUnavailable):
+		return upstreamFailure(ctx, "service.unavailable", "password safety check unavailable", err)
 	case errors.Is(err, identity.ErrIdempotencyConflict):
 		return conflict(ctx, "conflict.idempotency_payload_mismatch", "idempotency key was already used with a different request", err)
 	case errors.Is(err, identity.ErrSignupVerificationAlreadyUsed):

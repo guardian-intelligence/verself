@@ -472,10 +472,24 @@ const sourceBlobInputSchema = v.strictObject({
   path: v.pipe(v.string(), v.minLength(1)),
 });
 
-const sourceCheckoutGrantInputSchema = v.strictObject({
-  repoId: v.pipe(v.string(), v.uuid()),
-  body: createSourceCheckoutGrantRequestSchema,
-});
+type SourceCheckoutGrantInput = {
+  readonly repoId: string;
+  readonly body: CreateSourceCheckoutGrantRequest;
+};
+
+function parseSourceCheckoutGrantInput(input: unknown): SourceCheckoutGrantInput {
+  const parsed = v.parse(
+    v.strictObject({
+      repoId: v.pipe(v.string(), v.uuid()),
+      body: v.unknown(),
+    }),
+    input,
+  );
+  return {
+    repoId: parsed.repoId,
+    body: v.parse(createSourceCheckoutGrantRequestSchema, parsed.body),
+  };
+}
 
 const sourceGitCredentialInputSchema = createSourceGitCredentialRequestSchema;
 
@@ -549,7 +563,7 @@ export const getSourceBlob = createServerFn({ method: "GET" })
 
 export const createSourceCheckoutGrant = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
-  .inputValidator(sourceCheckoutGrantInputSchema)
+  .inputValidator(parseSourceCheckoutGrantInput)
   .handler(async ({ context, data }) => {
     return (await sourceCodeHostingSDK(context)).source.createCheckoutGrant(data.repoId, data.body);
   });

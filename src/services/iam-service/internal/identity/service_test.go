@@ -11,6 +11,17 @@ import (
 
 var testEmailIdentityKey = []byte("01234567890123456789012345678901")
 
+const testInitialPassword = "correct horse battery staple"
+
+type fakePasswordChecker struct {
+	result BreachedPasswordCheck
+	err    error
+}
+
+func (c fakePasswordChecker) CheckPassword(context.Context, string) (BreachedPasswordCheck, error) {
+	return c.result, c.err
+}
+
 func TestServiceMembersHidesMachineUsers(t *testing.T) {
 	directory := &fakeMembersDirectory{members: []Member{
 		{UserID: "u1", Type: MemberTypeHuman, Email: "owner@example.test", DisplayName: "Owner"},
@@ -117,6 +128,7 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 		Billing:          billing,
 		IdentityIssuer:   "https://auth.example.test",
 		EmailIdentityKey: testEmailIdentityKey,
+		PasswordChecker:  fakePasswordChecker{},
 		Now:              func() time.Time { return now },
 	}
 
@@ -138,6 +150,7 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 	got, err := svc.VerifySignup(context.Background(), VerifySignupRequest{
 		SignupIntentID:          start.Intent.SignupIntentID,
 		VerificationToken:       start.VerificationToken,
+		InitialPassword:         testInitialPassword,
 		OrganizationDisplayName: "  Acme Production  ",
 		OrganizationSlug:        "Acme_Prod",
 		IdempotencyKey:          "signup-verify-1",
@@ -150,6 +163,9 @@ func TestServiceVerifySignupMaterializesOrganizationPolicyAndBilling(t *testing.
 	}
 	if directory.signupInput.OrgID != "43" || directory.signupInput.Email != "Founder@example.test" {
 		t.Fatalf("unexpected signup user request: %#v", directory.signupInput)
+	}
+	if directory.signupInput.Password != testInitialPassword {
+		t.Fatalf("signup user did not receive initial password: %#v", directory.signupInput)
 	}
 	if got := strings.Join(store.steps, ","); got != "account_email_guard,zitadel_organization,zitadel_user,iam_organization,spicedb_owner_policy,billing_organization,account_graph" {
 		t.Fatalf("materialization steps = %s", got)
@@ -361,6 +377,7 @@ func TestServiceVerifySignupRejectsUnavailableSlugBeforeDirectorySideEffects(t *
 		Billing:          fakeBillingProvisioner{},
 		IdentityIssuer:   "https://auth.example.test",
 		EmailIdentityKey: testEmailIdentityKey,
+		PasswordChecker:  fakePasswordChecker{},
 		Now:              func() time.Time { return now },
 	}
 
@@ -375,6 +392,7 @@ func TestServiceVerifySignupRejectsUnavailableSlugBeforeDirectorySideEffects(t *
 	_, err = svc.VerifySignup(context.Background(), VerifySignupRequest{
 		SignupIntentID:          start.Intent.SignupIntentID,
 		VerificationToken:       start.VerificationToken,
+		InitialPassword:         testInitialPassword,
 		OrganizationDisplayName: "Acme Production",
 		OrganizationSlug:        "acme-prod",
 		IdempotencyKey:          "signup-verify-1",
@@ -398,6 +416,7 @@ func TestServiceVerifySignupRejectsUnavailableSlugBeforeDirectorySideEffects(t *
 	verified, err := svc.VerifySignup(context.Background(), VerifySignupRequest{
 		SignupIntentID:          start.Intent.SignupIntentID,
 		VerificationToken:       start.VerificationToken,
+		InitialPassword:         testInitialPassword,
 		OrganizationDisplayName: "Acme Production",
 		OrganizationSlug:        "acme-prod-2",
 		IdempotencyKey:          "signup-verify-2",
@@ -421,6 +440,7 @@ func TestServiceVerifySignupRejectsDuplicateEmailBeforeDirectorySideEffects(t *t
 		Billing:          fakeBillingProvisioner{},
 		IdentityIssuer:   "https://auth.example.test",
 		EmailIdentityKey: testEmailIdentityKey,
+		PasswordChecker:  fakePasswordChecker{},
 		Now:              func() time.Time { return now },
 	}
 	start, err := svc.StartSignup(context.Background(), StartSignupRequest{
@@ -445,6 +465,7 @@ func TestServiceVerifySignupRejectsDuplicateEmailBeforeDirectorySideEffects(t *t
 	_, err = svc.VerifySignup(context.Background(), VerifySignupRequest{
 		SignupIntentID:    start.Intent.SignupIntentID,
 		VerificationToken: start.VerificationToken,
+		InitialPassword:   testInitialPassword,
 		IdempotencyKey:    "signup-verify-1",
 	})
 	if !errors.Is(err, ErrSignupAccountExists) {

@@ -1,6 +1,8 @@
-import { useForm } from "@tanstack/react-form";
+import { revalidateLogic, useForm, type AnyFieldMeta } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { useHydrated } from "@tanstack/react-router";
 import { UserPlus } from "lucide-react";
+import * as v from "valibot";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -42,8 +44,128 @@ const INVITE_ROLES = [
   ["roles/secretsUser", "Secrets user"],
 ] as const;
 
+const organizationDisplayNameSchema = v.pipe(
+  v.string("Display name is required."),
+  v.trim(),
+  v.nonEmpty("Display name is required."),
+  v.maxLength(120, "Display name must be 120 characters or fewer."),
+);
+
+const organizationSlugSchema = v.pipe(
+  v.string("Slug is required."),
+  v.trim(),
+  v.nonEmpty("Slug is required."),
+  v.regex(/^[a-z0-9]([a-z0-9-]{0,78}[a-z0-9])?$/, "Use lowercase letters, numbers, and hyphens."),
+);
+
+const memberInviteEmailSchema = v.pipe(
+  v.string("Email is required."),
+  v.trim(),
+  v.nonEmpty("Email is required."),
+  v.email("Enter a valid email address."),
+);
+
+const memberInviteRoleSchema = v.pipe(
+  v.string("Role is required."),
+  v.nonEmpty("Role is required."),
+);
+
+const organizationProfileFormSchema = v.object({
+  displayName: organizationDisplayNameSchema,
+  slug: organizationSlugSchema,
+});
+
+const memberInviteFormSchema = v.object({
+  email: memberInviteEmailSchema,
+  role: memberInviteRoleSchema,
+});
+
 function formString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-")
+    .slice(0, 80)
+    .replace(/-+$/g, "");
+}
+
+function fieldErrorText(meta: AnyFieldMeta): string {
+  const error = meta.errors.find((item): item is NonNullable<typeof item> => Boolean(item));
+  if (!error) return "";
+  if (!meta.isBlurred && !meta.errorMap.onSubmit) return "";
+  if (Array.isArray(error)) {
+    const first = error.find(Boolean);
+    return first ? fieldValidationMessage(first) : "";
+  }
+  return fieldValidationMessage(error);
+}
+
+function fieldValidationMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function fieldInvalid(meta: AnyFieldMeta): boolean {
+  return Boolean(fieldErrorText(meta));
+}
+
+function authFormSubmitBusy(state: {
+  readonly hydrated: boolean;
+  readonly isSubmitting: boolean | undefined;
+  readonly isValidating: boolean | undefined;
+  readonly isPending?: boolean;
+}): boolean {
+  return (
+    !state.hydrated ||
+    Boolean(state.isSubmitting) ||
+    Boolean(state.isValidating) ||
+    Boolean(state.isPending)
+  );
+}
+
+function authFormSubmitDisabled(state: {
+  readonly hydrated: boolean;
+  readonly canSubmit: boolean | undefined;
+  readonly isSubmitting: boolean | undefined;
+  readonly isValidating: boolean | undefined;
+  readonly isPending?: boolean;
+  readonly allowed?: boolean;
+}): boolean {
+  return (
+    !state.hydrated ||
+    state.allowed === false ||
+    !state.canSubmit ||
+    Boolean(state.isSubmitting) ||
+    Boolean(state.isValidating) ||
+    Boolean(state.isPending)
+  );
+}
+
+function FieldError({ id, meta }: { readonly id: string; readonly meta: AnyFieldMeta }) {
+  const error = fieldErrorText(meta);
+  return (
+    <p
+      id={id}
+      role={error ? "alert" : undefined}
+      className="min-h-5 text-xs font-medium leading-5 text-destructive"
+    >
+      {error}
+    </p>
+  );
 }
 
 function hasPermission(permissions: ReadonlyArray<string>, permission: string): boolean {
@@ -87,11 +209,19 @@ function OrganizationSettingsSection({
   canUpdateOrganization: boolean;
   organization: Organization;
 }) {
+  const hydrated = useHydrated();
   const mutation = useUpdateOrganizationMutation();
   const form = useForm({
     defaultValues: {
       displayName: formString(organization.display_name),
       slug: formString(organization.slug),
+    },
+    validationLogic: revalidateLogic({
+      mode: "blur",
+      modeAfterSubmission: "change",
+    }),
+    validators: {
+      onDynamic: organizationProfileFormSchema,
     },
     onSubmit: async ({ value }) => {
       if (!canUpdateOrganization) {
@@ -103,11 +233,7 @@ function OrganizationSettingsSection({
         return;
       }
       const displayName = formString(value.displayName).trim();
-      const slug = formString(value.slug).trim().toLowerCase();
-      if (!displayName || !slug) {
-        toast.error("Display name and slug are required.");
-        return;
-      }
+      const slug = slugify(formString(value.slug));
       if (displayName === organization.display_name && slug === organization.slug) {
         toast.info("Organization is already up to date.");
         return;
@@ -152,39 +278,75 @@ function OrganizationSettingsSection({
         }}
         className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
       >
-        <form.Field name="displayName">
-          {(field) => (
-            <div className="space-y-1.5">
-              <Label htmlFor={field.name}>Display name</Label>
-              <Input
-                id={field.name}
-                value={formString(field.state.value)}
-                onBlur={field.handleBlur}
-                onChange={(event) => field.handleChange(event.target.value)}
-              />
-            </div>
-          )}
+        <form.Field
+          name="displayName"
+          validators={{
+            onBlur: organizationDisplayNameSchema,
+            onChange: organizationDisplayNameSchema,
+          }}
+        >
+          {(field) => {
+            const errorId = `${field.name}-error`;
+            return (
+              <div className="space-y-1.5">
+                <Label htmlFor={field.name}>Display name</Label>
+                <Input
+                  id={field.name}
+                  aria-describedby={errorId}
+                  aria-invalid={fieldInvalid(field.state.meta) || undefined}
+                  value={formString(field.state.value)}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                />
+                <FieldError id={errorId} meta={field.state.meta} />
+              </div>
+            );
+          }}
         </form.Field>
 
-        <form.Field name="slug">
-          {(field) => (
-            <div className="space-y-1.5">
-              <Label htmlFor={field.name}>Slug</Label>
-              <Input
-                id={field.name}
-                value={formString(field.state.value)}
-                onBlur={field.handleBlur}
-                onChange={(event) => field.handleChange(event.target.value)}
-              />
-            </div>
-          )}
+        <form.Field
+          name="slug"
+          validators={{ onBlur: organizationSlugSchema, onChange: organizationSlugSchema }}
+        >
+          {(field) => {
+            const errorId = `${field.name}-error`;
+            return (
+              <div className="space-y-1.5">
+                <Label htmlFor={field.name}>Slug</Label>
+                <Input
+                  id={field.name}
+                  aria-describedby={errorId}
+                  aria-invalid={fieldInvalid(field.state.meta) || undefined}
+                  value={formString(field.state.value)}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(slugify(event.target.value))}
+                />
+                <FieldError id={errorId} meta={field.state.meta} />
+              </div>
+            );
+          }}
         </form.Field>
 
-        <form.Subscribe selector={(state) => state.isSubmitting}>
-          {(isSubmitting) => (
+        <form.Subscribe
+          selector={(state) => [state.canSubmit, state.isSubmitting, state.isValidating]}
+        >
+          {([canSubmit, isSubmitting, isValidating]) => (
             <Button
               type="submit"
-              aria-busy={isSubmitting || mutation.isPending}
+              aria-busy={authFormSubmitBusy({
+                hydrated,
+                isSubmitting,
+                isValidating,
+                isPending: mutation.isPending,
+              })}
+              disabled={authFormSubmitDisabled({
+                hydrated,
+                canSubmit,
+                isSubmitting,
+                isValidating,
+                isPending: mutation.isPending,
+                allowed: canUpdateOrganization,
+              })}
               className="sm:shrink-0"
             >
               {isSubmitting || mutation.isPending ? "Saving..." : "Save"}
@@ -203,11 +365,19 @@ function MembersSection({
   canInviteMember: boolean;
   members: ReadonlyArray<Member>;
 }) {
+  const hydrated = useHydrated();
   const mutation = useInviteMemberMutation();
   const form = useForm({
     defaultValues: {
       email: "",
       role: DEFAULT_INVITE_ROLE,
+    },
+    validationLogic: revalidateLogic({
+      mode: "blur",
+      modeAfterSubmission: "change",
+    }),
+    validators: {
+      onDynamic: memberInviteFormSchema,
     },
     onSubmit: async ({ value }) => {
       if (!canInviteMember) {
@@ -220,10 +390,6 @@ function MembersSection({
       }
       const email = formString(value.email).trim().toLowerCase();
       const role = formString(value.role) || DEFAULT_INVITE_ROLE;
-      if (!email) {
-        toast.error("Email is required.");
-        return;
-      }
       try {
         await mutation.mutateAsync({ email, roles: [role] });
         form.reset();
@@ -252,44 +418,77 @@ function MembersSection({
           }}
           className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,14rem)_auto] sm:items-end"
         >
-          <form.Field name="email">
-            {(field) => (
-              <div className="space-y-1.5">
-                <Label htmlFor={field.name}>Email</Label>
-                <Input
-                  id={field.name}
-                  type="email"
-                  value={formString(field.state.value)}
-                  onBlur={field.handleBlur}
-                  onChange={(event) => field.handleChange(event.target.value)}
-                />
-              </div>
-            )}
+          <form.Field
+            name="email"
+            validators={{ onBlur: memberInviteEmailSchema, onChange: memberInviteEmailSchema }}
+          >
+            {(field) => {
+              const errorId = `${field.name}-error`;
+              return (
+                <div className="space-y-1.5">
+                  <Label htmlFor={field.name}>Email</Label>
+                  <Input
+                    id={field.name}
+                    aria-describedby={errorId}
+                    aria-invalid={fieldInvalid(field.state.meta) || undefined}
+                    type="email"
+                    value={formString(field.state.value)}
+                    onBlur={field.handleBlur}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                  />
+                  <FieldError id={errorId} meta={field.state.meta} />
+                </div>
+              );
+            }}
           </form.Field>
-          <form.Field name="role">
-            {(field) => (
-              <div className="space-y-1.5">
-                <Label htmlFor={field.name}>Role</Label>
-                <Select
-                  id={field.name}
-                  value={formString(field.state.value) || DEFAULT_INVITE_ROLE}
-                  onBlur={field.handleBlur}
-                  onChange={(event) => field.handleChange(event.target.value)}
-                >
-                  {INVITE_ROLES.map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            )}
+          <form.Field
+            name="role"
+            validators={{ onBlur: memberInviteRoleSchema, onChange: memberInviteRoleSchema }}
+          >
+            {(field) => {
+              const errorId = `${field.name}-error`;
+              return (
+                <div className="space-y-1.5">
+                  <Label htmlFor={field.name}>Role</Label>
+                  <Select
+                    id={field.name}
+                    aria-describedby={errorId}
+                    aria-invalid={fieldInvalid(field.state.meta) || undefined}
+                    value={formString(field.state.value) || DEFAULT_INVITE_ROLE}
+                    onBlur={field.handleBlur}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                  >
+                    {INVITE_ROLES.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </Select>
+                  <FieldError id={errorId} meta={field.state.meta} />
+                </div>
+              );
+            }}
           </form.Field>
-          <form.Subscribe selector={(state) => state.isSubmitting}>
-            {(isSubmitting) => (
+          <form.Subscribe
+            selector={(state) => [state.canSubmit, state.isSubmitting, state.isValidating]}
+          >
+            {([canSubmit, isSubmitting, isValidating]) => (
               <Button
                 type="submit"
-                aria-busy={isSubmitting || mutation.isPending}
+                aria-busy={authFormSubmitBusy({
+                  hydrated,
+                  isSubmitting,
+                  isValidating,
+                  isPending: mutation.isPending,
+                })}
+                disabled={authFormSubmitDisabled({
+                  hydrated,
+                  canSubmit,
+                  isSubmitting,
+                  isValidating,
+                  isPending: mutation.isPending,
+                  allowed: canInviteMember,
+                })}
                 className="sm:shrink-0"
               >
                 <UserPlus aria-hidden="true" />

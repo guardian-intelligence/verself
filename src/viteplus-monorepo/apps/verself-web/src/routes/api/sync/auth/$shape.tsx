@@ -4,7 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { requireURLFromEnv } from "@verself/web-env";
 import { forwardRequestMetadata } from "~/server-fns/request-metadata.server";
 
-type AuthShape = "client" | "accounts" | "sessions";
+type AuthShape = "client" | "accounts" | "sessions" | "device-login";
 
 type AuthShapeConfig = {
   readonly table: string;
@@ -121,6 +121,23 @@ const authShapes: Record<AuthShape, AuthShapeConfig> = {
     ],
     where: `"client_handle" = $1`,
   },
+  "device-login": {
+    table: "iam_web_device_login_requests",
+    columns: [
+      "device_login_handle",
+      "user_code_suffix",
+      "client_id",
+      "app_name",
+      "project_name",
+      "scopes",
+      "state",
+      "approved_at",
+      "denied_at",
+      "expires_at",
+      "updated_at",
+    ],
+    where: `"device_login_handle" = $1`,
+  },
 };
 
 let electricSecret: string | undefined;
@@ -154,7 +171,7 @@ async function proxyAuthShape(
     upstreamURL = upstreamElectricShapeURL(
       new URL(request.url),
       shape,
-      auth.clientHandle,
+      authShapeParam(new URL(request.url), shape, auth.clientHandle),
       readElectricSecret(),
     );
   } catch {
@@ -188,7 +205,23 @@ async function proxyAuthShape(
 }
 
 function parseAuthShape(value: string): AuthShape | null {
-  return value === "client" || value === "accounts" || value === "sessions" ? value : null;
+  return value === "client" ||
+    value === "accounts" ||
+    value === "sessions" ||
+    value === "device-login"
+    ? value
+    : null;
+}
+
+function authShapeParam(requestURL: URL, shape: AuthShape, clientHandle: string): string {
+  if (shape !== "device-login") {
+    return clientHandle;
+  }
+  const handle = requestURL.searchParams.get("device_login_handle")?.trim() ?? "";
+  if (!/^dlr_[A-Za-z0-9_-]{24,64}$/.test(handle)) {
+    throw new Error("invalid device login handle");
+  }
+  return handle;
 }
 
 async function authenticateAuthShapeRequest(

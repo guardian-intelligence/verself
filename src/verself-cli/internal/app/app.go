@@ -109,7 +109,7 @@ func (c CLI) usage() error {
 	return writef(c.out, `Usage:
   %[1]s login [--server-url URL|--issuer URL --client-id ID] [--profile NAME]
   %[1]s signup EMAIL [--org NAME] [--slug SLUG]
-  %[1]s signup verify --url URL
+  %[1]s signup verify --url URL --password-stdin
   %[1]s accounts list
   %[1]s accounts use <handle|email|subject>
   %[1]s accounts logout [handle|email|subject]

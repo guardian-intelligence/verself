@@ -49,6 +49,16 @@ type SignupAccountExistsNotification struct {
 	ResourceName   string
 }
 
+type PasswordResetNotifier interface {
+	SendPasswordReset(ctx context.Context, input PasswordResetNotification) error
+}
+
+type PasswordResetNotification struct {
+	Email        string
+	ActionURL    string
+	ResourceName string
+}
+
 func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string, inviteNotifier InviteNotifier, providerSession ProviderSessionRevoker) {
 	runtime := publicRuntime{service: svc, authz: authzSvc, installationID: installationID}
 	handlers := publicHandlers{

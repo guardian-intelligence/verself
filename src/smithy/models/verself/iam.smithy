@@ -18,6 +18,7 @@ use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#input
 use smithy.api#length
+use smithy.api#mixin
 use smithy.api#notProperty
 use smithy.api#nestedProperties
 use smithy.api#output
@@ -69,7 +70,12 @@ service Iam {
         RevokeDeviceSession
         ListAccountConnections
         RemoveAccountConnection
-        BrowserLogin
+        CompletePasswordLogin
+        StartPasswordReset
+        CompletePasswordReset
+        LookupDeviceLogin
+        ApproveDeviceLogin
+        DenyDeviceLogin
         BrowserAuthCallback
         GetBrowserSession
         SelectBrowserOrganization
@@ -87,6 +93,7 @@ service Iam {
         AccountConnection
         BrowserAccount
         BrowserSession
+        DeviceLogin
         SignupIntent
         Organization
     ]
@@ -141,6 +148,9 @@ string MemberInviteAcceptanceToken
 
 @length(min: 1, max: 2048)
 string LoginURL
+
+@length(min: 1, max: 512)
+string OIDCAuthRequestId
 
 @length(min: 1, max: 64)
 @pattern("^[a-z][a-z0-9_]*$")
@@ -225,6 +235,33 @@ string BrowserRedirectPath
 
 @length(min: 1, max: 2048)
 string BrowserRedirectURL
+
+@length(min: 1, max: 4096)
+@sensitive
+string Password
+
+@length(min: 1, max: 512)
+@sensitive
+string PasswordResetVerificationCode
+
+@length(min: 1, max: 128)
+@pattern("^[A-Za-z0-9-]+$")
+string DeviceUserCode
+
+@length(min: 28, max: 68)
+@pattern("^dlr_[A-Za-z0-9_-]{24,64}$")
+string DeviceLoginHandle
+
+@length(min: 1, max: 80)
+@pattern("^(pending|approved|denied|expired)$")
+string DeviceLoginState
+
+@length(min: 1, max: 512)
+string OAuthScope
+
+list OAuthScopes {
+    member: OAuthScope
+}
 
 @length(min: 1, max: 2048)
 @sensitive
@@ -433,6 +470,12 @@ string AccountConnectionDeletePermission
 @permission(name: "iam:browser_account:create")
 string BrowserSessionCreatePermission
 
+@permission(name: "iam:password_reset:create")
+string PasswordResetCreatePermission
+
+@permission(name: "iam:password_reset:complete")
+string PasswordResetCompletePermission
+
 @permission(name: "iam:browser_account:read")
 string BrowserSessionReadPermission
 
@@ -444,6 +487,15 @@ string BrowserSessionDeletePermission
 
 @permission(name: "iam:browser_resource_token:create")
 string BrowserResourceTokenCreatePermission
+
+@permission(name: "iam:device_login:read")
+string DeviceLoginReadPermission
+
+@permission(name: "iam:device_login:approve")
+string DeviceLoginApprovePermission
+
+@permission(name: "iam:device_login:deny")
+string DeviceLoginDenyPermission
 
 @permission(name: "iam:organization:list")
 string OrganizationListPermission
@@ -523,6 +575,12 @@ string AccountConnectionDeleteAuditEvent
 @auditEvent(name: "iam.browser_account.create")
 string BrowserSessionCreateAuditEvent
 
+@auditEvent(name: "iam.password_reset.create")
+string PasswordResetCreateAuditEvent
+
+@auditEvent(name: "iam.password_reset.complete")
+string PasswordResetCompleteAuditEvent
+
 @auditEvent(name: "iam.browser_account.read")
 string BrowserSessionReadAuditEvent
 
@@ -534,6 +592,15 @@ string BrowserSessionDeleteAuditEvent
 
 @auditEvent(name: "iam.browser_resource_token.create")
 string BrowserResourceTokenCreateAuditEvent
+
+@auditEvent(name: "iam.device_login.read")
+string DeviceLoginReadAuditEvent
+
+@auditEvent(name: "iam.device_login.approve")
+string DeviceLoginApproveAuditEvent
+
+@auditEvent(name: "iam.device_login.deny")
+string DeviceLoginDenyAuditEvent
 
 @auditEvent(name: "iam.organization.list")
 string OrganizationListAuditEvent
@@ -597,6 +664,12 @@ resource BrowserAccount {
     operations: [
         SelectBrowserAccount
     ]
+}
+
+resource DeviceLogin {
+    identifiers: {
+        deviceLoginHandle: DeviceLoginHandle
+    }
 }
 
 resource Organization {
@@ -1274,6 +1347,11 @@ structure VerifySignupInput {
     @notProperty
     verificationToken: SignupVerificationToken
 
+    @required
+    @protoField(number: 3)
+    @notProperty
+    initialPassword: Password
+
     @protoField(number: 4)
     organizationDisplayName: DisplayName
 
@@ -1714,60 +1792,280 @@ list BrowserAccountSummaries {
     member: BrowserAccountSummary
 }
 
-@readonly
-@http(method: "GET", uri: "/api/v1/auth/login", code: 303)
-@suppress(["HttpResponseCodeSemantics"])
+@http(method: "POST", uri: "/api/v1/auth/password-login")
 @identity(mode: "public", audience: "verself-api", principals: ["browser", "anonymous"])
 @authz(permission: BrowserSessionCreatePermission, organization: {source: "installation"})
 @audit(event: BrowserSessionCreateAuditEvent, resource: BrowserSession, action: "create")
 @rateLimit(bucket: "signup_mutation")
-@requestBudget(maxBytes: 0)
-@sdk(module: "auth", method: "login", paginated: false, retryable: false)
-operation BrowserLogin {
-    input: BrowserLoginInput
-    output: BrowserLoginOutput
+@requestBudget(maxBytes: 4096)
+@sdk(module: "auth", method: "completePasswordLogin", paginated: false, retryable: false)
+operation CompletePasswordLogin {
+    input: CompletePasswordLoginInput
+    output: CompletePasswordLoginOutput
     errors: [
+        ValidationFailedError
+        UnauthenticatedError
         RateLimitedError
         ServiceUnavailableError
     ]
 }
 
 @input
-structure BrowserLoginInput {
-    @httpQuery("redirect_to")
+structure CompletePasswordLoginInput {
+    @required
     @protoField(number: 1)
+    email: EmailAddress
+
+    @required
+    @protoField(number: 2)
+    password: Password
+
+    @protoField(number: 3)
     redirectTo: BrowserRedirectPath
 
-    @httpQuery("prompt")
-    @protoField(number: 2)
-    prompt: BrowserLoginPrompt
-
-    @httpQuery("purpose")
-    @protoField(number: 3)
+    @protoField(number: 4)
     purpose: BrowserLoginPurpose
 
-    @httpQuery("login_hint")
-    @protoField(number: 4)
+    @protoField(number: 5)
     loginHint: EmailAddress
 
-    @httpQuery("required_subject")
-    @protoField(number: 5)
+    @protoField(number: 6)
     requiredSubject: SubjectId
 
-    @httpQuery("required_email")
-    @protoField(number: 6)
+    @protoField(number: 7)
     requiredEmail: EmailAddress
 
-    @httpQuery("required_org_id")
-    @protoField(number: 7)
+    @protoField(number: 8)
     requiredOrgId: OrgId
+
+    @protoField(number: 9)
+    prompt: BrowserLoginPrompt
+
+    @protoField(number: 10)
+    authRequestId: OIDCAuthRequestId
 }
 
 @output
-structure BrowserLoginOutput {
-    @httpHeader("Location")
+structure CompletePasswordLoginOutput {
+    @required
     @protoField(number: 1)
-    location: BrowserRedirectURL
+    callbackUrl: BrowserRedirectURL
+}
+
+@http(method: "POST", uri: "/api/v1/auth/password-reset")
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "anonymous"])
+@authz(permission: PasswordResetCreatePermission, organization: {source: "installation"})
+@audit(event: PasswordResetCreateAuditEvent, resource: BrowserAccount, action: "create")
+@rateLimit(bucket: "signup_mutation")
+@requestBudget(maxBytes: 4096)
+@sdk(module: "auth", method: "startPasswordReset", paginated: false, retryable: false)
+operation StartPasswordReset {
+    input: StartPasswordResetInput
+    output: StartPasswordResetOutput
+    errors: [
+        ValidationFailedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure StartPasswordResetInput {
+    @required
+    @protoField(number: 1)
+    email: EmailAddress
+}
+
+@http(method: "POST", uri: "/api/v1/auth/password-reset/complete")
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "anonymous"])
+@authz(permission: PasswordResetCompletePermission, organization: {source: "installation"})
+@audit(event: PasswordResetCompleteAuditEvent, resource: BrowserAccount, action: "update")
+@rateLimit(bucket: "signup_mutation")
+@requestBudget(maxBytes: 4096)
+@sdk(module: "auth", method: "completePasswordReset", paginated: false, retryable: false)
+operation CompletePasswordReset {
+    input: CompletePasswordResetInput
+    output: CompletePasswordResetOutput
+    errors: [
+        ValidationFailedError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure CompletePasswordResetInput {
+    @required
+    @protoField(number: 1)
+    userId: SubjectId
+
+    @required
+    @protoField(number: 2)
+    @notProperty
+    verificationCode: PasswordResetVerificationCode
+
+    @required
+    @protoField(number: 3)
+    @notProperty
+    password: Password
+}
+
+@output
+structure StartPasswordResetOutput with [PasswordResetOutputFields] {}
+
+@output
+structure CompletePasswordResetOutput with [PasswordResetOutputFields] {}
+
+@mixin
+structure PasswordResetOutputFields {
+    @required
+    @protoField(number: 1)
+    status: String
+
+    @required
+    @protoField(number: 2)
+    message: String
+}
+
+@http(method: "POST", uri: "/api/v1/auth/device-logins/lookup")
+@identity(mode: "public", audience: "verself-api", principals: ["browser", "anonymous"])
+@authz(permission: DeviceLoginReadPermission, organization: {source: "installation"})
+@audit(event: DeviceLoginReadAuditEvent, resource: DeviceLogin, action: "read")
+@rateLimit(bucket: "read")
+@requestBudget(maxBytes: 4096)
+@sdk(module: "auth", method: "lookupDeviceLogin", paginated: false, retryable: true)
+@suppress(["ServiceBoundResourceOperation"])
+operation LookupDeviceLogin {
+    input: LookupDeviceLoginInput
+    output: LookupDeviceLoginOutput
+    errors: [
+        ValidationFailedError
+        ResourceNotFoundError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure LookupDeviceLoginInput {
+    @required
+    @protoField(number: 1)
+    userCode: DeviceUserCode
+}
+
+@http(method: "POST", uri: "/api/v1/auth/device-logins/{deviceLoginHandle}/approval")
+@identity(mode: "browser_session", audience: "verself-api", principals: ["browser"])
+@authz(permission: DeviceLoginApprovePermission, organization: {source: "request_subject"})
+@audit(event: DeviceLoginApproveAuditEvent, resource: DeviceLogin, action: "update")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 4096)
+@sdk(module: "auth", method: "approveDeviceLogin", paginated: false, retryable: false)
+@suppress(["ServiceBoundResourceOperation"])
+operation ApproveDeviceLogin {
+    input: ApproveDeviceLoginInput
+    output: ApproveDeviceLoginOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        ConflictError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@http(method: "POST", uri: "/api/v1/auth/device-logins/{deviceLoginHandle}/denial")
+@identity(mode: "browser_session", audience: "verself-api", principals: ["browser"])
+@authz(permission: DeviceLoginDenyPermission, organization: {source: "request_subject"})
+@audit(event: DeviceLoginDenyAuditEvent, resource: DeviceLogin, action: "update")
+@rateLimit(bucket: "iam_mutation")
+@requestBudget(maxBytes: 4096)
+@sdk(module: "auth", method: "denyDeviceLogin", paginated: false, retryable: false)
+@suppress(["ServiceBoundResourceOperation"])
+operation DenyDeviceLogin {
+    input: DenyDeviceLoginInput
+    output: DenyDeviceLoginOutput
+    errors: [
+        ValidationFailedError
+        UnauthenticatedError
+        ConflictError
+        RateLimitedError
+        ServiceUnavailableError
+    ]
+}
+
+@input
+structure ApproveDeviceLoginInput {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    deviceLoginHandle: DeviceLoginHandle
+}
+
+@output
+structure ApproveDeviceLoginOutput with [DeviceLoginOutputFields] {}
+
+@input
+structure DenyDeviceLoginInput {
+    @required
+    @httpLabel
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    deviceLoginHandle: DeviceLoginHandle
+}
+
+@output
+structure DenyDeviceLoginOutput with [DeviceLoginOutputFields] {}
+
+@output
+structure LookupDeviceLoginOutput with [DeviceLoginOutputFields] {}
+
+@mixin
+structure DeviceLoginOutputFields {
+    @required
+    @protoField(number: 1)
+    @suppress(["MemberShouldReferenceResource"])
+    deviceLoginHandle: DeviceLoginHandle
+
+    @required
+    @protoField(number: 2)
+    userCodeSuffix: String
+
+    @required
+    @protoField(number: 3)
+    clientId: String
+
+    @required
+    @protoField(number: 4)
+    appName: String
+
+    @required
+    @protoField(number: 5)
+    projectName: String
+
+    @required
+    @protoField(number: 6)
+    scopes: OAuthScopes
+
+    @required
+    @protoField(number: 7)
+    state: DeviceLoginState
+
+    @required
+    @protoField(number: 8)
+    approvedAt: String
+
+    @required
+    @protoField(number: 9)
+    deniedAt: String
+
+    @required
+    @protoField(number: 10)
+    expiresAt: DateTime
+
+    @required
+    @protoField(number: 11)
+    updatedAt: DateTime
 }
 
 @readonly

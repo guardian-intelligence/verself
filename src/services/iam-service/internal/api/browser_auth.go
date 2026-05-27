@@ -61,6 +61,9 @@ type BrowserAuthConfig struct {
 	HTTPClient      *http.Client
 	Authz           *authz.Service
 	ProviderSession ProviderSessionRevoker
+	ProviderLogin   ProviderLoginClient
+	PasswordChecker identity.PasswordBreachChecker
+	PasswordReset   PasswordResetNotifier
 }
 
 type BrowserAuth struct {
@@ -73,6 +76,9 @@ type BrowserAuth struct {
 	httpClient       *http.Client
 	authz            *authz.Service
 	providerSessions ProviderSessionRevoker
+	providerLogin    ProviderLoginClient
+	passwordChecker  identity.PasswordBreachChecker
+	passwordReset    PasswordResetNotifier
 	productAudience  string
 	publicBaseURL    *url.URL
 	postLogoutURL    string
@@ -80,6 +86,19 @@ type BrowserAuth struct {
 }
 
 type browserAuthRequestInfoKey struct{}
+
+type ProviderLoginClient interface {
+	CreatePasswordSession(context.Context, identity.LoginSessionInput) (identity.LoginSession, error)
+	GetOIDCAuthRequest(context.Context, string) (identity.OIDCAuthRequest, error)
+	FinalizeOIDCAuthRequest(context.Context, string, identity.LoginSession) (string, error)
+	StartDeviceAuthorization(context.Context, identity.StartDeviceAuthorizationInput) (identity.DeviceAuthorization, error)
+	GetDeviceAuthorizationRequest(context.Context, string) (identity.DeviceAuthorizationRequest, error)
+	ApproveDeviceAuthorization(context.Context, string, identity.LoginSession) error
+	DenyDeviceAuthorization(context.Context, string) error
+	FindPasswordResetUser(context.Context, string) (identity.PasswordResetUser, bool, error)
+	StartPasswordReset(context.Context, string) (string, error)
+	CompletePasswordReset(context.Context, string, string, string) error
+}
 
 type browserAuthRequestInfo struct {
 	Attribution requestmeta.Attribution
@@ -119,6 +138,15 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	}
 	if cfg.ProviderSession == nil {
 		return nil, errors.New("identity browser auth provider session revoker is required")
+	}
+	if cfg.ProviderLogin == nil {
+		return nil, errors.New("identity browser auth provider login client is required")
+	}
+	if cfg.PasswordChecker == nil {
+		return nil, errors.New("identity browser auth password checker is required")
+	}
+	if cfg.PasswordReset == nil {
+		return nil, errors.New("identity browser auth password reset notifier is required")
 	}
 	httpClient := cfg.HTTPClient
 	if httpClient == nil {
@@ -160,6 +188,9 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		httpClient:       httpClient,
 		authz:            cfg.Authz,
 		providerSessions: cfg.ProviderSession,
+		providerLogin:    cfg.ProviderLogin,
+		passwordChecker:  cfg.PasswordChecker,
+		passwordReset:    cfg.PasswordReset,
 		productAudience:  productAudience,
 		publicBaseURL:    publicBaseURL,
 		postLogoutURL:    postLogoutURL,
@@ -185,6 +216,7 @@ func parseBrowserAuthPublicBaseURL(raw string) (*url.URL, error) {
 }
 
 func RegisterBrowserAuthRoutes(mux *http.ServeMux, auth *BrowserAuth) {
+	mux.HandleFunc("/oauth/v2/device_authorization", auth.handleDeviceAuthorization)
 	mux.Handle("/api/v1/auth/", http.StripPrefix("/api/v1/auth", auth))
 }
 
@@ -199,8 +231,12 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 
 	switch r.URL.Path {
-	case "/login":
-		a.route(w, r, http.MethodGet, "browser-login", rateLimitSignup, 0, a.handleLogin)
+	case "/password-login":
+		a.route(w, r, http.MethodPost, "browser-password-login", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordLogin)
+	case "/password-reset":
+		a.route(w, r, http.MethodPost, "browser-password-reset-start", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetStart)
+	case "/password-reset/complete":
+		a.route(w, r, http.MethodPost, "browser-password-reset-complete", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetComplete)
 	case "/callback":
 		a.route(w, r, http.MethodGet, "browser-callback", rateLimitSignup, 0, a.handleCallback)
 	case "/session":
@@ -226,8 +262,23 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/sessions":
 		a.route(w, r, http.MethodGet, "browser-sessions-list", rateLimitRead, 0, a.handleSessions)
 	default:
+		if r.URL.Path == "/device-logins/lookup" {
+			a.route(w, r, http.MethodPost, "browser-device-login-lookup", rateLimitRead, browserAuthJSONBodyMax, a.handleDeviceLoginLookup)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/device-logins/") {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/approval"):
+				a.route(w, r, http.MethodPost, "browser-device-login-approve", rateLimitIAMMutation, browserAuthJSONBodyMax, a.handleDeviceLoginApprove)
+			case strings.HasSuffix(r.URL.Path, "/denial"):
+				a.route(w, r, http.MethodPost, "browser-device-login-deny", rateLimitIAMMutation, browserAuthJSONBodyMax, a.handleDeviceLoginDeny)
+			default:
+				a.writeProblem(w, r, http.StatusNotFound, "not-found", "auth route not found")
+			}
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/accounts/") {
-			a.route(w, r, http.MethodDelete, "browser-device-revoke", rateLimitIAMMutation, 0, a.handleAccountRemove)
+			a.route(w, r, http.MethodDelete, "browser-account-remove", rateLimitIAMMutation, 0, a.handleAccountRemove)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/sessions/") {
@@ -253,64 +304,6 @@ func (a *BrowserAuth) route(w http.ResponseWriter, r *http.Request, method strin
 	next(w, r)
 }
 
-func (a *BrowserAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if err := a.q.DeleteExpiredBrowserLoginTransactions(r.Context()); err != nil {
-		a.serverError(w, "cleanup login transactions", err)
-		return
-	}
-	client, clientSecret, err := a.ensureBrowserClient(w, r)
-	if err != nil {
-		a.serverError(w, "ensure browser client", err)
-		return
-	}
-	state, err := randomToken(32)
-	if err != nil {
-		a.serverError(w, "generate oidc state", err)
-		return
-	}
-	nonce, err := randomToken(32)
-	if err != nil {
-		a.serverError(w, "generate oidc nonce", err)
-		return
-	}
-	verifier, err := randomToken(48)
-	if err != nil {
-		a.serverError(w, "generate oidc verifier", err)
-		return
-	}
-	redirectTo := a.sanitizeRedirectTarget(r.URL.Query().Get("redirect_to"))
-	stateHash := hashToken(state)
-	if err := a.q.InsertBrowserLoginTransaction(r.Context(), identitystore.InsertBrowserLoginTransactionParams{
-		StateHash:       stateHash,
-		ClientHash:      client.ClientHash,
-		Nonce:           nonce,
-		CodeVerifier:    verifier,
-		RedirectTo:      redirectTo,
-		Purpose:         browserLoginPurpose(r.URL.Query().Get("purpose")),
-		LoginHint:       nullableText(normalizeEmailHint(r.URL.Query().Get("login_hint"))),
-		RequiredSubject: nullableText(strings.TrimSpace(r.URL.Query().Get("required_subject"))),
-		RequiredEmail:   nullableText(normalizeEmailHint(r.URL.Query().Get("required_email"))),
-		RequiredOrgID:   nullableText(strings.TrimSpace(r.URL.Query().Get("required_org_id"))),
-		ExpiresAt:       timestamptz(time.Now().UTC().Add(browserAuthLoginTTL)),
-	}); err != nil {
-		a.serverError(w, "persist login transaction", err)
-		return
-	}
-	a.setLoginCookie(w, stateHash)
-	authCodeOptions := []oauth2.AuthCodeOption{
-		oauth2.SetAuthURLParam("nonce", nonce),
-		oauth2.S256ChallengeOption(verifier),
-	}
-	if prompt := browserLoginPrompt(r.URL.Query().Get("prompt")); prompt != "" {
-		authCodeOptions = append(authCodeOptions, oauth2.SetAuthURLParam("prompt", prompt))
-	}
-	if hint := normalizeEmailHint(r.URL.Query().Get("login_hint")); hint != "" {
-		authCodeOptions = append(authCodeOptions, oauth2.SetAuthURLParam("login_hint", hint))
-	}
-	a.setClientCookie(w, clientSecret)
-	http.Redirect(w, r, a.oauth.AuthCodeURL(state, authCodeOptions...), http.StatusSeeOther)
-}
-
 func browserLoginPrompt(value string) string {
 	switch strings.TrimSpace(value) {
 	case "login":
@@ -330,7 +323,7 @@ func browserLoginPurpose(value string) string {
 	}
 }
 
-func (a *BrowserAuth) enforceLoginConstraints(ctx context.Context, pending identitystore.IamBrowserLoginTransaction, user browserUser) error {
+func (a *BrowserAuth) enforceLoginConstraints(ctx context.Context, pending identitystore.DeleteBrowserLoginTransactionRow, user browserUser) error {
 	if pending.RequiredSubject.Valid && pending.RequiredSubject.String != "" && user.Sub != pending.RequiredSubject.String {
 		return errors.New("required subject mismatch")
 	}
@@ -347,7 +340,7 @@ func (a *BrowserAuth) enforceLoginConstraints(ctx context.Context, pending ident
 	return nil
 }
 
-func (a *BrowserAuth) recordLoginConstraintFailure(ctx context.Context, pending identitystore.IamBrowserLoginTransaction, user browserUser, cause error) {
+func (a *BrowserAuth) recordLoginConstraintFailure(ctx context.Context, pending identitystore.DeleteBrowserLoginTransactionRow, user browserUser, cause error) {
 	trace.SpanFromContext(ctx).AddEvent("iam.browser_login.constraint_failed", trace.WithAttributes(
 		attribute.String("auth.client_handle", browserClientHandle(pending.ClientHash)),
 		attribute.String("auth.login_purpose", pending.Purpose),
@@ -439,13 +432,18 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 		a.writeProblem(w, r, http.StatusForbidden, "login-constraint-failed", "login did not match the required account")
 		return
 	}
+	providerSession, err := a.providerSessionFromLoginTransaction(pending)
+	if err != nil {
+		a.serverError(w, "open provider login session", err)
+		return
+	}
 	cachePartition, err := randomToken(24)
 	if err != nil {
 		a.serverError(w, "generate browser cache partition", err)
 		return
 	}
 	accountHandle := browserAccountHandle(pending.ClientHash, user.Sub)
-	if err := a.writeAccount(r.Context(), pending.ClientHash, accountHandle, tokens, user); err != nil {
+	if err := a.writeAccount(r.Context(), pending.ClientHash, accountHandle, tokens, user, providerSession); err != nil {
 		a.serverError(w, "persist browser account", err)
 		return
 	}
@@ -568,7 +566,7 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 		IDToken:      session.IDToken,
 		Scope:        stringValue(session.TokenScope),
 		ExpiresAt:    session.ExpiresAt,
-	}, session.User); err != nil {
+	}, session.User, session.providerLoginSession()); err != nil {
 		a.serverError(w, "persist selected organization context", err)
 		return
 	}
@@ -779,19 +777,30 @@ func (a *BrowserAuth) handleAccountRemove(w http.ResponseWriter, r *http.Request
 		a.serverError(w, "load browser account", err)
 		return
 	}
-	sessions, err := a.revokeBrowserClient(r.Context(), client.ClientHash, client.ClientHandle, client.ClientCachePartition)
-	if err != nil {
-		a.serverError(w, "revoke browser device", err)
+	if err := a.revokeProviderBrowserSessions(r.Context(), []*browserSession{removed}); err != nil {
+		a.serverError(w, "revoke browser account provider session", err)
 		return
 	}
-	a.clearClientCookie(w)
-	a.clearLoginCookie(w)
-	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_client.revoked", trace.WithAttributes(
+	if err := a.q.DeleteBrowserResourceTokens(r.Context(), identitystore.DeleteBrowserResourceTokensParams{AccountHandle: removed.AccountHandle}); err != nil {
+		a.serverError(w, "delete browser account resource tokens", err)
+		return
+	}
+	if err := a.q.DeleteBrowserAccountByHandle(r.Context(), identitystore.DeleteBrowserAccountByHandleParams{ClientHash: client.ClientHash, AccountHandle: accountHandle}); err != nil {
+		a.serverError(w, "remove browser account", err)
+		return
+	}
+	activeAccountHandle := stringValue(stringFromText(client.ActiveAccountHandle))
+	if activeAccountHandle == accountHandle {
+		if err := a.selectNextBrowserAccountAfterRemoval(r.Context(), client.ClientHash); err != nil {
+			a.serverError(w, "select next browser account", err)
+			return
+		}
+	}
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_account.removed", trace.WithAttributes(
 		attribute.String("auth.account_handle", accountHandle),
 		attribute.String("auth.client_handle", client.ClientHandle),
-		attribute.Int("auth.account_count", len(sessions)),
 	))
-	sendBrowserAuthActivity(r.Context(), removed.User, accountHandle, "browserAuth.revokeDevice", "iam.browser_client.revoked", "delete", "iam.browser_client.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
+	sendBrowserAuthActivity(r.Context(), removed.User, accountHandle, "browserAuth.removeAccount", "iam.browser_account.removed", "delete", "iam.browser_account.delete", r.Method, browserAuthExternalRoute(r), http.StatusNoContent)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -993,6 +1002,26 @@ func (a *BrowserAuth) revokeBrowserClient(ctx context.Context, clientHash, clien
 	return sessions, nil
 }
 
+func (a *BrowserAuth) selectNextBrowserAccountAfterRemoval(ctx context.Context, clientHash string) error {
+	cachePartition, err := randomToken(24)
+	if err != nil {
+		return err
+	}
+	rows, err := a.q.ListBrowserAccountsForClient(ctx, identitystore.ListBrowserAccountsForClientParams{ClientHash: clientHash})
+	if err != nil {
+		return err
+	}
+	accountHandle := pgtype.Text{}
+	if len(rows) > 0 {
+		accountHandle = textValue(rows[0].AccountHandle)
+	}
+	return a.q.SetBrowserClientActiveAccount(ctx, identitystore.SetBrowserClientActiveAccountParams{
+		AccountHandle:        accountHandle,
+		ClientCachePartition: cachePartition,
+		ClientHash:           clientHash,
+	})
+}
+
 func (a *BrowserAuth) browserAccountSessionsForClient(ctx context.Context, clientHash, clientHandle, cachePartition string) ([]*browserSession, error) {
 	rows, err := a.q.ListBrowserAccountsForClient(ctx, identitystore.ListBrowserAccountsForClientParams{ClientHash: clientHash})
 	if err != nil {
@@ -1045,6 +1074,9 @@ func (a *BrowserAuth) revokeProviderBrowserSessions(ctx context.Context, session
 func browserProviderSessionID(session *browserSession) (string, error) {
 	if session == nil {
 		return "", errors.New("browser account session is required")
+	}
+	if sessionID := strings.TrimSpace(session.ProviderSessionID); sessionID != "" {
+		return sessionID, nil
 	}
 	if sessionID := providerSessionIDFromClaims(session.User.Claims); sessionID != "" {
 		return sessionID, nil
@@ -1157,7 +1189,7 @@ func (a *BrowserAuth) refreshSession(ctx context.Context, session *browserSessio
 			return nil, err
 		}
 	}
-	if err := a.writeAccount(ctx, session.ClientHash, session.AccountHandle, tokens, user); err != nil {
+	if err := a.writeAccount(ctx, session.ClientHash, session.AccountHandle, tokens, user, session.providerLoginSession()); err != nil {
 		return nil, err
 	}
 	if err := a.q.SetBrowserClientActiveAccount(ctx, identitystore.SetBrowserClientActiveAccountParams{
@@ -1457,6 +1489,10 @@ func (a *BrowserAuth) browserSessionFromAccountRecord(row browserAccountRecord) 
 	if err != nil {
 		return nil, fmt.Errorf("open browser account id token: %w", err)
 	}
+	providerSessionToken, err := a.tokenVault.openNullable(textValue(row.ProviderSessionTokenCiphertext), row.AccountHandle, "provider_session")
+	if err != nil {
+		return nil, fmt.Errorf("open browser account provider session token: %w", err)
+	}
 	user := browserUser{
 		Sub:                    row.Subject,
 		Email:                  stringFromText(row.Email),
@@ -1476,6 +1512,8 @@ func (a *BrowserAuth) browserSessionFromAccountRecord(row browserAccountRecord) 
 		AccessToken:            accessToken,
 		RefreshToken:           refreshToken,
 		IDToken:                idToken,
+		ProviderSessionID:      row.ProviderSessionID,
+		ProviderSessionToken:   providerSessionToken,
 		TokenScope:             stringFromText(row.TokenScope),
 		ExpiresAt:              requiredTime(row.ExpiresAt),
 		CreatedClientIP:        row.CreatedClientIp,
@@ -1499,7 +1537,23 @@ func (a *BrowserAuth) browserSessionFromAccountRecord(row browserAccountRecord) 
 	}, nil
 }
 
-func (a *BrowserAuth) writeAccount(ctx context.Context, clientHash, accountHandle string, tokens tokenResponse, user browserUser) error {
+func (a *BrowserAuth) providerSessionFromLoginTransaction(pending identitystore.DeleteBrowserLoginTransactionRow) (identity.LoginSession, error) {
+	sessionID := strings.TrimSpace(pending.ProviderSessionID)
+	ciphertext := strings.TrimSpace(pending.ProviderSessionTokenCiphertext)
+	if sessionID == "" && ciphertext == "" {
+		return identity.LoginSession{}, nil
+	}
+	if sessionID == "" || ciphertext == "" {
+		return identity.LoginSession{}, errors.New("provider login session is incomplete")
+	}
+	token, err := a.tokenVault.open(ciphertext, pending.StateHash, "provider_session")
+	if err != nil {
+		return identity.LoginSession{}, err
+	}
+	return identity.LoginSession{SessionID: sessionID, SessionToken: token}, nil
+}
+
+func (a *BrowserAuth) writeAccount(ctx context.Context, clientHash, accountHandle string, tokens tokenResponse, user browserUser, providerSession identity.LoginSession) error {
 	organizations, err := json.Marshal(user.AvailableOrganizations)
 	if err != nil {
 		return err
@@ -1520,37 +1574,43 @@ func (a *BrowserAuth) writeAccount(ctx context.Context, clientHash, accountHandl
 	if err != nil {
 		return err
 	}
+	providerSessionToken, err := a.tokenVault.sealOptional(providerSession.SessionToken, accountHandle, "provider_session")
+	if err != nil {
+		return err
+	}
 	observation := browserSessionObservationFromContext(ctx)
 	if err := a.q.UpsertBrowserAccount(ctx, identitystore.UpsertBrowserAccountParams{
-		AccountHandle:            accountHandle,
-		ClientHash:               clientHash,
-		State:                    "active",
-		Subject:                  user.Sub,
-		Email:                    nullableTextPtr(user.Email),
-		DisplayName:              nullableTextPtr(user.Name),
-		PreferredUsername:        nullableTextPtr(user.PreferredUsername),
-		OrgID:                    nullableTextPtr(user.OrgID),
-		HomeOrgID:                nullableTextPtr(user.HomeOrgID),
-		SelectedOrgID:            nullableTextPtr(user.SelectedOrgID),
-		AvailableOrgContextsJson: organizations,
-		UserClaimsJson:           claims,
-		IDTokenCiphertext:        nullableText(idToken),
-		AccessTokenCiphertext:    accessToken,
-		RefreshTokenCiphertext:   nullableText(refreshToken),
-		TokenScope:               nullableText(tokens.Scope),
-		ExpiresAt:                timestamptz(tokens.ExpiresAt),
-		ClientIp:                 observation.ClientIP,
-		ClientIpTrusted:          observation.ClientIPTrusted,
-		ClientIpSource:           observation.ClientIPSource,
-		EdgePeerIp:               observation.EdgePeerIP,
-		UserAgent:                observation.UserAgent,
-		DeviceLabel:              observation.Device.Label,
-		DeviceKind:               observation.Device.Kind,
-		BrowserName:              observation.Device.BrowserName,
-		OsName:                   observation.Device.OSName,
-		GeoCountryCode:           observation.Location.CountryCode,
-		GeoRegion:                observation.Location.Region,
-		GeoCity:                  observation.Location.City,
+		AccountHandle:                  accountHandle,
+		ClientHash:                     clientHash,
+		State:                          "active",
+		Subject:                        user.Sub,
+		Email:                          nullableTextPtr(user.Email),
+		DisplayName:                    nullableTextPtr(user.Name),
+		PreferredUsername:              nullableTextPtr(user.PreferredUsername),
+		OrgID:                          nullableTextPtr(user.OrgID),
+		HomeOrgID:                      nullableTextPtr(user.HomeOrgID),
+		SelectedOrgID:                  nullableTextPtr(user.SelectedOrgID),
+		AvailableOrgContextsJson:       organizations,
+		UserClaimsJson:                 claims,
+		IDTokenCiphertext:              nullableText(idToken),
+		AccessTokenCiphertext:          accessToken,
+		RefreshTokenCiphertext:         nullableText(refreshToken),
+		ProviderSessionID:              strings.TrimSpace(providerSession.SessionID),
+		ProviderSessionTokenCiphertext: providerSessionToken,
+		TokenScope:                     nullableText(tokens.Scope),
+		ExpiresAt:                      timestamptz(tokens.ExpiresAt),
+		ClientIp:                       observation.ClientIP,
+		ClientIpTrusted:                observation.ClientIPTrusted,
+		ClientIpSource:                 observation.ClientIPSource,
+		EdgePeerIp:                     observation.EdgePeerIP,
+		UserAgent:                      observation.UserAgent,
+		DeviceLabel:                    observation.Device.Label,
+		DeviceKind:                     observation.Device.Kind,
+		BrowserName:                    observation.Device.BrowserName,
+		OsName:                         observation.Device.OSName,
+		GeoCountryCode:                 observation.Location.CountryCode,
+		GeoRegion:                      observation.Location.Region,
+		GeoCity:                        observation.Location.City,
 	}); err != nil {
 		return err
 	}
@@ -1808,6 +1868,8 @@ type browserSession struct {
 	AccessToken            string
 	RefreshToken           string
 	IDToken                string
+	ProviderSessionID      string
+	ProviderSessionToken   string
 	TokenScope             *string
 	ExpiresAt              time.Time
 	CreatedClientIP        string
@@ -1830,154 +1892,170 @@ type browserSession struct {
 	User                   browserUser
 }
 
+func (s *browserSession) providerLoginSession() identity.LoginSession {
+	if s == nil {
+		return identity.LoginSession{}
+	}
+	return identity.LoginSession{
+		SessionID:    strings.TrimSpace(s.ProviderSessionID),
+		SessionToken: strings.TrimSpace(s.ProviderSessionToken),
+	}
+}
+
 type browserAccountRecord struct {
-	ClientHandle             string
-	ClientCachePartition     string
-	AccountHandle            string
-	ClientHash               string
-	State                    string
-	Subject                  string
-	Email                    pgtype.Text
-	DisplayName              pgtype.Text
-	PreferredUsername        pgtype.Text
-	OrgID                    pgtype.Text
-	HomeOrgID                pgtype.Text
-	SelectedOrgID            pgtype.Text
-	AvailableOrgContextsJson string
-	UserClaimsJson           string
-	IDTokenCiphertext        pgtype.Text
-	AccessTokenCiphertext    string
-	RefreshTokenCiphertext   pgtype.Text
-	TokenScope               pgtype.Text
-	ExpiresAt                pgtype.Timestamptz
-	CreatedClientIp          string
-	CreatedClientIpTrusted   bool
-	CreatedClientIpSource    string
-	CreatedEdgePeerIp        string
-	CreatedUserAgent         string
-	CreatedDeviceLabel       string
-	CreatedDeviceKind        string
-	CreatedBrowserName       string
-	CreatedOsName            string
-	CreatedGeoCountryCode    string
-	CreatedGeoRegion         string
-	CreatedGeoCity           string
-	LastSeenClientIp         string
-	LastSeenClientIpTrusted  bool
-	LastSeenClientIpSource   string
-	LastSeenEdgePeerIp       string
-	LastSeenUserAgent        string
-	LastSeenDeviceLabel      string
-	LastSeenDeviceKind       string
-	LastSeenBrowserName      string
-	LastSeenOsName           string
-	LastSeenGeoCountryCode   string
-	LastSeenGeoRegion        string
-	LastSeenGeoCity          string
-	LastSeenAt               pgtype.Timestamptz
-	CreatedAt                pgtype.Timestamptz
-	UpdatedAt                pgtype.Timestamptz
+	ClientHandle                   string
+	ClientCachePartition           string
+	AccountHandle                  string
+	ClientHash                     string
+	State                          string
+	Subject                        string
+	Email                          pgtype.Text
+	DisplayName                    pgtype.Text
+	PreferredUsername              pgtype.Text
+	OrgID                          pgtype.Text
+	HomeOrgID                      pgtype.Text
+	SelectedOrgID                  pgtype.Text
+	AvailableOrgContextsJson       string
+	UserClaimsJson                 string
+	IDTokenCiphertext              pgtype.Text
+	AccessTokenCiphertext          string
+	RefreshTokenCiphertext         pgtype.Text
+	ProviderSessionID              string
+	ProviderSessionTokenCiphertext string
+	TokenScope                     pgtype.Text
+	ExpiresAt                      pgtype.Timestamptz
+	CreatedClientIp                string
+	CreatedClientIpTrusted         bool
+	CreatedClientIpSource          string
+	CreatedEdgePeerIp              string
+	CreatedUserAgent               string
+	CreatedDeviceLabel             string
+	CreatedDeviceKind              string
+	CreatedBrowserName             string
+	CreatedOsName                  string
+	CreatedGeoCountryCode          string
+	CreatedGeoRegion               string
+	CreatedGeoCity                 string
+	LastSeenClientIp               string
+	LastSeenClientIpTrusted        bool
+	LastSeenClientIpSource         string
+	LastSeenEdgePeerIp             string
+	LastSeenUserAgent              string
+	LastSeenDeviceLabel            string
+	LastSeenDeviceKind             string
+	LastSeenBrowserName            string
+	LastSeenOsName                 string
+	LastSeenGeoCountryCode         string
+	LastSeenGeoRegion              string
+	LastSeenGeoCity                string
+	LastSeenAt                     pgtype.Timestamptz
+	CreatedAt                      pgtype.Timestamptz
+	UpdatedAt                      pgtype.Timestamptz
 }
 
 func browserAccountRecordFromActive(row identitystore.GetActiveBrowserAccountRow) browserAccountRecord {
 	return browserAccountRecord{
-		ClientHandle:             row.ClientHandle,
-		ClientCachePartition:     row.ClientCachePartition,
-		AccountHandle:            row.AccountHandle,
-		ClientHash:               row.ClientHash,
-		State:                    row.State,
-		Subject:                  row.Subject,
-		Email:                    row.Email,
-		DisplayName:              row.DisplayName,
-		PreferredUsername:        row.PreferredUsername,
-		OrgID:                    row.OrgID,
-		HomeOrgID:                row.HomeOrgID,
-		SelectedOrgID:            row.SelectedOrgID,
-		AvailableOrgContextsJson: row.AvailableOrgContextsJson,
-		UserClaimsJson:           row.UserClaimsJson,
-		IDTokenCiphertext:        row.IDTokenCiphertext,
-		AccessTokenCiphertext:    row.AccessTokenCiphertext,
-		RefreshTokenCiphertext:   row.RefreshTokenCiphertext,
-		TokenScope:               row.TokenScope,
-		ExpiresAt:                row.ExpiresAt,
-		CreatedClientIp:          row.CreatedClientIp,
-		CreatedClientIpTrusted:   row.CreatedClientIpTrusted,
-		CreatedClientIpSource:    row.CreatedClientIpSource,
-		CreatedEdgePeerIp:        row.CreatedEdgePeerIp,
-		CreatedUserAgent:         row.CreatedUserAgent,
-		CreatedDeviceLabel:       row.CreatedDeviceLabel,
-		CreatedDeviceKind:        row.CreatedDeviceKind,
-		CreatedBrowserName:       row.CreatedBrowserName,
-		CreatedOsName:            row.CreatedOsName,
-		CreatedGeoCountryCode:    row.CreatedGeoCountryCode,
-		CreatedGeoRegion:         row.CreatedGeoRegion,
-		CreatedGeoCity:           row.CreatedGeoCity,
-		LastSeenClientIp:         row.LastSeenClientIp,
-		LastSeenClientIpTrusted:  row.LastSeenClientIpTrusted,
-		LastSeenClientIpSource:   row.LastSeenClientIpSource,
-		LastSeenEdgePeerIp:       row.LastSeenEdgePeerIp,
-		LastSeenUserAgent:        row.LastSeenUserAgent,
-		LastSeenDeviceLabel:      row.LastSeenDeviceLabel,
-		LastSeenDeviceKind:       row.LastSeenDeviceKind,
-		LastSeenBrowserName:      row.LastSeenBrowserName,
-		LastSeenOsName:           row.LastSeenOsName,
-		LastSeenGeoCountryCode:   row.LastSeenGeoCountryCode,
-		LastSeenGeoRegion:        row.LastSeenGeoRegion,
-		LastSeenGeoCity:          row.LastSeenGeoCity,
-		LastSeenAt:               row.LastSeenAt,
-		CreatedAt:                row.CreatedAt,
-		UpdatedAt:                row.UpdatedAt,
+		ClientHandle:                   row.ClientHandle,
+		ClientCachePartition:           row.ClientCachePartition,
+		AccountHandle:                  row.AccountHandle,
+		ClientHash:                     row.ClientHash,
+		State:                          row.State,
+		Subject:                        row.Subject,
+		Email:                          row.Email,
+		DisplayName:                    row.DisplayName,
+		PreferredUsername:              row.PreferredUsername,
+		OrgID:                          row.OrgID,
+		HomeOrgID:                      row.HomeOrgID,
+		SelectedOrgID:                  row.SelectedOrgID,
+		AvailableOrgContextsJson:       row.AvailableOrgContextsJson,
+		UserClaimsJson:                 row.UserClaimsJson,
+		IDTokenCiphertext:              row.IDTokenCiphertext,
+		AccessTokenCiphertext:          row.AccessTokenCiphertext,
+		RefreshTokenCiphertext:         row.RefreshTokenCiphertext,
+		ProviderSessionID:              row.ProviderSessionID,
+		ProviderSessionTokenCiphertext: row.ProviderSessionTokenCiphertext,
+		TokenScope:                     row.TokenScope,
+		ExpiresAt:                      row.ExpiresAt,
+		CreatedClientIp:                row.CreatedClientIp,
+		CreatedClientIpTrusted:         row.CreatedClientIpTrusted,
+		CreatedClientIpSource:          row.CreatedClientIpSource,
+		CreatedEdgePeerIp:              row.CreatedEdgePeerIp,
+		CreatedUserAgent:               row.CreatedUserAgent,
+		CreatedDeviceLabel:             row.CreatedDeviceLabel,
+		CreatedDeviceKind:              row.CreatedDeviceKind,
+		CreatedBrowserName:             row.CreatedBrowserName,
+		CreatedOsName:                  row.CreatedOsName,
+		CreatedGeoCountryCode:          row.CreatedGeoCountryCode,
+		CreatedGeoRegion:               row.CreatedGeoRegion,
+		CreatedGeoCity:                 row.CreatedGeoCity,
+		LastSeenClientIp:               row.LastSeenClientIp,
+		LastSeenClientIpTrusted:        row.LastSeenClientIpTrusted,
+		LastSeenClientIpSource:         row.LastSeenClientIpSource,
+		LastSeenEdgePeerIp:             row.LastSeenEdgePeerIp,
+		LastSeenUserAgent:              row.LastSeenUserAgent,
+		LastSeenDeviceLabel:            row.LastSeenDeviceLabel,
+		LastSeenDeviceKind:             row.LastSeenDeviceKind,
+		LastSeenBrowserName:            row.LastSeenBrowserName,
+		LastSeenOsName:                 row.LastSeenOsName,
+		LastSeenGeoCountryCode:         row.LastSeenGeoCountryCode,
+		LastSeenGeoRegion:              row.LastSeenGeoRegion,
+		LastSeenGeoCity:                row.LastSeenGeoCity,
+		LastSeenAt:                     row.LastSeenAt,
+		CreatedAt:                      row.CreatedAt,
+		UpdatedAt:                      row.UpdatedAt,
 	}
 }
 
 func browserAccountRecordFromAccount(clientHandle, cachePartition string, row identitystore.GetBrowserAccountRow) browserAccountRecord {
 	return browserAccountRecord{
-		ClientHandle:             clientHandle,
-		ClientCachePartition:     cachePartition,
-		AccountHandle:            row.AccountHandle,
-		ClientHash:               row.ClientHash,
-		State:                    row.State,
-		Subject:                  row.Subject,
-		Email:                    row.Email,
-		DisplayName:              row.DisplayName,
-		PreferredUsername:        row.PreferredUsername,
-		OrgID:                    row.OrgID,
-		HomeOrgID:                row.HomeOrgID,
-		SelectedOrgID:            row.SelectedOrgID,
-		AvailableOrgContextsJson: row.AvailableOrgContextsJson,
-		UserClaimsJson:           row.UserClaimsJson,
-		IDTokenCiphertext:        row.IDTokenCiphertext,
-		AccessTokenCiphertext:    row.AccessTokenCiphertext,
-		RefreshTokenCiphertext:   row.RefreshTokenCiphertext,
-		TokenScope:               row.TokenScope,
-		ExpiresAt:                row.ExpiresAt,
-		CreatedClientIp:          row.CreatedClientIp,
-		CreatedClientIpTrusted:   row.CreatedClientIpTrusted,
-		CreatedClientIpSource:    row.CreatedClientIpSource,
-		CreatedEdgePeerIp:        row.CreatedEdgePeerIp,
-		CreatedUserAgent:         row.CreatedUserAgent,
-		CreatedDeviceLabel:       row.CreatedDeviceLabel,
-		CreatedDeviceKind:        row.CreatedDeviceKind,
-		CreatedBrowserName:       row.CreatedBrowserName,
-		CreatedOsName:            row.CreatedOsName,
-		CreatedGeoCountryCode:    row.CreatedGeoCountryCode,
-		CreatedGeoRegion:         row.CreatedGeoRegion,
-		CreatedGeoCity:           row.CreatedGeoCity,
-		LastSeenClientIp:         row.LastSeenClientIp,
-		LastSeenClientIpTrusted:  row.LastSeenClientIpTrusted,
-		LastSeenClientIpSource:   row.LastSeenClientIpSource,
-		LastSeenEdgePeerIp:       row.LastSeenEdgePeerIp,
-		LastSeenUserAgent:        row.LastSeenUserAgent,
-		LastSeenDeviceLabel:      row.LastSeenDeviceLabel,
-		LastSeenDeviceKind:       row.LastSeenDeviceKind,
-		LastSeenBrowserName:      row.LastSeenBrowserName,
-		LastSeenOsName:           row.LastSeenOsName,
-		LastSeenGeoCountryCode:   row.LastSeenGeoCountryCode,
-		LastSeenGeoRegion:        row.LastSeenGeoRegion,
-		LastSeenGeoCity:          row.LastSeenGeoCity,
-		LastSeenAt:               row.LastSeenAt,
-		CreatedAt:                row.CreatedAt,
-		UpdatedAt:                row.UpdatedAt,
+		ClientHandle:                   clientHandle,
+		ClientCachePartition:           cachePartition,
+		AccountHandle:                  row.AccountHandle,
+		ClientHash:                     row.ClientHash,
+		State:                          row.State,
+		Subject:                        row.Subject,
+		Email:                          row.Email,
+		DisplayName:                    row.DisplayName,
+		PreferredUsername:              row.PreferredUsername,
+		OrgID:                          row.OrgID,
+		HomeOrgID:                      row.HomeOrgID,
+		SelectedOrgID:                  row.SelectedOrgID,
+		AvailableOrgContextsJson:       row.AvailableOrgContextsJson,
+		UserClaimsJson:                 row.UserClaimsJson,
+		IDTokenCiphertext:              row.IDTokenCiphertext,
+		AccessTokenCiphertext:          row.AccessTokenCiphertext,
+		RefreshTokenCiphertext:         row.RefreshTokenCiphertext,
+		ProviderSessionID:              row.ProviderSessionID,
+		ProviderSessionTokenCiphertext: row.ProviderSessionTokenCiphertext,
+		TokenScope:                     row.TokenScope,
+		ExpiresAt:                      row.ExpiresAt,
+		CreatedClientIp:                row.CreatedClientIp,
+		CreatedClientIpTrusted:         row.CreatedClientIpTrusted,
+		CreatedClientIpSource:          row.CreatedClientIpSource,
+		CreatedEdgePeerIp:              row.CreatedEdgePeerIp,
+		CreatedUserAgent:               row.CreatedUserAgent,
+		CreatedDeviceLabel:             row.CreatedDeviceLabel,
+		CreatedDeviceKind:              row.CreatedDeviceKind,
+		CreatedBrowserName:             row.CreatedBrowserName,
+		CreatedOsName:                  row.CreatedOsName,
+		CreatedGeoCountryCode:          row.CreatedGeoCountryCode,
+		CreatedGeoRegion:               row.CreatedGeoRegion,
+		CreatedGeoCity:                 row.CreatedGeoCity,
+		LastSeenClientIp:               row.LastSeenClientIp,
+		LastSeenClientIpTrusted:        row.LastSeenClientIpTrusted,
+		LastSeenClientIpSource:         row.LastSeenClientIpSource,
+		LastSeenEdgePeerIp:             row.LastSeenEdgePeerIp,
+		LastSeenUserAgent:              row.LastSeenUserAgent,
+		LastSeenDeviceLabel:            row.LastSeenDeviceLabel,
+		LastSeenDeviceKind:             row.LastSeenDeviceKind,
+		LastSeenBrowserName:            row.LastSeenBrowserName,
+		LastSeenOsName:                 row.LastSeenOsName,
+		LastSeenGeoCountryCode:         row.LastSeenGeoCountryCode,
+		LastSeenGeoRegion:              row.LastSeenGeoRegion,
+		LastSeenGeoCity:                row.LastSeenGeoCity,
+		LastSeenAt:                     row.LastSeenAt,
+		CreatedAt:                      row.CreatedAt,
+		UpdatedAt:                      row.UpdatedAt,
 	}
 }
 

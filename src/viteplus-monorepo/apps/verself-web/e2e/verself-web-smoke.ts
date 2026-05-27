@@ -189,6 +189,231 @@ async function assertNoPageErrors(errors: readonly string[]): Promise<void> {
   }
 }
 
+async function runAuthProductScenario(page: Page): Promise<number> {
+  let visited = 0;
+
+  await givenTheVisitorCanOpenTheAuthShell(page);
+  visited += 1;
+  await thenTheLoginFormIsPasswordManagerReady(page);
+  await thenTheLoginFormUsesBlurValidation(page);
+
+  await givenTheVisitorCanOpenTheAuthShell(page);
+  await whenTheVisitorSignsInWithIncorrectCredentials(page);
+  await thenIncorrectEmailOrPasswordDisplaysAToast(page);
+
+  await whenZitadelRoutesAnAuthRequestToVerself(page);
+  visited += 1;
+  await thenTheAuthRequestStaysOnTheVerselfLoginForm(page);
+
+  await whenTheVisitorStartsPasswordRecovery(page);
+  visited += 1;
+  await thenTheForgotPasswordFlowIsEmailOnly(page);
+  await thenTheForgotPasswordFormUsesBlurValidation(page);
+
+  await whenTheVisitorStartsSignup(page);
+  visited += 1;
+  await thenTheSignupFlowCollectsOrganizationIdentity(page);
+  await thenTheSignupFormUsesSchemaValidation(page);
+
+  await whenTheVisitorOpensAResetLinkWithoutToken(page);
+  visited += 1;
+  await thenTheResetFlowOffersFreshRecovery(page);
+
+  await whenTheVisitorOpensAResetLinkWithToken(page);
+  visited += 1;
+  await thenTheResetFormValidatesPasswordConfirmation(page);
+
+  await whenTheVisitorOpensADeviceCodeLink(page, "VERS-ELF1");
+  visited += 1;
+  await thenTheDeviceCodeIsPrefilled(page, "VERS-ELF1");
+  await thenTheDeviceCodeFormUsesBlurValidation(page);
+
+  return visited;
+}
+
+async function givenTheVisitorCanOpenTheAuthShell(page: Page): Promise<void> {
+  await page.goto("/login", { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Sign in" }).waitFor();
+}
+
+async function thenTheLoginFormIsPasswordManagerReady(page: Page): Promise<void> {
+  await page.getByLabel("Email").waitFor();
+  await page.getByLabel("Password", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Sign in" }).waitFor();
+  await page.getByRole("link", { name: "Forgot password?" }).waitFor();
+  await waitForEnabledButton(page, "Sign in");
+}
+
+async function thenTheLoginFormUsesBlurValidation(page: Page): Promise<void> {
+  const email = page.getByLabel("Email");
+  await email.fill("not-an-email");
+  await email.blur();
+  await page.getByText("Enter a valid email address.").waitFor();
+  const password = page.getByLabel("Password", { exact: true });
+  await password.focus();
+  await password.blur();
+  await page.getByText("Password is required.").waitFor();
+  if (!(await page.getByRole("button", { name: "Sign in" }).isDisabled())) {
+    throw new Error("invalid login form left Sign in enabled");
+  }
+}
+
+async function whenTheVisitorSignsInWithIncorrectCredentials(page: Page): Promise<void> {
+  const email = page.getByLabel("Email");
+  await email.fill(`wrong-${Date.now()}@example.test`);
+  await email.blur();
+  const password = page.getByLabel("Password", { exact: true });
+  await password.fill("not the right password");
+  await password.blur();
+  await waitForEnabledButton(page, "Sign in");
+  await page.getByRole("button", { name: "Sign in" }).click();
+}
+
+async function thenIncorrectEmailOrPasswordDisplaysAToast(page: Page): Promise<void> {
+  await page.getByText("Email or password is incorrect.").waitFor();
+  const path = new URL(page.url()).pathname;
+  if (path !== "/login") {
+    throw new Error(`incorrect password changed route to ${path}`);
+  }
+}
+
+async function whenZitadelRoutesAnAuthRequestToVerself(page: Page): Promise<void> {
+  await page.goto("/login?authRequest=V2_123&login_hint=founder%40example.test", {
+    waitUntil: "domcontentloaded",
+  });
+}
+
+async function thenTheAuthRequestStaysOnTheVerselfLoginForm(page: Page): Promise<void> {
+  await page.getByRole("heading", { name: "Sign in" }).waitFor();
+  const email = page.getByLabel("Email");
+  await email.waitFor();
+  const value = await email.inputValue();
+  if (value !== "founder@example.test") {
+    throw new Error(`auth request login hint = ${JSON.stringify(value)}`);
+  }
+  if (page.url().includes("/ui/login")) {
+    throw new Error("auth request fell through to Zitadel UI");
+  }
+}
+
+async function whenTheVisitorStartsPasswordRecovery(page: Page): Promise<void> {
+  await page.getByRole("link", { name: "Forgot password?" }).click();
+  await page.waitForURL("**/forgot-password");
+}
+
+async function thenTheForgotPasswordFlowIsEmailOnly(page: Page): Promise<void> {
+  await page.getByRole("heading", { name: "Reset password" }).waitFor();
+  await page.getByLabel("Email").waitFor();
+  await page.getByRole("button", { name: "Send reset email" }).waitFor();
+  await waitForEnabledButton(page, "Send reset email");
+}
+
+async function thenTheForgotPasswordFormUsesBlurValidation(page: Page): Promise<void> {
+  const email = page.getByLabel("Email");
+  await email.fill("invalid");
+  await email.blur();
+  await page.getByText("Enter a valid email address.").waitFor();
+  if (!(await page.getByRole("button", { name: "Send reset email" }).isDisabled())) {
+    throw new Error("invalid forgot-password form left Send reset email enabled");
+  }
+}
+
+async function whenTheVisitorStartsSignup(page: Page): Promise<void> {
+  await page.goto("/signup", { waitUntil: "domcontentloaded" });
+}
+
+async function thenTheSignupFlowCollectsOrganizationIdentity(page: Page): Promise<void> {
+  await page.getByRole("heading", { name: "Create account" }).waitFor();
+  await page.getByLabel("Email").waitFor();
+  await page.getByLabel("Organization name").waitFor();
+  await page.getByText("verself.sh/").waitFor();
+  await page.getByRole("button", { name: "Create account" }).waitFor();
+  await waitForEnabledButton(page, "Create account");
+}
+
+async function thenTheSignupFormUsesSchemaValidation(page: Page): Promise<void> {
+  const email = page.getByLabel("Email");
+  await email.fill("not-an-email");
+  await email.blur();
+  await page.getByText("Enter a valid email address.").waitFor();
+  const organization = page.getByLabel("Organization name");
+  await organization.focus();
+  await organization.blur();
+  await page.getByText("Organization name is required.").waitFor();
+  if (!(await page.getByRole("button", { name: "Create account" }).isDisabled())) {
+    throw new Error("invalid signup form left Create account enabled");
+  }
+}
+
+async function whenTheVisitorOpensAResetLinkWithoutToken(page: Page): Promise<void> {
+  await page.goto("/reset-password", { waitUntil: "domcontentloaded" });
+}
+
+async function whenTheVisitorOpensAResetLinkWithToken(page: Page): Promise<void> {
+  await page.goto("/reset-password?user_id=user_test&verification_code=code_test", {
+    waitUntil: "domcontentloaded",
+  });
+}
+
+async function thenTheResetFlowOffersFreshRecovery(page: Page): Promise<void> {
+  await page.getByRole("heading", { name: "Set password" }).waitFor();
+  await page.getByRole("link", { name: "Request a new reset email" }).waitFor();
+}
+
+async function thenTheResetFormValidatesPasswordConfirmation(page: Page): Promise<void> {
+  await page.getByRole("heading", { name: "Set password" }).waitFor();
+  await waitForEnabledButton(page, "Save password");
+  await page.getByLabel("New password").fill("correct horse battery staple");
+  await page.getByLabel("Confirm password").fill("wrong passphrase value");
+  await page.getByLabel("Confirm password").blur();
+  await page.getByText("Passwords do not match.").waitFor();
+  if (!(await page.getByRole("button", { name: "Save password" }).isDisabled())) {
+    throw new Error("invalid reset form left Save password enabled");
+  }
+}
+
+async function whenTheVisitorOpensADeviceCodeLink(page: Page, userCode: string): Promise<void> {
+  await page.goto(`/device?user_code=${encodeURIComponent(userCode)}`, {
+    waitUntil: "domcontentloaded",
+  });
+}
+
+async function thenTheDeviceCodeIsPrefilled(page: Page, userCode: string): Promise<void> {
+  await page.getByRole("heading", { name: "Approve device" }).waitFor();
+  const input = page.getByLabel("Device code");
+  await input.waitFor();
+  const value = await input.inputValue();
+  if (value !== userCode) {
+    throw new Error(
+      `device code prefill = ${JSON.stringify(value)}, want ${JSON.stringify(userCode)}`,
+    );
+  }
+  await page.getByRole("button", { name: "Continue" }).waitFor();
+  await waitForEnabledButton(page, "Continue");
+}
+
+async function thenTheDeviceCodeFormUsesBlurValidation(page: Page): Promise<void> {
+  const input = page.getByLabel("Device code");
+  await input.fill("x");
+  await input.blur();
+  await page.getByText("Enter the device code from your terminal.").waitFor();
+  if (!(await page.getByRole("button", { name: "Continue" }).isDisabled())) {
+    throw new Error("invalid device form left Continue enabled");
+  }
+}
+
+async function waitForEnabledButton(page: Page, name: string): Promise<void> {
+  const button = page.getByRole("button", { name });
+  await button.waitFor();
+  const started = performance.now();
+  while (await button.isDisabled()) {
+    if (performance.now() - started > assertionTimeoutMs) {
+      throw new Error(`${name} button did not hydrate into an enabled state`);
+    }
+    await page.waitForTimeout(50);
+  }
+}
+
 async function runBrowserSmoke(options: Options): Promise<Record<string, string | number>> {
   const browser = await chromium.launch({
     args: [
@@ -233,12 +458,11 @@ async function runBrowserSmoke(options: Options): Promise<Record<string, string 
     await page.getByRole("heading", { name: "Verself" }).waitFor();
     await page.getByRole("link", { name: "Get Verself" }).waitFor();
 
-    await page.goto("/login", { waitUntil: "domcontentloaded" });
-    await page.getByRole("heading", { name: "Sign in to Console" }).waitFor();
-    await page.getByRole("button", { name: /Continue to sign in/i }).waitFor();
+    const authPages = await runAuthProductScenario(page);
     await assertNoPageErrors(pageErrors);
 
     return {
+      auth_pages: authPages,
       final_url: page.url(),
       viewport_height: 667,
       viewport_width: 375,

@@ -82,6 +82,7 @@ func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
 	verificationToken := fs.String("verification-token", "", "signup verification token")
 	organizationDisplayName := fs.String("org", "", "organization display name")
 	organizationSlug := fs.String("slug", "", "organization slug")
+	passwordStdin := fs.Bool("password-stdin", false, "read initial password from stdin")
 	if err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
@@ -94,6 +95,10 @@ func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
 	}
 	verifyOrganizationDisplayName := trimOptionalString(*organizationDisplayName)
 	verifyOrganizationSlug := trimOptionalString(*organizationSlug)
+	initialPassword, err := c.signupInitialPassword(*passwordStdin)
+	if err != nil {
+		return err
+	}
 	client, err := c.publicIAMClient(*iamFlags)
 	if err != nil {
 		return err
@@ -101,6 +106,7 @@ func (c CLI) authSignupVerify(ctx context.Context, args []string) error {
 	result, err := client.IAM.VerifySignup(ctx, verself.VerifySignupInput{
 		SignupIntentID:          credentials.signupIntentID,
 		VerificationToken:       credentials.verificationToken,
+		InitialPassword:         initialPassword,
 		OrganizationDisplayName: verifyOrganizationDisplayName,
 		OrganizationSlug:        verifyOrganizationSlug,
 	})
@@ -148,6 +154,21 @@ func signupVerifyOutputFromResult(result verself.SignupVerificationResult) signu
 		Organization: result.Organization,
 		LoginURL:     result.LoginURL,
 	}
+}
+
+func (c CLI) signupInitialPassword(passwordStdin bool) (string, error) {
+	if !passwordStdin {
+		return "", errors.New("signup verify requires --password-stdin")
+	}
+	data, err := io.ReadAll(c.in)
+	if err != nil {
+		return "", fmt.Errorf("read signup initial password from stdin: %w", err)
+	}
+	password := strings.TrimRight(string(data), "\r\n")
+	if password == "" {
+		return "", errors.New("signup verify requires a non-empty initial password on stdin")
+	}
+	return password, nil
 }
 
 type signupVerificationCredentialSet struct {

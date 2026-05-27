@@ -234,7 +234,7 @@ func TestIAMSignupUsesPublicAPI(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"organization":` + organizationJSON("1") + `,"loginUrl":"https://verself.sh/api/v1/auth/login"}`))
+			_, _ = w.Write([]byte(`{"organization":` + organizationJSON("1") + `,"loginUrl":"https://verself.sh/login?required_email=operator%40example.test"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -275,6 +275,7 @@ func TestIAMSignupUsesPublicAPI(t *testing.T) {
 	result, err := client.IAM.VerifySignup(context.Background(), VerifySignupInput{
 		SignupIntentID:          testSignupID,
 		VerificationToken:       "signup-verification-token-0000000001",
+		InitialPassword:         "correct horse battery staple",
 		OrganizationDisplayName: ptrString("Guardian Labs"),
 		OrganizationSlug:        &verifySlug,
 		IdempotencyKey:          "iam:verify-signup",
@@ -287,6 +288,9 @@ func TestIAMSignupUsesPublicAPI(t *testing.T) {
 	}
 	if verifyBody["verificationToken"] != "signup-verification-token-0000000001" {
 		t.Fatalf("unexpected verify body: %#v", verifyBody)
+	}
+	if verifyBody["initialPassword"] != "correct horse battery staple" {
+		t.Fatalf("unexpected verify initial password body: %#v", verifyBody)
 	}
 	if verifyBody["organizationDisplayName"] != "Guardian Labs" {
 		t.Fatalf("unexpected verify organization display name: %#v", verifyBody)

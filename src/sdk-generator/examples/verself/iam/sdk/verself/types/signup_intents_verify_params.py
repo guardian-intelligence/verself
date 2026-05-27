@@ -16,3 +16,4 @@ from .._utils import PropertyInfo  # noqa: F401
 
 class SignupIntentVerifyParams(TypedDict, total=False):
     verification_token: Annotated[str, PropertyInfo(alias="verificationToken")]
+    initial_password: Annotated[str, PropertyInfo(alias="initialPassword")]

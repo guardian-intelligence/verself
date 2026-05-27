@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"net/http"
@@ -23,6 +25,7 @@ import (
 	"github.com/verself/iam-service/internal/zitadel"
 	"github.com/verself/iam-service/migrations"
 	iamschema "github.com/verself/iam-service/schema"
+	pwnedpasswords "github.com/verself/integrations/hibp/pwned-passwords"
 	notificationsinternalclient "github.com/verself/notifications-service/internalclient"
 	verselfotel "github.com/verself/observability/otel"
 	secretsclient "github.com/verself/secrets-service/client"
@@ -201,6 +204,7 @@ func run() error {
 	authAudience := cfg.RequireCredential("auth-audience")
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	browserAuthPublicBaseURL := cfg.RequireURL("IAM_BROWSER_AUTH_PUBLIC_BASE_URL")
+	pwnedPasswordsRangeEndpoint := cfg.RequireURL("IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT")
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IAM_ZITADEL_HOST")
 	spiceDBEndpoint := cfg.RequireString("IAM_SPICEDB_GRPC_ENDPOINT")
@@ -260,6 +264,18 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	pwnedPasswordsClient, err := pwnedpasswords.New(pwnedpasswords.Config{
+		RangeEndpoint: pwnedPasswordsRangeEndpoint,
+		HTTPClient: &http.Client{
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Timeout:   5 * time.Second,
+		},
+		UserAgent: serviceName + "/" + serviceVersion,
+	})
+	if err != nil {
+		return fmt.Errorf("iam pwned passwords client: %w", err)
+	}
+	passwordChecker := pwnedPasswordChecker{client: pwnedPasswordsClient}
 	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
 	if err != nil {
 		return fmt.Errorf("iam clickhouse tls: %w", err)
@@ -316,6 +332,7 @@ func run() error {
 		AuthorizationGraph: authzService,
 		PolicyWriter:       organizationOwnerPolicyWriter{authz: authzService},
 		Billing:            billingOrganizationProvisioner{client: billingClient},
+		PasswordChecker:    passwordChecker,
 		ProjectID:          authAudience,
 		IdentityIssuer:     authIssuerURL,
 		EmailIdentityKey:   []byte(emailIdentityHMACKey),
@@ -341,6 +358,9 @@ func run() error {
 		ProductAudience: authAudience,
 		Authz:           authzService,
 		ProviderSession: zitadelClient,
+		ProviderLogin:   zitadelClient,
+		PasswordChecker: passwordChecker,
+		PasswordReset:   signupNotifier,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 			Timeout:   5 * time.Second,
@@ -495,6 +515,23 @@ func requestMayHaveBody(r *http.Request) bool {
 
 type notificationInviteSender struct {
 	client *notificationsinternalclient.Client
+}
+
+func hashText(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+type pwnedPasswordChecker struct {
+	client *pwnedpasswords.Client
+}
+
+func (c pwnedPasswordChecker) CheckPassword(ctx context.Context, password string) (identity.BreachedPasswordCheck, error) {
+	check, err := c.client.CheckPassword(ctx, password)
+	if err != nil {
+		return identity.BreachedPasswordCheck{}, err
+	}
+	return identity.BreachedPasswordCheck{Breached: check.Breached, Occurrences: check.Occurrences}, nil
 }
 
 type organizationOwnerPolicyWriter struct {
@@ -681,6 +718,50 @@ func (s notificationSignupSender) SendSignupAccountExists(ctx context.Context, i
 			Body:               body,
 			Data:               &data,
 			OrgID:              notificationsinternalclient.OrgId(strings.TrimSpace(input.OrgID)),
+			Priority:           &priority,
+			Recipients:         notificationsinternalclient.WorkflowRecipients{{Email: &email}},
+			TargetResourceName: resourceName,
+			Title:              &title,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return fmt.Errorf("notifications workflow returned no response")
+	}
+	if resp.StatusCode != http.StatusAccepted || resp.Result == nil {
+		return fmt.Errorf("notifications workflow status %d: %s", resp.StatusCode, strings.TrimSpace(string(resp.Body)))
+	}
+	return nil
+}
+
+func (s notificationSignupSender) SendPasswordReset(ctx context.Context, input api.PasswordResetNotification) error {
+	if s.client == nil {
+		return fmt.Errorf("notifications client is required")
+	}
+	title := notificationsinternalclient.NotificationTitle("Reset your Verself password")
+	priority := notificationsinternalclient.NotificationPriorityNORMAL
+	actionURL := notificationsinternalclient.ActionURL(strings.TrimSpace(input.ActionURL))
+	email := notificationsinternalclient.EmailAddress(strings.TrimSpace(input.Email))
+	var resourceName *notificationsinternalclient.ResourceName
+	if trimmed := strings.TrimSpace(input.ResourceName); trimmed != "" {
+		value := notificationsinternalclient.ResourceName(trimmed)
+		resourceName = &value
+	}
+	data := map[string]any{
+		"notice": "password_reset",
+	}
+	body := notificationsinternalclient.RequiredNotificationBody(
+		fmt.Sprintf("Reset your Verself password: %s\n\nIf you did not request this, ignore this email.", actionURL),
+	)
+	resp, err := s.client.TriggerNotificationWorkflow(ctx, notificationsinternalclient.TriggerNotificationWorkflowRequest{
+		WorkflowKey:    notificationsinternalclient.WorkflowKey("iam.password.reset"),
+		IdempotencyKey: notificationsinternalclient.IdempotencyKey("iam:password_reset:" + hashText(strings.TrimSpace(input.ActionURL))),
+		Body: notificationsinternalclient.TriggerNotificationWorkflowInputBody{
+			ActionURL:          &actionURL,
+			Body:               body,
+			Data:               &data,
 			Priority:           &priority,
 			Recipients:         notificationsinternalclient.WorkflowRecipients{{Email: &email}},
 			TargetResourceName: resourceName,
