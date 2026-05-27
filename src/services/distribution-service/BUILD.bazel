@@ -16,6 +16,7 @@ pkg_tar(
     name = "release_tools_artifact",
     out = "distribution-release-tools.tar",
     files = {
+        "@distribution_release_tools//tools/bazelisk": "bin/bazelisk",
         "@distribution_release_tools//tools/cargo-about": "bin/cargo-about",
         "@distribution_release_tools//tools/cosign": "bin/cosign",
         "@distribution_release_tools//tools/oras": "bin/oras",
@@ -23,6 +24,7 @@ pkg_tar(
         "@distribution_release_tools//tools/syft": "bin/syft",
     },
     modes = {
+        "bin/bazelisk": "0755",
         "bin/cargo-about": "0755",
         "bin/cosign": "0755",
         "bin/oras": "0755",

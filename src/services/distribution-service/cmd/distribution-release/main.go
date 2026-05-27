@@ -223,6 +223,7 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 		return err
 	}
 	defer cleanup()
+	bazelisk := filepath.Join(toolsDir, "bin", "bazelisk")
 
 	workspace, err := workspaceVersion(filepath.Join(source.root, mkskCargoManifest))
 	if err != nil {
@@ -232,26 +233,34 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 	if err != nil {
 		return err
 	}
+	toolEnv, err := releaseToolEnv(cfg.outRoot, cfg.channel, version, sourceCommit)
+	if err != nil {
+		return err
+	}
+	bazelStartupOptions := releaseBazelStartupOptions(toolEnv)
+	bazelCommandOptions := releaseBazelCommandOptions(toolEnv)
 	started := time.Now().UTC()
 	bazelReleaseVersionFlag := rustReleaseVersionFlag(version)
-	testArgs := []string{
-		"test",
+	testArgs := append([]string{}, bazelStartupOptions...)
+	testArgs = append(testArgs, "test")
+	testArgs = append(testArgs, bazelCommandOptions...)
+	testArgs = append(testArgs,
 		bazelReleaseVersionFlag,
 		"//src/make-skill:core_test",
 		"//src/make-skill:exec_test",
 		"//src/make-skill:cli_test",
-	}
-	if _, err := runCommand(ctx, source.root, "bazelisk", testArgs...); err != nil {
+	)
+	if _, err := runCommandWithEnv(ctx, source.root, bazelisk, toolEnv, testArgs...); err != nil {
 		return err
 	}
-	mkskBinary, err := bazelOutputFile(ctx, source.root, mkskBinaryTarget, bazelReleaseVersionFlag)
+	mkskBinary, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, bazelStartupOptions, bazelCommandOptions, mkskBinaryTarget, bazelReleaseVersionFlag)
 	if err != nil {
 		return err
 	}
 	if err := verifyMkskVersion(ctx, mkskBinary, version); err != nil {
 		return err
 	}
-	releaseTar, err := bazelOutputFile(ctx, source.root, mkskReleaseTar, bazelReleaseVersionFlag)
+	releaseTar, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, bazelStartupOptions, bazelCommandOptions, mkskReleaseTar, bazelReleaseVersionFlag)
 	if err != nil {
 		return err
 	}
@@ -281,10 +290,10 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 	if err := copyTestXML(source.root, paths); err != nil {
 		return err
 	}
-	if err := generateSBOMs(ctx, source.root, toolsDir, artifactPath, version, paths); err != nil {
+	if err := generateSBOMs(ctx, source.root, toolsDir, artifactPath, version, paths, toolEnv); err != nil {
 		return err
 	}
-	if err := generateLicenses(ctx, source.root, toolsDir, paths); err != nil {
+	if err := generateLicenses(ctx, source.root, toolsDir, paths, toolEnv); err != nil {
 		return err
 	}
 	finished := time.Now().UTC()
@@ -376,24 +385,24 @@ func makeReleaseDirs(paths releasePaths) error {
 	return nil
 }
 
-func generateSBOMs(ctx context.Context, sourceRoot, toolsDir, artifactPath, version string, paths releasePaths) error {
+func generateSBOMs(ctx context.Context, sourceRoot, toolsDir, artifactPath, version string, paths releasePaths, env map[string]string) error {
 	syft := filepath.Join(toolsDir, "bin", "syft")
 	artifactOut := filepath.Join(paths.root, paths.sbom, "make-skill.artifact.spdx.json")
 	sourceOut := filepath.Join(paths.root, paths.sbom, "make-skill.source.spdx.json")
-	if _, err := runCommand(ctx, sourceRoot, syft, "scan", "file:"+artifactPath, "-q", "--source-name", mkskPackageName, "--source-version", version, "-o", "spdx-json="+artifactOut); err != nil {
+	if _, err := runCommandWithEnv(ctx, sourceRoot, syft, env, "scan", "file:"+artifactPath, "-q", "--source-name", mkskPackageName, "--source-version", version, "-o", "spdx-json="+artifactOut); err != nil {
 		return err
 	}
 	sourceDir := filepath.Join(sourceRoot, "src", "make-skill")
-	if _, err := runCommand(ctx, sourceRoot, syft, "scan", "dir:"+sourceDir, "--exclude", "**/target/**", "-q", "--source-name", mkskPackageName, "--source-version", version, "-o", "spdx-json="+sourceOut); err != nil {
+	if _, err := runCommandWithEnv(ctx, sourceRoot, syft, env, "scan", "dir:"+sourceDir, "--exclude", "**/target/**", "-q", "--source-name", mkskPackageName, "--source-version", version, "-o", "spdx-json="+sourceOut); err != nil {
 		return err
 	}
 	return nil
 }
 
-func generateLicenses(ctx context.Context, sourceRoot, toolsDir string, paths releasePaths) error {
+func generateLicenses(ctx context.Context, sourceRoot, toolsDir string, paths releasePaths, env map[string]string) error {
 	cargoAbout := filepath.Join(toolsDir, "bin", "cargo-about")
 	out := filepath.Join(paths.root, paths.licenses, "make-skill.cargo-about.json")
-	_, err := runCommand(ctx, sourceRoot, cargoAbout, "generate", "--config", mkskCargoAbout, "--manifest-path", mkskCargoManifest, "--workspace", "--frozen", "--format", "json", "--output-file", out)
+	_, err := runCommandWithEnv(ctx, sourceRoot, cargoAbout, env, "generate", "--config", mkskCargoAbout, "--manifest-path", mkskCargoManifest, "--workspace", "--frozen", "--format", "json", "--output-file", out)
 	return err
 }
 
@@ -607,15 +616,22 @@ func gitOutput(ctx context.Context, repoRoot string, args ...string) (string, er
 	return strings.TrimSpace(result.stdout), nil
 }
 
-func bazelOutputFile(ctx context.Context, repoRoot, target string, buildOptions ...string) (string, error) {
-	buildArgs := append([]string{"build"}, buildOptions...)
+func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[string]string, startupOptions []string, commandOptions []string, target string, buildOptions ...string) (string, error) {
+	buildArgs := append([]string{}, startupOptions...)
+	buildArgs = append(buildArgs, "build")
+	buildArgs = append(buildArgs, commandOptions...)
+	buildArgs = append(buildArgs, buildOptions...)
 	buildArgs = append(buildArgs, target)
-	if _, err := runCommand(ctx, repoRoot, "bazelisk", buildArgs...); err != nil {
+	if _, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, buildArgs...); err != nil {
 		return "", err
 	}
-	cqueryArgs := append([]string{"cquery", "--output=files"}, buildOptions...)
+	cqueryArgs := append([]string{}, startupOptions...)
+	cqueryArgs = append(cqueryArgs, "cquery")
+	cqueryArgs = append(cqueryArgs, commandOptions...)
+	cqueryArgs = append(cqueryArgs, "--output=files")
+	cqueryArgs = append(cqueryArgs, buildOptions...)
 	cqueryArgs = append(cqueryArgs, target)
-	files, err := runCommand(ctx, repoRoot, "bazelisk", cqueryArgs...)
+	files, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, cqueryArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -623,7 +639,11 @@ func bazelOutputFile(ctx context.Context, repoRoot, target string, buildOptions 
 	if len(lines) != 1 {
 		return "", fmt.Errorf("expected one output for %s, got %d", target, len(lines))
 	}
-	execroot, err := runCommand(ctx, repoRoot, "bazelisk", "info", "execution_root")
+	infoArgs := append([]string{}, startupOptions...)
+	infoArgs = append(infoArgs, "info")
+	infoArgs = append(infoArgs, commandOptions...)
+	infoArgs = append(infoArgs, "execution_root")
+	execroot, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, infoArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -635,9 +655,16 @@ func bazelOutputFile(ctx context.Context, repoRoot, target string, buildOptions 
 }
 
 func runCommand(ctx context.Context, cwd, program string, args ...string) (commandResult, error) {
+	return runCommandWithEnv(ctx, cwd, program, nil, args...)
+}
+
+func runCommandWithEnv(ctx context.Context, cwd, program string, env map[string]string, args ...string) (commandResult, error) {
 	cmd := exec.CommandContext(ctx, program, args...)
 	if cwd != "" {
 		cmd.Dir = cwd
+	}
+	if len(env) > 0 {
+		cmd.Env = mergeCommandEnv(os.Environ(), env)
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -658,6 +685,56 @@ func runCommand(ctx context.Context, cwd, program string, args ...string) (comma
 	return result, fmt.Errorf("%s %s: %s", program, strings.Join(args, " "), detail)
 }
 
+func releaseToolEnv(outRoot, channel, version, sourceCommit string) (map[string]string, error) {
+	root := filepath.Join(outRoot, "work", "tool-env", mkskPackageName, channel+"-"+version+"-"+shortSHA(sourceCommit))
+	dirs := map[string]string{
+		"HOME":           filepath.Join(root, "home"),
+		"XDG_CACHE_HOME": filepath.Join(root, "cache"),
+		"BAZELISK_HOME":  filepath.Join(root, "bazelisk"),
+		"CARGO_HOME":     filepath.Join(root, "cargo"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create release tool env %s: %w", dir, err)
+		}
+	}
+	return dirs, nil
+}
+
+func releaseBazelStartupOptions(env map[string]string) []string {
+	return []string{"--output_user_root=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-output")}
+}
+
+func releaseBazelCommandOptions(env map[string]string) []string {
+	return []string{
+		"--disk_cache=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-disk"),
+		"--repository_cache=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-repo"),
+	}
+}
+
+func mergeCommandEnv(base []string, overrides map[string]string) []string {
+	out := make([]string, 0, len(base)+len(overrides))
+	for _, entry := range base {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok {
+			if _, replace := overrides[key]; replace {
+				continue
+			}
+		}
+		out = append(out, entry)
+	}
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := overrides[key]
+		out = append(out, key+"="+value)
+	}
+	return out
+}
+
 func extractTools(toolsTar string) (string, func(), error) {
 	dir, err := os.MkdirTemp("", "verself-distribution-release-tools-")
 	if err != nil {
@@ -668,7 +745,7 @@ func extractTools(toolsTar string) (string, func(), error) {
 		cleanup()
 		return "", func() {}, err
 	}
-	for _, tool := range []string{"cargo-about", "cosign", "oras", "release-plz", "syft"} {
+	for _, tool := range []string{"bazelisk", "cargo-about", "cosign", "oras", "release-plz", "syft"} {
 		path := filepath.Join(dir, "bin", tool)
 		if st, err := os.Stat(path); err != nil {
 			cleanup()
