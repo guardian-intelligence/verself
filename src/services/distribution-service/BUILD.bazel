@@ -32,6 +32,22 @@ pkg_tar(
     visibility = ["//visibility:public"],
 )
 
+pkg_tar(
+    name = "release_worker_artifact",
+    out = "distribution-release-worker.tar",
+    files = {
+        ":release_tools_artifact": "share/distribution-release-tools.tar",
+        "//src/services/distribution-service/cmd/distribution-release:distribution-release": "bin/distribution-release",
+        "//src/services/distribution-service/cmd/distribution-release-worker:distribution-release-worker": "bin/distribution-release-worker",
+    },
+    modes = {
+        "bin/distribution-release": "0755",
+        "bin/distribution-release-worker": "0755",
+        "share/distribution-release-tools.tar": "0644",
+    },
+    visibility = ["//visibility:public"],
+)
+
 spire_identity(
     name = "spiffe_identity",
     component = "distribution_service",
@@ -45,6 +61,7 @@ spire_identity(
 nomad_component(
     name = "nomad_component",
     artifacts = {
+        ":release_worker_artifact": "distribution-release-worker",
         "//src/services/distribution-service/cmd/distribution-service:distribution-service_nomad_artifact": "distribution-service",
     },
     component = "distribution_service",
@@ -53,6 +70,7 @@ nomad_component(
     job_spec = "nomad.hcl",
     requires = [
         "clickhouse:migrations",
+        "nomad:job:temporal",
         "postgres:server",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
