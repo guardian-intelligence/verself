@@ -36,7 +36,7 @@ func TestRowsFromLogsStampsDatasetAndSourceAttributes(t *testing.T) {
 		}},
 	}
 	rows, err := RowsFromLogs(DatasetContext{
-		OrgID:       "371564185181576922",
+		OrgID:       "org_B7HWGKW0SH7G4EXW9XT8TCT60C",
 		ProjectID:   "verself",
 		DatasetID:   "build",
 		Environment: "prod",
@@ -55,7 +55,7 @@ func TestRowsFromLogsStampsDatasetAndSourceAttributes(t *testing.T) {
 		t.Fatalf("rows = %d, want 1", len(rows))
 	}
 	row := rows[0]
-	if row.OrgID != "371564185181576922" || row.ProjectID != "verself" || row.DatasetID != "build" || row.Environment != "prod" {
+	if row.OrgID != "org_B7HWGKW0SH7G4EXW9XT8TCT60C" || row.ProjectID != "verself" || row.DatasetID != "build" || row.Environment != "prod" {
 		t.Fatalf("dataset identity = %q/%q/%q/%q", row.OrgID, row.ProjectID, row.DatasetID, row.Environment)
 	}
 	if row.EventName != "build.typecheck" {

@@ -308,14 +308,31 @@ func (s *Service) deleteRunnerBootstrapSecret(ctx context.Context, secretName st
 }
 
 func (s *Service) deleteRunnerBootstrapConfig(ctx context.Context, allocationID uuid.UUID) error {
-	secretName, err := s.storeQueries().GetRunnerBootstrapSecretNameByAllocation(ctx, store.GetRunnerBootstrapSecretNameByAllocationParams{AllocationID: allocationID})
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	tx, err := s.PGX.Begin(ctx)
+	if err != nil {
 		return err
 	}
-	if err == nil && strings.TrimSpace(secretName) != "" {
-		_ = s.deleteRunnerBootstrapSecret(ctx, secretName, "runner-bootstrap-cleanup:"+allocationID.String())
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := store.New(tx)
+	config, err := qtx.LockRunnerBootstrapConfigByAllocation(ctx, store.LockRunnerBootstrapConfigByAllocationParams{AllocationID: allocationID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
 	}
-	return s.storeQueries().DeleteRunnerBootstrapConfig(ctx, store.DeleteRunnerBootstrapConfigParams{AllocationID: allocationID})
+	if err != nil {
+		return err
+	}
+
+	// Consumed bootstrap secrets are deleted during consumption.
+	if !config.ConsumedAt.Valid && strings.TrimSpace(config.BootstrapSecretName) != "" {
+		if err := s.deleteRunnerBootstrapSecret(ctx, config.BootstrapSecretName, "runner-bootstrap-cleanup:"+allocationID.String()); err != nil {
+			return err
+		}
+	}
+	if err := qtx.DeleteRunnerBootstrapConfig(ctx, store.DeleteRunnerBootstrapConfigParams{AllocationID: allocationID}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Service) ConsumeRunnerBootstrapConfig(ctx context.Context, token, expectedKind string) (string, error) {

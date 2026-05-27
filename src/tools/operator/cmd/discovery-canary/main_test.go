@@ -15,15 +15,27 @@ func TestAuthorizationProbeOrgIDUsesResolvedCanonicalOrgID(t *testing.T) {
 		},
 	}
 
-	got := authorizationProbeOrgID("371564185181576922", resp)
+	got, ok := authorizationProbeOrgID("org_00000000000000000000000000", resp)
+	if !ok {
+		t.Fatal("authorization probe org id was not accepted")
+	}
 	if got != "org_B7HWGKW0SH7G4EXW9XT8TCT60C" {
 		t.Fatalf("authorization probe org id = %q", got)
 	}
 }
 
 func TestAuthorizationProbeOrgIDFallsBackWhenResolutionHasNoResult(t *testing.T) {
-	got := authorizationProbeOrgID("  org_FALLBACK000000000000000000  ", &iamclient.ResolveOrganizationResponse{})
-	if got != "org_FALLBACK000000000000000000" {
+	got, ok := authorizationProbeOrgID("  org_00000000000000000000000000  ", &iamclient.ResolveOrganizationResponse{})
+	if !ok {
+		t.Fatal("authorization probe fallback was not accepted")
+	}
+	if got != "org_00000000000000000000000000" {
 		t.Fatalf("authorization probe fallback org id = %q", got)
+	}
+}
+
+func TestAuthorizationProbeOrgIDRejectsProviderOrgFallback(t *testing.T) {
+	if got, ok := authorizationProbeOrgID("42", &iamclient.ResolveOrganizationResponse{}); ok {
+		t.Fatalf("provider fallback accepted as org id: %q", got)
 	}
 }

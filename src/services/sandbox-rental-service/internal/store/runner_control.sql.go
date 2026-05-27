@@ -593,21 +593,27 @@ func (q *Queries) GetRunnerAllocationSubmission(ctx context.Context, arg GetRunn
 	return i, err
 }
 
-const getRunnerBootstrapSecretNameByAllocation = `-- name: GetRunnerBootstrapSecretNameByAllocation :one
-SELECT bootstrap_secret_name
+const lockRunnerBootstrapConfigByAllocation = `-- name: LockRunnerBootstrapConfigByAllocation :one
+SELECT bootstrap_secret_name, consumed_at
 FROM runner_bootstrap_configs
 WHERE allocation_id = $1
+FOR UPDATE
 `
 
-type GetRunnerBootstrapSecretNameByAllocationParams struct {
+type LockRunnerBootstrapConfigByAllocationParams struct {
 	AllocationID uuid.UUID
 }
 
-func (q *Queries) GetRunnerBootstrapSecretNameByAllocation(ctx context.Context, arg GetRunnerBootstrapSecretNameByAllocationParams) (string, error) {
-	row := q.db.QueryRow(ctx, getRunnerBootstrapSecretNameByAllocation, arg.AllocationID)
-	var bootstrap_secret_name string
-	err := row.Scan(&bootstrap_secret_name)
-	return bootstrap_secret_name, err
+type LockRunnerBootstrapConfigByAllocationRow struct {
+	BootstrapSecretName string
+	ConsumedAt          pgtype.Timestamptz
+}
+
+func (q *Queries) LockRunnerBootstrapConfigByAllocation(ctx context.Context, arg LockRunnerBootstrapConfigByAllocationParams) (LockRunnerBootstrapConfigByAllocationRow, error) {
+	row := q.db.QueryRow(ctx, lockRunnerBootstrapConfigByAllocation, arg.AllocationID)
+	var i LockRunnerBootstrapConfigByAllocationRow
+	err := row.Scan(&i.BootstrapSecretName, &i.ConsumedAt)
+	return i, err
 }
 
 const getRunnerExecutionIdentity = `-- name: GetRunnerExecutionIdentity :one

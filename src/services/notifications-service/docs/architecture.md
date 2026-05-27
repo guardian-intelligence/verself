@@ -41,7 +41,7 @@ keeps a per-recipient ring buffer of 999 notifications.
 
 ## Current Event Intake
 
-The service also consumes the platform domain-event stream:
+The service also consumes the operations domain-event stream:
 
 - NATS JetStream stream: `DOMAIN_EVENTS`.
 - Subject pattern: `events.>`.
@@ -117,7 +117,7 @@ Response:
 
 | Field | Requirement |
 | --- | --- |
-| `workflow_key` | Stable product workflow key such as `runner.workflow_failed` or `platform.alert_firing`. |
+| `workflow_key` | Stable product workflow key such as `runner.workflow_failed` or `operations.alert_firing`. |
 | `org_id` | Required Verself org id. This is the tenant boundary used for preferences and governance. |
 | `recipients` | Required recipient records. Initial recipients can carry `subject_id` or `email`. |
 | `title` / `body` | Rendered notification copy accepted by the workflow. |
@@ -169,21 +169,21 @@ Authorization: Bearer <grafana-notifications-webhook-token>
 The adapter accepts Grafana's native webhook payload, validates labels and
 annotations, and triggers notification workflows internally:
 
-- `platform.alert_firing`
-- `platform.alert_resolved`
+- `operations.alert_firing`
+- `operations.alert_resolved`
 
 Required Grafana labels for customer-routed alerts:
 
 | Label | Requirement |
 | --- | --- |
 | `verself_org_id` | Target org id. |
-| `verself_notification_topic` | Notification topic, for example `runner.workflow` or `platform.alert`. |
+| `verself_notification_topic` | Notification topic, for example `runner.workflow` or `operations.alert`. |
 | `severity` | `info`, `warning`, or `critical`. |
 | `resource_kind` | Product resource kind. |
 | `resource_id` | Product resource id. |
 
-The adapter rejects alerts missing routing labels. Platform-owned alerts can be
-bound to the `platform-admin` org and configured to notify
+The adapter rejects alerts missing routing labels. Operations-owned alerts can
+be bound to the dogfood org and configured to notify
 `integrations.anveio@gmail.com` through a verified org contact.
 
 Grafana's webhook token is a scoped integration credential in the component
@@ -301,7 +301,7 @@ needed, recipient forms. Example:
 | `spiffe://spiffe.verself.sh/svc/sandbox-rental-service` | `runner.*`, `sandbox.execution_*` |
 | `spiffe://spiffe.verself.sh/svc/source-code-hosting-service` | `source.workflow_*` |
 | `spiffe://spiffe.verself.sh/svc/billing-service` | `billing.*` |
-| `spiffe://spiffe.verself.sh/svc/alerting-service` | `platform.alert_*`, `platform.canary_*` |
+| `spiffe://spiffe.verself.sh/svc/alerting-service` | `operations.alert_*`, `operations.canary_*` |
 
 Grafana's webhook integration uses a scoped bearer token because Grafana contact
 points are configured through webhook headers. The token is stored in credstore,
@@ -345,9 +345,9 @@ Retention is split by purpose:
   retention according to the service data-retention policy.
 - ClickHouse notification ledger: append-only analytical and forensic evidence.
 
-The platform org uses the same product model as customers. `platform-admin`
-owns alert workflows and verified contacts; `integrations.anveio@gmail.com` is
-an org contact, not a hard-coded operator email.
+Operations alert workflows are owned by an explicitly configured Verself org
+and contact address. Promotion to the platform billing tier is handled outside
+notification delivery.
 
 ## Completion Evidence For The Cutover
 

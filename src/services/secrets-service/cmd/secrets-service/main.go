@@ -59,7 +59,7 @@ func run() error {
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	openBaoAddr := cfg.RequireString("SECRETS_OPENBAO_ADDR")
 	openBaoCACert := cfg.RequireCredentialPath("openbao-ca-cert")
-	platformOrgID := cfg.RequireString("SECRETS_PLATFORM_ORG_ID")
+	runtimeSecretNamespace := cfg.RequireString("SECRETS_RUNTIME_SECRET_NAMESPACE")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	environment := cfg.String("SECRETS_ENVIRONMENT", "single-node")
 	kvPrefix := cfg.String("SECRETS_OPENBAO_KV_PREFIX", "kv")
@@ -164,9 +164,9 @@ func run() error {
 	rootMux.Handle("/", protected)
 	internalMux := http.NewServeMux()
 	internalPeerIDs, err := secretsapi.RegisterInternalRoutes(internalMux, svc, spiffeSource, secretsapi.InternalRoutesConfig{
-		PlatformOrgID:  platformOrgID,
-		SandboxService: workloadauth.ServiceSandboxRental,
-		SourceService:  workloadauth.ServiceSourceCodeHosting,
+		RuntimeSecretNamespace: runtimeSecretNamespace,
+		SandboxService:         workloadauth.ServiceSandboxRental,
+		SourceService:          workloadauth.ServiceSourceCodeHosting,
 		RuntimeSecretReadPolicies: []secretsapi.RuntimeSecretPolicy{
 			{Service: workloadauth.ServiceBilling, SecretNames: []string{
 				secretsclient.BillingStripeSecretKeyName,

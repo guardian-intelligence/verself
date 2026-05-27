@@ -298,10 +298,11 @@ SET state = CASE WHEN state = 'vm_submitted' THEN 'runner_config_fetched' ELSE s
     updated_at = sqlc.arg(updated_at)
 WHERE allocation_id = sqlc.arg(allocation_id);
 
--- name: GetRunnerBootstrapSecretNameByAllocation :one
-SELECT bootstrap_secret_name
+-- name: LockRunnerBootstrapConfigByAllocation :one
+SELECT bootstrap_secret_name, consumed_at
 FROM runner_bootstrap_configs
-WHERE allocation_id = sqlc.arg(allocation_id);
+WHERE allocation_id = sqlc.arg(allocation_id)
+FOR UPDATE;
 
 -- name: DeleteRunnerBootstrapConfig :exec
 DELETE FROM runner_bootstrap_configs

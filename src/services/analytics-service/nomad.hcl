@@ -28,7 +28,7 @@ job "analytics-service" {
         ANALYTICS_ALLOWED_EVENT_PREFIXES = "build."
         ANALYTICS_DEFAULT_DATASET_ID = "build"
         ANALYTICS_DEFAULT_ENVIRONMENT = "prod"
-        ANALYTICS_DEFAULT_ORG_ID = "371564185181576922"
+        ANALYTICS_DEFAULT_ORG_ID = "org_B7HWGKW0SH7G4EXW9XT8TCT60C"
         ANALYTICS_DEFAULT_PROJECT_ID = "verself"
         ANALYTICS_GITHUB_ALLOWED_REPOSITORIES = "guardian-intelligence/verself"
         ANALYTICS_GITHUB_OIDC_AUDIENCE = "https://analytics.api.verself.sh"

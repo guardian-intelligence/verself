@@ -31,6 +31,8 @@ const (
 	stalwartManagementRemoteAddr = "127.0.0.1:8090"
 	stalwartAdminPasswordPath    = "/etc/credstore/stalwart/admin-password"
 	testMailboxCredentialDir     = "test-mailboxes"
+	mailZitadelAdminPATPath      = "/etc/zitadel/admin.pat"
+	mailZitadelRemote            = "127.0.0.1:8085"
 )
 
 type mailTestAccountsOptions struct {
@@ -72,6 +74,30 @@ type stalwartStatusError struct {
 	Path   string
 	Status int
 	Body   string
+}
+
+type mailZitadelClient struct {
+	BaseURL    string
+	HostHeader string
+	Token      string
+	Client     *http.Client
+}
+
+type mailZitadelStatusError struct {
+	Method string
+	Path   string
+	Status int
+	Body   string
+}
+
+type mailZitadelUser struct {
+	ID            string
+	Email         string
+	ResourceOwner string
+}
+
+func (e mailZitadelStatusError) Error() string {
+	return fmt.Sprintf("zitadel %s %s status %d: %s", e.Method, e.Path, e.Status, e.Body)
 }
 
 func (e stalwartStatusError) Error() string {
@@ -247,8 +273,8 @@ func newMailTestAccountsOptions() *mailTestAccountsOptions {
 		pgUser:         envOr("PG_USER", oppg.DefaultUser),
 		pgRemotePort:   envIntOr("PG_PORT", oppg.DefaultPort),
 		secretsFile:    os.Getenv("SOPS_SECRETS_FILE"),
-		zitadelPATPath: platformDefaultZitadelAdminPATPath,
-		zitadelAddr:    platformDefaultZitadelRemote,
+		zitadelPATPath: mailZitadelAdminPATPath,
+		zitadelAddr:    mailZitadelRemote,
 	}
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	return opts
@@ -966,20 +992,20 @@ func testMailboxDeliveryPrincipals(emails []string) []string {
 	return principals
 }
 
-func newMailZitadelClient(ctx context.Context, rt *opruntime.Runtime, opts *mailTestAccountsOptions) (platformZitadelClient, func(), error) {
+func newMailZitadelClient(ctx context.Context, rt *opruntime.Runtime, opts *mailTestAccountsOptions) (mailZitadelClient, func(), error) {
 	rawToken, err := opruntime.ReadRemoteFile(ctx, rt.SSH, opts.zitadelPATPath)
 	if err != nil {
-		return platformZitadelClient{}, func() {}, fmt.Errorf("zitadel: read admin PAT: %w", err)
+		return mailZitadelClient{}, func() {}, fmt.Errorf("zitadel: read admin PAT: %w", err)
 	}
 	token := strings.TrimSpace(string(rawToken))
 	if token == "" {
-		return platformZitadelClient{}, func() {}, errors.New("zitadel: admin PAT is empty")
+		return mailZitadelClient{}, func() {}, errors.New("zitadel: admin PAT is empty")
 	}
 	forward, err := rt.SSH.Forward(ctx, "zitadel-http", opts.zitadelAddr)
 	if err != nil {
-		return platformZitadelClient{}, func() {}, fmt.Errorf("zitadel: open HTTP forward: %w", err)
+		return mailZitadelClient{}, func() {}, fmt.Errorf("zitadel: open HTTP forward: %w", err)
 	}
-	client := platformZitadelClient{
+	client := mailZitadelClient{
 		BaseURL:    "http://" + forward.ListenAddr,
 		HostHeader: "verself.sh",
 		Token:      token,
@@ -988,7 +1014,7 @@ func newMailZitadelClient(ctx context.Context, rt *opruntime.Runtime, opts *mail
 	return client, func() { _ = forward.Close() }, nil
 }
 
-func (c platformZitadelClient) DeleteUser(ctx context.Context, userID string) (bool, error) {
+func (c mailZitadelClient) DeleteUser(ctx context.Context, userID string) (bool, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return false, nil
@@ -1003,7 +1029,7 @@ func (c platformZitadelClient) DeleteUser(ctx context.Context, userID string) (b
 	return false, fmt.Errorf("delete Zitadel user %s: %w", userID, err)
 }
 
-func (c platformZitadelClient) DeleteOrganization(ctx context.Context, orgID string) (bool, error) {
+func (c mailZitadelClient) DeleteOrganization(ctx context.Context, orgID string) (bool, error) {
 	orgID = strings.TrimSpace(orgID)
 	if orgID == "" {
 		return false, nil
@@ -1018,9 +1044,91 @@ func (c platformZitadelClient) DeleteOrganization(ctx context.Context, orgID str
 	return false, fmt.Errorf("delete Zitadel organization %s: %w", orgID, err)
 }
 
+func (c mailZitadelClient) FindHumanByEmail(ctx context.Context, email string) (mailZitadelUser, bool, error) {
+	var out struct {
+		Result []struct {
+			UserID  string `json:"userId"`
+			Details struct {
+				ResourceOwner string `json:"resourceOwner"`
+			} `json:"details"`
+			Human *struct {
+				Email struct {
+					Email string `json:"email"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"result"`
+	}
+	body := map[string]any{
+		"query": map[string]any{"limit": 10},
+		"queries": []map[string]any{{
+			"emailQuery": map[string]string{"emailAddress": strings.TrimSpace(email)},
+		}},
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users", body, &out, false); err != nil {
+		return mailZitadelUser{}, false, err
+	}
+	for _, item := range out.Result {
+		if item.Human == nil || !strings.EqualFold(item.Human.Email.Email, email) {
+			continue
+		}
+		return mailZitadelUser{
+			ID:            item.UserID,
+			Email:         item.Human.Email.Email,
+			ResourceOwner: item.Details.ResourceOwner,
+		}, true, nil
+	}
+	return mailZitadelUser{}, false, nil
+}
+
 func isZitadelNotFound(err error) bool {
-	var status platformZitadelStatusError
+	var status mailZitadelStatusError
 	return errors.As(err, &status) && status.Status == http.StatusNotFound
+}
+
+func (c mailZitadelClient) doJSON(ctx context.Context, method, path string, body any, out any, connect bool) error {
+	var reader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, reader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if connect {
+		req.Header.Set("Connect-Protocol-Version", "1")
+	}
+	if c.HostHeader != "" {
+		req.Host = c.HostHeader
+	}
+	client := c.Client
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("zitadel %s %s: %w", method, path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return mailZitadelStatusError{Method: method, Path: path, Status: resp.StatusCode, Body: strings.TrimSpace(string(data))}
+	}
+	if out == nil || len(data) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("zitadel %s %s: decode response: %w", method, path, err)
+	}
+	return nil
 }
 
 func openMailOperatorPG(ctx context.Context, rt *opruntime.Runtime, opts *mailTestAccountsOptions, dbName string) (*pgx.Conn, error) {

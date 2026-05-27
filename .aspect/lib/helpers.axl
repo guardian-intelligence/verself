@@ -311,6 +311,47 @@ def host_ansible_env(ctx, tool_shims = None, include_collections = True, extra_e
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
 
+def host_playbook(ctx, site, playbook, extra_vars = None):
+    rc = inventory_check(ctx, site)
+    if rc != 0:
+        return rc
+    ansible_playbook = host_ansible_playbook(ctx)
+    if ansible_playbook == "":
+        return 1
+    env = host_ansible_env(ctx, tool_shims = [SOPS_SHIM])
+    if env == None:
+        return 1
+    ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
+    playbook_args = [
+        "-i",
+        ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/inventory.ini"),
+        "playbooks/" + playbook,
+        "-e",
+        "verself_site=" + site,
+    ]
+    if extra_vars != None:
+        for key, value in extra_vars.items():
+            playbook_args.extend(["-e", key + "=" + value])
+    return checked_spawn(
+        ctx,
+        ansible_playbook,
+        playbook_args,
+        cwd = ansible_dir,
+        env = env,
+        label = "ansible-playbook " + playbook + " --site " + site,
+    )
+
+def host_service_foundation(ctx, site):
+    registry = bazel_output_file(ctx, SPIRE_IDENTITY_REGISTRY_TARGET)
+    if registry == "":
+        return 1
+    return host_playbook(
+        ctx,
+        site,
+        "service-foundation.yml",
+        extra_vars = {"spire_registrations_file": registry},
+    )
+
 def require_arg(ctx, name, value):
     """Reject empty required string args with the same message shape Make used."""
     if not value or value == "":

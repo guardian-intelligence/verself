@@ -5,7 +5,7 @@
 //
 // Usage:
 //
-//	discovery-canary --duration=180s --rps=10 --slug=platform [--format=json]
+//	discovery-canary --duration=180s --rps=10 --slug=guardian-intelligence [--format=json]
 package main
 
 import (
@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -31,6 +32,8 @@ const (
 	serviceName    = "discovery-canary"
 	serviceVersion = "1.0.0"
 )
+
+var canonicalOrgIDRE = regexp.MustCompile(`^org_[0-9A-HJKMNP-TV-Z]{26}$`)
 
 type result struct {
 	StartedAt        time.Time     `json:"started_at"`
@@ -66,14 +69,18 @@ func run() error {
 	rps := flag.Int("rps", 10, "Target requests per second across all workers.")
 	concurrency := flag.Int("concurrency", 4, "Number of parallel workers.")
 	timeout := flag.Duration("timeout", 5*time.Second, "Per-request timeout.")
-	slugFlag := flag.String("slug", "platform", "Org slug to resolve. 404 still counts as a successful round-trip.")
+	slugFlag := flag.String("slug", "", "Org slug to resolve. 404 still counts as a successful round-trip.")
 	format := flag.String("format", "json", "Output format: json | table.")
 	spiffeSocket := flag.String("spiffe-socket", "unix:///run/spire-agent/sockets/agent.sock", "SPIFFE workload API socket address.")
 	authzProbe := flag.Bool("authz-probe", true, "Also call the generated IAM operation authorizer with a typed policy.")
-	authzOrgID := flag.String("authz-org-id", "1", "Fallback organization ID used for the authorization probe.")
+	authzOrgID := flag.String("authz-org-id", "", "Fallback canonical organization ID used for the authorization probe.")
 	authzSubject := flag.String("authz-subject", "discovery-canary", "Subject ID used for the authorization probe.")
 	authzPermission := flag.String("authz-permission", "iam:organization:read", "Known IAM permission used for the authorization probe.")
 	flag.Parse()
+	fallbackAuthzOrgID := strings.TrimSpace(*authzOrgID)
+	if fallbackAuthzOrgID != "" && !canonicalOrgIDRE.MatchString(fallbackAuthzOrgID) {
+		return fmt.Errorf("authz org id must match %s", canonicalOrgIDRE.String())
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -103,6 +110,9 @@ func run() error {
 	}
 	authorizer := iamclient.NewAuthorizer(iam)
 	slug := strings.TrimSpace(*slugFlag)
+	if slug == "" {
+		return fmt.Errorf("slug is required")
+	}
 
 	startedAt := time.Now()
 	deadline := startedAt.Add(*duration)
@@ -158,7 +168,13 @@ func run() error {
 				}
 				success.Add(1)
 				if *authzProbe {
-					probeOrgID := authorizationProbeOrgID(*authzOrgID, resp)
+					probeOrgID, ok := authorizationProbeOrgID(fallbackAuthzOrgID, resp)
+					if !ok {
+						authzTotal.Add(1)
+						authzErrors.Add(1)
+						firstErr.CompareAndSwap(nil, "authorize: resolved org_id missing")
+						continue
+					}
 					authzCtx, authzCancel := context.WithTimeout(ctx, *timeout)
 					decision, err := authorizer.AuthorizeOperation(authzCtx, &auth.Identity{
 						Subject: *authzSubject,
@@ -249,13 +265,14 @@ loop:
 	return nil
 }
 
-func authorizationProbeOrgID(fallback string, resp *iamclient.ResolveOrganizationResponse) string {
+func authorizationProbeOrgID(fallback string, resp *iamclient.ResolveOrganizationResponse) (string, bool) {
 	if resp != nil && resp.Result != nil {
 		if orgID := strings.TrimSpace(string(resp.Result.Organization.OrgID)); orgID != "" {
-			return orgID
+			return orgID, canonicalOrgIDRE.MatchString(orgID)
 		}
 	}
-	return strings.TrimSpace(fallback)
+	fallback = strings.TrimSpace(fallback)
+	return fallback, fallback != "" && canonicalOrgIDRE.MatchString(fallback)
 }
 
 func printTable(r result) error {

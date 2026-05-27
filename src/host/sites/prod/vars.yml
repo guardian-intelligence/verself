@@ -158,20 +158,8 @@ host_wireguard_tunnels:
         public_key: AoVgh4aWFK5Gi7HBdqIzTea37aa5SaemU4Pyk92Nglc=
     port: 51821
 
-platform_org_id: "371564185181576922"
-platform_organization_name: guardianintelligence.org
-platform_company_slug: guardian-intelligence
-platform_company_display_name: Guardian Intelligence
-platform_owner_alias: shovon
-platform_owner_name: Shovon Hasan
-platform_owner_email: shovon@guardianintelligence.org
-platform_root_owner_email: anveio@verself.sh
-platform_trust_tier: platform
-platform_repo_slug: verself
-platform_repo_display_name: Verself
-platform_repo_description: Verself platform monorepo.
-platform_github_repository_id: 1195495246
-secrets_service_platform_org_id: "{{ platform_org_id }}"
+dogfood_org_id: org_B7HWGKW0SH7G4EXW9XT8TCT60C
+service_discovery_canary_org_slug: guardian-intelligence
 stalwart_operator_forward_to: ""
 
 github_integration_service_github_app_id: 3370540

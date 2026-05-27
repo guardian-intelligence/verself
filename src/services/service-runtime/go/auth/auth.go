@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +23,10 @@ const (
 
 type contextKey struct{}
 
-var identityKey contextKey
+var (
+	identityKey contextKey
+	orgIDRE     = regexp.MustCompile(`^org_[0-9A-HJKMNP-TV-Z]{26}$`)
+)
 
 // Identity is attached to the request context after successful validation.
 type Identity struct {
@@ -93,7 +97,11 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 				return
 			}
 
-			orgID := extractOrgID(rawClaims)
+			orgID, err := extractOrgID(rawClaims)
+			if err != nil {
+				writeProblem(w, r, http.StatusUnauthorized, "auth.unauthenticated", "invalid token claims")
+				return
+			}
 			identity := &Identity{
 				Subject: idToken.Subject,
 				OrgID:   orgID,
@@ -231,17 +239,13 @@ func stringClaim(claims map[string]any, key string) string {
 	return text
 }
 
-func extractOrgID(claims map[string]any) string {
-	if value := stringClaim(claims, "org_id"); value != "" {
-		return value
+func extractOrgID(claims map[string]any) (string, error) {
+	value := strings.TrimSpace(stringClaim(claims, "org_id"))
+	if value == "" {
+		return "", nil
 	}
-	if value := stringClaim(claims, "urn:zitadel:iam:org:id"); value != "" {
-		return value
+	if !orgIDRE.MatchString(value) {
+		return "", errors.New("org_id claim is not a canonical Verself org id")
 	}
-	for _, key := range []string{"urn:zitadel:iam:user:resourceowner:id", "resource_owner"} {
-		if value := stringClaim(claims, key); value != "" {
-			return value
-		}
-	}
-	return ""
+	return value, nil
 }

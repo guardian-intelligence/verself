@@ -124,8 +124,8 @@ uses the Verself auth shell backed by Zitadel. Use the dedicated QA human for
 automation.
 
 **QA account (verified working, 2026-05-16):** `qa-flight@verself.sh`, a
-password-only Zitadel human in the platform org `guardian-intelligence`
-(slug), credential in the agent-browser vault profile `verself-qa`. It is
+password-only Zitadel human associated with the `guardian-intelligence` org
+slug, credential in the agent-browser vault profile `verself-qa`. It is
 authorized by exactly **one** SpiceDB tuple — membership in the org's `admin`
 role — which is the minimum that satisfies iam-service `AccessibleOrganizations`
 (`org` permission `read = owner + admin + member`). Do not clone ceo's project

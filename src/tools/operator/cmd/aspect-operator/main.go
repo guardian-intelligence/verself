@@ -21,10 +21,6 @@
 //	aspect-operator device
 //	    Configure this checkout/device to reach the operator access plane.
 //
-//	aspect-operator platform --action=check|seed
-//	    Operator-side platform organization convergence for the dogfooded
-//	    first-party org, project, Forgejo repository, and source backend.
-//
 //	aspect-operator service-discovery-canary
 //	    Drive billing API traffic through the IAM authorize round-trip while
 //	    iam-service rolls; report any non-2xx-or-4xx outcome as a deploy gap.
@@ -75,8 +71,6 @@ func run(args []string) error {
 		return cmdMail(rest)
 	case "device":
 		return cmdDevice(rest)
-	case "platform":
-		return cmdPlatform(rest)
 	case "promote-org":
 		return cmdPromoteOrg(rest)
 	case "service-discovery-canary":
@@ -102,7 +96,7 @@ Subcommands:
   persona           Persona credential and fixture tooling
   mail              Mail operator helpers
   device            Configure this device for operator access
-  platform          Platform org/project/source convergence
+  promote-org       Promote an existing organization trust tier
   service-discovery-canary  Drive billing -> IAM traffic through the resolver
   release           Release publication helpers
 

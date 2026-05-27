@@ -18,9 +18,9 @@ import (
 )
 
 type InternalConfig struct {
-	Service            *notifications.Service
-	PlatformAlertOrgID string
-	PlatformAlertEmail string
+	Service              *notifications.Service
+	OperationsAlertOrgID string
+	OperationsAlertEmail string
 }
 
 func RegisterInternalRoutes(api huma.API, cfg InternalConfig) {
@@ -107,8 +107,8 @@ func grafanaAlertWebhook(cfg InternalConfig) func(context.Context, *internalcont
 		if !ok {
 			return nil, unauthorized(ctx)
 		}
-		orgID := strings.TrimSpace(cfg.PlatformAlertOrgID)
-		alertEmail := strings.TrimSpace(cfg.PlatformAlertEmail)
+		orgID := strings.TrimSpace(cfg.OperationsAlertOrgID)
+		alertEmail := strings.TrimSpace(cfg.OperationsAlertEmail)
 		if orgID == "" || alertEmail == "" {
 			return nil, problem(ctx, http.StatusInternalServerError, "grafana-alert-recipient-not-configured", "Grafana alert recipient is not configured", nil)
 		}
@@ -126,7 +126,7 @@ func grafanaAlertWebhook(cfg InternalConfig) func(context.Context, *internalcont
 			return nil, notificationError(ctx, err)
 		}
 		result, err := cfg.Service.TriggerWorkflow(ctx, notifications.WorkflowTriggerRequest{
-			WorkflowKey:    "platform.grafana.alert." + status,
+			WorkflowKey:    "operations.grafana.alert." + status,
 			OrgID:          orgID,
 			TriggeredBy:    peerID.String(),
 			IdempotencyKey: grafanaIdempotencyKey(payload),

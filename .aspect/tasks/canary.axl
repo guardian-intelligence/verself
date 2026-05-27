@@ -1,6 +1,6 @@
 """aspect canary — operator deploy-time canaries.
 
-  aspect canary service-discovery [--duration=180s --rps=10 --slug=platform]
+  aspect canary service-discovery [--duration=180s --rps=10 --slug=guardian-intelligence]
   aspect canary post-deploy [--size=medium|large|all]
 
 The canary uploads the discovery-canary binary to the prod host via the
@@ -48,9 +48,9 @@ service_discovery = task(
         "rps": args.int(default = 10, description = "Target requests per second."),
         "concurrency": args.int(default = 4, description = "Number of parallel workers on the host."),
         "timeout": args.string(default = "5s", description = "Per-request timeout on the host."),
-        "slug": args.string(default = "", description = "Org slug to resolve through IAM; defaults to platform_company_slug from site facts."),
+        "slug": args.string(default = "", description = "Org slug to resolve through IAM; defaults to service_discovery_canary_org_slug from site facts."),
         "format": args.string(default = "table", description = "Output format: table | json."),
-        "authz_org_id": args.string(default = "", description = "Provider organization ID used for the authorization probe."),
+        "authz_org_id": args.string(default = "", description = "Canonical organization ID fallback used for the authorization probe."),
     },
 )
 
