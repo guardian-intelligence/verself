@@ -23,8 +23,8 @@ func validateDigestRef(value string) error {
 }
 
 func validateAdmit(req AdmitArtifactRequest, trustedBuilders map[string]struct{}, trustedSigners map[string]struct{}) error {
-	if req.PackageName == "" || req.PackageVersion == "" || req.ChannelName == "" || req.PlatformOS == "" || req.PlatformArch == "" {
-		return fmt.Errorf("%w: package, channel, platform, and version are required", ErrInvalid)
+	if req.PackageName == "" || req.PackageVersion == "" || req.ChannelName == "" || req.PlatformOS == "" || req.PlatformArch == "" || req.Flavor == "" {
+		return fmt.Errorf("%w: package, channel, platform, flavor, and version are required", ErrInvalid)
 	}
 	if req.OriginRegistryURL == "" || req.PublicRegistryURL == "" || req.OCIRepository == "" || req.OCIMediaType == "" {
 		return fmt.Errorf("%w: oci registry, repository, digest, and media type are required", ErrInvalid)
@@ -41,7 +41,7 @@ func validateAdmit(req AdmitArtifactRequest, trustedBuilders map[string]struct{}
 	if _, ok := trustedSigners[req.SignerIdentity]; !ok {
 		return fmt.Errorf("%w: signer_identity %q is not trusted", ErrUntrustedSigner, req.SignerIdentity)
 	}
-	if req.SourceRepository == "" || req.SourceCommit == "" || req.SourceRef == "" || req.BazelTarget == "" || req.PolicyRef == "" {
+	if req.SourceRepository == "" || req.SourceCommit == "" || req.SourceRef == "" || req.PolicyRef == "" {
 		return fmt.Errorf("%w: source and policy fields are required", ErrSourcePolicyFailure)
 	}
 	if req.SubmittedBy == "" {
@@ -91,8 +91,8 @@ func validateEvidence(artifactDigest string, evidence Evidence) error {
 }
 
 func validatePromote(req PromoteTargetRequest) error {
-	if req.PackageName == "" || req.ChannelName == "" || req.PlatformOS == "" || req.PlatformArch == "" {
-		return fmt.Errorf("%w: package, channel, and platform are required", ErrInvalid)
+	if req.PackageName == "" || req.ChannelName == "" || req.PlatformOS == "" || req.PlatformArch == "" || req.Flavor == "" {
+		return fmt.Errorf("%w: package, channel, platform, and flavor are required", ErrInvalid)
 	}
 	if err := validateDigest(req.ArtifactDigest); err != nil {
 		return err

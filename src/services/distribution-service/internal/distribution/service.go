@@ -84,8 +84,8 @@ func (s *Service) PromoteTarget(ctx context.Context, principal Principal, req Pr
 	if artifact.State != StateAvailable {
 		return Target{}, fmt.Errorf("%w: artifact state %s is not promotable", ErrChannelPolicyFailure, artifact.State)
 	}
-	if artifact.PackageName != req.PackageName || artifact.PlatformOS != req.PlatformOS || artifact.PlatformArch != req.PlatformArch {
-		return Target{}, fmt.Errorf("%w: artifact does not match requested package/platform", ErrChannelPolicyFailure)
+	if artifact.PackageName != req.PackageName || artifact.PlatformOS != req.PlatformOS || artifact.PlatformArch != req.PlatformArch || artifact.Flavor != req.Flavor {
+		return Target{}, fmt.Errorf("%w: artifact does not match requested package/platform/flavor", ErrChannelPolicyFailure)
 	}
 	s.emit(ctx, event{EventType: "distribution.target.policy_allowed", Decision: "allowed", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.ArtifactDigest, Actor: principal.Actor})
 	target, err = s.Store.PublishTarget(ctx, req, artifact, requestDigest(req), s.now())
@@ -117,7 +117,7 @@ func (s *Service) ResolveTarget(ctx context.Context, principal Principal, req Re
 }
 
 func (s *Service) CheckUpdate(ctx context.Context, principal Principal, req CheckUpdateRequest) (Target, bool, error) {
-	target, err := s.ResolveTarget(ctx, principal, ResolveTargetRequest{PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch})
+	target, err := s.ResolveTarget(ctx, principal, ResolveTargetRequest{PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, Flavor: req.Flavor})
 	if err != nil {
 		return Target{}, false, err
 	}
@@ -131,11 +131,12 @@ func (s *Service) RecordUpgradeDownloadVerified(ctx context.Context, principal P
 	req.ChannelName = clean(req.ChannelName)
 	req.PlatformOS = clean(req.PlatformOS)
 	req.PlatformArch = clean(req.PlatformArch)
+	req.Flavor = clean(req.Flavor)
 	req.ArtifactDigest = clean(req.ArtifactDigest)
 	req.LayerDigest = clean(req.LayerDigest)
 	req.InstalledVersion = clean(req.InstalledVersion)
-	if req.PackageName == "" || req.ChannelName == "" || req.PlatformOS == "" || req.PlatformArch == "" {
-		return fmt.Errorf("%w: package, channel, and platform are required", ErrInvalid)
+	if req.PackageName == "" || req.ChannelName == "" || req.PlatformOS == "" || req.PlatformArch == "" || req.Flavor == "" {
+		return fmt.Errorf("%w: package, channel, platform, and flavor are required", ErrInvalid)
 	}
 	if err := validateDigest(req.ArtifactDigest); err != nil {
 		return err
@@ -159,11 +160,11 @@ func (s *Service) GetArtifactByRef(ctx context.Context, principal Principal, ref
 	return artifact, nil
 }
 
-func (s *Service) ListTargets(ctx context.Context, principal Principal, packageName, channelName, platformOS, platformArch string, limit int32) ([]Target, error) {
+func (s *Service) ListTargets(ctx context.Context, principal Principal, packageName, channelName, platformOS, platformArch, flavor string, limit int32) ([]Target, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	targets, err := s.Store.ListTargets(ctx, clean(packageName), clean(channelName), clean(platformOS), clean(platformArch), limit)
+	targets, err := s.Store.ListTargets(ctx, clean(packageName), clean(channelName), clean(platformOS), clean(platformArch), clean(flavor), limit)
 	if err == nil {
 		s.emit(ctx, event{EventType: "distribution.channel.targets_listed", Decision: "allowed", PackageName: clean(packageName), ChannelName: clean(channelName), PlatformOS: clean(platformOS), PlatformArch: clean(platformArch), Actor: principal.Actor})
 	}
@@ -229,6 +230,7 @@ func normalizeAdmit(req AdmitArtifactRequest) AdmitArtifactRequest {
 	req.ChannelName = clean(req.ChannelName)
 	req.PlatformOS = clean(req.PlatformOS)
 	req.PlatformArch = clean(req.PlatformArch)
+	req.Flavor = clean(req.Flavor)
 	req.OriginRegistryURL = clean(req.OriginRegistryURL)
 	req.PublicRegistryURL = clean(req.PublicRegistryURL)
 	req.OCIRepository = clean(req.OCIRepository)
@@ -239,7 +241,6 @@ func normalizeAdmit(req AdmitArtifactRequest) AdmitArtifactRequest {
 	req.SourceRepository = clean(req.SourceRepository)
 	req.SourceCommit = clean(req.SourceCommit)
 	req.SourceRef = clean(req.SourceRef)
-	req.BazelTarget = clean(req.BazelTarget)
 	req.PolicyRef = clean(req.PolicyRef)
 	req.SubmittedBy = clean(req.SubmittedBy)
 	req.IdempotencyKey = clean(req.IdempotencyKey)
@@ -259,6 +260,7 @@ func normalizePromote(req PromoteTargetRequest) PromoteTargetRequest {
 	req.ArtifactDigest = clean(req.ArtifactDigest)
 	req.PlatformOS = clean(req.PlatformOS)
 	req.PlatformArch = clean(req.PlatformArch)
+	req.Flavor = clean(req.Flavor)
 	req.PolicyRef = clean(req.PolicyRef)
 	req.PromotedBy = clean(req.PromotedBy)
 	req.Reason = clean(req.Reason)
@@ -271,6 +273,7 @@ func normalizeResolve(req ResolveTargetRequest) ResolveTargetRequest {
 	req.ChannelName = clean(req.ChannelName)
 	req.PlatformOS = clean(req.PlatformOS)
 	req.PlatformArch = clean(req.PlatformArch)
+	req.Flavor = clean(req.Flavor)
 	return req
 }
 

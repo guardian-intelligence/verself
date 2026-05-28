@@ -16,6 +16,7 @@ type DistributionArtifact struct {
 	ChannelName          string
 	PlatformOs           string
 	PlatformArch         string
+	Flavor               string
 	OriginRegistryUrl    string
 	PublicRegistryUrl    string
 	OciRepository        string
@@ -28,7 +29,6 @@ type DistributionArtifact struct {
 	SourceRepository     string
 	SourceCommit         string
 	SourceRef            string
-	BazelTarget          string
 	PolicyRef            string
 	State                string
 	VerificationDecision string
@@ -61,6 +61,7 @@ type DistributionChannelTarget struct {
 	ChannelName        string
 	PlatformOs         string
 	PlatformArch       string
+	Flavor             string
 	ArtifactID         uuid.UUID
 	ArtifactDigest     string
 	PackageVersion     string

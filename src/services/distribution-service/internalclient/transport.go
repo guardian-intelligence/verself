@@ -27,6 +27,7 @@ type AdmitArtifactRequest struct {
 	ChannelName       string     `json:"channel_name"`
 	PlatformOS        string     `json:"platform_os"`
 	PlatformArch      string     `json:"platform_arch"`
+	Flavor            string     `json:"flavor"`
 	OriginRegistryURL string     `json:"origin_registry_url"`
 	PublicRegistryURL string     `json:"public_registry_url"`
 	OCIRepository     string     `json:"oci_repository"`
@@ -38,7 +39,6 @@ type AdmitArtifactRequest struct {
 	SourceRepository  string     `json:"source_repository"`
 	SourceCommit      string     `json:"source_commit"`
 	SourceRef         string     `json:"source_ref"`
-	BazelTarget       string     `json:"bazel_target"`
 	PolicyRef         string     `json:"policy_ref"`
 	Evidence          []Evidence `json:"evidence"`
 	SubmittedBy       string     `json:"submitted_by"`
@@ -50,6 +50,7 @@ type PromoteTargetRequest struct {
 	ArtifactDigest string `json:"artifact_digest"`
 	PlatformOS     string `json:"platform_os"`
 	PlatformArch   string `json:"platform_arch"`
+	Flavor         string `json:"flavor"`
 	PolicyRef      string `json:"policy_ref"`
 	PromotedBy     string `json:"promoted_by"`
 	Reason         string `json:"reason"`
@@ -62,6 +63,7 @@ type ArtifactRecord struct {
 	ChannelName        string `json:"channel_name"`
 	PlatformOS         string `json:"platform_os"`
 	PlatformArch       string `json:"platform_arch"`
+	Flavor             string `json:"flavor"`
 	OCIRepository      string `json:"oci_repository"`
 	OCIDigest          string `json:"oci_digest"`
 	OCIMediaType       string `json:"oci_media_type"`
@@ -76,6 +78,7 @@ type TargetRecord struct {
 	ChannelName        string `json:"channel_name"`
 	PlatformOS         string `json:"platform_os"`
 	PlatformArch       string `json:"platform_arch"`
+	Flavor             string `json:"flavor"`
 	ArtifactDigest     string `json:"artifact_digest"`
 	PackageVersion     string `json:"package_version"`
 	PublicOCIReference string `json:"public_oci_reference"`

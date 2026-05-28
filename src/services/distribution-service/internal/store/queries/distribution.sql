@@ -33,6 +33,7 @@ INSERT INTO distribution_artifacts (
     channel_name,
     platform_os,
     platform_arch,
+    flavor,
     origin_registry_url,
     public_registry_url,
     oci_repository,
@@ -45,7 +46,6 @@ INSERT INTO distribution_artifacts (
     source_repository,
     source_commit,
     source_ref,
-    bazel_target,
     policy_ref,
     state,
     verification_decision,
@@ -64,6 +64,7 @@ INSERT INTO distribution_artifacts (
     @channel_name,
     @platform_os,
     @platform_arch,
+    @flavor,
     @origin_registry_url,
     @public_registry_url,
     @oci_repository,
@@ -76,7 +77,6 @@ INSERT INTO distribution_artifacts (
     @source_repository,
     @source_commit,
     @source_ref,
-    @bazel_target,
     @policy_ref,
     @state,
     @verification_decision,
@@ -158,6 +158,7 @@ WHERE package_name = @package_name
   AND channel_name = @channel_name
   AND platform_os = @platform_os
   AND platform_arch = @platform_arch
+  AND flavor = @flavor
   AND state IN ('published', 'rollback_target_published')
 ORDER BY published_at DESC, target_id DESC
 LIMIT 1;
@@ -173,6 +174,7 @@ WHERE package_name = @package_name
   AND channel_name = @channel_name
   AND platform_os = @platform_os
   AND platform_arch = @platform_arch
+  AND flavor = @flavor
   AND state IN ('published', 'rollback_target_published')
   AND artifact_digest <> @superseded_by_digest;
 
@@ -183,6 +185,7 @@ INSERT INTO distribution_channel_targets (
     channel_name,
     platform_os,
     platform_arch,
+    flavor,
     artifact_id,
     artifact_digest,
     package_version,
@@ -201,6 +204,7 @@ INSERT INTO distribution_channel_targets (
     @channel_name,
     @platform_os,
     @platform_arch,
+    @flavor,
     @artifact_id,
     @artifact_digest,
     @package_version,
@@ -214,7 +218,7 @@ INSERT INTO distribution_channel_targets (
     @created_at,
     @updated_at
 )
-ON CONFLICT (package_name, channel_name, platform_os, platform_arch, artifact_digest) DO UPDATE
+ON CONFLICT (package_name, channel_name, platform_os, platform_arch, flavor, artifact_digest) DO UPDATE
 SET
     state = EXCLUDED.state,
     public_oci_reference = EXCLUDED.public_oci_reference,
@@ -235,5 +239,6 @@ WHERE package_name = @package_name
   AND channel_name = @channel_name
   AND (@platform_os::text = '' OR platform_os = @platform_os)
   AND (@platform_arch::text = '' OR platform_arch = @platform_arch)
+  AND (@flavor::text = '' OR flavor = @flavor)
 ORDER BY published_at DESC, target_id DESC
 LIMIT @limit_count;

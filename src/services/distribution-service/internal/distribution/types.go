@@ -58,7 +58,6 @@ type Verification struct {
 	SourceRepository string
 	SourceCommit     string
 	SourceRef        string
-	BazelTarget      string
 	Evidence         []Evidence
 	CheckedAt        time.Time
 }
@@ -77,6 +76,7 @@ type Artifact struct {
 	ChannelName        string
 	PlatformOS         string
 	PlatformArch       string
+	Flavor             string
 	OriginRegistryURL  string
 	PublicRegistryURL  string
 	OCIRepository      string
@@ -89,7 +89,6 @@ type Artifact struct {
 	SourceRepository   string
 	SourceCommit       string
 	SourceRef          string
-	BazelTarget        string
 	PolicyRef          string
 	State              string
 	Verification       Verification
@@ -110,6 +109,7 @@ type Target struct {
 	ChannelName        string
 	PlatformOS         string
 	PlatformArch       string
+	Flavor             string
 	ArtifactID         string
 	ArtifactDigest     string
 	PackageVersion     string
@@ -132,6 +132,7 @@ type AdmitArtifactRequest struct {
 	ChannelName       string
 	PlatformOS        string
 	PlatformArch      string
+	Flavor            string
 	OriginRegistryURL string
 	PublicRegistryURL string
 	OCIRepository     string
@@ -143,7 +144,6 @@ type AdmitArtifactRequest struct {
 	SourceRepository  string
 	SourceCommit      string
 	SourceRef         string
-	BazelTarget       string
 	PolicyRef         string
 	Evidence          []Evidence
 	SubmittedBy       string
@@ -156,6 +156,7 @@ type PromoteTargetRequest struct {
 	ArtifactDigest string
 	PlatformOS     string
 	PlatformArch   string
+	Flavor         string
 	PolicyRef      string
 	PromotedBy     string
 	Reason         string
@@ -181,6 +182,7 @@ type ResolveTargetRequest struct {
 	ChannelName  string
 	PlatformOS   string
 	PlatformArch string
+	Flavor       string
 }
 
 type CheckUpdateRequest struct {
@@ -188,6 +190,7 @@ type CheckUpdateRequest struct {
 	ChannelName      string
 	PlatformOS       string
 	PlatformArch     string
+	Flavor           string
 	InstalledDigest  string
 	InstalledVersion string
 }
@@ -197,6 +200,7 @@ type UpgradeVerificationRequest struct {
 	ChannelName      string
 	PlatformOS       string
 	PlatformArch     string
+	Flavor           string
 	ArtifactDigest   string
 	LayerDigest      string
 	InstalledVersion string

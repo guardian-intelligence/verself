@@ -63,7 +63,7 @@ Admission requires:
 - package, version, channel, platform, OCI repository, digest, media type, and
   size;
 - trusted builder id and signer identity;
-- source repository, source commit, source ref, Bazel target, and policy ref;
+- source repository, source commit, source ref, flavor, and policy ref;
 - cosign signature evidence;
 - SLSA provenance with predicate type `https://slsa.dev/provenance/v1`;
 - SBOM evidence;

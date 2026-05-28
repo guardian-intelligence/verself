@@ -1,9 +1,9 @@
 """aspect release — release publication checks and helpers."""
 
-load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_output_file", "bazel_run", "resolve_sha", "ws_path")
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_output_file", "bazel_run", "ws_path")
 
-DISTRIBUTION_RELEASE_TARGET = "//src/services/distribution-service/cmd/distribution-release:distribution-release"
-DISTRIBUTION_RELEASE_TOOLS_TARGET = "//src/services/distribution-service:release_tools_artifact"
+MKSK_RELEASE_TARGET = "//src/make-skill/release:mksk-release"
+MKSK_RELEASE_TOOLS_TARGET = "//src/make-skill/release:release_tools_artifact"
 
 def _workspace_or_absolute(ctx, path):
     if path.startswith("/"):
@@ -28,33 +28,11 @@ def _npm_probe_impl(ctx):
     return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator release npm-probe")
 
 def _mksk_impl(ctx):
-    if not ctx.args.version_pr and not ctx.args.local:
-        source_commit = resolve_sha(ctx, ctx.args.source_ref)
-        if source_commit == "":
-            return 1
-        cli_args = [
-            "release",
-            "mksk",
-            "--site",
-            ctx.args.site,
-            "--repo-root",
-            ws_path(ctx),
-            "--channel",
-            ctx.args.channel,
-            "--source-ref",
-            ctx.args.source_ref,
-            "--source-commit",
-            source_commit,
-        ]
-        if ctx.args.version != "":
-            cli_args.extend(["--version", ctx.args.version])
-        return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator release mksk")
-
-    tools_tar = bazel_output_file(ctx, DISTRIBUTION_RELEASE_TOOLS_TARGET)
+    tools_tar = bazel_output_file(ctx, MKSK_RELEASE_TOOLS_TARGET)
     if tools_tar == "":
         return 1
     cli_args = [
-        "mksk",
+        "build",
         "--repo-root",
         ws_path(ctx),
         "--tools-tar",
@@ -63,18 +41,20 @@ def _mksk_impl(ctx):
         _workspace_or_absolute(ctx, ctx.args.out_dir),
         "--source-ref",
         ctx.args.source_ref,
+        "--channel",
+        ctx.args.channel,
+        "--version",
+        ctx.args.version,
         "--builder-id",
         ctx.args.builder_id,
         "--platform",
         ctx.args.platform,
+        "--flavor",
+        ctx.args.flavor,
     ]
-    if ctx.args.version_pr:
-        cli_args.append("--version-pr")
-    if ctx.args.channel != "":
-        cli_args.extend(["--channel", ctx.args.channel])
-    if ctx.args.version != "":
-        cli_args.extend(["--version", ctx.args.version])
-    return bazel_run(ctx, DISTRIBUTION_RELEASE_TARGET, cli_args, label = "distribution-release mksk")
+    if ctx.args.allow_dirty:
+        cli_args.append("--allow-dirty")
+    return bazel_run(ctx, MKSK_RELEASE_TARGET, cli_args, label = "mksk-release build")
 
 npm_probe = task(
     implementation = _npm_probe_impl,
@@ -94,16 +74,15 @@ mksk = task(
     implementation = _mksk_impl,
     name = "mksk",
     group = ["release"],
-    summary = "Dispatch or locally inspect a make-skill release.",
+    summary = "Build a package-owned make-skill release bundle.",
     args = {
-        "version_pr": args.boolean(default = False, description = "Generate an inspectable release-plz version PR patch."),
-        "local": args.boolean(default = False, description = "Build locally and emit inspection artifacts under --out-dir instead of dispatching production release workflow."),
         "channel": args.string(default = "", description = "Release channel: nightly, rc, or stable."),
-        "version": args.string(default = "", description = "Explicit version. Required for rc/stable; optional for nightly."),
+        "version": args.string(default = "", description = "Release version. Required for build bundles."),
         "source_ref": args.string(default = "HEAD", description = "Git ref recorded as the source revision."),
-        "site": args.string(default = "prod", description = "Deployment site for production release dispatch."),
         "out_dir": args.string(default = "artifacts/releases", description = "Directory for inspectable release outputs."),
-        "builder_id": args.string(default = "spiffe://prod.verself.sh/svc/distribution-service", description = "SLSA builder id recorded in local provenance."),
+        "builder_id": args.string(default = "spiffe://prod.verself.sh/svc/release-builder", description = "SLSA builder id recorded in local provenance."),
         "platform": args.string(default = "linux/amd64", description = "Release platform recorded in provenance."),
+        "flavor": args.string(default = "default", description = "Opaque release flavor recorded in provenance."),
+        "allow_dirty": args.boolean(default = False, description = "Allow building from a dirty local workspace for inspection."),
     },
 )

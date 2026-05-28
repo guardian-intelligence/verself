@@ -30,7 +30,7 @@ job "distribution-service" {
         command = "local/bin/distribution-service"
       }
       env {
-        DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/release-builder,spiffe://prod.verself.sh/svc/distribution-service"
+        DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/release-builder"
         DISTRIBUTION_TRUSTED_SIGNERS = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
@@ -68,7 +68,7 @@ job "distribution-service" {
         command = "local/bin/distribution-service"
       }
       env {
-        DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/release-builder,spiffe://prod.verself.sh/svc/distribution-service"
+        DISTRIBUTION_TRUSTED_BUILDERS = "spiffe://prod.verself.sh/svc/release-builder"
         DISTRIBUTION_TRUSTED_SIGNERS = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
@@ -133,83 +133,6 @@ job "distribution-service" {
       canary = 1
       auto_revert = true
       auto_promote = true
-    }
-  }
-  group "distribution-release-worker" {
-    count = 1
-    task "distribution-release-dirs" {
-      driver = "raw_exec"
-      user = "root"
-      lifecycle {
-        hook = "prestart"
-        sidecar = false
-      }
-      config {
-        command = "/bin/sh"
-        args = ["-ec", "install -d -o root -g root -m 0755 /artifacts\ninstall -d -o distribution_service -g distribution_service -m 0750 /artifacts/releases /artifacts/releases/work /artifacts/releases/mksk\n"]
-      }
-      resources {
-        cpu = 50
-        memory = 64
-      }
-    }
-    task "distribution-release-worker" {
-      driver = "raw_exec"
-      user = "distribution_service"
-      kill_signal = "SIGTERM"
-      kill_timeout = "30s"
-      artifact {
-        source = "verself-artifact://distribution-release-worker"
-        destination = "local"
-        chown = true
-      }
-      config {
-        command = "local/bin/distribution-release-worker"
-      }
-      env {
-        DISTRIBUTION_RELEASE_ARTIFACT_ROOT = "/artifacts/releases"
-        DISTRIBUTION_RELEASE_BINARY = "local/bin/distribution-release"
-        DISTRIBUTION_RELEASE_BUILDER_ID = "spiffe://prod.verself.sh/svc/distribution-service"
-        DISTRIBUTION_RELEASE_GIT_BINARY = "git"
-        DISTRIBUTION_RELEASE_SOURCE_REPOSITORY = "https://github.com/guardian-intelligence/verself.git"
-        DISTRIBUTION_RELEASE_TEMPORAL_NAMESPACE = "distribution-service"
-        DISTRIBUTION_RELEASE_TEMPORAL_TASK_QUEUE = "distribution-service.release-v1"
-        DISTRIBUTION_RELEASE_TOOLS_TAR = "local/share/distribution-release-tools.tar"
-        DISTRIBUTION_RELEASE_WORK_ROOT = "/artifacts/releases/work"
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "distribution-release-worker"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_SUPERVISOR = "nomad"
-      }
-      resources {
-        cpu = 1000
-        memory = 2048
-      }
-      restart {
-        attempts = 3
-        delay = "15s"
-        interval = "300s"
-        mode = "delay"
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/upstreams.env"
-        data = <<-EOT
-VERSELF_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService "temporal-frontend-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-EOT
-        env = true
-      }
-    }
-    update {
-      max_parallel = 1
-      health_check = "task_states"
-      min_healthy_time = "1s"
-      healthy_deadline = "60s"
-      progress_deadline = "120s"
-      canary = 0
-      auto_revert = true
-      auto_promote = false
     }
   }
 }

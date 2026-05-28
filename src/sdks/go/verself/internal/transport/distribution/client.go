@@ -32,6 +32,7 @@ type CheckUpdateRequest struct {
 	ChannelName      string `json:"channel_name"`
 	PlatformOS       string `json:"platform_os"`
 	PlatformArch     string `json:"platform_arch"`
+	Flavor           string `json:"flavor"`
 	InstalledDigest  string `json:"installed_digest,omitempty"`
 	InstalledVersion string `json:"installed_version,omitempty"`
 }
@@ -41,6 +42,7 @@ type ResolveTargetRequest struct {
 	ChannelName  string
 	PlatformOS   string
 	PlatformArch string
+	Flavor       string
 }
 
 type GetArtifactRequest struct {
@@ -52,6 +54,7 @@ type ListTargetsRequest struct {
 	ChannelName  string
 	PlatformOS   string
 	PlatformArch string
+	Flavor       string
 	PageSize     int32
 	PageToken    string
 }
@@ -73,7 +76,6 @@ type VerificationRecord struct {
 	SourceRepository string           `json:"source_repository"`
 	SourceCommit     string           `json:"source_commit"`
 	SourceRef        string           `json:"source_ref"`
-	BazelTarget      string           `json:"bazel_target"`
 	Evidence         []EvidenceRecord `json:"evidence"`
 	CheckedAt        string           `json:"checked_at"`
 }
@@ -93,6 +95,7 @@ type ArtifactRecord struct {
 	PackageVersion     string             `json:"package_version"`
 	PlatformOS         string             `json:"platform_os"`
 	PlatformArch       string             `json:"platform_arch"`
+	Flavor             string             `json:"flavor"`
 	OCIRepository      string             `json:"oci_repository"`
 	PublicOCIReference string             `json:"public_oci_reference"`
 	OCIMediaType       string             `json:"oci_media_type"`
@@ -113,6 +116,7 @@ type TargetRecord struct {
 	ChannelName        string  `json:"channel_name"`
 	PlatformOS         string  `json:"platform_os"`
 	PlatformArch       string  `json:"platform_arch"`
+	Flavor             string  `json:"flavor"`
 	ArtifactDigest     string  `json:"artifact_digest"`
 	ArtifactDigestRef  string  `json:"artifact_digest_ref"`
 	PackageVersion     string  `json:"package_version"`
@@ -243,6 +247,9 @@ func (c *Client) ResolveTarget(ctx context.Context, request ResolveTargetRequest
 	if strings.TrimSpace(request.PlatformArch) != "" {
 		query.Set("platform_arch", strings.TrimSpace(request.PlatformArch))
 	}
+	if strings.TrimSpace(request.Flavor) != "" {
+		query.Set("flavor", strings.TrimSpace(request.Flavor))
+	}
 	req.URL.RawQuery = query.Encode()
 	if err := c.edit(ctx, req, reqEditors...); err != nil {
 		return nil, err
@@ -282,6 +289,9 @@ func (c *Client) ListTargets(ctx context.Context, request ListTargetsRequest, re
 	}
 	if strings.TrimSpace(request.PlatformArch) != "" {
 		query.Set("platform_arch", strings.TrimSpace(request.PlatformArch))
+	}
+	if strings.TrimSpace(request.Flavor) != "" {
+		query.Set("flavor", strings.TrimSpace(request.Flavor))
 	}
 	if request.PageSize > 0 {
 		query.Set("page_size", fmt.Sprintf("%d", request.PageSize))

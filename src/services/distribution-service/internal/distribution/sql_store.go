@@ -53,6 +53,7 @@ func (s SQLStore) AdmitArtifact(ctx context.Context, req AdmitArtifactRequest, p
 		ChannelName:          req.ChannelName,
 		PlatformOs:           req.PlatformOS,
 		PlatformArch:         req.PlatformArch,
+		Flavor:               req.Flavor,
 		OriginRegistryUrl:    req.OriginRegistryURL,
 		PublicRegistryUrl:    req.PublicRegistryURL,
 		OciRepository:        req.OCIRepository,
@@ -65,7 +66,6 @@ func (s SQLStore) AdmitArtifact(ctx context.Context, req AdmitArtifactRequest, p
 		SourceRepository:     req.SourceRepository,
 		SourceCommit:         req.SourceCommit,
 		SourceRef:            req.SourceRef,
-		BazelTarget:          req.BazelTarget,
 		PolicyRef:            req.PolicyRef,
 		State:                StateAvailable,
 		VerificationDecision: DecisionAllowed,
@@ -135,9 +135,9 @@ func (s SQLStore) ListArtifactsByRepository(ctx context.Context, repository stri
 	}
 	rows, err := s.PG.Query(ctx, `
 SELECT artifact_id, package_name, package_version, channel_name, platform_os, platform_arch,
-       origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type,
+       flavor, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type,
        oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository,
-       source_commit, source_ref, bazel_target, policy_ref, state, verification_decision,
+       source_commit, source_ref, policy_ref, state, verification_decision,
        verification_reason, retention_class, replication_state, submitted_by, admitted_at,
        available_at, quarantined_at, quarantine_reason, created_at, updated_at
 FROM distribution_artifacts
@@ -158,6 +158,7 @@ LIMIT 100`, clean(repository), StateAvailable)
 			&row.ChannelName,
 			&row.PlatformOs,
 			&row.PlatformArch,
+			&row.Flavor,
 			&row.OriginRegistryUrl,
 			&row.PublicRegistryUrl,
 			&row.OciRepository,
@@ -170,7 +171,6 @@ LIMIT 100`, clean(repository), StateAvailable)
 			&row.SourceRepository,
 			&row.SourceCommit,
 			&row.SourceRef,
-			&row.BazelTarget,
 			&row.PolicyRef,
 			&row.State,
 			&row.VerificationDecision,
@@ -270,6 +270,7 @@ func (s SQLStore) PublishTarget(ctx context.Context, req PromoteTargetRequest, a
 				ChannelName:  req.ChannelName,
 				PlatformOS:   req.PlatformOS,
 				PlatformArch: req.PlatformArch,
+				Flavor:       req.Flavor,
 			})
 		}
 		return Target{}, err
@@ -279,6 +280,7 @@ func (s SQLStore) PublishTarget(ctx context.Context, req PromoteTargetRequest, a
 		ChannelName:        req.ChannelName,
 		PlatformOs:         req.PlatformOS,
 		PlatformArch:       req.PlatformArch,
+		Flavor:             req.Flavor,
 		SupersededByDigest: req.ArtifactDigest,
 		SupersededAt:       pgTime(now),
 		UpdatedAt:          pgTime(now),
@@ -291,6 +293,7 @@ func (s SQLStore) PublishTarget(ctx context.Context, req PromoteTargetRequest, a
 		ChannelName:        req.ChannelName,
 		PlatformOs:         req.PlatformOS,
 		PlatformArch:       req.PlatformArch,
+		Flavor:             req.Flavor,
 		ArtifactID:         uuid.MustParse(artifact.ArtifactID),
 		ArtifactDigest:     artifact.OCIDigest,
 		PackageVersion:     artifact.PackageVersion,
@@ -323,6 +326,7 @@ func (s SQLStore) GetCurrentTarget(ctx context.Context, req ResolveTargetRequest
 		ChannelName:  req.ChannelName,
 		PlatformOs:   req.PlatformOS,
 		PlatformArch: req.PlatformArch,
+		Flavor:       req.Flavor,
 	})
 	if err != nil {
 		return Target{}, storeError(err)
@@ -330,7 +334,7 @@ func (s SQLStore) GetCurrentTarget(ctx context.Context, req ResolveTargetRequest
 	return targetFromStore(row), nil
 }
 
-func (s SQLStore) ListTargets(ctx context.Context, packageName, channelName, platformOS, platformArch string, limit int32) ([]Target, error) {
+func (s SQLStore) ListTargets(ctx context.Context, packageName, channelName, platformOS, platformArch, flavor string, limit int32) ([]Target, error) {
 	q, err := s.queries()
 	if err != nil {
 		return nil, err
@@ -340,6 +344,7 @@ func (s SQLStore) ListTargets(ctx context.Context, packageName, channelName, pla
 		ChannelName:  channelName,
 		PlatformOs:   platformOS,
 		PlatformArch: platformArch,
+		Flavor:       flavor,
 		LimitCount:   limit,
 	})
 	if err != nil {
@@ -453,6 +458,7 @@ func artifactFromStore(row distributionstore.DistributionArtifact, evidence []Ev
 		ChannelName:        row.ChannelName,
 		PlatformOS:         row.PlatformOs,
 		PlatformArch:       row.PlatformArch,
+		Flavor:             row.Flavor,
 		OriginRegistryURL:  row.OriginRegistryUrl,
 		PublicRegistryURL:  row.PublicRegistryUrl,
 		OCIRepository:      row.OciRepository,
@@ -465,7 +471,6 @@ func artifactFromStore(row distributionstore.DistributionArtifact, evidence []Ev
 		SourceRepository:   row.SourceRepository,
 		SourceCommit:       row.SourceCommit,
 		SourceRef:          row.SourceRef,
-		BazelTarget:        row.BazelTarget,
 		PolicyRef:          row.PolicyRef,
 		State:              row.State,
 		Verification: Verification{
@@ -476,7 +481,6 @@ func artifactFromStore(row distributionstore.DistributionArtifact, evidence []Ev
 			SourceRepository: row.SourceRepository,
 			SourceCommit:     row.SourceCommit,
 			SourceRef:        row.SourceRef,
-			BazelTarget:      row.BazelTarget,
 			Evidence:         evidence,
 			CheckedAt:        checkedAt,
 		},
@@ -504,6 +508,7 @@ func targetFromStore(row distributionstore.DistributionChannelTarget) Target {
 		ChannelName:        row.ChannelName,
 		PlatformOS:         row.PlatformOs,
 		PlatformArch:       row.PlatformArch,
+		Flavor:             row.Flavor,
 		ArtifactID:         row.ArtifactID.String(),
 		ArtifactDigest:     row.ArtifactDigest,
 		PackageVersion:     row.PackageVersion,

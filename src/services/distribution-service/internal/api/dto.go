@@ -11,6 +11,7 @@ type checkUpdateBody struct {
 	ChannelName      string `json:"channel_name"`
 	PlatformOS       string `json:"platform_os"`
 	PlatformArch     string `json:"platform_arch"`
+	Flavor           string `json:"flavor"`
 	InstalledDigest  string `json:"installed_digest,omitempty"`
 	InstalledVersion string `json:"installed_version,omitempty"`
 }
@@ -20,6 +21,7 @@ type upgradeVerificationBody struct {
 	ChannelName      string `json:"channel_name"`
 	PlatformOS       string `json:"platform_os"`
 	PlatformArch     string `json:"platform_arch"`
+	Flavor           string `json:"flavor"`
 	ArtifactDigest   string `json:"artifact_digest"`
 	LayerDigest      string `json:"layer_digest"`
 	InstalledVersion string `json:"installed_version,omitempty"`
@@ -31,6 +33,7 @@ type admitArtifactBody struct {
 	ChannelName       string           `json:"channel_name"`
 	PlatformOS        string           `json:"platform_os"`
 	PlatformArch      string           `json:"platform_arch"`
+	Flavor            string           `json:"flavor"`
 	OriginRegistryURL string           `json:"origin_registry_url"`
 	PublicRegistryURL string           `json:"public_registry_url"`
 	OCIRepository     string           `json:"oci_repository"`
@@ -42,7 +45,6 @@ type admitArtifactBody struct {
 	SourceRepository  string           `json:"source_repository"`
 	SourceCommit      string           `json:"source_commit"`
 	SourceRef         string           `json:"source_ref"`
-	BazelTarget       string           `json:"bazel_target"`
 	PolicyRef         string           `json:"policy_ref"`
 	Evidence          []evidenceRecord `json:"evidence"`
 	SubmittedBy       string           `json:"submitted_by"`
@@ -52,6 +54,7 @@ type promoteTargetBody struct {
 	ArtifactDigest string `json:"artifact_digest"`
 	PlatformOS     string `json:"platform_os"`
 	PlatformArch   string `json:"platform_arch"`
+	Flavor         string `json:"flavor"`
 	PolicyRef      string `json:"policy_ref"`
 	PromotedBy     string `json:"promoted_by"`
 	Reason         string `json:"reason"`
@@ -78,7 +81,6 @@ type verificationRecord struct {
 	SourceRepository string           `json:"source_repository"`
 	SourceCommit     string           `json:"source_commit"`
 	SourceRef        string           `json:"source_ref"`
-	BazelTarget      string           `json:"bazel_target"`
 	Evidence         []evidenceRecord `json:"evidence"`
 	CheckedAt        string           `json:"checked_at"`
 }
@@ -98,6 +100,7 @@ type artifactRecord struct {
 	PackageVersion     string             `json:"package_version"`
 	PlatformOS         string             `json:"platform_os"`
 	PlatformArch       string             `json:"platform_arch"`
+	Flavor             string             `json:"flavor"`
 	OCIRepository      string             `json:"oci_repository"`
 	PublicOCIReference string             `json:"public_oci_reference"`
 	OCIMediaType       string             `json:"oci_media_type"`
@@ -118,6 +121,7 @@ type targetRecord struct {
 	ChannelName        string  `json:"channel_name"`
 	PlatformOS         string  `json:"platform_os"`
 	PlatformArch       string  `json:"platform_arch"`
+	Flavor             string  `json:"flavor"`
 	ArtifactDigest     string  `json:"artifact_digest"`
 	ArtifactDigestRef  string  `json:"artifact_digest_ref"`
 	PackageVersion     string  `json:"package_version"`
@@ -162,6 +166,7 @@ func artifactDTO(installationID string, artifact distribution.Artifact) artifact
 		PackageVersion:     artifact.PackageVersion,
 		PlatformOS:         artifact.PlatformOS,
 		PlatformArch:       artifact.PlatformArch,
+		Flavor:             artifact.Flavor,
 		OCIRepository:      artifact.OCIRepository,
 		PublicOCIReference: artifact.PublicOCIReference,
 		OCIMediaType:       artifact.OCIMediaType,
@@ -176,7 +181,6 @@ func artifactDTO(installationID string, artifact distribution.Artifact) artifact
 			SourceRepository: artifact.Verification.SourceRepository,
 			SourceCommit:     artifact.Verification.SourceCommit,
 			SourceRef:        artifact.Verification.SourceRef,
-			BazelTarget:      artifact.Verification.BazelTarget,
 			Evidence:         evidence,
 			CheckedAt:        formatTime(artifact.Verification.CheckedAt),
 		},
@@ -205,6 +209,7 @@ func targetDTO(installationID string, target distribution.Target) targetRecord {
 		ChannelName:        target.ChannelName,
 		PlatformOS:         target.PlatformOS,
 		PlatformArch:       target.PlatformArch,
+		Flavor:             target.Flavor,
 		ArtifactDigest:     target.ArtifactDigest,
 		ArtifactDigestRef:  digestRef(target.ArtifactDigest),
 		PackageVersion:     target.PackageVersion,
