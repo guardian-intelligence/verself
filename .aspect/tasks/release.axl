@@ -31,8 +31,9 @@ def _mksk_impl(ctx):
     tools_tar = bazel_output_file(ctx, MKSK_RELEASE_TOOLS_TARGET)
     if tools_tar == "":
         return 1
+    subcommand = "publish" if ctx.args.publish else "build"
     cli_args = [
-        "build",
+        subcommand,
         "--repo-root",
         ws_path(ctx),
         "--tools-tar",
@@ -41,10 +42,6 @@ def _mksk_impl(ctx):
         _workspace_or_absolute(ctx, ctx.args.out_dir),
         "--source-ref",
         ctx.args.source_ref,
-        "--channel",
-        ctx.args.channel,
-        "--version",
-        ctx.args.version,
         "--builder-id",
         ctx.args.builder_id,
         "--platform",
@@ -52,9 +49,23 @@ def _mksk_impl(ctx):
         "--flavor",
         ctx.args.flavor,
     ]
+    if ctx.args.nightly:
+        cli_args.append("--nightly")
+    if ctx.args.rc:
+        cli_args.append("--rc")
+    if ctx.args.stable:
+        cli_args.append("--stable")
+    if ctx.args.channel != "":
+        cli_args.extend(["--channel", ctx.args.channel])
+    if ctx.args.version != "":
+        cli_args.extend(["--version", ctx.args.version])
+    if ctx.args.source_commit != "":
+        cli_args.extend(["--source-commit", ctx.args.source_commit])
+    if ctx.args.from_rc != "":
+        cli_args.extend(["--from-rc", ctx.args.from_rc])
     if ctx.args.allow_dirty:
         cli_args.append("--allow-dirty")
-    return bazel_run(ctx, MKSK_RELEASE_TARGET, cli_args, label = "mksk-release build")
+    return bazel_run(ctx, MKSK_RELEASE_TARGET, cli_args, label = "mksk-release " + subcommand)
 
 npm_probe = task(
     implementation = _npm_probe_impl,
@@ -76,9 +87,15 @@ mksk = task(
     group = ["release"],
     summary = "Build a package-owned make-skill release bundle.",
     args = {
-        "channel": args.string(default = "", description = "Release channel: nightly, rc, or stable."),
-        "version": args.string(default = "", description = "Release version. Required for build bundles."),
+        "nightly": args.boolean(default = False, description = "Derive the next nightly version from source_ref."),
+        "rc": args.boolean(default = False, description = "Derive the next RC version from source_ref."),
+        "stable": args.boolean(default = False, description = "Derive a stable version from source_ref or from_rc."),
+        "publish": args.boolean(default = False, description = "Run the publish subcommand instead of the local build subcommand."),
+        "channel": args.string(default = "", description = "Exact release channel: nightly, rc, or stable."),
+        "version": args.string(default = "", description = "Exact release version."),
         "source_ref": args.string(default = "HEAD", description = "Git ref recorded as the source revision."),
+        "source_commit": args.string(default = "", description = "Resolved source commit for exact release subjects."),
+        "from_rc": args.string(default = "", description = "RC tag to rebuild as a stable release, e.g. mksk-v0.2.0-rc.2."),
         "out_dir": args.string(default = "artifacts/releases", description = "Directory for inspectable release outputs."),
         "builder_id": args.string(default = "spiffe://prod.verself.sh/svc/release-builder", description = "SLSA builder id recorded in local provenance."),
         "platform": args.string(default = "linux/amd64", description = "Release platform recorded in provenance."),

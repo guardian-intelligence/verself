@@ -2,11 +2,14 @@ package main
 
 import (
 	"archive/tar"
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateSubject(t *testing.T) {
@@ -20,68 +23,80 @@ func TestValidateSubject(t *testing.T) {
 		{
 			name: "nightly",
 			subject: ReleaseSubject{
-				Package:      packageName,
-				Version:      "0.2.0-nightly.20260527.1",
-				Channel:      ChannelNightly,
-				SourceCommit: commit,
-				Platform:     platform,
-				Flavor:       defaultFlavor,
+				Package:          packageName,
+				Version:          "0.2.0-nightly.20260527.1",
+				Channel:          ChannelNightly,
+				SourceRepository: sourceRepository,
+				SourceRef:        "HEAD",
+				SourceCommit:     commit,
+				Platform:         platform,
+				Flavor:           defaultFlavor,
 			},
 		},
 		{
 			name: "rc",
 			subject: ReleaseSubject{
-				Package:      packageName,
-				Version:      "0.2.0-rc.1",
-				Channel:      ChannelRC,
-				SourceCommit: commit,
-				Platform:     platform,
-				Flavor:       "glibc-default",
+				Package:          packageName,
+				Version:          "0.2.0-rc.1",
+				Channel:          ChannelRC,
+				SourceRepository: sourceRepository,
+				SourceRef:        "HEAD",
+				SourceCommit:     commit,
+				Platform:         platform,
+				Flavor:           "glibc-default",
 			},
 		},
 		{
 			name: "stable",
 			subject: ReleaseSubject{
-				Package:      packageName,
-				Version:      "0.2.0",
-				Channel:      ChannelStable,
-				SourceCommit: commit,
-				Platform:     platform,
-				Flavor:       defaultFlavor,
+				Package:          packageName,
+				Version:          "0.2.0",
+				Channel:          ChannelStable,
+				SourceRepository: sourceRepository,
+				SourceRef:        "HEAD",
+				SourceCommit:     commit,
+				Platform:         platform,
+				Flavor:           defaultFlavor,
 			},
 		},
 		{
 			name: "stable rejects rc bytes",
 			subject: ReleaseSubject{
-				Package:      packageName,
-				Version:      "0.2.0-rc.1",
-				Channel:      ChannelStable,
-				SourceCommit: commit,
-				Platform:     platform,
-				Flavor:       defaultFlavor,
+				Package:          packageName,
+				Version:          "0.2.0-rc.1",
+				Channel:          ChannelStable,
+				SourceRepository: sourceRepository,
+				SourceRef:        "HEAD",
+				SourceCommit:     commit,
+				Platform:         platform,
+				Flavor:           defaultFlavor,
 			},
 			wantErr: true,
 		},
 		{
 			name: "rc rejects final",
 			subject: ReleaseSubject{
-				Package:      packageName,
-				Version:      "0.2.0",
-				Channel:      ChannelRC,
-				SourceCommit: commit,
-				Platform:     platform,
-				Flavor:       defaultFlavor,
+				Package:          packageName,
+				Version:          "0.2.0",
+				Channel:          ChannelRC,
+				SourceRepository: sourceRepository,
+				SourceRef:        "HEAD",
+				SourceCommit:     commit,
+				Platform:         platform,
+				Flavor:           defaultFlavor,
 			},
 			wantErr: true,
 		},
 		{
 			name: "requires flavor",
 			subject: ReleaseSubject{
-				Package:      packageName,
-				Version:      "0.2.0",
-				Channel:      ChannelStable,
-				SourceCommit: commit,
-				Platform:     platform,
+				Package:          packageName,
+				Version:          "0.2.0",
+				Channel:          ChannelStable,
+				SourceRepository: sourceRepository,
+				SourceRef:        "HEAD",
+				SourceCommit:     commit,
+				Platform:         platform,
 			},
 			wantErr: true,
 		},
@@ -93,6 +108,105 @@ func TestValidateSubject(t *testing.T) {
 				t.Fatalf("validateSubject() error = %v, wantErr %t", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestReleaseIntentFromFlagsRequiresSingleIntent(t *testing.T) {
+	if _, err := releaseIntentFromFlags(releaseFlagValues{nightly: true, rc: true}); err == nil {
+		t.Fatal("releaseIntentFromFlags() error = nil for multiple intents")
+	}
+	if _, err := releaseIntentFromFlags(releaseFlagValues{}); err == nil {
+		t.Fatal("releaseIntentFromFlags() error = nil for missing intent")
+	}
+	intent, err := releaseIntentFromFlags(releaseFlagValues{channel: "rc", version: "0.2.0-rc.1", sourceRef: "HEAD"})
+	if err != nil {
+		t.Fatalf("releaseIntentFromFlags() error = %v", err)
+	}
+	if _, ok := intent.(exactIntent); !ok {
+		t.Fatalf("releaseIntentFromFlags() = %T, want exactIntent", intent)
+	}
+}
+
+func TestWorkspacePackageVersion(t *testing.T) {
+	version, err := workspacePackageVersion(`[package]
+version = "9.9.9"
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+`)
+	if err != nil {
+		t.Fatalf("workspacePackageVersion() error = %v", err)
+	}
+	if version != "0.2.0" {
+		t.Fatalf("workspacePackageVersion() = %q, want 0.2.0", version)
+	}
+}
+
+func TestNightlyIntentDerivesVersionFromCommitAndLocalCounter(t *testing.T) {
+	repoRoot, commit := initReleaseGitRepo(t, "0.2.0")
+	outputRoot := t.TempDir()
+	existing := filepath.Join(outputRoot, packageName, "build-nightly-0.2.0-nightly.20260528.3-linux-amd64-default-"+shortSHA(commit))
+	if err := os.MkdirAll(existing, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	subject, err := nightlyIntent{SourceRef: "HEAD"}.deriveSubject(context.Background(), releaseDerivationConfig{
+		RepoRoot:   repoRoot,
+		OutputRoot: outputRoot,
+		Platform:   Platform{OS: "linux", Arch: "amd64"},
+		Flavor:     defaultFlavor,
+		Now:        time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("deriveSubject() error = %v", err)
+	}
+	if subject.Version != "0.2.0-nightly.20260528.4" {
+		t.Fatalf("nightly version = %q", subject.Version)
+	}
+	if subject.SourceCommit != commit {
+		t.Fatalf("source commit = %q, want %q", subject.SourceCommit, commit)
+	}
+}
+
+func TestRCIntentReusesExistingTagForSameCommit(t *testing.T) {
+	repoRoot, _ := initReleaseGitRepo(t, "0.2.0")
+	runGitTest(t, repoRoot, "tag", "mksk-v0.2.0-rc.1")
+	subject, err := rcIntent{SourceRef: "HEAD"}.deriveSubject(context.Background(), releaseDerivationConfig{
+		RepoRoot:   repoRoot,
+		OutputRoot: t.TempDir(),
+		Platform:   Platform{OS: "linux", Arch: "amd64"},
+		Flavor:     defaultFlavor,
+		Now:        time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("deriveSubject() error = %v", err)
+	}
+	if subject.Version != "0.2.0-rc.1" {
+		t.Fatalf("rc version = %q", subject.Version)
+	}
+}
+
+func TestStableIntentFromRCTag(t *testing.T) {
+	repoRoot, commit := initReleaseGitRepo(t, "0.2.0")
+	runGitTest(t, repoRoot, "tag", "mksk-v0.2.0-rc.2")
+	subject, err := stableIntent{FromRC: "mksk-v0.2.0-rc.2"}.deriveSubject(context.Background(), releaseDerivationConfig{
+		RepoRoot:   repoRoot,
+		OutputRoot: t.TempDir(),
+		Platform:   Platform{OS: "linux", Arch: "amd64"},
+		Flavor:     defaultFlavor,
+		Now:        time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("deriveSubject() error = %v", err)
+	}
+	if subject.Version != "0.2.0" {
+		t.Fatalf("stable version = %q", subject.Version)
+	}
+	if subject.SourceRef != "mksk-v0.2.0-rc.2" {
+		t.Fatalf("source ref = %q", subject.SourceRef)
+	}
+	if subject.SourceCommit != commit {
+		t.Fatalf("source commit = %q, want %q", subject.SourceCommit, commit)
 	}
 }
 
@@ -232,4 +346,40 @@ func writeReleaseToolsTar(t *testing.T, tools []string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func initReleaseGitRepo(t *testing.T, version string) (string, string) {
+	t.Helper()
+	repoRoot := t.TempDir()
+	runGitTest(t, repoRoot, "init")
+	runGitTest(t, repoRoot, "config", "user.email", "release-test@verself.sh")
+	runGitTest(t, repoRoot, "config", "user.name", "release test")
+	manifestPath := filepath.Join(repoRoot, cargoManifest)
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `[workspace]
+members = []
+
+[workspace.package]
+version = "` + version + `"
+edition = "2024"
+`
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, repoRoot, "add", cargoManifest)
+	runGitTest(t, repoRoot, "commit", "-m", "initial")
+	return repoRoot, strings.TrimSpace(runGitTest(t, repoRoot, "rev-parse", "HEAD"))
+}
+
+func runGitTest(t *testing.T, repoRoot string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repoRoot
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+	}
+	return string(out)
 }

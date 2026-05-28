@@ -1,11 +1,22 @@
-# make-skill release build
+# make-skill release tooling
 
 make-skill owns the package-specific release command that produces
 side-effect-free build bundles. distribution-service admits and serves
 immutable OCI artifacts after a trusted publisher has pushed bytes and standard
 evidence to Zot.
 
-## Build
+## Command catalog
+
+Use intent commands for normal operation:
+
+```text
+aspect release mksk --nightly --source-ref=main
+aspect release mksk --rc --source-ref=HEAD
+aspect release mksk --stable --source-ref=<rc-source-sha>
+aspect release mksk --stable --from-rc=mksk-v0.2.0-rc.2
+```
+
+Use exact-subject commands for retries and diagnostics:
 
 ```text
 aspect release mksk \
@@ -16,19 +27,50 @@ aspect release mksk \
   --flavor=default
 ```
 
-`build` requires a complete release subject:
+`--publish` selects `mksk-release publish`. In this changeset it validates the
+same package-owned subject derivation and fails before build execution; trusted
+OCI publishing is the next release changeset.
+
+## Release subject
+
+After command parsing, every path becomes a complete release subject:
 
 ```text
 package=mksk
 version=<SemVer or channel prerelease>
 channel=nightly|rc|stable
+source_repository=https://github.com/guardian-intelligence/verself.git
+source_ref=<operator input, exact source ref, or RC tag>
 source_commit=<40-char git commit>
 platform=linux/amd64
 flavor=<opaque token>
 ```
 
-The command runs the package-owned Bazel tests and `//src/make-skill:release_tar`
-with `MKSK_RELEASE_VERSION` set to the subject version. It emits:
+## Version derivation
+
+`mksk-release build` and `mksk-release publish` both support intent flags. There
+is no public planning subcommand.
+
+- `--nightly` reads `[workspace.package].version` from
+  `src/make-skill/Cargo.toml` at the resolved source commit and derives
+  `<base>-nightly.YYYYMMDD.N`.
+- `--rc` reads the same base version and derives the next
+  `<base>-rc.N` from existing `mksk-v<base>-rc.N` git tags and local release
+  bundles. If the resolved commit already has an RC tag, that RC version is
+  reused.
+- `--stable --from-rc=<tag>` resolves the RC tag, strips `-rc.N`, and rebuilds
+  the RC source commit with the final SemVer.
+- `--stable --source-ref=<ref>` reads the final SemVer base from the resolved
+  source commit.
+
+Exact `--channel/--version` builds do not derive versions. They only resolve
+source authority and validate the provided subject.
+
+## Build bundle
+
+The command runs the package-owned Bazel tests and
+`//src/make-skill:release_tar` with `MKSK_RELEASE_VERSION` set to the subject
+version. It emits:
 
 ```text
 artifact/make-skill.tar
