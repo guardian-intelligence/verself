@@ -10,6 +10,7 @@ go_library(
         "browser_auth_activity.go",
         "browser_auth_devices.go",
         "browser_auth_login.go",
+        "browser_auth_problems.go",
         "errors.go",
         "internal.go",
         "internal_openapi.go",

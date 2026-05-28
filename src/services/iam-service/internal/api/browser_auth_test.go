@@ -288,6 +288,49 @@ func TestPasswordLoginFinalizesIncomingAuthRequest(t *testing.T) {
 	}
 }
 
+func TestPasswordLoginInvalidCredentialsReturnsStructuredProblem(t *testing.T) {
+	provider := &recordingProviderLogin{
+		createPasswordSessionErr: identity.ErrInvalidCredentials,
+	}
+	auth := &BrowserAuth{providerLogin: provider}
+	body := `{"email":"founder@example.test","password":"wrong password"}`
+	req := httptest.NewRequest(http.MethodPost, "/password-login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+
+	auth.handlePasswordLogin(res, req)
+
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("password login status = %d, body = %q", res.Code, res.Body.String())
+	}
+	var problem struct {
+		Tag     string `json:"_tag"`
+		Type    string `json:"type"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Detail  string `json:"detail"`
+		Status  int    `json:"status"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&problem); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	if problem.Code != "auth.invalid_credentials" || problem.Status != http.StatusUnauthorized {
+		t.Fatalf("problem = %#v", problem)
+	}
+	if problem.Type != "urn:verself:problem:auth:invalid_credentials" {
+		t.Fatalf("problem type = %q", problem.Type)
+	}
+	if problem.Tag != problem.Type {
+		t.Fatalf("problem tag = %q, want %q", problem.Tag, problem.Type)
+	}
+	if problem.Detail != "Email or password is incorrect." {
+		t.Fatalf("problem detail = %q", problem.Detail)
+	}
+	if problem.Message != "Email or password is incorrect." {
+		t.Fatalf("problem message = %q", problem.Message)
+	}
+}
+
 func TestPasswordResetCompleteUsesLocalPasswordPolicyOnly(t *testing.T) {
 	provider := &recordingProviderLogin{}
 	auth := &BrowserAuth{
@@ -476,6 +519,7 @@ func testJWT(claims map[string]any) string {
 
 type recordingProviderLogin struct {
 	session                        identity.LoginSession
+	createPasswordSessionErr       error
 	created                        identity.LoginSessionInput
 	loadedAuthRequestID            string
 	finalizedAuthRequestID         string
@@ -487,6 +531,9 @@ type recordingProviderLogin struct {
 
 func (r *recordingProviderLogin) CreatePasswordSession(_ context.Context, input identity.LoginSessionInput) (identity.LoginSession, error) {
 	r.created = input
+	if r.createPasswordSessionErr != nil {
+		return identity.LoginSession{}, r.createPasswordSessionErr
+	}
 	return r.session, nil
 }
 

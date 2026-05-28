@@ -129,9 +129,9 @@ type RemoveAccountConnectionInput struct {
 type RemoveAccountConnectionOutput struct{}
 
 var commonAuthProblems = []ProblemDescriptor{
-	{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "https://verself.sh/docs/reference/iam/errors#auth-unauthenticated", Code: "auth.unauthenticated", Status: 401},
-	{ShapeID: "verself.iam.v1#DeviceSessionRequiredError", Type: "https://verself.sh/docs/reference/iam/errors#auth-device-session-required", Code: "auth.device_session_required", Status: 401},
-	{ShapeID: "verself.iam.v1#SessionRevokedError", Type: "https://verself.sh/docs/reference/iam/errors#auth-session-revoked", Code: "auth.session_revoked", Status: 401},
+	{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+	{ShapeID: "verself.iam.v1#DeviceSessionRequiredError", Type: "urn:verself:problem:auth:device_session_required", Code: "auth.device_session_required", Status: 401},
+	{ShapeID: "verself.iam.v1#SessionRevokedError", Type: "urn:verself:problem:auth:session_revoked", Code: "auth.session_revoked", Status: 401},
 	{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 	{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
 }
@@ -174,10 +174,10 @@ var CreateDeviceSession = Operation[CreateDeviceSessionInput, CreateDeviceSessio
 		SDK:                 SDKDescriptor{Module: "auth", Method: "createDeviceSession", Paginated: false, Retryable: false},
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
-			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "https://verself.sh/docs/reference/iam/errors#auth-unauthenticated", Code: "auth.unauthenticated", Status: 401},
-			{ShapeID: "verself.iam.v1#ProviderEmailUnverifiedError", Type: "https://verself.sh/docs/reference/iam/errors#auth-provider-email-unverified", Code: "auth.provider_email_unverified", Status: 403},
-			{ShapeID: "verself.iam.v1#AccountLinkRequiredError", Type: "https://verself.sh/docs/reference/iam/errors#auth-account-link-required", Code: "auth.account_link_required", Status: 409},
-			{ShapeID: "verself.iam.v1#ProviderSubjectAlreadyLinkedError", Type: "https://verself.sh/docs/reference/iam/errors#auth-provider-subject-already-linked", Code: "auth.provider_subject_already_linked", Status: 409},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
+			{ShapeID: "verself.iam.v1#ProviderEmailUnverifiedError", Type: "urn:verself:problem:auth:provider_email_unverified", Code: "auth.provider_email_unverified", Status: 403},
+			{ShapeID: "verself.iam.v1#AccountLinkRequiredError", Type: "urn:verself:problem:auth:account_link_required", Code: "auth.account_link_required", Status: 409},
+			{ShapeID: "verself.iam.v1#ProviderSubjectAlreadyLinkedError", Type: "urn:verself:problem:auth:provider_subject_already_linked", Code: "auth.provider_subject_already_linked", Status: 409},
 			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
@@ -263,11 +263,11 @@ var RemoveAccountConnection = Operation[RemoveAccountConnectionInput, RemoveAcco
 		SDK:                 SDKDescriptor{Module: "auth", Method: "removeAccountConnection", Paginated: false, Retryable: false},
 		Problems: []ProblemDescriptor{
 			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
-			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "https://verself.sh/docs/reference/iam/errors#auth-unauthenticated", Code: "auth.unauthenticated", Status: 401},
+			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
 			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
-			{ShapeID: "verself.iam.v1#DeviceSessionRequiredError", Type: "https://verself.sh/docs/reference/iam/errors#auth-device-session-required", Code: "auth.device_session_required", Status: 401},
-			{ShapeID: "verself.iam.v1#SessionRevokedError", Type: "https://verself.sh/docs/reference/iam/errors#auth-session-revoked", Code: "auth.session_revoked", Status: 401},
-			{ShapeID: "verself.iam.v1#ReauthenticationRequiredError", Type: "https://verself.sh/docs/reference/iam/errors#auth-reauthentication-required", Code: "auth.reauthentication_required", Status: 403},
+			{ShapeID: "verself.iam.v1#DeviceSessionRequiredError", Type: "urn:verself:problem:auth:device_session_required", Code: "auth.device_session_required", Status: 401},
+			{ShapeID: "verself.iam.v1#SessionRevokedError", Type: "urn:verself:problem:auth:session_revoked", Code: "auth.session_revoked", Status: 401},
+			{ShapeID: "verself.iam.v1#ReauthenticationRequiredError", Type: "urn:verself:problem:auth:reauthentication_required", Code: "auth.reauthentication_required", Status: 403},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
 		},

@@ -78,6 +78,10 @@ type ProblemCode string
 
 type ProblemDetail string
 
+type ProblemMessage string
+
+type ProblemTag string
+
 type ProblemType string
 
 type RequestID string
@@ -143,10 +147,12 @@ type InviteMemberRoles []IAMRoleName
 type MemberInvitationStatus string
 
 type ConflictError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -154,10 +160,12 @@ type ConflictError struct {
 }
 
 type IdempotencyPayloadMismatchError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -165,10 +173,12 @@ type IdempotencyPayloadMismatchError struct {
 }
 
 type PermissionDeniedError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -176,10 +186,12 @@ type PermissionDeniedError struct {
 }
 
 type RateLimitedError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -187,10 +199,12 @@ type RateLimitedError struct {
 }
 
 type ResourceNotFoundError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -198,10 +212,12 @@ type ResourceNotFoundError struct {
 }
 
 type ServiceUnavailableError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -209,10 +225,12 @@ type ServiceUnavailableError struct {
 }
 
 type UnauthenticatedError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -220,10 +238,12 @@ type UnauthenticatedError struct {
 }
 
 type ValidationFailedError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -231,10 +251,12 @@ type ValidationFailedError struct {
 }
 
 type SignupVerificationInvalidError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -242,10 +264,12 @@ type SignupVerificationInvalidError struct {
 }
 
 type SignupVerificationExpiredError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -253,10 +277,12 @@ type SignupVerificationExpiredError struct {
 }
 
 type SignupVerificationAlreadyUsedError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -264,10 +290,12 @@ type SignupVerificationAlreadyUsedError struct {
 }
 
 type SignupMaterializingError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -275,10 +303,12 @@ type SignupMaterializingError struct {
 }
 
 type SignupStateConflictError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -286,10 +316,12 @@ type SignupStateConflictError struct {
 }
 
 type SignupAccountExistsError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -297,10 +329,12 @@ type SignupAccountExistsError struct {
 }
 
 type OrganizationSlugUnavailableError struct {
-	Type        ProblemType    `json:"type" required:"true" pattern:"^(https://.+|urn:verself:problem:.+)$"`
+	Type        ProblemType    `json:"type" required:"true" pattern:"^urn:verself:problem:.+$"`
+	Tag         ProblemTag     `json:"_tag" required:"true" pattern:"^urn:verself:problem:.+$"`
 	Title       string         `json:"title" required:"true"`
 	Status      int            `json:"status" required:"true"`
 	Detail      *ProblemDetail `json:"detail,omitempty" maxLength:"2048"`
+	Message     ProblemMessage `json:"message" required:"true" minLength:"1" maxLength:"2048"`
 	Instance    *string        `json:"instance,omitempty"`
 	Code        ProblemCode    `json:"code" required:"true" pattern:"^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"`
 	RequestID   *RequestID     `json:"requestId,omitempty" minLength:"8" maxLength:"128"`
@@ -690,6 +724,7 @@ var VerifySignup = Operation[VerifySignupInput, VerifySignupOutput]{
 			{ShapeID: "verself.common.v1#IdempotencyPayloadMismatchError", Type: "urn:verself:problem:conflict:idempotency_payload_mismatch", Code: "conflict.idempotency_payload_mismatch", Status: 409},
 			{ShapeID: "verself.iam.v1#OrganizationSlugUnavailableError", Type: "urn:verself:problem:iam:organization_slug_unavailable", Code: "iam.organization_slug.unavailable", Status: 409},
 			{ShapeID: "verself.iam.v1#PasswordBreachedError", Type: "urn:verself:problem:iam:password_breached", Code: "iam.password.breached", Status: 400},
+			{ShapeID: "verself.iam.v1#PasswordRejectedError", Type: "urn:verself:problem:iam:password_rejected", Code: "iam.password.rejected", Status: 400},
 			{ShapeID: "verself.iam.v1#PasswordTooLongError", Type: "urn:verself:problem:iam:password_too_long", Code: "iam.password.too_long", Status: 400},
 			{ShapeID: "verself.iam.v1#PasswordTooShortError", Type: "urn:verself:problem:iam:password_too_short", Code: "iam.password.too_short", Status: 400},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},

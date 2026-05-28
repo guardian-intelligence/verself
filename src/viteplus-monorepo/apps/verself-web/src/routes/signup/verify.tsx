@@ -2,6 +2,7 @@ import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { Link, createFileRoute, useHydrated } from "@tanstack/react-router";
 import { Building2, CheckCircle2, Eye, EyeOff, MailPlus } from "lucide-react";
 import { useReducer, type ReactNode } from "react";
+import { authFailureFromUnknown, unwrapAuthResult } from "@verself/sdk/auth";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -15,7 +16,6 @@ import {
   fieldErrorText,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
-import { passwordLoginErrorMessage } from "~/features/auth/auth-errors";
 import {
   formString,
   inviteLinkSchema,
@@ -94,7 +94,9 @@ function SignupVerificationPage() {
     onSubmit: async ({ value }) => {
       if (mode === "join") {
         const invite = inviteCredentialsFromInput(formString(value.inviteLink));
-        const result = await acceptMemberInvite({ data: { token: invite.token } });
+        const result = unwrapAuthResult(
+          await acceptMemberInvite({ data: { token: invite.token } }).catch(authFailureFromUnknown),
+        );
         assignLogin(result.loginIntent?.loginUrl ?? result.loginUrl, invite.org);
         return;
       }
@@ -104,34 +106,35 @@ function SignupVerificationPage() {
       const displayName = normalizeHumanText(value.organizationDisplayName);
       const slug = slugify(formString(value.organizationSlug));
       const initialPassword = formString(value.initialPassword);
-      const result = await verifySignup({
-        data: {
-          signupIntentId,
-          verificationToken,
-          initialPassword,
-          organizationDisplayName: displayName,
-          organizationSlug: slug,
-        },
-      });
+      const result = unwrapAuthResult(
+        await verifySignup({
+          data: {
+            signupIntentId,
+            verificationToken,
+            initialPassword,
+            organizationDisplayName: displayName,
+            organizationSlug: slug,
+          },
+        }).catch(authFailureFromUnknown),
+      );
       if (!result.loginIntent) {
         throw new Error("Signup completed, but sign-in could not be started.");
       }
-      const login = await passwordLogin({
-        data: {
-          email: result.loginIntent.requiredEmail,
-          password: initialPassword,
-          redirectTo: result.loginIntent.redirectTo ?? `/${result.organization.slug}`,
-          purpose: result.loginIntent.purpose,
-          loginHint: result.loginIntent.requiredEmail,
-          requiredSubject: result.loginIntent.requiredSubject,
-          requiredEmail: result.loginIntent.requiredEmail,
-          requiredOrgId: result.loginIntent.requiredOrgId,
-          prompt: "login",
-        },
-      });
-      if (!login.ok) {
-        throw new Error(passwordLoginErrorMessage(login.code));
-      }
+      const login = unwrapAuthResult(
+        await passwordLogin({
+          data: {
+            email: result.loginIntent.requiredEmail,
+            password: initialPassword,
+            redirectTo: result.loginIntent.redirectTo ?? `/${result.organization.slug}`,
+            purpose: result.loginIntent.purpose,
+            loginHint: result.loginIntent.requiredEmail,
+            requiredSubject: result.loginIntent.requiredSubject,
+            requiredEmail: result.loginIntent.requiredEmail,
+            requiredOrgId: result.loginIntent.requiredOrgId,
+            prompt: "login",
+          },
+        }).catch(authFailureFromUnknown),
+      );
       window.location.assign(login.callbackUrl);
     },
   });

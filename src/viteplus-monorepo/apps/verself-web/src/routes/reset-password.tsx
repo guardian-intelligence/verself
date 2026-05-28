@@ -2,6 +2,7 @@ import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { createFileRoute, Link, useHydrated } from "@tanstack/react-router";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
 import { useReducer } from "react";
+import { authFailureFromUnknown, unwrapAuthResult } from "@verself/sdk/auth";
 import { Button } from "@verself/ui/components/ui/button";
 import { Label } from "@verself/ui/components/ui/label";
 import {
@@ -67,13 +68,15 @@ function ResetPasswordPage() {
       if (!search.user_id || !search.verification_code) {
         throw new Error("This reset link is invalid or expired.");
       }
-      await completePasswordReset({
-        data: {
-          userId: search.user_id,
-          verificationCode: search.verification_code,
-          password,
-        },
-      });
+      unwrapAuthResult(
+        await completePasswordReset({
+          data: {
+            userId: search.user_id,
+            verificationCode: search.verification_code,
+            password,
+          },
+        }).catch(authFailureFromUnknown),
+      );
       window.location.assign("/login?prompt=login");
     },
   });

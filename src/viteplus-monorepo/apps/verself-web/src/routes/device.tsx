@@ -4,6 +4,12 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { CheckCircle2, KeyRound, XCircle } from "lucide-react";
 import { useMemo } from "react";
+import {
+  authErrorMessage,
+  authFailureFromUnknown,
+  isAuthErrorException,
+  unwrapAuthResult,
+} from "@verself/sdk/auth";
 import * as v from "valibot";
 import { createElectricShapeCollection } from "@verself/web-env";
 import { Button } from "@verself/ui/components/ui/button";
@@ -98,6 +104,7 @@ export const Route = createFileRoute("/device")({
       getClientAuthSnapshot(),
       deps.user_code
         ? lookupDeviceLogin({ data: { userCode: deps.user_code } })
+            .then(unwrapAuthResult)
             .then((result) => ({ result, error: "" }))
             .catch((error: unknown) => ({ result: undefined, error: errorMessage(error) }))
         : Promise.resolve({ result: undefined, error: "" }),
@@ -242,10 +249,20 @@ function DeviceLoginDecision({
   readonly userCode: string;
 }) {
   const approval = useMutation({
-    mutationFn: () => approveDeviceLogin({ data: { deviceLoginHandle: device.deviceLoginHandle } }),
+    mutationFn: async () =>
+      unwrapAuthResult(
+        await approveDeviceLogin({ data: { deviceLoginHandle: device.deviceLoginHandle } }).catch(
+          authFailureFromUnknown,
+        ),
+      ),
   });
   const denial = useMutation({
-    mutationFn: () => denyDeviceLogin({ data: { deviceLoginHandle: device.deviceLoginHandle } }),
+    mutationFn: async () =>
+      unwrapAuthResult(
+        await denyDeviceLogin({ data: { deviceLoginHandle: device.deviceLoginHandle } }).catch(
+          authFailureFromUnknown,
+        ),
+      ),
   });
   return (
     <div className="grid gap-4">
@@ -346,6 +363,7 @@ function deviceLoginSubtitle(device: DeviceLoginResult): string {
 function errorMessage(error: unknown): string {
   if (!error) return "";
   if (typeof error === "string") return error;
+  if (isAuthErrorException(error)) return authErrorMessage(error.authError);
   if (error instanceof Error) return error.message;
   return "Unexpected error.";
 }

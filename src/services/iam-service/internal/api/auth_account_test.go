@@ -145,7 +145,10 @@ func assertProblem(t *testing.T, err error, status int, code string) {
 	if problem.Status != status || problem.Code != code {
 		t.Fatalf("problem status/code = %d/%s, want %d/%s: %#v", problem.Status, problem.Code, status, code, problem)
 	}
-	if got, want := problem.Type, authProblemDocsURL+authProblemAnchor(code); got != want {
+	if got, want := problem.Type, problemType(code); got != want {
 		t.Fatalf("problem type = %q, want %q", got, want)
+	}
+	if got, want := problem.Tag, problemType(code); got != want {
+		t.Fatalf("problem tag = %q, want %q", got, want)
 	}
 }

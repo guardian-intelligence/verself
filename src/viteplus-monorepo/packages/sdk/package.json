@@ -17,6 +17,10 @@
       "types": "./src/iam.ts",
       "default": "./src/iam.ts"
     },
+    "./auth": {
+      "types": "./src/auth.ts",
+      "default": "./src/auth.ts"
+    },
     "./projects": {
       "types": "./src/projects.ts",
       "default": "./src/projects.ts"

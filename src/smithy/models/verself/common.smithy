@@ -6,6 +6,7 @@ use smithy.api#error
 use smithy.api#httpError
 use smithy.api#httpQuery
 use smithy.api#idRef
+use smithy.api#jsonName
 use smithy.api#length
 use smithy.api#mixin
 use smithy.api#notProperty
@@ -101,9 +102,17 @@ string ProblemCode
 @pattern("^(https://.+|urn:verself:problem:.+)$")
 string ProblemType
 
+/// Durable SDK discriminator for a problem.
+@pattern("^urn:verself:problem:.+$")
+string ProblemTag
+
 /// Optional human-readable problem detail.
 @length(max: 4096)
 string ProblemDetail
+
+/// User-safe problem message.
+@length(min: 1, max: 2048)
+string ProblemMessage
 
 /// Stable phase name for a problem that occurred inside a multi-step operation.
 @length(min: 1, max: 160)
@@ -372,6 +381,11 @@ structure PageResponse {
 @mixin
 structure ProblemDetails {
     @required
+    @jsonName("_tag")
+    @protoField(number: 10)
+    tag: ProblemTag
+
+    @required
     @protoField(number: 1)
     type: ProblemType
 
@@ -385,6 +399,10 @@ structure ProblemDetails {
 
     @protoField(number: 4)
     detail: ProblemDetail
+
+    @required
+    @protoField(number: 11)
+    message: ProblemMessage
 
     @protoField(number: 5)
     instance: String

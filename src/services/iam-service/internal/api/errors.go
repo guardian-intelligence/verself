@@ -15,13 +15,14 @@ import (
 )
 
 const (
-	problemTypePrefix  = "urn:verself:problem:"
-	authProblemDocsURL = "https://verself.sh/docs/reference/iam/errors#"
+	problemTypePrefix = "urn:verself:problem:"
 )
 
 type verselfProblem struct {
 	huma.ErrorModel
+	Tag         string `json:"_tag"`
 	Code        string `json:"code"`
+	Message     string `json:"message"`
 	RequestID   string `json:"requestId,omitempty"`
 	Traceparent string `json:"traceparent,omitempty"`
 }
@@ -42,15 +43,18 @@ func problem(ctx context.Context, status int, code, detail string, cause error) 
 	if requestID == "" && trace.SpanContextFromContext(ctx).HasTraceID() {
 		requestID = trace.SpanContextFromContext(ctx).TraceID().String()
 	}
+	problemType := problemType(code)
 	return &verselfProblem{
 		ErrorModel: huma.ErrorModel{
-			Type:     problemType(code),
-			Title:    http.StatusText(status),
+			Type:     problemType,
+			Title:    problemTitle(code, status),
 			Status:   status,
 			Detail:   detail,
 			Instance: instance,
 		},
+		Tag:         problemType,
 		Code:        code,
+		Message:     authErrorMessageForCode(code, detail, status),
 		RequestID:   requestID,
 		Traceparent: traceparent,
 	}
@@ -62,7 +66,7 @@ func problemType(code string) string {
 	case strings.HasPrefix(code, "request."):
 		return problemTypePrefix + "request:" + strings.ReplaceAll(strings.TrimPrefix(code, "request."), ".", "_")
 	case strings.HasPrefix(code, "auth."):
-		return authProblemDocsURL + authProblemAnchor(code)
+		return problemTypePrefix + "auth:" + strings.ReplaceAll(strings.TrimPrefix(code, "auth."), ".", "_")
 	case strings.HasPrefix(code, "conflict."):
 		return problemTypePrefix + "conflict:" + strings.ReplaceAll(strings.TrimPrefix(code, "conflict."), ".", "_")
 	case strings.HasPrefix(code, "quota."):
@@ -78,8 +82,79 @@ func problemType(code string) string {
 	}
 }
 
-func authProblemAnchor(code string) string {
-	return strings.NewReplacer(".", "-", "_", "-").Replace(strings.TrimSpace(code))
+func problemTitle(code string, status int) string {
+	if definition, ok := authProblemCatalog[authProblemCode(code)]; ok {
+		return definition.Title
+	}
+	if title := publicAuthProblemTitle(code); title != "" {
+		return title
+	}
+	return http.StatusText(status)
+}
+
+func authErrorMessageForCode(code, detail string, status int) string {
+	if definition, ok := authProblemCatalog[authProblemCode(code)]; ok {
+		if definition.Message != "" {
+			return definition.Message
+		}
+		return definition.Detail
+	}
+	switch code {
+	case "iam.password.breached":
+		return "This password has appeared in a public data breach. Please use a different one."
+	case "iam.signup.verification.expired":
+		return "This signup link has expired. Request a new signup email."
+	case "iam.signup.verification.invalid":
+		return "This signup link is no longer valid."
+	case "iam.signup.verification.already_used":
+		return "This signup is complete. Sign in with the account that completed signup."
+	case "iam.signup.materializing":
+		return "Signup is still being finalized. Wait a moment and try again."
+	case "iam.signup.account_exists":
+		return "This email already has a Verself account. Sign in instead."
+	case "iam.signup.state_conflict":
+		return "Signup could not be completed because the request state changed."
+	case "iam.organization_slug.unavailable":
+		return "That organization URL is already taken."
+	case "conflict.idempotency_payload_mismatch":
+		return "This request was already submitted with different data."
+	}
+	detail = strings.TrimSpace(detail)
+	if detail != "" && status < 500 {
+		return detail
+	}
+	if status == http.StatusTooManyRequests {
+		return "Too many attempts. Wait a moment and try again."
+	}
+	if status >= 500 {
+		return "Authentication is unavailable right now."
+	}
+	return "Authentication request failed."
+}
+
+func publicAuthProblemTitle(code string) string {
+	switch code {
+	case "iam.password.breached":
+		return "Password breached"
+	case "iam.signup.verification.expired":
+		return "Signup verification expired"
+	case "iam.signup.verification.invalid":
+		return "Signup verification invalid"
+	case "iam.signup.verification.already_used":
+		return "Signup verification already used"
+	case "iam.signup.materializing":
+		return "Signup materializing"
+	case "iam.signup.account_exists":
+		return "Signup account exists"
+	case "iam.signup.state_conflict":
+		return "Signup state conflict"
+	case "iam.organization_slug.unavailable":
+		return "Organization slug unavailable"
+	case "conflict.idempotency_payload_mismatch":
+		return "Idempotency conflict"
+	default:
+		return ""
+	}
 }
 
 func badRequest(ctx context.Context, code, detail string, cause error) error {

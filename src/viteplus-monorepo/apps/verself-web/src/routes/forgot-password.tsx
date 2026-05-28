@@ -1,6 +1,7 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { createFileRoute, Link, useHydrated } from "@tanstack/react-router";
 import { KeyRound, Mail } from "lucide-react";
+import { authFailureFromUnknown, unwrapAuthResult } from "@verself/sdk/auth";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -52,7 +53,7 @@ function ForgotPasswordPage() {
     onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const email = normalizeEmail(value.email);
-      await startPasswordReset({ data: { email } });
+      unwrapAuthResult(await startPasswordReset({ data: { email } }).catch(authFailureFromUnknown));
       window.location.assign(`/forgot-password?sent=${encodeURIComponent(email)}`);
     },
   });

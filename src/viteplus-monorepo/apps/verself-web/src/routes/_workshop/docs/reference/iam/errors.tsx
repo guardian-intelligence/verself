@@ -45,17 +45,18 @@ function IamAuthErrors() {
             <SectionHeaderContent>
               <SectionTitle>Problem Shape</SectionTitle>
               <SectionDescription>
-                Runtime errors use problem details with a stable code and a public type URL anchored
-                to this page.
+                Runtime errors use problem details with a stable code and a durable problem URN.
               </SectionDescription>
             </SectionHeaderContent>
           </SectionHeader>
           <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-4 text-xs leading-5">
             {`{
-  "type": "https://verself.sh/docs/reference/iam/errors#auth-session-revoked",
-  "title": "Unauthorized",
+  "_tag": "urn:verself:problem:auth:session_revoked",
+  "type": "urn:verself:problem:auth:session_revoked",
+  "title": "Session revoked",
   "status": 401,
   "detail": "device session is expired or revoked",
+  "message": "This session has ended. Sign in again.",
   "code": "auth.session_revoked",
   "requestId": "req_01J8QK4M5N6P7Q8R9S0T1V2W3X",
   "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"

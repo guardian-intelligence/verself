@@ -188,6 +188,30 @@ function normalizeURL(url: URL): string {
 }
 
 export {
+  AUTH_ERROR_TAG,
+  AuthErrorException,
+  authErrorFromResponse,
+  authErrorMessage,
+  authErrorTags,
+  authFailure,
+  authFailureFromResponse,
+  authFailureFromUnknown,
+  authResultFromResponse,
+  authSuccess,
+  isKnownAuthErrorTag,
+  knownAuthErrorSchema,
+  passwordPolicyErrorMessage,
+  unwrapAuthResult,
+  type AuthError,
+  type AuthFailure,
+  type AuthResult,
+  type AuthSuccess,
+  type KnownAuthError,
+  type KnownAuthErrorTag,
+  type UnknownAuthError,
+} from "./auth";
+
+export {
   Billing,
   BillingApiError,
   billingDocumentsQuerySchema,
