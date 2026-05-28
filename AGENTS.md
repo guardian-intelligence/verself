@@ -110,9 +110,17 @@ Single global writer for TigerBeetle, ClickHouse, and PG
 
 ## Releases
 
-Releases are provided by distribution-service + aspect tasks for convenience. Packages that produce artifacts in a format supported by distribution-service can integrate with it.
+Software is either released (distributed binaries) or deployed (services). This section covers distributed binaries.
 
-3 release channels: nightly, rc/public-test, stable
+All binaries we ship must, at a minimum, do the following 3:
+
+* Ship an artifact comprised of a single compressed distributable + LICENSE file.
+* Prove SLSA provenance and provide an SBOM (including vendor licenses)
+* Enable clients to subscribe to nightly, rc/public-test and stable channels, check for updates, and download + verify + apply updates safely.
+
+Releases are provided by distribution-service (+ aspect tasks for convenience). Packages that produce artifacts in a format supported by distribution-service can integrate with it.
+
+Detailed release architecture, data model, state machines, and security model live in `docs/architecture/*release*-architecture.md`.
 
 Releases are modeled as a five step process:
 
@@ -120,11 +128,13 @@ Releases are modeled as a five step process:
 
 2. Build - Given `{package, version, source_commit, platform, flavor}`, run package-owned Bazel targets and emit artifacts/evidence. Side-effect free . Output is binary + license, vendor licenses, SBOM. A releasable artifact bundle, but not released. `flavor` is opaque metadata for distribution-service and can be used by software that integrates to capture all quirks around specific ABIs, customer-specific distributables, feature-flag sets, any other customizations.
 
-3. Sign / Publish Bytes. Run a build in our cloud trusted environment using AmdSev OVMF (our fleet is 100% EPYC CPU), sign the resulting artifact/provenance/SBOM, and push immutable OCI manifests/blobs/referrers to Zot with an ephermeral key + root signing key held by OpenBao Transit.
+3. Sign / Publish Bytes. Run a build in our cloud trusted environment using AMD SEV-SNP OVMF (our fleet is 100% EPYC CPU), sign the resulting artifact/provenance/SBOM, and push immutable OCI manifests/blobs/referrers to Zot with an ephemeral key + root signing key held by OpenBao Transit.
 
 4. Admit - distribution-service verifies registry truth: manifest exists, digest matches, OCI referrers exist, SLSA provenance matches source/version/target/builder, signer is trusted, package/channel policy allows it. The releasable artifact is now publicly available, but pushes to 3p vendors and clients requires a manual step.
 
 5. Promote - For each target distribution platform, update it to point to new admitted digest: `mksk + nightly + linux/amd64 -> sha256:...` or `mksk + nightly + linux/arm64 -> sha256:...` Public notified, clients can discover the update.
+
+More detail in docs/architecture/release-architecture.md
 
 # Tech Stack (partial description):
 
@@ -176,7 +186,7 @@ Product service receives request
     -> billing settles, emits events, projects evidence
     -> governance records the API activity/audit trail
 
-The core abstraction is the billing window. Services never charge money directly; they only request to reserve bounded windows of product abstractions which then are metered and monitored for abuse. Fraud and compliance services (once implemented) should create explicit business decisions that cause normal billing transitions: deny new reservations, block receivables, suspend a contract, revoke unearned allowance or issue an adjustment.
+The core abstraction is the billing window. Services never charge money directly; they only request to reserve bounded windows of product abstractions which then are metered and monitored for abuse. Fraud and compliance services (once implemented) should create explicit business decisions that trigger well-trodden billing transitions: deny new reservations, block receivables, suspend a contract, revoke unearned allowance or issue an adjustment.
 
 Boundary components that sit outside the usual service shape:
 
