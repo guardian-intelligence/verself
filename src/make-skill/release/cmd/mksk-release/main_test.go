@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/verself/make-skill/release/internal/ocipublish"
 	"oras.land/oras-go/v2/content/memory"
 )
 
@@ -325,9 +326,6 @@ func TestPublishBundlePublishesEvidenceReferrers(t *testing.T) {
 			SourceSBOM:      writeEvidenceForTest(t, root, "sbom/make-skill.source.spdx.json", "{}", "application/spdx+json"),
 			LicenseEvidence: writeEvidenceForTest(t, root, "licenses/make-skill.cargo-about.json", "{}", "application/json"),
 			Provenance:      writeEvidenceForTest(t, root, "evidence/make-skill.provenance.intoto.json", "{}", "application/vnd.in-toto+json"),
-			TestResults: []EvidenceFile{
-				writeEvidenceForTest(t, root, "tests/cli_test.xml", "<testsuite/>", "application/xml"),
-			},
 		},
 	}
 	req := PublishRequest{
@@ -345,8 +343,20 @@ func TestPublishBundlePublishesEvidenceReferrers(t *testing.T) {
 	if result.Reference != "mksk-v0.2.0-nightly.20260528.1-linux-amd64-default" {
 		t.Fatalf("reference = %q", result.Reference)
 	}
-	if len(result.Referrers) != 5 {
-		t.Fatalf("referrers = %d, want 5", len(result.Referrers))
+	if len(result.Referrers) != 4 {
+		t.Fatalf("referrers = %d, want 4", len(result.Referrers))
+	}
+	gotKinds := map[string]int{}
+	for _, referrer := range result.Referrers {
+		gotKinds[referrer.ArtifactType]++
+	}
+	wantKinds := map[string]int{
+		ocipublish.MediaTypeSPDX:   2,
+		mediaTypeLicenseEvidence:   1,
+		ocipublish.MediaTypeInToto: 1,
+	}
+	if !reflect.DeepEqual(gotKinds, wantKinds) {
+		t.Fatalf("referrer artifact types = %#v, want %#v", gotKinds, wantKinds)
 	}
 }
 

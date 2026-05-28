@@ -105,7 +105,6 @@ type EvidenceSet struct {
 	ArtifactSBOM    EvidenceFile
 	LicenseEvidence EvidenceFile
 	Provenance      EvidenceFile
-	TestResults     []EvidenceFile
 }
 
 type BuildBundle struct {
@@ -120,7 +119,6 @@ type releasePaths struct {
 	sbom     string
 	licenses string
 	evidence string
-	tests    string
 }
 
 type commandResult struct {
@@ -433,7 +431,6 @@ func buildBundle(ctx context.Context, req BuildRequest) (BuildBundle, error) {
 		sbom:     "sbom",
 		licenses: "licenses",
 		evidence: "evidence",
-		tests:    "tests",
 	}
 	if err := makeReleaseDirs(paths); err != nil {
 		return BuildBundle{}, err
@@ -447,10 +444,6 @@ func buildBundle(ctx context.Context, req BuildRequest) (BuildBundle, error) {
 		return BuildBundle{}, err
 	}
 	if err := os.WriteFile(artifactPath+".sha256", []byte(artifactFile.Digest+"  make-skill.tar\n"), 0o644); err != nil {
-		return BuildBundle{}, err
-	}
-	tests, err := copyTestXML(source.root, paths)
-	if err != nil {
 		return BuildBundle{}, err
 	}
 	sourceSBOM, artifactSBOM, err := generateSBOMs(ctx, source.root, toolsDir, artifactPath, req.Subject.Version, paths, toolEnv)
@@ -500,7 +493,6 @@ func buildBundle(ctx context.Context, req BuildRequest) (BuildBundle, error) {
 		"sbom_source=sbom/make-skill.source.spdx.json",
 		"licenses=licenses/make-skill.cargo-about.json",
 		"provenance=evidence/make-skill.provenance.intoto.json",
-		"tests=tests/*.xml",
 	}); err != nil {
 		return BuildBundle{}, err
 	}
@@ -516,7 +508,6 @@ func buildBundle(ctx context.Context, req BuildRequest) (BuildBundle, error) {
 			ArtifactSBOM:    artifactSBOM,
 			LicenseEvidence: licenseEvidence,
 			Provenance:      provenance,
-			TestResults:     tests,
 		},
 	}, nil
 }
@@ -627,7 +618,7 @@ func makeReleaseDirs(paths releasePaths) error {
 	if err := os.RemoveAll(paths.root); err != nil {
 		return fmt.Errorf("clear release output root %s: %w", paths.root, err)
 	}
-	for _, rel := range []string{"", paths.artifact, paths.sbom, paths.licenses, paths.evidence, paths.tests} {
+	for _, rel := range []string{"", paths.artifact, paths.sbom, paths.licenses, paths.evidence} {
 		if err := os.MkdirAll(filepath.Join(paths.root, rel), 0o755); err != nil {
 			return err
 		}
@@ -665,32 +656,6 @@ func generateLicenses(ctx context.Context, sourceRoot, toolsDir, rustToolsBin st
 		return EvidenceFile{}, err
 	}
 	return evidenceFile(out, "application/json")
-}
-
-func copyTestXML(repoRoot string, paths releasePaths) ([]EvidenceFile, error) {
-	tests := map[string]string{
-		"core_test.xml": filepath.Join(repoRoot, "bazel-testlogs", "src", "make-skill", "core_test", "test.xml"),
-		"exec_test.xml": filepath.Join(repoRoot, "bazel-testlogs", "src", "make-skill", "exec_test", "test.xml"),
-		"cli_test.xml":  filepath.Join(repoRoot, "bazel-testlogs", "src", "make-skill", "cli_test", "test.xml"),
-	}
-	names := make([]string, 0, len(tests))
-	for name := range tests {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	files := make([]EvidenceFile, 0, len(names))
-	for _, name := range names {
-		dst := filepath.Join(paths.root, paths.tests, name)
-		if err := copyFile(tests[name], dst, 0o644); err != nil {
-			return nil, err
-		}
-		file, err := evidenceFile(dst, "application/xml")
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, file)
-	}
-	return files, nil
 }
 
 type provenanceInput struct {

@@ -268,7 +268,6 @@ sbom/make-skill.artifact.spdx.json
 sbom/make-skill.source.spdx.json
 licenses/make-skill.cargo-about.json
 evidence/make-skill.provenance.intoto.json
-tests/*.xml
 README.txt
 checksums.sha256
 ```
@@ -290,12 +289,13 @@ type BuildBundle struct {
     ArtifactSBOM  EvidenceFile
     Licenses      EvidenceFile
     Provenance    EvidenceFile
-    TestResults   []EvidenceFile
 }
 ```
 
 Nightly, RC, and stable use the same build target. Channel policy controls
 which evidence is required for admission.
+Package-owned tests run before bundle emission. Raw test reports remain CI and
+ClickHouse evidence.
 
 ## OCI Layout
 
@@ -650,7 +650,6 @@ distribution-service verifies:
 - SLSA source repository and commit match the request;
 - package, version, channel, platform, and flavor match the request;
 - SBOM and license evidence exist;
-- test evidence exists for RC and stable;
 - signer delegation is trusted;
 - SEV-SNP attestation policy passed;
 - channel/version policy is valid.
