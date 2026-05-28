@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "mksk-release_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+        "release_intent.go",
+    ],
     importpath = "github.com/verself/make-skill/release/cmd/mksk-release",
     visibility = ["//visibility:private"],
 )

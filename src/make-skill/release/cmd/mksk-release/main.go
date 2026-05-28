@@ -68,19 +68,20 @@ func (p Platform) token() string {
 }
 
 type ReleaseSubject struct {
-	Package      string
-	Version      string
-	Channel      Channel
-	SourceCommit string
-	Platform     Platform
-	Flavor       string
+	Package          string
+	Version          string
+	Channel          Channel
+	SourceRepository string
+	SourceRef        string
+	SourceCommit     string
+	Platform         Platform
+	Flavor           string
 }
 
 type BuildRequest struct {
 	RepoRoot   string
 	ToolsTar   string
 	OutputRoot string
-	SourceRef  string
 	Subject    ReleaseSubject
 	BuilderID  string
 	AllowDirty bool
@@ -142,6 +143,10 @@ func run(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "build":
 		return runBuild(ctx, args[1:])
+	case "publish":
+		return runPublish(ctx, args[1:])
+	case "admit", "tag":
+		return runFutureSubcommand(args[0])
 	case "-h", "--help", "help":
 		printUsage(os.Stdout)
 		return nil
@@ -155,6 +160,9 @@ func printUsage(w io.Writer) {
 
 Subcommands:
   build    Build make-skill artifacts and standard evidence without publishing.
+  publish  Build then publish through the trusted release path (not yet implemented).
+  admit    Ask distribution-service to admit a published digest (not yet implemented).
+  tag      Create post-admission release tags (not yet implemented).
 `)
 }
 
@@ -170,71 +178,149 @@ func runBuild(ctx context.Context, args []string) error {
 	return stdoutf("build bundle: %s\n", bundle.Root)
 }
 
+func runPublish(ctx context.Context, args []string) error {
+	if _, err := parseReleaseBuildRequest(ctx, args, "mksk-release publish"); err != nil {
+		return err
+	}
+	return fmt.Errorf("publish is not implemented yet; trusted OCI publishing is the next release changeset")
+}
+
+func runFutureSubcommand(name string) error {
+	return fmt.Errorf("%s is not implemented yet", name)
+}
+
+type releaseFlagValues struct {
+	repoRoot     string
+	toolsTar     string
+	outputRoot   string
+	sourceRef    string
+	sourceCommit string
+	channel      string
+	version      string
+	platform     string
+	flavor       string
+	builderID    string
+	fromRC       string
+	nightly      bool
+	rc           bool
+	stable       bool
+	allowDirty   bool
+}
+
 func parseBuildRequest(ctx context.Context, args []string) (BuildRequest, error) {
-	req := BuildRequest{BuilderID: defaultBuilderID}
-	platformValue := defaultPlatform
-	channelValue := ""
-	flavor := defaultFlavor
-	fs := flag.NewFlagSet("mksk-release build", flag.ContinueOnError)
+	return parseReleaseBuildRequest(ctx, args, "mksk-release build")
+}
+
+func parseReleaseBuildRequest(ctx context.Context, args []string, commandName string) (BuildRequest, error) {
+	values := releaseFlagValues{
+		outputRoot: defaultOutputRoot,
+		sourceRef:  defaultSourceRef,
+		platform:   defaultPlatform,
+		flavor:     defaultFlavor,
+		builderID:  defaultBuilderID,
+	}
+	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	fs.StringVar(&req.RepoRoot, "repo-root", "", "Repository root. Defaults to git rev-parse --show-toplevel.")
-	fs.StringVar(&req.ToolsTar, "tools-tar", "", "Bazel-built make-skill release tools tar.")
-	fs.StringVar(&req.OutputRoot, "out-dir", defaultOutputRoot, "Directory for build bundle outputs.")
-	fs.StringVar(&req.SourceRef, "source-ref", defaultSourceRef, "Git ref recorded as release source.")
-	fs.StringVar(&req.Subject.SourceCommit, "source-commit", "", "Resolved 40-character git source commit. Defaults to --source-ref.")
-	fs.StringVar(&channelValue, "channel", "", "Release channel: nightly, rc, or stable.")
-	fs.StringVar(&req.Subject.Version, "version", "", "Release version. Required for all build bundles.")
-	fs.StringVar(&platformValue, "platform", defaultPlatform, "Release platform as OS/ARCH.")
-	fs.StringVar(&flavor, "flavor", defaultFlavor, "Opaque release flavor token.")
-	fs.StringVar(&req.BuilderID, "builder-id", defaultBuilderID, "SLSA builder id recorded in provenance.")
-	fs.BoolVar(&req.AllowDirty, "allow-dirty", false, "Allow building from a dirty local workspace for inspection.")
+	fs.StringVar(&values.repoRoot, "repo-root", "", "Repository root. Defaults to git rev-parse --show-toplevel.")
+	fs.StringVar(&values.toolsTar, "tools-tar", "", "Bazel-built make-skill release tools tar.")
+	fs.StringVar(&values.outputRoot, "out-dir", defaultOutputRoot, "Directory for build bundle outputs.")
+	fs.StringVar(&values.sourceRef, "source-ref", defaultSourceRef, "Git ref recorded as release source.")
+	fs.StringVar(&values.sourceCommit, "source-commit", "", "Resolved 40-character git source commit. Only valid with --channel/--version.")
+	fs.StringVar(&values.channel, "channel", "", "Exact release channel: nightly, rc, or stable.")
+	fs.StringVar(&values.version, "version", "", "Exact release version.")
+	fs.StringVar(&values.platform, "platform", defaultPlatform, "Release platform as OS/ARCH.")
+	fs.StringVar(&values.flavor, "flavor", defaultFlavor, "Opaque release flavor token.")
+	fs.StringVar(&values.builderID, "builder-id", defaultBuilderID, "SLSA builder id recorded in provenance.")
+	fs.StringVar(&values.fromRC, "from-rc", "", "RC tag to rebuild as a stable release, e.g. mksk-v0.2.0-rc.2.")
+	fs.BoolVar(&values.nightly, "nightly", false, "Derive the next nightly version from --source-ref.")
+	fs.BoolVar(&values.rc, "rc", false, "Derive the next RC version from --source-ref.")
+	fs.BoolVar(&values.stable, "stable", false, "Derive a stable version from --source-ref or --from-rc.")
+	fs.BoolVar(&values.allowDirty, "allow-dirty", false, "Allow building from a dirty local workspace for inspection.")
 	if err := fs.Parse(args); err != nil {
 		return BuildRequest{}, err
 	}
 	if fs.NArg() != 0 {
 		return BuildRequest{}, fmt.Errorf("unexpected positional args: %s", strings.Join(fs.Args(), " "))
 	}
-	if err := fillRepoRoot(ctx, &req.RepoRoot); err != nil {
+	repoRoot := strings.TrimSpace(values.repoRoot)
+	if err := fillRepoRoot(ctx, &repoRoot); err != nil {
 		return BuildRequest{}, err
 	}
-	req.OutputRoot = absoluteFromRepo(req.RepoRoot, req.OutputRoot)
-	req.SourceRef = strings.TrimSpace(req.SourceRef)
-	req.ToolsTar = strings.TrimSpace(req.ToolsTar)
-	req.BuilderID = strings.TrimSpace(req.BuilderID)
-	req.Subject.Package = packageName
-	req.Subject.Version = strings.TrimSpace(req.Subject.Version)
-	req.Subject.SourceCommit = strings.TrimSpace(req.Subject.SourceCommit)
-	req.Subject.Flavor = strings.TrimSpace(flavor)
-	channel, err := parseChannel(channelValue)
+	outputRoot := absoluteFromRepo(repoRoot, values.outputRoot)
+	intent, err := releaseIntentFromFlags(values)
 	if err != nil {
 		return BuildRequest{}, err
 	}
-	req.Subject.Channel = channel
-	platform, err := parsePlatform(platformValue)
+	platform, err := parsePlatform(values.platform)
 	if err != nil {
 		return BuildRequest{}, err
 	}
-	req.Subject.Platform = platform
+	subject, err := intent.deriveSubject(ctx, releaseDerivationConfig{
+		RepoRoot:   repoRoot,
+		OutputRoot: outputRoot,
+		Platform:   platform,
+		Flavor:     values.flavor,
+		Now:        time.Now().UTC(),
+	})
+	if err != nil {
+		return BuildRequest{}, err
+	}
+	if err := validateSubject(subject); err != nil {
+		return BuildRequest{}, err
+	}
+	req := BuildRequest{
+		RepoRoot:   repoRoot,
+		ToolsTar:   strings.TrimSpace(values.toolsTar),
+		OutputRoot: outputRoot,
+		Subject:    subject,
+		BuilderID:  strings.TrimSpace(values.builderID),
+		AllowDirty: values.allowDirty,
+	}
 	if req.ToolsTar == "" {
 		return BuildRequest{}, fmt.Errorf("--tools-tar is required")
-	}
-	if req.SourceRef == "" {
-		return BuildRequest{}, fmt.Errorf("--source-ref is required")
 	}
 	if req.BuilderID == "" {
 		return BuildRequest{}, fmt.Errorf("--builder-id is required")
 	}
-	if req.Subject.SourceCommit == "" {
-		commit, err := resolveCommit(ctx, req.RepoRoot, req.SourceRef)
-		if err != nil {
-			return BuildRequest{}, err
-		}
-		req.Subject.SourceCommit = commit
-	}
-	if err := validateSubject(req.Subject); err != nil {
-		return BuildRequest{}, err
-	}
 	return req, nil
+}
+
+func releaseIntentFromFlags(values releaseFlagValues) (releaseIntent, error) {
+	exactRequested := strings.TrimSpace(values.channel) != "" || strings.TrimSpace(values.version) != "" || strings.TrimSpace(values.sourceCommit) != ""
+	intentCount := 0
+	for _, enabled := range []bool{values.nightly, values.rc, values.stable, exactRequested} {
+		if enabled {
+			intentCount++
+		}
+	}
+	if intentCount != 1 {
+		return nil, fmt.Errorf("choose exactly one release intent: --nightly, --rc, --stable, or --channel with --version")
+	}
+	if values.fromRC != "" && !values.stable {
+		return nil, fmt.Errorf("--from-rc is only valid with --stable")
+	}
+	switch {
+	case values.nightly:
+		return nightlyIntent{SourceRef: values.sourceRef}, nil
+	case values.rc:
+		return rcIntent{SourceRef: values.sourceRef}, nil
+	case values.stable:
+		return stableIntent{SourceRef: values.sourceRef, FromRC: strings.TrimSpace(values.fromRC)}, nil
+	default:
+		if strings.TrimSpace(values.channel) == "" || strings.TrimSpace(values.version) == "" {
+			return nil, fmt.Errorf("--channel and --version are required for an exact release subject")
+		}
+		channel, err := parseChannel(values.channel)
+		if err != nil {
+			return nil, err
+		}
+		return exactIntent{
+			Channel:      channel,
+			Version:      strings.TrimSpace(values.version),
+			SourceRef:    values.sourceRef,
+			SourceCommit: strings.TrimSpace(values.sourceCommit),
+		}, nil
+	}
 }
 
 func buildBundle(ctx context.Context, req BuildRequest) (BuildBundle, error) {
@@ -329,7 +415,6 @@ func buildBundle(ctx context.Context, req BuildRequest) (BuildBundle, error) {
 		artifactBytes:   artifactFile.SizeBytes,
 		builderID:       req.BuilderID,
 		subject:         req.Subject,
-		sourceRef:       req.SourceRef,
 		workspaceDirty:  source.dirty,
 		started:         started,
 		finished:        finished,
@@ -349,7 +434,8 @@ func buildBundle(ctx context.Context, req BuildRequest) (BuildBundle, error) {
 		"channel=" + string(req.Subject.Channel),
 		"platform=" + req.Subject.Platform.String(),
 		"flavor=" + req.Subject.Flavor,
-		"source_ref=" + req.SourceRef,
+		"source_repository=" + req.Subject.SourceRepository,
+		"source_ref=" + req.Subject.SourceRef,
 		"source_commit=" + req.Subject.SourceCommit,
 		fmt.Sprintf("workspace_dirty=%t", source.dirty),
 		"builder_id=" + req.BuilderID,
@@ -410,6 +496,12 @@ func validateSubject(subject ReleaseSubject) error {
 	}
 	if subject.SourceCommit == "" || !gitCommitRE.MatchString(subject.SourceCommit) {
 		return fmt.Errorf("source commit must be a 40-character lowercase git sha")
+	}
+	if subject.SourceRepository == "" {
+		return fmt.Errorf("source repository is required")
+	}
+	if subject.SourceRef == "" {
+		return fmt.Errorf("source ref is required")
 	}
 	if subject.Flavor == "" {
 		return fmt.Errorf("flavor is required")
@@ -553,7 +645,6 @@ type provenanceInput struct {
 	artifactBytes   int64
 	builderID       string
 	subject         ReleaseSubject
-	sourceRef       string
 	workspaceDirty  bool
 	started         time.Time
 	finished        time.Time
@@ -583,6 +674,7 @@ func writeSLSAProvenance(path string, input provenanceInput) error {
 					"package":     input.subject.Package,
 					"platform":    input.subject.Platform.String(),
 					"releaseURL":  releaseMetadataURL(input.subject.Version),
+					"sourceRef":   input.subject.SourceRef,
 					"version":     input.subject.Version,
 				},
 				"internalParameters": map[string]any{
@@ -590,7 +682,7 @@ func writeSLSAProvenance(path string, input provenanceInput) error {
 				},
 				"resolvedDependencies": []map[string]any{
 					{
-						"uri": sourceRepository,
+						"uri": input.subject.SourceRepository,
 						"digest": map[string]string{
 							"gitCommit": input.subject.SourceCommit,
 						},
