@@ -1,7 +1,7 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { createFileRoute, Link, useHydrated, useNavigate } from "@tanstack/react-router";
 import { KeyRound, Mail } from "lucide-react";
-import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
+import { useIamFormSubmit } from "@verself/auth-web/form";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -13,12 +13,13 @@ import {
   fieldInvalid,
   submitErrorText,
 } from "~/features/auth/form-primitives";
-import { iamErrorMessage } from "~/features/auth/iam-error-copy";
+import { forgotPasswordIamFormError } from "~/features/auth/iam-error-copy";
 import {
   emailSchema,
   forgotPasswordFormSchema,
   formString,
   normalizeEmail,
+  type ForgotPasswordFormValues,
 } from "~/features/auth/form-schemas";
 import { Squircle } from "~/features/console/flight/squircle";
 import { startPasswordReset } from "~/server-fns/auth";
@@ -40,6 +41,11 @@ function ForgotPasswordPage() {
   const hydrated = useHydrated();
   const navigate = useNavigate();
   const search = Route.useSearch();
+  const resetSubmit = useIamFormSubmit({
+    submit: (value: ForgotPasswordFormValues) =>
+      startPasswordReset({ data: { email: normalizeEmail(value.email) } }),
+    mapError: forgotPasswordIamFormError,
+  });
   const form = useForm({
     defaultValues: {
       email: search.sent ?? "",
@@ -50,15 +56,13 @@ function ForgotPasswordPage() {
     }),
     validators: {
       onDynamic: forgotPasswordFormSchema,
+      onSubmitAsync: resetSubmit.validate,
     },
     canSubmitWhenInvalid: true,
     onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const email = normalizeEmail(value.email);
-      const result = await startPasswordReset({ data: { email } }).catch(iamErrorFromUnknown);
-      if (isIamError(result)) {
-        throw new Error(iamErrorMessage(result));
-      }
+      resetSubmit.requireSuccess();
       await navigate({
         to: "/forgot-password",
         search: { sent: email },
@@ -149,11 +153,9 @@ function ForgotPasswordPage() {
                   }}
                 </form.Field>
                 <form.Subscribe
-                  selector={(state) => [
-                    state.isSubmitting,
-                    state.isValidating,
-                    state.errorMap.onSubmit,
-                  ]}
+                  selector={(state) =>
+                    [state.isSubmitting, state.isValidating, state.errorMap.onSubmit] as const
+                  }
                 >
                   {([isSubmitting, isValidating, submitError]) => (
                     <div className="grid gap-3">

@@ -1,14 +1,14 @@
 import { useForm } from "@tanstack/react-form";
 import { createFileRoute, useHydrated, useNavigate } from "@tanstack/react-router";
 import { CheckCircle2 } from "lucide-react";
-import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
+import { useIamFormSubmit } from "@verself/auth-web/form";
 import { Button } from "@verself/ui/components/ui/button";
 import {
   authFormSubmit,
   authFormSubmitBusy,
   submitErrorText,
 } from "~/features/auth/form-primitives";
-import { iamErrorMessage } from "~/features/auth/iam-error-copy";
+import { genericIamFormError } from "~/features/auth/iam-error-copy";
 import { acceptMemberInvite } from "~/server-fns/auth";
 
 function searchString(value: unknown): string | undefined {
@@ -61,13 +61,17 @@ function InviteAcceptanceForm({
 }) {
   const hydrated = useHydrated();
   const navigate = useNavigate();
+  const inviteSubmit = useIamFormSubmit({
+    submit: () => acceptMemberInvite({ data: { token } }),
+    mapError: genericIamFormError,
+  });
   const form = useForm({
     defaultValues: {},
+    validators: {
+      onSubmitAsync: inviteSubmit.validate,
+    },
     onSubmit: async () => {
-      const result = await acceptMemberInvite({ data: { token } }).catch(iamErrorFromUnknown);
-      if (isIamError(result)) {
-        throw new Error(iamErrorMessage(result));
-      }
+      inviteSubmit.requireSuccess();
       await navigate({
         to: "/login",
         search: org ? { redirect: `/${org}` } : {},
@@ -85,7 +89,7 @@ function InviteAcceptanceForm({
       }}
       className="mt-6 grid gap-4"
     >
-      <form.Subscribe selector={(state) => [state.isSubmitting, state.errorMap.onSubmit]}>
+      <form.Subscribe selector={(state) => [state.isSubmitting, state.errorMap.onSubmit] as const}>
         {([isSubmitting, submitError]) => (
           <div className="grid gap-3">
             <Button

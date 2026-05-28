@@ -455,6 +455,9 @@ importers:
       '@tanstack/react-router':
         specifier: 'catalog:'
         version: 1.168.10(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@verself/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@verself/ui':
         specifier: workspace:*
         version: link:../ui

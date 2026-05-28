@@ -21,6 +21,10 @@
       "types": "./src/react.ts",
       "default": "./src/react.ts"
     },
+    "./form": {
+      "types": "./src/form.ts",
+      "default": "./src/form.ts"
+    },
     "./components": {
       "types": "./src/components/index.ts",
       "default": "./src/components/index.ts"
@@ -36,6 +40,7 @@
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
+    "@verself/sdk": "workspace:*",
     "@verself/ui": "workspace:*",
     "@verself/web-env": "workspace:*",
     "lucide-react": "catalog:",
