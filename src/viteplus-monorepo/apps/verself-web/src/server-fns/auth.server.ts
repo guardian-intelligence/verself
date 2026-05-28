@@ -7,7 +7,13 @@ import {
   type AuthenticatedAuthSnapshot,
   type AuthSnapshot,
 } from "@verself/auth-web/isomorphic";
-import { authResultFromResponse, type AuthResult } from "@verself/sdk/auth";
+import {
+  IAM_SUCCESS_TAG,
+  iamErrorFromUnknown,
+  iamOutcomeFromResponse,
+  type IamOutcome,
+  type IamSuccess,
+} from "@verself/sdk/iam-errors";
 import type { ConsoleAuthContext } from "./auth";
 import {
   currentCookieHeader,
@@ -53,7 +59,14 @@ const signupVerificationResultSchema = v.object({
 });
 
 export type SignupVerificationResult = v.InferOutput<typeof signupVerificationResultSchema>;
-export type SignupVerificationOperationResult = AuthResult<SignupVerificationResult>;
+export type SignupVerificationSuccess = IamSuccess<
+  typeof IAM_SUCCESS_TAG.signupVerified,
+  SignupVerificationResult
+>;
+export type SignupVerificationOperationResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.signupVerified,
+  SignupVerificationResult
+>;
 
 const signupStartResultSchema = v.object({
   message: v.pipe(v.string(), v.nonEmpty()),
@@ -62,7 +75,10 @@ const signupStartResultSchema = v.object({
 });
 
 export type SignupStartResult = v.InferOutput<typeof signupStartResultSchema>;
-export type SignupStartOperationResult = AuthResult<SignupStartResult>;
+export type SignupStartOperationResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.signupStarted,
+  SignupStartResult
+>;
 
 const organizationSlugAvailabilitySchema = v.object({
   slug: v.pipe(v.string(), v.nonEmpty()),
@@ -89,14 +105,20 @@ const memberInviteAcceptanceResultSchema = v.object({
 });
 
 export type MemberInviteAcceptanceResult = v.InferOutput<typeof memberInviteAcceptanceResultSchema>;
-export type MemberInviteAcceptanceOperationResult = AuthResult<MemberInviteAcceptanceResult>;
+export type MemberInviteAcceptanceOperationResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.memberInviteAccepted,
+  MemberInviteAcceptanceResult
+>;
 
 const passwordLoginSuccessResultSchema = v.object({
   callbackUrl: v.pipe(v.string(), v.nonEmpty()),
 });
 
 export type PasswordLoginSuccessResult = v.InferOutput<typeof passwordLoginSuccessResultSchema>;
-export type PasswordLoginResult = AuthResult<PasswordLoginSuccessResult>;
+export type PasswordLoginResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.passwordLoginCompleted,
+  PasswordLoginSuccessResult
+>;
 
 const nullableStringSchema = v.union([v.null_(), v.string()]);
 
@@ -129,7 +151,14 @@ const passwordResetResultSchema = v.object({
 });
 
 export type PasswordResetResult = v.InferOutput<typeof passwordResetResultSchema>;
-export type PasswordResetOperationResult = AuthResult<PasswordResetResult>;
+export type PasswordResetStartOperationResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.passwordResetStarted,
+  PasswordResetResult
+>;
+export type PasswordResetCompleteOperationResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.passwordResetCompleted,
+  PasswordResetResult
+>;
 
 const deviceLoginResultSchema = v.object({
   deviceLoginHandle: v.pipe(v.string(), v.nonEmpty()),
@@ -146,7 +175,22 @@ const deviceLoginResultSchema = v.object({
 });
 
 export type DeviceLoginResult = v.InferOutput<typeof deviceLoginResultSchema>;
-export type DeviceLoginOperationResult = AuthResult<DeviceLoginResult>;
+export type DeviceLoginLoaded = IamSuccess<
+  typeof IAM_SUCCESS_TAG.deviceLoginLoaded,
+  DeviceLoginResult
+>;
+export type DeviceLoginLookupOperationResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.deviceLoginLoaded,
+  DeviceLoginResult
+>;
+export type DeviceLoginApprovalOperationResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.deviceLoginApproved,
+  DeviceLoginResult
+>;
+export type DeviceLoginDenialOperationResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.deviceLoginDenied,
+  DeviceLoginResult
+>;
 
 function identityAuthURL(path: string): string {
   return new URL(`/api/v1/auth/${path}`, IAM_SERVICE_BASE_URL).toString();
@@ -218,6 +262,44 @@ async function identityAPIFetch(
   } = {},
 ): Promise<Response> {
   return identityFetch(identityAPIURL(path), init, options);
+}
+
+async function identityAuthOutcome<TTag extends string, TSchema extends v.GenericSchema>(
+  path: string,
+  init: RequestInit,
+  options: {
+    cookieHeader?: string | undefined;
+    forwardCookies?: boolean;
+    sourceHeaders?: Headers | undefined;
+  },
+  schema: TSchema,
+  successTag: TTag,
+): Promise<IamOutcome<TTag, v.InferOutput<TSchema>>> {
+  try {
+    const response = await identityAuthFetch(path, init, options);
+    return iamOutcomeFromResponse(response, schema, successTag);
+  } catch (cause) {
+    return iamErrorFromUnknown(cause);
+  }
+}
+
+async function identityAPIOutcome<TTag extends string, TSchema extends v.GenericSchema>(
+  path: string,
+  init: RequestInit,
+  options: {
+    cookieHeader?: string | undefined;
+    forwardCookies?: boolean;
+    sourceHeaders?: Headers | undefined;
+  },
+  schema: TSchema,
+  successTag: TTag,
+): Promise<IamOutcome<TTag, v.InferOutput<TSchema>>> {
+  try {
+    const response = await identityAPIFetch(path, init, options);
+    return iamOutcomeFromResponse(response, schema, successTag);
+  } catch (cause) {
+    return iamErrorFromUnknown(cause);
+  }
 }
 
 export async function readAuthSnapshot(): Promise<AuthSnapshot> {
@@ -314,7 +396,7 @@ export async function revokeIdentityBrowserDevice(sessionHandle: string): Promis
 export async function acceptIdentityMemberInvite(data: {
   token: string;
 }): Promise<MemberInviteAcceptanceOperationResult> {
-  const response = await identityAuthFetch(
+  return identityAuthOutcome(
     "invites/accept",
     {
       method: "POST",
@@ -327,8 +409,9 @@ export async function acceptIdentityMemberInvite(data: {
       }),
     },
     { cookieHeader: undefined, forwardCookies: false },
+    memberInviteAcceptanceResultSchema,
+    IAM_SUCCESS_TAG.memberInviteAccepted,
   );
-  return authResultFromResponse(response, memberInviteAcceptanceResultSchema);
 }
 
 export async function completeIdentityPasswordLogin(data: {
@@ -343,53 +426,68 @@ export async function completeIdentityPasswordLogin(data: {
   requiredOrgId?: string | undefined;
   prompt?: "login" | "select_account" | undefined;
 }): Promise<PasswordLoginResult> {
-  const response = await identityAuthFetch("password-login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: data.email,
-      password: data.password,
-      authRequestId: data.authRequestId ?? "",
-      redirectTo: data.redirectTo ?? "",
-      purpose: data.purpose ?? "",
-      loginHint: data.loginHint ?? "",
-      requiredSubject: data.requiredSubject ?? "",
-      requiredEmail: data.requiredEmail ?? "",
-      requiredOrgId: data.requiredOrgId ?? "",
-      prompt: data.prompt ?? "",
-    }),
-  });
-  return authResultFromResponse(response, passwordLoginSuccessResultSchema);
+  return identityAuthOutcome(
+    "password-login",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: data.email,
+        password: data.password,
+        authRequestId: data.authRequestId ?? "",
+        redirectTo: data.redirectTo ?? "",
+        purpose: data.purpose ?? "",
+        loginHint: data.loginHint ?? "",
+        requiredSubject: data.requiredSubject ?? "",
+        requiredEmail: data.requiredEmail ?? "",
+        requiredOrgId: data.requiredOrgId ?? "",
+        prompt: data.prompt ?? "",
+      }),
+    },
+    {},
+    passwordLoginSuccessResultSchema,
+    IAM_SUCCESS_TAG.passwordLoginCompleted,
+  );
 }
 
 export async function startIdentityPasswordReset(
   email: string,
-): Promise<PasswordResetOperationResult> {
-  const response = await identityAuthFetch("password-reset", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  });
-  return authResultFromResponse(response, passwordResetResultSchema);
+): Promise<PasswordResetStartOperationResult> {
+  return identityAuthOutcome(
+    "password-reset",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    },
+    {},
+    passwordResetResultSchema,
+    IAM_SUCCESS_TAG.passwordResetStarted,
+  );
 }
 
 export async function completeIdentityPasswordReset(data: {
   userId: string;
   verificationCode: string;
   password: string;
-}): Promise<PasswordResetOperationResult> {
-  const response = await identityAuthFetch("password-reset/complete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  return authResultFromResponse(response, passwordResetResultSchema);
+}): Promise<PasswordResetCompleteOperationResult> {
+  return identityAuthOutcome(
+    "password-reset/complete",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+    {},
+    passwordResetResultSchema,
+    IAM_SUCCESS_TAG.passwordResetCompleted,
+  );
 }
 
 export async function lookupIdentityDeviceLogin(
   userCode: string,
-): Promise<DeviceLoginOperationResult> {
-  const response = await identityAuthFetch(
+): Promise<DeviceLoginLookupOperationResult> {
+  return identityAuthOutcome(
     "device-logins/lookup",
     {
       method: "POST",
@@ -397,36 +495,41 @@ export async function lookupIdentityDeviceLogin(
       body: JSON.stringify({ userCode }),
     },
     { forwardCookies: false },
+    deviceLoginResultSchema,
+    IAM_SUCCESS_TAG.deviceLoginLoaded,
   );
-  return authResultFromResponse(response, deviceLoginResultSchema);
 }
 
 export async function approveIdentityDeviceLogin(
   deviceLoginHandle: string,
-): Promise<DeviceLoginOperationResult> {
-  const response = await identityAuthFetch(
+): Promise<DeviceLoginApprovalOperationResult> {
+  return identityAuthOutcome(
     `device-logins/${encodeURIComponent(deviceLoginHandle)}/approval`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
     },
+    {},
+    deviceLoginResultSchema,
+    IAM_SUCCESS_TAG.deviceLoginApproved,
   );
-  return authResultFromResponse(response, deviceLoginResultSchema);
 }
 
 export async function denyIdentityDeviceLogin(
   deviceLoginHandle: string,
-): Promise<DeviceLoginOperationResult> {
-  const response = await identityAuthFetch(
+): Promise<DeviceLoginDenialOperationResult> {
+  return identityAuthOutcome(
     `device-logins/${encodeURIComponent(deviceLoginHandle)}/denial`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
     },
+    {},
+    deviceLoginResultSchema,
+    IAM_SUCCESS_TAG.deviceLoginDenied,
   );
-  return authResultFromResponse(response, deviceLoginResultSchema);
 }
 
 function inviteAcceptanceIdempotencyKey(token: string): string {
@@ -443,7 +546,7 @@ export async function verifyIdentitySignup(data: {
 }): Promise<SignupVerificationOperationResult> {
   const organizationDisplayName = normalizeHumanText(data.organizationDisplayName);
   const organizationSlug = normalizeSlug(data.organizationSlug);
-  const response = await identityAPIFetch(
+  return identityAPIOutcome(
     `signup-intents/${encodeURIComponent(data.signupIntentId)}/verification`,
     {
       method: "POST",
@@ -463,8 +566,9 @@ export async function verifyIdentitySignup(data: {
       }),
     },
     { cookieHeader: undefined, forwardCookies: false },
+    signupVerificationResultSchema,
+    IAM_SUCCESS_TAG.signupVerified,
   );
-  return authResultFromResponse(response, signupVerificationResultSchema);
 }
 
 export async function startIdentitySignup(data: {
@@ -476,7 +580,7 @@ export async function startIdentitySignup(data: {
 }): Promise<SignupStartOperationResult> {
   const organizationDisplayName = normalizeHumanText(data.organizationDisplayName);
   const organizationSlug = data.organizationSlug ? normalizeSlug(data.organizationSlug) : "";
-  const response = await identityAPIFetch(
+  return identityAPIOutcome(
     "signup-intents",
     {
       method: "POST",
@@ -499,8 +603,9 @@ export async function startIdentitySignup(data: {
       }),
     },
     { cookieHeader: undefined, forwardCookies: false },
+    signupStartResultSchema,
+    IAM_SUCCESS_TAG.signupStarted,
   );
-  return authResultFromResponse(response, signupStartResultSchema);
 }
 
 function signupStartIdempotencyKey(data: {

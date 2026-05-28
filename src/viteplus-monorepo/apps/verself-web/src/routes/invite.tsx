@@ -1,12 +1,14 @@
 import { useForm } from "@tanstack/react-form";
-import { createFileRoute, useHydrated } from "@tanstack/react-router";
+import { createFileRoute, useHydrated, useNavigate } from "@tanstack/react-router";
 import { CheckCircle2 } from "lucide-react";
+import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
 import { Button } from "@verself/ui/components/ui/button";
 import {
   authFormSubmit,
   authFormSubmitBusy,
   submitErrorText,
 } from "~/features/auth/form-primitives";
+import { iamErrorMessage } from "~/features/auth/iam-error-copy";
 import { acceptMemberInvite } from "~/server-fns/auth";
 
 function searchString(value: unknown): string | undefined {
@@ -58,15 +60,18 @@ function InviteAcceptanceForm({
   readonly org: string | undefined;
 }) {
   const hydrated = useHydrated();
+  const navigate = useNavigate();
   const form = useForm({
     defaultValues: {},
     onSubmit: async () => {
-      await acceptMemberInvite({ data: { token } });
-      const login = new URL("/login", window.location.origin);
-      if (org) {
-        login.searchParams.set("redirect", `/${org}`);
+      const result = await acceptMemberInvite({ data: { token } }).catch(iamErrorFromUnknown);
+      if (isIamError(result)) {
+        throw new Error(iamErrorMessage(result));
       }
-      window.location.assign(`${login.pathname}${login.search}`);
+      await navigate({
+        to: "/login",
+        search: org ? { redirect: `/${org}` } : {},
+      });
     },
   });
 

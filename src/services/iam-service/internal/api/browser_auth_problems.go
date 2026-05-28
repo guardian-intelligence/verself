@@ -54,7 +54,7 @@ type authProblemOccurrence struct {
 	Code        string `json:"code"`
 	RequestID   string `json:"requestId,omitempty"`
 	Traceparent string `json:"traceparent,omitempty"`
-	Retryable   bool   `json:"retryable,omitempty"`
+	Retryable   bool   `json:"retryable"`
 }
 
 type authProblemOptions struct {

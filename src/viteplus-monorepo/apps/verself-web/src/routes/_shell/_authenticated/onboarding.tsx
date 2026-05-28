@@ -1,5 +1,5 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
-import { createFileRoute, redirect, useHydrated } from "@tanstack/react-router";
+import { createFileRoute, redirect, useHydrated, useNavigate } from "@tanstack/react-router";
 import { Building2 } from "lucide-react";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
@@ -50,6 +50,7 @@ export const Route = createFileRoute("/_shell/_authenticated/onboarding")({
 
 function OnboardingPage() {
   const hydrated = useHydrated();
+  const navigate = useNavigate();
   const form = useForm({
     defaultValues: {
       displayName: "",
@@ -74,7 +75,7 @@ function OnboardingPage() {
         },
       });
       await selectActiveOrganization({ data: { orgID: organization.org_id } });
-      window.location.assign(orgPath(organization.slug, "/"));
+      await navigate({ to: orgPath(organization.slug, "/") });
     },
   });
 

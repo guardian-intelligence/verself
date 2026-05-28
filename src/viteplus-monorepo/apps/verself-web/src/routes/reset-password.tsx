@@ -1,8 +1,8 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
-import { createFileRoute, Link, useHydrated } from "@tanstack/react-router";
+import { createFileRoute, Link, useHydrated, useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
 import { useReducer } from "react";
-import { authFailureFromUnknown, unwrapAuthResult } from "@verself/sdk/auth";
+import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
 import { Button } from "@verself/ui/components/ui/button";
 import { Label } from "@verself/ui/components/ui/label";
 import {
@@ -13,6 +13,7 @@ import {
   authFormSubmitInvalid,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
+import { iamErrorMessage } from "~/features/auth/iam-error-copy";
 import {
   formString,
   newPasswordSchema,
@@ -47,6 +48,7 @@ export const Route = createFileRoute("/reset-password")({
 
 function ResetPasswordPage() {
   const hydrated = useHydrated();
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const [passwordVisible, togglePasswordVisible] = useReducer((value: boolean) => !value, false);
   const form = useForm({
@@ -68,16 +70,20 @@ function ResetPasswordPage() {
       if (!search.user_id || !search.verification_code) {
         throw new Error("This reset link is invalid or expired.");
       }
-      unwrapAuthResult(
-        await completePasswordReset({
-          data: {
-            userId: search.user_id,
-            verificationCode: search.verification_code,
-            password,
-          },
-        }).catch(authFailureFromUnknown),
-      );
-      window.location.assign("/login?prompt=login");
+      const result = await completePasswordReset({
+        data: {
+          userId: search.user_id,
+          verificationCode: search.verification_code,
+          password,
+        },
+      }).catch(iamErrorFromUnknown);
+      if (isIamError(result)) {
+        throw new Error(iamErrorMessage(result));
+      }
+      await navigate({
+        to: "/login",
+        search: { prompt: "login" },
+      });
     },
   });
 
