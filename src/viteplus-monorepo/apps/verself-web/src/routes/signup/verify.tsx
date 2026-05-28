@@ -2,7 +2,8 @@ import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { Link, createFileRoute, useHydrated, useNavigate } from "@tanstack/react-router";
 import { Building2, CheckCircle2, Eye, EyeOff, MailPlus } from "lucide-react";
 import { useReducer, type ReactNode } from "react";
-import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
+import { iamFormValidationError, useIamFormSubmit } from "@verself/auth-web/form";
+import { isIamError, type IamError } from "@verself/sdk/iam-errors";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -16,7 +17,7 @@ import {
   fieldErrorText,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
-import { iamErrorMessage } from "~/features/auth/iam-error-copy";
+import { signupVerificationIamFormError } from "~/features/auth/iam-error-copy";
 import {
   formString,
   inviteLinkSchema,
@@ -26,6 +27,7 @@ import {
   organizationSlugSchema,
   signupVerificationCreateFormSchema,
   signupVerificationJoinFormSchema,
+  type SignupVerificationFormValues,
   slugify,
 } from "~/features/auth/form-schemas";
 import { PASSWORD_GUIDANCE_TEXT } from "~/features/auth/password-policy";
@@ -33,6 +35,16 @@ import { organizationSlugAvailabilityError } from "~/features/auth/slug-availabi
 import { acceptMemberInvite, passwordLogin, verifySignup } from "~/server-fns/auth";
 
 type SignupMode = "create" | "join";
+
+type SignupVerificationSubmitSuccess =
+  | {
+      readonly kind: "login-target";
+      readonly target: string;
+    }
+  | {
+      readonly kind: "callback-url";
+      readonly callbackUrl: string;
+    };
 
 function searchString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -75,35 +87,20 @@ function SignupVerificationPage() {
   const organizationSlug = search.organization_slug;
   const mode = signupMode(search.mode);
   const [passwordVisible, togglePasswordVisible] = useReducer((value: boolean) => !value, false);
-  const form = useForm({
-    defaultValues: {
-      organizationDisplayName: organizationDisplayName ?? "",
-      organizationSlug: organizationSlug ?? slugify(organizationDisplayName ?? ""),
-      initialPassword: "",
-      confirmPassword: "",
-      inviteLink: "",
-    },
-    validationLogic: revalidateLogic({
-      mode: "blur",
-      modeAfterSubmission: "change",
-    }),
-    validators: {
-      onDynamic:
-        mode === "join" ? signupVerificationJoinFormSchema : signupVerificationCreateFormSchema,
-    },
-    canSubmitWhenInvalid: true,
-    onSubmitInvalid: authFormSubmitInvalid,
-    onSubmit: async ({ value }) => {
+  const signupSubmit = useIamFormSubmit({
+    submit: async (
+      value: SignupVerificationFormValues,
+    ): Promise<SignupVerificationSubmitSuccess | IamError> => {
       if (mode === "join") {
         const invite = inviteCredentialsFromInput(formString(value.inviteLink));
-        const result = await acceptMemberInvite({ data: { token: invite.token } }).catch(
-          iamErrorFromUnknown,
-        );
+        const result = await acceptMemberInvite({ data: { token: invite.token } });
         if (isIamError(result)) {
-          throw new Error(iamErrorMessage(result));
+          return result;
         }
-        await navigateLogin(navigate, result.loginIntent?.loginUrl ?? result.loginUrl, invite.org);
-        return;
+        return {
+          kind: "login-target",
+          target: result.loginIntent?.loginUrl ?? result.loginUrl ?? loginPath(invite.org),
+        };
       }
       if (!signupIntentId || !verificationToken) {
         throw new Error("Signup link could not be completed.");
@@ -119,9 +116,9 @@ function SignupVerificationPage() {
           organizationDisplayName: displayName,
           organizationSlug: slug,
         },
-      }).catch(iamErrorFromUnknown);
+      });
       if (isIamError(result)) {
-        throw new Error(iamErrorMessage(result));
+        return result;
       }
       if (!result.loginIntent) {
         throw new Error("Signup completed, but sign-in could not be started.");
@@ -138,11 +135,49 @@ function SignupVerificationPage() {
           requiredOrgId: result.loginIntent.requiredOrgId,
           prompt: "login",
         },
-      }).catch(iamErrorFromUnknown);
+      });
       if (isIamError(login)) {
-        throw new Error(iamErrorMessage(login));
+        return login;
       }
-      await navigateToSameOrigin(navigate, login.callbackUrl);
+      return {
+        kind: "callback-url",
+        callbackUrl: login.callbackUrl,
+      };
+    },
+    mapError: signupVerificationIamFormError,
+  });
+  const form = useForm({
+    defaultValues: {
+      organizationDisplayName: organizationDisplayName ?? "",
+      organizationSlug: organizationSlug ?? slugify(organizationDisplayName ?? ""),
+      initialPassword: "",
+      confirmPassword: "",
+      inviteLink: "",
+    },
+    validationLogic: revalidateLogic({
+      mode: "blur",
+      modeAfterSubmission: "change",
+    }),
+    validators: {
+      onDynamic:
+        mode === "join" ? signupVerificationJoinFormSchema : signupVerificationCreateFormSchema,
+      onSubmit: () =>
+        mode === "create" && (!signupIntentId || !verificationToken)
+          ? iamFormValidationError<SignupVerificationFormValues>({
+              form: "Signup link could not be completed.",
+            })
+          : undefined,
+      onSubmitAsync: signupSubmit.validate,
+    },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
+    onSubmit: async () => {
+      const result = signupSubmit.requireSuccess();
+      if (result.kind === "login-target") {
+        await navigateLogin(navigate, result.target);
+        return;
+      }
+      await navigateToSameOrigin(navigate, result.callbackUrl);
     },
   });
 
@@ -357,7 +392,9 @@ function SignupVerificationPage() {
             </form.Field>
           )}
           <form.Subscribe
-            selector={(state) => [state.isSubmitting, state.isValidating, state.errorMap.onSubmit]}
+            selector={(state) =>
+              [state.isSubmitting, state.isValidating, state.errorMap.onSubmit] as const
+            }
           >
             {([isSubmitting, isValidating, submitError]) => {
               const missingSignupLink =
@@ -480,6 +517,10 @@ function inviteCredentialsFromInput(raw: string): { token: string; org?: string 
     return { token: value };
   }
   return { token: value };
+}
+
+function loginPath(orgSlug: string | undefined): string {
+  return orgSlug ? `/login?redirect=/${orgSlug}` : "/login";
 }
 
 type Navigate = ReturnType<typeof useNavigate>;

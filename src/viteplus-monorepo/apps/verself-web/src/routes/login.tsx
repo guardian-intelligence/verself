@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { Eye, EyeOff, KeyRound, LogIn, Trash2, UserRound } from "lucide-react";
 import { useReducer } from "react";
-import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
+import { useIamFormSubmit } from "@verself/auth-web/form";
 import * as v from "valibot";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
@@ -22,13 +22,14 @@ import {
   authFormSubmitInvalid,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
-import { iamErrorMessage } from "~/features/auth/iam-error-copy";
+import { loginIamFormError } from "~/features/auth/iam-error-copy";
 import {
   currentPasswordSchema,
   emailSchema,
   formString,
   loginFormSchema,
   normalizeEmail,
+  type LoginFormValues,
 } from "~/features/auth/form-schemas";
 import { Squircle } from "~/features/console/flight/squircle";
 import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
@@ -132,22 +133,9 @@ function LoginPage() {
   const accountOptions = search.authRequest
     ? []
     : accounts.filter((account) => accountMatchesLoginSearch(account, search));
-  const form = useForm({
-    defaultValues: {
-      email: constrainedEmail,
-      password: "",
-    },
-    validationLogic: revalidateLogic({
-      mode: "blur",
-      modeAfterSubmission: "change",
-    }),
-    validators: {
-      onDynamic: loginFormSchema,
-    },
-    canSubmitWhenInvalid: true,
-    onSubmitInvalid: authFormSubmitInvalid,
-    onSubmit: async ({ value }) => {
-      const result = await passwordLogin({
+  const loginSubmit = useIamFormSubmit({
+    submit: (value: LoginFormValues) =>
+      passwordLogin({
         data: {
           email: normalizeEmail(value.email),
           password: formString(value.password),
@@ -160,11 +148,26 @@ function LoginPage() {
           requiredOrgId: search.required_org_id,
           prompt: search.prompt,
         },
-      }).catch(iamErrorFromUnknown);
-      if (isIamError(result)) {
-        toast.error(iamErrorMessage(result));
-        return;
-      }
+      }),
+    mapError: loginIamFormError,
+  });
+  const form = useForm({
+    defaultValues: {
+      email: constrainedEmail,
+      password: "",
+    },
+    validationLogic: revalidateLogic({
+      mode: "blur",
+      modeAfterSubmission: "change",
+    }),
+    validators: {
+      onDynamic: loginFormSchema,
+      onSubmitAsync: loginSubmit.validate,
+    },
+    canSubmitWhenInvalid: true,
+    onSubmitInvalid: authFormSubmitInvalid,
+    onSubmit: async () => {
+      const result = loginSubmit.requireSuccess();
       await navigateToSameOrigin(navigate, result.callbackUrl);
     },
   });
@@ -294,7 +297,7 @@ function LoginPage() {
                 Forgot password?
               </a>
             </div>
-            <form.Subscribe selector={(state) => [state.isSubmitting, state.isValidating]}>
+            <form.Subscribe selector={(state) => [state.isSubmitting, state.isValidating] as const}>
               {([isSubmitting, isValidating]) => (
                 <div className="grid gap-3">
                   <Button

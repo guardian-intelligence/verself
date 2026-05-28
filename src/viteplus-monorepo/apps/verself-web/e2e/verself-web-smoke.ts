@@ -234,6 +234,7 @@ async function runAuthProductScenario(page: Page): Promise<number> {
 async function givenTheVisitorCanOpenTheAuthShell(page: Page): Promise<void> {
   await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Sign in" }).waitFor();
+  await waitForReadyButton(page, "Sign in");
 }
 
 async function thenTheLoginFormIsPasswordManagerReady(page: Page): Promise<void> {
@@ -257,18 +258,27 @@ async function thenTheLoginFormSurfacesSubmitValidation(page: Page): Promise<voi
 }
 
 async function whenTheVisitorSignsInWithIncorrectCredentials(page: Page): Promise<void> {
+  await waitForReadyButton(page, "Sign in");
   const email = page.getByLabel("Email");
-  await email.fill(`wrong-${Date.now()}@example.test`);
+  const emailValue = `wrong-${Date.now()}@example.test`;
+  await email.fill(emailValue);
+  await assertInputValue(email, emailValue, "incorrect-login email");
   await email.blur();
   const password = page.getByLabel("Password", { exact: true });
-  await password.fill("not the right password");
+  const passwordValue = "not the right password";
+  await password.fill(passwordValue);
+  await assertInputValue(password, passwordValue, "incorrect-login password");
   await password.blur();
   await waitForReadyButton(page, "Sign in");
   await page.getByRole("button", { name: "Sign in" }).click();
 }
 
 async function thenIncorrectEmailOrPasswordDisplaysAToast(page: Page): Promise<void> {
-  await page.getByText("Email or password is incorrect.").waitFor();
+  await page
+    .locator("[data-sonner-toast]")
+    .filter({ hasText: "Email or password is incorrect." })
+    .waitFor();
+  await waitForReadyButton(page, "Sign in");
   const path = new URL(page.url()).pathname;
   if (path !== "/login") {
     throw new Error(`incorrect password changed route to ${path}`);
@@ -407,6 +417,17 @@ async function waitForReadyButton(page: Page, name: string): Promise<void> {
   }
 }
 
+async function assertInputValue(
+  input: ReturnType<Page["getByLabel"]>,
+  expected: string,
+  label: string,
+): Promise<void> {
+  const actual = await input.inputValue();
+  if (actual !== expected) {
+    throw new Error(`${label} value = ${JSON.stringify(actual)}, want ${JSON.stringify(expected)}`);
+  }
+}
+
 async function runBrowserSmoke(options: Options): Promise<Record<string, string | number>> {
   const browser = await chromium.launch({
     args: [
@@ -447,7 +468,7 @@ async function runBrowserSmoke(options: Options): Promise<Record<string, string 
       throw new Error(`/readyz returned ${JSON.stringify(readyBody)}`);
     }
 
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/", { waitUntil: "load" });
     await page.getByRole("heading", { name: "Verself" }).waitFor();
     await page.getByRole("link", { name: "Get Verself" }).waitFor();
 

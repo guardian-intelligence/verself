@@ -2,7 +2,7 @@ import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { createFileRoute, Link, useHydrated, useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
 import { useReducer } from "react";
-import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
+import { useIamFormSubmit } from "@verself/auth-web/form";
 import { Button } from "@verself/ui/components/ui/button";
 import { Label } from "@verself/ui/components/ui/label";
 import {
@@ -13,11 +13,12 @@ import {
   authFormSubmitInvalid,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
-import { iamErrorMessage } from "~/features/auth/iam-error-copy";
+import { resetPasswordIamFormError } from "~/features/auth/iam-error-copy";
 import {
   formString,
   newPasswordSchema,
   resetPasswordFormSchema,
+  type ResetPasswordFormValues,
 } from "~/features/auth/form-schemas";
 import { Squircle } from "~/features/console/flight/squircle";
 import { completePasswordReset } from "~/server-fns/auth";
@@ -51,6 +52,16 @@ function ResetPasswordPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const [passwordVisible, togglePasswordVisible] = useReducer((value: boolean) => !value, false);
+  const resetSubmit = useIamFormSubmit({
+    submit: (value: ResetPasswordFormValues) =>
+      completePasswordReset({
+        data: {
+          ...requireResetLink(search),
+          password: formString(value.password),
+        },
+      }),
+    mapError: resetPasswordIamFormError,
+  });
   const form = useForm({
     defaultValues: {
       password: "",
@@ -62,24 +73,12 @@ function ResetPasswordPage() {
     }),
     validators: {
       onDynamic: resetPasswordFormSchema,
+      onSubmitAsync: resetSubmit.validate,
     },
     canSubmitWhenInvalid: true,
     onSubmitInvalid: authFormSubmitInvalid,
-    onSubmit: async ({ value }) => {
-      const password = formString(value.password);
-      if (!search.user_id || !search.verification_code) {
-        throw new Error("This reset link is invalid or expired.");
-      }
-      const result = await completePasswordReset({
-        data: {
-          userId: search.user_id,
-          verificationCode: search.verification_code,
-          password,
-        },
-      }).catch(iamErrorFromUnknown);
-      if (isIamError(result)) {
-        throw new Error(iamErrorMessage(result));
-      }
+    onSubmit: async () => {
+      resetSubmit.requireSuccess();
       await navigate({
         to: "/login",
         search: { prompt: "login" },
@@ -192,11 +191,9 @@ function ResetPasswordPage() {
                 }}
               </form.Field>
               <form.Subscribe
-                selector={(state) => [
-                  state.isSubmitting,
-                  state.isValidating,
-                  state.errorMap.onSubmit,
-                ]}
+                selector={(state) =>
+                  [state.isSubmitting, state.isValidating, state.errorMap.onSubmit] as const
+                }
               >
                 {([isSubmitting, isValidating, submitError]) => (
                   <div className="grid gap-3">
@@ -224,6 +221,19 @@ function ResetPasswordPage() {
       </div>
     </main>
   );
+}
+
+function requireResetLink(search: ResetPasswordSearch): {
+  readonly userId: string;
+  readonly verificationCode: string;
+} {
+  if (!search.user_id || !search.verification_code) {
+    throw new Error("This reset link is invalid or expired.");
+  }
+  return {
+    userId: search.user_id,
+    verificationCode: search.verification_code,
+  };
 }
 
 function PasswordInput(props: {

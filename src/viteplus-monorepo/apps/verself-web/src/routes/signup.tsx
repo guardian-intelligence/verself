@@ -1,7 +1,7 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { createFileRoute, Link, useHydrated, useNavigate } from "@tanstack/react-router";
 import { CheckCircle2, Mail, UserPlus } from "lucide-react";
-import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
+import { useIamFormSubmit } from "@verself/auth-web/form";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -14,7 +14,7 @@ import {
   fieldInvalid,
   submitErrorText,
 } from "~/features/auth/form-primitives";
-import { iamErrorMessage } from "~/features/auth/iam-error-copy";
+import { signupStartIamFormError } from "~/features/auth/iam-error-copy";
 import { organizationSlugAvailabilityError } from "~/features/auth/slug-availability";
 import {
   emailSchema,
@@ -24,6 +24,7 @@ import {
   organizationNameSchema,
   organizationSlugSchema,
   signupStartFormSchema,
+  type SignupStartFormValues,
   slugify,
 } from "~/features/auth/form-schemas";
 import { Squircle } from "~/features/console/flight/squircle";
@@ -90,6 +91,21 @@ function SignupPage() {
 function SignupForm() {
   const hydrated = useHydrated();
   const navigate = useNavigate();
+  const signupSubmit = useIamFormSubmit({
+    submit: (value: SignupStartFormValues) => {
+      const organizationSlug = slugify(formString(value.organizationSlug));
+      return startSignup({
+        data: {
+          email: normalizeEmail(value.email),
+          organizationDisplayName: normalizeHumanText(value.organizationDisplayName),
+          ...(organizationSlug ? { organizationSlug } : {}),
+          givenName: formString(value.givenName).trim(),
+          familyName: formString(value.familyName).trim(),
+        },
+      });
+    },
+    mapError: signupStartIamFormError,
+  });
   const form = useForm({
     defaultValues: {
       email: "",
@@ -104,28 +120,15 @@ function SignupForm() {
     }),
     validators: {
       onDynamic: signupStartFormSchema,
+      onSubmitAsync: signupSubmit.validate,
     },
     canSubmitWhenInvalid: true,
     onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
-      const email = normalizeEmail(value.email);
-      const organizationDisplayName = normalizeHumanText(value.organizationDisplayName);
-      const organizationSlug = slugify(formString(value.organizationSlug));
-      const result = await startSignup({
-        data: {
-          email,
-          organizationDisplayName,
-          ...(organizationSlug ? { organizationSlug } : {}),
-          givenName: formString(value.givenName).trim(),
-          familyName: formString(value.familyName).trim(),
-        },
-      }).catch(iamErrorFromUnknown);
-      if (isIamError(result)) {
-        throw new Error(iamErrorMessage(result));
-      }
+      signupSubmit.requireSuccess();
       await navigate({
         to: "/signup",
-        search: { sent: email },
+        search: { sent: normalizeEmail(value.email) },
       });
     },
   });
@@ -293,7 +296,9 @@ function SignupForm() {
           }}
         </form.Field>
         <form.Subscribe
-          selector={(state) => [state.isSubmitting, state.isValidating, state.errorMap.onSubmit]}
+          selector={(state) =>
+            [state.isSubmitting, state.isValidating, state.errorMap.onSubmit] as const
+          }
         >
           {([isSubmitting, isValidating, submitError]) => (
             <div className="grid gap-3">
