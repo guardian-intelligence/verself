@@ -304,12 +304,13 @@ func TestPasswordLoginInvalidCredentialsReturnsStructuredProblem(t *testing.T) {
 		t.Fatalf("password login status = %d, body = %q", res.Code, res.Body.String())
 	}
 	var problem struct {
-		Tag     string `json:"_tag"`
-		Type    string `json:"type"`
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Detail  string `json:"detail"`
-		Status  int    `json:"status"`
+		Tag       string `json:"_tag"`
+		Type      string `json:"type"`
+		Code      string `json:"code"`
+		Message   string `json:"message"`
+		Detail    string `json:"detail"`
+		Status    int    `json:"status"`
+		Retryable bool   `json:"retryable"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&problem); err != nil {
 		t.Fatalf("decode problem: %v", err)
@@ -328,6 +329,9 @@ func TestPasswordLoginInvalidCredentialsReturnsStructuredProblem(t *testing.T) {
 	}
 	if problem.Message != "Email or password is incorrect." {
 		t.Fatalf("problem message = %q", problem.Message)
+	}
+	if problem.Retryable {
+		t.Fatalf("invalid credentials retryable = true")
 	}
 }
 

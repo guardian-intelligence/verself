@@ -1,15 +1,10 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { useLiveQuery } from "@tanstack/react-db";
-import { createFileRoute, useHydrated } from "@tanstack/react-router";
+import { createFileRoute, useHydrated, useNavigate } from "@tanstack/react-router";
 import { CheckCircle2, KeyRound, XCircle } from "lucide-react";
 import { useMemo } from "react";
-import {
-  authErrorMessage,
-  authFailureFromUnknown,
-  isAuthErrorException,
-  unwrapAuthResult,
-} from "@verself/sdk/auth";
+import { iamErrorFromUnknown, isIamError, type IamError } from "@verself/sdk/iam-errors";
 import * as v from "valibot";
 import { createElectricShapeCollection } from "@verself/web-env";
 import { Button } from "@verself/ui/components/ui/button";
@@ -24,6 +19,7 @@ import {
   fieldInvalid,
   submitErrorText,
 } from "~/features/auth/form-primitives";
+import { iamErrorMessage } from "~/features/auth/iam-error-copy";
 import {
   deviceCodeSchema,
   deviceCodeFormSchema,
@@ -104,9 +100,15 @@ export const Route = createFileRoute("/device")({
       getClientAuthSnapshot(),
       deps.user_code
         ? lookupDeviceLogin({ data: { userCode: deps.user_code } })
-            .then(unwrapAuthResult)
-            .then((result) => ({ result, error: "" }))
-            .catch((error: unknown) => ({ result: undefined, error: errorMessage(error) }))
+            .then((result) =>
+              isIamError(result)
+                ? { result: undefined, error: iamErrorMessage(result) }
+                : { result, error: "" },
+            )
+            .catch((error: unknown) => ({
+              result: undefined,
+              error: iamErrorMessage(iamErrorFromUnknown(error)),
+            }))
         : Promise.resolve({ result: undefined, error: "" }),
     ]);
     return {
@@ -119,6 +121,7 @@ export const Route = createFileRoute("/device")({
 
 function DeviceLoginPage() {
   const hydrated = useHydrated();
+  const navigate = useNavigate();
   const { user_code } = Route.useSearch();
   const { isSignedIn, lookup } = Route.useLoaderData();
   const form = useForm({
@@ -136,7 +139,10 @@ function DeviceLoginPage() {
     onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const code = normalizeDeviceCode(value.userCode);
-      window.location.assign(`/device?user_code=${encodeURIComponent(code)}`);
+      await navigate({
+        to: "/device",
+        search: { user_code: code },
+      });
     },
   });
 
@@ -248,21 +254,28 @@ function DeviceLoginDecision({
   readonly isSignedIn: boolean;
   readonly userCode: string;
 }) {
+  const navigate = useNavigate();
   const approval = useMutation({
     mutationFn: async () =>
-      unwrapAuthResult(
-        await approveDeviceLogin({ data: { deviceLoginHandle: device.deviceLoginHandle } }).catch(
-          authFailureFromUnknown,
-        ),
+      approveDeviceLogin({ data: { deviceLoginHandle: device.deviceLoginHandle } }).catch(
+        iamErrorFromUnknown,
       ),
+    onSuccess: (result) => {
+      if (isIamError(result)) {
+        toast.error(iamErrorMessage(result));
+      }
+    },
   });
   const denial = useMutation({
     mutationFn: async () =>
-      unwrapAuthResult(
-        await denyDeviceLogin({ data: { deviceLoginHandle: device.deviceLoginHandle } }).catch(
-          authFailureFromUnknown,
-        ),
+      denyDeviceLogin({ data: { deviceLoginHandle: device.deviceLoginHandle } }).catch(
+        iamErrorFromUnknown,
       ),
+    onSuccess: (result) => {
+      if (isIamError(result)) {
+        toast.error(iamErrorMessage(result));
+      }
+    },
   });
   return (
     <div className="grid gap-4">
@@ -308,7 +321,18 @@ function DeviceLoginDecision({
           </Button>
         </div>
       ) : (
-        <Button type="button" onClick={() => window.location.assign(signInURL(userCode))}>
+        <Button
+          type="button"
+          onClick={() => {
+            void navigate({
+              to: "/login",
+              search: {
+                redirect: `/device?user_code=${encodeURIComponent(userCode)}`,
+                purpose: "device",
+              },
+            });
+          }}
+        >
           <KeyRound aria-hidden="true" />
           <span>Sign in</span>
         </Button>
@@ -348,13 +372,6 @@ function LiveDeviceLoginStatus({ initial }: { readonly initial: DeviceLoginResul
   );
 }
 
-function signInURL(userCode: string): string {
-  const login = new URL("/login", window.location.origin);
-  login.searchParams.set("redirect", `/device?user_code=${encodeURIComponent(userCode)}`);
-  login.searchParams.set("purpose", "device");
-  return `${login.pathname}${login.search}`;
-}
-
 function deviceLoginSubtitle(device: DeviceLoginResult): string {
   const app = device.appName || device.clientId || "this client";
   return `Continue ${app}.`;
@@ -363,7 +380,11 @@ function deviceLoginSubtitle(device: DeviceLoginResult): string {
 function errorMessage(error: unknown): string {
   if (!error) return "";
   if (typeof error === "string") return error;
-  if (isAuthErrorException(error)) return authErrorMessage(error.authError);
+  if (isIamErrorObject(error)) return iamErrorMessage(error);
   if (error instanceof Error) return error.message;
   return "Unexpected error.";
+}
+
+function isIamErrorObject(error: unknown): error is IamError {
+  return isIamError(error);
 }

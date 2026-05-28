@@ -23,6 +23,7 @@ type verselfProblem struct {
 	Tag         string `json:"_tag"`
 	Code        string `json:"code"`
 	Message     string `json:"message"`
+	Retryable   bool   `json:"retryable"`
 	RequestID   string `json:"requestId,omitempty"`
 	Traceparent string `json:"traceparent,omitempty"`
 }
@@ -55,6 +56,7 @@ func problem(ctx context.Context, status int, code, detail string, cause error) 
 		Tag:         problemType,
 		Code:        code,
 		Message:     authErrorMessageForCode(code, detail, status),
+		Retryable:   authProblemRetryableForCode(code, status),
 		RequestID:   requestID,
 		Traceparent: traceparent,
 	}
@@ -130,6 +132,22 @@ func authErrorMessageForCode(code, detail string, status int) string {
 		return "Authentication is unavailable right now."
 	}
 	return "Authentication request failed."
+}
+
+func authProblemRetryableForCode(code string, status int) bool {
+	if definition, ok := authProblemCatalog[authProblemCode(code)]; ok {
+		return definition.Retryable
+	}
+	switch {
+	case code == "quota.rate_limited":
+		return true
+	case code == "service.unavailable":
+		return true
+	case status == http.StatusTooManyRequests:
+		return true
+	default:
+		return false
+	}
 }
 
 func publicAuthProblemTitle(code string) string {

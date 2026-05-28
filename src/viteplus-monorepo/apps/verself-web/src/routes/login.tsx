@@ -1,9 +1,15 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
-import { createFileRoute, redirect, useHydrated } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  redirect,
+  useHydrated,
+  useNavigate,
+  useRouter,
+} from "@tanstack/react-router";
 import { Eye, EyeOff, KeyRound, LogIn, Trash2, UserRound } from "lucide-react";
 import { useReducer } from "react";
-import { authErrorMessage, authFailureFromUnknown } from "@verself/sdk/auth";
+import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
 import * as v from "valibot";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
@@ -16,6 +22,7 @@ import {
   authFormSubmitInvalid,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
+import { iamErrorMessage } from "~/features/auth/iam-error-copy";
 import {
   currentPasswordSchema,
   emailSchema,
@@ -117,6 +124,7 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const hydrated = useHydrated();
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const { accounts } = Route.useLoaderData();
   const [passwordVisible, togglePasswordVisible] = useReducer((value: boolean) => !value, false);
@@ -152,12 +160,12 @@ function LoginPage() {
           requiredOrgId: search.required_org_id,
           prompt: search.prompt,
         },
-      }).catch(authFailureFromUnknown);
-      if (result._tag === "Err") {
-        toast.error(authErrorMessage(result.error));
+      }).catch(iamErrorFromUnknown);
+      if (isIamError(result)) {
+        toast.error(iamErrorMessage(result));
         return;
       }
-      window.location.assign(result.value.callbackUrl);
+      await navigateToSameOrigin(navigate, result.callbackUrl);
     },
   });
 
@@ -316,16 +324,22 @@ function AccountChooser({
   readonly accounts: ReadonlyArray<BrowserAccountSummary>;
   readonly search: LoginSearch;
 }) {
+  const navigate = useNavigate();
+  const router = useRouter();
   const choose = useMutation({
     mutationFn: (accountHandle: string) => selectActiveAccount({ data: { accountHandle } }),
     onSuccess: () => {
-      window.location.assign(search.redirect ?? "/");
+      void navigateToSameOrigin(navigate, search.redirect ?? "/").catch((error: unknown) => {
+        toast.error(errorMessage(error));
+      });
     },
   });
   const remove = useMutation({
     mutationFn: (accountHandle: string) => removeBrowserAccount({ data: { accountHandle } }),
     onSuccess: () => {
-      window.location.reload();
+      void router.invalidate().catch((error: unknown) => {
+        toast.error(errorMessage(error));
+      });
     },
   });
 
@@ -430,4 +444,37 @@ function errorMessage(error: unknown): string {
   if (!error) return "";
   if (error instanceof Error) return error.message;
   return "Account action failed.";
+}
+
+type Navigate = ReturnType<typeof useNavigate>;
+
+async function navigateToSameOrigin(
+  navigate: Navigate,
+  href: string,
+  replace = false,
+): Promise<void> {
+  const url = new URL(href, window.location.origin);
+  if (url.origin !== window.location.origin) {
+    throw new Error("External auth callback URL rejected.");
+  }
+  const options = {
+    to: url.pathname,
+    search: searchParamsObject(url.searchParams),
+    ...(url.hash ? { hash: url.hash.slice(1) } : {}),
+    replace,
+  };
+  await navigate(options as unknown as Parameters<Navigate>[0]);
+}
+
+function searchParamsObject(params: URLSearchParams): Record<string, string | Array<string>> {
+  const out: Record<string, string | Array<string>> = {};
+  for (const [key, value] of params.entries()) {
+    const existing = out[key];
+    if (Array.isArray(existing)) {
+      existing.push(value);
+      continue;
+    }
+    out[key] = existing === undefined ? value : [existing, value];
+  }
+  return out;
 }

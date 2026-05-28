@@ -1,8 +1,8 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
-import { Link, createFileRoute, useHydrated } from "@tanstack/react-router";
+import { Link, createFileRoute, useHydrated, useNavigate } from "@tanstack/react-router";
 import { Building2, CheckCircle2, Eye, EyeOff, MailPlus } from "lucide-react";
 import { useReducer, type ReactNode } from "react";
-import { authFailureFromUnknown, unwrapAuthResult } from "@verself/sdk/auth";
+import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -16,6 +16,7 @@ import {
   fieldErrorText,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
+import { iamErrorMessage } from "~/features/auth/iam-error-copy";
 import {
   formString,
   inviteLinkSchema,
@@ -66,6 +67,7 @@ export const Route = createFileRoute("/signup/verify")({
 
 function SignupVerificationPage() {
   const hydrated = useHydrated();
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const signupIntentId = search.signup_intent_id;
   const verificationToken = search.verification_token;
@@ -94,10 +96,13 @@ function SignupVerificationPage() {
     onSubmit: async ({ value }) => {
       if (mode === "join") {
         const invite = inviteCredentialsFromInput(formString(value.inviteLink));
-        const result = unwrapAuthResult(
-          await acceptMemberInvite({ data: { token: invite.token } }).catch(authFailureFromUnknown),
+        const result = await acceptMemberInvite({ data: { token: invite.token } }).catch(
+          iamErrorFromUnknown,
         );
-        assignLogin(result.loginIntent?.loginUrl ?? result.loginUrl, invite.org);
+        if (isIamError(result)) {
+          throw new Error(iamErrorMessage(result));
+        }
+        await navigateLogin(navigate, result.loginIntent?.loginUrl ?? result.loginUrl, invite.org);
         return;
       }
       if (!signupIntentId || !verificationToken) {
@@ -106,36 +111,38 @@ function SignupVerificationPage() {
       const displayName = normalizeHumanText(value.organizationDisplayName);
       const slug = slugify(formString(value.organizationSlug));
       const initialPassword = formString(value.initialPassword);
-      const result = unwrapAuthResult(
-        await verifySignup({
-          data: {
-            signupIntentId,
-            verificationToken,
-            initialPassword,
-            organizationDisplayName: displayName,
-            organizationSlug: slug,
-          },
-        }).catch(authFailureFromUnknown),
-      );
+      const result = await verifySignup({
+        data: {
+          signupIntentId,
+          verificationToken,
+          initialPassword,
+          organizationDisplayName: displayName,
+          organizationSlug: slug,
+        },
+      }).catch(iamErrorFromUnknown);
+      if (isIamError(result)) {
+        throw new Error(iamErrorMessage(result));
+      }
       if (!result.loginIntent) {
         throw new Error("Signup completed, but sign-in could not be started.");
       }
-      const login = unwrapAuthResult(
-        await passwordLogin({
-          data: {
-            email: result.loginIntent.requiredEmail,
-            password: initialPassword,
-            redirectTo: result.loginIntent.redirectTo ?? `/${result.organization.slug}`,
-            purpose: result.loginIntent.purpose,
-            loginHint: result.loginIntent.requiredEmail,
-            requiredSubject: result.loginIntent.requiredSubject,
-            requiredEmail: result.loginIntent.requiredEmail,
-            requiredOrgId: result.loginIntent.requiredOrgId,
-            prompt: "login",
-          },
-        }).catch(authFailureFromUnknown),
-      );
-      window.location.assign(login.callbackUrl);
+      const login = await passwordLogin({
+        data: {
+          email: result.loginIntent.requiredEmail,
+          password: initialPassword,
+          redirectTo: result.loginIntent.redirectTo ?? `/${result.organization.slug}`,
+          purpose: result.loginIntent.purpose,
+          loginHint: result.loginIntent.requiredEmail,
+          requiredSubject: result.loginIntent.requiredSubject,
+          requiredEmail: result.loginIntent.requiredEmail,
+          requiredOrgId: result.loginIntent.requiredOrgId,
+          prompt: "login",
+        },
+      }).catch(iamErrorFromUnknown);
+      if (isIamError(login)) {
+        throw new Error(iamErrorMessage(login));
+      }
+      await navigateToSameOrigin(navigate, login.callbackUrl);
     },
   });
 
@@ -475,17 +482,49 @@ function inviteCredentialsFromInput(raw: string): { token: string; org?: string 
   return { token: value };
 }
 
-function assignLogin(loginURLOrOrgSlug: string | undefined, fallbackOrgSlug?: string): void {
+type Navigate = ReturnType<typeof useNavigate>;
+
+async function navigateLogin(
+  navigate: Navigate,
+  loginURLOrOrgSlug: string | undefined,
+  fallbackOrgSlug?: string,
+): Promise<void> {
   if (loginURLOrOrgSlug?.startsWith("http") || loginURLOrOrgSlug?.startsWith("/login")) {
-    const login = new URL(loginURLOrOrgSlug, window.location.origin);
-    window.location.assign(`${login.pathname}${login.search}`);
+    await navigateToSameOrigin(navigate, loginURLOrOrgSlug);
     return;
   }
   const orgSlug = fallbackOrgSlug ?? loginURLOrOrgSlug;
-  const login = new URL("/login", window.location.origin);
-  login.searchParams.set("prompt", "login");
-  if (orgSlug) {
-    login.searchParams.set("redirect", `/${orgSlug}`);
+  await navigate({
+    to: "/login",
+    search: {
+      prompt: "login",
+      ...(orgSlug ? { redirect: `/${orgSlug}` } : {}),
+    },
+  });
+}
+
+async function navigateToSameOrigin(navigate: Navigate, href: string): Promise<void> {
+  const url = new URL(href, window.location.origin);
+  if (url.origin !== window.location.origin) {
+    throw new Error("External auth callback URL rejected.");
   }
-  window.location.assign(`${login.pathname}${login.search}`);
+  const options = {
+    to: url.pathname,
+    search: searchParamsObject(url.searchParams),
+    ...(url.hash ? { hash: url.hash.slice(1) } : {}),
+  };
+  await navigate(options as unknown as Parameters<Navigate>[0]);
+}
+
+function searchParamsObject(params: URLSearchParams): Record<string, string | Array<string>> {
+  const out: Record<string, string | Array<string>> = {};
+  for (const [key, value] of params.entries()) {
+    const existing = out[key];
+    if (Array.isArray(existing)) {
+      existing.push(value);
+      continue;
+    }
+    out[key] = existing === undefined ? value : [existing, value];
+  }
+  return out;
 }

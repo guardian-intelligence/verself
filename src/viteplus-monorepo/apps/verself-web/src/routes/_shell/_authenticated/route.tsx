@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { anonymousAuth, requireAuth } from "@verself/auth-web/isomorphic";
 import { useAuth } from "@verself/auth-web/react";
 import { LogIn } from "lucide-react";
@@ -18,8 +18,8 @@ export const Route = createFileRoute("/_shell/_authenticated")({
 function AuthenticatedOutlet() {
   const auth = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   if (!auth.isSignedIn) {
-    const loginURL = `/login?redirect=${encodeURIComponent(location.href)}`;
     return (
       <main className="grid min-h-svh place-items-center px-6 py-16">
         <section className="flex w-full max-w-sm flex-col items-center text-center">
@@ -30,7 +30,16 @@ function AuthenticatedOutlet() {
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
             Your browser session is no longer signed in.
           </p>
-          <Button type="button" className="mt-6" onClick={() => window.location.assign(loginURL)}>
+          <Button
+            type="button"
+            className="mt-6"
+            onClick={() => {
+              void navigate({
+                to: "/login",
+                search: { redirect: location.href },
+              });
+            }}
+          >
             <LogIn aria-hidden="true" />
             <span>Sign in</span>
           </Button>

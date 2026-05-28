@@ -1,7 +1,7 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
-import { createFileRoute, Link, useHydrated } from "@tanstack/react-router";
+import { createFileRoute, Link, useHydrated, useNavigate } from "@tanstack/react-router";
 import { CheckCircle2, Mail, UserPlus } from "lucide-react";
-import { authFailureFromUnknown, unwrapAuthResult } from "@verself/sdk/auth";
+import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -14,6 +14,7 @@ import {
   fieldInvalid,
   submitErrorText,
 } from "~/features/auth/form-primitives";
+import { iamErrorMessage } from "~/features/auth/iam-error-copy";
 import { organizationSlugAvailabilityError } from "~/features/auth/slug-availability";
 import {
   emailSchema,
@@ -88,6 +89,7 @@ function SignupPage() {
 
 function SignupForm() {
   const hydrated = useHydrated();
+  const navigate = useNavigate();
   const form = useForm({
     defaultValues: {
       email: "",
@@ -109,18 +111,22 @@ function SignupForm() {
       const email = normalizeEmail(value.email);
       const organizationDisplayName = normalizeHumanText(value.organizationDisplayName);
       const organizationSlug = slugify(formString(value.organizationSlug));
-      unwrapAuthResult(
-        await startSignup({
-          data: {
-            email,
-            organizationDisplayName,
-            ...(organizationSlug ? { organizationSlug } : {}),
-            givenName: formString(value.givenName).trim(),
-            familyName: formString(value.familyName).trim(),
-          },
-        }).catch(authFailureFromUnknown),
-      );
-      window.location.assign(`/signup?sent=${encodeURIComponent(email)}`);
+      const result = await startSignup({
+        data: {
+          email,
+          organizationDisplayName,
+          ...(organizationSlug ? { organizationSlug } : {}),
+          givenName: formString(value.givenName).trim(),
+          familyName: formString(value.familyName).trim(),
+        },
+      }).catch(iamErrorFromUnknown);
+      if (isIamError(result)) {
+        throw new Error(iamErrorMessage(result));
+      }
+      await navigate({
+        to: "/signup",
+        search: { sent: email },
+      });
     },
   });
 

@@ -17,9 +17,9 @@
       "types": "./src/iam.ts",
       "default": "./src/iam.ts"
     },
-    "./auth": {
-      "types": "./src/auth.ts",
-      "default": "./src/auth.ts"
+    "./iam-errors": {
+      "types": "./src/iam-errors.ts",
+      "default": "./src/iam-errors.ts"
     },
     "./projects": {
       "types": "./src/projects.ts",

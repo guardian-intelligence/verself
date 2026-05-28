@@ -1,7 +1,7 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
-import { createFileRoute, Link, useHydrated } from "@tanstack/react-router";
+import { createFileRoute, Link, useHydrated, useNavigate } from "@tanstack/react-router";
 import { KeyRound, Mail } from "lucide-react";
-import { authFailureFromUnknown, unwrapAuthResult } from "@verself/sdk/auth";
+import { iamErrorFromUnknown, isIamError } from "@verself/sdk/iam-errors";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -13,6 +13,7 @@ import {
   fieldInvalid,
   submitErrorText,
 } from "~/features/auth/form-primitives";
+import { iamErrorMessage } from "~/features/auth/iam-error-copy";
 import {
   emailSchema,
   forgotPasswordFormSchema,
@@ -37,6 +38,7 @@ export const Route = createFileRoute("/forgot-password")({
 
 function ForgotPasswordPage() {
   const hydrated = useHydrated();
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const form = useForm({
     defaultValues: {
@@ -53,8 +55,14 @@ function ForgotPasswordPage() {
     onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async ({ value }) => {
       const email = normalizeEmail(value.email);
-      unwrapAuthResult(await startPasswordReset({ data: { email } }).catch(authFailureFromUnknown));
-      window.location.assign(`/forgot-password?sent=${encodeURIComponent(email)}`);
+      const result = await startPasswordReset({ data: { email } }).catch(iamErrorFromUnknown);
+      if (isIamError(result)) {
+        throw new Error(iamErrorMessage(result));
+      }
+      await navigate({
+        to: "/forgot-password",
+        search: { sent: email },
+      });
     },
   });
 
