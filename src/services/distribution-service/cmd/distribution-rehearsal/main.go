@@ -26,6 +26,7 @@ type config struct {
 	channelName       string
 	platformOS        string
 	platformArch      string
+	flavor            string
 	originRegistryURL string
 	publicRegistryURL string
 	ociRepository     string
@@ -35,7 +36,6 @@ type config struct {
 	sourceRepository  string
 	sourceCommit      string
 	sourceRef         string
-	bazelTarget       string
 	policyRef         string
 	submittedBy       string
 }
@@ -56,6 +56,7 @@ func run(ctx context.Context, args []string) error {
 	fs.StringVar(&cfg.channelName, "channel", "", "Distribution channel.")
 	fs.StringVar(&cfg.platformOS, "platform-os", "", "Target operating system.")
 	fs.StringVar(&cfg.platformArch, "platform-arch", "", "Target architecture.")
+	fs.StringVar(&cfg.flavor, "flavor", "", "Artifact flavor.")
 	fs.StringVar(&cfg.originRegistryURL, "origin-registry-url", "", "Origin OCI registry URL.")
 	fs.StringVar(&cfg.publicRegistryURL, "public-registry-url", "", "Public OCI registry URL.")
 	fs.StringVar(&cfg.ociRepository, "oci-repository", "", "OCI repository.")
@@ -65,7 +66,6 @@ func run(ctx context.Context, args []string) error {
 	fs.StringVar(&cfg.sourceRepository, "source-repository", "", "Source repository.")
 	fs.StringVar(&cfg.sourceCommit, "source-commit", "", "Source commit.")
 	fs.StringVar(&cfg.sourceRef, "source-ref", "", "Source ref.")
-	fs.StringVar(&cfg.bazelTarget, "bazel-target", "", "Bazel target.")
 	fs.StringVar(&cfg.policyRef, "policy-ref", "", "Policy reference.")
 	fs.StringVar(&cfg.submittedBy, "submitted-by", "", "Submitting actor.")
 	if err := fs.Parse(args); err != nil {
@@ -98,6 +98,7 @@ func run(ctx context.Context, args []string) error {
 		ChannelName:       cfg.channelName,
 		PlatformOS:        cfg.platformOS,
 		PlatformArch:      cfg.platformArch,
+		Flavor:            cfg.flavor,
 		OriginRegistryURL: cfg.originRegistryURL,
 		PublicRegistryURL: cfg.publicRegistryURL,
 		OCIRepository:     cfg.ociRepository,
@@ -109,7 +110,6 @@ func run(ctx context.Context, args []string) error {
 		SourceRepository:  cfg.sourceRepository,
 		SourceCommit:      cfg.sourceCommit,
 		SourceRef:         cfg.sourceRef,
-		BazelTarget:       cfg.bazelTarget,
 		PolicyRef:         cfg.policyRef,
 		Evidence:          evidence(cfg.ociDigest),
 		SubmittedBy:       cfg.submittedBy,
@@ -127,6 +127,7 @@ func run(ctx context.Context, args []string) error {
 		ArtifactDigest: cfg.ociDigest,
 		PlatformOS:     cfg.platformOS,
 		PlatformArch:   cfg.platformArch,
+		Flavor:         cfg.flavor,
 		PolicyRef:      cfg.policyRef,
 		PromotedBy:     cfg.submittedBy,
 		Reason:         "distribution rehearsal",
@@ -152,6 +153,7 @@ func require(cfg config) error {
 		"channel":             cfg.channelName,
 		"platform-os":         cfg.platformOS,
 		"platform-arch":       cfg.platformArch,
+		"flavor":              cfg.flavor,
 		"origin-registry-url": cfg.originRegistryURL,
 		"public-registry-url": cfg.publicRegistryURL,
 		"oci-repository":      cfg.ociRepository,
@@ -160,7 +162,6 @@ func require(cfg config) error {
 		"source-repository":   cfg.sourceRepository,
 		"source-commit":       cfg.sourceCommit,
 		"source-ref":          cfg.sourceRef,
-		"bazel-target":        cfg.bazelTarget,
 		"policy-ref":          cfg.policyRef,
 		"submitted-by":        cfg.submittedBy,
 	}

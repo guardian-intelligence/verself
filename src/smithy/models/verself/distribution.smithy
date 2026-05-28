@@ -102,6 +102,10 @@ string PlatformOS
 @length(min: 1, max: 128)
 string PlatformArch
 
+@length(min: 1, max: 128)
+@pattern("^[a-z0-9][a-z0-9._-]*[a-z0-9]$")
+string ArtifactFlavor
+
 @length(min: 1, max: 4096)
 string OCIRepository
 
@@ -136,9 +140,6 @@ string SourceCommit
 
 @length(min: 1, max: 4096)
 string SourceRef
-
-@length(min: 1, max: 4096)
-string BazelTarget
 
 @length(min: 1, max: 4096)
 string BuilderID
@@ -299,6 +300,10 @@ structure DistributionArtifactRecord {
     platform_arch: PlatformArch
 
     @required
+    @protoField(number: 20)
+    flavor: ArtifactFlavor
+
+    @required
     @protoField(number: 8)
     oci_repository: OCIRepository
 
@@ -375,10 +380,6 @@ structure DistributionVerificationRecord {
     source_ref: SourceRef
 
     @required
-    @protoField(number: 8)
-    bazel_target: BazelTarget
-
-    @required
     @protoField(number: 9)
     evidence: DistributionEvidence
 
@@ -425,6 +426,10 @@ structure DistributionTargetRecord {
     @required
     @protoField(number: 5)
     platform_arch: PlatformArch
+
+    @required
+    @protoField(number: 15)
+    flavor: ArtifactFlavor
 
     @required
     @protoField(number: 6)
@@ -478,10 +483,14 @@ structure CheckDistributionUpdateBody {
     @protoField(number: 4)
     platform_arch: PlatformArch
 
+    @required
     @protoField(number: 5)
-    installed_digest: OCIDigest
+    flavor: ArtifactFlavor
 
     @protoField(number: 6)
+    installed_digest: OCIDigest
+
+    @protoField(number: 7)
     installed_version: PackageVersion
 }
 
@@ -530,13 +539,17 @@ structure RecordDistributionUpgradeVerificationBody {
 
     @required
     @protoField(number: 5)
-    artifact_digest: OCIDigest
+    flavor: ArtifactFlavor
 
     @required
     @protoField(number: 6)
+    artifact_digest: OCIDigest
+
+    @required
+    @protoField(number: 7)
     layer_digest: OCIDigest
 
-    @protoField(number: 7)
+    @protoField(number: 8)
     installed_version: PackageVersion
 }
 
@@ -574,6 +587,10 @@ structure ResolveDistributionTargetInput {
     @required
     @httpQuery("platform_arch")
     platform_arch: PlatformArch
+
+    @required
+    @httpQuery("flavor")
+    flavor: ArtifactFlavor
 }
 
 structure ResolveDistributionTargetOutputBody {
@@ -628,6 +645,9 @@ structure ListDistributionChannelTargetsInput {
 
     @httpQuery("platform_arch")
     platform_arch: PlatformArch
+
+    @httpQuery("flavor")
+    flavor: ArtifactFlavor
 
     @httpQuery("page_size")
     page_size: PageSize
@@ -685,51 +705,51 @@ structure AdmitDistributionArtifactBody {
 
     @required
     @protoField(number: 6)
-    origin_registry_url: RegistryURL
+    flavor: ArtifactFlavor
 
     @required
     @protoField(number: 7)
-    public_registry_url: RegistryURL
+    origin_registry_url: RegistryURL
 
     @required
     @protoField(number: 8)
-    oci_repository: OCIRepository
+    public_registry_url: RegistryURL
 
     @required
     @protoField(number: 9)
-    oci_digest: OCIDigest
+    oci_repository: OCIRepository
 
     @required
     @protoField(number: 10)
-    oci_media_type: OCIMediaType
+    oci_digest: OCIDigest
 
     @required
     @protoField(number: 11)
-    oci_size_bytes: OCISizeBytes
+    oci_media_type: OCIMediaType
 
     @required
     @protoField(number: 12)
-    builder_id: BuilderID
+    oci_size_bytes: OCISizeBytes
 
     @required
     @protoField(number: 13)
-    signer_identity: SignerIdentity
+    builder_id: BuilderID
 
     @required
     @protoField(number: 14)
-    source_repository: SourceRepository
+    signer_identity: SignerIdentity
 
     @required
     @protoField(number: 15)
-    source_commit: SourceCommit
+    source_repository: SourceRepository
 
     @required
     @protoField(number: 16)
-    source_ref: SourceRef
+    source_commit: SourceCommit
 
     @required
     @protoField(number: 17)
-    bazel_target: BazelTarget
+    source_ref: SourceRef
 
     @required
     @protoField(number: 18)
@@ -770,14 +790,18 @@ structure PromoteDistributionTargetBody {
 
     @required
     @protoField(number: 4)
-    policy_ref: PolicyRef
+    flavor: ArtifactFlavor
 
     @required
     @protoField(number: 5)
-    promoted_by: ActorId
+    policy_ref: PolicyRef
 
     @required
     @protoField(number: 6)
+    promoted_by: ActorId
+
+    @required
+    @protoField(number: 7)
     reason: DecisionReason
 }
 

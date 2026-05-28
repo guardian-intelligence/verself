@@ -16,6 +16,8 @@ const (
 
 	DistributionChannelStable = "stable"
 	DistributionChannelCanary = "canary"
+
+	DistributionFlavorDefault = "default"
 )
 
 type DistributionEvidence struct {
@@ -35,7 +37,6 @@ type DistributionVerification struct {
 	SourceRepository string                 `json:"source_repository"`
 	SourceCommit     string                 `json:"source_commit"`
 	SourceRef        string                 `json:"source_ref"`
-	BazelTarget      string                 `json:"bazel_target"`
 	Evidence         []DistributionEvidence `json:"evidence"`
 	CheckedAt        time.Time              `json:"checked_at"`
 }
@@ -55,6 +56,7 @@ type DistributionArtifact struct {
 	PackageVersion     string                   `json:"package_version"`
 	PlatformOS         string                   `json:"platform_os"`
 	PlatformArch       string                   `json:"platform_arch"`
+	Flavor             string                   `json:"flavor"`
 	OCIRepository      string                   `json:"oci_repository"`
 	PublicOCIReference string                   `json:"public_oci_reference"`
 	OCIMediaType       string                   `json:"oci_media_type"`
@@ -75,6 +77,7 @@ type DistributionTarget struct {
 	ChannelName        string     `json:"channel_name"`
 	PlatformOS         string     `json:"platform_os"`
 	PlatformArch       string     `json:"platform_arch"`
+	Flavor             string     `json:"flavor"`
 	ArtifactDigest     string     `json:"artifact_digest"`
 	ArtifactDigestRef  string     `json:"artifact_digest_ref"`
 	PackageVersion     string     `json:"package_version"`
@@ -103,6 +106,7 @@ type DistributionCheckUpdateInput struct {
 	ChannelName      string
 	PlatformOS       string
 	PlatformArch     string
+	Flavor           string
 	InstalledDigest  string
 	InstalledVersion string
 }
@@ -112,6 +116,7 @@ type DistributionResolveTargetInput struct {
 	ChannelName  string
 	PlatformOS   string
 	PlatformArch string
+	Flavor       string
 }
 
 type DistributionGetArtifactInput struct {
@@ -123,6 +128,7 @@ type DistributionListTargetsOptions struct {
 	ChannelName  string
 	PlatformOS   string
 	PlatformArch string
+	Flavor       string
 	PageSize     int32
 	PageToken    string
 }
@@ -140,6 +146,7 @@ func (c *DistributionClient) CheckUpdate(ctx context.Context, input Distribution
 		ChannelName:      strings.TrimSpace(input.ChannelName),
 		PlatformOS:       strings.TrimSpace(input.PlatformOS),
 		PlatformArch:     strings.TrimSpace(input.PlatformArch),
+		Flavor:           strings.TrimSpace(input.Flavor),
 		InstalledDigest:  strings.TrimSpace(input.InstalledDigest),
 		InstalledVersion: strings.TrimSpace(input.InstalledVersion),
 	})
@@ -165,6 +172,7 @@ func (c *DistributionClient) ResolveTarget(ctx context.Context, input Distributi
 		ChannelName:  strings.TrimSpace(input.ChannelName),
 		PlatformOS:   strings.TrimSpace(input.PlatformOS),
 		PlatformArch: strings.TrimSpace(input.PlatformArch),
+		Flavor:       strings.TrimSpace(input.Flavor),
 	})
 	if err != nil {
 		return DistributionTarget{}, err
@@ -200,6 +208,7 @@ func (c *DistributionClient) ListTargets(ctx context.Context, options Distributi
 		ChannelName:  strings.TrimSpace(options.ChannelName),
 		PlatformOS:   strings.TrimSpace(options.PlatformOS),
 		PlatformArch: strings.TrimSpace(options.PlatformArch),
+		Flavor:       strings.TrimSpace(options.Flavor),
 		PageSize:     options.PageSize,
 		PageToken:    strings.TrimSpace(options.PageToken),
 	})
@@ -227,6 +236,7 @@ func distributionTargetFromCore(input distributioncore.TargetRecord) Distributio
 		ChannelName:        input.ChannelName,
 		PlatformOS:         input.PlatformOS,
 		PlatformArch:       input.PlatformArch,
+		Flavor:             input.Flavor,
 		ArtifactDigest:     input.ArtifactDigest,
 		ArtifactDigestRef:  input.ArtifactDigestRef,
 		PackageVersion:     input.PackageVersion,
@@ -259,6 +269,7 @@ func distributionArtifactFromCore(input distributioncore.ArtifactRecord) Distrib
 		PackageVersion:     input.PackageVersion,
 		PlatformOS:         input.PlatformOS,
 		PlatformArch:       input.PlatformArch,
+		Flavor:             input.Flavor,
 		OCIRepository:      input.OCIRepository,
 		PublicOCIReference: input.PublicOCIReference,
 		OCIMediaType:       input.OCIMediaType,
@@ -273,7 +284,6 @@ func distributionArtifactFromCore(input distributioncore.ArtifactRecord) Distrib
 			SourceRepository: input.Verification.SourceRepository,
 			SourceCommit:     input.Verification.SourceCommit,
 			SourceRef:        input.Verification.SourceRef,
-			BazelTarget:      input.Verification.BazelTarget,
 			Evidence:         evidence,
 			CheckedAt:        parseSDKTime(input.Verification.CheckedAt),
 		},

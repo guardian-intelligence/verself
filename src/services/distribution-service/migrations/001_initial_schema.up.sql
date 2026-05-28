@@ -5,6 +5,7 @@ CREATE TABLE distribution_artifacts (
     channel_name TEXT NOT NULL CHECK (channel_name ~ '^[a-z][a-z0-9._-]*$'),
     platform_os TEXT NOT NULL CHECK (length(btrim(platform_os)) > 0),
     platform_arch TEXT NOT NULL CHECK (length(btrim(platform_arch)) > 0),
+    flavor TEXT NOT NULL CHECK (flavor ~ '^[a-z0-9][a-z0-9._-]*[a-z0-9]$'),
     origin_registry_url TEXT NOT NULL CHECK (length(btrim(origin_registry_url)) > 0),
     public_registry_url TEXT NOT NULL CHECK (length(btrim(public_registry_url)) > 0),
     oci_repository TEXT NOT NULL CHECK (length(btrim(oci_repository)) > 0),
@@ -17,7 +18,6 @@ CREATE TABLE distribution_artifacts (
     source_repository TEXT NOT NULL CHECK (length(btrim(source_repository)) > 0),
     source_commit TEXT NOT NULL CHECK (length(btrim(source_commit)) > 0),
     source_ref TEXT NOT NULL CHECK (length(btrim(source_ref)) > 0),
-    bazel_target TEXT NOT NULL CHECK (length(btrim(bazel_target)) > 0),
     policy_ref TEXT NOT NULL CHECK (length(btrim(policy_ref)) > 0),
     state TEXT NOT NULL CHECK (state IN ('zot_pushed', 'submitted', 'verifying', 'admitted', 'available', 'rejected', 'superseded', 'quarantined', 'retained', 'expired', 'gc_eligible', 'deleted')),
     verification_decision TEXT NOT NULL CHECK (verification_decision IN ('pending', 'allowed', 'denied')),
@@ -32,11 +32,11 @@ CREATE TABLE distribution_artifacts (
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     UNIQUE (oci_repository, oci_digest),
-    UNIQUE (package_name, platform_os, platform_arch, oci_digest)
+    UNIQUE (package_name, platform_os, platform_arch, flavor, oci_digest)
 );
 
 CREATE INDEX distribution_artifacts_package_platform_idx
-    ON distribution_artifacts (package_name, platform_os, platform_arch, state, updated_at DESC);
+    ON distribution_artifacts (package_name, platform_os, platform_arch, flavor, state, updated_at DESC);
 
 CREATE TABLE distribution_artifact_evidence (
     evidence_id UUID PRIMARY KEY,
@@ -59,6 +59,7 @@ CREATE TABLE distribution_channel_targets (
     channel_name TEXT NOT NULL CHECK (channel_name ~ '^[a-z][a-z0-9._-]*$'),
     platform_os TEXT NOT NULL CHECK (length(btrim(platform_os)) > 0),
     platform_arch TEXT NOT NULL CHECK (length(btrim(platform_arch)) > 0),
+    flavor TEXT NOT NULL CHECK (flavor ~ '^[a-z0-9][a-z0-9._-]*[a-z0-9]$'),
     artifact_id UUID NOT NULL REFERENCES distribution_artifacts (artifact_id),
     artifact_digest TEXT NOT NULL CHECK (artifact_digest ~ '^sha256:[a-f0-9]{64}$'),
     package_version TEXT NOT NULL CHECK (length(btrim(package_version)) > 0),
@@ -73,15 +74,15 @@ CREATE TABLE distribution_channel_targets (
     superseded_by_digest TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
-    UNIQUE (package_name, channel_name, platform_os, platform_arch, artifact_digest)
+    UNIQUE (package_name, channel_name, platform_os, platform_arch, flavor, artifact_digest)
 );
 
 CREATE UNIQUE INDEX distribution_channel_targets_current_idx
-    ON distribution_channel_targets (package_name, channel_name, platform_os, platform_arch)
+    ON distribution_channel_targets (package_name, channel_name, platform_os, platform_arch, flavor)
     WHERE state IN ('published', 'rollback_target_published');
 
 CREATE INDEX distribution_channel_targets_history_idx
-    ON distribution_channel_targets (package_name, channel_name, platform_os, platform_arch, published_at DESC);
+    ON distribution_channel_targets (package_name, channel_name, platform_os, platform_arch, flavor, published_at DESC);
 
 CREATE TABLE distribution_idempotency_keys (
     scope TEXT NOT NULL CHECK (length(btrim(scope)) > 0),

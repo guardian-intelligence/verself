@@ -43,6 +43,7 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		ArtifactDigest: req.OCIDigest,
 		PlatformOS:     req.PlatformOS,
 		PlatformArch:   req.PlatformArch,
+		Flavor:         req.Flavor,
 		PolicyRef:      req.PolicyRef,
 		PromotedBy:     "distribution-rehearsal",
 		Reason:         "release rehearsal",
@@ -61,6 +62,7 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		ArtifactDigest: req.OCIDigest,
 		PlatformOS:     req.PlatformOS,
 		PlatformArch:   req.PlatformArch,
+		Flavor:         req.Flavor,
 		PolicyRef:      req.PolicyRef,
 		PromotedBy:     "distribution-rehearsal",
 		Reason:         "release rehearsal",
@@ -78,6 +80,7 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		ChannelName:  req.ChannelName,
 		PlatformOS:   req.PlatformOS,
 		PlatformArch: req.PlatformArch,
+		Flavor:       req.Flavor,
 	})
 	if err != nil {
 		t.Fatalf("resolve target: %v", err)
@@ -97,6 +100,7 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		ChannelName:     req.ChannelName,
 		PlatformOS:      req.PlatformOS,
 		PlatformArch:    req.PlatformArch,
+		Flavor:          req.Flavor,
 		InstalledDigest: req.OCIDigest,
 	})
 	if err != nil {
@@ -119,6 +123,7 @@ func TestAdmissionPromotionAndQuarantineFlow(t *testing.T) {
 		ChannelName:  req.ChannelName,
 		PlatformOS:   req.PlatformOS,
 		PlatformArch: req.PlatformArch,
+		Flavor:       req.Flavor,
 	})
 	if !errors.Is(err, ErrQuarantined) {
 		t.Fatalf("resolve quarantined target error = %v, want %v", err, ErrQuarantined)
@@ -178,6 +183,7 @@ func admitRequest(digestFill string) AdmitArtifactRequest {
 		ChannelName:       "stable",
 		PlatformOS:        "linux",
 		PlatformArch:      "amd64",
+		Flavor:            "default",
 		OriginRegistryURL: "https://zot.service.consul",
 		PublicRegistryURL: "https://oci.verself.sh",
 		OCIRepository:     "verself/mksk",
@@ -189,7 +195,6 @@ func admitRequest(digestFill string) AdmitArtifactRequest {
 		SourceRepository:  "guardian-intelligence/verself",
 		SourceCommit:      "0123456789abcdef0123456789abcdef01234567",
 		SourceRef:         "refs/heads/main",
-		BazelTarget:       "//src/make-skill:mksk",
 		PolicyRef:         "distribution-policies/mksk/v1",
 		Evidence: []Evidence{
 			evidence(EvidenceCosign, "https://sigstore.dev/cosign/v1", digest, "c"),

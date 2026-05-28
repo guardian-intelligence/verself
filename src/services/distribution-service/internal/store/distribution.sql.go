@@ -20,6 +20,7 @@ INSERT INTO distribution_artifacts (
     channel_name,
     platform_os,
     platform_arch,
+    flavor,
     origin_registry_url,
     public_registry_url,
     oci_repository,
@@ -32,7 +33,6 @@ INSERT INTO distribution_artifacts (
     source_repository,
     source_commit,
     source_ref,
-    bazel_target,
     policy_ref,
     state,
     verification_decision,
@@ -76,7 +76,7 @@ INSERT INTO distribution_artifacts (
     $29,
     $30
 )
-RETURNING artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, bazel_target, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
+RETURNING artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, flavor, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
 `
 
 type CreateArtifactParams struct {
@@ -86,6 +86,7 @@ type CreateArtifactParams struct {
 	ChannelName          string
 	PlatformOs           string
 	PlatformArch         string
+	Flavor               string
 	OriginRegistryUrl    string
 	PublicRegistryUrl    string
 	OciRepository        string
@@ -98,7 +99,6 @@ type CreateArtifactParams struct {
 	SourceRepository     string
 	SourceCommit         string
 	SourceRef            string
-	BazelTarget          string
 	PolicyRef            string
 	State                string
 	VerificationDecision string
@@ -120,6 +120,7 @@ func (q *Queries) CreateArtifact(ctx context.Context, arg CreateArtifactParams) 
 		arg.ChannelName,
 		arg.PlatformOs,
 		arg.PlatformArch,
+		arg.Flavor,
 		arg.OriginRegistryUrl,
 		arg.PublicRegistryUrl,
 		arg.OciRepository,
@@ -132,7 +133,6 @@ func (q *Queries) CreateArtifact(ctx context.Context, arg CreateArtifactParams) 
 		arg.SourceRepository,
 		arg.SourceCommit,
 		arg.SourceRef,
-		arg.BazelTarget,
 		arg.PolicyRef,
 		arg.State,
 		arg.VerificationDecision,
@@ -153,6 +153,7 @@ func (q *Queries) CreateArtifact(ctx context.Context, arg CreateArtifactParams) 
 		&i.ChannelName,
 		&i.PlatformOs,
 		&i.PlatformArch,
+		&i.Flavor,
 		&i.OriginRegistryUrl,
 		&i.PublicRegistryUrl,
 		&i.OciRepository,
@@ -165,7 +166,6 @@ func (q *Queries) CreateArtifact(ctx context.Context, arg CreateArtifactParams) 
 		&i.SourceRepository,
 		&i.SourceCommit,
 		&i.SourceRef,
-		&i.BazelTarget,
 		&i.PolicyRef,
 		&i.State,
 		&i.VerificationDecision,
@@ -301,7 +301,7 @@ SET
     updated_at = $1
 WHERE oci_digest = $2
   AND state NOT IN ('quarantined', 'deleted')
-RETURNING artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, bazel_target, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
+RETURNING artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, flavor, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
 `
 
 type EnsureArtifactReplicationParams struct {
@@ -319,6 +319,7 @@ func (q *Queries) EnsureArtifactReplication(ctx context.Context, arg EnsureArtif
 		&i.ChannelName,
 		&i.PlatformOs,
 		&i.PlatformArch,
+		&i.Flavor,
 		&i.OriginRegistryUrl,
 		&i.PublicRegistryUrl,
 		&i.OciRepository,
@@ -331,7 +332,6 @@ func (q *Queries) EnsureArtifactReplication(ctx context.Context, arg EnsureArtif
 		&i.SourceRepository,
 		&i.SourceCommit,
 		&i.SourceRef,
-		&i.BazelTarget,
 		&i.PolicyRef,
 		&i.State,
 		&i.VerificationDecision,
@@ -350,7 +350,7 @@ func (q *Queries) EnsureArtifactReplication(ctx context.Context, arg EnsureArtif
 }
 
 const getArtifactByDigest = `-- name: GetArtifactByDigest :one
-SELECT artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, bazel_target, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
+SELECT artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, flavor, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
 FROM distribution_artifacts
 WHERE oci_digest = $1
 `
@@ -369,6 +369,7 @@ func (q *Queries) GetArtifactByDigest(ctx context.Context, arg GetArtifactByDige
 		&i.ChannelName,
 		&i.PlatformOs,
 		&i.PlatformArch,
+		&i.Flavor,
 		&i.OriginRegistryUrl,
 		&i.PublicRegistryUrl,
 		&i.OciRepository,
@@ -381,7 +382,6 @@ func (q *Queries) GetArtifactByDigest(ctx context.Context, arg GetArtifactByDige
 		&i.SourceRepository,
 		&i.SourceCommit,
 		&i.SourceRef,
-		&i.BazelTarget,
 		&i.PolicyRef,
 		&i.State,
 		&i.VerificationDecision,
@@ -400,7 +400,7 @@ func (q *Queries) GetArtifactByDigest(ctx context.Context, arg GetArtifactByDige
 }
 
 const getArtifactByRepositoryDigest = `-- name: GetArtifactByRepositoryDigest :one
-SELECT artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, bazel_target, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
+SELECT artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, flavor, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
 FROM distribution_artifacts
 WHERE oci_repository = $1 AND oci_digest = $2
 `
@@ -420,6 +420,7 @@ func (q *Queries) GetArtifactByRepositoryDigest(ctx context.Context, arg GetArti
 		&i.ChannelName,
 		&i.PlatformOs,
 		&i.PlatformArch,
+		&i.Flavor,
 		&i.OriginRegistryUrl,
 		&i.PublicRegistryUrl,
 		&i.OciRepository,
@@ -432,7 +433,6 @@ func (q *Queries) GetArtifactByRepositoryDigest(ctx context.Context, arg GetArti
 		&i.SourceRepository,
 		&i.SourceCommit,
 		&i.SourceRef,
-		&i.BazelTarget,
 		&i.PolicyRef,
 		&i.State,
 		&i.VerificationDecision,
@@ -451,12 +451,13 @@ func (q *Queries) GetArtifactByRepositoryDigest(ctx context.Context, arg GetArti
 }
 
 const getCurrentTarget = `-- name: GetCurrentTarget :one
-SELECT target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
+SELECT target_id, package_name, channel_name, platform_os, platform_arch, flavor, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
 FROM distribution_channel_targets
 WHERE package_name = $1
   AND channel_name = $2
   AND platform_os = $3
   AND platform_arch = $4
+  AND flavor = $5
   AND state IN ('published', 'rollback_target_published')
 ORDER BY published_at DESC, target_id DESC
 LIMIT 1
@@ -467,6 +468,7 @@ type GetCurrentTargetParams struct {
 	ChannelName  string
 	PlatformOs   string
 	PlatformArch string
+	Flavor       string
 }
 
 func (q *Queries) GetCurrentTarget(ctx context.Context, arg GetCurrentTargetParams) (DistributionChannelTarget, error) {
@@ -475,6 +477,7 @@ func (q *Queries) GetCurrentTarget(ctx context.Context, arg GetCurrentTargetPara
 		arg.ChannelName,
 		arg.PlatformOs,
 		arg.PlatformArch,
+		arg.Flavor,
 	)
 	var i DistributionChannelTarget
 	err := row.Scan(
@@ -483,6 +486,7 @@ func (q *Queries) GetCurrentTarget(ctx context.Context, arg GetCurrentTargetPara
 		&i.ChannelName,
 		&i.PlatformOs,
 		&i.PlatformArch,
+		&i.Flavor,
 		&i.ArtifactID,
 		&i.ArtifactDigest,
 		&i.PackageVersion,
@@ -527,14 +531,15 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, arg GetIdempotencyKeyPa
 }
 
 const listChannelTargets = `-- name: ListChannelTargets :many
-SELECT target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
+SELECT target_id, package_name, channel_name, platform_os, platform_arch, flavor, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
 FROM distribution_channel_targets
 WHERE package_name = $1
   AND channel_name = $2
   AND ($3::text = '' OR platform_os = $3)
   AND ($4::text = '' OR platform_arch = $4)
+  AND ($5::text = '' OR flavor = $5)
 ORDER BY published_at DESC, target_id DESC
-LIMIT $5
+LIMIT $6
 `
 
 type ListChannelTargetsParams struct {
@@ -542,6 +547,7 @@ type ListChannelTargetsParams struct {
 	ChannelName  string
 	PlatformOs   string
 	PlatformArch string
+	Flavor       string
 	LimitCount   int32
 }
 
@@ -551,6 +557,7 @@ func (q *Queries) ListChannelTargets(ctx context.Context, arg ListChannelTargets
 		arg.ChannelName,
 		arg.PlatformOs,
 		arg.PlatformArch,
+		arg.Flavor,
 		arg.LimitCount,
 	)
 	if err != nil {
@@ -566,6 +573,7 @@ func (q *Queries) ListChannelTargets(ctx context.Context, arg ListChannelTargets
 			&i.ChannelName,
 			&i.PlatformOs,
 			&i.PlatformArch,
+			&i.Flavor,
 			&i.ArtifactID,
 			&i.ArtifactDigest,
 			&i.PackageVersion,
@@ -640,7 +648,7 @@ SET
     updated_at = $3
 WHERE oci_digest = $4
   AND state <> 'deleted'
-RETURNING artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, bazel_target, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
+RETURNING artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, flavor, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
 `
 
 type MarkArtifactQuarantinedParams struct {
@@ -665,6 +673,7 @@ func (q *Queries) MarkArtifactQuarantined(ctx context.Context, arg MarkArtifactQ
 		&i.ChannelName,
 		&i.PlatformOs,
 		&i.PlatformArch,
+		&i.Flavor,
 		&i.OriginRegistryUrl,
 		&i.PublicRegistryUrl,
 		&i.OciRepository,
@@ -677,7 +686,6 @@ func (q *Queries) MarkArtifactQuarantined(ctx context.Context, arg MarkArtifactQ
 		&i.SourceRepository,
 		&i.SourceCommit,
 		&i.SourceRef,
-		&i.BazelTarget,
 		&i.PolicyRef,
 		&i.State,
 		&i.VerificationDecision,
@@ -717,6 +725,7 @@ WHERE package_name = $4
   AND channel_name = $5
   AND platform_os = $6
   AND platform_arch = $7
+  AND flavor = $8
   AND state IN ('published', 'rollback_target_published')
   AND artifact_digest <> $2
 `
@@ -729,6 +738,7 @@ type SupersedeCurrentTargetsParams struct {
 	ChannelName        string
 	PlatformOs         string
 	PlatformArch       string
+	Flavor             string
 }
 
 func (q *Queries) SupersedeCurrentTargets(ctx context.Context, arg SupersedeCurrentTargetsParams) error {
@@ -740,6 +750,7 @@ func (q *Queries) SupersedeCurrentTargets(ctx context.Context, arg SupersedeCurr
 		arg.ChannelName,
 		arg.PlatformOs,
 		arg.PlatformArch,
+		arg.Flavor,
 	)
 	return err
 }
@@ -751,6 +762,7 @@ INSERT INTO distribution_channel_targets (
     channel_name,
     platform_os,
     platform_arch,
+    flavor,
     artifact_id,
     artifact_digest,
     package_version,
@@ -780,9 +792,10 @@ INSERT INTO distribution_channel_targets (
     $14,
     $15,
     $16,
-    $17
+    $17,
+    $18
 )
-ON CONFLICT (package_name, channel_name, platform_os, platform_arch, artifact_digest) DO UPDATE
+ON CONFLICT (package_name, channel_name, platform_os, platform_arch, flavor, artifact_digest) DO UPDATE
 SET
     state = EXCLUDED.state,
     public_oci_reference = EXCLUDED.public_oci_reference,
@@ -794,7 +807,7 @@ SET
     superseded_at = NULL,
     superseded_by_digest = '',
     updated_at = EXCLUDED.updated_at
-RETURNING target_id, package_name, channel_name, platform_os, platform_arch, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
+RETURNING target_id, package_name, channel_name, platform_os, platform_arch, flavor, artifact_id, artifact_digest, package_version, state, public_oci_reference, download_url, policy_ref, promoted_by, reason, published_at, superseded_at, superseded_by_digest, created_at, updated_at
 `
 
 type UpsertPublishedTargetParams struct {
@@ -803,6 +816,7 @@ type UpsertPublishedTargetParams struct {
 	ChannelName        string
 	PlatformOs         string
 	PlatformArch       string
+	Flavor             string
 	ArtifactID         uuid.UUID
 	ArtifactDigest     string
 	PackageVersion     string
@@ -824,6 +838,7 @@ func (q *Queries) UpsertPublishedTarget(ctx context.Context, arg UpsertPublished
 		arg.ChannelName,
 		arg.PlatformOs,
 		arg.PlatformArch,
+		arg.Flavor,
 		arg.ArtifactID,
 		arg.ArtifactDigest,
 		arg.PackageVersion,
@@ -844,6 +859,7 @@ func (q *Queries) UpsertPublishedTarget(ctx context.Context, arg UpsertPublished
 		&i.ChannelName,
 		&i.PlatformOs,
 		&i.PlatformArch,
+		&i.Flavor,
 		&i.ArtifactID,
 		&i.ArtifactDigest,
 		&i.PackageVersion,

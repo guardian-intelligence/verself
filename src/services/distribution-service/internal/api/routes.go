@@ -59,6 +59,7 @@ func (a publicAPI) checkUpdate(w http.ResponseWriter, r *http.Request) {
 		ChannelName:      body.ChannelName,
 		PlatformOS:       body.PlatformOS,
 		PlatformArch:     body.PlatformArch,
+		Flavor:           body.Flavor,
 		InstalledDigest:  body.InstalledDigest,
 		InstalledVersion: body.InstalledVersion,
 	})
@@ -79,6 +80,7 @@ func (a publicAPI) recordUpgradeVerification(w http.ResponseWriter, r *http.Requ
 		ChannelName:      body.ChannelName,
 		PlatformOS:       body.PlatformOS,
 		PlatformArch:     body.PlatformArch,
+		Flavor:           body.Flavor,
 		ArtifactDigest:   body.ArtifactDigest,
 		LayerDigest:      body.LayerDigest,
 		InstalledVersion: body.InstalledVersion,
@@ -95,6 +97,7 @@ func (a publicAPI) resolveTarget(w http.ResponseWriter, r *http.Request) {
 		ChannelName:  r.PathValue("channel_name"),
 		PlatformOS:   r.URL.Query().Get("platform_os"),
 		PlatformArch: r.URL.Query().Get("platform_arch"),
+		Flavor:       r.URL.Query().Get("flavor"),
 	})
 	if err != nil {
 		writeError(w, r, err)
@@ -122,7 +125,7 @@ func (a publicAPI) listTargets(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = int32(parsed)
 	}
-	targets, err := a.cfg.Service.ListTargets(r.Context(), publicPrincipal(r.Context()), r.PathValue("package_name"), r.PathValue("channel_name"), r.URL.Query().Get("platform_os"), r.URL.Query().Get("platform_arch"), limit)
+	targets, err := a.cfg.Service.ListTargets(r.Context(), publicPrincipal(r.Context()), r.PathValue("package_name"), r.PathValue("channel_name"), r.URL.Query().Get("platform_os"), r.URL.Query().Get("platform_arch"), r.URL.Query().Get("flavor"), limit)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -278,6 +281,7 @@ func (a internalAPI) admitArtifact(w http.ResponseWriter, r *http.Request) {
 		ChannelName:       body.ChannelName,
 		PlatformOS:        body.PlatformOS,
 		PlatformArch:      body.PlatformArch,
+		Flavor:            body.Flavor,
 		OriginRegistryURL: body.OriginRegistryURL,
 		PublicRegistryURL: body.PublicRegistryURL,
 		OCIRepository:     body.OCIRepository,
@@ -289,7 +293,6 @@ func (a internalAPI) admitArtifact(w http.ResponseWriter, r *http.Request) {
 		SourceRepository:  body.SourceRepository,
 		SourceCommit:      body.SourceCommit,
 		SourceRef:         body.SourceRef,
-		BazelTarget:       body.BazelTarget,
 		PolicyRef:         body.PolicyRef,
 		Evidence:          evidenceFromDTO(body.Evidence),
 		SubmittedBy:       body.SubmittedBy,
@@ -313,6 +316,7 @@ func (a internalAPI) promoteTarget(w http.ResponseWriter, r *http.Request) {
 		ArtifactDigest: body.ArtifactDigest,
 		PlatformOS:     body.PlatformOS,
 		PlatformArch:   body.PlatformArch,
+		Flavor:         body.Flavor,
 		PolicyRef:      body.PolicyRef,
 		PromotedBy:     body.PromotedBy,
 		Reason:         body.Reason,

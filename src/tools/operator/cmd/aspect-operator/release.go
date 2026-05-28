@@ -12,14 +12,12 @@ import (
 	"strings"
 	"time"
 
-	opch "github.com/verself/operator-runtime/clickhouse"
 	opruntime "github.com/verself/operator-runtime/runtime"
 )
 
 const (
 	defaultNPMRegistry         = "https://registry.npmjs.org"
 	defaultGitHubRepository    = "guardian-intelligence/verself-sh"
-	distributionReleaseControl = "//src/services/distribution-service/cmd/distribution-release-control:distribution-release-control"
 	releaseCheckStatusOK       = "ok"
 	releaseCheckStatusWarn     = "warn"
 	releaseCheckStatusBlocked  = "blocked"
@@ -62,60 +60,15 @@ type releaseProbeRow struct {
 
 func cmdRelease(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("release: missing subcommand (try `mksk` or `npm-probe`)")
+		return fmt.Errorf("release: missing subcommand (try `npm-probe`)")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
-	case "mksk":
-		return cmdReleaseMksk(rest)
 	case "npm-probe":
 		return cmdReleaseNPMProbe(rest)
 	default:
 		return fmt.Errorf("release: unknown subcommand: %s", sub)
 	}
-}
-
-func cmdReleaseMksk(args []string) error {
-	var rtOpts operatorRuntimeOptions
-	addOperatorRuntimeFlags(&rtOpts)
-	fs := flagSet("release mksk")
-	channel := fs.String("channel", "", "Release channel: nightly, rc, or stable")
-	releaseVersion := fs.String("version", "", "Release version. Required for rc and stable")
-	sourceRef := fs.String("source-ref", "", "Git ref recorded as release source")
-	sourceCommit := fs.String("source-commit", "", "Resolved 40-character git source commit")
-	format := fs.String("format", "text", "Output format: text or json")
-	site := fs.String("site", rtOpts.site, "Deployment site")
-	repoRoot := fs.String("repo-root", "", "Repository root")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() != 0 {
-		return fmt.Errorf("release mksk: unexpected positional args: %s", strings.Join(fs.Args(), " "))
-	}
-	rtOpts.site = *site
-	rtOpts.repoRoot = *repoRoot
-	if strings.TrimSpace(*channel) == "" {
-		return fmt.Errorf("release mksk: --channel is required")
-	}
-	if strings.TrimSpace(*sourceRef) == "" {
-		return fmt.Errorf("release mksk: --source-ref is required")
-	}
-	if strings.TrimSpace(*sourceCommit) == "" {
-		return fmt.Errorf("release mksk: --source-commit is required")
-	}
-	remoteArgs := []string{
-		"mksk",
-		"--channel", strings.TrimSpace(*channel),
-		"--source-ref", strings.TrimSpace(*sourceRef),
-		"--source-commit", strings.TrimSpace(*sourceCommit),
-		"--format", strings.TrimSpace(*format),
-	}
-	if strings.TrimSpace(*releaseVersion) != "" {
-		remoteArgs = append(remoteArgs, "--version", strings.TrimSpace(*releaseVersion))
-	}
-	return runOperatorRuntime("release.mksk", rtOpts, false, opch.Config{}, func(rt *opruntime.Runtime, _ *opch.Client) error {
-		return runRemoteBazelExecutable(rt, distributionReleaseControl, "distribution-release-control", "distribution_service", remoteArgs)
-	})
 }
 
 func cmdReleaseNPMProbe(args []string) error {
