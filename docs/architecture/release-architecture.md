@@ -793,8 +793,8 @@ not the full artifact payload.
 
 1. Extend `mksk-release build` and `mksk-release publish` with version
    derivation for nightly, RC, and stable.
-2. Add `mksk-release publish` against a local or dev Zot instance using OCI
-   subject manifests and referrers.
+2. Add `mksk-release publish` against Zot using OCI subject manifests and
+   referrers.
 3. Add OpenBao release Transit convergence: mount, key, policy, role, and
    signer client.
 4. Add the release-builder host and guest commands with QEMU/OVMF SEV-SNP

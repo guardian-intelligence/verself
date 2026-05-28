@@ -22,6 +22,7 @@ use (
 	./src/services/service-runtime/go
 	./src/sdks/go/verself
 	./src/infrastructure-components/temporal-platform
+	./src/make-skill/release
 	./src/verself-cli
 	./src/substrate/vm-orchestrator
 )

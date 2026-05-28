@@ -3,7 +3,7 @@ argument_specs:
   main:
     short_description: "zot internal OCI artifact registry"
     description:
-      - "Brings up a loopback-only zot registry for admitted internal OCI artifacts."
+      - "Brings up a loopback-only zot registry for internal OCI artifacts."
       - "Anonymous clients can read objects; unauthenticated create/update/delete"
       - "requests are rejected so installers cannot populate the registry directly."
     options:
@@ -55,7 +55,7 @@ argument_specs:
       zot_publisher_user:
         type: str
         required: true
-        description: "Local identity allowed to publish admitted artifacts."
+        description: "Local identity allowed to publish internal artifacts."
       zot_publisher_password_path:
         type: str
         required: true

@@ -65,6 +65,31 @@ def _mksk_impl(ctx):
         cli_args.extend(["--from-rc", ctx.args.from_rc])
     if ctx.args.allow_dirty:
         cli_args.append("--allow-dirty")
+    if ctx.args.publish:
+        cli_args.extend([
+            "--registry",
+            ctx.args.registry,
+            "--public-registry",
+            ctx.args.public_registry,
+            "--repository",
+            ctx.args.repository,
+            "--registry-username",
+            ctx.args.registry_username,
+            "--registry-password-file",
+            ctx.args.registry_password_file,
+            "--signing",
+            ctx.args.signing,
+        ])
+        if ctx.args.openbao_addr != "":
+            cli_args.extend(["--openbao-addr", ctx.args.openbao_addr])
+        if ctx.args.openbao_token_file != "":
+            cli_args.extend(["--openbao-token-file", ctx.args.openbao_token_file])
+        if ctx.args.openbao_transit_mount != "":
+            cli_args.extend(["--openbao-transit-mount", ctx.args.openbao_transit_mount])
+        if ctx.args.openbao_key != "":
+            cli_args.extend(["--openbao-key", ctx.args.openbao_key])
+        if ctx.args.openbao_namespace != "":
+            cli_args.extend(["--openbao-namespace", ctx.args.openbao_namespace])
     return bazel_run(ctx, MKSK_RELEASE_TARGET, cli_args, label = "mksk-release " + subcommand)
 
 npm_probe = task(
@@ -101,5 +126,16 @@ mksk = task(
         "platform": args.string(default = "linux/amd64", description = "Release platform recorded in provenance."),
         "flavor": args.string(default = "default", description = "Opaque release flavor recorded in provenance."),
         "allow_dirty": args.boolean(default = False, description = "Allow building from a dirty local workspace for inspection."),
+        "registry": args.string(default = "http://127.0.0.1:5080", description = "Origin OCI registry used by --publish."),
+        "public_registry": args.string(default = "https://oci.verself.sh", description = "Public OCI registry URL reported by --publish."),
+        "repository": args.string(default = "verself/mksk", description = "OCI repository used by --publish."),
+        "registry_username": args.string(default = "artifact-publisher", description = "OCI registry publisher user used by --publish."),
+        "registry_password_file": args.string(default = "/etc/zot/publisher-password", description = "OCI registry publisher password file used by --publish."),
+        "signing": args.string(default = "disabled", description = "Signing mode used by --publish: disabled | openbao-transit."),
+        "openbao_addr": args.string(default = "", description = "OpenBao base URL used by --signing=openbao-transit."),
+        "openbao_token_file": args.string(default = "", description = "OpenBao token file used by --signing=openbao-transit."),
+        "openbao_transit_mount": args.string(default = "transit", description = "OpenBao Transit mount used by --signing=openbao-transit."),
+        "openbao_key": args.string(default = "", description = "OpenBao Transit key used by --signing=openbao-transit."),
+        "openbao_namespace": args.string(default = "", description = "OpenBao namespace header used by --signing=openbao-transit."),
     },
 )
