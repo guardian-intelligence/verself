@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -20,7 +19,6 @@ import (
 
 const (
 	mediaTypeLicenseEvidence = "application/vnd.verself.release.licenses.v1+json"
-	mediaTypeTestResult      = "application/vnd.verself.release.test-result.v1+xml"
 
 	annotationReleasePackage      = "sh.verself.release.package"
 	annotationReleaseChannel      = "sh.verself.release.channel"
@@ -181,9 +179,6 @@ func evidenceReferrers(bundle BuildBundle) []ocipublish.Manifest {
 		evidenceManifest(bundle.Subject, bundle.Evidence.SourceSBOM, ocipublish.MediaTypeSPDX, "make-skill.source.spdx.json", "source-sbom"),
 		evidenceManifest(bundle.Subject, bundle.Evidence.LicenseEvidence, mediaTypeLicenseEvidence, "make-skill.cargo-about.json", "licenses"),
 		evidenceManifest(bundle.Subject, bundle.Evidence.Provenance, ocipublish.MediaTypeInToto, "make-skill.provenance.intoto.json", "provenance"),
-	}
-	for _, test := range bundle.Evidence.TestResults {
-		referrers = append(referrers, evidenceManifest(bundle.Subject, test, mediaTypeTestResult, filepath.Base(test.Path), "test-result"))
 	}
 	return referrers
 }

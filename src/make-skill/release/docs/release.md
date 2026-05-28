@@ -29,8 +29,8 @@ aspect release mksk \
 
 `--publish` selects `mksk-release publish`. It builds the same bundle, publishes
 `artifact/make-skill.tar` as the OCI subject manifest, attaches SPDX, SLSA,
-license, and test evidence as OCI referrers, and verifies the pushed descriptor
-graph before returning.
+and license evidence as OCI referrers, and verifies the pushed descriptor graph
+before returning.
 
 The trusted-host defaults point at the local Zot listener:
 
@@ -101,7 +101,6 @@ sbom/make-skill.artifact.spdx.json
 sbom/make-skill.source.spdx.json
 licenses/make-skill.cargo-about.json
 evidence/make-skill.provenance.intoto.json
-tests/*.xml
 checksums.sha256
 ```
 
