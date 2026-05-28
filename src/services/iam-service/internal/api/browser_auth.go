@@ -251,7 +251,7 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			a.route(w, r, http.MethodPost, "browser-account-select", rateLimitIAMMutation, browserAuthJSONBodyMax, a.handleAccountSelect)
 		default:
 			w.Header().Set("Allow", "GET, POST")
-			a.writeProblem(w, r, http.StatusMethodNotAllowed, "method-not-allowed", "method not allowed")
+			a.writeProblem(w, r, http.StatusMethodNotAllowed, problemRequestMethodNotAllowed, "method not allowed")
 		}
 	case "/sessions":
 		a.route(w, r, http.MethodGet, "browser-sessions-list", rateLimitRead, 0, a.handleSessions)
@@ -267,7 +267,7 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			case strings.HasSuffix(r.URL.Path, "/denial"):
 				a.route(w, r, http.MethodPost, "browser-device-login-deny", rateLimitIAMMutation, browserAuthJSONBodyMax, a.handleDeviceLoginDeny)
 			default:
-				a.writeProblem(w, r, http.StatusNotFound, "not-found", "auth route not found")
+				a.writeProblem(w, r, http.StatusNotFound, problemResourceNotFound, "auth route not found")
 			}
 			return
 		}
@@ -279,14 +279,14 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			a.route(w, r, http.MethodDelete, "browser-device-revoke", rateLimitIAMMutation, 0, a.handleSessionRevoke)
 			return
 		}
-		a.writeProblem(w, r, http.StatusNotFound, "not-found", "auth route not found")
+		a.writeProblem(w, r, http.StatusNotFound, problemResourceNotFound, "auth route not found")
 	}
 }
 
 func (a *BrowserAuth) route(w http.ResponseWriter, r *http.Request, method string, operation string, class runtimeiam.RateLimitClass, maxBodyBytes int64, next http.HandlerFunc) {
 	if r.Method != method {
 		w.Header().Set("Allow", method)
-		a.writeProblem(w, r, http.StatusMethodNotAllowed, "method-not-allowed", "method not allowed")
+		a.writeProblem(w, r, http.StatusMethodNotAllowed, problemRequestMethodNotAllowed, "method not allowed")
 		return
 	}
 	if !a.allowBrowserAuthRequest(w, r, operation, class) {
@@ -354,38 +354,38 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if oauthErr := r.URL.Query().Get("error"); oauthErr != "" {
 		description := r.URL.Query().Get("error_description")
 		if description != "" {
-			a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-error", oauthErr+": "+description)
+			a.writeProblem(w, r, http.StatusBadRequest, problemOIDCCallbackFailed, oauthErr+": "+description)
 			return
 		}
-		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-error", oauthErr)
+		a.writeProblem(w, r, http.StatusBadRequest, problemOIDCCallbackFailed, oauthErr)
 		return
 	}
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	if code == "" || state == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-invalid", "OIDC callback is missing code or state")
+		a.writeProblem(w, r, http.StatusBadRequest, problemOIDCCallbackFailed, "OIDC callback is missing code or state")
 		return
 	}
 	stateHash := hashToken(state)
 	loginStateHash, ok := loginStateHashFromRequest(r)
 	if !ok || subtle.ConstantTimeCompare([]byte(loginStateHash), []byte(stateHash)) != 1 {
-		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-state-mismatch", "OIDC callback state did not originate from this browser")
+		a.writeProblem(w, r, http.StatusBadRequest, problemOIDCCallbackFailed, "OIDC callback state did not originate from this browser")
 		return
 	}
 	pending, err := a.q.DeleteBrowserLoginTransaction(r.Context(), identitystore.DeleteBrowserLoginTransactionParams{
 		StateHash: stateHash,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-state-expired", "OIDC callback state is missing or expired")
+		a.writeProblem(w, r, http.StatusBadRequest, problemOIDCCallbackFailed, "OIDC callback state is missing or expired")
 		return
 	}
 	if err != nil {
-		a.serverError(w, "load login transaction", err)
+		a.serverError(w, r, "load login transaction", err)
 		return
 	}
 	clientSecret, ok := browserClientSecretFromRequest(r)
 	if !ok || subtle.ConstantTimeCompare([]byte(hashToken(clientSecret)), []byte(pending.ClientHash)) != 1 {
-		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-client-mismatch", "OIDC callback client did not originate from this browser")
+		a.writeProblem(w, r, http.StatusBadRequest, problemOIDCCallbackFailed, "OIDC callback client did not originate from this browser")
 		return
 	}
 	tokens, err := a.exchangeToken(r.Context(), url.Values{
@@ -395,50 +395,50 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 		"code_verifier": {pending.CodeVerifier},
 	})
 	if err != nil {
-		a.serverError(w, "exchange authorization code", err)
+		a.serverError(w, r, "exchange authorization code", err)
 		return
 	}
 	if strings.TrimSpace(tokens.IDToken) == "" {
-		a.writeProblem(w, r, http.StatusBadGateway, "oidc-callback-id-token-missing", "OIDC callback returned no id_token")
+		a.writeProblem(w, r, http.StatusBadGateway, problemOIDCCallbackFailed, "OIDC callback returned no id_token")
 		return
 	}
 	verified, err := a.verifier.Verify(a.oidcContext(r.Context()), tokens.IDToken)
 	if err != nil {
-		a.writeProblem(w, r, http.StatusBadGateway, "oidc-callback-id-token-invalid", "OIDC callback returned an invalid id_token")
+		a.writeProblem(w, r, http.StatusBadGateway, problemOIDCCallbackFailed, "OIDC callback returned an invalid id_token")
 		return
 	}
 	var idClaims map[string]any
 	if err := verified.Claims(&idClaims); err != nil {
-		a.serverError(w, "decode id_token claims", err)
+		a.serverError(w, r, "decode id_token claims", err)
 		return
 	}
 	if nonce, _ := idClaims["nonce"].(string); nonce != pending.Nonce {
-		a.writeProblem(w, r, http.StatusBadRequest, "oidc-callback-nonce-mismatch", "OIDC callback nonce mismatch")
+		a.writeProblem(w, r, http.StatusBadRequest, problemOIDCCallbackFailed, "OIDC callback nonce mismatch")
 		return
 	}
 	user, err := a.userSnapshot(r.Context(), tokens, idClaims, nil)
 	if err != nil {
-		a.serverError(w, "build browser auth session", err)
+		a.serverError(w, r, "build browser auth session", err)
 		return
 	}
 	if err := a.enforceLoginConstraints(r.Context(), pending, user); err != nil {
 		a.recordLoginConstraintFailure(r.Context(), pending, user, err)
-		a.writeProblem(w, r, http.StatusForbidden, "login-constraint-failed", "login did not match the required account")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthConstraintFailed, "login did not match the required account")
 		return
 	}
 	providerSession, err := a.providerSessionFromLoginTransaction(pending)
 	if err != nil {
-		a.serverError(w, "open provider login session", err)
+		a.serverError(w, r, "open provider login session", err)
 		return
 	}
 	cachePartition, err := randomToken(24)
 	if err != nil {
-		a.serverError(w, "generate browser cache partition", err)
+		a.serverError(w, r, "generate browser cache partition", err)
 		return
 	}
 	accountHandle := browserAccountHandle(pending.ClientHash, user.Sub)
 	if err := a.writeAccount(r.Context(), pending.ClientHash, accountHandle, tokens, user, providerSession); err != nil {
-		a.serverError(w, "persist browser account", err)
+		a.serverError(w, r, "persist browser account", err)
 		return
 	}
 	if err := a.q.SetBrowserClientActiveAccount(r.Context(), identitystore.SetBrowserClientActiveAccountParams{
@@ -446,7 +446,7 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 		ClientCachePartition: cachePartition,
 		ClientHash:           pending.ClientHash,
 	}); err != nil {
-		a.serverError(w, "select browser account", err)
+		a.serverError(w, r, "select browser account", err)
 		return
 	}
 	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_account.created", trace.WithAttributes(
@@ -462,7 +462,7 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 func (a *BrowserAuth) handleSession(w http.ResponseWriter, r *http.Request) {
 	session, err := a.accountSessionFromRequest(w, r)
 	if err != nil {
-		a.serverError(w, "load browser account", err)
+		a.serverError(w, r, "load browser account", err)
 		return
 	}
 	if session != nil {
@@ -474,15 +474,15 @@ func (a *BrowserAuth) handleSession(w http.ResponseWriter, r *http.Request) {
 func (a *BrowserAuth) handleSyncSession(w http.ResponseWriter, r *http.Request) {
 	client, err := a.browserClientFromRequestMode(w, r, browserAuthObserveNone)
 	if err != nil {
-		a.serverError(w, "validate browser client", err)
+		a.serverError(w, r, "validate browser client", err)
 		return
 	}
 	if client == nil {
-		a.writeProblem(w, r, http.StatusUnauthorized, "unauthorized", "authentication required")
+		a.writeProblem(w, r, http.StatusUnauthorized, problemAuthUnauthenticated, "authentication required")
 		return
 	}
 	if _, err := a.accountSessionForClient(r.Context(), client.ClientHash, browserAuthObserveNone); err != nil {
-		a.serverError(w, "validate browser account", err)
+		a.serverError(w, r, "validate browser account", err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -491,7 +491,7 @@ func (a *BrowserAuth) handleSyncSession(w http.ResponseWriter, r *http.Request) 
 
 func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
 	var input struct {
@@ -500,15 +500,15 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, "request-body-too-large", "request body is too large")
+			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, problemRequestBodyTooLarge, "request body is too large")
 			return
 		}
-		a.writeProblem(w, r, http.StatusBadRequest, "invalid-organization-payload", "invalid organization payload")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "invalid organization payload")
 		return
 	}
 	orgID := strings.TrimSpace(input.OrgID)
 	if orgID == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "organization-required", "orgID is required")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "orgID is required")
 		return
 	}
 	session, err := a.requireAccount(w, r)
@@ -518,18 +518,18 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 	if _, ok := session.User.organization(orgID); !ok {
 		organizations, refreshErr := a.publicOrganizationContexts(r.Context(), session.User.Sub)
 		if refreshErr != nil {
-			a.serverError(w, "refresh browser organization contexts", refreshErr)
+			a.serverError(w, r, "refresh browser organization contexts", refreshErr)
 			return
 		}
 		session.User.AvailableOrganizations = organizations
 		if _, ok := session.User.organization(orgID); !ok {
-			a.writeProblem(w, r, http.StatusForbidden, "organization-unavailable", "selected organization is not available to this account")
+			a.writeProblem(w, r, http.StatusForbidden, problemAuthOrganizationMissing, "selected organization is not available to this account")
 			return
 		}
 	}
 	cachePartition, err := randomToken(24)
 	if err != nil {
-		a.serverError(w, "generate browser cache partition", err)
+		a.serverError(w, r, "generate browser cache partition", err)
 		return
 	}
 	if err := a.q.UpdateBrowserAccountOrganization(r.Context(), identitystore.UpdateBrowserAccountOrganizationParams{
@@ -537,11 +537,11 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 		AccountHandle: session.AccountHandle,
 		ClientHash:    session.ClientHash,
 	}); err != nil {
-		a.serverError(w, "update selected organization", err)
+		a.serverError(w, r, "update selected organization", err)
 		return
 	}
 	if err := a.q.DeleteBrowserResourceTokens(r.Context(), identitystore.DeleteBrowserResourceTokensParams{AccountHandle: session.AccountHandle}); err != nil {
-		a.serverError(w, "delete browser resource tokens", err)
+		a.serverError(w, r, "delete browser resource tokens", err)
 		return
 	}
 	if err := a.q.SetBrowserClientActiveAccount(r.Context(), identitystore.SetBrowserClientActiveAccountParams{
@@ -549,7 +549,7 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 		ClientCachePartition: cachePartition,
 		ClientHash:           session.ClientHash,
 	}); err != nil {
-		a.serverError(w, "rotate browser cache partition", err)
+		a.serverError(w, r, "rotate browser cache partition", err)
 		return
 	}
 	session.User.SelectedOrgID = &orgID
@@ -561,12 +561,12 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 		Scope:        stringValue(session.TokenScope),
 		ExpiresAt:    session.ExpiresAt,
 	}, session.User, session.providerLoginSession()); err != nil {
-		a.serverError(w, "persist selected organization context", err)
+		a.serverError(w, r, "persist selected organization context", err)
 		return
 	}
 	next, err := a.readActiveAccount(r.Context(), session.ClientHash)
 	if err != nil {
-		a.serverError(w, "reload browser account", err)
+		a.serverError(w, r, "reload browser account", err)
 		return
 	}
 	sendBrowserAuthActivity(r.Context(), next.User, next.AccountHandle, "browserAuth.selectOrganization", "iam.browser_org.selected", "update", "iam.browser_org.select", r.Method, browserAuthExternalRoute(r), http.StatusOK)
@@ -575,7 +575,7 @@ func (a *BrowserAuth) handleOrganization(w http.ResponseWriter, r *http.Request)
 
 func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
 	session, err := a.requireAccount(w, r)
@@ -584,7 +584,7 @@ func (a *BrowserAuth) handleResourceToken(w http.ResponseWriter, r *http.Request
 	}
 	token, err := a.resourceToken(r.Context(), session)
 	if err != nil {
-		a.serverError(w, "exchange browser resource token", err)
+		a.serverError(w, r, "exchange browser resource token", err)
 		return
 	}
 	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_resource_token.created", trace.WithAttributes(
@@ -614,7 +614,7 @@ func (a *BrowserAuth) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := a.q.ListBrowserAccountsForClient(r.Context(), identitystore.ListBrowserAccountsForClientParams{ClientHash: session.ClientHash})
 	if err != nil {
-		a.serverError(w, "list browser accounts", err)
+		a.serverError(w, r, "list browser accounts", err)
 		return
 	}
 	sessions := make([]browserSessionSummary, 0, len(rows))
@@ -671,7 +671,7 @@ func (a *BrowserAuth) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	currentAccountHandle := stringValue(stringFromText(client.ActiveAccountHandle))
 	accounts, err := a.browserAccountSummaries(r.Context(), client.ClientHash, currentAccountHandle)
 	if err != nil {
-		a.serverError(w, "list browser accounts", err)
+		a.serverError(w, r, "list browser accounts", err)
 		return
 	}
 	if currentAccountHandle != "" {
@@ -684,7 +684,7 @@ func (a *BrowserAuth) handleAccounts(w http.ResponseWriter, r *http.Request) {
 
 func (a *BrowserAuth) handleAccountSelect(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
 	client, err := a.requireBrowserClient(w, r)
@@ -697,29 +697,29 @@ func (a *BrowserAuth) handleAccountSelect(w http.ResponseWriter, r *http.Request
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, "request-body-too-large", "request body is too large")
+			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, problemRequestBodyTooLarge, "request body is too large")
 			return
 		}
-		a.writeProblem(w, r, http.StatusBadRequest, "invalid-account-payload", "invalid account payload")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "invalid account payload")
 		return
 	}
 	accountHandle := strings.TrimSpace(input.AccountHandle)
 	if accountHandle == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "account-required", "accountHandle is required")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "accountHandle is required")
 		return
 	}
 	account, err := a.readAccount(r.Context(), client.ClientHash, accountHandle)
 	if errors.Is(err, pgx.ErrNoRows) {
-		a.writeProblem(w, r, http.StatusForbidden, "account-unavailable", "account is not available to this browser")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthAccountMissing, "account is not available to this browser")
 		return
 	}
 	if err != nil {
-		a.serverError(w, "load browser account", err)
+		a.serverError(w, r, "load browser account", err)
 		return
 	}
 	cachePartition, err := randomToken(24)
 	if err != nil {
-		a.serverError(w, "generate browser cache partition", err)
+		a.serverError(w, r, "generate browser cache partition", err)
 		return
 	}
 	if err := a.q.SetBrowserClientActiveAccount(r.Context(), identitystore.SetBrowserClientActiveAccountParams{
@@ -727,16 +727,16 @@ func (a *BrowserAuth) handleAccountSelect(w http.ResponseWriter, r *http.Request
 		ClientCachePartition: cachePartition,
 		ClientHash:           client.ClientHash,
 	}); err != nil {
-		a.serverError(w, "select browser account", err)
+		a.serverError(w, r, "select browser account", err)
 		return
 	}
 	if err := a.q.DeleteBrowserResourceTokens(r.Context(), identitystore.DeleteBrowserResourceTokensParams{AccountHandle: account.AccountHandle}); err != nil {
-		a.serverError(w, "delete browser resource tokens", err)
+		a.serverError(w, r, "delete browser resource tokens", err)
 		return
 	}
 	next, err := a.readActiveAccount(r.Context(), client.ClientHash)
 	if err != nil {
-		a.serverError(w, "reload browser account", err)
+		a.serverError(w, r, "reload browser account", err)
 		return
 	}
 	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_account.selected", trace.WithAttributes(
@@ -750,7 +750,7 @@ func (a *BrowserAuth) handleAccountSelect(w http.ResponseWriter, r *http.Request
 
 func (a *BrowserAuth) handleAccountRemove(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
 	client, err := a.requireBrowserClient(w, r)
@@ -759,34 +759,34 @@ func (a *BrowserAuth) handleAccountRemove(w http.ResponseWriter, r *http.Request
 	}
 	accountHandle := strings.Trim(strings.TrimPrefix(r.URL.Path, "/accounts/"), "/")
 	if accountHandle == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "account-required", "account handle is required")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "account handle is required")
 		return
 	}
 	removed, err := a.readAccount(r.Context(), client.ClientHash, accountHandle)
 	if errors.Is(err, pgx.ErrNoRows) {
-		a.writeProblem(w, r, http.StatusForbidden, "account-unavailable", "account is not available to this browser")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthAccountMissing, "account is not available to this browser")
 		return
 	}
 	if err != nil {
-		a.serverError(w, "load browser account", err)
+		a.serverError(w, r, "load browser account", err)
 		return
 	}
 	if err := a.revokeProviderBrowserSessions(r.Context(), []*browserSession{removed}); err != nil {
-		a.serverError(w, "revoke browser account provider session", err)
+		a.serverError(w, r, "revoke browser account provider session", err)
 		return
 	}
 	if err := a.q.DeleteBrowserResourceTokens(r.Context(), identitystore.DeleteBrowserResourceTokensParams{AccountHandle: removed.AccountHandle}); err != nil {
-		a.serverError(w, "delete browser account resource tokens", err)
+		a.serverError(w, r, "delete browser account resource tokens", err)
 		return
 	}
 	if err := a.q.DeleteBrowserAccountByHandle(r.Context(), identitystore.DeleteBrowserAccountByHandleParams{ClientHash: client.ClientHash, AccountHandle: accountHandle}); err != nil {
-		a.serverError(w, "remove browser account", err)
+		a.serverError(w, r, "remove browser account", err)
 		return
 	}
 	activeAccountHandle := stringValue(stringFromText(client.ActiveAccountHandle))
 	if activeAccountHandle == accountHandle {
 		if err := a.selectNextBrowserAccountAfterRemoval(r.Context(), client.ClientHash); err != nil {
-			a.serverError(w, "select next browser account", err)
+			a.serverError(w, r, "select next browser account", err)
 			return
 		}
 	}
@@ -800,7 +800,7 @@ func (a *BrowserAuth) handleAccountRemove(w http.ResponseWriter, r *http.Request
 
 func (a *BrowserAuth) handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
 	client, err := a.requireBrowserClient(w, r)
@@ -809,21 +809,21 @@ func (a *BrowserAuth) handleSessionRevoke(w http.ResponseWriter, r *http.Request
 	}
 	sessionHandle := strings.Trim(strings.TrimPrefix(r.URL.Path, "/sessions/"), "/")
 	if sessionHandle == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "session-required", "session handle is required")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "session handle is required")
 		return
 	}
 	removed, err := a.readAccount(r.Context(), client.ClientHash, sessionHandle)
 	if errors.Is(err, pgx.ErrNoRows) {
-		a.writeProblem(w, r, http.StatusForbidden, "session-unavailable", "session is not available to this browser")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthSessionMissing, "session is not available to this browser")
 		return
 	}
 	if err != nil {
-		a.serverError(w, "load browser account", err)
+		a.serverError(w, r, "load browser account", err)
 		return
 	}
 	sessions, err := a.revokeBrowserClient(r.Context(), client.ClientHash, client.ClientHandle, client.ClientCachePartition)
 	if err != nil {
-		a.serverError(w, "revoke browser device", err)
+		a.serverError(w, r, "revoke browser device", err)
 		return
 	}
 	a.clearClientCookie(w)
@@ -848,12 +848,12 @@ func (a *BrowserAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
 			clientHandle = client.ClientHandle
 			cachePartition = client.ClientCachePartition
 		} else if !errors.Is(err, pgx.ErrNoRows) {
-			a.serverError(w, "load browser client", err)
+			a.serverError(w, r, "load browser client", err)
 			return
 		}
 		sessions, err := a.revokeBrowserClient(r.Context(), clientHash, clientHandle, cachePartition)
 		if err != nil {
-			a.serverError(w, "revoke browser device", err)
+			a.serverError(w, r, "revoke browser device", err)
 			return
 		}
 		logoutSessions = sessions
@@ -972,11 +972,11 @@ func (a *BrowserAuth) browserClientFromRequestMode(w http.ResponseWriter, r *htt
 func (a *BrowserAuth) requireBrowserClient(w http.ResponseWriter, r *http.Request) (*identitystore.IamBrowserClient, error) {
 	client, err := a.browserClientFromRequest(w, r)
 	if err != nil {
-		a.serverError(w, "load browser client", err)
+		a.serverError(w, r, "load browser client", err)
 		return nil, err
 	}
 	if client == nil {
-		a.writeProblem(w, r, http.StatusUnauthorized, "unauthorized", "authentication required")
+		a.writeProblem(w, r, http.StatusUnauthorized, problemAuthUnauthenticated, "authentication required")
 		return nil, errors.New("authentication required")
 	}
 	return client, nil
@@ -1133,11 +1133,11 @@ func (a *BrowserAuth) accountSessionForClient(ctx context.Context, clientHash st
 func (a *BrowserAuth) requireAccount(w http.ResponseWriter, r *http.Request) (*browserSession, error) {
 	session, err := a.accountSessionFromRequest(w, r)
 	if err != nil {
-		a.serverError(w, "load browser account", err)
+		a.serverError(w, r, "load browser account", err)
 		return nil, err
 	}
 	if session == nil {
-		a.writeProblem(w, r, http.StatusUnauthorized, "unauthorized", "authentication required")
+		a.writeProblem(w, r, http.StatusUnauthorized, problemAuthUnauthenticated, "authentication required")
 		return nil, errors.New("authentication required")
 	}
 	return session, nil
@@ -1724,7 +1724,7 @@ func (a *BrowserAuth) allowBrowserAuthRequest(w http.ResponseWriter, r *http.Req
 	if decision.RetryAfter > 0 {
 		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", decision.RetryAfter.Seconds()))
 	}
-	a.writeProblem(w, r, http.StatusTooManyRequests, "rate-limit-exceeded", "rate limit exceeded")
+	a.writeProblem(w, r, http.StatusTooManyRequests, problemQuotaRateLimited, "rate limit exceeded")
 	return false
 }
 
@@ -1751,29 +1751,11 @@ func (a *BrowserAuth) writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-func (a *BrowserAuth) writeProblem(w http.ResponseWriter, r *http.Request, status int, code, detail string) {
-	instance := ""
-	if spanContext := trace.SpanContextFromContext(r.Context()); spanContext.HasTraceID() {
-		instance = "urn:verself:trace:" + spanContext.TraceID().String()
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"type":     problemTypePrefix + code,
-		"title":    http.StatusText(status),
-		"status":   status,
-		"detail":   detail,
-		"instance": instance,
-		"code":     code,
-	})
-}
-
-func (a *BrowserAuth) serverError(w http.ResponseWriter, operation string, err error) {
+func (a *BrowserAuth) serverError(w http.ResponseWriter, r *http.Request, operation string, err error) {
 	if a.logger != nil {
 		a.logger.Error("browser auth failed", "operation", operation, "error", err)
 	}
-	http.Error(w, operation+" failed", http.StatusInternalServerError)
+	a.writeCatalogProblem(w, r, problemServiceUnavailable, withAuthProblemCause(err))
 }
 
 func (a *BrowserAuth) setClientCookie(w http.ResponseWriter, clientSecret string) {

@@ -105,7 +105,7 @@ func (a *BrowserAuth) handleDeviceAuthorization(w http.ResponseWriter, r *http.R
 	r = r.WithContext(ctx)
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		a.writeProblem(w, r, http.StatusMethodNotAllowed, "method-not-allowed", "method not allowed")
+		a.writeProblem(w, r, http.StatusMethodNotAllowed, problemRequestMethodNotAllowed, "method not allowed")
 		return
 	}
 	if !a.allowBrowserAuthRequest(w, r, "oauth-device-authorization-start", rateLimitSignup) {
@@ -115,10 +115,10 @@ func (a *BrowserAuth) handleDeviceAuthorization(w http.ResponseWriter, r *http.R
 	if err := r.ParseForm(); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, "request-body-too-large", "request body is too large")
+			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, problemRequestBodyTooLarge, "request body is too large")
 			return
 		}
-		a.writeProblem(w, r, http.StatusBadRequest, "invalid-device-authorization-payload", "invalid device authorization payload")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "invalid device authorization payload")
 		return
 	}
 	clientID := strings.TrimSpace(r.PostForm.Get("client_id"))
@@ -129,14 +129,14 @@ func (a *BrowserAuth) handleDeviceAuthorization(w http.ResponseWriter, r *http.R
 	})
 	if err != nil {
 		if identity.IsInvalid(err) {
-			a.writeProblem(w, r, http.StatusBadRequest, "invalid-device-authorization-request", "invalid device authorization request")
+			a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "invalid device authorization request")
 			return
 		}
-		a.serverError(w, "start provider device authorization", err)
+		a.serverError(w, r, "start provider device authorization", err)
 		return
 	}
 	if _, err := a.upsertDeviceLoginIntent(r.Context(), device.UserCode, device.Request, time.Now().UTC().Add(device.ExpiresIn)); err != nil {
-		a.serverError(w, "persist device authorization", err)
+		a.serverError(w, r, "persist device authorization", err)
 		return
 	}
 	verificationURI, verificationURIComplete := a.deviceVerificationURLs(device.UserCode)
@@ -152,22 +152,22 @@ func (a *BrowserAuth) handleDeviceAuthorization(w http.ResponseWriter, r *http.R
 
 func (a *BrowserAuth) handlePasswordLogin(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
 	var input passwordLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, "request-body-too-large", "request body is too large")
+			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, problemRequestBodyTooLarge, "request body is too large")
 			return
 		}
-		a.writeProblem(w, r, http.StatusBadRequest, "invalid-login-payload", "invalid login payload")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "invalid login payload")
 		return
 	}
 	email := normalizeEmailHint(firstNonEmpty(input.Email, input.LoginHint))
 	if email == "" || input.Password == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "login-required", "email and password are required")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "email and password are required")
 		return
 	}
 	incomingAuthRequestID := strings.TrimSpace(input.AuthRequestID)
@@ -180,22 +180,22 @@ func (a *BrowserAuth) handlePasswordLogin(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		if errors.Is(err, identity.ErrInvalidCredentials) {
-			a.writeProblem(w, r, http.StatusUnauthorized, "invalid-credentials", "Email or password is incorrect.")
+			a.writeProblem(w, r, http.StatusUnauthorized, problemAuthInvalidCredentials, "Email or password is incorrect.")
 			return
 		}
-		a.serverError(w, "create provider password session", err)
+		a.serverError(w, r, "create provider password session", err)
 		return
 	}
 	if incomingAuthRequestID != "" {
 		if _, err := a.providerLogin.GetOIDCAuthRequest(r.Context(), incomingAuthRequestID); err != nil {
 			_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)
-			a.serverError(w, "load incoming provider auth request", err)
+			a.serverError(w, r, "load incoming provider auth request", err)
 			return
 		}
 		callbackURL, err := a.providerLogin.FinalizeOIDCAuthRequest(r.Context(), incomingAuthRequestID, session)
 		if err != nil {
 			_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)
-			a.serverError(w, "finalize incoming provider auth request", err)
+			a.serverError(w, r, "finalize incoming provider auth request", err)
 			return
 		}
 		a.writeJSON(w, http.StatusOK, passwordLoginResponse{CallbackURL: callbackURL})
@@ -204,26 +204,26 @@ func (a *BrowserAuth) handlePasswordLogin(w http.ResponseWriter, r *http.Request
 	client, clientSecret, err := a.ensureBrowserClient(w, r)
 	if err != nil {
 		_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)
-		a.serverError(w, "ensure browser client", err)
+		a.serverError(w, r, "ensure browser client", err)
 		return
 	}
 	state, nonce, verifier, err := newOIDCLoginSecrets()
 	if err != nil {
 		_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)
-		a.serverError(w, "generate oidc login state", err)
+		a.serverError(w, r, "generate oidc login state", err)
 		return
 	}
 	authRequestID, err := a.startProviderOIDCAuthRequest(r.Context(), state, nonce, verifier, passwordLoginOIDCOptions(input, email))
 	if err != nil {
 		_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)
-		a.serverError(w, "start provider auth request", err)
+		a.serverError(w, r, "start provider auth request", err)
 		return
 	}
 	stateHash := hashToken(state)
 	providerSessionToken, err := a.tokenVault.seal(session.SessionToken, stateHash, "provider_session")
 	if err != nil {
 		_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)
-		a.serverError(w, "seal provider session token", err)
+		a.serverError(w, r, "seal provider session token", err)
 		return
 	}
 	redirectTo := a.sanitizeRedirectTarget(input.RedirectTo)
@@ -243,14 +243,14 @@ func (a *BrowserAuth) handlePasswordLogin(w http.ResponseWriter, r *http.Request
 		ExpiresAt:                      timestamptz(time.Now().UTC().Add(browserAuthLoginTTL)),
 	}); err != nil {
 		_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)
-		a.serverError(w, "persist login transaction", err)
+		a.serverError(w, r, "persist login transaction", err)
 		return
 	}
 	callbackURL, err := a.providerLogin.FinalizeOIDCAuthRequest(r.Context(), authRequestID, session)
 	if err != nil {
 		_, _ = a.q.DeleteBrowserLoginTransaction(context.WithoutCancel(r.Context()), identitystore.DeleteBrowserLoginTransactionParams{StateHash: stateHash})
 		_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)
-		a.serverError(w, "finalize provider auth request", err)
+		a.serverError(w, r, "finalize provider auth request", err)
 		return
 	}
 	a.setLoginCookie(w, stateHash)
@@ -260,27 +260,27 @@ func (a *BrowserAuth) handlePasswordLogin(w http.ResponseWriter, r *http.Request
 
 func (a *BrowserAuth) handlePasswordResetStart(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
 	var input passwordResetStartRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, "request-body-too-large", "request body is too large")
+			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, problemRequestBodyTooLarge, "request body is too large")
 			return
 		}
-		a.writeProblem(w, r, http.StatusBadRequest, "invalid-password-reset-payload", "invalid password reset payload")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "invalid password reset payload")
 		return
 	}
 	email := normalizeEmailHint(input.Email)
 	if email == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "email-required", "email is required")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "email is required")
 		return
 	}
 	user, found, err := a.providerLogin.FindPasswordResetUser(r.Context(), email)
 	if err != nil {
-		a.serverError(w, "find password reset user", err)
+		a.serverError(w, r, "find password reset user", err)
 		return
 	}
 	if !found {
@@ -289,7 +289,7 @@ func (a *BrowserAuth) handlePasswordResetStart(w http.ResponseWriter, r *http.Re
 	}
 	code, err := a.providerLogin.StartPasswordReset(r.Context(), user.UserID)
 	if err != nil {
-		a.serverError(w, "start provider password reset", err)
+		a.serverError(w, r, "start provider password reset", err)
 		return
 	}
 	if err := a.passwordReset.SendPasswordReset(r.Context(), PasswordResetNotification{
@@ -297,7 +297,7 @@ func (a *BrowserAuth) handlePasswordResetStart(w http.ResponseWriter, r *http.Re
 		ActionURL:    a.passwordResetURL(user.UserID, code),
 		ResourceName: "urn:verself:auth:password-resets/" + hashToken(user.UserID),
 	}); err != nil {
-		a.serverError(w, "send password reset", err)
+		a.serverError(w, r, "send password reset", err)
 		return
 	}
 	a.writeJSON(w, http.StatusOK, passwordResetStartedResponse())
@@ -305,38 +305,38 @@ func (a *BrowserAuth) handlePasswordResetStart(w http.ResponseWriter, r *http.Re
 
 func (a *BrowserAuth) handlePasswordResetComplete(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
-		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
 	var input passwordResetCompleteRequest
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, "request-body-too-large", "request body is too large")
+			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, problemRequestBodyTooLarge, "request body is too large")
 			return
 		}
-		a.writeProblem(w, r, http.StatusBadRequest, "invalid-password-reset-payload", "invalid password reset payload")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "invalid password reset payload")
 		return
 	}
 	userID := strings.TrimSpace(input.UserID)
 	verificationCode := strings.TrimSpace(input.VerificationCode)
 	if userID == "" || verificationCode == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "reset-token-required", "reset token is required")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "reset token is required")
 		return
 	}
 	if err := identity.ValidatePasswordPolicy(input.Password); err != nil {
 		if a.writePasswordPolicyProblem(w, r, err) {
 			return
 		}
-		a.serverError(w, "validate reset password", err)
+		a.serverError(w, r, "validate reset password", err)
 		return
 	}
 	if err := a.providerLogin.CompletePasswordReset(r.Context(), userID, verificationCode, input.Password); err != nil {
 		if identity.IsInvalid(err) {
-			a.writeProblem(w, r, http.StatusBadRequest, "reset-token-invalid", "Reset link is invalid or expired.")
+			a.writeProblem(w, r, http.StatusBadRequest, problemIAMPasswordResetInvalid, "Reset link is invalid or expired.")
 			return
 		}
-		a.serverError(w, "complete provider password reset", err)
+		a.serverError(w, r, "complete provider password reset", err)
 		return
 	}
 	a.writeJSON(w, http.StatusOK, passwordResetResponse{
@@ -366,11 +366,11 @@ func (a *BrowserAuth) passwordResetURL(userID, verificationCode string) string {
 func (a *BrowserAuth) writePasswordPolicyProblem(w http.ResponseWriter, r *http.Request, err error) bool {
 	switch {
 	case errors.Is(err, identity.ErrPasswordTooShort):
-		a.writeProblem(w, r, http.StatusBadRequest, "iam.password.too_short", fmt.Sprintf("Password must be at least %d characters.", identity.PasswordMinRunes))
+		a.writeProblem(w, r, http.StatusBadRequest, problemIAMPasswordTooShort, fmt.Sprintf("Password must be at least %d characters.", identity.PasswordMinRunes))
 	case errors.Is(err, identity.ErrPasswordTooLong):
-		a.writeProblem(w, r, http.StatusBadRequest, "iam.password.too_long", "Password is too long.")
+		a.writeProblem(w, r, http.StatusBadRequest, problemIAMPasswordTooLong, "Password is too long.")
 	case errors.Is(err, identity.ErrPasswordRejected):
-		a.writeProblem(w, r, http.StatusBadRequest, "iam.password.rejected", "Password does not meet the current password policy.")
+		a.writeProblem(w, r, http.StatusBadRequest, problemIAMPasswordRejected, "Password does not meet the current password policy.")
 	default:
 		return false
 	}
@@ -471,24 +471,24 @@ func (a *BrowserAuth) handleDeviceLoginLookup(w http.ResponseWriter, r *http.Req
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, "request-body-too-large", "request body is too large")
+			a.writeProblem(w, r, http.StatusRequestEntityTooLarge, problemRequestBodyTooLarge, "request body is too large")
 			return
 		}
-		a.writeProblem(w, r, http.StatusBadRequest, "invalid-device-login-payload", "invalid device login payload")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "invalid device login payload")
 		return
 	}
 	userCode := normalizeDeviceUserCode(input.UserCode)
 	if userCode == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "device-code-required", "device code is required")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "device code is required")
 		return
 	}
 	intent, err := a.q.GetDeviceLoginIntentByUserCodeHash(r.Context(), identitystore.GetDeviceLoginIntentByUserCodeHashParams{UserCodeHash: deviceLoginUserCodeHash(userCode)})
 	if errors.Is(err, pgx.ErrNoRows) {
-		a.writeProblem(w, r, http.StatusNotFound, "device-login-not-found", "device login request was not found")
+		a.writeProblem(w, r, http.StatusNotFound, problemIAMDeviceLoginNotFound, "device login request was not found")
 		return
 	}
 	if err != nil {
-		a.serverError(w, "load device login request", err)
+		a.serverError(w, r, "load device login request", err)
 		return
 	}
 	record := deviceLoginRecordFromUserCodeHash(intent)
@@ -498,7 +498,7 @@ func (a *BrowserAuth) handleDeviceLoginLookup(w http.ResponseWriter, r *http.Req
 		}
 	}
 	if record.State == "expired" {
-		a.writeProblem(w, r, http.StatusGone, "device-login-expired", "device login request has expired")
+		a.writeProblem(w, r, http.StatusGone, problemIAMDeviceLoginExpired, "device login request has expired")
 		return
 	}
 	a.writeJSON(w, http.StatusOK, deviceLoginResponseFromRecord(record))
@@ -514,7 +514,7 @@ func (a *BrowserAuth) handleDeviceLoginDeny(w http.ResponseWriter, r *http.Reque
 
 func (a *BrowserAuth) handleDeviceLoginDecision(w http.ResponseWriter, r *http.Request, approve bool) {
 	if !a.sameOrigin(r) {
-		a.writeProblem(w, r, http.StatusForbidden, "origin-not-allowed", "origin not allowed")
+		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
 	session, err := a.requireAccount(w, r)
@@ -523,16 +523,16 @@ func (a *BrowserAuth) handleDeviceLoginDecision(w http.ResponseWriter, r *http.R
 	}
 	handle := deviceLoginHandleFromPath(r.URL.Path, approve)
 	if handle == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, "device-login-required", "device login handle is required")
+		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "device login handle is required")
 		return
 	}
 	intent, err := a.q.GetDeviceLoginIntent(r.Context(), identitystore.GetDeviceLoginIntentParams{DeviceLoginHandle: handle})
 	if errors.Is(err, pgx.ErrNoRows) {
-		a.writeProblem(w, r, http.StatusNotFound, "device-login-not-found", "device login request was not found")
+		a.writeProblem(w, r, http.StatusNotFound, problemIAMDeviceLoginNotFound, "device login request was not found")
 		return
 	}
 	if err != nil {
-		a.serverError(w, "load device login request", err)
+		a.serverError(w, r, "load device login request", err)
 		return
 	}
 	record := deviceLoginRecordFromGet(intent)
@@ -542,17 +542,21 @@ func (a *BrowserAuth) handleDeviceLoginDecision(w http.ResponseWriter, r *http.R
 				record = deviceLoginRecordFromExpired(expired)
 			}
 		}
-		a.writeJSON(w, http.StatusConflict, deviceLoginResponseFromRecord(record))
+		if record.State == "expired" {
+			a.writeProblem(w, r, http.StatusGone, problemIAMDeviceLoginExpired, "device login request has expired")
+			return
+		}
+		a.writeProblem(w, r, http.StatusConflict, problemIAMDeviceLoginNotPending, "device login request is no longer pending")
 		return
 	}
 	providerSession := session.providerLoginSession()
 	if strings.TrimSpace(providerSession.SessionID) == "" || strings.TrimSpace(providerSession.SessionToken) == "" {
-		a.writeProblem(w, r, http.StatusConflict, "provider-session-required", "Sign in again before approving this device.")
+		a.writeProblem(w, r, http.StatusConflict, problemAuthProviderSession, "Sign in again before approving this device.")
 		return
 	}
 	if approve {
 		if err := a.providerLogin.ApproveDeviceAuthorization(r.Context(), record.ProviderDeviceAuthorizationID, providerSession); err != nil {
-			a.serverError(w, "approve provider device login", err)
+			a.serverError(w, r, "approve provider device login", err)
 			return
 		}
 		row, err := a.q.ApproveDeviceLoginIntent(r.Context(), identitystore.ApproveDeviceLoginIntentParams{
@@ -562,14 +566,14 @@ func (a *BrowserAuth) handleDeviceLoginDecision(w http.ResponseWriter, r *http.R
 			DeviceLoginHandle:       handle,
 		})
 		if err != nil {
-			a.serverError(w, "persist device login approval", err)
+			a.serverError(w, r, "persist device login approval", err)
 			return
 		}
 		a.writeJSON(w, http.StatusOK, deviceLoginResponseFromRecord(deviceLoginRecordFromApprove(row)))
 		return
 	}
 	if err := a.providerLogin.DenyDeviceAuthorization(r.Context(), record.ProviderDeviceAuthorizationID); err != nil {
-		a.serverError(w, "deny provider device login", err)
+		a.serverError(w, r, "deny provider device login", err)
 		return
 	}
 	row, err := a.q.DenyDeviceLoginIntent(r.Context(), identitystore.DenyDeviceLoginIntentParams{
@@ -579,7 +583,7 @@ func (a *BrowserAuth) handleDeviceLoginDecision(w http.ResponseWriter, r *http.R
 		DeviceLoginHandle:     handle,
 	})
 	if err != nil {
-		a.serverError(w, "persist device login denial", err)
+		a.serverError(w, r, "persist device login denial", err)
 		return
 	}
 	a.writeJSON(w, http.StatusOK, deviceLoginResponseFromRecord(deviceLoginRecordFromDeny(row)))

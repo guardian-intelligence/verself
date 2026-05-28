@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, redirect, useHydrated } from "@tanstack/react-router";
 import { Eye, EyeOff, KeyRound, LogIn, Trash2, UserRound } from "lucide-react";
 import { useReducer } from "react";
+import { authErrorMessage, authFailureFromUnknown } from "@verself/sdk/auth";
 import * as v from "valibot";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
@@ -15,7 +16,6 @@ import {
   authFormSubmitInvalid,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
-import { passwordLoginErrorMessage } from "~/features/auth/auth-errors";
 import {
   currentPasswordSchema,
   emailSchema,
@@ -152,15 +152,12 @@ function LoginPage() {
           requiredOrgId: search.required_org_id,
           prompt: search.prompt,
         },
-      }).catch(() => ({
-        ok: false as const,
-        code: "unavailable" as const,
-      }));
-      if (!result.ok) {
-        toast.error(passwordLoginErrorMessage(result.code));
+      }).catch(authFailureFromUnknown);
+      if (result._tag === "Err") {
+        toast.error(authErrorMessage(result.error));
         return;
       }
-      window.location.assign(result.callbackUrl);
+      window.location.assign(result.value.callbackUrl);
     },
   });
 

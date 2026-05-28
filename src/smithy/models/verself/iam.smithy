@@ -421,53 +421,93 @@ structure PasswordTooLongError with [ProblemDetails] {}
 structure PasswordBreachedError with [ProblemDetails] {}
 
 @error("client")
+@httpError(400)
+@problem(type: "urn:verself:problem:iam:password_rejected", code: "iam.password.rejected")
+structure PasswordRejectedError with [ProblemDetails] {}
+
+@error("client")
 @httpError(401)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-reauthentication-required", code: "auth.reauthentication_required")
+@problem(type: "urn:verself:problem:auth:invalid_credentials", code: "auth.invalid_credentials")
+structure InvalidCredentialsError with [ProblemDetails] {}
+
+@error("client")
+@httpError(403)
+@problem(type: "urn:verself:problem:auth:login_constraint_failed", code: "auth.login_constraint_failed")
+structure LoginConstraintFailedError with [ProblemDetails] {}
+
+@error("client")
+@httpError(400)
+@problem(type: "urn:verself:problem:iam:password_reset_token_invalid", code: "iam.password_reset.token_invalid")
+structure PasswordResetTokenInvalidError with [ProblemDetails] {}
+
+@error("client")
+@httpError(410)
+@problem(type: "urn:verself:problem:iam:device_login_expired", code: "iam.device_login.expired")
+structure DeviceLoginExpiredError with [ProblemDetails] {}
+
+@error("client")
+@httpError(404)
+@problem(type: "urn:verself:problem:iam:device_login_not_found", code: "iam.device_login.not_found")
+structure DeviceLoginNotFoundError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "urn:verself:problem:iam:device_login_not_pending", code: "iam.device_login.not_pending")
+structure DeviceLoginNotPendingError with [ProblemDetails] {}
+
+@error("client")
+@httpError(409)
+@problem(type: "urn:verself:problem:auth:provider_session_required", code: "auth.provider_session_required")
+structure ProviderSessionRequiredError with [ProblemDetails] {}
+
+@error("client")
+@httpError(401)
+@problem(type: "urn:verself:problem:auth:reauthentication_required", code: "auth.reauthentication_required")
 structure ReauthenticationRequiredError with [ProblemDetails] {}
 
 @error("client")
 @httpError(409)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-account-link-required", code: "auth.account_link_required")
+@problem(type: "urn:verself:problem:auth:account_link_required", code: "auth.account_link_required")
 structure AccountLinkRequiredError with [ProblemDetails] {}
 
 @error("client")
 @httpError(403)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-provider-email-unverified", code: "auth.provider_email_unverified")
+@problem(type: "urn:verself:problem:auth:provider_email_unverified", code: "auth.provider_email_unverified")
 structure ProviderEmailUnverifiedError with [ProblemDetails] {}
 
 @error("client")
 @httpError(409)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-provider-subject-already-linked", code: "auth.provider_subject_already_linked")
+@problem(type: "urn:verself:problem:auth:provider_subject_already_linked", code: "auth.provider_subject_already_linked")
 structure ProviderSubjectAlreadyLinkedError with [ProblemDetails] {}
 
 @error("client")
 @httpError(401)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-session-revoked", code: "auth.session_revoked")
+@problem(type: "urn:verself:problem:auth:session_revoked", code: "auth.session_revoked")
 structure SessionRevokedError with [ProblemDetails] {}
 
 @error("client")
 @httpError(403)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-no-accessible-organization", code: "auth.no_accessible_organization")
+@problem(type: "urn:verself:problem:auth:no_accessible_organization", code: "auth.no_accessible_organization")
 structure NoAccessibleOrganizationError with [ProblemDetails] {}
 
 @error("client")
 @httpError(409)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-org-selection-required", code: "auth.org_selection_required")
+@problem(type: "urn:verself:problem:auth:org_selection_required", code: "auth.org_selection_required")
 structure OrgSelectionRequiredError with [ProblemDetails] {}
 
 @error("client")
 @httpError(409)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-account-selection-required", code: "auth.account_selection_required")
+@problem(type: "urn:verself:problem:auth:account_selection_required", code: "auth.account_selection_required")
 structure AccountSelectionRequiredError with [ProblemDetails] {}
 
 @error("client")
 @httpError(403)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-insufficient-assurance", code: "auth.insufficient_assurance")
+@problem(type: "urn:verself:problem:auth:insufficient_assurance", code: "auth.insufficient_assurance")
 structure InsufficientAssuranceError with [ProblemDetails] {}
 
 @error("client")
 @httpError(401)
-@problem(type: "https://verself.sh/docs/reference/iam/errors#auth-device-session-required", code: "auth.device_session_required")
+@problem(type: "urn:verself:problem:auth:device_session_required", code: "auth.device_session_required")
 structure DeviceSessionRequiredError with [ProblemDetails] {}
 
 @permission(name: "iam:signup_intent:create")
@@ -1843,7 +1883,8 @@ operation CompletePasswordLogin {
     output: CompletePasswordLoginOutput
     errors: [
         ValidationFailedError
-        UnauthenticatedError
+        InvalidCredentialsError
+        LoginConstraintFailedError
         RateLimitedError
         ServiceUnavailableError
     ]
@@ -1929,6 +1970,8 @@ operation CompletePasswordReset {
         ValidationFailedError
         PasswordTooShortError
         PasswordTooLongError
+        PasswordRejectedError
+        PasswordResetTokenInvalidError
         RateLimitedError
         ServiceUnavailableError
     ]
@@ -1986,7 +2029,8 @@ operation LookupDeviceLogin {
     output: LookupDeviceLoginOutput
     errors: [
         ValidationFailedError
-        ResourceNotFoundError
+        DeviceLoginNotFoundError
+        DeviceLoginExpiredError
         RateLimitedError
         ServiceUnavailableError
     ]
@@ -2013,6 +2057,10 @@ operation ApproveDeviceLogin {
     errors: [
         ValidationFailedError
         UnauthenticatedError
+        ProviderSessionRequiredError
+        DeviceLoginNotFoundError
+        DeviceLoginExpiredError
+        DeviceLoginNotPendingError
         ConflictError
         RateLimitedError
         ServiceUnavailableError
@@ -2033,6 +2081,9 @@ operation DenyDeviceLogin {
     errors: [
         ValidationFailedError
         UnauthenticatedError
+        DeviceLoginNotFoundError
+        DeviceLoginExpiredError
+        DeviceLoginNotPendingError
         ConflictError
         RateLimitedError
         ServiceUnavailableError

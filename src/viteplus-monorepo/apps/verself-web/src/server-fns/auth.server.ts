@@ -7,12 +7,7 @@ import {
   type AuthenticatedAuthSnapshot,
   type AuthSnapshot,
 } from "@verself/auth-web/isomorphic";
-import {
-  passwordLoginErrorCodeFromProblem,
-  passwordPolicyErrorCodeFromProblem,
-  passwordPolicyErrorMessage,
-  type PasswordLoginResult,
-} from "../features/auth/auth-errors";
+import { authResultFromResponse, type AuthResult } from "@verself/sdk/auth";
 import type { ConsoleAuthContext } from "./auth";
 import {
   currentCookieHeader,
@@ -58,6 +53,7 @@ const signupVerificationResultSchema = v.object({
 });
 
 export type SignupVerificationResult = v.InferOutput<typeof signupVerificationResultSchema>;
+export type SignupVerificationOperationResult = AuthResult<SignupVerificationResult>;
 
 const signupStartResultSchema = v.object({
   message: v.pipe(v.string(), v.nonEmpty()),
@@ -66,6 +62,7 @@ const signupStartResultSchema = v.object({
 });
 
 export type SignupStartResult = v.InferOutput<typeof signupStartResultSchema>;
+export type SignupStartOperationResult = AuthResult<SignupStartResult>;
 
 const organizationSlugAvailabilitySchema = v.object({
   slug: v.pipe(v.string(), v.nonEmpty()),
@@ -92,12 +89,14 @@ const memberInviteAcceptanceResultSchema = v.object({
 });
 
 export type MemberInviteAcceptanceResult = v.InferOutput<typeof memberInviteAcceptanceResultSchema>;
+export type MemberInviteAcceptanceOperationResult = AuthResult<MemberInviteAcceptanceResult>;
 
 const passwordLoginSuccessResultSchema = v.object({
   callbackUrl: v.pipe(v.string(), v.nonEmpty()),
 });
 
-export type { PasswordLoginResult };
+export type PasswordLoginSuccessResult = v.InferOutput<typeof passwordLoginSuccessResultSchema>;
+export type PasswordLoginResult = AuthResult<PasswordLoginSuccessResult>;
 
 const nullableStringSchema = v.union([v.null_(), v.string()]);
 
@@ -130,6 +129,7 @@ const passwordResetResultSchema = v.object({
 });
 
 export type PasswordResetResult = v.InferOutput<typeof passwordResetResultSchema>;
+export type PasswordResetOperationResult = AuthResult<PasswordResetResult>;
 
 const deviceLoginResultSchema = v.object({
   deviceLoginHandle: v.pipe(v.string(), v.nonEmpty()),
@@ -146,6 +146,7 @@ const deviceLoginResultSchema = v.object({
 });
 
 export type DeviceLoginResult = v.InferOutput<typeof deviceLoginResultSchema>;
+export type DeviceLoginOperationResult = AuthResult<DeviceLoginResult>;
 
 function identityAuthURL(path: string): string {
   return new URL(`/api/v1/auth/${path}`, IAM_SERVICE_BASE_URL).toString();
@@ -312,7 +313,7 @@ export async function revokeIdentityBrowserDevice(sessionHandle: string): Promis
 
 export async function acceptIdentityMemberInvite(data: {
   token: string;
-}): Promise<MemberInviteAcceptanceResult> {
+}): Promise<MemberInviteAcceptanceOperationResult> {
   const response = await identityAuthFetch(
     "invites/accept",
     {
@@ -327,10 +328,7 @@ export async function acceptIdentityMemberInvite(data: {
     },
     { cookieHeader: undefined, forwardCookies: false },
   );
-  if (!response.ok) {
-    throw new Error(`identity invite acceptance failed: ${response.status}`);
-  }
-  return v.parse(memberInviteAcceptanceResultSchema, await response.json());
+  return authResultFromResponse(response, memberInviteAcceptanceResultSchema);
 }
 
 export async function completeIdentityPasswordLogin(data: {
@@ -361,67 +359,36 @@ export async function completeIdentityPasswordLogin(data: {
       prompt: data.prompt ?? "",
     }),
   });
-  if (!response.ok) {
-    return {
-      ok: false,
-      code: passwordLoginErrorCodeFromProblem(response.status, await response.text()),
-    };
-  }
-  return { ok: true, ...v.parse(passwordLoginSuccessResultSchema, await response.json()) };
+  return authResultFromResponse(response, passwordLoginSuccessResultSchema);
 }
 
-export async function startIdentityPasswordReset(email: string): Promise<PasswordResetResult> {
+export async function startIdentityPasswordReset(
+  email: string,
+): Promise<PasswordResetOperationResult> {
   const response = await identityAuthFetch("password-reset", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   });
-  if (!response.ok) {
-    throw new Error(passwordResetProblemMessage(response.status, await response.text()));
-  }
-  return v.parse(passwordResetResultSchema, await response.json());
+  return authResultFromResponse(response, passwordResetResultSchema);
 }
 
 export async function completeIdentityPasswordReset(data: {
   userId: string;
   verificationCode: string;
   password: string;
-}): Promise<PasswordResetResult> {
+}): Promise<PasswordResetOperationResult> {
   const response = await identityAuthFetch("password-reset/complete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!response.ok) {
-    throw new Error(passwordResetProblemMessage(response.status, await response.text()));
-  }
-  return v.parse(passwordResetResultSchema, await response.json());
+  return authResultFromResponse(response, passwordResetResultSchema);
 }
 
-function passwordResetProblemMessage(status: number, body: string): string {
-  let code = "";
-  try {
-    const problem = JSON.parse(body) as { code?: unknown };
-    code = typeof problem.code === "string" ? problem.code : "";
-  } catch {
-    code = "";
-  }
-  switch (code) {
-    case "iam.password.too_short":
-    case "iam.password.too_long":
-    case "iam.password.rejected":
-      return passwordPolicyErrorMessage(passwordPolicyErrorCodeFromProblem(status, body));
-  }
-  if (code === "reset-token-invalid") {
-    return "This reset link is invalid or expired.";
-  }
-  if (status === 429) {
-    return "Too many attempts. Wait a moment and try again.";
-  }
-  return "Password reset is unavailable right now.";
-}
-
-export async function lookupIdentityDeviceLogin(userCode: string): Promise<DeviceLoginResult> {
+export async function lookupIdentityDeviceLogin(
+  userCode: string,
+): Promise<DeviceLoginOperationResult> {
   const response = await identityAuthFetch(
     "device-logins/lookup",
     {
@@ -431,15 +398,12 @@ export async function lookupIdentityDeviceLogin(userCode: string): Promise<Devic
     },
     { forwardCookies: false },
   );
-  if (!response.ok) {
-    throw new Error(deviceLoginProblemMessage(response.status, await response.text()));
-  }
-  return v.parse(deviceLoginResultSchema, await response.json());
+  return authResultFromResponse(response, deviceLoginResultSchema);
 }
 
 export async function approveIdentityDeviceLogin(
   deviceLoginHandle: string,
-): Promise<DeviceLoginResult> {
+): Promise<DeviceLoginOperationResult> {
   const response = await identityAuthFetch(
     `device-logins/${encodeURIComponent(deviceLoginHandle)}/approval`,
     {
@@ -448,15 +412,12 @@ export async function approveIdentityDeviceLogin(
       body: "{}",
     },
   );
-  if (!response.ok) {
-    throw new Error(deviceLoginProblemMessage(response.status, await response.text()));
-  }
-  return v.parse(deviceLoginResultSchema, await response.json());
+  return authResultFromResponse(response, deviceLoginResultSchema);
 }
 
 export async function denyIdentityDeviceLogin(
   deviceLoginHandle: string,
-): Promise<DeviceLoginResult> {
+): Promise<DeviceLoginOperationResult> {
   const response = await identityAuthFetch(
     `device-logins/${encodeURIComponent(deviceLoginHandle)}/denial`,
     {
@@ -465,31 +426,7 @@ export async function denyIdentityDeviceLogin(
       body: "{}",
     },
   );
-  if (!response.ok) {
-    throw new Error(deviceLoginProblemMessage(response.status, await response.text()));
-  }
-  return v.parse(deviceLoginResultSchema, await response.json());
-}
-
-function deviceLoginProblemMessage(status: number, body: string): string {
-  let code = "";
-  try {
-    const problem = JSON.parse(body) as { code?: unknown };
-    code = typeof problem.code === "string" ? problem.code : "";
-  } catch {
-    code = "";
-  }
-  switch (code) {
-    case "device-login-expired":
-      return "This device code has expired.";
-    case "provider-session-required":
-      return "Sign in again before approving this device.";
-    case "device-login-not-found":
-      return "This device code is not valid.";
-    default:
-      if (status === 409) return "This device login is no longer pending.";
-      return "Device login is unavailable right now.";
-  }
+  return authResultFromResponse(response, deviceLoginResultSchema);
 }
 
 function inviteAcceptanceIdempotencyKey(token: string): string {
@@ -503,7 +440,7 @@ export async function verifyIdentitySignup(data: {
   initialPassword: string;
   organizationDisplayName: string;
   organizationSlug: string;
-}): Promise<SignupVerificationResult> {
+}): Promise<SignupVerificationOperationResult> {
   const organizationDisplayName = normalizeHumanText(data.organizationDisplayName);
   const organizationSlug = normalizeSlug(data.organizationSlug);
   const response = await identityAPIFetch(
@@ -527,10 +464,7 @@ export async function verifyIdentitySignup(data: {
     },
     { cookieHeader: undefined, forwardCookies: false },
   );
-  if (!response.ok) {
-    throw new Error(signupVerificationProblemMessage(response.status, await response.text()));
-  }
-  return v.parse(signupVerificationResultSchema, await response.json());
+  return authResultFromResponse(response, signupVerificationResultSchema);
 }
 
 export async function startIdentitySignup(data: {
@@ -539,7 +473,7 @@ export async function startIdentitySignup(data: {
   organizationSlug?: string | undefined;
   givenName?: string | undefined;
   familyName?: string | undefined;
-}): Promise<SignupStartResult> {
+}): Promise<SignupStartOperationResult> {
   const organizationDisplayName = normalizeHumanText(data.organizationDisplayName);
   const organizationSlug = data.organizationSlug ? normalizeSlug(data.organizationSlug) : "";
   const response = await identityAPIFetch(
@@ -566,27 +500,7 @@ export async function startIdentitySignup(data: {
     },
     { cookieHeader: undefined, forwardCookies: false },
   );
-  if (!response.ok) {
-    throw new Error(signupStartProblemMessage(response.status, await response.text()));
-  }
-  return v.parse(signupStartResultSchema, await response.json());
-}
-
-function signupStartProblemMessage(status: number, body: string): string {
-  let code = "";
-  try {
-    const problem = JSON.parse(body) as { code?: unknown };
-    code = typeof problem.code === "string" ? problem.code : "";
-  } catch {
-    code = "";
-  }
-  if (status === 429) {
-    return "Too many signup attempts. Wait a moment and try again.";
-  }
-  if (code === "iam.organization_slug.unavailable") {
-    return "That organization URL is already taken.";
-  }
-  return "Signup is unavailable right now.";
+  return authResultFromResponse(response, signupStartResultSchema);
 }
 
 function signupStartIdempotencyKey(data: {
@@ -609,40 +523,6 @@ function signupStartIdempotencyKey(data: {
     .digest("base64url")
     .slice(0, 48);
   return `signup-start-${digest}`;
-}
-
-function signupVerificationProblemMessage(status: number, body: string): string {
-  let code = "";
-  try {
-    const problem = JSON.parse(body) as { code?: unknown };
-    code = typeof problem.code === "string" ? problem.code : "";
-  } catch {
-    code = "";
-  }
-  switch (code) {
-    case "iam.signup.verification.expired":
-      return "This signup link has expired. Request a new signup email.";
-    case "iam.signup.verification.invalid":
-      return "This signup link is no longer valid. Use the newest signup email.";
-    case "iam.signup.verification.already_used":
-      return "This signup link has already been used. Sign in with the account that completed signup.";
-    case "iam.signup.materializing":
-      return "Signup is still being finalized. Wait a moment and try again.";
-    case "iam.signup.account_exists":
-      return "This email already has a Verself account. Sign in instead.";
-    case "iam.organization_slug.unavailable":
-      return "That organization URL is already taken.";
-    case "iam.password.too_short":
-    case "iam.password.too_long":
-    case "iam.password.breached":
-    case "iam.password.rejected":
-      return passwordPolicyErrorMessage(passwordPolicyErrorCodeFromProblem(status, body));
-    default:
-      if (status === 409) {
-        return "Signup could not be completed because the request state changed. Use the newest signup email and try again.";
-      }
-      return "Signup could not be completed. Use the newest signup email and try again.";
-  }
 }
 
 function signupVerificationIdempotencyKey(data: {

@@ -1,6 +1,7 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
 import { createFileRoute, Link, useHydrated } from "@tanstack/react-router";
 import { CheckCircle2, Mail, UserPlus } from "lucide-react";
+import { authFailureFromUnknown, unwrapAuthResult } from "@verself/sdk/auth";
 import { Button } from "@verself/ui/components/ui/button";
 import { Input } from "@verself/ui/components/ui/input";
 import { Label } from "@verself/ui/components/ui/label";
@@ -108,15 +109,17 @@ function SignupForm() {
       const email = normalizeEmail(value.email);
       const organizationDisplayName = normalizeHumanText(value.organizationDisplayName);
       const organizationSlug = slugify(formString(value.organizationSlug));
-      await startSignup({
-        data: {
-          email,
-          organizationDisplayName,
-          ...(organizationSlug ? { organizationSlug } : {}),
-          givenName: formString(value.givenName).trim(),
-          familyName: formString(value.familyName).trim(),
-        },
-      });
+      unwrapAuthResult(
+        await startSignup({
+          data: {
+            email,
+            organizationDisplayName,
+            ...(organizationSlug ? { organizationSlug } : {}),
+            givenName: formString(value.givenName).trim(),
+            familyName: formString(value.familyName).trim(),
+          },
+        }).catch(authFailureFromUnknown),
+      );
       window.location.assign(`/signup?sent=${encodeURIComponent(email)}`);
     },
   });
