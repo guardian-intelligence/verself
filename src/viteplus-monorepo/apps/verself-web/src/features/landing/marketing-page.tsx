@@ -2,7 +2,11 @@ import { Lockup } from "@verself/brand";
 
 import { DotMatrixField, recordDotMatrixClick } from "./dot-matrix";
 
-export function MarketingLandingPage() {
+type MarketingLandingPageProps = {
+  readonly onPrimaryAction?: () => void;
+};
+
+export function MarketingLandingPage({ onPrimaryAction }: MarketingLandingPageProps) {
   return (
     <main
       className="relative isolate flex min-h-[100svh] justify-center overflow-hidden bg-[#080909] text-white"
@@ -79,13 +83,14 @@ export function MarketingLandingPage() {
         </div>
 
         <div className="absolute bottom-[7.2%] left-0 right-0 z-10">
-          <a
+          <button
             className="mx-auto flex h-[12cqw] w-[81%] items-center justify-center rounded-full bg-white text-[3.2cqw] font-semibold text-black shadow-[0_1px_0_rgba(255,255,255,0.45)_inset,0_16px_32px_rgba(0,0,0,0.28)] transition hover:bg-white/92 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
             data-wave-shadow=""
-            href="/login"
+            type="button"
+            onClick={onPrimaryAction}
           >
-            <span>Get Verself</span>
-          </a>
+            <span>Sign in / Sign Up</span>
+          </button>
         </div>
         <a
           className="absolute bottom-[3.2%] left-0 right-0 z-10 text-center text-[3cqw] font-medium text-white/42 transition hover:text-white/68 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"

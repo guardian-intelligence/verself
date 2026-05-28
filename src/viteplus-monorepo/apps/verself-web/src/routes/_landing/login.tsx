@@ -31,7 +31,6 @@ import {
   normalizeEmail,
   type LoginFormValues,
 } from "~/features/auth/form-schemas";
-import { Squircle } from "~/features/console/flight/squircle";
 import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
 import {
   getClientAuthSnapshot,
@@ -124,7 +123,7 @@ function withoutUndefined<T extends Record<string, unknown>>(
   };
 }
 
-export const Route = createFileRoute("/login")({
+export const Route = createFileRoute("/_landing/login")({
   validateSearch: loginSearchSchema,
   beforeLoad: async ({ context, search }) => {
     const snapshot = await getClientAuthSnapshot();
@@ -214,175 +213,120 @@ function LoginPage() {
   });
 
   return (
-    <main className="min-h-svh bg-background px-4 py-6 text-foreground sm:px-6">
-      <div className="mx-auto grid min-h-[calc(100svh-3rem)] w-full max-w-5xl items-end gap-8 md:grid-cols-[1fr_390px] md:items-center">
-        <section className="hidden pb-6 md:block">
-          <div className="mb-5 flex size-10 items-center justify-center rounded-md border border-border bg-muted text-sm font-semibold">
-            VS
-          </div>
-          <h1 className="max-w-xl text-4xl font-semibold tracking-tight">Verself</h1>
-          <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
-            Sign in with your workspace account to manage builds, devices, and organization access.
-          </p>
-          <div className="mt-8 grid max-w-md gap-3 text-sm">
-            <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-              Password-manager friendly
-            </div>
-            <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-              Device login approvals stay on verself.sh
-            </div>
-          </div>
-        </section>
-        <Squircle
-          cornerRadius={36}
-          className="w-full bg-card p-5 shadow-[0_24px_80px_rgba(0,0,0,0.18)] md:p-6"
+    <section className="grid gap-4" aria-label="Email sign in form">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Or use your workspace email
+      </p>
+      <div className="mb-1 flex items-center gap-3">
+        <div className="flex size-10 items-center justify-center rounded-md border border-border bg-muted text-sm font-semibold">
+          VS
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Sign in</h2>
+          {search.required_email ? (
+            <p className="text-sm text-muted-foreground">Continue with {search.required_email}.</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Use your Verself account.</p>
+          )}
+        </div>      </div>
+      {accountOptions.length > 0 ? <AccountChooser accounts={accountOptions} search={search} /> : null}
+      <form
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          authFormSubmit(form);
+        }}
+        className="grid gap-4"
+      >
+        <form.Field name="email" validators={{ onBlur: emailSchema, onChange: emailSchema }}>
+          {(field) => {
+            const errorId = `${field.name}-error`;
+            return (
+              <div className="grid gap-1.5 text-sm font-medium">
+                <Label htmlFor={field.name}>Email</Label>
+                <Input
+                  id={field.name}
+                  aria-describedby={errorId}
+                  aria-invalid={fieldInvalid(field.state.meta) || undefined}
+                  autoComplete="username"
+                  inputMode="email"
+                  name={field.name}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  readOnly={Boolean(search.required_email)}
+                  type="email"
+                  value={formString(field.state.value)}
+                />
+                <FieldError id={errorId} meta={field.state.meta} />
+              </div>
+            );
+          }}
+        </form.Field>
+        <form.Field
+          name="password"
+          validators={{ onBlur: currentPasswordSchema, onChange: currentPasswordSchema }}
         >
-          <div className="mb-5 flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-md border border-border bg-muted text-sm font-semibold">
-              VS
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight">Sign in</h2>
-              {search.required_email ? (
-                <p className="text-sm text-muted-foreground">
-                  Continue with {search.required_email}.
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">Use your Verself account.</p>
-              )}
-            </div>
-          </div>
-          {search.error ? (
-            <p
-              role="alert"
-              className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              {loginSearchErrorMessage(search.error)}
-            </p>
-          ) : null}
-          <div className="mb-4 grid gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              aria-busy={githubLogin.isPending}
-              disabled={githubLogin.isPending}
-              onClick={() => githubLogin.mutate()}
-            >
-              <GithubMark />
-              <span>{githubLogin.isPending ? "Redirecting..." : "Continue with GitHub"}</span>
-            </Button>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="h-px flex-1 bg-border" />
-              <span>or</span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
-          </div>
-          {accountOptions.length > 0 ? (
-            <AccountChooser accounts={accountOptions} search={search} />
-          ) : null}
-          <form
-            noValidate
-            onSubmit={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              authFormSubmit(form);
-            }}
-            className="grid gap-4"
-          >
-            <form.Field name="email" validators={{ onBlur: emailSchema, onChange: emailSchema }}>
-              {(field) => {
-                const errorId = `${field.name}-error`;
-                return (
-                  <div className="grid gap-1.5 text-sm font-medium">
-                    <Label htmlFor={field.name}>Email</Label>
-                    <Input
-                      id={field.name}
-                      aria-describedby={errorId}
-                      aria-invalid={fieldInvalid(field.state.meta) || undefined}
-                      autoComplete="username"
-                      inputMode="email"
-                      name={field.name}
-                      onBlur={field.handleBlur}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      readOnly={Boolean(search.required_email)}
-                      type="email"
-                      value={formString(field.state.value)}
-                    />
-                    <FieldError id={errorId} meta={field.state.meta} />
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field
-              name="password"
-              validators={{ onBlur: currentPasswordSchema, onChange: currentPasswordSchema }}
-            >
-              {(field) => {
-                const errorId = `${field.name}-error`;
-                return (
-                  <div className="grid gap-1.5 text-sm font-medium">
-                    <Label htmlFor={field.name}>Password</Label>
-                    <div className="grid grid-cols-[1fr_auto] items-center rounded-md border border-input bg-input/20 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
-                      <input
-                        id={field.name}
-                        aria-describedby={errorId}
-                        aria-invalid={fieldInvalid(field.state.meta) || undefined}
-                        autoComplete="current-password"
-                        className="h-9 min-w-0 bg-transparent px-3 py-1 text-sm outline-none"
-                        name={field.name}
-                        onBlur={field.handleBlur}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        type={passwordVisible ? "text" : "password"}
-                        value={formString(field.state.value)}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={passwordVisible ? "Hide password" : "Show password"}
-                        onClick={togglePasswordVisible}
-                        className="mr-1"
-                      >
-                        {passwordVisible ? (
-                          <EyeOff aria-hidden="true" />
-                        ) : (
-                          <Eye aria-hidden="true" />
-                        )}
-                      </Button>
-                    </div>
-                    <FieldError id={errorId} meta={field.state.meta} />
-                  </div>
-                );
-              }}
-            </form.Field>
-            <div className="flex items-center justify-between text-sm">
-              <a
-                className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                href="/forgot-password"
-              >
-                Forgot password?
-              </a>
-            </div>
-            <form.Subscribe selector={(state) => [state.isSubmitting, state.isValidating] as const}>
-              {([isSubmitting, isValidating]) => (
-                <div className="grid gap-3">
+          {(field) => {
+            const errorId = `${field.name}-error`;
+            return (
+              <div className="grid gap-1.5 text-sm font-medium">
+                <Label htmlFor={field.name}>Password</Label>
+                <div className="grid grid-cols-[1fr_auto] items-center rounded-md border border-input bg-input/20 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
+                  <input
+                    id={field.name}
+                    aria-describedby={errorId}
+                    aria-invalid={fieldInvalid(field.state.meta) || undefined}
+                    autoComplete="current-password"
+                    className="h-9 min-w-0 bg-transparent px-3 py-1 text-sm outline-none"
+                    name={field.name}
+                    onBlur={field.handleBlur}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    type={passwordVisible ? "text" : "password"}
+                    value={formString(field.state.value)}
+                  />
                   <Button
-                    type="submit"
-                    aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={passwordVisible ? "Hide password" : "Show password"}
+                    onClick={togglePasswordVisible}
+                    className="mr-1"
                   >
-                    {isSubmitting ? <KeyRound aria-hidden="true" /> : <LogIn aria-hidden="true" />}
-                    <span>{isSubmitting ? "Signing in..." : "Sign in"}</span>
+                    {passwordVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
                   </Button>
-                  <p className="min-h-5 text-sm text-muted-foreground">
-                    Passphrases and password managers are supported.
-                  </p>
                 </div>
-              )}
-            </form.Subscribe>
-          </form>
-        </Squircle>
-      </div>
-    </main>
+                <FieldError id={errorId} meta={field.state.meta} />
+              </div>
+            );
+          }}
+        </form.Field>
+        <div className="flex items-center justify-between text-sm">
+          <a
+            className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            href="/forgot-password"
+          >
+            Forgot password?
+          </a>
+        </div>
+        <form.Subscribe selector={(state) => [state.isSubmitting, state.isValidating] as const}>
+          {([isSubmitting, isValidating]) => (
+            <div className="grid gap-3">
+              <Button
+                type="submit"
+                aria-busy={authFormSubmitBusy({ hydrated, isSubmitting, isValidating })}
+              >
+                {isSubmitting ? <KeyRound aria-hidden="true" /> : <LogIn aria-hidden="true" />}
+                <span>{isSubmitting ? "Signing in..." : "Sign in"}</span>
+              </Button>
+              <p className="min-h-5 text-sm text-muted-foreground">
+                Passphrases and password managers are supported.
+              </p>
+            </div>
+          )}
+        </form.Subscribe>
+      </form>
+    </section>
   );
 }
 

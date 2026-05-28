@@ -192,6 +192,15 @@ async function assertNoPageErrors(errors: readonly string[]): Promise<void> {
 async function runAuthProductScenario(page: Page): Promise<number> {
   let visited = 0;
 
+  await whenTheVisitorPivotsToLoginViaLandingSheet(page);
+  visited += 1;
+  await whenTheVisitorClosesLoginSheet(page);
+  visited += 1;
+  await whenTheVisitorPivotsToLoginViaLandingSheet(page);
+  visited += 1;
+  await whenTheVisitorRefreshesTheLoginSheet(page);
+  visited += 1;
+
   await givenTheVisitorCanOpenTheAuthShell(page);
   visited += 1;
   await thenTheLoginFormIsPasswordManagerReady(page);
@@ -235,6 +244,63 @@ async function givenTheVisitorCanOpenTheAuthShell(page: Page): Promise<void> {
   await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Sign in" }).waitFor();
   await waitForReadyButton(page, "Sign in");
+}
+
+async function whenTheVisitorPivotsToLoginViaLandingSheet(page: Page): Promise<void> {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Sign in / Sign Up" }).waitFor();
+  await page.getByRole("button", { name: "Sign in / Sign Up" }).click();
+  await page.waitForURL("**/login");
+  await page.getByRole("dialog", { name: "Sign in options" }).waitFor();
+  await page.getByRole("heading", { name: "Sign in" }).waitFor();
+  await page.waitForURL("**/login");
+}
+
+async function whenTheVisitorClosesLoginSheet(page: Page): Promise<void> {
+  const close = page.getByRole("button", { name: "Close" });
+  await close.waitFor();
+  await close.click();
+  await page.waitForURL("**/");
+  const start = performance.now();
+  while (true) {
+    const count = await page.getByRole("dialog", { name: "Sign in options" }).count();
+    if (count === 0) {
+      break;
+    }
+    if (performance.now() - start > assertionTimeoutMs) {
+      throw new Error("sign-in sheet did not unmount after route close");
+    }
+    await page.waitForTimeout(50);
+  }
+}
+
+async function whenTheVisitorRefreshesTheLoginSheet(page: Page): Promise<void> {
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForURL("**/login");
+  const sheet = page.getByRole("dialog", { name: "Sign in options" });
+  await sheet.waitFor();
+  await page.goBack();
+  await page.waitForURL("**/");
+  const start = performance.now();
+  let dismissedByTransition = false;
+  while (true) {
+    const state = await sheet.getAttribute("data-state");
+    if (state === "dismissing") {
+      dismissedByTransition = true;
+    }
+
+    const count = await sheet.count();
+    if (count === 0) {
+      if (!dismissedByTransition) {
+        throw new Error("sign-in sheet did not transition through dismissing before closing");
+      }
+      break;
+    }
+    if (performance.now() - start > assertionTimeoutMs) {
+      throw new Error("sign-in sheet did not hide after leaving /login");
+    }
+    await page.waitForTimeout(50);
+  }
 }
 
 async function thenTheLoginFormIsPasswordManagerReady(page: Page): Promise<void> {
@@ -470,7 +536,7 @@ async function runBrowserSmoke(options: Options): Promise<Record<string, string 
 
     await page.goto("/", { waitUntil: "load" });
     await page.getByRole("heading", { name: "Verself" }).waitFor();
-    await page.getByRole("link", { name: "Get Verself" }).waitFor();
+    await page.getByRole("button", { name: "Sign in / Sign Up" }).waitFor();
 
     const authPages = await runAuthProductScenario(page);
     await assertNoPageErrors(pageErrors);
