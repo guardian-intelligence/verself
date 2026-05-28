@@ -35,6 +35,7 @@ const (
 	releaseMetadataBase = "https://oci.verself.sh/releases/mksk"
 	sourceRepositoryURL = "https://github.com/guardian-intelligence/verself.git"
 	repoURL             = "https://github.com/guardian-intelligence/verself"
+	rulesRustToolsRepo  = "rules_rust++rust+rust_linux_x86_64__x86_64-unknown-linux-gnu__stable_tools"
 )
 
 var (
@@ -264,6 +265,14 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 	if err != nil {
 		return err
 	}
+	bazelExecRoot, err := bazelExecutionRoot(ctx, source.root, bazelisk, toolEnv, bazelStartupOptions, bazelCommandOptions)
+	if err != nil {
+		return err
+	}
+	rustToolsBin, err := releaseRustToolsBinDir(bazelExecRoot)
+	if err != nil {
+		return err
+	}
 	short := shortSHA(sourceCommit)
 	paths := releasePaths{
 		root:     filepath.Join(cfg.outRoot, mkskPackageName, cfg.channel+"-"+version+"-"+short),
@@ -293,7 +302,7 @@ func generateReleaseArtifacts(ctx context.Context, cfg mkskConfig) error {
 	if err := generateSBOMs(ctx, source.root, toolsDir, artifactPath, version, paths, toolEnv); err != nil {
 		return err
 	}
-	if err := generateLicenses(ctx, source.root, toolsDir, paths, toolEnv); err != nil {
+	if err := generateLicenses(ctx, source.root, toolsDir, rustToolsBin, paths, toolEnv); err != nil {
 		return err
 	}
 	finished := time.Now().UTC()
@@ -399,10 +408,11 @@ func generateSBOMs(ctx context.Context, sourceRoot, toolsDir, artifactPath, vers
 	return nil
 }
 
-func generateLicenses(ctx context.Context, sourceRoot, toolsDir string, paths releasePaths, env map[string]string) error {
+func generateLicenses(ctx context.Context, sourceRoot, toolsDir, rustToolsBin string, paths releasePaths, env map[string]string) error {
 	cargoAbout := filepath.Join(toolsDir, "bin", "cargo-about")
 	out := filepath.Join(paths.root, paths.licenses, "make-skill.cargo-about.json")
-	_, err := runCommandWithEnv(ctx, sourceRoot, cargoAbout, env, "generate", "--config", mkskCargoAbout, "--manifest-path", mkskCargoManifest, "--workspace", "--frozen", "--format", "json", "--output-file", out)
+	licenseEnv := commandEnvWithPrependedPath(env, filepath.Join(toolsDir, "bin"), rustToolsBin)
+	_, err := runCommandWithEnv(ctx, sourceRoot, cargoAbout, licenseEnv, "generate", "--config", mkskCargoAbout, "--manifest-path", mkskCargoManifest, "--workspace", "--frozen", "--format", "json", "--output-file", out)
 	return err
 }
 
@@ -639,6 +649,18 @@ func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[str
 	if len(lines) != 1 {
 		return "", fmt.Errorf("expected one output for %s, got %d", target, len(lines))
 	}
+	execroot, err := bazelExecutionRoot(ctx, repoRoot, bazelisk, env, startupOptions, commandOptions)
+	if err != nil {
+		return "", err
+	}
+	out := filepath.Join(execroot, lines[0])
+	if _, err := os.Stat(out); err != nil {
+		return "", fmt.Errorf("bazel output %s: %w", out, err)
+	}
+	return out, nil
+}
+
+func bazelExecutionRoot(ctx context.Context, repoRoot, bazelisk string, env map[string]string, startupOptions []string, commandOptions []string) (string, error) {
 	infoArgs := append([]string{}, startupOptions...)
 	infoArgs = append(infoArgs, "info")
 	infoArgs = append(infoArgs, commandOptions...)
@@ -647,11 +669,11 @@ func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[str
 	if err != nil {
 		return "", err
 	}
-	out := filepath.Join(strings.TrimSpace(execroot.stdout), lines[0])
-	if _, err := os.Stat(out); err != nil {
-		return "", fmt.Errorf("bazel output %s: %w", out, err)
+	root := strings.TrimSpace(execroot.stdout)
+	if root == "" {
+		return "", fmt.Errorf("bazel execution_root was empty")
 	}
-	return out, nil
+	return root, nil
 }
 
 func runCommand(ctx context.Context, cwd, program string, args ...string) (commandResult, error) {
@@ -712,6 +734,40 @@ func releaseBazelCommandOptions(env map[string]string) []string {
 	}
 }
 
+func releaseRustToolsBinDir(executionRoot string) (string, error) {
+	dir := filepath.Join(executionRoot, "external", rulesRustToolsRepo, "bin")
+	for _, tool := range []string{"cargo", "rustc"} {
+		if err := requireExecutable(filepath.Join(dir, tool), "Bazel Rust tool "+tool); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
+}
+
+func commandEnvWithPrependedPath(env map[string]string, dirs ...string) map[string]string {
+	out := make(map[string]string, len(env)+1)
+	for key, value := range env {
+		out[key] = value
+	}
+	parts := make([]string, 0, len(dirs)+1)
+	for _, dir := range dirs {
+		if strings.TrimSpace(dir) != "" {
+			parts = append(parts, dir)
+		}
+	}
+	existing := out["PATH"]
+	if existing == "" {
+		existing = os.Getenv("PATH")
+	}
+	if existing != "" {
+		parts = append(parts, existing)
+	}
+	if len(parts) > 0 {
+		out["PATH"] = strings.Join(parts, string(os.PathListSeparator))
+	}
+	return out
+}
+
 func mergeCommandEnv(base []string, overrides map[string]string) []string {
 	out := make([]string, 0, len(base)+len(overrides))
 	for _, entry := range base {
@@ -746,16 +802,23 @@ func extractTools(toolsTar string) (string, func(), error) {
 		return "", func() {}, err
 	}
 	for _, tool := range []string{"bazelisk", "cargo-about", "cosign", "oras", "release-plz", "syft"} {
-		path := filepath.Join(dir, "bin", tool)
-		if st, err := os.Stat(path); err != nil {
+		if err := requireExecutable(filepath.Join(dir, "bin", tool), "release tool "+tool); err != nil {
 			cleanup()
-			return "", func() {}, fmt.Errorf("release tool %s: %w", tool, err)
-		} else if st.Mode()&0o111 == 0 {
-			cleanup()
-			return "", func() {}, fmt.Errorf("release tool %s is not executable", tool)
+			return "", func() {}, err
 		}
 	}
 	return dir, cleanup, nil
+}
+
+func requireExecutable(path, label string) error {
+	st, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	if st.Mode()&0o111 == 0 {
+		return fmt.Errorf("%s is not executable", label)
+	}
+	return nil
 }
 
 func extractPlainTar(path, dest string) error {
