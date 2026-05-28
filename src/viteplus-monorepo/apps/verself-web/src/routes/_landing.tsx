@@ -1,4 +1,4 @@
-import { createFileRoute, useLocation, useNavigate, Outlet } from "@tanstack/react-router";
+import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 
 import {
@@ -7,12 +7,18 @@ import {
   AnchoredSheetPrimaryActionSection,
   type AnchoredSheetRef,
 } from "@verself/ui/components/ui/anchored-sheet";
+import { Button } from "@verself/ui/components/ui/button";
 import { MarketingLandingPage } from "~/features/landing/marketing-page";
 
 const loginRoutePathname = "/login";
+const loginEmailRoutePathname = "/login/email";
 
 function isLoginRoute(pathname: string): boolean {
-  return pathname === loginRoutePathname;
+  return pathname === loginRoutePathname || pathname === loginEmailRoutePathname;
+}
+
+function isEmailLoginRoute(pathname: string): boolean {
+  return pathname === loginEmailRoutePathname;
 }
 
 export const Route = createFileRoute("/_landing")({
@@ -24,10 +30,19 @@ function MarketingLandingLayout() {
   const navigate = useNavigate();
   const sheetRef = React.useRef<AnchoredSheetRef>(null);
   const shouldPresentSheet = isLoginRoute(location.pathname);
+  const isEmailLogin = isEmailLoginRoute(location.pathname);
 
   const openLoginRoute = React.useCallback(() => {
     void navigate({ to: loginRoutePathname });
   }, [navigate]);
+
+  const openLoginWithEmailRoute = React.useCallback(() => {
+    void navigate({ to: loginEmailRoutePathname });
+  }, [navigate]);
+
+  const openGitHubSignIn = React.useCallback(() => {
+    return;
+  }, []);
 
   const closeLoginRoute = React.useCallback(() => {
     if (location.pathname !== "/") {
@@ -50,19 +65,37 @@ function MarketingLandingLayout() {
         ref={sheetRef}
         aria-label="Sign in options"
         defaultPresented={shouldPresentSheet}
+        onHide={closeLoginRoute}
         onSheetDismissed={closeLoginRoute}
+        onPresent={openLoginRoute}
       >
         <AnchoredSheetPrimaryActionSection>
-          <AnchoredSheetPrimaryActionButton onClick={openLoginRoute}>
+          {isEmailLogin ? (
+            <Button
+              onClick={openLoginRoute}
+              size="xs"
+              variant="link"
+              className="mb-3 block w-full self-center text-xs text-center"
+            >
+              Sign in with GitHub
+            </Button>
+          ) : (
+            <Button
+              onClick={openLoginWithEmailRoute}
+              size="xs"
+              variant="link"
+              className="mb-3 block w-full self-center text-xs text-center"
+            >
+              Sign in with email
+            </Button>
+          )}
+          <AnchoredSheetPrimaryActionButton onClick={isEmailLogin ? openGitHubSignIn : openLoginRoute}>
             <span className="flex w-full items-center justify-center gap-2">
-              <GitHubIcon className="size-4" />
-              <span>Sign in with GitHub</span>
+              {isEmailLogin ? null : <GitHubIcon className="size-4" />}
+              <span>{isEmailLogin ? "Sign In" : "Sign in with GitHub"}</span>
             </span>
           </AnchoredSheetPrimaryActionButton>
         </AnchoredSheetPrimaryActionSection>
-        <section className="px-5 pb-4 pt-3">
-          <Outlet />
-        </section>
       </AnchoredSheet>
     </>
   );
