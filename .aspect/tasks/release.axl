@@ -1,9 +1,9 @@
 """aspect release — release publication checks and helpers."""
 
-load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_output_file", "bazel_run", "resolve_sha", "ws_path")
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_output_file", "bazel_run", "ws_path")
 
-DISTRIBUTION_RELEASE_TARGET = "//src/services/distribution-service/cmd/distribution-release:distribution-release"
-DISTRIBUTION_RELEASE_TOOLS_TARGET = "//src/services/distribution-service:release_tools_artifact"
+MKSK_RELEASE_TARGET = "//src/make-skill/release:mksk-release"
+MKSK_RELEASE_TOOLS_TARGET = "//src/make-skill/release:release_tools_artifact"
 
 def _workspace_or_absolute(ctx, path):
     if path.startswith("/"):
@@ -29,9 +29,6 @@ def _npm_probe_impl(ctx):
 
 def _mksk_impl(ctx):
     if not ctx.args.version_pr and not ctx.args.local:
-        source_commit = resolve_sha(ctx, ctx.args.source_ref)
-        if source_commit == "":
-            return 1
         cli_args = [
             "release",
             "mksk",
@@ -43,38 +40,35 @@ def _mksk_impl(ctx):
             ctx.args.channel,
             "--source-ref",
             ctx.args.source_ref,
-            "--source-commit",
-            source_commit,
         ]
         if ctx.args.version != "":
             cli_args.extend(["--version", ctx.args.version])
         return bazel_run(ctx, ASPECT_OPERATOR_TARGET, cli_args, label = "aspect-operator release mksk")
 
-    tools_tar = bazel_output_file(ctx, DISTRIBUTION_RELEASE_TOOLS_TARGET)
+    tools_tar = bazel_output_file(ctx, MKSK_RELEASE_TOOLS_TARGET)
     if tools_tar == "":
         return 1
+    release_subcommand = "build"
+    if ctx.args.version_pr:
+        release_subcommand = "version-pr"
     cli_args = [
-        "mksk",
+        release_subcommand,
         "--repo-root",
         ws_path(ctx),
         "--tools-tar",
         tools_tar,
-        "--out-dir",
+        "--artifact-root",
         _workspace_or_absolute(ctx, ctx.args.out_dir),
         "--source-ref",
         ctx.args.source_ref,
-        "--builder-id",
-        ctx.args.builder_id,
-        "--platform",
-        ctx.args.platform,
     ]
-    if ctx.args.version_pr:
-        cli_args.append("--version-pr")
-    if ctx.args.channel != "":
+    if not ctx.args.version_pr and ctx.args.channel != "":
         cli_args.extend(["--channel", ctx.args.channel])
-    if ctx.args.version != "":
+    if not ctx.args.version_pr and ctx.args.version != "":
         cli_args.extend(["--version", ctx.args.version])
-    return bazel_run(ctx, DISTRIBUTION_RELEASE_TARGET, cli_args, label = "distribution-release mksk")
+    if not ctx.args.version_pr:
+        cli_args.extend(["--builder-id", ctx.args.builder_id, "--platform", ctx.args.platform])
+    return bazel_run(ctx, MKSK_RELEASE_TARGET, cli_args, label = "mksk-release " + cli_args[0])
 
 npm_probe = task(
     implementation = _npm_probe_impl,

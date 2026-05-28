@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "client.go",
         "command_runner.go",
+        "distributable.go",
         "workflow.go",
     ],
     importpath = "github.com/verself/distribution-service/internal/releaseworkflow",
@@ -13,6 +14,7 @@ go_library(
         "//src/infrastructure-components/temporal-platform/sdkclient",
         "@com_github_spiffe_go_spiffe_v2//workloadapi",
         "@io_temporal_go_api//enums/v1:enums",
+        "@io_temporal_go_api//serviceerror",
         "@io_temporal_go_sdk//activity",
         "@io_temporal_go_sdk//client",
         "@io_temporal_go_sdk//temporal",

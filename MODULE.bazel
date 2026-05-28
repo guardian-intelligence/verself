@@ -41,6 +41,10 @@ component_tools.hub(
     lockfile = "//src/services/distribution-service:tools.lock.json",
 )
 component_tools.hub(
+    hub_name = "mksk_release_tools",
+    lockfile = "//src/make-skill/release:tools.lock.json",
+)
+component_tools.hub(
     hub_name = "electric_tools",
     lockfile = "//src/infrastructure-components/electric:tools.lock.json",
 )
@@ -105,6 +109,7 @@ use_repo(
     "garage_tools",
     "grafana_tools",
     "haproxy_tools",
+    "mksk_release_tools",
     "multitool",
     "nats_tools",
     "otelcol_tools",
@@ -127,6 +132,8 @@ use_repo(rust, "rust_toolchains")
 register_toolchains("@clickhouse_tools//toolchains:all")
 
 register_toolchains("@distribution_release_tools//toolchains:all")
+
+register_toolchains("@mksk_release_tools//toolchains:all")
 
 register_toolchains("@electric_tools//toolchains:all")
 

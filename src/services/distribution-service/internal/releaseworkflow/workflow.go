@@ -13,9 +13,9 @@ import (
 
 const (
 	ResolveSourceActivityName                = "verself.distribution.release.resolve-source.v1"
-	BuildMkskNightlyReleaseActivityName      = "verself.distribution.release.build-mksk-nightly.v1"
-	BuildMkskReleaseCandidateActivityName    = "verself.distribution.release.build-mksk-rc.v1"
-	BuildMkskStableReleaseActivityName       = "verself.distribution.release.build-mksk-stable.v1"
+	BuildNightlyReleaseActivityName          = "verself.distribution.release.build-nightly.v1"
+	BuildReleaseCandidateActivityName        = "verself.distribution.release.build-rc.v1"
+	BuildStableReleaseActivityName           = "verself.distribution.release.build-stable.v1"
 	defaultBuildActivityStartToCloseTimeout  = 8 * time.Hour
 	defaultBuildActivityScheduleToCloseLimit = 10 * time.Hour
 	defaultResolveActivityTimeout            = 5 * time.Minute
@@ -51,9 +51,9 @@ func Register(registry Registry, activities Activities) {
 	registry.RegisterWorkflowWithOptions(ReleaseCandidateWorkflow, workflow.RegisterOptions{Name: ReleaseCandidateWorkflowName})
 	registry.RegisterWorkflowWithOptions(StableReleaseWorkflow, workflow.RegisterOptions{Name: StableReleaseWorkflowName})
 	registry.RegisterActivityWithOptions(activities.ResolveSource, activity.RegisterOptions{Name: ResolveSourceActivityName})
-	registry.RegisterActivityWithOptions(activities.BuildNightly, activity.RegisterOptions{Name: BuildMkskNightlyReleaseActivityName})
-	registry.RegisterActivityWithOptions(activities.BuildReleaseCandidate, activity.RegisterOptions{Name: BuildMkskReleaseCandidateActivityName})
-	registry.RegisterActivityWithOptions(activities.BuildStable, activity.RegisterOptions{Name: BuildMkskStableReleaseActivityName})
+	registry.RegisterActivityWithOptions(activities.BuildNightly, activity.RegisterOptions{Name: BuildNightlyReleaseActivityName})
+	registry.RegisterActivityWithOptions(activities.BuildReleaseCandidate, activity.RegisterOptions{Name: BuildReleaseCandidateActivityName})
+	registry.RegisterActivityWithOptions(activities.BuildStable, activity.RegisterOptions{Name: BuildStableReleaseActivityName})
 }
 
 func RegisterWorker(workerInstance worker.Worker, runner ActivityRunner) {
@@ -65,7 +65,7 @@ func NightlyReleaseWorkflow(ctx workflow.Context, input NightlyReleaseInput) (Re
 		return ReleaseWorkflowResult{}, temporal.NewNonRetryableApplicationError(err.Error(), "InvalidReleaseInput", err)
 	}
 	var result ReleaseWorkflowResult
-	if err := workflow.ExecuteActivity(buildActivityContext(ctx), BuildMkskNightlyReleaseActivityName, input).Get(ctx, &result); err != nil {
+	if err := workflow.ExecuteActivity(buildActivityContext(ctx), BuildNightlyReleaseActivityName, input).Get(ctx, &result); err != nil {
 		return ReleaseWorkflowResult{}, err
 	}
 	return result, nil
@@ -90,7 +90,7 @@ func ReleaseCandidateWorkflow(ctx workflow.Context, input ReleaseCandidateInput)
 		return ReleaseWorkflowResult{}, temporal.NewNonRetryableApplicationError(err.Error(), "InvalidReleaseInput", err)
 	}
 	var result ReleaseWorkflowResult
-	if err := workflow.ExecuteActivity(buildActivityContext(ctx), BuildMkskReleaseCandidateActivityName, input).Get(ctx, &result); err != nil {
+	if err := workflow.ExecuteActivity(buildActivityContext(ctx), BuildReleaseCandidateActivityName, input).Get(ctx, &result); err != nil {
 		return ReleaseWorkflowResult{}, err
 	}
 	return result, nil
@@ -101,7 +101,7 @@ func StableReleaseWorkflow(ctx workflow.Context, input StableReleaseInput) (Rele
 		return ReleaseWorkflowResult{}, temporal.NewNonRetryableApplicationError(err.Error(), "InvalidReleaseInput", err)
 	}
 	var result ReleaseWorkflowResult
-	if err := workflow.ExecuteActivity(buildActivityContext(ctx), BuildMkskStableReleaseActivityName, input).Get(ctx, &result); err != nil {
+	if err := workflow.ExecuteActivity(buildActivityContext(ctx), BuildStableReleaseActivityName, input).Get(ctx, &result); err != nil {
 		return ReleaseWorkflowResult{}, err
 	}
 	return result, nil

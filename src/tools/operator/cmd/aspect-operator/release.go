@@ -82,7 +82,6 @@ func cmdReleaseMksk(args []string) error {
 	channel := fs.String("channel", "", "Release channel: nightly, rc, or stable")
 	releaseVersion := fs.String("version", "", "Release version. Required for rc and stable")
 	sourceRef := fs.String("source-ref", "", "Git ref recorded as release source")
-	sourceCommit := fs.String("source-commit", "", "Resolved 40-character git source commit")
 	format := fs.String("format", "text", "Output format: text or json")
 	site := fs.String("site", rtOpts.site, "Deployment site")
 	repoRoot := fs.String("repo-root", "", "Repository root")
@@ -100,14 +99,10 @@ func cmdReleaseMksk(args []string) error {
 	if strings.TrimSpace(*sourceRef) == "" {
 		return fmt.Errorf("release mksk: --source-ref is required")
 	}
-	if strings.TrimSpace(*sourceCommit) == "" {
-		return fmt.Errorf("release mksk: --source-commit is required")
-	}
 	remoteArgs := []string{
 		"mksk",
 		"--channel", strings.TrimSpace(*channel),
 		"--source-ref", strings.TrimSpace(*sourceRef),
-		"--source-commit", strings.TrimSpace(*sourceCommit),
 		"--format", strings.TrimSpace(*format),
 	}
 	if strings.TrimSpace(*releaseVersion) != "" {
