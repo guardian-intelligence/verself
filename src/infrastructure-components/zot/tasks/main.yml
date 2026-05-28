@@ -129,7 +129,7 @@
 
 - name: Assert zot publisher identity can create uploads
   ansible.builtin.uri:
-    url: "http://{{ zot_endpoint.address }}/v2/admitted/verself-probe/blobs/uploads/"
+    url: "http://{{ zot_endpoint.address }}/v2/verself/probe/blobs/uploads/"
     method: POST
     url_username: "{{ zot_publisher_user }}"
     url_password: "{{ zot_publisher_password_raw.content | b64decode | trim }}"

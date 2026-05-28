@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"oras.land/oras-go/v2/content/memory"
 )
 
 func TestValidateSubject(t *testing.T) {
@@ -231,6 +233,123 @@ func TestReleaseMetadataURL(t *testing.T) {
 	}
 }
 
+func TestReleaseOCIReference(t *testing.T) {
+	got, err := releaseOCIReference(ReleaseSubject{
+		Package:          packageName,
+		Version:          "0.2.0-nightly.20260528.1",
+		Channel:          ChannelNightly,
+		SourceRepository: sourceRepository,
+		SourceRef:        "main",
+		SourceCommit:     strings.Repeat("a", 40),
+		Platform:         Platform{OS: "linux", Arch: "amd64"},
+		Flavor:           defaultFlavor,
+	})
+	if err != nil {
+		t.Fatalf("releaseOCIReference() error = %v", err)
+	}
+	want := "mksk-v0.2.0-nightly.20260528.1-linux-amd64-default"
+	if got != want {
+		t.Fatalf("releaseOCIReference() = %q, want %q", got, want)
+	}
+	public := publicOCIReference("https://oci.verself.sh", "verself/mksk", "sha256:abc")
+	if public != "oci.verself.sh/verself/mksk@sha256:abc" {
+		t.Fatalf("publicOCIReference() = %q", public)
+	}
+}
+
+func TestRegistryCredentialRequiresPair(t *testing.T) {
+	if _, err := registryCredential("artifact-publisher", ""); err == nil {
+		t.Fatal("registryCredential() error = nil")
+	}
+	password := filepath.Join(t.TempDir(), "password")
+	if err := os.WriteFile(password, []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := registryCredential("artifact-publisher", password)
+	if err != nil {
+		t.Fatalf("registryCredential() error = %v", err)
+	}
+	if got.Username != "artifact-publisher" || got.Password != "secret" {
+		t.Fatalf("registryCredential() = %#v", got)
+	}
+}
+
+func TestReleaseSignerFromFlags(t *testing.T) {
+	signer, err := releaseSignerFromFlags(publishFlagValues{signingMode: signingModeDisabled})
+	if err != nil {
+		t.Fatalf("releaseSignerFromFlags() error = %v", err)
+	}
+	if _, ok := signer.(disabledSigner); !ok {
+		t.Fatalf("releaseSignerFromFlags() = %T, want disabledSigner", signer)
+	}
+	token := filepath.Join(t.TempDir(), "openbao-token")
+	if err := os.WriteFile(token, []byte("token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	signer, err = releaseSignerFromFlags(publishFlagValues{
+		signingMode:         signingModeOpenBaoTransit,
+		openBaoAddr:         "https://openbao.api.verself.sh",
+		openBaoTokenFile:    token,
+		openBaoTransitMount: "transit",
+		openBaoKey:          "mksk-release-root",
+	})
+	if err != nil {
+		t.Fatalf("releaseSignerFromFlags(openbao) error = %v", err)
+	}
+	if _, ok := signer.(openBaoTransitSigner); !ok {
+		t.Fatalf("releaseSignerFromFlags(openbao) = %T, want openBaoTransitSigner", signer)
+	}
+	if err := signer.Preflight(context.Background()); err == nil {
+		t.Fatal("openBaoTransitSigner.Preflight() error = nil")
+	}
+}
+
+func TestPublishBundlePublishesEvidenceReferrers(t *testing.T) {
+	root := t.TempDir()
+	subject := ReleaseSubject{
+		Package:          packageName,
+		Version:          "0.2.0-nightly.20260528.1",
+		Channel:          ChannelNightly,
+		SourceRepository: sourceRepository,
+		SourceRef:        "HEAD",
+		SourceCommit:     strings.Repeat("a", 40),
+		Platform:         Platform{OS: "linux", Arch: "amd64"},
+		Flavor:           defaultFlavor,
+	}
+	bundle := BuildBundle{
+		Subject: subject,
+		Root:    root,
+		Evidence: EvidenceSet{
+			Artifact:        writeEvidenceForTest(t, root, "artifact/make-skill.tar", "tar", "application/vnd.verself.mksk.release.tar"),
+			ArtifactSBOM:    writeEvidenceForTest(t, root, "sbom/make-skill.artifact.spdx.json", "{}", "application/spdx+json"),
+			SourceSBOM:      writeEvidenceForTest(t, root, "sbom/make-skill.source.spdx.json", "{}", "application/spdx+json"),
+			LicenseEvidence: writeEvidenceForTest(t, root, "licenses/make-skill.cargo-about.json", "{}", "application/json"),
+			Provenance:      writeEvidenceForTest(t, root, "evidence/make-skill.provenance.intoto.json", "{}", "application/vnd.in-toto+json"),
+			TestResults: []EvidenceFile{
+				writeEvidenceForTest(t, root, "tests/cli_test.xml", "<testsuite/>", "application/xml"),
+			},
+		},
+	}
+	req := PublishRequest{
+		Build: BuildRequest{
+			Subject:   subject,
+			BuilderID: defaultBuilderID,
+		},
+		PublicRegistryURL: defaultPublicURL,
+		Repository:        defaultRepository,
+	}
+	result, err := publishBundle(context.Background(), memory.New(), req, bundle)
+	if err != nil {
+		t.Fatalf("publishBundle() error = %v", err)
+	}
+	if result.Reference != "mksk-v0.2.0-nightly.20260528.1-linux-amd64-default" {
+		t.Fatalf("reference = %q", result.Reference)
+	}
+	if len(result.Referrers) != 5 {
+		t.Fatalf("referrers = %d, want 5", len(result.Referrers))
+	}
+}
+
 func TestExtractToolsRequiresBuildTools(t *testing.T) {
 	toolsTar := writeReleaseToolsTar(t, []string{"bazelisk", "cargo-about"})
 	_, cleanup, err := extractTools(toolsTar, []string{"bazelisk", "cargo-about", "syft"})
@@ -270,6 +389,7 @@ func TestReleaseBazelOptionsUseShortLivedServer(t *testing.T) {
 	wantCommand := []string{
 		"--disk_cache=/artifacts/releases/work/tool-env/mksk/cache/bazel-disk",
 		"--repository_cache=/artifacts/releases/work/tool-env/mksk/cache/bazel-repo",
+		"--repo_contents_cache=",
 	}
 	if !reflect.DeepEqual(gotCommand, wantCommand) {
 		t.Fatalf("releaseBazelCommandOptions() = %#v, want %#v", gotCommand, wantCommand)
@@ -348,12 +468,30 @@ func writeReleaseToolsTar(t *testing.T, tools []string) string {
 	return path
 }
 
+func writeEvidenceForTest(t *testing.T, root string, name string, body string, mediaType string) EvidenceFile {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file, err := evidenceFile(path, mediaType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
 func initReleaseGitRepo(t *testing.T, version string) (string, string) {
 	t.Helper()
 	repoRoot := t.TempDir()
 	runGitTest(t, repoRoot, "init")
 	runGitTest(t, repoRoot, "config", "user.email", "release-test@verself.sh")
 	runGitTest(t, repoRoot, "config", "user.name", "release test")
+	runGitTest(t, repoRoot, "config", "tag.gpgSign", "false")
+	runGitTest(t, repoRoot, "config", "tag.forceSignAnnotated", "false")
 	manifestPath := filepath.Join(repoRoot, cargoManifest)
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 		t.Fatal(err)

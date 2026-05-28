@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ocipublish",
+    srcs = ["publisher.go"],
+    importpath = "github.com/verself/make-skill/release/internal/ocipublish",
+    visibility = ["//src/make-skill/release:__subpackages__"],
+    deps = [
+        "@com_github_opencontainers_image_spec//specs-go/v1:specs-go",
+        "@land_oras_oras_go_v2//:oras-go",
+        "@land_oras_oras_go_v2//content",
+        "@land_oras_oras_go_v2//content/memory",
+        "@land_oras_oras_go_v2//errdef",
+        "@land_oras_oras_go_v2//registry/remote",
+        "@land_oras_oras_go_v2//registry/remote/auth",
+        "@land_oras_oras_go_v2//registry/remote/retry",
+    ],
+)
+
+go_test(
+    name = "ocipublish_test",
+    srcs = ["publisher_test.go"],
+    embed = [":ocipublish"],
+    deps = [
+        "@com_github_opencontainers_image_spec//specs-go/v1:specs-go",
+        "@land_oras_oras_go_v2//content/memory",
+    ],
+)

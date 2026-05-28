@@ -27,9 +27,32 @@ aspect release mksk \
   --flavor=default
 ```
 
-`--publish` selects `mksk-release publish`. In this changeset it validates the
-same package-owned subject derivation and fails before build execution; trusted
-OCI publishing is the next release changeset.
+`--publish` selects `mksk-release publish`. It builds the same bundle, publishes
+`artifact/make-skill.tar` as the OCI subject manifest, attaches SPDX, SLSA,
+license, and test evidence as OCI referrers, and verifies the pushed descriptor
+graph before returning.
+
+The trusted-host defaults point at the local Zot listener:
+
+```text
+aspect release mksk --nightly --source-ref=main --publish
+```
+
+For diagnostics against a registry without authentication, pass both registry
+credential flags as empty values. The production path uses the Zot publisher
+identity:
+
+```text
+--registry=http://127.0.0.1:5080
+--repository=verself/mksk
+--registry-username=artifact-publisher
+--registry-password-file=/etc/zot/publisher-password
+```
+
+`--signing=disabled` is the current tracer-bullet mode. `--signing=openbao-transit`
+validates the OpenBao Transit configuration and then fails before building or
+publishing; the signer boundary is in place for the next changeset that calls
+Transit after OCI referrer verification.
 
 ## Release subject
 

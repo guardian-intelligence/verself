@@ -22,20 +22,25 @@ import (
 )
 
 const (
-	packageName        = "mksk"
-	cargoManifest      = "src/make-skill/Cargo.toml"
-	cargoAboutConfig   = "src/make-skill/about.toml"
-	releaseTarTarget   = "//src/make-skill:release_tar"
-	binaryTarget       = "//src/make-skill:mksk"
-	releaseVersionEnv  = "MKSK_RELEASE_VERSION"
-	defaultOutputRoot  = "artifacts/releases"
-	defaultSourceRef   = "HEAD"
-	defaultBuilderID   = "spiffe://prod.verself.sh/svc/release-builder"
-	defaultFlavor      = "default"
-	defaultPlatform    = "linux/amd64"
-	metadataBaseURL    = "https://oci.verself.sh/releases/mksk"
-	sourceRepository   = "https://github.com/guardian-intelligence/verself.git"
-	rulesRustToolsRepo = "rules_rust++rust+rust_linux_x86_64__x86_64-unknown-linux-gnu__stable_tools"
+	packageName                 = "mksk"
+	cargoManifest               = "src/make-skill/Cargo.toml"
+	cargoAboutConfig            = "src/make-skill/about.toml"
+	releaseTarTarget            = "//src/make-skill:release_tar"
+	binaryTarget                = "//src/make-skill:mksk"
+	releaseVersionEnv           = "MKSK_RELEASE_VERSION"
+	defaultOutputRoot           = "artifacts/releases"
+	defaultSourceRef            = "HEAD"
+	defaultBuilderID            = "spiffe://prod.verself.sh/svc/release-builder"
+	defaultFlavor               = "default"
+	defaultPlatform             = "linux/amd64"
+	metadataBaseURL             = "https://oci.verself.sh/releases/mksk"
+	sourceRepository            = "https://github.com/guardian-intelligence/verself.git"
+	defaultRegistryURL          = "http://127.0.0.1:5080"
+	defaultPublicURL            = "https://oci.verself.sh"
+	defaultRepository           = "verself/mksk"
+	defaultRegistryUser         = "artifact-publisher"
+	defaultRegistryPasswordFile = "/etc/zot/publisher-password"
+	rulesRustToolsRepo          = "rules_rust++rust+rust_linux_x86_64__x86_64-unknown-linux-gnu__stable_tools"
 )
 
 var (
@@ -160,7 +165,7 @@ func printUsage(w io.Writer) {
 
 Subcommands:
   build    Build make-skill artifacts and standard evidence without publishing.
-  publish  Build then publish through the trusted release path (not yet implemented).
+  publish  Build then publish artifact and evidence to OCI.
   admit    Ask distribution-service to admit a published digest (not yet implemented).
   tag      Create post-admission release tags (not yet implemented).
 `)
@@ -179,10 +184,46 @@ func runBuild(ctx context.Context, args []string) error {
 }
 
 func runPublish(ctx context.Context, args []string) error {
-	if _, err := parseReleaseBuildRequest(ctx, args, "mksk-release publish"); err != nil {
+	req, err := parsePublishRequest(ctx, args)
+	if err != nil {
 		return err
 	}
-	return fmt.Errorf("publish is not implemented yet; trusted OCI publishing is the next release changeset")
+	if err := req.Signer.Preflight(ctx); err != nil {
+		return err
+	}
+	credential, err := registryCredential(req.RegistryUsername, req.RegistryPasswordFile)
+	if err != nil {
+		return err
+	}
+	bundle, err := buildBundle(ctx, req.Build)
+	if err != nil {
+		return err
+	}
+	target, err := newPublishTarget(req, credential)
+	if err != nil {
+		return err
+	}
+	result, err := publishBundle(ctx, target, req, bundle)
+	if err != nil {
+		return err
+	}
+	publicRef := publicOCIReference(req.PublicRegistryURL, req.Repository, result.Subject.Descriptor.Digest.String())
+	envelope := newReleaseSigningEnvelope(bundle.Subject, publicRef, result)
+	signature, err := req.Signer.SignRelease(ctx, envelope)
+	if err != nil {
+		return err
+	}
+	return stdoutf(
+		"build bundle: %s\noci repository: %s/%s\noci reference: %s\noci digest: %s\noci referrers: %d\nsignature: %s\nsigning payload sha256: %s\n",
+		bundle.Root,
+		strings.TrimRight(req.RegistryURL, "/"),
+		strings.Trim(req.Repository, "/"),
+		publicRef,
+		result.Subject.Descriptor.Digest,
+		len(result.Referrers),
+		signature.Mode,
+		signature.PayloadDigest,
+	)
 }
 
 func runFutureSubcommand(name string) error {
@@ -212,15 +253,30 @@ func parseBuildRequest(ctx context.Context, args []string) (BuildRequest, error)
 }
 
 func parseReleaseBuildRequest(ctx context.Context, args []string, commandName string) (BuildRequest, error) {
-	values := releaseFlagValues{
+	values := defaultReleaseFlagValues()
+	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	bindReleaseFlags(fs, &values)
+	if err := fs.Parse(args); err != nil {
+		return BuildRequest{}, err
+	}
+	if fs.NArg() != 0 {
+		return BuildRequest{}, fmt.Errorf("unexpected positional args: %s", strings.Join(fs.Args(), " "))
+	}
+	return buildRequestFromReleaseFlags(ctx, values)
+}
+
+func defaultReleaseFlagValues() releaseFlagValues {
+	return releaseFlagValues{
 		outputRoot: defaultOutputRoot,
 		sourceRef:  defaultSourceRef,
 		platform:   defaultPlatform,
 		flavor:     defaultFlavor,
 		builderID:  defaultBuilderID,
 	}
-	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+}
+
+func bindReleaseFlags(fs *flag.FlagSet, values *releaseFlagValues) {
 	fs.StringVar(&values.repoRoot, "repo-root", "", "Repository root. Defaults to git rev-parse --show-toplevel.")
 	fs.StringVar(&values.toolsTar, "tools-tar", "", "Bazel-built make-skill release tools tar.")
 	fs.StringVar(&values.outputRoot, "out-dir", defaultOutputRoot, "Directory for build bundle outputs.")
@@ -236,12 +292,9 @@ func parseReleaseBuildRequest(ctx context.Context, args []string, commandName st
 	fs.BoolVar(&values.rc, "rc", false, "Derive the next RC version from --source-ref.")
 	fs.BoolVar(&values.stable, "stable", false, "Derive a stable version from --source-ref or --from-rc.")
 	fs.BoolVar(&values.allowDirty, "allow-dirty", false, "Allow building from a dirty local workspace for inspection.")
-	if err := fs.Parse(args); err != nil {
-		return BuildRequest{}, err
-	}
-	if fs.NArg() != 0 {
-		return BuildRequest{}, fmt.Errorf("unexpected positional args: %s", strings.Join(fs.Args(), " "))
-	}
+}
+
+func buildRequestFromReleaseFlags(ctx context.Context, values releaseFlagValues) (BuildRequest, error) {
 	repoRoot := strings.TrimSpace(values.repoRoot)
 	if err := fillRepoRoot(ctx, &repoRoot); err != nil {
 		return BuildRequest{}, err
@@ -905,6 +958,8 @@ func releaseBazelCommandOptions(env map[string]string) []string {
 	return []string{
 		"--disk_cache=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-disk"),
 		"--repository_cache=" + filepath.Join(env["XDG_CACHE_HOME"], "bazel-repo"),
+		// The release bundle lives under the workspace; Bazel rejects repo contents caches there.
+		"--repo_contents_cache=",
 	}
 }
 
