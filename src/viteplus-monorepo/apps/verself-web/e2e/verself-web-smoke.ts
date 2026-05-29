@@ -249,15 +249,15 @@ async function givenTheVisitorCanOpenTheAuthShell(page: Page): Promise<void> {
 
 async function whenTheVisitorPivotsToLoginViaLandingSheet(page: Page): Promise<void> {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Sign in / Sign Up" }).waitFor();
-  await page.getByRole("button", { name: "Sign in / Sign Up" }).click();
-  await page.waitForURL("**/login", {
+  await page.getByRole("button", { name: "Sign in with GitHub", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Sign in with email", exact: true }).click();
+  await page.waitForURL("**/login/email", {
     timeout: routeNavigationTimeoutMs,
     waitUntil: "domcontentloaded",
   });
   await page.getByRole("dialog", { name: "Sign in options" }).waitFor();
   await page.getByRole("heading", { name: "Sign in", exact: true }).waitFor();
-  await page.waitForURL("**/login", { waitUntil: "domcontentloaded" });
+  await page.waitForURL("**/login/email", { waitUntil: "domcontentloaded" });
 }
 
 async function whenTheVisitorClosesLoginSheet(page: Page): Promise<void> {
@@ -280,7 +280,7 @@ async function whenTheVisitorClosesLoginSheet(page: Page): Promise<void> {
 
 async function whenTheVisitorRefreshesTheLoginSheet(page: Page): Promise<void> {
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForURL("**/login", { waitUntil: "domcontentloaded" });
+  await page.waitForURL("**/login/email", { waitUntil: "domcontentloaded" });
   const sheet = page.getByRole("dialog", { name: "Sign in options" });
   await sheet.waitFor();
   await page.goBack();
@@ -627,7 +627,8 @@ async function runBrowserSmoke(options: Options): Promise<Record<string, string 
 
     await page.goto("/", { waitUntil: "load" });
     await page.getByRole("heading", { name: "Verself" }).waitFor();
-    await page.getByRole("button", { name: "Sign in / Sign Up" }).waitFor();
+    await page.getByRole("button", { name: "Sign in with GitHub", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Sign in with email", exact: true }).waitFor();
 
     const authPages = await runAuthProductScenario(page);
     await assertNoPageErrors(pageErrors);
