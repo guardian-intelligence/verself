@@ -37,7 +37,8 @@ function searchString(value: unknown): string | undefined {
 // ready=1 (a non-sensitive marker that a reset cookie was set); a bare visit has
 // no active reset, and a failure carries error.
 function resetPasswordSearch(search: Record<string, unknown>): ResetPasswordSearch {
-  const ready = searchString(search.ready);
+  // The router coerces ?ready=1 to the number 1, so normalize both forms.
+  const ready = search.ready === 1 || search.ready === "1" ? "1" : undefined;
   const error = searchString(search.error);
   return {
     ...(ready ? { ready } : {}),
