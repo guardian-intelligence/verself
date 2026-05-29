@@ -1,8 +1,8 @@
 """aspect tidy — format authored sources into the repo's canonical shape.
 
 This is the one-stop local formatting command. It runs ecosystem-native
-formatters in a fixed order, then fails if tracked sources still differ from
-the index. Bazel metadata updates live under `aspect bazel *`; semantic
+formatters in a fixed order, then reports when tracked sources differ from the
+index. Bazel metadata updates live under `aspect bazel *`; semantic
 verification gates live under `aspect check`.
 """
 
@@ -51,20 +51,59 @@ def _buildifier(ctx):
         label = "buildifier -mode=fix",
     )
 
-def _tracked_diff(ctx):
-    rc = checked_spawn(
-        ctx,
-        "git",
-        ["diff", "--exit-code"],
-        cwd = ws_path(ctx),
-        label = "git diff --exit-code",
-    )
-    if rc != 0:
-        ctx.std.io.stderr.write("ERROR: aspect tidy left tracked source changes; review and stage the diff, then rerun.\n")
-    return rc
+def _git_capture(ctx, args, label):
+    r = (ctx.std.process.command("git")
+        .args(args)
+        .current_dir(ws_path(ctx))
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: " + label + " failed\n")
+        if r.stderr != "":
+            ctx.std.io.stderr.write(r.stderr)
+        return None
+    return r.stdout.strip()
+
+def _has_tracked_diff(ctx):
+    r = (ctx.std.process.command("git")
+        .args(["diff", "--quiet", "--exit-code"])
+        .current_dir(ws_path(ctx))
+        .stderr("piped")
+        .spawn().wait_with_output())
+    if r.status.code == 0:
+        return False
+    if r.status.code == 1:
+        return True
+    ctx.std.io.stderr.write("ERROR: git diff --quiet --exit-code failed\n")
+    if r.stderr != "":
+        ctx.std.io.stderr.write(r.stderr)
+    return None
+
+def _tracked_diff_report(ctx):
+    changed = _has_tracked_diff(ctx)
+    if changed == None:
+        return 1
+    if not changed:
+        return 0
+
+    shortstat = _git_capture(ctx, ["diff", "--shortstat"], "git diff --shortstat")
+    numstat = _git_capture(ctx, ["diff", "--numstat"], "git diff --numstat")
+    status = _git_capture(ctx, ["status", "--short"], "git status --short")
+    if shortstat == None or numstat == None or status == None:
+        return 1
+
+    ctx.std.io.stdout.write("\nINFO: aspect tidy completed with tracked source changes present.\n")
+    if shortstat != "":
+        ctx.std.io.stdout.write(shortstat + "\n")
+    if numstat != "":
+        ctx.std.io.stdout.write("\nAdded\tDeleted\tPath\n" + numstat + "\n")
+    if status != "":
+        ctx.std.io.stdout.write("\nGit status:\n" + status + "\n")
+    ctx.std.io.stdout.write("\nReview the diff before committing.\n")
+    return 0
 
 def _impl(ctx):
-    for step in [_viteplus, _go, _java, _buildifier, _tracked_diff]:
+    for step in [_viteplus, _go, _java, _buildifier, _tracked_diff_report]:
         rc = step(ctx)
         if rc != 0:
             return rc
@@ -73,5 +112,5 @@ def _impl(ctx):
 tidy = task(
     implementation = _impl,
     name = "tidy",
-    summary = "Run repo-wide source formatters, then assert a clean tracked diff.",
+    summary = "Run repo-wide source formatters, then report tracked diff stats.",
 )
