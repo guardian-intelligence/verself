@@ -40,7 +40,7 @@ I sat with her and watched her sew and get so focused neither of us said a word 
 
 She said “You didn’t pick me up once this whole summer". She paused. “Did I grow up too much?” and she jumped into my arms and hugged me tight because she knew I was about to cry. “I wish I could be a baby again,” she said, holding back her own tears. I told her that no matter how much she grows up she’ll always be my little baby, and she liked that better and fell asleep on my lap and we stayed like that for I don’t know how long.
 
-No one told me having kids would feel like having a compass in my heart that always points home. That no matter how much we fight and yell and say things we don't mean, that no matter how much our family breaks, our hearts find a way back to each other and we become strong in the broken places.
+No one told me having kids would feel like having a compass in my heart that always points home. That no matter how much we fight and yell and say things we don't mean, that no matter how much our family breaks, we'll find a way back to each other and become strong in the broken places.
 
 No one told me any of this, but it's better, I think, because I got to learn it from them.
 
