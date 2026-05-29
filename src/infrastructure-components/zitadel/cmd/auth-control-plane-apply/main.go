@@ -289,6 +289,11 @@ func apply(ctx context.Context, cfg config) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
+	if err := ensureLoginClientRole(ctx, client); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	project, err := client.EnsureProject(ctx, cfg.projectName)
 	if err != nil {
 		span.RecordError(err)
@@ -998,6 +1003,73 @@ func (c zitadelClient) AddIDPToLoginPolicy(ctx context.Context, idpID string) er
 		return fmt.Errorf("link Zitadel IdP %s to login policy: %w", idpID, err)
 	}
 	return nil
+}
+
+// ensureLoginClientRole grants the iam-service machine user (the admin token's
+// own user) the instance IAM_LOGIN_CLIENT role. The headless login finalizes OIDC
+// auth requests with a session via OIDCService.CreateCallback; that operation's
+// permission check (checkUserPermissions) requires the login-client role, which
+// IAM_OWNER does not include. Without it, finalizing a session for a user in any
+// org fails with "No matching permissions found (AUTH-AWfge)" and login 503s.
+// Idempotent and reconciled every deploy, so it also self-heals fresh instances.
+func ensureLoginClientRole(ctx context.Context, client zitadelClient) error {
+	userID, err := client.MyUserID(ctx)
+	if err != nil {
+		return err
+	}
+	roles, err := client.InstanceMemberRoles(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, r := range roles {
+		if r == "IAM_LOGIN_CLIENT" {
+			return nil
+		}
+	}
+	if err := client.SetInstanceMemberRoles(ctx, userID, append(roles, "IAM_LOGIN_CLIENT")); err != nil {
+		return fmt.Errorf("grant IAM_LOGIN_CLIENT to %s: %w", userID, err)
+	}
+	fmt.Printf("auth-control-plane-apply: granted IAM_LOGIN_CLIENT to login machine user %s\n", userID)
+	return nil
+}
+
+func (c zitadelClient) MyUserID(ctx context.Context) (string, error) {
+	var out struct {
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/auth/v1/users/me", nil, &out); err != nil {
+		return "", fmt.Errorf("resolve own user id: %w", err)
+	}
+	if strings.TrimSpace(out.User.ID) == "" {
+		return "", fmt.Errorf("resolve own user id returned empty")
+	}
+	return strings.TrimSpace(out.User.ID), nil
+}
+
+func (c zitadelClient) InstanceMemberRoles(ctx context.Context, userID string) ([]string, error) {
+	var out struct {
+		Result []struct {
+			UserID string   `json:"userId"`
+			Roles  []string `json:"roles"`
+		} `json:"result"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/admin/v1/members/_search", map[string]any{}, &out); err != nil {
+		return nil, fmt.Errorf("list instance members: %w", err)
+	}
+	for _, m := range out.Result {
+		if strings.TrimSpace(m.UserID) == strings.TrimSpace(userID) {
+			return m.Roles, nil
+		}
+	}
+	return nil, nil
+}
+
+func (c zitadelClient) SetInstanceMemberRoles(ctx context.Context, userID string, roles []string) error {
+	body := map[string]any{"roles": roles}
+	path := "/admin/v1/members/" + url.PathEscape(strings.TrimSpace(userID))
+	return c.doJSON(ctx, http.MethodPut, path, body, nil)
 }
 
 // crossOrgProjectRoleKey is the role attached to each tenant-org project grant.
