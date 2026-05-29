@@ -1,7 +1,9 @@
 import { createFileRoute, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
+import { isIamError } from "@verself/sdk/iam-errors";
 import {
   AnchoredSheet,
   AnchoredSheetPrimaryActionButton,
@@ -9,8 +11,10 @@ import {
   type AnchoredSheetRef,
 } from "@verself/ui/components/ui/anchored-sheet";
 import { Button } from "@verself/ui/components/ui/button";
+import { iamErrorMessage } from "~/features/auth/iam-error-copy";
 import { GitHubIcon } from "~/features/landing/github-icon";
 import { MarketingLandingPage } from "~/features/landing/marketing-page";
+import { startGithubLogin } from "~/server-fns/auth";
 
 const loginRoutePathname = "/login";
 const loginEmailRoutePathname = "/login/email";
@@ -34,7 +38,27 @@ function MarketingLandingLayout() {
   const { pathname } = location;
   const shouldPresentSheet = isLoginRoute(pathname);
   const isEmailLogin = isEmailLoginRoute(pathname);
-  const isGithubLogin = pathname === loginRoutePathname;
+  const isGithubRoute = pathname === loginRoutePathname;
+
+  // The dial actually leaves the SPA: the server fn sets same-origin login
+  // cookies, then we hand the browser to GitHub. isPending stays true through
+  // the redirect, so the spinner persists until navigation unloads the page.
+  const githubLogin = useMutation({
+    mutationFn: async () => {
+      const outcome = await startGithubLogin({ data: {} });
+      if (isIamError(outcome)) {
+        throw outcome;
+      }
+      return outcome;
+    },
+    onSuccess: (result) => {
+      window.location.assign(result.redirectURL);
+    },
+  });
+  const githubError =
+    githubLogin.error && isIamError(githubLogin.error)
+      ? iamErrorMessage(githubLogin.error)
+      : undefined;
 
   const openLoginRoute = React.useCallback(() => {
     void navigate({ to: loginRoutePathname });
@@ -44,9 +68,13 @@ function MarketingLandingLayout() {
     void navigate({ to: loginEmailRoutePathname });
   }, [navigate]);
 
+  const dialGithub = githubLogin.mutate;
   const openGitHubSignIn = React.useCallback(() => {
     openLoginRoute();
-  }, [openLoginRoute]);
+    dialGithub();
+  }, [openLoginRoute, dialGithub]);
+
+  const isGithubLogin = isGithubRoute && githubLogin.isPending;
 
   const closeLoginRoute = React.useCallback(() => {
     if (location.pathname !== "/") {
@@ -84,7 +112,7 @@ function MarketingLandingLayout() {
         <AnchoredSheetPrimaryActionSection>
           {isEmailLogin ? (
             <Button
-              onClick={openLoginRoute}
+              onClick={openGitHubSignIn}
               size="default"
               variant="link"
               className="mb-3 block w-full self-center text-sm font-medium text-foreground/60 hover:text-foreground/80"
@@ -98,21 +126,27 @@ function MarketingLandingLayout() {
               variant="link"
               className="mb-3 block w-full self-center text-sm font-medium text-foreground/60 hover:text-foreground/80"
             >
-              {isGithubLogin ? "Sign in with email instead" : "Sign in with email"}
+              Sign in with email instead
             </Button>
           )}
+          {githubError ? (
+            <p role="alert" className="mb-3 text-center text-sm text-destructive">
+              {githubError}
+            </p>
+          ) : null}
           <AnchoredSheetPrimaryActionButton
-            onClick={isEmailLogin ? openGitHubSignIn : openLoginRoute}
+            onClick={isEmailLogin ? openLoginWithEmailRoute : openGitHubSignIn}
+            disabled={githubLogin.isPending}
           >
             <span className="flex w-full items-center justify-center gap-2">
-              {isGithubLogin ? (
+              {isEmailLogin ? (
+                "Sign In"
+              ) : githubLogin.isPending ? (
                 <>
                   <GitHubIcon className="size-4" />
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                   <span>Dialing GitHub...</span>
                 </>
-              ) : isEmailLogin ? (
-                "Sign In"
               ) : (
                 <>
                   <GitHubIcon className="size-4" />

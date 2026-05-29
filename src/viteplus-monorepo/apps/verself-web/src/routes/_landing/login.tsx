@@ -96,9 +96,9 @@ function LoginSheetStateRoute() {
 function LoginLandingContent() {
   return (
     <section className="pb-2">
-      <p className="text-sm text-muted-foreground">
-        GitHub should be open in another tab or window. Finish sign in there and this page will
-        update as soon as you&apos;re done.
+      <h2 className="text-lg font-semibold tracking-tight">Continue with GitHub</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        We&apos;ll hand you to GitHub to authorize, then bring you back signed in.
       </p>
     </section>
   );
