@@ -44,29 +44,33 @@ const sheetStateArb: fc.Arbitrary<SheetState> = fc.record({
 describe("anchored-sheet reducer", () => {
   it("always transitions hidden + PRESENT to measuring", () => {
     fc.assert(
-      fc.property(sheetStateArb, fc.array(sheetEventArb, { minLength: 1, maxLength: 12 }), (seed, events) => {
-        let state: SheetState = seed.phase === "hidden" ? { ...seed, dragY: seed.dragY } : seed;
+      fc.property(
+        sheetStateArb,
+        fc.array(sheetEventArb, { minLength: 1, maxLength: 12 }),
+        (seed, events) => {
+          let state: SheetState = seed.phase === "hidden" ? { ...seed, dragY: seed.dragY } : seed;
 
-        for (const event of events) {
-          const previous = state;
-          const next = anchoredSheetReducer(previous, event);
+          for (const event of events) {
+            const previous = state;
+            const next = anchoredSheetReducer(previous, event);
 
-          if (previous.phase === "hidden" && event.type === "PRESENT") {
-            expect(next).toEqual({ dragY: 0, phase: "measuring" });
+            if (previous.phase === "hidden" && event.type === "PRESENT") {
+              expect(next).toEqual({ dragY: 0, phase: "measuring" });
+            }
+            if (previous.phase === "measuring" && event.type === "MEASURED") {
+              expect(next).toEqual({ dragY: 0, phase: "presenting" });
+            }
+
+            if (previous.phase === "dragging" && event.type === "DRAG_MOVE") {
+              expect(next.dragY).toBe(event.dragY);
+            } else if (event.type === "DRAG_MOVE") {
+              expect(next.dragY).toBe(previous.dragY);
+            }
+
+            state = next;
           }
-          if (previous.phase === "measuring" && event.type === "MEASURED") {
-            expect(next).toEqual({ dragY: 0, phase: "presenting" });
-          }
-
-          if (previous.phase === "dragging" && event.type === "DRAG_MOVE") {
-            expect(next.dragY).toBe(event.dragY);
-          } else if (event.type === "DRAG_MOVE") {
-            expect(next.dragY).toBe(previous.dragY);
-          }
-
-          state = next;
-        }
-      }),
+        },
+      ),
       { numRuns: 128 },
     );
   });
@@ -76,7 +80,14 @@ describe("anchored-sheet reducer", () => {
       fc.property(
         fc.array(
           fc.record({
-            phase: fc.constantFrom("presenting", "restoring", "dismissing", "presented", "dragging", "hidden"),
+            phase: fc.constantFrom(
+              "presenting",
+              "restoring",
+              "dismissing",
+              "presented",
+              "dragging",
+              "hidden",
+            ),
             dragY: fc.integer({ min: 0, max: 1200 }),
           }) as fc.Arbitrary<SheetState>,
           { minLength: 1, maxLength: 20 },
@@ -114,7 +125,11 @@ describe("anchored-sheet reducer", () => {
             expect(next).toEqual({ dragY: 0, phase: "measuring" });
           }
 
-          if (state.phase === "dismissing" && event.type === "SPRING_SETTLED" && next.phase === "hidden") {
+          if (
+            state.phase === "dismissing" &&
+            event.type === "SPRING_SETTLED" &&
+            next.phase === "hidden"
+          ) {
             activeVisibleIntent = false;
           }
 

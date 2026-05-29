@@ -36,14 +36,12 @@ const DISMISS_SPRING = {
   stiffness: 360,
 };
 
-export const ANCHORED_SHEET_PRIMARY_ACTION_BUTTON_CLASS =
-  "h-[47px] min-h-[47px] w-full px-5";
+export const ANCHORED_SHEET_PRIMARY_ACTION_BUTTON_CLASS = "h-[47px] min-h-[47px] w-full px-5";
 const ANCHORED_SHEET_PRIMARY_ACTION_SECTION = Symbol.for(
   "verself.ui.AnchoredSheetPrimaryActionSection",
 );
 
-const useIsomorphicLayoutEffect =
-  typeof window === "undefined" ? () => {} : React.useLayoutEffect;
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? () => {} : React.useLayoutEffect;
 
 export type SheetPhase =
   | "hidden"
@@ -118,6 +116,11 @@ export type AnchoredSheetProps = Omit<React.ComponentPropsWithoutRef<"section">,
 export type AnchoredSheetPrimaryActionSectionProps = React.ComponentPropsWithoutRef<"div">;
 
 export type AnchoredSheetPrimaryActionButtonProps = React.ComponentProps<typeof Button>;
+type AnchoredSheetButtonStyleFunction = Exclude<
+  NonNullable<AnchoredSheetPrimaryActionButtonProps["style"]>,
+  React.CSSProperties
+>;
+type AnchoredSheetButtonStyleState = Parameters<AnchoredSheetButtonStyleFunction>[0];
 
 const AnchoredSheetContext = React.createContext<AnchoredSheetContextValue | null>(null);
 
@@ -224,8 +227,7 @@ function sheetCornerRadii(height: number): SheetCorner {
 
 function prefersReducedMotion() {
   return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
   );
 }
 
@@ -329,14 +331,13 @@ function useSpringScalar({
       };
     }
 
-      if (isNewMotion && typeof initialValue === "number") {
-        const startVelocity =
-          (target - initialValue) * (config.startVelocityRatio ?? 0);
-        velocityRef.current = 0;
-        lastTimeRef.current = null;
-        valueRef.current = initialValue;
-        setValue(initialValue);
-        velocityRef.current = startVelocity;
+    if (isNewMotion && typeof initialValue === "number") {
+      const startVelocity = (target - initialValue) * (config.startVelocityRatio ?? 0);
+      velocityRef.current = 0;
+      lastTimeRef.current = null;
+      valueRef.current = initialValue;
+      setValue(initialValue);
+      velocityRef.current = startVelocity;
     } else if (isNewMotion && config.startVelocityRatio !== undefined) {
       velocityRef.current = (target - valueRef.current) * config.startVelocityRatio;
     }
@@ -429,25 +430,27 @@ const AnchoredSheetPrimaryActionSection = React.forwardRef<
         "[&_[data-slot=button]]:rounded-[var(--anchored-sheet-primary-action-radius)]",
         className,
       )}
-      style={{
-        ...style,
-        "--anchored-sheet-primary-action-radius": `${context.sheetCorner.bottom}px`,
-        // Keep the action area static relative to the sheet body.
-        transform: style?.transform,
-      } as React.CSSProperties}
+      style={
+        {
+          ...style,
+          "--anchored-sheet-primary-action-radius": `${context.sheetCorner.bottom}px`,
+          // Keep the action area static relative to the sheet body.
+          transform: style?.transform,
+        } as React.CSSProperties
+      }
       {...props}
     >
-        <div className="relative">
-          <div data-slot="anchored-sheet-primary-action-hitbox" className="w-full opacity-0">
-            {children}
-          </div>
-          <div
-            data-slot="anchored-sheet-primary-action-visual"
-            className="pointer-events-none absolute inset-x-0 top-0 z-20 w-full"
-            aria-hidden="true"
-          >
-            {children}
-          </div>
+      <div className="relative">
+        <div data-slot="anchored-sheet-primary-action-hitbox" className="w-full opacity-0">
+          {children}
+        </div>
+        <div
+          data-slot="anchored-sheet-primary-action-visual"
+          className="pointer-events-none absolute inset-x-0 top-0 z-20 w-full"
+          aria-hidden="true"
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -463,13 +466,23 @@ function AnchoredSheetPrimaryActionButton({
 }: AnchoredSheetPrimaryActionButtonProps) {
   const context = useAnchoredSheetContext("AnchoredSheetPrimaryActionButton");
 
+  const mergedStyle =
+    typeof style === "function"
+      ? (state: AnchoredSheetButtonStyleState) => {
+          const resolved = (style as AnchoredSheetButtonStyleFunction)(state);
+          return resolved
+            ? { ...resolved, borderRadius: `${context.sheetCorner.bottom}px` }
+            : { borderRadius: `${context.sheetCorner.bottom}px` };
+        }
+      : {
+          ...style,
+          borderRadius: `${context.sheetCorner.bottom}px`,
+        };
+
   return (
     <Button
       className={cn(ANCHORED_SHEET_PRIMARY_ACTION_BUTTON_CLASS, className)}
-      style={{
-        ...style,
-        borderRadius: `${context.sheetCorner.bottom}px`,
-      }}
+      style={mergedStyle}
       {...props}
     />
   );
@@ -501,13 +514,15 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
     const childArray = React.Children.toArray(children);
     const actionSections = childArray.filter(isPrimaryActionSection);
     if (actionSections.length > 1 && process.env.NODE_ENV !== "production") {
-      console.warn(
+      console.error(
         `AnchoredSheet received ${actionSections.length} primary action sections; using the last one.`,
       );
     }
     if (actionSections.length !== 1) {
       if (actionSections.length === 0) {
-        throw new Error("AnchoredSheet requires at least one AnchoredSheetPrimaryActionSection child.");
+        throw new Error(
+          "AnchoredSheet requires at least one AnchoredSheetPrimaryActionSection child.",
+        );
       }
       if (actionSections.length > 1) {
         // Pick the deepest section when nested routes accidentally re-render duplicates.
@@ -567,7 +582,9 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
       [measureLayout],
     );
 
-    const dismissThreshold = getDismissThreshold(Math.max(sheetTargetHeight - primaryActionHeight, 0));
+    const dismissThreshold = getDismissThreshold(
+      Math.max(sheetTargetHeight - primaryActionHeight, 0),
+    );
     const dismissOffsetY = React.useMemo(
       () => sheetTargetHeight + SHEET_DISMISS_OFFSET_PX,
       [sheetTargetHeight],
@@ -627,11 +644,7 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
         phase: state.phase,
         sheetCorner,
       }),
-      [
-        setActionSectionNode,
-        sheetCorner,
-        state.phase,
-      ],
+      [setActionSectionNode, sheetCorner, state.phase],
     );
 
     const presentSheet = React.useCallback(() => {
@@ -915,9 +928,7 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
           aria-labelledby={sheetTitleId}
           aria-describedby={sheetDescriptionId}
           aria-label={ariaLabel}
-          aria-modal={
-            state.phase === "measuring" || state.phase === "hidden" ? "false" : "true"
-          }
+          aria-modal={state.phase === "measuring" || state.phase === "hidden" ? "false" : "true"}
           data-slot="anchored-sheet"
           data-state={state.phase}
           ref={panelRef}
@@ -937,7 +948,9 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
             height: `${panelHeight}px`,
             transform: `translate3d(0, ${sheetTranslateY}px, 0)`,
             visibility:
-              state.phase === "measuring" || state.phase === "hidden" ? "hidden" : style?.visibility,
+              state.phase === "measuring" || state.phase === "hidden"
+                ? "hidden"
+                : style?.visibility,
             pointerEvents: state.phase === "hidden" ? "none" : style?.pointerEvents,
           }}
           onPointerCancel={(event) => {
@@ -960,9 +973,7 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
           <p id={sheetDescriptionId} className="sr-only">
             Sheet content with sign-in options and a close action.
           </p>
-          <div
-            className="relative min-h-0 overflow-hidden"
-          >
+          <div className="relative min-h-0 overflow-hidden">
             <div
               className="absolute inset-x-0 top-0 z-10 flex h-12 cursor-grab touch-none items-start justify-center pt-3.5"
               onPointerDown={beginDrag}
@@ -971,7 +982,10 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
               onPointerMove={updateDrag}
               onPointerUp={finishDrag}
             >
-              <span aria-hidden="true" className="pointer-events-none h-1 w-9 rounded-full bg-foreground/12" />
+              <span
+                aria-hidden="true"
+                className="pointer-events-none h-1 w-9 rounded-full bg-foreground/12"
+              />
               <a
                 href="/"
                 aria-controls={sheetElementId}
@@ -1000,21 +1014,20 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
             <div
               data-slot="anchored-sheet-content"
               ref={sheetTopSectionRef}
-              className={cn("relative flex min-h-0 flex-col overflow-y-auto px-5 pb-4 pt-12", contentClassName)}
+              className={cn(
+                "relative flex min-h-0 flex-col overflow-y-auto px-5 pb-4 pt-12",
+                contentClassName,
+              )}
             >
               {contentChildren}
             </div>
           </div>
           {actionSection}
-          </section>
+        </section>
       </AnchoredSheetContext.Provider>
     );
   },
 );
 AnchoredSheet.displayName = "AnchoredSheet";
 
-export {
-  AnchoredSheet,
-  AnchoredSheetPrimaryActionButton,
-  AnchoredSheetPrimaryActionSection,
-};
+export { AnchoredSheet, AnchoredSheetPrimaryActionButton, AnchoredSheetPrimaryActionSection };

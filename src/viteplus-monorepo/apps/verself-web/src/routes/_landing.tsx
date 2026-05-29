@@ -45,7 +45,7 @@ function MarketingLandingLayout() {
   }, [navigate]);
 
   const openGitHubSignIn = React.useCallback(() => {
-    void openLoginRoute();
+    openLoginRoute();
   }, [openLoginRoute]);
 
   const closeLoginRoute = React.useCallback(() => {

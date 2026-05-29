@@ -307,7 +307,12 @@ async function whenTheVisitorRefreshesTheLoginSheet(page: Page): Promise<void> {
       break;
     }
 
-    if (state === "measuring" || state === "presenting" || state === "presented" || state === "restoring") {
+    if (
+      state === "measuring" ||
+      state === "presenting" ||
+      state === "presented" ||
+      state === "restoring"
+    ) {
       throw new Error(`sign-in sheet remained in unexpected state while leaving route: ${state}`);
     }
 
@@ -363,9 +368,9 @@ async function thenIncorrectEmailOrPasswordDisplaysAToast(page: Page): Promise<v
   const toast = page
     .locator("[data-sonner-toast]")
     .filter({ hasText: incorrectCredentialsMessageText });
-  const passwordError = page
-    .locator("#password-error")
-    .filter({ hasText: new RegExp(`${incorrectCredentialsMessageText}|${localOriginMessageText}`) });
+  const passwordError = page.locator("#password-error").filter({
+    hasText: new RegExp(`${incorrectCredentialsMessageText}|${localOriginMessageText}`),
+  });
   const started = performance.now();
   while (true) {
     if (
@@ -593,24 +598,24 @@ async function runBrowserSmoke(options: Options): Promise<Record<string, string 
     const pageErrors = watchPageErrors(page);
     page.on("console", (message) => {
       if (message.type() === "error") {
-        console.log(`[e2e console] ${message.type()}: ${message.text()}`);
+        console.error(`[e2e console] ${message.type()}: ${message.text()}`);
       }
     });
     page.on("request", (request) => {
       if (request.url().startsWith(options.baseUrl)) {
-        console.log(`[e2e] request ${request.method()} ${request.url()}`);
+        console.error(`[e2e] request ${request.method()} ${request.url()}`);
       }
     });
     page.on("response", (response) => {
       if (response.url().startsWith(options.baseUrl)) {
-        console.log(
+        console.error(
           `[e2e] response ${response.status()} ${response.request().method()} ${response.url()}`,
         );
       }
     });
     page.on("requestfailed", (request) => {
       if (request.url().startsWith(options.baseUrl)) {
-        console.log(`[e2e] request failed ${request.url()} ${request.failure()?.errorText}`);
+        console.error(`[e2e] request failed ${request.url()} ${request.failure()?.errorText}`);
       }
     });
 
