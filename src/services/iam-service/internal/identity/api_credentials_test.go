@@ -190,6 +190,10 @@ func (d *apiCredentialTestDirectory) CreateOrganization(context.Context, Directo
 	return DirectoryCreateOrganizationResult{OrganizationID: "43"}, nil
 }
 
+func (d *apiCredentialTestDirectory) CreateHumanWithIDPLink(context.Context, DirectoryCreateHumanWithIDPLinkRequest) (DirectoryCreateSignupUserResult, error) {
+	return DirectoryCreateSignupUserResult{}, errors.New("unexpected CreateHumanWithIDPLink")
+}
+
 func (d *apiCredentialTestDirectory) ListMembers(context.Context, string) ([]Member, error) {
 	return nil, nil
 }

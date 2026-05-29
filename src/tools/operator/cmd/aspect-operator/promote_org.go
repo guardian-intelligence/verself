@@ -69,7 +69,7 @@ func cmdPromoteOrg(args []string) error {
 	if _, ok := promoteOrgTrustTiers[opts.tier]; !ok {
 		return fmt.Errorf("promote-org: --tier must be one of new|established|enterprise|platform, got %q", opts.tier)
 	}
-	return runOperatorRuntime("operator.promote_org", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("operator.promote_org", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		return promoteOrg(rt, opts)
 	})
 }

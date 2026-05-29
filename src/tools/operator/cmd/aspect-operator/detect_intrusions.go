@@ -34,7 +34,7 @@ func cmdDetectIntrusions(args []string) error {
 	default:
 		return fmt.Errorf("detect-intrusions: --format must be table, json, csv, or tsv")
 	}
-	return runOperatorRuntime("detect_intrusions", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, chClient *opch.Client) error {
+	return runOperatorRuntime("detect_intrusions", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, chClient *opch.Client) error {
 		table, err := chClient.QueryTableParams(rt.Ctx, detectIntrusionsSQL(), map[string]string{
 			"hours": strconv.FormatUint(uint64(opts.hours), 10),
 		})

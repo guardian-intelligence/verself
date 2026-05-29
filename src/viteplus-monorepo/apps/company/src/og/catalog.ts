@@ -105,7 +105,7 @@ export function ogSpecFor(slug: string): OGSpec | undefined {
     return {
       treatment: "letters",
       slug,
-      title: formatLetterSalutation(letter.title),
+      title: formatLetterSalutation(letter),
       flare: letter.flare,
       kicker: formatLetterDate(letter.publishedAt),
       bodyExcerpt: excerptOf(letter.bodyHtml),

@@ -59,6 +59,36 @@ func (q *Queries) DeleteBrowserClient(ctx context.Context, arg DeleteBrowserClie
 	return err
 }
 
+const deleteBrowserIDPLinkChallenge = `-- name: DeleteBrowserIDPLinkChallenge :one
+DELETE FROM iam_browser_idp_link_challenges
+WHERE challenge_hash = $1
+  AND expires_at > now()
+RETURNING challenge_hash, client_hash, zitadel_user_id, idp_id, external_user_id, external_user_name, email, redirect_to, purpose, expires_at, created_at
+`
+
+type DeleteBrowserIDPLinkChallengeParams struct {
+	ChallengeHash string
+}
+
+func (q *Queries) DeleteBrowserIDPLinkChallenge(ctx context.Context, arg DeleteBrowserIDPLinkChallengeParams) (IamBrowserIdpLinkChallenge, error) {
+	row := q.db.QueryRow(ctx, deleteBrowserIDPLinkChallenge, arg.ChallengeHash)
+	var i IamBrowserIdpLinkChallenge
+	err := row.Scan(
+		&i.ChallengeHash,
+		&i.ClientHash,
+		&i.ZitadelUserID,
+		&i.IdpID,
+		&i.ExternalUserID,
+		&i.ExternalUserName,
+		&i.Email,
+		&i.RedirectTo,
+		&i.Purpose,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteBrowserIDPLoginIntent = `-- name: DeleteBrowserIDPLoginIntent :one
 DELETE FROM iam_browser_idp_login_intents
 WHERE state_hash = $1
@@ -145,6 +175,16 @@ type DeleteBrowserResourceTokensParams struct {
 
 func (q *Queries) DeleteBrowserResourceTokens(ctx context.Context, arg DeleteBrowserResourceTokensParams) error {
 	_, err := q.db.Exec(ctx, deleteBrowserResourceTokens, arg.AccountHandle)
+	return err
+}
+
+const deleteExpiredBrowserIDPLinkChallenges = `-- name: DeleteExpiredBrowserIDPLinkChallenges :exec
+DELETE FROM iam_browser_idp_link_challenges
+WHERE expires_at <= now()
+`
+
+func (q *Queries) DeleteExpiredBrowserIDPLinkChallenges(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredBrowserIDPLinkChallenges)
 	return err
 }
 
@@ -688,6 +728,61 @@ func (q *Queries) InsertBrowserAccountObservation(ctx context.Context, arg Inser
 		arg.GeoCountryCode,
 		arg.GeoRegion,
 		arg.GeoCity,
+	)
+	return err
+}
+
+const insertBrowserIDPLinkChallenge = `-- name: InsertBrowserIDPLinkChallenge :exec
+INSERT INTO iam_browser_idp_link_challenges (
+  challenge_hash,
+  client_hash,
+  zitadel_user_id,
+  idp_id,
+  external_user_id,
+  external_user_name,
+  email,
+  redirect_to,
+  purpose,
+  expires_at
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6,
+  $7,
+  $8,
+  $9,
+  $10
+)
+`
+
+type InsertBrowserIDPLinkChallengeParams struct {
+	ChallengeHash    string
+	ClientHash       string
+	ZitadelUserID    string
+	IdpID            string
+	ExternalUserID   string
+	ExternalUserName string
+	Email            string
+	RedirectTo       string
+	Purpose          string
+	ExpiresAt        pgtype.Timestamptz
+}
+
+func (q *Queries) InsertBrowserIDPLinkChallenge(ctx context.Context, arg InsertBrowserIDPLinkChallengeParams) error {
+	_, err := q.db.Exec(ctx, insertBrowserIDPLinkChallenge,
+		arg.ChallengeHash,
+		arg.ClientHash,
+		arg.ZitadelUserID,
+		arg.IdpID,
+		arg.ExternalUserID,
+		arg.ExternalUserName,
+		arg.Email,
+		arg.RedirectTo,
+		arg.Purpose,
+		arg.ExpiresAt,
 	)
 	return err
 }

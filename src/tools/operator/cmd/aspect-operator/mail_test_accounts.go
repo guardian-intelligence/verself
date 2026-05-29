@@ -135,7 +135,7 @@ func cmdMailTestAccountsEnsure(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	return runOperatorRuntime("mail.test_accounts.ensure", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("mail.test_accounts.ensure", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		cfg, err := loadMailConfig(rt.RepoRoot, rt.Site)
 		if err != nil {
 			return err
@@ -162,7 +162,7 @@ func cmdMailTestAccountsList(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	return runOperatorRuntime("mail.test_accounts.list", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("mail.test_accounts.list", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		cfg, err := loadMailConfig(rt.RepoRoot, rt.Site)
 		if err != nil {
 			return err
@@ -203,7 +203,7 @@ func cmdMailTestAccountsDelete(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	return runOperatorRuntime("mail.test_accounts.delete", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("mail.test_accounts.delete", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		ctx, span := rt.Tracer.Start(rt.Ctx, "mail.test_accounts.delete")
 		defer span.End()
 		cfg, err := loadMailConfig(rt.RepoRoot, rt.Site)

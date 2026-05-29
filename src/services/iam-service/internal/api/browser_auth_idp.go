@@ -140,7 +140,54 @@ func (a *BrowserAuth) handleGithubLoginCallback(w http.ResponseWriter, r *http.R
 		a.serverError(w, r, "retrieve github idp intent", err)
 		return
 	}
-	session, err := a.providerLogin.CreateSessionFromIDPIntent(r.Context(), intentID, intentToken, result.UserID, identity.LoginSessionInput{
+	// The headless Session API only authenticates an already-linked external
+	// identity (the IdP-level autoLinking/autoCreation options apply to the hosted
+	// login, not here). Resolve the Zitadel user before minting the session.
+	userID := strings.TrimSpace(result.UserID)
+	if userID == "" {
+		if !result.EmailVerified || strings.TrimSpace(result.Email) == "" {
+			a.clearLoginCookie(w)
+			a.redirectLoginError(w, r, "github_email_unverified")
+			return
+		}
+		existing, found, findErr := a.providerLogin.FindHumanByVerifiedEmail(r.Context(), result.Email)
+		if findErr != nil {
+			a.serverError(w, r, "find human by verified email", findErr)
+			return
+		}
+		if found {
+			// Step-up: the email match only selects the candidate account; the link
+			// is authorized by proving control of it. Capture the external identity
+			// and redirect to a password proof instead of linking here.
+			a.beginIDPLinkStepUp(w, r, pending, result, existing, clientSecret)
+			return
+		}
+		// Brand-new user: just-in-time provision a Zitadel org, an IdP-linked human
+		// (the credential), and a starter Verself org, then mint the session for the
+		// new user. The account graph is materialized by the OIDC RP callback.
+		if a.accountProvisioner == nil {
+			a.clearLoginCookie(w)
+			a.redirectLoginError(w, r, "github_signup_unavailable")
+			return
+		}
+		provisioned, provErr := a.accountProvisioner.ProvisionGithubSignup(r.Context(), identity.GithubSignupRequest{
+			Email:            result.Email,
+			DisplayName:      result.Username,
+			IDPID:            firstNonEmpty(result.IDPID, a.githubLoginIDP()),
+			ExternalUserID:   result.ExternalSubject,
+			ExternalUserName: result.Username,
+		})
+		if provErr != nil {
+			a.serverError(w, r, "provision github account", provErr)
+			return
+		}
+		userID = provisioned.UserID
+		trace.SpanFromContext(r.Context()).AddEvent("iam.browser_idp_login.provisioned", trace.WithAttributes(
+			attribute.String("auth.idp_provider", "github"),
+			attribute.String("auth.org_id", provisioned.OrgID),
+		))
+	}
+	session, err := a.providerLogin.CreateSessionFromIDPIntent(r.Context(), intentID, intentToken, userID, identity.LoginSessionInput{
 		UserAgent: strings.TrimSpace(r.Header.Get("User-Agent")),
 		IP:        requestmetaIP(r.Context()),
 		Lifetime:  browserAuthSessionTTL,
@@ -204,6 +251,92 @@ func (a *BrowserAuth) handleGithubLoginCallback(w http.ResponseWriter, r *http.R
 
 func (a *BrowserAuth) discardProviderSession(ctx context.Context, sessionID string) {
 	_ = a.providerSessions.DeleteSession(context.WithoutCancel(ctx), sessionID)
+}
+
+// beginIDPLinkStepUp captures a completed GitHub identity that matched an
+// existing account by verified email and redirects the browser to a password
+// proof. The external identity is stored single-use, bound to the originating
+// browser client, and carried by the link cookie; the link is performed only
+// after a successful password authentication to the matched account (see
+// handlePasswordLogin). It abandons the idp-intent state because the session
+// will come from the password proof, not the intent.
+func (a *BrowserAuth) beginIDPLinkStepUp(w http.ResponseWriter, r *http.Request, pending identitystore.IamBrowserIdpLoginIntent, result identity.IDPIntentResult, userID, clientSecret string) {
+	challenge, err := randomToken(32)
+	if err != nil {
+		a.serverError(w, r, "generate idp link challenge", err)
+		return
+	}
+	if err := a.q.InsertBrowserIDPLinkChallenge(r.Context(), identitystore.InsertBrowserIDPLinkChallengeParams{
+		ChallengeHash:    hashToken(challenge),
+		ClientHash:       pending.ClientHash,
+		ZitadelUserID:    userID,
+		IdpID:            firstNonEmpty(result.IDPID, a.githubLoginIDP()),
+		ExternalUserID:   result.ExternalSubject,
+		ExternalUserName: firstNonEmpty(result.Username, result.ExternalSubject),
+		Email:            result.Email,
+		RedirectTo:       pending.RedirectTo,
+		Purpose:          pending.Purpose,
+		ExpiresAt:        timestamptz(time.Now().UTC().Add(browserAuthLoginTTL)),
+	}); err != nil {
+		a.serverError(w, r, "persist idp link challenge", err)
+		return
+	}
+	a.clearLoginCookie(w)
+	a.setLinkChallengeCookie(w, challenge)
+	a.setClientCookie(w, clientSecret)
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_idp_link.challenge_issued", trace.WithAttributes(
+		attribute.String("auth.idp_provider", "github"),
+		attribute.String("auth.client_handle", browserClientHandle(pending.ClientHash)),
+		attribute.String("auth.idp_external_subject_hash", hashToken(result.ExternalSubject)),
+	))
+	target := a.publicBaseURL.ResolveReference(&url.URL{
+		Path:     "/login/email",
+		RawQuery: url.Values{"link": {"github"}, "email": {result.Email}}.Encode(),
+	}).String()
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// linkGithubFromChallenge completes a step-up GitHub link during a password
+// login. It is a no-op unless a valid single-use link challenge cookie is present
+// for the same browser client and the proven account matches the challenge email
+// (the GitHub identity must bind only to the account whose verified email
+// selected it). The challenge is consumed regardless of outcome. A failure to
+// link is surfaced loudly by the caller rather than silently dropped, because
+// linking is the explicit purpose of this flow.
+func (a *BrowserAuth) linkGithubFromChallenge(r *http.Request, w http.ResponseWriter, loginEmail string) error {
+	secret, ok := linkChallengeSecretFromRequest(r)
+	if !ok {
+		return nil
+	}
+	a.clearLinkChallengeCookie(w)
+	challenge, err := a.q.DeleteBrowserIDPLinkChallenge(r.Context(), identitystore.DeleteBrowserIDPLinkChallengeParams{ChallengeHash: hashToken(secret)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	clientSecret, ok := browserClientSecretFromRequest(r)
+	if !ok || subtle.ConstantTimeCompare([]byte(hashToken(clientSecret)), []byte(challenge.ClientHash)) != 1 {
+		return nil
+	}
+	if !sameEmailIdentity(challenge.Email, loginEmail) {
+		return nil
+	}
+	if err := a.providerLogin.AddIDPLink(r.Context(), identity.AddIDPLinkInput{
+		UserID:           challenge.ZitadelUserID,
+		IDPID:            challenge.IdpID,
+		ExternalUserID:   challenge.ExternalUserID,
+		ExternalUserName: challenge.ExternalUserName,
+	}); err != nil {
+		return err
+	}
+	trace.SpanFromContext(r.Context()).AddEvent("iam.browser_idp_link.linked", trace.WithAttributes(
+		attribute.String("auth.idp_provider", "github"),
+		attribute.String("auth.client_handle", browserClientHandle(challenge.ClientHash)),
+		attribute.String("auth.idp_external_subject_hash", hashToken(challenge.ExternalUserID)),
+	))
+	return nil
 }
 
 func (a *BrowserAuth) redirectLoginError(w http.ResponseWriter, r *http.Request, code string) {

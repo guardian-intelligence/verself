@@ -56,6 +56,20 @@ type IamBrowserClient struct {
 	UpdatedAt               pgtype.Timestamptz
 }
 
+type IamBrowserIdpLinkChallenge struct {
+	ChallengeHash    string
+	ClientHash       string
+	ZitadelUserID    string
+	IdpID            string
+	ExternalUserID   string
+	ExternalUserName string
+	Email            string
+	RedirectTo       string
+	Purpose          string
+	ExpiresAt        pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+}
+
 type IamBrowserIdpLoginIntent struct {
 	StateHash  string
 	ClientHash string

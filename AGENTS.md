@@ -6,6 +6,9 @@ Console: verself.sh
 Auth portal: verself.sh
 Services: <service>.api.verself.sh
 Company website: guardianintelligence.org
+Letters - Blog posts from the founder: guardianintelligence.org/letters
+Newsroom - Business updates: guardianintelligence.org/newsroom
+
 
 <coding_contract>
 * Always lean on open standards where possible. Avoid re-inventing the wheel.

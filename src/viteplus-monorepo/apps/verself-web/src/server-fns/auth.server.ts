@@ -499,8 +499,6 @@ export async function startIdentityPasswordReset(
 }
 
 export async function completeIdentityPasswordReset(data: {
-  userId: string;
-  verificationCode: string;
   password: string;
 }): Promise<PasswordResetCompleteOperationResult> {
   return identityAuthOutcome(

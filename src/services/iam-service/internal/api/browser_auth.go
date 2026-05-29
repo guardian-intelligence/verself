@@ -37,34 +37,38 @@ import (
 )
 
 const (
-	browserAuthCookieName      = "verself_client"
-	browserAuthLoginCookieName = "verself_login"
-	browserAuthSessionTTL      = 30 * 24 * time.Hour
-	browserAuthLoginTTL        = 5 * time.Minute
-	browserAuthRefreshLeeway   = 60 * time.Second
-	browserAuthClientPrefix    = "bc_"
-	browserAuthAccountPrefix   = "ba_"
-	browserAuthCallbackPath    = "/api/v1/auth/callback"
-	browserAuthDefaultRedirect = "/"
-	browserAuthJSONBodyMax     = 4096
-	zitadelResourceOwnerID     = "urn:zitadel:iam:user:resourceowner:id"
+	browserAuthCookieName        = "verself_client"
+	browserAuthLoginCookieName   = "verself_login"
+	browserAuthLinkCookieName    = "verself_link"
+	browserAuthPwResetCookieName = "verself_pwreset"
+	passwordResetSealContext     = "password-reset"
+	browserAuthSessionTTL        = 30 * 24 * time.Hour
+	browserAuthLoginTTL          = 5 * time.Minute
+	browserAuthRefreshLeeway     = 60 * time.Second
+	browserAuthClientPrefix      = "bc_"
+	browserAuthAccountPrefix     = "ba_"
+	browserAuthCallbackPath      = "/api/v1/auth/callback"
+	browserAuthDefaultRedirect   = "/"
+	browserAuthJSONBodyMax       = 4096
+	zitadelResourceOwnerID       = "urn:zitadel:iam:user:resourceowner:id"
 )
 
 var browserAuthTracer = otel.Tracer("github.com/verself/iam-service/browser-auth")
 
 type BrowserAuthConfig struct {
-	PG              *pgxpool.Pool
-	Logger          *slog.Logger
-	IssuerURL       string
-	ClientID        string
-	ClientSecret    string
-	PublicBaseURL   string
-	ProductAudience string
-	HTTPClient      *http.Client
-	Authz           *authz.Service
-	ProviderSession ProviderSessionRevoker
-	ProviderLogin   ProviderLoginClient
-	PasswordReset   PasswordResetNotifier
+	PG                 *pgxpool.Pool
+	Logger             *slog.Logger
+	IssuerURL          string
+	ClientID           string
+	ClientSecret       string
+	PublicBaseURL      string
+	ProductAudience    string
+	HTTPClient         *http.Client
+	Authz              *authz.Service
+	ProviderSession    ProviderSessionRevoker
+	ProviderLogin      ProviderLoginClient
+	AccountProvisioner GithubAccountProvisioner
+	PasswordReset      PasswordResetNotifier
 	// GithubLoginIDPIDPath is the credstore path holding the Zitadel
 	// identity-provider id for "Sign in with GitHub". The file is written by
 	// auth-control-plane-apply, which may run after this service has started, so
@@ -74,21 +78,22 @@ type BrowserAuthConfig struct {
 }
 
 type BrowserAuth struct {
-	q                *identitystore.Queries
-	store            identity.SQLStore
-	logger           *slog.Logger
-	provider         *oidc.Provider
-	verifier         *oidc.IDTokenVerifier
-	oauth            oauth2.Config
-	httpClient       *http.Client
-	authz            *authz.Service
-	providerSessions ProviderSessionRevoker
-	providerLogin    ProviderLoginClient
-	passwordReset    PasswordResetNotifier
-	productAudience  string
-	publicBaseURL    *url.URL
-	postLogoutURL    string
-	tokenVault       browserTokenVault
+	q                  *identitystore.Queries
+	store              identity.SQLStore
+	logger             *slog.Logger
+	provider           *oidc.Provider
+	verifier           *oidc.IDTokenVerifier
+	oauth              oauth2.Config
+	httpClient         *http.Client
+	authz              *authz.Service
+	providerSessions   ProviderSessionRevoker
+	providerLogin      ProviderLoginClient
+	accountProvisioner GithubAccountProvisioner
+	passwordReset      PasswordResetNotifier
+	productAudience    string
+	publicBaseURL      *url.URL
+	postLogoutURL      string
+	tokenVault         browserTokenVault
 	// githubLoginIDPIDPath is read lazily; githubLoginIDPID caches the resolved
 	// value once present so login does not require a restart after the IdP is
 	// provisioned out of band.
@@ -103,6 +108,8 @@ type ProviderLoginClient interface {
 	CreatePasswordSession(context.Context, identity.LoginSessionInput) (identity.LoginSession, error)
 	StartIDPIntent(context.Context, string, string, string) (identity.IDPIntentStart, error)
 	RetrieveIDPIntent(context.Context, string, string) (identity.IDPIntentResult, error)
+	FindHumanByVerifiedEmail(context.Context, string) (string, bool, error)
+	AddIDPLink(context.Context, identity.AddIDPLinkInput) error
 	CreateSessionFromIDPIntent(context.Context, string, string, string, identity.LoginSessionInput) (identity.LoginSession, error)
 	GetOIDCAuthRequest(context.Context, string) (identity.OIDCAuthRequest, error)
 	FinalizeOIDCAuthRequest(context.Context, string, identity.LoginSession) (string, error)
@@ -113,6 +120,13 @@ type ProviderLoginClient interface {
 	FindPasswordResetUser(context.Context, string) (identity.PasswordResetUser, bool, error)
 	StartPasswordReset(context.Context, string) (string, error)
 	CompletePasswordReset(context.Context, string, string, string) error
+}
+
+// GithubAccountProvisioner provisions a brand-new account (Zitadel org, IdP-linked
+// human, starter Verself org) for a verified GitHub identity with no existing
+// account. Implemented by identity.Service.
+type GithubAccountProvisioner interface {
+	ProvisionGithubSignup(context.Context, identity.GithubSignupRequest) (identity.GithubSignupResult, error)
 }
 
 type browserAuthRequestInfo struct {
@@ -201,6 +215,7 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		authz:                cfg.Authz,
 		providerSessions:     cfg.ProviderSession,
 		providerLogin:        cfg.ProviderLogin,
+		accountProvisioner:   cfg.AccountProvisioner,
 		passwordReset:        cfg.PasswordReset,
 		productAudience:      productAudience,
 		publicBaseURL:        publicBaseURL,
@@ -269,6 +284,8 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.route(w, r, http.MethodPost, "browser-password-reset-start", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetStart)
 	case "/password-reset/complete":
 		a.route(w, r, http.MethodPost, "browser-password-reset-complete", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetComplete)
+	case "/password-reset/consume":
+		a.route(w, r, http.MethodGet, "browser-password-reset-consume", rateLimitSignup, 0, a.handlePasswordResetConsume)
 	case "/idp/github/start":
 		a.route(w, r, http.MethodPost, "browser-idp-github-start", rateLimitSignup, browserAuthJSONBodyMax, a.handleGithubLoginStart)
 	case "/idp/callback":
@@ -498,7 +515,24 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 	))
 	sendBrowserAuthActivity(r.Context(), user, accountHandle, "browserAuth.createAccount", "iam.browser_account.created", "create", "iam.browser_account.create", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
 	a.setClientCookie(w, clientSecret)
-	http.Redirect(w, r, a.absoluteRedirectTarget(pending.RedirectTo), http.StatusSeeOther)
+	target := a.absoluteRedirectTarget(pending.RedirectTo)
+	// The callback is reached two ways: a direct browser navigation (the GitHub
+	// redirect chain), which expects a 303 to the console; and an XHR fetch from
+	// the SPA after a password/step-up login, which expects JSON so it can stay in
+	// the SPA. The session cookie is set above either way.
+	if browserAuthAcceptsJSON(r) {
+		a.writeJSON(w, http.StatusOK, callbackCompletedResponse{RedirectTo: target})
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+type callbackCompletedResponse struct {
+	RedirectTo string `json:"redirectTo"`
+}
+
+func browserAuthAcceptsJSON(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "application/json")
 }
 
 func (a *BrowserAuth) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -1850,6 +1884,84 @@ func (a *BrowserAuth) clearLoginCookie(w http.ResponseWriter) {
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// setLinkChallengeCookie carries the single-use step-up link challenge secret.
+// Path is "/" (not "/api/v1/auth" like the login cookie) because the password
+// proof that consumes it runs through the verself-web server function, so the
+// browser only forwards the cookie to that root-path request when its path covers
+// it. It is short-lived, HttpOnly, and single-use.
+func (a *BrowserAuth) setLinkChallengeCookie(w http.ResponseWriter, challengeSecret string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserAuthLinkCookieName,
+		Value:    challengeSecret,
+		Path:     "/",
+		Expires:  time.Now().UTC().Add(browserAuthLoginTTL),
+		MaxAge:   int(browserAuthLoginTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (a *BrowserAuth) clearLinkChallengeCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserAuthLinkCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func linkChallengeSecretFromRequest(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(browserAuthLinkCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", false
+	}
+	return cookie.Value, true
+}
+
+// setPasswordResetCookie carries the sealed reset token (user id + verification
+// code) injected from the email link, so the verification code never appears in
+// the browser address bar, history, referrer, or access logs. Path is "/" because
+// the complete step runs through the verself-web server function. HttpOnly,
+// short-lived, single-use.
+func (a *BrowserAuth) setPasswordResetCookie(w http.ResponseWriter, sealed string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserAuthPwResetCookieName,
+		Value:    sealed,
+		Path:     "/",
+		Expires:  time.Now().UTC().Add(browserAuthLoginTTL),
+		MaxAge:   int(browserAuthLoginTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (a *BrowserAuth) clearPasswordResetCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserAuthPwResetCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func passwordResetSealedFromRequest(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(browserAuthPwResetCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", false
+	}
+	return cookie.Value, true
 }
 
 func browserClientSecretFromRequest(r *http.Request) (string, bool) {

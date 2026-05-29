@@ -1,5 +1,5 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
-import { Link, createFileRoute, useHydrated, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useHydrated, useNavigate, useRouter } from "@tanstack/react-router";
 import { Building2, CheckCircle2, Eye, EyeOff, MailPlus } from "lucide-react";
 import { useReducer, type ReactNode } from "react";
 import { iamFormValidationError, useIamFormSubmit } from "@verself/auth-web/form";
@@ -17,6 +17,7 @@ import {
   fieldErrorText,
   fieldInvalid,
 } from "~/features/auth/form-primitives";
+import { completeBrowserCallback } from "~/features/auth/complete-callback";
 import { signupVerificationIamFormError } from "~/features/auth/iam-error-copy";
 import {
   formString,
@@ -80,6 +81,7 @@ export const Route = createFileRoute("/signup/verify")({
 function SignupVerificationPage() {
   const hydrated = useHydrated();
   const navigate = useNavigate();
+  const router = useRouter();
   const search = Route.useSearch();
   const signupIntentId = search.signup_intent_id;
   const verificationToken = search.verification_token;
@@ -177,7 +179,7 @@ function SignupVerificationPage() {
         await navigateLogin(navigate, result.target);
         return;
       }
-      await navigateToSameOrigin(navigate, result.callbackUrl);
+      await completeBrowserCallback(router, result.callbackUrl);
     },
   });
 

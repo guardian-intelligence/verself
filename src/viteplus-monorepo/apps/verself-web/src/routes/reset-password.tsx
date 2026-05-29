@@ -24,21 +24,25 @@ import { Squircle } from "~/features/console/flight/squircle";
 import { completePasswordReset } from "~/server-fns/auth";
 
 type ResetPasswordSearch = {
-  readonly user_id?: string;
-  readonly verification_code?: string;
+  readonly ready?: string;
+  readonly error?: string;
 };
 
 function searchString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+// The reset token is injected server-side from the email link into an HttpOnly
+// cookie and never appears in this URL. The consume endpoint redirects here with
+// ready=1 (a non-sensitive marker that a reset cookie was set); a bare visit has
+// no active reset, and a failure carries error.
 function resetPasswordSearch(search: Record<string, unknown>): ResetPasswordSearch {
-  const userID = searchString(search.user_id) ?? searchString(search.userId);
-  const verificationCode =
-    searchString(search.verification_code) ?? searchString(search.verificationCode);
+  // The router coerces ?ready=1 to the number 1, so normalize both forms.
+  const ready = search.ready === 1 || search.ready === "1" ? "1" : undefined;
+  const error = searchString(search.error);
   return {
-    ...(userID ? { user_id: userID } : {}),
-    ...(verificationCode ? { verification_code: verificationCode } : {}),
+    ...(ready ? { ready } : {}),
+    ...(error ? { error } : {}),
   };
 }
 
@@ -56,12 +60,12 @@ function ResetPasswordPage() {
     submit: (value: ResetPasswordFormValues) =>
       completePasswordReset({
         data: {
-          ...requireResetLink(search),
           password: formString(value.password),
         },
       }),
     mapError: resetPasswordIamFormError,
   });
+  const showForm = search.ready === "1" && search.error !== "password_reset_invalid";
   const form = useForm({
     defaultValues: {
       password: "",
@@ -109,13 +113,11 @@ function ResetPasswordPage() {
             <div>
               <h2 className="text-lg font-semibold tracking-tight">Set password</h2>
               <p className="text-sm text-muted-foreground">
-                {search.user_id && search.verification_code
-                  ? "Enter a new password."
-                  : "Reset link unavailable."}
+                {showForm ? "Enter a new password." : "Reset link unavailable."}
               </p>
             </div>
           </div>
-          {search.user_id && search.verification_code ? (
+          {showForm ? (
             <form
               noValidate
               onSubmit={(event) => {
@@ -221,19 +223,6 @@ function ResetPasswordPage() {
       </div>
     </main>
   );
-}
-
-function requireResetLink(search: ResetPasswordSearch): {
-  readonly userId: string;
-  readonly verificationCode: string;
-} {
-  if (!search.user_id || !search.verification_code) {
-    throw new Error("This reset link is invalid or expired.");
-  }
-  return {
-    userId: search.user_id,
-    verificationCode: search.verification_code,
-  };
 }
 
 function PasswordInput(props: {

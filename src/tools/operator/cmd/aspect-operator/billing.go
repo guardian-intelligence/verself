@@ -86,7 +86,7 @@ func cmdBillingSeed(args []string) error {
 			return fmt.Errorf("billing seed: --target-prepaid-units must be an unsigned integer: %w", err)
 		}
 	}
-	return runOperatorRuntime("billing.seed", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("billing.seed", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		remoteArgs := []string{
 			"--pg-dsn", "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable",
 			"--org-id", *orgID,
@@ -138,7 +138,7 @@ func cmdBillingClock(args []string) error {
 			return fmt.Errorf("billing clock: --advance-seconds must be an integer: %w", err)
 		}
 	}
-	return runOperatorRuntime("billing.clock", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("billing.clock", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		localPath, err := buildBazelBinary(rt.Ctx, rt.RepoRoot, billingClockTarget)
 		if err != nil {
 			return err
@@ -198,7 +198,7 @@ func cmdBillingInspect(args []string, kind string) error {
 	default:
 		return fmt.Errorf("billing %s: --format must be table, json, csv, or tsv", kind)
 	}
-	return runOperatorRuntime("billing."+kind, opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, chClient *opch.Client) error {
+	return runOperatorRuntime("billing."+kind, opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, chClient *opch.Client) error {
 		conn, err := openBillingPG(rt, opts.billingOptions)
 		if err != nil {
 			return err

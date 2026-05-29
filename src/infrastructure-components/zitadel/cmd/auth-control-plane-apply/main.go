@@ -289,6 +289,11 @@ func apply(ctx context.Context, cfg config) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
+	if err := ensureLoginClientRole(ctx, client); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	project, err := client.EnsureProject(ctx, cfg.projectName)
 	if err != nil {
 		span.RecordError(err)
@@ -306,6 +311,11 @@ func apply(ctx context.Context, cfg config) error {
 		return err
 	}
 	if err := ensureCLIOIDCApplication(ctx, client, project.ID, cfg); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if err := ensureCrossOrgProjectAccess(ctx, client, project.ID); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -993,6 +1003,195 @@ func (c zitadelClient) AddIDPToLoginPolicy(ctx context.Context, idpID string) er
 		return fmt.Errorf("link Zitadel IdP %s to login policy: %w", idpID, err)
 	}
 	return nil
+}
+
+// ensureLoginClientRole grants the iam-service machine user (the admin token's
+// own user) the instance IAM_LOGIN_CLIENT role. The headless login finalizes OIDC
+// auth requests with a session via OIDCService.CreateCallback; that operation's
+// permission check (checkUserPermissions) requires the login-client role, which
+// IAM_OWNER does not include. Without it, finalizing a session for a user in any
+// org fails with "No matching permissions found (AUTH-AWfge)" and login 503s.
+// Idempotent and reconciled every deploy, so it also self-heals fresh instances.
+func ensureLoginClientRole(ctx context.Context, client zitadelClient) error {
+	userID, err := client.MyUserID(ctx)
+	if err != nil {
+		return err
+	}
+	roles, err := client.InstanceMemberRoles(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, r := range roles {
+		if r == "IAM_LOGIN_CLIENT" {
+			return nil
+		}
+	}
+	if err := client.SetInstanceMemberRoles(ctx, userID, append(roles, "IAM_LOGIN_CLIENT")); err != nil {
+		return fmt.Errorf("grant IAM_LOGIN_CLIENT to %s: %w", userID, err)
+	}
+	fmt.Printf("auth-control-plane-apply: granted IAM_LOGIN_CLIENT to login machine user %s\n", userID)
+	return nil
+}
+
+func (c zitadelClient) MyUserID(ctx context.Context) (string, error) {
+	var out struct {
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/auth/v1/users/me", nil, &out); err != nil {
+		return "", fmt.Errorf("resolve own user id: %w", err)
+	}
+	if strings.TrimSpace(out.User.ID) == "" {
+		return "", fmt.Errorf("resolve own user id returned empty")
+	}
+	return strings.TrimSpace(out.User.ID), nil
+}
+
+func (c zitadelClient) InstanceMemberRoles(ctx context.Context, userID string) ([]string, error) {
+	var out struct {
+		Result []struct {
+			UserID string   `json:"userId"`
+			Roles  []string `json:"roles"`
+		} `json:"result"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/admin/v1/members/_search", map[string]any{}, &out); err != nil {
+		return nil, fmt.Errorf("list instance members: %w", err)
+	}
+	for _, m := range out.Result {
+		if strings.TrimSpace(m.UserID) == strings.TrimSpace(userID) {
+			return m.Roles, nil
+		}
+	}
+	return nil, nil
+}
+
+func (c zitadelClient) SetInstanceMemberRoles(ctx context.Context, userID string, roles []string) error {
+	body := map[string]any{"roles": roles}
+	path := "/admin/v1/members/" + url.PathEscape(strings.TrimSpace(userID))
+	return c.doJSON(ctx, http.MethodPut, path, body, nil)
+}
+
+// crossOrgProjectRoleKey is the role attached to each tenant-org project grant.
+// projectRoleCheck is disabled, so the role is not required for authorization; the
+// grant itself is what makes the shared project reachable from a tenant org.
+const crossOrgProjectRoleKey = "member"
+
+// ensureCrossOrgProjectAccess makes the shared verself-api project usable by users
+// in every tenant organization. The project is owned by the Zitadel instance org
+// (shared auth infra, not a tenant); users live in per-tenant orgs. Without a
+// project grant Zitadel refuses to finalize an OIDC auth request for a tenant-org
+// user against this project ("No matching permissions found"). Granting the
+// project to each org is the Zitadel-native cross-org mechanism. Idempotent and
+// reconciled on every deploy, so existing and future tenant orgs both get access.
+func ensureCrossOrgProjectAccess(ctx context.Context, client zitadelClient, projectID string) error {
+	ownerOrg, err := client.ProjectOwnerOrg(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if err := client.EnsureProjectRole(ctx, projectID, crossOrgProjectRoleKey, "Member"); err != nil {
+		return err
+	}
+	existing, err := client.ListProjectGrantOrgs(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	orgs, err := client.ListOrgs(ctx)
+	if err != nil {
+		return err
+	}
+	granted := 0
+	for _, org := range orgs {
+		if org == ownerOrg || existing[org] {
+			continue
+		}
+		if err := client.CreateProjectGrant(ctx, projectID, org, []string{crossOrgProjectRoleKey}); err != nil {
+			if isAlreadyExists(err) {
+				continue
+			}
+			return fmt.Errorf("grant project %s to org %s: %w", projectID, org, err)
+		}
+		granted++
+	}
+	fmt.Printf("auth-control-plane-apply: cross-org project access reconciled (owner_org=%s orgs=%d existing_grants=%d new_grants=%d)\n", ownerOrg, len(orgs), len(existing), granted)
+	return nil
+}
+
+func (c zitadelClient) ProjectOwnerOrg(ctx context.Context, projectID string) (string, error) {
+	var out struct {
+		Project struct {
+			Details struct {
+				ResourceOwner string `json:"resourceOwner"`
+			} `json:"details"`
+		} `json:"project"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/management/v1/projects/"+url.PathEscape(strings.TrimSpace(projectID)), nil, &out); err != nil {
+		return "", fmt.Errorf("get project %s: %w", projectID, err)
+	}
+	owner := strings.TrimSpace(out.Project.Details.ResourceOwner)
+	if owner == "" {
+		return "", fmt.Errorf("project %s returned no resource owner", projectID)
+	}
+	return owner, nil
+}
+
+func (c zitadelClient) ListOrgs(ctx context.Context) ([]string, error) {
+	var ids []string
+	offset := 0
+	for {
+		var out struct {
+			Result []struct {
+				ID string `json:"id"`
+			} `json:"result"`
+		}
+		body := map[string]any{"query": map[string]any{"offset": offset, "limit": 100, "asc": true}}
+		if err := c.doJSON(ctx, http.MethodPost, "/admin/v1/orgs/_search", body, &out); err != nil {
+			return nil, fmt.Errorf("list orgs: %w", err)
+		}
+		for _, r := range out.Result {
+			if id := strings.TrimSpace(r.ID); id != "" {
+				ids = append(ids, id)
+			}
+		}
+		if len(out.Result) < 100 {
+			return ids, nil
+		}
+		offset += len(out.Result)
+	}
+}
+
+func (c zitadelClient) EnsureProjectRole(ctx context.Context, projectID, roleKey, displayName string) error {
+	body := map[string]any{"roleKey": strings.TrimSpace(roleKey), "displayName": strings.TrimSpace(displayName)}
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/roles"
+	if err := c.doJSON(ctx, http.MethodPost, path, body, nil); err != nil && !isAlreadyExists(err) {
+		return fmt.Errorf("ensure project role %s: %w", roleKey, err)
+	}
+	return nil
+}
+
+func (c zitadelClient) ListProjectGrantOrgs(ctx context.Context, projectID string) (map[string]bool, error) {
+	var out struct {
+		Result []struct {
+			GrantedOrgID string `json:"grantedOrgId"`
+		} `json:"result"`
+	}
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/grants/_search"
+	if err := c.doJSON(ctx, http.MethodPost, path, map[string]any{}, &out); err != nil {
+		return nil, fmt.Errorf("list project grants: %w", err)
+	}
+	orgs := make(map[string]bool, len(out.Result))
+	for _, r := range out.Result {
+		if id := strings.TrimSpace(r.GrantedOrgID); id != "" {
+			orgs[id] = true
+		}
+	}
+	return orgs, nil
+}
+
+func (c zitadelClient) CreateProjectGrant(ctx context.Context, projectID, grantedOrgID string, roleKeys []string) error {
+	body := map[string]any{"grantedOrgId": strings.TrimSpace(grantedOrgID), "roleKeys": roleKeys}
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/grants"
+	return c.doJSON(ctx, http.MethodPost, path, body, nil)
 }
 
 func isAlreadyExists(err error) bool {

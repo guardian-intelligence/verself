@@ -3,6 +3,7 @@ slug: dear-shovon
 title: Dear Shovon
 publishedAt: 2036-07-04
 flare: Shovon
+kind: correspondence
 summary: "Dear Shovon"
 ---
 

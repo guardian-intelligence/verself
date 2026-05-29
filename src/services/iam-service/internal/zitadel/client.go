@@ -135,6 +135,56 @@ func (c *Client) CreateSignupUser(ctx context.Context, input identity.DirectoryC
 	return identity.DirectoryCreateSignupUserResult{UserID: created.UserID}, nil
 }
 
+// CreateHumanWithIDPLink creates a human in orgID with a pre-verified email and
+// an external IdP link already attached, for just-in-time provisioning from a
+// completed IdP intent. The email is marked verified directly (provider truth),
+// so no verification code round-trip is needed, and no password is set.
+func (c *Client) CreateHumanWithIDPLink(ctx context.Context, input identity.DirectoryCreateHumanWithIDPLinkRequest) (identity.DirectoryCreateSignupUserResult, error) {
+	orgID := strings.TrimSpace(input.OrgID)
+	email := strings.TrimSpace(input.Email)
+	idpID := strings.TrimSpace(input.IDPID)
+	externalUserID := strings.TrimSpace(input.ExternalUserID)
+	if orgID == "" || email == "" || idpID == "" || externalUserID == "" {
+		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: org_id, email, idp_id, and external_user_id are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{
+		"organizationId": orgID,
+		"username":       email,
+		"human": map[string]any{
+			"profile": map[string]any{
+				"givenName":  firstNonEmpty(strings.TrimSpace(input.GivenName), email),
+				"familyName": firstNonEmpty(strings.TrimSpace(input.FamilyName), "Member"),
+			},
+			"email": map[string]any{
+				"email":      email,
+				"isVerified": true,
+			},
+			"idpLinks": []map[string]any{
+				{
+					"idpId":    idpID,
+					"userId":   externalUserID,
+					"userName": firstNonEmpty(strings.TrimSpace(input.ExternalUserName), externalUserID),
+				},
+			},
+		},
+	}
+	var out createUserResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out); err != nil {
+		if zitadelUserAlreadyExists(err) {
+			return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: create idp human: %v", identity.ErrSignupAccountExists, err)
+		}
+		if zitadelRequestInvalid(err) {
+			return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: create idp human: %v", identity.ErrInvalidInput, err)
+		}
+		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: create idp human: %v", identity.ErrZitadelUnavailable, err)
+	}
+	userID := firstNonEmpty(out.ID, out.UserID)
+	if userID == "" {
+		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: create idp human returned no user id", identity.ErrZitadelUnavailable)
+	}
+	return identity.DirectoryCreateSignupUserResult{UserID: userID}, nil
+}
+
 func (c *Client) FindPasswordResetUser(ctx context.Context, email string) (identity.PasswordResetUser, bool, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
@@ -416,10 +466,69 @@ func (c *Client) RetrieveIDPIntent(ctx context.Context, intentID, intentToken st
 	}, nil
 }
 
+// FindHumanByVerifiedEmail returns the Zitadel user id of a human whose email
+// matches and is verified. Used to auto-link a verified external identity to an
+// existing account by verified email. Reuses the /v2/users email search.
+func (c *Client) FindHumanByVerifiedEmail(ctx context.Context, email string) (string, bool, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", false, fmt.Errorf("%w: email is required", identity.ErrInvalidInput)
+	}
+	var out usersResponse
+	body := map[string]any{
+		"query": map[string]any{"limit": 2},
+		"queries": []map[string]any{
+			{"inUserEmailsQuery": map[string]any{"userEmails": []string{email}}},
+		},
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users", body, &out); err != nil {
+		return "", false, fmt.Errorf("%w: find human by email: %v", identity.ErrZitadelUnavailable, err)
+	}
+	for _, item := range out.Result {
+		if item.Human == nil || !item.Human.Email.IsVerified {
+			continue
+		}
+		if !sameEmailIdentity(item.Human.Email.Email, email) {
+			continue
+		}
+		if userID := strings.TrimSpace(item.UserID); userID != "" {
+			return userID, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// AddIDPLink binds an external identity to an existing Zitadel human. The
+// headless Session API never auto-links, so this is the explicit link an
+// auto-link-by-verified-email path must perform before creating the session.
+func (c *Client) AddIDPLink(ctx context.Context, input identity.AddIDPLinkInput) error {
+	userID := strings.TrimSpace(input.UserID)
+	idpID := strings.TrimSpace(input.IDPID)
+	externalUserID := strings.TrimSpace(input.ExternalUserID)
+	if userID == "" || idpID == "" || externalUserID == "" {
+		return fmt.Errorf("%w: user_id, idp_id, and external_user_id are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{
+		"idpLink": map[string]any{
+			"idpId":    idpID,
+			"userId":   externalUserID,
+			"userName": firstNonEmpty(strings.TrimSpace(input.ExternalUserName), externalUserID),
+		},
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/links", body, nil); err != nil {
+		if zitadelRequestInvalid(err) {
+			return fmt.Errorf("%w: add idp link: %v", identity.ErrInvalidInput, err)
+		}
+		return fmt.Errorf("%w: add idp link: %v", identity.ErrZitadelUnavailable, err)
+	}
+	return nil
+}
+
 // CreateSessionFromIDPIntent mints a Zitadel session from a completed IdP
-// intent. When userID is known (the external identity is already linked) it is
-// included as a user check; auto-linking/auto-creation on the IdP otherwise
-// binds the session subject. Returns the session token like CreatePasswordSession.
+// intent. The headless Session API only authenticates an external identity that
+// is already linked to a Zitadel user (it does NOT auto-create or auto-link like
+// the hosted login UI), so callers must resolve/link userID first; it is passed
+// as the user check. Returns the session token like CreatePasswordSession.
 func (c *Client) CreateSessionFromIDPIntent(ctx context.Context, intentID, intentToken, userID string, input identity.LoginSessionInput) (identity.LoginSession, error) {
 	intentID = strings.TrimSpace(intentID)
 	intentToken = strings.TrimSpace(intentToken)
@@ -629,7 +738,8 @@ type humanBlock struct {
 		DisplayName string `json:"displayName"`
 	} `json:"profile"`
 	Email struct {
-		Email string `json:"email"`
+		Email      string `json:"email"`
+		IsVerified bool   `json:"isVerified"`
 	} `json:"email"`
 }
 

@@ -49,6 +49,29 @@ const lettersMarkdown = {
   },
 };
 
+// OG-card fonts, baked into the server bundle as base64 at build time. The OG
+// route rasterises its SVG to PNG with resvg (social platforms reject SVG
+// cards), and resvg needs the actual font bytes — there is no system Fraunces.
+// Inlining sidesteps any runtime path/cwd assumptions in the deployed
+// artifact: the bytes travel inside the JS, identical in dev and prod.
+const OG_FONTS_ID = "virtual:og-fonts";
+const ogFonts = {
+  name: "company:og-fonts",
+  resolveId(id: string) {
+    if (id === OG_FONTS_ID) return `\0${OG_FONTS_ID}`;
+    return null;
+  },
+  load(id: string) {
+    if (id !== `\0${OG_FONTS_ID}`) return null;
+    const dir = fileURLToPath(new URL("./public/fonts", import.meta.url));
+    const b64 = (file: string) => readFileSync(`${dir}/${file}`).toString("base64");
+    return [
+      `export const FRAUNCES_WOFF2_B64 = ${JSON.stringify(b64("Fraunces-Variable.woff2"))};`,
+      `export const GEIST_WOFF2_B64 = ${JSON.stringify(b64("Geist-Variable.woff2"))};`,
+    ].join("\n");
+  },
+};
+
 export default defineConfig({
   server: {
     host: "127.0.0.1",
@@ -58,8 +81,19 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
+  // @resvg/resvg-js is a native napi addon used only by the server-side OG
+  // route. It must never be pre-bundled (the optimizer reads its .node binary
+  // as UTF-8 and fails) or bundled into the SSR graph — keep it external so it
+  // loads via require() from node_modules at runtime.
+  optimizeDeps: {
+    exclude: ["@resvg/resvg-js"],
+  },
+  ssr: {
+    external: ["@resvg/resvg-js"],
+  },
   plugins: [
     lettersMarkdown,
+    ogFonts,
     tailwindcss(),
     tanstackStart({ srcDirectory: "src" }),
     viteReact(),

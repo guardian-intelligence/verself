@@ -57,6 +57,9 @@ type PasswordResetNotification struct {
 	Email        string
 	ActionURL    string
 	ResourceName string
+	// OrgID scopes the notification. Notifications are org-scoped for tenancy and
+	// metering, so an account-level reset is attributed to the user's organization.
+	OrgID string
 }
 
 func RegisterRoutes(api huma.API, svc *identity.Service, authzSvc *authz.Service, installationID string, productBaseURL string, inviteNotifier InviteNotifier, providerSession ProviderSessionRevoker) {

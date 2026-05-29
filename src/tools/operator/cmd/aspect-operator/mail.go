@@ -41,7 +41,7 @@ func cmdMailAddresses(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	return runOperatorRuntime("mail.addresses", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("mail.addresses", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		cfg, err := loadMailConfig(rt.RepoRoot, rt.Site)
 		if err != nil {
 			return err

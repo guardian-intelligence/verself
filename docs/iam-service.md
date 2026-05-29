@@ -667,10 +667,11 @@ stateDiagram-v2
 
   ExistingAccount --> ProductContext
   Linked --> ProductContext
-  NewAccount --> Onboarding
+  NewAccount --> AutoProvisionOrg
   ProductContext --> OrgSelection
   ProductContext --> NoAccessibleOrg: no orgs
-  NoAccessibleOrg --> Onboarding
+  NoAccessibleOrg --> AutoProvisionOrg
+  AutoProvisionOrg --> Ready
   OrgSelection --> Ready
   OrgSelection --> Denied: required org unavailable
 ```
@@ -729,8 +730,83 @@ stateDiagram-v2
 
   OrgPicker --> ContinueToConsole
   OrgPicker --> LoginRejected: required org unavailable
-  NoOrg --> Onboarding
+  NoOrg --> AutoProvisionOrg
+  AutoProvisionOrg --> ContinueToConsole
 ```
+
+### Sign in with GitHub (headless external IdP)
+
+Zitadel's hosted Login V2 is disabled; iam-service is the OIDC relying party and
+owns the login surface. "Sign in with GitHub" is brokered through Zitadel's
+external-IdP intent over the Session API rather than the hosted login. The Verself
+Runner GitHub App backs both this login (its user-to-server OAuth, registered in
+Zitadel as a GitHub IdP) and CI installation.
+
+| Step | Surface | Endpoint |
+| --- | --- | --- |
+| Start intent | iam-service | `POST /api/v1/auth/idp/github/start` → Zitadel `POST /v2/idp_intents` |
+| Provider authorization | GitHub → Zitadel | GitHub authorize → `https://verself.sh/idps/callback` |
+| Resume | iam-service | `GET /api/v1/auth/idp/callback?id&token` |
+| Resolve external identity | Zitadel | `POST /v2/idp_intents/{id}` |
+| Link existing human | Zitadel | `POST /v2/users/{id}/links` |
+| Mint session | Zitadel | `POST /v2/sessions` with `checks.idpIntent` |
+| Account graph + org | iam-service | OIDC RP callback `GET /api/v1/auth/callback` |
+
+The Session API authenticates only an external identity that is already linked to
+a Zitadel user. The IdP-level `autoLinking` and `isAutoCreation` options apply to
+the hosted login flow and are inert here, so iam-service resolves the Zitadel user
+before minting the session. The intent's `userId` is populated only when the
+GitHub identity is already linked; otherwise the callback resolves the user by
+verified email and links explicitly, or provisions a new identity.
+
+Linking a GitHub identity to an existing account is gated on proof of control of
+that account, not on the email match alone. The verified-email match selects the
+candidate account; a password (or recovery) authentication against that account is
+the linking authority. This holds the link decision to the same assurance as a
+direct password login and removes any dependence on the provider's email
+verification semantics. The proof reuses the password-login path: a successful
+password authentication carrying the pending link challenge performs the
+`AddIDPLink` as part of completing the session. New identities with no matching
+account are provisioned just-in-time and never enter the link path.
+
+Every account holds at least one organization. A just-in-time account with no
+organization receives an auto-provisioned starter org during the callback, keyed
+off the GitHub login, and lands directly in the console; organization name, slug,
+and icon are customized later from settings.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Dialing: click Sign in with GitHub
+
+  Dialing --> AtGitHub: start intent, redirect to authorize URL
+  AtGitHub --> IdpCallback: GitHub then Zitadel /idps/callback then idp/callback?id&token
+
+  IdpCallback --> Rejected: state cookie, client mismatch, or expired intent
+  IdpCallback --> ResolveUser: intent resolved
+
+  ResolveUser --> AlreadyLinked: intent carries linked userId
+  ResolveUser --> Denied: provider email missing or unverified
+  ResolveUser --> StepUp: verified email matches an existing verified human
+  ResolveUser --> JitProvision: verified email, no existing account
+
+  StepUp --> AwaitingProof: store single-use link challenge, redirect to password proof
+  AwaitingProof --> Linked: password proven then AddIDPLink
+  AwaitingProof --> AwaitingProof: wrong password
+  AwaitingProof --> Rejected: challenge expired or client mismatch
+
+  AlreadyLinked --> SessionReady: session from intent
+  Linked --> SessionReady: session from password proof
+  JitProvision --> SessionReady: create org, human with idp link, account
+
+  SessionReady --> AccountGraph: OIDC finalize then /api/v1/auth/callback
+  AccountGraph --> AutoProvisionOrg: new account with no org
+  AccountGraph --> Console: account has an org
+  AutoProvisionOrg --> Console
+```
+
+A linked GitHub identity makes every subsequent sign-in a single redirect: the
+intent carries the linked `userId`, the callback takes the `AlreadyLinked` branch,
+and no proof or provisioning runs.
 
 The console surface implied by the state machine includes login/account chooser,
 provider choice, device/session-aware reauth, provider collision/link account,

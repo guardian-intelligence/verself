@@ -337,15 +337,23 @@ func TestPasswordLoginInvalidCredentialsReturnsStructuredProblem(t *testing.T) {
 
 func TestPasswordResetCompleteUsesLocalPasswordPolicyOnly(t *testing.T) {
 	provider := &recordingProviderLogin{}
+	vault, err := newBrowserTokenVault("browser-test-secret")
+	if err != nil {
+		t.Fatalf("new token vault: %v", err)
+	}
 	auth := &BrowserAuth{
 		providerLogin: provider,
+		tokenVault:    vault,
+	}
+	sealed, err := vault.seal("user-1|code-1", passwordResetSealContext, passwordResetSealContext)
+	if err != nil {
+		t.Fatalf("seal reset token: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/password-reset/complete", strings.NewReader(`{
-		"userId": "user-1",
-		"verificationCode": "code-1",
 		"password": "correct horse battery staple"
 	}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: browserAuthPwResetCookieName, Value: sealed})
 	res := httptest.NewRecorder()
 
 	auth.handlePasswordResetComplete(res, req)
@@ -547,6 +555,14 @@ func (r *recordingProviderLogin) StartIDPIntent(_ context.Context, _ string, _ s
 
 func (r *recordingProviderLogin) RetrieveIDPIntent(_ context.Context, _ string, _ string) (identity.IDPIntentResult, error) {
 	return identity.IDPIntentResult{}, nil
+}
+
+func (r *recordingProviderLogin) FindHumanByVerifiedEmail(context.Context, string) (string, bool, error) {
+	return "", false, errors.New("unexpected FindHumanByVerifiedEmail")
+}
+
+func (r *recordingProviderLogin) AddIDPLink(context.Context, identity.AddIDPLinkInput) error {
+	return errors.New("unexpected AddIDPLink")
 }
 
 func (r *recordingProviderLogin) CreateSessionFromIDPIntent(_ context.Context, _ string, _ string, _ string, input identity.LoginSessionInput) (identity.LoginSession, error) {

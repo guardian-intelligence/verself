@@ -241,6 +241,37 @@ type DirectoryCreateSignupUserResult struct {
 	UserID string
 }
 
+// DirectoryCreateHumanWithIDPLinkRequest creates a Zitadel human in an
+// organization with a pre-verified email and an external identity-provider link
+// already attached, for just-in-time provisioning from a completed IdP intent. No
+// password is set; the IdP is the credential.
+type DirectoryCreateHumanWithIDPLinkRequest struct {
+	OrgID            string
+	Email            string
+	GivenName        string
+	FamilyName       string
+	IDPID            string
+	ExternalUserID   string
+	ExternalUserName string
+}
+
+// GithubSignupRequest provisions a brand-new account from a verified GitHub
+// identity: a Zitadel organization, an IdP-linked human, and a starter Verself
+// organization (owner + billing). The account graph itself is materialized by the
+// OIDC relying-party callback once the session subject is known.
+type GithubSignupRequest struct {
+	Email            string
+	DisplayName      string
+	IDPID            string
+	ExternalUserID   string
+	ExternalUserName string
+}
+
+type GithubSignupResult struct {
+	UserID string
+	OrgID  string
+}
+
 type OrganizationOwnerPolicyRequest struct {
 	OrgID       string
 	OwnerUserID string
@@ -525,6 +556,18 @@ type IDPIntentResult struct {
 	Username        string
 	Email           string
 	EmailVerified   bool
+}
+
+// AddIDPLinkInput binds an external identity provider identity to an existing
+// Zitadel human. UserID is the Zitadel user; ExternalUserID/ExternalUserName are
+// provider truth from a completed IdP intent. Used to auto-link a verified GitHub
+// identity to an existing account by verified email over the headless Session API
+// (which, unlike the hosted login UI, never auto-links).
+type AddIDPLinkInput struct {
+	UserID           string
+	IDPID            string
+	ExternalUserID   string
+	ExternalUserName string
 }
 
 type StartDeviceAuthorizationInput struct {

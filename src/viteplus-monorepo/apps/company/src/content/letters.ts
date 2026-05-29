@@ -22,6 +22,12 @@ const LetterFrontmatterSchema = v.pipe(
     // anything else here is an authoring mistake worth surfacing.
     publishedAt: v.pipe(v.string(), v.regex(/^\d{4}-\d{2}-\d{2}$/)),
     flare: v.pipe(v.string(), v.minLength(1)),
+    // dispatch: a letter from the author to a younger self — a titled
+    // headline, signed by the author. correspondence: a letter received from
+    // someone else — it opens with a salutation ("Dear X,") and carries the
+    // sender's own sign-off in the body. Required so each letter declares its
+    // nature rather than inheriting a silent default.
+    kind: v.picklist(["dispatch", "correspondence"]),
     summary: v.optional(v.string(), ""),
   }),
   v.check(

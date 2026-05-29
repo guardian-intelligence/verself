@@ -77,8 +77,12 @@ export function excerptOf(bodyHtml: string): string {
   return lastSpace > 260 ? cut.slice(0, lastSpace) : cut;
 }
 
-export function formatLetterSalutation(title: string): string {
-  return title.endsWith(",") ? title : `${title},`;
+// Only received correspondence opens with a salutation, so only it takes the
+// trailing comma. A dispatch's title is a headline being announced, not a
+// person being addressed.
+export function formatLetterSalutation(letter: Letter): string {
+  if (letter.kind !== "correspondence") return letter.title;
+  return letter.title.endsWith(",") ? letter.title : `${letter.title},`;
 }
 
 export function LetterDate({
@@ -128,7 +132,7 @@ export function LetterSalutation({ letter }: { readonly letter: Letter }) {
         data-letter-transition-slot="salutation"
         style={{ ...transitionStyle(letter, "salutation"), display: "inline-block" }}
       >
-        {formatLetterSalutation(letter.title)}
+        {formatLetterSalutation(letter)}
       </span>
     </p>
   );
