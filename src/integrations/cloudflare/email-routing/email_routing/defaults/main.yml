@@ -1,0 +1,9 @@
+---
+# Cloudflare Email Routing role defaults.
+
+cloudflare_api_url: "https://api.cloudflare.com/client/v4"
+
+# A single apex SPF covering both Cloudflare Email Routing (inbound) and Resend
+# (outbound). Only one SPF TXT may exist per name, so this is the merged record;
+# confirm the Resend include against the live domain at deploy time.
+cloudflare_email_routing_spf: "v=spf1 include:_spf.mx.cloudflare.net include:amazonses.com ~all"

@@ -77,6 +77,9 @@ EOT
         command = "local/bin/email-service"
       }
       env {
+        EMAIL_SERVICE_AGENT_SENDER_ADDRESS = "agents@guardianintelligence.org"
+        EMAIL_SERVICE_AGENT_SENDER_NAME = "Verself Agents"
+        EMAIL_SERVICE_AGENT_SENDER_ORG_ID = "org_B7HWGKW0SH7G4EXW9XT8TCT60C"
         EMAIL_SERVICE_RESEND_FROM_NAME = "verself"
         EMAIL_SERVICE_STALWART_PUBLIC_BASE_URL = "https://mail.verself.sh"
         EMAIL_SERVICE_SYNC_DISCOVERY_INTERVAL = "2m"

@@ -1,0 +1,68 @@
+# gazelle:prefix github.com/verself/operator-tools/cmd/agent-mail
+
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+# Render the React Email template to a Go text/template. The {{.Subject}} and
+# {{.Body}} actions survive HTML escaping, so the output is both a valid email
+# and the template the tool fills per send. The result is checked in (go vet and
+# //go:embed read source, not build outputs); write_source_files keeps it in
+# sync — its test fails on drift, `bazel run :write_agent_notification` updates.
+js_run_binary(
+    name = "agent_notification_html_gen",
+    outs = ["generated/agent_notification.html.tmpl"],
+    args = [
+        "--mode=html",
+        "--out=generated/agent_notification.html.tmpl",
+    ],
+    chdir = package_name(),
+    mnemonic = "AgentEmailRender",
+    progress_message = "Rendering agent-mail notification template",
+    tool = "//src/viteplus-monorepo/packages/agent-email:render_template",
+)
+
+write_source_files(
+    name = "write_agent_notification",
+    files = {
+        "agent_notification.html.tmpl": ":agent_notification_html_gen",
+    },
+)
+
+go_library(
+    name = "agent-mail_lib",
+    srcs = ["main.go"],
+    embedsrcs = ["agent_notification.html.tmpl"],
+    importpath = "github.com/verself/operator-tools/cmd/agent-mail",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/services/email-service/internalclient",
+        "//src/services/service-runtime/go/workload",
+    ],
+)
+
+go_binary(
+    name = "agent-mail",
+    embed = [":agent-mail_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "agent-mail_test",
+    srcs = ["main_test.go"],
+    embed = [":agent-mail_lib"],
+)
+
+# agent-mail authenticates to email-service as its own SPIRE identity. The
+# operator subcommand runs this binary as the agent_mail user on the node so the
+# workload API issues spiffe://<td>/svc/agent-mail.
+spire_identity(
+    name = "spiffe_identity",
+    component = "agent_mail",
+    entry_id = "verself-agent-mail",
+    key = "agent_mail.default",
+    path = "/svc/agent-mail",
+    user = "agent_mail",
+    visibility = ["//src/host:__pkg__"],
+)

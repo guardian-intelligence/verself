@@ -55,6 +55,7 @@ filegroup(
     name = "workspace_sources",
     srcs = [
         ":workspace_config",
+        "//src/viteplus-monorepo/packages/agent-email:sources",
         "//src/viteplus-monorepo/packages/auth-web:sources",
         "//src/viteplus-monorepo/packages/brand:sources",
         "//src/viteplus-monorepo/packages/nitro-plugins:sources",
@@ -75,6 +76,7 @@ filegroup(
         "pnpm-workspace.yaml",
         "//src/viteplus-monorepo/apps/company:package_manifest",
         "//src/viteplus-monorepo/apps/verself-web:package_manifest",
+        "//src/viteplus-monorepo/packages/agent-email:package_manifest",
         "//src/viteplus-monorepo/packages/auth-web:package_manifest",
         "//src/viteplus-monorepo/packages/brand:package_manifest",
         "//src/viteplus-monorepo/packages/nitro-plugins:package_manifest",

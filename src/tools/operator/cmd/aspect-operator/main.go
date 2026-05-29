@@ -75,6 +75,8 @@ func run(args []string) error {
 		return cmdPromoteOrg(rest)
 	case "service-discovery-canary":
 		return cmdDiscoveryCanary(rest)
+	case "agent-mail":
+		return cmdAgentMail(rest)
 	case "release":
 		return cmdRelease(rest)
 	case "-h", "--help", "help":
@@ -98,6 +100,7 @@ Subcommands:
   device            Configure this device for operator access
   promote-org       Promote an existing organization trust tier
   service-discovery-canary  Drive billing -> IAM traffic through the resolver
+  agent-mail        Send a notification email from a Verself agent to the operator
   release           Release publication helpers
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.

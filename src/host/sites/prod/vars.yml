@@ -37,6 +37,30 @@ resend_subdomain: notify
 resend_domain: "{{ resend_subdomain }}.{{ verself_domain }}"
 resend_sender_address: "noreply@{{ resend_domain }}"
 resend_sender_name: verself
+
+# Resend sending domains. Each is registered with Resend and verified via DNS in
+# the named Cloudflare zone. notify.verself.sh carries transactional mail; the
+# company domain carries agent-to-operator mail (agents@guardianintelligence.org).
+# root_dmarc_domain is the apex that also gets a DMARC record; when it equals the
+# sending domain (a bare apex sender) the redundant root record is skipped.
+resend_sending_domains:
+  - domain: "{{ resend_domain }}"
+    zone: "{{ verself_domain }}"
+    root_dmarc_domain: "{{ verself_domain }}"
+  - domain: "{{ company_domain }}"
+    zone: "{{ company_domain }}"
+    root_dmarc_domain: "{{ company_domain }}"
+
+# Agent-to-operator email. agents@guardianintelligence.org sends through Resend;
+# anveio@guardianintelligence.org is delivered to the operator inbox by
+# Cloudflare Email Routing, which forwards to the verified destination below.
+agent_sender_address: "agents@{{ company_domain }}"
+operator_mailbox_address: "anveio@{{ company_domain }}"
+operator_forward_destination: "im.shovonhasan@gmail.com"
+cloudflare_email_routing_zone: "{{ company_domain }}"
+cloudflare_email_routing_rules:
+  - match: "{{ operator_mailbox_address }}"
+    forward_to: "{{ operator_forward_destination }}"
 sandbox_rental_service_subdomain: sandbox.api
 sandbox_rental_service_domain: "{{ sandbox_rental_service_subdomain }}.{{ verself_domain }}"
 secrets_service_subdomain: secrets.api
