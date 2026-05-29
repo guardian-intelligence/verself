@@ -58,6 +58,10 @@ nomad_component(
     },
     component = "auth_control_plane",
     deploy_phase = "platform",
+    # The credstore declaration carries the GitHub login OAuth credentials this
+    # job reads. Treating it as a digest input re-runs idP provisioning whenever
+    # those credentials change, since the job spec/artifact alone would not.
+    digest_inputs = ["deploy/credstore.yml"],
     job_id = "auth-control-plane",
     job_spec = "auth-control-plane.nomad.hcl",
     provides = ["auth:control-plane"],

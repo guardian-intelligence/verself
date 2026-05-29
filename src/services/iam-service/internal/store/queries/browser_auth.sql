@@ -39,6 +39,31 @@ RETURNING state_hash, client_hash, nonce, code_verifier, redirect_to, purpose, l
 DELETE FROM iam_browser_login_transactions
 WHERE expires_at <= now();
 
+-- name: InsertBrowserIDPLoginIntent :exec
+INSERT INTO iam_browser_idp_login_intents (
+  state_hash,
+  client_hash,
+  redirect_to,
+  purpose,
+  expires_at
+) VALUES (
+  sqlc.arg(state_hash),
+  sqlc.arg(client_hash),
+  sqlc.arg(redirect_to),
+  sqlc.arg(purpose),
+  sqlc.arg(expires_at)
+);
+
+-- name: DeleteBrowserIDPLoginIntent :one
+DELETE FROM iam_browser_idp_login_intents
+WHERE state_hash = sqlc.arg(state_hash)
+  AND expires_at > now()
+RETURNING state_hash, client_hash, redirect_to, purpose, expires_at, created_at;
+
+-- name: DeleteExpiredBrowserIDPLoginIntents :exec
+DELETE FROM iam_browser_idp_login_intents
+WHERE expires_at <= now();
+
 -- name: UpsertBrowserClient :exec
 INSERT INTO iam_browser_clients (
   client_hash,

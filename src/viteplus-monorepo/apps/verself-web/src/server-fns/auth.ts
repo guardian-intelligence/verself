@@ -36,6 +36,11 @@ const passwordLoginInputSchema = v.object({
   prompt: v.optional(v.picklist(["login", "select_account"])),
 });
 
+const githubLoginStartInputSchema = v.object({
+  redirectTo: v.optional(v.string()),
+  purpose: v.optional(v.string()),
+});
+
 const passwordResetStartInputSchema = v.object({
   email: v.pipe(v.string(), v.trim(), v.email()),
 });
@@ -176,6 +181,13 @@ export const passwordLogin = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { completeIdentityPasswordLogin } = await import("./auth.server");
     return completeIdentityPasswordLogin(data);
+  });
+
+export const startGithubLogin = createServerFn({ method: "POST" })
+  .inputValidator(githubLoginStartInputSchema)
+  .handler(async ({ data }) => {
+    const { startIdentityGithubLogin } = await import("./auth.server");
+    return startIdentityGithubLogin(data);
   });
 
 export const startPasswordReset = createServerFn({ method: "POST" })

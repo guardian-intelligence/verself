@@ -39,8 +39,10 @@ import {
   passwordLogin,
   removeBrowserAccount,
   selectActiveAccount,
+  startGithubLogin,
 } from "~/server-fns/auth";
 import type { BrowserAccountSummary } from "~/server-fns/auth.server";
+import { isIamError } from "@verself/sdk/iam-errors";
 
 type LoginSearch = {
   readonly authRequest?: string;
@@ -51,6 +53,7 @@ type LoginSearch = {
   readonly required_subject?: string;
   readonly required_email?: string;
   readonly required_org_id?: string;
+  readonly error?: string;
 };
 
 const optionalSearchString = v.pipe(
@@ -74,6 +77,7 @@ const loginSearchSchema = v.pipe(
     required_subject: v.optional(optionalSearchString),
     required_email: v.optional(optionalSearchString),
     required_org_id: v.optional(optionalSearchString),
+    error: v.optional(optionalSearchString),
   }),
   v.transform(
     (parsed): LoginSearch =>
@@ -86,9 +90,29 @@ const loginSearchSchema = v.pipe(
         required_subject: parsed.required_subject,
         required_email: parsed.required_email,
         required_org_id: parsed.required_org_id,
+        error: parsed.error,
       }),
   ),
 );
+
+function GithubMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+    </svg>
+  );
+}
+
+function loginSearchErrorMessage(code: string): string {
+  switch (code) {
+    case "github_login_failed":
+      return "GitHub sign-in could not be completed. Please try again.";
+    case "github_login_expired":
+      return "GitHub sign-in expired. Please start again.";
+    default:
+      return "Sign-in could not be completed. Please try again.";
+  }
+}
 
 function withoutUndefined<T extends Record<string, unknown>>(
   value: T,
@@ -151,6 +175,23 @@ function LoginPage() {
       }),
     mapError: loginIamFormError,
   });
+  const githubLogin = useMutation({
+    mutationFn: () =>
+      startGithubLogin({
+        data: { redirectTo: search.redirect ?? "/", purpose: search.purpose },
+      }),
+    onSuccess: (result) => {
+      if (isIamError(result)) {
+        toast.error("Could not start GitHub sign-in. Please try again.");
+        return;
+      }
+      // Full-page navigation to GitHub's authorize URL (external origin).
+      globalThis.location.assign(result.redirectURL);
+    },
+    onError: () => {
+      toast.error("Could not start GitHub sign-in. Please try again.");
+    },
+  });
   const form = useForm({
     defaultValues: {
       email: constrainedEmail,
@@ -209,6 +250,31 @@ function LoginPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">Use your Verself account.</p>
               )}
+            </div>
+          </div>
+          {search.error ? (
+            <p
+              role="alert"
+              className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              {loginSearchErrorMessage(search.error)}
+            </p>
+          ) : null}
+          <div className="mb-4 grid gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              aria-busy={githubLogin.isPending}
+              disabled={githubLogin.isPending}
+              onClick={() => githubLogin.mutate()}
+            >
+              <GithubMark />
+              <span>{githubLogin.isPending ? "Redirecting..." : "Continue with GitHub"}</span>
+            </Button>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              <span>or</span>
+              <span className="h-px flex-1 bg-border" />
             </div>
           </div>
           {accountOptions.length > 0 ? (

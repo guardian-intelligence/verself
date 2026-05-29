@@ -162,6 +162,12 @@ dogfood_org_id: org_B7HWGKW0SH7G4EXW9XT8TCT60C
 service_discovery_canary_org_slug: guardian-intelligence
 stalwart_operator_forward_to: ""
 
+# The Verself Runner GitHub App backs both CI installation AND "Sign in with
+# GitHub" (its user-to-server OAuth is brokered by Zitadel as an external IdP).
+# Public config only; the OAuth client secret lives in host.sops.yml as
+# github_integration_service_github_app_oauth_client_secret. For login the App
+# must grant Account permission "Email addresses: Read-only" and list
+# https://verself.sh/idps/callback among its Callback URLs.
 github_integration_service_github_app_id: 3370540
 github_integration_service_github_app_slug: verself-runner
 github_integration_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"

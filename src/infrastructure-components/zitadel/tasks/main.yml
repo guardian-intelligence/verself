@@ -111,6 +111,10 @@
     mode: "0640"
   no_log: true
 
+# GitHub login OAuth credstore material is owned by deploy/credstore.yml and
+# materialized by service-foundation during aspect deploy (this role does not
+# run in the deploy path).
+
 - name: Deploy Zitadel config
   ansible.builtin.template:
     src: config.yaml.j2

@@ -37,6 +37,7 @@ const (
 	defaultZitadelAdminPATPath                 = "/etc/zitadel/admin.pat"
 	defaultIAMCredstoreDir                     = "/etc/credstore/iam-service"
 	defaultIAMCredstoreGroup                   = "iam_service"
+	defaultGithubLoginIDPName                  = "GitHub"
 	desiredPasswordMinLength                   = 8
 	desiredPasswordLockoutAttempts             = 10
 	credentialMode                 os.FileMode = 0o640
@@ -56,6 +57,14 @@ type config struct {
 	claimsActionPath    string
 	zitadelReadyWait    time.Duration
 	zitadelReadyBackoff time.Duration
+	// GitHub login IdP ("Sign in with GitHub"). Optional: when either path is
+	// empty, GitHub IdP provisioning is skipped so deployments without GitHub
+	// login still converge. Both files are rendered from SOPS by the Zitadel
+	// Ansible role (the client id is non-secret but kept on the host for the
+	// same delivery path as the secret).
+	githubLoginIDPName          string
+	githubLoginClientIDPath     string
+	githubLoginClientSecretPath string
 }
 
 type zitadelClient struct {
@@ -166,6 +175,10 @@ func run(args []string) error {
 		claimsActionPath:    defaultClaimsActionPath,
 		zitadelReadyWait:    60 * time.Second,
 		zitadelReadyBackoff: time.Second,
+
+		githubLoginIDPName:          envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_IDP_NAME", defaultGithubLoginIDPName),
+		githubLoginClientIDPath:     envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID_PATH", ""),
+		githubLoginClientSecretPath: envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_SECRET_PATH", ""),
 	}
 	fs := flag.NewFlagSet("auth-control-plane-apply", flag.ContinueOnError)
 	fs.StringVar(&cfg.zitadelBaseURL, "zitadel-base-url", cfg.zitadelBaseURL, "Local Zitadel base URL.")
@@ -179,6 +192,9 @@ func run(args []string) error {
 	fs.StringVar(&cfg.cliAppName, "cli-app-name", cfg.cliAppName, "CLI OIDC app name.")
 	fs.StringVar(&cfg.claimsTargetName, "claims-target-name", cfg.claimsTargetName, "Product token claims action target name.")
 	fs.StringVar(&cfg.claimsActionPath, "claims-action-path", cfg.claimsActionPath, "Product token claims action path.")
+	fs.StringVar(&cfg.githubLoginIDPName, "github-login-idp-name", cfg.githubLoginIDPName, "Zitadel IdP display name for Sign in with GitHub.")
+	fs.StringVar(&cfg.githubLoginClientIDPath, "github-login-client-id-path", cfg.githubLoginClientIDPath, "Path to the GitHub OAuth App client id for Sign in with GitHub. Empty skips provisioning.")
+	fs.StringVar(&cfg.githubLoginClientSecretPath, "github-login-client-secret-path", cfg.githubLoginClientSecretPath, "Path to the GitHub OAuth App client secret. Empty skips provisioning.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -295,6 +311,11 @@ func apply(ctx context.Context, cfg config) error {
 		return err
 	}
 	if err := ensureProductTokenClaimsAction(ctx, client, cfg); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if err := ensureGitHubLoginIDP(ctx, client, cfg); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -871,6 +892,118 @@ func productTokenClaimsTargetBody(name, endpoint string) map[string]any {
 		"timeout":     "1s",
 		"payloadType": "PAYLOAD_TYPE_JSON",
 	}
+}
+
+// ensureGitHubLoginIDP provisions (or reconciles) the instance GitHub identity
+// provider used for "Sign in with GitHub", links it to the login policy, and
+// publishes its id to the iam-service credstore so iam-service can start the
+// idp-intent flow. Skipped when client credentials are not configured.
+func ensureGitHubLoginIDP(ctx context.Context, client zitadelClient, cfg config) error {
+	if strings.TrimSpace(cfg.githubLoginClientIDPath) == "" || strings.TrimSpace(cfg.githubLoginClientSecretPath) == "" {
+		fmt.Println("auth-control-plane-apply: github login idp not configured; skipping")
+		return nil
+	}
+	clientID, err := readSecret(cfg.githubLoginClientIDPath)
+	if err != nil {
+		return fmt.Errorf("read github login client id: %w", err)
+	}
+	clientSecret, err := readSecret(cfg.githubLoginClientSecretPath)
+	if err != nil {
+		return fmt.Errorf("read github login client secret: %w", err)
+	}
+	idpID, found, err := client.FindIDPByName(ctx, cfg.githubLoginIDPName)
+	if err != nil {
+		return err
+	}
+	if found {
+		if err := client.UpdateGitHubIDP(ctx, idpID, cfg.githubLoginIDPName, clientID, clientSecret); err != nil {
+			return err
+		}
+	} else {
+		idpID, err = client.CreateGitHubIDP(ctx, cfg.githubLoginIDPName, clientID, clientSecret)
+		if err != nil {
+			return err
+		}
+	}
+	if err := client.AddIDPToLoginPolicy(ctx, idpID); err != nil {
+		return err
+	}
+	return writeCredential(filepath.Join(cfg.iamCredstoreDir, "github-login-idp-id"), cfg.iamCredstoreGroup, idpID+"\n")
+}
+
+func githubIDPBody(name, clientID, clientSecret string) map[string]any {
+	return map[string]any{
+		"name":         strings.TrimSpace(name),
+		"clientId":     strings.TrimSpace(clientID),
+		"clientSecret": clientSecret,
+		"scopes":       []string{"read:user", "user:email"},
+		"providerOptions": map[string]any{
+			"isLinkingAllowed":  true,
+			"isCreationAllowed": true,
+			"isAutoCreation":    true,
+			"isAutoUpdate":      true,
+			"autoLinking":       "AUTO_LINKING_OPTION_EMAIL",
+		},
+	}
+}
+
+func (c zitadelClient) FindIDPByName(ctx context.Context, name string) (string, bool, error) {
+	var out struct {
+		Result []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"result"`
+	}
+	body := map[string]any{"queries": []map[string]any{{"idpNameQuery": map[string]string{"name": strings.TrimSpace(name), "method": "TEXT_QUERY_METHOD_EQUALS"}}}}
+	if err := c.doJSON(ctx, http.MethodPost, "/admin/v1/idps/_search", body, &out); err != nil {
+		return "", false, fmt.Errorf("search Zitadel IdP %s: %w", name, err)
+	}
+	for _, item := range out.Result {
+		if strings.EqualFold(strings.TrimSpace(item.Name), strings.TrimSpace(name)) && strings.TrimSpace(item.ID) != "" {
+			return strings.TrimSpace(item.ID), true, nil
+		}
+	}
+	return "", false, nil
+}
+
+func (c zitadelClient) CreateGitHubIDP(ctx context.Context, name, clientID, clientSecret string) (string, error) {
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/admin/v1/idps/github", githubIDPBody(name, clientID, clientSecret), &out); err != nil {
+		return "", fmt.Errorf("create Zitadel GitHub IdP %s: %w", name, err)
+	}
+	if strings.TrimSpace(out.ID) == "" {
+		return "", fmt.Errorf("create Zitadel GitHub IdP %s returned no id", name)
+	}
+	return strings.TrimSpace(out.ID), nil
+}
+
+func (c zitadelClient) UpdateGitHubIDP(ctx context.Context, idpID, name, clientID, clientSecret string) error {
+	path := "/admin/v1/idps/github/" + url.PathEscape(strings.TrimSpace(idpID))
+	if err := c.doJSON(ctx, http.MethodPut, path, githubIDPBody(name, clientID, clientSecret), nil); err != nil && !isNoChanges(err) {
+		return fmt.Errorf("update Zitadel GitHub IdP %s: %w", name, err)
+	}
+	return nil
+}
+
+func (c zitadelClient) AddIDPToLoginPolicy(ctx context.Context, idpID string) error {
+	body := map[string]any{"idpId": strings.TrimSpace(idpID), "ownerType": "IDP_OWNER_TYPE_SYSTEM"}
+	if err := c.doJSON(ctx, http.MethodPost, "/admin/v1/policies/login/idps", body, nil); err != nil && !isAlreadyExists(err) {
+		return fmt.Errorf("link Zitadel IdP %s to login policy: %w", idpID, err)
+	}
+	return nil
+}
+
+func isAlreadyExists(err error) bool {
+	var status statusError
+	if !errors.As(err, &status) {
+		return false
+	}
+	if status.Status == http.StatusConflict {
+		return true
+	}
+	return status.Status == http.StatusBadRequest && strings.Contains(strings.ToLower(status.Body), "already")
 }
 
 func isNoChanges(err error) bool {

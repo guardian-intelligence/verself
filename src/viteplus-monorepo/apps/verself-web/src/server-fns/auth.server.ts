@@ -120,6 +120,18 @@ export type PasswordLoginResult = IamOutcome<
   PasswordLoginSuccessResult
 >;
 
+const githubLoginStartSuccessResultSchema = v.object({
+  redirectURL: v.pipe(v.string(), v.nonEmpty()),
+});
+
+export type GithubLoginStartSuccessResult = v.InferOutput<
+  typeof githubLoginStartSuccessResultSchema
+>;
+export type GithubLoginStartResult = IamOutcome<
+  typeof IAM_SUCCESS_TAG.githubLoginStarted,
+  GithubLoginStartSuccessResult
+>;
+
 const nullableStringSchema = v.union([v.null_(), v.string()]);
 
 const browserAccountOrganizationSchema = v.object({
@@ -447,6 +459,26 @@ export async function completeIdentityPasswordLogin(data: {
     {},
     passwordLoginSuccessResultSchema,
     IAM_SUCCESS_TAG.passwordLoginCompleted,
+  );
+}
+
+export async function startIdentityGithubLogin(data: {
+  redirectTo?: string | undefined;
+  purpose?: string | undefined;
+}): Promise<GithubLoginStartResult> {
+  return identityAuthOutcome(
+    "idp/github/start",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        redirectTo: data.redirectTo ?? "",
+        purpose: data.purpose ?? "",
+      }),
+    },
+    {},
+    githubLoginStartSuccessResultSchema,
+    IAM_SUCCESS_TAG.githubLoginStarted,
   );
 }
 

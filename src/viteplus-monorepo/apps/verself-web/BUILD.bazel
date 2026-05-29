@@ -28,7 +28,10 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "verself-web",
     job_spec = "nomad.hcl",
-    post_deploy_canaries = [":medium_browser_canary"],
+    post_deploy_canaries = [
+        ":medium_browser_canary",
+        ":large_guardian_oidc_canary",
+    ],
     requires = ["nomad:job:electric"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
@@ -49,6 +52,24 @@ post_deploy_canary(
     canary_timeout = "90s",
     kind = "browser",
     target = ":e2e_smoke",
+)
+
+post_deploy_canary(
+    name = "large_guardian_oidc_canary",
+    args = [
+        "--site",
+        "{site}",
+        "--component",
+        "{component}",
+        "--job-id",
+        "{job_id}",
+        "--deploy-run-key",
+        "{deploy_run_key}",
+    ],
+    canary_size = "large",
+    canary_timeout = "2m",
+    kind = "browser",
+    target = ":e2e_guardian_oidc",
 )
 
 viteplus_app(
@@ -84,6 +105,11 @@ filegroup(
     srcs = glob(["e2e/**/*.ts"]),
 )
 
+filegroup(
+    name = "guardian_oidc_journey",
+    srcs = ["e2e/guardian-oidc-journey.feature"],
+)
+
 js_binary(
     name = "e2e_smoke",
     data = [
@@ -96,6 +122,32 @@ js_binary(
     fixed_args = [
         "--browser-executable=$(rootpath @chrome_headless_shell_linux64//:chrome_headless_shell)",
         "--cli=$(rootpath //src/verself-cli/cmd/verself:verself)",
+    ],
+    no_copy_to_bin = [
+        "@chrome_headless_shell_linux64//:all",
+        "@chrome_headless_shell_linux64//:chrome_headless_shell",
+    ],
+    tags = [
+        "browser_canary",
+        "local",
+        "manual",
+        "no-remote",
+        "no-sandbox",
+    ],
+)
+
+js_binary(
+    name = "e2e_guardian_oidc",
+    data = [
+        ":guardian_oidc_journey",
+        ":node_modules/playwright-core",
+        "@chrome_headless_shell_linux64//:all",
+        "@chrome_headless_shell_linux64//:chrome_headless_shell",
+    ],
+    entry_point = "e2e/guardian-oidc-canary.ts",
+    fixed_args = [
+        "--browser-executable=$(rootpath @chrome_headless_shell_linux64//:chrome_headless_shell)",
+        "--journey=$(rootpath :guardian_oidc_journey)",
     ],
     no_copy_to_bin = [
         "@chrome_headless_shell_linux64//:all",

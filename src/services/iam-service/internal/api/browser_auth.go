@@ -14,7 +14,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -63,6 +65,12 @@ type BrowserAuthConfig struct {
 	ProviderSession ProviderSessionRevoker
 	ProviderLogin   ProviderLoginClient
 	PasswordReset   PasswordResetNotifier
+	// GithubLoginIDPIDPath is the credstore path holding the Zitadel
+	// identity-provider id for "Sign in with GitHub". The file is written by
+	// auth-control-plane-apply, which may run after this service has started, so
+	// the value is resolved lazily rather than read once at boot. Empty path
+	// disables the GitHub login routes.
+	GithubLoginIDPIDPath string
 }
 
 type BrowserAuth struct {
@@ -81,12 +89,21 @@ type BrowserAuth struct {
 	publicBaseURL    *url.URL
 	postLogoutURL    string
 	tokenVault       browserTokenVault
+	// githubLoginIDPIDPath is read lazily; githubLoginIDPID caches the resolved
+	// value once present so login does not require a restart after the IdP is
+	// provisioned out of band.
+	githubLoginIDPIDPath string
+	githubLoginIDPMu     sync.Mutex
+	githubLoginIDPID     string
 }
 
 type browserAuthRequestInfoKey struct{}
 
 type ProviderLoginClient interface {
 	CreatePasswordSession(context.Context, identity.LoginSessionInput) (identity.LoginSession, error)
+	StartIDPIntent(context.Context, string, string, string) (identity.IDPIntentStart, error)
+	RetrieveIDPIntent(context.Context, string, string) (identity.IDPIntentResult, error)
+	CreateSessionFromIDPIntent(context.Context, string, string, string, identity.LoginSessionInput) (identity.LoginSession, error)
 	GetOIDCAuthRequest(context.Context, string) (identity.OIDCAuthRequest, error)
 	FinalizeOIDCAuthRequest(context.Context, string, identity.LoginSession) (string, error)
 	StartDeviceAuthorization(context.Context, identity.StartDeviceAuthorizationInput) (identity.DeviceAuthorization, error)
@@ -180,16 +197,37 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 			RedirectURL:  callbackURL,
 			Scopes:       scopes,
 		},
-		httpClient:       httpClient,
-		authz:            cfg.Authz,
-		providerSessions: cfg.ProviderSession,
-		providerLogin:    cfg.ProviderLogin,
-		passwordReset:    cfg.PasswordReset,
-		productAudience:  productAudience,
-		publicBaseURL:    publicBaseURL,
-		postLogoutURL:    postLogoutURL,
-		tokenVault:       tokenVault,
+		httpClient:           httpClient,
+		authz:                cfg.Authz,
+		providerSessions:     cfg.ProviderSession,
+		providerLogin:        cfg.ProviderLogin,
+		passwordReset:        cfg.PasswordReset,
+		productAudience:      productAudience,
+		publicBaseURL:        publicBaseURL,
+		postLogoutURL:        postLogoutURL,
+		tokenVault:           tokenVault,
+		githubLoginIDPIDPath: strings.TrimSpace(cfg.GithubLoginIDPIDPath),
 	}, nil
+}
+
+// githubLoginIDP resolves the Zitadel GitHub IdP id from credstore on demand.
+// auth-control-plane-apply writes this file when it provisions the IdP, possibly
+// after this service started, so it is read lazily and cached once present.
+func (a *BrowserAuth) githubLoginIDP() string {
+	a.githubLoginIDPMu.Lock()
+	defer a.githubLoginIDPMu.Unlock()
+	if a.githubLoginIDPID != "" {
+		return a.githubLoginIDPID
+	}
+	if a.githubLoginIDPIDPath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(a.githubLoginIDPIDPath)
+	if err != nil {
+		return ""
+	}
+	a.githubLoginIDPID = strings.TrimSpace(string(data))
+	return a.githubLoginIDPID
 }
 
 func parseBrowserAuthPublicBaseURL(raw string) (*url.URL, error) {
@@ -231,6 +269,10 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.route(w, r, http.MethodPost, "browser-password-reset-start", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetStart)
 	case "/password-reset/complete":
 		a.route(w, r, http.MethodPost, "browser-password-reset-complete", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetComplete)
+	case "/idp/github/start":
+		a.route(w, r, http.MethodPost, "browser-idp-github-start", rateLimitSignup, browserAuthJSONBodyMax, a.handleGithubLoginStart)
+	case "/idp/callback":
+		a.route(w, r, http.MethodGet, "browser-idp-callback", rateLimitSignup, 0, a.handleGithubLoginCallback)
 	case "/callback":
 		a.route(w, r, http.MethodGet, "browser-callback", rateLimitSignup, 0, a.handleCallback)
 	case "/session":

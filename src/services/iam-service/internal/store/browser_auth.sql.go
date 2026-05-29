@@ -59,6 +59,31 @@ func (q *Queries) DeleteBrowserClient(ctx context.Context, arg DeleteBrowserClie
 	return err
 }
 
+const deleteBrowserIDPLoginIntent = `-- name: DeleteBrowserIDPLoginIntent :one
+DELETE FROM iam_browser_idp_login_intents
+WHERE state_hash = $1
+  AND expires_at > now()
+RETURNING state_hash, client_hash, redirect_to, purpose, expires_at, created_at
+`
+
+type DeleteBrowserIDPLoginIntentParams struct {
+	StateHash string
+}
+
+func (q *Queries) DeleteBrowserIDPLoginIntent(ctx context.Context, arg DeleteBrowserIDPLoginIntentParams) (IamBrowserIdpLoginIntent, error) {
+	row := q.db.QueryRow(ctx, deleteBrowserIDPLoginIntent, arg.StateHash)
+	var i IamBrowserIdpLoginIntent
+	err := row.Scan(
+		&i.StateHash,
+		&i.ClientHash,
+		&i.RedirectTo,
+		&i.Purpose,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteBrowserLoginTransaction = `-- name: DeleteBrowserLoginTransaction :one
 DELETE FROM iam_browser_login_transactions
 WHERE state_hash = $1
@@ -120,6 +145,16 @@ type DeleteBrowserResourceTokensParams struct {
 
 func (q *Queries) DeleteBrowserResourceTokens(ctx context.Context, arg DeleteBrowserResourceTokensParams) error {
 	_, err := q.db.Exec(ctx, deleteBrowserResourceTokens, arg.AccountHandle)
+	return err
+}
+
+const deleteExpiredBrowserIDPLoginIntents = `-- name: DeleteExpiredBrowserIDPLoginIntents :exec
+DELETE FROM iam_browser_idp_login_intents
+WHERE expires_at <= now()
+`
+
+func (q *Queries) DeleteExpiredBrowserIDPLoginIntents(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredBrowserIDPLoginIntents)
 	return err
 }
 
@@ -653,6 +688,41 @@ func (q *Queries) InsertBrowserAccountObservation(ctx context.Context, arg Inser
 		arg.GeoCountryCode,
 		arg.GeoRegion,
 		arg.GeoCity,
+	)
+	return err
+}
+
+const insertBrowserIDPLoginIntent = `-- name: InsertBrowserIDPLoginIntent :exec
+INSERT INTO iam_browser_idp_login_intents (
+  state_hash,
+  client_hash,
+  redirect_to,
+  purpose,
+  expires_at
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5
+)
+`
+
+type InsertBrowserIDPLoginIntentParams struct {
+	StateHash  string
+	ClientHash string
+	RedirectTo string
+	Purpose    string
+	ExpiresAt  pgtype.Timestamptz
+}
+
+func (q *Queries) InsertBrowserIDPLoginIntent(ctx context.Context, arg InsertBrowserIDPLoginIntentParams) error {
+	_, err := q.db.Exec(ctx, insertBrowserIDPLoginIntent,
+		arg.StateHash,
+		arg.ClientHash,
+		arg.RedirectTo,
+		arg.Purpose,
+		arg.ExpiresAt,
 	)
 	return err
 }

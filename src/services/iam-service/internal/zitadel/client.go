@@ -348,6 +348,133 @@ func (c *Client) FinalizeOIDCAuthRequest(ctx context.Context, authRequestID stri
 	return strings.TrimSpace(out.CallbackURL), nil
 }
 
+// StartIDPIntent begins an external identity provider login intent and returns
+// the provider authorization URL. Zitadel appends `id` and `token` query
+// parameters to successURL after the provider redirects back through
+// /idps/callback.
+func (c *Client) StartIDPIntent(ctx context.Context, idpID, successURL, failureURL string) (identity.IDPIntentStart, error) {
+	idpID = strings.TrimSpace(idpID)
+	successURL = strings.TrimSpace(successURL)
+	failureURL = strings.TrimSpace(failureURL)
+	if idpID == "" || successURL == "" || failureURL == "" {
+		return identity.IDPIntentStart{}, fmt.Errorf("%w: idp_id, success_url, and failure_url are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{
+		"idpId": idpID,
+		"urls": map[string]any{
+			"successUrl": successURL,
+			"failureUrl": failureURL,
+		},
+	}
+	var out struct {
+		AuthURL string `json:"authUrl"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/idp_intents", body, &out); err != nil {
+		if zitadelRequestInvalid(err) {
+			return identity.IDPIntentStart{}, fmt.Errorf("%w: start idp intent: %v", identity.ErrInvalidInput, err)
+		}
+		return identity.IDPIntentStart{}, fmt.Errorf("%w: start idp intent: %v", identity.ErrZitadelUnavailable, err)
+	}
+	authURL := strings.TrimSpace(out.AuthURL)
+	if authURL == "" {
+		return identity.IDPIntentStart{}, fmt.Errorf("%w: start idp intent returned no auth URL", identity.ErrZitadelUnavailable)
+	}
+	return identity.IDPIntentStart{AuthURL: authURL}, nil
+}
+
+// RetrieveIDPIntent reads the external identity resolved for a completed intent.
+// The top-level userId is the linked Zitadel user (empty when unlinked).
+func (c *Client) RetrieveIDPIntent(ctx context.Context, intentID, intentToken string) (identity.IDPIntentResult, error) {
+	intentID = strings.TrimSpace(intentID)
+	intentToken = strings.TrimSpace(intentToken)
+	if intentID == "" || intentToken == "" {
+		return identity.IDPIntentResult{}, fmt.Errorf("%w: idp_intent_id and idp_intent_token are required", identity.ErrInvalidInput)
+	}
+	var out struct {
+		UserID         string `json:"userId"`
+		IDPInformation struct {
+			IDPID          string         `json:"idpId"`
+			UserID         string         `json:"userId"`
+			UserName       string         `json:"userName"`
+			RawInformation map[string]any `json:"rawInformation"`
+		} `json:"idpInformation"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/idp_intents/"+url.PathEscape(intentID), map[string]any{"idpIntentToken": intentToken}, &out); err != nil {
+		if zitadelRequestInvalid(err) {
+			return identity.IDPIntentResult{}, fmt.Errorf("%w: retrieve idp intent: %v", identity.ErrInvalidInput, err)
+		}
+		return identity.IDPIntentResult{}, fmt.Errorf("%w: retrieve idp intent: %v", identity.ErrZitadelUnavailable, err)
+	}
+	email, emailVerified := githubEmailFromRawInformation(out.IDPInformation.RawInformation)
+	return identity.IDPIntentResult{
+		IDPID:           strings.TrimSpace(out.IDPInformation.IDPID),
+		UserID:          strings.TrimSpace(out.UserID),
+		ExternalSubject: strings.TrimSpace(out.IDPInformation.UserID),
+		Username:        strings.TrimSpace(out.IDPInformation.UserName),
+		Email:           email,
+		EmailVerified:   emailVerified,
+	}, nil
+}
+
+// CreateSessionFromIDPIntent mints a Zitadel session from a completed IdP
+// intent. When userID is known (the external identity is already linked) it is
+// included as a user check; auto-linking/auto-creation on the IdP otherwise
+// binds the session subject. Returns the session token like CreatePasswordSession.
+func (c *Client) CreateSessionFromIDPIntent(ctx context.Context, intentID, intentToken, userID string, input identity.LoginSessionInput) (identity.LoginSession, error) {
+	intentID = strings.TrimSpace(intentID)
+	intentToken = strings.TrimSpace(intentToken)
+	if intentID == "" || intentToken == "" {
+		return identity.LoginSession{}, fmt.Errorf("%w: idp_intent_id and idp_intent_token are required", identity.ErrInvalidInput)
+	}
+	checks := map[string]any{
+		"idpIntent": map[string]any{
+			"idpIntentId":    intentID,
+			"idpIntentToken": intentToken,
+		},
+	}
+	if userID = strings.TrimSpace(userID); userID != "" {
+		checks["user"] = map[string]any{"userId": userID}
+	}
+	createBody := map[string]any{"checks": checks}
+	if input.Lifetime > 0 {
+		createBody["lifetime"] = protobufDuration(input.Lifetime)
+	}
+	if userAgent := loginSessionUserAgent(input); len(userAgent) > 0 {
+		createBody["userAgent"] = userAgent
+	}
+	var created sessionResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/sessions", createBody, &created); err != nil {
+		return identity.LoginSession{}, mapLoginSessionError("create idp session", err)
+	}
+	sessionID := strings.TrimSpace(created.SessionID)
+	sessionToken := strings.TrimSpace(created.SessionToken)
+	if sessionID == "" || sessionToken == "" {
+		return identity.LoginSession{}, fmt.Errorf("%w: create idp session returned no session token", identity.ErrZitadelUnavailable)
+	}
+	expiresAt := time.Time{}
+	if input.Lifetime > 0 {
+		expiresAt = time.Now().UTC().Add(input.Lifetime)
+	}
+	return identity.LoginSession{SessionID: sessionID, SessionToken: sessionToken, ExpiresAt: expiresAt}, nil
+}
+
+// githubEmailFromRawInformation extracts the GitHub primary email from the
+// provider's raw user payload. GitHub's /user response carries `email` (the
+// public/primary email) without a verification flag, so treat a present email as
+// verified provider truth; Zitadel's autoLinking compares against verified
+// Zitadel emails.
+func githubEmailFromRawInformation(raw map[string]any) (string, bool) {
+	if raw == nil {
+		return "", false
+	}
+	email, _ := raw["email"].(string)
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", false
+	}
+	return email, true
+}
+
 func (c *Client) StartDeviceAuthorization(ctx context.Context, input identity.StartDeviceAuthorizationInput) (identity.DeviceAuthorization, error) {
 	clientID := strings.TrimSpace(input.ClientID)
 	scopes := compactStrings(input.Scopes)

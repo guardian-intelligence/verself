@@ -196,6 +196,10 @@ func run() error {
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
 	browserOIDCClientID := cfg.RequireCredential("oidc-client-id")
 	browserOIDCClientSecret := cfg.RequireCredential("oidc-client-secret")
+	// Resolved lazily at request time: auth-control-plane-apply writes this
+	// credstore file when it provisions the GitHub login IdP, which can happen
+	// after this service starts. A missing file disables the routes until present.
+	githubLoginIDPIDPath := cfg.CredentialPath("github-login-idp-id")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "iam_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
@@ -350,17 +354,18 @@ func run() error {
 	inviteNotifier := notificationInviteSender{client: notificationsClient}
 	signupNotifier := notificationSignupSender{client: notificationsClient}
 	browserAuth, err := api.NewBrowserAuth(ctx, api.BrowserAuthConfig{
-		PG:              pg,
-		Logger:          logger,
-		IssuerURL:       authIssuerURL,
-		ClientID:        browserOIDCClientID,
-		ClientSecret:    browserOIDCClientSecret,
-		PublicBaseURL:   browserAuthPublicBaseURL,
-		ProductAudience: authAudience,
-		Authz:           authzService,
-		ProviderSession: zitadelClient,
-		ProviderLogin:   zitadelClient,
-		PasswordReset:   signupNotifier,
+		PG:                   pg,
+		Logger:               logger,
+		IssuerURL:            authIssuerURL,
+		ClientID:             browserOIDCClientID,
+		ClientSecret:         browserOIDCClientSecret,
+		PublicBaseURL:        browserAuthPublicBaseURL,
+		ProductAudience:      authAudience,
+		Authz:                authzService,
+		ProviderSession:      zitadelClient,
+		ProviderLogin:        zitadelClient,
+		PasswordReset:        signupNotifier,
+		GithubLoginIDPIDPath: githubLoginIDPIDPath,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 			Timeout:   5 * time.Second,

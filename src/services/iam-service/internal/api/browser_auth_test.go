@@ -541,6 +541,19 @@ func (r *recordingProviderLogin) CreatePasswordSession(_ context.Context, input 
 	return r.session, nil
 }
 
+func (r *recordingProviderLogin) StartIDPIntent(_ context.Context, _ string, _ string, _ string) (identity.IDPIntentStart, error) {
+	return identity.IDPIntentStart{AuthURL: "https://github.com/login/oauth/authorize?client_id=test"}, nil
+}
+
+func (r *recordingProviderLogin) RetrieveIDPIntent(_ context.Context, _ string, _ string) (identity.IDPIntentResult, error) {
+	return identity.IDPIntentResult{}, nil
+}
+
+func (r *recordingProviderLogin) CreateSessionFromIDPIntent(_ context.Context, _ string, _ string, _ string, input identity.LoginSessionInput) (identity.LoginSession, error) {
+	r.created = input
+	return r.session, nil
+}
+
 func (r *recordingProviderLogin) GetOIDCAuthRequest(_ context.Context, authRequestID string) (identity.OIDCAuthRequest, error) {
 	r.loadedAuthRequestID = authRequestID
 	return identity.OIDCAuthRequest{ID: authRequestID}, nil

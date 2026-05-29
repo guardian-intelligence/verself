@@ -506,6 +506,27 @@ type OIDCAuthRequest struct {
 	LoginHint   string
 }
 
+// IDPIntentStart is the result of starting an external identity provider intent
+// against Zitadel's session API. AuthURL is the provider authorization URL the
+// browser must be redirected to.
+type IDPIntentStart struct {
+	AuthURL string
+}
+
+// IDPIntentResult is the external identity Zitadel resolved for a completed IdP
+// intent. UserID is the linked Zitadel user when the external identity is
+// already (or auto-) linked; it is empty when no Verself/Zitadel user is bound
+// yet. ExternalSubject/Username/Email are provider truth used for telemetry and
+// later explicit-link decisions.
+type IDPIntentResult struct {
+	IDPID           string
+	UserID          string
+	ExternalSubject string
+	Username        string
+	Email           string
+	EmailVerified   bool
+}
+
 type StartDeviceAuthorizationInput struct {
 	ClientID string
 	Scopes   []string

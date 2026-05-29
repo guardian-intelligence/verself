@@ -53,6 +53,7 @@ export const IAM_ERROR_TAG = {
 export const IAM_SUCCESS_TAG = {
   memberInviteAccepted: "iam.member_invite.accepted",
   passwordLoginCompleted: "iam.password_login.completed",
+  githubLoginStarted: "iam.github_login.started",
   passwordResetStarted: "iam.password_reset.started",
   passwordResetCompleted: "iam.password_reset.completed",
   deviceLoginLoaded: "iam.device_login.loaded",
