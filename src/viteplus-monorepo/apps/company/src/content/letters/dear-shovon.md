@@ -8,7 +8,7 @@ summary: "Dear Shovon"
 
 I wish someone told me having a son would feel like meeting a smaller, kinder, funnier version of myself. Someone who holds my quirks like treasures instead of flaws.
 
-I love our morning walks and when he stops to teach me the laughing gulls names. There was a new one today so we picked out a name for them. It’s “Donnie,” in case you see them later.
+I love our morning walks and when he stops to teach me the laughing gulls names. There was a new one today so we picked out a name together. It’s “Donnie,” just so you know.
 
 And did you know he has his first crush? He told me over breakfast that, when they're nearby, his stomach tries to escape through his chest, and he asked me what he should do. It reminded me of when we met — those first few months — and falling in love at our first Odesza. So I smiled and told him, “Find out their favorite game and ask them to watch you play!” He rolled his eyes because he’s sick of hearing our story, but I wonder what you’d say if he asked you.
 
