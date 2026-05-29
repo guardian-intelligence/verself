@@ -527,6 +527,18 @@ type IDPIntentResult struct {
 	EmailVerified   bool
 }
 
+// AddIDPLinkInput binds an external identity provider identity to an existing
+// Zitadel human. UserID is the Zitadel user; ExternalUserID/ExternalUserName are
+// provider truth from a completed IdP intent. Used to auto-link a verified GitHub
+// identity to an existing account by verified email over the headless Session API
+// (which, unlike the hosted login UI, never auto-links).
+type AddIDPLinkInput struct {
+	UserID           string
+	IDPID            string
+	ExternalUserID   string
+	ExternalUserName string
+}
+
 type StartDeviceAuthorizationInput struct {
 	ClientID string
 	Scopes   []string

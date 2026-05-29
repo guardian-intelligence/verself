@@ -35,6 +35,8 @@ type LoginSearch = {
   readonly required_subject?: string;
   readonly required_email?: string;
   readonly required_org_id?: string;
+  readonly email?: string;
+  readonly link?: string;
 };
 
 const optionalSearchString = v.pipe(
@@ -58,6 +60,8 @@ const loginSearchSchema = v.pipe(
     required_subject: v.optional(optionalSearchString),
     required_email: v.optional(optionalSearchString),
     required_org_id: v.optional(optionalSearchString),
+    email: v.optional(optionalSearchString),
+    link: v.optional(optionalSearchString),
   }),
   v.transform(
     (parsed): LoginSearch =>
@@ -70,6 +74,8 @@ const loginSearchSchema = v.pipe(
         required_subject: parsed.required_subject,
         required_email: parsed.required_email,
         required_org_id: parsed.required_org_id,
+        email: parsed.email,
+        link: parsed.link,
       }),
   ),
 );
@@ -120,7 +126,7 @@ function LoginEmailSheetForm() {
 
   const form = useForm({
     defaultValues: {
-      email: search.required_email ?? search.login_hint ?? "",
+      email: search.email ?? search.required_email ?? search.login_hint ?? "",
       password: "",
     },
     validationLogic: revalidateLogic({
@@ -139,10 +145,18 @@ function LoginEmailSheetForm() {
     },
   });
 
+  const linkingGithub = search.link === "github";
+
   return (
     <section aria-label="Email sign in form" className="grid gap-4 pb-2">
-      <h2 className="text-lg font-semibold tracking-tight">Sign in</h2>
-      <p className="text-sm text-muted-foreground">Use your account email and password.</p>
+      <h2 className="text-lg font-semibold tracking-tight">
+        {linkingGithub ? "Confirm it's you" : "Sign in"}
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        {linkingGithub
+          ? "An account with this email already exists. Enter your password to connect GitHub."
+          : "Use your account email and password."}
+      </p>
       <form
         noValidate
         onSubmit={(event) => {

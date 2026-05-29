@@ -186,6 +186,13 @@ func (a *BrowserAuth) handlePasswordLogin(w http.ResponseWriter, r *http.Request
 		a.serverError(w, r, "create provider password session", err)
 		return
 	}
+	// A successful password authentication is the linking authority for a pending
+	// step-up GitHub link (the email match only selected the candidate account).
+	if err := a.linkGithubFromChallenge(r, w, email); err != nil {
+		_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)
+		a.serverError(w, r, "link github from challenge", err)
+		return
+	}
 	if incomingAuthRequestID != "" {
 		if _, err := a.providerLogin.GetOIDCAuthRequest(r.Context(), incomingAuthRequestID); err != nil {
 			_ = a.providerSessions.DeleteSession(context.WithoutCancel(r.Context()), session.SessionID)

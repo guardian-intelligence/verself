@@ -549,6 +549,14 @@ func (r *recordingProviderLogin) RetrieveIDPIntent(_ context.Context, _ string, 
 	return identity.IDPIntentResult{}, nil
 }
 
+func (r *recordingProviderLogin) FindHumanByVerifiedEmail(context.Context, string) (string, bool, error) {
+	return "", false, errors.New("unexpected FindHumanByVerifiedEmail")
+}
+
+func (r *recordingProviderLogin) AddIDPLink(context.Context, identity.AddIDPLinkInput) error {
+	return errors.New("unexpected AddIDPLink")
+}
+
 func (r *recordingProviderLogin) CreateSessionFromIDPIntent(_ context.Context, _ string, _ string, _ string, input identity.LoginSessionInput) (identity.LoginSession, error) {
 	r.created = input
 	return r.session, nil

@@ -64,6 +64,41 @@ RETURNING state_hash, client_hash, redirect_to, purpose, expires_at, created_at;
 DELETE FROM iam_browser_idp_login_intents
 WHERE expires_at <= now();
 
+-- name: InsertBrowserIDPLinkChallenge :exec
+INSERT INTO iam_browser_idp_link_challenges (
+  challenge_hash,
+  client_hash,
+  zitadel_user_id,
+  idp_id,
+  external_user_id,
+  external_user_name,
+  email,
+  redirect_to,
+  purpose,
+  expires_at
+) VALUES (
+  sqlc.arg(challenge_hash),
+  sqlc.arg(client_hash),
+  sqlc.arg(zitadel_user_id),
+  sqlc.arg(idp_id),
+  sqlc.arg(external_user_id),
+  sqlc.arg(external_user_name),
+  sqlc.arg(email),
+  sqlc.arg(redirect_to),
+  sqlc.arg(purpose),
+  sqlc.arg(expires_at)
+);
+
+-- name: DeleteBrowserIDPLinkChallenge :one
+DELETE FROM iam_browser_idp_link_challenges
+WHERE challenge_hash = sqlc.arg(challenge_hash)
+  AND expires_at > now()
+RETURNING challenge_hash, client_hash, zitadel_user_id, idp_id, external_user_id, external_user_name, email, redirect_to, purpose, expires_at, created_at;
+
+-- name: DeleteExpiredBrowserIDPLinkChallenges :exec
+DELETE FROM iam_browser_idp_link_challenges
+WHERE expires_at <= now();
+
 -- name: UpsertBrowserClient :exec
 INSERT INTO iam_browser_clients (
   client_hash,

@@ -39,6 +39,7 @@ import (
 const (
 	browserAuthCookieName      = "verself_client"
 	browserAuthLoginCookieName = "verself_login"
+	browserAuthLinkCookieName  = "verself_link"
 	browserAuthSessionTTL      = 30 * 24 * time.Hour
 	browserAuthLoginTTL        = 5 * time.Minute
 	browserAuthRefreshLeeway   = 60 * time.Second
@@ -103,6 +104,8 @@ type ProviderLoginClient interface {
 	CreatePasswordSession(context.Context, identity.LoginSessionInput) (identity.LoginSession, error)
 	StartIDPIntent(context.Context, string, string, string) (identity.IDPIntentStart, error)
 	RetrieveIDPIntent(context.Context, string, string) (identity.IDPIntentResult, error)
+	FindHumanByVerifiedEmail(context.Context, string) (string, bool, error)
+	AddIDPLink(context.Context, identity.AddIDPLinkInput) error
 	CreateSessionFromIDPIntent(context.Context, string, string, string, identity.LoginSessionInput) (identity.LoginSession, error)
 	GetOIDCAuthRequest(context.Context, string) (identity.OIDCAuthRequest, error)
 	FinalizeOIDCAuthRequest(context.Context, string, identity.LoginSession) (string, error)
@@ -1850,6 +1853,43 @@ func (a *BrowserAuth) clearLoginCookie(w http.ResponseWriter) {
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// setLinkChallengeCookie carries the single-use step-up link challenge secret on
+// the same /api/v1/auth path as the login cookie, so it rides along to the
+// password-login that proves account control and performs the link.
+func (a *BrowserAuth) setLinkChallengeCookie(w http.ResponseWriter, challengeSecret string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserAuthLinkCookieName,
+		Value:    challengeSecret,
+		Path:     "/api/v1/auth",
+		Expires:  time.Now().UTC().Add(browserAuthLoginTTL),
+		MaxAge:   int(browserAuthLoginTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (a *BrowserAuth) clearLinkChallengeCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserAuthLinkCookieName,
+		Value:    "",
+		Path:     "/api/v1/auth",
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func linkChallengeSecretFromRequest(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(browserAuthLinkCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", false
+	}
+	return cookie.Value, true
 }
 
 func browserClientSecretFromRequest(r *http.Request) (string, bool) {
