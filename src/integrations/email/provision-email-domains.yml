@@ -10,8 +10,13 @@
 #     ansible-playbook -i src/host/sites/prod/inventory.ini \
 #       -e verself_site=prod src/integrations/email/provision-email-domains.yml
 #
-# After it runs, click the verification link Cloudflare emails to the forwarding
-# destination, and confirm the merged apex SPF covers both providers.
+# The Cloudflare token (host.sops.yml: cloudflare_api_token) must carry the
+# "Email Routing" edit permission in addition to Zone DNS edit; the enable call
+# returns 403 without it. After it runs, click the verification link Cloudflare
+# emails to the forwarding destination.
+#
+# Resend keeps its MX/SPF on the send.<domain> subdomain and DKIM on
+# resend._domainkey, so the apex is free for Cloudflare Email Routing's records.
 - name: Provision company email domains
   hosts: localhost
   connection: local
@@ -30,12 +35,7 @@
       no_log: true
 
     - name: Register and verify Resend sending domains
-      ansible.builtin.include_role:
-        name: resend
-      vars:
-        resend_domain: "{{ sending_domain.domain }}"
-        resend_zone: "{{ sending_domain.zone }}"
-        resend_root_dmarc_domain: "{{ sending_domain.root_dmarc_domain }}"
+      ansible.builtin.include_tasks: provision-resend-domain.yml
       loop: "{{ resend_sending_domains }}"
       loop_control:
         loop_var: sending_domain
