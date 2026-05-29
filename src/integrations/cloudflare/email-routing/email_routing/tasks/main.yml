@@ -4,19 +4,19 @@
 # matching rule is absent. Destination verification still requires the operator
 # to click the link Cloudflare emails to the destination address.
 
-- name: Validate Cloudflare API token is configured
+- name: Validate Cloudflare Email Routing token is configured
   ansible.builtin.fail:
     msg: >-
-      cloudflare_api_token is empty. Add it via:
-      sops src/host/sites/{{ verself_site | default('prod') }}/secrets/host.sops.yml
-  when: cloudflare_api_token | default('', true) | length == 0
+      cloudflare_company_api_token is empty. Add an Email-Routing-scoped
+      token via: sops src/host/sites/{{ verself_site | default('prod') }}/secrets/host.sops.yml
+  when: cloudflare_company_api_token | default('', true) | length == 0
 
 - name: Resolve Cloudflare zone
   ansible.builtin.uri:
     url: "{{ cloudflare_api_url }}/zones?name={{ cloudflare_email_routing_zone }}"
     method: GET
     headers:
-      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
     return_content: true
     status_code: 200
   register: cloudflare_zone_lookup
@@ -34,7 +34,7 @@
     url: "{{ cloudflare_api_url }}/zones/{{ cloudflare_email_routing_zone_id }}/email/routing/enable"
     method: POST
     headers:
-      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
       Content-Type: "application/json"
     body_format: json
     body: {}
@@ -48,7 +48,7 @@
     url: "{{ cloudflare_api_url }}/zones/{{ cloudflare_email_routing_zone_id }}/email/routing/dns"
     method: GET
     headers:
-      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
     return_content: true
     status_code: 200
   register: cloudflare_email_routing_dns
@@ -65,7 +65,7 @@
     priority: "{{ item.priority | default(omit) }}"
     ttl: 1
     proxied: false
-    api_token: "{{ cloudflare_api_token }}"
+    api_token: "{{ cloudflare_company_api_token }}"
   loop: "{{ cloudflare_email_routing_dns.json.result | selectattr('type', 'equalto', 'MX') | list }}"
   loop_control:
     label: "MX {{ item.name }}"
@@ -83,7 +83,7 @@
     ttl: 1
     proxied: false
     solo: true
-    api_token: "{{ cloudflare_api_token }}"
+    api_token: "{{ cloudflare_company_api_token }}"
   delegate_to: localhost
   become: false
 
@@ -92,7 +92,7 @@
     url: "{{ cloudflare_api_url }}/accounts/{{ cloudflare_email_routing_account_id }}/email/routing/addresses"
     method: POST
     headers:
-      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
       Content-Type: "application/json"
     body_format: json
     body:
@@ -110,7 +110,7 @@
     url: "{{ cloudflare_api_url }}/zones/{{ cloudflare_email_routing_zone_id }}/email/routing/rules"
     method: GET
     headers:
-      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
     return_content: true
     status_code: 200
   register: cloudflare_email_routing_existing
@@ -131,7 +131,7 @@
     url: "{{ cloudflare_api_url }}/zones/{{ cloudflare_email_routing_zone_id }}/email/routing/rules"
     method: POST
     headers:
-      Authorization: "Bearer {{ cloudflare_api_token }}"
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
       Content-Type: "application/json"
     body_format: json
     body:
