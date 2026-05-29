@@ -63,6 +63,10 @@ type BrowserAuthConfig struct {
 	ProviderSession ProviderSessionRevoker
 	ProviderLogin   ProviderLoginClient
 	PasswordReset   PasswordResetNotifier
+	// GithubLoginIDPID is the Zitadel identity-provider id for "Sign in with
+	// GitHub". Empty disables the GitHub login routes (the feature is gated on
+	// the IdP being provisioned by auth-control-plane-apply).
+	GithubLoginIDPID string
 }
 
 type BrowserAuth struct {
@@ -81,12 +85,16 @@ type BrowserAuth struct {
 	publicBaseURL    *url.URL
 	postLogoutURL    string
 	tokenVault       browserTokenVault
+	githubLoginIDPID string
 }
 
 type browserAuthRequestInfoKey struct{}
 
 type ProviderLoginClient interface {
 	CreatePasswordSession(context.Context, identity.LoginSessionInput) (identity.LoginSession, error)
+	StartIDPIntent(context.Context, string, string, string) (identity.IDPIntentStart, error)
+	RetrieveIDPIntent(context.Context, string, string) (identity.IDPIntentResult, error)
+	CreateSessionFromIDPIntent(context.Context, string, string, string, identity.LoginSessionInput) (identity.LoginSession, error)
 	GetOIDCAuthRequest(context.Context, string) (identity.OIDCAuthRequest, error)
 	FinalizeOIDCAuthRequest(context.Context, string, identity.LoginSession) (string, error)
 	StartDeviceAuthorization(context.Context, identity.StartDeviceAuthorizationInput) (identity.DeviceAuthorization, error)
@@ -189,6 +197,7 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		publicBaseURL:    publicBaseURL,
 		postLogoutURL:    postLogoutURL,
 		tokenVault:       tokenVault,
+		githubLoginIDPID: strings.TrimSpace(cfg.GithubLoginIDPID),
 	}, nil
 }
 
@@ -231,6 +240,10 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.route(w, r, http.MethodPost, "browser-password-reset-start", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetStart)
 	case "/password-reset/complete":
 		a.route(w, r, http.MethodPost, "browser-password-reset-complete", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetComplete)
+	case "/idp/github/start":
+		a.route(w, r, http.MethodPost, "browser-idp-github-start", rateLimitSignup, browserAuthJSONBodyMax, a.handleGithubLoginStart)
+	case "/idp/callback":
+		a.route(w, r, http.MethodGet, "browser-idp-callback", rateLimitSignup, 0, a.handleGithubLoginCallback)
 	case "/callback":
 		a.route(w, r, http.MethodGet, "browser-callback", rateLimitSignup, 0, a.handleCallback)
 	case "/session":

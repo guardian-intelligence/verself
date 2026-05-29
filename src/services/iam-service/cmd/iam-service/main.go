@@ -196,6 +196,9 @@ func run() error {
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
 	browserOIDCClientID := cfg.RequireCredential("oidc-client-id")
 	browserOIDCClientSecret := cfg.RequireCredential("oidc-client-secret")
+	// Optional: present once auth-control-plane-apply has provisioned the GitHub
+	// login IdP. Empty disables the "Sign in with GitHub" routes.
+	githubLoginIDPID := cfg.CredentialOr("github-login-idp-id", "")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "iam_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
@@ -350,17 +353,18 @@ func run() error {
 	inviteNotifier := notificationInviteSender{client: notificationsClient}
 	signupNotifier := notificationSignupSender{client: notificationsClient}
 	browserAuth, err := api.NewBrowserAuth(ctx, api.BrowserAuthConfig{
-		PG:              pg,
-		Logger:          logger,
-		IssuerURL:       authIssuerURL,
-		ClientID:        browserOIDCClientID,
-		ClientSecret:    browserOIDCClientSecret,
-		PublicBaseURL:   browserAuthPublicBaseURL,
-		ProductAudience: authAudience,
-		Authz:           authzService,
-		ProviderSession: zitadelClient,
-		ProviderLogin:   zitadelClient,
-		PasswordReset:   signupNotifier,
+		PG:               pg,
+		Logger:           logger,
+		IssuerURL:        authIssuerURL,
+		ClientID:         browserOIDCClientID,
+		ClientSecret:     browserOIDCClientSecret,
+		PublicBaseURL:    browserAuthPublicBaseURL,
+		ProductAudience:  authAudience,
+		Authz:            authzService,
+		ProviderSession:  zitadelClient,
+		ProviderLogin:    zitadelClient,
+		PasswordReset:    signupNotifier,
+		GithubLoginIDPID: githubLoginIDPID,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 			Timeout:   5 * time.Second,

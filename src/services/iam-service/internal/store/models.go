@@ -56,6 +56,15 @@ type IamBrowserClient struct {
 	UpdatedAt               pgtype.Timestamptz
 }
 
+type IamBrowserIdpLoginIntent struct {
+	StateHash  string
+	ClientHash string
+	RedirectTo string
+	Purpose    string
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+}
+
 type IamDeviceSession struct {
 	SessionID               string
 	AccountID               string
