@@ -26,5 +26,4 @@ go_test(
     name = "discovery-canary_test",
     srcs = ["main_test.go"],
     embed = [":discovery-canary_lib"],
-    deps = ["//src/services/iam-service/client"],
 )

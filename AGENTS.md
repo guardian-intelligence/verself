@@ -23,7 +23,7 @@ Company website: guardianintelligence.org
 * Avoid verbosity. When solving a specific problem, the patch should solve the general case. E.g. if solving a TOCTOU vuln, don't write a function named `fix_toctou_bug`, make the simple patch to use the toctou-safe call and optionally leave a comment (no more than a few words).
 * Don't resolve failures through silent no-ops and imperative checks. Failures should be loud; signals should be followed to address root causes. Failures are useful data!
 * When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
-* Browser coverage belongs in ongoing live canaries with ClickHouse evidence. Browser canaries using Playwright are preferred.
+* Browser coverage belongs in ongoing live canaries with ClickHouse evidence. Do not add frontend Playwright suites; the old frontend e2e harness has been retired.
 
 * ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. `batch.Append` silently corrupts data when columns are added or reordered.
 * ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden `UInt8` column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (`UInt8` over `Int32` when the range fits).
@@ -112,10 +112,10 @@ Single global writer for TigerBeetle, ClickHouse, and PG
 
 Software is either released (distributed binaries) or deployed (services). This section covers distributed binaries.
 
-All binaries we ship must, at a minimum, do the following:
+All binaries we ship must, at a minimum, do the following 3:
 
-* Ship an artifact comprised of a single compressed distributable + LICENSE file. Around it: SBOM, manifest, vendor licenses. 
-* Measurement-gated signing with byte-for-byte reproducible builds. Prove SLSA level 3 via an in-toto statement, signed with cosign 
+* Ship an artifact comprised of a single compressed distributable + LICENSE file.
+* Prove SLSA provenance and provide an SBOM (including vendor licenses)
 * Enable clients to subscribe to nightly, rc/public-test and stable channels, check for updates, and download + verify + apply updates safely.
 
 Releases are provided by distribution-service (+ aspect tasks for convenience). Packages that produce artifacts in a format supported by distribution-service can integrate with it.
@@ -128,7 +128,7 @@ Releases are modeled as a five step process:
 
 2. Build - Given `{package, version, source_commit, platform, flavor}`, run package-owned Bazel targets and emit artifacts/evidence. Side-effect free . Output is binary + license, vendor licenses, SBOM. A releasable artifact bundle, but not released. `flavor` is opaque metadata for distribution-service and can be used by software that integrates to capture all quirks around specific ABIs, customer-specific distributables, feature-flag sets, any other customizations.
 
-3. Sign / Publish Bytes. Run a build in our measured trusted builder using TPM 2.0 (our fleet is 100% EPYC CPU), sign the resulting artifact/provenance/SBOM, and push immutable OCI manifests/blobs/referrers to Zot with an ephemeral key + root signing key held by OpenBao Transit.
+3. Sign / Publish Bytes. Run a build in our cloud trusted environment using AMD SEV-SNP OVMF (our fleet is 100% EPYC CPU), sign the resulting artifact/provenance/SBOM, and push immutable OCI manifests/blobs/referrers to Zot with an ephemeral key + root signing key held by OpenBao Transit.
 
 4. Admit - distribution-service verifies registry truth: manifest exists, digest matches, OCI referrers exist, SLSA provenance matches source/version/target/builder, signer is trusted, package/channel policy allows it. The releasable artifact is now publicly available, but pushes to 3p vendors and clients requires a manual step.
 
