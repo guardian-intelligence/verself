@@ -87,6 +87,10 @@
   delegate_to: localhost
   become: false
 
+# Destination addresses are an account-level resource. 403 is expected and
+# accepted when the company token is zone-scoped (no account permission); the
+# operator then adds the destination in the dashboard. Either way Cloudflare
+# emails a one-time verification link that must be clicked before forwarding.
 - name: Ensure forwarding destination addresses (triggers verification email)
   ansible.builtin.uri:
     url: "{{ cloudflare_api_url }}/accounts/{{ cloudflare_email_routing_account_id }}/email/routing/addresses"
@@ -97,13 +101,24 @@
     body_format: json
     body:
       email: "{{ item.forward_to }}"
-    status_code: [200, 201, 409]
+    status_code: [200, 201, 409, 403]
   loop: "{{ cloudflare_email_routing_rules }}"
   loop_control:
     label: "{{ item.forward_to }}"
   delegate_to: localhost
   become: false
   no_log: true
+
+- name: Remind operator to verify forwarding destinations
+  ansible.builtin.debug:
+    msg: >-
+      Verify {{ item.forward_to }} as a Cloudflare Email Routing destination:
+      Cloudflare emails a one-time link that must be clicked. With a zone-scoped
+      token, first add the destination in the dashboard
+      (Account > Email Routing > Destination addresses).
+  loop: "{{ cloudflare_email_routing_rules }}"
+  loop_control:
+    label: "{{ item.forward_to }}"
 
 - name: List existing Email Routing rules
   ansible.builtin.uri:
