@@ -40,7 +40,8 @@ func (a *BrowserAuth) handleGithubLoginStart(w http.ResponseWriter, r *http.Requ
 		a.writeProblem(w, r, http.StatusForbidden, problemAuthOriginNotAllowed, "origin not allowed")
 		return
 	}
-	if a.githubLoginIDPID == "" {
+	githubIDPID := a.githubLoginIDP()
+	if githubIDPID == "" {
 		a.writeProblem(w, r, http.StatusServiceUnavailable, problemServiceUnavailable, "GitHub login is not configured")
 		return
 	}
@@ -67,7 +68,7 @@ func (a *BrowserAuth) handleGithubLoginStart(w http.ResponseWriter, r *http.Requ
 	stateHash := hashToken(state)
 	successURL := a.publicBaseURL.ResolveReference(&url.URL{Path: browserIDPCallbackPath}).String()
 	failureURL := a.publicBaseURL.ResolveReference(&url.URL{Path: "/login", RawQuery: "error=github_login_failed"}).String()
-	start, err := a.providerLogin.StartIDPIntent(r.Context(), a.githubLoginIDPID, successURL, failureURL)
+	start, err := a.providerLogin.StartIDPIntent(r.Context(), githubIDPID, successURL, failureURL)
 	if err != nil {
 		a.serverError(w, r, "start github idp intent", err)
 		return
@@ -99,7 +100,7 @@ func (a *BrowserAuth) handleGithubLoginStart(w http.ResponseWriter, r *http.Requ
 // login transaction, finalize, and redirect to the OIDC RP callback that builds
 // the browser account.
 func (a *BrowserAuth) handleGithubLoginCallback(w http.ResponseWriter, r *http.Request) {
-	if a.githubLoginIDPID == "" {
+	if a.githubLoginIDP() == "" {
 		a.clearLoginCookie(w)
 		a.redirectLoginError(w, r, "github_login_failed")
 		return

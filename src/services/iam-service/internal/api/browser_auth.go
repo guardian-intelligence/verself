@@ -14,7 +14,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -63,10 +65,12 @@ type BrowserAuthConfig struct {
 	ProviderSession ProviderSessionRevoker
 	ProviderLogin   ProviderLoginClient
 	PasswordReset   PasswordResetNotifier
-	// GithubLoginIDPID is the Zitadel identity-provider id for "Sign in with
-	// GitHub". Empty disables the GitHub login routes (the feature is gated on
-	// the IdP being provisioned by auth-control-plane-apply).
-	GithubLoginIDPID string
+	// GithubLoginIDPIDPath is the credstore path holding the Zitadel
+	// identity-provider id for "Sign in with GitHub". The file is written by
+	// auth-control-plane-apply, which may run after this service has started, so
+	// the value is resolved lazily rather than read once at boot. Empty path
+	// disables the GitHub login routes.
+	GithubLoginIDPIDPath string
 }
 
 type BrowserAuth struct {
@@ -85,7 +89,12 @@ type BrowserAuth struct {
 	publicBaseURL    *url.URL
 	postLogoutURL    string
 	tokenVault       browserTokenVault
-	githubLoginIDPID string
+	// githubLoginIDPIDPath is read lazily; githubLoginIDPID caches the resolved
+	// value once present so login does not require a restart after the IdP is
+	// provisioned out of band.
+	githubLoginIDPIDPath string
+	githubLoginIDPMu     sync.Mutex
+	githubLoginIDPID     string
 }
 
 type browserAuthRequestInfoKey struct{}
@@ -188,17 +197,37 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 			RedirectURL:  callbackURL,
 			Scopes:       scopes,
 		},
-		httpClient:       httpClient,
-		authz:            cfg.Authz,
-		providerSessions: cfg.ProviderSession,
-		providerLogin:    cfg.ProviderLogin,
-		passwordReset:    cfg.PasswordReset,
-		productAudience:  productAudience,
-		publicBaseURL:    publicBaseURL,
-		postLogoutURL:    postLogoutURL,
-		tokenVault:       tokenVault,
-		githubLoginIDPID: strings.TrimSpace(cfg.GithubLoginIDPID),
+		httpClient:           httpClient,
+		authz:                cfg.Authz,
+		providerSessions:     cfg.ProviderSession,
+		providerLogin:        cfg.ProviderLogin,
+		passwordReset:        cfg.PasswordReset,
+		productAudience:      productAudience,
+		publicBaseURL:        publicBaseURL,
+		postLogoutURL:        postLogoutURL,
+		tokenVault:           tokenVault,
+		githubLoginIDPIDPath: strings.TrimSpace(cfg.GithubLoginIDPIDPath),
 	}, nil
+}
+
+// githubLoginIDP resolves the Zitadel GitHub IdP id from credstore on demand.
+// auth-control-plane-apply writes this file when it provisions the IdP, possibly
+// after this service started, so it is read lazily and cached once present.
+func (a *BrowserAuth) githubLoginIDP() string {
+	a.githubLoginIDPMu.Lock()
+	defer a.githubLoginIDPMu.Unlock()
+	if a.githubLoginIDPID != "" {
+		return a.githubLoginIDPID
+	}
+	if a.githubLoginIDPIDPath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(a.githubLoginIDPIDPath)
+	if err != nil {
+		return ""
+	}
+	a.githubLoginIDPID = strings.TrimSpace(string(data))
+	return a.githubLoginIDPID
 }
 
 func parseBrowserAuthPublicBaseURL(raw string) (*url.URL, error) {
