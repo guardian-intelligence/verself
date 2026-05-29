@@ -111,28 +111,9 @@
     mode: "0640"
   no_log: true
 
-# Sign in with GitHub reuses the Verself Runner GitHub App's user-to-server
-# OAuth. Rendered only when configured; absence skips GitHub IdP provisioning in
-# auth-control-plane-apply.
-- name: Deploy GitHub login OAuth client id to credstore
-  ansible.builtin.copy:
-    content: "{{ github_integration_service_github_app_client_id }}"
-    dest: /etc/credstore/zitadel/github-login-client-id
-    owner: root
-    group: zitadel
-    mode: "0640"
-  no_log: true
-  when: github_integration_service_github_app_client_id | default('') | length > 0
-
-- name: Deploy GitHub login OAuth client secret to credstore
-  ansible.builtin.copy:
-    content: "{{ github_integration_service_github_app_oauth_client_secret }}"
-    dest: /etc/credstore/zitadel/github-login-client-secret
-    owner: root
-    group: zitadel
-    mode: "0640"
-  no_log: true
-  when: github_integration_service_github_app_oauth_client_secret | default('') | length > 0
+# GitHub login OAuth credstore material is owned by deploy/credstore.yml and
+# materialized by service-foundation during aspect deploy (this role does not
+# run in the deploy path).
 
 - name: Deploy Zitadel config
   ansible.builtin.template:
