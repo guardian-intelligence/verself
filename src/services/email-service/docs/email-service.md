@@ -67,7 +67,7 @@ Agents working in the repo email the operator through the same internal send pat
 
 The agent-facing tool is `src/tools/operator/cmd/agent-mail`. It must run as the `agent_mail` user on a node so the SPIRE workload API issues `spiffe://<td>/svc/agent-mail`, which `email-service`'s internal peer allowlist trusts. The HTML body is a React Email template (`@verself/agent-email`) rendered to a Go `text/template` at build time; the plaintext alternative is assembled in the tool. Operators invoke it as `aspect mail send --subject ... --body ...`, which uploads the binary via the operator SSH plane and runs it as `agent_mail`.
 
-Provision the domains with `src/integrations/email/provision-email-domains.yml` (Resend verification for every `resend_sending_domains` entry plus Cloudflare Email Routing). The company apex carries one merged SPF covering both Resend and Cloudflare; the Gmail destination must complete Cloudflare's verification click once.
+Provision the domains with `src/integrations/email/provision-email-domains.yml` (Resend verification for every `resend_sending_domains` entry plus Cloudflare Email Routing). The company apex carries one merged SPF covering both Resend and Cloudflare; the Gmail destination must complete Cloudflare's verification click once. The full runbook — Cloudflare token scopes, DNS layout, the `agent_mail` identity, and send verification — is in `src/integrations/email/README.md`.
 
 ## Receiving And Forwarding
 
