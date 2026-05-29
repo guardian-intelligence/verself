@@ -88,7 +88,7 @@ func cmdPersonaUserState(args []string) error {
 	if *balanceUnits != "" && *balanceCents != "" {
 		return errors.New("persona user-state: set only one of --balance-units or --balance-cents")
 	}
-	return runOperatorRuntime("persona.user_state", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("persona.user_state", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		remoteArgs := []string{
 			"--pg-dsn", "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable",
 			"--email", *email,
@@ -128,7 +128,7 @@ func cmdPersonaAssume(args []string) error {
 		return errors.New("persona assume: persona name is required")
 	}
 	name := fs.Arg(0)
-	return runOperatorRuntime("persona.assume", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("persona.assume", opts.operatorRuntimeOptions, 0, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		def, err := resolvePersona(rt.RepoRoot, rt.Site, name)
 		if err != nil {
 			return err

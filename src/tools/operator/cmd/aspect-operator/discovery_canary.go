@@ -58,7 +58,7 @@ func cmdDiscoveryCanary(args []string) error {
 	if totalBudget < 2*time.Minute {
 		totalBudget = 2 * time.Minute
 	}
-	return runOperatorRuntime("canary.service_discovery", opts.operatorRuntimeOptions, totalBudget > operatorCommandBudget, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("canary.service_discovery", opts.operatorRuntimeOptions, totalBudget, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		var vars discoveryCanarySiteVars
 		if strings.TrimSpace(opts.slug) == "" {
 			if err := readYAMLFile(siteVarsPath(rt.RepoRoot, rt.Site), &vars); err != nil {

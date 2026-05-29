@@ -27,15 +27,22 @@ func addOperatorRuntimeFlags(opts *operatorRuntimeOptions) {
 	}
 }
 
-func runOperatorRuntime(command string, opts operatorRuntimeOptions, interactive bool, chConfig opch.Config, fn func(*opruntime.Runtime, *opch.Client) error) error {
+// runOperatorRuntime runs an automated (non-interactive) operator command bounded
+// by commandBudget. A zero budget falls back to the default operatorCommandBudget.
+// Operator commands never drive an interactive TTY/sign-in: they assume a valid
+// Pomerium session (re-established out of band via `aspect operator device`) and
+// fail loud otherwise. Long automated commands (e.g. the service-discovery canary)
+// pass an explicit budget >= their duration rather than flipping into interactive
+// mode to dodge the default cap -- interactive mode under a non-TTY parent like
+// verself-deploy destabilizes the run.
+func runOperatorRuntime(command string, opts operatorRuntimeOptions, commandBudget time.Duration, chConfig opch.Config, fn func(*opruntime.Runtime, *opch.Client) error) error {
 	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ctx := parentCtx
-	var cancel context.CancelFunc
-	if !interactive {
-		ctx, cancel = context.WithTimeout(parentCtx, operatorCommandBudget)
-		defer cancel()
+	if commandBudget <= 0 {
+		commandBudget = operatorCommandBudget
 	}
+	ctx, cancel := context.WithTimeout(parentCtx, commandBudget)
+	defer cancel()
 	started := time.Now()
 	return opruntime.Run(ctx, opruntime.Options{
 		ServiceName:    serviceName,
@@ -45,7 +52,7 @@ func runOperatorRuntime(command string, opts operatorRuntimeOptions, interactive
 		Site:           opts.site,
 		NeedSSH:        true,
 		NeedOTel:       true,
-		Interactive:    interactive,
+		Interactive:    false,
 		UseRecovery:    operatorUseRecovery(),
 	}, func(rt *opruntime.Runtime) error {
 		chClient, err := opch.OpenOperator(rt.Ctx, rt, chConfig)
