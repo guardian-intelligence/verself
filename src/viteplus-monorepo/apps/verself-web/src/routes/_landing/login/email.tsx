@@ -120,7 +120,7 @@ function LoginEmailSheetForm() {
 
   const form = useForm({
     defaultValues: {
-      email: search.required_email ?? "",
+      email: search.required_email ?? search.login_hint ?? "",
       password: "",
     },
     validationLogic: revalidateLogic({
