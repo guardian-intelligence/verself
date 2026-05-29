@@ -297,7 +297,11 @@ async function whenTheVisitorRefreshesTheLoginSheet(page: Page): Promise<void> {
       break;
     }
 
-    const state = await sheet.getAttribute("data-state");
+    const state = await sheet.getAttribute("data-state", { timeout: 250 }).catch(() => null);
+    if (state === null) {
+      break;
+    }
+
     if (state === "dismissing") {
       dismissedByTransition = true;
       continue;
