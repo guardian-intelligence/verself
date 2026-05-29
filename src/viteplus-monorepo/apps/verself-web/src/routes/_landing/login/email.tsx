@@ -1,5 +1,5 @@
 import { revalidateLogic, useForm } from "@tanstack/react-form";
-import { Link, createFileRoute, redirect, useHydrated, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, redirect, useHydrated, useRouter } from "@tanstack/react-router";
 import { KeyRound } from "lucide-react";
 import { useIamFormSubmit } from "@verself/auth-web/form";
 import { Button } from "@verself/ui/components/ui/button";
@@ -23,6 +23,7 @@ import {
   type LoginFormValues,
 } from "~/features/auth/form-schemas";
 import { resolveDefaultSignedInPath } from "~/features/shell/org-route-loaders";
+import { completeBrowserCallback } from "~/features/auth/complete-callback";
 import { getClientAuthSnapshot, passwordLogin } from "~/server-fns/auth";
 import * as v from "valibot";
 
@@ -102,7 +103,7 @@ export const Route = createFileRoute("/_landing/login/email")({
 
 function LoginEmailSheetForm() {
   const hydrated = useHydrated();
-  const navigate = useNavigate();
+  const router = useRouter();
   const search = Route.useSearch();
 
   const loginSubmit = useIamFormSubmit({
@@ -141,7 +142,7 @@ function LoginEmailSheetForm() {
     onSubmitInvalid: authFormSubmitInvalid,
     onSubmit: async () => {
       const result = loginSubmit.requireSuccess();
-      await navigateToSameOrigin(navigate, result.callbackUrl);
+      await completeBrowserCallback(router, result.callbackUrl);
     },
   });
 
@@ -255,33 +256,4 @@ function withoutUndefined<T extends Record<string, unknown>>(
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as {
     readonly [K in keyof T]?: Exclude<T[K], undefined>;
   };
-}
-
-async function navigateToSameOrigin(
-  navigate: ReturnType<typeof useNavigate>,
-  href: string,
-): Promise<void> {
-  const url = new URL(href, window.location.origin);
-  if (url.origin !== window.location.origin) {
-    throw new Error("External auth callback URL rejected.");
-  }
-  const options = {
-    to: url.pathname,
-    search: searchParamsObject(url.searchParams),
-    ...(url.hash ? { hash: url.hash.slice(1) } : {}),
-  } as unknown as Parameters<ReturnType<typeof useNavigate>>[0];
-  await navigate(options);
-}
-
-function searchParamsObject(params: URLSearchParams): Record<string, string | Array<string>> {
-  const out: Record<string, string | Array<string>> = {};
-  for (const [key, value] of params.entries()) {
-    const existing = out[key];
-    if (Array.isArray(existing)) {
-      existing.push(value);
-      continue;
-    }
-    out[key] = existing === undefined ? value : [existing, value];
-  }
-  return out;
 }

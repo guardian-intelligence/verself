@@ -515,7 +515,24 @@ func (a *BrowserAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 	))
 	sendBrowserAuthActivity(r.Context(), user, accountHandle, "browserAuth.createAccount", "iam.browser_account.created", "create", "iam.browser_account.create", r.Method, browserAuthExternalRoute(r), http.StatusSeeOther)
 	a.setClientCookie(w, clientSecret)
-	http.Redirect(w, r, a.absoluteRedirectTarget(pending.RedirectTo), http.StatusSeeOther)
+	target := a.absoluteRedirectTarget(pending.RedirectTo)
+	// The callback is reached two ways: a direct browser navigation (the GitHub
+	// redirect chain), which expects a 303 to the console; and an XHR fetch from
+	// the SPA after a password/step-up login, which expects JSON so it can stay in
+	// the SPA. The session cookie is set above either way.
+	if browserAuthAcceptsJSON(r) {
+		a.writeJSON(w, http.StatusOK, callbackCompletedResponse{RedirectTo: target})
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+type callbackCompletedResponse struct {
+	RedirectTo string `json:"redirectTo"`
+}
+
+func browserAuthAcceptsJSON(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "application/json")
 }
 
 func (a *BrowserAuth) handleSession(w http.ResponseWriter, r *http.Request) {
