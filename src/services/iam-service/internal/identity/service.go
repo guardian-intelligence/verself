@@ -58,6 +58,7 @@ type SignupStore interface {
 
 type Directory interface {
 	CreateOrganization(ctx context.Context, input DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error)
+	CreateHumanWithIDPLink(ctx context.Context, input DirectoryCreateHumanWithIDPLinkRequest) (DirectoryCreateSignupUserResult, error)
 	ListMembers(ctx context.Context, orgID string) ([]Member, error)
 	InviteMember(ctx context.Context, orgID string, input InviteMemberRequest) (DirectoryInviteMemberResult, error)
 	CompleteMemberInvite(ctx context.Context, input DirectoryCompleteMemberInviteRequest) error
@@ -290,6 +291,93 @@ func (s *Service) CreateOrganization(ctx context.Context, subjectID string, inpu
 		Slug:        profile.Slug,
 		Version:     profile.Version,
 	}, nil
+}
+
+// ProvisionGithubSignup creates a brand-new account from a verified GitHub
+// identity: a Zitadel organization, an IdP-linked human (the credential, no
+// password), and a starter Verself organization with that human as owner plus a
+// billing record. The account graph is materialized later by the OIDC
+// relying-party callback once the session subject is known. It mirrors the signup
+// ceremony without the password and email-verification-code steps.
+func (s *Service) ProvisionGithubSignup(ctx context.Context, input GithubSignupRequest) (GithubSignupResult, error) {
+	email := strings.TrimSpace(input.Email)
+	idpID := strings.TrimSpace(input.IDPID)
+	externalUserID := strings.TrimSpace(input.ExternalUserID)
+	if email == "" || idpID == "" || externalUserID == "" {
+		return GithubSignupResult{}, fmt.Errorf("%w: email, idp_id, and external_user_id are required", ErrInvalidInput)
+	}
+	displayName := strings.TrimSpace(input.DisplayName)
+	if displayName == "" {
+		displayName = strings.TrimSpace(input.ExternalUserName)
+	}
+	if displayName == "" {
+		displayName = email[:strings.IndexByte(email+"@", '@')]
+	}
+	store, err := s.store()
+	if err != nil {
+		return GithubSignupResult{}, err
+	}
+	directory, err := s.directory()
+	if err != nil {
+		return GithubSignupResult{}, err
+	}
+	slug, err := s.availableOrganizationSlug(ctx, store, "", displayName)
+	if err != nil {
+		return GithubSignupResult{}, err
+	}
+	orgID, err := randomOrganizationID()
+	if err != nil {
+		return GithubSignupResult{}, err
+	}
+	provider, err := directory.CreateOrganization(ctx, DirectoryCreateOrganizationRequest{
+		Name: slug + "-" + strings.TrimPrefix(orgID, organizationPublicIDPrefix),
+	})
+	if err != nil {
+		return GithubSignupResult{}, err
+	}
+	user, err := directory.CreateHumanWithIDPLink(ctx, DirectoryCreateHumanWithIDPLinkRequest{
+		OrgID:            provider.OrganizationID,
+		Email:            email,
+		IDPID:            idpID,
+		ExternalUserID:   externalUserID,
+		ExternalUserName: input.ExternalUserName,
+	})
+	if err != nil {
+		return GithubSignupResult{}, err
+	}
+	profile, err := store.CreateOrganizationProfile(ctx, CreateOrganizationRequest{
+		OrgID:                 orgID,
+		IdentityProviderOrgID: provider.OrganizationID,
+		DisplayName:           displayName,
+		Slug:                  slug,
+		ActorID:               user.UserID,
+	})
+	if err != nil {
+		return GithubSignupResult{}, err
+	}
+	policyWriter, err := s.policyWriter()
+	if err != nil {
+		return GithubSignupResult{}, err
+	}
+	if err := policyWriter.SetOrganizationOwner(ctx, OrganizationOwnerPolicyRequest{
+		OrgID:       profile.OrgID,
+		OwnerUserID: user.UserID,
+		OperationID: "provision-github-signup",
+	}); err != nil {
+		return GithubSignupResult{}, err
+	}
+	billing, err := s.billing()
+	if err != nil {
+		return GithubSignupResult{}, err
+	}
+	if err := billing.EnsureBillingOrganization(ctx, BillingOrganizationProvisioningRequest{
+		OrgID:       profile.OrgID,
+		DisplayName: profile.DisplayName,
+		TrustTier:   "new",
+	}); err != nil {
+		return GithubSignupResult{}, err
+	}
+	return GithubSignupResult{UserID: user.UserID, OrgID: profile.OrgID}, nil
 }
 
 func (s *Service) UpdateOrganization(ctx context.Context, principal Principal, input UpdateOrganizationRequest) (Organization, error) {

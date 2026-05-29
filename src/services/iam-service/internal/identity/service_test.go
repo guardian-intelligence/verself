@@ -577,12 +577,13 @@ func TestServiceCompleteMemberInviteReturnsAcceptedMember(t *testing.T) {
 }
 
 type fakeMembersDirectory struct {
-	members             []Member
-	createInput         DirectoryCreateOrganizationRequest
-	signupInput         DirectoryCreateSignupUserRequest
-	inviteProviderOrgID string
-	inviteInput         InviteMemberRequest
-	completeInput       DirectoryCompleteMemberInviteRequest
+	members                     []Member
+	createInput                 DirectoryCreateOrganizationRequest
+	createHumanWithIDPLinkInput DirectoryCreateHumanWithIDPLinkRequest
+	signupInput                 DirectoryCreateSignupUserRequest
+	inviteProviderOrgID         string
+	inviteInput                 InviteMemberRequest
+	completeInput               DirectoryCompleteMemberInviteRequest
 }
 
 func (d *fakeMembersDirectory) ListMembers(context.Context, string) ([]Member, error) {
@@ -594,6 +595,11 @@ func (d *fakeMembersDirectory) ListMembers(context.Context, string) ([]Member, e
 func (d *fakeMembersDirectory) CreateOrganization(_ context.Context, input DirectoryCreateOrganizationRequest) (DirectoryCreateOrganizationResult, error) {
 	d.createInput = input
 	return DirectoryCreateOrganizationResult{OrganizationID: "43"}, nil
+}
+
+func (d *fakeMembersDirectory) CreateHumanWithIDPLink(_ context.Context, input DirectoryCreateHumanWithIDPLinkRequest) (DirectoryCreateSignupUserResult, error) {
+	d.createHumanWithIDPLinkInput = input
+	return DirectoryCreateSignupUserResult{UserID: "idp-user-1"}, nil
 }
 
 func (d *fakeMembersDirectory) InviteMember(_ context.Context, providerOrgID string, input InviteMemberRequest) (DirectoryInviteMemberResult, error) {

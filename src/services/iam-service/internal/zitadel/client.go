@@ -135,6 +135,56 @@ func (c *Client) CreateSignupUser(ctx context.Context, input identity.DirectoryC
 	return identity.DirectoryCreateSignupUserResult{UserID: created.UserID}, nil
 }
 
+// CreateHumanWithIDPLink creates a human in orgID with a pre-verified email and
+// an external IdP link already attached, for just-in-time provisioning from a
+// completed IdP intent. The email is marked verified directly (provider truth),
+// so no verification code round-trip is needed, and no password is set.
+func (c *Client) CreateHumanWithIDPLink(ctx context.Context, input identity.DirectoryCreateHumanWithIDPLinkRequest) (identity.DirectoryCreateSignupUserResult, error) {
+	orgID := strings.TrimSpace(input.OrgID)
+	email := strings.TrimSpace(input.Email)
+	idpID := strings.TrimSpace(input.IDPID)
+	externalUserID := strings.TrimSpace(input.ExternalUserID)
+	if orgID == "" || email == "" || idpID == "" || externalUserID == "" {
+		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: org_id, email, idp_id, and external_user_id are required", identity.ErrInvalidInput)
+	}
+	body := map[string]any{
+		"organizationId": orgID,
+		"username":       email,
+		"human": map[string]any{
+			"profile": map[string]any{
+				"givenName":  firstNonEmpty(strings.TrimSpace(input.GivenName), email),
+				"familyName": firstNonEmpty(strings.TrimSpace(input.FamilyName), "Member"),
+			},
+			"email": map[string]any{
+				"email":      email,
+				"isVerified": true,
+			},
+			"idpLinks": []map[string]any{
+				{
+					"idpId":    idpID,
+					"userId":   externalUserID,
+					"userName": firstNonEmpty(strings.TrimSpace(input.ExternalUserName), externalUserID),
+				},
+			},
+		},
+	}
+	var out createUserResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/users/new", body, &out); err != nil {
+		if zitadelUserAlreadyExists(err) {
+			return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: create idp human: %v", identity.ErrSignupAccountExists, err)
+		}
+		if zitadelRequestInvalid(err) {
+			return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: create idp human: %v", identity.ErrInvalidInput, err)
+		}
+		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: create idp human: %v", identity.ErrZitadelUnavailable, err)
+	}
+	userID := firstNonEmpty(out.ID, out.UserID)
+	if userID == "" {
+		return identity.DirectoryCreateSignupUserResult{}, fmt.Errorf("%w: create idp human returned no user id", identity.ErrZitadelUnavailable)
+	}
+	return identity.DirectoryCreateSignupUserResult{UserID: userID}, nil
+}
+
 func (c *Client) FindPasswordResetUser(ctx context.Context, email string) (identity.PasswordResetUser, bool, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {

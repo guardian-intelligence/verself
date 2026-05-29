@@ -364,6 +364,7 @@ func run() error {
 		Authz:                authzService,
 		ProviderSession:      zitadelClient,
 		ProviderLogin:        zitadelClient,
+		AccountProvisioner:   identityService,
 		PasswordReset:        signupNotifier,
 		GithubLoginIDPIDPath: githubLoginIDPIDPath,
 		HTTPClient: &http.Client{

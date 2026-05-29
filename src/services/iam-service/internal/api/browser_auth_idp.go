@@ -162,11 +162,30 @@ func (a *BrowserAuth) handleGithubLoginCallback(w http.ResponseWriter, r *http.R
 			a.beginIDPLinkStepUp(w, r, pending, result, existing, clientSecret)
 			return
 		}
-		// Brand-new user: JIT-provision is handled by the new-account path; until
-		// it lands this fails loud rather than minting a session with no user.
-		a.clearLoginCookie(w)
-		a.redirectLoginError(w, r, "github_account_not_found")
-		return
+		// Brand-new user: just-in-time provision a Zitadel org, an IdP-linked human
+		// (the credential), and a starter Verself org, then mint the session for the
+		// new user. The account graph is materialized by the OIDC RP callback.
+		if a.accountProvisioner == nil {
+			a.clearLoginCookie(w)
+			a.redirectLoginError(w, r, "github_signup_unavailable")
+			return
+		}
+		provisioned, provErr := a.accountProvisioner.ProvisionGithubSignup(r.Context(), identity.GithubSignupRequest{
+			Email:            result.Email,
+			DisplayName:      result.Username,
+			IDPID:            firstNonEmpty(result.IDPID, a.githubLoginIDP()),
+			ExternalUserID:   result.ExternalSubject,
+			ExternalUserName: result.Username,
+		})
+		if provErr != nil {
+			a.serverError(w, r, "provision github account", provErr)
+			return
+		}
+		userID = provisioned.UserID
+		trace.SpanFromContext(r.Context()).AddEvent("iam.browser_idp_login.provisioned", trace.WithAttributes(
+			attribute.String("auth.idp_provider", "github"),
+			attribute.String("auth.org_id", provisioned.OrgID),
+		))
 	}
 	session, err := a.providerLogin.CreateSessionFromIDPIntent(r.Context(), intentID, intentToken, userID, identity.LoginSessionInput{
 		UserAgent: strings.TrimSpace(r.Header.Get("User-Agent")),

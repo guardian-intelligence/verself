@@ -54,18 +54,19 @@ const (
 var browserAuthTracer = otel.Tracer("github.com/verself/iam-service/browser-auth")
 
 type BrowserAuthConfig struct {
-	PG              *pgxpool.Pool
-	Logger          *slog.Logger
-	IssuerURL       string
-	ClientID        string
-	ClientSecret    string
-	PublicBaseURL   string
-	ProductAudience string
-	HTTPClient      *http.Client
-	Authz           *authz.Service
-	ProviderSession ProviderSessionRevoker
-	ProviderLogin   ProviderLoginClient
-	PasswordReset   PasswordResetNotifier
+	PG                 *pgxpool.Pool
+	Logger             *slog.Logger
+	IssuerURL          string
+	ClientID           string
+	ClientSecret       string
+	PublicBaseURL      string
+	ProductAudience    string
+	HTTPClient         *http.Client
+	Authz              *authz.Service
+	ProviderSession    ProviderSessionRevoker
+	ProviderLogin      ProviderLoginClient
+	AccountProvisioner GithubAccountProvisioner
+	PasswordReset      PasswordResetNotifier
 	// GithubLoginIDPIDPath is the credstore path holding the Zitadel
 	// identity-provider id for "Sign in with GitHub". The file is written by
 	// auth-control-plane-apply, which may run after this service has started, so
@@ -75,21 +76,22 @@ type BrowserAuthConfig struct {
 }
 
 type BrowserAuth struct {
-	q                *identitystore.Queries
-	store            identity.SQLStore
-	logger           *slog.Logger
-	provider         *oidc.Provider
-	verifier         *oidc.IDTokenVerifier
-	oauth            oauth2.Config
-	httpClient       *http.Client
-	authz            *authz.Service
-	providerSessions ProviderSessionRevoker
-	providerLogin    ProviderLoginClient
-	passwordReset    PasswordResetNotifier
-	productAudience  string
-	publicBaseURL    *url.URL
-	postLogoutURL    string
-	tokenVault       browserTokenVault
+	q                  *identitystore.Queries
+	store              identity.SQLStore
+	logger             *slog.Logger
+	provider           *oidc.Provider
+	verifier           *oidc.IDTokenVerifier
+	oauth              oauth2.Config
+	httpClient         *http.Client
+	authz              *authz.Service
+	providerSessions   ProviderSessionRevoker
+	providerLogin      ProviderLoginClient
+	accountProvisioner GithubAccountProvisioner
+	passwordReset      PasswordResetNotifier
+	productAudience    string
+	publicBaseURL      *url.URL
+	postLogoutURL      string
+	tokenVault         browserTokenVault
 	// githubLoginIDPIDPath is read lazily; githubLoginIDPID caches the resolved
 	// value once present so login does not require a restart after the IdP is
 	// provisioned out of band.
@@ -116,6 +118,13 @@ type ProviderLoginClient interface {
 	FindPasswordResetUser(context.Context, string) (identity.PasswordResetUser, bool, error)
 	StartPasswordReset(context.Context, string) (string, error)
 	CompletePasswordReset(context.Context, string, string, string) error
+}
+
+// GithubAccountProvisioner provisions a brand-new account (Zitadel org, IdP-linked
+// human, starter Verself org) for a verified GitHub identity with no existing
+// account. Implemented by identity.Service.
+type GithubAccountProvisioner interface {
+	ProvisionGithubSignup(context.Context, identity.GithubSignupRequest) (identity.GithubSignupResult, error)
 }
 
 type browserAuthRequestInfo struct {
@@ -204,6 +213,7 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 		authz:                cfg.Authz,
 		providerSessions:     cfg.ProviderSession,
 		providerLogin:        cfg.ProviderLogin,
+		accountProvisioner:   cfg.AccountProvisioner,
 		passwordReset:        cfg.PasswordReset,
 		productAudience:      productAudience,
 		publicBaseURL:        publicBaseURL,
