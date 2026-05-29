@@ -1,8 +1,8 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
+import { useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
-import { useMemo, useRef } from "react";
-import { HalfFloatType, NoToneMapping } from "three";
+import { HalfFloatType, NoToneMapping, Timer } from "three";
 
 import { DotMatrixEngineObject } from "./engine/DotMatrixEngineObject";
 import { DOT_MATRIX_RENDER_DPR_RANGE } from "./engine/frame-budget";
@@ -50,6 +50,7 @@ interface DotMatrixSceneProps {
 
 function DotMatrixScene({ hostRef, stageRef }: DotMatrixSceneProps) {
   const { camera, gl } = useThree();
+  const timerRef = useRef<Timer>(new Timer());
   const engine = useMemo(
     () => new DotMatrixEngineObject({ camera, hostRef, renderer: gl, stageRef }),
     [camera, gl, hostRef, stageRef],
@@ -62,11 +63,21 @@ function DotMatrixScene({ hostRef, stageRef }: DotMatrixSceneProps) {
     [],
   );
 
-  useFrame((state, deltaSeconds) => {
+  useEffect(() => {
+    timerRef.current.connect(document);
+    return () => {
+      timerRef.current.disconnect();
+    };
+  }, []);
+
+  useFrame((state) => {
+    timerRef.current.update();
+    const deltaSeconds = timerRef.current.getDelta();
+    const nowSeconds = timerRef.current.getElapsed();
     engine.frame({
       deltaSeconds,
       nowMs: performance.now(),
-      nowSeconds: state.clock.elapsedTime,
+      nowSeconds,
       r3fPerformance: {
         current: state.performance.current,
         max: state.performance.max,

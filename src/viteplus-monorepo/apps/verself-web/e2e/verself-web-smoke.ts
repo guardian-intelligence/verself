@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 
 const navigationTimeoutMs = 5_000;
 const assertionTimeoutMs = 3_000;
+const routeNavigationTimeoutMs = 8_000;
 
 type CanaryStatus = "passed" | "failed";
 
@@ -192,6 +193,15 @@ async function assertNoPageErrors(errors: readonly string[]): Promise<void> {
 async function runAuthProductScenario(page: Page): Promise<number> {
   let visited = 0;
 
+  await whenTheVisitorPivotsToLoginViaLandingSheet(page);
+  visited += 1;
+  await whenTheVisitorClosesLoginSheet(page);
+  visited += 1;
+  await whenTheVisitorPivotsToLoginViaLandingSheet(page);
+  visited += 1;
+  await whenTheVisitorRefreshesTheLoginSheet(page);
+  visited += 1;
+
   await givenTheVisitorCanOpenTheAuthShell(page);
   visited += 1;
   await thenTheLoginFormIsPasswordManagerReady(page);
@@ -232,34 +242,113 @@ async function runAuthProductScenario(page: Page): Promise<number> {
 }
 
 async function givenTheVisitorCanOpenTheAuthShell(page: Page): Promise<void> {
-  await page.goto("/login", { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: "Sign in" }).waitFor();
+  await page.goto("/login/email", { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Sign in", exact: true }).waitFor();
   await waitForReadyButton(page, "Sign in");
 }
 
+async function whenTheVisitorPivotsToLoginViaLandingSheet(page: Page): Promise<void> {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Sign in / Sign Up" }).waitFor();
+  await page.getByRole("button", { name: "Sign in / Sign Up" }).click();
+  await page.waitForURL("**/login", {
+    timeout: routeNavigationTimeoutMs,
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByRole("dialog", { name: "Sign in options" }).waitFor();
+  await page.getByRole("heading", { name: "Sign in", exact: true }).waitFor();
+  await page.waitForURL("**/login", { waitUntil: "domcontentloaded" });
+}
+
+async function whenTheVisitorClosesLoginSheet(page: Page): Promise<void> {
+  const close = page.getByRole("button", { name: "Close" });
+  await close.waitFor();
+  await close.click();
+  await page.waitForURL("**/", { waitUntil: "domcontentloaded" });
+  const start = performance.now();
+  while (true) {
+    const count = await page.getByRole("dialog", { name: "Sign in options" }).count();
+    if (count === 0) {
+      break;
+    }
+    if (performance.now() - start > assertionTimeoutMs) {
+      throw new Error("sign-in sheet did not unmount after route close");
+    }
+    await page.waitForTimeout(50);
+  }
+}
+
+async function whenTheVisitorRefreshesTheLoginSheet(page: Page): Promise<void> {
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForURL("**/login", { waitUntil: "domcontentloaded" });
+  const sheet = page.getByRole("dialog", { name: "Sign in options" });
+  await sheet.waitFor();
+  await page.goBack();
+  await page.waitForURL("**/", { waitUntil: "domcontentloaded" });
+  const start = performance.now();
+  let dismissedByTransition = false;
+  while (true) {
+    const count = await sheet.count();
+    if (count === 0) {
+      if (!dismissedByTransition) {
+        // Route transition may remount the sheet route state directly into hidden state.
+        break;
+      }
+      break;
+    }
+
+    const state = await sheet.getAttribute("data-state");
+    if (state === "dismissing") {
+      dismissedByTransition = true;
+      continue;
+    }
+
+    if (state === "hidden") {
+      break;
+    }
+
+    if (
+      state === "measuring" ||
+      state === "presenting" ||
+      state === "presented" ||
+      state === "restoring"
+    ) {
+      throw new Error(`sign-in sheet remained in unexpected state while leaving route: ${state}`);
+    }
+
+    if (performance.now() - start > assertionTimeoutMs) {
+      throw new Error("sign-in sheet did not hide after leaving /login");
+    }
+    await page.waitForTimeout(50);
+  }
+}
+
 async function thenTheLoginFormIsPasswordManagerReady(page: Page): Promise<void> {
-  await page.getByLabel("Email").waitFor();
+  const authForm = page.locator('[aria-label="Email sign in form"]');
+  await getEmailInput(page).waitFor();
   await page.getByLabel("Password", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Sign in" }).waitFor();
+  await authForm.getByRole("button", { name: "Sign in" }).waitFor();
   await page.getByRole("link", { name: "Forgot password?" }).waitFor();
   await waitForReadyButton(page, "Sign in");
 }
 
 async function thenTheLoginFormSurfacesSubmitValidation(page: Page): Promise<void> {
-  const email = page.getByLabel("Email");
+  const authForm = page.locator('[aria-label="Email sign in form"]');
+  const email = getEmailInput(page);
   await email.fill("not-an-email");
   await email.blur();
   const password = page.getByLabel("Password", { exact: true });
   await password.focus();
   await password.blur();
   await waitForReadyButton(page, "Sign in");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByText("Enter a valid email address.").waitFor();
+  await authForm.getByRole("button", { name: "Sign in" }).click();
+  await authForm.locator("#email-error").waitFor();
 }
 
 async function whenTheVisitorSignsInWithIncorrectCredentials(page: Page): Promise<void> {
+  const authForm = page.locator('[aria-label="Email sign in form"]');
   await waitForReadyButton(page, "Sign in");
-  const email = page.getByLabel("Email");
+  const email = getEmailInput(page);
   const emailValue = `wrong-${Date.now()}@example.test`;
   await email.fill(emailValue);
   await assertInputValue(email, emailValue, "incorrect-login email");
@@ -270,30 +359,69 @@ async function whenTheVisitorSignsInWithIncorrectCredentials(page: Page): Promis
   await assertInputValue(password, passwordValue, "incorrect-login password");
   await password.blur();
   await waitForReadyButton(page, "Sign in");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await authForm.getByRole("button", { name: "Sign in" }).click();
 }
 
 async function thenIncorrectEmailOrPasswordDisplaysAToast(page: Page): Promise<void> {
-  await page
+  const incorrectCredentialsMessageText = "Email or password is incorrect.";
+  const localOriginMessageText = "The auth request did not come from the Verself origin.";
+  const toast = page
     .locator("[data-sonner-toast]")
-    .filter({ hasText: "Email or password is incorrect." })
-    .waitFor();
+    .filter({ hasText: incorrectCredentialsMessageText });
+  const passwordError = page.locator("#password-error").filter({
+    hasText: new RegExp(`${incorrectCredentialsMessageText}|${localOriginMessageText}`),
+  });
+  const started = performance.now();
+  while (true) {
+    if (
+      (await toast.isVisible().catch(() => false)) ||
+      (await passwordError.isVisible().catch(() => false))
+    ) {
+      break;
+    }
+    if (performance.now() - started > assertionTimeoutMs) {
+      const alerts = await page.locator('[role="alert"]').allTextContents();
+      const toasts = await toast.allTextContents();
+      const emailFormText = await page
+        .locator('[aria-label="Email sign in form"]')
+        .textContent()
+        .catch(() => undefined);
+      const passwordFieldError = await page
+        .locator("#password-error")
+        .textContent()
+        .catch(() => undefined);
+      const signInBusy = await page
+        .getByRole("button", { name: "Sign in", exact: true })
+        .getAttribute("aria-busy")
+        .catch(() => null);
+      throw new Error(
+        `incorrect credentials message did not surface in time; visible alerts=${JSON.stringify(
+          alerts,
+        )}; toast-text=${JSON.stringify(toasts)}; email-form-text=${JSON.stringify(
+          emailFormText,
+        )}; password-error=${JSON.stringify(passwordFieldError)}; sign-in-busy=${JSON.stringify(
+          signInBusy,
+        )}`,
+      );
+    }
+    await page.waitForTimeout(50);
+  }
   await waitForReadyButton(page, "Sign in");
   const path = new URL(page.url()).pathname;
-  if (path !== "/login") {
+  if (path !== "/login/email") {
     throw new Error(`incorrect password changed route to ${path}`);
   }
 }
 
 async function whenZitadelRoutesAnAuthRequestToVerself(page: Page): Promise<void> {
-  await page.goto("/login?authRequest=V2_123&login_hint=founder%40example.test", {
+  await page.goto("/login/email?authRequest=V2_123&login_hint=founder%40example.test", {
     waitUntil: "domcontentloaded",
   });
 }
 
 async function thenTheAuthRequestStaysOnTheVerselfLoginForm(page: Page): Promise<void> {
-  await page.getByRole("heading", { name: "Sign in" }).waitFor();
-  const email = page.getByLabel("Email");
+  await page.getByRole("heading", { name: "Sign in", exact: true }).waitFor();
+  const email = getEmailInput(page);
   await email.waitFor();
   const value = await email.inputValue();
   if (value !== "founder@example.test") {
@@ -306,23 +434,26 @@ async function thenTheAuthRequestStaysOnTheVerselfLoginForm(page: Page): Promise
 
 async function whenTheVisitorStartsPasswordRecovery(page: Page): Promise<void> {
   await page.getByRole("link", { name: "Forgot password?" }).click();
-  await page.waitForURL("**/forgot-password");
+  await page.waitForURL("**/forgot-password", {
+    timeout: routeNavigationTimeoutMs,
+    waitUntil: "domcontentloaded",
+  });
 }
 
 async function thenTheForgotPasswordFlowIsEmailOnly(page: Page): Promise<void> {
   await page.getByRole("heading", { name: "Reset password" }).waitFor();
-  await page.getByLabel("Email").waitFor();
+  await getEmailInput(page).waitFor();
   await page.getByRole("button", { name: "Send reset email" }).waitFor();
   await waitForReadyButton(page, "Send reset email");
 }
 
 async function thenTheForgotPasswordFormSurfacesSubmitValidation(page: Page): Promise<void> {
-  const email = page.getByLabel("Email");
+  const email = getEmailInput(page);
   await email.fill("invalid");
   await email.blur();
   await waitForReadyButton(page, "Send reset email");
   await page.getByRole("button", { name: "Send reset email" }).click();
-  await page.getByText("Enter a valid email address.").waitFor();
+  await page.locator("#email-error").waitFor();
 }
 
 async function whenTheVisitorStartsSignup(page: Page): Promise<void> {
@@ -331,7 +462,7 @@ async function whenTheVisitorStartsSignup(page: Page): Promise<void> {
 
 async function thenTheSignupFlowCollectsOrganizationIdentity(page: Page): Promise<void> {
   await page.getByRole("heading", { name: "Create account" }).waitFor();
-  await page.getByLabel("Email").waitFor();
+  await getEmailInput(page).waitFor();
   await page.getByLabel("Organization name").waitFor();
   await page.getByText("verself.sh/").waitFor();
   await page.getByRole("button", { name: "Create account" }).waitFor();
@@ -339,7 +470,7 @@ async function thenTheSignupFlowCollectsOrganizationIdentity(page: Page): Promis
 }
 
 async function thenTheSignupFormSurfacesSubmitValidation(page: Page): Promise<void> {
-  const email = page.getByLabel("Email");
+  const email = getEmailInput(page);
   await email.fill("not-an-email");
   await email.blur();
   const organization = page.getByLabel("Organization name");
@@ -347,7 +478,7 @@ async function thenTheSignupFormSurfacesSubmitValidation(page: Page): Promise<vo
   await organization.blur();
   await waitForReadyButton(page, "Create account");
   await page.getByRole("button", { name: "Create account" }).click();
-  await page.getByText("Enter a valid email address.").waitFor();
+  await page.locator("#email-error").waitFor();
 }
 
 async function whenTheVisitorOpensAResetLinkWithoutToken(page: Page): Promise<void> {
@@ -405,8 +536,12 @@ async function thenTheDeviceCodeFormSurfacesSubmitValidation(page: Page): Promis
   await page.getByText("Enter the device code from your terminal.").waitFor();
 }
 
+function getEmailInput(page: Page) {
+  return page.getByRole("textbox", { name: "Email", exact: true });
+}
+
 async function waitForReadyButton(page: Page, name: string): Promise<void> {
-  const button = page.getByRole("button", { name });
+  const button = page.getByRole("button", { name, exact: true });
   await button.waitFor();
   const started = performance.now();
   while ((await button.getAttribute("aria-busy")) === "true") {
@@ -461,6 +596,28 @@ async function runBrowserSmoke(options: Options): Promise<Record<string, string 
     page.setDefaultNavigationTimeout(navigationTimeoutMs);
     page.setDefaultTimeout(assertionTimeoutMs);
     const pageErrors = watchPageErrors(page);
+    page.on("console", (message) => {
+      if (message.type() === "error") {
+        console.error(`[e2e console] ${message.type()}: ${message.text()}`);
+      }
+    });
+    page.on("request", (request) => {
+      if (request.url().startsWith(options.baseUrl)) {
+        console.error(`[e2e] request ${request.method()} ${request.url()}`);
+      }
+    });
+    page.on("response", (response) => {
+      if (response.url().startsWith(options.baseUrl)) {
+        console.error(
+          `[e2e] response ${response.status()} ${response.request().method()} ${response.url()}`,
+        );
+      }
+    });
+    page.on("requestfailed", (request) => {
+      if (request.url().startsWith(options.baseUrl)) {
+        console.error(`[e2e] request failed ${request.url()} ${request.failure()?.errorText}`);
+      }
+    });
 
     await page.goto("/readyz", { waitUntil: "domcontentloaded" });
     const readyBody = (await page.locator("body").textContent())?.trim();
@@ -470,7 +627,7 @@ async function runBrowserSmoke(options: Options): Promise<Record<string, string 
 
     await page.goto("/", { waitUntil: "load" });
     await page.getByRole("heading", { name: "Verself" }).waitFor();
-    await page.getByRole("link", { name: "Get Verself" }).waitFor();
+    await page.getByRole("button", { name: "Sign in / Sign Up" }).waitFor();
 
     const authPages = await runAuthProductScenario(page);
     await assertNoPageErrors(pageErrors);
