@@ -765,6 +765,7 @@ func (s notificationSignupSender) SendPasswordReset(ctx context.Context, input a
 		WorkflowKey:    notificationsinternalclient.WorkflowKey("iam.password.reset"),
 		IdempotencyKey: notificationsinternalclient.IdempotencyKey("iam:password_reset:" + hashText(strings.TrimSpace(input.ActionURL))),
 		Body: notificationsinternalclient.TriggerNotificationWorkflowInputBody{
+			OrgID:              notificationsinternalclient.OrgId(strings.TrimSpace(input.OrgID)),
 			ActionURL:          &actionURL,
 			Body:               body,
 			Data:               &data,

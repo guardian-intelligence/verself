@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
 
 	"github.com/verself/iam-service/internal/identity"
@@ -294,6 +296,26 @@ func (a *BrowserAuth) handlePasswordResetStart(w http.ResponseWriter, r *http.Re
 		a.writeJSON(w, http.StatusOK, passwordResetStartedResponse())
 		return
 	}
+	// Notifications are org-scoped; attribute the account-level reset to the
+	// user's organization. Every user belongs to at least one org by
+	// construction; absence is an invariant violation we surface loudly rather
+	// than leak via the response (kept generic to avoid email enumeration).
+	orgIDs, _, err := a.authz.LookupOrganizations(r.Context(), identity.AuthorizationSubject{
+		Kind: identity.AuthorizationSubjectKindUser,
+		ID:   user.UserID,
+	}, "read", "")
+	if err != nil {
+		a.serverError(w, r, "lookup password reset organization", err)
+		return
+	}
+	orgIDs = compactUniqueStrings(orgIDs)
+	if len(orgIDs) == 0 {
+		trace.SpanFromContext(r.Context()).AddEvent("iam.password_reset.no_organization", trace.WithAttributes(
+			attribute.String("auth.user_handle", hashToken(user.UserID)),
+		))
+		a.writeJSON(w, http.StatusOK, passwordResetStartedResponse())
+		return
+	}
 	code, err := a.providerLogin.StartPasswordReset(r.Context(), user.UserID)
 	if err != nil {
 		a.serverError(w, r, "start provider password reset", err)
@@ -303,6 +325,7 @@ func (a *BrowserAuth) handlePasswordResetStart(w http.ResponseWriter, r *http.Re
 		Email:        user.Email,
 		ActionURL:    a.passwordResetURL(user.UserID, code),
 		ResourceName: "urn:verself:auth:password-resets/" + hashToken(user.UserID),
+		OrgID:        orgIDs[0],
 	}); err != nil {
 		a.serverError(w, r, "send password reset", err)
 		return
