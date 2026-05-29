@@ -49,7 +49,7 @@ func cmdAgentMail(args []string) error {
 	if strings.TrimSpace(opts.body) == "" {
 		return fmt.Errorf("agent-mail: --body is required")
 	}
-	return runOperatorRuntime("agent.mail", opts.operatorRuntimeOptions, false, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
+	return runOperatorRuntime("agent.mail", opts.operatorRuntimeOptions, operatorCommandBudget, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		remoteArgs := []string{"--subject", opts.subject, "--body", opts.body}
 		for flagName, value := range map[string]string{"--from": opts.from, "--to": opts.to, "--org-id": opts.orgID} {
 			if v := strings.TrimSpace(value); v != "" {
