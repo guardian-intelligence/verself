@@ -41,9 +41,11 @@ export function createClickWaveImpulse(
   },
   cameraRect: DomainRect,
 ): WaveImpulse {
+  const DOT_MATRIX_CLICK_STRENGTH = 0.064;
+  const DOT_MATRIX_CLICK_STRENGTH_SCALE = 0.1;
   return {
     radius: 0.034,
-    strength: 0.064,
+    strength: DOT_MATRIX_CLICK_STRENGTH * DOT_MATRIX_CLICK_STRENGTH_SCALE,
     x: cameraRect.x + point.x * cameraRect.width,
     y: cameraRect.y + point.y * cameraRect.height,
   };

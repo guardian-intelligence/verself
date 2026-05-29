@@ -1,6 +1,7 @@
 import type { WebGLRenderer } from "three";
 
 import { emitSpan, initBrowserTelemetry } from "../../../../lib/telemetry/browser";
+import { isDevelopmentModeEnabled } from "../../../../lib/development-mode";
 
 export interface DotMatrixViewportTelemetry {
   readonly dpr: number;
@@ -102,6 +103,12 @@ interface DotMatrixPerfSnapshot {
   readonly waveGrid: string;
 }
 
+type DotMatrixPerfPanel = {
+  readonly ownerId: number;
+  readonly snapshot: DotMatrixPerfSnapshot;
+  readonly element: HTMLDivElement;
+};
+
 interface DotMatrixDevTools {
   readonly dispose: () => void;
   readonly recordFrame: (
@@ -124,6 +131,7 @@ declare global {
     __verselfDotMatrixPerf?: {
       snapshot: () => DotMatrixPerfSnapshot;
     };
+    __verselfDotMatrixPerfPanel?: DotMatrixPerfPanel;
   }
 }
 
@@ -447,7 +455,7 @@ function emitLoadSpan(input: {
 }
 
 function createDotMatrixDevTools(initialViewport: DotMatrixViewportTelemetry): DotMatrixDevTools {
-  if (!import.meta.env.DEV || typeof document === "undefined") {
+  if (!import.meta.env.DEV || typeof document === "undefined" || !isDevelopmentModeEnabled()) {
     return noopDevTools();
   }
 
@@ -467,6 +475,7 @@ function createDotMatrixDevTools(initialViewport: DotMatrixViewportTelemetry): D
     waveGrid: waveGridLabel({ height: 0, width: 0 }),
   };
   const el = document.createElement("div");
+  const ownerId = ++DOT_MATRIX_PANEL_OWNER_COUNTER;
   el.dataset.dotMatrixPerf = "";
   Object.assign(el.style, {
     background: "rgba(8, 12, 14, 0.82)",
@@ -484,6 +493,12 @@ function createDotMatrixDevTools(initialViewport: DotMatrixViewportTelemetry): D
     zIndex: "2147483647",
   });
   document.body.append(el);
+  window.__verselfDotMatrixPerfPanel?.element?.remove();
+  window.__verselfDotMatrixPerfPanel = {
+    ownerId,
+    snapshot,
+    element: el,
+  };
 
   const api = {
     snapshot: () => snapshot,
@@ -503,10 +518,13 @@ function createDotMatrixDevTools(initialViewport: DotMatrixViewportTelemetry): D
 
   return {
     dispose() {
+      if (window.__verselfDotMatrixPerfPanel?.ownerId === ownerId) {
+        window.__verselfDotMatrixPerfPanel.element.remove();
+        delete window.__verselfDotMatrixPerfPanel;
+      }
       if (window.__verselfDotMatrixPerf === api) {
         delete window.__verselfDotMatrixPerf;
       }
-      el.remove();
     },
     recordFrame(input, summarize) {
       if (input.nowMs - lastRefreshMs < DOT_MATRIX_DEV_TOOLS_REFRESH_MS) return;
@@ -534,6 +552,8 @@ function createDotMatrixDevTools(initialViewport: DotMatrixViewportTelemetry): D
     },
   };
 }
+
+let DOT_MATRIX_PANEL_OWNER_COUNTER = 0;
 
 function noopDevTools(): DotMatrixDevTools {
   return {

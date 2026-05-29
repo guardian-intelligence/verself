@@ -1,12 +1,43 @@
+import { Loader2 } from "lucide-react";
 import { Lockup } from "@verself/brand";
+import { ANCHORED_SHEET_PRIMARY_ACTION_BUTTON_CLASS } from "@verself/ui/components/ui/anchored-sheet";
 
 import { DotMatrixField, recordDotMatrixClick } from "./dot-matrix";
+import { GitHubIcon } from "./github-icon";
 
 type MarketingLandingPageProps = {
-  readonly onPrimaryAction?: () => void;
+  readonly onSignInWithEmail?: () => void;
+  readonly onSignInWithGitHub?: () => void;
+  readonly isGithubLogin?: boolean;
+  readonly isEmailLogin?: boolean;
 };
 
-export function MarketingLandingPage({ onPrimaryAction }: MarketingLandingPageProps) {
+export function MarketingLandingPage({
+  onSignInWithEmail,
+  onSignInWithGitHub,
+  isGithubLogin = false,
+  isEmailLogin = false,
+}: MarketingLandingPageProps) {
+  const secondaryActionLabel = isGithubLogin
+    ? "Sign in with email instead"
+    : isEmailLogin
+      ? "Sign in with GitHub"
+      : "Sign in with email";
+  const secondaryActionHref = isEmailLogin ? "/login" : "/login/email";
+  const secondaryActionHandler = isEmailLogin ? onSignInWithGitHub : onSignInWithEmail;
+  const secondaryActionTextClasses =
+    "mb-3 block w-full max-w-[28rem] self-center px-[1rem] text-center text-sm font-medium text-white/72 hover:text-white transition";
+
+  const primaryActionLabel = isGithubLogin
+    ? "Dialing GitHub..."
+    : isEmailLogin
+      ? "Sign In"
+      : "Sign in with GitHub";
+  const primaryActionHref = "/login";
+
+  const shouldShowDialingLoader = isGithubLogin;
+  const showGitHubLogo = !isEmailLogin;
+
   return (
     <main
       className="relative isolate flex min-h-[100svh] justify-center overflow-hidden bg-[#080909] text-white"
@@ -82,23 +113,44 @@ export function MarketingLandingPage({ onPrimaryAction }: MarketingLandingPagePr
           </p>
         </div>
 
-        <div className="absolute bottom-[7.2%] left-0 right-0 z-10">
-          <button
-            className="mx-auto flex h-[12cqw] w-[81%] items-center justify-center rounded-full bg-white text-[3.2cqw] font-semibold text-black shadow-[0_1px_0_rgba(255,255,255,0.45)_inset,0_16px_32px_rgba(0,0,0,0.28)] transition hover:bg-white/92 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
-            data-wave-shadow=""
-            type="button"
-            onClick={onPrimaryAction}
-          >
-            <span>Sign in / Sign Up</span>
-          </button>
-        </div>
-        <a
-          className="absolute bottom-[3.2%] left-0 right-0 z-10 text-center text-[3cqw] font-medium text-white/42 transition hover:text-white/68 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
-          data-wave-shadow=""
-          href="#intro"
+        <div
+          className="fixed inset-x-0 z-20 flex flex-col items-center gap-2 px-[1rem] transition"
+          style={{
+            bottom: "calc(max(1rem, env(safe-area-inset-bottom, 0px)) + 1rem)",
+          }}
         >
-          <span>Learn more about Verself&nbsp;›</span>
-        </a>
+          <a
+            href={secondaryActionHref}
+            onClick={(event) => {
+              if (!secondaryActionHandler) {
+                return;
+              }
+              event.preventDefault();
+              secondaryActionHandler();
+            }}
+            role="button"
+            className={secondaryActionTextClasses}
+          >
+            <span>{secondaryActionLabel}</span>
+          </a>
+
+          <a
+            href={primaryActionHref}
+            onClick={(event) => {
+              if (!onSignInWithGitHub) {
+                return;
+              }
+              event.preventDefault();
+              onSignInWithGitHub();
+            }}
+            role="button"
+            className={`flex w-full max-w-[28rem] items-center justify-center gap-2 rounded-[var(--anchored-sheet-primary-action-radius,30px)] bg-white text-sm font-semibold text-black shadow-[0_1px_0_rgba(255,255,255,0.45)_inset,0_16px_32px_rgba(0,0,0,0.28)] hover:bg-white/92 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white ${ANCHORED_SHEET_PRIMARY_ACTION_BUTTON_CLASS}`}
+          >
+            {showGitHubLogo ? <GitHubIcon className="size-4" /> : null}
+            <span data-wave-shadow="">{primaryActionLabel}</span>
+            {shouldShowDialingLoader ? <Loader2 className="size-4 animate-spin" /> : null}
+          </a>
+        </div>
       </section>
     </main>
   );

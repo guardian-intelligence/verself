@@ -6,9 +6,7 @@ import { Button } from "./button";
 
 import { cn } from "@verself/ui/lib/utils";
 
-const SHEET_MIN_HEIGHT_PX = 320;
-const SHEET_MAX_HEIGHT_PX = 544;
-const SHEET_OPEN_RATIO = 0.54;
+const SHEET_CORNER_REFERENCE_HEIGHT_PX = 320;
 const SHEET_TOP_RADIUS_MIN = 16;
 const SHEET_TOP_RADIUS_MAX = 26;
 const SHEET_BOTTOM_RADIUS_MIN = 22;
@@ -17,6 +15,9 @@ const SHEET_ACTION_FALLBACK_PX = 88;
 const SHEET_DISMISS_OFFSET_PX = 24;
 const SPRING_REST_DISTANCE_PX = 0.5;
 const SPRING_REST_VELOCITY = 3.2;
+const DEVELOPMENT_MODE_PARAM = "developmentMode";
+const DEVELOPMENT_MODE_VALUE = "1";
+const ANCHORED_SHEET_PRIMARY_ACTION_SECTION_DISPLAY_NAME = "AnchoredSheetPrimaryActionSection";
 
 // Tuned from the 60fps reference: ~2.6% overshoot after the initial launch.
 const PRESENT_SPRING = {
@@ -34,6 +35,9 @@ const DISMISS_SPRING = {
   startVelocityRatio: 0,
   stiffness: 360,
 };
+
+export const ANCHORED_SHEET_PRIMARY_ACTION_BUTTON_CLASS =
+  "h-[47px] min-h-[47px] w-full px-5";
 const ANCHORED_SHEET_PRIMARY_ACTION_SECTION = Symbol.for(
   "verself.ui.AnchoredSheetPrimaryActionSection",
 );
@@ -104,8 +108,10 @@ export type AnchoredSheetProps = Omit<React.ComponentPropsWithoutRef<"section">,
   children: React.ReactNode;
   contentClassName?: string;
   defaultPresented?: boolean;
+  onHide?: () => void;
   onSheetHidden?: () => void;
   onSheetDismissed?: () => void;
+  onPresent?: () => void;
   onSheetPresented?: () => void;
 };
 
@@ -165,13 +171,23 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function getTargetSheetHeight() {
+function isDevelopmentModeActive(): boolean {
   if (typeof window === "undefined") {
-    return SHEET_MIN_HEIGHT_PX;
+    return false;
   }
-  const viewportHeight = window.innerHeight;
-  const ratioHeight = Math.round(viewportHeight * SHEET_OPEN_RATIO);
-  return clamp(ratioHeight, SHEET_MIN_HEIGHT_PX, SHEET_MAX_HEIGHT_PX);
+  const params = new URLSearchParams(window.location.search);
+  return params.get(DEVELOPMENT_MODE_PARAM) === DEVELOPMENT_MODE_VALUE;
+}
+
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select";
 }
 
 function getDismissThreshold(topSectionBaseHeight: number) {
@@ -193,7 +209,7 @@ function getSpringConfig(phase: SheetPhase): SpringConfig {
 
 function sheetCornerRadii(height: number): SheetCorner {
   const normalized = clamp(
-    (height - SHEET_MIN_HEIGHT_PX) / (SHEET_MAX_HEIGHT_PX - SHEET_MIN_HEIGHT_PX),
+    (height - SHEET_CORNER_REFERENCE_HEIGHT_PX) / (SHEET_CORNER_REFERENCE_HEIGHT_PX * 2),
     0,
     1,
   );
@@ -245,8 +261,12 @@ function isPrimaryActionSection(
 ): child is React.ReactElement<AnchoredSheetPrimaryActionSectionProps> {
   return (
     React.isValidElement(child) &&
-    (child.type as AnchoredSheetMarkedComponent).__anchoredSheetRole ===
-      ANCHORED_SHEET_PRIMARY_ACTION_SECTION
+    ((child.type as AnchoredSheetMarkedComponent).__anchoredSheetRole ===
+      ANCHORED_SHEET_PRIMARY_ACTION_SECTION ||
+      (typeof child.type === "function" &&
+        ((child.type as React.FC).displayName ===
+          ANCHORED_SHEET_PRIMARY_ACTION_SECTION_DISPLAY_NAME ||
+          child.type.name === ANCHORED_SHEET_PRIMARY_ACTION_SECTION_DISPLAY_NAME)))
   );
 }
 
@@ -445,7 +465,7 @@ function AnchoredSheetPrimaryActionButton({
 
   return (
     <Button
-      className={cn("h-[47px] min-h-[47px] w-full px-5", className)}
+      className={cn(ANCHORED_SHEET_PRIMARY_ACTION_BUTTON_CLASS, className)}
       style={{
         ...style,
         borderRadius: `${context.sheetCorner.bottom}px`,
@@ -463,10 +483,12 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
       children,
       className,
       contentClassName,
+      onHide,
       defaultPresented = false,
       onSheetHidden,
       onSheetDismissed,
       onSheetPresented,
+      onPresent,
       onPointerCancel,
       onPointerDown,
       onPointerMove,
@@ -478,37 +500,56 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
   ) => {
     const childArray = React.Children.toArray(children);
     const actionSections = childArray.filter(isPrimaryActionSection);
-    if (actionSections.length !== 1) {
-      throw new Error("AnchoredSheet requires exactly one AnchoredSheetPrimaryActionSection child.");
+    if (actionSections.length > 1 && process.env.NODE_ENV !== "production") {
+      console.warn(
+        `AnchoredSheet received ${actionSections.length} primary action sections; using the last one.`,
+      );
     }
-    const actionSection = actionSections[0];
+    if (actionSections.length !== 1) {
+      if (actionSections.length === 0) {
+        throw new Error("AnchoredSheet requires at least one AnchoredSheetPrimaryActionSection child.");
+      }
+      if (actionSections.length > 1) {
+        // Pick the deepest section when nested routes accidentally re-render duplicates.
+        // This keeps the sheet visible while preserving compatibility with route-driven
+        // composition during progressive refactors.
+      }
+    }
+    const actionSection = actionSections[actionSections.length - 1] ?? actionSections[0];
     const contentChildren = childArray.filter((child) => !isPrimaryActionSection(child));
 
     const [state, dispatch] = React.useReducer(anchoredSheetReducer, {
       dragY: 0,
       phase: defaultPresented ? "presented" : "hidden",
     });
+    const [isDevelopmentMode, setIsDevelopmentMode] = React.useState(isDevelopmentModeActive);
 
     const dragSessionRef = React.useRef<DragSession | null>(null);
     const panelRef = React.useRef<HTMLElement | null>(null);
     const primaryActionRef = React.useRef<HTMLDivElement | null>(null);
+    const sheetTopSectionRef = React.useRef<HTMLDivElement | null>(null);
     const closeCallbacksFiredRef = React.useRef(false);
-    const [sheetTargetHeight, setSheetTargetHeight] = React.useState(SHEET_MIN_HEIGHT_PX);
+    const [sheetTargetHeight, setSheetTargetHeight] = React.useState(0);
     const [primaryActionHeight, setPrimaryActionHeight] = React.useState(SHEET_ACTION_FALLBACK_PX);
-
-    const topSectionBaseHeight = Math.max(sheetTargetHeight - primaryActionHeight, 0);
+    const sheetId = React.useId();
+    const sheetElementId = `anchored-sheet-${sheetId}`;
+    const sheetTitleId = `${sheetElementId}-title`;
+    const sheetDescriptionId = `${sheetElementId}-description`;
 
     const measureLayout = React.useCallback(() => {
+      const topSection = sheetTopSectionRef.current;
+      const action = primaryActionRef.current;
+      if (!topSection || !action) {
+        return;
+      }
+      const topSectionHeight = topSection.scrollHeight;
+      const actionHeight = action.getBoundingClientRect().height;
+
+      const nextHeight = Math.max(Math.ceil(topSectionHeight + actionHeight), 0);
       setSheetTargetHeight((previousHeight) => {
-        const nextHeight = getTargetSheetHeight();
         return Math.abs(previousHeight - nextHeight) > 0.5 ? nextHeight : previousHeight;
       });
 
-      const action = primaryActionRef.current;
-      if (!action) {
-        return;
-      }
-      const actionHeight = action.getBoundingClientRect().height;
       if (actionHeight > 1) {
         setPrimaryActionHeight((previousHeight) => {
           return Math.abs(previousHeight - actionHeight) > 0.5 ? actionHeight : previousHeight;
@@ -526,7 +567,7 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
       [measureLayout],
     );
 
-    const dismissThreshold = getDismissThreshold(sheetTargetHeight);
+    const dismissThreshold = getDismissThreshold(Math.max(sheetTargetHeight - primaryActionHeight, 0));
     const dismissOffsetY = React.useMemo(
       () => sheetTargetHeight + SHEET_DISMISS_OFFSET_PX,
       [sheetTargetHeight],
@@ -575,9 +616,9 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
       target: sheetTranslateYTarget,
     });
 
-    const panelHeight = Math.max(sheetTargetHeight, SHEET_MIN_HEIGHT_PX);
+    const panelHeight = Math.max(sheetTargetHeight, 0);
     const sheetCorner = React.useMemo(
-      () => sheetCornerRadii(Math.max(panelHeight, SHEET_MIN_HEIGHT_PX)),
+      () => sheetCornerRadii(Math.max(panelHeight, SHEET_CORNER_REFERENCE_HEIGHT_PX)),
       [panelHeight],
     );
     const contextValue = React.useMemo<AnchoredSheetContextValue>(
@@ -617,6 +658,37 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
       hideSheet();
     }, [hideSheet]);
 
+    const requestPresent = React.useCallback(() => {
+      if (onPresent) {
+        onPresent();
+        return;
+      }
+      presentSheet();
+    }, [onPresent, presentSheet]);
+
+    const requestHide = React.useCallback(() => {
+      if (onHide) {
+        onHide();
+        return;
+      }
+      hideSheet();
+    }, [hideSheet, onHide]);
+
+    const closeOnEscape = React.useCallback(
+      (event: KeyboardEvent) => {
+        if (event.key !== "Escape") {
+          return;
+        }
+
+        if (state.phase === "measuring") {
+          return;
+        }
+
+        requestHide();
+      },
+      [requestHide, state.phase],
+    );
+
     React.useImperativeHandle(
       ref,
       () => ({
@@ -626,6 +698,66 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
       }),
       [hideSheet, dismissSheet, presentSheet],
     );
+
+    const refreshDevelopmentMode = React.useCallback(() => {
+      setIsDevelopmentMode(isDevelopmentModeActive());
+    }, []);
+
+    React.useEffect(() => {
+      refreshDevelopmentMode();
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      window.addEventListener("popstate", refreshDevelopmentMode);
+      return () => {
+        window.removeEventListener("popstate", refreshDevelopmentMode);
+      };
+    }, [refreshDevelopmentMode]);
+
+    const toggleSheet = React.useCallback(() => {
+      if (state.phase === "hidden" || state.phase === "dismissing") {
+        requestPresent();
+        return;
+      }
+      requestHide();
+    }, [requestHide, requestPresent, state.phase]);
+
+    const toggleSheetOnKey = React.useCallback(
+      (event: KeyboardEvent) => {
+        if (!isDevelopmentMode) {
+          return;
+        }
+
+        const key = event.key.toLowerCase();
+        if (key !== "a" || isEditableElement(event.target)) {
+          return;
+        }
+
+        if (event.repeat) {
+          return;
+        }
+
+        event.preventDefault();
+        toggleSheet();
+      },
+      [isDevelopmentMode, toggleSheet],
+    );
+
+    useIsomorphicLayoutEffect(() => {
+      if (!isDevelopmentMode) {
+        return;
+      }
+
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      window.addEventListener("keydown", toggleSheetOnKey);
+      return () => {
+        window.removeEventListener("keydown", toggleSheetOnKey);
+      };
+    }, [isDevelopmentMode, toggleSheetOnKey]);
 
     const beginDrag = React.useCallback(
       (event: React.PointerEvent<HTMLElement>) => {
@@ -733,8 +865,9 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
         return;
       }
 
+      const topSection = sheetTopSectionRef.current;
       const action = primaryActionRef.current;
-      if (!action) {
+      if (!topSection || !action) {
         return;
       }
 
@@ -742,6 +875,7 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
         measureLayout();
       });
       observer.observe(action);
+      observer.observe(topSection);
       return () => {
         observer.disconnect();
       };
@@ -758,19 +892,38 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
       };
     }, [measureLayout]);
 
-    if (state.phase === "hidden") {
+    useIsomorphicLayoutEffect(() => {
+      if (state.phase === "hidden" || state.phase === "measuring") {
+        return;
+      }
+
+      window.addEventListener("keydown", closeOnEscape);
+      return () => {
+        window.removeEventListener("keydown", closeOnEscape);
+      };
+    }, [closeOnEscape, state.phase]);
+
+    const shouldRender = isDevelopmentMode || state.phase !== "hidden";
+    if (!shouldRender) {
       return null;
     }
 
     return (
       <AnchoredSheetContext.Provider value={contextValue}>
         <section
+          id={sheetElementId}
+          aria-labelledby={sheetTitleId}
+          aria-describedby={sheetDescriptionId}
           aria-label={ariaLabel}
-          aria-modal="false"
+          aria-modal={
+            state.phase === "measuring" || state.phase === "hidden" ? "false" : "true"
+          }
           data-slot="anchored-sheet"
           data-state={state.phase}
           ref={panelRef}
           role="dialog"
+          tabIndex={-1}
+          aria-hidden={state.phase === "hidden" ? "true" : "false"}
           className={cn(
             "fixed bottom-[max(1rem,env(safe-area-inset-bottom,0px))] inset-x-0 z-50 mx-auto flex w-[calc(100vw_-_2rem)] max-w-[28rem] flex-col overflow-hidden bg-popover bg-clip-padding text-popover-foreground shadow-[0_-1px_2px_rgb(0_0_0/0.04),0_-20px_56px_-32px_rgb(0_0_0/0.28)] ring-1 ring-foreground/5 will-change-[transform] select-none",
             className,
@@ -783,7 +936,9 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
             borderBottomRightRadius: `${sheetCorner.bottom}px`,
             height: `${panelHeight}px`,
             transform: `translate3d(0, ${sheetTranslateY}px, 0)`,
-            visibility: state.phase === "measuring" ? "hidden" : style?.visibility,
+            visibility:
+              state.phase === "measuring" || state.phase === "hidden" ? "hidden" : style?.visibility,
+            pointerEvents: state.phase === "hidden" ? "none" : style?.pointerEvents,
           }}
           onPointerCancel={(event) => {
             onPointerCancel?.(event);
@@ -799,9 +954,14 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
           }}
           {...props}
         >
+          <h2 id={sheetTitleId} className="sr-only">
+            {ariaLabel}
+          </h2>
+          <p id={sheetDescriptionId} className="sr-only">
+            Sheet content with sign-in options and a close action.
+          </p>
           <div
-            style={{ height: `${Math.max(topSectionBaseHeight, 0)}px` }}
-            className="relative min-h-0 flex-1 overflow-hidden"
+            className="relative min-h-0 overflow-hidden"
           >
             <div
               className="absolute inset-x-0 top-0 z-10 flex h-12 cursor-grab touch-none items-start justify-center pt-3.5"
@@ -812,32 +972,35 @@ const AnchoredSheet = React.forwardRef<AnchoredSheetRef, AnchoredSheetProps>(
               onPointerUp={finishDrag}
             >
               <span aria-hidden="true" className="pointer-events-none h-1 w-9 rounded-full bg-foreground/12" />
-              <button
-                type="button"
+              <a
+                href="/"
+                aria-controls={sheetElementId}
+                aria-expanded={state.phase !== "measuring"}
+                aria-label="Close"
                 className="pointer-events-auto absolute right-3 top-2 border border-transparent px-3 py-2 text-sm font-medium leading-none transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-foreground/14 hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 style={{
                   borderRadius: `${sheetCorner.top}px`,
                 }}
+                role="button"
                 onPointerDown={(event) => {
                   event.stopPropagation();
+                  requestHide();
                 }}
                 onPointerCancel={(event) => {
                   cancelDrag(event);
                 }}
                 onClick={(event) => {
                   event.preventDefault();
-                  hideSheet();
+                  requestHide();
                 }}
               >
                 Close
-              </button>
+              </a>
             </div>
             <div
               data-slot="anchored-sheet-content"
-              className={cn(
-                "relative flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-4 pt-12",
-                contentClassName,
-              )}
+              ref={sheetTopSectionRef}
+              className={cn("relative flex min-h-0 flex-col overflow-y-auto px-5 pb-4 pt-12", contentClassName)}
             >
               {contentChildren}
             </div>

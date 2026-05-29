@@ -1,6 +1,6 @@
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
-import { DirectionalLight, HemisphereLight, MathUtils, PointLight, Vector3 } from "three";
+import { useEffect, useMemo, useRef } from "react";
+import { DirectionalLight, HemisphereLight, MathUtils, PointLight, Timer, Vector3 } from "three";
 import {
   firstLightFocusPoint,
   firstLightStartPoint,
@@ -17,12 +17,24 @@ export function LightingRig() {
   const bounceLight = useRef<DirectionalLight>(null);
   const rimLight = useRef<DirectionalLight>(null);
   const skyFill = useRef<HemisphereLight>(null);
+  const timerRef = useRef<Timer>(new Timer());
   const currentPosition = useMemo(() => new Vector3().copy(startPoint), []);
   const desiredPosition = useMemo(() => new Vector3(), []);
   const orbitOffset = useMemo(() => new Vector3(), []);
 
-  useFrame(({ clock }, delta) => {
-    const elapsed = clock.getElapsedTime();
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      timerRef.current.connect(document);
+    }
+    return () => {
+      timerRef.current.disconnect();
+    };
+  }, []);
+
+  useFrame(() => {
+    timerRef.current.update();
+    const delta = timerRef.current.getDelta();
+    const elapsed = timerRef.current.getElapsed();
     const reveal = MathUtils.smoothstep(elapsed, 0.2, 3.8);
     const scroll = Math.min(runtime.scroll.current, 1);
     const orbit = elapsed * 0.34 + scroll * 0.48;

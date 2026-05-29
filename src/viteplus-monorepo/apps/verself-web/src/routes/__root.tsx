@@ -9,6 +9,7 @@ import { emitSpan } from "~/lib/telemetry/browser";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
 import { PRODUCT_DOMAIN_META_NAME, readProductDomain } from "~/lib/product-domain";
+import { DevelopmentModeHotkey } from "~/components/development-mode-hotkey";
 import "~/styles/app.css";
 
 const authNavigationClient = {
@@ -132,6 +133,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body className="bg-background text-foreground font-sans antialiased">
         {children}
+        <DevelopmentModeHotkey />
         <Toaster />
         <TelemetryProbe />
         <Scripts />
