@@ -85,8 +85,8 @@
 
 - name: Create DNS records in Cloudflare
   community.general.cloudflare_dns:
-    zone: "{{ verself_domain }}"
-    record: "{{ item.name }}.{{ verself_domain }}"
+    zone: "{{ resend_zone }}"
+    record: "{{ item.name }}.{{ resend_zone }}"
     type: "{{ item.type }}"
     value: "{{ item.value | regex_replace('^\"|\"$', '') }}"
     priority: "{{ item.priority | default(omit) }}"
@@ -96,7 +96,7 @@
     api_token: "{{ cloudflare_api_token }}"
   loop: "{{ resend_dns_records }}"
   loop_control:
-    label: "{{ item.type }} {{ item.name }}.{{ verself_domain }}"
+    label: "{{ item.type }} {{ item.name }}.{{ resend_zone }}"
   delegate_to: localhost
   become: false
   when: resend_domain_status != 'verified'
@@ -143,9 +143,9 @@
 # Enforce sender alignment for the transactional subdomain and root domain.
 # p=reject is safe here: single sender (Resend), no third-party mail to break.
 
-- name: Create DMARC record for sending subdomain
+- name: Create DMARC record for sending domain
   community.general.cloudflare_dns:
-    zone: "{{ verself_domain }}"
+    zone: "{{ resend_zone }}"
     record: "_dmarc.{{ resend_domain }}"
     type: TXT
     value: "v=DMARC1; p={{ resend_dmarc_policy }}; rua=mailto:{{ resend_dmarc_rua }}"
@@ -156,10 +156,12 @@
   delegate_to: localhost
   become: false
 
+# Skipped for bare-apex senders, where the sending domain is already the apex
+# and the record above covers it.
 - name: Create DMARC record for root domain
   community.general.cloudflare_dns:
-    zone: "{{ verself_domain }}"
-    record: "_dmarc.{{ verself_domain }}"
+    zone: "{{ resend_zone }}"
+    record: "_dmarc.{{ resend_root_dmarc_domain }}"
     type: TXT
     value: "v=DMARC1; p={{ resend_dmarc_policy }}; rua=mailto:{{ resend_dmarc_rua }}"
     ttl: 1
@@ -168,3 +170,4 @@
     api_token: "{{ cloudflare_api_token }}"
   delegate_to: localhost
   become: false
+  when: resend_root_dmarc_domain != resend_domain

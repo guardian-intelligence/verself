@@ -1,0 +1,8 @@
+---
+dependencies: []
+
+galaxy_info:
+  role_name: email_routing
+  description: >-
+    Enable Cloudflare Email Routing on a zone and forward operator mailboxes to
+    verified external destinations. All API calls run on the Ansible controller.

@@ -47,6 +47,9 @@ type config struct {
 	AuthIssuerURL         string
 	AuthAudience          string
 	SPIFFEEndpoint        string
+	AgentSenderAddress    string
+	AgentSenderOrgID      string
+	AgentSenderName       string
 }
 
 func main() {
@@ -152,6 +155,9 @@ func run() error {
 	defer pgPool.Close()
 
 	store := mailstore.New(pgPool)
+	if err := seedAgentSender(ctx, store, cfg); err != nil {
+		return fmt.Errorf("email-service seed agent sender: %w", err)
+	}
 	sender, err := provider.NewResend(resendAPIKey, cfg.ResendFromName, &http.Client{Timeout: 10 * time.Second, Transport: transport})
 	if err != nil {
 		return fmt.Errorf("email-service sender provider: %w", err)
@@ -181,6 +187,7 @@ func run() error {
 
 	internalPeerIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
+		workloadauth.ServiceAgentMail,
 		workloadauth.ServiceBilling,
 		workloadauth.ServiceNotifications,
 	)
@@ -218,11 +225,53 @@ func loadConfig() (config, error) {
 		AuthIssuerURL:         l.RequireURL("VERSELF_AUTH_ISSUER_URL"),
 		AuthAudience:          l.RequireCredential("auth-audience"),
 		SPIFFEEndpoint:        l.String(workloadauth.EndpointSocketEnv, ""),
+		AgentSenderAddress:    l.String("EMAIL_SERVICE_AGENT_SENDER_ADDRESS", ""),
+		AgentSenderOrgID:      l.String("EMAIL_SERVICE_AGENT_SENDER_ORG_ID", ""),
+		AgentSenderName:       l.String("EMAIL_SERVICE_AGENT_SENDER_NAME", ""),
 	}
 	if err := l.Err(); err != nil {
 		return config{}, err
 	}
 	return cfg, nil
+}
+
+// agentSenderSubject is the actor subject the agent-mail workload presents; the
+// seed grants it send_as so audit rows attribute agent email to a stable subject.
+const agentSenderSubject = workloadauth.ServiceAgentMail
+
+// seedAgentSender provisions the configured agent sender address (e.g.
+// agents@guardianintelligence.org) under the dogfood org so EnsureOutboundAddress
+// accepts it, and records the Resend provider binding for its domain. Opt-in by
+// config presence; idempotent so it converges on every boot.
+func seedAgentSender(ctx context.Context, store *mailstore.Store, cfg config) error {
+	address := strings.TrimSpace(strings.ToLower(cfg.AgentSenderAddress))
+	if address == "" {
+		return nil
+	}
+	orgID := strings.TrimSpace(cfg.AgentSenderOrgID)
+	if orgID == "" {
+		return fmt.Errorf("EMAIL_SERVICE_AGENT_SENDER_ADDRESS set without EMAIL_SERVICE_AGENT_SENDER_ORG_ID")
+	}
+	at := strings.LastIndexByte(address, '@')
+	if at <= 0 || at == len(address)-1 {
+		return fmt.Errorf("agent sender address %q is not a valid email", address)
+	}
+	if err := store.ProvisionAddress(ctx, mailstore.ProvisionedAddress{
+		OrgID:           orgID,
+		IdentityType:    "system",
+		Address:         address,
+		DisplayName:     strings.TrimSpace(cfg.AgentSenderName),
+		SubjectID:       agentSenderSubject,
+		SendAsGrantedBy: "system:agent-sender-seed",
+	}); err != nil {
+		return err
+	}
+	return store.UpsertProviderBinding(ctx, mailstore.ProviderBinding{
+		Provider:    provider.NameResend,
+		Domain:      address[at+1:],
+		FromAddress: address,
+		Active:      true,
+	})
 }
 
 func requireSecretField(values map[string]string, field string, label string) string {

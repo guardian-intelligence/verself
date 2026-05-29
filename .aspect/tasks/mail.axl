@@ -26,6 +26,47 @@ addresses = task(
     },
 )
 
+def _send_impl(ctx):
+    argv = [
+        "agent-mail",
+        "--repo-root",
+        ws_path(ctx),
+        "--site",
+        ctx.args.site,
+        "--subject",
+        ctx.args.subject,
+        "--body",
+        ctx.args.body,
+    ]
+    if ctx.args.to:
+        argv.extend(["--to", ctx.args.to])
+    if ctx.args.from_address:
+        argv.extend(["--from", ctx.args.from_address])
+    if ctx.args.org_id:
+        argv.extend(["--org-id", ctx.args.org_id])
+    return bazel_run(
+        ctx,
+        ASPECT_OPERATOR_TARGET,
+        argv,
+        cwd = ws_path(ctx),
+        label = "aspect-operator agent-mail",
+    )
+
+send = task(
+    implementation = _send_impl,
+    name = "send",
+    group = ["mail"],
+    summary = "Send a notification email from a Verself agent to the operator.",
+    args = {
+        "subject": args.string(description = "Email subject."),
+        "body": args.string(description = "Email body."),
+        "to": args.string(default = "", description = "Override recipient address."),
+        "from_address": args.string(default = "", description = "Override sender address."),
+        "org_id": args.string(default = "", description = "Override owning organization ID."),
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
 def _test_accounts_args(ctx, action):
     argv = [
         "mail",

@@ -61,6 +61,14 @@ Public customer send APIs are intentionally absent. Customer-facing authenticate
 
 Notifications uses an internal email-service client and no provider credentials. Provider-specific request shape, idempotency headers, response IDs, retries, and rate-limit interpretation stay inside `email-service`.
 
+## Agent-To-Operator Email
+
+Agents working in the repo email the operator through the same internal send path. The sender is `agents@guardianintelligence.org`, owned by the dogfood org; on boot `email-service` provisions that identity (the otherwise-unused `ProvisionAddress`) and a `resend` / `guardianintelligence.org` provider binding from `EMAIL_SERVICE_AGENT_SENDER_*`, so `EnsureOutboundAddress` accepts it. `guardianintelligence.org` is a verified Resend sending domain; `anveio@guardianintelligence.org` is delivered to the operator inbox by Cloudflare Email Routing (`src/integrations/cloudflare/email-routing`), which forwards to the verified Gmail destination.
+
+The agent-facing tool is `src/tools/operator/cmd/agent-mail`. It must run as the `agent_mail` user on a node so the SPIRE workload API issues `spiffe://<td>/svc/agent-mail`, which `email-service`'s internal peer allowlist trusts. The HTML body is a React Email template (`@verself/agent-email`) rendered to a Go `text/template` at build time; the plaintext alternative is assembled in the tool. Operators invoke it as `aspect mail send --subject ... --body ...`, which uploads the binary via the operator SSH plane and runs it as `agent_mail`.
+
+Provision the domains with `src/integrations/email/provision-email-domains.yml` (Resend verification for every `resend_sending_domains` entry plus Cloudflare Email Routing). The company apex carries one merged SPF covering both Resend and Cloudflare; the Gmail destination must complete Cloudflare's verification click once. The full runbook — Cloudflare token scopes, DNS layout, the `agent_mail` identity, and send verification — is in `src/integrations/email/README.md`.
+
 ## Receiving And Forwarding
 
 Inbound mail is accepted by Stalwart, projected through JMAP sync workers, and stored in `mailboxes`, `emails`, `email_mailboxes`, `email_bodies`, and `threads`. Sync workers skip provisioned identities that lack a protocol credential; company role addresses still exist as address and forwarding policy rows.

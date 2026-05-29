@@ -29,6 +29,7 @@ spire_identity_registry(
         "//src/services/sandbox-rental-service:spiffe_identity",
         "//src/services/secrets-service:spiffe_identity",
         "//src/services/source-code-hosting-service:spiffe_identity",
+        "//src/tools/operator/cmd/agent-mail:spiffe_identity",
     ],
 )
 

@@ -1,0 +1,170 @@
+---
+# Enable Cloudflare Email Routing on a zone and forward operator mailboxes to
+# verified destinations. Idempotent: routing rules are created only when a
+# matching rule is absent. Destination verification still requires the operator
+# to click the link Cloudflare emails to the destination address.
+
+- name: Validate Cloudflare Email Routing token is configured
+  ansible.builtin.fail:
+    msg: >-
+      cloudflare_company_api_token is empty. Add an Email-Routing-scoped
+      token via: sops src/host/sites/{{ verself_site | default('prod') }}/secrets/host.sops.yml
+  when: cloudflare_company_api_token | default('', true) | length == 0
+
+- name: Resolve Cloudflare zone
+  ansible.builtin.uri:
+    url: "{{ cloudflare_api_url }}/zones?name={{ cloudflare_email_routing_zone }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
+    return_content: true
+    status_code: 200
+  register: cloudflare_zone_lookup
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Capture zone and account identifiers
+  ansible.builtin.set_fact:
+    cloudflare_email_routing_zone_id: "{{ cloudflare_zone_lookup.json.result[0].id }}"
+    cloudflare_email_routing_account_id: "{{ cloudflare_zone_lookup.json.result[0].account.id }}"
+
+- name: Enable Cloudflare Email Routing
+  ansible.builtin.uri:
+    url: "{{ cloudflare_api_url }}/zones/{{ cloudflare_email_routing_zone_id }}/email/routing/enable"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body: {}
+    status_code: [200, 409]
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Fetch required Email Routing DNS records
+  ansible.builtin.uri:
+    url: "{{ cloudflare_api_url }}/zones/{{ cloudflare_email_routing_zone_id }}/email/routing/dns"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
+    return_content: true
+    status_code: 200
+  register: cloudflare_email_routing_dns
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Create Email Routing MX records
+  community.general.cloudflare_dns:
+    zone: "{{ cloudflare_email_routing_zone }}"
+    record: "{{ item.name }}"
+    type: MX
+    value: "{{ item.content }}"
+    priority: "{{ item.priority | default(omit) }}"
+    ttl: 1
+    proxied: false
+    api_token: "{{ cloudflare_company_api_token }}"
+  loop: "{{ cloudflare_email_routing_dns.json.result | selectattr('type', 'equalto', 'MX') | list }}"
+  loop_control:
+    label: "MX {{ item.name }}"
+  delegate_to: localhost
+  become: false
+
+# Single merged apex SPF: routing and Resend cannot each own one. solo keeps it
+# unique.
+- name: Set merged apex SPF for Email Routing and Resend
+  community.general.cloudflare_dns:
+    zone: "{{ cloudflare_email_routing_zone }}"
+    record: "{{ cloudflare_email_routing_zone }}"
+    type: TXT
+    value: "{{ cloudflare_email_routing_spf }}"
+    ttl: 1
+    proxied: false
+    solo: true
+    api_token: "{{ cloudflare_company_api_token }}"
+  delegate_to: localhost
+  become: false
+
+# Destination addresses are an account-level resource. 403 is expected and
+# accepted when the company token is zone-scoped (no account permission); the
+# operator then adds the destination in the dashboard. Either way Cloudflare
+# emails a one-time verification link that must be clicked before forwarding.
+- name: Ensure forwarding destination addresses (triggers verification email)
+  ansible.builtin.uri:
+    url: "{{ cloudflare_api_url }}/accounts/{{ cloudflare_email_routing_account_id }}/email/routing/addresses"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      email: "{{ item.forward_to }}"
+    status_code: [200, 201, 409, 403]
+  loop: "{{ cloudflare_email_routing_rules }}"
+  loop_control:
+    label: "{{ item.forward_to }}"
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Remind operator to verify forwarding destinations
+  ansible.builtin.debug:
+    msg: >-
+      Verify {{ item.forward_to }} as a Cloudflare Email Routing destination:
+      Cloudflare emails a one-time link that must be clicked. With a zone-scoped
+      token, first add the destination in the dashboard
+      (Account > Email Routing > Destination addresses).
+  loop: "{{ cloudflare_email_routing_rules }}"
+  loop_control:
+    label: "{{ item.forward_to }}"
+
+- name: List existing Email Routing rules
+  ansible.builtin.uri:
+    url: "{{ cloudflare_api_url }}/zones/{{ cloudflare_email_routing_zone_id }}/email/routing/rules"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
+    return_content: true
+    status_code: 200
+  register: cloudflare_email_routing_existing
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Compute already-routed match addresses
+  ansible.builtin.set_fact:
+    cloudflare_email_routing_existing_matches: >-
+      {{ cloudflare_email_routing_existing.json.result
+         | map(attribute='matchers') | flatten
+         | selectattr('field', 'equalto', 'to')
+         | map(attribute='value') | list }}
+
+- name: Create missing Email Routing rules
+  ansible.builtin.uri:
+    url: "{{ cloudflare_api_url }}/zones/{{ cloudflare_email_routing_zone_id }}/email/routing/rules"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ cloudflare_company_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "forward {{ item.match }}"
+      enabled: true
+      matchers:
+        - type: literal
+          field: to
+          value: "{{ item.match }}"
+      actions:
+        - type: forward
+          value:
+            - "{{ item.forward_to }}"
+    status_code: [200, 201]
+  loop: "{{ cloudflare_email_routing_rules }}"
+  loop_control:
+    label: "{{ item.match }} -> {{ item.forward_to }}"
+  when: item.match not in cloudflare_email_routing_existing_matches
+  delegate_to: localhost
+  become: false
+  no_log: true

@@ -6,6 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/tigerbeetle/tigerbeetle-go v0.17.1
+	github.com/verself/email-service v0.0.0
 	github.com/verself/iam-service v0.0.0
 	github.com/verself/observability v0.0.0
 	github.com/verself/operator-runtime v0.0.0
@@ -62,6 +63,8 @@ require (
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+replace github.com/verself/email-service => ../../services/email-service
 
 replace github.com/verself/operator-runtime => ../operator-runtime/go
 

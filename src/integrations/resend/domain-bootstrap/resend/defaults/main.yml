@@ -4,6 +4,11 @@
 resend_api_url: "https://api.resend.com"
 resend_region: "us-east-1"
 
+# Cloudflare zone holding this sending domain's DNS, and the apex that also gets
+# a DMARC record. Callers override per domain (see resend_sending_domains).
+resend_zone: "{{ verself_domain }}"
+resend_root_dmarc_domain: "{{ verself_domain }}"
+
 # DMARC policy for the sending subdomain and root domain.
 # "reject" is safe for dedicated transactional subdomains with a single sender.
 resend_dmarc_policy: "reject"

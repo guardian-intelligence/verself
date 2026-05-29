@@ -1,0 +1,30 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_source_package")
+
+package(default_visibility = ["//visibility:public"])
+
+viteplus_source_package(
+    srcs = [
+        "package.json",
+        "render-template.ts",
+        "src/**/*",
+        "tsconfig.json",
+    ],
+    npm_name = "@verself/agent-email",
+)
+
+# Renders the React Email template to HTML or plaintext. The agent-mail tool
+# drives this through js_run_binary at build time and embeds the output as a Go
+# text/template.
+js_binary(
+    name = "render_template",
+    data = [
+        "render-template.ts",
+        "src/agent-notification.ts",
+        ":node_modules/@react-email/components",
+        ":node_modules/@react-email/render",
+        ":node_modules/react",
+        ":node_modules/react-dom",
+    ],
+    entry_point = "render-template.ts",
+)

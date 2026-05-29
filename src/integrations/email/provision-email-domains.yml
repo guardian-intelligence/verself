@@ -1,0 +1,46 @@
+---
+# Provision the company email domains: register and verify each Resend sending
+# domain, then enable Cloudflare Email Routing for the operator mailboxes. All
+# work runs on the controller against the Resend and Cloudflare APIs.
+#
+# Run with the host Ansible toolchain so SOPS and the community.general /
+# community.sops collections resolve, pointing roles at the integration trees:
+#
+#   ANSIBLE_ROLES_PATH=src/integrations/resend/domain-bootstrap:src/integrations/cloudflare/email-routing \
+#     ansible-playbook -i src/host/sites/prod/inventory.ini \
+#       -e verself_site=prod src/integrations/email/provision-email-domains.yml
+#
+# The Cloudflare token (host.sops.yml: cloudflare_api_token) must carry the
+# "Email Routing" edit permission in addition to Zone DNS edit; the enable call
+# returns 403 without it. After it runs, click the verification link Cloudflare
+# emails to the forwarding destination.
+#
+# Resend keeps its MX/SPF on the send.<domain> subdomain and DKIM on
+# resend._domainkey, so the apex is free for Cloudflare Email Routing's records.
+- name: Provision company email domains
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - "../../host/sites/{{ verself_site | default('prod') }}/vars.yml"
+  tasks:
+    - name: Load site secrets
+      community.sops.load_vars:
+        file: "../../host/sites/{{ verself_site | default('prod') }}/secrets/{{ secrets_file }}"
+      loop:
+        - host.sops.yml
+        - external.sops.yml
+      loop_control:
+        loop_var: secrets_file
+      no_log: true
+
+    - name: Register and verify Resend sending domains
+      ansible.builtin.include_tasks: provision-resend-domain.yml
+      loop: "{{ resend_sending_domains }}"
+      loop_control:
+        loop_var: sending_domain
+        label: "{{ sending_domain.domain }}"
+
+    - name: Enable Cloudflare Email Routing for operator mailboxes
+      ansible.builtin.include_role:
+        name: email_routing

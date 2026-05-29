@@ -1,0 +1,16 @@
+---
+# Cloudflare Email Routing role defaults.
+
+cloudflare_api_url: "https://api.cloudflare.com/client/v4"
+
+# Cloudflare token scoped to the company zone (guardianintelligence.org): Email
+# Routing edit + DNS edit, plus account-level Email Routing Addresses for
+# destinations. Named for the zone (vs the shared product cloudflare_api_token)
+# to keep the access separation explicit; defaults to the shared token for
+# single-token setups.
+cloudflare_company_api_token: "{{ cloudflare_api_token }}"
+
+# A single apex SPF covering both Cloudflare Email Routing (inbound) and Resend
+# (outbound). Only one SPF TXT may exist per name, so this is the merged record;
+# confirm the Resend include against the live domain at deploy time.
+cloudflare_email_routing_spf: "v=spf1 include:_spf.mx.cloudflare.net include:amazonses.com ~all"
