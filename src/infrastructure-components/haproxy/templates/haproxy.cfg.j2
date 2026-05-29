@@ -111,7 +111,7 @@ frontend fe_https
   acl stripe_source src {{ haproxy_stripe_webhook_ips | join(' ') }}
   acl auth_device_authorization_path path -i /oauth/v2/device_authorization
   acl zitadel_oidc_path path -i /.well-known/openid-configuration /.well-known/webfinger /robots.txt
-  acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console
+  acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console /idps/
   acl auth_path path -i /api/v1/auth/password-login /api/v1/auth/password-reset /api/v1/auth/password-reset/complete /api/v1/auth/callback /api/v1/auth/session /api/v1/auth/sync-session /api/v1/auth/organization /api/v1/auth/resource-token /api/v1/auth/logout /api/v1/auth/accounts /api/v1/auth/sessions /api/v1/auth/invites/accept
   acl auth_accounts_path path_beg /api/v1/auth/accounts/
   acl auth_sessions_path path_beg /api/v1/auth/sessions/
