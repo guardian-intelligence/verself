@@ -37,18 +37,20 @@ import (
 )
 
 const (
-	browserAuthCookieName      = "verself_client"
-	browserAuthLoginCookieName = "verself_login"
-	browserAuthLinkCookieName  = "verself_link"
-	browserAuthSessionTTL      = 30 * 24 * time.Hour
-	browserAuthLoginTTL        = 5 * time.Minute
-	browserAuthRefreshLeeway   = 60 * time.Second
-	browserAuthClientPrefix    = "bc_"
-	browserAuthAccountPrefix   = "ba_"
-	browserAuthCallbackPath    = "/api/v1/auth/callback"
-	browserAuthDefaultRedirect = "/"
-	browserAuthJSONBodyMax     = 4096
-	zitadelResourceOwnerID     = "urn:zitadel:iam:user:resourceowner:id"
+	browserAuthCookieName        = "verself_client"
+	browserAuthLoginCookieName   = "verself_login"
+	browserAuthLinkCookieName    = "verself_link"
+	browserAuthPwResetCookieName = "verself_pwreset"
+	passwordResetSealContext     = "password-reset"
+	browserAuthSessionTTL        = 30 * 24 * time.Hour
+	browserAuthLoginTTL          = 5 * time.Minute
+	browserAuthRefreshLeeway     = 60 * time.Second
+	browserAuthClientPrefix      = "bc_"
+	browserAuthAccountPrefix     = "ba_"
+	browserAuthCallbackPath      = "/api/v1/auth/callback"
+	browserAuthDefaultRedirect   = "/"
+	browserAuthJSONBodyMax       = 4096
+	zitadelResourceOwnerID       = "urn:zitadel:iam:user:resourceowner:id"
 )
 
 var browserAuthTracer = otel.Tracer("github.com/verself/iam-service/browser-auth")
@@ -282,6 +284,8 @@ func (a *BrowserAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.route(w, r, http.MethodPost, "browser-password-reset-start", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetStart)
 	case "/password-reset/complete":
 		a.route(w, r, http.MethodPost, "browser-password-reset-complete", rateLimitSignup, browserAuthJSONBodyMax, a.handlePasswordResetComplete)
+	case "/password-reset/consume":
+		a.route(w, r, http.MethodGet, "browser-password-reset-consume", rateLimitSignup, 0, a.handlePasswordResetConsume)
 	case "/idp/github/start":
 		a.route(w, r, http.MethodPost, "browser-idp-github-start", rateLimitSignup, browserAuthJSONBodyMax, a.handleGithubLoginStart)
 	case "/idp/callback":
@@ -1898,6 +1902,45 @@ func (a *BrowserAuth) clearLinkChallengeCookie(w http.ResponseWriter) {
 
 func linkChallengeSecretFromRequest(r *http.Request) (string, bool) {
 	cookie, err := r.Cookie(browserAuthLinkCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", false
+	}
+	return cookie.Value, true
+}
+
+// setPasswordResetCookie carries the sealed reset token (user id + verification
+// code) injected from the email link, so the verification code never appears in
+// the browser address bar, history, referrer, or access logs. Path is "/" because
+// the complete step runs through the verself-web server function. HttpOnly,
+// short-lived, single-use.
+func (a *BrowserAuth) setPasswordResetCookie(w http.ResponseWriter, sealed string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserAuthPwResetCookieName,
+		Value:    sealed,
+		Path:     "/",
+		Expires:  time.Now().UTC().Add(browserAuthLoginTTL),
+		MaxAge:   int(browserAuthLoginTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (a *BrowserAuth) clearPasswordResetCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     browserAuthPwResetCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func passwordResetSealedFromRequest(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(browserAuthPwResetCookieName)
 	if err != nil || strings.TrimSpace(cookie.Value) == "" {
 		return "", false
 	}

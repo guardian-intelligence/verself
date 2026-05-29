@@ -44,9 +44,7 @@ type passwordResetStartRequest struct {
 }
 
 type passwordResetCompleteRequest struct {
-	UserID           string `json:"userId"`
-	VerificationCode string `json:"verificationCode"`
-	Password         string `json:"password"`
+	Password string `json:"password"`
 }
 
 type passwordResetResponse struct {
@@ -348,10 +346,24 @@ func (a *BrowserAuth) handlePasswordResetComplete(w http.ResponseWriter, r *http
 		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "invalid password reset payload")
 		return
 	}
-	userID := strings.TrimSpace(input.UserID)
-	verificationCode := strings.TrimSpace(input.VerificationCode)
-	if userID == "" || verificationCode == "" {
-		a.writeProblem(w, r, http.StatusBadRequest, problemRequestValidationFailed, "reset token is required")
+	// The reset token is injected from the email link via a sealed HttpOnly
+	// cookie, never the request body, so the verification code never transits the
+	// browser address bar or client JavaScript.
+	sealed, ok := passwordResetSealedFromRequest(r)
+	if !ok {
+		a.writeProblem(w, r, http.StatusBadRequest, problemIAMPasswordResetInvalid, "Reset link is invalid or expired.")
+		return
+	}
+	opened, err := a.tokenVault.open(sealed, passwordResetSealContext, passwordResetSealContext)
+	if err != nil {
+		a.clearPasswordResetCookie(w)
+		a.writeProblem(w, r, http.StatusBadRequest, problemIAMPasswordResetInvalid, "Reset link is invalid or expired.")
+		return
+	}
+	userID, verificationCode, ok := strings.Cut(opened, "|")
+	if !ok || strings.TrimSpace(userID) == "" || strings.TrimSpace(verificationCode) == "" {
+		a.clearPasswordResetCookie(w)
+		a.writeProblem(w, r, http.StatusBadRequest, problemIAMPasswordResetInvalid, "Reset link is invalid or expired.")
 		return
 	}
 	if err := identity.ValidatePasswordPolicy(input.Password); err != nil {
@@ -363,12 +375,14 @@ func (a *BrowserAuth) handlePasswordResetComplete(w http.ResponseWriter, r *http
 	}
 	if err := a.providerLogin.CompletePasswordReset(r.Context(), userID, verificationCode, input.Password); err != nil {
 		if identity.IsInvalid(err) {
+			a.clearPasswordResetCookie(w)
 			a.writeProblem(w, r, http.StatusBadRequest, problemIAMPasswordResetInvalid, "Reset link is invalid or expired.")
 			return
 		}
 		a.serverError(w, r, "complete provider password reset", err)
 		return
 	}
+	a.clearPasswordResetCookie(w)
 	a.writeJSON(w, http.StatusOK, passwordResetResponse{
 		Status:  "completed",
 		Message: "Password reset complete.",
@@ -382,15 +396,41 @@ func passwordResetStartedResponse() passwordResetResponse {
 	}
 }
 
+// passwordResetURL targets the server-side consume endpoint rather than the SPA
+// page: the email link's code is exchanged for a sealed HttpOnly cookie and the
+// browser is redirected to a clean /reset-password URL, so the code never lands
+// in the app address bar, history, referrer, or access logs.
 func (a *BrowserAuth) passwordResetURL(userID, verificationCode string) string {
 	reset := *a.publicBaseURL
-	reset.Path = "/reset-password"
-	query := reset.Query()
+	reset.Path = "/api/v1/auth/password-reset/consume"
+	query := url.Values{}
 	query.Set("user_id", strings.TrimSpace(userID))
 	query.Set("verification_code", strings.TrimSpace(verificationCode))
 	reset.RawQuery = query.Encode()
 	reset.Fragment = ""
 	return reset.String()
+}
+
+// handlePasswordResetConsume is the email-link landing. It seals the reset token
+// into an HttpOnly cookie and redirects to a clean /reset-password URL. No
+// same-origin check: this is a top-level navigation from the user's mail client.
+func (a *BrowserAuth) handlePasswordResetConsume(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	userID := strings.TrimSpace(query.Get("user_id"))
+	verificationCode := strings.TrimSpace(query.Get("verification_code"))
+	resetPage := a.publicBaseURL.ResolveReference(&url.URL{Path: "/reset-password"})
+	if userID == "" || verificationCode == "" {
+		resetPage.RawQuery = "error=password_reset_invalid"
+		http.Redirect(w, r, resetPage.String(), http.StatusSeeOther)
+		return
+	}
+	sealed, err := a.tokenVault.seal(userID+"|"+verificationCode, passwordResetSealContext, passwordResetSealContext)
+	if err != nil {
+		a.serverError(w, r, "seal password reset token", err)
+		return
+	}
+	a.setPasswordResetCookie(w, sealed)
+	http.Redirect(w, r, resetPage.String(), http.StatusSeeOther)
 }
 
 func (a *BrowserAuth) writePasswordPolicyProblem(w http.ResponseWriter, r *http.Request, err error) bool {

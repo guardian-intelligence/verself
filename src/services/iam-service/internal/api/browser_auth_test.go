@@ -337,15 +337,23 @@ func TestPasswordLoginInvalidCredentialsReturnsStructuredProblem(t *testing.T) {
 
 func TestPasswordResetCompleteUsesLocalPasswordPolicyOnly(t *testing.T) {
 	provider := &recordingProviderLogin{}
+	vault, err := newBrowserTokenVault("browser-test-secret")
+	if err != nil {
+		t.Fatalf("new token vault: %v", err)
+	}
 	auth := &BrowserAuth{
 		providerLogin: provider,
+		tokenVault:    vault,
+	}
+	sealed, err := vault.seal("user-1|code-1", passwordResetSealContext, passwordResetSealContext)
+	if err != nil {
+		t.Fatalf("seal reset token: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/password-reset/complete", strings.NewReader(`{
-		"userId": "user-1",
-		"verificationCode": "code-1",
 		"password": "correct horse battery staple"
 	}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: browserAuthPwResetCookieName, Value: sealed})
 	res := httptest.NewRecorder()
 
 	auth.handlePasswordResetComplete(res, req)

@@ -46,8 +46,6 @@ const passwordResetStartInputSchema = v.object({
 });
 
 const passwordResetCompleteInputSchema = v.object({
-  userId: v.pipe(v.string(), v.trim(), v.nonEmpty()),
-  verificationCode: v.pipe(v.string(), v.trim(), v.nonEmpty()),
   password: v.pipe(
     v.string(),
     v.nonEmpty(),
