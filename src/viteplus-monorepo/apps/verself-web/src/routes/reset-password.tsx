@@ -24,6 +24,7 @@ import { Squircle } from "~/features/console/flight/squircle";
 import { completePasswordReset } from "~/server-fns/auth";
 
 type ResetPasswordSearch = {
+  readonly ready?: string;
   readonly error?: string;
 };
 
@@ -32,10 +33,14 @@ function searchString(value: unknown): string | undefined {
 }
 
 // The reset token is injected server-side from the email link into an HttpOnly
-// cookie and never appears in this URL; only a failure marker may.
+// cookie and never appears in this URL. The consume endpoint redirects here with
+// ready=1 (a non-sensitive marker that a reset cookie was set); a bare visit has
+// no active reset, and a failure carries error.
 function resetPasswordSearch(search: Record<string, unknown>): ResetPasswordSearch {
+  const ready = searchString(search.ready);
   const error = searchString(search.error);
   return {
+    ...(ready ? { ready } : {}),
     ...(error ? { error } : {}),
   };
 }
@@ -59,7 +64,7 @@ function ResetPasswordPage() {
       }),
     mapError: resetPasswordIamFormError,
   });
-  const linkUnavailable = search.error === "password_reset_invalid";
+  const showForm = search.ready === "1" && search.error !== "password_reset_invalid";
   const form = useForm({
     defaultValues: {
       password: "",
@@ -107,11 +112,11 @@ function ResetPasswordPage() {
             <div>
               <h2 className="text-lg font-semibold tracking-tight">Set password</h2>
               <p className="text-sm text-muted-foreground">
-                {linkUnavailable ? "Reset link unavailable." : "Enter a new password."}
+                {showForm ? "Enter a new password." : "Reset link unavailable."}
               </p>
             </div>
           </div>
-          {!linkUnavailable ? (
+          {showForm ? (
             <form
               noValidate
               onSubmit={(event) => {

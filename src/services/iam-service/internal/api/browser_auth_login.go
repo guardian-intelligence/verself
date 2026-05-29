@@ -430,6 +430,7 @@ func (a *BrowserAuth) handlePasswordResetConsume(w http.ResponseWriter, r *http.
 		return
 	}
 	a.setPasswordResetCookie(w, sealed)
+	resetPage.RawQuery = "ready=1"
 	http.Redirect(w, r, resetPage.String(), http.StatusSeeOther)
 }
 

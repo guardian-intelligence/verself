@@ -490,7 +490,9 @@ async function whenTheVisitorOpensAResetLinkWithoutToken(page: Page): Promise<vo
 }
 
 async function whenTheVisitorOpensAResetLinkWithToken(page: Page): Promise<void> {
-  await page.goto("/reset-password?user_id=user_test&verification_code=code_test", {
+  // The reset token is injected server-side into an HttpOnly cookie; the consume
+  // endpoint lands here with ready=1, never the code in the URL.
+  await page.goto("/reset-password?ready=1", {
     waitUntil: "domcontentloaded",
   });
 }
