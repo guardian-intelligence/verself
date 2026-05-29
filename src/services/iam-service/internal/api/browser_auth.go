@@ -1855,14 +1855,16 @@ func (a *BrowserAuth) clearLoginCookie(w http.ResponseWriter) {
 	})
 }
 
-// setLinkChallengeCookie carries the single-use step-up link challenge secret on
-// the same /api/v1/auth path as the login cookie, so it rides along to the
-// password-login that proves account control and performs the link.
+// setLinkChallengeCookie carries the single-use step-up link challenge secret.
+// Path is "/" (not "/api/v1/auth" like the login cookie) because the password
+// proof that consumes it runs through the verself-web server function, so the
+// browser only forwards the cookie to that root-path request when its path covers
+// it. It is short-lived, HttpOnly, and single-use.
 func (a *BrowserAuth) setLinkChallengeCookie(w http.ResponseWriter, challengeSecret string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     browserAuthLinkCookieName,
 		Value:    challengeSecret,
-		Path:     "/api/v1/auth",
+		Path:     "/",
 		Expires:  time.Now().UTC().Add(browserAuthLoginTTL),
 		MaxAge:   int(browserAuthLoginTTL.Seconds()),
 		HttpOnly: true,
@@ -1875,7 +1877,7 @@ func (a *BrowserAuth) clearLinkChallengeCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     browserAuthLinkCookieName,
 		Value:    "",
-		Path:     "/api/v1/auth",
+		Path:     "/",
 		Expires:  time.Unix(0, 0).UTC(),
 		MaxAge:   -1,
 		HttpOnly: true,
