@@ -256,9 +256,14 @@ function buildNewsroomCard(spec: OGSpec): string {
 
 function buildLettersCard(spec: OGSpec): string {
   const salutationLines = wrapText(spec.title, 26, 2);
-  const bodyText = spec.bodyExcerpt ?? spec.subtitle ?? "";
-  const bodyLines = bodyText ? wrapText(bodyText, 52, 5, { ellipsis: false }) : [];
   const bodyY = 342 + (salutationLines.length - 1) * 78;
+  const bodyText = spec.bodyExcerpt ?? spec.subtitle ?? "";
+  // Cap the excerpt to lines that clear the footer rule (y=532). A two-line
+  // salutation drops bodyY by 78px; at the old fixed 5 lines the tail rendered
+  // over the rule once rasterised. The last baseline plus its descender must
+  // sit above the rule: bodyY + (n-1)·39 + ~8 < 532.
+  const maxBodyLines = Math.max(2, Math.min(5, Math.floor(1 + (524 - bodyY) / 39)));
+  const bodyLines = bodyText ? wrapText(bodyText, 52, maxBodyLines, { ellipsis: false }) : [];
   const bodyFadeY = bodyY - 34;
 
   return `<?xml version="1.0" encoding="UTF-8"?>

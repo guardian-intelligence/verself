@@ -1,0 +1,7 @@
+// Virtual module emitted by the `company:og-fonts` Vite plugin (vite.config).
+// Base64 of the variable woff2 faces, baked into the server bundle so the OG
+// rasteriser has font bytes without any runtime filesystem assumptions.
+declare module "virtual:og-fonts" {
+  export const FRAUNCES_WOFF2_B64: string;
+  export const GEIST_WOFF2_B64: string;
+}

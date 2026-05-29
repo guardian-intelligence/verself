@@ -25,6 +25,9 @@ catalog:
   "@react-three/drei": ^10.7.7
   "@react-three/fiber": ^9.6.1
   "@react-three/postprocessing": ^3.0.4
+  # Server-side SVG→PNG for OG cards. Native napi build; the linux-x64-gnu
+  # optional binary matches the prod fleet's arch (EPYC amd64).
+  "@resvg/resvg-js": 2.6.2
   "@tailwindcss/typography": ^0.5.16
   "@tailwindcss/vite": ^4
   "@tanstack/electric-db-collection": 0.3.2

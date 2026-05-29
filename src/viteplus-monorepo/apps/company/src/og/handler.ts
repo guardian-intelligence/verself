@@ -1,5 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import { ogSpecFor } from "./catalog";
+import { rasterizeOGCard } from "./raster";
 import { buildOGCard, formatOGError } from "./template";
 
 // Shared OG-card request handler. Both /og/$slug (top-level) and
@@ -18,7 +19,7 @@ export function ogHeadResponse(slug: string): Response {
   return new Response(null, {
     status: 200,
     headers: {
-      "content-type": "image/svg+xml; charset=utf-8",
+      "content-type": "image/png",
       "cache-control": "public, max-age=600, s-maxage=600",
     },
   });
@@ -49,13 +50,16 @@ export function ogGetResponse(slug: string): Response {
           headers: { "content-type": "text/plain" },
         });
       }
+      const png = rasterizeOGCard(result.svg);
       span.setAttribute("og.voice_pass", "true");
       span.setAttribute("og.content_hash", result.contentHash);
-      span.setAttribute("og.bytes", String(result.svg.length));
-      return new Response(result.svg, {
+      span.setAttribute("og.bytes", String(png.length));
+      // @types/node types byte arrays as Uint8Array<ArrayBufferLike>, which
+      // lib.dom's BodyInit union does not accept; the runtime handles it fine.
+      return new Response(png as unknown as BodyInit, {
         status: 200,
         headers: {
-          "content-type": "image/svg+xml; charset=utf-8",
+          "content-type": "image/png",
           "cache-control": "public, max-age=600, s-maxage=600",
         },
       });
