@@ -19,6 +19,8 @@ func main() {
 	switch os.Args[1] {
 	case "canary":
 		os.Exit(runCanary(os.Args[2:]))
+	case "rehearse":
+		os.Exit(runRehearse(os.Args[2:]))
 	case "run":
 		os.Exit(runRun(os.Args[2:]))
 	case "-h", "--help", "help":
@@ -36,11 +38,16 @@ func usage() {
 
 usage:
   verself-deploy canary --site=<site> --size=medium|large|all [--repo-root=<path>]
+  verself-deploy rehearse --site=<site> [--sha=<rev>] [--repo-root=<path>]
   verself-deploy run --site=<site> [--sha=<rev>] [--repo-root=<path>]
+
+The rehearse command renders the same Bazel-produced Nomad jobs as run, then
+runs repo shape lint, Nomad validation, and a scheduler plan against the target
+cluster without publishing artifacts or submitting jobs.
 
 The run command assumes host bootstrap is complete. It discovers Bazel
 nomad_component targets, runs component-owned tests, builds their artifacts,
-publishes missing artifacts, submits changed Nomad jobs by deploy wave,
+rehearses the exact rendered Nomad jobs, publishes missing artifacts, submits changed Nomad jobs by deploy wave,
 monitors deployments, runs selected post-deploy canaries, reverts changed jobs
 when canaries fail, and emits deploy spans.
 

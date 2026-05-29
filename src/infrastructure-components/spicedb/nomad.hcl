@@ -4,6 +4,11 @@ job "spicedb" {
   type = "service"
   group "spicedb" {
     count = 1
+
+    meta {
+      verself_group_kind = "service"
+      verself_allow_prestart_migration = "true"
+    }
     network {
       mode = "host"
       port "grpc" {

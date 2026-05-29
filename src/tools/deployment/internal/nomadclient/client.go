@@ -160,24 +160,22 @@ type SubmitResult struct {
 	DeploymentID   string
 }
 
-// Submit issues Plan (for diff visibility) and EnforceRegister (for
-// CAS-safe submit). The diff is a span attribute; the CAS fence is the
-// caller-supplied priorModifyIndex (zero for first submits).
-func (c *Client) Submit(ctx context.Context, spec *Spec, priorModifyIndex uint64) (*SubmitResult, error) {
-	planResp, err := c.plan(ctx, spec)
-	if err != nil {
-		return nil, err
+// Submit registers a previously rehearsed job. The rehearsal JobModifyIndex is
+// the CAS fence so deploy cannot submit a job that changed after planning.
+func (c *Client) Submit(ctx context.Context, planned PlannedJob) (*SubmitResult, error) {
+	if planned.Spec == nil {
+		return nil, errors.New("planned job spec is required")
 	}
-	regResp, err := c.register(ctx, spec, priorModifyIndex, planResp.JobModifyIndex)
+	regResp, err := c.register(ctx, planned.Spec, planned.Plan.JobModifyIndex)
 	if err != nil {
 		return nil, err
 	}
 	return &SubmitResult{
-		JobID:          spec.JobID(),
-		JobType:        spec.JobType(),
+		JobID:          planned.Spec.JobID(),
+		JobType:        planned.Spec.JobType(),
 		EvalID:         regResp.EvalID,
 		JobModifyIndex: regResp.JobModifyIndex,
-		DeploymentID:   c.findDeploymentID(ctx, spec.JobID(), regResp.JobModifyIndex),
+		DeploymentID:   c.findDeploymentID(ctx, planned.Spec.JobID(), regResp.JobModifyIndex),
 	}, nil
 }
 
@@ -270,42 +268,17 @@ func (c *Client) Deregister(ctx context.Context, jobID, jobType string) (*Submit
 	return sub, nil
 }
 
-func (c *Client) plan(ctx context.Context, spec *Spec) (*api.JobPlanResponse, error) {
-	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.plan",
-		trace.WithSpanKind(trace.SpanKindClient),
-		trace.WithAttributes(attribute.String("nomad.job_id", spec.JobID())),
-	)
-	defer span.End()
-
-	resp, _, err := c.api.Jobs().Plan(spec.Job, true, (&api.WriteOptions{}).WithContext(ctx))
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, fmt.Errorf("plan %s: %w", spec.JobID(), err)
-	}
-	span.SetAttributes(
-		attribute.Int64("nomad.job_modify_index", int64FromUint64(resp.JobModifyIndex, "job modify index")),
-		attribute.Int("nomad.failed_tg_allocs", len(resp.FailedTGAllocs)),
-	)
-	if resp.Diff != nil {
-		span.SetAttributes(attribute.String("nomad.diff_type", resp.Diff.Type))
-	}
-	span.SetStatus(codes.Ok, "")
-	return resp, nil
-}
-
-func (c *Client) register(ctx context.Context, spec *Spec, priorModifyIndex, planModifyIndex uint64) (*api.JobRegisterResponse, error) {
+func (c *Client) register(ctx context.Context, spec *Spec, enforceModifyIndex uint64) (*api.JobRegisterResponse, error) {
 	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.register",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("nomad.job_id", spec.JobID()),
-			attribute.Int64("nomad.enforce_index", int64FromUint64(priorModifyIndex, "enforce index")),
-			attribute.Int64("nomad.plan_modify_index", int64FromUint64(planModifyIndex, "plan modify index")),
+			attribute.Int64("nomad.enforce_index", int64FromUint64(enforceModifyIndex, "enforce index")),
 		),
 	)
 	defer span.End()
 
-	resp, _, err := c.api.Jobs().EnforceRegister(spec.Job, priorModifyIndex, (&api.WriteOptions{}).WithContext(ctx))
+	resp, _, err := c.api.Jobs().EnforceRegister(spec.Job, enforceModifyIndex, (&api.WriteOptions{}).WithContext(ctx))
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())

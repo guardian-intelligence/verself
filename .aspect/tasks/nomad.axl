@@ -1,0 +1,99 @@
+"""aspect nomad doctor [--site=prod] [--sha=<rev>]
+
+Runs the repo-owned Nomad rehearsal path without publishing artifacts or
+submitting jobs. The Go binary owns Bazel component discovery, target-cluster
+HCL parsing, shape linting, Nomad validation, and scheduler planning.
+"""
+
+load(
+    ".aspect/lib/helpers.axl",
+    "VERSELF_DEPLOY_TARGET",
+    "bazel_run",
+    "checked_spawn",
+    "git_dirty",
+    "git_head",
+    "resolve_sha",
+    "site_inventory_source",
+    "ws_path",
+)
+
+def _doctor_one(ctx, site, sha, repo_root):
+    return bazel_run(
+        ctx,
+        VERSELF_DEPLOY_TARGET,
+        [
+            "rehearse",
+            "--site=" + site,
+            "--sha=" + sha,
+            "--repo-root=" + repo_root,
+        ],
+        cwd = repo_root,
+        label = "verself-deploy rehearse --site=" + site,
+    )
+
+def _make_tree_removable(ctx, path):
+    r = (ctx.std.process.command("test")
+        .args(["-e", path])
+        .spawn().wait())
+    if r.code != 0:
+        return
+    checked_spawn(ctx, "find", [path, "-type", "d", "-exec", "chmod", "u+w", "{}", "+"], label = "make " + path + " directories removable")
+    checked_spawn(ctx, "find", [path, "-type", "f", "-exec", "chmod", "u+w", "{}", "+"], label = "make " + path + " files removable")
+
+def _remove_worktree(ctx, wt):
+    _make_tree_removable(ctx, wt)
+    return checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
+
+def _doctor_in_worktree(ctx, site, sha):
+    wt = "/tmp/verself-nomad-doctor-" + sha[:12]
+    _make_tree_removable(ctx, wt)
+    checked_spawn(ctx, "rm", ["-rf", wt], label = "clean " + wt)
+    rc = checked_spawn(ctx, "git", ["worktree", "add", "--detach", wt, sha], label = "git worktree add " + wt)
+    if rc != 0:
+        return rc
+    inv_rel = site_inventory_source(site)
+    inv_abs = ws_path(ctx, inv_rel)
+    rc = checked_spawn(ctx, "test", ["-f", inv_abs], label = "test -f " + inv_rel)
+    if rc != 0:
+        ctx.std.io.stderr.write("ERROR: " + inv_rel + " not found. Run: aspect provision apply\n")
+        _remove_worktree(ctx, wt)
+        return 1
+    rc = checked_spawn(ctx, "mkdir", ["-p", wt + "/src/host/sites/" + site], label = "mkdir worktree inventory dir")
+    if rc != 0:
+        _remove_worktree(ctx, wt)
+        return rc
+    rc = checked_spawn(ctx, "cp", [inv_abs, wt + "/" + inv_rel], label = "copy " + inv_rel + " into doctor worktree")
+    if rc != 0:
+        _remove_worktree(ctx, wt)
+        return rc
+    rc = _doctor_one(ctx, site, sha, wt)
+    _remove_worktree(ctx, wt)
+    return rc
+
+def _doctor_impl(ctx):
+    site = ctx.args.site or "prod"
+    sha = resolve_sha(ctx, ctx.args.sha or "")
+    if sha == "":
+        return 1
+    head = git_head(ctx)
+    if sha == head and git_dirty(ctx):
+        ctx.std.io.stderr.write(
+            "ERROR: workspace has uncommitted changes; aspect nomad doctor rehearses committed Git SHAs only.\n"
+            + "Commit the changes, clean the worktree, or pass --sha=<committed-ref> for a different clean revision.\n",
+        )
+        checked_spawn(ctx, "git", ["status", "--short"], label = "git status --short")
+        return 1
+    if sha != head:
+        return _doctor_in_worktree(ctx, site, sha)
+    return _doctor_one(ctx, site, sha, ws_path(ctx))
+
+doctor = task(
+    implementation = _doctor_impl,
+    name = "doctor",
+    group = ["nomad"],
+    summary = "Rehearse rendered Nomad jobs with repo lint, Nomad validation, and scheduler plan.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "sha": args.string(default = "", description = "Git SHA or symbolic ref to rehearse. Defaults to HEAD."),
+    },
+)

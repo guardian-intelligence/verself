@@ -6,6 +6,10 @@ job "nats" {
   group "nats" {
     count = 1
 
+    meta {
+      verself_group_kind = "service"
+    }
+
     network {
       mode = "host"
       port "client" {
@@ -78,6 +82,13 @@ job "nats" {
         port = "client"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "nats-client-tcp"
+          type = "tcp"
+          port = "client"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
 
       service {
@@ -85,7 +96,23 @@ job "nats" {
         port = "monitoring"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "nats-monitoring-tcp"
+          type = "tcp"
+          port = "monitoring"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
+    }
+
+    update {
+      max_parallel = 1
+      health_check = "checks"
+      min_healthy_time = "3s"
+      healthy_deadline = "300s"
+      progress_deadline = "600s"
+      auto_revert = true
     }
   }
 }

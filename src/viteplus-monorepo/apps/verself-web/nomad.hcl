@@ -4,6 +4,12 @@ job "verself-web" {
   type = "service"
   group "verself-web" {
     count = 2
+
+    meta {
+      verself_group_kind = "service"
+      verself_template_fallback = "blackhole"
+      verself_template_fallback_reason = "required upstream is registered by a separate Nomad job"
+    }
     network {
       mode = "host"
       port "http" {

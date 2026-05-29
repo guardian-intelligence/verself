@@ -4,6 +4,13 @@ job "sandbox-rental" {
   type = "service"
   group "sandbox-rental-service" {
     count = 2
+
+    meta {
+      verself_group_kind = "service"
+      verself_allow_prestart_migration = "true"
+      verself_template_fallback = "blackhole"
+      verself_template_fallback_reason = "required upstream is registered by a separate Nomad job"
+    }
     network {
       mode = "host"
       port "internal_https" {
@@ -164,6 +171,12 @@ EOT
   }
   group "sandbox-rental-recurring-worker" {
     count = 1
+
+    meta {
+      verself_group_kind = "worker"
+      verself_template_fallback = "blackhole"
+      verself_template_fallback_reason = "required upstream is registered by a separate Nomad job"
+    }
     task "sandbox-rental-recurring-worker" {
       driver = "raw_exec"
       user = "sandbox_rental"

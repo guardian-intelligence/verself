@@ -16,6 +16,7 @@ import (
 
 	"github.com/verself/deployment-tools/internal/deploymodel"
 	"github.com/verself/deployment-tools/internal/nomadclient"
+	"github.com/verself/deployment-tools/internal/nomadlint"
 	"github.com/verself/deployment-tools/internal/runtime"
 	"github.com/verself/deployment-tools/internal/sshtun"
 )
@@ -137,10 +138,14 @@ type jobApplyResult struct {
 }
 
 type jobApplyIntent struct {
-	Job      deploymodel.NomadJob
-	Spec     *nomadclient.Spec
-	Decision nomadclient.Decision
-	Changed  bool
+	Job            deploymodel.NomadJob
+	Spec           *nomadclient.Spec
+	Decision       nomadclient.Decision
+	Plan           nomadclient.PlanResult
+	Lint           nomadlint.Result
+	Validation     nomadclient.ValidationResult
+	RehearsalError string
+	Changed        bool
 }
 
 func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) ([]jobApplyResult, error) {
@@ -153,14 +158,15 @@ func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) 
 	if err != nil {
 		return nil, err
 	}
-	intents := make([]jobApplyIntent, 0, len(plan.Jobs))
-	for _, job := range plan.Jobs {
-		intent, err := prepareNomadJob(ctx, rt, client, job)
-		if err != nil {
-			return applyResults(intents), fmt.Errorf("%s: %w", job.JobID, err)
+	rehearsal, err := rehearseNomadPlan(ctx, rt, client, plan)
+	printRehearsalReport(rehearsal)
+	if err != nil {
+		if rehearsal == nil {
+			return nil, err
 		}
-		intents = append(intents, intent)
+		return applyResults(rehearsal.Intents), err
 	}
+	intents := rehearsal.Intents
 	intentsByPhase, err := groupIntentsByPhase(intents)
 	if err != nil {
 		return applyResults(intents), err
@@ -233,53 +239,6 @@ func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 	return nil
 }
 
-func prepareNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, job deploymodel.NomadJob) (jobApplyIntent, error) {
-	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.apply")
-	defer span.End()
-	span.SetAttributes(
-		attribute.String("nomad.job_id", job.JobID),
-		attribute.String("verself.deploy_wave", job.DeployPhase),
-		attribute.StringSlice("verself.artifact_outputs", job.ArtifactOutputs),
-		attribute.String("verself.input_sha256", job.InputSHA256),
-	)
-	spec, err := nomadclient.ParseSpec(job.Spec, "nomad job "+job.JobID)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return jobApplyIntent{}, err
-	}
-	if spec.SpecDigest != job.SpecSHA256 {
-		err := fmt.Errorf("job spec digest mismatch: descriptor=%s spec=%s", job.SpecSHA256, spec.SpecDigest)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return jobApplyIntent{}, err
-	}
-	if spec.ArtifactDigest != job.ArtifactSHA256 {
-		err := fmt.Errorf("job artifact digest mismatch: descriptor=%s spec=%s", job.ArtifactSHA256, spec.ArtifactDigest)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return jobApplyIntent{}, err
-	}
-	decisionStarted := time.Now()
-	decision, err := client.Decide(ctx, spec)
-	if err != nil {
-		recordNomadSubmitFailed(span, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted), err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return jobApplyIntent{}, err
-	}
-	recordNomadDecision(span, rt.Identity.RunKey(), rt.Site, job, decision, time.Since(decisionStarted))
-	if decision.NoOp {
-		recordNomadSkipped(span, rt.Identity.RunKey(), rt.Site, job, decision)
-		fmt.Printf("verself-deploy: %s already at desired digests; no submit\n", job.JobID)
-		span.SetStatus(codes.Ok, "")
-		return jobApplyIntent{Job: job, Spec: spec, Decision: decision, Changed: false}, nil
-	}
-	span.SetAttributes(attribute.Bool("nomad.decision.noop", false))
-	span.SetStatus(codes.Ok, "")
-	return jobApplyIntent{Job: job, Spec: spec, Decision: decision, Changed: true}, nil
-}
-
 func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, plan *deployPlan, intent jobApplyIntent) error {
 	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.submit",
 		trace.WithAttributes(
@@ -289,7 +248,11 @@ func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 	)
 	defer span.End()
 	submitStarted := time.Now()
-	submitted, err := client.Submit(ctx, intent.Spec, intent.Decision.PriorJobModifyIndex)
+	submitted, err := client.Submit(ctx, nomadclient.PlannedJob{
+		Spec:     intent.Spec,
+		Decision: intent.Decision,
+		Plan:     intent.Plan,
+	})
 	if err != nil {
 		recordNomadSubmitFailed(span, rt.Identity.RunKey(), rt.Site, intent.Job, intent.Decision, time.Since(submitStarted), err)
 		span.RecordError(err)
@@ -303,6 +266,9 @@ func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 	monitor, err := client.Monitor(ctx, submitted)
 	if err != nil {
 		recordNomadDeploymentFailed(span, rt.Identity.RunKey(), rt.Site, intent.Job, submitted, monitor, time.Since(monitorStarted), err)
+		packet := client.InspectFailure(ctx, submitted)
+		recordNomadFailurePacket(span, rt.Identity.RunKey(), rt.Site, intent.Job, packet)
+		printFailurePacket(packet)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err

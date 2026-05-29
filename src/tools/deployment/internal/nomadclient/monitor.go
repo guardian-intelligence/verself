@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -24,6 +27,12 @@ const MonitorWaitTime = 10 * time.Second
 // auto_revert=true) gives Nomad three chances; if all three die the
 // same way no further waiting helps.
 const FailFastDeadAllocs = 3
+
+const (
+	monitorQueryRetryLimit = 6
+	monitorQueryRetryBase  = 250 * time.Millisecond
+	monitorQueryRetryMax   = 2 * time.Second
+)
 
 // MonitorResult is the terminal Nomad execution shape surfaced by deploy
 // spans. It mirrors the operator-relevant fields from Nomad deployments and
@@ -72,14 +81,21 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) (MonitorResult,
 		AllowStale: true,
 		WaitTime:   MonitorWaitTime,
 	}).WithContext(ctx)
+	queryErrors := 0
 
 	for {
 		dep, meta, err := c.api.Deployments().Info(sub.DeploymentID, q)
 		if err != nil {
+			queryErrors++
+			if retryMonitorQuery(ctx, span, "deployment_info", queryErrors, err) {
+				q.WaitIndex = 0
+				continue
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return MonitorResult{DeploymentExists: true, DeploymentID: sub.DeploymentID}, fmt.Errorf("deployment info %s: %w", sub.DeploymentID, err)
 		}
+		queryErrors = 0
 		if dep == nil {
 			err := fmt.Errorf("deployment %s not found", sub.DeploymentID)
 			span.RecordError(err)
@@ -163,6 +179,7 @@ func (c *Client) WaitStopped(ctx context.Context, jobID string) error {
 		AllowStale: true,
 		WaitTime:   MonitorWaitTime,
 	}).WithContext(ctx)
+	queryErrors := 0
 
 	for {
 		job, meta, err := c.api.Jobs().Info(jobID, q)
@@ -171,10 +188,16 @@ func (c *Client) WaitStopped(ctx context.Context, jobID string) error {
 				span.SetStatus(codes.Ok, "")
 				return nil
 			}
+			queryErrors++
+			if retryMonitorQuery(ctx, span, "job_info", queryErrors, err) {
+				q.WaitIndex = 0
+				continue
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("job info %s: %w", jobID, err)
 		}
+		queryErrors = 0
 		if job == nil || derefBool(job.Stop) {
 			span.SetStatus(codes.Ok, "")
 			return nil
@@ -227,6 +250,7 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 
 	evalID := sub.EvalID
 	seenEvalIDs := map[string]struct{}{}
+	queryErrors := 0
 	for {
 		if _, seen := seenEvalIDs[evalID]; seen {
 			err := fmt.Errorf("batch evaluation chain for job %s cycled at %s", sub.JobID, evalID)
@@ -238,10 +262,16 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 
 		ev, meta, err := c.api.Evaluations().Info(evalID, q)
 		if err != nil {
+			queryErrors++
+			if retryMonitorQuery(ctx, span, "evaluation_info", queryErrors, err) {
+				q.WaitIndex = 0
+				continue
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return MonitorResult{TerminalStatus: "eval_query_failed"}, fmt.Errorf("evaluation info %s: %w", evalID, err)
 		}
+		queryErrors = 0
 		if ev == nil {
 			err := fmt.Errorf("evaluation %s not found", evalID)
 			span.RecordError(err)
@@ -303,14 +333,21 @@ func (c *Client) monitorBatchAllocations(ctx context.Context, span trace.Span, e
 		AllowStale: true,
 		WaitTime:   MonitorWaitTime,
 	}).WithContext(ctx)
+	queryErrors := 0
 
 	for {
 		allocs, meta, err := c.api.Evaluations().Allocations(evalID, q)
 		if err != nil {
+			queryErrors++
+			if retryMonitorQuery(ctx, span, "evaluation_allocations", queryErrors, err) {
+				q.WaitIndex = 0
+				continue
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return MonitorResult{TerminalStatus: "alloc_query_failed"}, fmt.Errorf("evaluation allocations %s: %w", evalID, err)
 		}
+		queryErrors = 0
 		total, complete, failed, running, pending := batchAllocTotals(allocs)
 		span.SetAttributes(
 			attribute.Int("nomad.batch.alloc_total", total),
@@ -370,6 +407,65 @@ func batchAllocTotals(allocs []*api.AllocationListStub) (total, complete, failed
 		}
 	}
 	return total, complete, failed, running, pending
+}
+
+func retryMonitorQuery(ctx context.Context, span trace.Span, operation string, attempt int, err error) bool {
+	if ctx.Err() != nil || attempt > monitorQueryRetryLimit || !isRetryableNomadQueryError(err) {
+		return false
+	}
+	delay := monitorQueryRetryDelay(attempt)
+	span.AddEvent("nomad.monitor.query_retry", trace.WithAttributes(
+		attribute.String("nomad.query_operation", operation),
+		attribute.Int("nomad.query_retry_attempt", attempt),
+		attribute.String("nomad.query_error", err.Error()),
+		attribute.Int64("nomad.query_retry_delay_ms", delay.Milliseconds()),
+	))
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func monitorQueryRetryDelay(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	delay := monitorQueryRetryBase << min(attempt-1, 3)
+	if delay > monitorQueryRetryMax {
+		return monitorQueryRetryMax
+	}
+	return delay
+}
+
+func isRetryableNomadQueryError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, token := range []string{
+		"connection reset by peer",
+		"connection refused",
+		"server closed idle connection",
+		"use of closed network connection",
+		"broken pipe",
+		"unexpected eof",
+	} {
+		if strings.Contains(msg, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) recordTerminalAttributes(span trace.Span, dep *api.Deployment, status string) {

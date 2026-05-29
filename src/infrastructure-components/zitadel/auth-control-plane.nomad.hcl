@@ -6,6 +6,10 @@ job "auth-control-plane" {
   group "auth-control-plane" {
     count = 1
 
+    meta {
+      verself_group_kind = "batch"
+    }
+
     task "auth-control-plane" {
       driver = "raw_exec"
       user = "root"

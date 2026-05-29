@@ -4,6 +4,12 @@ job "temporal" {
   type = "service"
   group "temporal" {
     count = 1
+
+    meta {
+      verself_group_kind = "service"
+      verself_allow_prestart_migration = "true"
+      verself_allow_lifecycle_bootstrap = "true"
+    }
     network {
       mode = "host"
       port "frontend_grpc" {

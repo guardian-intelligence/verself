@@ -76,6 +76,9 @@ func buildQueries(cfg config) ([]query, error) {
 			newQuery("deploy.tasks", deployTasksSQL, params),
 		}, nil
 	case "nomad":
+		if cfg.mode == "health" {
+			return []query{newQuery("nomad.health", nomadHealthSQL, params)}, nil
+		}
 		if cfg.runKey != "" {
 			return []query{
 				newQuery("nomad.events", nomadEventsSQL, params),
@@ -249,6 +252,8 @@ func emptyHintFor(id string) string {
 		return "No matching nomad-observer logs. With --run-key, no-op deploys have no Nomad event-stream rows because no jobs were submitted."
 	case "nomad.failure_logs":
 		return "No failed allocation tails were captured in this window. This is expected when Nomad rollouts are healthy."
+	case "nomad.health":
+		return "No blocked evaluations, unhealthy allocations, restart loops, deadline failures, or setup/download failures matched this window."
 	default:
 		return ""
 	}
@@ -989,6 +994,55 @@ WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
     OR LogAttributes['nomad.alloc.client_status'] IN ('failed', 'lost')
     OR LogAttributes['nomad.deployment.status'] IN ('failed', 'blocked', 'cancelled')
     OR LogAttributes['nomad.eval.status'] IN ('failed', 'blocked', 'canceled')
+  )
+  AND ({search:String} = '' OR positionCaseInsensitive(Body, {search:String}) > 0 OR positionCaseInsensitive(toString(LogAttributes), {search:String}) > 0)
+ORDER BY Timestamp DESC
+LIMIT {row_limit:UInt32}`
+
+const nomadHealthSQL = `
+SELECT
+  formatDateTime(Timestamp, '%H:%i:%S') AS time,
+  multiIf(
+    LogAttributes['nomad.eval.status'] = 'blocked', 'blocked_eval',
+    positionCaseInsensitive(LogAttributes['nomad.deployment.status_description'], 'progress deadline') > 0, 'progress_deadline',
+    LogAttributes['nomad.alloc.client_status'] IN ('failed', 'lost'), 'unhealthy_alloc',
+    toUInt64OrZero(LogAttributes['nomad.task.restarts']) >= 3, 'restart_loop',
+    positionCaseInsensitive(concat(LogAttributes['nomad.task.event.type'], ' ', LogAttributes['nomad.task.event.message'], ' ', LogAttributes['nomad.task.event.driver_error']), 'download') > 0, 'task_download_failure',
+    positionCaseInsensitive(concat(LogAttributes['nomad.task.event.type'], ' ', LogAttributes['nomad.task.event.message'], ' ', LogAttributes['nomad.task.event.driver_error']), 'setup') > 0, 'task_setup_failure',
+    LogAttributes['nomad.deployment.status'] IN ('failed', 'blocked', 'cancelled'), 'deployment_unhealthy',
+    LogAttributes['nomad.eval.status'] IN ('failed', 'canceled'), 'eval_unhealthy',
+    'nomad_unhealthy'
+  ) AS reason_class,
+  SeverityText AS level,
+  LogAttributes['nomad.job_id'] AS job_id,
+  LogAttributes['nomad.task_group'] AS task_group,
+  LogAttributes['nomad.task'] AS task,
+  LogAttributes['nomad.deployment.status'] AS deployment_status,
+  LogAttributes['nomad.deployment.status_description'] AS deployment_status_description,
+  LogAttributes['nomad.eval.status'] AS eval_status,
+  LogAttributes['nomad.eval.status_description'] AS eval_status_description,
+  LogAttributes['nomad.alloc.client_status'] AS alloc_status,
+  LogAttributes['nomad.task.state'] AS task_state,
+  toUInt64OrZero(LogAttributes['nomad.task.restarts']) AS restarts,
+  LogAttributes['verself.deploy_run_key'] AS deploy_run_key,
+  LogAttributes['nomad.deployment_id'] AS deployment_id,
+  LogAttributes['nomad.eval_id'] AS eval_id,
+  LogAttributes['nomad.alloc_id'] AS alloc_id,
+  TraceId AS trace_id,
+  left(Body, 240) AS message
+FROM default.otel_logs
+WHERE Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
+  AND Timestamp <= parseDateTime64BestEffort({until:String}, 9, 'UTC')
+  AND ServiceName = 'nomad-observer'
+  AND ({run_key:String} = '' OR LogAttributes['verself.deploy_run_key'] = {run_key:String})
+  AND (
+    LogAttributes['nomad.eval.status'] IN ('blocked', 'failed', 'canceled')
+    OR LogAttributes['nomad.deployment.status'] IN ('failed', 'blocked', 'cancelled')
+    OR LogAttributes['nomad.alloc.client_status'] IN ('failed', 'lost')
+    OR toUInt64OrZero(LogAttributes['nomad.task.restarts']) >= 3
+    OR positionCaseInsensitive(LogAttributes['nomad.deployment.status_description'], 'progress deadline') > 0
+    OR positionCaseInsensitive(concat(LogAttributes['nomad.task.event.type'], ' ', LogAttributes['nomad.task.event.message'], ' ', LogAttributes['nomad.task.event.driver_error']), 'setup') > 0
+    OR positionCaseInsensitive(concat(LogAttributes['nomad.task.event.type'], ' ', LogAttributes['nomad.task.event.message'], ' ', LogAttributes['nomad.task.event.driver_error']), 'download') > 0
   )
   AND ({search:String} = '' OR positionCaseInsensitive(Body, {search:String}) > 0 OR positionCaseInsensitive(toString(LogAttributes), {search:String}) > 0)
 ORDER BY Timestamp DESC

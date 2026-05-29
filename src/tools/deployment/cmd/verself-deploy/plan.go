@@ -180,7 +180,7 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 		return siteConfig{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", path)
 	}
 	if raw.NomadAddr == "" {
-		raw.NomadAddr = "http://127.0.0.1:4646"
+		return siteConfig{}, fmt.Errorf("%s: nomad_addr is required", path)
 	}
 	return siteConfig{NomadAddr: raw.NomadAddr, ArtifactDelivery: raw.ArtifactDelivery}, nil
 }

@@ -6,6 +6,11 @@ job "verdaccio" {
   group "verdaccio" {
     count = 1
 
+    meta {
+      verself_group_kind = "service"
+      verself_allow_lifecycle_bootstrap = "true"
+    }
+
     network {
       mode = "host"
       port "http" {

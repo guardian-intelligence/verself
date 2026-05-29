@@ -6,6 +6,10 @@ job "clickhouse-host-install" {
   group "clickhouse-host-install" {
     count = 1
 
+    meta {
+      verself_group_kind = "batch"
+    }
+
     restart {
       attempts = 0
       mode = "fail"

@@ -6,6 +6,10 @@ job "garage-1" {
   group "garage-1" {
     count = 1
 
+    meta {
+      verself_group_kind = "service"
+    }
+
     network {
       mode = "host"
       port "s3" {

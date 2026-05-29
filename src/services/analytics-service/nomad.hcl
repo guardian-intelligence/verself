@@ -4,6 +4,10 @@ job "analytics-service" {
   type = "service"
   group "analytics-service" {
     count = 2
+
+    meta {
+      verself_group_kind = "service"
+    }
     network {
       mode = "host"
       port "public_http" {

@@ -6,6 +6,10 @@ job "otelcol" {
   group "otelcol" {
     count = 1
 
+    meta {
+      verself_group_kind = "service"
+    }
+
     network {
       mode = "host"
       port "otlp_grpc" {
@@ -94,6 +98,13 @@ job "otelcol" {
         port = "otlp_grpc"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "otelcol-otlp-grpc-tcp"
+          type = "tcp"
+          port = "otlp_grpc"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
 
       service {
@@ -101,7 +112,23 @@ job "otelcol" {
         port = "otlp_http"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "otelcol-otlp-http-tcp"
+          type = "tcp"
+          port = "otlp_http"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
+    }
+
+    update {
+      max_parallel = 1
+      health_check = "checks"
+      min_healthy_time = "3s"
+      healthy_deadline = "300s"
+      progress_deadline = "600s"
+      auto_revert = true
     }
   }
 }

@@ -4,6 +4,10 @@ job "haproxy-upstreams" {
   type = "service"
   group "haproxy-upstreams" {
     count = 1
+
+    meta {
+      verself_group_kind = "worker"
+    }
     task "haproxy-upstreams" {
       driver = "raw_exec"
       user = "root"

@@ -74,6 +74,10 @@ load(
 )
 load(".aspect/tasks/observe.axl", "observe")
 load(
+    ".aspect/tasks/nomad.axl",
+    nomad_doctor = "doctor",
+)
+load(
     ".aspect/tasks/operator.axl",
     operator_device = "device",
     operator_promote_org = "promote_org",
@@ -171,3 +175,6 @@ def config(ctx):
     # aspect canary ...
     ctx.tasks.add(canary_post_deploy)
     ctx.tasks.add(canary_service_discovery)
+
+    # aspect nomad ...
+    ctx.tasks.add(nomad_doctor)

@@ -6,6 +6,10 @@ job "vm-orchestrator" {
   group "daemon" {
     count = 1
 
+    meta {
+      verself_group_kind = "substrate-daemon"
+    }
+
     task "stage-guest-images" {
       driver = "raw_exec"
       user = "root"

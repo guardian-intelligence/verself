@@ -6,6 +6,10 @@ job "nomad-observer" {
   group "observer" {
     count = 1
 
+    meta {
+      verself_group_kind = "worker"
+    }
+
     task "observer" {
       driver = "raw_exec"
       user = "nobody"

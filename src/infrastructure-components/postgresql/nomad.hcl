@@ -6,6 +6,10 @@ job "postgresql" {
   group "postgresql" {
     count = 1
 
+    meta {
+      verself_group_kind = "service"
+    }
+
     network {
       mode = "host"
       port "postgres" {
@@ -43,7 +47,23 @@ job "postgresql" {
         port = "postgres"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "postgresql-tcp"
+          type = "tcp"
+          port = "postgres"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
+    }
+
+    update {
+      max_parallel = 1
+      health_check = "checks"
+      min_healthy_time = "3s"
+      healthy_deadline = "300s"
+      progress_deadline = "600s"
+      auto_revert = true
     }
   }
 }

@@ -4,6 +4,10 @@ job "company" {
   type = "service"
   group "company" {
     count = 2
+
+    meta {
+      verself_group_kind = "service"
+    }
     network {
       mode = "host"
       port "http" {

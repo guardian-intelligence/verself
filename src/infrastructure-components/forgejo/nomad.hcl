@@ -6,6 +6,11 @@ job "forgejo" {
   group "forgejo" {
     count = 1
 
+    meta {
+      verself_group_kind = "service"
+      verself_allow_lifecycle_bootstrap = "true"
+    }
+
     network {
       mode = "host"
       port "http" {
@@ -71,7 +76,23 @@ job "forgejo" {
         port = "http"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "forgejo-http-tcp"
+          type = "tcp"
+          port = "http"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
+    }
+
+    update {
+      max_parallel = 1
+      health_check = "checks"
+      min_healthy_time = "3s"
+      healthy_deadline = "300s"
+      progress_deadline = "600s"
+      auto_revert = true
     }
   }
 }

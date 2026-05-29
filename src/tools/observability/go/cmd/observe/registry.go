@@ -666,6 +666,30 @@ var queryDocs = []queryDoc{
 		},
 	},
 	{
+		ID:      "nomad.health",
+		Family:  "nomad",
+		Title:   "Nomad Health Surface",
+		Purpose: "Classified Nomad object-state health rows: blocked evals, unhealthy allocations, restart loops, progress-deadline failures, and task setup/download failures.",
+		Optional: []string{
+			"--run-key=<deploy-run-key>",
+			"--search=<substring>",
+			"--since=<duration-or-UTC>",
+			"--until=<duration-or-UTC>",
+			"--minutes=<lookback>",
+			"--limit=<rows>",
+			"--format=table|json|markdown",
+		},
+		Examples: []string{
+			"aspect observe --what=nomad --mode=health",
+			"aspect observe --what=nomad --mode=health --run-key=2026-04-29.000003@rust-forge-01",
+		},
+		Next: []string{
+			"aspect observe --what=nomad --run-key=<deploy-run-key>",
+			"aspect observe --what=nomad --run-key=<deploy-run-key> --search=<alloc-or-task>",
+			"aspect observe --what=trace --trace-id=<trace-id>",
+		},
+	},
+	{
 		ID:      "nomad.failure_logs",
 		Family:  "nomad",
 		Title:   "Nomad Failure Logs",

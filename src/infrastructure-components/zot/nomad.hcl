@@ -6,6 +6,10 @@ job "zot" {
   group "zot" {
     count = 1
 
+    meta {
+      verself_group_kind = "service"
+    }
+
     network {
       mode = "host"
       port "http" {
@@ -46,7 +50,23 @@ job "zot" {
         port = "http"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "zot-http-tcp"
+          type = "tcp"
+          port = "http"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
+    }
+
+    update {
+      max_parallel = 1
+      health_check = "checks"
+      min_healthy_time = "3s"
+      healthy_deadline = "300s"
+      progress_deadline = "600s"
+      auto_revert = true
     }
   }
 }

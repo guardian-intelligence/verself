@@ -6,6 +6,11 @@ job "stalwart" {
   group "stalwart" {
     count = 1
 
+    meta {
+      verself_group_kind = "service"
+      verself_allow_lifecycle_bootstrap = "true"
+    }
+
     network {
       mode = "host"
       # Stalwart binds SMTP publicly; Nomad service discovery stays in-node.
@@ -155,6 +160,13 @@ EOT
         port = "http"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "stalwart-http-tcp"
+          type = "tcp"
+          port = "http"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
 
       service {
@@ -162,6 +174,13 @@ EOT
         port = "smtp"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "stalwart-smtp-tcp"
+          type = "tcp"
+          port = "smtp"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
     }
 
@@ -189,6 +208,15 @@ EOT
         cpu = 100
         memory = 64
       }
+    }
+
+    update {
+      max_parallel = 1
+      health_check = "checks"
+      min_healthy_time = "3s"
+      healthy_deadline = "300s"
+      progress_deadline = "600s"
+      auto_revert = true
     }
   }
 }

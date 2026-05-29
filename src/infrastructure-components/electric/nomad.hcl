@@ -5,6 +5,11 @@ job "electric" {
 
   group "electric-default" {
     count = 1
+
+    meta {
+      verself_group_kind = "service"
+      verself_allow_prestart_migration = "true"
+    }
     network {
       mode = "host"
       port "http" {
@@ -90,6 +95,11 @@ job "electric" {
 
   group "electric-notifications" {
     count = 1
+
+    meta {
+      verself_group_kind = "service"
+      verself_allow_prestart_migration = "true"
+    }
     network {
       mode = "host"
       port "http" {
@@ -175,6 +185,11 @@ job "electric" {
 
   group "electric-iam" {
     count = 1
+
+    meta {
+      verself_group_kind = "service"
+      verself_allow_prestart_migration = "true"
+    }
     network {
       mode = "host"
       port "http" {

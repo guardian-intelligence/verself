@@ -3,8 +3,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "nomadclient",
     srcs = [
+        "capacity.go",
         "client.go",
+        "failure.go",
         "monitor.go",
+        "rehearse.go",
         "safeconv.go",
         "spec.go",
     ],
@@ -21,7 +24,10 @@ go_library(
 
 go_test(
     name = "nomadclient_test",
-    srcs = ["monitor_test.go"],
+    srcs = [
+        "capacity_test.go",
+        "monitor_test.go",
+    ],
     embed = [":nomadclient"],
     deps = ["@com_github_hashicorp_nomad_api//:api"],
 )

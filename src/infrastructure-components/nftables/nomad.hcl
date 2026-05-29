@@ -6,6 +6,10 @@ job "nftables" {
   group "nftables" {
     count = 1
 
+    meta {
+      verself_group_kind = "batch"
+    }
+
     task "apply" {
       driver = "raw_exec"
       user = "root"

@@ -6,6 +6,10 @@ job "clickhouse-migrations" {
   group "clickhouse-migrations" {
     count = 1
 
+    meta {
+      verself_group_kind = "migration"
+    }
+
     restart {
       attempts = 0
       mode = "fail"

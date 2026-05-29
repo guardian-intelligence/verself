@@ -6,6 +6,11 @@ job "openbao" {
   group "openbao" {
     count = 1
 
+    meta {
+      verself_group_kind = "service"
+      verself_allow_lifecycle_bootstrap = "true"
+    }
+
     network {
       mode = "host"
       port "api" {
@@ -54,6 +59,13 @@ job "openbao" {
         port = "api"
         provider = "nomad"
         address_mode = "auto"
+        check {
+          name = "openbao-api-tcp"
+          type = "tcp"
+          port = "api"
+          interval = "2s"
+          timeout = "3s"
+        }
       }
     }
 
@@ -85,6 +97,15 @@ job "openbao" {
         cpu = 50
         memory = 64
       }
+    }
+
+    update {
+      max_parallel = 1
+      health_check = "checks"
+      min_healthy_time = "3s"
+      healthy_deadline = "300s"
+      progress_deadline = "600s"
+      auto_revert = true
     }
   }
 }
