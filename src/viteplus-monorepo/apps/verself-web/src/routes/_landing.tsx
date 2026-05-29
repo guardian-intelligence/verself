@@ -134,27 +134,27 @@ function MarketingLandingLayout() {
               {githubError}
             </p>
           ) : null}
-          <AnchoredSheetPrimaryActionButton
-            onClick={isEmailLogin ? openLoginWithEmailRoute : openGitHubSignIn}
-            disabled={githubLogin.isPending}
-          >
-            <span className="flex w-full items-center justify-center gap-2">
-              {isEmailLogin ? (
-                "Sign In"
-              ) : githubLogin.isPending ? (
-                <>
-                  <GitHubIcon className="size-4" />
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  <span>Dialing GitHub...</span>
-                </>
-              ) : (
-                <>
-                  <GitHubIcon className="size-4" />
-                  <span>Sign in with GitHub</span>
-                </>
-              )}
-            </span>
-          </AnchoredSheetPrimaryActionButton>
+          {isEmailLogin ? null : (
+            <AnchoredSheetPrimaryActionButton
+              onClick={openGitHubSignIn}
+              disabled={githubLogin.isPending}
+            >
+              <span className="flex w-full items-center justify-center gap-2">
+                {githubLogin.isPending ? (
+                  <>
+                    <GitHubIcon className="size-4" />
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    <span>Dialing GitHub...</span>
+                  </>
+                ) : (
+                  <>
+                    <GitHubIcon className="size-4" />
+                    <span>Sign in with GitHub</span>
+                  </>
+                )}
+              </span>
+            </AnchoredSheetPrimaryActionButton>
+          )}
         </AnchoredSheetPrimaryActionSection>
       </AnchoredSheet>
     </>
