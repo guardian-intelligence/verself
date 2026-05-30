@@ -118,6 +118,13 @@ func run(args []string) error {
 	if len(cfg.haproxyConfigs) == 0 {
 		cfg.haproxyConfigs = append(cfg.haproxyConfigs, "/etc/haproxy/haproxy.cfg", cfg.dest)
 	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve runtime cwd: %w", err)
+	}
+	if err := resolveRuntimePaths(&cfg, cwd); err != nil {
+		return err
+	}
 	shutdown, err := initTelemetry()
 	if err != nil {
 		// HAProxy upstream convergence is the availability path; telemetry
@@ -144,6 +151,59 @@ func run(args []string) error {
 	defer stop()
 	<-ctx.Done()
 	return nil
+}
+
+func resolveRuntimePaths(cfg *config, base string) error {
+	var err error
+	if cfg.source, err = absPath(base, cfg.source, "source"); err != nil {
+		return err
+	}
+	if cfg.dest, err = absPath(base, cfg.dest, "dest"); err != nil {
+		return err
+	}
+	if cfg.haproxyBin, err = absPath(base, cfg.haproxyBin, "haproxy-bin"); err != nil {
+		return err
+	}
+	for i, path := range cfg.haproxyConfigs {
+		if cfg.haproxyConfigs[i], err = absPath(base, path, "haproxy-config"); err != nil {
+			return err
+		}
+	}
+	if cfg.haproxyLDLibraryPath, err = absPathList(base, cfg.haproxyLDLibraryPath, "haproxy-ld-library-path"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func absPath(base, path, flagName string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	if base == "" {
+		return "", fmt.Errorf("--%s is relative but runtime cwd is empty: %s", flagName, path)
+	}
+	return filepath.Clean(filepath.Join(base, path)), nil
+}
+
+func absPathList(base, paths, flagName string) (string, error) {
+	if paths == "" {
+		return "", nil
+	}
+	parts := filepath.SplitList(paths)
+	for i, path := range parts {
+		if path == "" {
+			return "", fmt.Errorf("--%s contains an empty path element", flagName)
+		}
+		resolved, err := absPath(base, path, flagName)
+		if err != nil {
+			return "", err
+		}
+		parts[i] = resolved
+	}
+	return strings.Join(parts, string(os.PathListSeparator)), nil
 }
 
 func initTelemetry() (func(context.Context) error, error) {
