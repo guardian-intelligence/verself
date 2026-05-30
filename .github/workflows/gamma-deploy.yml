@@ -1,0 +1,56 @@
+name: Gamma deploy
+
+on:
+  workflow_run:
+    workflows:
+      - Verself CI
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Git SHA to deploy. Defaults to the selected ref.
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gamma-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy main to gamma
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: verself-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: Resolve deploy SHA
+        id: sha
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.sha }}" ]; then
+            printf 'value=%s\n' "${{ inputs.sha }}" >> "${GITHUB_OUTPUT}"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            printf 'value=%s\n' "${{ github.event.workflow_run.head_sha }}" >> "${GITHUB_OUTPUT}"
+          else
+            printf 'value=%s\n' "${{ github.sha }}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Check out repository
+        uses: guardian-intelligence/verself/.github/actions/checkout@main
+        with:
+          ref: ${{ steps.sha.outputs.value }}
+          persist-credentials: false
+
+      - name: Bootstrap toolchain
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
+
+      - name: Validate gamma site
+        run: aspect site validate --site=gamma --require-inventory
+
+      - name: Deploy gamma
+        run: aspect deploy --site=gamma --sha="${{ steps.sha.outputs.value }}"

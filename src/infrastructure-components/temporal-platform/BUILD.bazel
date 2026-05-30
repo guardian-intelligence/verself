@@ -70,7 +70,6 @@ nomad_component(
         ":runtime_artifact": "temporal-runtime",
     },
     component = "temporal",
-    deploy_phase = "platform",
     digest_inputs = [":deploy_declarations"],
     job_id = "temporal",
     job_spec = "nomad.hcl",

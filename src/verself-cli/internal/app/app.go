@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -614,7 +613,7 @@ func (c CLI) companySecretSet(args []string) error {
 		Kind:          spec.Kind,
 		Sensitivity:   "secret",
 		ValueRef:      ref,
-		RenderTargets: spec.RenderTargets,
+		Destinations:  []string{siteConfigDestination(secretSpecSiteConfigKey(spec))},
 		RevealCommand: fmt.Sprintf("%s company secret reveal %s --key %s", c.binary, company.Name, *key),
 		UpdatedAt:     time.Now().UTC(),
 	}
@@ -1092,33 +1091,36 @@ func classifyOption(company CompanyRecord, name string) CompanyOption {
 		opt.Provider = parts[0]
 		opt.Kind = parts[1]
 	}
-	target := func(file string) []string {
-		return []string{filepath.ToSlash(filepath.Join("src", "host", "sites", company.Site, "secrets", file))}
+	destination := func() []string {
+		return []string{siteConfigDestination(siteConfigKey(name))}
 	}
 	switch {
 	case name == "latitude.api_token":
 		opt.Purpose = "infrastructure"
-		opt.RenderTargets = target("provisioning.sops.yml")
+		opt.Destinations = destination()
+		opt.RequiredBy = "provisioning"
+	case strings.HasPrefix(name, "latitude."):
+		opt.Purpose = "infrastructure"
 		opt.RequiredBy = "provisioning"
 	case strings.HasPrefix(name, "cloudflare."):
 		opt.Purpose = "infrastructure"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.Destinations = destination()
 		opt.RequiredBy = "dns"
 	case strings.HasPrefix(name, "stripe."):
 		opt.Purpose = "billing"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.Destinations = destination()
 		opt.RequiredBy = "billing-service.runtime"
 	case strings.HasPrefix(name, "aws."):
 		opt.Purpose = "backup"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.Destinations = destination()
 		opt.RequiredBy = "backup.runtime"
 	case strings.HasPrefix(name, "resend."):
 		opt.Purpose = "notification"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.Destinations = destination()
 		opt.RequiredBy = "notifications-service.runtime"
 	default:
 		opt.Purpose = "runtime_integration"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.Destinations = destination()
 	}
 	return opt
 }
@@ -1142,7 +1144,7 @@ func findSecretSpec(site, key string) SecretSpec {
 	return SecretSpec{
 		Key:           key,
 		Kind:          "secret",
-		RenderTargets: []string{"src/host/sites/" + site + "/secrets/external.sops.yml"},
+		SiteConfigKey: siteConfigKey(key),
 		Generator:     func() (string, error) { return randomSecret(32) },
 	}
 }

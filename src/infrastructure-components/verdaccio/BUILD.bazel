@@ -9,7 +9,6 @@ nomad_component(
         ":runtime_artifact": "verdaccio-runtime",
     },
     component = "verdaccio",
-    deploy_phase = "platform",
     digest_inputs = [":deploy_declarations"],
     job_id = "verdaccio",
     job_spec = "nomad.hcl",

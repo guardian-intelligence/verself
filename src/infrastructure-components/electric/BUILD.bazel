@@ -33,7 +33,6 @@ nomad_component(
         ":runtime_artifact": "electric-runtime",
     },
     component = "electric",
-    deploy_phase = "platform",
     job_id = "electric-containerd",
     job_spec = "containerd.nomad.hcl",
     provides = ["electric:containerd"],
@@ -46,7 +45,6 @@ nomad_component(
         ":runtime_artifact": "electric-runtime",
     },
     component = "electric",
-    deploy_phase = "product",
     digest_inputs = [
         ":deploy_declarations",
         "//src/services/iam-service:deploy_declarations",

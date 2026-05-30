@@ -13,6 +13,7 @@ genrule(
         "@grafana_tool_clickhouse_datasource//file",
         "@grafana_tool_grafana_oss//file",
         "@grafana_tools//tools/spiffe-helper",
+        "//src/infrastructure-components/grafana/cmd/grafana-node-runner",
     ],
     outs = ["grafana-tree.tar"],
     cmd = """
@@ -29,6 +30,8 @@ test -d "$$tmp/plugin/grafana-clickhouse-datasource"
 cp -a "$$tmp/plugin/grafana-clickhouse-datasource" "$$tmp/runtime/plugins/grafana-clickhouse-datasource"
 printf '4.17.0\\n' > "$$tmp/runtime/plugins/.grafana-clickhouse-datasource-version"
 install -m 0755 "$(location @grafana_tools//tools/spiffe-helper)" "$$tmp/runtime/bin/spiffe-helper"
+install -m 0755 "$(location //src/infrastructure-components/grafana/cmd/grafana-node-runner:grafana-node-runner)" "$$tmp/runtime/bin/grafana-node-runner"
+ln -s grafana-node-runner "$$tmp/runtime/bin/refresh-grafana-clickhouse-datasource"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
 """,
     target_compatible_with = [
@@ -77,7 +80,6 @@ spire_identity(
 nomad_component(
     name = "nomad_component",
     component = "grafana",
-    deploy_phase = "platform",
     digest_inputs = [
         ":deploy_declarations",
     ],

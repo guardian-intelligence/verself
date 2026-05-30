@@ -4,9 +4,9 @@ go_library(
     name = "runtime",
     srcs = [
         "inventory.go",
+        "openbao.go",
         "output.go",
         "runtime.go",
-        "sops.go",
         "ssh.go",
     ],
     importpath = "github.com/verself/operator-runtime/runtime",
@@ -14,7 +14,6 @@ go_library(
     deps = [
         "//src/tools/observability/go/otel",
         "@com_github_google_uuid//:uuid",
-        "@io_bazel_rules_go//go/runfiles",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",

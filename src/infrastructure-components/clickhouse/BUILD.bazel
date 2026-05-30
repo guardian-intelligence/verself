@@ -11,11 +11,15 @@ pkg_tar(
     out = "clickhouse-host-install.tar",
     files = {
         "@clickhouse_tools//tools/clickhouse": "opt/verself/profile/bin/clickhouse",
+        "@otelcol_tools//tools/spiffe-helper": "opt/verself/profile/bin/spiffe-helper",
+        "//src/infrastructure-components/clickhouse/cmd/clickhouse-host-install:clickhouse-host-install": "opt/verself/profile/bin/clickhouse-host-install",
         "//src/infrastructure-components/clickhouse/cmd/clickhouse-spiffe-bundle-reload:clickhouse-spiffe-bundle-reload": "opt/verself/profile/bin/clickhouse-spiffe-bundle-reload",
     },
     modes = {
         "opt/verself/profile/bin/clickhouse": "0755",
+        "opt/verself/profile/bin/clickhouse-host-install": "0755",
         "opt/verself/profile/bin/clickhouse-spiffe-bundle-reload": "0755",
+        "opt/verself/profile/bin/spiffe-helper": "0755",
     },
     symlinks = {
         "opt/verself/profile/bin/clickhouse-benchmark": "/opt/verself/profile/bin/clickhouse",
@@ -51,7 +55,6 @@ pkg_tar(
     srcs = glob(
         ["migrations/*.up.sql"],
         allow_empty = True,
-        exclude = ["migrations/001_initial_schema.up.sql"],
     ),
     out = "clickhouse-migrations.tar",
     empty_files = ["migrations/.collapsed"],
@@ -61,13 +64,12 @@ pkg_tar(
 
 nomad_component(
     name = "host_install_nomad_component",
-    artifacts = {
-        ":host_install_artifact": "clickhouse-host-install",
-    },
     component = "clickhouse_host_install",
-    deploy_phase = "pre_artifact",
     job_id = "clickhouse-host-install",
     job_spec = "host-install.nomad.hcl",
+    pre_artifacts = {
+        ":host_install_artifact": "clickhouse-host-install",
+    },
     provides = ["clickhouse:host-tools"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
@@ -78,7 +80,6 @@ nomad_component(
         ":migration_artifact": "clickhouse-migrations",
     },
     component = "clickhouse_migrations",
-    deploy_phase = "platform",
     job_id = "clickhouse-migrations",
     job_spec = "nomad.hcl",
     provides = ["clickhouse:migrations"],

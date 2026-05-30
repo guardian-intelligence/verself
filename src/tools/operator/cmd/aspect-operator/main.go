@@ -27,6 +27,10 @@
 //
 //	aspect-operator release npm-probe
 //	    Probe npm registry state for SDK release publication.
+//
+//	aspect-operator site ...
+//	    Operator site lifecycle helpers for bare-metal allocation, host
+//	    substrate tool installation, and OpenBao-backed site configuration.
 package main
 
 import (
@@ -79,6 +83,8 @@ func run(args []string) error {
 		return cmdAgentMail(rest)
 	case "release":
 		return cmdRelease(rest)
+	case "site":
+		return cmdSite(rest)
 	case "-h", "--help", "help":
 		printUsage(os.Stdout)
 		return nil
@@ -102,6 +108,7 @@ Subcommands:
   service-discovery-canary  Drive billing -> IAM traffic through the resolver
   agent-mail        Send a notification email from a Verself agent to the operator
   release           Release publication helpers
+  site              Site lifecycle and OpenBao configuration helpers
 
 Run 'aspect-operator <subcommand> -h' for subcommand-specific flags.
 `)

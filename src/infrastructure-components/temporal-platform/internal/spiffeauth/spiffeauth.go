@@ -17,6 +17,11 @@ import (
 
 var tracer = otel.Tracer("github.com/verself/temporal-platform/spiffeauth")
 
+const (
+	trustDomainPlaceholder = "{trust_domain}"
+	trustDomainPath        = "/etc/verself/spiffe-trust-domain"
+)
+
 type Config struct {
 	systemRoles    map[string]authorization.Role
 	namespaceRoles map[string]map[string]authorization.Role
@@ -27,28 +32,32 @@ func LoadFromEnv() (*Config, error) {
 		systemRoles:    map[string]authorization.Role{},
 		namespaceRoles: map[string]map[string]authorization.Role{},
 	}
-	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS", authorization.RoleAdmin); err != nil {
+	expander, err := trustDomainExpander()
+	if err != nil {
 		return nil, err
 	}
-	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_WRITER_IDS", authorization.RoleWriter); err != nil {
+	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS", authorization.RoleAdmin, expander); err != nil {
 		return nil, err
 	}
-	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_READER_IDS", authorization.RoleReader); err != nil {
+	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_WRITER_IDS", authorization.RoleWriter, expander); err != nil {
 		return nil, err
 	}
-	if err := cfg.mergeNamespaceRoleEnv("VERSELF_TEMPORAL_NAMESPACE_ROLES"); err != nil {
+	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_READER_IDS", authorization.RoleReader, expander); err != nil {
+		return nil, err
+	}
+	if err := cfg.mergeNamespaceRoleEnv("VERSELF_TEMPORAL_NAMESPACE_ROLES", expander); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-func (c *Config) mergeSystemRoleEnv(name string, role authorization.Role) error {
+func (c *Config) mergeSystemRoleEnv(name string, role authorization.Role, expander *strings.Replacer) error {
 	raw := strings.TrimSpace(getenv(name))
 	if raw == "" {
 		return nil
 	}
 	for _, item := range strings.Split(raw, ",") {
-		id := strings.TrimSpace(item)
+		id := strings.TrimSpace(expander.Replace(item))
 		if id == "" {
 			continue
 		}
@@ -57,13 +66,13 @@ func (c *Config) mergeSystemRoleEnv(name string, role authorization.Role) error 
 	return nil
 }
 
-func (c *Config) mergeNamespaceRoleEnv(name string) error {
+func (c *Config) mergeNamespaceRoleEnv(name string, expander *strings.Replacer) error {
 	raw := strings.TrimSpace(getenv(name))
 	if raw == "" {
 		return nil
 	}
 	for _, entry := range strings.Split(raw, ",") {
-		entry = strings.TrimSpace(entry)
+		entry = strings.TrimSpace(expander.Replace(entry))
 		if entry == "" {
 			continue
 		}
@@ -88,6 +97,18 @@ func (c *Config) mergeNamespaceRoleEnv(name string) error {
 		rolesByNamespace[namespace] |= role
 	}
 	return nil
+}
+
+func trustDomainExpander() (*strings.Replacer, error) {
+	raw, err := os.ReadFile(trustDomainPath)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", trustDomainPath, err)
+	}
+	trustDomain := strings.TrimSpace(string(raw))
+	if trustDomain == "" {
+		return nil, fmt.Errorf("%s is empty", trustDomainPath)
+	}
+	return strings.NewReplacer(trustDomainPlaceholder, trustDomain), nil
 }
 
 type ClaimMapper struct {

@@ -5,23 +5,6 @@ exports_files([
 ])
 
 genrule(
-    name = "age_tools",
-    srcs = ["@dev_tool_age//file"],
-    outs = [
-        "age",
-        "age-keygen",
-    ],
-    cmd = """
-set -euo pipefail
-tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tmp"' EXIT
-tar -xzf "$(location @dev_tool_age//file)" -C "$$tmp" --strip-components=1
-install -m 0755 "$$tmp/age" "$(location age)"
-install -m 0755 "$$tmp/age-keygen" "$(location age-keygen)"
-""",
-)
-
-genrule(
     name = "buildifier_bin",
     srcs = ["@dev_tool_buildifier//file"],
     outs = ["buildifier"],
@@ -31,13 +14,6 @@ genrule(
 alias(
     name = "gofumpt",
     actual = "@cc_mvdan_gofumpt//:gofumpt",
-)
-
-genrule(
-    name = "sops_bin",
-    srcs = ["@dev_tool_sops//file"],
-    outs = ["sops"],
-    cmd = "install -m 0755 $(location @dev_tool_sops//file) $@",
 )
 
 genrule(

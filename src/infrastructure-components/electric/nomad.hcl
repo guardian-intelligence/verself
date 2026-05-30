@@ -45,8 +45,22 @@ job "electric" {
         chown = true
       }
       config {
-        command = "/bin/sh"
-        args = ["-ec", "pg_password=\"$(tr -d '\\n' </etc/credstore/electric/pg-password)\"\napi_secret=\"$(tr -d '\\n' </etc/credstore/electric/api-secret)\"\ninstall -d -m 0700 secrets\nprintf 'DATABASE_URL=postgresql://electric:%s@127.0.0.1:5432/sandbox_rental\\nELECTRIC_SECRET=%s\\n' \"$pg_password\" \"$api_secret\" > secrets/electric.env\nchmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric \\\n  --instance-id=electric \\\n  --replication-stream-id=default \\\n  --db-pool-size=15 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
+        command = "local/bin/electric-nomad-runner"
+        args = [
+          "--ctr=local/bin/ctr",
+          "--containerd-address=/run/electric-containerd/containerd.sock",
+          "--image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176",
+          "--env-file=secrets/electric.env",
+          "--pg-user=electric",
+          "--pg-password-file=/etc/credstore/electric/pg-password",
+          "--pg-database=sandbox_rental",
+          "--electric-secret-file=/etc/credstore/electric/api-secret",
+          "--storage-dir=/var/lib/electric",
+          "--instance-id=electric",
+          "--replication-stream-id=default",
+          "--db-pool-size=15",
+          "--runc-binary=local/bin/runc",
+        ]
       }
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -130,8 +144,22 @@ job "electric" {
         chown = true
       }
       config {
-        command = "/bin/sh"
-        args = ["-ec", "pg_password=\"$(tr -d '\\n' </etc/credstore/electric-notifications/pg-password)\"\napi_secret=\"$(tr -d '\\n' </etc/credstore/electric-notifications/api-secret)\"\ninstall -d -m 0700 secrets\nprintf 'DATABASE_URL=postgresql://electric_notifications:%s@127.0.0.1:5432/notifications_service\\nELECTRIC_SECRET=%s\\n' \"$pg_password\" \"$api_secret\" > secrets/electric.env\nchmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric-notifications \\\n  --instance-id=electric-notifications \\\n  --replication-stream-id=notifications \\\n  --db-pool-size=8 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
+        command = "local/bin/electric-nomad-runner"
+        args = [
+          "--ctr=local/bin/ctr",
+          "--containerd-address=/run/electric-containerd/containerd.sock",
+          "--image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176",
+          "--env-file=secrets/electric.env",
+          "--pg-user=electric_notifications",
+          "--pg-password-file=/etc/credstore/electric-notifications/pg-password",
+          "--pg-database=notifications_service",
+          "--electric-secret-file=/etc/credstore/electric-notifications/api-secret",
+          "--storage-dir=/var/lib/electric-notifications",
+          "--instance-id=electric-notifications",
+          "--replication-stream-id=notifications",
+          "--db-pool-size=8",
+          "--runc-binary=local/bin/runc",
+        ]
       }
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -215,8 +243,22 @@ job "electric" {
         chown = true
       }
       config {
-        command = "/bin/sh"
-        args = ["-ec", "pg_password=\"$(tr -d '\\n' </etc/credstore/electric-iam/pg-password)\"\napi_secret=\"$(tr -d '\\n' </etc/credstore/verself-web/electric-api-secret)\"\ninstall -d -m 0700 secrets\nprintf 'DATABASE_URL=postgresql://electric_iam:%s@127.0.0.1:5432/iam_service\\nELECTRIC_SECRET=%s\\n' \"$pg_password\" \"$api_secret\" > secrets/electric.env\nchmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric-iam \\\n  --instance-id=electric-iam \\\n  --replication-stream-id=iam \\\n  --db-pool-size=8 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
+        command = "local/bin/electric-nomad-runner"
+        args = [
+          "--ctr=local/bin/ctr",
+          "--containerd-address=/run/electric-containerd/containerd.sock",
+          "--image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176",
+          "--env-file=secrets/electric.env",
+          "--pg-user=electric_iam",
+          "--pg-password-file=/etc/credstore/electric-iam/pg-password",
+          "--pg-database=iam_service",
+          "--electric-secret-file=/etc/credstore/verself-web/electric-api-secret",
+          "--storage-dir=/var/lib/electric-iam",
+          "--instance-id=electric-iam",
+          "--replication-stream-id=iam",
+          "--db-pool-size=8",
+          "--runc-binary=local/bin/runc",
+        ]
       }
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"

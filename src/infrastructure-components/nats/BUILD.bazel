@@ -8,10 +8,12 @@ pkg_tar(
     name = "runtime_artifact",
     out = "nats-runtime.tar",
     files = {
+        "//src/infrastructure-components/nats/cmd/nats-node-runner": "bin/nats-node-runner",
         "@nats_tools//tools/nats-server": "bin/nats-server",
         "@nats_tools//tools/spiffe-helper": "bin/spiffe-helper",
     },
     modes = {
+        "bin/nats-node-runner": "0755",
         "bin/nats-server": "0755",
         "bin/spiffe-helper": "0755",
     },
@@ -54,7 +56,6 @@ nomad_component(
         ":runtime_artifact": "nats-runtime",
     },
     component = "nats",
-    deploy_phase = "platform",
     job_id = "nats",
     job_spec = "nomad.hcl",
     provides = ["nats:client"],

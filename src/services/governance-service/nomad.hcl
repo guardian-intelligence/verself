@@ -13,6 +13,22 @@ job "governance-service" {
         host_network = "loopback"
       }
     }
+    task "governance-service-prepare" {
+      driver = "raw_exec"
+      user = "root"
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+      config {
+        command = "/usr/bin/install"
+        args = ["-d", "-o", "governance_service", "-g", "governance_service", "-m", "0750", "/var/lib/governance-service/exports"]
+      }
+      resources {
+        cpu = 50
+        memory = 32
+      }
+    }
     task "governance-service-migrate" {
       driver = "raw_exec"
       user = "governance_service"
@@ -38,13 +54,11 @@ job "governance-service" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "governance-service-migration"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "https://verself.sh"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "governance_service"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/governance-service/auth-audience"
         VERSELF_CRED_API_ACTIVITY_HMAC_KEY = "/etc/credstore/governance-service/api-activity-hmac-key"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/governance-service/clickhouse-ca-cert"
-        VERSELF_INSTALLATION_ID = "inst_5NZSEA08R8P3HN566DNH8D301M"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
@@ -82,13 +96,11 @@ job "governance-service" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "governance-service"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "https://verself.sh"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "governance_service"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/governance-service/auth-audience"
         VERSELF_CRED_API_ACTIVITY_HMAC_KEY = "/etc/credstore/governance-service/api-activity-hmac-key"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/governance-service/clickhouse-ca-cert"
-        VERSELF_INSTALLATION_ID = "inst_5NZSEA08R8P3HN566DNH8D301M"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"

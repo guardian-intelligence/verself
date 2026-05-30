@@ -39,3 +39,4 @@ openbao_credential_consumer_subject: "{{ (spire_registrations_spiffe_ids | defau
 openbao_audit_request_headers:
   - name: X-Verself-Request-Id
     hmac: false
+openbao_site_config_kv_mount: site-config

@@ -1,12 +1,10 @@
 package app
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -79,10 +77,9 @@ func writeRenderedFiles(store *Store, company CompanyRecord, repoRoot string, fo
 	}
 	files := map[string][]byte{
 		filepath.Join(repoRoot, ".verself", "bootstrap", "manifest.yaml"): []byte(renderManifest(company)),
-		filepath.Join(repoRoot, ".sops.yaml"):                             []byte(renderSOPSConfig(company)),
-		siteVarsPath:                                                      []byte(siteVars),
-		filepath.Join(repoRoot, "src", "host", "sites", company.Site, "provisioning.tfvars.json.template"): []byte(renderProvisioningTemplate(company)),
-		filepath.Join(repoRoot, "README.md"): []byte(renderREADME(company)),
+		siteVarsPath: []byte(siteVars),
+		filepath.Join(repoRoot, "src", "host", "sites", company.Site, "provisioning.tfvars.json"): []byte(renderProvisioningTemplate(company)),
+		filepath.Join(repoRoot, "README.md"):                                                      []byte(renderREADME(company)),
 	}
 	for path, data := range files {
 		if err := writeRenderFile(path, data, 0o644, force); err != nil {
@@ -90,9 +87,6 @@ func writeRenderedFiles(store *Store, company CompanyRecord, repoRoot string, fo
 		}
 	}
 	if err := renderCLIEntrypoint(repoRoot, company, force); err != nil {
-		return err
-	}
-	if err := renderSOPSBags(store, company, repoRoot, force); err != nil {
 		return err
 	}
 	return nil
@@ -121,16 +115,16 @@ func renderManifest(company CompanyRecord) string {
 	b.WriteString("  owner_name: " + yamlQuote(company.OwnerName) + "\n")
 	b.WriteString("  cli_name: " + yamlQuote(company.CLIName) + "\n")
 	b.WriteString("  project: " + yamlQuote(company.Project) + "\n")
-	b.WriteString("root_sops_key:\n")
-	if company.RootSOPSKey != nil {
-		b.WriteString("  env_key: " + yamlQuote(company.RootSOPSKey.EnvKey) + "\n")
-		b.WriteString("  provider: " + yamlQuote(company.RootSOPSKey.Provider) + "\n")
-		b.WriteString("  recipient: " + yamlQuote(company.RootSOPSKey.Recipient) + "\n")
-		b.WriteString("  secret_ref: " + yamlQuote(envSecretRef(company.RootSOPSKey.Scope, company.RootSOPSKey.EnvKey)) + "\n")
-		b.WriteString("  scope:\n")
-		b.WriteString("    org: " + yamlQuote(company.RootSOPSKey.Scope.Org) + "\n")
-		b.WriteString("    project: " + yamlQuote(company.RootSOPSKey.Scope.Project) + "\n")
-		b.WriteString("    environment: " + yamlQuote(company.RootSOPSKey.Scope.Environment) + "\n")
+	b.WriteString("openbao_site_config:\n")
+	b.WriteString("  mount: " + yamlQuote(siteConfigMount) + "\n")
+	b.WriteString("  prefix: " + yamlQuote(siteConfigPrefix) + "\n")
+	b.WriteString("  entries:\n")
+	for _, secret := range company.Secrets {
+		b.WriteString("    - key: " + yamlQuote(secret.Key) + "\n")
+		b.WriteString("      destination: " + yamlQuote(firstDestination(secret.Destinations)) + "\n")
+		if secret.RevealCommand != "" {
+			b.WriteString("      reveal_command: " + yamlQuote(secret.RevealCommand) + "\n")
+		}
 	}
 	b.WriteString("company_options:\n")
 	for _, opt := range company.Options {
@@ -149,9 +143,9 @@ func renderManifest(company CompanyRecord) string {
 		if opt.RequiredBy != "" {
 			b.WriteString("    required_by: " + yamlQuote(opt.RequiredBy) + "\n")
 		}
-		if len(opt.RenderTargets) > 0 {
-			b.WriteString("    render_targets:\n")
-			for _, target := range opt.RenderTargets {
+		if len(opt.Destinations) > 0 {
+			b.WriteString("    destinations:\n")
+			for _, target := range opt.Destinations {
 				b.WriteString("      - " + yamlQuote(target) + "\n")
 			}
 		}
@@ -163,20 +157,6 @@ func renderManifest(company CompanyRecord) string {
 	b.WriteString("  decoupled_from_verself_sh: true\n")
 	b.WriteString("  substrate: customer_latitude_bare_metal\n")
 	return b.String()
-}
-
-func renderSOPSConfig(company CompanyRecord) string {
-	recipient := ""
-	if company.RootSOPSKey != nil {
-		recipient = company.RootSOPSKey.Recipient
-	}
-	return fmt.Sprintf(`# sops configuration for the generated %s installation.
-# The private Age identity is stored outside the repo as %s.
-
-creation_rules:
-  - path_regex: \.sops\.yml$
-    age: %s
-`, company.CompanyName, rootSOPSKeyName, recipient)
 }
 
 func renderSiteVars(path string, company CompanyRecord) (string, error) {
@@ -270,22 +250,29 @@ func siteVarOverlay(company CompanyRecord) map[string]string {
 
 func renderProvisioningTemplate(company CompanyRecord) string {
 	type template struct {
-		CompanyDomain string `json:"company_domain"`
-		ProductDomain string `json:"product_domain"`
-		Site          string `json:"site"`
-		Latitude      struct {
-			ProjectID string `json:"project_id"`
-			Region    string `json:"region"`
-			Plan      string `json:"plan"`
-		} `json:"latitude"`
+		ClusterName      string `json:"cluster_name"`
+		ProjectID        string `json:"project_id"`
+		SSHPublicKeyPath string `json:"ssh_public_key_path"`
+		WorkerCount      int    `json:"worker_count"`
+		InfraCount       int    `json:"infra_count"`
+		Region           string `json:"region"`
+		Plan             string `json:"plan"`
+		InfraPlan        string `json:"infra_plan"`
+		OperatingSystem  string `json:"operating_system"`
+		Billing          string `json:"billing"`
+		R2BackupsEnabled bool   `json:"r2_backups_enabled"`
 	}
-	var t template
-	t.CompanyDomain = company.CompanyDomain
-	t.ProductDomain = company.ProductDomain
-	t.Site = company.Site
-	t.Latitude.ProjectID = optionValue(company, "latitude.project_id")
-	t.Latitude.Region = optionValue(company, "latitude.region")
-	t.Latitude.Plan = optionValue(company, "latitude.plan")
+	t := template{
+		ClusterName:     company.Site,
+		ProjectID:       optionValue(company, "latitude.project_id"),
+		WorkerCount:     1,
+		InfraCount:      0,
+		Region:          optionValue(company, "latitude.region"),
+		Plan:            optionValue(company, "latitude.plan"),
+		InfraPlan:       optionValue(company, "latitude.plan"),
+		OperatingSystem: "ubuntu_24_04_x64_lts",
+		Billing:         "hourly",
+	}
 	data, _ := json.MarshalIndent(t, "", "  ")
 	return string(data) + "\n"
 }
@@ -304,11 +291,12 @@ Runtime substrate: customer-provisioned Latitude bare metal.
 ./src/tools/dev/bootstrap/bootstrap-linux-amd64
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
 bazelisk build //src/%s-cli:%s
-./bazel-bin/src/%s-cli/%s env get %s --org %s --project %s --environment bootstrap
 ./bazel-bin/src/%s-cli/%s company inspect %s --json
-./bazel-bin/src/%s-cli/%s env run --org %s --project %s --environment bootstrap -- aspect deploy --site=%s --sha=HEAD
+aspect site allocate --site=%s --confirm
+aspect site bootstrap --site=%s
+aspect deploy --site=%s --sha=HEAD
 `+"```"+`
-`, company.CompanyName, company.CLIName, company.CLIName, company.CLIName, company.CLIName, rootSOPSKeyName, company.OrganizationName, company.Project, company.CLIName, company.CLIName, company.Name, company.CLIName, company.CLIName, company.OrganizationName, company.Project, company.Site)
+`, company.CompanyName, company.CLIName, company.CLIName, company.CLIName, company.CLIName, company.Name, company.Site, company.Site, company.Site)
 }
 
 func renderCLIEntrypoint(repoRoot string, company CompanyRecord, force bool) error {
@@ -347,123 +335,6 @@ go_binary(
 	return writeRenderFile(filepath.Join(dir, "BUILD.bazel"), []byte(build), 0o644, force)
 }
 
-func renderSOPSBags(store *Store, company CompanyRecord, repoRoot string, force bool) error {
-	bags, err := collectSecretBags(store, company)
-	if err != nil {
-		return err
-	}
-	for rel, values := range bags {
-		path := filepath.Join(repoRoot, rel)
-		if err := writeEncryptedSOPSBag(repoRoot, path, values, force); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func collectSecretBags(store *Store, company CompanyRecord) (map[string]map[string]string, error) {
-	bags := map[string]map[string]string{
-		"src/host/sites/" + company.Site + "/secrets/host.sops.yml":         {},
-		"src/host/sites/" + company.Site + "/secrets/external.sops.yml":     {},
-		"src/host/sites/" + company.Site + "/secrets/provisioning.sops.yml": {},
-	}
-	for _, secret := range company.Secrets {
-		value, err := store.ReadCredential(secret.ValueRef)
-		if err != nil {
-			return nil, err
-		}
-		targets := secretRenderTargets(company.Site, secret)
-		for _, target := range targets {
-			if _, ok := bags[target]; !ok {
-				bags[target] = map[string]string{}
-			}
-			bags[target][secretYAMLKey(secret.Key)] = value
-		}
-	}
-	for _, opt := range company.Options {
-		value := opt.Value
-		if opt.ValueRef != "" {
-			var err error
-			value, err = store.ReadCredential(opt.ValueRef)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if value == "" || len(opt.RenderTargets) == 0 {
-			continue
-		}
-		for _, target := range opt.RenderTargets {
-			if _, ok := bags[target]; !ok {
-				bags[target] = map[string]string{}
-			}
-			bags[target][secretYAMLKey(opt.Name)] = value
-		}
-	}
-	return bags, nil
-}
-
-func secretRenderTargets(site string, secret CompanySecret) []string {
-	spec := findSecretSpec(site, secret.Key)
-	if len(spec.RenderTargets) > 0 {
-		return spec.RenderTargets
-	}
-	return secret.RenderTargets
-}
-
-func writeEncryptedSOPSBag(repoRoot, path string, values map[string]string, force bool) error {
-	var b strings.Builder
-	b.WriteString("---\n")
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		b.WriteString(key + ": " + yamlQuote(values[key]) + "\n")
-	}
-	if !force {
-		if _, err := os.Stat(path); err == nil {
-			return fmt.Errorf("render would overwrite %s; pass --force", path)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.sops.yml")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if _, err := tmp.Write([]byte(b.String())); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	// SOPS encrypts in place, so use a temp path and rename only after success.
-	cmd := exec.Command(toolBinary("VERSELF_SOPS_BIN", "sops"), "encrypt", "-i", tmpName)
-	cmd.Dir = repoRoot
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("sops encrypt %s: %w (%s)", path, err, strings.TrimSpace(stderr.String()))
-	}
-	return os.Rename(tmpName, path)
-}
-
 func optionValue(company CompanyRecord, name string) string {
 	for _, opt := range company.Options {
 		if opt.Name == name {
@@ -480,11 +351,9 @@ func yamlQuote(v string) string {
 	return `"` + v + `"`
 }
 
-func secretYAMLKey(key string) string {
-	r := strings.NewReplacer(".", "_", "-", "_")
-	return r.Replace(key)
-}
-
-func envSecretRef(scope EnvScope, key string) string {
-	return "env://" + scope.Org + "/" + scope.Project + "/" + scope.Environment + "/" + key
+func firstDestination(destinations []string) string {
+	if len(destinations) == 0 {
+		return ""
+	}
+	return destinations[0]
 }

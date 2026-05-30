@@ -17,9 +17,8 @@ import (
 
 type dbPGOptions struct {
 	dbRuntimeOptions
-	secretsFile string
-	user        string
-	remotePort  int
+	user       string
+	remotePort int
 }
 
 func cmdDBPG(args []string) error {
@@ -120,7 +119,7 @@ func cmdDBPGShell(args []string) error {
 		return errors.New("db pg shell: --db is required")
 	}
 	return runDBRuntime("db.pg.shell", opts.dbRuntimeOptions, true, func(rt *opruntime.Runtime, _ *opch.Client) error {
-		password, err := opruntime.DecryptSOPSValue(rt.Ctx, postgresSecretsPath(rt, opts), "postgresql_admin_password")
+		password, err := opruntime.ReadSiteConfigValue(rt.Ctx, rt, "postgresql_admin_password")
 		if err != nil {
 			return err
 		}
@@ -159,7 +158,6 @@ func addDBPGFlags(fs *flag.FlagSet) *dbPGOptions {
 	addDBRuntimeFlags(&opts.dbRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.secretsFile, "secrets-file", os.Getenv("SOPS_SECRETS_FILE"), "SOPS secrets file")
 	fs.StringVar(&opts.user, "user", envOr("PG_USER", oppg.DefaultUser), "PostgreSQL user")
 	fs.IntVar(&opts.remotePort, "remote-port", envIntOr("PG_PORT", oppg.DefaultPort), "Remote PostgreSQL port on the worker loopback")
 	return opts
@@ -175,10 +173,9 @@ func (opts *dbPGOptions) validate() error {
 func runDBPG(command string, opts *dbPGOptions, dbName string, interactive bool, fn func(*opruntime.Runtime, *opch.Client, *pgx.Conn) error) error {
 	return runDBRuntime(command, opts.dbRuntimeOptions, interactive, func(rt *opruntime.Runtime, ch *opch.Client) error {
 		conn, err := oppg.OpenOverSSH(rt.Ctx, rt, oppg.Config{
-			Database:     dbName,
-			User:         opts.user,
-			RemotePort:   opts.remotePort,
-			PasswordPath: postgresSecretsPath(rt, opts),
+			Database:   dbName,
+			User:       opts.user,
+			RemotePort: opts.remotePort,
 		})
 		if err != nil {
 			return fmt.Errorf("db pg %s: %w", dbName, err)
@@ -186,13 +183,6 @@ func runDBPG(command string, opts *dbPGOptions, dbName string, interactive bool,
 		defer func() { _ = conn.Close(rt.Ctx) }()
 		return fn(rt, ch, conn)
 	})
-}
-
-func postgresSecretsPath(rt *opruntime.Runtime, opts *dbPGOptions) string {
-	if opts.secretsFile != "" {
-		return opts.secretsFile
-	}
-	return opruntime.HostConfigurationSecretsPath(rt.RepoRoot, rt.Site)
 }
 
 func splitHostPort(addr string) (string, string, error) {

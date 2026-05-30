@@ -1,0 +1,53 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+go_library(
+    name = "credential_store_apply_lib",
+    srcs = ["cmd/credential-store-apply/main.go"],
+    importpath = "github.com/verself/infrastructure-components/credential-store/cmd/credential-store-apply",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "credential-store-apply",
+    embed = [":credential_store_apply_lib"],
+    visibility = ["//visibility:public"],
+)
+
+pkg_tar(
+    name = "runtime_artifact",
+    out = "credential-store-runtime.tar",
+    files = {
+        ":credential-store-apply": "opt/verself/credential-store/bin/credential-store-apply",
+    },
+    modes = {
+        "opt/verself/credential-store/bin/credential-store-apply": "0755",
+    },
+)
+
+nomad_component(
+    name = "nomad_component",
+    component = "credential_store",
+    job_id = "credential-store",
+    job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "credential-store-runtime",
+    },
+    provides = ["host:credstore"],
+    requires = ["clickhouse:host-tools"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+nomad_component(
+    name = "object_storage_nomad_component",
+    component = "credential_store_object_storage",
+    job_id = "credential-store-object-storage",
+    job_spec = "object-storage.nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "credential-store-runtime",
+    },
+    provides = ["object-storage:credentials"],
+    requires = ["garage:admin"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

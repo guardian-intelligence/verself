@@ -85,6 +85,9 @@ argument_specs:
           hmac:
             type: bool
             required: true
+      openbao_site_config_kv_mount:
+        type: str
+        default: site-config
       verself_bin:
         type: path
         required: true

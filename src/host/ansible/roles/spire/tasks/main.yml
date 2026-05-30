@@ -212,8 +212,7 @@
     content: |
       [Unit]
       Description=SPIRE Server
-      After=verself-firewall.target network.target
-      Requires=verself-firewall.target
+      After=network.target
 
       [Service]
       Type=simple
@@ -303,8 +302,8 @@
     content: |
       [Unit]
       Description=SPIRE Agent
-      After=verself-firewall.target network.target spire-server.service
-      Requires=verself-firewall.target spire-server.service
+      After=network.target spire-server.service
+      Requires=spire-server.service
 
       [Service]
       Type=simple
@@ -349,7 +348,7 @@
       -spiffeID {{ spire_agent_id }}
       -ttl 600
       -output json
-      | jq -r .value
+      | python3 -c 'import json, sys; print(json.load(sys.stdin)["value"])'
       > /run/spire-agent/private/join-token
   notify: restart spire-agent
 

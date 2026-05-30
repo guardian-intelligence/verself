@@ -53,13 +53,10 @@ load(
     ".aspect/tasks/dev.axl",
     dev_hooks_install = "hooks_install",
     dev_install = "install",
-    dev_sops_init = "sops_init",
 )
 load(
     ".aspect/tasks/host_configuration.axl",
-    host_configuration_edit_secrets = "edit_secrets",
     host_configuration_operator_access_handoff = "operator_access_handoff",
-    host_configuration_service_foundation = "service_foundation",
 )
 load(
     ".aspect/tasks/integrations.axl",
@@ -86,14 +83,19 @@ load(
     persona_user_state = "user_state",
 )
 load(
-    ".aspect/tasks/provision.axl",
-    provision_apply = "apply",
-    provision_destroy = "destroy",
-)
-load(
     ".aspect/tasks/release.axl",
     release_mksk = "mksk",
     release_npm_probe = "npm_probe",
+)
+load(
+    ".aspect/tasks/site.axl",
+    site_allocate = "allocate",
+    site_bootstrap = "bootstrap",
+    site_destroy = "destroy",
+    site_secret_get = "secret_get",
+    site_secret_put = "secret_put",
+    site_validate = "validate",
+    site_verify = "verify",
 )
 load(".aspect/tasks/tidy.axl", "tidy")
 load(".aspect/tasks/vp.axl", "vp")
@@ -114,17 +116,20 @@ def config(ctx):
     ctx.tasks.add(bazel_gazelle)
     ctx.tasks.add(bazel_update)
 
-    # aspect provision ...
-    ctx.tasks.add(provision_apply)
-    ctx.tasks.add(provision_destroy)
+    # aspect site ...
+    ctx.tasks.add(site_validate)
+    ctx.tasks.add(site_allocate)
+    ctx.tasks.add(site_bootstrap)
+    ctx.tasks.add(site_destroy)
+    ctx.tasks.add(site_secret_put)
+    ctx.tasks.add(site_secret_get)
+    ctx.tasks.add(site_verify)
 
     # aspect release ...
     ctx.tasks.add(release_mksk)
     ctx.tasks.add(release_npm_probe)
 
     # aspect host ...
-    ctx.tasks.add(host_configuration_edit_secrets)
-    ctx.tasks.add(host_configuration_service_foundation)
     ctx.tasks.add(host_configuration_operator_access_handoff)
 
     # aspect integrations ...
@@ -143,7 +148,6 @@ def config(ctx):
 
     # aspect dev ...
     ctx.tasks.add(dev_install)
-    ctx.tasks.add(dev_sops_init)
     ctx.tasks.add(dev_hooks_install)
 
     # aspect persona ...

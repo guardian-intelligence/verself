@@ -37,7 +37,7 @@ integrations:
     owner: src/tools/provisioning
     purpose: bare_metal_provisioning
     credentials:
-      - sops_key: latitudesh_auth_token
+      - key: latitudesh_auth_token
         storage: site_provisioning
     reason: Latitude is not a Stripe Projects-backed runtime integration.
   - key: edge.cloudflare_dns
@@ -46,7 +46,7 @@ integrations:
     owner: src/integrations/cloudflare
     purpose: dns_and_tls
     credentials:
-      - sops_key: cloudflare_api_token
+      - key: cloudflare_api_token
         storage: site_host
         isolation: bootstrap_shared
     reason: Projects can help link Cloudflare resources, but parent-zone DNS remains a bootstrap exception.
@@ -56,16 +56,16 @@ integrations:
     owner: src/services/billing-service
     purpose: billing
     credentials:
-      - sops_key: stripe_secret_key
+      - key: stripe_secret_key
         storage: site_external
         target: runtime_secret
-      - sops_key: stripe_webhook_secret
+      - key: stripe_webhook_secret
         storage: site_external
         target: runtime_secret
-      - sops_key: stripe_publishable_key
+      - key: stripe_publishable_key
         storage: site_external
         target: public_config
-      - sops_key: stripe_test_webhook_endpoint_id
+      - key: stripe_test_webhook_endpoint_id
         storage: site_external
         target: provider_resource_id
     reason: Stripe Projects provisions third-party services; it does not replace Verself's Stripe Billing integration.
@@ -75,7 +75,7 @@ integrations:
     owner: src/services/email-service
     purpose: outbound_email
     credentials:
-      - sops_key: resend_api_key
+      - key: resend_api_key
         storage: site_external
         target: runtime_secret
     migration_check: aspect integrations stripe-projects --site=prod --action=search --query=resend
@@ -85,13 +85,13 @@ integrations:
     owner: src/services/github-integration-service
     purpose: hosted_runner_integration
     credentials:
-      - sops_key: github_integration_service_github_app_private_key
+      - key: github_integration_service_github_app_private_key
         storage: site_external
         target: runtime_secret
-      - sops_key: github_integration_service_github_app_webhook_secret
+      - key: github_integration_service_github_app_webhook_secret
         storage: site_external
         target: runtime_secret
-      - sops_key: github_integration_service_github_app_oauth_client_secret
+      - key: github_integration_service_github_app_oauth_client_secret
         storage: site_host
         target: runtime_secret
     public_config:
@@ -104,7 +104,7 @@ integrations:
     owner: src/infrastructure-components/zitadel
     purpose: identity_provider_bootstrap
     credentials:
-      - sops_key: github_integration_service_github_app_oauth_client_secret
+      - key: github_integration_service_github_app_oauth_client_secret
         storage: site_host
         target: host_credstore
     reason: Zitadel is hosted inside the Verself site.
@@ -114,30 +114,42 @@ integrations:
     owner: src/host
     purpose: host_and_service_bootstrap
     credentials:
-      - sops_key: postgresql_admin_password
+      - key: postgresql_admin_password
         storage: site_host
-      - sops_key: postgresql_billing_password
+      - key: postgresql_billing_password
         storage: site_host
-      - sops_key: postgresql_sandbox_rental_password
+      - key: postgresql_sandbox_rental_password
         storage: site_host
-      - sops_key: postgresql_iam_service_password
+      - key: postgresql_iam_service_password
         storage: site_host
-      - sops_key: postgresql_email_service_password
+      - key: postgresql_email_service_password
         storage: site_host
-      - sops_key: zitadel_db_password
+      - key: electric_pg_password
         storage: site_host
-      - sops_key: zitadel_masterkey
+      - key: electric_api_secret
         storage: site_host
-      - sops_key: zitadel_admin_password
+      - key: electric_notifications_pg_password
         storage: site_host
-      - sops_key: zitadel_admin_pat
+      - key: electric_notifications_api_secret
         storage: site_host
-      - sops_key: stalwart_admin_password
+      - key: electric_iam_pg_password
         storage: site_host
-      - sops_key: platform_agent_password
+      - key: verself_web_electric_api_secret
         storage: site_host
-      - sops_key: iam_service_email_identity_hmac_key
+      - key: zitadel_db_password
+        storage: site_host
+      - key: zitadel_masterkey
+        storage: site_host
+      - key: zitadel_admin_password
+        storage: site_host
+      - key: zitadel_admin_pat
+        storage: site_host
+      - key: stalwart_admin_password
+        storage: site_host
+      - key: platform_agent_password
+        storage: site_host
+      - key: iam_service_email_identity_hmac_key
         storage: site_external
-      - sops_key: distribution_service_tuf_ed25519_seed
+      - key: distribution_service_tuf_ed25519_seed
         storage: site_external
     reason: These values are generated or hosted by Verself components.

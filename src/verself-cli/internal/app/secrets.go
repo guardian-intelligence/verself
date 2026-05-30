@@ -3,14 +3,9 @@ package app
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
-
-	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
 type SecretInventoryItem struct {
@@ -20,30 +15,26 @@ type SecretInventoryItem struct {
 	Plaintext     string `json:"plaintext,omitempty"`
 }
 
-func secretCatalog(site string) []SecretSpec {
+func secretCatalog(_ string) []SecretSpec {
+	generated := func(n int) func() (string, error) {
+		return func() (string, error) { return randomSecret(n) }
+	}
 	return []SecretSpec{
-		{
-			Key:           "zitadel.initial_admin_password",
-			Kind:          "password",
-			RenderTargets: []string{"src/host/sites/" + site + "/secrets/host.sops.yml"},
-			Generator:     func() (string, error) { return randomSecret(32) },
-		},
-		{
-			Key:           "forgejo.initial_admin_password",
-			Kind:          "password",
-			RenderTargets: []string{"src/host/sites/" + site + "/secrets/host.sops.yml"},
-			Generator:     func() (string, error) { return randomSecret(32) },
-		},
-		{
-			Key:           "billing.cookie_signing_key",
-			Kind:          "symmetric_key",
-			RenderTargets: []string{"src/host/sites/" + site + "/secrets/external.sops.yml"},
-			Generator:     func() (string, error) { return randomSecret(48) },
-		},
+		{Key: "postgresql_admin_password", Kind: "password", SiteConfigKey: "postgresql_admin_password", Generator: generated(32)},
+		{Key: "postgresql_billing_password", Kind: "password", SiteConfigKey: "postgresql_billing_password", Generator: generated(32)},
+		{Key: "postgresql_sandbox_rental_password", Kind: "password", SiteConfigKey: "postgresql_sandbox_rental_password", Generator: generated(32)},
+		{Key: "postgresql_iam_service_password", Kind: "password", SiteConfigKey: "postgresql_iam_service_password", Generator: generated(32)},
+		{Key: "postgresql_email_service_password", Kind: "password", SiteConfigKey: "postgresql_email_service_password", Generator: generated(32)},
+		{Key: "zitadel_db_password", Kind: "password", SiteConfigKey: "zitadel_db_password", Generator: generated(32)},
+		{Key: "zitadel_masterkey", Kind: "symmetric_key", SiteConfigKey: "zitadel_masterkey", Generator: generated(32)},
+		{Key: "zitadel_admin_password", Kind: "password", SiteConfigKey: "zitadel_admin_password", Generator: generated(32)},
+		{Key: "stalwart_admin_password", Kind: "password", SiteConfigKey: "stalwart_admin_password", Generator: generated(32)},
+		{Key: "platform_agent_password", Kind: "password", SiteConfigKey: "platform_agent_password", Generator: generated(32)},
+		{Key: "iam_service_email_identity_hmac_key", Kind: "symmetric_key", SiteConfigKey: "iam_service_email_identity_hmac_key", Generator: generated(48)},
 		{
 			Key:           "stripe.webhook_secret",
 			Kind:          "webhook_secret",
-			RenderTargets: []string{"src/host/sites/" + site + "/secrets/external.sops.yml"},
+			SiteConfigKey: "stripe_webhook_secret",
 			Generator: func() (string, error) {
 				value, err := randomSecret(32)
 				if err != nil {
@@ -57,43 +48,10 @@ func secretCatalog(site string) []SecretSpec {
 
 func ensureAllGeneratedSecrets(store *Store, company *CompanyRecord, reveal bool) ([]SecretInventoryItem, error) {
 	items := make([]SecretInventoryItem, 0)
-	rootItem, err := ensureRootSOPSIdentity(store, company, reveal)
-	if err != nil {
-		return nil, err
-	}
-	items = append(items, rootItem)
 	for _, spec := range secretCatalog(company.Site) {
-		existing := findSecret(company, spec.Key)
-		if existing != nil && existing.ValueRef != "" {
-			items = append(items, SecretInventoryItem{
-				Key:           spec.Key,
-				Destination:   strings.Join(spec.RenderTargets, ","),
-				RevealCommand: existing.RevealCommand,
-			})
-			continue
-		}
-		value, err := spec.Generator()
+		item, err := ensureSecretSpec(store, company, spec, reveal)
 		if err != nil {
 			return nil, err
-		}
-		ref, err := store.SaveCredential(value)
-		if err != nil {
-			return nil, err
-		}
-		cmd := fmt.Sprintf("verself company secret reveal %s --key %s", company.Name, spec.Key)
-		secret := CompanySecret{
-			Key:           spec.Key,
-			Kind:          spec.Kind,
-			Sensitivity:   "secret",
-			ValueRef:      ref,
-			RenderTargets: spec.RenderTargets,
-			RevealCommand: cmd,
-			UpdatedAt:     time.Now().UTC(),
-		}
-		upsertSecret(company, secret)
-		item := SecretInventoryItem{Key: spec.Key, Destination: strings.Join(spec.RenderTargets, ","), RevealCommand: cmd}
-		if reveal {
-			item.Plaintext = value
 		}
 		items = append(items, item)
 	}
@@ -101,15 +59,16 @@ func ensureAllGeneratedSecrets(store *Store, company *CompanyRecord, reveal bool
 }
 
 func ensureGeneratedSecret(store *Store, company *CompanyRecord, key string, reveal bool) (SecretInventoryItem, error) {
-	if key == rootSOPSKeyName {
-		return ensureRootSOPSIdentity(store, company, reveal)
-	}
-	spec := findSecretSpec(company.Site, key)
+	return ensureSecretSpec(store, company, findSecretSpec(company.Site, key), reveal)
+}
+
+func ensureSecretSpec(store *Store, company *CompanyRecord, spec SecretSpec, reveal bool) (SecretInventoryItem, error) {
+	destination := siteConfigDestination(secretSpecSiteConfigKey(spec))
 	existing := findSecret(company, spec.Key)
 	if existing != nil && existing.ValueRef != "" {
 		item := SecretInventoryItem{
 			Key:           spec.Key,
-			Destination:   strings.Join(spec.RenderTargets, ","),
+			Destination:   destination,
 			RevealCommand: existing.RevealCommand,
 		}
 		if reveal {
@@ -135,62 +94,14 @@ func ensureGeneratedSecret(store *Store, company *CompanyRecord, key string, rev
 		Kind:          spec.Kind,
 		Sensitivity:   "secret",
 		ValueRef:      ref,
-		RenderTargets: spec.RenderTargets,
+		Destinations:  []string{destination},
 		RevealCommand: cmd,
 		UpdatedAt:     time.Now().UTC(),
 	}
 	upsertSecret(company, secret)
-	item := SecretInventoryItem{Key: spec.Key, Destination: strings.Join(spec.RenderTargets, ","), RevealCommand: cmd}
+	item := SecretInventoryItem{Key: spec.Key, Destination: destination, RevealCommand: cmd}
 	if reveal {
 		item.Plaintext = value
-	}
-	return item, nil
-}
-
-func ensureRootSOPSIdentity(store *Store, company *CompanyRecord, reveal bool) (SecretInventoryItem, error) {
-	scope := EnvScope{
-		Org:         company.OrganizationName,
-		Project:     company.Project,
-		Environment: envBootstrap,
-	}
-	if company.RootSOPSKey != nil && company.RootSOPSKey.SecretRef != "" {
-		item := SecretInventoryItem{
-			Key:           rootSOPSKeyName,
-			Destination:   fmt.Sprintf("env %s/%s/%s", scope.Environment, scope.Org, scope.Project),
-			RevealCommand: envGetCommand(company.CLIName, scope, rootSOPSKeyName),
-		}
-		if reveal {
-			value, err := store.ReadCredential(company.RootSOPSKey.SecretRef)
-			if err != nil {
-				return SecretInventoryItem{}, err
-			}
-			item.Plaintext = value
-		}
-		return item, nil
-	}
-	identity, recipient, err := generateAgeIdentity()
-	if err != nil {
-		return SecretInventoryItem{}, err
-	}
-	ref, err := store.PutEnvSecret(scope, rootSOPSKeyName, identity)
-	if err != nil {
-		return SecretInventoryItem{}, err
-	}
-	company.RootSOPSKey = &RootSOPSKey{
-		EnvKey:    rootSOPSKeyName,
-		Provider:  "age",
-		Scope:     scope,
-		Recipient: recipient,
-		SecretRef: ref,
-		UpdatedAt: time.Now().UTC(),
-	}
-	item := SecretInventoryItem{
-		Key:           rootSOPSKeyName,
-		Destination:   fmt.Sprintf("env %s/%s/%s", scope.Environment, scope.Org, scope.Project),
-		RevealCommand: envGetCommand(company.CLIName, scope, rootSOPSKeyName),
-	}
-	if reveal {
-		item.Plaintext = identity
 	}
 	return item, nil
 }
@@ -222,59 +133,18 @@ func randomSecret(n int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-func generateAgeIdentity() (identity string, recipient string, err error) {
-	out, err := exec.Command(toolBinary("VERSELF_AGE_KEYGEN_BIN", "age-keygen")).CombinedOutput()
-	if err != nil {
-		return "", "", fmt.Errorf("age-keygen: %w (%s)", err, strings.TrimSpace(string(out)))
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "AGE-SECRET-KEY-"):
-			identity = line
-		case strings.Contains(line, "public key:"):
-			_, after, _ := strings.Cut(line, "public key:")
-			recipient = strings.TrimSpace(after)
-		case strings.HasPrefix(line, "Public key:"):
-			recipient = strings.TrimSpace(strings.TrimPrefix(line, "Public key:"))
-		}
-	}
-	if identity == "" {
-		return "", "", errors.New("age-keygen did not emit an AGE-SECRET-KEY identity")
-	}
-	if recipient == "" || !strings.HasPrefix(recipient, "age1") {
-		return "", "", errors.New("age-keygen did not emit an age recipient")
-	}
-	return identity, recipient, nil
+func siteConfigDestination(name string) string {
+	return siteConfigMount + "/" + siteConfigPrefix + "/" + name
 }
 
-func toolBinary(envName, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(envName)); value != "" {
-		return value
+func secretSpecSiteConfigKey(spec SecretSpec) string {
+	if spec.SiteConfigKey != "" {
+		return spec.SiteConfigKey
 	}
-	if path := bazelRunfile("src/tools/dev/binaries/" + fallback); path != "" {
-		return path
-	}
-	return fallback
+	return siteConfigKey(spec.Key)
 }
 
-func bazelRunfile(rel string) string {
-	for _, candidate := range []string{"verself/" + rel, "_main/" + rel, rel} {
-		path, err := runfiles.Rlocation(candidate)
-		if err != nil {
-			continue
-		}
-		info, err := os.Stat(path)
-		if err == nil && !info.IsDir() {
-			return path
-		}
-	}
-	return ""
-}
-
-func envGetCommand(cliName string, scope EnvScope, key string) string {
-	if cliName == "" {
-		cliName = "verself"
-	}
-	return fmt.Sprintf("%s env get %s --org %s --project %s --environment %s", cliName, key, scope.Org, scope.Project, scope.Environment)
+func siteConfigKey(key string) string {
+	r := strings.NewReplacer(".", "_", "-", "_")
+	return r.Replace(key)
 }

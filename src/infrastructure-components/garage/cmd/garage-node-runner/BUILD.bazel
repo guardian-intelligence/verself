@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "garage-node-runner_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/garage/cmd/garage-node-runner",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "garage-node-runner",
+    embed = [":garage-node-runner_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -5,7 +5,8 @@ import "time"
 const (
 	currentCompanyVersion = 1
 	envBootstrap          = "bootstrap"
-	rootSOPSKeyName       = "VERSELF_SOPS_AGE_IDENTITY"
+	siteConfigMount       = "site-config"
+	siteConfigPrefix      = "config"
 	defaultProject        = "verself"
 	defaultTrustTier      = "platform"
 )
@@ -73,23 +74,22 @@ type CompanyRecord struct {
 	TrustTier        string          `json:"trust_tier"`
 	Options          []CompanyOption `json:"options,omitempty"`
 	Secrets          []CompanySecret `json:"secrets,omitempty"`
-	RootSOPSKey      *RootSOPSKey    `json:"root_sops_key,omitempty"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
 type CompanyOption struct {
-	Name          string    `json:"name"`
-	Source        string    `json:"source"`
-	Sensitivity   string    `json:"sensitivity"`
-	ValueRef      string    `json:"value_ref,omitempty"`
-	Value         string    `json:"value,omitempty"`
-	Provider      string    `json:"provider,omitempty"`
-	Kind          string    `json:"kind,omitempty"`
-	Purpose       string    `json:"purpose,omitempty"`
-	RenderTargets []string  `json:"render_targets,omitempty"`
-	RequiredBy    string    `json:"required_by,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	Name         string    `json:"name"`
+	Source       string    `json:"source"`
+	Sensitivity  string    `json:"sensitivity"`
+	ValueRef     string    `json:"value_ref,omitempty"`
+	Value        string    `json:"value,omitempty"`
+	Provider     string    `json:"provider,omitempty"`
+	Kind         string    `json:"kind,omitempty"`
+	Purpose      string    `json:"purpose,omitempty"`
+	Destinations []string  `json:"destinations,omitempty"`
+	RequiredBy   string    `json:"required_by,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type CompanySecret struct {
@@ -97,18 +97,9 @@ type CompanySecret struct {
 	Kind          string    `json:"kind"`
 	Sensitivity   string    `json:"sensitivity"`
 	ValueRef      string    `json:"value_ref"`
-	RenderTargets []string  `json:"render_targets,omitempty"`
+	Destinations  []string  `json:"destinations,omitempty"`
 	RevealCommand string    `json:"reveal_command,omitempty"`
 	UpdatedAt     time.Time `json:"updated_at"`
-}
-
-type RootSOPSKey struct {
-	EnvKey    string    `json:"env_key"`
-	Provider  string    `json:"provider"`
-	Scope     EnvScope  `json:"scope"`
-	Recipient string    `json:"recipient"`
-	SecretRef string    `json:"secret_ref"`
-	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type EnvScope struct {
@@ -159,7 +150,7 @@ type InstallReceipt struct {
 type SecretSpec struct {
 	Key           string
 	Kind          string
-	RenderTargets []string
+	SiteConfigKey string
 	Generator     func() (string, error)
 }
 

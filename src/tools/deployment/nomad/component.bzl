@@ -6,7 +6,6 @@ NomadComponentInfo = provider(
         "artifacts": "label_keyed_string_dict of artifact targets to release output names.",
         "component": "Topology component key.",
         "descriptor": "Component descriptor JSON file.",
-        "deploy_phase": "Deployment phase for graph wave submission.",
         "digest_inputs": "Files whose content must participate in the Nomad job spec digest without being downloaded as runtime artifacts.",
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
@@ -30,13 +29,6 @@ PostDeployCanaryInfo = provider(
         "timeout": "Optional Go-duration timeout for this canary.",
     },
 )
-
-_ALLOWED_DEPLOY_PHASES = [
-    "pre_artifact",
-    "platform",
-    "product",
-    "edge",
-]
 
 _ALLOWED_CANARY_KINDS = [
     "browser",
@@ -104,8 +96,6 @@ def _nomad_component_impl(ctx):
         fail("component is required")
     if not ctx.attr.job_id:
         fail("job_id is required")
-    if ctx.attr.deploy_phase not in _ALLOWED_DEPLOY_PHASES:
-        fail("deploy_phase must be one of %s" % ", ".join(_ALLOWED_DEPLOY_PHASES))
 
     descriptor_inputs = [job_spec]
     default_outputs = []
@@ -149,10 +139,9 @@ def _nomad_component_impl(ctx):
 
     descriptor = ctx.actions.declare_file(ctx.label.name + ".nomad_component.json")
     descriptor_data = {
-        "schema_version": 5,
+        "schema_version": 6,
         "artifacts": artifacts,
         "component": ctx.attr.component,
-        "deploy_phase": ctx.attr.deploy_phase,
         "digest_inputs": digest_inputs,
         "job_id": ctx.attr.job_id,
         "job_spec": job_spec.short_path,
@@ -174,7 +163,6 @@ def _nomad_component_impl(ctx):
             artifacts = ctx.attr.artifacts,
             component = ctx.attr.component,
             descriptor = descriptor,
-            deploy_phase = ctx.attr.deploy_phase,
             digest_inputs = ctx.attr.digest_inputs,
             job_id = ctx.attr.job_id,
             job_spec = job_spec,
@@ -201,10 +189,6 @@ nomad_component = rule(
         "component": attr.string(
             mandatory = True,
             doc = "Topology component key.",
-        ),
-        "deploy_phase": attr.string(
-            default = "product",
-            doc = "Deployment phase. pre_artifact jobs are submitted before artifact publication; platform/product/edge jobs are submitted after artifact publication is available.",
         ),
         "digest_inputs": attr.label_list(
             allow_files = True,

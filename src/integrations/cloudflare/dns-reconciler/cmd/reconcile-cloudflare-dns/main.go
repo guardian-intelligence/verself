@@ -16,14 +16,12 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,7 +36,7 @@ type config struct {
 	site        string
 	ansibleDir  string
 	inventory   string
-	secretsPath string
+	tokenEnv    string
 	timeout     time.Duration
 	concurrency int
 	dryRun      bool
@@ -50,7 +48,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
 	fs.StringVar(&cfg.ansibleDir, "ansible-dir", "", "Path to authored host Ansible root (defaults to src/host/ansible).")
 	fs.StringVar(&cfg.inventory, "inventory", "", "Path to the site Ansible inventory (defaults to src/host/sites/<site>/inventory.ini).")
-	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to SOPS-encrypted host secrets (defaults to src/host/sites/<site>/secrets/host.sops.yml).")
+	fs.StringVar(&cfg.tokenEnv, "token-env", "CLOUDFLARE_API_TOKEN", "Environment variable containing the Cloudflare API token.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for the Cloudflare API.")
 	fs.IntVar(&cfg.concurrency, "concurrency", 8, "Maximum parallel Cloudflare write requests.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print the diff without applying.")
@@ -63,17 +61,14 @@ func run(args []string) error {
 	if cfg.inventory == "" {
 		cfg.inventory = filepath.Clean(filepath.Join(cfg.ansibleDir, "..", "sites", cfg.site, "inventory.ini"))
 	}
-	if cfg.secretsPath == "" {
-		cfg.secretsPath = filepath.Clean(filepath.Join(cfg.ansibleDir, "..", "sites", cfg.site, "secrets", "host.sops.yml"))
-	}
 
 	desired, err := loadDesired(cfg.ansibleDir, cfg.site, cfg.inventory)
 	if err != nil {
 		return err
 	}
-	token, err := decryptSopsToken(cfg.secretsPath)
+	token, err := tokenFromEnv(cfg.tokenEnv)
 	if err != nil {
-		return fmt.Errorf("decrypt cloudflare_api_token: %w", err)
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -234,10 +229,11 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 	siteVarsPath := filepath.Clean(filepath.Join(ansibleDir, "..", "sites", site, "vars.yml"))
 
 	var siteVars struct {
-		VerselfDomain       string `yaml:"verself_domain"`
-		CompanyDomain       string `yaml:"company_domain"`
-		BareMetalPublicIPv4 string `yaml:"bare_metal_public_ipv4"`
-		Records             []struct {
+		VerselfDomain         string `yaml:"verself_domain"`
+		CloudflareProductZone string `yaml:"cloudflare_product_zone"`
+		CompanyDomain         string `yaml:"company_domain"`
+		BareMetalPublicIPv4   string `yaml:"bare_metal_public_ipv4"`
+		Records               []struct {
 			Kind   string `yaml:"kind"`
 			Record string `yaml:"record"`
 			Zone   string `yaml:"zone"` // "product" | "company"
@@ -247,9 +243,13 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 		return nil, fmt.Errorf("read %s: %w", siteVarsPath, err)
 	}
 	verself := strings.TrimSpace(siteVars.VerselfDomain)
+	productZone := strings.TrimSpace(siteVars.CloudflareProductZone)
+	if productZone == "" {
+		productZone = verself
+	}
 	company := strings.TrimSpace(siteVars.CompanyDomain)
 	publicIP := strings.TrimSpace(siteVars.BareMetalPublicIPv4)
-	if publicIP == "" {
+	if publicIP == "" || strings.Contains(publicIP, "{{") {
 		var err error
 		publicIP, err = inventoryInfraHost(inventoryPath)
 		if err != nil {
@@ -264,17 +264,23 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 	seen := map[string]struct{}{}
 	for _, r := range siteVars.Records {
 		var zone string
+		var baseDomain string
 		switch r.Zone {
 		case "product":
-			zone = verself
+			zone = productZone
+			baseDomain = verself
 		case "company":
 			zone = company
+			baseDomain = company
 		default:
 			return nil, fmt.Errorf("unknown cloudflare_dns_records[].zone: %q", r.Zone)
 		}
-		fqdn := zone
+		fqdn := baseDomain
 		if r.Record != "@" {
-			fqdn = r.Record + "." + zone
+			fqdn = r.Record + "." + baseDomain
+		}
+		if fqdn != zone && !strings.HasSuffix(fqdn, "."+zone) {
+			return nil, fmt.Errorf("record %q renders outside Cloudflare zone %q", fqdn, zone)
 		}
 		key := zone + "|" + fqdn
 		if _, dup := seen[key]; dup {
@@ -345,55 +351,16 @@ func readYAML(path string, into any) error {
 	return yaml.Unmarshal(b, into)
 }
 
-// decryptSopsToken shells out to `sops -d --extract '["cloudflare_api_token"]'`
-// to read the single ciphertext we care about; doing it ourselves would
-// require linking against the SOPS Go library and decrypting age/PGP/KMS
-// recipients we don't manage here.
-func decryptSopsToken(path string) (string, error) {
-	if _, err := os.Stat(path); err != nil {
-		return "", fmt.Errorf("stat %s: %w", path, err)
+func tokenFromEnv(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("--token-env is required")
 	}
-	cmd := exec.Command(sopsBinary(), "-d", "--extract", `["cloudflare_api_token"]`, path)
-	out, err := cmd.Output()
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			return "", fmt.Errorf("sops -d %s: %w (%s)", path, err, string(ee.Stderr))
-		}
-		return "", fmt.Errorf("sops -d %s: %w", path, err)
+	token := strings.TrimSpace(os.Getenv(name))
+	if token == "" {
+		return "", fmt.Errorf("%s is required in the controller environment", name)
 	}
-	tok := string(out)
-	for len(tok) > 0 && (tok[len(tok)-1] == '\n' || tok[len(tok)-1] == '\r') {
-		tok = tok[:len(tok)-1]
-	}
-	if tok == "" {
-		return "", fmt.Errorf("sops -d %s returned empty value for cloudflare_api_token", path)
-	}
-	return tok, nil
-}
-
-func sopsBinary() string {
-	if value := strings.TrimSpace(os.Getenv("VERSELF_SOPS_BIN")); value != "" {
-		return value
-	}
-	if path := bazelRunfile("src/tools/dev/binaries/sops"); path != "" {
-		return path
-	}
-	return "sops"
-}
-
-func bazelRunfile(rel string) string {
-	for _, candidate := range []string{"verself/" + rel, "_main/" + rel, rel} {
-		path, err := runfiles.Rlocation(candidate)
-		if err != nil {
-			continue
-		}
-		info, err := os.Stat(path)
-		if err == nil && !info.IsDir() {
-			return path
-		}
-	}
-	return ""
+	return token, nil
 }
 
 // ---- helpers used by main / cf client ------------------------------------

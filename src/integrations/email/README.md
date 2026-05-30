@@ -57,7 +57,7 @@ against the Resend and Cloudflare APIs and is idempotent.
 
 ### Cloudflare tokens
 
-Two SOPS-encrypted tokens in `src/host/sites/prod/secrets/host.sops.yml`:
+Two OpenBao-backed site configuration keys:
 
 - `cloudflare_api_token` — the shared product token. Zone DNS edit + read across
   `verself.sh` and `guardianintelligence.org`. Used by the DNS reconciler, the
@@ -82,7 +82,7 @@ clicked, regardless of token scope.
 
 `spire_identity` at `//src/tools/operator/cmd/agent-mail:spiffe_identity`
 declares the `svc/agent-mail` workload (unix user `agent_mail`). Host
-service-foundation runs `spire_registrations`, which creates the user and the
+`aspect site bootstrap` runs `spire_registrations`, which creates the user and the
 SPIRE entry. `email-service`'s internal peer allowlist trusts `agent-mail`
 alongside `billing-service` and `notifications-service`. On boot `email-service`
 provisions the `agents@guardianintelligence.org` identity and a Resend provider

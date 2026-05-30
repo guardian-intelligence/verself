@@ -28,6 +28,7 @@ func TestApplyOnceOnlyWritesNomadUpstreams(t *testing.T) {
 		haproxyBin:     "/bin/true",
 		haproxyConfigs: stringList{staticConfig, dest},
 		reloadUnit:     "",
+		skipHostState:  true,
 	})
 	if err != nil {
 		t.Fatalf("apply once: %v", err)

@@ -27,7 +27,6 @@ nomad_component(
         "//src/infrastructure-components/nomad-observer/cmd/nomad-observer:nomad-observer_nomad_artifact": "nomad-observer",
     },
     component = "nomad-observer",
-    deploy_phase = "platform",
     job_id = "nomad-observer",
     job_spec = "nomad.hcl",
     provides = ["nomad-observer:events"],

@@ -31,6 +31,7 @@ job "secrets-service" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "secrets-service"
+        SECRETS_OPENBAO_ADDR = "https://127.0.0.1:8200"
         SECRETS_OPENBAO_JWT_PREFIX = "jwt"
         SECRETS_OPENBAO_KV_PREFIX = "kv"
         SECRETS_OPENBAO_SPIFFE_JWT_PREFIX = "spiffe-jwt"
@@ -82,14 +83,6 @@ job "secrets-service" {
           interval = "1s"
           timeout = "3s"
         }
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/upstreams.env"
-        data = <<-EOT
-SECRETS_OPENBAO_ADDR=https://{{- with nomadService "openbao-api" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-EOT
-        env = true
       }
     }
     update {

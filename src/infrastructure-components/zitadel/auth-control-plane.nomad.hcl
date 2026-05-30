@@ -24,10 +24,8 @@ job "auth-control-plane" {
         AUTH_CONTROL_PLANE_ADMIN_PAT_PATH = "/etc/zitadel/admin.pat"
         AUTH_CONTROL_PLANE_IAM_CREDSTORE_DIR = "/etc/credstore/iam-service"
         AUTH_CONTROL_PLANE_IAM_CREDSTORE_GROUP = "iam_service"
-        AUTH_CONTROL_PLANE_VERSELF_DOMAIN = "verself.sh"
         AUTH_CONTROL_PLANE_ZITADEL_BASE_URL = "http://127.0.0.1:8085"
-        AUTH_CONTROL_PLANE_ZITADEL_HOST = "verself.sh"
-        # Sign in with GitHub. Files are rendered from SOPS by the Zitadel
+        # Sign in with GitHub. Files are rendered from OpenBao site configuration by the Zitadel
         # Ansible role; empty/absent files skip GitHub IdP provisioning.
         AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID_PATH = "/etc/credstore/zitadel/github-login-client-id"
         AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_SECRET_PATH = "/etc/credstore/zitadel/github-login-client-secret"

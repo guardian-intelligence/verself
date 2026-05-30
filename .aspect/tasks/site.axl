@@ -1,0 +1,253 @@
+"""aspect site allocate|bootstrap|destroy|secret-put|secret-get|validate|verify."""
+
+load(
+    ".aspect/lib/helpers.axl",
+    "ASPECT_OPERATOR_TARGET",
+    "DEFAULT_SITE",
+    "HOST_CONFIGURATION_DIR",
+    "SPIRE_IDENTITY_REGISTRY_TARGET",
+    "bazel_output_file",
+    "bazel_run",
+    "checked_spawn",
+    "host_ansible_env",
+    "host_ansible_playbook",
+    "inventory_check",
+    "site_inventory_source",
+    "ws_path",
+)
+
+_HOST_SUBSTRATE_TOOLS_TARGET = "//src/host:substrate_tools_archive"
+_TOFU_TARGET = "//src/tools/dev/binaries:tofu"
+
+def _site_operator(ctx, argv, label):
+    return bazel_run(
+        ctx,
+        ASPECT_OPERATOR_TARGET,
+        ["site"] + argv,
+        cwd = ws_path(ctx),
+        label = label,
+    )
+
+def _site_validate_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    argv = [
+        "validate",
+        "--site=" + site,
+        "--repo-root=" + ws_path(ctx),
+    ]
+    if ctx.args.require_inventory:
+        argv.append("--require-inventory")
+    return _site_operator(
+        ctx,
+        argv,
+        "aspect-operator site validate --site " + site,
+    )
+
+validate = task(
+    implementation = _site_validate_impl,
+    name = "validate",
+    group = ["site"],
+    summary = "Validate the authored site catalog and local inventory shape.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "require_inventory": args.boolean(default = False, description = "Require the site inventory file to exist."),
+    },
+)
+
+def _site_allocate_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    tofu = bazel_output_file(ctx, _TOFU_TARGET)
+    if tofu == "":
+        return 1
+    argv = [
+        "allocate",
+        "--site=" + site,
+        "--repo-root=" + ws_path(ctx),
+        "--tofu-bin=" + tofu,
+    ]
+    if ctx.args.tfvars != "":
+        argv.append("--tfvars=" + ws_path(ctx, ctx.args.tfvars))
+    if ctx.args.confirm:
+        argv.append("--confirm")
+    return _site_operator(ctx, argv, "aspect-operator site allocate --site " + site)
+
+allocate = task(
+    implementation = _site_allocate_impl,
+    name = "allocate",
+    group = ["site"],
+    summary = "Allocate bare-metal resources with OpenTofu and write site inventory.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "tfvars": args.string(default = "", description = "Repo-relative site tfvars JSON."),
+        "confirm": args.boolean(default = False, description = "Required confirmation for provider-side allocation."),
+    },
+)
+
+def _site_destroy_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    tofu = bazel_output_file(ctx, _TOFU_TARGET)
+    if tofu == "":
+        return 1
+    argv = [
+        "destroy",
+        "--site=" + site,
+        "--repo-root=" + ws_path(ctx),
+        "--tofu-bin=" + tofu,
+    ]
+    if ctx.args.tfvars != "":
+        argv.append("--tfvars=" + ws_path(ctx, ctx.args.tfvars))
+    if ctx.args.confirm:
+        argv.append("--confirm")
+    return _site_operator(ctx, argv, "aspect-operator site destroy --site " + site)
+
+destroy = task(
+    implementation = _site_destroy_impl,
+    name = "destroy",
+    group = ["site"],
+    summary = "Destroy OpenTofu-managed bare metal for a site.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "tfvars": args.string(default = "", description = "Repo-relative site tfvars JSON."),
+        "confirm": args.boolean(default = False, description = "Required confirmation for provider-side destruction."),
+    },
+)
+
+def _site_bootstrap_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    rc = inventory_check(ctx, site)
+    if rc != 0:
+        return rc
+    archive = bazel_output_file(ctx, _HOST_SUBSTRATE_TOOLS_TARGET)
+    if archive == "":
+        return 1
+    rc = _site_operator(
+        ctx,
+        [
+            "install-tools",
+            "--site=" + site,
+            "--repo-root=" + ws_path(ctx),
+            "--archive=" + archive,
+        ],
+        "aspect-operator site install-tools --site " + site,
+    )
+    if rc != 0:
+        return rc
+    registry = bazel_output_file(ctx, SPIRE_IDENTITY_REGISTRY_TARGET)
+    if registry == "":
+        return 1
+    ansible_playbook = host_ansible_playbook(ctx)
+    if ansible_playbook == "":
+        return 1
+    env = host_ansible_env(ctx)
+    if env == None:
+        return 1
+    return checked_spawn(
+        ctx,
+        ansible_playbook,
+        [
+            "-i",
+            ws_path(ctx, site_inventory_source(site)),
+            "playbooks/site.yml",
+            "-e",
+            "verself_site=" + site,
+            "-e",
+            "spire_registrations_file=" + registry,
+        ],
+        cwd = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
+        env = env,
+        label = "ansible-playbook site.yml --site " + site,
+    )
+
+bootstrap = task(
+    implementation = _site_bootstrap_impl,
+    name = "bootstrap",
+    group = ["site"],
+    summary = "Install host substrate tools and converge the site host.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
+)
+
+def _site_secret_put_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    if ctx.args.name == "":
+        ctx.std.io.stderr.write("ERROR: --name is required\n")
+        return 1
+    argv = [
+        "secret",
+        "put",
+        "--site=" + site,
+        "--repo-root=" + ws_path(ctx),
+        "--name=" + ctx.args.name,
+    ]
+    if ctx.args.value_env != "":
+        argv.append("--value-env=" + ctx.args.value_env)
+    else:
+        argv.append("--value-stdin")
+    return _site_operator(ctx, argv, "aspect-operator site secret put --site " + site)
+
+secret_put = task(
+    implementation = _site_secret_put_impl,
+    name = "secret-put",
+    group = ["site"],
+    summary = "Write one OpenBao-backed site configuration secret.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "name": args.string(default = "", description = "Site configuration key."),
+        "value_env": args.string(default = "", description = "Read the value from this environment variable; otherwise stdin is used."),
+    },
+)
+
+def _site_secret_get_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    if ctx.args.name == "":
+        ctx.std.io.stderr.write("ERROR: --name is required\n")
+        return 1
+    return _site_operator(
+        ctx,
+        [
+            "secret",
+            "get",
+            "--site=" + site,
+            "--repo-root=" + ws_path(ctx),
+            "--name=" + ctx.args.name,
+        ],
+        "aspect-operator site secret get --site " + site,
+    )
+
+secret_get = task(
+    implementation = _site_secret_get_impl,
+    name = "secret-get",
+    group = ["site"],
+    summary = "Read one OpenBao-backed site configuration secret.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "name": args.string(default = "", description = "Site configuration key."),
+    },
+)
+
+def _site_verify_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    return _site_operator(
+        ctx,
+        [
+            "verify",
+            "--site=" + site,
+            "--repo-root=" + ws_path(ctx),
+            "--minutes=" + str(ctx.args.minutes),
+            "--format=" + (ctx.args.format or "table"),
+        ],
+        "aspect-operator site verify --site " + site,
+    )
+
+verify = task(
+    implementation = _site_verify_impl,
+    name = "verify",
+    group = ["site"],
+    summary = "Print recent ClickHouse evidence for site lifecycle commands.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "minutes": args.int(default = 120, description = "Lookback window in minutes."),
+        "format": args.string(default = "table", description = "Output format: table, json, csv, or tsv."),
+    },
+)

@@ -18,7 +18,6 @@ Conventions:
 """
 
 HOST_CONFIGURATION_DIR = "src/host"
-PROVISION_DIR = "src/tools/provisioning"
 DEFAULT_SITE = "prod"
 GO_DIRS = [
     "src/services/analytics-service",
@@ -54,7 +53,6 @@ ANSIBLE_PLAYBOOK_TARGET = "//src/host:ansible_playbook_bin"
 ANSIBLE_COLLECTIONS_ARCHIVE_TARGET = "//src/host:ansible_collections_archive"
 SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
 DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-SOPS_SHIM = ("sops", "//src/tools/dev/binaries:sops")
 
 # Aspect-owned Vite+ toolchain, shared by the frontend build and controller
 # checks. This bypasses any shell `vp` so Bazel/Aspect actions use the
@@ -80,8 +78,8 @@ def inventory_check(ctx, site = DEFAULT_SITE):
     """Fail loud when the per-site Ansible inventory is missing.
 
     Any task that needs to reach the bare-metal node must call this first so
-    error messages point to the provision playbook rather than failing on a
-    deeper SSH/tunnel error.
+    error messages point to site allocation rather than failing on a deeper
+    SSH/tunnel error.
     """
     inv = ws_path(ctx, site_inventory_source(site))
     r = (ctx.std.process.command("test")
@@ -89,7 +87,7 @@ def inventory_check(ctx, site = DEFAULT_SITE):
         .spawn().wait())
     if r.code != 0:
         ctx.std.io.stderr.write(
-            "ERROR: " + site_inventory_source(site) + " not found. Run: aspect provision apply\n",
+            "ERROR: " + site_inventory_source(site) + " not found. Run: aspect site allocate --site=" + site + " --confirm\n",
         )
         return 1
     return 0
@@ -263,12 +261,8 @@ def path_env_with_bazel_tool_shims(ctx, shims, bin_dir = ".verself/tools/aspect/
             return None
         env["PATH"] = tool_dir + ":" + DEFAULT_PROCESS_PATH
         for name, _target in shims:
-            if name == "age-keygen":
-                env["VERSELF_AGE_KEYGEN_BIN"] = tool_dir + "/age-keygen"
             if name == "ansible-playbook":
                 env["VERSELF_ANSIBLE_PLAYBOOK_BIN"] = tool_dir + "/ansible-playbook"
-            if name == "sops":
-                env["VERSELF_SOPS_BIN"] = tool_dir + "/sops"
             if name == "tofu":
                 env["TOFU_BIN"] = tool_dir + "/tofu"
     return env
@@ -310,47 +304,6 @@ def host_ansible_env(ctx, tool_shims = None, include_collections = True, extra_e
         env["ANSIBLE_COLLECTIONS_PATH"] = collections
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env
-
-def host_playbook(ctx, site, playbook, extra_vars = None):
-    rc = inventory_check(ctx, site)
-    if rc != 0:
-        return rc
-    ansible_playbook = host_ansible_playbook(ctx)
-    if ansible_playbook == "":
-        return 1
-    env = host_ansible_env(ctx, tool_shims = [SOPS_SHIM])
-    if env == None:
-        return 1
-    ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
-    playbook_args = [
-        "-i",
-        ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/inventory.ini"),
-        "playbooks/" + playbook,
-        "-e",
-        "verself_site=" + site,
-    ]
-    if extra_vars != None:
-        for key, value in extra_vars.items():
-            playbook_args.extend(["-e", key + "=" + value])
-    return checked_spawn(
-        ctx,
-        ansible_playbook,
-        playbook_args,
-        cwd = ansible_dir,
-        env = env,
-        label = "ansible-playbook " + playbook + " --site " + site,
-    )
-
-def host_service_foundation(ctx, site):
-    registry = bazel_output_file(ctx, SPIRE_IDENTITY_REGISTRY_TARGET)
-    if registry == "":
-        return 1
-    return host_playbook(
-        ctx,
-        site,
-        "service-foundation.yml",
-        extra_vars = {"spire_registrations_file": registry},
-    )
 
 def require_arg(ctx, name, value):
     """Reject empty required string args with the same message shape Make used."""

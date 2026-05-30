@@ -1,6 +1,7 @@
 ---
 - name: "Operator access secrets"
-  hosts: all
+  hosts: infra
+  become: true
   gather_facts: false
   vars_files:
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
@@ -11,8 +12,11 @@
   tags:
     - always
   tasks:
-    - name: Load site secrets
-      ansible.builtin.import_tasks: tasks/site-secrets.yml
+    - name: Load OpenBao-backed operator access secrets
+      ansible.builtin.import_tasks: tasks/openbao-site-secrets.yml
+      vars:
+        site_secret_names:
+          - postgresql_admin_password
 
 - name: "Operator access handoff"
   hosts: infra

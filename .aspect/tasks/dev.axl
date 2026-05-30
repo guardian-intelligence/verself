@@ -2,8 +2,6 @@
 
 load(
     ".aspect/lib/helpers.axl",
-    "SOPS_SHIM",
-    "bazel_output_file",
     "bazel_run",
     "checked_spawn",
     "install_bazel_tool_shims",
@@ -11,11 +9,8 @@ load(
 )
 
 DEV_CONVENIENCE_SHIMS = [
-    ("age", "//src/tools/dev/binaries:age"),
-    ("age-keygen", "//src/tools/dev/binaries:age-keygen"),
     ("buildifier", "//src/tools/dev/binaries:buildifier"),
     ("gofumpt", "//src/tools/dev/binaries:gofumpt"),
-    SOPS_SHIM,
     ("uv", "//src/tools/dev/binaries:uv"),
     ("uvx", "//src/tools/dev/binaries:uvx"),
 ]
@@ -28,30 +23,6 @@ def _install_impl(ctx):
         if ctx.args.print_path:
             ctx.std.io.stdout.write(bin_dir + "\n")
     return 0
-
-def _sops_init_impl(ctx):
-    age_keygen = bazel_output_file(ctx, "//src/tools/dev/binaries:age-keygen")
-    if age_keygen == "":
-        return 1
-    sops = bazel_output_file(ctx, "//src/tools/dev/binaries:sops")
-    if sops == "":
-        return 1
-    return bazel_run(
-        ctx,
-        "//src/tools/dev/cmd/sops-init:sops-init",
-        [
-            "--repo-root",
-            ws_path(ctx),
-            "--site",
-            "prod",
-            "--age-keygen-bin",
-            age_keygen,
-            "--sops-bin",
-            sops,
-        ],
-        cwd = ws_path(ctx),
-        label = "sops-init",
-    )
 
 def _hooks_install_impl(ctx):
     existing_hooks_path = (ctx.std.process.command("git")
@@ -80,13 +51,6 @@ install = task(
         "print_path": args.boolean(default = False, description = "Print the shim directory that should lead PATH for local development."),
         "bin_dir": args.string(default = ".verself/tools/dev/bin", description = "Directory for --install-shims output."),
     },
-)
-
-sops_init = task(
-    implementation = _sops_init_impl,
-    name = "sops-init",
-    group = ["dev"],
-    summary = "Bootstrap SOPS + Age encryption.",
 )
 
 hooks_install = task(

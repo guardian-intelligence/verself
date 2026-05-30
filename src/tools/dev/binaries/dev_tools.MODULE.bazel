@@ -53,26 +53,6 @@ controller_http_file(
 )
 
 controller_http_file(
-    name = "dev_tool_sops",
-    darwin_arm64_downloaded_file_path = "sops-v3.12.2.darwin.arm64",
-    darwin_arm64_sha256 = "284edc64acf91ca249f227ffa2b444632656e4e1ac02baa26bed7051a7d51ce5",
-    darwin_arm64_url = "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.darwin.arm64",
-    linux_amd64_downloaded_file_path = "sops-v3.12.2.linux.amd64",
-    linux_amd64_sha256 = "14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998",
-    linux_amd64_url = "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64",
-)
-
-controller_http_file(
-    name = "dev_tool_age",
-    darwin_arm64_downloaded_file_path = "age-v1.3.1-darwin-arm64.tar.gz",
-    darwin_arm64_sha256 = "01120ea2cbf0463d4c6bd767f99f3271bbed1cdc8a9aa718a76ba1fe4f01998b",
-    darwin_arm64_url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-darwin-arm64.tar.gz",
-    linux_amd64_downloaded_file_path = "age-v1.3.1-linux-amd64.tar.gz",
-    linux_amd64_sha256 = "bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377",
-    linux_amd64_url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz",
-)
-
-controller_http_file(
     name = "dev_tool_uv",
     darwin_arm64_downloaded_file_path = "uv-aarch64-apple-darwin.tar.gz",
     darwin_arm64_sha256 = "2bc3d0c7bf2bd08325b1e170abac6f7e5b3346e1d4eab3370d17cefec934996f",
@@ -97,13 +77,6 @@ http_file(
     downloaded_file_path = "ansible-posix-2.1.0.tar.gz",
     sha256 = "5ff232cf69492a991f2a0990dbb23ef25a600b7e9209de6e33377a6ff08a8a29",
     url = "https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/ansible-posix-2.1.0.tar.gz",
-)
-
-http_file(
-    name = "dev_tool_ansible_collection_community_sops",
-    downloaded_file_path = "community-sops-2.2.7.tar.gz",
-    sha256 = "b16e3820cae113b044c967980333ea4574da5f705e1dcd7729140bce27f5673b",
-    url = "https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/community-sops-2.2.7.tar.gz",
 )
 
 http_file(

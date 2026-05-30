@@ -1,15 +1,4 @@
 ---
-- name: "Site secrets"
-  hosts: all
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - always
-  tasks:
-    - name: Load site secrets
-      ansible.builtin.import_tasks: tasks/site-secrets.yml
-
 - name: "Preflight: controller prerequisites"
   hosts: localhost
   connection: local
@@ -23,7 +12,7 @@
     - name: Run controller preflight checks
       ansible.builtin.import_tasks: tasks/controller-preflight.yml
 
-- name: "Host bootstrap foundation"
+- name: "Host base bootstrap"
   hosts: all
   become: true
   gather_facts: true
@@ -31,12 +20,41 @@
     - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
   tags:
     - bootstrap
-    - foundation
   roles:
     - role: base
       tags:
         - base
         - packages
+
+- name: "Host workload identity and secrets substrate"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - identity
+    - secrets
+  tasks:
+    - name: Assert SPIRE identity registry input
+      ansible.builtin.assert:
+        that:
+          - spire_registrations_file is defined
+          - spire_registrations_file | length > 0
+        fail_msg: "site.yml requires spire_registrations_file."
+
+    - name: Converge SPIRE host identity plane
+      ansible.builtin.include_role:
+        name: spire
+
+    - name: Converge service SPIRE identities
+      ansible.builtin.include_role:
+        name: spire_registrations
+
+    - name: Converge OpenBao host secrets plane
+      ansible.builtin.include_role:
+        name: openbao
 
 - name: "Nomad bootstrap"
   hosts: infra

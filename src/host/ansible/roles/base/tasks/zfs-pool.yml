@@ -1,0 +1,70 @@
+---
+- name: Assert ZFS pool declaration
+  ansible.builtin.assert:
+    that:
+      - base_zfs_pool.name is match('^[A-Za-z][A-Za-z0-9_-]*$')
+      - base_zfs_pool.devices is defined
+      - base_zfs_pool.devices | length > 0
+      - base_zfs_pool.mountpoint is defined
+      - base_zfs_pool.mountpoint is match('^/')
+    fail_msg: "base_zfs_pools entries require name, absolute mountpoint, and one or more devices."
+
+- name: Check ZFS pool {{ base_zfs_pool.name }}
+  ansible.builtin.command:
+    argv:
+      - zpool
+      - list
+      - -H
+      - -o
+      - name
+      - "{{ base_zfs_pool.name }}"
+  register: base_zfs_pool_status
+  changed_when: false
+  failed_when: base_zfs_pool_status.rc not in [0, 1]
+
+- name: Inspect devices for absent ZFS pool {{ base_zfs_pool.name }}
+  ansible.builtin.command:
+    argv:
+      - lsblk
+      - --json
+      - --output
+      - NAME,TYPE,MOUNTPOINT,FSTYPE
+      - "{{ item }}"
+  loop: "{{ base_zfs_pool.devices }}"
+  register: base_zfs_pool_device_inspections
+  changed_when: false
+  when: base_zfs_pool_status.rc != 0
+
+- name: Assert ZFS pool devices are unused whole disks
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | from_json).blockdevices | length == 1
+      - (item.stdout | from_json).blockdevices[0].type == "disk"
+      - ((item.stdout | from_json).blockdevices[0].children | default([])) | length == 0
+      - (((item.stdout | from_json).blockdevices[0].mountpoint | default("")) | string | length) == 0
+      - (((item.stdout | from_json).blockdevices[0].fstype | default("")) | string | length) == 0
+    fail_msg: "Refusing to create {{ base_zfs_pool.name }} on a device that is partitioned, mounted, or already formatted."
+  loop: "{{ base_zfs_pool_device_inspections.results | default([]) }}"
+  when: base_zfs_pool_status.rc != 0
+
+- name: Create ZFS pool {{ base_zfs_pool.name }}
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          'zpool',
+          'create',
+          '-o',
+          'ashift=' ~ (base_zfs_pool.ashift | default(12) | string),
+          '-O',
+          'atime=off',
+          '-O',
+          'compression=lz4',
+          '-O',
+          'mountpoint=' ~ base_zfs_pool.mountpoint,
+          base_zfs_pool.name,
+        ]
+        + base_zfs_pool.devices
+      }}
+  changed_when: true
+  when: base_zfs_pool_status.rc != 0

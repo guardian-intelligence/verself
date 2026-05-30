@@ -42,7 +42,6 @@ nomad_component(
         "//src/infrastructure-components/zitadel/cmd/zitadel-setup-apply:zitadel-setup-apply_nomad_artifact": "zitadel-setup-apply",
     },
     component = "zitadel",
-    deploy_phase = "platform",
     digest_inputs = [":role_sources"],
     job_id = "zitadel",
     job_spec = "nomad.hcl",
@@ -57,7 +56,6 @@ nomad_component(
         "//src/infrastructure-components/zitadel/cmd/auth-control-plane-apply:auth-control-plane-apply_nomad_artifact": "auth-control-plane-apply",
     },
     component = "auth_control_plane",
-    deploy_phase = "platform",
     # The credstore declaration carries the GitHub login OAuth credentials this
     # job reads. Treating it as a digest input re-runs idP provisioning whenever
     # those credentials change, since the job spec/artifact alone would not.

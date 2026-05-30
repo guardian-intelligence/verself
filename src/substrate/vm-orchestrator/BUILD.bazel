@@ -179,7 +179,6 @@ nomad_component(
         "//src/substrate/vm-orchestrator/guest-images:toolchain_images_bundle": "vm-orchestrator-toolchain-images",
     },
     component = "vm_orchestrator",
-    deploy_phase = "platform",
     job_id = "vm-orchestrator",
     job_spec = "nomad.hcl",
     provides = [

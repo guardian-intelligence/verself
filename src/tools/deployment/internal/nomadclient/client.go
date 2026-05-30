@@ -92,6 +92,26 @@ func (c *Client) Decide(ctx context.Context, spec *Spec) (Decision, error) {
 	curArtifact := cur.Meta["artifact_sha256"]
 	curSpec := cur.Meta["spec_sha256"]
 	noop := !stopped && curArtifact == spec.ArtifactDigest && curSpec == spec.SpecDigest
+	if noop && spec.JobType() == "batch" {
+		complete, err := c.batchJobVersionComplete(ctx, spec.JobID(), prevVersion)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return Decision{}, err
+		}
+		span.SetAttributes(attribute.Bool("nomad.batch_version_complete", complete))
+		noop = complete
+	}
+	if noop && spec.JobType() == "service" {
+		healthy, err := c.serviceJobVersionHealthy(ctx, spec.JobID(), prevVersion)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return Decision{}, err
+		}
+		span.SetAttributes(attribute.Bool("nomad.service_version_healthy", healthy))
+		noop = healthy
+	}
 
 	span.SetAttributes(
 		attribute.Bool("nomad.job.exists", true),
@@ -110,6 +130,56 @@ func (c *Client) Decide(ctx context.Context, spec *Spec) (Decision, error) {
 		PriorArtifactDigest: curArtifact,
 		PriorSpecDigest:     curSpec,
 	}, nil
+}
+
+func (c *Client) batchJobVersionComplete(ctx context.Context, jobID string, version uint64) (bool, error) {
+	allocs, _, err := c.api.Jobs().Allocations(jobID, true, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return false, fmt.Errorf("inspect %s allocations: %w", jobID, err)
+	}
+	return batchJobVersionComplete(allocs, version), nil
+}
+
+func (c *Client) serviceJobVersionHealthy(ctx context.Context, jobID string, version uint64) (bool, error) {
+	allocs, _, err := c.api.Jobs().Allocations(jobID, true, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return false, fmt.Errorf("inspect %s allocations: %w", jobID, err)
+	}
+	return serviceJobVersionHealthy(allocs, version), nil
+}
+
+func batchJobVersionComplete(allocs []*api.AllocationListStub, version uint64) bool {
+	var complete bool
+	for _, alloc := range allocs {
+		if alloc == nil || alloc.JobVersion != version {
+			continue
+		}
+		if alloc.ClientStatus == api.AllocClientStatusComplete {
+			complete = true
+			continue
+		}
+		if alloc.DesiredStatus == api.AllocDesiredStatusRun {
+			return false
+		}
+	}
+	return complete
+}
+
+func serviceJobVersionHealthy(allocs []*api.AllocationListStub, version uint64) bool {
+	var desired int
+	for _, alloc := range allocs {
+		if alloc == nil || alloc.JobVersion != version || alloc.DesiredStatus != api.AllocDesiredStatusRun {
+			continue
+		}
+		desired++
+		if alloc.ClientStatus != api.AllocClientStatusRunning {
+			return false
+		}
+		if alloc.DeploymentStatus != nil && alloc.DeploymentStatus.Healthy != nil && !*alloc.DeploymentStatus.Healthy {
+			return false
+		}
+	}
+	return desired > 0
 }
 
 // ParseJobHCL asks the target Nomad agent to parse an authored HCL2 jobspec.

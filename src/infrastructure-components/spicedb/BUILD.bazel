@@ -10,10 +10,12 @@ pkg_tar(
     name = "runtime_artifact",
     out = "spicedb-runtime.tar",
     files = {
+        "//src/infrastructure-components/spicedb/cmd/spicedb-node-runner": "bin/spicedb-node-runner",
         "@spicedb_tools//tools/spicedb": "bin/spicedb",
         "@spicedb_tools//tools/zed": "bin/zed",
     },
     modes = {
+        "bin/spicedb-node-runner": "0755",
         "bin/spicedb": "0755",
         "bin/zed": "0755",
     },
@@ -45,7 +47,6 @@ nomad_component(
         ":runtime_artifact": "spicedb-runtime",
     },
     component = "spicedb",
-    deploy_phase = "platform",
     digest_inputs = [":deploy_declarations"],
     job_id = "spicedb",
     job_spec = "nomad.hcl",

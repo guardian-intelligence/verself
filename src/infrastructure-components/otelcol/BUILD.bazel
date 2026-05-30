@@ -30,12 +30,14 @@ pkg_tar(
     name = "runtime_artifact",
     out = "otelcol-runtime.tar",
     files = {
+        "//src/infrastructure-components/otelcol/cmd/otelcol-node-runner": "bin/otelcol-node-runner",
         "@clickhouse_tools//tools/clickhouse": "bin/clickhouse",
         "@otelcol_tools//tools/otelcol-contrib": "bin/otelcol-contrib",
         "@otelcol_tools//tools/spiffe-helper": "bin/spiffe-helper",
     },
     modes = {
         "bin/clickhouse": "0755",
+        "bin/otelcol-node-runner": "0755",
         "bin/otelcol-contrib": "0755",
         "bin/spiffe-helper": "0755",
     },
@@ -76,7 +78,6 @@ nomad_component(
         ":runtime_artifact": "otelcol-runtime",
     },
     component = "otelcol",
-    deploy_phase = "platform",
     digest_inputs = [":deploy_declarations"],
     job_id = "otelcol",
     job_spec = "nomad.hcl",

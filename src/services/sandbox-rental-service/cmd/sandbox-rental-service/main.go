@@ -48,6 +48,8 @@ const (
 	sandboxAPIRequestBodyLimit  = 1 << 20
 	sandboxInternalWriteTimeout = 60 * time.Second
 	schedulerShutdownTimeout    = 10 * time.Second
+	siteDomainPath              = "/etc/verself/domain"
+	installationIDPath          = "/etc/verself/installation-id"
 )
 
 func main() {
@@ -90,10 +92,11 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4263")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "sandbox_rental")
-	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := cfg.RequireCredential("auth-audience")
-	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
+	siteDomain := cfg.RequireFile(siteDomainPath)
+	publicBaseURL := cfg.String("SANDBOX_PUBLIC_BASE_URL", "https://sandbox.api."+siteDomain)
+	authIssuerURL := cfg.URL("VERSELF_AUTH_ISSUER_URL", "https://"+siteDomain)
+	installationID := cfg.String("VERSELF_INSTALLATION_ID", cfg.RequireFile(installationIDPath))
 	temporalFrontendAddress := cfg.RequireString("SANDBOX_TEMPORAL_FRONTEND_ADDRESS")
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)
 	temporalRecurringTaskQueue := cfg.String("SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING", recurring.DefaultTaskQueue)

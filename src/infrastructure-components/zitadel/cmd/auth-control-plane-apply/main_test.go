@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -46,6 +48,60 @@ func TestProductTokenClaimsTargetBody(t *testing.T) {
 	}
 }
 
+func TestProductTokenClaimsEndpoint(t *testing.T) {
+	got := productTokenClaimsEndpoint(config{
+		claimsEndpointHost: "iam.api.gamma.verself.sh",
+		claimsActionPath:   "/internal/zitadel/actions/product-token-claims",
+	})
+	want := "https://iam.api.gamma.verself.sh/internal/zitadel/actions/product-token-claims"
+	if got != want {
+		t.Fatalf("endpoint = %q, want %q", got, want)
+	}
+}
+
+func TestReadOptionalSecret(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing")
+	if value, ok, err := readOptionalSecret(missing); err != nil || ok || value != "" {
+		t.Fatalf("missing optional secret = value:%q ok:%v err:%v", value, ok, err)
+	}
+	empty := filepath.Join(dir, "empty")
+	if err := os.WriteFile(empty, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if value, ok, err := readOptionalSecret(empty); err != nil || ok || value != "" {
+		t.Fatalf("empty optional secret = value:%q ok:%v err:%v", value, ok, err)
+	}
+	present := filepath.Join(dir, "present")
+	if err := os.WriteFile(present, []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if value, ok, err := readOptionalSecret(present); err != nil || !ok || value != "secret" {
+		t.Fatalf("present optional secret = value:%q ok:%v err:%v", value, ok, err)
+	}
+}
+
+func TestSiteDomainFromTrustDomain(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "spiffe prefix", input: "spiffe.gamma.verself.sh\n", want: "gamma.verself.sh"},
+		{name: "plain domain", input: "prod.verself.sh", want: "prod.verself.sh"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := siteDomainFromTrustDomain(tc.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("domain = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPasswordPolicyBodies(t *testing.T) {
 	complexity := desiredPasswordComplexityPolicyBody()
 	if complexity["minLength"] != 8 {
@@ -63,6 +119,63 @@ func TestPasswordPolicyBodies(t *testing.T) {
 	lockout := desiredLockoutPolicyBody()
 	if lockout["maxPasswordAttempts"] != 10 || lockout["maxOtpAttempts"] != 10 {
 		t.Fatalf("lockout body = %#v", lockout)
+	}
+}
+
+func TestOIDCConfigConverged(t *testing.T) {
+	var browserLogin oidcLoginVersion
+	browserLogin.LoginV2.BaseURI = "https://gamma.verself.sh"
+	browser := oidcAppConfig{
+		RedirectURIs:             []string{"https://gamma.verself.sh/api/v1/auth/callback"},
+		ResponseTypes:            []string{"OIDC_RESPONSE_TYPE_CODE"},
+		GrantTypes:               []string{"OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN", "OIDC_GRANT_TYPE_TOKEN_EXCHANGE"},
+		AuthMethodType:           "OIDC_AUTH_METHOD_TYPE_POST",
+		PostLogoutRedirectURIs:   []string{"https://gamma.verself.sh"},
+		AccessTokenType:          "OIDC_TOKEN_TYPE_JWT",
+		IDTokenUserinfoAssertion: true,
+		LoginVersion:             browserLogin,
+	}
+	if !browserOIDCConfigConverged(browser, []string{"https://gamma.verself.sh/api/v1/auth/callback"}, []string{"https://gamma.verself.sh"}, "https://gamma.verself.sh") {
+		t.Fatal("browser OIDC config should be converged")
+	}
+
+	var nativeLogin oidcLoginVersion
+	nativeLogin.LoginV2.BaseURI = "https://gamma.verself.sh"
+	native := oidcAppConfig{
+		ResponseTypes:            []string{"OIDC_RESPONSE_TYPE_CODE"},
+		GrantTypes:               []string{"OIDC_GRANT_TYPE_DEVICE_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"},
+		AppType:                  "OIDC_APP_TYPE_NATIVE",
+		AuthMethodType:           "OIDC_AUTH_METHOD_TYPE_NONE",
+		AccessTokenType:          "OIDC_TOKEN_TYPE_JWT",
+		IDTokenUserinfoAssertion: true,
+		LoginVersion:             nativeLogin,
+	}
+	if !nativeOIDCConfigConverged(native, "https://gamma.verself.sh") {
+		t.Fatal("native OIDC config should be converged")
+	}
+}
+
+func TestEnsureProjectRoleSkipsExistingRole(t *testing.T) {
+	var gotRequests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequests = append(gotRequests, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "POST /management/v1/projects/project/roles/_search":
+			writeJSON(t, w, map[string]any{"result": []map[string]any{{"key": "member"}}})
+		case "POST /management/v1/projects/project/roles":
+			t.Fatal("existing role should not be recreated")
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client := zitadelClient{baseURL: server.URL, token: "token", client: server.Client()}
+	if err := client.EnsureProjectRole(context.Background(), "project", "member", "Member"); err != nil {
+		t.Fatalf("EnsureProjectRole: %v", err)
+	}
+	wantRequests := []string{"POST /management/v1/projects/project/roles/_search"}
+	if !reflect.DeepEqual(gotRequests, wantRequests) {
+		t.Fatalf("requests = %#v, want %#v", gotRequests, wantRequests)
 	}
 }
 

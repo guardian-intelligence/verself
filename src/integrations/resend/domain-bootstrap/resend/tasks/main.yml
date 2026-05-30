@@ -8,7 +8,8 @@
 - name: Validate Resend API key is configured
   ansible.builtin.fail:
     msg: >-
-      resend_api_key is empty. Add it via: sops src/host/sites/{{ verself_site | default('prod') }}/secrets/external.sops.yml
+      resend_api_key is empty. Add it to OpenBao site configuration or set
+      RESEND_API_KEY for the controller-side email bootstrap playbook.
   when: resend_api_key | default('', true) | length == 0
 
 # --- Domain registration ---

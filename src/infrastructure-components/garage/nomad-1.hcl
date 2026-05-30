@@ -30,8 +30,13 @@ job "garage-1" {
       user = "root"
 
       config {
-        command = "/bin/sh"
-        args = ["-ec", "getent group garage >/dev/null || groupadd --system garage\nid -u garage >/dev/null 2>&1 || useradd --system --gid garage --home-dir /var/lib/garage-1 --shell /usr/sbin/nologin --no-create-home garage\ninstall -d -o garage -g garage -m 0750 /var/lib/garage-1 /var/lib/garage-1/data /var/lib/garage-1/meta /var/lib/garage-1/snapshots\nexec /usr/sbin/runuser -u garage --preserve-environment -- \"$${VERSELF_GARAGE_RUNTIME}/bin/garage\" -c /etc/garage/garage-1.toml server\n"]
+        command = "$${VERSELF_GARAGE_RUNTIME}/bin/garage-node-runner"
+        args = [
+          "--garage-bin",
+          "$${VERSELF_GARAGE_RUNTIME}/bin/garage",
+          "--instance=1",
+          "--nodes=0:3900:3901:3903,1:3910:3911:3913,2:3920:3921:3923",
+        ]
       }
 
       env {

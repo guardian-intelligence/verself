@@ -2,10 +2,10 @@
 
 Verself configuration and third-party integration state is managed through an
 environment-scoped catalog. The catalog records every external account,
-resource, credential, public variable, render target, consumer, verification
-step, and isolation exception. Secret values live in SOPS, OpenBao, provider
-vaults, or product KV stores according to their lifecycle. The catalog is the
-inventory that ties those stores together.
+resource, credential, public variable, destination, consumer, verification step,
+and isolation exception. Secret values live in OpenBao, provider-native vaults,
+or product KV stores according to lifecycle. The catalog is the inventory that
+ties those stores together.
 
 Stripe Projects is the provider provisioning and credential-handoff model for
 new integrations when the provider exists in the Projects catalog. A Stripe
@@ -19,7 +19,7 @@ one provider project per deployment environment.
 Verself site/environment
   -> provider project
   -> integration catalog entry
-  -> storage target
+  -> OpenBao site-config or runtime-secret target
   -> materialization target
   -> runtime consumer
   -> verification evidence
@@ -37,9 +37,8 @@ catalog marks a credential as a bootstrap exception.
 | `dev` | Per-operator provider projects or disposable provider resources. | Operator-local. No prod credentials. |
 
 Provider projects are a provisioning surface. Runtime services do not read
-`.env`, `.projects/vault`, or provider CLI caches. Deployment imports only
-catalog-approved credential names into SOPS or OpenBao, then host convergence
-materializes the runtime view.
+`.env`, `.projects/vault`, or provider CLI caches. Import tooling reads only
+catalog-approved names and writes them into OpenBao.
 
 Stripe Projects state lives in a per-site worktree:
 
@@ -69,9 +68,7 @@ Stripe can prompt for implicit installation.
 | Class | Stored in | Consumed by | Rule |
 | --- | --- | --- | --- |
 | `provider_project` | Stripe Projects vault or provider-native vault | Operator import tooling | Local handoff only. Never consumed by Nomad jobs. |
-| `site_provisioning` | `src/host/sites/<site>/secrets/provisioning.sops.yml` | Provisioning tasks | Host creation and DNS/bootstrap inputs. |
-| `site_host` | `src/host/sites/<site>/secrets/host.sops.yml` | Ansible host convergence | Host-local bootstrap and credstore inputs. |
-| `site_external` | `src/host/sites/<site>/secrets/external.sops.yml` | Service foundation import | Third-party runtime provider material before OpenBao import. |
+| `site_config` | OpenBao `site-config/config/<name>` | Host bootstrap, provider bootstrap, and runtime seed import | Environment-scoped site configuration. |
 | `host_credstore` | `/etc/credstore/...` | Host daemons and local jobs | Host file cache owned by Ansible. |
 | `runtime_secret` | OpenBao KV v2 | Workloads through secrets-service or direct runtime injection | Runtime application secret material. |
 | `product_kv` | secrets-service over OpenBao | Customers and product services | Customer/org-owned secrets and variables after deploy. |
@@ -84,14 +81,14 @@ handoff where the provider exists in the Projects catalog. It does not replace
 the Verself runtime secret system, service-owned provider clients, provider
 webhook verification, ClickHouse canaries, or host convergence.
 
-| Current surface | Stripe Projects role | Verself-owned role |
+| Surface | Stripe Projects role | Verself-owned role |
 | --- | --- | --- |
-| Resend or alternate email provider | Candidate provider provisioning and credential handoff. | Sender-domain DNS, runtime secret import, email-service canary. |
-| PostHog, Sentry, OpenRouter, queue/cache/search providers | Preferred provisioning path when selected. | Catalog validation, SOPS/OpenBao import, service config, canary evidence. |
+| Resend or alternate email provider | Candidate provider provisioning and credential handoff. | Sender-domain DNS, OpenBao import, email-service canary. |
+| PostHog, Sentry, OpenRouter, queue/cache/search providers | Preferred provisioning path when selected. | Catalog validation, OpenBao import, service config, canary evidence. |
 | Cloudflare DNS/TLS | Possible provider account linking for supported services. | Parent-zone DNS token remains a bootstrap exception when using `verself.sh`. |
 | Stripe Billing | No replacement for the product billing integration. | Billing service Stripe client, webhook endpoint, signing secret, catalog seed. |
 | GitHub App and hosted runners | Provider-specific setup. | GitHub App, webhooks, runner prefix/group, runtime secrets, canaries. |
-| Latitude bare-metal provisioning | Provider-specific setup. | OpenTofu/Ansible provisioning, inventory, host convergence. |
+| Latitude bare-metal provisioning | Provider-specific setup. | OpenTofu allocation, inventory, host convergence. |
 
 ## Bootstrap Exceptions
 
@@ -112,11 +109,10 @@ declarations that reference a `bootstrap_shared` credential fail validation.
 
 ## Catalog Entry
 
-The catalog should be checked in as structured data and validated by an Aspect
-task before deployment. Owner-local integration declarations can remain near the
-service that consumes them, but the global catalog must be able to answer
-"where is this value, who owns it, and how is it verified" without decrypting
-anything.
+The catalog is checked in as structured data and validated by an Aspect task
+before deployment. Owner-local integration declarations can remain near the
+service that consumes them, but the global catalog must answer where a value
+lives, who owns it, and how it is verified without revealing plaintext.
 
 ```yaml
 version: verself.integrations.v1
@@ -138,25 +134,23 @@ integrations:
         kind: api_key
         sensitivity: secret
         source: manual_provider_dashboard
-        target: runtime_secret
-        sops_bag: external
-        sops_key: stripe_secret_key
+        target: site_config
+        openbao_key: stripe_secret_key
         consumer: src/services/billing-service/deploy/runtime-secrets.yml
         rotation: provider_dashboard_roll_key
       - key: billing-service.stripe.webhook_secret
         kind: webhook_secret
         sensitivity: secret
         source: provider_webhook_endpoint
-        target: runtime_secret
-        sops_bag: external
-        sops_key: stripe_webhook_secret
+        target: site_config
+        openbao_key: stripe_webhook_secret
         consumer: src/services/billing-service/deploy/runtime-secrets.yml
     variables:
       - key: billing-service.stripe.publishable_key
         sensitivity: public
         source: provider_dashboard
-        target: site_vars
-        sops_key: stripe_publishable_key
+        target: site_config
+        openbao_key: stripe_publishable_key
     verification:
       - command: aspect deploy --site=gamma --sha=HEAD --post-deploy-checks=medium
       - evidence: billing Stripe webhook route accepts signed sandbox event
@@ -178,9 +172,8 @@ variable exported by `stripe projects env --pull`:
       - key: analytics-service.posthog.project_api_key
         source: stripe_projects_env
         external_name: POSTHOG_PROJECT_API_KEY
-        target: runtime_secret
-        sops_bag: external
-        sops_key: posthog_project_api_key
+        target: site_config
+        openbao_key: posthog_project_api_key
 ```
 
 ## Runbook: Add Configuration
@@ -193,10 +186,9 @@ variable exported by `stripe projects env --pull`:
 
 2. Choose the storage class.
 
-   Use `site_provisioning` for values needed before a host exists, `site_host`
-   for host bootstrap inputs, `site_external` for third-party runtime seed
-   material, `runtime_secret` for workload consumption, and `product_kv` for
-   customer/org-managed values after deploy.
+   Use `site_config` for host bootstrap inputs, provider bootstrap inputs, and
+   third-party runtime seed material; `runtime_secret` for workload
+   consumption; and `product_kv` for customer/org-managed values after deploy.
 
 3. Add or update the catalog entry.
 
@@ -209,18 +201,19 @@ variable exported by `stripe projects env --pull`:
 
    Runtime service credentials use owner-local `deploy/runtime-secrets.yml`.
    Host file credentials use owner-local `deploy/credstore.yml`. Public
-   provider variables belong in site vars or generated service config, never in
-   ad hoc Nomad literals when they vary by environment.
+   provider variables belong in site vars, OpenBao site config, or generated
+   service config, never in ad hoc Nomad literals when they vary by
+   environment.
 
 5. Populate the environment value.
 
    Prefer provider-project import. If the provider is not supported by Stripe
-   Projects, enter the value into the correct SOPS bag with `sops` and record
-   the manual source in the catalog.
+   Projects, write the value through `aspect site secret-put --site=<site>
+   --name=<openbao_key>`.
 
 6. Validate before deploy.
 
-   The target validator should reject undeclared SOPS keys, undeclared
+   The validator should reject undeclared OpenBao keys, undeclared
    `site_secret` references, runtime references to bootstrap-shared material,
    prod credentials in gamma or dev, and hardcoded environment-specific Nomad
    literals.
@@ -250,8 +243,8 @@ aspect integrations credentials reveal --site=gamma --key=<catalog-key> --reason
 aspect integrations credentials rotate --site=gamma --key=<catalog-key>
 ```
 
-`credentials pull` imports provider-project values into the catalog-approved
-SOPS targets without printing plaintext. It must reject unrecognized environment
+`credentials pull` imports provider-project values into catalog-approved OpenBao
+targets without printing plaintext. It must reject unrecognized environment
 variable names from `.env` or provider-project output.
 
 `credentials reveal` is break-glass. It requires a reason, writes an audit row,
@@ -260,8 +253,8 @@ reveal should require an explicit production flag and a Pomerium-authenticated
 operator session.
 
 Runtime services get credentials through OpenBao and secrets-service. They do
-not read provider project files, local `.env`, SOPS files, shell history,
-GitHub Actions secrets, or operator terminals.
+not read provider project files, local `.env`, shell history, GitHub Actions
+secrets, or operator terminals.
 
 ## Runbook: Add An Integration
 
@@ -290,7 +283,7 @@ GitHub Actions secrets, or operator terminals.
 
    `stripe projects env --pull` refreshes the local vault and `.env` file for
    local handoff. The import tool reads only catalog-approved variable names and
-   writes SOPS or OpenBao seed material.
+   writes OpenBao site-config material.
 
 5. Add service ownership.
 
@@ -308,15 +301,14 @@ GitHub Actions secrets, or operator terminals.
 7. Add rotation and revocation.
 
    Every credential has a documented rotation command, expected propagation
-   path, rollback behavior, and revocation action. Rotation must update the
+   path, propagation behavior, and revocation action. Rotation must update the
    provider project and Verself target store in one operator flow.
 
 ## Validator Rules
 
-The catalog validator should run in CI and before `aspect deploy`.
+The catalog validator should run in CI and before deploy.
 
-- Every SOPS key under `src/host/sites/*/secrets/*.sops.yml` has a catalog
-  entry.
+- Every OpenBao `site-config` key has a catalog entry.
 - Every `site_secret` reference in `deploy/runtime-secrets.yml` and
   `deploy/credstore.yml` resolves to exactly one catalog entry.
 - Every environment-specific Nomad literal is represented as site vars or a
@@ -324,9 +316,8 @@ The catalog validator should run in CI and before `aspect deploy`.
 - `bootstrap_shared` credentials are denied as runtime secret sources.
 - `prod`, `gamma`, and `dev` provider resource IDs do not match unless the
   catalog marks the value as intentionally shared.
-- Credential values are never logged, printed in JSON, or committed in
-  `.env`, `.projects/vault`, `.projects/cache`, SOPS plaintext, or generated
-  artifacts.
+- Credential values are never logged, printed in JSON, or committed in `.env`,
+  `.projects/vault`, `.projects/cache`, or generated artifacts.
 - Provider project imports reject unknown environment variable names.
 - Rotation metadata exists for all `secret`, `key_material`, and
   `webhook_secret` entries.
@@ -350,13 +341,13 @@ provider-specific canary evidence in ClickHouse.
 ## Initial Build Order
 
 1. Add the integration catalog schema and validator.
-2. Populate prod inventory from current SOPS, `runtime-secrets.yml`,
-   `credstore.yml`, provider tasks, site vars, and hardcoded provider config.
+2. Populate prod inventory from `runtime-secrets.yml`, `credstore.yml`,
+   provider tasks, site vars, and hardcoded provider config.
 3. Add gamma catalog entries and mark bootstrap-shared Cloudflare exceptions.
-4. Add SOPS skeleton generation for a new site from the catalog.
+4. Add OpenBao site-config import for a new site from the catalog.
 5. Add provider-project import for Stripe Projects-backed providers.
 6. Add credential reveal, rotation, and provider canary evidence.
-7. Gate `aspect deploy` on catalog validation for non-bootstrap deploys.
+7. Gate deploy automation on catalog validation for non-bootstrap deploys.
 
 ## References
 

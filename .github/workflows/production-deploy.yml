@@ -1,0 +1,37 @@
+name: Production deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Git SHA to deploy to production.
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy production
+    runs-on: verself-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Check out repository
+        uses: guardian-intelligence/verself/.github/actions/checkout@main
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+
+      - name: Bootstrap toolchain
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
+
+      - name: Validate production site
+        run: aspect site validate --site=prod --require-inventory
+
+      - name: Deploy production
+        run: aspect deploy --site=prod --sha="${{ inputs.sha }}"

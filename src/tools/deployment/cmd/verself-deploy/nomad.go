@@ -161,75 +161,45 @@ func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) 
 		}
 		intents = append(intents, intent)
 	}
-	intentsByPhase, err := groupIntentsByPhase(intents)
+	preArtifacts, garageArtifacts, err := artifactsForChangedIntents(plan, intents)
 	if err != nil {
 		return applyResults(intents), err
 	}
-	for _, phase := range deployPhaseOrder {
-		phaseIntents := intentsByPhase[phase]
-		artifacts, err := artifactsForIntents(plan, phaseIntents, phase != deployPhasePreArtifact)
-		if err != nil {
+	if len(preArtifacts) > 0 {
+		if err := publishPreArtifacts(ctx, rt, preArtifacts); err != nil {
 			return applyResults(intents), err
 		}
-		if err := applyNomadWave(ctx, rt, client, plan, phase, phaseIntents, artifacts); err != nil {
-			return applyResults(intents), err
-		}
+	}
+	if err := submitNomadJobs(ctx, rt, client, plan, intents, garageArtifacts); err != nil {
+		return applyResults(intents), err
 	}
 	results := applyResults(intents)
 	return results, nil
 }
 
-func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, plan *deployPlan, wave string, intents []jobApplyIntent, artifacts []deploymodel.Artifact) error {
-	if len(intents) == 0 {
-		return nil
-	}
-	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.wave",
-		trace.WithAttributes(
-			attribute.String("verself.deploy_wave", wave),
-			attribute.Int("verself.nomad_job_count", len(intents)),
-			attribute.Int("verself.changed_job_count", changedIntentCount(intents)),
-			attribute.Int("verself.artifact_count", len(artifacts)),
-		),
-	)
-	defer span.End()
-	started := time.Now()
-	recordDeployWaveStarted(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started)
-	preArtifacts, garageArtifacts := splitArtifactsByDelivery(artifacts)
-	if len(preArtifacts) > 0 {
-		if err := publishPreArtifacts(ctx, rt, preArtifacts); err != nil {
-			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return err
-		}
-	}
-	if len(garageArtifacts) > 0 {
-		if err := ensureArtifactOriginAvailable(ctx, rt, client); err != nil {
-			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return err
-		}
-		if err := publishArtifacts(ctx, rt, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, garageArtifacts); err != nil {
-			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return err
-		}
-	}
-	for i, intent := range intents {
+func submitNomadJobs(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, plan *deployPlan, intents []jobApplyIntent, garageArtifacts []deploymodel.Artifact) error {
+	artifactOriginReady := len(garageArtifacts) == 0
+	for _, intent := range intents {
 		if !intent.Changed {
 			continue
 		}
+		needsArtifactOrigin, err := intentNeedsArtifactOrigin(plan, intent)
+		if err != nil {
+			return err
+		}
+		if needsArtifactOrigin && !artifactOriginReady {
+			if err := ensureArtifactOriginAvailable(ctx, rt, client, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery); err != nil {
+				return err
+			}
+			if err := publishArtifacts(ctx, rt, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, garageArtifacts); err != nil {
+				return err
+			}
+			artifactOriginReady = true
+		}
 		if err := submitNomadJob(ctx, rt, client, plan, intent); err != nil {
-			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents[:i+1], artifacts, started, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("%s: %w", intent.Job.JobID, err)
 		}
 	}
-	recordDeployWaveSucceeded(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started)
-	span.SetStatus(codes.Ok, "")
 	return nil
 }
 
@@ -238,7 +208,6 @@ func prepareNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclie
 	defer span.End()
 	span.SetAttributes(
 		attribute.String("nomad.job_id", job.JobID),
-		attribute.String("verself.deploy_wave", job.DeployPhase),
 		attribute.StringSlice("verself.artifact_outputs", job.ArtifactOutputs),
 		attribute.String("verself.input_sha256", job.InputSHA256),
 	)
@@ -284,7 +253,6 @@ func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.submit",
 		trace.WithAttributes(
 			attribute.String("nomad.job_id", intent.Job.JobID),
-			attribute.String("verself.deploy_wave", intent.Job.DeployPhase),
 		),
 	)
 	defer span.End()
@@ -332,7 +300,6 @@ func rollbackNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadcli
 	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.rollback",
 		trace.WithAttributes(
 			attribute.String("nomad.job_id", intent.Job.JobID),
-			attribute.String("verself.deploy_wave", intent.Job.DeployPhase),
 			attribute.Bool("nomad.prior_exists", intent.Decision.PriorExists),
 			attribute.Int64("nomad.target_version", int64FromUint64(intent.Decision.PriorVersion, "prior job version")),
 			attribute.String("error.message", truncateError(cause)),
@@ -383,52 +350,170 @@ func rollbackNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadcli
 	return nil
 }
 
-func groupIntentsByPhase(intents []jobApplyIntent) (map[string][]jobApplyIntent, error) {
-	byPhase := map[string][]jobApplyIntent{}
-	for _, intent := range intents {
-		if !validDeployPhase(intent.Job.DeployPhase) {
-			return nil, fmt.Errorf("%s: unsupported deploy phase %q", intent.Job.JobID, intent.Job.DeployPhase)
-		}
-		byPhase[intent.Job.DeployPhase] = append(byPhase[intent.Job.DeployPhase], intent)
-	}
-	return byPhase, nil
-}
-
-func ensureArtifactOriginAvailable(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client) error {
+func ensureArtifactOriginAvailable(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, delivery deploymodel.ArtifactDelivery) error {
 	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.artifacts.origin_health")
 	defer span.End()
 
-	services, err := client.ListServiceAddresses(ctx)
+	artifactOrigin, err := waitForArtifactOriginServices(ctx, client, 30*time.Second)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	var garageS3 int
-	for _, service := range services {
-		if service.Name == "garage-s3" {
-			garageS3++
-		}
-	}
-	span.SetAttributes(attribute.Int("verself.artifact_origin.garage_s3_count", garageS3))
-	if garageS3 == 0 {
-		err := fmt.Errorf("artifact origin is unavailable: no healthy garage-s3 Nomad service registrations")
+	span.SetAttributes(attribute.Int("verself.artifact_origin.service_count", artifactOrigin))
+	loaded, err := nomadGetterCredentialsLoaded(ctx, rt, delivery.GetterCredentials)
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
+	}
+	span.SetAttributes(attribute.Bool("verself.artifact_origin.nomad_credentials_loaded", loaded))
+	if !loaded {
+		if err := restartNomadForArtifactCredentials(ctx, rt); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		span.SetAttributes(attribute.Bool("verself.artifact_origin.nomad_restarted_for_credentials", true))
+		if _, err := waitForArtifactOriginServices(ctx, client, 60*time.Second); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		loaded, err = nomadGetterCredentialsLoaded(ctx, rt, delivery.GetterCredentials)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if !loaded {
+			err := fmt.Errorf("nomad artifact getter credentials were not loaded from %s after restart", delivery.GetterCredentials.EnvironmentFile)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
 	}
 	span.SetStatus(codes.Ok, "")
 	return nil
 }
 
-func changedIntentCount(intents []jobApplyIntent) int {
-	count := 0
-	for _, intent := range intents {
-		if intent.Changed {
+func waitForArtifactOriginServices(ctx context.Context, client *nomadclient.Client, timeout time.Duration) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	var lastErr error
+	for {
+		count, err := artifactOriginServiceCount(ctx, client)
+		if err == nil && count > 0 {
+			return count, nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		select {
+		case <-ctx.Done():
+			if lastErr != nil {
+				return 0, fmt.Errorf("artifact origin is unavailable: %w", lastErr)
+			}
+			return 0, fmt.Errorf("artifact origin is unavailable: no healthy artifact-origin Nomad service registrations")
+		case <-ticker.C:
+		}
+	}
+}
+
+func artifactOriginServiceCount(ctx context.Context, client *nomadclient.Client) (int, error) {
+	services, err := client.ListServiceAddresses(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int
+	for _, service := range services {
+		if service.Name == "artifact-origin" {
 			count++
 		}
 	}
-	return count
+	return count, nil
+}
+
+func nomadGetterCredentialsLoaded(ctx context.Context, rt *runtime.Runtime, creds deploymodel.Credentials) (bool, error) {
+	if creds.EnvironmentFile == "" || creds.AccessKeyIDEnv == "" || creds.SecretAccessKeyEnv == "" {
+		return false, fmt.Errorf("artifact getter credentials require environment_file, access_key_id_env, and secret_access_key_env")
+	}
+	if !validEnvironmentName(creds.AccessKeyIDEnv) || !validEnvironmentName(creds.SecretAccessKeyEnv) {
+		return false, fmt.Errorf("artifact getter credential env vars must be shell-safe names")
+	}
+	script := `env_file="$1"
+access="$2"
+secret="$3"
+if [ ! -s "$env_file" ]; then
+  echo missing
+  exit 0
+fi
+pid="$(systemctl show -p MainPID --value nomad || true)"
+if [ -z "$pid" ] || [ "$pid" = "0" ]; then
+  echo missing
+  exit 0
+fi
+if tr '\000' '\n' < "/proc/$pid/environ" | grep -q "^$access=" &&
+   tr '\000' '\n' < "/proc/$pid/environ" | grep -q "^$secret="; then
+  echo loaded
+else
+  echo missing
+fi`
+	quotedScript, err := shellQuote(script)
+	if err != nil {
+		return false, err
+	}
+	quotedFile, err := shellQuote(creds.EnvironmentFile)
+	if err != nil {
+		return false, err
+	}
+	quotedAccess, err := shellQuote(creds.AccessKeyIDEnv)
+	if err != nil {
+		return false, err
+	}
+	quotedSecret, err := shellQuote(creds.SecretAccessKeyEnv)
+	if err != nil {
+		return false, err
+	}
+	out, err := rt.SSH.Exec(ctx, "sudo /bin/sh -eu -c "+quotedScript+" -- "+quotedFile+" "+quotedAccess+" "+quotedSecret)
+	if err != nil {
+		return false, fmt.Errorf("inspect Nomad artifact getter credentials: %w", err)
+	}
+	switch strings.TrimSpace(string(out)) {
+	case "loaded":
+		return true, nil
+	case "missing":
+		return false, nil
+	default:
+		return false, fmt.Errorf("unexpected Nomad artifact credential probe output")
+	}
+}
+
+func restartNomadForArtifactCredentials(ctx context.Context, rt *runtime.Runtime) error {
+	if _, err := rt.SSH.Exec(ctx, "sudo /bin/systemctl restart nomad"); err != nil {
+		return fmt.Errorf("restart Nomad after artifact credentials were generated: %w", err)
+	}
+	return nil
+}
+
+func validEnvironmentName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for idx, r := range name {
+		if idx == 0 {
+			if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+				return false
+			}
+			continue
+		}
+		if r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func applyResults(intents []jobApplyIntent) []jobApplyResult {
@@ -439,10 +524,10 @@ func applyResults(intents []jobApplyIntent) []jobApplyResult {
 	return results
 }
 
-func artifactsForIntents(plan *deployPlan, intents []jobApplyIntent, changedOnly bool) ([]deploymodel.Artifact, error) {
+func artifactsForChangedIntents(plan *deployPlan, intents []jobApplyIntent) ([]deploymodel.Artifact, []deploymodel.Artifact, error) {
 	outputs := map[string]bool{}
 	for _, intent := range intents {
-		if changedOnly && !intent.Changed {
+		if !intent.Changed {
 			continue
 		}
 		for _, output := range intent.Job.ArtifactOutputs {
@@ -450,7 +535,7 @@ func artifactsForIntents(plan *deployPlan, intents []jobApplyIntent, changedOnly
 		}
 	}
 	if len(outputs) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	artifacts := make([]deploymodel.Artifact, 0, len(outputs))
 	for _, artifact := range plan.Artifacts {
@@ -466,9 +551,27 @@ func artifactsForIntents(plan *deployPlan, intents []jobApplyIntent, changedOnly
 			missing = append(missing, output)
 		}
 		sortStrings(missing)
-		return nil, fmt.Errorf("nomad jobs reference unknown artifacts: %s", strings.Join(missing, ", "))
+		return nil, nil, fmt.Errorf("nomad jobs reference unknown artifacts: %s", strings.Join(missing, ", "))
 	}
-	return artifacts, nil
+	preArtifacts, garageArtifacts := splitArtifactsByDelivery(artifacts)
+	return preArtifacts, garageArtifacts, nil
+}
+
+func intentNeedsArtifactOrigin(plan *deployPlan, intent jobApplyIntent) (bool, error) {
+	artifactByOutput := make(map[string]deploymodel.Artifact, len(plan.Artifacts))
+	for _, artifact := range plan.Artifacts {
+		artifactByOutput[artifact.Output] = artifact
+	}
+	for _, output := range intent.Job.ArtifactOutputs {
+		artifact, ok := artifactByOutput[output]
+		if !ok {
+			return false, fmt.Errorf("%s references unknown artifact %q", intent.Job.JobID, output)
+		}
+		if !isPreArtifact(artifact) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func splitArtifactsByDelivery(artifacts []deploymodel.Artifact) ([]deploymodel.Artifact, []deploymodel.Artifact) {
@@ -482,6 +585,10 @@ func splitArtifactsByDelivery(artifacts []deploymodel.Artifact) ([]deploymodel.A
 		garageArtifacts = append(garageArtifacts, artifact)
 	}
 	return preArtifacts, garageArtifacts
+}
+
+func isPreArtifact(artifact deploymodel.Artifact) bool {
+	return strings.HasPrefix(artifact.Key, preArtifactRemoteRoot+"/")
 }
 
 func sortStrings(values []string) {

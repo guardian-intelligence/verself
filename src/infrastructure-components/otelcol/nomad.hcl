@@ -25,6 +25,32 @@ job "otelcol" {
       }
     }
 
+    task "prepare-storage" {
+      driver = "raw_exec"
+      user = "root"
+
+      artifact {
+        source = "verself-artifact://otelcol-runtime"
+        destination = "local"
+        chown = true
+      }
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "local/bin/otelcol-node-runner"
+        args = ["prepare"]
+      }
+
+      resources {
+        cpu = 50
+        memory = 64
+      }
+    }
+
     task "clickhouse-spiffe-helper" {
       driver = "raw_exec"
       user = "otelcol"

@@ -24,6 +24,12 @@ job "clickhouse-migrations" {
         args = ["-euc", <<-EOT
 client=/opt/verself/profile/bin/clickhouse-client
 test -x "$client"
+trust_domain="$(cat /etc/verself/spiffe-trust-domain)"
+test -n "$trust_domain"
+"$client" \
+  --config-file /etc/clickhouse-client/operator.xml \
+  --user clickhouse_operator \
+  --query 'CREATE DATABASE IF NOT EXISTS verself'
 applied=0
 for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do
   if [ ! -f "$migration" ]; then
@@ -31,12 +37,15 @@ for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do
   fi
   applied=$((applied + 1))
   echo "clickhouse-migrations: applying $migration" >&2
+  rendered="$(mktemp)"
+  sed "s#spiffe://spiffe.verself.sh/#spiffe://$trust_domain/#g" "$migration" > "$rendered"
   "$client" \
     --config-file /etc/clickhouse-client/operator.xml \
     --user clickhouse_operator \
     --database verself \
     --multiquery \
-    --queries-file "$migration"
+    --queries-file "$rendered"
+  rm -f "$rendered"
 done
 echo "clickhouse-migrations: applied $applied delta migration files" >&2
 EOT

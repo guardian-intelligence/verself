@@ -15,12 +15,36 @@ job "grafana" {
       }
     }
 
+    task "prepare" {
+      driver = "raw_exec"
+      user = "root"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "$${VERSELF_GRAFANA_RUNTIME}/bin/grafana-node-runner"
+        args = ["prepare"]
+      }
+
+      env {
+        VERSELF_GRAFANA_RUNTIME = "verself-artifact://grafana-runtime"
+      }
+
+      resources {
+        cpu = 100
+        memory = 128
+      }
+    }
+
     task "clickhouse-spiffe-helper" {
       driver = "raw_exec"
       user = "grafana"
 
       lifecycle {
-        hook = "prestart"
+        hook = "poststart"
         sidecar = true
       }
 
@@ -44,8 +68,8 @@ job "grafana" {
       user = "grafana"
 
       config {
-        command = "/bin/sh"
-        args = ["-ec", "set -a\n. /etc/credstore/grafana/grafana.env\nset +a\nexport GF_PATHS_PLUGINS=\"$VERSELF_GRAFANA_RUNTIME/plugins\"\nexec \"$VERSELF_GRAFANA_RUNTIME/grafana/bin/grafana\" server --homepath \"$VERSELF_GRAFANA_RUNTIME/grafana\" --config /etc/grafana/grafana.ini\n"]
+        command = "$${VERSELF_GRAFANA_RUNTIME}/bin/grafana-node-runner"
+        args = ["serve"]
       }
 
       env {
@@ -81,8 +105,8 @@ job "grafana" {
       }
 
       config {
-        command = "/bin/sh"
-        args = ["-ec", "set -a\n. /etc/credstore/grafana/grafana.env\nset +a\nexport GF_PATHS_PLUGINS=\"$VERSELF_GRAFANA_RUNTIME/plugins\"\nlast_status=1\nfor attempt in $(seq 1 30); do\n  if \"$VERSELF_GRAFANA_RUNTIME/grafana/bin/grafana\" cli --homepath \"$VERSELF_GRAFANA_RUNTIME/grafana\" --config /etc/grafana/grafana.ini admin reset-admin-password \"$GF_SECURITY_ADMIN_PASSWORD\"; then\n    exit 0\n  fi\n  last_status=$?\n  sleep 1\ndone\nexit \"$last_status\"\n"]
+        command = "$${VERSELF_GRAFANA_RUNTIME}/bin/grafana-node-runner"
+        args = ["reset-admin-password"]
       }
 
       env {

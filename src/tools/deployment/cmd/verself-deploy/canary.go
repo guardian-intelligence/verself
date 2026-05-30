@@ -187,7 +187,6 @@ func loadCanaryJobs(ctx context.Context, repoRoot, site, componentFilter, jobFil
 		jobs = append(jobs, deploymodel.NomadJob{
 			JobID:              component.JobID,
 			Component:          component.Component,
-			DeployPhase:        component.DeployPhase,
 			DependsOn:          append([]string(nil), component.Requires...),
 			PostDeployCanaries: append([]deploymodel.PostDeployCanary(nil), component.PostDeployCanaries...),
 		})
@@ -246,7 +245,6 @@ func runPostDeployCanaries(ctx context.Context, rt *runtime.Runtime, repoRoot, s
 		trace.WithAttributes(
 			attribute.String("verself.component", job.Component),
 			attribute.String("nomad.job_id", job.JobID),
-			attribute.String("verself.deploy_wave", job.DeployPhase),
 			attribute.String("verself.canary_selection", selection),
 			attribute.Int("verself.canary_count", len(selected)),
 		),

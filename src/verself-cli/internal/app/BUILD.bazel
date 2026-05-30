@@ -23,18 +23,11 @@ go_library(
     ],
     importpath = "github.com/verself/verself-cli/internal/app",
     visibility = ["//visibility:public"],
-    deps = [
-        "//src/sdks/go/verself",
-        "@io_bazel_rules_go//go/runfiles",
-    ],
+    deps = ["//src/sdks/go/verself"],
 )
 
 go_test(
     name = "app_test",
     srcs = ["app_test.go"],
-    data = [
-        "//src/tools/dev/binaries:age-keygen",
-        "//src/tools/dev/binaries:sops",
-    ],
     embed = [":app"],
 )

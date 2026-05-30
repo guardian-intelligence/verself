@@ -21,27 +21,8 @@ import (
 const (
 	artifactSourcePrefix = "verself-artifact://"
 
-	nomadComponentSchemaVersion = 5
-
-	deployPhasePreArtifact = "pre_artifact"
-	deployPhasePlatform    = "platform"
-	deployPhaseProduct     = "product"
-	deployPhaseEdge        = "edge"
+	nomadComponentSchemaVersion = 6
 )
-
-var deployPhaseOrder = []string{
-	deployPhasePreArtifact,
-	deployPhasePlatform,
-	deployPhaseProduct,
-	deployPhaseEdge,
-}
-
-var deployPhaseRank = map[string]int{
-	deployPhasePreArtifact: 0,
-	deployPhasePlatform:    1,
-	deployPhaseProduct:     2,
-	deployPhaseEdge:        3,
-}
 
 type deployPlan struct {
 	Identity         identity.Snapshot
@@ -74,7 +55,6 @@ type nomadComponentDescriptor struct {
 	SchemaVersion      int                            `json:"schema_version"`
 	Label              string                         `json:"label"`
 	Component          string                         `json:"component"`
-	DeployPhase        string                         `json:"deploy_phase"`
 	JobID              string                         `json:"job_id"`
 	JobSpec            string                         `json:"job_spec"`
 	JobSpecPath        string                         `json:"job_spec_path"`
@@ -176,6 +156,16 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if raw.ArtifactDelivery.Bucket == "" || raw.ArtifactDelivery.GetterSourcePrefix == "" || raw.ArtifactDelivery.KeyPrefix == "" {
 		return siteConfig{}, fmt.Errorf("%s: artifact_delivery requires bucket, getter_source_prefix, and key_prefix", path)
 	}
+	if raw.ArtifactDelivery.GetterCredentials.EnvironmentFile == "" ||
+		raw.ArtifactDelivery.GetterCredentials.AccessKeyIDEnv == "" ||
+		raw.ArtifactDelivery.GetterCredentials.SecretAccessKeyEnv == "" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.getter_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
+	}
+	if raw.ArtifactDelivery.PublisherCredentials.EnvironmentFile == "" ||
+		raw.ArtifactDelivery.PublisherCredentials.AccessKeyIDEnv == "" ||
+		raw.ArtifactDelivery.PublisherCredentials.SecretAccessKeyEnv == "" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.publisher_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
+	}
 	if raw.ArtifactDelivery.ChecksumAlgorithm != "sha256" {
 		return siteConfig{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", path)
 	}
@@ -208,9 +198,6 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 		}
 		if component.Label == "" || component.Component == "" || component.JobID == "" || component.JobSpec == "" || component.JobSpecPath == "" {
 			return nil, fmt.Errorf("%s: component descriptor requires label, component, job_id, job_spec, and job_spec_path", path)
-		}
-		if !validDeployPhase(component.DeployPhase) {
-			return nil, fmt.Errorf("%s: deploy_phase must be one of %s", path, strings.Join(deployPhaseOrder, ", "))
 		}
 		if component.UnitID == "" {
 			component.UnitID = component.JobID
@@ -305,6 +292,19 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 				depJobs[provider] = true
 			}
 		}
+		if provider := providerByResource["host:credstore"]; provider != "" && provider != jobID && !providesResource(component, "clickhouse:host-tools") {
+			depJobs[provider] = true
+		}
+		if len(component.Artifacts) > 0 {
+			provider := providerByResource["artifact-origin"]
+			if provider == "" {
+				return fmt.Errorf("%s declares Garage-backed artifacts but no component provides artifact-origin", jobID)
+			}
+			if provider == jobID {
+				return fmt.Errorf("%s cannot provide artifact-origin with Garage-backed artifacts", jobID)
+			}
+			depJobs[provider] = true
+		}
 		deps := make([]string, 0, len(depJobs))
 		for dep := range depJobs {
 			deps = append(deps, dep)
@@ -316,10 +316,6 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 			}
 			if dep == jobID {
 				return fmt.Errorf("%s depends on itself", jobID)
-			}
-			depComponent := byJobID[dep]
-			if deployPhaseRank[depComponent.DeployPhase] > deployPhaseRank[component.DeployPhase] {
-				return fmt.Errorf("%s in deploy_phase=%s requires %s in later deploy_phase=%s", jobID, component.DeployPhase, dep, depComponent.DeployPhase)
 			}
 			if err := visit(dep, append(stack, jobID)); err != nil {
 				return err
@@ -341,6 +337,15 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 		}
 	}
 	return out, nil
+}
+
+func providesResource(component nomadComponentDescriptor, resource string) bool {
+	for _, provided := range component.Provides {
+		if provided == resource {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoRoot string, components []nomadComponentDescriptor, bindings map[string]artifactBinding, runKey, sha string) ([]deploymodel.NomadJob, error) {
@@ -382,7 +387,6 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 		jobs = append(jobs, deploymodel.NomadJob{
 			JobID:              component.JobID,
 			Component:          component.Component,
-			DeployPhase:        component.DeployPhase,
 			DependsOn:          append([]string(nil), component.Requires...),
 			ArtifactOutputs:    artifactOutputs,
 			PostDeployCanaries: append([]deploymodel.PostDeployCanary(nil), component.PostDeployCanaries...),
@@ -434,11 +438,6 @@ func componentInputDigest(repoRoot string, component nomadComponentDescriptor) (
 		return "", fmt.Errorf("encode component digest inputs: %w", err)
 	}
 	return deploymodel.SHA256(body), nil
-}
-
-func validDeployPhase(value string) bool {
-	_, ok := deployPhaseRank[value]
-	return ok
 }
 
 func sortedArtifactOutputs(seen map[string]bool) []string {

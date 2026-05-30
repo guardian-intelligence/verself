@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/nomad/api"
@@ -94,6 +95,112 @@ func TestStampNomadSpecMetaIncludesInputDigest(t *testing.T) {
 	}
 	if firstSpec == secondSpec {
 		t.Fatalf("spec digest did not change after input digest changed: %s", firstSpec)
+	}
+}
+
+func TestOrderNomadComponentsAddsArtifactOriginDependency(t *testing.T) {
+	ordered, err := orderNomadComponents([]nomadComponentDescriptor{
+		{
+			JobID:     "web",
+			Component: "web",
+			Requires:  []string{"postgres:server"},
+			Artifacts: []nomadDescriptorArtifact{{Label: "//src/web:bin", Output: "web", Path: "/tmp/web"}},
+		},
+		{
+			JobID:     "postgres",
+			Component: "postgres",
+			Provides:  []string{"postgres:server"},
+		},
+		{
+			JobID:     "garage",
+			Component: "garage",
+			Provides:  []string{"artifact-origin"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("order: %v", err)
+	}
+	got := make([]string, 0, len(ordered))
+	for _, component := range ordered {
+		got = append(got, component.JobID)
+	}
+	want := []string{"garage", "postgres", "web"}
+	if len(got) != len(want) {
+		t.Fatalf("ordered len = %d, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ordered[%d] = %q, want %q; full order: %v", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestOrderNomadComponentsAddsCredentialStoreDependency(t *testing.T) {
+	ordered, err := orderNomadComponents([]nomadComponentDescriptor{
+		{
+			JobID:     "web",
+			Component: "web",
+			Artifacts: []nomadDescriptorArtifact{{Label: "//src/web:bin", Output: "web", Path: "/tmp/web"}},
+		},
+		{
+			JobID:     "clickhouse-host-install",
+			Component: "clickhouse_host_install",
+			Provides:  []string{"clickhouse:host-tools"},
+		},
+		{
+			JobID:     "credential-store",
+			Component: "credential_store",
+			Provides:  []string{"host:credstore"},
+			Requires:  []string{"clickhouse:host-tools"},
+		},
+		{
+			JobID:     "garage",
+			Component: "garage",
+			Provides:  []string{"artifact-origin"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("order: %v", err)
+	}
+	got := make([]string, 0, len(ordered))
+	for _, component := range ordered {
+		got = append(got, component.JobID)
+	}
+	want := []string{"clickhouse-host-install", "credential-store", "garage", "web"}
+	if len(got) != len(want) {
+		t.Fatalf("ordered len = %d, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ordered[%d] = %q, want %q; full order: %v", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestOrderNomadComponentsRequiresArtifactOriginForGarageArtifacts(t *testing.T) {
+	_, err := orderNomadComponents([]nomadComponentDescriptor{
+		{
+			JobID:     "web",
+			Component: "web",
+			Artifacts: []nomadDescriptorArtifact{{Label: "//src/web:bin", Output: "web", Path: "/tmp/web"}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "no component provides artifact-origin") {
+		t.Fatalf("err = %v, want missing artifact-origin", err)
+	}
+}
+
+func TestOrderNomadComponentsRejectsArtifactOriginProviderWithGarageArtifacts(t *testing.T) {
+	_, err := orderNomadComponents([]nomadComponentDescriptor{
+		{
+			JobID:     "garage",
+			Component: "garage",
+			Provides:  []string{"artifact-origin"},
+			Artifacts: []nomadDescriptorArtifact{{Label: "//src/garage:bin", Output: "garage", Path: "/tmp/garage"}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot provide artifact-origin with Garage-backed artifacts") {
+		t.Fatalf("err = %v, want artifact-origin provider rejection", err)
 	}
 }
 

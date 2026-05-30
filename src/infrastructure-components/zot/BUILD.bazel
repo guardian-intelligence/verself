@@ -11,10 +11,12 @@ pkg_tar(
     files = {
         "@zot_tools//tools/zot": "bin/zot",
         "//src/infrastructure-components/zot/cmd/zot-htpasswd:zot-htpasswd": "bin/zot-htpasswd",
+        "//src/infrastructure-components/zot/cmd/zot-node-runner:zot-node-runner": "bin/zot-node-runner",
     },
     modes = {
         "bin/zot": "0755",
         "bin/zot-htpasswd": "0755",
+        "bin/zot-node-runner": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -44,9 +46,9 @@ nomad_component(
         ":runtime_artifact": "zot-runtime",
     },
     component = "zot",
-    deploy_phase = "platform",
     job_id = "zot",
     job_spec = "nomad.hcl",
     provides = ["zot:http"],
+    requires = ["host:credstore"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

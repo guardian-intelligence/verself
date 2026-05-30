@@ -1,31 +1,21 @@
 # Provisioning Tools
 
-Provisioning tools own the bare-metal allocation boundary:
+Provisioning is intentionally narrow: this directory contains the OpenTofu
+module that allocates bare-metal hosts and optional recovery storage. The
+operator-facing command surface is:
 
-- `terraform/` contains the Latitude.sh OpenTofu project.
-- `ansible/` contains the local controller playbooks that apply or destroy
-  that OpenTofu state and write the host inventory consumed by render,
-  substrate, and deploy commands.
-
-Optional Cloudflare R2 backup infrastructure is also provisioned here when the
-site tfvars set `r2_backups_enabled = true`. The Cloudflare provider reads
-`CLOUDFLARE_API_TOKEN` from `src/host/sites/<site>/secrets/provisioning.sops.yml`
-key `cloudflare_api_token`, with a controller environment variable fallback.
-OpenTofu provisions the recovery bucket and bucket lock only. Runtime and
-restore credentials are owned by `object-storage-service` and the offline
-recovery procedure so that OpenTofu state does not contain live R2 object
-credentials.
-
-`aspect provision destroy` tears down bare-metal resources only. Recovery
-storage has Terraform `prevent_destroy` enabled and must be retired by a
-separate recovery-data decommissioning procedure.
-
-Use the explicit command surface:
-
-```bash
-aspect provision apply
-aspect provision destroy --confirm
+```text
+aspect site allocate --site=<site> --confirm
+aspect site destroy --site=<site> --confirm
 ```
 
-Provisioning stops after inventory exists. Host and daemon convergence is
-`src/host/`; application rollout is Nomad through `aspect deploy`.
+Provider bootstrap credentials are controller environment variables, not repo
+secrets:
+
+- `LATITUDESH_AUTH_TOKEN`
+- `CLOUDFLARE_API_TOKEN` when the site tfvars enable Cloudflare R2 recovery
+  storage
+
+`aspect site allocate` uses site-local OpenTofu state under `.verself/` and
+writes `src/host/sites/<site>/inventory.ini`. Host convergence is
+`aspect site bootstrap`; service deployment is Nomad through `aspect deploy`.

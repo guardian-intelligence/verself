@@ -48,6 +48,7 @@ nomad_component(
         "garage:admin",
         "garage:s3",
         "nomad:job:secrets-service",
+        "object-storage:credentials",
         "postgres:server",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],

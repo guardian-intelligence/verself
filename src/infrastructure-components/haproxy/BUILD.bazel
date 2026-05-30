@@ -7,14 +7,42 @@ exports_files(["tools.lock.json"])
 
 genrule(
     name = "haproxy_bin",
-    srcs = ["@haproxy_tool_haproxy_deb//file"],
-    outs = ["haproxy"],
+    srcs = [
+        "@haproxy_tool_haproxy_deb//file",
+        "@haproxy_tool_libssl_awslc_deb//file",
+    ],
+    outs = [
+        "haproxy",
+        "libcrypto.so",
+        "libcrypt.so.1",
+        "libgcc_s.so.1",
+        "libjemalloc.so.2",
+        "liblua5.4.so.0",
+        "libopentracing-c-wrapper.so.0",
+        "libopentracing.so.1",
+        "libpcre2-8.so.0",
+        "libssl.so",
+        "libstdc++.so.6",
+    ],
     cmd = """
 set -euo pipefail
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
-dpkg-deb -x "$(location @haproxy_tool_haproxy_deb//file)" "$$tmp"
-install -m 0755 "$$tmp/usr/sbin/haproxy" "$@"
+haproxy_root="$$tmp/haproxy"
+awslc_root="$$tmp/awslc"
+dpkg-deb -x "$(location @haproxy_tool_haproxy_deb//file)" "$$haproxy_root"
+dpkg-deb -x "$(location @haproxy_tool_libssl_awslc_deb//file)" "$$awslc_root"
+install -m 0755 "$$haproxy_root/usr/sbin/haproxy" "$(location haproxy)"
+install -m 0644 "$$awslc_root/opt/aws-lc/lib/x86_64-linux-gnu/libcrypto.so" "$(location libcrypto.so)"
+install -m 0644 /lib/x86_64-linux-gnu/libcrypt.so.1 "$(location libcrypt.so.1)"
+install -m 0644 /lib/x86_64-linux-gnu/libgcc_s.so.1 "$(location libgcc_s.so.1)"
+install -m 0644 /lib/x86_64-linux-gnu/libjemalloc.so.2 "$(location libjemalloc.so.2)"
+install -m 0644 /lib/x86_64-linux-gnu/liblua5.4.so.0 "$(location liblua5.4.so.0)"
+install -m 0644 /lib/x86_64-linux-gnu/libopentracing-c-wrapper.so.0 "$(location libopentracing-c-wrapper.so.0)"
+install -m 0644 /lib/x86_64-linux-gnu/libopentracing.so.1 "$(location libopentracing.so.1)"
+install -m 0644 /lib/x86_64-linux-gnu/libpcre2-8.so.0 "$(location libpcre2-8.so.0)"
+install -m 0644 "$$awslc_root/opt/aws-lc/lib/x86_64-linux-gnu/libssl.so" "$(location libssl.so)"
+install -m 0644 /lib/x86_64-linux-gnu/libstdc++.so.6 "$(location libstdc++.so.6)"
 """,
 )
 
@@ -22,7 +50,17 @@ pkg_tar(
     name = "runtime_artifact",
     out = "haproxy-runtime.tar",
     files = {
-        ":haproxy_bin": "bin/haproxy",
+        ":haproxy": "bin/haproxy",
+        ":libcrypto.so": "lib/libcrypto.so",
+        ":libcrypt.so.1": "lib/libcrypt.so.1",
+        ":libgcc_s.so.1": "lib/libgcc_s.so.1",
+        ":libjemalloc.so.2": "lib/libjemalloc.so.2",
+        ":liblua5.4.so.0": "lib/liblua5.4.so.0",
+        ":libopentracing-c-wrapper.so.0": "lib/libopentracing-c-wrapper.so.0",
+        ":libopentracing.so.1": "lib/libopentracing.so.1",
+        ":libpcre2-8.so.0": "lib/libpcre2-8.so.0",
+        ":libssl.so": "lib/libssl.so",
+        ":libstdc++.so.6": "lib/libstdc++.so.6",
         "@haproxy_tools//tools/lego": "bin/lego",
         "//src/infrastructure-components/haproxy/cmd/haproxy-lego-renew:haproxy-lego-renew": "bin/haproxy-lego-renew",
         "//src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply": "bin/haproxy-upstreams-apply",
@@ -32,6 +70,16 @@ pkg_tar(
         "bin/haproxy-lego-renew": "0755",
         "bin/haproxy-upstreams-apply": "0755",
         "bin/lego": "0755",
+        "lib/libcrypto.so": "0644",
+        "lib/libcrypt.so.1": "0644",
+        "lib/libgcc_s.so.1": "0644",
+        "lib/libjemalloc.so.2": "0644",
+        "lib/liblua5.4.so.0": "0644",
+        "lib/libopentracing-c-wrapper.so.0": "0644",
+        "lib/libopentracing.so.1": "0644",
+        "lib/libpcre2-8.so.0": "0644",
+        "lib/libssl.so": "0644",
+        "lib/libstdc++.so.6": "0644",
     },
     visibility = ["//visibility:public"],
 )
@@ -90,7 +138,6 @@ nomad_component(
         ":runtime_artifact": "haproxy-runtime",
     },
     component = "haproxy_upstreams",
-    deploy_phase = "platform",
     digest_inputs = [
         ":public_route_declarations",
         ":role_sources",

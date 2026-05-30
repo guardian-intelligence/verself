@@ -40,7 +40,7 @@ usage:
 
 The run command assumes host bootstrap is complete. It discovers Bazel
 nomad_component targets, runs component-owned tests, builds their artifacts,
-publishes missing artifacts, submits changed Nomad jobs by deploy wave,
+publishes missing artifacts, submits changed Nomad jobs in dependency order,
 monitors deployments, runs selected post-deploy canaries, reverts changed jobs
 when canaries fail, and emits deploy spans.
 

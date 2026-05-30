@@ -32,7 +32,7 @@ job "stalwart" {
 
       config {
         command = "/bin/sh"
-        args = ["-ec", "getent group stalwart >/dev/null || groupadd --system stalwart\nid -u stalwart >/dev/null 2>&1 || useradd --system --gid stalwart --home-dir /var/lib/stalwart --shell /usr/sbin/nologin --no-create-home stalwart\ninstall -d -o stalwart -g stalwart -m 0750 /var/lib/stalwart\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/webadmin.zip /var/lib/stalwart/webadmin.zip\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/spam-filter.toml /var/lib/stalwart/spam-filter.toml\n/usr/sbin/setcap cap_net_bind_service+ep local/bin/stalwart\nexec /usr/sbin/runuser -u stalwart --preserve-environment -- local/bin/stalwart --config \"$${NOMAD_TASK_DIR}/config.toml\"\n"]
+        args = ["-ec", "getent group stalwart >/dev/null || groupadd --system stalwart\nid -u stalwart >/dev/null 2>&1 || useradd --system --gid stalwart --home-dir /var/lib/stalwart --shell /usr/sbin/nologin --no-create-home stalwart\ninstall -d -o stalwart -g stalwart -m 0750 /var/lib/stalwart\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/webadmin.zip /var/lib/stalwart/webadmin.zip\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/spam-filter.toml /var/lib/stalwart/spam-filter.toml\n/usr/sbin/setcap cap_net_bind_service+ep local/bin/stalwart\nadmin_password=\"$(tr -d '\\n' </etc/credstore/stalwart/admin-password)\"\nexport STALWART_RECOVERY_ADMIN=\"admin:$admin_password\"\nexec /usr/sbin/runuser -u stalwart --preserve-environment -- local/bin/stalwart --config \"$${NOMAD_TASK_DIR}/config.toml\"\n"]
       }
 
       env {

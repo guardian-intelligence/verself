@@ -49,7 +49,6 @@ nomad_component(
         ":runtime_artifact": "stalwart-runtime",
     },
     component = "stalwart",
-    deploy_phase = "platform",
     digest_inputs = [":deploy_declarations"],
     job_id = "stalwart",
     job_spec = "nomad.hcl",

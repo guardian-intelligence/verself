@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -132,10 +131,7 @@ func TestUpgradeInstallsVerifiedDistributionArtifact(t *testing.T) {
 	}
 }
 
-func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
-	requireTool(t, "age-keygen")
-	requireTool(t, "sops")
-
+func TestBootstrapRendersOpenBaoSiteArtifacts(t *testing.T) {
 	xdgRoot := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(xdgRoot, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(xdgRoot, "data"))
@@ -166,25 +162,15 @@ func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 	repoRoot := t.TempDir()
 	runCLI(t, nil, "bootstrap", "--company", "guardian", "--repo-root", repoRoot, "--json")
 
-	var out bytes.Buffer
-	runCLI(t, &out,
-		"env", "get", rootSOPSKeyName,
-		"--org", "guardianintelligence.org",
-		"--project", "verself",
-		"--environment", "bootstrap",
-		"--reveal-secret",
-	)
-	identity := strings.TrimSpace(out.String())
-	if !strings.HasPrefix(identity, "AGE-SECRET-KEY-") {
-		t.Fatalf("env get returned non-Age identity: %q", identity)
-	}
-
 	assertFileContains(t, filepath.Join(repoRoot, ".verself", "bootstrap", "manifest.yaml"), []string{
 		`owner_email: "shovon@guardianintelligence.org"`,
 		`organization_name: "guardianintelligence.org"`,
-		`recipient: "age1`,
+		`openbao_site_config:`,
+		`destination: "site-config/config/postgresql_admin_password"`,
+		`destination: "site-config/config/stripe_webhook_secret"`,
+		`destinations:`,
+		`- "site-config/config/stripe_secret_key"`,
 		`decoupled_from_verself_sh: true`,
-		`render_targets:`,
 	})
 	assertFileContains(t, filepath.Join(repoRoot, "src", "host", "sites", "prod", "vars.yml"), []string{
 		`service_discovery_canary_org_slug: "guardian"`,
@@ -192,54 +178,22 @@ func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 	})
 	assertFileContains(t, filepath.Join(repoRoot, "README.md"), []string{
 		"bazelisk build //src/guardian-cli:guardian",
-		"guardian env get VERSELF_SOPS_AGE_IDENTITY --org guardianintelligence.org --project verself --environment bootstrap",
+		"aspect site allocate --site=prod --confirm",
+		"aspect site bootstrap --site=prod",
 		"aspect deploy --site=prod --sha=HEAD",
 	})
-
-	provisioningBag := filepath.Join(repoRoot, "src", "host", "sites", "prod", "secrets", "provisioning.sops.yml")
-	raw := readFile(t, provisioningBag)
-	if strings.Contains(raw, "lat_test_guardian") {
-		t.Fatalf("encrypted provisioning bag contains plaintext Latitude token")
+	assertFileContains(t, filepath.Join(repoRoot, "src", "host", "sites", "prod", "provisioning.tfvars.json"), []string{
+		`"cluster_name": "prod"`,
+		`"project_id": "proj_guardian"`,
+		`"region": "ASH"`,
+		`"plan": "f4-metal-medium"`,
+		`"billing": "hourly"`,
+	})
+	if found, path := treeContains(t, repoRoot, "lat_test_guardian"); found {
+		t.Fatalf("rendered repository contains Latitude API token in %s", path)
 	}
-	plain := decryptSOPS(t, repoRoot, provisioningBag, identity)
-	for _, want := range []string{
-		`latitude_api_token: lat_test_guardian`,
-	} {
-		if !strings.Contains(plain, want) {
-			t.Fatalf("decrypted provisioning bag missing %q:\n%s", want, plain)
-		}
-	}
-
-	hostBag := filepath.Join(repoRoot, "src", "host", "sites", "prod", "secrets", "host.sops.yml")
-	hostPlain := decryptSOPS(t, repoRoot, hostBag, identity)
-	for _, want := range []string{
-		"zitadel_initial_admin_password:",
-		"forgejo_initial_admin_password:",
-	} {
-		if !strings.Contains(hostPlain, want) {
-			t.Fatalf("decrypted host bag missing %q:\n%s", want, hostPlain)
-		}
-	}
-
-	externalBag := filepath.Join(repoRoot, "src", "host", "sites", "prod", "secrets", "external.sops.yml")
-	externalRaw := readFile(t, externalBag)
-	if strings.Contains(externalRaw, "sk_test_guardian") {
-		t.Fatalf("encrypted external bag contains plaintext Stripe secret")
-	}
-	externalPlain := decryptSOPS(t, repoRoot, externalBag, identity)
-	for _, want := range []string{
-		`stripe_secret_key: sk_test_guardian`,
-		`stripe_publishable_key: pk_test_guardian`,
-		"billing_cookie_signing_key:",
-		"stripe_webhook_secret:",
-	} {
-		if !strings.Contains(externalPlain, want) {
-			t.Fatalf("decrypted external bag missing %q:\n%s", want, externalPlain)
-		}
-	}
-
-	if found, path := treeContains(t, repoRoot, "AGE-SECRET-KEY-"); found {
-		t.Fatalf("rendered repository contains private Age identity in %s", path)
+	if found, path := treeContains(t, repoRoot, "sk_test_guardian"); found {
+		t.Fatalf("rendered repository contains Stripe secret key in %s", path)
 	}
 	if found, path := treeContains(t, repoRoot, "verself-cred://"); found {
 		t.Fatalf("rendered repository contains local credential ref in %s", path)
@@ -252,7 +206,7 @@ func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 		"--repo-root", overrideRepoRoot,
 		"--set", "latitude.region=DFW",
 	)
-	assertFileContains(t, filepath.Join(overrideRepoRoot, "src", "host", "sites", "prod", "provisioning.tfvars.json.template"), []string{
+	assertFileContains(t, filepath.Join(overrideRepoRoot, "src", "host", "sites", "prod", "provisioning.tfvars.json"), []string{
 		`"region": "DFW"`,
 	})
 
@@ -1442,9 +1396,6 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 }
 
 func TestBootstrapOverlaysExistingSiteVars(t *testing.T) {
-	requireTool(t, "age-keygen")
-	requireTool(t, "sops")
-
 	xdgRoot := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(xdgRoot, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(xdgRoot, "data"))
@@ -1524,66 +1475,6 @@ func testReleaseTar(t *testing.T, binaryName string, body string) []byte {
 
 func testDistributionTargetJSON(serverURL, packageName, channelName, digest string) string {
 	return `{"resourceName":"urn:verself:test:distribution/packages/` + packageName + `/channels/` + channelName + `/targets/` + strings.Replace(digest, ":", "-", 1) + `","package_name":"` + packageName + `","channel_name":"` + channelName + `","platform_os":"` + runtime.GOOS + `","platform_arch":"` + runtime.GOARCH + `","artifact_digest":"` + digest + `","artifact_digest_ref":"` + strings.Replace(digest, ":", "-", 1) + `","package_version":"0.2.0","state":"published","public_oci_reference":"oci.verself.sh/verself/` + packageName + `@` + digest + `","download_url":"` + serverURL + `/v2/verself/` + packageName + `/manifests/` + digest + `","published_at":"2026-05-25T12:00:00Z"}`
-}
-
-func requireTool(t *testing.T, name string) {
-	t.Helper()
-	envName := ""
-	runfile := ""
-	switch name {
-	case "age-keygen":
-		envName = "VERSELF_AGE_KEYGEN_BIN"
-		runfile = "src/tools/dev/binaries/age-keygen"
-	case "sops":
-		envName = "VERSELF_SOPS_BIN"
-		runfile = "src/tools/dev/binaries/sops"
-	}
-	if envName != "" && os.Getenv(envName) != "" {
-		return
-	}
-	if runfile != "" {
-		if path := findRunfile(runfile); path != "" {
-			t.Setenv(envName, path)
-			return
-		}
-	}
-	path, err := exec.LookPath(name)
-	if err != nil {
-		t.Skipf("%s is required for bootstrap render verification: %v", name, err)
-	}
-	if envName != "" {
-		t.Setenv(envName, path)
-	}
-}
-
-func decryptSOPS(t *testing.T, repoRoot, path, identity string) string {
-	t.Helper()
-	cmd := exec.Command(toolBinary("VERSELF_SOPS_BIN", "sops"), "-d", path)
-	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "SOPS_AGE_KEY="+identity)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("sops -d %s: %v\n%s", path, err, string(out))
-	}
-	return string(out)
-}
-
-func findRunfile(rel string) string {
-	testSrcDir := os.Getenv("TEST_SRCDIR")
-	if testSrcDir == "" {
-		return ""
-	}
-	candidates := []string{}
-	if workspace := os.Getenv("TEST_WORKSPACE"); workspace != "" {
-		candidates = append(candidates, filepath.Join(testSrcDir, workspace, rel))
-	}
-	candidates = append(candidates, filepath.Join(testSrcDir, "_main", rel), filepath.Join(testSrcDir, rel))
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
 }
 
 func assertFileContains(t *testing.T, path string, values []string) {

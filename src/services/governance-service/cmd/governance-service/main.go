@@ -26,6 +26,11 @@ import (
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
+const (
+	siteDomainPath     = "/etc/verself/domain"
+	installationIDPath = "/etc/verself/installation-id"
+)
+
 func main() {
 	if handled, err := runMigrationCLI(context.Background()); handled {
 		if err != nil {
@@ -68,9 +73,10 @@ func run() error {
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4254")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "governance_service")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
+	siteDomain := cfg.RequireFile(siteDomainPath)
+	authIssuerURL := cfg.URL("VERSELF_AUTH_ISSUER_URL", "https://"+siteDomain)
 	authAudience := cfg.RequireCredential("auth-audience")
-	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
+	installationID := cfg.String("VERSELF_INSTALLATION_ID", cfg.RequireFile(installationIDPath))
 	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
 	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
 	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())

@@ -23,8 +23,7 @@ func bindNomadArtifacts(repoRoot string, policy artifactDeliveryPolicy, componen
 	bindings := map[string]artifactBinding{}
 	for _, component := range components {
 		for _, declared := range component.Artifacts {
-			pre := component.DeployPhase == deployPhasePreArtifact
-			if err := bindNomadArtifact(repoRoot, policy, declared, pre, bindings); err != nil {
+			if err := bindNomadArtifact(repoRoot, policy, declared, false, bindings); err != nil {
 				return nil, nil, err
 			}
 		}

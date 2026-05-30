@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -14,6 +16,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,20 +30,28 @@ import (
 )
 
 const (
-	defaultProjectName                         = "verself-api"
-	defaultBrowserAppName                      = "verself-web"
-	defaultCLIAppName                          = "verself-cli"
-	defaultClaimsTargetName                    = "verself-product-token-claims"
-	defaultClaimsActionPath                    = "/internal/zitadel/actions/product-token-claims"
-	productTokenClaimsFunction                 = "preaccesstoken"
-	defaultZitadelBaseURL                      = "http://127.0.0.1:8085"
-	defaultZitadelAdminPATPath                 = "/etc/zitadel/admin.pat"
-	defaultIAMCredstoreDir                     = "/etc/credstore/iam-service"
-	defaultIAMCredstoreGroup                   = "iam_service"
-	defaultGithubLoginIDPName                  = "GitHub"
-	desiredPasswordMinLength                   = 8
-	desiredPasswordLockoutAttempts             = 10
-	credentialMode                 os.FileMode = 0o640
+	defaultProjectName                          = "verself-api"
+	defaultBrowserAppName                       = "verself-web"
+	defaultCLIAppName                           = "verself-cli"
+	defaultClaimsTargetName                     = "verself-product-token-claims"
+	defaultClaimsActionPath                     = "/internal/zitadel/actions/product-token-claims"
+	defaultClaimsEndpointHostPrefix             = "iam.api."
+	productTokenClaimsFunction                  = "preaccesstoken"
+	defaultZitadelBaseURL                       = "http://127.0.0.1:8085"
+	defaultZitadelAdminPATPath                  = "/etc/zitadel/admin.pat"
+	openbaoAddr                                 = "https://127.0.0.1:8200"
+	openbaoCACertPath                           = "/etc/openbao/tls/cert.pem"
+	openbaoRootTokenPath                        = "/etc/credstore/openbao/root-token"
+	runtimeSecretKVMount                        = "kv-runtime"
+	runtimeSecretNamespace                      = "runtime"
+	iamZitadelAdminTokenSecretName              = "iam-service.zitadel.admin_token"
+	defaultIAMCredstoreDir                      = "/etc/credstore/iam-service"
+	defaultIAMCredstoreGroup                    = "iam_service"
+	defaultGithubLoginIDPName                   = "GitHub"
+	trustDomainPath                             = "/etc/verself/spiffe-trust-domain"
+	desiredPasswordMinLength                    = 8
+	desiredPasswordLockoutAttempts              = 10
+	credentialMode                  os.FileMode = 0o640
 )
 
 type config struct {
@@ -55,11 +66,12 @@ type config struct {
 	cliAppName          string
 	claimsTargetName    string
 	claimsActionPath    string
+	claimsEndpointHost  string
 	zitadelReadyWait    time.Duration
 	zitadelReadyBackoff time.Duration
 	// GitHub login IdP ("Sign in with GitHub"). Optional: when either path is
 	// empty, GitHub IdP provisioning is skipped so deployments without GitHub
-	// login still converge. Both files are rendered from SOPS by the Zitadel
+	// login still converge. Both files are rendered from OpenBao site configuration by the Zitadel
 	// Ansible role (the client id is non-secret but kept on the host for the
 	// same delivery path as the secret).
 	githubLoginIDPName          string
@@ -84,6 +96,7 @@ type zitadelOIDCApp struct {
 	ID           string
 	ClientID     string
 	ClientSecret string
+	Config       oidcAppConfig
 }
 
 type actionTarget struct {
@@ -108,6 +121,27 @@ type audienceSpec struct {
 }
 
 type policyInt int
+
+type oidcAppConfig struct {
+	RedirectURIs             []string         `json:"redirectUris"`
+	ResponseTypes            []string         `json:"responseTypes"`
+	GrantTypes               []string         `json:"grantTypes"`
+	AppType                  string           `json:"appType"`
+	ClientID                 string           `json:"clientId"`
+	AuthMethodType           string           `json:"authMethodType"`
+	PostLogoutRedirectURIs   []string         `json:"postLogoutRedirectUris"`
+	AccessTokenType          string           `json:"accessTokenType"`
+	IDTokenUserinfoAssertion bool             `json:"idTokenUserinfoAssertion"`
+	AccessTokenRoleAssertion bool             `json:"accessTokenRoleAssertion"`
+	IDTokenRoleAssertion     bool             `json:"idTokenRoleAssertion"`
+	LoginVersion             oidcLoginVersion `json:"loginVersion"`
+}
+
+type oidcLoginVersion struct {
+	LoginV2 struct {
+		BaseURI string `json:"baseUri"`
+	} `json:"loginV2"`
+}
 
 type passwordComplexityPolicy struct {
 	MinLength    policyInt `json:"minLength"`
@@ -173,6 +207,7 @@ func run(args []string) error {
 		cliAppName:          defaultCLIAppName,
 		claimsTargetName:    defaultClaimsTargetName,
 		claimsActionPath:    defaultClaimsActionPath,
+		claimsEndpointHost:  envOr("AUTH_CONTROL_PLANE_CLAIMS_ENDPOINT_HOST", ""),
 		zitadelReadyWait:    60 * time.Second,
 		zitadelReadyBackoff: time.Second,
 
@@ -192,6 +227,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.cliAppName, "cli-app-name", cfg.cliAppName, "CLI OIDC app name.")
 	fs.StringVar(&cfg.claimsTargetName, "claims-target-name", cfg.claimsTargetName, "Product token claims action target name.")
 	fs.StringVar(&cfg.claimsActionPath, "claims-action-path", cfg.claimsActionPath, "Product token claims action path.")
+	fs.StringVar(&cfg.claimsEndpointHost, "claims-endpoint-host", cfg.claimsEndpointHost, "Public host for the product token claims action endpoint.")
 	fs.StringVar(&cfg.githubLoginIDPName, "github-login-idp-name", cfg.githubLoginIDPName, "Zitadel IdP display name for Sign in with GitHub.")
 	fs.StringVar(&cfg.githubLoginClientIDPath, "github-login-client-id-path", cfg.githubLoginClientIDPath, "Path to the GitHub OAuth App client id for Sign in with GitHub. Empty skips provisioning.")
 	fs.StringVar(&cfg.githubLoginClientSecretPath, "github-login-client-secret-path", cfg.githubLoginClientSecretPath, "Path to the GitHub OAuth App client secret. Empty skips provisioning.")
@@ -200,6 +236,19 @@ func run(args []string) error {
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected positional args: %s", strings.Join(fs.Args(), " "))
+	}
+	if strings.TrimSpace(cfg.verselfDomain) == "" {
+		domain, err := siteDomain()
+		if err != nil {
+			return err
+		}
+		cfg.verselfDomain = domain
+	}
+	if strings.TrimSpace(cfg.zitadelHost) == "" {
+		cfg.zitadelHost = cfg.verselfDomain
+	}
+	if strings.TrimSpace(cfg.claimsEndpointHost) == "" {
+		cfg.claimsEndpointHost = defaultClaimsEndpointHostPrefix + cfg.verselfDomain
 	}
 	if err := cfg.validate(); err != nil {
 		return err
@@ -224,17 +273,18 @@ func run(args []string) error {
 func (cfg config) validate() error {
 	missing := []string{}
 	for name, value := range map[string]string{
-		"--zitadel-base-url":    cfg.zitadelBaseURL,
-		"--zitadel-host":        cfg.zitadelHost,
-		"--admin-pat-path":      cfg.adminPATPath,
-		"--verself-domain":      cfg.verselfDomain,
-		"--iam-credstore-dir":   cfg.iamCredstoreDir,
-		"--iam-credstore-group": cfg.iamCredstoreGroup,
-		"--project-name":        cfg.projectName,
-		"--browser-app-name":    cfg.browserAppName,
-		"--cli-app-name":        cfg.cliAppName,
-		"--claims-target-name":  cfg.claimsTargetName,
-		"--claims-action-path":  cfg.claimsActionPath,
+		"--zitadel-base-url":     cfg.zitadelBaseURL,
+		"--zitadel-host":         cfg.zitadelHost,
+		"--admin-pat-path":       cfg.adminPATPath,
+		"--verself-domain":       cfg.verselfDomain,
+		"--iam-credstore-dir":    cfg.iamCredstoreDir,
+		"--iam-credstore-group":  cfg.iamCredstoreGroup,
+		"--project-name":         cfg.projectName,
+		"--browser-app-name":     cfg.browserAppName,
+		"--cli-app-name":         cfg.cliAppName,
+		"--claims-endpoint-host": cfg.claimsEndpointHost,
+		"--claims-target-name":   cfg.claimsTargetName,
+		"--claims-action-path":   cfg.claimsActionPath,
 	} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)
@@ -243,10 +293,41 @@ func (cfg config) validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
 	}
+	if strings.ContainsAny(cfg.zitadelHost, "/:@") || strings.Contains(cfg.zitadelHost, "{{") {
+		return fmt.Errorf("invalid --zitadel-host %q", cfg.zitadelHost)
+	}
+	if strings.ContainsAny(cfg.verselfDomain, "/:@") || strings.Contains(cfg.verselfDomain, "{{") {
+		return fmt.Errorf("invalid --verself-domain %q", cfg.verselfDomain)
+	}
+	if strings.ContainsAny(cfg.claimsEndpointHost, "/:@") || strings.Contains(cfg.claimsEndpointHost, "{{") {
+		return fmt.Errorf("invalid --claims-endpoint-host %q", cfg.claimsEndpointHost)
+	}
 	if _, err := url.ParseRequestURI("https://" + cfg.verselfDomain); err != nil {
 		return fmt.Errorf("invalid --verself-domain: %w", err)
 	}
+	if _, err := url.ParseRequestURI(productTokenClaimsEndpoint(cfg)); err != nil {
+		return fmt.Errorf("invalid product token claims endpoint: %w", err)
+	}
 	return nil
+}
+
+func siteDomain() (string, error) {
+	body, err := os.ReadFile(trustDomainPath)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", trustDomainPath, err)
+	}
+	return siteDomainFromTrustDomain(string(body))
+}
+
+func siteDomainFromTrustDomain(value string) (string, error) {
+	trustDomain := strings.TrimSpace(value)
+	if trustDomain == "" {
+		return "", fmt.Errorf("%s is empty", trustDomainPath)
+	}
+	if strings.HasPrefix(trustDomain, "spiffe.") {
+		return strings.TrimPrefix(trustDomain, "spiffe."), nil
+	}
+	return trustDomain, nil
 }
 
 func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
@@ -330,6 +411,11 @@ func apply(ctx context.Context, cfg config) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
+	if err := publishIAMAdminTokenRuntimeSecret(ctx, token); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	span.SetStatus(codes.Ok, "")
 	fmt.Println("auth-control-plane-apply: changed state reconciled")
 	return nil
@@ -392,6 +478,136 @@ func runtimeAudienceSpecs(cfg config) []audienceSpec {
 		{ComponentName: "secrets-service", CredentialPath: "/etc/credstore/secrets-service/auth-audience", Group: "secrets_service"},
 		{ComponentName: "email-service", CredentialPath: "/etc/credstore/email-service/auth-audience", Group: "email_service"},
 	}
+}
+
+type openbao struct {
+	client *http.Client
+	token  string
+}
+
+func publishIAMAdminTokenRuntimeSecret(ctx context.Context, token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return fmt.Errorf("Zitadel admin PAT is empty")
+	}
+	client, err := openbaoClient()
+	if err != nil {
+		return err
+	}
+	createdAt, err := client.runtimeSecretCreatedAt(ctx, iamZitadelAdminTokenSecretName)
+	if err != nil {
+		return err
+	}
+	return client.writeRuntimeSecret(ctx, iamZitadelAdminTokenSecretName, token, createdAt)
+}
+
+func openbaoClient() (openbao, error) {
+	tokenBody, err := os.ReadFile(openbaoRootTokenPath)
+	if err != nil {
+		return openbao{}, fmt.Errorf("read OpenBao root token: %w", err)
+	}
+	certBody, err := os.ReadFile(openbaoCACertPath)
+	if err != nil {
+		return openbao{}, fmt.Errorf("read OpenBao CA cert: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if ok := pool.AppendCertsFromPEM(certBody); !ok {
+		return openbao{}, fmt.Errorf("parse OpenBao CA cert %s", openbaoCACertPath)
+	}
+	return openbao{
+		token: strings.TrimSpace(string(tokenBody)),
+		client: &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+			},
+		},
+	}, nil
+}
+
+func (b openbao) runtimeSecretCreatedAt(ctx context.Context, name string) (string, error) {
+	body, status, err := b.request(ctx, http.MethodGet, runtimeSecretPath(name), nil, http.StatusOK, http.StatusNotFound)
+	if err != nil {
+		return "", fmt.Errorf("read OpenBao runtime secret %s: %w", name, err)
+	}
+	if status == http.StatusNotFound {
+		return time.Now().UTC().Format(time.RFC3339), nil
+	}
+	var payload struct {
+		Data struct {
+			Data struct {
+				CreatedAt string `json:"created_at"`
+			} `json:"data"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", fmt.Errorf("decode OpenBao runtime secret %s: %w", name, err)
+	}
+	createdAt := strings.TrimSpace(payload.Data.Data.CreatedAt)
+	if createdAt == "" {
+		return time.Now().UTC().Format(time.RFC3339), nil
+	}
+	return createdAt, nil
+}
+
+func (b openbao) writeRuntimeSecret(ctx context.Context, name, value, createdAt string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	payload := map[string]any{
+		"data": map[string]string{
+			"org_id":      runtimeSecretNamespace,
+			"kind":        "secret",
+			"name":        name,
+			"scope_level": "org",
+			"source_id":   "",
+			"env_id":      "",
+			"branch":      "",
+			"value":       value,
+			"created_at":  createdAt,
+			"updated_at":  now,
+		},
+	}
+	if _, _, err := b.request(ctx, http.MethodPost, runtimeSecretPath(name), payload, http.StatusOK, http.StatusNoContent); err != nil {
+		return fmt.Errorf("write OpenBao runtime secret %s: %w", name, err)
+	}
+	return nil
+}
+
+func runtimeSecretPath(name string) string {
+	return runtimeSecretKVMount + "/data/secret/org/" + url.PathEscape(strings.TrimSpace(name))
+}
+
+func (b openbao) request(ctx context.Context, method, path string, body any, expected ...int) ([]byte, int, error) {
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return nil, 0, fmt.Errorf("marshal OpenBao request %s %s: %w", method, path, err)
+		}
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, openbaoAddr+"/v1/"+strings.TrimLeft(path, "/"), reader)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("X-Vault-Token", b.token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("OpenBao %s %s: %w", method, path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("read OpenBao response %s %s: %w", method, path, err)
+	}
+	for _, status := range expected {
+		if resp.StatusCode == status {
+			return raw, resp.StatusCode, nil
+		}
+	}
+	return nil, resp.StatusCode, fmt.Errorf("OpenBao %s %s status %d", method, path, resp.StatusCode)
 }
 
 func (c zitadelClient) EnsurePasswordPolicies(ctx context.Context) error {
@@ -524,7 +740,7 @@ func ensureBrowserOIDCApplication(ctx context.Context, client zitadelClient, pro
 		if err != nil {
 			return err
 		}
-	} else if err := client.ReconcileBrowserOIDCApp(ctx, projectID, app.ID, cfg.browserAppName, redirectURIs, postLogout, loginBaseURI); err != nil {
+	} else if err := client.ReconcileBrowserOIDCApp(ctx, projectID, app, cfg.browserAppName, redirectURIs, postLogout, loginBaseURI); err != nil {
 		return err
 	}
 	values := map[string]string{
@@ -556,7 +772,7 @@ func ensureCLIOIDCApplication(ctx context.Context, client zitadelClient, project
 		if err != nil {
 			return err
 		}
-	} else if err := client.ReconcileNativeOIDCApp(ctx, projectID, app.ID, cfg.cliAppName, "https://"+cfg.verselfDomain); err != nil {
+	} else if err := client.ReconcileNativeOIDCApp(ctx, projectID, app, cfg.cliAppName, "https://"+cfg.verselfDomain); err != nil {
 		return err
 	}
 	values := map[string]string{
@@ -574,7 +790,7 @@ func ensureCLIOIDCApplication(ctx context.Context, client zitadelClient, project
 }
 
 func ensureProductTokenClaimsAction(ctx context.Context, client zitadelClient, cfg config) error {
-	endpoint := "https://" + cfg.verselfDomain + cfg.claimsActionPath
+	endpoint := productTokenClaimsEndpoint(cfg)
 	target, found, err := client.FindActionTargetByName(ctx, cfg.claimsTargetName)
 	if err != nil {
 		return err
@@ -597,6 +813,10 @@ func ensureProductTokenClaimsAction(ctx context.Context, client zitadelClient, c
 		return fmt.Errorf("write Zitadel product token claims signing key: %w", err)
 	}
 	return client.SetFunctionExecution(ctx, productTokenClaimsFunction, []string{target.ID})
+}
+
+func productTokenClaimsEndpoint(cfg config) string {
+	return "https://" + strings.TrimSpace(cfg.claimsEndpointHost) + "/" + strings.TrimLeft(strings.TrimSpace(cfg.claimsActionPath), "/")
 }
 
 func (c zitadelClient) EnsureProject(ctx context.Context, name string) (zitadelProject, error) {
@@ -646,10 +866,8 @@ func (c zitadelClient) FindProjectByName(ctx context.Context, name string) (zita
 func (c zitadelClient) FindOIDCAppByName(ctx context.Context, projectID, name string) (zitadelOIDCApp, bool, error) {
 	var out struct {
 		Result []struct {
-			ID         string `json:"id"`
-			OIDCConfig struct {
-				ClientID string `json:"clientId"`
-			} `json:"oidcConfig"`
+			ID         string        `json:"id"`
+			OIDCConfig oidcAppConfig `json:"oidcConfig"`
 		} `json:"result"`
 	}
 	body := map[string]any{"queries": []map[string]any{{"nameQuery": map[string]string{"name": strings.TrimSpace(name), "method": "TEXT_QUERY_METHOD_EQUALS"}}}}
@@ -661,7 +879,7 @@ func (c zitadelClient) FindOIDCAppByName(ctx context.Context, projectID, name st
 		return zitadelOIDCApp{}, false, nil
 	}
 	item := out.Result[0]
-	return zitadelOIDCApp{ID: item.ID, ClientID: item.OIDCConfig.ClientID}, true, nil
+	return zitadelOIDCApp{ID: item.ID, ClientID: item.OIDCConfig.ClientID, Config: item.OIDCConfig}, true, nil
 }
 
 func (c zitadelClient) CreateBrowserOIDCApp(ctx context.Context, projectID, name string, redirectURIs, postLogoutRedirectURIs []string, loginBaseURI string) (zitadelOIDCApp, error) {
@@ -701,24 +919,30 @@ func (c zitadelClient) CreateNativeOIDCApp(ctx context.Context, projectID, name 
 	return app, nil
 }
 
-func (c zitadelClient) ReconcileBrowserOIDCApp(ctx context.Context, projectID, appID, name string, redirectURIs, postLogoutRedirectURIs []string, loginBaseURI string) error {
+func (c zitadelClient) ReconcileBrowserOIDCApp(ctx context.Context, projectID string, app zitadelOIDCApp, name string, redirectURIs, postLogoutRedirectURIs []string, loginBaseURI string) error {
+	if browserOIDCConfigConverged(app.Config, redirectURIs, postLogoutRedirectURIs, loginBaseURI) {
+		return nil
+	}
 	body := browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs, loginBaseURI)
 	body["accessTokenRoleAssertion"] = false
 	body["idTokenRoleAssertion"] = false
 	body["idTokenUserinfoAssertion"] = true
-	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/" + url.PathEscape(strings.TrimSpace(appID)) + "/oidc_config"
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/" + url.PathEscape(strings.TrimSpace(app.ID)) + "/oidc_config"
 	if err := c.doJSON(ctx, http.MethodPut, path, body, nil); err != nil && !isNoChanges(err) {
 		return fmt.Errorf("update Zitadel OIDC app %s: %w", name, err)
 	}
 	return nil
 }
 
-func (c zitadelClient) ReconcileNativeOIDCApp(ctx context.Context, projectID, appID, name string, loginBaseURI string) error {
+func (c zitadelClient) ReconcileNativeOIDCApp(ctx context.Context, projectID string, app zitadelOIDCApp, name string, loginBaseURI string) error {
+	if nativeOIDCConfigConverged(app.Config, loginBaseURI) {
+		return nil
+	}
 	body := nativeOIDCConfigBody(loginBaseURI)
 	body["accessTokenRoleAssertion"] = false
 	body["idTokenRoleAssertion"] = false
 	body["idTokenUserinfoAssertion"] = true
-	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/" + url.PathEscape(strings.TrimSpace(appID)) + "/oidc_config"
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/apps/" + url.PathEscape(strings.TrimSpace(app.ID)) + "/oidc_config"
 	if err := c.doJSON(ctx, http.MethodPut, path, body, nil); err != nil && !isNoChanges(err) {
 		return fmt.Errorf("update Zitadel native OIDC app %s: %w", name, err)
 	}
@@ -886,6 +1110,33 @@ func nativeOIDCConfigBody(loginBaseURI string) map[string]any {
 	}
 }
 
+func browserOIDCConfigConverged(got oidcAppConfig, redirectURIs, postLogoutRedirectURIs []string, loginBaseURI string) bool {
+	return slices.Equal(got.RedirectURIs, redirectURIs) &&
+		slices.Equal(got.ResponseTypes, []string{"OIDC_RESPONSE_TYPE_CODE"}) &&
+		slices.Equal(got.GrantTypes, []string{"OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN", "OIDC_GRANT_TYPE_TOKEN_EXCHANGE"}) &&
+		got.AuthMethodType == "OIDC_AUTH_METHOD_TYPE_POST" &&
+		slices.Equal(got.PostLogoutRedirectURIs, postLogoutRedirectURIs) &&
+		got.AccessTokenType == "OIDC_TOKEN_TYPE_JWT" &&
+		got.IDTokenUserinfoAssertion &&
+		!got.AccessTokenRoleAssertion &&
+		!got.IDTokenRoleAssertion &&
+		got.LoginVersion.LoginV2.BaseURI == strings.TrimRight(strings.TrimSpace(loginBaseURI), "/")
+}
+
+func nativeOIDCConfigConverged(got oidcAppConfig, loginBaseURI string) bool {
+	return len(got.RedirectURIs) == 0 &&
+		slices.Equal(got.ResponseTypes, []string{"OIDC_RESPONSE_TYPE_CODE"}) &&
+		slices.Equal(got.GrantTypes, []string{"OIDC_GRANT_TYPE_DEVICE_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"}) &&
+		got.AppType == "OIDC_APP_TYPE_NATIVE" &&
+		got.AuthMethodType == "OIDC_AUTH_METHOD_TYPE_NONE" &&
+		len(got.PostLogoutRedirectURIs) == 0 &&
+		got.AccessTokenType == "OIDC_TOKEN_TYPE_JWT" &&
+		got.IDTokenUserinfoAssertion &&
+		!got.AccessTokenRoleAssertion &&
+		!got.IDTokenRoleAssertion &&
+		got.LoginVersion.LoginV2.BaseURI == strings.TrimRight(strings.TrimSpace(loginBaseURI), "/")
+}
+
 func customLoginVersion(loginBaseURI string) map[string]any {
 	return map[string]any{
 		"loginV2": map[string]any{
@@ -913,13 +1164,17 @@ func ensureGitHubLoginIDP(ctx context.Context, client zitadelClient, cfg config)
 		fmt.Println("auth-control-plane-apply: github login idp not configured; skipping")
 		return nil
 	}
-	clientID, err := readSecret(cfg.githubLoginClientIDPath)
+	clientID, ok, err := readOptionalSecret(cfg.githubLoginClientIDPath)
 	if err != nil {
 		return fmt.Errorf("read github login client id: %w", err)
 	}
-	clientSecret, err := readSecret(cfg.githubLoginClientSecretPath)
+	clientSecret, secretOK, err := readOptionalSecret(cfg.githubLoginClientSecretPath)
 	if err != nil {
 		return fmt.Errorf("read github login client secret: %w", err)
+	}
+	if !ok || !secretOK {
+		fmt.Println("auth-control-plane-apply: github login idp credentials absent; skipping")
+		return nil
 	}
 	idpID, found, err := client.FindIDPByName(ctx, cfg.githubLoginIDPName)
 	if err != nil {
@@ -1161,12 +1416,37 @@ func (c zitadelClient) ListOrgs(ctx context.Context) ([]string, error) {
 }
 
 func (c zitadelClient) EnsureProjectRole(ctx context.Context, projectID, roleKey, displayName string) error {
+	exists, err := c.ProjectRoleExists(ctx, projectID, roleKey)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
 	body := map[string]any{"roleKey": strings.TrimSpace(roleKey), "displayName": strings.TrimSpace(displayName)}
 	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/roles"
 	if err := c.doJSON(ctx, http.MethodPost, path, body, nil); err != nil && !isAlreadyExists(err) {
 		return fmt.Errorf("ensure project role %s: %w", roleKey, err)
 	}
 	return nil
+}
+
+func (c zitadelClient) ProjectRoleExists(ctx context.Context, projectID, roleKey string) (bool, error) {
+	var out struct {
+		Result []struct {
+			Key string `json:"key"`
+		} `json:"result"`
+	}
+	path := "/management/v1/projects/" + url.PathEscape(strings.TrimSpace(projectID)) + "/roles/_search"
+	if err := c.doJSON(ctx, http.MethodPost, path, map[string]any{}, &out); err != nil {
+		return false, fmt.Errorf("list Zitadel project roles: %w", err)
+	}
+	for _, role := range out.Result {
+		if strings.TrimSpace(role.Key) == strings.TrimSpace(roleKey) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (c zitadelClient) ListProjectGrantOrgs(ctx context.Context, projectID string) (map[string]bool, error) {
@@ -1213,7 +1493,7 @@ func isNoChanges(err error) bool {
 func readSecret(path string) (string, error) {
 	value, err := readTrimmed(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("read %s: %w", path, err)
 	}
 	if value == "" {
 		return "", fmt.Errorf("%s is empty", path)
@@ -1221,10 +1501,24 @@ func readSecret(path string) (string, error) {
 	return value, nil
 }
 
+func readOptionalSecret(path string) (string, bool, error) {
+	value, err := readTrimmed(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("read %s: %w", path, err)
+	}
+	if value == "" {
+		return "", false, nil
+	}
+	return value, true, nil
+}
+
 func readTrimmed(path string) (string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("read %s: %w", path, err)
+		return "", err
 	}
 	return strings.TrimSpace(string(raw)), nil
 }

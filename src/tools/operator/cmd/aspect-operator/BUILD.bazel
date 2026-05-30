@@ -26,6 +26,7 @@ go_library(
         "release.go",
         "remote_binary.go",
         "runtime_common.go",
+        "site.go",
     ],
     importpath = "github.com/verself/operator-tools/cmd/aspect-operator",
     visibility = ["//visibility:private"],
@@ -46,7 +47,6 @@ go_library(
 
 go_binary(
     name = "aspect-operator",
-    data = ["//src/tools/dev/binaries:sops"],
     embed = [":aspect-operator_lib"],
     visibility = ["//visibility:public"],
 )
@@ -56,6 +56,7 @@ go_test(
     srcs = [
         "mail_test_accounts_test.go",
         "release_test.go",
+        "site_test.go",
     ],
     embed = [":aspect-operator_lib"],
 )

@@ -17,11 +17,11 @@ job "postgresql" {
 
     task "server" {
       driver = "raw_exec"
-      user = "postgres"
+      user = "root"
 
       config {
-        command = "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/usr/lib/postgresql/16/bin/postgres"
-        args = ["-D", "/var/lib/postgresql/16/verself", "-c", "config_file=/etc/postgresql/verself/postgresql.conf"]
+        command = "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/bin/postgresql-node-runner"
+        args = ["--runtime-root", "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql"]
       }
 
       env {

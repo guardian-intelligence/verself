@@ -112,8 +112,8 @@
   no_log: true
 
 # GitHub login OAuth credstore material is owned by deploy/credstore.yml and
-# materialized by service-foundation during aspect deploy (this role does not
-# run in the deploy path).
+# materialized by site bootstrap before deploy (this role does not run in the
+# deploy path).
 
 - name: Deploy Zitadel config
   ansible.builtin.template:
@@ -214,39 +214,42 @@
     zitadel_admin_pat: "{{ zitadel_admin_pat_raw.content | b64decode | trim }}"
   no_log: true
 
-- name: Read current Zitadel admin PAT from SOPS secrets
-  ansible.builtin.command:
-    argv:
-      - sops
-      - -d
-      - --extract
-      - '["zitadel_admin_pat"]'
-      - "{{ playbook_dir }}/../../sites/{{ verself_site | default('prod') }}/secrets/host.sops.yml"
-  register: zitadel_admin_pat_sops_current
-  delegate_to: localhost
-  become: false
-  failed_when: false
+- name: Read OpenBao root token for Zitadel admin PAT export
+  ansible.builtin.slurp:
+    src: "{{ openbao_credstore_dir | default('/etc/credstore/openbao') }}/root-token"
+  register: zitadel_admin_pat_openbao_root_token_raw
+  no_log: true
+
+- name: Read current Zitadel admin PAT from OpenBao site configuration
+  ansible.builtin.uri:
+    url: "https://{{ openbao_api_address | default('127.0.0.1:8200') }}/v1/{{ openbao_site_config_kv_mount | default('site-config') }}/data/config/zitadel_admin_pat"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ zitadel_admin_pat_openbao_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir | default('/etc/openbao/tls') }}/cert.pem"
+    status_code: [200, 404]
+    return_content: true
+  register: zitadel_admin_pat_openbao_current
   changed_when: false
   no_log: true
 
-- name: Write admin PAT back to SOPS secrets
-  # `sops set --value-stdin` reads the JSON-encoded value from stdin so the
-  # secret never lands on the process argv.
-  ansible.builtin.command:
-    argv:
-      - sops
-      - set
-      - --value-stdin
-      - "{{ playbook_dir }}/../../sites/{{ verself_site | default('prod') }}/secrets/host.sops.yml"
-      - '["zitadel_admin_pat"]'
-    stdin: "{{ zitadel_admin_pat | to_json }}"
-  delegate_to: localhost
-  become: false
+- name: Write Zitadel admin PAT to OpenBao site configuration
+  ansible.builtin.uri:
+    url: "https://{{ openbao_api_address | default('127.0.0.1:8200') }}/v1/{{ openbao_site_config_kv_mount | default('site-config') }}/data/config/zitadel_admin_pat"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ zitadel_admin_pat_openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      data:
+        value: "{{ zitadel_admin_pat }}"
+    ca_path: "{{ openbao_tls_dir | default('/etc/openbao/tls') }}/cert.pem"
+    status_code: [200, 204]
   no_log: true
   changed_when: true
   when: >-
-    zitadel_admin_pat_sops_current.rc != 0
-    or (zitadel_admin_pat_sops_current.stdout | trim) != zitadel_admin_pat
+    zitadel_admin_pat_openbao_current.status == 404
+    or (zitadel_admin_pat_openbao_current.json.data.data.value | default('')) != zitadel_admin_pat
 
 # --- Readiness gate ---
 

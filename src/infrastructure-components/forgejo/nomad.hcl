@@ -17,7 +17,7 @@ job "forgejo" {
 
     task "setup" {
       driver = "raw_exec"
-      user = "forgejo"
+      user = "root"
 
       lifecycle {
         hook = "prestart"
@@ -31,8 +31,8 @@ job "forgejo" {
       }
 
       config {
-        command = "/bin/sh"
-        args = ["-ec", "export HOME=/var/lib/forgejo\nexport FORGEJO_WORK_DIR=/var/lib/forgejo\nexport PATH=\"$PWD/local/bin:/usr/bin:/bin\"\nlocal/bin/forgejo migrate --config /etc/forgejo/app.ini --work-path /var/lib/forgejo\nlocal/bin/forgejo admin regenerate keys --config /etc/forgejo/app.ini\n"]
+        command = "local/bin/forgejo-node-runner"
+        args = ["prepare"]
       }
     }
 
@@ -47,8 +47,8 @@ job "forgejo" {
       }
 
       config {
-        command = "local/bin/forgejo"
-        args = ["web", "--config", "/etc/forgejo/app.ini"]
+        command = "local/bin/forgejo-node-runner"
+        args = ["serve"]
       }
 
       env {

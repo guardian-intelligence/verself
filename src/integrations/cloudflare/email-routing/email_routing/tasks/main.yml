@@ -8,7 +8,8 @@
   ansible.builtin.fail:
     msg: >-
       cloudflare_company_api_token is empty. Add an Email-Routing-scoped
-      token via: sops src/host/sites/{{ verself_site | default('prod') }}/secrets/host.sops.yml
+      token to OpenBao site configuration or set CLOUDFLARE_COMPANY_API_TOKEN
+      for the controller-side email bootstrap playbook.
   when: cloudflare_company_api_token | default('', true) | length == 0
 
 - name: Resolve Cloudflare zone

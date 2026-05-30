@@ -10,7 +10,7 @@ def _cloudflare_dns_impl(ctx):
     args_list = [
         "--site=" + site,
         "--ansible-dir=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
-        "--secrets=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/secrets/host.sops.yml"),
+        "--token-env=" + (ctx.args.token_env or "CLOUDFLARE_API_TOKEN"),
     ]
     if ctx.args.dry_run:
         args_list.append("--dry-run")
@@ -29,6 +29,7 @@ cloudflare_dns = task(
     summary = "Reconcile Cloudflare DNS records from site integration inputs.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
+        "token_env": args.string(default = "CLOUDFLARE_API_TOKEN", description = "Environment variable containing the Cloudflare API token."),
         "dry_run": args.boolean(default = False, description = "Print the DNS diff without applying it."),
     },
 )

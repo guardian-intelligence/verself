@@ -6,3 +6,10 @@ http_file(
     sha256 = "02dff22237bb600d947de302ae21d5463ebffbee302e18e423fd417cb4064bdf",
     url = "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/h/haproxy-awslc/haproxy-awslc_3.3.7-0+ha33+ubuntu24.04u1_amd64.deb",
 )
+
+http_file(
+    name = "haproxy_tool_libssl_awslc_deb",
+    downloaded_file_path = "libssl-awslc_3.3.0-0+ha33+ubuntu24.04u1_amd64.deb",
+    sha256 = "e75ceefa692bb002ae76d2e04ad88c344e524f28aeabf8b165c7bab922474b5c",
+    url = "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/a/awslc/libssl-awslc_3.3.0-0+ha33+ubuntu24.04u1_amd64.deb",
+)

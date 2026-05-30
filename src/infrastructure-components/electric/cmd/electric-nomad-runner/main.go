@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -20,6 +21,10 @@ type config struct {
 	containerdAddress   string
 	image               string
 	envFile             string
+	pgUser              string
+	pgPasswordFile      string
+	pgDatabase          string
+	electricSecretFile  string
 	storageDir          string
 	instanceID          string
 	replicationStreamID string
@@ -50,6 +55,10 @@ func parseConfig(args []string) (config, error) {
 	fs.StringVar(&cfg.containerdAddress, "containerd-address", "", "containerd socket address")
 	fs.StringVar(&cfg.image, "image", "", "container image reference")
 	fs.StringVar(&cfg.envFile, "env-file", "", "runtime env file containing Electric secrets")
+	fs.StringVar(&cfg.pgUser, "pg-user", "", "PostgreSQL replication role")
+	fs.StringVar(&cfg.pgPasswordFile, "pg-password-file", "", "path to the PostgreSQL password credential")
+	fs.StringVar(&cfg.pgDatabase, "pg-database", "", "PostgreSQL database Electric should replicate")
+	fs.StringVar(&cfg.electricSecretFile, "electric-secret-file", "", "path to the Electric API secret credential")
 	fs.StringVar(&cfg.storageDir, "storage-dir", "", "host storage directory mounted at /data")
 	fs.StringVar(&cfg.instanceID, "instance-id", "", "stable Electric instance id")
 	fs.StringVar(&cfg.replicationStreamID, "replication-stream-id", "", "stable Electric replication stream id")
@@ -71,6 +80,10 @@ func parseConfig(args []string) (config, error) {
 		"containerd-address":    cfg.containerdAddress,
 		"image":                 cfg.image,
 		"env-file":              cfg.envFile,
+		"pg-user":               cfg.pgUser,
+		"pg-password-file":      cfg.pgPasswordFile,
+		"pg-database":           cfg.pgDatabase,
+		"electric-secret-file":  cfg.electricSecretFile,
 		"storage-dir":           cfg.storageDir,
 		"instance-id":           cfg.instanceID,
 		"replication-stream-id": cfg.replicationStreamID,
@@ -86,8 +99,26 @@ func parseConfig(args []string) (config, error) {
 	if allocID == "" {
 		return config{}, errors.New("NOMAD_ALLOC_ID is required")
 	}
+	if err := absolutizeExecutable(&cfg.ctrBin, "ctr"); err != nil {
+		return config{}, err
+	}
+	if err := absolutizeExecutable(&cfg.runcBinary, "runc-binary"); err != nil {
+		return config{}, err
+	}
 	cfg.containerID = cfg.instanceID + "-" + allocID
 	return cfg, nil
+}
+
+func absolutizeExecutable(path *string, flagName string) error {
+	if filepath.IsAbs(*path) {
+		return nil
+	}
+	absPath, err := filepath.Abs(*path)
+	if err != nil {
+		return fmt.Errorf("resolve --%s: %w", flagName, err)
+	}
+	*path = absPath
+	return nil
 }
 
 func run(cfg config) error {
@@ -97,6 +128,9 @@ func run(cfg config) error {
 	}
 	if err := os.MkdirAll(cfg.storageDir, 0o750); err != nil {
 		return fmt.Errorf("create storage dir %s: %w", cfg.storageDir, err)
+	}
+	if err := writeEnvFile(cfg); err != nil {
+		return err
 	}
 
 	_ = cleanup(cfg)
@@ -131,6 +165,43 @@ func run(cfg config) error {
 		}
 		return nil
 	}
+}
+
+func writeEnvFile(cfg config) error {
+	pgPassword, err := readCredential(cfg.pgPasswordFile)
+	if err != nil {
+		return fmt.Errorf("read PostgreSQL password: %w", err)
+	}
+	electricSecret, err := readCredential(cfg.electricSecretFile)
+	if err != nil {
+		return fmt.Errorf("read Electric secret: %w", err)
+	}
+	databaseURL := url.URL{
+		Scheme: "postgresql",
+		User:   url.UserPassword(cfg.pgUser, pgPassword),
+		Host:   "127.0.0.1:5432",
+		Path:   "/" + cfg.pgDatabase,
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.envFile), 0o700); err != nil {
+		return fmt.Errorf("create env dir: %w", err)
+	}
+	body := "DATABASE_URL=" + databaseURL.String() + "\nELECTRIC_SECRET=" + electricSecret + "\n"
+	if err := os.WriteFile(cfg.envFile, []byte(body), 0o600); err != nil {
+		return fmt.Errorf("write Electric env file: %w", err)
+	}
+	return nil
+}
+
+func readCredential(path string) (string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	value := strings.TrimSpace(string(body))
+	if value == "" {
+		return "", fmt.Errorf("%s is empty", path)
+	}
+	return value, nil
 }
 
 func ctrRunArgs(cfg config, port string) []string {

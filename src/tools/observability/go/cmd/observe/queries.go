@@ -860,7 +860,6 @@ SELECT
   formatDateTime(event_time, '%H:%i:%S') AS time,
   event_name AS event,
   event_attrs['nomad.job_id'] AS job_id,
-  event_attrs['verself.deploy_wave'] AS wave,
   event_attrs['nomad.decision.noop'] AS noop,
   event_attrs['nomad.eval_id'] AS eval_id,
   event_attrs['nomad.deployment_id'] AS deployment_id,

@@ -7,10 +7,14 @@ pkg_tar(
     name = "runtime_artifact",
     out = "garage-runtime.tar",
     files = {
+        "//src/infrastructure-components/garage/cmd/garage-artifact-origin:garage-artifact-origin": "bin/garage-artifact-origin",
+        "//src/infrastructure-components/garage/cmd/garage-node-runner:garage-node-runner": "bin/garage-node-runner",
         "@garage_tools//tools/garage": "bin/garage",
     },
     modes = {
         "bin/garage": "0755",
+        "bin/garage-artifact-origin": "0755",
+        "bin/garage-node-runner": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -36,26 +40,24 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "garage-runtime",
-    },
     component = "garage",
-    deploy_phase = "pre_artifact",
     job_id = "garage",
     job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "garage-runtime",
+    },
     provides = ["garage:replica-0"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 
 nomad_component(
     name = "nomad_component_1",
-    artifacts = {
-        ":runtime_artifact": "garage-runtime",
-    },
     component = "garage",
-    deploy_phase = "pre_artifact",
     job_id = "garage-1",
     job_spec = "nomad-1.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "garage-runtime",
+    },
     provides = ["garage:replica-1"],
     requires = ["garage:replica-0"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
@@ -63,19 +65,33 @@ nomad_component(
 
 nomad_component(
     name = "nomad_component_2",
-    artifacts = {
-        ":runtime_artifact": "garage-runtime",
-    },
     component = "garage",
-    deploy_phase = "pre_artifact",
     job_id = "garage-2",
     job_spec = "nomad-2.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "garage-runtime",
+    },
     provides = [
-        "artifact-origin",
         "garage:replica-2",
         "garage:s3",
         "garage:admin",
     ],
     requires = ["garage:replica-1"],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+nomad_component(
+    name = "artifact_origin_nomad_component",
+    component = "garage_artifact_origin",
+    job_id = "garage-artifact-origin",
+    job_spec = "artifact-origin.nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "garage-runtime",
+    },
+    provides = ["artifact-origin"],
+    requires = [
+        "garage:admin",
+        "garage:s3",
+    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

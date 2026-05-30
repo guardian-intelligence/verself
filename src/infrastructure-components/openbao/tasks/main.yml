@@ -40,7 +40,7 @@
     - { path: "{{ openbao_data_dir }}", owner: openbao, group: openbao, mode: "0700" }
     - { path: "{{ openbao_raft_dir }}", owner: openbao, group: openbao, mode: "0700" }
     - { path: "{{ openbao_log_dir }}", owner: openbao, group: openbao, mode: "0700" }
-    - { path: "{{ openbao_credstore_dir }}", owner: root, group: openbao, mode: "0750" }
+    - { path: "{{ openbao_credstore_dir }}", owner: root, group: root, mode: "0700" }
 
 - name: Confirm destructive OpenBao rebootstrap request
   ansible.builtin.assert:
@@ -153,6 +153,58 @@
     owner: root
     group: openbao
     mode: "0640"
+  notify: restart openbao
+
+- name: Deploy OpenBao systemd unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/openbao.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=OpenBao
+      After=network.target spire-server.service spire-agent.service
+      Wants=spire-server.service spire-agent.service
+
+      [Service]
+      Type=simple
+      User=openbao
+      Group=openbao
+      Environment=BAO_ADDR=https://127.0.0.1:8200
+      Environment=HOME={{ openbao_data_dir }}
+      ExecStart={{ verself_bin }}/bao server -config={{ openbao_config_dir }}/openbao.hcl
+      ExecReload=/bin/kill -HUP $MAINPID
+      Restart=on-failure
+      RestartSec=5
+      LimitMEMLOCK=infinity
+      AmbientCapabilities=CAP_IPC_LOCK
+      CapabilityBoundingSet=CAP_IPC_LOCK
+      NoNewPrivileges=true
+      PrivateTmp=true
+      ProtectHome=true
+      ProtectSystem=strict
+      ReadWritePaths={{ openbao_data_dir }} {{ openbao_log_dir }}
+      ReadOnlyPaths={{ openbao_config_dir }}
+      RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+      RestrictRealtime=true
+      RestrictSUIDSGID=true
+      SystemCallArchitectures=native
+      UMask=0077
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: restart openbao
+
+- name: Apply OpenBao unit and config changes before readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start OpenBao
+  ansible.builtin.systemd:
+    name: openbao
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Wait for OpenBao listener
   ansible.builtin.wait_for:
@@ -198,8 +250,8 @@
     content: "{{ (openbao_init_raw.stdout | from_json).root_token }}"
     dest: "{{ openbao_credstore_dir }}/root-token"
     owner: root
-    group: openbao
-    mode: "0640"
+    group: root
+    mode: "0600"
   when: openbao_bootstrap_initialized | bool
   no_log: true
 
@@ -211,8 +263,8 @@
     content: "{{ item }}"
     dest: "{{ openbao_credstore_dir }}/unseal-key-{{ openbao_unseal_key_index + 1 }}"
     owner: root
-    group: openbao
-    mode: "0640"
+    group: root
+    mode: "0600"
   loop: "{{ openbao_unseal_keys }}"
   loop_control:
     index_var: openbao_unseal_key_index
@@ -244,8 +296,8 @@
   ansible.builtin.file:
     path: "{{ openbao_credstore_dir }}/{{ item }}"
     owner: root
-    group: openbao
-    mode: "0640"
+    group: root
+    mode: "0600"
   loop:
     - root-token
     - unseal-key-1
@@ -380,6 +432,37 @@
   loop: "{{ openbao_audit_request_headers }}"
   loop_control:
     label: "{{ item.name }}"
+  no_log: true
+
+- name: List OpenBao secret mounts for site configuration
+  ansible.builtin.uri:
+    url: "https://{{ openbao_api_address }}/v1/sys/mounts"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 200
+    return_content: true
+  register: openbao_site_config_mounts_response
+  changed_when: false
+  no_log: true
+
+- name: Mount OpenBao site configuration KV v2
+  ansible.builtin.uri:
+    url: "https://{{ openbao_api_address }}/v1/sys/mounts/{{ openbao_site_config_kv_mount }}"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+    body_format: json
+    body:
+      type: kv
+      options:
+        version: "2"
+      description: Verself site configuration
+    ca_path: "{{ openbao_tls_dir }}/cert.pem"
+    status_code: 204
+  when: (openbao_site_config_kv_mount ~ '/') not in (openbao_site_config_mounts_response.json.data.keys() | list)
+  changed_when: true
   no_log: true
 
 - name: Probe OpenBao authenticated sys/mounts to exercise audit device

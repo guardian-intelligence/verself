@@ -40,7 +40,6 @@ nomad_component(
         ":runtime_artifact": "tigerbeetle-runtime",
     },
     component = "tigerbeetle",
-    deploy_phase = "platform",
     job_id = "tigerbeetle",
     job_spec = "nomad.hcl",
     provides = ["tigerbeetle:client"],

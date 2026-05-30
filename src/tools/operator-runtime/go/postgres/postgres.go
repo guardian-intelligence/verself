@@ -19,12 +19,11 @@ const (
 )
 
 type Config struct {
-	Database     string
-	User         string
-	Password     string
-	RemotePort   int
-	PasswordPath string
-	PasswordKey  string
+	Database    string
+	User        string
+	Password    string
+	RemotePort  int
+	PasswordKey string
 }
 
 func OpenOverSSH(ctx context.Context, rt *opruntime.Runtime, cfg Config) (*pgx.Conn, error) {
@@ -49,12 +48,8 @@ func OpenOverSSH(ctx context.Context, rt *opruntime.Runtime, cfg Config) (*pgx.C
 		if key == "" {
 			key = "postgresql_admin_password"
 		}
-		path := cfg.PasswordPath
-		if path == "" {
-			path = opruntime.HostConfigurationSecretsPath(rt.RepoRoot, rt.Site)
-		}
 		var err error
-		password, err = opruntime.DecryptSOPSValue(ctx, path, key)
+		password, err = opruntime.ReadSiteConfigValue(ctx, rt, key)
 		if err != nil {
 			return nil, err
 		}

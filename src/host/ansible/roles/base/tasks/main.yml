@@ -75,6 +75,145 @@
     # contents stay tight: each subdirectory carries its own mode.
     mode: "0755"
 
+- name: Write Verself site domain
+  ansible.builtin.copy:
+    content: "{{ verself_domain }}\n"
+    dest: /etc/verself/domain
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Write Verself installation ID
+  ansible.builtin.copy:
+    content: "{{ verself_installation_id }}\n"
+    dest: /etc/verself/installation-id
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create workload system groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+    state: present
+  loop: "{{ base_workload_users }}"
+
+- name: Read existing passwd database
+  ansible.builtin.getent:
+    database: passwd
+
+- name: Create workload system users
+  ansible.builtin.user:
+    name: "{{ item }}"
+    group: "{{ item }}"
+    home: "/var/lib/{{ item }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+    system: true
+    state: present
+  loop: "{{ base_workload_users }}"
+  when: item not in ansible_facts.getent_passwd
+
+- name: Create Firecracker jailer group
+  ansible.builtin.group:
+    name: "{{ base_firecracker_jailer_user }}"
+    gid: "{{ base_firecracker_jailer_gid }}"
+    state: present
+
+- name: Create Firecracker jailer user
+  ansible.builtin.user:
+    name: "{{ base_firecracker_jailer_user }}"
+    uid: "{{ base_firecracker_jailer_uid }}"
+    group: "{{ base_firecracker_jailer_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: /nonexistent
+    create_home: false
+    state: present
+  when: base_firecracker_jailer_user not in ansible_facts.getent_passwd
+
+- name: Create vm-orchestrator socket group
+  ansible.builtin.group:
+    name: "{{ base_vm_orchestrator_socket_group }}"
+    system: true
+    state: present
+
+- name: Read vm-orchestrator socket group membership
+  ansible.builtin.command:
+    argv:
+      - getent
+      - group
+      - "{{ base_vm_orchestrator_socket_group }}"
+  register: base_vm_orchestrator_socket_group_getent
+  changed_when: false
+
+- name: Grant approved services vm-orchestrator socket access
+  ansible.builtin.command:
+    argv:
+      - gpasswd
+      - --add
+      - "{{ item }}"
+      - "{{ base_vm_orchestrator_socket_group }}"
+  loop: "{{ base_vm_orchestrator_socket_members }}"
+  changed_when: true
+  when: >-
+    base_vm_orchestrator_socket_group_getent.stdout
+    is not regex('(^|[:,])' ~ item ~ '($|,)')
+
+- name: Create vm-orchestrator state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/lib/verself, mode: "0755" }
+    - { path: /var/lib/verself/vm-orchestrator, mode: "0755" }
+    - { path: /var/lib/verself/vm-orchestrator/storage-keys, mode: "0700" }
+
+- name: Configure host-service dummy interface
+  ansible.builtin.copy:
+    content: |
+      # Managed by Verself host.
+      [NetDev]
+      Name={{ base_host_service_interface }}
+      Kind=dummy
+    dest: "/etc/systemd/network/20-{{ base_host_service_interface }}.netdev"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-networkd
+
+- name: Configure host-service address
+  ansible.builtin.copy:
+    content: |
+      # Managed by Verself host.
+      [Match]
+      Name={{ base_host_service_interface }}
+
+      [Network]
+      Address={{ base_host_service_ip }}/32
+      LinkLocalAddressing=no
+      IPv6AcceptRA=no
+    dest: "/etc/systemd/network/20-{{ base_host_service_interface }}.network"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-networkd
+
+- name: Ensure host-service network plane is active
+  ansible.builtin.systemd:
+    name: systemd-networkd
+    enabled: true
+    state: started
+
+- name: Converge configured ZFS pools
+  ansible.builtin.include_tasks: zfs-pool.yml
+  loop: "{{ base_zfs_pools }}"
+  loop_control:
+    loop_var: base_zfs_pool
+
 - name: Disable unsupported GSSAPIAuthentication in ssh_config
   ansible.builtin.lineinfile:
     path: /etc/ssh/ssh_config

@@ -13,6 +13,7 @@ type ArtifactDelivery struct {
 	Bucket               string            `json:"bucket"`
 	GetterSourcePrefix   string            `json:"getter_source_prefix"`
 	GetterOptions        map[string]string `json:"getter_options"`
+	GetterCredentials    Credentials       `json:"getter_credentials"`
 	PublisherCredentials Credentials       `json:"publisher_credentials"`
 	Origin               Origin            `json:"origin"`
 }
@@ -43,7 +44,6 @@ type Artifact struct {
 type NomadJob struct {
 	JobID              string             `json:"job_id"`
 	Component          string             `json:"component"`
-	DeployPhase        string             `json:"deploy_phase"`
 	DependsOn          []string           `json:"depends_on,omitempty"`
 	ArtifactOutputs    []string           `json:"artifact_outputs,omitempty"`
 	PostDeployCanaries []PostDeployCanary `json:"post_deploy_canaries,omitempty"`

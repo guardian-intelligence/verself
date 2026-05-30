@@ -1,0 +1,95 @@
+name: Preview deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open pull request number to deploy.
+        required: true
+      sha:
+        description: Optional PR head SHA. When set, it must match the current PR head.
+        required: false
+      site:
+        description: Pre-provisioned site that will receive the preview deploy.
+        required: false
+        default: gamma
+      post_deploy_checks:
+        description: Post-deploy canary depth.
+        required: false
+        default: medium
+        type: choice
+        options:
+          - medium
+          - large
+          - all
+          - none
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: preview-deploy-${{ inputs.site }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy PR preview
+    runs-on: verself-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    environment: preview
+    steps:
+      - name: Resolve PR head
+        id: pr
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REQUESTED_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          repo = os.environ["REPOSITORY"]
+          pr_number = os.environ["PR_NUMBER"]
+          requested_sha = os.environ.get("REQUESTED_SHA", "").strip()
+          token = os.environ["GITHUB_TOKEN"]
+
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              payload = json.load(resp)
+          if payload["state"] != "open":
+              raise SystemExit(f"pull request {pr_number} is {payload['state']}, not open")
+          head_sha = payload["head"]["sha"]
+          if requested_sha and requested_sha != head_sha:
+              raise SystemExit(f"requested sha {requested_sha} does not match current PR head {head_sha}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              print(f"sha={head_sha}", file=out)
+          print(f"Resolved PR {pr_number} head {head_sha}")
+          PY
+
+      - name: Check out repository
+        uses: guardian-intelligence/verself/.github/actions/checkout@main
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          persist-credentials: false
+
+      - name: Bootstrap toolchain
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
+
+      - name: Validate preview site
+        run: aspect site validate --site="${{ inputs.site }}" --require-inventory
+
+      - name: Deploy preview
+        run: aspect deploy --site="${{ inputs.site }}" --sha="${{ steps.pr.outputs.sha }}" --post-deploy-checks="${{ inputs.post_deploy_checks }}"

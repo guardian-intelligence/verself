@@ -26,6 +26,7 @@ filegroup(
 genrule(
     name = "postgresql_runtime",
     srcs = [
+        "//src/infrastructure-components/postgresql/cmd/postgresql-node-runner",
         "@postgresql_tool_libpq5//file",
         "@postgresql_tool_libxml2//file",
         "@postgresql_tool_postgresql_16//file",
@@ -42,9 +43,11 @@ dpkg-deb -x "$(location @postgresql_tool_libxml2//file)" "$$tmp/extract"
 dpkg-deb -x "$(location @postgresql_tool_postgresql_client_16//file)" "$$tmp/extract"
 dpkg-deb -x "$(location @postgresql_tool_postgresql_16//file)" "$$tmp/extract"
 mkdir -p \
+  "$$tmp/{root}/bin" \
   "$$tmp/{root}/usr/lib/postgresql" \
   "$$tmp/{root}/usr/share/postgresql" \
   "$$tmp/{root}/usr/lib/x86_64-linux-gnu"
+install -m 0755 "$(location //src/infrastructure-components/postgresql/cmd/postgresql-node-runner:postgresql-node-runner)" "$$tmp/{root}/bin/postgresql-node-runner"
 cp -a "$$tmp/extract/usr/lib/postgresql/{major}" "$$tmp/{root}/usr/lib/postgresql/{major}"
 cp -a "$$tmp/extract/usr/share/postgresql/{major}" "$$tmp/{root}/usr/share/postgresql/{major}"
 cp -a "$$tmp/extract/usr/lib/x86_64-linux-gnu"/libpq.so.* "$$tmp/{root}/usr/lib/x86_64-linux-gnu/"
@@ -65,13 +68,12 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
 
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        ":postgresql_runtime": "postgresql-runtime",
-    },
     component = "postgresql",
-    deploy_phase = "pre_artifact",
     job_id = "postgresql",
     job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":postgresql_runtime": "postgresql-runtime",
+    },
     provides = ["postgres:server"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

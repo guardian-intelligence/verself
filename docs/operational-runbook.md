@@ -48,6 +48,28 @@ canary dependency is known to be unavailable. If a canary fails after a changed
 Nomad job becomes healthy, `verself-deploy` reverts the job to the prior Nomad
 version; first deploys with no prior version are deregistered.
 
+Deployment policy is split by site:
+
+- Gamma deploys are automatic after `Verself CI` succeeds on `main`.
+- Production deploys are a manual GitHub Actions dispatch against an explicit
+  commit SHA and the protected `production` environment.
+- PR previews are manual GitHub Actions dispatches against an open pull request;
+  the workflow resolves the current PR head through the GitHub API and refuses a
+  mismatched requested SHA before deploying to the selected pre-provisioned
+  preview site.
+
+Site allocation, host bootstrap, and OpenBao site configuration are explicit
+operator actions:
+
+```shell
+aspect site allocate --site=gamma --confirm
+aspect site bootstrap --site=gamma
+aspect site secret-put --site=gamma --name=postgresql_admin_password
+```
+
+Those actions prepare the substrate that Nomad deploys target. Application
+deployment remains `aspect deploy`.
+
 Declared canaries can also be run against the current site without submitting
 jobs:
 

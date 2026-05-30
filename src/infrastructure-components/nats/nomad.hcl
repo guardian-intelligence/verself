@@ -20,6 +20,32 @@ job "nats" {
       }
     }
 
+    task "prepare-storage" {
+      driver = "raw_exec"
+      user = "root"
+
+      artifact {
+        source = "verself-artifact://nats-runtime"
+        destination = "local"
+        chown = true
+      }
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "local/bin/nats-node-runner"
+        args = ["prepare"]
+      }
+
+      resources {
+        cpu = 50
+        memory = 64
+      }
+    }
+
     task "spiffe-helper" {
       driver = "raw_exec"
       user = "nats"
@@ -36,8 +62,8 @@ job "nats" {
       }
 
       config {
-        command = "local/bin/spiffe-helper"
-        args = ["-config", "/etc/nats/nats-spiffe-helper.conf"]
+        command = "local/bin/nats-node-runner"
+        args = ["spiffe-helper"]
       }
 
       resources {
@@ -57,8 +83,8 @@ job "nats" {
       }
 
       config {
-        command = "local/bin/nats-server"
-        args = ["-c", "/etc/nats/nats-server.conf"]
+        command = "local/bin/nats-node-runner"
+        args = ["server"]
       }
 
       env {

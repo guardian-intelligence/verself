@@ -62,16 +62,14 @@ export PATH="${HOME}/.local/bin:${PATH}"
 ### (optional) Cloning this repo onto your own infrastructure
 
 ```bash
-# 2. Tell OpenTofu where to provision (one time per environment).
-cp src/tools/provisioning/terraform/terraform.tfvars.example.json \
-   src/tools/provisioning/terraform/terraform.tfvars.json
-$EDITOR src/tools/provisioning/terraform/terraform.tfvars.json   # set project_id
+# 2. Tell OpenTofu where to provision (one time per site).
+$EDITOR src/host/sites/prod/provisioning.tfvars.json   # set provider inputs
 
-# 3. Provision bare metal + render inventory.
-aspect dev sops-init
-aspect provision apply
+# 3. Allocate bare metal, render inventory, and converge host substrate.
+aspect site allocate --site=prod --confirm
+aspect site bootstrap --site=prod
 
-# 4. Deploy. Idempotent; safe to repeat.
+# 4. Deploy through Nomad. Idempotent; safe to repeat.
 aspect deploy
 
 # 5. Mint a persona env file and start working.
@@ -88,5 +86,4 @@ automatically add that directory to GitHub Actions via `GITHUB_PATH` when that
 file is present. Set `BOOTSTRAP_INSTALL_DIR` to opt into a different install
 directory. Local shells need that directory on `PATH` before invoking `aspect`
 or `bazelisk`.
-
 
