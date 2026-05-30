@@ -193,11 +193,11 @@
   --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
   --treatment-surface-border: rgba(11, 11, 11, 0.14);
   --treatment-hairline: rgba(11, 11, 11, 0.14);
-  /* Letters paints the masthead/colophon rule in warm sepia. The thickness
+  /* Letters paints the masthead/colophon rule in Guardian ink. The thickness
      is tuned to the optical weight of Fraunces body type — 3px reads as
      a deliberate masthead stroke at our type scale. The rule is
      column-aligned by the chrome's max-w-6xl wrapper, so it never touches
      the viewport edge. */
-  --treatment-rule-color: var(--color-sepia);
+  --treatment-rule-color: var(--color-ink);
   --treatment-rule-thickness: 3px;
 }

@@ -14,7 +14,7 @@ const CRITICAL_TREATMENTS = {
     colorScheme: "light",
   },
   letters: {
-    ground: "#fbf7ee",
+    ground: "#fff4dc",
     ink: "#0b0b0b",
     colorScheme: "light",
   },

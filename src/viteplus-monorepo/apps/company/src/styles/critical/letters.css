@@ -7,7 +7,7 @@
 html,
 body {
   margin: 0;
-  background: #fbf7ee;
+  background: #fff4dc;
   color: #0b0b0b;
   color-scheme: light;
 }
@@ -19,7 +19,7 @@ body {
   --chrome-lockup-h: 22px;
   --header-h: calc(var(--chrome-edge-gap) + var(--chrome-lockup-h) + var(--chrome-rule-gap));
   --header-scroll-offset: calc(var(--header-h) + 1.5rem);
-  --treatment-ground: #fbf7ee;
+  --treatment-ground: #fff4dc;
   --treatment-ink: #0b0b0b;
   --treatment-accent: #0b0b0b;
   --treatment-wordmark: #0b0b0b;
@@ -33,6 +33,6 @@ body {
   --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
   --treatment-surface-border: rgba(11, 11, 11, 0.14);
   --treatment-hairline: rgba(11, 11, 11, 0.14);
-  --treatment-rule-color: #5b3a26;
+  --treatment-rule-color: #0b0b0b;
   --treatment-rule-thickness: 3px;
 }

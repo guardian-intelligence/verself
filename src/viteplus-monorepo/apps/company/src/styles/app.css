@@ -144,9 +144,33 @@
   opacity: 0.24;
 }
 
+/* Watercolor wash: irregular splotches where the cream sheet dried lighter,
+   toward white. Pure layered radial gradients — no SVG filter, no blend mode,
+   no animation — so the whole effect rasterises once with first paint and costs
+   nothing at runtime. The layer sits BELOW the text (z-0), so white alpha only
+   lightens the paper and never washes out the ink; the graph ruling multiplies
+   on top. Y is px (anchored to the masthead, so pools never stretch down a long
+   letter); X is % so they track viewport width. Each cluster overlaps two
+   ellipses of different ratios so the bloom edge reads irregular, not a clean
+   oval. */
+.letters-paper-wash {
+  background-image:
+    radial-gradient(
+      560px 420px at 28% 90px,
+      rgb(255 255 255 / 0.34) 0%,
+      rgb(255 255 255 / 0.13) 40%,
+      transparent 72%
+    ),
+    radial-gradient(520px 380px at 82% 60px, rgb(255 255 255 / 0.3) 0%, transparent 66%),
+    radial-gradient(440px 340px at 62% 320px, rgb(255 255 255 / 0.24) 0%, transparent 68%),
+    radial-gradient(360px 300px at 12% 300px, rgb(255 255 255 / 0.24) 0%, transparent 64%),
+    radial-gradient(720px 500px at 50% 460px, rgb(255 255 255 / 0.2) 0%, transparent 72%);
+  background-repeat: no-repeat;
+}
+
 .letters-paper-grid {
-  --letters-grid-minor-alpha: 0.03;
-  --letters-grid-major-alpha: 0.055;
+  --letters-grid-minor-alpha: 0.0225;
+  --letters-grid-major-alpha: 0.041;
   background-image:
     linear-gradient(to right, rgb(40 44 52 / var(--letters-grid-major-alpha)) 1px, transparent 1px),
     linear-gradient(
@@ -171,13 +195,13 @@
 }
 
 .letters-paper-grid--text {
-  --letters-grid-minor-alpha: 0.026;
-  --letters-grid-major-alpha: 0.052;
+  --letters-grid-minor-alpha: 0.0195;
+  --letters-grid-major-alpha: 0.039;
 }
 
 .letters-paper-grid--margin {
-  --letters-grid-minor-alpha: 0.12;
-  --letters-grid-major-alpha: 0.2;
+  --letters-grid-minor-alpha: 0.09;
+  --letters-grid-major-alpha: 0.15;
 }
 
 :root {
