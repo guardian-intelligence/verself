@@ -6,17 +6,27 @@ import (
 	"testing"
 )
 
-func TestZitadelProductTokenClaimsRouteIsLoopbackOnly(t *testing.T) {
+func TestZitadelProductTokenClaimsRouteUsesIAMServiceHost(t *testing.T) {
 	cfg := readTemplate(t, "haproxy.cfg.j2")
+	requireContains(t, cfg, "acl host_iam var(txn.host) -m str {{ iam_service_domain }}")
 	requireContains(t, cfg, "acl zitadel_product_token_claims path -i /internal/zitadel/actions/product-token-claims")
-	requireContains(t, cfg, "acl zitadel_product_token_claims_source src 127.0.0.1")
-	requireContains(t, cfg, "http-request return status 403 if host_verself zitadel_product_token_claims !zitadel_product_token_claims_source")
-	requireContains(t, cfg, "use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims zitadel_product_token_claims_source")
+	requireContains(t, cfg, "http-request return status 405 if host_iam zitadel_product_token_claims !method_post")
+	requireContains(t, cfg, "use_backend be_zitadel_product_token_claims if host_iam method_post zitadel_product_token_claims")
+	if strings.Contains(cfg, "zitadel_product_token_claims_source") {
+		t.Fatalf("Zitadel action route must not depend on loopback source matching")
+	}
+	if strings.Contains(cfg, "host_verself method_post zitadel_product_token_claims") {
+		t.Fatalf("Zitadel action route must not live on the product apex")
+	}
 
-	deny := strings.Index(cfg, "http-request return status 403 if host_verself zitadel_product_token_claims !zitadel_product_token_claims_source")
-	route := strings.Index(cfg, "use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims zitadel_product_token_claims_source")
+	deny := strings.Index(cfg, "http-request return status 405 if host_iam zitadel_product_token_claims !method_post")
+	route := strings.Index(cfg, "use_backend be_zitadel_product_token_claims if host_iam method_post zitadel_product_token_claims")
 	if deny < 0 || route < 0 || deny > route {
-		t.Fatalf("Zitadel action deny rule must appear before backend routing")
+		t.Fatalf("Zitadel action method gate must appear before backend routing")
+	}
+	hostMap := strings.Index(cfg, "use_backend %[var(txn.host),map(")
+	if hostMap < 0 || route > hostMap {
+		t.Fatalf("Zitadel action route must appear before host-map routing")
 	}
 
 	upstreams := readTemplate(t, "nomad-upstreams.cfg.j2")

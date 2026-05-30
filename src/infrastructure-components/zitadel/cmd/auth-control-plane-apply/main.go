@@ -48,6 +48,7 @@ type config struct {
 	zitadelHost         string
 	adminPATPath        string
 	verselfDomain       string
+	iamServiceDomain    string
 	iamCredstoreDir     string
 	iamCredstoreGroup   string
 	projectName         string
@@ -166,6 +167,7 @@ func run(args []string) error {
 		zitadelHost:         envOr("AUTH_CONTROL_PLANE_ZITADEL_HOST", ""),
 		adminPATPath:        envOr("AUTH_CONTROL_PLANE_ADMIN_PAT_PATH", defaultZitadelAdminPATPath),
 		verselfDomain:       envOr("AUTH_CONTROL_PLANE_VERSELF_DOMAIN", ""),
+		iamServiceDomain:    envOr("AUTH_CONTROL_PLANE_IAM_SERVICE_DOMAIN", ""),
 		iamCredstoreDir:     envOr("AUTH_CONTROL_PLANE_IAM_CREDSTORE_DIR", defaultIAMCredstoreDir),
 		iamCredstoreGroup:   envOr("AUTH_CONTROL_PLANE_IAM_CREDSTORE_GROUP", defaultIAMCredstoreGroup),
 		projectName:         defaultProjectName,
@@ -185,6 +187,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.zitadelHost, "zitadel-host", cfg.zitadelHost, "Zitadel HTTP Host header.")
 	fs.StringVar(&cfg.adminPATPath, "admin-pat-path", cfg.adminPATPath, "Zitadel admin PAT path.")
 	fs.StringVar(&cfg.verselfDomain, "verself-domain", cfg.verselfDomain, "Product apex domain.")
+	fs.StringVar(&cfg.iamServiceDomain, "iam-service-domain", cfg.iamServiceDomain, "Public IAM service domain.")
 	fs.StringVar(&cfg.iamCredstoreDir, "iam-credstore-dir", cfg.iamCredstoreDir, "IAM credstore directory.")
 	fs.StringVar(&cfg.iamCredstoreGroup, "iam-credstore-group", cfg.iamCredstoreGroup, "IAM credstore group.")
 	fs.StringVar(&cfg.projectName, "project-name", cfg.projectName, "Zitadel project for product API audiences.")
@@ -228,6 +231,7 @@ func (cfg config) validate() error {
 		"--zitadel-host":        cfg.zitadelHost,
 		"--admin-pat-path":      cfg.adminPATPath,
 		"--verself-domain":      cfg.verselfDomain,
+		"--iam-service-domain":  cfg.iamServiceDomain,
 		"--iam-credstore-dir":   cfg.iamCredstoreDir,
 		"--iam-credstore-group": cfg.iamCredstoreGroup,
 		"--project-name":        cfg.projectName,
@@ -243,8 +247,28 @@ func (cfg config) validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
 	}
-	if _, err := url.ParseRequestURI("https://" + cfg.verselfDomain); err != nil {
-		return fmt.Errorf("invalid --verself-domain: %w", err)
+	if err := validateDomainFlag("--verself-domain", cfg.verselfDomain); err != nil {
+		return err
+	}
+	if err := validateDomainFlag("--iam-service-domain", cfg.iamServiceDomain); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(cfg.claimsActionPath, "/") {
+		return fmt.Errorf("invalid --claims-action-path: must start with /")
+	}
+	if _, err := url.ParseRequestURI(cfg.claimsActionPath); err != nil {
+		return fmt.Errorf("invalid --claims-action-path: %w", err)
+	}
+	return nil
+}
+
+func validateDomainFlag(name, value string) error {
+	value = strings.TrimSpace(value)
+	if strings.Contains(value, "://") || strings.ContainsAny(value, "/?#") {
+		return fmt.Errorf("invalid %s: expected host name", name)
+	}
+	if _, err := url.ParseRequestURI("https://" + value); err != nil {
+		return fmt.Errorf("invalid %s: %w", name, err)
 	}
 	return nil
 }
@@ -574,7 +598,7 @@ func ensureCLIOIDCApplication(ctx context.Context, client zitadelClient, project
 }
 
 func ensureProductTokenClaimsAction(ctx context.Context, client zitadelClient, cfg config) error {
-	endpoint := "https://" + cfg.verselfDomain + cfg.claimsActionPath
+	endpoint := productTokenClaimsEndpoint(cfg)
 	target, found, err := client.FindActionTargetByName(ctx, cfg.claimsTargetName)
 	if err != nil {
 		return err
@@ -597,6 +621,10 @@ func ensureProductTokenClaimsAction(ctx context.Context, client zitadelClient, c
 		return fmt.Errorf("write Zitadel product token claims signing key: %w", err)
 	}
 	return client.SetFunctionExecution(ctx, productTokenClaimsFunction, []string{target.ID})
+}
+
+func productTokenClaimsEndpoint(cfg config) string {
+	return "https://" + strings.TrimRight(strings.TrimSpace(cfg.iamServiceDomain), "/") + cfg.claimsActionPath
 }
 
 func (c zitadelClient) EnsureProject(ctx context.Context, name string) (zitadelProject, error) {
