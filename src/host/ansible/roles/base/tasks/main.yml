@@ -180,6 +180,17 @@
     - { path: /var/lib/verself/vm-orchestrator, mode: "0755" }
     - { path: /var/lib/verself/vm-orchestrator/storage-keys, mode: "0700" }
 
+- name: Create sandbox-rental host cache directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: sandbox_rental
+    group: sandbox_rental
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /var/lib/verself/sandbox-rental, mode: "0750" }
+    - { path: /var/lib/verself/sandbox-rental/github-checkout-bundles, mode: "0750" }
+
 - name: Configure host-service dummy interface
   ansible.builtin.copy:
     content: |

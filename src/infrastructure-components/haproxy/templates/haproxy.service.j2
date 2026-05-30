@@ -1,8 +1,8 @@
 [Unit]
 Description=HAProxy public edge
-After=verself-firewall.target network-online.target verself-firecracker-network.service
+After=verself-firewall.target network-online.target
 Requires=verself-firewall.target
-Wants=network-online.target verself-firecracker-network.service
+Wants=network-online.target
 
 [Service]
 Type=notify

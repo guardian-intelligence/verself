@@ -7,19 +7,6 @@ deploy_declarations(visibility = ["//visibility:public"])
 exports_files(["tools.lock.json"])
 
 genrule(
-    name = "git_bin",
-    srcs = ["@forgejo_tool_git_deb//file"],
-    outs = ["git"],
-    cmd = """
-set -euo pipefail
-tmp="$$(mktemp -d)"
-trap 'rm -rf "$$tmp"' EXIT
-dpkg-deb -x "$(location @forgejo_tool_git_deb//file)" "$$tmp"
-install -m 0755 "$$tmp/usr/bin/git" "$@"
-""",
-)
-
-genrule(
     name = "sqlite3_bin",
     srcs = ["@forgejo_tool_sqlite3_deb//file"],
     outs = ["sqlite3"],
@@ -38,16 +25,15 @@ pkg_tar(
     files = {
         "//src/infrastructure-components/forgejo/cmd/forgejo-node-runner:forgejo-node-runner": "bin/forgejo-node-runner",
         "@forgejo_tools//tools/forgejo": "bin/forgejo",
-        ":git_bin": "bin/git",
         ":sqlite3_bin": "bin/sqlite3",
     },
     modes = {
         "bin/forgejo-node-runner": "0755",
         "bin/forgejo": "0755",
-        "bin/git": "0755",
         "bin/sqlite3": "0755",
     },
     visibility = ["//visibility:public"],
+    deps = ["//src/host:git_runtime_archive"],
 )
 
 filegroup(

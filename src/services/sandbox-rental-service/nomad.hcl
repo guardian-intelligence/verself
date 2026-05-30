@@ -70,10 +70,18 @@ job "sandbox-rental" {
         destination = "local"
         chown = true
       }
+      artifact {
+        source = "verself-artifact://sandbox-rental-git"
+        destination = "local"
+        chown = true
+      }
       config {
         command = "local/bin/sandbox-rental-service"
       }
       env {
+        GIT_EXEC_PATH = "$${NOMAD_TASK_DIR}/lib/git-core"
+        GIT_TEMPLATE_DIR = "$${NOMAD_TASK_DIR}/share/git-core/templates"
+        LD_LIBRARY_PATH = "$${NOMAD_TASK_DIR}/lib"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-service"
@@ -97,6 +105,7 @@ job "sandbox-rental" {
         VERSELF_PG_MAX_CONNS = "16"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
+        PATH = "$${NOMAD_TASK_DIR}/bin:/usr/bin:/bin"
       }
       resources {
         cpu = 500

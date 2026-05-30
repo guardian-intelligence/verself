@@ -11,8 +11,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"regexp"
 	"sort"
@@ -185,6 +187,10 @@ func run() error {
 					authzCancel()
 					authzTotal.Add(1)
 					if err != nil {
+						if authorizationProbeNotFound(err) {
+							authzDenied.Add(1)
+							continue
+						}
 						authzErrors.Add(1)
 						firstErr.CompareAndSwap(nil, "authorize: "+err.Error())
 						continue
@@ -273,6 +279,21 @@ func authorizationProbeOrgID(fallback string, resp *iamclient.ResolveOrganizatio
 	}
 	fallback = strings.TrimSpace(fallback)
 	return fallback, fallback != "" && canonicalOrgIDRE.MatchString(fallback)
+}
+
+func authorizationProbeNotFound(err error) bool {
+	var authErr iamclient.AuthorizationError
+	if !errors.As(err, &authErr) || authErr.StatusCode != http.StatusNotFound {
+		return false
+	}
+	var problem iamclient.ErrorModel
+	if decodeErr := json.Unmarshal([]byte(authErr.Body), &problem); decodeErr != nil {
+		return false
+	}
+	if problem.Code == nil || *problem.Code != "resource.not_found" {
+		return false
+	}
+	return problem.Detail != nil && strings.Contains(strings.ToLower(*problem.Detail), "organization not found")
 }
 
 func printTable(r result) error {

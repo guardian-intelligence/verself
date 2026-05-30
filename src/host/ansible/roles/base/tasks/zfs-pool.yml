@@ -41,8 +41,8 @@
       - (item.stdout | from_json).blockdevices | length == 1
       - (item.stdout | from_json).blockdevices[0].type == "disk"
       - ((item.stdout | from_json).blockdevices[0].children | default([])) | length == 0
-      - (((item.stdout | from_json).blockdevices[0].mountpoint | default("")) | string | length) == 0
-      - (((item.stdout | from_json).blockdevices[0].fstype | default("")) | string | length) == 0
+      - (((item.stdout | from_json).blockdevices[0].mountpoint | default("", true)) | string | length) == 0
+      - (((item.stdout | from_json).blockdevices[0].fstype | default("", true)) | string | length) == 0
     fail_msg: "Refusing to create {{ base_zfs_pool.name }} on a device that is partitioned, mounted, or already formatted."
   loop: "{{ base_zfs_pool_device_inspections.results | default([]) }}"
   when: base_zfs_pool_status.rc != 0

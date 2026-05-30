@@ -42,6 +42,8 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "release-lease":
+		os.Exit(runReleaseLease(os.Args[2:]))
 	case "seed-image":
 		os.Exit(runSeedImage(os.Args[2:]))
 	case "seed-catalog":
@@ -61,6 +63,7 @@ func main() {
 func printRootUsage() {
 	fmt.Fprintln(os.Stderr, "usage: vm-orchestrator-cli <subcommand> [flags]")
 	fmt.Fprintln(os.Stderr, "subcommands:")
+	fmt.Fprintln(os.Stderr, "  release-lease  release an active lease via the daemon")
 	fmt.Fprintln(os.Stderr, "  seed-image     materialize one composable image zvol via the daemon")
 	fmt.Fprintln(os.Stderr, "  seed-catalog   materialize a JSON catalog of composable image zvols in order")
 	fmt.Fprintln(os.Stderr, "  stage-guest-images   stage substrate and toolchain image files from deploy artifacts")
@@ -105,6 +108,13 @@ type stageGuestImagesFlags struct {
 	workDir         string
 }
 
+type releaseLeaseFlags struct {
+	socket         string
+	leaseID        string
+	idempotencyKey string
+	timeout        time.Duration
+}
+
 var (
 	substrateOutputFiles = []string{
 		"substrate.ext4",
@@ -118,6 +128,64 @@ var (
 		"toolchains/gh-actions-runner.manifest.json",
 	}
 )
+
+func runReleaseLease(args []string) int {
+	fs := flag.NewFlagSet("release-lease", flag.ExitOnError)
+	cfg := releaseLeaseFlags{}
+	fs.StringVar(&cfg.socket, "socket", vmorchestrator.DefaultSocketPath, "Unix socket path of the vm-orchestrator daemon")
+	fs.StringVar(&cfg.leaseID, "lease-id", "", "Lease ID to release")
+	fs.StringVar(&cfg.idempotencyKey, "idempotency-key", "", "Idempotency key for the release request")
+	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "client-side RPC deadline")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if err := cfg.validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		fs.Usage()
+		return 2
+	}
+	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	otelShutdown, _, err := verselfotel.Init(rootCtx, verselfotel.Config{
+		ServiceName:    "vm-orchestrator-cli",
+		ServiceVersion: "0.1.0",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "otel init: %v\n", err)
+		return 1
+	}
+	defer func() { _ = otelShutdown(context.Background()) }()
+
+	tracer := otel.Tracer("vm-orchestrator-cli")
+	ctx, span := tracer.Start(rootCtx, "vmorchestrator.cli.release_lease", trace.WithAttributes(
+		attribute.String("lease.id", cfg.leaseID),
+	))
+	defer span.End()
+
+	conn, err := dial(ctx, cfg.socket)
+	if err != nil {
+		failSpan(span, err)
+		fmt.Fprintf(os.Stderr, "dial %s: %v\n", cfg.socket, err)
+		return 1
+	}
+	defer func() { _ = conn.Close() }()
+
+	rpcCtx, cancel := context.WithTimeout(ctx, cfg.timeout)
+	defer cancel()
+	client := vmrpc.NewVMServiceClient(conn)
+	resp, err := client.ReleaseLease(rpcCtx, &vmrpc.ReleaseLeaseRequest{LeaseId: cfg.leaseID, IdempotencyKey: cfg.idempotencyKey})
+	if err != nil {
+		failSpan(span, err)
+		fmt.Fprintf(os.Stderr, "ReleaseLease failed: %v\n", err)
+		return 1
+	}
+	span.SetAttributes(
+		attribute.String("lease.state", strings.ToLower(strings.TrimPrefix(resp.GetState().String(), "LEASE_STATE_"))),
+	)
+	fmt.Printf("release-lease: lease_id=%s state=%s released_at_unix_ns=%d\n", resp.GetLeaseId(), resp.GetState().String(), resp.GetReleasedAtUnixNs())
+	return 0
+}
 
 func runSeedImage(args []string) int {
 	fs := flag.NewFlagSet("seed-image", flag.ExitOnError)
@@ -361,6 +429,16 @@ func seedImage(ctx context.Context, client vmrpc.VMServiceClient, cfg seedImageF
 func failSpan(span trace.Span, err error) {
 	span.RecordError(err)
 	span.SetStatus(codes.Error, err.Error())
+}
+
+func (c releaseLeaseFlags) validate() error {
+	if strings.TrimSpace(c.leaseID) == "" {
+		return fmt.Errorf("--lease-id is required")
+	}
+	if strings.TrimSpace(c.idempotencyKey) == "" {
+		return fmt.Errorf("--idempotency-key is required")
+	}
+	return nil
 }
 
 func (c seedImageFlags) validate() error {

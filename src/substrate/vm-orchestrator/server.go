@@ -1205,10 +1205,19 @@ func (a *vmActor) handleRelease(reason string, state LeaseState, event LeaseEven
 		a.bootCancel = nil
 	}
 	if a.active != nil {
+		execID := a.active.execID
 		a.active.cancel()
 		if a.runtime != nil {
-			_ = a.runtime.CancelExec(a.active.execID, reason)
+			_ = a.runtime.CancelExec(execID, reason)
 		}
+		_ = a.server.state.finishExec(context.Background(), execSnapshot{
+			LeaseID:        a.leaseID,
+			ExecID:         execID,
+			State:          ExecStateCanceled,
+			TerminalReason: reason,
+			ExitedAt:       time.Now().UTC(),
+		})
+		a.active = nil
 	}
 	if a.runtime != nil {
 		a.runtime.Cleanup(reason)
@@ -1367,9 +1376,10 @@ func (a *vmActor) handleCancelExec(execID, reason string) bool {
 }
 
 func (a *vmActor) handleExecDone(done execDoneCmd) {
-	if a.active != nil && a.active.execID == done.execID {
-		a.active = nil
+	if a.active == nil || a.active.execID != done.execID || a.state.Terminal() {
+		return
 	}
+	a.active = nil
 	state := ExecStateExited
 	reason := ""
 	if done.err != nil {

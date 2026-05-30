@@ -16,10 +16,13 @@ import (
 )
 
 const managedHeader = "# Managed by Verself nftables component."
+const firecrackerHostServiceCIDR = "10.255.0.1/32"
+const firecrackerHostServiceInterface = "verself-host0"
 
 type config struct {
 	artifactRoot  string
 	nftBin        string
+	ipBin         string
 	ldLibraryPath string
 	destRoot      string
 	manageSystemd bool
@@ -49,6 +52,9 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	if err := installConfig(cfg); err != nil {
+		return err
+	}
+	if err := convergeFirecrackerHostNetwork(ctx, cfg); err != nil {
 		return err
 	}
 	nftConf := destPath(cfg.destRoot, "/etc/nftables.conf")
@@ -82,6 +88,7 @@ func parseConfig(args []string) (config, error) {
 	cfg := config{
 		artifactRoot:  os.Getenv("VERSELF_NFTABLES_RUNTIME"),
 		nftBin:        "nft",
+		ipBin:         "/usr/sbin/ip",
 		ldLibraryPath: os.Getenv("LD_LIBRARY_PATH"),
 		destRoot:      "/",
 		manageSystemd: true,
@@ -89,6 +96,7 @@ func parseConfig(args []string) (config, error) {
 	}
 	fs.StringVar(&cfg.artifactRoot, "artifact-root", cfg.artifactRoot, "Extracted nftables runtime artifact root.")
 	fs.StringVar(&cfg.nftBin, "nft-bin", cfg.nftBin, "nft executable.")
+	fs.StringVar(&cfg.ipBin, "ip-bin", cfg.ipBin, "iproute2 executable.")
 	fs.StringVar(&cfg.ldLibraryPath, "ld-library-path", cfg.ldLibraryPath, "LD_LIBRARY_PATH for nft.")
 	fs.StringVar(&cfg.destRoot, "dest-root", cfg.destRoot, "Destination root for tests.")
 	fs.BoolVar(&cfg.manageSystemd, "manage-systemd", cfg.manageSystemd, "Install, enable, and start component-owned systemd units.")
@@ -114,6 +122,9 @@ func (cfg *config) validate() error {
 	if cfg.nftBin == "" {
 		return errors.New("--nft-bin is required")
 	}
+	if cfg.ipBin == "" {
+		return errors.New("--ip-bin is required")
+	}
 	if cfg.destRoot == "" {
 		return errors.New("--dest-root is required")
 	}
@@ -124,6 +135,9 @@ func (cfg *config) validate() error {
 	cfg.destRoot = destRoot
 	if cfg.destRoot == "/" && cfg.manageSystemd && !filepath.IsAbs(cfg.nftBin) {
 		return errors.New("--nft-bin must be absolute when installing systemd units")
+	}
+	if cfg.destRoot == "/" && cfg.manageSystemd && !filepath.IsAbs(cfg.ipBin) {
+		return errors.New("--ip-bin must be absolute when installing systemd units")
 	}
 	return nil
 }
@@ -157,6 +171,7 @@ func installConfig(cfg config) error {
 			return err
 		}
 	}
+	installs = append(installs, firecrackerSysctlInstall(cfg))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".nft") {
 			continue
@@ -170,11 +185,58 @@ func installConfig(cfg config) error {
 	}
 	sort.Slice(installs, func(i, j int) bool { return installs[i].Dest < installs[j].Dest })
 	for _, install := range installs {
-		if err := copyManagedFile(install); err != nil {
+		if install.Source != "" {
+			if err := copyManagedFile(install); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := writeManagedFile(install); err != nil {
 			return err
 		}
 	}
 	if err := removeStaleManagedRules(destPath(cfg.destRoot, "/etc/nftables.d"), desiredRules); err != nil {
+		return err
+	}
+	return nil
+}
+
+func firecrackerSysctlInstall(cfg config) fileInstall {
+	body := []byte(managedHeader + `
+# Firecracker guests require host forwarding for NAT egress and must not route host loopback.
+net.ipv4.ip_forward = 1
+net.ipv4.conf.all.route_localnet = 0
+net.ipv4.conf.default.route_localnet = 0
+`)
+	return fileInstall{
+		Dest: destPath(cfg.destRoot, "/etc/sysctl.d/99-verself-firecracker.conf"),
+		Mode: 0o644,
+		Body: body,
+	}
+}
+
+func convergeFirecrackerHostNetwork(ctx context.Context, cfg config) error {
+	if cfg.destRoot != "/" {
+		return nil
+	}
+	for path, value := range map[string]string{
+		"/proc/sys/net/ipv4/ip_forward":                  "1\n",
+		"/proc/sys/net/ipv4/conf/all/route_localnet":     "0\n",
+		"/proc/sys/net/ipv4/conf/default/route_localnet": "0\n",
+	} {
+		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+	}
+	if !commandSucceeds(ctx, "", cfg.ipBin, "link", "show", firecrackerHostServiceInterface) {
+		if err := runCommand(ctx, "", cfg.ipBin, "link", "add", firecrackerHostServiceInterface, "type", "dummy"); err != nil {
+			return err
+		}
+	}
+	if err := runCommand(ctx, "", cfg.ipBin, "addr", "replace", firecrackerHostServiceCIDR, "dev", firecrackerHostServiceInterface); err != nil {
+		return err
+	}
+	if err := runCommand(ctx, "", cfg.ipBin, "link", "set", firecrackerHostServiceInterface, "up"); err != nil {
 		return err
 	}
 	return nil
@@ -234,11 +296,11 @@ Wants=network-pre.target
 Type=oneshot
 RemainAfterExit=yes
 Environment=LD_LIBRARY_PATH=%s
-ExecStart=%s --artifact-root %s --nft-bin %s --ld-library-path %s --manage-systemd=false
+ExecStart=%s --artifact-root %s --nft-bin %s --ip-bin %s --ld-library-path %s --manage-systemd=false
 
 [Install]
 WantedBy=multi-user.target
-`, managedHeader, cfg.ldLibraryPath, shellQuoteArg(filepath.Join(cfg.artifactRoot, "bin", "nftables-apply")), shellQuoteArg(cfg.artifactRoot), shellQuoteArg(cfg.nftBin), shellQuoteArg(cfg.ldLibraryPath)))
+`, managedHeader, cfg.ldLibraryPath, shellQuoteArg(filepath.Join(cfg.artifactRoot, "bin", "nftables-apply")), shellQuoteArg(cfg.artifactRoot), shellQuoteArg(cfg.nftBin), shellQuoteArg(cfg.ipBin), shellQuoteArg(cfg.ldLibraryPath)))
 }
 
 func shellQuoteArg(value string) string {
@@ -289,6 +351,17 @@ func runCommand(ctx context.Context, ldLibraryPath, bin string, args ...string) 
 		return fmt.Errorf("%s %s: %w: %s", bin, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+func commandSucceeds(ctx context.Context, ldLibraryPath, bin string, args ...string) bool {
+	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, bin, args...)
+	cmd.Env = os.Environ()
+	if ldLibraryPath != "" {
+		cmd.Env = append(cmd.Env, "LD_LIBRARY_PATH="+ldLibraryPath)
+	}
+	return cmd.Run() == nil
 }
 
 func destPath(root, path string, more ...string) string {

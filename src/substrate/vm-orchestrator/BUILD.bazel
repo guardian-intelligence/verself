@@ -158,18 +158,6 @@ go_test(
     ],
 )
 
-filegroup(
-    name = "host_ansible_sources",
-    srcs = glob(
-        [
-            "host/ansible/**",
-            "host/nftables/**",
-        ],
-        allow_empty = False,
-    ),
-    visibility = ["//src/host:__pkg__"],
-)
-
 nomad_component(
     name = "nomad_component",
     artifacts = {
@@ -185,7 +173,10 @@ nomad_component(
         "nomad:job:vm-orchestrator",
         "vm-orchestrator:socket",
     ],
-    requires = ["otelcol:otlp"],
+    requires = [
+        "host:firewall",
+        "otelcol:otlp",
+    ],
     test_targets = ["//src/substrate/vm-orchestrator/..."],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

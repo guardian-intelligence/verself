@@ -1,6 +1,13 @@
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 http_file(
+    name = "host_tool_git_deb",
+    downloaded_file_path = "git_2.43.0-1ubuntu7.3_amd64.deb",
+    sha256 = "099bb129f543adc4c14203334b0fa0a909f8bf038c4d56bc9cc7c774ebf78f87",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/git/git_2.43.0-1ubuntu7.3_amd64.deb",
+)
+
+http_file(
     name = "host_tool_nomad_zip",
     downloaded_file_path = "nomad_1.11.3_linux_amd64.zip",
     sha256 = "19dac5642a2ba5305e6ff8efee06a708d760ebe4d1cd7936bc3dc526f477dc12",

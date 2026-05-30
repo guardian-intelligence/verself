@@ -88,6 +88,31 @@ func TestSiteValidateCanRequireInventory(t *testing.T) {
 	}
 }
 
+func TestResolveDiscoveryCanaryInputsUsesDogfoodOrgFallback(t *testing.T) {
+	slug, orgID, err := resolveDiscoveryCanaryInputs("", "", discoveryCanarySiteVars{
+		ServiceDiscoveryCanaryOrgSlug: " guardian-intelligence ",
+		DogfoodOrgID:                  " org_B7HWGKW0SH7G4EXW9XT8TCT60C ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slug != "guardian-intelligence" {
+		t.Fatalf("slug = %q, want guardian-intelligence", slug)
+	}
+	if orgID != "org_B7HWGKW0SH7G4EXW9XT8TCT60C" {
+		t.Fatalf("orgID = %q, want dogfood org", orgID)
+	}
+}
+
+func TestResolveDiscoveryCanaryInputsRejectsInvalidDogfoodOrgFallback(t *testing.T) {
+	_, _, err := resolveDiscoveryCanaryInputs("guardian-intelligence", "", discoveryCanarySiteVars{
+		DogfoodOrgID: "org_invalid",
+	})
+	if err == nil || !strings.Contains(err.Error(), "authz org id must match") {
+		t.Fatalf("err = %v, want invalid authz org id", err)
+	}
+}
+
 func writeTestFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {

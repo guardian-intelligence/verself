@@ -53,3 +53,31 @@ func TestApplyOnceOnlyWritesNomadUpstreams(t *testing.T) {
 		t.Fatalf("static config changed:\n%s", string(gotStatic))
 	}
 }
+
+func TestResolveRuntimePathsMakesNomadArtifactPathsAbsolute(t *testing.T) {
+	base := t.TempDir()
+	cfg := config{
+		source:               "local/nomad-upstreams.cfg",
+		dest:                 "/etc/haproxy/nomad-upstreams.cfg",
+		haproxyBin:           "local/bin/haproxy",
+		haproxyConfigs:       stringList{"/etc/haproxy/haproxy.cfg", "local/rendered.cfg"},
+		haproxyLDLibraryPath: "local/lib",
+	}
+
+	if err := resolveRuntimePaths(&cfg, base); err != nil {
+		t.Fatalf("resolve runtime paths: %v", err)
+	}
+
+	assertPath := func(name, got, want string) {
+		t.Helper()
+		if got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+	}
+	assertPath("source", cfg.source, filepath.Join(base, "local/nomad-upstreams.cfg"))
+	assertPath("dest", cfg.dest, "/etc/haproxy/nomad-upstreams.cfg")
+	assertPath("haproxyBin", cfg.haproxyBin, filepath.Join(base, "local/bin/haproxy"))
+	assertPath("haproxyConfigs[0]", cfg.haproxyConfigs[0], "/etc/haproxy/haproxy.cfg")
+	assertPath("haproxyConfigs[1]", cfg.haproxyConfigs[1], filepath.Join(base, "local/rendered.cfg"))
+	assertPath("haproxyLDLibraryPath", cfg.haproxyLDLibraryPath, filepath.Join(base, "local/lib"))
+}

@@ -7,6 +7,75 @@ load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
 package(default_visibility = ["//visibility:public"])
 
 genrule(
+    name = "git_bin",
+    srcs = ["@host_tool_git_deb//file"],
+    outs = ["git"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+dpkg-deb -x "$(location @host_tool_git_deb//file)" "$$tmp"
+install -m 0755 "$$tmp/usr/bin/git" "$@"
+""",
+)
+
+genrule(
+    name = "git_runtime_archive",
+    srcs = ["@host_tool_git_deb//file"],
+    outs = ["git-runtime.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+dpkg-deb -x "$(location @host_tool_git_deb//file)" "$$tmp/deb"
+mkdir -p "$$tmp/runtime/bin" "$$tmp/runtime/lib" "$$tmp/runtime/share/git-core"
+install -m 0755 "$$tmp/deb/usr/bin/git" "$$tmp/runtime/bin/git"
+cp -a "$$tmp/deb/usr/lib/git-core" "$$tmp/runtime/lib/git-core"
+cp -a "$$tmp/deb/usr/share/git-core/templates" "$$tmp/runtime/share/git-core/templates"
+for helper in git-remote-ftp git-remote-ftps git-remote-https; do
+  if [ -L "$$tmp/runtime/lib/git-core/$$helper" ]; then
+    cp -f --remove-destination "$$tmp/runtime/lib/git-core/git-remote-http" "$$tmp/runtime/lib/git-core/$$helper"
+    chmod 0755 "$$tmp/runtime/lib/git-core/$$helper"
+  fi
+done
+for lib in \
+  libbrotlicommon.so.1 \
+  libbrotlidec.so.1 \
+  libcom_err.so.2 \
+  libcrypto.so.3 \
+  libcurl-gnutls.so.4 \
+  libffi.so.8 \
+  libgmp.so.10 \
+  libgnutls.so.30 \
+  libgssapi_krb5.so.2 \
+  libhogweed.so.6 \
+  libidn2.so.0 \
+  libk5crypto.so.3 \
+  libkeyutils.so.1 \
+  libkrb5.so.3 \
+  libkrb5support.so.0 \
+  liblber.so.2 \
+  libldap.so.2 \
+  libnettle.so.8 \
+  libnghttp2.so.14 \
+  libp11-kit.so.0 \
+  libpcre2-8.so.0 \
+  libpsl.so.5 \
+  libresolv.so.2 \
+  librtmp.so.1 \
+  libsasl2.so.2 \
+  libssh.so.4 \
+  libtasn1.so.6 \
+  libunistring.so.5 \
+  libz.so.1 \
+  libzstd.so.1; do
+  install -m 0644 "/lib/x86_64-linux-gnu/$$lib" "$$tmp/runtime/lib/$$lib"
+done
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
+""",
+)
+
+genrule(
     name = "nomad_bin",
     srcs = ["@host_tool_nomad_zip//file"],
     outs = ["nomad"],
@@ -45,10 +114,42 @@ install -m 0755 "$$tmp/bin/spire-agent" "$@"
 """,
 )
 
+genrule(
+    name = "firecracker_bin",
+    srcs = ["@guest_image_firecracker_release//file"],
+    outs = ["firecracker"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xzf "$(location @guest_image_firecracker_release//file)" -C "$$tmp"
+bin="$$(find "$$tmp" -type f -name 'firecracker-v*' ! -name '*.debug' -print -quit)"
+test -n "$$bin"
+install -m 0755 "$$bin" "$@"
+""",
+)
+
+genrule(
+    name = "jailer_bin",
+    srcs = ["@guest_image_firecracker_release//file"],
+    outs = ["jailer"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xzf "$(location @guest_image_firecracker_release//file)" -C "$$tmp"
+bin="$$(find "$$tmp" -type f -name 'jailer-v*' ! -name '*.debug' -print -quit)"
+test -n "$$bin"
+install -m 0755 "$$bin" "$@"
+""",
+)
+
 pkg_tar(
     name = "substrate_tools_archive",
     out = "verself-host-substrate-tools.tar",
     files = {
+        ":firecracker_bin": "opt/verself/profile/bin/firecracker",
+        ":jailer_bin": "opt/verself/profile/bin/jailer",
         ":nomad_bin": "opt/verself/profile/bin/nomad",
         ":spire_agent_bin": "opt/verself/profile/bin/spire-agent",
         ":spire_server_bin": "opt/verself/profile/bin/spire-server",
@@ -56,6 +157,8 @@ pkg_tar(
     },
     modes = {
         "opt/verself/profile/bin/bao": "0755",
+        "opt/verself/profile/bin/firecracker": "0755",
+        "opt/verself/profile/bin/jailer": "0755",
         "opt/verself/profile/bin/nomad": "0755",
         "opt/verself/profile/bin/spire-agent": "0755",
         "opt/verself/profile/bin/spire-server": "0755",
@@ -351,6 +454,5 @@ filegroup(
     ) + [
         "//src/infrastructure-components:role_sources",
         "//src/integrations:integration_sources",
-        "//src/substrate/vm-orchestrator:host_ansible_sources",
     ],
 )
