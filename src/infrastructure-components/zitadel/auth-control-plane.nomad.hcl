@@ -24,6 +24,7 @@ job "auth-control-plane" {
         AUTH_CONTROL_PLANE_ADMIN_PAT_PATH = "/etc/zitadel/admin.pat"
         AUTH_CONTROL_PLANE_IAM_CREDSTORE_DIR = "/etc/credstore/iam-service"
         AUTH_CONTROL_PLANE_IAM_CREDSTORE_GROUP = "iam_service"
+        AUTH_CONTROL_PLANE_IAM_SERVICE_DOMAIN = "iam.api.verself.sh"
         AUTH_CONTROL_PLANE_VERSELF_DOMAIN = "verself.sh"
         AUTH_CONTROL_PLANE_ZITADEL_BASE_URL = "http://127.0.0.1:8085"
         AUTH_CONTROL_PLANE_ZITADEL_HOST = "verself.sh"

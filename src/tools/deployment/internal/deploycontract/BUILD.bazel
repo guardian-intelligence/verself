@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "deploycontract",
+    srcs = [
+        "contract.go",
+        "deploy_files.go",
+        "integration_catalog.go",
+    ],
+    importpath = "github.com/verself/deployment-tools/internal/deploycontract",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
+)
+
+go_test(
+    name = "deploycontract_test",
+    srcs = ["contract_test.go"],
+    embed = [":deploycontract"],
+)

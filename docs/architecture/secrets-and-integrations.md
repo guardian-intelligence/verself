@@ -3,10 +3,9 @@
 Verself configuration and third-party integration state is managed through an
 environment-scoped catalog. The catalog records every external account,
 resource, credential, public variable, render target, consumer, verification
-step, and isolation exception. The target state has one durable secrets system:
-OpenBao. Provider vaults and Stripe Projects are provisioning and handoff
-surfaces; product KV is served by secrets-service on top of OpenBao. SOPS is
-legacy compatibility for existing prod site files, not the model for new sites.
+step, and isolation exception. OpenBao is the durable secrets system. Provider
+vaults and Stripe Projects are provisioning and handoff surfaces; product KV is
+served by secrets-service on top of OpenBao.
 
 Stripe Projects is the provider provisioning and credential-handoff model for
 new integrations when the provider exists in the Projects catalog. A Stripe
@@ -68,9 +67,9 @@ Stripe config with `--config` when one exists.
 
 ## Bootstrap State Machine
 
-The no-SOPS bootstrap path has an explicit state machine. A privileged coding
-agent may hold the same operational authority as a human operator, but every
-transition is performed by an authenticated principal and leaves audit evidence.
+Bootstrap has an explicit state machine. A privileged coding agent may hold the
+same operational authority as a human operator, but every transition is
+performed by an authenticated principal and leaves audit evidence.
 
 ```text
 S0 repo_metadata_only
@@ -91,7 +90,7 @@ S0 repo_metadata_only
 | `S0 repo_metadata_only` | Catalog, site vars, provider resource declarations, and tfvars exist. | No plaintext secrets in repo. | User or privileged agent starts a bootstrap session. |
 | `S1 stripe_authenticated` | The operator or agent has authenticated Stripe CLI/Projects locally. | Stripe config on the principal's machine only. | Initialize or select the site provider project. |
 | `S2 provider_bootstrap_credentials_available` | Latitude, Cloudflare, and other pre-host API keys are acquired. | Bootstrap session memory until imported. | Import catalog-approved bootstrap keys. |
-| `S3 controller_openbao_seeded` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao, not SOPS. | Provisioning reads short-lived credentials from OpenBao. |
+| `S3 controller_openbao_seeded` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
 | `S4 bare_metal_allocated` | Latitude host exists and inventory can be written. | Provider credentials remain in controller OpenBao. | Host bootstrap connects over SSH. |
 | `S5 host_openbao_installed` | Host convergence copies the OpenBao binary, configuration, TLS files, and service definition to the host. | No site secrets copied yet. | Start OpenBao and initialize the site store. |
 | `S6 site_openbao_initialized` | The host OpenBao Raft store, root token, unseal material, auth mounts, and base policies exist for this site. | Site OpenBao and host credstore during bootstrap. | Import a wrapped site seed bundle. |
@@ -121,6 +120,10 @@ plaintext files.
   the catalog.
 - Host OpenBao initializes its own site-local Raft store and recovery material.
   Environments never share OpenBao root tokens, unseal keys, or Raft state.
+- OpenBao root tokens are bootstrap and break-glass material. Runtime services
+  authenticate with SPIFFE JWT-SVIDs mapped to scoped OpenBao policies.
+- Owner-local deployment declarations define every runtime secret, provider
+  credential, host credential projection, and consumer.
 - The successful transition to `S9 deployed` requires provider-specific canary
   evidence, not just a green Nomad allocation.
 
@@ -136,11 +139,7 @@ plaintext files.
 | `runtime_secret` | OpenBao KV v2 | Workloads through secrets-service or direct runtime injection | Runtime application secret material. |
 | `product_kv` | secrets-service over OpenBao | Customers and product services | Customer/org-owned secrets and variables after deploy. |
 
-Legacy prod site files may still use `site_provisioning`, `site_host`, and
-`site_external` SOPS bags while the migration is in progress. New gamma
-bootstrap work should not add persistent SOPS state.
-
-## Replacement Boundary
+## Provider Project Boundary
 
 Stripe Projects replaces provider signup, provisioning, credential generation,
 credential sync, rotation, provider dashboard linking, and provider billing
@@ -148,7 +147,7 @@ handoff where the provider exists in the Projects catalog. It does not replace
 the Verself runtime secret system, service-owned provider clients, provider
 webhook verification, ClickHouse canaries, or host convergence.
 
-| Current surface | Stripe Projects role | Verself-owned role |
+| Provider surface | Stripe Projects role | Verself-owned role |
 | --- | --- | --- |
 | Resend or alternate email provider | Candidate provider provisioning and credential handoff. | Sender-domain DNS, runtime secret import, email-service canary. |
 | PostHog, Sentry, OpenRouter, queue/cache/search providers | Preferred provisioning path when selected. | Catalog validation, OpenBao import, service config, canary evidence. |
@@ -281,15 +280,14 @@ variable exported by `stripe projects env --pull`:
    Prefer provider-project import. If the provider is not supported by Stripe
    Projects, import the value directly into controller OpenBao or site OpenBao
    through the catalog-aware credential command and record the manual source in
-   the catalog. Legacy prod migrations may still read SOPS until the value has
-   been rotated into OpenBao.
+   the catalog.
 
 6. Validate before deploy.
 
    The target validator should reject undeclared OpenBao names, undeclared
-   legacy `site_secret` references, runtime references to bootstrap-shared
-   material, prod credentials in gamma or dev, and hardcoded
-   environment-specific Nomad literals.
+   runtime secret consumers, runtime references to bootstrap-shared material,
+   prod credentials in gamma or dev, and hardcoded environment-specific Nomad
+   literals.
 
 7. Deploy and capture evidence.
 
@@ -326,9 +324,8 @@ reveal should require an explicit production flag and a Pomerium-authenticated
 operator session.
 
 Runtime services get credentials through OpenBao and secrets-service. They do
-not read provider project files, local `.env`, SOPS files, shell history,
-GitHub Actions secrets, or operator terminals. SOPS reads are legacy migration
-inputs only, not a runtime contract.
+not read provider project files, local `.env`, shell history, GitHub Actions
+secrets, or operator terminals.
 
 ## Runbook: Add An Integration
 
@@ -383,18 +380,18 @@ inputs only, not a runtime contract.
 The catalog validator should run in CI and before `aspect deploy`.
 
 - Every OpenBao target name has a catalog entry.
-- Every legacy SOPS key under `src/host/sites/*/secrets/*.sops.yml` has a
-  catalog entry until that file is retired.
-- Every `site_secret` reference in legacy deploy declarations resolves to
-  exactly one catalog entry.
+- Every OpenBao target name has exactly one owner-local consumer declaration.
+- Every credential projection has a declared path, group, mode, consumer, and
+  rotation path.
 - Every environment-specific Nomad literal is represented as site vars or a
   cataloged variable.
 - `bootstrap_shared` credentials are denied as runtime secret sources.
 - `prod`, `gamma`, and `dev` provider resource IDs do not match unless the
   catalog marks the value as intentionally shared.
 - Credential values are never logged, printed in JSON, or committed in `.env`,
-  `.projects/vault`, `.projects/cache`, SOPS plaintext, or generated artifacts.
-- New gamma bootstrap changes do not add persistent SOPS state.
+  `.projects/vault`, `.projects/cache`, or generated artifacts.
+- Runtime services never read local provider workspaces, shell environments,
+  GitHub Actions secrets, or operator terminals.
 - Provider project imports reject unknown environment variable names.
 - Rotation metadata exists for all `secret`, `key_material`, and
   `webhook_secret` entries.
@@ -415,15 +412,14 @@ Credential and integration operations emit operational evidence:
 Completion evidence for integration work is a successful deploy plus
 provider-specific canary evidence in ClickHouse.
 
-## Initial Build Order
+## Build Order
 
 1. Add the integration catalog schema and validator.
-2. Populate prod inventory from current SOPS, `runtime-secrets.yml`,
-   `credstore.yml`, provider tasks, site vars, and hardcoded provider config as
-   migration input.
-3. Add gamma catalog entries and mark bootstrap-shared Cloudflare exceptions.
-4. Add no-SOPS gamma bootstrap: bootstrap session, controller OpenBao seed, and
-   site OpenBao seed bundle import.
+2. Add owner-local declaration validators for runtime secrets, host credential
+   projections, provider variables, and bootstrap-shared exceptions.
+3. Add site catalog entries and mark bootstrap-shared Cloudflare exceptions.
+4. Add bootstrap session, controller OpenBao seed, and site OpenBao seed-bundle
+   import commands.
 5. Add provider-project import for Stripe Projects-backed providers.
 6. Add credential reveal, rotation, and provider canary evidence.
 7. Gate `aspect deploy` on catalog validation for non-bootstrap deploys.

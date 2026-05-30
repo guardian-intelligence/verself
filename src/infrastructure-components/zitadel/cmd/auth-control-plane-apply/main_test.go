@@ -34,15 +34,45 @@ func TestOIDCConfigBodies(t *testing.T) {
 }
 
 func TestProductTokenClaimsTargetBody(t *testing.T) {
-	body := productTokenClaimsTargetBody("target", "https://verself.sh/internal/zitadel/actions/product-token-claims")
+	endpoint := productTokenClaimsEndpoint(config{
+		iamServiceDomain: "iam.api.verself.sh",
+		claimsActionPath: "/internal/zitadel/actions/product-token-claims",
+	})
+	if endpoint != "https://iam.api.verself.sh/internal/zitadel/actions/product-token-claims" {
+		t.Fatalf("endpoint = %v", endpoint)
+	}
+	body := productTokenClaimsTargetBody("target", endpoint)
 	if body["name"] != "target" {
 		t.Fatalf("name = %v", body["name"])
 	}
-	if body["endpoint"] != "https://verself.sh/internal/zitadel/actions/product-token-claims" {
+	if body["endpoint"] != "https://iam.api.verself.sh/internal/zitadel/actions/product-token-claims" {
 		t.Fatalf("endpoint = %v", body["endpoint"])
 	}
 	if body["timeout"] != "1s" {
 		t.Fatalf("timeout = %v", body["timeout"])
+	}
+}
+
+func TestConfigValidateRequiresIAMServiceDomain(t *testing.T) {
+	cfg := config{
+		zitadelBaseURL:    "http://127.0.0.1:8085",
+		zitadelHost:       "verself.sh",
+		adminPATPath:      "/tmp/admin.pat",
+		verselfDomain:     "verself.sh",
+		iamCredstoreDir:   "/tmp/credstore",
+		iamCredstoreGroup: "iam_service",
+		projectName:       "verself-api",
+		browserAppName:    "verself-web",
+		cliAppName:        "verself-cli",
+		claimsTargetName:  "verself-product-token-claims",
+		claimsActionPath:  "/internal/zitadel/actions/product-token-claims",
+	}
+	if err := cfg.validate(); err == nil {
+		t.Fatalf("validate succeeded without IAM service domain")
+	}
+	cfg.iamServiceDomain = "iam.api.verself.sh"
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("validate: %v", err)
 	}
 }
 

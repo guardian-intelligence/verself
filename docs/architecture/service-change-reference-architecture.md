@@ -11,6 +11,31 @@ resource, service-to-service API, quota, billing behavior, durable artifact,
 background worker, retention rule, or product state transition. Sections may be
 marked `not_applicable` only with a concrete reason.
 
+## Goals And Verification Gates
+
+Service changes use these deployment goals:
+
+- deployable packages own their PostgreSQL, OpenBao, Zitadel, ClickHouse,
+  credential, route, integration, and promotion-gate declarations;
+- substrate reconcilers apply declaration input and stay generic;
+- shared site substrate instances enforce service isolation until a service or
+  tenant boundary requires a separate cluster;
+- promotion gates live with the deployable unit and emit ClickHouse evidence;
+- cutovers delete superseded code and declarations in the same PR.
+
+Verification gates:
+
+- static validation rejects undeclared resources, duplicate claims,
+  schema-drifted declarations, missing consumers, and hardcoded deployment
+  literals;
+- repository search shows converted substrate resources are declared only beside
+  owning packages;
+- `aspect check` passes, including deployment-contract validation;
+- `aspect deploy --site=<site> --sha=<sha>` succeeds for the target site;
+- ClickHouse evidence proves reconcilers, canaries, and promotion gates ran;
+- direct substrate checks confirm PostgreSQL roles/databases, OpenBao policies
+  and JWT roles, Zitadel objects, and service-owned route state.
+
 ## Review Spine
 
 ```text
@@ -45,7 +70,7 @@ server functions, and generated OpenAPI projections conform to the Smithy model.
 | Caching | Cached object, authority source, invalidation trigger, freshness bound, tenant key, negative-cache behavior, and proof that stale data cannot authorize or bill incorrectly. |
 | Observability | Spans, logs, metrics, ClickHouse evidence rows, dashboard/update path, missing-metric alert, and traces that join SDK request to service and substrate work. |
 | Audit | OCSF activity, actor, credential metadata, resource names, permission, denied-request evidence, HMAC chain verification, and export impact. |
-| Deployability | Owning Bazel target, migrations, Nomad job, route registration, config/secrets, recovery status endpoint, independent deploy path, rollback or full-cutover plan, and generated artifact ownership. |
+| Deployability | Owning Bazel target, owner-local substrate declarations, migrations, Nomad job, route registration, config/secrets, recovery status endpoint, independent deploy path, rollback or full-cutover plan, and generated artifact ownership. |
 | Load and failure testing | Product-level load test, maximum payload test, failure injection, worker retry test, reconciliation test, and saturation behavior. |
 | Documentation and communication | Public docs, internal docs, AGENTS guidance, SDK examples, policy updates, release note, customer notification, and lead-time rule for customer-impacting runtime changes. |
 | Release evidence | Canary scenario, `aspect deploy` evidence, ClickHouse queries, PostgreSQL/TigerBeetle checks, host metrics, billing projection checks, audit rows, and SLO gate. |
@@ -282,18 +307,53 @@ Every service remains independently deployable. The packet must confirm:
 - Nomad job and service registration;
 - HAProxy discovery entry for new public services;
 - SPIFFE identity and service-local clients for repo-owned calls;
+- owner-local PostgreSQL, OpenBao, Zitadel, ClickHouse, credential, route, and
+  integration declarations;
 - migrations, generated artifacts, and validators;
 - recovery status endpoint for declared recoverable sources;
 - config and secrets source;
 - post-deploy canary declarations and rollback or full-cutover behavior.
 
+Deployable packages own their substrate contract next to the code that consumes
+it. The conventional package layout is:
+
+```text
+src/services/<service>/
+  deploy/postgres.yml
+  deploy/openbao.yml
+  deploy/zitadel.yml
+  deploy/clickhouse.yml
+  deploy/credstore.yml
+  deploy/gates.yml
+```
+
+Infrastructure components may use the same declaration shape under the owning
+component directory. Bazel providers aggregate and validate these declarations
+into deploy inputs. Generic reconcilers apply the inputs to each substrate:
+PostgreSQL creates databases, owner roles, extensions, migrations, and
+publications; OpenBao creates mounts, policies, auth roles, transit keys, and
+secret names; Zitadel creates projects, apps, actions, identity-provider links,
+and grants; ClickHouse creates service-owned schemas, tables, materialized
+views, and evidence queries. Reconciler code stays generic; Bazel-supplied
+declarations provide all service-specific inputs.
+
+Shared site substrate instances still provide hard service isolation. Each
+service has one PostgreSQL database and owner role, no shared writable schema,
+no cross-service peer mappings, and publications declared by the service that
+owns the tables. Runtime services authenticate to OpenBao through SPIFFE
+JWT-SVIDs mapped to scoped policies, and root tokens remain bootstrap and
+break-glass material. Zitadel remains the human and customer-credential IdP;
+service-specific projects, applications, grants, and actions are declared by
+the owning service or component.
+
 Deployable units declare live checks at the Bazel edge, next to the
-`nomad_component`, with `post_deploy_canary`. Medium checks are the normal
-rollback gate for a deploy. Large checks are deeper browser/CLI canaries for
-release candidates, high-risk migrations, and soak validation. Canary targets
-should exercise product behavior through the same public or service-local
-contracts customers and repo-owned callers use; Nomad allocation health alone is
-not release health.
+`nomad_component`, with `post_deploy_canary` or an owner-local gate descriptor.
+Medium checks are the normal rollback gate for a deploy. Large checks are
+deeper browser/CLI canaries for release candidates, high-risk migrations, and
+soak validation. Canary targets exercise product behavior through the same
+public or service-local contracts customers and repo-owned callers use.
+Promotion requires owner-declared ClickHouse evidence, not just scheduler
+health.
 
 Release classification is explicit: additive public API, breaking public API,
 internal-only API, policy-only behavior change, operator-only change, runtime
@@ -301,9 +361,9 @@ image change, billing change, retention change, or security change. RC priority
 follows customer impact, data risk, security risk, billing correctness, and
 deployment blast radius.
 
-Pre-release status removes backwards-compatibility obligations, but it does not
-allow contradictory implementations to coexist. A change that replaces an
-abstraction removes the retired path in the same cutover.
+Pre-release status removes backwards-compatibility obligations. A change that
+replaces an abstraction deletes the superseded path in the same cutover so one
+current implementation remains.
 
 Customer communication is required when a change affects customer-visible
 runtime behavior, data collected from customer workloads, guest image contents,

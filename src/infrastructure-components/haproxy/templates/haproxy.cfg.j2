@@ -86,6 +86,7 @@ frontend fe_https
 
   acl host_verself var(txn.host) -m str {{ verself_domain }}
   acl host_billing var(txn.host) -m str {{ billing_service_domain }}
+  acl host_iam var(txn.host) -m str {{ iam_service_domain }}
   acl host_sandbox var(txn.host) -m str {{ sandbox_rental_service_domain }}
   acl host_source var(txn.host) -m str {{ source_code_hosting_service_domain }}
   acl host_mail var(txn.host) -m str {{ stalwart_domain }}
@@ -109,8 +110,6 @@ frontend fe_https
   acl jmap_session path -i /jmap/session
   acl stripe_webhook path -i /webhooks/stripe
   acl stripe_source src {{ haproxy_stripe_webhook_ips | join(' ') }}
-  # On-host Zitadel resolves the product apex to loopback before calling this signed action.
-  acl zitadel_product_token_claims_source src 127.0.0.1
   acl auth_device_authorization_path path -i /oauth/v2/device_authorization
   acl zitadel_oidc_path path -i /.well-known/openid-configuration /.well-known/webfinger /robots.txt
   acl zitadel_oidc_path path_beg /oauth/ /oauth/v2/ /oidc/ /oidc/v1/ /saml/ /ui/login /ui/console /idps/
@@ -152,15 +151,14 @@ frontend fe_https
   http-request return status 405 if host_billing stripe_webhook !method_post
   http-request return status 405 if host_verself verself_discovery !well_known_read_method
   http-request return status 200 content-type application/json file {{ haproxy_verself_discovery_manifest_path }} hdr Cache-Control "public, max-age=300" if host_verself verself_discovery well_known_read_method
-  http-request return status 403 if host_verself zitadel_product_token_claims !zitadel_product_token_claims_source
-  http-request return status 405 if host_verself zitadel_product_token_claims zitadel_product_token_claims_source !method_post
+  http-request return status 405 if host_iam zitadel_product_token_claims !method_post
   http-request return status 405 if host_verself auth_device_authorization_path !method_post
 
   use_backend be_billing_stripe_webhook if host_billing stripe_webhook method_post stripe_source
   use_backend be_sandbox_execution_submit if host_sandbox method_post { path -i /api/v1/executions }
   use_backend be_sandbox_execution_schedule_create if host_sandbox method_post { path -i /api/v1/execution-schedules }
   use_backend be_source_forgejo_webhook if host_source { path -i /webhooks/forgejo }
-  use_backend be_zitadel_product_token_claims if host_verself method_post zitadel_product_token_claims zitadel_product_token_claims_source
+  use_backend be_zitadel_product_token_claims if host_iam method_post zitadel_product_token_claims
   use_backend be_route_product_apex_iam_service_public_api if host_verself method_post auth_device_authorization_path
   use_backend be_route_product_auth_zitadel_oidc if host_verself zitadel_oidc_path
   use_backend be_email_jmap_session if host_mail jmap_session
