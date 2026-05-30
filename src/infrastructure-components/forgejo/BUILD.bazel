@@ -25,16 +25,15 @@ pkg_tar(
     files = {
         "//src/infrastructure-components/forgejo/cmd/forgejo-node-runner:forgejo-node-runner": "bin/forgejo-node-runner",
         "@forgejo_tools//tools/forgejo": "bin/forgejo",
-        "//src/host:git_bin": "bin/git",
         ":sqlite3_bin": "bin/sqlite3",
     },
     modes = {
         "bin/forgejo-node-runner": "0755",
         "bin/forgejo": "0755",
-        "bin/git": "0755",
         "bin/sqlite3": "0755",
     },
     visibility = ["//visibility:public"],
+    deps = ["//src/host:git_runtime_archive"],
 )
 
 filegroup(

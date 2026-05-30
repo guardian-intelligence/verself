@@ -20,6 +20,23 @@ install -m 0755 "$$tmp/usr/bin/git" "$@"
 )
 
 genrule(
+    name = "git_runtime_archive",
+    srcs = ["@host_tool_git_deb//file"],
+    outs = ["git-runtime.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+dpkg-deb -x "$(location @host_tool_git_deb//file)" "$$tmp/deb"
+mkdir -p "$$tmp/runtime/bin" "$$tmp/runtime/lib" "$$tmp/runtime/share/git-core"
+install -m 0755 "$$tmp/deb/usr/bin/git" "$$tmp/runtime/bin/git"
+cp -a "$$tmp/deb/usr/lib/git-core" "$$tmp/runtime/lib/git-core"
+cp -a "$$tmp/deb/usr/share/git-core/templates" "$$tmp/runtime/share/git-core/templates"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
+""",
+)
+
+genrule(
     name = "nomad_bin",
     srcs = ["@host_tool_nomad_zip//file"],
     outs = ["nomad"],

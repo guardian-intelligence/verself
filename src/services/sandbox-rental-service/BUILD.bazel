@@ -23,12 +23,7 @@ spire_identity(
 pkg_tar(
     name = "git_runtime_artifact",
     out = "sandbox-rental-git.tar",
-    files = {
-        "//src/host:git_bin": "bin/git",
-    },
-    modes = {
-        "bin/git": "0755",
-    },
+    deps = ["//src/host:git_runtime_archive"],
 )
 
 nomad_component(
