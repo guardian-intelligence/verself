@@ -25,7 +25,9 @@ Last night before bed, I was making sure he brushed his teeth and do you remembe
 
 And I wish someone told me having a daughter would be like meeting the two of us as one tiny human, but braver, stronger, and wiser. Someone who knocks on my door when I’m crying because I’m sad, and charges through it when I cry because I’ve been hurt.
 
-I treasure the piles of scrapbooks from our adventures. A million branches and she loves every one. I mentioned needing something from the market the other day and she jumped up from editing a music video to beg me to bring her. I was hoping she would because I adore the way she finds magic in things I stopped looking at. There was a stall selling jewelry for pennies and, when we passed by, she froze; her entire Being enchanted by an aquamarine seahorse necklace no bigger than a fingernail. At a few hundred words per minute she debated how each of her favorite characters would love or hate the necklace in different ways. She used to stop her self but she longer does because she knows, now, how much I admire the depth of her explanations.
+I treasure the piles of scrapbooks from our adventures. A million branches and she loves every one. I mentioned needing something from the market the other day and she jumped up from editing a music video to beg me to bring her. I was hoping she would because I adore the way she finds magic in things I stopped looking at.
+
+There was a stall selling jewelry for pennies and, when we passed by, she froze — enchanted by an aquamarine seahorse necklace no bigger than a fingernail. At a few hundred words per minute she debated how each of her favorite characters would love or hate the necklace in different ways. She used to stop her self but she longer does because she knows, now, how much I admire the depth of her explanations.
 
 By the time we got home and parked, she was only halfway done. “It’ll be easier if I make a flow chart,” she said, and raced up to her room.
 

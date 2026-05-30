@@ -1,7 +1,8 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, useSearch } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useEffect } from "react";
-import { letterBySlug } from "~/content/letters";
+import { letterBySlug, type Letter } from "~/content/letters";
+import { lettersSignatureFont } from "~/features/letters/fonts";
 import {
   LETTER_POST_PAGE_PADDING_CLASS,
   LETTER_READING_COLUMN_CLASS,
@@ -18,6 +19,7 @@ import {
   fixedTransitionStyle,
   LETTER_RETURN_TRANSITION_NAME,
 } from "~/features/letters/transitions";
+import { LetterOgPreview, LetterOgPreviewHotkey } from "~/features/letters/og-preview";
 import { ogMeta } from "~/lib/head";
 import { emitSpan } from "~/lib/telemetry/browser";
 
@@ -58,6 +60,14 @@ export const Route = createFileRoute("/letters/$slug")({
 
 function LetterPost() {
   const { letter } = Route.useLoaderData();
+  const search = useSearch({ strict: false }) as {
+    readonly developmentMode?: string | number;
+    readonly og?: string | number;
+  };
+  // Developer affordance: Cmd+D arms developer mode, then "s" swaps the article
+  // for the OG card (PNG + source SVG). The article isn't rendered while on.
+  // (TanStack parses ?og=1 to the number 1, so coerce before comparing.)
+  const showOgPreview = String(search.developmentMode) === "1" && String(search.og) === "1";
 
   useEffect(() => {
     emitSpan("company.letter.view", {
@@ -71,13 +81,18 @@ function LetterPost() {
       data-letter-transition-route="post"
       className={`${LETTER_READING_COLUMN_CLASS} ${LETTER_POST_PAGE_PADDING_CLASS}`}
     >
-      <div className={LETTER_TEXT_MEASURE_CLASS} data-letter-entry={letter.slug}>
-        <LetterReturnLink />
-        <LetterDate letter={letter} />
-        <LetterSalutation letter={letter} />
-        <LetterBody letter={letter} />
-        <RedactionMark />
-      </div>
+      <LetterOgPreviewHotkey />
+      {showOgPreview ? (
+        <LetterOgPreview slug={letter.slug} />
+      ) : (
+        <div className={LETTER_TEXT_MEASURE_CLASS} data-letter-entry={letter.slug}>
+          <LetterReturnLink />
+          <LetterDate letter={letter} />
+          <LetterSalutation letter={letter} />
+          <LetterBody letter={letter} />
+          <LetterSignature letter={letter} />
+        </div>
+      )}
     </article>
   );
 }
@@ -100,16 +115,53 @@ function LetterReturnLink() {
   );
 }
 
-// The signature, redacted. A solid marker bar in the letter's own ink —
-// twice the footprint of the four-character name it covers (double width,
-// double the line's height): a deliberate strike, not a tight cover. It
-// sits tight under "Love," so the two read as one sign-off block, not a
-// closing and a stray rectangle. Decorative only: aria-hidden,
-// no text, nothing for a screen reader or crawler to read. The faint paper
-// grid still multiplies over it, so it reads as a marker stroke on the
-// sheet. The slight rotation and softened ends keep it a drawn gesture,
-// deterministic (no random), not a sterile box.
-function RedactionMark() {
+// The sign-off, by letter kind. A dispatch — a letter from the author to a
+// younger self — closes with a valediction, his printed name, and his hand:
+// "S.H" in Pinyon Script. The printed name carries the accessible text, so the
+// cursive mark is aria-hidden (decorative) to avoid a double read.
+//
+// Correspondence (dear-shovon, written by someone else) is signed by a hand we
+// don't reveal: a redaction bar struck in the letter's ink where the name
+// would be — twice the footprint of the name it covers, a deliberate strike.
+// The body already carries the sender's own 💙 close just above it. The faint
+// paper grid multiplies over the bar so it reads as a marker stroke on the
+// sheet; the slight rotation keeps it a drawn gesture, not a sterile box.
+function LetterSignature({ letter }: { readonly letter: Letter }) {
+  if (letter.kind === "dispatch") {
+    return (
+      <div className="mt-16" style={{ marginLeft: "72px" }}>
+        <p
+          className="font-display text-[clamp(20px,1.6vw,22px)] text-[var(--treatment-ink)]"
+          style={{ margin: 0 }}
+        >
+          Yours,
+        </p>
+        <div className="mt-2 flex items-baseline gap-1">
+          {/* Large em dash, sized to the signature, leading into it. */}
+          <span
+            aria-hidden
+            className="font-display leading-none text-[var(--treatment-ink)] text-[clamp(42px,4.25vw,55px)]"
+          >
+            —
+          </span>
+          {/* Signature nudged down + left so it reads as one gesture with the
+              dash; the printed name trails beneath it in small print. */}
+          <div style={{ transform: "translate(-8px, 6px)" }}>
+            <span
+              aria-hidden
+              className="block leading-none text-[var(--treatment-ink)] text-[clamp(42px,4.25vw,55px)]"
+              style={{ fontFamily: lettersSignatureFont.stack }}
+            >
+              {lettersSignatureFont.initials}
+            </span>
+            <span className="mt-2 block font-display text-[clamp(12px,1vw,13px)] text-[var(--treatment-muted-strong)]">
+              {lettersSignatureFont.signer}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       aria-hidden

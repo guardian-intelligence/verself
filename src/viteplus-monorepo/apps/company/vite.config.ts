@@ -8,6 +8,7 @@ import matter from "gray-matter";
 import { marked } from "marked";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite-plus";
+import { lettersBodyFont } from "./src/features/letters/fonts";
 
 const observabilityPlugin = fileURLToPath(
   import.meta.resolve("@verself/nitro-plugins/observability-plugin"),
@@ -65,9 +66,15 @@ const ogFonts = {
     if (id !== `\0${OG_FONTS_ID}`) return null;
     const dir = fileURLToPath(new URL("./public/fonts", import.meta.url));
     const b64 = (file: string) => readFileSync(`${dir}/${file}`).toString("base64");
+    // Fraunces + Geist serve the workshop/newsroom cards' chrome; the letters
+    // card body uses the configured reading face (lettersBodyFont.ogFile). The
+    // filename is exported so the rasteriser stages the temp file with the
+    // right extension (resvg's fontFiles path; see og/raster.ts).
     return [
-      `export const FRAUNCES_WOFF2_B64 = ${JSON.stringify(b64("Fraunces-Variable.woff2"))};`,
-      `export const GEIST_WOFF2_B64 = ${JSON.stringify(b64("Geist-Variable.woff2"))};`,
+      `export const FRAUNCES_B64 = ${JSON.stringify(b64("Fraunces-Variable.woff2"))};`,
+      `export const GEIST_B64 = ${JSON.stringify(b64("Geist-Variable.woff2"))};`,
+      `export const LETTERS_BODY_B64 = ${JSON.stringify(b64(lettersBodyFont.ogFile))};`,
+      `export const LETTERS_BODY_FILE = ${JSON.stringify(lettersBodyFont.ogFile)};`,
     ].join("\n");
   },
 };

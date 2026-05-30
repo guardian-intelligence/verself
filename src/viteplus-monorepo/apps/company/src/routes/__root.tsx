@@ -1,5 +1,6 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { BrandTelemetryProvider } from "@verself/brand";
+import { DevelopmentModeHotkey } from "~/components/development-mode-hotkey";
 import { emitSpan } from "~/lib/telemetry/browser";
 import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
@@ -78,6 +79,7 @@ function RootComponent() {
           <Outlet />
         </BrandTelemetryProvider>
         <TelemetryProbe />
+        <DevelopmentModeHotkey />
         <Scripts />
       </body>
     </html>

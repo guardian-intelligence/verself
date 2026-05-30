@@ -1,4 +1,5 @@
 import { assertVoice, formatViolation, type VoiceViolation } from "~/brand/voice.ts";
+import { lettersBodyFont } from "~/features/letters/fonts";
 import { WINGS_PADDED_VIEWBOX, WINGS_PATH_D } from "@verself/brand";
 
 // OG card generator. Produces treatment-specific 1200×630 SVG cards.
@@ -290,12 +291,12 @@ function buildLettersCard(spec: OGSpec): string {
   <rect width="${WIDTH}" height="${HEIGHT}" fill="rgba(255,255,255,0.28)"/>
   ${brandMark({ x: 72, y: 56, markFill: INK, wordmarkFill: INK, section: "Letters", chip: true })}
   <text x="1128" y="80" font-family="'Geist', 'Inter', sans-serif" font-size="18" font-weight="500" fill="${STONE}" text-anchor="end" letter-spacing="0">${xmlEscape(spec.kicker ?? "Letters")}</text>
-  <text x="72" y="258" font-family="'Fraunces', Georgia, serif" font-size="78" font-weight="400" fill="${INK}" letter-spacing="0" style="font-variation-settings:'opsz' 18, 'SOFT' 0;">
+  <text x="72" y="258" font-family="${lettersBodyFont.stack}" font-size="78" font-weight="400" fill="${INK}" letter-spacing="0">
     ${textLines(salutationLines, 72, 78)}
   </text>
   ${
     bodyLines.length
-      ? `<text x="72" y="${bodyY}" font-family="'Fraunces', Georgia, serif" font-size="28" font-weight="400" fill="${STONE_STRONG}" letter-spacing="0" mask="url(#letterBodyFade)" style="font-variation-settings:'opsz' 18, 'SOFT' 0;">
+      ? `<text x="72" y="${bodyY}" font-family="${lettersBodyFont.stack}" font-size="28" font-weight="500" fill="${STONE_STRONG}" letter-spacing="0" mask="url(#letterBodyFade)">
     ${textLines(bodyLines, 72, 39)}
   </text>`
       : ""

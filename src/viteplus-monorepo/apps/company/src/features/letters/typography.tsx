@@ -1,4 +1,5 @@
 import type { Letter } from "~/content/letters";
+import { lettersSignatureFont } from "~/features/letters/fonts";
 import { syncLetterContinuationMetrics } from "~/features/letters/transitions.intent";
 import { transitionStyle } from "~/features/letters/transitions";
 
@@ -11,8 +12,9 @@ export const LETTER_INDEX_PAGE_PADDING_CLASS =
 
 export const LETTER_POST_PAGE_PADDING_CLASS = "pb-24 pt-4 sm:pb-28 sm:pt-5 md:pb-32 md:pt-6";
 
-const LETTER_DATE_CLASS =
-  "font-display italic text-[var(--treatment-ink)] [font-variation-settings:'opsz'_60,'SOFT'_30]";
+// The date is set in the signature hand — the same cursive that signs the
+// letter — so the sheet opens and closes in the writer's own script.
+const LETTER_DATE_CLASS = "text-[var(--treatment-ink)]";
 
 const LETTER_SALUTATION_CLASS =
   "font-display font-normal text-[var(--treatment-ink)] [font-variation-settings:'opsz'_18,'SOFT'_0]";
@@ -104,6 +106,7 @@ export function LetterDate({
       style={{
         ...metrics,
         margin: 0,
+        fontFamily: lettersSignatureFont.stack,
       }}
     >
       <span
@@ -117,6 +120,10 @@ export function LetterDate({
 }
 
 export function LetterSalutation({ letter }: { readonly letter: Letter }) {
+  // Dispatches open straight into the body under the date — they were never
+  // written to a title. Only received correspondence opens with a salutation
+  // ("Dear Shovon,"). The frontmatter title still drives the <head> + OG card.
+  if (letter.kind !== "correspondence") return null;
   return (
     <p
       data-letter-slot="salutation"

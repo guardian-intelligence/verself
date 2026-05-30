@@ -23,8 +23,9 @@ body {
   --treatment-ink: #0b0b0b;
   --treatment-accent: #0b0b0b;
   --treatment-wordmark: #0b0b0b;
-  --treatment-display-font: "Fraunces", Georgia, serif;
-  --treatment-body-font: "Fraunces", Georgia, serif;
+  /* Letters fonts (faces + --font-display / --treatment-*-font / weight) are
+     generated from src/features/letters/fonts.ts and appended to this critical
+     CSS by routes/letters/route.tsx — one source of truth for the face. */
   --treatment-muted-strong: rgba(11, 11, 11, 0.9);
   --treatment-muted: rgba(11, 11, 11, 0.78);
   --treatment-muted-meta: rgba(11, 11, 11, 0.68);

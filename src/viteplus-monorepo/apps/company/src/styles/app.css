@@ -56,6 +56,9 @@
   font-style: italic;
   font-display: swap;
 }
+/* Letters faces (Lora reading face + Pinyon Script signature) are self-hosted
+   too, but declared in src/features/letters/fonts.ts and inlined into the
+   letters critical CSS — the single source of truth for the Letters face. */
 
 @layer base {
   body {
