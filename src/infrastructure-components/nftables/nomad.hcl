@@ -15,6 +15,7 @@ job "nftables" {
         args = [
           "--artifact-root", "$${VERSELF_NFTABLES_RUNTIME}/opt/verself/nftables",
           "--nft-bin", "$${VERSELF_NFTABLES_RUNTIME}/opt/verself/nftables/bin/nft",
+          "--ip-bin", "/usr/sbin/ip",
           "--ld-library-path", "$${VERSELF_NFTABLES_RUNTIME}/opt/verself/nftables/lib/x86_64-linux-gnu",
         ]
       }

@@ -30,6 +30,9 @@ func TestInstallConfigPreservesUnmanagedRules(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dest, "etc", "systemd", "system", "verself-nftables.service")); err != nil {
 		t.Fatalf("boot service was not installed: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(dest, "etc", "sysctl.d", "99-verself-firecracker.conf")); err != nil {
+		t.Fatalf("firecracker sysctl config was not installed: %v", err)
+	}
 }
 
 func TestInstallConfigSkipsSystemdWhenDisabled(t *testing.T) {

@@ -385,6 +385,5 @@ filegroup(
     ) + [
         "//src/infrastructure-components:role_sources",
         "//src/integrations:integration_sources",
-        "//src/substrate/vm-orchestrator:host_ansible_sources",
     ],
 )

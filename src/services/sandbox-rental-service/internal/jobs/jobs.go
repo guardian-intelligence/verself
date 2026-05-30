@@ -1719,6 +1719,10 @@ func (s *Service) latestBillingReservation(ctx context.Context, item executionWo
 		return billingclient.BillingWindowReservation{}, fmt.Errorf("execution attempt %s has no billing window", item.AttemptID)
 	}
 	window := windows[len(windows)-1]
+	return billingReservationFromWindow(item, window), nil
+}
+
+func billingReservationFromWindow(item executionWorkItem, window BillingWindow) billingclient.BillingWindowReservation {
 	return billingclient.BillingWindowReservation{
 		WindowID:            window.BillingWindowID,
 		OrgID:               billingclient.OrgId(item.OrgID),
@@ -1733,7 +1737,7 @@ func (s *Service) latestBillingReservation(ctx context.Context, item executionWo
 		PricingPhase:        billingclient.PricingPhase(window.PricingPhase),
 		CostPerUnit:         billingclient.DecimalUint64(strconv.FormatUint(window.CostPerUnit, 10)),
 		WindowStart:         window.WindowStart.UTC().Format(time.RFC3339Nano),
-	}, nil
+	}
 }
 
 func (s *Service) writeExecutionLogs(ctx context.Context, record ExecutionRecord, logs string) error {
