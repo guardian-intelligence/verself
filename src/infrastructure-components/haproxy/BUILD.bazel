@@ -1,5 +1,6 @@
 # gazelle:prefix github.com/verself/infrastructure-components/haproxy
 
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
@@ -55,6 +56,15 @@ filegroup(
     visibility = [
         "//src/host:__pkg__",
         "//src/infrastructure-components:__pkg__",
+    ],
+)
+
+go_test(
+    name = "frontend_policy_test",
+    srcs = ["frontend_policy_test.go"],
+    data = [
+        "templates/haproxy.cfg.j2",
+        "templates/nomad-upstreams.cfg.j2",
     ],
 )
 
