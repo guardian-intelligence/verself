@@ -6,22 +6,44 @@ index. Bazel metadata updates live under `aspect bazel *`; semantic
 verification gates live under `aspect check`.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "bazel_run", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "viteplus_vp", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "VITEPLUS_NODE_TARGET", "VITEPLUS_WORKSPACE_INSTALL_TARGET", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "viteplus_vp", "ws_path")
+
+GOFUMPT_TARGET = "//src/tools/dev/binaries:gofumpt"
+GOOGLE_JAVA_FORMAT_TARGET = "//src/smithy/tools:google_java_format"
+BUILDIFIER_TARGET = "//src/tools/dev/binaries:buildifier"
+
+def _tool_path(ctx, *parts):
+    return ws_path(ctx, "bazel-bin", *parts)
+
+def _build_toolchain(ctx):
+    return checked_spawn(
+        ctx,
+        "bazelisk",
+        [
+            "build",
+            VITEPLUS_NODE_TARGET,
+            VITEPLUS_WORKSPACE_INSTALL_TARGET,
+            GOFUMPT_TARGET,
+            GOOGLE_JAVA_FORMAT_TARGET,
+            BUILDIFIER_TARGET,
+        ],
+        cwd = ws_path(ctx),
+        label = "bazelisk build tidy toolchain",
+    )
 
 def _viteplus(ctx):
-    return viteplus_vp(ctx, ["fmt", ".", "--write"])
+    return viteplus_vp(ctx, ["fmt", ".", "--write"], ensure_toolchain = False)
 
 def _go(ctx):
+    dirs = []
     for d in GO_DIRS:
-        rc = bazel_run(
-            ctx,
-            "//src/tools/dev/binaries:gofumpt",
-            ["-w", ws_path(ctx, d)],
-            label = "gofumpt -w (" + d + ")",
-        )
-        if rc != 0:
-            return rc
-    return 0
+        dirs.append(ws_path(ctx, d))
+    return checked_spawn(
+        ctx,
+        _tool_path(ctx, "src/tools/dev/binaries/gofumpt"),
+        ["-w"] + dirs,
+        label = "gofumpt -w",
+    )
 
 def _java(ctx):
     files = java_tracked_files(ctx)
@@ -31,8 +53,8 @@ def _java(ctx):
         return 0
     return checked_spawn(
         ctx,
-        "bazelisk",
-        ["run", "--java_runtime_version=remotejdk_25", "//src/smithy/tools:google_java_format", "--", "--replace"] + files,
+        _tool_path(ctx, "src/smithy/tools/google_java_format"),
+        ["--replace"] + files,
         cwd = ws_path(ctx),
         label = "google-java-format --replace",
     )
@@ -44,9 +66,9 @@ def _buildifier(ctx):
     abs_files = []
     for f in files:
         abs_files.append(ws_path(ctx, f))
-    return bazel_run(
+    return checked_spawn(
         ctx,
-        "//src/tools/dev/binaries:buildifier",
+        _tool_path(ctx, "src/tools/dev/binaries/buildifier"),
         ["-mode=fix"] + abs_files,
         label = "buildifier -mode=fix",
     )
@@ -103,7 +125,7 @@ def _tracked_diff_report(ctx):
     return 0
 
 def _impl(ctx):
-    for step in [_viteplus, _go, _java, _buildifier, _tracked_diff_report]:
+    for step in [_build_toolchain, _viteplus, _go, _java, _buildifier, _tracked_diff_report]:
         rc = step(ctx)
         if rc != 0:
             return rc

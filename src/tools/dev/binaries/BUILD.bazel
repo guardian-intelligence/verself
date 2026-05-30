@@ -30,9 +30,11 @@ genrule(
     cmd = "install -m 0755 $(location @dev_tool_buildifier//file) $@",
 )
 
-alias(
-    name = "gofumpt",
-    actual = "@cc_mvdan_gofumpt//:gofumpt",
+genrule(
+    name = "gofumpt_bin",
+    srcs = ["@cc_mvdan_gofumpt//:gofumpt"],
+    outs = ["gofumpt"],
+    cmd = "install -m 0755 $(location @cc_mvdan_gofumpt//:gofumpt) $@",
 )
 
 alias(

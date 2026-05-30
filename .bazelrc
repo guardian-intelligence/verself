@@ -21,9 +21,9 @@ build --jobs=auto
 # Reuse sandbox directories across actions; cuts setup/teardown cost on
 # incremental builds.
 build --reuse_sandbox_directories
-# The repository does not assume a host-installed JDK. Java tool actions run on
-# the newest Bazel-managed JDK while emitted bytecode stays at the repo baseline.
-build --java_runtime_version=remotejdk_17
+# The repository does not assume a host-installed JDK. Java actions run on the
+# newest Bazel-managed JDK while emitted bytecode stays at the repo baseline.
+build --java_runtime_version=remotejdk_25
 build --tool_java_runtime_version=remotejdk_25
 build --java_language_version=17
 build --tool_java_language_version=17

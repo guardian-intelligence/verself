@@ -88,6 +88,56 @@ def inventory_check(ctx, site = DEFAULT_SITE):
         return 1
     return 0
 
+def _safe_artifact_name(raw):
+    out = raw
+    for old in ["/", "\\", ":", " ", "\t", "\n", "(", ")", "[", "]", "{", "}", "@", "+", "=", ",", ";", "'", "\""]:
+        out = out.replace(old, "_")
+    return out.strip("_")
+
+def _timestamp_ns(ctx):
+    r = (ctx.std.process.command("date")
+        .args(["+%Y%m%dT%H%M%S%N"])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: date failed while preparing Bazel BEP output\n")
+        if r.stderr != "":
+            ctx.std.io.stderr.write(r.stderr)
+        return ""
+    return r.stdout.strip()
+
+def _bazel_args_with_bep(ctx, args, label):
+    """Attach a per-invocation JSON BEP file when explicitly requested."""
+    bep_dir = _read_env_value(ctx, "VERSELF_ASPECT_BEP_DIR")
+    if bep_dir == "":
+        return args
+    if len(args) == 0:
+        return args
+    if args[0] == "info":
+        return args
+
+    out_dir = bep_dir if bep_dir.startswith("/") else ws_path(ctx, bep_dir)
+    r = (ctx.std.process.command("mkdir")
+        .args(["-p", out_dir])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if r.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: cannot create VERSELF_ASPECT_BEP_DIR " + out_dir + "\n")
+        if r.stderr != "":
+            ctx.std.io.stderr.write(r.stderr)
+        return None
+
+    ts = _timestamp_ns(ctx)
+    if ts == "":
+        return None
+
+    name = _safe_artifact_name(label if label != None else "bazelisk_" + "_".join(args))
+    if name == "":
+        name = "bazelisk"
+    path = out_dir + "/" + ts + "__" + name + ".bep.json"
+    ctx.std.io.stderr.write("BEP: " + path + "\n")
+    return [args[0], "--build_event_json_file=" + path] + args[1:]
+
 def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
     """Spawn a subprocess attached to the parent's stdio and return its exit code.
 
@@ -100,13 +150,18 @@ def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
     # TODO(aspect-followups): emit a row to default.aspect_task_invocations on
     # exit so we can answer "how often is each task actually invoked" without
     # taking on the full OTel task-tracing surface.
-    cmd = ctx.std.process.command(program).args(args)
+    label_str = label if label != None else program
+    spawn_args = args
+    if program == "bazelisk":
+        spawn_args = _bazel_args_with_bep(ctx, args, label_str)
+        if spawn_args == None:
+            return 1
+    cmd = ctx.std.process.command(program).args(spawn_args)
     if cwd != None:
         cmd = cmd.current_dir(cwd)
     if env != None:
         for k, v in env.items():
             cmd = cmd.env(k, v)
-    label_str = label if label != None else program
     if ctx.std.io.stderr.is_tty:
         ctx.std.io.stderr.write("$ " + label_str + "\n")
     r = cmd.spawn().wait()
@@ -126,13 +181,18 @@ def bazel_run(ctx, target, args = None, cwd = None, env = None, label = None, ba
     )
 
 def _capture_stdout(ctx, program, args, cwd = None, env = None, label = None):
-    cmd = ctx.std.process.command(program).args(args)
+    label_str = label if label != None else program
+    spawn_args = args
+    if program == "bazelisk":
+        spawn_args = _bazel_args_with_bep(ctx, args, label_str)
+        if spawn_args == None:
+            return None
+    cmd = ctx.std.process.command(program).args(spawn_args)
     if cwd != None:
         cmd = cmd.current_dir(cwd)
     if env != None:
         for k, v in env.items():
             cmd = cmd.env(k, v)
-    label_str = label if label != None else program
     if ctx.std.io.stderr.is_tty:
         ctx.std.io.stderr.write("$ " + label_str + "\n")
     r = cmd.stdout("piped").stderr("piped").spawn().wait_with_output()
@@ -226,7 +286,7 @@ def install_bazel_tool_shims(ctx, shims, bin_dir):
             return ""
     return out_dir
 
-def viteplus_node(ctx):
+def viteplus_node(ctx, ensure_toolchain = True):
     """Build the Bazel-resolved host Node and materialize node_modules.
 
     Returns the execroot-absolute path to the pinned `node` binary, or "" on
@@ -234,25 +294,32 @@ def viteplus_node(ctx):
     `vp install` the frontend build does, so the source `node_modules` (and the
     `vite-plus` launcher under it) is the lockfile-pinned tree.
     """
-    node = bazel_output_file(ctx, VITEPLUS_NODE_TARGET)
-    if node == "":
-        return ""
-    if bazel_output_file(ctx, VITEPLUS_WORKSPACE_INSTALL_TARGET) == "":
+    if ensure_toolchain:
+        rc = checked_spawn(
+            ctx,
+            "bazelisk",
+            ["build", VITEPLUS_NODE_TARGET, VITEPLUS_WORKSPACE_INSTALL_TARGET],
+            cwd = ws_path(ctx),
+            label = "bazelisk build Vite+ toolchain",
+        )
+        if rc != 0:
+            return ""
+    node = ws_path(ctx, "bazel-bin", "src/viteplus-monorepo", "node")
+    if not _path_exists(ctx, node):
+        ctx.std.io.stderr.write("ERROR: expected Bazel-built Node at " + node + "\n")
         return ""
     return node
 
-def viteplus_vp(ctx, args, env = None, label = None):
+def viteplus_vp(ctx, args, env = None, label = None, ensure_toolchain = True):
     """Run the lockfile-pinned Vite+ under the vendored Node, in src/viteplus-monorepo.
 
     The single entry point for `vp` from the controller. `args` is the `vp`
     argv (e.g. ["fmt", ".", "--write"]). Returns the process exit code.
     """
-    node = viteplus_node(ctx)
+    node = viteplus_node(ctx, ensure_toolchain = ensure_toolchain)
     if node == "":
         return 1
-    node_dir = _capture_stdout(ctx, "dirname", [node], label = "dirname vp node")
-    if node_dir == None:
-        return 1
+    node_dir = ws_path(ctx, "bazel-bin", "src/viteplus-monorepo")
     vp = ws_path(ctx, VITEPLUS_VP_SCRIPT)
     arglist = list(args)
     vp_env = {}
