@@ -64,6 +64,7 @@ load(
 load(
     ".aspect/tasks/integrations.axl",
     integrations_cloudflare_dns = "cloudflare_dns",
+    integrations_stripe_projects = "stripe_projects",
 )
 load(
     ".aspect/tasks/mail.axl",
@@ -128,6 +129,7 @@ def config(ctx):
 
     # aspect integrations ...
     ctx.tasks.add(integrations_cloudflare_dns)
+    ctx.tasks.add(integrations_stripe_projects)
 
     # aspect db pg|ch|tb ...
     ctx.tasks.add(db_pg_list)

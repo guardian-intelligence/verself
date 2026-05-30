@@ -1,0 +1,93 @@
+version: verself.integrations.v1
+site: gamma
+provider_project:
+  engine: stripe_projects
+  project_name: verself-gamma
+  directory: src/integrations/stripe-projects/sites/gamma
+  status: not_initialized
+  bootstrap_command: aspect integrations stripe-projects --site=gamma --action=init --confirm
+bootstrap_exceptions:
+  - key: edge.cloudflare_parent_zone_dns
+    provider: cloudflare
+    isolation: bootstrap_shared
+    credential_keys:
+      - cloudflare_api_token
+    storage_targets:
+      - site_provisioning
+      - site_host
+    allowed_uses:
+      - delegate or reconcile gamma.verself.sh DNS records
+      - haproxy lego DNS-01 certificate renewal for gamma names
+    reason: Cloudflare DNS token resources are zone scoped for verself.sh.
+integrations:
+  - key: infrastructure.latitude
+    provider: latitude
+    replacement: provider_specific
+    owner: src/tools/provisioning
+    purpose: bare_metal_provisioning
+    credentials:
+      - sops_key: latitudesh_auth_token
+        storage: site_provisioning
+    gamma_policy: prefer dedicated Latitude project and token; mark bootstrap_shared only for the hourly tracer bullet.
+  - key: edge.cloudflare_dns
+    provider: cloudflare
+    replacement: partial_stripe_projects_candidate
+    owner: src/integrations/cloudflare
+    purpose: dns_and_tls
+    credentials:
+      - sops_key: cloudflare_api_token
+        storage: site_host
+        isolation: bootstrap_shared
+    gamma_policy: parent-zone token use is operator-only and never a runtime secret.
+  - key: billing.stripe
+    provider: stripe
+    replacement: keep_provider_native
+    owner: src/services/billing-service
+    purpose: billing
+    credentials:
+      - sops_key: stripe_secret_key
+        storage: site_external
+        target: runtime_secret
+      - sops_key: stripe_webhook_secret
+        storage: site_external
+        target: runtime_secret
+      - sops_key: stripe_publishable_key
+        storage: site_external
+        target: public_config
+      - sops_key: stripe_test_webhook_endpoint_id
+        storage: site_external
+        target: provider_resource_id
+    gamma_policy: use sandbox/test-mode resources that cannot affect prod billing.
+  - key: email.provider
+    provider: resend
+    replacement: stripe_projects_candidate
+    owner: src/services/email-service
+    purpose: outbound_email
+    credentials:
+      - sops_key: resend_api_key
+        storage: site_external
+        target: runtime_secret
+    migration_check: aspect integrations stripe-projects --site=gamma --action=search --query=resend
+    gamma_policy: use notify.gamma.verself.sh or another gamma-only sender domain.
+  - key: github.runner_app
+    provider: github
+    replacement: provider_specific
+    owner: src/services/github-integration-service
+    purpose: hosted_runner_integration
+    credentials:
+      - sops_key: github_integration_service_github_app_private_key
+        storage: site_external
+        target: runtime_secret
+      - sops_key: github_integration_service_github_app_webhook_secret
+        storage: site_external
+        target: runtime_secret
+      - sops_key: github_integration_service_github_app_oauth_client_secret
+        storage: site_host
+        target: runtime_secret
+    gamma_policy: create a separate GitHub App, OAuth client, webhook secret, private key, and runner prefix.
+  - key: runtime.generated_host_secrets
+    provider: verself
+    replacement: internal_runtime
+    owner: src/host
+    purpose: host_and_service_bootstrap
+    gamma_policy: generated per site; never copied from prod.

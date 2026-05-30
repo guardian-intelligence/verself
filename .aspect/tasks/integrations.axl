@@ -1,8 +1,9 @@
-"""aspect integrations cloudflare-dns — reconcile external integration state."""
+"""aspect integrations cloudflare-dns|stripe-projects - external integration state."""
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "HOST_CONFIGURATION_DIR", "bazel_run", "ws_path")
+load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "HOST_CONFIGURATION_DIR", "bazel_run", "checked_spawn", "ws_path")
 
 _CLOUDFLARE_DNS_TARGET = "//src/integrations/cloudflare/dns-reconciler/cmd/reconcile-cloudflare-dns:reconcile-cloudflare-dns"
+_STRIPE_PROJECTS_PLUGIN_VERSION = "0.16.0"
 
 def _cloudflare_dns_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
@@ -29,5 +30,95 @@ cloudflare_dns = task(
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "dry_run": args.boolean(default = False, description = "Print the DNS diff without applying it."),
+    },
+)
+
+def _stripe_projects_site_dir(ctx, site):
+    return ws_path(ctx, "src/integrations/stripe-projects/sites/" + site)
+
+def _stripe_projects_preflight(ctx):
+    stripe = (ctx.std.process.command("which")
+        .args(["stripe"])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if stripe.status.code != 0:
+        ctx.std.io.stderr.write("ERROR: stripe CLI is required. Install the pinned CLI through repo tooling before using Stripe Projects.\n")
+        return 1
+    help = (ctx.std.process.command("stripe")
+        .args(["projects", "--help"])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    output = help.stdout + help.stderr
+    if help.status.code != 0 or "status" not in output or "env" not in output:
+        ctx.std.io.stderr.write(
+            "ERROR: Stripe Projects plugin is not installed. Install the pinned plugin with: stripe plugin install projects@" +
+            _STRIPE_PROJECTS_PLUGIN_VERSION +
+            "\n",
+        )
+        return 1
+    return 0
+
+def _stripe_projects_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    action = ctx.args.action
+    if action == "":
+        ctx.std.io.stderr.write("ERROR: --action is required.\n")
+        return 1
+    if _stripe_projects_preflight(ctx) != 0:
+        return 1
+    site_dir = _stripe_projects_site_dir(ctx, site)
+    if checked_spawn(ctx, "mkdir", ["-p", site_dir], label = "mkdir -p " + site_dir) != 0:
+        return 1
+
+    project_name = ctx.args.project_name
+    if project_name == "":
+        project_name = "verself-" + site
+
+    stripe_args = ["projects"]
+    label = "stripe projects " + action + " --site " + site
+    if action == "init":
+        if not ctx.args.confirm:
+            ctx.std.io.stderr.write("ERROR: pass --confirm to initialize Stripe Projects state for " + site + ".\n")
+            return 1
+        stripe_args = stripe_args + ["init", project_name]
+    elif action == "status":
+        stripe_args = stripe_args + ["status", "--json", "--no-interactive"]
+    elif action == "env":
+        stripe_args = stripe_args + ["env", "--json", "--no-interactive"]
+    elif action == "env-pull":
+        if not ctx.args.confirm:
+            ctx.std.io.stderr.write("ERROR: pass --confirm because env-pull writes .env and .projects/vault under " + site_dir + ".\n")
+            return 1
+        stripe_args = stripe_args + ["env", "--pull", "--json", "--no-interactive"]
+    elif action == "catalog":
+        stripe_args = stripe_args + ["catalog", "--json", "--no-interactive"]
+    elif action == "search":
+        if ctx.args.query == "":
+            ctx.std.io.stderr.write("ERROR: --query is required for --action=search.\n")
+            return 1
+        stripe_args = stripe_args + ["search", ctx.args.query, "--json", "--no-interactive"]
+    else:
+        ctx.std.io.stderr.write("ERROR: unsupported Stripe Projects action " + action + ". Use init, status, env, env-pull, catalog, or search.\n")
+        return 1
+
+    return checked_spawn(
+        ctx,
+        "stripe",
+        stripe_args,
+        cwd = site_dir,
+        label = label,
+    )
+
+stripe_projects = task(
+    implementation = _stripe_projects_impl,
+    name = "stripe-projects",
+    group = ["integrations"],
+    summary = "Run Stripe Projects for a site-scoped provider project.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "action": args.string(default = "status", description = "Stripe Projects action: init, status, env, env-pull, catalog, or search."),
+        "query": args.string(default = "", description = "Search query for --action=search."),
+        "project_name": args.string(default = "", description = "Stripe Projects name for --action=init. Defaults to verself-<site>."),
+        "confirm": args.boolean(default = False, description = "Required for actions that initialize state or write credentials."),
     },
 )
