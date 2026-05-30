@@ -34,6 +34,7 @@ Newsroom - Business updates: guardianintelligence.org/newsroom
 * Our customers will use our services via API and browser. Fix issues at the service level; don't paper over them in any one domain. E2E test the browser primarily since it exercises the same API that API consumers call directly.
 * No global, hand-managed /usr/local/bin. Let Bazel call out to package-specific toolchains for dev tools and deployment requirements.
 * For local development, packages should offer to install onto the caller's $HOME/.local/bin, requiring an explicit --bin-dir. These shims should point back to Bazel-resolved outputs or package-manager-resolved binaries and not duplicate version state.
+* When adding a binary dependency, classify it as controller/dev tooling under `src/tools/dev/binaries` or runtime/deployed tooling under the owning component's Bazel targets before exposing it through Aspect, Ansible, or deployment code.
 
 * Avoid drift between what runs in CI and what you run for local development. CI is basically a warm dev box. Local development should give high confidence on correctness.
 

@@ -2,6 +2,8 @@ http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_
 
 controller_http_file = use_repo_rule("//src/tools/dev/binaries:controller_http_file.bzl", "controller_http_file")
 
+controller_http_archive = use_repo_rule("//src/tools/dev/binaries:controller_http_file.bzl", "controller_http_archive")
+
 controller_http_file(
     name = "dev_tool_go",
     darwin_arm64_downloaded_file_path = "go1.25.8.darwin-arm64.tar.gz",
@@ -90,6 +92,48 @@ controller_http_file(
     linux_amd64_downloaded_file_path = "syft_1.43.0_linux_amd64.tar.gz",
     linux_amd64_sha256 = "7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a",
     linux_amd64_url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_linux_amd64.tar.gz",
+)
+
+controller_http_archive(
+    name = "dev_tool_ruby",
+    build_file_content = """package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "bin/ruby",
+])
+
+filegroup(
+    name = "ruby",
+    srcs = ["bin/ruby"],
+)
+""",
+    darwin_arm64_downloaded_file_path = "portable-ruby-3.4.5.arm64_big_sur.bottle.tar.gz",
+    darwin_arm64_sha256 = "20fa657858e44a4b39171d6e4111f8a9716eb62a78ebbd1491d94f90bb7b830a",
+    darwin_arm64_url = "https://github.com/Homebrew/homebrew-portable-ruby/releases/download/3.4.5/portable-ruby-3.4.5.arm64_big_sur.bottle.tar.gz",
+    linux_amd64_downloaded_file_path = "portable-ruby-3.4.5.x86_64_linux.bottle.tar.gz",
+    linux_amd64_sha256 = "5ea0e3a30feef0743da5a2924c8a71baead1b9f1d571afbd675bc556e59705f5",
+    linux_amd64_url = "https://github.com/Homebrew/homebrew-portable-ruby/releases/download/3.4.5/portable-ruby-3.4.5.x86_64_linux.bottle.tar.gz",
+    strip_prefix = "portable-ruby/3.4.5",
+)
+
+controller_http_file(
+    name = "dev_tool_stripe_cli",
+    darwin_arm64_downloaded_file_path = "stripe_1.42.1_mac-os_arm64.tar.gz",
+    darwin_arm64_sha256 = "d16863a7936e4e868be68c86afec147bdb6f33e7d2c40fa43261a73d0b208192",
+    darwin_arm64_url = "https://github.com/stripe/stripe-cli/releases/download/v1.42.1/stripe_1.42.1_mac-os_arm64.tar.gz",
+    linux_amd64_downloaded_file_path = "stripe_1.42.1_linux_x86_64.tar.gz",
+    linux_amd64_sha256 = "5ff632096207fc903eecf9b1cafe34d1f90d49df3d55e07cc32a072f63b52c04",
+    linux_amd64_url = "https://github.com/stripe/stripe-cli/releases/download/v1.42.1/stripe_1.42.1_linux_x86_64.tar.gz",
+)
+
+controller_http_file(
+    name = "dev_tool_stripe_projects_plugin",
+    darwin_arm64_downloaded_file_path = "stripe-cli-projects-0.16.0-darwin-arm64",
+    darwin_arm64_sha256 = "aba342901504fcea4bf07bc34bf2d32ed4f740908b74b43772894772ff906a04",
+    darwin_arm64_url = "https://stripe.jfrog.io/artifactory/stripe-cli-plugins-local/projects/0.16.0/darwin/arm64/stripe-cli-projects",
+    linux_amd64_downloaded_file_path = "stripe-cli-projects-0.16.0-linux-amd64",
+    linux_amd64_sha256 = "4f4741a2168e0f49436c8e6dcc3d7bee4807205364a3aef8dc7d60a06e96e1e1",
+    linux_amd64_url = "https://stripe.jfrog.io/artifactory/stripe-cli-plugins-local/projects/0.16.0/linux/amd64/stripe-cli-projects",
 )
 
 http_file(
