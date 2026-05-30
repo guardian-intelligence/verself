@@ -33,6 +33,7 @@ type discoveryCanaryOptions struct {
 
 type discoveryCanarySiteVars struct {
 	ServiceDiscoveryCanaryOrgSlug string `yaml:"service_discovery_canary_org_slug"`
+	DogfoodOrgID                  string `yaml:"dogfood_org_id"`
 }
 
 func cmdDiscoveryCanary(args []string) error {
@@ -60,21 +61,14 @@ func cmdDiscoveryCanary(args []string) error {
 	}
 	return runOperatorRuntime("canary.service_discovery", opts.operatorRuntimeOptions, totalBudget, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		var vars discoveryCanarySiteVars
-		if strings.TrimSpace(opts.slug) == "" {
+		if strings.TrimSpace(opts.slug) == "" || strings.TrimSpace(opts.authzOrgID) == "" {
 			if err := readYAMLFile(siteVarsPath(rt.RepoRoot, rt.Site), &vars); err != nil {
 				return err
 			}
 		}
-		authzOrgID := strings.TrimSpace(opts.authzOrgID)
-		if authzOrgID != "" && !discoveryCanaryOrgIDRE.MatchString(authzOrgID) {
-			return fmt.Errorf("service-discovery canary: authz org id must match %s", discoveryCanaryOrgIDRE.String())
-		}
-		slug := strings.TrimSpace(opts.slug)
-		if slug == "" {
-			slug = strings.TrimSpace(vars.ServiceDiscoveryCanaryOrgSlug)
-		}
-		if slug == "" {
-			return fmt.Errorf("service-discovery canary: org slug is required")
+		slug, authzOrgID, err := resolveDiscoveryCanaryInputs(opts.slug, opts.authzOrgID, vars)
+		if err != nil {
+			return err
 		}
 		canaryArgs := []string{
 			"--duration", opts.duration.String(),
@@ -91,4 +85,22 @@ func cmdDiscoveryCanary(args []string) error {
 			discoveryCanaryTarget, "iam-service", opts.rps, opts.duration)
 		return runRemoteBazelExecutable(rt, discoveryCanaryTarget, "discovery-canary", discoveryCanaryUser, canaryArgs)
 	})
+}
+
+func resolveDiscoveryCanaryInputs(slugFlag, authzOrgIDFlag string, vars discoveryCanarySiteVars) (slug string, authzOrgID string, err error) {
+	slug = strings.TrimSpace(slugFlag)
+	if slug == "" {
+		slug = strings.TrimSpace(vars.ServiceDiscoveryCanaryOrgSlug)
+	}
+	if slug == "" {
+		return "", "", fmt.Errorf("service-discovery canary: org slug is required")
+	}
+	authzOrgID = strings.TrimSpace(authzOrgIDFlag)
+	if authzOrgID == "" {
+		authzOrgID = strings.TrimSpace(vars.DogfoodOrgID)
+	}
+	if authzOrgID != "" && !discoveryCanaryOrgIDRE.MatchString(authzOrgID) {
+		return "", "", fmt.Errorf("service-discovery canary: authz org id must match %s", discoveryCanaryOrgIDRE.String())
+	}
+	return slug, authzOrgID, nil
 }

@@ -232,7 +232,9 @@ func (rt *Runtime) Close() error {
 	var closeErr error
 	if rt.otelShutdown != nil {
 		flushCtx, cancel := context.WithTimeout(context.Background(), otelShutdownBudget)
-		closeErr = errors.Join(closeErr, rt.otelShutdown(flushCtx))
+		if err := rt.otelShutdown(flushCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "operator runtime: telemetry shutdown: %v\n", err)
+		}
 		cancel()
 		rt.otelShutdown = nil
 	}

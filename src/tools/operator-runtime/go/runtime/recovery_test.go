@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -75,5 +77,19 @@ func TestFindSignInURL(t *testing.T) {
 	}
 	if got := findSignInURL("no url here", "plain text"); got != "" {
 		t.Fatalf("findSignInURL = %q, want empty when no URL present", got)
+	}
+}
+
+func TestCloseDoesNotFailOnTelemetryShutdownError(t *testing.T) {
+	rt := &Runtime{
+		otelShutdown: func(context.Context) error {
+			return errors.New("collector unavailable")
+		},
+	}
+	if err := rt.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+	if rt.otelShutdown != nil {
+		t.Fatal("otel shutdown was not cleared")
 	}
 }
