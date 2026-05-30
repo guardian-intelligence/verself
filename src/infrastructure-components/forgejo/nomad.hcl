@@ -54,7 +54,7 @@ job "forgejo" {
       env {
         HOME = "/var/lib/forgejo"
         FORGEJO_WORK_DIR = "/var/lib/forgejo"
-        PATH = "$${NOMAD_TASK_DIR}/local/bin:/usr/bin:/bin"
+        PATH = "$${NOMAD_TASK_DIR}/bin:/usr/bin:/bin"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "forgejo"

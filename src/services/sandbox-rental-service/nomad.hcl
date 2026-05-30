@@ -102,7 +102,7 @@ job "sandbox-rental" {
         VERSELF_PG_MAX_CONNS = "16"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
-        PATH = "$${NOMAD_TASK_DIR}/local/bin:/usr/bin:/bin"
+        PATH = "$${NOMAD_TASK_DIR}/bin:/usr/bin:/bin"
       }
       resources {
         cpu = 500
