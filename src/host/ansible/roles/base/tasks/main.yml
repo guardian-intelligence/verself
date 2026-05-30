@@ -91,6 +91,14 @@
     group: root
     mode: "0644"
 
+- name: Write Verself SPIFFE trust domain
+  ansible.builtin.copy:
+    content: "{{ spire_trust_domain }}\n"
+    dest: /etc/verself/spiffe-trust-domain
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Create workload system groups
   ansible.builtin.group:
     name: "{{ item }}"
