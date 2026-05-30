@@ -50,17 +50,6 @@ backend be_firecracker_forgejo
   http-request return status 503 content-type text/plain string "service unavailable"
 [[ end ]]
 
-backend be_garage_nomad_artifacts
-  guid be_garage_nomad_artifacts
-  balance random
-[[ with nomadService "garage-s3" ]]
-[[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_garage_nomad_artifacts_srv_[[ $i ]]
-[[ end ]]
-[[ else ]]
-  http-request return status 503 content-type text/plain string "service unavailable"
-[[ end ]]
-
 backend be_route_product_npm_registry_verdaccio
   guid be_route_product_npm_registry_verdaccio
   http-request del-header Authorization

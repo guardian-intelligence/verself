@@ -222,16 +222,6 @@ frontend fe_firecracker_npm_registry
   http-request set-header X-Forwarded-Proto http
   default_backend be_route_product_npm_registry_verdaccio
 
-frontend fe_nomad_artifacts
-  guid fe_nomad_artifacts
-  maxconn {{ haproxy_internal_frontend_maxconn }}
-  bind 127.0.0.1:9443 ssl crt /etc/verself/pki/nomad-artifacts-server-haproxy.pem alpn h2,http/1.1
-  http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
-  http-request set-var(txn.client_ip) src
-  http-request set-var(txn.edge_peer_ip) src
-  http-request set-var(txn.client_ip_source) str(direct)
-  default_backend be_garage_nomad_artifacts
-
 backend be_edge_public_rates
   guid be_edge_public_rates
   stick-table type ip size {{ haproxy_stick_table_size }} expire {{ haproxy_stick_table_expire }} store http_req_rate({{ haproxy_public_rate_window }}),http_err_rate({{ haproxy_public_rate_window }})
