@@ -27,13 +27,13 @@ And I wish someone told me having a daughter would be like meeting the two of us
 
 I treasure the piles of scrapbooks from our adventures. A million branches and she loves every one. I mentioned needing something from the market the other day and she jumped up from editing a music video to beg me to bring her. I was hoping she would because I adore the way she finds magic in things I stopped looking at.
 
-There was a stall selling jewelry for pennies and, when we passed by, she froze — enchanted by an aquamarine seahorse necklace no bigger than a fingernail. At a few hundred words per minute she debated how each of her favorite characters would love or hate the necklace in different ways. She used to stop her self but she longer does because she knows, now, how much I admire the depth of her explanations.
+There was a stall selling jewelry for pennies and, when we passed by, she froze — enchanted by an aquamarine seahorse necklace no bigger than a fingernail. At a few thousand words per second she debated how each of her favorite characters would love or hate the necklace in different ways. She used to stop herself but she no longer does because she knows, now, how much I admire the depth of her explanations.
 
-By the time we got home and parked, she was only halfway done. “It’ll be easier if I make a flow chart,” she said, and raced up to her room.
+By the time we got home and parked, we were only halfway done. “It’ll be easier if I make a flow chart,” she said, and raced up to her room.
 
-I worry about her, too. There's something in the way she trembles standing between her friends and a spider, and the way she cried all morning when the spring flowers collapsed. It's like a poet and a warrior made a home in her heart but they’re still learning to share.
+I worry about her, too. There's something in the way she trembles standing between her friends and a spider, and the way she cried all morning when the spring flowers died. It's like a poet and a warrior made a home in her heart but they’re still learning to share.
 
-Over lunch, I finished the shield from her XIV character. The one she’s been asking me to make for months. When I gave it to her, she screamed and ran around the block with it so fast neither the dogs nor I could keep up. She suddenly stopped, turned around, pushed the shield into my chest and said, “If we only have one, I want you to have it. To keep you safe.”
+Over lunch, I finished making the shield from her XIV character, the one she’s been asking me for for months. When I gave it to her, she screamed and ran around the block with it so fast neither the dogs nor I could keep up. She suddenly stopped, turned around, pushed the shield into my chest and said, “If we only have one, I want you to have it. To keep you safe.”
 
 I asked what would keep her safe and she furrowed one brow and said, “You, silly!” and did you know that pride and grief are the same thing?
 
@@ -41,7 +41,7 @@ She tore her favorite cargo shorts the other day climbing the tree where the woo
 
 I sat with her and watched her sew and get so focused neither of us said a word and all you could hear was the whir of the machine while the sun sank into the ocean outside. When it felt right, I asked her what had been making her sad, and she didn’t say anything for a long time and then reached into her pocket and put a polaroid into my hand. I think you took this one. It’s me and her last year: I was holding her up to the sun, doing a Lion King bit. It had been torn apart, probably by the woodpeckers, but she had carefully taped it back up.
 
-She said “You didn’t pick me up once this whole summer". She paused. “Did I grow up too much?” and she jumped into my arms and hugged me tight because she knew I was about to cry. “I wish I could be a baby again,” she said, holding back her own tears. I told her that no matter how much she grows up she’ll always be my little baby, and she liked that better and fell asleep on my lap and we stayed like that for I don’t know how long.
+She said “You didn’t pick me up once this whole summer". She paused. “Did I grow up too much?” and she jumped into my arms and hugged me tight because we both knew I was going to cry. “I wish I could be a baby again,” she said, holding back her own tears. I told her that no matter how much she grows up she’ll always be my little baby, and she liked that better and fell asleep on my lap and we stayed like that for I don’t know how long.
 
 No one told me having kids would feel like having a compass in my heart that always points home. That no matter how much we fight and yell and say things we don't mean, that no matter how much our family breaks, we'll find a way back to each other and become strong in the broken places.
 
