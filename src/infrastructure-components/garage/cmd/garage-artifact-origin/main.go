@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	rpcSecretPath = "/etc/garage/rpc-secret"
+	rpcSecretPath  = "/etc/garage/rpc-secret"
 	adminTokenPath = "/etc/garage/admin-token"
 )
 
@@ -506,7 +506,7 @@ func convergeTLS(opts options) error {
 			return err
 		}
 	}
-	if !fileExists(serverCertPath) || !fileExists(serverKeyPath) {
+	if !serverTLSReady(opts, serverCertPath, serverKeyPath) {
 		if err := generateServerCert(opts, serverCertPath, serverKeyPath, opts.CABundlePath, caKeyPath); err != nil {
 			return err
 		}
@@ -520,6 +520,29 @@ func convergeTLS(opts options) error {
 		return fmt.Errorf("update-ca-certificates: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+func serverTLSReady(opts options, certPath, keyPath string) bool {
+	cert, err := readCertificate(certPath)
+	if err != nil {
+		return false
+	}
+	key, err := readPrivateKey(keyPath)
+	if err != nil {
+		return false
+	}
+	pub, ok := cert.PublicKey.(*rsa.PublicKey)
+	if !ok || pub.E != key.PublicKey.E || pub.N.Cmp(key.PublicKey.N) != 0 {
+		return false
+	}
+	now := time.Now()
+	if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+		return false
+	}
+	if err := cert.VerifyHostname(opts.OriginHostname); err != nil {
+		return false
+	}
+	return cert.VerifyHostname("127.0.0.1") == nil
 }
 
 func generateCA(certPath, keyPath string) error {
