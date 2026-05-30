@@ -159,6 +159,11 @@ nomad_artifact_publisher_s3_secret_key_env_var: VERSELF_NOMAD_ARTIFACTS_S3_SECRE
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_host_service_ip: 10.255.0.1
 base_host_service_ip: "{{ firecracker_host_service_ip }}"
+base_zfs_pools:
+  - name: vspool
+    mountpoint: /vspool
+    devices:
+      - /dev/disk/by-id/nvme-MTFDKCC960TGP-1BK1JABYY_362510FCEFF6
 spire_agent_id: spiffe://spiffe.verself.sh/node/single-node
 spire_agent_socket_path: /run/spire-agent/sockets/agent.sock
 spire_bundle_endpoint_bind_address: 127.0.0.1
