@@ -3,11 +3,7 @@ import { type CSSProperties, type ReactNode } from "react";
 import { AppChrome } from "@verself/brand";
 import { TopNav } from "~/components/top-nav";
 import { criticalTreatmentHead, criticalTreatmentRootStyle } from "~/lib/critical-treatment";
-import {
-  lettersFontVars,
-  lettersTypographyCss,
-  resolveLettersFont,
-} from "~/features/letters/fonts";
+import { lettersTypographyCss } from "~/features/letters/fonts";
 import lettersCriticalCss from "~/styles/critical/letters.css?inline";
 
 // Letters layout — /letters and /letters/$slug share this chrome. Paper
@@ -46,13 +42,9 @@ import lettersCriticalCss from "~/styles/critical/letters.css?inline";
 
 export const Route = createFileRoute("/letters")({
   component: LettersLayout,
-  // ?font=<id> previews a reading face live (see features/letters/fonts.ts).
-  // The developer flags (?developmentMode=1, ?og=1) are deliberately NOT
-  // validated here: they're set as bare values by raw-history hotkeys (Cmd+D,
-  // then "s"), and isDevelopmentModeEnabled() reads the bare string — putting
-  // them through validateSearch would re-serialise "1" as quoted and break it.
-  validateSearch: (search: Record<string, unknown>): { font?: string } =>
-    typeof search.font === "string" ? { font: search.font } : {},
+  // No validateSearch: the developer flags (?developmentMode=1, ?og=1) are set
+  // as bare values by raw-history hotkeys (Cmd+D, then "s") and read off the
+  // raw URL — validating would re-serialise "1" as quoted and break the check.
   head: () => criticalTreatmentHead("letters", `${lettersCriticalCss}${lettersTypographyCss()}`),
 });
 
@@ -190,8 +182,6 @@ function LettersLayout() {
   // index there is no slug, so the sheet falls back to a stable "letters".
   const params = useParams({ strict: false }) as { slug?: string };
   const slug = params.slug ?? "letters";
-  const { font } = Route.useSearch();
-  const fontVars = lettersFontVars(resolveLettersFont(font));
 
   // The seeded boundary, feathered by offset clip-path layers.
   const fadeClips = CURVE_FADE_STOPS.map((stop) => ({
@@ -208,7 +198,6 @@ function LettersLayout() {
         ...criticalTreatmentRootStyle("letters"),
         isolation: "isolate",
         ...PAPER_GEOMETRY_VARS,
-        ...fontVars,
       }}
     >
       <PaperGrain />
