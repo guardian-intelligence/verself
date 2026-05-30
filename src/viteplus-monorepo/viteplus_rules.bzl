@@ -385,6 +385,60 @@ def viteplus_app(npm_name, srcs, name = "instrumentation_bundle"):
         tool = _INSTRUMENTATION_BUNDLER,
     )
 
+# Nitro plugins each app loads from @verself/nitro-plugins: (output, entry).
+# `rewrite-cjs-require` is a build-time `compiled` hook vite.config.ts imports;
+# `observability-plugin` is a runtime plugin Nitro re-bundles into the server
+# (referenced by file path).
+_NITRO_PLUGIN_BUNDLES = [
+    ("rewrite-cjs-require.mjs", "@verself/nitro-plugins/rewrite-cjs-require"),
+    ("observability-plugin.mjs", "@verself/nitro-plugins/observability-plugin"),
+]
+
+def viteplus_server_plugin_bundles(name = "server_plugin_bundles"):
+    """Pre-bundle the Nitro plugins to self-contained `.mjs` co-located in the app.
+
+    vite.config.ts imports these local outputs instead of `@verself/nitro-plugins`
+    source, so the `vp build` module graph never resolves the workspace package's
+    `.ts` tree — the dependency that pins the build to a source-tree node_modules
+    layout and blocks the sandboxed rules_js port. Each bundle keeps its bare npm
+    imports external (`--external-bare`), inlining only the plugin's own relative
+    `.ts` imports, so resolution and runtime behavior match the source-first build.
+
+    Outputs are `generated_srcs` synced into the app tree before `vp build`,
+    exactly like the route-tree generator. The committed `<name>.d.mts` beside
+    each generated `.mjs` re-exports the package type, so the typed face cannot
+    drift from the source while the runtime stays the bundle.
+
+    Args:
+      name: filegroup of generated `.mjs` sources to pass to `generated_srcs`.
+    """
+    generated = []
+    for outfile, entry in _NITRO_PLUGIN_BUNDLES:
+        gen = outfile[:-len(".mjs")].replace("-", "_") + "_bundle"
+        out = "__generated_sources/" + outfile
+        js_run_binary(
+            name = gen,
+            srcs = [
+                "//src/viteplus-monorepo:workspace_config",
+                ":node_modules",
+                ":sources",
+            ],
+            outs = [out],
+            args = [
+                "--entry=" + entry,
+                "--outfile=" + out,
+                "--external-bare",
+            ],
+            chdir = native.package_name(),
+            progress_message = "Bundling %s for %s" % (outfile, native.package_name()),
+            tool = _INSTRUMENTATION_BUNDLER,
+        )
+        generated.append(":" + gen)
+    native.filegroup(
+        name = name + "_generated_sources",
+        srcs = generated,
+    )
+
 def viteplus_node_runtime_artifact(name):
     native.genrule(
         name = name,

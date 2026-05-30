@@ -6,7 +6,7 @@ load(
 )
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component", "post_deploy_canary")
-load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree")
+load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree", "viteplus_server_plugin_bundles")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -78,12 +78,15 @@ viteplus_app(
         "instrumentation.mts",
         "package.json",
         "public/**/*",
+        "rewrite-cjs-require.d.mts",
         "src/**/*",
         "tsconfig.json",
         "vite.config.ts",
     ],
     npm_name = "@verself/verself-web",
 )
+
+viteplus_server_plugin_bundles()
 
 viteplus_node_app_artifact(
     name = "node_app_nomad_artifact",
@@ -93,6 +96,7 @@ viteplus_node_app_artifact(
         ":openapi_spec_copies_generated_sources",
         ":dot_matrix_shader_generated_sources",
         ":dot_matrix_wave_shader_generated_sources",
+        ":server_plugin_bundles_generated_sources",
         "//src/viteplus-monorepo/packages/sdk:openapi_clients_generated_sources",
     ],
     output = "verself-web",

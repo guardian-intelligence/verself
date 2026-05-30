@@ -3,16 +3,17 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
-import { rewriteCjsRequireOnCompiled } from "@verself/nitro-plugins/rewrite-cjs-require";
 import matter from "gray-matter";
 import { marked } from "marked";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite-plus";
 import { lettersBodyFont } from "./src/features/letters/fonts";
+// Bazel/Rolldown-bundled forms of the @verself/nitro-plugins entrypoints (see
+// viteplus_server_plugin_bundles). Importing the local .mjs keeps the workspace
+// package's .ts source out of the vp build module graph.
+import { rewriteCjsRequireOnCompiled } from "./rewrite-cjs-require.mjs";
 
-const observabilityPlugin = fileURLToPath(
-  import.meta.resolve("@verself/nitro-plugins/observability-plugin"),
-);
+const observabilityPlugin = fileURLToPath(new URL("./observability-plugin.mjs", import.meta.url));
 
 // Letters markdown loader. Each src/content/letters/*.md becomes a JS module
 // exporting { frontmatter, html, leadHtml, continuationHtml } parsed at build

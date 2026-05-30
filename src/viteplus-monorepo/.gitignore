@@ -20,6 +20,11 @@ blob-report
 *.tsbuildinfo
 *.local
 
+# Nitro plugin bundles synced into app trees by viteplus_server_plugin_bundles
+# (Rolldown output; the committed .d.mts type faces stay tracked).
+apps/*/rewrite-cjs-require.mjs
+apps/*/observability-plugin.mjs
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

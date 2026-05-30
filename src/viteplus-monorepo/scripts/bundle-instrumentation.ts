@@ -7,9 +7,12 @@
 // interop match what the rest of the app gets.
 //
 // Args:
-//   --entry=<path>     entrypoint (relative to the cwd Bazel sets via
-//                      `chdir = native.package_name()`)
-//   --outfile=<path>   bundled output file
+//   --entry=<path|specifier>  entrypoint, resolved from the cwd Bazel sets via
+//                             `chdir = native.package_name()` (a relative path
+//                             or a node-resolvable bare specifier)
+//   --outfile=<path>          bundled output file
+//   --external-bare           keep every bare npm/package import external,
+//                             inlining only the entry's own relative imports
 import process from "node:process";
 
 import { build } from "rolldown";
@@ -23,10 +26,23 @@ function arg(name: string): string {
   return hit.slice(prefix.length);
 }
 
+const entry = arg("entry");
+
+// Default: inline everything non-`node:` into a standalone file (the OTel
+// preload, loaded with no node_modules sidecar). With --external-bare only the
+// entry's own relative (`./`, `../`) imports are inlined and every bare
+// specifier stays external — for Nitro plugins that the app's own bundler
+// re-processes, where inlining `nitro`/`@opentelemetry/api` would duplicate the
+// framework and the OTel global singletons.
+const externalBare = process.argv.includes("--external-bare");
+const isRelativeOrVirtual = (id: string) =>
+  id.startsWith(".") || id.startsWith("/") || id.startsWith("\0");
+
 await build({
-  input: arg("entry"),
+  input: entry,
   platform: "node",
-  external: (id) => id.startsWith("node:"),
+  external: (id) =>
+    id !== entry && (id.startsWith("node:") || (externalBare && !isRelativeOrVirtual(id))),
   tsconfig: "tsconfig.json",
   output: {
     file: arg("outfile"),
