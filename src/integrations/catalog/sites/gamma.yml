@@ -1,5 +1,6 @@
 version: verself.integrations.v1
 site: gamma
+secret_store_policy: openbao_only
 provider_project:
   engine: stripe_projects
   project_name: verself-gamma
@@ -13,8 +14,8 @@ bootstrap_exceptions:
     credential_keys:
       - cloudflare_api_token
     storage_targets:
-      - site_provisioning
-      - site_host
+      - controller_openbao
+      - host_credstore
     allowed_uses:
       - delegate or reconcile gamma.verself.sh DNS records
       - haproxy lego DNS-01 certificate renewal for gamma names
@@ -26,8 +27,11 @@ integrations:
     owner: src/tools/provisioning
     purpose: bare_metal_provisioning
     credentials:
-      - sops_key: latitudesh_auth_token
-        storage: site_provisioning
+      - key: infrastructure.latitude.auth_token
+        source: bootstrap_session
+        target: provisioning_bootstrap
+        target_store: controller_openbao
+        openbao_name: infrastructure.latitude.auth_token
     gamma_policy: prefer dedicated Latitude project and token; mark bootstrap_shared only for the hourly tracer bullet.
   - key: edge.cloudflare_dns
     provider: cloudflare
@@ -35,8 +39,11 @@ integrations:
     owner: src/integrations/cloudflare
     purpose: dns_and_tls
     credentials:
-      - sops_key: cloudflare_api_token
-        storage: site_host
+      - key: edge.cloudflare.parent_zone_dns_token
+        source: bootstrap_session
+        target: host_credstore
+        target_store: controller_openbao
+        openbao_name: edge.cloudflare.parent_zone_dns_token
         isolation: bootstrap_shared
     gamma_policy: parent-zone token use is operator-only and never a runtime secret.
   - key: billing.stripe
@@ -45,18 +52,24 @@ integrations:
     owner: src/services/billing-service
     purpose: billing
     credentials:
-      - sops_key: stripe_secret_key
-        storage: site_external
+      - key: billing-service.stripe.secret_key
+        source: manual_provider_dashboard
         target: runtime_secret
-      - sops_key: stripe_webhook_secret
-        storage: site_external
+        target_store: site_openbao
+        openbao_name: billing-service.stripe.secret_key
+      - key: billing-service.stripe.webhook_secret
+        source: provider_webhook_endpoint
         target: runtime_secret
-      - sops_key: stripe_publishable_key
-        storage: site_external
+        target_store: site_openbao
+        openbao_name: billing-service.stripe.webhook_secret
+      - key: billing-service.stripe.publishable_key
+        source: provider_dashboard
         target: public_config
-      - sops_key: stripe_test_webhook_endpoint_id
-        storage: site_external
+        site_var: stripe_publishable_key
+      - key: billing-service.stripe.test_webhook_endpoint_id
+        source: provider_webhook_endpoint
         target: provider_resource_id
+        catalog_field: stripe_test_webhook_endpoint_id
     gamma_policy: use sandbox/test-mode resources that cannot affect prod billing.
   - key: email.provider
     provider: resend
@@ -64,9 +77,12 @@ integrations:
     owner: src/services/email-service
     purpose: outbound_email
     credentials:
-      - sops_key: resend_api_key
-        storage: site_external
+      - key: email-service.resend.api_key
+        source: stripe_projects_env
+        external_name: RESEND_API_KEY
         target: runtime_secret
+        target_store: site_openbao
+        openbao_name: email-service.resend.api_key
     migration_check: aspect integrations stripe-projects --site=gamma --action=search --query=resend
     gamma_policy: use notify.gamma.verself.sh or another gamma-only sender domain.
   - key: github.runner_app
@@ -75,19 +91,26 @@ integrations:
     owner: src/services/github-integration-service
     purpose: hosted_runner_integration
     credentials:
-      - sops_key: github_integration_service_github_app_private_key
-        storage: site_external
+      - key: github-integration-service.github.private_key
+        source: provider_dashboard
         target: runtime_secret
-      - sops_key: github_integration_service_github_app_webhook_secret
-        storage: site_external
+        target_store: site_openbao
+        openbao_name: github-integration-service.github.private_key
+      - key: github-integration-service.github.webhook_secret
+        source: provider_webhook_config
         target: runtime_secret
-      - sops_key: github_integration_service_github_app_oauth_client_secret
-        storage: site_host
+        target_store: site_openbao
+        openbao_name: github-integration-service.github.webhook_secret
+      - key: github-integration-service.github.oauth_client_secret
+        source: provider_oauth_app
         target: runtime_secret
+        target_store: site_openbao
+        openbao_name: github-integration-service.github.oauth_client_secret
     gamma_policy: create a separate GitHub App, OAuth client, webhook secret, private key, and runner prefix.
   - key: runtime.generated_host_secrets
     provider: verself
     replacement: internal_runtime
     owner: src/host
     purpose: host_and_service_bootstrap
+    generation: host_convergence_to_site_openbao
     gamma_policy: generated per site; never copied from prod.
