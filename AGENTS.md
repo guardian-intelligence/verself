@@ -93,7 +93,7 @@ Single Region:
         - Cell: verself-owned bare-metal cell
         - Cell: customer BYO-compute pool X
         - Cell: customer BYO-compute pool Y
-    - staging: prod clone, internal integration/release rehearsal site, periodic RC generation + release notes. Pomerium-gated.
+    - staging: prod clone, internal integration/release rehearsal site, periodic RC generation + release notes. Public with feature flags.
     - gamma: prod clone, preview/canary site, Pomerium-gated. Deploys main continuously.
     - dev: personal/operator development sites, Pomerium-gated
 
@@ -105,9 +105,9 @@ Current:
 
 100% bare metal fleet
 Single region (ASH)
-Single fabric (prod)
+three sites (prod, gamma, dev)
 No cells
-1 control plane node
+1 node per site
 Single global writer for TigerBeetle, ClickHouse, and PG
 
 <critical>Make architecture decisions that design for the target</critical>
