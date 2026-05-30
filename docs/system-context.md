@@ -23,8 +23,12 @@ The bootstrap ring contains OS/package hardening, Nomad agent state,
 operator-recovery SSH, OpenBao site configuration, and SPIRE server/agent state
 required before Nomad workloads can receive SVIDs. `aspect site allocate`
 creates provider resources and inventory; `aspect site bootstrap` converges the
-host substrate. Runtime versions, component binaries, service binaries,
-ClickHouse migrations, and deploy semantics are Nomad-managed deployable units.
+host substrate. The nftables foundation is a pre-artifact Nomad component so
+firewall changes use the same deployment evidence and rollback path as other
+host-owned platform components. SPIRE entries, local databases, runtime
+secrets, HAProxy routes, runtime versions, component binaries, service
+binaries, ClickHouse migrations, and rollout semantics are owned by explicit
+bootstrap state or Nomad-managed deployable units with deployment evidence.
 Devtools remain controller-local/host-local tooling outside Nomad.
 
 Bootstrap and operator-recovery secrets are stored in the site OpenBao

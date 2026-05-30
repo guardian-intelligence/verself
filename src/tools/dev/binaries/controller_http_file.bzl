@@ -55,3 +55,27 @@ controller_http_file = repository_rule(
         "linux_amd64_url": attr.string(mandatory = True),
     },
 )
+
+def _controller_http_archive_impl(repository_ctx):
+    asset = _asset_for_controller(repository_ctx)
+    repository_ctx.download_and_extract(
+        output = "",
+        sha256 = asset.sha256,
+        stripPrefix = repository_ctx.attr.strip_prefix,
+        url = asset.url,
+    )
+    repository_ctx.file("BUILD.bazel", repository_ctx.attr.build_file_content)
+
+controller_http_archive = repository_rule(
+    implementation = _controller_http_archive_impl,
+    attrs = {
+        "build_file_content": attr.string(mandatory = True),
+        "darwin_arm64_downloaded_file_path": attr.string(mandatory = True),
+        "darwin_arm64_sha256": attr.string(mandatory = True),
+        "darwin_arm64_url": attr.string(mandatory = True),
+        "linux_amd64_downloaded_file_path": attr.string(mandatory = True),
+        "linux_amd64_sha256": attr.string(mandatory = True),
+        "linux_amd64_url": attr.string(mandatory = True),
+        "strip_prefix": attr.string(mandatory = True),
+    },
+)

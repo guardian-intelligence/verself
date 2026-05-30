@@ -11,6 +11,8 @@ load(
 DEV_CONVENIENCE_SHIMS = [
     ("buildifier", "//src/tools/dev/binaries:buildifier"),
     ("gofumpt", "//src/tools/dev/binaries:gofumpt"),
+    ("ruby", "//src/tools/dev/binaries:ruby"),
+    ("stripe", "//src/tools/dev/binaries:stripe"),
     ("uv", "//src/tools/dev/binaries:uv"),
     ("uvx", "//src/tools/dev/binaries:uvx"),
 ]

@@ -2,6 +2,8 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "dev_tools.MODULE.bazel",
+    "stripe-projects-config.toml",
+    "stripe-projects-plugin.toml",
 ])
 
 genrule(
@@ -16,6 +18,11 @@ alias(
     actual = "@cc_mvdan_gofumpt//:gofumpt",
 )
 
+alias(
+    name = "ruby",
+    actual = "@dev_tool_ruby//:ruby",
+)
+
 genrule(
     name = "tofu_bin",
     srcs = ["@dev_tool_tofu//file"],
@@ -27,6 +34,26 @@ trap 'rm -rf "$$tmp"' EXIT
 unzip -q "$(location @dev_tool_tofu//file)" -d "$$tmp"
 install -m 0755 "$$tmp/tofu" "$@"
 """,
+)
+
+genrule(
+    name = "stripe_cli_bin",
+    srcs = ["@dev_tool_stripe_cli//file"],
+    outs = ["stripe"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xzf "$(location @dev_tool_stripe_cli//file)" -C "$$tmp"
+install -m 0755 "$$tmp/stripe" "$@"
+""",
+)
+
+genrule(
+    name = "stripe_projects_plugin_bin",
+    srcs = ["@dev_tool_stripe_projects_plugin//file"],
+    outs = ["stripe-cli-projects"],
+    cmd = "install -m 0755 $(location @dev_tool_stripe_projects_plugin//file) $@",
 )
 
 genrule(

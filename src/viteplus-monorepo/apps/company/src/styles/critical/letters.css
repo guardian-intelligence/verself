@@ -33,6 +33,6 @@ body {
   --treatment-surface-subtle: rgba(11, 11, 11, 0.04);
   --treatment-surface-border: rgba(11, 11, 11, 0.14);
   --treatment-hairline: rgba(11, 11, 11, 0.14);
-  --treatment-rule-color: #5b3a26;
+  --treatment-rule-color: #0b0b0b;
   --treatment-rule-thickness: 3px;
 }

@@ -4,7 +4,7 @@ title: The Coding Agent is the Next Smartphone
 publishedAt: 2026-05-29
 flare: Coding Agent
 kind: dispatch
-summary: "Don't bring a knife to a gun fight."
+summary: "if your agent and my agent ever meet, your agent is going to die. Don't give them a knife and send them into a gun fight."
 ---
 
 Someone called TigerBeetle the Rolls-Royce of software engineering and it made me chuckle. It's true, TigerBeetle is great software. They still make it by hand over there, can you believe it?

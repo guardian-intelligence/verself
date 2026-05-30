@@ -2,10 +2,10 @@
 
 Verself configuration and third-party integration state is managed through an
 environment-scoped catalog. The catalog records every external account,
-resource, credential, public variable, destination, consumer, verification step,
-and isolation exception. Secret values live in OpenBao, provider-native vaults,
-or product KV stores according to lifecycle. The catalog is the inventory that
-ties those stores together.
+resource, credential, public variable, render target, consumer, verification
+step, and isolation exception. The target state has one durable secrets system:
+OpenBao. Provider vaults and Stripe Projects are provisioning and handoff
+surfaces; product KV is served by secrets-service on top of OpenBao.
 
 Stripe Projects is the provider provisioning and credential-handoff model for
 new integrations when the provider exists in the Projects catalog. A Stripe
@@ -37,8 +37,9 @@ catalog marks a credential as a bootstrap exception.
 | `dev` | Per-operator provider projects or disposable provider resources. | Operator-local. No prod credentials. |
 
 Provider projects are a provisioning surface. Runtime services do not read
-`.env`, `.projects/vault`, or provider CLI caches. Import tooling reads only
-catalog-approved names and writes them into OpenBao.
+`.env`, `.projects/vault`, or provider CLI caches. Deployment imports only
+catalog-approved credential names into OpenBao, then host convergence
+materializes the runtime view.
 
 Stripe Projects state lives in a per-site worktree:
 
@@ -60,16 +61,78 @@ aspect integrations stripe-projects --site=gamma --action=search --query=resend
 aspect integrations stripe-projects --site=gamma --action=env-pull --confirm
 ```
 
-The wrapper checks that the pinned Projects plugin is installed and fails before
-Stripe can prompt for implicit installation.
+The wrapper builds the pinned Stripe CLI and Projects plugin through Bazel,
+loads plugin manifest state from repo-local `.verself`, and passes the host
+Stripe config with `--config` when one exists.
+
+## Bootstrap State Machine
+
+The OpenBao bootstrap path has an explicit state machine. A privileged coding
+agent may hold the same operational authority as a human operator, but every
+transition is performed by an authenticated principal and leaves audit evidence.
+
+```text
+S0 repo_metadata_only
+  -> S1 stripe_authenticated
+  -> S2 provider_bootstrap_credentials_available
+  -> S3 controller_openbao_seeded
+  -> S4 bare_metal_allocated
+  -> S5 host_openbao_installed
+  -> S6 site_openbao_initialized
+  -> S7 site_openbao_seeded
+  -> S8 nomad_ready
+  -> S9 deployed
+  -> S10 steady_state_rotation
+```
+
+| State | Meaning | Secret location | Exit transition |
+| --- | --- | --- | --- |
+| `S0 repo_metadata_only` | Catalog, site vars, provider resource declarations, and tfvars exist. | No plaintext secrets in repo. | User or privileged agent starts a bootstrap session. |
+| `S1 stripe_authenticated` | The operator or agent has authenticated Stripe CLI/Projects locally. | Stripe config on the principal's machine only. | Initialize or select the site provider project. |
+| `S2 provider_bootstrap_credentials_available` | Latitude, Cloudflare, and other pre-host API keys are acquired. | Bootstrap session memory until imported. | Import catalog-approved bootstrap keys. |
+| `S3 controller_openbao_seeded` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
+| `S4 bare_metal_allocated` | Latitude host exists and inventory can be written. | Provider credentials remain in controller OpenBao. | Host bootstrap connects over SSH. |
+| `S5 host_openbao_installed` | Host convergence copies the OpenBao binary, configuration, TLS files, and service definition to the host. | No site secrets copied yet. | Start OpenBao and initialize the site store. |
+| `S6 site_openbao_initialized` | The host OpenBao Raft store, root token, unseal material, auth mounts, and base policies exist for this site. | Site OpenBao and host credstore during bootstrap. | Import a wrapped site seed bundle. |
+| `S7 site_openbao_seeded` | Runtime secrets, provider credentials, transit keys, and host credstore inputs are present in site OpenBao. | Site OpenBao is the source of truth. | Project required host state and hand off to Nomad. |
+| `S8 nomad_ready` | Base OS, SPIRE, OpenBao auth, credstore projections, and Nomad are ready. | Runtime reads use OpenBao/secrets-service. | Nomad deploys service jobs. |
+| `S9 deployed` | Services run from Nomad and consume only OpenBao-backed runtime secrets. | Site OpenBao and product KV. | Post-deploy canaries pass. |
+| `S10 steady_state_rotation` | Future credential changes use catalog-driven import, rotate, reveal, and revoke commands. | OpenBao only. | Repeat from provider handoff or rotation transition. |
+
+The phrase "copy OpenBao" means install/copy OpenBao runtime assets to the new
+host and then seed that site's OpenBao from a catalog-approved, wrapped bundle.
+It does not mean copying prod's OpenBao data, root token, unseal keys, Raft
+store, or runtime secret values into gamma.
+
+The first-site bootstrap is the only special case. If there is no controller
+OpenBao yet, the bootstrap session may hold the small set of secret-zero values
+in process memory long enough to bring up the first OpenBao. Once any controller
+OpenBao exists, new sites use `S3 controller_openbao_seeded` instead of
+plaintext files.
+
+### Transition Rules
+
+- No transition writes plaintext credentials to git, `.env`, generated Bazel
+  outputs, shell history, or logs.
+- `bootstrap_shared` values may be used by provisioning and DNS tasks, but they
+  cannot be runtime secret sources.
+- Provider-project imports reject environment variables that are not declared in
+  the catalog.
+- Host OpenBao initializes its own site-local Raft store and recovery material.
+  Environments never share OpenBao root tokens, unseal keys, or Raft state.
+- The successful transition to `S9 deployed` requires provider-specific canary
+  evidence, not just a green Nomad allocation.
 
 ## Storage Classes
 
 | Class | Stored in | Consumed by | Rule |
 | --- | --- | --- | --- |
-| `provider_project` | Stripe Projects vault or provider-native vault | Operator import tooling | Local handoff only. Never consumed by Nomad jobs. |
-| `site_config` | OpenBao `site-config/config/<name>` | Host bootstrap, provider bootstrap, and runtime seed import | Environment-scoped site configuration. |
-| `host_credstore` | `/etc/credstore/...` | Host daemons and local jobs | Host file cache owned by Ansible. |
+| `bootstrap_session` | Operator or privileged-agent process memory | Initial import command | Secret-zero values only. Do not persist. |
+| `provider_project` | Stripe Projects vault or provider-native vault | Import tooling | Local handoff only. Never consumed by Nomad jobs. |
+| `controller_openbao` | Controller OpenBao bootstrap namespace | Provisioning and seed-bundle tools | Pre-host source of truth for site bootstrap inputs. |
+| `site_openbao` | Per-site OpenBao KV v2 and transit | Host convergence, secrets-service, workloads | Durable source of truth after site OpenBao exists. |
+| `site_config` | OpenBao `site-config/config/<name>` | Host bootstrap, provider bootstrap, and runtime seed import | Environment-scoped site configuration inside site OpenBao. |
+| `host_credstore` | `/etc/credstore/...` | Host daemons and local jobs | Host file cache materialized from generated values or site OpenBao. |
 | `runtime_secret` | OpenBao KV v2 | Workloads through secrets-service or direct runtime injection | Runtime application secret material. |
 | `product_kv` | secrets-service over OpenBao | Customers and product services | Customer/org-owned secrets and variables after deploy. |
 
@@ -95,7 +158,7 @@ webhook verification, ClickHouse canaries, or host convergence.
 Some provider credentials cannot be fully isolated because the provider scopes
 authorization above the environment boundary. These credentials must be marked
 `bootstrap_shared`, never imported as runtime secrets, and used only by
-operator-controlled tasks.
+operator-controlled or privileged-agent-controlled tasks.
 
 | Provider surface | Reason | Allowed use |
 | --- | --- | --- |
@@ -134,23 +197,25 @@ integrations:
         kind: api_key
         sensitivity: secret
         source: manual_provider_dashboard
-        target: site_config
-        openbao_key: stripe_secret_key
+        target: runtime_secret
+        target_store: site_openbao
+        openbao_name: billing-service.stripe.secret_key
         consumer: src/services/billing-service/deploy/runtime-secrets.yml
         rotation: provider_dashboard_roll_key
       - key: billing-service.stripe.webhook_secret
         kind: webhook_secret
         sensitivity: secret
         source: provider_webhook_endpoint
-        target: site_config
-        openbao_key: stripe_webhook_secret
+        target: runtime_secret
+        target_store: site_openbao
+        openbao_name: billing-service.stripe.webhook_secret
         consumer: src/services/billing-service/deploy/runtime-secrets.yml
     variables:
       - key: billing-service.stripe.publishable_key
         sensitivity: public
         source: provider_dashboard
-        target: site_config
-        openbao_key: stripe_publishable_key
+        target: site_vars
+        site_var: stripe_publishable_key
     verification:
       - command: aspect deploy --site=gamma --sha=HEAD --post-deploy-checks=medium
       - evidence: billing Stripe webhook route accepts signed sandbox event
@@ -172,8 +237,9 @@ variable exported by `stripe projects env --pull`:
       - key: analytics-service.posthog.project_api_key
         source: stripe_projects_env
         external_name: POSTHOG_PROJECT_API_KEY
-        target: site_config
-        openbao_key: posthog_project_api_key
+        target: runtime_secret
+        target_store: site_openbao
+        openbao_name: analytics-service.posthog.project_api_key
 ```
 
 ## Runbook: Add Configuration
@@ -186,9 +252,10 @@ variable exported by `stripe projects env --pull`:
 
 2. Choose the storage class.
 
-   Use `site_config` for host bootstrap inputs, provider bootstrap inputs, and
-   third-party runtime seed material; `runtime_secret` for workload
-   consumption; and `product_kv` for customer/org-managed values after deploy.
+   Use `bootstrap_session` for secret-zero values before any OpenBao exists,
+   `controller_openbao` for pre-host site bootstrap inputs, `site_openbao` for
+   durable runtime and host seed material, and `product_kv` for customer or
+   org-managed values after deploy.
 
 3. Add or update the catalog entry.
 
@@ -209,14 +276,14 @@ variable exported by `stripe projects env --pull`:
 
    Prefer provider-project import. If the provider is not supported by Stripe
    Projects, write the value through `aspect site secret-put --site=<site>
-   --name=<openbao_key>`.
+   --name=<site_config_key>` or the catalog-aware credential import command.
 
 6. Validate before deploy.
 
-   The validator should reject undeclared OpenBao keys, undeclared
+   The target validator should reject undeclared OpenBao names, undeclared
    `site_secret` references, runtime references to bootstrap-shared material,
-   prod credentials in gamma or dev, and hardcoded environment-specific Nomad
-   literals.
+   prod credentials in gamma or dev, and hardcoded
+   environment-specific Nomad literals.
 
 7. Deploy and capture evidence.
 
@@ -243,9 +310,9 @@ aspect integrations credentials reveal --site=gamma --key=<catalog-key> --reason
 aspect integrations credentials rotate --site=gamma --key=<catalog-key>
 ```
 
-`credentials pull` imports provider-project values into catalog-approved OpenBao
-targets without printing plaintext. It must reject unrecognized environment
-variable names from `.env` or provider-project output.
+`credentials pull` imports provider-project values into the catalog-approved
+OpenBao targets without printing plaintext. It must reject unrecognized
+environment variable names from `.env` or provider-project output.
 
 `credentials reveal` is break-glass. It requires a reason, writes an audit row,
 prints at most one requested value, and never supports broad reveal. Production
@@ -283,7 +350,7 @@ secrets, or operator terminals.
 
    `stripe projects env --pull` refreshes the local vault and `.env` file for
    local handoff. The import tool reads only catalog-approved variable names and
-   writes OpenBao site-config material.
+   writes OpenBao seed material.
 
 5. Add service ownership.
 
@@ -308,9 +375,9 @@ secrets, or operator terminals.
 
 The catalog validator should run in CI and before deploy.
 
-- Every OpenBao `site-config` key has a catalog entry.
-- Every `site_secret` reference in `deploy/runtime-secrets.yml` and
-  `deploy/credstore.yml` resolves to exactly one catalog entry.
+- Every OpenBao target name has a catalog entry.
+- Every `site_secret` reference in deploy declarations resolves to exactly one
+  catalog entry.
 - Every environment-specific Nomad literal is represented as site vars or a
   cataloged variable.
 - `bootstrap_shared` credentials are denied as runtime secret sources.

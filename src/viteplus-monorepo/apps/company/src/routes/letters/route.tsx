@@ -200,6 +200,7 @@ function LettersLayout() {
         ...PAPER_GEOMETRY_VARS,
       }}
     >
+      <PaperWash />
       <PaperGrain />
       <FeatheredGridLayer
         toneClass="letters-paper-grid--text"
@@ -229,6 +230,18 @@ function LettersLayout() {
 
 function PaperGrain() {
   return <div aria-hidden className={`${PAPER_LAYER_CLASS} letters-paper-tooth`} />;
+}
+
+// Watercolor wash: soft splotches where the cream sheet dried lighter, toward
+// white. Pure CSS radial gradients (see .letters-paper-wash) — no SVG filter,
+// no blend mode, no animation — so it paints once and costs nothing at runtime.
+// Sits at z-0, BELOW the text, so white alpha only lightens paper and never
+// washes out ink; the graph ruling (z-40, multiply) still prints over the
+// splotches.
+function PaperWash() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 z-0 letters-paper-wash" />
+  );
 }
 
 // One band of the sheet: the checked-in CSS grid, shown only inside its

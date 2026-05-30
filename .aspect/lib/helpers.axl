@@ -53,6 +53,7 @@ ANSIBLE_PLAYBOOK_TARGET = "//src/host:ansible_playbook_bin"
 ANSIBLE_COLLECTIONS_ARCHIVE_TARGET = "//src/host:ansible_collections_archive"
 SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
 DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+STRIPE_CLI_SHIM = ("stripe", "//src/tools/dev/binaries:stripe")
 
 # Aspect-owned Vite+ toolchain, shared by the frontend build and controller
 # checks. This bypasses any shell `vp` so Bazel/Aspect actions use the
@@ -147,6 +148,13 @@ def _capture_stdout(ctx, program, args, cwd = None, env = None, label = None):
         return None
     return r.stdout.strip()
 
+def _path_exists(ctx, path):
+    r = (ctx.std.process.command("test")
+        .args(["-e", path])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    return r.status.code == 0
+
 def bazel_output_file(ctx, target):
     """Build a single-output Bazel target and return its execroot-absolute path."""
     rc = checked_spawn(
@@ -184,7 +192,24 @@ def bazel_output_file(ctx, target):
     )
     if execroot == None:
         return ""
-    return execroot + "/" + files[0]
+    execroot_path = execroot + "/" + files[0]
+    if not files[0].startswith("external/"):
+        return execroot_path
+
+    # External source targets are not kept materialized under execroot.
+    output_base = _capture_stdout(
+        ctx,
+        "bazelisk",
+        ["info", "output_base"],
+        cwd = ws_path(ctx),
+        label = "bazelisk info output_base",
+    )
+    if output_base == None:
+        return ""
+    output_base_path = output_base + "/" + files[0]
+    if _path_exists(ctx, output_base_path):
+        return output_base_path
+    return execroot_path
 
 def _absolute_or_workspace_path(ctx, path):
     if path.startswith("/"):
@@ -239,6 +264,7 @@ def viteplus_vp(ctx, args, env = None, label = None):
     if env != None:
         for k, v in env.items():
             vp_env[k] = v
+
     # Vite+ package-manager shims re-exec `node` through PATH.
     vp_env["PATH"] = node_dir + ":" + DEFAULT_PROCESS_PATH
     return checked_spawn(
@@ -266,6 +292,92 @@ def path_env_with_bazel_tool_shims(ctx, shims, bin_dir = ".verself/tools/aspect/
             if name == "tofu":
                 env["TOFU_BIN"] = tool_dir + "/tofu"
     return env
+
+def _read_env_value(ctx, name):
+    value = (ctx.std.process.command("printenv")
+        .args([name])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if value.status.code != 0:
+        return ""
+    return value.stdout.strip()
+
+def _host_stripe_config_file(ctx):
+    xdg = _read_env_value(ctx, "XDG_CONFIG_HOME")
+    if xdg != "":
+        candidate = xdg + "/stripe/config.toml"
+    else:
+        home = _read_env_value(ctx, "HOME")
+        if home == "":
+            return ""
+        candidate = home + "/.config/stripe/config.toml"
+    exists = (ctx.std.process.command("test")
+        .args(["-f", candidate])
+        .stdout("piped").stderr("piped")
+        .spawn().wait_with_output())
+    if exists.status.code != 0:
+        return ""
+    return candidate
+
+def stripe_cli_plugin_context(ctx, plugin_set, bin_dir = ".verself/tools/stripe/bin", state_dir = ".verself/tools/stripe"):
+    """Prepare a repo-local Stripe CLI plugin environment.
+
+    `plugin_set` contains manifest, config, and plugins fields. The returned
+    dict contains env and args_prefix fields for invoking the Bazel-resolved
+    `stripe` binary.
+    """
+    plugins = plugin_set["plugins"]
+    shims = [STRIPE_CLI_SHIM]
+    for plugin in plugins:
+        shims.append((plugin["binary"], plugin["target"]))
+
+    tool_dir = install_bazel_tool_shims(ctx, shims, bin_dir)
+    if tool_dir == "":
+        return None
+
+    plugin_root = ws_path(ctx, state_dir, "plugins")
+    xdg_config_home = ws_path(ctx, state_dir, "xdg-config")
+    stripe_config_dir = xdg_config_home + "/stripe"
+    if checked_spawn(ctx, "mkdir", ["-p", plugin_root, stripe_config_dir], label = "mkdir -p Stripe plugin state") != 0:
+        return None
+
+    local_config = stripe_config_dir + "/config.toml"
+    local_manifest = stripe_config_dir + "/plugins.toml"
+    for target_file in [local_config, local_manifest]:
+        symlink = (ctx.std.process.command("test")
+            .args(["-L", target_file])
+            .stdout("piped").stderr("piped")
+            .spawn().wait_with_output())
+        if symlink.status.code == 0:
+            ctx.std.io.stderr.write("ERROR: refusing to write Stripe plugin state through symlink: " + target_file + "\n")
+            return None
+    if checked_spawn(ctx, "cp", [ws_path(ctx, plugin_set["config"]), local_config], label = "cp Stripe plugin config") != 0:
+        return None
+    if checked_spawn(ctx, "chmod", ["0600", local_config], label = "chmod Stripe plugin config") != 0:
+        return None
+    if checked_spawn(ctx, "cp", [ws_path(ctx, plugin_set["manifest"]), local_manifest], label = "cp Stripe plugin manifest") != 0:
+        return None
+
+    for plugin in plugins:
+        plugin_dir = plugin_root + "/" + plugin["shortname"] + "/" + plugin["version"]
+        if checked_spawn(ctx, "mkdir", ["-p", plugin_dir], label = "mkdir -p Stripe plugin " + plugin["shortname"]) != 0:
+            return None
+        if checked_spawn(ctx, "ln", ["-sf", tool_dir + "/" + plugin["binary"], plugin_dir + "/" + plugin["binary"]], label = "ln -sf Stripe plugin " + plugin["shortname"]) != 0:
+            return None
+
+    env = {
+        "PATH": tool_dir + ":" + DEFAULT_PROCESS_PATH,
+        "STRIPE_PLUGINS_PATH": plugin_root,
+        "XDG_CONFIG_HOME": xdg_config_home,
+    }
+    args_prefix = []
+    host_config = _host_stripe_config_file(ctx)
+    if host_config != "":
+        args_prefix = ["--config", host_config]
+    return {
+        "env": env,
+        "args_prefix": args_prefix,
+    }
 
 def ansible_collections_path(ctx):
     archive = bazel_output_file(ctx, ANSIBLE_COLLECTIONS_ARCHIVE_TARGET)

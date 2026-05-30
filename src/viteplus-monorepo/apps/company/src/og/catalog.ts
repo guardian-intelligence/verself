@@ -111,7 +111,7 @@ export function ogSpecFor(slug: string): OGSpec | undefined {
       bodyExcerpt: excerptOf(letter.bodyHtml),
       ...(letter.summary === letter.title ? {} : { subtitle: letter.summary }),
       footerLeft: `guardianintelligence.org/letters/${letter.slug}`,
-      footerRight: "Seattle · 2026",
+      footerRight: "Read the letter →",
     };
   }
   return OG_CATALOG[slug];

@@ -12,7 +12,7 @@ ssh ubuntu@prod@access.verself.sh
 - ubuntu: the upstream Linux account Pomerium is allowed to request from sshd.
 
 During first bootstrap before IAM, Zitadel, Pomerium, and WireGuard are healthy,
-use direct host SSH only as the temporary provisioning path. After the operator
+use direct host SSH only as the temporary bootstrap path. After the operator
 access handoff, public SSH is Pomerium-only and fallback access is WireGuard:
 
 ```shell

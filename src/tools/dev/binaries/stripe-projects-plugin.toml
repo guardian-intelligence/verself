@@ -1,0 +1,17 @@
+[[Plugin]]
+  Shortname = "projects"
+  Shortdesc = "Provision and manage developer tools through Stripe"
+  Binary = "stripe-cli-projects"
+  MagicCookieValue = "4B23F0C0-C926-4203-BA34-3C69CE1CD1F7"
+
+  [[Plugin.Release]]
+    Arch = "amd64"
+    OS = "linux"
+    Version = "0.16.0"
+    Sum = "4f4741a2168e0f49436c8e6dcc3d7bee4807205364a3aef8dc7d60a06e96e1e1"
+
+  [[Plugin.Release]]
+    Arch = "arm64"
+    OS = "darwin"
+    Version = "0.16.0"
+    Sum = "aba342901504fcea4bf07bc34bf2d32ed4f740908b74b43772894772ff906a04"

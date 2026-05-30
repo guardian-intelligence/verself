@@ -117,7 +117,12 @@ export function AppChrome({
     <header
       className={`${sticky ? "sticky top-0" : "relative"} z-30 transition-colors duration-300 ease-out`}
       style={{
-        background: "var(--treatment-ground)",
+        // Sticky chrome needs its own opaque ground to cover content scrolling
+        // under it; non-sticky chrome sits at the top of the page where that
+        // ground already shows, so it stays transparent — letting a page-level
+        // backdrop (e.g. the Letters paper wash) read continuously through the
+        // masthead instead of hard-cutting at the bar.
+        background: sticky ? "var(--treatment-ground)" : "transparent",
         color: "var(--treatment-wordmark)",
       }}
     >
