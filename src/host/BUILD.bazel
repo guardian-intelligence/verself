@@ -32,6 +32,12 @@ mkdir -p "$$tmp/runtime/bin" "$$tmp/runtime/lib" "$$tmp/runtime/share/git-core"
 install -m 0755 "$$tmp/deb/usr/bin/git" "$$tmp/runtime/bin/git"
 cp -a "$$tmp/deb/usr/lib/git-core" "$$tmp/runtime/lib/git-core"
 cp -a "$$tmp/deb/usr/share/git-core/templates" "$$tmp/runtime/share/git-core/templates"
+for helper in git-remote-ftp git-remote-ftps git-remote-https; do
+  if [ -L "$$tmp/runtime/lib/git-core/$$helper" ]; then
+    cp -f --remove-destination "$$tmp/runtime/lib/git-core/git-remote-http" "$$tmp/runtime/lib/git-core/$$helper"
+    chmod 0755 "$$tmp/runtime/lib/git-core/$$helper"
+  fi
+done
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
 """,
 )
