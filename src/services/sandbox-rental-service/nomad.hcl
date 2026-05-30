@@ -81,6 +81,7 @@ job "sandbox-rental" {
       env {
         GIT_EXEC_PATH = "$${NOMAD_TASK_DIR}/lib/git-core"
         GIT_TEMPLATE_DIR = "$${NOMAD_TASK_DIR}/share/git-core/templates"
+        LD_LIBRARY_PATH = "$${NOMAD_TASK_DIR}/lib"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-service"

@@ -38,6 +38,39 @@ for helper in git-remote-ftp git-remote-ftps git-remote-https; do
     chmod 0755 "$$tmp/runtime/lib/git-core/$$helper"
   fi
 done
+for lib in \
+  libbrotlicommon.so.1 \
+  libbrotlidec.so.1 \
+  libcom_err.so.2 \
+  libcrypto.so.3 \
+  libcurl-gnutls.so.4 \
+  libffi.so.8 \
+  libgmp.so.10 \
+  libgnutls.so.30 \
+  libgssapi_krb5.so.2 \
+  libhogweed.so.6 \
+  libidn2.so.0 \
+  libk5crypto.so.3 \
+  libkeyutils.so.1 \
+  libkrb5.so.3 \
+  libkrb5support.so.0 \
+  liblber.so.2 \
+  libldap.so.2 \
+  libnettle.so.8 \
+  libnghttp2.so.14 \
+  libp11-kit.so.0 \
+  libpcre2-8.so.0 \
+  libpsl.so.5 \
+  libresolv.so.2 \
+  librtmp.so.1 \
+  libsasl2.so.2 \
+  libssh.so.4 \
+  libtasn1.so.6 \
+  libunistring.so.5 \
+  libz.so.1 \
+  libzstd.so.1; do
+  install -m 0644 "/lib/x86_64-linux-gnu/$$lib" "$$tmp/runtime/lib/$$lib"
+done
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
 """,
 )
