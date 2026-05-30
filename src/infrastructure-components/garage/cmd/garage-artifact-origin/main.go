@@ -650,9 +650,16 @@ func readPrivateKey(path string) (*rsa.PrivateKey, error) {
 	if block == nil {
 		return nil, fmt.Errorf("%s does not contain a PEM block", path)
 	}
-	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, fmt.Errorf("parse %s as PKCS#1 or PKCS#8 RSA private key: %w", path, err)
+	}
+	key, ok := parsed.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("parse %s: PEM block is %T, not RSA private key", path, parsed)
 	}
 	return key, nil
 }

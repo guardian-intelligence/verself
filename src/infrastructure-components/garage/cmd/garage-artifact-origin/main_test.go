@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"path/filepath"
 	"testing"
 )
@@ -39,5 +42,28 @@ func TestServerTLSReadyAcceptsGeneratedMaterial(t *testing.T) {
 	}
 	if !serverTLSReady(opts, serverCertPath, serverKeyPath) {
 		t.Fatal("serverTLSReady rejected generated artifact origin TLS material")
+	}
+}
+
+func TestReadPrivateKeyAcceptsPKCS8RSA(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "key.pem")
+	want, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writePEM(path, "PRIVATE KEY", der, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readPrivateKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.N.Cmp(want.N) != 0 || got.E != want.E {
+		t.Fatal("readPrivateKey returned the wrong PKCS#8 RSA key")
 	}
 }
