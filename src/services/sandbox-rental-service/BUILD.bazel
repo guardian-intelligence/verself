@@ -1,5 +1,6 @@
 # gazelle:prefix github.com/verself/sandbox-rental-service
 
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
@@ -19,11 +20,23 @@ spire_identity(
     visibility = ["//src/host:__pkg__"],
 )
 
+pkg_tar(
+    name = "git_runtime_artifact",
+    out = "sandbox-rental-git.tar",
+    files = {
+        "//src/host:git_bin": "bin/git",
+    },
+    modes = {
+        "bin/git": "0755",
+    },
+)
+
 nomad_component(
     name = "nomad_component",
     artifacts = {
         "//src/services/sandbox-rental-service/cmd/sandbox-rental-recurring-worker:sandbox-rental-recurring-worker_nomad_artifact": "sandbox-rental-recurring-worker",
         "//src/services/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service_nomad_artifact": "sandbox-rental-service",
+        ":git_runtime_artifact": "sandbox-rental-git",
     },
     component = "sandbox_rental",
     digest_inputs = [":deploy_declarations"],

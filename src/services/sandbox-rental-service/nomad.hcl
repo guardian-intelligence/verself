@@ -70,6 +70,11 @@ job "sandbox-rental" {
         destination = "local"
         chown = true
       }
+      artifact {
+        source = "verself-artifact://sandbox-rental-git"
+        destination = "local"
+        chown = true
+      }
       config {
         command = "local/bin/sandbox-rental-service"
       }
@@ -97,6 +102,7 @@ job "sandbox-rental" {
         VERSELF_PG_MAX_CONNS = "16"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
+        PATH = "$${NOMAD_TASK_DIR}/local/bin:/usr/bin:/bin"
       }
       resources {
         cpu = 500

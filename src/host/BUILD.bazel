@@ -7,6 +7,19 @@ load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
 package(default_visibility = ["//visibility:public"])
 
 genrule(
+    name = "git_bin",
+    srcs = ["@host_tool_git_deb//file"],
+    outs = ["git"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+dpkg-deb -x "$(location @host_tool_git_deb//file)" "$$tmp"
+install -m 0755 "$$tmp/usr/bin/git" "$@"
+""",
+)
+
+genrule(
     name = "nomad_bin",
     srcs = ["@host_tool_nomad_zip//file"],
     outs = ["nomad"],
