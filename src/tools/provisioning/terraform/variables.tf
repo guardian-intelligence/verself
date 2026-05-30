@@ -65,8 +65,8 @@ variable "billing" {
   default     = "hourly"
 
   validation {
-    condition     = contains(["hourly", "monthly"], var.billing)
-    error_message = "billing must be either 'hourly' or 'monthly'."
+    condition     = contains(["hourly", "monthly", "yearly"], var.billing)
+    error_message = "billing must be 'hourly', 'monthly', or 'yearly'."
   }
 }
 

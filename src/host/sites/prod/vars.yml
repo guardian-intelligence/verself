@@ -1,8 +1,8 @@
 ---
 
 verself_site: prod
-bare_metal_host_alias: vs-dev-w0
-bare_metal_public_ipv4: 206.223.228.101
+bare_metal_host_alias: vs-prod-w0
+bare_metal_public_ipv4: "{{ hostvars[groups['infra'][0]].ansible_host }}"
 verself_domain: verself.sh
 cloudflare_product_zone: verself.sh
 verself_version: 0.1.0
