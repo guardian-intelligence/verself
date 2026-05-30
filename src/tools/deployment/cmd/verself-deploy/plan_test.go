@@ -177,6 +177,77 @@ func TestOrderNomadComponentsAddsCredentialStoreDependency(t *testing.T) {
 	}
 }
 
+func TestOrderNomadComponentsPlacesPublicOIDCEdgeBeforeIAM(t *testing.T) {
+	ordered, err := orderNomadComponents([]nomadComponentDescriptor{
+		{
+			JobID:     "clickhouse-host-install",
+			Component: "clickhouse_host_install",
+			Provides:  []string{"clickhouse:host-tools"},
+		},
+		{
+			JobID:     "credential-store",
+			Component: "credential_store",
+			Provides:  []string{"host:credstore"},
+			Requires:  []string{"clickhouse:host-tools"},
+		},
+		{
+			JobID:     "garage-artifact-origin",
+			Component: "garage_artifact_origin",
+			Provides:  []string{"artifact-origin"},
+		},
+		{
+			JobID:     "postgresql",
+			Component: "postgresql",
+			Provides:  []string{"postgres:server"},
+		},
+		{
+			JobID:     "zitadel",
+			Component: "zitadel",
+			Provides:  []string{"zitadel:http"},
+			Requires:  []string{"postgres:server"},
+		},
+		{
+			JobID:     "auth-control-plane",
+			Component: "auth_control_plane",
+			Provides:  []string{"auth:control-plane"},
+			Requires:  []string{"zitadel:http"},
+		},
+		{
+			JobID:     "haproxy-upstreams",
+			Component: "haproxy_upstreams",
+			Provides:  []string{"edge:public-oidc", "nomad:job:haproxy-upstreams"},
+			Requires:  []string{"zitadel:http"},
+			Artifacts: []nomadDescriptorArtifact{{Label: "//src/haproxy:runtime", Output: "haproxy-runtime", Path: "/tmp/haproxy"}},
+		},
+		{
+			JobID:     "iam-service",
+			Component: "iam_service",
+			Requires:  []string{"auth:control-plane", "edge:public-oidc"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("order: %v", err)
+	}
+	positions := map[string]int{}
+	for i, component := range ordered {
+		positions[component.JobID] = i
+	}
+	for _, jobID := range []string{"zitadel", "auth-control-plane", "haproxy-upstreams", "iam-service"} {
+		if _, ok := positions[jobID]; !ok {
+			t.Fatalf("%s missing from ordered components: %+v", jobID, positions)
+		}
+	}
+	if positions["zitadel"] > positions["haproxy-upstreams"] {
+		t.Fatalf("haproxy-upstreams ordered before zitadel: %+v", positions)
+	}
+	if positions["haproxy-upstreams"] > positions["iam-service"] {
+		t.Fatalf("iam-service ordered before public OIDC edge: %+v", positions)
+	}
+	if positions["auth-control-plane"] > positions["iam-service"] {
+		t.Fatalf("iam-service ordered before auth control plane: %+v", positions)
+	}
+}
+
 func TestOrderNomadComponentsRequiresArtifactOriginForGarageArtifacts(t *testing.T) {
 	_, err := orderNomadComponents([]nomadComponentDescriptor{
 		{

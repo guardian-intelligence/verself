@@ -733,6 +733,8 @@ func validateHAProxy(cfg config) error {
 		argv = append(argv, "-f", config)
 	}
 	cmd := exec.CommandContext(ctx, cfg.haproxyBin, argv...)
+	// HAProxy drops privileges during validation; use a world-readable cwd.
+	cmd.Dir = "/"
 	cmd.Env = withLDLibraryPath(os.Environ(), cfg.haproxyLDLibraryPath)
 	if cfg.haproxyUser != "" {
 		credential, err := userCredential(cfg.haproxyUser)
