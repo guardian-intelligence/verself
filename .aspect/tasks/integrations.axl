@@ -1,9 +1,30 @@
 """aspect integrations cloudflare-dns|stripe-projects - external integration state."""
 
-load(".aspect/lib/helpers.axl", "DEFAULT_SITE", "HOST_CONFIGURATION_DIR", "bazel_run", "checked_spawn", "ws_path")
+load(
+    ".aspect/lib/helpers.axl",
+    "DEFAULT_SITE",
+    "HOST_CONFIGURATION_DIR",
+    "bazel_run",
+    "checked_spawn",
+    "stripe_cli_plugin_context",
+    "ws_path",
+)
 
 _CLOUDFLARE_DNS_TARGET = "//src/integrations/cloudflare/dns-reconciler/cmd/reconcile-cloudflare-dns:reconcile-cloudflare-dns"
+_STRIPE_CLI_VERSION = "1.42.1"
 _STRIPE_PROJECTS_PLUGIN_VERSION = "0.16.0"
+_STRIPE_PROJECTS_PLUGIN = {
+    "config": "src/tools/dev/binaries/stripe-projects-config.toml",
+    "manifest": "src/tools/dev/binaries/stripe-projects-plugin.toml",
+    "plugins": [
+        {
+            "shortname": "projects",
+            "version": _STRIPE_PROJECTS_PLUGIN_VERSION,
+            "binary": "stripe-cli-projects",
+            "target": "//src/tools/dev/binaries:stripe-cli-projects",
+        },
+    ],
+}
 
 def _cloudflare_dns_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
@@ -36,24 +57,21 @@ cloudflare_dns = task(
 def _stripe_projects_site_dir(ctx, site):
     return ws_path(ctx, "src/integrations/stripe-projects/sites/" + site)
 
-def _stripe_projects_preflight(ctx):
-    stripe = (ctx.std.process.command("which")
-        .args(["stripe"])
-        .stdout("piped").stderr("piped")
-        .spawn().wait_with_output())
-    if stripe.status.code != 0:
-        ctx.std.io.stderr.write("ERROR: stripe CLI is required. Install the pinned CLI through repo tooling before using Stripe Projects.\n")
-        return 1
-    help = (ctx.std.process.command("stripe")
-        .args(["projects", "--help"])
+def _stripe_projects_preflight(ctx, stripe_ctx):
+    help_cmd = ctx.std.process.command("stripe").args(stripe_ctx["args_prefix"] + ["projects", "--help"])
+    for k, v in stripe_ctx["env"].items():
+        help_cmd = help_cmd.env(k, v)
+    help = (help_cmd
         .stdout("piped").stderr("piped")
         .spawn().wait_with_output())
     output = help.stdout + help.stderr
     if help.status.code != 0 or "status" not in output or "env" not in output:
         ctx.std.io.stderr.write(
-            "ERROR: Stripe Projects plugin is not installed. Install the pinned plugin with: stripe plugin install projects@" +
+            "ERROR: Bazel-resolved Stripe Projects tooling is not runnable. Expected stripe v" +
+            _STRIPE_CLI_VERSION +
+            " with projects plugin v" +
             _STRIPE_PROJECTS_PLUGIN_VERSION +
-            "\n",
+            ".\n",
         )
         return 1
     return 0
@@ -64,7 +82,10 @@ def _stripe_projects_impl(ctx):
     if action == "":
         ctx.std.io.stderr.write("ERROR: --action is required.\n")
         return 1
-    if _stripe_projects_preflight(ctx) != 0:
+    stripe_ctx = stripe_cli_plugin_context(ctx, _STRIPE_PROJECTS_PLUGIN)
+    if stripe_ctx == None:
+        return 1
+    if _stripe_projects_preflight(ctx, stripe_ctx) != 0:
         return 1
     site_dir = _stripe_projects_site_dir(ctx, site)
     if checked_spawn(ctx, "mkdir", ["-p", site_dir], label = "mkdir -p " + site_dir) != 0:
@@ -74,7 +95,7 @@ def _stripe_projects_impl(ctx):
     if project_name == "":
         project_name = "verself-" + site
 
-    stripe_args = ["projects"]
+    stripe_args = stripe_ctx["args_prefix"] + ["projects"]
     label = "stripe projects " + action + " --site " + site
     if action == "init":
         if not ctx.args.confirm:
@@ -106,6 +127,7 @@ def _stripe_projects_impl(ctx):
         "stripe",
         stripe_args,
         cwd = site_dir,
+        env = stripe_ctx["env"],
         label = label,
     )
 

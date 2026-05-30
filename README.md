@@ -59,26 +59,6 @@ aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
 export PATH="${HOME}/.local/bin:${PATH}"
 ```
 
-### (optional) Cloning this repo onto your own infrastructure
-
-```bash
-# 2. Tell OpenTofu where to provision (one time per environment).
-cp src/tools/provisioning/terraform/terraform.tfvars.example.json \
-   src/tools/provisioning/terraform/terraform.tfvars.json
-$EDITOR src/tools/provisioning/terraform/terraform.tfvars.json   # set project_id
-
-# 3. Provision bare metal + render inventory.
-aspect dev sops-init
-aspect provision apply
-
-# 4. Deploy. Idempotent; safe to repeat.
-aspect deploy
-
-# 5. Mint a persona env file and start working.
-aspect persona assume platform-admin
-```
-
-
 `src/tools/dev/bootstrap/bootstrap-linux-amd64` and
 `src/tools/dev/bootstrap/bootstrap-darwin-arm64` are the only sanctioned shell
 scripts in the repo. Everything else is done through `aspect` and `bazelisk`.
@@ -88,5 +68,4 @@ automatically add that directory to GitHub Actions via `GITHUB_PATH` when that
 file is present. Set `BOOTSTRAP_INSTALL_DIR` to opt into a different install
 directory. Local shells need that directory on `PATH` before invoking `aspect`
 or `bazelisk`.
-
 

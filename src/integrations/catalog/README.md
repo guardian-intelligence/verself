@@ -19,6 +19,6 @@ aspect integrations stripe-projects --site=gamma --action=search --query=resend
 aspect integrations stripe-projects --site=gamma --action=env-pull --confirm
 ```
 
-The wrapper does not install the Stripe Projects plugin. Install the pinned
-plugin version named by `.aspect/tasks/integrations.axl` before using the
-wrapper.
+The wrapper builds the pinned Stripe CLI and Projects plugin through Bazel,
+keeps plugin state under ignored `.verself` paths, and passes the host Stripe
+config with `--config` when one exists.

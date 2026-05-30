@@ -2,11 +2,11 @@
 # App's user-to-server OAuth credentials are read by the auth-control-plane
 # batch job to register (and reconcile) the Zitadel GitHub identity provider.
 #
-# These are materialized by the service-foundation playbook during `aspect
-# deploy`; the full zitadel Ansible role is NOT part of the deploy path, so the
-# credentials must be declared here rather than rendered by that role. The
-# client id is public (carried in site vars.yml); the client secret lives in
-# host.sops.yml. Absent/empty values fail the foundation assert loudly.
+# These credentials must be projected before the auth-control-plane batch job
+# reconciles Zitadel. The full Zitadel Ansible role is not part of the deploy
+# path, so the projection remains declared near the component that owns it. The
+# client id is public (carried in site vars.yml); the client secret lives in the
+# site secret store.
 credstore_secret_files:
   - path: /etc/credstore/zitadel/github-login-client-id
     group: zitadel

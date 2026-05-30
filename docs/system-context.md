@@ -23,10 +23,11 @@ The bootstrap ring contains OS/package hardening, Nomad agent state,
 operator-recovery SSH, and SPIRE server/agent state required before Nomad
 workloads can receive SVIDs. The nftables foundation is a pre-artifact Nomad
 component so firewall changes use the same deployment evidence and rollback
-path as other host-owned platform components. `aspect host service-foundation`
-converges SPIRE entries, local database declarations, runtime-secret
-declarations, and HAProxy public routing from owner-local deploy files. Runtime
-versions, component binaries, service binaries, ClickHouse migrations, and
+path as other host-owned platform components. The old Ansible pre-deploy sweep
+for SPIRE entries, local databases, runtime secrets, and HAProxy routes has
+been retired; those surfaces must now be owned by explicit bootstrap state or
+Nomad-managed deployable units with deployment evidence. Runtime versions,
+component binaries, service binaries, ClickHouse migrations, and
 rollout/rollback semantics are Nomad-managed deployable units. Devtools remain
 controller-local/host-local tooling outside Nomad.
 
@@ -60,10 +61,10 @@ single TanStack Start app, and public service APIs live at
 service API origins directly; TanStack Start server functions preserve the
 same-origin CSP and attach service credentials server-side.
 
-HAProxy 3.3 with AWS-LC terminates public TLS. `aspect host service-foundation`
-renders `haproxy.cfg` from owner-local route declarations, and deployment
-reconciles `/etc/haproxy/maps/upstreams.map` from Nomad's native service catalog
-after Nomad allocations become healthy.
+HAProxy 3.3 with AWS-LC terminates public TLS. Route configuration is bootstrap
+or Nomad-owned state, and deployment reconciles
+`/etc/haproxy/maps/upstreams.map` from Nomad's native service catalog after
+Nomad allocations become healthy.
 Nomad-supervised public origins are keyed by owner-local route/backend identity
 and Nomad service name. HAProxy GUIDs use those stable frontend, backend, and
 server identities so reload-persistent statistics can match objects across

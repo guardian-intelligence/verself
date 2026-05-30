@@ -1,4 +1,4 @@
-"""aspect host edit-secrets | service-foundation | operator-access-handoff
+"""aspect host edit-secrets | operator-access-handoff
 
 Bootstrap convergence and Nomad deployments do not own the operator-access
 handoff. Pomerium is a manual host action because a bad change can move SSH
@@ -7,14 +7,12 @@ listeners and lock operators out.
 
 load(
     ".aspect/lib/helpers.axl",
-    "DEFAULT_SITE",
     "HOST_CONFIGURATION_DIR",
     "SOPS_SHIM",
     "bazel_run",
     "checked_spawn",
     "host_ansible_env",
     "host_ansible_playbook",
-    "host_service_foundation",
     "ws_path",
 )
 
@@ -31,20 +29,6 @@ edit_secrets = task(
     name = "edit-secrets",
     group = ["host"],
     summary = "Open encrypted host configuration secrets in $EDITOR via sops.",
-)
-
-def _service_foundation_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
-    return host_service_foundation(ctx, site)
-
-service_foundation = task(
-    implementation = _service_foundation_impl,
-    name = "service-foundation",
-    group = ["host"],
-    summary = "Converge service identities, local databases, runtime secrets, and public routes.",
-    args = {
-        "site": args.string(default = "prod", description = "Deployment site."),
-    },
 )
 
 def _operator_access_handoff_impl(ctx):
