@@ -85,6 +85,14 @@
       }}/firecracker-release-{{ firecracker_version_pins.version
       }}-{{ firecracker_version_pins.arch }}
 
+- name: Create Verself profile bin directory
+  ansible.builtin.file:
+    path: /opt/verself/profile/bin
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Upload Firecracker release archive
   ansible.builtin.copy:
     src: "{{ firecracker_release_local_archive }}"
@@ -117,7 +125,7 @@
         ~ '-'
         ~ firecracker_version_pins.arch
       }}
-    dest: /usr/local/bin/firecracker
+    dest: /opt/verself/profile/bin/firecracker
     remote_src: true
     owner: root
     group: root
@@ -137,14 +145,14 @@
         ~ '-'
         ~ firecracker_version_pins.arch
       }}
-    dest: /usr/local/bin/jailer
+    dest: /opt/verself/profile/bin/jailer
     remote_src: true
     owner: root
     group: root
     mode: "0755"
 
 - name: Verify installed Firecracker version
-  ansible.builtin.command: /usr/local/bin/firecracker --version
+  ansible.builtin.command: /opt/verself/profile/bin/firecracker --version
   register: firecracker_installed_version
   changed_when: false
   failed_when: "'v' + firecracker_version_pins.version not in firecracker_installed_version.stdout"
@@ -291,7 +299,7 @@
 - name: Install Firecracker host networking setup script
   ansible.builtin.template:
     src: firecracker-network-setup.sh.j2
-    dest: /usr/local/bin/verself-firecracker-network-setup
+    dest: /opt/verself/profile/bin/verself-firecracker-network-setup
     mode: "0755"
   notify: restart firecracker networking
 

@@ -45,10 +45,42 @@ install -m 0755 "$$tmp/bin/spire-agent" "$@"
 """,
 )
 
+genrule(
+    name = "firecracker_bin",
+    srcs = ["@guest_image_firecracker_release//file"],
+    outs = ["firecracker"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xzf "$(location @guest_image_firecracker_release//file)" -C "$$tmp"
+bin="$$(find "$$tmp" -type f -name 'firecracker-v*' ! -name '*.debug' -print -quit)"
+test -n "$$bin"
+install -m 0755 "$$bin" "$@"
+""",
+)
+
+genrule(
+    name = "jailer_bin",
+    srcs = ["@guest_image_firecracker_release//file"],
+    outs = ["jailer"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xzf "$(location @guest_image_firecracker_release//file)" -C "$$tmp"
+bin="$$(find "$$tmp" -type f -name 'jailer-v*' ! -name '*.debug' -print -quit)"
+test -n "$$bin"
+install -m 0755 "$$bin" "$@"
+""",
+)
+
 pkg_tar(
     name = "substrate_tools_archive",
     out = "verself-host-substrate-tools.tar",
     files = {
+        ":firecracker_bin": "opt/verself/profile/bin/firecracker",
+        ":jailer_bin": "opt/verself/profile/bin/jailer",
         ":nomad_bin": "opt/verself/profile/bin/nomad",
         ":spire_agent_bin": "opt/verself/profile/bin/spire-agent",
         ":spire_server_bin": "opt/verself/profile/bin/spire-server",
@@ -56,6 +88,8 @@ pkg_tar(
     },
     modes = {
         "opt/verself/profile/bin/bao": "0755",
+        "opt/verself/profile/bin/firecracker": "0755",
+        "opt/verself/profile/bin/jailer": "0755",
         "opt/verself/profile/bin/nomad": "0755",
         "opt/verself/profile/bin/spire-agent": "0755",
         "opt/verself/profile/bin/spire-server": "0755",
