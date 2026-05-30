@@ -57,7 +57,8 @@ against the Resend and Cloudflare APIs and is idempotent.
 
 ### Cloudflare tokens
 
-Two SOPS-encrypted tokens in `src/host/sites/prod/secrets/host.sops.yml`:
+Two cataloged Cloudflare tokens are imported into the site OpenBao bootstrap
+path:
 
 - `cloudflare_api_token` — the shared product token. Zone DNS edit + read across
   `verself.sh` and `guardianintelligence.org`. Used by the DNS reconciler, the

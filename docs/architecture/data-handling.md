@@ -47,7 +47,7 @@ The Smithy recovery model covers:
 
 The Smithy recovery model does not need to cover every byte:
 
-- `.tfstate`, legacy SOPS bags, bootstrap keys, and first-host recovery
+- `.tfstate`, bootstrap keys, OpenBao seed bundles, and first-host recovery
   material are owned by the site bootstrap state machine;
 - generated artifacts remain governed by generated-artifact policy;
 - CI golden artifacts, package caches, Docker layer caches, and other

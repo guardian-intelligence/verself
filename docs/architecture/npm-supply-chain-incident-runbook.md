@@ -74,7 +74,7 @@ For `executed-privileged`, revoke or roll every credential reachable from the pr
 - GitHub personal access tokens, GitHub App private keys, and installation tokens where logs show API use outside expected runner control paths;
 - GitHub Actions environment secrets and repository/organization secrets exposed to the job;
 - OIDC trust relationships that could exchange the job token for external authority;
-- Cloudflare, Latitude.sh, Resend, Stripe, SOPS/Age, OpenBao bootstrap, and Verself service credentials reachable from the job;
+- Cloudflare, Latitude.sh, Resend, Stripe, OpenBao bootstrap, and Verself service credentials reachable from the job;
 - customer or internal product secrets resolved by `secrets-service` for the run.
 
 For `published`, deprecate or remove the published package/artifact, publish a clean fixed version from a trusted lane, and audit downstream consumers. Treat valid provenance as build-origin evidence only; a compromised build step can still produce an attested malicious artifact.

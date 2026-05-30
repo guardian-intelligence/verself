@@ -110,7 +110,7 @@ The CLI boundary has these major pieces:
 | CLI facade | Command grammar, local profile resolution, interactive UX, JSON output, company option capture, and command orchestration. |
 | Curated SDK | Auth, retries, idempotency keys, pagination, waiters, error normalization, trace propagation, and DTO conversion above public transport implementations. |
 | XDG file store | Non-secret profiles, active context, cached discovery documents, and local locks across config, data, state, cache, and runtime directories. |
-| Credential store | Machine credential bundles, provider tokens, and company option secret values when they are not rendered into SOPS bags. |
+| Credential store | Machine credential bundles, provider tokens, and company option secret references used during local bootstrap. |
 | Source-code-hosting-service | Repository storage, Git HTTP, checkout grants, archive resources, and signed download URLs. |
 | Aspect task surface | Repo-local provisioning, host convergence, Nomad deployment, owner-claim preparation, Zitadel grant reconciliation, and post-deploy verification through checked-in tasks such as `aspect deploy`. |
 | IAM service | Organization materialization, verified owner claim completion, Zitadel grants, and authorization graph convergence when invoked by repo-local operator/seeding logic. |
@@ -139,7 +139,7 @@ operator checkout
 
 | Term | Layer | Meaning |
 | --- | --- | --- |
-| Site | Repo/operator | A checked-in deployment environment such as `prod`, `beta`, `gamma`, or `dev-shovon`. It owns host vars, inventory, provisioning input, and SOPS bags under `src/host/sites/<site>/`. |
+| Site | Repo/operator | A checked-in deployment environment such as `prod`, `beta`, `gamma`, or `dev-shovon`. It owns host vars, inventory, provisioning input, OpenBao seed metadata, and catalog declarations under `src/host/sites/<site>/`. |
 | Company | Business intent | The external business being created or operated. It supplies display name, owner identity, brand/domain intent, and billing/legal semantics. |
 | Organization | Product tenant | The IAM, billing, policy, and membership boundary in hosted Verself. A company is represented by one primary organization. |
 | Domain | DNS/resource | A DNS name attached to a company, organization, or service origin. `product_domain` names the hosted Verself product root; `company_domain` names the business. |
@@ -320,9 +320,9 @@ stateDiagram-v2
 Durable local state is append-or-replace by resource kind: profiles, accounts,
 and active context update XDG config/data, company records live under XDG data, run records
 append under XDG state, cached discovery is rebuildable under XDG cache, and
-secret material is stored by reference in the credential store or rendered into
-site SOPS bags. Public bootstrap option overrides affect the current run unless
-the user also writes them through `verself company`.
+secret material is stored by reference in the credential store or imported into
+catalog-approved OpenBao seed bundles. Public bootstrap option overrides affect
+the current run unless the user also writes them through `verself company`.
 
 ## Profile Model
 
@@ -669,14 +669,14 @@ verself company options set guardian stripe.default_currency --value usd
 
 Token-valued command-line flags are avoided because shells record argv in
 history and process listings. Secret-valued options use `--stdin`, `--from-env`,
-`--from-file`, a credential-store prompt, or SOPS rendering.
+`--from-file`, a credential-store prompt, or OpenBao import.
 
 `company configure` writes the shared local store:
 
 - company records under `$XDG_DATA_HOME/verself/companies/<company>.json`;
 - active company pointer under `$XDG_CONFIG_HOME/verself/config.json`;
 - credential references in the company record;
-- secret values in the credential store or site SOPS bags when explicitly
+- secret values in the credential store or OpenBao seed import when explicitly
   requested.
 
 For Guardian, the company record derives these seeding inputs:
@@ -710,7 +710,7 @@ verself bootstrap --company guardian --option stripe.default_currency=usd
 - `.verself/bootstrap/manifest.yaml`;
 - `src/host/sites/<site>/vars.yml`;
 - `src/host/sites/<site>/provisioning.tfvars.json.template`;
-- `src/host/sites/<site>/secrets/*.sops.yml`;
+- `src/host/sites/<site>/openbao-seed.manifest.yaml`;
 - `src/<cli_name>-cli/` when rendering a named CLI;
 - bootstrap run records under `$XDG_STATE_HOME/verself/bootstrap/<run-id>.json`.
 
@@ -738,12 +738,12 @@ An option has:
 | Field | Meaning |
 | --- | --- |
 | `name` | Stable semantic name when the value cannot be classified from shape alone. |
-| `source` | `env`, `stdin`, `credential_store`, `sops`, `literal`, or `generated`. |
+| `source` | `env`, `stdin`, `credential_store`, `openbao`, `literal`, or `generated`. |
 | `sensitivity` | `secret`, `confidential`, or `public`. |
 | `value_ref` | Redacted local reference, never the raw secret. |
 | `classification` | Derived provider, kind, capability set, and confidence. |
 | `purpose` | `infrastructure`, `runtime_integration`, `identity`, `notification`, `billing`, or `backup`. |
-| `render_targets` | Site vars, provisioning tfvars, SOPS bag, bootstrap manifest, README, or service config template. |
+| `render_targets` | Site vars, provisioning tfvars, OpenBao seed bundle, bootstrap manifest, README, or service config template. |
 | `required_by` | Phase, command surface, or service capability that cannot run without this option. |
 
 Opaque credentials are classified from value shape, environment variable name,
@@ -753,8 +753,8 @@ with `fields` instead of `secret`. Ambiguous values produce
 
 Initial local rendering has no hard runtime integration requirement. Every
 third-party runtime integration the deployed installation needs still belongs
-in the option catalog so operator artifacts can include the right SOPS
-templates, service config keys, and verification commands.
+in the option catalog so operator artifacts can include the right OpenBao seed
+entries, service config keys, and verification commands.
 
 Initial option catalog:
 
@@ -773,22 +773,22 @@ and verification evidence. Service code then consumes generated config through
 the normal service runtime and never through CLI-only shortcuts.
 
 Secret-valued options store metadata and a `value_ref`; the plaintext lives in
-the company secret store or rendered SOPS bag. `company options add --from-env`
-is a convenience that writes the secret value and the option metadata in one
-transaction.
+the company secret store or the catalog-approved OpenBao target. `company
+options add --from-env` is a convenience that writes the secret value and the
+option metadata in one transaction.
 
 ## Company Secrets [DESCOPED]
 
-Company secrets are generated or supplied values that become SOPS bag entries,
-credential-store entries, or provider/runtime config secrets. They are modeled
-separately from options because a secret has generation policy, rotation
-metadata, and reveal rules.
+Company secrets are generated or supplied values that become OpenBao seed
+entries, credential-store entries, or provider/runtime config secrets. They are
+modeled separately from options because a secret has generation policy,
+rotation metadata, and reveal rules.
 
-Local bootstrap generation creates or accepts a root SOPS Age identity, stores
-the private identity in the local credential store or explicit env scope, and
-encrypts generated SOPS bags to the corresponding Age recipient. Rendered site
-artifacts contain encrypted secrets and recipient metadata, never the private Age
-identity.
+Local bootstrap generation creates or accepts an OpenBao bootstrap principal,
+stores bootstrap material in the local credential store or controller OpenBao,
+and renders seed-bundle metadata for the target site. Rendered site artifacts
+contain secret names, fingerprints, consumers, and rotation metadata, never
+plaintext secret values.
 
 ```text
 verself company secret generate guardian --all
@@ -799,7 +799,7 @@ verself company secret set guardian --key stripe.webhook_secret --from-env STRIP
 ```
 
 Generated secrets use cryptographic randomness and type-specific encodings. The
-catalog defines length, alphabet, target SOPS bag, consuming component,
+catalog defines length, alphabet, target OpenBao mount, consuming component,
 rotation command, and whether the value may be revealed.
 
 Initial generated secret kinds:
@@ -809,18 +809,18 @@ Initial generated secret kinds:
 | Password | Zitadel initial admin password, Postgres service passwords, Forgejo initial admin password. |
 | Symmetric key | Cookie signing keys, session encryption keys, webhook HMAC keys, internal API shared secrets for components that cannot use SPIFFE. |
 | Token | Bootstrap-only one-use tokens, initial service bootstrap tokens, local deploy handoff tokens. |
-| Private key | SOPS root Age identity, JWT signing key, TLS or SSH private keys when a component cannot generate them internally. |
+| Private key | JWT signing key, TLS or SSH private keys when a component cannot generate them internally. |
 
 Default generation writes encrypted values and prints an inventory:
 
 ```text
-generated  VERSELF_SOPS_AGE_IDENTITY       -> env bootstrap/guardianintelligence.org/verself
-generated  zitadel.initial_admin_password  -> src/host/sites/prod/secrets/host.sops.yml
-generated  stripe.webhook_secret           -> src/host/sites/prod/secrets/external.sops.yml
-generated  billing.cookie_signing_key      -> src/host/sites/prod/secrets/external.sops.yml
+generated  openbao.bootstrap_token         -> controller_openbao/prod/bootstrap
+generated  zitadel.initial_admin_password  -> openbao://prod/kv/bootstrap/zitadel.initial_admin_password
+generated  stripe.webhook_secret           -> openbao://prod/kv/runtime/billing-service.stripe.webhook_secret
+generated  billing.cookie_signing_key      -> openbao://prod/kv/runtime/billing-service.cookie_signing_key
 
-Reveal the root SOPS key:
-  verself env get VERSELF_SOPS_AGE_IDENTITY --org guardianintelligence.org --project verself --environment bootstrap
+Reveal a break-glass bootstrap value:
+  verself company secret reveal guardian --key openbao.bootstrap_token --reason <ticket-or-incident>
 
 Update a generated value:
   printf '%s' "$VALUE" | verself company secret set guardian --key zitadel.initial_admin_password --stdin
@@ -832,7 +832,7 @@ after the encrypted writes succeed:
 ```text
 Your generated secrets:
 
-VERSELF_SOPS_AGE_IDENTITY: AGE-SECRET-KEY-...
+openbao.bootstrap_token: <plaintext>
 zitadel.initial_admin_password: <plaintext>
 forgejo.initial_admin_password: <plaintext>
 billing.cookie_signing_key: <plaintext>
@@ -847,9 +847,9 @@ first-run screen with names, destinations, and update commands. Non-interactive
 JSON output includes `value_ref`, `render_targets`, and `reveal_command`, but
 omits plaintext unless `--reveal-once` is passed and stdout is a terminal.
 
-The root SOPS key never leaves the operator checkout: bootstrap renders SOPS
-bags to its public Age recipient and stores the private identity through the
-local credential store.
+Bootstrap tokens and unseal material are scoped to the target site. Runtime
+services authenticate to OpenBao with SPIFFE JWT-SVIDs mapped to scoped
+policies.
 
 ## Derivation Rules [DESCOPED]
 
@@ -876,7 +876,7 @@ company_options:
       confidence: high
     purpose: infrastructure
     render_targets:
-      - src/host/sites/prod/secrets/provisioning.sops.yml
+      - openbao://controller/prod/bootstrap/latitudesh-auth-token
     required_by: infrastructure.provisioning
   - name: stripe-secret-key
     source: env:STRIPE_SECRET_KEY
@@ -887,17 +887,16 @@ company_options:
       confidence: high
     purpose: billing
     render_targets:
-      - src/host/sites/prod/secrets/external.sops.yml
+      - openbao://prod/kv/runtime/billing-service.stripe.secret_key
     required_by: billing-service.runtime
-root_sops_key:
-  env_key: VERSELF_SOPS_AGE_IDENTITY
-  provider: age
+openbao_bootstrap:
+  bootstrap_key: openbao.bootstrap_token
+  provider: openbao
   scope:
     org: guardianintelligence.org
     project: verself
     environment: bootstrap
-  recipient: age1example...
-  secret_ref: env://guardianintelligence.org/verself/bootstrap/VERSELF_SOPS_AGE_IDENTITY
+  secret_ref: openbao://controller/prod/bootstrap/openbao.bootstrap_token
 derived:
   owner_email: shovon@guardianintelligence.org
   organization_name: guardianintelligence.org
@@ -930,18 +929,16 @@ Resolved by later provisioning and seeding commands:
 
 Generated by bootstrap rendering:
 
-- encrypted SOPS bags for generated site secrets;
-- the root SOPS Age recipient and env secret reference;
+- OpenBao seed-bundle manifests for generated site secrets;
 - bootstrap run identifiers;
 - rendered artifact manifest hashes.
 
 Generated by company secret generation:
 
-- the root SOPS Age identity when the account does not already have one;
+- scoped OpenBao bootstrap values when the account does not already have them;
 - passwords and tokens using cryptographic randomness;
 - service signing and encryption keys;
-- Age identities or recipients when the user asks the CLI to manage them;
-- metadata describing target SOPS bags, consuming components, reveal policy,
+- metadata describing target OpenBao mounts, consuming components, reveal policy,
   and rotation commands.
 
 ## Site Artifacts [DESCOPED]
@@ -952,11 +949,10 @@ writes the artifacts the operator's `aspect deploy` will consume:
 | Path | Purpose |
 | --- | --- |
 | `.verself/bootstrap/manifest.yaml` | Canonical bootstrap manifest with company, owner, CLI, site, domain, and provider capability metadata. |
-| `.sops.yaml` | SOPS creation rules addressed to the root Age recipient. |
 | `src/<cli_name>-cli/` | CLI package or build target that emits the chosen command name. |
 | `src/host/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, and canary defaults. |
 | `src/host/sites/<site>/provisioning.tfvars.json.template` | Latitude/OpenTofu input template with provider-specific placeholders. |
-| `src/host/sites/<site>/secrets/*.sops.yml` | Encrypted SOPS bags for generated and supplied secrets. |
+| `src/host/sites/<site>/openbao-seed.manifest.yaml` | Catalog-approved seed-bundle metadata for generated and supplied secrets. |
 | `README.md` | Operator next commands using `<cli_name>`, owner email, organization name, and selected site. |
 
 The operator-local flow is:
@@ -965,7 +961,6 @@ The operator-local flow is:
 ./src/tools/dev/bootstrap/bootstrap-linux-amd64
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
 bazelisk build //src/<cli_name>-cli:<cli_name>
-./bazel-bin/src/<cli_name>-cli/<cli_name> env get VERSELF_SOPS_AGE_IDENTITY --org <org> --project <project> --environment bootstrap
 ./bazel-bin/src/<cli_name>-cli/<cli_name> company inspect <company> --json
 ./bazel-bin/src/<cli_name>-cli/<cli_name> env run --org <org> --project <project> --environment bootstrap -- aspect deploy --site=prod --sha=HEAD
 ```
@@ -1100,13 +1095,14 @@ normal organization membership.
   tokens, or admin credentials. Account config stores only a credential
   reference and non-secret subject/org metadata.
 - Provider tokens enter company options through stdin, environment variables, OS
-  credential stores, or encrypted SOPS bags.
+  credential stores, or catalog-approved OpenBao imports.
 - Generated secrets use cryptographic randomness and are written to encrypted
   storage before any optional plaintext reveal.
 - Plaintext secret reveal requires an explicit command or `--reveal-once`;
   default JSON and progress output contain only references and destinations.
 - Secret updates use stdin, environment variables, files, credential-store
-  prompts, or SOPS edits. `--value` is reserved for non-secret options.
+  prompts, or OpenBao import commands. `--value` is reserved for non-secret
+  options.
 - The Zitadel admin PAT is consumed by `iam-service`, component reconcilers, and
   repo-local operator/seeding logic; routine CLI commands call service APIs.
 - Mutating commands set idempotency keys through SDK middleware.

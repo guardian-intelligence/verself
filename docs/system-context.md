@@ -17,21 +17,34 @@ org-scoped compute pools and cells; see
 
 ## Service Architecture
 
-Host bootstrap substrate is authored under `src/host`. Components, services, frontends, SPIRE workload identities, runtime users, route metadata, and Nomad jobs are owned by the deployable package that needs them. Host firewall foundation files are authored in `src/infrastructure-components/nftables/`; component, service, frontend, and privileged-substrate nftables snippets live with the owning package. Bazel-input artifacts are authored in their owner packages.
+Host bootstrap substrate is authored under `src/host`. Components, services,
+frontends, SPIRE workload identities, runtime users, route metadata, and Nomad
+jobs are owned by the deployable package that needs them. Host firewall
+foundation files are authored in `src/infrastructure-components/nftables/`;
+component, service, frontend, and privileged-substrate nftables snippets live
+with the owning package. Bazel-input artifacts are authored in their owner
+packages.
 
 The bootstrap ring contains OS/package hardening, Nomad agent state,
-operator-recovery SSH, and SPIRE server/agent state required before Nomad
-workloads can receive SVIDs. The nftables foundation is a pre-artifact Nomad
-component so firewall changes use the same deployment evidence and rollback
-path as other host-owned platform components. The old Ansible pre-deploy sweep
-for SPIRE entries, local databases, runtime secrets, and HAProxy routes has
-been retired; those surfaces must now be owned by explicit bootstrap state or
-Nomad-managed deployable units with deployment evidence. Runtime versions,
-component binaries, service binaries, ClickHouse migrations, and
-rollout/rollback semantics are Nomad-managed deployable units. Devtools remain
-controller-local/host-local tooling outside Nomad.
+operator-recovery SSH, OpenBao, and SPIRE server/agent state required before
+Nomad workloads can receive SVIDs. The nftables foundation is a pre-artifact
+Nomad component so firewall changes use the same deployment evidence and
+rollback path as other host-owned platform components. Runtime versions,
+component binaries, service binaries, ClickHouse migrations, PostgreSQL
+databases, OpenBao mounts and policies, Zitadel projects and applications, and
+rollout/rollback semantics are Nomad-managed deployable units or reconciler
+inputs owned by the deployable package. Generic reconcilers apply those
+owner-local declarations; reconcilers contain no service catalog entries.
+Devtools remain controller-local/host-local tooling outside Nomad.
 
-Bootstrap and operator-recovery secrets are SOPS-encrypted in `src/host/sites/<site>/secrets/host.sops.yml` and written into root-owned host credential files. External SaaS credentials live in `src/host/sites/<site>/secrets/external.sops.yml`. Bootstrap systemd units consume host credentials with `LoadCredential=`; Nomad jobs consume host credential files through job-local templates. Repo-owned service-to-service authentication is SPIFFE/SPIRE; runtime third-party provider credentials are fetched from OpenBao by SPIFFE-authenticated services.
+Bootstrap and operator-recovery secrets enter through catalog-approved
+bootstrap sessions and controller OpenBao, then each site OpenBao owns durable
+runtime and host secret state. Host credential files under `/etc/credstore`
+are materialized caches with paths, groups, and modes from owner-local
+declarations. Bootstrap systemd units consume host credentials with
+`LoadCredential=`; Nomad jobs consume SPIFFE-authenticated OpenBao or
+secrets-service access, or scoped credential projections. Repo-owned
+service-to-service authentication is SPIFFE/SPIRE.
 
 Product service APIs are modeled in Smithy under `src/smithy`. The Smithy
 model is the semantic authority for resource DTOs, HTTP bindings, auth
@@ -104,6 +117,14 @@ Auth at the web application level is treated only as a UX concern. Authenticatio
 Full model for organization boundaries, three-role IAM (`owner`/`admin`/`member`), capability catalog, credentials, SCIM, TanStack Start server-owned OAuth sessions, browser CSP bearer isolation, and the service OIDC discovery path lives in [`docs/iam-service.md`](iam-service.md).
 
 We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is a relying party for workload identity and the resource plane for secrets/KMS material: it accepts SPIRE-issued JWT-SVID login assertions, exchanges them for short-lived OpenBao tokens, and maps SPIFFE subjects to OpenBao policies. OpenBao is not the source of truth for repo-owned workload identity.
+
+PostgreSQL, OpenBao, and Zitadel use shared site substrate instances until a
+service or tenant boundary requires a separate cluster. Isolation is enforced
+through owner-local declarations: one PostgreSQL database and owner role per
+service, per-service OpenBao mounts, policies, and JWT roles, and
+service-owned Zitadel project, app, action, and grant declarations. Services do
+not read another service's database directly; repo-owned calls cross typed
+service clients over SPIFFE-authenticated transports.
 
 ## Dual-Write Pattern
 
