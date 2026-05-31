@@ -36,9 +36,9 @@ job "verself-web" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "verself-web"
         PORT = "$${NOMAD_PORT_http}"
-        PRODUCT_BASE_URL = "https://verself.sh"
+        PRODUCT_BASE_URL = "__VERSELF_PRODUCT_BASE_URL__"
         VERSELF_CRED_ELECTRIC_API_SECRET = "/etc/credstore/verself-web/electric-api-secret"
-        VERSELF_DOMAIN = "verself.sh"
+        VERSELF_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {

@@ -33,8 +33,10 @@ type PostgresLogicalPublication struct {
 }
 
 type PostgresPeerMapping struct {
-	SystemUser string `yaml:"system_user"`
-	PGUser     string `yaml:"pg_user"`
+	SystemUser    string `yaml:"system_user"`
+	PGUser        string `yaml:"pg_user"`
+	Purpose       string `yaml:"purpose"`
+	Justification string `yaml:"justification"`
 }
 
 type RuntimeSecretsFile struct {
@@ -118,6 +120,13 @@ func (v *Validator) validatePostgres(rel string, doc PostgresFile) {
 		prefix := fmt.Sprintf("postgresql_peer_mappings[%d]", i)
 		requireName(v, rel, prefix+".system_user", mapping.SystemUser)
 		requireName(v, rel, prefix+".pg_user", mapping.PGUser)
+		v.seen.peerMappings = append(v.seen.peerMappings, postgresPeerClaim{
+			path:          rel,
+			systemUser:    mapping.SystemUser,
+			pgUser:        mapping.PGUser,
+			purpose:       mapping.Purpose,
+			justification: mapping.Justification,
+		})
 	}
 	for i, pub := range doc.LogicalPublications {
 		prefix := fmt.Sprintf("postgresql_logical_publications[%d]", i)
@@ -131,6 +140,24 @@ func (v *Validator) validatePostgres(rel string, doc PostgresFile) {
 		}
 		for j, table := range pub.Tables {
 			requireName(v, rel, fmt.Sprintf("%s.tables[%d]", prefix, j), table)
+		}
+	}
+}
+
+func (v *Validator) validatePostgresPeerMappings() {
+	for _, mapping := range v.seen.peerMappings {
+		if mapping.systemUser == "" || mapping.pgUser == "" {
+			continue
+		}
+		if mapping.systemUser == mapping.pgUser || (mapping.systemUser == "postgres" && mapping.pgUser == "postgres") {
+			continue
+		}
+		ownerPath := v.seen.postgresOwners[mapping.pgUser]
+		if ownerPath == "" || ownerPath == mapping.path {
+			continue
+		}
+		if mapping.purpose != "data_export" || strings.TrimSpace(mapping.justification) == "" {
+			v.add(mapping.path, fmt.Sprintf("cross-service postgres peer mapping %s -> %s must declare purpose: data_export and justification", mapping.systemUser, mapping.pgUser))
 		}
 	}
 }

@@ -12,10 +12,13 @@ import (
 
 	"github.com/hashicorp/nomad/api"
 
+	"github.com/verself/deployment-tools/internal/deploycontract"
 	"github.com/verself/deployment-tools/internal/deploymodel"
 	"github.com/verself/deployment-tools/internal/identity"
 	"github.com/verself/deployment-tools/internal/nomadclient"
 	"github.com/verself/deployment-tools/internal/runtime"
+	"github.com/verself/deployment-tools/internal/siteconfig"
+	"github.com/verself/deployment-tools/internal/siteinject"
 )
 
 const (
@@ -48,6 +51,7 @@ type deployPlan struct {
 	SHA              string
 	Site             string
 	SiteCfg          siteConfig
+	SiteModel        siteconfig.Model
 	PostDeployChecks string
 	Artifacts        []deploymodel.Artifact
 	Jobs             []deploymodel.NomadJob
@@ -118,6 +122,13 @@ func buildDeployPlan(ctx context.Context, rt *runtime.Runtime, repoRoot, site, s
 	if err != nil {
 		return nil, err
 	}
+	siteModel, err := siteconfig.Load(repoRoot, site)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := deploycontract.ValidateRepo(repoRoot); err != nil {
+		return nil, err
+	}
 	_, descriptorPaths, err := buildNomadComponentDescriptors(ctx, repoRoot)
 	if err != nil {
 		return nil, err
@@ -146,7 +157,7 @@ func buildDeployPlan(ctx context.Context, rt *runtime.Runtime, repoRoot, site, s
 	if err != nil {
 		return nil, err
 	}
-	jobs, err := resolveNomadJobs(ctx, nomad, repoRoot, ordered, bindings, snap.RunKey(), sha)
+	jobs, err := resolveNomadJobs(ctx, nomad, repoRoot, siteModel, ordered, bindings, snap.RunKey(), sha)
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +166,7 @@ func buildDeployPlan(ctx context.Context, rt *runtime.Runtime, repoRoot, site, s
 		SHA:       sha,
 		Site:      site,
 		SiteCfg:   cfg,
+		SiteModel: siteModel,
 		Artifacts: artifacts,
 		Jobs:      jobs,
 	}, nil
@@ -343,7 +355,7 @@ func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadCompone
 	return out, nil
 }
 
-func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoRoot string, components []nomadComponentDescriptor, bindings map[string]artifactBinding, runKey, sha string) ([]deploymodel.NomadJob, error) {
+func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoRoot string, model siteconfig.Model, components []nomadComponentDescriptor, bindings map[string]artifactBinding, runKey, sha string) ([]deploymodel.NomadJob, error) {
 	referenced := map[string]bool{}
 	jobs := make([]deploymodel.NomadJob, 0, len(components))
 	for _, component := range components {
@@ -351,6 +363,9 @@ func resolveNomadJobs(ctx context.Context, parser authoredNomadSpecParser, repoR
 		job, err := loadAuthoredNomadSpec(ctx, parser, specPath)
 		if err != nil {
 			return nil, err
+		}
+		if err := siteinject.Apply(job, model); err != nil {
+			return nil, fmt.Errorf("%s: %w", component.JobID, err)
 		}
 		seen, err := bindArtifactsInSpec(job, bindings)
 		if err != nil {

@@ -39,6 +39,7 @@ type Report struct {
 	PublicAPIs       int `json:"public_apis"`
 	ClickHouseCreds  int `json:"clickhouse_credentials"`
 	Gates            int `json:"promotion_gates"`
+	NomadSpecs       int `json:"nomad_specs"`
 }
 
 type ValidationError struct {
@@ -70,6 +71,15 @@ type seenClaims struct {
 	credstorePaths    map[string]string
 	clickhouseCreds   map[string]string
 	gateNames         map[string]string
+	peerMappings      []postgresPeerClaim
+}
+
+type postgresPeerClaim struct {
+	path          string
+	systemUser    string
+	pgUser        string
+	purpose       string
+	justification string
 }
 
 func ValidateRepo(root string) (Report, error) {
@@ -98,7 +108,11 @@ func ValidateRepo(root string) (Report, error) {
 	if err := v.walkDeployFiles(); err != nil {
 		return Report{}, err
 	}
+	v.validatePostgresPeerMappings()
 	if err := v.walkIntegrationCatalogs(); err != nil {
+		return Report{}, err
+	}
+	if err := v.walkNomadSpecs(); err != nil {
 		return Report{}, err
 	}
 	if len(v.errs) > 0 {
@@ -173,6 +187,42 @@ func (v *Validator) walkIntegrationCatalogs() error {
 		rel := v.rel(path)
 		v.report.IntegrationFiles++
 		v.validateIntegrationCatalog(rel, path)
+	}
+	return nil
+}
+
+func (v *Validator) walkNomadSpecs() error {
+	root := filepath.Join(v.root, "src")
+	forbidden := []string{
+		"https://verself.sh",
+		"verself.sh",
+		"guardianintelligence.org",
+		"spiffe.verself.sh",
+		"inst_5NZSEA08R8P3HN566DNH8D301M",
+	}
+	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || filepath.Base(path) != "nomad.hcl" {
+			return nil
+		}
+		rel := v.rel(path)
+		v.report.NomadSpecs++
+		body, err := os.ReadFile(path)
+		if err != nil {
+			v.add(rel, "read: "+err.Error())
+			return nil
+		}
+		text := string(body)
+		for _, literal := range forbidden {
+			if strings.Contains(text, literal) {
+				v.add(rel, fmt.Sprintf("authored Nomad spec contains environment literal %q; use __VERSELF_* site tokens", literal))
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("walk src nomad specs: %w", err)
 	}
 	return nil
 }

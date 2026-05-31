@@ -322,7 +322,11 @@ func submitNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	recordPostDeployCanariesSucceeded(span, rt.Identity.RunKey(), rt.Site, intent.Job, plan.PostDeployChecks, time.Since(canaryStarted))
+	if len(selectPostDeployCanaries(intent.Job.PostDeployCanaries, plan.PostDeployChecks)) == 0 {
+		recordPostDeployCanariesSkipped(span, rt.Identity.RunKey(), rt.Site, intent.Job, plan.PostDeployChecks)
+	} else {
+		recordPostDeployCanariesSucceeded(span, rt.Identity.RunKey(), rt.Site, intent.Job, plan.PostDeployChecks, time.Since(canaryStarted))
+	}
 	fmt.Printf("verself-deploy: %s healthy\n", submitted.JobID)
 	span.SetStatus(codes.Ok, "")
 	return nil

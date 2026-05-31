@@ -173,6 +173,17 @@ func recordPostDeployCanariesSucceeded(span trace.Span, runKey, site string, job
 	))
 }
 
+func recordPostDeployCanariesSkipped(span trace.Span, runKey, site string, job deploymodel.NomadJob, selection string) {
+	span.AddEvent("verself.canary.skipped", trace.WithAttributes(
+		attribute.String("verself.deploy_run_key", runKey),
+		attribute.String("verself.site", site),
+		attribute.String("nomad.job_id", job.JobID),
+		attribute.String("verself.component", job.Component),
+		attribute.String("verself.canary_selection", selection),
+		attribute.Int("verself.canary_count", 0),
+	))
+}
+
 func recordPostDeployCanariesFailed(span trace.Span, runKey, site string, job deploymodel.NomadJob, selection string, duration time.Duration, err error) {
 	count := len(selectPostDeployCanaries(job.PostDeployCanaries, selection))
 	span.AddEvent("verself.canary.failed", trace.WithAttributes(
