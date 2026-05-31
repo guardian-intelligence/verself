@@ -130,6 +130,10 @@ export const getClientAuthSnapshot = createServerFn({ method: "GET" }).handler(a
   return readAuthSnapshot();
 });
 
+export const getClientAuthSettings = createServerFn({ method: "GET" }).handler(async () => ({
+  liveAuthEnabled: process.env.VERSELF_WEB_LIVE_AUTH !== "false",
+}));
+
 export const selectActiveOrganization = createServerFn({ method: "POST" })
   .middleware([consoleAuthMiddleware])
   .inputValidator(selectOrganizationInputSchema)

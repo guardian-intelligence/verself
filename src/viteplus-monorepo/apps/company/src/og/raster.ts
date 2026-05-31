@@ -20,7 +20,7 @@ function stage(name: string, b64: string): string {
 }
 const FONT_FILES = [
   stage("fraunces.woff2", FRAUNCES_B64),
-  stage("geist.woff2", GEIST_B64),
+  stage("geist.ttf", GEIST_B64),
   stage(LETTERS_BODY_FILE, LETTERS_BODY_B64),
 ];
 

@@ -1,6 +1,5 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { WINGS_PADDED_VIEWBOX, WINGS_PATH_D } from "@verself/brand/components/wings";
 import { elevation, LIVE_ACTIVITY_LIFT } from "./elevation";
 import { FlightArc } from "./flight-arc";
 import { arcGeometry, tangentDeg } from "./geometry";
@@ -9,7 +8,7 @@ import { IPhoneFrame, type FrameKind } from "./iphone-frame";
 import { useFlightMachine } from "./machine";
 import type { Flight } from "./model";
 import type { PhaseKind } from "./phase";
-import { type CornerRadius, Squircle, useSquircle } from "./squircle";
+import { type CornerRadius, Squircle } from "./squircle";
 
 // ── Numeric tokens (single source of truth; the brief tunes these here) ──────
 
@@ -98,13 +97,7 @@ function layoutOf(cardW: number, cardH: number, radius: CornerRadius): Layout {
 // metaphor), but the gap is small. cornerSmoothing stays Apple-canonical 0.6
 // (the figma plugin default) — the fix is the radius, not the smoothing.
 const CARD_RADIUS: CornerRadius = { top: 42, bottom: 52 };
-// The pill corner is a fraction of its OWN height, held well under half-height
-// so it reads as a squircle rounded-rectangle, never a stadium. A fixed radius
-// against a small pill collapsed toward a stadium ("we squircled so much it
-// looks like a pill", brief note d) — deriving it from pillH fixes that by
-// construction at every scale.
 const PILL_RADIUS_RATIO = 0.3;
-
 // iOS fidelity: real San Francisco on Apple devices (the reference context),
 // a near-equivalent neo-grotesque elsewhere. Brand Geist is deliberately not
 // used here — the whole card stays one type system.
@@ -128,12 +121,7 @@ const NODE_INK = "oklch(0 0 0)";
 // group; `late` is label-only and never recolors, so there is no second
 // accent and no crossfade — the green cannot vary by construction.
 const ACCENT = "oklch(0.8767 0.1631 144.03)";
-// The commit button. Sampled from the reference pill body (#E9B13A) — a
-// marigold gold at oklch hue ≈ 82; the prior hue-70 token read "too orange"
-// (brief). This is the only place the color appears; the glyph and the count
-// are NODE_INK painted directly on it (no well, no third color — note d).
 const BUTTON = "oklch(0.7923 0.1443 82.08)";
-
 // The card floats at the Live-Activity elevation level — the framework
 // derives the three contact/key/ambient layers from that single choice, so
 // the card has no hand-written shadow numbers (brief note 1).
@@ -154,7 +142,7 @@ type Scale = {
   readonly arrowStroke: number; // arrow stroke (fine — note a)
   readonly arcStroke: number; // flight-path stroke width (thin — note a)
   readonly markerR: number; // triangle marker circumradius (small — note a)
-  readonly headerPx: number; // actor / house-mark size
+  readonly headerPx: number; // actor/status size
   readonly statusPx: number; // status group — matches the actor size (note e)
   readonly pillH: number; // commit pill height
 };
@@ -176,7 +164,8 @@ function scaleOf(cardW: number, routeH: number): Scale {
   // capping by routeH closes the composition loop so the terminals can never
   // overflow the band and crush the arc, at any card height. Width still
   // governs below the cap so narrow cards shrink fluidly.
-  const terminalPx = clamp(Math.min(w * 0.085, routeH * 0.7), 28, 46);
+  const terminalBasisPx = clamp(Math.min(w * 0.085, routeH * 0.7), 28, 46);
+  const terminalPx = terminalBasisPx * 0.75;
   const capPx = terminalPx * SF_CAP_RATIO;
   const discPx = Math.round(capPx * DISC_TO_CAP);
   const arrowPx = Math.round(discPx * 0.62);
@@ -184,7 +173,7 @@ function scaleOf(cardW: number, routeH: number): Scale {
   const arrowStroke = Math.max(1.25, discPx * 0.085);
   const arcStroke = Math.max(2, Math.round(discPx * 0.17));
   const markerR = Math.max(4, Math.round(discPx * 0.52));
-  const headerPx = clamp(terminalPx * 0.33, 12, 16);
+  const headerPx = clamp(terminalBasisPx * 0.33, 12, 16);
   return {
     terminalPx,
     discPx,
@@ -194,7 +183,7 @@ function scaleOf(cardW: number, routeH: number): Scale {
     markerR,
     headerPx,
     statusPx: headerPx, // note e: the status group matches the ASH size
-    pillH: clamp(Math.round(terminalPx * 0.74), 28, 40),
+    pillH: clamp(Math.round(terminalBasisPx * 0.74), 28, 40),
   };
 }
 
@@ -230,13 +219,15 @@ export function FlightBoard({
   flights,
   orgSlug,
   frame,
+  placement = "center",
 }: {
   readonly flights: readonly Flight[];
   readonly orgSlug: string;
   readonly frame?: FrameKind | undefined;
+  readonly placement?: FlightBoardPlacement;
 }) {
   return (
-    <FlightCanvas frame={frame}>
+    <FlightCanvas frame={frame} placement={placement}>
       {flights.length === 0 ? (
         <FlightShell>
           <div className="flex flex-1 items-center justify-center">
@@ -252,9 +243,13 @@ export function FlightBoard({
   );
 }
 
-export function FlightConsoleSkeleton() {
+export function FlightConsoleSkeleton({
+  placement = "center",
+}: {
+  readonly placement?: FlightBoardPlacement;
+}) {
   return (
-    <FlightCanvas>
+    <FlightCanvas placement={placement}>
       <FlightShell>
         <div className="flex-1 animate-pulse" style={{ background: "oklch(0.18 0 0)" }} />
       </FlightShell>
@@ -264,12 +259,16 @@ export function FlightConsoleSkeleton() {
 
 // ── Layout shells ───────────────────────────────────────────────────────────
 
+type FlightBoardPlacement = "center" | "inline";
+
 function FlightCanvas({
   children,
   frame,
+  placement,
 }: {
   readonly children: ReactNode;
   readonly frame?: FrameKind | undefined;
+  readonly placement: FlightBoardPlacement;
 }) {
   const board = (
     <div className="flex w-full flex-col gap-5" style={{ maxWidth: WIDGET_MAX_PX }}>
@@ -281,7 +280,11 @@ function FlightCanvas({
   // tuned 1:1. It is never part of the shipped console surface.
   return (
     <div
-      className="flex min-h-[80svh] w-full items-center justify-center px-5 py-12"
+      className={
+        placement === "inline"
+          ? "flex w-full items-start justify-center"
+          : "flex min-h-[80svh] w-full items-center justify-center px-5 py-12"
+      }
       style={{ fontFamily: IOS_FONT }}
     >
       {frame ? <IPhoneFrame kind={frame}>{board}</IPhoneFrame> : board}
@@ -344,90 +347,64 @@ function FlightCard({ flight, orgSlug }: { readonly flight: Flight; readonly org
   const scale = scaleOf(measuredW, layout.route);
 
   return (
-    <FlightShell layout={layout}>
-      {/* Three explicit bands summing to the safe rectangle — header / route /
-          status. The route band has a definite height so the arc fills it. */}
-      <div ref={measureRef} className="flex flex-col">
-        <div
-          className="flex shrink-0 items-center justify-between"
-          style={{ height: layout.header }}
-        >
-          <FlightHeader actor={flight.actorLabel} scale={scale} />
-        </div>
-        <div className="shrink-0" style={{ height: layout.route }}>
-          <FlightRoute
-            source={flight.sourceLabel}
-            dest={flight.destLabel}
-            progress={proj.progressTarget}
-            phaseKind={proj.phaseKind}
-            scale={scale}
-          />
-        </div>
-        <div
-          className="flex shrink-0 items-end justify-between gap-4"
-          style={{ height: layout.status }}
-        >
-          <FlightStatus
-            headline={proj.headline}
-            detail={proj.detail}
-            accent={ACCENT}
-            scale={scale}
-          />
-          {flight.commitPill !== null ? (
-            <CommitPill
-              orgSlug={orgSlug}
-              providerRunId={flight.providerRunId}
-              count={flight.commitPill}
+    <div ref={measureRef} className="w-full">
+      <FlightShell layout={layout}>
+        {/* Three explicit bands summing to the safe rectangle — header / route /
+            status. The route band has a definite height so the arc fills it. */}
+        <div className="flex flex-col">
+          <div
+            className="flex shrink-0 items-center justify-between"
+            style={{ height: layout.header }}
+          >
+            <FlightHeader actor={flight.actorLabel} scale={scale} />
+          </div>
+          <div className="shrink-0" style={{ height: layout.route }}>
+            <FlightRoute
+              source={flight.sourceLabel}
+              dest={flight.destLabel}
+              progress={proj.progressTarget}
+              phaseKind={proj.phaseKind}
               scale={scale}
             />
-          ) : null}
+          </div>
+          <div
+            className="flex shrink-0 items-end justify-between gap-4"
+            style={{ height: layout.status }}
+          >
+            <FlightStatus
+              headline={proj.headline}
+              detail={proj.detail}
+              accent={ACCENT}
+              scale={scale}
+            />
+            {flight.commitPill !== null ? (
+              <CommitPill
+                orgSlug={orgSlug}
+                providerRunId={flight.providerRunId}
+                count={flight.commitPill}
+              />
+            ) : null}
+          </div>
         </div>
-      </div>
-    </FlightShell>
+      </FlightShell>
+    </div>
   );
 }
 
 // ── Leaves ──────────────────────────────────────────────────────────────────
 
-// Header row: the region actor (left) and the house mark (right), mirroring
-// the reference's "FL234 … ✈ FLIGHTY". The actor keeps near-zero tracking so a
-// short all-caps run like ASH reads as one tight word, not spaced-out letters
-// (brief note g).
+// Header row: the region actor keeps near-zero tracking so a short all-caps
+// run like ASH reads as one tight word, not spaced-out letters (brief note g).
 function FlightHeader({ actor, scale }: { readonly actor: string; readonly scale: Scale }) {
   return (
-    <>
+    <div>
       <p
         className="tracking-[0.01em]"
         style={{ color: INK, fontSize: scale.headerPx, fontWeight: REGION_WEIGHT }}
       >
         {actor}
       </p>
-      <HouseMark sizePx={scale.headerPx} />
-    </>
-  );
-}
-
-// Bare white wings — no chip, no GUARDIAN wordmark (brief note j → bare).
-// Rendered EXACTLY as the company masthead's argent mark: the padded 292
-// viewBox (square footprint, the wings sitting where the chip/emboss place
-// them) with the same 1.21 scale around the wings' optical centre (176,177)
-// that `WingsArgent` applies at chrome size — bare ink reads ~10% small vs a
-// framed mark, so the masthead compensates and we match it 1:1. The prior
-// glyph-hugging crop rendered an illegible portrait sliver at this size.
-function HouseMark({ sizePx }: { readonly sizePx: number }) {
-  const box = Math.round(sizePx * 1.55);
-  return (
-    <svg
-      viewBox={WINGS_PADDED_VIEWBOX}
-      style={{ width: box, height: box }}
-      role="presentation"
-      focusable="false"
-      aria-hidden="true"
-    >
-      <g transform="translate(176 177) scale(1.21) translate(-176 -177)">
-        <path d={WINGS_PATH_D} fill={INK} />
-      </g>
-    </svg>
+    </div>
   );
 }
 
@@ -503,7 +480,7 @@ function FlightRoute({
 function Terminal({ label, scale }: { readonly label: string; readonly scale: Scale }) {
   return (
     <span
-      className="shrink-0 whitespace-nowrap tracking-[-0.01em]"
+      className="shrink-0 whitespace-nowrap tracking-normal"
       style={{ color: INK, fontSize: scale.terminalPx, fontWeight: 620, lineHeight: 1 }}
     >
       {label}
@@ -594,55 +571,34 @@ function FlightStatus({
   );
 }
 
-// The bottom-right interactive piece — its own <Squircle> with an integer-px
-// box (so the clip-path never hairline-aliases, note k). It is the gold
-// BUTTON, the card's fourth and only non-grayscale-besides-green color, kept
-// exactly as the reference baggage chip: the commit glyph and the count are
-// solid NODE_INK painted DIRECTLY on the gold — no well, no recess, no third
-// color (brief note d; the prior "orange-through-a-well" was a divergence the
-// reference does not have). Links to the logs.
+// The bottom-right interactive piece uses the compact repo-native glyph and a
+// tabular count so the live activity stays legible at small sizes.
 function CommitPill({
   orgSlug,
   providerRunId,
   count,
-  scale,
 }: {
   readonly orgSlug: string;
   readonly providerRunId: string;
   readonly count: string;
-  readonly scale: Scale;
 }) {
-  // The pill is a <Link>, so it takes the squircle via the hook rather than
-  // the div wrapper — same single radius source, full Link typing preserved.
-  // Radius derived from the pill's own height so it is a rounded-rect, never a
-  // stadium, at any scale (note d).
-  const sq = useSquircle<HTMLAnchorElement>(Math.round(scale.pillH * PILL_RADIUS_RATIO));
-  // The glyph is sized to the reference baggage-chip footprint: ≈ the count's
-  // cap height, compact — ~30% under the prior pass and far less internal
-  // negative space (note d; the glyph's own viewBox is now tight-cropped).
-  const glyphPx = Math.round(scale.pillH * 0.42);
-  const padX = Math.round(scale.pillH * 0.34);
   return (
     <Link
-      ref={sq.ref}
       className="inline-flex shrink-0 items-center font-bold leading-none transition-opacity hover:opacity-90"
       style={{
-        ...sq.style,
-        height: scale.pillH,
-        paddingInline: padX,
-        gap: Math.round(scale.pillH * 0.2),
+        height: 28,
+        paddingInline: 10,
+        gap: 6,
+        borderRadius: Math.round(28 * PILL_RADIUS_RATIO),
         background: BUTTON,
         color: NODE_INK,
-        fontSize: Math.round(scale.statusPx * 0.95),
+        fontSize: 13,
       }}
       to="/$orgSlug/runs/$providerRunId"
       params={{ orgSlug, providerRunId }}
       title="CI run logs"
     >
-      <GitCommitGlyph
-        style={{ height: glyphPx, width: "auto", color: NODE_INK }}
-        aria-hidden="true"
-      />
+      <GitCommitGlyph style={{ height: 12, width: "auto", color: NODE_INK }} aria-hidden="true" />
       <span className="tabular-nums">{count}</span>
     </Link>
   );

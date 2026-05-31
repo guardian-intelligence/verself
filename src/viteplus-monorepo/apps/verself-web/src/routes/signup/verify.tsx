@@ -551,6 +551,10 @@ async function navigateToSameOrigin(navigate: Navigate, href: string): Promise<v
   if (url.origin !== window.location.origin) {
     throw new Error("External auth callback URL rejected.");
   }
+  if (url.pathname.startsWith("/api/v1/auth/")) {
+    window.location.assign(url.href);
+    return;
+  }
   const options = {
     to: url.pathname,
     search: searchParamsObject(url.searchParams),

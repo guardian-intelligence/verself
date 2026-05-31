@@ -15,10 +15,11 @@ const INK = "#0b0b0b";
 const ARGENT = "#FFFFFF";
 const PAPER = "#fff4dc";
 const FLARE = "#ccff00";
-const SEPIA = "#5b3a26";
 const MUTED = "rgba(245,245,245,0.6)";
 const STONE_STRONG = "rgba(11,11,11,0.9)";
 const STONE = "rgba(11,11,11,0.62)";
+const WORDMARK_CAP_RATIO = 0.7;
+const WORDMARK_OVERSHOOT_RATIO = 0.076;
 
 export type OGTreatment = "workshop" | "newsroom" | "letters";
 
@@ -131,9 +132,15 @@ function brandMark({
   readonly chip?: boolean;
 }): string {
   const resolvedVariant = chip ? "chip" : variant;
-  const size = resolvedVariant === "chip" ? 34 : 56;
-  const wordmarkX = x + size + (chip ? 14 : 16);
-  const wordmarkY = y + (chip ? 24 : 38);
+  const size = resolvedVariant === "chip" ? 66 : 56;
+  const wordmarkFontSize = resolvedVariant === "chip" ? size * 0.5 : 22;
+  const wordmarkLineHeight =
+    resolvedVariant === "chip" ? wordmarkFontSize * WORDMARK_CAP_RATIO : 22;
+  const wordmarkX = x + size + (resolvedVariant === "chip" ? 18 : 16);
+  const wordmarkY =
+    resolvedVariant === "chip"
+      ? y + size / 2 + wordmarkLineHeight / 2 - wordmarkFontSize * WORDMARK_OVERSHOOT_RATIO
+      : y + 38;
   const sectionText = section ? ` · ${section.toUpperCase()}` : "";
   const mark =
     resolvedVariant === "chip"
@@ -152,7 +159,7 @@ function brandMark({
 
   return `<g>
     ${mark}
-    <text x="${wordmarkX}" y="${wordmarkY}" font-family="'Geist', 'Inter', sans-serif" font-size="${chip ? 18 : 22}" font-weight="600" fill="${wordmarkFill}" letter-spacing="${chip ? 4.2 : 2.6}">GUARDIAN${sectionText}</text>
+    <text x="${wordmarkX}" y="${wordmarkY}" font-family="'Geist', 'Inter', sans-serif" font-size="${wordmarkFontSize}" font-weight="600" fill="${wordmarkFill}" letter-spacing="${resolvedVariant === "chip" ? wordmarkFontSize * 0.26 : 2.6}">GUARDIAN${sectionText}</text>
   </g>`;
 }
 
@@ -257,13 +264,10 @@ function buildNewsroomCard(spec: OGSpec): string {
 
 function buildLettersCard(spec: OGSpec): string {
   const salutationLines = wrapText(spec.title, 26, 2);
-  const bodyY = 342 + (salutationLines.length - 1) * 78;
+  const bodyY = 352 + (salutationLines.length - 1) * 78;
   const bodyText = spec.bodyExcerpt ?? spec.subtitle ?? "";
-  // Cap the excerpt to lines that clear the footer rule (y=532). A two-line
-  // salutation drops bodyY by 78px; at the old fixed 5 lines the tail rendered
-  // over the rule once rasterised. The last baseline plus its descender must
-  // sit above the rule: bodyY + (n-1)·39 + ~8 < 532.
-  const maxBodyLines = Math.max(2, Math.min(5, Math.floor(1 + (524 - bodyY) / 39)));
+  // Cap the excerpt inside the card instead of letting it fight a footer.
+  const maxBodyLines = Math.max(2, Math.min(5, Math.floor(1 + (572 - bodyY) / 39)));
   const bodyLines = bodyText ? wrapText(bodyText, 52, maxBodyLines, { ellipsis: false }) : [];
   const bodyFadeY = bodyY - 34;
 
@@ -279,18 +283,18 @@ function buildLettersCard(spec: OGSpec): string {
       <rect x="72" y="${bodyFadeY}" width="1056" height="206" fill="url(#letterBodyFadeGradient)"/>
     </mask>
     <pattern id="minor" width="28" height="28" patternUnits="userSpaceOnUse">
-      <path d="M27.5 0V28M0 27.5H28" stroke="${INK}" stroke-width="1" opacity="0.055" fill="none"/>
+      <path d="M27.5 0V28M0 27.5H28" stroke="${INK}" stroke-width="1" opacity="0.095" fill="none"/>
     </pattern>
     <pattern id="major" width="140" height="140" patternUnits="userSpaceOnUse">
-      <path d="M139.5 0V140M0 139.5H140" stroke="${INK}" stroke-width="1.2" opacity="0.085" fill="none"/>
+      <path d="M139.5 0V140M0 139.5H140" stroke="${INK}" stroke-width="1.2" opacity="0.15" fill="none"/>
     </pattern>
   </defs>
   <rect width="${WIDTH}" height="${HEIGHT}" fill="${PAPER}"/>
   <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#minor)"/>
   <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#major)"/>
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgba(255,255,255,0.28)"/>
-  ${brandMark({ x: 72, y: 56, markFill: INK, wordmarkFill: INK, section: "Letters", chip: true })}
-  <text x="1128" y="80" font-family="'Geist', 'Inter', sans-serif" font-size="18" font-weight="500" fill="${STONE}" text-anchor="end" letter-spacing="0">${xmlEscape(spec.kicker ?? "Letters")}</text>
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgba(255,255,255,0.18)"/>
+  ${brandMark({ x: 72, y: 32, markFill: INK, wordmarkFill: INK, section: "Letters", chip: true })}
+  <line x1="72" y1="126" x2="1128" y2="126" stroke="${INK}" stroke-width="9"/>
   <text x="72" y="258" font-family="${lettersBodyFont.stack}" font-size="78" font-weight="400" fill="${INK}" letter-spacing="0">
     ${textLines(salutationLines, 72, 78)}
   </text>
@@ -301,9 +305,6 @@ function buildLettersCard(spec: OGSpec): string {
   </text>`
       : ""
   }
-  <line x1="72" y1="532" x2="1128" y2="532" stroke="${SEPIA}" stroke-width="2" opacity="0.46"/>
-  <text x="72" y="568" font-family="'Geist', 'Inter', sans-serif" font-size="16" fill="${STONE}" letter-spacing="0">${xmlEscape(spec.footerLeft)}</text>
-  <text x="1128" y="568" font-family="'Geist', 'Inter', sans-serif" font-size="16" fill="${STONE}" text-anchor="end" letter-spacing="0">${xmlEscape(spec.footerRight)}</text>
 </svg>
 `;
 }

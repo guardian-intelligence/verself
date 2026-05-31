@@ -2,18 +2,15 @@
 
 import { lazy, Suspense, useRef } from "react";
 import { ClientOnly } from "@tanstack/react-router";
-
 import { cn } from "@verself/ui/lib/utils";
 
 const DotMatrixCanvas = lazy(() =>
-  import("./DotMatrixCanvas").then((module) => ({ default: module.DotMatrixCanvas })),
+  import("~/features/landing/dot-matrix/DotMatrixCanvas").then((module) => ({
+    default: module.DotMatrixCanvas,
+  })),
 );
 
-interface DotMatrixFieldProps {
-  readonly className?: string;
-}
-
-export function DotMatrixField({ className }: DotMatrixFieldProps) {
+export function NaveeMatrixScene({ className }: { readonly className?: string | undefined }) {
   const hostRef = useRef<HTMLDivElement>(null);
 
   return (

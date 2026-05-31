@@ -4,7 +4,7 @@ import { parseAuthSnapshot, syncAuthPartitionedCache } from "@verself/auth-web/i
 import { IAMApiProvider } from "@verself/auth-web/components";
 import { iamApiClient } from "~/lib/iam-api-client";
 import { AppShell } from "~/features/shell/app-shell";
-import { getClientAuthSnapshot } from "~/server-fns/auth";
+import { getClientAuthSettings, getClientAuthSnapshot } from "~/server-fns/auth";
 
 const authNavigationClient = {
   getSignInRedirectURL: async ({
@@ -57,22 +57,33 @@ const authNavigationClient = {
 // nests under this and enforces the actual auth gate.
 export const Route = createFileRoute("/_shell")({
   beforeLoad: async ({ context }) => {
-    const authSnapshot = await getClientAuthSnapshot();
+    const [authSnapshot, settings] = await Promise.all([
+      getClientAuthSnapshot(),
+      getClientAuthSettings(),
+    ]);
     syncAuthPartitionedCache(context.queryClient, authSnapshot);
-    return authSnapshot;
+    return {
+      ...authSnapshot,
+      liveAuthEnabled: settings.liveAuthEnabled,
+    };
   },
   component: ShellLayout,
 });
 
 function ShellLayout() {
-  const snapshot = parseAuthSnapshot(Route.useRouteContext());
+  const routeContext = Route.useRouteContext();
+  const snapshot = parseAuthSnapshot(routeContext);
   // Keying IAMApiProvider on the cache partition remounts the shell subtree
   // when a user signs in/out, discarding signed-in component state alongside
   // the cache reset that syncAuthPartitionedCache performs in beforeLoad.
   const partitionKey = `auth:${snapshot.auth.cachePartition ?? "anonymous"}`;
 
   return (
-    <AuthProvider client={authNavigationClient} live snapshot={snapshot}>
+    <AuthProvider
+      client={authNavigationClient}
+      live={routeContext.liveAuthEnabled}
+      snapshot={snapshot}
+    >
       <IAMApiProvider key={partitionKey} client={iamApiClient}>
         <AppShell />
       </IAMApiProvider>
