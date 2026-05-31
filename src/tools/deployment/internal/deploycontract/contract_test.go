@@ -107,6 +107,48 @@ openbao_runtime_secret_seed_declarations:
 	}
 }
 
+func TestValidateRepoRejectsNonProdSOPSSecrets(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/host/sites/gamma/secrets/host.sops.yml", `cloudflare_api_token: ENC[...]`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "must not use SOPS secret files") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRepoRejectsBootstrapSharedRuntimeSecrets(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/integrations/catalog/sites/gamma.yml", `
+version: verself.integrations.v1
+site: gamma
+secret_store_policy: openbao_only
+integrations:
+  - key: billing.stripe
+    provider: stripe
+    owner: src/services/billing-service
+    purpose: billing
+    credentials:
+      - key: billing-service.stripe.secret_key
+        source: bootstrap_session
+        target: runtime_secret
+        target_store: site_openbao
+        openbao_name: billing-service.stripe.secret_key
+        isolation: bootstrap_shared
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "bootstrap_shared cannot feed runtime secrets") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func write(t *testing.T, root, rel, body string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))

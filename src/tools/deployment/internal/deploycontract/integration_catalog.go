@@ -208,6 +208,9 @@ func validateIntegrationCredential(v *Validator, rel, prefix string, credential 
 	if credential.Isolation != "" && credential.Isolation != "bootstrap_shared" {
 		v.add(rel, prefix+".isolation must be bootstrap_shared when set")
 	}
+	if credential.Isolation == "bootstrap_shared" && (credential.Target == "runtime_secret" || credential.TargetStore == "site_openbao" || credential.TargetStore == "runtime_secret") {
+		v.add(rel, prefix+".isolation bootstrap_shared cannot feed runtime secrets or site OpenBao")
+	}
 }
 
 func validateStorageTarget(v *Validator, rel, field, target string) {

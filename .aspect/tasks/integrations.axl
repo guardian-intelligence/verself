@@ -28,11 +28,23 @@ _STRIPE_PROJECTS_PLUGIN = {
 
 def _cloudflare_dns_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
+    secret_vars_file = ctx.args.secret_vars_file
+    token_file = ctx.args.cloudflare_token_file
     args_list = [
         "--site=" + site,
         "--ansible-dir=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
-        "--secrets=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/secrets/host.sops.yml"),
     ]
+    if secret_vars_file == "" and token_file == "" and site != "prod":
+        secret_vars_file = ".verself/site-bootstrap/" + site + "/ansible-secrets.json"
+    if secret_vars_file != "":
+        args_list.append("--vars-file=" + (secret_vars_file if secret_vars_file.startswith("/") else ws_path(ctx, secret_vars_file)))
+    elif token_file != "":
+        args_list.append("--cloudflare-token-file=" + (token_file if token_file.startswith("/") else ws_path(ctx, token_file)))
+    elif site == "prod":
+        args_list.append("--secrets=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/secrets/host.sops.yml"))
+    else:
+        ctx.std.io.stderr.write("ERROR: non-prod Cloudflare DNS requires --secret-vars-file or --cloudflare-token-file.\n")
+        return 1
     if ctx.args.dry_run:
         args_list.append("--dry-run")
     return bazel_run(
@@ -51,6 +63,8 @@ cloudflare_dns = task(
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "dry_run": args.boolean(default = False, description = "Print the DNS diff without applying it."),
+        "secret_vars_file": args.string(default = "", description = "Generated Ansible vars file containing cloudflare_api_token."),
+        "cloudflare_token_file": args.string(default = "", description = "File containing only cloudflare_api_token."),
     },
 )
 

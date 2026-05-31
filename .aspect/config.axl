@@ -89,6 +89,15 @@ load(
     release_mksk = "mksk",
     release_npm_probe = "npm_probe",
 )
+load(
+    ".aspect/tasks/site.axl",
+    site_converge_host = "converge_host",
+    site_inventory_write = "inventory_write",
+    site_materialize_seed = "materialize_seed",
+    site_root_handoff = "root_handoff",
+    site_seed_template = "seed_template",
+    site_validate_seed = "validate_seed",
+)
 load(".aspect/tasks/tidy.axl", "tidy")
 load(".aspect/tasks/vp.axl", "vp")
 
@@ -115,6 +124,14 @@ def config(ctx):
     # aspect host ...
     ctx.tasks.add(host_configuration_edit_secrets)
     ctx.tasks.add(host_configuration_operator_access_handoff)
+
+    # aspect site ...
+    ctx.tasks.add(site_seed_template)
+    ctx.tasks.add(site_validate_seed)
+    ctx.tasks.add(site_materialize_seed)
+    ctx.tasks.add(site_inventory_write)
+    ctx.tasks.add(site_root_handoff)
+    ctx.tasks.add(site_converge_host)
 
     # aspect integrations ...
     ctx.tasks.add(integrations_cloudflare_dns)

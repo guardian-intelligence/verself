@@ -39,6 +39,8 @@ type config struct {
 	ansibleDir  string
 	inventory   string
 	secretsPath string
+	varsFile    string
+	tokenFile   string
 	timeout     time.Duration
 	concurrency int
 	dryRun      bool
@@ -50,7 +52,9 @@ func run(args []string) error {
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
 	fs.StringVar(&cfg.ansibleDir, "ansible-dir", "", "Path to authored host Ansible root (defaults to src/host/ansible).")
 	fs.StringVar(&cfg.inventory, "inventory", "", "Path to the site Ansible inventory (defaults to src/host/sites/<site>/inventory.ini).")
-	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to SOPS-encrypted host secrets (defaults to src/host/sites/<site>/secrets/host.sops.yml).")
+	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to legacy SOPS-encrypted host secrets.")
+	fs.StringVar(&cfg.varsFile, "vars-file", "", "Path to generated bootstrap Ansible secret vars.")
+	fs.StringVar(&cfg.tokenFile, "cloudflare-token-file", "", "Path to a file containing only cloudflare_api_token.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for the Cloudflare API.")
 	fs.IntVar(&cfg.concurrency, "concurrency", 8, "Maximum parallel Cloudflare write requests.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print the diff without applying.")
@@ -63,7 +67,7 @@ func run(args []string) error {
 	if cfg.inventory == "" {
 		cfg.inventory = filepath.Clean(filepath.Join(cfg.ansibleDir, "..", "sites", cfg.site, "inventory.ini"))
 	}
-	if cfg.secretsPath == "" {
+	if cfg.secretsPath == "" && cfg.varsFile == "" && cfg.tokenFile == "" {
 		cfg.secretsPath = filepath.Clean(filepath.Join(cfg.ansibleDir, "..", "sites", cfg.site, "secrets", "host.sops.yml"))
 	}
 
@@ -71,9 +75,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	token, err := decryptSopsToken(cfg.secretsPath)
+	token, err := loadCloudflareToken(cfg)
 	if err != nil {
-		return fmt.Errorf("decrypt cloudflare_api_token: %w", err)
+		return fmt.Errorf("load cloudflare_api_token: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -249,7 +253,7 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 	verself := strings.TrimSpace(siteVars.VerselfDomain)
 	company := strings.TrimSpace(siteVars.CompanyDomain)
 	publicIP := strings.TrimSpace(siteVars.BareMetalPublicIPv4)
-	if publicIP == "" {
+	if publicIP == "" || publicIP == "0.0.0.0" {
 		var err error
 		publicIP, err = inventoryInfraHost(inventoryPath)
 		if err != nil {
@@ -343,6 +347,52 @@ func readYAML(path string, into any) error {
 		return err
 	}
 	return yaml.Unmarshal(b, into)
+}
+
+func loadCloudflareToken(cfg config) (string, error) {
+	sources := 0
+	for _, value := range []string{cfg.varsFile, cfg.tokenFile, cfg.secretsPath} {
+		if strings.TrimSpace(value) != "" {
+			sources++
+		}
+	}
+	if sources != 1 {
+		return "", fmt.Errorf("declare exactly one token source: --vars-file, --cloudflare-token-file, or --secrets")
+	}
+	switch {
+	case cfg.varsFile != "":
+		return readCloudflareTokenFromVars(cfg.varsFile)
+	case cfg.tokenFile != "":
+		return readPlainToken(cfg.tokenFile)
+	default:
+		return decryptSopsToken(cfg.secretsPath)
+	}
+}
+
+func readCloudflareTokenFromVars(path string) (string, error) {
+	var values struct {
+		CloudflareAPIToken string `json:"cloudflare_api_token" yaml:"cloudflare_api_token"`
+	}
+	if err := readYAML(path, &values); err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	token := strings.TrimSpace(values.CloudflareAPIToken)
+	if token == "" {
+		return "", fmt.Errorf("%s has no cloudflare_api_token", path)
+	}
+	return token, nil
+}
+
+func readPlainToken(path string) (string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	token := strings.TrimSpace(string(body))
+	if token == "" {
+		return "", fmt.Errorf("%s is empty", path)
+	}
+	return token, nil
 }
 
 // decryptSopsToken shells out to `sops -d --extract '["cloudflare_api_token"]'`
