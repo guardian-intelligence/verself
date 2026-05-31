@@ -53,6 +53,19 @@ def _remove_worktree(ctx, wt):
     _make_tree_removable(ctx, wt)
     return checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
 
+def _copy_site_bootstrap(ctx, site, wt):
+    src = ws_path(ctx, ".verself/site-bootstrap/" + site)
+    r = (ctx.std.process.command("test")
+        .args(["-d", src])
+        .spawn().wait())
+    if r.code != 0:
+        return 0
+    dst_parent = wt + "/.verself/site-bootstrap"
+    rc = checked_spawn(ctx, "mkdir", ["-p", dst_parent], label = "mkdir worktree site-bootstrap dir")
+    if rc != 0:
+        return rc
+    return checked_spawn(ctx, "cp", ["-R", src, dst_parent + "/" + site], label = "copy local site bootstrap material into deploy worktree")
+
 def _deploy_in_worktree(ctx, site, sha):
     """Deploy from a temporary detached worktree at <sha>.
 
@@ -82,6 +95,10 @@ def _deploy_in_worktree(ctx, site, sha):
         _remove_worktree(ctx, wt)
         return rc
     rc = checked_spawn(ctx, "cp", [inv_abs, wt + "/" + inv_rel], label = "copy " + inv_rel + " into deploy worktree")
+    if rc != 0:
+        _remove_worktree(ctx, wt)
+        return rc
+    rc = _copy_site_bootstrap(ctx, site, wt)
     if rc != 0:
         _remove_worktree(ctx, wt)
         return rc

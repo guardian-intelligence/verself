@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "verself-deploy_lib",
     srcs = [
+        "artifacts.go",
         "bazel.go",
         "inputs.go",
         "main.go",
@@ -14,11 +15,15 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//src/tools/deployment/internal/bazelbuild",
+        "//src/tools/deployment/internal/controlplane",
         "//src/tools/deployment/internal/deploycontract",
+        "//src/tools/deployment/internal/deploymodel",
         "//src/tools/deployment/internal/identity",
         "//src/tools/deployment/internal/nomadclient",
         "//src/tools/deployment/internal/runtime",
+        "//src/tools/deployment/internal/s3artifact",
         "//src/tools/deployment/internal/siteconfig",
+        "//src/tools/deployment/internal/siteinject",
         "//src/tools/deployment/internal/sshtun",
         "@com_github_hashicorp_nomad_api//:api",
         "@io_opentelemetry_go_otel//attribute",

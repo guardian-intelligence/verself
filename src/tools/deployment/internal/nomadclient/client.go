@@ -128,3 +128,48 @@ func (c *Client) Register(ctx context.Context, job *api.Job) (*SubmitResult, err
 	span.SetStatus(codes.Ok, "")
 	return sub, nil
 }
+
+type DispatchResult struct {
+	ParentJobID     string
+	DispatchedJobID string
+	EvalID          string
+	EvalCreateIndex uint64
+}
+
+func (c *Client) Dispatch(ctx context.Context, jobID string, meta map[string]string, payload []byte, idPrefixTemplate string) (*DispatchResult, error) {
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.dispatch",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.job_id", jobID)),
+	)
+	defer span.End()
+	if jobID == "" {
+		err := errors.New("nomad job id is required")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	resp, _, err := c.api.Jobs().DispatchOpts(&api.DispatchOptions{
+		JobID:            jobID,
+		Meta:             meta,
+		Payload:          payload,
+		IdPrefixTemplate: idPrefixTemplate,
+	}, (&api.WriteOptions{}).WithContext(ctx))
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("dispatch %s: %w", jobID, err)
+	}
+	result := &DispatchResult{
+		ParentJobID:     jobID,
+		DispatchedJobID: resp.DispatchedJobID,
+		EvalID:          resp.EvalID,
+		EvalCreateIndex: resp.EvalCreateIndex,
+	}
+	span.SetAttributes(
+		attribute.String("nomad.dispatched_job_id", result.DispatchedJobID),
+		attribute.String("nomad.eval_id", result.EvalID),
+		attribute.Int64("nomad.eval_create_index", int64FromUint64(result.EvalCreateIndex, "eval create index")),
+	)
+	span.SetStatus(codes.Ok, "")
+	return result, nil
+}

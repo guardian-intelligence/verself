@@ -215,6 +215,9 @@ import pathlib
 import subprocess
 import sys
 import time
+import ssl
+import urllib.error
+import urllib.request
 
 bao = pathlib.Path("local/bin/bao")
 credstore = pathlib.Path("/etc/credstore/openbao")
@@ -263,6 +266,85 @@ if status.get("sealed", True):
         run(["operator", "unseal", path.read_text(encoding="utf-8").strip()])
 
 if root_token:
+    # The operator init root token is only valid inside this bootstrap
+    # transaction: create the site-local workload identity path, then revoke it.
+    api_ctx = ssl.create_default_context(cafile="/etc/openbao/tls/cert.pem")
+
+    def api(method, path, body=None, expected=(200, 204)):
+        data = None
+        headers = {"X-Vault-Token": root_token}
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(
+            "https://127.0.0.1:8200/v1/" + path,
+            data=data,
+            headers=headers,
+            method=method,
+        )
+        try:
+            with urllib.request.urlopen(req, context=api_ctx, timeout=10) as resp:
+                raw = resp.read()
+                if resp.status not in expected:
+                    raise RuntimeError(f"openbao {method} {path} status {resp.status}: {raw[:512]!r}")
+                if raw:
+                    return json.loads(raw.decode("utf-8"))
+                return {}
+        except urllib.error.HTTPError as exc:
+            raw = exc.read()
+            if exc.code in expected:
+                if raw:
+                    return json.loads(raw.decode("utf-8"))
+                return {}
+            raise RuntimeError(f"openbao {method} {path} status {exc.code}: {raw[:512]!r}") from exc
+
+    mounts = api("GET", "sys/mounts").get("data", {})
+    if "kv-runtime/" not in mounts:
+        api("POST", "sys/mounts/kv-runtime", {"type": "kv", "options": {"version": "2"}})
+
+    auth = api("GET", "sys/auth").get("data", {})
+    if "jwt-nomad/" not in auth:
+        api("POST", "sys/auth/jwt-nomad", {"type": "jwt", "description": "Verself Nomad workload identity auth"})
+    api("POST", "auth/jwt-nomad/config", {
+        "jwks_url": "http://127.0.0.1:4646/.well-known/jwks.json",
+        "jwt_supported_algs": ["RS256", "EdDSA"],
+    })
+
+    policy = """
+path "sys/policies/acl/*" {
+  capabilities = ["create", "update", "read", "list"]
+}
+
+path "auth/jwt-nomad/role/*" {
+  capabilities = ["create", "update", "read", "list"]
+}
+
+path "kv-runtime/data/secret/org/*" {
+  capabilities = ["create", "update", "read", "delete"]
+}
+
+path "kv-runtime/metadata/secret/org/*" {
+  capabilities = ["read", "list", "delete"]
+}
+""".strip()
+    api("POST", "sys/policies/acl/substrate-control-plane", {"policy": policy})
+    api("POST", "auth/jwt-nomad/role/substrate-control-plane", {
+        "role_type": "jwt",
+        "bound_audiences": ["vault.io"],
+        "user_claim": "/nomad_job_id",
+        "user_claim_json_pointer": True,
+        "claim_mappings": {
+            "nomad_namespace": "nomad_namespace",
+            "nomad_job_id": "nomad_job_id",
+            "nomad_task": "nomad_task",
+        },
+        "bound_claims": {"nomad_job_id": "substrate-control-plane"},
+        "token_type": "service",
+        "token_policies": ["substrate-control-plane"],
+        "token_period": "30m",
+        "token_explicit_max_ttl": 0,
+    })
+
     env = os.environ.copy()
     env["BAO_TOKEN"] = root_token
     run(["token", "revoke", "-self"], env=env)

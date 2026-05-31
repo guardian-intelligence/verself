@@ -93,7 +93,7 @@ func run(ctx context.Context, opts runOptions) error {
 	)
 	defer span.End()
 
-	inputs, err := buildDeployInputs(runCtx, opts.RepoRoot, opts.Site)
+	inputs, err := buildDeployInputs(runCtx, opts.RepoRoot, opts.Site, resolvedSHA, snap.RunKey())
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
