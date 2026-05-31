@@ -196,3 +196,4 @@ github_integration_service_github_app_id: 3370540
 github_integration_service_github_app_slug: verself-runner
 github_integration_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
 github_integration_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/verself-runner"
+github_integration_service_github_runner_class_prefix: verself-
