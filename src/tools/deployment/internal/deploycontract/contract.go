@@ -112,6 +112,9 @@ func ValidateRepo(root string) (Report, error) {
 	if err := v.walkIntegrationCatalogs(); err != nil {
 		return Report{}, err
 	}
+	if err := v.walkSiteSecrets(); err != nil {
+		return Report{}, err
+	}
 	if err := v.walkNomadSpecs(); err != nil {
 		return Report{}, err
 	}
@@ -125,6 +128,29 @@ func ValidateRepo(root string) (Report, error) {
 		return v.report, ErrorList(v.errs)
 	}
 	return v.report, nil
+}
+
+func (v *Validator) walkSiteSecrets() error {
+	root := filepath.Join(v.root, "src", "host", "sites")
+	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("stat src/host/sites: %w", err)
+	}
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(filepath.Base(path), ".sops.yml") {
+			return nil
+		}
+		rel := v.rel(path)
+		parts := strings.Split(filepath.ToSlash(rel), "/")
+		if len(parts) >= 5 && parts[0] == "src" && parts[1] == "host" && parts[2] == "sites" && parts[4] == "secrets" && parts[3] != "prod" {
+			v.add(rel, "new site bootstrap must not use SOPS secret files; use a local generated seed vars file")
+		}
+		return nil
+	})
 }
 
 type ErrorList []ValidationError
