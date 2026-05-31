@@ -24,7 +24,6 @@ import (
 
 const (
 	openBaoRemotePort = 8200
-	openBaoRootToken  = "/etc/credstore/openbao/root-token"
 	openBaoCACert     = "/etc/openbao/tls/cert.pem"
 	runtimeMount      = "kv-runtime"
 )
@@ -33,6 +32,7 @@ type ApplyOptions struct {
 	Site   string
 	SSH    *sshtun.Client
 	Tracer trace.Tracer
+	Token  string
 }
 
 type Result struct {
@@ -97,7 +97,7 @@ func ApplyReplicationRoles(ctx context.Context, opts ApplyOptions, plan Plan) (R
 		span.SetStatus(codes.Ok, "")
 		return Result{}, nil
 	}
-	bao, closeBao, err := dialOpenBao(ctx, opts.SSH)
+	bao, closeBao, err := dialOpenBao(ctx, opts.SSH, opts.Token)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -271,17 +271,16 @@ func runPSQL(ctx context.Context, opts ApplyOptions, database, sql string) error
 	return opts.SSH.Run(ctx, cmd, strings.NewReader(sql))
 }
 
-func dialOpenBao(ctx context.Context, sshClient *sshtun.Client) (*baoClient, func(), error) {
+func dialOpenBao(ctx context.Context, sshClient *sshtun.Client, token string) (*baoClient, func(), error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, func() {}, fmt.Errorf("VERSELF_OPENBAO_RECONCILE_TOKEN is required for OpenBao-backed PostgreSQL reconciliation")
+	}
 	forward, err := sshClient.Forward(ctx, "openbao-postgres", openBaoRemotePort)
 	if err != nil {
 		return nil, func() {}, err
 	}
 	closeForward := func() { _ = forward.Close() }
-	token, err := sudoCatTrim(ctx, sshClient, openBaoRootToken)
-	if err != nil {
-		closeForward()
-		return nil, func() {}, err
-	}
 	caPEM, err := sudoCat(ctx, sshClient, openBaoCACert)
 	if err != nil {
 		closeForward()
@@ -360,14 +359,6 @@ func sudoCat(ctx context.Context, sshClient *sshtun.Client, path string) ([]byte
 		return nil, fmt.Errorf("path is required")
 	}
 	return sshClient.Exec(ctx, "sudo /bin/cat -- "+strconv.Quote(path))
-}
-
-func sudoCatTrim(ctx context.Context, sshClient *sshtun.Client, path string) (string, error) {
-	body, err := sudoCat(ctx, sshClient, path)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(body)), nil
 }
 
 func sqlStringArray(values []string) string {

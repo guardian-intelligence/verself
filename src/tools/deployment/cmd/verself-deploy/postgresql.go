@@ -44,5 +44,6 @@ func postgresApplyOptions(rt *runtime.Runtime, plan *deployPlan) postgresruntime
 		Site:   plan.Site,
 		SSH:    rt.SSH,
 		Tracer: rt.Tracer,
+		Token:  openBaoReconcileToken(),
 	}
 }

@@ -116,7 +116,7 @@ Auth at the web application level is treated only as a UX concern. Authenticatio
 
 Full model for organization boundaries, three-role IAM (`owner`/`admin`/`member`), capability catalog, credentials, SCIM, TanStack Start server-owned OAuth sessions, browser CSP bearer isolation, and the service OIDC discovery path lives in [`docs/iam-service.md`](iam-service.md).
 
-We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is a relying party for workload identity and the resource plane for secrets/KMS material: it accepts SPIRE-issued JWT-SVID login assertions, exchanges them for short-lived OpenBao tokens, and maps SPIFFE subjects to OpenBao policies. OpenBao is not the source of truth for repo-owned workload identity.
+We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is a relying party for workload identity and the resource plane for secrets/KMS material: it accepts SPIRE-issued JWT-SVID login assertions, exchanges them for short-lived OpenBao tokens, and maps SPIFFE subjects to OpenBao policies. OpenBao is not the source of truth for repo-owned workload identity. The root token returned by `bao operator init` is used only inside the bootstrap transaction that creates base auth, audit, and scoped reconciliation state. It is not persisted. Disaster recovery may require a temporary root token generated from recovery material during an incident or gameday.
 
 PostgreSQL, OpenBao, and Zitadel use shared site substrate instances until a
 service or tenant boundary requires a separate cluster. Isolation is enforced

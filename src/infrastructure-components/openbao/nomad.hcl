@@ -223,8 +223,8 @@ openbao_gid = grp.getgrnam("openbao").gr_gid
 os.chown(credstore, 0, openbao_gid)
 os.chmod(credstore, 0o750)
 
-def run(args):
-    return subprocess.run([str(bao)] + args, check=True, text=True, capture_output=True)
+def run(args, env=None):
+    return subprocess.run([str(bao)] + args, check=True, text=True, capture_output=True, env=env)
 
 status = None
 last_error = None
@@ -244,12 +244,13 @@ def write_secret(name, value):
     os.chown(path, 0, openbao_gid)
     os.chmod(path, 0o640)
 
+root_token = None
 if not status.get("initialized", False):
     init = json.loads(run(["operator", "init", "-key-shares=3", "-key-threshold=2", "-format=json"]).stdout)
     keys = init.get("unseal_keys_b64") or init.get("keys_base64") or []
     if len(keys) < 2 or not init.get("root_token"):
         raise SystemExit("openbao init response did not include root token and at least two unseal keys")
-    write_secret("root-token", init["root_token"])
+    root_token = init["root_token"]
     for index, key in enumerate(keys, start=1):
         write_secret(f"unseal-key-{index}", key)
     status = json.loads(run(["status", "-format=json"]).stdout)
@@ -260,6 +261,11 @@ if status.get("sealed", True):
         if not path.exists():
             raise SystemExit(f"{path} is required to unseal initialized OpenBao")
         run(["operator", "unseal", path.read_text(encoding="utf-8").strip()])
+
+if root_token:
+    env = os.environ.copy()
+    env["BAO_TOKEN"] = root_token
+    run(["token", "revoke", "-self"], env=env)
 PY
         ]
       }

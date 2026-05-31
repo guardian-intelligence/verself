@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -11,6 +13,8 @@ import (
 	"github.com/verself/deployment-tools/internal/openbaoruntime"
 	"github.com/verself/deployment-tools/internal/runtime"
 )
+
+const openBaoReconcileTokenEnv = "VERSELF_OPENBAO_RECONCILE_TOKEN"
 
 func applyOpenBaoRuntime(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) error {
 	if len(plan.OpenBao.Secrets) == 0 {
@@ -31,6 +35,7 @@ func applyOpenBaoRuntime(ctx context.Context, rt *runtime.Runtime, plan *deployP
 		Tracer:        rt.Tracer,
 		SpiffeSubject: "spiffe://" + plan.SiteModel.SpiffeTrustDomain + "/svc/secrets-service",
 		SeedVarsPath:  filepath.Join(rt.RepoRoot, ".verself", "site-bootstrap", plan.Site, "ansible-secrets.json"),
+		Token:         openBaoReconcileToken(),
 	}, plan.OpenBao)
 	span.SetAttributes(
 		attribute.Int("verself.openbao.secrets_created", result.SecretsCreated),
@@ -55,4 +60,8 @@ func applyOpenBaoRuntime(ctx context.Context, rt *runtime.Runtime, plan *deployP
 	))
 	span.SetStatus(codes.Ok, "")
 	return nil
+}
+
+func openBaoReconcileToken() string {
+	return strings.TrimSpace(os.Getenv(openBaoReconcileTokenEnv))
 }

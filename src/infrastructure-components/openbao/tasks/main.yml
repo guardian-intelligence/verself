@@ -49,7 +49,7 @@
     fail_msg: >-
       openbao_rebootstrap=true requires
       openbao_rebootstrap_confirm=wipe-openbao because it deletes the Raft
-      datastore and root/unseal credentials before bootstrapping a new node.
+      datastore and recovery material before bootstrapping a new node.
   when: openbao_rebootstrap | bool
 
 - name: Remove OpenBao bootstrap state
@@ -58,7 +58,6 @@
     state: absent
   loop:
     - "{{ openbao_raft_dir }}"
-    - "{{ openbao_credstore_dir }}/root-token"
     - "{{ openbao_credstore_dir }}/unseal-key-1"
     - "{{ openbao_credstore_dir }}/unseal-key-2"
     - "{{ openbao_credstore_dir }}/unseal-key-3"
@@ -193,13 +192,9 @@
   when: openbao_bootstrap_initialized | bool
   no_log: true
 
-- name: Persist OpenBao initial root token
-  ansible.builtin.copy:
-    content: "{{ (openbao_init_raw.stdout | from_json).root_token }}"
-    dest: "{{ openbao_credstore_dir }}/root-token"
-    owner: root
-    group: openbao
-    mode: "0640"
+- name: Hold OpenBao bootstrap root token in memory
+  ansible.builtin.set_fact:
+    openbao_bootstrap_token: "{{ (openbao_init_raw.stdout | from_json).root_token }}"
   when: openbao_bootstrap_initialized | bool
   no_log: true
 
@@ -224,7 +219,6 @@
   ansible.builtin.stat:
     path: "{{ openbao_credstore_dir }}/{{ item }}"
   loop:
-    - root-token
     - unseal-key-1
     - unseal-key-2
     - unseal-key-3
@@ -234,9 +228,9 @@
 - name: Assert OpenBao credentials exist
   ansible.builtin.assert:
     that:
-      - openbao_credential_files.results | selectattr('stat.exists', 'equalto', true) | list | length == 4
+      - openbao_credential_files.results | selectattr('stat.exists', 'equalto', true) | list | length >= openbao_key_threshold
     fail_msg: >-
-      OpenBao is initialized but required root/unseal credstore files are missing.
+      OpenBao is initialized but required unseal key files are missing.
       Restore them from the operator secret backup before continuing.
   no_log: true
 
@@ -247,7 +241,6 @@
     group: openbao
     mode: "0640"
   loop:
-    - root-token
     - unseal-key-1
     - unseal-key-2
     - unseal-key-3
@@ -291,23 +284,18 @@
   when: openbao_status.sealed | default(true) | bool
   no_log: true
 
-- name: Read OpenBao root token
-  ansible.builtin.slurp:
-    src: "{{ openbao_credstore_dir }}/root-token"
-  register: openbao_root_token_raw
-  no_log: true
-
 - name: List OpenBao auth mounts for SPIFFE JWT auth
   ansible.builtin.uri:
     url: "https://{{ openbao_api_address }}/v1/sys/auth"
     method: GET
     headers:
-      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+      X-Vault-Token: "{{ openbao_bootstrap_token }}"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true
   register: openbao_auth_mounts_response
   changed_when: false
+  when: openbao_bootstrap_initialized | bool
   no_log: true
 
 - name: Enable OpenBao SPIFFE JWT auth mount
@@ -315,14 +303,16 @@
     url: "https://{{ openbao_api_address }}/v1/sys/auth/{{ openbao_spiffe_jwt_mount }}"
     method: POST
     headers:
-      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+      X-Vault-Token: "{{ openbao_bootstrap_token }}"
     body_format: json
     body:
       type: jwt
       description: Verself SPIRE JWT-SVID workload auth
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
-  when: (openbao_spiffe_jwt_mount ~ '/') not in (openbao_auth_mounts_response.json.data.keys() | list)
+  when:
+    - openbao_bootstrap_initialized | bool
+    - (openbao_spiffe_jwt_mount ~ '/') not in (openbao_auth_mounts_response.json.data.keys() | list)
   changed_when: true
   no_log: true
 
@@ -331,18 +321,20 @@
     url: "https://{{ openbao_api_address }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
     method: GET
     headers:
-      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+      X-Vault-Token: "{{ openbao_bootstrap_token }}"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: [200, 404]
     return_content: true
   register: openbao_spiffe_jwt_config_response
   changed_when: false
+  when: openbao_bootstrap_initialized | bool
   no_log: true
 
 - name: Read SPIRE bundle endpoint CA for OpenBao JWT auth
   ansible.builtin.slurp:
     src: "{{ openbao_spiffe_jwt_jwks_ca_pem_path }}"
   register: openbao_spiffe_jwt_jwks_ca
+  when: openbao_bootstrap_initialized | bool
   no_log: true
 
 - name: Configure OpenBao SPIFFE JWT auth JWKS validation
@@ -350,7 +342,7 @@
     url: "https://{{ openbao_api_address }}/v1/auth/{{ openbao_spiffe_jwt_mount }}/config"
     method: POST
     headers:
-      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+      X-Vault-Token: "{{ openbao_bootstrap_token }}"
     body_format: json
     body:
       jwks_url: "{{ openbao_spiffe_jwt_jwks_url }}"
@@ -359,11 +351,14 @@
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 204
   when: >-
-    openbao_spiffe_jwt_config_response.status == 404
-    or (openbao_spiffe_jwt_config_response.json.data | default({})).jwks_url | default('') != openbao_spiffe_jwt_jwks_url
-    or (openbao_spiffe_jwt_config_response.json.data | default({})).bound_issuer | default('') != spire_jwt_issuer_url
-    or (openbao_spiffe_jwt_config_response.json.data | default({})).jwks_ca_pem | default([]) | length == 0
-    or (openbao_spiffe_jwt_config_response.json.data | default({})).oidc_discovery_url | default('') != ''
+    openbao_bootstrap_initialized | bool
+    and (
+      openbao_spiffe_jwt_config_response.status == 404
+      or (openbao_spiffe_jwt_config_response.json.data | default({})).jwks_url | default('') != openbao_spiffe_jwt_jwks_url
+      or (openbao_spiffe_jwt_config_response.json.data | default({})).bound_issuer | default('') != spire_jwt_issuer_url
+      or (openbao_spiffe_jwt_config_response.json.data | default({})).jwks_ca_pem | default([]) | length == 0
+      or (openbao_spiffe_jwt_config_response.json.data | default({})).oidc_discovery_url | default('') != ''
+    )
   changed_when: true
   no_log: true
 
@@ -372,7 +367,7 @@
     url: "https://{{ openbao_api_address }}/v1/sys/config/auditing/request-headers/{{ item.name }}"
     method: POST
     headers:
-      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+      X-Vault-Token: "{{ openbao_bootstrap_token }}"
     body_format: json
     body: "{{ {'hmac': (item.hmac | bool)} }}"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
@@ -380,6 +375,7 @@
   loop: "{{ openbao_audit_request_headers }}"
   loop_control:
     label: "{{ item.name }}"
+  when: openbao_bootstrap_initialized | bool
   no_log: true
 
 - name: Probe OpenBao authenticated sys/mounts to exercise audit device
@@ -387,11 +383,12 @@
     url: "https://{{ openbao_api_address }}/v1/sys/mounts"
     method: GET
     headers:
-      X-Vault-Token: "{{ openbao_root_token_raw.content | b64decode | trim }}"
+      X-Vault-Token: "{{ openbao_bootstrap_token }}"
       X-Verself-Request-Id: "openbao-bootstrap-probe"
     ca_path: "{{ openbao_tls_dir }}/cert.pem"
     status_code: 200
     return_content: true
+  when: openbao_bootstrap_initialized | bool
   no_log: true
 
 - name: Wait for OpenBao audit log
@@ -399,6 +396,7 @@
     path: "{{ openbao_audit_log }}"
     state: present
     timeout: 15
+  when: openbao_bootstrap_initialized | bool
 
 - name: Set OpenBao audit log permissions
   ansible.builtin.file:
@@ -406,3 +404,14 @@
     owner: openbao
     group: openbao
     mode: "0600"
+  when: openbao_bootstrap_initialized | bool
+
+- name: Revoke OpenBao bootstrap root token
+  ansible.builtin.command:
+    cmd: "{{ verself_bin }}/bao token revoke -self"
+  environment:
+    BAO_ADDR: "https://{{ openbao_api_address }}"
+    BAO_CACERT: "{{ openbao_tls_dir }}/cert.pem"
+    BAO_TOKEN: "{{ openbao_bootstrap_token }}"
+  when: openbao_bootstrap_initialized | bool
+  no_log: true

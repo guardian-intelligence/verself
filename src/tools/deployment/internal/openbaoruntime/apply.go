@@ -31,7 +31,6 @@ import (
 
 const (
 	openBaoRemotePort = 8200
-	openBaoRootToken  = "/etc/credstore/openbao/root-token"
 	openBaoCACert     = "/etc/openbao/tls/cert.pem"
 	nomadJWKSURL      = "http://127.0.0.1:4646/.well-known/jwks.json"
 )
@@ -43,6 +42,7 @@ type ApplyOptions struct {
 	Tracer        trace.Tracer
 	SpiffeSubject string
 	SeedVarsPath  string
+	Token         string
 }
 
 type Result struct {
@@ -84,7 +84,7 @@ func Apply(ctx context.Context, opts ApplyOptions, plan Plan) (Result, error) {
 		return Result{}, nil
 	}
 
-	c, closeForward, err := dial(ctx, opts.SSH)
+	c, closeForward, err := dial(ctx, opts.SSH, opts.Token)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -115,17 +115,16 @@ func Apply(ctx context.Context, opts ApplyOptions, plan Plan) (Result, error) {
 	return result, nil
 }
 
-func dial(ctx context.Context, sshClient *sshtun.Client) (*client, func(), error) {
+func dial(ctx context.Context, sshClient *sshtun.Client, token string) (*client, func(), error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, func() {}, fmt.Errorf("VERSELF_OPENBAO_RECONCILE_TOKEN is required for OpenBao runtime reconciliation")
+	}
 	forward, err := sshClient.Forward(ctx, "openbao", openBaoRemotePort)
 	if err != nil {
 		return nil, func() {}, err
 	}
 	closeForward := func() { _ = forward.Close() }
-	token, err := sudoCatTrim(ctx, sshClient, openBaoRootToken)
-	if err != nil {
-		closeForward()
-		return nil, func() {}, err
-	}
 	caPEM, err := sudoCat(ctx, sshClient, openBaoCACert)
 	if err != nil {
 		closeForward()

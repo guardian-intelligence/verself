@@ -113,6 +113,12 @@ aspect site root-handoff \
 
 Then materialize, converge, publish DNS, and deploy:
 
+OpenBao initialization uses the root token returned by `bao operator init` only
+inside the first bootstrap transaction. The token is not stored in `/etc`,
+`.verself`, git, logs, or generated artifacts. Disaster recovery may require a
+temporary root token generated from recovery material during a dedicated
+recovery exercise.
+
 ```shell
 aspect site validate-seed --site=gamma
 aspect site materialize-seed --site=gamma

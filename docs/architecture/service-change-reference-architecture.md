@@ -341,10 +341,12 @@ Shared site substrate instances still provide hard service isolation. Each
 service has one PostgreSQL database and owner role, no shared writable schema,
 no cross-service peer mappings, and publications declared by the service that
 owns the tables. Runtime services authenticate to OpenBao through SPIFFE
-JWT-SVIDs mapped to scoped policies, and root tokens remain bootstrap and
-break-glass material. Zitadel remains the human and customer-credential IdP;
-service-specific projects, applications, grants, and actions are declared by
-the owning service or component.
+JWT-SVIDs mapped to scoped policies. The root token returned by
+`bao operator init` is used only inside the bootstrap transaction and is not
+persisted. Disaster recovery may require a temporary root token generated from
+recovery material during an incident or gameday. Zitadel remains the human and
+customer-credential IdP; service-specific projects, applications, grants, and
+actions are declared by the owning service or component.
 
 Deployable units declare live checks at the Bazel edge, next to the
 `nomad_component`, with `post_deploy_canary` or an owner-local gate descriptor.

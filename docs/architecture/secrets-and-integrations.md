@@ -93,9 +93,9 @@ S0 repo_metadata_only
 | `S3 controller_openbao_seeded` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
 | `S4 bare_metal_allocated` | Latitude host exists and inventory can be written. | Provider credentials remain in controller OpenBao. | Host bootstrap connects over SSH. |
 | `S5 host_openbao_installed` | Host convergence copies the OpenBao binary, configuration, TLS files, and service definition to the host. | No site secrets copied yet. | Start OpenBao and initialize the site store. |
-| `S6 site_openbao_initialized` | The host OpenBao Raft store, root token, unseal material, auth mounts, and base policies exist for this site. | Site OpenBao and host credstore during bootstrap. | Import a wrapped site seed bundle. |
-| `S7 site_openbao_seeded` | Runtime secrets, provider credentials, transit keys, and host credstore inputs are present in site OpenBao. | Site OpenBao is the source of truth. | Project required host state and hand off to Nomad. |
-| `S8 nomad_ready` | Base OS, SPIRE, OpenBao auth, credstore projections, and Nomad are ready. | Runtime reads use OpenBao/secrets-service. | Nomad deploys service jobs. |
+| `S6 site_openbao_initialized` | The host OpenBao Raft store, recovery material, auth mounts, and base policies exist for this site. The initial root token is used only inside the `bao operator init` transaction. | Site OpenBao and operator-held recovery material. | Import a wrapped site seed bundle. |
+| `S7 site_openbao_seeded` | Runtime secrets, provider credentials, and transit keys are present in site OpenBao. | Site OpenBao is the source of truth. | Hand off to Nomad. |
+| `S8 nomad_ready` | Base OS, SPIRE, OpenBao workload auth, and Nomad are ready. | Runtime reads use OpenBao/secrets-service. | Nomad deploys service jobs. |
 | `S9 deployed` | Services run from Nomad and consume only OpenBao-backed runtime secrets. | Site OpenBao and product KV. | Post-deploy canaries pass. |
 | `S10 steady_state_rotation` | Future credential changes use catalog-driven import, rotate, reveal, and revoke commands. | OpenBao only. | Repeat from provider handoff or rotation transition. |
 
@@ -120,8 +120,16 @@ plaintext files.
   the catalog.
 - Host OpenBao initializes its own site-local Raft store and recovery material.
   Environments never share OpenBao root tokens, unseal keys, or Raft state.
-- OpenBao root tokens are bootstrap and break-glass material. Runtime services
-  authenticate with SPIFFE JWT-SVIDs mapped to scoped OpenBao policies.
+- The `bao operator init` response is the only normal path that exposes an
+  OpenBao root token. Bootstrap uses that token in process memory to create
+  base auth, audit, and scoped reconciliation state, then revokes or discards
+  it. The token is not written to host files, controller files, git, logs, or
+  generated artifacts.
+- Disaster recovery may require a temporary root token generated from recovery
+  material during a gameday or incident. No steady-state automation handles
+  that path.
+- Runtime services authenticate with SPIFFE JWT-SVIDs or Nomad workload
+  identity mapped to scoped OpenBao policies.
 - Owner-local deployment declarations define every runtime secret, provider
   credential, host credential projection, and consumer.
 - The successful transition to `S9 deployed` requires provider-specific canary
@@ -135,7 +143,7 @@ plaintext files.
 | `provider_project` | Stripe Projects vault or provider-native vault | Import tooling | Local handoff only. Never consumed by Nomad jobs. |
 | `controller_openbao` | Controller OpenBao bootstrap namespace | Provisioning and seed-bundle tools | Pre-host source of truth for site bootstrap inputs. |
 | `site_openbao` | Per-site OpenBao KV v2 and transit | Host convergence, secrets-service, workloads | Durable source of truth after site OpenBao exists. |
-| `host_credstore` | `/etc/credstore/...` | Host daemons and local jobs | Host file cache materialized from generated values or site OpenBao. |
+| `host_runtime_file` | Nomad allocation `secrets/` directory or component-owned runtime config | Host daemons and local jobs | Derived projection only. Files are never secret sources and deploy tooling does not read them. |
 | `runtime_secret` | OpenBao KV v2 | Workloads through secrets-service or direct runtime injection | Runtime application secret material. |
 | `product_kv` | secrets-service over OpenBao | Customers and product services | Customer/org-owned secrets and variables after deploy. |
 
