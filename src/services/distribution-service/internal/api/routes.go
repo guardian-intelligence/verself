@@ -276,27 +276,28 @@ func (a internalAPI) admitArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	artifact, err := a.cfg.Service.AdmitArtifact(r.Context(), internalPrincipal(r.Context()), distribution.AdmitArtifactRequest{
-		PackageName:       body.PackageName,
-		PackageVersion:    body.PackageVersion,
-		ChannelName:       body.ChannelName,
-		PlatformOS:        body.PlatformOS,
-		PlatformArch:      body.PlatformArch,
-		Flavor:            body.Flavor,
-		OriginRegistryURL: body.OriginRegistryURL,
-		PublicRegistryURL: body.PublicRegistryURL,
-		OCIRepository:     body.OCIRepository,
-		OCIDigest:         body.OCIDigest,
-		OCIMediaType:      body.OCIMediaType,
-		OCISizeBytes:      body.OCISizeBytes,
-		BuilderID:         body.BuilderID,
-		SignerIdentity:    body.SignerIdentity,
-		SourceRepository:  body.SourceRepository,
-		SourceCommit:      body.SourceCommit,
-		SourceRef:         body.SourceRef,
-		PolicyRef:         body.PolicyRef,
-		Evidence:          evidenceFromDTO(body.Evidence),
-		SubmittedBy:       body.SubmittedBy,
-		IdempotencyKey:    r.Header.Get("Idempotency-Key"),
+		PackageName:        body.PackageName,
+		PackageVersion:     body.PackageVersion,
+		ChannelName:        body.ChannelName,
+		PlatformOS:         body.PlatformOS,
+		PlatformArch:       body.PlatformArch,
+		Flavor:             body.Flavor,
+		OriginRegistryURL:  body.OriginRegistryURL,
+		PublicRegistryURL:  body.PublicRegistryURL,
+		OCIRepository:      body.OCIRepository,
+		OCIDigest:          body.OCIDigest,
+		OCIMediaType:       body.OCIMediaType,
+		OCISizeBytes:       body.OCISizeBytes,
+		BuilderID:          body.BuilderID,
+		SignerIdentity:     body.SignerIdentity,
+		SourceRepository:   body.SourceRepository,
+		SourceCommit:       body.SourceCommit,
+		SourceRef:          body.SourceRef,
+		PolicyRef:          body.PolicyRef,
+		Evidence:           evidenceFromDTO(body.Evidence),
+		ReleaseAttestation: releaseAttestationFromDTO(body.ReleaseAttestation),
+		SubmittedBy:        body.SubmittedBy,
+		IdempotencyKey:     r.Header.Get("Idempotency-Key"),
 	})
 	if err != nil {
 		writeError(w, r, err)
@@ -415,6 +416,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeProblem(w, r, http.StatusForbidden, "distribution.untrusted_builder", err.Error())
 	case errors.Is(err, distribution.ErrUntrustedSigner):
 		writeProblem(w, r, http.StatusForbidden, "distribution.untrusted_signer", err.Error())
+	case errors.Is(err, distribution.ErrAttestationFailed):
+		writeProblem(w, r, http.StatusForbidden, "distribution.release_attestation_failed", err.Error())
 	case errors.Is(err, distribution.ErrSourcePolicyFailure):
 		writeProblem(w, r, http.StatusForbidden, "distribution.source_policy_failure", err.Error())
 	case errors.Is(err, distribution.ErrChannelPolicyFailure):

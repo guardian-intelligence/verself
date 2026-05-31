@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//src/services/distribution-service/internal/api",
         "//src/services/distribution-service/internal/distribution",
+        "//src/services/distribution-service/internal/releaseattest",
         "//src/services/distribution-service/migrations",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",

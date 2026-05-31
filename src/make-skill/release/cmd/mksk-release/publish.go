@@ -14,6 +14,7 @@ import (
 
 	"github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/verself/make-skill/release/internal/ocipublish"
+	releaseinput "github.com/verself/releaseattest"
 	"oras.land/oras-go/v2"
 )
 
@@ -43,21 +44,31 @@ type PublishRequest struct {
 	Repository           string
 	RegistryUsername     string
 	RegistryPasswordFile string
+	Ceremony             releaseCeremony
 	Signer               releaseSigner
 }
 
 type publishFlagValues struct {
-	registryURL          string
-	publicRegistryURL    string
-	repository           string
-	registryUsername     string
-	registryPasswordFile string
-	signingMode          string
-	openBaoAddr          string
-	openBaoTokenFile     string
-	openBaoTransitMount  string
-	openBaoKey           string
-	openBaoNamespace     string
+	registryURL                string
+	publicRegistryURL          string
+	repository                 string
+	registryUsername           string
+	registryPasswordFile       string
+	signingMode                string
+	openBaoAddr                string
+	openBaoTokenFile           string
+	openBaoTransitMount        string
+	openBaoKey                 string
+	openBaoNamespace           string
+	distributionChallenge      string
+	tpmReleasePublicName       string
+	tpmReleasePublicBlobDigest string
+}
+
+type releaseCeremony struct {
+	DistributionChallenge      string
+	TPMReleasePublicName       string
+	TPMReleasePublicBlobDigest string
 }
 
 func parsePublishRequest(ctx context.Context, args []string) (PublishRequest, error) {
@@ -95,7 +106,12 @@ func parsePublishRequest(ctx context.Context, args []string) (PublishRequest, er
 		Repository:           strings.Trim(strings.TrimSpace(publishValues.repository), "/"),
 		RegistryUsername:     strings.TrimSpace(publishValues.registryUsername),
 		RegistryPasswordFile: strings.TrimSpace(publishValues.registryPasswordFile),
-		Signer:               signer,
+		Ceremony: releaseCeremony{
+			DistributionChallenge:      strings.TrimSpace(publishValues.distributionChallenge),
+			TPMReleasePublicName:       strings.TrimSpace(publishValues.tpmReleasePublicName),
+			TPMReleasePublicBlobDigest: strings.TrimSpace(publishValues.tpmReleasePublicBlobDigest),
+		},
+		Signer: signer,
 	}
 	if req.RegistryURL == "" {
 		return PublishRequest{}, fmt.Errorf("--registry is required")
@@ -105,6 +121,11 @@ func parsePublishRequest(ctx context.Context, args []string) (PublishRequest, er
 	}
 	if req.Repository == "" {
 		return PublishRequest{}, fmt.Errorf("--repository is required")
+	}
+	if req.Ceremony.enabled() {
+		if err := validateReleaseCeremony(req.Ceremony); err != nil {
+			return PublishRequest{}, err
+		}
 	}
 	return req, nil
 }
@@ -127,6 +148,9 @@ func bindPublishFlags(fs *flag.FlagSet, values *publishFlagValues) {
 	fs.StringVar(&values.openBaoTransitMount, "openbao-transit-mount", "transit", "OpenBao Transit mount path.")
 	fs.StringVar(&values.openBaoKey, "openbao-key", "", "OpenBao Transit key name for release signatures.")
 	fs.StringVar(&values.openBaoNamespace, "openbao-namespace", "", "OpenBao namespace header value. Empty means root namespace.")
+	fs.StringVar(&values.distributionChallenge, "distribution-challenge", "", "One-use distribution-service challenge bound into the release input digest.")
+	fs.StringVar(&values.tpmReleasePublicName, "tpm-release-public-name", "", "TPM Name for the ephemeral release signing key.")
+	fs.StringVar(&values.tpmReleasePublicBlobDigest, "tpm-release-public-blob-digest", "", "sha256 digest of the TPM release public blob.")
 }
 
 func registryCredential(username string, passwordFile string) (ocipublish.RegistryAuth, error) {
@@ -253,12 +277,19 @@ func registryReferenceHost(registryURL string) string {
 }
 
 type releaseSigningEnvelope struct {
-	Subject            ReleaseSubject
-	PublicOCIReference string
-	SubjectDigest      string
-	SubjectMediaType   string
-	SubjectSizeBytes   int64
-	Referrers          []releaseSigningReferrer
+	Subject                    ReleaseSubject
+	PublicOCIReference         string
+	SubjectDigest              string
+	SubjectMediaType           string
+	SubjectSizeBytes           int64
+	Referrers                  []releaseSigningReferrer
+	DistributionChallenge      string
+	ReleaseInputDigest         string
+	ArtifactDigest             string
+	ProvenanceDigest           string
+	SBOMDigest                 string
+	TPMReleasePublicName       string
+	TPMReleasePublicBlobDigest string
 }
 
 type releaseSigningReferrer struct {
@@ -336,6 +367,9 @@ func releaseSignerFromFlags(values publishFlagValues) (releaseSigner, error) {
 		if config.KeyName == "" {
 			return nil, fmt.Errorf("--openbao-key is required with --signing=%s", mode)
 		}
+		if err := requireReleaseCeremony(values); err != nil {
+			return nil, err
+		}
 		if _, err := os.Stat(config.TokenFile); err != nil {
 			return nil, fmt.Errorf("read OpenBao token file %s: %w", config.TokenFile, err)
 		}
@@ -345,7 +379,35 @@ func releaseSignerFromFlags(values publishFlagValues) (releaseSigner, error) {
 	}
 }
 
-func newReleaseSigningEnvelope(subject ReleaseSubject, publicRef string, result ocipublish.Result) releaseSigningEnvelope {
+func requireReleaseCeremony(values publishFlagValues) error {
+	return validateReleaseCeremony(releaseCeremony{
+		DistributionChallenge:      values.distributionChallenge,
+		TPMReleasePublicName:       values.tpmReleasePublicName,
+		TPMReleasePublicBlobDigest: values.tpmReleasePublicBlobDigest,
+	})
+}
+
+func validateReleaseCeremony(ceremony releaseCeremony) error {
+	missing := []string{}
+	if strings.TrimSpace(ceremony.DistributionChallenge) == "" {
+		missing = append(missing, "--distribution-challenge")
+	}
+	if strings.TrimSpace(ceremony.TPMReleasePublicName) == "" {
+		missing = append(missing, "--tpm-release-public-name")
+	}
+	if strings.TrimSpace(ceremony.TPMReleasePublicBlobDigest) == "" {
+		missing = append(missing, "--tpm-release-public-blob-digest")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("release ceremony requires %s", strings.Join(missing, ", "))
+	}
+	if _, err := releaseinput.DigestBytes(ceremony.TPMReleasePublicBlobDigest); err != nil {
+		return fmt.Errorf("--tpm-release-public-blob-digest: %w", err)
+	}
+	return nil
+}
+
+func newReleaseSigningEnvelope(bundle BuildBundle, publicRef string, result ocipublish.Result, ceremony releaseCeremony) (releaseSigningEnvelope, error) {
 	referrers := make([]releaseSigningReferrer, 0, len(result.Referrers))
 	for _, referrer := range result.Referrers {
 		referrers = append(referrers, releaseSigningReferrer{
@@ -358,14 +420,42 @@ func newReleaseSigningEnvelope(subject ReleaseSubject, publicRef string, result 
 	sort.Slice(referrers, func(i, j int) bool {
 		return referrers[i].Digest < referrers[j].Digest
 	})
-	return releaseSigningEnvelope{
-		Subject:            subject,
+	envelope := releaseSigningEnvelope{
+		Subject:            bundle.Subject,
 		PublicOCIReference: publicRef,
 		SubjectDigest:      result.Subject.Descriptor.Digest.String(),
 		SubjectMediaType:   result.Subject.Descriptor.MediaType,
 		SubjectSizeBytes:   result.Subject.Descriptor.Size,
 		Referrers:          referrers,
 	}
+	if ceremony.enabled() {
+		input := releaseinput.ReleaseInput{
+			DistributionChallenge:      ceremony.DistributionChallenge,
+			Package:                    bundle.Subject.Package,
+			Version:                    bundle.Subject.Version,
+			SourceCommit:               bundle.Subject.SourceCommit,
+			Platform:                   bundle.Subject.Platform.String(),
+			Flavor:                     bundle.Subject.Flavor,
+			OCIManifestDigest:          result.Subject.Descriptor.Digest.String(),
+			ArtifactDigest:             sha256Digest(bundle.Evidence.Artifact.Digest),
+			ProvenanceDigest:           sha256Digest(bundle.Evidence.Provenance.Digest),
+			SBOMDigest:                 sha256Digest(bundle.Evidence.ArtifactSBOM.Digest),
+			TPMReleasePublicName:       ceremony.TPMReleasePublicName,
+			TPMReleasePublicBlobDigest: ceremony.TPMReleasePublicBlobDigest,
+		}
+		digest, err := input.Digest()
+		if err != nil {
+			return releaseSigningEnvelope{}, err
+		}
+		envelope.DistributionChallenge = ceremony.DistributionChallenge
+		envelope.ReleaseInputDigest = digest
+		envelope.ArtifactDigest = input.ArtifactDigest
+		envelope.ProvenanceDigest = input.ProvenanceDigest
+		envelope.SBOMDigest = input.SBOMDigest
+		envelope.TPMReleasePublicName = ceremony.TPMReleasePublicName
+		envelope.TPMReleasePublicBlobDigest = ceremony.TPMReleasePublicBlobDigest
+	}
+	return envelope, nil
 }
 
 func (e releaseSigningEnvelope) PayloadDigest() string {
@@ -389,6 +479,17 @@ func (e releaseSigningEnvelope) CanonicalPayload() []byte {
 		"subject_media_type=" + e.SubjectMediaType,
 		"subject_size_bytes=" + strconv.FormatInt(e.SubjectSizeBytes, 10),
 	}
+	if e.ReleaseInputDigest != "" {
+		lines = append(lines,
+			"distribution_challenge="+e.DistributionChallenge,
+			"release_input_digest="+e.ReleaseInputDigest,
+			"artifact_digest="+e.ArtifactDigest,
+			"provenance_digest="+e.ProvenanceDigest,
+			"sbom_digest="+e.SBOMDigest,
+			"tpm_release_public_name="+e.TPMReleasePublicName,
+			"tpm_release_public_blob_digest="+e.TPMReleasePublicBlobDigest,
+		)
+	}
 	for _, referrer := range e.Referrers {
 		lines = append(lines, strings.Join([]string{
 			"referrer",
@@ -399,4 +500,12 @@ func (e releaseSigningEnvelope) CanonicalPayload() []byte {
 		}, "="))
 	}
 	return []byte(strings.Join(lines, "\n") + "\n")
+}
+
+func (c releaseCeremony) enabled() bool {
+	return c.DistributionChallenge != "" || c.TPMReleasePublicName != "" || c.TPMReleasePublicBlobDigest != ""
+}
+
+func sha256Digest(hexDigest string) string {
+	return "sha256:" + strings.TrimSpace(hexDigest)
 }

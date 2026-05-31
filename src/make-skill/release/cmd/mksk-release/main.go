@@ -206,19 +206,23 @@ func runPublish(ctx context.Context, args []string) error {
 		return err
 	}
 	publicRef := publicOCIReference(req.PublicRegistryURL, req.Repository, result.Subject.Descriptor.Digest.String())
-	envelope := newReleaseSigningEnvelope(bundle.Subject, publicRef, result)
+	envelope, err := newReleaseSigningEnvelope(bundle, publicRef, result, req.Ceremony)
+	if err != nil {
+		return err
+	}
 	signature, err := req.Signer.SignRelease(ctx, envelope)
 	if err != nil {
 		return err
 	}
 	return stdoutf(
-		"build bundle: %s\noci repository: %s/%s\noci reference: %s\noci digest: %s\noci referrers: %d\nsignature: %s\nsigning payload sha256: %s\n",
+		"build bundle: %s\noci repository: %s/%s\noci reference: %s\noci digest: %s\noci referrers: %d\nrelease input digest: %s\nsignature: %s\nsigning payload sha256: %s\n",
 		bundle.Root,
 		strings.TrimRight(req.RegistryURL, "/"),
 		strings.Trim(req.Repository, "/"),
 		publicRef,
 		result.Subject.Descriptor.Digest,
 		len(result.Referrers),
+		envelope.ReleaseInputDigest,
 		signature.Mode,
 		signature.PayloadDigest,
 	)

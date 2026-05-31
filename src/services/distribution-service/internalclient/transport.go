@@ -21,27 +21,69 @@ type Evidence struct {
 	OCIReferrerDigest string `json:"oci_referrer_digest"`
 }
 
+type ReleaseAttestation struct {
+	DistributionChallenge      string      `json:"distribution_challenge"`
+	ReleaseInputDigest         string      `json:"release_input_digest"`
+	ArtifactDigest             string      `json:"artifact_digest"`
+	ProvenanceDigest           string      `json:"provenance_digest"`
+	SBOMDigest                 string      `json:"sbom_digest"`
+	TPMReleasePublicName       string      `json:"tpm_release_public_name"`
+	TPMReleasePublicBlobDigest string      `json:"tpm_release_public_blob_digest"`
+	PolicyID                   string      `json:"policy_id"`
+	TPM                        TPMEvidence `json:"tpm"`
+}
+
+type TPMEvidence struct {
+	AKPublic                []byte                  `json:"ak_public"`
+	Quotes                  []TPMQuote              `json:"quotes"`
+	PCRs                    []TPMPCR                `json:"pcrs"`
+	EventLog                []byte                  `json:"event_log"`
+	ReleasePublicName       string                  `json:"release_public_name"`
+	ReleasePublicBlob       []byte                  `json:"release_public_blob"`
+	ReleasePublicBlobDigest string                  `json:"release_public_blob_digest"`
+	ReleaseKeyCertification ReleaseKeyCertification `json:"release_key_certification"`
+}
+
+type TPMQuote struct {
+	Quote     []byte `json:"quote"`
+	Signature []byte `json:"signature"`
+}
+
+type TPMPCR struct {
+	Index     int    `json:"index"`
+	Digest    string `json:"digest"`
+	DigestAlg string `json:"digest_alg"`
+}
+
+type ReleaseKeyCertification struct {
+	Public            []byte `json:"public"`
+	CreateData        []byte `json:"create_data"`
+	CreateAttestation []byte `json:"create_attestation"`
+	CreateSignature   []byte `json:"create_signature"`
+}
+
 type AdmitArtifactRequest struct {
-	PackageName       string     `json:"package_name"`
-	PackageVersion    string     `json:"package_version"`
-	ChannelName       string     `json:"channel_name"`
-	PlatformOS        string     `json:"platform_os"`
-	PlatformArch      string     `json:"platform_arch"`
-	Flavor            string     `json:"flavor"`
-	OriginRegistryURL string     `json:"origin_registry_url"`
-	PublicRegistryURL string     `json:"public_registry_url"`
-	OCIRepository     string     `json:"oci_repository"`
-	OCIDigest         string     `json:"oci_digest"`
-	OCIMediaType      string     `json:"oci_media_type"`
-	OCISizeBytes      int64      `json:"oci_size_bytes"`
-	BuilderID         string     `json:"builder_id"`
-	SignerIdentity    string     `json:"signer_identity"`
-	SourceRepository  string     `json:"source_repository"`
-	SourceCommit      string     `json:"source_commit"`
-	SourceRef         string     `json:"source_ref"`
-	PolicyRef         string     `json:"policy_ref"`
-	Evidence          []Evidence `json:"evidence"`
-	SubmittedBy       string     `json:"submitted_by"`
+	PackageName        string             `json:"package_name"`
+	PackageVersion     string             `json:"package_version"`
+	ChannelName        string             `json:"channel_name"`
+	PlatformOS         string             `json:"platform_os"`
+	PlatformArch       string             `json:"platform_arch"`
+	Flavor             string             `json:"flavor"`
+	OriginRegistryURL  string             `json:"origin_registry_url"`
+	PublicRegistryURL  string             `json:"public_registry_url"`
+	OCIRepository      string             `json:"oci_repository"`
+	OCIDigest          string             `json:"oci_digest"`
+	OCIMediaType       string             `json:"oci_media_type"`
+	OCISizeBytes       int64              `json:"oci_size_bytes"`
+	BuilderID          string             `json:"builder_id"`
+	SignerIdentity     string             `json:"signer_identity"`
+	SourceRepository   string             `json:"source_repository"`
+	SourceCommit       string             `json:"source_commit"`
+	SourceRef          string             `json:"source_ref"`
+	PolicyRef          string             `json:"policy_ref"`
+	Evidence           []Evidence         `json:"evidence"`
+	ReleaseAttestation ReleaseAttestation `json:"release_attestation"`
+	SubmittedBy        string             `json:"submitted_by"`
 }
 
 type PromoteTargetRequest struct {

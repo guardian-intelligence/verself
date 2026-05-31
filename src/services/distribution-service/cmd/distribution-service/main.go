@@ -18,6 +18,7 @@ import (
 
 	distributionapi "github.com/verself/distribution-service/internal/api"
 	"github.com/verself/distribution-service/internal/distribution"
+	distributionreleaseattest "github.com/verself/distribution-service/internal/releaseattest"
 	"github.com/verself/distribution-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
 	auth "github.com/verself/service-runtime/auth"
@@ -29,7 +30,7 @@ import (
 const (
 	serviceName      = distribution.ServiceName
 	serviceVersion   = "1.0.0"
-	requestBodyLimit = 1 << 20
+	requestBodyLimit = 4 << 20
 )
 
 func main() {
@@ -133,7 +134,11 @@ func run() error {
 		Logger:          logger,
 		TrustedBuilders: trustedBuilders,
 		TrustedSigners:  trustedSigners,
-		InstallationID:  installationID,
+		ReleaseVerifier: distributionreleaseattest.Verifier{
+			TrustedAKs:  map[string]distributionreleaseattest.TrustedAK{},
+			PCRPolicies: map[string]distributionreleaseattest.PCRPolicy{},
+		},
+		InstallationID: installationID,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("distribution readiness: %w", err)

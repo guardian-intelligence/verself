@@ -14,6 +14,7 @@ use (
 	./src/services/object-storage-service
 	./src/tools/observability/go
 	./src/tools/operator-runtime/go
+	./src/tools/releaseattest
 	./src/services/profile-service
 	./src/services/projects-service
 	./src/services/sandbox-rental-service

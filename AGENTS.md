@@ -132,7 +132,7 @@ Releases are modeled as a five step process:
 
 2. Build - Given `{package, version, source_commit, platform, flavor}`, run package-owned Bazel targets and emit artifacts/evidence. Side-effect free . Output is binary + license, vendor licenses, SBOM. A releasable artifact bundle, but not released. `flavor` is opaque metadata for distribution-service and can be used by software that integrates to capture all quirks around specific ABIs, customer-specific distributables, feature-flag sets, any other customizations.
 
-3. Sign / Publish Bytes. Run a build in our cloud trusted environment using AMD SEV-SNP OVMF (our fleet is 100% EPYC CPU), sign the resulting artifact/provenance/SBOM, and push immutable OCI manifests/blobs/referrers to Zot with an ephemeral key + root signing key held by OpenBao Transit.
+3. Sign / Publish Bytes. Run a build in our trusted builder environment using TPM 2.0 quote evidence, sign the resulting artifact/provenance/SBOM, and push immutable OCI manifests/blobs/referrers to Zot with an ephemeral key + root signing key held by OpenBao Transit.
 
 4. Admit - distribution-service verifies registry truth: manifest exists, digest matches, OCI referrers exist, SLSA provenance matches source/version/target/builder, signer is trusted, package/channel policy allows it. The releasable artifact is now publicly available, but pushes to 3p vendors and clients requires a manual step.
 

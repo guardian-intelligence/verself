@@ -12,6 +12,7 @@ var (
 	ErrDigestMismatch       = errors.New("distribution digest mismatch")
 	ErrUntrustedBuilder     = errors.New("distribution untrusted builder")
 	ErrUntrustedSigner      = errors.New("distribution untrusted signer")
+	ErrAttestationFailed    = errors.New("distribution release attestation failed")
 	ErrSourcePolicyFailure  = errors.New("distribution source policy failure")
 	ErrChannelPolicyFailure = errors.New("distribution channel policy failure")
 	ErrQuarantined          = errors.New("distribution artifact quarantined")

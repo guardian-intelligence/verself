@@ -188,8 +188,39 @@ long ByteLength
 @length(min: 1, max: 4096)
 string EvidenceKind
 
+@length(min: 1, max: 4096)
+string DistributionChallenge
+
+@length(min: 1, max: 4096)
+@pattern("^sha256:[a-f0-9]{64}$")
+string ReleaseInputDigest
+
+@length(min: 1, max: 4096)
+string TPMAttestationPolicyId
+
+@length(min: 1, max: 4096)
+string TPMReleasePublicName
+
+@length(min: 1, max: 32)
+@pattern("^sha256$")
+string TPMDigestAlgorithm
+
+@range(min: 0, max: 23)
+integer TPMPCRIndex
+
+@length(min: 1, max: 1048576)
+blob TPMEvidenceBlob
+
 list DistributionEvidence {
     member: DistributionEvidenceRecord
+}
+
+list TPMQuoteList {
+    member: TPMQuoteRecord
+}
+
+list TPMPCRList {
+    member: TPMPCRRecord
 }
 
 list DistributionTargetList {
@@ -268,6 +299,120 @@ structure DistributionEvidenceRecord {
     @required
     @protoField(number: 5)
     oci_referrer_digest: OCIDigest
+}
+
+structure DistributionReleaseAttestation {
+    @required
+    @protoField(number: 1)
+    distribution_challenge: DistributionChallenge
+
+    @required
+    @protoField(number: 2)
+    release_input_digest: ReleaseInputDigest
+
+    @required
+    @protoField(number: 3)
+    artifact_digest: OCIDigest
+
+    @required
+    @protoField(number: 4)
+    provenance_digest: OCIDigest
+
+    @required
+    @protoField(number: 5)
+    sbom_digest: OCIDigest
+
+    @required
+    @protoField(number: 6)
+    tpm_release_public_name: TPMReleasePublicName
+
+    @required
+    @protoField(number: 7)
+    tpm_release_public_blob_digest: OCIDigest
+
+    @required
+    @protoField(number: 8)
+    policy_id: TPMAttestationPolicyId
+
+    @required
+    @protoField(number: 9)
+    tpm: TPMEvidence
+}
+
+structure TPMEvidence {
+    @required
+    @protoField(number: 1)
+    ak_public: TPMEvidenceBlob
+
+    @required
+    @protoField(number: 2)
+    quotes: TPMQuoteList
+
+    @required
+    @protoField(number: 3)
+    pcrs: TPMPCRList
+
+    @required
+    @protoField(number: 4)
+    event_log: TPMEvidenceBlob
+
+    @required
+    @protoField(number: 5)
+    release_public_name: TPMReleasePublicName
+
+    @required
+    @protoField(number: 6)
+    release_public_blob: TPMEvidenceBlob
+
+    @required
+    @protoField(number: 7)
+    release_public_blob_digest: OCIDigest
+
+    @required
+    @protoField(number: 8)
+    release_key_certification: TPMReleaseKeyCertification
+}
+
+structure TPMQuoteRecord {
+    @required
+    @protoField(number: 1)
+    quote: TPMEvidenceBlob
+
+    @required
+    @protoField(number: 2)
+    signature: TPMEvidenceBlob
+}
+
+structure TPMPCRRecord {
+    @required
+    @protoField(number: 1)
+    index: TPMPCRIndex
+
+    @required
+    @protoField(number: 2)
+    digest: OCIDigest
+
+    @required
+    @protoField(number: 3)
+    digest_alg: TPMDigestAlgorithm
+}
+
+structure TPMReleaseKeyCertification {
+    @required
+    @protoField(number: 1)
+    public: TPMEvidenceBlob
+
+    @required
+    @protoField(number: 2)
+    create_data: TPMEvidenceBlob
+
+    @required
+    @protoField(number: 3)
+    create_attestation: TPMEvidenceBlob
+
+    @required
+    @protoField(number: 4)
+    create_signature: TPMEvidenceBlob
 }
 
 structure DistributionArtifactRecord {
@@ -761,6 +906,10 @@ structure AdmitDistributionArtifactBody {
 
     @required
     @protoField(number: 20)
+    release_attestation: DistributionReleaseAttestation
+
+    @required
+    @protoField(number: 21)
     submitted_by: ActorId
 }
 
@@ -896,6 +1045,11 @@ structure UntrustedSignerError {}
 
 @error("client")
 @httpError(403)
+@problem(type: "urn:verself:problem:distribution:release_attestation_failed", code: "distribution.release_attestation_failed")
+structure ReleaseAttestationFailedError {}
+
+@error("client")
+@httpError(403)
 @problem(type: "urn:verself:problem:distribution:source_policy_failure", code: "distribution.source_policy_failure")
 structure SourcePolicyFailureError {}
 
@@ -990,7 +1144,7 @@ operation ListDistributionChannelTargets {
 @authz(permission: DistributionArtifactWritePermission, organization: {source: "request_id"})
 @audit(event: DistributionArtifactAdmitAuditEvent, resource: DistributionArtifact, action: "create")
 @rateLimit(bucket: "distribution_mutation")
-@requestBudget(maxBytes: 65536)
+@requestBudget(maxBytes: 4194304)
 @sdk(module: "distributionInternal.artifacts", method: "admit", paginated: false, retryable: true)
 operation AdmitDistributionArtifact {
     input: AdmitDistributionArtifactInput
@@ -1004,6 +1158,7 @@ operation AdmitDistributionArtifact {
         DistributionDigestMismatchError,
         UntrustedBuilderError,
         UntrustedSignerError,
+        ReleaseAttestationFailedError,
         SourcePolicyFailureError,
         QuarantinedArtifactError,
         RateLimitedError,

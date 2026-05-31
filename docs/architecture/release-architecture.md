@@ -114,10 +114,10 @@ distribution-service request handling code.
 
 Responsibilities:
 
-- launch an AMD SEV-SNP QEMU/OVMF guest;
+- launch a trusted builder VM on TPM 2.0-capable production hardware;
 - pass the release subject into the guest;
 - receive artifact/evidence outputs from the guest;
-- verify guest attestation and builder image identity;
+- verify TPM quote, AK enrollment, PCR policy, and builder image identity;
 - authorize a short-lived signing delegation;
 - push immutable OCI content to Zot.
 
@@ -132,7 +132,7 @@ Responsibilities:
 
 - hold release root signing keys;
 - sign short canonical delegations over the guest ephemeral public key, release
-  subject, artifact digest, and accepted SEV-SNP attestation hash;
+  subject, artifact digest, and accepted TPM quote transcript;
 - verify signatures for admission tooling and operator diagnostics.
 
 OpenBao Transit should never receive artifact bytes. Sign digests or short
@@ -336,7 +336,7 @@ application/spdx+json
 application/vnd.verself.release.licenses+json
 application/vnd.verself.release.tests+xml
 application/vnd.dev.cosign.artifact.sig.v1+json or notation signature
-application/vnd.verself.release.sev-snp-attestation
+application/vnd.verself.release.tpm2-attestation
 application/vnd.verself.release.signing-delegation
 ```
 
@@ -554,16 +554,16 @@ Package release tooling:
 
 Trusted release builder host:
 
-- trusted to launch the SEV-SNP guest and forward outputs;
-- not trusted to read guest memory or mutate guest build inputs without
-  detection by attestation policy;
+- trusted to launch the builder VM and forward outputs;
+- not trusted to mutate builder inputs without detection by TPM quote and PCR
+  policy;
 - still part of the trusted computing base for availability and launch
   correctness.
 
 Trusted release builder guest:
 
-- trusted only after attestation verifies expected OVMF, kernel, initrd,
-  builder image, host data, report data, and firmware TCB policy;
+- trusted only after attestation verifies expected TPM AK identity, PCR
+  selection, event log, builder image, and release input digest binding;
 - holds the ephemeral artifact signing key for one release run;
 - never receives OpenBao root signing material.
 
@@ -586,40 +586,42 @@ distribution-service:
 - trusted to publish channel pointers later;
 - not trusted to produce build provenance.
 
-### SEV-SNP Builder Policy
+### TPM Builder Policy
 
 The release builder must verify before signing:
 
-- host CPU supports required AMD SEV-SNP mode;
-- firmware and microcode meet the current security baseline;
-- QEMU launches a stateless OVMF image whose measured bytes match policy;
-- guest kernel, initrd, and command line match policy;
-- builder root filesystem image digest matches policy;
-- SEV-SNP report chains to AMD VCEK/ASK/ARK roots;
-- report `REPORT_DATA` binds the release subject, artifact digest, ephemeral
-  public key, and builder image digest;
-- report `HOST_DATA` binds host-provided policy input where supported;
-- TCB values satisfy current allow policy.
-
-AMD SEV-SNP reduces host tamper and memory disclosure risk; it does not remove
-the need for patched firmware, launch measurement checks, and a narrow signing
-interface.
+- TPM AK identity is enrolled for the builder pool;
+- TPM quote signature verifies against the enrolled AK;
+- quote `extraData` equals the release input digest;
+- PCR values match an approved builder measurement policy;
+- event log replay matches quoted PCRs when an event log is supplied;
+- TPM certification proves the ephemeral release public key was created under
+  the quoted TPM;
+- builder root filesystem image digest matches policy.
 
 ### Signing Policy
 
 Use a two-level model:
 
 1. The guest creates an ephemeral key for the release run.
-2. A host-side signer verifies SEV-SNP attestation and asks OpenBao Transit to
+2. distribution-service verifies TPM attestation and asks OpenBao Transit to
    sign a delegation over:
 
 ```text
-release subject
-subject manifest digest
-ephemeral public key
-builder measurement
-SEV-SNP report hash
-expiration timestamp
+release_input_digest =
+  H(domain_separator,
+    distribution_challenge,
+    package,
+    version,
+    source_commit,
+    platform,
+    flavor,
+    oci_manifest_digest,
+    artifact_digest,
+    provenance_digest,
+    sbom_digest,
+    tpm_release_public_name,
+    tpm_release_public_blob_digest)
 ```
 
 The ephemeral key signs artifact and evidence referrers. The OpenBao root
@@ -651,7 +653,7 @@ distribution-service verifies:
 - package, version, channel, platform, and flavor match the request;
 - SBOM and license evidence exist;
 - signer delegation is trusted;
-- SEV-SNP attestation policy passed;
+- TPM attestation policy passed;
 - channel/version policy is valid.
 
 Nightly policy may be weaker than RC/stable, but the difference must be visible
@@ -794,10 +796,10 @@ not the full artifact payload.
    derivation for nightly, RC, and stable.
 2. Add `mksk-release publish` against Zot using OCI subject manifests and
    referrers.
-3. Add OpenBao release Transit convergence: mount, key, policy, role, and
+3. Add TPM release input digest and distribution-service attestation
+   verification.
+4. Add OpenBao release Transit convergence: mount, key, policy, role, and
    signer client.
-4. Add the release-builder host and guest commands with QEMU/OVMF SEV-SNP
-   attestation.
 5. Harden distribution-service admission to read Zot and verify descriptor
    truth.
 6. Persist the OCI descriptor graph for admitted artifacts.
@@ -817,11 +819,9 @@ not the full artifact payload.
   <https://openbao.org/docs/secrets/transit/>
 - OpenBao Transit API:
   <https://openbao.org/api-docs/secret/transit/>
-- QEMU AMD SEV and SEV-SNP launch documentation:
-  <https://www.qemu.org/docs/master/system/i386/amd-memory-encryption.html>
-- Linux SEV guest API:
-  <https://docs.kernel.org/virt/coco/sev-guest.html>
-- AMD SEV developer documentation:
-  <https://www.amd.com/en/developer/sev.html>
+- Trusted Computing Group TPM 2.0 Library:
+  <https://trustedcomputinggroup.org/resource/tpm-library-specification/>
+- Google go-attestation:
+  <https://github.com/google/go-attestation>
 - Zot OCI artifact workflow:
   <https://zotregistry.dev/v2.1.0/articles/workflow/>

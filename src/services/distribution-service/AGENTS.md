@@ -104,6 +104,8 @@ from any channel:
 - SLSA provenance uses predicate type `https://slsa.dev/provenance/v1`.
 - The signer identity and `runDetails.builder.id` pair is allowed for the
   package and channel.
+- TPM quote `extraData` matches the release input digest and the quoted PCRs
+  match the approved builder measurement policy.
 - The source repository, source commit, package name, version, flavor, and
   channel are authorized by package policy.
 - The artifact was produced by an authorized builder, not by
