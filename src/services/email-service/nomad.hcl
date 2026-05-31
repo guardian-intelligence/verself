@@ -68,6 +68,14 @@ EOT
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "email-service-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://email-service"
         destination = "local"
@@ -135,6 +143,15 @@ EOT
           interval = "1s"
           timeout = "3s"
         }
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/provider.env"
+        data = <<-EOT
+EMAIL_SERVICE_RESEND_API_KEY={{ with secret "kv-runtime/data/secret/org/email-service.resend.api_key" }}{{ .Data.data.value }}{{ end }}
+EMAIL_SERVICE_STALWART_ADMIN_PASSWORD={{ with secret "kv-runtime/data/secret/org/email-service.stalwart.admin_password" }}{{ .Data.data.value }}{{ end }}
+EOT
+        env = true
       }
       template {
         change_mode = "restart"

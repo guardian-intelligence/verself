@@ -20,7 +20,7 @@ type PostgresServiceDatabase struct {
 type PostgresReplicationRole struct {
 	Name            string `yaml:"name"`
 	ConnectionLimit int    `yaml:"connection_limit"`
-	PasswordFile    string `yaml:"password_file"`
+	OpenBaoSecret   string `yaml:"openbao_secret"`
 }
 
 type PostgresLogicalPublication struct {
@@ -45,8 +45,12 @@ type RuntimeSecretsFile struct {
 
 type RuntimeSecretSeed struct {
 	Name       string `yaml:"name"`
+	JobID      string `yaml:"job_id"`
 	SiteSecret string `yaml:"site_secret"`
 	File       string `yaml:"file"`
+	Generated  struct {
+		Bytes int `yaml:"bytes"`
+	} `yaml:"generated"`
 }
 
 type CredstoreFile struct {
@@ -113,7 +117,9 @@ func (v *Validator) validatePostgres(rel string, doc PostgresFile) {
 		if role.ConnectionLimit <= 0 {
 			v.add(rel, prefix+".connection_limit must be positive")
 		}
-		requirePathPrefix(v, rel, prefix+".password_file", role.PasswordFile, "/etc/credstore/")
+		if !secretRE.MatchString(strings.TrimSpace(role.OpenBaoSecret)) {
+			v.add(rel, fmt.Sprintf("%s.openbao_secret must match %s", prefix, secretRE.String()))
+		}
 		v.claim(rel, v.seen.replicationRoles, "PostgreSQL replication role", role.Name)
 	}
 	for i, mapping := range doc.PeerMappings {
@@ -169,14 +175,17 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 		if !secretRE.MatchString(strings.TrimSpace(seed.Name)) {
 			v.add(rel, fmt.Sprintf("%s.name must match %s", prefix, secretRE.String()))
 		}
-		if !exactlyOne(seed.SiteSecret, seed.File) {
-			v.add(rel, prefix+" must declare exactly one source: site_secret or file")
+		if !exactlyOneRuntimeSecretSource(seed.SiteSecret, seed.File, seed.Generated.Bytes) {
+			v.add(rel, prefix+" must declare exactly one source: site_secret, file, or generated")
 		}
 		if seed.SiteSecret != "" {
 			requireName(v, rel, prefix+".site_secret", seed.SiteSecret)
 		}
 		if seed.File != "" {
 			requirePathPrefix(v, rel, prefix+".file", seed.File, "/")
+		}
+		if seed.Generated.Bytes != 0 && (seed.Generated.Bytes < 16 || seed.Generated.Bytes > 96) {
+			v.add(rel, prefix+".generated.bytes must be between 16 and 96")
 		}
 		v.claim(rel, v.seen.runtimeSecrets, "OpenBao runtime secret", seed.Name)
 	}

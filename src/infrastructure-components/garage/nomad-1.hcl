@@ -30,8 +30,49 @@ job "garage-1" {
       user = "root"
 
       config {
-        command = "/bin/sh"
-        args = ["-ec", "getent group garage >/dev/null || groupadd --system garage\nid -u garage >/dev/null 2>&1 || useradd --system --gid garage --home-dir /var/lib/garage-1 --shell /usr/sbin/nologin --no-create-home garage\ninstall -d -o garage -g garage -m 0750 /var/lib/garage-1 /var/lib/garage-1/data /var/lib/garage-1/meta /var/lib/garage-1/snapshots\nexec /usr/sbin/runuser -u garage --preserve-environment -- \"$${VERSELF_GARAGE_RUNTIME}/bin/garage\" -c /etc/garage/garage-1.toml server\n"]
+        command = "/bin/bash"
+        args = ["-euo", "pipefail", "-c", <<EOH
+getent group garage >/dev/null || groupadd --system garage
+id -u garage >/dev/null 2>&1 || useradd --system --gid garage --home-dir /var/lib/garage-1 --shell /usr/sbin/nologin --no-create-home garage
+install -d -o root -g garage -m 0750 /etc/garage
+install -d -o garage -g garage -m 0750 /var/lib/garage-1 /var/lib/garage-1/data /var/lib/garage-1/meta /var/lib/garage-1/snapshots
+[ -s /etc/garage/rpc-secret ] || openssl rand -hex 32 >/etc/garage/rpc-secret
+[ -s /etc/garage/admin-token ] || openssl rand -base64 48 | tr -d '\n' >/etc/garage/admin-token
+[ -s /etc/garage/metrics-token ] || openssl rand -base64 48 | tr -d '\n' >/etc/garage/metrics-token
+chown root:garage /etc/garage/rpc-secret /etc/garage/admin-token /etc/garage/metrics-token
+chmod 0640 /etc/garage/rpc-secret /etc/garage/admin-token /etc/garage/metrics-token
+cat >/etc/garage/garage-1.toml <<GARAGECONF
+replication_factor = 3
+consistency_mode = "consistent"
+metadata_dir = "/var/lib/garage-1/meta"
+data_dir = "/var/lib/garage-1/data"
+metadata_snapshots_dir = "/var/lib/garage-1/snapshots"
+metadata_fsync = true
+data_fsync = true
+db_engine = "lmdb"
+block_size = "1M"
+block_ram_buffer_max = "64MiB"
+lmdb_map_size = "10G"
+compression_level = 1
+rpc_secret = "$(cat /etc/garage/rpc-secret)"
+rpc_bind_addr = "127.0.0.1:3911"
+rpc_public_addr = "127.0.0.1:3911"
+allow_world_readable_secrets = false
+[s3_api]
+api_bind_addr = "127.0.0.1:3910"
+s3_region = "garage"
+[admin]
+api_bind_addr = "127.0.0.1:3913"
+metrics_token = "$(cat /etc/garage/metrics-token)"
+metrics_require_token = true
+admin_token = "$(cat /etc/garage/admin-token)"
+GARAGECONF
+chown root:garage /etc/garage/garage-1.toml
+chmod 0640 /etc/garage/garage-1.toml
+pkill -u garage -f 'garage-1.toml server' || true
+exec /usr/sbin/runuser -u garage --preserve-environment -- "$${VERSELF_GARAGE_RUNTIME}/bin/garage" -c /etc/garage/garage-1.toml server
+EOH
+        ]
       }
 
       env {

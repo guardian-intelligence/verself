@@ -168,37 +168,11 @@ func run() error {
 		SandboxService:         workloadauth.ServiceSandboxRental,
 		SourceService:          workloadauth.ServiceSourceCodeHosting,
 		RuntimeSecretReadPolicies: []secretsapi.RuntimeSecretPolicy{
-			{Service: workloadauth.ServiceBilling, SecretNames: []string{
-				secretsclient.BillingStripeSecretKeyName,
-				secretsclient.BillingStripeWebhookSecretName,
-			}},
 			{Service: workloadauth.ServiceSandboxRental, SecretNamePrefixes: []string{
 				secretsclient.SandboxRunnerBootstrapSecretPrefix,
 			}},
-			{Service: workloadauth.ServiceGitHubIntegration, SecretNames: []string{
-				secretsclient.GitHubIntegrationPrivateKeyName,
-				secretsclient.GitHubIntegrationWebhookSecretName,
-				secretsclient.GitHubIntegrationOAuthClientSecretName,
-			}, SecretNamePrefixes: []string{
+			{Service: workloadauth.ServiceGitHubIntegration, SecretNamePrefixes: []string{
 				secretsclient.GitHubIntegrationUserTokenSecretPrefix,
-			}},
-			{Service: workloadauth.ServiceIAM, SecretNames: []string{
-				secretsclient.IAMEmailIdentityHMACKeyName,
-				secretsclient.IAMSpiceDBPresharedKeyName,
-				secretsclient.IAMZitadelAdminTokenName,
-			}},
-			{Service: workloadauth.ServiceEmail, SecretNames: []string{
-				secretsclient.EmailResendAPIKeyName,
-				secretsclient.EmailStalwartAdminPasswordName,
-			}},
-			{Service: workloadauth.ServiceNotifications, SecretNames: []string{
-				secretsclient.NotificationsResendAPIKeyName,
-			}},
-			{Service: workloadauth.ServiceObjectStorageAdmin, SecretNames: []string{
-				secretsclient.ObjectStorageGarageAdminTokenName,
-			}},
-			{Service: workloadauth.ServiceSourceCodeHosting, SecretNames: []string{
-				secretsclient.SourceForgejoAutomationTokenName,
 			}},
 		},
 		RuntimeSecretWritePolicies: []secretsapi.RuntimeSecretPolicy{

@@ -369,6 +369,19 @@ func exactlyOne(values ...string) bool {
 	return count == 1
 }
 
+func exactlyOneRuntimeSecretSource(siteSecret, file string, generatedBytes int) bool {
+	count := 0
+	for _, value := range []string{siteSecret, file} {
+		if strings.TrimSpace(value) != "" {
+			count++
+		}
+	}
+	if generatedBytes != 0 {
+		count++
+	}
+	return count == 1
+}
+
 func sortedJSON(v any) string {
 	body, err := json.Marshal(v)
 	if err != nil {

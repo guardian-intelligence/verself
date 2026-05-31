@@ -159,6 +159,14 @@ EOT
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "object-storage-service-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://object-storage-service"
         destination = "local"
@@ -208,6 +216,14 @@ EOT
           interval = "1s"
           timeout = "3s"
         }
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/provider.env"
+        data = <<-EOT
+OBJECT_STORAGE_GARAGE_ADMIN_TOKEN={{ with secret "kv-runtime/data/secret/org/object-storage-service.garage.admin_token" }}{{ .Data.data.value }}{{ end }}
+EOT
+        env = true
       }
       template {
         change_mode = "restart"

@@ -16,6 +16,8 @@ import (
 	"github.com/verself/deployment-tools/internal/deploymodel"
 	"github.com/verself/deployment-tools/internal/identity"
 	"github.com/verself/deployment-tools/internal/nomadclient"
+	"github.com/verself/deployment-tools/internal/openbaoruntime"
+	"github.com/verself/deployment-tools/internal/postgresruntime"
 	"github.com/verself/deployment-tools/internal/runtime"
 	"github.com/verself/deployment-tools/internal/siteconfig"
 	"github.com/verself/deployment-tools/internal/siteinject"
@@ -55,6 +57,8 @@ type deployPlan struct {
 	PostDeployChecks string
 	Artifacts        []deploymodel.Artifact
 	Jobs             []deploymodel.NomadJob
+	OpenBao          openbaoruntime.Plan
+	Postgres         postgresruntime.Plan
 }
 
 type siteConfig struct {
@@ -141,6 +145,14 @@ func buildDeployPlan(ctx context.Context, rt *runtime.Runtime, repoRoot, site, s
 	if err != nil {
 		return nil, err
 	}
+	openBaoPlan, err := openbaoruntime.LoadPlan(repoRoot, site, openBaoComponents(ordered))
+	if err != nil {
+		return nil, err
+	}
+	postgresPlan, err := postgresruntime.LoadPlan(repoRoot)
+	if err != nil {
+		return nil, err
+	}
 	if err := runNomadComponentTests(ctx, repoRoot, ordered); err != nil {
 		return nil, err
 	}
@@ -169,7 +181,25 @@ func buildDeployPlan(ctx context.Context, rt *runtime.Runtime, repoRoot, site, s
 		SiteModel: siteModel,
 		Artifacts: artifacts,
 		Jobs:      jobs,
+		OpenBao:   openBaoPlan,
+		Postgres:  postgresPlan,
 	}, nil
+}
+
+func openBaoComponents(components []nomadComponentDescriptor) []openbaoruntime.Component {
+	out := make([]openbaoruntime.Component, 0, len(components))
+	for _, component := range components {
+		jobSpec := component.JobSpec
+		if jobSpec == "" {
+			jobSpec = component.JobSpecPath
+		}
+		out = append(out, openbaoruntime.Component{
+			Component: component.Component,
+			JobID:     component.JobID,
+			JobSpec:   jobSpec,
+		})
+	}
+	return out
 }
 
 func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
@@ -187,6 +217,12 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	}
 	if raw.ArtifactDelivery.Bucket == "" || raw.ArtifactDelivery.GetterSourcePrefix == "" || raw.ArtifactDelivery.KeyPrefix == "" {
 		return siteConfig{}, fmt.Errorf("%s: artifact_delivery requires bucket, getter_source_prefix, and key_prefix", path)
+	}
+	if raw.ArtifactDelivery.GetterCredentials.EnvironmentFile == "" || raw.ArtifactDelivery.GetterCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.GetterCredentials.SecretAccessKeyEnv == "" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.getter_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
+	}
+	if raw.ArtifactDelivery.PublisherCredentials.EnvironmentFile == "" || raw.ArtifactDelivery.PublisherCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.PublisherCredentials.SecretAccessKeyEnv == "" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.publisher_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
 	}
 	if raw.ArtifactDelivery.ChecksumAlgorithm != "sha256" {
 		return siteConfig{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", path)

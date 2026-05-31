@@ -198,8 +198,8 @@ state.
 
 ## Secrets
 
-The service reads GitHub App private key, webhook secret, and OAuth client
-secret from secrets-service runtime secrets. GitHub user tokens are written to
+Nomad injects the GitHub App private key, webhook secret, and OAuth client
+secret from OpenBao runtime secrets. GitHub user tokens are written to
 secrets-service under the service-owned user-token prefix. PostgreSQL stores
 only credential references and metadata.
 

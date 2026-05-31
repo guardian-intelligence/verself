@@ -70,6 +70,14 @@ EOT
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "billing-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://billing-service"
         destination = "local"
@@ -136,6 +144,15 @@ EOT
           interval = "1s"
           timeout = "3s"
         }
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/provider.env"
+        data = <<-EOT
+STRIPE_SECRET_KEY={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.secret_key" }}{{ .Data.data.value }}{{ end }}
+STRIPE_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.webhook_secret" }}{{ .Data.data.value }}{{ end }}
+EOT
+        env = true
       }
       template {
         change_mode = "restart"

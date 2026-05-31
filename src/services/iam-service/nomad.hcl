@@ -75,6 +75,14 @@ EOT
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "iam-service-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://iam-service"
         destination = "local"
@@ -146,6 +154,16 @@ EOT
           interval = "1s"
           timeout = "3s"
         }
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/provider.env"
+        data = <<-EOT
+IAM_EMAIL_IDENTITY_HMAC_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.email_identity.hmac_key" }}{{ .Data.data.value }}{{ end }}
+IAM_SPICEDB_GRPC_PRESHARED_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" }}{{ .Data.data.value }}{{ end }}
+IAM_ZITADEL_ADMIN_TOKEN={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
+EOT
+        env = true
       }
       template {
         change_mode = "restart"

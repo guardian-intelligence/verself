@@ -53,6 +53,14 @@ job "github-integration" {
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "github-integration-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://github-integration-service"
         destination = "local"
@@ -96,6 +104,24 @@ job "github-integration" {
       resources {
         cpu = 500
         memory = 512
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/github-app-private-key.pem"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/github-integration-service.github.private_key" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/provider.env"
+        data = <<-EOT
+GITHUB_APP_PRIVATE_KEY_FILE=secrets/github-app-private-key.pem
+GITHUB_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.webhook_secret" }}{{ .Data.data.value }}{{ end }}
+GITHUB_OAUTH_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.oauth_client_secret" }}{{ .Data.data.value }}{{ end }}
+EOT
+        env = true
       }
       restart {
         attempts = 3

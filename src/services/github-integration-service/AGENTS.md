@@ -11,7 +11,7 @@ sandbox execution policy.
 - Calls sandbox-rental-service for provider-neutral sandbox primitives: execution submission, lease and attempt identity, durable mount plans, golden VM activation, GoldenSnapshotBarrier evaluation, checkpoint, publishing, and promotion.
 - Treats GitHub as provider-truth authority only. The control plane remains the snapshot authority because only Verself knows lease identity, durable generation identity, trust class, Firecracker compatibility, hook profile, and promotion policy.
 - Does not call vm-orchestrator directly. All VM and ZFS work goes through sandbox-rental-service, which owns the product policy boundary above the privileged host daemon.
-- Does not store or verify non-retrievable GitHub credential material locally. GitHub App private keys, webhook secrets, client secrets, runner bootstrap tokens, and rotated provider secrets belong behind secrets-service or a service-owned opaque credential reference.
+- Does not store or verify non-retrievable GitHub credential material locally. GitHub App private keys, webhook secrets, client secrets, and rotated provider secrets are injected from OpenBao by Nomad; customer/user token material belongs behind secrets-service or a service-owned opaque credential reference.
 
 ## Security Model
 

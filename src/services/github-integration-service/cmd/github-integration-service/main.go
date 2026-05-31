@@ -78,6 +78,15 @@ func run() error {
 	oauthAuthorizeURL := cfg.String("GITHUB_OAUTH_AUTHORIZE_URL", "https://github.com/login/oauth/authorize")
 	oauthTokenURL := cfg.String("GITHUB_OAUTH_TOKEN_URL", "https://github.com/login/oauth/access_token")
 	oauthRedirectURL := cfg.String("GITHUB_OAUTH_REDIRECT_URL", "")
+	privateKey := strings.TrimSpace(cfg.String("GITHUB_APP_PRIVATE_KEY", ""))
+	if privateKey == "" {
+		privateKeyPath := cfg.String("GITHUB_APP_PRIVATE_KEY_FILE", "")
+		if privateKeyPath != "" {
+			privateKey = cfg.RequireFile(privateKeyPath)
+		}
+	}
+	webhookSecret := strings.TrimSpace(cfg.String("GITHUB_WEBHOOK_SECRET", ""))
+	oauthClientSecret := strings.TrimSpace(cfg.String("GITHUB_OAUTH_CLIENT_SECRET", ""))
 	runnerGroupID := cfg.Int64("GITHUB_RUNNER_GROUP_ID", 1)
 	runnerClassPrefix := cfg.String("GITHUB_RUNNER_CLASS_PREFIX", "verself-")
 	repositoryRunnerClassActiveLimit := int32FromInt(cfg.Int("GITHUB_REPOSITORY_RUNNER_CLASS_ACTIVE_LIMIT", 15), "GITHUB_REPOSITORY_RUNNER_CLASS_ACTIVE_LIMIT")
@@ -140,19 +149,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("github integration secrets client: %w", err)
 	}
-	providerSecrets, err := readRuntimeSecrets(ctx, secretsClient,
-		secretsclient.GitHubIntegrationPrivateKeyName,
-		secretsclient.GitHubIntegrationWebhookSecretName,
-	)
-	if err != nil {
-		return fmt.Errorf("github integration provider secrets: %w", err)
-	}
-	privateKey := strings.TrimSpace(providerSecrets[secretsclient.GitHubIntegrationPrivateKeyName])
-	webhookSecret := strings.TrimSpace(providerSecrets[secretsclient.GitHubIntegrationWebhookSecretName])
-	oauthClientSecret, err := readOptionalRuntimeSecret(ctx, secretsClient, secretsclient.GitHubIntegrationOAuthClientSecretName)
-	if err != nil {
-		logger.WarnContext(ctx, "github integration oauth client secret unavailable", "error", err)
-	}
 	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
 	if err != nil {
 		return fmt.Errorf("github integration iam mtls: %w", err)
@@ -197,7 +193,7 @@ func run() error {
 		WebhookSecret:                    webhookSecret,
 		APIBaseURL:                       apiBaseURL,
 		OAuthClientID:                    oauthClientID,
-		OAuthClientSecret:                strings.TrimSpace(oauthClientSecret),
+		OAuthClientSecret:                oauthClientSecret,
 		OAuthAuthorizeURL:                oauthAuthorizeURL,
 		OAuthTokenURL:                    oauthTokenURL,
 		OAuthRedirectURL:                 oauthRedirectURL,
@@ -262,34 +258,6 @@ func run() error {
 
 	server := httpserver.New(listenAddr, otelhttp.NewHandler(mux, serviceName))
 	return httpserver.Run(ctx, logger, server)
-}
-
-func readRuntimeSecrets(ctx context.Context, client *secretsclient.Client, secretNames ...string) (map[string]string, error) {
-	if client == nil {
-		return nil, fmt.Errorf("runtime secrets client is required")
-	}
-	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	values := make(map[string]string, len(secretNames))
-	for _, secretName := range secretNames {
-		resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: secretsclient.SecretName(secretName)})
-		if err != nil {
-			return nil, fmt.Errorf("read runtime secret %s: %w", secretName, err)
-		}
-		if resp.Result == nil {
-			return nil, fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
-		}
-		values[secretName] = string(resp.Result.Value)
-	}
-	return values, nil
-}
-
-func readOptionalRuntimeSecret(ctx context.Context, client *secretsclient.Client, secretName string) (string, error) {
-	values, err := readRuntimeSecrets(ctx, client, secretName)
-	if err != nil {
-		return "", err
-	}
-	return values[secretName], nil
 }
 
 func int32FromInt(value int, field string) int32 {

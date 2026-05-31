@@ -7,10 +7,12 @@ pkg_tar(
     name = "runtime_artifact",
     out = "garage-runtime.tar",
     files = {
+        "//src/infrastructure-components/garage/cmd/garage-artifact-origin:garage-artifact-origin": "bin/garage-artifact-origin",
         "@garage_tools//tools/garage": "bin/garage",
     },
     modes = {
         "bin/garage": "0755",
+        "bin/garage-artifact-origin": "0755",
     },
     visibility = ["//visibility:public"],
 )

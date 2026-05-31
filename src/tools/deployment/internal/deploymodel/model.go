@@ -13,6 +13,7 @@ type ArtifactDelivery struct {
 	Bucket               string            `json:"bucket"`
 	GetterSourcePrefix   string            `json:"getter_source_prefix"`
 	GetterOptions        map[string]string `json:"getter_options"`
+	GetterCredentials    Credentials       `json:"getter_credentials"`
 	PublisherCredentials Credentials       `json:"publisher_credentials"`
 	Origin               Origin            `json:"origin"`
 }

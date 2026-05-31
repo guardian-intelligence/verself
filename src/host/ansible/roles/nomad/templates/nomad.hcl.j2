@@ -100,6 +100,18 @@ plugin "raw_exec" {
 # them in. raw_exec above is the single driver this node accepts;
 # `nomad node status -self` will reflect that.
 
+vault {
+  enabled               = true
+  address               = "https://127.0.0.1:8200"
+  ca_file               = "/etc/openbao/tls/cert.pem"
+  jwt_auth_backend_path = "jwt-nomad"
+
+  default_identity {
+    aud = ["vault.io"]
+    ttl = "1h"
+  }
+}
+
 telemetry {
   collection_interval        = "10s"
   disable_hostname           = true

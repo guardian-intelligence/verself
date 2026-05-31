@@ -68,6 +68,14 @@ EOT
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "source-code-hosting-service-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://source-code-hosting-service"
         destination = "local"
@@ -132,6 +140,14 @@ EOT
           interval = "1s"
           timeout = "3s"
         }
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/provider.env"
+        data = <<-EOT
+SOURCE_FORGEJO_AUTOMATION_TOKEN={{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" }}{{ .Data.data.value }}{{ end }}
+EOT
+        env = true
       }
       template {
         change_mode = "restart"

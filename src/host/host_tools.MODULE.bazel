@@ -1,0 +1,15 @@
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "host_tool_nomad",
+    downloaded_file_path = "nomad_1.11.3_linux_amd64.zip",
+    sha256 = "19dac5642a2ba5305e6ff8efee06a708d760ebe4d1cd7936bc3dc526f477dc12",
+    url = "https://releases.hashicorp.com/nomad/1.11.3/nomad_1.11.3_linux_amd64.zip",
+)
+
+http_file(
+    name = "host_tool_spire",
+    downloaded_file_path = "spire-1.15.0-linux-amd64-musl.tar.gz",
+    sha256 = "98345cd14e1e0fac1698669209127f0f870d46f6a1add81fed46a042059994ce",
+    url = "https://github.com/spiffe/spire/releases/download/v1.15.0/spire-1.15.0-linux-amd64-musl.tar.gz",
+)

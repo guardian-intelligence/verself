@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "postgresruntime",
+    srcs = [
+        "apply.go",
+        "plan.go",
+    ],
+    importpath = "github.com/verself/deployment-tools/internal/postgresruntime",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+    deps = [
+        "//src/tools/deployment/internal/deploycontract",
+        "//src/tools/deployment/internal/sshtun",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "postgresruntime_test",
+    srcs = ["plan_test.go"],
+    embed = [":postgresruntime"],
+)

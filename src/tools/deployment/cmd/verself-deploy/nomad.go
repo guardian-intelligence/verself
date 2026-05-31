@@ -174,6 +174,31 @@ func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) 
 		if err := applyNomadWave(ctx, rt, client, plan, phase, phaseIntents, artifacts); err != nil {
 			return applyResults(intents), err
 		}
+		if phase == deployPhasePreArtifact {
+			if err := applyPostgresBase(ctx, rt, plan); err != nil {
+				return applyResults(intents), err
+			}
+			if err := applyGarageBootstrap(ctx, rt, plan); err != nil {
+				return applyResults(intents), err
+			}
+			_ = forward.Close()
+			forward, err = openNomadForward(ctx, rt, plan.SiteCfg.NomadAddr)
+			if err != nil {
+				return applyResults(intents), err
+			}
+			client, err = nomadclient.New("http://" + forward.ListenAddr)
+			if err != nil {
+				return applyResults(intents), err
+			}
+		}
+		if phase == deployPhasePlatform {
+			if err := applyOpenBaoRuntime(ctx, rt, plan); err != nil {
+				return applyResults(intents), err
+			}
+			if err := applyPostgresReplicationRoles(ctx, rt, plan); err != nil {
+				return applyResults(intents), err
+			}
+		}
 	}
 	results := applyResults(intents)
 	return results, nil
@@ -218,7 +243,23 @@ func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 		}
 	}
 	for i, intent := range intents {
+		if wave == deployPhaseProduct && intent.Job.Component == "electric" {
+			if err := applyPostgresPublications(ctx, rt, plan, true); err != nil {
+				recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents[:i+1], artifacts, started, err)
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return err
+			}
+		}
 		if !intent.Changed {
+			if wave == deployPhaseProduct && intent.Job.Component != "electric" {
+				if err := applyPostgresPublications(ctx, rt, plan, false); err != nil {
+					recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents[:i+1], artifacts, started, err)
+					span.RecordError(err)
+					span.SetStatus(codes.Error, err.Error())
+					return err
+				}
+			}
 			continue
 		}
 		if err := submitNomadJob(ctx, rt, client, plan, intent); err != nil {
@@ -226,6 +267,14 @@ func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("%s: %w", intent.Job.JobID, err)
+		}
+		if wave == deployPhaseProduct && intent.Job.Component != "electric" {
+			if err := applyPostgresPublications(ctx, rt, plan, false); err != nil {
+				recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents[:i+1], artifacts, started, err)
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return err
+			}
 		}
 	}
 	recordDeployWaveSucceeded(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started)

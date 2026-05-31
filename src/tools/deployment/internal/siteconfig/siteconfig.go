@@ -189,6 +189,7 @@ func (m Model) TokenMap() map[string]string {
 		"__VERSELF_SOURCE_PUBLIC_BASE_URL__":         "https://" + m.domain("source_code_hosting_service"),
 		"__VERSELF_GITHUB_OAUTH_REDIRECT_URL__":      "https://" + m.domain("github_integration_service") + "/api/v1/github/user-authorizations/complete",
 		"__VERSELF_ANALYTICS_GITHUB_OIDC_AUDIENCE__": "https://" + m.domain("analytics_service"),
+		"__VERSELF_NOMAD_ARTIFACT_ORIGIN_HOSTNAME__": "artifacts.internal." + m.ProductDomain,
 		"__VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS__":      "spiffe://" + m.SpiffeTrustDomain + "/svc/temporal-server",
 	}
 	if m.GitHubAppID != "" && m.GitHubAppID != "0" {

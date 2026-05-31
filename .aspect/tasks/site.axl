@@ -6,6 +6,7 @@ load(
     "HOST_CONFIGURATION_DIR",
     "SOPS_SHIM",
     "bazel_run",
+    "bazel_output_file",
     "checked_spawn",
     "host_ansible_env",
     "host_ansible_playbook",
@@ -14,6 +15,8 @@ load(
 )
 
 _SITE_BOOTSTRAP_TARGET = "//src/tools/deployment/cmd/site-bootstrap:site-bootstrap"
+_HOST_TOOLS_TARGET = "//src/host:host_tools_artifact"
+_SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
 
 def _abs(ctx, path):
     if path == "":
@@ -232,12 +235,22 @@ def _converge_host_impl(ctx):
     if env == None:
         return 1
     ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
+    host_tools = bazel_output_file(ctx, _HOST_TOOLS_TARGET)
+    if host_tools == "":
+        return 1
+    spire_registry = bazel_output_file(ctx, _SPIRE_IDENTITY_REGISTRY_TARGET)
+    if spire_registry == "":
+        return 1
     playbook_args = [
         "-i",
         ws_path(ctx, _default_inventory(site)),
         "playbooks/site.yml",
         "-e",
         "verself_site=" + site,
+        "-e",
+        "verself_host_tools_artifact=" + host_tools,
+        "-e",
+        "spire_registrations_file=" + spire_registry,
     ]
     if use_secret_vars:
         playbook_args.extend([
