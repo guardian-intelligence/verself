@@ -1,6 +1,6 @@
 job "otelcol" {
   name = "otelcol"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
 
   group "otelcol" {

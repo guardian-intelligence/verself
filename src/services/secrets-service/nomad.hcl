@@ -1,6 +1,6 @@
 job "secrets-service" {
   name = "secrets-service"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "secrets-service" {
     count = 2

@@ -9,7 +9,7 @@ go_library(
 
 go_binary(
     name = "nftables-apply",
-    embed = [":nftables-apply_lib"],
+    embed = [":lib"],
     visibility = ["//visibility:public"],
 )
 
@@ -17,4 +17,17 @@ go_test(
     name = "nftables-apply_test",
     srcs = ["main_test.go"],
     embed = [":nftables-apply_lib"],
+)
+
+go_library(
+    name = "lib",
+    srcs = ["main.go"],
+    importpath = "",
+    visibility = ["//visibility:private"],
+)
+
+go_test(
+    name = "lib_test",
+    srcs = ["main_test.go"],
+    embed = [":lib"],
 )

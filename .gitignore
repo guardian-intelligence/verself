@@ -104,3 +104,7 @@ src/*/internalclient/client.gen.go
 
 # E2E smoke-test bundles, personas, Playwright traces, and query evidence
 smoke-artifacts/
+
+# Nitro plugin bundles emitted next to each app's vite.config by the build
+src/viteplus-monorepo/apps/*/observability-plugin.mjs
+src/viteplus-monorepo/apps/*/rewrite-cjs-require.mjs

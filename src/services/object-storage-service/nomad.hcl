@@ -1,6 +1,6 @@
 job "object-storage-service" {
   name = "object-storage-service"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "object-storage-service" {
     count = 2

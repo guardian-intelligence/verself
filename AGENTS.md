@@ -26,7 +26,7 @@ Newsroom - Business updates: guardianintelligence.org/newsroom
 * Avoid verbosity. When solving a specific problem, the patch should solve the general case. E.g. if solving a TOCTOU vuln, don't write a function named `fix_toctou_bug`, make the simple patch to use the toctou-safe call and optionally leave a comment (no more than a few words).
 * Don't resolve failures through silent no-ops and imperative checks. Failures should be loud; signals should be followed to address root causes. Failures are useful data!
 * When you run into a footgun, leave a comment around the code (no more than a sentence) explaining the footgun and how the code works around it.
-* Browser coverage belongs in ongoing live canaries with ClickHouse evidence. Do not add frontend Playwright suites; the old frontend e2e harness has been retired.
+* Browser coverage belongs in ongoing live canaries with ClickHouse evidence. Browser canaries using Playwright are preferred.
 
 * ClickHouse inserts must use `batch.AppendStruct` with `ch:"column_name"` struct tags. `batch.Append` silently corrupts data when columns are added or reordered.
 * ClickHouse schema design: ORDER BY columns are sorted on disk and control compression — order keys by ascending cardinality (low-cardinality columns first). Avoid `Nullable` (it adds a hidden `UInt8` column per row); use empty-value defaults instead. Use `LowCardinality(String)` for columns with fewer than ~10k distinct values. Use the smallest sufficient integer type (`UInt8` over `Int32` when the range fits).
@@ -116,10 +116,10 @@ Single global writer for TigerBeetle, ClickHouse, and PG
 
 Software is either released (distributed binaries) or deployed (services). This section covers distributed binaries.
 
-All binaries we ship must, at a minimum, do the following 3:
+All binaries we ship must, at a minimum, do the following:
 
-* Ship an artifact comprised of a single compressed distributable + LICENSE file.
-* Prove SLSA provenance and provide an SBOM (including vendor licenses)
+* Ship an artifact comprised of a single compressed distributable + LICENSE file. Around it: SBOM, manifest, vendor licenses. 
+* Measurement-gated signing with byte-for-byte reproducible builds. Prove SLSA level 3 via an in-toto statement, signed with cosign 
 * Enable clients to subscribe to nightly, rc/public-test and stable channels, check for updates, and download + verify + apply updates safely.
 
 Releases are provided by distribution-service (+ aspect tasks for convenience). Packages that produce artifacts in a format supported by distribution-service can integrate with it.

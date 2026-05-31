@@ -1,6 +1,6 @@
 job "github-integration" {
   name = "github-integration"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "github-integration-service" {
     count = 2

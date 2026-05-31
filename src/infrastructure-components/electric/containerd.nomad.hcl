@@ -1,6 +1,6 @@
 job "electric-containerd" {
   name = "electric-containerd"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
 
   group "containerd" {

@@ -1,6 +1,6 @@
 job "verself-web" {
   name = "verself-web"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "verself-web" {
     count = 2

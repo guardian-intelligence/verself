@@ -1,6 +1,6 @@
 job "haproxy-upstreams" {
   name = "haproxy-upstreams"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "haproxy-upstreams" {
     count = 1

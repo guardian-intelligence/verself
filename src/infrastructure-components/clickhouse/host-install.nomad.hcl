@@ -1,6 +1,6 @@
 job "clickhouse-host-install" {
   name = "clickhouse-host-install"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "batch"
 
   group "clickhouse-host-install" {
