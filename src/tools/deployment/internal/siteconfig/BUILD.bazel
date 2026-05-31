@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "siteconfig",
+    srcs = ["siteconfig.go"],
+    importpath = "github.com/verself/deployment-tools/internal/siteconfig",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
+)
+
+go_test(
+    name = "siteconfig_test",
+    srcs = ["siteconfig_test.go"],
+    embed = [":siteconfig"],
+)

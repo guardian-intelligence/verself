@@ -54,7 +54,7 @@ job "stalwart" {
         destination = "local/config.toml"
         data = <<-EOT
 [server]
-hostname = "mail.verself.sh"
+hostname = "__VERSELF_STALWART_DOMAIN__"
 max-connections = 256
 
 [server.listener."smtp"]
@@ -97,7 +97,7 @@ local-keys = [
 ]
 
 [http]
-url = "'https://mail.verself.sh'"
+url = "'__VERSELF_STALWART_PUBLIC_BASE_URL__'"
 use-x-forwarded = true
 allowed-endpoint.0.if = "starts_with(url_path, '/api') && remote_ip != '127.0.0.1'"
 allowed-endpoint.0.then = "404"

@@ -17,10 +17,11 @@ load(
 )
 
 def _edit_secrets_impl(ctx):
+    site = ctx.args.site or "prod"
     return bazel_run(
         ctx,
         "//src/tools/dev/binaries:sops",
-        [ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/prod/secrets/host.sops.yml")],
+        [ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/secrets/host.sops.yml")],
         label = "sops edit host secrets",
     )
 
@@ -29,6 +30,9 @@ edit_secrets = task(
     name = "edit-secrets",
     group = ["host"],
     summary = "Open encrypted host configuration secrets in $EDITOR via sops.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+    },
 )
 
 def _operator_access_handoff_impl(ctx):

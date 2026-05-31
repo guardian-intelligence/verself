@@ -29,8 +29,8 @@ job "company" {
         command = "local/bin/company"
       }
       env {
-        BASE_URL = "https://guardianintelligence.org"
-        COMPANY_DOMAIN = "guardianintelligence.org"
+        BASE_URL = "__VERSELF_COMPANY_BASE_URL__"
+        COMPANY_DOMAIN = "__VERSELF_COMPANY_DOMAIN__"
         HOME = "/var/lib/company"
         HOST = "127.0.0.1"
         NODE_ENV = "production"
@@ -38,9 +38,9 @@ job "company" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "company"
         PORT = "$${NOMAD_PORT_http}"
-        PRODUCT_BASE_URL = "https://verself.sh"
-        SITE_ORIGIN = "https://guardianintelligence.org"
-        VERSELF_DOMAIN = "verself.sh"
+        PRODUCT_BASE_URL = "__VERSELF_PRODUCT_BASE_URL__"
+        SITE_ORIGIN = "__VERSELF_COMPANY_BASE_URL__"
+        VERSELF_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {

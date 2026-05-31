@@ -227,8 +227,8 @@ EOT
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_SUPERVISOR = "nomad"
         VERSELF_TEMPORAL_CONFIG_PATH = "$${NOMAD_TASK_DIR}/config.yaml"
-        VERSELF_TEMPORAL_NAMESPACE_ROLES = "spiffe://spiffe.verself.sh/svc/sandbox-rental-service|sandbox-rental-service|admin,spiffe://spiffe.verself.sh/svc/billing-service|billing-service|admin,spiffe://spiffe.verself.sh/svc/distribution-service|distribution-service|admin"
-        VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS = "spiffe://spiffe.verself.sh/svc/temporal-server"
+        VERSELF_TEMPORAL_NAMESPACE_ROLES = "__VERSELF_TEMPORAL_NAMESPACE_ROLES__"
+        VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS = "__VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS__"
       }
       resources {
         cpu = 1000

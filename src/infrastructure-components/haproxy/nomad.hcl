@@ -40,8 +40,8 @@ job "haproxy-upstreams" {
 
 backend be_firecracker_forgejo
   guid be_firecracker_forgejo
-  http-request set-header Host git.verself.sh
-  http-request set-header X-Forwarded-Host git.verself.sh
+  http-request set-header Host __VERSELF_FORGEJO_DOMAIN__
+  http-request set-header X-Forwarded-Host __VERSELF_FORGEJO_DOMAIN__
 [[ with nomadService "forgejo-http" ]]
 [[ range $i, $svc := . ]]
   server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_firecracker_forgejo_srv_[[ $i ]]
@@ -76,8 +76,8 @@ backend be_route_product_npm_registry_verdaccio
 
 backend be_route_product_auth_zitadel_oidc
   guid be_route_product_auth_zitadel_oidc
-  http-request set-header X-Zitadel-Public-Host verself.sh
-  http-request set-header X-Zitadel-Instance-Host verself.sh
+  http-request set-header X-Zitadel-Public-Host __VERSELF_PRODUCT_DOMAIN__
+  http-request set-header X-Zitadel-Instance-Host __VERSELF_PRODUCT_DOMAIN__
 [[ with nomadService "zitadel-http" ]]
 [[ range $i, $svc := . ]]
   server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_route_product_auth_zitadel_oidc_srv_[[ $i ]]
@@ -166,8 +166,8 @@ backend be_route_company_apex_company_frontend
 backend be_route_product_apex_iam_service_public_api
   guid be_route_product_apex_iam_service_public_api
   balance random
-  http-response set-header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; report-uri https://verself.sh/api/browser-events/csp; report-to verself-csp"
-  http-response set-header Reporting-Endpoints "verself-csp=\"https://verself.sh/api/browser-events/reports\""
+  http-response set-header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; report-uri __VERSELF_PRODUCT_BASE_URL__/api/browser-events/csp; report-to verself-csp"
+  http-response set-header Reporting-Endpoints "verself-csp=\"__VERSELF_PRODUCT_BASE_URL__/api/browser-events/reports\""
   http-response set-header Cross-Origin-Resource-Policy same-origin
   http-response set-header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
   http-response set-header Referrer-Policy no-referrer
@@ -189,8 +189,8 @@ backend be_route_product_apex_iam_service_public_api
 backend be_route_product_apex_verself_web_frontend
   guid be_route_product_apex_verself_web_frontend
   balance random
-  http-response set-header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; report-uri https://verself.sh/api/browser-events/csp; report-to verself-csp"
-  http-response set-header Reporting-Endpoints "verself-csp=\"https://verself.sh/api/browser-events/reports\""
+  http-response set-header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; report-uri __VERSELF_PRODUCT_BASE_URL__/api/browser-events/csp; report-to verself-csp"
+  http-response set-header Reporting-Endpoints "verself-csp=\"__VERSELF_PRODUCT_BASE_URL__/api/browser-events/reports\""
   http-response set-header Cross-Origin-Opener-Policy same-origin
   http-response set-header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
   http-response set-header Referrer-Policy strict-origin-when-cross-origin
@@ -281,7 +281,7 @@ backend be_route_product_git_source_code_hosting_service_git_smart_http
   acl source_git method GET POST
   acl source_git_path path_reg ^/[^/]+/[^/]+(\.git)?/(info/refs|git-upload-pack|git-receive-pack)$
   http-request return status 404 unless source_git source_git_path
-  http-request set-header X-Forwarded-Host git.verself.sh
+  http-request set-header X-Forwarded-Host __VERSELF_FORGEJO_DOMAIN__
   http-request set-header X-Forwarded-Proto https
 [[ with nomadService "source-code-hosting-service-public-http" ]]
 [[ range $i, $svc := . ]]

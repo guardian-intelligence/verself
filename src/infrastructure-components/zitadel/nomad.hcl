@@ -45,7 +45,7 @@ job "zitadel" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "zitadel-setup-apply"
         VERSELF_ZITADEL_BIN = "local/bin/zitadel"
-        VERSELF_ZITADEL_EXTERNAL_DOMAIN = "verself.sh"
+        VERSELF_ZITADEL_EXTERNAL_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
         VERSELF_SUPERVISOR = "nomad"
       }
 
@@ -75,7 +75,7 @@ job "zitadel" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "zitadel"
-        VERSELF_ZITADEL_EXTERNAL_DOMAIN = "verself.sh"
+        VERSELF_ZITADEL_EXTERNAL_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
         VERSELF_SUPERVISOR = "nomad"
       }
 
