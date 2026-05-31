@@ -19,7 +19,7 @@ type FleetNodeRow struct {
 	Datacenter        string            `ch:"datacenter"`
 	NodePool          string            `ch:"node_pool"`
 	NodeClass         string            `ch:"node_class"`
-	CPUGen            string            `ch:"cpu_gen"`
+	CPUISALevel       string            `ch:"cpu_isa_level"`
 	NodeID            string            `ch:"node_id"`
 	NodeName          string            `ch:"node_name"`
 	SPIFFEID          string            `ch:"spiffe_id"`
@@ -90,19 +90,19 @@ func (p *fleetProjector) snapshotOnce(ctx context.Context) {
 			meta = map[string]string{}
 		}
 		row := FleetNodeRow{
-			Region:      p.region,
-			Datacenter:  node.Datacenter,
-			NodePool:    node.NodePool,
-			NodeClass:   node.NodeClass,
-			CPUGen:      meta["cpu_gen"],
-			NodeID:      node.ID,
-			NodeName:    node.Name,
-			Status:      node.Status,
-			Eligibility: node.SchedulingEligibility,
-			Drain:       boolToUint8(node.Drain),
-			Meta:        meta,
-			ModifyIndex: node.ModifyIndex,
-			ObservedAt:  observedAt,
+			Region:            p.region,
+			Datacenter:        node.Datacenter,
+			NodePool:          node.NodePool,
+			NodeClass:         node.NodeClass,
+			CPUISALevel:       meta["cpu_isa_level"],
+			NodeID:            node.ID,
+			NodeName:          node.Name,
+			Status:            node.Status,
+			Eligibility:       node.SchedulingEligibility,
+			Drain:             boolToUint8(node.Drain),
+			Meta:              meta,
+			ModifyIndex:       node.ModifyIndex,
+			ObservedAt:        observedAt,
 		}
 		if err := batch.AppendStruct(&row); err != nil {
 			_ = batch.Abort()

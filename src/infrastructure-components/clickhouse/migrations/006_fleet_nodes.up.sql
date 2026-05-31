@@ -3,7 +3,7 @@
 -- Append-only snapshots of the schedulable fleet keyed by the four placement
 -- coordinates: region (cell / fate domain), datacenter (cluster / placement
 -- locality), node_pool (role), and meta (arbitrary attested capabilities, e.g.
--- cpu_gen). nomad-observer writes one row per node per snapshot tick; current
+-- cpu_isa_level). nomad-observer writes one row per node per snapshot tick; current
 -- state is the argMax(*, observed_at) per node_id. Rows are never updated.
 --
 -- `attestation_method` records how the node's identity was proven at boot
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS verself.fleet_nodes
     datacenter         LowCardinality(String) CODEC(ZSTD(3)),
     node_pool          LowCardinality(String) CODEC(ZSTD(3)),
     node_class         LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
-    cpu_gen            LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
+    cpu_isa_level      LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
     node_id            String                 CODEC(ZSTD(3)),
     node_name          LowCardinality(String) CODEC(ZSTD(3)),
     spiffe_id          String DEFAULT ''      CODEC(ZSTD(3)),
