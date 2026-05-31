@@ -145,6 +145,16 @@ postgresql_address: "{{ postgresql_host }}:{{ postgresql_port }}"
 nomad_host: 127.0.0.1
 nomad_http_port: 4646
 nomad_http_address: "{{ nomad_host }}:{{ nomad_http_port }}"
+
+# Node placement coordinates (fleet capability model):
+#   datacenter = cluster (IATA metro + ordinal; iad1 = Ashburn, provider-decoupled)
+#   node_pool  = role (default = the single all-in-one node; loadgen/gpu opt in)
+#   cpu_gen    = normalized microarch label for Roblox-style pinning
+#   meta       = arbitrary additional capabilities
+nomad_node_datacenter: iad1
+nomad_node_pool: default
+nomad_node_cpu_gen: amd-zen5
+nomad_node_meta: {}
 nomad_artifact_bucket: nomad-artifacts
 nomad_artifact_region: garage
 # Nomad's go-getter S3 transport requires AWS_* variable names even though

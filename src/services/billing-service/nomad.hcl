@@ -1,6 +1,6 @@
 job "billing" {
   name = "billing"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "billing-service" {
     count = 2

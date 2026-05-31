@@ -1,6 +1,6 @@
 job "clickhouse-migrations" {
   name = "clickhouse-migrations"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "batch"
 
   group "clickhouse-migrations" {

@@ -1,6 +1,6 @@
 job "sandbox-rental" {
   name = "sandbox-rental"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "sandbox-rental-service" {
     count = 2

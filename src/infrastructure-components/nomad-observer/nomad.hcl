@@ -1,6 +1,6 @@
 job "nomad-observer" {
   name = "nomad-observer"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
 
   group "observer" {

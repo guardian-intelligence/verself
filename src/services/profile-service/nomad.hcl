@@ -1,6 +1,6 @@
 job "profile-service" {
   name = "profile-service"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "profile-service" {
     count = 2

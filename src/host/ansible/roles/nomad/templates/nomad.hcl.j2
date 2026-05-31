@@ -9,6 +9,11 @@
 data_dir  = "{{ nomad_data_dir }}"
 log_level = "INFO"
 
+# Placement coordinate: datacenter = cluster (IATA metro + ordinal, e.g. iad1).
+# region (cell) stays at Nomad's default until cells exist; node_pool (role) and
+# meta (attested capabilities) are set on the client stanza below.
+datacenter = "{{ nomad_node_datacenter }}"
+
 bind_addr = "{{ nomad_host }}"
 
 # HTTP is the only host-bootstrap Nomad port — operators connect here
@@ -36,8 +41,27 @@ server {
 
 client {
   enabled = true
+
+  # Role coordinate. The single all-in-one node stays in the built-in `default`
+  # pool so jobs that don't pin a pool keep placing; dedicated roles (loadgen,
+  # gpu) are separate pools that nodes/jobs opt into explicitly.
+  node_pool = "{{ nomad_node_pool }}"
+
   min_dynamic_port = 20000
   max_dynamic_port = 32000
+
+  # Capability coordinate. cpu_model is read from the host's own CPU facts;
+  # cpu_gen is the normalized microarchitecture label used for Roblox-style
+  # placement pinning. Additional capabilities flow through nomad_node_meta.
+  # NOTE: client meta is self-asserted today; the attested SPIRE node identity
+  # makes it source-of-truth-by-SVID (see fleet capability model).
+  meta {
+    cpu_model = "{{ (ansible_processor | select('search', 'EPYC|Ryzen|Xeon|Core') | list | first) | default(ansible_processor | last, true) }}"
+    cpu_gen   = "{{ nomad_node_cpu_gen }}"
+{% for key, value in (nomad_node_meta | default({}, true)).items() %}
+    {{ key }} = "{{ value }}"
+{% endfor %}
+  }
 
   # Single-node: server is co-resident on loopback. Setting servers
   # explicitly skips Consul discovery (we don't run Consul).

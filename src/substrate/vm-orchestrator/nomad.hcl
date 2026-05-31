@@ -1,6 +1,6 @@
 job "vm-orchestrator" {
   name = "vm-orchestrator"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
 
   group "daemon" {

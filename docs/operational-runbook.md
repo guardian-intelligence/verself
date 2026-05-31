@@ -55,3 +55,54 @@ jobs:
 aspect canary post-deploy --site=prod --size=medium
 aspect canary post-deploy --site=prod --size=large
 ```
+
+
+## Gamma Wipe + Bootstrap
+
+If the Latitude box is already freshly reinstalled to Ubuntu and you
+have the new root password, start at step 2. If it still has old gamma
+state, first wipe it by reinstalling the OS from Latitude, then use
+the new IP/root password from that reinstall.
+
+cd /home/ubuntu/Projects/verself-sh
+git pull --ff-only
+
+aspect site seed-template --site=gamma --force
+
+Fill .verself/site-bootstrap/gamma/seed.yml with only the requested
+provider values. No SOPS file is created.
+
+install -m 700 -d .verself/site-bootstrap/gamma
+printf '%s\n' '<gamma-root-password>' > .verself/site-bootstrap/gamma/
+root-password.txt
+chmod 600 .verself/site-bootstrap/gamma/root-password.txt
+
+Prefer pinned host key verification:
+
+aspect site root-handoff \
+--site=gamma \
+--host=<gamma-public-ip> \
+--root-password-file=.verself/site-bootstrap/gamma/root-password.txt
+\
+--host-key-sha256='<SHA256:fingerprint>' \
+--force-inventory
+
+If you do not have the host key fingerprint yet, use TOFU explicitly:
+
+aspect site root-handoff \
+--site=gamma \
+--host=<gamma-public-ip> \
+--root-password-file=.verself/site-bootstrap/gamma/root-password.txt
+\
+--trust-first-use \
+--force-inventory
+
+Then materialize, converge, publish DNS, and deploy:
+
+aspect site validate-seed --site=gamma
+aspect site materialize-seed --site=gamma
+aspect site converge-host --site=gamma
+aspect integrations cloudflare-dns --site=gamma --dry-run
+aspect integrations cloudflare-dns --site=gamma
+aspect deploy --site=gamma --sha="$(git rev-parse HEAD)" --post-
+deploy-checks=medium

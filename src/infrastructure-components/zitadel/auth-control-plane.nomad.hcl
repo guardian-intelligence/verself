@@ -1,6 +1,6 @@
 job "auth-control-plane" {
   name = "auth-control-plane"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "batch"
 
   group "auth-control-plane" {

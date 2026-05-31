@@ -1,6 +1,6 @@
 job "zot" {
   name = "zot"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
 
   group "zot" {

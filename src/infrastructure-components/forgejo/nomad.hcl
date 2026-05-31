@@ -1,6 +1,6 @@
 job "forgejo" {
   name = "forgejo"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
 
   group "forgejo" {

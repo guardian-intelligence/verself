@@ -1,6 +1,6 @@
 job "nftables" {
   name = "nftables"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "batch"
 
   group "nftables" {

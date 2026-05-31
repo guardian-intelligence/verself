@@ -1,6 +1,6 @@
 job "notifications-service" {
   name = "notifications-service"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "notifications-service" {
     count = 2

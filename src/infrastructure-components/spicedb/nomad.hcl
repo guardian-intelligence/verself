@@ -1,6 +1,6 @@
 job "spicedb" {
   name = "spicedb"
-  datacenters = ["dc1"]
+  datacenters = ["*"]
   type = "service"
   group "spicedb" {
     count = 1
