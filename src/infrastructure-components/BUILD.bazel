@@ -18,7 +18,6 @@ filegroup(
     ) + [
         "//src/infrastructure-components/clickhouse:role_sources",
         "//src/infrastructure-components/forgejo:role_sources",
-        "//src/infrastructure-components/garage:role_sources",
         "//src/infrastructure-components/grafana:role_sources",
         "//src/infrastructure-components/haproxy:role_sources",
         "//src/infrastructure-components/nats:role_sources",

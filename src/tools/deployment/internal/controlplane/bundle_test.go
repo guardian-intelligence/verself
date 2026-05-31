@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -21,13 +22,6 @@ postgresql_service_databases:
 postgresql_peer_mappings:
   - { system_user: billing, pg_user: billing }
 `)
-	values := map[string]string{"stripe_secret_key": "sk_test_gamma"}
-	body, err := json.Marshal(values)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeBytes(t, root, ".verself/site-bootstrap/gamma/ansible-secrets.json", body)
-
 	bundle, err := LoadBundle(root, "gamma", "sha", "run", []Component{{
 		Component: "billing",
 		JobID:     "billing",
@@ -39,8 +33,15 @@ postgresql_peer_mappings:
 	if len(bundle.OpenBao.RuntimeSecrets) != 1 {
 		t.Fatalf("runtime secrets = %d", len(bundle.OpenBao.RuntimeSecrets))
 	}
-	if got := bundle.OpenBao.RuntimeSecrets[0].SiteSecret.Value; got != "sk_test_gamma" {
-		t.Fatalf("site secret value = %q", got)
+	if got := bundle.OpenBao.RuntimeSecrets[0].Source.SiteSecretKey; got != "stripe_secret_key" {
+		t.Fatalf("site secret key = %q", got)
+	}
+	body, err := json.Marshal(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "sk_test_gamma") {
+		t.Fatalf("bundle contains site secret material: %s", body)
 	}
 	if len(bundle.OpenBao.NomadRoles) != 1 || bundle.OpenBao.NomadRoles[0].Name != "billing-runtime" {
 		t.Fatalf("roles = %#v", bundle.OpenBao.NomadRoles)

@@ -73,21 +73,27 @@ aspect site seed-template --site=gamma --force
 ```
 
 Fill .verself/site-bootstrap/gamma/seed.yml with only the requested
-provider values, including the scoped Nomad artifact getter R2 keypair. No SOPS
-file is created. The Cloudflare account ID is checked into site metadata. Keep
-the parent R2 admin credential in controller OpenBao or an operator-only
-environment, and verify the deployment artifact bucket before deploy:
+provider values. No SOPS file is created. The Cloudflare account ID is checked
+into site metadata. Keep the parent R2 admin credential in controller OpenBao
+or an operator-only environment, then provision the site-scoped R2 credentials
+into the local seed bundle before materializing it:
 
 ```shell
 aspect integrations cloudflare-r2-control-plane \
   --site=gamma \
+  --action=rotate-getter \
+  --credential-source=openbao
+
+aspect integrations cloudflare-r2-control-plane \
+  --site=gamma \
+  --action=rotate-object-storage-provider \
   --credential-source=openbao
 ```
 
-Until the deploy publisher consumes the R2 control-plane temporary credential
-handoff directly, any controller publisher credential used for `aspect deploy`
-must be bucket-scoped to the site's artifact bucket. Do not use the parent R2
-admin credential outside the R2 control plane.
+`aspect deploy` mints temporary publisher credentials from the controller R2
+credential source. The durable Nomad getter credential remains bucket-read-only
+so allocation restarts can refetch artifacts after deploy-time credentials
+expire.
 
 ```shell
 install -m 700 -d .verself/site-bootstrap/gamma
@@ -131,5 +137,5 @@ aspect site materialize-seed --site=gamma
 aspect site converge-host --site=gamma
 aspect integrations cloudflare-dns --site=gamma --dry-run
 aspect integrations cloudflare-dns --site=gamma
-aspect deploy --site=gamma --sha="$(git rev-parse HEAD)" --post-deploy-checks=medium
+aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 ```

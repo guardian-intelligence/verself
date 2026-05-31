@@ -37,6 +37,7 @@ type MaterializeOptions struct {
 type SeedTemplateOptions struct {
 	Site       string
 	OutputPath string
+	RepoRoot   string
 	ForceWrite bool
 }
 
@@ -65,8 +66,8 @@ type seedKey struct {
 
 var fallbackProvidedSeedKeys = map[string]seedKey{
 	"cloudflare_api_token":                       {Source: "provider_bootstrap"},
-	"nomad_artifact_getter_s3_access_key_id":     {Source: "provider_bootstrap"},
-	"nomad_artifact_getter_s3_secret_access_key": {Source: "provider_bootstrap"},
+	"nomad_artifact_getter_s3_access_key_id":     {Source: "cloudflare_r2_control_plane"},
+	"nomad_artifact_getter_s3_secret_access_key": {Source: "cloudflare_r2_control_plane"},
 
 	"stripe_secret_key":                                         {Source: "provider_runtime"},
 	"stripe_webhook_secret":                                     {Source: "provider_runtime"},
@@ -106,7 +107,7 @@ func WriteSeedTemplate(opts SeedTemplateOptions) error {
 		Site:    site,
 		Values:  map[string]string{},
 	}
-	policy, err := loadSeedPolicy("", site)
+	policy, err := loadSeedPolicy(opts.RepoRoot, site)
 	if err != nil {
 		return err
 	}
@@ -120,12 +121,16 @@ func WriteSeedTemplate(opts SeedTemplateOptions) error {
 	return writePrivateFile(out, body, opts.ForceWrite)
 }
 
-func ValidateSeedBundle(site, path string) (Evidence, error) {
+func ValidateSeedBundle(site, path string, repoRoot ...string) (Evidence, error) {
 	bundle, err := readSeedBundle(path)
 	if err != nil {
 		return Evidence{}, err
 	}
-	policy, err := loadSeedPolicy("", site)
+	root := ""
+	if len(repoRoot) > 0 {
+		root = repoRoot[0]
+	}
+	policy, err := loadSeedPolicy(root, site)
 	if err != nil {
 		return Evidence{}, err
 	}

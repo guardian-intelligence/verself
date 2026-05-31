@@ -158,25 +158,28 @@ func reconcileRuntimeSecret(ctx context.Context, c *baoClient, secret RuntimeSec
 		return err
 	}
 	value := ""
-	switch {
-	case secret.Generated.Bytes != 0:
+	switch secret.Source.Kind {
+	case RuntimeSecretSourceGenerated:
 		if found && strings.TrimSpace(existing) != "" {
 			return nil
 		}
-		generated, err := generateSecretValue(secret.Generated.Bytes)
+		generated, err := generateSecretValue(secret.Source.GeneratedBytes, secret.Source.Encoding)
 		if err != nil {
 			return fmt.Errorf("%s: generate value: %w", secret.Name, err)
 		}
 		value = generated
-	case secret.SiteSecret.Key != "":
-		value = strings.TrimSpace(secret.SiteSecret.Value)
-	case secret.File != "":
-		body, err := os.ReadFile(secret.File)
+	case RuntimeSecretSourceSiteSecret:
+		if found && strings.TrimSpace(existing) != "" {
+			return nil
+		}
+		return fmt.Errorf("%s: site secret %s has not been imported into OpenBao", secret.Name, secret.Source.SiteSecretKey)
+	case RuntimeSecretSourceFile:
+		body, err := os.ReadFile(secret.Source.File)
 		if err != nil {
 			if found && strings.TrimSpace(existing) != "" {
 				return nil
 			}
-			return fmt.Errorf("%s: read source file %s: %w", secret.Name, secret.File, err)
+			return fmt.Errorf("%s: read source file %s: %w", secret.Name, secret.Source.File, err)
 		}
 		value = strings.TrimSpace(string(body))
 	default:
@@ -417,10 +420,13 @@ func runPSQL(ctx context.Context, cfg ApplyConfig, database, sql string) error {
 	return nil
 }
 
-func generateSecretValue(bytes int) (string, error) {
+func generateSecretValue(bytes int, encoding string) (string, error) {
 	raw := make([]byte, bytes)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
+	}
+	if encoding == "hex" {
+		return hex.EncodeToString(raw), nil
 	}
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }

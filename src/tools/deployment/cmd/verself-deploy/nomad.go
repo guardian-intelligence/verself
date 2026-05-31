@@ -55,7 +55,7 @@ func registerNomadJobs(ctx context.Context, rt *runtime.Runtime, inputs *deployI
 	if err != nil {
 		return nil, err
 	}
-	if err := publishArtifacts(ctx, rt, inputs.SiteCfg.ArtifactDelivery.ArtifactDelivery, inputs.Artifacts); err != nil {
+	if err := publishArtifacts(ctx, rt, inputs.SiteCfg.ArtifactDelivery, inputs.Artifacts); err != nil {
 		return nil, err
 	}
 	jobs, err := prepareNomadJobsForSite(ctx, client, rt.RepoRoot, inputs.SiteModel, inputs.Bindings, inputs.Components)

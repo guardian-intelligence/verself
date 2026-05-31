@@ -2,18 +2,19 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/nomad/api"
 
 	"github.com/verself/deployment-tools/internal/deploymodel"
 	"github.com/verself/deployment-tools/internal/runtime"
 	"github.com/verself/deployment-tools/internal/s3artifact"
+	"github.com/verself/deployment-tools/r2control"
 )
 
 const taskArtifactRoot = "local/verself-artifacts"
@@ -96,11 +97,11 @@ func artifactGetterSource(policy artifactDeliveryPolicy, key string) string {
 	return strings.TrimRight(policy.GetterSourcePrefix, "/") + "/" + key
 }
 
-func publishArtifacts(ctx context.Context, rt *runtime.Runtime, delivery deploymodel.ArtifactDelivery, artifacts []deploymodel.Artifact) error {
+func publishArtifacts(ctx context.Context, rt *runtime.Runtime, delivery artifactDeliveryPolicy, artifacts []deploymodel.Artifact) error {
 	if len(artifacts) == 0 {
 		return nil
 	}
-	pub, err := newArtifactPublisher(delivery)
+	pub, err := newArtifactPublisher(ctx, delivery)
 	if err != nil {
 		return err
 	}
@@ -111,49 +112,41 @@ func taskArtifactDestination(output string) string {
 	return path.Join(taskArtifactRoot, output)
 }
 
-func newArtifactPublisher(delivery deploymodel.ArtifactDelivery) (*s3artifact.Publisher, error) {
-	cfg, err := publisherCredentials(delivery.PublisherCredentials)
+func newArtifactPublisher(ctx context.Context, delivery artifactDeliveryPolicy) (*s3artifact.Publisher, error) {
+	parent, err := r2control.LoadParentCredentials(ctx, r2control.ParentCredentialConfig{})
 	if err != nil {
 		return nil, err
 	}
-	return s3artifact.New(delivery, cfg)
-}
-
-func publisherCredentials(creds deploymodel.Credentials) (s3artifact.Config, error) {
-	switch creds.Source {
-	case "", "controller_environment":
-		if creds.AccessKeyIDEnv == "" || creds.SecretAccessKeyEnv == "" {
-			return s3artifact.Config{}, errors.New("artifact_delivery.publisher_credentials requires access_key_id_env and secret_access_key_env")
-		}
-		access := strings.TrimSpace(os.Getenv(creds.AccessKeyIDEnv))
-		secret := strings.TrimSpace(os.Getenv(creds.SecretAccessKeyEnv))
-		if access == "" || secret == "" {
-			return s3artifact.Config{}, fmt.Errorf("controller environment missing %s and/or %s", creds.AccessKeyIDEnv, creds.SecretAccessKeyEnv)
-		}
-		session := ""
-		if creds.SessionTokenEnv != "" {
-			session = strings.TrimSpace(os.Getenv(creds.SessionTokenEnv))
-			if session == "" {
-				return s3artifact.Config{}, fmt.Errorf("controller environment missing %s", creds.SessionTokenEnv)
-			}
-		}
-		return s3artifact.Config{AccessKeyID: access, SecretAccessKey: secret, SessionToken: session}, nil
-	case "controller_environment_file":
-		if creds.EnvironmentFile == "" {
-			return s3artifact.Config{}, errors.New("artifact_delivery.publisher_credentials.environment_file is required")
-		}
-		body, err := os.ReadFile(creds.EnvironmentFile)
-		if err != nil {
-			return s3artifact.Config{}, fmt.Errorf("read publisher environment file: %w", err)
-		}
-		access, secret, session, err := s3artifact.ParseEnvFile(body, creds.AccessKeyIDEnv, creds.SecretAccessKeyEnv, creds.SessionTokenEnv)
-		if err != nil {
-			return s3artifact.Config{}, err
-		}
-		return s3artifact.Config{AccessKeyID: access, SecretAccessKey: secret, SessionToken: session}, nil
-	default:
-		return s3artifact.Config{}, fmt.Errorf("unsupported artifact_delivery.publisher_credentials.source %q", creds.Source)
+	if parent.SessionToken != "" {
+		return nil, fmt.Errorf("R2 artifact publisher requires a non-temporary parent credential")
 	}
+	if strings.TrimSpace(parent.APIToken) == "" {
+		return nil, fmt.Errorf("R2 artifact publisher requires the parent Cloudflare API token value")
+	}
+	prefix := strings.Trim(strings.TrimSpace(delivery.KeyPrefix), "/")
+	if prefix == "" {
+		return nil, fmt.Errorf("artifact_delivery.key_prefix is required")
+	}
+	apiClient, err := r2control.NewCloudflareAPIClient(parent.APIToken, 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	temp, err := apiClient.CreateTemporaryCredentials(ctx, delivery.CloudflareAccountID, r2control.TemporaryCredentialRequest{
+		ParentAccessKeyID: parent.AccessKeyID,
+		Bucket:            delivery.Bucket,
+		Permission:        r2control.TemporaryPermissionObjectReadWrite,
+		Prefixes:          []string{prefix + "/"},
+		TTL:               30 * time.Minute,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s3artifact.New(delivery.ArtifactDelivery, s3artifact.Config{
+		AccessKeyID:      temp.AccessKeyID,
+		SecretAccessKey:  temp.SecretAccessKey,
+		SessionToken:     temp.SessionToken,
+		SkipBucketEnsure: true,
+	})
 }
 
 func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map[string]bool, error) {

@@ -39,7 +39,8 @@
       - nomad_artifact_region | default('', true) | length > 0
     fail_msg: >-
       Nomad artifact getter credentials are required. Run
-      aspect site materialize-seed and provide the site R2 getter keypair.
+      aspect integrations cloudflare-r2-control-plane --action=rotate-getter
+      and rerun host convergence with the generated site secret vars.
   no_log: true
 
 - name: Deploy Nomad artifact getter environment

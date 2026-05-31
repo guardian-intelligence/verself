@@ -81,8 +81,7 @@ nomad_artifact_region: auto
 nomad_artifact_getter_s3_environment_file: /etc/nomad/nomad-artifacts.env
 nomad_artifact_getter_s3_access_key_env_var: AWS_ACCESS_KEY_ID
 nomad_artifact_getter_s3_secret_key_env_var: AWS_SECRET_ACCESS_KEY
-nomad_artifact_publisher_s3_access_key_env_var: VERSELF_NOMAD_ARTIFACTS_R2_ACCESS_KEY_ID
-nomad_artifact_publisher_s3_secret_key_env_var: VERSELF_NOMAD_ARTIFACTS_R2_SECRET_ACCESS_KEY
+cloudflare_r2_endpoint: https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_host_service_ip: 10.255.0.1
 

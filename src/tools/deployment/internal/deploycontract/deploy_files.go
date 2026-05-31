@@ -49,7 +49,8 @@ type RuntimeSecretSeed struct {
 	SiteSecret string `yaml:"site_secret"`
 	File       string `yaml:"file"`
 	Generated  struct {
-		Bytes int `yaml:"bytes"`
+		Bytes    int    `yaml:"bytes"`
+		Encoding string `yaml:"encoding"`
 	} `yaml:"generated"`
 }
 
@@ -184,8 +185,15 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 		if seed.File != "" {
 			requirePathPrefix(v, rel, prefix+".file", seed.File, "/")
 		}
-		if seed.Generated.Bytes != 0 && (seed.Generated.Bytes < 16 || seed.Generated.Bytes > 96) {
-			v.add(rel, prefix+".generated.bytes must be between 16 and 96")
+		if seed.Generated.Bytes != 0 {
+			if seed.Generated.Bytes < 16 || seed.Generated.Bytes > 96 {
+				v.add(rel, prefix+".generated.bytes must be between 16 and 96")
+			}
+			switch strings.TrimSpace(seed.Generated.Encoding) {
+			case "", "base64url", "hex":
+			default:
+				v.add(rel, prefix+".generated.encoding must be base64url or hex")
+			}
 		}
 		v.claim(rel, v.seen.runtimeSecrets, "OpenBao runtime secret", seed.Name)
 	}

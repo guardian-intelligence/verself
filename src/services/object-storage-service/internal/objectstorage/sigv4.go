@@ -32,7 +32,7 @@ var (
 	ErrSigV4TimeSkew             = errors.New("object-storage sigv4 request time skew")
 )
 
-const garageBodyMemoryThreshold = 1 << 20
+const upstreamBodyMemoryThreshold = 1 << 20
 
 var sigv4HexSHA256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -105,14 +105,14 @@ func VerifySigV4Request(ctx context.Context, req *http.Request, secretAccessKey 
 	return auth, nil
 }
 
-func SignGarageRequest(ctx context.Context, signer *awsv4.Signer, creds aws.Credentials, req *http.Request, region string) (func(), error) {
+func SignUpstreamS3Request(ctx context.Context, signer *awsv4.Signer, creds aws.Credentials, req *http.Request, region string) (func(), error) {
 	if signer == nil {
 		return func() {}, fmt.Errorf("aws signer is required")
 	}
 	if req == nil {
 		return func() {}, fmt.Errorf("request is required")
 	}
-	payloadHash, cleanup, err := prepareGarageRequestBody(req)
+	payloadHash, cleanup, err := prepareUpstreamRequestBody(req)
 	if err != nil {
 		return func() {}, err
 	}
@@ -128,7 +128,7 @@ func SignGarageRequest(ctx context.Context, signer *awsv4.Signer, creds aws.Cred
 	return cleanup, nil
 }
 
-func prepareGarageRequestBody(req *http.Request) (string, func(), error) {
+func prepareUpstreamRequestBody(req *http.Request) (string, func(), error) {
 	if req == nil {
 		return "", func() {}, fmt.Errorf("request is required")
 	}
@@ -142,29 +142,29 @@ func prepareGarageRequestBody(req *http.Request) (string, func(), error) {
 		return payloadHash, func() {}, nil
 	}
 
-	// Garage sits behind an HTTP loopback endpoint, so SigV4 must use a real payload hash.
-	return spoolGarageRequestBody(req)
+	// S3-compatible upstreams need a real payload hash on proxied writes.
+	return spoolUpstreamRequestBody(req)
 }
 
-func spoolGarageRequestBody(req *http.Request) (string, func(), error) {
+func spoolUpstreamRequestBody(req *http.Request) (string, func(), error) {
 	hasher := sha256.New()
 	originalBody := req.Body
 	defer func() { _ = originalBody.Close() }()
 
-	if req.ContentLength >= 0 && req.ContentLength <= garageBodyMemoryThreshold {
+	if req.ContentLength >= 0 && req.ContentLength <= upstreamBodyMemoryThreshold {
 		var buf bytes.Buffer
 		written, err := io.Copy(io.MultiWriter(&buf, hasher), req.Body)
 		if err != nil {
-			return "", func() {}, fmt.Errorf("buffer garage request body: %w", err)
+			return "", func() {}, fmt.Errorf("buffer upstream s3 request body: %w", err)
 		}
 		req.ContentLength = written
 		req.Body = io.NopCloser(bytes.NewReader(buf.Bytes()))
 		return hex.EncodeToString(hasher.Sum(nil)), func() {}, nil
 	}
 
-	file, err := os.CreateTemp("", "object-storage-garage-body-*")
+	file, err := os.CreateTemp("", "object-storage-upstream-s3-body-*")
 	if err != nil {
-		return "", func() {}, fmt.Errorf("create garage request spool: %w", err)
+		return "", func() {}, fmt.Errorf("create upstream s3 request spool: %w", err)
 	}
 	cleanup := func() {
 		_ = file.Close()
@@ -173,11 +173,11 @@ func spoolGarageRequestBody(req *http.Request) (string, func(), error) {
 	written, err := io.Copy(io.MultiWriter(file, hasher), req.Body)
 	if err != nil {
 		cleanup()
-		return "", func() {}, fmt.Errorf("spool garage request body: %w", err)
+		return "", func() {}, fmt.Errorf("spool upstream s3 request body: %w", err)
 	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		cleanup()
-		return "", func() {}, fmt.Errorf("rewind garage request spool: %w", err)
+		return "", func() {}, fmt.Errorf("rewind upstream s3 request spool: %w", err)
 	}
 	req.ContentLength = written
 	req.Body = file

@@ -27,9 +27,9 @@ job "object-storage-service" {
         command = "local/bin/object-storage-service"
       }
       env {
-        OBJECT_STORAGE_PROVIDER = "garage"
+        OBJECT_STORAGE_PROVIDER = "cloudflare_r2"
         OBJECT_STORAGE_ROLE = "s3"
-        OBJECT_STORAGE_S3_REGION = "garage"
+        OBJECT_STORAGE_S3_REGION = "auto"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "object-storage-service-migration"
@@ -37,9 +37,6 @@ job "object-storage-service" {
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "object_storage_service"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/object-storage-service/clickhouse-ca-cert"
-        VERSELF_CRED_CREDENTIAL_KEK = "/etc/credstore/object-storage-service/credential-kek"
-        VERSELF_CRED_GARAGE_PROXY_ACCESS_KEY_ID = "/etc/credstore/object-storage-service/garage-proxy-access-key-id"
-        VERSELF_CRED_GARAGE_PROXY_SECRET_ACCESS_KEY = "/etc/credstore/object-storage-service/garage-proxy-secret-access-key"
         VERSELF_CRED_S3_TLS_CERT = "/etc/credstore/object-storage-service/s3-tls-cert"
         VERSELF_CRED_S3_TLS_KEY = "/etc/credstore/object-storage-service/s3-tls-key"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -54,14 +51,6 @@ job "object-storage-service" {
         cpu = 100
         memory = 128
       }
-      template {
-        change_mode = "restart"
-        destination = "secrets/garage.env"
-        data = <<-EOT
-OBJECT_STORAGE_S3_URLS={{ range $i, $service := nomadService "garage-s3" }}{{ if $i }},{{ end }}http://{{ $service.Address }}:{{ $service.Port }}{{ else }}http://127.0.0.1:1{{ end }}
-EOT
-        env = true
-      }
     }
     task "object-storage-service" {
       driver = "raw_exec"
@@ -69,6 +58,14 @@ EOT
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "object-storage-service-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://object-storage-service"
         destination = "local"
@@ -78,9 +75,10 @@ EOT
         command = "local/bin/object-storage-service"
       }
       env {
-        OBJECT_STORAGE_PROVIDER = "garage"
+        CREDENTIALS_DIRECTORY = "secrets"
+        OBJECT_STORAGE_PROVIDER = "cloudflare_r2"
         OBJECT_STORAGE_ROLE = "s3"
-        OBJECT_STORAGE_S3_REGION = "garage"
+        OBJECT_STORAGE_S3_REGION = "auto"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "object-storage-service"
@@ -88,9 +86,6 @@ EOT
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "object_storage_service"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/object-storage-service/clickhouse-ca-cert"
-        VERSELF_CRED_CREDENTIAL_KEK = "/etc/credstore/object-storage-service/credential-kek"
-        VERSELF_CRED_GARAGE_PROXY_ACCESS_KEY_ID = "/etc/credstore/object-storage-service/garage-proxy-access-key-id"
-        VERSELF_CRED_GARAGE_PROXY_SECRET_ACCESS_KEY = "/etc/credstore/object-storage-service/garage-proxy-secret-access-key"
         VERSELF_CRED_S3_TLS_CERT = "/etc/credstore/object-storage-service/s3-tls-cert"
         VERSELF_CRED_S3_TLS_KEY = "/etc/credstore/object-storage-service/s3-tls-key"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -113,11 +108,32 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/garage.env"
+        destination = "secrets/r2.env"
         data = <<-EOT
-OBJECT_STORAGE_S3_URLS={{ range $i, $service := nomadService "garage-s3" }}{{ if $i }},{{ end }}http://{{ $service.Address }}:{{ $service.Port }}{{ else }}http://127.0.0.1:1{{ end }}
+OBJECT_STORAGE_S3_URLS=__VERSELF_CLOUDFLARE_R2_ENDPOINT__
 EOT
         env = true
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/credential-kek"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/r2-proxy-access-key-id"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/r2-proxy-secret-access-key"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       service {
         name = "object-storage-service-public-http"
@@ -179,17 +195,17 @@ EOT
       }
       env {
         OBJECT_STORAGE_ADMIN_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_admin_http}"
-        OBJECT_STORAGE_PROVIDER = "garage"
+        CREDENTIALS_DIRECTORY = "secrets"
+        OBJECT_STORAGE_PROVIDER = "cloudflare_r2"
+        OBJECT_STORAGE_R2_ENDPOINT = "__VERSELF_CLOUDFLARE_R2_ENDPOINT__"
         OBJECT_STORAGE_ROLE = "admin"
-        OBJECT_STORAGE_S3_REGION = "garage"
+        OBJECT_STORAGE_S3_REGION = "auto"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "object-storage-admin"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/object-storage-service/auth-audience"
-        VERSELF_CRED_CREDENTIAL_KEK = "/etc/credstore/object-storage-service/credential-kek"
-        VERSELF_CRED_GARAGE_PROXY_ACCESS_KEY_ID = "/etc/credstore/object-storage-service/garage-proxy-access-key-id"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
         VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
         VERSELF_PG_DSN = "postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable"
@@ -222,19 +238,24 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/provider.env"
+        destination = "secrets/credential-kek"
         data = <<-EOT
-OBJECT_STORAGE_GARAGE_ADMIN_TOKEN={{ with secret "kv-runtime/data/secret/org/object-storage-service.garage.admin_token" }}{{ .Data.data.value }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value }}{{ end }}
 EOT
-        env = true
       }
       template {
         change_mode = "restart"
-        destination = "secrets/upstreams.env"
+        destination = "secrets/r2-admin-access-key-id"
         data = <<-EOT
-OBJECT_STORAGE_GARAGE_ADMIN_URLS={{ range $i, $service := nomadService "garage-admin" }}{{ if $i }},{{ end }}http://{{ $service.Address }}:{{ $service.Port }}{{ else }}http://127.0.0.1:1{{ end }}
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" }}{{ .Data.data.value }}{{ end }}
 EOT
-        env = true
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/r2-admin-secret-access-key"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_secret_access_key" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
     }
     update {

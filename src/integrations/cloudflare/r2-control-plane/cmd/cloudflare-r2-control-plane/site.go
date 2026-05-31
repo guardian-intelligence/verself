@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/verself/deployment-tools/r2control"
 )
 
 type siteArtifactConfig struct {
@@ -28,7 +30,6 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 			CloudflareAccountID    string            `json:"cloudflare_account_id"`
 			CloudflareAccountIDEnv string            `json:"cloudflare_account_id_env"`
 			GetterOptions          map[string]string `json:"getter_options"`
-			PublisherCredentials   map[string]string `json:"publisher_credentials"`
 			ChecksumAlgorithm      string            `json:"checksum_algorithm"`
 			Public                 *bool             `json:"public"`
 		} `json:"artifact_delivery"`
@@ -68,20 +69,8 @@ func resolveCloudflareAccountID(direct, envName string) (string, error) {
 		}
 	}
 	accountID = strings.ToLower(accountID)
-	if !isCloudflareAccountID(accountID) {
+	if !r2control.IsCloudflareAccountID(accountID) {
 		return "", errors.New("artifact_delivery.cloudflare_account_id must be a 32-character hex Cloudflare account ID")
 	}
 	return accountID, nil
-}
-
-func isCloudflareAccountID(value string) bool {
-	if len(value) != 32 {
-		return false
-	}
-	for _, r := range value {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return false
-		}
-	}
-	return true
 }

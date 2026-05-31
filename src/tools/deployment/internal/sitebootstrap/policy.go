@@ -38,6 +38,12 @@ func loadSeedPolicy(repoRoot, site string) (seedPolicy, error) {
 	for key, meta := range generatedSeedKeys {
 		derived.keys[key] = meta
 	}
+	for _, key := range []string{
+		"nomad_artifact_getter_s3_access_key_id",
+		"nomad_artifact_getter_s3_secret_access_key",
+	} {
+		derived.keys[key] = fallbackProvidedSeedKeys[key]
+	}
 	siteVars, err := loadSiteVars(root, site)
 	if err != nil {
 		return seedPolicy{}, err

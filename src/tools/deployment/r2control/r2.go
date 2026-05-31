@@ -1,4 +1,4 @@
-package main
+package r2control
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 )
 
-const emptyPayloadSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+const EmptyPayloadSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-type r2ClientConfig struct {
+type R2ClientConfig struct {
 	Endpoint        string
 	Region          string
 	AccessKeyID     string
@@ -25,7 +25,7 @@ type r2ClientConfig struct {
 	Timeout         time.Duration
 }
 
-type r2Client struct {
+type R2Client struct {
 	endpoint *url.URL
 	region   string
 	client   *http.Client
@@ -33,7 +33,11 @@ type r2Client struct {
 	creds    aws.Credentials
 }
 
-func newR2Client(cfg r2ClientConfig) (*r2Client, error) {
+func Endpoint(accountID string) string {
+	return "https://" + strings.ToLower(strings.TrimSpace(accountID)) + ".r2.cloudflarestorage.com"
+}
+
+func NewR2Client(cfg R2ClientConfig) (*R2Client, error) {
 	endpoint, err := url.Parse(strings.TrimSpace(cfg.Endpoint))
 	if err != nil {
 		return nil, fmt.Errorf("parse R2 endpoint: %w", err)
@@ -52,7 +56,7 @@ func newR2Client(cfg r2ClientConfig) (*r2Client, error) {
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
-	return &r2Client{
+	return &R2Client{
 		endpoint: endpoint,
 		region:   firstNonEmpty(cfg.Region, "auto"),
 		client:   &http.Client{Timeout: timeout},
@@ -66,8 +70,8 @@ func newR2Client(cfg r2ClientConfig) (*r2Client, error) {
 	}, nil
 }
 
-func (c *r2Client) ensureBucket(ctx context.Context, bucket string) (bool, bool, error) {
-	status, err := c.headBucket(ctx, bucket)
+func (c *R2Client) EnsureBucket(ctx context.Context, bucket string) (bool, bool, error) {
+	status, err := c.HeadBucket(ctx, bucket)
 	if err != nil {
 		return false, false, err
 	}
@@ -77,14 +81,14 @@ func (c *r2Client) ensureBucket(ctx context.Context, bucket string) (bool, bool,
 	if status != http.StatusNotFound {
 		return false, false, fmt.Errorf("head R2 bucket %s returned status %d", bucket, status)
 	}
-	status, _, err = c.signedRequest(ctx, http.MethodPut, c.bucketURL(bucket), http.NoBody, emptyPayloadSHA256, nil)
+	status, _, err = c.SignedRequest(ctx, http.MethodPut, c.BucketURL(bucket), http.NoBody, EmptyPayloadSHA256, nil)
 	if err != nil {
 		return false, false, err
 	}
 	if status < 200 || status >= 300 {
 		return false, false, fmt.Errorf("create R2 bucket %s returned status %d", bucket, status)
 	}
-	status, err = c.headBucket(ctx, bucket)
+	status, err = c.HeadBucket(ctx, bucket)
 	if err != nil {
 		return false, false, err
 	}
@@ -94,29 +98,29 @@ func (c *r2Client) ensureBucket(ctx context.Context, bucket string) (bool, bool,
 	return false, true, nil
 }
 
-func (c *r2Client) headBucket(ctx context.Context, bucket string) (int, error) {
-	status, _, err := c.signedRequest(ctx, http.MethodHead, c.bucketURL(bucket), http.NoBody, emptyPayloadSHA256, nil)
+func (c *R2Client) HeadBucket(ctx context.Context, bucket string) (int, error) {
+	status, _, err := c.SignedRequest(ctx, http.MethodHead, c.BucketURL(bucket), http.NoBody, EmptyPayloadSHA256, nil)
 	return status, err
 }
 
-func (c *r2Client) putObject(ctx context.Context, bucket, key string, body io.Reader, payloadHash string) (int, error) {
+func (c *R2Client) PutObject(ctx context.Context, bucket, key string, body io.Reader, payloadHash string) (int, error) {
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/octet-stream")
 	headers.Set("X-Amz-Meta-Sha256", payloadHash)
-	status, _, err := c.signedRequest(ctx, http.MethodPut, c.objectURL(bucket, key), body, payloadHash, headers)
+	status, _, err := c.SignedRequest(ctx, http.MethodPut, c.ObjectURL(bucket, key), body, payloadHash, headers)
 	return status, err
 }
 
-func (c *r2Client) headObject(ctx context.Context, bucket, key string) (int, error) {
-	status, _, err := c.signedRequest(ctx, http.MethodHead, c.objectURL(bucket, key), http.NoBody, emptyPayloadSHA256, nil)
+func (c *R2Client) HeadObject(ctx context.Context, bucket, key string) (int, error) {
+	status, _, err := c.SignedRequest(ctx, http.MethodHead, c.ObjectURL(bucket, key), http.NoBody, EmptyPayloadSHA256, nil)
 	return status, err
 }
 
-func (c *r2Client) getObject(ctx context.Context, bucket, key string) (int, []byte, error) {
-	return c.signedRequest(ctx, http.MethodGet, c.objectURL(bucket, key), http.NoBody, emptyPayloadSHA256, nil)
+func (c *R2Client) GetObject(ctx context.Context, bucket, key string) (int, []byte, error) {
+	return c.SignedRequest(ctx, http.MethodGet, c.ObjectURL(bucket, key), http.NoBody, EmptyPayloadSHA256, nil)
 }
 
-func (c *r2Client) signedRequest(ctx context.Context, method string, u *url.URL, body io.Reader, payloadHash string, headers http.Header) (int, []byte, error) {
+func (c *R2Client) SignedRequest(ctx context.Context, method string, u *url.URL, body io.Reader, payloadHash string, headers http.Header) (int, []byte, error) {
 	if body == nil {
 		body = http.NoBody
 	}
@@ -153,19 +157,19 @@ func (c *r2Client) signedRequest(ctx context.Context, method string, u *url.URL,
 	return resp.StatusCode, respBody, nil
 }
 
-func (c *r2Client) bucketURL(bucket string) *url.URL {
+func (c *R2Client) BucketURL(bucket string) *url.URL {
 	u := *c.endpoint
 	u.Path = "/" + strings.Trim(bucket, "/")
 	return &u
 }
 
-func (c *r2Client) objectURL(bucket, key string) *url.URL {
+func (c *R2Client) ObjectURL(bucket, key string) *url.URL {
 	u := *c.endpoint
 	u.Path = "/" + strings.Trim(bucket, "/") + "/" + strings.TrimLeft(key, "/")
 	return &u
 }
 
-func isR2BucketName(value string) bool {
+func IsR2BucketName(value string) bool {
 	if len(value) < 3 || len(value) > 63 {
 		return false
 	}
@@ -187,4 +191,16 @@ func isR2BucketName(value string) bool {
 		}
 	}
 	return !strings.Contains(value, "..") && !strings.Contains(value, ".-") && !strings.Contains(value, "-.")
+}
+
+func IsCloudflareAccountID(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }

@@ -25,6 +25,7 @@ go_library(
         "//src/tools/deployment/internal/siteconfig",
         "//src/tools/deployment/internal/siteinject",
         "//src/tools/deployment/internal/sshtun",
+        "//src/tools/deployment/r2control",
         "@com_github_hashicorp_nomad_api//:api",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",

@@ -89,6 +89,10 @@ def _cloudflare_r2_control_plane_impl(ctx):
         args_list.append("--openbao-path=" + ctx.args.openbao_path)
     if ctx.args.openbao_token_file != "":
         args_list.append("--openbao-token-file=" + (ctx.args.openbao_token_file if ctx.args.openbao_token_file.startswith("/") else ws_path(ctx, ctx.args.openbao_token_file)))
+    if ctx.args.getter_vars_file != "":
+        args_list.append("--getter-vars-file=" + (ctx.args.getter_vars_file if ctx.args.getter_vars_file.startswith("/") else ws_path(ctx, ctx.args.getter_vars_file)))
+    if ctx.args.seed_bundle_file != "":
+        args_list.append("--seed-bundle-file=" + (ctx.args.seed_bundle_file if ctx.args.seed_bundle_file.startswith("/") else ws_path(ctx, ctx.args.seed_bundle_file)))
     if ctx.args.test_prefix != "":
         args_list.append("--test-prefix=" + ctx.args.test_prefix)
     args_list.append("--verify-temp-credentials=" + ("true" if ctx.args.verify_temp_credentials else "false"))
@@ -104,10 +108,10 @@ cloudflare_r2_control_plane = task(
     implementation = _cloudflare_r2_control_plane_impl,
     name = "cloudflare-r2-control-plane",
     group = ["integrations"],
-    summary = "Ensure and live-verify Cloudflare R2 deployment artifact buckets.",
+    summary = "Ensure and live-verify Cloudflare R2 deployment artifact state.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
-        "action": args.string(default = "verify", description = "Action: verify or ensure-bucket."),
+        "action": args.string(default = "verify", description = "Action: verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to site.json."),
         "credential_source": args.string(default = "auto", description = "Credential source: auto, env, env-file, or openbao."),
@@ -115,6 +119,8 @@ cloudflare_r2_control_plane = task(
         "openbao_addr": args.string(default = "", description = "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR."),
         "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2-admin", description = "Controller OpenBao KV path for parent R2 credentials."),
         "openbao_token_file": args.string(default = "", description = "File containing the OpenBao token."),
+        "getter_vars_file": args.string(default = "", description = "JSON vars file to receive durable Nomad artifact getter credentials."),
+        "seed_bundle_file": args.string(default = "", description = "Seed bundle file to receive generated provider values."),
         "test_prefix": args.string(default = "control-plane-verification/", description = "R2 prefix used for live verification objects."),
         "verify_temp_credentials": args.boolean(default = True, description = "Mint scoped temporary credentials and verify with them."),
     },

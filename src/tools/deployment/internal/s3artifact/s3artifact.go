@@ -26,18 +26,20 @@ const (
 )
 
 type Config struct {
-	AccessKeyID     string
-	SecretAccessKey string
-	SessionToken    string
+	AccessKeyID      string
+	SecretAccessKey  string
+	SessionToken     string
+	SkipBucketEnsure bool
 }
 
 type Publisher struct {
-	client   *http.Client
-	signer   *awsv4.Signer
-	creds    aws.Credentials
-	endpoint *url.URL
-	bucket   string
-	region   string
+	client           *http.Client
+	signer           *awsv4.Signer
+	creds            aws.Credentials
+	endpoint         *url.URL
+	bucket           string
+	region           string
+	skipBucketEnsure bool
 }
 
 func New(delivery deploymodel.ArtifactDelivery, cfg Config) (*Publisher, error) {
@@ -66,9 +68,10 @@ func New(delivery deploymodel.ArtifactDelivery, cfg Config) (*Publisher, error) 
 			SessionToken:    strings.TrimSpace(cfg.SessionToken),
 			Source:          "verself-deploy",
 		},
-		endpoint: endpoint,
-		bucket:   bucket,
-		region:   region,
+		endpoint:         endpoint,
+		bucket:           bucket,
+		region:           region,
+		skipBucketEnsure: cfg.SkipBucketEnsure,
 	}, nil
 }
 
@@ -76,8 +79,10 @@ func (p *Publisher) PublishAll(ctx context.Context, artifacts []deploymodel.Arti
 	if len(artifacts) == 0 {
 		return nil
 	}
-	if err := p.ensureBucket(ctx); err != nil {
-		return err
+	if !p.skipBucketEnsure {
+		if err := p.ensureBucket(ctx); err != nil {
+			return err
+		}
 	}
 	for _, artifact := range artifacts {
 		if err := p.publishOne(ctx, artifact, repoRoot); err != nil {

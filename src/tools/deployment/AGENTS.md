@@ -18,11 +18,13 @@ access is owned by `src/tools/operator/cmd/aspect-operator` and the shared
 
 ## Phase boundaries
 
-This module does not publish artifacts, reconcile OpenBao/Postgres, mutate HCL,
-run canaries, monitor rollouts, or roll jobs back. Bazel produces the deployable
-bytes and Nomad owns deployment mechanics. ClickHouse is an observability
-backend, not a runtime dependency of this binary. Host bootstrap and patching
-are outside this binary.
+This module does not reconcile OpenBao/Postgres, mutate HCL, run canaries,
+monitor rollouts, or roll jobs back. Bazel produces the deployable bytes and
+Nomad owns deployment mechanics. Until artifact publication is moved behind a
+Nomad-owned publisher job, this binary uploads Bazel outputs to the site R2
+artifact bucket with short-lived prefix-scoped credentials minted from the R2
+control plane. ClickHouse is an observability backend, not a runtime dependency
+of this binary. Host bootstrap and patching are outside this binary.
 
 ## Conventions
 

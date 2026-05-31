@@ -2,7 +2,6 @@ package controlplane
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -50,23 +49,26 @@ type OpenBaoBundle struct {
 }
 
 type RuntimeSecret struct {
-	Name       string          `json:"name"`
-	OwnerPath  string          `json:"owner_path"`
-	Component  string          `json:"component"`
-	JobID      string          `json:"job_id"`
-	SiteSecret SiteSecretValue `json:"site_secret,omitempty"`
-	File       string          `json:"file,omitempty"`
-	Generated  GeneratedValue  `json:"generated,omitempty"`
+	Name      string              `json:"name"`
+	OwnerPath string              `json:"owner_path"`
+	Component string              `json:"component"`
+	JobID     string              `json:"job_id"`
+	Source    RuntimeSecretSource `json:"source"`
 }
 
-type SiteSecretValue struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+type RuntimeSecretSource struct {
+	Kind           string `json:"kind"`
+	SiteSecretKey  string `json:"site_secret_key,omitempty"`
+	File           string `json:"file,omitempty"`
+	GeneratedBytes int    `json:"generated_bytes,omitempty"`
+	Encoding       string `json:"encoding,omitempty"`
 }
 
-type GeneratedValue struct {
-	Bytes int `json:"bytes,omitempty"`
-}
+const (
+	RuntimeSecretSourceSiteSecret = "site_secret"
+	RuntimeSecretSourceFile       = "file"
+	RuntimeSecretSourceGenerated  = "generated"
+)
 
 type NomadRole struct {
 	Name      string   `json:"name"`
@@ -138,12 +140,8 @@ func LoadBundle(repoRoot, site, sha, deployRunKey string, components []Component
 	}, nil
 }
 
-func loadRuntimeSecrets(repoRoot, site string, components []Component) ([]RuntimeSecret, error) {
+func loadRuntimeSecrets(repoRoot, _ string, components []Component) ([]RuntimeSecret, error) {
 	owners, err := componentOwners(repoRoot, components)
-	if err != nil {
-		return nil, err
-	}
-	seedValues, err := readSeedValues(repoRoot, site)
 	if err != nil {
 		return nil, err
 	}
@@ -181,17 +179,7 @@ func loadRuntimeSecrets(repoRoot, site string, components []Component) ([]Runtim
 				OwnerPath: rel,
 				Component: component.Component,
 				JobID:     component.JobID,
-				File:      strings.TrimSpace(seed.File),
-				Generated: GeneratedValue{
-					Bytes: seed.Generated.Bytes,
-				},
-			}
-			if key := strings.TrimSpace(seed.SiteSecret); key != "" {
-				value := strings.TrimSpace(seedValues[key])
-				if value == "" {
-					return fmt.Errorf("%s: site secret %s required by %s is missing from materialized seed values", rel, key, secret.Name)
-				}
-				secret.SiteSecret = SiteSecretValue{Key: key, Value: value}
+				Source:    runtimeSecretSource(seed),
 			}
 			if err := validateRuntimeSecret(secret); err != nil {
 				return fmt.Errorf("%s: %w", rel, err)
@@ -217,6 +205,23 @@ func loadRuntimeSecrets(repoRoot, site string, components []Component) ([]Runtim
 		seen[secret.Name] = secret.OwnerPath
 	}
 	return out, nil
+}
+
+func runtimeSecretSource(seed deploycontract.RuntimeSecretSeed) RuntimeSecretSource {
+	if key := strings.TrimSpace(seed.SiteSecret); key != "" {
+		return RuntimeSecretSource{Kind: RuntimeSecretSourceSiteSecret, SiteSecretKey: key}
+	}
+	if file := strings.TrimSpace(seed.File); file != "" {
+		return RuntimeSecretSource{Kind: RuntimeSecretSourceFile, File: file}
+	}
+	if seed.Generated.Bytes != 0 {
+		return RuntimeSecretSource{
+			Kind:           RuntimeSecretSourceGenerated,
+			GeneratedBytes: seed.Generated.Bytes,
+			Encoding:       strings.TrimSpace(seed.Generated.Encoding),
+		}
+	}
+	return RuntimeSecretSource{}
 }
 
 type componentOwner struct {
@@ -266,20 +271,30 @@ func validateRuntimeSecret(secret RuntimeSecret) error {
 		return fmt.Errorf("runtime secret %q must match %s", secret.Name, secretNameRE.String())
 	}
 	sources := 0
-	if secret.SiteSecret.Key != "" {
+	switch secret.Source.Kind {
+	case RuntimeSecretSourceSiteSecret:
 		sources++
-	}
-	if secret.File != "" {
+		if !nameRE.MatchString(secret.Source.SiteSecretKey) {
+			return fmt.Errorf("%s site_secret_key must match %s", secret.Name, nameRE.String())
+		}
+	case RuntimeSecretSourceFile:
 		sources++
-		if !filepath.IsAbs(secret.File) {
+		if !filepath.IsAbs(secret.Source.File) {
 			return fmt.Errorf("%s file source must be absolute", secret.Name)
 		}
-	}
-	if secret.Generated.Bytes != 0 {
+	case RuntimeSecretSourceGenerated:
 		sources++
-		if secret.Generated.Bytes < 16 || secret.Generated.Bytes > 96 {
+		if secret.Source.GeneratedBytes < 16 || secret.Source.GeneratedBytes > 96 {
 			return fmt.Errorf("%s generated.bytes must be between 16 and 96", secret.Name)
 		}
+		switch secret.Source.Encoding {
+		case "", "base64url", "hex":
+		default:
+			return fmt.Errorf("%s generated.encoding must be base64url or hex", secret.Name)
+		}
+	case "":
+	default:
+		return fmt.Errorf("%s source.kind must be site_secret, file, or generated", secret.Name)
 	}
 	if sources != 1 {
 		return fmt.Errorf("%s must declare exactly one source: site_secret, file, or generated", secret.Name)
@@ -404,22 +419,6 @@ func walkDeployFiles(repoRoot string, visit func(path, rel string) error) error 
 		}
 	}
 	return nil
-}
-
-func readSeedValues(repoRoot, site string) (map[string]string, error) {
-	path := filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "ansible-secrets.json")
-	body, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return map[string]string{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	values := map[string]string{}
-	if err := json.Unmarshal(body, &values); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
-	}
-	return values, nil
 }
 
 func decodeYAML(path string, out any) error {

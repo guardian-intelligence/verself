@@ -87,8 +87,8 @@ func run() error {
 	spiffeEndpoint := shared.String(workloadauth.EndpointSocketEnv, "")
 	environment := shared.String("OBJECT_STORAGE_ENVIRONMENT", "single-node")
 	writerInstanceID := shared.String("OBJECT_STORAGE_WRITER_INSTANCE_ID", hostname())
-	providerKind := shared.String("OBJECT_STORAGE_PROVIDER", objectstorage.ProviderGarage)
-	proxyRegion := shared.String("OBJECT_STORAGE_S3_REGION", "garage")
+	providerKind := shared.String("OBJECT_STORAGE_PROVIDER", objectstorage.ProviderCloudflareR2)
+	proxyRegion := shared.String("OBJECT_STORAGE_S3_REGION", "auto")
 	if err := shared.Err(); err != nil {
 		return err
 	}

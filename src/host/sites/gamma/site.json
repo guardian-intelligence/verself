@@ -13,11 +13,6 @@
       "access_key_id_env": "AWS_ACCESS_KEY_ID",
       "secret_access_key_env": "AWS_SECRET_ACCESS_KEY"
     },
-    "publisher_credentials": {
-      "source": "controller_environment",
-      "access_key_id_env": "VERSELF_NOMAD_ARTIFACTS_R2_ACCESS_KEY_ID",
-      "secret_access_key_env": "VERSELF_NOMAD_ARTIFACTS_R2_SECRET_ACCESS_KEY"
-    },
     "checksum_algorithm": "sha256",
     "public": false
   },

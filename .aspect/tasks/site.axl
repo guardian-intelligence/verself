@@ -40,7 +40,7 @@ def _default_inventory(site):
 def _seed_template_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
     out = ctx.args.out or _default_seed(site)
-    args_list = ["seed-template", "--site=" + site, "--out=" + _abs(ctx, out)]
+    args_list = ["seed-template", "--site=" + site, "--out=" + _abs(ctx, out), "--repo-root=" + ws_path(ctx)]
     if ctx.args.force:
         args_list.append("--force")
     return bazel_run(
@@ -68,7 +68,9 @@ def _validate_seed_impl(ctx):
     return bazel_run(
         ctx,
         _SITE_BOOTSTRAP_TARGET,
-        ["seed-validate", "--site=" + site, "--seed-bundle=" + _abs(ctx, seed)],
+        # Keep seed validation tied to owner-local deploy declarations.
+        # The Bazel runfiles cwd is not the repo root.
+        ["seed-validate", "--site=" + site, "--seed-bundle=" + _abs(ctx, seed), "--repo-root=" + ws_path(ctx)],
         label = "site-bootstrap seed-validate --site " + site,
     )
 
@@ -94,6 +96,7 @@ def _materialize_seed_impl(ctx):
         "--seed-bundle=" + _abs(ctx, seed),
         "--out-vars=" + _abs(ctx, vars_file),
         "--out-evidence=" + _abs(ctx, evidence),
+        "--repo-root=" + ws_path(ctx),
     ]
     if ctx.args.force:
         args_list.append("--force")

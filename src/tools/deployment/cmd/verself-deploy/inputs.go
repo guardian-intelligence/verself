@@ -165,6 +165,7 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if err != nil {
 		return siteConfig{}, fmt.Errorf("%s: %w", path, err)
 	}
+	raw.ArtifactDelivery.CloudflareAccountID = accountID
 	raw.ArtifactDelivery.GetterSourcePrefix = "s3::https://" + accountID + ".r2.cloudflarestorage.com/" + raw.ArtifactDelivery.Bucket
 	if raw.ArtifactDelivery.GetterOptions == nil {
 		raw.ArtifactDelivery.GetterOptions = map[string]string{}
@@ -180,18 +181,6 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	}
 	if raw.ArtifactDelivery.GetterCredentials.Source != "host_environment" {
 		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.getter_credentials.source must be host_environment", path)
-	}
-	switch raw.ArtifactDelivery.PublisherCredentials.Source {
-	case "", "controller_environment":
-		if raw.ArtifactDelivery.PublisherCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.PublisherCredentials.SecretAccessKeyEnv == "" {
-			return siteConfig{}, fmt.Errorf("%s: artifact_delivery.publisher_credentials requires access_key_id_env and secret_access_key_env", path)
-		}
-	case "controller_environment_file":
-		if raw.ArtifactDelivery.PublisherCredentials.EnvironmentFile == "" || raw.ArtifactDelivery.PublisherCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.PublisherCredentials.SecretAccessKeyEnv == "" {
-			return siteConfig{}, fmt.Errorf("%s: artifact_delivery.publisher_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
-		}
-	default:
-		return siteConfig{}, fmt.Errorf("%s: unsupported artifact_delivery.publisher_credentials.source %q", path, raw.ArtifactDelivery.PublisherCredentials.Source)
 	}
 	if raw.ArtifactDelivery.ChecksumAlgorithm != "sha256" {
 		return siteConfig{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", path)
