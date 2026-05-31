@@ -12,6 +12,7 @@ spire_identity_registry(
         "//src/infrastructure-components/clickhouse:spiffe_identity_server",
         "//src/infrastructure-components/grafana:spiffe_identity",
         "//src/infrastructure-components/nats:spiffe_identity",
+        "//src/infrastructure-components/nomad-observer:spiffe_identity",
         "//src/infrastructure-components/otelcol:spiffe_identity",
         "//src/infrastructure-components/temporal-platform:spiffe_identity_server",
         "//src/services/analytics-service:spiffe_identity",

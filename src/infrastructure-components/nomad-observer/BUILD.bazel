@@ -1,6 +1,23 @@
 # gazelle:prefix github.com/verself/infrastructure-components/nomad-observer
 
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+deploy_declarations(visibility = ["//visibility:public"])
+
+go_module_checks()
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "nomad_observer",
+    entry_id = "verself-nomad-observer",
+    key = "nomad_observer.default",
+    path = "/svc/nomad-observer",
+    user = "nomad_observer",
+    visibility = ["//src/host:__pkg__"],
+)
 
 filegroup(
     name = "role_sources",
@@ -28,9 +45,13 @@ nomad_component(
     },
     component = "nomad-observer",
     deploy_phase = "platform",
+    digest_inputs = [":deploy_declarations"],
     job_id = "nomad-observer",
     job_spec = "nomad.hcl",
     provides = ["nomad-observer:events"],
-    requires = ["otelcol:otlp"],
+    requires = [
+        "otelcol:otlp",
+        "clickhouse:migrations",
+    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

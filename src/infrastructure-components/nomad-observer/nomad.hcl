@@ -8,7 +8,10 @@ job "nomad-observer" {
 
     task "observer" {
       driver = "raw_exec"
-      user = "nobody"
+      # Runs as a dedicated identity (not nobody): it presents an x509-SVID to
+      # write the fleet projection to ClickHouse over mTLS, and is a member of
+      # the spire_workload group for agent-socket access.
+      user = "nomad_observer"
       kill_signal = "SIGTERM"
       kill_timeout = "15s"
 
@@ -31,6 +34,10 @@ job "nomad-observer" {
         NOMAD_OBSERVER_STDOUT_TAIL_BYTES = "32768"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_SERVICE_NAME = "nomad-observer"
+        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
+        VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
+        VERSELF_CLICKHOUSE_USER = "nomad_observer"
+        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/nomad-observer/clickhouse-ca-cert"
         VERSELF_SUPERVISOR = "nomad"
       }
 

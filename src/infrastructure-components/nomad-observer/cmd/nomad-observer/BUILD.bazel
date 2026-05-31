@@ -3,11 +3,16 @@ load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "nomad-observer_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "fleet.go",
+        "main.go",
+    ],
     importpath = "github.com/verself/infrastructure-components/nomad-observer/cmd/nomad-observer",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/services/service-runtime/go/workload",
         "//src/tools/observability/go/otel",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_hashicorp_nomad_api//:api",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//attribute",

@@ -18,8 +18,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/hashicorp/nomad/api"
 	verselfotel "github.com/verself/observability/otel"
+	workloadauth "github.com/verself/service-runtime/workload"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -48,12 +50,17 @@ var (
 )
 
 type config struct {
-	nomadAddr        string
-	namespace        string
-	stderrTailBytes  int64
-	stdoutTailBytes  int64
-	captureWorkers   int
-	captureQueueSize int
+	nomadAddr             string
+	namespace             string
+	stderrTailBytes       int64
+	stdoutTailBytes       int64
+	captureWorkers        int
+	captureQueueSize      int
+	clickhouseAddr        string
+	clickhouseUser        string
+	clickhouseCACertPath  string
+	spiffeSocket          string
+	fleetSnapshotInterval time.Duration
 }
 
 type deployMeta struct {
@@ -199,6 +206,44 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("nomad client: %w", err)
 	}
 
+	// Fleet projection writer. CH reachability is required at startup (fail
+	// fast); the snapshot loop itself tolerates transient errors.
+	spiffeSource, err := workloadauth.Source(ctx, cfg.spiffeSocket)
+	if err != nil {
+		return fmt.Errorf("spiffe source: %w", err)
+	}
+	defer func() { _ = spiffeSource.Close() }()
+	chTLS, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, cfg.clickhouseCACertPath)
+	if err != nil {
+		return fmt.Errorf("clickhouse tls: %w", err)
+	}
+	chConn, err := clickhouse.Open(&clickhouse.Options{
+		Addr: []string{cfg.clickhouseAddr},
+		Auth: clickhouse.Auth{Database: "verself", Username: cfg.clickhouseUser},
+		TLS:  chTLS,
+	})
+	if err != nil {
+		return fmt.Errorf("open clickhouse: %w", err)
+	}
+	defer func() { _ = chConn.Close() }()
+	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+	err = chConn.Ping(pingCtx)
+	pingCancel()
+	if err != nil {
+		return fmt.Errorf("ping clickhouse: %w", err)
+	}
+	region, err := nomadClient.Agent().Region()
+	if err != nil {
+		return fmt.Errorf("nomad region: %w", err)
+	}
+	go (&fleetProjector{
+		nomad:    nomadClient,
+		ch:       chConn,
+		region:   region,
+		interval: cfg.fleetSnapshotInterval,
+		logger:   logger,
+	}).run(ctx)
+
 	obs := &observer{
 		cfg:     cfg,
 		client:  nomadClient,
@@ -233,19 +278,34 @@ func configFromEnv() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
+	fleetIntervalSeconds, err := envInt("NOMAD_OBSERVER_FLEET_SNAPSHOT_INTERVAL_SECONDS", 30, 5, 3600)
+	if err != nil {
+		return config{}, err
+	}
 	cfg := config{
-		nomadAddr:        envString("NOMAD_ADDR", "http://127.0.0.1:4646"),
-		namespace:        envString("NOMAD_NAMESPACE", defaultNS),
-		stderrTailBytes:  stderrTailBytes,
-		stdoutTailBytes:  stdoutTailBytes,
-		captureWorkers:   captureWorkers,
-		captureQueueSize: captureQueueSize,
+		nomadAddr:             envString("NOMAD_ADDR", "http://127.0.0.1:4646"),
+		namespace:             envString("NOMAD_NAMESPACE", defaultNS),
+		stderrTailBytes:       stderrTailBytes,
+		stdoutTailBytes:       stdoutTailBytes,
+		captureWorkers:        captureWorkers,
+		captureQueueSize:      captureQueueSize,
+		clickhouseAddr:        envString("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440"),
+		clickhouseUser:        envString("VERSELF_CLICKHOUSE_USER", "nomad_observer"),
+		clickhouseCACertPath:  envString("VERSELF_CRED_CLICKHOUSE_CA_CERT", ""),
+		spiffeSocket:          envString(workloadauth.EndpointSocketEnv, ""),
+		fleetSnapshotInterval: time.Duration(fleetIntervalSeconds) * time.Second,
 	}
 	if cfg.nomadAddr == "" {
 		return config{}, errors.New("NOMAD_ADDR must not be empty")
 	}
 	if cfg.namespace == "" {
 		cfg.namespace = defaultNS
+	}
+	if cfg.clickhouseCACertPath == "" {
+		return config{}, errors.New("VERSELF_CRED_CLICKHOUSE_CA_CERT must not be empty")
+	}
+	if cfg.spiffeSocket == "" {
+		return config{}, fmt.Errorf("%s must not be empty", workloadauth.EndpointSocketEnv)
 	}
 	return cfg, nil
 }

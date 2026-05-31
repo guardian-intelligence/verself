@@ -1,0 +1,2 @@
+clickhouse_client_ca_credentials:
+  - { path: /etc/credstore/nomad-observer/clickhouse-ca-cert, group: nomad_observer }
