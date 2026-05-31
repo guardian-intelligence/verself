@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/url"
+	"syscall"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -24,6 +28,8 @@ const MonitorWaitTime = 10 * time.Second
 // auto_revert=true) gives Nomad three chances; if all three die the
 // same way no further waiting helps.
 const FailFastDeadAllocs = 3
+
+const transientNomadQueryRetries = 3
 
 // MonitorResult is the terminal Nomad execution shape surfaced by deploy
 // spans. It mirrors the operator-relevant fields from Nomad deployments and
@@ -73,13 +79,18 @@ func (c *Client) Monitor(ctx context.Context, sub *SubmitResult) (MonitorResult,
 		WaitTime:   MonitorWaitTime,
 	}).WithContext(ctx)
 
+	transientFailures := 0
 	for {
 		dep, meta, err := c.api.Deployments().Info(sub.DeploymentID, q)
 		if err != nil {
+			if retryTransientNomadQuery(ctx, span, "deployment info", err, &transientFailures) {
+				continue
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return MonitorResult{DeploymentExists: true, DeploymentID: sub.DeploymentID}, fmt.Errorf("deployment info %s: %w", sub.DeploymentID, err)
 		}
+		transientFailures = 0
 		if dep == nil {
 			err := fmt.Errorf("deployment %s not found", sub.DeploymentID)
 			span.RecordError(err)
@@ -164,6 +175,7 @@ func (c *Client) WaitStopped(ctx context.Context, jobID string) error {
 		WaitTime:   MonitorWaitTime,
 	}).WithContext(ctx)
 
+	transientFailures := 0
 	for {
 		job, meta, err := c.api.Jobs().Info(jobID, q)
 		if err != nil {
@@ -171,10 +183,14 @@ func (c *Client) WaitStopped(ctx context.Context, jobID string) error {
 				span.SetStatus(codes.Ok, "")
 				return nil
 			}
+			if retryTransientNomadQuery(ctx, span, "job info", err, &transientFailures) {
+				continue
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("job info %s: %w", jobID, err)
 		}
+		transientFailures = 0
 		if job == nil || derefBool(job.Stop) {
 			span.SetStatus(codes.Ok, "")
 			return nil
@@ -227,6 +243,7 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 
 	evalID := sub.EvalID
 	seenEvalIDs := map[string]struct{}{}
+	transientFailures := 0
 	for {
 		if _, seen := seenEvalIDs[evalID]; seen {
 			err := fmt.Errorf("batch evaluation chain for job %s cycled at %s", sub.JobID, evalID)
@@ -238,10 +255,14 @@ func (c *Client) monitorBatchEvaluation(ctx context.Context, sub *SubmitResult) 
 
 		ev, meta, err := c.api.Evaluations().Info(evalID, q)
 		if err != nil {
+			if retryTransientNomadQuery(ctx, span, "evaluation info", err, &transientFailures) {
+				continue
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return MonitorResult{TerminalStatus: "eval_query_failed"}, fmt.Errorf("evaluation info %s: %w", evalID, err)
 		}
+		transientFailures = 0
 		if ev == nil {
 			err := fmt.Errorf("evaluation %s not found", evalID)
 			span.RecordError(err)
@@ -304,13 +325,18 @@ func (c *Client) monitorBatchAllocations(ctx context.Context, span trace.Span, e
 		WaitTime:   MonitorWaitTime,
 	}).WithContext(ctx)
 
+	transientFailures := 0
 	for {
 		allocs, meta, err := c.api.Evaluations().Allocations(evalID, q)
 		if err != nil {
+			if retryTransientNomadQuery(ctx, span, "evaluation allocations", err, &transientFailures) {
+				continue
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return MonitorResult{TerminalStatus: "alloc_query_failed"}, fmt.Errorf("evaluation allocations %s: %w", evalID, err)
 		}
+		transientFailures = 0
 		total, complete, failed, running, pending := batchAllocTotals(allocs)
 		span.SetAttributes(
 			attribute.Int("nomad.batch.alloc_total", total),
@@ -353,6 +379,37 @@ func (c *Client) monitorBatchAllocations(ctx context.Context, span trace.Span, e
 			return result, err
 		}
 	}
+}
+
+func retryTransientNomadQuery(ctx context.Context, span trace.Span, operation string, err error, failures *int) bool {
+	if ctx.Err() != nil || !isTransientNomadQueryError(err) || *failures >= transientNomadQueryRetries {
+		return false
+	}
+	*failures++
+	// Nomad long-polls can lose the SSH tunnel while nftables atomically replaces host rules.
+	span.AddEvent("verself.nomad.query.retry", trace.WithAttributes(
+		attribute.String("nomad.query.operation", operation),
+		attribute.Int("nomad.query.retry", *failures),
+		attribute.String("error.message", err.Error()),
+	))
+	return true
+}
+
+func isTransientNomadQueryError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNREFUSED) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+		return true
+	}
+	var urlErr *url.Error
+	return errors.As(err, &urlErr) && isTransientNomadQueryError(urlErr.Err)
 }
 
 func batchAllocTotals(allocs []*api.AllocationListStub) (total, complete, failed, running, pending int) {
