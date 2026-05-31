@@ -199,6 +199,9 @@ func (v *Validator) walkNomadSpecs() error {
 		"guardianintelligence.org",
 		"spiffe.verself.sh",
 		"inst_5NZSEA08R8P3HN566DNH8D301M",
+		"3370540",
+		"Iv23liDpxGOmBSQwSJ5i",
+		"verself-runner",
 	}
 	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

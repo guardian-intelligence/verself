@@ -12,13 +12,18 @@ import (
 )
 
 type Model struct {
-	Site              string
-	ProductDomain     string
-	CompanyDomain     string
-	ZitadelDomain     string
-	SpiffeTrustDomain string
-	InstallationID    string
-	Domains           map[string]string
+	Site                    string
+	ProductDomain           string
+	CompanyDomain           string
+	ZitadelDomain           string
+	SpiffeTrustDomain       string
+	InstallationID          string
+	GitHubAppID             string
+	GitHubAppSlug           string
+	GitHubOAuthClientID     string
+	GitHubAppSettingsURL    string
+	GitHubRunnerClassPrefix string
+	Domains                 map[string]string
 }
 
 func Load(repoRoot, site string) (Model, error) {
@@ -85,6 +90,11 @@ func Load(repoRoot, site string) (Model, error) {
 	model.Domains["product"] = model.ProductDomain
 	model.Domains["company"] = model.CompanyDomain
 	model.Domains["zitadel"] = model.ZitadelDomain
+	model.GitHubAppID = resolveString(values, "github_integration_service_github_app_id")
+	model.GitHubAppSlug = resolveString(values, "github_integration_service_github_app_slug")
+	model.GitHubOAuthClientID = resolveString(values, "github_integration_service_github_app_client_id")
+	model.GitHubAppSettingsURL = resolveString(values, "github_integration_service_github_app_settings_url")
+	model.GitHubRunnerClassPrefix = resolveString(values, "github_integration_service_github_runner_class_prefix")
 	return model, nil
 }
 
@@ -180,6 +190,22 @@ func (m Model) TokenMap() map[string]string {
 		"__VERSELF_GITHUB_OAUTH_REDIRECT_URL__":      "https://" + m.domain("github_integration_service") + "/api/v1/github/user-authorizations/complete",
 		"__VERSELF_ANALYTICS_GITHUB_OIDC_AUDIENCE__": "https://" + m.domain("analytics_service"),
 		"__VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS__":      "spiffe://" + m.SpiffeTrustDomain + "/svc/temporal-server",
+	}
+	if m.GitHubAppID != "" && m.GitHubAppID != "0" {
+		tokens["__VERSELF_GITHUB_APP_ID__"] = m.GitHubAppID
+	}
+	if m.GitHubAppSlug != "" {
+		tokens["__VERSELF_GITHUB_APP_SLUG__"] = m.GitHubAppSlug
+		tokens["__VERSELF_GITHUB_APP_SETUP_URL__"] = "https://github.com/apps/" + m.GitHubAppSlug + "/installations/new"
+	}
+	if m.GitHubOAuthClientID != "" {
+		tokens["__VERSELF_GITHUB_OAUTH_CLIENT_ID__"] = m.GitHubOAuthClientID
+	}
+	if m.GitHubAppSettingsURL != "" {
+		tokens["__VERSELF_GITHUB_APP_SETTINGS_URL__"] = m.GitHubAppSettingsURL
+	}
+	if m.GitHubRunnerClassPrefix != "" {
+		tokens["__VERSELF_GITHUB_RUNNER_CLASS_PREFIX__"] = m.GitHubRunnerClassPrefix
 	}
 	tokens["__VERSELF_DISTRIBUTION_TRUSTED_BUILDERS__"] = "spiffe://" + m.SpiffeTrustDomain + "/svc/release-builder"
 	tokens["__VERSELF_TEMPORAL_NAMESPACE_ROLES__"] = strings.Join([]string{

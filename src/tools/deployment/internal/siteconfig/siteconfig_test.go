@@ -23,6 +23,10 @@ billing_service_subdomain: billing.api
 billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
 resend_subdomain: notify
 resend_domain: "{{ resend_subdomain }}.{{ verself_domain }}"
+github_integration_service_github_app_id: 3918896
+github_integration_service_github_app_slug: verself-runner-gamma
+github_integration_service_github_app_client_id: Iv23lidNdRYiMW9kU27r
+github_integration_service_github_runner_class_prefix: verself-gamma-
 `)
 	if err := os.WriteFile(filepath.Join(siteDir, "vars.yml"), vars, 0o644); err != nil {
 		t.Fatalf("write vars: %v", err)
@@ -43,5 +47,17 @@ resend_domain: "{{ resend_subdomain }}.{{ verself_domain }}"
 	}
 	if tokens["__VERSELF_EMAIL_FROM_ADDRESS__"] != "noreply@notify.gamma.verself.sh" {
 		t.Fatalf("email token = %q", tokens["__VERSELF_EMAIL_FROM_ADDRESS__"])
+	}
+	if tokens["__VERSELF_GITHUB_APP_ID__"] != "3918896" {
+		t.Fatalf("github app id token = %q", tokens["__VERSELF_GITHUB_APP_ID__"])
+	}
+	if tokens["__VERSELF_GITHUB_APP_SETUP_URL__"] != "https://github.com/apps/verself-runner-gamma/installations/new" {
+		t.Fatalf("github setup token = %q", tokens["__VERSELF_GITHUB_APP_SETUP_URL__"])
+	}
+	if tokens["__VERSELF_GITHUB_OAUTH_CLIENT_ID__"] != "Iv23lidNdRYiMW9kU27r" {
+		t.Fatalf("github oauth client token = %q", tokens["__VERSELF_GITHUB_OAUTH_CLIENT_ID__"])
+	}
+	if tokens["__VERSELF_GITHUB_RUNNER_CLASS_PREFIX__"] != "verself-gamma-" {
+		t.Fatalf("github runner class prefix token = %q", tokens["__VERSELF_GITHUB_RUNNER_CLASS_PREFIX__"])
 	}
 }
