@@ -112,36 +112,47 @@ func taskArtifactDestination(output string) string {
 }
 
 func newArtifactPublisher(delivery deploymodel.ArtifactDelivery) (*s3artifact.Publisher, error) {
-	access, secret, err := publisherCredentialPair(delivery.PublisherCredentials)
+	cfg, err := publisherCredentials(delivery.PublisherCredentials)
 	if err != nil {
 		return nil, err
 	}
-	return s3artifact.New(delivery, s3artifact.Config{AccessKeyID: access, SecretAccessKey: secret})
+	return s3artifact.New(delivery, cfg)
 }
 
-func publisherCredentialPair(creds deploymodel.Credentials) (string, string, error) {
+func publisherCredentials(creds deploymodel.Credentials) (s3artifact.Config, error) {
 	switch creds.Source {
 	case "", "controller_environment":
 		if creds.AccessKeyIDEnv == "" || creds.SecretAccessKeyEnv == "" {
-			return "", "", errors.New("artifact_delivery.publisher_credentials requires access_key_id_env and secret_access_key_env")
+			return s3artifact.Config{}, errors.New("artifact_delivery.publisher_credentials requires access_key_id_env and secret_access_key_env")
 		}
 		access := strings.TrimSpace(os.Getenv(creds.AccessKeyIDEnv))
 		secret := strings.TrimSpace(os.Getenv(creds.SecretAccessKeyEnv))
 		if access == "" || secret == "" {
-			return "", "", fmt.Errorf("controller environment missing %s and/or %s", creds.AccessKeyIDEnv, creds.SecretAccessKeyEnv)
+			return s3artifact.Config{}, fmt.Errorf("controller environment missing %s and/or %s", creds.AccessKeyIDEnv, creds.SecretAccessKeyEnv)
 		}
-		return access, secret, nil
+		session := ""
+		if creds.SessionTokenEnv != "" {
+			session = strings.TrimSpace(os.Getenv(creds.SessionTokenEnv))
+			if session == "" {
+				return s3artifact.Config{}, fmt.Errorf("controller environment missing %s", creds.SessionTokenEnv)
+			}
+		}
+		return s3artifact.Config{AccessKeyID: access, SecretAccessKey: secret, SessionToken: session}, nil
 	case "controller_environment_file":
 		if creds.EnvironmentFile == "" {
-			return "", "", errors.New("artifact_delivery.publisher_credentials.environment_file is required")
+			return s3artifact.Config{}, errors.New("artifact_delivery.publisher_credentials.environment_file is required")
 		}
 		body, err := os.ReadFile(creds.EnvironmentFile)
 		if err != nil {
-			return "", "", fmt.Errorf("read publisher environment file: %w", err)
+			return s3artifact.Config{}, fmt.Errorf("read publisher environment file: %w", err)
 		}
-		return s3artifact.ParseEnvFile(body, creds.AccessKeyIDEnv, creds.SecretAccessKeyEnv)
+		access, secret, session, err := s3artifact.ParseEnvFile(body, creds.AccessKeyIDEnv, creds.SecretAccessKeyEnv, creds.SessionTokenEnv)
+		if err != nil {
+			return s3artifact.Config{}, err
+		}
+		return s3artifact.Config{AccessKeyID: access, SecretAccessKey: secret, SessionToken: session}, nil
 	default:
-		return "", "", fmt.Errorf("unsupported artifact_delivery.publisher_credentials.source %q", creds.Source)
+		return s3artifact.Config{}, fmt.Errorf("unsupported artifact_delivery.publisher_credentials.source %q", creds.Source)
 	}
 }
 

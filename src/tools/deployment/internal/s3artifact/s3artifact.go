@@ -28,6 +28,7 @@ const (
 type Config struct {
 	AccessKeyID     string
 	SecretAccessKey string
+	SessionToken    string
 }
 
 type Publisher struct {
@@ -62,6 +63,7 @@ func New(delivery deploymodel.ArtifactDelivery, cfg Config) (*Publisher, error) 
 		creds: aws.Credentials{
 			AccessKeyID:     strings.TrimSpace(cfg.AccessKeyID),
 			SecretAccessKey: strings.TrimSpace(cfg.SecretAccessKey),
+			SessionToken:    strings.TrimSpace(cfg.SessionToken),
 			Source:          "verself-deploy",
 		},
 		endpoint: endpoint,
@@ -207,7 +209,7 @@ func parseGetterPrefix(prefix string) (*url.URL, string, error) {
 	return u, bucket, nil
 }
 
-func ParseEnvFile(body []byte, accessKeyEnv, secretKeyEnv string) (string, string, error) {
+func ParseEnvFile(body []byte, accessKeyEnv, secretKeyEnv, sessionTokenEnv string) (string, string, string, error) {
 	values := map[string]string{}
 	for _, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
@@ -216,16 +218,23 @@ func ParseEnvFile(body []byte, accessKeyEnv, secretKeyEnv string) (string, strin
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if !ok {
-			return "", "", fmt.Errorf("invalid environment line %q", line)
+			return "", "", "", fmt.Errorf("invalid environment line %q", line)
 		}
 		values[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), "\"'")
 	}
 	access := strings.TrimSpace(values[accessKeyEnv])
 	secret := strings.TrimSpace(values[secretKeyEnv])
 	if access == "" || secret == "" {
-		return "", "", fmt.Errorf("environment file missing %s and/or %s", accessKeyEnv, secretKeyEnv)
+		return "", "", "", fmt.Errorf("environment file missing %s and/or %s", accessKeyEnv, secretKeyEnv)
 	}
-	return access, secret, nil
+	session := ""
+	if sessionTokenEnv != "" {
+		session = strings.TrimSpace(values[sessionTokenEnv])
+		if session == "" {
+			return "", "", "", fmt.Errorf("environment file missing %s", sessionTokenEnv)
+		}
+	}
+	return access, secret, session, nil
 }
 
 func sha256Hex(body []byte) string {

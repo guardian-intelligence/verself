@@ -74,14 +74,20 @@ aspect site seed-template --site=gamma --force
 
 Fill .verself/site-bootstrap/gamma/seed.yml with only the requested
 provider values, including the scoped Nomad artifact getter R2 keypair. No SOPS
-file is created. Export the non-secret Cloudflare account ID and scoped
-publisher R2 keypair in the deploy controller environment before `aspect deploy`:
+file is created. The Cloudflare account ID is checked into site metadata. Keep
+the parent R2 admin credential in controller OpenBao or an operator-only
+environment, and verify the deployment artifact bucket before deploy:
 
 ```shell
-export VERSELF_CLOUDFLARE_ACCOUNT_ID=<32-hex-account-id>
-export VERSELF_NOMAD_ARTIFACTS_R2_ACCESS_KEY_ID=<publisher-access-key-id>
-export VERSELF_NOMAD_ARTIFACTS_R2_SECRET_ACCESS_KEY=<publisher-secret-access-key>
+aspect integrations cloudflare-r2-control-plane \
+  --site=gamma \
+  --credential-source=openbao
 ```
+
+Until the deploy publisher consumes the R2 control-plane temporary credential
+handoff directly, any controller publisher credential used for `aspect deploy`
+must be bucket-scoped to the site's artifact bucket. Do not use the parent R2
+admin credential outside the R2 control plane.
 
 ```shell
 install -m 700 -d .verself/site-bootstrap/gamma

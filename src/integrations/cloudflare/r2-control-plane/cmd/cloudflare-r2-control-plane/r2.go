@@ -1,0 +1,190 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+)
+
+const emptyPayloadSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+type r2ClientConfig struct {
+	Endpoint        string
+	Region          string
+	AccessKeyID     string
+	SecretAccessKey string
+	SessionToken    string
+	Source          string
+	Timeout         time.Duration
+}
+
+type r2Client struct {
+	endpoint *url.URL
+	region   string
+	client   *http.Client
+	signer   *awsv4.Signer
+	creds    aws.Credentials
+}
+
+func newR2Client(cfg r2ClientConfig) (*r2Client, error) {
+	endpoint, err := url.Parse(strings.TrimSpace(cfg.Endpoint))
+	if err != nil {
+		return nil, fmt.Errorf("parse R2 endpoint: %w", err)
+	}
+	if endpoint.Scheme != "https" || endpoint.Host == "" {
+		return nil, fmt.Errorf("R2 endpoint must be an https URL")
+	}
+	endpoint.Path = ""
+	endpoint.RawPath = ""
+	endpoint.RawQuery = ""
+	endpoint.Fragment = ""
+	if strings.TrimSpace(cfg.AccessKeyID) == "" || strings.TrimSpace(cfg.SecretAccessKey) == "" {
+		return nil, fmt.Errorf("R2 access key ID and secret access key are required")
+	}
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+	return &r2Client{
+		endpoint: endpoint,
+		region:   firstNonEmpty(cfg.Region, "auto"),
+		client:   &http.Client{Timeout: timeout},
+		signer:   awsv4.NewSigner(),
+		creds: aws.Credentials{
+			AccessKeyID:     strings.TrimSpace(cfg.AccessKeyID),
+			SecretAccessKey: strings.TrimSpace(cfg.SecretAccessKey),
+			SessionToken:    strings.TrimSpace(cfg.SessionToken),
+			Source:          firstNonEmpty(cfg.Source, "cloudflare-r2-control-plane"),
+		},
+	}, nil
+}
+
+func (c *r2Client) ensureBucket(ctx context.Context, bucket string) (bool, bool, error) {
+	status, err := c.headBucket(ctx, bucket)
+	if err != nil {
+		return false, false, err
+	}
+	if status == http.StatusOK {
+		return true, false, nil
+	}
+	if status != http.StatusNotFound {
+		return false, false, fmt.Errorf("head R2 bucket %s returned status %d", bucket, status)
+	}
+	status, _, err = c.signedRequest(ctx, http.MethodPut, c.bucketURL(bucket), http.NoBody, emptyPayloadSHA256, nil)
+	if err != nil {
+		return false, false, err
+	}
+	if status < 200 || status >= 300 {
+		return false, false, fmt.Errorf("create R2 bucket %s returned status %d", bucket, status)
+	}
+	status, err = c.headBucket(ctx, bucket)
+	if err != nil {
+		return false, false, err
+	}
+	if status != http.StatusOK {
+		return false, false, fmt.Errorf("created R2 bucket %s but follow-up HEAD returned status %d", bucket, status)
+	}
+	return false, true, nil
+}
+
+func (c *r2Client) headBucket(ctx context.Context, bucket string) (int, error) {
+	status, _, err := c.signedRequest(ctx, http.MethodHead, c.bucketURL(bucket), http.NoBody, emptyPayloadSHA256, nil)
+	return status, err
+}
+
+func (c *r2Client) putObject(ctx context.Context, bucket, key string, body io.Reader, payloadHash string) (int, error) {
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/octet-stream")
+	headers.Set("X-Amz-Meta-Sha256", payloadHash)
+	status, _, err := c.signedRequest(ctx, http.MethodPut, c.objectURL(bucket, key), body, payloadHash, headers)
+	return status, err
+}
+
+func (c *r2Client) headObject(ctx context.Context, bucket, key string) (int, error) {
+	status, _, err := c.signedRequest(ctx, http.MethodHead, c.objectURL(bucket, key), http.NoBody, emptyPayloadSHA256, nil)
+	return status, err
+}
+
+func (c *r2Client) getObject(ctx context.Context, bucket, key string) (int, []byte, error) {
+	return c.signedRequest(ctx, http.MethodGet, c.objectURL(bucket, key), http.NoBody, emptyPayloadSHA256, nil)
+}
+
+func (c *r2Client) signedRequest(ctx context.Context, method string, u *url.URL, body io.Reader, payloadHash string, headers http.Header) (int, []byte, error) {
+	if body == nil {
+		body = http.NoBody
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
+	if err != nil {
+		return 0, nil, err
+	}
+	for key, values := range headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
+	if err := c.signer.SignHTTP(ctx, c.creds, req, payloadHash, "s3", c.region, time.Now().UTC(), func(options *awsv4.SignerOptions) {
+		options.DisableURIPathEscaping = true
+	}); err != nil {
+		return 0, nil, fmt.Errorf("sign R2 %s %s: %w", method, u.Redacted(), err)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("R2 %s %s: %w", method, u.Redacted(), err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return 0, nil, fmt.Errorf("read R2 response: %w", err)
+	}
+	if resp.StatusCode >= 500 {
+		return resp.StatusCode, respBody, fmt.Errorf("R2 %s %s returned status %d: %s", method, u.Redacted(), resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusNotFound {
+		return resp.StatusCode, respBody, fmt.Errorf("R2 %s %s returned status %d: %s", method, u.Redacted(), resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	return resp.StatusCode, respBody, nil
+}
+
+func (c *r2Client) bucketURL(bucket string) *url.URL {
+	u := *c.endpoint
+	u.Path = "/" + strings.Trim(bucket, "/")
+	return &u
+}
+
+func (c *r2Client) objectURL(bucket, key string) *url.URL {
+	u := *c.endpoint
+	u.Path = "/" + strings.Trim(bucket, "/") + "/" + strings.TrimLeft(key, "/")
+	return &u
+}
+
+func isR2BucketName(value string) bool {
+	if len(value) < 3 || len(value) > 63 {
+		return false
+	}
+	first := value[0]
+	if (first < 'a' || first > 'z') && (first < '0' || first > '9') {
+		return false
+	}
+	last := value[len(value)-1]
+	if (last < 'a' || last > 'z') && (last < '0' || last > '9') {
+		return false
+	}
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '-' || r == '.':
+		default:
+			return false
+		}
+	}
+	return !strings.Contains(value, "..") && !strings.Contains(value, ".-") && !strings.Contains(value, "-.")
+}

@@ -11,6 +11,7 @@ load(
 )
 
 _CLOUDFLARE_DNS_TARGET = "//src/integrations/cloudflare/dns-reconciler/cmd/reconcile-cloudflare-dns:reconcile-cloudflare-dns"
+_CLOUDFLARE_R2_CONTROL_PLANE_TARGET = "//src/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane:cloudflare-r2-control-plane"
 _STRIPE_CLI_VERSION = "1.42.1"
 _STRIPE_PROJECTS_PLUGIN_VERSION = "0.16.0"
 _STRIPE_PROJECTS_PLUGIN = {
@@ -65,6 +66,57 @@ cloudflare_dns = task(
         "dry_run": args.boolean(default = False, description = "Print the DNS diff without applying it."),
         "secret_vars_file": args.string(default = "", description = "Generated Ansible vars file containing cloudflare_api_token."),
         "cloudflare_token_file": args.string(default = "", description = "File containing only cloudflare_api_token."),
+    },
+)
+
+def _cloudflare_r2_control_plane_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    args_list = [
+        "--site=" + site,
+        "--repo-root=" + ws_path(ctx),
+        "--action=" + ctx.args.action,
+        "--credential-source=" + ctx.args.credential_source,
+    ]
+    if ctx.args.account_id != "":
+        args_list.append("--account-id=" + ctx.args.account_id)
+    if ctx.args.bucket != "":
+        args_list.append("--bucket=" + ctx.args.bucket)
+    if ctx.args.credentials_file != "":
+        args_list.append("--credentials-file=" + (ctx.args.credentials_file if ctx.args.credentials_file.startswith("/") else ws_path(ctx, ctx.args.credentials_file)))
+    if ctx.args.openbao_addr != "":
+        args_list.append("--openbao-addr=" + ctx.args.openbao_addr)
+    if ctx.args.openbao_path != "":
+        args_list.append("--openbao-path=" + ctx.args.openbao_path)
+    if ctx.args.openbao_token_file != "":
+        args_list.append("--openbao-token-file=" + (ctx.args.openbao_token_file if ctx.args.openbao_token_file.startswith("/") else ws_path(ctx, ctx.args.openbao_token_file)))
+    if ctx.args.test_prefix != "":
+        args_list.append("--test-prefix=" + ctx.args.test_prefix)
+    args_list.append("--verify-temp-credentials=" + ("true" if ctx.args.verify_temp_credentials else "false"))
+    return bazel_run(
+        ctx,
+        _CLOUDFLARE_R2_CONTROL_PLANE_TARGET,
+        args_list,
+        bazel_args = ["--noshow_progress", "--ui_event_filters=-info"],
+        label = "cloudflare-r2-control-plane --site " + site,
+    )
+
+cloudflare_r2_control_plane = task(
+    implementation = _cloudflare_r2_control_plane_impl,
+    name = "cloudflare-r2-control-plane",
+    group = ["integrations"],
+    summary = "Ensure and live-verify Cloudflare R2 deployment artifact buckets.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "action": args.string(default = "verify", description = "Action: verify or ensure-bucket."),
+        "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
+        "bucket": args.string(default = "", description = "R2 bucket. Defaults to site.json."),
+        "credential_source": args.string(default = "auto", description = "Credential source: auto, env, env-file, or openbao."),
+        "credentials_file": args.string(default = "", description = "Environment file containing parent R2 credentials."),
+        "openbao_addr": args.string(default = "", description = "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR."),
+        "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2-admin", description = "Controller OpenBao KV path for parent R2 credentials."),
+        "openbao_token_file": args.string(default = "", description = "File containing the OpenBao token."),
+        "test_prefix": args.string(default = "control-plane-verification/", description = "R2 prefix used for live verification objects."),
+        "verify_temp_credentials": args.boolean(default = True, description = "Mint scoped temporary credentials and verify with them."),
     },
 )
 

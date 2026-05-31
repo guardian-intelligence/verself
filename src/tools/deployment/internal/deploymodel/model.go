@@ -20,6 +20,7 @@ type Credentials struct {
 	EnvironmentFile    string `json:"environment_file"`
 	AccessKeyIDEnv     string `json:"access_key_id_env"`
 	SecretAccessKeyEnv string `json:"secret_access_key_env"`
+	SessionTokenEnv    string `json:"session_token_env"`
 }
 
 type Artifact struct {
