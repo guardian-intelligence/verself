@@ -90,6 +90,12 @@ def _mksk_impl(ctx):
             cli_args.extend(["--openbao-key", ctx.args.openbao_key])
         if ctx.args.openbao_namespace != "":
             cli_args.extend(["--openbao-namespace", ctx.args.openbao_namespace])
+        if ctx.args.distribution_challenge != "":
+            cli_args.extend(["--distribution-challenge", ctx.args.distribution_challenge])
+        if ctx.args.tpm_release_public_name != "":
+            cli_args.extend(["--tpm-release-public-name", ctx.args.tpm_release_public_name])
+        if ctx.args.tpm_release_public_blob_digest != "":
+            cli_args.extend(["--tpm-release-public-blob-digest", ctx.args.tpm_release_public_blob_digest])
     return bazel_run(ctx, MKSK_RELEASE_TARGET, cli_args, label = "mksk-release " + subcommand)
 
 npm_probe = task(
@@ -137,5 +143,8 @@ mksk = task(
         "openbao_transit_mount": args.string(default = "transit", description = "OpenBao Transit mount used by --signing=openbao-transit."),
         "openbao_key": args.string(default = "", description = "OpenBao Transit key used by --signing=openbao-transit."),
         "openbao_namespace": args.string(default = "", description = "OpenBao namespace header used by --signing=openbao-transit."),
+        "distribution_challenge": args.string(default = "", description = "One-use distribution-service challenge bound into the release input digest."),
+        "tpm_release_public_name": args.string(default = "", description = "TPM Name for the ephemeral release signing key."),
+        "tpm_release_public_blob_digest": args.string(default = "", description = "sha256 digest of the TPM release public blob."),
     },
 )

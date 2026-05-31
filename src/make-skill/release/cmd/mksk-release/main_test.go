@@ -288,11 +288,14 @@ func TestReleaseSignerFromFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	signer, err = releaseSignerFromFlags(publishFlagValues{
-		signingMode:         signingModeOpenBaoTransit,
-		openBaoAddr:         "https://openbao.api.verself.sh",
-		openBaoTokenFile:    token,
-		openBaoTransitMount: "transit",
-		openBaoKey:          "mksk-release-root",
+		signingMode:                signingModeOpenBaoTransit,
+		openBaoAddr:                "https://openbao.api.verself.sh",
+		openBaoTokenFile:           token,
+		openBaoTransitMount:        "transit",
+		openBaoKey:                 "mksk-release-root",
+		distributionChallenge:      "challenge",
+		tpmReleasePublicName:       "000b" + strings.Repeat("a", 64),
+		tpmReleasePublicBlobDigest: "sha256:" + strings.Repeat("b", 64),
 	})
 	if err != nil {
 		t.Fatalf("releaseSignerFromFlags(openbao) error = %v", err)
@@ -302,6 +305,21 @@ func TestReleaseSignerFromFlags(t *testing.T) {
 	}
 	if err := signer.Preflight(context.Background()); err == nil {
 		t.Fatal("openBaoTransitSigner.Preflight() error = nil")
+	}
+}
+
+func TestValidateReleaseCeremonyRejectsPartialInput(t *testing.T) {
+	err := validateReleaseCeremony(releaseCeremony{DistributionChallenge: "challenge"})
+	if err == nil || !strings.Contains(err.Error(), "--tpm-release-public-name") {
+		t.Fatalf("validateReleaseCeremony() error = %v, want missing TPM key", err)
+	}
+	err = validateReleaseCeremony(releaseCeremony{
+		DistributionChallenge:      "challenge",
+		TPMReleasePublicName:       "000b" + strings.Repeat("a", 64),
+		TPMReleasePublicBlobDigest: "not-a-digest",
+	})
+	if err == nil || !strings.Contains(err.Error(), "sha256:<64 lowercase hex>") {
+		t.Fatalf("validateReleaseCeremony() digest error = %v", err)
 	}
 }
 
@@ -357,6 +375,17 @@ func TestPublishBundlePublishesEvidenceReferrers(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotKinds, wantKinds) {
 		t.Fatalf("referrer artifact types = %#v, want %#v", gotKinds, wantKinds)
+	}
+	envelope, err := newReleaseSigningEnvelope(bundle, publicOCIReference(defaultPublicURL, defaultRepository, result.Subject.Descriptor.Digest.String()), result, releaseCeremony{
+		DistributionChallenge:      "challenge",
+		TPMReleasePublicName:       "000b" + strings.Repeat("a", 64),
+		TPMReleasePublicBlobDigest: "sha256:" + strings.Repeat("b", 64),
+	})
+	if err != nil {
+		t.Fatalf("newReleaseSigningEnvelope() error = %v", err)
+	}
+	if envelope.ReleaseInputDigest == "" || !strings.Contains(string(envelope.CanonicalPayload()), "release_input_digest="+envelope.ReleaseInputDigest) {
+		t.Fatalf("release input digest was not bound into signing payload")
 	}
 }
 

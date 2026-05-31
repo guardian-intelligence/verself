@@ -1,6 +1,11 @@
 package distribution
 
-import "time"
+import (
+	"context"
+	"time"
+
+	"github.com/verself/distribution-service/internal/releaseattest"
+)
 
 const ServiceName = "distribution-service"
 
@@ -36,6 +41,10 @@ const (
 
 	PredicateSLSAProvenance = "https://slsa.dev/provenance/v1"
 )
+
+type ReleaseAttestationVerifier interface {
+	Verify(context.Context, releaseattest.Request) (releaseattest.Result, error)
+}
 
 type Principal struct {
 	Actor string
@@ -127,27 +136,40 @@ type Target struct {
 }
 
 type AdmitArtifactRequest struct {
-	PackageName       string
-	PackageVersion    string
-	ChannelName       string
-	PlatformOS        string
-	PlatformArch      string
-	Flavor            string
-	OriginRegistryURL string
-	PublicRegistryURL string
-	OCIRepository     string
-	OCIDigest         string
-	OCIMediaType      string
-	OCISizeBytes      int64
-	BuilderID         string
-	SignerIdentity    string
-	SourceRepository  string
-	SourceCommit      string
-	SourceRef         string
-	PolicyRef         string
-	Evidence          []Evidence
-	SubmittedBy       string
-	IdempotencyKey    string
+	PackageName        string
+	PackageVersion     string
+	ChannelName        string
+	PlatformOS         string
+	PlatformArch       string
+	Flavor             string
+	OriginRegistryURL  string
+	PublicRegistryURL  string
+	OCIRepository      string
+	OCIDigest          string
+	OCIMediaType       string
+	OCISizeBytes       int64
+	BuilderID          string
+	SignerIdentity     string
+	SourceRepository   string
+	SourceCommit       string
+	SourceRef          string
+	PolicyRef          string
+	Evidence           []Evidence
+	ReleaseAttestation ReleaseAttestation
+	SubmittedBy        string
+	IdempotencyKey     string
+}
+
+type ReleaseAttestation struct {
+	DistributionChallenge      string
+	ReleaseInputDigest         string
+	ArtifactDigest             string
+	ProvenanceDigest           string
+	SBOMDigest                 string
+	TPMReleasePublicName       string
+	TPMReleasePublicBlobDigest string
+	PolicyID                   string
+	TPM                        releaseattest.TPMEvidence
 }
 
 type PromoteTargetRequest struct {

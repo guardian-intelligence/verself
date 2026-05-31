@@ -14,6 +14,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/verself/distribution-service/internal/releaseattest"
+	releaseinput "github.com/verself/releaseattest"
 )
 
 var serviceTracer = otel.Tracer("distribution-service/distribution")
@@ -24,6 +27,7 @@ type Service struct {
 	Logger          *slog.Logger
 	TrustedBuilders map[string]struct{}
 	TrustedSigners  map[string]struct{}
+	ReleaseVerifier ReleaseAttestationVerifier
 	InstallationID  string
 	Now             func() time.Time
 }
@@ -37,6 +41,9 @@ func (s *Service) Ready(ctx context.Context) error {
 	}
 	if len(s.TrustedSigners) == 0 {
 		return fmt.Errorf("%w: at least one trusted signer is required", ErrUntrustedSigner)
+	}
+	if s.ReleaseVerifier == nil {
+		return fmt.Errorf("%w: verifier is required", ErrAttestationFailed)
 	}
 	if s.CH != nil {
 		var one uint8
@@ -57,12 +64,47 @@ func (s *Service) AdmitArtifact(ctx context.Context, principal Principal, req Ad
 		return Artifact{}, err
 	}
 	s.emit(ctx, event{EventType: "distribution.artifact.verification_started", Decision: "started", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor})
+	attestation, err := s.verifyReleaseAttestation(ctx, req)
+	if err != nil {
+		err = fmt.Errorf("%w: %v", ErrAttestationFailed, err)
+		s.emit(ctx, event{EventType: "distribution.artifact.attestation_denied", Decision: "denied", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor, Reason: err.Error()})
+		return Artifact{}, err
+	}
+	s.emit(ctx, event{EventType: "distribution.artifact.attestation_verified", Decision: "allowed", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor, Reason: "release_input_digest=" + attestation.ReleaseInputDigest + " pcr_policy=" + attestation.PCRPolicyID})
 	artifact, err = s.Store.AdmitArtifact(ctx, req, requestDigest(req), s.now())
 	if err == nil {
 		s.emit(ctx, event{EventType: "distribution.artifact.verification_allowed", Decision: "allowed", PackageName: artifact.PackageName, ChannelName: artifact.ChannelName, PlatformOS: artifact.PlatformOS, PlatformArch: artifact.PlatformArch, ArtifactDigest: artifact.OCIDigest, Actor: principal.Actor})
 		s.emit(ctx, event{EventType: "distribution.artifact.available", Decision: "available", PackageName: artifact.PackageName, ChannelName: artifact.ChannelName, PlatformOS: artifact.PlatformOS, PlatformArch: artifact.PlatformArch, ArtifactDigest: artifact.OCIDigest, Actor: principal.Actor})
 	}
 	return artifact, err
+}
+
+func (s *Service) verifyReleaseAttestation(ctx context.Context, req AdmitArtifactRequest) (releaseattest.Result, error) {
+	if s.ReleaseVerifier == nil {
+		return releaseattest.Result{}, fmt.Errorf("release attestation verifier is not configured")
+	}
+	attestation := req.ReleaseAttestation
+	return s.ReleaseVerifier.Verify(ctx, releaseattest.Request{
+		Input: releaseinput.ReleaseInput{
+			DistributionChallenge:      attestation.DistributionChallenge,
+			Package:                    req.PackageName,
+			Version:                    req.PackageVersion,
+			SourceCommit:               req.SourceCommit,
+			Platform:                   req.PlatformOS + "/" + req.PlatformArch,
+			Flavor:                     req.Flavor,
+			OCIManifestDigest:          req.OCIDigest,
+			ArtifactDigest:             attestation.ArtifactDigest,
+			ProvenanceDigest:           attestation.ProvenanceDigest,
+			SBOMDigest:                 attestation.SBOMDigest,
+			TPMReleasePublicName:       attestation.TPMReleasePublicName,
+			TPMReleasePublicBlobDigest: attestation.TPMReleasePublicBlobDigest,
+		},
+		ReleaseInputDigest: attestation.ReleaseInputDigest,
+		BuilderID:          req.BuilderID,
+		PolicyID:           attestation.PolicyID,
+		TPM:                attestation.TPM,
+		CheckedAt:          s.now(),
+	})
 }
 
 func (s *Service) PromoteTarget(ctx context.Context, principal Principal, req PromoteTargetRequest) (target Target, err error) {
@@ -244,6 +286,20 @@ func normalizeAdmit(req AdmitArtifactRequest) AdmitArtifactRequest {
 	req.PolicyRef = clean(req.PolicyRef)
 	req.SubmittedBy = clean(req.SubmittedBy)
 	req.IdempotencyKey = clean(req.IdempotencyKey)
+	req.ReleaseAttestation.DistributionChallenge = clean(req.ReleaseAttestation.DistributionChallenge)
+	req.ReleaseAttestation.ReleaseInputDigest = clean(req.ReleaseAttestation.ReleaseInputDigest)
+	req.ReleaseAttestation.ArtifactDigest = clean(req.ReleaseAttestation.ArtifactDigest)
+	req.ReleaseAttestation.ProvenanceDigest = clean(req.ReleaseAttestation.ProvenanceDigest)
+	req.ReleaseAttestation.SBOMDigest = clean(req.ReleaseAttestation.SBOMDigest)
+	req.ReleaseAttestation.TPMReleasePublicName = clean(req.ReleaseAttestation.TPMReleasePublicName)
+	req.ReleaseAttestation.TPMReleasePublicBlobDigest = clean(req.ReleaseAttestation.TPMReleasePublicBlobDigest)
+	req.ReleaseAttestation.PolicyID = clean(req.ReleaseAttestation.PolicyID)
+	req.ReleaseAttestation.TPM.ReleasePublicName = clean(req.ReleaseAttestation.TPM.ReleasePublicName)
+	req.ReleaseAttestation.TPM.ReleasePublicBlobDigest = clean(req.ReleaseAttestation.TPM.ReleasePublicBlobDigest)
+	for i := range req.ReleaseAttestation.TPM.PCRs {
+		req.ReleaseAttestation.TPM.PCRs[i].Digest = clean(req.ReleaseAttestation.TPM.PCRs[i].Digest)
+		req.ReleaseAttestation.TPM.PCRs[i].DigestAlg = clean(req.ReleaseAttestation.TPM.PCRs[i].DigestAlg)
+	}
 	for i := range req.Evidence {
 		req.Evidence[i].EvidenceKind = clean(req.Evidence[i].EvidenceKind)
 		req.Evidence[i].PredicateType = clean(req.Evidence[i].PredicateType)

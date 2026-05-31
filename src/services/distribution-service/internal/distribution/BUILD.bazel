@@ -14,7 +14,9 @@ go_library(
     importpath = "github.com/verself/distribution-service/internal/distribution",
     visibility = ["//src/services/distribution-service:__subpackages__"],
     deps = [
+        "//src/services/distribution-service/internal/releaseattest",
         "//src/services/distribution-service/internal/store",
+        "//src/tools/releaseattest",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@com_github_google_uuid//:uuid",
         "@com_github_jackc_pgx_v5//:pgx",
@@ -33,8 +35,10 @@ go_test(
     srcs = ["service_test.go"],
     embed = [":distribution"],
     deps = [
+        "//src/services/distribution-service/internal/releaseattest",
         "//src/services/distribution-service/migrations",
         "//src/services/service-runtime/go/pgtest",
+        "//src/tools/releaseattest",
         "@com_github_jackc_pgx_v5//pgxpool",
     ],
 )

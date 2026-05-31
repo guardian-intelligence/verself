@@ -10,6 +10,7 @@ go_library(
     visibility = ["//src/services/distribution-service:__subpackages__"],
     deps = [
         "//src/services/distribution-service/internal/distribution",
+        "//src/services/distribution-service/internal/releaseattest",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/workload",
         "@io_opentelemetry_go_otel_trace//:trace",

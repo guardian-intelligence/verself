@@ -2,6 +2,8 @@ package distribution
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,7 +12,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	distributionreleaseattest "github.com/verself/distribution-service/internal/releaseattest"
 	"github.com/verself/distribution-service/migrations"
+	releaseinput "github.com/verself/releaseattest"
 	"github.com/verself/service-runtime/pgtest"
 )
 
@@ -167,7 +171,8 @@ func newTestService(t *testing.T) (context.Context, *Service) {
 		TrustedSigners: map[string]struct{}{
 			"https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main": {},
 		},
-		InstallationID: "test",
+		ReleaseVerifier: testReleaseVerifier{},
+		InstallationID:  "test",
 		Now: func() time.Time {
 			now = now.Add(time.Second)
 			return now
@@ -177,6 +182,41 @@ func newTestService(t *testing.T) (context.Context, *Service) {
 
 func admitRequest(digestFill string) AdmitArtifactRequest {
 	digest := "sha256:" + sixtyFour(digestFill)
+	releasePublicBlob := []byte("test-tpm-release-public-" + digestFill)
+	releasePublicBlobDigest := digestForBytes(releasePublicBlob)
+	attestation := ReleaseAttestation{
+		DistributionChallenge:      "challenge-" + digestFill,
+		ArtifactDigest:             "sha256:" + sixtyFour("a"),
+		ProvenanceDigest:           "sha256:" + sixtyFour("d"),
+		SBOMDigest:                 "sha256:" + sixtyFour("e"),
+		TPMReleasePublicName:       "000b" + sixtyFour("f"),
+		TPMReleasePublicBlobDigest: releasePublicBlobDigest,
+		PolicyID:                   "release-builder-v1",
+		TPM: distributionreleaseattest.TPMEvidence{
+			ReleasePublicName:       "000b" + sixtyFour("f"),
+			ReleasePublicBlob:       releasePublicBlob,
+			ReleasePublicBlobDigest: releasePublicBlobDigest,
+		},
+	}
+	releaseInput := releaseinput.ReleaseInput{
+		DistributionChallenge:      attestation.DistributionChallenge,
+		Package:                    "mksk",
+		Version:                    "0.1.0",
+		SourceCommit:               "0123456789abcdef0123456789abcdef01234567",
+		Platform:                   "linux/amd64",
+		Flavor:                     "default",
+		OCIManifestDigest:          digest,
+		ArtifactDigest:             attestation.ArtifactDigest,
+		ProvenanceDigest:           attestation.ProvenanceDigest,
+		SBOMDigest:                 attestation.SBOMDigest,
+		TPMReleasePublicName:       attestation.TPMReleasePublicName,
+		TPMReleasePublicBlobDigest: attestation.TPMReleasePublicBlobDigest,
+	}
+	releaseInputDigest, err := releaseInput.Digest()
+	if err != nil {
+		panic(err)
+	}
+	attestation.ReleaseInputDigest = releaseInputDigest
 	return AdmitArtifactRequest{
 		PackageName:       "mksk",
 		PackageVersion:    "0.1.0",
@@ -202,8 +242,9 @@ func admitRequest(digestFill string) AdmitArtifactRequest {
 			evidence(EvidenceSBOM, "https://spdx.dev/Document", digest, "e"),
 			evidence(EvidenceTest, "https://verself.sh/test-evidence/v1", digest, "f"),
 		},
-		SubmittedBy:    "distribution-rehearsal",
-		IdempotencyKey: "admit-" + digestFill,
+		ReleaseAttestation: attestation,
+		SubmittedBy:        "distribution-rehearsal",
+		IdempotencyKey:     "admit-" + digestFill,
 	}
 }
 
@@ -217,10 +258,34 @@ func evidence(kind string, predicate string, subjectDigest string, referrerFill 
 	}
 }
 
+func digestForBytes(value []byte) string {
+	sum := sha256.Sum256(value)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
 func sixtyFour(value string) string {
 	out := ""
 	for len(out) < 64 {
 		out += value
 	}
 	return out[:64]
+}
+
+type testReleaseVerifier struct{}
+
+func (testReleaseVerifier) Verify(_ context.Context, req distributionreleaseattest.Request) (distributionreleaseattest.Result, error) {
+	digest, err := req.Input.Digest()
+	if err != nil {
+		return distributionreleaseattest.Result{}, err
+	}
+	if req.ReleaseInputDigest != digest {
+		return distributionreleaseattest.Result{}, ErrDigestMismatch
+	}
+	return distributionreleaseattest.Result{
+		ReleaseInputDigest:     digest,
+		PCRPolicyID:            req.PolicyID,
+		TPMReleasePublicName:   req.TPM.ReleasePublicName,
+		TPMReleasePublicDigest: req.TPM.ReleasePublicBlobDigest,
+		CheckedAt:              req.CheckedAt,
+	}, nil
 }

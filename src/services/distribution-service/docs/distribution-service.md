@@ -67,7 +67,11 @@ Admission requires:
 - cosign signature evidence;
 - SLSA provenance with predicate type `https://slsa.dev/provenance/v1`;
 - SBOM evidence;
-- test evidence for stable and RC channels.
+- test evidence for stable and RC channels;
+- a release input digest bound to TPM quote `extraData`, the OCI manifest
+  digest, artifact digest, SLSA provenance digest, SBOM digest, platform,
+  flavor, source commit, version, distribution challenge, and TPM release key
+  identity.
 
 All admission and mutation operations require idempotency keys. Idempotency
 payload mismatches return a conflict instead of replacing state.
