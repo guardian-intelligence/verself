@@ -476,6 +476,10 @@ def host_ansible_env(ctx, tool_shims = None, include_collections = True, extra_e
     env = path_env_with_bazel_tool_shims(ctx, shims, extra_env = extra_env)
     if env == None:
         return None
+    # Explicit task envs must carry ssh-agent auth through to OpenSSH.
+    ssh_auth_sock = _read_env_value(ctx, "SSH_AUTH_SOCK")
+    if ssh_auth_sock != "":
+        env["SSH_AUTH_SOCK"] = ssh_auth_sock
     if include_collections:
         collections = ansible_collections_path(ctx)
         if collections == "":

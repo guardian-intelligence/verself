@@ -4,6 +4,7 @@ load(
     ".aspect/lib/helpers.axl",
     "DEFAULT_SITE",
     "HOST_CONFIGURATION_DIR",
+    "SOPS_SHIM",
     "bazel_run",
     "checked_spawn",
     "host_ansible_env",
@@ -210,34 +211,43 @@ root_handoff = task(
 
 def _converge_host_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    secret_vars = ctx.args.secret_vars_file or _default_vars(site)
+    secret_vars = ctx.args.secret_vars_file
+    use_secret_vars = secret_vars != ""
+    if secret_vars == "" and site != "prod":
+        secret_vars = _default_vars(site)
+        use_secret_vars = True
     if inventory_check(ctx, site = site) != 0:
         return 1
-    exists = (ctx.std.process.command("test")
-        .args(["-f", _abs(ctx, secret_vars)])
-        .spawn().wait())
-    if exists.code != 0:
-        ctx.std.io.stderr.write("ERROR: " + secret_vars + " not found. Run aspect site materialize-seed --site=" + site + " first.\n")
-        return 1
+    if use_secret_vars:
+        exists = (ctx.std.process.command("test")
+            .args(["-f", _abs(ctx, secret_vars)])
+            .spawn().wait())
+        if exists.code != 0:
+            ctx.std.io.stderr.write("ERROR: " + secret_vars + " not found. Run aspect site materialize-seed --site=" + site + " first.\n")
+            return 1
     ansible_playbook = host_ansible_playbook(ctx)
     if ansible_playbook == "":
         return 1
-    env = host_ansible_env(ctx, tool_shims = [])
+    env = host_ansible_env(ctx, tool_shims = [SOPS_SHIM])
     if env == None:
         return 1
     ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
+    playbook_args = [
+        "-i",
+        ws_path(ctx, _default_inventory(site)),
+        "playbooks/site.yml",
+        "-e",
+        "verself_site=" + site,
+    ]
+    if use_secret_vars:
+        playbook_args.extend([
+            "-e",
+            "verself_site_secret_vars_file=" + _abs(ctx, secret_vars),
+        ])
     return checked_spawn(
         ctx,
         ansible_playbook,
-        [
-            "-i",
-            ws_path(ctx, _default_inventory(site)),
-            "playbooks/site.yml",
-            "-e",
-            "verself_site=" + site,
-            "-e",
-            "verself_site_secret_vars_file=" + _abs(ctx, secret_vars),
-        ],
+        playbook_args,
         cwd = ansible_dir,
         env = env,
         label = "ansible-playbook site.yml --site " + site,

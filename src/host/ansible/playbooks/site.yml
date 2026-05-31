@@ -10,19 +10,6 @@
     - name: Load site secrets
       ansible.builtin.import_tasks: tasks/site-secrets.yml
 
-- name: "Preflight: controller prerequisites"
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - preflight
-    - controller
-  tasks:
-    - name: Run controller preflight checks
-      ansible.builtin.import_tasks: tasks/controller-preflight.yml
-
 - name: "Host bootstrap foundation"
   hosts: all
   become: true
