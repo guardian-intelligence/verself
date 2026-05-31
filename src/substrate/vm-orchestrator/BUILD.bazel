@@ -187,6 +187,5 @@ nomad_component(
         "vm-orchestrator:socket",
     ],
     requires = ["otelcol:otlp"],
-    test_targets = ["//src/substrate/vm-orchestrator/..."],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

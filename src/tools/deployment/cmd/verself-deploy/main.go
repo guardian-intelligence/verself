@@ -17,8 +17,6 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
-	case "canary":
-		os.Exit(runCanary(os.Args[2:]))
 	case "run":
 		os.Exit(runRun(os.Args[2:]))
 	case "validate":
@@ -37,18 +35,13 @@ func usage() {
 	fmt.Fprint(os.Stderr, `verself-deploy
 
 usage:
-  verself-deploy canary --site=<site> --size=medium|large|all [--repo-root=<path>]
   verself-deploy run --site=<site> [--sha=<rev>] [--repo-root=<path>]
   verself-deploy validate --site=<site> [--repo-root=<path>]
 
-The run command assumes host bootstrap is complete. It discovers Bazel
-nomad_component targets, runs component-owned tests, builds their artifacts,
-publishes missing artifacts, submits changed Nomad jobs by deploy wave,
-monitors deployments, runs selected post-deploy canaries, reverts changed jobs
-when canaries fail, and emits deploy spans.
-
-The canary command runs declared post-deploy checks against the current site
-without submitting or reverting Nomad jobs.
+The run command assumes host bootstrap is complete. It builds every
+nomad_component with Bazel, parses the Bazel-produced owner-local Nomad job
+specs through the target Nomad API, and registers those jobs. Nomad owns
+rollout health, promotion, and task lifecycle behavior from that point.
 
 The validate command checks site metadata, provider catalog entries,
 owner-local deploy declarations, deploy gates, and authored Nomad specs without

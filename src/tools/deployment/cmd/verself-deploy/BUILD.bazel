@@ -1,19 +1,13 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
     name = "verself-deploy_lib",
     srcs = [
-        "artifacts.go",
         "bazel.go",
-        "canary.go",
-        "evidence.go",
+        "inputs.go",
         "main.go",
         "nomad.go",
-        "openbao.go",
-        "plan.go",
-        "postgresql.go",
         "run.go",
-        "safeconv.go",
         "validate.go",
     ],
     importpath = "github.com/verself/deployment-tools/cmd/verself-deploy",
@@ -21,15 +15,10 @@ go_library(
     deps = [
         "//src/tools/deployment/internal/bazelbuild",
         "//src/tools/deployment/internal/deploycontract",
-        "//src/tools/deployment/internal/deploymodel",
         "//src/tools/deployment/internal/identity",
         "//src/tools/deployment/internal/nomadclient",
-        "//src/tools/deployment/internal/openbaoruntime",
-        "//src/tools/deployment/internal/postgresruntime",
         "//src/tools/deployment/internal/runtime",
-        "//src/tools/deployment/internal/s3artifact",
         "//src/tools/deployment/internal/siteconfig",
-        "//src/tools/deployment/internal/siteinject",
         "//src/tools/deployment/internal/sshtun",
         "@com_github_hashicorp_nomad_api//:api",
         "@io_opentelemetry_go_otel//attribute",
@@ -42,14 +31,4 @@ go_binary(
     name = "verself-deploy",
     embed = [":verself-deploy_lib"],
     visibility = ["//visibility:public"],
-)
-
-go_test(
-    name = "verself-deploy_test",
-    srcs = ["plan_test.go"],
-    embed = [":verself-deploy_lib"],
-    deps = [
-        "//src/tools/deployment/internal/deploymodel",
-        "@com_github_hashicorp_nomad_api//:api",
-    ],
 )

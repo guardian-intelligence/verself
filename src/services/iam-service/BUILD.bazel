@@ -2,7 +2,7 @@
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component", "post_deploy_canary")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 deploy_declarations(visibility = ["//visibility:public"])
@@ -28,7 +28,6 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "iam-service",
     job_spec = "nomad.hcl",
-    post_deploy_canaries = [":service_discovery_medium_canary"],
     requires = [
         "auth:control-plane",
         "clickhouse:migrations",
@@ -38,29 +37,4 @@ nomad_component(
         "postgres:server",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-post_deploy_canary(
-    name = "service_discovery_medium_canary",
-    args = [
-        "service-discovery-canary",
-        "--repo-root",
-        "{repo_root}",
-        "--site",
-        "{site}",
-        "--duration",
-        "45s",
-        "--rps",
-        "6",
-        "--concurrency",
-        "3",
-        "--timeout",
-        "3s",
-        "--format",
-        "table",
-    ],
-    canary_size = "medium",
-    canary_timeout = "2m",
-    kind = "cli",
-    target = "//src/tools/operator/cmd/aspect-operator",
 )
