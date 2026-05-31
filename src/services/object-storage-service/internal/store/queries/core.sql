@@ -1,10 +1,10 @@
 -- name: CreateBucket :exec
 INSERT INTO object_storage_buckets (
-    bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+    bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
     lifecycle_json, created_at, created_by, updated_at, updated_by
 )
 VALUES (
-    sqlc.arg(bucket_id), sqlc.arg(org_id), sqlc.arg(bucket_name), sqlc.arg(garage_bucket_id), sqlc.arg(quota_bytes), sqlc.arg(quota_objects),
+    sqlc.arg(bucket_id), sqlc.arg(org_id), sqlc.arg(bucket_name), sqlc.arg(provider), sqlc.arg(provider_bucket_id), sqlc.arg(quota_bytes), sqlc.arg(quota_objects),
     sqlc.arg(lifecycle_json)::jsonb, sqlc.arg(created_at), sqlc.arg(created_by), sqlc.arg(updated_at), sqlc.arg(updated_by)
 );
 
@@ -19,25 +19,25 @@ WHERE bucket_id = sqlc.arg(bucket_id)
 RETURNING bucket_id;
 
 -- name: BucketByID :one
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+SELECT bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
        lifecycle_json, created_at, created_by, updated_at, updated_by
 FROM object_storage_buckets
 WHERE bucket_id = $1;
 
 -- name: BucketByName :one
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+SELECT bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
        lifecycle_json, created_at, created_by, updated_at, updated_by
 FROM object_storage_buckets
 WHERE bucket_name = $1;
 
 -- name: ListBuckets :many
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+SELECT bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
        lifecycle_json, created_at, created_by, updated_at, updated_by
 FROM object_storage_buckets
 ORDER BY created_at DESC, bucket_id DESC;
 
 -- name: ListBucketsByOrg :many
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+SELECT bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
        lifecycle_json, created_at, created_by, updated_at, updated_by
 FROM object_storage_buckets
 WHERE org_id = $1
@@ -64,7 +64,7 @@ WHERE bucket_id = $1
 ORDER BY alias;
 
 -- name: ResolveBucketAlias :one
-SELECT b.bucket_id, b.org_id, b.bucket_name, b.garage_bucket_id, b.quota_bytes, b.quota_objects,
+SELECT b.bucket_id, b.org_id, b.bucket_name, b.provider, b.provider_bucket_id, b.quota_bytes, b.quota_objects,
        b.lifecycle_json, b.created_at, b.created_by, b.updated_at, b.updated_by,
        a.alias, a.bucket_id AS alias_bucket_id, a.prefix, a.service_tag, a.created_at AS alias_created_at, a.created_by AS alias_created_by
 FROM object_storage_bucket_aliases a

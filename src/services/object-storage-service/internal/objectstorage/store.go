@@ -50,17 +50,18 @@ func (s *Store) CreateBucket(ctx context.Context, bucket Bucket) error {
 		bucket.LifecycleJSON = json.RawMessage("[]")
 	}
 	err = q.CreateBucket(ctx, storegen.CreateBucketParams{
-		BucketID:       bucket.BucketID,
-		OrgID:          bucket.OrgID,
-		BucketName:     bucket.BucketName,
-		GarageBucketID: bucket.GarageBucketID,
-		QuotaBytes:     pgInt8(bucket.QuotaBytes),
-		QuotaObjects:   pgInt8(bucket.QuotaObjects),
-		LifecycleJson:  []byte(bucket.LifecycleJSON),
-		CreatedAt:      pgTimestamptz(bucket.CreatedAt),
-		CreatedBy:      bucket.CreatedBy,
-		UpdatedAt:      pgTimestamptz(bucket.UpdatedAt),
-		UpdatedBy:      bucket.UpdatedBy,
+		BucketID:         bucket.BucketID,
+		OrgID:            bucket.OrgID,
+		BucketName:       bucket.BucketName,
+		Provider:         bucket.Provider,
+		ProviderBucketID: bucket.ProviderBucketID,
+		QuotaBytes:       pgInt8(bucket.QuotaBytes),
+		QuotaObjects:     pgInt8(bucket.QuotaObjects),
+		LifecycleJson:    []byte(bucket.LifecycleJSON),
+		CreatedAt:        pgTimestamptz(bucket.CreatedAt),
+		CreatedBy:        bucket.CreatedBy,
+		UpdatedAt:        pgTimestamptz(bucket.UpdatedAt),
+		UpdatedBy:        bucket.UpdatedBy,
 	})
 	if err != nil {
 		return classifyStoreError("create bucket", err)
@@ -371,17 +372,18 @@ func (s *Store) readyQueries() (*storegen.Queries, error) {
 
 func bucketFromRow(row storegen.ObjectStorageBucket) Bucket {
 	return Bucket{
-		BucketID:       row.BucketID,
-		OrgID:          row.OrgID,
-		BucketName:     row.BucketName,
-		GarageBucketID: row.GarageBucketID,
-		QuotaBytes:     int64Ptr(row.QuotaBytes),
-		QuotaObjects:   int64Ptr(row.QuotaObjects),
-		LifecycleJSON:  json.RawMessage(row.LifecycleJson),
-		CreatedAt:      timeFromPG(row.CreatedAt),
-		CreatedBy:      row.CreatedBy,
-		UpdatedAt:      timeFromPG(row.UpdatedAt),
-		UpdatedBy:      row.UpdatedBy,
+		BucketID:         row.BucketID,
+		OrgID:            row.OrgID,
+		BucketName:       row.BucketName,
+		Provider:         row.Provider,
+		ProviderBucketID: row.ProviderBucketID,
+		QuotaBytes:       int64Ptr(row.QuotaBytes),
+		QuotaObjects:     int64Ptr(row.QuotaObjects),
+		LifecycleJSON:    json.RawMessage(row.LifecycleJson),
+		CreatedAt:        timeFromPG(row.CreatedAt),
+		CreatedBy:        row.CreatedBy,
+		UpdatedAt:        timeFromPG(row.UpdatedAt),
+		UpdatedBy:        row.UpdatedBy,
 	}
 }
 
@@ -419,17 +421,18 @@ func credentialFromRow(row storegen.ObjectStorageCredential) Credential {
 
 func bucketFromAliasRow(row storegen.ResolveBucketAliasRow) Bucket {
 	return Bucket{
-		BucketID:       row.BucketID,
-		OrgID:          row.OrgID,
-		BucketName:     row.BucketName,
-		GarageBucketID: row.GarageBucketID,
-		QuotaBytes:     int64Ptr(row.QuotaBytes),
-		QuotaObjects:   int64Ptr(row.QuotaObjects),
-		LifecycleJSON:  json.RawMessage(row.LifecycleJson),
-		CreatedAt:      timeFromPG(row.CreatedAt),
-		CreatedBy:      row.CreatedBy,
-		UpdatedAt:      timeFromPG(row.UpdatedAt),
-		UpdatedBy:      row.UpdatedBy,
+		BucketID:         row.BucketID,
+		OrgID:            row.OrgID,
+		BucketName:       row.BucketName,
+		Provider:         row.Provider,
+		ProviderBucketID: row.ProviderBucketID,
+		QuotaBytes:       int64Ptr(row.QuotaBytes),
+		QuotaObjects:     int64Ptr(row.QuotaObjects),
+		LifecycleJSON:    json.RawMessage(row.LifecycleJson),
+		CreatedAt:        timeFromPG(row.CreatedAt),
+		CreatedBy:        row.CreatedBy,
+		UpdatedAt:        timeFromPG(row.UpdatedAt),
+		UpdatedBy:        row.UpdatedBy,
 	}
 }
 

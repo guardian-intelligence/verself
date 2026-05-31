@@ -23,11 +23,6 @@ job "garage-2" {
         static = 3923
         to = 3923
       }
-      port "https" {
-        host_network = "loopback"
-        static = 9443
-        to = 9443
-      }
     }
 
     task "server" {
@@ -126,43 +121,6 @@ EOH
           interval = "1s"
           timeout = "3s"
         }
-      }
-    }
-
-    task "artifact-origin" {
-      driver = "raw_exec"
-      user = "root"
-
-      config {
-        command = "/bin/bash"
-        args = ["-euo", "pipefail", "-c", <<EOH
-      pkill -f '[g]arage-artifact-origin' || true
-exec "$${VERSELF_GARAGE_RUNTIME}/bin/garage-artifact-origin" \
-  --origin-hostname "__VERSELF_NOMAD_ARTIFACT_ORIGIN_HOSTNAME__" \
-  --listen 127.0.0.1:9443 \
-  --target http://127.0.0.1:3900
-EOH
-        ]
-      }
-
-      env {
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "garage-artifact-origin"
-        VERSELF_GARAGE_RUNTIME = "verself-artifact://garage-runtime"
-        VERSELF_SUPERVISOR = "nomad"
-      }
-
-      resources {
-        cpu = 100
-        memory = 128
-      }
-
-      service {
-        name = "artifact-origin"
-        port = "https"
-        provider = "nomad"
-        address_mode = "auto"
       }
     }
 

@@ -30,10 +30,9 @@ const (
 )
 
 type ApplyOptions struct {
-	Site        string
-	SSH         *sshtun.Client
-	Tracer      trace.Tracer
-	RuntimePath string
+	Site   string
+	SSH    *sshtun.Client
+	Tracer trace.Tracer
 }
 
 type Result struct {
@@ -158,7 +157,6 @@ func startSpan(ctx context.Context, opts ApplyOptions, name string) (context.Con
 	return opts.Tracer.Start(ctx, name,
 		trace.WithAttributes(
 			attribute.String("verself.site", opts.Site),
-			attribute.String("verself.postgres.runtime_path", opts.RuntimePath),
 		),
 	)
 }
@@ -169,9 +167,6 @@ func validateOpts(opts ApplyOptions) error {
 	}
 	if opts.Tracer == nil {
 		return fmt.Errorf("tracer is required")
-	}
-	if strings.TrimSpace(opts.RuntimePath) == "" {
-		return fmt.Errorf("postgres runtime path is required")
 	}
 	return nil
 }
@@ -267,10 +262,12 @@ func publicationSQL(pub Publication, strict bool) string {
 }
 
 func runPSQL(ctx context.Context, opts ApplyOptions, database, sql string) error {
-	runtimePath := strings.TrimRight(opts.RuntimePath, "/")
-	libPath := runtimePath + "/opt/verself/postgresql/usr/lib/x86_64-linux-gnu:" + runtimePath + "/opt/verself/postgresql/usr/lib/postgresql/16/lib"
-	psql := runtimePath + "/opt/verself/postgresql/usr/lib/postgresql/16/bin/psql"
-	cmd := "sudo -u postgres env LD_LIBRARY_PATH=" + shellQuote(libPath) + " " + shellQuote(psql) + " -v ON_ERROR_STOP=1 --no-psqlrc --quiet --dbname=" + shellQuote(database) + " --file=-"
+	script := `psql="$VERSELF_POSTGRESQL_RUNTIME/opt/verself/postgresql/usr/lib/postgresql/16/bin/psql"; exec "$psql" -v ON_ERROR_STOP=1 --no-psqlrc --quiet --dbname="$1" --file=-`
+	cmd := strings.Join([]string{
+		"alloc=$(sudo /opt/verself/profile/bin/nomad job status -json postgresql | jq -r '.[0].Allocations[] | select(.ClientStatus == \"running\" and .DesiredStatus == \"run\") | .ID' | head -1)",
+		"test -n \"$alloc\"",
+		"sudo /opt/verself/profile/bin/nomad alloc exec -i -task server \"$alloc\" /bin/sh -ec " + shellQuote(script) + " _ " + shellQuote(database),
+	}, "\n")
 	return opts.SSH.Run(ctx, cmd, strings.NewReader(sql))
 }
 

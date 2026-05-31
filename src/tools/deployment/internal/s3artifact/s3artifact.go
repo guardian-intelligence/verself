@@ -1,13 +1,10 @@
-// Package garage is the verself-deploy artifact publisher. It uses
-// AWS SigV4 against the controller-side Garage S3 endpoint, taking
-// a typed Config (replacing the env-var-and-CLI-flag dance the bash
-// predecessor used) and wrapping each HEAD/GET/PUT in an OTel span.
+// Package s3artifact publishes deploy artifacts to an S3-compatible private
+// bucket. It signs HEAD/GET/PUT with AWS SigV4 and wraps each operation in an
+// OTel span.
 //
-// The publisher signs requests with AWS SigV4 (Garage's S3-compatible
-// API). Credentials and CA bundle are read from the controller-side
-// environment file via SSH `sudo cat`; the caller passes them in as
-// raw bytes so this package has no SSH dependency itself.
-package garage
+// Credentials and optional private-origin TLS roots are passed as typed config,
+// so this package has no SSH, Cloudflare, or Nomad dependency.
+package s3artifact
 
 import (
 	"bytes"
@@ -38,34 +35,29 @@ import (
 )
 
 const (
-	tracerName                = "github.com/verself/deployment-tools/internal/garage"
+	tracerName                = "github.com/verself/deployment-tools/internal/s3artifact"
 	emptyPayloadSHA256        = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	httpResponseHeaderTimeout = 30 * time.Second
 )
 
-var ErrNotFound = errors.New("garage: object not found")
+var ErrNotFound = errors.New("s3artifact: object not found")
 
-// Config is the controller-side material the publisher needs that
-// can't be inferred from the manifest alone: the AWS keys (sourced
-// from the env file under sudo) and the CA bundle (used to verify
-// the artifact origin's TLS cert).
+// Config is the controller-side material the publisher needs that cannot be
+// inferred from the checked-in site manifest.
 type Config struct {
-	// ConnectAddress is the local-forward address the SSH tunnel exposes
-	// (e.g. 127.0.0.1:34567); the publisher dials this in lieu of the
-	// origin host.
+	// ConnectAddress overrides the TCP dial target while preserving the URL host
+	// for TLS/SigV4. R2 leaves this empty; private origins may use a tunnel.
 	ConnectAddress string
 
-	// CABundlePEM is the artifact origin's TLS CA chain (Garage uses
-	// our internal PKI; system roots don't include it).
+	// CABundlePEM is only needed for private origins whose TLS root is absent
+	// from the system bundle. R2 leaves this empty.
 	CABundlePEM []byte
 
-	// AccessKeyID and SecretAccessKey are sourced from the controller's
-	// environment file via SSH sudo cat.
 	AccessKeyID     string
 	SecretAccessKey string
 }
 
-// Publisher applies a manifest of artifacts to Garage. It is single-use
+// Publisher applies a manifest of artifacts to the artifact store. It is single-use
 // (HTTP client + signer share state) and cheap to construct.
 type Publisher struct {
 	client   *http.Client
@@ -87,7 +79,7 @@ func New(delivery deploymodel.ArtifactDelivery, cfg Config) (*Publisher, error) 
 		return nil, fmt.Errorf("artifact delivery bucket mismatch: prefix=%q bucket=%q", bucket, delivery.Bucket)
 	}
 	if cfg.AccessKeyID == "" || cfg.SecretAccessKey == "" {
-		return nil, errors.New("garage: AccessKeyID and SecretAccessKey are required")
+		return nil, errors.New("s3artifact: AccessKeyID and SecretAccessKey are required")
 	}
 	transport, err := transportFor(endpoint, cfg.ConnectAddress, cfg.CABundlePEM)
 	if err != nil {
@@ -95,7 +87,7 @@ func New(delivery deploymodel.ArtifactDelivery, cfg Config) (*Publisher, error) 
 	}
 	region := strings.TrimSpace(delivery.GetterOptions["region"])
 	if region == "" {
-		region = "garage"
+		region = "auto"
 	}
 	return &Publisher{
 		client: &http.Client{
@@ -113,6 +105,9 @@ func New(delivery deploymodel.ArtifactDelivery, cfg Config) (*Publisher, error) 
 // matching remote sha256. Each item gets its own put_object span
 // regardless of whether it actually transfers.
 func (p *Publisher) PublishAll(ctx context.Context, artifacts []deploymodel.Artifact, repoRoot string) error {
+	if err := p.ensureBucket(ctx, artifacts); err != nil {
+		return err
+	}
 	for _, item := range artifacts {
 		if err := p.publishOne(ctx, item, repoRoot); err != nil {
 			return fmt.Errorf("%s: %w", item.Output, err)
@@ -121,20 +116,62 @@ func (p *Publisher) PublishAll(ctx context.Context, artifacts []deploymodel.Arti
 	return nil
 }
 
+func (p *Publisher) ensureBucket(ctx context.Context, artifacts []deploymodel.Artifact) error {
+	if len(artifacts) == 0 {
+		return nil
+	}
+	bucket := artifacts[0].Bucket
+	for _, item := range artifacts {
+		if item.Bucket != bucket {
+			return fmt.Errorf("artifact manifest targets multiple buckets: %q and %q", bucket, item.Bucket)
+		}
+	}
+	ctx, span := p.tracer.Start(ctx, "verself_deploy.artifact_store.ensure_bucket",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("artifact.bucket", bucket)),
+	)
+	defer span.End()
+	status, err := p.headBucket(ctx, bucket)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if status == http.StatusOK {
+		span.SetAttributes(attribute.String("artifact.action", "bucket-exists"))
+		span.SetStatus(codes.Ok, "")
+		return nil
+	}
+	if status != http.StatusNotFound {
+		err := fmt.Errorf("unexpected bucket HEAD status %d for %s", status, bucket)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if err := p.createBucket(ctx, bucket); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetAttributes(attribute.String("artifact.action", "bucket-created"))
+	span.SetStatus(codes.Ok, "")
+	return nil
+}
+
 func (p *Publisher) PublishBytes(ctx context.Context, item deploymodel.Artifact, body []byte, contentType string) error {
-	ctx, span := p.tracer.Start(ctx, "verself_deploy.garage.put_object",
+	ctx, span := p.tracer.Start(ctx, "verself_deploy.artifact_store.put_object",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
-			attribute.String("garage.bucket", item.Bucket),
-			attribute.String("garage.key", item.Key),
-			attribute.String("garage.sha256", item.SHA256),
+			attribute.String("artifact.bucket", item.Bucket),
+			attribute.String("artifact.key", item.Key),
+			attribute.String("artifact.sha256", item.SHA256),
 			attribute.String("verself.artifact_output", item.Output),
 		),
 	)
 	defer span.End()
 
 	if item.Bucket == "" || item.Key == "" || item.SHA256 == "" {
-		err := errors.New("garage byte object is incomplete")
+		err := errors.New("artifact store byte object is incomplete")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -167,7 +204,7 @@ func (p *Publisher) PublishBytes(ctx context.Context, item deploymodel.Artifact,
 				return err
 			}
 		}
-		span.SetAttributes(attribute.String("garage.action", "skip-already-uploaded"))
+		span.SetAttributes(attribute.String("artifact.action", "skip-already-uploaded"))
 		span.SetStatus(codes.Ok, "")
 		return nil
 	}
@@ -187,27 +224,27 @@ func (p *Publisher) PublishBytes(ctx context.Context, item deploymodel.Artifact,
 		return err
 	}
 	span.SetAttributes(
-		attribute.String("garage.action", "uploaded"),
-		attribute.Int64("garage.bytes_uploaded", uploaded),
+		attribute.String("artifact.action", "uploaded"),
+		attribute.Int64("artifact.bytes_uploaded", uploaded),
 	)
 	span.SetStatus(codes.Ok, "")
 	return nil
 }
 
 func (p *Publisher) ReadBytes(ctx context.Context, item deploymodel.Artifact, maxBytes int64) ([]byte, error) {
-	ctx, span := p.tracer.Start(ctx, "verself_deploy.garage.get_object",
+	ctx, span := p.tracer.Start(ctx, "verself_deploy.artifact_store.get_object",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
-			attribute.String("garage.bucket", item.Bucket),
-			attribute.String("garage.key", item.Key),
-			attribute.String("garage.sha256", item.SHA256),
+			attribute.String("artifact.bucket", item.Bucket),
+			attribute.String("artifact.key", item.Key),
+			attribute.String("artifact.sha256", item.SHA256),
 			attribute.String("verself.artifact_output", item.Output),
 		),
 	)
 	defer span.End()
 
 	if item.Bucket == "" || item.Key == "" {
-		err := errors.New("garage object is incomplete")
+		err := errors.New("artifact store object is incomplete")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
@@ -284,25 +321,25 @@ func (p *Publisher) ReadBytes(ctx context.Context, item deploymodel.Artifact, ma
 		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
-	span.SetAttributes(attribute.Int("garage.bytes_downloaded", len(body)))
+	span.SetAttributes(attribute.Int("artifact.bytes_downloaded", len(body)))
 	span.SetStatus(codes.Ok, "")
 	return body, nil
 }
 
 func (p *Publisher) Verify(ctx context.Context, item deploymodel.Artifact) error {
-	ctx, span := p.tracer.Start(ctx, "verself_deploy.garage.verify_object",
+	ctx, span := p.tracer.Start(ctx, "verself_deploy.artifact_store.verify_object",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
-			attribute.String("garage.bucket", item.Bucket),
-			attribute.String("garage.key", item.Key),
-			attribute.String("garage.sha256", item.SHA256),
+			attribute.String("artifact.bucket", item.Bucket),
+			attribute.String("artifact.key", item.Key),
+			attribute.String("artifact.sha256", item.SHA256),
 			attribute.String("verself.artifact_output", item.Output),
 		),
 	)
 	defer span.End()
 
 	if item.Bucket == "" || item.Key == "" || item.SHA256 == "" {
-		err := errors.New("garage verify object is incomplete")
+		err := errors.New("artifact store verify object is incomplete")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -346,12 +383,12 @@ func (p *Publisher) Verify(ctx context.Context, item deploymodel.Artifact) error
 }
 
 func (p *Publisher) publishOne(ctx context.Context, item deploymodel.Artifact, repoRoot string) error {
-	ctx, span := p.tracer.Start(ctx, "verself_deploy.garage.put_object",
+	ctx, span := p.tracer.Start(ctx, "verself_deploy.artifact_store.put_object",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
-			attribute.String("garage.bucket", item.Bucket),
-			attribute.String("garage.key", item.Key),
-			attribute.String("garage.sha256", item.SHA256),
+			attribute.String("artifact.bucket", item.Bucket),
+			attribute.String("artifact.key", item.Key),
+			attribute.String("artifact.sha256", item.SHA256),
 			attribute.String("verself.artifact_output", item.Output),
 		),
 	)
@@ -400,7 +437,7 @@ func (p *Publisher) publishOne(ctx context.Context, item deploymodel.Artifact, r
 			}
 		}
 		span.SetAttributes(
-			attribute.String("garage.action", "skip-already-uploaded"),
+			attribute.String("artifact.action", "skip-already-uploaded"),
 		)
 		span.SetStatus(codes.Ok, "")
 		return nil
@@ -412,8 +449,8 @@ func (p *Publisher) publishOne(ctx context.Context, item deploymodel.Artifact, r
 			return err
 		}
 		span.SetAttributes(
-			attribute.String("garage.action", "uploaded"),
-			attribute.Int64("garage.bytes_uploaded", bytes),
+			attribute.String("artifact.action", "uploaded"),
+			attribute.Int64("artifact.bytes_uploaded", bytes),
 		)
 		span.SetStatus(codes.Ok, "")
 		return nil
@@ -443,6 +480,47 @@ func (p *Publisher) head(ctx context.Context, item deploymodel.Artifact) (int, s
 		return resp.StatusCode, strings.TrimSpace(resp.Header.Get("X-Amz-Meta-Sha256")), nil
 	}
 	return resp.StatusCode, "", nil
+}
+
+func (p *Publisher) headBucket(ctx context.Context, bucket string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, p.bucketURL(bucket).String(), http.NoBody)
+	if err != nil {
+		return 0, err
+	}
+	if err := p.sign(ctx, req, emptyPayloadSHA256); err != nil {
+		return 0, err
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("head bucket: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode, nil
+}
+
+func (p *Publisher) createBucket(ctx context.Context, bucket string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, p.bucketURL(bucket).String(), strings.NewReader(""))
+	if err != nil {
+		return err
+	}
+	req.ContentLength = 0
+	if err := p.sign(ctx, req, emptyPayloadSHA256); err != nil {
+		return err
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("create bucket: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	if resp.StatusCode == http.StatusConflict {
+		return nil
+	}
+	return fmt.Errorf("CreateBucket returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 }
 
 func (p *Publisher) getDigest(ctx context.Context, item deploymodel.Artifact) (string, error) {
@@ -506,8 +584,17 @@ func (p *Publisher) putReader(ctx context.Context, body io.Reader, contentLength
 }
 
 func (p *Publisher) objectURL(item deploymodel.Artifact) *url.URL {
-	u := *p.endpoint
+	u := p.bucketURL(item.Bucket)
 	u.Path = "/" + path.Join(item.Bucket, item.Key)
+	return u
+}
+
+func (p *Publisher) bucketURL(bucket string) *url.URL {
+	u := *p.endpoint
+	u.Path = "/" + strings.Trim(bucket, "/")
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
 	return &u
 }
 
@@ -557,7 +644,7 @@ func transportFor(endpoint *url.URL, connectAddress string, caBundle []byte) (*h
 	}
 	if len(caBundle) > 0 {
 		if !rootCAs.AppendCertsFromPEM(caBundle) {
-			return nil, errors.New("garage: CABundlePEM contained no PEM certificates")
+			return nil, errors.New("s3artifact: CABundlePEM contained no PEM certificates")
 		}
 	}
 	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}

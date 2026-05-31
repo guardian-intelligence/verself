@@ -1,11 +1,11 @@
 {
   "artifact_delivery": {
-    "kind": "garage_s3_private_origin",
+    "kind": "cloudflare_r2_s3",
     "bucket": "nomad-artifacts-gamma",
     "key_prefix": "sha256",
-    "getter_source_prefix": "s3::https://artifacts.internal.gamma.verself.sh:9443/nomad-artifacts-gamma",
+    "cloudflare_account_id_env": "VERSELF_CLOUDFLARE_ACCOUNT_ID",
     "getter_options": {
-      "region": "garage"
+      "region": "auto"
     },
     "getter_credentials": {
       "source": "host_environment",
@@ -15,23 +15,11 @@
     },
     "publisher_credentials": {
       "source": "controller_environment",
-      "environment_file": "/etc/garage/nomad-artifacts/publisher.env",
-      "access_key_id_env": "VERSELF_NOMAD_ARTIFACTS_S3_ACCESS_KEY_ID",
-      "secret_access_key_env": "VERSELF_NOMAD_ARTIFACTS_S3_SECRET_ACCESS_KEY"
+      "access_key_id_env": "VERSELF_NOMAD_ARTIFACTS_R2_ACCESS_KEY_ID",
+      "secret_access_key_env": "VERSELF_NOMAD_ARTIFACTS_R2_SECRET_ACCESS_KEY"
     },
     "checksum_algorithm": "sha256",
-    "public": false,
-    "origin": {
-      "scheme": "https",
-      "hostname": "artifacts.internal.gamma.verself.sh",
-      "port": 9443,
-      "placement": "node_local",
-      "resolution": "per_node_hosts_file",
-      "listen_host": "127.0.0.1",
-      "public_dns": false,
-      "public_ingress": false,
-      "ca_bundle_path": "/etc/verself/pki/nomad-artifacts-ca.pem"
-    }
+    "public": false
   },
   "nomad_addr": "http://127.0.0.1:4646"
 }

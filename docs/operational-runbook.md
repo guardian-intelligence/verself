@@ -30,10 +30,11 @@ aspect deploy --site=prod --sha=HEAD
 ```
 
 `aspect deploy` builds the Bazel-discovered descriptors, uploads missing
-content-addressed artifacts to the private Garage origin, resolves each Nomad
-job, submits the resulting payloads to Nomad, and emits ClickHouse evidence for
-each job decision. Changed jobs are not reported healthy until Nomad rollout
-health and the selected component-owned post-deploy canaries pass.
+content-addressed artifacts to the site's private Cloudflare R2 artifact
+bucket, resolves each Nomad job, submits the resulting payloads to Nomad, and
+emits ClickHouse evidence for each job decision. Changed jobs are not reported
+healthy until Nomad rollout health and the selected component-owned post-deploy
+canaries pass.
 
 Medium canaries run by default:
 
@@ -64,45 +65,59 @@ have the new root password, start at step 2. If it still has old gamma
 state, first wipe it by reinstalling the OS from Latitude, then use
 the new IP/root password from that reinstall.
 
+```shell
 cd /home/ubuntu/Projects/verself-sh
 git pull --ff-only
 
 aspect site seed-template --site=gamma --force
+```
 
 Fill .verself/site-bootstrap/gamma/seed.yml with only the requested
-provider values. No SOPS file is created.
+provider values, including the scoped Nomad artifact getter R2 keypair. No SOPS
+file is created. Export the non-secret Cloudflare account ID and scoped
+publisher R2 keypair in the deploy controller environment before `aspect deploy`:
 
+```shell
+export VERSELF_CLOUDFLARE_ACCOUNT_ID=<32-hex-account-id>
+export VERSELF_NOMAD_ARTIFACTS_R2_ACCESS_KEY_ID=<publisher-access-key-id>
+export VERSELF_NOMAD_ARTIFACTS_R2_SECRET_ACCESS_KEY=<publisher-secret-access-key>
+```
+
+```shell
 install -m 700 -d .verself/site-bootstrap/gamma
-printf '%s\n' '<gamma-root-password>' > .verself/site-bootstrap/gamma/
-root-password.txt
+printf '%s\n' '<gamma-root-password>' > .verself/site-bootstrap/gamma/root-password.txt
 chmod 600 .verself/site-bootstrap/gamma/root-password.txt
+```
 
 Prefer pinned host key verification:
 
+```shell
 aspect site root-handoff \
---site=gamma \
---host=<gamma-public-ip> \
---root-password-file=.verself/site-bootstrap/gamma/root-password.txt
-\
---host-key-sha256='<SHA256:fingerprint>' \
---force-inventory
+  --site=gamma \
+  --host=<gamma-public-ip> \
+  --root-password-file=.verself/site-bootstrap/gamma/root-password.txt \
+  --host-key-sha256='<SHA256:fingerprint>' \
+  --force-inventory
+```
 
 If you do not have the host key fingerprint yet, use TOFU explicitly:
 
+```shell
 aspect site root-handoff \
---site=gamma \
---host=<gamma-public-ip> \
---root-password-file=.verself/site-bootstrap/gamma/root-password.txt
-\
---trust-first-use \
---force-inventory
+  --site=gamma \
+  --host=<gamma-public-ip> \
+  --root-password-file=.verself/site-bootstrap/gamma/root-password.txt \
+  --trust-first-use \
+  --force-inventory
+```
 
 Then materialize, converge, publish DNS, and deploy:
 
+```shell
 aspect site validate-seed --site=gamma
 aspect site materialize-seed --site=gamma
 aspect site converge-host --site=gamma
 aspect integrations cloudflare-dns --site=gamma --dry-run
 aspect integrations cloudflare-dns --site=gamma
-aspect deploy --site=gamma --sha="$(git rev-parse HEAD)" --post-
-deploy-checks=medium
+aspect deploy --site=gamma --sha="$(git rev-parse HEAD)" --post-deploy-checks=medium
+```

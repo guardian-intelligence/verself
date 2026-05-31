@@ -68,9 +68,11 @@ type siteConfig struct {
 
 type artifactDeliveryPolicy struct {
 	deploymodel.ArtifactDelivery
-	KeyPrefix         string `json:"key_prefix"`
-	ChecksumAlgorithm string `json:"checksum_algorithm"`
-	Public            *bool  `json:"public"`
+	KeyPrefix              string `json:"key_prefix"`
+	ChecksumAlgorithm      string `json:"checksum_algorithm"`
+	Public                 *bool  `json:"public"`
+	CloudflareAccountID    string `json:"cloudflare_account_id"`
+	CloudflareAccountIDEnv string `json:"cloudflare_account_id_env"`
 }
 
 type rawSiteConfig struct {
@@ -212,17 +214,46 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return siteConfig{}, fmt.Errorf("decode %s: %w", path, err)
 	}
+	if raw.ArtifactDelivery.Kind != "cloudflare_r2_s3" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.kind must be cloudflare_r2_s3", path)
+	}
 	if raw.ArtifactDelivery.Public == nil || *raw.ArtifactDelivery.Public {
 		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.public must be false", path)
 	}
-	if raw.ArtifactDelivery.Bucket == "" || raw.ArtifactDelivery.GetterSourcePrefix == "" || raw.ArtifactDelivery.KeyPrefix == "" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery requires bucket, getter_source_prefix, and key_prefix", path)
+	if raw.ArtifactDelivery.Bucket == "" || raw.ArtifactDelivery.KeyPrefix == "" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery requires bucket and key_prefix", path)
+	}
+	accountID, err := resolveCloudflareAccountID(raw.ArtifactDelivery)
+	if err != nil {
+		return siteConfig{}, fmt.Errorf("%s: %w", path, err)
+	}
+	raw.ArtifactDelivery.GetterSourcePrefix = "s3::https://" + accountID + ".r2.cloudflarestorage.com/" + raw.ArtifactDelivery.Bucket
+	if raw.ArtifactDelivery.GetterOptions == nil {
+		raw.ArtifactDelivery.GetterOptions = map[string]string{}
+	}
+	region := strings.TrimSpace(raw.ArtifactDelivery.GetterOptions["region"])
+	if region == "" {
+		raw.ArtifactDelivery.GetterOptions["region"] = "auto"
+	} else if region != "auto" {
+		return siteConfig{}, fmt.Errorf("%s: cloudflare_r2_s3 artifact_delivery.getter_options.region must be auto", path)
 	}
 	if raw.ArtifactDelivery.GetterCredentials.EnvironmentFile == "" || raw.ArtifactDelivery.GetterCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.GetterCredentials.SecretAccessKeyEnv == "" {
 		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.getter_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
 	}
-	if raw.ArtifactDelivery.PublisherCredentials.EnvironmentFile == "" || raw.ArtifactDelivery.PublisherCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.PublisherCredentials.SecretAccessKeyEnv == "" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.publisher_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
+	if raw.ArtifactDelivery.GetterCredentials.Source != "host_environment" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.getter_credentials.source must be host_environment", path)
+	}
+	switch raw.ArtifactDelivery.PublisherCredentials.Source {
+	case "", "controller_environment":
+		if raw.ArtifactDelivery.PublisherCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.PublisherCredentials.SecretAccessKeyEnv == "" {
+			return siteConfig{}, fmt.Errorf("%s: artifact_delivery.publisher_credentials requires access_key_id_env and secret_access_key_env", path)
+		}
+	case "controller_environment_file":
+		if raw.ArtifactDelivery.PublisherCredentials.EnvironmentFile == "" || raw.ArtifactDelivery.PublisherCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.PublisherCredentials.SecretAccessKeyEnv == "" {
+			return siteConfig{}, fmt.Errorf("%s: artifact_delivery.publisher_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
+		}
+	default:
+		return siteConfig{}, fmt.Errorf("%s: unsupported artifact_delivery.publisher_credentials.source %q", path, raw.ArtifactDelivery.PublisherCredentials.Source)
 	}
 	if raw.ArtifactDelivery.ChecksumAlgorithm != "sha256" {
 		return siteConfig{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", path)
@@ -231,6 +262,38 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 		raw.NomadAddr = "http://127.0.0.1:4646"
 	}
 	return siteConfig{NomadAddr: raw.NomadAddr, ArtifactDelivery: raw.ArtifactDelivery}, nil
+}
+
+func resolveCloudflareAccountID(policy artifactDeliveryPolicy) (string, error) {
+	direct := strings.TrimSpace(policy.CloudflareAccountID)
+	envName := strings.TrimSpace(policy.CloudflareAccountIDEnv)
+	if direct != "" && envName != "" {
+		return "", errors.New("artifact_delivery must declare only one of cloudflare_account_id or cloudflare_account_id_env")
+	}
+	accountID := direct
+	if envName != "" {
+		accountID = strings.TrimSpace(os.Getenv(envName))
+		if accountID == "" {
+			return "", fmt.Errorf("artifact_delivery.cloudflare_account_id_env %s is unset", envName)
+		}
+	}
+	accountID = strings.ToLower(accountID)
+	if !isCloudflareAccountID(accountID) {
+		return "", errors.New("artifact_delivery.cloudflare_account_id must be a 32-character hex Cloudflare account ID")
+	}
+	return accountID, nil
+}
+
+func isCloudflareAccountID(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponentDescriptor, error) {

@@ -9,11 +9,7 @@ import (
 )
 
 func applyPostgresBase(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) error {
-	runtimePath, err := artifactRemotePath(plan, "postgresql-runtime")
-	if err != nil {
-		return err
-	}
-	result, err := postgresruntime.ApplyBase(ctx, postgresApplyOptions(rt, plan, runtimePath), plan.Postgres)
+	result, err := postgresruntime.ApplyBase(ctx, postgresApplyOptions(rt, plan), plan.Postgres)
 	if err != nil {
 		return err
 	}
@@ -22,11 +18,7 @@ func applyPostgresBase(ctx context.Context, rt *runtime.Runtime, plan *deployPla
 }
 
 func applyPostgresReplicationRoles(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) error {
-	runtimePath, err := artifactRemotePath(plan, "postgresql-runtime")
-	if err != nil {
-		return err
-	}
-	result, err := postgresruntime.ApplyReplicationRoles(ctx, postgresApplyOptions(rt, plan, runtimePath), plan.Postgres)
+	result, err := postgresruntime.ApplyReplicationRoles(ctx, postgresApplyOptions(rt, plan), plan.Postgres)
 	if err != nil {
 		return err
 	}
@@ -37,11 +29,7 @@ func applyPostgresReplicationRoles(ctx context.Context, rt *runtime.Runtime, pla
 }
 
 func applyPostgresPublications(ctx context.Context, rt *runtime.Runtime, plan *deployPlan, strict bool) error {
-	runtimePath, err := artifactRemotePath(plan, "postgresql-runtime")
-	if err != nil {
-		return err
-	}
-	result, err := postgresruntime.ApplyPublications(ctx, postgresApplyOptions(rt, plan, runtimePath), plan.Postgres, strict)
+	result, err := postgresruntime.ApplyPublications(ctx, postgresApplyOptions(rt, plan), plan.Postgres, strict)
 	if err != nil {
 		return err
 	}
@@ -51,20 +39,10 @@ func applyPostgresPublications(ctx context.Context, rt *runtime.Runtime, plan *d
 	return nil
 }
 
-func postgresApplyOptions(rt *runtime.Runtime, plan *deployPlan, runtimePath string) postgresruntime.ApplyOptions {
+func postgresApplyOptions(rt *runtime.Runtime, plan *deployPlan) postgresruntime.ApplyOptions {
 	return postgresruntime.ApplyOptions{
-		Site:        plan.Site,
-		SSH:         rt.SSH,
-		Tracer:      rt.Tracer,
-		RuntimePath: runtimePath,
+		Site:   plan.Site,
+		SSH:    rt.SSH,
+		Tracer: rt.Tracer,
 	}
-}
-
-func artifactRemotePath(plan *deployPlan, output string) (string, error) {
-	for _, artifact := range plan.Artifacts {
-		if artifact.Output == output {
-			return artifact.Key, nil
-		}
-	}
-	return "", fmt.Errorf("artifact %q is not in deploy plan", output)
 }

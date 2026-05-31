@@ -57,9 +57,6 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 				if !ok {
 					return nil, fmt.Errorf("artifact %q is referenced by authored spec but not declared by nomad_component", output)
 				}
-				if binding.Pre {
-					return nil, fmt.Errorf("pre_artifact %q must be referenced through a task env placeholder, not a Nomad artifact stanza", output)
-				}
 				getterOptions := map[string]string{}
 				for key, value := range binding.Artifact.GetterOptions {
 					getterOptions[key] = value
@@ -78,12 +75,29 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 				if !ok {
 					return nil, fmt.Errorf("artifact %q is referenced by authored spec but not declared by nomad_component", output)
 				}
-				task.Env[key] = binding.Artifact.Key
+				destination := taskArtifactDestination(output)
+				task.Artifacts = append(task.Artifacts, taskArtifact(binding, destination))
+				task.Env[key] = destination
 				seen[output] = true
 			}
 		}
 	}
 	return seen, nil
+}
+
+func taskArtifact(binding artifactBinding, destination string) *api.TaskArtifact {
+	getterOptions := map[string]string{}
+	for key, value := range binding.Artifact.GetterOptions {
+		getterOptions[key] = value
+	}
+	getterOptions["checksum"] = binding.Checksum
+	source := binding.Artifact.GetterSource
+	return &api.TaskArtifact{
+		GetterSource:  &source,
+		GetterOptions: getterOptions,
+		RelativeDest:  &destination,
+		Chown:         true,
+	}
 }
 
 func canonicalArtifactDigestInput(seen map[string]bool, bindings map[string]artifactBinding) []map[string]string {
@@ -178,9 +192,6 @@ func applyNomadPlan(ctx context.Context, rt *runtime.Runtime, plan *deployPlan) 
 			if err := applyPostgresBase(ctx, rt, plan); err != nil {
 				return applyResults(intents), err
 			}
-			if err := applyGarageBootstrap(ctx, rt, plan); err != nil {
-				return applyResults(intents), err
-			}
 			_ = forward.Close()
 			forward, err = openNomadForward(ctx, rt, plan.SiteCfg.NomadAddr)
 			if err != nil {
@@ -219,28 +230,11 @@ func applyNomadWave(ctx context.Context, rt *runtime.Runtime, client *nomadclien
 	defer span.End()
 	started := time.Now()
 	recordDeployWaveStarted(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started)
-	preArtifacts, garageArtifacts := splitArtifactsByDelivery(artifacts)
-	if len(preArtifacts) > 0 {
-		if err := publishPreArtifacts(ctx, rt, preArtifacts); err != nil {
-			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return err
-		}
-	}
-	if len(garageArtifacts) > 0 {
-		if err := ensureArtifactOriginAvailable(ctx, rt, client); err != nil {
-			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return err
-		}
-		if err := publishArtifacts(ctx, rt, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, garageArtifacts); err != nil {
-			recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return err
-		}
+	if err := publishArtifacts(ctx, rt, plan.SiteCfg.ArtifactDelivery.ArtifactDelivery, artifacts); err != nil {
+		recordDeployWaveFailed(span, rt.Identity.RunKey(), rt.Site, wave, intents, artifacts, started, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	for i, intent := range intents {
 		if wave == deployPhaseProduct && intent.Job.Component == "electric" {
@@ -447,33 +441,6 @@ func groupIntentsByPhase(intents []jobApplyIntent) (map[string][]jobApplyIntent,
 	return byPhase, nil
 }
 
-func ensureArtifactOriginAvailable(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client) error {
-	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.artifacts.origin_health")
-	defer span.End()
-
-	services, err := client.ListServiceAddresses(ctx)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	var garageS3 int
-	for _, service := range services {
-		if service.Name == "garage-s3" {
-			garageS3++
-		}
-	}
-	span.SetAttributes(attribute.Int("verself.artifact_origin.garage_s3_count", garageS3))
-	if garageS3 == 0 {
-		err := fmt.Errorf("artifact origin is unavailable: no healthy garage-s3 Nomad service registrations")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	span.SetStatus(codes.Ok, "")
-	return nil
-}
-
 func changedIntentCount(intents []jobApplyIntent) int {
 	count := 0
 	for _, intent := range intents {
@@ -522,19 +489,6 @@ func artifactsForIntents(plan *deployPlan, intents []jobApplyIntent, changedOnly
 		return nil, fmt.Errorf("nomad jobs reference unknown artifacts: %s", strings.Join(missing, ", "))
 	}
 	return artifacts, nil
-}
-
-func splitArtifactsByDelivery(artifacts []deploymodel.Artifact) ([]deploymodel.Artifact, []deploymodel.Artifact) {
-	preArtifacts := []deploymodel.Artifact{}
-	garageArtifacts := []deploymodel.Artifact{}
-	for _, artifact := range artifacts {
-		if strings.HasPrefix(artifact.Key, preArtifactRemoteRoot+"/") {
-			preArtifacts = append(preArtifacts, artifact)
-			continue
-		}
-		garageArtifacts = append(garageArtifacts, artifact)
-	}
-	return preArtifacts, garageArtifacts
 }
 
 func sortStrings(values []string) {

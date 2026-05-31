@@ -7,6 +7,7 @@ go_library(
         "audit.go",
         "crypto.go",
         "garage.go",
+        "r2.go",
         "random.go",
         "s3.go",
         "s3_xml.go",

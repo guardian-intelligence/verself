@@ -16,7 +16,7 @@ packages, not this deployment orchestrator.
   baggage so every span this binary creates carries `verself.deploy_run_key`,
   `verself.deploy_id`, `verself.site`, `verself.author`.
 - `internal/nomadclient/` — typed wrapper around `github.com/hashicorp/nomad/api`.
-- `internal/deploymodel/` — shared value types for Garage artifact delivery and
+- `internal/deploymodel/` — shared value types for S3 artifact delivery and
   resolved Nomad submit jobs.
 - `internal/nomadclient/` — typed wrapper around `github.com/hashicorp/nomad/api`.
   Uses `Plan` → `EnforceRegister` for CAS-safe submit, mirrors the upstream
@@ -25,7 +25,7 @@ packages, not this deployment orchestrator.
 
 ## Phase boundaries
 
-This module owns deploy orchestration: Bazel component discovery, Garage
+This module owns deploy orchestration: Bazel component discovery, R2-backed
 artifact publication, Nomad submit/monitor, post-deploy canary execution, and
 identity propagation. It emits OpenTelemetry spans and stdout. ClickHouse is an
 observability backend, not a runtime dependency of this binary. Host bootstrap

@@ -193,6 +193,8 @@ values:
   github_integration_service_github_app_oauth_client_secret: github_oauth_gamma
   github_integration_service_github_app_private_key: github_private_gamma
   github_integration_service_github_app_webhook_secret: github_webhook_gamma
+  nomad_artifact_getter_s3_access_key_id: r2_getter_gamma
+  nomad_artifact_getter_s3_secret_access_key: r2_getter_secret_gamma
   resend_api_key: re_gamma
   stripe_publishable_key: pk_test_gamma
   stripe_secret_key: sk_test_gamma

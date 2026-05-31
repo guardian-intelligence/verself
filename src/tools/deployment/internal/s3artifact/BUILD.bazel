@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "garage",
-    srcs = ["garage.go"],
-    importpath = "github.com/verself/deployment-tools/internal/garage",
+    name = "s3artifact",
+    srcs = ["s3artifact.go"],
+    importpath = "github.com/verself/deployment-tools/internal/s3artifact",
     visibility = ["//src/tools/deployment:__subpackages__"],
     deps = [
         "//src/tools/deployment/internal/deploymodel",

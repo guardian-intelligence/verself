@@ -87,7 +87,8 @@ func run() error {
 	spiffeEndpoint := shared.String(workloadauth.EndpointSocketEnv, "")
 	environment := shared.String("OBJECT_STORAGE_ENVIRONMENT", "single-node")
 	writerInstanceID := shared.String("OBJECT_STORAGE_WRITER_INSTANCE_ID", hostname())
-	proxyRegion := shared.String("OBJECT_STORAGE_GARAGE_REGION", "garage")
+	providerKind := shared.String("OBJECT_STORAGE_PROVIDER", objectstorage.ProviderGarage)
+	proxyRegion := shared.String("OBJECT_STORAGE_S3_REGION", "garage")
 	if err := shared.Err(); err != nil {
 		return err
 	}
@@ -122,6 +123,7 @@ func run() error {
 		Environment:      environment,
 		ServiceVersion:   serviceVersion,
 		WriterInstanceID: writerInstanceID,
+		Provider:         providerKind,
 		ProxyRegion:      proxyRegion,
 	}
 	switch role {
@@ -146,10 +148,11 @@ func runAdmin(
 	adminListenAddr := l.String("OBJECT_STORAGE_ADMIN_LISTEN_ADDR", "127.0.0.1:4257")
 	authIssuerURL := l.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := l.RequireCredential("auth-audience")
-	garageAdminURLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_URLS"))
-	proxyAccessKeyID := l.RequireCredential("garage-proxy-access-key-id")
-	garageAdminToken := l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_TOKEN")
+	provider, proxyAccessKeyID, err := newBucketProviderFromEnv(ctx, l, cfg)
 	if err := l.Err(); err != nil {
+		return err
+	}
+	if err != nil {
 		return err
 	}
 
@@ -165,23 +168,15 @@ func runAdmin(
 	if err != nil {
 		return fmt.Errorf("object-storage iam client: %w", err)
 	}
-	garageAdminHTTPClient := &http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
-		Timeout:   3 * time.Second,
-	}
-	garageClient, err := objectstorage.NewGarageAdminClient(garageAdminURLs, garageAdminToken, garageAdminHTTPClient)
-	if err != nil {
-		return err
-	}
 	cfg.ProxyAccessKeyID = proxyAccessKeyID
 
 	objectstorageapi.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	svc := &objectstorage.Service{
-		Store:   objectstorage.NewStore(pg),
-		Garage:  garageClient,
-		Secrets: secretBox,
-		Logger:  logger,
-		Config:  cfg,
+		Store:    objectstorage.NewStore(pg),
+		Provider: provider,
+		Secrets:  secretBox,
+		Logger:   logger,
+		Config:   cfg,
 	}
 	svc.SetAPIActivitySink(func(ctx context.Context, record objectstorage.APIActivity) error {
 		return objectstorageapi.SendGovernanceAPIActivity(ctx, record)
@@ -222,6 +217,60 @@ func runAdmin(
 	return httpserver.Run(ctx, logger, adminServer)
 }
 
+func newBucketProviderFromEnv(ctx context.Context, l *envconfig.Loader, cfg objectstorage.Config) (objectstorage.BucketProvider, string, error) {
+	providerHTTPClient := &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:   3 * time.Second,
+	}
+	switch cfg.Provider {
+	case objectstorage.ProviderGarage:
+		garageAdminURLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_URLS"))
+		proxyAccessKeyID := l.RequireCredential("garage-proxy-access-key-id")
+		garageAdminToken := l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_TOKEN")
+		if err := l.Err(); err != nil {
+			return nil, "", err
+		}
+		garageClient, err := objectstorage.NewGarageAdminClient(garageAdminURLs, garageAdminToken, providerHTTPClient)
+		if err != nil {
+			return nil, "", err
+		}
+		return &objectstorage.GarageBucketProvider{Admin: garageClient, ProxyAccessKeyID: proxyAccessKeyID}, proxyAccessKeyID, nil
+	case objectstorage.ProviderCloudflareR2:
+		endpoint := l.RequireString("OBJECT_STORAGE_R2_ENDPOINT")
+		accessKeyID := l.RequireCredential("r2-admin-access-key-id")
+		secretAccessKey := l.RequireCredential("r2-admin-secret-access-key")
+		if err := l.Err(); err != nil {
+			return nil, "", err
+		}
+		provider, err := objectstorage.NewR2BucketProvider(endpoint, accessKeyID, secretAccessKey, cfg.ProxyRegion, providerHTTPClient)
+		if err != nil {
+			return nil, "", err
+		}
+		healthCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		if err := provider.Health(healthCtx); err != nil {
+			return nil, "", err
+		}
+		return provider, "", nil
+	default:
+		return nil, "", fmt.Errorf("unsupported OBJECT_STORAGE_PROVIDER %q", cfg.Provider)
+	}
+}
+
+func proxyAccessKeyIDCredentialName(provider string) string {
+	if provider == objectstorage.ProviderCloudflareR2 {
+		return "r2-proxy-access-key-id"
+	}
+	return "garage-proxy-access-key-id"
+}
+
+func proxySecretAccessKeyCredentialName(provider string) string {
+	if provider == objectstorage.ProviderCloudflareR2 {
+		return "r2-proxy-secret-access-key"
+	}
+	return "garage-proxy-secret-access-key"
+}
+
 func objectStorageAdminHandler(public http.Handler, protected http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isUnauthenticatedObjectStorageAdminPath(r.URL.Path) {
@@ -251,9 +300,9 @@ func runS3(
 	s3ListenAddr := l.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4256")
 	chAddress := l.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := l.String("VERSELF_CLICKHOUSE_USER", "object_storage_service")
-	garageS3URLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_S3_URLS"))
-	proxyAccessKeyID := l.RequireCredential("garage-proxy-access-key-id")
-	proxySecretAccessKey := l.RequireCredential("garage-proxy-secret-access-key")
+	upstreamS3URLs := splitEnvList(l.RequireString("OBJECT_STORAGE_S3_URLS"))
+	proxyAccessKeyID := l.RequireCredential(proxyAccessKeyIDCredentialName(cfg.Provider))
+	proxySecretAccessKey := l.RequireCredential(proxySecretAccessKeyCredentialName(cfg.Provider))
 	s3TLSCertPath := l.RequireCredentialPath("s3-tls-cert")
 	s3TLSKeyPath := l.RequireCredentialPath("s3-tls-key")
 	chCACertPath := l.RequireCredentialPath("clickhouse-ca-cert")
@@ -270,13 +319,13 @@ func runS3(
 	}
 	defer func() { _ = chConn.Close() }()
 
-	garageS3Transport, err := cloneTransport(http.DefaultTransport)
+	upstreamS3Transport, err := cloneTransport(http.DefaultTransport)
 	if err != nil {
-		return fmt.Errorf("clone garage s3 transport: %w", err)
+		return fmt.Errorf("clone upstream s3 transport: %w", err)
 	}
-	garageS3Transport.ResponseHeaderTimeout = 5 * time.Second
-	garageS3HTTPClient := &http.Client{
-		Transport: otelhttp.NewTransport(garageS3Transport),
+	upstreamS3Transport.ResponseHeaderTimeout = 5 * time.Second
+	upstreamS3HTTPClient := &http.Client{
+		Transport: otelhttp.NewTransport(upstreamS3Transport),
 	}
 	svc := &objectstorage.Service{
 		CH:      chConn,
@@ -290,8 +339,8 @@ func runS3(
 	}
 	s3Handler, err := objectstorage.NewS3Handler(
 		svc,
-		garageS3URLs,
-		garageS3HTTPClient,
+		upstreamS3URLs,
+		upstreamS3HTTPClient,
 		proxyAccessKeyID,
 		proxySecretAccessKey,
 		cfg.ProxyRegion,

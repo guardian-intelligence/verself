@@ -64,7 +64,9 @@ type seedKey struct {
 }
 
 var fallbackProvidedSeedKeys = map[string]seedKey{
-	"cloudflare_api_token": {Source: "provider_bootstrap"},
+	"cloudflare_api_token":                       {Source: "provider_bootstrap"},
+	"nomad_artifact_getter_s3_access_key_id":     {Source: "provider_bootstrap"},
+	"nomad_artifact_getter_s3_secret_access_key": {Source: "provider_bootstrap"},
 
 	"stripe_secret_key":                                         {Source: "provider_runtime"},
 	"stripe_webhook_secret":                                     {Source: "provider_runtime"},

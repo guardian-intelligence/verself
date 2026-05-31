@@ -10,7 +10,7 @@ NomadComponentInfo = provider(
         "digest_inputs": "Files whose content must participate in the Nomad job spec digest without being downloaded as runtime artifacts.",
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
-        "pre_artifacts": "label_keyed_string_dict of artifact targets to release output names that deploy extracts onto the host before this job is submitted.",
+        "pre_artifacts": "label_keyed_string_dict of artifact targets to release output names preserved for components in the pre_artifact wave.",
         "provides": "Logical resources this component provides.",
         "post_deploy_canaries": "Post-deploy canary descriptors gated after Nomad rollout health.",
         "requires": "Logical resources this component requires.",
@@ -196,7 +196,7 @@ nomad_component = rule(
         ),
         "pre_artifacts": attr.label_keyed_string_dict(
             allow_files = True,
-            doc = "Artifact targets deploy extracts onto the host before this job is submitted. Authored Nomad specs must reference these through task env placeholders, not Nomad artifact stanzas.",
+            doc = "Artifact targets preserved for pre_artifact wave jobs. Authored Nomad specs must reference these through task env placeholders, not Nomad artifact stanzas.",
         ),
         "component": attr.string(
             mandatory = True,
@@ -204,7 +204,7 @@ nomad_component = rule(
         ),
         "deploy_phase": attr.string(
             default = "product",
-            doc = "Deployment phase. pre_artifact jobs are submitted before artifact publication; platform/product/edge jobs are submitted after artifact publication is available.",
+            doc = "Deployment phase. Every phase uses the site artifact store; phase only controls graph wave ordering.",
         ),
         "digest_inputs": attr.label_list(
             allow_files = True,

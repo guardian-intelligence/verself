@@ -10,22 +10,16 @@ import (
 )
 
 type ArtifactDelivery struct {
+	Kind                 string            `json:"kind"`
 	Bucket               string            `json:"bucket"`
 	GetterSourcePrefix   string            `json:"getter_source_prefix"`
 	GetterOptions        map[string]string `json:"getter_options"`
 	GetterCredentials    Credentials       `json:"getter_credentials"`
 	PublisherCredentials Credentials       `json:"publisher_credentials"`
-	Origin               Origin            `json:"origin"`
-}
-
-type Origin struct {
-	Scheme       string `json:"scheme"`
-	Hostname     string `json:"hostname"`
-	Port         int    `json:"port"`
-	CABundlePath string `json:"ca_bundle_path"`
 }
 
 type Credentials struct {
+	Source             string `json:"source"`
 	EnvironmentFile    string `json:"environment_file"`
 	AccessKeyIDEnv     string `json:"access_key_id_env"`
 	SecretAccessKeyEnv string `json:"secret_access_key_env"`

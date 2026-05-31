@@ -7,12 +7,10 @@ pkg_tar(
     name = "runtime_artifact",
     out = "garage-runtime.tar",
     files = {
-        "//src/infrastructure-components/garage/cmd/garage-artifact-origin:garage-artifact-origin": "bin/garage-artifact-origin",
         "@garage_tools//tools/garage": "bin/garage",
     },
     modes = {
         "bin/garage": "0755",
-        "bin/garage-artifact-origin": "0755",
     },
     visibility = ["//visibility:public"],
 )
@@ -42,7 +40,7 @@ nomad_component(
         ":runtime_artifact": "garage-runtime",
     },
     component = "garage",
-    deploy_phase = "pre_artifact",
+    deploy_phase = "platform",
     job_id = "garage",
     job_spec = "nomad.hcl",
     provides = ["garage:replica-0"],
@@ -55,7 +53,7 @@ nomad_component(
         ":runtime_artifact": "garage-runtime",
     },
     component = "garage",
-    deploy_phase = "pre_artifact",
+    deploy_phase = "platform",
     job_id = "garage-1",
     job_spec = "nomad-1.hcl",
     provides = ["garage:replica-1"],
@@ -69,11 +67,10 @@ nomad_component(
         ":runtime_artifact": "garage-runtime",
     },
     component = "garage",
-    deploy_phase = "pre_artifact",
+    deploy_phase = "platform",
     job_id = "garage-2",
     job_spec = "nomad-2.hcl",
     provides = [
-        "artifact-origin",
         "garage:replica-2",
         "garage:s3",
         "garage:admin",
