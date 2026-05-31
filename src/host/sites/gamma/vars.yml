@@ -88,6 +88,14 @@ nomad_artifact_origin_hostname: artifacts.internal.gamma.verself.sh
 nomad_artifact_origin_ca_bundle_path: /etc/verself/pki/nomad-artifacts-ca.pem
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_host_service_ip: 10.255.0.1
+
+# Node placement coordinates (see prod/vars.yml for the model). cpu_isa_level is
+# derived per-host from CPU flags by the nomad role; datacenter iad1 (single ASH
+# metro). gamma is the natural loadgen proving ground — add canary_loadgen here
+# when ready to rehearse load before prod. Each site is its own SPIFFE trust domain.
+nomad_node_datacenter: iad1
+nomad_node_pool: default
+nomad_node_meta: {}
 spire_agent_id: spiffe://gamma.verself.sh/node/single-node
 spire_agent_socket_path: /run/spire-agent/sockets/agent.sock
 spire_bundle_endpoint_bind_address: 127.0.0.1

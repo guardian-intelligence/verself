@@ -40,6 +40,25 @@
     # Refs: hashicorp/nomad#10850, #17871, discuss/16597.
     mode: "0711"
 
+# Derive the node's x86-64 psABI microarchitecture level (x86-64-v2/v3/v4) from
+# its own CPU flags. This is the capability placement actually pins on (it is what
+# glibc-hwcaps and -march builds dispatch on) and it is deterministic from the
+# flag set, so it replaces any hand-set, drift-prone microarch label.
+- name: Read host CPU flags
+  ansible.builtin.slurp:
+    src: /proc/cpuinfo
+  register: nomad_cpuinfo
+
+- name: Derive x86-64 psABI level from CPU flags
+  ansible.builtin.set_fact:
+    nomad_node_cpu_isa_level: >-
+      {%- set flags = ((nomad_cpuinfo.content | b64decode).split('\n') | select('match', '^flags') | list | first | default('')).split() -%}
+      {%- if 'avx512f' in flags and 'avx512bw' in flags and 'avx512cd' in flags and 'avx512dq' in flags and 'avx512vl' in flags -%}x86-64-v4
+      {%- elif 'avx2' in flags and 'bmi1' in flags and 'bmi2' in flags and 'fma' in flags and 'f16c' in flags and 'movbe' in flags -%}x86-64-v3
+      {%- elif 'sse4_2' in flags and 'sse4_1' in flags and 'ssse3' in flags and 'popcnt' in flags -%}x86-64-v2
+      {%- else -%}x86-64-v1
+      {%- endif -%}
+
 - name: Deploy Nomad agent configuration
   ansible.builtin.template:
     src: nomad.hcl.j2

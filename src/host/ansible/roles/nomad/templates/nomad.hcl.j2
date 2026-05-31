@@ -50,14 +50,13 @@ client {
   min_dynamic_port = 20000
   max_dynamic_port = 32000
 
-  # Capability coordinate. cpu_model is read from the host's own CPU facts;
-  # cpu_gen is the normalized microarchitecture label used for Roblox-style
-  # placement pinning. Additional capabilities flow through nomad_node_meta.
-  # NOTE: client meta is self-asserted today; the attested SPIRE node identity
-  # makes it source-of-truth-by-SVID (see fleet capability model).
+  # Capability coordinate. cpu_model is the human-readable model from the host's
+  # own CPU facts; cpu_isa_level is the x86-64 psABI level (v2/v3/v4) derived from
+  # the host's CPU flags — the capability placement pins on. Additional
+  # capabilities (e.g. canary_loadgen) flow through nomad_node_meta.
   meta {
-    cpu_model = "{{ (ansible_processor | select('search', 'EPYC|Ryzen|Xeon|Core') | list | first) | default(ansible_processor | last, true) }}"
-    cpu_gen   = "{{ nomad_node_cpu_gen }}"
+    cpu_model     = "{{ (ansible_processor | select('search', 'EPYC|Ryzen|Xeon|Core') | list | first) | default(ansible_processor | last, true) }}"
+    cpu_isa_level = "{{ nomad_node_cpu_isa_level }}"
 {% for key, value in (nomad_node_meta | default({}, true)).items() %}
     {{ key }} = "{{ value }}"
 {% endfor %}
