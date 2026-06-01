@@ -24,7 +24,7 @@ job "clickhouse-migrations" {
         args = ["-euc", <<-EOT
 client=/opt/verself/profile/bin/clickhouse
 test -x "$client"
-rendered_dir="${NOMAD_TASK_DIR}/rendered-clickhouse-migrations"
+rendered_dir="$NOMAD_TASK_DIR/rendered-clickhouse-migrations"
 rm -rf "$rendered_dir"
 mkdir -p "$rendered_dir"
 applied=0
@@ -32,8 +32,8 @@ for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do
   if [ ! -f "$migration" ]; then
     continue
   fi
-  rendered="${rendered_dir}/$(basename "$migration")"
-  sed "s#__VERSELF_SPIFFE_SERVICE_PREFIX__#${VERSELF_SPIFFE_SERVICE_PREFIX}#g" "$migration" > "$rendered"
+  rendered="$rendered_dir/$(basename "$migration")"
+  sed "s#__VERSELF_SPIFFE_SERVICE_PREFIX__#$VERSELF_SPIFFE_SERVICE_PREFIX#g" "$migration" > "$rendered"
   applied=$((applied + 1))
   echo "clickhouse-migrations: applying $migration" >&2
   "$client" client \
