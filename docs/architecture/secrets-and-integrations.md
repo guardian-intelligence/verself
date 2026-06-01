@@ -266,8 +266,8 @@ variable exported by `stripe projects env --pull`:
 
    Use `bootstrap_session` for secret-zero values before any OpenBao exists,
    `controller_openbao` for pre-host site bootstrap inputs, `site_openbao` for
-   durable runtime and host seed material, and `product_kv` for customer or
-   org-managed values after deploy.
+   durable site material, `runtime_secret` for OpenBao runtime values, and
+   `product_kv` for customer or org-managed values after deploy.
 
 3. Add or update the catalog entry.
 
@@ -279,9 +279,10 @@ variable exported by `stripe projects env --pull`:
 4. Add the consumer declaration.
 
    Runtime service credentials use owner-local `deploy/runtime-secrets.yml`.
-   Host file credentials use owner-local `deploy/credstore.yml`. Public
-   provider variables belong in site vars or generated service config, never in
-   ad hoc Nomad literals when they vary by environment.
+   Public provider variables belong in site vars or generated service config,
+   never in ad hoc Nomad literals when they vary by environment. Bootstrap and
+   operator-access host files are named bootstrap/access-plane state, not
+   runtime credential declarations.
 
 5. Populate the environment value.
 
@@ -366,7 +367,7 @@ secrets, or operator terminals.
 
 5. Add service ownership.
 
-   Add owner-local runtime, credstore, public route, and post-deploy canary
+   Add owner-local runtime secret, public route, and post-deploy canary
    declarations. If the integration changes customer-visible API behavior,
    include it in the Service Change Packet.
 

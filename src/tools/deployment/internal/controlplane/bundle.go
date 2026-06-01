@@ -61,7 +61,6 @@ type RuntimeSecret struct {
 type RuntimeSecretSource struct {
 	Kind           string `json:"kind"`
 	SiteSecretKey  string `json:"site_secret_key,omitempty"`
-	File           string `json:"file,omitempty"`
 	ProducedByJob  string `json:"produced_by_job,omitempty"`
 	GeneratedBytes int    `json:"generated_bytes,omitempty"`
 	Encoding       string `json:"encoding,omitempty"`
@@ -69,7 +68,6 @@ type RuntimeSecretSource struct {
 
 const (
 	RuntimeSecretSourceSiteSecret = "site_secret"
-	RuntimeSecretSourceFile       = "file"
 	RuntimeSecretSourceGenerated  = "generated"
 	RuntimeSecretSourceProduced   = "produced_by_job"
 )
@@ -231,9 +229,6 @@ func runtimeSecretSource(seed deploycontract.RuntimeSecretSeed) RuntimeSecretSou
 	if key := strings.TrimSpace(seed.SiteSecret); key != "" {
 		return RuntimeSecretSource{Kind: RuntimeSecretSourceSiteSecret, SiteSecretKey: key}
 	}
-	if file := strings.TrimSpace(seed.File); file != "" {
-		return RuntimeSecretSource{Kind: RuntimeSecretSourceFile, File: file}
-	}
 	if jobID := strings.TrimSpace(seed.ProducedByJob); jobID != "" {
 		return RuntimeSecretSource{Kind: RuntimeSecretSourceProduced, ProducedByJob: jobID}
 	}
@@ -313,11 +308,6 @@ func validateRuntimeSecret(secret RuntimeSecret) error {
 		if !nameRE.MatchString(secret.Source.SiteSecretKey) {
 			return fmt.Errorf("%s site_secret_key must match %s", secret.Name, nameRE.String())
 		}
-	case RuntimeSecretSourceFile:
-		sources++
-		if !filepath.IsAbs(secret.Source.File) {
-			return fmt.Errorf("%s file source must be absolute", secret.Name)
-		}
 	case RuntimeSecretSourceGenerated:
 		sources++
 		if secret.Source.GeneratedBytes < 16 || secret.Source.GeneratedBytes > 96 {
@@ -335,10 +325,10 @@ func validateRuntimeSecret(secret RuntimeSecret) error {
 		}
 	case "":
 	default:
-		return fmt.Errorf("%s source.kind must be site_secret, file, generated, or produced_by_job", secret.Name)
+		return fmt.Errorf("%s source.kind must be site_secret, generated, or produced_by_job", secret.Name)
 	}
 	if sources != 1 {
-		return fmt.Errorf("%s must declare exactly one source: site_secret, file, generated, or produced_by_job", secret.Name)
+		return fmt.Errorf("%s must declare exactly one source: site_secret, generated, or produced_by_job", secret.Name)
 	}
 	return nil
 }

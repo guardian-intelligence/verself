@@ -5,12 +5,12 @@ haproxy_cert_dir: /etc/haproxy/certs
 haproxy_map_dir: /etc/haproxy/maps
 haproxy_log_dir: /var/log/haproxy
 haproxy_shm_stats_file: /var/lib/haproxy/edge-stats.shm
-haproxy_credstore_dir: /etc/credstore/haproxy
+haproxy_secret_dir: /var/lib/verself/access/haproxy
 haproxy_well_known_dir: /var/www/verself/.well-known
 haproxy_verself_discovery_manifest_path: "{{ haproxy_well_known_dir }}/verself"
-haproxy_iam_service_credstore_dir: /etc/credstore/iam-service
-haproxy_verself_cli_client_id_path: "{{ haproxy_iam_service_credstore_dir }}/oidc-cli-client-id"
-haproxy_verself_product_api_audience_path: "{{ haproxy_iam_service_credstore_dir }}/auth-audience"
+haproxy_iam_service_state_dir: /var/lib/verself/bootstrap/iam-service
+haproxy_verself_cli_client_id_path: "{{ haproxy_iam_service_state_dir }}/oidc-cli-client-id"
+haproxy_verself_product_api_audience_path: "{{ haproxy_iam_service_state_dir }}/auth-audience"
 haproxy_lego_path: /var/lib/lego
 haproxy_lego_email: "hostmaster@{{ verself_domain }}"
 # lego's authoritative DNS checker can select Cloudflare IPv6 nameservers before host IPv6 egress is fully reliable.
@@ -18,7 +18,7 @@ haproxy_lego_dns_propagation_disable_ans: false
 haproxy_lego_dns_propagation_wait: 60s
 haproxy_lego_dns_resolvers: []
 haproxy_runtime_library_path: /opt/verself/profile/lib/haproxy
-haproxy_cloudflare_token_path: "{{ haproxy_credstore_dir }}/cloudflare-dns-api-token"
+haproxy_cloudflare_token_path: "{{ haproxy_secret_dir }}/cloudflare-dns-api-token"
 haproxy_global_maxconn: 20000
 haproxy_public_frontend_maxconn: 12000
 haproxy_internal_frontend_maxconn: 2000

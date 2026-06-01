@@ -426,11 +426,21 @@ function readElectricSecret(): string {
   if (electricSecret !== undefined) {
     return electricSecret;
   }
+  const value =
+    process.env.VERSELF_CRED_VALUE_ELECTRIC_IAM_API_SECRET ??
+    process.env.VERSELF_CRED_VALUE_ELECTRIC_API_SECRET;
+  if (value !== undefined) {
+    electricSecret = value.trim();
+    if (!electricSecret) {
+      throw new Error("Electric IAM API secret is empty");
+    }
+    return electricSecret;
+  }
   const path =
     process.env.VERSELF_CRED_ELECTRIC_IAM_API_SECRET ??
     process.env.VERSELF_CRED_ELECTRIC_API_SECRET;
   if (!path) {
-    throw new Error("VERSELF_CRED_ELECTRIC_IAM_API_SECRET is required");
+    throw new Error("VERSELF_CRED_VALUE_ELECTRIC_IAM_API_SECRET is required");
   }
   electricSecret = readFileSync(path, "utf8").trim();
   if (!electricSecret) {

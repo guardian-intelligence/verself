@@ -6,7 +6,7 @@ openbao_data_dir: /var/lib/openbao
 openbao_raft_dir: /var/lib/openbao/raft
 openbao_log_dir: /var/log/openbao
 openbao_audit_log: /var/log/openbao/audit.log
-openbao_credstore_dir: /etc/credstore/openbao
+openbao_bootstrap_state_dir: /var/lib/verself/bootstrap/openbao
 openbao_node_id: verself-single-node
 openbao_host: 127.0.0.1
 openbao_api_port: 8200

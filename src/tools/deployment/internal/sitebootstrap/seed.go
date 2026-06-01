@@ -90,13 +90,6 @@ var fallbackProvidedSeedKeys = map[string]seedKey{
 }
 
 var generatedSeedKeys = map[string]seedKey{
-	"postgresql_admin_password":           {Source: "generated_host"},
-	"postgresql_billing_password":         {Source: "generated_host"},
-	"postgresql_sandbox_rental_password":  {Source: "generated_host"},
-	"postgresql_iam_service_password":     {Source: "generated_host"},
-	"postgresql_email_service_password":   {Source: "generated_host"},
-	"stalwart_admin_password":             {Source: "generated_host"},
-	"platform_agent_password":             {Source: "generated_host"},
 	"iam_service_email_identity_hmac_key": {Source: "generated_runtime"},
 }
 

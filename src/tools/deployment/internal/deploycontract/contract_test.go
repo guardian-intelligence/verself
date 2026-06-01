@@ -43,7 +43,7 @@ bootstrap_exceptions:
     provider: cloudflare
     isolation: bootstrap_shared
     credential_keys: [cloudflare_api_token]
-    storage_targets: [controller_openbao, host_credstore]
+    storage_targets: [controller_openbao]
     allowed_uses: [dns reconciliation]
     reason: Cloudflare DNS tokens are zone scoped.
 integrations:

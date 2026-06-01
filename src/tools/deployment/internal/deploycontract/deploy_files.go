@@ -48,23 +48,11 @@ type RuntimeSecretSeed struct {
 	JobID          string   `yaml:"job_id"`
 	ConsumerJobIDs []string `yaml:"consumer_job_ids"`
 	SiteSecret     string   `yaml:"site_secret"`
-	File           string   `yaml:"file"`
 	ProducedByJob  string   `yaml:"produced_by_job"`
 	Generated      struct {
 		Bytes    int    `yaml:"bytes"`
 		Encoding string `yaml:"encoding"`
 	} `yaml:"generated"`
-}
-
-type CredstoreFile struct {
-	Files []CredstoreSecretFile `yaml:"credstore_secret_files"`
-}
-
-type CredstoreSecretFile struct {
-	Path       string `yaml:"path"`
-	Group      string `yaml:"group"`
-	SiteSecret string `yaml:"site_secret"`
-	Mode       string `yaml:"mode"`
 }
 
 type PublicRoutesFile struct {
@@ -178,8 +166,8 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 		if !secretRE.MatchString(strings.TrimSpace(seed.Name)) {
 			v.add(rel, fmt.Sprintf("%s.name must match %s", prefix, secretRE.String()))
 		}
-		if !exactlyOneRuntimeSecretSource(seed.SiteSecret, seed.File, seed.ProducedByJob, seed.Generated.Bytes) {
-			v.add(rel, prefix+" must declare exactly one source: site_secret, file, generated, or produced_by_job")
+		if !exactlyOneRuntimeSecretSource(seed.SiteSecret, seed.ProducedByJob, seed.Generated.Bytes) {
+			v.add(rel, prefix+" must declare exactly one source: site_secret, generated, or produced_by_job")
 		}
 		if seed.SiteSecret != "" {
 			requireName(v, rel, prefix+".site_secret", seed.SiteSecret)
@@ -188,9 +176,6 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 			if !jobIDRE.MatchString(strings.TrimSpace(jobID)) {
 				v.add(rel, fmt.Sprintf("%s.consumer_job_ids[%d] must match %s", prefix, j, jobIDRE.String()))
 			}
-		}
-		if seed.File != "" {
-			requirePathPrefix(v, rel, prefix+".file", seed.File, "/")
 		}
 		if seed.ProducedByJob != "" {
 			if !jobIDRE.MatchString(strings.TrimSpace(seed.ProducedByJob)) {
@@ -208,22 +193,6 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 			}
 		}
 		v.claim(rel, v.seen.runtimeSecrets, "OpenBao runtime secret", seed.Name)
-	}
-}
-
-func (v *Validator) validateCredstore(rel string, doc CredstoreFile) {
-	for i, file := range doc.Files {
-		v.report.CredstoreFiles++
-		prefix := fmt.Sprintf("credstore_secret_files[%d]", i)
-		requirePathPrefix(v, rel, prefix+".path", file.Path, "/etc/credstore/")
-		requireName(v, rel, prefix+".group", file.Group)
-		requireName(v, rel, prefix+".site_secret", file.SiteSecret)
-		if file.Mode == "" {
-			v.add(rel, prefix+".mode is required")
-		} else if !modeRE.MatchString(file.Mode) {
-			v.add(rel, prefix+".mode must be a four-digit octal mode")
-		}
-		v.claim(rel, v.seen.credstorePaths, "credstore path", file.Path)
 	}
 }
 
@@ -259,8 +228,8 @@ func (v *Validator) validateClickHouse(rel string, doc ClickHouseClientFile) {
 	for i, cred := range doc.CACredentials {
 		v.report.ClickHouseCreds++
 		prefix := fmt.Sprintf("clickhouse_client_ca_credentials[%d]", i)
-		if !strings.HasPrefix(strings.TrimSpace(cred.Path), "/etc/credstore/") && !strings.HasPrefix(strings.TrimSpace(cred.Path), "/etc/otelcol/") {
-			v.add(rel, prefix+".path must start with /etc/credstore/ or /etc/otelcol/")
+		if !strings.HasPrefix(strings.TrimSpace(cred.Path), "/etc/otelcol/") {
+			v.add(rel, prefix+".path must start with /etc/otelcol/")
 		}
 		requireName(v, rel, prefix+".group", cred.Group)
 		v.claim(rel, v.seen.clickhouseCreds, "ClickHouse CA credential path", cred.Path)

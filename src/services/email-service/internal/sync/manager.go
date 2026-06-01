@@ -18,6 +18,7 @@ import (
 
 type Config struct {
 	StalwartBaseURL   string
+	AdminUsername     string
 	AdminPassword     string
 	MailboxPasswords  map[string]string
 	DiscoveryInterval time.Duration
@@ -228,7 +229,7 @@ func (m *Manager) discoverPrincipals(ctx context.Context) ([]DiscoveryPrincipal,
 	if err != nil {
 		return nil, err
 	}
-	req.SetBasicAuth("admin", m.cfg.AdminPassword)
+	req.SetBasicAuth(m.cfg.AdminUsername, m.cfg.AdminPassword)
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {

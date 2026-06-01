@@ -4,8 +4,8 @@
 # zitadel_oauth_app_project_name: e.g. "verself-api"
 # zitadel_oauth_app_redirect_uris: list of URLs
 # zitadel_oauth_app_post_logout_redirect_uris: list of URLs
-# zitadel_oauth_app_credstore_dir: e.g. "/etc/credstore/verself-web"
-# zitadel_oauth_app_credstore_group: group that owns the credstore files
+# zitadel_oauth_app_state_dir: e.g. "/var/lib/verself/access/pomerium"
+# zitadel_oauth_app_state_group: group that owns the persisted state files
 
 # Optional, with defaults
 zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_POST
@@ -19,9 +19,9 @@ zitadel_oauth_app_response_types:
 zitadel_oauth_app_dev_mode: false
 zitadel_oauth_app_create_project_if_missing: false
 zitadel_oauth_app_persist_client_secret: true
-zitadel_oauth_app_credstore_owner: root
-zitadel_oauth_app_credstore_mode: "0640"
-zitadel_oauth_app_credstore_dir_mode: "0750"
+zitadel_oauth_app_state_owner: root
+zitadel_oauth_app_state_mode: "0640"
+zitadel_oauth_app_state_dir_mode: "0750"
 zitadel_oauth_app_client_secret_filename: oidc-client-secret
 zitadel_oauth_app_cutover_marker_filename: oidc-cutover
 zitadel_oauth_app_admin_pat_file: /etc/zitadel/admin.pat

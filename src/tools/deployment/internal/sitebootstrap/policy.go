@@ -115,14 +115,6 @@ func collectOwnerLocalSeedKeys(root string, siteVars map[string]string, keys map
 				for _, seed := range doc.Seeds {
 					addOwnerLocalSiteSecret(siteVars, keys, seed.SiteSecret)
 				}
-			case "credstore.yml":
-				var doc deploycontract.CredstoreFile
-				if err := decodeYAMLFile(path, &doc); err != nil {
-					return err
-				}
-				for _, file := range doc.Files {
-					addOwnerLocalSiteSecret(siteVars, keys, file.SiteSecret)
-				}
 			}
 			return nil
 		}); err != nil {

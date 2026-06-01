@@ -11,6 +11,14 @@ ssh ubuntu@prod@access.verself.sh
 - prod: the Pomerium SSH route name.
 - ubuntu: the upstream Linux account Pomerium is allowed to request from sshd.
 
+Additional site routes use the same native-SSH shape once the access plane has
+routes for those upstreams:
+
+```shell
+ssh ubuntu@gamma@access.verself.sh
+ssh ubuntu@dev@access.verself.sh
+```
+
 During first bootstrap before IAM, Zitadel, Pomerium, and WireGuard are healthy,
 use direct host SSH only as the temporary bootstrap path. After the operator
 access handoff, public SSH is Pomerium-only and fallback access is WireGuard:
@@ -150,3 +158,26 @@ aspect integrations cloudflare-dns --site=gamma --dry-run
 aspect integrations cloudflare-dns --site=gamma
 aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 ```
+
+## Bootstrap State Machine
+
+```text
+controller OpenBao unlocked
+  -> site seed bundle materialized
+  -> host base converged
+  -> OpenBao initialized and unsealed
+  -> Nomad starts with site-local OpenBao integration
+  -> substrate-control-plane applies runtime secrets and workload roles
+  -> Nomad deploys platform and product jobs
+  -> Pomerium operator access handoff is verified
+```
+
+Only two local host state classes remain after handoff:
+
+- `/var/lib/verself/bootstrap/openbao`: OpenBao Shamir unseal material for the
+  site-local OpenBao instance. The `bao operator init` root token exists only
+  in memory during this state transition and is revoked before the bootstrap
+  task exits.
+- `/var/lib/verself/access/pomerium`: operator-access key material needed by
+  Pomerium and sshd before an authenticated operator can reach the host through
+  Pomerium.

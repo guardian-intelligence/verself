@@ -15,7 +15,6 @@ bootstrap_exceptions:
       - cloudflare_api_token
     storage_targets:
       - controller_openbao
-      - host_credstore
     allowed_uses:
       - aspect integrations cloudflare-dns
       - haproxy lego DNS-01 certificate renewal
@@ -28,7 +27,6 @@ bootstrap_exceptions:
       - cloudflare_company_api_token
     storage_targets:
       - controller_openbao
-      - host_credstore
     allowed_uses:
       - company-domain Email Routing bootstrap
     reason: guardianintelligence.org mail routing is a company-domain resource.
@@ -53,7 +51,7 @@ integrations:
     credentials:
       - key: edge.cloudflare.parent_zone_dns_token
         source: bootstrap_session
-        target: host_credstore
+        target: controller_openbao
         target_store: controller_openbao
         openbao_name: edge.cloudflare.parent_zone_dns_token
         isolation: bootstrap_shared
@@ -129,80 +127,7 @@ integrations:
     credentials:
       - key: github-integration-service.github.oauth_client_secret
         source: provider_oauth_app
-        target: host_credstore
+        target: runtime_secret
         target_store: site_openbao
         openbao_name: github-integration-service.github.oauth_client_secret
     reason: Zitadel is hosted inside the Verself site.
-  - key: runtime.generated_host_secrets
-    provider: verself
-    replacement: internal_runtime
-    owner: src/host
-    purpose: host_and_service_bootstrap
-    generation: host_convergence_to_site_openbao
-    credentials:
-      - key: postgresql.admin.password
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: postgresql.admin.password
-      - key: postgresql.billing.password
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: postgresql.billing.password
-      - key: postgresql.sandbox_rental.password
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: postgresql.sandbox_rental.password
-      - key: postgresql.iam_service.password
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: postgresql.iam_service.password
-      - key: postgresql.email_service.password
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: postgresql.email_service.password
-      - key: zitadel.database.password
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: zitadel.database.password
-      - key: zitadel.masterkey
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: zitadel.masterkey
-      - key: zitadel.admin.password
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: zitadel.admin.password
-      - key: zitadel.admin.pat
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: zitadel.admin.pat
-      - key: stalwart.admin.password
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: stalwart.admin.password
-      - key: platform.agent.password
-        source: generated
-        target: host_credstore
-        target_store: site_openbao
-        openbao_name: platform.agent.password
-      - key: iam-service.email_identity.hmac_key
-        source: generated
-        target: runtime_secret
-        target_store: site_openbao
-        openbao_name: iam-service.email_identity.hmac_key
-      - key: distribution-service.tuf.ed25519_seed
-        source: generated
-        target: runtime_secret
-        target_store: site_openbao
-        openbao_name: distribution-service.tuf.ed25519_seed
-    reason: These values are generated or hosted by Verself components.

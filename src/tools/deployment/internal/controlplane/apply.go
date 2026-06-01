@@ -263,15 +263,6 @@ func reconcileRuntimeSecret(ctx context.Context, c *baoClient, secret RuntimeSec
 			return false, fmt.Errorf("%s: site secret %s is missing from the OpenBao runtime seed", secret.Name, secret.Source.SiteSecretKey)
 		}
 		importedSiteSecret = true
-	case RuntimeSecretSourceFile:
-		body, err := os.ReadFile(secret.Source.File)
-		if err != nil {
-			if found && strings.TrimSpace(existing) != "" {
-				return false, nil
-			}
-			return false, fmt.Errorf("%s: read source file %s: %w", secret.Name, secret.Source.File, err)
-		}
-		value = strings.TrimSpace(string(body))
 	case RuntimeSecretSourceProduced:
 		return false, nil
 	default:

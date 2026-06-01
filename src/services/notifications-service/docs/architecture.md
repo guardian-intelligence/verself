@@ -186,10 +186,10 @@ The adapter rejects alerts missing routing labels. Operations-owned alerts can
 be bound to the dogfood org and configured to notify
 `integrations.anveio@gmail.com` through a verified org contact.
 
-Grafana's webhook token is a scoped integration credential in the component
-credstore. It can trigger only the Grafana integration endpoint and only the
-allowed alert workflows. Grafana does not receive database credentials beyond
-its existing read-only ClickHouse datasource.
+Grafana's webhook token is a scoped integration credential in site OpenBao. It
+can trigger only the Grafana integration endpoint and only the allowed alert
+workflows. Grafana does not receive database credentials beyond its existing
+read-only ClickHouse datasource.
 
 ## Delivery Policy Model
 
@@ -304,9 +304,9 @@ needed, recipient forms. Example:
 | `spiffe://spiffe.verself.sh/svc/alerting-service` | `operations.alert_*`, `operations.canary_*` |
 
 Grafana's webhook integration uses a scoped bearer token because Grafana contact
-points are configured through webhook headers. The token is stored in credstore,
-rotated through the same secret distribution path as component credentials, and
-accepted only on `/internal/v1/integrations/grafana/alerts`.
+points are configured through webhook headers. The token is stored in site
+OpenBao, rotated through the runtime secret path, and accepted only on
+`/internal/v1/integrations/grafana/alerts`.
 
 Notification payloads are controller data. Producers must send stable resource
 ids, trace ids, workflow names, and short summaries. Secrets, bearer tokens,

@@ -215,7 +215,7 @@ func validateIntegrationCredential(v *Validator, rel, prefix string, credential 
 
 func validateStorageTarget(v *Validator, rel, field, target string) {
 	switch target {
-	case "bootstrap_session", "controller_openbao", "site_openbao", "host_credstore", "runtime_secret", "product_kv", "public_config", "provider_resource_id", "provisioning_bootstrap":
+	case "bootstrap_session", "controller_openbao", "site_openbao", "runtime_secret", "product_kv", "public_config", "provider_resource_id", "provisioning_bootstrap":
 	default:
 		v.add(rel, field+" has unsupported storage target "+sortedJSON(target))
 	}

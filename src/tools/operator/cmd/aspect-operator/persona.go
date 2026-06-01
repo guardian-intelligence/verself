@@ -1,19 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-	"time"
 
 	opch "github.com/verself/operator-runtime/clickhouse"
 	opruntime "github.com/verself/operator-runtime/runtime"
@@ -150,9 +141,9 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 		return personaDefinition{
 			Name:               name,
 			HumanEmail:         "agent@" + domain,
-			HumanPasswordPath:  "/etc/credstore/seed-system/platform-agent-password",
+			HumanPasswordPath:  "openbao://kv-runtime/secret/org/seed-system.platform_agent_password",
 			MachineUsername:    "assume-platform-admin",
-			MachineSecretPath:  "/etc/credstore/seed-system/assume-platform-admin-client-secret",
+			MachineSecretPath:  "openbao://kv-runtime/secret/org/seed-system.assume_platform_admin_client_secret",
 			EmailLocalPart:     "agents",
 			IncludePlatformOps: true,
 			TokenProjects:      []string{productAPIProjectName, "forgejo"},
@@ -161,18 +152,18 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 		return personaDefinition{
 			Name:              name,
 			HumanEmail:        "acme-admin@" + domain,
-			HumanPasswordPath: "/etc/credstore/seed-system/acme-admin-password",
+			HumanPasswordPath: "openbao://kv-runtime/secret/org/seed-system.acme_admin_password",
 			MachineUsername:   "assume-acme-admin",
-			MachineSecretPath: "/etc/credstore/seed-system/assume-acme-admin-client-secret",
+			MachineSecretPath: "openbao://kv-runtime/secret/org/seed-system.assume_acme_admin_client_secret",
 			TokenProjects:     []string{productAPIProjectName},
 		}, nil
 	case "acme-member":
 		return personaDefinition{
 			Name:              name,
 			HumanEmail:        "acme-user@" + domain,
-			HumanPasswordPath: "/etc/credstore/seed-system/acme-user-password",
+			HumanPasswordPath: "openbao://kv-runtime/secret/org/seed-system.acme_user_password",
 			MachineUsername:   "assume-acme-member",
-			MachineSecretPath: "/etc/credstore/seed-system/assume-acme-member-client-secret",
+			MachineSecretPath: "openbao://kv-runtime/secret/org/seed-system.assume_acme_member_client_secret",
 			TokenProjects:     []string{productAPIProjectName},
 		}, nil
 	default:
@@ -193,393 +184,5 @@ func loadVerselfDomain(repoRoot, site string) (string, error) {
 }
 
 func assumePersona(rt *opruntime.Runtime, def personaDefinition, outputPath string, printEnv bool) error {
-	domain, err := loadVerselfDomain(rt.RepoRoot, rt.Site)
-	if err != nil {
-		return err
-	}
-	authBaseURL := "https://" + domain
-	adminPAT, err := readRemoteSecretString(rt, "/etc/zitadel/admin.pat")
-	if err != nil {
-		return err
-	}
-	humanPassword, err := readRemoteSecretString(rt, def.HumanPasswordPath)
-	if err != nil {
-		return err
-	}
-	machineSecret, err := readRemoteSecretString(rt, def.MachineSecretPath)
-	if err != nil {
-		return err
-	}
-	client := &http.Client{Timeout: 5 * time.Second}
-	projectIDs := map[string]string{}
-	projectTokens := map[string]string{}
-	for _, project := range def.TokenProjects {
-		id, err := zitadelProjectID(rt.Ctx, client, authBaseURL, adminPAT, project)
-		if err != nil {
-			return err
-		}
-		token, err := zitadelProjectToken(rt.Ctx, client, authBaseURL, def.MachineUsername, machineSecret, id)
-		if err != nil {
-			return err
-		}
-		projectIDs[project] = id
-		projectTokens[project] = token
-	}
-	env := personaEnv(def, domain, authBaseURL, humanPassword, projectIDs, projectTokens)
-	rendered := renderEnv(env)
-	if printEnv {
-		fmt.Print(rendered)
-		return nil
-	}
-	if outputPath == "" {
-		return errors.New("persona assume: output path is required unless --print is set")
-	}
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(outputPath), filepath.Base(outputPath)+".")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	finalized := false
-	defer func() {
-		if !finalized {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.WriteString(rendered); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, outputPath); err != nil {
-		return err
-	}
-	finalized = true
-	fmt.Fprintf(os.Stderr, "persona env written: %s\n", outputPath)
-	fmt.Fprintf(os.Stderr, "source %s\n", shellExportValue(outputPath))
-	return printIdentityMetadata(rt, client, def.Name, projectTokens[productAPIProjectName])
-}
-
-func readRemoteSecretString(rt *opruntime.Runtime, path string) (string, error) {
-	raw, err := opruntime.ReadRemoteFile(rt.Ctx, rt.SSH, path)
-	if err != nil {
-		return "", err
-	}
-	value := strings.TrimRight(string(raw), "\r\n")
-	if value == "" {
-		return "", fmt.Errorf("remote secret %s is empty", path)
-	}
-	return value, nil
-}
-
-func zitadelProjectID(ctx context.Context, client *http.Client, baseURL, adminPAT, name string) (string, error) {
-	body, err := json.Marshal(map[string]any{
-		"queries": []map[string]any{{
-			"nameQuery": map[string]string{
-				"name":   name,
-				"method": "TEXT_QUERY_METHOD_EQUALS",
-			},
-		}},
-	})
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/management/v1/projects/_search", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+adminPAT)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("search Zitadel project %s: %w", name, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("search Zitadel project %s: HTTP %d: %s", name, resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	var payload struct {
-		Result []struct {
-			ID string `json:"id"`
-		} `json:"result"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode Zitadel project search: %w", err)
-	}
-	if len(payload.Result) == 0 || payload.Result[0].ID == "" {
-		return "", fmt.Errorf("zitadel project not found: %s", name)
-	}
-	return payload.Result[0].ID, nil
-}
-
-func zitadelProjectToken(ctx context.Context, client *http.Client, baseURL, username, secret, projectID string) (string, error) {
-	scope := "openid profile urn:zitadel:iam:org:project:id:" + projectID + ":aud"
-	values := url.Values{}
-	values.Set("grant_type", "client_credentials")
-	values.Set("scope", scope)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/oauth/v2/token", strings.NewReader(values.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.SetBasicAuth(username, secret)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("mint Zitadel token for project %s: %w", projectID, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("mint Zitadel token for project %s: HTTP %d: %s", projectID, resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	var payload struct {
-		AccessToken string `json:"access_token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode Zitadel token: %w", err)
-	}
-	if payload.AccessToken == "" {
-		return "", errors.New("zitadel token response did not include access_token")
-	}
-	return payload.AccessToken, nil
-}
-
-func personaEnv(def personaDefinition, domain, authBaseURL, humanPassword string, projectIDs, projectTokens map[string]string) map[string]string {
-	env := map[string]string{
-		"VERSELF_PERSONA":           def.Name,
-		"VERSELF_DOMAIN":            domain,
-		"ZITADEL_ISSUER_URL":        authBaseURL,
-		"ZITADEL_MACHINE_CLIENT_ID": def.MachineUsername,
-		"TEST_EMAIL":                def.HumanEmail,
-		"TEST_PASSWORD":             humanPassword,
-		"BROWSER_EMAIL":             def.HumanEmail,
-		"BROWSER_PASSWORD":          humanPassword,
-		"VERSELF_WEB_URL":           "https://" + domain,
-		"WEBMAIL_URL":               "https://mail." + domain,
-		"FORGEJO_URL":               "https://git." + domain,
-	}
-	if token := projectTokens[productAPIProjectName]; token != "" {
-		env["VERSELF_PRODUCT_API_AUTH_AUDIENCE"] = projectIDs[productAPIProjectName]
-		env["VERSELF_PRODUCT_API_ACCESS_TOKEN"] = token
-		env["IAM_SERVICE_ACCESS_TOKEN"] = token
-		env["IAM_SERVICE_TOKEN"] = token
-		env["SANDBOX_RENTAL_ACCESS_TOKEN"] = token
-		env["SANDBOX_RENTAL_TOKEN"] = token
-		env["SECRETS_SERVICE_ACCESS_TOKEN"] = token
-		env["SECRETS_SERVICE_TOKEN"] = token
-		env["EMAIL_SERVICE_ACCESS_TOKEN"] = token
-		env["EMAIL_SERVICE_TOKEN"] = token
-		env["SOURCE_CODE_HOSTING_SERVICE_ACCESS_TOKEN"] = token
-		env["SOURCE_CODE_HOSTING_SERVICE_TOKEN"] = token
-	}
-	if token := projectTokens["forgejo"]; token != "" {
-		env["FORGEJO_AUTH_AUDIENCE"] = projectIDs["forgejo"]
-		env["FORGEJO_OIDC_ACCESS_TOKEN"] = token
-		env["FORGEJO_OIDC_TOKEN"] = token
-	}
-	if def.IncludePlatformOps {
-		env["EMAIL_ADDRESS"] = def.EmailLocalPart + "@" + domain
-		env["EMAIL_OPERATOR_COMMAND"] = "aspect mail addresses"
-		env["CLICKHOUSE_OPERATOR_COMMAND"] = "aspect db ch query --query='SELECT 1'"
-		env["FORGEJO_OPERATOR_CREDENTIAL"] = "provider-native forgejo-automation token in /etc/credstore/forgejo/automation-token"
-	}
-	return env
-}
-
-func renderEnv(env map[string]string) string {
-	keys := make([]string, 0, len(env))
-	for key := range env {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	var out strings.Builder
-	for _, key := range keys {
-		out.WriteString("export ")
-		out.WriteString(key)
-		out.WriteByte('=')
-		out.WriteString(shellExportValue(env[key]))
-		out.WriteByte('\n')
-	}
-	return out.String()
-}
-
-func shellExportValue(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
-}
-
-func printIdentityMetadata(rt *opruntime.Runtime, client *http.Client, personaName, token string) error {
-	if token == "" {
-		return errors.New("iam-service token is missing")
-	}
-	forward, err := rt.SSH.Forward(rt.Ctx, "iam-service", "127.0.0.1:4248")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = forward.Close() }()
-	baseURL := "http://" + forward.ListenAddr
-	if err := waitForHTTP(rt.Ctx, client, baseURL+"/readyz", http.StatusOK); err != nil {
-		return err
-	}
-	access, err := iamAPIGet(rt.Ctx, client, baseURL+"/api/v1/orgs", token)
-	if err != nil {
-		return err
-	}
-	if orgID := firstOrganizationID(access); orgID != "" {
-		org, err := iamAPIGet(rt.Ctx, client, baseURL+"/api/v1/orgs/"+url.PathEscape(orgID), token)
-		if err != nil {
-			return err
-		}
-		access["selected_organization"] = org
-	}
-	operations := map[string]any{"services": []any{}}
-	metadata := identityMetadata(personaName, access, operations)
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(metadata)
-}
-
-func firstOrganizationID(payload map[string]any) string {
-	organizations, ok := payload["organizations"].([]any)
-	if !ok || len(organizations) == 0 {
-		return ""
-	}
-	first, ok := organizations[0].(map[string]any)
-	if !ok {
-		return ""
-	}
-	orgID, _ := first["orgId"].(string)
-	return strings.TrimSpace(orgID)
-}
-
-func waitForHTTP(ctx context.Context, client *http.Client, endpoint string, expected int) error {
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			return err
-		}
-		resp, err := client.Do(req)
-		if err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == expected {
-				return nil
-			}
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("%s did not return %d", endpoint, expected)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-func iamAPIGet(ctx context.Context, client *http.Client, endpoint, token string) (map[string]any, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("iam API %s: HTTP %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	var payload map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
-}
-
-func identityMetadata(personaName string, access, operations map[string]any) map[string]any {
-	permissions := stringSet(access["permissions"])
-	operationPermissions := map[string]bool{}
-	effectiveServices := []map[string]any{}
-	if services, ok := operations["services"].([]any); ok {
-		for _, rawService := range services {
-			service, ok := rawService.(map[string]any)
-			if !ok {
-				continue
-			}
-			effectiveOps := []any{}
-			if ops, ok := service["operations"].([]any); ok {
-				for _, rawOp := range ops {
-					op, ok := rawOp.(map[string]any)
-					if !ok {
-						continue
-					}
-					permission, _ := op["permission"].(string)
-					if permission != "" {
-						operationPermissions[permission] = true
-					}
-					if permissions[permission] {
-						effectiveOps = append(effectiveOps, op)
-					}
-				}
-			}
-			if len(effectiveOps) > 0 {
-				effectiveServices = append(effectiveServices, map[string]any{
-					"service":    service["service"],
-					"operations": effectiveOps,
-				})
-			}
-		}
-	}
-	withoutDeclared := []string{}
-	for permission := range permissions {
-		if !operationPermissions[permission] {
-			withoutDeclared = append(withoutDeclared, permission)
-		}
-	}
-	sort.Strings(withoutDeclared)
-	return map[string]any{
-		"persona": personaName,
-		"iam_service": map[string]any{
-			"access":     access,
-			"operations": operations,
-			"effective_operations": map[string]any{
-				"org_id":                                 access["org_id"],
-				"caller":                                 access["caller"],
-				"permissions":                            sortedSet(permissions),
-				"services":                               effectiveServices,
-				"permissions_without_declared_operation": withoutDeclared,
-			},
-		},
-	}
-}
-
-func stringSet(value any) map[string]bool {
-	out := map[string]bool{}
-	values, ok := value.([]any)
-	if !ok {
-		return out
-	}
-	for _, raw := range values {
-		if s, ok := raw.(string); ok && s != "" {
-			out[s] = true
-		}
-	}
-	return out
-}
-
-func sortedSet(set map[string]bool) []string {
-	out := make([]string, 0, len(set))
-	for value := range set {
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
+	return errors.New("persona assume requires an OpenBao-backed operator reveal flow; file-based persona seed secrets were retired")
 }

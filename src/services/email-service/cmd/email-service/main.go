@@ -38,6 +38,7 @@ type config struct {
 	StalwartBaseURL       string
 	PublicBaseURL         string
 	ResendAPIKey          string
+	StalwartAdminUsername string
 	StalwartAdminPassword string
 	ResendFromName        string
 	SyncDiscoveryInterval time.Duration
@@ -144,6 +145,7 @@ func run() error {
 	}
 	syncManager := emailsync.New(emailsync.Config{
 		StalwartBaseURL:   cfg.StalwartBaseURL,
+		AdminUsername:     cfg.StalwartAdminUsername,
 		AdminPassword:     cfg.StalwartAdminPassword,
 		MailboxPasswords:  map[string]string{},
 		DiscoveryInterval: cfg.SyncDiscoveryInterval,
@@ -200,6 +202,7 @@ func loadConfig() (config, error) {
 		StalwartBaseURL:       l.String("EMAIL_SERVICE_STALWART_BASE_URL", "http://127.0.0.1:8090"),
 		PublicBaseURL:         l.RequireURL("EMAIL_SERVICE_STALWART_PUBLIC_BASE_URL"),
 		ResendAPIKey:          l.RequireString("EMAIL_SERVICE_RESEND_API_KEY"),
+		StalwartAdminUsername: l.RequireString("EMAIL_SERVICE_STALWART_ADMIN_USERNAME"),
 		StalwartAdminPassword: l.RequireString("EMAIL_SERVICE_STALWART_ADMIN_PASSWORD"),
 		ResendFromName:        l.String("EMAIL_SERVICE_RESEND_FROM_NAME", "verself"),
 		SyncDiscoveryInterval: l.Duration("EMAIL_SERVICE_SYNC_DISCOVERY_INTERVAL", 2*time.Minute),

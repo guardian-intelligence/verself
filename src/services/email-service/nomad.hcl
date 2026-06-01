@@ -177,7 +177,8 @@ EOT
         perms = "0600"
         data = <<-EOT
 EMAIL_SERVICE_RESEND_API_KEY={{ with secret "kv-runtime/data/secret/org/email-service.resend.api_key" }}{{ .Data.data.value | toJSON }}{{ end }}
-EMAIL_SERVICE_STALWART_ADMIN_PASSWORD={{ with secret "kv-runtime/data/secret/org/email-service.stalwart.admin_password" }}{{ .Data.data.value | toJSON }}{{ end }}
+EMAIL_SERVICE_STALWART_ADMIN_USERNAME=verself-admin
+EMAIL_SERVICE_STALWART_ADMIN_PASSWORD={{ with secret "kv-runtime/data/secret/org/stalwart.admin_password" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
         env = true
       }

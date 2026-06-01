@@ -38,13 +38,14 @@ owner-local declarations; reconcilers contain no service catalog entries.
 Devtools remain controller-local/host-local tooling outside Nomad.
 
 Bootstrap and operator-recovery secrets enter through catalog-approved
-bootstrap sessions and controller OpenBao, then each site OpenBao owns durable
-runtime and host secret state. Host credential files under `/etc/credstore`
-are materialized caches with paths, groups, and modes from owner-local
-declarations. Bootstrap systemd units consume host credentials with
-`LoadCredential=`; Nomad jobs consume SPIFFE-authenticated OpenBao or
-secrets-service access, or scoped credential projections. Repo-owned
-service-to-service authentication is SPIFFE/SPIRE.
+bootstrap sessions and controller OpenBao, then a wrapped site seed initializes
+fresh site OpenBao state. Runtime secrets are owner-local
+`deploy/runtime-secrets.yml` declarations applied by the substrate control
+plane. Nomad jobs consume them through Nomad workload identity and OpenBao
+templates. The remaining host-local files are named non-runtime state:
+OpenBao Shamir unseal material under `/var/lib/verself/bootstrap/openbao` and
+Pomerium operator-access key material under `/var/lib/verself/access/pomerium`.
+Repo-owned service-to-service authentication is SPIFFE/SPIRE.
 
 Product service APIs are modeled in Smithy under `src/smithy`. The Smithy
 model is the semantic authority for resource DTOs, HTTP bindings, auth

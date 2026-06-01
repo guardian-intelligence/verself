@@ -323,7 +323,6 @@ src/services/<service>/
   deploy/openbao.yml
   deploy/zitadel.yml
   deploy/clickhouse.yml
-  deploy/credstore.yml
   deploy/gates.yml
 ```
 

@@ -73,10 +73,12 @@ def mkdir(path, uid, gid, mode):
 
 mkdir("/etc/openbao", 0, openbao.pw_gid, 0o750)
 mkdir("/etc/openbao/tls", 0, openbao.pw_gid, 0o750)
+mkdir("/var/lib/verself", 0, 0, 0o755)
+mkdir("/var/lib/verself/bootstrap", 0, 0, 0o700)
+mkdir("/var/lib/verself/bootstrap/openbao", 0, openbao.pw_gid, 0o750)
 mkdir("/var/lib/openbao", openbao.pw_uid, openbao.pw_gid, 0o700)
 mkdir("/var/lib/openbao/raft", openbao.pw_uid, openbao.pw_gid, 0o700)
 mkdir("/var/log/openbao", openbao.pw_uid, openbao.pw_gid, 0o700)
-mkdir("/etc/credstore/openbao", 0, openbao.pw_gid, 0o750)
 
 cert = pathlib.Path("/etc/openbao/tls/cert.pem")
 key = pathlib.Path("/etc/openbao/tls/key.pem")
@@ -229,11 +231,11 @@ import urllib.error
 import urllib.request
 
 bao = pathlib.Path("local/bin/bao")
-credstore = pathlib.Path("/etc/credstore/openbao")
-credstore.mkdir(mode=0o750, parents=True, exist_ok=True)
+bootstrap_state = pathlib.Path("/var/lib/verself/bootstrap/openbao")
+bootstrap_state.mkdir(mode=0o750, parents=True, exist_ok=True)
 openbao_gid = grp.getgrnam("openbao").gr_gid
-os.chown(credstore, 0, openbao_gid)
-os.chmod(credstore, 0o750)
+os.chown(bootstrap_state, 0, openbao_gid)
+os.chmod(bootstrap_state, 0o750)
 
 def run(args, env=None):
     return subprocess.run([str(bao)] + args, check=True, text=True, capture_output=True, env=env)
@@ -257,13 +259,15 @@ if status is None:
     raise SystemExit(f"openbao status did not become readable: {last_error}")
 
 def write_secret(name, value):
-    path = credstore / name
+    path = bootstrap_state / name
     path.write_text(value.strip() + "\n", encoding="utf-8")
     os.chown(path, 0, openbao_gid)
     os.chmod(path, 0o640)
 
 root_token = None
 if not status.get("initialized", False):
+    # This is the only path that receives the operator-init root token. It is
+    # revoked before this task exits and is not written to disk.
     init = json.loads(run(["operator", "init", "-key-shares=3", "-key-threshold=2", "-format=json"]).stdout)
     keys = init.get("unseal_keys_b64") or init.get("keys_base64") or []
     if len(keys) < 2 or not init.get("root_token"):
@@ -275,7 +279,7 @@ if not status.get("initialized", False):
 
 if status.get("sealed", True):
     for index in (1, 2):
-        path = credstore / f"unseal-key-{index}"
+        path = bootstrap_state / f"unseal-key-{index}"
         if not path.exists():
             raise SystemExit(f"{path} is required to unseal initialized OpenBao")
         run(["operator", "unseal", path.read_text(encoding="utf-8").strip()])

@@ -15,7 +15,6 @@ bootstrap_exceptions:
       - cloudflare_api_token
     storage_targets:
       - controller_openbao
-      - host_credstore
     allowed_uses:
       - delegate or reconcile gamma.verself.sh DNS records
       - haproxy lego DNS-01 certificate renewal for gamma names
@@ -41,7 +40,7 @@ integrations:
     credentials:
       - key: edge.cloudflare.parent_zone_dns_token
         source: bootstrap_session
-        target: host_credstore
+        target: controller_openbao
         target_store: controller_openbao
         openbao_name: edge.cloudflare.parent_zone_dns_token
         isolation: bootstrap_shared
@@ -107,10 +106,3 @@ integrations:
         target_store: site_openbao
         openbao_name: github-integration-service.github.oauth_client_secret
     gamma_policy: create a separate GitHub App, OAuth client, webhook secret, private key, and runner prefix.
-  - key: runtime.generated_host_secrets
-    provider: verself
-    replacement: internal_runtime
-    owner: src/host
-    purpose: host_and_service_bootstrap
-    generation: host_convergence_to_site_openbao
-    gamma_policy: generated per site; never copied from prod.

@@ -144,8 +144,9 @@ IPMI is the emergency path when WireGuard is unavailable. Use it to restore the
 WireGuard listener, repair Pomerium, or reprovision when host-level state is not
 worth preserving. Public direct SSH is a first-bootstrap path only.
 
-The Pomerium SSH user CA key lives in `/etc/credstore/pomerium/`; deleting that
-credstore and rerunning host convergence rotates operator SSH trust.
+The Pomerium SSH user CA key lives in `/var/lib/verself/access/pomerium/`;
+rotating that access-plane state and rerunning the operator access handoff
+rotates operator SSH trust.
 
 OpenBao recovery remains independent of operator SSH. OpenBao runtime-secret
 bindings are reconciled by Nomad-managed OpenBao/component reconcilers after

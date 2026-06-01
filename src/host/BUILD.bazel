@@ -67,7 +67,6 @@ spire_identity_registry(
     identities = [
         "//src/infrastructure-components/clickhouse:spiffe_identity_operator",
         "//src/infrastructure-components/clickhouse:spiffe_identity_server",
-        "//src/infrastructure-components/grafana:spiffe_identity",
         "//src/infrastructure-components/nats:spiffe_identity",
         "//src/infrastructure-components/nomad-observer:spiffe_identity",
         "//src/infrastructure-components/otelcol:spiffe_identity",

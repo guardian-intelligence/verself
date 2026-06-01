@@ -39,14 +39,6 @@
   changed_when: false
   failed_when: base_copy_fail_algif_aead_modprobe.stdout is not search('/bin/false')
 
-- name: Create credstore parent directory
-  ansible.builtin.file:
-    path: /etc/credstore
-    state: directory
-    owner: root
-    group: root
-    mode: "0711"
-
 - name: Create OpenBao bootstrap TLS directory
   ansible.builtin.file:
     path: /etc/openbao/tls
@@ -94,23 +86,6 @@
       [Unit]
       Description=Verself firewall readiness target
     dest: /etc/systemd/system/verself-firewall.target
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Override systemd credential store tmpfiles mode
-  ansible.builtin.copy:
-    content: |
-      # Managed by Verself host.
-      # Systemd ships /usr/lib/tmpfiles.d/credstore.conf with /etc/credstore
-      # at 0700. Verself stores per-service credentials under group-readable
-      # subdirectories, so the parent must be traversable without being
-      # listable.
-      d /etc/credstore 0711 root root
-      d /etc/credstore.encrypted 0700 root root
-      z /run/credstore 0700 root root
-      z /run/credstore.encrypted 0700 root root
-    dest: /etc/tmpfiles.d/credstore.conf
     owner: root
     group: root
     mode: "0644"

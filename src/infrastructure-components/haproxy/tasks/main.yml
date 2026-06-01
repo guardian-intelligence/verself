@@ -28,7 +28,7 @@
     - { path: "{{ haproxy_config_dir }}", owner: root, group: haproxy, mode: "0750" }
     - { path: "{{ haproxy_cert_dir }}", owner: root, group: haproxy, mode: "0750" }
     - { path: "{{ haproxy_map_dir }}", owner: root, group: haproxy, mode: "0750" }
-    - { path: "{{ haproxy_credstore_dir }}", owner: root, group: haproxy, mode: "0750" }
+    - { path: "{{ haproxy_secret_dir }}", owner: root, group: haproxy, mode: "0750" }
     - { path: "{{ haproxy_lego_path }}", owner: root, group: haproxy, mode: "0750" }
     - { path: /var/lib/haproxy, owner: haproxy, group: haproxy, mode: "0750" }
     - { path: "{{ haproxy_log_dir }}", owner: haproxy, group: adm, mode: "2750" }
