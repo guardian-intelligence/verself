@@ -43,7 +43,6 @@ aspect canary post-deploy --site=prod --size=medium
 aspect canary post-deploy --site=prod --size=large
 ```
 
-
 ## Gamma Wipe + Bootstrap
 
 If the Latitude box is already freshly reinstalled to Ubuntu and you

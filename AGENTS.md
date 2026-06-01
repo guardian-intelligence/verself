@@ -40,7 +40,6 @@ Newsroom - Business updates: guardianintelligence.org/newsroom
 
 * The only shell scripts allowed are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Scripts are load-bearing tooling and infrastructure so choose the right tool for the job (it's never a shell script).
 * Binaries are versioned, built, packaged, and installed by Bazel declarations owned by the component or tool that uses them.
-* Efficient rebuilding & Independent deployments through ref-based GitOps -- Every deployable unit must be able to be deployed atomically without worrying about the rest of the topology. Bazel's job is to cache and decide when to run a unit's build pipeline. Nomad orchestrates deployments for non-host concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. Deploys are just `aspect deploy` and Bazel and Nomad take over via the `verself-deploy` CLI. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
 * Canonical API contracts live under `src/smithy/models/verself` as Smithy models. OpenAPI is generated for docs, ecosystem tooling, and transitional generators; it is not semantic truth.
 * Model our system's contracts in Smithy-first: OpenAPI is good at describing HTTP shapes, but Verself needs one contract to also carry correctness-critical semantics: Zanzibar permissions, OIDC audience and auth mode, SPIFFE-only internal surfaces, audit event names, idempotency policy, pagination shape, rate-limit class, request body limits, stable problem types, SDK behavior, and conformance cases. Smithy gives us a protocol-aware model with custom traits so those invariants can be validated and generated instead of re-declared in prose, route metadata, SDK code, and audit code.
 * Service-oriented-architecture by default: repo-owned services talk to each other through service-local typed clients/adapters that implement the Smithy-modeled internal HTTP surface. Internal routes use SPIFFE mTLS and may include repo-only operations; public routes use Zitadel bearer auth.
@@ -139,6 +138,52 @@ Releases are modeled as a five step process:
 5. Promote - For each target distribution platform, update it to point to new admitted digest: `mksk + nightly + linux/amd64 -> sha256:...` or `mksk + nightly + linux/arm64 -> sha256:...` Public notified, clients can discover the update.
 
 More detail in docs/architecture/release-architecture.md
+
+# Deployments
+
+We use Nomad for deployments. Ongoing effort to minimize all infrastructure that is hand-managed/deployed via Ansible to work towards a north star goal of "CI/CD everywhere".
+
+Bazel produces every byte that is deployed. If we know the commit SHA that was deployed, we should be able to byte-for-byte reproduce what's deployed by pulling the commit and building.
+
+Each deployable unit (including services, CLIs) teaches Nomad about its deployment mechanics and its promotion gates. Usually these are load testing/pentesting for services, real browser session for web frontends, deep health checks for infrastructure components like Zitadel and SpiceDB.
+
+`aspect deploy` runs Bazel, publishes artifacts through the R2 control-plane upload-session API, and registers Nomad jobs for a site ID such as "prod" | "gamma" | "dev".
+
+aspect deploy
+    -> bazel build
+    -> verself-deploy computes artifact manifest
+    -> verself-deploy asks r2-control-plane for upload session
+    -> r2-control-plane reads Cloudflare Account Admin token from
+    controller OpenBao
+    -> r2-control-plane ensures bucket/prefix state
+    -> r2-control-plane returns presigned PUT URLs
+    -> verself-deploy uploads bytes
+    -> r2-control-plane verifies uploaded objects
+    -> verself-deploy registers Nomad jobs pointing at immutable R2
+    object URLs
+    -> Nomad fetches artifacts with durable read-only getter credentials
+
+Prod/Staging/Gamma/Beta/Dev are the same code with different config loaded, different perimeter authentication strategies, and different real-world meanings. 
+
+OpenBao is the runtime secret source of truth; Nomad is the runtime secret delivery mechanism; SPIRE is workload mTLS identity, not the normal secret-delivery path.
+
+Per environment, the founder configures a single root key that they are responsible for, it's used to seal/unseal Openbao. All other secrets are created as needed at runtime.
+
+Deployments are designed to be as efficient as possible by leveraging artifact digests. Bazel produces the artifacts. A key invariant to maintain velocity is that we skip deploying unchanged deployable components, whether that's a service, an infrastructure binary like Zitadel, a CLI, or frontend. 
+
+Ref-based GitOps: every deployable unit must be able to deploy atomically. Bazel's job is to cache and decide when to run a unit's build pipeline. The R2 control plane publishes immutable artifacts from those outputs. Nomad orchestrates deployments for non-host concerns. Ansible configures hosts and ensures convergence. We rebuild only what we need by teaching Bazel about inputs and outputs.
+
+The bootstrap from zero special case:
+
+1. Operator sets up API keys and root password
+    a. Minimum needed are
+        i. Compute Provider (Latitude only for now)
+        ii. Domain Registrar (Cloudflare only for now)
+        iii. Object Storage Provider (Cloudflare R2 only for now)
+    b. Additional integrations: Stripe for payments, Resend for email delivery (alternatives planned)
+2. SSH into target box, verify the OS/machine is configured correctly, apply security patches. Seed OpenBao with the root key.
+3. Aspect deploy builds locally, uploads build artifacts to the box. The build includes all binaries + source code.
+4. Nomad orchestrates a regular deployment, each deployable unit declares its own bootstrap semantics which will be hit in the bootstrap path such as installing/configuring binaries, running migrations, ensuring required binaries are running.
 
 # Tech Stack (partial description):
 
@@ -300,7 +345,7 @@ Before writing markdown architecture in docs/ directories, please read docs/agen
 
 
 <mission_overview>
-The immediate goal of Verself is to make CI 10x faster across the industry, and to redefine how CI is thought of. Today, CI execution environments start from a clean slate, throwing out precious build artifacts that in many cases take hours to generate, and the standard GitHub golden path is to start a VM without having the repo even cloned. GitHub wins because CI takes forever and they charge by the minute. Our philosophy is that CI should start from a golden image of the deployed software: all build, lint, compilation, and intermediate artifacts intact. This means teaching developers that their CI VM should begin from a snapshot that preserves the same thing a developer machine preserves: hot Bazel server state plus the filesystem cache layout it expects.
+The immediate goal of Verself is to make CI 10-20x faster across the industry, and to redefine how CI is thought of. Today, CI execution environments start from a clean slate, throwing out precious build artifacts that in many cases take hours to generate, and the standard GitHub golden path is to start a VM without having the repo even cloned. GitHub wins because CI takes forever and they charge by the minute. Our philosophy is that CI should start from a golden image of the deployed software: all build, lint, compilation, and intermediate artifacts intact. This means teaching developers that their CI VM should begin from a snapshot that preserves the same thing a developer machine preserves: hot Bazel server state plus the filesystem cache layout it expects.
 
 That means:
 * Stop thinking of CI like a sterile one-shot build machine.
