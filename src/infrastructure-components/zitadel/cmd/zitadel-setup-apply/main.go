@@ -220,7 +220,7 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := chmodChownExisting(cfg.zitadelMasterkey, 0, gid, 0o640); err != nil {
+	if err := normalizeSecretFile(cfg.zitadelMasterkey, 0, gid, 0o640); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -285,6 +285,23 @@ func leadingWhitespace(value string) string {
 
 func renderDiscoveryHosts(domain string) []byte {
 	return []byte("127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n127.0.0.1 " + domain + "\n")
+}
+
+func normalizeSecretFile(path string, uid, gid int, mode fs.FileMode) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	value := strings.TrimSpace(string(raw))
+	if value == "" {
+		return fmt.Errorf("%s is empty", path)
+	}
+	// Nomad templates render a trailing newline by default; Zitadel counts it
+	// when validating the 32-byte master key.
+	if err := writeFileIfChanged(path, []byte(value), uid, gid, mode); err != nil {
+		return err
+	}
+	return chmodChownExisting(path, uid, gid, mode)
 }
 
 func runZitadelBootstrap(ctx context.Context, cfg config, uid, gid int, stdout, stderr io.Writer) error {

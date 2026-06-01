@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -46,5 +48,22 @@ func TestRenderDiscoveryHosts(t *testing.T) {
 	want := "127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n127.0.0.1 example.test\n"
 	if got != want {
 		t.Fatalf("hosts file:\n%s", got)
+	}
+}
+
+func TestNormalizeSecretFileTrimsTemplateNewline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "masterkey")
+	if err := os.WriteFile(path, []byte("01234567890123456789012345678901\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := normalizeSecretFile(path, os.Getuid(), os.Getgid(), 0o600); err != nil {
+		t.Fatalf("normalize secret: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "01234567890123456789012345678901" {
+		t.Fatalf("secret file was not trimmed: %q", string(got))
 	}
 }
