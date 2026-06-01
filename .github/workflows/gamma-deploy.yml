@@ -1,0 +1,120 @@
+name: Gamma Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gamma-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy main to gamma
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'guardian-intelligence/verself'
+    runs-on: verself-4vcpu-ubuntu-2404
+    timeout-minutes: 45
+    environment: gamma
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: guardian-intelligence/verself/.github/actions/checkout@3a32516af0e647dbb470066e8772f06be7e4b8be
+        with:
+          persist-credentials: false
+
+      - name: Assert GitHub OIDC deploy identity
+        env:
+          EXPECTED_AUDIENCE: verself-deploy-gamma
+          EXPECTED_ENVIRONMENT: gamma
+          EXPECTED_EVENT: push
+          EXPECTED_REF: refs/heads/main
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          EXPECTED_REPOSITORY_ID: ${{ github.repository_id }}
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/gamma-deploy.yml@refs/heads/main
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import sys
+          import urllib.parse
+          import urllib.request
+
+          def decode_payload(token):
+              parts = token.split(".")
+              if len(parts) != 3:
+                  raise ValueError("GitHub OIDC token is not a compact JWT")
+              payload = parts[1]
+              payload += "=" * ((4 - len(payload) % 4) % 4)
+              return json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+
+          request_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          request_token = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+          audience = os.environ["EXPECTED_AUDIENCE"]
+          separator = "&" if "?" in request_url else "?"
+          token_url = request_url + separator + "audience=" + urllib.parse.quote(audience, safe="")
+          request = urllib.request.Request(
+              token_url,
+              headers={
+                  "Accept": "application/json",
+                  "Authorization": "Bearer " + request_token,
+              },
+          )
+          with urllib.request.urlopen(request, timeout=10) as response:
+              token = json.load(response)["value"]
+          claims = decode_payload(token)
+          expected = {
+              "aud": audience,
+              "environment": os.environ["EXPECTED_ENVIRONMENT"],
+              "event_name": os.environ["EXPECTED_EVENT"],
+              "iss": "https://token.actions.githubusercontent.com",
+              "ref": os.environ["EXPECTED_REF"],
+              "repository": os.environ["EXPECTED_REPOSITORY"],
+              "repository_id": os.environ["EXPECTED_REPOSITORY_ID"],
+              "sha": os.environ["EXPECTED_SHA"],
+              "workflow_ref": os.environ["EXPECTED_WORKFLOW_REF"],
+          }
+          failures = []
+          for name, want in expected.items():
+              got = str(claims.get(name, ""))
+              if got != want:
+                  failures.append(f"{name}: got {got!r}, want {want!r}")
+          if failures:
+              print("GitHub OIDC deploy identity rejected:", file=sys.stderr)
+              for failure in failures:
+                  print("  " + failure, file=sys.stderr)
+              sys.exit(1)
+          accepted = {name: claims.get(name, "") for name in sorted(expected)}
+          accepted["run_id"] = claims.get("run_id", "")
+          accepted["run_attempt"] = claims.get("run_attempt", "")
+          print("GitHub OIDC deploy identity accepted: " + json.dumps(accepted, sort_keys=True))
+          PY
+
+      - name: Bootstrap toolchain
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
+
+      - name: Deploy gamma
+        run: |
+          set -euo pipefail
+          if [ -n "${RUNNER_TRACKING_ID:-}" ]; then
+            unset RUNNER_TRACKING_ID
+          fi
+          aspect deploy --site=gamma --sha="${GITHUB_SHA}"
+          server_pid="$(bazelisk info server_pid)"
+          if [ -z "$server_pid" ] || [ ! -r "/proc/${server_pid}/environ" ]; then
+            echo "::error::Bazel server process ${server_pid:-<empty>} is not inspectable"
+            exit 1
+          fi
+          if tr '\0' '\n' < "/proc/${server_pid}/environ" | grep -q '^RUNNER_TRACKING_ID='; then
+            echo "::error::Bazel server inherited RUNNER_TRACKING_ID and will be killed by GitHub runner cleanup"
+            exit 1
+          fi
+          echo "Bazel server ${server_pid} does not carry RUNNER_TRACKING_ID."
