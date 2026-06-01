@@ -141,27 +141,11 @@ More detail in docs/architecture/release-architecture.md
 
 # Deployments
 
-We use Nomad for deployments. Ongoing effort to minimize all infrastructure that is hand-managed/deployed via Ansible to work towards a north star goal of "CI/CD everywhere".
+Each site runs its own deployment-service. `aspect deploy` is a thin client that resolves the site endpoint, authenticates, submits a deployment request for a commit SHA, and returns a deployment ID for status, logs, and ClickHouse evidence.
 
 Bazel produces every byte that is deployed. If we know the commit SHA that was deployed, we should be able to byte-for-byte reproduce what's deployed by pulling the commit and building.
 
-Each deployable unit (including services, CLIs) teaches Nomad about its deployment mechanics and its promotion gates. Usually these are load testing/pentesting for services, real browser session for web frontends, deep health checks for infrastructure components like Zitadel and SpiceDB.
-
-`aspect deploy` runs Bazel, publishes artifacts through the R2 control-plane upload-session API, and registers Nomad jobs for a site ID such as "prod" | "gamma" | "dev".
-
-aspect deploy
-    -> bazel build
-    -> verself-deploy computes artifact manifest
-    -> verself-deploy asks r2-control-plane for upload session
-    -> r2-control-plane reads Cloudflare Account Admin token from
-    controller OpenBao
-    -> r2-control-plane ensures bucket/prefix state
-    -> r2-control-plane returns presigned PUT URLs
-    -> verself-deploy uploads bytes
-    -> r2-control-plane verifies uploaded objects
-    -> verself-deploy registers Nomad jobs pointing at immutable R2
-    object URLs
-    -> Nomad fetches artifacts with durable read-only getter credentials
+The deployment-service owns build orchestration, artifact publication, Nomad submission, deployment state, errors as data, realtime health ingestion, and promotion evidence. Nomad remains the runtime executor. Owner-local Nomad jobs and gate descriptors declare rollout behavior.
 
 Prod/Staging/Gamma/Beta/Dev are the same code with different config loaded, different perimeter authentication strategies, and different real-world meanings. 
 

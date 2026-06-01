@@ -1,16 +1,17 @@
 # deployment
 
-The typed Go adapter for Verself deploys. It owns the narrow Bazel-to-Nomad
-handoff: build deployable `nomad_component` targets, parse owner-local Nomad
-jobs with the target Nomad API, and register those jobs. Operator database
-access is owned by `src/tools/operator/cmd/aspect-operator` and the shared
-`src/tools/operator-runtime/go` packages, not this deployment adapter.
+The deployment tooling is moving behind the site-local deployment-service.
+`aspect deploy` should remain a thin client: resolve the site endpoint,
+authenticate, submit a commit-SHA deployment request, and follow the returned
+deployment ID. The service owns build orchestration, artifact publication,
+Nomad submission, deployment state, errors as data, realtime health ingestion,
+and promotion evidence.
 
 ## Layout
 
-- `cmd/verself-deploy/` — single binary, subcommands grouped under
-  `verself-deploy <group> <action>` (mirrors the `aspect <group> <action>`
-  surface). `run` builds deployable units and registers their Nomad jobs.
+- `cmd/verself-deploy/` — single binary behind the `aspect deploy` task. Keep
+  request/auth/follow behavior in the CLI and move deployment mutation into the
+  site-local deployment-service.
 - `internal/identity/` — derives the verself deploy identity env and emits W3C
   baggage so every span this binary creates carries `verself.deploy_run_key`,
   `verself.deploy_id`, `verself.site`, `verself.author`.
@@ -18,13 +19,10 @@ access is owned by `src/tools/operator/cmd/aspect-operator` and the shared
 
 ## Phase boundaries
 
-This module does not reconcile OpenBao/Postgres, mutate HCL, run canaries,
-monitor rollouts, or roll jobs back. Bazel produces the deployable bytes and
-Nomad owns deployment mechanics. Artifact publication goes through the
-Cloudflare R2 control-plane upload-session API; this binary must not read
-Cloudflare parent credentials or controller OpenBao. ClickHouse is an
-observability backend, not a runtime dependency of this binary. Host bootstrap
-and patching are outside this binary.
+This module must not grow new deployment authority while the service boundary is
+being introduced. Bazel produces the deployable bytes, the deployment-service
+records the state machine and evidence, and Nomad executes runtime rollout
+mechanics. Host bootstrap and patching remain outside this module.
 
 ## Conventions
 

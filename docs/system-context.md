@@ -37,6 +37,10 @@ inputs owned by the deployable package. Generic reconcilers apply those
 owner-local declarations; reconcilers contain no service catalog entries.
 Devtools remain controller-local/host-local tooling outside Nomad.
 
+Each site runs a deployment-service that accepts deployment requests, records
+state and ClickHouse evidence, publishes artifacts, and submits owner-local
+Nomad jobs. `aspect deploy` is the operator client for that service.
+
 Bootstrap and operator-recovery secrets enter through catalog-approved
 bootstrap sessions and controller OpenBao, then a wrapped site seed initializes
 fresh site OpenBao state. Runtime secrets are owner-local
