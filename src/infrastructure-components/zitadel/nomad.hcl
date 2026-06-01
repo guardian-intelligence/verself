@@ -51,7 +51,7 @@ job "zitadel" {
           "--config=$${NOMAD_TASK_DIR}/config.yaml",
           "--steps=$${NOMAD_TASK_DIR}/steps.yaml",
           "--masterkey=$${NOMAD_SECRETS_DIR}/masterkey",
-          "--admin-pat-path=$${NOMAD_SECRETS_DIR}/admin.pat",
+          "--admin-pat-path=$${NOMAD_TASK_DIR}/zitadel-admin/admin.pat",
         ]
       }
 
@@ -158,7 +158,7 @@ EOT
         data = <<-EOT
 FirstInstance:
   InstanceName: verself
-  PatPath: "{{ env "NOMAD_SECRETS_DIR" }}/admin.pat"
+  PatPath: "{{ env "NOMAD_TASK_DIR" }}/zitadel-admin/admin.pat"
   Org:
     Name: Guardian Intelligence LLC
     Human:

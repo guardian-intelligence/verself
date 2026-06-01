@@ -205,6 +205,11 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
+	if err := ensureDirectory(filepath.Dir(cfg.adminPATPath), uid, gid, 0o700); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	if err := ensureDirectory(filepath.Dir(cfg.discoveryHostsPath), 0, 0, 0o755); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -226,6 +231,11 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		return err
 	}
 	if err := writeFileIfChanged(cfg.discoveryHostsPath, renderDiscoveryHosts(cfg.domain), 0, 0, 0o644); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if err := removeFileIfExists(cfg.adminPATPath); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -359,6 +369,9 @@ func publishAdminPAT(ctx context.Context, cfg config, stdout io.Writer) error {
 		}
 		fmt.Fprintf(stdout, "zitadel-setup-apply: published admin PAT %s sha256=%s\n", secret, fingerprint(value))
 	}
+	if err := os.Remove(cfg.adminPATPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove generated Zitadel admin PAT: %w", err)
+	}
 	return nil
 }
 
@@ -449,6 +462,13 @@ func ensureDirectory(path string, uid, gid int, mode fs.FileMode) error {
 	}
 	if err := os.Chmod(path, mode); err != nil {
 		return fmt.Errorf("chmod %s: %w", path, err)
+	}
+	return nil
+}
+
+func removeFileIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale %s: %w", path, err)
 	}
 	return nil
 }
