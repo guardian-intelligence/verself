@@ -351,17 +351,18 @@ func publishAdminPAT(ctx context.Context, cfg config, stdout io.Writer) error {
 	if len(cfg.adminPATSecrets) == 0 {
 		return nil
 	}
-	body, err := os.ReadFile(cfg.adminPATPath)
-	if err != nil {
-		return fmt.Errorf("read generated Zitadel admin PAT: %w", err)
-	}
-	value := strings.TrimSpace(string(body))
-	if value == "" {
-		return fmt.Errorf("generated Zitadel admin PAT is empty")
-	}
 	client, err := newBaoClient(cfg)
 	if err != nil {
 		return err
+	}
+	value, generated, err := readGeneratedAdminPAT(cfg.adminPATPath)
+	if err != nil {
+		return err
+	}
+	if !generated {
+		// Zitadel only writes PatPath while creating the first instance; retries
+		// must find the already-published value in OpenBao.
+		return requirePublishedAdminPAT(ctx, client, cfg.adminPATSecrets, stdout)
 	}
 	for _, secret := range cfg.adminPATSecrets {
 		if err := client.writeRuntimeSecret(ctx, secret, value); err != nil {
@@ -371,6 +372,35 @@ func publishAdminPAT(ctx context.Context, cfg config, stdout io.Writer) error {
 	}
 	if err := os.Remove(cfg.adminPATPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove generated Zitadel admin PAT: %w", err)
+	}
+	return nil
+}
+
+func readGeneratedAdminPAT(path string) (string, bool, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("read generated Zitadel admin PAT: %w", err)
+	}
+	value := strings.TrimSpace(string(body))
+	if value == "" {
+		return "", false, fmt.Errorf("generated Zitadel admin PAT is empty")
+	}
+	return value, true, nil
+}
+
+func requirePublishedAdminPAT(ctx context.Context, client *baoClient, secrets []string, stdout io.Writer) error {
+	for _, secret := range secrets {
+		value, found, err := client.readRuntimeSecret(ctx, secret)
+		if err != nil {
+			return err
+		}
+		if !found || strings.TrimSpace(value) == "" {
+			return fmt.Errorf("generated Zitadel admin PAT is missing and OpenBao runtime secret %s is empty or missing", secret)
+		}
+		fmt.Fprintf(stdout, "zitadel-setup-apply: admin PAT %s already present in OpenBao sha256=%s\n", secret, fingerprint(value))
 	}
 	return nil
 }
@@ -407,6 +437,34 @@ func newBaoClient(cfg config) (*baoClient, error) {
 
 func (c *baoClient) writeRuntimeSecret(ctx context.Context, name, value string) error {
 	return c.write(ctx, "v1/kv-runtime/data/secret/org/"+url.PathEscape(name), map[string]any{"data": map[string]any{"value": value}})
+}
+
+func (c *baoClient) readRuntimeSecret(ctx context.Context, name string) (string, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.addr+"/v1/kv-runtime/data/secret/org/"+url.PathEscape(name), http.NoBody)
+	if err != nil {
+		return "", false, err
+	}
+	req.Header.Set("X-Vault-Token", c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", false, fmt.Errorf("openbao GET runtime secret %s: %w", name, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode == http.StatusNotFound {
+		return "", false, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", false, fmt.Errorf("openbao GET runtime secret %s status %d: %s", name, resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	var decoded struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return "", false, fmt.Errorf("decode OpenBao runtime secret %s: %w", name, err)
+	}
+	data, _ := decoded.Data["data"].(map[string]any)
+	return strings.TrimSpace(fmt.Sprint(data["value"])), true, nil
 }
 
 func (c *baoClient) write(ctx context.Context, path string, body any) error {

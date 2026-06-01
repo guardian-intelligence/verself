@@ -2,8 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,5 +70,44 @@ func TestNormalizeSecretFileTrimsTemplateNewline(t *testing.T) {
 	}
 	if string(got) != "01234567890123456789012345678901" {
 		t.Fatalf("secret file was not trimmed: %q", string(got))
+	}
+}
+
+func TestPublishAdminPATAcceptsPreviouslyPublishedOpenBaoPAT(t *testing.T) {
+	values := map[string]string{
+		"/v1/kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token": "existing-pat",
+		"/v1/kv-runtime/data/secret/org/iam-service.zitadel.admin_token":        "existing-pat",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("unexpected method %s", r.Method)
+		}
+		value, ok := values[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"data": map[string]string{"value": value}},
+		}); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+	cfg := config{
+		adminPATPath: filepath.Join(t.TempDir(), "missing-admin.pat"),
+		adminPATSecrets: []string{
+			"auth-control-plane.zitadel.admin_token",
+			"iam-service.zitadel.admin_token",
+		},
+		openBaoAddr:  server.URL,
+		openBaoToken: "token",
+	}
+	var stdout bytes.Buffer
+	if err := publishAdminPAT(context.Background(), cfg, &stdout); err != nil {
+		t.Fatalf("publish admin PAT: %v", err)
+	}
+	if got := stdout.String(); !strings.Contains(got, "already present in OpenBao") {
+		t.Fatalf("expected OpenBao presence output, got %q", got)
 	}
 }
