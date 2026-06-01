@@ -33,14 +33,14 @@ import (
 )
 
 const (
-	defaultZitadelBin       = "local/bin/zitadel"
-	defaultZitadelConfig    = "/etc/zitadel/config.yaml"
-	defaultZitadelSteps     = "/etc/zitadel/steps.yaml"
-	defaultZitadelMasterkey = ""
-	defaultZitadelAdminPAT  = ""
-	defaultDiscoveryHosts   = "/etc/verself/auth-discovery-hosts"
-	defaultZitadelUser      = "zitadel"
-	defaultZitadelGroup     = "zitadel"
+	defaultZitadelBin             = "local/bin/zitadel"
+	defaultZitadelConfig          = "/etc/zitadel/config.yaml"
+	defaultZitadelSteps           = "/etc/zitadel/steps.yaml"
+	defaultZitadelMasterkeySecret = "zitadel.masterkey"
+	defaultZitadelAdminPAT        = ""
+	defaultDiscoveryHosts         = "/etc/verself/auth-discovery-hosts"
+	defaultZitadelUser            = "zitadel"
+	defaultZitadelGroup           = "zitadel"
 )
 
 type mode string
@@ -56,7 +56,7 @@ type config struct {
 	zitadelBin         string
 	zitadelConfigPath  string
 	zitadelStepsPath   string
-	zitadelMasterkey   string
+	masterkeySecret    string
 	adminPATPath       string
 	adminPATSecrets    []string
 	discoveryHostsPath string
@@ -82,7 +82,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		zitadelBin:         envOr("VERSELF_ZITADEL_BIN", defaultZitadelBin),
 		zitadelConfigPath:  envOr("VERSELF_ZITADEL_CONFIG_PATH", defaultZitadelConfig),
 		zitadelStepsPath:   envOr("VERSELF_ZITADEL_STEPS_PATH", defaultZitadelSteps),
-		zitadelMasterkey:   envOr("VERSELF_ZITADEL_MASTERKEY_PATH", defaultZitadelMasterkey),
+		masterkeySecret:    envOr("VERSELF_ZITADEL_MASTERKEY_OPENBAO_SECRET", defaultZitadelMasterkeySecret),
 		adminPATPath:       envOr("VERSELF_ZITADEL_ADMIN_PAT_PATH", defaultZitadelAdminPAT),
 		adminPATSecrets:    splitCSV(envOr("VERSELF_ZITADEL_ADMIN_PAT_OPENBAO_SECRETS", "")),
 		discoveryHostsPath: envOr("VERSELF_AUTH_DISCOVERY_HOSTS_PATH", defaultDiscoveryHosts),
@@ -101,7 +101,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fs.StringVar(&cfg.zitadelBin, "zitadel-bin", cfg.zitadelBin, "Zitadel binary path.")
 	fs.StringVar(&cfg.zitadelConfigPath, "config", cfg.zitadelConfigPath, "Zitadel config path.")
 	fs.StringVar(&cfg.zitadelStepsPath, "steps", cfg.zitadelStepsPath, "Zitadel setup steps path.")
-	fs.StringVar(&cfg.zitadelMasterkey, "masterkey", cfg.zitadelMasterkey, "Zitadel masterkey path.")
+	fs.StringVar(&cfg.masterkeySecret, "masterkey-openbao-secret", cfg.masterkeySecret, "OpenBao runtime secret containing the Zitadel masterkey.")
 	fs.StringVar(&cfg.adminPATPath, "admin-pat-path", cfg.adminPATPath, "Zitadel admin PAT path.")
 	fs.StringVar(&cfg.discoveryHostsPath, "discovery-hosts", cfg.discoveryHostsPath, "Local discovery hosts file path.")
 	fs.StringVar(&cfg.zitadelUser, "zitadel-user", cfg.zitadelUser, "User to run zitadel setup as.")
@@ -143,12 +143,12 @@ func (cfg config) validate() error {
 	}
 	missing := []string{}
 	for name, value := range map[string]string{
-		"--external-domain": cfg.domain,
-		"--zitadel-bin":     cfg.zitadelBin,
-		"--config":          cfg.zitadelConfigPath,
-		"--masterkey":       cfg.zitadelMasterkey,
-		"--zitadel-user":    cfg.zitadelUser,
-		"--zitadel-group":   cfg.zitadelGroup,
+		"--external-domain":          cfg.domain,
+		"--zitadel-bin":              cfg.zitadelBin,
+		"--config":                   cfg.zitadelConfigPath,
+		"--masterkey-openbao-secret": cfg.masterkeySecret,
+		"--zitadel-user":             cfg.zitadelUser,
+		"--zitadel-group":            cfg.zitadelGroup,
 	} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)
@@ -170,6 +170,15 @@ func (cfg config) validate() error {
 	}
 	if strings.ContainsAny(cfg.domain, "/:@") || strings.Contains(cfg.domain, "{{") {
 		return fmt.Errorf("invalid external domain %q", cfg.domain)
+	}
+	if strings.ContainsAny(cfg.masterkeySecret, "/ ") {
+		return fmt.Errorf("invalid OpenBao masterkey secret name %q", cfg.masterkeySecret)
+	}
+	if strings.TrimSpace(cfg.openBaoAddr) == "" {
+		return fmt.Errorf("--openbao-addr is required")
+	}
+	if strings.TrimSpace(cfg.openBaoToken) == "" {
+		return fmt.Errorf("--openbao-token is required")
 	}
 	if cfg.mode == modeSetup && len(cfg.adminPATSecrets) > 0 {
 		if strings.TrimSpace(cfg.openBaoAddr) == "" {
@@ -223,13 +232,14 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureDirectory(filepath.Dir(cfg.zitadelMasterkey), 0, gid, 0o750); err != nil {
+	masterkey, err := readMasterkey(ctx, cfg)
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	if cfg.mode == modeStart {
-		if err := runZitadelServer(ctx, cfg, uid, gid, stdout, stderr); err != nil {
+		if err := runZitadelServer(ctx, cfg, masterkey, uid, gid, stdout, stderr); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return err
@@ -257,11 +267,6 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := normalizeSecretFile(cfg.zitadelMasterkey, 0, gid, 0o640); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
 	if err := writeFileIfChanged(cfg.discoveryHostsPath, renderDiscoveryHosts(cfg.domain), 0, 0, 0o644); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -276,7 +281,7 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		span.SetStatus(codes.Ok, "")
 		return nil
 	}
-	if err := runZitadelBootstrap(ctx, cfg, uid, gid, stdout, stderr); err != nil {
+	if err := runZitadelBootstrap(ctx, cfg, masterkey, uid, gid, stdout, stderr); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -326,36 +331,35 @@ func renderDiscoveryHosts(domain string) []byte {
 	return []byte("127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n127.0.0.1 " + domain + "\n")
 }
 
-func normalizeSecretFile(path string, uid, gid int, mode fs.FileMode) error {
-	raw, err := os.ReadFile(path)
+func readMasterkey(ctx context.Context, cfg config) (string, error) {
+	client, err := newBaoClient(cfg)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
+		return "", err
 	}
-	value := strings.TrimSpace(string(raw))
-	if value == "" {
-		return fmt.Errorf("%s is empty", path)
+	value, found, err := client.readRuntimeSecret(ctx, cfg.masterkeySecret)
+	if err != nil {
+		return "", err
 	}
-	// Nomad templates render a trailing newline by default; Zitadel counts it
-	// when validating the 32-byte master key.
-	if err := writeFileIfChanged(path, []byte(value), uid, gid, mode); err != nil {
-		return err
+	value = strings.TrimSpace(value)
+	if !found || value == "" {
+		return "", fmt.Errorf("OpenBao runtime secret %s is empty or missing", cfg.masterkeySecret)
 	}
-	return chmodChownExisting(path, uid, gid, mode)
+	return value, nil
 }
 
-func runZitadelBootstrap(ctx context.Context, cfg config, uid, gid int, stdout, stderr io.Writer) error {
+func runZitadelBootstrap(ctx context.Context, cfg config, masterkey string, uid, gid int, stdout, stderr io.Writer) error {
 	// PostgreSQL ownership is reconciled by substrate-control-plane; Zitadel
 	// only initializes its own internals here.
-	if err := runZitadelCommand(ctx, cfg, uid, gid, stdout, stderr,
+	if err := runZitadelCommand(ctx, cfg, masterkey, uid, gid, stdout, stderr,
 		"init",
 		"zitadel",
 		"--config", cfg.zitadelConfigPath,
 	); err != nil {
 		return fmt.Errorf("run zitadel init: %w", err)
 	}
-	if err := runZitadelCommand(ctx, cfg, uid, gid, stdout, stderr,
+	if err := runZitadelCommand(ctx, cfg, masterkey, uid, gid, stdout, stderr,
 		"setup",
-		"--masterkeyFile", cfg.zitadelMasterkey,
+		"--masterkeyFromEnv",
 		"--config", cfg.zitadelConfigPath,
 		"--steps", cfg.zitadelStepsPath,
 	); err != nil {
@@ -364,25 +368,22 @@ func runZitadelBootstrap(ctx context.Context, cfg config, uid, gid int, stdout, 
 	return nil
 }
 
-func runZitadelServer(ctx context.Context, cfg config, uid, gid int, stdout, stderr io.Writer) error {
+func runZitadelServer(ctx context.Context, cfg config, masterkey string, uid, gid int, stdout, stderr io.Writer) error {
 	if err := normalizeConfigFile(cfg.zitadelConfigPath, cfg.domain, uid, gid); err != nil {
 		return err
 	}
-	if err := normalizeSecretFile(cfg.zitadelMasterkey, 0, gid, 0o640); err != nil {
-		return err
-	}
-	return runZitadelCommand(ctx, cfg, uid, gid, stdout, stderr,
+	return runZitadelCommand(ctx, cfg, masterkey, uid, gid, stdout, stderr,
 		"start",
-		"--masterkeyFile", cfg.zitadelMasterkey,
+		"--masterkeyFromEnv",
 		"--config", cfg.zitadelConfigPath,
 	)
 }
 
-func runZitadelCommand(ctx context.Context, cfg config, uid, gid int, stdout, stderr io.Writer, args ...string) error {
+func runZitadelCommand(ctx context.Context, cfg config, masterkey string, uid, gid int, stdout, stderr io.Writer, args ...string) error {
 	cmd := exec.CommandContext(ctx, cfg.zitadelBin, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Env = append(os.Environ(), "HOME=/var/lib/zitadel")
+	cmd.Env = append(os.Environ(), "HOME=/var/lib/zitadel", "ZITADEL_MASTERKEY="+strings.TrimSpace(masterkey))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}}
 	if err := cmd.Run(); err != nil {
 		return err

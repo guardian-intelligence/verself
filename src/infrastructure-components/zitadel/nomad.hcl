@@ -50,14 +50,14 @@ job "zitadel" {
         args = [
           "--config=$${NOMAD_TASK_DIR}/config.yaml",
           "--steps=$${NOMAD_TASK_DIR}/steps.yaml",
-          "--masterkey=$${NOMAD_SECRETS_DIR}/masterkey",
+          "--masterkey-openbao-secret=zitadel.masterkey",
           "--admin-pat-path=$${NOMAD_TASK_DIR}/zitadel-admin/admin.pat",
         ]
       }
 
       env {
         BAO_ADDR = "https://127.0.0.1:8200"
-        BAO_CACERT = "/etc/openbao/tls/cert.pem"
+        BAO_CACERT = "/etc/verself/openbao/ca.pem"
         HOME = "/var/lib/zitadel"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
@@ -71,15 +71,6 @@ job "zitadel" {
       resources {
         cpu = 200
         memory = 256
-      }
-
-      template {
-        change_mode = "restart"
-        destination = "secrets/masterkey"
-        perms = "0400"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/zitadel.masterkey" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
 
       template {
@@ -213,11 +204,13 @@ EOT
         args = [
           "--mode=start",
           "--config=$${NOMAD_TASK_DIR}/config.yaml",
-          "--masterkey=$${NOMAD_SECRETS_DIR}/masterkey",
+          "--masterkey-openbao-secret=zitadel.masterkey",
         ]
       }
 
       env {
+        BAO_ADDR = "https://127.0.0.1:8200"
+        BAO_CACERT = "/etc/verself/openbao/ca.pem"
         HOME = "/var/lib/zitadel"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
@@ -236,15 +229,6 @@ EOT
         port = "http"
         provider = "nomad"
         address_mode = "auto"
-      }
-
-      template {
-        change_mode = "restart"
-        destination = "secrets/masterkey"
-        perms = "0400"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/zitadel.masterkey" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
 
       template {

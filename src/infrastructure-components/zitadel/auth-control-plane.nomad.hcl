@@ -37,7 +37,7 @@ job "auth-control-plane" {
         AUTH_CONTROL_PLANE_ZITADEL_HOST = "__VERSELF_PRODUCT_DOMAIN__"
         AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID = "__VERSELF_GITHUB_OAUTH_CLIENT_ID__"
         BAO_ADDR = "https://127.0.0.1:8200"
-        BAO_CACERT = "/etc/openbao/tls/cert.pem"
+        BAO_CACERT = "/etc/verself/openbao/ca.pem"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "auth-control-plane-apply"

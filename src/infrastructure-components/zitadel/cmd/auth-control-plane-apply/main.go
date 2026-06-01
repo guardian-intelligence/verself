@@ -36,7 +36,7 @@ const (
 	defaultZitadelBaseURL          = "http://127.0.0.1:8085"
 	defaultGithubLoginIDPName      = "GitHub"
 	defaultOpenBaoAddr             = "https://127.0.0.1:8200"
-	defaultOpenBaoCACert           = "/etc/openbao/tls/cert.pem"
+	defaultOpenBaoCACert           = "/etc/verself/openbao/ca.pem"
 	desiredPasswordMinLength       = 8
 	desiredPasswordLockoutAttempts = 10
 )
