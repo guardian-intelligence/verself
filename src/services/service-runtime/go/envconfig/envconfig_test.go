@@ -125,6 +125,33 @@ func TestRequireCredentialReadsExplicitNomadPath(t *testing.T) {
 	}
 }
 
+func TestRequireCredentialReadsExplicitValue(t *testing.T) {
+	t.Setenv("VERSELF_CRED_VALUE_AUTH_AUDIENCE", "  audience-value\n")
+
+	l := envconfig.New()
+	got := l.RequireCredential("auth-audience")
+	if got != "audience-value" {
+		t.Errorf("RequireCredential value: got %q", got)
+	}
+	if err := l.Err(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRequireCredentialValuePrecedesPath(t *testing.T) {
+	t.Setenv("VERSELF_CRED_VALUE_FORGEJO_TOKEN", "token-from-value")
+	t.Setenv("VERSELF_CRED_FORGEJO_TOKEN", "relative-token-path")
+
+	l := envconfig.New()
+	got := l.RequireCredential("forgejo-token")
+	if got != "token-from-value" {
+		t.Errorf("RequireCredential value precedence: got %q", got)
+	}
+	if err := l.Err(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRequireCredentialPathRejectsRelativeExplicitNomadPath(t *testing.T) {
 	t.Setenv("VERSELF_CRED_CLICKHOUSE_CA_CERT", "relative.pem")
 
