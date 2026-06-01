@@ -26,6 +26,9 @@ job "postgresql" {
       config {
         command = "/bin/bash"
         args = ["-euo", "pipefail", "-c", <<EOH
+runtime="$(realpath "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql")"
+export LD_LIBRARY_PATH="$runtime/usr/lib/x86_64-linux-gnu:$runtime/usr/lib/postgresql/16/lib"
+
 getent group postgres >/dev/null || groupadd --system postgres
 id -u postgres >/dev/null 2>&1 || useradd --system --gid postgres --home-dir /var/lib/postgresql --shell /bin/bash --create-home postgres
 install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/16/verself /etc/postgresql/verself
@@ -40,7 +43,7 @@ superuser_reserved_connections = 10
 data_directory = '/var/lib/postgresql/16/verself'
 hba_file = '/etc/postgresql/verself/pg_hba.conf'
 ident_file = '/etc/postgresql/verself/pg_ident.conf'
-dynamic_library_path = '$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/usr/lib/postgresql/16/lib'
+dynamic_library_path = '$runtime/usr/lib/postgresql/16/lib'
 logging_collector = on
 log_directory = '/var/log/postgresql'
 log_filename = 'postgresql-%Y-%m-%d.log'
@@ -80,13 +83,13 @@ if [ ! -s /var/lib/postgresql/16/verself/PG_VERSION ]; then
   openssl rand -base64 48 >"$pwfile"
   chown postgres:postgres "$pwfile"
   chmod 0600 "$pwfile"
-  runuser -u postgres --preserve-environment -- "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/usr/lib/postgresql/16/bin/initdb" \
+  runuser -u postgres --preserve-environment -- "$runtime/usr/lib/postgresql/16/bin/initdb" \
     --pgdata=/var/lib/postgresql/16/verself \
     --auth-local=peer \
     --auth-host=scram-sha-256 \
     --encoding=UTF8 \
     --locale=C.UTF-8 \
-    -L "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/usr/share/postgresql/16" \
+    -L "$runtime/usr/share/postgresql/16" \
     --pwfile="$pwfile"
 fi
 EOH
