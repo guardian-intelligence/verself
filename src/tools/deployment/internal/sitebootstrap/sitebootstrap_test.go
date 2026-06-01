@@ -90,6 +90,47 @@ func TestMaterializeSeedBundlePreservesExistingGeneratedValues(t *testing.T) {
 	}
 }
 
+func TestMaterializeSeedBundleWritesFilteredRuntimeSeed(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "src/services/billing-service/deploy/runtime-secrets.yml"), `
+openbao_runtime_secret_seed_declarations:
+  - name: billing-service.stripe.secret_key
+    site_secret: stripe_secret_key
+`)
+	seed := filepath.Join(root, "seed.yml")
+	writeTestFile(t, seed, validSeedBundle("gamma"))
+	runtimeSeed := filepath.Join(root, "openbao-runtime-seed.json")
+
+	report, err := MaterializeSeedBundle(MaterializeOptions{
+		Site:            "gamma",
+		SeedPath:        seed,
+		VarsPath:        filepath.Join(root, "ansible-secrets.json"),
+		RuntimeSeedPath: runtimeSeed,
+		Evidence:        filepath.Join(root, "seed-fingerprints.json"),
+		RepoRoot:        root,
+		ForceWrite:      true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle RuntimeSeedBundle
+	readJSON(t, runtimeSeed, &bundle)
+	if bundle.Version != RuntimeSeedBundleVersion || bundle.Site != "gamma" {
+		t.Fatalf("runtime seed header = %#v", bundle)
+	}
+	if got := bundle.Values["stripe_secret_key"]; got != "sk_test_gamma" {
+		t.Fatalf("runtime seed stripe_secret_key = %q", got)
+	}
+	for _, forbidden := range []string{"cloudflare_api_token", "nomad_artifact_getter_s3_secret_access_key", "stripe_publishable_key"} {
+		if _, ok := bundle.Values[forbidden]; ok {
+			t.Fatalf("runtime seed included non-runtime key %s", forbidden)
+		}
+	}
+	if report.Outputs["openbao_runtime_seed"] != runtimeSeed {
+		t.Fatalf("runtime seed output missing from evidence: %#v", report.Outputs)
+	}
+}
+
 func TestWriteInventory(t *testing.T) {
 	root := t.TempDir()
 	out := filepath.Join(root, "inventory.ini")

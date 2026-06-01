@@ -22,7 +22,7 @@ job "clickhouse-migrations" {
       config {
         command = "/bin/sh"
         args = ["-euc", <<-EOT
-client=/opt/verself/profile/bin/clickhouse-client
+client=/opt/verself/profile/bin/clickhouse
 test -x "$client"
 applied=0
 for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do
@@ -31,7 +31,7 @@ for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do
   fi
   applied=$((applied + 1))
   echo "clickhouse-migrations: applying $migration" >&2
-  "$client" \
+  "$client" client \
     --config-file /etc/clickhouse-client/operator.xml \
     --user clickhouse_operator \
     --database verself \

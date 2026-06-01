@@ -51,6 +51,31 @@ postgresql_peer_mappings:
 	}
 }
 
+func TestLoadRuntimeSeedRejectsWrongSite(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "openbao-runtime-seed.json")
+	writeBytes(t, root, "openbao-runtime-seed.json", []byte(`{
+  "version": "verself.openbao-runtime-seed.v1",
+  "site": "prod",
+  "values": {"stripe_secret_key": "sk_test"}
+}
+`))
+	_, err := loadRuntimeSeed(ApplyConfig{RuntimeSeedPath: path}, Bundle{Site: "gamma"})
+	if err == nil || !strings.Contains(err.Error(), "does not match bundle site") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadRuntimeSeedAcceptsMissingFile(t *testing.T) {
+	seed, err := loadRuntimeSeed(ApplyConfig{RuntimeSeedPath: filepath.Join(t.TempDir(), "missing.json")}, Bundle{Site: "gamma"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seed.Loaded || len(seed.Values) != 0 {
+		t.Fatalf("missing seed = %#v", seed)
+	}
+}
+
 func write(t *testing.T, root, rel, body string) {
 	t.Helper()
 	writeBytes(t, root, rel, []byte(body))

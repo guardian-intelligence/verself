@@ -25,6 +25,7 @@ import (
 
 type ApplyConfig struct {
 	BundlePath            string
+	RuntimeSeedPath       string
 	OpenBaoAddr           string
 	OpenBaoCACert         string
 	OpenBaoToken          string
@@ -35,6 +36,7 @@ type ApplyConfig struct {
 
 type ApplyResult struct {
 	RuntimeSecrets int
+	SiteSecrets    int
 	NomadRoles     int
 	PostgresRoles  int
 	Databases      int
@@ -66,6 +68,10 @@ func ApplyBundleFile(ctx context.Context, cfg ApplyConfig) (ApplyResult, error) 
 	if bundle.SchemaVersion != BundleSchemaVersion {
 		return ApplyResult{}, fmt.Errorf("unsupported control-plane bundle schema %q", bundle.SchemaVersion)
 	}
+	runtimeSeed, err := loadRuntimeSeed(cfg, bundle)
+	if err != nil {
+		return ApplyResult{}, err
+	}
 	bao, err := newBaoClient(cfg)
 	if err != nil {
 		return ApplyResult{}, err
@@ -74,14 +80,21 @@ func ApplyBundleFile(ctx context.Context, cfg ApplyConfig) (ApplyResult, error) 
 		return ApplyResult{}, err
 	}
 	result := ApplyResult{}
-	if err := applyOpenBao(ctx, bao, bundle.OpenBao); err != nil {
+	siteSecrets, err := applyOpenBao(ctx, bao, bundle.OpenBao, runtimeSeed.Values)
+	if err != nil {
 		return result, err
 	}
 	result.RuntimeSecrets = len(bundle.OpenBao.RuntimeSecrets)
+	result.SiteSecrets = siteSecrets
 	result.NomadRoles = len(bundle.OpenBao.NomadRoles)
 	pgResult, err := applyPostgres(ctx, cfg, bao, bundle.Postgres)
 	if err != nil {
 		return result, err
+	}
+	if runtimeSeed.Loaded {
+		if err := os.Remove(runtimeSeed.Path); err != nil && !os.IsNotExist(err) {
+			return result, fmt.Errorf("remove imported OpenBao runtime seed: %w", err)
+		}
 	}
 	result.PostgresRoles = pgResult.PostgresRoles
 	result.Databases = pgResult.Databases
@@ -99,6 +112,9 @@ func (cfg ApplyConfig) withDefaults() ApplyConfig {
 	}
 	if cfg.OpenBaoToken == "" {
 		cfg.OpenBaoToken = envOr("BAO_TOKEN", envOr("VAULT_TOKEN", ""))
+	}
+	if cfg.RuntimeSeedPath == "" {
+		cfg.RuntimeSeedPath = envOr("VERSELF_OPENBAO_RUNTIME_SEED_FILE", "")
 	}
 	if cfg.PostgresRuntime == "" {
 		cfg.PostgresRuntime = envOr("VERSELF_POSTGRESQL_RUNTIME", filepath.Join(envOr("NOMAD_TASK_DIR", "local"), "postgresql", "opt", "verself", "postgresql"))
@@ -135,67 +151,119 @@ func newBaoClient(cfg ApplyConfig) (*baoClient, error) {
 	}, nil
 }
 
-func applyOpenBao(ctx context.Context, c *baoClient, bundle OpenBaoBundle) error {
+type runtimeSeed struct {
+	Path   string
+	Values map[string]string
+	Loaded bool
+}
+
+type runtimeSeedFile struct {
+	Version string            `json:"version"`
+	Site    string            `json:"site"`
+	Values  map[string]string `json:"values"`
+}
+
+func loadRuntimeSeed(cfg ApplyConfig, bundle Bundle) (runtimeSeed, error) {
+	path := strings.TrimSpace(cfg.RuntimeSeedPath)
+	if path == "" {
+		return runtimeSeed{Values: map[string]string{}}, nil
+	}
+	body, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return runtimeSeed{Path: path, Values: map[string]string{}}, nil
+	}
+	if err != nil {
+		return runtimeSeed{}, fmt.Errorf("read OpenBao runtime seed: %w", err)
+	}
+	var file runtimeSeedFile
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&file); err != nil {
+		return runtimeSeed{}, fmt.Errorf("decode OpenBao runtime seed: %w", err)
+	}
+	if file.Version != "verself.openbao-runtime-seed.v1" {
+		return runtimeSeed{}, fmt.Errorf("unsupported OpenBao runtime seed schema %q", file.Version)
+	}
+	if strings.TrimSpace(file.Site) != bundle.Site {
+		return runtimeSeed{}, fmt.Errorf("OpenBao runtime seed site %q does not match bundle site %q", file.Site, bundle.Site)
+	}
+	if file.Values == nil {
+		file.Values = map[string]string{}
+	}
+	return runtimeSeed{Path: path, Values: file.Values, Loaded: true}, nil
+}
+
+func applyOpenBao(ctx context.Context, c *baoClient, bundle OpenBaoBundle, siteSecrets map[string]string) (int, error) {
+	importedSiteSecrets := 0
 	for _, role := range bundle.NomadRoles {
 		if err := c.writePolicy(ctx, role.Policy, runtimeReadPolicy(role.Secrets)); err != nil {
-			return fmt.Errorf("write OpenBao policy %s: %w", role.Policy, err)
+			return 0, fmt.Errorf("write OpenBao policy %s: %w", role.Policy, err)
 		}
 		if err := c.writeNomadRole(ctx, role); err != nil {
-			return fmt.Errorf("write OpenBao Nomad role %s: %w", role.Name, err)
+			return 0, fmt.Errorf("write OpenBao Nomad role %s: %w", role.Name, err)
 		}
 	}
 	for _, secret := range bundle.RuntimeSecrets {
-		if err := reconcileRuntimeSecret(ctx, c, secret); err != nil {
-			return err
+		imported, err := reconcileRuntimeSecret(ctx, c, secret, siteSecrets)
+		if err != nil {
+			return importedSiteSecrets, err
+		}
+		if imported {
+			importedSiteSecrets++
 		}
 	}
-	return nil
+	return importedSiteSecrets, nil
 }
 
-func reconcileRuntimeSecret(ctx context.Context, c *baoClient, secret RuntimeSecret) error {
+func reconcileRuntimeSecret(ctx context.Context, c *baoClient, secret RuntimeSecret, siteSecrets map[string]string) (bool, error) {
 	existing, found, err := c.readRuntimeSecret(ctx, secret.Name)
 	if err != nil {
-		return err
+		return false, err
 	}
 	value := ""
+	importedSiteSecret := false
 	switch secret.Source.Kind {
 	case RuntimeSecretSourceGenerated:
 		if found && strings.TrimSpace(existing) != "" {
-			return nil
+			return false, nil
 		}
 		generated, err := generateSecretValue(secret.Source.GeneratedBytes, secret.Source.Encoding)
 		if err != nil {
-			return fmt.Errorf("%s: generate value: %w", secret.Name, err)
+			return false, fmt.Errorf("%s: generate value: %w", secret.Name, err)
 		}
 		value = generated
 	case RuntimeSecretSourceSiteSecret:
 		if found && strings.TrimSpace(existing) != "" {
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("%s: site secret %s has not been imported into OpenBao", secret.Name, secret.Source.SiteSecretKey)
+		value = strings.TrimSpace(siteSecrets[secret.Source.SiteSecretKey])
+		if value == "" {
+			return false, fmt.Errorf("%s: site secret %s is missing from the OpenBao runtime seed", secret.Name, secret.Source.SiteSecretKey)
+		}
+		importedSiteSecret = true
 	case RuntimeSecretSourceFile:
 		body, err := os.ReadFile(secret.Source.File)
 		if err != nil {
 			if found && strings.TrimSpace(existing) != "" {
-				return nil
+				return false, nil
 			}
-			return fmt.Errorf("%s: read source file %s: %w", secret.Name, secret.Source.File, err)
+			return false, fmt.Errorf("%s: read source file %s: %w", secret.Name, secret.Source.File, err)
 		}
 		value = strings.TrimSpace(string(body))
 	default:
-		return fmt.Errorf("%s: no runtime secret source", secret.Name)
+		return false, fmt.Errorf("%s: no runtime secret source", secret.Name)
 	}
 	if value == "" {
-		return fmt.Errorf("%s: source value is empty", secret.Name)
+		return false, fmt.Errorf("%s: source value is empty", secret.Name)
 	}
 	if found && existing == value {
-		return nil
+		return false, nil
 	}
 	if err := c.writeRuntimeSecret(ctx, secret.Name, value); err != nil {
-		return err
+		return false, err
 	}
 	fmt.Printf("substrate-control-plane: openbao runtime secret %s sha256=%s\n", secret.Name, fingerprint(value))
-	return nil
+	return importedSiteSecret, nil
 }
 
 func (c *baoClient) ready(ctx context.Context) error {

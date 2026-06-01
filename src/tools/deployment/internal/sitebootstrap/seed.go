@@ -17,7 +17,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const SeedBundleVersion = "verself.site-bootstrap.seed.v1"
+const (
+	SeedBundleVersion        = "verself.site-bootstrap.seed.v1"
+	RuntimeSeedBundleVersion = "verself.openbao-runtime-seed.v1"
+)
 
 type SeedBundle struct {
 	Version string            `json:"version" yaml:"version"`
@@ -25,13 +28,20 @@ type SeedBundle struct {
 	Values  map[string]string `json:"values" yaml:"values"`
 }
 
+type RuntimeSeedBundle struct {
+	Version string            `json:"version"`
+	Site    string            `json:"site"`
+	Values  map[string]string `json:"values"`
+}
+
 type MaterializeOptions struct {
-	Site       string
-	SeedPath   string
-	VarsPath   string
-	Evidence   string
-	RepoRoot   string
-	ForceWrite bool
+	Site            string
+	SeedPath        string
+	VarsPath        string
+	RuntimeSeedPath string
+	Evidence        string
+	RepoRoot        string
+	ForceWrite      bool
 }
 
 type SeedTemplateOptions struct {
@@ -196,9 +206,26 @@ func MaterializeSeedBundle(opts MaterializeOptions) (Evidence, error) {
 		return Evidence{}, err
 	}
 
-	evidence := buildEvidence(opts.Site, values, generated, policy, map[string]string{
+	outputs := map[string]string{
 		"ansible_vars": opts.VarsPath,
-	})
+	}
+	if strings.TrimSpace(opts.RuntimeSeedPath) != "" {
+		runtimeSeed, err := buildRuntimeSeedBundle(opts.RepoRoot, opts.Site, values)
+		if err != nil {
+			return Evidence{}, err
+		}
+		runtimeSeedBody, err := json.MarshalIndent(runtimeSeed, "", "  ")
+		if err != nil {
+			return Evidence{}, fmt.Errorf("encode OpenBao runtime seed: %w", err)
+		}
+		runtimeSeedBody = append(runtimeSeedBody, '\n')
+		if err := writePrivateFile(opts.RuntimeSeedPath, runtimeSeedBody, opts.ForceWrite); err != nil {
+			return Evidence{}, err
+		}
+		outputs["openbao_runtime_seed"] = opts.RuntimeSeedPath
+	}
+
+	evidence := buildEvidence(opts.Site, values, generated, policy, outputs)
 	evidenceBody, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		return Evidence{}, fmt.Errorf("encode evidence: %w", err)
@@ -208,6 +235,31 @@ func MaterializeSeedBundle(opts MaterializeOptions) (Evidence, error) {
 		return Evidence{}, err
 	}
 	return evidence, nil
+}
+
+func buildRuntimeSeedBundle(repoRoot, site string, values map[string]string) (RuntimeSeedBundle, error) {
+	keys, err := loadRuntimeSiteSecretKeys(repoRoot)
+	if err != nil {
+		return RuntimeSeedBundle{}, err
+	}
+	seed := RuntimeSeedBundle{
+		Version: RuntimeSeedBundleVersion,
+		Site:    site,
+		Values:  map[string]string{},
+	}
+	var missing []string
+	for _, key := range keys {
+		value := strings.TrimSpace(values[key])
+		if value == "" {
+			missing = append(missing, key)
+			continue
+		}
+		seed.Values[key] = value
+	}
+	if len(missing) > 0 {
+		return RuntimeSeedBundle{}, fmt.Errorf("missing OpenBao runtime seed values: %s", strings.Join(missing, ", "))
+	}
+	return seed, nil
 }
 
 func readSeedBundle(path string) (SeedBundle, error) {

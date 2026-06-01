@@ -52,6 +52,7 @@ job "substrate-control-plane" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "substrate-control-plane-apply"
+        VERSELF_OPENBAO_RUNTIME_SEED_FILE = "/etc/verself/bootstrap/openbao-runtime-seed.json"
         VERSELF_POSTGRESQL_RUNTIME = "$${NOMAD_TASK_DIR}/postgresql/opt/verself/postgresql"
         VERSELF_SUPERVISOR = "nomad"
       }

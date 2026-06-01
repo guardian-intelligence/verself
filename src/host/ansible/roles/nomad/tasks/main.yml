@@ -57,6 +57,25 @@
   notify: restart nomad
   no_log: true
 
+- name: Create bootstrap substrate seed directory
+  ansible.builtin.file:
+    path: "{{ nomad_openbao_runtime_seed_dest | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: verself_openbao_runtime_seed_file | default('', true) | length > 0
+
+- name: Deploy filtered OpenBao runtime seed
+  ansible.builtin.copy:
+    src: "{{ verself_openbao_runtime_seed_file }}"
+    dest: "{{ nomad_openbao_runtime_seed_dest }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: verself_openbao_runtime_seed_file | default('', true) | length > 0
+  no_log: true
+
 - name: Create Nomad state directory
   ansible.builtin.file:
     path: "{{ nomad_data_dir }}"

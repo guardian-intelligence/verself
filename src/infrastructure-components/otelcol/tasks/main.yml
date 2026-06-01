@@ -69,7 +69,8 @@
       - sudo
       - -u
       - "{{ otelcol_clickhouse_operator_user }}"
-      - "{{ verself_bin }}/clickhouse-client"
+      - "{{ verself_bin }}/clickhouse"
+      - client
       - --config-file
       - "{{ otelcol_clickhouse_operator_config_path }}"
       - --user
