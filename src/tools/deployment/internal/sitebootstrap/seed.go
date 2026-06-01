@@ -95,9 +95,6 @@ var generatedSeedKeys = map[string]seedKey{
 	"postgresql_sandbox_rental_password":  {Source: "generated_host"},
 	"postgresql_iam_service_password":     {Source: "generated_host"},
 	"postgresql_email_service_password":   {Source: "generated_host"},
-	"zitadel_db_password":                 {Source: "generated_host"},
-	"zitadel_masterkey":                   {Source: "generated_host"},
-	"zitadel_admin_password":              {Source: "generated_host"},
 	"stalwart_admin_password":             {Source: "generated_host"},
 	"platform_agent_password":             {Source: "generated_host"},
 	"iam_service_email_identity_hmac_key": {Source: "generated_runtime"},
@@ -345,9 +342,6 @@ func validateCompleteValues(site string, values map[string]string, policy seedPo
 	if len(missing) > 0 {
 		return fmt.Errorf("missing bootstrap values after materialization: %s", strings.Join(missing, ", "))
 	}
-	if len(values["zitadel_masterkey"]) != 32 {
-		return fmt.Errorf("zitadel_masterkey must be exactly 32 bytes")
-	}
 	return validateProviderIsolation(site, values)
 }
 
@@ -399,8 +393,6 @@ func buildEvidence(site string, values map[string]string, generated map[string]b
 func generateSecret(key string) (string, error) {
 	size := 32
 	switch key {
-	case "zitadel_masterkey":
-		size = 24 // RawURLEncoding produces the 32-byte ASCII key Zitadel requires.
 	case "iam_service_email_identity_hmac_key":
 		size = 64
 	}

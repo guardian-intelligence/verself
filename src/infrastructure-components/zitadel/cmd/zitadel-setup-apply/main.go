@@ -37,7 +37,7 @@ const (
 	defaultZitadelConfig    = "/etc/zitadel/config.yaml"
 	defaultZitadelSteps     = "/etc/zitadel/steps.yaml"
 	defaultZitadelMasterkey = ""
-	defaultZitadelAdminPAT  = "/etc/zitadel/admin.pat"
+	defaultZitadelAdminPAT  = ""
 	defaultDiscoveryHosts   = "/etc/verself/auth-discovery-hosts"
 	defaultZitadelUser      = "zitadel"
 	defaultZitadelGroup     = "zitadel"
@@ -310,9 +310,6 @@ func normalizeExternalDomain(content []byte, domain string) ([]byte, error) {
 		if strings.HasPrefix(strings.TrimSpace(line), "ExternalDomain:") {
 			lines[i] = leadingWhitespace(line) + "ExternalDomain: " + domain
 			found = true
-		}
-		if strings.Contains(line, "Managed by Ansible") {
-			lines[i] = strings.ReplaceAll(line, "Managed by Ansible", "Managed by Nomad")
 		}
 	}
 	if !found {

@@ -31,7 +31,6 @@ job "auth-control-plane" {
       }
 
       env {
-        AUTH_CONTROL_PLANE_ADMIN_PAT_PATH = "$${NOMAD_SECRETS_DIR}/admin.pat"
         AUTH_CONTROL_PLANE_IAM_SERVICE_DOMAIN = "__VERSELF_IAM_SERVICE_DOMAIN__"
         AUTH_CONTROL_PLANE_VERSELF_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
         AUTH_CONTROL_PLANE_ZITADEL_BASE_URL = "http://127.0.0.1:8085"
@@ -47,18 +46,10 @@ job "auth-control-plane" {
 
       template {
         change_mode = "restart"
-        destination = "secrets/admin.pat"
-        perms = "0400"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-
-      template {
-        change_mode = "restart"
-        destination = "secrets/github-login.env"
+        destination = "secrets/runtime.env"
         env = true
         data = <<-EOT
+AUTH_CONTROL_PLANE_ADMIN_PAT={{ with secret "kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
 AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/auth-control-plane.github_login.oauth_client_secret" }}{{ .Data.data.value }}{{ end }}
 EOT
       }

@@ -57,7 +57,7 @@ func TestConfigValidateRequiresIAMServiceDomain(t *testing.T) {
 	cfg := config{
 		zitadelBaseURL:   "http://127.0.0.1:8085",
 		zitadelHost:      "verself.sh",
-		adminPATPath:     "/tmp/admin.pat",
+		adminPAT:         "token",
 		verselfDomain:    "verself.sh",
 		projectName:      "verself-api",
 		browserAppName:   "verself-web",

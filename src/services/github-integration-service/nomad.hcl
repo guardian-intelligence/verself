@@ -91,7 +91,6 @@ job "github-integration" {
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "github_integration_service"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/github-integration-service/auth-audience"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
@@ -100,6 +99,14 @@ job "github-integration" {
         VERSELF_PG_MAX_CONNS = "8"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       resources {
         cpu = 500

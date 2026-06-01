@@ -16,6 +16,16 @@ job "projects-service" {
     task "projects-service-migrate" {
       driver = "raw_exec"
       user = "projects_service"
+      vault {
+        role = "projects-service-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       lifecycle {
         hook = "prestart"
         sidecar = false
@@ -35,7 +45,6 @@ job "projects-service" {
         OTEL_SERVICE_NAME = "projects-service-migration"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/projects-service/auth-audience"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
@@ -45,6 +54,14 @@ job "projects-service" {
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SERVICE_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_service_https}"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       resources {
         cpu = 100
@@ -57,6 +74,16 @@ job "projects-service" {
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "projects-service-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       artifact {
         source = "verself-artifact://projects-service"
         destination = "local"
@@ -71,7 +98,6 @@ job "projects-service" {
         OTEL_SERVICE_NAME = "projects-service"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/projects-service/auth-audience"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
@@ -81,6 +107,14 @@ job "projects-service" {
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SERVICE_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_service_https}"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       resources {
         cpu = 500

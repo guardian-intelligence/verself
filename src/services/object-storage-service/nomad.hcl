@@ -205,13 +205,20 @@ EOT
         OTEL_SERVICE_NAME = "object-storage-admin"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/object-storage-service/auth-audience"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
         VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
         VERSELF_PG_DSN = "postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable"
         VERSELF_PG_MAX_CONNS = "12"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       resources {
         cpu = 500

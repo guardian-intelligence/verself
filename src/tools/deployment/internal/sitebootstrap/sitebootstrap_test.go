@@ -32,9 +32,6 @@ func TestMaterializeSeedBundleGeneratesMissingHostSecrets(t *testing.T) {
 			t.Fatalf("%s was not generated", key)
 		}
 	}
-	if len(values["zitadel_masterkey"]) != 32 {
-		t.Fatalf("zitadel_masterkey must be 32 bytes, got %d", len(values["zitadel_masterkey"]))
-	}
 	body, err := os.ReadFile(evidence)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +69,7 @@ func TestMaterializeSeedBundlePreservesExistingGeneratedValues(t *testing.T) {
 	seed := filepath.Join(root, "seed.yml")
 	writeTestFile(t, seed, validSeedBundle("gamma"))
 	vars := filepath.Join(root, "ansible-secrets.json")
-	writeTestFile(t, vars, `{"zitadel_masterkey":"01234567890123456789012345678901"}`)
+	writeTestFile(t, vars, `{"iam_service_email_identity_hmac_key":"existing-hmac"}`)
 
 	if _, err := MaterializeSeedBundle(MaterializeOptions{
 		Site:       "gamma",
@@ -85,8 +82,8 @@ func TestMaterializeSeedBundlePreservesExistingGeneratedValues(t *testing.T) {
 	}
 	var values map[string]string
 	readJSON(t, vars, &values)
-	if values["zitadel_masterkey"] != "01234567890123456789012345678901" {
-		t.Fatalf("expected existing masterkey to be preserved, got %q", values["zitadel_masterkey"])
+	if values["iam_service_email_identity_hmac_key"] != "existing-hmac" {
+		t.Fatalf("expected existing generated value to be preserved, got %q", values["iam_service_email_identity_hmac_key"])
 	}
 }
 

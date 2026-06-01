@@ -16,6 +16,16 @@ job "email-service" {
     task "email-service-migrate" {
       driver = "raw_exec"
       user = "email_service"
+      vault {
+        role = "email-service-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       lifecycle {
         hook = "prestart"
         sidecar = false
@@ -39,7 +49,6 @@ job "email-service" {
         OTEL_SERVICE_NAME = "email-service-migration"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/email-service/auth-audience"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
@@ -48,6 +57,14 @@ job "email-service" {
         VERSELF_PG_MAX_CONNS = "8"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       resources {
         cpu = 100
@@ -97,7 +114,6 @@ EOT
         OTEL_SERVICE_NAME = "email-service"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/email-service/auth-audience"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
@@ -106,6 +122,14 @@ EOT
         VERSELF_PG_MAX_CONNS = "8"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       resources {
         cpu = 500

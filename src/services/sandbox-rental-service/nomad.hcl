@@ -16,6 +16,16 @@ job "sandbox-rental" {
     task "sandbox-rental-service-migrate" {
       driver = "raw_exec"
       user = "sandbox_rental"
+      vault {
+        role = "sandbox-rental-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       lifecycle {
         hook = "prestart"
         sidecar = false
@@ -41,7 +51,6 @@ job "sandbox-rental" {
         SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING = "sandbox-rental-service.recurring-vm"
         SANDBOX_VM_ORCHESTRATOR_SOCKET = "/run/vm-orchestrator/api.sock"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/sandbox-rental/auth-audience"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "sandbox_rental"
@@ -57,6 +66,14 @@ job "sandbox-rental" {
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
       resources {
         cpu = 100
         memory = 128
@@ -68,6 +85,16 @@ job "sandbox-rental" {
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "sandbox-rental-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       artifact {
         source = "verself-artifact://sandbox-rental-service"
         destination = "local"
@@ -88,7 +115,6 @@ job "sandbox-rental" {
         SANDBOX_TEMPORAL_TASK_QUEUE_RECURRING = "sandbox-rental-service.recurring-vm"
         SANDBOX_VM_ORCHESTRATOR_SOCKET = "/run/vm-orchestrator/api.sock"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/sandbox-rental/auth-audience"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "sandbox_rental"
@@ -103,6 +129,14 @@ job "sandbox-rental" {
         VERSELF_PG_MAX_CONNS = "16"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       resources {
         cpu = 500

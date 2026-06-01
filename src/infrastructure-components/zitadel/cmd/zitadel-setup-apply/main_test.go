@@ -13,10 +13,7 @@ import (
 )
 
 func TestNormalizeExternalDomain(t *testing.T) {
-	input := []byte(`# Zitadel configuration.
-# Managed by Ansible - do not edit manually.
-
-Port: 8085
+	input := []byte(`Port: 8085
 ExternalDomain: auth.example.test
 ExternalPort: 443
 `)
@@ -29,9 +26,6 @@ ExternalPort: 443
 	}
 	if bytes.Contains(got, []byte("auth.example.test")) {
 		t.Fatalf("legacy auth domain remained:\n%s", string(got))
-	}
-	if !bytes.Contains(got, []byte("Managed by Nomad")) {
-		t.Fatalf("management marker was not updated:\n%s", string(got))
 	}
 	again, err := normalizeExternalDomain(got, "example.test")
 	if err != nil {

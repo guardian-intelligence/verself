@@ -16,6 +16,16 @@ job "distribution-service" {
     task "distribution-service-migrate" {
       driver = "raw_exec"
       user = "distribution_service"
+      vault {
+        role = "distribution-service-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       lifecycle {
         hook = "prestart"
         sidecar = false
@@ -39,7 +49,6 @@ job "distribution-service" {
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "distribution_service"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/distribution-service/auth-audience"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
@@ -47,6 +56,14 @@ job "distribution-service" {
         VERSELF_PG_DSN = "postgres://distribution_service@/distribution_service?host=/var/run/postgresql&sslmode=disable"
         VERSELF_PG_MAX_CONNS = "8"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       resources {
         cpu = 100
@@ -59,6 +76,16 @@ job "distribution-service" {
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "distribution-service-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       artifact {
         source = "verself-artifact://distribution-service"
         destination = "local"
@@ -77,7 +104,6 @@ job "distribution-service" {
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "distribution_service"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/distribution-service/auth-audience"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
@@ -85,6 +111,14 @@ job "distribution-service" {
         VERSELF_PG_DSN = "postgres://distribution_service@/distribution_service?host=/var/run/postgresql&sslmode=disable"
         VERSELF_PG_MAX_CONNS = "8"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       resources {
         cpu = 500
