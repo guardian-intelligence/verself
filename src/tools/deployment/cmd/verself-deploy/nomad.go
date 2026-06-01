@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -109,14 +111,19 @@ func dispatchControlPlane(ctx context.Context, rt *runtime.Runtime, client *noma
 	if err != nil {
 		return fmt.Errorf("encode substrate control-plane bundle: %w", err)
 	}
-	if len(body) > nomadDispatchPayloadLimit {
-		return fmt.Errorf("substrate control-plane bundle is %d bytes; Nomad dispatch payload limit is %d bytes", len(body), nomadDispatchPayloadLimit)
+	payload, err := gzipPayload(body)
+	if err != nil {
+		return fmt.Errorf("compress substrate control-plane bundle: %w", err)
 	}
-	fmt.Printf("verself-deploy: substrate-control-plane bundle_bytes=%d\n", len(body))
+	if len(payload) > nomadDispatchPayloadLimit {
+		return fmt.Errorf("substrate control-plane bundle is %d compressed bytes (%d raw); Nomad dispatch payload limit is %d bytes", len(payload), len(body), nomadDispatchPayloadLimit)
+	}
+	fmt.Printf("verself-deploy: substrate-control-plane bundle_bytes=%d compressed_bytes=%d\n", len(body), len(payload))
 	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.dispatch_control_plane",
 		trace.WithAttributes(
 			attribute.String("nomad.job_id", "substrate-control-plane"),
 			attribute.Int("verself.control_plane_bundle_bytes", len(body)),
+			attribute.Int("verself.control_plane_bundle_compressed_bytes", len(payload)),
 		),
 	)
 	defer span.End()
@@ -124,7 +131,7 @@ func dispatchControlPlane(ctx context.Context, rt *runtime.Runtime, client *noma
 		"deploy_run_key": inputs.DeployRunKey,
 		"sha":            inputs.SHA,
 		"site":           rt.Site,
-	}, body, "")
+	}, payload, "")
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -137,4 +144,17 @@ func dispatchControlPlane(ctx context.Context, rt *runtime.Runtime, client *noma
 	)
 	span.SetStatus(codes.Ok, "")
 	return nil
+}
+
+func gzipPayload(body []byte) ([]byte, error) {
+	var out bytes.Buffer
+	zw := gzip.NewWriter(&out)
+	if _, err := zw.Write(body); err != nil {
+		_ = zw.Close()
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }

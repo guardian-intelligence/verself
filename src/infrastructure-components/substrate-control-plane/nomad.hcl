@@ -38,12 +38,12 @@ job "substrate-control-plane" {
       }
 
       dispatch_payload {
-        file = "bundle.json"
+        file = "bundle.json.gz"
       }
 
       config {
         command = "local/bin/substrate-control-plane-apply"
-        args = ["--bundle=$${NOMAD_TASK_DIR}/bundle.json"]
+        args = ["--bundle=$${NOMAD_TASK_DIR}/bundle.json.gz"]
       }
 
       env {

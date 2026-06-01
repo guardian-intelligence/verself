@@ -21,7 +21,7 @@ func main() {
 func run(args []string) error {
 	cfg := controlplane.ApplyConfig{}
 	fs := flag.NewFlagSet("substrate-control-plane-apply", flag.ContinueOnError)
-	fs.StringVar(&cfg.BundlePath, "bundle", "", "Nomad dispatch payload JSON bundle.")
+	fs.StringVar(&cfg.BundlePath, "bundle", "", "Nomad dispatch payload JSON or gzip-compressed JSON bundle.")
 	fs.StringVar(&cfg.RuntimeSeedPath, "openbao-runtime-seed", "", "Filtered OpenBao runtime seed JSON.")
 	fs.StringVar(&cfg.OpenBaoAddr, "openbao-addr", "", "OpenBao API address.")
 	fs.StringVar(&cfg.OpenBaoCACert, "openbao-ca-cert", "", "OpenBao CA certificate path.")

@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -58,7 +59,7 @@ type baoResponse struct {
 
 func ApplyBundleFile(ctx context.Context, cfg ApplyConfig) (ApplyResult, error) {
 	cfg = cfg.withDefaults()
-	body, err := os.ReadFile(cfg.BundlePath)
+	body, err := readBundleFile(cfg.BundlePath)
 	if err != nil {
 		return ApplyResult{}, fmt.Errorf("read bundle: %w", err)
 	}
@@ -102,6 +103,26 @@ func ApplyBundleFile(ctx context.Context, cfg ApplyConfig) (ApplyResult, error) 
 	result.PeerMappings = pgResult.PeerMappings
 	result.Publications = pgResult.Publications
 	return result, nil
+}
+
+func readBundleFile(path string) ([]byte, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) < 2 || body[0] != 0x1f || body[1] != 0x8b {
+		return body, nil
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("open gzip bundle: %w", err)
+	}
+	defer func() { _ = zr.Close() }()
+	decoded, err := io.ReadAll(io.LimitReader(zr, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("decompress gzip bundle: %w", err)
+	}
+	return decoded, nil
 }
 
 func (cfg ApplyConfig) withDefaults() ApplyConfig {

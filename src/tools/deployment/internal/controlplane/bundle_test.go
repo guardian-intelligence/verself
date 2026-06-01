@@ -1,6 +1,8 @@
 package controlplane
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -73,6 +75,29 @@ func TestLoadRuntimeSeedAcceptsMissingFile(t *testing.T) {
 	}
 	if seed.Loaded || len(seed.Values) != 0 {
 		t.Fatalf("missing seed = %#v", seed)
+	}
+}
+
+func TestReadBundleFileAcceptsGzipJSON(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "bundle.json.gz")
+	var body bytes.Buffer
+	zw := gzip.NewWriter(&body)
+	if _, err := zw.Write([]byte(`{"schema_version":"verself.substrate-control-plane.v1"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readBundleFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"schema_version":"verself.substrate-control-plane.v1"}` {
+		t.Fatalf("decoded = %s", got)
 	}
 }
 
