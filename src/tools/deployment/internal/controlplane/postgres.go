@@ -144,7 +144,8 @@ func publicationSQL(pub PostgresPublication) string {
 	b.WriteString("BEGIN\n")
 	fmt.Fprintf(&b, "  SELECT array_agg(t) INTO missing FROM unnest(%s) AS t WHERE to_regclass('public.' || quote_ident(t)) IS NULL;\n", tableArray)
 	b.WriteString("  IF COALESCE(array_length(missing, 1), 0) > 0 THEN\n")
-	fmt.Fprintf(&b, "    RAISE EXCEPTION 'publication %% missing tables: %%', %s, missing;\n", quoteLiteral(pub.Publication))
+	fmt.Fprintf(&b, "    RAISE NOTICE 'publication %% deferred, missing tables: %%', %s, missing;\n", quoteLiteral(pub.Publication))
+	b.WriteString("    RETURN;\n")
 	b.WriteString("  END IF;\n")
 	for _, table := range pub.Tables {
 		fmt.Fprintf(&b, "  EXECUTE %s;\n", quoteLiteral("ALTER TABLE public."+quoteIdent(table)+" OWNER TO "+quoteIdent(pub.TableOwner)))
