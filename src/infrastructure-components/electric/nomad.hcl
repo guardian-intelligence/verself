@@ -64,6 +64,7 @@ job "electric" {
       }
       template {
         destination = "secrets/electric.env"
+        perms = "0600"
         change_mode = "restart"
         data = <<EOH
 DATABASE_URL=postgresql://electric:{{ with secret "kv-runtime/data/secret/org/electric.pg.password" }}{{ .Data.data.value }}{{ end }}@127.0.0.1:5432/sandbox_rental
@@ -165,6 +166,7 @@ EOH
       }
       template {
         destination = "secrets/electric.env"
+        perms = "0600"
         change_mode = "restart"
         data = <<EOH
 DATABASE_URL=postgresql://electric_notifications:{{ with secret "kv-runtime/data/secret/org/electric-notifications.pg.password" }}{{ .Data.data.value }}{{ end }}@127.0.0.1:5432/notifications_service
@@ -266,6 +268,7 @@ EOH
       }
       template {
         destination = "secrets/electric.env"
+        perms = "0600"
         change_mode = "restart"
         data = <<EOH
 DATABASE_URL=postgresql://electric_iam:{{ with secret "kv-runtime/data/secret/org/electric-iam.pg.password" }}{{ .Data.data.value }}{{ end }}@127.0.0.1:5432/iam_service

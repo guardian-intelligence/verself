@@ -79,12 +79,6 @@ func run() error {
 	oauthTokenURL := cfg.String("GITHUB_OAUTH_TOKEN_URL", "https://github.com/login/oauth/access_token")
 	oauthRedirectURL := cfg.String("GITHUB_OAUTH_REDIRECT_URL", "")
 	privateKey := strings.TrimSpace(cfg.String("GITHUB_APP_PRIVATE_KEY", ""))
-	if privateKey == "" {
-		privateKeyPath := cfg.String("GITHUB_APP_PRIVATE_KEY_FILE", "")
-		if privateKeyPath != "" {
-			privateKey = cfg.RequireFile(privateKeyPath)
-		}
-	}
 	webhookSecret := strings.TrimSpace(cfg.String("GITHUB_WEBHOOK_SECRET", ""))
 	oauthClientSecret := strings.TrimSpace(cfg.String("GITHUB_OAUTH_CLIENT_SECRET", ""))
 	runnerGroupID := cfg.Int64("GITHUB_RUNNER_GROUP_ID", 1)

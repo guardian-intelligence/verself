@@ -75,10 +75,11 @@ job "spicedb" {
       }
       template {
         destination = "secrets/spicedb.env"
+        perms = "0600"
         env = true
         change_mode = "restart"
         data = <<EOH
-SPICEDB_GRPC_PRESHARED_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" }}{{ .Data.data.value }}{{ end }}
+SPICEDB_GRPC_PRESHARED_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOH
       }
       restart {

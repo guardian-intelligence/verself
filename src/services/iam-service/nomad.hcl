@@ -58,6 +58,7 @@ job "iam-service" {
       template {
         change_mode = "restart"
         destination = "secrets/zitadel.env"
+        perms = "0600"
         data = <<-EOT
 IAM_ZITADEL_BASE_URL=http://{{- with nomadService "zitadel-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
@@ -148,21 +149,23 @@ EOT
       template {
         change_mode = "restart"
         destination = "secrets/provider.env"
+        perms = "0600"
         data = <<-EOT
-IAM_EMAIL_IDENTITY_HMAC_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.email_identity.hmac_key" }}{{ .Data.data.value }}{{ end }}
-IAM_SPICEDB_GRPC_PRESHARED_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" }}{{ .Data.data.value }}{{ end }}
-IAM_ZITADEL_ADMIN_TOKEN={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
-VERSELF_CRED_VALUE_GITHUB_LOGIN_IDP_ID={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.github_login_idp_id" }}{{ .Data.data.value }}{{ end }}
-VERSELF_CRED_VALUE_OIDC_CLIENT_ID={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_id" }}{{ .Data.data.value }}{{ end }}
-VERSELF_CRED_VALUE_OIDC_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_secret" }}{{ .Data.data.value }}{{ end }}
-VERSELF_CRED_VALUE_ZITADEL_ACTION_SIGNING_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.action_signing_key" }}{{ .Data.data.value }}{{ end }}
+IAM_EMAIL_IDENTITY_HMAC_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.email_identity.hmac_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+IAM_SPICEDB_GRPC_PRESHARED_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+IAM_ZITADEL_ADMIN_TOKEN={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.admin_token" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_GITHUB_LOGIN_IDP_ID={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.github_login_idp_id" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_OIDC_CLIENT_ID={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_id" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_OIDC_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_ZITADEL_ACTION_SIGNING_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.action_signing_key" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
         env = true
       }
       template {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
+        perms = "0600"
         data = <<-EOT
 IAM_ZITADEL_BASE_URL=http://{{- with nomadService "zitadel-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 IAM_SPICEDB_GRPC_ENDPOINT={{- with nomadService "spicedb-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}

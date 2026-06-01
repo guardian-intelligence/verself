@@ -103,9 +103,10 @@ job "github-integration" {
       template {
         change_mode = "restart"
         destination = "secrets/auth-audience.env"
+        perms = "0600"
         env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
       resources {
@@ -114,19 +115,12 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/github-app-private-key.pem"
+        destination = "secrets/provider.env"
         perms = "0600"
         data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/github-integration-service.github.private_key" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/provider.env"
-        data = <<-EOT
-GITHUB_APP_PRIVATE_KEY_FILE=secrets/github-app-private-key.pem
-GITHUB_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.webhook_secret" }}{{ .Data.data.value }}{{ end }}
-GITHUB_OAUTH_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.oauth_client_secret" }}{{ .Data.data.value }}{{ end }}
+GITHUB_APP_PRIVATE_KEY={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.private_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+GITHUB_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+GITHUB_OAUTH_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.oauth_client_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
         env = true
       }

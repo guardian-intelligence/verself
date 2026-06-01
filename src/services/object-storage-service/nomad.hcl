@@ -109,31 +109,14 @@ job "object-storage-service" {
       template {
         change_mode = "restart"
         destination = "secrets/r2.env"
+        perms = "0600"
         data = <<-EOT
 OBJECT_STORAGE_S3_URLS=__VERSELF_CLOUDFLARE_R2_ENDPOINT__
+VERSELF_CRED_VALUE_CREDENTIAL_KEK={{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_R2_PROXY_ACCESS_KEY_ID={{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_R2_PROXY_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
         env = true
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/credential-kek"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/r2-proxy-access-key-id"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/r2-proxy-secret-access-key"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
       service {
         name = "object-storage-service-public-http"
@@ -215,9 +198,13 @@ EOT
       template {
         change_mode = "restart"
         destination = "secrets/auth-audience.env"
+        perms = "0600"
         env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_CREDENTIAL_KEK={{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_R2_ADMIN_ACCESS_KEY_ID={{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_R2_ADMIN_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_secret_access_key" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
       resources {
@@ -242,27 +229,6 @@ EOT
           interval = "1s"
           timeout = "3s"
         }
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/credential-kek"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/r2-admin-access-key-id"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/r2-admin-secret-access-key"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_secret_access_key" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
     }
     update {

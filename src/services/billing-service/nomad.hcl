@@ -63,9 +63,10 @@ job "billing" {
       template {
         change_mode = "restart"
         destination = "secrets/auth-audience.env"
+        perms = "0600"
         env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
       resources {
@@ -75,6 +76,7 @@ EOT
       template {
         change_mode = "restart"
         destination = "secrets/platform.env"
+        perms = "0600"
         data = <<-EOT
 BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
@@ -127,9 +129,10 @@ EOT
       template {
         change_mode = "restart"
         destination = "secrets/auth-audience.env"
+        perms = "0600"
         env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
       resources {
@@ -172,15 +175,17 @@ EOT
       template {
         change_mode = "restart"
         destination = "secrets/provider.env"
+        perms = "0600"
         data = <<-EOT
-STRIPE_SECRET_KEY={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.secret_key" }}{{ .Data.data.value }}{{ end }}
-STRIPE_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.webhook_secret" }}{{ .Data.data.value }}{{ end }}
+STRIPE_SECRET_KEY={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.secret_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+STRIPE_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
         env = true
       }
       template {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
+        perms = "0600"
         data = <<-EOT
 BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT

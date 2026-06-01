@@ -339,24 +339,3 @@ func credentialEnv(prefix, name string) string {
 	}
 	return b.String()
 }
-
-// RequireFile reads the absolute path and returns its trimmed contents.
-// Records a failure if the file is missing, unreadable, or empty.
-func (l *Loader) RequireFile(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		l.errs = append(l.errs, errors.New("envconfig: RequireFile called with empty path"))
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		l.failErr("file "+path, err)
-		return ""
-	}
-	value := strings.TrimSpace(string(data))
-	if value == "" {
-		l.fail("file "+path, "is empty")
-		return ""
-	}
-	return value
-}
