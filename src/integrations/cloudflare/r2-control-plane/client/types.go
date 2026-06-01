@@ -2,6 +2,13 @@ package client
 
 import "time"
 
+type UploadAction string
+
+const (
+	UploadActionPresent UploadAction = "present"
+	UploadActionPut     UploadAction = "put"
+)
+
 type ArtifactUpload struct {
 	Output    string `json:"output"`
 	SHA256    string `json:"sha256"`
@@ -20,6 +27,7 @@ type UploadObject struct {
 	Bucket       string            `json:"bucket"`
 	Key          string            `json:"key"`
 	GetterSource string            `json:"getter_source"`
+	Action       UploadAction      `json:"action"`
 	PutURL       string            `json:"put_url"`
 	Headers      map[string]string `json:"headers"`
 	ExpiresAt    time.Time         `json:"expires_at"`

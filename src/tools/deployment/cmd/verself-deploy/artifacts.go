@@ -173,8 +173,18 @@ func publishArtifacts(ctx context.Context, rt *runtime.Runtime, inputs *deployIn
 			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
-		if err := uploadArtifact(ctx, rt, artifact, object, rt.RepoRoot); err != nil {
-			err = fmt.Errorf("%s: %w", artifact.Output, err)
+		switch object.Action {
+		case r2controlplane.UploadActionPresent:
+			continue
+		case r2controlplane.UploadActionPut:
+			if err := uploadArtifact(ctx, rt, artifact, object, rt.RepoRoot); err != nil {
+				err = fmt.Errorf("%s: %w", artifact.Output, err)
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return err
+			}
+		default:
+			err := fmt.Errorf("R2 control-plane returned unknown upload action %q for %q", object.Action, artifact.Output)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return err

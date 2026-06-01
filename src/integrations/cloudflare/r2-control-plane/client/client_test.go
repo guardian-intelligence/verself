@@ -30,6 +30,7 @@ func TestClientCreateAndCompleteUploadSession(t *testing.T) {
 					Output: "svc",
 					Bucket: "nomad-artifacts-gamma",
 					Key:    "sha256/abc/svc.tar",
+					Action: UploadActionPut,
 				}},
 			})
 		case "/v1/sites/gamma/artifact-upload-sessions/session-1/complete":

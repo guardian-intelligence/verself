@@ -29,9 +29,10 @@ type uploadSession struct {
 }
 
 type uploadBinding struct {
-	output string
-	sha256 string
-	key    string
+	output  string
+	sha256  string
+	key     string
+	present bool
 }
 
 type uploadServer struct {
@@ -152,7 +153,7 @@ func (s *uploadServer) handleCreateUploadSession(w http.ResponseWriter, r *http.
 		return
 	}
 	bindings := make([]uploadBinding, 0, len(req.Artifacts))
-	objectKeys := make([]string, 0, len(req.Artifacts))
+	missingObjectKeys := make([]string, 0, len(req.Artifacts))
 	seen := map[string]bool{}
 	for _, artifact := range req.Artifacts {
 		output, err := cleanArtifactOutput(artifact.Output)
@@ -174,55 +175,81 @@ func (s *uploadServer) handleCreateUploadSession(w http.ResponseWriter, r *http.
 			return
 		}
 		key := artifactKey(s.siteCfg, artifact.SHA256, output)
+		status, err := s.parentClient.HeadObject(ctx, s.siteCfg.Bucket, key)
+		if err != nil {
+			writeJSONError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		present := false
+		switch status {
+		case http.StatusOK:
+			present = true
+		case http.StatusNotFound:
+			missingObjectKeys = append(missingObjectKeys, key)
+		default:
+			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("artifact %s HEAD returned status %d", output, status))
+			return
+		}
 		bindings = append(bindings, uploadBinding{
-			output: output,
-			sha256: artifact.SHA256,
-			key:    key,
+			output:  output,
+			sha256:  artifact.SHA256,
+			key:     key,
+			present: present,
 		})
-		objectKeys = append(objectKeys, key)
 	}
-	apiClient, err := r2control.NewCloudflareAPIClient(s.parent.APIToken, s.cfg.timeout)
-	if err != nil {
-		writeJSONError(w, http.StatusFailedDependency, err.Error())
-		return
-	}
-	temp, err := apiClient.CreateTemporaryCredentials(ctx, s.siteCfg.AccountID, r2control.TemporaryCredentialRequest{
-		ParentAccessKeyID: s.parent.AccessKeyID,
-		Bucket:            s.siteCfg.Bucket,
-		Permission:        r2control.TemporaryPermissionObjectReadWrite,
-		Objects:           objectKeys,
-		TTL:               s.cfg.uploadSessionTTL,
-	})
-	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	tempClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(s.siteCfg.AccountID),
-		Region:          s.siteCfg.Region,
-		AccessKeyID:     temp.AccessKeyID,
-		SecretAccessKey: temp.SecretAccessKey,
-		SessionToken:    temp.SessionToken,
-		Source:          "cloudflare-r2-control-plane-upload-session",
-		Timeout:         s.cfg.timeout,
-	})
-	if err != nil {
-		writeJSONError(w, http.StatusFailedDependency, err.Error())
-		return
+	var tempClient *r2control.R2Client
+	if len(missingObjectKeys) > 0 {
+		apiClient, err := r2control.NewCloudflareAPIClient(s.parent.APIToken, s.cfg.timeout)
+		if err != nil {
+			writeJSONError(w, http.StatusFailedDependency, err.Error())
+			return
+		}
+		temp, err := apiClient.CreateTemporaryCredentials(ctx, s.siteCfg.AccountID, r2control.TemporaryCredentialRequest{
+			ParentAccessKeyID: s.parent.AccessKeyID,
+			Bucket:            s.siteCfg.Bucket,
+			Permission:        r2control.TemporaryPermissionObjectReadWrite,
+			Objects:           missingObjectKeys,
+			TTL:               s.cfg.uploadSessionTTL,
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		tempClient, err = r2control.NewR2Client(r2control.R2ClientConfig{
+			Endpoint:        r2control.Endpoint(s.siteCfg.AccountID),
+			Region:          s.siteCfg.Region,
+			AccessKeyID:     temp.AccessKeyID,
+			SecretAccessKey: temp.SecretAccessKey,
+			SessionToken:    temp.SessionToken,
+			Source:          "cloudflare-r2-control-plane-upload-session",
+			Timeout:         s.cfg.timeout,
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusFailedDependency, err.Error())
+			return
+		}
 	}
 	expiresAt := time.Now().UTC().Add(s.cfg.uploadSessionTTL)
 	objects := make([]r2client.UploadObject, 0, len(bindings))
 	for _, binding := range bindings {
-		putURL, headers, err := tempClient.PresignPutObject(ctx, s.siteCfg.Bucket, binding.key, binding.sha256, s.cfg.uploadSessionTTL)
-		if err != nil {
-			writeJSONError(w, http.StatusBadGateway, err.Error())
-			return
+		action := r2client.UploadActionPresent
+		putURL := ""
+		headers := http.Header{}
+		if !binding.present {
+			action = r2client.UploadActionPut
+			var err error
+			putURL, headers, err = tempClient.PresignPutObject(ctx, s.siteCfg.Bucket, binding.key, binding.sha256, s.cfg.uploadSessionTTL)
+			if err != nil {
+				writeJSONError(w, http.StatusBadGateway, err.Error())
+				return
+			}
 		}
 		objects = append(objects, r2client.UploadObject{
 			Output:       binding.output,
 			Bucket:       s.siteCfg.Bucket,
 			Key:          binding.key,
 			GetterSource: artifactGetterSource(s.siteCfg, binding.key),
+			Action:       action,
 			PutURL:       putURL,
 			Headers:      flattenHeaders(headers),
 			ExpiresAt:    expiresAt,
