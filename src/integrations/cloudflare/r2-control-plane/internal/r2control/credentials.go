@@ -3,6 +3,8 @@ package r2control
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -23,6 +25,7 @@ const (
 
 type ParentCredentialConfig struct {
 	Source             string
+	AccountID          string
 	CredentialsFile    string
 	AccessKeyIDEnv     string
 	SecretAccessKeyEnv string
@@ -30,6 +33,7 @@ type ParentCredentialConfig struct {
 	SessionTokenEnv    string
 	OpenBaoAddr        string
 	OpenBaoPath        string
+	OpenBaoCACertFile  string
 	OpenBaoTokenEnv    string
 	OpenBaoTokenFile   string
 	Timeout            time.Duration
@@ -159,7 +163,10 @@ func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialC
 		return ParentCredentials{}, err
 	}
 	req.Header.Set("X-Vault-Token", token)
-	client := &http.Client{Timeout: cfg.Timeout}
+	client, err := openBaoHTTPClient(cfg)
+	if err != nil {
+		return ParentCredentials{}, err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return ParentCredentials{}, fmt.Errorf("read OpenBao R2 credentials: %w", err)
@@ -179,6 +186,29 @@ func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialC
 	return parentCredentialsFromValues(values, "openbao:"+path)
 }
 
+func openBaoHTTPClient(cfg ParentCredentialConfig) (*http.Client, error) {
+	client := &http.Client{Timeout: cfg.Timeout}
+	caFile := firstNonEmpty(cfg.OpenBaoCACertFile, os.Getenv("BAO_CACERT"), os.Getenv("VAULT_CACERT"))
+	if caFile == "" {
+		return client, nil
+	}
+	cert, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("read OpenBao CA cert: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(cert) {
+		return nil, fmt.Errorf("OpenBao CA cert file contains no PEM certificates")
+	}
+	client.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs:    pool,
+			MinVersion: tls.VersionTLS12,
+		},
+	}
+	return client, nil
+}
+
 func resolveParentCredentials(ctx context.Context, cfg ParentCredentialConfig, creds ParentCredentials, err error) (ParentCredentials, error) {
 	if err != nil {
 		return ParentCredentials{}, err
@@ -189,11 +219,15 @@ func resolveParentCredentials(ctx context.Context, cfg ParentCredentialConfig, c
 	if strings.TrimSpace(creds.APIToken) == "" {
 		return ParentCredentials{}, errors.New("R2 parent access key id is required")
 	}
+	accountID := strings.ToLower(strings.TrimSpace(cfg.AccountID))
+	if !IsCloudflareAccountID(accountID) {
+		return ParentCredentials{}, errors.New("Cloudflare account ID is required to derive an R2 access key ID from an Account API token")
+	}
 	client, err := NewCloudflareAPIClient(creds.APIToken, cfg.Timeout)
 	if err != nil {
 		return ParentCredentials{}, err
 	}
-	verified, err := client.VerifyToken(ctx)
+	verified, err := client.VerifyAccountToken(ctx, accountID)
 	if err != nil {
 		return ParentCredentials{}, err
 	}

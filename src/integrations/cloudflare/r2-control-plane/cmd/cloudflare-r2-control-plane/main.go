@@ -37,6 +37,7 @@ type config struct {
 	parentSessionTokenEnv    string
 	openBaoAddr              string
 	openBaoPath              string
+	openBaoCACertFile        string
 	openBaoTokenEnv          string
 	openBaoTokenFile         string
 	getterVarsFile           string
@@ -108,6 +109,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.parentSessionTokenEnv, "parent-session-token-env", "CLOUDFLARE_R2_ADMIN_SESSION_TOKEN", "Environment variable name for an optional parent R2 session token.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR.")
 	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2-admin", "Controller OpenBao KV path for parent R2 credentials.")
+	fs.StringVar(&cfg.openBaoCACertFile, "openbao-ca-cert", "", "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT.")
 	fs.StringVar(&cfg.openBaoTokenEnv, "openbao-token-env", "BAO_TOKEN", "Environment variable name for the OpenBao token.")
 	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", "", "File containing the OpenBao token.")
 	fs.StringVar(&cfg.getterVarsFile, "getter-vars-file", "", "JSON vars file to receive the durable Nomad artifact getter keypair.")
@@ -306,6 +308,7 @@ func (cfg config) validate() error {
 func (cfg config) parentCredentialConfig() r2control.ParentCredentialConfig {
 	return r2control.ParentCredentialConfig{
 		Source:             cfg.credentialSource,
+		AccountID:          cfg.accountID,
 		CredentialsFile:    cfg.credentialsFile,
 		AccessKeyIDEnv:     cfg.parentAccessKeyIDEnv,
 		SecretAccessKeyEnv: cfg.parentSecretAccessKeyEnv,
@@ -313,6 +316,7 @@ func (cfg config) parentCredentialConfig() r2control.ParentCredentialConfig {
 		SessionTokenEnv:    cfg.parentSessionTokenEnv,
 		OpenBaoAddr:        cfg.openBaoAddr,
 		OpenBaoPath:        cfg.openBaoPath,
+		OpenBaoCACertFile:  cfg.openBaoCACertFile,
 		OpenBaoTokenEnv:    cfg.openBaoTokenEnv,
 		OpenBaoTokenFile:   cfg.openBaoTokenFile,
 		Timeout:            cfg.timeout,

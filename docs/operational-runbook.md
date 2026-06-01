@@ -67,12 +67,14 @@ into the local seed bundle before materializing it:
 aspect integrations cloudflare-r2-control-plane \
   --site=gamma \
   --action=rotate-getter \
-  --credential-source=openbao
+  --credential-source=openbao \
+  --openbao-ca-cert="$HOME/.config/verself/trust-anchors/verself-openbao-ca.pem"
 
 aspect integrations cloudflare-r2-control-plane \
   --site=gamma \
   --action=rotate-object-storage-provider \
-  --credential-source=openbao
+  --credential-source=openbao \
+  --openbao-ca-cert="$HOME/.config/verself/trust-anchors/verself-openbao-ca.pem"
 ```
 
 Run the R2 control-plane upload-session API from a controller context that can
@@ -86,7 +88,8 @@ expire.
 aspect integrations cloudflare-r2-control-plane \
   --site=gamma \
   --action=serve \
-  --credential-source=openbao
+  --credential-source=openbao \
+  --openbao-ca-cert="$HOME/.config/verself/trust-anchors/verself-openbao-ca.pem"
 ```
 
 Keep the control-plane process running while `aspect deploy` publishes

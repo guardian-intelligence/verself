@@ -45,8 +45,9 @@ func TestParentCredentialsDeriveS3SecretFromAPIToken(t *testing.T) {
 }
 
 func TestLoadParentCredentialsDerivesAccessKeyIDFromAPIToken(t *testing.T) {
+	const accountID = "c3eaeffaadf7d4847684d4775c16d598"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/user/tokens/verify" {
+		if r.URL.Path != "/accounts/"+accountID+"/tokens/verify" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer token-value" {
@@ -69,8 +70,9 @@ func TestLoadParentCredentialsDerivesAccessKeyIDFromAPIToken(t *testing.T) {
 	t.Setenv("CLOUDFLARE_R2_ADMIN_API_TOKEN", "token-value")
 
 	creds, err := LoadParentCredentials(context.Background(), ParentCredentialConfig{
-		Source:  ParentCredentialSourceEnv,
-		Timeout: time.Second,
+		Source:    ParentCredentialSourceEnv,
+		AccountID: accountID,
+		Timeout:   time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -87,6 +87,8 @@ def _cloudflare_r2_control_plane_impl(ctx):
         args_list.append("--openbao-addr=" + ctx.args.openbao_addr)
     if ctx.args.openbao_path != "":
         args_list.append("--openbao-path=" + ctx.args.openbao_path)
+    if ctx.args.openbao_ca_cert != "":
+        args_list.append("--openbao-ca-cert=" + (ctx.args.openbao_ca_cert if ctx.args.openbao_ca_cert.startswith("/") else ws_path(ctx, ctx.args.openbao_ca_cert)))
     if ctx.args.openbao_token_file != "":
         args_list.append("--openbao-token-file=" + (ctx.args.openbao_token_file if ctx.args.openbao_token_file.startswith("/") else ws_path(ctx, ctx.args.openbao_token_file)))
     if ctx.args.getter_vars_file != "":
@@ -122,6 +124,7 @@ cloudflare_r2_control_plane = task(
         "credentials_file": args.string(default = "", description = "Environment file containing parent R2 credentials."),
         "openbao_addr": args.string(default = "", description = "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR."),
         "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2-admin", description = "Controller OpenBao KV path for parent R2 credentials."),
+        "openbao_ca_cert": args.string(default = "", description = "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT."),
         "openbao_token_file": args.string(default = "", description = "File containing the OpenBao token."),
         "getter_vars_file": args.string(default = "", description = "JSON vars file to receive durable Nomad artifact getter credentials."),
         "seed_bundle_file": args.string(default = "", description = "Seed bundle file to receive generated provider values."),

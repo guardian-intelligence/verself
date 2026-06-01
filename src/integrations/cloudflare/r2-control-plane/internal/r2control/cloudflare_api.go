@@ -109,9 +109,13 @@ func NewCloudflareAPIClient(apiToken string, timeout time.Duration) (*Cloudflare
 	}, nil
 }
 
-func (c *CloudflareAPIClient) VerifyToken(ctx context.Context) (TokenVerification, error) {
+func (c *CloudflareAPIClient) VerifyAccountToken(ctx context.Context, accountID string) (TokenVerification, error) {
+	accountID = strings.ToLower(strings.TrimSpace(accountID))
+	if !IsCloudflareAccountID(accountID) {
+		return TokenVerification{}, fmt.Errorf("account ID must be a 32-character lowercase hex Cloudflare account ID")
+	}
 	var response tokenVerifyResponse
-	if err := c.doJSON(ctx, http.MethodGet, "/user/tokens/verify", nil, &response); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/accounts/"+url.PathEscape(accountID)+"/tokens/verify", nil, &response); err != nil {
 		return TokenVerification{}, err
 	}
 	if !response.Success {
