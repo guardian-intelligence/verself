@@ -52,3 +52,13 @@ func TestUploadServerRequiresBearerToken(t *testing.T) {
 		t.Fatal("request with bearer token was not authorized")
 	}
 }
+
+func TestReadParentAPITokenRejectsWhitespaceSeparatedValues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("one two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readParentAPIToken(path); err == nil {
+		t.Fatal("expected whitespace-separated token to fail")
+	}
+}

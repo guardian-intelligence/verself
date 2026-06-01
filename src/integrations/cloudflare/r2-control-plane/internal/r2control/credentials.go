@@ -1,6 +1,7 @@
 package r2control
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -185,6 +186,52 @@ func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialC
 		return ParentCredentials{}, err
 	}
 	return parentCredentialsFromValues(values, "openbao:"+path)
+}
+
+func WriteParentCredentialsToOpenBao(ctx context.Context, cfg ParentCredentialConfig, values map[string]string) error {
+	cfg = cfg.WithDefaults()
+	addr := strings.TrimRight(strings.TrimSpace(firstNonEmpty(cfg.OpenBaoAddr, os.Getenv("BAO_ADDR"), os.Getenv("VAULT_ADDR"))), "/")
+	if addr == "" {
+		return errors.New("OpenBao address is required via config, BAO_ADDR, or VAULT_ADDR")
+	}
+	token, err := LoadOpenBaoToken(cfg)
+	if err != nil {
+		return err
+	}
+	path := strings.Trim(strings.TrimSpace(cfg.OpenBaoPath), "/")
+	if path == "" {
+		return errors.New("OpenBao path is required for R2 credentials")
+	}
+	if !strings.Contains(path, "/data/") {
+		return fmt.Errorf("OpenBao path %q must be a KV v2 data path", path)
+	}
+	body, err := json.Marshal(map[string]map[string]string{"data": values})
+	if err != nil {
+		return fmt.Errorf("encode OpenBao R2 credentials: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, addr+"/v1/"+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Vault-Token", token)
+	client, err := openBaoHTTPClient(cfg)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("write OpenBao R2 credentials: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("read OpenBao response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("OpenBao write %s returned status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	return nil
 }
 
 func openBaoHTTPClient(cfg ParentCredentialConfig) (*http.Client, error) {

@@ -59,22 +59,31 @@ aspect site seed-template --site=gamma --force
 
 Fill .verself/site-bootstrap/gamma/seed.yml with only the requested
 provider values. No SOPS file is created. The Cloudflare account ID is checked
-into site metadata. Keep the parent R2 admin credential in controller OpenBao
-or an operator-only environment, then provision the site-scoped R2 credentials
-into the local seed bundle before materializing it:
+into site metadata. Import the parent R2 admin credential directly into
+controller OpenBao, then provision the site-scoped R2 credentials into the
+local seed bundle before materializing it:
+
+```shell
+aspect integrations cloudflare-r2-control-plane \
+  --site=gamma \
+  --action=import-parent \
+  --parent-api-token-file=<operator-only-token-file> \
+  --openbao-addr=<controller-openbao-addr> \
+  --openbao-token-file=<controller-openbao-token-file>
+```
 
 ```shell
 aspect integrations cloudflare-r2-control-plane \
   --site=gamma \
   --action=rotate-getter \
-  --credential-source=openbao \
-  --openbao-ca-cert="$HOME/.config/verself/trust-anchors/verself-openbao-ca.pem"
+  --openbao-addr=<controller-openbao-addr> \
+  --openbao-token-file=<controller-openbao-token-file>
 
 aspect integrations cloudflare-r2-control-plane \
   --site=gamma \
   --action=rotate-object-storage-provider \
-  --credential-source=openbao \
-  --openbao-ca-cert="$HOME/.config/verself/trust-anchors/verself-openbao-ca.pem"
+  --openbao-addr=<controller-openbao-addr> \
+  --openbao-token-file=<controller-openbao-token-file>
 ```
 
 Run the R2 control-plane upload-session API from a controller context that can
@@ -90,8 +99,8 @@ expire. The upload API bearer token is generated under
 aspect integrations cloudflare-r2-control-plane \
   --site=gamma \
   --action=serve \
-  --credential-source=openbao \
-  --openbao-ca-cert="$HOME/.config/verself/trust-anchors/verself-openbao-ca.pem"
+  --openbao-addr=<controller-openbao-addr> \
+  --openbao-token-file=<controller-openbao-token-file>
 ```
 
 Keep the control-plane process running while `aspect deploy` publishes

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,6 +35,7 @@ type config struct {
 	parentAccessKeyIDEnv     string
 	parentSecretAccessKeyEnv string
 	parentAPITokenEnv        string
+	parentAPITokenFile       string
 	parentSessionTokenEnv    string
 	openBaoAddr              string
 	openBaoPath              string
@@ -95,7 +97,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-r2-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify", "Action: serve, verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider.")
+	fs.StringVar(&cfg.action, "action", "verify", "Action: serve, verify, import-parent, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading src/host/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to site.json artifact_delivery.cloudflare_account_id.")
@@ -106,6 +108,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.parentAccessKeyIDEnv, "parent-access-key-id-env", "CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID", "Environment variable name for the parent R2 access key ID.")
 	fs.StringVar(&cfg.parentSecretAccessKeyEnv, "parent-secret-access-key-env", "CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY", "Environment variable name for the parent R2 secret access key.")
 	fs.StringVar(&cfg.parentAPITokenEnv, "parent-api-token-env", "CLOUDFLARE_R2_ADMIN_API_TOKEN", "Environment variable name for the parent R2 API token value; the S3 secret is derived from this value.")
+	fs.StringVar(&cfg.parentAPITokenFile, "parent-api-token-file", "", "One-time import file containing the parent Cloudflare R2 API token value; use '-' to read stdin.")
 	fs.StringVar(&cfg.parentSessionTokenEnv, "parent-session-token-env", "CLOUDFLARE_R2_ADMIN_SESSION_TOKEN", "Environment variable name for an optional parent R2 session token.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR.")
 	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2-admin", "Controller OpenBao KV path for parent R2 credentials.")
@@ -139,6 +142,10 @@ func run(args []string) error {
 		ctx, cancel = context.WithTimeout(ctx, cfg.timeout)
 	}
 	defer cancel()
+
+	if cfg.action == "import-parent" {
+		return importParentCredential(ctx, cfg)
+	}
 
 	parent, err := r2control.LoadParentCredentials(ctx, cfg.parentCredentialConfig())
 	if err != nil {
@@ -286,9 +293,9 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "serve", "verify", "ensure-bucket", "ensure-getter", "rotate-getter", "rotate-object-storage-provider":
+	case "serve", "verify", "import-parent", "ensure-bucket", "ensure-getter", "rotate-getter", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be serve, verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be serve, verify, import-parent, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider, got %q", cfg.action)
 	}
 	if !r2control.IsCloudflareAccountID(cfg.accountID) {
 		return fmt.Errorf("--account-id must be a 32-character lowercase hex Cloudflare account ID")
@@ -307,6 +314,9 @@ func (cfg config) validate() error {
 	}
 	if cfg.action == "serve" && strings.TrimSpace(cfg.authTokenFile) == "" {
 		return fmt.Errorf("--auth-token-file is required for action=serve")
+	}
+	if cfg.action == "import-parent" && strings.TrimSpace(cfg.parentAPITokenFile) == "" {
+		return fmt.Errorf("--parent-api-token-file is required for action=import-parent")
 	}
 	return nil
 }
@@ -327,6 +337,90 @@ func (cfg config) parentCredentialConfig() r2control.ParentCredentialConfig {
 		OpenBaoTokenFile:   cfg.openBaoTokenFile,
 		Timeout:            cfg.timeout,
 	}
+}
+
+func importParentCredential(ctx context.Context, cfg config) error {
+	apiToken, err := readParentAPIToken(cfg.parentAPITokenFile)
+	if err != nil {
+		return err
+	}
+	apiClient, err := r2control.NewCloudflareAPIClient(apiToken, cfg.timeout)
+	if err != nil {
+		return err
+	}
+	verified, err := apiClient.VerifyAccountToken(ctx, cfg.accountID)
+	if err != nil {
+		return err
+	}
+	if verified.Status != "" && verified.Status != "active" {
+		return fmt.Errorf("Cloudflare API token status is %q", verified.Status)
+	}
+	parent := r2control.ParentCredentials{
+		AccessKeyID:     verified.ID,
+		SecretAccessKey: r2control.SHA256Hex([]byte(apiToken)),
+		APIToken:        apiToken,
+		Source:          "import-parent:verified-token-id",
+	}
+	parentClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
+		Endpoint:        r2control.Endpoint(cfg.accountID),
+		Region:          cfg.region,
+		AccessKeyID:     parent.AccessKeyID,
+		SecretAccessKey: parent.SecretAccessKey,
+		Source:          "cloudflare-r2-control-plane-parent-import",
+		Timeout:         cfg.timeout,
+	})
+	if err != nil {
+		return err
+	}
+	existed, created, err := parentClient.EnsureBucket(ctx, cfg.bucket)
+	if err != nil {
+		return err
+	}
+	if err := r2control.WriteParentCredentialsToOpenBao(ctx, cfg.parentCredentialConfig(), map[string]string{
+		"api_token": apiToken,
+		"token_id":  verified.ID,
+	}); err != nil {
+		return err
+	}
+	out := report{
+		Timestamp:                    time.Now().UTC().Format(time.RFC3339),
+		Action:                       cfg.action,
+		Site:                         cfg.site,
+		AccountID:                    cfg.accountID,
+		Endpoint:                     r2control.Endpoint(cfg.accountID),
+		Bucket:                       cfg.bucket,
+		ParentCredentialSource:       parent.Source,
+		ParentAccessKeyIDFingerprint: r2control.Fingerprint(parent.AccessKeyID),
+		BucketExisted:                existed,
+		BucketCreated:                created,
+		VerifiedWith:                 "parent-api-token",
+	}
+	return writeReport(out)
+}
+
+func readParentAPIToken(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("parent API token file is required")
+	}
+	var body []byte
+	var err error
+	if path == "-" {
+		body, err = io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
+	} else {
+		body, err = os.ReadFile(path)
+	}
+	if err != nil {
+		return "", fmt.Errorf("read parent API token: %w", err)
+	}
+	token := strings.TrimSpace(string(body))
+	if token == "" {
+		return "", fmt.Errorf("parent API token is empty")
+	}
+	if strings.ContainsAny(token, "\r\n\t ") {
+		return "", fmt.Errorf("parent API token must be a single token value")
+	}
+	return token, nil
 }
 
 func verifyObjectRoundTrip(ctx context.Context, client *r2control.R2Client, cfg config, verifiedWith string, out *report) error {
