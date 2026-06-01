@@ -55,7 +55,6 @@ job "sandbox-rental" {
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "sandbox_rental"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
-        VERSELF_CRED_RUNNER_BOOTSTRAP_SECRET = "/etc/credstore/sandbox-rental/runner-bootstrap-secret"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -73,6 +72,15 @@ job "sandbox-rental" {
         env = true
         data = <<-EOT
 VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/sandbox.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_RUNNER_BOOTSTRAP_SECRET={{ with secret "kv-runtime/data/secret/org/sandbox-rental-service.runner_bootstrap_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
       resources {
@@ -120,7 +128,6 @@ EOT
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "sandbox_rental"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
-        VERSELF_CRED_RUNNER_BOOTSTRAP_SECRET = "/etc/credstore/sandbox-rental/runner-bootstrap-secret"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -138,6 +145,15 @@ EOT
         env = true
         data = <<-EOT
 VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/sandbox.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_RUNNER_BOOTSTRAP_SECRET={{ with secret "kv-runtime/data/secret/org/sandbox-rental-service.runner_bootstrap_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
       resources {

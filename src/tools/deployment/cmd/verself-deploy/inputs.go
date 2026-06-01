@@ -92,6 +92,8 @@ type nomadDescriptorInput struct {
 type nomadJob struct {
 	Component string
 	JobID     string
+	Provides  []string
+	Requires  []string
 	Source    string
 	Job       *api.Job
 }
@@ -309,6 +311,8 @@ func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser
 		jobs = append(jobs, nomadJob{
 			Component: component.Component,
 			JobID:     component.JobID,
+			Provides:  append([]string(nil), component.Provides...),
+			Requires:  append([]string(nil), component.Requires...),
 			Source:    specPath,
 			Job:       job,
 		})

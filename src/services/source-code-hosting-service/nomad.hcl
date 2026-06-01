@@ -47,7 +47,6 @@ job "source-code-hosting-service" {
         SOURCE_PUBLIC_BASE_URL = "__VERSELF_FORGEJO_BASE_URL__"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_WEBHOOK_SECRET = "/etc/credstore/source-code-hosting-service/webhook-secret"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -67,6 +66,15 @@ job "source-code-hosting-service" {
 VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/webhook.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+      }
       resources {
         cpu = 100
         memory = 128
@@ -76,6 +84,7 @@ EOT
         destination = "secrets/forgejo.env"
         perms = "0600"
         data = <<-EOT
+SOURCE_FORGEJO_AUTOMATION_TOKEN={{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" }}{{ .Data.data.value | toJSON }}{{ end }}
 SOURCE_FORGEJO_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true
@@ -111,7 +120,6 @@ EOT
         SOURCE_PUBLIC_BASE_URL = "__VERSELF_FORGEJO_BASE_URL__"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_WEBHOOK_SECRET = "/etc/credstore/source-code-hosting-service/webhook-secret"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -129,6 +137,15 @@ EOT
         env = true
         data = <<-EOT
 VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/webhook.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
       resources {

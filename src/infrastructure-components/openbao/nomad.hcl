@@ -100,6 +100,15 @@ for path, mode in ((cert, 0o640), (key, 0o640)):
     os.chown(path, 0, openbao.pw_gid)
     os.chmod(path, mode)
 
+public_ca_dir = pathlib.Path("/etc/verself/openbao")
+public_ca_dir.mkdir(parents=True, exist_ok=True)
+public_ca = public_ca_dir / "ca.pem"
+shutil.copyfile(cert, public_ca)
+os.chown(public_ca_dir, 0, 0)
+os.chmod(public_ca_dir, 0o755)
+os.chown(public_ca, 0, 0)
+os.chmod(public_ca, 0o644)
+
 hosts = pathlib.Path("/etc/openbao/hosts")
 hosts.write_text("127.0.0.1 localhost\\n::1 localhost ip6-localhost ip6-loopback\\n", encoding="utf-8")
 os.chown(hosts, 0, openbao.pw_gid)

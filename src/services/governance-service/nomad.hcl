@@ -51,7 +51,6 @@ job "governance-service" {
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "governance_service"
-        VERSELF_CRED_API_ACTIVITY_HMAC_KEY = "/etc/credstore/governance-service/api-activity-hmac-key"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
@@ -70,6 +69,15 @@ job "governance-service" {
         env = true
         data = <<-EOT
 VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/governance.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_API_ACTIVITY_HMAC_KEY={{ with secret "kv-runtime/data/secret/org/governance-service.api_activity.hmac_key" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
       resources {
@@ -113,7 +121,6 @@ EOT
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "governance_service"
-        VERSELF_CRED_API_ACTIVITY_HMAC_KEY = "/etc/credstore/governance-service/api-activity-hmac-key"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
@@ -132,6 +139,15 @@ EOT
         env = true
         data = <<-EOT
 VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/governance.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_API_ACTIVITY_HMAC_KEY={{ with secret "kv-runtime/data/secret/org/governance-service.api_activity.hmac_key" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
       resources {

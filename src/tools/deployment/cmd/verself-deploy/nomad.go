@@ -90,7 +90,23 @@ func registerNomadJobs(ctx context.Context, rt *runtime.Runtime, inputs *deployI
 		return results, err
 	}
 	fmt.Printf("verself-deploy: %s completed\n", dispatched.DispatchedJobID)
-	for _, job := range runtimeJobs {
+	batchJobs, serviceJobs := splitBlockingRuntimeBatchJobs(runtimeJobs)
+	for _, job := range batchJobs {
+		submitted, err := registerNomadJob(ctx, rt, client, job)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, submitted)
+	}
+	for _, job := range batchJobs {
+		// Batch jobs are one-time substrate mutations; runtime jobs must not
+		// race the state they create.
+		if err := client.WaitForBatchComplete(ctx, job.JobID, controlPlaneApplyTimeout); err != nil {
+			return results, err
+		}
+		fmt.Printf("verself-deploy: %s completed\n", job.JobID)
+	}
+	for _, job := range serviceJobs {
 		submitted, err := registerNomadJob(ctx, rt, client, job)
 		if err != nil {
 			return results, err
@@ -144,6 +160,34 @@ func splitControlPlaneHandoff(jobs []nomadJob) ([]nomadJob, []nomadJob, error) {
 		runtimeJobs = append(runtimeJobs, job)
 	}
 	return controlPlaneJobs, runtimeJobs, nil
+}
+
+func splitBlockingRuntimeBatchJobs(jobs []nomadJob) ([]nomadJob, []nomadJob) {
+	required := make(map[string]bool)
+	for _, job := range jobs {
+		for _, resource := range job.Requires {
+			required[resource] = true
+		}
+	}
+	batchJobs := make([]nomadJob, 0)
+	serviceJobs := make([]nomadJob, 0, len(jobs))
+	for _, job := range jobs {
+		if job.Job != nil && job.Job.Type != nil && *job.Job.Type == "batch" && providesRequiredResource(job, required) {
+			batchJobs = append(batchJobs, job)
+			continue
+		}
+		serviceJobs = append(serviceJobs, job)
+	}
+	return batchJobs, serviceJobs
+}
+
+func providesRequiredResource(job nomadJob, required map[string]bool) bool {
+	for _, resource := range job.Provides {
+		if required[resource] {
+			return true
+		}
+	}
+	return false
 }
 
 func registerNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, job nomadJob) (nomadRegisterResult, error) {

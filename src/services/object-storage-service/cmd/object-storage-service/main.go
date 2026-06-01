@@ -303,8 +303,6 @@ func runS3(
 	upstreamS3URLs := splitEnvList(l.RequireString("OBJECT_STORAGE_S3_URLS"))
 	proxyAccessKeyID := l.RequireCredential(proxyAccessKeyIDCredentialName(cfg.Provider))
 	proxySecretAccessKey := l.RequireCredential(proxySecretAccessKeyCredentialName(cfg.Provider))
-	s3TLSCertPath := l.RequireCredentialPath("s3-tls-cert")
-	s3TLSKeyPath := l.RequireCredentialPath("s3-tls-key")
 	chCACertPath := l.RequireCredentialPath("clickhouse-ca-cert")
 	spiffeEndpoint := l.String(workloadauth.EndpointSocketEnv, "")
 	if err := l.Err(); err != nil {
@@ -354,10 +352,7 @@ func runS3(
 		return fmt.Errorf("object-storage spiffe bundle source: %w", err)
 	}
 	defer func() { _ = bundleSource.Close() }()
-	s3TLSConfig, err := newS3TLSConfig(bundleSource, s3TLSCertPath, s3TLSKeyPath)
-	if err != nil {
-		return fmt.Errorf("object-storage s3 tls: %w", err)
-	}
+	s3TLSConfig := newS3TLSConfig(spiffeSource, bundleSource)
 	s3Mux := http.NewServeMux()
 	s3Mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	s3Mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -378,16 +373,9 @@ func runS3(
 	return httpserver.Run(ctx, logger, s3Server)
 }
 
-func newS3TLSConfig(bundleSource *workloadapi.BundleSource, certPath, keyPath string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, err
-	}
-	config := &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequestClientCert,
-	}
+func newS3TLSConfig(source *workloadapi.X509Source, bundleSource *workloadapi.BundleSource) *tls.Config {
+	config := tlsconfig.TLSServerConfig(source)
+	config.ClientAuth = tls.RequestClientCert
 	verifyPeer := tlsconfig.VerifyPeerCertificate(bundleSource, tlsconfig.AuthorizeAny())
 	config.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 		if len(rawCerts) == 0 {
@@ -395,7 +383,7 @@ func newS3TLSConfig(bundleSource *workloadapi.BundleSource, certPath, keyPath st
 		}
 		return verifyPeer(rawCerts, nil)
 	}
-	return config, nil
+	return config
 }
 
 func s3PeerMiddleware(next http.Handler) http.Handler {

@@ -49,7 +49,7 @@ job "secrets-service" {
         SECRETS_RUNTIME_SECRET_NAMESPACE = "runtime"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_OPENBAO_CA_CERT = "/etc/credstore/secrets-service/openbao-ca-cert"
+        VERSELF_CRED_OPENBAO_CA_CERT = "/etc/verself/openbao/ca.pem"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"

@@ -167,16 +167,10 @@ openbao_runtime_secret_seed_declarations:
   - name: iam-service.email_identity.hmac_key
     site_secret: iam_service_email_identity_hmac_key
 `)
-	writeTestFile(t, filepath.Join(root, "src/infrastructure-components/zitadel/deploy/credstore.yml"), `
-credstore_secret_files:
-  - path: /etc/credstore/zitadel/github-login-client-id
-    group: zitadel
-    site_secret: github_integration_service_github_app_client_id
-    mode: "0640"
-  - path: /etc/credstore/zitadel/github-login-client-secret
-    group: zitadel
+	writeTestFile(t, filepath.Join(root, "src/services/github-integration-service/deploy/runtime-secrets.yml"), `
+openbao_runtime_secret_seed_declarations:
+  - name: github-integration-service.github.oauth_client_secret
     site_secret: github_integration_service_github_app_oauth_client_secret
-    mode: "0640"
 `)
 	writeTestFile(t, filepath.Join(root, "src/integrations/catalog/sites/gamma.yml"), `
 version: verself.integrations.v1
