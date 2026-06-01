@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/verself/integrations/cloudflare/r2-control-plane/internal/r2control"
+	"github.com/verself/tools/controllerstate"
 )
 
 type siteArtifactConfig struct {
@@ -64,8 +65,9 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 	if tokenFile == "" {
 		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.control_plane_token_file is required", path)
 	}
-	if !filepath.IsAbs(tokenFile) {
-		tokenFile = filepath.Join(repoRoot, filepath.FromSlash(tokenFile))
+	tokenFile, err = controllerstate.ConfigPath(repoRoot, tokenFile)
+	if err != nil {
+		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.control_plane_token_file: %w", path, err)
 	}
 	keyPrefix := strings.Trim(raw.ArtifactDelivery.KeyPrefix, "/")
 	if keyPrefix == "" {
