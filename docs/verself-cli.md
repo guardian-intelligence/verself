@@ -98,7 +98,7 @@ page, err := client.Projects.List(ctx, verself.ListProjectsOptions{
 `baseURL` is the installation apex. Omitted `baseURL` means
 `https://verself.sh`. SDKs and the CLI resolve service origins from
 `{baseURL}/.well-known/verself`; service URL overrides are diagnostic inputs for
-service-local development, staging tunnels, and operator break-glass sessions.
+service-local development, staging tunnels, and temporary operator diagnostics.
 Public examples omit service URL overrides.
 
 ## System Pieces
@@ -606,29 +606,17 @@ the canonical command.
 
 ## Environment UX
 
-`verself env` follows Vercel's project-scoped environment variable shape while
-adding an explicit single-key reveal command. The primary compatible flows are
-pulling variables into a file and running a command with fetched variables:
+`verself env` follows Vercel's project-scoped environment variable shape. The
+primary compatible flows are pulling variables into a file and running a command
+with fetched variables:
 
 ```text
 verself env pull .env.verself --org guardianintelligence.org --project api --environment production
 verself env run --org guardianintelligence.org --project api --environment preview -- npm test
 ```
 
-`env get` is a Verself extension for explicit single-secret reveal:
-
-```text
-verself env get API_TOKEN \
-  --org guardianintelligence.org \
-  --project api \
-  --environment production
-```
-
-`env get` is terminal-only by default for secret values. Non-interactive callers
-must pass `--json --reveal-secret` so accidental scripts do not print secrets
-through normal structured output. Every environment command requires an
-unambiguous organization, project, and environment from flags, project linkage,
-or active profile state.
+Every environment command requires an unambiguous organization, project, and
+environment from flags, project linkage, or active profile state.
 
 ## Company UX
 
@@ -777,76 +765,6 @@ the company secret store or the catalog-approved OpenBao target. `company
 options add --from-env` is a convenience that writes the secret value and the
 option metadata in one transaction.
 
-## Company Secrets [DESCOPED]
-
-Company secrets are generated or supplied values that become OpenBao seed
-entries, credential-store entries, or provider/runtime config secrets. They are
-modeled separately from options because a secret has generation policy,
-rotation metadata, and reveal rules.
-
-Local bootstrap generation creates or accepts an OpenBao bootstrap principal,
-stores bootstrap material in the local credential store or controller OpenBao,
-and renders seed-bundle metadata for the target site. Rendered site artifacts
-contain secret names, fingerprints, consumers, and rotation metadata, never
-plaintext secret values.
-
-```text
-verself company secret generate guardian --all
-verself company secret generate guardian --key zitadel.initial_admin_password
-verself company secret reveal guardian --key zitadel.initial_admin_password
-printf '%s' "$PASSWORD" | verself company secret set guardian --key zitadel.initial_admin_password --stdin
-verself company secret set guardian --key stripe.webhook_secret --from-env STRIPE_WEBHOOK_SECRET
-```
-
-Generated secrets use cryptographic randomness and type-specific encodings. The
-catalog defines length, alphabet, target OpenBao mount, consuming component,
-rotation command, and whether the value may be revealed.
-
-Initial generated secret kinds:
-
-| Kind | Examples |
-| --- | --- |
-| Password | Zitadel initial admin password, Postgres service passwords, Forgejo initial admin password. |
-| Symmetric key | Cookie signing keys, session encryption keys, webhook HMAC keys, internal API shared secrets for components that cannot use SPIFFE. |
-| Token | Bootstrap-only one-use tokens, initial service bootstrap tokens, local deploy handoff tokens. |
-| Private key | JWT signing key, TLS or SSH private keys when a component cannot generate them internally. |
-
-Default generation writes encrypted values and prints an inventory:
-
-```text
-generated  openbao.bootstrap_token         -> controller_openbao/prod/bootstrap
-generated  zitadel.initial_admin_password  -> openbao://prod/kv/bootstrap/zitadel.initial_admin_password
-generated  stripe.webhook_secret           -> openbao://prod/kv/runtime/billing-service.stripe.webhook_secret
-generated  billing.cookie_signing_key      -> openbao://prod/kv/runtime/billing-service.cookie_signing_key
-
-Reveal a break-glass bootstrap value:
-  verself company secret reveal guardian --key openbao.bootstrap_token --reason <ticket-or-incident>
-
-Update a generated value:
-  printf '%s' "$VALUE" | verself company secret set guardian --key zitadel.initial_admin_password --stdin
-```
-
-Interactive generation may accept `--reveal-once` to show a table of values
-after the encrypted writes succeed:
-
-```text
-Your generated secrets:
-
-openbao.bootstrap_token: <plaintext>
-zitadel.initial_admin_password: <plaintext>
-forgejo.initial_admin_password: <plaintext>
-billing.cookie_signing_key: <plaintext>
-
-Update a value:
-  printf '%s' "$VALUE" | verself company secret set guardian --key <key> --stdin
-```
-
-Plaintext reveal is intentionally opt-in. The default path avoids terminal
-scrollback and shell history leakage while still giving the facade a rich
-first-run screen with names, destinations, and update commands. Non-interactive
-JSON output includes `value_ref`, `render_targets`, and `reveal_command`, but
-omits plaintext unless `--reveal-once` is passed and stdout is a terminal.
-
 Bootstrap tokens and unseal material are scoped to the target site. Runtime
 services authenticate to OpenBao with SPIFFE JWT-SVIDs mapped to scoped
 policies.
@@ -938,8 +856,8 @@ Generated by company secret generation:
 - scoped OpenBao bootstrap values when the account does not already have them;
 - passwords and tokens using cryptographic randomness;
 - service signing and encryption keys;
-- metadata describing target OpenBao mounts, consuming components, reveal policy,
-  and rotation commands.
+- metadata describing target OpenBao mounts, consuming components, and rotation
+  commands.
 
 ## Site Artifacts [DESCOPED]
 
@@ -1097,9 +1015,7 @@ normal organization membership.
 - Provider tokens enter company options through stdin, environment variables, OS
   credential stores, or catalog-approved OpenBao imports.
 - Generated secrets use cryptographic randomness and are written to encrypted
-  storage before any optional plaintext reveal.
-- Plaintext secret reveal requires an explicit command or `--reveal-once`;
-  default JSON and progress output contain only references and destinations.
+  storage.
 - Secret updates use stdin, environment variables, files, credential-store
   prompts, or OpenBao import commands. `--value` is reserved for non-secret
   options.
@@ -1131,8 +1047,8 @@ CLI implementation should have deterministic tests for:
 - company option classification without leaking raw credential material;
 - company secret generation with deterministic metadata and nondeterministic
   values from cryptographic randomness;
-- secret reveal and set command behavior, including no plaintext in default JSON
-  or progress output;
+- secret set command behavior, including no plaintext in default JSON or
+  progress output;
 - generated next-command output that uses `aspect deploy` for deployment;
 - Smithy/OpenAPI-derived request shapes for SDK-backed commands;
 - idempotency key generation and retry behavior for mutating commands;

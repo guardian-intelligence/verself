@@ -147,9 +147,10 @@ Then materialize, converge, publish DNS, and deploy:
 
 OpenBao initialization uses the root token returned by `bao operator init` only
 inside the first bootstrap transaction. The token is not stored in `/etc`,
-`.verself`, git, logs, or generated artifacts. Disaster recovery may require a
-temporary root token generated from recovery material during a dedicated
-recovery exercise.
+`.verself`, git, logs, or generated artifacts. Breakglass plaintext access is
+limited to an operator-approved incident or gameday through controller OpenBao
+with an auditable reason and no persistence in repo files, generated artifacts,
+shell history, or logs.
 
 ```shell
 aspect site validate-seed --site=gamma
