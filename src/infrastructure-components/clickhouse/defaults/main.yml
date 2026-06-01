@@ -22,3 +22,9 @@ clickhouse_operator_helper_config_path: /etc/clickhouse-client/operator-spiffe-h
 clickhouse_client_ca_projections:
   - path: /etc/otelcol/clickhouse-server-ca.pem
     group: otelcol
+    mode: "0640"
+    directory_mode: "0750"
+  - path: /etc/verself/clickhouse/server-ca.pem
+    group: root
+    mode: "0644"
+    directory_mode: "0755"

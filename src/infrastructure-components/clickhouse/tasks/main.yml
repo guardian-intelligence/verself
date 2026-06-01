@@ -267,7 +267,7 @@
     state: directory
     owner: root
     group: "{{ item.group }}"
-    mode: "0750"
+    mode: "{{ item.directory_mode | default('0750') }}"
   loop: "{{ clickhouse_client_ca_projections }}"
   loop_control:
     label: "{{ item.path }}"
@@ -279,7 +279,7 @@
     remote_src: true
     owner: root
     group: "{{ item.group }}"
-    mode: "0640"
+    mode: "{{ item.mode | default('0640') }}"
   loop: "{{ clickhouse_client_ca_projections }}"
   loop_control:
     label: "{{ item.path }}"

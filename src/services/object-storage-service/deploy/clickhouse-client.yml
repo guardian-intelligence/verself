@@ -1,2 +1,0 @@
-clickhouse_client_ca_credentials:
-  - { path: /etc/credstore/object-storage-service/clickhouse-ca-cert, group: object_storage_service }

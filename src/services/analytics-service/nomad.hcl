@@ -40,7 +40,7 @@ job "analytics-service" {
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "analytics_service"
         VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/analytics-service/auth-audience"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/analytics-service/clickhouse-ca-cert"
+        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_SUPERVISOR = "nomad"
       }
