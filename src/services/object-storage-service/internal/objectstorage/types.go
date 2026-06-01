@@ -9,6 +9,9 @@ import (
 )
 
 const (
+	ProviderGarage       = "garage"
+	ProviderCloudflareR2 = "cloudflare_r2"
+
 	AuthModeSigV4Static = "sigv4_static"
 	AuthModeSPIFFEMTLS  = "spiffe_mtls"
 
@@ -17,17 +20,18 @@ const (
 )
 
 type Bucket struct {
-	BucketID       uuid.UUID
-	OrgID          string
-	BucketName     string
-	GarageBucketID string
-	QuotaBytes     *int64
-	QuotaObjects   *int64
-	LifecycleJSON  json.RawMessage
-	CreatedAt      time.Time
-	CreatedBy      string
-	UpdatedAt      time.Time
-	UpdatedBy      string
+	BucketID         uuid.UUID
+	OrgID            string
+	BucketName       string
+	Provider         string
+	ProviderBucketID string
+	QuotaBytes       *int64
+	QuotaObjects     *int64
+	LifecycleJSON    json.RawMessage
+	CreatedAt        time.Time
+	CreatedBy        string
+	UpdatedAt        time.Time
+	UpdatedBy        string
 }
 
 type BucketAlias struct {
@@ -56,6 +60,33 @@ type Credential struct {
 	CreatedBy         string
 	RevokedAt         *time.Time
 	RevokedBy         string
+}
+
+type ProviderBucket struct {
+	ID             string
+	LifecycleRules json.RawMessage
+}
+
+type BucketProviderInput struct {
+	Name          string
+	QuotaBytes    *int64
+	QuotaObjects  *int64
+	LifecycleJSON json.RawMessage
+}
+
+type BucketProviderUpdate struct {
+	ProviderBucketID string
+	QuotaBytes       *int64
+	QuotaObjects     *int64
+	LifecycleJSON    json.RawMessage
+}
+
+type BucketProvider interface {
+	Kind() string
+	Health(ctx context.Context) error
+	CreateBucket(ctx context.Context, input BucketProviderInput) (ProviderBucket, error)
+	UpdateBucket(ctx context.Context, input BucketProviderUpdate) (ProviderBucket, error)
+	DeleteBucket(ctx context.Context, providerBucketID string) error
 }
 
 type GarageBucket struct {

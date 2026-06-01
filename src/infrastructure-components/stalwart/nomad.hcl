@@ -24,6 +24,14 @@ job "stalwart" {
     task "server" {
       driver = "raw_exec"
       user = "root"
+      vault {
+        role = "stalwart-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
 
       artifact {
         source = "verself-artifact://stalwart-runtime"
@@ -32,7 +40,7 @@ job "stalwart" {
 
       config {
         command = "/bin/sh"
-        args = ["-ec", "getent group stalwart >/dev/null || groupadd --system stalwart\nid -u stalwart >/dev/null 2>&1 || useradd --system --gid stalwart --home-dir /var/lib/stalwart --shell /usr/sbin/nologin --no-create-home stalwart\ninstall -d -o stalwart -g stalwart -m 0750 /var/lib/stalwart\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/webadmin.zip /var/lib/stalwart/webadmin.zip\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/spam-filter.toml /var/lib/stalwart/spam-filter.toml\n/usr/sbin/setcap cap_net_bind_service+ep local/bin/stalwart\nexec /usr/sbin/runuser -u stalwart --preserve-environment -- local/bin/stalwart --config \"$${NOMAD_TASK_DIR}/config.toml\"\n"]
+        args = ["-ec", "getent group stalwart >/dev/null || groupadd --system stalwart\nid -u stalwart >/dev/null 2>&1 || useradd --system --gid stalwart --home-dir /var/lib/stalwart --shell /usr/sbin/nologin --no-create-home stalwart\ninstall -d -o stalwart -g stalwart -m 0750 /var/lib/stalwart\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/webadmin.zip /var/lib/stalwart/webadmin.zip\ninstall -o stalwart -g stalwart -m 0644 local/share/stalwart/spam-filter.toml /var/lib/stalwart/spam-filter.toml\nadmin_hash=\"$${NOMAD_TASK_DIR}/admin-password.hash\"\nsalt=$(openssl rand -hex 8)\nopenssl passwd -6 -stdin -salt \"$salt\" < \"$${NOMAD_SECRETS_DIR}/admin-password\" | tr -d '\\n' > \"$admin_hash\"\nchown stalwart:stalwart \"$admin_hash\"\nchmod 0600 \"$admin_hash\"\nawk -v hash=\"$(cat \"$admin_hash\")\" '{ gsub(\"__STALWART_ADMIN_SECRET_HASH__\", hash); print }' \"$${NOMAD_TASK_DIR}/config.template.toml\" > \"$${NOMAD_TASK_DIR}/config.toml\"\nchown stalwart:stalwart \"$${NOMAD_TASK_DIR}/config.toml\"\nchmod 0600 \"$${NOMAD_TASK_DIR}/config.toml\"\n/usr/sbin/setcap cap_net_bind_service+ep local/bin/stalwart\nexec /usr/bin/setpriv --reuid=stalwart --regid=stalwart --init-groups local/bin/stalwart --config \"$${NOMAD_TASK_DIR}/config.toml\"\n"]
       }
 
       env {
@@ -51,7 +59,16 @@ job "stalwart" {
       # Receive-only: no outbound relay.
       template {
         change_mode = "restart"
-        destination = "local/config.toml"
+        destination = "secrets/admin-password"
+        perms = "0600"
+        data = <<-EOT
+{{- with secret "kv-runtime/data/secret/org/stalwart.admin_password" -}}{{ .Data.data.value }}{{- end -}}
+EOT
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "local/config.template.toml"
         data = <<-EOT
 [server]
 hostname = "__VERSELF_STALWART_DOMAIN__"
@@ -136,8 +153,10 @@ store = "postgresql"
 
 # Fallback admin for Management API bootstrap.
 [authentication.fallback-admin]
-user = "admin"
-secret = "%%{file:/etc/credstore/stalwart/admin-password}%"
+user = "verself-admin"
+# Stalwart 0.15.5 accepts hashed fallback secrets inline; this auth field does
+# not reliably resolve file interpolation.
+secret = "__STALWART_ADMIN_SECRET_HASH__"
 
 [tracer."otel"]
 type = "open-telemetry"
@@ -168,6 +187,14 @@ EOT
     task "settings" {
       driver = "raw_exec"
       user = "stalwart"
+      vault {
+        role = "stalwart-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
 
       lifecycle {
         hook = "poststart"
@@ -182,12 +209,22 @@ EOT
 
       config {
         command = "/bin/sh"
-        args = ["-ec", "credentials=\"admin:$(tr -d '\\n' </etc/credstore/stalwart/admin-password)\"\nlast_status=1\nfor attempt in $(seq 1 30); do\n  if CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config session.rcpt.relay false && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config asn.type disabled && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config metrics.open-telemetry.transport grpc && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config metrics.open-telemetry.endpoint http://127.0.0.1:4317 && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server add-config metrics.open-telemetry.interval 30s && \\\n     CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 server reload-config; then\n    exit 0\n  fi\n  last_status=$?\n  sleep 1\ndone\nexit \"$last_status\"\n"]
+        args = ["-ec", "test -n \"$STALWART_ADMIN_PASSWORD\" || { echo 'missing Stalwart OpenBao admin password' >&2; exit 1; }\ncredentials=\"verself-admin:$STALWART_ADMIN_PASSWORD\"\nstalwart_cli() {\n  output=$(CREDENTIALS=\"$credentials\" local/bin/stalwart-cli -u http://127.0.0.1:8090 \"$@\" 2>&1)\n  status=$?\n  if [ \"$status\" -ne 0 ] || printf '%s' \"$output\" | grep -Eq 'Authentication failed|Request failed'; then\n    printf '%s\\n' \"$output\" >&2\n    return 1\n  fi\n}\nlast_status=1\nfor attempt in $(seq 1 30); do\n  if stalwart_cli server add-config session.rcpt.relay false && \\\n     stalwart_cli server add-config asn.type disabled && \\\n     stalwart_cli server add-config metrics.open-telemetry.transport grpc && \\\n     stalwart_cli server add-config metrics.open-telemetry.endpoint http://127.0.0.1:4317 && \\\n     stalwart_cli server add-config metrics.open-telemetry.interval 30s && \\\n     stalwart_cli server reload-config; then\n    exit 0\n  fi\n  last_status=$?\n  sleep 1\ndone\nexit \"$last_status\"\n"]
       }
 
       resources {
         cpu = 100
         memory = 64
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "secrets/admin.env"
+        perms = "0600"
+        data = <<-EOT
+STALWART_ADMIN_PASSWORD={{ with secret "kv-runtime/data/secret/org/stalwart.admin_password" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+        env = true
       }
     }
   }

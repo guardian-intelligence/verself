@@ -5,7 +5,7 @@ load(
     openapi_ts_bin = "bin",
 )
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component", "post_deploy_canary")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree", "viteplus_server_plugin_bundles")
 
 package(default_visibility = ["//visibility:public"])
@@ -28,48 +28,8 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "verself-web",
     job_spec = "nomad.hcl",
-    post_deploy_canaries = [
-        ":medium_browser_canary",
-        ":large_guardian_oidc_canary",
-    ],
     requires = ["nomad:job:electric"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-post_deploy_canary(
-    name = "medium_browser_canary",
-    args = [
-        "--site",
-        "{site}",
-        "--component",
-        "{component}",
-        "--job-id",
-        "{job_id}",
-        "--deploy-run-key",
-        "{deploy_run_key}",
-    ],
-    canary_size = "medium",
-    canary_timeout = "90s",
-    kind = "browser",
-    target = ":e2e_smoke",
-)
-
-post_deploy_canary(
-    name = "large_guardian_oidc_canary",
-    args = [
-        "--site",
-        "{site}",
-        "--component",
-        "{component}",
-        "--job-id",
-        "{job_id}",
-        "--deploy-run-key",
-        "{deploy_run_key}",
-    ],
-    canary_size = "large",
-    canary_timeout = "2m",
-    kind = "browser",
-    target = ":e2e_guardian_oidc",
 )
 
 viteplus_app(

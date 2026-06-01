@@ -25,7 +25,7 @@
     mode: "{{ item.mode }}"
   loop:
     - { path: "{{ pomerium_config_dir }}", owner: root, group: pomerium, mode: "0750" }
-    - { path: "{{ pomerium_credstore_dir }}", owner: root, group: pomerium, mode: "0750" }
+    - { path: "{{ pomerium_secret_dir }}", owner: root, group: pomerium, mode: "0750" }
     - { path: "{{ pomerium_data_dir }}", owner: pomerium, group: pomerium, mode: "0750" }
     - { path: "{{ pomerium_log_dir }}", owner: pomerium, group: adm, mode: "2750" }
   loop_control:
@@ -37,9 +37,7 @@
       - (pomerium_operator_allowed_domains | length) + (pomerium_operator_allowed_emails | length) > 0
       - pomerium_operator_http_routes | length > 0
       - pomerium_ssh_address | length > 0
-      - pomerium_ssh_route_name | length > 0
-      - pomerium_ssh_upstream | length > 0
-      - pomerium_ssh_allowed_user | length > 0
+      - pomerium_ssh_routes | length > 0
     fail_msg: >-
       Pomerium operator access needs at least one allowed email domain or
       explicit email, at least one operator HTTP upstream, and an SSH route
@@ -230,8 +228,8 @@
       - "{{ pomerium_oidc_redirect_uri }}"
     zitadel_oauth_app_post_logout_redirect_uris:
       - "{{ pomerium_oidc_post_logout_redirect_uri }}"
-    zitadel_oauth_app_credstore_dir: "{{ pomerium_credstore_dir }}"
-    zitadel_oauth_app_credstore_group: pomerium
+    zitadel_oauth_app_state_dir: "{{ pomerium_secret_dir }}"
+    zitadel_oauth_app_state_group: pomerium
     zitadel_oauth_app_auth_method_type: OIDC_AUTH_METHOD_TYPE_POST
     zitadel_oauth_app_grant_types:
       - OIDC_GRANT_TYPE_AUTHORIZATION_CODE

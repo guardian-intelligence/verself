@@ -15,6 +15,14 @@ job "verself-web" {
       user = "verself-web"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      vault {
+        role = "verself-web-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://verself-web"
         destination = "local"
@@ -37,7 +45,6 @@ job "verself-web" {
         OTEL_SERVICE_NAME = "verself-web"
         PORT = "$${NOMAD_PORT_http}"
         PRODUCT_BASE_URL = "__VERSELF_PRODUCT_BASE_URL__"
-        VERSELF_CRED_ELECTRIC_API_SECRET = "/etc/credstore/verself-web/electric-api-secret"
         VERSELF_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
         VERSELF_SUPERVISOR = "nomad"
       }
@@ -64,6 +71,15 @@ job "verself-web" {
           interval = "1s"
           timeout = "3s"
         }
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/electric.env"
+        perms = "0600"
+        data = <<-EOT
+VERSELF_CRED_VALUE_ELECTRIC_IAM_API_SECRET={{ with secret "kv-runtime/data/secret/org/electric-iam.api_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+        env = true
       }
       template {
         change_mode = "restart"

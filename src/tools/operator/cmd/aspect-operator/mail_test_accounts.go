@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,11 +27,9 @@ import (
 )
 
 const (
-	stalwartManagementRemoteAddr = "127.0.0.1:8090"
-	stalwartAdminPasswordPath    = "/etc/credstore/stalwart/admin-password"
-	testMailboxCredentialDir     = "test-mailboxes"
-	mailZitadelAdminPATPath      = "/etc/zitadel/admin.pat"
-	mailZitadelRemote            = "127.0.0.1:8085"
+	testMailboxCredentialDir = "test-mailboxes"
+	mailZitadelAdminPATPath  = "/etc/zitadel/admin.pat"
+	mailZitadelRemote        = "127.0.0.1:8085"
 )
 
 type mailTestAccountsOptions struct {
@@ -319,26 +316,7 @@ func testMailAccountEmails(domain string) []string {
 }
 
 func newStalwartOperatorClient(rt *opruntime.Runtime) (stalwartClient, error) {
-	rawPassword, err := opruntime.ReadRemoteFile(rt.Ctx, rt.SSH, stalwartAdminPasswordPath)
-	if err != nil {
-		return stalwartClient{}, fmt.Errorf("stalwart: read admin password: %w", err)
-	}
-	password := strings.TrimSpace(string(rawPassword))
-	if password == "" {
-		return stalwartClient{}, errors.New("stalwart: admin password is empty")
-	}
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return rt.SSH.DialContext(ctx, "tcp", stalwartManagementRemoteAddr)
-		},
-		DisableKeepAlives: true,
-	}
-	return stalwartClient{
-		baseURL:  "http://" + stalwartManagementRemoteAddr,
-		username: "admin",
-		password: password,
-		client:   &http.Client{Transport: transport, Timeout: 10 * time.Second},
-	}, nil
+	return stalwartClient{}, errors.New("mail test-accounts requires an OpenBao-backed operator reveal flow; file-based Stalwart admin password access was retired")
 }
 
 func ensureTestMailbox(ctx context.Context, client stalwartClient, domain, email string, resetSecret bool) (string, string, string, error) {
@@ -1168,10 +1146,7 @@ func addDeletedRows(total *int64, result deleteResult) error {
 }
 
 func runZedRelationshipDelete(ctx context.Context, rt *opruntime.Runtime, resource, relation, subject string) error {
-	zedCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	script := `token="$(sudo /bin/cat /etc/credstore/spicedb/grpc-preshared-key)"; exec /opt/verself/profile/bin/zed --endpoint 127.0.0.1:24009 --token "$token" --insecure --skip-version-check --max-retries 0 relationship delete "$@"`
-	return rt.SSH.RunArgv(zedCtx, "", []string{"/bin/bash", "-lc", script, "_", resource, relation, subject}, nil, io.Discard, io.Discard)
+	return errors.New("mail test-accounts delete requires an OpenBao-backed operator reveal flow; file-based SpiceDB preshared-key access was retired")
 }
 
 func encodeZedOpaqueID(value string) string {

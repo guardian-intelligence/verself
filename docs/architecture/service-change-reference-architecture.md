@@ -312,7 +312,7 @@ Every service remains independently deployable. The packet must confirm:
 - migrations, generated artifacts, and validators;
 - recovery status endpoint for declared recoverable sources;
 - config and secrets source;
-- post-deploy canary declarations and rollback or full-cutover behavior.
+- owner-local promotion gates and full-cutover behavior.
 
 Deployable packages own their substrate contract next to the code that consumes
 it. The conventional package layout is:
@@ -323,7 +323,6 @@ src/services/<service>/
   deploy/openbao.yml
   deploy/zitadel.yml
   deploy/clickhouse.yml
-  deploy/credstore.yml
   deploy/gates.yml
 ```
 
@@ -341,19 +340,20 @@ Shared site substrate instances still provide hard service isolation. Each
 service has one PostgreSQL database and owner role, no shared writable schema,
 no cross-service peer mappings, and publications declared by the service that
 owns the tables. Runtime services authenticate to OpenBao through SPIFFE
-JWT-SVIDs mapped to scoped policies, and root tokens remain bootstrap and
-break-glass material. Zitadel remains the human and customer-credential IdP;
-service-specific projects, applications, grants, and actions are declared by
-the owning service or component.
+JWT-SVIDs mapped to scoped policies. The root token returned by
+`bao operator init` is used only inside the bootstrap transaction and is not
+persisted. Disaster recovery may require a temporary root token generated from
+recovery material during an incident or gameday. Zitadel remains the human and
+customer-credential IdP; service-specific projects, applications, grants, and
+actions are declared by the owning service or component.
 
-Deployable units declare live checks at the Bazel edge, next to the
-`nomad_component`, with `post_deploy_canary` or an owner-local gate descriptor.
-Medium checks are the normal rollback gate for a deploy. Large checks are
-deeper browser/CLI canaries for release candidates, high-risk migrations, and
-soak validation. Canary targets exercise product behavior through the same
-public or service-local contracts customers and repo-owned callers use.
-Promotion requires owner-declared ClickHouse evidence, not just scheduler
-health.
+Deployable units declare rollout and promotion behavior in owner-local Nomad
+jobs and gate descriptors. Medium checks are the normal promotion gate for a
+deploy. Large checks are deeper browser/CLI canaries for release candidates,
+high-risk migrations, and soak validation. Canary targets exercise product
+behavior through the same public or service-local contracts customers and
+repo-owned callers use. Promotion requires scheduler health and owner-declared
+ClickHouse evidence.
 
 Release classification is explicit: additive public API, breaking public API,
 internal-only API, policy-only behavior change, operator-only change, runtime

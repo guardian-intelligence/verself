@@ -33,7 +33,7 @@ job "github-integration" {
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "github_integration_service"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/github-integration-service/clickhouse-ca-cert"
+        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
         VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
@@ -53,6 +53,14 @@ job "github-integration" {
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "github-integration-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://github-integration-service"
         destination = "local"
@@ -83,8 +91,7 @@ job "github-integration" {
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "github_integration_service"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/github-integration-service/auth-audience"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/github-integration-service/clickhouse-ca-cert"
+        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
         VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
@@ -93,9 +100,29 @@ job "github-integration" {
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+      }
       resources {
         cpu = 500
         memory = 512
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/provider.env"
+        perms = "0600"
+        data = <<-EOT
+GITHUB_APP_PRIVATE_KEY={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.private_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+GITHUB_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+GITHUB_OAUTH_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.oauth_client_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+        env = true
       }
       restart {
         attempts = 3

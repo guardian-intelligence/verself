@@ -1,0 +1,31 @@
+# gazelle:prefix github.com/verself/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "cloudflare-r2-control-plane_lib",
+    srcs = [
+        "main.go",
+        "server.go",
+        "site.go",
+    ],
+    importpath = "github.com/verself/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/integrations/cloudflare/r2-control-plane/client",
+        "//src/integrations/cloudflare/r2-control-plane/internal/r2control",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)
+
+go_binary(
+    name = "cloudflare-r2-control-plane",
+    embed = [":cloudflare-r2-control-plane_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "cloudflare-r2-control-plane_test",
+    srcs = ["server_test.go"],
+    embed = [":cloudflare-r2-control-plane_lib"],
+)

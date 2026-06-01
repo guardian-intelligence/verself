@@ -60,6 +60,7 @@ nomad_component(
         "nomad:job:iam-service",
         "nomad:job:notifications-service",
         "nomad:job:sandbox-rental",
+        "openbao:api",
         "postgres:server",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],

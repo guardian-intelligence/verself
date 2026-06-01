@@ -16,7 +16,6 @@ import (
 
 	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
-	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
@@ -77,6 +76,7 @@ func run() error {
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	forgejoBaseURL := cfg.RequireURL("SOURCE_FORGEJO_BASE_URL")
 	forgejoOwner := cfg.RequireString("SOURCE_FORGEJO_OWNER")
+	forgejoToken := cfg.RequireString("SOURCE_FORGEJO_AUTOMATION_TOKEN")
 	publicBaseURL := cfg.RequireURL("SOURCE_PUBLIC_BASE_URL")
 	webhookSecret := cfg.CredentialOr("webhook-secret", cfg.String("SOURCE_WEBHOOK_SECRET", ""))
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
@@ -104,14 +104,6 @@ func run() error {
 	credentialClient, err := source.NewSecretsCredentialClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsHTTPClient)
 	if err != nil {
 		return fmt.Errorf("create secrets internal client: %w", err)
-	}
-	runtimeSecretsClient, err := secretsclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
-	if err != nil {
-		return fmt.Errorf("source runtime secrets client: %w", err)
-	}
-	forgejoToken, err := readRuntimeSecret(ctx, runtimeSecretsClient, secretsclient.SourceForgejoAutomationTokenName)
-	if err != nil {
-		return fmt.Errorf("source forgejo provider secret: %w", err)
 	}
 	projectsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceProjects, nil)
 	if err != nil {
@@ -244,26 +236,6 @@ func int32FromInt(value int, field string) int32 {
 		panic(fmt.Sprintf("%s exceeds int32 range: %d", field, value))
 	}
 	return int32(value) // #nosec G115 -- value is checked against the int32 range above.
-}
-
-func readRuntimeSecret(ctx context.Context, client *secretsclient.Client, name secretsclient.SecretName) (string, error) {
-	if client == nil {
-		return "", fmt.Errorf("runtime secrets client is required")
-	}
-	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: name})
-	if err != nil {
-		return "", fmt.Errorf("read runtime secret %s: %w", name, err)
-	}
-	if resp.Result == nil {
-		return "", fmt.Errorf("read runtime secret %s: unexpected status %d: %s", name, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
-	}
-	value := strings.TrimSpace(string(resp.Result.Value))
-	if value == "" {
-		return "", fmt.Errorf("read runtime secret %s: empty value", name)
-	}
-	return value, nil
 }
 
 func limitRequestBodies(next http.Handler, maxBytes int64) http.Handler {

@@ -17,7 +17,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const SeedBundleVersion = "verself.site-bootstrap.seed.v1"
+const (
+	SeedBundleVersion        = "verself.site-bootstrap.seed.v1"
+	RuntimeSeedBundleVersion = "verself.openbao-runtime-seed.v1"
+)
 
 type SeedBundle struct {
 	Version string            `json:"version" yaml:"version"`
@@ -25,18 +28,26 @@ type SeedBundle struct {
 	Values  map[string]string `json:"values" yaml:"values"`
 }
 
+type RuntimeSeedBundle struct {
+	Version string            `json:"version"`
+	Site    string            `json:"site"`
+	Values  map[string]string `json:"values"`
+}
+
 type MaterializeOptions struct {
-	Site       string
-	SeedPath   string
-	VarsPath   string
-	Evidence   string
-	RepoRoot   string
-	ForceWrite bool
+	Site            string
+	SeedPath        string
+	VarsPath        string
+	RuntimeSeedPath string
+	Evidence        string
+	RepoRoot        string
+	ForceWrite      bool
 }
 
 type SeedTemplateOptions struct {
 	Site       string
 	OutputPath string
+	RepoRoot   string
 	ForceWrite bool
 }
 
@@ -64,7 +75,9 @@ type seedKey struct {
 }
 
 var fallbackProvidedSeedKeys = map[string]seedKey{
-	"cloudflare_api_token": {Source: "provider_bootstrap"},
+	"cloudflare_api_token":                       {Source: "provider_bootstrap"},
+	"nomad_artifact_getter_s3_access_key_id":     {Source: "cloudflare_r2_control_plane"},
+	"nomad_artifact_getter_s3_secret_access_key": {Source: "cloudflare_r2_control_plane"},
 
 	"stripe_secret_key":                                         {Source: "provider_runtime"},
 	"stripe_webhook_secret":                                     {Source: "provider_runtime"},
@@ -77,16 +90,6 @@ var fallbackProvidedSeedKeys = map[string]seedKey{
 }
 
 var generatedSeedKeys = map[string]seedKey{
-	"postgresql_admin_password":           {Source: "generated_host"},
-	"postgresql_billing_password":         {Source: "generated_host"},
-	"postgresql_sandbox_rental_password":  {Source: "generated_host"},
-	"postgresql_iam_service_password":     {Source: "generated_host"},
-	"postgresql_email_service_password":   {Source: "generated_host"},
-	"zitadel_db_password":                 {Source: "generated_host"},
-	"zitadel_masterkey":                   {Source: "generated_host"},
-	"zitadel_admin_password":              {Source: "generated_host"},
-	"stalwart_admin_password":             {Source: "generated_host"},
-	"platform_agent_password":             {Source: "generated_host"},
 	"iam_service_email_identity_hmac_key": {Source: "generated_runtime"},
 }
 
@@ -104,7 +107,7 @@ func WriteSeedTemplate(opts SeedTemplateOptions) error {
 		Site:    site,
 		Values:  map[string]string{},
 	}
-	policy, err := loadSeedPolicy("", site)
+	policy, err := loadSeedPolicy(opts.RepoRoot, site)
 	if err != nil {
 		return err
 	}
@@ -118,12 +121,16 @@ func WriteSeedTemplate(opts SeedTemplateOptions) error {
 	return writePrivateFile(out, body, opts.ForceWrite)
 }
 
-func ValidateSeedBundle(site, path string) (Evidence, error) {
+func ValidateSeedBundle(site, path string, repoRoot ...string) (Evidence, error) {
 	bundle, err := readSeedBundle(path)
 	if err != nil {
 		return Evidence{}, err
 	}
-	policy, err := loadSeedPolicy("", site)
+	root := ""
+	if len(repoRoot) > 0 {
+		root = repoRoot[0]
+	}
+	policy, err := loadSeedPolicy(root, site)
 	if err != nil {
 		return Evidence{}, err
 	}
@@ -189,9 +196,26 @@ func MaterializeSeedBundle(opts MaterializeOptions) (Evidence, error) {
 		return Evidence{}, err
 	}
 
-	evidence := buildEvidence(opts.Site, values, generated, policy, map[string]string{
+	outputs := map[string]string{
 		"ansible_vars": opts.VarsPath,
-	})
+	}
+	if strings.TrimSpace(opts.RuntimeSeedPath) != "" {
+		runtimeSeed, err := buildRuntimeSeedBundle(opts.RepoRoot, opts.Site, values)
+		if err != nil {
+			return Evidence{}, err
+		}
+		runtimeSeedBody, err := json.MarshalIndent(runtimeSeed, "", "  ")
+		if err != nil {
+			return Evidence{}, fmt.Errorf("encode OpenBao runtime seed: %w", err)
+		}
+		runtimeSeedBody = append(runtimeSeedBody, '\n')
+		if err := writePrivateFile(opts.RuntimeSeedPath, runtimeSeedBody, opts.ForceWrite); err != nil {
+			return Evidence{}, err
+		}
+		outputs["openbao_runtime_seed"] = opts.RuntimeSeedPath
+	}
+
+	evidence := buildEvidence(opts.Site, values, generated, policy, outputs)
 	evidenceBody, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		return Evidence{}, fmt.Errorf("encode evidence: %w", err)
@@ -201,6 +225,31 @@ func MaterializeSeedBundle(opts MaterializeOptions) (Evidence, error) {
 		return Evidence{}, err
 	}
 	return evidence, nil
+}
+
+func buildRuntimeSeedBundle(repoRoot, site string, values map[string]string) (RuntimeSeedBundle, error) {
+	keys, err := loadRuntimeSiteSecretKeys(repoRoot)
+	if err != nil {
+		return RuntimeSeedBundle{}, err
+	}
+	seed := RuntimeSeedBundle{
+		Version: RuntimeSeedBundleVersion,
+		Site:    site,
+		Values:  map[string]string{},
+	}
+	var missing []string
+	for _, key := range keys {
+		value := strings.TrimSpace(values[key])
+		if value == "" {
+			missing = append(missing, key)
+			continue
+		}
+		seed.Values[key] = value
+	}
+	if len(missing) > 0 {
+		return RuntimeSeedBundle{}, fmt.Errorf("missing OpenBao runtime seed values: %s", strings.Join(missing, ", "))
+	}
+	return seed, nil
 }
 
 func readSeedBundle(path string) (SeedBundle, error) {
@@ -286,9 +335,6 @@ func validateCompleteValues(site string, values map[string]string, policy seedPo
 	if len(missing) > 0 {
 		return fmt.Errorf("missing bootstrap values after materialization: %s", strings.Join(missing, ", "))
 	}
-	if len(values["zitadel_masterkey"]) != 32 {
-		return fmt.Errorf("zitadel_masterkey must be exactly 32 bytes")
-	}
 	return validateProviderIsolation(site, values)
 }
 
@@ -340,8 +386,6 @@ func buildEvidence(site string, values map[string]string, generated map[string]b
 func generateSecret(key string) (string, error) {
 	size := 32
 	switch key {
-	case "zitadel_masterkey":
-		size = 24 // RawURLEncoding produces the 32-byte ASCII key Zitadel requires.
 	case "iam_service_email_identity_hmac_key":
 		size = 64
 	}

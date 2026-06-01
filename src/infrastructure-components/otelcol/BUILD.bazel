@@ -82,7 +82,6 @@ nomad_component(
     job_spec = "nomad.hcl",
     provides = ["otelcol:otlp"],
     requires = [
-        "artifact-origin",
         "postgres:server",
     ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],

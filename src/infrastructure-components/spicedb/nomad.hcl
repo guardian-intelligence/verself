@@ -46,13 +46,21 @@ job "spicedb" {
       user = "spicedb"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      vault {
+        role = "spicedb-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud = ["vault.io"]
+        ttl = "1h"
+      }
       artifact {
         source = "verself-artifact://spicedb-runtime"
         destination = "local"
         chown = true
       }
       config {
-        args = ["-ec", "set -a\n. /etc/spicedb/spicedb.env\nset +a\nexec local/bin/spicedb serve \\\n  --datastore-engine=postgres \\\n  --datastore-conn-uri='postgres://spicedb@/spicedb?host=/var/run/postgresql&sslmode=disable&application_name=spicedb' \\\n  --datastore-conn-pool-read-max-open=8 \\\n  --datastore-conn-pool-read-min-open=1 \\\n  --datastore-conn-pool-write-max-open=4 \\\n  --datastore-conn-pool-write-min-open=1 \\\n  --grpc-addr=\"127.0.0.1:$${NOMAD_PORT_grpc}\" \\\n  --metrics-addr=\"127.0.0.1:$${NOMAD_PORT_metrics}\" \\\n  --http-enabled=false \\\n  --telemetry-endpoint= \\\n  --skip-release-check \\\n  --log-format=json\n"]
+        args = ["-ec", "exec local/bin/spicedb serve \\\n  --datastore-engine=postgres \\\n  --datastore-conn-uri='postgres://spicedb@/spicedb?host=/var/run/postgresql&sslmode=disable&application_name=spicedb' \\\n  --datastore-conn-pool-read-max-open=8 \\\n  --datastore-conn-pool-read-min-open=1 \\\n  --datastore-conn-pool-write-max-open=4 \\\n  --datastore-conn-pool-write-min-open=1 \\\n  --grpc-addr=\"127.0.0.1:$${NOMAD_PORT_grpc}\" \\\n  --metrics-addr=\"127.0.0.1:$${NOMAD_PORT_metrics}\" \\\n  --http-enabled=false \\\n  --telemetry-endpoint= \\\n  --skip-release-check \\\n  --log-format=json\n"]
         command = "/bin/sh"
       }
       env {
@@ -64,6 +72,15 @@ job "spicedb" {
       resources {
         cpu = 500
         memory = 1024
+      }
+      template {
+        destination = "secrets/spicedb.env"
+        perms = "0600"
+        env = true
+        change_mode = "restart"
+        data = <<EOH
+SPICEDB_GRPC_PRESHARED_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOH
       }
       restart {
         attempts = 3

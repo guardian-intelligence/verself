@@ -1,0 +1,19 @@
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/infrastructure-components/postgresql:postgresql_runtime": "postgresql-runtime",
+        "//src/tools/deployment/cmd/substrate-control-plane-apply:substrate-control-plane-apply_nomad_artifact": "substrate-control-plane-apply",
+    },
+    component = "substrate_control_plane",
+    deploy_phase = "platform",
+    job_id = "substrate-control-plane",
+    job_spec = "nomad.hcl",
+    provides = ["substrate:control-plane"],
+    requires = [
+        "openbao:api",
+        "postgres:server",
+    ],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

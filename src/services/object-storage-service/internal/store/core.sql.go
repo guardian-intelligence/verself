@@ -127,7 +127,7 @@ func (q *Queries) AliasesByBucket(ctx context.Context, arg AliasesByBucketParams
 }
 
 const bucketByID = `-- name: BucketByID :one
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+SELECT bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
        lifecycle_json, created_at, created_by, updated_at, updated_by
 FROM object_storage_buckets
 WHERE bucket_id = $1
@@ -144,7 +144,8 @@ func (q *Queries) BucketByID(ctx context.Context, arg BucketByIDParams) (ObjectS
 		&i.BucketID,
 		&i.OrgID,
 		&i.BucketName,
-		&i.GarageBucketID,
+		&i.Provider,
+		&i.ProviderBucketID,
 		&i.QuotaBytes,
 		&i.QuotaObjects,
 		&i.LifecycleJson,
@@ -157,7 +158,7 @@ func (q *Queries) BucketByID(ctx context.Context, arg BucketByIDParams) (ObjectS
 }
 
 const bucketByName = `-- name: BucketByName :one
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+SELECT bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
        lifecycle_json, created_at, created_by, updated_at, updated_by
 FROM object_storage_buckets
 WHERE bucket_name = $1
@@ -174,7 +175,8 @@ func (q *Queries) BucketByName(ctx context.Context, arg BucketByNameParams) (Obj
 		&i.BucketID,
 		&i.OrgID,
 		&i.BucketName,
-		&i.GarageBucketID,
+		&i.Provider,
+		&i.ProviderBucketID,
 		&i.QuotaBytes,
 		&i.QuotaObjects,
 		&i.LifecycleJson,
@@ -214,27 +216,28 @@ func (q *Queries) CreateAlias(ctx context.Context, arg CreateAliasParams) error 
 
 const createBucket = `-- name: CreateBucket :exec
 INSERT INTO object_storage_buckets (
-    bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+    bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
     lifecycle_json, created_at, created_by, updated_at, updated_by
 )
 VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7::jsonb, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7,
+    $8::jsonb, $9, $10, $11, $12
 )
 `
 
 type CreateBucketParams struct {
-	BucketID       uuid.UUID
-	OrgID          string
-	BucketName     string
-	GarageBucketID string
-	QuotaBytes     pgtype.Int8
-	QuotaObjects   pgtype.Int8
-	LifecycleJson  []byte
-	CreatedAt      pgtype.Timestamptz
-	CreatedBy      string
-	UpdatedAt      pgtype.Timestamptz
-	UpdatedBy      string
+	BucketID         uuid.UUID
+	OrgID            string
+	BucketName       string
+	Provider         string
+	ProviderBucketID string
+	QuotaBytes       pgtype.Int8
+	QuotaObjects     pgtype.Int8
+	LifecycleJson    []byte
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        string
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        string
 }
 
 func (q *Queries) CreateBucket(ctx context.Context, arg CreateBucketParams) error {
@@ -242,7 +245,8 @@ func (q *Queries) CreateBucket(ctx context.Context, arg CreateBucketParams) erro
 		arg.BucketID,
 		arg.OrgID,
 		arg.BucketName,
-		arg.GarageBucketID,
+		arg.Provider,
+		arg.ProviderBucketID,
 		arg.QuotaBytes,
 		arg.QuotaObjects,
 		arg.LifecycleJson,
@@ -442,7 +446,7 @@ func (q *Queries) DeleteCredential(ctx context.Context, arg DeleteCredentialPara
 }
 
 const listBuckets = `-- name: ListBuckets :many
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+SELECT bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
        lifecycle_json, created_at, created_by, updated_at, updated_by
 FROM object_storage_buckets
 ORDER BY created_at DESC, bucket_id DESC
@@ -461,7 +465,8 @@ func (q *Queries) ListBuckets(ctx context.Context) ([]ObjectStorageBucket, error
 			&i.BucketID,
 			&i.OrgID,
 			&i.BucketName,
-			&i.GarageBucketID,
+			&i.Provider,
+			&i.ProviderBucketID,
 			&i.QuotaBytes,
 			&i.QuotaObjects,
 			&i.LifecycleJson,
@@ -481,7 +486,7 @@ func (q *Queries) ListBuckets(ctx context.Context) ([]ObjectStorageBucket, error
 }
 
 const listBucketsByOrg = `-- name: ListBucketsByOrg :many
-SELECT bucket_id, org_id, bucket_name, garage_bucket_id, quota_bytes, quota_objects,
+SELECT bucket_id, org_id, bucket_name, provider, provider_bucket_id, quota_bytes, quota_objects,
        lifecycle_json, created_at, created_by, updated_at, updated_by
 FROM object_storage_buckets
 WHERE org_id = $1
@@ -505,7 +510,8 @@ func (q *Queries) ListBucketsByOrg(ctx context.Context, arg ListBucketsByOrgPara
 			&i.BucketID,
 			&i.OrgID,
 			&i.BucketName,
-			&i.GarageBucketID,
+			&i.Provider,
+			&i.ProviderBucketID,
 			&i.QuotaBytes,
 			&i.QuotaObjects,
 			&i.LifecycleJson,
@@ -525,7 +531,7 @@ func (q *Queries) ListBucketsByOrg(ctx context.Context, arg ListBucketsByOrgPara
 }
 
 const resolveBucketAlias = `-- name: ResolveBucketAlias :one
-SELECT b.bucket_id, b.org_id, b.bucket_name, b.garage_bucket_id, b.quota_bytes, b.quota_objects,
+SELECT b.bucket_id, b.org_id, b.bucket_name, b.provider, b.provider_bucket_id, b.quota_bytes, b.quota_objects,
        b.lifecycle_json, b.created_at, b.created_by, b.updated_at, b.updated_by,
        a.alias, a.bucket_id AS alias_bucket_id, a.prefix, a.service_tag, a.created_at AS alias_created_at, a.created_by AS alias_created_by
 FROM object_storage_bucket_aliases a
@@ -538,23 +544,24 @@ type ResolveBucketAliasParams struct {
 }
 
 type ResolveBucketAliasRow struct {
-	BucketID       uuid.UUID
-	OrgID          string
-	BucketName     string
-	GarageBucketID string
-	QuotaBytes     pgtype.Int8
-	QuotaObjects   pgtype.Int8
-	LifecycleJson  []byte
-	CreatedAt      pgtype.Timestamptz
-	CreatedBy      string
-	UpdatedAt      pgtype.Timestamptz
-	UpdatedBy      string
-	Alias          string
-	AliasBucketID  uuid.UUID
-	Prefix         string
-	ServiceTag     string
-	AliasCreatedAt pgtype.Timestamptz
-	AliasCreatedBy string
+	BucketID         uuid.UUID
+	OrgID            string
+	BucketName       string
+	Provider         string
+	ProviderBucketID string
+	QuotaBytes       pgtype.Int8
+	QuotaObjects     pgtype.Int8
+	LifecycleJson    []byte
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        string
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        string
+	Alias            string
+	AliasBucketID    uuid.UUID
+	Prefix           string
+	ServiceTag       string
+	AliasCreatedAt   pgtype.Timestamptz
+	AliasCreatedBy   string
 }
 
 func (q *Queries) ResolveBucketAlias(ctx context.Context, arg ResolveBucketAliasParams) (ResolveBucketAliasRow, error) {
@@ -564,7 +571,8 @@ func (q *Queries) ResolveBucketAlias(ctx context.Context, arg ResolveBucketAlias
 		&i.BucketID,
 		&i.OrgID,
 		&i.BucketName,
-		&i.GarageBucketID,
+		&i.Provider,
+		&i.ProviderBucketID,
 		&i.QuotaBytes,
 		&i.QuotaObjects,
 		&i.LifecycleJson,

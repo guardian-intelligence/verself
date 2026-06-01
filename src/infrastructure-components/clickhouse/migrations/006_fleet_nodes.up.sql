@@ -34,6 +34,6 @@ PARTITION BY toYYYYMM(toDate(observed_at))
 ORDER BY (region, datacenter, node_pool, node_id, observed_at)
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
-CREATE USER IF NOT EXISTS nomad_observer IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/nomad-observer' HOST LOCAL;
-ALTER USER nomad_observer IDENTIFIED WITH ssl_certificate SAN 'URI:spiffe://spiffe.verself.sh/svc/nomad-observer' HOST LOCAL;
+CREATE USER IF NOT EXISTS nomad_observer IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/nomad-observer' HOST LOCAL;
+ALTER USER nomad_observer IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/nomad-observer' HOST LOCAL;
 GRANT INSERT ON verself.fleet_nodes TO nomad_observer;

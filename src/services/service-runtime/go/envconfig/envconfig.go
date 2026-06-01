@@ -1,7 +1,7 @@
 // Package envconfig loads process configuration from environment variables,
-// explicit credential paths, and systemd LoadCredential= files. It is the
-// single source of truth for how Verself Go binaries consume their runtime
-// settings.
+// explicit credential values and paths, and systemd LoadCredential= files. It
+// is the single source of truth for how Verself Go binaries consume their
+// runtime settings.
 //
 // The Loader accumulates errors instead of failing on the first missing value
 // so one misconfigured deploy reports every missing env and credential at once
@@ -23,7 +23,10 @@ import (
 // per-unit credential directory (LoadCredential=, LoadCredentialEncrypted=).
 const CredentialsDirectoryEnv = "CREDENTIALS_DIRECTORY"
 
-const credentialPathPrefix = "VERSELF_CRED_"
+const (
+	credentialPathPrefix  = "VERSELF_CRED_"
+	credentialValuePrefix = "VERSELF_CRED_VALUE_"
+)
 
 // Loader accumulates every env/credential failure encountered during startup.
 // Call Err() once all values have been read.
@@ -238,6 +241,13 @@ func (l *Loader) RequireCredentialPath(name string) string {
 // RequireCredential reads <CREDENTIALS_DIRECTORY>/<name> and returns the
 // trimmed file contents. An empty file is treated as a missing credential.
 func (l *Loader) RequireCredential(name string) string {
+	if value, ok := explicitCredentialValue(name); ok {
+		if value == "" {
+			l.fail(credentialValueEnv(name), "is empty")
+			return ""
+		}
+		return value
+	}
 	path := l.CredentialPath(name)
 	if path == "" {
 		return ""
@@ -259,6 +269,12 @@ func (l *Loader) RequireCredential(name string) string {
 // otherwise. Use only for genuinely optional credentials (e.g. mailbox
 // forward-to overrides). No error is accumulated.
 func (l *Loader) CredentialOr(name, fallback string) string {
+	if value, ok := explicitCredentialValue(name); ok {
+		if value == "" {
+			return fallback
+		}
+		return value
+	}
 	if path, ok := explicitCredentialPath(name); ok {
 		if !filepath.IsAbs(path) {
 			return fallback
@@ -293,9 +309,22 @@ func explicitCredentialPath(name string) (string, bool) {
 	return value, value != ""
 }
 
+func explicitCredentialValue(name string) (string, bool) {
+	raw, ok := os.LookupEnv(credentialValueEnv(name))
+	return strings.TrimSpace(raw), ok
+}
+
 func credentialPathEnv(name string) string {
+	return credentialEnv(credentialPathPrefix, name)
+}
+
+func credentialValueEnv(name string) string {
+	return credentialEnv(credentialValuePrefix, name)
+}
+
+func credentialEnv(prefix, name string) string {
 	var b strings.Builder
-	b.WriteString(credentialPathPrefix)
+	b.WriteString(prefix)
 	for _, r := range name {
 		switch {
 		case r >= 'a' && r <= 'z':
@@ -309,25 +338,4 @@ func credentialPathEnv(name string) string {
 		}
 	}
 	return b.String()
-}
-
-// RequireFile reads the absolute path and returns its trimmed contents.
-// Records a failure if the file is missing, unreadable, or empty.
-func (l *Loader) RequireFile(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		l.errs = append(l.errs, errors.New("envconfig: RequireFile called with empty path"))
-		return ""
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		l.failErr("file "+path, err)
-		return ""
-	}
-	value := strings.TrimSpace(string(data))
-	if value == "" {
-		l.fail("file "+path, "is empty")
-		return ""
-	}
-	return value
 }

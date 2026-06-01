@@ -19,6 +19,16 @@ job "secrets-service" {
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "secrets-service-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       artifact {
         source = "verself-artifact://secrets-service"
         destination = "local"
@@ -39,12 +49,20 @@ job "secrets-service" {
         SECRETS_RUNTIME_SECRET_NAMESPACE = "runtime"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/secrets-service/auth-audience"
-        VERSELF_CRED_OPENBAO_CA_CERT = "/etc/credstore/secrets-service/openbao-ca-cert"
+        VERSELF_CRED_OPENBAO_CA_CERT = "/etc/verself/openbao/ca.pem"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
       }
       resources {
         cpu = 500
@@ -86,6 +104,7 @@ job "secrets-service" {
       template {
         change_mode = "restart"
         destination = "secrets/upstreams.env"
+        perms = "0600"
         data = <<-EOT
 SECRETS_OPENBAO_ADDR=https://{{- with nomadService "openbao-api" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT

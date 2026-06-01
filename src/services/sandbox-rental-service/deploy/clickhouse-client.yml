@@ -1,2 +1,0 @@
-clickhouse_client_ca_credentials:
-  - { path: /etc/credstore/sandbox-rental/clickhouse-ca-cert, group: sandbox_rental }

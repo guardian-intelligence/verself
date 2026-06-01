@@ -3,8 +3,7 @@
   ansible.builtin.assert:
     that:
       - otelcol_postgresql_user is match('^[a-z][a-z0-9_]*$')
-      - otelcol_clickhouse_user is match('^[a-z][a-z0-9_]*$')
-    fail_msg: "otelcol PostgreSQL and ClickHouse users must be simple SQL identifiers."
+    fail_msg: "otelcol PostgreSQL user must be a simple SQL identifier."
 
 - name: Create otelcol system group
   ansible.builtin.group:
@@ -61,24 +60,4 @@
     query: GRANT pg_monitor TO "{{ otelcol_postgresql_user }}"
   become: true
   become_user: postgres
-  changed_when: false
-
-- name: Converge otelcol ClickHouse certificate role
-  ansible.builtin.command:
-    argv:
-      - sudo
-      - -u
-      - "{{ otelcol_clickhouse_operator_user }}"
-      - "{{ verself_bin }}/clickhouse-client"
-      - --config-file
-      - "{{ otelcol_clickhouse_operator_config_path }}"
-      - --user
-      - "{{ otelcol_clickhouse_operator_user }}"
-      - --multiquery
-    stdin: |
-      CREATE USER IF NOT EXISTS {{ otelcol_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ otelcol_clickhouse_spiffe_id }}' HOST LOCAL;
-      ALTER USER {{ otelcol_clickhouse_user }} IDENTIFIED WITH ssl_certificate SAN 'URI:{{ otelcol_clickhouse_spiffe_id }}' HOST LOCAL;
-      GRANT INSERT ON default.* TO {{ otelcol_clickhouse_user }};
-      GRANT SELECT ON default.otel_logs TO {{ otelcol_clickhouse_user }};
-      GRANT SELECT (Timestamp, SpanAttributes, SpanName, TraceId, SpanId, ServiceName) ON default.otel_traces TO {{ otelcol_clickhouse_user }};
   changed_when: false

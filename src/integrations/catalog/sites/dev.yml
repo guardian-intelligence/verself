@@ -15,7 +15,6 @@ bootstrap_exceptions:
       - cloudflare_api_token
     storage_targets:
       - controller_openbao
-      - host_credstore
     allowed_uses:
       - delegate or reconcile dev.verself.sh DNS records
       - haproxy lego DNS-01 certificate renewal for dev names
@@ -41,7 +40,7 @@ integrations:
     credentials:
       - key: edge.cloudflare.parent_zone_dns_token
         source: bootstrap_session
-        target: host_credstore
+        target: controller_openbao
         target_store: controller_openbao
         openbao_name: edge.cloudflare.parent_zone_dns_token
         isolation: bootstrap_shared
@@ -102,16 +101,3 @@ integrations:
         target_store: site_openbao
         openbao_name: github-integration-service.github.oauth_client_secret
     reason: Dev gets a separate GitHub App, OAuth client, webhook secret, private key, and runner prefix.
-  - key: runtime.generated_host_secrets
-    provider: verself
-    replacement: internal_runtime
-    owner: src/host
-    purpose: host_and_service_bootstrap
-    generation: host_convergence_to_site_openbao
-    credentials:
-      - key: iam-service.email_identity.hmac_key
-        source: generated
-        target: runtime_secret
-        target_store: site_openbao
-        openbao_name: iam-service.email_identity.hmac_key
-    reason: These values are generated or hosted by Verself components.

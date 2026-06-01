@@ -37,7 +37,7 @@ job "nomad-observer" {
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "nomad_observer"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/nomad-observer/clickhouse-ca-cert"
+        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_SUPERVISOR = "nomad"
       }
 

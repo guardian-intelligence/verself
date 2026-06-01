@@ -52,7 +52,7 @@
     mode: "{{ item.mode }}"
   loop:
     - { path: "{{ spicedb_config_dir }}", owner: root, group: "{{ spicedb_system_group }}", mode: "0750" }
-    - { path: "{{ spicedb_credstore_dir }}", owner: root, group: "{{ spicedb_system_group }}", mode: "0750" }
+    - { path: "{{ spicedb_secret_dir }}", owner: root, group: "{{ spicedb_system_group }}", mode: "0750" }
     - { path: "{{ spicedb_state_dir }}", owner: "{{ spicedb_system_user }}", group: "{{ spicedb_system_group }}", mode: "0750" }
   loop_control:
     label: "{{ item.path }}"

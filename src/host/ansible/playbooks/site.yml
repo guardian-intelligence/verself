@@ -19,11 +19,62 @@
   tags:
     - bootstrap
     - foundation
+  pre_tasks:
+    - name: Assert host tools artifact input
+      ansible.builtin.assert:
+        that:
+          - verself_host_tools_artifact is defined
+          - verself_host_tools_artifact | length > 0
+        fail_msg: "site.yml requires verself_host_tools_artifact from Bazel."
+
+    - name: Install Verself bootstrap host tools
+      ansible.builtin.unarchive:
+        src: "{{ verself_host_tools_artifact }}"
+        dest: /
+        owner: root
+        group: root
+        mode: "0755"
   roles:
     - role: base
       tags:
         - base
         - packages
+
+- name: "SPIRE bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - spire
+    - identity
+  roles:
+    - role: spire
+      tags:
+        - spire
+        - identity
+    - role: spire_registrations
+      tags:
+        - spire
+        - identity
+
+- name: "ClickHouse bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - clickhouse
+    - observability
+  roles:
+    - role: clickhouse
+      tags:
+        - clickhouse
+        - observability
 
 - name: "Nomad bootstrap"
   hosts: infra

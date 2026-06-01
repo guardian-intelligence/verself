@@ -7,7 +7,8 @@ CREATE TABLE object_storage_buckets (
     bucket_id        UUID        PRIMARY KEY,
     org_id           TEXT        NOT NULL,
     bucket_name      TEXT        NOT NULL UNIQUE,
-    garage_bucket_id TEXT        NOT NULL UNIQUE,
+    provider         TEXT        NOT NULL CHECK (provider IN ('garage', 'cloudflare_r2')),
+    provider_bucket_id TEXT      NOT NULL,
     quota_bytes      BIGINT      NULL CHECK (quota_bytes IS NULL OR quota_bytes >= 0),
     quota_objects    BIGINT      NULL CHECK (quota_objects IS NULL OR quota_objects >= 0),
     lifecycle_json   JSONB       NOT NULL DEFAULT '[]'::jsonb,
@@ -16,6 +17,9 @@ CREATE TABLE object_storage_buckets (
     updated_at       TIMESTAMPTZ NOT NULL,
     updated_by       TEXT        NOT NULL
 );
+
+CREATE UNIQUE INDEX object_storage_buckets_provider_bucket_idx
+    ON object_storage_buckets (provider, provider_bucket_id);
 
 CREATE INDEX object_storage_buckets_org_created_idx
     ON object_storage_buckets (org_id, created_at DESC);

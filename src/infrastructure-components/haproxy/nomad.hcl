@@ -16,7 +16,7 @@ job "haproxy-upstreams" {
       }
 
       config {
-        args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "local/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "--reload-unit", "haproxy.service", "--daemon"]
+        args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "local/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/opt/verself/profile/lib/haproxy", "--reload-unit", "haproxy.service", "--daemon"]
         command = "local/bin/haproxy-upstreams-apply"
       }
       env {
@@ -45,17 +45,6 @@ backend be_firecracker_forgejo
 [[ with nomadService "forgejo-http" ]]
 [[ range $i, $svc := . ]]
   server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_firecracker_forgejo_srv_[[ $i ]]
-[[ end ]]
-[[ else ]]
-  http-request return status 503 content-type text/plain string "service unavailable"
-[[ end ]]
-
-backend be_garage_nomad_artifacts
-  guid be_garage_nomad_artifacts
-  balance random
-[[ with nomadService "garage-s3" ]]
-[[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_garage_nomad_artifacts_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"
@@ -640,7 +629,7 @@ EOT
         }
         change_script {
           command = "local/bin/haproxy-upstreams-apply"
-          args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "local/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "--reload-unit", "haproxy.service"]
+          args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "local/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/opt/verself/profile/lib/haproxy", "--reload-unit", "haproxy.service"]
           timeout = "5s"
           fail_on_error = true
         }

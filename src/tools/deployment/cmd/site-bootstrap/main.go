@@ -43,6 +43,7 @@ func seedTemplate(args []string) error {
 	fs := flag.NewFlagSet("seed-template", flag.ContinueOnError)
 	site := fs.String("site", "prod", "Deployment site.")
 	out := fs.String("out", "", "Seed template output path.")
+	repoRoot := fs.String("repo-root", "", "Repository root for owner-local deployment declarations.")
 	force := fs.Bool("force", false, "Overwrite an existing output file.")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -54,6 +55,7 @@ func seedTemplate(args []string) error {
 	if err := sitebootstrap.WriteSeedTemplate(sitebootstrap.SeedTemplateOptions{
 		Site:       *site,
 		OutputPath: output,
+		RepoRoot:   *repoRoot,
 		ForceWrite: *force,
 	}); err != nil {
 		return err
@@ -66,6 +68,7 @@ func seedValidate(args []string) error {
 	fs := flag.NewFlagSet("seed-validate", flag.ContinueOnError)
 	site := fs.String("site", "prod", "Deployment site.")
 	seed := fs.String("seed-bundle", "", "Operator-provided seed bundle path.")
+	repoRoot := fs.String("repo-root", "", "Repository root for owner-local deployment declarations.")
 	format := fs.String("format", "text", "Output format: text or json.")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -74,7 +77,7 @@ func seedValidate(args []string) error {
 	if seedPath == "" {
 		seedPath = defaultSeedBundlePath(*site)
 	}
-	evidence, err := sitebootstrap.ValidateSeedBundle(*site, seedPath)
+	evidence, err := sitebootstrap.ValidateSeedBundle(*site, seedPath, *repoRoot)
 	if err != nil {
 		return err
 	}
@@ -85,7 +88,9 @@ func seedMaterialize(args []string) error {
 	fs := flag.NewFlagSet("seed-materialize", flag.ContinueOnError)
 	site := fs.String("site", "prod", "Deployment site.")
 	seed := fs.String("seed-bundle", "", "Operator-provided seed bundle path.")
+	repoRoot := fs.String("repo-root", "", "Repository root for owner-local deployment declarations.")
 	vars := fs.String("out-vars", "", "Ansible vars output path.")
+	runtimeSeed := fs.String("out-openbao-runtime-seed", "", "Filtered OpenBao runtime seed output path.")
 	evidence := fs.String("out-evidence", "", "Fingerprint evidence output path.")
 	force := fs.Bool("force", false, "Overwrite existing generated outputs.")
 	if err := fs.Parse(args); err != nil {
@@ -99,16 +104,22 @@ func seedMaterialize(args []string) error {
 	if varsPath == "" {
 		varsPath = defaultVarsPath(*site)
 	}
+	runtimeSeedPath := *runtimeSeed
+	if runtimeSeedPath == "" {
+		runtimeSeedPath = defaultRuntimeSeedPath(*site)
+	}
 	evidencePath := *evidence
 	if evidencePath == "" {
 		evidencePath = defaultEvidencePath(*site)
 	}
 	report, err := sitebootstrap.MaterializeSeedBundle(sitebootstrap.MaterializeOptions{
-		Site:       *site,
-		SeedPath:   seedPath,
-		VarsPath:   varsPath,
-		Evidence:   evidencePath,
-		ForceWrite: *force,
+		Site:            *site,
+		SeedPath:        seedPath,
+		VarsPath:        varsPath,
+		RuntimeSeedPath: runtimeSeedPath,
+		Evidence:        evidencePath,
+		RepoRoot:        *repoRoot,
+		ForceWrite:      *force,
 	})
 	if err != nil {
 		return err
@@ -210,6 +221,10 @@ func defaultSeedBundlePath(site string) string {
 
 func defaultVarsPath(site string) string {
 	return filepath.Join(".verself", "site-bootstrap", site, "ansible-secrets.json")
+}
+
+func defaultRuntimeSeedPath(site string) string {
+	return filepath.Join(".verself", "site-bootstrap", site, "openbao-runtime-seed.json")
 }
 
 func defaultEvidencePath(site string) string {

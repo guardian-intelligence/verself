@@ -39,6 +39,14 @@ job "electric" {
       user = "root"
       kill_signal = "SIGTERM"
       kill_timeout = "45s"
+      vault {
+        role = "electric-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://electric-runtime"
         destination = "local"
@@ -46,13 +54,22 @@ job "electric" {
       }
       config {
         command = "/bin/sh"
-        args = ["-ec", "pg_password=\"$(tr -d '\\n' </etc/credstore/electric/pg-password)\"\napi_secret=\"$(tr -d '\\n' </etc/credstore/electric/api-secret)\"\ninstall -d -m 0700 secrets\nprintf 'DATABASE_URL=postgresql://electric:%s@127.0.0.1:5432/sandbox_rental\\nELECTRIC_SECRET=%s\\n' \"$pg_password\" \"$api_secret\" > secrets/electric.env\nchmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric \\\n  --instance-id=electric \\\n  --replication-stream-id=default \\\n  --db-pool-size=15 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
+        args = ["-ec", "chmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric \\\n  --instance-id=electric \\\n  --replication-stream-id=default \\\n  --db-pool-size=15 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
       }
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "electric"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        destination = "secrets/electric.env"
+        perms = "0600"
+        change_mode = "restart"
+        data = <<EOH
+DATABASE_URL=postgresql://electric:{{ with secret "kv-runtime/data/secret/org/electric.pg.password" }}{{ .Data.data.value }}{{ end }}@127.0.0.1:5432/sandbox_rental
+ELECTRIC_SECRET={{ with secret "kv-runtime/data/secret/org/electric.api_secret" }}{{ .Data.data.value }}{{ end }}
+EOH
       }
       resources {
         cpu = 500
@@ -124,6 +141,14 @@ job "electric" {
       user = "root"
       kill_signal = "SIGTERM"
       kill_timeout = "45s"
+      vault {
+        role = "electric-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://electric-runtime"
         destination = "local"
@@ -131,13 +156,22 @@ job "electric" {
       }
       config {
         command = "/bin/sh"
-        args = ["-ec", "pg_password=\"$(tr -d '\\n' </etc/credstore/electric-notifications/pg-password)\"\napi_secret=\"$(tr -d '\\n' </etc/credstore/electric-notifications/api-secret)\"\ninstall -d -m 0700 secrets\nprintf 'DATABASE_URL=postgresql://electric_notifications:%s@127.0.0.1:5432/notifications_service\\nELECTRIC_SECRET=%s\\n' \"$pg_password\" \"$api_secret\" > secrets/electric.env\nchmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric-notifications \\\n  --instance-id=electric-notifications \\\n  --replication-stream-id=notifications \\\n  --db-pool-size=8 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
+        args = ["-ec", "chmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric-notifications \\\n  --instance-id=electric-notifications \\\n  --replication-stream-id=notifications \\\n  --db-pool-size=8 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
       }
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "electric-notifications"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        destination = "secrets/electric.env"
+        perms = "0600"
+        change_mode = "restart"
+        data = <<EOH
+DATABASE_URL=postgresql://electric_notifications:{{ with secret "kv-runtime/data/secret/org/electric-notifications.pg.password" }}{{ .Data.data.value }}{{ end }}@127.0.0.1:5432/notifications_service
+ELECTRIC_SECRET={{ with secret "kv-runtime/data/secret/org/electric-notifications.api_secret" }}{{ .Data.data.value }}{{ end }}
+EOH
       }
       resources {
         cpu = 500
@@ -209,6 +243,14 @@ job "electric" {
       user = "root"
       kill_signal = "SIGTERM"
       kill_timeout = "45s"
+      vault {
+        role = "electric-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://electric-runtime"
         destination = "local"
@@ -216,13 +258,22 @@ job "electric" {
       }
       config {
         command = "/bin/sh"
-        args = ["-ec", "pg_password=\"$(tr -d '\\n' </etc/credstore/electric-iam/pg-password)\"\napi_secret=\"$(tr -d '\\n' </etc/credstore/verself-web/electric-api-secret)\"\ninstall -d -m 0700 secrets\nprintf 'DATABASE_URL=postgresql://electric_iam:%s@127.0.0.1:5432/iam_service\\nELECTRIC_SECRET=%s\\n' \"$pg_password\" \"$api_secret\" > secrets/electric.env\nchmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric-iam \\\n  --instance-id=electric-iam \\\n  --replication-stream-id=iam \\\n  --db-pool-size=8 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
+        args = ["-ec", "chmod 0600 secrets/electric.env\nruntime_dir=\"$PWD/local/bin\"\nexec \"$runtime_dir/electric-nomad-runner\" \\\n  --ctr=\"$runtime_dir/ctr\" \\\n  --containerd-address=/run/electric-containerd/containerd.sock \\\n  --image=docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176 \\\n  --env-file=\"$PWD/secrets/electric.env\" \\\n  --storage-dir=/var/lib/electric-iam \\\n  --instance-id=electric-iam \\\n  --replication-stream-id=iam \\\n  --db-pool-size=8 \\\n  --runc-binary=\"$runtime_dir/runc\"\n"]
       }
       env {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "electric-iam"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        destination = "secrets/electric.env"
+        perms = "0600"
+        change_mode = "restart"
+        data = <<EOH
+DATABASE_URL=postgresql://electric_iam:{{ with secret "kv-runtime/data/secret/org/electric-iam.pg.password" }}{{ .Data.data.value }}{{ end }}@127.0.0.1:5432/iam_service
+ELECTRIC_SECRET={{ with secret "kv-runtime/data/secret/org/electric-iam.api_secret" }}{{ .Data.data.value }}{{ end }}
+EOH
       }
       resources {
         cpu = 500

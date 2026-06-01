@@ -21,7 +21,7 @@ job "clickhouse-host-install" {
 
       config {
         command = "/bin/sh"
-        args = ["-euc", "src=\"$VERSELF_CLICKHOUSE_HOST_INSTALL/opt\"\ntest -x \"$src/verself/profile/bin/clickhouse\"\ntest -x \"$src/verself/profile/bin/clickhouse-spiffe-bundle-reload\"\ninstall -d -m 0755 /opt\ntar -C \"$src\" -cf - . | tar -C /opt -xf -\n/opt/verself/profile/bin/clickhouse-client --version >/dev/null\n"]
+        args = ["-euc", "src=\"$VERSELF_CLICKHOUSE_HOST_INSTALL/opt\"\ntest -x \"$src/verself/profile/bin/clickhouse\"\ntest -x \"$src/verself/profile/bin/clickhouse-spiffe-bundle-reload\"\ninstall -d -m 0755 /opt\ntar -C \"$src\" -cf - . | tar -C /opt -xf -\n/opt/verself/profile/bin/clickhouse client --version >/dev/null\n"]
       }
 
       env {

@@ -25,6 +25,57 @@
     group: "{{ nomad_group }}"
     mode: "0750"
 
+- name: Load Nomad artifact getter credentials
+  ansible.builtin.include_vars:
+    file: "{{ verself_site_secret_vars_file }}"
+  when: verself_site_secret_vars_file | default('', true) | length > 0
+  no_log: true
+
+- name: Assert Nomad artifact getter credentials
+  ansible.builtin.assert:
+    that:
+      - nomad_artifact_getter_s3_access_key_id | default('', true) | length > 0
+      - nomad_artifact_getter_s3_secret_access_key | default('', true) | length > 0
+      - nomad_artifact_region | default('', true) | length > 0
+    fail_msg: >-
+      Nomad artifact getter credentials are required. Run
+      aspect integrations cloudflare-r2-control-plane --action=rotate-getter
+      and rerun host convergence with the generated site secret vars.
+  no_log: true
+
+- name: Deploy Nomad artifact getter environment
+  ansible.builtin.copy:
+    dest: "{{ nomad_artifact_getter_s3_environment_file }}"
+    owner: root
+    group: "{{ nomad_group }}"
+    mode: "0640"
+    content: |
+      {{ nomad_artifact_getter_s3_access_key_env_var }}={{ nomad_artifact_getter_s3_access_key_id }}
+      {{ nomad_artifact_getter_s3_secret_key_env_var }}={{ nomad_artifact_getter_s3_secret_access_key }}
+      AWS_REGION={{ nomad_artifact_region }}
+      AWS_EC2_METADATA_DISABLED=true
+  notify: restart nomad
+  no_log: true
+
+- name: Create bootstrap substrate seed directory
+  ansible.builtin.file:
+    path: "{{ nomad_openbao_runtime_seed_dest | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: verself_openbao_runtime_seed_file | default('', true) | length > 0
+
+- name: Deploy filtered OpenBao runtime seed
+  ansible.builtin.copy:
+    src: "{{ verself_openbao_runtime_seed_file }}"
+    dest: "{{ nomad_openbao_runtime_seed_dest }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: verself_openbao_runtime_seed_file | default('', true) | length > 0
+  no_log: true
+
 - name: Create Nomad state directory
   ansible.builtin.file:
     path: "{{ nomad_data_dir }}"

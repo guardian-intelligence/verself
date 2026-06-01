@@ -16,6 +16,16 @@ job "analytics-service" {
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "analytics-service-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       artifact {
         source = "verself-artifact://analytics-service"
         destination = "local"
@@ -39,10 +49,18 @@ job "analytics-service" {
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "analytics_service"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/analytics-service/auth-audience"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/analytics-service/clickhouse-ca-cert"
+        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
       }
       resources {
         cpu = 250

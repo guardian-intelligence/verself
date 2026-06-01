@@ -55,17 +55,17 @@ func TestProductTokenClaimsTargetBody(t *testing.T) {
 
 func TestConfigValidateRequiresIAMServiceDomain(t *testing.T) {
 	cfg := config{
-		zitadelBaseURL:    "http://127.0.0.1:8085",
-		zitadelHost:       "verself.sh",
-		adminPATPath:      "/tmp/admin.pat",
-		verselfDomain:     "verself.sh",
-		iamCredstoreDir:   "/tmp/credstore",
-		iamCredstoreGroup: "iam_service",
-		projectName:       "verself-api",
-		browserAppName:    "verself-web",
-		cliAppName:        "verself-cli",
-		claimsTargetName:  "verself-product-token-claims",
-		claimsActionPath:  "/internal/zitadel/actions/product-token-claims",
+		zitadelBaseURL:   "http://127.0.0.1:8085",
+		zitadelHost:      "verself.sh",
+		adminPAT:         "token",
+		verselfDomain:    "verself.sh",
+		projectName:      "verself-api",
+		browserAppName:   "verself-web",
+		cliAppName:       "verself-cli",
+		claimsTargetName: "verself-product-token-claims",
+		claimsActionPath: "/internal/zitadel/actions/product-token-claims",
+		openBaoAddr:      "https://127.0.0.1:8200",
+		openBaoToken:     "token",
 	}
 	if err := cfg.validate(); err == nil {
 		t.Fatalf("validate succeeded without IAM service domain")

@@ -20,7 +20,7 @@ type PostgresServiceDatabase struct {
 type PostgresReplicationRole struct {
 	Name            string `yaml:"name"`
 	ConnectionLimit int    `yaml:"connection_limit"`
-	PasswordFile    string `yaml:"password_file"`
+	OpenBaoSecret   string `yaml:"openbao_secret"`
 }
 
 type PostgresLogicalPublication struct {
@@ -44,20 +44,15 @@ type RuntimeSecretsFile struct {
 }
 
 type RuntimeSecretSeed struct {
-	Name       string `yaml:"name"`
-	SiteSecret string `yaml:"site_secret"`
-	File       string `yaml:"file"`
-}
-
-type CredstoreFile struct {
-	Files []CredstoreSecretFile `yaml:"credstore_secret_files"`
-}
-
-type CredstoreSecretFile struct {
-	Path       string `yaml:"path"`
-	Group      string `yaml:"group"`
-	SiteSecret string `yaml:"site_secret"`
-	Mode       string `yaml:"mode"`
+	Name           string   `yaml:"name"`
+	JobID          string   `yaml:"job_id"`
+	ConsumerJobIDs []string `yaml:"consumer_job_ids"`
+	SiteSecret     string   `yaml:"site_secret"`
+	ProducedByJob  string   `yaml:"produced_by_job"`
+	Generated      struct {
+		Bytes    int    `yaml:"bytes"`
+		Encoding string `yaml:"encoding"`
+	} `yaml:"generated"`
 }
 
 type PublicRoutesFile struct {
@@ -113,7 +108,9 @@ func (v *Validator) validatePostgres(rel string, doc PostgresFile) {
 		if role.ConnectionLimit <= 0 {
 			v.add(rel, prefix+".connection_limit must be positive")
 		}
-		requirePathPrefix(v, rel, prefix+".password_file", role.PasswordFile, "/etc/credstore/")
+		if !secretRE.MatchString(strings.TrimSpace(role.OpenBaoSecret)) {
+			v.add(rel, fmt.Sprintf("%s.openbao_secret must match %s", prefix, secretRE.String()))
+		}
 		v.claim(rel, v.seen.replicationRoles, "PostgreSQL replication role", role.Name)
 	}
 	for i, mapping := range doc.PeerMappings {
@@ -169,32 +166,33 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 		if !secretRE.MatchString(strings.TrimSpace(seed.Name)) {
 			v.add(rel, fmt.Sprintf("%s.name must match %s", prefix, secretRE.String()))
 		}
-		if !exactlyOne(seed.SiteSecret, seed.File) {
-			v.add(rel, prefix+" must declare exactly one source: site_secret or file")
+		if !exactlyOneRuntimeSecretSource(seed.SiteSecret, seed.ProducedByJob, seed.Generated.Bytes) {
+			v.add(rel, prefix+" must declare exactly one source: site_secret, generated, or produced_by_job")
 		}
 		if seed.SiteSecret != "" {
 			requireName(v, rel, prefix+".site_secret", seed.SiteSecret)
 		}
-		if seed.File != "" {
-			requirePathPrefix(v, rel, prefix+".file", seed.File, "/")
+		for j, jobID := range seed.ConsumerJobIDs {
+			if !jobIDRE.MatchString(strings.TrimSpace(jobID)) {
+				v.add(rel, fmt.Sprintf("%s.consumer_job_ids[%d] must match %s", prefix, j, jobIDRE.String()))
+			}
+		}
+		if seed.ProducedByJob != "" {
+			if !jobIDRE.MatchString(strings.TrimSpace(seed.ProducedByJob)) {
+				v.add(rel, fmt.Sprintf("%s.produced_by_job must match %s", prefix, jobIDRE.String()))
+			}
+		}
+		if seed.Generated.Bytes != 0 {
+			if seed.Generated.Bytes < 16 || seed.Generated.Bytes > 96 {
+				v.add(rel, prefix+".generated.bytes must be between 16 and 96")
+			}
+			switch strings.TrimSpace(seed.Generated.Encoding) {
+			case "", "base64url", "hex", "alphanumeric":
+			default:
+				v.add(rel, prefix+".generated.encoding must be base64url, hex, or alphanumeric")
+			}
 		}
 		v.claim(rel, v.seen.runtimeSecrets, "OpenBao runtime secret", seed.Name)
-	}
-}
-
-func (v *Validator) validateCredstore(rel string, doc CredstoreFile) {
-	for i, file := range doc.Files {
-		v.report.CredstoreFiles++
-		prefix := fmt.Sprintf("credstore_secret_files[%d]", i)
-		requirePathPrefix(v, rel, prefix+".path", file.Path, "/etc/credstore/")
-		requireName(v, rel, prefix+".group", file.Group)
-		requireName(v, rel, prefix+".site_secret", file.SiteSecret)
-		if file.Mode == "" {
-			v.add(rel, prefix+".mode is required")
-		} else if !modeRE.MatchString(file.Mode) {
-			v.add(rel, prefix+".mode must be a four-digit octal mode")
-		}
-		v.claim(rel, v.seen.credstorePaths, "credstore path", file.Path)
 	}
 }
 
@@ -230,8 +228,8 @@ func (v *Validator) validateClickHouse(rel string, doc ClickHouseClientFile) {
 	for i, cred := range doc.CACredentials {
 		v.report.ClickHouseCreds++
 		prefix := fmt.Sprintf("clickhouse_client_ca_credentials[%d]", i)
-		if !strings.HasPrefix(strings.TrimSpace(cred.Path), "/etc/credstore/") && !strings.HasPrefix(strings.TrimSpace(cred.Path), "/etc/otelcol/") {
-			v.add(rel, prefix+".path must start with /etc/credstore/ or /etc/otelcol/")
+		if !strings.HasPrefix(strings.TrimSpace(cred.Path), "/etc/otelcol/") {
+			v.add(rel, prefix+".path must start with /etc/otelcol/")
 		}
 		requireName(v, rel, prefix+".group", cred.Group)
 		v.claim(rel, v.seen.clickhouseCreds, "ClickHouse CA credential path", cred.Path)

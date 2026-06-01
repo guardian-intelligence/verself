@@ -7,7 +7,7 @@ argument_specs:
         Provisions the Zitadel project (optionally creating it), then creates /
         recreates the OIDC application when its stored config drifts from the
         desired shape. Persists client_id, optionally client_secret, and a
-        cutover marker in the caller's credstore directory. Publishes output
+        cutover marker in the caller's state directory. Publishes output
         facts so the caller can feed client_id / client_secret into
         service-specific config files.
     options:
@@ -27,11 +27,11 @@ argument_specs:
         type: list
         elements: str
         required: true
-      zitadel_oauth_app_credstore_dir:
+      zitadel_oauth_app_state_dir:
         type: str
         required: true
         description: Absolute path to the directory where credentials are persisted.
-      zitadel_oauth_app_credstore_group:
+      zitadel_oauth_app_state_group:
         type: str
         required: true
         description: POSIX group that should own the persisted credential files.
@@ -69,13 +69,13 @@ argument_specs:
         type: bool
         default: true
         description: Public clients (authMethodType=NONE) should set this to false.
-      zitadel_oauth_app_credstore_owner:
+      zitadel_oauth_app_state_owner:
         type: str
         default: root
-      zitadel_oauth_app_credstore_mode:
+      zitadel_oauth_app_state_mode:
         type: str
         default: "0640"
-      zitadel_oauth_app_credstore_dir_mode:
+      zitadel_oauth_app_state_dir_mode:
         type: str
         default: "0750"
       zitadel_oauth_app_client_secret_filename:

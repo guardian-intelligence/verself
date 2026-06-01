@@ -36,6 +36,7 @@ const (
 	maxTailBytes      = 1024 * 1024
 	dedupeMaxAge      = 24 * time.Hour
 	heartbeatInterval = 60 * time.Second
+	logCaptureTimeout = 5 * time.Second
 )
 
 var (
@@ -814,6 +815,8 @@ func (o *observer) captureWorker(ctx context.Context, workerID int) {
 }
 
 func (o *observer) captureLogTail(ctx context.Context, workerID int, req logCaptureRequest) {
+	ctx, cancel := context.WithTimeout(ctx, logCaptureTimeout)
+	defer cancel()
 	ctx, span := o.tracer.Start(ctx, "nomad_observer.log_capture",
 		trace.WithAttributes(
 			attribute.String("nomad.namespace", req.Namespace),
@@ -912,26 +915,36 @@ func (o *observer) readLogTail(ctx context.Context, alloc *api.Allocation, req l
 	}
 	var buf bytes.Buffer
 	limit := int(req.TailBytes)
-	for frame := range frames {
-		if len(frame.Data) == 0 {
-			continue
-		}
-		_, _ = buf.Write(frame.Data)
-		if limit > 0 && buf.Len() > limit*2 {
-			trimBuffer(&buf, limit)
+	for {
+		select {
+		case frame, ok := <-frames:
+			if !ok {
+				if limit > 0 && buf.Len() > limit {
+					trimBuffer(&buf, limit)
+				}
+				return buf.Bytes(), nil
+			}
+			if frame == nil || len(frame.Data) == 0 {
+				continue
+			}
+			_, _ = buf.Write(frame.Data)
+			if limit > 0 && buf.Len() > limit*2 {
+				trimBuffer(&buf, limit)
+			}
+		case err := <-errCh:
+			if err != nil {
+				return nil, err
+			}
+		case <-ctx.Done():
+			if buf.Len() > 0 {
+				if limit > 0 && buf.Len() > limit {
+					trimBuffer(&buf, limit)
+				}
+				return buf.Bytes(), nil
+			}
+			return nil, ctx.Err()
 		}
 	}
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return nil, err
-		}
-	default:
-	}
-	if limit > 0 && buf.Len() > limit {
-		trimBuffer(&buf, limit)
-	}
-	return buf.Bytes(), nil
 }
 
 func trimBuffer(buf *bytes.Buffer, limit int) {

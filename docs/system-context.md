@@ -38,13 +38,14 @@ owner-local declarations; reconcilers contain no service catalog entries.
 Devtools remain controller-local/host-local tooling outside Nomad.
 
 Bootstrap and operator-recovery secrets enter through catalog-approved
-bootstrap sessions and controller OpenBao, then each site OpenBao owns durable
-runtime and host secret state. Host credential files under `/etc/credstore`
-are materialized caches with paths, groups, and modes from owner-local
-declarations. Bootstrap systemd units consume host credentials with
-`LoadCredential=`; Nomad jobs consume SPIFFE-authenticated OpenBao or
-secrets-service access, or scoped credential projections. Repo-owned
-service-to-service authentication is SPIFFE/SPIRE.
+bootstrap sessions and controller OpenBao, then a wrapped site seed initializes
+fresh site OpenBao state. Runtime secrets are owner-local
+`deploy/runtime-secrets.yml` declarations applied by the substrate control
+plane. Nomad jobs consume them through Nomad workload identity and OpenBao
+templates. The remaining host-local files are named non-runtime state:
+OpenBao Shamir unseal material under `/var/lib/verself/bootstrap/openbao` and
+Pomerium operator-access key material under `/var/lib/verself/access/pomerium`.
+Repo-owned service-to-service authentication is SPIFFE/SPIRE.
 
 Product service APIs are modeled in Smithy under `src/smithy`. The Smithy
 model is the semantic authority for resource DTOs, HTTP bindings, auth
@@ -116,7 +117,7 @@ Auth at the web application level is treated only as a UX concern. Authenticatio
 
 Full model for organization boundaries, three-role IAM (`owner`/`admin`/`member`), capability catalog, credentials, SCIM, TanStack Start server-owned OAuth sessions, browser CSP bearer isolation, and the service OIDC discovery path lives in [`docs/iam-service.md`](iam-service.md).
 
-We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is a relying party for workload identity and the resource plane for secrets/KMS material: it accepts SPIRE-issued JWT-SVID login assertions, exchanges them for short-lived OpenBao tokens, and maps SPIFFE subjects to OpenBao policies. OpenBao is not the source of truth for repo-owned workload identity.
+We use OpenBao Transit for KMS and OpenBao KV for Secrets Management. OpenBao is a relying party for workload identity and the resource plane for secrets/KMS material: it accepts SPIRE-issued JWT-SVID login assertions, exchanges them for short-lived OpenBao tokens, and maps SPIFFE subjects to OpenBao policies. OpenBao is not the source of truth for repo-owned workload identity. The root token returned by `bao operator init` is used only inside the bootstrap transaction that creates base auth, audit, and scoped reconciliation state. It is not persisted. Disaster recovery may require a temporary root token generated from recovery material during an incident or gameday.
 
 PostgreSQL, OpenBao, and Zitadel use shared site substrate instances until a
 service or tenant boundary requires a separate cluster. Isolation is enforced

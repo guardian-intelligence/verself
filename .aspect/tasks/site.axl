@@ -6,6 +6,7 @@ load(
     "HOST_CONFIGURATION_DIR",
     "SOPS_SHIM",
     "bazel_run",
+    "bazel_output_file",
     "checked_spawn",
     "host_ansible_env",
     "host_ansible_playbook",
@@ -14,6 +15,8 @@ load(
 )
 
 _SITE_BOOTSTRAP_TARGET = "//src/tools/deployment/cmd/site-bootstrap:site-bootstrap"
+_HOST_TOOLS_TARGET = "//src/host:host_tools_artifact"
+_SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
 
 def _abs(ctx, path):
     if path == "":
@@ -28,6 +31,9 @@ def _default_seed(site):
 def _default_vars(site):
     return ".verself/site-bootstrap/" + site + "/ansible-secrets.json"
 
+def _default_runtime_seed(site):
+    return ".verself/site-bootstrap/" + site + "/openbao-runtime-seed.json"
+
 def _default_evidence(site):
     return ".verself/site-bootstrap/" + site + "/seed-fingerprints.json"
 
@@ -37,7 +43,7 @@ def _default_inventory(site):
 def _seed_template_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
     out = ctx.args.out or _default_seed(site)
-    args_list = ["seed-template", "--site=" + site, "--out=" + _abs(ctx, out)]
+    args_list = ["seed-template", "--site=" + site, "--out=" + _abs(ctx, out), "--repo-root=" + ws_path(ctx)]
     if ctx.args.force:
         args_list.append("--force")
     return bazel_run(
@@ -65,7 +71,9 @@ def _validate_seed_impl(ctx):
     return bazel_run(
         ctx,
         _SITE_BOOTSTRAP_TARGET,
-        ["seed-validate", "--site=" + site, "--seed-bundle=" + _abs(ctx, seed)],
+        # Keep seed validation tied to owner-local deploy declarations.
+        # The Bazel runfiles cwd is not the repo root.
+        ["seed-validate", "--site=" + site, "--seed-bundle=" + _abs(ctx, seed), "--repo-root=" + ws_path(ctx)],
         label = "site-bootstrap seed-validate --site " + site,
     )
 
@@ -84,13 +92,16 @@ def _materialize_seed_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
     seed = ctx.args.seed_bundle or _default_seed(site)
     vars_file = ctx.args.out_vars or _default_vars(site)
+    runtime_seed = ctx.args.out_openbao_runtime_seed or _default_runtime_seed(site)
     evidence = ctx.args.out_evidence or _default_evidence(site)
     args_list = [
         "seed-materialize",
         "--site=" + site,
         "--seed-bundle=" + _abs(ctx, seed),
         "--out-vars=" + _abs(ctx, vars_file),
+        "--out-openbao-runtime-seed=" + _abs(ctx, runtime_seed),
         "--out-evidence=" + _abs(ctx, evidence),
+        "--repo-root=" + ws_path(ctx),
     ]
     if ctx.args.force:
         args_list.append("--force")
@@ -110,6 +121,7 @@ materialize_seed = task(
         "site": args.string(default = "prod", description = "Deployment site."),
         "seed_bundle": args.string(default = "", description = "Seed bundle path. Defaults to .verself/site-bootstrap/<site>/seed.yml."),
         "out_vars": args.string(default = "", description = "Generated Ansible vars path."),
+        "out_openbao_runtime_seed": args.string(default = "", description = "Filtered OpenBao runtime seed path."),
         "out_evidence": args.string(default = "", description = "Generated fingerprint evidence path."),
         "force": args.boolean(default = False, description = "Overwrite existing generated outputs."),
     },
@@ -216,6 +228,11 @@ def _converge_host_impl(ctx):
     if secret_vars == "" and site != "prod":
         secret_vars = _default_vars(site)
         use_secret_vars = True
+    runtime_seed = ctx.args.openbao_runtime_seed_file
+    use_runtime_seed = runtime_seed != ""
+    if runtime_seed == "" and use_secret_vars:
+        runtime_seed = _default_runtime_seed(site)
+        use_runtime_seed = True
     if inventory_check(ctx, site = site) != 0:
         return 1
     if use_secret_vars:
@@ -225,6 +242,13 @@ def _converge_host_impl(ctx):
         if exists.code != 0:
             ctx.std.io.stderr.write("ERROR: " + secret_vars + " not found. Run aspect site materialize-seed --site=" + site + " first.\n")
             return 1
+    if use_runtime_seed:
+        exists = (ctx.std.process.command("test")
+            .args(["-f", _abs(ctx, runtime_seed)])
+            .spawn().wait())
+        if exists.code != 0:
+            ctx.std.io.stderr.write("ERROR: " + runtime_seed + " not found. Run aspect site materialize-seed --site=" + site + " first.\n")
+            return 1
     ansible_playbook = host_ansible_playbook(ctx)
     if ansible_playbook == "":
         return 1
@@ -232,17 +256,32 @@ def _converge_host_impl(ctx):
     if env == None:
         return 1
     ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
+    host_tools = bazel_output_file(ctx, _HOST_TOOLS_TARGET)
+    if host_tools == "":
+        return 1
+    spire_registry = bazel_output_file(ctx, _SPIRE_IDENTITY_REGISTRY_TARGET)
+    if spire_registry == "":
+        return 1
     playbook_args = [
         "-i",
         ws_path(ctx, _default_inventory(site)),
         "playbooks/site.yml",
         "-e",
         "verself_site=" + site,
+        "-e",
+        "verself_host_tools_artifact=" + host_tools,
+        "-e",
+        "spire_registrations_file=" + spire_registry,
     ]
     if use_secret_vars:
         playbook_args.extend([
             "-e",
             "verself_site_secret_vars_file=" + _abs(ctx, secret_vars),
+        ])
+    if use_runtime_seed:
+        playbook_args.extend([
+            "-e",
+            "verself_openbao_runtime_seed_file=" + _abs(ctx, runtime_seed),
         ])
     return checked_spawn(
         ctx,
@@ -261,5 +300,6 @@ converge_host = task(
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "secret_vars_file": args.string(default = "", description = "Generated Ansible vars file."),
+        "openbao_runtime_seed_file": args.string(default = "", description = "Filtered OpenBao runtime seed file."),
     },
 )

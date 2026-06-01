@@ -10,17 +10,18 @@ import (
 )
 
 type ObjectStorageBucket struct {
-	BucketID       uuid.UUID
-	OrgID          string
-	BucketName     string
-	GarageBucketID string
-	QuotaBytes     pgtype.Int8
-	QuotaObjects   pgtype.Int8
-	LifecycleJson  []byte
-	CreatedAt      pgtype.Timestamptz
-	CreatedBy      string
-	UpdatedAt      pgtype.Timestamptz
-	UpdatedBy      string
+	BucketID         uuid.UUID
+	OrgID            string
+	BucketName       string
+	Provider         string
+	ProviderBucketID string
+	QuotaBytes       pgtype.Int8
+	QuotaObjects     pgtype.Int8
+	LifecycleJson    []byte
+	CreatedAt        pgtype.Timestamptz
+	CreatedBy        string
+	UpdatedAt        pgtype.Timestamptz
+	UpdatedBy        string
 }
 
 type ObjectStorageBucketAlias struct {

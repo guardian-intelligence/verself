@@ -7,6 +7,7 @@
     name:
       - zfsutils-linux
       - e2fsprogs
+      - jq
       - lld=1:18.0-59~exp2
       - lld-18=1:18.1.3-1ubuntu1
     state: present
@@ -38,27 +39,53 @@
   changed_when: false
   failed_when: base_copy_fail_algif_aead_modprobe.stdout is not search('/bin/false')
 
-- name: Create credstore parent directory
+- name: Create OpenBao bootstrap TLS directory
   ansible.builtin.file:
-    path: /etc/credstore
+    path: /etc/openbao/tls
     state: directory
     owner: root
     group: root
-    mode: "0711"
+    mode: "0755"
 
-- name: Override systemd credential store tmpfiles mode
+- name: Generate OpenBao loopback TLS material before Nomad starts
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/openssl
+      - req
+      - -x509
+      - -newkey
+      - ec
+      - -pkeyopt
+      - ec_paramgen_curve:prime256v1
+      - -days
+      - "3650"
+      - -nodes
+      - -keyout
+      - /etc/openbao/tls/key.pem
+      - -out
+      - /etc/openbao/tls/cert.pem
+      - -subj
+      - /CN=127.0.0.1
+      - -addext
+      - subjectAltName=IP:127.0.0.1,DNS:localhost
+    creates: /etc/openbao/tls/cert.pem
+
+- name: Set OpenBao bootstrap TLS permissions
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/openbao/tls/cert.pem, mode: "0644" }
+    - { path: /etc/openbao/tls/key.pem, mode: "0600" }
+
+- name: Install bootstrap firewall readiness target
   ansible.builtin.copy:
     content: |
-      # Managed by Verself host.
-      # Systemd ships /usr/lib/tmpfiles.d/credstore.conf with /etc/credstore
-      # at 0700. Verself stores per-service credentials under group-readable
-      # subdirectories, so the parent must be traversable without being
-      # listable.
-      d /etc/credstore 0711 root root
-      d /etc/credstore.encrypted 0700 root root
-      z /run/credstore 0700 root root
-      z /run/credstore.encrypted 0700 root root
-    dest: /etc/tmpfiles.d/credstore.conf
+      [Unit]
+      Description=Verself firewall readiness target
+    dest: /etc/systemd/system/verself-firewall.target
     owner: root
     group: root
     mode: "0644"

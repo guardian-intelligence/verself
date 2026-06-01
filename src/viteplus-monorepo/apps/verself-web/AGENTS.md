@@ -147,18 +147,19 @@ Name"'`, never a bare label grep which also matches the `heading "Password"`):
 **Re-provisioning a QA human** (sanctioned path; secrets stay on the host /
 in the vault, never in tracked files or echoed commands):
 
-- Zitadel admin token: `sudo -n cat /etc/credstore/iam-service/zitadel-admin-token`
-  over operator SSH (`ssh ubuntu@prod@access.verself.sh`), fed into a mode-600
-  curl config (`curl -K`), not argv. API base `https://verself.sh`,
-  `Authorization: Bearer …`.
+- Zitadel admin token: reveal `iam-service.zitadel.admin_token` from site
+  OpenBao through the operator break-glass flow, fed into a mode-600 curl config
+  (`curl -K`), not argv. API base `https://verself.sh`, `Authorization:
+Bearer …`.
 - Create: `POST /v2/users/human` `{username,organization:{orgId},profile,
 email:{isVerified:true},password:{changeRequired:false}}` in the platform
   org (orgId resolved from `POST /v2/users` email search of an existing
   member). Returns `userId`.
-- Authorize (the actual console gate is SpiceDB, not Zitadel grants): on the
-  host, `zed --endpoint 127.0.0.1:24009 --token "$(sudo -n cat
-/etc/credstore/iam-service/spicedb-grpc-preshared-key)" --insecure
-relationship create role:org_org_<ORG>_role_admin member
+- Authorize (the actual console gate is SpiceDB, not Zitadel grants): reveal
+  `iam-service.spicedb.grpc_preshared_key` from site OpenBao through the
+  operator break-glass flow, then run `zed --endpoint 127.0.0.1:24009 --token
+<token>` over operator SSH with `--insecure relationship create
+role:org_org_<ORG>_role_admin member
 user:b64_<base64(zitadelUserId)>`. Discover `<ORG>` / subject form from
   `zed relationship read org` + `… read role` (subject is
   `user:b64_<base64 of the decimal Zitadel user id>`).

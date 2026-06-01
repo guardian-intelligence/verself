@@ -1,0 +1,6 @@
+postgresql_service_databases:
+  - name: grafana
+    owner: grafana
+postgresql_peer_mappings:
+  - system_user: grafana
+    pg_user: grafana

@@ -110,7 +110,6 @@ nomad_component(
     requires = [
         "auth:control-plane",
         "forgejo:http",
-        "garage:s3",
         "grafana:http",
         "stalwart:http",
         "verdaccio:http",

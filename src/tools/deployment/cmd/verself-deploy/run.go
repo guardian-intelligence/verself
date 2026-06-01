@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -20,10 +19,9 @@ import (
 const deployScope = "nomad"
 
 type runOptions struct {
-	Site             string
-	SHA              string
-	RepoRoot         string
-	PostDeployChecks string
+	Site     string
+	SHA      string
+	RepoRoot string
 }
 
 func runRun(args []string) int {
@@ -31,7 +29,6 @@ func runRun(args []string) int {
 	site := fs.String("site", "prod", "deployment site")
 	sha := fs.String("sha", "", "git SHA being deployed")
 	repoRoot := fs.String("repo-root", "", "verself-sh checkout root")
-	postDeployChecks := fs.String("post-deploy-checks", canarySizeMedium, "post-deploy canary size to run: none, medium, large, or all")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -44,7 +41,7 @@ func runRun(args []string) int {
 		}
 		rr = cwd
 	}
-	if err := run(context.Background(), runOptions{Site: *site, SHA: *sha, RepoRoot: rr, PostDeployChecks: *postDeployChecks}); err != nil {
+	if err := run(context.Background(), runOptions{Site: *site, SHA: *sha, RepoRoot: rr}); err != nil {
 		fmt.Fprintf(os.Stderr, "verself-deploy run: %v\n", err)
 		return 1
 	}
@@ -57,9 +54,6 @@ func run(ctx context.Context, opts runOptions) error {
 	}
 	if opts.RepoRoot == "" {
 		return fmt.Errorf("repo root is required")
-	}
-	if !validCanarySelection(opts.PostDeployChecks) {
-		return fmt.Errorf("post-deploy-checks must be one of %s", canarySelectionUsage())
 	}
 	snap, err := identity.Generate(identity.GenerateOptions{
 		Site:  opts.Site,
@@ -99,32 +93,26 @@ func run(ctx context.Context, opts runOptions) error {
 	)
 	defer span.End()
 
-	startedAt := time.Now()
-	recordDeployStarted(span, snap.RunKey(), opts.Site, resolvedSHA, snap.Get("VERSELF_AUTHOR"), startedAt)
-
-	plan, err := buildDeployPlan(runCtx, rt, opts.RepoRoot, opts.Site, resolvedSHA, snap)
+	inputs, err := buildDeployInputs(runCtx, opts.RepoRoot, opts.Site, resolvedSHA, snap.RunKey())
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		recordDeployFailed(span, nil, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
 		return err
 	}
-	plan.PostDeployChecks = opts.PostDeployChecks
 	span.SetAttributes(
-		attribute.Int("verself.artifact_count", len(plan.Artifacts)),
-		attribute.Int("verself.nomad_job_count", len(plan.Jobs)),
-		attribute.String("verself.post_deploy_checks", opts.PostDeployChecks),
+		attribute.Int("verself.nomad_job_count", len(inputs.Components)),
+		attribute.String("verself.deploy_sha", resolvedSHA),
+		attribute.String("verself.deploy_run_key", snap.RunKey()),
 	)
 
-	results, err := applyNomadPlan(runCtx, rt, plan)
+	results, err := registerNomadJobs(runCtx, rt, inputs)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		recordDeployFailed(span, plan, snap.RunKey(), opts.Site, resolvedSHA, startedAt, err)
 		return err
 	}
 
-	recordDeploySucceeded(span, plan, results, startedAt)
+	span.SetAttributes(attribute.Int("verself.nomad_submitted_job_count", len(results)))
 	span.SetStatus(codes.Ok, "")
 	return nil
 }

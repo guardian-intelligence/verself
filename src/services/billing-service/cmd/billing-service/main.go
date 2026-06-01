@@ -15,9 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stripe/stripe-go/v85"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 
 	"github.com/verself/billing-service/internal/billing"
 	"github.com/verself/billing-service/internal/billing/ledger"
@@ -25,7 +22,6 @@ import (
 	"github.com/verself/billing-service/migrations"
 	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
-	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
@@ -102,14 +98,6 @@ func run() error {
 			logger.ErrorContext(context.Background(), "billing-service spiffe source close", "error", err)
 		}
 	}()
-	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
-	if err != nil {
-		return fmt.Errorf("billing secrets mtls: %w", err)
-	}
-	secretsClient, err := secretsclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
-	if err != nil {
-		return fmt.Errorf("billing secrets client: %w", err)
-	}
 	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
 	if err != nil {
 		return fmt.Errorf("billing iam mtls: %w", err)
@@ -118,15 +106,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing iam client: %w", err)
 	}
-	stripeSecrets, err := readRuntimeSecrets(ctx, secretsClient,
-		secretsclient.BillingStripeSecretKeyName,
-		secretsclient.BillingStripeWebhookSecretName,
-	)
-	if err != nil {
-		return fmt.Errorf("billing stripe provider secret: %w", err)
-	}
-	stripeKey := strings.TrimSpace(stripeSecrets[secretsclient.BillingStripeSecretKeyName])
-	webhookSecret := strings.TrimSpace(stripeSecrets[secretsclient.BillingStripeWebhookSecretName])
+	stripeKey := strings.TrimSpace(cfg.String("STRIPE_SECRET_KEY", ""))
+	webhookSecret := strings.TrimSpace(cfg.String("STRIPE_WEBHOOK_SECRET", ""))
 	if stripeKey != "" && webhookSecret == "" {
 		return fmt.Errorf("billing stripe provider secret missing required field webhook_secret")
 	}
@@ -292,37 +273,4 @@ func isUnauthenticatedBillingPath(path string) bool {
 		return true
 	}
 	return false
-}
-
-func readRuntimeSecrets(ctx context.Context, client *secretsclient.Client, secretNames ...string) (map[string]string, error) {
-	ctx, span := otel.Tracer("runtime-secrets").Start(ctx, "secrets.runtime.resolve")
-	defer span.End()
-	span.SetAttributes(attribute.Int("verself.secret_count", len(secretNames)))
-
-	if client == nil {
-		err := fmt.Errorf("runtime secrets client is required")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, err
-	}
-	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	values := make(map[string]string, len(secretNames))
-	for _, secretName := range secretNames {
-		resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: secretsclient.SecretName(secretName)})
-		if err != nil {
-			err = fmt.Errorf("read runtime secret %s: %w", secretName, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		if resp.Result == nil {
-			err := fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		values[secretName] = string(resp.Result.Value)
-	}
-	return values, nil
 }

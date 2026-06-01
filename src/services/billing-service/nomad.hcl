@@ -16,6 +16,16 @@ job "billing" {
     task "billing-service-migrate" {
       driver = "raw_exec"
       user = "billing"
+      vault {
+        role = "billing-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       lifecycle {
         hook = "prestart"
         sidecar = false
@@ -39,8 +49,7 @@ job "billing" {
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "billing_service"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/billing/auth-audience"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/billing/clickhouse-ca-cert"
+        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -51,6 +60,15 @@ job "billing" {
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
       }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+      }
       resources {
         cpu = 100
         memory = 128
@@ -58,6 +76,7 @@ job "billing" {
       template {
         change_mode = "restart"
         destination = "secrets/platform.env"
+        perms = "0600"
         data = <<-EOT
 BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
@@ -70,6 +89,14 @@ EOT
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
+      vault {
+        role = "billing-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://billing-service"
         destination = "local"
@@ -88,8 +115,7 @@ EOT
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "billing_service"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/billing/auth-audience"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/billing/clickhouse-ca-cert"
+        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -99,6 +125,15 @@ EOT
         VERSELF_PG_MAX_CONNS = "12"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience.env"
+        perms = "0600"
+        env = true
+        data = <<-EOT
+VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
       }
       resources {
         cpu = 500
@@ -139,7 +174,18 @@ EOT
       }
       template {
         change_mode = "restart"
+        destination = "secrets/provider.env"
+        perms = "0600"
+        data = <<-EOT
+STRIPE_SECRET_KEY={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.secret_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+STRIPE_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+EOT
+        env = true
+      }
+      template {
+        change_mode = "restart"
         destination = "secrets/upstreams.env"
+        perms = "0600"
         data = <<-EOT
 BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT

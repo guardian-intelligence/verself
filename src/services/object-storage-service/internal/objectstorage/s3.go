@@ -26,8 +26,8 @@ import (
 type S3Handler struct {
 	Service       *Service
 	Logger        *slog.Logger
-	GarageURLs    []*url.URL
-	GarageHTTP    *http.Client
+	UpstreamURLs  []*url.URL
+	UpstreamHTTP  *http.Client
 	Signer        *awsv4.Signer
 	Credentials   aws.Credentials
 	Region        string
@@ -42,29 +42,29 @@ type s3Operation struct {
 	NeedsXMLRewrite bool
 }
 
-func NewS3Handler(service *Service, garageURLs []string, garageHTTP *http.Client, proxyAccessKeyID, proxySecretAccessKey, region string, logger *slog.Logger) (*S3Handler, error) {
+func NewS3Handler(service *Service, upstreamURLs []string, upstreamHTTP *http.Client, proxyAccessKeyID, proxySecretAccessKey, region string, logger *slog.Logger) (*S3Handler, error) {
 	if service == nil {
 		return nil, fmt.Errorf("object-storage service is required")
 	}
-	parsed, err := parseGarageURLs(garageURLs, "s3")
+	parsed, err := parseUpstreamURLs(upstreamURLs, "s3")
 	if err != nil {
 		return nil, err
 	}
-	if garageHTTP == nil {
-		garageHTTP = http.DefaultClient
+	if upstreamHTTP == nil {
+		upstreamHTTP = http.DefaultClient
 	}
 	return &S3Handler{
-		Service:    service,
-		Logger:     logger,
-		GarageURLs: parsed,
-		GarageHTTP: garageHTTP,
-		Signer:     awsv4.NewSigner(),
+		Service:      service,
+		Logger:       logger,
+		UpstreamURLs: parsed,
+		UpstreamHTTP: upstreamHTTP,
+		Signer:       awsv4.NewSigner(),
 		Credentials: aws.Credentials{
 			AccessKeyID:     strings.TrimSpace(proxyAccessKeyID),
 			SecretAccessKey: strings.TrimSpace(proxySecretAccessKey),
 			Source:          "object-storage-service",
 		},
-		Region: firstNonEmpty(region, "garage"),
+		Region: firstNonEmpty(region, "auto"),
 	}, nil
 }
 
@@ -153,7 +153,7 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		event.ResolvedPrefix = alias.Prefix
 	}
 
-	upstreamReq, cleanupUpstreamReq, err := h.buildGarageRequest(ctx, r, operation, targetBucket, alias.Prefix)
+	upstreamReq, cleanupUpstreamReq, err := h.buildUpstreamRequest(ctx, r, operation, targetBucket, alias.Prefix)
 	if err != nil {
 		event.Status = http.StatusInternalServerError
 		event.ErrorClass = classifyError(err)
@@ -165,12 +165,12 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cleanupUpstreamReq()
 	event.UpstreamRequestURI = upstreamReq.URL.RequestURI()
-	resp, err := h.GarageHTTP.Do(upstreamReq)
+	resp, err := h.UpstreamHTTP.Do(upstreamReq)
 	if err != nil {
 		event.Status = http.StatusBadGateway
 		event.ErrorClass = "upstream"
 		event.ErrorMessage = err.Error()
-		writeS3Error(w, http.StatusBadGateway, "InternalError", "garage request failed", r.URL.EscapedPath())
+		writeS3Error(w, http.StatusBadGateway, "InternalError", "upstream S3 request failed", r.URL.EscapedPath())
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return
@@ -185,7 +185,7 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			event.Status = http.StatusBadGateway
 			event.ErrorClass = "upstream"
 			event.ErrorMessage = err.Error()
-			writeS3Error(w, http.StatusBadGateway, "InternalError", "garage response read failed", r.URL.EscapedPath())
+			writeS3Error(w, http.StatusBadGateway, "InternalError", "upstream S3 response read failed", r.URL.EscapedPath())
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return
@@ -195,7 +195,7 @@ func (h *S3Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			event.Status = http.StatusBadGateway
 			event.ErrorClass = "upstream"
 			event.ErrorMessage = err.Error()
-			writeS3Error(w, http.StatusBadGateway, "InternalError", "garage response rewrite failed", r.URL.EscapedPath())
+			writeS3Error(w, http.StatusBadGateway, "InternalError", "upstream S3 response rewrite failed", r.URL.EscapedPath())
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return
@@ -273,71 +273,90 @@ func (h *S3Handler) authenticate(ctx context.Context, r *http.Request) (authenti
 	return authenticatedRequest{AuthMode: AuthModeSigV4Static, AccessKeyID: parsed.AccessKeyID}, principal, secretAccessKey, nil
 }
 
-func (h *S3Handler) buildGarageRequest(ctx context.Context, incoming *http.Request, operation s3Operation, bucket Bucket, aliasPrefix string) (*http.Request, func(), error) {
+func (h *S3Handler) buildUpstreamRequest(ctx context.Context, incoming *http.Request, operation s3Operation, bucket Bucket, aliasPrefix string) (*http.Request, func(), error) {
 	targetKey := operation.ObjectKey
 	if aliasPrefix != "" && targetKey != "" {
 		targetKey = aliasPrefix + targetKey
 	} else if aliasPrefix != "" && operation.Name == "ListObjectsV2" {
 		targetKey = ""
 	}
-	selectedURL, err := h.selectGarageURL(ctx)
+	selectedURL, err := h.selectUpstreamURL(ctx)
 	if err != nil {
 		return nil, func() {}, err
 	}
-	garageURL := *selectedURL
-	garageURL.Scheme = firstNonEmpty(garageURL.Scheme, "http")
-	garageURL.Host = selectedURL.Host
-	garageURL.Path = "/" + bucket.BucketName
-	garageURL.RawPath = "/" + bucket.BucketName
+	upstreamURL := *selectedURL
+	upstreamURL.Scheme = firstNonEmpty(upstreamURL.Scheme, "http")
+	upstreamURL.Host = selectedURL.Host
+	upstreamURL.Path = "/" + bucket.BucketName
+	upstreamURL.RawPath = "/" + bucket.BucketName
 	if targetKey != "" {
-		garageURL.Path += "/" + targetKey
-		garageURL.RawPath += "/" + escapeS3Key(targetKey)
+		upstreamURL.Path += "/" + targetKey
+		upstreamURL.RawPath += "/" + escapeS3Key(targetKey)
 	}
-	garageURL.RawQuery = rewriteQueryForAlias(operation.Name, incoming.URL.Query(), aliasPrefix).Encode()
+	upstreamURL.RawQuery = rewriteQueryForAlias(operation.Name, incoming.URL.Query(), aliasPrefix).Encode()
 	body := incoming.Body
 	if incoming.Body == nil {
 		body = http.NoBody
 	}
-	req, err := http.NewRequestWithContext(ctx, incoming.Method, garageURL.String(), body)
+	req, err := http.NewRequestWithContext(ctx, incoming.Method, upstreamURL.String(), body)
 	if err != nil {
 		return nil, func() {}, err
 	}
-	req.URL.Path = garageURL.Path
-	req.URL.RawPath = garageURL.RawPath
+	req.URL.Path = upstreamURL.Path
+	req.URL.RawPath = upstreamURL.RawPath
 	req.Host = selectedURL.Host
 	req.ContentLength = incoming.ContentLength
 	copyUpstreamHeaders(req.Header, incoming.Header)
-	cleanup, err := SignGarageRequest(ctx, h.Signer, h.Credentials, req, h.Region)
+	cleanup, err := SignUpstreamS3Request(ctx, h.Signer, h.Credentials, req, h.Region)
 	if err != nil {
 		return nil, func() {}, err
 	}
 	return req, cleanup, nil
 }
 
-func (h *S3Handler) selectGarageURL(ctx context.Context) (*url.URL, error) {
-	if h == nil || len(h.GarageURLs) == 0 {
-		return nil, fmt.Errorf("garage s3 endpoints are not configured")
+func (h *S3Handler) selectUpstreamURL(ctx context.Context) (*url.URL, error) {
+	if h == nil || len(h.UpstreamURLs) == 0 {
+		return nil, fmt.Errorf("upstream S3 endpoints are not configured")
 	}
-	start := int(h.endpointIndex.Add(1)-1) % len(h.GarageURLs)
+	start := int(h.endpointIndex.Add(1)-1) % len(h.UpstreamURLs)
 	dialer := &net.Dialer{Timeout: 200 * time.Millisecond}
 	var lastErr error
-	for offset := 0; offset < len(h.GarageURLs); offset++ {
-		index := (start + offset) % len(h.GarageURLs)
-		endpoint := h.GarageURLs[index]
+	for offset := 0; offset < len(h.UpstreamURLs); offset++ {
+		index := (start + offset) % len(h.UpstreamURLs)
+		endpoint := h.UpstreamURLs[index]
 		conn, err := dialer.DialContext(ctx, "tcp", endpoint.Host)
 		if err != nil {
 			lastErr = err
 			continue
 		}
 		_ = conn.Close()
-		h.endpointIndex.Store(uint32FromIndex((index+1)%len(h.GarageURLs), "garage endpoint index"))
+		h.endpointIndex.Store(uint32FromIndex((index+1)%len(h.UpstreamURLs), "upstream S3 endpoint index"))
 		selected := *endpoint
 		return &selected, nil
 	}
 	if lastErr == nil {
-		lastErr = fmt.Errorf("garage s3 endpoints are not configured")
+		lastErr = fmt.Errorf("upstream S3 endpoints are not configured")
 	}
-	return nil, fmt.Errorf("select garage s3 endpoint: %w", lastErr)
+	return nil, fmt.Errorf("select upstream S3 endpoint: %w", lastErr)
+}
+
+func parseUpstreamURLs(raw []string, kind string) ([]*url.URL, error) {
+	urls := make([]*url.URL, 0, len(raw))
+	for _, item := range raw {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		parsed, err := url.Parse(item)
+		if err != nil {
+			return nil, fmt.Errorf("parse upstream %s url: %w", kind, err)
+		}
+		urls = append(urls, parsed)
+	}
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("at least one upstream %s url is required", kind)
+	}
+	return urls, nil
 }
 
 func classifyS3Operation(r *http.Request) (s3Operation, error) {

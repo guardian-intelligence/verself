@@ -434,7 +434,7 @@ exporters:
     traces_table_name: otel_traces
     create_schema: false
     tls:
-      ca_file: /etc/otelcol/clickhouse-server-ca.pem
+      ca_file: /etc/verself/clickhouse/server-ca.pem
       cert_file: /var/lib/otelcol/clickhouse-spiffe/svid.pem
       key_file: /var/lib/otelcol/clickhouse-spiffe/svid_key.pem
       reload_interval: 60s

@@ -27,17 +27,18 @@ type Config struct {
 	Environment      string
 	ServiceVersion   string
 	WriterInstanceID string
+	Provider         string
 	ProxyAccessKeyID string
 	ProxyRegion      string
 }
 
 type Service struct {
-	CH      clickhouse.Conn
-	Store   *Store
-	Garage  GarageAdmin
-	Secrets *SecretBox
-	Logger  *slog.Logger
-	Config  Config
+	CH       clickhouse.Conn
+	Store    *Store
+	Provider BucketProvider
+	Secrets  *SecretBox
+	Logger   *slog.Logger
+	Config   Config
 
 	apiActivitySink APIActivitySink
 }
@@ -97,11 +98,11 @@ func (s *Service) Ready(ctx context.Context) error {
 	if s.Secrets == nil {
 		return fmt.Errorf("object-storage secret box is nil")
 	}
-	if s.Garage == nil && s.CH == nil {
-		return fmt.Errorf("garage admin client or clickhouse connection is required")
+	if s.Provider == nil && s.CH == nil {
+		return fmt.Errorf("object-storage provider or clickhouse connection is required")
 	}
-	if s.Garage != nil {
-		if err := s.Garage.Health(ctx); err != nil {
+	if s.Provider != nil {
+		if err := s.Provider.Health(ctx); err != nil {
 			return err
 		}
 	}
@@ -117,8 +118,8 @@ func (s *Service) AdminReady(ctx context.Context) error {
 	if s == nil {
 		return fmt.Errorf("object-storage service is nil")
 	}
-	if s.Garage == nil {
-		return fmt.Errorf("garage admin client is nil")
+	if s.Provider == nil {
+		return fmt.Errorf("object-storage provider is nil")
 	}
 	return s.Ready(ctx)
 }
@@ -169,30 +170,26 @@ func (s *Service) CreateBucket(ctx context.Context, input CreateBucketInput) (Bu
 	record.ResourceType = "bucket"
 	record.ResourceUID = bucket.BucketID.String()
 
-	garageBucket, err := s.Garage.CreateBucket(ctx, bucket.BucketName)
+	providerBucket, err := s.Provider.CreateBucket(ctx, BucketProviderInput{
+		Name:          bucket.BucketName,
+		QuotaBytes:    bucket.QuotaBytes,
+		QuotaObjects:  bucket.QuotaObjects,
+		LifecycleJSON: bucket.LifecycleJSON,
+	})
 	if err != nil {
-		return Bucket{}, s.finishAdminOp(ctx, record, fmt.Errorf("create garage bucket: %w", err))
+		return Bucket{}, s.finishAdminOp(ctx, record, fmt.Errorf("create object-storage provider bucket: %w", err))
 	}
-	bucket.GarageBucketID = garageBucket.ID
+	bucket.Provider = s.Provider.Kind()
+	bucket.ProviderBucketID = providerBucket.ID
 	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
-		"verself.content_sha256": hashForTelemetry(bucket.BucketName + "\x00" + bucket.GarageBucketID),
+		"verself.content_sha256": hashForTelemetry(bucket.BucketName + "\x00" + bucket.Provider + "\x00" + bucket.ProviderBucketID),
 	})
 
 	cleanup := func() error {
-		var cleanupErr error
-		if bucket.GarageBucketID != "" {
-			cleanupErr = s.Garage.DeleteBucket(ctx, bucket.GarageBucketID)
+		if bucket.ProviderBucketID == "" {
+			return nil
 		}
-		return cleanupErr
-	}
-
-	if _, err := s.Garage.UpdateBucket(ctx, bucket.GarageBucketID, GarageQuotas{MaxSize: bucket.QuotaBytes, MaxObjects: bucket.QuotaObjects}, bucket.LifecycleJSON); err != nil {
-		_ = cleanup()
-		return Bucket{}, s.finishAdminOp(ctx, record, fmt.Errorf("configure garage bucket: %w", err))
-	}
-	if err := s.Garage.AllowBucketKey(ctx, bucket.GarageBucketID, s.Config.ProxyAccessKeyID, GarageBucketPermissions{Read: true, Write: true, Owner: false}); err != nil {
-		_ = cleanup()
-		return Bucket{}, s.finishAdminOp(ctx, record, fmt.Errorf("grant garage proxy key: %w", err))
+		return s.Provider.DeleteBucket(ctx, bucket.ProviderBucketID)
 	}
 	if err := s.Store.CreateBucket(ctx, bucket); err != nil {
 		_ = cleanup()
@@ -239,14 +236,19 @@ func (s *Service) UpdateBucket(ctx context.Context, bucketID uuid.UUID, quotaByt
 		"verself.content_sha256": hashForTelemetry(bucket.BucketName + "\x00" + string(lifecycleJSON)),
 	})
 
-	garageBucket, err := s.Garage.UpdateBucket(ctx, bucket.GarageBucketID, GarageQuotas{MaxSize: quotaBytes, MaxObjects: quotaObjects}, lifecycleJSON)
+	providerBucket, err := s.Provider.UpdateBucket(ctx, BucketProviderUpdate{
+		ProviderBucketID: bucket.ProviderBucketID,
+		QuotaBytes:       quotaBytes,
+		QuotaObjects:     quotaObjects,
+		LifecycleJSON:    lifecycleJSON,
+	})
 	if err != nil {
-		return Bucket{}, s.finishAdminOp(ctx, record, fmt.Errorf("update garage bucket: %w", err))
+		return Bucket{}, s.finishAdminOp(ctx, record, fmt.Errorf("update object-storage provider bucket: %w", err))
 	}
 	now := time.Now().UTC()
-	bucket.QuotaBytes = garageBucket.QuotaBytes
-	bucket.QuotaObjects = garageBucket.QuotaObjects
-	bucket.LifecycleJSON = normalizeLifecycleJSON(garageBucket.LifecycleRules)
+	bucket.QuotaBytes = quotaBytes
+	bucket.QuotaObjects = quotaObjects
+	bucket.LifecycleJSON = normalizeLifecycleJSON(providerBucket.LifecycleRules)
 	bucket.UpdatedAt = now
 	bucket.UpdatedBy = actor
 	if err := s.Store.UpdateBucket(ctx, bucket); err != nil {
@@ -277,11 +279,11 @@ func (s *Service) DeleteBucket(ctx context.Context, bucketID uuid.UUID, actor st
 	record.ResourceType = "bucket"
 	record.ResourceUID = bucket.BucketID.String()
 	record.Unmapped = compactAPIActivityUnmapped(map[string]any{
-		"verself.content_sha256": hashForTelemetry(bucket.BucketName + "\x00" + bucket.GarageBucketID),
+		"verself.content_sha256": hashForTelemetry(bucket.BucketName + "\x00" + bucket.Provider + "\x00" + bucket.ProviderBucketID),
 	})
 
-	if err := s.Garage.DeleteBucket(ctx, bucket.GarageBucketID); err != nil {
-		return s.finishAdminOp(ctx, record, fmt.Errorf("delete garage bucket: %w", err))
+	if err := s.Provider.DeleteBucket(ctx, bucket.ProviderBucketID); err != nil {
+		return s.finishAdminOp(ctx, record, fmt.Errorf("delete object-storage provider bucket: %w", err))
 	}
 	if err := s.Store.DeleteBucket(ctx, bucket.BucketID); err != nil {
 		return s.finishAdminOp(ctx, record, err)

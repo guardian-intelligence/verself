@@ -1,7 +1,7 @@
 ---
 # Every caller used to carry this boilerplate in its own zitadel_app.yml. This
 # role consolidates project lookup/create, drift detection, POST/DELETE+POST on
-# drift, OIDC config convergence, and credstore writes.
+# drift, OIDC config convergence, and access-plane state writes.
 
 - name: Wait for Zitadel listener for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.wait_for:
@@ -117,22 +117,22 @@
   register: zitadel_oauth_app_search_result
   no_log: true
 
-- name: Ensure credstore directory exists for OAuth app {{ zitadel_oauth_app_name }}
+- name: Ensure state directory exists for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.file:
-    path: "{{ zitadel_oauth_app_credstore_dir }}"
+    path: "{{ zitadel_oauth_app_state_dir }}"
     state: directory
-    owner: "{{ zitadel_oauth_app_credstore_owner }}"
-    group: "{{ zitadel_oauth_app_credstore_group }}"
-    mode: "{{ zitadel_oauth_app_credstore_dir_mode }}"
+    owner: "{{ zitadel_oauth_app_state_owner }}"
+    group: "{{ zitadel_oauth_app_state_group }}"
+    mode: "{{ zitadel_oauth_app_state_dir_mode }}"
 
 - name: Check cutover marker for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.stat:
-    path: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_cutover_marker_filename }}"
+    path: "{{ zitadel_oauth_app_state_dir }}/{{ zitadel_oauth_app_cutover_marker_filename }}"
   register: zitadel_oauth_app_cutover_marker
 
 - name: Check stored client secret for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.stat:
-    path: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_client_secret_filename }}"
+    path: "{{ zitadel_oauth_app_state_dir }}/{{ zitadel_oauth_app_client_secret_filename }}"
   register: zitadel_oauth_app_secret_file
 
 - name: Classify existing state for OAuth app {{ zitadel_oauth_app_name }}
@@ -242,9 +242,9 @@
   when: zitadel_oauth_app_create_result is skipped
   no_log: true
 
-- name: Read stored client secret from credstore — {{ zitadel_oauth_app_name }}
+- name: Read stored client secret — {{ zitadel_oauth_app_name }}
   ansible.builtin.slurp:
-    src: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_client_secret_filename }}"
+    src: "{{ zitadel_oauth_app_state_dir }}/{{ zitadel_oauth_app_client_secret_filename }}"
   register: zitadel_oauth_app_stored_secret_raw
   when:
     - zitadel_oauth_app_persist_client_secret | bool
@@ -310,21 +310,21 @@
 
 - name: Store client secret for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.copy:
-    dest: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_client_secret_filename }}"
+    dest: "{{ zitadel_oauth_app_state_dir }}/{{ zitadel_oauth_app_client_secret_filename }}"
     content: "{{ zitadel_oauth_app_out_client_secret }}"
-    owner: "{{ zitadel_oauth_app_credstore_owner }}"
-    group: "{{ zitadel_oauth_app_credstore_group }}"
-    mode: "{{ zitadel_oauth_app_credstore_mode }}"
+    owner: "{{ zitadel_oauth_app_state_owner }}"
+    group: "{{ zitadel_oauth_app_state_group }}"
+    mode: "{{ zitadel_oauth_app_state_mode }}"
   when: zitadel_oauth_app_persist_client_secret | bool
   no_log: true
 
 - name: Store resolved identifiers for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.copy:
-    dest: "{{ zitadel_oauth_app_credstore_dir }}/{{ item.name }}"
+    dest: "{{ zitadel_oauth_app_state_dir }}/{{ item.name }}"
     content: "{{ item.value }}"
-    owner: "{{ zitadel_oauth_app_credstore_owner }}"
-    group: "{{ zitadel_oauth_app_credstore_group }}"
-    mode: "{{ zitadel_oauth_app_credstore_mode }}"
+    owner: "{{ zitadel_oauth_app_state_owner }}"
+    group: "{{ zitadel_oauth_app_state_group }}"
+    mode: "{{ zitadel_oauth_app_state_mode }}"
   loop:
     - {name: "oidc-app-id", value: "{{ zitadel_oauth_app_out_id }}"}
     - {name: "oidc-client-id", value: "{{ zitadel_oauth_app_out_client_id }}"}
@@ -335,10 +335,10 @@
 
 - name: Persist cutover marker for OAuth app {{ zitadel_oauth_app_name }}
   ansible.builtin.copy:
-    dest: "{{ zitadel_oauth_app_credstore_dir }}/{{ zitadel_oauth_app_cutover_marker_filename }}"
-    owner: "{{ zitadel_oauth_app_credstore_owner }}"
-    group: "{{ zitadel_oauth_app_credstore_group }}"
-    mode: "{{ zitadel_oauth_app_credstore_mode }}"
+    dest: "{{ zitadel_oauth_app_state_dir }}/{{ zitadel_oauth_app_cutover_marker_filename }}"
+    owner: "{{ zitadel_oauth_app_state_owner }}"
+    group: "{{ zitadel_oauth_app_state_group }}"
+    mode: "{{ zitadel_oauth_app_state_mode }}"
     content: |
       app_id={{ zitadel_oauth_app_out_id }}
       client_id={{ zitadel_oauth_app_out_client_id }}

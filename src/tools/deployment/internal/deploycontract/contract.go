@@ -17,8 +17,8 @@ import (
 
 var (
 	nameRE      = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	jobIDRE     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	secretRE    = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z0-9_]+)+$`)
-	modeRE      = regexp.MustCompile(`^0[0-7]{3}$`)
 	durationRE  = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
 	siteNameRE  = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 	apiKeyRE    = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
@@ -34,7 +34,6 @@ type Report struct {
 	IntegrationFiles int `json:"integration_files"`
 	PostgresFiles    int `json:"postgres_files"`
 	RuntimeSecrets   int `json:"runtime_secrets"`
-	CredstoreFiles   int `json:"credstore_files"`
 	PublicRoutes     int `json:"public_routes"`
 	PublicAPIs       int `json:"public_apis"`
 	ClickHouseCreds  int `json:"clickhouse_credentials"`
@@ -68,7 +67,6 @@ type seenClaims struct {
 	publicRouteHosts  map[string]string
 	publicAPIKeys     map[string]string
 	runtimeSecrets    map[string]string
-	credstorePaths    map[string]string
 	clickhouseCreds   map[string]string
 	gateNames         map[string]string
 	peerMappings      []postgresPeerClaim
@@ -100,7 +98,6 @@ func ValidateRepo(root string) (Report, error) {
 			publicRouteHosts:  map[string]string{},
 			publicAPIKeys:     map[string]string{},
 			runtimeSecrets:    map[string]string{},
-			credstorePaths:    map[string]string{},
 			clickhouseCreds:   map[string]string{},
 			gateNames:         map[string]string{},
 		},
@@ -220,6 +217,7 @@ func (v *Validator) walkIntegrationCatalogs() error {
 func (v *Validator) walkNomadSpecs() error {
 	root := filepath.Join(v.root, "src")
 	forbidden := []string{
+		"/etc/credstore",
 		"https://verself.sh",
 		"verself.sh",
 		"guardianintelligence.org",
@@ -270,11 +268,6 @@ func (v *Validator) validateDeployFile(rel, path string) {
 		var doc RuntimeSecretsFile
 		if v.decode(rel, path, &doc) {
 			v.validateRuntimeSecrets(rel, doc)
-		}
-	case "credstore.yml":
-		var doc CredstoreFile
-		if v.decode(rel, path, &doc) {
-			v.validateCredstore(rel, doc)
 		}
 	case "public-routes.yml":
 		var doc PublicRoutesFile
@@ -365,6 +358,19 @@ func exactlyOne(values ...string) bool {
 		if strings.TrimSpace(value) != "" {
 			count++
 		}
+	}
+	return count == 1
+}
+
+func exactlyOneRuntimeSecretSource(siteSecret, producedByJob string, generatedBytes int) bool {
+	count := 0
+	for _, value := range []string{siteSecret, producedByJob} {
+		if strings.TrimSpace(value) != "" {
+			count++
+		}
+	}
+	if generatedBytes != 0 {
+		count++
 	}
 	return count == 1
 }

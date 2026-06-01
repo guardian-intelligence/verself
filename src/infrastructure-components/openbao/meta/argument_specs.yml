@@ -4,7 +4,7 @@ argument_specs:
     short_description: "OpenBao single-node Raft KMS and secrets backend"
     description:
       - "Deploys OpenBao with a loopback TLS listener, integrated Raft storage,"
-      - "declarative file audit device, manual Shamir unseal keys in credstore,"
+      - "declarative file audit device, manual Shamir unseal keys in bootstrap state,"
       - "and nftables confinement. Service ports are component defaults or Nomad service registrations."
     options:
       openbao_config_dir:
@@ -25,9 +25,9 @@ argument_specs:
       openbao_audit_log:
         type: path
         default: /var/log/openbao/audit.log
-      openbao_credstore_dir:
+      openbao_bootstrap_state_dir:
         type: path
-        default: /etc/credstore/openbao
+        default: /var/lib/verself/bootstrap/openbao
       openbao_node_id:
         type: str
         default: verself-single-node
@@ -52,18 +52,6 @@ argument_specs:
       openbao_workload_token_max_ttl:
         type: str
         default: 1h
-      openbao_runtime_secret_namespace:
-        type: str
-        required: true
-      openbao_runtime_secret_kv_mount_prefix:
-        type: str
-        default: kv
-      openbao_runtime_secret_consumer_subject:
-        type: str
-        required: true
-      openbao_runtime_secret_force:
-        type: bool
-        default: false
       openbao_credential_org_ids:
         type: list
         elements: str

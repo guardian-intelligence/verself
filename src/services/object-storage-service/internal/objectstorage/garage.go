@@ -20,6 +20,63 @@ type GarageAdminClient struct {
 	next       atomic.Uint32
 }
 
+type GarageBucketProvider struct {
+	Admin            *GarageAdminClient
+	ProxyAccessKeyID string
+}
+
+func (p *GarageBucketProvider) Kind() string {
+	return ProviderGarage
+}
+
+func (p *GarageBucketProvider) Health(ctx context.Context) error {
+	if p == nil || p.Admin == nil {
+		return fmt.Errorf("garage provider admin client is nil")
+	}
+	return p.Admin.Health(ctx)
+}
+
+func (p *GarageBucketProvider) CreateBucket(ctx context.Context, input BucketProviderInput) (ProviderBucket, error) {
+	if p == nil || p.Admin == nil {
+		return ProviderBucket{}, fmt.Errorf("garage provider admin client is nil")
+	}
+	if strings.TrimSpace(p.ProxyAccessKeyID) == "" {
+		return ProviderBucket{}, fmt.Errorf("garage provider proxy access key id is required")
+	}
+	created, err := p.Admin.CreateBucket(ctx, input.Name)
+	if err != nil {
+		return ProviderBucket{}, err
+	}
+	updated, err := p.Admin.UpdateBucket(ctx, created.ID, GarageQuotas{MaxSize: input.QuotaBytes, MaxObjects: input.QuotaObjects}, input.LifecycleJSON)
+	if err != nil {
+		_ = p.Admin.DeleteBucket(ctx, created.ID)
+		return ProviderBucket{}, err
+	}
+	if err := p.Admin.AllowBucketKey(ctx, created.ID, p.ProxyAccessKeyID, GarageBucketPermissions{Read: true, Write: true, Owner: false}); err != nil {
+		_ = p.Admin.DeleteBucket(ctx, created.ID)
+		return ProviderBucket{}, err
+	}
+	return ProviderBucket{ID: updated.ID, LifecycleRules: updated.LifecycleRules}, nil
+}
+
+func (p *GarageBucketProvider) UpdateBucket(ctx context.Context, input BucketProviderUpdate) (ProviderBucket, error) {
+	if p == nil || p.Admin == nil {
+		return ProviderBucket{}, fmt.Errorf("garage provider admin client is nil")
+	}
+	updated, err := p.Admin.UpdateBucket(ctx, input.ProviderBucketID, GarageQuotas{MaxSize: input.QuotaBytes, MaxObjects: input.QuotaObjects}, input.LifecycleJSON)
+	if err != nil {
+		return ProviderBucket{}, err
+	}
+	return ProviderBucket{ID: updated.ID, LifecycleRules: updated.LifecycleRules}, nil
+}
+
+func (p *GarageBucketProvider) DeleteBucket(ctx context.Context, providerBucketID string) error {
+	if p == nil || p.Admin == nil {
+		return fmt.Errorf("garage provider admin client is nil")
+	}
+	return p.Admin.DeleteBucket(ctx, providerBucketID)
+}
+
 func NewGarageAdminClient(baseURLs []string, adminToken string, httpClient *http.Client) (*GarageAdminClient, error) {
 	parsed, err := parseGarageURLs(baseURLs, "admin")
 	if err != nil {

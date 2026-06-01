@@ -47,8 +47,8 @@ mkdir -p \
   "$$tmp/{root}/usr/lib/x86_64-linux-gnu"
 cp -a "$$tmp/extract/usr/lib/postgresql/{major}" "$$tmp/{root}/usr/lib/postgresql/{major}"
 cp -a "$$tmp/extract/usr/share/postgresql/{major}" "$$tmp/{root}/usr/share/postgresql/{major}"
-cp -a "$$tmp/extract/usr/lib/x86_64-linux-gnu"/libpq.so.* "$$tmp/{root}/usr/lib/x86_64-linux-gnu/"
-cp -a "$$tmp/extract/usr/lib/x86_64-linux-gnu"/libxml2.so.* "$$tmp/{root}/usr/lib/x86_64-linux-gnu/"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libpq.so.5" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libpq.so.5"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libxml2.so.2" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libxml2.so.2"
 rm -rf "$$tmp/extract"
 chmod -R a+rX "$$tmp"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .

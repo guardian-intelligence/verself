@@ -147,7 +147,7 @@ Bazel produces every byte that is deployed. If we know the commit SHA that was d
 
 Each deployable unit (including services, CLIs) teaches Nomad about its deployment mechanics and its promotion gates. Usually these are load testing/pentesting for services, real browser session for web frontends, deep health checks for infrastructure components like Zitadel and SpiceDB.
 
-`aspect deploy` simply runs Bazel, uploads artifacts + digests to S3, triggers a nomad deployment. Takes an site ID of "prod" | "gamma" | "dev" etc.
+`aspect deploy` runs Bazel, publishes artifacts through the R2 control-plane upload-session API, and registers Nomad jobs for a site ID such as "prod" | "gamma" | "dev".
 
 aspect deploy
     -> bazel build
@@ -171,7 +171,7 @@ Per environment, the founder configures a single root key that they are responsi
 
 Deployments are designed to be as efficient as possible by leveraging artifact digests. Bazel produces the artifacts. A key invariant to maintain velocity is that we skip deploying unchanged deployable components, whether that's a service, an infrastructure binary like Zitadel, a CLI, or frontend. 
 
-Ref-based GitOps: every deployable unit must be able to be deployed atomically, though we model some services as depening on other deployables being up, like Garage for hosting Nomad's deployable artifacts. Bazel's job is to cache and decide when to run a unit's build pipeline, we build in a TEE and copy the attested artifacts to Garage. Nomad orchestrates deployments for non-host concerns. Ansible's job is to configure the host and ensure convergence. We rebuild only what we need by teaching Bazel about inputs and outputs. Deploys are just `aspect deploy` and Bazel and Nomad take over via the `verself-deploy` CLI. Let each bazel boundary decide how to build itself. We finetune our build process per unit.
+Ref-based GitOps: every deployable unit must be able to deploy atomically. Bazel's job is to cache and decide when to run a unit's build pipeline. The R2 control plane publishes immutable artifacts from those outputs. Nomad orchestrates deployments for non-host concerns. Ansible configures hosts and ensures convergence. We rebuild only what we need by teaching Bazel about inputs and outputs.
 
 The bootstrap from zero special case:
 

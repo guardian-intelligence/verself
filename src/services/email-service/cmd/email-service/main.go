@@ -14,15 +14,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
-	secretsclient "github.com/verself/secrets-service/client"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
 	workloadauth "github.com/verself/service-runtime/workload"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 
 	"github.com/verself/email-service/internal/api"
 	"github.com/verself/email-service/internal/app"
@@ -41,6 +37,9 @@ type config struct {
 	PGDSN                 string
 	StalwartBaseURL       string
 	PublicBaseURL         string
+	ResendAPIKey          string
+	StalwartAdminUsername string
+	StalwartAdminPassword string
 	ResendFromName        string
 	SyncDiscoveryInterval time.Duration
 	SyncReconcileInterval time.Duration
@@ -102,14 +101,6 @@ func run() error {
 		}
 	}()
 
-	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
-	if err != nil {
-		return fmt.Errorf("email-service secrets mtls: %w", err)
-	}
-	secretsClient, err := secretsclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsclient.WithHTTPClient(secretsHTTPClient))
-	if err != nil {
-		return fmt.Errorf("email-service secrets client: %w", err)
-	}
 	iamHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceIAM, nil)
 	if err != nil {
 		return fmt.Errorf("email-service iam mtls: %w", err)
@@ -133,16 +124,6 @@ func run() error {
 		return fmt.Errorf("create session proxy: %w", err)
 	}
 
-	runtimeSecrets, err := readRuntimeSecrets(ctx, secretsClient,
-		secretsclient.EmailResendAPIKeyName,
-		secretsclient.EmailStalwartAdminPasswordName,
-	)
-	if err != nil {
-		return fmt.Errorf("email-service runtime provider secret: %w", err)
-	}
-	resendAPIKey := requireSecretField(runtimeSecrets, secretsclient.EmailResendAPIKeyName, "email-service resend provider secret")
-	adminPassword := requireSecretField(runtimeSecrets, secretsclient.EmailStalwartAdminPasswordName, "email-service stalwart provider secret")
-
 	pgConfig, err := pgxpool.ParseConfig(cfg.PGDSN)
 	if err != nil {
 		return fmt.Errorf("parse pg-dsn: %w", err)
@@ -158,13 +139,14 @@ func run() error {
 	if err := seedAgentSender(ctx, store, cfg); err != nil {
 		return fmt.Errorf("email-service seed agent sender: %w", err)
 	}
-	sender, err := provider.NewResend(resendAPIKey, cfg.ResendFromName, &http.Client{Timeout: 10 * time.Second, Transport: transport})
+	sender, err := provider.NewResend(cfg.ResendAPIKey, cfg.ResendFromName, &http.Client{Timeout: 10 * time.Second, Transport: transport})
 	if err != nil {
 		return fmt.Errorf("email-service sender provider: %w", err)
 	}
 	syncManager := emailsync.New(emailsync.Config{
 		StalwartBaseURL:   cfg.StalwartBaseURL,
-		AdminPassword:     adminPassword,
+		AdminUsername:     cfg.StalwartAdminUsername,
+		AdminPassword:     cfg.StalwartAdminPassword,
 		MailboxPasswords:  map[string]string{},
 		DiscoveryInterval: cfg.SyncDiscoveryInterval,
 		ReconcileInterval: cfg.SyncReconcileInterval,
@@ -219,6 +201,9 @@ func loadConfig() (config, error) {
 		PGDSN:                 l.RequireString("VERSELF_PG_DSN"),
 		StalwartBaseURL:       l.String("EMAIL_SERVICE_STALWART_BASE_URL", "http://127.0.0.1:8090"),
 		PublicBaseURL:         l.RequireURL("EMAIL_SERVICE_STALWART_PUBLIC_BASE_URL"),
+		ResendAPIKey:          l.RequireString("EMAIL_SERVICE_RESEND_API_KEY"),
+		StalwartAdminUsername: l.RequireString("EMAIL_SERVICE_STALWART_ADMIN_USERNAME"),
+		StalwartAdminPassword: l.RequireString("EMAIL_SERVICE_STALWART_ADMIN_PASSWORD"),
 		ResendFromName:        l.String("EMAIL_SERVICE_RESEND_FROM_NAME", "verself"),
 		SyncDiscoveryInterval: l.Duration("EMAIL_SERVICE_SYNC_DISCOVERY_INTERVAL", 2*time.Minute),
 		SyncReconcileInterval: l.Duration("EMAIL_SERVICE_SYNC_RECONCILE_INTERVAL", 10*time.Minute),
@@ -272,46 +257,4 @@ func seedAgentSender(ctx context.Context, store *mailstore.Store, cfg config) er
 		FromAddress: address,
 		Active:      true,
 	})
-}
-
-func requireSecretField(values map[string]string, field string, label string) string {
-	value := strings.TrimSpace(values[field])
-	if value == "" {
-		fmt.Fprintf(os.Stderr, "%s missing required field %s\n", label, field)
-		os.Exit(1)
-	}
-	return value
-}
-
-func readRuntimeSecrets(ctx context.Context, client *secretsclient.Client, secretNames ...string) (map[string]string, error) {
-	ctx, span := otel.Tracer("runtime-secrets").Start(ctx, "secrets.runtime.resolve")
-	defer span.End()
-	span.SetAttributes(attribute.Int("verself.secret_count", len(secretNames)))
-
-	if client == nil {
-		err := fmt.Errorf("runtime secrets client is required")
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, err
-	}
-	secretCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	values := make(map[string]string, len(secretNames))
-	for _, secretName := range secretNames {
-		resp, err := client.ReadSecret(secretCtx, secretsclient.ReadSecretRequest{Name: secretsclient.SecretName(secretName)})
-		if err != nil {
-			err = fmt.Errorf("read runtime secret %s: %w", secretName, err)
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		if resp.Result == nil {
-			err := fmt.Errorf("read runtime secret %s: unexpected status %d: %s", secretName, resp.StatusCode, strings.TrimSpace(string(resp.Body)))
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return nil, err
-		}
-		values[secretName] = string(resp.Result.Value)
-	}
-	return values, nil
 }

@@ -32,9 +32,6 @@ func TestMaterializeSeedBundleGeneratesMissingHostSecrets(t *testing.T) {
 			t.Fatalf("%s was not generated", key)
 		}
 	}
-	if len(values["zitadel_masterkey"]) != 32 {
-		t.Fatalf("zitadel_masterkey must be 32 bytes, got %d", len(values["zitadel_masterkey"]))
-	}
 	body, err := os.ReadFile(evidence)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +69,7 @@ func TestMaterializeSeedBundlePreservesExistingGeneratedValues(t *testing.T) {
 	seed := filepath.Join(root, "seed.yml")
 	writeTestFile(t, seed, validSeedBundle("gamma"))
 	vars := filepath.Join(root, "ansible-secrets.json")
-	writeTestFile(t, vars, `{"zitadel_masterkey":"01234567890123456789012345678901"}`)
+	writeTestFile(t, vars, `{"iam_service_email_identity_hmac_key":"existing-hmac"}`)
 
 	if _, err := MaterializeSeedBundle(MaterializeOptions{
 		Site:       "gamma",
@@ -85,8 +82,49 @@ func TestMaterializeSeedBundlePreservesExistingGeneratedValues(t *testing.T) {
 	}
 	var values map[string]string
 	readJSON(t, vars, &values)
-	if values["zitadel_masterkey"] != "01234567890123456789012345678901" {
-		t.Fatalf("expected existing masterkey to be preserved, got %q", values["zitadel_masterkey"])
+	if values["iam_service_email_identity_hmac_key"] != "existing-hmac" {
+		t.Fatalf("expected existing generated value to be preserved, got %q", values["iam_service_email_identity_hmac_key"])
+	}
+}
+
+func TestMaterializeSeedBundleWritesFilteredRuntimeSeed(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "src/services/billing-service/deploy/runtime-secrets.yml"), `
+openbao_runtime_secret_seed_declarations:
+  - name: billing-service.stripe.secret_key
+    site_secret: stripe_secret_key
+`)
+	seed := filepath.Join(root, "seed.yml")
+	writeTestFile(t, seed, validSeedBundle("gamma"))
+	runtimeSeed := filepath.Join(root, "openbao-runtime-seed.json")
+
+	report, err := MaterializeSeedBundle(MaterializeOptions{
+		Site:            "gamma",
+		SeedPath:        seed,
+		VarsPath:        filepath.Join(root, "ansible-secrets.json"),
+		RuntimeSeedPath: runtimeSeed,
+		Evidence:        filepath.Join(root, "seed-fingerprints.json"),
+		RepoRoot:        root,
+		ForceWrite:      true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle RuntimeSeedBundle
+	readJSON(t, runtimeSeed, &bundle)
+	if bundle.Version != RuntimeSeedBundleVersion || bundle.Site != "gamma" {
+		t.Fatalf("runtime seed header = %#v", bundle)
+	}
+	if got := bundle.Values["stripe_secret_key"]; got != "sk_test_gamma" {
+		t.Fatalf("runtime seed stripe_secret_key = %q", got)
+	}
+	for _, forbidden := range []string{"cloudflare_api_token", "nomad_artifact_getter_s3_secret_access_key", "stripe_publishable_key"} {
+		if _, ok := bundle.Values[forbidden]; ok {
+			t.Fatalf("runtime seed included non-runtime key %s", forbidden)
+		}
+	}
+	if report.Outputs["openbao_runtime_seed"] != runtimeSeed {
+		t.Fatalf("runtime seed output missing from evidence: %#v", report.Outputs)
 	}
 }
 
@@ -129,16 +167,10 @@ openbao_runtime_secret_seed_declarations:
   - name: iam-service.email_identity.hmac_key
     site_secret: iam_service_email_identity_hmac_key
 `)
-	writeTestFile(t, filepath.Join(root, "src/infrastructure-components/zitadel/deploy/credstore.yml"), `
-credstore_secret_files:
-  - path: /etc/credstore/zitadel/github-login-client-id
-    group: zitadel
-    site_secret: github_integration_service_github_app_client_id
-    mode: "0640"
-  - path: /etc/credstore/zitadel/github-login-client-secret
-    group: zitadel
+	writeTestFile(t, filepath.Join(root, "src/services/github-integration-service/deploy/runtime-secrets.yml"), `
+openbao_runtime_secret_seed_declarations:
+  - name: github-integration-service.github.oauth_client_secret
     site_secret: github_integration_service_github_app_oauth_client_secret
-    mode: "0640"
 `)
 	writeTestFile(t, filepath.Join(root, "src/integrations/catalog/sites/gamma.yml"), `
 version: verself.integrations.v1
@@ -193,6 +225,8 @@ values:
   github_integration_service_github_app_oauth_client_secret: github_oauth_gamma
   github_integration_service_github_app_private_key: github_private_gamma
   github_integration_service_github_app_webhook_secret: github_webhook_gamma
+  nomad_artifact_getter_s3_access_key_id: r2_getter_gamma
+  nomad_artifact_getter_s3_secret_access_key: r2_getter_secret_gamma
   resend_api_key: re_gamma
   stripe_publishable_key: pk_test_gamma
   stripe_secret_key: sk_test_gamma

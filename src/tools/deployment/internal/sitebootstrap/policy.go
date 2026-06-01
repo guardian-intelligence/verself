@@ -38,6 +38,12 @@ func loadSeedPolicy(repoRoot, site string) (seedPolicy, error) {
 	for key, meta := range generatedSeedKeys {
 		derived.keys[key] = meta
 	}
+	for _, key := range []string{
+		"nomad_artifact_getter_s3_access_key_id",
+		"nomad_artifact_getter_s3_secret_access_key",
+	} {
+		derived.keys[key] = fallbackProvidedSeedKeys[key]
+	}
 	siteVars, err := loadSiteVars(root, site)
 	if err != nil {
 		return seedPolicy{}, err
@@ -109,14 +115,6 @@ func collectOwnerLocalSeedKeys(root string, siteVars map[string]string, keys map
 				for _, seed := range doc.Seeds {
 					addOwnerLocalSiteSecret(siteVars, keys, seed.SiteSecret)
 				}
-			case "credstore.yml":
-				var doc deploycontract.CredstoreFile
-				if err := decodeYAMLFile(path, &doc); err != nil {
-					return err
-				}
-				for _, file := range doc.Files {
-					addOwnerLocalSiteSecret(siteVars, keys, file.SiteSecret)
-				}
 			}
 			return nil
 		}); err != nil {
@@ -124,6 +122,56 @@ func collectOwnerLocalSeedKeys(root string, siteVars map[string]string, keys map
 		}
 	}
 	return nil
+}
+
+func loadRuntimeSiteSecretKeys(root string) ([]string, error) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve working directory: %w", err)
+		}
+		root = wd
+	}
+	seen := map[string]bool{}
+	for _, relRoot := range []string{"src/services", "src/infrastructure-components", "src/viteplus-monorepo/apps"} {
+		absRoot := filepath.Join(root, filepath.FromSlash(relRoot))
+		if _, err := os.Stat(absRoot); errors.Is(err, fs.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return nil, fmt.Errorf("stat %s: %w", relRoot, err)
+		}
+		if err := filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || filepath.Base(filepath.Dir(path)) != "deploy" || filepath.Ext(path) != ".yml" {
+				return nil
+			}
+			switch filepath.Base(path) {
+			case "runtime-secrets.yml", "openbao.yml":
+				var doc deploycontract.RuntimeSecretsFile
+				if err := decodeYAMLFile(path, &doc); err != nil {
+					return err
+				}
+				for _, seed := range doc.Seeds {
+					key := strings.TrimSpace(seed.SiteSecret)
+					if key != "" {
+						seen[key] = true
+					}
+				}
+			}
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("walk %s: %w", relRoot, err)
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for key := range seen {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func addOwnerLocalSiteSecret(siteVars map[string]string, keys map[string]seedKey, key string) {

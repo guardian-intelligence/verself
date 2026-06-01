@@ -31,12 +31,11 @@ func main() {
 	switch *format {
 	case "text":
 		fmt.Printf(
-			"validated deployment contracts: deploy_files=%d integration_files=%d postgres_files=%d runtime_secrets=%d credstore_files=%d public_routes=%d public_apis=%d clickhouse_credentials=%d promotion_gates=%d nomad_specs=%d\n",
+			"validated deployment contracts: deploy_files=%d integration_files=%d postgres_files=%d runtime_secrets=%d public_routes=%d public_apis=%d clickhouse_credentials=%d promotion_gates=%d nomad_specs=%d\n",
 			report.DeployFiles,
 			report.IntegrationFiles,
 			report.PostgresFiles,
 			report.RuntimeSecrets,
-			report.CredstoreFiles,
 			report.PublicRoutes,
 			report.PublicAPIs,
 			report.ClickHouseCreds,

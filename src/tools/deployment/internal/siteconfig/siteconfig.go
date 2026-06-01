@@ -23,6 +23,7 @@ type Model struct {
 	GitHubOAuthClientID     string
 	GitHubAppSettingsURL    string
 	GitHubRunnerClassPrefix string
+	CloudflareR2Endpoint    string
 	Domains                 map[string]string
 }
 
@@ -95,6 +96,7 @@ func Load(repoRoot, site string) (Model, error) {
 	model.GitHubOAuthClientID = resolveString(values, "github_integration_service_github_app_client_id")
 	model.GitHubAppSettingsURL = resolveString(values, "github_integration_service_github_app_settings_url")
 	model.GitHubRunnerClassPrefix = resolveString(values, "github_integration_service_github_runner_class_prefix")
+	model.CloudflareR2Endpoint = resolveString(values, "cloudflare_r2_endpoint")
 	return model, nil
 }
 
@@ -189,6 +191,7 @@ func (m Model) TokenMap() map[string]string {
 		"__VERSELF_SOURCE_PUBLIC_BASE_URL__":         "https://" + m.domain("source_code_hosting_service"),
 		"__VERSELF_GITHUB_OAUTH_REDIRECT_URL__":      "https://" + m.domain("github_integration_service") + "/api/v1/github/user-authorizations/complete",
 		"__VERSELF_ANALYTICS_GITHUB_OIDC_AUDIENCE__": "https://" + m.domain("analytics_service"),
+		"__VERSELF_CLOUDFLARE_R2_ENDPOINT__":         m.CloudflareR2Endpoint,
 		"__VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS__":      "spiffe://" + m.SpiffeTrustDomain + "/svc/temporal-server",
 	}
 	if m.GitHubAppID != "" && m.GitHubAppID != "0" {

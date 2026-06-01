@@ -2,7 +2,7 @@
 # Pomerium operator access gateway.
 pomerium_config_dir: /etc/pomerium
 pomerium_config_path: "{{ pomerium_config_dir }}/config.yaml"
-pomerium_credstore_dir: /etc/credstore/pomerium
+pomerium_secret_dir: /var/lib/verself/access/pomerium
 pomerium_data_dir: /var/lib/pomerium
 pomerium_log_dir: /var/log/pomerium
 
@@ -15,16 +15,16 @@ pomerium_otelcol_otlp_grpc_address: 127.0.0.1:4317
 pomerium_cookie_name: _pomerium_operator
 pomerium_cookie_expire: 48h
 
-pomerium_shared_secret_path: "{{ pomerium_credstore_dir }}/shared-secret"
-pomerium_cookie_secret_path: "{{ pomerium_credstore_dir }}/cookie-secret"
-pomerium_signing_key_path: "{{ pomerium_credstore_dir }}/signing-key"
-pomerium_signing_key_raw_path: "{{ pomerium_credstore_dir }}/signing-key.pem"
-pomerium_ssh_user_ca_key_path: "{{ pomerium_credstore_dir }}/ssh-user-ca"
+pomerium_shared_secret_path: "{{ pomerium_secret_dir }}/shared-secret"
+pomerium_cookie_secret_path: "{{ pomerium_secret_dir }}/cookie-secret"
+pomerium_signing_key_path: "{{ pomerium_secret_dir }}/signing-key"
+pomerium_signing_key_raw_path: "{{ pomerium_secret_dir }}/signing-key.pem"
+pomerium_ssh_user_ca_key_path: "{{ pomerium_secret_dir }}/ssh-user-ca"
 pomerium_ssh_user_ca_pubkey_path: "{{ pomerium_ssh_user_ca_key_path }}.pub"
-pomerium_ssh_host_key_path: "{{ pomerium_credstore_dir }}/ssh-host-ed25519"
-pomerium_db_password_path: "{{ pomerium_credstore_dir }}/pg-password"
-pomerium_db_connection_string_path: "{{ pomerium_credstore_dir }}/databroker-postgres-url"
-pomerium_oidc_client_secret_path: "{{ pomerium_credstore_dir }}/oidc-client-secret"
+pomerium_ssh_host_key_path: "{{ pomerium_secret_dir }}/ssh-host-ed25519"
+pomerium_db_password_path: "{{ pomerium_secret_dir }}/pg-password"
+pomerium_db_connection_string_path: "{{ pomerium_secret_dir }}/databroker-postgres-url"
+pomerium_oidc_client_secret_path: "{{ pomerium_secret_dir }}/oidc-client-secret"
 
 pomerium_db_name: pomerium
 pomerium_db_user: pomerium
@@ -45,6 +45,10 @@ pomerium_operator_http_routes:
 
 pomerium_ssh_bind_address: "{{ bare_metal_public_ipv4 }}"
 pomerium_ssh_address: "{{ pomerium_ssh_bind_address }}:22"
-pomerium_ssh_route_name: prod
+pomerium_ssh_route_name: "{{ verself_site | default('prod') }}"
 pomerium_ssh_upstream: "127.0.0.1:22"
 pomerium_ssh_allowed_user: ubuntu
+pomerium_ssh_routes:
+  - name: "{{ pomerium_ssh_route_name }}"
+    upstream: "{{ pomerium_ssh_upstream }}"
+    allowed_user: "{{ pomerium_ssh_allowed_user }}"
