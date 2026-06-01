@@ -49,7 +49,7 @@ type ParentCredentials struct {
 
 func (cfg ParentCredentialConfig) WithDefaults() ParentCredentialConfig {
 	if cfg.Source == "" {
-		cfg.Source = ParentCredentialSourceAuto
+		cfg.Source = ParentCredentialSourceOpenBao
 	}
 	if cfg.AccessKeyIDEnv == "" {
 		cfg.AccessKeyIDEnv = "CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID"
@@ -88,6 +88,7 @@ func LoadParentCredentials(ctx context.Context, cfg ParentCredentialConfig) (Par
 		creds, err := loadParentCredentialsFromOpenBao(ctx, cfg)
 		return resolveParentCredentials(ctx, cfg, creds, err)
 	case ParentCredentialSourceAuto, "":
+		// Explicit auto is for one-time bootstrap diagnostics; steady state reads controller OpenBao.
 		if envHasParentCredentials(cfg) {
 			creds, err := loadParentCredentialsFromEnv(cfg)
 			return resolveParentCredentials(ctx, cfg, creds, err)

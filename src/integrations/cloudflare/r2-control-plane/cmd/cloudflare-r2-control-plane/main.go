@@ -101,7 +101,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to site.json artifact_delivery.cloudflare_account_id.")
 	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to site.json artifact_delivery.bucket.")
 	fs.StringVar(&cfg.region, "region", "auto", "R2 S3 signing region.")
-	fs.StringVar(&cfg.credentialSource, "credential-source", "auto", "Credential source: auto, env, env-file, or openbao.")
+	fs.StringVar(&cfg.credentialSource, "credential-source", "openbao", "Credential source: openbao, env, env-file, or auto.")
 	fs.StringVar(&cfg.credentialsFile, "credentials-file", "", "Environment file containing the parent R2 credentials.")
 	fs.StringVar(&cfg.parentAccessKeyIDEnv, "parent-access-key-id-env", "CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID", "Environment variable name for the parent R2 access key ID.")
 	fs.StringVar(&cfg.parentSecretAccessKeyEnv, "parent-secret-access-key-env", "CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY", "Environment variable name for the parent R2 secret access key.")

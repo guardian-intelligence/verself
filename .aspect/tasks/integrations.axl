@@ -120,7 +120,7 @@ cloudflare_r2_control_plane = task(
         "action": args.string(default = "verify", description = "Action: serve, verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to site.json."),
-        "credential_source": args.string(default = "auto", description = "Credential source: auto, env, env-file, or openbao."),
+        "credential_source": args.string(default = "openbao", description = "Credential source: openbao, env, env-file, or auto."),
         "credentials_file": args.string(default = "", description = "Environment file containing parent R2 credentials."),
         "openbao_addr": args.string(default = "", description = "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR."),
         "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2-admin", description = "Controller OpenBao KV path for parent R2 credentials."),
