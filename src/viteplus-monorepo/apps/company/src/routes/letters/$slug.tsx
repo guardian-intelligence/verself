@@ -2,7 +2,7 @@ import { createFileRoute, Link, notFound, useSearch } from "@tanstack/react-rout
 import { ArrowLeft } from "lucide-react";
 import { useEffect } from "react";
 import { letterBySlug, type Letter } from "~/content/letters";
-import { lettersSignatureFont } from "~/features/letters/fonts";
+import { HandwrittenSignature } from "~/features/letters/handwritten-signature";
 import {
   LETTER_POST_PAGE_PADDING_CLASS,
   LETTER_READING_COLUMN_CLASS,
@@ -116,9 +116,9 @@ function LetterReturnLink() {
 }
 
 // The sign-off, by letter kind. A dispatch — a letter from the author to a
-// younger self — closes with a valediction, his printed name, and his hand:
-// "S.H" in Pinyon Script. The printed name carries the accessible text, so the
-// cursive mark is aria-hidden (decorative) to avoid a double read.
+// younger self — closes with his hand:
+// The dispatch sign-off is a rectified trace of the author's ink signature.
+// The SVG carries the accessible name so the close is readable and indexable.
 //
 // Correspondence (dear-shovon, written by someone else) is signed by a hand we
 // don't reveal: a redaction bar struck in the letter's ink where the name
@@ -130,35 +130,15 @@ function LetterSignature({ letter }: { readonly letter: Letter }) {
   if (letter.kind === "dispatch") {
     return (
       <div className="mt-16" style={{ marginLeft: "72px" }}>
+        <HandwrittenSignature className="block h-auto w-[min(100%,clamp(180px,25vw,252px))] text-[var(--treatment-ink)]" />
         <p
-          className="font-display text-[clamp(20px,1.6vw,22px)] text-[var(--treatment-ink)]"
-          style={{ margin: 0 }}
+          aria-label="By Shovon Hasan - Founder, Guardian Intelligence Inc. Est. 2026 Seattle, WA"
+          className="mt-3 max-w-[min(100%,clamp(180px,25vw,252px))] text-right font-display text-[clamp(10.5px,0.8vw,12px)] leading-[1.35] tracking-[0.02em] text-[var(--treatment-muted-strong)]"
         >
-          Yours,
+          <span className="block text-[var(--treatment-ink)]">By Shovon Hasan</span>{" "}
+          <span className="block">Founder, Guardian Intelligence Inc.</span>{" "}
+          <span className="block">Est. 2026 · Seattle, WA</span>
         </p>
-        <div className="mt-2 flex items-baseline gap-1">
-          {/* Large em dash, sized to the signature, leading into it. */}
-          <span
-            aria-hidden
-            className="font-display leading-none text-[var(--treatment-ink)] text-[clamp(42px,4.25vw,55px)]"
-          >
-            —
-          </span>
-          {/* Signature nudged down + left so it reads as one gesture with the
-              dash; the printed name trails beneath it in small print. */}
-          <div style={{ transform: "translate(-8px, 6px)" }}>
-            <span
-              aria-hidden
-              className="block leading-none text-[var(--treatment-ink)] text-[clamp(42px,4.25vw,55px)]"
-              style={{ fontFamily: lettersSignatureFont.stack }}
-            >
-              {lettersSignatureFont.initials}
-            </span>
-            <span className="mt-2 block font-display text-[clamp(12px,1vw,13px)] text-[var(--treatment-muted-strong)]">
-              {lettersSignatureFont.signer}
-            </span>
-          </div>
-        </div>
       </div>
     );
   }
