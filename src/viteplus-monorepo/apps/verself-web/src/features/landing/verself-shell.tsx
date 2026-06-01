@@ -1,5 +1,4 @@
 import { type ReactNode } from "react";
-import { Lockup } from "@verself/brand";
 import { cn } from "@verself/ui/lib/utils";
 import { recordNaveePointer } from "~/features/navee";
 
@@ -18,7 +17,7 @@ export function VerselfShell({
 }: VerselfShellProps) {
   return (
     <main
-      className="relative isolate min-h-[100svh] overflow-hidden text-white"
+      className="relative isolate min-h-[100svh] overflow-hidden text-black"
       onPointerDown={recordNaveePointer}
     >
       <div className="relative z-10 min-h-[100svh] w-full">
@@ -34,30 +33,30 @@ function VerselfShellNav({ className }: { readonly className?: string | undefine
   return (
     <div
       className={cn(
-        "absolute left-1/2 top-[12%] z-20 flex w-[min(86vw,32rem)] -translate-x-1/2 items-center justify-between [container-type:inline-size]",
+        "absolute left-1/2 top-8 z-20 flex w-[min(calc(100vw-2rem),48.25rem)] -translate-x-1/2 items-center justify-between",
         className,
       )}
     >
       <a
-        aria-label="Guardian"
-        className="inline-flex text-white transition hover:text-white/78 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+        aria-label="Verself"
+        className="inline-flex font-semibold leading-none text-black transition hover:text-black/72 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
         data-wave-shadow=""
-        href="https://guardianintelligence.org"
+        href="/"
       >
-        <Lockup size="sm" title="Guardian" style={{ padding: 0 }} />
+        verself.sh
       </a>
       <nav
         aria-label="Primary"
-        className="flex items-center gap-[clamp(1rem,4.2cqw,1.35rem)] text-[clamp(0.75rem,2.25cqw,0.875rem)] font-medium leading-none text-white/62"
+        className="flex items-center gap-5 text-sm font-medium leading-none text-black/48"
       >
         <a
-          className="transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+          className="transition hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
           href="https://github.com/guardian-intelligence/verself"
         >
           <span data-wave-mask="">Code</span>
         </a>
         <a
-          className="transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+          className="transition hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
           href="/docs"
         >
           <span data-wave-mask="">Docs</span>

@@ -47,7 +47,7 @@ export const lettersBodyFont: LettersFont = {
 };
 
 // The date hand. The dispatch sign-off itself is the traced SVG in
-// handwritten-signature.tsx; this face stays for the handwritten date.
+// @verself/brand; this face stays for the handwritten date.
 export const lettersSignatureFont = {
   family: "Pinyon Script",
   stack: "'Pinyon Script', cursive",

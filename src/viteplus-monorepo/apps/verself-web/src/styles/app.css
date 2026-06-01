@@ -112,6 +112,15 @@
 @layer base {
   :root {
     --navee-guardian-ink: #080909;
+    --verself-landing-ground: #dad9da;
+    --verself-landing-page-gradient: linear-gradient(180deg, #bfc3c8 17.31%, #dad9da 100%);
+    --verself-landing-metal-gradient: linear-gradient(
+      52deg,
+      #435059 0%,
+      #5d6472 29%,
+      #78858d 59%,
+      #747b81 100%
+    );
     --navee-console-stage-height: min(100svh, 956px);
     --navee-console-stage-offset-y: calc((100svh - var(--navee-console-stage-height)) / 2);
     --navee-dock-inset: 0.75rem;
@@ -179,6 +188,15 @@
     z-index: 40;
   }
 
+  .navee-stage[data-navee-aperture="fullscreen"] {
+    background-attachment: fixed;
+    background-color: var(--verself-landing-ground);
+    background-image: var(--verself-landing-page-gradient);
+    background-position: 0 0;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+  }
+
   .navee-aperture {
     background: var(--navee-guardian-ink);
     border-radius: 0;
@@ -192,6 +210,20 @@
       left 560ms cubic-bezier(0.2, 0.8, 0.2, 1),
       right 560ms cubic-bezier(0.2, 0.8, 0.2, 1),
       top 560ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .navee-stage[data-navee-aperture="fullscreen"] .navee-aperture {
+    background: transparent;
+  }
+
+  .navee-stage[data-navee-aperture="fullscreen"] .navee-matrix-scene {
+    filter: invert(1) grayscale(1) contrast(0.84);
+    mix-blend-mode: multiply;
+    opacity: 0.16;
+  }
+
+  .navee-stage[data-navee-aperture="fullscreen"] .landing-spotlight {
+    opacity: 0;
   }
 
   .navee-stage[data-navee-aperture="dock"] .navee-aperture {

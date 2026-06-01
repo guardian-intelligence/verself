@@ -25,8 +25,9 @@ export function HandwrittenSignature({ className }: { readonly className?: strin
       role="img"
       aria-label="Shovon Hasan handwritten signature with a heart"
       className={className}
-      viewBox="0 0 1113 448"
+      viewBox="0 0 886 448"
       fill="none"
+      shapeRendering="crispEdges"
       xmlns="http://www.w3.org/2000/svg"
     >
       <title>Shovon Hasan</title>

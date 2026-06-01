@@ -23,8 +23,8 @@ export function NaveeStage() {
       data-navee-mode={snapshot.mode}
     >
       <div className="navee-aperture">
-        <NaveeMatrixScene className="opacity-95" />
-        <LandingSpotlight className="absolute inset-0" />
+        <NaveeMatrixScene className="navee-matrix-scene opacity-95" />
+        <LandingSpotlight className="landing-spotlight absolute inset-0" />
       </div>
     </div>
   );
