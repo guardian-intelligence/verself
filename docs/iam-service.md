@@ -1127,8 +1127,7 @@ type FullyConsistent struct{}
 
 `MinimizeLatency` is for non-security UI hints and low-risk affordance
 rendering. Security-sensitive checks use `AtLeastAsFresh` when a relevant
-ZedToken exists. `FullyConsistent` is reserved for narrow administrative paths
-and break-glass inspection.
+ZedToken exists. `FullyConsistent` is reserved for narrow administrative paths.
 
 ZedTokens are stored wherever a later authorization read must be causally fresh:
 
@@ -1356,7 +1355,7 @@ Caveats are for request-time conditions:
 - source network class;
 - device posture;
 - step-up authentication age;
-- break-glass session state;
+- privileged session state;
 - temporary access windows when expiring relationships are insufficient;
 - environment attributes that are not durable product facts.
 

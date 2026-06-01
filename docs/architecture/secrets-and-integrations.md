@@ -97,7 +97,7 @@ S0 repo_metadata_only
 | `S7 site_openbao_seeded` | Runtime secrets, provider credentials, and transit keys are present in site OpenBao. | Site OpenBao is the source of truth. | Hand off to Nomad. |
 | `S8 nomad_ready` | Base OS, SPIRE, OpenBao workload auth, and Nomad are ready. | Runtime reads use OpenBao/secrets-service. | Nomad deploys service jobs. |
 | `S9 deployed` | Services run from Nomad and consume only OpenBao-backed runtime secrets. | Site OpenBao and product KV. | Post-deploy canaries pass. |
-| `S10 steady_state_rotation` | Future credential changes use catalog-driven import, rotate, reveal, and revoke commands. | OpenBao only. | Repeat from provider handoff or rotation transition. |
+| `S10 steady_state_rotation` | Future credential changes use catalog-driven import, rotate, and revoke commands. | OpenBao only. | Repeat from provider handoff or rotation transition. |
 
 The phrase "copy OpenBao" means install/copy OpenBao runtime assets to the new
 host and then seed that site's OpenBao from a catalog-approved, wrapped bundle.
@@ -304,11 +304,10 @@ variable exported by `stripe projects env --pull`:
    evidence plus provider-specific canaries to prove the value was consumed by
    the intended component.
 
-## Runbook: Get Credentials For An Environment
+## Runbook: Inspect Environment Credential Metadata
 
 Credential access starts with metadata. Operators list credential names,
-owners, target stores, rotation state, and verification status without revealing
-values.
+owners, target stores, rotation state, and verification status.
 
 ```text
 aspect integrations inventory --site=gamma
@@ -319,18 +318,12 @@ The command surface to build:
 
 ```text
 aspect integrations credentials pull --site=gamma
-aspect integrations credentials reveal --site=gamma --key=<catalog-key> --reason=<ticket-or-incident>
 aspect integrations credentials rotate --site=gamma --key=<catalog-key>
 ```
 
 `credentials pull` imports provider-project values into the catalog-approved
 OpenBao targets without printing plaintext. It must reject unrecognized
 environment variable names from `.env` or provider-project output.
-
-`credentials reveal` is break-glass. It requires a reason, writes an audit row,
-prints at most one requested value, and never supports broad reveal. Production
-reveal should require an explicit production flag and a Pomerium-authenticated
-operator session.
 
 Runtime services get credentials through OpenBao and secrets-service. They do
 not read provider project files, local `.env`, shell history, GitHub Actions
@@ -430,7 +423,7 @@ provider-specific canary evidence in ClickHouse.
 4. Add bootstrap session, controller OpenBao seed, and site OpenBao seed-bundle
    import commands.
 5. Add provider-project import for Stripe Projects-backed providers.
-6. Add credential reveal, rotation, and provider canary evidence.
+6. Add rotation and provider canary evidence.
 7. Gate `aspect deploy` on catalog validation for non-bootstrap deploys.
 
 ## References
