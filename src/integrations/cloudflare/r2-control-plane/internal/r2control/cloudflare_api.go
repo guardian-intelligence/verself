@@ -60,16 +60,6 @@ type tokenCreateResponse struct {
 	Errors []cloudflareMessage `json:"errors"`
 }
 
-type temporaryCredentialResponse struct {
-	Success bool `json:"success"`
-	Result  struct {
-		AccessKeyID     string `json:"accessKeyId"`
-		SecretAccessKey string `json:"secretAccessKey"`
-		SessionToken    string `json:"sessionToken"`
-	} `json:"result"`
-	Errors []cloudflareMessage `json:"errors"`
-}
-
 type tokenVerifyResponse struct {
 	Success bool `json:"success"`
 	Result  struct {
@@ -275,44 +265,6 @@ func (c *CloudflareAPIClient) CreateR2AllBucketsToken(ctx context.Context, accou
 		S3SecretKey:     SHA256Hex([]byte(response.Result.Value)),
 		Name:            response.Result.Name,
 		PermissionGroup: group.Name,
-	}, nil
-}
-
-func (c *CloudflareAPIClient) CreateTemporaryCredentials(ctx context.Context, accountID string, req TemporaryCredentialRequest) (TemporaryCredentials, error) {
-	accountID = strings.ToLower(strings.TrimSpace(accountID))
-	if !IsCloudflareAccountID(accountID) {
-		return TemporaryCredentials{}, fmt.Errorf("account ID must be a 32-character lowercase hex Cloudflare account ID")
-	}
-	req, err := req.validate()
-	if err != nil {
-		return TemporaryCredentials{}, err
-	}
-	body := map[string]any{
-		"bucket":            req.Bucket,
-		"parentAccessKeyId": req.ParentAccessKeyID,
-		"permission":        req.Permission,
-		"ttlSeconds":        int64(req.TTL / time.Second),
-	}
-	if len(req.Prefixes) > 0 {
-		body["prefixes"] = req.Prefixes
-	}
-	if len(req.Objects) > 0 {
-		body["objects"] = req.Objects
-	}
-	var response temporaryCredentialResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/accounts/"+url.PathEscape(accountID)+"/r2/temp-access-credentials", body, &response); err != nil {
-		return TemporaryCredentials{}, err
-	}
-	if !response.Success {
-		return TemporaryCredentials{}, fmt.Errorf("Cloudflare temporary R2 credentials create failed: %s", cloudflareErrors(response.Errors))
-	}
-	if response.Result.AccessKeyID == "" || response.Result.SecretAccessKey == "" || response.Result.SessionToken == "" {
-		return TemporaryCredentials{}, fmt.Errorf("Cloudflare temporary R2 credentials response was missing credential fields")
-	}
-	return TemporaryCredentials{
-		AccessKeyID:     response.Result.AccessKeyID,
-		SecretAccessKey: response.Result.SecretAccessKey,
-		SessionToken:    response.Result.SessionToken,
 	}, nil
 }
 

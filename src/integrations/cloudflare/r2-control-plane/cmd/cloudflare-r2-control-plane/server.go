@@ -135,10 +135,6 @@ func (s *uploadServer) handleCreateUploadSession(w http.ResponseWriter, r *http.
 		writeJSONError(w, http.StatusBadRequest, "at least one artifact is required")
 		return
 	}
-	if strings.TrimSpace(s.parent.APIToken) == "" {
-		writeJSONError(w, http.StatusFailedDependency, "parent Cloudflare API token value is required")
-		return
-	}
 	if strings.TrimSpace(s.parent.SessionToken) != "" {
 		writeJSONError(w, http.StatusFailedDependency, "parent Cloudflare credential must not be temporary")
 		return
@@ -195,12 +191,8 @@ func (s *uploadServer) handleCreateUploadSession(w http.ResponseWriter, r *http.
 	}
 	var tempClient *r2control.R2Client
 	if len(missingObjectKeys) > 0 {
-		apiClient, err := r2control.NewCloudflareAPIClient(s.parent.APIToken, s.cfg.timeout)
-		if err != nil {
-			writeJSONError(w, http.StatusFailedDependency, err.Error())
-			return
-		}
-		temp, err := apiClient.CreateTemporaryCredentials(ctx, s.siteCfg.AccountID, r2control.TemporaryCredentialRequest{
+		// Keep the Cloudflare Account API token out of the deploy hot path.
+		temp, err := r2control.CreateLocalTemporaryCredentials(r2control.Endpoint(s.siteCfg.AccountID), s.siteCfg.AccountID, s.parent.SecretAccessKey, r2control.TemporaryCredentialRequest{
 			ParentAccessKeyID: s.parent.AccessKeyID,
 			Bucket:            s.siteCfg.Bucket,
 			Permission:        r2control.TemporaryPermissionObjectReadWrite,

@@ -196,14 +196,7 @@ func run(args []string) error {
 		if parent.SessionToken != "" {
 			return fmt.Errorf("cannot create scoped R2 temporary credentials from a parent credential that is itself temporary")
 		}
-		if strings.TrimSpace(parent.APIToken) == "" {
-			return fmt.Errorf("temporary R2 credential verification requires the parent Cloudflare API token value")
-		}
-		apiClient, err := r2control.NewCloudflareAPIClient(parent.APIToken, cfg.timeout)
-		if err != nil {
-			return err
-		}
-		temp, err := apiClient.CreateTemporaryCredentials(ctx, cfg.accountID, r2control.TemporaryCredentialRequest{
+		temp, err := r2control.CreateLocalTemporaryCredentials(r2control.Endpoint(cfg.accountID), cfg.accountID, parent.SecretAccessKey, r2control.TemporaryCredentialRequest{
 			ParentAccessKeyID: parent.AccessKeyID,
 			Bucket:            cfg.bucket,
 			Permission:        r2control.TemporaryPermissionObjectReadWrite,

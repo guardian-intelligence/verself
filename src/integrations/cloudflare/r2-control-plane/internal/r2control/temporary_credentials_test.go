@@ -2,71 +2,88 @@ package r2control
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
 
-func TestCreateTemporaryCredentials(t *testing.T) {
-	var gotPath string
-	var gotBody struct {
-		Bucket            string   `json:"bucket"`
-		ParentAccessKeyID string   `json:"parentAccessKeyId"`
-		Permission        string   `json:"permission"`
-		TTLSeconds        int64    `json:"ttlSeconds"`
-		Prefixes          []string `json:"prefixes"`
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		if r.Method != http.MethodPost {
-			t.Fatalf("method = %s", r.Method)
-		}
-		if r.Header.Get("Authorization") != "Bearer parent-api-token" {
-			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
-		}
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Fatal(err)
-		}
-		_, _ = w.Write([]byte(`{
-			"success": true,
-			"result": {
-				"accessKeyId": "temporary-access",
-				"secretAccessKey": "temporary-secret",
-				"sessionToken": "temporary-session"
-			}
-		}`))
-	}))
-	defer server.Close()
-
-	client := &CloudflareAPIClient{
-		apiBase: server.URL,
-		token:   "parent-api-token",
-		http:    server.Client(),
-	}
-	creds, err := client.CreateTemporaryCredentials(context.Background(), "c3eaeffaadf7d4847684d4775c16d598", TemporaryCredentialRequest{
+func TestCreateLocalTemporaryCredentials(t *testing.T) {
+	now := time.Unix(1_786_000_000, 0).UTC()
+	creds, err := createLocalTemporaryCredentialsAt(now, "https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com", "c3eaeffaadf7d4847684d4775c16d598", "parent-secret", TemporaryCredentialRequest{
 		ParentAccessKeyID: "parent-access",
 		Bucket:            "nomad-artifacts-gamma",
 		Permission:        TemporaryPermissionObjectReadWrite,
-		TTL:               30 * time.Minute,
-		Prefixes:          []string{"/sha256/"},
+		TTL:               15 * time.Minute,
+		Objects:           []string{"/sha256/abc/service.tar"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/accounts/c3eaeffaadf7d4847684d4775c16d598/r2/temp-access-credentials" {
-		t.Fatalf("path = %q", gotPath)
+	if creds.AccessKeyID != "parent-access" {
+		t.Fatalf("access key = %q", creds.AccessKeyID)
 	}
-	if gotBody.Bucket != "nomad-artifacts-gamma" || gotBody.ParentAccessKeyID != "parent-access" || gotBody.Permission != TemporaryPermissionObjectReadWrite || gotBody.TTLSeconds != 1800 {
-		t.Fatalf("body = %+v", gotBody)
+	rawSessionToken, err := base64.StdEncoding.DecodeString(creds.SessionToken)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(gotBody.Prefixes) != 1 || gotBody.Prefixes[0] != "sha256/" {
-		t.Fatalf("prefixes = %#v", gotBody.Prefixes)
+	jwtValue := strings.TrimPrefix(string(rawSessionToken), "jwt/")
+	if jwtValue == string(rawSessionToken) {
+		t.Fatalf("session token prefix missing")
 	}
-	if creds.AccessKeyID != "temporary-access" || creds.SecretAccessKey != "temporary-secret" || creds.SessionToken != "temporary-session" {
-		t.Fatalf("credentials = %+v", creds)
+	if creds.SecretAccessKey != SHA256Hex([]byte(jwtValue)) {
+		t.Fatalf("temporary secret was not derived from signed jwt")
 	}
+	parts := strings.Split(jwtValue, ".")
+	if len(parts) != 3 {
+		t.Fatalf("jwt parts = %d", len(parts))
+	}
+	mac := hmac.New(sha256.New, []byte("parent-secret"))
+	_, _ = mac.Write([]byte(parts[0] + "." + parts[1]))
+	if !hmac.Equal(mac.Sum(nil), mustDecodeRawURL(t, parts[2])) {
+		t.Fatalf("jwt signature did not verify")
+	}
+	var claims struct {
+		Bucket string `json:"bucket"`
+		Scope  string `json:"scope"`
+		Paths  struct {
+			ObjectPaths []string `json:"objectPaths"`
+		} `json:"paths"`
+		Sub string `json:"sub"`
+		Iss string `json:"iss"`
+		Aud string `json:"aud"`
+		Iat int64  `json:"iat"`
+		Exp int64  `json:"exp"`
+	}
+	if err := json.Unmarshal(mustDecodeRawURL(t, parts[1]), &claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims.Bucket != "nomad-artifacts-gamma" || claims.Scope != TemporaryPermissionObjectReadWrite {
+		t.Fatalf("claims = %+v", claims)
+	}
+	if claims.Sub != "c3eaeffaadf7d4847684d4775c16d598" || claims.Iss != "parent-access" || claims.Aud != "c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com" {
+		t.Fatalf("identity claims = %+v", claims)
+	}
+	if claims.Iat != now.Unix() || claims.Exp != now.Add(15*time.Minute).Unix() {
+		t.Fatalf("time claims = %+v", claims)
+	}
+	if len(claims.Paths.ObjectPaths) != 1 || claims.Paths.ObjectPaths[0] != "sha256/abc/service.tar" {
+		t.Fatalf("object paths = %#v", claims.Paths.ObjectPaths)
+	}
+}
+
+func mustDecodeRawURL(t *testing.T, value string) []byte {
+	t.Helper()
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decoded
 }
 
 func TestCreateR2AllBucketsTokenUsesBucketPermissionOnAccountResource(t *testing.T) {
