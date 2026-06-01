@@ -9,10 +9,10 @@ Type=notify
 User=haproxy
 Group=haproxy
 SupplementaryGroups=adm
-Environment=LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }}
-ExecStartPre=/usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f {{ haproxy_config_dir }}/haproxy.cfg -f {{ haproxy_nomad_upstreams_config }}
+Environment=LD_LIBRARY_PATH={{ haproxy_runtime_library_path }}
+ExecStartPre=/usr/bin/env LD_LIBRARY_PATH={{ haproxy_runtime_library_path }} {{ verself_bin }}/haproxy -c -f {{ haproxy_config_dir }}/haproxy.cfg -f {{ haproxy_nomad_upstreams_config }}
 ExecStart={{ verself_bin }}/haproxy -Ws -f {{ haproxy_config_dir }}/haproxy.cfg -f {{ haproxy_nomad_upstreams_config }} -p /run/haproxy/haproxy.pid -S /run/haproxy/master.sock
-ExecReload=/usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f {{ haproxy_config_dir }}/haproxy.cfg -f {{ haproxy_nomad_upstreams_config }}
+ExecReload=/usr/bin/env LD_LIBRARY_PATH={{ haproxy_runtime_library_path }} {{ verself_bin }}/haproxy -c -f {{ haproxy_config_dir }}/haproxy.cfg -f {{ haproxy_nomad_upstreams_config }}
 ExecReload=/bin/kill -USR2 $MAINPID
 Restart=on-failure
 RestartSec=5
@@ -34,7 +34,7 @@ SystemCallArchitectures=native
 RuntimeDirectory=haproxy
 RuntimeDirectoryMode=0750
 ReadWritePaths=/run/haproxy /var/lib/haproxy {{ haproxy_log_dir }}
-ReadOnlyPaths={{ haproxy_config_dir }} /etc/verself/pki /var/www/verself /opt/aws-lc
+ReadOnlyPaths={{ haproxy_config_dir }} /etc/verself/pki /var/www/verself /opt/verself/profile/lib/haproxy
 
 [Install]
 WantedBy=multi-user.target

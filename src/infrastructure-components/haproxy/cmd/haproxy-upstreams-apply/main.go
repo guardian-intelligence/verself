@@ -79,7 +79,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.haproxyUser, "haproxy-user", "haproxy", "User used for HAProxy config validation.")
 	fs.StringVar(&cfg.haproxyBin, "haproxy-bin", "haproxy", "Path to the HAProxy binary.")
 	fs.Var(&cfg.haproxyConfigs, "haproxy-config", "HAProxy config to validate; repeat in HAProxy load order.")
-	fs.StringVar(&cfg.haproxyLDLibraryPath, "haproxy-ld-library-path", "/opt/aws-lc/lib/x86_64-linux-gnu", "LD_LIBRARY_PATH used when invoking HAProxy.")
+	fs.StringVar(&cfg.haproxyLDLibraryPath, "haproxy-ld-library-path", "/opt/verself/profile/lib/haproxy", "LD_LIBRARY_PATH used when invoking HAProxy.")
 	fs.StringVar(&cfg.reloadUnit, "reload-unit", "haproxy.service", "systemd unit to reload after a valid upstream swap.")
 	fs.BoolVar(&cfg.daemon, "daemon", false, "Apply once, then stay alive until SIGINT or SIGTERM.")
 	if err := fs.Parse(args); err != nil {
@@ -293,7 +293,13 @@ func validateHAProxy(cfg config) error {
 	for _, config := range cfg.haproxyConfigs {
 		argv = append(argv, "-f", config)
 	}
-	cmd := exec.CommandContext(ctx, cfg.haproxyBin, argv...)
+	haproxyBin, err := commandPath(cfg.haproxyBin)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, haproxyBin, argv...)
+	// HAProxy validates after dropping privileges; do not inherit an operator-only cwd.
+	cmd.Dir = "/"
 	cmd.Env = withLDLibraryPath(os.Environ(), cfg.haproxyLDLibraryPath)
 	if cfg.haproxyUser != "" {
 		credential, err := userCredential(cfg.haproxyUser)
@@ -304,9 +310,20 @@ func validateHAProxy(cfg config) error {
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s %s: %w: %s", cfg.haproxyBin, strings.Join(argv, " "), err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("%s %s: %w: %s", haproxyBin, strings.Join(argv, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+func commandPath(path string) (string, error) {
+	if filepath.IsAbs(path) || !strings.ContainsRune(path, '/') {
+		return path, nil
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve command path %s: %w", path, err)
+	}
+	return absPath, nil
 }
 
 func userCredential(name string) (*syscall.Credential, error) {

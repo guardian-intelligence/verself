@@ -167,7 +167,7 @@
       trap "rm -f \"$tmp\"" EXIT;
       /usr/bin/install -o haproxy -g haproxy -m 0640 "$1" "$tmp";
       cd /;
-      /usr/bin/sudo -u haproxy /usr/bin/env LD_LIBRARY_PATH={{ haproxy_aws_lc_library_path }} {{ verself_bin }}/haproxy -c -f "$tmp" -f {{ haproxy_nomad_upstreams_config }}'
+      /usr/bin/sudo -u haproxy /usr/bin/env LD_LIBRARY_PATH={{ haproxy_runtime_library_path }} {{ verself_bin }}/haproxy -c -f "$tmp" -f {{ haproxy_nomad_upstreams_config }}'
       -- %s
   notify: restart haproxy
 
@@ -240,7 +240,7 @@
       - --haproxy-config
       - "{{ haproxy_nomad_upstreams_config }}"
       - --haproxy-ld-library-path
-      - "{{ haproxy_aws_lc_library_path }}"
+      - "{{ haproxy_runtime_library_path }}"
       - --lego-path
       - "{{ haproxy_lego_path }}"
       - --email

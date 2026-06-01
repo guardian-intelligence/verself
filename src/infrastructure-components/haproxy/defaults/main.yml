@@ -17,7 +17,7 @@ haproxy_lego_email: "hostmaster@{{ verself_domain }}"
 haproxy_lego_dns_propagation_disable_ans: false
 haproxy_lego_dns_propagation_wait: 60s
 haproxy_lego_dns_resolvers: []
-haproxy_aws_lc_library_path: /opt/aws-lc/lib/x86_64-linux-gnu
+haproxy_runtime_library_path: /opt/verself/profile/lib/haproxy
 haproxy_cloudflare_token_path: "{{ haproxy_credstore_dir }}/cloudflare-dns-api-token"
 haproxy_global_maxconn: 20000
 haproxy_public_frontend_maxconn: 12000
