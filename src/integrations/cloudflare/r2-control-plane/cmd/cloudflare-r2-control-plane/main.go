@@ -115,7 +115,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.getterVarsFile, "getter-vars-file", "", "JSON vars file to receive the durable Nomad artifact getter keypair.")
 	fs.StringVar(&cfg.seedBundleFile, "seed-bundle-file", "", "Seed bundle file to receive generated provider values.")
 	fs.StringVar(&cfg.listenAddr, "listen", "127.0.0.1:18732", "HTTP listen address for --action=serve.")
-	fs.StringVar(&cfg.authTokenFile, "auth-token-file", "", "Optional bearer token file for --action=serve.")
+	fs.StringVar(&cfg.authTokenFile, "auth-token-file", "", "Bearer token file for --action=serve. Defaults to site.json artifact_delivery.control_plane_token_file.")
 	fs.StringVar(&cfg.testPrefix, "test-prefix", "control-plane-verification/", "R2 object prefix used for live verification.")
 	fs.DurationVar(&cfg.tempTTL, "temp-ttl", 15*time.Minute, "TTL for Cloudflare temporary scoped R2 verification credentials.")
 	fs.DurationVar(&cfg.uploadSessionTTL, "upload-session-ttl", 30*time.Minute, "TTL for deployment artifact upload sessions.")
@@ -261,6 +261,9 @@ func (cfg *config) applySiteDefaults() error {
 	if cfg.region == "" {
 		cfg.region = siteCfg.Region
 	}
+	if cfg.authTokenFile == "" {
+		cfg.authTokenFile = siteCfg.AuthTokenFile
+	}
 	return nil
 }
 
@@ -301,6 +304,9 @@ func (cfg config) validate() error {
 	}
 	if cfg.uploadSessionTTL < time.Minute || cfg.uploadSessionTTL > 7*24*time.Hour {
 		return fmt.Errorf("--upload-session-ttl must be between 1 minute and 7 days")
+	}
+	if cfg.action == "serve" && strings.TrimSpace(cfg.authTokenFile) == "" {
+		return fmt.Errorf("--auth-token-file is required for action=serve")
 	}
 	return nil
 }

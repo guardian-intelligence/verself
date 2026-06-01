@@ -82,7 +82,9 @@ read the parent Cloudflare R2 credential from controller OpenBao. `aspect
 deploy` talks to this HTTP boundary and does not read Cloudflare or OpenBao
 credentials. The durable Nomad getter credential remains bucket-read-only so
 allocation restarts can refetch artifacts after deploy-time upload sessions
-expire.
+expire. The upload API bearer token is generated under
+`.verself/controller/r2-control-plane/` on first serve and is read by
+`aspect deploy` from checked-in site metadata.
 
 ```shell
 aspect integrations cloudflare-r2-control-plane \

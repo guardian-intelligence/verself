@@ -190,6 +190,13 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if strings.TrimSpace(raw.ArtifactDelivery.ControlPlaneAddr) == "" {
 		raw.ArtifactDelivery.ControlPlaneAddr = "http://127.0.0.1:18732"
 	}
+	raw.ArtifactDelivery.ControlPlaneTokenFile = strings.TrimSpace(raw.ArtifactDelivery.ControlPlaneTokenFile)
+	if raw.ArtifactDelivery.ControlPlaneTokenFile == "" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.control_plane_token_file is required", path)
+	}
+	if !filepath.IsAbs(raw.ArtifactDelivery.ControlPlaneTokenFile) {
+		raw.ArtifactDelivery.ControlPlaneTokenFile = filepath.Join(repoRoot, filepath.FromSlash(raw.ArtifactDelivery.ControlPlaneTokenFile))
+	}
 	if raw.NomadAddr == "" {
 		raw.NomadAddr = "http://127.0.0.1:4646"
 	}

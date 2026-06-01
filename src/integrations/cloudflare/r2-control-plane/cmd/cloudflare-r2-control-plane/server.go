@@ -3,14 +3,16 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -53,9 +55,6 @@ func serveUploadAPI(ctx context.Context, cfg config, parent r2control.ParentCred
 	token, err := loadServerAuthToken(cfg)
 	if err != nil {
 		return err
-	}
-	if token == "" && !listenIsLoopback(cfg.listenAddr) {
-		return fmt.Errorf("auth token file is required when --listen is not loopback")
 	}
 	srv := &uploadServer{
 		cfg:          cfg,
@@ -110,11 +109,8 @@ func (s *uploadServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uploadServer) authorized(r *http.Request) bool {
-	if s.authToken == "" {
-		return true
-	}
 	got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	return got != "" && got == s.authToken
+	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.authToken)) == 1
 }
 
 func (s *uploadServer) handleCreateUploadSession(w http.ResponseWriter, r *http.Request, site string) {
@@ -388,29 +384,30 @@ func isSHA256Hex(value string) bool {
 func loadServerAuthToken(cfg config) (string, error) {
 	path := strings.TrimSpace(cfg.authTokenFile)
 	if path == "" {
-		return "", nil
+		return "", fmt.Errorf("auth token file is required")
 	}
 	body, err := osReadFile(path)
+	if err == nil {
+		token := strings.TrimSpace(string(body))
+		if token == "" {
+			return "", fmt.Errorf("auth token file is empty")
+		}
+		return token, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", fmt.Errorf("create auth token directory: %w", err)
+	}
+	token, err := randomID()
 	if err != nil {
 		return "", err
 	}
-	token := strings.TrimSpace(string(body))
-	if token == "" {
-		return "", fmt.Errorf("auth token file is empty")
+	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
+		return "", fmt.Errorf("write auth token file: %w", err)
 	}
 	return token, nil
-}
-
-func listenIsLoopback(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return false
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 func osReadFile(path string) ([]byte, error) {

@@ -129,7 +129,7 @@ cloudflare_r2_control_plane = task(
         "getter_vars_file": args.string(default = "", description = "JSON vars file to receive durable Nomad artifact getter credentials."),
         "seed_bundle_file": args.string(default = "", description = "Seed bundle file to receive generated provider values."),
         "listen": args.string(default = "127.0.0.1:18732", description = "HTTP listen address for action=serve."),
-        "auth_token_file": args.string(default = "", description = "Optional bearer token file for action=serve."),
+        "auth_token_file": args.string(default = "", description = "Bearer token file for action=serve. Defaults to site.json."),
         "test_prefix": args.string(default = "control-plane-verification/", description = "R2 prefix used for live verification objects."),
         "verify_temp_credentials": args.boolean(default = True, description = "Mint scoped temporary credentials and verify with them."),
     },

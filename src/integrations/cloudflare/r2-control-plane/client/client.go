@@ -40,6 +40,9 @@ func New(cfg Config) (*Client, error) {
 	if base.Host == "" {
 		return nil, fmt.Errorf("R2 control-plane address requires a host")
 	}
+	if strings.TrimSpace(cfg.Token) == "" {
+		return nil, fmt.Errorf("R2 control-plane bearer token is required")
+	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 2 * time.Minute
