@@ -25,6 +25,7 @@ const (
 
 var (
 	nameRE       = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	jobIDRE      = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	secretNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z0-9_]+)+$`)
 )
 
@@ -60,6 +61,7 @@ type RuntimeSecretSource struct {
 	Kind           string `json:"kind"`
 	SiteSecretKey  string `json:"site_secret_key,omitempty"`
 	File           string `json:"file,omitempty"`
+	ProducedByJob  string `json:"produced_by_job,omitempty"`
 	GeneratedBytes int    `json:"generated_bytes,omitempty"`
 	Encoding       string `json:"encoding,omitempty"`
 }
@@ -68,14 +70,16 @@ const (
 	RuntimeSecretSourceSiteSecret = "site_secret"
 	RuntimeSecretSourceFile       = "file"
 	RuntimeSecretSourceGenerated  = "generated"
+	RuntimeSecretSourceProduced   = "produced_by_job"
 )
 
 type NomadRole struct {
-	Name      string   `json:"name"`
-	Policy    string   `json:"policy"`
-	Component string   `json:"component"`
-	JobID     string   `json:"job_id"`
-	Secrets   []string `json:"secrets"`
+	Name         string   `json:"name"`
+	Policy       string   `json:"policy"`
+	Component    string   `json:"component"`
+	JobID        string   `json:"job_id"`
+	Secrets      []string `json:"secrets"`
+	WriteSecrets []string `json:"write_secrets,omitempty"`
 }
 
 type PostgresBundle struct {
@@ -145,6 +149,10 @@ func loadRuntimeSecrets(repoRoot, _ string, components []Component) ([]RuntimeSe
 	if err != nil {
 		return nil, err
 	}
+	componentByJob := map[string]Component{}
+	for _, component := range components {
+		componentByJob[component.JobID] = component
+	}
 	ownerByRoot := map[string][]Component{}
 	for _, owner := range owners {
 		ownerByRoot[owner.ownerRoot] = append(ownerByRoot[owner.ownerRoot], owner.component)
@@ -181,6 +189,11 @@ func loadRuntimeSecrets(repoRoot, _ string, components []Component) ([]RuntimeSe
 				JobID:     component.JobID,
 				Source:    runtimeSecretSource(seed),
 			}
+			if secret.Source.Kind == RuntimeSecretSourceProduced {
+				if _, ok := componentByJob[secret.Source.ProducedByJob]; !ok {
+					return fmt.Errorf("%s: produced_by_job %q does not match a Nomad component", rel, secret.Source.ProducedByJob)
+				}
+			}
 			if err := validateRuntimeSecret(secret); err != nil {
 				return fmt.Errorf("%s: %w", rel, err)
 			}
@@ -213,6 +226,9 @@ func runtimeSecretSource(seed deploycontract.RuntimeSecretSeed) RuntimeSecretSou
 	}
 	if file := strings.TrimSpace(seed.File); file != "" {
 		return RuntimeSecretSource{Kind: RuntimeSecretSourceFile, File: file}
+	}
+	if jobID := strings.TrimSpace(seed.ProducedByJob); jobID != "" {
+		return RuntimeSecretSource{Kind: RuntimeSecretSourceProduced, ProducedByJob: jobID}
 	}
 	if seed.Generated.Bytes != 0 {
 		return RuntimeSecretSource{
@@ -288,27 +304,43 @@ func validateRuntimeSecret(secret RuntimeSecret) error {
 			return fmt.Errorf("%s generated.bytes must be between 16 and 96", secret.Name)
 		}
 		switch secret.Source.Encoding {
-		case "", "base64url", "hex":
+		case "", "base64url", "hex", "alphanumeric":
 		default:
-			return fmt.Errorf("%s generated.encoding must be base64url or hex", secret.Name)
+			return fmt.Errorf("%s generated.encoding must be base64url, hex, or alphanumeric", secret.Name)
+		}
+	case RuntimeSecretSourceProduced:
+		sources++
+		if !jobIDRE.MatchString(secret.Source.ProducedByJob) {
+			return fmt.Errorf("%s produced_by_job must match %s", secret.Name, jobIDRE.String())
 		}
 	case "":
 	default:
-		return fmt.Errorf("%s source.kind must be site_secret, file, or generated", secret.Name)
+		return fmt.Errorf("%s source.kind must be site_secret, file, generated, or produced_by_job", secret.Name)
 	}
 	if sources != 1 {
-		return fmt.Errorf("%s must declare exactly one source: site_secret, file, or generated", secret.Name)
+		return fmt.Errorf("%s must declare exactly one source: site_secret, file, generated, or produced_by_job", secret.Name)
 	}
 	return nil
 }
 
 func buildNomadRoles(secrets []RuntimeSecret) []NomadRole {
 	byJob := map[string][]RuntimeSecret{}
+	writesByJob := map[string][]string{}
 	for _, secret := range secrets {
 		byJob[secret.JobID] = append(byJob[secret.JobID], secret)
+		if secret.Source.Kind == RuntimeSecretSourceProduced {
+			writesByJob[secret.Source.ProducedByJob] = append(writesByJob[secret.Source.ProducedByJob], secret.Name)
+		}
 	}
-	jobs := make([]string, 0, len(byJob))
+	jobsSeen := map[string]bool{}
 	for job := range byJob {
+		jobsSeen[job] = true
+	}
+	for job := range writesByJob {
+		jobsSeen[job] = true
+	}
+	jobs := make([]string, 0, len(jobsSeen))
+	for job := range jobsSeen {
 		jobs = append(jobs, job)
 	}
 	sort.Strings(jobs)
@@ -317,15 +349,25 @@ func buildNomadRoles(secrets []RuntimeSecret) []NomadRole {
 		jobSecrets := byJob[job]
 		sort.Slice(jobSecrets, func(i, j int) bool { return jobSecrets[i].Name < jobSecrets[j].Name })
 		names := make([]string, 0, len(jobSecrets))
+		component := job
 		for _, secret := range jobSecrets {
 			names = append(names, secret.Name)
+			if secret.Component != "" {
+				component = secret.Component
+			}
+		}
+		writeSecrets := append([]string(nil), writesByJob[job]...)
+		sort.Strings(writeSecrets)
+		if component == job && len(jobSecrets) == 0 {
+			component = job
 		}
 		roles = append(roles, NomadRole{
-			Name:      job + "-runtime",
-			Policy:    job + "-runtime",
-			Component: jobSecrets[0].Component,
-			JobID:     job,
-			Secrets:   names,
+			Name:         job + "-runtime",
+			Policy:       job + "-runtime",
+			Component:    component,
+			JobID:        job,
+			Secrets:      names,
+			WriteSecrets: writeSecrets,
 		})
 	}
 	return roles

@@ -175,9 +175,6 @@ func run() error {
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
 	browserOIDCClientID := cfg.RequireCredential("oidc-client-id")
 	browserOIDCClientSecret := cfg.RequireCredential("oidc-client-secret")
-	// Resolved lazily at request time: auth-control-plane-apply writes this
-	// credstore file when it provisions the GitHub login IdP, which can happen
-	// after this service starts. A missing file disables the routes until present.
 	githubLoginIDPIDPath := cfg.CredentialPath("github-login-idp-id")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "iam_service")

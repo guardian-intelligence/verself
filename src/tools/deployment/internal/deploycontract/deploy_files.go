@@ -44,11 +44,12 @@ type RuntimeSecretsFile struct {
 }
 
 type RuntimeSecretSeed struct {
-	Name       string `yaml:"name"`
-	JobID      string `yaml:"job_id"`
-	SiteSecret string `yaml:"site_secret"`
-	File       string `yaml:"file"`
-	Generated  struct {
+	Name          string `yaml:"name"`
+	JobID         string `yaml:"job_id"`
+	SiteSecret    string `yaml:"site_secret"`
+	File          string `yaml:"file"`
+	ProducedByJob string `yaml:"produced_by_job"`
+	Generated     struct {
 		Bytes    int    `yaml:"bytes"`
 		Encoding string `yaml:"encoding"`
 	} `yaml:"generated"`
@@ -176,8 +177,8 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 		if !secretRE.MatchString(strings.TrimSpace(seed.Name)) {
 			v.add(rel, fmt.Sprintf("%s.name must match %s", prefix, secretRE.String()))
 		}
-		if !exactlyOneRuntimeSecretSource(seed.SiteSecret, seed.File, seed.Generated.Bytes) {
-			v.add(rel, prefix+" must declare exactly one source: site_secret, file, or generated")
+		if !exactlyOneRuntimeSecretSource(seed.SiteSecret, seed.File, seed.ProducedByJob, seed.Generated.Bytes) {
+			v.add(rel, prefix+" must declare exactly one source: site_secret, file, generated, or produced_by_job")
 		}
 		if seed.SiteSecret != "" {
 			requireName(v, rel, prefix+".site_secret", seed.SiteSecret)
@@ -185,14 +186,19 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 		if seed.File != "" {
 			requirePathPrefix(v, rel, prefix+".file", seed.File, "/")
 		}
+		if seed.ProducedByJob != "" {
+			if !jobIDRE.MatchString(strings.TrimSpace(seed.ProducedByJob)) {
+				v.add(rel, fmt.Sprintf("%s.produced_by_job must match %s", prefix, jobIDRE.String()))
+			}
+		}
 		if seed.Generated.Bytes != 0 {
 			if seed.Generated.Bytes < 16 || seed.Generated.Bytes > 96 {
 				v.add(rel, prefix+".generated.bytes must be between 16 and 96")
 			}
 			switch strings.TrimSpace(seed.Generated.Encoding) {
-			case "", "base64url", "hex":
+			case "", "base64url", "hex", "alphanumeric":
 			default:
-				v.add(rel, prefix+".generated.encoding must be base64url or hex")
+				v.add(rel, prefix+".generated.encoding must be base64url, hex, or alphanumeric")
 			}
 		}
 		v.claim(rel, v.seen.runtimeSecrets, "OpenBao runtime secret", seed.Name)

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -35,12 +37,25 @@ const (
 	productTokenClaimsFunction                 = "preaccesstoken"
 	defaultZitadelBaseURL                      = "http://127.0.0.1:8085"
 	defaultZitadelAdminPATPath                 = "/etc/zitadel/admin.pat"
-	defaultIAMCredstoreDir                     = "/etc/credstore/iam-service"
-	defaultIAMCredstoreGroup                   = "iam_service"
 	defaultGithubLoginIDPName                  = "GitHub"
+	defaultOpenBaoAddr                         = "https://127.0.0.1:8200"
+	defaultOpenBaoCACert                       = "/etc/openbao/tls/cert.pem"
 	desiredPasswordMinLength                   = 8
 	desiredPasswordLockoutAttempts             = 10
 	credentialMode                 os.FileMode = 0o640
+)
+
+const (
+	iamAuthAudienceSecret     = "iam-service.zitadel.auth_audience"
+	iamOIDCAppIDSecret        = "iam-service.zitadel.oidc_app_id"
+	iamOIDCClientIDSecret     = "iam-service.zitadel.oidc_client_id"
+	iamOIDCClientSecretSecret = "iam-service.zitadel.oidc_client_secret"
+	iamOIDCProjectIDSecret    = "iam-service.zitadel.oidc_project_id"
+	iamOIDCCLIAppIDSecret     = "iam-service.zitadel.oidc_cli_app_id"
+	iamOIDCCLIClientIDSecret  = "iam-service.zitadel.oidc_cli_client_id"
+	iamOIDCCLIProjectIDSecret = "iam-service.zitadel.oidc_cli_project_id"
+	iamActionSigningKeySecret = "iam-service.zitadel.action_signing_key"
+	iamGithubLoginIDPIDSecret = "iam-service.zitadel.github_login_idp_id"
 )
 
 type config struct {
@@ -49,8 +64,6 @@ type config struct {
 	adminPATPath        string
 	verselfDomain       string
 	iamServiceDomain    string
-	iamCredstoreDir     string
-	iamCredstoreGroup   string
 	projectName         string
 	browserAppName      string
 	cliAppName          string
@@ -58,12 +71,16 @@ type config struct {
 	claimsActionPath    string
 	zitadelReadyWait    time.Duration
 	zitadelReadyBackoff time.Duration
-	// GitHub login IdP ("Sign in with GitHub"). Optional: when either path is
+	openBaoAddr         string
+	openBaoCACert       string
+	openBaoToken        string
+	// GitHub login IdP ("Sign in with GitHub"). Optional: when either value is
 	// empty, GitHub IdP provisioning is skipped so deployments without GitHub
-	// login still converge. Both files are rendered from SOPS by the Zitadel
-	// Ansible role (the client id is non-secret but kept on the host for the
-	// same delivery path as the secret).
+	// login still converge. Values normally come from site metadata plus an
+	// OpenBao-rendered Nomad template; paths remain for local tests.
 	githubLoginIDPName          string
+	githubLoginClientID         string
+	githubLoginClientSecret     string
 	githubLoginClientIDPath     string
 	githubLoginClientSecretPath string
 }
@@ -106,6 +123,12 @@ type audienceSpec struct {
 	ComponentName  string
 	CredentialPath string
 	Group          string
+}
+
+type runtimeSecretStore struct {
+	addr  string
+	token string
+	http  *http.Client
 }
 
 type policyInt int
@@ -168,8 +191,6 @@ func run(args []string) error {
 		adminPATPath:        envOr("AUTH_CONTROL_PLANE_ADMIN_PAT_PATH", defaultZitadelAdminPATPath),
 		verselfDomain:       envOr("AUTH_CONTROL_PLANE_VERSELF_DOMAIN", ""),
 		iamServiceDomain:    envOr("AUTH_CONTROL_PLANE_IAM_SERVICE_DOMAIN", ""),
-		iamCredstoreDir:     envOr("AUTH_CONTROL_PLANE_IAM_CREDSTORE_DIR", defaultIAMCredstoreDir),
-		iamCredstoreGroup:   envOr("AUTH_CONTROL_PLANE_IAM_CREDSTORE_GROUP", defaultIAMCredstoreGroup),
 		projectName:         defaultProjectName,
 		browserAppName:      defaultBrowserAppName,
 		cliAppName:          defaultCLIAppName,
@@ -177,8 +198,13 @@ func run(args []string) error {
 		claimsActionPath:    defaultClaimsActionPath,
 		zitadelReadyWait:    60 * time.Second,
 		zitadelReadyBackoff: time.Second,
+		openBaoAddr:         envOr("BAO_ADDR", envOr("VAULT_ADDR", defaultOpenBaoAddr)),
+		openBaoCACert:       envOr("BAO_CACERT", envOr("VAULT_CACERT", defaultOpenBaoCACert)),
+		openBaoToken:        envOr("BAO_TOKEN", envOr("VAULT_TOKEN", "")),
 
 		githubLoginIDPName:          envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_IDP_NAME", defaultGithubLoginIDPName),
+		githubLoginClientID:         envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID", ""),
+		githubLoginClientSecret:     envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_SECRET", ""),
 		githubLoginClientIDPath:     envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID_PATH", ""),
 		githubLoginClientSecretPath: envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_SECRET_PATH", ""),
 	}
@@ -188,14 +214,17 @@ func run(args []string) error {
 	fs.StringVar(&cfg.adminPATPath, "admin-pat-path", cfg.adminPATPath, "Zitadel admin PAT path.")
 	fs.StringVar(&cfg.verselfDomain, "verself-domain", cfg.verselfDomain, "Product apex domain.")
 	fs.StringVar(&cfg.iamServiceDomain, "iam-service-domain", cfg.iamServiceDomain, "Public IAM service domain.")
-	fs.StringVar(&cfg.iamCredstoreDir, "iam-credstore-dir", cfg.iamCredstoreDir, "IAM credstore directory.")
-	fs.StringVar(&cfg.iamCredstoreGroup, "iam-credstore-group", cfg.iamCredstoreGroup, "IAM credstore group.")
 	fs.StringVar(&cfg.projectName, "project-name", cfg.projectName, "Zitadel project for product API audiences.")
 	fs.StringVar(&cfg.browserAppName, "browser-app-name", cfg.browserAppName, "Browser OIDC app name.")
 	fs.StringVar(&cfg.cliAppName, "cli-app-name", cfg.cliAppName, "CLI OIDC app name.")
 	fs.StringVar(&cfg.claimsTargetName, "claims-target-name", cfg.claimsTargetName, "Product token claims action target name.")
 	fs.StringVar(&cfg.claimsActionPath, "claims-action-path", cfg.claimsActionPath, "Product token claims action path.")
+	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", cfg.openBaoAddr, "OpenBao address for publishing Zitadel outputs.")
+	fs.StringVar(&cfg.openBaoCACert, "openbao-ca-cert", cfg.openBaoCACert, "OpenBao CA certificate path.")
+	fs.StringVar(&cfg.openBaoToken, "openbao-token", cfg.openBaoToken, "OpenBao token. Defaults to BAO_TOKEN or VAULT_TOKEN.")
 	fs.StringVar(&cfg.githubLoginIDPName, "github-login-idp-name", cfg.githubLoginIDPName, "Zitadel IdP display name for Sign in with GitHub.")
+	fs.StringVar(&cfg.githubLoginClientID, "github-login-client-id", cfg.githubLoginClientID, "GitHub OAuth App client id for Sign in with GitHub. Empty uses --github-login-client-id-path.")
+	fs.StringVar(&cfg.githubLoginClientSecret, "github-login-client-secret", cfg.githubLoginClientSecret, "GitHub OAuth App client secret. Empty uses --github-login-client-secret-path.")
 	fs.StringVar(&cfg.githubLoginClientIDPath, "github-login-client-id-path", cfg.githubLoginClientIDPath, "Path to the GitHub OAuth App client id for Sign in with GitHub. Empty skips provisioning.")
 	fs.StringVar(&cfg.githubLoginClientSecretPath, "github-login-client-secret-path", cfg.githubLoginClientSecretPath, "Path to the GitHub OAuth App client secret. Empty skips provisioning.")
 	if err := fs.Parse(args); err != nil {
@@ -227,18 +256,18 @@ func run(args []string) error {
 func (cfg config) validate() error {
 	missing := []string{}
 	for name, value := range map[string]string{
-		"--zitadel-base-url":    cfg.zitadelBaseURL,
-		"--zitadel-host":        cfg.zitadelHost,
-		"--admin-pat-path":      cfg.adminPATPath,
-		"--verself-domain":      cfg.verselfDomain,
-		"--iam-service-domain":  cfg.iamServiceDomain,
-		"--iam-credstore-dir":   cfg.iamCredstoreDir,
-		"--iam-credstore-group": cfg.iamCredstoreGroup,
-		"--project-name":        cfg.projectName,
-		"--browser-app-name":    cfg.browserAppName,
-		"--cli-app-name":        cfg.cliAppName,
-		"--claims-target-name":  cfg.claimsTargetName,
-		"--claims-action-path":  cfg.claimsActionPath,
+		"--zitadel-base-url":   cfg.zitadelBaseURL,
+		"--zitadel-host":       cfg.zitadelHost,
+		"--admin-pat-path":     cfg.adminPATPath,
+		"--verself-domain":     cfg.verselfDomain,
+		"--iam-service-domain": cfg.iamServiceDomain,
+		"--project-name":       cfg.projectName,
+		"--browser-app-name":   cfg.browserAppName,
+		"--cli-app-name":       cfg.cliAppName,
+		"--claims-target-name": cfg.claimsTargetName,
+		"--claims-action-path": cfg.claimsActionPath,
+		"--openbao-addr":       cfg.openBaoAddr,
+		"--openbao-token":      cfg.openBaoToken,
 	} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)
@@ -308,6 +337,12 @@ func apply(ctx context.Context, cfg config) error {
 		token:      token,
 		client:     &http.Client{Timeout: 5 * time.Second},
 	}
+	secrets, err := newRuntimeSecretStore(cfg)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	if err := client.EnsurePasswordPolicies(ctx); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -324,17 +359,17 @@ func apply(ctx context.Context, cfg config) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureRuntimeAudiences(project.ID, cfg); err != nil {
+	if err := ensureRuntimeAudiences(ctx, secrets, project.ID); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureBrowserOIDCApplication(ctx, client, project.ID, cfg); err != nil {
+	if err := ensureBrowserOIDCApplication(ctx, secrets, client, project.ID, cfg); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureCLIOIDCApplication(ctx, client, project.ID, cfg); err != nil {
+	if err := ensureCLIOIDCApplication(ctx, secrets, client, project.ID, cfg); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -344,12 +379,12 @@ func apply(ctx context.Context, cfg config) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureProductTokenClaimsAction(ctx, client, cfg); err != nil {
+	if err := ensureProductTokenClaimsAction(ctx, secrets, client, cfg); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureGitHubLoginIDP(ctx, client, cfg); err != nil {
+	if err := ensureGitHubLoginIDP(ctx, secrets, client, cfg); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -391,8 +426,11 @@ func waitForZitadel(ctx context.Context, cfg config) error {
 	return fmt.Errorf("wait for Zitadel health: %w", lastErr)
 }
 
-func ensureRuntimeAudiences(projectID string, cfg config) error {
-	for _, spec := range runtimeAudienceSpecs(cfg) {
+func ensureRuntimeAudiences(ctx context.Context, secrets *runtimeSecretStore, projectID string) error {
+	if err := secrets.writeRuntimeSecret(ctx, iamAuthAudienceSecret, projectID); err != nil {
+		return fmt.Errorf("write iam-service auth audience: %w", err)
+	}
+	for _, spec := range runtimeAudienceSpecs() {
 		if err := writeCredential(spec.CredentialPath, spec.Group, projectID+"\n"); err != nil {
 			return fmt.Errorf("write %s auth audience: %w", spec.ComponentName, err)
 		}
@@ -400,11 +438,10 @@ func ensureRuntimeAudiences(projectID string, cfg config) error {
 	return nil
 }
 
-func runtimeAudienceSpecs(cfg config) []audienceSpec {
+func runtimeAudienceSpecs() []audienceSpec {
 	return []audienceSpec{
 		{ComponentName: "analytics-service", CredentialPath: "/etc/credstore/analytics-service/auth-audience", Group: "analytics_service"},
 		{ComponentName: "distribution-service", CredentialPath: "/etc/credstore/distribution-service/auth-audience", Group: "distribution_service"},
-		{ComponentName: "iam-service", CredentialPath: filepath.Join(cfg.iamCredstoreDir, "auth-audience"), Group: cfg.iamCredstoreGroup},
 		{ComponentName: "governance-service", CredentialPath: "/etc/credstore/governance-service/auth-audience", Group: "governance_service"},
 		{ComponentName: "notifications-service", CredentialPath: "/etc/credstore/notifications-service/auth-audience", Group: "notifications_service"},
 		{ComponentName: "object-storage-service", CredentialPath: "/etc/credstore/object-storage-service/auth-audience", Group: "object_storage_service"},
@@ -527,13 +564,19 @@ func desiredLockoutPolicyBody() map[string]any {
 	}
 }
 
-func ensureBrowserOIDCApplication(ctx context.Context, client zitadelClient, projectID string, cfg config) error {
+func ensureBrowserOIDCApplication(ctx context.Context, secrets *runtimeSecretStore, client zitadelClient, projectID string, cfg config) error {
 	app, found, err := client.FindOIDCAppByName(ctx, projectID, cfg.browserAppName)
 	if err != nil {
 		return err
 	}
-	storedProjectID, _ := readTrimmed(filepath.Join(cfg.iamCredstoreDir, "oidc-project-id"))
-	storedSecret, _ := readTrimmed(filepath.Join(cfg.iamCredstoreDir, "oidc-client-secret"))
+	storedProjectID, _, err := secrets.readRuntimeSecret(ctx, iamOIDCProjectIDSecret)
+	if err != nil {
+		return fmt.Errorf("read browser OIDC project id: %w", err)
+	}
+	storedSecret, _, err := secrets.readRuntimeSecret(ctx, iamOIDCClientSecretSecret)
+	if err != nil {
+		return fmt.Errorf("read browser OIDC client secret: %w", err)
+	}
 	if found && strings.TrimSpace(app.ClientSecret) == "" && (storedProjectID != projectID || storedSecret == "") {
 		if err := client.DeleteOIDCApp(ctx, projectID, app.ID); err != nil {
 			return err
@@ -552,25 +595,25 @@ func ensureBrowserOIDCApplication(ctx context.Context, client zitadelClient, pro
 		return err
 	}
 	values := map[string]string{
-		"oidc-app-id":     app.ID + "\n",
-		"oidc-client-id":  app.ClientID + "\n",
-		"oidc-project-id": projectID + "\n",
+		iamOIDCAppIDSecret:     app.ID,
+		iamOIDCClientIDSecret:  app.ClientID,
+		iamOIDCProjectIDSecret: projectID,
 	}
 	if strings.TrimSpace(app.ClientSecret) != "" {
-		values["oidc-client-secret"] = app.ClientSecret + "\n"
+		values[iamOIDCClientSecretSecret] = app.ClientSecret
 	} else if storedSecret == "" {
-		return fmt.Errorf("browser OIDC app exists but no client secret is available in %s/oidc-client-secret", cfg.iamCredstoreDir)
+		return fmt.Errorf("browser OIDC app exists but no client secret is available in OpenBao")
 	}
-	for name, value := range values {
-		if err := writeCredential(filepath.Join(cfg.iamCredstoreDir, name), cfg.iamCredstoreGroup, value); err != nil {
+	for secret, value := range values {
+		if err := secrets.writeRuntimeSecret(ctx, secret, value); err != nil {
+			name := strings.TrimPrefix(secret, "iam-service.zitadel.")
 			return fmt.Errorf("write browser OIDC %s: %w", name, err)
 		}
 	}
-	marker := fmt.Sprintf("app_id=%s\nclient_id=%s\nauth_method=OIDC_AUTH_METHOD_TYPE_POST\n", app.ID, app.ClientID)
-	return writeCredential(filepath.Join(cfg.iamCredstoreDir, "oidc-web-cutover"), cfg.iamCredstoreGroup, marker)
+	return nil
 }
 
-func ensureCLIOIDCApplication(ctx context.Context, client zitadelClient, projectID string, cfg config) error {
+func ensureCLIOIDCApplication(ctx context.Context, secrets *runtimeSecretStore, client zitadelClient, projectID string, cfg config) error {
 	app, found, err := client.FindOIDCAppByName(ctx, projectID, cfg.cliAppName)
 	if err != nil {
 		return err
@@ -584,20 +627,20 @@ func ensureCLIOIDCApplication(ctx context.Context, client zitadelClient, project
 		return err
 	}
 	values := map[string]string{
-		"oidc-cli-app-id":     app.ID + "\n",
-		"oidc-cli-client-id":  app.ClientID + "\n",
-		"oidc-cli-project-id": projectID + "\n",
-		"oidc-cli-cutover":    fmt.Sprintf("app_id=%s\nclient_id=%s\nauth_method=OIDC_AUTH_METHOD_TYPE_NONE\n", app.ID, app.ClientID),
+		iamOIDCCLIAppIDSecret:     app.ID,
+		iamOIDCCLIClientIDSecret:  app.ClientID,
+		iamOIDCCLIProjectIDSecret: projectID,
 	}
-	for name, value := range values {
-		if err := writeCredential(filepath.Join(cfg.iamCredstoreDir, name), cfg.iamCredstoreGroup, value); err != nil {
+	for secret, value := range values {
+		if err := secrets.writeRuntimeSecret(ctx, secret, value); err != nil {
+			name := strings.TrimPrefix(secret, "iam-service.zitadel.")
 			return fmt.Errorf("write CLI OIDC %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
-func ensureProductTokenClaimsAction(ctx context.Context, client zitadelClient, cfg config) error {
+func ensureProductTokenClaimsAction(ctx context.Context, secrets *runtimeSecretStore, client zitadelClient, cfg config) error {
 	endpoint := productTokenClaimsEndpoint(cfg)
 	target, found, err := client.FindActionTargetByName(ctx, cfg.claimsTargetName)
 	if err != nil {
@@ -617,7 +660,7 @@ func ensureProductTokenClaimsAction(ctx context.Context, client zitadelClient, c
 	if strings.TrimSpace(target.ID) == "" || strings.TrimSpace(target.SigningKey) == "" {
 		return errors.New("Zitadel product token claims target returned incomplete credentials")
 	}
-	if err := writeCredential(filepath.Join(cfg.iamCredstoreDir, "zitadel-action-signing-key"), cfg.iamCredstoreGroup, target.SigningKey+"\n"); err != nil {
+	if err := secrets.writeRuntimeSecret(ctx, iamActionSigningKeySecret, target.SigningKey); err != nil {
 		return fmt.Errorf("write Zitadel product token claims signing key: %w", err)
 	}
 	return client.SetFunctionExecution(ctx, productTokenClaimsFunction, []string{target.ID})
@@ -886,6 +929,94 @@ func (c zitadelClient) doJSON(ctx context.Context, method, path string, body any
 	return nil
 }
 
+func newRuntimeSecretStore(cfg config) (*runtimeSecretStore, error) {
+	addr := strings.TrimRight(strings.TrimSpace(cfg.openBaoAddr), "/")
+	if addr == "" {
+		return nil, fmt.Errorf("OpenBao address is required")
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if cfg.openBaoCACert != "" {
+		pem, err := os.ReadFile(cfg.openBaoCACert)
+		if err != nil {
+			return nil, fmt.Errorf("read OpenBao CA certificate: %w", err)
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("parse OpenBao CA certificate %s", cfg.openBaoCACert)
+		}
+		transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	}
+	return &runtimeSecretStore{
+		addr:  addr,
+		token: strings.TrimSpace(cfg.openBaoToken),
+		http:  &http.Client{Transport: transport, Timeout: 5 * time.Second},
+	}, nil
+}
+
+func (s *runtimeSecretStore) readRuntimeSecret(ctx context.Context, name string) (string, bool, error) {
+	var out struct {
+		Data struct {
+			Data map[string]any `json:"data"`
+		} `json:"data"`
+	}
+	status, err := s.doJSON(ctx, http.MethodGet, runtimeSecretPath(name), nil, &out)
+	if status == http.StatusNotFound {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	value, _ := out.Data.Data["value"].(string)
+	return strings.TrimSpace(value), strings.TrimSpace(value) != "", nil
+}
+
+func (s *runtimeSecretStore) writeRuntimeSecret(ctx context.Context, name, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("%s value is empty", name)
+	}
+	_, err := s.doJSON(ctx, http.MethodPost, runtimeSecretPath(name), map[string]any{"data": map[string]any{"value": value}}, nil)
+	return err
+}
+
+func (s *runtimeSecretStore) doJSON(ctx context.Context, method, path string, body any, out any) (int, error) {
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return 0, fmt.Errorf("encode OpenBao request: %w", err)
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, s.addr+"/"+path, reader)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("X-Vault-Token", s.token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("openbao %s %s: %w", method, path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if out != nil && len(raw) > 0 {
+			if err := json.Unmarshal(raw, out); err != nil {
+				return resp.StatusCode, fmt.Errorf("decode openbao %s %s: %w", method, path, err)
+			}
+		}
+		return resp.StatusCode, nil
+	}
+	return resp.StatusCode, fmt.Errorf("openbao %s %s status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
+}
+
+func runtimeSecretPath(name string) string {
+	return "v1/kv-runtime/data/secret/org/" + url.PathEscape(name)
+}
+
 func browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs []string, loginBaseURI string) map[string]any {
 	return map[string]any{
 		"redirectUris":           redirectURIs,
@@ -934,20 +1065,27 @@ func productTokenClaimsTargetBody(name, endpoint string) map[string]any {
 
 // ensureGitHubLoginIDP provisions (or reconciles) the instance GitHub identity
 // provider used for "Sign in with GitHub", links it to the login policy, and
-// publishes its id to the iam-service credstore so iam-service can start the
-// idp-intent flow. Skipped when client credentials are not configured.
-func ensureGitHubLoginIDP(ctx context.Context, client zitadelClient, cfg config) error {
-	if strings.TrimSpace(cfg.githubLoginClientIDPath) == "" || strings.TrimSpace(cfg.githubLoginClientSecretPath) == "" {
+// publishes its id to OpenBao for iam-service.
+func ensureGitHubLoginIDP(ctx context.Context, secrets *runtimeSecretStore, client zitadelClient, cfg config) error {
+	clientID := strings.TrimSpace(cfg.githubLoginClientID)
+	clientSecret := strings.TrimSpace(cfg.githubLoginClientSecret)
+	if clientID == "" && strings.TrimSpace(cfg.githubLoginClientIDPath) != "" {
+		value, err := readSecret(cfg.githubLoginClientIDPath)
+		if err != nil {
+			return fmt.Errorf("read github login client id: %w", err)
+		}
+		clientID = strings.TrimSpace(value)
+	}
+	if clientSecret == "" && strings.TrimSpace(cfg.githubLoginClientSecretPath) != "" {
+		value, err := readSecret(cfg.githubLoginClientSecretPath)
+		if err != nil {
+			return fmt.Errorf("read github login client secret: %w", err)
+		}
+		clientSecret = strings.TrimSpace(value)
+	}
+	if clientID == "" || clientSecret == "" {
 		fmt.Println("auth-control-plane-apply: github login idp not configured; skipping")
 		return nil
-	}
-	clientID, err := readSecret(cfg.githubLoginClientIDPath)
-	if err != nil {
-		return fmt.Errorf("read github login client id: %w", err)
-	}
-	clientSecret, err := readSecret(cfg.githubLoginClientSecretPath)
-	if err != nil {
-		return fmt.Errorf("read github login client secret: %w", err)
 	}
 	idpID, found, err := client.FindIDPByName(ctx, cfg.githubLoginIDPName)
 	if err != nil {
@@ -966,7 +1104,7 @@ func ensureGitHubLoginIDP(ctx context.Context, client zitadelClient, cfg config)
 	if err := client.AddIDPToLoginPolicy(ctx, idpID); err != nil {
 		return err
 	}
-	return writeCredential(filepath.Join(cfg.iamCredstoreDir, "github-login-idp-id"), cfg.iamCredstoreGroup, idpID+"\n")
+	return secrets.writeRuntimeSecret(ctx, iamGithubLoginIDPIDSecret, idpID)
 }
 
 func githubIDPBody(name, clientID, clientSecret string) map[string]any {

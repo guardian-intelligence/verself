@@ -10,6 +10,16 @@ job "auth-control-plane" {
       driver = "raw_exec"
       user = "root"
 
+      vault {
+        role = "auth-control-plane-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       artifact {
         source = "verself-artifact://auth-control-plane-apply"
         destination = "local"
@@ -21,21 +31,36 @@ job "auth-control-plane" {
       }
 
       env {
-        AUTH_CONTROL_PLANE_ADMIN_PAT_PATH = "/etc/zitadel/admin.pat"
-        AUTH_CONTROL_PLANE_IAM_CREDSTORE_DIR = "/etc/credstore/iam-service"
-        AUTH_CONTROL_PLANE_IAM_CREDSTORE_GROUP = "iam_service"
-        AUTH_CONTROL_PLANE_IAM_SERVICE_DOMAIN = "iam.api.verself.sh"
-        AUTH_CONTROL_PLANE_VERSELF_DOMAIN = "verself.sh"
+        AUTH_CONTROL_PLANE_ADMIN_PAT_PATH = "$${NOMAD_SECRETS_DIR}/admin.pat"
+        AUTH_CONTROL_PLANE_IAM_SERVICE_DOMAIN = "__VERSELF_IAM_SERVICE_DOMAIN__"
+        AUTH_CONTROL_PLANE_VERSELF_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
         AUTH_CONTROL_PLANE_ZITADEL_BASE_URL = "http://127.0.0.1:8085"
-        AUTH_CONTROL_PLANE_ZITADEL_HOST = "verself.sh"
-        # Sign in with GitHub. Files are rendered from SOPS by the Zitadel
-        # Ansible role; empty/absent files skip GitHub IdP provisioning.
-        AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID_PATH = "/etc/credstore/zitadel/github-login-client-id"
-        AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_SECRET_PATH = "/etc/credstore/zitadel/github-login-client-secret"
+        AUTH_CONTROL_PLANE_ZITADEL_HOST = "__VERSELF_PRODUCT_DOMAIN__"
+        AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID = "__VERSELF_GITHUB_OAUTH_CLIENT_ID__"
+        BAO_ADDR = "https://127.0.0.1:8200"
+        BAO_CACERT = "/etc/openbao/tls/cert.pem"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "auth-control-plane-apply"
         VERSELF_SUPERVISOR = "nomad"
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "secrets/admin.pat"
+        perms = "0400"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "secrets/github-login.env"
+        env = true
+        data = <<-EOT
+AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/auth-control-plane.github_login.oauth_client_secret" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
 
       resources {

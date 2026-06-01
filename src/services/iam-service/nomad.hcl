@@ -40,12 +40,7 @@ job "iam-service" {
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "iam_service"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/iam-service/auth-audience"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/iam-service/clickhouse-ca-cert"
-        VERSELF_CRED_GITHUB_LOGIN_IDP_ID = "/etc/credstore/iam-service/github-login-idp-id"
-        VERSELF_CRED_OIDC_CLIENT_ID = "/etc/credstore/iam-service/oidc-client-id"
-        VERSELF_CRED_OIDC_CLIENT_SECRET = "/etc/credstore/iam-service/oidc-client-secret"
-        VERSELF_CRED_ZITADEL_ACTION_SIGNING_KEY = "/etc/credstore/iam-service/zitadel-action-signing-key"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -102,12 +97,12 @@ EOT
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "iam_service"
-        VERSELF_CRED_AUTH_AUDIENCE = "/etc/credstore/iam-service/auth-audience"
+        VERSELF_CRED_AUTH_AUDIENCE = "$${NOMAD_SECRETS_DIR}/auth-audience"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/credstore/iam-service/clickhouse-ca-cert"
-        VERSELF_CRED_GITHUB_LOGIN_IDP_ID = "/etc/credstore/iam-service/github-login-idp-id"
-        VERSELF_CRED_OIDC_CLIENT_ID = "/etc/credstore/iam-service/oidc-client-id"
-        VERSELF_CRED_OIDC_CLIENT_SECRET = "/etc/credstore/iam-service/oidc-client-secret"
-        VERSELF_CRED_ZITADEL_ACTION_SIGNING_KEY = "/etc/credstore/iam-service/zitadel-action-signing-key"
+        VERSELF_CRED_GITHUB_LOGIN_IDP_ID = "$${NOMAD_SECRETS_DIR}/github-login-idp-id"
+        VERSELF_CRED_OIDC_CLIENT_ID = "$${NOMAD_SECRETS_DIR}/oidc-client-id"
+        VERSELF_CRED_OIDC_CLIENT_SECRET = "$${NOMAD_SECRETS_DIR}/oidc-client-secret"
+        VERSELF_CRED_ZITADEL_ACTION_SIGNING_KEY = "$${NOMAD_SECRETS_DIR}/zitadel-action-signing-key"
         VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
@@ -164,6 +159,46 @@ IAM_SPICEDB_GRPC_PRESHARED_KEY={{ with secret "kv-runtime/data/secret/org/iam-se
 IAM_ZITADEL_ADMIN_TOKEN={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
 EOT
         env = true
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience"
+        perms = "0400"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/oidc-client-id"
+        perms = "0400"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_id" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/oidc-client-secret"
+        perms = "0400"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_secret" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/github-login-idp-id"
+        perms = "0400"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.github_login_idp_id" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/zitadel-action-signing-key"
+        perms = "0400"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.action_signing_key" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       template {
         change_mode = "restart"

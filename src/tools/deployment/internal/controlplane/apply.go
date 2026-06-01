@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -196,7 +197,7 @@ func loadRuntimeSeed(cfg ApplyConfig, bundle Bundle) (runtimeSeed, error) {
 func applyOpenBao(ctx context.Context, c *baoClient, bundle OpenBaoBundle, siteSecrets map[string]string) (int, error) {
 	importedSiteSecrets := 0
 	for _, role := range bundle.NomadRoles {
-		if err := c.writePolicy(ctx, role.Policy, runtimeReadPolicy(role.Secrets)); err != nil {
+		if err := c.writePolicy(ctx, role.Policy, runtimePolicy(role.Secrets, role.WriteSecrets)); err != nil {
 			return 0, fmt.Errorf("write OpenBao policy %s: %w", role.Policy, err)
 		}
 		if err := c.writeNomadRole(ctx, role); err != nil {
@@ -250,6 +251,8 @@ func reconcileRuntimeSecret(ctx context.Context, c *baoClient, secret RuntimeSec
 			return false, fmt.Errorf("%s: read source file %s: %w", secret.Name, secret.Source.File, err)
 		}
 		value = strings.TrimSpace(string(body))
+	case RuntimeSecretSourceProduced:
+		return false, nil
 	default:
 		return false, fmt.Errorf("%s: no runtime secret source", secret.Name)
 	}
@@ -389,10 +392,13 @@ func runtimeSecretAPIPath(name string) string {
 	return "v1/" + RuntimeMount + "/data/secret/org/" + url.PathEscape(name)
 }
 
-func runtimeReadPolicy(secrets []string) string {
+func runtimePolicy(readSecrets, writeSecrets []string) string {
 	var b strings.Builder
-	for _, secret := range secrets {
+	for _, secret := range readSecrets {
 		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"read\"]\n}\n\n", RuntimeMount+"/data/secret/org/"+secret)
+	}
+	for _, secret := range writeSecrets {
+		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"create\", \"update\", \"read\"]\n}\n\n", RuntimeMount+"/data/secret/org/"+secret)
 	}
 	return b.String()
 }
@@ -489,6 +495,19 @@ func runPSQL(ctx context.Context, cfg ApplyConfig, database, sql string) error {
 }
 
 func generateSecretValue(bytes int, encoding string) (string, error) {
+	if encoding == "alphanumeric" {
+		const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+		out := make([]byte, bytes)
+		limit := big.NewInt(int64(len(alphabet)))
+		for i := range out {
+			n, err := rand.Int(rand.Reader, limit)
+			if err != nil {
+				return "", err
+			}
+			out[i] = alphabet[n.Int64()]
+		}
+		return string(out), nil
+	}
 	raw := make([]byte, bytes)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err

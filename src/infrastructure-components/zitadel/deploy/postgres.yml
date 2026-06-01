@@ -1,0 +1,4 @@
+postgresql_service_databases:
+  - { name: zitadel, owner: zitadel }
+postgresql_peer_mappings:
+  - { system_user: zitadel, pg_user: zitadel }

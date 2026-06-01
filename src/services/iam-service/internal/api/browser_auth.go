@@ -69,11 +69,9 @@ type BrowserAuthConfig struct {
 	ProviderLogin      ProviderLoginClient
 	AccountProvisioner GithubAccountProvisioner
 	PasswordReset      PasswordResetNotifier
-	// GithubLoginIDPIDPath is the credstore path holding the Zitadel
-	// identity-provider id for "Sign in with GitHub". The file is written by
-	// auth-control-plane-apply, which may run after this service has started, so
-	// the value is resolved lazily rather than read once at boot. Empty path
-	// disables the GitHub login routes.
+	// GithubLoginIDPIDPath is the task-local path holding the Zitadel identity
+	// provider id for "Sign in with GitHub". Nomad renders it from OpenBao and
+	// restarts this task when auth-control-plane rotates the value.
 	GithubLoginIDPIDPath string
 }
 
@@ -225,9 +223,8 @@ func NewBrowserAuth(ctx context.Context, cfg BrowserAuthConfig) (*BrowserAuth, e
 	}, nil
 }
 
-// githubLoginIDP resolves the Zitadel GitHub IdP id from credstore on demand.
-// auth-control-plane-apply writes this file when it provisions the IdP, possibly
-// after this service started, so it is read lazily and cached once present.
+// githubLoginIDP resolves the Zitadel GitHub IdP id from the Nomad-rendered
+// OpenBao value and caches it after the first successful read.
 func (a *BrowserAuth) githubLoginIDP() string {
 	a.githubLoginIDPMu.Lock()
 	defer a.githubLoginIDPMu.Unlock()

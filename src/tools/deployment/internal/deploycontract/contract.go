@@ -17,6 +17,7 @@ import (
 
 var (
 	nameRE      = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	jobIDRE     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	secretRE    = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z0-9_]+)+$`)
 	modeRE      = regexp.MustCompile(`^0[0-7]{3}$`)
 	durationRE  = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
@@ -369,9 +370,9 @@ func exactlyOne(values ...string) bool {
 	return count == 1
 }
 
-func exactlyOneRuntimeSecretSource(siteSecret, file string, generatedBytes int) bool {
+func exactlyOneRuntimeSecretSource(siteSecret, file, producedByJob string, generatedBytes int) bool {
 	count := 0
-	for _, value := range []string{siteSecret, file} {
+	for _, value := range []string{siteSecret, file, producedByJob} {
 		if strings.TrimSpace(value) != "" {
 			count++
 		}
