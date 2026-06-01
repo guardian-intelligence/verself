@@ -22,6 +22,7 @@ import (
 const (
 	defaultNomadRemotePort    = 4646
 	nomadDispatchPayloadLimit = 16 * 1024
+	controlPlaneReadyTimeout  = 3 * time.Minute
 	controlPlaneApplyTimeout  = 5 * time.Minute
 )
 
@@ -78,6 +79,9 @@ func registerNomadJobs(ctx context.Context, rt *runtime.Runtime, inputs *deployI
 		}
 		results = append(results, submitted)
 	}
+	if err := waitForControlPlanePrereqs(ctx, client); err != nil {
+		return results, err
+	}
 	dispatched, err := dispatchControlPlane(ctx, rt, client, inputs)
 	if err != nil {
 		return results, err
@@ -94,6 +98,26 @@ func registerNomadJobs(ctx context.Context, rt *runtime.Runtime, inputs *deployI
 		results = append(results, submitted)
 	}
 	return results, nil
+}
+
+func waitForControlPlanePrereqs(ctx context.Context, client *nomadclient.Client) error {
+	if err := client.WaitForTasks(ctx, "openbao", []nomadclient.TaskExpectation{
+		{Name: "bootstrap", State: "dead", ExitCode: ptr(0)},
+		{Name: "server", State: "running"},
+	}, controlPlaneReadyTimeout); err != nil {
+		return err
+	}
+	if err := client.WaitForTasks(ctx, "postgresql", []nomadclient.TaskExpectation{
+		{Name: "setup", State: "dead", ExitCode: ptr(0)},
+		{Name: "server", State: "running"},
+	}, controlPlaneReadyTimeout); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ptr(value int) *int {
+	return &value
 }
 
 func splitControlPlaneHandoff(jobs []nomadJob) ([]nomadJob, []nomadJob, error) {

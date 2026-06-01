@@ -175,6 +175,53 @@ func (c *Client) Dispatch(ctx context.Context, jobID string, meta map[string]str
 	return result, nil
 }
 
+type TaskExpectation struct {
+	Name     string
+	State    string
+	ExitCode *int
+}
+
+func (c *Client) WaitForTasks(ctx context.Context, jobID string, expectations []TaskExpectation, timeout time.Duration) error {
+	if jobID == "" {
+		return errors.New("nomad job id is required")
+	}
+	if len(expectations) == 0 {
+		return errors.New("at least one task expectation is required")
+	}
+	if timeout <= 0 {
+		return errors.New("timeout must be positive")
+	}
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.wait_tasks",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.job_id", jobID)),
+	)
+	defer span.End()
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		ready, err := c.tasksReady(waitCtx, jobID, expectations)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if ready {
+			span.SetStatus(codes.Ok, "")
+			return nil
+		}
+		select {
+		case <-waitCtx.Done():
+			err := fmt.Errorf("wait for %s task readiness: %w", jobID, waitCtx.Err())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		case <-ticker.C:
+		}
+	}
+}
+
 func (c *Client) WaitForBatchComplete(ctx context.Context, jobID string, timeout time.Duration) error {
 	if jobID == "" {
 		return errors.New("nomad job id is required")
@@ -256,4 +303,49 @@ func (c *Client) batchStatus(ctx context.Context, jobID string) (batchStatus, er
 		}
 	}
 	return status, nil
+}
+
+func (c *Client) tasksReady(ctx context.Context, jobID string, expectations []TaskExpectation) (bool, error) {
+	allocs, _, err := c.api.Jobs().Allocations(jobID, true, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return false, fmt.Errorf("read %s allocations: %w", jobID, err)
+	}
+	for _, alloc := range allocs {
+		if alloc.DesiredStatus != "run" {
+			continue
+		}
+		if taskStatesMatch(alloc.TaskStates, expectations) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func taskStatesMatch(states map[string]*api.TaskState, expectations []TaskExpectation) bool {
+	for _, expectation := range expectations {
+		state := states[expectation.Name]
+		if state == nil {
+			return false
+		}
+		if expectation.State != "" && state.State != expectation.State {
+			return false
+		}
+		if expectation.ExitCode != nil {
+			code, ok := latestExitCode(state)
+			if !ok || code != *expectation.ExitCode {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func latestExitCode(state *api.TaskState) (int, bool) {
+	for i := len(state.Events) - 1; i >= 0; i-- {
+		event := state.Events[i]
+		if event.Type == api.TaskTerminated {
+			return event.ExitCode, true
+		}
+	}
+	return 0, false
 }
