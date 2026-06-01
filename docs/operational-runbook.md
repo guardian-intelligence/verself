@@ -100,8 +100,9 @@ deploy` talks to this HTTP boundary and does not read Cloudflare or OpenBao
 credentials. The durable Nomad getter credential remains bucket-read-only so
 allocation restarts can refetch artifacts after deploy-time upload sessions
 expire. The upload API bearer token is generated under
-`.verself/controller/r2-control-plane/` on first serve and is read by
-`aspect deploy` from checked-in site metadata.
+`.verself/controller/r2-control-plane/` on first serve. Checked-in site
+metadata names the token path relative to `.verself/controller`, and Aspect
+passes that controller state root through temporary deploy worktrees.
 
 ```shell
 aspect integrations cloudflare-r2-control-plane \
@@ -163,6 +164,7 @@ aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 
 ```text
 controller OpenBao unlocked
+  -> controller state root available at .verself/controller
   -> site seed bundle materialized
   -> host base converged
   -> OpenBao initialized and unsealed

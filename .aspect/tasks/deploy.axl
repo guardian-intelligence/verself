@@ -22,6 +22,9 @@ load(
 )
 
 def _deploy_one(ctx, site, sha):
+    env = {
+        "VERSELF_CONTROLLER_STATE_ROOT": ws_path(ctx, ".verself/controller"),
+    }
     deploy_args = [
         "run",
         "--site=" + site,
@@ -33,6 +36,7 @@ def _deploy_one(ctx, site, sha):
         VERSELF_DEPLOY_TARGET,
         deploy_args,
         cwd = ws_path(ctx),
+        env = env,
         label = "verself-deploy run --site=" + site,
     )
     if deploy_rc != 0:
@@ -85,6 +89,9 @@ def _deploy_in_worktree(ctx, site, sha):
     if rc != 0:
         _remove_worktree(ctx, wt)
         return rc
+    env = {
+        "VERSELF_CONTROLLER_STATE_ROOT": ws_path(ctx, ".verself/controller"),
+    }
     deploy_args = [
         "run",
         "--site=" + site,
@@ -96,6 +103,7 @@ def _deploy_in_worktree(ctx, site, sha):
         VERSELF_DEPLOY_TARGET,
         deploy_args,
         cwd = wt,
+        env = env,
         label = "verself-deploy run --site=" + site + " (worktree " + sha[:12] + ")",
     )
     _remove_worktree(ctx, wt)

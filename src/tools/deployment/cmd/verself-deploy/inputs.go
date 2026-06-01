@@ -17,6 +17,7 @@ import (
 	"github.com/verself/deployment-tools/internal/deploymodel"
 	"github.com/verself/deployment-tools/internal/siteconfig"
 	"github.com/verself/deployment-tools/internal/siteinject"
+	"github.com/verself/tools/controllerstate"
 )
 
 const (
@@ -196,9 +197,11 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if raw.ArtifactDelivery.ControlPlaneTokenFile == "" {
 		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.control_plane_token_file is required", path)
 	}
-	if !filepath.IsAbs(raw.ArtifactDelivery.ControlPlaneTokenFile) {
-		raw.ArtifactDelivery.ControlPlaneTokenFile = filepath.Join(repoRoot, filepath.FromSlash(raw.ArtifactDelivery.ControlPlaneTokenFile))
+	tokenFile, err := controllerstate.ConfigPath(repoRoot, raw.ArtifactDelivery.ControlPlaneTokenFile)
+	if err != nil {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.control_plane_token_file: %w", path, err)
 	}
+	raw.ArtifactDelivery.ControlPlaneTokenFile = tokenFile
 	if raw.NomadAddr == "" {
 		raw.NomadAddr = "http://127.0.0.1:4646"
 	}

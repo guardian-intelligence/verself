@@ -108,6 +108,7 @@ def _cloudflare_r2_control_plane_impl(ctx):
         ctx,
         _CLOUDFLARE_R2_CONTROL_PLANE_TARGET,
         args_list,
+        env = {"VERSELF_CONTROLLER_STATE_ROOT": ws_path(ctx, ".verself/controller")},
         bazel_args = ["--noshow_progress", "--ui_event_filters=-info"],
         label = "cloudflare-r2-control-plane --site " + site,
     )
