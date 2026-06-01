@@ -8,9 +8,16 @@ interface SceneCanvasProps {
   readonly children: ReactNode;
   readonly className?: string;
   readonly fallback?: ReactNode;
+  readonly interactive?: boolean;
 }
 
-export function SceneCanvas({ camera, children, className, fallback }: SceneCanvasProps) {
+export function SceneCanvas({
+  camera,
+  children,
+  className,
+  fallback,
+  interactive = false,
+}: SceneCanvasProps) {
   const fallbackNode = fallback ?? <SceneFallback />;
 
   return (
@@ -27,7 +34,7 @@ export function SceneCanvas({ camera, children, className, fallback }: SceneCanv
         gl.toneMappingExposure = 1.08;
       }}
       shadows
-      style={{ pointerEvents: "none" }}
+      style={{ pointerEvents: interactive ? "auto" : "none" }}
     >
       {children}
     </Canvas>

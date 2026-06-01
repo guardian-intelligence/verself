@@ -10,6 +10,7 @@ import { TelemetryProbe } from "~/lib/telemetry/page-view";
 import { deployMetaTags } from "~/lib/telemetry/server-deploy-meta";
 import { PRODUCT_DOMAIN_META_NAME, readProductDomain } from "~/lib/product-domain";
 import { DevelopmentModeHotkey } from "~/components/development-mode-hotkey";
+import { NaveeDockButton, NaveeProvider, NaveeStage } from "~/features/navee";
 import "~/styles/app.css";
 
 const authNavigationClient = {
@@ -116,9 +117,11 @@ function RootComponent() {
     <QueryClientProvider client={routeContext.queryClient}>
       <AuthProvider client={authNavigationClient} snapshot={anonymousSnapshot}>
         <BrandTelemetryProvider emitSpan={emitSpan}>
-          <RootDocument>
-            <Outlet />
-          </RootDocument>
+          <NaveeProvider>
+            <RootDocument>
+              <Outlet />
+            </RootDocument>
+          </NaveeProvider>
         </BrandTelemetryProvider>
       </AuthProvider>
     </QueryClientProvider>
@@ -132,7 +135,9 @@ function RootDocument({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body className="bg-background text-foreground font-sans antialiased">
-        {children}
+        <NaveeStage />
+        <div className="relative z-10">{children}</div>
+        <NaveeDockButton />
         <DevelopmentModeHotkey />
         <Toaster />
         <TelemetryProbe />

@@ -73,7 +73,9 @@ const ogFonts = {
     // right extension (resvg's fontFiles path; see og/raster.ts).
     return [
       `export const FRAUNCES_B64 = ${JSON.stringify(b64("Fraunces-Variable.woff2"))};`,
-      `export const GEIST_B64 = ${JSON.stringify(b64("Geist-Variable.woff2"))};`,
+      // resvg 2.6.2 does not reliably resolve the Geist WOFF2 through
+      // fontFiles. The OG TTF is generated from the same checked-in WOFF2.
+      `export const GEIST_B64 = ${JSON.stringify(b64("Geist-OG.ttf"))};`,
       `export const LETTERS_BODY_B64 = ${JSON.stringify(b64(lettersBodyFont.ogFile))};`,
       `export const LETTERS_BODY_FILE = ${JSON.stringify(lettersBodyFont.ogFile)};`,
     ].join("\n");

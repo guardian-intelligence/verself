@@ -32,13 +32,8 @@ mitigation.
   (SSR, first paint) it returns a plain `border-radius` (the 4-value shorthand
   carries the asymmetry), derived from props not box size, so there is no
   hydration shift.
-- `<Squircle>`/`useSquircle` is the only corner source. **Two** surfaces: the
-  OLED card and the commit pill. There is no well, **no light tray** and **no
-  Guardian chip** (the mark is bare wings) — depth is a layered shadow (see
-  Layout), not a border. The pill's radius is a fraction of its **own height**
-  (`PILL_RADIUS_RATIO`, well under half-height) so the corner reads as a
-  squircle _rounded rectangle_, never a stadium, at any scale — a fixed radius
-  against a small pill is what made the prior pass "look like a pill" (note d).
+- `<Squircle>` is the card corner source. The commit chip uses the compact
+  repo-native `GitCommitGlyph` and tabular count inside the gold button.
 - The card corner is **bulbous and only slightly asymmetric**: the prior
   `{ 28, 46 }` read as a tight top over an oblong bottom. The fix is the radius,
   not the smoothing — `cornerSmoothing` stays Apple's canonical `0.6` (the
@@ -48,8 +43,8 @@ mitigation.
   small, so the card reads full and rounded like the reference.
 
 Radii (single source of truth, `flight-widget.tsx`): card
-`{ top: 42, bottom: 52 }`; pill `round(pillH · PILL_RADIUS_RATIO)`. No well,
-so no nested radius.
+`{ top: 42, bottom: 52 }`. The commit chip radius comes from the reference
+image crop.
 
 ## Color and type
 
@@ -66,26 +61,20 @@ photograph itself**, not chosen from a system palette:
   everywhere", and the pixel sample is decisively lighter and less saturated.
   That prior decision (and the brand-Flare one before it) is **reverted** —
   see git history; there is no trace of either in the code.
-- The button is the reference's marigold gold — `#E9B13A`,
-  `oklch(0.7923 0.1443 82.08)`. The prior `oklch(0.80 0.16 70)` token sat at
-  hue ~70 and read "too orange" (brief); the sample is hue ~82.
+- The commit chip uses the reference marigold gold with `NODE_INK` glyph and
+  count painted directly on top.
 
 There is **one accent and it never varies**: `late` is label-only and does
 not recolor anything, so the old green⇄amber crossfade is gone (the accent is
-a constant, not an animated channel). The button gold is the _only_ place a
-non-grayscale-besides-green color appears; the commit glyph and its count are
-`NODE_INK` painted **directly on the gold** — there is no inset "well" and no
-third (orange) color (that negative-space treatment was a divergence the
-reference does not have — note d).
+a constant, not an animated channel).
 
 | Token      | Value                      | Use                               |
 | ---------- | -------------------------- | --------------------------------- |
 | `INK`      | `oklch(1 0 0)`             | terminals, header, marker         |
 | `INK_DIM`  | `oklch(0.62 0 0)`          | empty-state text                  |
 | `CARD`     | `oklch(0.05 0 0)`          | OLED card                         |
-| `NODE_INK` | `oklch(0 0 0)`             | disc glyphs; commit glyph + count |
+| `NODE_INK` | `oklch(0 0 0)`             | disc glyphs                       |
 | `ACCENT`   | `oklch(0.8767 0.1631 144)` | arc, both discs, the status group |
-| `BUTTON`   | `oklch(0.7923 0.1443 82)`  | the commit pill (only)            |
 
 Typography uses the Apple system stack
 (`-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
@@ -175,12 +164,8 @@ Card vertical structure (deterministic `layoutOf` band split — **not**
 `flex`/`justify-between`; `h-full` against an indefinite flex parent collapses
 the arc to zero, so the band heights are computed px, padding inside):
 
-- **Header row.** Region actor (`ASH`) left; the house mark right — mirroring
-  the reference's `FL234 … ✈ FLIGHTY`. The mark is **bare white wings only**:
-  no chip, no `GUARDIAN` wordmark. It is the same argent glyph the company
-  masthead carries (`@verself/brand` `WINGS_PATH_D`), painted `INK`, sized
-  quiet — restraint over a lockup, and it keeps the widget free of brand Geist
-  so the whole card stays one San-Francisco type system.
+- **Header row.** Region actor (`ASH`) left. The card carries no top-right
+  house mark; that branded affordance belongs to the surrounding shell.
 - **Route row** (centered). Source terminal, then a no-gap path group
   [source disc · flight arc · dest disc], then dest terminal. The route band
   owns the measured box and computes the bezier **once**; the arc consumes it
@@ -348,18 +333,10 @@ to perturb the marker.
 
 - Actor label is uppercased (`ASH`). Source is `PR<n>` for PRs, otherwise the
   uppercased head branch. Destination is the uppercased base branch.
-- The house mark is bare white wings, not a per-run datum; it is the same on
-  every card. No chip, no wordmark.
+- The card header has no house mark; top-right chrome belongs to the shell.
 - No "jobs left" anywhere. The concept is removed from the model, not hidden.
-- The commit pill is the gold `BUTTON` `<Squircle>` (rounded-rect, never a
-  stadium — radius from its own height). It carries the git-commit glyph and
-  the count painted **`NODE_INK` directly on the gold** — no well, no recess,
-  no orange (the reference is solid black on the chip; the prior
-  orange-through-a-punched-well was a divergence — note d). The glyph's own
-  viewBox is tight-cropped (a dense, compact mark, ≈20% less internal negative
-  space) and it is sized to the reference baggage-chip footprint (≈30% under
-  the prior pass). Integer-px box so the clip-path never hairline-aliases
-  (note k); links to the logs.
+- The commit pill is the gold rounded-rectangle carrying `GitCommitGlyph` and
+  the commit count.
 
 ## Mocking
 

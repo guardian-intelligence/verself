@@ -87,9 +87,10 @@ void main() {
   float sceneVisibility = fields.r;
   float readableProtection = 1.0 - max(shadow, fields.a);
   float dotFade = sceneVisibility * readableProtection;
+  float compactAperture = 1.0 - smoothstep(44.0, 132.0, min(uResolution.x, uResolution.y) / dpr);
 
   float mask = dotMask(localPixel, stepPx * 0.225);
-  float base = 0.018;
+  float base = mix(0.018, 0.072, compactAperture);
 
   float jitter = hash12(cell + vec2(uSeed * 97.0, 11.0));
   float slowTwinkle = 0.5 + 0.5 * sin(uPhase * 1.7 + jitter * 6.28318);
@@ -131,6 +132,7 @@ void main() {
   float luminance = dormant * mix(0.78, 0.92, uAmbient) + waveEnergy * 1.22;
   luminance *= dotFade;
   luminance *= uContrast;
+  luminance *= mix(1.0, 2.35, compactAperture);
   luminance = clamp(luminance, 0.0, 1.42);
 
   vec3 baseTone = vec3(0.42);
@@ -150,6 +152,7 @@ void main() {
     mask * mix(0.34 + 0.44 * clamp(luminance, 0.0, 1.0), 0.84, waveHighlight * 0.48);
   alpha *= dotFade;
   alpha *= mix(0.72, 1.0, uActive);
+  alpha *= mix(1.0, 2.4, compactAperture);
 
   fragColor = vec4(min(color * light * luminance * uPostExposure, vec3(1.0)), alpha);
 }

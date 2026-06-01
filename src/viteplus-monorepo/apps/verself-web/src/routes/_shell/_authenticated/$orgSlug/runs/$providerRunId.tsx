@@ -19,6 +19,7 @@ function RunLogsStub() {
         to="/$orgSlug"
         params={{ orgSlug }}
         search={{
+          app: "ci-flight",
           flight: undefined,
           actor: undefined,
           src: undefined,
