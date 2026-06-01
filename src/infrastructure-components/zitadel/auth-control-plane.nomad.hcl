@@ -69,9 +69,9 @@ EOT
       }
 
       restart {
-        attempts = 2
-        delay = "5s"
-        interval = "60s"
+        attempts = 12
+        delay = "10s"
+        interval = "10m"
         mode = "fail"
       }
     }
