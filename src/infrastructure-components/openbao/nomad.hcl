@@ -229,11 +229,17 @@ os.chmod(credstore, 0o750)
 def run(args, env=None):
     return subprocess.run([str(bao)] + args, check=True, text=True, capture_output=True, env=env)
 
+def bao_status():
+    proc = subprocess.run([str(bao), "status", "-format=json"], check=False, text=True, capture_output=True)
+    if proc.stdout.strip():
+        return json.loads(proc.stdout)
+    raise RuntimeError(f"bao status exited {proc.returncode}: {proc.stderr.strip()}")
+
 status = None
 last_error = None
 for _ in range(45):
     try:
-        status = json.loads(run(["status", "-format=json"]).stdout)
+        status = bao_status()
         break
     except Exception as exc:
         last_error = exc
@@ -256,7 +262,7 @@ if not status.get("initialized", False):
     root_token = init["root_token"]
     for index, key in enumerate(keys, start=1):
         write_secret(f"unseal-key-{index}", key)
-    status = json.loads(run(["status", "-format=json"]).stdout)
+    status = bao_status()
 
 if status.get("sealed", True):
     for index in (1, 2):
