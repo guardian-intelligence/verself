@@ -43,7 +43,15 @@ const (
 	defaultZitadelGroup     = "zitadel"
 )
 
+type mode string
+
+const (
+	modeSetup mode = "setup"
+	modeStart mode = "start"
+)
+
 type config struct {
+	mode               mode
 	domain             string
 	zitadelBin         string
 	zitadelConfigPath  string
@@ -69,6 +77,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	cfg := config{
+		mode:               mode(envOr("VERSELF_ZITADEL_MODE", string(modeSetup))),
 		domain:             envOr("VERSELF_ZITADEL_EXTERNAL_DOMAIN", ""),
 		zitadelBin:         envOr("VERSELF_ZITADEL_BIN", defaultZitadelBin),
 		zitadelConfigPath:  envOr("VERSELF_ZITADEL_CONFIG_PATH", defaultZitadelConfig),
@@ -86,6 +95,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	fs := flag.NewFlagSet("zitadel-setup-apply", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	modeValue := string(cfg.mode)
+	fs.StringVar(&modeValue, "mode", modeValue, "Operation mode: setup or start.")
 	fs.StringVar(&cfg.domain, "external-domain", cfg.domain, "Zitadel external domain.")
 	fs.StringVar(&cfg.zitadelBin, "zitadel-bin", cfg.zitadelBin, "Zitadel binary path.")
 	fs.StringVar(&cfg.zitadelConfigPath, "config", cfg.zitadelConfigPath, "Zitadel config path.")
@@ -105,6 +116,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected positional args: %s", strings.Join(fs.Args(), " "))
 	}
+	cfg.mode = mode(modeValue)
 	if err := cfg.validate(); err != nil {
 		return err
 	}
@@ -126,20 +138,31 @@ func run(args []string, stdout, stderr io.Writer) error {
 }
 
 func (cfg config) validate() error {
+	if cfg.mode != modeSetup && cfg.mode != modeStart {
+		return fmt.Errorf("invalid --mode %q", cfg.mode)
+	}
 	missing := []string{}
 	for name, value := range map[string]string{
 		"--external-domain": cfg.domain,
 		"--zitadel-bin":     cfg.zitadelBin,
 		"--config":          cfg.zitadelConfigPath,
-		"--steps":           cfg.zitadelStepsPath,
 		"--masterkey":       cfg.zitadelMasterkey,
-		"--admin-pat-path":  cfg.adminPATPath,
-		"--discovery-hosts": cfg.discoveryHostsPath,
 		"--zitadel-user":    cfg.zitadelUser,
 		"--zitadel-group":   cfg.zitadelGroup,
 	} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)
+		}
+	}
+	if cfg.mode == modeSetup {
+		for name, value := range map[string]string{
+			"--steps":           cfg.zitadelStepsPath,
+			"--admin-pat-path":  cfg.adminPATPath,
+			"--discovery-hosts": cfg.discoveryHostsPath,
+		} {
+			if strings.TrimSpace(value) == "" {
+				missing = append(missing, name)
+			}
 		}
 	}
 	if len(missing) > 0 {
@@ -148,7 +171,7 @@ func (cfg config) validate() error {
 	if strings.ContainsAny(cfg.domain, "/:@") || strings.Contains(cfg.domain, "{{") {
 		return fmt.Errorf("invalid external domain %q", cfg.domain)
 	}
-	if len(cfg.adminPATSecrets) > 0 {
+	if cfg.mode == modeSetup && len(cfg.adminPATSecrets) > 0 {
 		if strings.TrimSpace(cfg.openBaoAddr) == "" {
 			return fmt.Errorf("--openbao-addr is required when admin PAT OpenBao secrets are configured")
 		}
@@ -204,6 +227,15 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
+	}
+	if cfg.mode == modeStart {
+		if err := runZitadelServer(ctx, cfg, uid, gid, stdout, stderr); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		span.SetStatus(codes.Ok, "")
+		return nil
 	}
 	if err := ensureDirectory(filepath.Dir(cfg.adminPATPath), uid, gid, 0o700); err != nil {
 		span.RecordError(err)
@@ -333,6 +365,20 @@ func runZitadelBootstrap(ctx context.Context, cfg config, uid, gid int, stdout, 
 		return fmt.Errorf("run zitadel setup: %w", err)
 	}
 	return nil
+}
+
+func runZitadelServer(ctx context.Context, cfg config, uid, gid int, stdout, stderr io.Writer) error {
+	if err := normalizeConfigFile(cfg.zitadelConfigPath, cfg.domain, uid, gid); err != nil {
+		return err
+	}
+	if err := normalizeSecretFile(cfg.zitadelMasterkey, 0, gid, 0o640); err != nil {
+		return err
+	}
+	return runZitadelCommand(ctx, cfg, uid, gid, stdout, stderr,
+		"start",
+		"--masterkeyFile", cfg.zitadelMasterkey,
+		"--config", cfg.zitadelConfigPath,
+	)
 }
 
 func runZitadelCommand(ctx context.Context, cfg config, uid, gid int, stdout, stderr io.Writer, args ...string) error {

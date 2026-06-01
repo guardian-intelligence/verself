@@ -180,9 +180,11 @@ EOT
       }
     }
 
+    # Nomad renders Vault templates as the agent user; the launcher fixes
+    # task-local ownership, then drops to the zitadel user for the server.
     task "server" {
       driver = "raw_exec"
-      user = "zitadel"
+      user = "root"
 
       vault {
         role = "zitadel-runtime"
@@ -200,9 +202,19 @@ EOT
         chown = true
       }
 
+      artifact {
+        source = "verself-artifact://zitadel-setup-apply"
+        destination = "local"
+        chown = true
+      }
+
       config {
-        command = "local/bin/zitadel"
-        args = ["start", "--masterkeyFile", "$${NOMAD_SECRETS_DIR}/masterkey", "--config", "$${NOMAD_TASK_DIR}/config.yaml"]
+        command = "local/bin/zitadel-setup-apply"
+        args = [
+          "--mode=start",
+          "--config=$${NOMAD_TASK_DIR}/config.yaml",
+          "--masterkey=$${NOMAD_SECRETS_DIR}/masterkey",
+        ]
       }
 
       env {
