@@ -50,11 +50,12 @@ type OpenBaoBundle struct {
 }
 
 type RuntimeSecret struct {
-	Name      string              `json:"name"`
-	OwnerPath string              `json:"owner_path"`
-	Component string              `json:"component"`
-	JobID     string              `json:"job_id"`
-	Source    RuntimeSecretSource `json:"source"`
+	Name           string              `json:"name"`
+	OwnerPath      string              `json:"owner_path"`
+	Component      string              `json:"component"`
+	JobID          string              `json:"job_id"`
+	ConsumerJobIDs []string            `json:"consumer_job_ids,omitempty"`
+	Source         RuntimeSecretSource `json:"source"`
 }
 
 type RuntimeSecretSource struct {
@@ -183,11 +184,17 @@ func loadRuntimeSecrets(repoRoot, _ string, components []Component) ([]RuntimeSe
 				return err
 			}
 			secret := RuntimeSecret{
-				Name:      strings.TrimSpace(seed.Name),
-				OwnerPath: rel,
-				Component: component.Component,
-				JobID:     component.JobID,
-				Source:    runtimeSecretSource(seed),
+				Name:           strings.TrimSpace(seed.Name),
+				OwnerPath:      rel,
+				Component:      component.Component,
+				JobID:          component.JobID,
+				ConsumerJobIDs: normalizedConsumerJobIDs(seed.ConsumerJobIDs),
+				Source:         runtimeSecretSource(seed),
+			}
+			for _, consumerJobID := range secret.ConsumerJobIDs {
+				if _, ok := componentByJob[consumerJobID]; !ok {
+					return fmt.Errorf("%s: consumer_job_ids entry %q does not match a Nomad component", rel, consumerJobID)
+				}
 			}
 			if secret.Source.Kind == RuntimeSecretSourceProduced {
 				if _, ok := componentByJob[secret.Source.ProducedByJob]; !ok {
@@ -286,6 +293,19 @@ func validateRuntimeSecret(secret RuntimeSecret) error {
 	if !secretNameRE.MatchString(secret.Name) {
 		return fmt.Errorf("runtime secret %q must match %s", secret.Name, secretNameRE.String())
 	}
+	seenConsumers := map[string]bool{}
+	for _, consumerJobID := range secret.ConsumerJobIDs {
+		if !jobIDRE.MatchString(consumerJobID) {
+			return fmt.Errorf("%s consumer job %q must match %s", secret.Name, consumerJobID, jobIDRE.String())
+		}
+		if consumerJobID == secret.JobID {
+			return fmt.Errorf("%s consumer job %q duplicates owner job", secret.Name, consumerJobID)
+		}
+		if seenConsumers[consumerJobID] {
+			return fmt.Errorf("%s consumer job %q is duplicated", secret.Name, consumerJobID)
+		}
+		seenConsumers[consumerJobID] = true
+	}
 	sources := 0
 	switch secret.Source.Kind {
 	case RuntimeSecretSourceSiteSecret:
@@ -328,6 +348,9 @@ func buildNomadRoles(secrets []RuntimeSecret) []NomadRole {
 	writesByJob := map[string][]string{}
 	for _, secret := range secrets {
 		byJob[secret.JobID] = append(byJob[secret.JobID], secret)
+		for _, consumerJobID := range secret.ConsumerJobIDs {
+			byJob[consumerJobID] = append(byJob[consumerJobID], secret)
+		}
 		if secret.Source.Kind == RuntimeSecretSourceProduced {
 			writesByJob[secret.Source.ProducedByJob] = append(writesByJob[secret.Source.ProducedByJob], secret.Name)
 		}
@@ -371,6 +394,18 @@ func buildNomadRoles(secrets []RuntimeSecret) []NomadRole {
 		})
 	}
 	return roles
+}
+
+func normalizedConsumerJobIDs(raw []string) []string {
+	out := []string{}
+	for _, value := range raw {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func loadPostgres(repoRoot string) (PostgresBundle, error) {

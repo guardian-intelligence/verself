@@ -44,12 +44,13 @@ type RuntimeSecretsFile struct {
 }
 
 type RuntimeSecretSeed struct {
-	Name          string `yaml:"name"`
-	JobID         string `yaml:"job_id"`
-	SiteSecret    string `yaml:"site_secret"`
-	File          string `yaml:"file"`
-	ProducedByJob string `yaml:"produced_by_job"`
-	Generated     struct {
+	Name           string   `yaml:"name"`
+	JobID          string   `yaml:"job_id"`
+	ConsumerJobIDs []string `yaml:"consumer_job_ids"`
+	SiteSecret     string   `yaml:"site_secret"`
+	File           string   `yaml:"file"`
+	ProducedByJob  string   `yaml:"produced_by_job"`
+	Generated      struct {
 		Bytes    int    `yaml:"bytes"`
 		Encoding string `yaml:"encoding"`
 	} `yaml:"generated"`
@@ -182,6 +183,11 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 		}
 		if seed.SiteSecret != "" {
 			requireName(v, rel, prefix+".site_secret", seed.SiteSecret)
+		}
+		for j, jobID := range seed.ConsumerJobIDs {
+			if !jobIDRE.MatchString(strings.TrimSpace(jobID)) {
+				v.add(rel, fmt.Sprintf("%s.consumer_job_ids[%d] must match %s", prefix, j, jobIDRE.String()))
+			}
 		}
 		if seed.File != "" {
 			requirePathPrefix(v, rel, prefix+".file", seed.File, "/")

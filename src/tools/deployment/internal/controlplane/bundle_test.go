@@ -13,9 +13,11 @@ import (
 func TestLoadBundleBuildsNomadRuntimeRoles(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "src/services/billing-service/nomad.hcl", `job "billing" {}`)
+	write(t, root, "src/infrastructure-components/webhook-proxy/nomad.hcl", `job "webhook-proxy" {}`)
 	write(t, root, "src/services/billing-service/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_seed_declarations:
   - name: billing-service.stripe.secret_key
+    consumer_job_ids: [webhook-proxy]
     site_secret: stripe_secret_key
 `)
 	write(t, root, "src/services/billing-service/deploy/postgres.yml", `
@@ -28,6 +30,10 @@ postgresql_peer_mappings:
 		Component: "billing",
 		JobID:     "billing",
 		JobSpec:   filepath.Join(root, "src/services/billing-service/nomad.hcl"),
+	}, {
+		Component: "webhook_proxy",
+		JobID:     "webhook-proxy",
+		JobSpec:   filepath.Join(root, "src/infrastructure-components/webhook-proxy/nomad.hcl"),
 	}})
 	if err != nil {
 		t.Fatalf("LoadBundle: %v", err)
@@ -45,8 +51,11 @@ postgresql_peer_mappings:
 	if strings.Contains(string(body), "sk_test_gamma") {
 		t.Fatalf("bundle contains site secret material: %s", body)
 	}
-	if len(bundle.OpenBao.NomadRoles) != 1 || bundle.OpenBao.NomadRoles[0].Name != "billing-runtime" {
+	if len(bundle.OpenBao.NomadRoles) != 2 || bundle.OpenBao.NomadRoles[0].Name != "billing-runtime" || bundle.OpenBao.NomadRoles[1].Name != "webhook-proxy-runtime" {
 		t.Fatalf("roles = %#v", bundle.OpenBao.NomadRoles)
+	}
+	if len(bundle.OpenBao.NomadRoles[1].Secrets) != 1 || bundle.OpenBao.NomadRoles[1].Secrets[0] != "billing-service.stripe.secret_key" {
+		t.Fatalf("consumer role secrets = %#v", bundle.OpenBao.NomadRoles[1].Secrets)
 	}
 	if len(bundle.Postgres.Databases) != 1 || bundle.Postgres.Databases[0].Name != "billing" {
 		t.Fatalf("databases = %#v", bundle.Postgres.Databases)
