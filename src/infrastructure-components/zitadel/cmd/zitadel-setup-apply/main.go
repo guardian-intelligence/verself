@@ -36,7 +36,7 @@ const (
 	defaultZitadelBin       = "local/bin/zitadel"
 	defaultZitadelConfig    = "/etc/zitadel/config.yaml"
 	defaultZitadelSteps     = "/etc/zitadel/steps.yaml"
-	defaultZitadelMasterkey = "/etc/credstore/zitadel/masterkey"
+	defaultZitadelMasterkey = ""
 	defaultZitadelAdminPAT  = "/etc/zitadel/admin.pat"
 	defaultDiscoveryHosts   = "/etc/verself/auth-discovery-hosts"
 	defaultZitadelUser      = "zitadel"
@@ -234,7 +234,7 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		span.SetStatus(codes.Ok, "")
 		return nil
 	}
-	if err := runZitadelSetup(ctx, cfg, uid, gid, stdout, stderr); err != nil {
+	if err := runZitadelBootstrap(ctx, cfg, uid, gid, stdout, stderr); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -287,19 +287,35 @@ func renderDiscoveryHosts(domain string) []byte {
 	return []byte("127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n127.0.0.1 " + domain + "\n")
 }
 
-func runZitadelSetup(ctx context.Context, cfg config, uid, gid int, stdout, stderr io.Writer) error {
-	cmd := exec.CommandContext(ctx, cfg.zitadelBin,
+func runZitadelBootstrap(ctx context.Context, cfg config, uid, gid int, stdout, stderr io.Writer) error {
+	// PostgreSQL ownership is reconciled by substrate-control-plane; Zitadel
+	// only initializes its own internals here.
+	if err := runZitadelCommand(ctx, cfg, uid, gid, stdout, stderr,
+		"init",
+		"zitadel",
+		"--config", cfg.zitadelConfigPath,
+	); err != nil {
+		return fmt.Errorf("run zitadel init: %w", err)
+	}
+	if err := runZitadelCommand(ctx, cfg, uid, gid, stdout, stderr,
 		"setup",
 		"--masterkeyFile", cfg.zitadelMasterkey,
 		"--config", cfg.zitadelConfigPath,
 		"--steps", cfg.zitadelStepsPath,
-	)
+	); err != nil {
+		return fmt.Errorf("run zitadel setup: %w", err)
+	}
+	return nil
+}
+
+func runZitadelCommand(ctx context.Context, cfg config, uid, gid int, stdout, stderr io.Writer, args ...string) error {
+	cmd := exec.CommandContext(ctx, cfg.zitadelBin, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Env = append(os.Environ(), "HOME=/var/lib/zitadel")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run zitadel setup: %w", err)
+		return err
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -21,6 +22,7 @@ import (
 const (
 	defaultNomadRemotePort    = 4646
 	nomadDispatchPayloadLimit = 16 * 1024
+	controlPlaneApplyTimeout  = 5 * time.Minute
 )
 
 func openNomadForward(ctx context.Context, rt *runtime.Runtime, addr string) (*sshtun.Forward, error) {
@@ -65,17 +67,59 @@ func registerNomadJobs(ctx context.Context, rt *runtime.Runtime, inputs *deployI
 		return nil, err
 	}
 	results := make([]nomadRegisterResult, 0, len(jobs))
-	for _, job := range jobs {
+	controlPlaneJobs, runtimeJobs, err := splitControlPlaneHandoff(jobs)
+	if err != nil {
+		return nil, err
+	}
+	for _, job := range controlPlaneJobs {
 		submitted, err := registerNomadJob(ctx, rt, client, job)
 		if err != nil {
 			return results, err
 		}
 		results = append(results, submitted)
 	}
-	if err := dispatchControlPlane(ctx, rt, client, inputs); err != nil {
+	dispatched, err := dispatchControlPlane(ctx, rt, client, inputs)
+	if err != nil {
 		return results, err
 	}
+	if err := client.WaitForBatchComplete(ctx, dispatched.DispatchedJobID, controlPlaneApplyTimeout); err != nil {
+		return results, err
+	}
+	fmt.Printf("verself-deploy: %s completed\n", dispatched.DispatchedJobID)
+	for _, job := range runtimeJobs {
+		submitted, err := registerNomadJob(ctx, rt, client, job)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, submitted)
+	}
 	return results, nil
+}
+
+func splitControlPlaneHandoff(jobs []nomadJob) ([]nomadJob, []nomadJob, error) {
+	requiredOrder := []string{"openbao", "postgresql", "substrate-control-plane"}
+	byID := make(map[string]nomadJob, len(jobs))
+	for _, job := range jobs {
+		byID[job.JobID] = job
+	}
+	controlPlaneJobs := make([]nomadJob, 0, len(requiredOrder))
+	required := make(map[string]bool, len(requiredOrder))
+	for _, jobID := range requiredOrder {
+		job, ok := byID[jobID]
+		if !ok {
+			return nil, nil, fmt.Errorf("required control-plane handoff job %q is missing", jobID)
+		}
+		controlPlaneJobs = append(controlPlaneJobs, job)
+		required[jobID] = true
+	}
+	runtimeJobs := make([]nomadJob, 0, len(jobs)-len(controlPlaneJobs))
+	for _, job := range jobs {
+		if required[job.JobID] {
+			continue
+		}
+		runtimeJobs = append(runtimeJobs, job)
+	}
+	return controlPlaneJobs, runtimeJobs, nil
 }
 
 func registerNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, job nomadJob) (nomadRegisterResult, error) {
@@ -106,17 +150,17 @@ func registerNomadJob(ctx context.Context, rt *runtime.Runtime, client *nomadcli
 	}, nil
 }
 
-func dispatchControlPlane(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, inputs *deployInputs) error {
+func dispatchControlPlane(ctx context.Context, rt *runtime.Runtime, client *nomadclient.Client, inputs *deployInputs) (*nomadclient.DispatchResult, error) {
 	body, err := json.Marshal(inputs.ControlPlane)
 	if err != nil {
-		return fmt.Errorf("encode substrate control-plane bundle: %w", err)
+		return nil, fmt.Errorf("encode substrate control-plane bundle: %w", err)
 	}
 	payload, err := gzipPayload(body)
 	if err != nil {
-		return fmt.Errorf("compress substrate control-plane bundle: %w", err)
+		return nil, fmt.Errorf("compress substrate control-plane bundle: %w", err)
 	}
 	if len(payload) > nomadDispatchPayloadLimit {
-		return fmt.Errorf("substrate control-plane bundle is %d compressed bytes (%d raw); Nomad dispatch payload limit is %d bytes", len(payload), len(body), nomadDispatchPayloadLimit)
+		return nil, fmt.Errorf("substrate control-plane bundle is %d compressed bytes (%d raw); Nomad dispatch payload limit is %d bytes", len(payload), len(body), nomadDispatchPayloadLimit)
 	}
 	fmt.Printf("verself-deploy: substrate-control-plane bundle_bytes=%d compressed_bytes=%d\n", len(body), len(payload))
 	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.nomad.dispatch_control_plane",
@@ -135,7 +179,7 @@ func dispatchControlPlane(ctx context.Context, rt *runtime.Runtime, client *noma
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return nil, err
 	}
 	fmt.Printf("verself-deploy: dispatched substrate-control-plane job=%s eval_id=%s\n", result.DispatchedJobID, result.EvalID)
 	span.SetAttributes(
@@ -143,7 +187,7 @@ func dispatchControlPlane(ctx context.Context, rt *runtime.Runtime, client *noma
 		attribute.String("nomad.eval_id", result.EvalID),
 	)
 	span.SetStatus(codes.Ok, "")
-	return nil
+	return result, nil
 }
 
 func gzipPayload(body []byte) ([]byte, error) {

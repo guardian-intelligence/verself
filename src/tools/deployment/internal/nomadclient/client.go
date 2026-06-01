@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/nomad/api"
 	"go.opentelemetry.io/otel"
@@ -172,4 +173,87 @@ func (c *Client) Dispatch(ctx context.Context, jobID string, meta map[string]str
 	)
 	span.SetStatus(codes.Ok, "")
 	return result, nil
+}
+
+func (c *Client) WaitForBatchComplete(ctx context.Context, jobID string, timeout time.Duration) error {
+	if jobID == "" {
+		return errors.New("nomad job id is required")
+	}
+	if timeout <= 0 {
+		return errors.New("timeout must be positive")
+	}
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.wait_batch_complete",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.job_id", jobID)),
+	)
+	defer span.End()
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		status, err := c.batchStatus(waitCtx, jobID)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if status.complete > 0 {
+			span.SetAttributes(
+				attribute.Int("nomad.allocations_complete", status.complete),
+				attribute.Int("nomad.allocations_failed", status.failed),
+			)
+			span.SetStatus(codes.Ok, "")
+			return nil
+		}
+		if status.dead && status.active == 0 {
+			err := fmt.Errorf("%s finished without a successful allocation: failed=%d", jobID, status.failed)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		select {
+		case <-waitCtx.Done():
+			err := fmt.Errorf("wait for %s completion: %w", jobID, waitCtx.Err())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		case <-ticker.C:
+		}
+	}
+}
+
+type batchStatus struct {
+	dead     bool
+	active   int
+	complete int
+	failed   int
+}
+
+func (c *Client) batchStatus(ctx context.Context, jobID string) (batchStatus, error) {
+	job, _, err := c.api.Jobs().Info(jobID, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return batchStatus{}, fmt.Errorf("read %s: %w", jobID, err)
+	}
+	status := batchStatus{}
+	if job != nil && job.Status != nil && *job.Status == "dead" {
+		status.dead = true
+	}
+	allocs, _, err := c.api.Jobs().Allocations(jobID, true, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return batchStatus{}, fmt.Errorf("read %s allocations: %w", jobID, err)
+	}
+	for _, alloc := range allocs {
+		switch alloc.ClientStatus {
+		case "complete":
+			status.complete++
+		case "failed", "lost", "unknown":
+			status.failed++
+		case "pending", "running":
+			status.active++
+		default:
+			status.active++
+		}
+	}
+	return status, nil
 }
