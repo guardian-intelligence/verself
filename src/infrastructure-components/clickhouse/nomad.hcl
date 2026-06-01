@@ -27,13 +27,15 @@ test -x "$client"
 rendered_dir="$NOMAD_TASK_DIR/rendered-clickhouse-migrations"
 rm -rf "$rendered_dir"
 mkdir -p "$rendered_dir"
+token_prefix="__VERSELF_SPIFFE"
+token="$token_prefix""_SERVICE_PREFIX__"
 applied=0
 for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do
   if [ ! -f "$migration" ]; then
     continue
   fi
   rendered="$rendered_dir/$(basename "$migration")"
-  sed "s#__VERSELF_SPIFFE_SERVICE_PREFIX__#$VERSELF_SPIFFE_SERVICE_PREFIX#g" "$migration" > "$rendered"
+  sed "s#$token#$VERSELF_SPIFFE_SERVICE_PREFIX#g" "$migration" > "$rendered"
   applied=$((applied + 1))
   echo "clickhouse-migrations: applying $migration" >&2
   "$client" client \
