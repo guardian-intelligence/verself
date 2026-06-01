@@ -29,25 +29,11 @@ Nomad deploys are driven directly by the checked-in `nomad_component` targets fo
 aspect deploy --site=prod --sha=HEAD
 ```
 
-`aspect deploy` builds the Bazel-discovered descriptors, uploads missing
-content-addressed artifacts to the site's private Cloudflare R2 artifact
-bucket, resolves each Nomad job, submits the resulting payloads to Nomad, and
-emits ClickHouse evidence for each job decision. Changed jobs are not reported
-healthy until Nomad rollout health and the selected component-owned post-deploy
-canaries pass.
-
-Medium canaries run by default:
-
-```shell
-aspect deploy --site=prod --sha=HEAD --post-deploy-checks=medium
-```
-
-Use `--post-deploy-checks=large` or `--post-deploy-checks=all` when a release
-requires deeper browser/CLI checks in the deploy rollback window. Use
-`--post-deploy-checks=none` only for bootstrap or incident procedures where the
-canary dependency is known to be unavailable. If a canary fails after a changed
-Nomad job becomes healthy, `verself-deploy` reverts the job to the prior Nomad
-version; first deploys with no prior version are deregistered.
+`aspect deploy` builds the Bazel-discovered descriptors, requests an artifact
+upload session from the Cloudflare R2 control plane, uploads the
+content-addressed artifacts through the returned presigned URLs, resolves each
+Nomad job, and submits the resulting payloads to Nomad. Rollout health and
+promotion gates are owned by the Nomad jobs.
 
 Declared canaries can also be run against the current site without submitting
 jobs:
@@ -90,10 +76,22 @@ aspect integrations cloudflare-r2-control-plane \
   --credential-source=openbao
 ```
 
-`aspect deploy` mints temporary publisher credentials from the controller R2
-credential source. The durable Nomad getter credential remains bucket-read-only
-so allocation restarts can refetch artifacts after deploy-time credentials
+Run the R2 control-plane upload-session API from a controller context that can
+read the parent Cloudflare R2 credential from controller OpenBao. `aspect
+deploy` talks to this HTTP boundary and does not read Cloudflare or OpenBao
+credentials. The durable Nomad getter credential remains bucket-read-only so
+allocation restarts can refetch artifacts after deploy-time upload sessions
 expire.
+
+```shell
+aspect integrations cloudflare-r2-control-plane \
+  --site=gamma \
+  --action=serve \
+  --credential-source=openbao
+```
+
+Keep the control-plane process running while `aspect deploy` publishes
+artifacts.
 
 ```shell
 install -m 700 -d .verself/site-bootstrap/gamma

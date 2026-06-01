@@ -1,20 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/hashicorp/nomad/api"
 
+	r2controlplane "github.com/verself/integrations/cloudflare/r2-control-plane/client"
+
 	"github.com/verself/deployment-tools/internal/deploymodel"
 	"github.com/verself/deployment-tools/internal/runtime"
-	"github.com/verself/deployment-tools/internal/s3artifact"
-	"github.com/verself/deployment-tools/r2control"
 )
 
 const taskArtifactRoot = "local/verself-artifacts"
@@ -97,56 +99,132 @@ func artifactGetterSource(policy artifactDeliveryPolicy, key string) string {
 	return strings.TrimRight(policy.GetterSourcePrefix, "/") + "/" + key
 }
 
-func publishArtifacts(ctx context.Context, rt *runtime.Runtime, delivery artifactDeliveryPolicy, artifacts []deploymodel.Artifact) error {
-	if len(artifacts) == 0 {
+func publishArtifacts(ctx context.Context, rt *runtime.Runtime, inputs *deployInputs) error {
+	if len(inputs.Artifacts) == 0 {
 		return nil
 	}
-	pub, err := newArtifactPublisher(ctx, delivery)
+	token, err := readControlPlaneToken(inputs.SiteCfg.ArtifactDelivery.ControlPlaneTokenFile)
 	if err != nil {
 		return err
 	}
-	return pub.PublishAll(ctx, artifacts, rt.RepoRoot)
+	client, err := r2controlplane.New(r2controlplane.Config{
+		Address: inputs.SiteCfg.ArtifactDelivery.ControlPlaneAddr,
+		Token:   token,
+	})
+	if err != nil {
+		return err
+	}
+	req := r2controlplane.CreateUploadSessionRequest{
+		Site:         rt.Site,
+		DeployRunKey: inputs.DeployRunKey,
+		SHA:          inputs.SHA,
+		Artifacts:    make([]r2controlplane.ArtifactUpload, 0, len(inputs.Artifacts)),
+	}
+	for _, artifact := range inputs.Artifacts {
+		size, err := artifactSize(artifact, rt.RepoRoot)
+		if err != nil {
+			return err
+		}
+		req.Artifacts = append(req.Artifacts, r2controlplane.ArtifactUpload{
+			Output:    artifact.Output,
+			SHA256:    artifact.SHA256,
+			SizeBytes: size,
+		})
+	}
+	session, err := client.CreateUploadSession(ctx, req)
+	if err != nil {
+		return err
+	}
+	objects := mapUploadObjects(session.Objects)
+	for _, artifact := range inputs.Artifacts {
+		object, ok := objects[artifact.Output]
+		if !ok {
+			return fmt.Errorf("R2 control-plane upload session omitted artifact %q", artifact.Output)
+		}
+		if object.Bucket != artifact.Bucket || object.Key != artifact.Key || object.GetterSource != artifact.GetterSource {
+			return fmt.Errorf("R2 control-plane returned mismatched object binding for %q", artifact.Output)
+		}
+		if err := uploadArtifact(ctx, artifact, object, rt.RepoRoot); err != nil {
+			return fmt.Errorf("%s: %w", artifact.Output, err)
+		}
+	}
+	completed, err := client.CompleteUploadSession(ctx, rt.Site, session.SessionID)
+	if err != nil {
+		return err
+	}
+	if len(completed.Objects) != len(inputs.Artifacts) {
+		return fmt.Errorf("R2 control-plane completed %d artifacts, expected %d", len(completed.Objects), len(inputs.Artifacts))
+	}
+	return nil
 }
 
 func taskArtifactDestination(output string) string {
 	return path.Join(taskArtifactRoot, output)
 }
 
-func newArtifactPublisher(ctx context.Context, delivery artifactDeliveryPolicy) (*s3artifact.Publisher, error) {
-	parent, err := r2control.LoadParentCredentials(ctx, r2control.ParentCredentialConfig{})
+func artifactSize(artifact deploymodel.Artifact, repoRoot string) (int64, error) {
+	info, err := os.Stat(artifact.ResolveLocalPath(repoRoot))
 	if err != nil {
-		return nil, err
+		return 0, fmt.Errorf("stat artifact: %w", err)
 	}
-	if parent.SessionToken != "" {
-		return nil, fmt.Errorf("R2 artifact publisher requires a non-temporary parent credential")
+	if !info.Mode().IsRegular() {
+		return 0, fmt.Errorf("artifact path is not a regular file")
 	}
-	if strings.TrimSpace(parent.APIToken) == "" {
-		return nil, fmt.Errorf("R2 artifact publisher requires the parent Cloudflare API token value")
-	}
-	prefix := strings.Trim(strings.TrimSpace(delivery.KeyPrefix), "/")
-	if prefix == "" {
-		return nil, fmt.Errorf("artifact_delivery.key_prefix is required")
-	}
-	apiClient, err := r2control.NewCloudflareAPIClient(parent.APIToken, 30*time.Second)
+	return info.Size(), nil
+}
+
+func uploadArtifact(ctx context.Context, artifact deploymodel.Artifact, object r2controlplane.UploadObject, repoRoot string) error {
+	body, err := os.ReadFile(artifact.ResolveLocalPath(repoRoot))
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("read artifact: %w", err)
 	}
-	temp, err := apiClient.CreateTemporaryCredentials(ctx, delivery.CloudflareAccountID, r2control.TemporaryCredentialRequest{
-		ParentAccessKeyID: parent.AccessKeyID,
-		Bucket:            delivery.Bucket,
-		Permission:        r2control.TemporaryPermissionObjectReadWrite,
-		Prefixes:          []string{prefix + "/"},
-		TTL:               30 * time.Minute,
-	})
+	digest := deploymodel.SHA256(body)
+	if digest != artifact.SHA256 {
+		return fmt.Errorf("artifact sha256=%s does not match descriptor sha256=%s", digest, artifact.SHA256)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, object.PutURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return s3artifact.New(delivery.ArtifactDelivery, s3artifact.Config{
-		AccessKeyID:      temp.AccessKeyID,
-		SecretAccessKey:  temp.SecretAccessKey,
-		SessionToken:     temp.SessionToken,
-		SkipBucketEnsure: true,
-	})
+	for key, value := range object.Headers {
+		req.Header.Set(key, value)
+	}
+	req.ContentLength = int64(len(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("PUT presigned R2 artifact: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("PUT presigned R2 artifact status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
+func mapUploadObjects(objects []r2controlplane.UploadObject) map[string]r2controlplane.UploadObject {
+	out := map[string]r2controlplane.UploadObject{}
+	for _, object := range objects {
+		out[object.Output] = object
+	}
+	return out
+}
+
+func readControlPlaneToken(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", nil
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read R2 control-plane token file: %w", err)
+	}
+	token := strings.TrimSpace(string(body))
+	if token == "" {
+		return "", fmt.Errorf("R2 control-plane token file is empty")
+	}
+	return token, nil
 }
 
 func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map[string]bool, error) {

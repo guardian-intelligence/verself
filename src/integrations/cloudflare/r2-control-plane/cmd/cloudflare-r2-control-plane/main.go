@@ -12,11 +12,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/verself/deployment-tools/r2control"
+	"github.com/verself/integrations/cloudflare/r2-control-plane/internal/r2control"
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,8 +41,11 @@ type config struct {
 	openBaoTokenFile         string
 	getterVarsFile           string
 	seedBundleFile           string
+	listenAddr               string
+	authTokenFile            string
 	testPrefix               string
 	tempTTL                  time.Duration
+	uploadSessionTTL         time.Duration
 	timeout                  time.Duration
 	verifyTempCredentials    bool
 }
@@ -89,7 +94,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-r2-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify", "Action: verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider.")
+	fs.StringVar(&cfg.action, "action", "verify", "Action: serve, verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading src/host/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to site.json artifact_delivery.cloudflare_account_id.")
@@ -107,8 +112,11 @@ func run(args []string) error {
 	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", "", "File containing the OpenBao token.")
 	fs.StringVar(&cfg.getterVarsFile, "getter-vars-file", "", "JSON vars file to receive the durable Nomad artifact getter keypair.")
 	fs.StringVar(&cfg.seedBundleFile, "seed-bundle-file", "", "Seed bundle file to receive generated provider values.")
+	fs.StringVar(&cfg.listenAddr, "listen", "127.0.0.1:18732", "HTTP listen address for --action=serve.")
+	fs.StringVar(&cfg.authTokenFile, "auth-token-file", "", "Optional bearer token file for --action=serve.")
 	fs.StringVar(&cfg.testPrefix, "test-prefix", "control-plane-verification/", "R2 object prefix used for live verification.")
 	fs.DurationVar(&cfg.tempTTL, "temp-ttl", 15*time.Minute, "TTL for Cloudflare temporary scoped R2 verification credentials.")
+	fs.DurationVar(&cfg.uploadSessionTTL, "upload-session-ttl", 30*time.Minute, "TTL for deployment artifact upload sessions.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for Cloudflare R2 calls.")
 	fs.BoolVar(&cfg.verifyTempCredentials, "verify-temp-credentials", true, "Mint scoped temporary credentials and use them for the object verification.")
 	if err := fs.Parse(args); err != nil {
@@ -121,7 +129,13 @@ func run(args []string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
+	ctx := context.Background()
+	cancel := func() {}
+	if cfg.action == "serve" {
+		ctx, cancel = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	} else {
+		ctx, cancel = context.WithTimeout(ctx, cfg.timeout)
+	}
 	defer cancel()
 
 	parent, err := r2control.LoadParentCredentials(ctx, cfg.parentCredentialConfig())
@@ -139,6 +153,9 @@ func run(args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+	if cfg.action == "serve" {
+		return serveUploadAPI(ctx, cfg, parent, parentClient)
 	}
 
 	existed, created, err := parentClient.EnsureBucket(ctx, cfg.bucket)
@@ -264,9 +281,9 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "verify", "ensure-bucket", "ensure-getter", "rotate-getter", "rotate-object-storage-provider":
+	case "serve", "verify", "ensure-bucket", "ensure-getter", "rotate-getter", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be serve, verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider, got %q", cfg.action)
 	}
 	if !r2control.IsCloudflareAccountID(cfg.accountID) {
 		return fmt.Errorf("--account-id must be a 32-character lowercase hex Cloudflare account ID")
@@ -279,6 +296,9 @@ func (cfg config) validate() error {
 	}
 	if cfg.tempTTL < time.Minute || cfg.tempTTL > 7*24*time.Hour {
 		return fmt.Errorf("--temp-ttl must be between 1 minute and 7 days")
+	}
+	if cfg.uploadSessionTTL < time.Minute || cfg.uploadSessionTTL > 7*24*time.Hour {
+		return fmt.Errorf("--upload-session-ttl must be between 1 minute and 7 days")
 	}
 	return nil
 }

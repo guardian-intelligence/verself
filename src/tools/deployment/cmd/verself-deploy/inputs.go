@@ -57,6 +57,8 @@ type artifactDeliveryPolicy struct {
 	Public                 *bool  `json:"public"`
 	CloudflareAccountID    string `json:"cloudflare_account_id"`
 	CloudflareAccountIDEnv string `json:"cloudflare_account_id_env"`
+	ControlPlaneAddr       string `json:"control_plane_addr"`
+	ControlPlaneTokenFile  string `json:"control_plane_token_file"`
 }
 
 type nomadComponentDescriptor struct {
@@ -152,8 +154,8 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return siteConfig{}, fmt.Errorf("decode %s: %w", path, err)
 	}
-	if raw.ArtifactDelivery.Kind != "cloudflare_r2_s3" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.kind must be cloudflare_r2_s3", path)
+	if raw.ArtifactDelivery.Kind != "cloudflare_r2_control_plane" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.kind must be cloudflare_r2_control_plane", path)
 	}
 	if raw.ArtifactDelivery.Public == nil || *raw.ArtifactDelivery.Public {
 		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.public must be false", path)
@@ -174,7 +176,7 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if region == "" {
 		raw.ArtifactDelivery.GetterOptions["region"] = "auto"
 	} else if region != "auto" {
-		return siteConfig{}, fmt.Errorf("%s: cloudflare_r2_s3 artifact_delivery.getter_options.region must be auto", path)
+		return siteConfig{}, fmt.Errorf("%s: cloudflare_r2_control_plane artifact_delivery.getter_options.region must be auto", path)
 	}
 	if raw.ArtifactDelivery.GetterCredentials.EnvironmentFile == "" || raw.ArtifactDelivery.GetterCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.GetterCredentials.SecretAccessKeyEnv == "" {
 		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.getter_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
@@ -184,6 +186,9 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	}
 	if raw.ArtifactDelivery.ChecksumAlgorithm != "sha256" {
 		return siteConfig{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", path)
+	}
+	if strings.TrimSpace(raw.ArtifactDelivery.ControlPlaneAddr) == "" {
+		raw.ArtifactDelivery.ControlPlaneAddr = "http://127.0.0.1:18732"
 	}
 	if raw.NomadAddr == "" {
 		raw.NomadAddr = "http://127.0.0.1:4646"

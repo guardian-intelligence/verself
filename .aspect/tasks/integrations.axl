@@ -93,6 +93,10 @@ def _cloudflare_r2_control_plane_impl(ctx):
         args_list.append("--getter-vars-file=" + (ctx.args.getter_vars_file if ctx.args.getter_vars_file.startswith("/") else ws_path(ctx, ctx.args.getter_vars_file)))
     if ctx.args.seed_bundle_file != "":
         args_list.append("--seed-bundle-file=" + (ctx.args.seed_bundle_file if ctx.args.seed_bundle_file.startswith("/") else ws_path(ctx, ctx.args.seed_bundle_file)))
+    if ctx.args.listen != "":
+        args_list.append("--listen=" + ctx.args.listen)
+    if ctx.args.auth_token_file != "":
+        args_list.append("--auth-token-file=" + (ctx.args.auth_token_file if ctx.args.auth_token_file.startswith("/") else ws_path(ctx, ctx.args.auth_token_file)))
     if ctx.args.test_prefix != "":
         args_list.append("--test-prefix=" + ctx.args.test_prefix)
     args_list.append("--verify-temp-credentials=" + ("true" if ctx.args.verify_temp_credentials else "false"))
@@ -111,7 +115,7 @@ cloudflare_r2_control_plane = task(
     summary = "Ensure and live-verify Cloudflare R2 deployment artifact state.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
-        "action": args.string(default = "verify", description = "Action: verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider."),
+        "action": args.string(default = "verify", description = "Action: serve, verify, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to site.json."),
         "credential_source": args.string(default = "auto", description = "Credential source: auto, env, env-file, or openbao."),
@@ -121,6 +125,8 @@ cloudflare_r2_control_plane = task(
         "openbao_token_file": args.string(default = "", description = "File containing the OpenBao token."),
         "getter_vars_file": args.string(default = "", description = "JSON vars file to receive durable Nomad artifact getter credentials."),
         "seed_bundle_file": args.string(default = "", description = "Seed bundle file to receive generated provider values."),
+        "listen": args.string(default = "127.0.0.1:18732", description = "HTTP listen address for action=serve."),
+        "auth_token_file": args.string(default = "", description = "Optional bearer token file for action=serve."),
         "test_prefix": args.string(default = "control-plane-verification/", description = "R2 prefix used for live verification objects."),
         "verify_temp_credentials": args.boolean(default = True, description = "Mint scoped temporary credentials and verify with them."),
     },

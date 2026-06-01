@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,6 +110,36 @@ func (c *R2Client) PutObject(ctx context.Context, bucket, key string, body io.Re
 	headers.Set("X-Amz-Meta-Sha256", payloadHash)
 	status, _, err := c.SignedRequest(ctx, http.MethodPut, c.ObjectURL(bucket, key), body, payloadHash, headers)
 	return status, err
+}
+
+func (c *R2Client) PresignPutObject(ctx context.Context, bucket, key, payloadHash string, expires time.Duration) (string, http.Header, error) {
+	if expires < time.Minute || expires > 7*24*time.Hour {
+		return "", nil, fmt.Errorf("R2 presigned PUT expiry must be between 1 minute and 7 days")
+	}
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/octet-stream")
+	headers.Set("X-Amz-Meta-Sha256", payloadHash)
+	u := c.ObjectURL(bucket, key)
+	query := u.Query()
+	query.Set("X-Amz-Expires", strconv.FormatInt(int64(expires/time.Second), 10))
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), http.NoBody)
+	if err != nil {
+		return "", nil, err
+	}
+	for key, values := range headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
+	signedURL, signedHeaders, err := c.signer.PresignHTTP(ctx, c.creds, req, payloadHash, "s3", c.region, time.Now().UTC(), func(options *awsv4.SignerOptions) {
+		options.DisableURIPathEscaping = true
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("presign R2 PUT %s: %w", u.Redacted(), err)
+	}
+	return signedURL, signedHeaders, nil
 }
 
 func (c *R2Client) HeadObject(ctx context.Context, bucket, key string) (int, error) {

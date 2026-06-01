@@ -8,13 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/verself/deployment-tools/r2control"
+	"github.com/verself/integrations/cloudflare/r2-control-plane/internal/r2control"
 )
 
 type siteArtifactConfig struct {
-	AccountID string
-	Bucket    string
-	Region    string
+	AccountID          string
+	Bucket             string
+	KeyPrefix          string
+	GetterSourcePrefix string
+	Region             string
 }
 
 func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
@@ -27,6 +29,7 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 		ArtifactDelivery struct {
 			Kind                   string            `json:"kind"`
 			Bucket                 string            `json:"bucket"`
+			KeyPrefix              string            `json:"key_prefix"`
 			CloudflareAccountID    string            `json:"cloudflare_account_id"`
 			CloudflareAccountIDEnv string            `json:"cloudflare_account_id_env"`
 			GetterOptions          map[string]string `json:"getter_options"`
@@ -37,8 +40,8 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return siteArtifactConfig{}, fmt.Errorf("decode %s: %w", path, err)
 	}
-	if raw.ArtifactDelivery.Kind != "cloudflare_r2_s3" {
-		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.kind must be cloudflare_r2_s3", path)
+	if raw.ArtifactDelivery.Kind != "cloudflare_r2_control_plane" {
+		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.kind must be cloudflare_r2_control_plane", path)
 	}
 	accountID, err := resolveCloudflareAccountID(raw.ArtifactDelivery.CloudflareAccountID, raw.ArtifactDelivery.CloudflareAccountIDEnv)
 	if err != nil {
@@ -48,10 +51,16 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 	if region == "" {
 		region = "auto"
 	}
+	keyPrefix := strings.Trim(raw.ArtifactDelivery.KeyPrefix, "/")
+	if keyPrefix == "" {
+		keyPrefix = "sha256"
+	}
 	return siteArtifactConfig{
-		AccountID: accountID,
-		Bucket:    raw.ArtifactDelivery.Bucket,
-		Region:    region,
+		AccountID:          accountID,
+		Bucket:             raw.ArtifactDelivery.Bucket,
+		KeyPrefix:          keyPrefix,
+		GetterSourcePrefix: "s3::https://" + accountID + ".r2.cloudflarestorage.com/" + raw.ArtifactDelivery.Bucket,
+		Region:             region,
 	}, nil
 }
 
