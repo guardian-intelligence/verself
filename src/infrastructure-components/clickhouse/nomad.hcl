@@ -27,8 +27,8 @@ test -x "$client"
 rendered_dir="$NOMAD_TASK_DIR/rendered-clickhouse-migrations"
 rm -rf "$rendered_dir"
 mkdir -p "$rendered_dir"
-token_prefix="__VERSELF_SPIFFE"
-token="$token_prefix""_SERVICE_PREFIX__"
+token_prefix="__VERS"
+token="$token_prefix""ELF_SPIFFE""_SERVICE_PREFIX__"
 applied=0
 for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do
   if [ ! -f "$migration" ]; then
