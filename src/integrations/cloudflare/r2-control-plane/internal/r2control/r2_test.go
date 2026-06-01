@@ -32,8 +32,11 @@ func TestPresignPutObjectScopesTemporaryCredentialToURL(t *testing.T) {
 	if u.Query().Get("X-Amz-Expires") != "300" {
 		t.Fatalf("expires = %q", u.Query().Get("X-Amz-Expires"))
 	}
-	if headers.Get("X-Amz-Meta-Sha256") == "" {
-		t.Fatalf("required signed headers did not include checksum metadata: %#v", headers)
+	if headers.Get("X-Amz-Content-Sha256") != UnsignedPayload {
+		t.Fatalf("content sha header = %q", headers.Get("X-Amz-Content-Sha256"))
+	}
+	if headers.Get("X-Amz-Meta-Sha256") != "" {
+		t.Fatalf("checksum metadata should not be a signed upload-session header: %#v", headers)
 	}
 	if strings.Contains(signed, "secret-key") {
 		t.Fatal("presigned URL leaked the secret access key")

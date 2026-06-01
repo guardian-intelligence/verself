@@ -14,7 +14,10 @@ import (
 	awsv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 )
 
-const EmptyPayloadSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+const (
+	EmptyPayloadSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	UnsignedPayload    = "UNSIGNED-PAYLOAD"
+)
 
 type R2ClientConfig struct {
 	Endpoint        string
@@ -117,8 +120,7 @@ func (c *R2Client) PresignPutObject(ctx context.Context, bucket, key, payloadHas
 		return "", nil, fmt.Errorf("R2 presigned PUT expiry must be between 1 minute and 7 days")
 	}
 	headers := http.Header{}
-	headers.Set("Content-Type", "application/octet-stream")
-	headers.Set("X-Amz-Meta-Sha256", payloadHash)
+	headers.Set("X-Amz-Content-Sha256", UnsignedPayload)
 	u := c.ObjectURL(bucket, key)
 	query := u.Query()
 	query.Set("X-Amz-Expires", strconv.FormatInt(int64(expires/time.Second), 10))
@@ -132,8 +134,7 @@ func (c *R2Client) PresignPutObject(ctx context.Context, bucket, key, payloadHas
 			req.Header.Add(key, value)
 		}
 	}
-	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
-	signedURL, signedHeaders, err := c.signer.PresignHTTP(ctx, c.creds, req, payloadHash, "s3", c.region, time.Now().UTC(), func(options *awsv4.SignerOptions) {
+	signedURL, signedHeaders, err := c.signer.PresignHTTP(ctx, c.creds, req, UnsignedPayload, "s3", c.region, time.Now().UTC(), func(options *awsv4.SignerOptions) {
 		options.DisableURIPathEscaping = true
 	})
 	if err != nil {
