@@ -345,7 +345,7 @@ path "kv-runtime/metadata/secret/org/*" {
             "nomad_task": "nomad_task",
         },
         "bound_claims_type": "glob",
-        "bound_claims": {"nomad_job_id": "substrate-control-plane/dispatch-*"},
+        "bound_claims": {"nomad_job_id": "substrate-control-plane*"},
         "token_type": "service",
         "token_policies": ["substrate-control-plane"],
         "token_period": "30m",
