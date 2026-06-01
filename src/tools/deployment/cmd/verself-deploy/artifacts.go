@@ -12,6 +12,9 @@ import (
 	"strings"
 
 	"github.com/hashicorp/nomad/api"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	r2controlplane "github.com/verself/integrations/cloudflare/r2-control-plane/client"
 
@@ -103,8 +106,21 @@ func publishArtifacts(ctx context.Context, rt *runtime.Runtime, inputs *deployIn
 	if len(inputs.Artifacts) == 0 {
 		return nil
 	}
+	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.artifacts.publish",
+		trace.WithAttributes(
+			attribute.String("verself.site", rt.Site),
+			attribute.String("verself.deploy_run_key", inputs.DeployRunKey),
+			attribute.String("verself.deploy_sha", inputs.SHA),
+			attribute.String("verself.r2_control_plane.addr", inputs.SiteCfg.ArtifactDelivery.ControlPlaneAddr),
+			attribute.String("verself.artifact_bucket", inputs.SiteCfg.ArtifactDelivery.Bucket),
+			attribute.Int("verself.artifact_count", len(inputs.Artifacts)),
+		),
+	)
+	defer span.End()
 	token, err := readControlPlaneToken(inputs.SiteCfg.ArtifactDelivery.ControlPlaneTokenFile)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	client, err := r2controlplane.New(r2controlplane.Config{
@@ -112,6 +128,8 @@ func publishArtifacts(ctx context.Context, rt *runtime.Runtime, inputs *deployIn
 		Token:   token,
 	})
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	req := r2controlplane.CreateUploadSessionRequest{
@@ -123,6 +141,8 @@ func publishArtifacts(ctx context.Context, rt *runtime.Runtime, inputs *deployIn
 	for _, artifact := range inputs.Artifacts {
 		size, err := artifactSize(artifact, rt.RepoRoot)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
 		req.Artifacts = append(req.Artifacts, r2controlplane.ArtifactUpload{
@@ -131,30 +151,48 @@ func publishArtifacts(ctx context.Context, rt *runtime.Runtime, inputs *deployIn
 			SizeBytes: size,
 		})
 	}
-	session, err := client.CreateUploadSession(ctx, req)
+	session, err := createUploadSession(ctx, rt, client, req, inputs.SiteCfg.ArtifactDelivery)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
+	span.SetAttributes(attribute.String("verself.r2_upload_session_id", session.SessionID))
 	objects := mapUploadObjects(session.Objects)
 	for _, artifact := range inputs.Artifacts {
 		object, ok := objects[artifact.Output]
 		if !ok {
-			return fmt.Errorf("R2 control-plane upload session omitted artifact %q", artifact.Output)
+			err := fmt.Errorf("R2 control-plane upload session omitted artifact %q", artifact.Output)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
 		}
 		if object.Bucket != artifact.Bucket || object.Key != artifact.Key || object.GetterSource != artifact.GetterSource {
-			return fmt.Errorf("R2 control-plane returned mismatched object binding for %q", artifact.Output)
+			err := fmt.Errorf("R2 control-plane returned mismatched object binding for %q", artifact.Output)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
 		}
-		if err := uploadArtifact(ctx, artifact, object, rt.RepoRoot); err != nil {
-			return fmt.Errorf("%s: %w", artifact.Output, err)
+		if err := uploadArtifact(ctx, rt, artifact, object, rt.RepoRoot); err != nil {
+			err = fmt.Errorf("%s: %w", artifact.Output, err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
 		}
 	}
-	completed, err := client.CompleteUploadSession(ctx, rt.Site, session.SessionID)
+	completed, err := completeUploadSession(ctx, rt, client, session.SessionID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	if len(completed.Objects) != len(inputs.Artifacts) {
-		return fmt.Errorf("R2 control-plane completed %d artifacts, expected %d", len(completed.Objects), len(inputs.Artifacts))
+		err := fmt.Errorf("R2 control-plane completed %d artifacts, expected %d", len(completed.Objects), len(inputs.Artifacts))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
+	span.SetStatus(codes.Ok, "")
 	return nil
 }
 
@@ -173,17 +211,80 @@ func artifactSize(artifact deploymodel.Artifact, repoRoot string) (int64, error)
 	return info.Size(), nil
 }
 
-func uploadArtifact(ctx context.Context, artifact deploymodel.Artifact, object r2controlplane.UploadObject, repoRoot string) error {
+func createUploadSession(ctx context.Context, rt *runtime.Runtime, client *r2controlplane.Client, req r2controlplane.CreateUploadSessionRequest, delivery artifactDeliveryPolicy) (r2controlplane.CreateUploadSessionResponse, error) {
+	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.artifacts.upload_session.create",
+		trace.WithAttributes(
+			attribute.String("verself.site", rt.Site),
+			attribute.String("verself.deploy_run_key", req.DeployRunKey),
+			attribute.String("verself.deploy_sha", req.SHA),
+			attribute.String("verself.artifact_bucket", delivery.Bucket),
+			attribute.String("verself.r2_control_plane.addr", delivery.ControlPlaneAddr),
+			attribute.Int("verself.artifact_count", len(req.Artifacts)),
+		),
+	)
+	defer span.End()
+	session, err := client.CreateUploadSession(ctx, req)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return r2controlplane.CreateUploadSessionResponse{}, err
+	}
+	span.SetAttributes(
+		attribute.String("verself.r2_upload_session_id", session.SessionID),
+		attribute.Int("verself.r2_upload_object_count", len(session.Objects)),
+	)
+	span.SetStatus(codes.Ok, "")
+	return session, nil
+}
+
+func completeUploadSession(ctx context.Context, rt *runtime.Runtime, client *r2controlplane.Client, sessionID string) (r2controlplane.CompleteUploadSessionResponse, error) {
+	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.artifacts.upload_session.complete",
+		trace.WithAttributes(
+			attribute.String("verself.site", rt.Site),
+			attribute.String("verself.r2_upload_session_id", sessionID),
+		),
+	)
+	defer span.End()
+	completed, err := client.CompleteUploadSession(ctx, rt.Site, sessionID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return r2controlplane.CompleteUploadSessionResponse{}, err
+	}
+	span.SetAttributes(attribute.Int("verself.r2_upload_object_count", len(completed.Objects)))
+	span.SetStatus(codes.Ok, "")
+	return completed, nil
+}
+
+func uploadArtifact(ctx context.Context, rt *runtime.Runtime, artifact deploymodel.Artifact, object r2controlplane.UploadObject, repoRoot string) error {
+	ctx, span := rt.Tracer.Start(ctx, "verself_deploy.artifacts.upload",
+		trace.WithAttributes(
+			attribute.String("verself.site", rt.Site),
+			attribute.String("verself.artifact_output", artifact.Output),
+			attribute.String("verself.artifact_sha256", artifact.SHA256),
+			attribute.String("verself.artifact_bucket", artifact.Bucket),
+			attribute.String("verself.artifact_key", artifact.Key),
+		),
+	)
+	defer span.End()
 	body, err := os.ReadFile(artifact.ResolveLocalPath(repoRoot))
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("read artifact: %w", err)
 	}
+	span.SetAttributes(attribute.Int("verself.artifact_size_bytes", len(body)))
 	digest := deploymodel.SHA256(body)
 	if digest != artifact.SHA256 {
-		return fmt.Errorf("artifact sha256=%s does not match descriptor sha256=%s", digest, artifact.SHA256)
+		err := fmt.Errorf("artifact sha256=%s does not match descriptor sha256=%s", digest, artifact.SHA256)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, object.PutURL, bytes.NewReader(body))
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	for key, value := range object.Headers {
@@ -192,14 +293,21 @@ func uploadArtifact(ctx context.Context, artifact deploymodel.Artifact, object r
 	req.ContentLength = int64(len(body))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("PUT presigned R2 artifact: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("PUT presigned R2 artifact status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		err := fmt.Errorf("PUT presigned R2 artifact status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
+	span.SetStatus(codes.Ok, "")
 	return nil
 }
 
