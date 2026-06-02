@@ -173,10 +173,11 @@ and rolls the first. Cloudflare DNS authority is not projected into target
 sites. R2 blast radius is controlled with bucket-scoped child credentials.
 
 DNS authority is verified by listing the hosted zones referenced by target site
-vars and recording zone ID fingerprints. `aspect integrations cloudflare-dns
---site=<site>` runs from the controller and applies the site's
-`cloudflare_dns_records` with an account-admin slot. It produces DNS records and
-operational evidence, not site credential material.
+vars and recording zone ID fingerprints. `aspect integrations
+cloudflare-control-plane --site=<site> --action=reconcile-dns` runs from the
+prod controller and applies the site's `cloudflare_dns_records` with the
+account-admin pair. It produces DNS records and operational evidence, not site
+credential material.
 
 TLS/certificate issuance uses the same prod Cloudflare authority. Certificate
 material is projected to target-site OpenBao/Nomad or host convergence outputs

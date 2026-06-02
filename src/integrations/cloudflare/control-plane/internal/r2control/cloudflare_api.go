@@ -59,6 +59,15 @@ type R2Bucket struct {
 	StorageClass string `json:"storage_class,omitempty"`
 }
 
+type DNSRecord struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Content string `json:"content"`
+	TTL     int    `json:"ttl"`
+	Proxied bool   `json:"proxied"`
+}
+
 type permissionGroup struct {
 	ID     string   `json:"id"`
 	Name   string   `json:"name"`
@@ -140,6 +149,24 @@ type zoneListResponse struct {
 		Name string `json:"name"`
 	} `json:"result"`
 	Errors []cloudflareMessage `json:"errors"`
+}
+
+type dnsRecordListResponse struct {
+	Success    bool                `json:"success"`
+	Result     []DNSRecord         `json:"result"`
+	ResultInfo resultInfo          `json:"result_info"`
+	Errors     []cloudflareMessage `json:"errors"`
+}
+
+type dnsRecordResponse struct {
+	Success bool                `json:"success"`
+	Result  DNSRecord           `json:"result"`
+	Errors  []cloudflareMessage `json:"errors"`
+}
+
+type resultInfo struct {
+	Page       int `json:"page"`
+	TotalPages int `json:"total_pages"`
 }
 
 type temporaryCredentialsResponse struct {
@@ -478,6 +505,85 @@ func (c *CloudflareAPIClient) ZonesByName(ctx context.Context, names []string) (
 		out[name] = strings.TrimSpace(response.Result[0].ID)
 	}
 	return out, nil
+}
+
+func (c *CloudflareAPIClient) ListARecords(ctx context.Context, zoneID string) ([]DNSRecord, error) {
+	zoneID = strings.TrimSpace(zoneID)
+	if zoneID == "" {
+		return nil, fmt.Errorf("zone ID is required")
+	}
+	var out []DNSRecord
+	for page := 1; ; page++ {
+		q := url.Values{}
+		q.Set("type", "A")
+		q.Set("page", fmt.Sprint(page))
+		q.Set("per_page", "100")
+		var response dnsRecordListResponse
+		if err := c.doJSON(ctx, http.MethodGet, "/zones/"+url.PathEscape(zoneID)+"/dns_records?"+q.Encode(), nil, &response); err != nil {
+			return nil, err
+		}
+		if !response.Success {
+			return nil, fmt.Errorf("cloudflare DNS record list failed: %s", cloudflareErrors(response.Errors))
+		}
+		out = append(out, response.Result...)
+		if response.ResultInfo.TotalPages <= response.ResultInfo.Page {
+			break
+		}
+		if response.ResultInfo.TotalPages == 0 {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (c *CloudflareAPIClient) CreateARecord(ctx context.Context, zoneID, name, content string, ttl int, proxied bool) (DNSRecord, error) {
+	zoneID = strings.TrimSpace(zoneID)
+	if zoneID == "" {
+		return DNSRecord{}, fmt.Errorf("zone ID is required")
+	}
+	var response dnsRecordResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/zones/"+url.PathEscape(zoneID)+"/dns_records", dnsRecordBody(name, content, ttl, proxied), &response); err != nil {
+		return DNSRecord{}, err
+	}
+	if !response.Success {
+		return DNSRecord{}, fmt.Errorf("cloudflare DNS record create failed: %s", cloudflareErrors(response.Errors))
+	}
+	if response.Result.ID == "" {
+		return DNSRecord{}, fmt.Errorf("cloudflare DNS record create returned no record ID")
+	}
+	return response.Result, nil
+}
+
+func (c *CloudflareAPIClient) UpdateARecord(ctx context.Context, zoneID, recordID, name, content string, ttl int, proxied bool) (DNSRecord, error) {
+	zoneID = strings.TrimSpace(zoneID)
+	recordID = strings.TrimSpace(recordID)
+	if zoneID == "" {
+		return DNSRecord{}, fmt.Errorf("zone ID is required")
+	}
+	if recordID == "" {
+		return DNSRecord{}, fmt.Errorf("record ID is required")
+	}
+	var response dnsRecordResponse
+	if err := c.doJSON(ctx, http.MethodPut, "/zones/"+url.PathEscape(zoneID)+"/dns_records/"+url.PathEscape(recordID), dnsRecordBody(name, content, ttl, proxied), &response); err != nil {
+		return DNSRecord{}, err
+	}
+	if !response.Success {
+		return DNSRecord{}, fmt.Errorf("cloudflare DNS record update failed: %s", cloudflareErrors(response.Errors))
+	}
+	if response.Result.ID == "" {
+		return DNSRecord{}, fmt.Errorf("cloudflare DNS record update returned no record ID")
+	}
+	return response.Result, nil
+}
+
+func dnsRecordBody(name, content string, ttl int, proxied bool) map[string]any {
+	return map[string]any{
+		"type":    "A",
+		"name":    strings.Trim(strings.TrimSpace(name), "."),
+		"content": strings.TrimSpace(content),
+		"ttl":     ttl,
+		"proxied": proxied,
+	}
 }
 
 func (c *CloudflareAPIClient) CreateZoneTokenWithPermissions(ctx context.Context, accountID string, zoneIDs []string, name string, permissionNames []string, expiresOn time.Time) (CreatedAPIToken, error) {

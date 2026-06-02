@@ -52,7 +52,7 @@ DNS records are target-site resources inside global hosted zones. For Gamma, `ve
 
 `cloudflare_product_zone` and `cloudflare_company_zone` name hosted zones. `verself_domain` and `company_domain` name public domains inside those zones. Do not infer the hosted zone from a subdomain site name.
 
-The prod Cloudflare control plane reconciles DNS using the account-admin pair. `aspect integrations cloudflare-dns --site=<site>` reads a prod account-admin slot from controller authority and applies the target site's `cloudflare_dns_records`. DNS reconciliation produces records and evidence only; target sites receive no DNS credential material.
+The prod Cloudflare control plane reconciles DNS using the account-admin pair. `aspect integrations cloudflare-control-plane --site=<site> --action=reconcile-dns` reads the prod account-admin pair from controller authority and applies the target site's `cloudflare_dns_records`. DNS reconciliation produces records and evidence only; target sites receive no DNS credential material.
 
 DNS and ACME/TLS issuer authority are controller-only surfaces. Site hosts may consume public certificates projected by the prod control plane through OpenBao/Nomad/host convergence, but they must not receive Cloudflare DNS credentials for DNS-01 issuance.
 
@@ -109,9 +109,8 @@ Bootstrap seeds contain machine-provisioned Cloudflare children and generated ho
 
 ## Module Boundaries
 
-- `control-plane/`: prod-owned Cloudflare authority, account-admin pair verification/rotation, hosted-zone authority verification, R2 bucket creation, and R2 child credential provisioning.
+- `control-plane/`: prod-owned Cloudflare authority, account-admin pair verification/rotation, hosted-zone authority verification, DNS reconciliation, R2 bucket creation, and R2 child credential provisioning.
 - `r2-control-plane/`: site-local runtime upload-session service. It consumes a scoped publisher S3 credential and locally signs temporary R2 upload credentials. It does not hold account-admin authority or Cloudflare API token values.
-- `dns-reconciler/`: applies target-site DNS desired state from prod controller account authority. It does not mint, rotate, or persist credentials.
 - `email-routing/`: zone email-routing automation. It must use scoped zone credentials and must not depend on account-admin material.
 
 Generated local files under `.verself/site-bootstrap/<site>/` are operator bootstrap artifacts. Do not commit them.

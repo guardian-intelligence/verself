@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -18,6 +19,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/verself/integrations/cloudflare/control-plane/internal/r2control"
@@ -70,6 +72,9 @@ type config struct {
 	openBaoCACertFile          string
 	openBaoTokenEnv            string
 	openBaoTokenFile           string
+	dnsInventory               string
+	dnsConcurrency             int
+	dryRun                     bool
 	getterVarsFile             string
 	seedBundleFile             string
 	bootstrapPublisherEnvFile  string
@@ -108,6 +113,11 @@ type report struct {
 	TestObjectGetStatus          int                     `json:"test_object_get_status,omitempty"`
 	PrefixIsolationProbeStatus   int                     `json:"prefix_isolation_probe_status,omitempty"`
 	DNSZones                     []dnsZoneReport         `json:"dns_zones,omitempty"`
+	DNSRecordsSeen               int                     `json:"dns_records_seen,omitempty"`
+	DNSRecordsDiffed             int                     `json:"dns_records_diffed,omitempty"`
+	DNSRecordsApplied            int                     `json:"dns_records_applied,omitempty"`
+	DNSDryRun                    bool                    `json:"dns_dry_run,omitempty"`
+	DNSChanges                   []dnsChangeReport       `json:"dns_changes,omitempty"`
 	GetterCredentialPermission   string                  `json:"getter_credential_permission,omitempty"`
 	GetterCredentialName         string                  `json:"getter_credential_name,omitempty"`
 	GetterCredentialExpiresOn    string                  `json:"getter_credential_expires_on,omitempty"`
@@ -134,6 +144,15 @@ type dnsZoneReport struct {
 	ZoneIDFingerprint string `json:"zone_id_fingerprint"`
 }
 
+type dnsChangeReport struct {
+	Operation string `json:"operation"`
+	Zone      string `json:"zone"`
+	Name      string `json:"name"`
+	Content   string `json:"content"`
+	TTL       int    `json:"ttl"`
+	Proxied   bool   `json:"proxied"`
+}
+
 type accountAdminStatus struct {
 	TokenIDFingerprint string `json:"token_id_fingerprint,omitempty"`
 	Status             string `json:"status,omitempty"`
@@ -156,7 +175,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, provision-site, provision-site-bootstrap, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
+	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, provision-site, provision-site-bootstrap, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
@@ -182,6 +201,9 @@ func run(args []string) error {
 	fs.StringVar(&cfg.openBaoCACertFile, "openbao-ca-cert", "", "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT.")
 	fs.StringVar(&cfg.openBaoTokenEnv, "openbao-token-env", "BAO_TOKEN", "Environment variable name for the OpenBao token.")
 	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", "", "File containing the OpenBao token.")
+	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini.")
+	fs.IntVar(&cfg.dnsConcurrency, "dns-concurrency", 8, "Maximum parallel Cloudflare DNS write requests for --action=reconcile-dns.")
+	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print and report the DNS diff without applying writes for --action=reconcile-dns.")
 	fs.StringVar(&cfg.getterVarsFile, "getter-vars-file", "", "JSON vars file to receive the durable Nomad artifact getter keypair.")
 	fs.StringVar(&cfg.seedBundleFile, "seed-bundle-file", "", "Seed bundle file to receive generated provider values.")
 	fs.StringVar(&cfg.bootstrapPublisherEnvFile, "bootstrap-publisher-env-file", "", "Env file to receive the bootstrap-only R2 publisher credential.")
@@ -219,6 +241,8 @@ func run(args []string) error {
 		return rotateAccountAdminPair(ctx, cfg)
 	case "verify-dns-authority":
 		return verifyDNSAuthority(ctx, cfg)
+	case "reconcile-dns":
+		return reconcileDNS(ctx, cfg)
 	case "provision-site":
 		return provisionSite(ctx, cfg)
 	}
@@ -257,6 +281,7 @@ func run(args []string) error {
 		return writeReport(report{
 			Timestamp:                    time.Now().UTC().Format(time.RFC3339),
 			Action:                       cfg.action,
+			ControlPlaneSite:             cloudflareControlPlaneSite,
 			Site:                         cfg.site,
 			AccountID:                    cfg.accountID,
 			Endpoint:                     r2control.Endpoint(cfg.accountID),
@@ -276,6 +301,7 @@ func run(args []string) error {
 	out := report{
 		Timestamp:                    time.Now().UTC().Format(time.RFC3339),
 		Action:                       cfg.action,
+		ControlPlaneSite:             cloudflareControlPlaneSite,
 		Site:                         cfg.site,
 		AccountID:                    cfg.accountID,
 		Endpoint:                     r2control.Endpoint(cfg.accountID),
@@ -395,9 +421,9 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "import-admin-pair", "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "import-admin-pair", "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
 	}
 	if !r2control.IsCloudflareAccountID(cfg.accountID) {
 		return fmt.Errorf("--account-id must be a 32-character lowercase hex Cloudflare account ID")
@@ -425,6 +451,9 @@ func (cfg config) validate() error {
 	}
 	if cfg.inventoryDepth < 1 || cfg.inventoryDepth > 8 {
 		return fmt.Errorf("--inventory-depth must be between 1 and 8")
+	}
+	if cfg.dnsConcurrency < 1 || cfg.dnsConcurrency > 64 {
+		return fmt.Errorf("--dns-concurrency must be between 1 and 64")
 	}
 	if cfg.accountAdminTTL <= 0 || cfg.accountAdminTTL > 7*24*time.Hour {
 		return fmt.Errorf("--account-admin-ttl must be greater than zero and no more than 7 days")
@@ -730,9 +759,9 @@ func loadAndVerifyAccountAdminPair(ctx context.Context, cfg config) (accountAdmi
 
 func provisionSite(ctx context.Context, cfg config) error {
 	dnsCfg := cfg
-	dnsCfg.action = "verify-dns-authority"
-	if err := verifyDNSAuthority(ctx, dnsCfg); err != nil {
-		return fmt.Errorf("verify-dns-authority: %w", err)
+	dnsCfg.action = "reconcile-dns"
+	if err := reconcileDNS(ctx, dnsCfg); err != nil {
+		return fmt.Errorf("reconcile-dns: %w", err)
 	}
 	bootstrapCfg := cfg
 	bootstrapCfg.action = "provision-site-bootstrap"
@@ -1478,6 +1507,63 @@ func verifyDNSAuthority(ctx context.Context, cfg config) error {
 	return writeReport(out)
 }
 
+func reconcileDNS(ctx context.Context, cfg config) error {
+	accountAdmin, err := loadRequiredAccountAdminCredentials(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	apiClient, err := r2control.NewCloudflareAPIClient(accountAdmin.APIToken, cfg.timeout)
+	if err != nil {
+		return err
+	}
+	desired, err := loadDNSDesiredState(cfg)
+	if err != nil {
+		return err
+	}
+	zoneIDsByName, err := apiClient.ZonesByName(ctx, desired.zoneNames())
+	if err != nil {
+		return fmt.Errorf("list cloudflare zones: %w", err)
+	}
+	plan, err := buildDNSPlan(ctx, apiClient, zoneIDsByName, desired)
+	if err != nil {
+		return err
+	}
+	jobs := dnsWriteJobs(plan)
+
+	out := baseReport(cfg, accountAdmin.Source)
+	out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(accountAdmin.AccessKeyID)
+	out.VerifiedWith = "cloudflare-account-admin-dns-reconcile"
+	out.DNSRecordsSeen = len(plan)
+	out.DNSRecordsDiffed = len(jobs)
+	out.DNSDryRun = cfg.dryRun
+	for _, zone := range desired.zoneNames() {
+		out.DNSZones = append(out.DNSZones, dnsZoneReport{
+			Name:              zone,
+			ZoneIDFingerprint: r2control.Fingerprint(zoneIDsByName[zone]),
+		})
+	}
+	for _, job := range jobs {
+		out.DNSChanges = append(out.DNSChanges, dnsChangeReport{
+			Operation: job.operation,
+			Zone:      job.entry.desired.zoneName,
+			Name:      job.entry.desired.fqdn,
+			Content:   job.entry.desired.targetIP,
+			TTL:       job.entry.desired.ttl,
+			Proxied:   job.entry.desired.proxied,
+		})
+	}
+	if cfg.dryRun {
+		return writeReport(out)
+	}
+	applied, err := applyDNSWrites(ctx, apiClient, cfg.dnsConcurrency, jobs)
+	out.DNSRecordsApplied = applied
+	if err != nil {
+		_ = writeReport(out)
+		return err
+	}
+	return writeReport(out)
+}
+
 func siteDNSZones(cfg config) ([]string, error) {
 	path := filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "vars.yml")
 	body, err := os.ReadFile(path)
@@ -1522,6 +1608,284 @@ func siteDNSZones(cfg config) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+type dnsDesiredRecord struct {
+	zoneName string
+	record   string
+	fqdn     string
+	targetIP string
+	ttl      int
+	proxied  bool
+}
+
+type dnsDesiredState struct {
+	records []dnsDesiredRecord
+}
+
+func (d dnsDesiredState) zoneNames() []string {
+	seen := map[string]struct{}{}
+	for _, record := range d.records {
+		seen[record.zoneName] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for zone := range seen {
+		out = append(out, zone)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (d dnsDesiredState) byZone(zone string) []dnsDesiredRecord {
+	var out []dnsDesiredRecord
+	for _, record := range d.records {
+		if record.zoneName == zone {
+			out = append(out, record)
+		}
+	}
+	return out
+}
+
+func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
+	path := filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "vars.yml")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return dnsDesiredState{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	var siteVars struct {
+		VerselfDomain         string `yaml:"verself_domain"`
+		CompanyDomain         string `yaml:"company_domain"`
+		CloudflareProductZone string `yaml:"cloudflare_product_zone"`
+		CloudflareCompanyZone string `yaml:"cloudflare_company_zone"`
+		BareMetalPublicIPv4   string `yaml:"bare_metal_public_ipv4"`
+		Records               []struct {
+			Kind   string `yaml:"kind"`
+			Record string `yaml:"record"`
+			Zone   string `yaml:"zone"`
+		} `yaml:"cloudflare_dns_records"`
+	}
+	if err := yaml.Unmarshal(body, &siteVars); err != nil {
+		return dnsDesiredState{}, fmt.Errorf("decode %s: %w", path, err)
+	}
+	verself := strings.TrimSpace(siteVars.VerselfDomain)
+	company := strings.TrimSpace(siteVars.CompanyDomain)
+	publicIP := strings.TrimSpace(siteVars.BareMetalPublicIPv4)
+	if publicIP == "" || publicIP == "0.0.0.0" {
+		inventoryPath := cfg.dnsInventory
+		if strings.TrimSpace(inventoryPath) == "" {
+			inventoryPath = filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "inventory.ini")
+		}
+		publicIP, err = inventoryInfraHost(inventoryPath)
+		if err != nil {
+			return dnsDesiredState{}, err
+		}
+	}
+	if verself == "" || company == "" || publicIP == "" {
+		return dnsDesiredState{}, fmt.Errorf("%s: missing verself_domain, company_domain, or site public IP", path)
+	}
+	productZone := firstNonEmpty(siteVars.CloudflareProductZone, verself)
+	companyZone := firstNonEmpty(siteVars.CloudflareCompanyZone, company)
+	seen := map[string]struct{}{}
+	out := dnsDesiredState{}
+	for _, record := range siteVars.Records {
+		publicDomain := ""
+		hostedZone := ""
+		switch strings.TrimSpace(record.Zone) {
+		case "product":
+			publicDomain = verself
+			hostedZone = productZone
+		case "company":
+			publicDomain = company
+			hostedZone = companyZone
+		default:
+			return dnsDesiredState{}, fmt.Errorf("%s: unknown cloudflare_dns_records[].zone %q", path, record.Zone)
+		}
+		fqdn := publicFQDN(publicDomain, record.Record)
+		relativeRecord, err := recordNameForHostedZone(fqdn, hostedZone)
+		if err != nil {
+			return dnsDesiredState{}, fmt.Errorf("%s: %w", path, err)
+		}
+		key := strings.TrimSpace(hostedZone) + "|" + fqdn
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out.records = append(out.records, dnsDesiredRecord{
+			zoneName: strings.Trim(strings.TrimSpace(hostedZone), "."),
+			record:   relativeRecord,
+			fqdn:     fqdn,
+			targetIP: publicIP,
+			ttl:      1,
+			proxied:  false,
+		})
+	}
+	if len(out.records) == 0 {
+		return dnsDesiredState{}, fmt.Errorf("%s declares no cloudflare_dns_records", path)
+	}
+	return out, nil
+}
+
+func publicFQDN(publicDomain, record string) string {
+	publicDomain = strings.Trim(strings.TrimSpace(publicDomain), ".")
+	record = strings.Trim(strings.TrimSpace(record), ".")
+	if record == "" || record == "@" {
+		return publicDomain
+	}
+	return record + "." + publicDomain
+}
+
+func recordNameForHostedZone(fqdn, hostedZone string) (string, error) {
+	fqdn = strings.Trim(strings.TrimSpace(fqdn), ".")
+	hostedZone = strings.Trim(strings.TrimSpace(hostedZone), ".")
+	if hostedZone == "" || strings.Contains(hostedZone, "{{") {
+		return "", fmt.Errorf("invalid Cloudflare hosted zone %q", hostedZone)
+	}
+	if fqdn == hostedZone {
+		return "@", nil
+	}
+	suffix := "." + hostedZone
+	if !strings.HasSuffix(fqdn, suffix) {
+		return "", fmt.Errorf("DNS name %s is not inside Cloudflare hosted zone %s", fqdn, hostedZone)
+	}
+	return strings.TrimSuffix(fqdn, suffix), nil
+}
+
+func inventoryInfraHost(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("inventory path is required when bare_metal_public_ipv4 is unset")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open inventory %s: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+
+	section := ""
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.Trim(line, "[]")
+			continue
+		}
+		if section != "infra" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		host := fields[0]
+		for _, field := range fields[1:] {
+			key, value, ok := strings.Cut(field, "=")
+			if ok && key == "ansible_host" {
+				host = value
+				break
+			}
+		}
+		if host == "" {
+			return "", fmt.Errorf("inventory %s has an empty [infra] host", path)
+		}
+		return host, nil
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read inventory %s: %w", path, err)
+	}
+	return "", fmt.Errorf("inventory %s has no [infra] host", path)
+}
+
+type dnsPlanEntry struct {
+	zoneID  string
+	desired dnsDesiredRecord
+	actual  *r2control.DNSRecord
+}
+
+type dnsWriteJob struct {
+	entry     dnsPlanEntry
+	operation string
+}
+
+func buildDNSPlan(ctx context.Context, apiClient *r2control.CloudflareAPIClient, zones map[string]string, desired dnsDesiredState) ([]dnsPlanEntry, error) {
+	var plan []dnsPlanEntry
+	for _, zoneName := range desired.zoneNames() {
+		zoneID := zones[zoneName]
+		actual, err := apiClient.ListARecords(ctx, zoneID)
+		if err != nil {
+			return nil, fmt.Errorf("list A records for zone %s: %w", zoneName, err)
+		}
+		actualByName := map[string]r2control.DNSRecord{}
+		for _, record := range actual {
+			actualByName[record.Name] = record
+		}
+		for _, want := range desired.byZone(zoneName) {
+			entry := dnsPlanEntry{zoneID: zoneID, desired: want}
+			if current, ok := actualByName[want.fqdn]; ok {
+				current := current
+				entry.actual = &current
+			}
+			plan = append(plan, entry)
+		}
+	}
+	return plan, nil
+}
+
+func dnsWriteJobs(plan []dnsPlanEntry) []dnsWriteJob {
+	var jobs []dnsWriteJob
+	for _, entry := range plan {
+		if entry.actual == nil {
+			jobs = append(jobs, dnsWriteJob{entry: entry, operation: "create"})
+			continue
+		}
+		if entry.actual.Content == entry.desired.targetIP &&
+			entry.actual.TTL == entry.desired.ttl &&
+			entry.actual.Proxied == entry.desired.proxied {
+			continue
+		}
+		jobs = append(jobs, dnsWriteJob{entry: entry, operation: "update"})
+	}
+	return jobs
+}
+
+func applyDNSWrites(ctx context.Context, apiClient *r2control.CloudflareAPIClient, concurrency int, jobs []dnsWriteJob) (int, error) {
+	if len(jobs) == 0 {
+		return 0, nil
+	}
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var applied int
+	var applyErr error
+	for _, job := range jobs {
+		job := job
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			var err error
+			switch job.operation {
+			case "create":
+				_, err = apiClient.CreateARecord(ctx, job.entry.zoneID, job.entry.desired.fqdn, job.entry.desired.targetIP, job.entry.desired.ttl, job.entry.desired.proxied)
+			case "update":
+				_, err = apiClient.UpdateARecord(ctx, job.entry.zoneID, job.entry.actual.ID, job.entry.desired.fqdn, job.entry.desired.targetIP, job.entry.desired.ttl, job.entry.desired.proxied)
+			default:
+				err = fmt.Errorf("unknown DNS write operation %q", job.operation)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				applyErr = errors.Join(applyErr, fmt.Errorf("%s %s: %w", job.operation, job.entry.desired.fqdn, err))
+				return
+			}
+			applied++
+		}()
+	}
+	wg.Wait()
+	return applied, applyErr
 }
 
 func capabilityOpenBaoPath(cfg config, capability string) string {

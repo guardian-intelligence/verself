@@ -45,7 +45,7 @@ integrations:
   - key: edge.cloudflare_dns
     provider: cloudflare
     controller: prod
-    owner: src/integrations/cloudflare/dns-reconciler
+    owner: src/integrations/cloudflare/control-plane
     purpose: global_dns_reconciliation
   - key: billing.stripe
     provider: stripe
@@ -73,7 +73,7 @@ integrations:
   - key: edge.cloudflare_dns
     provider: cloudflare
     controller: gamma
-    owner: src/integrations/cloudflare/dns-reconciler
+    owner: src/integrations/cloudflare/control-plane
     purpose: global_dns_reconciliation
 `)
 

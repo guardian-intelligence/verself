@@ -60,7 +60,6 @@ load(
 load(
     ".aspect/tasks/integrations.axl",
     integrations_cloudflare_control_plane = "cloudflare_control_plane",
-    integrations_cloudflare_dns = "cloudflare_dns",
     integrations_stripe_projects = "stripe_projects",
 )
 load(
@@ -133,7 +132,6 @@ def config(ctx):
     ctx.tasks.add(site_bootstrap_deploy)
 
     # aspect integrations ...
-    ctx.tasks.add(integrations_cloudflare_dns)
     ctx.tasks.add(integrations_cloudflare_control_plane)
     ctx.tasks.add(integrations_stripe_projects)
 

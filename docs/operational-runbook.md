@@ -140,14 +140,9 @@ aspect integrations cloudflare-control-plane \
 
 aspect integrations cloudflare-control-plane \
   --site=gamma \
-  --action=verify-dns-authority \
+  --action=reconcile-dns \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
-
-aspect integrations cloudflare-dns \
-  --site=gamma \
-  --secret-env-file=secret.env \
-  --account-admin-slot=a
 
 aspect integrations cloudflare-control-plane \
   --site=gamma \
@@ -165,14 +160,9 @@ Nomad, and runtime jobs:
 ```shell
 aspect integrations cloudflare-control-plane \
   --site=gamma \
-  --action=verify-dns-authority \
+  --action=reconcile-dns \
   --account-admin-source=secret-env \
   --secret-env-file=secret.env
-
-aspect integrations cloudflare-dns \
-  --site=gamma \
-  --secret-env-file=secret.env \
-  --account-admin-slot=a
 
 aspect integrations cloudflare-control-plane \
   --site=gamma \
@@ -298,8 +288,8 @@ aspect site materialize-seed --site=gamma
 aspect site converge-host \
   --site=gamma \
   --openbao-site-root-key-file=.verself/site-bootstrap/gamma/site-root.key
-aspect integrations cloudflare-dns --site=gamma --dry-run
-aspect integrations cloudflare-dns --site=gamma
+aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns --dry-run
+aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns
 aspect site bootstrap-deploy --site=gamma --sha="$(git rev-parse HEAD)"
 aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 ```
