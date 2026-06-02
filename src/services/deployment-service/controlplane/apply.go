@@ -136,7 +136,7 @@ func (cfg ApplyConfig) withDefaults() ApplyConfig {
 		cfg.OpenBaoAddr = envOr("BAO_ADDR", envOr("VAULT_ADDR", "https://127.0.0.1:8200"))
 	}
 	if cfg.OpenBaoCACert == "" {
-		cfg.OpenBaoCACert = envOr("BAO_CACERT", "/etc/openbao/tls/cert.pem")
+		cfg.OpenBaoCACert = envOr("BAO_CACERT", "/etc/verself/openbao/ca.pem")
 	}
 	if cfg.OpenBaoToken == "" {
 		cfg.OpenBaoToken = envOr("VAULT_TOKEN", "")

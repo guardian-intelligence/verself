@@ -29,7 +29,7 @@ func applyResendKeys(ctx context.Context, args []string) error {
 	fs.SetOutput(os.Stderr)
 	site := fs.String("site", envOr("VERSELF_SITE", ""), "Deployment site.")
 	openBaoAddr := fs.String("openbao-addr", envOr("BAO_ADDR", envOr("VAULT_ADDR", "https://127.0.0.1:8200")), "OpenBao API address.")
-	openBaoCACert := fs.String("openbao-ca-cert", envOr("BAO_CACERT", envOr("VAULT_CACERT", "/etc/openbao/tls/cert.pem")), "OpenBao CA certificate.")
+	openBaoCACert := fs.String("openbao-ca-cert", envOr("BAO_CACERT", envOr("VAULT_CACERT", "/etc/verself/openbao/ca.pem")), "OpenBao CA certificate.")
 	openBaoToken := fs.String("openbao-token", envOr("VAULT_TOKEN", ""), "OpenBao token. Defaults to VAULT_TOKEN from Nomad.")
 	resendAPIURL := fs.String("resend-api-url", envOr("RESEND_API_URL", "https://api.resend.com"), "Resend API base URL.")
 	adminSecret := fs.String("admin-secret", envOr("EMAIL_SERVICE_RESEND_ADMIN_SECRET", resendkeys.DefaultAdminSecret), "OpenBao runtime secret containing the Resend full-access API key.")
