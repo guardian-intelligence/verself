@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -1093,7 +1092,7 @@ func classifyOption(company CompanyRecord, name string) CompanyOption {
 		opt.Kind = parts[1]
 	}
 	target := func() []string {
-		return []string{filepath.ToSlash(filepath.Join(".verself", "site-bootstrap", company.Site, "seed.yml"))}
+		return []string{openBaoRuntimeTarget(name)}
 	}
 	switch {
 	case name == "latitude.api_token":
@@ -1142,7 +1141,7 @@ func findSecretSpec(site, key string) SecretSpec {
 	return SecretSpec{
 		Key:           key,
 		Kind:          "secret",
-		RenderTargets: []string{".verself/site-bootstrap/" + site + "/seed.yml"},
+		RenderTargets: []string{openBaoRuntimeTarget(key)},
 		Generator:     func() (string, error) { return randomSecret(32) },
 	}
 }

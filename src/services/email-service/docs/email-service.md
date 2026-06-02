@@ -53,7 +53,7 @@ org:
 
 The company seed creates forwarding policy from every company address to `integrations.anveio@gmail.com` with local-copy retention enabled. The owning org receives `owner` membership and `send_as` grants for each address.
 
-The seed also creates `noreply@notify.verself.sh` as a system sender identity because `notify.verself.sh` is the currently verified Resend domain. This address is outbound-only and is not part of the company address inventory.
+The email bootstrap flow also creates `noreply@notify.verself.sh` as a system sender identity because `notify.verself.sh` is the currently verified Resend domain. This address is outbound-only and is not part of the company address inventory.
 
 ## Sending
 
@@ -65,8 +65,8 @@ Notifications uses an internal email-service client and no provider credentials.
 
 ## Resend Key Lifecycle
 
-`email-service` owns the Resend implementation boundary. The bootstrap seed contains
-no Resend runtime sending key. The `email-service-resend-keys` Nomad batch job
+`email-service` owns the Resend implementation boundary. Generated bootstrap
+vars contain no Resend runtime sending key. The `email-service-resend-keys` Nomad batch job
 authenticates to OpenBao with workload identity, reads
 `email-service.resend.full_access_api_key`, creates a `sending_access` Resend API
 key, writes `email-service.resend.api_key`, writes the same SMTP-compatible value

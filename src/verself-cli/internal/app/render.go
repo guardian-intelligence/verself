@@ -89,9 +89,6 @@ func writeRenderedFiles(store *Store, company CompanyRecord, repoRoot string, fo
 	if err := renderCLIEntrypoint(repoRoot, company, force); err != nil {
 		return err
 	}
-	if err := renderLocalSeedBundle(store, company, repoRoot, force); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -318,68 +315,6 @@ go_binary(
 	return writeRenderFile(filepath.Join(dir, "BUILD.bazel"), []byte(build), 0o644, force)
 }
 
-func renderLocalSeedBundle(store *Store, company CompanyRecord, repoRoot string, force bool) error {
-	values, err := collectSeedValues(store, company)
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(repoRoot, ".verself", "site-bootstrap", company.Site, "seed.yml")
-	return writeSeedBundle(path, company.Site, values, force)
-}
-
-func collectSeedValues(store *Store, company CompanyRecord) (map[string]string, error) {
-	values := map[string]string{}
-	for _, secret := range company.Secrets {
-		value, err := store.ReadCredential(secret.ValueRef)
-		if err != nil {
-			return nil, err
-		}
-		values[secretYAMLKey(secret.Key)] = value
-	}
-	for _, opt := range company.Options {
-		value := opt.Value
-		if opt.ValueRef != "" {
-			var err error
-			value, err = store.ReadCredential(opt.ValueRef)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if value == "" || len(opt.RenderTargets) == 0 {
-			continue
-		}
-		values[secretYAMLKey(opt.Name)] = value
-	}
-	return values, nil
-}
-
-func writeSeedBundle(path, site string, values map[string]string, force bool) error {
-	var b strings.Builder
-	b.WriteString("version: verself.site-bootstrap.seed.v1\n")
-	b.WriteString("site: " + yamlQuote(site) + "\n")
-	b.WriteString("values:\n")
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		b.WriteString("  " + key + ": " + yamlQuote(values[key]) + "\n")
-	}
-	if !force {
-		if _, err := os.Stat(path); err == nil {
-			return fmt.Errorf("render would overwrite %s; pass --force", path)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	return atomicWriteFile(path, []byte(b.String()), 0o600)
-}
-
 func optionValue(company CompanyRecord, name string) string {
 	for _, opt := range company.Options {
 		if opt.Name == name {
@@ -394,9 +329,4 @@ func yamlQuote(v string) string {
 	v = strings.ReplaceAll(v, `"`, `\"`)
 	v = strings.ReplaceAll(v, "\n", `\n`)
 	return `"` + v + `"`
-}
-
-func secretYAMLKey(key string) string {
-	r := strings.NewReplacer(".", "_", "-", "_")
-	return r.Replace(key)
 }

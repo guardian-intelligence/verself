@@ -52,16 +52,14 @@ the new IP and fresh-host SSH root password from that reinstall.
 ```shell
 cd /home/ubuntu/Projects/verself-sh
 git pull --ff-only
-
-aspect site seed-template --site=gamma --force
 ```
 
-Fill .verself/site-bootstrap/gamma/seed.yml with the requested bootstrap values.
-No repository secret file is created. `provision-site-bootstrap` ensures the
-deployment artifact bucket and writes only the Nomad artifact getter to the
-bootstrap seed/vars path. `aspect site bootstrap-deploy` mints a short-lived
-R2 publisher credential in memory through the Cloudflare control plane, uses it
-for the initial artifact publication, and revokes it before returning. Runtime
+`provision-site-bootstrap` ensures the deployment artifact bucket and writes
+only the Nomad artifact getter to
+`.verself/site-bootstrap/gamma/bootstrap-vars.json` for early Nomad artifact
+retrieval. `aspect site bootstrap-deploy` mints a short-lived R2 publisher
+credential in memory through the Cloudflare control plane, uses it for the
+initial artifact publication, and revokes it before returning. Runtime
 Cloudflare child credentials for deployment publication, recovery, and
 object-storage-service are written to OpenBao by their rotation actions after
 provider verification. Product provider credentials such as Stripe and GitHub
@@ -89,7 +87,7 @@ scoped R2 child credentials. Cloudflare R2 is modeled as global capability
 buckets, with site isolation handled by object prefixes and OpenBao policy.
 Cloudflare account API tokens are stored only in prod controller OpenBao and are
 exposed only to the rotation/provisioning control plane. Controller-only
-bootstrap exceptions are not bootstrap seed values.
+bootstrap exceptions are imported into controller OpenBao.
 
 Prod owns global DNS and TLS/certificate control-plane operations for every
 Verself site. Target sites receive DNS records and certificate projections, not
@@ -104,7 +102,7 @@ Storage Bucket Item Read/Write, Zone Read, and DNS Write for the managed hosted
 zones. The Cloudflare API token value returned by the provider is available
 only once and must be written directly into controller OpenBao by the operator
 or an authenticated controller ingress path. Do not stage Cloudflare account
-authority in repo-local env files, bootstrap seeds, Nomad jobs, Ansible vars, or
+authority in repo-local env files, generated bootstrap vars, Nomad jobs, Ansible vars, or
 generated artifacts.
 
 The R2 buckets are capability-owned global account resources:
@@ -209,15 +207,16 @@ artifacts.
 Bootstrap uses one durable R2 child credential before Nomad can render OpenBao
 templates:
 
-- The Nomad artifact getter is written to the bootstrap seed/materialized vars
-  path so Nomad can fetch artifacts during early allocation starts.
+- The Nomad artifact getter is written to
+  `.verself/site-bootstrap/<site>/bootstrap-vars.json` so Nomad can fetch
+  artifacts during early allocation starts.
 
 The initial artifact publisher is minted by the Cloudflare control plane for
 each `aspect site bootstrap-deploy` run. It is passed in memory to the local R2
 helper and revoked before the command exits.
 
 Runtime deployment publisher, object-storage, and recovery credentials are
-OpenBao entries. They are not bootstrap seed values.
+OpenBao entries.
 
 Daily Cloudflare rotation is controller-owned:
 
@@ -226,7 +225,7 @@ verify cloudflare.account_admin
   -> rotate the account-admin pair through the peer token
   -> reconcile DNS and certificate state from prod control-plane authority
   -> create new R2 child token generation for each R2 capability
-  -> write runtime child generations to OpenBao and bootstrap-only getter to the bootstrap seed when requested
+  -> write runtime child generations to OpenBao and the bootstrap-only getter to bootstrap-vars.json when requested
   -> verify real R2 access for every child generation
   -> delete superseded R2 child generations after overlap
   -> emit ClickHouse evidence
@@ -278,8 +277,7 @@ with an auditable reason and no persistence in repo files, generated artifacts,
 shell history, or logs.
 
 ```shell
-aspect site validate-seed --site=gamma
-aspect site materialize-seed --site=gamma
+aspect integrations cloudflare-control-plane --site=gamma --action=provision-site-bootstrap
 aspect site converge-host \
   --site=gamma \
   --openbao-site-root-key-file=.verself/site-bootstrap/gamma/site-root.key
@@ -294,7 +292,7 @@ aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 ```text
 external provider authority available through controller OpenBao
   -> site root key is copied to the host as OpenBao bootstrap authority
-  -> bootstrap seed bundle materialized
+  -> Nomad artifact getter bootstrap vars are provisioned
   -> host base converged
   -> OpenBao initialized and unsealed; unseal material is wrapped by the site root key
   -> Nomad starts with site-local OpenBao integration

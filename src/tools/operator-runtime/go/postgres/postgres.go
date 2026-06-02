@@ -19,12 +19,10 @@ const (
 )
 
 type Config struct {
-	Database     string
-	User         string
-	Password     string
-	RemotePort   int
-	PasswordPath string
-	PasswordKey  string
+	Database   string
+	User       string
+	Password   string
+	RemotePort int
 }
 
 func OpenOverSSH(ctx context.Context, rt *opruntime.Runtime, cfg Config) (*pgx.Conn, error) {
@@ -43,25 +41,12 @@ func OpenOverSSH(ctx context.Context, rt *opruntime.Runtime, cfg Config) (*pgx.C
 	if cfg.RemotePort <= 0 || cfg.RemotePort > 65535 {
 		return nil, fmt.Errorf("postgres: invalid remote port %d", cfg.RemotePort)
 	}
-	password := cfg.Password
-	if password == "" {
-		key := cfg.PasswordKey
-		if key == "" {
-			key = "postgresql_admin_password"
-		}
-		path := cfg.PasswordPath
-		if path == "" {
-			path = opruntime.SiteBootstrapVarsPath(rt.RepoRoot, rt.Site)
-		}
-		var err error
-		password, err = opruntime.ReadBootstrapVarsValue(path, key)
-		if err != nil {
-			return nil, err
-		}
+	if cfg.Password == "" {
+		return nil, fmt.Errorf("postgres: Password is required")
 	}
 	u := url.URL{
 		Scheme:   "postgres",
-		User:     url.UserPassword(cfg.User, password),
+		User:     url.UserPassword(cfg.User, cfg.Password),
 		Host:     net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.RemotePort)),
 		Path:     "/" + cfg.Database,
 		RawQuery: "sslmode=disable",

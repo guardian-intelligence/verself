@@ -1,15 +1,4 @@
 ---
-- name: "Site secrets"
-  hosts: all
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - always
-  tasks:
-    - name: Load bootstrap vars
-      ansible.builtin.import_tasks: tasks/bootstrap-vars.yml
-
 - name: "Host bootstrap foundation"
   hosts: all
   become: true

@@ -16,30 +16,29 @@ type SecretInventoryItem struct {
 }
 
 func secretCatalog(site string) []SecretSpec {
-	target := []string{".verself/site-bootstrap/" + site + "/seed.yml"}
 	return []SecretSpec{
 		{
 			Key:           "zitadel.initial_admin_password",
 			Kind:          "password",
-			RenderTargets: target,
+			RenderTargets: []string{openBaoRuntimeTarget("zitadel.initial_admin_password")},
 			Generator:     func() (string, error) { return randomSecret(32) },
 		},
 		{
 			Key:           "forgejo.initial_admin_password",
 			Kind:          "password",
-			RenderTargets: target,
+			RenderTargets: []string{openBaoRuntimeTarget("forgejo.initial_admin_password")},
 			Generator:     func() (string, error) { return randomSecret(32) },
 		},
 		{
 			Key:           "billing.cookie_signing_key",
 			Kind:          "symmetric_key",
-			RenderTargets: target,
+			RenderTargets: []string{openBaoRuntimeTarget("billing.cookie_signing_key")},
 			Generator:     func() (string, error) { return randomSecret(48) },
 		},
 		{
 			Key:           "stripe.webhook_secret",
 			Kind:          "webhook_secret",
-			RenderTargets: target,
+			RenderTargets: []string{openBaoRuntimeTarget("stripe.webhook_secret")},
 			Generator: func() (string, error) {
 				value, err := randomSecret(32)
 				if err != nil {
@@ -49,6 +48,10 @@ func secretCatalog(site string) []SecretSpec {
 			},
 		},
 	}
+}
+
+func openBaoRuntimeTarget(key string) string {
+	return "openbao://kv-runtime/secret/org/" + key
 }
 
 func ensureAllGeneratedSecrets(store *Store, company *CompanyRecord, reveal bool) ([]SecretInventoryItem, error) {

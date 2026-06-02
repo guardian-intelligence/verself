@@ -63,8 +63,8 @@ The playbook does not create or deliver the runtime Resend sending key.
 Cloudflare DNS mutations run from the prod Cloudflare control-plane authority.
 The controller may pass one account-admin token as
 `cloudflare_account_admin_api_token` when provisioning Resend verification DNS.
-That token is never written to a bootstrap seed, Nomad job, Ansible host vars file, or
-runtime service environment.
+That token is never written to generated bootstrap vars, Nomad jobs, Ansible
+host vars, or runtime service environments.
 
 `cloudflare_company_api_token` is an explicit Email-Routing-scoped credential
 for the Email Routing role. It needs, on `guardianintelligence.org`: Zone DNS

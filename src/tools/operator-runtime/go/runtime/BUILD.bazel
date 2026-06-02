@@ -6,7 +6,6 @@ go_library(
         "inventory.go",
         "output.go",
         "runtime.go",
-        "secret_vars.go",
         "ssh.go",
     ],
     importpath = "github.com/verself/operator-runtime/runtime",

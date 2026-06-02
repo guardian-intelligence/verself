@@ -1,4 +1,4 @@
-"""aspect site seed-template|materialize-seed|validate-seed|inventory-write|root-handoff|converge-host."""
+"""aspect site inventory-write|root-handoff|converge-host|bootstrap-deploy."""
 
 load(
     ".aspect/lib/helpers.axl",
@@ -28,104 +28,14 @@ def _abs(ctx, path):
         return path
     return ws_path(ctx, path)
 
-def _default_seed(site):
-    return ".verself/site-bootstrap/" + site + "/seed.yml"
-
 def _default_vars(site):
     return ".verself/site-bootstrap/" + site + "/bootstrap-vars.json"
 
 def _default_site_root_key(site):
     return ".verself/site-bootstrap/" + site + "/site-root.key"
 
-def _default_evidence(site):
-    return ".verself/site-bootstrap/" + site + "/seed-fingerprints.json"
-
 def _default_inventory(site):
     return HOST_CONFIGURATION_DIR + "/sites/" + site + "/inventory.ini"
-
-def _seed_template_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
-    out = ctx.args.out or _default_seed(site)
-    args_list = ["seed-template", "--site=" + site, "--out=" + _abs(ctx, out), "--repo-root=" + ws_path(ctx)]
-    if ctx.args.force:
-        args_list.append("--force")
-    return bazel_run(
-        ctx,
-        _SITE_BOOTSTRAP_TARGET,
-        args_list,
-        label = "site-bootstrap seed-template --site " + site,
-    )
-
-seed_template = task(
-    implementation = _seed_template_impl,
-    name = "seed-template",
-    group = ["site"],
-    summary = "Create a local ignored seed-bundle template for a site.",
-    args = {
-        "site": args.string(default = "prod", description = "Deployment site."),
-        "out": args.string(default = "", description = "Output seed template path."),
-        "force": args.boolean(default = False, description = "Overwrite an existing template."),
-    },
-)
-
-def _validate_seed_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
-    seed = ctx.args.seed_bundle or _default_seed(site)
-    return bazel_run(
-        ctx,
-        _SITE_BOOTSTRAP_TARGET,
-        # Keep seed validation tied to owner-local deploy declarations.
-        # The Bazel runfiles cwd is not the repo root.
-        ["seed-validate", "--site=" + site, "--seed-bundle=" + _abs(ctx, seed), "--repo-root=" + ws_path(ctx)],
-        label = "site-bootstrap seed-validate --site " + site,
-    )
-
-validate_seed = task(
-    implementation = _validate_seed_impl,
-    name = "validate-seed",
-    group = ["site"],
-    summary = "Validate a local bootstrap seed bundle without materializing generated secrets.",
-    args = {
-        "site": args.string(default = "prod", description = "Deployment site."),
-        "seed_bundle": args.string(default = "", description = "Seed bundle path. Defaults to .verself/site-bootstrap/<site>/seed.yml."),
-    },
-)
-
-def _materialize_seed_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
-    seed = ctx.args.seed_bundle or _default_seed(site)
-    vars_file = ctx.args.out_vars or _default_vars(site)
-    evidence = ctx.args.out_evidence or _default_evidence(site)
-    args_list = [
-        "seed-materialize",
-        "--site=" + site,
-        "--seed-bundle=" + _abs(ctx, seed),
-        "--out-vars=" + _abs(ctx, vars_file),
-        "--out-evidence=" + _abs(ctx, evidence),
-        "--repo-root=" + ws_path(ctx),
-    ]
-    if ctx.args.force:
-        args_list.append("--force")
-    return bazel_run(
-        ctx,
-        _SITE_BOOTSTRAP_TARGET,
-        args_list,
-        label = "site-bootstrap seed-materialize --site " + site,
-    )
-
-materialize_seed = task(
-    implementation = _materialize_seed_impl,
-    name = "materialize-seed",
-    group = ["site"],
-    summary = "Materialize bootstrap site vars and fingerprint evidence outside git.",
-    args = {
-        "site": args.string(default = "prod", description = "Deployment site."),
-        "seed_bundle": args.string(default = "", description = "Seed bundle path. Defaults to .verself/site-bootstrap/<site>/seed.yml."),
-        "out_vars": args.string(default = "", description = "Generated Ansible vars path."),
-        "out_evidence": args.string(default = "", description = "Generated fingerprint evidence path."),
-        "force": args.boolean(default = False, description = "Overwrite existing generated outputs."),
-    },
-)
 
 def _inventory_write_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
@@ -242,7 +152,7 @@ def _converge_host_impl(ctx):
             .args(["-f", _abs(ctx, bootstrap_vars)])
             .spawn().wait())
         if exists.code != 0:
-            ctx.std.io.stderr.write("ERROR: " + bootstrap_vars + " not found. Run aspect site materialize-seed --site=" + site + " first.\n")
+            ctx.std.io.stderr.write("ERROR: " + bootstrap_vars + " not found. Run aspect integrations cloudflare-control-plane --site=" + site + " --action=provision-site-bootstrap first.\n")
             return 1
     ansible_playbook = host_ansible_playbook(ctx)
     if ansible_playbook == "":
@@ -306,13 +216,6 @@ def _bootstrap_deploy_impl(ctx):
     sha = resolve_sha(ctx, ctx.args.sha or "")
     if sha == "":
         return 1
-    bootstrap_vars = ctx.args.bootstrap_vars_file or _default_vars(site)
-    exists = (ctx.std.process.command("test")
-        .args(["-f", _abs(ctx, bootstrap_vars)])
-        .spawn().wait())
-    if exists.code != 0:
-        ctx.std.io.stderr.write("ERROR: " + bootstrap_vars + " not found. Run aspect site materialize-seed --site=" + site + " first.\n")
-        return 1
     if inventory_check(ctx, site = site) != 0:
         return 1
     r2_control_plane = bazel_output_file(ctx, _CLOUDFLARE_R2_CONTROL_PLANE_TARGET)
@@ -327,7 +230,6 @@ def _bootstrap_deploy_impl(ctx):
         "--sha=" + sha,
         "--repo-root=" + ws_path(ctx),
         "--inventory=" + ws_path(ctx, _default_inventory(site)),
-        "--bootstrap-vars-file=" + _abs(ctx, bootstrap_vars),
         "--ssh-transport=" + ctx.args.ssh_transport,
         "--r2-control-plane-binary=" + r2_control_plane,
         "--cloudflare-control-plane-binary=" + cloudflare_control_plane,
@@ -350,7 +252,6 @@ bootstrap_deploy = task(
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or ref to deploy. Defaults to HEAD."),
-        "bootstrap_vars_file": args.string(default = "", description = "Generated Ansible vars file. Defaults to .verself/site-bootstrap/<site>/bootstrap-vars.json."),
         "ssh_transport": args.string(default = "recovery", description = "SSH transport for the bootstrap Nomad tunnel: recovery or inventory."),
         "timeout": args.string(default = "15m", description = "Bootstrap deploy timeout as a Go duration."),
     },

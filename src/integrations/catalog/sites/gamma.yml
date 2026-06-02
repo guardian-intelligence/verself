@@ -22,7 +22,7 @@ bootstrap_exceptions:
       - create site-scoped R2 deployment artifact child tokens
       - create site-scoped R2 object-storage child tokens
       - create recovery R2 child tokens
-    reason: Cloudflare account API tokens are account authority and must never be bootstrap seed or runtime material.
+    reason: Cloudflare account API tokens are account authority and must never be generated bootstrap vars or runtime material.
 integrations:
   - key: infrastructure.latitude
     provider: latitude

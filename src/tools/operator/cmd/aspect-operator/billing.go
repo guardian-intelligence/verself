@@ -25,9 +25,8 @@ var billingTokenRE = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 type billingOptions struct {
 	operatorRuntimeOptions
-	bootstrapVarsFile string
-	pgUser            string
-	remotePort        int
+	pgUser     string
+	remotePort int
 }
 
 type billingInspectOptions struct {
@@ -220,7 +219,6 @@ func addBillingFlags(fs *flag.FlagSet) *billingOptions {
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.bootstrapVarsFile, "bootstrap-vars-file", os.Getenv("VERSELF_BOOTSTRAP_VARS_FILE"), "generated bootstrap vars file")
 	fs.StringVar(&opts.pgUser, "pg-user", envOr("PG_USER", oppg.DefaultUser), "PostgreSQL user")
 	fs.IntVar(&opts.remotePort, "remote-port", envIntOr("PG_PORT", oppg.DefaultPort), "Remote PostgreSQL port")
 	return opts
@@ -243,15 +241,15 @@ func openBillingPG(rt *opruntime.Runtime, opts *billingOptions) (*pgx.Conn, erro
 	if opts.remotePort <= 0 || opts.remotePort > 65535 {
 		return nil, fmt.Errorf("billing pg: --remote-port must be between 1 and 65535 (got %d)", opts.remotePort)
 	}
-	passwordPath := opts.bootstrapVarsFile
-	if passwordPath == "" {
-		passwordPath = opruntime.SiteBootstrapVarsPath(rt.RepoRoot, rt.Site)
+	password, err := requirePGPassword("billing pg")
+	if err != nil {
+		return nil, err
 	}
 	return oppg.OpenOverSSH(rt.Ctx, rt, oppg.Config{
-		Database:     "billing",
-		User:         opts.pgUser,
-		RemotePort:   opts.remotePort,
-		PasswordPath: passwordPath,
+		Database:   "billing",
+		User:       opts.pgUser,
+		Password:   password,
+		RemotePort: opts.remotePort,
 	})
 }
 

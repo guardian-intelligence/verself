@@ -321,7 +321,7 @@ Durable local state is append-or-replace by resource kind: profiles, accounts,
 and active context update XDG config/data, company records live under XDG data, run records
 append under XDG state, cached discovery is rebuildable under XDG cache, and
 secret material is stored by reference in the credential store or imported into
-catalog-approved OpenBao seed bundles. Public bootstrap option overrides affect
+OpenBao runtime paths. Public bootstrap option overrides affect
 the current run unless the user also writes them through `verself company`.
 
 ## Profile Model
@@ -732,7 +732,7 @@ An option has:
 | `value_ref` | Redacted local reference, never the raw secret. |
 | `classification` | Derived provider, kind, capability set, and confidence. |
 | `purpose` | `infrastructure`, `runtime_integration`, `identity`, `notification`, `billing`, or `backup`. |
-| `render_targets` | Site vars, provisioning tfvars, OpenBao seed bundle, bootstrap manifest, README, or service config template. |
+| `render_targets` | Site vars, provisioning tfvars, OpenBao runtime path, bootstrap manifest, README, or service config template. |
 | `required_by` | Phase, command surface, or service capability that cannot run without this option. |
 
 Opaque credentials are classified from value shape, environment variable name,
@@ -872,7 +872,6 @@ writes the artifacts the operator's `aspect deploy` will consume:
 | `src/<cli_name>-cli/` | CLI package or build target that emits the chosen command name. |
 | `src/host/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, and canary defaults. |
 | `src/host/sites/<site>/provisioning.tfvars.json.template` | Latitude/OpenTofu input template with provider-specific placeholders. |
-| `src/host/sites/<site>/openbao-seed.manifest.yaml` | Catalog-approved seed-bundle metadata for generated and supplied secrets. |
 | `README.md` | Operator next commands using `<cli_name>`, owner email, organization name, and selected site. |
 
 The operator-local flow is:

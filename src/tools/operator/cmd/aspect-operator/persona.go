@@ -22,7 +22,7 @@ type personaOptions struct {
 type personaDefinition struct {
 	Name               string
 	HumanEmail         string
-	HumanPasswordPath  string
+	HumanPasswordURI   string
 	MachineUsername    string
 	MachineSecretPath  string
 	EmailLocalPart     string
@@ -141,7 +141,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 		return personaDefinition{
 			Name:               name,
 			HumanEmail:         "agent@" + domain,
-			HumanPasswordPath:  "openbao://kv-runtime/secret/org/seed-system.platform_agent_password",
+			HumanPasswordURI:   "openbao://kv-runtime/secret/org/seed-system.platform_agent_password",
 			MachineUsername:    "assume-platform-admin",
 			MachineSecretPath:  "openbao://kv-runtime/secret/org/seed-system.assume_platform_admin_client_secret",
 			EmailLocalPart:     "agents",
@@ -152,7 +152,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 		return personaDefinition{
 			Name:              name,
 			HumanEmail:        "acme-admin@" + domain,
-			HumanPasswordPath: "openbao://kv-runtime/secret/org/seed-system.acme_admin_password",
+			HumanPasswordURI:  "openbao://kv-runtime/secret/org/seed-system.acme_admin_password",
 			MachineUsername:   "assume-acme-admin",
 			MachineSecretPath: "openbao://kv-runtime/secret/org/seed-system.assume_acme_admin_client_secret",
 			TokenProjects:     []string{productAPIProjectName},
@@ -161,7 +161,7 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 		return personaDefinition{
 			Name:              name,
 			HumanEmail:        "acme-user@" + domain,
-			HumanPasswordPath: "openbao://kv-runtime/secret/org/seed-system.acme_user_password",
+			HumanPasswordURI:  "openbao://kv-runtime/secret/org/seed-system.acme_user_password",
 			MachineUsername:   "assume-acme-member",
 			MachineSecretPath: "openbao://kv-runtime/secret/org/seed-system.assume_acme_member_client_secret",
 			TokenProjects:     []string{productAPIProjectName},
@@ -184,5 +184,5 @@ func loadVerselfDomain(repoRoot, site string) (string, error) {
 }
 
 func assumePersona(rt *opruntime.Runtime, def personaDefinition, outputPath string, printEnv bool) error {
-	return errors.New("persona assume requires an OpenBao-backed operator reveal flow; file-based persona seed secrets were retired")
+	return errors.New("persona assume requires an OpenBao-backed operator reveal flow")
 }

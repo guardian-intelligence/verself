@@ -35,12 +35,11 @@ var promoteOrgTrustTiers = map[string]struct{}{
 
 type promoteOrgOptions struct {
 	operatorRuntimeOptions
-	bootstrapVarsFile string
-	pgUser            string
-	pgRemotePort      int
-	slug              string
-	tier              string
-	dryRun            bool
+	pgUser       string
+	pgRemotePort int
+	slug         string
+	tier         string
+	dryRun       bool
 }
 
 func cmdPromoteOrg(args []string) error {
@@ -49,7 +48,6 @@ func cmdPromoteOrg(args []string) error {
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	fs.StringVar(&opts.site, "site", opts.site, "Deploy site")
 	fs.StringVar(&opts.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	fs.StringVar(&opts.bootstrapVarsFile, "bootstrap-vars-file", os.Getenv("VERSELF_BOOTSTRAP_VARS_FILE"), "generated bootstrap vars file")
 	fs.StringVar(&opts.pgUser, "pg-user", envOr("PG_USER", oppg.DefaultUser), "PostgreSQL user")
 	fs.IntVar(&opts.pgRemotePort, "pg-remote-port", envIntOr("PG_PORT", oppg.DefaultPort), "Remote PostgreSQL port on the worker loopback")
 	fs.StringVar(&opts.slug, "slug", "", "Organization slug to promote")
@@ -187,15 +185,15 @@ WHERE slug = $1 AND state = 'active'`, opts.slug).Scan(&orgID, &displayName)
 }
 
 func promoteOpenPG(ctx context.Context, rt *opruntime.Runtime, opts *promoteOrgOptions, db string) (*pgx.Conn, error) {
-	passwordPath := opts.bootstrapVarsFile
-	if passwordPath == "" {
-		passwordPath = opruntime.SiteBootstrapVarsPath(rt.RepoRoot, rt.Site)
+	password, err := requirePGPassword("promote-org pg")
+	if err != nil {
+		return nil, err
 	}
 	return oppg.OpenOverSSH(ctx, rt, oppg.Config{
-		Database:     db,
-		User:         opts.pgUser,
-		RemotePort:   opts.pgRemotePort,
-		PasswordPath: passwordPath,
+		Database:   db,
+		User:       opts.pgUser,
+		Password:   password,
+		RemotePort: opts.pgRemotePort,
 	})
 }
 

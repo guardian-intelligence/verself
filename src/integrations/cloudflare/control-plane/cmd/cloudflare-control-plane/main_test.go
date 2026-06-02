@@ -90,18 +90,43 @@ func TestParentCredentialsAlwaysComeFromOpenBao(t *testing.T) {
 	}
 }
 
-func TestSiteBootstrapSeedUpdatesOnlyIncludeNomadArtifactGetter(t *testing.T) {
+func TestNomadArtifactGetterBootstrapVarsOnlyIncludeGetter(t *testing.T) {
 	getter := r2control.CreatedAPIToken{
 		S3AccessKeyID: "getter-access-key",
 		S3SecretKey:   "getter-secret-key",
 	}
 
-	got := siteBootstrapSeedUpdates(getter)
+	got := nomadArtifactGetterBootstrapVars(getter)
 	if len(got) != 2 {
 		t.Fatalf("updates = %#v", got)
 	}
 	if got["nomad_artifact_getter_s3_access_key_id"] != getter.S3AccessKeyID || got["nomad_artifact_getter_s3_secret_access_key"] != getter.S3SecretKey {
 		t.Fatalf("updates = %#v", got)
+	}
+}
+
+func TestMergeBootstrapVarsWritesJSONOnly(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "bootstrap-vars.json")
+	writeTestFile(t, path, `{"host_generated":"value"}`)
+
+	if err := mergeBootstrapVars(path, map[string]string{
+		"nomad_artifact_getter_s3_access_key_id":     "getter-access-key",
+		"nomad_artifact_getter_s3_secret_access_key": "getter-secret-key",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var got map[string]string
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("bootstrap vars should be JSON, got %s: %v", body, err)
+	}
+	if got["host_generated"] != "value" || got["nomad_artifact_getter_s3_access_key_id"] != "getter-access-key" || got["nomad_artifact_getter_s3_secret_access_key"] != "getter-secret-key" {
+		t.Fatalf("bootstrap vars = %#v", got)
 	}
 }
 

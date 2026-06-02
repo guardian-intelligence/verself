@@ -261,11 +261,3 @@ func (rt *Runtime) TraceID() string {
 func InventoryPath(repoRoot, site string) string {
 	return filepath.Join(repoRoot, "src", "host", "sites", site, "inventory.ini")
 }
-
-func BootstrapVarsPath(repoRoot string) string {
-	return SiteBootstrapVarsPath(repoRoot, DefaultSite)
-}
-
-func SiteBootstrapVarsPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "bootstrap-vars.json")
-}

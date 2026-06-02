@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -167,6 +168,7 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 		`organization_name: "guardianintelligence.org"`,
 		`decoupled_from_verself_sh: true`,
 		`render_targets:`,
+		`openbao://kv-runtime/secret/org/latitude.api_token`,
 	})
 	assertFileContains(t, filepath.Join(repoRoot, "src", "host", "sites", "prod", "vars.yml"), []string{
 		`service_discovery_canary_org_slug: "guardian"`,
@@ -177,29 +179,9 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 		"aspect deploy --site=prod --sha=HEAD",
 	})
 
-	seedPath := filepath.Join(repoRoot, ".verself", "site-bootstrap", "prod", "seed.yml")
-	info, err := os.Stat(seedPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("seed mode = %o, want 0600", info.Mode().Perm())
-	}
-	seed := readFile(t, seedPath)
-	for _, want := range []string{
-		`version: verself.site-bootstrap.seed.v1`,
-		`site: "prod"`,
-		`latitude_api_token: "lat_test_guardian"`,
-		"zitadel_initial_admin_password:",
-		"forgejo_initial_admin_password:",
-		`stripe_secret_key: "sk_test_guardian"`,
-		`stripe_publishable_key: "pk_test_guardian"`,
-		"billing_cookie_signing_key:",
-		"stripe_webhook_secret:",
-	} {
-		if !strings.Contains(seed, want) {
-			t.Fatalf("seed missing %q:\n%s", want, seed)
-		}
+	obsoleteSeedDir := filepath.Join(repoRoot, ".verself", "site-bootstrap")
+	if _, err := os.Stat(obsoleteSeedDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("rendered obsolete local secret directory at %s: %v", obsoleteSeedDir, err)
 	}
 	if found, path := treeContains(t, repoRoot, "verself-cred://"); found {
 		t.Fatalf("rendered repository contains local credential ref in %s", path)

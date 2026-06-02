@@ -71,7 +71,7 @@ type config struct {
 	acmeContactEmail         string
 	acmeDNSPropagationWait   time.Duration
 	certificateRenewBefore   time.Duration
-	seedBundleFile           string
+	bootstrapVarsFile        string
 	testPrefix               string
 	inventoryPrefix          string
 	inventoryDepth           int
@@ -115,8 +115,8 @@ type report struct {
 	GetterCredentialExpiresOn    string                  `json:"getter_credential_expires_on,omitempty"`
 	GetterAccessKeyIDFingerprint string                  `json:"getter_access_key_id_fingerprint,omitempty"`
 	GetterSecretKeyFingerprint   string                  `json:"getter_secret_key_fingerprint,omitempty"`
-	SeedBundleFile               string                  `json:"seed_bundle_file,omitempty"`
-	SeedCredentialFingerprints   map[string]string       `json:"seed_credential_fingerprints,omitempty"`
+	BootstrapVarsFile            string                  `json:"bootstrap_vars_file,omitempty"`
+	BootstrapVarsFingerprints    map[string]string       `json:"bootstrap_vars_fingerprints,omitempty"`
 	RuntimeSecretFingerprints    map[string]string       `json:"runtime_secret_fingerprints,omitempty"`
 	GetterObjectGetStatus        int                     `json:"getter_object_get_status,omitempty"`
 	Inventory                    []inventoryPrefixReport `json:"inventory,omitempty"`
@@ -148,12 +148,6 @@ type accountAdminStatus struct {
 	TokenIDFingerprint string `json:"token_id_fingerprint,omitempty"`
 	Status             string `json:"status,omitempty"`
 	ExpiresOn          string `json:"expires_on,omitempty"`
-}
-
-type seedBundle struct {
-	Version string            `yaml:"version"`
-	Site    string            `yaml:"site"`
-	Values  map[string]string `yaml:"values"`
 }
 
 type bootstrapPublisherCredential struct {
@@ -199,7 +193,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.acmeContactEmail, "acme-contact-email", "", "ACME account contact email for --action=issue-site-certificates.")
 	fs.DurationVar(&cfg.acmeDNSPropagationWait, "acme-dns-propagation-wait", 2*time.Minute, "Maximum wait for ACME DNS-01 TXT propagation.")
 	fs.DurationVar(&cfg.certificateRenewBefore, "certificate-renew-before", 30*24*time.Hour, "Renew projected certificates expiring before this duration.")
-	fs.StringVar(&cfg.seedBundleFile, "seed-bundle-file", "", "Bootstrap seed file to receive the Nomad artifact getter credential.")
+	fs.StringVar(&cfg.bootstrapVarsFile, "bootstrap-vars-file", "", "Bootstrap vars JSON file to receive the Nomad artifact getter credential.")
 	fs.StringVar(&cfg.testPrefix, "test-prefix", "control-plane-verification/", "R2 object prefix used for live verification.")
 	fs.StringVar(&cfg.inventoryPrefix, "inventory-prefix", "", "R2 object prefix for --action=inventory.")
 	fs.IntVar(&cfg.inventoryDepth, "inventory-depth", 2, "Prefix depth for --action=inventory summaries.")
@@ -1015,19 +1009,19 @@ func provisionSiteBootstrapCredentials(ctx context.Context, cfg config, apiClien
 	}
 	publisherDeleted = true
 
-	updates := siteBootstrapSeedUpdates(getter)
-	seedFile := defaultSeedBundleFile(cfg)
-	if err := mergeSeedBundle(seedFile, cfg.site, updates); err != nil {
+	updates := nomadArtifactGetterBootstrapVars(getter)
+	varsFile := defaultBootstrapVarsFile(cfg)
+	if err := mergeBootstrapVars(varsFile, updates); err != nil {
 		return err
 	}
 	getterPersisted = true
-	out.SeedBundleFile = seedFile
+	out.BootstrapVarsFile = varsFile
 	out.GetterCredentialPermission = getter.PermissionGroup
 	out.GetterCredentialName = getter.Name
 	out.GetterCredentialExpiresOn = getter.ExpiresOn
 	out.GetterAccessKeyIDFingerprint = r2control.Fingerprint(getter.S3AccessKeyID)
 	out.GetterSecretKeyFingerprint = r2control.Fingerprint(getter.S3SecretKey)
-	out.SeedCredentialFingerprints = fingerprintMap(updates)
+	out.BootstrapVarsFingerprints = fingerprintMap(updates)
 	return nil
 }
 
@@ -1138,11 +1132,9 @@ func provisionGetterCredential(ctx context.Context, cfg config, parent r2control
 	if err := verifyGetterReadRoundTrip(ctx, writerClient, getterClient, cfg, "verify getter credential propagation", out); err != nil {
 		return err
 	}
-	seedFile := defaultSeedBundleFile(cfg)
-	if err := mergeSeedBundle(seedFile, cfg.site, map[string]string{
-		"nomad_artifact_getter_s3_access_key_id":     getter.S3AccessKeyID,
-		"nomad_artifact_getter_s3_secret_access_key": getter.S3SecretKey,
-	}); err != nil {
+	updates := nomadArtifactGetterBootstrapVars(getter)
+	varsFile := defaultBootstrapVarsFile(cfg)
+	if err := mergeBootstrapVars(varsFile, updates); err != nil {
 		return err
 	}
 	persisted = true
@@ -1151,7 +1143,8 @@ func provisionGetterCredential(ctx context.Context, cfg config, parent r2control
 	out.GetterCredentialExpiresOn = getter.ExpiresOn
 	out.GetterAccessKeyIDFingerprint = r2control.Fingerprint(getter.S3AccessKeyID)
 	out.GetterSecretKeyFingerprint = r2control.Fingerprint(getter.S3SecretKey)
-	out.SeedBundleFile = seedFile
+	out.BootstrapVarsFile = varsFile
+	out.BootstrapVarsFingerprints = fingerprintMap(updates)
 	return nil
 }
 
@@ -1849,7 +1842,7 @@ func publisherRuntimeSecretValues(publisher r2control.CreatedAPIToken) map[strin
 	}
 }
 
-func siteBootstrapSeedUpdates(getter r2control.CreatedAPIToken) map[string]string {
+func nomadArtifactGetterBootstrapVars(getter r2control.CreatedAPIToken) map[string]string {
 	return map[string]string{
 		"nomad_artifact_getter_s3_access_key_id":     getter.S3AccessKeyID,
 		"nomad_artifact_getter_s3_secret_access_key": getter.S3SecretKey,
@@ -1869,55 +1862,49 @@ func fingerprintMap(values map[string]string) map[string]string {
 	return out
 }
 
-func defaultSeedBundleFile(cfg config) string {
-	if strings.TrimSpace(cfg.seedBundleFile) != "" {
-		return cfg.seedBundleFile
+func defaultBootstrapVarsFile(cfg config) string {
+	if strings.TrimSpace(cfg.bootstrapVarsFile) != "" {
+		return cfg.bootstrapVarsFile
 	}
-	return filepath.Join(cfg.repoRoot, ".verself", "site-bootstrap", cfg.site, "seed.yml")
+	return filepath.Join(cfg.repoRoot, ".verself", "site-bootstrap", cfg.site, "bootstrap-vars.json")
 }
 
-func mergeSeedBundle(path, site string, updates map[string]string) error {
+func mergeBootstrapVars(path string, updates map[string]string) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return fmt.Errorf("seed bundle file is required")
+		return fmt.Errorf("bootstrap vars file is required")
 	}
-	bundle := seedBundle{
-		Version: "verself.site-bootstrap.seed.v1",
-		Site:    site,
-		Values:  map[string]string{},
-	}
+	values := map[string]string{}
 	body, err := os.ReadFile(path)
 	if err == nil && len(bytes.TrimSpace(body)) > 0 {
-		if err := yaml.Unmarshal(body, &bundle); err != nil {
-			return fmt.Errorf("decode seed bundle %s: %w", path, err)
+		if err := json.Unmarshal(body, &values); err != nil {
+			return fmt.Errorf("decode bootstrap vars %s: %w", path, err)
 		}
-		if bundle.Values == nil {
-			bundle.Values = map[string]string{}
+		if values == nil {
+			values = map[string]string{}
 		}
 	} else if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("read seed bundle %s: %w", path, err)
-	}
-	if strings.TrimSpace(bundle.Site) == "" {
-		bundle.Site = site
-	}
-	if bundle.Site != site {
-		return fmt.Errorf("seed bundle %s is for site %q, not %q", path, bundle.Site, site)
-	}
-	if strings.TrimSpace(bundle.Version) == "" {
-		bundle.Version = "verself.site-bootstrap.seed.v1"
+		return fmt.Errorf("read bootstrap vars %s: %w", path, err)
 	}
 	for key, value := range updates {
-		bundle.Values[key] = value
+		if strings.TrimSpace(key) == "" {
+			return fmt.Errorf("bootstrap vars key is empty")
+		}
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("bootstrap vars %s is empty", key)
+		}
+		values[key] = value
 	}
-	body, err = yaml.Marshal(bundle)
+	body, err = json.MarshalIndent(values, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode seed bundle %s: %w", path, err)
+		return fmt.Errorf("encode bootstrap vars %s: %w", path, err)
 	}
+	body = append(body, '\n')
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create seed bundle directory: %w", err)
+		return fmt.Errorf("create bootstrap vars directory: %w", err)
 	}
 	if err := writeFileAtomic(path, body, 0o600); err != nil {
-		return fmt.Errorf("write seed bundle %s: %w", path, err)
+		return fmt.Errorf("write bootstrap vars %s: %w", path, err)
 	}
 	return nil
 }

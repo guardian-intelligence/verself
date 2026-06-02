@@ -70,8 +70,8 @@ def _cloudflare_control_plane_impl(ctx):
         args_list.append("--acme-dns-propagation-wait=" + ctx.args.acme_dns_propagation_wait)
     if ctx.args.certificate_renew_before != "":
         args_list.append("--certificate-renew-before=" + ctx.args.certificate_renew_before)
-    if ctx.args.seed_bundle_file != "":
-        args_list.append("--seed-bundle-file=" + (ctx.args.seed_bundle_file if ctx.args.seed_bundle_file.startswith("/") else ws_path(ctx, ctx.args.seed_bundle_file)))
+    if ctx.args.bootstrap_vars_file != "":
+        args_list.append("--bootstrap-vars-file=" + (ctx.args.bootstrap_vars_file if ctx.args.bootstrap_vars_file.startswith("/") else ws_path(ctx, ctx.args.bootstrap_vars_file)))
     if ctx.args.test_prefix != "":
         args_list.append("--test-prefix=" + ctx.args.test_prefix)
     if ctx.args.inventory_prefix != "":
@@ -120,7 +120,7 @@ cloudflare_control_plane = task(
         "acme_contact_email": args.string(default = "", description = "ACME account contact email for issue-site-certificates."),
         "acme_dns_propagation_wait": args.string(default = "", description = "Maximum wait for ACME DNS-01 TXT propagation."),
         "certificate_renew_before": args.string(default = "", description = "Renew projected certificates expiring before this duration."),
-        "seed_bundle_file": args.string(default = "", description = "Bootstrap seed file to receive the Nomad artifact getter credential."),
+        "bootstrap_vars_file": args.string(default = "", description = "Bootstrap vars JSON file to receive the Nomad artifact getter credential."),
         "test_prefix": args.string(default = "control-plane-verification/", description = "R2 prefix used for live verification objects."),
         "inventory_prefix": args.string(default = "", description = "R2 object prefix for --action=inventory."),
         "inventory_depth": args.int(default = 2, description = "Prefix depth for --action=inventory summaries."),

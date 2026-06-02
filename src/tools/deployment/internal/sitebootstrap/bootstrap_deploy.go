@@ -36,7 +36,6 @@ type BootstrapDeployOptions struct {
 	SHA                  string
 	RepoRoot             string
 	InventoryPath        string
-	BootstrapVarsPath    string
 	SSHTransport         string
 	R2ControlPlaneBinary string
 	CloudflareBinary     string
@@ -77,9 +76,6 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	}
 	if opts.InventoryPath == "" {
 		return errors.New("inventory path is required")
-	}
-	if err := checkLocalBootstrapMaterial(opts); err != nil {
-		return err
 	}
 	if err := checkBootstrapArtifactPublishingInput(opts); err != nil {
 		return err
@@ -171,7 +167,6 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 	opts.SHA = strings.TrimSpace(opts.SHA)
 	opts.RepoRoot = strings.TrimSpace(opts.RepoRoot)
 	opts.InventoryPath = strings.TrimSpace(opts.InventoryPath)
-	opts.BootstrapVarsPath = strings.TrimSpace(opts.BootstrapVarsPath)
 	opts.SSHTransport = strings.TrimSpace(opts.SSHTransport)
 	opts.R2ControlPlaneBinary = strings.TrimSpace(opts.R2ControlPlaneBinary)
 	opts.CloudflareBinary = strings.TrimSpace(opts.CloudflareBinary)
@@ -182,19 +177,10 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 		opts.SSHTransport = "recovery"
 	}
 	if opts.RepoRoot != "" && opts.Site != "" {
-		if opts.BootstrapVarsPath == "" {
-			opts.BootstrapVarsPath = defaultLocalBootstrapVarsPath(opts.RepoRoot, opts.Site)
-		} else {
-			opts.BootstrapVarsPath = resolveLocalBootstrapPath(opts.RepoRoot, opts.BootstrapVarsPath)
-		}
 		opts.R2ControlPlaneBinary = resolveLocalBootstrapPath(opts.RepoRoot, opts.R2ControlPlaneBinary)
 		opts.CloudflareBinary = resolveLocalBootstrapPath(opts.RepoRoot, opts.CloudflareBinary)
 	}
 	return opts
-}
-
-func defaultLocalBootstrapVarsPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "bootstrap-vars.json")
 }
 
 func resolveLocalBootstrapPath(repoRoot, path string) string {
@@ -205,33 +191,6 @@ func resolveLocalBootstrapPath(repoRoot, path string) string {
 		return path
 	}
 	return filepath.Join(repoRoot, path)
-}
-
-func checkLocalBootstrapMaterial(opts BootstrapDeployOptions) error {
-	if err := checkLocalPrivateFile(opts.BootstrapVarsPath, "generated bootstrap vars"); err != nil {
-		return fmt.Errorf("%w; run aspect site materialize-seed --site=%s first", err, opts.Site)
-	}
-	return nil
-}
-
-func checkLocalPrivateFile(path, label string) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("bootstrap deploy requires local %s at %s", label, path)
-		}
-		return fmt.Errorf("inspect local %s at %s: %w", label, path, err)
-	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("bootstrap deploy requires local %s at %s to be a regular file", label, path)
-	}
-	if info.Size() == 0 {
-		return fmt.Errorf("bootstrap deploy requires non-empty local %s at %s", label, path)
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("bootstrap deploy requires local %s at %s to be readable only by the operator", label, path)
-	}
-	return nil
 }
 
 func checkBootstrapArtifactPublishingInput(opts BootstrapDeployOptions) error {

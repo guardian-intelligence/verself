@@ -1,19 +1,4 @@
 ---
-- name: "Operator access secrets"
-  hosts: all
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  vars:
-    ansible_host: "{{ verself_recovery_ssh_host | default(host_wireguard_tunnels.ops.address) }}"
-    ansible_port: "{{ verself_recovery_ssh_port | default(2222) }}"
-    ansible_user: "{{ verself_recovery_ssh_user | default('ubuntu') }}"
-  tags:
-    - always
-  tasks:
-    - name: Load bootstrap vars
-      ansible.builtin.import_tasks: tasks/bootstrap-vars.yml
-
 - name: "Operator access handoff"
   hosts: infra
   become: true

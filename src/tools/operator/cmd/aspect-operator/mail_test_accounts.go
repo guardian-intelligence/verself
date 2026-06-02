@@ -34,13 +34,12 @@ const (
 
 type mailTestAccountsOptions struct {
 	operatorRuntimeOptions
-	format            string
-	pgUser            string
-	pgRemotePort      int
-	bootstrapVarsFile string
-	resetSecrets      bool
-	zitadelPATPath    string
-	zitadelAddr       string
+	format         string
+	pgUser         string
+	pgRemotePort   int
+	resetSecrets   bool
+	zitadelPATPath string
+	zitadelAddr    string
 }
 
 type testMailAccountSpec struct {
@@ -266,12 +265,11 @@ func cmdMailTestAccountsDelete(args []string) error {
 
 func newMailTestAccountsOptions() *mailTestAccountsOptions {
 	opts := &mailTestAccountsOptions{
-		format:            "table",
-		pgUser:            envOr("PG_USER", oppg.DefaultUser),
-		pgRemotePort:      envIntOr("PG_PORT", oppg.DefaultPort),
-		bootstrapVarsFile: os.Getenv("VERSELF_BOOTSTRAP_VARS_FILE"),
-		zitadelPATPath:    mailZitadelAdminPATPath,
-		zitadelAddr:       mailZitadelRemote,
+		format:         "table",
+		pgUser:         envOr("PG_USER", oppg.DefaultUser),
+		pgRemotePort:   envIntOr("PG_PORT", oppg.DefaultPort),
+		zitadelPATPath: mailZitadelAdminPATPath,
+		zitadelAddr:    mailZitadelRemote,
 	}
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	return opts
@@ -284,7 +282,6 @@ func mailTestAccountsFlagSet(name string, opts *mailTestAccountsOptions) *flag.F
 	fs.StringVar(&opts.format, "format", opts.format, "Output format: table, json, csv, or tsv")
 	fs.StringVar(&opts.pgUser, "pg-user", opts.pgUser, "PostgreSQL user")
 	fs.IntVar(&opts.pgRemotePort, "pg-remote-port", opts.pgRemotePort, "Remote PostgreSQL port on the worker loopback")
-	fs.StringVar(&opts.bootstrapVarsFile, "bootstrap-vars-file", opts.bootstrapVarsFile, "generated bootstrap vars file")
 	fs.StringVar(&opts.zitadelPATPath, "zitadel-admin-pat-path", opts.zitadelPATPath, "Remote Zitadel admin PAT path")
 	fs.StringVar(&opts.zitadelAddr, "zitadel-remote-addr", opts.zitadelAddr, "Remote Zitadel HTTP address reached over SSH")
 	return fs
@@ -1110,15 +1107,15 @@ func (c mailZitadelClient) doJSON(ctx context.Context, method, path string, body
 }
 
 func openMailOperatorPG(ctx context.Context, rt *opruntime.Runtime, opts *mailTestAccountsOptions, dbName string) (*pgx.Conn, error) {
-	passwordPath := opts.bootstrapVarsFile
-	if passwordPath == "" {
-		passwordPath = opruntime.SiteBootstrapVarsPath(rt.RepoRoot, rt.Site)
+	password, err := requirePGPassword("mail test-accounts pg")
+	if err != nil {
+		return nil, err
 	}
 	return oppg.OpenOverSSH(ctx, rt, oppg.Config{
-		Database:     dbName,
-		User:         opts.pgUser,
-		RemotePort:   opts.pgRemotePort,
-		PasswordPath: passwordPath,
+		Database:   dbName,
+		User:       opts.pgUser,
+		Password:   password,
+		RemotePort: opts.pgRemotePort,
 	})
 }
 
