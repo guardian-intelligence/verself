@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -50,5 +51,38 @@ func TestApplyOnceOnlyWritesNomadUpstreams(t *testing.T) {
 	}
 	if string(gotStatic) != string(staticBefore) {
 		t.Fatalf("static config changed:\n%s", string(gotStatic))
+	}
+}
+
+func TestValidateHAProxyResolvesRelativeLibraryPathBeforeChangingDir(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	out := filepath.Join(root, "ld-library-path")
+	t.Setenv("HAPROXY_LD_OUT", out)
+
+	haproxyBin := filepath.Join(root, "local", "bin", "haproxy")
+	if err := os.MkdirAll(filepath.Dir(haproxyBin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(haproxyBin, []byte("#!/bin/sh\nprintf '%s' \"$LD_LIBRARY_PATH\" > \"$HAPROXY_LD_OUT\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := validateHAProxy(config{
+		haproxyBin:           filepath.Join("local", "bin", "haproxy"),
+		haproxyConfigs:       stringList{"/etc/haproxy/haproxy.cfg"},
+		haproxyLDLibraryPath: filepath.Join("local", "lib", "haproxy"),
+		haproxyUser:          "",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "local", "lib", "haproxy")
+	if !strings.Contains(string(got), want) {
+		t.Fatalf("LD_LIBRARY_PATH = %q, want %q", string(got), want)
 	}
 }

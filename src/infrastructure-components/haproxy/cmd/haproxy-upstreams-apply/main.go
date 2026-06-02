@@ -297,10 +297,14 @@ func validateHAProxy(cfg config) error {
 	if err != nil {
 		return err
 	}
+	ldLibraryPath, err := relativePathToAbs(cfg.haproxyLDLibraryPath)
+	if err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, haproxyBin, argv...)
 	// HAProxy validates after dropping privileges; do not inherit an operator-only cwd.
 	cmd.Dir = "/"
-	cmd.Env = withLDLibraryPath(os.Environ(), cfg.haproxyLDLibraryPath)
+	cmd.Env = withLDLibraryPath(os.Environ(), ldLibraryPath)
 	if cfg.haproxyUser != "" {
 		credential, err := userCredential(cfg.haproxyUser)
 		if err != nil {
@@ -316,12 +320,16 @@ func validateHAProxy(cfg config) error {
 }
 
 func commandPath(path string) (string, error) {
-	if filepath.IsAbs(path) || !strings.ContainsRune(path, '/') {
+	return relativePathToAbs(path)
+}
+
+func relativePathToAbs(path string) (string, error) {
+	if path == "" || filepath.IsAbs(path) || !strings.ContainsRune(path, '/') {
 		return path, nil
 	}
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("resolve command path %s: %w", path, err)
+		return "", fmt.Errorf("resolve path %s: %w", path, err)
 	}
 	return absPath, nil
 }
