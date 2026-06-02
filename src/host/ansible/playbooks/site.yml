@@ -75,3 +75,18 @@
       tags:
         - nomad
         - scheduler
+
+- name: "Public edge bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - edge
+  roles:
+    - role: haproxy
+      tags:
+        - haproxy
+        - edge

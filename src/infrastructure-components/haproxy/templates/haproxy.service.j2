@@ -34,7 +34,7 @@ SystemCallArchitectures=native
 RuntimeDirectory=haproxy
 RuntimeDirectoryMode=0750
 ReadWritePaths=/run/haproxy /var/lib/haproxy {{ haproxy_log_dir }}
-ReadOnlyPaths={{ haproxy_config_dir }} /etc/verself/pki /var/www/verself /opt/verself/profile/lib/haproxy
+ReadOnlyPaths={{ haproxy_config_dir }} /etc/verself/pki /var/www/verself /opt/verself/profile
 
 [Install]
 WantedBy=multi-user.target

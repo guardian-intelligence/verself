@@ -16,6 +16,7 @@ load(
 
 _SITE_BOOTSTRAP_TARGET = "//src/tools/deployment/cmd/site-bootstrap:site-bootstrap"
 _CLOUDFLARE_R2_CONTROL_PLANE_TARGET = "//src/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane:cloudflare-r2-control-plane"
+_HAPROXY_HOST_INSTALL_TARGET = "//src/infrastructure-components/haproxy:host_install_artifact"
 _HOST_TOOLS_TARGET = "//src/host:host_tools_artifact"
 _SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
 
@@ -273,6 +274,9 @@ def _converge_host_impl(ctx):
     host_tools = bazel_output_file(ctx, _HOST_TOOLS_TARGET)
     if host_tools == "":
         return 1
+    haproxy_host_install = bazel_output_file(ctx, _HAPROXY_HOST_INSTALL_TARGET)
+    if haproxy_host_install == "":
+        return 1
     spire_registry = bazel_output_file(ctx, _SPIRE_IDENTITY_REGISTRY_TARGET)
     if spire_registry == "":
         return 1
@@ -284,6 +288,8 @@ def _converge_host_impl(ctx):
         "verself_site=" + site,
         "-e",
         "verself_host_tools_artifact=" + host_tools,
+        "-e",
+        "haproxy_host_install_artifact=" + haproxy_host_install,
         "-e",
         "spire_registrations_file=" + spire_registry,
         "-e",

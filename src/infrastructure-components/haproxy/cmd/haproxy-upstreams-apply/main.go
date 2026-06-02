@@ -184,7 +184,7 @@ func applyOnce(cfg config) (bool, error) {
 		return false, fmt.Errorf("haproxy validation failed after writing config set; previous files restored: %w", err)
 	}
 	if cfg.reloadUnit != "" {
-		if err := systemctl("reload", cfg.reloadUnit); err != nil {
+		if err := reloadOrStartSystemdUnit(cfg.reloadUnit); err != nil {
 			return false, err
 		}
 	}
@@ -368,6 +368,32 @@ func withLDLibraryPath(env []string, path string) []string {
 		}
 	}
 	return append(env, "LD_LIBRARY_PATH="+path)
+}
+
+func reloadOrStartSystemdUnit(unit string) error {
+	active, err := systemdUnitActive(unit)
+	if err != nil {
+		return err
+	}
+	action := "start"
+	if active {
+		action = "reload"
+	}
+	return systemctl(action, unit)
+}
+
+func systemdUnitActive(unit string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", unit).CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 3 {
+		return false, nil
+	}
+	return false, fmt.Errorf("systemctl is-active --quiet %s: %w: %s", unit, err, strings.TrimSpace(string(out)))
 }
 
 func systemctl(action, unit string) error {

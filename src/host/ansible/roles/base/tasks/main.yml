@@ -123,6 +123,7 @@
     owner: root
     group: root
     mode: "0644"
+    force: false
 
 - name: Create verself system config directory
   ansible.builtin.file:

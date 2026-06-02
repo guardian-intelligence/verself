@@ -2,6 +2,29 @@
 # HAProxy public edge. DNS and public certificate issuance are owned by the
 # prod Cloudflare/TLS control plane; site hosts consume projected cert material.
 
+- name: Assert HAProxy host runtime artifact input
+  ansible.builtin.assert:
+    that:
+      - haproxy_host_install_artifact is defined
+      - haproxy_host_install_artifact | length > 0
+    fail_msg: "haproxy role requires haproxy_host_install_artifact from Bazel."
+
+- name: Install HAProxy host runtime
+  ansible.builtin.unarchive:
+    src: "{{ haproxy_host_install_artifact }}"
+    dest: /
+    owner: root
+    group: root
+
+- name: Verify HAProxy host runtime
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - "LD_LIBRARY_PATH={{ haproxy_runtime_library_path }}"
+      - "{{ verself_bin }}/haproxy"
+      - -vv
+  changed_when: false
+
 - name: Create HAProxy system group
   ansible.builtin.group:
     name: haproxy
@@ -174,18 +197,8 @@
     daemon_reload: true
   when: haproxy_systemd_unit.changed
 
-- name: Apply HAProxy unit and config changes before readiness
-  ansible.builtin.meta: flush_handlers
-
-- name: Enable and start HAProxy
+- name: Enable HAProxy for Nomad-started public edge
   ansible.builtin.systemd:
     name: haproxy
     enabled: true
-    state: started
     daemon_reload: true
-
-- name: Wait for HAProxy HTTPS listener
-  ansible.builtin.wait_for:
-    host: 127.0.0.1
-    port: 443
-    timeout: 30
