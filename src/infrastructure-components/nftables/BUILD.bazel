@@ -58,7 +58,7 @@ mkdir -p \
 install -m 0755 "$$tmp/extract/usr/sbin/nft" "$$tmp/{root}/bin/nft"
 for libdir in "$$tmp/extract/lib/x86_64-linux-gnu" "$$tmp/extract/usr/lib/x86_64-linux-gnu"; do
   if [ -d "$$libdir" ]; then
-    find "$$libdir" -maxdepth 1 -name 'lib*.so*' -exec cp -a {{}} "$$tmp/{root}/lib/x86_64-linux-gnu/" \\;
+    find "$$libdir" -maxdepth 1 -name 'lib*.so*' -exec cp -aL {{}} "$$tmp/{root}/lib/x86_64-linux-gnu/" \\;
   fi
 done
 install -m 0644 src/infrastructure-components/nftables/files/etc/nftables.conf "$$tmp/{root}/etc/nftables.conf"
@@ -68,7 +68,7 @@ done
 install -m 0644 src/infrastructure-components/nftables/files/systemd/verself-firewall.target "$$tmp/{root}/systemd/verself-firewall.target"
 install -m 0755 "$(location //src/infrastructure-components/nftables/cmd/nftables-apply:nftables-apply)" "$$tmp/{root}/bin/nftables-apply"
 chmod -R a+rX "$$tmp/{root}"
-tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" opt
 """.format(
         root = NFTABLES_RUNTIME_ROOT,
     ),

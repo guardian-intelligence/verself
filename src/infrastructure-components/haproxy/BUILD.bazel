@@ -53,7 +53,7 @@ install -m 0755 "$$tmp/extract/usr/sbin/haproxy" "$$tmp/runtime/bin/haproxy"
 install -m 0755 "$(location //src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply)" "$$tmp/runtime/bin/haproxy-upstreams-apply"
 for libdir in "$$tmp/extract/lib/x86_64-linux-gnu" "$$tmp/extract/usr/lib/x86_64-linux-gnu" "$$tmp/extract/opt/aws-lc/lib/x86_64-linux-gnu"; do
   if [ -d "$$libdir" ]; then
-    find "$$libdir" -maxdepth 1 -name 'lib*.so*' -exec cp -a {} "$$tmp/runtime/lib/haproxy/" \\;
+    find "$$libdir" -maxdepth 1 -name 'lib*.so*' -exec cp -aL {} "$$tmp/runtime/lib/haproxy/" \\;
   fi
 done
 for lib in libcrypto.so libcrypt.so.1 libgcc_s.so.1 libjemalloc.so.2 liblua5.4.so.0 libopentracing-c-wrapper.so.0 libopentracing.so.1 libpcre2-8.so.0 libssl.so libstdc++.so.6; do
@@ -84,7 +84,7 @@ done
 install -m 0755 "$$tmp/extract/usr/sbin/haproxy" "$$tmp/runtime/opt/verself/profile/bin/haproxy"
 for libdir in "$$tmp/extract/lib/x86_64-linux-gnu" "$$tmp/extract/usr/lib/x86_64-linux-gnu" "$$tmp/extract/opt/aws-lc/lib/x86_64-linux-gnu"; do
   if [ -d "$$libdir" ]; then
-    find "$$libdir" -maxdepth 1 -name 'lib*.so*' -exec cp -a {} "$$tmp/runtime/opt/verself/profile/lib/haproxy/" \\;
+    find "$$libdir" -maxdepth 1 -name 'lib*.so*' -exec cp -aL {} "$$tmp/runtime/opt/verself/profile/lib/haproxy/" \\;
   fi
 done
 for lib in libcrypto.so libcrypt.so.1 libgcc_s.so.1 libjemalloc.so.2 liblua5.4.so.0 libopentracing-c-wrapper.so.0 libopentracing.so.1 libpcre2-8.so.0 libssl.so libstdc++.so.6; do
