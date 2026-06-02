@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,11 +24,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const recoveryBucket = "verself-recovery"
+const (
+	cloudflareControlPlaneSite = "prod"
+	recoveryBucket             = "verself-recovery"
+)
+
+const (
+	r2CredentialPropagationRetryInterval = 2 * time.Second
+	r2CredentialPropagationTimeout       = 45 * time.Second
+)
 
 const (
 	accountAdminAOpenBaoPathDefault   = "kv-controller/data/integrations/cloudflare/account-admin/a"
 	accountAdminBOpenBaoPathDefault   = "kv-controller/data/integrations/cloudflare/account-admin/b"
+	accountAdminSourceOpenBao         = "openbao"
+	accountAdminSourceSecretEnv       = "secret-env"
 	childPersistenceControllerOpenBao = "controller-openbao"
 	childPersistenceSiteSeed          = "site-seed"
 )
@@ -48,6 +59,7 @@ type config struct {
 	parentSessionTokenEnv      string
 	accountAdminAAPITokenFile  string
 	accountAdminBAPITokenFile  string
+	accountAdminSource         string
 	accountAdminAOpenBaoPath   string
 	accountAdminBOpenBaoPath   string
 	secretEnvFile              string
@@ -78,6 +90,7 @@ type config struct {
 type report struct {
 	Timestamp                    string                  `json:"timestamp"`
 	Action                       string                  `json:"action"`
+	ControlPlaneSite             string                  `json:"cloudflare_control_plane_site"`
 	Site                         string                  `json:"site"`
 	AccountID                    string                  `json:"account_id"`
 	Endpoint                     string                  `json:"endpoint"`
@@ -139,7 +152,7 @@ func run(args []string) error {
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
 	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, provision-site, provision-site-bootstrap, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, provision-dns, rotate-dns, inventory, or verify.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading src/host/sites/<site>/site.json.")
-	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
+	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to site.json artifact_delivery.cloudflare_account_id.")
 	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to site.json artifact_delivery.bucket.")
 	fs.StringVar(&cfg.keyPrefix, "key-prefix", "sha256", "R2 artifact key prefix.")
@@ -152,6 +165,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.parentSessionTokenEnv, "parent-session-token-env", "CLOUDFLARE_R2_ADMIN_SESSION_TOKEN", "Environment variable name for an optional R2 session token.")
 	fs.StringVar(&cfg.accountAdminAAPITokenFile, "account-admin-a-api-token-file", "", "File containing Cloudflare account-admin slot A token value.")
 	fs.StringVar(&cfg.accountAdminBAPITokenFile, "account-admin-b-api-token-file", "", "File containing Cloudflare account-admin slot B token value.")
+	fs.StringVar(&cfg.accountAdminSource, "account-admin-source", accountAdminSourceOpenBao, "Account-admin credential source for verification and child provisioning: openbao or secret-env.")
 	fs.StringVar(&cfg.accountAdminAOpenBaoPath, "account-admin-a-openbao-path", accountAdminAOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot A.")
 	fs.StringVar(&cfg.accountAdminBOpenBaoPath, "account-admin-b-openbao-path", accountAdminBOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot B.")
 	fs.StringVar(&cfg.secretEnvFile, "secret-env-file", "secret.env", "Ingress-only local env file containing account-admin-a and account-admin-b.")
@@ -406,6 +420,14 @@ func (cfg config) validate() error {
 	}
 	if cfg.accountAdminTTL <= 0 || cfg.accountAdminTTL > 7*24*time.Hour {
 		return fmt.Errorf("--account-admin-ttl must be greater than zero and no more than 7 days")
+	}
+	switch strings.TrimSpace(cfg.accountAdminSource) {
+	case accountAdminSourceOpenBao, accountAdminSourceSecretEnv:
+	default:
+		return fmt.Errorf("--account-admin-source must be %s or %s", accountAdminSourceOpenBao, accountAdminSourceSecretEnv)
+	}
+	if cfg.action == "rotate-admin-pair" && strings.TrimSpace(cfg.accountAdminSource) != accountAdminSourceOpenBao {
+		return fmt.Errorf("--action=rotate-admin-pair requires --account-admin-source=%s", accountAdminSourceOpenBao)
 	}
 	switch cfg.effectiveChildCredentialPersistence() {
 	case childPersistenceControllerOpenBao, childPersistenceSiteSeed:
@@ -666,6 +688,24 @@ func rotateAccountAdminTarget(ctx context.Context, cfg config, actor, target r2c
 }
 
 func loadAndVerifyAccountAdminPair(ctx context.Context, cfg config) (accountAdminPair, error) {
+	if strings.TrimSpace(cfg.accountAdminSource) == accountAdminSourceSecretEnv {
+		tokenA, tokenB, err := readAccountAdminPairIngress(cfg)
+		if err != nil {
+			return accountAdminPair{}, err
+		}
+		a, aStatus, err := verifyIngressAccountAdmin(ctx, cfg, "a", tokenA)
+		if err != nil {
+			return accountAdminPair{}, fmt.Errorf("verify account-admin a: %w", err)
+		}
+		b, bStatus, err := verifyIngressAccountAdmin(ctx, cfg, "b", tokenB)
+		if err != nil {
+			return accountAdminPair{}, fmt.Errorf("verify account-admin b: %w", err)
+		}
+		if a.AccessKeyID == b.AccessKeyID {
+			return accountAdminPair{}, fmt.Errorf("account-admin slots a and b resolve to the same Cloudflare token ID")
+		}
+		return accountAdminPair{A: a, B: b, AStatus: aStatus, BStatus: bStatus}, nil
+	}
 	a, aStatus, err := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminAOpenBaoPath(cfg))
 	if err != nil {
 		return accountAdminPair{}, fmt.Errorf("verify account-admin a: %w", err)
@@ -759,7 +799,19 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 	if cfg.action == "provision-dns" || cfg.action == "rotate-dns" {
 		return provisionDNSCredential(ctx, cfg, apiClient, accountAdmin)
 	}
-	adminClient, cleanup, existed, created, err := ensureBucketWithEphemeralAdmin(ctx, cfg, apiClient)
+	if cfg.action == "provision-site-bootstrap" {
+		out := baseReport(cfg, accountAdmin.Source)
+		out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(accountAdmin.AccessKeyID)
+		if err := provisionSiteBootstrapCredentials(ctx, cfg, apiClient, &out); err != nil {
+			return err
+		}
+		return writeReport(out)
+	}
+	existed, created, err := ensureR2BucketWithAccountAdmin(ctx, cfg, apiClient)
+	if err != nil {
+		return err
+	}
+	parentClient, err := accountAdminR2Client(cfg, accountAdmin, "cloudflare-r2-control-plane-account-admin-verification")
 	if err != nil {
 		return err
 	}
@@ -770,12 +822,10 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 	switch cfg.action {
 	case "ensure-bucket":
 		err = nil
-	case "provision-site-bootstrap":
-		err = provisionSiteBootstrapCredentials(ctx, cfg, apiClient, adminClient, &out)
 	case "ensure-getter", "rotate-getter":
-		err = provisionGetterCredential(ctx, cfg, accountAdmin, adminClient, &out)
+		err = provisionGetterCredential(ctx, cfg, accountAdmin, parentClient, &out)
 	case "ensure-publisher", "rotate-publisher":
-		err = provisionPublisherCredential(ctx, cfg, accountAdmin, adminClient, &out)
+		err = provisionPublisherCredential(ctx, cfg, accountAdmin, parentClient, &out)
 	case "ensure-recovery", "rotate-recovery":
 		err = provisionRecoveryCredential(ctx, cfg, accountAdmin, &out)
 	case "rotate-object-storage-provider":
@@ -784,13 +834,7 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 		err = fmt.Errorf("unsupported child credential action %q", cfg.action)
 	}
 	if err != nil {
-		if cleanupErr := cleanup(); cleanupErr != nil {
-			return fmt.Errorf("%w; additionally failed to delete ephemeral R2 admin token: %v", err, cleanupErr)
-		}
 		return err
-	}
-	if cleanupErr := cleanup(); cleanupErr != nil {
-		return fmt.Errorf("delete ephemeral R2 admin token: %w", cleanupErr)
 	}
 	return writeReport(out)
 }
@@ -816,38 +860,30 @@ func preflightOpenBaoPersistence(cfg config, label string) error {
 	return nil
 }
 
-func ensureBucketWithEphemeralAdmin(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient) (*r2control.R2Client, func() error, bool, bool, error) {
-	name := "verself-r2-ephemeral-admin-" + time.Now().UTC().Format("20060102T150405Z")
-	// Cleanup can fail after process death; keep temporary bucket-admin tokens short.
-	admin, err := apiClient.CreateR2AccountToken(ctx, cfg.accountID, name, r2control.PermissionR2StorageWrite, time.Now().UTC().Add(cfg.ephemeralPublisherTTL))
-	if err != nil {
-		return nil, nil, false, false, err
-	}
-	cleanup := func() error {
-		return apiClient.DeleteAccountToken(context.Background(), cfg.accountID, admin.ID)
-	}
-	adminClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(cfg.accountID),
-		Region:          cfg.region,
-		AccessKeyID:     admin.S3AccessKeyID,
-		SecretAccessKey: admin.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-ephemeral-admin",
-		Timeout:         cfg.timeout,
+func ensureR2BucketWithAccountAdmin(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient) (bool, bool, error) {
+	var existed bool
+	var created bool
+	err := retryR2CredentialPropagation(ctx, "ensure R2 bucket with account-admin credential", func() error {
+		var ensureErr error
+		existed, created, ensureErr = apiClient.EnsureR2Bucket(ctx, cfg.accountID, cfg.bucket)
+		return ensureErr
 	})
 	if err != nil {
-		if cleanupErr := cleanup(); cleanupErr != nil {
-			return nil, nil, false, false, fmt.Errorf("%w; additionally failed to delete ephemeral R2 admin token: %v", err, cleanupErr)
-		}
-		return nil, nil, false, false, err
+		return false, false, err
 	}
-	existed, created, err := adminClient.EnsureBucket(ctx, cfg.bucket)
-	if err != nil {
-		if cleanupErr := cleanup(); cleanupErr != nil {
-			return nil, nil, false, false, fmt.Errorf("%w; additionally failed to delete ephemeral R2 admin token: %v", err, cleanupErr)
-		}
-		return nil, nil, false, false, err
-	}
-	return adminClient, cleanup, existed, created, nil
+	return existed, created, nil
+}
+
+func accountAdminR2Client(cfg config, parent r2control.ParentCredentials, source string) (*r2control.R2Client, error) {
+	return r2control.NewR2Client(r2control.R2ClientConfig{
+		Endpoint:        r2control.Endpoint(cfg.accountID),
+		Region:          cfg.region,
+		AccessKeyID:     parent.AccessKeyID,
+		SecretAccessKey: parent.SecretAccessKey,
+		SessionToken:    parent.SessionToken,
+		Source:          source,
+		Timeout:         cfg.timeout,
+	})
 }
 
 func accountAdminAOpenBaoPath(cfg config) string {
@@ -862,6 +898,7 @@ func baseReport(cfg config, source string) report {
 	return report{
 		Timestamp:              time.Now().UTC().Format(time.RFC3339),
 		Action:                 cfg.action,
+		ControlPlaneSite:       cloudflareControlPlaneSite,
 		Site:                   cfg.site,
 		AccountID:              cfg.accountID,
 		Endpoint:               r2control.Endpoint(cfg.accountID),
@@ -895,30 +932,82 @@ func readAPITokenFile(path, label string) (string, error) {
 	return token, nil
 }
 
+type r2VerificationStatusError struct {
+	operation string
+	status    int
+}
+
+func (e r2VerificationStatusError) Error() string {
+	return fmt.Sprintf("%s returned status %d", e.operation, e.status)
+}
+
+func retryableR2CredentialPropagation(err error) bool {
+	var apiErr r2control.APIStatusError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden
+	}
+	var responseErr r2control.StatusError
+	if errors.As(err, &responseErr) {
+		return responseErr.StatusCode == http.StatusUnauthorized || responseErr.StatusCode == http.StatusForbidden
+	}
+	var statusErr r2VerificationStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.status == http.StatusUnauthorized || statusErr.status == http.StatusForbidden
+	}
+	return false
+}
+
+func retryR2CredentialPropagation(ctx context.Context, operation string, fn func() error) error {
+	retryCtx, cancel := context.WithTimeout(ctx, r2CredentialPropagationTimeout)
+	defer cancel()
+	for {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		if !retryableR2CredentialPropagation(err) {
+			return err
+		}
+		timer := time.NewTimer(r2CredentialPropagationRetryInterval)
+		select {
+		case <-retryCtx.Done():
+			timer.Stop()
+			return fmt.Errorf("%s did not complete before timeout: %w", operation, err)
+		case <-timer.C:
+		}
+	}
+}
+
 func verifyObjectRoundTrip(ctx context.Context, client *r2control.R2Client, cfg config, verifiedWith string, out *report) error {
 	key, body, err := verificationObject(cfg.site, cfg.testPrefix)
 	if err != nil {
 		return err
 	}
 	digest := r2control.SHA256Hex(body)
+	return retryR2CredentialPropagation(ctx, "verify R2 object credential propagation", func() error {
+		return verifyObjectRoundTripOnce(ctx, client, cfg, verifiedWith, out, key, body, digest)
+	})
+}
+
+func verifyObjectRoundTripOnce(ctx context.Context, client *r2control.R2Client, cfg config, verifiedWith string, out *report, key string, body []byte, digest string) error {
 	if status, err := client.PutObject(ctx, cfg.bucket, key, bytes.NewReader(body), digest); err != nil {
 		return err
 	} else if status < 200 || status >= 300 {
-		return fmt.Errorf("put verification object returned status %d", status)
+		return r2VerificationStatusError{operation: "put verification object", status: status}
 	}
 	headStatus, err := client.HeadObject(ctx, cfg.bucket, key)
 	if err != nil {
 		return err
 	}
 	if headStatus != http.StatusOK {
-		return fmt.Errorf("head verification object returned status %d", headStatus)
+		return r2VerificationStatusError{operation: "head verification object", status: headStatus}
 	}
 	getStatus, got, err := client.GetObject(ctx, cfg.bucket, key)
 	if err != nil {
 		return err
 	}
 	if getStatus != http.StatusOK {
-		return fmt.Errorf("get verification object returned status %d", getStatus)
+		return r2VerificationStatusError{operation: "get verification object", status: getStatus}
 	}
 	if !bytes.Equal(got, body) {
 		return fmt.Errorf("verification object body mismatch")
@@ -931,7 +1020,38 @@ func verifyObjectRoundTrip(ctx context.Context, client *r2control.R2Client, cfg 
 	return nil
 }
 
-func provisionSiteBootstrapCredentials(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient, adminClient *r2control.R2Client, out *report) (err error) {
+func verifyGetterReadRoundTrip(ctx context.Context, writerClient *r2control.R2Client, getterClient *r2control.R2Client, cfg config, operation string, out *report) error {
+	key, body, err := verificationObject(cfg.site, cfg.testPrefix)
+	if err != nil {
+		return err
+	}
+	digest := r2control.SHA256Hex(body)
+	return retryR2CredentialPropagation(ctx, operation, func() error {
+		if status, err := writerClient.PutObject(ctx, cfg.bucket, key, bytes.NewReader(body), digest); err != nil {
+			return err
+		} else if status < 200 || status >= 300 {
+			return r2VerificationStatusError{operation: "put getter verification object", status: status}
+		}
+		getStatus, got, err := getterClient.GetObject(ctx, cfg.bucket, key)
+		if err != nil {
+			return err
+		}
+		if getStatus != http.StatusOK {
+			return r2VerificationStatusError{operation: "getter credential get verification object", status: getStatus}
+		}
+		if !bytes.Equal(got, body) {
+			return fmt.Errorf("getter credential verification object body mismatch")
+		}
+		if out != nil {
+			out.GetterObjectGetStatus = getStatus
+			out.TestObjectKey = key
+			out.TestObjectSHA256 = digest
+		}
+		return nil
+	})
+}
+
+func provisionSiteBootstrapCredentials(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient, out *report) (err error) {
 	suffix := time.Now().UTC().Format("20060102T150405Z")
 	expiresOn := time.Now().UTC().Add(cfg.childTokenTTL)
 	created := []r2control.CreatedAPIToken{}
@@ -941,6 +1061,13 @@ func provisionSiteBootstrapCredentials(ctx context.Context, cfg config, apiClien
 			deleteCreatedTokensOnError(&err, apiClient, cfg, created...)
 		}
 	}()
+
+	existed, bucketCreated, err := ensureR2BucketWithAccountAdmin(ctx, cfg, apiClient)
+	if err != nil {
+		return err
+	}
+	out.BucketExisted = existed
+	out.BucketCreated = bucketCreated
 
 	publisher, err := apiClient.CreateR2BucketTokenWithPermissions(ctx, cfg.accountID, cfg.bucket, "verself-"+cfg.site+"-nomad-artifact-publisher-"+suffix, []string{
 		r2control.PermissionR2BucketItemRead,
@@ -981,29 +1108,14 @@ func provisionSiteBootstrapCredentials(ctx context.Context, cfg config, apiClien
 	if err != nil {
 		return err
 	}
-	getterKey, getterBody, err := verificationObject(cfg.site, cfg.testPrefix)
-	if err != nil {
+	if err := verifyGetterReadRoundTrip(ctx, publisherClient, getterClient, cfg, "verify bootstrap getter credential propagation", out); err != nil {
 		return err
 	}
-	getterDigest := r2control.SHA256Hex(getterBody)
-	if status, err := adminClient.PutObject(ctx, cfg.bucket, getterKey, bytes.NewReader(getterBody), getterDigest); err != nil {
-		return err
-	} else if status < 200 || status >= 300 {
-		return fmt.Errorf("put bootstrap getter verification object returned status %d", status)
-	}
-	getStatus, got, err := getterClient.GetObject(ctx, cfg.bucket, getterKey)
-	if err != nil {
-		return err
-	}
-	if getStatus != http.StatusOK {
-		return fmt.Errorf("bootstrap getter credential get verification object returned status %d", getStatus)
-	}
-	if !bytes.Equal(got, getterBody) {
-		return fmt.Errorf("bootstrap getter credential verification object body mismatch")
-	}
-	out.GetterObjectGetStatus = getStatus
 
-	objectAdmin, err := apiClient.CreateR2AccountToken(ctx, cfg.accountID, "verself-"+cfg.site+"-object-storage-admin-"+suffix, r2control.PermissionR2StorageWrite, expiresOn)
+	objectAdmin, err := apiClient.CreateR2BucketTokenWithPermissions(ctx, cfg.accountID, cfg.bucket, "verself-"+cfg.site+"-object-storage-admin-"+suffix, []string{
+		r2control.PermissionR2BucketItemRead,
+		r2control.PermissionR2BucketItemWrite,
+	}, expiresOn)
 	if err != nil {
 		return err
 	}
@@ -1019,10 +1131,13 @@ func provisionSiteBootstrapCredentials(ctx context.Context, cfg config, apiClien
 	if err != nil {
 		return err
 	}
-	if _, _, err := objectAdminClient.EnsureBucket(ctx, cfg.bucket); err != nil {
+	if err := verifyObjectRoundTrip(ctx, objectAdminClient, cfg, "bootstrap-object-storage-admin", out); err != nil {
 		return err
 	}
-	objectProxy, err := apiClient.CreateR2AllBucketsToken(ctx, cfg.accountID, "verself-"+cfg.site+"-object-storage-proxy-"+suffix, r2control.PermissionR2BucketItemWrite, expiresOn)
+	objectProxy, err := apiClient.CreateR2BucketTokenWithPermissions(ctx, cfg.accountID, cfg.bucket, "verself-"+cfg.site+"-object-storage-proxy-"+suffix, []string{
+		r2control.PermissionR2BucketItemRead,
+		r2control.PermissionR2BucketItemWrite,
+	}, expiresOn)
 	if err != nil {
 		return err
 	}
@@ -1091,25 +1206,8 @@ func provisionGetterCredential(ctx context.Context, cfg config, parent r2control
 	if err != nil {
 		return err
 	}
-	key, body, err := verificationObject(cfg.site, cfg.testPrefix)
-	if err != nil {
+	if err := verifyGetterReadRoundTrip(ctx, writerClient, getterClient, cfg, "verify getter credential propagation", out); err != nil {
 		return err
-	}
-	digest := r2control.SHA256Hex(body)
-	if status, err := writerClient.PutObject(ctx, cfg.bucket, key, bytes.NewReader(body), digest); err != nil {
-		return err
-	} else if status < 200 || status >= 300 {
-		return fmt.Errorf("put getter verification object returned status %d", status)
-	}
-	getStatus, got, err := getterClient.GetObject(ctx, cfg.bucket, key)
-	if err != nil {
-		return err
-	}
-	if getStatus != http.StatusOK {
-		return fmt.Errorf("getter credential get verification object returned status %d", getStatus)
-	}
-	if !bytes.Equal(got, body) {
-		return fmt.Errorf("getter credential verification object body mismatch")
 	}
 	varsFile := cfg.getterVarsFile
 	seedFile := defaultSeedBundleFile(cfg)
@@ -1132,9 +1230,6 @@ func provisionGetterCredential(ctx context.Context, cfg config, parent r2control
 	out.GetterSecretKeyFingerprint = r2control.Fingerprint(getter.S3SecretKey)
 	out.GetterVarsFile = varsFile
 	out.SeedBundleFile = seedFile
-	out.GetterObjectGetStatus = getStatus
-	out.TestObjectKey = key
-	out.TestObjectSHA256 = digest
 	return nil
 }
 
@@ -1219,7 +1314,10 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 	}
 	suffix := time.Now().UTC().Format("20060102T150405Z")
 	adminName := "verself-" + cfg.site + "-object-storage-admin-" + suffix
-	adminToken, err := apiClient.CreateR2AccountToken(ctx, cfg.accountID, adminName, r2control.PermissionR2StorageWrite, time.Now().UTC().Add(cfg.childTokenTTL))
+	adminToken, err := apiClient.CreateR2BucketTokenWithPermissions(ctx, cfg.accountID, cfg.bucket, adminName, []string{
+		r2control.PermissionR2BucketItemRead,
+		r2control.PermissionR2BucketItemWrite,
+	}, time.Now().UTC().Add(cfg.childTokenTTL))
 	if err != nil {
 		return err
 	}
@@ -1230,7 +1328,10 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 		}
 	}()
 	proxyName := "verself-" + cfg.site + "-object-storage-proxy-" + suffix
-	proxyToken, err := apiClient.CreateR2AllBucketsToken(ctx, cfg.accountID, proxyName, r2control.PermissionR2BucketItemWrite, time.Now().UTC().Add(cfg.childTokenTTL))
+	proxyToken, err := apiClient.CreateR2BucketTokenWithPermissions(ctx, cfg.accountID, cfg.bucket, proxyName, []string{
+		r2control.PermissionR2BucketItemRead,
+		r2control.PermissionR2BucketItemWrite,
+	}, time.Now().UTC().Add(cfg.childTokenTTL))
 	if err != nil {
 		return err
 	}
@@ -1250,7 +1351,7 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 	if err != nil {
 		return err
 	}
-	if _, _, err := adminClient.EnsureBucket(ctx, cfg.bucket); err != nil {
+	if err := verifyObjectRoundTrip(ctx, adminClient, cfg, "object-storage-admin", out); err != nil {
 		return err
 	}
 	proxyClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
@@ -1413,9 +1514,11 @@ func siteDNSZones(cfg config) ([]string, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	var siteVars struct {
-		VerselfDomain string `yaml:"verself_domain"`
-		CompanyDomain string `yaml:"company_domain"`
-		Records       []struct {
+		VerselfDomain         string `yaml:"verself_domain"`
+		CompanyDomain         string `yaml:"company_domain"`
+		CloudflareProductZone string `yaml:"cloudflare_product_zone"`
+		CloudflareCompanyZone string `yaml:"cloudflare_company_zone"`
+		Records               []struct {
 			Zone string `yaml:"zone"`
 		} `yaml:"cloudflare_dns_records"`
 	}
@@ -1423,8 +1526,8 @@ func siteDNSZones(cfg config) ([]string, error) {
 		return nil, fmt.Errorf("decode %s: %w", path, err)
 	}
 	zoneBySelector := map[string]string{
-		"product": strings.TrimSpace(siteVars.VerselfDomain),
-		"company": strings.TrimSpace(siteVars.CompanyDomain),
+		"product": firstNonEmpty(siteVars.CloudflareProductZone, siteVars.VerselfDomain),
+		"company": firstNonEmpty(siteVars.CloudflareCompanyZone, siteVars.CompanyDomain),
 	}
 	seen := map[string]struct{}{}
 	out := []string{}

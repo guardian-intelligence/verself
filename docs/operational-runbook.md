@@ -77,24 +77,27 @@ external provider authorities; the site root key protects imported copies after
 they enter OpenBao. Provider-side authority originates from the provider control
 plane and enters OpenBao through an approved import or rotation path.
 
-The Cloudflare account ID is checked into site metadata. Cloudflare R2 is
-modeled as account-level capability buckets, with site isolation handled by
-object prefixes and OpenBao policy. Cloudflare account API tokens are not
-site-isolated; they are stored only in controller OpenBao and are exposed only
-to the rotation/provisioning control plane. Controller-only bootstrap
-exceptions are not site seed values.
+The Cloudflare account is a single global provider control plane anchored to
+prod authority. `--site=gamma` selects target site records, R2 prefixes, and
+child credential destinations; it does not select a Gamma-local Cloudflare
+authority. The Cloudflare account ID is checked into site metadata. Cloudflare
+R2 is modeled as global capability buckets, with site isolation handled by
+object prefixes and OpenBao policy. Cloudflare account API tokens are stored
+only in prod controller OpenBao and are exposed only to the
+rotation/provisioning control plane. Controller-only bootstrap exceptions are
+not site seed values.
 
 Provision two Cloudflare account admin API tokens before bootstrap. They are
 stored only in controller OpenBao at
 `kv-controller/data/integrations/cloudflare/account-admin/a` and
 `kv-controller/data/integrations/cloudflare/account-admin/b`. Each token must
-have the minimal account permissions needed to verify itself, read Cloudflare
-zones, rotate the peer account-admin token, and create account-owned child
-tokens for DNS and R2 capabilities. The Cloudflare API token value returned by
-the provider is available only once and must be imported directly into
-controller OpenBao from the controller-local `secret.env` file.
+have Account API Tokens Read/Write, Workers R2 Storage Read/Write, Workers R2
+Storage Bucket Item Read/Write, Zone Read, and DNS Write for the managed hosted
+zones. The Cloudflare API token value returned by the provider is available
+only once and must be imported directly into controller OpenBao from the
+controller-local `secret.env` file.
 
-The R2 buckets are capability-owned, not environment-owned:
+The R2 buckets are capability-owned global account resources:
 
 | Capability | Bucket | Durable credential | Access |
 | --- | --- | --- | --- |
@@ -143,8 +146,28 @@ aspect integrations cloudflare-control-plane \
   --openbao-token-file=<controller-openbao-token-file>
 ```
 
-Steady-state child rotation uses the controller OpenBao account-admin pair for
-the individual capabilities:
+If prod controller OpenBao is not reachable during first-site recovery, run only
+the target-site child-credential provisioning from the controller-local ingress
+file. This still keeps Cloudflare account-admin material out of site seed,
+Nomad, and runtime jobs:
+
+```shell
+aspect integrations cloudflare-control-plane \
+  --site=gamma \
+  --action=provision-dns \
+  --account-admin-source=secret-env \
+  --secret-env-file=secret.env
+
+aspect integrations cloudflare-control-plane \
+  --site=gamma \
+  --action=provision-site-bootstrap \
+  --account-admin-source=secret-env \
+  --secret-env-file=secret.env \
+  --bootstrap-publisher-env-file=.verself/site-bootstrap/gamma/r2-publisher.env
+```
+
+Steady-state child rotation uses the prod controller OpenBao account-admin pair
+for the individual capabilities:
 
 ```shell
 aspect integrations cloudflare-control-plane \
@@ -184,13 +207,14 @@ aspect integrations cloudflare-control-plane \
   --openbao-token-file=<controller-openbao-token-file>
 ```
 
-The Cloudflare account admin token stays in controller OpenBao and is used only
-by the provisioning control plane. Steady-state artifact publication uses the
-site-local `cloudflare-r2-control-plane` Nomad job with a scoped publisher
-credential. That job receives the publisher token ID and API token from OpenBao,
-then mints temporary R2 upload credentials per deployment. The durable Nomad
-getter credential remains read-only so allocation restarts can refetch
-artifacts.
+The Cloudflare account admin token stays in prod controller OpenBao and is used
+only by the provisioning control plane. It creates the global R2 buckets through
+Cloudflare's REST R2 bucket API and mints bucket- or zone-scoped child tokens.
+Steady-state artifact publication uses the site-local
+`cloudflare-r2-control-plane` Nomad job with a scoped publisher credential.
+That job receives the publisher token ID and API token from OpenBao, then mints
+temporary R2 upload credentials per deployment. The durable Nomad getter
+credential remains read-only so allocation restarts can refetch artifacts.
 
 Generated DNS, bootstrap deployment publisher, Nomad getter, and
 object-storage child credentials default to the local site seed path during

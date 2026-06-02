@@ -75,6 +75,41 @@ vs-gamma-w0 ansible_host=203.0.113.10
 	}
 }
 
+func TestLoadDesiredUsesHostedZoneForSubdomainSite(t *testing.T) {
+	root := t.TempDir()
+	ansibleDir := filepath.Join(root, "ansible")
+	writeTestFile(t, filepath.Join(root, "sites/gamma/vars.yml"), `
+verself_domain: gamma.verself.sh
+cloudflare_product_zone: verself.sh
+company_domain: gamma.guardianintelligence.org
+cloudflare_company_zone: guardianintelligence.org
+bare_metal_public_ipv4: 203.0.113.10
+cloudflare_dns_records:
+  - { kind: public_api_origin, record: deployments.api, zone: product }
+  - { kind: browser_origin, record: "@", zone: company }
+`)
+
+	desired, err := loadDesired(ansibleDir, "gamma", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(desired.records) != 2 {
+		t.Fatalf("unexpected desired records: %+v", desired.records)
+	}
+	byFQDN := map[string]desiredRecord{}
+	for _, record := range desired.records {
+		byFQDN[record.fqdn] = record
+	}
+	deployments := byFQDN["deployments.api.gamma.verself.sh"]
+	if deployments.zoneName != "verself.sh" || deployments.record != "deployments.api.gamma" {
+		t.Fatalf("deployment record = %+v", deployments)
+	}
+	company := byFQDN["gamma.guardianintelligence.org"]
+	if company.zoneName != "guardianintelligence.org" || company.record != "gamma" {
+		t.Fatalf("company record = %+v", company)
+	}
+}
+
 func writeTestFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

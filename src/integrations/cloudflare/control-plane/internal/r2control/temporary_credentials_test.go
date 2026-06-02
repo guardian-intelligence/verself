@@ -86,14 +86,15 @@ func mustDecodeRawURL(t *testing.T, value string) []byte {
 	return decoded
 }
 
-func TestCreateR2AllBucketsTokenUsesBucketPermissionOnAccountResource(t *testing.T) {
+func TestCreateR2BucketTokenUsesTopLevelBucketResource(t *testing.T) {
 	const accountID = "c3eaeffaadf7d4847684d4775c16d598"
+	const bucket = "verself-deployment-artifacts"
 	var tokenBody struct {
 		Name      string `json:"name"`
 		ExpiresOn string `json:"expires_on"`
 		Policies  []struct {
-			Resources        map[string]map[string]string `json:"resources"`
-			PermissionGroups []map[string]string          `json:"permission_groups"`
+			Resources        map[string]string   `json:"resources"`
+			PermissionGroups []map[string]string `json:"permission_groups"`
 		} `json:"policies"`
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,25 +135,92 @@ func TestCreateR2AllBucketsTokenUsesBucketPermissionOnAccountResource(t *testing
 		http:    server.Client(),
 	}
 	expiresOn := time.Unix(1_786_086_400, 0).UTC()
-	token, err := client.CreateR2AllBucketsToken(context.Background(), accountID, "test-token", PermissionR2BucketItemWrite, expiresOn)
+	token, err := client.CreateR2BucketToken(context.Background(), accountID, bucket, "test-token", PermissionR2BucketItemWrite, expiresOn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if token.S3AccessKeyID != "created-token-id" || token.S3SecretKey == "" {
 		t.Fatalf("token = %+v", token)
 	}
-	if tokenBody.Name != "test-token" || len(tokenBody.Policies) != 1 {
-		t.Fatalf("body = %+v", tokenBody)
-	}
-	if tokenBody.ExpiresOn != expiresOn.Format(time.RFC3339) {
-		t.Fatalf("expires_on = %q", tokenBody.ExpiresOn)
-	}
-	accountResource := "com.cloudflare.api.account." + accountID
-	if tokenBody.Policies[0].Resources[accountResource]["com.cloudflare.edge.r2.bucket.*"] != "*" {
+	bucketResource := "com.cloudflare.edge.r2.bucket." + accountID + "_default_" + bucket
+	if tokenBody.Policies[0].Resources[bucketResource] != "*" {
 		t.Fatalf("resources = %#v", tokenBody.Policies[0].Resources)
 	}
-	if tokenBody.Policies[0].PermissionGroups[0]["id"] != "permission-group-id" {
-		t.Fatalf("permission groups = %#v", tokenBody.Policies[0].PermissionGroups)
+}
+
+func TestEnsureR2BucketReturnsExistingBucket(t *testing.T) {
+	const accountID = "c3eaeffaadf7d4847684d4775c16d598"
+	const bucket = "verself-deployment-artifacts"
+	seenGet := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/accounts/"+accountID+"/r2/buckets/"+bucket:
+			seenGet = true
+			_ = json.NewEncoder(w).Encode(r2BucketResponse{
+				Success: true,
+				Result:  R2Bucket{Name: bucket},
+			})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.RequestURI())
+		}
+	}))
+	defer server.Close()
+
+	client := &CloudflareAPIClient{
+		apiBase: server.URL,
+		token:   "parent-api-token",
+		http:    server.Client(),
+	}
+	existed, created, err := client.EnsureR2Bucket(context.Background(), accountID, bucket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !seenGet || !existed || created {
+		t.Fatalf("seenGet=%v existed=%v created=%v", seenGet, existed, created)
+	}
+}
+
+func TestEnsureR2BucketCreatesAbsentBucket(t *testing.T) {
+	const accountID = "c3eaeffaadf7d4847684d4775c16d598"
+	const bucket = "verself-deployment-artifacts"
+	seenPost := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/accounts/"+accountID+"/r2/buckets/"+bucket:
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(r2BucketResponse{Success: false})
+		case r.Method == http.MethodPost && r.URL.Path == "/accounts/"+accountID+"/r2/buckets":
+			seenPost = true
+			var body struct {
+				Name string `json:"name"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Name != bucket {
+				t.Fatalf("bucket create body = %+v", body)
+			}
+			_ = json.NewEncoder(w).Encode(r2BucketResponse{
+				Success: true,
+				Result:  R2Bucket{Name: bucket},
+			})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.RequestURI())
+		}
+	}))
+	defer server.Close()
+
+	client := &CloudflareAPIClient{
+		apiBase: server.URL,
+		token:   "parent-api-token",
+		http:    server.Client(),
+	}
+	existed, created, err := client.EnsureR2Bucket(context.Background(), accountID, bucket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !seenPost || existed || !created {
+		t.Fatalf("seenPost=%v existed=%v created=%v", seenPost, existed, created)
 	}
 }
 

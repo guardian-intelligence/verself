@@ -188,9 +188,9 @@ func run(args []string) error {
 // ---- desired-state loading -------------------------------------------------
 
 type desiredRecord struct {
-	zoneName string // verself.sh / guardianintelligence.org
-	record   string // "@" or "billing.api"
-	fqdn     string // record + "." + zoneName, or zoneName when record == "@"
+	zoneName string // Cloudflare hosted zone, for example verself.sh.
+	record   string // Name relative to the hosted zone, for example deployments.api.gamma.
+	fqdn     string // Public DNS name, for example deployments.api.gamma.verself.sh.
 	targetIP string // inventory/site public IP
 	ttl      int    // 1 = Cloudflare automatic
 	proxied  bool
@@ -230,10 +230,12 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 	siteVarsPath := filepath.Clean(filepath.Join(ansibleDir, "..", "sites", site, "vars.yml"))
 
 	var siteVars struct {
-		VerselfDomain       string `yaml:"verself_domain"`
-		CompanyDomain       string `yaml:"company_domain"`
-		BareMetalPublicIPv4 string `yaml:"bare_metal_public_ipv4"`
-		Records             []struct {
+		VerselfDomain         string `yaml:"verself_domain"`
+		CompanyDomain         string `yaml:"company_domain"`
+		CloudflareProductZone string `yaml:"cloudflare_product_zone"`
+		CloudflareCompanyZone string `yaml:"cloudflare_company_zone"`
+		BareMetalPublicIPv4   string `yaml:"bare_metal_public_ipv4"`
+		Records               []struct {
 			Kind   string `yaml:"kind"`
 			Record string `yaml:"record"`
 			Zone   string `yaml:"zone"` // "product" | "company"
@@ -255,31 +257,37 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 	if verself == "" || company == "" || publicIP == "" {
 		return nil, fmt.Errorf("missing verself_domain / company_domain / inventory public IP")
 	}
+	productZone := firstNonEmpty(siteVars.CloudflareProductZone, verself)
+	companyZone := firstNonEmpty(siteVars.CloudflareCompanyZone, company)
 
 	out := &desiredState{}
 	seen := map[string]struct{}{}
 	for _, r := range siteVars.Records {
-		var zone string
+		var publicDomain string
+		var hostedZone string
 		switch r.Zone {
 		case "product":
-			zone = verself
+			publicDomain = verself
+			hostedZone = productZone
 		case "company":
-			zone = company
+			publicDomain = company
+			hostedZone = companyZone
 		default:
 			return nil, fmt.Errorf("unknown cloudflare_dns_records[].zone: %q", r.Zone)
 		}
-		fqdn := zone
-		if r.Record != "@" {
-			fqdn = r.Record + "." + zone
+		fqdn := publicFQDN(publicDomain, r.Record)
+		record, err := recordNameForHostedZone(fqdn, hostedZone)
+		if err != nil {
+			return nil, err
 		}
-		key := zone + "|" + fqdn
+		key := hostedZone + "|" + fqdn
 		if _, dup := seen[key]; dup {
 			continue
 		}
 		seen[key] = struct{}{}
 		out.records = append(out.records, desiredRecord{
-			zoneName: zone,
-			record:   r.Record,
+			zoneName: hostedZone,
+			record:   record,
 			fqdn:     fqdn,
 			targetIP: publicIP,
 			ttl:      1,
@@ -287,6 +295,31 @@ func loadDesired(ansibleDir, site, inventoryPath string) (*desiredState, error) 
 		})
 	}
 	return out, nil
+}
+
+func publicFQDN(publicDomain, record string) string {
+	publicDomain = strings.Trim(strings.TrimSpace(publicDomain), ".")
+	record = strings.Trim(strings.TrimSpace(record), ".")
+	if record == "" || record == "@" {
+		return publicDomain
+	}
+	return record + "." + publicDomain
+}
+
+func recordNameForHostedZone(fqdn, hostedZone string) (string, error) {
+	fqdn = strings.Trim(strings.TrimSpace(fqdn), ".")
+	hostedZone = strings.Trim(strings.TrimSpace(hostedZone), ".")
+	if hostedZone == "" || strings.Contains(hostedZone, "{{") {
+		return "", fmt.Errorf("invalid Cloudflare hosted zone %q", hostedZone)
+	}
+	if fqdn == hostedZone {
+		return "@", nil
+	}
+	suffix := "." + hostedZone
+	if !strings.HasSuffix(fqdn, suffix) {
+		return "", fmt.Errorf("DNS name %s is not inside Cloudflare hosted zone %s", fqdn, hostedZone)
+	}
+	return strings.TrimSuffix(fqdn, suffix), nil
 }
 
 func inventoryInfraHost(path string) (string, error) {

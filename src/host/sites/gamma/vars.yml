@@ -4,10 +4,12 @@ verself_site: gamma
 bare_metal_host_alias: vs-gamma-w0
 bare_metal_public_ipv4: 206.223.228.87
 verself_domain: gamma.verself.sh
+cloudflare_product_zone: verself.sh
 verself_version: 0.1.0
 verself_installation_id: inst_gamma_01JZ0000000000000000000000
 verself_bin: /opt/verself/profile/bin
 company_domain: gamma.guardianintelligence.org
+cloudflare_company_zone: guardianintelligence.org
 
 billing_service_subdomain: billing.api
 billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
@@ -55,7 +57,6 @@ zitadel_domain: "{{ verself_domain }}"
 
 cloudflare_dns_records:
   - { kind: browser_origin, record: "@", zone: product }
-  - { kind: browser_origin, record: "@", zone: company }
   - { kind: public_api_origin, record: billing.api, zone: product }
   - { kind: public_api_origin, record: deployments.api, zone: product }
   - { kind: public_api_origin, record: distribution.api, zone: product }

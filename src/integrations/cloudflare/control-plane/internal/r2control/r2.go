@@ -43,6 +43,17 @@ type ObjectSummary struct {
 	Size int64
 }
 
+type StatusError struct {
+	Method     string
+	URL        string
+	StatusCode int
+	Body       string
+}
+
+func (e StatusError) Error() string {
+	return fmt.Sprintf("r2 %s %s returned status %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
+}
+
 func Endpoint(accountID string) string {
 	return "https://" + strings.ToLower(strings.TrimSpace(accountID)) + ".r2.cloudflarestorage.com"
 }
@@ -89,21 +100,33 @@ func (c *R2Client) EnsureBucket(ctx context.Context, bucket string) (bool, bool,
 		return true, false, nil
 	}
 	if status != http.StatusNotFound {
-		return false, false, fmt.Errorf("head R2 bucket %s returned status %d", bucket, status)
+		return false, false, StatusError{
+			Method:     http.MethodHead,
+			URL:        c.BucketURL(bucket).Redacted(),
+			StatusCode: status,
+		}
 	}
 	status, _, err = c.SignedRequest(ctx, http.MethodPut, c.BucketURL(bucket), http.NoBody, EmptyPayloadSHA256, nil)
 	if err != nil {
 		return false, false, err
 	}
 	if status < 200 || status >= 300 {
-		return false, false, fmt.Errorf("create R2 bucket %s returned status %d", bucket, status)
+		return false, false, StatusError{
+			Method:     http.MethodPut,
+			URL:        c.BucketURL(bucket).Redacted(),
+			StatusCode: status,
+		}
 	}
 	status, err = c.HeadBucket(ctx, bucket)
 	if err != nil {
 		return false, false, err
 	}
 	if status != http.StatusOK {
-		return false, false, fmt.Errorf("created R2 bucket %s but follow-up HEAD returned status %d", bucket, status)
+		return false, false, StatusError{
+			Method:     http.MethodHead,
+			URL:        c.BucketURL(bucket).Redacted(),
+			StatusCode: status,
+		}
 	}
 	return false, true, nil
 }
@@ -237,10 +260,20 @@ func (c *R2Client) SignedRequest(ctx context.Context, method string, u *url.URL,
 		return 0, nil, fmt.Errorf("read R2 response: %w", err)
 	}
 	if resp.StatusCode >= 500 {
-		return resp.StatusCode, respBody, fmt.Errorf("r2 %s %s returned status %d: %s", method, u.Redacted(), resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return resp.StatusCode, respBody, StatusError{
+			Method:     method,
+			URL:        u.Redacted(),
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(respBody)),
+		}
 	}
 	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusNotFound {
-		return resp.StatusCode, respBody, fmt.Errorf("r2 %s %s returned status %d: %s", method, u.Redacted(), resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return resp.StatusCode, respBody, StatusError{
+			Method:     method,
+			URL:        u.Redacted(),
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(respBody)),
+		}
 	}
 	return resp.StatusCode, respBody, nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,7 +16,6 @@ import (
 const (
 	PermissionR2BucketItemRead  = "Workers R2 Storage Bucket Item Read"
 	PermissionR2BucketItemWrite = "Workers R2 Storage Bucket Item Write"
-	PermissionR2StorageWrite    = "Workers R2 Storage Write"
 	PermissionZoneRead          = "Zone Read"
 	PermissionDNSWrite          = "DNS Write"
 	CloudflareAPIBase           = "https://api.cloudflare.com/client/v4"
@@ -38,6 +38,25 @@ type CreatedAPIToken struct {
 	PermissionGroup string
 	Bucket          string
 	ExpiresOn       string
+}
+
+type APIStatusError struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Body       string
+}
+
+func (e APIStatusError) Error() string {
+	return fmt.Sprintf("cloudflare API %s %s status %d: %s", e.Method, e.Path, e.StatusCode, e.Body)
+}
+
+type R2Bucket struct {
+	Name         string `json:"name"`
+	CreatedAt    string `json:"creation_date,omitempty"`
+	Jurisdiction string `json:"jurisdiction,omitempty"`
+	Location     string `json:"location,omitempty"`
+	StorageClass string `json:"storage_class,omitempty"`
 }
 
 type permissionGroup struct {
@@ -131,6 +150,12 @@ type temporaryCredentialsResponse struct {
 		SessionToken    string `json:"sessionToken"`
 	} `json:"result"`
 	Errors []cloudflareMessage `json:"errors"`
+}
+
+type r2BucketResponse struct {
+	Success bool                `json:"success"`
+	Result  R2Bucket            `json:"result"`
+	Errors  []cloudflareMessage `json:"errors"`
 }
 
 type cloudflareMessage struct {
@@ -304,6 +329,62 @@ func (c *CloudflareAPIClient) CreateTemporaryCredentials(ctx context.Context, ac
 	}, nil
 }
 
+func (c *CloudflareAPIClient) GetR2Bucket(ctx context.Context, accountID, bucket string) (R2Bucket, error) {
+	accountID, bucket, err := validateR2Bucket(accountID, bucket)
+	if err != nil {
+		return R2Bucket{}, err
+	}
+	var response r2BucketResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/accounts/"+url.PathEscape(accountID)+"/r2/buckets/"+url.PathEscape(bucket), nil, &response); err != nil {
+		return R2Bucket{}, err
+	}
+	if !response.Success {
+		return R2Bucket{}, fmt.Errorf("cloudflare r2 bucket get failed: %s", cloudflareErrors(response.Errors))
+	}
+	if response.Result.Name == "" {
+		return R2Bucket{}, fmt.Errorf("cloudflare r2 bucket get returned no bucket name")
+	}
+	return response.Result, nil
+}
+
+func (c *CloudflareAPIClient) CreateR2Bucket(ctx context.Context, accountID, bucket string) (R2Bucket, error) {
+	accountID, bucket, err := validateR2Bucket(accountID, bucket)
+	if err != nil {
+		return R2Bucket{}, err
+	}
+	var response r2BucketResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/accounts/"+url.PathEscape(accountID)+"/r2/buckets", map[string]string{"name": bucket}, &response); err != nil {
+		return R2Bucket{}, err
+	}
+	if !response.Success {
+		return R2Bucket{}, fmt.Errorf("cloudflare r2 bucket create failed: %s", cloudflareErrors(response.Errors))
+	}
+	if response.Result.Name == "" {
+		return R2Bucket{}, fmt.Errorf("cloudflare r2 bucket create returned no bucket name")
+	}
+	return response.Result, nil
+}
+
+func (c *CloudflareAPIClient) EnsureR2Bucket(ctx context.Context, accountID, bucket string) (bool, bool, error) {
+	_, err := c.GetR2Bucket(ctx, accountID, bucket)
+	if err == nil {
+		return true, false, nil
+	}
+	var statusErr APIStatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusNotFound {
+		return false, false, err
+	}
+	if _, err := c.CreateR2Bucket(ctx, accountID, bucket); err != nil {
+		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict {
+			if _, getErr := c.GetR2Bucket(ctx, accountID, bucket); getErr == nil {
+				return true, false, nil
+			}
+		}
+		return false, false, err
+	}
+	return false, true, nil
+}
+
 func (c *CloudflareAPIClient) CreateR2BucketToken(ctx context.Context, accountID, bucket, name, permissionName string, expiresOn time.Time) (CreatedAPIToken, error) {
 	return c.CreateR2BucketTokenWithPermissions(ctx, accountID, bucket, name, []string{permissionName}, expiresOn)
 }
@@ -371,112 +452,6 @@ func (c *CloudflareAPIClient) CreateR2BucketTokenWithPermissions(ctx context.Con
 		Name:            response.Result.Name,
 		PermissionGroup: strings.Join(permissionLabels, ","),
 		Bucket:          bucket,
-		ExpiresOn:       firstNonEmpty(response.Result.ExpiresOn, expiresOnValue),
-	}, nil
-}
-
-func (c *CloudflareAPIClient) CreateR2AccountToken(ctx context.Context, accountID, name, permissionName string, expiresOn time.Time) (CreatedAPIToken, error) {
-	accountID = strings.ToLower(strings.TrimSpace(accountID))
-	name = strings.TrimSpace(name)
-	permissionName = strings.TrimSpace(permissionName)
-	expiresOnValue, err := formatExpiresOn(expiresOn)
-	if err != nil {
-		return CreatedAPIToken{}, err
-	}
-	if !IsCloudflareAccountID(accountID) {
-		return CreatedAPIToken{}, fmt.Errorf("account ID must be a 32-character lowercase hex Cloudflare account ID")
-	}
-	if name == "" {
-		return CreatedAPIToken{}, fmt.Errorf("token name is required")
-	}
-	if permissionName == "" {
-		return CreatedAPIToken{}, fmt.Errorf("permission group name is required")
-	}
-	group, err := c.findPermissionGroup(ctx, accountID, permissionName, "com.cloudflare.api.account")
-	if err != nil {
-		return CreatedAPIToken{}, err
-	}
-	body := map[string]any{
-		"name": name,
-		"policies": []tokenPolicy{{
-			Effect: "allow",
-			PermissionGroups: []map[string]string{{
-				"id": group.ID,
-			}},
-			Resources: allBucketsResource(accountID),
-		}},
-		"expires_on": expiresOnValue,
-	}
-	var response tokenCreateResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/accounts/"+url.PathEscape(accountID)+"/tokens", body, &response); err != nil {
-		return CreatedAPIToken{}, err
-	}
-	if !response.Success {
-		return CreatedAPIToken{}, fmt.Errorf("cloudflare token create failed: %s", cloudflareErrors(response.Errors))
-	}
-	if response.Result.ID == "" || response.Result.Value == "" {
-		return CreatedAPIToken{}, fmt.Errorf("cloudflare token create returned no token value")
-	}
-	return CreatedAPIToken{
-		ID:              response.Result.ID,
-		Value:           response.Result.Value,
-		S3AccessKeyID:   response.Result.ID,
-		S3SecretKey:     SHA256Hex([]byte(response.Result.Value)),
-		Name:            response.Result.Name,
-		PermissionGroup: group.Name,
-		ExpiresOn:       firstNonEmpty(response.Result.ExpiresOn, expiresOnValue),
-	}, nil
-}
-
-func (c *CloudflareAPIClient) CreateR2AllBucketsToken(ctx context.Context, accountID, name, permissionName string, expiresOn time.Time) (CreatedAPIToken, error) {
-	accountID = strings.ToLower(strings.TrimSpace(accountID))
-	name = strings.TrimSpace(name)
-	permissionName = strings.TrimSpace(permissionName)
-	expiresOnValue, err := formatExpiresOn(expiresOn)
-	if err != nil {
-		return CreatedAPIToken{}, err
-	}
-	if !IsCloudflareAccountID(accountID) {
-		return CreatedAPIToken{}, fmt.Errorf("account ID must be a 32-character lowercase hex Cloudflare account ID")
-	}
-	if name == "" {
-		return CreatedAPIToken{}, fmt.Errorf("token name is required")
-	}
-	if permissionName == "" {
-		return CreatedAPIToken{}, fmt.Errorf("permission group name is required")
-	}
-	group, err := c.findPermissionGroup(ctx, accountID, permissionName, "com.cloudflare.edge.r2.bucket")
-	if err != nil {
-		return CreatedAPIToken{}, err
-	}
-	body := map[string]any{
-		"name": name,
-		"policies": []tokenPolicy{{
-			Effect: "allow",
-			PermissionGroups: []map[string]string{{
-				"id": group.ID,
-			}},
-			Resources: allBucketsResource(accountID),
-		}},
-		"expires_on": expiresOnValue,
-	}
-	var response tokenCreateResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/accounts/"+url.PathEscape(accountID)+"/tokens", body, &response); err != nil {
-		return CreatedAPIToken{}, err
-	}
-	if !response.Success {
-		return CreatedAPIToken{}, fmt.Errorf("cloudflare token create failed: %s", cloudflareErrors(response.Errors))
-	}
-	if response.Result.ID == "" || response.Result.Value == "" {
-		return CreatedAPIToken{}, fmt.Errorf("cloudflare token create returned no token value")
-	}
-	return CreatedAPIToken{
-		ID:              response.Result.ID,
-		Value:           response.Result.Value,
-		S3AccessKeyID:   response.Result.ID,
-		S3SecretKey:     SHA256Hex([]byte(response.Result.Value)),
-		Name:            response.Result.Name,
-		PermissionGroup: group.Name,
 		ExpiresOn:       firstNonEmpty(response.Result.ExpiresOn, expiresOnValue),
 	}, nil
 }
@@ -629,7 +604,12 @@ func (c *CloudflareAPIClient) doJSON(ctx context.Context, method, path string, b
 		return fmt.Errorf("read Cloudflare API response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("cloudflare API %s %s status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
+		return APIStatusError{
+			Method:     method,
+			Path:       path,
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(raw)),
+		}
 	}
 	if out != nil && len(raw) > 0 {
 		if err := json.Unmarshal(raw, out); err != nil {
@@ -639,24 +619,24 @@ func (c *CloudflareAPIClient) doJSON(ctx context.Context, method, path string, b
 	return nil
 }
 
+func validateR2Bucket(accountID, bucket string) (string, string, error) {
+	accountID = strings.ToLower(strings.TrimSpace(accountID))
+	bucket = strings.TrimSpace(bucket)
+	if !IsCloudflareAccountID(accountID) {
+		return "", "", fmt.Errorf("account ID must be a 32-character lowercase hex Cloudflare account ID")
+	}
+	if !IsR2BucketName(bucket) {
+		return "", "", fmt.Errorf("bucket must be a valid lowercase R2 bucket name")
+	}
+	return accountID, bucket, nil
+}
+
 func r2BucketResource(accountID, bucket string) string {
 	return "com.cloudflare.edge.r2.bucket." + accountID + "_default_" + bucket
 }
 
-func accountResource(accountID string) string {
-	return "com.cloudflare.api.account." + accountID
-}
-
 func zoneResource(zoneID string) string {
 	return "com.cloudflare.api.account.zone." + strings.TrimSpace(zoneID)
-}
-
-func allBucketsResource(accountID string) map[string]any {
-	return map[string]any{
-		accountResource(accountID): map[string]string{
-			"com.cloudflare.edge.r2.bucket.*": "*",
-		},
-	}
 }
 
 func cloudflareErrors(messages []cloudflareMessage) string {
