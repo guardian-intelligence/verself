@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -38,10 +39,10 @@ EOT
   }
 }`)
 	write(t, root, "src/services/billing-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_seed_declarations:
+openbao_runtime_secret_declarations:
   - name: billing-service.stripe.secret_key
     consumer_job_ids: [webhook-proxy]
-    site_secret: stripe_secret_key
+    external_openbao: true
 `)
 	write(t, root, "src/services/billing-service/deploy/postgres.yml", `
 postgresql_service_databases:
@@ -64,15 +65,15 @@ postgresql_peer_mappings:
 	if len(bundle.OpenBao.RuntimeSecrets) != 1 {
 		t.Fatalf("runtime secrets = %d", len(bundle.OpenBao.RuntimeSecrets))
 	}
-	if got := bundle.OpenBao.RuntimeSecrets[0].Source.SiteSecretKey; got != "stripe_secret_key" {
-		t.Fatalf("site secret key = %q", got)
+	if got := bundle.OpenBao.RuntimeSecrets[0].Source.Kind; got != RuntimeSecretSourceExternal {
+		t.Fatalf("source kind = %q", got)
 	}
 	body, err := json.Marshal(bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(body), "sk_test_gamma") {
-		t.Fatalf("bundle contains site secret material: %s", body)
+		t.Fatalf("bundle contains static runtime secret material: %s", body)
 	}
 	if len(bundle.OpenBao.NomadRoles) != 2 || bundle.OpenBao.NomadRoles[0].Name != "billing-runtime" || bundle.OpenBao.NomadRoles[1].Name != "webhook-proxy-runtime" {
 		t.Fatalf("roles = %#v", bundle.OpenBao.NomadRoles)
@@ -129,9 +130,9 @@ EOT
   }
 }`)
 	write(t, root, "src/services/billing-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_seed_declarations:
+openbao_runtime_secret_declarations:
   - name: billing-service.stripe.secret_key
-    site_secret: stripe_secret_key
+    external_openbao: true
 `)
 	write(t, root, "src/services/billing-service/deploy/postgres.yml", `
 postgresql_service_databases:
@@ -164,8 +165,7 @@ func TestBundleSHA256IgnoresDeployAttemptIdentity(t *testing.T) {
 				Component: "billing",
 				JobID:     "billing",
 				Source: RuntimeSecretSource{
-					Kind:          RuntimeSecretSourceSiteSecret,
-					SiteSecretKey: "stripe_secret_key",
+					Kind: RuntimeSecretSourceExternal,
 				},
 			}},
 		},
@@ -188,8 +188,8 @@ func TestProducedRuntimeSecretGrantsWriterAndStableMarker(t *testing.T) {
 	write(t, root, "src/services/deployment-service/nomad.hcl", `job "deployment-service" {}`)
 	write(t, root, "src/infrastructure-components/substrate-control-plane/nomad.hcl", `job "substrate-control-plane" {}`)
 	write(t, root, "src/services/deployment-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_seed_declarations:
-  - name: deployment-service.site_seed_import_marker
+openbao_runtime_secret_declarations:
+  - name: deployment-service.substrate_control_plane_marker
     produced_by_job: substrate-control-plane
 `)
 	bundle, err := LoadBundle(root, "gamma", []Component{{
@@ -215,15 +215,34 @@ openbao_runtime_secret_seed_declarations:
 	for _, role := range bundle.OpenBao.NomadRoles {
 		roles[role.JobID] = role
 	}
-	if got := roles["deployment-service"].Secrets; len(got) != 1 || got[0] != "deployment-service.site_seed_import_marker" {
+	if got := roles["deployment-service"].Secrets; len(got) != 1 || got[0] != "deployment-service.substrate_control_plane_marker" {
 		t.Fatalf("deployment-service read secrets = %#v", got)
 	}
-	if got := roles["substrate-control-plane"].WriteSecrets; len(got) != 1 || got[0] != "deployment-service.site_seed_import_marker" {
+	if got := roles["substrate-control-plane"].WriteSecrets; len(got) != 1 || got[0] != "deployment-service.substrate_control_plane_marker" {
 		t.Fatalf("substrate-control-plane write secrets = %#v", got)
 	}
 	values := substrateControlPlaneProducedSecretValues(bundle)
-	if values["deployment-service.site_seed_import_marker"] != "verself.substrate-control-plane.applied.v1:gamma" {
+	if values["deployment-service.substrate_control_plane_marker"] != "verself.substrate-control-plane.applied.v1:gamma" {
 		t.Fatalf("marker values = %#v", values)
+	}
+}
+
+func TestRuntimePolicyForSubstrateControlPlaneIncludesTransitRandom(t *testing.T) {
+	policy := runtimePolicy(NomadRole{
+		JobID:        ControlPlaneJobID,
+		WriteSecrets: []string{"deployment-service.substrate_control_plane_marker"},
+	})
+	for _, want := range []string{
+		`path "sys/policies/acl/*"`,
+		`path "auth/jwt-nomad/role/*"`,
+		`path "sys/mounts"`,
+		`path "sys/mounts/transit"`,
+		`path "transit/random/*"`,
+		`kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker`,
+	} {
+		if !strings.Contains(policy, want) {
+			t.Fatalf("policy missing %s:\n%s", want, policy)
+		}
 	}
 }
 
@@ -253,7 +272,7 @@ EOT
   }
 }`)
 	write(t, root, "src/services/email-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_seed_declarations:
+openbao_runtime_secret_declarations:
   - name: email-service.resend.full_access_api_key
     job_id: email-service-resend-keys
     external_openbao: true
@@ -322,31 +341,6 @@ openbao_runtime_secret_seed_declarations:
 	}
 }
 
-func TestLoadRuntimeSeedRejectsWrongSite(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "openbao-runtime-seed.json")
-	writeBytes(t, root, "openbao-runtime-seed.json", []byte(`{
-  "version": "verself.openbao-runtime-seed.v1",
-  "site": "prod",
-  "values": {"stripe_secret_key": "sk_test"}
-}
-`))
-	_, err := loadRuntimeSeed(ApplyConfig{RuntimeSeedPath: path}, Bundle{Site: "gamma"})
-	if err == nil || !strings.Contains(err.Error(), "does not match bundle site") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestLoadRuntimeSeedAcceptsMissingFile(t *testing.T) {
-	seed, err := loadRuntimeSeed(ApplyConfig{RuntimeSeedPath: filepath.Join(t.TempDir(), "missing.json")}, Bundle{Site: "gamma"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if seed.Loaded || len(seed.Values) != 0 {
-		t.Fatalf("missing seed = %#v", seed)
-	}
-}
-
 func TestOpenBaoClientIgnoresManualBootstrapTokenEnv(t *testing.T) {
 	t.Setenv("BAO_TOKEN", "manual-token")
 	t.Setenv("VAULT_TOKEN", "")
@@ -373,11 +367,13 @@ func TestOpenBaoClientAcceptsNomadWorkloadToken(t *testing.T) {
 	}
 }
 
-func TestReconcileRuntimeSecretSkipsMissingSiteSecret(t *testing.T) {
+func TestReconcileRuntimeSecretSkipsExternalOpenBao(t *testing.T) {
 	writes := 0
+	reads := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
+			reads++
 			w.WriteHeader(http.StatusNotFound)
 		case http.MethodPost:
 			writes++
@@ -388,25 +384,91 @@ func TestReconcileRuntimeSecretSkipsMissingSiteSecret(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imported, err := reconcileRuntimeSecret(context.Background(), &baoClient{
+	err := reconcileRuntimeSecret(context.Background(), &baoClient{
 		addr:  server.URL,
 		token: "token",
 		http:  server.Client(),
 	}, RuntimeSecret{
 		Name: "billing-service.stripe.secret_key",
 		Source: RuntimeSecretSource{
-			Kind:          RuntimeSecretSourceSiteSecret,
-			SiteSecretKey: "stripe_secret_key",
+			Kind: RuntimeSecretSourceExternal,
 		},
-	}, map[string]string{})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if imported {
-		t.Fatal("missing site secret was reported as imported")
+	if reads != 1 {
+		t.Fatalf("reads = %d, want one OpenBao existence check", reads)
 	}
 	if writes != 0 {
-		t.Fatalf("writes = %d, want no write for absent site secret", writes)
+		t.Fatalf("writes = %d, want no write for external OpenBao source", writes)
+	}
+}
+
+func TestReconcileGeneratedRuntimeSecretUsesOpenBaoTransit(t *testing.T) {
+	random := []byte{0x01, 0x02, 0x03, 0x04}
+	transitReads := 0
+	kvWrites := 0
+	written := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/kv-runtime/data/secret/org/deployment-service.r2_control_plane_token":
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/transit/random/4":
+			transitReads++
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode transit body: %v", err)
+			}
+			if body["format"] != "base64" {
+				t.Fatalf("transit format = %q", body["format"])
+			}
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]string{
+					"random_bytes": base64.StdEncoding.EncodeToString(random),
+				},
+			}); err != nil {
+				t.Fatalf("encode transit response: %v", err)
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/kv-runtime/data/secret/org/deployment-service.r2_control_plane_token":
+			kvWrites++
+			var body struct {
+				Data map[string]string `json:"data"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode KV body: %v", err)
+			}
+			written = body.Data["value"]
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected OpenBao request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	err := reconcileRuntimeSecret(context.Background(), &baoClient{
+		addr:  server.URL,
+		token: "token",
+		http:  server.Client(),
+	}, RuntimeSecret{
+		Name: "deployment-service.r2_control_plane_token",
+		Source: RuntimeSecretSource{
+			Kind:           RuntimeSecretSourceGenerated,
+			GeneratedBytes: len(random),
+			Encoding:       "base64url",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transitReads != 1 {
+		t.Fatalf("transit reads = %d, want one", transitReads)
+	}
+	if kvWrites != 1 {
+		t.Fatalf("KV writes = %d, want one", kvWrites)
+	}
+	if want := base64.RawURLEncoding.EncodeToString(random); written != want {
+		t.Fatalf("written = %q, want %q", written, want)
 	}
 }
 

@@ -27,8 +27,8 @@
 
 - name: Load Nomad artifact getter credentials
   ansible.builtin.include_vars:
-    file: "{{ verself_site_secret_vars_file }}"
-  when: verself_site_secret_vars_file | default('', true) | length > 0
+    file: "{{ verself_bootstrap_vars_file }}"
+  when: verself_bootstrap_vars_file | default('', true) | length > 0
   no_log: true
 
 - name: Deploy Nomad artifact getter environment
@@ -60,14 +60,6 @@
   notify: restart nomad
   no_log: true
 
-- name: Create bootstrap substrate seed directory
-  ansible.builtin.file:
-    path: "{{ nomad_openbao_runtime_seed_dest | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0700"
-
 - name: Assert OpenBao site root key input
   ansible.builtin.assert:
     that:
@@ -84,16 +76,6 @@
     owner: root
     group: root
     mode: "0600"
-  no_log: true
-
-- name: Deploy filtered OpenBao runtime seed
-  ansible.builtin.copy:
-    src: "{{ verself_openbao_runtime_seed_file }}"
-    dest: "{{ nomad_openbao_runtime_seed_dest }}"
-    owner: root
-    group: root
-    mode: "0600"
-  when: verself_openbao_runtime_seed_file | default('', true) | length > 0
   no_log: true
 
 - name: Create Nomad state directory

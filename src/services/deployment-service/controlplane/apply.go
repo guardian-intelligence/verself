@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -13,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,7 +25,6 @@ import (
 
 type ApplyConfig struct {
 	BundlePath            string
-	RuntimeSeedPath       string
 	OpenBaoAddr           string
 	OpenBaoCACert         string
 	OpenBaoToken          string
@@ -38,7 +35,6 @@ type ApplyConfig struct {
 
 type ApplyResult struct {
 	RuntimeSecrets  int
-	SiteSecrets     int
 	ProducedSecrets int
 	NomadRoles      int
 	PostgresRoles   int
@@ -71,10 +67,6 @@ func ApplyBundleFile(ctx context.Context, cfg ApplyConfig) (ApplyResult, error) 
 	if bundle.SchemaVersion != BundleSchemaVersion {
 		return ApplyResult{}, fmt.Errorf("unsupported control-plane bundle schema %q", bundle.SchemaVersion)
 	}
-	runtimeSeed, err := loadRuntimeSeed(cfg, bundle)
-	if err != nil {
-		return ApplyResult{}, err
-	}
 	bao, err := newBaoClient(cfg)
 	if err != nil {
 		return ApplyResult{}, err
@@ -83,12 +75,10 @@ func ApplyBundleFile(ctx context.Context, cfg ApplyConfig) (ApplyResult, error) 
 		return ApplyResult{}, err
 	}
 	result := ApplyResult{}
-	siteSecrets, err := applyOpenBao(ctx, bao, bundle.OpenBao, runtimeSeed.Values)
-	if err != nil {
+	if err := applyOpenBao(ctx, bao, bundle.OpenBao); err != nil {
 		return result, err
 	}
 	result.RuntimeSecrets = len(bundle.OpenBao.RuntimeSecrets)
-	result.SiteSecrets = siteSecrets
 	result.NomadRoles = len(bundle.OpenBao.NomadRoles)
 	pgResult, err := applyPostgres(ctx, cfg, bao, bundle.Postgres)
 	if err != nil {
@@ -97,11 +87,6 @@ func ApplyBundleFile(ctx context.Context, cfg ApplyConfig) (ApplyResult, error) 
 	producedSecrets, err := writeProducedRuntimeSecrets(ctx, bao, bundle)
 	if err != nil {
 		return result, err
-	}
-	if runtimeSeed.Loaded {
-		if err := os.Remove(runtimeSeed.Path); err != nil && !os.IsNotExist(err) {
-			return result, fmt.Errorf("remove imported OpenBao runtime seed: %w", err)
-		}
 	}
 	result.PostgresRoles = pgResult.PostgresRoles
 	result.Databases = pgResult.Databases
@@ -141,9 +126,6 @@ func (cfg ApplyConfig) withDefaults() ApplyConfig {
 	if cfg.OpenBaoToken == "" {
 		cfg.OpenBaoToken = envOr("VAULT_TOKEN", "")
 	}
-	if cfg.RuntimeSeedPath == "" {
-		cfg.RuntimeSeedPath = envOr("VERSELF_OPENBAO_RUNTIME_SEED_FILE", "")
-	}
 	if cfg.PostgresRuntime == "" {
 		cfg.PostgresRuntime = envOr("VERSELF_POSTGRESQL_RUNTIME", filepath.Join(envOr("NOMAD_TASK_DIR", "local"), "postgresql", "opt", "verself", "postgresql"))
 	}
@@ -179,68 +161,24 @@ func newBaoClient(cfg ApplyConfig) (*baoClient, error) {
 	}, nil
 }
 
-type runtimeSeed struct {
-	Path   string
-	Values map[string]string
-	Loaded bool
-}
-
-type runtimeSeedFile struct {
-	Version string            `json:"version"`
-	Site    string            `json:"site"`
-	Values  map[string]string `json:"values"`
-}
-
-func loadRuntimeSeed(cfg ApplyConfig, bundle Bundle) (runtimeSeed, error) {
-	path := strings.TrimSpace(cfg.RuntimeSeedPath)
-	if path == "" {
-		return runtimeSeed{Values: map[string]string{}}, nil
-	}
-	body, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return runtimeSeed{Path: path, Values: map[string]string{}}, nil
-	}
-	if err != nil {
-		return runtimeSeed{}, fmt.Errorf("read OpenBao runtime seed: %w", err)
-	}
-	var file runtimeSeedFile
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&file); err != nil {
-		return runtimeSeed{}, fmt.Errorf("decode OpenBao runtime seed: %w", err)
-	}
-	if file.Version != "verself.openbao-runtime-seed.v1" {
-		return runtimeSeed{}, fmt.Errorf("unsupported OpenBao runtime seed schema %q", file.Version)
-	}
-	if strings.TrimSpace(file.Site) != bundle.Site {
-		return runtimeSeed{}, fmt.Errorf("OpenBao runtime seed site %q does not match bundle site %q", file.Site, bundle.Site)
-	}
-	if file.Values == nil {
-		file.Values = map[string]string{}
-	}
-	return runtimeSeed{Path: path, Values: file.Values, Loaded: true}, nil
-}
-
-func applyOpenBao(ctx context.Context, c *baoClient, bundle OpenBaoBundle, siteSecrets map[string]string) (int, error) {
-	importedSiteSecrets := 0
+func applyOpenBao(ctx context.Context, c *baoClient, bundle OpenBaoBundle) error {
 	for _, role := range bundle.NomadRoles {
-		if err := c.writePolicy(ctx, role.Policy, runtimePolicy(role.Secrets, role.WriteSecrets)); err != nil {
-			return 0, fmt.Errorf("write OpenBao policy %s: %w", role.Policy, err)
+		if err := c.writePolicy(ctx, role.Policy, runtimePolicy(role)); err != nil {
+			return fmt.Errorf("write OpenBao policy %s: %w", role.Policy, err)
 		}
 		if err := c.writeNomadRole(ctx, role); err != nil {
-			return 0, fmt.Errorf("write OpenBao Nomad role %s: %w", role.Name, err)
+			return fmt.Errorf("write OpenBao Nomad role %s: %w", role.Name, err)
 		}
+	}
+	if err := c.ensureTransitMount(ctx); err != nil {
+		return err
 	}
 	for _, secret := range bundle.RuntimeSecrets {
-		imported, err := reconcileRuntimeSecret(ctx, c, secret, siteSecrets)
-		if err != nil {
-			return importedSiteSecrets, err
-		}
-		if imported {
-			importedSiteSecrets++
+		if err := reconcileRuntimeSecret(ctx, c, secret); err != nil {
+			return err
 		}
 	}
-	return importedSiteSecrets, nil
+	return nil
 }
 
 func writeProducedRuntimeSecrets(ctx context.Context, c *baoClient, bundle Bundle) (int, error) {
@@ -271,51 +209,40 @@ func substrateControlPlaneProducedSecretValues(bundle Bundle) map[string]string 
 	return out
 }
 
-func reconcileRuntimeSecret(ctx context.Context, c *baoClient, secret RuntimeSecret, siteSecrets map[string]string) (bool, error) {
+func reconcileRuntimeSecret(ctx context.Context, c *baoClient, secret RuntimeSecret) error {
 	existing, found, err := c.readRuntimeSecret(ctx, secret.Name)
 	if err != nil {
-		return false, err
+		return err
 	}
 	value := ""
-	importedSiteSecret := false
 	switch secret.Source.Kind {
 	case RuntimeSecretSourceGenerated:
 		if found && strings.TrimSpace(existing) != "" {
-			return false, nil
+			return nil
 		}
-		generated, err := generateSecretValue(secret.Source.GeneratedBytes, secret.Source.Encoding)
+		generated, err := c.generateSecretValue(ctx, secret.Source.GeneratedBytes, secret.Source.Encoding)
 		if err != nil {
-			return false, fmt.Errorf("%s: generate value: %w", secret.Name, err)
+			return fmt.Errorf("%s: generate value: %w", secret.Name, err)
 		}
 		value = generated
-	case RuntimeSecretSourceSiteSecret:
-		if found && strings.TrimSpace(existing) != "" {
-			return false, nil
-		}
-		value = strings.TrimSpace(siteSecrets[secret.Source.SiteSecretKey])
-		if value == "" {
-			fmt.Printf("substrate-control-plane: OpenBao runtime secret %s not seeded; site secret %s is absent\n", secret.Name, secret.Source.SiteSecretKey)
-			return false, nil
-		}
-		importedSiteSecret = true
 	case RuntimeSecretSourceProduced:
-		return false, nil
+		return nil
 	case RuntimeSecretSourceExternal:
-		return false, nil
+		return nil
 	default:
-		return false, fmt.Errorf("%s: no runtime secret source", secret.Name)
+		return fmt.Errorf("%s: no runtime secret source", secret.Name)
 	}
 	if value == "" {
-		return false, fmt.Errorf("%s: source value is empty", secret.Name)
+		return fmt.Errorf("%s: source value is empty", secret.Name)
 	}
 	if found && existing == value {
-		return false, nil
+		return nil
 	}
 	if err := c.writeRuntimeSecret(ctx, secret.Name, value); err != nil {
-		return false, err
+		return err
 	}
 	fmt.Printf("substrate-control-plane: openbao runtime secret %s sha256=%s\n", secret.Name, fingerprint(value))
-	return importedSiteSecret, nil
+	return nil
 }
 
 func (c *baoClient) ready(ctx context.Context) error {
@@ -356,8 +283,92 @@ func (c *baoClient) readRuntimeSecret(ctx context.Context, name string) (string,
 	return strings.TrimSpace(fmt.Sprint(data["value"])), true, nil
 }
 
+func (c *baoClient) ensureTransitMount(ctx context.Context) error {
+	var response baoResponse
+	if _, err := c.do(ctx, http.MethodGet, "v1/sys/mounts", nil, &response, http.StatusOK); err != nil {
+		return fmt.Errorf("read OpenBao mounts: %w", err)
+	}
+	if _, ok := response.Data["transit/"]; ok {
+		return nil
+	}
+	if err := c.write(ctx, "v1/sys/mounts/transit", map[string]string{"type": "transit"}); err != nil {
+		return fmt.Errorf("enable OpenBao transit mount: %w", err)
+	}
+	return nil
+}
+
 func (c *baoClient) writeRuntimeSecret(ctx context.Context, name, value string) error {
 	return c.write(ctx, runtimeSecretAPIPath(name), map[string]any{"data": map[string]string{"value": value}})
+}
+
+func (c *baoClient) generateSecretValue(ctx context.Context, length int, encoding string) (string, error) {
+	if length <= 0 {
+		return "", fmt.Errorf("generated secret byte length is required")
+	}
+	if encoding == "alphanumeric" {
+		return c.generateAlphanumericSecretValue(ctx, length)
+	}
+	raw, err := c.randomBytes(ctx, length)
+	if err != nil {
+		return "", err
+	}
+	switch encoding {
+	case "base64url":
+		return base64.RawURLEncoding.EncodeToString(raw), nil
+	case "hex":
+		return hex.EncodeToString(raw), nil
+	default:
+		return "", fmt.Errorf("unsupported generated secret encoding %q", encoding)
+	}
+}
+
+func (c *baoClient) generateAlphanumericSecretValue(ctx context.Context, length int) (string, error) {
+	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	const maxUnbiasedByte = 256 - (256 % len(alphabet))
+	out := make([]byte, 0, length)
+	for len(out) < length {
+		remaining := length - len(out)
+		raw, err := c.randomBytes(ctx, remaining+16)
+		if err != nil {
+			return "", err
+		}
+		for _, value := range raw {
+			if int(value) >= maxUnbiasedByte {
+				continue
+			}
+			out = append(out, alphabet[int(value)%len(alphabet)])
+			if len(out) == length {
+				break
+			}
+		}
+	}
+	return string(out), nil
+}
+
+func (c *baoClient) randomBytes(ctx context.Context, length int) ([]byte, error) {
+	var response baoResponse
+	if _, err := c.do(
+		ctx,
+		http.MethodPost,
+		"v1/transit/random/"+strconv.Itoa(length),
+		map[string]string{"format": "base64"},
+		&response,
+		http.StatusOK,
+	); err != nil {
+		return nil, err
+	}
+	value := strings.TrimSpace(fmt.Sprint(response.Data["random_bytes"]))
+	if value == "" {
+		return nil, fmt.Errorf("OpenBao transit/random returned empty random_bytes")
+	}
+	raw, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, fmt.Errorf("decode OpenBao transit/random bytes: %w", err)
+	}
+	if len(raw) != length {
+		return nil, fmt.Errorf("OpenBao transit/random returned %d bytes, want %d", len(raw), length)
+	}
+	return raw, nil
 }
 
 func (c *baoClient) readRuntimeSecretRequired(ctx context.Context, name string) (string, error) {
@@ -441,13 +452,36 @@ func runtimeSecretAPIPath(name string) string {
 	return "v1/" + RuntimeMount + "/data/secret/org/" + url.PathEscape(name)
 }
 
-func runtimePolicy(readSecrets, writeSecrets []string) string {
+func runtimePolicy(role NomadRole) string {
 	var b strings.Builder
-	for _, secret := range readSecrets {
+	for _, secret := range role.Secrets {
 		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"read\"]\n}\n\n", RuntimeMount+"/data/secret/org/"+secret)
 	}
-	for _, secret := range writeSecrets {
+	for _, secret := range role.WriteSecrets {
 		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"create\", \"update\", \"read\"]\n}\n\n", RuntimeMount+"/data/secret/org/"+secret)
+	}
+	if role.JobID == ControlPlaneJobID {
+		b.WriteString(`path "sys/policies/acl/*" {
+  capabilities = ["create", "update", "read", "list"]
+}
+
+path "auth/jwt-nomad/role/*" {
+  capabilities = ["create", "update", "read", "list"]
+}
+
+path "sys/mounts" {
+  capabilities = ["read"]
+}
+
+path "sys/mounts/transit" {
+  capabilities = ["create", "update", "read", "sudo"]
+}
+
+path "transit/random/*" {
+  capabilities = ["update"]
+}
+
+`)
 	}
 	return b.String()
 }
@@ -541,30 +575,6 @@ func runPSQL(ctx context.Context, cfg ApplyConfig, database, sql string) error {
 		return fmt.Errorf("psql %s: %w: %s", database, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
-}
-
-func generateSecretValue(bytes int, encoding string) (string, error) {
-	if encoding == "alphanumeric" {
-		const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-		out := make([]byte, bytes)
-		limit := big.NewInt(int64(len(alphabet)))
-		for i := range out {
-			n, err := rand.Int(rand.Reader, limit)
-			if err != nil {
-				return "", err
-			}
-			out[i] = alphabet[n.Int64()]
-		}
-		return string(out), nil
-	}
-	raw := make([]byte, bytes)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	if encoding == "hex" {
-		return hex.EncodeToString(raw), nil
-	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func fingerprint(value string) string {

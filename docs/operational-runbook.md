@@ -57,18 +57,20 @@ aspect site seed-template --site=gamma --force
 ```
 
 Fill .verself/site-bootstrap/gamma/seed.yml with the requested bootstrap values.
-No repository secret file is created. Cloudflare R2 child credentials for
-deployment publication, Nomad artifact retrieval, recovery, and
-object-storage-service are provisioned by the R2 control plane and merged into
-the local seed/vars outputs by the rotation commands below. Materialization
-fails if those
-machine-provisioned values are missing. Product provider credentials such as
-Stripe and GitHub App private material may be absent during substrate bootstrap;
-if absent, the owning service or gate fails when it consumes that runtime
-secret. Resend sending credentials are created by `email-service` after site
-OpenBao is available.
+No repository secret file is created. `provision-site-bootstrap` ensures the
+deployment artifact bucket and writes only the Nomad artifact getter to the
+bootstrap seed/vars path. `aspect site bootstrap-deploy` mints a short-lived
+R2 publisher credential in memory through the Cloudflare control plane, uses it
+for the initial artifact publication, and revokes it before returning. Runtime
+Cloudflare child credentials for deployment publication, recovery, and
+object-storage-service are written to OpenBao by their rotation actions after
+provider verification. Product provider credentials such as Stripe and GitHub
+App private material may be absent during substrate bootstrap; if absent, the
+owning service or gate fails when it consumes that runtime secret. Resend
+sending credentials are created by `email-service` after site OpenBao is
+available.
 
-The site root key is site secret-zero for OpenBao initialization, seal, and
+The site root key is the operator-held bootstrap key for OpenBao initialization, seal, and
 unseal. It is separate from the fresh-host SSH root password. Runtime DEKs and
 generated site-local credentials are derived or created after site OpenBao is
 available. Cloudflare account tokens, R2 child token creation, DNS authority,
@@ -87,7 +89,7 @@ scoped R2 child credentials. Cloudflare R2 is modeled as global capability
 buckets, with site isolation handled by object prefixes and OpenBao policy.
 Cloudflare account API tokens are stored only in prod controller OpenBao and are
 exposed only to the rotation/provisioning control plane. Controller-only
-bootstrap exceptions are not site seed values.
+bootstrap exceptions are not bootstrap seed values.
 
 Prod owns global DNS and TLS/certificate control-plane operations for every
 Verself site. Target sites receive DNS records and certificate projections, not
@@ -102,8 +104,8 @@ Storage Bucket Item Read/Write, Zone Read, and DNS Write for the managed hosted
 zones. The Cloudflare API token value returned by the provider is available
 only once and must be written directly into controller OpenBao by the operator
 or an authenticated controller ingress path. Do not stage Cloudflare account
-authority in repo-local env files, site seeds, Nomad jobs, Ansible vars, or
-runtime OpenBao seeds.
+authority in repo-local env files, bootstrap seeds, Nomad jobs, Ansible vars, or
+generated artifacts.
 
 The R2 buckets are capability-owned global account resources:
 
@@ -145,7 +147,6 @@ aspect integrations cloudflare-control-plane \
 aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=provision-site-bootstrap \
-  --bootstrap-publisher-env-file=.verself/site-bootstrap/gamma/r2-publisher.env \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 ```
@@ -169,7 +170,9 @@ aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=rotate-publisher \
   --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file>
+  --openbao-token-file=<controller-openbao-token-file> \
+  --runtime-openbao-addr=<site-runtime-openbao-addr> \
+  --runtime-openbao-token-file=<site-runtime-openbao-token-file>
 
 aspect integrations cloudflare-control-plane \
   --site=gamma \
@@ -181,7 +184,9 @@ aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=rotate-object-storage-provider \
   --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file>
+  --openbao-token-file=<controller-openbao-token-file> \
+  --runtime-openbao-addr=<site-runtime-openbao-addr> \
+  --runtime-openbao-token-file=<site-runtime-openbao-token-file>
 
 aspect integrations cloudflare-control-plane \
   --site=gamma \
@@ -201,12 +206,18 @@ OpenBao, then signs temporary R2 upload credentials per deployment. The durable
 Nomad getter credential remains read-only so allocation restarts can refetch
 artifacts.
 
-Bootstrap deployment publisher, Nomad getter, and object-storage R2 child
-credentials default to the local site seed path during bootstrap.
-`provision-site-bootstrap` also writes
-`.verself/site-bootstrap/<site>/r2-publisher.env`; this is the only R2
-credential file consumed by `aspect site bootstrap-deploy`. Recovery and
-steady-state deployment publisher credentials default to controller OpenBao.
+Bootstrap uses one durable R2 child credential before Nomad can render OpenBao
+templates:
+
+- The Nomad artifact getter is written to the bootstrap seed/materialized vars
+  path so Nomad can fetch artifacts during early allocation starts.
+
+The initial artifact publisher is minted by the Cloudflare control plane for
+each `aspect site bootstrap-deploy` run. It is passed in memory to the local R2
+helper and revoked before the command exits.
+
+Runtime deployment publisher, object-storage, and recovery credentials are
+OpenBao entries. They are not bootstrap seed values.
 
 Daily Cloudflare rotation is controller-owned:
 
@@ -215,7 +226,7 @@ verify cloudflare.account_admin
   -> rotate the account-admin pair through the peer token
   -> reconcile DNS and certificate state from prod control-plane authority
   -> create new R2 child token generation for each R2 capability
-  -> write R2 child generation to controller OpenBao or the bootstrap site seed
+  -> write runtime child generations to OpenBao and bootstrap-only getter to the bootstrap seed when requested
   -> verify real R2 access for every child generation
   -> delete superseded R2 child generations after overlap
   -> emit ClickHouse evidence
@@ -281,14 +292,15 @@ aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 ## Bootstrap State Machine
 
 ```text
-external provider authority available through controller OpenBao or approved env-file
+external provider authority available through controller OpenBao
   -> site root key is copied to the host as OpenBao bootstrap authority
-  -> site seed bundle materialized
+  -> bootstrap seed bundle materialized
   -> host base converged
   -> OpenBao initialized and unsealed; unseal material is wrapped by the site root key
   -> Nomad starts with site-local OpenBao integration
-  -> quarantined bootstrap-deploy publishes initial R2 artifacts and tunnels to Nomad
-  -> substrate-control-plane applies runtime secrets and workload roles
+  -> bootstrap-deploy publishes initial R2 artifacts and tunnels to Nomad
+  -> substrate-control-plane creates generated runtime secrets through OpenBao transit/random and applies workload roles
+  -> integration services or rotation commands project external runtime secrets into OpenBao
   -> Nomad deploys deployment-service and site-local control-plane jobs
   -> Pomerium operator access handoff is verified
   -> normal aspect deploy submits requests to deployment-service
@@ -304,12 +316,10 @@ Ansible.
 
 `aspect site bootstrap-deploy` is the only deployment-shaped bootstrap escape
 hatch. It runs from the controller, opens a temporary recovery SSH tunnel to the
-site Nomad API, runs a local one-shot Cloudflare R2 control-plane backed by the
-scoped publisher env file created by `cloudflare-control-plane`, publishes the
-initial immutable artifacts to R2, registers the Nomad jobs, and exits. The
-quarantined credential source is `--r2-credential-source=env-file` with
-`.verself/site-bootstrap/<site>/r2-publisher.env`. It is not used after the
-site-local deployment-service is reachable.
+site Nomad API, asks `cloudflare-control-plane` to mint a short-lived scoped R2
+publisher, runs a local one-shot Cloudflare R2 control-plane with that
+credential in process environment, publishes the initial immutable artifacts to
+R2, registers the Nomad jobs, revokes the publisher, and exits.
 
 Only two local host state classes remain after handoff:
 

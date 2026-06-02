@@ -109,9 +109,9 @@ postgresql_service_databases:
 func TestValidateRepoRejectsUnknownDeployShape(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_seed_declarations:
+openbao_runtime_secret_declarations:
   - name: example-service.provider.api_key
-    site_secret: example_provider_api_key
+    external_openbao: true
     fallback: ignored
 `)
 
@@ -120,19 +120,6 @@ openbao_runtime_secret_seed_declarations:
 		t.Fatal("expected validation error")
 	}
 	if !strings.Contains(err.Error(), "field fallback not found") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateRepoRejectsSiteEncryptedSecretFiles(t *testing.T) {
-	root := t.TempDir()
-	write(t, root, "src/host/sites/prod/secrets/host.sops.yml", `runtime_provider_secret: ENC[...]`)
-
-	_, err := ValidateRepo(root)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), "must not use encrypted repository secret files") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -318,12 +305,12 @@ func TestValidateRepoRejectsBootstrapR2TokenWithoutConsumer(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
 	write(t, root, "src/services/deployment-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_seed_declarations:
+openbao_runtime_secret_declarations:
   - name: deployment-service.r2_control_plane_token
     generated:
       bytes: 32
       encoding: base64url
-  - name: deployment-service.site_seed_import_marker
+  - name: deployment-service.substrate_control_plane_marker
     produced_by_job: substrate-control-plane
   - name: deployment-service.operator_deploy_token
     generated:
@@ -406,6 +393,25 @@ job "substrate-control-plane" {
 	}
 }
 
+func TestValidateRepoRejectsGeneratedRuntimeSecretsWithoutOpenBaoTransit(t *testing.T) {
+	root := t.TempDir()
+	writeBootstrapRuntimeContracts(t, root)
+	write(t, root, "src/services/deployment-service/controlplane/apply.go", `package controlplane
+
+func generate() {
+	_ = "crypto/rand"
+}
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "must be created through OpenBao transit/random") || !strings.Contains(err.Error(), "must not use local RNG") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateRepoRejectsToolLayerDeploymentEngine(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
@@ -434,13 +440,13 @@ func write(t *testing.T, root, rel, body string) {
 func writeBootstrapRuntimeContracts(t *testing.T, root string) {
 	t.Helper()
 	write(t, root, "src/services/deployment-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_seed_declarations:
+openbao_runtime_secret_declarations:
   - name: deployment-service.r2_control_plane_token
     consumer_job_ids: [cloudflare-r2-control-plane]
     generated:
       bytes: 32
       encoding: base64url
-  - name: deployment-service.site_seed_import_marker
+  - name: deployment-service.substrate_control_plane_marker
     produced_by_job: substrate-control-plane
   - name: deployment-service.operator_deploy_token
     generated:
@@ -448,11 +454,11 @@ openbao_runtime_secret_seed_declarations:
       encoding: base64url
 `)
 	write(t, root, "src/integrations/cloudflare/r2-control-plane/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_seed_declarations:
+openbao_runtime_secret_declarations:
   - name: cloudflare-r2-control-plane.publisher_token_id
-    site_secret: cloudflare_r2_control_plane_publisher_token_id
+    external_openbao: true
   - name: cloudflare-r2-control-plane.publisher_secret_access_key
-    site_secret: cloudflare_r2_control_plane_publisher_secret_access_key
+    external_openbao: true
 `)
 	write(t, root, "src/services/deployment-service/nomad.hcl", `
 job "deployment-service" {
@@ -461,7 +467,7 @@ job "deployment-service" {
       template {
         data = <<-EOT
 VERSELF_CRED_VALUE_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
-VERSELF_CRED_VALUE_SITE_SEED_IMPORT_MARKER={{ with secret "kv-runtime/data/secret/org/deployment-service.site_seed_import_marker" }}{{ .Data.data.value }}{{ end }}
+VERSELF_CRED_VALUE_SUBSTRATE_CONTROL_PLANE_MARKER={{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value }}{{ end }}
 VERSELF_CRED_VALUE_OPERATOR_DEPLOY_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.operator_deploy_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
@@ -493,6 +499,24 @@ VERSELF_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deploy
 	}
 	`)
 	write(t, root, "src/infrastructure-components/substrate-control-plane/nomad.hcl", substrateControlPlaneNomadContract())
+	write(t, root, "src/infrastructure-components/openbao/cmd/openbao-bootstrap/main.go",
+		"package main\n\n"+
+			"func configureWorkloadIdentity() {\n"+
+			"\t_ = \"sys/mounts/transit\"\n"+
+			"\t_ = `\"type\": \"transit\"`\n"+
+			"\t_ = `path \"transit/random/*\" {\n  capabilities = [\"update\"]\n}`\n"+
+			"\t_ = `path \"sys/mounts/transit\" {\n  capabilities = [\"create\", \"update\", \"read\", \"sudo\"]\n}`\n"+
+			"}\n",
+	)
+	write(t, root, "src/services/deployment-service/controlplane/apply.go",
+		"package controlplane\n\n"+
+			"func randomBytes() {\n"+
+			"\t_ = \"v1/transit/random/\"\n"+
+			"\t_ = \"v1/sys/mounts/transit\"\n"+
+			"\t_ = `path \"transit/random/*\" {\n  capabilities = [\"update\"]\n}`\n"+
+			"\t_ = `path \"sys/mounts/transit\" {\n  capabilities = [\"create\", \"update\", \"read\", \"sudo\"]\n}`\n"+
+			"}\n",
+	)
 }
 
 func r2ControlPlaneNomadContract() string {

@@ -51,10 +51,10 @@ func OpenOverSSH(ctx context.Context, rt *opruntime.Runtime, cfg Config) (*pgx.C
 		}
 		path := cfg.PasswordPath
 		if path == "" {
-			path = opruntime.SiteSecretVarsPath(rt.RepoRoot, rt.Site)
+			path = opruntime.SiteBootstrapVarsPath(rt.RepoRoot, rt.Site)
 		}
 		var err error
-		password, err = opruntime.ReadSecretVarsValue(path, key)
+		password, err = opruntime.ReadBootstrapVarsValue(path, key)
 		if err != nil {
 			return nil, err
 		}

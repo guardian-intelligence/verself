@@ -47,12 +47,10 @@ func bootstrapDeploy(args []string) error {
 	sha := fs.String("sha", "", "Git SHA to bootstrap deploy.")
 	repoRoot := fs.String("repo-root", "", "Repository root.")
 	inventory := fs.String("inventory", "", "Site inventory path.")
-	secretVars := fs.String("secret-vars-file", "", "Generated Ansible secret vars path.")
-	runtimeSeed := fs.String("openbao-runtime-seed-file", "", "Filtered OpenBao runtime seed path.")
+	bootstrapVars := fs.String("bootstrap-vars-file", "", "Generated Ansible bootstrap vars path.")
 	sshTransport := fs.String("ssh-transport", "recovery", "SSH transport for the Nomad tunnel: recovery or inventory.")
 	r2ControlPlaneBinary := fs.String("r2-control-plane-binary", "", "Bazel-resolved cloudflare-r2-control-plane binary.")
-	r2CredentialSource := fs.String("r2-credential-source", "env-file", "R2 credential source for bootstrap publishing: env, env-file, or auto.")
-	r2CredentialsFile := fs.String("r2-credentials-file", "", "Environment file containing scoped R2 publisher credentials.")
+	cloudflareBinary := fs.String("cloudflare-control-plane-binary", "", "Bazel-resolved cloudflare-control-plane binary.")
 	timeout := fs.Duration("timeout", 15*time.Minute, "Bootstrap deploy timeout.")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -76,12 +74,10 @@ func bootstrapDeploy(args []string) error {
 		SHA:                  *sha,
 		RepoRoot:             root,
 		InventoryPath:        inventoryPath,
-		SecretVarsPath:       *secretVars,
-		RuntimeSeedPath:      *runtimeSeed,
+		BootstrapVarsPath:    *bootstrapVars,
 		SSHTransport:         *sshTransport,
 		R2ControlPlaneBinary: *r2ControlPlaneBinary,
-		R2CredentialSource:   *r2CredentialSource,
-		R2CredentialsFile:    *r2CredentialsFile,
+		CloudflareBinary:     *cloudflareBinary,
 		Timeout:              *timeout,
 	})
 }
@@ -137,7 +133,6 @@ func seedMaterialize(args []string) error {
 	seed := fs.String("seed-bundle", "", "Operator-provided seed bundle path.")
 	repoRoot := fs.String("repo-root", "", "Repository root for owner-local deployment declarations.")
 	vars := fs.String("out-vars", "", "Ansible vars output path.")
-	runtimeSeed := fs.String("out-openbao-runtime-seed", "", "Filtered OpenBao runtime seed output path.")
 	evidence := fs.String("out-evidence", "", "Fingerprint evidence output path.")
 	force := fs.Bool("force", false, "Overwrite existing generated outputs.")
 	if err := fs.Parse(args); err != nil {
@@ -151,22 +146,17 @@ func seedMaterialize(args []string) error {
 	if varsPath == "" {
 		varsPath = defaultVarsPath(*site)
 	}
-	runtimeSeedPath := *runtimeSeed
-	if runtimeSeedPath == "" {
-		runtimeSeedPath = defaultRuntimeSeedPath(*site)
-	}
 	evidencePath := *evidence
 	if evidencePath == "" {
 		evidencePath = defaultEvidencePath(*site)
 	}
 	report, err := sitebootstrap.MaterializeSeedBundle(sitebootstrap.MaterializeOptions{
-		Site:            *site,
-		SeedPath:        seedPath,
-		VarsPath:        varsPath,
-		RuntimeSeedPath: runtimeSeedPath,
-		Evidence:        evidencePath,
-		RepoRoot:        *repoRoot,
-		ForceWrite:      *force,
+		Site:       *site,
+		SeedPath:   seedPath,
+		VarsPath:   varsPath,
+		Evidence:   evidencePath,
+		RepoRoot:   *repoRoot,
+		ForceWrite: *force,
 	})
 	if err != nil {
 		return err
@@ -267,11 +257,7 @@ func defaultSeedBundlePath(site string) string {
 }
 
 func defaultVarsPath(site string) string {
-	return filepath.Join(".verself", "site-bootstrap", site, "ansible-secrets.json")
-}
-
-func defaultRuntimeSeedPath(site string) string {
-	return filepath.Join(".verself", "site-bootstrap", site, "openbao-runtime-seed.json")
+	return filepath.Join(".verself", "site-bootstrap", site, "bootstrap-vars.json")
 }
 
 func defaultEvidencePath(site string) string {

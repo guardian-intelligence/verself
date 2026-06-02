@@ -322,7 +322,7 @@ operation SubmitDeployment {
         DeploymentBootstrapS3BazeliskError,
         DeploymentBootstrapS3GitError,
         DeploymentBootstrapS4OpenBaoRuntimeSecretDeliveryError,
-        DeploymentBootstrapS5SiteSeedImportedError,
+        DeploymentBootstrapS5SubstrateControlPlaneAppliedError,
         DeploymentBootstrapS6NomadError,
         DeploymentBootstrapS7PostgresError,
         DeploymentBootstrapS7RepoRootError,
@@ -563,8 +563,8 @@ structure DeploymentBootstrapS4OpenBaoRuntimeSecretDeliveryError with [ProblemDe
 
 @error("server")
 @httpError(503)
-@problem(type: "urn:verself:problem:deployment:bootstrap:s5:site_seed_imported", code: "deployment.bootstrap.s5.site_seed_imported")
-structure DeploymentBootstrapS5SiteSeedImportedError with [ProblemDetails] {}
+@problem(type: "urn:verself:problem:deployment:bootstrap:s5:substrate_control_plane_applied", code: "deployment.bootstrap.s5.substrate_control_plane_applied")
+structure DeploymentBootstrapS5SubstrateControlPlaneAppliedError with [ProblemDetails] {}
 
 @error("server")
 @httpError(503)

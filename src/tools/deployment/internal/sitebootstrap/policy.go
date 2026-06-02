@@ -37,21 +37,11 @@ func loadSeedPolicy(repoRoot, site string) (seedPolicy, error) {
 	}
 	policy := seedPolicy{keys: map[string]seedKey{}, controllerOnly: map[string]seedKey{}}
 	if catalogExists {
-		for key, meta := range generatedSeedKeys {
-			policy.keys[key] = meta
-		}
 		for key, meta := range machineProvisionedSeedKeys {
 			policy.keys[key] = meta
 		}
 	} else {
 		policy = fallbackSeedPolicy()
-	}
-	siteVars, err := loadSiteVars(root, site)
-	if err != nil {
-		return seedPolicy{}, err
-	}
-	if err := collectOwnerLocalSeedKeys(root, siteVars, policy.keys); err != nil {
-		return seedPolicy{}, err
 	}
 	if catalogExists {
 		if err := collectCatalogSeedKeys(catalogPath, &policy); err != nil {
@@ -69,155 +59,7 @@ func fallbackSeedPolicy() seedPolicy {
 	for key, meta := range machineProvisionedSeedKeys {
 		policy.keys[key] = meta
 	}
-	for key, meta := range generatedSeedKeys {
-		policy.keys[key] = meta
-	}
 	return policy
-}
-
-func loadSiteVars(root, site string) (map[string]string, error) {
-	path := filepath.Join(root, "src", "host", "sites", site, "vars.yml")
-	body, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return map[string]string{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	values := map[string]any{}
-	if err := yaml.Unmarshal(body, &values); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
-	}
-	out := map[string]string{}
-	for key, value := range values {
-		out[key] = strings.TrimSpace(fmt.Sprint(value))
-	}
-	return out, nil
-}
-
-func collectOwnerLocalSeedKeys(root string, siteVars map[string]string, keys map[string]seedKey) error {
-	for _, relRoot := range []string{"src/services", "src/integrations", "src/infrastructure-components", "src/viteplus-monorepo/apps"} {
-		absRoot := filepath.Join(root, filepath.FromSlash(relRoot))
-		if _, err := os.Stat(absRoot); errors.Is(err, fs.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return fmt.Errorf("stat %s: %w", relRoot, err)
-		}
-		if err := filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() || filepath.Base(filepath.Dir(path)) != "deploy" || filepath.Ext(path) != ".yml" {
-				return nil
-			}
-			switch filepath.Base(path) {
-			case "runtime-secrets.yml", "openbao.yml":
-				var doc deploycontract.RuntimeSecretsFile
-				if err := decodeYAMLFile(path, &doc); err != nil {
-					return err
-				}
-				for _, seed := range doc.Seeds {
-					addOwnerLocalSiteSecret(siteVars, keys, seed.SiteSecret)
-				}
-			}
-			return nil
-		}); err != nil {
-			return fmt.Errorf("walk %s: %w", relRoot, err)
-		}
-	}
-	return nil
-}
-
-func loadRuntimeSiteSecretKeys(root string) ([]string, error) {
-	root = strings.TrimSpace(root)
-	if root == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("resolve working directory: %w", err)
-		}
-		root = wd
-	}
-	seen := map[string]bool{}
-	for _, relRoot := range []string{"src/services", "src/integrations", "src/infrastructure-components", "src/viteplus-monorepo/apps"} {
-		absRoot := filepath.Join(root, filepath.FromSlash(relRoot))
-		if _, err := os.Stat(absRoot); errors.Is(err, fs.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return nil, fmt.Errorf("stat %s: %w", relRoot, err)
-		}
-		if err := filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() || filepath.Base(filepath.Dir(path)) != "deploy" || filepath.Ext(path) != ".yml" {
-				return nil
-			}
-			switch filepath.Base(path) {
-			case "runtime-secrets.yml", "openbao.yml":
-				var doc deploycontract.RuntimeSecretsFile
-				if err := decodeYAMLFile(path, &doc); err != nil {
-					return err
-				}
-				for _, seed := range doc.Seeds {
-					key := strings.TrimSpace(seed.SiteSecret)
-					if key != "" {
-						seen[key] = true
-					}
-				}
-			}
-			return nil
-		}); err != nil {
-			return nil, fmt.Errorf("walk %s: %w", relRoot, err)
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for key := range seen {
-		out = append(out, key)
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
-func requiredRuntimeSiteSecretKeys(root, site string) (map[string]seedKey, error) {
-	keys, err := loadRuntimeSiteSecretKeys(root)
-	if err != nil {
-		return nil, err
-	}
-	policy, err := loadSeedPolicy(root, site)
-	if err != nil {
-		return nil, err
-	}
-	required := map[string]seedKey{}
-	for _, key := range keys {
-		meta, ok := policy.keys[key]
-		if !ok {
-			continue
-		}
-		if strings.HasPrefix(meta.Source, "machine_provisioned") {
-			continue
-		}
-		required[key] = meta
-	}
-	return required, nil
-}
-
-func addOwnerLocalSiteSecret(siteVars map[string]string, keys map[string]seedKey, key string) {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return
-	}
-	if strings.TrimSpace(siteVars[key]) != "" {
-		return
-	}
-	if meta, ok := generatedSeedKeys[key]; ok {
-		keys[key] = meta
-		return
-	}
-	if meta, ok := machineProvisionedSeedKeys[key]; ok {
-		keys[key] = meta
-		return
-	}
-	keys[key] = seedKey{Source: "provider_runtime"}
 }
 
 func collectCatalogSeedKeys(path string, policy *seedPolicy) error {
@@ -262,9 +104,6 @@ func addCatalogKey(keys map[string]seedKey, key, source string) {
 	if key == "" {
 		return
 	}
-	if _, generated := generatedSeedKeys[key]; generated {
-		return
-	}
 	if machine, ok := machineProvisionedSeedKeys[key]; ok {
 		keys[key] = machine
 		return
@@ -288,7 +127,7 @@ func decodeYAMLFile(path string, into any) error {
 func (p seedPolicy) operatorProvidedKeys() []string {
 	var out []string
 	for key, meta := range p.keys {
-		if strings.HasPrefix(meta.Source, "generated") || strings.HasPrefix(meta.Source, "machine_provisioned") {
+		if strings.HasPrefix(meta.Source, "machine_provisioned") {
 			continue
 		}
 		out = append(out, key)
@@ -301,17 +140,6 @@ func (p seedPolicy) bootstrapMaterializedKeys() []string {
 	out := make([]string, 0, len(p.keys))
 	for key, meta := range p.keys {
 		if meta.RequiredForBootstrap {
-			out = append(out, key)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-func (p seedPolicy) generatedKeys() []string {
-	var out []string
-	for key, meta := range p.keys {
-		if strings.HasPrefix(meta.Source, "generated") {
 			out = append(out, key)
 		}
 	}

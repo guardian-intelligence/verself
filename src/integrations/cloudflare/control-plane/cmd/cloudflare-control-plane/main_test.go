@@ -1,45 +1,60 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/verself/integrations/cloudflare/control-plane/internal/r2control"
 )
 
-func TestWriteBootstrapPublisherEnvFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "site-bootstrap", "gamma", "r2-publisher.env")
+func TestWriteBootstrapPublisherCredentialUsesFixedFD(t *testing.T) {
 	publisher := r2control.CreatedAPIToken{
-		ID:          "token-id",
-		S3SecretKey: "publisher-secret",
+		ID:            "token-id",
+		S3AccessKeyID: "access-key-id",
+		S3SecretKey:   "publisher-secret",
+		ExpiresOn:     "2026-06-02T20:00:00Z",
 	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reader.Close() }()
+	savedFD, saveErr := syscall.Dup(bootstrapPublisherOutputFD)
+	if saveErr != nil {
+		savedFD = -1
+	}
+	if err := syscall.Dup2(int(writer.Fd()), bootstrapPublisherOutputFD); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if savedFD >= 0 {
+			_ = syscall.Dup2(savedFD, bootstrapPublisherOutputFD)
+			_ = syscall.Close(savedFD)
+		} else {
+			_ = syscall.Close(bootstrapPublisherOutputFD)
+		}
+	}()
 
-	if err := writeBootstrapPublisherEnvFile(path, publisher); err != nil {
+	if err := writeBootstrapPublisherCredential(publisher); err != nil {
 		t.Fatal(err)
 	}
+	_ = writer.Close()
 
-	info, err := os.Stat(path)
+	var got bootstrapPublisherCredential
+	err = json.NewDecoder(reader).Decode(&got)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("mode = %o, want 0600", info.Mode().Perm())
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	values, err := r2control.ParseEnvFile(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if values["CLOUDFLARE_R2_PUBLISHER_TOKEN_ID"] != "token-id" ||
-		values["CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY"] != "publisher-secret" {
-		t.Fatalf("unexpected env values: %#v", values)
+	if got.AccessKeyID != publisher.S3AccessKeyID || got.SecretAccessKey != publisher.S3SecretKey || got.TokenID != publisher.ID || got.ExpiresOn != publisher.ExpiresOn {
+		t.Fatalf("credential = %#v", got)
 	}
 }
 
@@ -55,31 +70,86 @@ func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsUnknownAccountAdminSource(t *testing.T) {
+func TestParentCredentialsAlwaysComeFromOpenBao(t *testing.T) {
 	cfg := validTestConfig()
-	cfg.accountAdminSource = "legacy"
+	cfg.openBaoAddr = "https://openbao.internal"
+	cfg.openBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
+	cfg.openBaoCACertFile = "/openbao/ca.pem"
+	cfg.openBaoTokenEnv = "BAO_TOKEN"
+	cfg.openBaoTokenFile = "/run/openbao/token"
 
-	err := cfg.validate()
-	if err == nil {
-		t.Fatal("expected validation error")
+	got := cfg.parentCredentialConfig()
+	if got.Source != r2control.ParentCredentialSourceOpenBao {
+		t.Fatalf("source = %q", got.Source)
+	}
+	if got.CredentialsFile != "" || got.AccessKeyIDEnv != "" || got.SecretAccessKeyEnv != "" || got.APITokenEnv != "" || got.SessionTokenEnv != "" {
+		t.Fatalf("parent credential config still exposes static credential selectors: %+v", got)
+	}
+	if got.OpenBaoAddr != cfg.openBaoAddr || got.OpenBaoPath != cfg.openBaoPath || got.OpenBaoCACertFile != cfg.openBaoCACertFile || got.OpenBaoTokenEnv != cfg.openBaoTokenEnv || got.OpenBaoTokenFile != cfg.openBaoTokenFile {
+		t.Fatalf("OpenBao config = %+v", got)
 	}
 }
 
-func TestPublisherDefaultsToControllerOpenBaoPersistence(t *testing.T) {
-	cfg := validTestConfig()
-	cfg.action = "ensure-publisher"
+func TestSiteBootstrapSeedUpdatesOnlyIncludeNomadArtifactGetter(t *testing.T) {
+	getter := r2control.CreatedAPIToken{
+		S3AccessKeyID: "getter-access-key",
+		S3SecretKey:   "getter-secret-key",
+	}
 
-	if got := cfg.effectiveChildCredentialPersistence(); got != childPersistenceControllerOpenBao {
-		t.Fatalf("publisher persistence = %q, want %q", got, childPersistenceControllerOpenBao)
+	got := siteBootstrapSeedUpdates(getter)
+	if len(got) != 2 {
+		t.Fatalf("updates = %#v", got)
+	}
+	if got["nomad_artifact_getter_s3_access_key_id"] != getter.S3AccessKeyID || got["nomad_artifact_getter_s3_secret_access_key"] != getter.S3SecretKey {
+		t.Fatalf("updates = %#v", got)
 	}
 }
 
-func TestBootstrapProvisioningRequiresSiteSeedPersistence(t *testing.T) {
-	cfg := validTestConfig()
-	cfg.action = "provision-site-bootstrap"
+func TestRuntimeSecretOpenBaoPathEscapesName(t *testing.T) {
+	got := runtimeSecretOpenBaoPath("object-storage-service.r2.admin_access_key_id")
 
-	if got := cfg.effectiveChildCredentialPersistence(); got != childPersistenceSiteSeed {
-		t.Fatalf("bootstrap persistence = %q, want %q", got, childPersistenceSiteSeed)
+	if got != "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" {
+		t.Fatalf("path = %q", got)
+	}
+}
+
+func TestWriteRuntimeSecretsWritesKVValues(t *testing.T) {
+	writes := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s", r.Method)
+		}
+		if r.Header.Get("X-Vault-Token") != "openbao-token" {
+			t.Fatalf("token header = %q", r.Header.Get("X-Vault-Token"))
+		}
+		var body struct {
+			Data map[string]string `json:"data"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		writes[strings.TrimPrefix(r.URL.Path, "/v1/")] = body.Data["value"]
+		_, _ = w.Write([]byte(`{"data":{}}`))
+	}))
+	defer server.Close()
+	t.Setenv("BAO_TOKEN", "openbao-token")
+
+	err := writeRuntimeSecrets(context.Background(), config{
+		openBaoAddr:        "http://controller-openbao.invalid",
+		runtimeOpenBaoAddr: server.URL,
+		timeout:            time.Second,
+	}, map[string]string{
+		"cloudflare-r2-control-plane.publisher_token_id":    "publisher-id",
+		"object-storage-service.r2.proxy_secret_access_key": "proxy-secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if writes["kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id"] != "publisher-id" {
+		t.Fatalf("publisher write = %#v", writes)
+	}
+	if writes["kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key"] != "proxy-secret" {
+		t.Fatalf("proxy write = %#v", writes)
 	}
 }
 
@@ -222,10 +292,8 @@ func validTestConfig() config {
 		bucket:                 "verself-deployment-artifacts",
 		keyPrefix:              "sha256",
 		region:                 "auto",
-		accountAdminSource:     accountAdminSourceOpenBao,
 		tempTTL:                15 * time.Minute,
 		uploadSessionTTL:       30 * time.Minute,
-		ephemeralPublisherTTL:  time.Hour,
 		childTokenTTL:          7 * 24 * time.Hour,
 		accountAdminTTL:        7 * 24 * time.Hour,
 		inventoryDepth:         2,

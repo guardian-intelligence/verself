@@ -76,7 +76,7 @@ func run() error {
 	recoverySSHReady := cfg.String("VERSELF_RECOVERY_SSH_READY", "")
 	r2ControlPlaneAddr := cfg.String("VERSELF_R2_CONTROL_PLANE_ADDR", "http://127.0.0.1:18732")
 	r2ControlPlaneToken := cfg.RequireCredential("r2-control-plane-token")
-	seedImportMarker := cfg.RequireCredential("site-seed-import-marker")
+	substrateControlPlaneMarker := cfg.RequireCredential("substrate-control-plane-marker")
 	operatorToken := cfg.CredentialOr("operator-deploy-token", "")
 	bazelJobsRaw := cfg.RequireString("VERSELF_DEPLOY_BAZEL_JOBS")
 	githubAudience := cfg.URL("VERSELF_DEPLOY_GITHUB_OIDC_AUDIENCE", "")
@@ -117,15 +117,15 @@ func run() error {
 	svc := &deploymentapi.Service{
 		Store: deploymentapi.Store{PG: pg},
 		Config: deploymentapi.Config{
-			Site:                site,
-			RepoRoot:            repoRoot,
-			R2ControlPlaneToken: r2ControlPlaneToken,
-			SeedImportMarker:    seedImportMarker,
-			R2ControlPlaneAddr:  r2ControlPlaneAddr,
-			NomadAddr:           nomadAddr,
-			NomadAllocID:        nomadAllocID,
-			RecoverySSHReady:    recoverySSHReady,
-			BazelJobs:           bazelJobs,
+			Site:                        site,
+			RepoRoot:                    repoRoot,
+			R2ControlPlaneToken:         r2ControlPlaneToken,
+			SubstrateControlPlaneMarker: substrateControlPlaneMarker,
+			R2ControlPlaneAddr:          r2ControlPlaneAddr,
+			NomadAddr:                   nomadAddr,
+			NomadAllocID:                nomadAllocID,
+			RecoverySSHReady:            recoverySSHReady,
+			BazelJobs:                   bazelJobs,
 		},
 	}
 	if err := svc.Store.Ready(ctx); err != nil {

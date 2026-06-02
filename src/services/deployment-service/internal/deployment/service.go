@@ -23,15 +23,15 @@ var gitSHARegex = regexp.MustCompile(`^[0-9a-f]{40}$`)
 const dependencyProbeDeadline = 900 * time.Millisecond
 
 type Config struct {
-	Site                string
-	RepoRoot            string
-	R2ControlPlaneToken string
-	SeedImportMarker    string
-	R2ControlPlaneAddr  string
-	NomadAddr           string
-	NomadAllocID        string
-	RecoverySSHReady    string
-	BazelJobs           int
+	Site                        string
+	RepoRoot                    string
+	R2ControlPlaneToken         string
+	SubstrateControlPlaneMarker string
+	R2ControlPlaneAddr          string
+	NomadAddr                   string
+	NomadAllocID                string
+	RecoverySSHReady            string
+	BazelJobs                   int
 }
 
 type Service struct {
@@ -73,7 +73,9 @@ func (s *Service) DependencyChecks(ctx context.Context) []DependencyCheck {
 		{Stage: "S3", Name: "bazelisk", Run: func(context.Context) DependencyCheck { return s3Bazelisk() }},
 		{Stage: "S3", Name: "git", Run: func(context.Context) DependencyCheck { return s3Git() }},
 		{Stage: "S4", Name: "openbao_runtime_secret_delivery", Run: func(context.Context) DependencyCheck { return s4OpenBaoToken(s.Config.R2ControlPlaneToken) }},
-		{Stage: "S5", Name: "site_seed_imported", Run: func(context.Context) DependencyCheck { return s5SiteSeed(s.Config.SeedImportMarker) }},
+		{Stage: "S5", Name: "substrate_control_plane_applied", Run: func(context.Context) DependencyCheck {
+			return s5SubstrateControlPlane(s.Config.SubstrateControlPlaneMarker)
+		}},
 		{Stage: "S6", Name: "nomad", Run: func(ctx context.Context) DependencyCheck { return s6Nomad(ctx, s.Config.NomadAddr) }},
 		{Stage: "S7", Name: "postgres", Run: func(ctx context.Context) DependencyCheck { return s7Postgres(ctx, s.Store) }},
 		{Stage: "S7", Name: "repo_root", Run: func(ctx context.Context) DependencyCheck { return s7RepoRoot(ctx, s.Config.RepoRoot) }},
@@ -374,11 +376,11 @@ func s4OpenBaoToken(token string) DependencyCheck {
 	return dependencyFailed("S4", "openbao_runtime_secret_delivery", "deployment-service.r2_control_plane_token was not delivered")
 }
 
-func s5SiteSeed(token string) DependencyCheck {
+func s5SubstrateControlPlane(token string) DependencyCheck {
 	if strings.TrimSpace(token) != "" {
-		return dependencyOK("S5", "site_seed_imported")
+		return dependencyOK("S5", "substrate_control_plane_applied")
 	}
-	return dependencyFailed("S5", "site_seed_imported", "substrate-control-plane import marker was not delivered from OpenBao")
+	return dependencyFailed("S5", "substrate_control_plane_applied", "substrate-control-plane apply marker was not delivered from OpenBao")
 }
 
 func s6Nomad(ctx context.Context, addr string) DependencyCheck {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -22,9 +23,12 @@ import (
 const (
 	defaultNomadRemoteAddr = "127.0.0.1:4646"
 
-	defaultR2CredentialSource = "env-file"
-	bootstrapR2AuthTokenEnv   = "VERSELF_BOOTSTRAP_R2_CONTROL_PLANE_TOKEN"
-	openBaoRootKeyPath        = "/etc/verself/bootstrap/openbao-root.key"
+	bootstrapR2CredentialSource  = "env"
+	bootstrapR2AccessKeyIDEnv    = "CLOUDFLARE_R2_PUBLISHER_TOKEN_ID"
+	bootstrapR2SecretAccessEnv   = "CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY"
+	bootstrapR2AuthTokenEnv      = "VERSELF_BOOTSTRAP_R2_CONTROL_PLANE_TOKEN"
+	bootstrapR2PublisherTokenEnv = "VERSELF_BOOTSTRAP_R2_PUBLISHER_TOKEN_ID"
+	openBaoRootKeyPath           = "/etc/verself/bootstrap/openbao-root.key"
 )
 
 type BootstrapDeployOptions struct {
@@ -32,13 +36,18 @@ type BootstrapDeployOptions struct {
 	SHA                  string
 	RepoRoot             string
 	InventoryPath        string
-	SecretVarsPath       string
-	RuntimeSeedPath      string
+	BootstrapVarsPath    string
 	SSHTransport         string
 	R2ControlPlaneBinary string
-	R2CredentialSource   string
-	R2CredentialsFile    string
+	CloudflareBinary     string
 	Timeout              time.Duration
+}
+
+type bootstrapPublisherCredential struct {
+	AccessKeyID     string `json:"access_key_id"`
+	SecretAccessKey string `json:"secret_access_key"`
+	TokenID         string `json:"token_id"`
+	ExpiresOn       string `json:"expires_on"`
 }
 
 type inventoryTarget struct {
@@ -55,7 +64,7 @@ type childProcess struct {
 	done chan error
 }
 
-func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) error {
+func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err error) {
 	opts = normalizeBootstrapDeployOptions(opts)
 	if opts.Site == "" {
 		return errors.New("site is required")
@@ -72,7 +81,7 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) error 
 	if err := checkLocalBootstrapMaterial(opts); err != nil {
 		return err
 	}
-	if err := checkBootstrapR2PublisherInput(opts); err != nil {
+	if err := checkBootstrapArtifactPublishingInput(opts); err != nil {
 		return err
 	}
 	target, err := loadBootstrapInventoryTarget(opts.InventoryPath, opts.SSHTransport)
@@ -97,9 +106,21 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) error 
 	if err != nil {
 		return err
 	}
+	publisher, err := mintBootstrapPublisher(ctx, opts)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		revokeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if revokeErr := revokeBootstrapPublisher(revokeCtx, opts, publisher.TokenID); revokeErr != nil {
+			err = errors.Join(err, revokeErr)
+		}
+	}()
+
 	r2ListenAddr := "127.0.0.1:" + strconv.Itoa(r2Port)
 	r2ControlPlaneURL := "http://" + r2ListenAddr
-	r2Cmd, err := startBootstrapR2ControlPlane(ctx, opts, r2ListenAddr, r2Token)
+	r2Cmd, err := startBootstrapR2ControlPlane(ctx, opts, r2ListenAddr, r2Token, publisher)
 	if err != nil {
 		return err
 	}
@@ -150,52 +171,30 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 	opts.SHA = strings.TrimSpace(opts.SHA)
 	opts.RepoRoot = strings.TrimSpace(opts.RepoRoot)
 	opts.InventoryPath = strings.TrimSpace(opts.InventoryPath)
-	opts.SecretVarsPath = strings.TrimSpace(opts.SecretVarsPath)
-	opts.RuntimeSeedPath = strings.TrimSpace(opts.RuntimeSeedPath)
+	opts.BootstrapVarsPath = strings.TrimSpace(opts.BootstrapVarsPath)
 	opts.SSHTransport = strings.TrimSpace(opts.SSHTransport)
 	opts.R2ControlPlaneBinary = strings.TrimSpace(opts.R2ControlPlaneBinary)
-	opts.R2CredentialSource = strings.TrimSpace(opts.R2CredentialSource)
-	opts.R2CredentialsFile = strings.TrimSpace(opts.R2CredentialsFile)
+	opts.CloudflareBinary = strings.TrimSpace(opts.CloudflareBinary)
 	if opts.Timeout == 0 {
 		opts.Timeout = 15 * time.Minute
 	}
 	if opts.SSHTransport == "" {
 		opts.SSHTransport = "recovery"
 	}
-	if opts.R2CredentialSource == "" {
-		opts.R2CredentialSource = defaultR2CredentialSource
-	}
 	if opts.RepoRoot != "" && opts.Site != "" {
-		if opts.SecretVarsPath == "" {
-			opts.SecretVarsPath = defaultLocalSecretVarsPath(opts.RepoRoot, opts.Site)
+		if opts.BootstrapVarsPath == "" {
+			opts.BootstrapVarsPath = defaultLocalBootstrapVarsPath(opts.RepoRoot, opts.Site)
 		} else {
-			opts.SecretVarsPath = resolveLocalBootstrapPath(opts.RepoRoot, opts.SecretVarsPath)
-		}
-		if opts.RuntimeSeedPath == "" {
-			opts.RuntimeSeedPath = defaultLocalRuntimeSeedPath(opts.RepoRoot, opts.Site)
-		} else {
-			opts.RuntimeSeedPath = resolveLocalBootstrapPath(opts.RepoRoot, opts.RuntimeSeedPath)
+			opts.BootstrapVarsPath = resolveLocalBootstrapPath(opts.RepoRoot, opts.BootstrapVarsPath)
 		}
 		opts.R2ControlPlaneBinary = resolveLocalBootstrapPath(opts.RepoRoot, opts.R2ControlPlaneBinary)
-		if opts.R2CredentialsFile == "" {
-			opts.R2CredentialsFile = defaultLocalR2PublisherCredentialsPath(opts.RepoRoot, opts.Site)
-		} else {
-			opts.R2CredentialsFile = resolveLocalBootstrapPath(opts.RepoRoot, opts.R2CredentialsFile)
-		}
+		opts.CloudflareBinary = resolveLocalBootstrapPath(opts.RepoRoot, opts.CloudflareBinary)
 	}
 	return opts
 }
 
-func defaultLocalSecretVarsPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "ansible-secrets.json")
-}
-
-func defaultLocalRuntimeSeedPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "openbao-runtime-seed.json")
-}
-
-func defaultLocalR2PublisherCredentialsPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "r2-publisher.env")
+func defaultLocalBootstrapVarsPath(repoRoot, site string) string {
+	return filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "bootstrap-vars.json")
 }
 
 func resolveLocalBootstrapPath(repoRoot, path string) string {
@@ -209,16 +208,13 @@ func resolveLocalBootstrapPath(repoRoot, path string) string {
 }
 
 func checkLocalBootstrapMaterial(opts BootstrapDeployOptions) error {
-	if err := checkLocalSecretFile(opts.SecretVarsPath, "generated Ansible secret vars"); err != nil {
-		return fmt.Errorf("%w; run aspect site materialize-seed --site=%s first", err, opts.Site)
-	}
-	if err := checkLocalRuntimeSeed(opts.RuntimeSeedPath, opts.Site, opts.RepoRoot); err != nil {
+	if err := checkLocalPrivateFile(opts.BootstrapVarsPath, "generated bootstrap vars"); err != nil {
 		return fmt.Errorf("%w; run aspect site materialize-seed --site=%s first", err, opts.Site)
 	}
 	return nil
 }
 
-func checkLocalSecretFile(path, label string) error {
+func checkLocalPrivateFile(path, label string) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -238,59 +234,74 @@ func checkLocalSecretFile(path, label string) error {
 	return nil
 }
 
-func checkLocalRuntimeSeed(path, site, repoRoot string) error {
-	if err := checkLocalSecretFile(path, "OpenBao runtime seed"); err != nil {
+func checkBootstrapArtifactPublishingInput(opts BootstrapDeployOptions) error {
+	if opts.CloudflareBinary == "" {
+		return errors.New("bootstrap deploy requires --cloudflare-control-plane-binary")
+	}
+	if err := checkLocalExecutable(opts.CloudflareBinary, "Cloudflare control-plane binary"); err != nil {
 		return err
 	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read local OpenBao runtime seed at %s: %w", path, err)
-	}
-	var seed RuntimeSeedBundle
-	if err := json.Unmarshal(body, &seed); err != nil {
-		return fmt.Errorf("decode local OpenBao runtime seed at %s: %w", path, err)
-	}
-	if seed.Version != RuntimeSeedBundleVersion {
-		return fmt.Errorf("local OpenBao runtime seed at %s has unsupported version %q", path, seed.Version)
-	}
-	if seed.Site != site {
-		return fmt.Errorf("local OpenBao runtime seed at %s is for site %q, not %q", path, seed.Site, site)
-	}
-	if len(seed.Values) == 0 {
-		return fmt.Errorf("local OpenBao runtime seed at %s has no values", path)
-	}
-	required, err := requiredRuntimeSiteSecretKeys(repoRoot, site)
-	if err != nil {
-		return err
-	}
-	var missing []MissingSeedValue
-	for key, meta := range required {
-		if strings.TrimSpace(seed.Values[key]) == "" {
-			missing = append(missing, MissingSeedValue{Key: key, Source: meta.Source})
-		}
-	}
-	if len(missing) > 0 {
-		return MissingRuntimeSeedValuesError{Path: path, Missing: missing}
-	}
-	return nil
-}
-
-func checkBootstrapR2PublisherInput(opts BootstrapDeployOptions) error {
 	if opts.R2ControlPlaneBinary == "" {
 		return errors.New("bootstrap deploy requires --r2-control-plane-binary")
 	}
 	if err := checkLocalExecutable(opts.R2ControlPlaneBinary, "Cloudflare R2 control-plane binary"); err != nil {
 		return err
 	}
-	switch opts.R2CredentialSource {
-	case "env", "env-file", "auto":
-	default:
-		return fmt.Errorf("bootstrap R2 credential source must be env, env-file, or auto, got %q", opts.R2CredentialSource)
+	return nil
+}
+
+func mintBootstrapPublisher(ctx context.Context, opts BootstrapDeployOptions) (bootstrapPublisherCredential, error) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return bootstrapPublisherCredential{}, fmt.Errorf("create bootstrap publisher pipe: %w", err)
 	}
-	if opts.R2CredentialSource == "env-file" || opts.R2CredentialSource == "auto" {
-		if err := checkLocalSecretFile(opts.R2CredentialsFile, "scoped R2 publisher credentials"); err != nil {
-			return fmt.Errorf("%w; run aspect integrations cloudflare-control-plane --site=%s --action=provision-site-bootstrap first", err, opts.Site)
-		}
+	defer func() { _ = reader.Close() }()
+	cmd := exec.CommandContext(ctx, opts.CloudflareBinary,
+		"--action=mint-bootstrap-publisher",
+		"--site="+opts.Site,
+		"--repo-root="+opts.RepoRoot,
+	)
+	cmd.ExtraFiles = []*os.File{writer}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		_ = writer.Close()
+		return bootstrapPublisherCredential{}, fmt.Errorf("start Cloudflare bootstrap publisher mint: %w", err)
+	}
+	_ = writer.Close()
+	body, readErr := io.ReadAll(io.LimitReader(reader, 1<<20))
+	waitErr := cmd.Wait()
+	if waitErr != nil {
+		return bootstrapPublisherCredential{}, fmt.Errorf("Cloudflare bootstrap publisher mint failed: %w", waitErr)
+	}
+	if readErr != nil {
+		return bootstrapPublisherCredential{}, fmt.Errorf("read Cloudflare bootstrap publisher credential: %w", readErr)
+	}
+	var out bootstrapPublisherCredential
+	if err := json.Unmarshal(body, &out); err != nil {
+		return bootstrapPublisherCredential{}, fmt.Errorf("decode Cloudflare bootstrap publisher credential: %w", err)
+	}
+	if strings.TrimSpace(out.AccessKeyID) == "" || strings.TrimSpace(out.SecretAccessKey) == "" || strings.TrimSpace(out.TokenID) == "" {
+		return bootstrapPublisherCredential{}, errors.New("Cloudflare bootstrap publisher credential is incomplete")
+	}
+	return out, nil
+}
+
+func revokeBootstrapPublisher(ctx context.Context, opts BootstrapDeployOptions, tokenID string) error {
+	tokenID = strings.TrimSpace(tokenID)
+	if tokenID == "" {
+		return errors.New("Cloudflare bootstrap publisher token ID is required for revoke")
+	}
+	cmd := exec.CommandContext(ctx, opts.CloudflareBinary,
+		"--action=revoke-bootstrap-publisher",
+		"--site="+opts.Site,
+		"--repo-root="+opts.RepoRoot,
+	)
+	cmd.Env = append(os.Environ(), bootstrapR2PublisherTokenEnv+"="+tokenID)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("revoke Cloudflare bootstrap publisher token: %w", err)
 	}
 	return nil
 }
@@ -317,9 +328,12 @@ func startNomadTunnel(ctx context.Context, target inventoryTarget, localPort int
 	return cmd
 }
 
-func startBootstrapR2ControlPlane(ctx context.Context, opts BootstrapDeployOptions, listenAddr, token string) (*exec.Cmd, error) {
-	if err := checkBootstrapR2PublisherInput(opts); err != nil {
+func startBootstrapR2ControlPlane(ctx context.Context, opts BootstrapDeployOptions, listenAddr, token string, publisher bootstrapPublisherCredential) (*exec.Cmd, error) {
+	if err := checkBootstrapArtifactPublishingInput(opts); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(publisher.AccessKeyID) == "" || strings.TrimSpace(publisher.SecretAccessKey) == "" || strings.TrimSpace(publisher.TokenID) == "" {
+		return nil, errors.New("bootstrap publisher credential is incomplete")
 	}
 	args := []string{
 		"--action=serve",
@@ -327,16 +341,14 @@ func startBootstrapR2ControlPlane(ctx context.Context, opts BootstrapDeployOptio
 		"--repo-root=" + opts.RepoRoot,
 		"--listen=" + listenAddr,
 		"--auth-token-env=" + bootstrapR2AuthTokenEnv,
-		"--credential-source=" + opts.R2CredentialSource,
+		"--credential-source=" + bootstrapR2CredentialSource,
 	}
-	appendOptionalFlag := func(name, value string) {
-		if strings.TrimSpace(value) != "" {
-			args = append(args, name+"="+value)
-		}
-	}
-	appendOptionalFlag("--credentials-file", opts.R2CredentialsFile)
 	cmd := exec.CommandContext(ctx, opts.R2ControlPlaneBinary, args...)
-	cmd.Env = append(os.Environ(), bootstrapR2AuthTokenEnv+"="+token)
+	cmd.Env = append(os.Environ(),
+		bootstrapR2AuthTokenEnv+"="+token,
+		bootstrapR2AccessKeyIDEnv+"="+publisher.AccessKeyID,
+		bootstrapR2SecretAccessEnv+"="+publisher.SecretAccessKey,
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd, nil

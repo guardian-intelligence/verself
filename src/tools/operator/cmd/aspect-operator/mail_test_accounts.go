@@ -34,13 +34,13 @@ const (
 
 type mailTestAccountsOptions struct {
 	operatorRuntimeOptions
-	format         string
-	pgUser         string
-	pgRemotePort   int
-	secretVarsFile string
-	resetSecrets   bool
-	zitadelPATPath string
-	zitadelAddr    string
+	format            string
+	pgUser            string
+	pgRemotePort      int
+	bootstrapVarsFile string
+	resetSecrets      bool
+	zitadelPATPath    string
+	zitadelAddr       string
 }
 
 type testMailAccountSpec struct {
@@ -266,12 +266,12 @@ func cmdMailTestAccountsDelete(args []string) error {
 
 func newMailTestAccountsOptions() *mailTestAccountsOptions {
 	opts := &mailTestAccountsOptions{
-		format:         "table",
-		pgUser:         envOr("PG_USER", oppg.DefaultUser),
-		pgRemotePort:   envIntOr("PG_PORT", oppg.DefaultPort),
-		secretVarsFile: os.Getenv("VERSELF_SITE_SECRET_VARS_FILE"),
-		zitadelPATPath: mailZitadelAdminPATPath,
-		zitadelAddr:    mailZitadelRemote,
+		format:            "table",
+		pgUser:            envOr("PG_USER", oppg.DefaultUser),
+		pgRemotePort:      envIntOr("PG_PORT", oppg.DefaultPort),
+		bootstrapVarsFile: os.Getenv("VERSELF_BOOTSTRAP_VARS_FILE"),
+		zitadelPATPath:    mailZitadelAdminPATPath,
+		zitadelAddr:       mailZitadelRemote,
 	}
 	addOperatorRuntimeFlags(&opts.operatorRuntimeOptions)
 	return opts
@@ -284,7 +284,7 @@ func mailTestAccountsFlagSet(name string, opts *mailTestAccountsOptions) *flag.F
 	fs.StringVar(&opts.format, "format", opts.format, "Output format: table, json, csv, or tsv")
 	fs.StringVar(&opts.pgUser, "pg-user", opts.pgUser, "PostgreSQL user")
 	fs.IntVar(&opts.pgRemotePort, "pg-remote-port", opts.pgRemotePort, "Remote PostgreSQL port on the worker loopback")
-	fs.StringVar(&opts.secretVarsFile, "secret-vars-file", opts.secretVarsFile, "generated site secret vars file")
+	fs.StringVar(&opts.bootstrapVarsFile, "bootstrap-vars-file", opts.bootstrapVarsFile, "generated bootstrap vars file")
 	fs.StringVar(&opts.zitadelPATPath, "zitadel-admin-pat-path", opts.zitadelPATPath, "Remote Zitadel admin PAT path")
 	fs.StringVar(&opts.zitadelAddr, "zitadel-remote-addr", opts.zitadelAddr, "Remote Zitadel HTTP address reached over SSH")
 	return fs
@@ -1110,9 +1110,9 @@ func (c mailZitadelClient) doJSON(ctx context.Context, method, path string, body
 }
 
 func openMailOperatorPG(ctx context.Context, rt *opruntime.Runtime, opts *mailTestAccountsOptions, dbName string) (*pgx.Conn, error) {
-	passwordPath := opts.secretVarsFile
+	passwordPath := opts.bootstrapVarsFile
 	if passwordPath == "" {
-		passwordPath = opruntime.SiteSecretVarsPath(rt.RepoRoot, rt.Site)
+		passwordPath = opruntime.SiteBootstrapVarsPath(rt.RepoRoot, rt.Site)
 	}
 	return oppg.OpenOverSSH(ctx, rt, oppg.Config{
 		Database:     dbName,

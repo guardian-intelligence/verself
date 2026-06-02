@@ -79,7 +79,7 @@ S0 repo_metadata_only
   -> S4 bare_metal_allocated
   -> S5 host_openbao_installed
   -> S6 site_openbao_initialized
-  -> S7 site_openbao_seeded
+  -> S7 runtime_secret_policy_reconciled
   -> S8 nomad_ready
   -> S9 deployed
   -> S10 steady_state_rotation
@@ -92,17 +92,17 @@ S0 repo_metadata_only
 | `S2 provider_bootstrap_credentials_available` | Latitude, Cloudflare, and other pre-host API keys are acquired. | Bootstrap session memory until imported. | Import catalog-approved bootstrap keys. |
 | `S3 controller_openbao_seeded` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
 | `S4 bare_metal_allocated` | Latitude host exists and inventory can be written. | Provider credentials remain in controller OpenBao. | Host bootstrap connects over SSH. |
-| `S5 host_openbao_installed` | Host convergence copies the OpenBao binary, configuration, TLS files, and service definition to the host. | No site secrets copied yet. | Start OpenBao and initialize the site store. |
-| `S6 site_openbao_initialized` | The host OpenBao Raft store, recovery material, auth mounts, and base policies exist for this site. The initial root token is used only inside the `bao operator init` transaction. | Site OpenBao and operator-held recovery material. | Import a wrapped site seed bundle. |
-| `S7 site_openbao_seeded` | Runtime secret policy is reconciled, bootstrap-required provider credentials are present, and available product provider credentials are imported. | Site OpenBao is the source of truth. | Hand off to Nomad. |
+| `S5 host_openbao_installed` | Host convergence copies the OpenBao binary, configuration, TLS files, and service definition to the host. | No runtime secret values copied yet. | Start OpenBao and initialize the site store. |
+| `S6 site_openbao_initialized` | The host OpenBao Raft store, wrapped recovery material, auth mounts, audit sinks, KV mounts, transit mount, and base policies exist for this site. The initial root token is used only inside the bootstrap transaction. | Site OpenBao and operator-held recovery material. | Reconcile runtime secret declarations and workload auth. |
+| `S7 runtime_secret_policy_reconciled` | Generated runtime secrets are created through OpenBao transit/random, produced-secret placeholders, external secret declarations, OpenBao policies, and Nomad JWT roles are present. External provider values may still be missing until their integration lifecycle runs. | OpenBao is the source of truth for secret values and metadata. | Hand off to Nomad. |
 | `S8 nomad_ready` | Base OS, SPIRE, OpenBao workload auth, and Nomad are ready. | Runtime reads use OpenBao/secrets-service. | Nomad deploys service jobs. |
 | `S9 deployed` | Services run from Nomad and consume only OpenBao-backed runtime secrets. | Site OpenBao and product KV. | Post-deploy canaries pass. |
 | `S10 steady_state_rotation` | Future credential changes use catalog-driven import, rotate, and revoke commands. | OpenBao only. | Repeat from provider handoff or rotation transition. |
 
 The phrase "copy OpenBao" means install/copy OpenBao runtime assets to the new
-host and then seed that site's OpenBao from a catalog-approved, wrapped bundle.
-It does not mean copying prod's OpenBao data, root token, unseal keys, Raft
-store, or runtime secret values into gamma.
+host and then initialize that site's OpenBao store. It does not mean copying
+prod's OpenBao data, root token, unseal keys, Raft store, or runtime secret
+values into gamma.
 
 The first-site bootstrap is the only special case. If there is no controller
 OpenBao yet, the bootstrap session may hold the small set of secret-zero values
@@ -130,9 +130,12 @@ plaintext files.
   that path.
 - Runtime services authenticate with SPIFFE JWT-SVIDs or Nomad workload
   identity mapped to scoped OpenBao policies.
+- Runtime declarations with `generated` source request entropy from OpenBao
+  transit/random and then store the resulting value in OpenBao KV. Workload
+  reconcilers do not use process-local RNG for runtime secret material.
 - Owner-local deployment declarations define every runtime secret, provider
   credential, host credential projection, and consumer.
-- Missing product-provider site secrets do not block substrate reconciliation.
+- Missing product-provider external OpenBao secrets do not block substrate reconciliation.
   The consuming workload or promotion gate reports the absent runtime secret.
 - The successful transition to `S9 deployed` requires provider-specific canary
   evidence, not just a green Nomad allocation.
@@ -216,7 +219,7 @@ are invalid state transitions.
 | --- | --- | --- | --- |
 | `bootstrap_session` | Operator or privileged-agent process memory | Initial import command | Secret-zero values only. Do not persist. |
 | `provider_project` | Stripe Projects vault or provider-native vault | Import tooling | Local handoff only. Never consumed by Nomad jobs. |
-| `controller_openbao` | Controller OpenBao bootstrap namespace | Provisioning and seed-bundle tools | Pre-host source of truth for site bootstrap inputs. |
+| `controller_openbao` | Controller OpenBao bootstrap namespace | Provisioning tools | Pre-host source of truth for site bootstrap inputs. |
 | `site_openbao` | Per-site OpenBao KV v2 and transit | Host convergence, secrets-service, workloads | Durable source of truth after site OpenBao exists. |
 | `host_runtime_file` | Nomad allocation `secrets/` directory or component-owned runtime config | Host daemons and local jobs | Derived projection only. Files are never secret sources and deploy tooling does not read them. |
 | `runtime_secret` | OpenBao KV v2 | Workloads through secrets-service or direct runtime injection | Runtime application secret material. |
@@ -235,7 +238,7 @@ webhook verification, ClickHouse canaries, or host convergence.
 | Resend or alternate email provider | Candidate provider provisioning and full-access authority handoff. | Child sending-key creation, sender-domain policy, runtime secret ownership, email-service canary. |
 | PostHog, Sentry, OpenRouter, queue/cache/search providers | Preferred provisioning path when selected. | Catalog validation, OpenBao import, service config, canary evidence. |
 | Cloudflare DNS/TLS | Possible provider account linking for supported services. | Prod Cloudflare control-plane reconciles DNS and issues certificates for every site. |
-| Stripe Billing | No replacement for the product billing integration. | Billing service Stripe client, webhook endpoint, signing secret, catalog seed. |
+| Stripe Billing | No replacement for the product billing integration. | Billing service Stripe client, webhook endpoint, signing secret, catalog entry. |
 | GitHub App and hosted runners | Provider-specific setup. | GitHub App, webhooks, runner prefix/group, runtime secrets, canaries. |
 | Latitude bare-metal provisioning | Provider-specific setup. | OpenTofu/Ansible provisioning, inventory, host convergence. |
 
@@ -432,7 +435,7 @@ secrets, or operator terminals.
 
    `stripe projects env --pull` refreshes the local vault and `.env` file for
    local handoff. The import tool reads only catalog-approved variable names and
-   writes OpenBao seed material.
+   writes OpenBao entries.
 
 5. Add service ownership.
 
@@ -482,8 +485,8 @@ Credential and integration operations emit operational evidence:
 | --- | --- |
 | Catalog validation | Site, integration key, owner, storage target, missing or extra keys. |
 | Provider import | Site, provider project ID, variable names, target keys, value fingerprints, no plaintext. |
-| Host materialization | Filtered site seed output paths, generated secret fingerprints, and import status. |
-| OpenBao seed | Mount, namespace, secret names, version fingerprints. |
+| Host materialization | Bootstrap output paths and generated secret fingerprints. |
+| OpenBao reconciliation | Mount, namespace, secret names, version fingerprints, policies, and roles. |
 | Runtime read | Workload SPIFFE ID, secret name, OpenBao role, result class. |
 | Provider canary | Provider, resource ID, endpoint, route, deploy run key, pass/fail. |
 
@@ -496,8 +499,8 @@ provider-specific canary evidence in ClickHouse.
 2. Add owner-local declaration validators for runtime secrets, host credential
    projections, provider variables, and bootstrap-shared exceptions.
 3. Add site catalog entries and mark bootstrap-shared Cloudflare exceptions.
-4. Add bootstrap session, controller OpenBao seed, and site OpenBao seed-bundle
-   import commands.
+4. Add bootstrap session, controller OpenBao ingress, and site OpenBao
+   reconciliation commands.
 5. Add provider-project import for Stripe Projects-backed providers.
 6. Add rotation and provider canary evidence.
 7. Gate `aspect deploy` on catalog validation for non-bootstrap deploys.
@@ -509,3 +512,11 @@ provider-specific canary evidence in ClickHouse.
   https://docs.stripe.com/testing-use-cases
 - Stripe API key management:
   https://docs.stripe.com/keys-best-practices
+- OpenBao JWT auth method:
+  https://openbao.org/api-docs/auth/jwt/
+- Nomad Vault/OpenBao workload identity integration:
+  https://developer.hashicorp.com/nomad/docs/secure/vault
+- Nomad job `identity` block:
+  https://developer.hashicorp.com/nomad/docs/job-specification/identity
+- SPIFFE JWT-SVID:
+  https://github.com/spiffe/spiffe/blob/main/standards/JWT-SVID.md

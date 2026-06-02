@@ -62,17 +62,15 @@ type RuntimeSecret struct {
 
 type RuntimeSecretSource struct {
 	Kind           string `json:"kind"`
-	SiteSecretKey  string `json:"site_secret_key,omitempty"`
 	ProducedByJob  string `json:"produced_by_job,omitempty"`
 	GeneratedBytes int    `json:"generated_bytes,omitempty"`
 	Encoding       string `json:"encoding,omitempty"`
 }
 
 const (
-	RuntimeSecretSourceSiteSecret = "site_secret"
-	RuntimeSecretSourceGenerated  = "generated"
-	RuntimeSecretSourceProduced   = "produced_by_job"
-	RuntimeSecretSourceExternal   = "external_openbao"
+	RuntimeSecretSourceGenerated = "generated"
+	RuntimeSecretSourceProduced  = "produced_by_job"
+	RuntimeSecretSourceExternal  = "external_openbao"
 )
 
 type NomadRole struct {
@@ -189,18 +187,18 @@ func loadRuntimeSecrets(repoRoot, _ string, components []Component) ([]RuntimeSe
 		if err := decodeYAML(path, &doc); err != nil {
 			return fmt.Errorf("%s: %w", rel, err)
 		}
-		for _, seed := range doc.Seeds {
-			component, err := resolveSeedComponent(rel, seed, components)
+		for _, declaration := range doc.Declarations {
+			component, err := resolveRuntimeSecretComponent(rel, declaration, components)
 			if err != nil {
 				return err
 			}
 			secret := RuntimeSecret{
-				Name:           strings.TrimSpace(seed.Name),
+				Name:           strings.TrimSpace(declaration.Name),
 				OwnerPath:      rel,
 				Component:      component.Component,
 				JobID:          component.JobID,
-				ConsumerJobIDs: normalizedConsumerJobIDs(seed.ConsumerJobIDs),
-				Source:         runtimeSecretSource(seed),
+				ConsumerJobIDs: normalizedConsumerJobIDs(declaration.ConsumerJobIDs),
+				Source:         runtimeSecretSource(declaration),
 			}
 			for _, consumerJobID := range secret.ConsumerJobIDs {
 				if _, ok := componentByJob[consumerJobID]; !ok {
@@ -298,21 +296,18 @@ func runtimeSecretReadableBy(secret RuntimeSecret, jobID string) bool {
 	return false
 }
 
-func runtimeSecretSource(seed deploycontract.RuntimeSecretSeed) RuntimeSecretSource {
-	if key := strings.TrimSpace(seed.SiteSecret); key != "" {
-		return RuntimeSecretSource{Kind: RuntimeSecretSourceSiteSecret, SiteSecretKey: key}
-	}
-	if jobID := strings.TrimSpace(seed.ProducedByJob); jobID != "" {
+func runtimeSecretSource(declaration deploycontract.RuntimeSecretDeclaration) RuntimeSecretSource {
+	if jobID := strings.TrimSpace(declaration.ProducedByJob); jobID != "" {
 		return RuntimeSecretSource{Kind: RuntimeSecretSourceProduced, ProducedByJob: jobID}
 	}
-	if seed.Generated.Bytes != 0 {
+	if declaration.Generated.Bytes != 0 {
 		return RuntimeSecretSource{
 			Kind:           RuntimeSecretSourceGenerated,
-			GeneratedBytes: seed.Generated.Bytes,
-			Encoding:       strings.TrimSpace(seed.Generated.Encoding),
+			GeneratedBytes: declaration.Generated.Bytes,
+			Encoding:       strings.TrimSpace(declaration.Generated.Encoding),
 		}
 	}
-	if seed.ExternalOpenBao {
+	if declaration.ExternalOpenBao {
 		return RuntimeSecretSource{Kind: RuntimeSecretSourceExternal}
 	}
 	return RuntimeSecretSource{}
@@ -344,8 +339,8 @@ func componentOwners(repoRoot string, components []Component) ([]componentOwner,
 	return owners, nil
 }
 
-func resolveSeedComponent(rel string, seed deploycontract.RuntimeSecretSeed, components []Component) (Component, error) {
-	jobID := strings.TrimSpace(seed.JobID)
+func resolveRuntimeSecretComponent(rel string, declaration deploycontract.RuntimeSecretDeclaration, components []Component) (Component, error) {
+	jobID := strings.TrimSpace(declaration.JobID)
 	if jobID == "" {
 		if len(components) != 1 {
 			return Component{}, fmt.Errorf("%s: runtime secret owner must map to exactly one Nomad job, got %d", rel, len(components))
@@ -379,11 +374,6 @@ func validateRuntimeSecret(secret RuntimeSecret) error {
 	}
 	sources := 0
 	switch secret.Source.Kind {
-	case RuntimeSecretSourceSiteSecret:
-		sources++
-		if !nameRE.MatchString(secret.Source.SiteSecretKey) {
-			return fmt.Errorf("%s site_secret_key must match %s", secret.Name, nameRE.String())
-		}
 	case RuntimeSecretSourceGenerated:
 		sources++
 		if secret.Source.GeneratedBytes < 16 || secret.Source.GeneratedBytes > 96 {
@@ -403,10 +393,10 @@ func validateRuntimeSecret(secret RuntimeSecret) error {
 		sources++
 	case "":
 	default:
-		return fmt.Errorf("%s source.kind must be site_secret, generated, produced_by_job, or external_openbao", secret.Name)
+		return fmt.Errorf("%s source.kind must be generated, produced_by_job, or external_openbao", secret.Name)
 	}
 	if sources != 1 {
-		return fmt.Errorf("%s must declare exactly one source: site_secret, generated, produced_by_job, or external_openbao", secret.Name)
+		return fmt.Errorf("%s must declare exactly one source: generated, produced_by_job, or external_openbao", secret.Name)
 	}
 	return nil
 }

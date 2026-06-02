@@ -9,11 +9,11 @@ import (
 	"testing"
 )
 
-func TestMaterializeSeedBundleGeneratesMissingHostSecrets(t *testing.T) {
+func TestMaterializeSeedBundleWritesExplicitBootstrapVars(t *testing.T) {
 	root := t.TempDir()
 	seed := filepath.Join(root, "seed.yml")
 	writeTestFile(t, seed, validSeedBundle("gamma"))
-	vars := filepath.Join(root, "ansible-secrets.json")
+	vars := filepath.Join(root, "bootstrap-vars.json")
 	evidence := filepath.Join(root, "seed-fingerprints.json")
 
 	report, err := MaterializeSeedBundle(MaterializeOptions{
@@ -28,9 +28,9 @@ func TestMaterializeSeedBundleGeneratesMissingHostSecrets(t *testing.T) {
 	}
 	var values map[string]string
 	readJSON(t, vars, &values)
-	for key := range generatedSeedKeys {
+	for key := range machineProvisionedSeedKeys {
 		if values[key] == "" {
-			t.Fatalf("%s was not generated", key)
+			t.Fatalf("%s was not materialized", key)
 		}
 	}
 	body, err := os.ReadFile(evidence)
@@ -40,7 +40,7 @@ func TestMaterializeSeedBundleGeneratesMissingHostSecrets(t *testing.T) {
 	if strings.Contains(string(body), "sk_test_gamma") {
 		t.Fatalf("evidence leaked a raw secret: %s", body)
 	}
-	if len(report.Values) != len(fallbackProvidedSeedKeys)+len(machineProvisionedSeedKeys)+len(generatedSeedKeys) {
+	if len(report.Values) != len(machineProvisionedSeedKeys) {
 		t.Fatalf("unexpected evidence values: %+v", report.Values)
 	}
 }
@@ -78,19 +78,18 @@ func TestMaterializeSeedBundleAllowsMissingMachineProvisionedKeys(t *testing.T) 
 	seed := filepath.Join(root, "seed.yml")
 	writeTestFile(t, seed, operatorSeedBundle("gamma"))
 	report, err := MaterializeSeedBundle(MaterializeOptions{
-		Site:            "gamma",
-		SeedPath:        seed,
-		VarsPath:        filepath.Join(root, "ansible-secrets.json"),
-		RuntimeSeedPath: filepath.Join(root, "openbao-runtime-seed.json"),
-		Evidence:        filepath.Join(root, "seed-fingerprints.json"),
-		RepoRoot:        root,
-		ForceWrite:      true,
+		Site:       "gamma",
+		SeedPath:   seed,
+		VarsPath:   filepath.Join(root, "bootstrap-vars.json"),
+		Evidence:   filepath.Join(root, "seed-fingerprints.json"),
+		RepoRoot:   root,
+		ForceWrite: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, evidence := range report.Values {
-		if strings.HasPrefix(evidence.Key, "nomad_artifact_getter_") || strings.HasPrefix(evidence.Key, "cloudflare_r2_control_plane_") {
+		if strings.HasPrefix(evidence.Key, "nomad_artifact_getter_") {
 			t.Fatalf("machine-provisioned key should not be materialized before the site control plane exists: %+v", evidence)
 		}
 	}
@@ -99,22 +98,20 @@ func TestMaterializeSeedBundleAllowsMissingMachineProvisionedKeys(t *testing.T) 
 func TestMaterializeSeedBundleDoesNotRequireExternalProviderRuntimeSecrets(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "src/services/example-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
+openbao_runtime_secret_declarations:
   - name: example-service.provider.api_key
     external_openbao: true
 `)
 	seed := filepath.Join(root, "seed.yml")
 	writeTestFile(t, seed, bootstrapOnlySeedBundle("gamma"))
-	runtimeSeed := filepath.Join(root, "openbao-runtime-seed.json")
 
 	report, err := MaterializeSeedBundle(MaterializeOptions{
-		Site:            "gamma",
-		SeedPath:        seed,
-		VarsPath:        filepath.Join(root, "ansible-secrets.json"),
-		RuntimeSeedPath: runtimeSeed,
-		Evidence:        filepath.Join(root, "seed-fingerprints.json"),
-		RepoRoot:        root,
-		ForceWrite:      true,
+		Site:       "gamma",
+		SeedPath:   seed,
+		VarsPath:   filepath.Join(root, "bootstrap-vars.json"),
+		Evidence:   filepath.Join(root, "seed-fingerprints.json"),
+		RepoRoot:   root,
+		ForceWrite: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +134,7 @@ func TestBootstrapDeployChecksLocalMaterialBeforeRemoteAccess(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing local bootstrap material error")
 	}
-	if !strings.Contains(err.Error(), filepath.Join(".verself", "site-bootstrap", "gamma", "ansible-secrets.json")) {
+	if !strings.Contains(err.Error(), filepath.Join(".verself", "site-bootstrap", "gamma", "bootstrap-vars.json")) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if strings.Contains(err.Error(), "Cloudflare") || strings.Contains(err.Error(), "R2") {
@@ -147,44 +144,43 @@ func TestBootstrapDeployChecksLocalMaterialBeforeRemoteAccess(t *testing.T) {
 
 func TestBootstrapDeployChecksR2PublisherBeforeRemoteAccess(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, defaultLocalSecretVarsPath(root, "gamma"), `{"host_generated":"value"}`)
-	writeRuntimeSeedFile(t, defaultLocalRuntimeSeedPath(root, "gamma"), RuntimeSeedBundle{
-		Version: RuntimeSeedBundleVersion,
-		Site:    "gamma",
-		Values:  map[string]string{"runtime_secret": "raw_secret"},
-	})
+	writeTestFile(t, defaultLocalBootstrapVarsPath(root, "gamma"), `{"host_generated":"value"}`)
 	err := RunBootstrapDeploy(context.Background(), BootstrapDeployOptions{
 		Site:          "gamma",
 		SHA:           "0123456789abcdef0123456789abcdef01234567",
 		RepoRoot:      root,
 		InventoryPath: filepath.Join(root, "missing-inventory.ini"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "--r2-control-plane-binary") {
+	if err == nil || !strings.Contains(err.Error(), "--cloudflare-control-plane-binary") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if strings.Contains(err.Error(), "inventory") || strings.Contains(err.Error(), "OpenBao site root key") {
-		t.Fatalf("bootstrap deploy reached remote-facing checks before local R2 publisher validation: %v", err)
+		t.Fatalf("bootstrap deploy reached remote-facing checks before local artifact publishing validation: %v", err)
 	}
 }
 
-func TestBootstrapR2ControlPlaneCommandUsesR2Publisher(t *testing.T) {
+func TestBootstrapR2ControlPlaneCommandUsesInMemoryPublisher(t *testing.T) {
 	root := t.TempDir()
-	binary := filepath.Join(root, "cloudflare-r2-control-plane")
-	if err := os.WriteFile(binary, []byte("binary"), 0o700); err != nil {
+	r2Binary := filepath.Join(root, "cloudflare-r2-control-plane")
+	if err := os.WriteFile(r2Binary, []byte("binary"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	publisherEnv := filepath.Join(root, "r2-publisher.env")
-	writeTestFile(t, publisherEnv, `CLOUDFLARE_R2_PUBLISHER_TOKEN_ID=token-id
-CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY=secret
-`)
+	cloudflareBinary := filepath.Join(root, "cloudflare-control-plane")
+	if err := os.WriteFile(cloudflareBinary, []byte("binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	opts := normalizeBootstrapDeployOptions(BootstrapDeployOptions{
 		Site:                 "gamma",
 		RepoRoot:             root,
-		R2ControlPlaneBinary: binary,
-		R2CredentialSource:   "env-file",
-		R2CredentialsFile:    publisherEnv,
+		R2ControlPlaneBinary: r2Binary,
+		CloudflareBinary:     cloudflareBinary,
 	})
-	cmd, err := startBootstrapR2ControlPlane(context.Background(), opts, "127.0.0.1:18732", "r2bootstrap_token")
+	publisher := bootstrapPublisherCredential{
+		AccessKeyID:     "publisher-token-id",
+		SecretAccessKey: "publisher-secret",
+		TokenID:         "publisher-token-id",
+	}
+	cmd, err := startBootstrapR2ControlPlane(context.Background(), opts, "127.0.0.1:18732", "r2bootstrap_token", publisher)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,12 +191,14 @@ CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY=secret
 		"--repo-root=" + root,
 		"--listen=127.0.0.1:18732",
 		"--auth-token-env=" + bootstrapR2AuthTokenEnv,
-		"--credential-source=env-file",
-		"--credentials-file=" + publisherEnv,
+		"--credential-source=env",
 	} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("R2 control-plane args missing %q:\n%s", want, args)
 		}
+	}
+	if strings.Contains(args, "--credentials-file") {
+		t.Fatalf("R2 bootstrap command still depends on a credential file:\n%s", args)
 	}
 	for _, forbidden := range []string{"account-admin", "openbao", "BAO_", "VAULT_"} {
 		if strings.Contains(args, forbidden) {
@@ -213,67 +211,23 @@ CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY=secret
 	if !envContains(cmd.Env, bootstrapR2AuthTokenEnv+"=r2bootstrap_token") {
 		t.Fatalf("R2 control-plane command did not carry bootstrap auth token env: %v", cmd.Env)
 	}
+	if !envContains(cmd.Env, bootstrapR2AccessKeyIDEnv+"=publisher-token-id") {
+		t.Fatalf("R2 control-plane command did not carry publisher token id env: %v", cmd.Env)
+	}
+	if !envContains(cmd.Env, bootstrapR2SecretAccessEnv+"=publisher-secret") {
+		t.Fatalf("R2 control-plane command did not carry publisher secret env: %v", cmd.Env)
+	}
 }
 
 func TestLocalBootstrapMaterialAcceptsMaterializedSeedOutputs(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, defaultLocalSecretVarsPath(root, "gamma"), `{"host_generated":"value"}`)
-	writeRuntimeSeedFile(t, defaultLocalRuntimeSeedPath(root, "gamma"), RuntimeSeedBundle{
-		Version: RuntimeSeedBundleVersion,
-		Site:    "gamma",
-		Values:  map[string]string{"runtime_secret": "raw_secret"},
-	})
+	writeTestFile(t, defaultLocalBootstrapVarsPath(root, "gamma"), `{"host_generated":"value"}`)
 	err := checkLocalBootstrapMaterial(normalizeBootstrapDeployOptions(BootstrapDeployOptions{
 		Site:     "gamma",
 		RepoRoot: root,
 	}))
 	if err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestLocalBootstrapMaterialRejectsWrongSiteWithoutLeakingValues(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, defaultLocalSecretVarsPath(root, "gamma"), `{"host_generated":"value"}`)
-	writeRuntimeSeedFile(t, defaultLocalRuntimeSeedPath(root, "gamma"), RuntimeSeedBundle{
-		Version: RuntimeSeedBundleVersion,
-		Site:    "prod",
-		Values:  map[string]string{"runtime_secret": "raw_secret"},
-	})
-	err := checkLocalBootstrapMaterial(normalizeBootstrapDeployOptions(BootstrapDeployOptions{
-		Site:     "gamma",
-		RepoRoot: root,
-	}))
-	if err == nil || !strings.Contains(err.Error(), `not "gamma"`) {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if strings.Contains(err.Error(), "raw_secret") {
-		t.Fatalf("local preflight leaked a runtime seed value: %v", err)
-	}
-}
-
-func TestLocalBootstrapMaterialRejectsIncompleteRuntimeSeed(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/services/email-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: email-service.provider.api_key
-    site_secret: email_provider_api_key
-`)
-	writeTestFile(t, defaultLocalSecretVarsPath(root, "gamma"), `{"host_generated":"value"}`)
-	writeRuntimeSeedFile(t, defaultLocalRuntimeSeedPath(root, "gamma"), RuntimeSeedBundle{
-		Version: RuntimeSeedBundleVersion,
-		Site:    "gamma",
-		Values:  map[string]string{"unrelated_runtime_value": "raw_secret"},
-	})
-	err := checkLocalBootstrapMaterial(normalizeBootstrapDeployOptions(BootstrapDeployOptions{
-		Site:     "gamma",
-		RepoRoot: root,
-	}))
-	if err == nil || !strings.Contains(err.Error(), "email_provider_api_key") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if strings.Contains(err.Error(), "raw_secret") {
-		t.Fatalf("local preflight leaked a runtime seed value: %v", err)
 	}
 }
 
@@ -336,203 +290,6 @@ values:
 	}
 }
 
-func TestMaterializeSeedBundlePreservesExistingGeneratedValues(t *testing.T) {
-	root := t.TempDir()
-	seed := filepath.Join(root, "seed.yml")
-	writeTestFile(t, seed, validSeedBundle("gamma"))
-	vars := filepath.Join(root, "ansible-secrets.json")
-	writeTestFile(t, vars, `{"iam_service_email_identity_hmac_key":"existing-hmac"}`)
-
-	if _, err := MaterializeSeedBundle(MaterializeOptions{
-		Site:       "gamma",
-		SeedPath:   seed,
-		VarsPath:   vars,
-		Evidence:   filepath.Join(root, "seed-fingerprints.json"),
-		ForceWrite: true,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	var values map[string]string
-	readJSON(t, vars, &values)
-	if values["iam_service_email_identity_hmac_key"] != "existing-hmac" {
-		t.Fatalf("expected existing generated value to be preserved, got %q", values["iam_service_email_identity_hmac_key"])
-	}
-}
-
-func TestMaterializeSeedBundleWritesFilteredRuntimeSeed(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/services/email-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: email-service.provider.api_key
-    site_secret: email_provider_api_key
-`)
-	seed := filepath.Join(root, "seed.yml")
-	writeTestFile(t, seed, validSeedBundle("gamma")+`  email_provider_api_key: provider_gamma
-`)
-	runtimeSeed := filepath.Join(root, "openbao-runtime-seed.json")
-
-	report, err := MaterializeSeedBundle(MaterializeOptions{
-		Site:            "gamma",
-		SeedPath:        seed,
-		VarsPath:        filepath.Join(root, "ansible-secrets.json"),
-		RuntimeSeedPath: runtimeSeed,
-		Evidence:        filepath.Join(root, "seed-fingerprints.json"),
-		RepoRoot:        root,
-		ForceWrite:      true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var bundle RuntimeSeedBundle
-	readJSON(t, runtimeSeed, &bundle)
-	if bundle.Version != RuntimeSeedBundleVersion || bundle.Site != "gamma" {
-		t.Fatalf("runtime seed header = %#v", bundle)
-	}
-	if got := bundle.Values["email_provider_api_key"]; got != "provider_gamma" {
-		t.Fatalf("runtime seed email_provider_api_key = %q", got)
-	}
-	forbiddenRuntimeKeys := map[string]string{
-		"nomad_artifact_getter_s3_secret_access_key": "deployment artifact getter credential",
-		"cloudflare_account_admin_api_token_a":       "controller Cloudflare authority",
-		"cloudflare_account_admin_api_token_b":       "controller Cloudflare authority",
-	}
-	for key, label := range forbiddenRuntimeKeys {
-		if _, ok := bundle.Values[key]; ok {
-			t.Fatalf("runtime seed included non-runtime %s key %s", label, key)
-		}
-	}
-	if report.Outputs["openbao_runtime_seed"] != runtimeSeed {
-		t.Fatalf("runtime seed output missing from evidence: %#v", report.Outputs)
-	}
-}
-
-func TestMaterializeSeedBundleWritesInfrastructureRuntimeSeed(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/infrastructure-components/zitadel/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: infrastructure.provider.api_key
-    job_id: zitadel
-    site_secret: infrastructure_provider_api_key
-`)
-	seed := filepath.Join(root, "seed.yml")
-	writeTestFile(t, seed, `version: verself.site-bootstrap.seed.v1
-site: gamma
-values:
-  infrastructure_provider_api_key: provider_gamma
-`)
-	runtimeSeed := filepath.Join(root, "openbao-runtime-seed.json")
-
-	if _, err := MaterializeSeedBundle(MaterializeOptions{
-		Site:            "gamma",
-		SeedPath:        seed,
-		VarsPath:        filepath.Join(root, "ansible-secrets.json"),
-		RuntimeSeedPath: runtimeSeed,
-		Evidence:        filepath.Join(root, "seed-fingerprints.json"),
-		RepoRoot:        root,
-		ForceWrite:      true,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	var bundle RuntimeSeedBundle
-	readJSON(t, runtimeSeed, &bundle)
-	if got := bundle.Values["infrastructure_provider_api_key"]; got != "provider_gamma" {
-		t.Fatalf("runtime seed infrastructure_provider_api_key = %q", got)
-	}
-}
-
-func TestLoadRuntimeSiteSecretKeysScansAllOwnerRoots(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/services/example-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: example-service.provider.api_key
-    site_secret: example_provider_api_key
-  - name: example-service.provider.webhook_secret
-    site_secret: example_provider_webhook_secret
-`)
-	writeTestFile(t, filepath.Join(root, "src/services/email-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: email-service.provider.api_key
-    site_secret: email_provider_api_key
-`)
-	writeTestFile(t, filepath.Join(root, "src/services/github-integration-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: github-integration-service.github.private_key
-    site_secret: github_integration_service_github_app_private_key
-  - name: github-integration-service.github.webhook_secret
-    site_secret: github_integration_service_github_app_webhook_secret
-  - name: github-integration-service.github.oauth_client_secret
-    site_secret: github_integration_service_github_app_oauth_client_secret
-`)
-	writeTestFile(t, filepath.Join(root, "src/services/iam-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: iam-service.email_identity.hmac_key
-    site_secret: iam_service_email_identity_hmac_key
-`)
-	writeTestFile(t, filepath.Join(root, "src/infrastructure-components/zitadel/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: auth-control-plane.github_login.oauth_client_secret
-    job_id: auth-control-plane
-    site_secret: github_integration_service_github_app_oauth_client_secret
-  - name: infrastructure.provider.api_key
-    job_id: zitadel
-    site_secret: infrastructure_provider_api_key
-`)
-
-	keys, err := loadRuntimeSiteSecretKeys(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := map[string]bool{}
-	for _, key := range keys {
-		got[key] = true
-	}
-	for _, key := range []string{
-		"github_integration_service_github_app_oauth_client_secret",
-		"github_integration_service_github_app_private_key",
-		"github_integration_service_github_app_webhook_secret",
-		"email_provider_api_key",
-		"example_provider_api_key",
-		"example_provider_webhook_secret",
-		"iam_service_email_identity_hmac_key",
-		"infrastructure_provider_api_key",
-	} {
-		if !got[key] {
-			t.Fatalf("runtime site-secret keys missing %s from %v", key, keys)
-		}
-	}
-}
-
-func TestMaterializeSeedBundlePreservesExistingRuntimeProviderValues(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/services/email-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: email-service.provider.api_key
-    site_secret: email_provider_api_key
-`)
-	seed := filepath.Join(root, "seed.yml")
-	writeTestFile(t, seed, bootstrapOnlySeedBundle("gamma"))
-	vars := filepath.Join(root, "ansible-secrets.json")
-	writeTestFile(t, vars, `{"email_provider_api_key":"existing-provider-key"}`)
-	runtimeSeed := filepath.Join(root, "openbao-runtime-seed.json")
-
-	if _, err := MaterializeSeedBundle(MaterializeOptions{
-		Site:            "gamma",
-		SeedPath:        seed,
-		VarsPath:        vars,
-		RuntimeSeedPath: runtimeSeed,
-		Evidence:        filepath.Join(root, "seed-fingerprints.json"),
-		RepoRoot:        root,
-		ForceWrite:      true,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	var bundle RuntimeSeedBundle
-	readJSON(t, runtimeSeed, &bundle)
-	if got := bundle.Values["email_provider_api_key"]; got != "existing-provider-key" {
-		t.Fatalf("runtime seed did not preserve existing provider value, got %q", got)
-	}
-}
-
 func TestWriteInventory(t *testing.T) {
 	root := t.TempDir()
 	out := filepath.Join(root, "inventory.ini")
@@ -562,13 +319,8 @@ func TestLoadSeedPolicyUsesCatalogAndOwnerLocalDeclarations(t *testing.T) {
 verself_site: gamma
 github_integration_service_github_app_client_id: public-client-id
 `)
-	writeTestFile(t, filepath.Join(root, "src/services/iam-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: iam-service.email_identity.hmac_key
-    site_secret: iam_service_email_identity_hmac_key
-`)
 	writeTestFile(t, filepath.Join(root, "src/services/github-integration-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
+openbao_runtime_secret_declarations:
   - name: github-integration-service.github.oauth_client_secret
     external_openbao: true
 `)
@@ -618,11 +370,25 @@ integrations:
 	if _, ok := policy.keys["github_integration_service_github_app_client_id"]; ok {
 		t.Fatalf("public site var should not be requested in seed bundle")
 	}
-	if policy.keys["iam_service_email_identity_hmac_key"].Source != "generated_runtime" {
-		t.Fatalf("iam hmac should be generated: %+v", policy.keys["iam_service_email_identity_hmac_key"])
+	if _, ok := policy.keys["iam_service_email_identity_hmac_key"]; ok {
+		t.Fatalf("iam hmac should be generated by OpenBao runtime reconciliation: %+v", policy.keys)
 	}
-	if policy.keys["object_storage_service_r2_admin_access_key_id"].Source != "machine_provisioned_cloudflare_r2_control_plane" {
-		t.Fatalf("object storage R2 credential should be machine provisioned: %+v", policy.keys["object_storage_service_r2_admin_access_key_id"])
+	if _, ok := policy.keys["object_storage_service_r2_admin_access_key_id"]; ok {
+		t.Fatalf("object storage R2 credential should be projected through OpenBao runtime secrets: %+v", policy.keys)
+	}
+}
+
+func TestValidateSeedBundleRejectsRuntimeProviderSecrets(t *testing.T) {
+	root := t.TempDir()
+	seed := filepath.Join(root, "seed.yml")
+	writeTestFile(t, seed, staleRuntimeProviderSeedBundle("gamma"))
+
+	_, err := ValidateSeedBundle("gamma", seed)
+	if err == nil {
+		t.Fatal("expected stale runtime provider seed key rejection")
+	}
+	if !strings.Contains(err.Error(), "is not a declared bootstrap seed key") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -637,14 +403,8 @@ func validSeedBundle(site string) string {
 	return `version: verself.site-bootstrap.seed.v1
 site: ` + site + `
 values:
-  cloudflare_r2_control_plane_publisher_secret_access_key: cf_r2_publisher_secret_gamma
-  cloudflare_r2_control_plane_publisher_token_id: cf_r2_publisher_token_gamma
   nomad_artifact_getter_s3_access_key_id: r2_getter_gamma
   nomad_artifact_getter_s3_secret_access_key: r2_getter_secret_gamma
-  object_storage_service_r2_admin_access_key_id: r2_admin_gamma
-  object_storage_service_r2_admin_secret_access_key: r2_admin_secret_gamma
-  object_storage_service_r2_proxy_access_key_id: r2_proxy_gamma
-  object_storage_service_r2_proxy_secret_access_key: r2_proxy_secret_gamma
 `
 }
 
@@ -652,10 +412,15 @@ func bootstrapOnlySeedBundle(site string) string {
 	return `version: verself.site-bootstrap.seed.v1
 site: ` + site + `
 values:
-  cloudflare_r2_control_plane_publisher_secret_access_key: cf_r2_publisher_secret_gamma
-  cloudflare_r2_control_plane_publisher_token_id: cf_r2_publisher_token_gamma
   nomad_artifact_getter_s3_access_key_id: r2_getter_gamma
   nomad_artifact_getter_s3_secret_access_key: r2_getter_secret_gamma
+`
+}
+
+func staleRuntimeProviderSeedBundle(site string) string {
+	return `version: verself.site-bootstrap.seed.v1
+site: ` + site + `
+values:
   object_storage_service_r2_admin_access_key_id: r2_admin_gamma
   object_storage_service_r2_admin_secret_access_key: r2_admin_secret_gamma
   object_storage_service_r2_proxy_access_key_id: r2_proxy_gamma
@@ -691,13 +456,4 @@ func envContains(env []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func writeRuntimeSeedFile(t *testing.T, path string, seed RuntimeSeedBundle) {
-	t.Helper()
-	body, err := json.Marshal(seed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeTestFile(t, path, string(body))
 }

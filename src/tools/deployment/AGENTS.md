@@ -12,7 +12,7 @@ and promotion evidence.
 - `cmd/verself-deploy/` — single binary behind the `aspect deploy` task. Keep
   request/auth/follow behavior in the CLI and move deployment mutation into the
   site-local deployment-service.
-- `cmd/site-bootstrap/` — quarantined bootstrap/recovery entrypoint for sites
+- `cmd/site-bootstrap/` — first-bootstrap/recovery entrypoint for sites
   that do not yet have deployment-service online.
 - `internal/identity/` — derives the verself deploy identity env and emits W3C
   baggage so every span this binary creates carries `verself.deploy_run_key`,

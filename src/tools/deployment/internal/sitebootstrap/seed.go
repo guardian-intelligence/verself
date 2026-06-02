@@ -2,9 +2,7 @@ package sitebootstrap
 
 import (
 	"bytes"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,8 +16,7 @@ import (
 )
 
 const (
-	SeedBundleVersion        = "verself.site-bootstrap.seed.v1"
-	RuntimeSeedBundleVersion = "verself.openbao-runtime-seed.v1"
+	SeedBundleVersion = "verself.site-bootstrap.seed.v1"
 )
 
 type SeedBundle struct {
@@ -28,20 +25,13 @@ type SeedBundle struct {
 	Values  map[string]string `json:"values" yaml:"values"`
 }
 
-type RuntimeSeedBundle struct {
-	Version string            `json:"version"`
-	Site    string            `json:"site"`
-	Values  map[string]string `json:"values"`
-}
-
 type MaterializeOptions struct {
-	Site            string
-	SeedPath        string
-	VarsPath        string
-	RuntimeSeedPath string
-	Evidence        string
-	RepoRoot        string
-	ForceWrite      bool
+	Site       string
+	SeedPath   string
+	VarsPath   string
+	Evidence   string
+	RepoRoot   string
+	ForceWrite bool
 }
 
 type SeedTemplateOptions struct {
@@ -52,39 +42,16 @@ type SeedTemplateOptions struct {
 }
 
 type Evidence struct {
-	Version string             `json:"version"`
-	Site    string             `json:"site"`
-	Values  []EvidenceValue    `json:"values"`
-	Outputs map[string]string  `json:"outputs"`
-	Missing []MissingSeedValue `json:"missing,omitempty"`
+	Version string            `json:"version"`
+	Site    string            `json:"site"`
+	Values  []EvidenceValue   `json:"values"`
+	Outputs map[string]string `json:"outputs"`
 }
 
 type EvidenceValue struct {
 	Key         string `json:"key"`
 	Source      string `json:"source"`
 	Fingerprint string `json:"sha256"`
-}
-
-type MissingSeedValue struct {
-	Key    string `json:"key"`
-	Source string `json:"source"`
-}
-
-type MissingRuntimeSeedValuesError struct {
-	Path    string
-	Missing []MissingSeedValue
-}
-
-func (e MissingRuntimeSeedValuesError) Error() string {
-	missing := map[string][]string{}
-	for _, item := range e.Missing {
-		missing[item.Source] = append(missing[item.Source], item.Key)
-	}
-	location := "OpenBao runtime seed"
-	if strings.TrimSpace(e.Path) != "" {
-		location += " at " + e.Path
-	}
-	return location + " is missing declared site-secret values: " + formatMissingBySource(missing)
 }
 
 type seedKey struct {
@@ -95,19 +62,8 @@ type seedKey struct {
 var fallbackProvidedSeedKeys = map[string]seedKey{}
 
 var machineProvisionedSeedKeys = map[string]seedKey{
-	"cloudflare_r2_control_plane_publisher_secret_access_key": {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-	"cloudflare_r2_control_plane_publisher_token_id":          {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-	"nomad_artifact_getter_s3_access_key_id":                  {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-	"nomad_artifact_getter_s3_secret_access_key":              {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-
-	"object_storage_service_r2_admin_access_key_id":     {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-	"object_storage_service_r2_admin_secret_access_key": {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-	"object_storage_service_r2_proxy_access_key_id":     {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-	"object_storage_service_r2_proxy_secret_access_key": {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-}
-
-var generatedSeedKeys = map[string]seedKey{
-	"iam_service_email_identity_hmac_key": {Source: "generated_runtime"},
+	"nomad_artifact_getter_s3_access_key_id":     {Source: "machine_provisioned_cloudflare_r2_control_plane"},
+	"nomad_artifact_getter_s3_secret_access_key": {Source: "machine_provisioned_cloudflare_r2_control_plane"},
 }
 
 func WriteSeedTemplate(opts SeedTemplateOptions) error {
@@ -182,34 +138,6 @@ func MaterializeSeedBundle(opts MaterializeOptions) (Evidence, error) {
 	for key, value := range bundle.Values {
 		values[key] = value
 	}
-	existingValues, err := readExistingVars(opts.VarsPath)
-	if err != nil {
-		return Evidence{}, err
-	}
-	runtimeSiteSecretKeys, err := loadRuntimeSiteSecretKeys(opts.RepoRoot)
-	if err != nil {
-		return Evidence{}, err
-	}
-	generated := map[string]bool{}
-	for _, key := range policy.generatedKeys() {
-		if strings.TrimSpace(values[key]) == "" {
-			if strings.TrimSpace(existingValues[key]) != "" {
-				values[key] = existingValues[key]
-				continue
-			}
-			value, err := generateSecret(key)
-			if err != nil {
-				return Evidence{}, err
-			}
-			values[key] = value
-			generated[key] = true
-		}
-	}
-	for _, key := range runtimeSiteSecretKeys {
-		if strings.TrimSpace(values[key]) == "" && strings.TrimSpace(existingValues[key]) != "" {
-			values[key] = existingValues[key]
-		}
-	}
 	if err := validateCompleteValues(opts.Site, values, policy); err != nil {
 		return Evidence{}, err
 	}
@@ -225,23 +153,7 @@ func MaterializeSeedBundle(opts MaterializeOptions) (Evidence, error) {
 	outputs := map[string]string{
 		"ansible_vars": opts.VarsPath,
 	}
-	if strings.TrimSpace(opts.RuntimeSeedPath) != "" {
-		runtimeSeed, err := buildRuntimeSeedBundle(opts.RepoRoot, opts.Site, values)
-		if err != nil {
-			return Evidence{}, err
-		}
-		runtimeSeedBody, err := json.MarshalIndent(runtimeSeed, "", "  ")
-		if err != nil {
-			return Evidence{}, fmt.Errorf("encode OpenBao runtime seed: %w", err)
-		}
-		runtimeSeedBody = append(runtimeSeedBody, '\n')
-		if err := writePrivateFile(opts.RuntimeSeedPath, runtimeSeedBody, opts.ForceWrite); err != nil {
-			return Evidence{}, err
-		}
-		outputs["openbao_runtime_seed"] = opts.RuntimeSeedPath
-	}
-
-	evidence := buildEvidence(opts.Site, values, generated, policy, outputs)
+	evidence := buildEvidence(opts.Site, values, policy, outputs)
 	evidenceBody, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		return Evidence{}, fmt.Errorf("encode evidence: %w", err)
@@ -251,37 +163,6 @@ func MaterializeSeedBundle(opts MaterializeOptions) (Evidence, error) {
 		return Evidence{}, err
 	}
 	return evidence, nil
-}
-
-func buildRuntimeSeedBundle(repoRoot, site string, values map[string]string) (RuntimeSeedBundle, error) {
-	keys, err := loadRuntimeSiteSecretKeys(repoRoot)
-	if err != nil {
-		return RuntimeSeedBundle{}, err
-	}
-	required, err := requiredRuntimeSiteSecretKeys(repoRoot, site)
-	if err != nil {
-		return RuntimeSeedBundle{}, err
-	}
-	seed := RuntimeSeedBundle{
-		Version: RuntimeSeedBundleVersion,
-		Site:    site,
-		Values:  map[string]string{},
-	}
-	var missing []MissingSeedValue
-	for _, key := range keys {
-		value := strings.TrimSpace(values[key])
-		if value == "" {
-			if meta, ok := required[key]; ok {
-				missing = append(missing, MissingSeedValue{Key: key, Source: meta.Source})
-			}
-			continue
-		}
-		seed.Values[key] = value
-	}
-	if len(missing) > 0 {
-		return RuntimeSeedBundle{}, MissingRuntimeSeedValuesError{Missing: missing}
-	}
-	return seed, nil
 }
 
 func readSeedBundle(path string) (SeedBundle, error) {
@@ -301,21 +182,6 @@ func readSeedBundle(path string) (SeedBundle, error) {
 	return bundle, nil
 }
 
-func readExistingVars(path string) (map[string]string, error) {
-	body, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return map[string]string{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read existing vars %s: %w", path, err)
-	}
-	values := map[string]string{}
-	if err := yaml.Unmarshal(body, &values); err != nil {
-		return nil, fmt.Errorf("decode existing vars %s: %w", path, err)
-	}
-	return values, nil
-}
-
 func validateSeedBundle(site, path string, bundle SeedBundle, policy seedPolicy) (Evidence, error) {
 	if bundle.Version != SeedBundleVersion {
 		return Evidence{}, fmt.Errorf("%s: version must be %s", path, SeedBundleVersion)
@@ -331,11 +197,11 @@ func validateSeedBundle(site, path string, bundle SeedBundle, policy seedPolicy)
 			continue
 		}
 		if _, ok := policy.controllerOnly[key]; ok {
-			return Evidence{}, fmt.Errorf("%s: values.%s is controller-only bootstrap authority; import it into controller OpenBao instead of the site seed bundle", path, key)
+			return Evidence{}, fmt.Errorf("%s: values.%s is controller-only bootstrap authority; import it into controller OpenBao instead of the bootstrap seed bundle", path, key)
 		}
 		return Evidence{}, fmt.Errorf("%s: values.%s is not a declared bootstrap seed key", path, key)
 	}
-	return buildEvidence(site, bundle.Values, nil, policy, nil), nil
+	return buildEvidence(site, bundle.Values, policy, nil), nil
 }
 
 func validateCompleteValues(site string, values map[string]string, policy seedPolicy) error {
@@ -366,7 +232,7 @@ func formatMissingBySource(missing map[string][]string) string {
 	return strings.Join(parts, "; ")
 }
 
-func buildEvidence(site string, values map[string]string, generated map[string]bool, policy seedPolicy, outputs map[string]string) Evidence {
+func buildEvidence(site string, values map[string]string, policy seedPolicy, outputs map[string]string) Evidence {
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
@@ -383,9 +249,7 @@ func buildEvidence(site string, values map[string]string, generated map[string]b
 	for _, key := range keys {
 		value := values[key]
 		source := "provided"
-		if generated[key] {
-			source = "generated"
-		} else if meta, ok := policy.keys[key]; ok {
+		if meta, ok := policy.keys[key]; ok {
 			source = meta.Source
 		}
 		digest := sha256.Sum256([]byte(value))
@@ -396,19 +260,6 @@ func buildEvidence(site string, values map[string]string, generated map[string]b
 		})
 	}
 	return out
-}
-
-func generateSecret(key string) (string, error) {
-	size := 32
-	switch key {
-	case "iam_service_email_identity_hmac_key":
-		size = 64
-	}
-	raw := make([]byte, size)
-	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("generate %s: %w", key, err)
-	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func writePrivateFile(path string, body []byte, force bool) error {

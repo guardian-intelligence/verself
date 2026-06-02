@@ -444,6 +444,13 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 			return err
 		}
 	}
+	if _, ok := dataMap(mounts)["transit/"]; !ok {
+		if _, err := api(http.MethodPost, "sys/mounts/transit", map[string]any{
+			"type": "transit",
+		}, http.StatusNoContent); err != nil {
+			return err
+		}
+	}
 	auth, err := api(http.MethodGet, "sys/auth", nil, http.StatusOK)
 	if err != nil {
 		return err
@@ -471,12 +478,24 @@ path "auth/jwt-nomad/role/*" {
   capabilities = ["create", "update", "read", "list"]
 }
 
+path "sys/mounts" {
+  capabilities = ["read"]
+}
+
+path "sys/mounts/transit" {
+  capabilities = ["create", "update", "read", "sudo"]
+}
+
 path "kv-runtime/data/secret/org/*" {
   capabilities = ["create", "update", "read", "delete"]
 }
 
 path "kv-runtime/metadata/secret/org/*" {
   capabilities = ["read", "list", "delete"]
+}
+
+path "transit/random/*" {
+  capabilities = ["update"]
 }
 `)
 	if _, err := api(http.MethodPost, "sys/policies/acl/substrate-control-plane", map[string]any{"policy": policy}, http.StatusOK, http.StatusNoContent); err != nil {

@@ -42,8 +42,8 @@ state and ClickHouse evidence, publishes artifacts, and submits owner-local
 Nomad jobs. `aspect deploy` is the operator client for that service.
 
 Bootstrap and operator-recovery secrets enter through catalog-approved
-bootstrap sessions and controller OpenBao, then a wrapped site seed initializes
-fresh site OpenBao state. Runtime secrets are owner-local
+bootstrap sessions and controller OpenBao. Site OpenBao initializes fresh state
+with operator-provided bootstrap authority. Runtime secrets are owner-local
 `deploy/runtime-secrets.yml` declarations applied by the substrate control
 plane. Nomad jobs consume them through Nomad workload identity and OpenBao
 templates. The remaining host-local files are named non-runtime state:

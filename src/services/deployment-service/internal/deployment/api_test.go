@@ -199,7 +199,7 @@ func TestDependencyChecksReturnCanonicalS0ToS7Model(t *testing.T) {
 		"S3/bazelisk",
 		"S3/git",
 		"S4/openbao_runtime_secret_delivery",
-		"S5/site_seed_imported",
+		"S5/substrate_control_plane_applied",
 		"S6/nomad",
 		"S7/postgres",
 		"S7/repo_root",
@@ -405,7 +405,7 @@ func TestDependencyChecksRunSlowProbesConcurrently(t *testing.T) {
 	checks := (&Service{Config: Config{
 		Site:                "gamma",
 		R2ControlPlaneToken: "token",
-		SeedImportMarker:    "seed-imported",
+		SubstrateControlPlaneMarker:    "seed-imported",
 		NomadAddr:           nomad.URL,
 		R2ControlPlaneAddr:  r2.URL,
 		NomadAllocID:        "alloc-1",
@@ -500,7 +500,7 @@ func TestDependencyChecksRequireNomadAllocationAndRecoveryHandoff(t *testing.T) 
 	for _, check := range checks {
 		found[check.Code] = check
 	}
-	for _, code := range []string{"deployment.bootstrap.s1.host_allocated", "deployment.bootstrap.s2.recovery_ssh_ready", "deployment.bootstrap.s5.site_seed_imported"} {
+	for _, code := range []string{"deployment.bootstrap.s1.host_allocated", "deployment.bootstrap.s2.recovery_ssh_ready", "deployment.bootstrap.s5.substrate_control_plane_applied"} {
 		check, ok := found[code]
 		if !ok {
 			t.Fatalf("missing %s in checks: %+v", code, checks)

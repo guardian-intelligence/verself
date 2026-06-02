@@ -11,8 +11,8 @@
   tags:
     - always
   tasks:
-    - name: Load site secrets
-      ansible.builtin.import_tasks: tasks/site-secrets.yml
+    - name: Load bootstrap vars
+      ansible.builtin.import_tasks: tasks/bootstrap-vars.yml
 
 - name: "Operator access handoff"
   hosts: infra

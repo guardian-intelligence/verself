@@ -55,10 +55,11 @@ func (e ValidationError) Error() string {
 }
 
 type Validator struct {
-	root   string
-	report Report
-	errs   []ValidationError
-	seen   seenClaims
+	root                    string
+	report                  Report
+	errs                    []ValidationError
+	seen                    seenClaims
+	generatedRuntimeSecrets bool
 }
 
 type seenClaims struct {
@@ -127,9 +128,6 @@ func ValidateRepo(root string) (Report, error) {
 	if err := v.walkIntegrationCatalogs(); err != nil {
 		return Report{}, err
 	}
-	if err := v.walkSiteSecrets(); err != nil {
-		return Report{}, err
-	}
 	if err := v.walkSiteVars(); err != nil {
 		return Report{}, err
 	}
@@ -148,29 +146,6 @@ func ValidateRepo(root string) (Report, error) {
 		return v.report, ErrorList(v.errs)
 	}
 	return v.report, nil
-}
-
-func (v *Validator) walkSiteSecrets() error {
-	root := filepath.Join(v.root, "src", "host", "sites")
-	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("stat src/host/sites: %w", err)
-	}
-	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(filepath.Base(path), ".sops.yml") {
-			return nil
-		}
-		rel := v.rel(path)
-		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if len(parts) >= 5 && parts[0] == "src" && parts[1] == "host" && parts[2] == "sites" && parts[4] == "secrets" {
-			v.add(rel, "site bootstrap must not use encrypted repository secret files; use local generated seed vars and OpenBao imports")
-		}
-		return nil
-	})
 }
 
 func (v *Validator) walkSiteVars() error {
@@ -435,7 +410,7 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		var doc RuntimeSecretsFile
 		if v.decode(rel, deploymentSecretsPath, &doc) {
 			v.requireGeneratedSecret(rel, doc, "deployment-service.r2_control_plane_token", 32, "base64url", "cloudflare-r2-control-plane")
-			v.requireProducedSecret(rel, doc, "deployment-service.site_seed_import_marker", "substrate-control-plane")
+			v.requireProducedSecret(rel, doc, "deployment-service.substrate_control_plane_marker", "substrate-control-plane")
 			v.requireGeneratedSecret(rel, doc, "deployment-service.operator_deploy_token", 32, "base64url", "")
 		}
 	}
@@ -444,8 +419,8 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		rel := v.rel(r2SecretsPath)
 		var doc RuntimeSecretsFile
 		if v.decode(rel, r2SecretsPath, &doc) {
-			v.requireSiteSecret(rel, doc, "cloudflare-r2-control-plane.publisher_token_id", "cloudflare_r2_control_plane_publisher_token_id")
-			v.requireSiteSecret(rel, doc, "cloudflare-r2-control-plane.publisher_secret_access_key", "cloudflare_r2_control_plane_publisher_secret_access_key")
+			v.requireExternalOpenBaoSecret(rel, doc, "cloudflare-r2-control-plane.publisher_token_id")
+			v.requireExternalOpenBaoSecret(rel, doc, "cloudflare-r2-control-plane.publisher_secret_access_key")
 		}
 	}
 	emailSecretsPath := filepath.Join(v.root, "src", "services", "email-service", "deploy", "runtime-secrets.yml")
@@ -457,7 +432,7 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 			v.requireProducedSecret(rel, doc, "email-service.resend.api_key", "email-service-resend-keys")
 			v.requireProducedSecret(rel, doc, "email-service.resend.key_metadata", "email-service-resend-keys")
 			v.requireProducedSecret(rel, doc, "zitadel.smtp.password", "email-service-resend-keys")
-			if seed, ok := runtimeSeedByName(doc, "zitadel.smtp.password"); ok && !stringSliceContains(seed.ConsumerJobIDs, "zitadel") {
+			if declaration, ok := runtimeDeclarationByName(doc, "zitadel.smtp.password"); ok && !stringSliceContains(declaration.ConsumerJobIDs, "zitadel") {
 				v.add(rel, "bootstrap runtime secret zitadel.smtp.password must declare consumer_job_ids: [zitadel]")
 			}
 		}
@@ -483,7 +458,7 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 	}
 	v.requireNomadRuntimeSecretReferences("src/services/deployment-service/nomad.hcl", []string{
 		"deployment-service.r2_control_plane_token",
-		"deployment-service.site_seed_import_marker",
+		"deployment-service.substrate_control_plane_marker",
 		"deployment-service.operator_deploy_token",
 	})
 	v.requireNomadRuntimeSecretReferences("src/integrations/cloudflare/r2-control-plane/nomad.hcl", []string{
@@ -492,6 +467,12 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		"deployment-service.r2_control_plane_token",
 	})
 	v.requireR2ControlPlaneServeBoundary("src/integrations/cloudflare/r2-control-plane/nomad.hcl")
+	if v.generatedRuntimeSecrets {
+		v.requireOpenBaoTransitRuntimeGeneration(
+			"src/infrastructure-components/openbao/cmd/openbao-bootstrap/main.go",
+			"src/services/deployment-service/controlplane/apply.go",
+		)
+	}
 	v.requireSubstrateControlPlaneWorkloadIdentity("src/infrastructure-components/substrate-control-plane/nomad.hcl")
 }
 
@@ -511,7 +492,7 @@ func (v *Validator) validateNoToolLayerDeployEngine() {
 	} {
 		path := filepath.Join(v.root, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); err == nil {
-			v.add(rel, "normal deployment runtime code must live under src/services/deployment-service; src/tools/deployment is limited to thin clients and quarantined bootstrap")
+			v.add(rel, "normal deployment runtime code must live under src/services/deployment-service; src/tools/deployment is limited to thin clients and first-bootstrap tooling")
 		} else if err != nil && !os.IsNotExist(err) {
 			v.add(rel, "inspect: "+err.Error())
 		}
@@ -519,49 +500,38 @@ func (v *Validator) validateNoToolLayerDeployEngine() {
 }
 
 func (v *Validator) requireGeneratedSecret(rel string, doc RuntimeSecretsFile, name string, bytes int, encoding string, consumerJobID string) {
-	seed, ok := runtimeSeedByName(doc, name)
+	declaration, ok := runtimeDeclarationByName(doc, name)
 	if !ok {
 		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s is required", name))
 		return
 	}
-	if seed.Generated.Bytes != bytes || strings.TrimSpace(seed.Generated.Encoding) != encoding || strings.TrimSpace(seed.SiteSecret) != "" || strings.TrimSpace(seed.ProducedByJob) != "" || seed.ExternalOpenBao {
+	if declaration.Generated.Bytes != bytes || strings.TrimSpace(declaration.Generated.Encoding) != encoding || strings.TrimSpace(declaration.ProducedByJob) != "" || declaration.ExternalOpenBao {
 		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s must be generated with %d %s bytes", name, bytes, encoding))
 	}
-	if consumerJobID != "" && !stringSliceContains(seed.ConsumerJobIDs, consumerJobID) {
+	if consumerJobID != "" && !stringSliceContains(declaration.ConsumerJobIDs, consumerJobID) {
 		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s must declare consumer_job_ids: [%s]", name, consumerJobID))
 	}
 }
 
 func (v *Validator) requireProducedSecret(rel string, doc RuntimeSecretsFile, name string, producedByJob string) {
-	seed, ok := runtimeSeedByName(doc, name)
+	declaration, ok := runtimeDeclarationByName(doc, name)
 	if !ok {
 		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s is required", name))
 		return
 	}
-	if strings.TrimSpace(seed.ProducedByJob) != producedByJob || strings.TrimSpace(seed.SiteSecret) != "" || seed.Generated.Bytes != 0 || seed.ExternalOpenBao {
+	if strings.TrimSpace(declaration.ProducedByJob) != producedByJob || declaration.Generated.Bytes != 0 || declaration.ExternalOpenBao {
 		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s must be produced_by_job: %s", name, producedByJob))
 	}
 }
 
 func (v *Validator) requireExternalOpenBaoSecret(rel string, doc RuntimeSecretsFile, name string) {
-	seed, ok := runtimeSeedByName(doc, name)
+	declaration, ok := runtimeDeclarationByName(doc, name)
 	if !ok {
 		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s is required", name))
 		return
 	}
-	if !seed.ExternalOpenBao || strings.TrimSpace(seed.SiteSecret) != "" || strings.TrimSpace(seed.ProducedByJob) != "" || seed.Generated.Bytes != 0 {
+	if !declaration.ExternalOpenBao || strings.TrimSpace(declaration.ProducedByJob) != "" || declaration.Generated.Bytes != 0 {
 		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s must be external_openbao", name))
-	}
-}
-
-func (v *Validator) requireSiteSecret(rel string, doc RuntimeSecretsFile, name string, siteSecret string) {
-	seed, ok := runtimeSeedByName(doc, name)
-	if !ok {
-		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s is required", name))
-		return
-	}
-	if strings.TrimSpace(seed.SiteSecret) != siteSecret || strings.TrimSpace(seed.ProducedByJob) != "" || seed.Generated.Bytes != 0 || seed.ExternalOpenBao {
-		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s must import site_secret: %s", name, siteSecret))
 	}
 }
 
@@ -690,13 +660,67 @@ func (v *Validator) requireSubstrateControlPlaneWorkloadIdentity(rel string) {
 	}
 }
 
-func runtimeSeedByName(doc RuntimeSecretsFile, name string) (RuntimeSecretSeed, bool) {
-	for _, seed := range doc.Seeds {
-		if strings.TrimSpace(seed.Name) == name {
-			return seed, true
+func (v *Validator) requireOpenBaoTransitRuntimeGeneration(openbaoBootstrapRel, controlPlaneApplyRel string) {
+	openbaoPath := filepath.Join(v.root, filepath.FromSlash(openbaoBootstrapRel))
+	openbaoBody, err := os.ReadFile(openbaoPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			v.add(openbaoBootstrapRel, "OpenBao bootstrap must configure transit before generated runtime secrets are reconciled")
+			return
+		}
+		v.add(openbaoBootstrapRel, "read: "+err.Error())
+		return
+	}
+	openbaoText := string(openbaoBody)
+	for _, required := range []string{
+		`"sys/mounts/transit"`,
+		`"type": "transit"`,
+		`path "transit/random/*"`,
+		`path "sys/mounts/transit"`,
+	} {
+		if !strings.Contains(openbaoText, required) {
+			v.add(openbaoBootstrapRel, fmt.Sprintf("OpenBao bootstrap must declare %s for generated runtime secrets", required))
 		}
 	}
-	return RuntimeSecretSeed{}, false
+
+	applyPath := filepath.Join(v.root, filepath.FromSlash(controlPlaneApplyRel))
+	applyBody, err := os.ReadFile(applyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			v.add(controlPlaneApplyRel, "substrate-control-plane must generate runtime secrets through OpenBao transit/random")
+			return
+		}
+		v.add(controlPlaneApplyRel, "read: "+err.Error())
+		return
+	}
+	applyText := string(applyBody)
+	if !strings.Contains(applyText, `"v1/transit/random/"`) {
+		v.add(controlPlaneApplyRel, "generated runtime secrets must be created through OpenBao transit/random")
+	}
+	if !strings.Contains(applyText, `path "transit/random/*"`) {
+		v.add(controlPlaneApplyRel, "substrate-control-plane runtime policy must retain OpenBao transit/random access")
+	}
+	if !strings.Contains(applyText, `"v1/sys/mounts/transit"`) || !strings.Contains(applyText, `path "sys/mounts/transit"`) {
+		v.add(controlPlaneApplyRel, "substrate-control-plane must ensure the OpenBao transit mount with a narrow sys/mounts policy")
+	}
+	for _, forbidden := range []string{
+		`"crypto/rand"`,
+		"rand.Read(",
+		"rand.Int(",
+	} {
+		if strings.Contains(applyText, forbidden) {
+			v.add(controlPlaneApplyRel, fmt.Sprintf("generated runtime secrets must not use local RNG %q", forbidden))
+		}
+	}
+}
+
+func runtimeDeclarationByName(doc RuntimeSecretsFile, name string) (RuntimeSecretDeclaration, bool) {
+	for _, declaration := range doc.Declarations {
+		if strings.TrimSpace(declaration.Name) == name {
+			return declaration, true
+		}
+	}
+	return RuntimeSecretDeclaration{}, false
 }
 
 func stringSliceContains(values []string, want string) bool {
@@ -840,12 +864,10 @@ func requireName(v *Validator, rel, field, value string) {
 	}
 }
 
-func exactlyOneRuntimeSecretSource(siteSecret, producedByJob string, generatedBytes int, externalOpenBao bool) bool {
+func exactlyOneRuntimeSecretSource(producedByJob string, generatedBytes int, externalOpenBao bool) bool {
 	count := 0
-	for _, value := range []string{siteSecret, producedByJob} {
-		if strings.TrimSpace(value) != "" {
-			count++
-		}
+	if strings.TrimSpace(producedByJob) != "" {
+		count++
 	}
 	if generatedBytes != 0 {
 		count++

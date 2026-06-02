@@ -65,7 +65,7 @@ Notifications uses an internal email-service client and no provider credentials.
 
 ## Resend Key Lifecycle
 
-`email-service` owns the Resend implementation boundary. The site seed contains
+`email-service` owns the Resend implementation boundary. The bootstrap seed contains
 no Resend runtime sending key. The `email-service-resend-keys` Nomad batch job
 authenticates to OpenBao with workload identity, reads
 `email-service.resend.full_access_api_key`, creates a `sending_access` Resend API

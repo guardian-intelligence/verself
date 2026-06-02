@@ -40,14 +40,13 @@ type PostgresPeerMapping struct {
 }
 
 type RuntimeSecretsFile struct {
-	Seeds []RuntimeSecretSeed `yaml:"openbao_runtime_secret_seed_declarations"`
+	Declarations []RuntimeSecretDeclaration `yaml:"openbao_runtime_secret_declarations"`
 }
 
-type RuntimeSecretSeed struct {
+type RuntimeSecretDeclaration struct {
 	Name            string   `yaml:"name"`
 	JobID           string   `yaml:"job_id"`
 	ConsumerJobIDs  []string `yaml:"consumer_job_ids"`
-	SiteSecret      string   `yaml:"site_secret"`
 	ProducedByJob   string   `yaml:"produced_by_job"`
 	ExternalOpenBao bool     `yaml:"external_openbao"`
 	Generated       struct {
@@ -161,39 +160,37 @@ func (v *Validator) validatePostgresPeerMappings() {
 }
 
 func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
-	for i, seed := range doc.Seeds {
+	for i, declaration := range doc.Declarations {
 		v.report.RuntimeSecrets++
-		prefix := fmt.Sprintf("openbao_runtime_secret_seed_declarations[%d]", i)
-		if !secretRE.MatchString(strings.TrimSpace(seed.Name)) {
+		prefix := fmt.Sprintf("openbao_runtime_secret_declarations[%d]", i)
+		if !secretRE.MatchString(strings.TrimSpace(declaration.Name)) {
 			v.add(rel, fmt.Sprintf("%s.name must match %s", prefix, secretRE.String()))
 		}
-		if !exactlyOneRuntimeSecretSource(seed.SiteSecret, seed.ProducedByJob, seed.Generated.Bytes, seed.ExternalOpenBao) {
-			v.add(rel, prefix+" must declare exactly one source: site_secret, generated, produced_by_job, or external_openbao")
+		if !exactlyOneRuntimeSecretSource(declaration.ProducedByJob, declaration.Generated.Bytes, declaration.ExternalOpenBao) {
+			v.add(rel, prefix+" must declare exactly one source: generated, produced_by_job, or external_openbao")
 		}
-		if seed.SiteSecret != "" {
-			requireName(v, rel, prefix+".site_secret", seed.SiteSecret)
-		}
-		for j, jobID := range seed.ConsumerJobIDs {
+		for j, jobID := range declaration.ConsumerJobIDs {
 			if !jobIDRE.MatchString(strings.TrimSpace(jobID)) {
 				v.add(rel, fmt.Sprintf("%s.consumer_job_ids[%d] must match %s", prefix, j, jobIDRE.String()))
 			}
 		}
-		if seed.ProducedByJob != "" {
-			if !jobIDRE.MatchString(strings.TrimSpace(seed.ProducedByJob)) {
+		if declaration.ProducedByJob != "" {
+			if !jobIDRE.MatchString(strings.TrimSpace(declaration.ProducedByJob)) {
 				v.add(rel, fmt.Sprintf("%s.produced_by_job must match %s", prefix, jobIDRE.String()))
 			}
 		}
-		if seed.Generated.Bytes != 0 {
-			if seed.Generated.Bytes < 16 || seed.Generated.Bytes > 96 {
+		if declaration.Generated.Bytes != 0 {
+			v.generatedRuntimeSecrets = true
+			if declaration.Generated.Bytes < 16 || declaration.Generated.Bytes > 96 {
 				v.add(rel, prefix+".generated.bytes must be between 16 and 96")
 			}
-			switch strings.TrimSpace(seed.Generated.Encoding) {
+			switch strings.TrimSpace(declaration.Generated.Encoding) {
 			case "", "base64url", "hex", "alphanumeric":
 			default:
 				v.add(rel, prefix+".generated.encoding must be base64url, hex, or alphanumeric")
 			}
 		}
-		v.claim(rel, v.seen.runtimeSecrets, "OpenBao runtime secret", seed.Name)
+		v.claim(rel, v.seen.runtimeSecrets, "OpenBao runtime secret", declaration.Name)
 	}
 }
 

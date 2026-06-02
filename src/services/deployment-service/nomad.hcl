@@ -107,7 +107,7 @@ job "deployment-service" {
         env = true
         data = <<-EOT
 VERSELF_CRED_VALUE_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_SITE_SEED_IMPORT_MARKER={{ with secret "kv-runtime/data/secret/org/deployment-service.site_seed_import_marker" }}{{ .Data.data.value | toJSON }}{{ end }}
+VERSELF_CRED_VALUE_SUBSTRATE_CONTROL_PLANE_MARKER={{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value | toJSON }}{{ end }}
 VERSELF_CRED_VALUE_OPERATOR_DEPLOY_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.operator_deploy_token" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }
