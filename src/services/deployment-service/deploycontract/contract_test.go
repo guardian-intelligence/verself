@@ -15,13 +15,6 @@ postgresql_service_databases:
 postgresql_peer_mappings:
   - { system_user: billing, pg_user: billing }
 `)
-	write(t, root, "src/services/billing-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_seed_declarations:
-  - name: billing-service.stripe.secret_key
-    external_openbao: true
-  - name: billing-service.stripe.webhook_secret
-    external_openbao: true
-`)
 	write(t, root, "src/services/billing-service/deploy/public-routes.yml", `
 haproxy_public_routes:
   - host: '{{ billing_service_domain }}'
@@ -54,19 +47,13 @@ integrations:
     replacement: keep_provider_native
     owner: src/services/billing-service
     purpose: billing
-    credentials:
-      - key: billing-service.stripe.secret_key
-        source: manual_provider_dashboard
-        target: runtime_secret
-        target_store: site_openbao
-        openbao_name: billing-service.stripe.secret_key
 `)
 
 	report, err := ValidateRepo(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.PostgresFiles != 1 || report.RuntimeSecrets != 2 || report.PublicRoutes != 1 || report.IntegrationFiles != 1 {
+	if report.PostgresFiles != 1 || report.RuntimeSecrets != 0 || report.PublicRoutes != 1 || report.IntegrationFiles != 1 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
@@ -93,10 +80,10 @@ postgresql_service_databases:
 
 func TestValidateRepoRejectsUnknownDeployShape(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/services/billing-service/deploy/runtime-secrets.yml", `
+	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_seed_declarations:
-  - name: billing-service.stripe.secret_key
-    site_secret: stripe_secret_key
+  - name: example-service.provider.api_key
+    site_secret: example_provider_api_key
     fallback: ignored
 `)
 
@@ -268,16 +255,16 @@ version: verself.integrations.v1
 site: gamma
 secret_store_policy: openbao_only
 integrations:
-  - key: billing.stripe
-    provider: stripe
-    owner: src/services/billing-service
-    purpose: billing
+  - key: example.provider
+    provider: example
+    owner: src/services/example-service
+    purpose: example
     credentials:
-      - key: billing-service.stripe.secret_key
+      - key: example-service.provider.api_key
         source: bootstrap_session
         target: runtime_secret
         target_store: site_openbao
-        openbao_name: billing-service.stripe.secret_key
+        openbao_name: example-service.provider.api_key
         isolation: bootstrap_shared
 `)
 

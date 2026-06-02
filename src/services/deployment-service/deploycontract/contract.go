@@ -463,15 +463,6 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		}
 		v.requireEmailServiceResendKeyManagerBoundary("src/services/email-service/resend-keys.nomad.hcl")
 	}
-	billingSecretsPath := filepath.Join(v.root, "src", "services", "billing-service", "deploy", "runtime-secrets.yml")
-	if _, err := os.Stat(billingSecretsPath); err == nil {
-		rel := v.rel(billingSecretsPath)
-		var doc RuntimeSecretsFile
-		if v.decode(rel, billingSecretsPath, &doc) {
-			v.requireExternalOpenBaoSecret(rel, doc, "billing-service.stripe.secret_key")
-			v.requireExternalOpenBaoSecret(rel, doc, "billing-service.stripe.webhook_secret")
-		}
-	}
 	githubSecretsPath := filepath.Join(v.root, "src", "services", "github-integration-service", "deploy", "runtime-secrets.yml")
 	if _, err := os.Stat(githubSecretsPath); err == nil {
 		rel := v.rel(githubSecretsPath)

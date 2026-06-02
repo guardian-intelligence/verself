@@ -98,9 +98,9 @@ func TestMaterializeSeedBundleAllowsMissingMachineProvisionedKeys(t *testing.T) 
 
 func TestMaterializeSeedBundleDoesNotRequireExternalProviderRuntimeSecrets(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/services/billing-service/deploy/runtime-secrets.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/services/example-service/deploy/runtime-secrets.yml"), `
 openbao_runtime_secret_seed_declarations:
-  - name: billing-service.stripe.secret_key
+  - name: example-service.provider.api_key
     external_openbao: true
 `)
 	seed := filepath.Join(root, "seed.yml")
@@ -120,7 +120,7 @@ openbao_runtime_secret_seed_declarations:
 		t.Fatal(err)
 	}
 	for _, evidence := range report.Values {
-		if evidence.Key == "stripe_secret_key" || evidence.Key == "billing-service.stripe.secret_key" {
+		if evidence.Key == "example_provider_api_key" || evidence.Key == "example-service.provider.api_key" {
 			t.Fatalf("external provider secret should not be materialized into bootstrap seed: %+v", evidence)
 		}
 	}
@@ -437,12 +437,12 @@ values:
 
 func TestLoadRuntimeSiteSecretKeysScansAllOwnerRoots(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/services/billing-service/deploy/runtime-secrets.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/services/example-service/deploy/runtime-secrets.yml"), `
 openbao_runtime_secret_seed_declarations:
-  - name: billing-service.stripe.secret_key
-    site_secret: stripe_secret_key
-  - name: billing-service.stripe.webhook_secret
-    site_secret: stripe_webhook_secret
+  - name: example-service.provider.api_key
+    site_secret: example_provider_api_key
+  - name: example-service.provider.webhook_secret
+    site_secret: example_provider_webhook_secret
 `)
 	writeTestFile(t, filepath.Join(root, "src/services/email-service/deploy/runtime-secrets.yml"), `
 openbao_runtime_secret_seed_declarations:
@@ -486,10 +486,10 @@ openbao_runtime_secret_seed_declarations:
 		"github_integration_service_github_app_private_key",
 		"github_integration_service_github_app_webhook_secret",
 		"email_provider_api_key",
+		"example_provider_api_key",
+		"example_provider_webhook_secret",
 		"iam_service_email_identity_hmac_key",
 		"infrastructure_provider_api_key",
-		"stripe_secret_key",
-		"stripe_webhook_secret",
 	} {
 		if !got[key] {
 			t.Fatalf("runtime site-secret keys missing %s from %v", key, keys)
@@ -557,11 +557,6 @@ func TestLoadSeedPolicyUsesCatalogAndOwnerLocalDeclarations(t *testing.T) {
 verself_site: gamma
 github_integration_service_github_app_client_id: public-client-id
 `)
-	writeTestFile(t, filepath.Join(root, "src/services/billing-service/deploy/runtime-secrets.yml"), `
-openbao_runtime_secret_seed_declarations:
-  - name: billing-service.stripe.secret_key
-    external_openbao: true
-`)
 	writeTestFile(t, filepath.Join(root, "src/services/iam-service/deploy/runtime-secrets.yml"), `
 openbao_runtime_secret_seed_declarations:
   - name: iam-service.email_identity.hmac_key
@@ -585,26 +580,26 @@ bootstrap_exceptions:
     allowed_uses: [child token provisioning]
     reason: account authority
 integrations:
-  - key: billing.stripe
-    provider: stripe
-    owner: src/services/billing-service
-    purpose: billing
+  - key: example.provider
+    provider: example
+    owner: src/services/example-service
+    purpose: example
     credentials:
-      - key: billing-service.stripe.publishable_key
+      - key: example-service.provider.publishable_key
         source: provider_dashboard
         target: public_config
-        site_var: stripe_publishable_key
-      - key: billing-service.stripe.test_webhook_endpoint_id
+        site_var: example_provider_publishable_key
+      - key: example-service.provider.webhook_endpoint_id
         source: provider_webhook_endpoint
         target: provider_resource_id
-        catalog_field: stripe_test_webhook_endpoint_id
+        catalog_field: example_provider_webhook_endpoint_id
 `)
 
 	policy, err := loadSeedPolicy(root, "gamma")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"stripe_secret_key", "stripe_publishable_key", "stripe_test_webhook_endpoint_id", "github_integration_service_github_app_oauth_client_secret"} {
+	for _, key := range []string{"example_provider_publishable_key", "example_provider_webhook_endpoint_id", "github_integration_service_github_app_oauth_client_secret"} {
 		if _, ok := policy.keys[key]; ok {
 			t.Fatalf("policy should not require product provider key %s during bootstrap: %+v", key, policy.keys)
 		}

@@ -174,16 +174,6 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/provider.env"
-        perms = "0600"
-        data = <<-EOT
-STRIPE_SECRET_KEY={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.secret_key" }}{{ .Data.data.value | toJSON }}{{ end }}
-STRIPE_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
-EOT
-        env = true
-      }
-      template {
-        change_mode = "restart"
         destination = "secrets/upstreams.env"
         perms = "0600"
         data = <<-EOT
