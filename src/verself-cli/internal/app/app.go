@@ -1092,33 +1092,33 @@ func classifyOption(company CompanyRecord, name string) CompanyOption {
 		opt.Provider = parts[0]
 		opt.Kind = parts[1]
 	}
-	target := func(file string) []string {
-		return []string{filepath.ToSlash(filepath.Join("src", "host", "sites", company.Site, "secrets", file))}
+	target := func() []string {
+		return []string{filepath.ToSlash(filepath.Join(".verself", "site-bootstrap", company.Site, "seed.yml"))}
 	}
 	switch {
 	case name == "latitude.api_token":
 		opt.Purpose = "infrastructure"
-		opt.RenderTargets = target("provisioning.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "provisioning"
 	case strings.HasPrefix(name, "cloudflare."):
 		opt.Purpose = "infrastructure"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "dns"
 	case strings.HasPrefix(name, "stripe."):
 		opt.Purpose = "billing"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "billing-service.runtime"
 	case strings.HasPrefix(name, "aws."):
 		opt.Purpose = "backup"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "backup.runtime"
 	case strings.HasPrefix(name, "resend."):
 		opt.Purpose = "notification"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "notifications-service.runtime"
 	default:
 		opt.Purpose = "runtime_integration"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 	}
 	return opt
 }
@@ -1142,7 +1142,7 @@ func findSecretSpec(site, key string) SecretSpec {
 	return SecretSpec{
 		Key:           key,
 		Kind:          "secret",
-		RenderTargets: []string{"src/host/sites/" + site + "/secrets/external.sops.yml"},
+		RenderTargets: []string{".verself/site-bootstrap/" + site + "/seed.yml"},
 		Generator:     func() (string, error) { return randomSecret(32) },
 	}
 }

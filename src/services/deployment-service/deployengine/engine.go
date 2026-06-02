@@ -18,29 +18,16 @@ const tracerName = "github.com/verself/deployment-service/deployengine"
 var gitSHARE = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 type Options struct {
-	Site                     string
-	SHA                      string
-	DeployRunKey             string
-	RepoRoot                 string
-	R2ControlPlaneToken      string
-	R2ControlPlaneAddr       string
-	NomadAddr                string
-	BootstrapArtifactRootURL string
-	ArtifactStager           ArtifactStager
-	Tracer                   trace.Tracer
-	Stdout                   io.Writer
-}
-
-type ArtifactStager func(context.Context, []ArtifactStagingCandidate) error
-
-type ArtifactStagingCandidate struct {
-	Output       string
-	SHA256       string
-	Key          string
-	GetterSource string
-	LocalPath    string
-	Body         []byte
-	SizeBytes    int64
+	Site                string
+	SHA                 string
+	DeployRunKey        string
+	RepoRoot            string
+	R2ControlPlaneToken string
+	R2ControlPlaneAddr  string
+	NomadAddr           string
+	Bootstrap           bool
+	Tracer              trace.Tracer
+	Stdout              io.Writer
 }
 
 type Result struct {
@@ -125,5 +112,5 @@ func (e execution) stdout() io.Writer {
 }
 
 func (e execution) bootstrapMode() bool {
-	return e.BootstrapArtifactRootURL != "" || e.ArtifactStager != nil
+	return e.Bootstrap
 }

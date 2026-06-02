@@ -120,7 +120,7 @@ func Apply(ctx context.Context, cfg Config, store SecretStore, api ResendAPI) (R
 		return Result{}, err
 	}
 	if strings.TrimSpace(created.ID) == "" || strings.TrimSpace(created.Token) == "" {
-		return Result{}, errors.New("Resend create api key response omitted id or token")
+		return Result{}, errors.New("resend create api key response omitted id or token")
 	}
 	for _, secret := range cfg.ChildSecrets {
 		if err := store.Write(ctx, secret, created.Token); err != nil {
@@ -280,11 +280,11 @@ func NewHTTPResendAPI(baseURL, adminToken string, client *http.Client) (*HTTPRes
 	baseURL = strings.TrimRight(strings.TrimSpace(firstNonEmpty(baseURL, "https://api.resend.com")), "/")
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-		return nil, fmt.Errorf("Resend API base URL must be https: %q", baseURL)
+		return nil, fmt.Errorf("resend API base URL must be https: %q", baseURL)
 	}
 	adminToken = strings.TrimSpace(adminToken)
 	if adminToken == "" {
-		return nil, errors.New("Resend full-access API key is required")
+		return nil, errors.New("resend full-access API key is required")
 	}
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
@@ -300,7 +300,7 @@ func NewHTTPResendAPI(baseURL, adminToken string, client *http.Client) (*HTTPRes
 func (c *HTTPResendAPI) CreateAPIKey(ctx context.Context, req CreateAPIKeyRequest) (CreateAPIKeyResponse, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return CreateAPIKeyResponse{}, errors.New("Resend API key name is required")
+		return CreateAPIKeyResponse{}, errors.New("resend API key name is required")
 	}
 	permission := strings.TrimSpace(req.Permission)
 	if permission == "" {
@@ -342,7 +342,7 @@ func (c *HTTPResendAPI) CreateAPIKey(ctx context.Context, req CreateAPIKeyReques
 func (c *HTTPResendAPI) DeleteAPIKey(ctx context.Context, id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return errors.New("Resend API key id is required")
+		return errors.New("resend API key id is required")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+"/api-keys/"+url.PathEscape(id), http.NoBody)
 	if err != nil {
@@ -373,15 +373,15 @@ type OpenBaoStore struct {
 func NewOpenBaoStore(addr, caCert, token string) (*OpenBaoStore, error) {
 	addr = strings.TrimRight(strings.TrimSpace(addr), "/")
 	if addr == "" {
-		return nil, errors.New("OpenBao address is required")
+		return nil, errors.New("openbao address is required")
 	}
 	parsed, err := url.Parse(addr)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-		return nil, fmt.Errorf("OpenBao address must be https: %q", addr)
+		return nil, fmt.Errorf("openbao address must be https: %q", addr)
 	}
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return nil, errors.New("OpenBao token is required")
+		return nil, errors.New("openbao token is required")
 	}
 	pool, err := x509.SystemCertPool()
 	if err != nil {

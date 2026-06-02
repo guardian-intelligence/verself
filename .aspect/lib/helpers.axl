@@ -53,7 +53,6 @@ ACTIONS_PUBLISHER_TARGET = "//src/tools/actions/cmd/actions-publisher:actions-pu
 ANSIBLE_PLAYBOOK_TARGET = "//src/host:ansible_playbook_bin"
 ANSIBLE_COLLECTIONS_ARCHIVE_TARGET = "//src/host:ansible_collections_archive"
 DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-SOPS_SHIM = ("sops", "//src/tools/dev/binaries:sops")
 STRIPE_CLI_SHIM = ("stripe", "//src/tools/dev/binaries:stripe")
 
 # Aspect-owned Vite+ toolchain, shared by the frontend build and controller
@@ -350,12 +349,8 @@ def path_env_with_bazel_tool_shims(ctx, shims, bin_dir = ".verself/tools/aspect/
             return None
         env["PATH"] = tool_dir + ":" + DEFAULT_PROCESS_PATH
         for name, _target in shims:
-            if name == "age-keygen":
-                env["VERSELF_AGE_KEYGEN_BIN"] = tool_dir + "/age-keygen"
             if name == "ansible-playbook":
                 env["VERSELF_ANSIBLE_PLAYBOOK_BIN"] = tool_dir + "/ansible-playbook"
-            if name == "sops":
-                env["VERSELF_SOPS_BIN"] = tool_dir + "/sops"
             if name == "tofu":
                 env["TOFU_BIN"] = tool_dir + "/tofu"
     return env

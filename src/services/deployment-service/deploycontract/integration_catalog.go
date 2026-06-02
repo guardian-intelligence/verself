@@ -153,8 +153,10 @@ func validateBootstrapException(v *Validator, rel string, index int, exception B
 		v.add(rel, prefix+".key must be provider-qualified")
 	}
 	requireName(v, rel, prefix+".provider", exception.Provider)
-	if exception.Isolation != "bootstrap_shared" {
-		v.add(rel, prefix+".isolation must be bootstrap_shared")
+	switch exception.Isolation {
+	case "bootstrap_shared", "controller_only":
+	default:
+		v.add(rel, prefix+".isolation must be bootstrap_shared or controller_only")
 	}
 	if len(exception.CredentialKeys) == 0 {
 		v.add(rel, prefix+".credential_keys must not be empty")
@@ -188,7 +190,7 @@ func validateIntegrationCredential(v *Validator, rel, prefix string, credential 
 	}
 	if credential.TargetStore == "" {
 		switch credential.Target {
-		case "public_config", "provider_resource_id":
+		case "public_config", "provider_resource_id", "bootstrap_seed":
 		default:
 			v.add(rel, prefix+".target_store is required")
 		}
@@ -202,11 +204,13 @@ func validateIntegrationCredential(v *Validator, rel, prefix string, credential 
 			v.add(rel, prefix+".openbao_name must match the runtime secret naming shape")
 		}
 	}
-	if credential.Target == "public_config" && strings.TrimSpace(credential.SiteVar) == "" {
-		v.add(rel, prefix+".site_var is required for public_config targets")
+	if (credential.Target == "public_config" || credential.Target == "bootstrap_seed") && strings.TrimSpace(credential.SiteVar) == "" {
+		v.add(rel, prefix+".site_var is required for "+credential.Target+" targets")
 	}
-	if credential.Isolation != "" && credential.Isolation != "bootstrap_shared" {
-		v.add(rel, prefix+".isolation must be bootstrap_shared when set")
+	switch credential.Isolation {
+	case "", "bootstrap_shared", "site_scoped":
+	default:
+		v.add(rel, prefix+".isolation must be bootstrap_shared or site_scoped when set")
 	}
 	if credential.Isolation == "bootstrap_shared" && (credential.Target == "runtime_secret" || credential.TargetStore == "site_openbao" || credential.TargetStore == "runtime_secret") {
 		v.add(rel, prefix+".isolation bootstrap_shared cannot feed runtime secrets or site OpenBao")
@@ -215,7 +219,7 @@ func validateIntegrationCredential(v *Validator, rel, prefix string, credential 
 
 func validateStorageTarget(v *Validator, rel, field, target string) {
 	switch target {
-	case "bootstrap_session", "controller_openbao", "site_openbao", "runtime_secret", "product_kv", "public_config", "provider_resource_id", "provisioning_bootstrap":
+	case "bootstrap_session", "controller_openbao", "site_openbao", "runtime_secret", "product_kv", "public_config", "provider_resource_id", "provisioning_bootstrap", "site_seed":
 	default:
 		v.add(rel, field+" has unsupported storage target "+sortedJSON(target))
 	}

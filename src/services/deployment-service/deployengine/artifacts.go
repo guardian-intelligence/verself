@@ -158,9 +158,6 @@ func publishArtifacts(ctx context.Context, exec execution, inputs *deployInputs)
 	if len(candidates) == 0 {
 		return nil
 	}
-	if exec.ArtifactStager != nil {
-		return stageArtifacts(ctx, exec, candidates)
-	}
 	ctx, span := exec.Tracer.Start(ctx, "verself_deploy.artifacts.publish",
 		trace.WithAttributes(
 			attribute.String("verself.site", exec.Site),
@@ -247,36 +244,6 @@ func publishArtifacts(ctx context.Context, exec execution, inputs *deployInputs)
 	}
 	if len(completed.Objects) != len(candidates) {
 		err := fmt.Errorf("R2 control-plane completed %d artifacts, expected %d", len(completed.Objects), len(candidates))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	span.SetStatus(codes.Ok, "")
-	return nil
-}
-
-func stageArtifacts(ctx context.Context, exec execution, candidates []uploadCandidate) error {
-	staged := make([]ArtifactStagingCandidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		staged = append(staged, ArtifactStagingCandidate{
-			Output:       candidate.Artifact.Output,
-			SHA256:       candidate.Artifact.SHA256,
-			Key:          candidate.Artifact.Key,
-			GetterSource: candidate.Artifact.GetterSource,
-			LocalPath:    candidate.LocalPath,
-			Body:         candidate.Body,
-			SizeBytes:    candidate.SizeBytes,
-		})
-	}
-	ctx, span := exec.Tracer.Start(ctx, "verself_deploy.artifacts.stage_bootstrap",
-		trace.WithAttributes(
-			attribute.String("verself.site", exec.Site),
-			attribute.String("verself.deploy_run_key", exec.DeployRunKey),
-			attribute.Int("verself.artifact_count", len(staged)),
-		),
-	)
-	defer span.End()
-	if err := exec.ArtifactStager(ctx, staged); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err

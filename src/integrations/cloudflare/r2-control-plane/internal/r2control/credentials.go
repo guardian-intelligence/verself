@@ -1,17 +1,11 @@
 package r2control
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -21,7 +15,6 @@ const (
 	ParentCredentialSourceAuto    = "auto"
 	ParentCredentialSourceEnv     = "env"
 	ParentCredentialSourceEnvFile = "env-file"
-	ParentCredentialSourceOpenBao = "openbao"
 )
 
 type ParentCredentialConfig struct {
@@ -32,11 +25,6 @@ type ParentCredentialConfig struct {
 	SecretAccessKeyEnv string
 	APITokenEnv        string
 	SessionTokenEnv    string
-	OpenBaoAddr        string
-	OpenBaoPath        string
-	OpenBaoCACertFile  string
-	OpenBaoTokenEnv    string
-	OpenBaoTokenFile   string
 	Timeout            time.Duration
 }
 
@@ -50,7 +38,7 @@ type ParentCredentials struct {
 
 func (cfg ParentCredentialConfig) WithDefaults() ParentCredentialConfig {
 	if cfg.Source == "" {
-		cfg.Source = ParentCredentialSourceOpenBao
+		cfg.Source = ParentCredentialSourceEnv
 	}
 	if cfg.AccessKeyIDEnv == "" {
 		cfg.AccessKeyIDEnv = "CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID"
@@ -63,12 +51,6 @@ func (cfg ParentCredentialConfig) WithDefaults() ParentCredentialConfig {
 	}
 	if cfg.SessionTokenEnv == "" {
 		cfg.SessionTokenEnv = "CLOUDFLARE_R2_ADMIN_SESSION_TOKEN"
-	}
-	if cfg.OpenBaoPath == "" {
-		cfg.OpenBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
-	}
-	if cfg.OpenBaoTokenEnv == "" {
-		cfg.OpenBaoTokenEnv = "BAO_TOKEN"
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
@@ -85,11 +67,7 @@ func LoadParentCredentials(ctx context.Context, cfg ParentCredentialConfig) (Par
 	case ParentCredentialSourceEnvFile:
 		creds, err := loadParentCredentialsFromEnvFile(cfg)
 		return resolveParentCredentials(ctx, cfg, creds, err)
-	case ParentCredentialSourceOpenBao:
-		creds, err := loadParentCredentialsFromOpenBao(ctx, cfg)
-		return resolveParentCredentials(ctx, cfg, creds, err)
 	case ParentCredentialSourceAuto, "":
-		// Explicit auto is for one-time bootstrap diagnostics; steady state reads controller OpenBao.
 		if envHasParentCredentials(cfg) {
 			creds, err := loadParentCredentialsFromEnv(cfg)
 			return resolveParentCredentials(ctx, cfg, creds, err)
@@ -98,11 +76,7 @@ func LoadParentCredentials(ctx context.Context, cfg ParentCredentialConfig) (Par
 			creds, err := loadParentCredentialsFromEnvFile(cfg)
 			return resolveParentCredentials(ctx, cfg, creds, err)
 		}
-		if cfg.OpenBaoAddr != "" || cfg.OpenBaoTokenFile != "" || os.Getenv(cfg.OpenBaoTokenEnv) != "" || os.Getenv("BAO_TOKEN") != "" || os.Getenv("VAULT_TOKEN") != "" {
-			creds, err := loadParentCredentialsFromOpenBao(ctx, cfg)
-			return resolveParentCredentials(ctx, cfg, creds, err)
-		}
-		return ParentCredentials{}, fmt.Errorf("no R2 credentials found; set %s plus %s or %s, pass credentials file, or use OpenBao",
+		return ParentCredentials{}, fmt.Errorf("no R2 credentials found; set %s plus %s or %s, or pass credentials file",
 			cfg.AccessKeyIDEnv, cfg.SecretAccessKeyEnv, cfg.APITokenEnv)
 	default:
 		return ParentCredentials{}, fmt.Errorf("unsupported R2 credential source %q", cfg.Source)
@@ -147,116 +121,6 @@ func loadParentCredentialsFromEnvFile(cfg ParentCredentialConfig) (ParentCredent
 	return parentCredentialsFromValues(mapped, "env-file:"+cfg.CredentialsFile)
 }
 
-func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialConfig) (ParentCredentials, error) {
-	addr := strings.TrimRight(strings.TrimSpace(firstNonEmpty(cfg.OpenBaoAddr, os.Getenv("BAO_ADDR"), os.Getenv("VAULT_ADDR"))), "/")
-	if addr == "" {
-		return ParentCredentials{}, errors.New("openbao address is required via config, BAO_ADDR, or VAULT_ADDR")
-	}
-	token, err := LoadOpenBaoToken(cfg)
-	if err != nil {
-		return ParentCredentials{}, err
-	}
-	path := strings.Trim(strings.TrimSpace(cfg.OpenBaoPath), "/")
-	if path == "" {
-		return ParentCredentials{}, errors.New("openbao path is required for r2 credentials")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr+"/v1/"+path, http.NoBody)
-	if err != nil {
-		return ParentCredentials{}, err
-	}
-	req.Header.Set("X-Vault-Token", token)
-	client, err := openBaoHTTPClient(cfg)
-	if err != nil {
-		return ParentCredentials{}, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return ParentCredentials{}, fmt.Errorf("read OpenBao R2 credentials: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return ParentCredentials{}, fmt.Errorf("read OpenBao response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ParentCredentials{}, fmt.Errorf("openbao read %s returned status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	values, err := OpenBaoSecretData(body)
-	if err != nil {
-		return ParentCredentials{}, err
-	}
-	return parentCredentialsFromValues(values, "openbao:"+path)
-}
-
-func WriteParentCredentialsToOpenBao(ctx context.Context, cfg ParentCredentialConfig, values map[string]string) error {
-	cfg = cfg.WithDefaults()
-	addr := strings.TrimRight(strings.TrimSpace(firstNonEmpty(cfg.OpenBaoAddr, os.Getenv("BAO_ADDR"), os.Getenv("VAULT_ADDR"))), "/")
-	if addr == "" {
-		return errors.New("openbao address is required via config, BAO_ADDR, or VAULT_ADDR")
-	}
-	token, err := LoadOpenBaoToken(cfg)
-	if err != nil {
-		return err
-	}
-	path := strings.Trim(strings.TrimSpace(cfg.OpenBaoPath), "/")
-	if path == "" {
-		return errors.New("openbao path is required for r2 credentials")
-	}
-	if !strings.Contains(path, "/data/") {
-		return fmt.Errorf("openbao path %q must be a KV v2 data path", path)
-	}
-	body, err := json.Marshal(map[string]map[string]string{"data": values})
-	if err != nil {
-		return fmt.Errorf("encode OpenBao R2 credentials: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, addr+"/v1/"+path, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Vault-Token", token)
-	client, err := openBaoHTTPClient(cfg)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("write OpenBao R2 credentials: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return fmt.Errorf("read OpenBao response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("openbao write %s returned status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	return nil
-}
-
-func openBaoHTTPClient(cfg ParentCredentialConfig) (*http.Client, error) {
-	client := &http.Client{Timeout: cfg.Timeout}
-	caFile := firstNonEmpty(cfg.OpenBaoCACertFile, os.Getenv("BAO_CACERT"), os.Getenv("VAULT_CACERT"))
-	if caFile == "" {
-		return client, nil
-	}
-	cert, err := os.ReadFile(caFile)
-	if err != nil {
-		return nil, fmt.Errorf("read OpenBao CA cert: %w", err)
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(cert) {
-		return nil, fmt.Errorf("openbao CA cert file contains no PEM certificates")
-	}
-	client.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs:    pool,
-			MinVersion: tls.VersionTLS12,
-		},
-	}
-	return client, nil
-}
-
 func resolveParentCredentials(ctx context.Context, cfg ParentCredentialConfig, creds ParentCredentials, err error) (ParentCredentials, error) {
 	if err != nil {
 		return ParentCredentials{}, err
@@ -285,52 +149,6 @@ func resolveParentCredentials(ctx context.Context, cfg ParentCredentialConfig, c
 	creds.AccessKeyID = verified.ID
 	creds.Source += ":verified-token-id"
 	return creds, nil
-}
-
-func LoadOpenBaoToken(cfg ParentCredentialConfig) (string, error) {
-	if cfg.OpenBaoTokenFile != "" {
-		body, err := os.ReadFile(cfg.OpenBaoTokenFile)
-		if err != nil {
-			return "", fmt.Errorf("read OpenBao token file: %w", err)
-		}
-		token := strings.TrimSpace(string(body))
-		if token == "" {
-			return "", errors.New("openbao token file is empty")
-		}
-		return token, nil
-	}
-	for _, envName := range []string{cfg.OpenBaoTokenEnv, "BAO_TOKEN", "VAULT_TOKEN"} {
-		if envName == "" {
-			continue
-		}
-		if token := strings.TrimSpace(os.Getenv(envName)); token != "" {
-			return token, nil
-		}
-	}
-	return "", errors.New("openbao token is required via token file, BAO_TOKEN, or VAULT_TOKEN")
-}
-
-func OpenBaoSecretData(body []byte) (map[string]string, error) {
-	var raw struct {
-		Data json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("decode OpenBao response: %w", err)
-	}
-	var maybeKV2 struct {
-		Data map[string]string `json:"data"`
-	}
-	if err := json.Unmarshal(raw.Data, &maybeKV2); err == nil && len(maybeKV2.Data) > 0 {
-		return maybeKV2.Data, nil
-	}
-	values := map[string]string{}
-	if err := json.Unmarshal(raw.Data, &values); err != nil {
-		return nil, fmt.Errorf("decode OpenBao secret data: %w", err)
-	}
-	if len(values) == 0 {
-		return nil, errors.New("openbao secret has no data")
-	}
-	return values, nil
 }
 
 func parentCredentialsFromValues(values map[string]string, source string) (ParentCredentials, error) {

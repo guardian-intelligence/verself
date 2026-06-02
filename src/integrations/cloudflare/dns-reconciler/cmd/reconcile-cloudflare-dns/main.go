@@ -16,14 +16,12 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,7 +36,6 @@ type config struct {
 	site        string
 	ansibleDir  string
 	inventory   string
-	secretsPath string
 	varsFile    string
 	tokenFile   string
 	timeout     time.Duration
@@ -52,7 +49,6 @@ func run(args []string) error {
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
 	fs.StringVar(&cfg.ansibleDir, "ansible-dir", "", "Path to authored host Ansible root (defaults to src/host/ansible).")
 	fs.StringVar(&cfg.inventory, "inventory", "", "Path to the site Ansible inventory (defaults to src/host/sites/<site>/inventory.ini).")
-	fs.StringVar(&cfg.secretsPath, "secrets", "", "Path to legacy SOPS-encrypted host secrets.")
 	fs.StringVar(&cfg.varsFile, "vars-file", "", "Path to generated bootstrap Ansible secret vars.")
 	fs.StringVar(&cfg.tokenFile, "cloudflare-token-file", "", "Path to a file containing only cloudflare_api_token.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for the Cloudflare API.")
@@ -67,10 +63,6 @@ func run(args []string) error {
 	if cfg.inventory == "" {
 		cfg.inventory = filepath.Clean(filepath.Join(cfg.ansibleDir, "..", "sites", cfg.site, "inventory.ini"))
 	}
-	if cfg.secretsPath == "" && cfg.varsFile == "" && cfg.tokenFile == "" {
-		cfg.secretsPath = filepath.Clean(filepath.Join(cfg.ansibleDir, "..", "sites", cfg.site, "secrets", "host.sops.yml"))
-	}
-
 	desired, err := loadDesired(cfg.ansibleDir, cfg.site, cfg.inventory)
 	if err != nil {
 		return err
@@ -351,36 +343,46 @@ func readYAML(path string, into any) error {
 
 func loadCloudflareToken(cfg config) (string, error) {
 	sources := 0
-	for _, value := range []string{cfg.varsFile, cfg.tokenFile, cfg.secretsPath} {
+	for _, value := range []string{cfg.varsFile, cfg.tokenFile} {
 		if strings.TrimSpace(value) != "" {
 			sources++
 		}
 	}
 	if sources != 1 {
-		return "", fmt.Errorf("declare exactly one token source: --vars-file, --cloudflare-token-file, or --secrets")
+		return "", fmt.Errorf("declare exactly one token source: --vars-file or --cloudflare-token-file")
 	}
 	switch {
 	case cfg.varsFile != "":
 		return readCloudflareTokenFromVars(cfg.varsFile)
-	case cfg.tokenFile != "":
-		return readPlainToken(cfg.tokenFile)
 	default:
-		return decryptSopsToken(cfg.secretsPath)
+		return readPlainToken(cfg.tokenFile)
 	}
 }
 
 func readCloudflareTokenFromVars(path string) (string, error) {
 	var values struct {
 		CloudflareAPIToken string `json:"cloudflare_api_token" yaml:"cloudflare_api_token"`
+		Values             struct {
+			CloudflareAPIToken string `json:"cloudflare_api_token" yaml:"cloudflare_api_token"`
+		} `json:"values" yaml:"values"`
 	}
 	if err := readYAML(path, &values); err != nil {
 		return "", fmt.Errorf("read %s: %w", path, err)
 	}
-	token := strings.TrimSpace(values.CloudflareAPIToken)
+	token := strings.TrimSpace(firstNonEmpty(values.CloudflareAPIToken, values.Values.CloudflareAPIToken))
 	if token == "" {
 		return "", fmt.Errorf("%s has no cloudflare_api_token", path)
 	}
 	return token, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func readPlainToken(path string) (string, error) {
@@ -393,57 +395,6 @@ func readPlainToken(path string) (string, error) {
 		return "", fmt.Errorf("%s is empty", path)
 	}
 	return token, nil
-}
-
-// decryptSopsToken shells out to `sops -d --extract '["cloudflare_api_token"]'`
-// to read the single ciphertext we care about; doing it ourselves would
-// require linking against the SOPS Go library and decrypting age/PGP/KMS
-// recipients we don't manage here.
-func decryptSopsToken(path string) (string, error) {
-	if _, err := os.Stat(path); err != nil {
-		return "", fmt.Errorf("stat %s: %w", path, err)
-	}
-	cmd := exec.Command(sopsBinary(), "-d", "--extract", `["cloudflare_api_token"]`, path)
-	out, err := cmd.Output()
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			return "", fmt.Errorf("sops -d %s: %w (%s)", path, err, string(ee.Stderr))
-		}
-		return "", fmt.Errorf("sops -d %s: %w", path, err)
-	}
-	tok := string(out)
-	for len(tok) > 0 && (tok[len(tok)-1] == '\n' || tok[len(tok)-1] == '\r') {
-		tok = tok[:len(tok)-1]
-	}
-	if tok == "" {
-		return "", fmt.Errorf("sops -d %s returned empty value for cloudflare_api_token", path)
-	}
-	return tok, nil
-}
-
-func sopsBinary() string {
-	if value := strings.TrimSpace(os.Getenv("VERSELF_SOPS_BIN")); value != "" {
-		return value
-	}
-	if path := bazelRunfile("src/tools/dev/binaries/sops"); path != "" {
-		return path
-	}
-	return "sops"
-}
-
-func bazelRunfile(rel string) string {
-	for _, candidate := range []string{"verself/" + rel, "_main/" + rel, rel} {
-		path, err := runfiles.Rlocation(candidate)
-		if err != nil {
-			continue
-		}
-		info, err := os.Stat(path)
-		if err == nil && !info.IsDir() {
-			return path
-		}
-	}
-	return ""
 }
 
 // ---- helpers used by main / cf client ------------------------------------

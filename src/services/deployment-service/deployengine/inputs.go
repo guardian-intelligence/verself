@@ -125,10 +125,6 @@ func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, erro
 	if strings.TrimSpace(exec.R2ControlPlaneAddr) != "" {
 		cfg.ArtifactDelivery.ControlPlaneAddr = strings.TrimSpace(exec.R2ControlPlaneAddr)
 	}
-	if strings.TrimSpace(exec.BootstrapArtifactRootURL) != "" {
-		cfg.ArtifactDelivery.GetterSourcePrefix = strings.TrimRight(strings.TrimSpace(exec.BootstrapArtifactRootURL), "/")
-		cfg.ArtifactDelivery.GetterOptions = map[string]string{}
-	}
 	model, err := siteconfig.Load(repoRoot, site)
 	if err != nil {
 		return nil, err

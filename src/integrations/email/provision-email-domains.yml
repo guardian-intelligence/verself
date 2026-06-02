@@ -4,17 +4,18 @@
 # controller-side provider setup; runtime Resend sending keys are created by
 # email-service after site OpenBao is available.
 #
-# Run with the host Ansible toolchain so SOPS and the community.general /
-# community.sops collections resolve, pointing roles at the integration trees:
+# Run with the host Ansible toolchain, pointing roles at the integration trees:
 #
 #   ANSIBLE_ROLES_PATH=src/integrations/resend/domain-bootstrap:src/integrations/cloudflare/email-routing \
 #     ansible-playbook -i src/host/sites/prod/inventory.ini \
-#       -e verself_site=prod src/integrations/email/provision-email-domains.yml
+#       -e verself_site=prod \
+#       -e verself_site_secret_vars_file=.verself/site-bootstrap/prod/ansible-secrets.json \
+#       src/integrations/email/provision-email-domains.yml
 #
-# The Cloudflare token (host.sops.yml: cloudflare_api_token) must carry the
-# "Email Routing" edit permission in addition to Zone DNS edit; the enable call
-# returns 403 without it. After it runs, click the verification link Cloudflare
-# emails to the forwarding destination.
+# cloudflare_api_token must carry the "Email Routing" edit permission in
+# addition to Zone DNS edit; the enable call returns 403 without it. After it
+# runs, click the verification link Cloudflare emails to the forwarding
+# destination.
 #
 # Resend keeps its MX/SPF on the send.<domain> subdomain and DKIM on
 # resend._domainkey, so the apex is free for Cloudflare Email Routing's records.
@@ -25,16 +26,18 @@
   vars_files:
     - "../../host/sites/{{ verself_site | default('prod') }}/vars.yml"
   vars:
+    verself_site_secret_vars_file: "{{ lookup('ansible.builtin.env', 'VERSELF_SITE_SECRET_VARS_FILE') }}"
     resend_full_access_api_key: "{{ lookup('ansible.builtin.env', 'RESEND_FULL_ACCESS_API_KEY') }}"
   tasks:
+    - name: Require site secret vars file
+      ansible.builtin.assert:
+        that:
+          - verself_site_secret_vars_file | length > 0
+        fail_msg: "Set -e verself_site_secret_vars_file=... or VERSELF_SITE_SECRET_VARS_FILE."
+
     - name: Load site secrets
-      community.sops.load_vars:
-        file: "../../host/sites/{{ verself_site | default('prod') }}/secrets/{{ secrets_file }}"
-      loop:
-        - host.sops.yml
-        - external.sops.yml
-      loop_control:
-        loop_var: secrets_file
+      ansible.builtin.include_vars:
+        file: "{{ verself_site_secret_vars_file }}"
       no_log: true
 
     - name: Register and verify Resend sending domains

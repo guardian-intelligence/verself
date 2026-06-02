@@ -1,10 +1,9 @@
-"""aspect site seed-template|controller-secret-handoff|materialize-seed|validate-seed|inventory-write|root-handoff|converge-host."""
+"""aspect site seed-template|materialize-seed|validate-seed|inventory-write|root-handoff|converge-host."""
 
 load(
     ".aspect/lib/helpers.axl",
     "DEFAULT_SITE",
     "HOST_CONFIGURATION_DIR",
-    "SOPS_SHIM",
     "bazel_output_file",
     "bazel_run",
     "checked_spawn",
@@ -16,6 +15,7 @@ load(
 )
 
 _SITE_BOOTSTRAP_TARGET = "//src/tools/deployment/cmd/site-bootstrap:site-bootstrap"
+_CLOUDFLARE_R2_CONTROL_PLANE_TARGET = "//src/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane:cloudflare-r2-control-plane"
 _HOST_TOOLS_TARGET = "//src/host:host_tools_artifact"
 _SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
 
@@ -37,6 +37,9 @@ def _default_runtime_seed(site):
 
 def _default_site_root_key(site):
     return ".verself/site-bootstrap/" + site + "/site-root.key"
+
+def _default_r2_publisher_credentials(site):
+    return ".verself/site-bootstrap/" + site + "/r2-publisher.env"
 
 def _default_evidence(site):
     return ".verself/site-bootstrap/" + site + "/seed-fingerprints.json"
@@ -66,44 +69,6 @@ seed_template = task(
         "site": args.string(default = "prod", description = "Deployment site."),
         "out": args.string(default = "", description = "Output seed template path."),
         "force": args.boolean(default = False, description = "Overwrite an existing template."),
-    },
-)
-
-def _controller_secret_handoff_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
-    seed = ctx.args.seed_bundle or _default_seed(site)
-    args_list = [
-        "controller-secret-handoff",
-        "--site=" + site,
-        "--key=" + ctx.args.key,
-        "--seed-bundle=" + _abs(ctx, seed),
-        "--repo-root=" + ws_path(ctx),
-    ]
-    if ctx.args.out != "":
-        args_list.append("--out=" + _abs(ctx, ctx.args.out))
-    if not ctx.args.remove:
-        args_list.append("--remove=false")
-    if ctx.args.force:
-        args_list.append("--force")
-    return bazel_run(
-        ctx,
-        _SITE_BOOTSTRAP_TARGET,
-        args_list,
-        label = "site-bootstrap controller-secret-handoff --site " + site,
-    )
-
-controller_secret_handoff = task(
-    implementation = _controller_secret_handoff_impl,
-    name = "controller-secret-handoff",
-    group = ["site"],
-    summary = "Extract a controller-only seed value into an ignored private file and remove it from the seed.",
-    args = {
-        "site": args.string(default = "prod", description = "Deployment site."),
-        "key": args.string(default = "", description = "Controller-only seed key to extract."),
-        "seed_bundle": args.string(default = "", description = "Seed bundle path. Defaults to .verself/site-bootstrap/<site>/seed.yml."),
-        "out": args.string(default = "", description = "Output path. Defaults to .verself/site-bootstrap/<site>/<key>.txt."),
-        "remove": args.boolean(default = True, description = "Remove the extracted controller-only key from the seed."),
-        "force": args.boolean(default = False, description = "Overwrite an existing output file."),
     },
 )
 
@@ -301,7 +266,7 @@ def _converge_host_impl(ctx):
     ansible_playbook = host_ansible_playbook(ctx)
     if ansible_playbook == "":
         return 1
-    env = host_ansible_env(ctx, tool_shims = [SOPS_SHIM])
+    env = host_ansible_env(ctx)
     if env == None:
         return 1
     ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
@@ -372,6 +337,9 @@ def _bootstrap_deploy_impl(ctx):
             return 1
     if inventory_check(ctx, site = site) != 0:
         return 1
+    r2_control_plane = bazel_output_file(ctx, _CLOUDFLARE_R2_CONTROL_PLANE_TARGET)
+    if r2_control_plane == "":
+        return 1
     args_list = [
         "bootstrap-deploy",
         "--site=" + site,
@@ -381,7 +349,11 @@ def _bootstrap_deploy_impl(ctx):
         "--secret-vars-file=" + _abs(ctx, secret_vars),
         "--openbao-runtime-seed-file=" + _abs(ctx, runtime_seed),
         "--ssh-transport=" + ctx.args.ssh_transport,
+        "--r2-control-plane-binary=" + r2_control_plane,
+        "--r2-credential-source=" + ctx.args.r2_credential_source,
     ]
+    r2_credentials_file = ctx.args.r2_credentials_file or _default_r2_publisher_credentials(site)
+    args_list.append("--r2-credentials-file=" + _abs(ctx, r2_credentials_file))
     if ctx.args.timeout != "":
         args_list.append("--timeout=" + ctx.args.timeout)
     return bazel_run(
@@ -403,6 +375,8 @@ bootstrap_deploy = task(
         "secret_vars_file": args.string(default = "", description = "Generated Ansible vars file. Defaults to .verself/site-bootstrap/<site>/ansible-secrets.json."),
         "openbao_runtime_seed_file": args.string(default = "", description = "Filtered OpenBao runtime seed file. Defaults to .verself/site-bootstrap/<site>/openbao-runtime-seed.json."),
         "ssh_transport": args.string(default = "recovery", description = "SSH transport for the bootstrap Nomad tunnel: recovery or inventory."),
+        "r2_credential_source": args.string(default = "env-file", description = "R2 credential source for bootstrap publishing: env, env-file, or auto."),
+        "r2_credentials_file": args.string(default = "", description = "Scoped R2 publisher env file. Defaults to .verself/site-bootstrap/<site>/r2-publisher.env."),
         "timeout": args.string(default = "15m", description = "Bootstrap deploy timeout as a Go duration."),
     },
 )

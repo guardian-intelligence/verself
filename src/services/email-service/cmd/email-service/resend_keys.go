@@ -98,7 +98,7 @@ func (a openBaoBackedResendAPI) api(ctx context.Context) (*resendkeys.HTTPResend
 		return nil, fmt.Errorf("read Resend full-access key: %w", err)
 	}
 	if !found || strings.TrimSpace(adminToken) == "" {
-		return nil, fmt.Errorf("Resend full-access key %s is empty or missing in OpenBao", a.adminSecret)
+		return nil, fmt.Errorf("resend full-access key %s is empty or missing in OpenBao", a.adminSecret)
 	}
 	api, err := resendkeys.NewHTTPResendAPI(a.baseURL, adminToken, a.httpClient)
 	if err != nil {

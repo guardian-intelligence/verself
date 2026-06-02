@@ -166,8 +166,8 @@ func (v *Validator) walkSiteSecrets() error {
 		}
 		rel := v.rel(path)
 		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if len(parts) >= 5 && parts[0] == "src" && parts[1] == "host" && parts[2] == "sites" && parts[4] == "secrets" && parts[3] != "prod" {
-			v.add(rel, "new site bootstrap must not use SOPS secret files; use a local generated seed vars file")
+		if len(parts) >= 5 && parts[0] == "src" && parts[1] == "host" && parts[2] == "sites" && parts[4] == "secrets" {
+			v.add(rel, "site bootstrap must not use encrypted repository secret files; use local generated seed vars and OpenBao imports")
 		}
 		return nil
 	})
@@ -463,6 +463,33 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		}
 		v.requireEmailServiceResendKeyManagerBoundary("src/services/email-service/resend-keys.nomad.hcl")
 	}
+	billingSecretsPath := filepath.Join(v.root, "src", "services", "billing-service", "deploy", "runtime-secrets.yml")
+	if _, err := os.Stat(billingSecretsPath); err == nil {
+		rel := v.rel(billingSecretsPath)
+		var doc RuntimeSecretsFile
+		if v.decode(rel, billingSecretsPath, &doc) {
+			v.requireExternalOpenBaoSecret(rel, doc, "billing-service.stripe.secret_key")
+			v.requireExternalOpenBaoSecret(rel, doc, "billing-service.stripe.webhook_secret")
+		}
+	}
+	githubSecretsPath := filepath.Join(v.root, "src", "services", "github-integration-service", "deploy", "runtime-secrets.yml")
+	if _, err := os.Stat(githubSecretsPath); err == nil {
+		rel := v.rel(githubSecretsPath)
+		var doc RuntimeSecretsFile
+		if v.decode(rel, githubSecretsPath, &doc) {
+			v.requireExternalOpenBaoSecret(rel, doc, "github-integration-service.github.private_key")
+			v.requireExternalOpenBaoSecret(rel, doc, "github-integration-service.github.webhook_secret")
+			v.requireExternalOpenBaoSecret(rel, doc, "github-integration-service.github.oauth_client_secret")
+		}
+	}
+	zitadelSecretsPath := filepath.Join(v.root, "src", "infrastructure-components", "zitadel", "deploy", "runtime-secrets.yml")
+	if _, err := os.Stat(zitadelSecretsPath); err == nil {
+		rel := v.rel(zitadelSecretsPath)
+		var doc RuntimeSecretsFile
+		if v.decode(rel, zitadelSecretsPath, &doc) {
+			v.requireExternalOpenBaoSecret(rel, doc, "auth-control-plane.github_login.oauth_client_secret")
+		}
+	}
 	v.requireNomadRuntimeSecretReferences("src/services/deployment-service/nomad.hcl", []string{
 		"deployment-service.r2_control_plane_token",
 		"deployment-service.site_seed_import_marker",
@@ -588,10 +615,10 @@ func (v *Validator) requireR2ControlPlaneServeBoundary(rel string) {
 	}
 	for _, forbidden := range []string{
 		`"--credential-source=openbao"`,
-		`"--credential-source=token-admin"`,
+		`"--credential-source=account-admin"`,
 		`"--openbao-addr`,
 		`"--openbao-token`,
-		`"--token-admin`,
+		`"--account-admin`,
 		"BAO_ADDR",
 		"VAULT_ADDR",
 		"BAO_TOKEN",

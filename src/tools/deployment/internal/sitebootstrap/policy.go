@@ -239,10 +239,8 @@ func collectCatalogSeedKeys(path string, policy *seedPolicy) error {
 	for _, integration := range catalog.Integrations {
 		for _, credential := range integration.Credentials {
 			switch credential.Target {
-			case "public_config":
-				addCatalogKey(policy.keys, credential.SiteVar, "provider_public_config")
-			case "provider_resource_id":
-				addCatalogKey(policy.keys, credential.CatalogField, "provider_resource_id")
+			case "bootstrap_seed":
+				addCatalogKey(policy.keys, credential.SiteVar, "machine_provisioned_"+integration.Provider)
 			}
 		}
 	}

@@ -15,7 +15,6 @@ go_library(
     deps = [
         "//src/integrations/cloudflare/r2-control-plane/client",
         "//src/integrations/cloudflare/r2-control-plane/internal/r2control",
-        "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )
 

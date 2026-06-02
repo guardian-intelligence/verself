@@ -57,10 +57,11 @@ aspect site seed-template --site=gamma --force
 ```
 
 Fill .verself/site-bootstrap/gamma/seed.yml with the requested bootstrap values.
-No SOPS file is created. Cloudflare R2 child credentials for deployment
-publication, Nomad artifact retrieval, recovery, and object-storage-service are
-provisioned by the R2 control plane and merged into the local seed/vars outputs
-by the rotation commands below. Materialization fails if those
+No repository secret file is created. Cloudflare R2 child credentials for
+deployment publication, Nomad artifact retrieval, recovery, and
+object-storage-service are provisioned by the R2 control plane and merged into
+the local seed/vars outputs by the rotation commands below. Materialization
+fails if those
 machine-provisioned values are missing. Product provider credentials such as
 Stripe and GitHub App private material may be absent during substrate bootstrap;
 if absent, the owning service or gate fails when it consumes that runtime
@@ -83,19 +84,15 @@ site-isolated; they are stored only in controller OpenBao and are exposed only
 to the rotation/provisioning control plane. Controller-only bootstrap
 exceptions are not site seed values.
 
-Provision two equivalent Cloudflare token-admin credentials before bootstrap:
-
-- `cloudflare_token_admin_a`
-- `cloudflare_token_admin_b`
-
-Each token has a seven-day expiration and the minimal Cloudflare account
-permissions needed to verify, update, roll, create, and delete account-owned R2
-child tokens. The pair is required because Cloudflare does not allow a
-sub-token to create another token-management sub-token; steady-state automation
-extends one operator-created token's expiration and rolls its value using the
-other token as the recovery path if one update/roll/write step fails. The
-Cloudflare API token value returned by the provider is available only once and
-must be written directly to controller OpenBao.
+Provision two Cloudflare account admin API tokens before bootstrap. They are
+stored only in controller OpenBao at
+`kv-controller/data/integrations/cloudflare/account-admin/a` and
+`kv-controller/data/integrations/cloudflare/account-admin/b`. Each token must
+have the minimal account permissions needed to verify itself, read Cloudflare
+zones, rotate the peer account-admin token, and create account-owned child
+tokens for DNS and R2 capabilities. The Cloudflare API token value returned by
+the provider is available only once and must be imported directly into
+controller OpenBao from the controller-local `secret.env` file.
 
 The R2 buckets are capability-owned, not environment-owned:
 
@@ -119,112 +116,99 @@ allocations. Recovery retention follows the recovery policy for the protected
 data class.
 
 ```shell
-aspect integrations cloudflare-r2-control-plane \
+aspect integrations cloudflare-control-plane \
   --site=gamma \
-  --action=import-token-admin \
-  --token-admin-slot=a \
-  --token-admin-api-token-file=<cloudflare-token-admin-a-file> \
+  --action=import-admin-pair \
+  --secret-env-file=secret.env \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 
-aspect integrations cloudflare-r2-control-plane \
+aspect integrations cloudflare-control-plane \
   --site=gamma \
-  --action=import-token-admin \
-  --token-admin-slot=b \
-  --token-admin-api-token-file=<cloudflare-token-admin-b-file> \
+  --action=verify-admin-pair \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 
-aspect integrations cloudflare-r2-control-plane \
+aspect integrations cloudflare-control-plane \
   --site=gamma \
-  --action=rotate-token-admin-pair \
+  --action=provision-dns \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 
-aspect integrations cloudflare-r2-control-plane \
+aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=provision-site-bootstrap \
-  --token-admin-openbao-path=kv-controller/data/integrations/cloudflare/token-admin/a \
+  --bootstrap-publisher-env-file=.verself/site-bootstrap/gamma/r2-publisher.env \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 ```
 
-Steady-state rotation uses the same token-admin path for the individual
-capabilities:
+Steady-state child rotation uses the controller OpenBao account-admin pair for
+the individual capabilities:
 
 ```shell
-aspect integrations cloudflare-r2-control-plane \
+aspect integrations cloudflare-control-plane \
+  --site=gamma \
+  --action=rotate-admin-pair \
+  --openbao-addr=<controller-openbao-addr> \
+  --openbao-token-file=<controller-openbao-token-file>
+
+aspect integrations cloudflare-control-plane \
+  --site=gamma \
+  --action=rotate-dns \
+  --openbao-addr=<controller-openbao-addr> \
+  --openbao-token-file=<controller-openbao-token-file>
+
+aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=rotate-publisher \
-  --token-admin-openbao-path=kv-controller/data/integrations/cloudflare/token-admin/a \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 
-aspect integrations cloudflare-r2-control-plane \
+aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=rotate-getter \
-  --token-admin-openbao-path=kv-controller/data/integrations/cloudflare/token-admin/a \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 
-aspect integrations cloudflare-r2-control-plane \
+aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=rotate-object-storage-provider \
-  --token-admin-openbao-path=kv-controller/data/integrations/cloudflare/token-admin/a \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 
-aspect integrations cloudflare-r2-control-plane \
+aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=rotate-recovery \
-  --token-admin-openbao-path=kv-controller/data/integrations/cloudflare/token-admin/a \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 ```
 
-The Cloudflare token-admin pair stays in controller OpenBao and is used only by
-the rotation/provisioning control plane. Steady-state artifact publication uses
-the site-local `cloudflare-r2-control-plane` Nomad job with a scoped publisher
-credential. That job receives the publisher token ID and API token from
-OpenBao, then mints temporary R2 upload credentials per deployment. The durable
-Nomad getter credential remains read-only so allocation restarts can refetch
+The Cloudflare account admin token stays in controller OpenBao and is used only
+by the provisioning control plane. Steady-state artifact publication uses the
+site-local `cloudflare-r2-control-plane` Nomad job with a scoped publisher
+credential. That job receives the publisher token ID and API token from OpenBao,
+then mints temporary R2 upload credentials per deployment. The durable Nomad
+getter credential remains read-only so allocation restarts can refetch
 artifacts.
 
-Generated deployment publisher, Nomad getter, and object-storage child
-credentials default to the site seed path. Recovery credentials default to
-controller OpenBao.
-
-When controller OpenBao is not reachable during first bootstrap, the same
-token-admin authority may be passed as an ignored token file to provision the
-site seed before host convergence. If a controller-only value was accidentally
-placed in the ignored seed bundle, extract it without logging the value:
-
-```shell
-aspect site controller-secret-handoff \
-  --site=gamma \
-  --key=cloudflare_api_token \
-  --out=.verself/site-bootstrap/gamma/cloudflare-token-admin.txt \
-  --force
-```
-
-```shell
-aspect integrations cloudflare-r2-control-plane \
-  --site=gamma \
-  --action=provision-site-bootstrap \
-  --token-admin-api-token-file=.verself/site-bootstrap/gamma/cloudflare-token-admin.txt
-```
+Generated DNS, bootstrap deployment publisher, Nomad getter, and
+object-storage child credentials default to the local site seed path during
+bootstrap. `provision-site-bootstrap` also writes
+`.verself/site-bootstrap/<site>/r2-publisher.env`; this is the only R2
+credential file consumed by `aspect site bootstrap-deploy`. Recovery and
+steady-state deployment publisher credentials default to controller OpenBao.
+The current host roles still read the generated DNS child token as
+`cloudflare_api_token`; this value is a zone-scoped child token.
 
 Daily Cloudflare rotation is controller-owned:
 
 ```text
-verify token_admin_a and token_admin_b
-  -> use token_admin_a to update and roll token_admin_b
-  -> write and verify token_admin_b
-  -> use token_admin_b to update and roll token_admin_a
-  -> write and verify token_admin_a
-  -> create new child R2 token generation for each capability
-  -> write child generation to OpenBao
-  -> verify real R2 access for every child generation
+verify cloudflare.account_admin
+  -> rotate the account-admin pair through the peer token
+  -> create new child token generation for each Cloudflare capability
+  -> write child generation to site seed or OpenBao
+  -> verify real DNS/R2 access for every child generation
   -> delete superseded child generations after overlap
   -> emit ClickHouse evidence
   -> email the operator on any failure
@@ -312,16 +296,12 @@ Ansible.
 
 `aspect site bootstrap-deploy` is the only deployment-shaped bootstrap escape
 hatch. It runs from the controller, opens a temporary recovery SSH tunnel to the
-site Nomad API, runs a local one-shot Cloudflare R2 control-plane backed by an
-external provider-authority credential, publishes the initial immutable
-artifacts to R2, registers the Nomad jobs, and exits. The preferred credential
-source is controller OpenBao path
-`kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher`;
-the quarantined recovery alternatives are `--r2-credential-source=env-file`
-for a scoped publisher credential or `--r2-credential-source=token-admin`
-with `--r2-token-admin-api-token-file=<token-admin-file>` for a one-shot
-publisher minted and deleted by the local control plane. It is not used after
-the site-local deployment-service is reachable.
+site Nomad API, runs a local one-shot Cloudflare R2 control-plane backed by the
+scoped publisher env file created by `cloudflare-control-plane`, publishes the
+initial immutable artifacts to R2, registers the Nomad jobs, and exits. The
+quarantined credential source is `--r2-credential-source=env-file` with
+`.verself/site-bootstrap/<site>/r2-publisher.env`. It is not used after the
+site-local deployment-service is reachable.
 
 Only two local host state classes remain after handoff:
 

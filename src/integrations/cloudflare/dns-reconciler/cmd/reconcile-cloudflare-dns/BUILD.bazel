@@ -12,13 +12,11 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
     ],
 )
 
 go_binary(
     name = "reconcile-cloudflare-dns",
-    data = ["//src/tools/dev/binaries:sops"],
     embed = [":reconcile-cloudflare-dns_lib"],
     visibility = ["//visibility:public"],
 )

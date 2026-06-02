@@ -37,7 +37,7 @@ type mailTestAccountsOptions struct {
 	format         string
 	pgUser         string
 	pgRemotePort   int
-	secretsFile    string
+	secretVarsFile string
 	resetSecrets   bool
 	zitadelPATPath string
 	zitadelAddr    string
@@ -269,7 +269,7 @@ func newMailTestAccountsOptions() *mailTestAccountsOptions {
 		format:         "table",
 		pgUser:         envOr("PG_USER", oppg.DefaultUser),
 		pgRemotePort:   envIntOr("PG_PORT", oppg.DefaultPort),
-		secretsFile:    os.Getenv("SOPS_SECRETS_FILE"),
+		secretVarsFile: os.Getenv("VERSELF_SITE_SECRET_VARS_FILE"),
 		zitadelPATPath: mailZitadelAdminPATPath,
 		zitadelAddr:    mailZitadelRemote,
 	}
@@ -284,7 +284,7 @@ func mailTestAccountsFlagSet(name string, opts *mailTestAccountsOptions) *flag.F
 	fs.StringVar(&opts.format, "format", opts.format, "Output format: table, json, csv, or tsv")
 	fs.StringVar(&opts.pgUser, "pg-user", opts.pgUser, "PostgreSQL user")
 	fs.IntVar(&opts.pgRemotePort, "pg-remote-port", opts.pgRemotePort, "Remote PostgreSQL port on the worker loopback")
-	fs.StringVar(&opts.secretsFile, "secrets-file", opts.secretsFile, "SOPS secrets file")
+	fs.StringVar(&opts.secretVarsFile, "secret-vars-file", opts.secretVarsFile, "generated site secret vars file")
 	fs.StringVar(&opts.zitadelPATPath, "zitadel-admin-pat-path", opts.zitadelPATPath, "Remote Zitadel admin PAT path")
 	fs.StringVar(&opts.zitadelAddr, "zitadel-remote-addr", opts.zitadelAddr, "Remote Zitadel HTTP address reached over SSH")
 	return fs
@@ -1110,9 +1110,9 @@ func (c mailZitadelClient) doJSON(ctx context.Context, method, path string, body
 }
 
 func openMailOperatorPG(ctx context.Context, rt *opruntime.Runtime, opts *mailTestAccountsOptions, dbName string) (*pgx.Conn, error) {
-	passwordPath := opts.secretsFile
+	passwordPath := opts.secretVarsFile
 	if passwordPath == "" {
-		passwordPath = opruntime.HostConfigurationSecretsPath(rt.RepoRoot, rt.Site)
+		passwordPath = opruntime.SiteSecretVarsPath(rt.RepoRoot, rt.Site)
 	}
 	return oppg.OpenOverSSH(ctx, rt, oppg.Config{
 		Database:     dbName,

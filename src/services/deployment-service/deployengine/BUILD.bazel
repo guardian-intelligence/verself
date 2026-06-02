@@ -32,8 +32,10 @@ go_library(
 go_test(
     name = "deployengine_test",
     srcs = [
+        "engine_test.go",
         "nomad_test.go",
         "source_test.go",
     ],
     embed = [":deployengine"],
+    deps = ["@com_github_hashicorp_nomad_api//:api"],
 )

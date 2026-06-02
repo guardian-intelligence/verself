@@ -7,8 +7,8 @@
 - name: Validate Cloudflare Email Routing token is configured
   ansible.builtin.fail:
     msg: >-
-      cloudflare_company_api_token is empty. Add an Email-Routing-scoped
-      token via: sops src/host/sites/{{ verself_site | default('prod') }}/secrets/host.sops.yml
+      cloudflare_company_api_token is empty. Import an Email-Routing-scoped
+      token into the site OpenBao runtime store.
   when: cloudflare_company_api_token | default('', true) | length == 0
 
 - name: Resolve Cloudflare zone

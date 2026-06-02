@@ -5,7 +5,6 @@ import "time"
 const (
 	currentCompanyVersion = 1
 	envBootstrap          = "bootstrap"
-	rootSOPSKeyName       = "VERSELF_SOPS_AGE_IDENTITY"
 	defaultProject        = "verself"
 	defaultTrustTier      = "platform"
 )
@@ -73,7 +72,6 @@ type CompanyRecord struct {
 	TrustTier        string          `json:"trust_tier"`
 	Options          []CompanyOption `json:"options,omitempty"`
 	Secrets          []CompanySecret `json:"secrets,omitempty"`
-	RootSOPSKey      *RootSOPSKey    `json:"root_sops_key,omitempty"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
 }
@@ -100,15 +98,6 @@ type CompanySecret struct {
 	RenderTargets []string  `json:"render_targets,omitempty"`
 	RevealCommand string    `json:"reveal_command,omitempty"`
 	UpdatedAt     time.Time `json:"updated_at"`
-}
-
-type RootSOPSKey struct {
-	EnvKey    string    `json:"env_key"`
-	Provider  string    `json:"provider"`
-	Scope     EnvScope  `json:"scope"`
-	Recipient string    `json:"recipient"`
-	SecretRef string    `json:"secret_ref"`
-	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type EnvScope struct {

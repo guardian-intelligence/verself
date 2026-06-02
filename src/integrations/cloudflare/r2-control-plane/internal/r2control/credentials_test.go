@@ -2,7 +2,6 @@ package r2control
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,45 +41,6 @@ func TestParentCredentialsDeriveS3SecretFromAPIToken(t *testing.T) {
 	}
 	if creds.SecretAccessKey == "" || strings.Contains(creds.SecretAccessKey, "token-value") {
 		t.Fatalf("secret access key was not derived safely: %q", creds.SecretAccessKey)
-	}
-}
-
-func TestWriteParentCredentialsToOpenBao(t *testing.T) {
-	const secretPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
-	var gotBody struct {
-		Data map[string]string `json:"data"`
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/"+secretPath {
-			t.Fatalf("path = %s", r.URL.Path)
-		}
-		if r.Method != http.MethodPost {
-			t.Fatalf("method = %s", r.Method)
-		}
-		if r.Header.Get("X-Vault-Token") != "openbao-token" {
-			t.Fatalf("token header = %q", r.Header.Get("X-Vault-Token"))
-		}
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Fatal(err)
-		}
-		_, _ = w.Write([]byte(`{"data":{}}`))
-	}))
-	defer server.Close()
-	t.Setenv("BAO_TOKEN", "openbao-token")
-
-	err := WriteParentCredentialsToOpenBao(context.Background(), ParentCredentialConfig{
-		OpenBaoAddr: server.URL,
-		OpenBaoPath: secretPath,
-		Timeout:     time.Second,
-	}, map[string]string{
-		"api_token": "parent-token",
-		"token_id":  "parent-token-id",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotBody.Data["api_token"] != "parent-token" || gotBody.Data["token_id"] != "parent-token-id" {
-		t.Fatalf("body = %+v", gotBody)
 	}
 }
 

@@ -262,14 +262,10 @@ func InventoryPath(repoRoot, site string) string {
 	return filepath.Join(repoRoot, "src", "host", "sites", site, "inventory.ini")
 }
 
-func SecretsPath(repoRoot string) string {
-	return HostConfigurationSecretsPath(repoRoot, DefaultSite)
+func SecretVarsPath(repoRoot string) string {
+	return SiteSecretVarsPath(repoRoot, DefaultSite)
 }
 
-func HostConfigurationSecretsPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host", "sites", site, "secrets", "host.sops.yml")
-}
-
-func DeploymentSecretsPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host", "sites", site, "secrets", "external.sops.yml")
+func SiteSecretVarsPath(repoRoot, site string) string {
+	return filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "ansible-secrets.json")
 }

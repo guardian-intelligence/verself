@@ -1,4 +1,4 @@
-"""aspect integrations cloudflare-dns|stripe-projects - external integration state."""
+"""aspect integrations cloudflare-control-plane|cloudflare-dns|stripe-projects - external integration state."""
 
 load(
     ".aspect/lib/helpers.axl",
@@ -11,7 +11,7 @@ load(
 )
 
 _CLOUDFLARE_DNS_TARGET = "//src/integrations/cloudflare/dns-reconciler/cmd/reconcile-cloudflare-dns:reconcile-cloudflare-dns"
-_CLOUDFLARE_R2_CONTROL_PLANE_TARGET = "//src/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane:cloudflare-r2-control-plane"
+_CLOUDFLARE_CONTROL_PLANE_TARGET = "//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane:cloudflare-control-plane"
 _STRIPE_CLI_VERSION = "1.42.1"
 _STRIPE_PROJECTS_PLUGIN_VERSION = "0.16.0"
 _STRIPE_PROJECTS_PLUGIN = {
@@ -35,16 +35,14 @@ def _cloudflare_dns_impl(ctx):
         "--site=" + site,
         "--ansible-dir=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
     ]
-    if secret_vars_file == "" and token_file == "" and site != "prod":
-        secret_vars_file = ".verself/site-bootstrap/" + site + "/ansible-secrets.json"
+    if secret_vars_file == "" and token_file == "":
+        secret_vars_file = ".verself/site-bootstrap/" + site + "/seed.yml"
     if secret_vars_file != "":
         args_list.append("--vars-file=" + (secret_vars_file if secret_vars_file.startswith("/") else ws_path(ctx, secret_vars_file)))
     elif token_file != "":
         args_list.append("--cloudflare-token-file=" + (token_file if token_file.startswith("/") else ws_path(ctx, token_file)))
-    elif site == "prod":
-        args_list.append("--secrets=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/secrets/host.sops.yml"))
     else:
-        ctx.std.io.stderr.write("ERROR: non-prod Cloudflare DNS requires --secret-vars-file or --cloudflare-token-file.\n")
+        ctx.std.io.stderr.write("ERROR: Cloudflare DNS requires --secret-vars-file or --cloudflare-token-file.\n")
         return 1
     if ctx.args.dry_run:
         args_list.append("--dry-run")
@@ -64,12 +62,12 @@ cloudflare_dns = task(
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "dry_run": args.boolean(default = False, description = "Print the DNS diff without applying it."),
-        "secret_vars_file": args.string(default = "", description = "Generated Ansible vars file containing cloudflare_api_token."),
-        "cloudflare_token_file": args.string(default = "", description = "File containing only cloudflare_api_token."),
+        "secret_vars_file": args.string(default = "", description = "Generated site seed or Ansible vars file containing a scoped cloudflare_api_token."),
+        "cloudflare_token_file": args.string(default = "", description = "File containing only a scoped Cloudflare DNS API token."),
     },
 )
 
-def _cloudflare_r2_control_plane_impl(ctx):
+def _cloudflare_control_plane_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
     args_list = [
         "--site=" + site,
@@ -83,20 +81,16 @@ def _cloudflare_r2_control_plane_impl(ctx):
         args_list.append("--bucket=" + ctx.args.bucket)
     if ctx.args.credentials_file != "":
         args_list.append("--credentials-file=" + (ctx.args.credentials_file if ctx.args.credentials_file.startswith("/") else ws_path(ctx, ctx.args.credentials_file)))
-    if ctx.args.token_admin_credential_source != "":
-        args_list.append("--token-admin-credential-source=" + ctx.args.token_admin_credential_source)
-    if ctx.args.token_admin_credentials_file != "":
-        args_list.append("--token-admin-credentials-file=" + (ctx.args.token_admin_credentials_file if ctx.args.token_admin_credentials_file.startswith("/") else ws_path(ctx, ctx.args.token_admin_credentials_file)))
-    if ctx.args.token_admin_api_token_file != "":
-        args_list.append("--token-admin-api-token-file=" + (ctx.args.token_admin_api_token_file if ctx.args.token_admin_api_token_file.startswith("/") else ws_path(ctx, ctx.args.token_admin_api_token_file)))
-    if ctx.args.token_admin_openbao_path != "":
-        args_list.append("--token-admin-openbao-path=" + ctx.args.token_admin_openbao_path)
-    if ctx.args.token_admin_a_openbao_path != "":
-        args_list.append("--token-admin-a-openbao-path=" + ctx.args.token_admin_a_openbao_path)
-    if ctx.args.token_admin_b_openbao_path != "":
-        args_list.append("--token-admin-b-openbao-path=" + ctx.args.token_admin_b_openbao_path)
-    if ctx.args.token_admin_slot != "":
-        args_list.append("--token-admin-slot=" + ctx.args.token_admin_slot)
+    if ctx.args.secret_env_file != "":
+        args_list.append("--secret-env-file=" + (ctx.args.secret_env_file if ctx.args.secret_env_file.startswith("/") else ws_path(ctx, ctx.args.secret_env_file)))
+    if ctx.args.account_admin_a_api_token_file != "":
+        args_list.append("--account-admin-a-api-token-file=" + (ctx.args.account_admin_a_api_token_file if ctx.args.account_admin_a_api_token_file.startswith("/") else ws_path(ctx, ctx.args.account_admin_a_api_token_file)))
+    if ctx.args.account_admin_b_api_token_file != "":
+        args_list.append("--account-admin-b-api-token-file=" + (ctx.args.account_admin_b_api_token_file if ctx.args.account_admin_b_api_token_file.startswith("/") else ws_path(ctx, ctx.args.account_admin_b_api_token_file)))
+    if ctx.args.account_admin_a_openbao_path != "":
+        args_list.append("--account-admin-a-openbao-path=" + ctx.args.account_admin_a_openbao_path)
+    if ctx.args.account_admin_b_openbao_path != "":
+        args_list.append("--account-admin-b-openbao-path=" + ctx.args.account_admin_b_openbao_path)
     if ctx.args.openbao_addr != "":
         args_list.append("--openbao-addr=" + ctx.args.openbao_addr)
     if ctx.args.openbao_path != "":
@@ -109,12 +103,12 @@ def _cloudflare_r2_control_plane_impl(ctx):
         args_list.append("--getter-vars-file=" + (ctx.args.getter_vars_file if ctx.args.getter_vars_file.startswith("/") else ws_path(ctx, ctx.args.getter_vars_file)))
     if ctx.args.seed_bundle_file != "":
         args_list.append("--seed-bundle-file=" + (ctx.args.seed_bundle_file if ctx.args.seed_bundle_file.startswith("/") else ws_path(ctx, ctx.args.seed_bundle_file)))
+    if ctx.args.bootstrap_publisher_env_file != "":
+        args_list.append("--bootstrap-publisher-env-file=" + (ctx.args.bootstrap_publisher_env_file if ctx.args.bootstrap_publisher_env_file.startswith("/") else ws_path(ctx, ctx.args.bootstrap_publisher_env_file)))
     if ctx.args.capability_openbao_path != "":
         args_list.append("--capability-openbao-path=" + ctx.args.capability_openbao_path)
     if ctx.args.child_credential_persistence != "":
         args_list.append("--child-credential-persistence=" + ctx.args.child_credential_persistence)
-    if ctx.args.listen != "":
-        args_list.append("--listen=" + ctx.args.listen)
     if ctx.args.test_prefix != "":
         args_list.append("--test-prefix=" + ctx.args.test_prefix)
     if ctx.args.inventory_prefix != "":
@@ -123,55 +117,53 @@ def _cloudflare_r2_control_plane_impl(ctx):
         args_list.append("--inventory-depth=" + str(ctx.args.inventory_depth))
     if ctx.args.child_token_ttl != "":
         args_list.append("--child-token-ttl=" + ctx.args.child_token_ttl)
+    if ctx.args.account_admin_ttl != "":
+        args_list.append("--account-admin-ttl=" + ctx.args.account_admin_ttl)
     if ctx.args.ephemeral_publisher_ttl != "":
         args_list.append("--ephemeral-publisher-ttl=" + ctx.args.ephemeral_publisher_ttl)
-    if ctx.args.token_admin_ttl != "":
-        args_list.append("--token-admin-ttl=" + ctx.args.token_admin_ttl)
     if ctx.args.timeout != "":
         args_list.append("--timeout=" + ctx.args.timeout)
     args_list.append("--verify-temp-credentials=" + ("true" if ctx.args.verify_temp_credentials else "false"))
     return bazel_run(
         ctx,
-        _CLOUDFLARE_R2_CONTROL_PLANE_TARGET,
+        _CLOUDFLARE_CONTROL_PLANE_TARGET,
         args_list,
         bazel_args = ["--noshow_progress", "--ui_event_filters=-info"],
-        label = "cloudflare-r2-control-plane --site " + site,
+        label = "cloudflare-control-plane --site " + site,
     )
 
-cloudflare_r2_control_plane = task(
-    implementation = _cloudflare_r2_control_plane_impl,
-    name = "cloudflare-r2-control-plane",
+cloudflare_control_plane = task(
+    implementation = _cloudflare_control_plane_impl,
+    name = "cloudflare-control-plane",
     group = ["integrations"],
-    summary = "Ensure and live-verify Cloudflare R2 deployment artifact state.",
+    summary = "Provision and rotate Cloudflare site credentials from controller OpenBao authority.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
-        "action": args.string(default = "verify", description = "Action: serve, inventory, verify, import-token-admin, rotate-token-admin-pair, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
+        "action": args.string(default = "verify-admin-pair", description = "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, provision-dns, or rotate-dns."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to site.json."),
-        "credential_source": args.string(default = "openbao", description = "Credential source: openbao, env, env-file, auto, or token-admin for bootstrap-only serving."),
+        "credential_source": args.string(default = "openbao", description = "Scoped R2 credential source for inventory or verify: openbao, env, env-file, or auto."),
         "credentials_file": args.string(default = "", description = "Environment file containing R2 credentials."),
-        "token_admin_credential_source": args.string(default = "", description = "Optional Cloudflare token-admin credential source. Defaults to the active R2 credential."),
-        "token_admin_credentials_file": args.string(default = "", description = "Optional environment file containing a token-admin API token."),
-        "token_admin_api_token_file": args.string(default = "", description = "File containing a Cloudflare token-admin API token."),
-        "token_admin_openbao_path": args.string(default = "", description = "Optional controller OpenBao KV path for a token-admin API token."),
-        "token_admin_a_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/token-admin/a", description = "Controller OpenBao KV path for Cloudflare token-admin A."),
-        "token_admin_b_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/token-admin/b", description = "Controller OpenBao KV path for Cloudflare token-admin B."),
-        "token_admin_slot": args.string(default = "", description = "Token-admin slot for action=import-token-admin: a or b."),
+        "secret_env_file": args.string(default = "secret.env", description = "Ingress-only env file containing account-admin-a and account-admin-b."),
+        "account_admin_a_api_token_file": args.string(default = "", description = "File containing Cloudflare account-admin slot A token value."),
+        "account_admin_b_api_token_file": args.string(default = "", description = "File containing Cloudflare account-admin slot B token value."),
+        "account_admin_a_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/a", description = "Controller OpenBao KV path for Cloudflare account-admin slot A."),
+        "account_admin_b_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/b", description = "Controller OpenBao KV path for Cloudflare account-admin slot B."),
         "openbao_addr": args.string(default = "", description = "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR."),
         "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher", description = "Controller OpenBao KV path for R2 credentials."),
         "openbao_ca_cert": args.string(default = "", description = "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT."),
         "openbao_token_file": args.string(default = "", description = "File containing the OpenBao token."),
         "getter_vars_file": args.string(default = "", description = "JSON vars file to receive durable Nomad artifact getter credentials."),
         "seed_bundle_file": args.string(default = "", description = "Seed bundle file to receive generated provider values."),
+        "bootstrap_publisher_env_file": args.string(default = "", description = "Env file to receive the bootstrap-only R2 publisher credential."),
         "capability_openbao_path": args.string(default = "", description = "Controller OpenBao KV path for generated capability credentials."),
         "child_credential_persistence": args.string(default = "", description = "Persistence for generated child credentials: controller-openbao or site-seed. Defaults by action."),
-        "listen": args.string(default = "127.0.0.1:18732", description = "HTTP listen address for action=serve."),
         "test_prefix": args.string(default = "control-plane-verification/", description = "R2 prefix used for live verification objects."),
         "inventory_prefix": args.string(default = "", description = "R2 object prefix for --action=inventory."),
         "inventory_depth": args.int(default = 2, description = "Prefix depth for --action=inventory summaries."),
-        "child_token_ttl": args.string(default = "168h", description = "TTL for generated Cloudflare R2 child API tokens."),
-        "ephemeral_publisher_ttl": args.string(default = "1h", description = "TTL for bootstrap-only publisher tokens minted from token-admin credentials."),
-        "token_admin_ttl": args.string(default = "168h", description = "TTL for Cloudflare token-admin expiration updates."),
+        "child_token_ttl": args.string(default = "168h", description = "TTL for generated Cloudflare child API tokens."),
+        "account_admin_ttl": args.string(default = "168h", description = "TTL for account-admin token expiration updates during rotation."),
+        "ephemeral_publisher_ttl": args.string(default = "1h", description = "TTL for bootstrap-only publisher tokens minted from account-admin credentials."),
         "timeout": args.string(default = "", description = "Total timeout for Cloudflare R2 control-plane calls."),
         "verify_temp_credentials": args.boolean(default = True, description = "Mint scoped temporary credentials and verify with them."),
     },

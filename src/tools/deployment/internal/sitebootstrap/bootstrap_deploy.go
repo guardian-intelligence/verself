@@ -3,17 +3,14 @@ package sitebootstrap
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,19 +22,23 @@ import (
 const (
 	defaultNomadRemoteAddr = "127.0.0.1:4646"
 
-	bootstrapArtifactRemotePort = 18734
-	openBaoRootKeyPath          = "/etc/verself/bootstrap/openbao-root.key"
+	defaultR2CredentialSource = "env-file"
+	bootstrapR2AuthTokenEnv   = "VERSELF_BOOTSTRAP_R2_CONTROL_PLANE_TOKEN"
+	openBaoRootKeyPath        = "/etc/verself/bootstrap/openbao-root.key"
 )
 
 type BootstrapDeployOptions struct {
-	Site            string
-	SHA             string
-	RepoRoot        string
-	InventoryPath   string
-	SecretVarsPath  string
-	RuntimeSeedPath string
-	SSHTransport    string
-	Timeout         time.Duration
+	Site                 string
+	SHA                  string
+	RepoRoot             string
+	InventoryPath        string
+	SecretVarsPath       string
+	RuntimeSeedPath      string
+	SSHTransport         string
+	R2ControlPlaneBinary string
+	R2CredentialSource   string
+	R2CredentialsFile    string
+	Timeout              time.Duration
 }
 
 type inventoryTarget struct {
@@ -52,18 +53,6 @@ type inventoryTarget struct {
 type childProcess struct {
 	cmd  *exec.Cmd
 	done chan error
-}
-
-type contextReader struct {
-	ctx context.Context
-	r   io.Reader
-}
-
-func (r contextReader) Read(p []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.r.Read(p)
 }
 
 func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) error {
@@ -83,11 +72,14 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) error 
 	if err := checkLocalBootstrapMaterial(opts); err != nil {
 		return err
 	}
+	if err := checkBootstrapR2PublisherInput(opts); err != nil {
+		return err
+	}
 	target, err := loadBootstrapInventoryTarget(opts.InventoryPath, opts.SSHTransport)
 	if err != nil {
 		return err
 	}
-	artifactPort, err := freeLoopbackPort()
+	r2Port, err := freeLoopbackPort()
 	if err != nil {
 		return err
 	}
@@ -101,26 +93,24 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) error 
 		return err
 	}
 
-	artifactDir, err := os.MkdirTemp("", "verself-bootstrap-artifacts-*")
-	if err != nil {
-		return fmt.Errorf("create bootstrap artifact directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(artifactDir) }()
-	artifactServer, err := startBootstrapArtifactServer(artifactDir, artifactPort)
+	r2Token, err := randomPrefixedID("r2bootstrap")
 	if err != nil {
 		return err
 	}
-	defer func() { _ = artifactServer.Shutdown(context.Background()) }()
-	if err := waitHTTP(ctx, "http://127.0.0.1:"+strconv.Itoa(artifactPort)+"/healthz", http.StatusNoContent, nil); err != nil {
-		return fmt.Errorf("local bootstrap artifact server readiness: %w", err)
-	}
-
-	artifactTunnelCmd := startArtifactTunnel(ctx, target, artifactPort, bootstrapArtifactRemotePort)
-	artifactTunnel, err := startChildProcess(artifactTunnelCmd)
+	r2ListenAddr := "127.0.0.1:" + strconv.Itoa(r2Port)
+	r2ControlPlaneURL := "http://" + r2ListenAddr
+	r2Cmd, err := startBootstrapR2ControlPlane(ctx, opts, r2ListenAddr, r2Token)
 	if err != nil {
-		return fmt.Errorf("start bootstrap artifact reverse tunnel: %w", err)
+		return err
 	}
-	defer stopChildProcess(cancel, artifactTunnel)
+	r2Proc, err := startChildProcess(r2Cmd)
+	if err != nil {
+		return fmt.Errorf("start bootstrap R2 control plane: %w", err)
+	}
+	defer stopChildProcess(cancel, r2Proc)
+	if err := waitHTTP(ctx, r2ControlPlaneURL+"/healthz", http.StatusNoContent, r2Proc.done); err != nil {
+		return fmt.Errorf("bootstrap R2 control-plane readiness: %w", err)
+	}
 
 	sshCmd := startNomadTunnel(ctx, target, nomadPort)
 	sshProc, err := startChildProcess(sshCmd)
@@ -137,13 +127,14 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) error 
 		return err
 	}
 	_, err = deployengine.Run(ctx, deployengine.Options{
-		Site:                     opts.Site,
-		SHA:                      opts.SHA,
-		DeployRunKey:             deployRunKey,
-		RepoRoot:                 opts.RepoRoot,
-		NomadAddr:                "http://127.0.0.1:" + strconv.Itoa(nomadPort),
-		BootstrapArtifactRootURL: "http://127.0.0.1:" + strconv.Itoa(bootstrapArtifactRemotePort),
-		ArtifactStager:           localBootstrapArtifactStager(artifactDir),
+		Site:                opts.Site,
+		SHA:                 opts.SHA,
+		DeployRunKey:        deployRunKey,
+		RepoRoot:            opts.RepoRoot,
+		R2ControlPlaneAddr:  r2ControlPlaneURL,
+		R2ControlPlaneToken: r2Token,
+		NomadAddr:           "http://127.0.0.1:" + strconv.Itoa(nomadPort),
+		Bootstrap:           true,
 	})
 	if err != nil {
 		return err
@@ -162,11 +153,17 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 	opts.SecretVarsPath = strings.TrimSpace(opts.SecretVarsPath)
 	opts.RuntimeSeedPath = strings.TrimSpace(opts.RuntimeSeedPath)
 	opts.SSHTransport = strings.TrimSpace(opts.SSHTransport)
+	opts.R2ControlPlaneBinary = strings.TrimSpace(opts.R2ControlPlaneBinary)
+	opts.R2CredentialSource = strings.TrimSpace(opts.R2CredentialSource)
+	opts.R2CredentialsFile = strings.TrimSpace(opts.R2CredentialsFile)
 	if opts.Timeout == 0 {
 		opts.Timeout = 15 * time.Minute
 	}
 	if opts.SSHTransport == "" {
 		opts.SSHTransport = "recovery"
+	}
+	if opts.R2CredentialSource == "" {
+		opts.R2CredentialSource = defaultR2CredentialSource
 	}
 	if opts.RepoRoot != "" && opts.Site != "" {
 		if opts.SecretVarsPath == "" {
@@ -178,6 +175,12 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 			opts.RuntimeSeedPath = defaultLocalRuntimeSeedPath(opts.RepoRoot, opts.Site)
 		} else {
 			opts.RuntimeSeedPath = resolveLocalBootstrapPath(opts.RepoRoot, opts.RuntimeSeedPath)
+		}
+		opts.R2ControlPlaneBinary = resolveLocalBootstrapPath(opts.RepoRoot, opts.R2ControlPlaneBinary)
+		if opts.R2CredentialsFile == "" {
+			opts.R2CredentialsFile = defaultLocalR2PublisherCredentialsPath(opts.RepoRoot, opts.Site)
+		} else {
+			opts.R2CredentialsFile = resolveLocalBootstrapPath(opts.RepoRoot, opts.R2CredentialsFile)
 		}
 	}
 	return opts
@@ -191,7 +194,14 @@ func defaultLocalRuntimeSeedPath(repoRoot, site string) string {
 	return filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "openbao-runtime-seed.json")
 }
 
+func defaultLocalR2PublisherCredentialsPath(repoRoot, site string) string {
+	return filepath.Join(repoRoot, ".verself", "site-bootstrap", site, "r2-publisher.env")
+}
+
 func resolveLocalBootstrapPath(repoRoot, path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
 	if filepath.IsAbs(path) {
 		return path
 	}
@@ -265,6 +275,26 @@ func checkLocalRuntimeSeed(path, site, repoRoot string) error {
 	return nil
 }
 
+func checkBootstrapR2PublisherInput(opts BootstrapDeployOptions) error {
+	if opts.R2ControlPlaneBinary == "" {
+		return errors.New("bootstrap deploy requires --r2-control-plane-binary")
+	}
+	if err := checkLocalExecutable(opts.R2ControlPlaneBinary, "Cloudflare R2 control-plane binary"); err != nil {
+		return err
+	}
+	switch opts.R2CredentialSource {
+	case "env", "env-file", "auto":
+	default:
+		return fmt.Errorf("bootstrap R2 credential source must be env, env-file, or auto, got %q", opts.R2CredentialSource)
+	}
+	if opts.R2CredentialSource == "env-file" || opts.R2CredentialSource == "auto" {
+		if err := checkLocalSecretFile(opts.R2CredentialsFile, "scoped R2 publisher credentials"); err != nil {
+			return fmt.Errorf("%w; run aspect integrations cloudflare-control-plane --site=%s --action=provision-site-bootstrap first", err, opts.Site)
+		}
+	}
+	return nil
+}
+
 func startNomadTunnel(ctx context.Context, target inventoryTarget, localPort int) *exec.Cmd {
 	remote := defaultNomadRemoteAddr
 	forward := "127.0.0.1:" + strconv.Itoa(localPort) + ":" + remote
@@ -287,129 +317,46 @@ func startNomadTunnel(ctx context.Context, target inventoryTarget, localPort int
 	return cmd
 }
 
-func startArtifactTunnel(ctx context.Context, target inventoryTarget, localPort, remotePort int) *exec.Cmd {
-	forward := "127.0.0.1:" + strconv.Itoa(remotePort) + ":127.0.0.1:" + strconv.Itoa(localPort)
-	addr := target.User + "@" + target.Host
+func startBootstrapR2ControlPlane(ctx context.Context, opts BootstrapDeployOptions, listenAddr, token string) (*exec.Cmd, error) {
+	if err := checkBootstrapR2PublisherInput(opts); err != nil {
+		return nil, err
+	}
 	args := []string{
-		"-N",
-		"-R", forward,
-		"-o", "ExitOnForwardFailure=yes",
-		"-o", "IdentitiesOnly=yes",
-		"-o", "ServerAliveInterval=15",
-		"-o", "ServerAliveCountMax=2",
+		"--action=serve",
+		"--site=" + opts.Site,
+		"--repo-root=" + opts.RepoRoot,
+		"--listen=" + listenAddr,
+		"--auth-token-env=" + bootstrapR2AuthTokenEnv,
+		"--credential-source=" + opts.R2CredentialSource,
 	}
-	if target.Port != 0 {
-		args = append(args, "-p", strconv.Itoa(target.Port))
+	appendOptionalFlag := func(name, value string) {
+		if strings.TrimSpace(value) != "" {
+			args = append(args, name+"="+value)
+		}
 	}
-	args = append(args, addr)
-	cmd := exec.CommandContext(ctx, "ssh", args...)
+	appendOptionalFlag("--credentials-file", opts.R2CredentialsFile)
+	cmd := exec.CommandContext(ctx, opts.R2ControlPlaneBinary, args...)
+	cmd.Env = append(os.Environ(), bootstrapR2AuthTokenEnv+"="+token)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd
+	return cmd, nil
 }
 
-func startBootstrapArtifactServer(root string, port int) (*http.Server, error) {
-	root = filepath.Clean(root)
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-	mux.Handle("/", http.FileServer(http.Dir(root)))
-	server := &http.Server{
-		Addr:              "127.0.0.1:" + strconv.Itoa(port),
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	ln, err := net.Listen("tcp", server.Addr)
+func checkLocalExecutable(path, label string) error {
+	info, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("listen bootstrap artifact server: %w", err)
-	}
-	go func() {
-		if err := server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fmt.Fprintln(os.Stderr, "site-bootstrap: bootstrap artifact server: "+err.Error())
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("bootstrap deploy requires local %s at %s", label, path)
 		}
-	}()
-	return server, nil
-}
-
-func localBootstrapArtifactStager(root string) deployengine.ArtifactStager {
-	return func(ctx context.Context, candidates []deployengine.ArtifactStagingCandidate) error {
-		for _, candidate := range candidates {
-			if err := stageBootstrapArtifact(ctx, root, candidate); err != nil {
-				return err
-			}
-		}
-		return nil
+		return fmt.Errorf("inspect local %s at %s: %w", label, path, err)
 	}
-}
-
-func stageBootstrapArtifact(ctx context.Context, root string, candidate deployengine.ArtifactStagingCandidate) error {
-	rel, err := cleanBootstrapArtifactKey(candidate.Key)
-	if err != nil {
-		return fmt.Errorf("%s: %w", candidate.Output, err)
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("bootstrap deploy requires local %s at %s to be a regular file", label, path)
 	}
-	out := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
-		return fmt.Errorf("create bootstrap artifact directory: %w", err)
-	}
-	if candidate.Body != nil {
-		if err := verifyBootstrapArtifactBodyDigest(candidate.Output, candidate.SHA256, candidate.Body); err != nil {
-			return err
-		}
-		if err := os.WriteFile(out, candidate.Body, 0o644); err != nil {
-			return fmt.Errorf("write bootstrap artifact %s: %w", candidate.Output, err)
-		}
-		return nil
-	}
-	if strings.TrimSpace(candidate.LocalPath) == "" {
-		return fmt.Errorf("bootstrap artifact %s has no local path", candidate.Output)
-	}
-	in, err := os.Open(candidate.LocalPath)
-	if err != nil {
-		return fmt.Errorf("open bootstrap artifact %s: %w", candidate.Output, err)
-	}
-	defer func() { _ = in.Close() }()
-	outFile, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return fmt.Errorf("create bootstrap artifact %s: %w", candidate.Output, err)
-	}
-	hash := sha256.New()
-	_, copyErr := io.Copy(io.MultiWriter(outFile, hash), contextReader{ctx: ctx, r: in})
-	closeErr := outFile.Close()
-	if copyErr != nil {
-		return fmt.Errorf("copy bootstrap artifact %s: %w", candidate.Output, copyErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close bootstrap artifact %s: %w", candidate.Output, closeErr)
-	}
-	if err := verifyBootstrapArtifactDigestHex(candidate.Output, candidate.SHA256, hex.EncodeToString(hash.Sum(nil))); err != nil {
-		return err
+	if info.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("bootstrap deploy requires local %s at %s to be executable", label, path)
 	}
 	return nil
-}
-
-func verifyBootstrapArtifactBodyDigest(output string, expected string, body []byte) error {
-	sum := sha256.Sum256(body)
-	return verifyBootstrapArtifactDigestHex(output, expected, hex.EncodeToString(sum[:]))
-}
-
-func verifyBootstrapArtifactDigestHex(output string, expected string, actual string) error {
-	expected = strings.TrimSpace(expected)
-	if expected == "" {
-		return nil
-	}
-	if actual != expected {
-		return fmt.Errorf("bootstrap artifact %s sha256=%s does not match descriptor sha256=%s", output, actual, expected)
-	}
-	return nil
-}
-
-func cleanBootstrapArtifactKey(key string) (string, error) {
-	key = path.Clean(strings.TrimSpace(key))
-	if key == "." || key == ".." || key == "/" || strings.HasPrefix(key, "../") || strings.HasPrefix(key, "/") {
-		return "", fmt.Errorf("invalid bootstrap artifact key %q", key)
-	}
-	return key, nil
 }
 
 func checkRemoteOpenBaoRootKey(ctx context.Context, target inventoryTarget) error {

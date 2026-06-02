@@ -21,6 +21,25 @@ func TestLoadCloudflareTokenFromGeneratedVars(t *testing.T) {
 	}
 }
 
+func TestLoadCloudflareTokenFromSeedBundle(t *testing.T) {
+	root := t.TempDir()
+	seed := filepath.Join(root, "seed.yml")
+	writeTestFile(t, seed, `
+version: verself.site-bootstrap.seed.v1
+site: gamma
+values:
+  cloudflare_api_token: scoped_dns_token
+`)
+
+	token, err := loadCloudflareToken(config{varsFile: seed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "scoped_dns_token" {
+		t.Fatalf("unexpected token %q", token)
+	}
+}
+
 func TestLoadCloudflareTokenRejectsAmbiguousSources(t *testing.T) {
 	_, err := loadCloudflareToken(config{varsFile: "vars.json", tokenFile: "token"})
 	if err == nil || !strings.Contains(err.Error(), "exactly one token source") {

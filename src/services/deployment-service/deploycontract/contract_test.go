@@ -18,7 +18,9 @@ postgresql_peer_mappings:
 	write(t, root, "src/services/billing-service/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_seed_declarations:
   - name: billing-service.stripe.secret_key
-    site_secret: stripe_secret_key
+    external_openbao: true
+  - name: billing-service.stripe.webhook_secret
+    external_openbao: true
 `)
 	write(t, root, "src/services/billing-service/deploy/public-routes.yml", `
 haproxy_public_routes:
@@ -39,13 +41,13 @@ provider_project:
   directory: src/integrations/stripe-projects/sites/gamma
   status: initialized
 bootstrap_exceptions:
-  - key: edge.cloudflare_parent_zone_dns
+  - key: cloudflare.account_admin
     provider: cloudflare
-    isolation: bootstrap_shared
-    credential_keys: [cloudflare_api_token]
+    isolation: controller_only
+    credential_keys: [cloudflare_account_admin_api_token_a, cloudflare_account_admin_api_token_b]
     storage_targets: [controller_openbao]
-    allowed_uses: [dns reconciliation]
-    reason: Cloudflare DNS tokens are zone scoped.
+    allowed_uses: [child token provisioning]
+    reason: Cloudflare account authority stays controller-only.
 integrations:
   - key: billing.stripe
     provider: stripe
@@ -64,7 +66,7 @@ integrations:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.PostgresFiles != 1 || report.RuntimeSecrets != 1 || report.PublicRoutes != 1 || report.IntegrationFiles != 1 {
+	if report.PostgresFiles != 1 || report.RuntimeSecrets != 2 || report.PublicRoutes != 1 || report.IntegrationFiles != 1 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
@@ -107,15 +109,15 @@ openbao_runtime_secret_seed_declarations:
 	}
 }
 
-func TestValidateRepoRejectsNonProdSOPSSecrets(t *testing.T) {
+func TestValidateRepoRejectsSiteEncryptedSecretFiles(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/host/sites/gamma/secrets/host.sops.yml", `cloudflare_api_token: ENC[...]`)
+	write(t, root, "src/host/sites/prod/secrets/host.sops.yml", `cloudflare_api_token: ENC[...]`)
 
 	_, err := ValidateRepo(root)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	if !strings.Contains(err.Error(), "must not use SOPS secret files") {
+	if !strings.Contains(err.Error(), "must not use encrypted repository secret files") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -351,16 +353,16 @@ func TestValidateRepoRejectsR2ControlPlaneOpenBaoRuntimeCredentials(t *testing.T
 	}
 }
 
-func TestValidateRepoRejectsR2ControlPlaneTokenAdminRuntimeCredentials(t *testing.T) {
+func TestValidateRepoRejectsR2ControlPlaneAccountAdminRuntimeCredentials(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
-	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", strings.Replace(r2ControlPlaneNomadContract(), `"--credential-source=env"`, `"--credential-source=token-admin"`, 1))
+	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", strings.Replace(r2ControlPlaneNomadContract(), `"--credential-source=env"`, `"--credential-source=account-admin"`, 1))
 
 	_, err := ValidateRepo(root)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	if !strings.Contains(err.Error(), `R2 control-plane runtime must not depend on bootstrap/controller credential input "\"--credential-source=token-admin\""`) {
+	if !strings.Contains(err.Error(), `R2 control-plane runtime must not depend on bootstrap/controller credential input "\"--credential-source=account-admin\""`) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -51,16 +51,6 @@ type SeedTemplateOptions struct {
 	ForceWrite bool
 }
 
-type ControllerSecretHandoffOptions struct {
-	Site       string
-	SeedPath   string
-	Key        string
-	OutputPath string
-	RepoRoot   string
-	ForceWrite bool
-	Remove     bool
-}
-
 type Evidence struct {
 	Version string             `json:"version"`
 	Site    string             `json:"site"`
@@ -102,17 +92,11 @@ type seedKey struct {
 	RequiredForBootstrap bool
 }
 
-var fallbackProvidedSeedKeys = map[string]seedKey{
-	"stripe_secret_key":                                         {Source: "provider_runtime"},
-	"stripe_webhook_secret":                                     {Source: "provider_runtime"},
-	"stripe_publishable_key":                                    {Source: "provider_public_config"},
-	"stripe_test_webhook_endpoint_id":                           {Source: "provider_resource_id"},
-	"github_integration_service_github_app_private_key":         {Source: "provider_runtime"},
-	"github_integration_service_github_app_webhook_secret":      {Source: "provider_runtime"},
-	"github_integration_service_github_app_oauth_client_secret": {Source: "provider_runtime"},
-}
+var fallbackProvidedSeedKeys = map[string]seedKey{}
 
 var machineProvisionedSeedKeys = map[string]seedKey{
+	"cloudflare_api_token": {Source: "machine_provisioned_cloudflare_control_plane"},
+
 	"cloudflare_r2_control_plane_publisher_api_token": {Source: "machine_provisioned_cloudflare_r2_control_plane"},
 	"cloudflare_r2_control_plane_publisher_token_id":  {Source: "machine_provisioned_cloudflare_r2_control_plane"},
 	"nomad_artifact_getter_s3_access_key_id":          {Source: "machine_provisioned_cloudflare_r2_control_plane"},
@@ -271,55 +255,6 @@ func MaterializeSeedBundle(opts MaterializeOptions) (Evidence, error) {
 	return evidence, nil
 }
 
-func HandoffControllerSecret(opts ControllerSecretHandoffOptions) error {
-	site := strings.TrimSpace(opts.Site)
-	if site == "" {
-		return errors.New("site is required")
-	}
-	seedPath := strings.TrimSpace(opts.SeedPath)
-	if seedPath == "" {
-		return errors.New("seed bundle path is required")
-	}
-	key := strings.TrimSpace(opts.Key)
-	if key == "" {
-		return errors.New("controller secret key is required")
-	}
-	outputPath := strings.TrimSpace(opts.OutputPath)
-	if outputPath == "" {
-		return errors.New("output path is required")
-	}
-	bundle, err := readSeedBundle(seedPath)
-	if err != nil {
-		return err
-	}
-	policy, err := loadSeedPolicy(opts.RepoRoot, site)
-	if err != nil {
-		return err
-	}
-	if _, ok := policy.controllerOnly[key]; !ok {
-		return fmt.Errorf("%s is not declared controller-only for site %s", key, site)
-	}
-	if bundle.Site != site {
-		return fmt.Errorf("%s: site %q does not match selected site %q", seedPath, bundle.Site, site)
-	}
-	value := strings.TrimSpace(bundle.Values[key])
-	if value == "" {
-		return fmt.Errorf("%s: values.%s is empty or missing", seedPath, key)
-	}
-	if err := writePrivateFile(outputPath, []byte(value+"\n"), opts.ForceWrite); err != nil {
-		return err
-	}
-	if !opts.Remove {
-		return nil
-	}
-	delete(bundle.Values, key)
-	body, err := yaml.Marshal(bundle)
-	if err != nil {
-		return fmt.Errorf("encode seed bundle %s: %w", seedPath, err)
-	}
-	return writePrivateFile(seedPath, body, true)
-}
-
 func buildRuntimeSeedBundle(repoRoot, site string, values map[string]string) (RuntimeSeedBundle, error) {
 	keys, err := loadRuntimeSiteSecretKeys(repoRoot)
 	if err != nil {
@@ -402,9 +337,6 @@ func validateSeedBundle(site, path string, bundle SeedBundle, policy seedPolicy)
 		}
 		return Evidence{}, fmt.Errorf("%s: values.%s is not a declared bootstrap seed key", path, key)
 	}
-	if err := validateProviderIsolation(site, bundle.Values); err != nil {
-		return Evidence{}, fmt.Errorf("%s: %w", path, err)
-	}
 	return buildEvidence(site, bundle.Values, nil, policy, nil), nil
 }
 
@@ -417,19 +349,6 @@ func validateCompleteValues(site string, values map[string]string, policy seedPo
 	}
 	if len(missingBySource) > 0 {
 		return fmt.Errorf("missing bootstrap values after materialization: %s", formatMissingBySource(missingBySource))
-	}
-	return validateProviderIsolation(site, values)
-}
-
-func validateProviderIsolation(site string, values map[string]string) error {
-	if site == "prod" {
-		return nil
-	}
-	if strings.HasPrefix(values["stripe_secret_key"], "sk_live_") || strings.HasPrefix(values["stripe_secret_key"], "rk_live_") {
-		return fmt.Errorf("non-prod site %s cannot use a live-mode Stripe secret key", site)
-	}
-	if strings.HasPrefix(values["stripe_publishable_key"], "pk_live_") {
-		return fmt.Errorf("non-prod site %s cannot use a live-mode Stripe publishable key", site)
 	}
 	return nil
 }
