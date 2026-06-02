@@ -9,6 +9,10 @@ Company website: guardianintelligence.org
 Letters - Blog posts from the founder: guardianintelligence.org/letters
 Newsroom - Business updates: guardianintelligence.org/newsroom
 
+<available_tooling>
+Integrations: `aspect integrations`
+</available_toling>
+
 
 <coding_contract>
 * Always lean on open standards where possible. Avoid re-inventing the wheel.
