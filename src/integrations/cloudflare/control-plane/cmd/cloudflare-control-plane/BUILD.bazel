@@ -5,6 +5,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 go_library(
     name = "cloudflare-control-plane_lib",
     srcs = [
+        "certificates.go",
         "main.go",
         "site.go",
     ],
@@ -13,6 +14,7 @@ go_library(
     deps = [
         "//src/integrations/cloudflare/control-plane/internal/r2control",
         "@in_gopkg_yaml_v3//:yaml_v3",
+        "@org_golang_x_crypto//acme",
     ],
 )
 

@@ -180,12 +180,40 @@
     fail_msg: >-
       haproxy_stripe_webhook_ips must contain the published Stripe webhook source IPs.
 
-- name: Install HAProxy placeholder certificates for first config validation
-  ansible.builtin.include_tasks: placeholder_cert.yml
+- name: Inspect HAProxy projected public certificates
+  ansible.builtin.stat:
+    path: "{{ haproxy_public_certificate_projection_dir }}/{{ item.name }}.pem"
+  loop: "{{ haproxy_public_certificates }}"
+  register: haproxy_projected_public_certificates
+  delegate_to: localhost
+  become: false
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Require HAProxy projected public certificates
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: >-
+      Missing projected public certificate {{ item.stat.path }}.
+      Run aspect integrations cloudflare-control-plane --site={{ verself_site }}
+      --action=issue-site-certificates before host convergence.
+  loop: "{{ haproxy_projected_public_certificates.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Install HAProxy projected public certificates
+  ansible.builtin.copy:
+    src: "{{ haproxy_public_certificate_projection_dir }}/{{ item.name }}.pem"
+    dest: "{{ item.pem_path }}"
+    owner: root
+    group: haproxy
+    mode: "0640"
   loop: "{{ haproxy_public_certificates }}"
   loop_control:
-    loop_var: haproxy_public_certificate
-    label: "{{ haproxy_public_certificate.name }}"
+    label: "{{ item.name }}"
+  notify: reload haproxy
+  no_log: true
 
 - name: Deploy HAProxy public host map
   ansible.builtin.template:

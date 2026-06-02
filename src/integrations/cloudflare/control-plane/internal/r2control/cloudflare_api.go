@@ -508,14 +508,25 @@ func (c *CloudflareAPIClient) ZonesByName(ctx context.Context, names []string) (
 }
 
 func (c *CloudflareAPIClient) ListARecords(ctx context.Context, zoneID string) ([]DNSRecord, error) {
+	return c.ListDNSRecords(ctx, zoneID, "A", "")
+}
+
+func (c *CloudflareAPIClient) ListDNSRecords(ctx context.Context, zoneID, recordType, name string) ([]DNSRecord, error) {
 	zoneID = strings.TrimSpace(zoneID)
 	if zoneID == "" {
 		return nil, fmt.Errorf("zone ID is required")
 	}
+	recordType = strings.ToUpper(strings.TrimSpace(recordType))
+	if recordType == "" {
+		return nil, fmt.Errorf("DNS record type is required")
+	}
 	var out []DNSRecord
 	for page := 1; ; page++ {
 		q := url.Values{}
-		q.Set("type", "A")
+		q.Set("type", recordType)
+		if strings.TrimSpace(name) != "" {
+			q.Set("name", strings.Trim(strings.TrimSpace(name), "."))
+		}
 		q.Set("page", fmt.Sprint(page))
 		q.Set("per_page", "100")
 		var response dnsRecordListResponse
@@ -537,12 +548,20 @@ func (c *CloudflareAPIClient) ListARecords(ctx context.Context, zoneID string) (
 }
 
 func (c *CloudflareAPIClient) CreateARecord(ctx context.Context, zoneID, name, content string, ttl int, proxied bool) (DNSRecord, error) {
+	return c.createDNSRecord(ctx, zoneID, dnsRecordBody("A", name, content, ttl, proxied))
+}
+
+func (c *CloudflareAPIClient) CreateTXTRecord(ctx context.Context, zoneID, name, content string, ttl int) (DNSRecord, error) {
+	return c.createDNSRecord(ctx, zoneID, dnsRecordBody("TXT", name, content, ttl, false))
+}
+
+func (c *CloudflareAPIClient) createDNSRecord(ctx context.Context, zoneID string, body map[string]any) (DNSRecord, error) {
 	zoneID = strings.TrimSpace(zoneID)
 	if zoneID == "" {
 		return DNSRecord{}, fmt.Errorf("zone ID is required")
 	}
 	var response dnsRecordResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/zones/"+url.PathEscape(zoneID)+"/dns_records", dnsRecordBody(name, content, ttl, proxied), &response); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/zones/"+url.PathEscape(zoneID)+"/dns_records", body, &response); err != nil {
 		return DNSRecord{}, err
 	}
 	if !response.Success {
@@ -564,7 +583,7 @@ func (c *CloudflareAPIClient) UpdateARecord(ctx context.Context, zoneID, recordI
 		return DNSRecord{}, fmt.Errorf("record ID is required")
 	}
 	var response dnsRecordResponse
-	if err := c.doJSON(ctx, http.MethodPut, "/zones/"+url.PathEscape(zoneID)+"/dns_records/"+url.PathEscape(recordID), dnsRecordBody(name, content, ttl, proxied), &response); err != nil {
+	if err := c.doJSON(ctx, http.MethodPut, "/zones/"+url.PathEscape(zoneID)+"/dns_records/"+url.PathEscape(recordID), dnsRecordBody("A", name, content, ttl, proxied), &response); err != nil {
 		return DNSRecord{}, err
 	}
 	if !response.Success {
@@ -576,9 +595,21 @@ func (c *CloudflareAPIClient) UpdateARecord(ctx context.Context, zoneID, recordI
 	return response.Result, nil
 }
 
-func dnsRecordBody(name, content string, ttl int, proxied bool) map[string]any {
+func (c *CloudflareAPIClient) DeleteDNSRecord(ctx context.Context, zoneID, recordID string) error {
+	zoneID = strings.TrimSpace(zoneID)
+	recordID = strings.TrimSpace(recordID)
+	if zoneID == "" {
+		return fmt.Errorf("zone ID is required")
+	}
+	if recordID == "" {
+		return fmt.Errorf("record ID is required")
+	}
+	return c.doJSON(ctx, http.MethodDelete, "/zones/"+url.PathEscape(zoneID)+"/dns_records/"+url.PathEscape(recordID), map[string]string{}, nil)
+}
+
+func dnsRecordBody(recordType, name, content string, ttl int, proxied bool) map[string]any {
 	return map[string]any{
-		"type":    "A",
+		"type":    strings.ToUpper(strings.TrimSpace(recordType)),
 		"name":    strings.Trim(strings.TrimSpace(name), "."),
 		"content": strings.TrimSpace(content),
 		"ttl":     ttl,

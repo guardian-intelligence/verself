@@ -62,7 +62,7 @@ func TestBootstrapCheckIsReadOnly(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	if err := bootstrapCheck(context.Background(), srv.URL, "token"); err != nil {
+	if _, err := bootstrapCheck(context.Background(), srv.URL, "token"); err != nil {
 		t.Fatal(err)
 	}
 	if !seenBootstrap {
@@ -87,8 +87,6 @@ deployment_service_domain: deployments.api.gamma.verself.test
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen[r.Method+" "+r.URL.Path]++
 		switch r.Method + " " + r.URL.Path {
-		case "GET /healthz":
-			_, _ = w.Write([]byte("ok\n"))
 		case "GET /api/v1/deployments/bootstrap:check":
 			if r.Header.Get("Authorization") != "Bearer deploy-token" {
 				t.Fatalf("bootstrap check missing bearer token")
@@ -106,14 +104,15 @@ deployment_service_domain: deployments.api.gamma.verself.test
 	if err := check(context.Background(), checkOptions{Site: "gamma", RepoRoot: repoRoot}); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"GET /healthz", "GET /api/v1/deployments/bootstrap:check"} {
-		if seen[key] != 1 {
-			t.Fatalf("%s count = %d, want 1; all requests = %#v", key, seen[key], seen)
-		}
+	if seen["GET /api/v1/deployments/bootstrap:check"] != 1 {
+		t.Fatalf("bootstrap check count = %d, want 1; all requests = %#v", seen["GET /api/v1/deployments/bootstrap:check"], seen)
+	}
+	if len(seen) != 1 {
+		t.Fatalf("unexpected request set: %#v", seen)
 	}
 }
 
-func TestCheckRequiresDeploymentAuthAfterHealthz(t *testing.T) {
+func TestCheckRequiresDeploymentAuthBeforeReadinessRequest(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeRunTestCloudflareAccountConfig(t, repoRoot)
 	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
@@ -128,11 +127,10 @@ deployment_service_domain: deployments.api.gamma.verself.test
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "")
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
 
+	requested := false
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/healthz" {
-			t.Fatalf("unexpected request without auth %s %s", r.Method, r.URL.Path)
-		}
-		_, _ = w.Write([]byte("ok\n"))
+		requested = true
+		t.Fatalf("unexpected request without auth %s %s", r.Method, r.URL.Path)
 	}))
 	t.Cleanup(srv.Close)
 	restoreTransport := routeAllHTTPSToTestServer(t, srv)
@@ -141,5 +139,8 @@ deployment_service_domain: deployments.api.gamma.verself.test
 	err := check(context.Background(), checkOptions{Site: "gamma", RepoRoot: repoRoot})
 	if err == nil || !strings.Contains(err.Error(), "deployment_auth_unavailable") {
 		t.Fatalf("check error = %v, want deployment auth failure", err)
+	}
+	if requested {
+		t.Fatal("check called deployment-service before deployment auth was available")
 	}
 }

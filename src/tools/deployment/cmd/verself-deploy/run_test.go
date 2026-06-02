@@ -101,7 +101,7 @@ func TestBootstrapCheckPreservesProblemCode(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	err := bootstrapCheck(context.Background(), srv.URL, "token")
+	_, err := bootstrapCheck(context.Background(), srv.URL, "token")
 	if err == nil {
 		t.Fatal("bootstrap check unexpectedly succeeded")
 	}

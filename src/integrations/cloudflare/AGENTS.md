@@ -56,6 +56,42 @@ The prod Cloudflare control plane reconciles DNS using the account-admin pair. `
 
 DNS and ACME/TLS issuer authority are controller-only surfaces. Site hosts may consume public certificates projected by the prod control plane through OpenBao/Nomad/host convergence, but they must not receive Cloudflare DNS credentials for DNS-01 issuance.
 
+## TLS Certificate Model
+
+HAProxy public certificates are issued by the prod Cloudflare control plane before host convergence. The account-admin token creates short-lived ACME DNS-01 TXT records in the managed Cloudflare zones, completes the ACME authorization, deletes the TXT records, and projects combined private-key plus certificate-chain PEM files under:
+
+```text
+.verself/site-bootstrap/<site>/tls/haproxy/<certificate-name>.pem
+```
+
+Host convergence copies those projected PEM files to `/etc/haproxy/certs` and reloads HAProxy. It must fail when a projected certificate is missing. A site bootstrap should provision the real public certificate; it should not manage a temporary public-edge certificate lifecycle.
+
+The certificate set is derived from target site vars:
+
+```text
+verself_domain + *.verself_domain + *.api.verself_domain
+company_domain
+```
+
+The hosted zone is derived from `cloudflare_product_zone` and `cloudflare_company_zone`, not by trimming labels from the domain. This supports subdomain sites such as `gamma.verself.sh` inside the `verself.sh` zone.
+
+Certificate issuance state machine:
+
+```text
+load account-admin slot A from prod controller authority
+  -> resolve every hosted zone referenced by target site vars
+  -> inspect projected PEM for keypair validity, SAN coverage, and expiry
+  -> reuse projected PEM when it is valid and outside the renewal window
+  -> create ACME DNS-01 TXT records through Cloudflare
+  -> wait for public DNS visibility
+  -> complete ACME authorization and finalize the order
+  -> write projected PEM atomically with 0600 mode
+  -> delete ACME TXT records
+  -> emit certificate names, domains, paths, expiry, and reuse evidence
+```
+
+The prod controller is the only holder of DNS issuer authority. Target sites receive certificate bytes, not Cloudflare DNS credentials. Renewal uses the same controller state transition and should run before host convergence or as a controller-owned operational task that refreshes the projection and then triggers host convergence.
+
 ## Account-Admin Rotation
 
 The account-admin pair rotates by peer authority:

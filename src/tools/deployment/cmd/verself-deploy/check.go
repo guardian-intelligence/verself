@@ -32,7 +32,7 @@ func runCheck(args []string) int {
 		rr = cwd
 	}
 	if err := check(context.Background(), checkOptions{Site: *site, RepoRoot: rr}); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "verself-deploy check: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "verself-deploy check: status=error error_details=%v\n", err)
 		return 1
 	}
 	return 0
@@ -47,17 +47,15 @@ func check(ctx context.Context, opts checkOptions) error {
 		return err
 	}
 	baseURL := deploymentServiceBaseURL(model)
-	if err := deploymentServiceReachable(ctx, baseURL); err != nil {
-		return err
-	}
 	token, err := deploymentBearerToken(ctx, baseURL)
 	if err != nil {
 		return err
 	}
-	if err := bootstrapCheck(ctx, baseURL, token); err != nil {
+	out, err := bootstrapCheck(ctx, baseURL, token)
+	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(os.Stdout, "deployment_service=%s healthz=ok bootstrap=ok\n", baseURL); err != nil {
+	if _, err := fmt.Fprintf(os.Stdout, "status=pass deployment_service=%s bootstrap=ok failed_count=%d checks=%d\n", baseURL, out.FailedCount, len(out.Checks)); err != nil {
 		return fmt.Errorf("write deployment check response: %w", err)
 	}
 	return nil

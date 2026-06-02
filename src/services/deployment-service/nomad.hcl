@@ -18,7 +18,7 @@ job "deployment-service" {
       }
       config {
         command = "/usr/bin/install"
-        args = ["-d", "-o", "deployment_service", "-g", "deployment_service", "-m", "0750", "/var/lib/verself/deployment-service"]
+        args = ["-d", "-o", "deployment_service", "-g", "deployment_service", "-m", "0750", "/home/deployment_service", "/var/lib/verself/deployment-service", "/var/lib/verself/deployment-service/.cache", "/var/lib/verself/deployment-service/.cache/bazelisk", "/var/lib/verself/deployment-service/tmp"]
       }
       resources {
         cpu = 50
@@ -73,11 +73,15 @@ job "deployment-service" {
         command = "local/bin/deployment-service"
       }
       env {
+        BAZELISK_HOME = "/var/lib/verself/deployment-service/.cache/bazelisk"
         HOME = "/var/lib/verself/deployment-service"
+        LOGNAME = "deployment_service"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "deployment-service"
         PATH = "/opt/verself/profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        TMPDIR = "/var/lib/verself/deployment-service/tmp"
+        USER = "deployment_service"
         VERSELF_DEPLOY_GITHUB_ALLOWED_REFS = "__VERSELF_DEPLOY_GITHUB_ALLOWED_REFS__"
         VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES = "__VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES__"
         VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS = "__VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS__"
@@ -93,6 +97,7 @@ job "deployment-service" {
         VERSELF_RECOVERY_SSH_READY = "true"
         VERSELF_SITE = "__VERSELF_SITE__"
         VERSELF_SUPERVISOR = "nomad"
+        XDG_CACHE_HOME = "/var/lib/verself/deployment-service/.cache"
       }
       template {
         change_mode = "restart"

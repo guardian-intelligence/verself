@@ -75,6 +75,11 @@ type config struct {
 	dnsInventory               string
 	dnsConcurrency             int
 	dryRun                     bool
+	certificateProjectionDir   string
+	acmeDirectoryURL           string
+	acmeContactEmail           string
+	acmeDNSPropagationWait     time.Duration
+	certificateRenewBefore     time.Duration
 	getterVarsFile             string
 	seedBundleFile             string
 	bootstrapPublisherEnvFile  string
@@ -118,6 +123,7 @@ type report struct {
 	DNSRecordsApplied            int                     `json:"dns_records_applied,omitempty"`
 	DNSDryRun                    bool                    `json:"dns_dry_run,omitempty"`
 	DNSChanges                   []dnsChangeReport       `json:"dns_changes,omitempty"`
+	TLSCertificates              []tlsCertificateReport  `json:"tls_certificates,omitempty"`
 	GetterCredentialPermission   string                  `json:"getter_credential_permission,omitempty"`
 	GetterCredentialName         string                  `json:"getter_credential_name,omitempty"`
 	GetterCredentialExpiresOn    string                  `json:"getter_credential_expires_on,omitempty"`
@@ -175,7 +181,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, provision-site, provision-site-bootstrap, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
+	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, provision-site-bootstrap, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
@@ -204,6 +210,11 @@ func run(args []string) error {
 	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini.")
 	fs.IntVar(&cfg.dnsConcurrency, "dns-concurrency", 8, "Maximum parallel Cloudflare DNS write requests for --action=reconcile-dns.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print and report the DNS diff without applying writes for --action=reconcile-dns.")
+	fs.StringVar(&cfg.certificateProjectionDir, "certificate-projection-dir", "", "Local directory to receive HAProxy public certificate PEM projections. Defaults to .verself/site-bootstrap/<site>/tls/haproxy.")
+	fs.StringVar(&cfg.acmeDirectoryURL, "acme-directory-url", letsEncryptProductionDirectoryURL, "ACME directory URL for public certificate issuance.")
+	fs.StringVar(&cfg.acmeContactEmail, "acme-contact-email", "", "ACME account contact email for --action=issue-site-certificates.")
+	fs.DurationVar(&cfg.acmeDNSPropagationWait, "acme-dns-propagation-wait", 2*time.Minute, "Maximum wait for ACME DNS-01 TXT propagation.")
+	fs.DurationVar(&cfg.certificateRenewBefore, "certificate-renew-before", 30*24*time.Hour, "Renew projected certificates expiring before this duration.")
 	fs.StringVar(&cfg.getterVarsFile, "getter-vars-file", "", "JSON vars file to receive the durable Nomad artifact getter keypair.")
 	fs.StringVar(&cfg.seedBundleFile, "seed-bundle-file", "", "Seed bundle file to receive generated provider values.")
 	fs.StringVar(&cfg.bootstrapPublisherEnvFile, "bootstrap-publisher-env-file", "", "Env file to receive the bootstrap-only R2 publisher credential.")
@@ -229,7 +240,11 @@ func run(args []string) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
+	timeout := cfg.timeout
+	if (cfg.action == "issue-site-certificates" || cfg.action == "provision-site") && timeout < 5*time.Minute {
+		timeout = 5 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	switch cfg.action {
@@ -243,6 +258,8 @@ func run(args []string) error {
 		return verifyDNSAuthority(ctx, cfg)
 	case "reconcile-dns":
 		return reconcileDNS(ctx, cfg)
+	case "issue-site-certificates":
+		return issueSiteCertificates(ctx, cfg)
 	case "provision-site":
 		return provisionSite(ctx, cfg)
 	}
@@ -421,9 +438,9 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "import-admin-pair", "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "import-admin-pair", "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
 	}
 	if !r2control.IsCloudflareAccountID(cfg.accountID) {
 		return fmt.Errorf("--account-id must be a 32-character lowercase hex Cloudflare account ID")
@@ -457,6 +474,20 @@ func (cfg config) validate() error {
 	}
 	if cfg.accountAdminTTL <= 0 || cfg.accountAdminTTL > 7*24*time.Hour {
 		return fmt.Errorf("--account-admin-ttl must be greater than zero and no more than 7 days")
+	}
+	if cfg.acmeDNSPropagationWait <= 0 || cfg.acmeDNSPropagationWait > 10*time.Minute {
+		return fmt.Errorf("--acme-dns-propagation-wait must be greater than zero and no more than 10 minutes")
+	}
+	if cfg.certificateRenewBefore <= 0 || cfg.certificateRenewBefore > 90*24*time.Hour {
+		return fmt.Errorf("--certificate-renew-before must be greater than zero and no more than 90 days")
+	}
+	if cfg.action == "issue-site-certificates" || cfg.action == "provision-site" {
+		if strings.TrimSpace(cfg.acmeDirectoryURL) == "" {
+			return fmt.Errorf("--acme-directory-url is required for certificate issuance")
+		}
+		if strings.TrimSpace(cfg.acmeContactEmail) == "" {
+			return fmt.Errorf("--acme-contact-email is required for certificate issuance")
+		}
 	}
 	switch strings.TrimSpace(cfg.accountAdminSource) {
 	case accountAdminSourceOpenBao, accountAdminSourceSecretEnv:
@@ -762,6 +793,11 @@ func provisionSite(ctx context.Context, cfg config) error {
 	dnsCfg.action = "reconcile-dns"
 	if err := reconcileDNS(ctx, dnsCfg); err != nil {
 		return fmt.Errorf("reconcile-dns: %w", err)
+	}
+	certCfg := cfg
+	certCfg.action = "issue-site-certificates"
+	if err := issueSiteCertificates(ctx, certCfg); err != nil {
+		return fmt.Errorf("issue-site-certificates: %w", err)
 	}
 	bootstrapCfg := cfg
 	bootstrapCfg.action = "provision-site-bootstrap"

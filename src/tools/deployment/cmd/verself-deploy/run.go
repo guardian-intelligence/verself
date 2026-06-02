@@ -110,7 +110,7 @@ func run(ctx context.Context, opts runOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := bootstrapCheck(ctx, baseURL, token); err != nil {
+	if _, err := bootstrapCheck(ctx, baseURL, token); err != nil {
 		return err
 	}
 	out, err := submitDeployment(ctx, baseURL, token, submitRequest{
@@ -153,27 +153,27 @@ func deploymentServiceReachable(ctx context.Context, baseURL string) error {
 	return nil
 }
 
-func bootstrapCheck(ctx context.Context, baseURL string, token string) error {
+func bootstrapCheck(ctx context.Context, baseURL string, token string) (bootstrapCheckResponse, error) {
 	checkCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(checkCtx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/api/v1/deployments/bootstrap:check", http.NoBody)
 	if err != nil {
-		return err
+		return bootstrapCheckResponse{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return deploymentServiceReachabilityError(baseURL, err)
+		return bootstrapCheckResponse{}, deploymentServiceReachabilityError(baseURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return httpProblem("deployment_service_unavailable: "+baseURL+" bootstrap check failed", resp.StatusCode, body)
+		return bootstrapCheckResponse{}, httpProblem("deployment_service_unavailable: "+baseURL+" bootstrap check failed", resp.StatusCode, body)
 	}
 	var out bootstrapCheckResponse
 	if err := json.Unmarshal(body, &out); err != nil {
-		return fmt.Errorf("deployment_service_unavailable: decode bootstrap check response: %w", err)
+		return bootstrapCheckResponse{}, fmt.Errorf("deployment_service_unavailable: decode bootstrap check response: %w", err)
 	}
 	failures := []string{}
 	for _, check := range out.Checks {
@@ -182,9 +182,9 @@ func bootstrapCheck(ctx context.Context, baseURL string, token string) error {
 		}
 	}
 	if len(failures) > 0 {
-		return fmt.Errorf("deployment_service_unavailable: site is not past S7 deployment-service-ready: %s", strings.Join(failures, "; "))
+		return out, fmt.Errorf("deployment_service_unavailable: site is not past S7 deployment-service-ready: %s", strings.Join(failures, "; "))
 	}
-	return nil
+	return out, nil
 }
 
 func deploymentBearerToken(ctx context.Context, audience string) (string, error) {

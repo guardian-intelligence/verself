@@ -219,20 +219,22 @@ func TestLoadSiteConfigRejectsSiteCloudflareGlobals(t *testing.T) {
 
 func validTestConfig() config {
 	return config{
-		action:                "verify-admin-pair",
-		site:                  "gamma",
-		accountID:             "0123456789abcdef0123456789abcdef",
-		bucket:                "verself-deployment-artifacts",
-		keyPrefix:             "sha256",
-		region:                "auto",
-		accountAdminSource:    accountAdminSourceOpenBao,
-		tempTTL:               15 * time.Minute,
-		uploadSessionTTL:      30 * time.Minute,
-		ephemeralPublisherTTL: time.Hour,
-		childTokenTTL:         7 * 24 * time.Hour,
-		accountAdminTTL:       7 * 24 * time.Hour,
-		inventoryDepth:        2,
-		dnsConcurrency:        8,
+		action:                 "verify-admin-pair",
+		site:                   "gamma",
+		accountID:              "0123456789abcdef0123456789abcdef",
+		bucket:                 "verself-deployment-artifacts",
+		keyPrefix:              "sha256",
+		region:                 "auto",
+		accountAdminSource:     accountAdminSourceOpenBao,
+		tempTTL:                15 * time.Minute,
+		uploadSessionTTL:       30 * time.Minute,
+		ephemeralPublisherTTL:  time.Hour,
+		childTokenTTL:          7 * 24 * time.Hour,
+		accountAdminTTL:        7 * 24 * time.Hour,
+		inventoryDepth:         2,
+		dnsConcurrency:         8,
+		acmeDNSPropagationWait: 2 * time.Minute,
+		certificateRenewBefore: 30 * 24 * time.Hour,
 	}
 }
 

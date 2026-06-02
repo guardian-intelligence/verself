@@ -65,6 +65,16 @@ def _cloudflare_control_plane_impl(ctx):
         args_list.append("--dns-concurrency=" + str(ctx.args.dns_concurrency))
     if ctx.args.dry_run:
         args_list.append("--dry-run")
+    if ctx.args.certificate_projection_dir != "":
+        args_list.append("--certificate-projection-dir=" + (ctx.args.certificate_projection_dir if ctx.args.certificate_projection_dir.startswith("/") else ws_path(ctx, ctx.args.certificate_projection_dir)))
+    if ctx.args.acme_directory_url != "":
+        args_list.append("--acme-directory-url=" + ctx.args.acme_directory_url)
+    if ctx.args.acme_contact_email != "":
+        args_list.append("--acme-contact-email=" + ctx.args.acme_contact_email)
+    if ctx.args.acme_dns_propagation_wait != "":
+        args_list.append("--acme-dns-propagation-wait=" + ctx.args.acme_dns_propagation_wait)
+    if ctx.args.certificate_renew_before != "":
+        args_list.append("--certificate-renew-before=" + ctx.args.certificate_renew_before)
     if ctx.args.getter_vars_file != "":
         args_list.append("--getter-vars-file=" + (ctx.args.getter_vars_file if ctx.args.getter_vars_file.startswith("/") else ws_path(ctx, ctx.args.getter_vars_file)))
     if ctx.args.seed_bundle_file != "":
@@ -105,7 +115,7 @@ cloudflare_control_plane = task(
     summary = "Provision target-site Cloudflare resources from prod global account authority.",
     args = {
         "site": args.string(default = "prod", description = "Target deployment site for DNS records, R2 prefixes, and scoped R2 credentials. Cloudflare authority is global and prod-owned."),
-        "action": args.string(default = "verify-admin-pair", description = "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
+        "action": args.string(default = "verify-admin-pair", description = "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to src/integrations/cloudflare/account.json."),
         "credential_source": args.string(default = "openbao", description = "Scoped R2 credential source for inventory or verify: openbao, env, env-file, or auto."),
@@ -123,6 +133,11 @@ cloudflare_control_plane = task(
         "dns_inventory": args.string(default = "", description = "Site inventory used for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini."),
         "dns_concurrency": args.int(default = 8, description = "Maximum parallel Cloudflare DNS write requests for reconcile-dns."),
         "dry_run": args.boolean(default = False, description = "Report the DNS diff without applying writes for reconcile-dns."),
+        "certificate_projection_dir": args.string(default = "", description = "Local directory to receive HAProxy public certificate PEM projections. Defaults to .verself/site-bootstrap/<site>/tls/haproxy."),
+        "acme_directory_url": args.string(default = "", description = "ACME directory URL for public certificate issuance."),
+        "acme_contact_email": args.string(default = "", description = "ACME account contact email for issue-site-certificates."),
+        "acme_dns_propagation_wait": args.string(default = "", description = "Maximum wait for ACME DNS-01 TXT propagation."),
+        "certificate_renew_before": args.string(default = "", description = "Renew projected certificates expiring before this duration."),
         "getter_vars_file": args.string(default = "", description = "JSON vars file to receive durable Nomad artifact getter credentials."),
         "seed_bundle_file": args.string(default = "", description = "Seed bundle file to receive generated provider values."),
         "bootstrap_publisher_env_file": args.string(default = "", description = "Env file to receive the bootstrap-only R2 publisher credential."),
