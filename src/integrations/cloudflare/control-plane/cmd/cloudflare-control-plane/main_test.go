@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,6 +108,57 @@ cloudflare_dns_records:
 	}
 }
 
+func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
+	root := t.TempDir()
+	writeCloudflareAccountConfig(t, root)
+	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/site.json"), `{
+  "artifact_delivery": {
+    "kind": "cloudflare_r2_control_plane",
+    "key_prefix": "sha256",
+    "getter_options": {"region": "auto"},
+    "checksum_algorithm": "sha256",
+    "public": false
+  }
+}`)
+
+	cfg, err := loadSiteConfig(root, "gamma")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AccountID != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("account id = %q", cfg.AccountID)
+	}
+	if cfg.Bucket != "verself-deployment-artifacts" {
+		t.Fatalf("bucket = %q", cfg.Bucket)
+	}
+	if cfg.SitePrefix != "gamma" {
+		t.Fatalf("site prefix = %q", cfg.SitePrefix)
+	}
+}
+
+func TestLoadSiteConfigRejectsSiteCloudflareGlobals(t *testing.T) {
+	root := t.TempDir()
+	writeCloudflareAccountConfig(t, root)
+	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/site.json"), `{
+  "artifact_delivery": {
+    "kind": "cloudflare_r2_control_plane",
+    "bucket": "verself-deployment-artifacts",
+    "key_prefix": "sha256",
+    "getter_options": {"region": "auto"},
+    "checksum_algorithm": "sha256",
+    "public": false
+  }
+}`)
+
+	err := validLoadSiteConfigError(root, "gamma")
+	if err == nil {
+		t.Fatal("expected site Cloudflare global rejection")
+	}
+	if !strings.Contains(err.Error(), "artifact_delivery.bucket belongs to src/integrations/cloudflare/account.json") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func validTestConfig() config {
 	return config{
 		action:                "verify-admin-pair",
@@ -133,4 +185,22 @@ func writeTestFile(t *testing.T, path, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeCloudflareAccountConfig(t *testing.T, root string) {
+	t.Helper()
+	writeTestFile(t, filepath.Join(root, "src/integrations/cloudflare/account.json"), `{
+  "version": "verself.cloudflare.account.v1",
+  "control_plane_site": "prod",
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "r2": {
+    "deployment_artifacts_bucket": "verself-deployment-artifacts",
+    "recovery_bucket": "verself-recovery"
+  }
+}`)
+}
+
+func validLoadSiteConfigError(root, site string) error {
+	_, err := loadSiteConfig(root, site)
+	return err
 }

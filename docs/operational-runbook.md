@@ -80,10 +80,12 @@ plane and enters OpenBao through an approved import or rotation path.
 The Cloudflare account is a single global provider control plane anchored to
 prod authority. `--site=gamma` selects target site records, R2 prefixes, and
 child credential destinations; it does not select a Gamma-local Cloudflare
-authority. The Cloudflare account ID is checked into site metadata. Cloudflare
-R2 is modeled as global capability buckets, with site isolation handled by
-object prefixes and OpenBao policy. Cloudflare account API tokens are stored
-only in prod controller OpenBao and are exposed only to the
+authority. The Cloudflare account ID and account-owned R2 buckets are declared
+only in `src/integrations/cloudflare/account.json`. Site metadata consumes
+Cloudflare capabilities through scoped child credentials. Cloudflare R2 is
+modeled as global capability buckets, with site isolation handled by object
+prefixes and OpenBao policy. Cloudflare account API tokens are stored only in
+prod controller OpenBao and are exposed only to the
 rotation/provisioning control plane. Controller-only bootstrap exceptions are
 not site seed values.
 

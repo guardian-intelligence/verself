@@ -84,10 +84,10 @@ func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-r2-control-plane", flag.ContinueOnError)
 	fs.StringVar(&cfg.action, "action", "verify", "Action: serve, inventory, or verify.")
-	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading src/host/sites/<site>/site.json.")
+	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
-	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to site.json artifact_delivery.cloudflare_account_id.")
-	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to site.json artifact_delivery.bucket.")
+	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
+	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to account.json r2.deployment_artifacts_bucket.")
 	fs.StringVar(&cfg.keyPrefix, "key-prefix", "sha256", "R2 artifact key prefix.")
 	fs.StringVar(&cfg.region, "region", "auto", "R2 S3 signing region.")
 	fs.StringVar(&cfg.credentialSource, "credential-source", "env", "Scoped R2 credential source: env, env-file, or auto.")

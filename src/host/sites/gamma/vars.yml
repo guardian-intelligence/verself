@@ -84,13 +84,9 @@ postgresql_address: "{{ postgresql_host }}:{{ postgresql_port }}"
 nomad_host: 127.0.0.1
 nomad_http_port: 4646
 nomad_http_address: "{{ nomad_host }}:{{ nomad_http_port }}"
-cloudflare_account_id: c3eaeffaadf7d4847684d4775c16d598
-nomad_artifact_bucket: verself-deployment-artifacts
-nomad_artifact_region: auto
 nomad_artifact_getter_s3_environment_file: /etc/nomad/nomad-artifacts.env
 nomad_artifact_getter_s3_access_key_env_var: AWS_ACCESS_KEY_ID
 nomad_artifact_getter_s3_secret_key_env_var: AWS_SECRET_ACCESS_KEY
-cloudflare_r2_endpoint: https://{{ cloudflare_account_id }}.r2.cloudflarestorage.com
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_host_service_ip: 10.255.0.1
 

@@ -2,6 +2,8 @@
 
 Cloudflare is a single global provider control plane anchored to prod authority. The repository still passes `--site=<site>` to Cloudflare tooling; that argument selects target site records, object prefixes, and child credential destinations. It does not select a site-local Cloudflare authority.
 
+Global Cloudflare account identity and account-owned R2 buckets are declared only in `src/integrations/cloudflare/account.json`. Site files may reference Cloudflare as a consumed capability, but must not declare `cloudflare_account_id` or global R2 bucket names.
+
 The Cloudflare account-admin pair is stored only in prod controller OpenBao:
 
 - `kv-controller/data/integrations/cloudflare/account-admin/a`
@@ -20,7 +22,7 @@ Required account-admin token policies:
 
 R2 is required for bootstrap and ongoing deployment. `aspect site bootstrap-deploy` publishes the initial immutable build artifacts through the bootstrap publisher credential; after Nomad starts deployment-service, normal deployments publish through the site-local Cloudflare R2 control-plane job.
 
-The deployment artifact bucket is a global account resource:
+The deployment artifact bucket is a global account resource declared in `account.json`:
 
 ```text
 verself-deployment-artifacts

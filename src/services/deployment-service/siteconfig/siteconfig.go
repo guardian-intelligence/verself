@@ -1,6 +1,7 @@
 package siteconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -10,6 +11,16 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+const cloudflareAccountConfigVersion = "verself.cloudflare.account.v1"
+
+type CloudflareProvider struct {
+	ControlPlaneSite          string
+	AccountID                 string
+	R2Endpoint                string
+	DeploymentArtifactsBucket string
+	RecoveryBucket            string
+}
 
 type Model struct {
 	Site                    string
@@ -31,6 +42,51 @@ type Model struct {
 	CloudflareR2Endpoint    string
 	NomadArtifactBucket     string
 	Domains                 map[string]string
+}
+
+func LoadCloudflareProvider(repoRoot string) (CloudflareProvider, error) {
+	path := filepath.Join(repoRoot, "src", "integrations", "cloudflare", "account.json")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return CloudflareProvider{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	var raw struct {
+		Version          string `json:"version"`
+		ControlPlaneSite string `json:"control_plane_site"`
+		AccountID        string `json:"account_id"`
+		R2               struct {
+			DeploymentArtifactsBucket string `json:"deployment_artifacts_bucket"`
+			RecoveryBucket            string `json:"recovery_bucket"`
+		} `json:"r2"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return CloudflareProvider{}, fmt.Errorf("decode %s: %w", path, err)
+	}
+	if raw.Version != cloudflareAccountConfigVersion {
+		return CloudflareProvider{}, fmt.Errorf("%s: version must be %s", path, cloudflareAccountConfigVersion)
+	}
+	if raw.ControlPlaneSite != "prod" {
+		return CloudflareProvider{}, fmt.Errorf("%s: control_plane_site must be prod", path)
+	}
+	accountID := strings.ToLower(strings.TrimSpace(raw.AccountID))
+	if !isCloudflareAccountID(accountID) {
+		return CloudflareProvider{}, fmt.Errorf("%s: account_id must be a 32-character hex Cloudflare account ID", path)
+	}
+	deploymentBucket := strings.TrimSpace(raw.R2.DeploymentArtifactsBucket)
+	if !isR2BucketName(deploymentBucket) {
+		return CloudflareProvider{}, fmt.Errorf("%s: r2.deployment_artifacts_bucket must be a valid lowercase R2 bucket name", path)
+	}
+	recoveryBucket := strings.TrimSpace(raw.R2.RecoveryBucket)
+	if !isR2BucketName(recoveryBucket) {
+		return CloudflareProvider{}, fmt.Errorf("%s: r2.recovery_bucket must be a valid lowercase R2 bucket name", path)
+	}
+	return CloudflareProvider{
+		ControlPlaneSite:          raw.ControlPlaneSite,
+		AccountID:                 accountID,
+		R2Endpoint:                "https://" + accountID + ".r2.cloudflarestorage.com",
+		DeploymentArtifactsBucket: deploymentBucket,
+		RecoveryBucket:            recoveryBucket,
+	}, nil
 }
 
 func Load(repoRoot, site string) (Model, error) {
@@ -61,6 +117,10 @@ func Load(repoRoot, site string) (Model, error) {
 	}
 	if model.Site != site {
 		return Model{}, fmt.Errorf("%s: verself_site=%q does not match selected site %q", path, model.Site, site)
+	}
+	cloudflare, err := LoadCloudflareProvider(repoRoot)
+	if err != nil {
+		return Model{}, err
 	}
 	if err := validateDNSName("verself_domain", model.ProductDomain); err != nil {
 		return Model{}, fmt.Errorf("%s: %w", path, err)
@@ -106,9 +166,9 @@ func Load(repoRoot, site string) (Model, error) {
 	model.DeployGitHubRefs = resolveString(values, "deployment_github_allowed_refs")
 	model.DeployGitHubWorkflows = resolveString(values, "deployment_github_allowed_workflow_refs")
 	model.DeployRepoURL = resolveString(values, "deployment_repo_url")
-	model.CloudflareAccountID = resolveString(values, "cloudflare_account_id")
-	model.CloudflareR2Endpoint = resolveString(values, "cloudflare_r2_endpoint")
-	model.NomadArtifactBucket = resolveString(values, "nomad_artifact_bucket")
+	model.CloudflareAccountID = cloudflare.AccountID
+	model.CloudflareR2Endpoint = cloudflare.R2Endpoint
+	model.NomadArtifactBucket = cloudflare.DeploymentArtifactsBucket
 	return model, nil
 }
 
@@ -178,6 +238,33 @@ func validateDNSName(field, value string) error {
 		}
 	}
 	return nil
+}
+
+func isCloudflareAccountID(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func isR2BucketName(value string) bool {
+	if len(value) < 3 || len(value) > 63 {
+		return false
+	}
+	if value[0] == '-' || value[len(value)-1] == '-' {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func (m Model) TokenMap() map[string]string {

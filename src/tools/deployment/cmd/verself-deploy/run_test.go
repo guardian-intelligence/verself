@@ -16,6 +16,7 @@ import (
 func TestRunSubmitsOnlyToDeploymentServiceHTTPBoundary(t *testing.T) {
 	const sha = "0123456789abcdef0123456789abcdef01234567"
 	repoRoot := t.TempDir()
+	writeRunTestCloudflareAccountConfig(t, repoRoot)
 	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
 verself_site: gamma
 verself_domain: gamma.verself.test
@@ -136,6 +137,19 @@ func writeRunTestFile(t *testing.T, root, rel, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeRunTestCloudflareAccountConfig(t *testing.T, root string) {
+	t.Helper()
+	writeRunTestFile(t, root, "src/integrations/cloudflare/account.json", `{
+  "version": "verself.cloudflare.account.v1",
+  "control_plane_site": "prod",
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "r2": {
+    "deployment_artifacts_bucket": "verself-deployment-artifacts",
+    "recovery_bucket": "verself-recovery"
+  }
+}`)
 }
 
 func TestSubmitDeploymentPreservesAdmissionProblemCode(t *testing.T) {

@@ -190,20 +190,27 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if raw.ArtifactDelivery.Public == nil || *raw.ArtifactDelivery.Public {
 		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.public must be false", path)
 	}
-	if raw.ArtifactDelivery.Bucket == "" || raw.ArtifactDelivery.KeyPrefix == "" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery requires bucket and key_prefix", path)
+	if strings.TrimSpace(raw.ArtifactDelivery.Bucket) != "" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.bucket belongs to src/integrations/cloudflare/account.json", path)
+	}
+	if strings.TrimSpace(raw.ArtifactDelivery.CloudflareAccountID) != "" || strings.TrimSpace(raw.ArtifactDelivery.CloudflareAccountIDEnv) != "" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.cloudflare_account_id belongs to src/integrations/cloudflare/account.json", path)
+	}
+	if raw.ArtifactDelivery.KeyPrefix == "" {
+		return siteConfig{}, fmt.Errorf("%s: artifact_delivery requires key_prefix", path)
 	}
 	sitePrefix, err := artifactSitePrefix(site)
 	if err != nil {
 		return siteConfig{}, fmt.Errorf("%s: %w", path, err)
 	}
-	accountID, err := resolveCloudflareAccountID(raw.ArtifactDelivery)
+	cloudflare, err := siteconfig.LoadCloudflareProvider(repoRoot)
 	if err != nil {
-		return siteConfig{}, fmt.Errorf("%s: %w", path, err)
+		return siteConfig{}, err
 	}
-	raw.ArtifactDelivery.CloudflareAccountID = accountID
+	raw.ArtifactDelivery.CloudflareAccountID = cloudflare.AccountID
+	raw.ArtifactDelivery.Bucket = cloudflare.DeploymentArtifactsBucket
 	raw.ArtifactDelivery.SitePrefix = sitePrefix
-	raw.ArtifactDelivery.GetterSourcePrefix = "s3::https://" + accountID + ".r2.cloudflarestorage.com/" + raw.ArtifactDelivery.Bucket
+	raw.ArtifactDelivery.GetterSourcePrefix = "s3::" + cloudflare.R2Endpoint + "/" + raw.ArtifactDelivery.Bucket
 	if raw.ArtifactDelivery.GetterOptions == nil {
 		raw.ArtifactDelivery.GetterOptions = map[string]string{}
 	}
@@ -452,26 +459,6 @@ func controlPlaneComponents(components []nomadComponentDescriptor) []controlplan
 	return out
 }
 
-func resolveCloudflareAccountID(policy artifactDeliveryPolicy) (string, error) {
-	direct := strings.TrimSpace(policy.CloudflareAccountID)
-	envName := strings.TrimSpace(policy.CloudflareAccountIDEnv)
-	if direct != "" && envName != "" {
-		return "", errors.New("artifact_delivery must declare only one of cloudflare_account_id or cloudflare_account_id_env")
-	}
-	accountID := direct
-	if envName != "" {
-		accountID = strings.TrimSpace(os.Getenv(envName))
-		if accountID == "" {
-			return "", fmt.Errorf("artifact_delivery.cloudflare_account_id_env %s is unset", envName)
-		}
-	}
-	accountID = strings.ToLower(accountID)
-	if !isCloudflareAccountID(accountID) {
-		return "", errors.New("artifact_delivery.cloudflare_account_id must be a 32-character hex Cloudflare account ID")
-	}
-	return accountID, nil
-}
-
 func artifactSitePrefix(site string) (string, error) {
 	site = strings.TrimSpace(site)
 	if site == "" {
@@ -486,16 +473,4 @@ func artifactSitePrefix(site string) (string, error) {
 		}
 	}
 	return site, nil
-}
-
-func isCloudflareAccountID(value string) bool {
-	if len(value) != 32 {
-		return false
-	}
-	for _, r := range value {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return false
-		}
-	}
-	return true
 }

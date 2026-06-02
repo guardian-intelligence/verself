@@ -143,7 +143,7 @@ cloudflare_control_plane = task(
         "site": args.string(default = "prod", description = "Target deployment site for child credentials, DNS records, and R2 prefixes. Cloudflare authority is global and prod-owned."),
         "action": args.string(default = "verify-admin-pair", description = "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, provision-dns, or rotate-dns."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
-        "bucket": args.string(default = "", description = "R2 bucket. Defaults to site.json."),
+        "bucket": args.string(default = "", description = "R2 bucket. Defaults to src/integrations/cloudflare/account.json."),
         "credential_source": args.string(default = "openbao", description = "Scoped R2 credential source for inventory or verify: openbao, env, env-file, or auto."),
         "credentials_file": args.string(default = "", description = "Environment file containing R2 credentials."),
         "secret_env_file": args.string(default = "secret.env", description = "Ingress-only env file containing the global prod-owned account-admin-a and account-admin-b."),
