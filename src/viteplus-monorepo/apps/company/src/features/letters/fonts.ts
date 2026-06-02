@@ -46,12 +46,11 @@ export const lettersBodyFont: LettersFont = {
   ],
 };
 
-// The dispatch sign-off hand. Only loaded/used on the letters surface.
+// The date hand. The dispatch sign-off itself is the traced SVG in
+// handwritten-signature.tsx; this face stays for the handwritten date.
 export const lettersSignatureFont = {
   family: "Pinyon Script",
   stack: "'Pinyon Script', cursive",
-  initials: "S",
-  signer: "Shovon Hasan",
   faces: [
     { file: "PinyonScript-Regular.woff2", style: "normal", weight: "400", variable: false },
   ] satisfies readonly LetterFontFace[],
