@@ -42,7 +42,7 @@ The account-admin token creates the bucket through Cloudflare's REST R2 bucket A
 - Bootstrap publisher: bucket item read/write, written as S3 credential material to `.verself/site-bootstrap/<site>/r2-publisher.env`.
 - Nomad artifact getter: bucket item read, written to site seed/materialized Ansible vars.
 - Object storage service admin/proxy: bucket item read/write, written to site seed or controller OpenBao depending on action.
-- Deployment publisher: bucket item read/write, stored as S3 credential material in site runtime OpenBao for the site-local R2 control-plane job.
+- Deployment publisher: bucket item read/write, stored in controller OpenBao and projected into the runtime OpenBao names consumed by the site-local R2 control-plane job.
 
 Do not create account-wide R2 child tokens. Live Cloudflare behavior requires bucket-scoped child token resources for S3-compatible credentials; account-wide R2 bucket management stays with the account-admin pair.
 

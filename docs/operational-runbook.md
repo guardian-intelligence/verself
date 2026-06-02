@@ -215,7 +215,7 @@ verify cloudflare.account_admin
   -> rotate the account-admin pair through the peer token
   -> reconcile DNS and certificate state from prod control-plane authority
   -> create new R2 child token generation for each R2 capability
-  -> write R2 child generation to site seed or OpenBao
+  -> write R2 child generation to controller OpenBao or the bootstrap site seed
   -> verify real R2 access for every child generation
   -> delete superseded R2 child generations after overlap
   -> emit ClickHouse evidence

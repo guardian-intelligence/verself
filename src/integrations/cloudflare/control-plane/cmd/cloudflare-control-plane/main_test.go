@@ -65,6 +65,24 @@ func TestValidateRejectsUnknownAccountAdminSource(t *testing.T) {
 	}
 }
 
+func TestPublisherDefaultsToControllerOpenBaoPersistence(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.action = "ensure-publisher"
+
+	if got := cfg.effectiveChildCredentialPersistence(); got != childPersistenceControllerOpenBao {
+		t.Fatalf("publisher persistence = %q, want %q", got, childPersistenceControllerOpenBao)
+	}
+}
+
+func TestBootstrapProvisioningRequiresSiteSeedPersistence(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.action = "provision-site-bootstrap"
+
+	if got := cfg.effectiveChildCredentialPersistence(); got != childPersistenceSiteSeed {
+		t.Fatalf("bootstrap persistence = %q, want %q", got, childPersistenceSiteSeed)
+	}
+}
+
 func TestSiteDNSZonesUsesHostedZoneForSubdomainSite(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `

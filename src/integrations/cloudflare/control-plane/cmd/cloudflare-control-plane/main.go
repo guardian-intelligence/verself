@@ -499,7 +499,7 @@ func (cfg config) effectiveChildCredentialPersistence() string {
 		return value
 	}
 	switch cfg.action {
-	case "provision-site-bootstrap", "ensure-publisher", "rotate-publisher", "ensure-getter", "rotate-getter", "rotate-object-storage-provider":
+	case "provision-site-bootstrap", "ensure-getter", "rotate-getter", "rotate-object-storage-provider":
 		return childPersistenceSiteSeed
 	default:
 		return childPersistenceControllerOpenBao
@@ -1182,14 +1182,14 @@ func provisionPublisherCredential(ctx context.Context, cfg config, parent r2cont
 	if err := verifyObjectRoundTrip(ctx, publisherClient, cfg, "publisher", out); err != nil {
 		return err
 	}
-	seedFile := defaultSeedBundleFile(cfg)
-	if err := mergeSeedBundle(seedFile, cfg.site, map[string]string{
-		"cloudflare_r2_control_plane_publisher_token_id":          publisher.ID,
-		"cloudflare_r2_control_plane_publisher_secret_access_key": publisher.S3SecretKey,
-	}); err != nil {
-		return err
-	}
 	if cfg.effectiveChildCredentialPersistence() == childPersistenceSiteSeed {
+		seedFile := defaultSeedBundleFile(cfg)
+		if err := mergeSeedBundle(seedFile, cfg.site, map[string]string{
+			"cloudflare_r2_control_plane_publisher_token_id":          publisher.ID,
+			"cloudflare_r2_control_plane_publisher_secret_access_key": publisher.S3SecretKey,
+		}); err != nil {
+			return err
+		}
 		persisted = true
 		out.GetterCredentialPermission = publisher.PermissionGroup
 		out.GetterCredentialName = publisher.Name
@@ -1209,7 +1209,6 @@ func provisionPublisherCredential(ctx context.Context, cfg config, parent r2cont
 	out.GetterCredentialExpiresOn = publisher.ExpiresOn
 	out.GetterAccessKeyIDFingerprint = r2control.Fingerprint(publisher.S3AccessKeyID)
 	out.GetterSecretKeyFingerprint = r2control.Fingerprint(publisher.S3SecretKey)
-	out.SeedBundleFile = seedFile
 	out.GetterObjectGetStatus = out.TestObjectGetStatus
 	return nil
 }
