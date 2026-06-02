@@ -14,8 +14,8 @@ import (
 func TestWriteBootstrapPublisherEnvFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "site-bootstrap", "gamma", "r2-publisher.env")
 	publisher := r2control.CreatedAPIToken{
-		ID:    "token-id",
-		Value: "publisher-token",
+		ID:          "token-id",
+		S3SecretKey: "publisher-secret",
 	}
 
 	if err := writeBootstrapPublisherEnvFile(path, publisher); err != nil {
@@ -37,10 +37,8 @@ func TestWriteBootstrapPublisherEnvFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantSecret := r2control.SHA256Hex([]byte("publisher-token"))
 	if values["CLOUDFLARE_R2_PUBLISHER_TOKEN_ID"] != "token-id" ||
-		values["CLOUDFLARE_R2_PUBLISHER_API_TOKEN"] != "publisher-token" ||
-		values["CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY"] != wantSecret {
+		values["CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY"] != "publisher-secret" {
 		t.Fatalf("unexpected env values: %#v", values)
 	}
 }

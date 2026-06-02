@@ -23,7 +23,6 @@ type ParentCredentialConfig struct {
 	CredentialsFile    string
 	AccessKeyIDEnv     string
 	SecretAccessKeyEnv string
-	APITokenEnv        string
 	SessionTokenEnv    string
 	Timeout            time.Duration
 }
@@ -31,7 +30,6 @@ type ParentCredentialConfig struct {
 type ParentCredentials struct {
 	AccessKeyID     string
 	SecretAccessKey string
-	APIToken        string
 	SessionToken    string
 	Source          string
 }
@@ -45,9 +43,6 @@ func (cfg ParentCredentialConfig) WithDefaults() ParentCredentialConfig {
 	}
 	if cfg.SecretAccessKeyEnv == "" {
 		cfg.SecretAccessKeyEnv = "CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY"
-	}
-	if cfg.APITokenEnv == "" {
-		cfg.APITokenEnv = "CLOUDFLARE_R2_ADMIN_API_TOKEN"
 	}
 	if cfg.SessionTokenEnv == "" {
 		cfg.SessionTokenEnv = "CLOUDFLARE_R2_ADMIN_SESSION_TOKEN"
@@ -76,8 +71,8 @@ func LoadParentCredentials(ctx context.Context, cfg ParentCredentialConfig) (Par
 			creds, err := loadParentCredentialsFromEnvFile(cfg)
 			return resolveParentCredentials(ctx, cfg, creds, err)
 		}
-		return ParentCredentials{}, fmt.Errorf("no R2 credentials found; set %s plus %s or %s, or pass credentials file",
-			cfg.AccessKeyIDEnv, cfg.SecretAccessKeyEnv, cfg.APITokenEnv)
+		return ParentCredentials{}, fmt.Errorf("no R2 credentials found; set %s plus %s, or pass credentials file",
+			cfg.AccessKeyIDEnv, cfg.SecretAccessKeyEnv)
 	default:
 		return ParentCredentials{}, fmt.Errorf("unsupported R2 credential source %q", cfg.Source)
 	}
@@ -87,7 +82,6 @@ func loadParentCredentialsFromEnv(cfg ParentCredentialConfig) (ParentCredentials
 	values := map[string]string{
 		"access_key_id":     strings.TrimSpace(os.Getenv(cfg.AccessKeyIDEnv)),
 		"secret_access_key": strings.TrimSpace(os.Getenv(cfg.SecretAccessKeyEnv)),
-		"api_token":         strings.TrimSpace(os.Getenv(cfg.APITokenEnv)),
 		"session_token":     strings.TrimSpace(os.Getenv(cfg.SessionTokenEnv)),
 	}
 	return parentCredentialsFromValues(values, "env:"+cfg.AccessKeyIDEnv)
@@ -96,8 +90,7 @@ func loadParentCredentialsFromEnv(cfg ParentCredentialConfig) (ParentCredentials
 func envHasParentCredentials(cfg ParentCredentialConfig) bool {
 	access := strings.TrimSpace(os.Getenv(cfg.AccessKeyIDEnv))
 	secret := strings.TrimSpace(os.Getenv(cfg.SecretAccessKeyEnv))
-	apiToken := strings.TrimSpace(os.Getenv(cfg.APITokenEnv))
-	return apiToken != "" || (access != "" && secret != "")
+	return access != "" && secret != ""
 }
 
 func loadParentCredentialsFromEnvFile(cfg ParentCredentialConfig) (ParentCredentials, error) {
@@ -115,39 +108,18 @@ func loadParentCredentialsFromEnvFile(cfg ParentCredentialConfig) (ParentCredent
 	mapped := map[string]string{
 		"access_key_id":     values[cfg.AccessKeyIDEnv],
 		"secret_access_key": values[cfg.SecretAccessKeyEnv],
-		"api_token":         values[cfg.APITokenEnv],
 		"session_token":     values[cfg.SessionTokenEnv],
 	}
 	return parentCredentialsFromValues(mapped, "env-file:"+cfg.CredentialsFile)
 }
 
-func resolveParentCredentials(ctx context.Context, cfg ParentCredentialConfig, creds ParentCredentials, err error) (ParentCredentials, error) {
+func resolveParentCredentials(_ context.Context, _ ParentCredentialConfig, creds ParentCredentials, err error) (ParentCredentials, error) {
 	if err != nil {
 		return ParentCredentials{}, err
 	}
-	if strings.TrimSpace(creds.AccessKeyID) != "" {
-		return creds, nil
-	}
-	if strings.TrimSpace(creds.APIToken) == "" {
+	if strings.TrimSpace(creds.AccessKeyID) == "" {
 		return ParentCredentials{}, errors.New("r2 parent access key id is required")
 	}
-	accountID := strings.ToLower(strings.TrimSpace(cfg.AccountID))
-	if !IsCloudflareAccountID(accountID) {
-		return ParentCredentials{}, errors.New("cloudflare account ID is required to derive an r2 access key ID from an account API token")
-	}
-	client, err := NewCloudflareAPIClient(creds.APIToken, cfg.Timeout)
-	if err != nil {
-		return ParentCredentials{}, err
-	}
-	verified, err := client.VerifyAccountToken(ctx, accountID)
-	if err != nil {
-		return ParentCredentials{}, err
-	}
-	if verified.Status != "" && verified.Status != "active" {
-		return ParentCredentials{}, fmt.Errorf("cloudflare API token status is %q", verified.Status)
-	}
-	creds.AccessKeyID = verified.ID
-	creds.Source += ":verified-token-id"
 	return creds, nil
 }
 
@@ -163,17 +135,12 @@ func parentCredentialsFromValues(values map[string]string, source string) (Paren
 		values["parent_secret_access_key"],
 		values["s3_secret_access_key"],
 	)
-	apiToken := firstNonEmpty(values["api_token"], values["token"], values["value"])
-	if secret == "" && apiToken != "" {
-		secret = SHA256Hex([]byte(apiToken))
-	}
 	if strings.TrimSpace(secret) == "" {
-		return ParentCredentials{}, errors.New("r2 parent secret access key or API token value is required")
+		return ParentCredentials{}, errors.New("r2 parent secret access key is required")
 	}
 	return ParentCredentials{
 		AccessKeyID:     strings.TrimSpace(access),
 		SecretAccessKey: strings.TrimSpace(secret),
-		APIToken:        strings.TrimSpace(apiToken),
 		SessionToken:    strings.TrimSpace(values["session_token"]),
 		Source:          source,
 	}, nil

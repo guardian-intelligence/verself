@@ -39,7 +39,6 @@ type uploadServer struct {
 	cfg       config
 	siteCfg   siteArtifactConfig
 	publisher r2control.ParentCredentials
-	apiClient *r2control.CloudflareAPIClient
 	authToken string
 	mu        sync.Mutex
 	sessions  map[string]uploadSession
@@ -50,15 +49,11 @@ func serveUploadAPI(ctx context.Context, cfg config, publisher r2control.ParentC
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(publisher.APIToken) == "" {
-		return fmt.Errorf("publisher Cloudflare API token is required for upload sessions")
-	}
 	if strings.TrimSpace(publisher.AccessKeyID) == "" {
 		return fmt.Errorf("publisher Cloudflare token id is required for upload sessions")
 	}
-	apiClient, err := r2control.NewCloudflareAPIClient(publisher.APIToken, cfg.timeout)
-	if err != nil {
-		return err
+	if strings.TrimSpace(publisher.SecretAccessKey) == "" {
+		return fmt.Errorf("publisher Cloudflare R2 secret access key is required for upload sessions")
 	}
 	token, err := loadServerAuthToken(cfg)
 	if err != nil {
@@ -68,7 +63,6 @@ func serveUploadAPI(ctx context.Context, cfg config, publisher r2control.ParentC
 		cfg:       cfg,
 		siteCfg:   siteCfg,
 		publisher: publisher,
-		apiClient: apiClient,
 		authToken: token,
 		sessions:  map[string]uploadSession{},
 	}
@@ -295,8 +289,8 @@ func (s *uploadServer) handleCompleteUploadSession(w http.ResponseWriter, r *htt
 	})
 }
 
-func (s *uploadServer) temporaryR2Client(ctx context.Context, permission string, objectKeys []string, ttl time.Duration) (*r2control.R2Client, error) {
-	temp, err := s.apiClient.CreateTemporaryCredentials(ctx, s.siteCfg.AccountID, r2control.TemporaryCredentialRequest{
+func (s *uploadServer) temporaryR2Client(_ context.Context, permission string, objectKeys []string, ttl time.Duration) (*r2control.R2Client, error) {
+	temp, err := r2control.CreateLocalTemporaryCredentials(r2control.Endpoint(s.siteCfg.AccountID), s.siteCfg.AccountID, s.publisher.SecretAccessKey, r2control.TemporaryCredentialRequest{
 		ParentAccessKeyID: s.publisher.AccessKeyID,
 		Bucket:            s.siteCfg.Bucket,
 		Permission:        permission,

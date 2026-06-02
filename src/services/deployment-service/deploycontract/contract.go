@@ -445,7 +445,7 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		var doc RuntimeSecretsFile
 		if v.decode(rel, r2SecretsPath, &doc) {
 			v.requireSiteSecret(rel, doc, "cloudflare-r2-control-plane.publisher_token_id", "cloudflare_r2_control_plane_publisher_token_id")
-			v.requireSiteSecret(rel, doc, "cloudflare-r2-control-plane.publisher_api_token", "cloudflare_r2_control_plane_publisher_api_token")
+			v.requireSiteSecret(rel, doc, "cloudflare-r2-control-plane.publisher_secret_access_key", "cloudflare_r2_control_plane_publisher_secret_access_key")
 		}
 	}
 	emailSecretsPath := filepath.Join(v.root, "src", "services", "email-service", "deploy", "runtime-secrets.yml")
@@ -497,7 +497,7 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 	})
 	v.requireNomadRuntimeSecretReferences("src/integrations/cloudflare/r2-control-plane/nomad.hcl", []string{
 		"cloudflare-r2-control-plane.publisher_token_id",
-		"cloudflare-r2-control-plane.publisher_api_token",
+		"cloudflare-r2-control-plane.publisher_secret_access_key",
 		"deployment-service.r2_control_plane_token",
 	})
 	v.requireR2ControlPlaneServeBoundary("src/integrations/cloudflare/r2-control-plane/nomad.hcl")
@@ -607,7 +607,7 @@ func (v *Validator) requireR2ControlPlaneServeBoundary(rel string) {
 		`"--action=serve"`,
 		`"--credential-source=env"`,
 		`"--parent-access-key-id-env=CLOUDFLARE_R2_PUBLISHER_TOKEN_ID"`,
-		`"--parent-api-token-env=CLOUDFLARE_R2_PUBLISHER_API_TOKEN"`,
+		`"--parent-secret-access-key-env=CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY"`,
 	} {
 		if !strings.Contains(text, required) {
 			v.add(rel, fmt.Sprintf("R2 control-plane runtime must declare %s", required))

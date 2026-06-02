@@ -1274,8 +1274,8 @@ func provisionPublisherCredential(ctx context.Context, cfg config, parent r2cont
 	}
 	seedFile := defaultSeedBundleFile(cfg)
 	if err := mergeSeedBundle(seedFile, cfg.site, map[string]string{
-		"cloudflare_r2_control_plane_publisher_token_id":  publisher.ID,
-		"cloudflare_r2_control_plane_publisher_api_token": publisher.Value,
+		"cloudflare_r2_control_plane_publisher_token_id":          publisher.ID,
+		"cloudflare_r2_control_plane_publisher_secret_access_key": publisher.S3SecretKey,
 	}); err != nil {
 		return err
 	}
@@ -1634,8 +1634,7 @@ func writeBootstrapPublisherEnvFile(path string, publisher r2control.CreatedAPIT
 	}
 	values := map[string]string{
 		"CLOUDFLARE_R2_PUBLISHER_TOKEN_ID":          publisher.ID,
-		"CLOUDFLARE_R2_PUBLISHER_API_TOKEN":         publisher.Value,
-		"CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY": r2control.SHA256Hex([]byte(publisher.Value)),
+		"CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY": publisher.S3SecretKey,
 	}
 	for key, value := range values {
 		if strings.TrimSpace(value) == "" {
@@ -1644,7 +1643,6 @@ func writeBootstrapPublisherEnvFile(path string, publisher r2control.CreatedAPIT
 	}
 	body := []byte(
 		"CLOUDFLARE_R2_PUBLISHER_TOKEN_ID=" + values["CLOUDFLARE_R2_PUBLISHER_TOKEN_ID"] + "\n" +
-			"CLOUDFLARE_R2_PUBLISHER_API_TOKEN=" + values["CLOUDFLARE_R2_PUBLISHER_API_TOKEN"] + "\n" +
 			"CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY=" + values["CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY"] + "\n",
 	)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -1667,10 +1665,10 @@ func objectStorageVars(adminToken, proxyToken r2control.CreatedAPIToken) map[str
 
 func siteBootstrapSeedUpdates(publisher, getter, objectAdmin, objectProxy r2control.CreatedAPIToken) map[string]string {
 	updates := map[string]string{
-		"cloudflare_r2_control_plane_publisher_token_id":  publisher.ID,
-		"cloudflare_r2_control_plane_publisher_api_token": publisher.Value,
-		"nomad_artifact_getter_s3_access_key_id":          getter.S3AccessKeyID,
-		"nomad_artifact_getter_s3_secret_access_key":      getter.S3SecretKey,
+		"cloudflare_r2_control_plane_publisher_token_id":          publisher.ID,
+		"cloudflare_r2_control_plane_publisher_secret_access_key": publisher.S3SecretKey,
+		"nomad_artifact_getter_s3_access_key_id":                  getter.S3AccessKeyID,
+		"nomad_artifact_getter_s3_secret_access_key":              getter.S3SecretKey,
 	}
 	for key, value := range objectStorageVars(objectAdmin, objectProxy) {
 		updates[key] = value

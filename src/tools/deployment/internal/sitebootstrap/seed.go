@@ -97,10 +97,10 @@ var fallbackProvidedSeedKeys = map[string]seedKey{}
 var machineProvisionedSeedKeys = map[string]seedKey{
 	"cloudflare_api_token": {Source: "machine_provisioned_cloudflare_control_plane"},
 
-	"cloudflare_r2_control_plane_publisher_api_token": {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-	"cloudflare_r2_control_plane_publisher_token_id":  {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-	"nomad_artifact_getter_s3_access_key_id":          {Source: "machine_provisioned_cloudflare_r2_control_plane"},
-	"nomad_artifact_getter_s3_secret_access_key":      {Source: "machine_provisioned_cloudflare_r2_control_plane"},
+	"cloudflare_r2_control_plane_publisher_secret_access_key": {Source: "machine_provisioned_cloudflare_r2_control_plane"},
+	"cloudflare_r2_control_plane_publisher_token_id":          {Source: "machine_provisioned_cloudflare_r2_control_plane"},
+	"nomad_artifact_getter_s3_access_key_id":                  {Source: "machine_provisioned_cloudflare_r2_control_plane"},
+	"nomad_artifact_getter_s3_secret_access_key":              {Source: "machine_provisioned_cloudflare_r2_control_plane"},
 
 	"object_storage_service_r2_admin_access_key_id":     {Source: "machine_provisioned_cloudflare_r2_control_plane"},
 	"object_storage_service_r2_admin_secret_access_key": {Source: "machine_provisioned_cloudflare_r2_control_plane"},

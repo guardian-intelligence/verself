@@ -42,7 +42,7 @@ job "cloudflare-r2-control-plane" {
           "--key-prefix=sha256",
           "--credential-source=env",
           "--parent-access-key-id-env=CLOUDFLARE_R2_PUBLISHER_TOKEN_ID",
-          "--parent-api-token-env=CLOUDFLARE_R2_PUBLISHER_API_TOKEN",
+          "--parent-secret-access-key-env=CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY",
           "--listen=127.0.0.1:18732",
           "--auth-token-env=VERSELF_R2_CONTROL_PLANE_TOKEN",
         ]
@@ -62,7 +62,7 @@ job "cloudflare-r2-control-plane" {
         env = true
         data = <<-EOT
 CLOUDFLARE_R2_PUBLISHER_TOKEN_ID={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value | toJSON }}{{ end }}
-CLOUDFLARE_R2_PUBLISHER_API_TOKEN={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_api_token" }}{{ .Data.data.value | toJSON }}{{ end }}
+CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value | toJSON }}{{ end }}
 VERSELF_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
       }

@@ -35,12 +35,12 @@ verself-deployment-artifacts/<site>/sha256/<artifact-sha256>/...
 verself-deployment-artifacts/<site>/candidate/<deploy-run-key>/...
 ```
 
-The account-admin token creates the bucket through Cloudflare's REST R2 bucket API. Runtime and bootstrap jobs receive bucket-scoped child credentials only:
+The account-admin token creates the bucket through Cloudflare's REST R2 bucket API. Runtime and bootstrap jobs receive bucket-scoped child credentials only. R2 publisher and getter credentials are delivered to site runtime as S3-compatible access key IDs plus secret access keys. The Cloudflare API token value used to create a child credential is not a site runtime secret.
 
-- Bootstrap publisher: bucket item read/write, written to `.verself/site-bootstrap/<site>/r2-publisher.env`.
+- Bootstrap publisher: bucket item read/write, written as S3 credential material to `.verself/site-bootstrap/<site>/r2-publisher.env`.
 - Nomad artifact getter: bucket item read, written to site seed/materialized Ansible vars.
 - Object storage service admin/proxy: bucket item read/write, written to site seed or controller OpenBao depending on action.
-- Deployment publisher: bucket item read/write, stored in controller OpenBao for the site-local R2 control-plane job.
+- Deployment publisher: bucket item read/write, stored as S3 credential material in site runtime OpenBao for the site-local R2 control-plane job.
 
 Do not create account-wide R2 child tokens. Live Cloudflare behavior requires bucket-scoped child token resources for S3-compatible credentials; account-wide R2 bucket management stays with the account-admin pair.
 
@@ -95,7 +95,7 @@ Bootstrap seeds contain machine-provisioned Cloudflare children and generated ho
 ## Module Boundaries
 
 - `control-plane/`: prod-owned Cloudflare authority, account-admin pair verification/rotation, DNS child provisioning, R2 bucket creation, and child credential provisioning.
-- `r2-control-plane/`: site-local runtime upload-session service. It consumes a scoped publisher credential and mints temporary R2 upload credentials. It does not hold account-admin authority.
+- `r2-control-plane/`: site-local runtime upload-session service. It consumes a scoped publisher S3 credential and locally signs temporary R2 upload credentials. It does not hold account-admin authority or Cloudflare API token values.
 - `dns-reconciler/`: applies target-site DNS desired state using a scoped DNS child token. It does not mint or rotate tokens.
 - `email-routing/`: zone email-routing automation. It must use scoped zone credentials and must not depend on account-admin material.
 

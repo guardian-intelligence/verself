@@ -641,7 +641,7 @@ func validSeedBundle(site string) string {
 site: ` + site + `
 values:
   cloudflare_api_token: cf_dns_gamma
-  cloudflare_r2_control_plane_publisher_api_token: cf_r2_publisher_api_gamma
+  cloudflare_r2_control_plane_publisher_secret_access_key: cf_r2_publisher_secret_gamma
   cloudflare_r2_control_plane_publisher_token_id: cf_r2_publisher_token_gamma
   nomad_artifact_getter_s3_access_key_id: r2_getter_gamma
   nomad_artifact_getter_s3_secret_access_key: r2_getter_secret_gamma
@@ -657,7 +657,7 @@ func bootstrapOnlySeedBundle(site string) string {
 site: ` + site + `
 values:
   cloudflare_api_token: cf_dns_gamma
-  cloudflare_r2_control_plane_publisher_api_token: cf_r2_publisher_api_gamma
+  cloudflare_r2_control_plane_publisher_secret_access_key: cf_r2_publisher_secret_gamma
   cloudflare_r2_control_plane_publisher_token_id: cf_r2_publisher_token_gamma
   nomad_artifact_getter_s3_access_key_id: r2_getter_gamma
   nomad_artifact_getter_s3_secret_access_key: r2_getter_secret_gamma

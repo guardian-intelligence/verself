@@ -436,8 +436,8 @@ openbao_runtime_secret_seed_declarations:
 openbao_runtime_secret_seed_declarations:
   - name: cloudflare-r2-control-plane.publisher_token_id
     site_secret: cloudflare_r2_control_plane_publisher_token_id
-  - name: cloudflare-r2-control-plane.publisher_api_token
-    site_secret: cloudflare_r2_control_plane_publisher_api_token
+  - name: cloudflare-r2-control-plane.publisher_secret_access_key
+    site_secret: cloudflare_r2_control_plane_publisher_secret_access_key
 `)
 	write(t, root, "src/services/deployment-service/nomad.hcl", `
 job "deployment-service" {
@@ -463,13 +463,13 @@ job "cloudflare-r2-control-plane" {
           "--action=serve",
           "--credential-source=env",
           "--parent-access-key-id-env=CLOUDFLARE_R2_PUBLISHER_TOKEN_ID",
-          "--parent-api-token-env=CLOUDFLARE_R2_PUBLISHER_API_TOKEN",
+          "--parent-secret-access-key-env=CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY",
         ]
       }
       template {
         data = <<-EOT
 CLOUDFLARE_R2_PUBLISHER_TOKEN_ID={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value }}{{ end }}
-CLOUDFLARE_R2_PUBLISHER_API_TOKEN={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_api_token" }}{{ .Data.data.value }}{{ end }}
+CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
 VERSELF_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
 	EOT
 	      }
@@ -490,13 +490,13 @@ job "cloudflare-r2-control-plane" {
           "--action=serve",
           "--credential-source=env",
           "--parent-access-key-id-env=CLOUDFLARE_R2_PUBLISHER_TOKEN_ID",
-          "--parent-api-token-env=CLOUDFLARE_R2_PUBLISHER_API_TOKEN",
+          "--parent-secret-access-key-env=CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY",
         ]
       }
       template {
         data = <<-EOT
 CLOUDFLARE_R2_PUBLISHER_TOKEN_ID={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value }}{{ end }}
-CLOUDFLARE_R2_PUBLISHER_API_TOKEN={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_api_token" }}{{ .Data.data.value }}{{ end }}
+CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
 VERSELF_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }

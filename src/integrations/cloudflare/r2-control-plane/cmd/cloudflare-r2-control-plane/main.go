@@ -34,7 +34,6 @@ type config struct {
 	credentialsFile          string
 	parentAccessKeyIDEnv     string
 	parentSecretAccessKeyEnv string
-	parentAPITokenEnv        string
 	parentSessionTokenEnv    string
 	listenAddr               string
 	authTokenEnv             string
@@ -94,7 +93,6 @@ func run(args []string) error {
 	fs.StringVar(&cfg.credentialsFile, "credentials-file", "", "Environment file containing scoped R2 publisher credentials.")
 	fs.StringVar(&cfg.parentAccessKeyIDEnv, "parent-access-key-id-env", "CLOUDFLARE_R2_PUBLISHER_TOKEN_ID", "Environment variable name for the R2 publisher token ID.")
 	fs.StringVar(&cfg.parentSecretAccessKeyEnv, "parent-secret-access-key-env", "CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY", "Environment variable name for the R2 publisher S3 secret.")
-	fs.StringVar(&cfg.parentAPITokenEnv, "parent-api-token-env", "CLOUDFLARE_R2_PUBLISHER_API_TOKEN", "Environment variable name for the R2 publisher API token.")
 	fs.StringVar(&cfg.parentSessionTokenEnv, "parent-session-token-env", "CLOUDFLARE_R2_PUBLISHER_SESSION_TOKEN", "Environment variable name for an optional R2 session token.")
 	fs.StringVar(&cfg.listenAddr, "listen", "127.0.0.1:18732", "HTTP listen address for --action=serve.")
 	fs.StringVar(&cfg.authTokenEnv, "auth-token-env", "VERSELF_R2_CONTROL_PLANE_TOKEN", "Environment variable containing the --action=serve bearer token.")
@@ -238,7 +236,6 @@ func (cfg config) parentCredentialConfig() r2control.ParentCredentialConfig {
 		CredentialsFile:    cfg.credentialsFile,
 		AccessKeyIDEnv:     cfg.parentAccessKeyIDEnv,
 		SecretAccessKeyEnv: cfg.parentSecretAccessKeyEnv,
-		APITokenEnv:        cfg.parentAPITokenEnv,
 		SessionTokenEnv:    cfg.parentSessionTokenEnv,
 		Timeout:            cfg.timeout,
 	}
@@ -276,12 +273,8 @@ func verifyScopedR2(ctx context.Context, cfg config, parent r2control.ParentCred
 	return writeReport(out)
 }
 
-func temporaryCredentials(ctx context.Context, cfg config, parent r2control.ParentCredentials, permission string, prefixes, objects []string, ttl time.Duration) (r2control.ParentCredentials, error) {
-	apiClient, err := r2control.NewCloudflareAPIClient(parent.APIToken, cfg.timeout)
-	if err != nil {
-		return r2control.ParentCredentials{}, err
-	}
-	temp, err := apiClient.CreateTemporaryCredentials(ctx, cfg.accountID, r2control.TemporaryCredentialRequest{
+func temporaryCredentials(_ context.Context, cfg config, parent r2control.ParentCredentials, permission string, prefixes, objects []string, ttl time.Duration) (r2control.ParentCredentials, error) {
+	temp, err := r2control.CreateLocalTemporaryCredentials(r2control.Endpoint(cfg.accountID), cfg.accountID, parent.SecretAccessKey, r2control.TemporaryCredentialRequest{
 		ParentAccessKeyID: parent.AccessKeyID,
 		Bucket:            cfg.bucket,
 		Permission:        permission,

@@ -3,7 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "r2control",
     srcs = [
-        "cloudflare_api.go",
         "credentials.go",
         "r2.go",
         "temporary_credentials.go",

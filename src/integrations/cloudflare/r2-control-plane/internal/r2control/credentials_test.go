@@ -1,12 +1,8 @@
 package r2control
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestParseEnvFile(t *testing.T) {
@@ -25,10 +21,10 @@ CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY="def"
 	}
 }
 
-func TestParentCredentialsDeriveS3SecretFromAPIToken(t *testing.T) {
+func TestParentCredentialsRequireS3Secret(t *testing.T) {
 	creds, err := parentCredentialsFromValues(map[string]string{
-		"token_id":  "token-id",
-		"api_token": "token-value",
+		"token_id":          "token-id",
+		"secret_access_key": "secret-value",
 	}, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -36,51 +32,11 @@ func TestParentCredentialsDeriveS3SecretFromAPIToken(t *testing.T) {
 	if creds.AccessKeyID != "token-id" {
 		t.Fatalf("access key = %q", creds.AccessKeyID)
 	}
-	if creds.APIToken != "token-value" {
-		t.Fatalf("api token = %q", creds.APIToken)
+	if creds.SecretAccessKey != "secret-value" {
+		t.Fatalf("secret access key = %q", creds.SecretAccessKey)
 	}
-	if creds.SecretAccessKey == "" || strings.Contains(creds.SecretAccessKey, "token-value") {
-		t.Fatalf("secret access key was not derived safely: %q", creds.SecretAccessKey)
-	}
-}
-
-func TestLoadParentCredentialsDerivesAccessKeyIDFromAPIToken(t *testing.T) {
-	const accountID = "c3eaeffaadf7d4847684d4775c16d598"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/accounts/"+accountID+"/tokens/verify" {
-			t.Fatalf("path = %s", r.URL.Path)
-		}
-		if r.Header.Get("Authorization") != "Bearer token-value" {
-			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
-		}
-		_, _ = w.Write([]byte(`{
-			"success": true,
-			"result": {
-				"id": "verified-token-id",
-				"status": "active"
-			}
-		}`))
-	}))
-	defer server.Close()
-	oldBase := cloudflareAPIBase
-	cloudflareAPIBase = server.URL
-	t.Cleanup(func() { cloudflareAPIBase = oldBase })
-	t.Setenv("CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID", "")
-	t.Setenv("CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY", "")
-	t.Setenv("CLOUDFLARE_R2_ADMIN_API_TOKEN", "token-value")
-
-	creds, err := LoadParentCredentials(context.Background(), ParentCredentialConfig{
-		Source:    ParentCredentialSourceEnv,
-		AccountID: accountID,
-		Timeout:   time.Second,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if creds.AccessKeyID != "verified-token-id" {
-		t.Fatalf("access key = %q", creds.AccessKeyID)
-	}
-	if creds.SecretAccessKey == "" || strings.Contains(creds.SecretAccessKey, "token-value") {
-		t.Fatalf("secret access key was not derived safely: %q", creds.SecretAccessKey)
+	_, err = parentCredentialsFromValues(map[string]string{"token_id": "token-id"}, "test")
+	if err == nil || !strings.Contains(err.Error(), "secret access key is required") {
+		t.Fatalf("error = %v, want missing secret refusal", err)
 	}
 }
