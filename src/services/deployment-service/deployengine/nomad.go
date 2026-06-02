@@ -108,6 +108,11 @@ func registerNomadJobsBootstrap(ctx context.Context, exec execution, client *nom
 	}
 	blockingBatchJobs := blockingRuntimeBatchJobs(runtimeJobs)
 	for _, job := range runtimeJobs {
+		if blockingBatchJobs[job.JobID] {
+			if err := purgeBlockingBatchJob(ctx, exec, client, job.JobID); err != nil {
+				return result, err
+			}
+		}
 		submitted, err := registerNomadJob(ctx, exec, client, job)
 		if err != nil {
 			return result, err
@@ -124,6 +129,20 @@ func registerNomadJobsBootstrap(ctx context.Context, exec execution, client *nom
 		}
 	}
 	return result, nil
+}
+
+func purgeBlockingBatchJob(ctx context.Context, exec execution, client *nomadclient.Client, jobID string) error {
+	purged, err := client.PurgeJob(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if purged == nil {
+		return nil
+	}
+	if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s purged eval_id=%s\n", purged.JobID, purged.EvalID); err != nil {
+		return fmt.Errorf("%s: write purged job status: %w", purged.JobID, err)
+	}
+	return nil
 }
 
 func (r *nomadApplyResult) add(job NomadRegisterResult) {

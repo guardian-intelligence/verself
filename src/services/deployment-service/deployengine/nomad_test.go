@@ -110,6 +110,31 @@ func TestBlockingRuntimeBatchJobsAllowsBatchToDependOnService(t *testing.T) {
 	}
 }
 
+func TestBlockingRuntimeBatchJobsMarksFirewallPrereq(t *testing.T) {
+	batchType := "batch"
+	serviceType := "service"
+	jobs := []nomadJob{
+		{
+			JobID:    "nftables",
+			Provides: []string{"host:firewall"},
+			Job:      &api.Job{Type: &batchType},
+		},
+		{
+			JobID:    "haproxy-upstreams",
+			Requires: []string{"host:firewall"},
+			Job:      &api.Job{Type: &serviceType},
+		},
+	}
+
+	blocking := blockingRuntimeBatchJobs(jobs)
+	if !blocking["nftables"] {
+		t.Fatalf("nftables should block dependent public edge startup")
+	}
+	if blocking["haproxy-upstreams"] {
+		t.Fatalf("service consumer haproxy-upstreams was marked as a blocking batch")
+	}
+}
+
 func TestOrderNomadComponentsRespectsControlPlaneResourceChain(t *testing.T) {
 	components := []nomadComponentDescriptor{
 		{

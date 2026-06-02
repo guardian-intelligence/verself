@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -173,6 +174,44 @@ func (c *Client) Dispatch(ctx context.Context, jobID string, meta map[string]str
 	)
 	span.SetStatus(codes.Ok, "")
 	return result, nil
+}
+
+type DeregisterResult struct {
+	JobID  string
+	EvalID string
+}
+
+func (c *Client) PurgeJob(ctx context.Context, jobID string) (*DeregisterResult, error) {
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.purge",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.job_id", jobID)),
+	)
+	defer span.End()
+	if jobID == "" {
+		err := errors.New("nomad job id is required")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+	evalID, _, err := c.api.Jobs().Deregister(jobID, true, (&api.WriteOptions{}).WithContext(ctx))
+	if err != nil {
+		if nomadNotFound(err) {
+			span.SetAttributes(attribute.Bool("nomad.job_missing", true))
+			span.SetStatus(codes.Ok, "")
+			return nil, nil
+		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("purge %s: %w", jobID, err)
+	}
+	span.SetAttributes(attribute.String("nomad.eval_id", evalID))
+	span.SetStatus(codes.Ok, "")
+	return &DeregisterResult{JobID: jobID, EvalID: evalID}, nil
+}
+
+func nomadNotFound(err error) bool {
+	var unexpected api.UnexpectedResponseError
+	return errors.As(err, &unexpected) && unexpected.StatusCode() == http.StatusNotFound
 }
 
 type TaskExpectation struct {
