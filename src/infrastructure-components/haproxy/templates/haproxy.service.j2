@@ -1,7 +1,7 @@
 [Unit]
 Description=HAProxy public edge
-After=verself-firewall.target network-online.target verself-firecracker-network.service
-Requires=verself-firewall.target
+After=verself-firewall.target network-online.target verself-host-service-plane.service verself-firecracker-network.service
+Requires=verself-firewall.target verself-host-service-plane.service
 Wants=network-online.target verself-firecracker-network.service
 
 [Service]

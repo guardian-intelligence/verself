@@ -81,7 +81,8 @@ haproxy_cloudflare_trusted_ips:
   - "2a06:98c0::/29"
   - "2c0f:f248::/32"
 
-haproxy_firecracker_host_service_ip: "{{ firecracker_host_service_ip }}"
+haproxy_firecracker_host_service_interface: "{{ firecracker_host_service_interface | default('verself-host0') }}"
+haproxy_firecracker_host_service_ip: "{{ firecracker_host_service_ip | default('10.255.0.1') }}"
 haproxy_metrics_address: 127.0.0.1:8404
 
 haproxy_h2c_components:

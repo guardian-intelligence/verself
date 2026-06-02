@@ -191,7 +191,7 @@ frontend fe_haproxy_metrics
 frontend fe_firecracker_host_http
   guid fe_firecracker_host_http
   maxconn {{ haproxy_internal_frontend_maxconn }}
-  bind 10.255.0.1:18080
+  bind {{ haproxy_firecracker_host_service_ip }}:18080
   http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
   http-request set-var(txn.client_ip) src
   http-request set-var(txn.edge_peer_ip) src
@@ -210,7 +210,7 @@ frontend fe_firecracker_host_http
 frontend fe_firecracker_npm_registry
   guid fe_firecracker_npm_registry
   maxconn {{ haproxy_internal_frontend_maxconn }}
-  bind 10.255.0.1:4873
+  bind {{ haproxy_firecracker_host_service_ip }}:4873
   http-request set-var(txn.host) str({{ haproxy_npm_registry_domain }})
   http-request set-var(txn.client_ip) src
   http-request set-var(txn.edge_peer_ip) src

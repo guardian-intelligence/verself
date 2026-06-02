@@ -57,6 +57,19 @@
 
 # HAProxy creates shm-stats-file during validation; an empty precreated file SIGBUSes in 3.3.7.
 
+- name: Deploy Verself host-service plane unit
+  ansible.builtin.template:
+    src: verself-host-service-plane.service.j2
+    dest: /etc/systemd/system/verself-host-service-plane.service
+    mode: "0644"
+
+- name: Enable Verself host-service plane
+  ansible.builtin.systemd:
+    name: verself-host-service-plane.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
 - name: Create well-known publication directory
   ansible.builtin.file:
     path: "{{ haproxy_well_known_dir }}"
