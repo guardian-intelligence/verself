@@ -1,8 +1,8 @@
 import { createFileRoute, Link, notFound, useSearch } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useEffect } from "react";
-import { HandwrittenSignature } from "@verself/brand";
 import { letterBySlug, type Letter } from "~/content/letters";
+import { HandwrittenSignature } from "~/features/letters/handwritten-signature";
 import {
   LETTER_POST_PAGE_PADDING_CLASS,
   LETTER_READING_COLUMN_CLASS,

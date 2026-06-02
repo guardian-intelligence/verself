@@ -13,7 +13,6 @@ export type {
   LockupVariant,
   StackedLockupProps,
 } from "./components/lockup";
-export { HandwrittenSignature } from "./components/handwritten-signature";
 export { grounds, accents, pantone } from "./tokens";
 export type { GroundName, AccentName } from "./tokens";
 export { AppChrome } from "./chrome/app-chrome";
