@@ -23,7 +23,6 @@ job "auth-control-plane" {
       artifact {
         source = "verself-artifact://auth-control-plane-apply"
         destination = "local"
-        chown = true
       }
 
       config {

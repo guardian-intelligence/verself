@@ -244,8 +244,8 @@ function buildNewsroomCard(spec: OGSpec): string {
   <rect width="${WIDTH}" height="${HEIGHT}" fill="${ARGENT}"/>
   <rect x="56" y="56" width="1088" height="518" rx="28" fill="${ARGENT}" stroke="rgba(11,11,11,0.12)" stroke-width="2"/>
   <path d="M84 56H1116C1131.46 56 1144 68.54 1144 84V190H56V84C56 68.54 68.54 56 84 56Z" fill="${FLARE}"/>
-  ${brandMark({ x: 96, y: 96, markFill: INK, wordmarkFill: INK, section: "Newsroom", variant: "emboss" })}
-  <text x="96" y="252" font-family="'Geist', 'Inter', sans-serif" font-size="18" font-weight="600" fill="${STONE}" letter-spacing="3.2">${xmlEscape(spec.kicker ?? "NEWSROOM")}</text>
+  ${brandMark({ x: 96, y: 96, markFill: INK, wordmarkFill: INK, section: "News", variant: "emboss" })}
+  <text x="96" y="252" font-family="'Geist', 'Inter', sans-serif" font-size="18" font-weight="600" fill="${STONE}" letter-spacing="3.2">${xmlEscape(spec.kicker ?? "NEWS")}</text>
   <text x="96" y="320" font-family="'Fraunces', Georgia, serif" font-size="64" font-weight="400" fill="${INK}" letter-spacing="0">
     ${textLines(titleLines, 96, 68)}
   </text>

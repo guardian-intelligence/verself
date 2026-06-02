@@ -41,14 +41,14 @@ export const OG_CATALOG: Record<string, OGSpec> = {
     footerLeft: "guardianintelligence.org/letters",
     footerRight: "Seattle · 2026",
   },
-  newsroom: {
+  news: {
     treatment: "newsroom",
-    slug: "newsroom",
+    slug: "news",
     title: currentBulletin?.title ?? "Bulletins from Guardian.",
     flare: "Bulletins",
-    kicker: currentBulletin ? `${currentBulletin.kicker} · ${currentBulletin.date}` : "Newsroom",
-    subtitle: currentBulletin?.deck ?? "Bulletins, milestones, and public notes from Guardian.",
-    footerLeft: "guardianintelligence.org/newsroom",
+    kicker: currentBulletin ? `${currentBulletin.kicker} · ${currentBulletin.date}` : "News",
+    subtitle: currentBulletin?.deck ?? "News, milestones, and public notes from Guardian.",
+    footerLeft: "guardianintelligence.org/news",
     footerRight: "Seattle · 2026",
   },
   solutions: {

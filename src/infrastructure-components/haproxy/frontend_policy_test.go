@@ -37,13 +37,37 @@ func TestZitadelProductTokenClaimsRouteUsesIAMServiceHost(t *testing.T) {
 	}
 }
 
+func TestDeploymentServicePublicBackendAllowsOnlyAPIAndHealthz(t *testing.T) {
+	upstreams := readTemplate(t, "nomad-upstreams.cfg.j2")
+	backend := backendBlock(t, upstreams, "backend be_route_product_deployments_api_deployment_service_public_api")
+	requireContains(t, backend, "acl deployment_service_allowed path -i /healthz")
+	requireContains(t, backend, "acl deployment_service_allowed path_beg /api/v1")
+	requireContains(t, backend, "http-request return status 404 unless deployment_service_allowed")
+	if strings.Contains(backend, "/readyz") {
+		t.Fatalf("deployment-service readiness details must stay behind authenticated API checks")
+	}
+
+	runtimeTemplate := readRepoFile(t, "src/infrastructure-components/haproxy/nomad.hcl")
+	runtimeBackend := backendBlock(t, runtimeTemplate, "backend be_route_product_deployments_api_deployment_service_public_api")
+	requireContains(t, runtimeBackend, `[[ with nomadService "deployment-service-public-api" ]]`)
+	requireContains(t, runtimeBackend, "acl deployment_service_allowed path -i /healthz")
+	requireContains(t, runtimeBackend, "acl deployment_service_allowed path_beg /api/v1")
+	if strings.Contains(runtimeBackend, "/readyz") {
+		t.Fatalf("deployment-service readiness details must stay behind authenticated API checks")
+	}
+}
+
 func readTemplate(t *testing.T, name string) string {
 	t.Helper()
-	rel := "src/infrastructure-components/haproxy/templates/" + name
+	return readRepoFile(t, "src/infrastructure-components/haproxy/templates/"+name)
+}
+
+func readRepoFile(t *testing.T, rel string) string {
+	t.Helper()
 	for _, path := range []string{
 		rel,
 		"_main/" + rel,
-		"templates/" + name,
+		strings.TrimPrefix(rel, "src/infrastructure-components/haproxy/"),
 	} {
 		if root := strings.TrimSpace(os.Getenv("TEST_SRCDIR")); root != "" {
 			path = root + "/" + path
@@ -53,7 +77,7 @@ func readTemplate(t *testing.T, name string) string {
 			return string(raw)
 		}
 	}
-	t.Fatalf("read %s from runfiles or source tree", name)
+	t.Fatalf("read %s from runfiles or source tree", rel)
 	return ""
 }
 

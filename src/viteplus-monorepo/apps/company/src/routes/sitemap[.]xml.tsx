@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { LETTERS_META, sortedLetters } from "~/content/letters";
+import { NEWSROOM_META, sortedNewsroomItems } from "~/content/newsroom";
 import { SITE_URL } from "~/lib/head";
 
 // Dynamic sitemap. Routes are declared once here so retired paths vanish the
@@ -17,6 +18,7 @@ const STATIC_PATHS: readonly string[] = [
   "/company",
   "/solutions",
   "/letters",
+  "/news",
   "/design",
   "/press",
   "/careers",
@@ -34,11 +36,15 @@ function buildSitemap(): string {
     loc: `${LETTERS_META.siteURL}/letters/${letter.slug}`,
     lastmod: letter.publishedAt,
   }));
+  const newsPaths = sortedNewsroomItems().map((item) => ({
+    loc: `${NEWSROOM_META.siteURL}/news/${item.slug}`,
+    lastmod: item.publishedAt,
+  }));
   const staticUrls = STATIC_PATHS.map((p) => ({
     loc: p === "/" ? `${SITE_URL}/` : `${SITE_URL}${p}`,
     lastmod: undefined as string | undefined,
   }));
-  const entries = [...staticUrls, ...letterPaths]
+  const entries = [...staticUrls, ...letterPaths, ...newsPaths]
     .map(({ loc, lastmod }) => {
       const inner = lastmod
         ? `<loc>${loc}</loc><lastmod>${lastmod}</lastmod>`

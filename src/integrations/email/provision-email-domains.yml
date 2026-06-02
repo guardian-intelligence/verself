@@ -1,7 +1,8 @@
 ---
-# Provision the company email domains: register and verify each Resend sending
-# domain, then enable Cloudflare Email Routing for the operator mailboxes. All
-# work runs on the controller against the Resend and Cloudflare APIs.
+# Provision company email domains: register and verify Resend sending domains,
+# then enable Cloudflare Email Routing for operator mailboxes. This is
+# controller-side provider setup; runtime Resend sending keys are created by
+# email-service after site OpenBao is available.
 #
 # Run with the host Ansible toolchain so SOPS and the community.general /
 # community.sops collections resolve, pointing roles at the integration trees:
@@ -23,6 +24,8 @@
   gather_facts: false
   vars_files:
     - "../../host/sites/{{ verself_site | default('prod') }}/vars.yml"
+  vars:
+    resend_full_access_api_key: "{{ lookup('ansible.builtin.env', 'RESEND_FULL_ACCESS_API_KEY') }}"
   tasks:
     - name: Load site secrets
       community.sops.load_vars:

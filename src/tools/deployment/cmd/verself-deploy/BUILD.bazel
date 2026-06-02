@@ -1,35 +1,19 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "verself-deploy_lib",
     srcs = [
-        "artifacts.go",
-        "bazel.go",
-        "inputs.go",
+        "check.go",
         "main.go",
-        "nomad.go",
         "run.go",
+        "status.go",
         "validate.go",
     ],
     importpath = "github.com/verself/deployment-tools/cmd/verself-deploy",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/integrations/cloudflare/r2-control-plane/client",
-        "//src/tools/controllerstate",
-        "//src/tools/deployment/internal/bazelbuild",
-        "//src/tools/deployment/internal/controlplane",
-        "//src/tools/deployment/internal/deploycontract",
-        "//src/tools/deployment/internal/deploymodel",
-        "//src/tools/deployment/internal/identity",
-        "//src/tools/deployment/internal/nomadclient",
-        "//src/tools/deployment/internal/runtime",
-        "//src/tools/deployment/internal/siteconfig",
-        "//src/tools/deployment/internal/siteinject",
-        "//src/tools/deployment/internal/sshtun",
-        "@com_github_hashicorp_nomad_api//:api",
-        "@io_opentelemetry_go_otel//attribute",
-        "@io_opentelemetry_go_otel//codes",
-        "@io_opentelemetry_go_otel_trace//:trace",
+        "//src/services/deployment-service/deploycontract",
+        "//src/services/deployment-service/siteconfig",
     ],
 )
 
@@ -37,4 +21,16 @@ go_binary(
     name = "verself-deploy",
     embed = [":verself-deploy_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "verself-deploy_test",
+    srcs = [
+        "boundary_test.go",
+        "check_test.go",
+        "run_test.go",
+        "status_test.go",
+    ],
+    data = glob(["*.go"]),
+    embed = [":verself-deploy_lib"],
 )

@@ -1,12 +1,8 @@
-"""aspect deploy [--site=prod] [--sha=<rev>]
+"""aspect deploy [--site=prod] [--sha=<rev>|--deployment-id=<id>]
 
-The single deploy verb. Resolves --sha (falling back to a temporary worktree
-when non-HEAD) and shells out to `verself-deploy run`.
-
-The deploy boundary is intentionally narrow: Bazel builds the deployable
-nomad_component targets, then the deploy binary registers the Bazel-produced
-Nomad jobs with the target site. Nomad owns rollout health, promotion, task
-lifecycle, and failure behavior from that point.
+Thin deployment-service client. Resolves --sha, verifies the workspace when
+deploying HEAD, submits deployment requests, and fetches deployment state from
+the selected site.
 """
 
 load(
@@ -17,14 +13,10 @@ load(
     "git_dirty",
     "git_head",
     "resolve_sha",
-    "site_inventory_source",
     "ws_path",
 )
 
 def _deploy_one(ctx, site, sha):
-    env = {
-        "VERSELF_CONTROLLER_STATE_ROOT": ws_path(ctx, ".verself/controller"),
-    }
     deploy_args = [
         "run",
         "--site=" + site,
@@ -36,102 +28,81 @@ def _deploy_one(ctx, site, sha):
         VERSELF_DEPLOY_TARGET,
         deploy_args,
         cwd = ws_path(ctx),
-        env = env,
         label = "verself-deploy run --site=" + site,
     )
     if deploy_rc != 0:
         return deploy_rc
     return 0
 
-def _make_tree_removable(ctx, path):
-    r = (ctx.std.process.command("test")
-        .args(["-e", path])
-        .spawn().wait())
-    if r.code != 0:
-        return
-    checked_spawn(ctx, "find", [path, "-type", "d", "-exec", "chmod", "u+w", "{}", "+"], label = "make " + path + " directories removable")
-    checked_spawn(ctx, "find", [path, "-type", "f", "-exec", "chmod", "u+w", "{}", "+"], label = "make " + path + " files removable")
-
-def _remove_worktree(ctx, wt):
-    # Bazel/frontend generators can leave read-only files that block worktree removal.
-    _make_tree_removable(ctx, wt)
-    return checked_spawn(ctx, "git", ["worktree", "remove", "--force", wt], label = "git worktree remove " + wt)
-
-def _deploy_in_worktree(ctx, site, sha):
-    """Deploy from a temporary detached worktree at <sha>.
-
-    Inside the worktree HEAD == sha, so the inner invocation falls through to
-    the in-tree path with no further branching.
-    """
-    wt = "/tmp/verself-deploy-" + sha[:12]
-    _make_tree_removable(ctx, wt)
-    checked_spawn(ctx, "rm", ["-rf", wt], label = "clean " + wt)
-    rc = checked_spawn(
-        ctx,
-        "git",
-        ["worktree", "add", "--detach", wt, sha],
-        label = "git worktree add " + wt,
-    )
-    if rc != 0:
-        return rc
-    inv_rel = site_inventory_source(site)
-    inv_abs = ws_path(ctx, inv_rel)
-    rc = checked_spawn(ctx, "test", ["-f", inv_abs], label = "test -f " + inv_rel)
-    if rc != 0:
-        ctx.std.io.stderr.write("ERROR: " + inv_rel + " not found. Run: aspect provision apply\n")
-        _remove_worktree(ctx, wt)
-        return 1
-    rc = checked_spawn(ctx, "mkdir", ["-p", wt + "/src/host/sites/" + site], label = "mkdir worktree inventory dir")
-    if rc != 0:
-        _remove_worktree(ctx, wt)
-        return rc
-    rc = checked_spawn(ctx, "cp", [inv_abs, wt + "/" + inv_rel], label = "copy " + inv_rel + " into deploy worktree")
-    if rc != 0:
-        _remove_worktree(ctx, wt)
-        return rc
-    env = {
-        "VERSELF_CONTROLLER_STATE_ROOT": ws_path(ctx, ".verself/controller"),
-    }
+def _deploy_status(ctx, site, deployment_id):
     deploy_args = [
-        "run",
+        "status",
         "--site=" + site,
-        "--sha=" + sha,
-        "--repo-root=" + wt,
+        "--deployment-id=" + deployment_id,
+        "--repo-root=" + ws_path(ctx),
     ]
-    deploy_rc = bazel_run(
+    if ctx.args.events:
+        deploy_args.append("--events")
+    return bazel_run(
         ctx,
         VERSELF_DEPLOY_TARGET,
         deploy_args,
-        cwd = wt,
-        env = env,
-        label = "verself-deploy run --site=" + site + " (worktree " + sha[:12] + ")",
+        cwd = ws_path(ctx),
+        label = "verself-deploy status --site=" + site,
     )
-    _remove_worktree(ctx, wt)
-    return deploy_rc
+
+def _deploy_check(ctx, site):
+    deploy_args = [
+        "check",
+        "--site=" + site,
+        "--repo-root=" + ws_path(ctx),
+    ]
+    return bazel_run(
+        ctx,
+        VERSELF_DEPLOY_TARGET,
+        deploy_args,
+        cwd = ws_path(ctx),
+        label = "verself-deploy check --site=" + site,
+    )
 
 def _deploy_impl(ctx):
     site = ctx.args.site or "prod"
+    deployment_id = ctx.args.deployment_id
+    if ctx.args.check:
+        if deployment_id != "" or ctx.args.sha != "" or ctx.args.events:
+            ctx.std.io.stderr.write("ERROR: --check cannot be combined with --deployment-id, --sha, or --events.\n")
+            return 1
+        return _deploy_check(ctx, site)
+    if deployment_id != "":
+        if ctx.args.sha != "":
+            ctx.std.io.stderr.write("ERROR: --deployment-id and --sha are mutually exclusive.\n")
+            return 1
+        return _deploy_status(ctx, site, deployment_id)
+    if ctx.args.events:
+        ctx.std.io.stderr.write("ERROR: --events requires --deployment-id.\n")
+        return 1
     sha = resolve_sha(ctx, ctx.args.sha or "")
     if sha == "":
         return 1
     head = git_head(ctx)
     if sha == head and git_dirty(ctx):
         ctx.std.io.stderr.write(
-            "ERROR: workspace has uncommitted changes; aspect deploy deploys committed Git SHAs only.\n"
-            + "Commit the changes, clean the worktree, or pass --sha=<committed-ref> for a different clean revision.\n",
+            "ERROR: workspace has uncommitted changes; aspect deploy deploys committed Git SHAs only.\n" +
+            "Commit the changes, clean the worktree, or pass --sha=<committed-ref> for a different clean revision.\n",
         )
         checked_spawn(ctx, "git", ["status", "--short"], label = "git status --short")
         return 1
-    if sha != head:
-        return _deploy_in_worktree(ctx, site, sha)
     return _deploy_one(ctx, site, sha)
 
 deploy = task(
     implementation = _deploy_impl,
     name = "deploy",
-    summary = "Build deployable units and register their Nomad jobs.",
+    summary = "Submit a deployment request or fetch deployment state from the site deployment-service.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or symbolic ref to deploy (e.g. HEAD~1, prod-tip). Defaults to HEAD."),
+        "deployment_id": args.string(default = "", description = "Fetch deployment state instead of submitting a new deployment."),
+        "events": args.boolean(default = False, description = "Include the deployment event ledger when --deployment-id is set."),
+        "check": args.boolean(default = False, description = "Run the read-only deployment-service S0-S7 readiness check without submitting a deployment."),
     },
 )

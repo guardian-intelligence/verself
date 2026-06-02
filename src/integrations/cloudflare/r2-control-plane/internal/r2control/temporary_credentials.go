@@ -68,10 +68,10 @@ func createLocalTemporaryCredentialsAt(now time.Time, endpoint, accountID, paren
 	}
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil {
-		return TemporaryCredentials{}, fmt.Errorf("parse R2 endpoint: %w", err)
+		return TemporaryCredentials{}, fmt.Errorf("parse r2 endpoint: %w", err)
 	}
 	if parsed.Scheme != "https" || parsed.Host == "" {
-		return TemporaryCredentials{}, fmt.Errorf("R2 endpoint must be an https URL")
+		return TemporaryCredentials{}, fmt.Errorf("r2 endpoint must be an https URL")
 	}
 	payload := localTemporaryCredentialPayload{
 		Bucket: req.Bucket,
@@ -128,13 +128,13 @@ func (req TemporaryCredentialRequest) validate() (TemporaryCredentialRequest, er
 	switch req.Permission {
 	case TemporaryPermissionAdminReadWrite, TemporaryPermissionAdminReadOnly, TemporaryPermissionObjectReadWrite, TemporaryPermissionObjectReadOnly:
 	default:
-		return TemporaryCredentialRequest{}, fmt.Errorf("unsupported temporary R2 permission %q", req.Permission)
+		return TemporaryCredentialRequest{}, fmt.Errorf("unsupported temporary r2 permission %q", req.Permission)
 	}
 	if req.TTL == 0 {
 		req.TTL = 15 * time.Minute
 	}
 	if req.TTL < time.Minute || req.TTL > 7*24*time.Hour {
-		return TemporaryCredentialRequest{}, fmt.Errorf("R2 temporary credential TTL must be between 1 minute and 7 days")
+		return TemporaryCredentialRequest{}, fmt.Errorf("r2 temporary credential TTL must be between 1 minute and 7 days")
 	}
 	req.Prefixes = cleanPaths(req.Prefixes)
 	req.Objects = cleanPaths(req.Objects)

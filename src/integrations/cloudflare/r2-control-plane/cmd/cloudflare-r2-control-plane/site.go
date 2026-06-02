@@ -9,16 +9,15 @@ import (
 	"strings"
 
 	"github.com/verself/integrations/cloudflare/r2-control-plane/internal/r2control"
-	"github.com/verself/tools/controllerstate"
 )
 
 type siteArtifactConfig struct {
 	AccountID          string
 	Bucket             string
 	KeyPrefix          string
+	SitePrefix         string
 	GetterSourcePrefix string
 	Region             string
-	AuthTokenFile      string
 }
 
 func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
@@ -34,7 +33,6 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 			KeyPrefix              string            `json:"key_prefix"`
 			CloudflareAccountID    string            `json:"cloudflare_account_id"`
 			CloudflareAccountIDEnv string            `json:"cloudflare_account_id_env"`
-			ControlPlaneTokenFile  string            `json:"control_plane_token_file"`
 			GetterOptions          map[string]string `json:"getter_options"`
 			ChecksumAlgorithm      string            `json:"checksum_algorithm"`
 			Public                 *bool             `json:"public"`
@@ -61,25 +59,52 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 	if region == "" {
 		region = "auto"
 	}
-	tokenFile := strings.TrimSpace(raw.ArtifactDelivery.ControlPlaneTokenFile)
-	if tokenFile == "" {
-		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.control_plane_token_file is required", path)
-	}
-	tokenFile, err = controllerstate.ConfigPath(repoRoot, tokenFile)
-	if err != nil {
-		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.control_plane_token_file: %w", path, err)
-	}
 	keyPrefix := strings.Trim(raw.ArtifactDelivery.KeyPrefix, "/")
 	if keyPrefix == "" {
 		keyPrefix = "sha256"
+	}
+	sitePrefix, err := artifactSitePrefix(site)
+	if err != nil {
+		return siteArtifactConfig{}, err
 	}
 	return siteArtifactConfig{
 		AccountID:          accountID,
 		Bucket:             bucket,
 		KeyPrefix:          keyPrefix,
+		SitePrefix:         sitePrefix,
 		GetterSourcePrefix: "s3::https://" + accountID + ".r2.cloudflarestorage.com/" + bucket,
 		Region:             region,
-		AuthTokenFile:      tokenFile,
+	}, nil
+}
+
+func siteArtifactConfigFromConfig(cfg config) (siteArtifactConfig, error) {
+	accountID, err := resolveCloudflareAccountID(cfg.accountID, "")
+	if err != nil {
+		return siteArtifactConfig{}, err
+	}
+	bucket := strings.TrimSpace(cfg.bucket)
+	if !r2control.IsR2BucketName(bucket) {
+		return siteArtifactConfig{}, fmt.Errorf("bucket must be a valid lowercase R2 bucket name")
+	}
+	region := strings.TrimSpace(cfg.region)
+	if region == "" {
+		region = "auto"
+	}
+	keyPrefix := strings.Trim(cfg.keyPrefix, "/")
+	if keyPrefix == "" {
+		keyPrefix = "sha256"
+	}
+	sitePrefix, err := artifactSitePrefix(cfg.site)
+	if err != nil {
+		return siteArtifactConfig{}, err
+	}
+	return siteArtifactConfig{
+		AccountID:          accountID,
+		Bucket:             bucket,
+		KeyPrefix:          keyPrefix,
+		SitePrefix:         sitePrefix,
+		GetterSourcePrefix: "s3::https://" + accountID + ".r2.cloudflarestorage.com/" + bucket,
+		Region:             region,
 	}, nil
 }
 
@@ -101,4 +126,20 @@ func resolveCloudflareAccountID(direct, envName string) (string, error) {
 		return "", errors.New("artifact_delivery.cloudflare_account_id must be a 32-character hex Cloudflare account ID")
 	}
 	return accountID, nil
+}
+
+func artifactSitePrefix(site string) (string, error) {
+	site = strings.TrimSpace(site)
+	if site == "" {
+		return "", errors.New("site is required for artifact object prefix")
+	}
+	if site == "." || site == ".." || strings.Contains(site, "/") || strings.Contains(site, "\\") {
+		return "", fmt.Errorf("site %q cannot be used as an artifact object prefix segment", site)
+	}
+	for _, r := range site {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return "", fmt.Errorf("site %q cannot be used as an artifact object prefix segment", site)
+		}
+	}
+	return site, nil
 }

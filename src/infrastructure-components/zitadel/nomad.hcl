@@ -36,13 +36,11 @@ job "zitadel" {
       artifact {
         source = "verself-artifact://zitadel-setup-apply"
         destination = "local"
-        chown = true
       }
 
       artifact {
         source = "verself-artifact://zitadel-runtime"
         destination = "local"
-        chown = true
       }
 
       config {
@@ -190,13 +188,11 @@ EOT
       artifact {
         source = "verself-artifact://zitadel-runtime"
         destination = "local"
-        chown = true
       }
 
       artifact {
         source = "verself-artifact://zitadel-setup-apply"
         destination = "local"
-        chown = true
       }
 
       config {

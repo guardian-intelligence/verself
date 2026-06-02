@@ -70,20 +70,6 @@ integrations:
         target: provider_resource_id
         catalog_field: stripe_test_webhook_endpoint_id
     gamma_policy: use sandbox/test-mode resources that cannot affect prod billing.
-  - key: email.provider
-    provider: resend
-    replacement: stripe_projects_candidate
-    owner: src/services/email-service
-    purpose: outbound_email
-    credentials:
-      - key: email-service.resend.api_key
-        source: stripe_projects_env
-        external_name: RESEND_API_KEY
-        target: runtime_secret
-        target_store: site_openbao
-        openbao_name: email-service.resend.api_key
-    migration_check: aspect integrations stripe-projects --site=gamma --action=search --query=resend
-    gamma_policy: use notify.gamma.verself.sh or another gamma-only sender domain.
   - key: github.runner_app
     provider: github
     replacement: provider_specific

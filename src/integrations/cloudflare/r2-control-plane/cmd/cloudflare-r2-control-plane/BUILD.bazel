@@ -1,6 +1,7 @@
 # gazelle:prefix github.com/verself/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "cloudflare-r2-control-plane_lib",
@@ -14,7 +15,6 @@ go_library(
     deps = [
         "//src/integrations/cloudflare/r2-control-plane/client",
         "//src/integrations/cloudflare/r2-control-plane/internal/r2control",
-        "//src/tools/controllerstate",
         "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )
@@ -23,6 +23,12 @@ go_binary(
     name = "cloudflare-r2-control-plane",
     embed = [":cloudflare-r2-control-plane_lib"],
     visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "cloudflare-r2-control-plane_nomad_artifact",
+    binary = ":cloudflare-r2-control-plane",
+    output = "cloudflare-r2-control-plane",
 )
 
 go_test(

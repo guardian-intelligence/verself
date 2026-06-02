@@ -7,7 +7,7 @@ kind: dispatch
 summary: "if your agent and my agent ever meet, your agent is going to die. Don't give them a knife and send them into a gun fight."
 ---
 
-Someone called TigerBeetle the Rolls-Royce of software engineering and it made me chuckle. It's true, TigerBeetle is great software. They still make it by hand over there, can you believe it?
+Someone called TigerBeetle the Rolls-Royce of software engineering and it made me chuckle. It's true, TigerBeetle is great software. They still make it by hand, can you believe it?
 
 We obviously live in a very different world now. Our computers can summon infinite digital factory workers happy to make us the software equivalent of the first pancake for anything we can think of. But we're not more than a few years off, now, from the pancake making you go "hey, maybe I'm not so bad at cooking after all". Or at the very least smothered in so much syrup and butter you don't even notice. I am hungry while writing this.
 

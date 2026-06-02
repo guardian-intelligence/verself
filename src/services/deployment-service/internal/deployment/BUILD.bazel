@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "deployment",
+    srcs = [
+        "api.go",
+        "errors.go",
+        "github_oidc.go",
+        "service.go",
+        "source_repo.go",
+        "store.go",
+        "types.go",
+    ],
+    importpath = "github.com/verself/deployment-service/internal/deployment",
+    visibility = ["//src/services/deployment-service:__subpackages__"],
+    deps = [
+        "//src/services/deployment-service/deployengine",
+        "@com_github_coreos_go_oidc_v3//oidc",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgconn",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "deployment_test",
+    srcs = [
+        "api_test.go",
+        "github_oidc_test.go",
+        "source_repo_test.go",
+        "store_test.go",
+    ],
+    embed = [":deployment"],
+    deps = [
+        "//src/services/deployment-service/migrations",
+        "//src/services/service-runtime/go/pgtest",
+        "@com_github_jackc_pgx_v5//pgxpool",
+    ],
+)

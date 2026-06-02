@@ -29,9 +29,25 @@ nomad_component(
     job_id = "email-service",
     job_spec = "nomad.hcl",
     requires = [
+        "email:resend-sending-key",
         "openbao:api",
         "postgres:server",
         "stalwart:http",
     ],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+nomad_component(
+    name = "resend_keys_nomad_component",
+    artifacts = {
+        "//src/services/email-service/cmd/email-service:email-service_nomad_artifact": "email-service-resend-keys",
+    },
+    component = "email_service_resend_keys",
+    deploy_phase = "platform",
+    digest_inputs = [":deploy_declarations"],
+    job_id = "email-service-resend-keys",
+    job_spec = "resend-keys.nomad.hcl",
+    provides = ["email:resend-sending-key"],
+    requires = ["openbao:api"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

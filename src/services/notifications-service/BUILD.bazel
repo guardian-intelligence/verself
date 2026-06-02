@@ -29,7 +29,6 @@ nomad_component(
     job_id = "notifications-service",
     job_spec = "nomad.hcl",
     requires = [
-        "clickhouse:migrations",
         "nats:client",
         "postgres:server",
     ],

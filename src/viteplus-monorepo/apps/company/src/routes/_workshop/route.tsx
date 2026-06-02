@@ -6,7 +6,7 @@ import { criticalTreatmentHead, criticalTreatmentRootStyle } from "~/lib/critica
 import workshopCriticalCss from "~/styles/critical/workshop.css?inline";
 
 // _workshop — Guardian's default layout. Every URL that is not /letters/* or
-// /newsroom lives here: /, /company, /careers, /changelog, /contact, /press,
+// /news lives here: /, /company, /careers, /changelog, /contact, /press,
 // /solutions, /design/*. The chrome sits on Iron with Amber accents and
 // declines Fraunces in its own body (Fraunces remains available to nested
 // specimen content, e.g. /design/letters renders Letters' Fraunces ladder).

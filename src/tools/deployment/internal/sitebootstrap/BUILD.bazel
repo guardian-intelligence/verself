@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "sitebootstrap",
     srcs = [
+        "bootstrap_deploy.go",
         "handoff.go",
         "inventory.go",
         "policy.go",
@@ -11,7 +12,8 @@ go_library(
     importpath = "github.com/verself/deployment-tools/internal/sitebootstrap",
     visibility = ["//src/tools/deployment:__subpackages__"],
     deps = [
-        "//src/tools/deployment/internal/deploycontract",
+        "//src/services/deployment-service/deploycontract",
+        "//src/services/deployment-service/deployengine",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_x_crypto//ssh",
     ],

@@ -207,43 +207,9 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("nomad client: %w", err)
 	}
 
-	// Fleet projection writer. CH reachability is required at startup (fail
-	// fast); the snapshot loop itself tolerates transient errors.
-	spiffeSource, err := workloadauth.Source(ctx, cfg.spiffeSocket)
-	if err != nil {
-		return fmt.Errorf("spiffe source: %w", err)
+	if err := startFleetProjector(ctx, cfg, nomadClient, logger); err != nil {
+		logger.Warn("nomad-observer clickhouse sink disabled", slog.Any("error", err))
 	}
-	defer func() { _ = spiffeSource.Close() }()
-	chTLS, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, cfg.clickhouseCACertPath)
-	if err != nil {
-		return fmt.Errorf("clickhouse tls: %w", err)
-	}
-	chConn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{cfg.clickhouseAddr},
-		Auth: clickhouse.Auth{Database: "verself", Username: cfg.clickhouseUser},
-		TLS:  chTLS,
-	})
-	if err != nil {
-		return fmt.Errorf("open clickhouse: %w", err)
-	}
-	defer func() { _ = chConn.Close() }()
-	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
-	err = chConn.Ping(pingCtx)
-	pingCancel()
-	if err != nil {
-		return fmt.Errorf("ping clickhouse: %w", err)
-	}
-	region, err := nomadClient.Agent().Region()
-	if err != nil {
-		return fmt.Errorf("nomad region: %w", err)
-	}
-	go (&fleetProjector{
-		nomad:    nomadClient,
-		ch:       chConn,
-		region:   region,
-		interval: cfg.fleetSnapshotInterval,
-		logger:   logger,
-	}).run(ctx)
 
 	obs := &observer{
 		cfg:     cfg,
@@ -260,6 +226,60 @@ func run(ctx context.Context, cfg config) error {
 	go obs.heartbeat(ctx)
 
 	return obs.streamLoop(ctx)
+}
+
+func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Client, logger *slog.Logger) error {
+	if cfg.clickhouseCACertPath == "" {
+		return errors.New("VERSELF_CRED_CLICKHOUSE_CA_CERT must not be empty")
+	}
+	if cfg.spiffeSocket == "" {
+		return fmt.Errorf("%s must not be empty", workloadauth.EndpointSocketEnv)
+	}
+	spiffeSource, err := workloadauth.Source(ctx, cfg.spiffeSocket)
+	if err != nil {
+		return fmt.Errorf("spiffe source: %w", err)
+	}
+	chTLS, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, cfg.clickhouseCACertPath)
+	if err != nil {
+		_ = spiffeSource.Close()
+		return fmt.Errorf("clickhouse tls: %w", err)
+	}
+	chConn, err := clickhouse.Open(&clickhouse.Options{
+		Addr: []string{cfg.clickhouseAddr},
+		Auth: clickhouse.Auth{Database: "verself", Username: cfg.clickhouseUser},
+		TLS:  chTLS,
+	})
+	if err != nil {
+		_ = spiffeSource.Close()
+		return fmt.Errorf("open clickhouse: %w", err)
+	}
+	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+	err = chConn.Ping(pingCtx)
+	pingCancel()
+	if err != nil {
+		_ = chConn.Close()
+		_ = spiffeSource.Close()
+		return fmt.Errorf("ping clickhouse: %w", err)
+	}
+	region, err := nomadClient.Agent().Region()
+	if err != nil {
+		_ = chConn.Close()
+		_ = spiffeSource.Close()
+		return fmt.Errorf("nomad region: %w", err)
+	}
+	go func() {
+		<-ctx.Done()
+		_ = chConn.Close()
+		_ = spiffeSource.Close()
+	}()
+	go (&fleetProjector{
+		nomad:    nomadClient,
+		ch:       chConn,
+		region:   region,
+		interval: cfg.fleetSnapshotInterval,
+		logger:   logger,
+	}).run(ctx)
+	return nil
 }
 
 func configFromEnv() (config, error) {
@@ -301,12 +321,6 @@ func configFromEnv() (config, error) {
 	}
 	if cfg.namespace == "" {
 		cfg.namespace = defaultNS
-	}
-	if cfg.clickhouseCACertPath == "" {
-		return config{}, errors.New("VERSELF_CRED_CLICKHOUSE_CA_CERT must not be empty")
-	}
-	if cfg.spiffeSocket == "" {
-		return config{}, fmt.Errorf("%s must not be empty", workloadauth.EndpointSocketEnv)
 	}
 	return cfg, nil
 }

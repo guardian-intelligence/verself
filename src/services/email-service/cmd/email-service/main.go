@@ -52,6 +52,13 @@ type config struct {
 }
 
 func main() {
+	if handled, err := runResendKeysCLI(context.Background()); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if handled, err := runMigrationCLI(context.Background()); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

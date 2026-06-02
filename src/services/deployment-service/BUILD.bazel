@@ -1,0 +1,37 @@
+# gazelle:prefix github.com/verself/deployment-service
+
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+
+deploy_declarations(visibility = ["//visibility:public"])
+
+go_module_checks()
+
+spire_identity(
+    name = "spiffe_identity",
+    component = "deployment_service",
+    entry_id = "verself-deployment-service",
+    key = "deployment_service.default",
+    path = "/svc/deployment-service",
+    user = "deployment_service",
+    visibility = ["//src/host:__pkg__"],
+)
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/services/deployment-service/cmd/deployment-service:deployment-service_nomad_artifact": "deployment-service",
+    },
+    component = "deployment_service",
+    digest_inputs = [":deploy_declarations"],
+    job_id = "deployment-service",
+    job_spec = "nomad.hcl",
+    requires = [
+        "nomad:job:cloudflare-r2-control-plane",
+        "nomad:job:substrate-control-plane",
+        "postgres:server",
+    ],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

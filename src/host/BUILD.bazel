@@ -9,6 +9,13 @@ package(default_visibility = ["//visibility:public"])
 exports_files(["host_tools.MODULE.bazel"])
 
 genrule(
+    name = "bazelisk_bin",
+    srcs = ["@host_tool_bazelisk//file"],
+    outs = ["bazelisk"],
+    cmd = "install -m 0755 $(location @host_tool_bazelisk//file) $@",
+)
+
+genrule(
     name = "nomad_bin",
     srcs = ["@host_tool_nomad//file"],
     outs = ["nomad"],
@@ -51,12 +58,16 @@ pkg_tar(
     name = "host_tools_artifact",
     out = "host-tools.tar",
     files = {
+        ":bazelisk_bin": "opt/verself/profile/bin/bazelisk",
         ":nomad_bin": "opt/verself/profile/bin/nomad",
+        "@otelcol_tools//tools/spiffe-helper": "opt/verself/profile/bin/spiffe-helper",
         ":spire_agent_bin": "opt/verself/profile/bin/spire-agent",
         ":spire_server_bin": "opt/verself/profile/bin/spire-server",
     },
     modes = {
+        "opt/verself/profile/bin/bazelisk": "0755",
         "opt/verself/profile/bin/nomad": "0755",
+        "opt/verself/profile/bin/spiffe-helper": "0755",
         "opt/verself/profile/bin/spire-agent": "0755",
         "opt/verself/profile/bin/spire-server": "0755",
     },
@@ -73,6 +84,7 @@ spire_identity_registry(
         "//src/infrastructure-components/temporal-platform:spiffe_identity_server",
         "//src/services/analytics-service:spiffe_identity",
         "//src/services/billing-service:spiffe_identity",
+        "//src/services/deployment-service:spiffe_identity",
         "//src/services/distribution-service:spiffe_identity",
         "//src/services/governance-service:spiffe_identity",
         "//src/services/github-integration-service:spiffe_identity",

@@ -29,7 +29,6 @@ nomad_component(
     job_id = "distribution-service",
     job_spec = "nomad.hcl",
     requires = [
-        "clickhouse:migrations",
         "nomad:job:temporal",
         "postgres:server",
     ],

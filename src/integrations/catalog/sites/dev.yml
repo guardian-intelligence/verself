@@ -66,19 +66,6 @@ integrations:
         target: public_config
         site_var: stripe_publishable_key
     reason: Dev uses provider resources isolated from prod and gamma.
-  - key: email.resend
-    provider: resend
-    replacement: stripe_projects_candidate
-    owner: src/services/email-service
-    purpose: outbound_email
-    credentials:
-      - key: email-service.resend.api_key
-        source: stripe_projects_env
-        external_name: RESEND_API_KEY
-        target: runtime_secret
-        target_store: site_openbao
-        openbao_name: email-service.resend.api_key
-    migration_check: aspect integrations stripe-projects --site=dev --action=search --query=resend
   - key: github.runner_app
     provider: github
     replacement: provider_specific

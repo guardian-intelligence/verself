@@ -63,6 +63,7 @@ go_test(
     name = "frontend_policy_test",
     srcs = ["frontend_policy_test.go"],
     data = [
+        "nomad.hcl",
         "templates/haproxy.cfg.j2",
         "templates/nomad-upstreams.cfg.j2",
     ],
@@ -78,6 +79,7 @@ filegroup(
         "//src/infrastructure-components/verdaccio:deploy_declarations",
         "//src/services/analytics-service:deploy_declarations",
         "//src/services/billing-service:deploy_declarations",
+        "//src/services/deployment-service:deploy_declarations",
         "//src/services/distribution-service:deploy_declarations",
         "//src/services/email-service:deploy_declarations",
         "//src/services/github-integration-service:deploy_declarations",

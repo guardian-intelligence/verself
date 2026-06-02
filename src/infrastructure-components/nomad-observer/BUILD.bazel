@@ -49,9 +49,6 @@ nomad_component(
     job_id = "nomad-observer",
     job_spec = "nomad.hcl",
     provides = ["nomad-observer:events"],
-    requires = [
-        "otelcol:otlp",
-        "clickhouse:migrations",
-    ],
+    requires = ["otelcol:otlp"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -2,7 +2,7 @@
 
 verself_site: gamma
 bare_metal_host_alias: vs-gamma-w0
-bare_metal_public_ipv4: 0.0.0.0
+bare_metal_public_ipv4: 206.223.228.87
 verself_domain: gamma.verself.sh
 verself_version: 0.1.0
 verself_installation_id: inst_gamma_01JZ0000000000000000000000
@@ -11,6 +11,12 @@ company_domain: gamma.guardianintelligence.org
 
 billing_service_subdomain: billing.api
 billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
+deployment_service_subdomain: deployments.api
+deployment_service_domain: "{{ deployment_service_subdomain }}.{{ verself_domain }}"
+deployment_github_allowed_repositories: ""
+deployment_github_allowed_refs: ""
+deployment_github_allowed_workflow_refs: ""
+deployment_repo_url: https://github.com/guardian-intelligence/verself.git
 distribution_service_subdomain: distribution.api
 distribution_service_domain: "{{ distribution_service_subdomain }}.{{ verself_domain }}"
 forgejo_subdomain: git
@@ -51,6 +57,7 @@ cloudflare_dns_records:
   - { kind: browser_origin, record: "@", zone: product }
   - { kind: browser_origin, record: "@", zone: company }
   - { kind: public_api_origin, record: billing.api, zone: product }
+  - { kind: public_api_origin, record: deployments.api, zone: product }
   - { kind: public_api_origin, record: distribution.api, zone: product }
   - { kind: public_api_origin, record: oci, zone: product }
   - { kind: public_api_origin, record: sandbox.api, zone: product }
@@ -76,12 +83,13 @@ postgresql_address: "{{ postgresql_host }}:{{ postgresql_port }}"
 nomad_host: 127.0.0.1
 nomad_http_port: 4646
 nomad_http_address: "{{ nomad_host }}:{{ nomad_http_port }}"
-nomad_artifact_bucket: nomad-artifacts-gamma
+cloudflare_account_id: c3eaeffaadf7d4847684d4775c16d598
+nomad_artifact_bucket: verself-deployment-artifacts
 nomad_artifact_region: auto
 nomad_artifact_getter_s3_environment_file: /etc/nomad/nomad-artifacts.env
 nomad_artifact_getter_s3_access_key_env_var: AWS_ACCESS_KEY_ID
 nomad_artifact_getter_s3_secret_key_env_var: AWS_SECRET_ACCESS_KEY
-cloudflare_r2_endpoint: https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com
+cloudflare_r2_endpoint: https://{{ cloudflare_account_id }}.r2.cloudflarestorage.com
 firecracker_guest_pool_cidr: 172.16.0.0/16
 firecracker_host_service_ip: 10.255.0.1
 

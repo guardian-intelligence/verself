@@ -6,7 +6,7 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/verself/deployment-tools/cmd/substrate-control-plane-apply",
     visibility = ["//visibility:private"],
-    deps = ["//src/tools/deployment/internal/controlplane"],
+    deps = ["//src/services/deployment-service/controlplane"],
 )
 
 go_binary(

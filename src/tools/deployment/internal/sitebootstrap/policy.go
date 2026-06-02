@@ -10,12 +10,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/verself/deployment-tools/internal/deploycontract"
+	"github.com/verself/deployment-service/deploycontract"
 	"gopkg.in/yaml.v3"
 )
 
 type seedPolicy struct {
-	keys map[string]seedKey
+	keys           map[string]seedKey
+	controllerOnly map[string]seedKey
 }
 
 func loadSeedPolicy(repoRoot, site string) (seedPolicy, error) {
@@ -27,42 +28,45 @@ func loadSeedPolicy(repoRoot, site string) (seedPolicy, error) {
 		}
 		root = wd
 	}
-	policy := fallbackSeedPolicy()
 	catalogPath := filepath.Join(root, "src", "integrations", "catalog", "sites", site+".yml")
+	catalogExists := true
 	if _, err := os.Stat(catalogPath); errors.Is(err, fs.ErrNotExist) {
-		return policy, nil
+		catalogExists = false
 	} else if err != nil {
 		return seedPolicy{}, fmt.Errorf("stat %s: %w", catalogPath, err)
 	}
-	derived := seedPolicy{keys: map[string]seedKey{}}
-	for key, meta := range generatedSeedKeys {
-		derived.keys[key] = meta
-	}
-	for _, key := range []string{
-		"nomad_artifact_getter_s3_access_key_id",
-		"nomad_artifact_getter_s3_secret_access_key",
-	} {
-		derived.keys[key] = fallbackProvidedSeedKeys[key]
+	policy := seedPolicy{keys: map[string]seedKey{}, controllerOnly: map[string]seedKey{}}
+	if catalogExists {
+		for key, meta := range generatedSeedKeys {
+			policy.keys[key] = meta
+		}
+		for key, meta := range machineProvisionedSeedKeys {
+			policy.keys[key] = meta
+		}
+	} else {
+		policy = fallbackSeedPolicy()
 	}
 	siteVars, err := loadSiteVars(root, site)
 	if err != nil {
 		return seedPolicy{}, err
 	}
-	if err := collectOwnerLocalSeedKeys(root, siteVars, derived.keys); err != nil {
+	if err := collectOwnerLocalSeedKeys(root, siteVars, policy.keys); err != nil {
 		return seedPolicy{}, err
 	}
-	if err := collectCatalogSeedKeys(catalogPath, derived.keys); err != nil {
-		return seedPolicy{}, err
+	if catalogExists {
+		if err := collectCatalogSeedKeys(catalogPath, &policy); err != nil {
+			return seedPolicy{}, err
+		}
 	}
-	if len(derived.providedKeys()) == 0 {
-		return policy, nil
-	}
-	return derived, nil
+	return policy, nil
 }
 
 func fallbackSeedPolicy() seedPolicy {
-	policy := seedPolicy{keys: map[string]seedKey{}}
+	policy := seedPolicy{keys: map[string]seedKey{}, controllerOnly: map[string]seedKey{}}
 	for key, meta := range fallbackProvidedSeedKeys {
+		policy.keys[key] = meta
+	}
+	for key, meta := range machineProvisionedSeedKeys {
 		policy.keys[key] = meta
 	}
 	for key, meta := range generatedSeedKeys {
@@ -92,7 +96,7 @@ func loadSiteVars(root, site string) (map[string]string, error) {
 }
 
 func collectOwnerLocalSeedKeys(root string, siteVars map[string]string, keys map[string]seedKey) error {
-	for _, relRoot := range []string{"src/services", "src/infrastructure-components", "src/viteplus-monorepo/apps"} {
+	for _, relRoot := range []string{"src/services", "src/integrations", "src/infrastructure-components", "src/viteplus-monorepo/apps"} {
 		absRoot := filepath.Join(root, filepath.FromSlash(relRoot))
 		if _, err := os.Stat(absRoot); errors.Is(err, fs.ErrNotExist) {
 			continue
@@ -134,7 +138,7 @@ func loadRuntimeSiteSecretKeys(root string) ([]string, error) {
 		root = wd
 	}
 	seen := map[string]bool{}
-	for _, relRoot := range []string{"src/services", "src/infrastructure-components", "src/viteplus-monorepo/apps"} {
+	for _, relRoot := range []string{"src/services", "src/integrations", "src/infrastructure-components", "src/viteplus-monorepo/apps"} {
 		absRoot := filepath.Join(root, filepath.FromSlash(relRoot))
 		if _, err := os.Stat(absRoot); errors.Is(err, fs.ErrNotExist) {
 			continue
@@ -174,6 +178,29 @@ func loadRuntimeSiteSecretKeys(root string) ([]string, error) {
 	return out, nil
 }
 
+func requiredRuntimeSiteSecretKeys(root, site string) (map[string]seedKey, error) {
+	keys, err := loadRuntimeSiteSecretKeys(root)
+	if err != nil {
+		return nil, err
+	}
+	policy, err := loadSeedPolicy(root, site)
+	if err != nil {
+		return nil, err
+	}
+	required := map[string]seedKey{}
+	for _, key := range keys {
+		meta, ok := policy.keys[key]
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(meta.Source, "machine_provisioned") {
+			continue
+		}
+		required[key] = meta
+	}
+	return required, nil
+}
+
 func addOwnerLocalSiteSecret(siteVars map[string]string, keys map[string]seedKey, key string) {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -186,30 +213,50 @@ func addOwnerLocalSiteSecret(siteVars map[string]string, keys map[string]seedKey
 		keys[key] = meta
 		return
 	}
+	if meta, ok := machineProvisionedSeedKeys[key]; ok {
+		keys[key] = meta
+		return
+	}
 	keys[key] = seedKey{Source: "provider_runtime"}
 }
 
-func collectCatalogSeedKeys(path string, keys map[string]seedKey) error {
+func collectCatalogSeedKeys(path string, policy *seedPolicy) error {
 	var catalog deploycontract.IntegrationCatalog
 	if err := decodeYAMLFile(path, &catalog); err != nil {
 		return err
 	}
 	for _, exception := range catalog.BootstrapExceptions {
+		if !bootstrapExceptionTargetsSiteSeed(exception) {
+			for _, key := range exception.CredentialKeys {
+				addCatalogKey(policy.controllerOnly, key, "controller_openbao")
+			}
+			continue
+		}
 		for _, key := range exception.CredentialKeys {
-			addCatalogKey(keys, key, "provider_bootstrap")
+			addCatalogKey(policy.keys, key, "provider_bootstrap")
 		}
 	}
 	for _, integration := range catalog.Integrations {
 		for _, credential := range integration.Credentials {
 			switch credential.Target {
 			case "public_config":
-				addCatalogKey(keys, credential.SiteVar, "provider_public_config")
+				addCatalogKey(policy.keys, credential.SiteVar, "provider_public_config")
 			case "provider_resource_id":
-				addCatalogKey(keys, credential.CatalogField, "provider_resource_id")
+				addCatalogKey(policy.keys, credential.CatalogField, "provider_resource_id")
 			}
 		}
 	}
 	return nil
+}
+
+func bootstrapExceptionTargetsSiteSeed(exception deploycontract.BootstrapException) bool {
+	for _, target := range exception.StorageTargets {
+		switch strings.TrimSpace(target) {
+		case "site_openbao", "runtime_secret":
+			return true
+		}
+	}
+	return false
 }
 
 func addCatalogKey(keys map[string]seedKey, key, source string) {
@@ -218,6 +265,10 @@ func addCatalogKey(keys map[string]seedKey, key, source string) {
 		return
 	}
 	if _, generated := generatedSeedKeys[key]; generated {
+		return
+	}
+	if machine, ok := machineProvisionedSeedKeys[key]; ok {
+		keys[key] = machine
 		return
 	}
 	keys[key] = seedKey{Source: source}
@@ -236,13 +287,24 @@ func decodeYAMLFile(path string, into any) error {
 	return nil
 }
 
-func (p seedPolicy) providedKeys() []string {
+func (p seedPolicy) operatorProvidedKeys() []string {
 	var out []string
 	for key, meta := range p.keys {
-		if strings.HasPrefix(meta.Source, "generated") {
+		if strings.HasPrefix(meta.Source, "generated") || strings.HasPrefix(meta.Source, "machine_provisioned") {
 			continue
 		}
 		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (p seedPolicy) bootstrapMaterializedKeys() []string {
+	out := make([]string, 0, len(p.keys))
+	for key, meta := range p.keys {
+		if meta.RequiredForBootstrap {
+			out = append(out, key)
+		}
 	}
 	sort.Strings(out)
 	return out

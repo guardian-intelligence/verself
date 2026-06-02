@@ -2,6 +2,7 @@ package r2control
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,6 +38,11 @@ type R2Client struct {
 	creds    aws.Credentials
 }
 
+type ObjectSummary struct {
+	Key  string
+	Size int64
+}
+
 func Endpoint(accountID string) string {
 	return "https://" + strings.ToLower(strings.TrimSpace(accountID)) + ".r2.cloudflarestorage.com"
 }
@@ -47,14 +53,14 @@ func NewR2Client(cfg R2ClientConfig) (*R2Client, error) {
 		return nil, fmt.Errorf("parse R2 endpoint: %w", err)
 	}
 	if endpoint.Scheme != "https" || endpoint.Host == "" {
-		return nil, fmt.Errorf("R2 endpoint must be an https URL")
+		return nil, fmt.Errorf("r2 endpoint must be an https URL")
 	}
 	endpoint.Path = ""
 	endpoint.RawPath = ""
 	endpoint.RawQuery = ""
 	endpoint.Fragment = ""
 	if strings.TrimSpace(cfg.AccessKeyID) == "" || strings.TrimSpace(cfg.SecretAccessKey) == "" {
-		return nil, fmt.Errorf("R2 access key ID and secret access key are required")
+		return nil, fmt.Errorf("r2 access key ID and secret access key are required")
 	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
@@ -117,7 +123,7 @@ func (c *R2Client) PutObject(ctx context.Context, bucket, key string, body io.Re
 
 func (c *R2Client) PresignPutObject(ctx context.Context, bucket, key, payloadHash string, expires time.Duration) (string, http.Header, error) {
 	if expires < time.Minute || expires > 7*24*time.Hour {
-		return "", nil, fmt.Errorf("R2 presigned PUT expiry must be between 1 minute and 7 days")
+		return "", nil, fmt.Errorf("r2 presigned PUT expiry must be between 1 minute and 7 days")
 	}
 	headers := http.Header{}
 	headers.Set("X-Amz-Content-Sha256", UnsignedPayload)
@@ -152,6 +158,56 @@ func (c *R2Client) GetObject(ctx context.Context, bucket, key string) (int, []by
 	return c.SignedRequest(ctx, http.MethodGet, c.ObjectURL(bucket, key), http.NoBody, EmptyPayloadSHA256, nil)
 }
 
+func (c *R2Client) ListObjectsV2(ctx context.Context, bucket, prefix string) ([]ObjectSummary, error) {
+	token := ""
+	objects := []ObjectSummary{}
+	for {
+		u := c.BucketURL(bucket)
+		q := u.Query()
+		q.Set("list-type", "2")
+		q.Set("max-keys", "1000")
+		if strings.TrimSpace(prefix) != "" {
+			q.Set("prefix", strings.TrimLeft(prefix, "/"))
+		}
+		if token != "" {
+			q.Set("continuation-token", token)
+		}
+		u.RawQuery = q.Encode()
+		status, body, err := c.SignedRequest(ctx, http.MethodGet, u, http.NoBody, EmptyPayloadSHA256, nil)
+		if err != nil {
+			return nil, err
+		}
+		if status != http.StatusOK {
+			return nil, fmt.Errorf("list R2 bucket %s returned status %d: %s", bucket, status, strings.TrimSpace(string(body)))
+		}
+		var page listBucketV2Result
+		if err := xml.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("decode R2 ListObjectsV2 response: %w", err)
+		}
+		for _, item := range page.Contents {
+			objects = append(objects, ObjectSummary(item))
+		}
+		if !page.IsTruncated {
+			return objects, nil
+		}
+		token = strings.TrimSpace(page.NextContinuationToken)
+		if token == "" {
+			return nil, fmt.Errorf("R2 ListObjectsV2 response was truncated without a continuation token")
+		}
+	}
+}
+
+type listBucketV2Result struct {
+	IsTruncated           bool                `xml:"IsTruncated"`
+	NextContinuationToken string              `xml:"NextContinuationToken"`
+	Contents              []listBucketContent `xml:"Contents"`
+}
+
+type listBucketContent struct {
+	Key  string `xml:"Key"`
+	Size int64  `xml:"Size"`
+}
+
 func (c *R2Client) SignedRequest(ctx context.Context, method string, u *url.URL, body io.Reader, payloadHash string, headers http.Header) (int, []byte, error) {
 	if body == nil {
 		body = http.NoBody
@@ -173,7 +229,7 @@ func (c *R2Client) SignedRequest(ctx context.Context, method string, u *url.URL,
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return 0, nil, fmt.Errorf("R2 %s %s: %w", method, u.Redacted(), err)
+		return 0, nil, fmt.Errorf("r2 %s %s: %w", method, u.Redacted(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
@@ -181,10 +237,10 @@ func (c *R2Client) SignedRequest(ctx context.Context, method string, u *url.URL,
 		return 0, nil, fmt.Errorf("read R2 response: %w", err)
 	}
 	if resp.StatusCode >= 500 {
-		return resp.StatusCode, respBody, fmt.Errorf("R2 %s %s returned status %d: %s", method, u.Redacted(), resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return resp.StatusCode, respBody, fmt.Errorf("r2 %s %s returned status %d: %s", method, u.Redacted(), resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusNotFound {
-		return resp.StatusCode, respBody, fmt.Errorf("R2 %s %s returned status %d: %s", method, u.Redacted(), resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return resp.StatusCode, respBody, fmt.Errorf("r2 %s %s returned status %d: %s", method, u.Redacted(), resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 	return resp.StatusCode, respBody, nil
 }

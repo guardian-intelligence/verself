@@ -6,6 +6,8 @@ Primary references:
 
 - Resend `POST /emails`, response `id`, `from`, `to`, `subject`, `html`, `text`, and `Idempotency-Key`: <https://resend.com/docs/api-reference/emails>
 - Resend idempotency retention and conflict behavior: <https://resend.com/docs/dashboard/emails/idempotency-keys>
+- Resend `POST /api-keys` child-key creation with `sending_access`: <https://resend.com/docs/api-reference/api-keys/create-api-key>
+- Resend `DELETE /api-keys/:api_key_id` child-key revocation: <https://resend.com/docs/api-reference/api-keys/delete-api-key>
 - Cloudflare Email Sending REST endpoint: <https://developers.cloudflare.com/email-service/api/send-emails/rest-api/>
 - Cloudflare Email Sending API resource: <https://developers.cloudflare.com/api/resources/email_sending/methods/send/>
 
@@ -60,6 +62,22 @@ Internal callers send through `POST /internal/v1/email/send` over SPIFFE mTLS. T
 Public customer send APIs are intentionally absent. Customer-facing authenticated routes are limited to mailbox reads and mutations over `/api/v1/email/*`.
 
 Notifications uses an internal email-service client and no provider credentials. Provider-specific request shape, idempotency headers, response IDs, retries, and rate-limit interpretation stay inside `email-service`.
+
+## Resend Key Lifecycle
+
+`email-service` owns the Resend implementation boundary. The site seed contains
+no Resend runtime sending key. The `email-service-resend-keys` Nomad batch job
+authenticates to OpenBao with workload identity, reads
+`email-service.resend.full_access_api_key`, creates a `sending_access` Resend API
+key, writes `email-service.resend.api_key`, writes the same SMTP-compatible value
+to `zitadel.smtp.password`, and records non-secret key metadata in
+`email-service.resend.key_metadata`. Rotation writes the replacement child key
+to OpenBao before revoking the prior Resend key and records pending revocation in
+metadata so retries complete the delete instead of creating another child key.
+
+The full-access Resend key is an external provider authority stored in site
+OpenBao under the email-service policy boundary. Runtime services receive only
+the generated child credentials through Nomad/OpenBao templates.
 
 ## Agent-To-Operator Email
 

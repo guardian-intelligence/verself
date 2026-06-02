@@ -8,8 +8,8 @@
 - name: Validate Resend API key is configured
   ansible.builtin.fail:
     msg: >-
-      resend_api_key is empty. Add it via: sops src/host/sites/{{ verself_site | default('prod') }}/secrets/external.sops.yml
-  when: resend_api_key | default('', true) | length == 0
+      resend_full_access_api_key is empty. Load the provider authority from OpenBao before running domain provisioning.
+  when: resend_full_access_api_key | default('', true) | length == 0
 
 # --- Domain registration ---
 
@@ -18,7 +18,7 @@
     url: "{{ resend_api_url }}/domains"
     method: GET
     headers:
-      Authorization: "Bearer {{ resend_api_key }}"
+      Authorization: "Bearer {{ resend_full_access_api_key }}"
     return_content: true
     status_code: 200
   register: resend_domains_list
@@ -38,7 +38,7 @@
     url: "{{ resend_api_url }}/domains"
     method: POST
     headers:
-      Authorization: "Bearer {{ resend_api_key }}"
+      Authorization: "Bearer {{ resend_full_access_api_key }}"
       Content-Type: "application/json"
     body_format: json
     body:
@@ -66,7 +66,7 @@
     url: "{{ resend_api_url }}/domains/{{ resend_domain_id }}"
     method: GET
     headers:
-      Authorization: "Bearer {{ resend_api_key }}"
+      Authorization: "Bearer {{ resend_full_access_api_key }}"
     return_content: true
     status_code: 200
   register: resend_domain_details
@@ -108,7 +108,7 @@
     url: "{{ resend_api_url }}/domains/{{ resend_domain_id }}/verify"
     method: POST
     headers:
-      Authorization: "Bearer {{ resend_api_key }}"
+      Authorization: "Bearer {{ resend_full_access_api_key }}"
     status_code: [200, 202]
   delegate_to: localhost
   become: false
@@ -120,7 +120,7 @@
     url: "{{ resend_api_url }}/domains/{{ resend_domain_id }}"
     method: GET
     headers:
-      Authorization: "Bearer {{ resend_api_key }}"
+      Authorization: "Bearer {{ resend_full_access_api_key }}"
     return_content: true
     status_code: 200
   register: resend_verify_poll

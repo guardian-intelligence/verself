@@ -3,9 +3,8 @@ go 1.25.8
 use (
 	./src/services/analytics-service
 	./src/services/billing-service
+	./src/services/deployment-service
 	./src/services/distribution-service
-	./src/tools/deployment
-	./src/tools/dev
 	./src/services/governance-service
 	./src/services/github-integration-service
 	./src/services/iam-service
@@ -24,7 +23,10 @@ use (
 	./src/sdks/go/verself
 	./src/infrastructure-components/nomad-observer
 	./src/infrastructure-components/temporal-platform
+	./src/integrations/cloudflare/r2-control-plane
 	./src/make-skill/release
 	./src/verself-cli
+	./src/tools/deployment
+	./src/tools/dev
 	./src/substrate/vm-orchestrator
 )

@@ -83,8 +83,20 @@ def _cloudflare_r2_control_plane_impl(ctx):
         args_list.append("--bucket=" + ctx.args.bucket)
     if ctx.args.credentials_file != "":
         args_list.append("--credentials-file=" + (ctx.args.credentials_file if ctx.args.credentials_file.startswith("/") else ws_path(ctx, ctx.args.credentials_file)))
-    if ctx.args.parent_api_token_file != "":
-        args_list.append("--parent-api-token-file=" + (ctx.args.parent_api_token_file if ctx.args.parent_api_token_file == "-" or ctx.args.parent_api_token_file.startswith("/") else ws_path(ctx, ctx.args.parent_api_token_file)))
+    if ctx.args.token_admin_credential_source != "":
+        args_list.append("--token-admin-credential-source=" + ctx.args.token_admin_credential_source)
+    if ctx.args.token_admin_credentials_file != "":
+        args_list.append("--token-admin-credentials-file=" + (ctx.args.token_admin_credentials_file if ctx.args.token_admin_credentials_file.startswith("/") else ws_path(ctx, ctx.args.token_admin_credentials_file)))
+    if ctx.args.token_admin_api_token_file != "":
+        args_list.append("--token-admin-api-token-file=" + (ctx.args.token_admin_api_token_file if ctx.args.token_admin_api_token_file.startswith("/") else ws_path(ctx, ctx.args.token_admin_api_token_file)))
+    if ctx.args.token_admin_openbao_path != "":
+        args_list.append("--token-admin-openbao-path=" + ctx.args.token_admin_openbao_path)
+    if ctx.args.token_admin_a_openbao_path != "":
+        args_list.append("--token-admin-a-openbao-path=" + ctx.args.token_admin_a_openbao_path)
+    if ctx.args.token_admin_b_openbao_path != "":
+        args_list.append("--token-admin-b-openbao-path=" + ctx.args.token_admin_b_openbao_path)
+    if ctx.args.token_admin_slot != "":
+        args_list.append("--token-admin-slot=" + ctx.args.token_admin_slot)
     if ctx.args.openbao_addr != "":
         args_list.append("--openbao-addr=" + ctx.args.openbao_addr)
     if ctx.args.openbao_path != "":
@@ -97,18 +109,31 @@ def _cloudflare_r2_control_plane_impl(ctx):
         args_list.append("--getter-vars-file=" + (ctx.args.getter_vars_file if ctx.args.getter_vars_file.startswith("/") else ws_path(ctx, ctx.args.getter_vars_file)))
     if ctx.args.seed_bundle_file != "":
         args_list.append("--seed-bundle-file=" + (ctx.args.seed_bundle_file if ctx.args.seed_bundle_file.startswith("/") else ws_path(ctx, ctx.args.seed_bundle_file)))
+    if ctx.args.capability_openbao_path != "":
+        args_list.append("--capability-openbao-path=" + ctx.args.capability_openbao_path)
+    if ctx.args.child_credential_persistence != "":
+        args_list.append("--child-credential-persistence=" + ctx.args.child_credential_persistence)
     if ctx.args.listen != "":
         args_list.append("--listen=" + ctx.args.listen)
-    if ctx.args.auth_token_file != "":
-        args_list.append("--auth-token-file=" + (ctx.args.auth_token_file if ctx.args.auth_token_file.startswith("/") else ws_path(ctx, ctx.args.auth_token_file)))
     if ctx.args.test_prefix != "":
         args_list.append("--test-prefix=" + ctx.args.test_prefix)
+    if ctx.args.inventory_prefix != "":
+        args_list.append("--inventory-prefix=" + ctx.args.inventory_prefix)
+    if ctx.args.inventory_depth != 0:
+        args_list.append("--inventory-depth=" + str(ctx.args.inventory_depth))
+    if ctx.args.child_token_ttl != "":
+        args_list.append("--child-token-ttl=" + ctx.args.child_token_ttl)
+    if ctx.args.ephemeral_publisher_ttl != "":
+        args_list.append("--ephemeral-publisher-ttl=" + ctx.args.ephemeral_publisher_ttl)
+    if ctx.args.token_admin_ttl != "":
+        args_list.append("--token-admin-ttl=" + ctx.args.token_admin_ttl)
+    if ctx.args.timeout != "":
+        args_list.append("--timeout=" + ctx.args.timeout)
     args_list.append("--verify-temp-credentials=" + ("true" if ctx.args.verify_temp_credentials else "false"))
     return bazel_run(
         ctx,
         _CLOUDFLARE_R2_CONTROL_PLANE_TARGET,
         args_list,
-        env = {"VERSELF_CONTROLLER_STATE_ROOT": ws_path(ctx, ".verself/controller")},
         bazel_args = ["--noshow_progress", "--ui_event_filters=-info"],
         label = "cloudflare-r2-control-plane --site " + site,
     )
@@ -120,21 +145,34 @@ cloudflare_r2_control_plane = task(
     summary = "Ensure and live-verify Cloudflare R2 deployment artifact state.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
-        "action": args.string(default = "verify", description = "Action: serve, verify, import-parent, ensure-bucket, ensure-getter, rotate-getter, or rotate-object-storage-provider."),
+        "action": args.string(default = "verify", description = "Action: serve, inventory, verify, import-token-admin, rotate-token-admin-pair, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to site.json."),
-        "credential_source": args.string(default = "openbao", description = "Credential source: openbao, env, env-file, or auto."),
-        "credentials_file": args.string(default = "", description = "Environment file containing parent R2 credentials."),
-        "parent_api_token_file": args.string(default = "", description = "One-time import file containing the parent Cloudflare R2 API token value."),
+        "credential_source": args.string(default = "openbao", description = "Credential source: openbao, env, env-file, auto, or token-admin for bootstrap-only serving."),
+        "credentials_file": args.string(default = "", description = "Environment file containing R2 credentials."),
+        "token_admin_credential_source": args.string(default = "", description = "Optional Cloudflare token-admin credential source. Defaults to the active R2 credential."),
+        "token_admin_credentials_file": args.string(default = "", description = "Optional environment file containing a token-admin API token."),
+        "token_admin_api_token_file": args.string(default = "", description = "File containing a Cloudflare token-admin API token."),
+        "token_admin_openbao_path": args.string(default = "", description = "Optional controller OpenBao KV path for a token-admin API token."),
+        "token_admin_a_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/token-admin/a", description = "Controller OpenBao KV path for Cloudflare token-admin A."),
+        "token_admin_b_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/token-admin/b", description = "Controller OpenBao KV path for Cloudflare token-admin B."),
+        "token_admin_slot": args.string(default = "", description = "Token-admin slot for action=import-token-admin: a or b."),
         "openbao_addr": args.string(default = "", description = "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR."),
-        "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2-admin", description = "Controller OpenBao KV path for parent R2 credentials."),
+        "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher", description = "Controller OpenBao KV path for R2 credentials."),
         "openbao_ca_cert": args.string(default = "", description = "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT."),
         "openbao_token_file": args.string(default = "", description = "File containing the OpenBao token."),
         "getter_vars_file": args.string(default = "", description = "JSON vars file to receive durable Nomad artifact getter credentials."),
         "seed_bundle_file": args.string(default = "", description = "Seed bundle file to receive generated provider values."),
+        "capability_openbao_path": args.string(default = "", description = "Controller OpenBao KV path for generated capability credentials."),
+        "child_credential_persistence": args.string(default = "", description = "Persistence for generated child credentials: controller-openbao or site-seed. Defaults by action."),
         "listen": args.string(default = "127.0.0.1:18732", description = "HTTP listen address for action=serve."),
-        "auth_token_file": args.string(default = "", description = "Bearer token file for action=serve. Defaults to site.json."),
         "test_prefix": args.string(default = "control-plane-verification/", description = "R2 prefix used for live verification objects."),
+        "inventory_prefix": args.string(default = "", description = "R2 object prefix for --action=inventory."),
+        "inventory_depth": args.int(default = 2, description = "Prefix depth for --action=inventory summaries."),
+        "child_token_ttl": args.string(default = "168h", description = "TTL for generated Cloudflare R2 child API tokens."),
+        "ephemeral_publisher_ttl": args.string(default = "1h", description = "TTL for bootstrap-only publisher tokens minted from token-admin credentials."),
+        "token_admin_ttl": args.string(default = "168h", description = "TTL for Cloudflare token-admin expiration updates."),
+        "timeout": args.string(default = "", description = "Total timeout for Cloudflare R2 control-plane calls."),
         "verify_temp_credentials": args.boolean(default = True, description = "Mint scoped temporary credentials and verify with them."),
     },
 )

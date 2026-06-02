@@ -228,7 +228,6 @@ func hostSecretsYAML() ([]byte, error) {
 		{Key: "zitadel_admin_pat"},
 		{Key: "stripe_secret_key"},
 		{Key: "stripe_webhook_secret"},
-		{Key: "resend_api_key"},
 		{Key: "github_integration_service_github_app_private_key"},
 		{Key: "github_integration_service_github_app_webhook_secret"},
 		{Key: "postgresql_sandbox_rental_password", Value: values["postgresql_sandbox_rental_password"], Secret: true},

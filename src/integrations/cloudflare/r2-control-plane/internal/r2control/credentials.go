@@ -65,7 +65,7 @@ func (cfg ParentCredentialConfig) WithDefaults() ParentCredentialConfig {
 		cfg.SessionTokenEnv = "CLOUDFLARE_R2_ADMIN_SESSION_TOKEN"
 	}
 	if cfg.OpenBaoPath == "" {
-		cfg.OpenBaoPath = "kv-controller/data/integrations/cloudflare/r2-admin"
+		cfg.OpenBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
 	}
 	if cfg.OpenBaoTokenEnv == "" {
 		cfg.OpenBaoTokenEnv = "BAO_TOKEN"
@@ -102,10 +102,10 @@ func LoadParentCredentials(ctx context.Context, cfg ParentCredentialConfig) (Par
 			creds, err := loadParentCredentialsFromOpenBao(ctx, cfg)
 			return resolveParentCredentials(ctx, cfg, creds, err)
 		}
-		return ParentCredentials{}, fmt.Errorf("no R2 parent credentials found; set %s plus %s or %s, pass credentials file, or use OpenBao",
+		return ParentCredentials{}, fmt.Errorf("no R2 credentials found; set %s plus %s or %s, pass credentials file, or use OpenBao",
 			cfg.AccessKeyIDEnv, cfg.SecretAccessKeyEnv, cfg.APITokenEnv)
 	default:
-		return ParentCredentials{}, fmt.Errorf("unsupported R2 parent credential source %q", cfg.Source)
+		return ParentCredentials{}, fmt.Errorf("unsupported R2 credential source %q", cfg.Source)
 	}
 }
 
@@ -128,7 +128,7 @@ func envHasParentCredentials(cfg ParentCredentialConfig) bool {
 
 func loadParentCredentialsFromEnvFile(cfg ParentCredentialConfig) (ParentCredentials, error) {
 	if cfg.CredentialsFile == "" {
-		return ParentCredentials{}, errors.New("credentials file is required for env-file R2 parent credentials")
+		return ParentCredentials{}, errors.New("credentials file is required for env-file R2 credentials")
 	}
 	body, err := os.ReadFile(cfg.CredentialsFile)
 	if err != nil {
@@ -150,7 +150,7 @@ func loadParentCredentialsFromEnvFile(cfg ParentCredentialConfig) (ParentCredent
 func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialConfig) (ParentCredentials, error) {
 	addr := strings.TrimRight(strings.TrimSpace(firstNonEmpty(cfg.OpenBaoAddr, os.Getenv("BAO_ADDR"), os.Getenv("VAULT_ADDR"))), "/")
 	if addr == "" {
-		return ParentCredentials{}, errors.New("OpenBao address is required via config, BAO_ADDR, or VAULT_ADDR")
+		return ParentCredentials{}, errors.New("openbao address is required via config, BAO_ADDR, or VAULT_ADDR")
 	}
 	token, err := LoadOpenBaoToken(cfg)
 	if err != nil {
@@ -158,7 +158,7 @@ func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialC
 	}
 	path := strings.Trim(strings.TrimSpace(cfg.OpenBaoPath), "/")
 	if path == "" {
-		return ParentCredentials{}, errors.New("OpenBao path is required for R2 credentials")
+		return ParentCredentials{}, errors.New("openbao path is required for r2 credentials")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr+"/v1/"+path, http.NoBody)
 	if err != nil {
@@ -179,7 +179,7 @@ func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialC
 		return ParentCredentials{}, fmt.Errorf("read OpenBao response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ParentCredentials{}, fmt.Errorf("OpenBao read %s returned status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
+		return ParentCredentials{}, fmt.Errorf("openbao read %s returned status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	values, err := OpenBaoSecretData(body)
 	if err != nil {
@@ -192,7 +192,7 @@ func WriteParentCredentialsToOpenBao(ctx context.Context, cfg ParentCredentialCo
 	cfg = cfg.WithDefaults()
 	addr := strings.TrimRight(strings.TrimSpace(firstNonEmpty(cfg.OpenBaoAddr, os.Getenv("BAO_ADDR"), os.Getenv("VAULT_ADDR"))), "/")
 	if addr == "" {
-		return errors.New("OpenBao address is required via config, BAO_ADDR, or VAULT_ADDR")
+		return errors.New("openbao address is required via config, BAO_ADDR, or VAULT_ADDR")
 	}
 	token, err := LoadOpenBaoToken(cfg)
 	if err != nil {
@@ -200,10 +200,10 @@ func WriteParentCredentialsToOpenBao(ctx context.Context, cfg ParentCredentialCo
 	}
 	path := strings.Trim(strings.TrimSpace(cfg.OpenBaoPath), "/")
 	if path == "" {
-		return errors.New("OpenBao path is required for R2 credentials")
+		return errors.New("openbao path is required for r2 credentials")
 	}
 	if !strings.Contains(path, "/data/") {
-		return fmt.Errorf("OpenBao path %q must be a KV v2 data path", path)
+		return fmt.Errorf("openbao path %q must be a KV v2 data path", path)
 	}
 	body, err := json.Marshal(map[string]map[string]string{"data": values})
 	if err != nil {
@@ -229,7 +229,7 @@ func WriteParentCredentialsToOpenBao(ctx context.Context, cfg ParentCredentialCo
 		return fmt.Errorf("read OpenBao response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("OpenBao write %s returned status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(raw)))
+		return fmt.Errorf("openbao write %s returned status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	return nil
 }
@@ -246,7 +246,7 @@ func openBaoHTTPClient(cfg ParentCredentialConfig) (*http.Client, error) {
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(cert) {
-		return nil, fmt.Errorf("OpenBao CA cert file contains no PEM certificates")
+		return nil, fmt.Errorf("openbao CA cert file contains no PEM certificates")
 	}
 	client.Transport = &http.Transport{
 		TLSClientConfig: &tls.Config{
@@ -265,11 +265,11 @@ func resolveParentCredentials(ctx context.Context, cfg ParentCredentialConfig, c
 		return creds, nil
 	}
 	if strings.TrimSpace(creds.APIToken) == "" {
-		return ParentCredentials{}, errors.New("R2 parent access key id is required")
+		return ParentCredentials{}, errors.New("r2 parent access key id is required")
 	}
 	accountID := strings.ToLower(strings.TrimSpace(cfg.AccountID))
 	if !IsCloudflareAccountID(accountID) {
-		return ParentCredentials{}, errors.New("Cloudflare account ID is required to derive an R2 access key ID from an Account API token")
+		return ParentCredentials{}, errors.New("cloudflare account ID is required to derive an r2 access key ID from an account API token")
 	}
 	client, err := NewCloudflareAPIClient(creds.APIToken, cfg.Timeout)
 	if err != nil {
@@ -280,7 +280,7 @@ func resolveParentCredentials(ctx context.Context, cfg ParentCredentialConfig, c
 		return ParentCredentials{}, err
 	}
 	if verified.Status != "" && verified.Status != "active" {
-		return ParentCredentials{}, fmt.Errorf("Cloudflare API token status is %q", verified.Status)
+		return ParentCredentials{}, fmt.Errorf("cloudflare API token status is %q", verified.Status)
 	}
 	creds.AccessKeyID = verified.ID
 	creds.Source += ":verified-token-id"
@@ -295,7 +295,7 @@ func LoadOpenBaoToken(cfg ParentCredentialConfig) (string, error) {
 		}
 		token := strings.TrimSpace(string(body))
 		if token == "" {
-			return "", errors.New("OpenBao token file is empty")
+			return "", errors.New("openbao token file is empty")
 		}
 		return token, nil
 	}
@@ -307,7 +307,7 @@ func LoadOpenBaoToken(cfg ParentCredentialConfig) (string, error) {
 			return token, nil
 		}
 	}
-	return "", errors.New("OpenBao token is required via token file, BAO_TOKEN, or VAULT_TOKEN")
+	return "", errors.New("openbao token is required via token file, BAO_TOKEN, or VAULT_TOKEN")
 }
 
 func OpenBaoSecretData(body []byte) (map[string]string, error) {
@@ -328,7 +328,7 @@ func OpenBaoSecretData(body []byte) (map[string]string, error) {
 		return nil, fmt.Errorf("decode OpenBao secret data: %w", err)
 	}
 	if len(values) == 0 {
-		return nil, errors.New("OpenBao secret has no data")
+		return nil, errors.New("openbao secret has no data")
 	}
 	return values, nil
 }
@@ -350,7 +350,7 @@ func parentCredentialsFromValues(values map[string]string, source string) (Paren
 		secret = SHA256Hex([]byte(apiToken))
 	}
 	if strings.TrimSpace(secret) == "" {
-		return ParentCredentials{}, errors.New("R2 parent secret access key or API token value is required")
+		return ParentCredentials{}, errors.New("r2 parent secret access key or API token value is required")
 	}
 	return ParentCredentials{
 		AccessKeyID:     strings.TrimSpace(access),

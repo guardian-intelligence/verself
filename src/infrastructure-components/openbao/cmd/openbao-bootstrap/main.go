@@ -1,0 +1,583 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/scrypt"
+)
+
+const (
+	wrappedKeyVersion = "verself.openbao.unseal-key.v1"
+	defaultKeyShares  = 3
+	defaultThreshold  = 2
+)
+
+type config struct {
+	bao         string
+	stateDir    string
+	rootKeyFile string
+	keyShares   int
+	threshold   int
+	addr        string
+	caCert      string
+}
+
+type baoStatus struct {
+	Initialized bool `json:"initialized"`
+	Sealed      bool `json:"sealed"`
+}
+
+type initResponse struct {
+	RootToken     string   `json:"root_token"`
+	UnsealKeysB64 []string `json:"unseal_keys_b64"`
+	KeysBase64    []string `json:"keys_base64"`
+}
+
+type wrappedKey struct {
+	Version    string `json:"version"`
+	KDF        string `json:"kdf"`
+	Salt       string `json:"salt"`
+	Nonce      string `json:"nonce"`
+	Ciphertext string `json:"ciphertext"`
+}
+
+func main() {
+	fs := flag.NewFlagSet("openbao-bootstrap", flag.ExitOnError)
+	cfg := config{}
+	fs.StringVar(&cfg.bao, "bao", "bao", "bao binary path")
+	fs.StringVar(&cfg.stateDir, "state-dir", "/var/lib/verself/bootstrap/openbao", "OpenBao bootstrap state directory")
+	fs.StringVar(&cfg.rootKeyFile, "root-key-file", "/etc/verself/bootstrap/openbao-root.key", "site root key file")
+	fs.IntVar(&cfg.keyShares, "key-shares", defaultKeyShares, "OpenBao operator init key shares")
+	fs.IntVar(&cfg.threshold, "key-threshold", defaultThreshold, "OpenBao operator init key threshold")
+	fs.StringVar(&cfg.addr, "addr", firstNonEmpty(os.Getenv("BAO_ADDR"), "https://127.0.0.1:8200"), "OpenBao API address")
+	fs.StringVar(&cfg.caCert, "ca-cert", os.Getenv("BAO_CACERT"), "OpenBao CA certificate")
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "openbao-bootstrap: %v\n", err)
+		os.Exit(2)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	if err := run(ctx, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "openbao-bootstrap: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, cfg config) error {
+	cfg = normalizeConfig(cfg)
+	rootKey, err := readRootKey(cfg.rootKeyFile)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(cfg.stateDir, 0o700); err != nil {
+		return fmt.Errorf("create OpenBao bootstrap state dir: %w", err)
+	}
+	if err := os.Chmod(cfg.stateDir, 0o700); err != nil {
+		return fmt.Errorf("chmod OpenBao bootstrap state dir: %w", err)
+	}
+	status, err := waitStatus(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	rootToken := ""
+	if !status.Initialized {
+		init, err := operatorInit(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		keys := init.UnsealKeysB64
+		if len(keys) == 0 {
+			keys = init.KeysBase64
+		}
+		if len(keys) < cfg.threshold || strings.TrimSpace(init.RootToken) == "" {
+			return errors.New("openbao init response did not include root token and enough unseal keys")
+		}
+		for index, key := range keys {
+			if err := writeWrappedKey(cfg.stateDir, rootKey, index+1, key); err != nil {
+				return err
+			}
+		}
+		rootToken = strings.TrimSpace(init.RootToken)
+		status, err = statusOnce(ctx, cfg)
+		if err != nil {
+			return err
+		}
+	}
+	if err := wrapLegacyPlaintextKeys(cfg.stateDir, rootKey); err != nil {
+		return err
+	}
+	if status.Sealed {
+		for index := 1; index <= cfg.threshold; index++ {
+			key, err := readWrappedKey(cfg.stateDir, rootKey, index)
+			if err != nil {
+				return err
+			}
+			if err := baoCommand(ctx, cfg, "operator", "unseal", key); err != nil {
+				return err
+			}
+		}
+	}
+	if rootToken != "" {
+		if err := configureWorkloadIdentity(ctx, cfg, rootToken); err != nil {
+			return err
+		}
+		if err := revokeRootToken(ctx, cfg, rootToken); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeConfig(cfg config) config {
+	cfg.bao = strings.TrimSpace(cfg.bao)
+	cfg.stateDir = strings.TrimSpace(cfg.stateDir)
+	cfg.rootKeyFile = strings.TrimSpace(cfg.rootKeyFile)
+	cfg.addr = strings.TrimSpace(cfg.addr)
+	cfg.caCert = strings.TrimSpace(cfg.caCert)
+	if cfg.keyShares == 0 {
+		cfg.keyShares = defaultKeyShares
+	}
+	if cfg.threshold == 0 {
+		cfg.threshold = defaultThreshold
+	}
+	return cfg
+}
+
+func readRootKey(path string) ([]byte, error) {
+	if path == "" {
+		return nil, errors.New("site root key file is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("site root key file %s is required before OpenBao bootstrap", path)
+		}
+		return nil, fmt.Errorf("inspect site root key file %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("site root key file %s must be a regular file", path)
+	}
+	if info.Size() == 0 {
+		return nil, fmt.Errorf("site root key file %s is empty", path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("site root key file %s must be readable only by root", path)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read site root key file %s: %w", path, err)
+	}
+	key := bytes.TrimSpace(body)
+	if len(key) == 0 {
+		return nil, fmt.Errorf("site root key file %s is empty", path)
+	}
+	return key, nil
+}
+
+func waitStatus(ctx context.Context, cfg config) (baoStatus, error) {
+	var last error
+	for {
+		status, err := statusOnce(ctx, cfg)
+		if err == nil {
+			return status, nil
+		}
+		last = err
+		select {
+		case <-ctx.Done():
+			return baoStatus{}, fmt.Errorf("openbao status did not become readable: %w: %v", ctx.Err(), last)
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+func statusOnce(ctx context.Context, cfg config) (baoStatus, error) {
+	cmd := exec.CommandContext(ctx, cfg.bao, "status", "-format=json")
+	cmd.Env = baoEnv(cfg, "")
+	out, err := cmd.Output()
+	if status, decodeErr := decodeStatusOutput(out); decodeErr == nil {
+		return status, nil
+	} else if err == nil {
+		return baoStatus{}, decodeErr
+	}
+	return baoStatus{}, commandError("bao status", err)
+}
+
+func decodeStatusOutput(out []byte) (baoStatus, error) {
+	var status baoStatus
+	if err := json.Unmarshal(bytes.TrimSpace(out), &status); err != nil {
+		return baoStatus{}, fmt.Errorf("decode bao status: %w", err)
+	}
+	return status, nil
+}
+
+func operatorInit(ctx context.Context, cfg config) (initResponse, error) {
+	cmd := exec.CommandContext(ctx, cfg.bao, "operator", "init",
+		fmt.Sprintf("-key-shares=%d", cfg.keyShares),
+		fmt.Sprintf("-key-threshold=%d", cfg.threshold),
+		"-format=json",
+	)
+	cmd.Env = baoEnv(cfg, "")
+	out, err := cmd.Output()
+	if err != nil {
+		return initResponse{}, commandError("bao operator init", err)
+	}
+	var init initResponse
+	if err := json.Unmarshal(out, &init); err != nil {
+		return initResponse{}, fmt.Errorf("decode bao operator init: %w", err)
+	}
+	return init, nil
+}
+
+func baoCommand(ctx context.Context, cfg config, args ...string) error {
+	cmd := exec.CommandContext(ctx, cfg.bao, args...)
+	cmd.Env = baoEnv(cfg, "")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("bao %s: %w: %s", strings.Join(args, " "), err, sanitizeCommandOutput(out))
+	}
+	return nil
+}
+
+func revokeRootToken(ctx context.Context, cfg config, rootToken string) error {
+	cmd := exec.CommandContext(ctx, cfg.bao, "token", "revoke", "-self")
+	cmd.Env = baoEnv(cfg, rootToken)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("revoke OpenBao bootstrap root token: %w: %s", err, sanitizeCommandOutput(out))
+	}
+	return nil
+}
+
+func baoEnv(cfg config, token string) []string {
+	env := append([]string{}, os.Environ()...)
+	env = append(env, "BAO_ADDR="+cfg.addr)
+	if cfg.caCert != "" {
+		env = append(env, "BAO_CACERT="+cfg.caCert)
+	}
+	if token != "" {
+		env = append(env, "BAO_TOKEN="+token)
+	}
+	return env
+}
+
+func commandError(op string, err error) error {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return fmt.Errorf("%s: %w: %s", op, err, sanitizeCommandOutput(exit.Stderr))
+	}
+	return fmt.Errorf("%s: %w", op, err)
+}
+
+func sanitizeCommandOutput(out []byte) string {
+	text := strings.TrimSpace(string(out))
+	if len(text) > 512 {
+		return text[:512]
+	}
+	return text
+}
+
+func writeWrappedKey(stateDir string, rootKey []byte, index int, plaintext string) error {
+	envelope, err := encryptUnsealKey(rootKey, plaintext)
+	if err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(envelope, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode wrapped unseal key: %w", err)
+	}
+	body = append(body, '\n')
+	path := wrappedKeyPath(stateDir, index)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, body, 0o600); err != nil {
+		return fmt.Errorf("write wrapped unseal key: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("replace wrapped unseal key: %w", err)
+	}
+	return os.Chmod(path, 0o600)
+}
+
+func readWrappedKey(stateDir string, rootKey []byte, index int) (string, error) {
+	path := wrappedKeyPath(stateDir, index)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("%s is required to unseal OpenBao", path)
+		}
+		return "", fmt.Errorf("read wrapped unseal key %s: %w", path, err)
+	}
+	var envelope wrappedKey
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return "", fmt.Errorf("decode wrapped unseal key %s: %w", path, err)
+	}
+	return decryptUnsealKey(rootKey, envelope)
+}
+
+func wrapLegacyPlaintextKeys(stateDir string, rootKey []byte) error {
+	for index := 1; index <= 10; index++ {
+		plainPath := filepath.Join(stateDir, fmt.Sprintf("unseal-key-%d", index))
+		body, err := os.ReadFile(plainPath)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read legacy plaintext unseal key %s: %w", plainPath, err)
+		}
+		value := strings.TrimSpace(string(body))
+		if value == "" {
+			return fmt.Errorf("legacy plaintext unseal key %s is empty", plainPath)
+		}
+		if err := writeWrappedKey(stateDir, rootKey, index, value); err != nil {
+			return err
+		}
+		if err := os.Remove(plainPath); err != nil {
+			return fmt.Errorf("remove legacy plaintext unseal key %s: %w", plainPath, err)
+		}
+	}
+	return nil
+}
+
+func encryptUnsealKey(rootKey []byte, plaintext string) (wrappedKey, error) {
+	salt := make([]byte, 32)
+	if _, err := rand.Read(salt); err != nil {
+		return wrappedKey{}, fmt.Errorf("generate scrypt salt: %w", err)
+	}
+	nonce := make([]byte, chacha20poly1305.NonceSizeX)
+	if _, err := rand.Read(nonce); err != nil {
+		return wrappedKey{}, fmt.Errorf("generate unseal key nonce: %w", err)
+	}
+	key, err := deriveWrapKey(rootKey, salt)
+	if err != nil {
+		return wrappedKey{}, err
+	}
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return wrappedKey{}, fmt.Errorf("create unseal key AEAD: %w", err)
+	}
+	ciphertext := aead.Seal(nil, nonce, []byte(strings.TrimSpace(plaintext)), []byte(wrappedKeyVersion))
+	return wrappedKey{
+		Version:    wrappedKeyVersion,
+		KDF:        "scrypt-n32768-r8-p1-sha256-root",
+		Salt:       base64.StdEncoding.EncodeToString(salt),
+		Nonce:      base64.StdEncoding.EncodeToString(nonce),
+		Ciphertext: base64.StdEncoding.EncodeToString(ciphertext),
+	}, nil
+}
+
+func decryptUnsealKey(rootKey []byte, envelope wrappedKey) (string, error) {
+	if envelope.Version != wrappedKeyVersion {
+		return "", fmt.Errorf("wrapped unseal key version %q is not supported", envelope.Version)
+	}
+	salt, err := base64.StdEncoding.DecodeString(envelope.Salt)
+	if err != nil {
+		return "", fmt.Errorf("decode wrapped unseal key salt: %w", err)
+	}
+	nonce, err := base64.StdEncoding.DecodeString(envelope.Nonce)
+	if err != nil {
+		return "", fmt.Errorf("decode wrapped unseal key nonce: %w", err)
+	}
+	ciphertext, err := base64.StdEncoding.DecodeString(envelope.Ciphertext)
+	if err != nil {
+		return "", fmt.Errorf("decode wrapped unseal key ciphertext: %w", err)
+	}
+	key, err := deriveWrapKey(rootKey, salt)
+	if err != nil {
+		return "", err
+	}
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return "", fmt.Errorf("create unseal key AEAD: %w", err)
+	}
+	plaintext, err := aead.Open(nil, nonce, ciphertext, []byte(wrappedKeyVersion))
+	if err != nil {
+		return "", errors.New("decrypt wrapped unseal key with site root key")
+	}
+	return string(plaintext), nil
+}
+
+func deriveWrapKey(rootKey, salt []byte) ([]byte, error) {
+	rootDigest := sha256.Sum256(bytes.TrimSpace(rootKey))
+	key, err := scrypt.Key(rootDigest[:], salt, 32768, 8, 1, chacha20poly1305.KeySize)
+	if err != nil {
+		return nil, fmt.Errorf("derive OpenBao unseal wrapping key: %w", err)
+	}
+	return key, nil
+}
+
+func wrappedKeyPath(stateDir string, index int) string {
+	return filepath.Join(stateDir, fmt.Sprintf("unseal-key-%d.wrapped.json", index))
+}
+
+func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string) error {
+	client, err := apiClient(cfg)
+	if err != nil {
+		return err
+	}
+	api := func(method, path string, body any, expected ...int) (map[string]any, error) {
+		return apiRequest(ctx, client, cfg.addr, rootToken, method, path, body, expected...)
+	}
+	mounts, err := api(http.MethodGet, "sys/mounts", nil, http.StatusOK)
+	if err != nil {
+		return err
+	}
+	if _, ok := dataMap(mounts)["kv-runtime/"]; !ok {
+		if _, err := api(http.MethodPost, "sys/mounts/kv-runtime", map[string]any{
+			"type":    "kv",
+			"options": map[string]any{"version": "2"},
+		}, http.StatusNoContent); err != nil {
+			return err
+		}
+	}
+	auth, err := api(http.MethodGet, "sys/auth", nil, http.StatusOK)
+	if err != nil {
+		return err
+	}
+	if _, ok := dataMap(auth)["jwt-nomad/"]; !ok {
+		if _, err := api(http.MethodPost, "sys/auth/jwt-nomad", map[string]any{
+			"type":        "jwt",
+			"description": "Verself Nomad workload identity auth",
+		}, http.StatusNoContent); err != nil {
+			return err
+		}
+	}
+	if _, err := api(http.MethodPost, "auth/jwt-nomad/config", map[string]any{
+		"jwks_url":           "http://127.0.0.1:4646/.well-known/jwks.json",
+		"jwt_supported_algs": []string{"RS256", "EdDSA"},
+	}, http.StatusNoContent); err != nil {
+		return err
+	}
+	policy := strings.TrimSpace(`
+path "sys/policies/acl/*" {
+  capabilities = ["create", "update", "read", "list"]
+}
+
+path "auth/jwt-nomad/role/*" {
+  capabilities = ["create", "update", "read", "list"]
+}
+
+path "kv-runtime/data/secret/org/*" {
+  capabilities = ["create", "update", "read", "delete"]
+}
+
+path "kv-runtime/metadata/secret/org/*" {
+  capabilities = ["read", "list", "delete"]
+}
+`)
+	if _, err := api(http.MethodPost, "sys/policies/acl/substrate-control-plane", map[string]any{"policy": policy}, http.StatusOK, http.StatusNoContent); err != nil {
+		return err
+	}
+	_, err = api(http.MethodPost, "auth/jwt-nomad/role/substrate-control-plane", map[string]any{
+		"role_type":               "jwt",
+		"bound_audiences":         []string{"vault.io"},
+		"user_claim":              "/nomad_job_id",
+		"user_claim_json_pointer": true,
+		"claim_mappings": map[string]string{
+			"nomad_namespace": "nomad_namespace",
+			"nomad_job_id":    "nomad_job_id",
+			"nomad_task":      "nomad_task",
+		},
+		"bound_claims_type":      "glob",
+		"bound_claims":           map[string]string{"nomad_job_id": "substrate-control-plane*"},
+		"token_type":             "service",
+		"token_policies":         []string{"substrate-control-plane"},
+		"token_period":           "30m",
+		"token_explicit_max_ttl": 0,
+	}, http.StatusNoContent)
+	return err
+}
+
+func apiClient(cfg config) (*http.Client, error) {
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("load system cert pool: %w", err)
+	}
+	if cfg.caCert != "" {
+		body, err := os.ReadFile(cfg.caCert)
+		if err != nil {
+			return nil, fmt.Errorf("read OpenBao CA cert: %w", err)
+		}
+		if !pool.AppendCertsFromPEM(body) {
+			return nil, fmt.Errorf("OpenBao CA cert %s did not contain a PEM certificate", cfg.caCert)
+		}
+	}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS13},
+		},
+	}, nil
+}
+
+func apiRequest(ctx context.Context, client *http.Client, addr, token, method, path string, body any, expected ...int) (map[string]any, error) {
+	var requestBody io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("encode OpenBao API body: %w", err)
+		}
+		requestBody = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(addr, "/")+"/v1/"+path, requestBody)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Vault-Token", token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("openbao %s %s: %w", method, path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return nil, fmt.Errorf("read openbao %s %s response: %w", method, path, err)
+	}
+	for _, status := range expected {
+		if resp.StatusCode == status {
+			if len(bytes.TrimSpace(raw)) == 0 {
+				return map[string]any{}, nil
+			}
+			var decoded map[string]any
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				return nil, fmt.Errorf("decode openbao %s %s response: %w", method, path, err)
+			}
+			return decoded, nil
+		}
+	}
+	return nil, fmt.Errorf("openbao %s %s status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
+}
+
+func dataMap(response map[string]any) map[string]any {
+	data, ok := response["data"].(map[string]any)
+	if !ok {
+		return map[string]any{}
+	}
+	return data
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}

@@ -28,8 +28,8 @@ func TestClientCreateAndCompleteUploadSession(t *testing.T) {
 				ExpiresAt: time.Unix(10, 0).UTC(),
 				Objects: []UploadObject{{
 					Output: "svc",
-					Bucket: "nomad-artifacts-gamma",
-					Key:    "sha256/abc/svc.tar",
+					Bucket: "verself-deployment-artifacts",
+					Key:    "gamma/sha256/abc/svc.tar",
 					Action: UploadActionPut,
 				}},
 			})

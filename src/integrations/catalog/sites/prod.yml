@@ -18,7 +18,8 @@ bootstrap_exceptions:
     allowed_uses:
       - aspect integrations cloudflare-dns
       - haproxy lego DNS-01 certificate renewal
-      - Resend and Cloudflare Email Routing DNS bootstrap
+      - Resend sending-domain DNS verification
+      - Cloudflare Email Routing DNS bootstrap
     reason: Cloudflare DNS token resources are zone scoped for verself.sh.
   - key: company.cloudflare_email_routing
     provider: cloudflare
@@ -81,19 +82,6 @@ integrations:
         target: provider_resource_id
         catalog_field: stripe_test_webhook_endpoint_id
     reason: Stripe Projects provisions third-party services; it does not replace Verself's Stripe Billing integration.
-  - key: email.resend
-    provider: resend
-    replacement: stripe_projects_candidate
-    owner: src/services/email-service
-    purpose: outbound_email
-    credentials:
-      - key: email-service.resend.api_key
-        source: stripe_projects_env
-        external_name: RESEND_API_KEY
-        target: runtime_secret
-        target_store: site_openbao
-        openbao_name: email-service.resend.api_key
-    migration_check: aspect integrations stripe-projects --site=prod --action=search --query=resend
   - key: github.runner_app
     provider: github
     replacement: provider_specific

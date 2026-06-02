@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/verself/deployment-tools/internal/sitebootstrap"
@@ -21,9 +22,13 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: site-bootstrap seed-template|seed-validate|seed-materialize|inventory-write|root-handoff")
+		return fmt.Errorf("usage: site-bootstrap bootstrap-deploy|controller-secret-handoff|seed-template|seed-validate|seed-materialize|inventory-write|root-handoff")
 	}
 	switch args[0] {
+	case "bootstrap-deploy":
+		return bootstrapDeploy(args[1:])
+	case "controller-secret-handoff":
+		return controllerSecretHandoff(args[1:])
 	case "seed-template":
 		return seedTemplate(args[1:])
 	case "seed-validate":
@@ -37,6 +42,80 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func controllerSecretHandoff(args []string) error {
+	fs := flag.NewFlagSet("controller-secret-handoff", flag.ContinueOnError)
+	site := fs.String("site", "prod", "Deployment site.")
+	key := fs.String("key", "", "Controller-only seed key to extract.")
+	seed := fs.String("seed-bundle", "", "Operator-provided seed bundle path.")
+	repoRoot := fs.String("repo-root", "", "Repository root for integration catalog validation.")
+	out := fs.String("out", "", "Private output file for the controller-only value.")
+	remove := fs.Bool("remove", true, "Remove the controller-only key from the seed bundle after writing it.")
+	force := fs.Bool("force", false, "Overwrite an existing output file.")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	seedPath := *seed
+	if seedPath == "" {
+		seedPath = defaultSeedBundlePath(*site)
+	}
+	outputPath := *out
+	if outputPath == "" {
+		outputPath = defaultControllerSecretPath(*site, *key)
+	}
+	if err := sitebootstrap.HandoffControllerSecret(sitebootstrap.ControllerSecretHandoffOptions{
+		Site:       *site,
+		SeedPath:   seedPath,
+		Key:        *key,
+		OutputPath: outputPath,
+		RepoRoot:   *repoRoot,
+		ForceWrite: *force,
+		Remove:     *remove,
+	}); err != nil {
+		return err
+	}
+	fmt.Println(outputPath)
+	return nil
+}
+
+func bootstrapDeploy(args []string) error {
+	fs := flag.NewFlagSet("bootstrap-deploy", flag.ContinueOnError)
+	site := fs.String("site", "prod", "Deployment site.")
+	sha := fs.String("sha", "", "Git SHA to bootstrap deploy.")
+	repoRoot := fs.String("repo-root", "", "Repository root.")
+	inventory := fs.String("inventory", "", "Site inventory path.")
+	secretVars := fs.String("secret-vars-file", "", "Generated Ansible secret vars path.")
+	runtimeSeed := fs.String("openbao-runtime-seed-file", "", "Filtered OpenBao runtime seed path.")
+	sshTransport := fs.String("ssh-transport", "recovery", "SSH transport for the Nomad tunnel: recovery or inventory.")
+	timeout := fs.Duration("timeout", 15*time.Minute, "Bootstrap deploy timeout.")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	root := *repoRoot
+	if root == "" {
+		var err error
+		root, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("resolve repo root: %w", err)
+		}
+	}
+	inventoryPath := *inventory
+	if inventoryPath == "" {
+		inventoryPath = defaultInventoryPath(*site)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	return sitebootstrap.RunBootstrapDeploy(ctx, sitebootstrap.BootstrapDeployOptions{
+		Site:            *site,
+		SHA:             *sha,
+		RepoRoot:        root,
+		InventoryPath:   inventoryPath,
+		SecretVarsPath:  *secretVars,
+		RuntimeSeedPath: *runtimeSeed,
+		SSHTransport:    *sshTransport,
+		Timeout:         *timeout,
+	})
 }
 
 func seedTemplate(args []string) error {
@@ -229,6 +308,14 @@ func defaultRuntimeSeedPath(site string) string {
 
 func defaultEvidencePath(site string) string {
 	return filepath.Join(".verself", "site-bootstrap", site, "seed-fingerprints.json")
+}
+
+func defaultControllerSecretPath(site, key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = "controller-secret"
+	}
+	return filepath.Join(".verself", "site-bootstrap", site, key+".txt")
 }
 
 func defaultInventoryPath(site string) string {

@@ -46,7 +46,7 @@ func TestParentCredentialsDeriveS3SecretFromAPIToken(t *testing.T) {
 }
 
 func TestWriteParentCredentialsToOpenBao(t *testing.T) {
-	const secretPath = "kv-controller/data/integrations/cloudflare/r2-admin"
+	const secretPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
 	var gotBody struct {
 		Data map[string]string `json:"data"`
 	}

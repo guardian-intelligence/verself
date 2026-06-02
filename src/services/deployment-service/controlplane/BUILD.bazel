@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "controlplane",
+    srcs = [
+        "apply.go",
+        "bundle.go",
+        "postgres.go",
+    ],
+    importpath = "github.com/verself/deployment-service/controlplane",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/services/deployment-service/deploycontract",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)
+
+go_test(
+    name = "controlplane_test",
+    srcs = ["bundle_test.go"],
+    embed = [":controlplane"],
+)

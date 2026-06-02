@@ -38,9 +38,10 @@ Email Routing zone. Resend keeps its records on subdomains — DKIM on
 includes both providers. DMARC at the apex is `p=reject`; alignment holds
 through Resend's DKIM signature.
 
-`resend_sending_domains` in the site vars drives `provision-email-domains.yml`.
-Each entry names the Cloudflare zone holding its DNS and the apex that also
-receives a DMARC record; a bare-apex sender skips the redundant root record.
+`resend_sending_domains` in the site vars describes the sending domains.
+Provider-side domain verification is controller/operator setup. Runtime Resend
+sending credentials are created by `email-service` after site OpenBao is
+available.
 
 ## Provisioning
 
@@ -53,7 +54,9 @@ ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections" \
 
 The playbook registers and verifies every Resend sending domain, then enables
 Cloudflare Email Routing for the operator mailboxes. It runs on the controller
-against the Resend and Cloudflare APIs and is idempotent.
+against the Resend and Cloudflare APIs and is idempotent. The controller process
+must supply `resend_full_access_api_key` from OpenBao. The playbook does not
+create or deliver the runtime Resend sending key.
 
 ### Cloudflare tokens
 

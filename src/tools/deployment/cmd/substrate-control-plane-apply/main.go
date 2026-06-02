@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/verself/deployment-tools/internal/controlplane"
+	"github.com/verself/deployment-service/controlplane"
 )
 
 func main() {
@@ -21,7 +21,7 @@ func main() {
 func run(args []string) error {
 	cfg := controlplane.ApplyConfig{}
 	fs := flag.NewFlagSet("substrate-control-plane-apply", flag.ContinueOnError)
-	fs.StringVar(&cfg.BundlePath, "bundle", "", "Nomad dispatch payload JSON or gzip-compressed JSON bundle.")
+	fs.StringVar(&cfg.BundlePath, "bundle", "", "Control-plane JSON or gzip-compressed JSON bundle.")
 	fs.StringVar(&cfg.RuntimeSeedPath, "openbao-runtime-seed", "", "Filtered OpenBao runtime seed JSON.")
 	fs.StringVar(&cfg.OpenBaoAddr, "openbao-addr", "", "OpenBao API address.")
 	fs.StringVar(&cfg.OpenBaoCACert, "openbao-ca-cert", "", "OpenBao CA certificate path.")
@@ -42,9 +42,10 @@ func run(args []string) error {
 		return err
 	}
 	fmt.Printf(
-		"substrate-control-plane: runtime_secrets=%d site_secrets=%d nomad_roles=%d postgres_roles=%d databases=%d peer_mappings=%d publications=%d\n",
+		"substrate-control-plane: runtime_secrets=%d site_secrets=%d produced_secrets=%d nomad_roles=%d postgres_roles=%d databases=%d peer_mappings=%d publications=%d\n",
 		result.RuntimeSecrets,
 		result.SiteSecrets,
+		result.ProducedSecrets,
 		result.NomadRoles,
 		result.PostgresRoles,
 		result.Databases,

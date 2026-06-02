@@ -1,16 +1,17 @@
-"""aspect site seed-template|materialize-seed|validate-seed|inventory-write|root-handoff|converge-host."""
+"""aspect site seed-template|controller-secret-handoff|materialize-seed|validate-seed|inventory-write|root-handoff|converge-host."""
 
 load(
     ".aspect/lib/helpers.axl",
     "DEFAULT_SITE",
     "HOST_CONFIGURATION_DIR",
     "SOPS_SHIM",
-    "bazel_run",
     "bazel_output_file",
+    "bazel_run",
     "checked_spawn",
     "host_ansible_env",
     "host_ansible_playbook",
     "inventory_check",
+    "resolve_sha",
     "ws_path",
 )
 
@@ -33,6 +34,9 @@ def _default_vars(site):
 
 def _default_runtime_seed(site):
     return ".verself/site-bootstrap/" + site + "/openbao-runtime-seed.json"
+
+def _default_site_root_key(site):
+    return ".verself/site-bootstrap/" + site + "/site-root.key"
 
 def _default_evidence(site):
     return ".verself/site-bootstrap/" + site + "/seed-fingerprints.json"
@@ -62,6 +66,44 @@ seed_template = task(
         "site": args.string(default = "prod", description = "Deployment site."),
         "out": args.string(default = "", description = "Output seed template path."),
         "force": args.boolean(default = False, description = "Overwrite an existing template."),
+    },
+)
+
+def _controller_secret_handoff_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    seed = ctx.args.seed_bundle or _default_seed(site)
+    args_list = [
+        "controller-secret-handoff",
+        "--site=" + site,
+        "--key=" + ctx.args.key,
+        "--seed-bundle=" + _abs(ctx, seed),
+        "--repo-root=" + ws_path(ctx),
+    ]
+    if ctx.args.out != "":
+        args_list.append("--out=" + _abs(ctx, ctx.args.out))
+    if not ctx.args.remove:
+        args_list.append("--remove=false")
+    if ctx.args.force:
+        args_list.append("--force")
+    return bazel_run(
+        ctx,
+        _SITE_BOOTSTRAP_TARGET,
+        args_list,
+        label = "site-bootstrap controller-secret-handoff --site " + site,
+    )
+
+controller_secret_handoff = task(
+    implementation = _controller_secret_handoff_impl,
+    name = "controller-secret-handoff",
+    group = ["site"],
+    summary = "Extract a controller-only seed value into an ignored private file and remove it from the seed.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "key": args.string(default = "", description = "Controller-only seed key to extract."),
+        "seed_bundle": args.string(default = "", description = "Seed bundle path. Defaults to .verself/site-bootstrap/<site>/seed.yml."),
+        "out": args.string(default = "", description = "Output path. Defaults to .verself/site-bootstrap/<site>/<key>.txt."),
+        "remove": args.boolean(default = True, description = "Remove the extracted controller-only key from the seed."),
+        "force": args.boolean(default = False, description = "Overwrite an existing output file."),
     },
 )
 
@@ -233,7 +275,14 @@ def _converge_host_impl(ctx):
     if runtime_seed == "" and use_secret_vars:
         runtime_seed = _default_runtime_seed(site)
         use_runtime_seed = True
+    site_root_key = ctx.args.openbao_site_root_key_file or _default_site_root_key(site)
     if inventory_check(ctx, site = site) != 0:
+        return 1
+    exists = (ctx.std.process.command("test")
+        .args(["-f", _abs(ctx, site_root_key)])
+        .spawn().wait())
+    if exists.code != 0:
+        ctx.std.io.stderr.write("ERROR: " + site_root_key + " not found. Create the site root key before host convergence.\n")
         return 1
     if use_secret_vars:
         exists = (ctx.std.process.command("test")
@@ -272,6 +321,8 @@ def _converge_host_impl(ctx):
         "verself_host_tools_artifact=" + host_tools,
         "-e",
         "spire_registrations_file=" + spire_registry,
+        "-e",
+        "verself_openbao_site_root_key_file=" + _abs(ctx, site_root_key),
     ]
     if use_secret_vars:
         playbook_args.extend([
@@ -301,5 +352,57 @@ converge_host = task(
         "site": args.string(default = "prod", description = "Deployment site."),
         "secret_vars_file": args.string(default = "", description = "Generated Ansible vars file."),
         "openbao_runtime_seed_file": args.string(default = "", description = "Filtered OpenBao runtime seed file."),
+        "openbao_site_root_key_file": args.string(default = "", description = "Site root key file. Defaults to .verself/site-bootstrap/<site>/site-root.key."),
+    },
+)
+
+def _bootstrap_deploy_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    sha = resolve_sha(ctx, ctx.args.sha or "")
+    if sha == "":
+        return 1
+    secret_vars = ctx.args.secret_vars_file or _default_vars(site)
+    runtime_seed = ctx.args.openbao_runtime_seed_file or _default_runtime_seed(site)
+    for path in [secret_vars, runtime_seed]:
+        exists = (ctx.std.process.command("test")
+            .args(["-f", _abs(ctx, path)])
+            .spawn().wait())
+        if exists.code != 0:
+            ctx.std.io.stderr.write("ERROR: " + path + " not found. Run aspect site materialize-seed --site=" + site + " first.\n")
+            return 1
+    if inventory_check(ctx, site = site) != 0:
+        return 1
+    args_list = [
+        "bootstrap-deploy",
+        "--site=" + site,
+        "--sha=" + sha,
+        "--repo-root=" + ws_path(ctx),
+        "--inventory=" + ws_path(ctx, _default_inventory(site)),
+        "--secret-vars-file=" + _abs(ctx, secret_vars),
+        "--openbao-runtime-seed-file=" + _abs(ctx, runtime_seed),
+        "--ssh-transport=" + ctx.args.ssh_transport,
+    ]
+    if ctx.args.timeout != "":
+        args_list.append("--timeout=" + ctx.args.timeout)
+    return bazel_run(
+        ctx,
+        _SITE_BOOTSTRAP_TARGET,
+        args_list,
+        cwd = ws_path(ctx),
+        label = "site-bootstrap bootstrap-deploy --site " + site,
+    )
+
+bootstrap_deploy = task(
+    implementation = _bootstrap_deploy_impl,
+    name = "bootstrap-deploy",
+    group = ["site"],
+    summary = "Quarantined first deploy for a bootstrapped host before deployment-service is reachable.",
+    args = {
+        "site": args.string(default = "prod", description = "Deployment site."),
+        "sha": args.string(default = "", description = "Git SHA or ref to deploy. Defaults to HEAD."),
+        "secret_vars_file": args.string(default = "", description = "Generated Ansible vars file. Defaults to .verself/site-bootstrap/<site>/ansible-secrets.json."),
+        "openbao_runtime_seed_file": args.string(default = "", description = "Filtered OpenBao runtime seed file. Defaults to .verself/site-bootstrap/<site>/openbao-runtime-seed.json."),
+        "ssh_transport": args.string(default = "recovery", description = "SSH transport for the bootstrap Nomad tunnel: recovery or inventory."),
+        "timeout": args.string(default = "15m", description = "Bootstrap deploy timeout as a Go duration."),
     },
 )

@@ -18,7 +18,7 @@ func TestPresignPutObjectScopesTemporaryCredentialToURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	signed, headers, err := client.PresignPutObject(t.Context(), "nomad-artifacts-gamma", "sha256/abc/service.tar", strings.Repeat("a", 64), 5*time.Minute)
+	signed, headers, err := client.PresignPutObject(t.Context(), "verself-deployment-artifacts", "gamma/sha256/abc/service.tar", strings.Repeat("a", 64), 5*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
