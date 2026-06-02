@@ -32,10 +32,16 @@ go_library(
 go_test(
     name = "deployengine_test",
     srcs = [
+        "artifacts_test.go",
         "engine_test.go",
         "nomad_test.go",
         "source_test.go",
     ],
     embed = [":deployengine"],
-    deps = ["@com_github_hashicorp_nomad_api//:api"],
+    deps = [
+        "//src/integrations/cloudflare/r2-control-plane/client",
+        "//src/services/deployment-service/internal/deploymodel",
+        "@com_github_hashicorp_nomad_api//:api",
+        "@io_opentelemetry_go_otel//:otel",
+    ],
 )

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -79,11 +81,10 @@ func bindNomadArtifact(repoRoot string, policy artifactDeliveryPolicy, declared 
 		return nil
 	}
 	artifactPath := resolveWorkspacePath(repoRoot, declared.Path)
-	body, err := os.ReadFile(artifactPath)
+	digest, err := fileSHA256(artifactPath)
 	if err != nil {
-		return fmt.Errorf("read artifact %s: %w", declared.Path, err)
+		return fmt.Errorf("hash artifact %s: %w", declared.Path, err)
 	}
-	digest := deploymodel.SHA256(body)
 	key := artifactKey(policy, digest, declared.Output)
 	getterSource := artifactGetterSource(policy, key)
 	artifact := deploymodel.Artifact{
@@ -102,6 +103,19 @@ func bindNomadArtifact(repoRoot string, policy artifactDeliveryPolicy, declared 
 		Path:     declared.Path,
 	}
 	return nil
+}
+
+func fileSHA256(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = file.Close() }()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func artifactKey(policy artifactDeliveryPolicy, digest, output string) string {
@@ -342,21 +356,27 @@ func uploadArtifact(ctx context.Context, exec execution, candidate uploadCandida
 		),
 	)
 	defer span.End()
-	body, err := candidateBody(candidate)
+	digest, err := candidateSHA256(candidate)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	span.SetAttributes(attribute.Int("verself.artifact_size_bytes", len(body)))
-	digest := deploymodel.SHA256(body)
+	span.SetAttributes(attribute.Int64("verself.artifact_size_bytes", candidate.SizeBytes))
 	if digest != candidate.Artifact.SHA256 {
 		err := fmt.Errorf("artifact sha256=%s does not match descriptor sha256=%s", digest, candidate.Artifact.SHA256)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, object.PutURL, bytes.NewReader(body))
+	reader, err := candidateReader(candidate)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, object.PutURL, reader)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -365,7 +385,7 @@ func uploadArtifact(ctx context.Context, exec execution, candidate uploadCandida
 	for key, value := range object.Headers {
 		req.Header.Set(key, value)
 	}
-	req.ContentLength = int64(len(body))
+	req.ContentLength = candidate.SizeBytes
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		span.RecordError(err)
@@ -386,18 +406,32 @@ func uploadArtifact(ctx context.Context, exec execution, candidate uploadCandida
 	return nil
 }
 
-func candidateBody(candidate uploadCandidate) ([]byte, error) {
+func candidateSHA256(candidate uploadCandidate) (string, error) {
 	if candidate.Body != nil {
-		return candidate.Body, nil
+		return deploymodel.SHA256(candidate.Body), nil
+	}
+	if candidate.LocalPath == "" {
+		return "", fmt.Errorf("artifact %s has no local path", candidate.Artifact.Output)
+	}
+	digest, err := fileSHA256(candidate.LocalPath)
+	if err != nil {
+		return "", fmt.Errorf("hash artifact: %w", err)
+	}
+	return digest, nil
+}
+
+func candidateReader(candidate uploadCandidate) (io.ReadCloser, error) {
+	if candidate.Body != nil {
+		return io.NopCloser(bytes.NewReader(candidate.Body)), nil
 	}
 	if candidate.LocalPath == "" {
 		return nil, fmt.Errorf("artifact %s has no local path", candidate.Artifact.Output)
 	}
-	body, err := os.ReadFile(candidate.LocalPath)
+	file, err := os.Open(candidate.LocalPath)
 	if err != nil {
-		return nil, fmt.Errorf("read artifact: %w", err)
+		return nil, fmt.Errorf("open artifact: %w", err)
 	}
-	return body, nil
+	return file, nil
 }
 
 func mapUploadObjects(objects []r2controlplane.UploadObject) map[string]r2controlplane.UploadObject {
