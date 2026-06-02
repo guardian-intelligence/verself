@@ -114,8 +114,8 @@ plaintext files.
 
 - No transition writes plaintext credentials to git, `.env`, generated Bazel
   outputs, shell history, or logs.
-- `bootstrap_shared` values may be used by provisioning and DNS tasks, but they
-  cannot be runtime secret sources.
+- Controller-owned provider authority may be used by provisioning, DNS, and TLS
+  tasks. It cannot be a runtime secret source.
 - Provider-project imports reject environment variables that are not declared in
   the catalog.
 - Host OpenBao initializes its own site-local Raft store and recovery material.
@@ -137,7 +137,12 @@ plaintext files.
 - The successful transition to `S9 deployed` requires provider-specific canary
   evidence, not just a green Nomad allocation.
 
-## Cloudflare R2 Credential Factory
+## Cloudflare Control Plane
+
+Cloudflare account authority is a prod control-plane concern. Prod owns global
+Cloudflare DNS reconciliation and TLS certificate issuance for every Verself
+site. Target sites receive DNS records, certificate projections, and scoped R2
+credentials. They do not receive Cloudflare DNS API tokens.
 
 Cloudflare R2 credentials are account-scoped provider credentials. Verself keeps
 the Cloudflare account boundary in controller OpenBao and projects narrower
@@ -152,21 +157,30 @@ material originate from their provider control planes and enter OpenBao through
 the approved import or rotation path. Resend sending keys are child credentials
 created by `email-service`.
 
-Controller OpenBao stores two equivalent token-admin credentials:
+Controller OpenBao stores two equivalent account-admin credentials:
 
 ```text
-kv-controller/data/integrations/cloudflare/token-admin/a
-kv-controller/data/integrations/cloudflare/token-admin/b
+kv-controller/data/integrations/cloudflare/account-admin/a
+kv-controller/data/integrations/cloudflare/account-admin/b
 ```
 
 Each credential has a seven-day expiration and the minimal Cloudflare account
 permissions required to verify, update, roll, create, and delete account-owned
-child tokens. The two-token shape is required for availability during rotation:
-one token extends and rolls the other, the new value is written and verified,
-then the fresh token extends and rolls the first. Cloudflare account API tokens
-cannot be isolated per Verself site, so the blast radius is controlled by
-OpenBao policy, short expiration, ClickHouse evidence, and child credentials
-scoped to R2 capability buckets.
+R2 child tokens, reconcile DNS, and issue DNS-01 certificates. The two-token
+shape is required for availability during rotation: one token extends and rolls
+the other, the new value is written and verified, then the fresh token extends
+and rolls the first. Cloudflare DNS authority is not projected into target
+sites. R2 blast radius is controlled with bucket-scoped child credentials.
+
+DNS authority is verified by listing the hosted zones referenced by target site
+vars and recording zone ID fingerprints. `aspect integrations cloudflare-dns
+--site=<site>` runs from the controller and applies the site's
+`cloudflare_dns_records` with an account-admin slot. It produces DNS records and
+operational evidence, not site credential material.
+
+TLS/certificate issuance uses the same prod Cloudflare authority. Certificate
+material is projected to target-site OpenBao/Nomad or host convergence outputs
+as derived secret material. Site hosts do not run Cloudflare DNS-01 issuers.
 
 R2 buckets are capability resources:
 
@@ -177,9 +191,9 @@ R2 buckets are capability resources:
 | Recovery and backup bytes | `verself-recovery` | recovery reader/writer |
 
 The site-local Cloudflare R2 control-plane receives only the deployment
-publisher token ID and API token from site OpenBao. It mints short-lived
-temporary R2 credentials for each upload session and never consumes a standing
-parent S3 secret.
+publisher access key ID and secret access key from site OpenBao. It locally
+signs short-lived upload credentials for each upload session and never consumes
+account-admin authority.
 
 Site identity is encoded in object prefixes and policy metadata:
 
@@ -219,7 +233,7 @@ webhook verification, ClickHouse canaries, or host convergence.
 | --- | --- | --- |
 | Resend or alternate email provider | Candidate provider provisioning and full-access authority handoff. | Child sending-key creation, sender-domain policy, runtime secret ownership, email-service canary. |
 | PostHog, Sentry, OpenRouter, queue/cache/search providers | Preferred provisioning path when selected. | Catalog validation, OpenBao import, service config, canary evidence. |
-| Cloudflare DNS/TLS | Possible provider account linking for supported services. | Parent-zone DNS token remains a bootstrap exception when using `verself.sh`. |
+| Cloudflare DNS/TLS | Possible provider account linking for supported services. | Prod Cloudflare control-plane reconciles DNS and issues certificates for every site. |
 | Stripe Billing | No replacement for the product billing integration. | Billing service Stripe client, webhook endpoint, signing secret, catalog seed. |
 | GitHub App and hosted runners | Provider-specific setup. | GitHub App, webhooks, runner prefix/group, runtime secrets, canaries. |
 | Latitude bare-metal provisioning | Provider-specific setup. | OpenTofu/Ansible provisioning, inventory, host convergence. |
@@ -227,19 +241,20 @@ webhook verification, ClickHouse canaries, or host convergence.
 ## Bootstrap Exceptions
 
 Some provider credentials cannot be fully isolated because the provider scopes
-authorization above the environment boundary. These credentials must be marked
-`bootstrap_shared`, never imported as runtime secrets, and used only by
+authorization above the environment boundary. These credentials remain
+controller-owned, are never imported as runtime secrets, and are used only by
 operator-controlled or privileged-agent-controlled tasks.
 
 | Provider surface | Reason | Allowed use |
 | --- | --- | --- |
-| Cloudflare parent-zone DNS token for `verself.sh` | Cloudflare API tokens scope DNS at zone level, not individual subdomains. | Delegate or reconcile gamma DNS records. |
+| Cloudflare account-admin pair | Cloudflare DNS/TLS and account-owned R2 are global account resources. | Reconcile DNS, issue certificates, create R2 child credentials. |
 | Cloudflare Email Routing token for the company domain | Company mail routing is account or zone scoped. | Operator mailbox routing. Avoid gamma use unless explicitly needed. |
 | Shared provider billing account for Projects paid tiers | Payment method belongs to the Stripe account used by Projects. | Provider spend authorization with explicit limits. |
 
 A bootstrap exception must include an owner, scope, provider permissions,
 permitted commands, rotation path, and blast-radius statement. Runtime
-declarations that reference a `bootstrap_shared` credential fail validation.
+declarations that reference a controller-owned provider authority credential
+fail validation.
 
 ## Catalog Entry
 

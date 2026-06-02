@@ -58,7 +58,7 @@
 
 # --- Self-signed TLS placeholder ---
 # Stalwart needs a cert at startup for STARTTLS. Generate a self-signed one
-# that will be replaced by the lego-managed wildcard cert from the HAProxy role.
+# that will be replaced by prod control-plane certificate projection.
 
 - name: Create stalwart TLS cert directory
   ansible.builtin.file:
@@ -96,11 +96,6 @@
   loop:
     - cert.pem
     - key.pem
-
-# --- DNS records ---
-
-- name: Include DNS record tasks
-  ansible.builtin.include_tasks: dns.yml
 
 # --- Credentials ---
 

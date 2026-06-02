@@ -29,20 +29,19 @@ _STRIPE_PROJECTS_PLUGIN = {
 
 def _cloudflare_dns_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    secret_vars_file = ctx.args.secret_vars_file
-    token_file = ctx.args.cloudflare_token_file
+    secret_env_file = ctx.args.secret_env_file
+    token_file = ctx.args.account_admin_token_file
     args_list = [
         "--site=" + site,
         "--ansible-dir=" + ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible"),
     ]
-    if secret_vars_file == "" and token_file == "":
-        secret_vars_file = ".verself/site-bootstrap/" + site + "/seed.yml"
-    if secret_vars_file != "":
-        args_list.append("--vars-file=" + (secret_vars_file if secret_vars_file.startswith("/") else ws_path(ctx, secret_vars_file)))
-    elif token_file != "":
-        args_list.append("--cloudflare-token-file=" + (token_file if token_file.startswith("/") else ws_path(ctx, token_file)))
+    if token_file != "":
+        args_list.append("--account-admin-token-file=" + (token_file if token_file.startswith("/") else ws_path(ctx, token_file)))
+    elif secret_env_file != "":
+        args_list.append("--secret-env-file=" + (secret_env_file if secret_env_file.startswith("/") else ws_path(ctx, secret_env_file)))
+        args_list.append("--account-admin-slot=" + ctx.args.account_admin_slot)
     else:
-        ctx.std.io.stderr.write("ERROR: Cloudflare DNS requires --secret-vars-file or --cloudflare-token-file.\n")
+        ctx.std.io.stderr.write("ERROR: Cloudflare DNS requires --secret-env-file or --account-admin-token-file.\n")
         return 1
     if ctx.args.dry_run:
         args_list.append("--dry-run")
@@ -58,12 +57,13 @@ cloudflare_dns = task(
     implementation = _cloudflare_dns_impl,
     name = "cloudflare-dns",
     group = ["integrations"],
-    summary = "Reconcile Cloudflare DNS records from site integration inputs.",
+    summary = "Reconcile Cloudflare DNS records from prod-owned account authority.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "dry_run": args.boolean(default = False, description = "Print the DNS diff without applying it."),
-        "secret_vars_file": args.string(default = "", description = "Generated site seed or Ansible vars file containing a scoped cloudflare_api_token."),
-        "cloudflare_token_file": args.string(default = "", description = "File containing only a scoped Cloudflare DNS API token."),
+        "secret_env_file": args.string(default = "secret.env", description = "Ingress-only env file containing the global prod-owned account-admin-a and account-admin-b."),
+        "account_admin_slot": args.string(default = "a", description = "Cloudflare account-admin slot to use from --secret-env-file: a or b."),
+        "account_admin_token_file": args.string(default = "", description = "File containing one prod Cloudflare account-admin token."),
     },
 )
 
@@ -138,10 +138,10 @@ cloudflare_control_plane = task(
     implementation = _cloudflare_control_plane_impl,
     name = "cloudflare-control-plane",
     group = ["integrations"],
-    summary = "Provision target-site Cloudflare children from the prod global account authority.",
+    summary = "Provision target-site Cloudflare resources from prod global account authority.",
     args = {
-        "site": args.string(default = "prod", description = "Target deployment site for child credentials, DNS records, and R2 prefixes. Cloudflare authority is global and prod-owned."),
-        "action": args.string(default = "verify-admin-pair", description = "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, provision-dns, or rotate-dns."),
+        "site": args.string(default = "prod", description = "Target deployment site for DNS records, R2 prefixes, and scoped R2 credentials. Cloudflare authority is global and prod-owned."),
+        "action": args.string(default = "verify-admin-pair", description = "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to src/integrations/cloudflare/account.json."),
         "credential_source": args.string(default = "openbao", description = "Scoped R2 credential source for inventory or verify: openbao, env, env-file, or auto."),
@@ -149,7 +149,7 @@ cloudflare_control_plane = task(
         "secret_env_file": args.string(default = "secret.env", description = "Ingress-only env file containing the global prod-owned account-admin-a and account-admin-b."),
         "account_admin_a_api_token_file": args.string(default = "", description = "File containing Cloudflare account-admin slot A token value."),
         "account_admin_b_api_token_file": args.string(default = "", description = "File containing Cloudflare account-admin slot B token value."),
-        "account_admin_source": args.string(default = "openbao", description = "Account-admin credential source for verification and child provisioning: openbao or secret-env."),
+        "account_admin_source": args.string(default = "openbao", description = "Account-admin credential source for verification and resource provisioning: openbao or secret-env."),
         "account_admin_a_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/a", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot A."),
         "account_admin_b_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/b", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot B."),
         "openbao_addr": args.string(default = "", description = "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR."),

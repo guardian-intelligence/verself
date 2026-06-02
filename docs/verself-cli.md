@@ -644,7 +644,8 @@ Company options are supplied through environment variables, stdin, explicit
 non-secret values, or structured field sets:
 
 ```text
-verself company options add guardian cloudflare.api_token --from-env CLOUDFLARE_API_TOKEN
+verself company options add guardian cloudflare.account_admin_a --from-env CLOUDFLARE_ACCOUNT_ADMIN_A
+verself company options add guardian cloudflare.account_admin_b --from-env CLOUDFLARE_ACCOUNT_ADMIN_B
 verself company options add guardian latitude.api_token --from-env LATITUDESH_AUTH_TOKEN
 verself company options set guardian latitude.project_id --value <project-id>
 verself company options set guardian latitude.region --value ASH
@@ -749,7 +750,7 @@ Initial option catalog:
 | Area | Options | Required by |
 | --- | --- | --- |
 | Compute | Latitude.sh API token, project ID, region, plan, SSH key policy | Checked-in provisioning task before `aspect deploy` |
-| DNS and TLS | Cloudflare API token, account ID, zone ID, DNS zone intent | DNS reconciliation and host convergence tasks before or during `aspect deploy` |
+| DNS and TLS | Cloudflare account-admin pair, account ID, hosted-zone names, DNS zone intent | Prod control-plane DNS reconciliation and certificate projection before or during `aspect deploy` |
 | Backups | AWS S3 access key ID, secret access key, region, bucket, prefix, retention policy | Backup verification and scheduled backup jobs |
 | Billing | Stripe secret key, publishable key, webhook signing secret, account mode, price/catalog mapping | Billing service payment and webhook handling |
 | Outbound email | Email-service provider secret, sender domain, default sender address | Email verification, invites, notifications, and company addresses |
@@ -765,9 +766,10 @@ the company secret store or the catalog-approved OpenBao target. `company
 options add --from-env` is a convenience that writes the secret value and the
 option metadata in one transaction.
 
-Bootstrap tokens and unseal material are scoped to the target site. Runtime
-services authenticate to OpenBao with SPIFFE JWT-SVIDs mapped to scoped
-policies.
+Site root keys and unseal material are scoped to the target site. Global
+provider authorities such as Cloudflare DNS/TLS live in the prod controller and
+project derived state to target sites. Runtime services authenticate to OpenBao
+with SPIFFE JWT-SVIDs mapped to scoped policies.
 
 ## Derivation Rules [DESCOPED]
 

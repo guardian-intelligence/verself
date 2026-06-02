@@ -12,10 +12,9 @@
 #       -e verself_site_secret_vars_file=.verself/site-bootstrap/prod/ansible-secrets.json \
 #       src/integrations/email/provision-email-domains.yml
 #
-# cloudflare_api_token must carry the "Email Routing" edit permission in
-# addition to Zone DNS edit; the enable call returns 403 without it. After it
-# runs, click the verification link Cloudflare emails to the forwarding
-# destination.
+# Cloudflare DNS mutations run from controller authority. Email Routing may use
+# a separate explicit cloudflare_company_api_token when the account-admin token
+# does not carry Email Routing permissions.
 #
 # Resend keeps its MX/SPF on the send.<domain> subdomain and DKIM on
 # resend._domainkey, so the apex is free for Cloudflare Email Routing's records.
@@ -28,6 +27,7 @@
   vars:
     verself_site_secret_vars_file: "{{ lookup('ansible.builtin.env', 'VERSELF_SITE_SECRET_VARS_FILE') }}"
     resend_full_access_api_key: "{{ lookup('ansible.builtin.env', 'RESEND_FULL_ACCESS_API_KEY') }}"
+    cloudflare_account_admin_api_token: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_ACCOUNT_ADMIN_API_TOKEN') }}"
   tasks:
     - name: Require site secret vars file
       ansible.builtin.assert:

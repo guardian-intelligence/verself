@@ -17,7 +17,8 @@ bootstrap_exceptions:
     storage_targets:
       - controller_openbao
     allowed_uses:
-      - create site-scoped DNS child tokens
+      - reconcile hosted-zone DNS records
+      - issue and project site TLS certificates
       - create site-scoped R2 deployment artifact child tokens
       - create site-scoped R2 object-storage child tokens
       - create recovery R2 child tokens
@@ -40,14 +41,8 @@ integrations:
     replacement: partial_stripe_projects_candidate
     owner: src/integrations/cloudflare
     purpose: dns_and_tls
-    credentials:
-      - key: edge.cloudflare.site_dns_token
-        source: generated_by_cloudflare_control_plane
-        target: bootstrap_seed
-        target_store: site_seed
-        site_var: cloudflare_api_token
-        isolation: site_scoped
-    gamma_policy: DNS and TLS automation receives only a site-scoped child token; the Cloudflare account admin token remains controller-only.
+    controller: prod
+    gamma_policy: DNS and TLS automation runs from prod Cloudflare control-plane authority; gamma receives only derived DNS state and certificate projections.
   - key: billing.stripe
     provider: stripe
     replacement: keep_provider_native

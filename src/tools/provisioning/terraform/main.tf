@@ -2,8 +2,8 @@
 # environment variable. No credentials are stored in configuration.
 provider "latitudesh" {}
 
-# The Cloudflare provider authenticates via the CLOUDFLARE_API_TOKEN
-# environment variable. Keep provider credentials out of OpenTofu state.
+# The Cloudflare provider receives a prod account-admin slot through its
+# provider-native environment at invocation time. Keep credentials out of state.
 provider "cloudflare" {}
 
 # -----------------------------------------------------------------

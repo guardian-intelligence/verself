@@ -202,7 +202,7 @@ Each service defines a /recoveryz to expose recovery health status
 * ClickHouse for all time series data (host process metrics, time-series data from APIs), logs, traces, metrics (Wide Event pattern a. la Majors et. al/Honeycomb), miscellaneous append only event ledger where realtime policy decisions or UX isn't critical. ClickHouse rows never get updated
 * TigerBeetle for financial OLTP. Currently using for financial truth and treating as a ledger -- we model debits/credits.
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
-* HAProxy (AWS-LC build) terminates public TLS with certificates issued by lego (Cloudflare DNS-01) and renewed by the typed `haproxy-lego-renew` Go unit; Ansible renders bootstrap `haproxy.cfg`, and Nomad-managed upstream reconciliation owns dynamic workload backends.
+* HAProxy (AWS-LC build) terminates public TLS with certificates projected by the prod Cloudflare/TLS control plane; Ansible renders bootstrap `haproxy.cfg`, and Nomad-managed upstream reconciliation owns dynamic workload backends.
 * SPIRE for our SPIFFE implementation, x509-SVIDs everywhere except services that don't support SPIFFE where we use short-lived JWT-SVIDs.
 * Golang's River library for background jobs within a service. NATS JetStream for messaging/fan-out batch jobs between services.
 * Stalwart over JMAP for inbound mail, Resend API integration for outbound

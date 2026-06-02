@@ -79,15 +79,19 @@ plane and enters OpenBao through an approved import or rotation path.
 
 The Cloudflare account is a single global provider control plane anchored to
 prod authority. `--site=gamma` selects target site records, R2 prefixes, and
-child credential destinations; it does not select a Gamma-local Cloudflare
+R2 child credential destinations; it does not select a Gamma-local Cloudflare
 authority. The Cloudflare account ID and account-owned R2 buckets are declared
 only in `src/integrations/cloudflare/account.json`. Site metadata consumes
-Cloudflare capabilities through scoped child credentials. Cloudflare R2 is
-modeled as global capability buckets, with site isolation handled by object
-prefixes and OpenBao policy. Cloudflare account API tokens are stored only in
-prod controller OpenBao and are exposed only to the
-rotation/provisioning control plane. Controller-only bootstrap exceptions are
-not site seed values.
+Cloudflare capabilities through controller-owned DNS/TLS reconciliation and
+scoped R2 child credentials. Cloudflare R2 is modeled as global capability
+buckets, with site isolation handled by object prefixes and OpenBao policy.
+Cloudflare account API tokens are stored only in prod controller OpenBao and are
+exposed only to the rotation/provisioning control plane. Controller-only
+bootstrap exceptions are not site seed values.
+
+Prod owns global DNS and TLS/certificate control-plane operations for every
+Verself site. Target sites receive DNS records and certificate projections, not
+Cloudflare DNS API tokens.
 
 Provision two Cloudflare account admin API tokens before bootstrap. They are
 stored only in controller OpenBao at
@@ -136,9 +140,14 @@ aspect integrations cloudflare-control-plane \
 
 aspect integrations cloudflare-control-plane \
   --site=gamma \
-  --action=provision-dns \
+  --action=verify-dns-authority \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
+
+aspect integrations cloudflare-dns \
+  --site=gamma \
+  --secret-env-file=secret.env \
+  --account-admin-slot=a
 
 aspect integrations cloudflare-control-plane \
   --site=gamma \
@@ -156,9 +165,14 @@ Nomad, and runtime jobs:
 ```shell
 aspect integrations cloudflare-control-plane \
   --site=gamma \
-  --action=provision-dns \
+  --action=verify-dns-authority \
   --account-admin-source=secret-env \
   --secret-env-file=secret.env
+
+aspect integrations cloudflare-dns \
+  --site=gamma \
+  --secret-env-file=secret.env \
+  --account-admin-slot=a
 
 aspect integrations cloudflare-control-plane \
   --site=gamma \
@@ -175,12 +189,6 @@ for the individual capabilities:
 aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=rotate-admin-pair \
-  --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file>
-
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=rotate-dns \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 
@@ -211,31 +219,31 @@ aspect integrations cloudflare-control-plane \
 
 The Cloudflare account admin token stays in prod controller OpenBao and is used
 only by the provisioning control plane. It creates the global R2 buckets through
-Cloudflare's REST R2 bucket API and mints bucket- or zone-scoped child tokens.
+Cloudflare's REST R2 bucket API, reconciles DNS, issues certificates, and mints
+bucket-scoped R2 child tokens.
 Steady-state artifact publication uses the site-local
 `cloudflare-r2-control-plane` Nomad job with a scoped publisher credential.
-That job receives the publisher token ID and API token from OpenBao, then mints
-temporary R2 upload credentials per deployment. The durable Nomad getter
+That job receives the publisher access key ID and secret access key from
+OpenBao, then signs temporary R2 upload credentials per deployment. The durable Nomad getter
 credential remains read-only so allocation restarts can refetch artifacts.
 
-Generated DNS, bootstrap deployment publisher, Nomad getter, and
-object-storage child credentials default to the local site seed path during
-bootstrap. `provision-site-bootstrap` also writes
+Bootstrap deployment publisher, Nomad getter, and object-storage R2 child
+credentials default to the local site seed path during bootstrap.
+`provision-site-bootstrap` also writes
 `.verself/site-bootstrap/<site>/r2-publisher.env`; this is the only R2
 credential file consumed by `aspect site bootstrap-deploy`. Recovery and
 steady-state deployment publisher credentials default to controller OpenBao.
-The current host roles still read the generated DNS child token as
-`cloudflare_api_token`; this value is a zone-scoped child token.
 
 Daily Cloudflare rotation is controller-owned:
 
 ```text
 verify cloudflare.account_admin
   -> rotate the account-admin pair through the peer token
-  -> create new child token generation for each Cloudflare capability
-  -> write child generation to site seed or OpenBao
-  -> verify real DNS/R2 access for every child generation
-  -> delete superseded child generations after overlap
+  -> reconcile DNS and certificate state from prod control-plane authority
+  -> create new R2 child token generation for each R2 capability
+  -> write R2 child generation to site seed or OpenBao
+  -> verify real R2 access for every child generation
+  -> delete superseded R2 child generations after overlap
   -> emit ClickHouse evidence
   -> email the operator on any failure
 ```

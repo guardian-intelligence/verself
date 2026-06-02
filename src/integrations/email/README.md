@@ -55,20 +55,21 @@ ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections" \
 The playbook registers and verifies every Resend sending domain, then enables
 Cloudflare Email Routing for the operator mailboxes. It runs on the controller
 against the Resend and Cloudflare APIs and is idempotent. The controller process
-must supply `resend_full_access_api_key` from OpenBao. The playbook does not
-create or deliver the runtime Resend sending key.
+must supply `resend_full_access_api_key` and Cloudflare authority from OpenBao.
+The playbook does not create or deliver the runtime Resend sending key.
 
-### Cloudflare tokens
+### Cloudflare Credentials
 
-Two cataloged Cloudflare tokens are imported into the site OpenBao bootstrap
-path:
+Cloudflare DNS mutations run from the prod Cloudflare control-plane authority.
+The controller may pass one account-admin token as
+`cloudflare_account_admin_api_token` when provisioning Resend verification DNS.
+That token is never written to a site seed, Nomad job, Ansible host vars file, or
+runtime service environment.
 
-- `cloudflare_api_token` — the shared product token. Zone DNS edit + read across
-  `verself.sh` and `guardianintelligence.org`. Used by the DNS reconciler, the
-  Resend role, and HAProxy lego renewal.
-- `cloudflare_company_api_token` — scoped to the company zone for the Email
-  Routing role. It needs, on `guardianintelligence.org`: Zone DNS edit, Zone
-  Email Routing Rules edit, and account-level Email Routing Addresses edit.
+`cloudflare_company_api_token` is an explicit Email-Routing-scoped credential
+for the Email Routing role. It needs, on `guardianintelligence.org`: Zone DNS
+edit, Zone Email Routing Rules edit, and account-level Email Routing Addresses
+edit.
 
 A token missing Zone Email Routing Rules edit returns 403 on rule list/create.
 Email Routing destination addresses are an account-level resource: a strictly

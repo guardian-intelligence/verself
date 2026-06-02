@@ -1,5 +1,6 @@
 ---
-# HAProxy public edge with lego-managed DNS-01 certificates.
+# HAProxy public edge. DNS and public certificate issuance are owned by the
+# prod Cloudflare/TLS control plane; site hosts consume projected cert material.
 
 - name: Create HAProxy system group
   ansible.builtin.group:
@@ -28,8 +29,6 @@
     - { path: "{{ haproxy_config_dir }}", owner: root, group: haproxy, mode: "0750" }
     - { path: "{{ haproxy_cert_dir }}", owner: root, group: haproxy, mode: "0750" }
     - { path: "{{ haproxy_map_dir }}", owner: root, group: haproxy, mode: "0750" }
-    - { path: "{{ haproxy_secret_dir }}", owner: root, group: haproxy, mode: "0750" }
-    - { path: "{{ haproxy_lego_path }}", owner: root, group: haproxy, mode: "0750" }
     - { path: /var/lib/haproxy, owner: haproxy, group: haproxy, mode: "0750" }
     - { path: "{{ haproxy_log_dir }}", owner: haproxy, group: adm, mode: "2750" }
 
@@ -91,15 +90,6 @@
     group: root
     mode: "0644"
   notify: reload haproxy
-
-- name: Store Cloudflare DNS token for lego
-  ansible.builtin.copy:
-    content: "{{ cloudflare_api_token }}\n"
-    dest: "{{ haproxy_cloudflare_token_path }}"
-    owner: root
-    group: haproxy
-    mode: "0640"
-  no_log: true
 
 - name: Create Verself PKI directories
   ansible.builtin.file:
@@ -179,108 +169,10 @@
   register: haproxy_systemd_unit
   notify: restart haproxy
 
-- name: Deploy HAProxy lego renew systemd service
-  ansible.builtin.template:
-    src: haproxy-lego-renew.service.j2
-    dest: /etc/systemd/system/haproxy-lego-renew.service
-    mode: "0644"
-  register: haproxy_lego_renew_service
-
-- name: Deploy HAProxy lego renew systemd timer
-  ansible.builtin.copy:
-    content: |
-      [Unit]
-      Description=Renew HAProxy TLS certificates with lego
-
-      [Timer]
-      Persistent=true
-      OnCalendar=*-*-* 03:35:00
-      RandomizedDelaySec=1h
-
-      [Install]
-      WantedBy=timers.target
-    dest: /etc/systemd/system/haproxy-lego-renew.timer
-    mode: "0644"
-  register: haproxy_lego_renew_timer
-
 - name: Reload systemd manager after HAProxy unit changes
   ansible.builtin.systemd:
     daemon_reload: true
-  when: >-
-    haproxy_systemd_unit.changed
-    or haproxy_lego_renew_service.changed
-    or haproxy_lego_renew_timer.changed
-
-- name: Issue or renew HAProxy public certificates
-  ansible.builtin.command:
-    argv: "{{ haproxy_lego_argv }}"
-  environment:
-    CF_DNS_API_TOKEN_FILE: "{{ haproxy_cloudflare_token_path }}"
-    CLOUDFLARE_PROPAGATION_TIMEOUT: "600"
-    CLOUDFLARE_POLLING_INTERVAL: "5"
-  changed_when: true
-  vars:
-    haproxy_lego_argv: >-
-      {{
-        haproxy_lego_base_argv
-        + haproxy_lego_wait_argv
-        + haproxy_lego_disable_ans_argv
-        + haproxy_lego_dns_resolver_argv
-        + haproxy_lego_domain_argv
-        + haproxy_lego_split_argv
-      }}
-    haproxy_lego_base_argv:
-      - "{{ verself_bin }}/haproxy-lego-renew"
-      - --lego-bin
-      - "{{ verself_bin }}/lego"
-      - --haproxy-bin
-      - "{{ verself_bin }}/haproxy"
-      - --haproxy-config
-      - "{{ haproxy_config_dir }}/haproxy.cfg"
-      - --haproxy-config
-      - "{{ haproxy_nomad_upstreams_config }}"
-      - --haproxy-ld-library-path
-      - "{{ haproxy_runtime_library_path }}"
-      - --lego-path
-      - "{{ haproxy_lego_path }}"
-      - --email
-      - "{{ haproxy_lego_email }}"
-      - --cert-name
-      - "{{ item.name }}"
-      - --pem-out
-      - "{{ item.pem_path }}"
-      - --pem-group
-      - haproxy
-      - --reload-unit
-      - haproxy.service
-    haproxy_lego_wait_argv: >-
-      {{
-        ['--dns-propagation-wait', haproxy_lego_dns_propagation_wait]
-        if haproxy_lego_dns_propagation_wait | default('0s') != '0s'
-        else []
-      }}
-    haproxy_lego_disable_ans_argv: >-
-      {{
-        ['--dns-propagation-disable-ans']
-        if haproxy_lego_dns_propagation_disable_ans
-        and (haproxy_lego_dns_propagation_wait | default('0s')) == '0s'
-        else []
-      }}
-    haproxy_lego_dns_resolver_argv: "{{ haproxy_lego_dns_resolvers | map('regex_replace', '^(.*)$', '--dns-resolver=\\1') | list }}"
-    haproxy_lego_domain_argv: "{{ item.domains | map('regex_replace', '^(.*)$', '--domain=\\1') | list }}"
-    haproxy_lego_split_argv: >-
-      {{
-        [
-          '--split-cert-out', item.split_cert_path,
-          '--split-key-out', item.split_key_path,
-          '--split-group', item.split_group | default('stalwart')
-        ]
-        if item.split_cert_path is defined and item.split_key_path is defined else []
-      }}
-  loop: "{{ haproxy_public_certificates }}"
-  loop_control:
-    label: "{{ item.name }}"
-  no_log: true
+  when: haproxy_systemd_unit.changed
 
 - name: Apply HAProxy unit and config changes before readiness
   ansible.builtin.meta: flush_handlers
@@ -288,13 +180,6 @@
 - name: Enable and start HAProxy
   ansible.builtin.systemd:
     name: haproxy
-    enabled: true
-    state: started
-    daemon_reload: true
-
-- name: Enable HAProxy lego renew timer
-  ansible.builtin.systemd:
-    name: haproxy-lego-renew.timer
     enabled: true
     state: started
     daemon_reload: true

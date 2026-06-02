@@ -37,6 +37,7 @@ type Integration struct {
 	Key             string                  `yaml:"key"`
 	Provider        string                  `yaml:"provider"`
 	Replacement     string                  `yaml:"replacement"`
+	Controller      string                  `yaml:"controller"`
 	Owner           string                  `yaml:"owner"`
 	Purpose         string                  `yaml:"purpose"`
 	ProviderProject ProviderProjectRef      `yaml:"provider_project"`
@@ -102,6 +103,7 @@ func (v *Validator) validateIntegrationCatalog(rel, path string) {
 		if strings.TrimSpace(integration.Owner) == "" {
 			v.add(rel, prefix+".owner is required")
 		}
+		validateIntegrationController(v, rel, prefix, integration)
 		requireName(v, rel, prefix+".purpose", integration.Purpose)
 		validateProviderProjectRef(v, rel, prefix+".provider_project", integration.ProviderProject)
 		for j, credential := range integration.Credentials {
@@ -110,6 +112,19 @@ func (v *Validator) validateIntegrationCatalog(rel, path string) {
 		for j, public := range integration.PublicConfig {
 			requireName(v, rel, fmt.Sprintf("%s.public_config[%d]", prefix, j), public)
 		}
+	}
+}
+
+func validateIntegrationController(v *Validator, rel, prefix string, integration Integration) {
+	controller := strings.TrimSpace(integration.Controller)
+	if controller == "" {
+		return
+	}
+	if !siteNameRE.MatchString(controller) {
+		v.add(rel, prefix+".controller must be a stable site key")
+	}
+	if integration.Key == "edge.cloudflare_dns" && controller != "prod" {
+		v.add(rel, prefix+".controller must be prod for Cloudflare DNS")
 	}
 }
 

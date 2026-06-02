@@ -7,41 +7,39 @@ import (
 	"testing"
 )
 
-func TestLoadCloudflareTokenFromGeneratedVars(t *testing.T) {
+func TestLoadCloudflareTokenFromSecretEnv(t *testing.T) {
 	root := t.TempDir()
-	vars := filepath.Join(root, "ansible-secrets.json")
-	writeTestFile(t, vars, `{"cloudflare_api_token":"cf_token"}`)
+	secretEnv := filepath.Join(root, "secret.env")
+	writeTestFile(t, secretEnv, `
+account-admin-a=cf_admin_a
+account-admin-b=cf_admin_b
+`)
 
-	token, err := loadCloudflareToken(config{varsFile: vars})
+	token, err := loadCloudflareToken(config{secretEnv: secretEnv, adminSlot: "b"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if token != "cf_token" {
+	if token != "cf_admin_b" {
 		t.Fatalf("unexpected token %q", token)
 	}
 }
 
-func TestLoadCloudflareTokenFromSeedBundle(t *testing.T) {
+func TestLoadCloudflareTokenFromAccountAdminTokenFile(t *testing.T) {
 	root := t.TempDir()
-	seed := filepath.Join(root, "seed.yml")
-	writeTestFile(t, seed, `
-version: verself.site-bootstrap.seed.v1
-site: gamma
-values:
-  cloudflare_api_token: scoped_dns_token
-`)
+	tokenFile := filepath.Join(root, "account-admin-token")
+	writeTestFile(t, tokenFile, `cf_admin`)
 
-	token, err := loadCloudflareToken(config{varsFile: seed})
+	token, err := loadCloudflareToken(config{tokenFile: tokenFile})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if token != "scoped_dns_token" {
+	if token != "cf_admin" {
 		t.Fatalf("unexpected token %q", token)
 	}
 }
 
 func TestLoadCloudflareTokenRejectsAmbiguousSources(t *testing.T) {
-	_, err := loadCloudflareToken(config{varsFile: "vars.json", tokenFile: "token"})
+	_, err := loadCloudflareToken(config{secretEnv: "secret.env", tokenFile: "token"})
 	if err == nil || !strings.Contains(err.Error(), "exactly one token source") {
 		t.Fatalf("unexpected error: %v", err)
 	}

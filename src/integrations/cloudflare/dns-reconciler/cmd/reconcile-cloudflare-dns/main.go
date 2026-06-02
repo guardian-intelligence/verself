@@ -4,7 +4,8 @@
 // This binary makes one list call per zone, diffs, and applies in parallel.
 //
 // The reconciler is a fast idempotent diff/apply. It is run explicitly through
-// `aspect integrations cloudflare-dns` when site DNS inputs change.
+// `aspect integrations cloudflare-dns` from the prod Cloudflare control plane
+// when site DNS inputs change.
 package main
 
 import (
@@ -36,8 +37,9 @@ type config struct {
 	site        string
 	ansibleDir  string
 	inventory   string
-	varsFile    string
+	secretEnv   string
 	tokenFile   string
+	adminSlot   string
 	timeout     time.Duration
 	concurrency int
 	dryRun      bool
@@ -49,8 +51,9 @@ func run(args []string) error {
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
 	fs.StringVar(&cfg.ansibleDir, "ansible-dir", "", "Path to authored host Ansible root (defaults to src/host/ansible).")
 	fs.StringVar(&cfg.inventory, "inventory", "", "Path to the site Ansible inventory (defaults to src/host/sites/<site>/inventory.ini).")
-	fs.StringVar(&cfg.varsFile, "vars-file", "", "Path to generated bootstrap Ansible secret vars.")
-	fs.StringVar(&cfg.tokenFile, "cloudflare-token-file", "", "Path to a file containing only cloudflare_api_token.")
+	fs.StringVar(&cfg.secretEnv, "secret-env-file", "", "Ingress-only env file containing the prod Cloudflare account-admin pair.")
+	fs.StringVar(&cfg.tokenFile, "account-admin-token-file", "", "File containing one prod Cloudflare account-admin token.")
+	fs.StringVar(&cfg.adminSlot, "account-admin-slot", "a", "Account-admin slot to read from --secret-env-file: a or b.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for the Cloudflare API.")
 	fs.IntVar(&cfg.concurrency, "concurrency", 8, "Maximum parallel Cloudflare write requests.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print the diff without applying.")
@@ -69,7 +72,7 @@ func run(args []string) error {
 	}
 	token, err := loadCloudflareToken(cfg)
 	if err != nil {
-		return fmt.Errorf("load cloudflare_api_token: %w", err)
+		return fmt.Errorf("load Cloudflare account-admin token: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
@@ -376,37 +379,66 @@ func readYAML(path string, into any) error {
 
 func loadCloudflareToken(cfg config) (string, error) {
 	sources := 0
-	for _, value := range []string{cfg.varsFile, cfg.tokenFile} {
+	for _, value := range []string{cfg.secretEnv, cfg.tokenFile} {
 		if strings.TrimSpace(value) != "" {
 			sources++
 		}
 	}
 	if sources != 1 {
-		return "", fmt.Errorf("declare exactly one token source: --vars-file or --cloudflare-token-file")
+		return "", fmt.Errorf("declare exactly one token source: --secret-env-file or --account-admin-token-file")
 	}
 	switch {
-	case cfg.varsFile != "":
-		return readCloudflareTokenFromVars(cfg.varsFile)
+	case cfg.secretEnv != "":
+		return readAccountAdminTokenFromSecretEnv(cfg.secretEnv, cfg.adminSlot)
 	default:
 		return readPlainToken(cfg.tokenFile)
 	}
 }
 
-func readCloudflareTokenFromVars(path string) (string, error) {
-	var values struct {
-		CloudflareAPIToken string `json:"cloudflare_api_token" yaml:"cloudflare_api_token"`
-		Values             struct {
-			CloudflareAPIToken string `json:"cloudflare_api_token" yaml:"cloudflare_api_token"`
-		} `json:"values" yaml:"values"`
+func readAccountAdminTokenFromSecretEnv(path, slot string) (string, error) {
+	slot = strings.TrimSpace(slot)
+	switch slot {
+	case "a", "b":
+	default:
+		return "", fmt.Errorf("--account-admin-slot must be a or b")
 	}
-	if err := readYAML(path, &values); err != nil {
+	body, err := os.ReadFile(path)
+	if err != nil {
 		return "", fmt.Errorf("read %s: %w", path, err)
 	}
-	token := strings.TrimSpace(firstNonEmpty(values.CloudflareAPIToken, values.Values.CloudflareAPIToken))
+	values, err := parseEnvFile(body)
+	if err != nil {
+		return "", fmt.Errorf("parse %s: %w", path, err)
+	}
+	token := strings.TrimSpace(values["account-admin-"+slot])
 	if token == "" {
-		return "", fmt.Errorf("%s has no cloudflare_api_token", path)
+		return "", fmt.Errorf("%s has no account-admin-%s", path, slot)
 	}
 	return token, nil
+}
+
+func parseEnvFile(body []byte) (map[string]string, error) {
+	out := map[string]string{}
+	scanner := bufio.NewScanner(strings.NewReader(string(body)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return nil, fmt.Errorf("line %q is missing '='", scanner.Text())
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("line %q has an empty key", scanner.Text())
+		}
+		out[key] = strings.Trim(strings.TrimSpace(value), `"'`)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func firstNonEmpty(values ...string) string {

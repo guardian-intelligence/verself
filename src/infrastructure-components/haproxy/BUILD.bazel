@@ -4,8 +4,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
-exports_files(["tools.lock.json"])
-
 genrule(
     name = "haproxy_bin",
     srcs = ["@haproxy_tool_haproxy_deb//file"],
@@ -24,15 +22,11 @@ pkg_tar(
     out = "haproxy-runtime.tar",
     files = {
         ":haproxy_bin": "bin/haproxy",
-        "@haproxy_tools//tools/lego": "bin/lego",
-        "//src/infrastructure-components/haproxy/cmd/haproxy-lego-renew:haproxy-lego-renew": "bin/haproxy-lego-renew",
         "//src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply": "bin/haproxy-upstreams-apply",
     },
     modes = {
         "bin/haproxy": "0755",
-        "bin/haproxy-lego-renew": "0755",
         "bin/haproxy-upstreams-apply": "0755",
-        "bin/lego": "0755",
     },
     visibility = ["//visibility:public"],
 )

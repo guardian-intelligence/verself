@@ -1,6 +1,8 @@
 # Cloudflare Integration
 
-Cloudflare is a single global provider control plane anchored to prod authority. The repository still passes `--site=<site>` to Cloudflare tooling; that argument selects target site records, object prefixes, and child credential destinations. It does not select a site-local Cloudflare authority.
+Cloudflare is a single global provider control plane anchored to prod authority. The repository still passes `--site=<site>` to Cloudflare tooling; that argument selects target site records, object prefixes, and R2 child credential destinations. It does not select a site-local Cloudflare authority.
+
+Site `prod` has a special infrastructure role: it owns global Cloudflare DNS and TLS/certificate control-plane operations for prod, gamma, dev, and future sites. Other sites receive derived DNS state and certificate projections. They do not receive Cloudflare DNS API tokens.
 
 Global Cloudflare account identity and account-owned R2 buckets are declared only in `src/integrations/cloudflare/account.json`. Site files may reference Cloudflare as a consumed capability, but must not declare `cloudflare_account_id` or global R2 bucket names.
 
@@ -50,7 +52,9 @@ DNS records are target-site resources inside global hosted zones. For Gamma, `ve
 
 `cloudflare_product_zone` and `cloudflare_company_zone` name hosted zones. `verself_domain` and `company_domain` name public domains inside those zones. Do not infer the hosted zone from a subdomain site name.
 
-The DNS child token is zone-scoped and contains Zone Read plus DNS Write for the hosted zones referenced by `cloudflare_dns_records`. The child token is written as `cloudflare_api_token` for the DNS reconciler and host roles.
+The prod Cloudflare control plane reconciles DNS using the account-admin pair. `aspect integrations cloudflare-dns --site=<site>` reads a prod account-admin slot from controller authority and applies the target site's `cloudflare_dns_records`. DNS reconciliation produces records and evidence only; target sites receive no DNS credential material.
+
+DNS and ACME/TLS issuer authority are controller-only surfaces. Site hosts may consume public certificates projected by the prod control plane through OpenBao/Nomad/host convergence, but they must not receive Cloudflare DNS credentials for DNS-01 issuance.
 
 ## Account-Admin Rotation
 
@@ -78,25 +82,36 @@ Child credentials are disposable projections from the prod account-admin pair. T
 load account-admin slot A from prod controller OpenBao
   -> verify account-admin token status
   -> ensure required global resource exists
-  -> create new bucket- or zone-scoped child token
+  -> create new bucket-scoped R2 child token
   -> verify child token against the real provider API
   -> persist the new generation to site seed or controller OpenBao
   -> delete the newly created child token on any pre-persistence failure
 ```
 
-Provider verification is part of the state transition. R2 child tokens must complete a PUT/HEAD/GET round trip. DNS child tokens must list the intended zones before persistence. Verification may retry short-lived 401/403 responses because newly created Cloudflare tokens can require a short propagation interval; other provider errors are data and should fail the transition.
+Provider verification is part of the state transition. R2 child tokens must complete a PUT/HEAD/GET round trip. Verification may retry short-lived 401/403 responses because newly created Cloudflare tokens can require a short propagation interval; other provider errors are data and should fail the transition.
+
+DNS is verified through hosted-zone visibility from the account-admin pair:
+
+```text
+load account-admin slot A from prod controller OpenBao
+  -> list every hosted zone referenced by target site vars
+  -> report zone ID fingerprints
+  -> reconcile records from the controller
+```
+
+The DNS transition emits evidence and produces no child credential.
 
 ## Bootstrap Boundary
 
-Bootstrap may use `--account-admin-source=secret-env` only when prod controller OpenBao is not reachable. That source is for provisioning child credentials and R2 buckets from local ingress material. It is not valid for account-admin rotation.
+Bootstrap may use `--account-admin-source=secret-env` only when prod controller OpenBao is not reachable. That source is for provisioning R2 child credentials, R2 buckets, and controller-side DNS records from local ingress material. It is not valid for account-admin rotation.
 
 Bootstrap seeds contain machine-provisioned Cloudflare children and generated host secrets. Product-provider secrets such as Stripe, Resend, and GitHub App private material do not belong in the S0-S7 site seed. Those providers enter site OpenBao through their service-owned lifecycle after OpenBao and Nomad are available.
 
 ## Module Boundaries
 
-- `control-plane/`: prod-owned Cloudflare authority, account-admin pair verification/rotation, DNS child provisioning, R2 bucket creation, and child credential provisioning.
+- `control-plane/`: prod-owned Cloudflare authority, account-admin pair verification/rotation, hosted-zone authority verification, R2 bucket creation, and R2 child credential provisioning.
 - `r2-control-plane/`: site-local runtime upload-session service. It consumes a scoped publisher S3 credential and locally signs temporary R2 upload credentials. It does not hold account-admin authority or Cloudflare API token values.
-- `dns-reconciler/`: applies target-site DNS desired state using a scoped DNS child token. It does not mint or rotate tokens.
+- `dns-reconciler/`: applies target-site DNS desired state from prod controller account authority. It does not mint, rotate, or persist credentials.
 - `email-routing/`: zone email-routing automation. It must use scoped zone credentials and must not depend on account-admin material.
 
 Generated local files under `.verself/site-bootstrap/<site>/` are operator bootstrap artifacts. Do not commit them.

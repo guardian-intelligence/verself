@@ -107,6 +107,7 @@ type report struct {
 	TestObjectHeadStatus         int                     `json:"test_object_head_status,omitempty"`
 	TestObjectGetStatus          int                     `json:"test_object_get_status,omitempty"`
 	PrefixIsolationProbeStatus   int                     `json:"prefix_isolation_probe_status,omitempty"`
+	DNSZones                     []dnsZoneReport         `json:"dns_zones,omitempty"`
 	GetterCredentialPermission   string                  `json:"getter_credential_permission,omitempty"`
 	GetterCredentialName         string                  `json:"getter_credential_name,omitempty"`
 	GetterCredentialExpiresOn    string                  `json:"getter_credential_expires_on,omitempty"`
@@ -126,6 +127,11 @@ type inventoryPrefixReport struct {
 	Prefix     string `json:"prefix"`
 	Objects    int    `json:"objects"`
 	TotalBytes int64  `json:"total_bytes"`
+}
+
+type dnsZoneReport struct {
+	Name              string `json:"name"`
+	ZoneIDFingerprint string `json:"zone_id_fingerprint"`
 }
 
 type accountAdminStatus struct {
@@ -150,7 +156,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, provision-site, provision-site-bootstrap, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, provision-dns, rotate-dns, inventory, or verify.")
+	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, provision-site, provision-site-bootstrap, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
@@ -211,6 +217,8 @@ func run(args []string) error {
 		return verifyAccountAdminPair(ctx, cfg)
 	case "rotate-admin-pair":
 		return rotateAccountAdminPair(ctx, cfg)
+	case "verify-dns-authority":
+		return verifyDNSAuthority(ctx, cfg)
 	case "provision-site":
 		return provisionSite(ctx, cfg)
 	}
@@ -361,7 +369,7 @@ func isRecoveryAction(action string) bool {
 
 func isChildProvisioningAction(action string) bool {
 	switch action {
-	case "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider", "provision-dns", "rotate-dns":
+	case "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 		return true
 	default:
 		return false
@@ -387,9 +395,9 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "import-admin-pair", "verify-admin-pair", "rotate-admin-pair", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider", "provision-dns", "rotate-dns":
+	case "import-admin-pair", "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be import-admin-pair, verify-admin-pair, rotate-admin-pair, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, provision-dns, or rotate-dns, got %q", cfg.action)
+		return fmt.Errorf("--action must be import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
 	}
 	if !r2control.IsCloudflareAccountID(cfg.accountID) {
 		return fmt.Errorf("--account-id must be a 32-character lowercase hex Cloudflare account ID")
@@ -448,7 +456,7 @@ func (cfg config) effectiveChildCredentialPersistence() string {
 		return value
 	}
 	switch cfg.action {
-	case "provision-site-bootstrap", "ensure-publisher", "rotate-publisher", "ensure-getter", "rotate-getter", "rotate-object-storage-provider", "provision-dns", "rotate-dns":
+	case "provision-site-bootstrap", "ensure-publisher", "rotate-publisher", "ensure-getter", "rotate-getter", "rotate-object-storage-provider":
 		return childPersistenceSiteSeed
 	default:
 		return childPersistenceControllerOpenBao
@@ -721,12 +729,15 @@ func loadAndVerifyAccountAdminPair(ctx context.Context, cfg config) (accountAdmi
 }
 
 func provisionSite(ctx context.Context, cfg config) error {
-	for _, action := range []string{"provision-dns", "provision-site-bootstrap"} {
-		next := cfg
-		next.action = action
-		if err := provisionChildCredential(ctx, next); err != nil {
-			return fmt.Errorf("%s: %w", action, err)
-		}
+	dnsCfg := cfg
+	dnsCfg.action = "verify-dns-authority"
+	if err := verifyDNSAuthority(ctx, dnsCfg); err != nil {
+		return fmt.Errorf("verify-dns-authority: %w", err)
+	}
+	bootstrapCfg := cfg
+	bootstrapCfg.action = "provision-site-bootstrap"
+	if err := provisionChildCredential(ctx, bootstrapCfg); err != nil {
+		return fmt.Errorf("provision-site-bootstrap: %w", err)
 	}
 	out := baseReport(cfg, "controller-openbao:cloudflare-account-admin-pair")
 	out.VerifiedWith = "cloudflare-site-provisioned"
@@ -795,9 +806,6 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 	apiClient, err := r2control.NewCloudflareAPIClient(accountAdmin.APIToken, cfg.timeout)
 	if err != nil {
 		return err
-	}
-	if cfg.action == "provision-dns" || cfg.action == "rotate-dns" {
-		return provisionDNSCredential(ctx, cfg, apiClient, accountAdmin)
 	}
 	if cfg.action == "provision-site-bootstrap" {
 		out := baseReport(cfg, accountAdmin.Source)
@@ -1441,7 +1449,15 @@ func provisionRecoveryCredential(ctx context.Context, cfg config, parent r2contr
 	return nil
 }
 
-func provisionDNSCredential(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient, accountAdmin r2control.ParentCredentials) (err error) {
+func verifyDNSAuthority(ctx context.Context, cfg config) error {
+	accountAdmin, err := loadRequiredAccountAdminCredentials(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	apiClient, err := r2control.NewCloudflareAPIClient(accountAdmin.APIToken, cfg.timeout)
+	if err != nil {
+		return err
+	}
 	zones, err := siteDNSZones(cfg)
 	if err != nil {
 		return err
@@ -1450,60 +1466,15 @@ func provisionDNSCredential(ctx context.Context, cfg config, apiClient *r2contro
 	if err != nil {
 		return err
 	}
-	zoneIDs := make([]string, 0, len(zones))
-	for _, zone := range zones {
-		zoneIDs = append(zoneIDs, zoneIDsByName[zone])
-	}
-	tokenName := "verself-" + cfg.site + "-dns-" + time.Now().UTC().Format("20060102T150405Z")
-	dnsToken, err := apiClient.CreateZoneTokenWithPermissions(ctx, cfg.accountID, zoneIDs, tokenName, []string{
-		r2control.PermissionZoneRead,
-		r2control.PermissionDNSWrite,
-	}, time.Now().UTC().Add(cfg.childTokenTTL))
-	if err != nil {
-		return err
-	}
-	persisted := false
-	defer func() {
-		if !persisted {
-			deleteCreatedTokensOnError(&err, apiClient, cfg, dnsToken)
-		}
-	}()
-	childClient, err := r2control.NewCloudflareAPIClient(dnsToken.Value, cfg.timeout)
-	if err != nil {
-		return err
-	}
-	verifiedZones, err := childClient.ZonesByName(ctx, zones)
-	if err != nil {
-		return fmt.Errorf("verify DNS child token zone access: %w", err)
-	}
-	for _, zone := range zones {
-		if verifiedZones[zone] != zoneIDsByName[zone] {
-			return fmt.Errorf("DNS child token resolved zone %s as %s, expected %s", zone, verifiedZones[zone], zoneIDsByName[zone])
-		}
-	}
-
-	updates := map[string]string{"cloudflare_api_token": dnsToken.Value}
 	out := baseReport(cfg, accountAdmin.Source)
 	out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(accountAdmin.AccessKeyID)
-	out.VerifiedWith = "dns-zone-token"
-	out.GetterCredentialPermission = dnsToken.PermissionGroup
-	out.GetterCredentialName = dnsToken.Name
-	out.GetterCredentialExpiresOn = dnsToken.ExpiresOn
-	out.GetterAccessKeyIDFingerprint = r2control.Fingerprint(dnsToken.ID)
-	out.SeedCredentialFingerprints = fingerprintMap(updates)
-	if cfg.effectiveChildCredentialPersistence() == childPersistenceControllerOpenBao {
-		if err := writeDNSCapabilityCredential(ctx, cfg, dnsToken, zones, zoneIDs); err != nil {
-			return err
-		}
-		persisted = true
-		return writeReport(out)
+	out.VerifiedWith = "cloudflare-account-admin-dns-authority"
+	for _, zone := range zones {
+		out.DNSZones = append(out.DNSZones, dnsZoneReport{
+			Name:              zone,
+			ZoneIDFingerprint: r2control.Fingerprint(zoneIDsByName[zone]),
+		})
 	}
-	seedFile := defaultSeedBundleFile(cfg)
-	if err := mergeSeedBundle(seedFile, cfg.site, updates); err != nil {
-		return err
-	}
-	persisted = true
-	out.SeedBundleFile = seedFile
 	return writeReport(out)
 }
 
@@ -1551,28 +1522,6 @@ func siteDNSZones(cfg config) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
-}
-
-func writeDNSCapabilityCredential(ctx context.Context, cfg config, token r2control.CreatedAPIToken, zones, zoneIDs []string) error {
-	writeCfg := cfg.parentCredentialConfig()
-	writeCfg.Source = r2control.ParentCredentialSourceOpenBao
-	writeCfg.OpenBaoPath = dnsCapabilityOpenBaoPath(cfg)
-	return r2control.WriteParentCredentialsToOpenBao(ctx, writeCfg, map[string]string{
-		"api_token":  token.Value,
-		"token_id":   token.ID,
-		"expires_on": token.ExpiresOn,
-		"capability": "dns",
-		"permission": token.PermissionGroup,
-		"zones":      strings.Join(zones, ","),
-		"zone_ids":   strings.Join(zoneIDs, ","),
-	})
-}
-
-func dnsCapabilityOpenBaoPath(cfg config) string {
-	if strings.TrimSpace(cfg.capabilityOpenBaoPath) != "" {
-		return strings.TrimSpace(cfg.capabilityOpenBaoPath)
-	}
-	return "kv-controller/data/integrations/cloudflare/dns/sites/" + cfg.site
 }
 
 func capabilityOpenBaoPath(cfg config, capability string) string {

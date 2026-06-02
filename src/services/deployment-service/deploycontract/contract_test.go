@@ -39,9 +39,14 @@ bootstrap_exceptions:
     isolation: controller_only
     credential_keys: [cloudflare_account_admin_api_token_a, cloudflare_account_admin_api_token_b]
     storage_targets: [controller_openbao]
-    allowed_uses: [child token provisioning]
+    allowed_uses: [global DNS and R2 control-plane provisioning]
     reason: Cloudflare account authority stays controller-only.
 integrations:
+  - key: edge.cloudflare_dns
+    provider: cloudflare
+    controller: prod
+    owner: src/integrations/cloudflare/dns-reconciler
+    purpose: global_dns_reconciliation
   - key: billing.stripe
     provider: stripe
     replacement: keep_provider_native
@@ -55,6 +60,29 @@ integrations:
 	}
 	if report.PostgresFiles != 1 || report.RuntimeSecrets != 0 || report.PublicRoutes != 1 || report.IntegrationFiles != 1 {
 		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+func TestValidateRepoRejectsCloudflareDNSControllerOutsideProd(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/integrations/catalog/sites/gamma.yml", `
+version: verself.integrations.v1
+site: gamma
+secret_store_policy: openbao_only
+integrations:
+  - key: edge.cloudflare_dns
+    provider: cloudflare
+    controller: gamma
+    owner: src/integrations/cloudflare/dns-reconciler
+    purpose: global_dns_reconciliation
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "controller must be prod for Cloudflare DNS") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -98,7 +126,7 @@ openbao_runtime_secret_seed_declarations:
 
 func TestValidateRepoRejectsSiteEncryptedSecretFiles(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/host/sites/prod/secrets/host.sops.yml", `cloudflare_api_token: ENC[...]`)
+	write(t, root, "src/host/sites/prod/secrets/host.sops.yml", `runtime_provider_secret: ENC[...]`)
 
 	_, err := ValidateRepo(root)
 	if err == nil {

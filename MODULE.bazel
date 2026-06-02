@@ -50,10 +50,6 @@ component_tools.hub(
     lockfile = "//src/infrastructure-components/forgejo:tools.lock.json",
 )
 component_tools.hub(
-    hub_name = "haproxy_tools",
-    lockfile = "//src/infrastructure-components/haproxy:tools.lock.json",
-)
-component_tools.hub(
     hub_name = "nats_tools",
     lockfile = "//src/infrastructure-components/nats:tools.lock.json",
 )
@@ -94,7 +90,6 @@ use_repo(
     "clickhouse_tools",
     "electric_tools",
     "forgejo_tools",
-    "haproxy_tools",
     "mksk_release_tools",
     "multitool",
     "nats_tools",
@@ -122,8 +117,6 @@ register_toolchains("@mksk_release_tools//toolchains:all")
 register_toolchains("@electric_tools//toolchains:all")
 
 register_toolchains("@forgejo_tools//toolchains:all")
-
-register_toolchains("@haproxy_tools//toolchains:all")
 
 register_toolchains("@nats_tools//toolchains:all")
 

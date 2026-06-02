@@ -320,7 +320,7 @@ bootstrap_exceptions:
     isolation: controller_only
     credential_keys: [cloudflare_account_admin_api_token_a, cloudflare_account_admin_api_token_b]
     storage_targets: [controller_openbao]
-    allowed_uses: [child token provisioning]
+    allowed_uses: [global DNS and R2 control-plane provisioning]
     reason: account authority
 integrations: []
 `)
@@ -391,9 +391,14 @@ openbao_runtime_secret_seed_declarations:
 	if got := bundle.Values["email_provider_api_key"]; got != "provider_gamma" {
 		t.Fatalf("runtime seed email_provider_api_key = %q", got)
 	}
-	for _, forbidden := range []string{"cloudflare_api_token", "nomad_artifact_getter_s3_secret_access_key"} {
-		if _, ok := bundle.Values[forbidden]; ok {
-			t.Fatalf("runtime seed included non-runtime key %s", forbidden)
+	forbiddenRuntimeKeys := map[string]string{
+		"nomad_artifact_getter_s3_secret_access_key": "deployment artifact getter credential",
+		"cloudflare_account_admin_api_token_a":       "controller Cloudflare authority",
+		"cloudflare_account_admin_api_token_b":       "controller Cloudflare authority",
+	}
+	for key, label := range forbiddenRuntimeKeys {
+		if _, ok := bundle.Values[key]; ok {
+			t.Fatalf("runtime seed included non-runtime %s key %s", label, key)
 		}
 	}
 	if report.Outputs["openbao_runtime_seed"] != runtimeSeed {
@@ -577,7 +582,7 @@ bootstrap_exceptions:
     isolation: controller_only
     credential_keys: [cloudflare_account_admin_api_token_a, cloudflare_account_admin_api_token_b]
     storage_targets: [controller_openbao]
-    allowed_uses: [child token provisioning]
+    allowed_uses: [global DNS and R2 control-plane provisioning]
     reason: account authority
 integrations:
   - key: example.provider
@@ -603,9 +608,6 @@ integrations:
 		if _, ok := policy.keys[key]; ok {
 			t.Fatalf("policy should not require product provider key %s during bootstrap: %+v", key, policy.keys)
 		}
-	}
-	if policy.keys["cloudflare_api_token"].Source != "machine_provisioned_cloudflare_control_plane" {
-		t.Fatalf("Cloudflare DNS child token should be machine provisioned: %+v", policy.keys["cloudflare_api_token"])
 	}
 	if _, ok := policy.controllerOnly["cloudflare_account_admin_api_token_a"]; !ok {
 		t.Fatalf("Cloudflare account admin token A should be controller-only: %+v", policy.controllerOnly)
@@ -635,7 +637,6 @@ func validSeedBundle(site string) string {
 	return `version: verself.site-bootstrap.seed.v1
 site: ` + site + `
 values:
-  cloudflare_api_token: cf_dns_gamma
   cloudflare_r2_control_plane_publisher_secret_access_key: cf_r2_publisher_secret_gamma
   cloudflare_r2_control_plane_publisher_token_id: cf_r2_publisher_token_gamma
   nomad_artifact_getter_s3_access_key_id: r2_getter_gamma
@@ -651,7 +652,6 @@ func bootstrapOnlySeedBundle(site string) string {
 	return `version: verself.site-bootstrap.seed.v1
 site: ` + site + `
 values:
-  cloudflare_api_token: cf_dns_gamma
   cloudflare_r2_control_plane_publisher_secret_access_key: cf_r2_publisher_secret_gamma
   cloudflare_r2_control_plane_publisher_token_id: cf_r2_publisher_token_gamma
   nomad_artifact_getter_s3_access_key_id: r2_getter_gamma
