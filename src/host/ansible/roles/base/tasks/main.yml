@@ -17,6 +17,39 @@
     force_apt_get: true
     lock_timeout: 60
 
+- name: Create non-SPIFFE Nomad runtime groups
+  ansible.builtin.group:
+    name: "{{ item.name }}"
+    system: true
+    state: present
+  loop: "{{ base_nomad_runtime_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create non-SPIFFE Nomad runtime users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    group: "{{ item.name }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ item.home }}"
+    create_home: false
+    state: present
+  loop: "{{ base_nomad_runtime_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create non-SPIFFE Nomad runtime homes
+  ansible.builtin.file:
+    path: "{{ item.home }}"
+    state: directory
+    owner: "{{ item.name }}"
+    group: "{{ item.name }}"
+    mode: "0750"
+  loop: "{{ base_nomad_runtime_users }}"
+  loop_control:
+    label: "{{ item.home }}"
+
 - name: Block algif_aead autoload for Copy Fail
   ansible.builtin.copy:
     content: |
