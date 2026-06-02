@@ -39,12 +39,6 @@ def _cloudflare_control_plane_impl(ctx):
         args_list.append("--bucket=" + ctx.args.bucket)
     if ctx.args.credentials_file != "":
         args_list.append("--credentials-file=" + (ctx.args.credentials_file if ctx.args.credentials_file.startswith("/") else ws_path(ctx, ctx.args.credentials_file)))
-    if ctx.args.secret_env_file != "":
-        args_list.append("--secret-env-file=" + (ctx.args.secret_env_file if ctx.args.secret_env_file.startswith("/") else ws_path(ctx, ctx.args.secret_env_file)))
-    if ctx.args.account_admin_a_api_token_file != "":
-        args_list.append("--account-admin-a-api-token-file=" + (ctx.args.account_admin_a_api_token_file if ctx.args.account_admin_a_api_token_file.startswith("/") else ws_path(ctx, ctx.args.account_admin_a_api_token_file)))
-    if ctx.args.account_admin_b_api_token_file != "":
-        args_list.append("--account-admin-b-api-token-file=" + (ctx.args.account_admin_b_api_token_file if ctx.args.account_admin_b_api_token_file.startswith("/") else ws_path(ctx, ctx.args.account_admin_b_api_token_file)))
     if ctx.args.account_admin_source != "":
         args_list.append("--account-admin-source=" + ctx.args.account_admin_source)
     if ctx.args.account_admin_a_openbao_path != "":
@@ -115,15 +109,12 @@ cloudflare_control_plane = task(
     summary = "Provision target-site Cloudflare resources from prod global account authority.",
     args = {
         "site": args.string(default = "prod", description = "Target deployment site for DNS records, R2 prefixes, and scoped R2 credentials. Cloudflare authority is global and prod-owned."),
-        "action": args.string(default = "verify-admin-pair", description = "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
+        "action": args.string(default = "verify-admin-pair", description = "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to src/integrations/cloudflare/account.json."),
         "credential_source": args.string(default = "openbao", description = "Scoped R2 credential source for inventory or verify: openbao, env, env-file, or auto."),
         "credentials_file": args.string(default = "", description = "Environment file containing R2 credentials."),
-        "secret_env_file": args.string(default = "secret.env", description = "Ingress-only env file containing the global prod-owned account-admin-a and account-admin-b."),
-        "account_admin_a_api_token_file": args.string(default = "", description = "File containing Cloudflare account-admin slot A token value."),
-        "account_admin_b_api_token_file": args.string(default = "", description = "File containing Cloudflare account-admin slot B token value."),
-        "account_admin_source": args.string(default = "openbao", description = "Account-admin credential source for verification and resource provisioning: openbao or secret-env."),
+        "account_admin_source": args.string(default = "openbao", description = "Account-admin credential source for verification and resource provisioning. Only openbao is supported."),
         "account_admin_a_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/a", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot A."),
         "account_admin_b_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/b", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot B."),
         "openbao_addr": args.string(default = "", description = "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR."),

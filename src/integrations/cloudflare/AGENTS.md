@@ -11,7 +11,7 @@ The Cloudflare account-admin pair is stored only in prod controller OpenBao:
 - `kv-controller/data/integrations/cloudflare/account-admin/a`
 - `kv-controller/data/integrations/cloudflare/account-admin/b`
 
-First-site recovery may read the same pair from the controller-local ingress file `secret.env` with keys `account-admin-a` and `account-admin-b`. That path is ingress-only. Do not copy account-admin tokens into a site seed, Nomad job, Ansible vars, runtime OpenBao seed, or service environment.
+Initial provider ingress writes the account-admin pair directly to prod controller OpenBao. Do not copy account-admin tokens into repo files, site seeds, Nomad jobs, Ansible vars, runtime OpenBao seeds, or service environments.
 
 Required account-admin token policies:
 
@@ -139,9 +139,9 @@ The DNS transition emits evidence and produces no child credential.
 
 ## Bootstrap Boundary
 
-Bootstrap may use `--account-admin-source=secret-env` only when prod controller OpenBao is not reachable. That source is for provisioning R2 child credentials, R2 buckets, and controller-side DNS records from local ingress material. It is not valid for account-admin rotation.
+Bootstrap Cloudflare operations load account-admin authority from prod controller OpenBao. When prod controller OpenBao is not reachable, establish or recover controller OpenBao first; do not run Cloudflare DNS, TLS, or R2 provisioning from a local static secret file.
 
-Bootstrap seeds contain machine-provisioned Cloudflare children and generated host secrets. Product-provider secrets such as Stripe, Resend, and GitHub App private material do not belong in the S0-S7 site seed. Those providers enter site OpenBao through their service-owned lifecycle after OpenBao and Nomad are available.
+Bootstrap seeds contain machine-provisioned Cloudflare children and generated host secrets. Product-provider secrets such as Stripe, Resend, and GitHub App private material do not belong in the S0-S7 site seed. Those providers enter OpenBao through their service-owned lifecycle after OpenBao and Nomad are available.
 
 ## Module Boundaries
 

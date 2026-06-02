@@ -12,7 +12,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -40,7 +39,6 @@ const (
 	accountAdminAOpenBaoPathDefault   = "kv-controller/data/integrations/cloudflare/account-admin/a"
 	accountAdminBOpenBaoPathDefault   = "kv-controller/data/integrations/cloudflare/account-admin/b"
 	accountAdminSourceOpenBao         = "openbao"
-	accountAdminSourceSecretEnv       = "secret-env"
 	childPersistenceControllerOpenBao = "controller-openbao"
 	childPersistenceSiteSeed          = "site-seed"
 )
@@ -59,14 +57,9 @@ type config struct {
 	parentSecretAccessKeyEnv   string
 	parentAPITokenEnv          string
 	parentSessionTokenEnv      string
-	accountAdminAAPITokenFile  string
-	accountAdminBAPITokenFile  string
 	accountAdminSource         string
 	accountAdminAOpenBaoPath   string
 	accountAdminBOpenBaoPath   string
-	secretEnvFile              string
-	accountAdminASecretEnvKey  string
-	accountAdminBSecretEnvKey  string
 	openBaoAddr                string
 	openBaoPath                string
 	openBaoCACertFile          string
@@ -181,7 +174,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, provision-site-bootstrap, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
+	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, provision-site-bootstrap, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
@@ -194,14 +187,9 @@ func run(args []string) error {
 	fs.StringVar(&cfg.parentSecretAccessKeyEnv, "parent-secret-access-key-env", "CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY", "Environment variable name for the R2 secret access key.")
 	fs.StringVar(&cfg.parentAPITokenEnv, "parent-api-token-env", "CLOUDFLARE_R2_ADMIN_API_TOKEN", "Environment variable name for the R2 API token value.")
 	fs.StringVar(&cfg.parentSessionTokenEnv, "parent-session-token-env", "CLOUDFLARE_R2_ADMIN_SESSION_TOKEN", "Environment variable name for an optional R2 session token.")
-	fs.StringVar(&cfg.accountAdminAAPITokenFile, "account-admin-a-api-token-file", "", "File containing Cloudflare account-admin slot A token value.")
-	fs.StringVar(&cfg.accountAdminBAPITokenFile, "account-admin-b-api-token-file", "", "File containing Cloudflare account-admin slot B token value.")
-	fs.StringVar(&cfg.accountAdminSource, "account-admin-source", accountAdminSourceOpenBao, "Account-admin credential source for verification and child provisioning: openbao or secret-env.")
+	fs.StringVar(&cfg.accountAdminSource, "account-admin-source", accountAdminSourceOpenBao, "Account-admin credential source for verification and child provisioning. Only openbao is supported.")
 	fs.StringVar(&cfg.accountAdminAOpenBaoPath, "account-admin-a-openbao-path", accountAdminAOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot A.")
 	fs.StringVar(&cfg.accountAdminBOpenBaoPath, "account-admin-b-openbao-path", accountAdminBOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot B.")
-	fs.StringVar(&cfg.secretEnvFile, "secret-env-file", "secret.env", "Ingress-only local env file containing account-admin-a and account-admin-b.")
-	fs.StringVar(&cfg.accountAdminASecretEnvKey, "account-admin-a-secret-env-key", "account-admin-a", "secret.env key for Cloudflare account-admin slot A.")
-	fs.StringVar(&cfg.accountAdminBSecretEnvKey, "account-admin-b-secret-env-key", "account-admin-b", "secret.env key for Cloudflare account-admin slot B.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR.")
 	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher", "Controller OpenBao KV path for R2 credentials.")
 	fs.StringVar(&cfg.openBaoCACertFile, "openbao-ca-cert", "", "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT.")
@@ -248,8 +236,6 @@ func run(args []string) error {
 	defer cancel()
 
 	switch cfg.action {
-	case "import-admin-pair":
-		return importAccountAdminPair(ctx, cfg)
 	case "verify-admin-pair":
 		return verifyAccountAdminPair(ctx, cfg)
 	case "rotate-admin-pair":
@@ -438,9 +424,9 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "import-admin-pair", "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
 	}
 	if !r2control.IsCloudflareAccountID(cfg.accountID) {
 		return fmt.Errorf("--account-id must be a 32-character lowercase hex Cloudflare account ID")
@@ -490,12 +476,9 @@ func (cfg config) validate() error {
 		}
 	}
 	switch strings.TrimSpace(cfg.accountAdminSource) {
-	case accountAdminSourceOpenBao, accountAdminSourceSecretEnv:
+	case accountAdminSourceOpenBao:
 	default:
-		return fmt.Errorf("--account-admin-source must be %s or %s", accountAdminSourceOpenBao, accountAdminSourceSecretEnv)
-	}
-	if cfg.action == "rotate-admin-pair" && strings.TrimSpace(cfg.accountAdminSource) != accountAdminSourceOpenBao {
-		return fmt.Errorf("--action=rotate-admin-pair requires --account-admin-source=%s", accountAdminSourceOpenBao)
+		return fmt.Errorf("--account-admin-source must be %s", accountAdminSourceOpenBao)
 	}
 	switch cfg.effectiveChildCredentialPersistence() {
 	case childPersistenceControllerOpenBao, childPersistenceSiteSeed:
@@ -590,109 +573,6 @@ type accountAdminPair struct {
 	BStatus accountAdminStatus
 }
 
-func importAccountAdminPair(ctx context.Context, cfg config) error {
-	tokenA, tokenB, err := readAccountAdminPairIngress(cfg)
-	if err != nil {
-		return err
-	}
-	aCreds, aStatus, err := verifyIngressAccountAdmin(ctx, cfg, "a", tokenA)
-	if err != nil {
-		return err
-	}
-	bCreds, bStatus, err := verifyIngressAccountAdmin(ctx, cfg, "b", tokenB)
-	if err != nil {
-		return err
-	}
-	if aCreds.AccessKeyID == bCreds.AccessKeyID {
-		return fmt.Errorf("account-admin slots a and b verified as the same Cloudflare token ID")
-	}
-	if err := writeAccountAdminCredential(ctx, cfg, accountAdminAOpenBaoPath(cfg), aCreds.AccessKeyID, tokenA, aStatus.ExpiresOn); err != nil {
-		return err
-	}
-	if err := writeAccountAdminCredential(ctx, cfg, accountAdminBOpenBaoPath(cfg), bCreds.AccessKeyID, tokenB, bStatus.ExpiresOn); err != nil {
-		return err
-	}
-	pair, err := loadAndVerifyAccountAdminPair(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	out := baseReport(cfg, "controller-openbao:cloudflare-account-admin-pair")
-	out.VerifiedWith = "cloudflare-account-admin-pair-import"
-	out.AccountAdminAStatus = pair.AStatus
-	out.AccountAdminBStatus = pair.BStatus
-	return writeReport(out)
-}
-
-func readAccountAdminPairIngress(cfg config) (string, string, error) {
-	tokenA := ""
-	tokenB := ""
-	var err error
-	if strings.TrimSpace(cfg.accountAdminAAPITokenFile) != "" {
-		tokenA, err = readAPITokenFile(cfg.accountAdminAAPITokenFile, "account-admin A API token")
-		if err != nil {
-			return "", "", err
-		}
-	}
-	if strings.TrimSpace(cfg.accountAdminBAPITokenFile) != "" {
-		tokenB, err = readAPITokenFile(cfg.accountAdminBAPITokenFile, "account-admin B API token")
-		if err != nil {
-			return "", "", err
-		}
-	}
-	if tokenA != "" && tokenB != "" {
-		return tokenA, tokenB, nil
-	}
-	secretEnv := strings.TrimSpace(cfg.secretEnvFile)
-	if secretEnv == "" {
-		return "", "", fmt.Errorf("account-admin pair import requires --secret-env-file or both slot token files")
-	}
-	body, err := os.ReadFile(secretEnv)
-	if err != nil {
-		return "", "", fmt.Errorf("read account-admin ingress env file: %w", err)
-	}
-	values, err := r2control.ParseEnvFile(body)
-	if err != nil {
-		return "", "", err
-	}
-	tokenA = firstNonEmpty(tokenA, values[cfg.accountAdminASecretEnvKey])
-	tokenB = firstNonEmpty(tokenB, values[cfg.accountAdminBSecretEnvKey])
-	if strings.TrimSpace(tokenA) == "" || strings.TrimSpace(tokenB) == "" {
-		return "", "", fmt.Errorf("%s must contain %s and %s", secretEnv, cfg.accountAdminASecretEnvKey, cfg.accountAdminBSecretEnvKey)
-	}
-	if tokenA == tokenB {
-		return "", "", fmt.Errorf("account-admin slots a and b must be different token values")
-	}
-	return tokenA, tokenB, nil
-}
-
-func verifyIngressAccountAdmin(ctx context.Context, cfg config, slot, apiToken string) (r2control.ParentCredentials, accountAdminStatus, error) {
-	apiClient, err := r2control.NewCloudflareAPIClient(apiToken, cfg.timeout)
-	if err != nil {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, err
-	}
-	verified, err := apiClient.VerifyAccountToken(ctx, cfg.accountID)
-	if err != nil {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, err
-	}
-	if verified.Status != "" && verified.Status != "active" {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, fmt.Errorf("cloudflare account-admin %s status is %q", slot, verified.Status)
-	}
-	details, err := apiClient.GetAccountToken(ctx, cfg.accountID, verified.ID)
-	if err != nil {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, fmt.Errorf("verify account-admin %s management permission: %w", slot, err)
-	}
-	return r2control.ParentCredentials{
-			AccessKeyID:     verified.ID,
-			SecretAccessKey: r2control.SHA256Hex([]byte(apiToken)),
-			APIToken:        apiToken,
-			Source:          "ingress:account-admin-" + slot,
-		}, accountAdminStatus{
-			TokenIDFingerprint: r2control.Fingerprint(verified.ID),
-			Status:             verified.Status,
-			ExpiresOn:          firstNonEmpty(details.ExpiresOn, verified.ExpiresOn),
-		}, nil
-}
-
 func verifyAccountAdminPair(ctx context.Context, cfg config) error {
 	pair, err := loadAndVerifyAccountAdminPair(ctx, cfg)
 	if err != nil {
@@ -756,24 +636,6 @@ func rotateAccountAdminTarget(ctx context.Context, cfg config, actor, target r2c
 }
 
 func loadAndVerifyAccountAdminPair(ctx context.Context, cfg config) (accountAdminPair, error) {
-	if strings.TrimSpace(cfg.accountAdminSource) == accountAdminSourceSecretEnv {
-		tokenA, tokenB, err := readAccountAdminPairIngress(cfg)
-		if err != nil {
-			return accountAdminPair{}, err
-		}
-		a, aStatus, err := verifyIngressAccountAdmin(ctx, cfg, "a", tokenA)
-		if err != nil {
-			return accountAdminPair{}, fmt.Errorf("verify account-admin a: %w", err)
-		}
-		b, bStatus, err := verifyIngressAccountAdmin(ctx, cfg, "b", tokenB)
-		if err != nil {
-			return accountAdminPair{}, fmt.Errorf("verify account-admin b: %w", err)
-		}
-		if a.AccessKeyID == b.AccessKeyID {
-			return accountAdminPair{}, fmt.Errorf("account-admin slots a and b resolve to the same Cloudflare token ID")
-		}
-		return accountAdminPair{A: a, B: b, AStatus: aStatus, BStatus: bStatus}, nil
-	}
 	a, aStatus, err := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminAOpenBaoPath(cfg))
 	if err != nil {
 		return accountAdminPair{}, fmt.Errorf("verify account-admin a: %w", err)
@@ -978,31 +840,6 @@ func baseReport(cfg config, source string) report {
 		Bucket:                 cfg.bucket,
 		ParentCredentialSource: source,
 	}
-}
-
-func readAPITokenFile(path, label string) (string, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return "", fmt.Errorf("%s file is required", label)
-	}
-	var body []byte
-	var err error
-	if path == "-" {
-		body, err = io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
-	} else {
-		body, err = os.ReadFile(path)
-	}
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", label, err)
-	}
-	token := strings.TrimSpace(string(body))
-	if token == "" {
-		return "", fmt.Errorf("%s is empty", label)
-	}
-	if strings.ContainsAny(token, "\r\n\t ") {
-		return "", fmt.Errorf("%s must be a single token value", label)
-	}
-	return token, nil
 }
 
 type r2VerificationStatusError struct {

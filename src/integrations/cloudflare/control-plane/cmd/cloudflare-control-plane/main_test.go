@@ -55,27 +55,6 @@ func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
 	}
 }
 
-func TestValidateAllowsSecretEnvAccountAdminForBootstrapChildren(t *testing.T) {
-	cfg := validTestConfig()
-	cfg.action = "provision-site-bootstrap"
-	cfg.accountAdminSource = accountAdminSourceSecretEnv
-
-	if err := cfg.validate(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestValidateRejectsSecretEnvAccountAdminRotation(t *testing.T) {
-	cfg := validTestConfig()
-	cfg.action = "rotate-admin-pair"
-	cfg.accountAdminSource = accountAdminSourceSecretEnv
-
-	err := cfg.validate()
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-}
-
 func TestValidateRejectsUnknownAccountAdminSource(t *testing.T) {
 	cfg := validTestConfig()
 	cfg.accountAdminSource = "legacy"

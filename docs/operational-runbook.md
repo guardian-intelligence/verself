@@ -100,8 +100,10 @@ stored only in controller OpenBao at
 have Account API Tokens Read/Write, Workers R2 Storage Read/Write, Workers R2
 Storage Bucket Item Read/Write, Zone Read, and DNS Write for the managed hosted
 zones. The Cloudflare API token value returned by the provider is available
-only once and must be imported directly into controller OpenBao from the
-controller-local `secret.env` file.
+only once and must be written directly into controller OpenBao by the operator
+or an authenticated controller ingress path. Do not stage Cloudflare account
+authority in repo-local env files, site seeds, Nomad jobs, Ansible vars, or
+runtime OpenBao seeds.
 
 The R2 buckets are capability-owned global account resources:
 
@@ -124,14 +126,10 @@ the in-flight candidate deployment, and a short drain window for previous
 allocations. Recovery retention follows the recovery policy for the protected
 data class.
 
-```shell
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=import-admin-pair \
-  --secret-env-file=secret.env \
-  --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file>
+After the two account-admin credentials are present in controller OpenBao, every
+Cloudflare action reads account authority from OpenBao:
 
+```shell
 aspect integrations cloudflare-control-plane \
   --site=gamma \
   --action=verify-admin-pair \
@@ -152,25 +150,10 @@ aspect integrations cloudflare-control-plane \
   --openbao-token-file=<controller-openbao-token-file>
 ```
 
-If prod controller OpenBao is not reachable during first-site recovery, run only
-the target-site child-credential provisioning from the controller-local ingress
-file. This still keeps Cloudflare account-admin material out of site seed,
-Nomad, and runtime jobs:
-
-```shell
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=reconcile-dns \
-  --account-admin-source=secret-env \
-  --secret-env-file=secret.env
-
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=provision-site-bootstrap \
-  --account-admin-source=secret-env \
-  --secret-env-file=secret.env \
-  --bootstrap-publisher-env-file=.verself/site-bootstrap/gamma/r2-publisher.env
-```
+If prod controller OpenBao is not reachable during first-site recovery, recover
+or establish controller OpenBao before running Cloudflare DNS, TLS, or R2
+provisioning. The Cloudflare control plane does not accept static account-admin
+secret files.
 
 Steady-state child rotation uses the prod controller OpenBao account-admin pair
 for the individual capabilities:
@@ -214,8 +197,9 @@ bucket-scoped R2 child tokens.
 Steady-state artifact publication uses the site-local
 `cloudflare-r2-control-plane` Nomad job with a scoped publisher credential.
 That job receives the publisher access key ID and secret access key from
-OpenBao, then signs temporary R2 upload credentials per deployment. The durable Nomad getter
-credential remains read-only so allocation restarts can refetch artifacts.
+OpenBao, then signs temporary R2 upload credentials per deployment. The durable
+Nomad getter credential remains read-only so allocation restarts can refetch
+artifacts.
 
 Bootstrap deployment publisher, Nomad getter, and object-storage R2 child
 credentials default to the local site seed path during bootstrap.
