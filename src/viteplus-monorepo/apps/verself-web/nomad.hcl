@@ -41,11 +41,12 @@ job "verself-web" {
         HOST = "127.0.0.1"
         NODE_ENV = "production"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4318"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
+        OTEL_RESOURCE_ATTRIBUTES = "deployment.environment.name=__VERSELF_SITE__,verself.site=__VERSELF_SITE__,verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "verself-web"
         PORT = "$${NOMAD_PORT_http}"
         PRODUCT_BASE_URL = "__VERSELF_PRODUCT_BASE_URL__"
         VERSELF_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
+        VERSELF_SITE = "__VERSELF_SITE__"
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {

@@ -73,6 +73,22 @@ function scrubUndiciRequestURL(span: Span, request: UndiciRequest): void {
   span.setAttributes(redactedUndiciURLAttributes(request));
 }
 
+function resourceAttributes(serviceName: string): Record<string, string> {
+  const attrs: Record<string, string> = {
+    "service.name": process.env.OTEL_SERVICE_NAME || serviceName,
+  };
+  const site = process.env.VERSELF_SITE?.trim();
+  if (site) {
+    attrs["deployment.environment.name"] = site;
+    attrs["verself.site"] = site;
+  }
+  const supervisor = process.env.VERSELF_SUPERVISOR?.trim();
+  if (supervisor) {
+    attrs["verself.supervisor"] = supervisor;
+  }
+  return attrs;
+}
+
 export async function initOtel(serviceName: string): Promise<void> {
   const otlpEndpoint = (process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://127.0.0.1:4318").replace(
     /\/+$/,
@@ -82,10 +98,7 @@ export async function initOtel(serviceName: string): Promise<void> {
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || `${otlpEndpoint}/v1/traces`;
 
   const sdk = new NodeSDK({
-    resource: resourceFromAttributes({
-      "service.name": process.env.OTEL_SERVICE_NAME || serviceName,
-      "deployment.environment.name": process.env.NODE_ENV || "production",
-    }),
+    resource: resourceFromAttributes(resourceAttributes(serviceName)),
     traceExporter: new OTLPTraceExporter({ url: tracesEndpoint }),
     instrumentations: [
       new HttpInstrumentation(),
