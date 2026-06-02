@@ -118,6 +118,32 @@
       }}
   no_log: true
 
+- name: Initialize HAProxy public declarations
+  ansible.builtin.set_fact:
+    haproxy_public_routes: "{{ haproxy_public_routes | default([]) }}"
+    haproxy_public_apis: "{{ haproxy_public_apis | default([]) }}"
+
+- name: Load HAProxy public route declarations
+  ansible.builtin.include_vars:
+    file: "{{ item }}"
+    name: haproxy_public_declaration
+  loop: "{{ haproxy_public_route_declaration_files }}"
+  register: haproxy_public_declaration_results
+
+- name: Append HAProxy public route declarations
+  ansible.builtin.set_fact:
+    haproxy_public_routes: >-
+      {{
+        haproxy_public_routes
+        + (item.ansible_facts.haproxy_public_declaration.haproxy_public_routes | default([]))
+      }}
+    haproxy_public_apis: >-
+      {{
+        haproxy_public_apis
+        + (item.ansible_facts.haproxy_public_declaration.haproxy_public_apis | default([]))
+      }}
+  loop: "{{ haproxy_public_declaration_results.results }}"
+
 - name: Publish Verself discovery manifest
   ansible.builtin.template:
     src: verself-discovery.json.j2
