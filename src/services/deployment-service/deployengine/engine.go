@@ -25,6 +25,7 @@ type Options struct {
 	R2ControlPlaneToken string
 	R2ControlPlaneAddr  string
 	NomadAddr           string
+	BazelBuildFlags     []string
 	Bootstrap           bool
 	Tracer              trace.Tracer
 	Stdout              io.Writer

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -77,6 +78,7 @@ func run() error {
 	r2ControlPlaneToken := cfg.RequireCredential("r2-control-plane-token")
 	seedImportMarker := cfg.RequireCredential("site-seed-import-marker")
 	operatorToken := cfg.CredentialOr("operator-deploy-token", "")
+	bazelJobsRaw := cfg.RequireString("VERSELF_DEPLOY_BAZEL_JOBS")
 	githubAudience := cfg.URL("VERSELF_DEPLOY_GITHUB_OIDC_AUDIENCE", "")
 	githubRepositories := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES", "")
 	githubRefs := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_REFS", "")
@@ -84,6 +86,10 @@ func run() error {
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 4)
 	admissionConcurrency := cfg.Int("VERSELF_DEPLOY_ADMISSION_CONCURRENCY", 4)
 	if err := cfg.Err(); err != nil {
+		return err
+	}
+	bazelJobs, err := parsePositiveInt("VERSELF_DEPLOY_BAZEL_JOBS", bazelJobsRaw)
+	if err != nil {
 		return err
 	}
 	if admissionConcurrency <= 0 {
@@ -119,6 +125,7 @@ func run() error {
 			NomadAddr:           nomadAddr,
 			NomadAllocID:        nomadAllocID,
 			RecoverySSHReady:    recoverySSHReady,
+			BazelJobs:           bazelJobs,
 		},
 	}
 	if err := svc.Store.Ready(ctx); err != nil {
@@ -159,6 +166,17 @@ func githubVerifier(ctx context.Context, audience, repositories, refs, workflowR
 
 func hasDeploymentAuth(operatorToken string, verifier *deploymentapi.GitHubOIDCVerifier) bool {
 	return strings.TrimSpace(operatorToken) != "" || verifier != nil
+}
+
+func parsePositiveInt(name, raw string) (int, error) {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer: %w", name, err)
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf("%s must be positive", name)
+	}
+	return value, nil
 }
 
 func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, error) {

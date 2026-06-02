@@ -40,3 +40,19 @@ func TestDeploymentAuthConfigurationRequiresAtLeastOneMethod(t *testing.T) {
 		t.Fatal("empty operator token and disabled github verifier should not be considered authenticated")
 	}
 }
+
+func TestParsePositiveIntRejectsZero(t *testing.T) {
+	if _, err := parsePositiveInt("VERSELF_DEPLOY_BAZEL_JOBS", "0"); err == nil {
+		t.Fatal("expected zero to be rejected")
+	}
+}
+
+func TestParsePositiveIntAcceptsPositiveValue(t *testing.T) {
+	got, err := parsePositiveInt("VERSELF_DEPLOY_BAZEL_JOBS", "4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 4 {
+		t.Fatalf("value = %d, want 4", got)
+	}
+}

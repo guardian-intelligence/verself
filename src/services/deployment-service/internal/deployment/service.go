@@ -31,6 +31,7 @@ type Config struct {
 	NomadAddr           string
 	NomadAllocID        string
 	RecoverySSHReady    string
+	BazelJobs           int
 }
 
 type Service struct {
@@ -183,6 +184,7 @@ func (s *Service) runDeployment(ctx context.Context, record Record) {
 		R2ControlPlaneToken: s.Config.R2ControlPlaneToken,
 		R2ControlPlaneAddr:  s.Config.R2ControlPlaneAddr,
 		NomadAddr:           s.Config.NomadAddr,
+		BazelBuildFlags:     bazelBuildFlags(s.Config.BazelJobs),
 	})
 	if err != nil {
 		_ = s.Store.MarkFailed(ctx, record.DeploymentID, err)
@@ -253,6 +255,10 @@ func sourceHasIdempotencyKey(source Source) bool {
 		strings.TrimSpace(source.Repository) != "" &&
 		strings.TrimSpace(source.RunID) != "" &&
 		source.RunAttempt != 0
+}
+
+func bazelBuildFlags(jobs int) []string {
+	return []string{fmt.Sprintf("--jobs=%d", jobs)}
 }
 
 func (s *Service) acquire() bool {

@@ -132,7 +132,7 @@ func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, erro
 	if _, err := deploycontract.ValidateRepo(repoRoot); err != nil {
 		return nil, err
 	}
-	_, descriptorPaths, err := buildNomadComponentDescriptors(ctx, repoRoot)
+	_, descriptorPaths, err := buildNomadComponentDescriptors(ctx, repoRoot, exec.BazelBuildFlags...)
 	if err != nil {
 		return nil, err
 	}

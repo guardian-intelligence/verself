@@ -42,6 +42,13 @@ func TestAuthenticateDoesNotAcceptOperatorTokenWhenUnconfigured(t *testing.T) {
 	}
 }
 
+func TestBazelBuildFlagsUsesDeclaredJobLimit(t *testing.T) {
+	got := bazelBuildFlags(4)
+	if len(got) != 1 || got[0] != "--jobs=4" {
+		t.Fatalf("flags = %#v, want --jobs=4", got)
+	}
+}
+
 func TestDeploymentEndpointsRequireAuthenticationBeforeServiceState(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

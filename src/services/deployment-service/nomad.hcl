@@ -82,6 +82,7 @@ job "deployment-service" {
         PATH = "/opt/verself/profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         TMPDIR = "/var/lib/verself/deployment-service/tmp"
         USER = "deployment_service"
+        VERSELF_DEPLOY_BAZEL_JOBS = "4"
         VERSELF_DEPLOY_GITHUB_ALLOWED_REFS = "__VERSELF_DEPLOY_GITHUB_ALLOWED_REFS__"
         VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES = "__VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES__"
         VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS = "__VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS__"
