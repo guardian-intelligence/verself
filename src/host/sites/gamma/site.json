@@ -3,6 +3,15 @@
     "kind": "cloudflare_r2_control_plane",
     "key_prefix": "sha256",
     "control_plane_addr": "http://127.0.0.1:18732",
+    "getter_options": {
+      "region": "auto"
+    },
+    "getter_credentials": {
+      "source": "host_environment",
+      "environment_file": "/etc/nomad/nomad-artifacts.env",
+      "access_key_id_env": "AWS_ACCESS_KEY_ID",
+      "secret_access_key_env": "AWS_SECRET_ACCESS_KEY"
+    },
     "checksum_algorithm": "sha256",
     "public": false
   },
