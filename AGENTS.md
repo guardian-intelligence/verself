@@ -177,7 +177,7 @@ The bootstrap from zero special case:
 
 ## Layers:
 
-1. Host layer: machine + OS configuration and binaries/processes that run directly on our bare metal (see `src/infrastructure-components`, `src/host`, `src/integrations`)
+1. Host layer: machine + OS configuration and binaries/processes that run directly on our bare metal (see `src/infrastructure-components`, `src/bootstrap`, `src/integrations`)
 2. Contract layer: Smithy models under `src/smithy/models/verself` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, data handling.
 3. Service API layer: services expose the Smithy-modeled HTTP APIs at <service>.api.<domain>. Typically Huma because we are an OpenAPI shop, but services can be written in any language.
 4. Client/projection layer: OpenAPI compatibility artifacts are generated from the contract model for docs, ecosystem tooling, and public SDK transport generation where reliable. Repo-owned service calls use service-local typed clients/adapters with caller-owned SPIFFE mTLS transports.
@@ -229,7 +229,7 @@ Boundary components that sit outside the usual service shape:
 
 - `src/substrate/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
 - `src/substrate/vm-guest-telemetry/` — Zig, lives in the guest, streams over vsock.
-- `src/host/` — host bootstrap convergence: Ansible runner, server-tool catalog, site facts, Nomad agent, and ClickHouse initial schema.
+- `src/bootstrap/` — host bootstrap convergence: Ansible runner, server-tool catalog, site facts, Nomad agent, and ClickHouse initial schema.
 - `src/tools/provisioning/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
 
 Top-level landmarks:

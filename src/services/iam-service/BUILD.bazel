@@ -16,7 +16,7 @@ spire_identity(
     key = "iam_service.default",
     path = "/svc/iam-service",
     user = "iam_service",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/bootstrap:__pkg__"],
 )
 
 nomad_component(

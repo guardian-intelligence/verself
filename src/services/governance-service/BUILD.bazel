@@ -16,7 +16,7 @@ spire_identity(
     key = "governance_service.default",
     path = "/svc/governance-service",
     user = "governance_service",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/bootstrap:__pkg__"],
 )
 
 nomad_component(

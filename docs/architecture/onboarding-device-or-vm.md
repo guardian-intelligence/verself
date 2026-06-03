@@ -60,8 +60,8 @@ aspect host operator-access-handoff --site=prod --confirm
 
 `aspect operator device --site=prod` configures a checkout to use the native SSH
 route. It derives the Pomerium access host from
-`src/host/sites/<site>/vars.yml`, writes the authored per-site inventory at
-`src/host/sites/<site>/inventory.ini`, and ensures a default OpenSSH key exists
+`src/bootstrap/sites/<site>/vars.yml`, writes the authored per-site inventory at
+`src/bootstrap/sites/<site>/inventory.ini`, and ensures a default OpenSSH key exists
 at `~/.ssh/id_ed25519`.
 
 Passphrase-protected device keys are supported through `ssh-agent`. Load the

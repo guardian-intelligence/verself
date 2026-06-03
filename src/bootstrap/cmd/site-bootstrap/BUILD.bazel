@@ -3,9 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "site-bootstrap_lib",
     srcs = ["main.go"],
-    importpath = "github.com/verself/deployment-tools/cmd/site-bootstrap",
+    importpath = "github.com/verself/bootstrap/cmd/site-bootstrap",
     visibility = ["//visibility:private"],
-    deps = ["//src/tools/deployment/internal/sitebootstrap"],
+    deps = ["//src/bootstrap/internal/sitebootstrap"],
 )
 
 go_binary(

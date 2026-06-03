@@ -117,7 +117,7 @@ filegroup(
         allow_empty = True,
     ),
     visibility = [
-        "//src/host:__pkg__",
+        "//src/bootstrap:__pkg__",
         "//src/infrastructure-components:__pkg__",
     ],
 )

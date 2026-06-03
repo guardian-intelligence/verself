@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/verself/deployment-tools/internal/sitebootstrap"
+	"github.com/verself/bootstrap/internal/sitebootstrap"
 )
 
 func main() {
@@ -144,7 +144,7 @@ func rootHandoff(args []string) error {
 }
 
 func defaultInventoryPath(site string) string {
-	return filepath.Join("src", "host", "sites", site, "inventory.ini")
+	return filepath.Join("src", "bootstrap", "sites", site, "inventory.ini")
 }
 
 func defaultHomePath(rel string) string {

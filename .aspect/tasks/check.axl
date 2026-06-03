@@ -1,11 +1,10 @@
 """aspect check — run repo verification.
 
-The task validates authored deployment contracts before running the Bazel test
-graph. Language-specific lint and generated-output checks stay modeled as Bazel
-test targets so warm CI runners reuse the local action/test cache.
+Language-specific lint and generated-output checks stay modeled as Bazel test
+targets so warm CI runners reuse the local action/test cache.
 """
 
-load(".aspect/lib/helpers.axl", "DEPLOY_CONTRACT_VALIDATE_TARGET", "bazel_run", "bazel_tracked_files", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "bazel_run", "bazel_tracked_files", "checked_spawn", "ws_path")
 
 def _bazel(ctx, args, label):
     return checked_spawn(
@@ -33,15 +32,6 @@ def _buildifier(ctx):
 def _bzlmod(ctx):
     return _bazel(ctx, ["mod", "tidy", "--lockfile_mode=error"], "bazelisk mod tidy --lockfile_mode=error")
 
-def _deploy_contracts(ctx):
-    return bazel_run(
-        ctx,
-        DEPLOY_CONTRACT_VALIDATE_TARGET,
-        ["--repo-root", ws_path(ctx)],
-        cwd = ws_path(ctx),
-        label = "deploy-contract-validate",
-    )
-
 def _bazel_test(ctx):
     return _bazel(
         ctx,
@@ -53,7 +43,7 @@ def _bazel_test(ctx):
     )
 
 def _impl(ctx):
-    for step in [_buildifier, _bzlmod, _deploy_contracts, _bazel_test]:
+    for step in [_buildifier, _bzlmod, _bazel_test]:
         rc = step(ctx)
         if rc != 0:
             return rc

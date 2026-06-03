@@ -16,7 +16,7 @@ spire_identity(
     key = "nomad_observer.default",
     path = "/svc/nomad-observer",
     user = "nomad_observer",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/bootstrap:__pkg__"],
 )
 
 filegroup(

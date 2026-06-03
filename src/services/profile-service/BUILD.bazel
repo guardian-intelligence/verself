@@ -38,7 +38,7 @@ spire_identity(
     key = "profile_service.default",
     path = "/svc/profile-service",
     user = "profile_service",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/bootstrap:__pkg__"],
 )
 
 nomad_component(

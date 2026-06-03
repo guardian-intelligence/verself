@@ -245,6 +245,9 @@ func activeRuntimeSecrets(secrets runtimeSecretCatalog, access runtimeAccessCata
 
 func sortedRuntimeRoles(access runtimeAccessCatalog) []string {
 	roles := map[string]struct{}{}
+	for role := range access.Roles {
+		roles[role] = struct{}{}
+	}
 	for role, secrets := range access.RoleReads {
 		if len(secrets) > 0 {
 			roles[role] = struct{}{}

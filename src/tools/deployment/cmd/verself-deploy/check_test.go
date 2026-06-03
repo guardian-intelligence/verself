@@ -72,7 +72,7 @@ func TestBootstrapCheckIsReadOnly(t *testing.T) {
 
 func TestCheckRunsBootstrapReadinessByDefault(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
+	writeRunTestFile(t, repoRoot, "src/bootstrap/sites/gamma/vars.yml", `
 verself_site: gamma
 verself_domain: gamma.verself.test
 company_domain: gamma.guardianintelligence.test
@@ -127,7 +127,7 @@ object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 
 func TestCheckRequiresDeploymentAuthBeforeReadinessRequest(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
+	writeRunTestFile(t, repoRoot, "src/bootstrap/sites/gamma/vars.yml", `
 verself_site: gamma
 verself_domain: gamma.verself.test
 company_domain: gamma.guardianintelligence.test

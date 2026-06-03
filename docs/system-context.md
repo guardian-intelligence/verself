@@ -17,7 +17,7 @@ org-scoped compute pools and cells; see
 
 ## Service Architecture
 
-Host bootstrap substrate is authored under `src/host`. Components, services,
+Host bootstrap substrate is authored under `src/bootstrap`. Components, services,
 frontends, SPIRE workload identities, runtime users, route metadata, and Nomad
 jobs are owned by the deployable package that needs them. Host firewall
 foundation files are authored in `src/infrastructure-components/nftables/`;

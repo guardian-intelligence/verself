@@ -11,8 +11,8 @@ go_library(
         "openbao_reconcile.go",
         "postgres_reconcile.go",
     ],
-    importpath = "github.com/verself/deployment-tools/internal/sitebootstrap",
-    visibility = ["//src/tools/deployment:__subpackages__"],
+    importpath = "github.com/verself/bootstrap/internal/sitebootstrap",
+    visibility = ["//src/bootstrap:__subpackages__"],
     deps = [
         "//src/services/deployment-service/deploycontract",
         "//src/services/deployment-service/deployengine",

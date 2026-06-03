@@ -124,6 +124,21 @@ func TestExternalRuntimeSecretImportErrorListsAllMissingSecrets(t *testing.T) {
 	}
 }
 
+func TestSortedRuntimeRolesIncludesVaultOnlyRoles(t *testing.T) {
+	got := sortedRuntimeRoles(runtimeAccessCatalog{
+		Roles:     map[string]struct{}{"deployment-service-runtime": {}},
+		RoleReads: map[string]map[string]struct{}{},
+		RoleWrites: map[string]map[string]struct{}{
+			"object-storage-runtime": {"object-storage-service.r2.proxy_access_key_id": {}},
+		},
+	})
+
+	want := []string{"deployment-service-runtime", "object-storage-runtime"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("roles = %#v, want %#v", got, want)
+	}
+}
+
 func TestParseRemotePasswdEntry(t *testing.T) {
 	identity, err := parseRemotePasswdEntry("deployment_service", "deployment_service:x:990:984::/home/deployment_service:/usr/sbin/nologin\n")
 	if err != nil {

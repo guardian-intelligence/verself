@@ -119,14 +119,14 @@ func TestWriteRuntimeSecretsWritesKVValues(t *testing.T) {
 	}
 }
 
-func TestValidateImportAdminPairRequiresTokenFiles(t *testing.T) {
+func TestValidateImportAccountAdminRequiresTokenFile(t *testing.T) {
 	cfg := validTestConfig()
-	cfg.action = "import-admin-pair"
+	cfg.action = "import-account-admin"
 	cfg.openBaoAddr = "https://openbao.internal"
 	cfg.openBaoTokenFile = "/run/openbao/token"
 
 	err := cfg.validate()
-	if err == nil || !strings.Contains(err.Error(), "--account-admin-a-api-token-file is required") {
+	if err == nil || !strings.Contains(err.Error(), "--account-admin-api-token-file is required") {
 		t.Fatalf("validate error = %v", err)
 	}
 }
@@ -161,7 +161,7 @@ func TestReadRequiredSecretFileTrimsSecret(t *testing.T) {
 
 func TestSiteDNSZonesUsesHostedZoneForSubdomainSite(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/bootstrap/sites/gamma/vars.yml"), `
 verself_domain: gamma.verself.sh
 cloudflare_product_zone: verself.sh
 company_domain: gamma.guardianintelligence.org
@@ -181,14 +181,14 @@ cloudflare_dns_records:
 
 func TestLoadDNSDesiredStateUsesInventoryWhenSiteIPIsPlaceholder(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/bootstrap/sites/gamma/vars.yml"), `
 verself_domain: gamma.verself.sh
 company_domain: gamma.guardianintelligence.org
 bare_metal_public_ipv4: 0.0.0.0
 cloudflare_dns_records:
   - { kind: browser_origin, record: "@", zone: product }
 `)
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/inventory.ini"), `
+	writeTestFile(t, filepath.Join(root, "src/bootstrap/sites/gamma/inventory.ini"), `
 [infra]
 vs-gamma-w0 ansible_host=203.0.113.10
 `)
@@ -207,7 +207,7 @@ vs-gamma-w0 ansible_host=203.0.113.10
 
 func TestLoadDNSDesiredStateUsesHostedZoneForSubdomainSite(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/bootstrap/sites/gamma/vars.yml"), `
 verself_domain: gamma.verself.sh
 cloudflare_product_zone: verself.sh
 company_domain: gamma.guardianintelligence.org
@@ -260,7 +260,7 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 
 func validTestConfig() config {
 	return config{
-		action:                 "verify-admin-pair",
+		action:                 "verify-account-admin",
 		site:                   "gamma",
 		accountID:              "0123456789abcdef0123456789abcdef",
 		bucket:                 "verself-deployment-artifacts",
@@ -268,7 +268,6 @@ func validTestConfig() config {
 		region:                 "auto",
 		tempTTL:                15 * time.Minute,
 		childTokenTTL:          7 * 24 * time.Hour,
-		accountAdminTTL:        7 * 24 * time.Hour,
 		inventoryDepth:         2,
 		dnsConcurrency:         8,
 		acmeDNSPropagationWait: 2 * time.Minute,

@@ -16,7 +16,7 @@ spire_identity(
     key = "secrets_service.default",
     path = "/svc/secrets-service",
     user = "secrets_service",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/bootstrap:__pkg__"],
 )
 
 nomad_component(

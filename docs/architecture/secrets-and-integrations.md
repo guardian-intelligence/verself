@@ -160,20 +160,19 @@ Cloudflare account authority is global and anchored to prod. Site names select
 target DNS records, R2 prefixes, runtime capability credentials, and evidence
 labels. Host bootstrap does not receive Cloudflare account authority.
 
-The account-admin pair is stored through `secrets-service` as two equivalent
-Cloudflare API tokens:
+The bootstrap account-admin credential is stored through `secrets-service` as a
+single Cloudflare API token:
 
 ```text
-cloudflare.account_admin.a
-cloudflare.account_admin.b
+cloudflare.account_admin
 ```
 
-Each account-admin credential has the minimal Cloudflare account permissions
-required to verify, update, roll, create, and delete account-owned R2 capability
+The account-admin credential has the minimal Cloudflare account permissions
+required to verify, create, update, and delete account-owned R2 capability
 credentials, reconcile DNS, issue DNS-01 challenge records, and reconcile Email
-Routing. The two-token shape keeps rotation available: one token extends and
-rolls the other, the new value is persisted and verified, then the fresh token
-extends and rolls the first.
+Routing. Overlapping provider credential generations are a steady-state
+`cloudflare-integration-service` concern after bootstrap, with new generations
+persisted and verified before old generations are revoked.
 
 The site root key initializes and unseals the site OpenBao instance. Site
 OpenBao then creates runtime DEKs and stores imported provider credentials under
@@ -274,7 +273,7 @@ operator-controlled or privileged-agent-controlled tasks.
 
 | Provider surface | Reason | Allowed use |
 | --- | --- | --- |
-| Cloudflare account-admin pair | Cloudflare DNS/TLS, Email Routing, and account-owned R2 are global account resources. | Used only by `cloudflare-integration-service` for DNS, ACME DNS-01, Email Routing, R2 capability credentials, and R2 bucket reconciliation. Object-byte sessions are requested through `object-storage-service`. |
+| Cloudflare account-admin credential | Cloudflare DNS/TLS, Email Routing, and account-owned R2 are global account resources. | Used only by `cloudflare-integration-service` for DNS, ACME DNS-01, Email Routing, R2 capability credentials, and R2 bucket reconciliation. Object-byte sessions are requested through `object-storage-service`. |
 | Shared provider billing account for Projects paid tiers | Payment method belongs to the Stripe account used by Projects. | Provider spend authorization with explicit limits. |
 
 A bootstrap exception must include an owner, scope, provider permissions,

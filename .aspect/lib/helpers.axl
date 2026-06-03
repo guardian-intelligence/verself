@@ -17,7 +17,7 @@ Conventions:
     non-zero exit code. They never silently coerce errors to no-ops.
 """
 
-HOST_CONFIGURATION_DIR = "src/host"
+HOST_CONFIGURATION_DIR = "src/bootstrap"
 DEFAULT_SITE = "prod"
 GO_DIRS = [
     "src/services/analytics-service",
@@ -47,11 +47,10 @@ GO_DIRS = [
 ]
 
 VERSELF_DEPLOY_TARGET = "//src/tools/deployment/cmd/verself-deploy:verself-deploy"
-DEPLOY_CONTRACT_VALIDATE_TARGET = "//src/tools/deployment/cmd/deploy-contract-validate:deploy-contract-validate"
 ASPECT_OPERATOR_TARGET = "//src/tools/operator/cmd/aspect-operator:aspect-operator"
 ACTIONS_PUBLISHER_TARGET = "//src/tools/actions/cmd/actions-publisher:actions-publisher"
-ANSIBLE_PLAYBOOK_TARGET = "//src/host:ansible_playbook_bin"
-ANSIBLE_COLLECTIONS_ARCHIVE_TARGET = "//src/host:ansible_collections_archive"
+ANSIBLE_PLAYBOOK_TARGET = "//src/bootstrap:ansible_playbook_bin"
+ANSIBLE_COLLECTIONS_ARCHIVE_TARGET = "//src/bootstrap:ansible_collections_archive"
 DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 STRIPE_CLI_SHIM = ("stripe", "//src/tools/dev/binaries:stripe")
 

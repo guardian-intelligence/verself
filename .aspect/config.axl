@@ -88,7 +88,7 @@ load(
 )
 load(
     ".aspect/tasks/site.axl",
-    site_bootstrap_deploy = "bootstrap_deploy",
+    bootstrap_deploy = "bootstrap_deploy",
     site_converge_host = "converge_host",
     site_inventory_write = "inventory_write",
     site_root_handoff = "root_handoff",
@@ -99,6 +99,7 @@ load(".aspect/tasks/vp.axl", "vp")
 def config(ctx):
     # Top-level tasks.
     ctx.tasks.add(deploy)
+    ctx.tasks.add(bootstrap_deploy)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
     ctx.tasks.add(tidy)
@@ -123,7 +124,6 @@ def config(ctx):
     ctx.tasks.add(site_inventory_write)
     ctx.tasks.add(site_root_handoff)
     ctx.tasks.add(site_converge_host)
-    ctx.tasks.add(site_bootstrap_deploy)
 
     # aspect integrations ...
     ctx.tasks.add(integrations_cloudflare_control_plane)

@@ -16,7 +16,7 @@ spire_identity(
     key = "source_code_hosting_service.default",
     path = "/svc/source-code-hosting-service",
     user = "source_code_hosting_service",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/bootstrap:__pkg__"],
 )
 
 nomad_component(

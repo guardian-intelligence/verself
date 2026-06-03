@@ -167,7 +167,7 @@ filegroup(
         ],
         allow_empty = False,
     ),
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/bootstrap:__pkg__"],
 )
 
 nomad_component(

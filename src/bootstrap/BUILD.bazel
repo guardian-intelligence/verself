@@ -59,7 +59,7 @@ pkg_tar(
     out = "host-tools.tar",
     files = {
         ":bazelisk_bin": "opt/verself/profile/bin/bazelisk",
-        "//src/tools/deployment/cmd/bootstrap-artifact-server": "opt/verself/profile/bin/bootstrap-artifact-server",
+        "//src/bootstrap/cmd/bootstrap-artifact-server": "opt/verself/profile/bin/bootstrap-artifact-server",
         "//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane": "opt/verself/profile/bin/cloudflare-control-plane",
         ":nomad_bin": "opt/verself/profile/bin/nomad",
         "@otelcol_tools//tools/spiffe-helper": "opt/verself/profile/bin/spiffe-helper",
@@ -237,7 +237,7 @@ for candidate in $(locations @python_3_13//:files); do
   esac
 done
 test -x "$$python"
-cd src/host/ansible
+cd src/bootstrap/ansible
 "$$uv_tmp/uv" export --locked --python "$$python" --format requirements.txt --no-emit-project --no-header --output-file "$$uv_home/requirements_lock.txt" >/dev/null
 diff -u requirements_lock.txt "$$uv_home/requirements_lock.txt"
 touch "$$out"
@@ -310,7 +310,7 @@ mkdir -p "$$collections_tmp/ansible_collections/community/postgresql"
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_ansible_posix//file)" -C "$$collections_tmp/ansible_collections/ansible/posix"
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_general//file)" -C "$$collections_tmp/ansible_collections/community/general"
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_postgresql//file)" -C "$$collections_tmp/ansible_collections/community/postgresql"
-cd src/host/ansible
+cd src/bootstrap/ansible
 "$$execroot/$(execpath :ansible_lint_bin)" playbooks roles
 touch "$$out"
 """,

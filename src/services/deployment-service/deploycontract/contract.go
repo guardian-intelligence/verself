@@ -149,11 +149,11 @@ func ValidateRepo(root string) (Report, error) {
 }
 
 func (v *Validator) walkSiteVars() error {
-	root := filepath.Join(v.root, "src", "host", "sites")
+	root := filepath.Join(v.root, "src", "bootstrap", "sites")
 	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	} else if err != nil {
-		return fmt.Errorf("stat src/host/sites: %w", err)
+		return fmt.Errorf("stat src/bootstrap/sites: %w", err)
 	}
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -378,7 +378,7 @@ func deploymentRunMatches(run, site string) bool {
 
 func siteNameFromVarsRel(rel string) string {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
-	if len(parts) >= 4 && parts[0] == "src" && parts[1] == "host" && parts[2] == "sites" {
+	if len(parts) >= 4 && parts[0] == "src" && parts[1] == "bootstrap" && parts[2] == "sites" {
 		return parts[3]
 	}
 	return ""
@@ -454,7 +454,7 @@ func (v *Validator) validateNoToolLayerDeployEngine() {
 	} {
 		path := filepath.Join(v.root, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); err == nil {
-			v.add(rel, "normal deployment runtime code must live under src/services/deployment-service; src/tools/deployment is limited to thin clients and first-bootstrap tooling")
+			v.add(rel, "normal deployment runtime code must live under src/services/deployment-service; src/tools/deployment is limited to thin clients")
 		} else if err != nil && !os.IsNotExist(err) {
 			v.add(rel, "inspect: "+err.Error())
 		}

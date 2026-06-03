@@ -1,4 +1,4 @@
-"""aspect site inventory-write|root-handoff|converge-host|bootstrap-deploy."""
+"""aspect site inventory-write|root-handoff|converge-host."""
 
 load(
     ".aspect/lib/helpers.axl",
@@ -15,9 +15,9 @@ load(
     "ws_path",
 )
 
-_SITE_BOOTSTRAP_TARGET = "//src/tools/deployment/cmd/site-bootstrap:site-bootstrap"
-_HOST_TOOLS_TARGET = "//src/host:host_tools_artifact"
-_SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
+_SITE_BOOTSTRAP_TARGET = "//src/bootstrap/cmd/site-bootstrap:site-bootstrap"
+_HOST_TOOLS_TARGET = "//src/bootstrap:host_tools_artifact"
+_SPIRE_IDENTITY_REGISTRY_TARGET = "//src/bootstrap:spire_identity_registry"
 
 def _abs(ctx, path):
     if path == "":
@@ -216,7 +216,6 @@ def _bootstrap_deploy_impl(ctx):
 bootstrap_deploy = task(
     implementation = _bootstrap_deploy_impl,
     name = "bootstrap-deploy",
-    group = ["site"],
     summary = "First deploy for a bootstrapped host before deployment-service is reachable.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),

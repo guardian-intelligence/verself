@@ -22,6 +22,7 @@ type bootstrapNomadDescriptor struct {
 }
 
 type runtimeAccessCatalog struct {
+	Roles          map[string]struct{}
 	RoleReads      map[string]map[string]struct{}
 	RoleWrites     map[string]map[string]struct{}
 	SecretReaders  map[string]map[string]struct{}
@@ -97,6 +98,7 @@ func inspectNomadRuntimeAccess(ctx context.Context, nomadAddr, repoRoot string, 
 		return runtimeAccessCatalog{}, fmt.Errorf("nomad client: %w", err)
 	}
 	access := runtimeAccessCatalog{
+		Roles:          map[string]struct{}{},
 		RoleReads:      map[string]map[string]struct{}{},
 		RoleWrites:     map[string]map[string]struct{}{},
 		SecretReaders:  map[string]map[string]struct{}{},
@@ -167,6 +169,7 @@ func (c *runtimeAccessCatalog) addPrincipalRole(principal, role string) {
 	if principal == "" || role == "" {
 		return
 	}
+	c.Roles[role] = struct{}{}
 	addSetValue(c.PrincipalRoles, principal, role)
 }
 

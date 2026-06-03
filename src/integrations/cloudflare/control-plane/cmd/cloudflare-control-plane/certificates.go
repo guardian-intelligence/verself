@@ -133,7 +133,7 @@ func loadSiteTLSCertificates(cfg config) ([]siteTLSCertificate, []string, error)
 	if hasExplicitTLSConfig(cfg) {
 		return explicitSiteTLSCertificates(cfg)
 	}
-	path := filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "vars.yml")
+	path := filepath.Join(cfg.repoRoot, "src", "bootstrap", "sites", cfg.site, "vars.yml")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read %s: %w", path, err)

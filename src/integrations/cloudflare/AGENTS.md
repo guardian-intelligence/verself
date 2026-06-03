@@ -19,11 +19,10 @@ records audit evidence, and stores encrypted material in OpenBao. OpenBao stores
 provider secret material and supplies Transit/KV primitives. It does not own
 Cloudflare policy, rotation, verification, or provider state machines.
 
-The account-admin pair is two equivalent Cloudflare API tokens:
+The bootstrap account-admin credential is one Cloudflare API token:
 
 ```text
-cloudflare.account_admin.a
-cloudflare.account_admin.b
+cloudflare.account_admin
 ```
 
 Required account-admin permissions:
@@ -39,6 +38,8 @@ Required account-admin permissions:
 The provider returns a token value only when it is created or rolled.
 `cloudflare-integration-service` writes it to `secrets-service` before any
 follow-up mutation and records only token ID and value fingerprints in reports.
+Overlapping token generations are created after bootstrap by the Cloudflare
+integration owner, not by the host bootstrap path.
 
 ## Capability API
 

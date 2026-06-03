@@ -34,6 +34,8 @@ Before testing the authenticated console against the production website, read th
 Deployment requests go through the site-local deployment-service for the requested SHA:
 
 ```shell
+aspect deploy
+aspect deploy --site=gamma
 aspect deploy --site=prod --sha=HEAD
 ```
 
@@ -41,6 +43,8 @@ aspect deploy --site=prod --sha=HEAD
 and returns a deployment ID. The deployment-service owns build orchestration,
 artifact publication, Nomad submission, state, errors as data, and ClickHouse
 evidence. Nomad jobs own runtime rollout behavior.
+
+**Don't use personal access tokens**. We don't use static permanent long-standing credentials.
 
 ## Gamma Wipe + Bootstrap
 
@@ -58,7 +62,7 @@ git pull --ff-only
 ```
 
 `aspect site converge-host` configures the OS, installs host tools, starts
-Nomad, and skips the public edge. `aspect site bootstrap-deploy` stages the
+Nomad, and skips the public edge. `aspect bootstrap-deploy` stages the
 operator-provided OpenBao site root token under `/run`, builds locally, copies
 every deployment artifact to the target host over SSH, registers the Nomad jobs
 through a temporary SSH tunnel, and exits. Object-storage runtime capabilities
@@ -99,34 +103,38 @@ machines remain in `cloudflare-integration-service`.
 Target hosts do not receive Cloudflare account authority during host
 convergence.
 
-Provision two Cloudflare account admin API tokens before bootstrap. They are
+Bootstrap credential inventory is declared in `src/bootstrap/credentials.yml`.
+The file contains names, provider surfaces, target OpenBao logical names, and
+retrieval pointers only. It must not contain live, encrypted, redacted, or
+example secret values.
+
+Provision one Cloudflare account admin API token before bootstrap. It is
 imported through `cloudflare-integration-service` and stored through
 `secrets-service` as:
 
 ```text
-cloudflare.account_admin.a
-cloudflare.account_admin.b
+cloudflare.account_admin
 ```
 
-Each token must have Account API Tokens Read/Write, Workers R2 Storage
+The token must have Account API Tokens Read/Write, Workers R2 Storage
 Read/Write, Workers R2 Storage Bucket Item Read/Write, Zone Read, DNS Write,
 and Email Routing permissions for managed zones. The provider returns token
-values only once; write them directly into the approved import path. Do not
-stage Cloudflare account authority in repo-local env files, Nomad jobs, Ansible
-vars, or generated artifacts.
+values only once; write the value directly into a local operator-only handoff
+file or read it from the approved password manager. Do not stage Cloudflare
+account authority in repo-local env files, Nomad jobs, Ansible vars, generated
+artifacts, or committed encrypted blobs.
 
-Once OpenBao is reachable, import the pair through the provider control-plane
-tool. The token files must be regular files with mode `0600`.
+Once OpenBao is reachable, import the token through the provider control-plane
+tool. The token file must be a regular file with mode `0600`.
 
 ```shell
 aspect integrations cloudflare-control-plane \
   --site=gamma \
-  --action=import-admin-pair \
+  --action=import-account-admin \
   --openbao-addr=https://127.0.0.1:<openbao-tunnel-port> \
   --openbao-ca-cert=<path-to-openbao-ca.pem> \
   --openbao-token-file=<path-to-temporary-openbao-root-token> \
-  --account-admin-a-api-token-file=<path-to-cloudflare-account-admin-a> \
-  --account-admin-b-api-token-file=<path-to-cloudflare-account-admin-b>
+  --account-admin-api-token-file=<path-to-cloudflare-account-admin-token>
 ```
 
 The R2 buckets are capability-owned global account resources:
@@ -150,7 +158,7 @@ the in-flight candidate deployment, and a short drain window for previous
 allocations. Recovery retention follows the recovery policy for the protected
 data class.
 
-After the account-admin pair is present, `cloudflare-integration-service`
+After the account-admin credential is present, `cloudflare-integration-service`
 performs these provider transitions:
 
 ```text
@@ -186,7 +194,6 @@ Daily Cloudflare reconciliation is service-owned:
 
 ```text
 verify cloudflare.account_admin
-  -> rotate the account-admin pair through the peer token
   -> reconcile DNS state from desired records
   -> create new R2 capability credential generation when due
   -> persist capability generations through secrets-service
@@ -202,8 +209,28 @@ event, and notify the operator instead of retrying silently or deleting old
 credentials.
 
 The OpenBao site root token is a single operator-provided file path passed to
-`aspect site bootstrap-deploy`. Do not place it under `.verself`, git, generated
+`aspect bootstrap-deploy`. Do not place it under `.verself`, git, generated
 artifacts, or site inventory.
+
+GitHub Sign-in is a manual provider credential. In GitHub, create or open the
+OAuth App used for browser login, set the homepage URL to the site product
+domain, and set the authorization callback URL to the Zitadel GitHub IdP
+callback for that site:
+
+```text
+https://<site-product-domain>/idps/callback
+```
+
+For gamma this is `https://gamma.verself.sh/idps/callback`. Store the client
+secret in the approved password manager and import it into site OpenBao as:
+
+```text
+auth-control-plane.github_login.oauth_client_secret
+```
+
+The client ID is site metadata rendered into `auth-control-plane`; the client
+secret is not procedurally provisioned by bootstrap and must never be committed
+as an env file, SOPS file, Ansible var, or generated artifact.
 
 If the reinstall used `verself-bootstrap`, write inventory for the new host and
 verify direct SSH as `ubuntu` before convergence:
@@ -258,7 +285,7 @@ cloudflare-integration-service.ReconcileR2Capability(site=gamma, capability=depl
 
 ```shell
 aspect site converge-host --site=gamma
-aspect site bootstrap-deploy \
+aspect bootstrap-deploy \
   --site=gamma \
   --sha="$(git rev-parse HEAD)" \
   --openbao-site-root-token-file=<path-to-gamma-openbao-site-root-token>
@@ -291,12 +318,12 @@ through `object-storage-service`. `aspect deploy` reports
 `deployment_service_unavailable` with the failed stage and does not SSH or run
 Ansible.
 
-`aspect site bootstrap-deploy` is the only deployment-shaped bootstrap escape
+`aspect bootstrap-deploy` is the only deployment-shaped bootstrap escape
 hatch. It runs from the controller, opens a temporary recovery SSH tunnel to the
 site Nomad API, builds the deployment inputs locally, copies the artifact bytes
-to `/var/lib/verself/bootstrap/artifacts/<site>/<sha>/` on the host, rewrites
-the Nomad artifact sources to those host-local files, registers the Nomad jobs,
-and exits.
+to `/var/lib/verself/bootstrap-artifacts/<site>/<sha>/` on the host, rewrites
+the Nomad artifact sources to the host loopback artifact server, registers the
+Nomad jobs, and exits.
 
 Only durable local host state classes remain after handoff:
 

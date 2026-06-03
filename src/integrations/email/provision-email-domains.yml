@@ -7,7 +7,7 @@
 # Run with the host Ansible toolchain, pointing roles at the integration trees:
 #
 #   ANSIBLE_ROLES_PATH=src/integrations/resend/domain-bootstrap:src/integrations/cloudflare/email-routing \
-#     ansible-playbook -i src/host/sites/prod/inventory.ini \
+#     ansible-playbook -i src/bootstrap/sites/prod/inventory.ini \
 #       -e verself_site=prod \
 #       src/integrations/email/provision-email-domains.yml
 #
@@ -22,7 +22,7 @@
   connection: local
   gather_facts: false
   vars_files:
-    - "../../host/sites/{{ verself_site | default('prod') }}/vars.yml"
+    - "../../bootstrap/sites/{{ verself_site | default('prod') }}/vars.yml"
   vars:
     resend_full_access_api_key: "{{ lookup('ansible.builtin.env', 'RESEND_FULL_ACCESS_API_KEY') }}"
     cloudflare_account_admin_api_token: "{{ lookup('ansible.builtin.env', 'CLOUDFLARE_ACCOUNT_ADMIN_API_TOKEN') }}"

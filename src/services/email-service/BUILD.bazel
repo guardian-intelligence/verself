@@ -16,7 +16,7 @@ spire_identity(
     key = "email_service.default",
     path = "/svc/email-service",
     user = "email_service",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/bootstrap:__pkg__"],
 )
 
 nomad_component(

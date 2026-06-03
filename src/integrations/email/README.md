@@ -48,7 +48,7 @@ available.
 ```
 ANSIBLE_ROLES_PATH=src/integrations/resend/domain-bootstrap:src/integrations/cloudflare/email-routing \
 ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections" \
-  ansible-playbook -i src/host/sites/prod/inventory.ini \
+  ansible-playbook -i src/bootstrap/sites/prod/inventory.ini \
     -e verself_site=prod src/integrations/email/provision-email-domains.yml
 ```
 
@@ -63,7 +63,7 @@ sending key.
 ### Cloudflare Authority
 
 Cloudflare DNS and Email Routing mutations run through
-`cloudflare-integration-service`. The service owns the account-admin pair,
+`cloudflare-integration-service`. The service owns account-admin authority,
 loads it through `secrets-service` only for the provider operation, and records
 token fingerprints in provider evidence. The playbook must not receive or stage
 Cloudflare API token values.

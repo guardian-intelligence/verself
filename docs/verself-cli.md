@@ -139,7 +139,7 @@ operator checkout
 
 | Term | Layer | Meaning |
 | --- | --- | --- |
-| Site | Repo/operator | A checked-in deployment environment such as `prod`, `beta`, `gamma`, or `dev-shovon`. It owns host vars, inventory, provisioning input, and catalog declarations under `src/host/sites/<site>/`. |
+| Site | Repo/operator | A checked-in deployment environment such as `prod`, `beta`, `gamma`, or `dev-shovon`. It owns host vars, inventory, provisioning input, and catalog declarations under `src/bootstrap/sites/<site>/`. |
 | Company | Business intent | The external business being created or operated. It supplies display name, owner identity, brand/domain intent, and billing/legal semantics. |
 | Organization | Product tenant | The IAM, billing, policy, and membership boundary in hosted Verself. A company is represented by one primary organization. |
 | Domain | DNS/resource | A DNS name attached to a company, organization, or service origin. `product_domain` names the hosted Verself product root; `company_domain` names the business. |
@@ -159,7 +159,7 @@ Names map across layers during bootstrap:
 | `owner.alias` | owner email local-part and owner-claim input |
 | `cli.name` | generated CLI binary name and command examples |
 | `product_domain` | hosted product root, auth origin, API origins, Git/source origin |
-| `site` | local deployment environment used to materialize `src/host/sites/<site>/` |
+| `site` | local deployment environment used to materialize `src/bootstrap/sites/<site>/` |
 
 This keeps customer-facing UX focused on hosted Verself resources. Operator
 bootstrap commands can still materialize site artifacts from company intent, but
@@ -308,7 +308,7 @@ stateDiagram-v2
   BootstrapCommand --> OverrideMerge: one-run public option flags
   OverrideMerge --> ManifestSnapshot
   ManifestSnapshot --> XDGState: bootstrap/<run-id>.json
-  ManifestSnapshot --> RepoArtifacts: src/host/sites/<site>/
+  ManifestSnapshot --> RepoArtifacts: src/bootstrap/sites/<site>/
 
   TypedError --> [*]
   RepoArtifacts --> AspectDeploy: aspect deploy --site
@@ -697,8 +697,8 @@ verself bootstrap --company guardian --option stripe.default_currency=usd
 `bootstrap` writes the local render outputs for a checkout:
 
 - `.verself/bootstrap/manifest.yaml`;
-- `src/host/sites/<site>/vars.yml`;
-- `src/host/sites/<site>/provisioning.tfvars.json.template`;
+- `src/bootstrap/sites/<site>/vars.yml`;
+- `src/bootstrap/sites/<site>/provisioning.tfvars.json.template`;
 - `src/<cli_name>-cli/` when rendering a named CLI;
 - bootstrap run records under `$XDG_STATE_HOME/verself/bootstrap/<run-id>.json`.
 
@@ -749,7 +749,7 @@ Initial option catalog:
 | Area | Options | Required by |
 | --- | --- | --- |
 | Compute | Latitude.sh API token, project ID, region, plan, SSH key policy | Checked-in provisioning task before `aspect deploy` |
-| DNS, TLS, R2, and Email Routing | Cloudflare account-admin pair, account ID, hosted-zone names, DNS zone intent, R2 capability policy, Email Routing intent | `cloudflare-integration-service` reconciliation for DNS, ACME DNS-01, Email Routing, and R2 provider capability lifecycle; object-byte sessions through `object-storage-service`; explicit public-edge certificate issuance |
+| DNS, TLS, R2, and Email Routing | Cloudflare account-admin credential, account ID, hosted-zone names, DNS zone intent, R2 capability policy, Email Routing intent | `cloudflare-integration-service` reconciliation for DNS, ACME DNS-01, Email Routing, and R2 provider capability lifecycle; object-byte sessions through `object-storage-service`; explicit public-edge certificate issuance |
 | Backups | AWS S3 access key ID, secret access key, region, bucket, prefix, retention policy | Backup verification and scheduled backup jobs |
 | Billing | Stripe secret key, publishable key, webhook signing secret, account mode, price/catalog mapping | Billing service payment and webhook handling |
 | Outbound email | Email-service provider secret, sender domain, default sender address | Email verification, invites, notifications, and company addresses |
@@ -850,8 +850,8 @@ writes the artifacts the operator's `aspect deploy` will consume:
 | --- | --- |
 | `.verself/bootstrap/manifest.yaml` | Canonical bootstrap manifest with company, owner, CLI, site, domain, and provider capability metadata. |
 | `src/<cli_name>-cli/` | CLI package or build target that emits the chosen command name. |
-| `src/host/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, and canary defaults. |
-| `src/host/sites/<site>/provisioning.tfvars.json.template` | Latitude/OpenTofu input template with provider-specific placeholders. |
+| `src/bootstrap/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, and canary defaults. |
+| `src/bootstrap/sites/<site>/provisioning.tfvars.json.template` | Latitude/OpenTofu input template with provider-specific placeholders. |
 | `README.md` | Operator next commands using `<cli_name>`, owner email, organization name, and selected site. |
 
 The operator-local flow is:

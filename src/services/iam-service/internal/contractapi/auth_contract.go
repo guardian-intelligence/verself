@@ -130,8 +130,8 @@ type RemoveAccountConnectionOutput struct{}
 
 var commonAuthProblems = []ProblemDescriptor{
 	{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
-	{ShapeID: "verself.iam.v1#DeviceSessionRequiredError", Type: "urn:verself:problem:auth:device_session_required", Code: "auth.device_session_required", Status: 401},
-	{ShapeID: "verself.iam.v1#SessionRevokedError", Type: "urn:verself:problem:auth:session_revoked", Code: "auth.session_revoked", Status: 401},
+	{ShapeID: "verself.iam.v1#DeviceSessionRequiredError", Type: "urn:verself:problem:auth:device_session_required", Code: "auth.device_session_required", Status: 403},
+	{ShapeID: "verself.iam.v1#SessionRevokedError", Type: "urn:verself:problem:auth:session_revoked", Code: "auth.session_revoked", Status: 403},
 	{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 	{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
 }
@@ -265,8 +265,8 @@ var RemoveAccountConnection = Operation[RemoveAccountConnectionInput, RemoveAcco
 			{ShapeID: "verself.common.v1#ValidationFailedError", Type: "urn:verself:problem:request:validation_failed", Code: "request.validation_failed", Status: 400},
 			{ShapeID: "verself.common.v1#UnauthenticatedError", Type: "urn:verself:problem:auth:unauthenticated", Code: "auth.unauthenticated", Status: 401},
 			{ShapeID: "verself.common.v1#PermissionDeniedError", Type: "urn:verself:problem:auth:permission_denied", Code: "auth.permission_denied", Status: 403},
-			{ShapeID: "verself.iam.v1#DeviceSessionRequiredError", Type: "urn:verself:problem:auth:device_session_required", Code: "auth.device_session_required", Status: 401},
-			{ShapeID: "verself.iam.v1#SessionRevokedError", Type: "urn:verself:problem:auth:session_revoked", Code: "auth.session_revoked", Status: 401},
+			{ShapeID: "verself.iam.v1#DeviceSessionRequiredError", Type: "urn:verself:problem:auth:device_session_required", Code: "auth.device_session_required", Status: 403},
+			{ShapeID: "verself.iam.v1#SessionRevokedError", Type: "urn:verself:problem:auth:session_revoked", Code: "auth.session_revoked", Status: 403},
 			{ShapeID: "verself.iam.v1#ReauthenticationRequiredError", Type: "urn:verself:problem:auth:reauthentication_required", Code: "auth.reauthentication_required", Status: 403},
 			{ShapeID: "verself.common.v1#RateLimitedError", Type: "urn:verself:problem:quota:rate_limited", Code: "quota.rate_limited", Status: 429},
 			{ShapeID: "verself.common.v1#ServiceUnavailableError", Type: "urn:verself:problem:service:unavailable", Code: "service.unavailable", Status: 503},
