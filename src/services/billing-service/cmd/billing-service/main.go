@@ -22,13 +22,18 @@ import (
 	"github.com/verself/billing-service/migrations"
 	iamclient "github.com/verself/iam-service/client"
 	verselfotel "github.com/verself/observability/otel"
+	secretsinternalclient "github.com/verself/secrets-service/internalclient"
 	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-const serviceVersion = "2.0.0"
+const (
+	serviceVersion                   = "2.0.0"
+	stripeSecretKeyRuntimeSecret     = "billing-service.stripe.secret_key"
+	stripeWebhookSecretRuntimeSecret = "billing-service.stripe.webhook_secret"
+)
 
 func main() {
 	if handled, err := runMigrationCLI(context.Background()); handled {
@@ -106,10 +111,17 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("billing iam client: %w", err)
 	}
-	stripeKey := strings.TrimSpace(cfg.String("STRIPE_SECRET_KEY", ""))
-	webhookSecret := strings.TrimSpace(cfg.String("STRIPE_WEBHOOK_SECRET", ""))
-	if stripeKey != "" && webhookSecret == "" {
-		return fmt.Errorf("billing stripe provider secret missing required field webhook_secret")
+	secretsHTTPClient, err := workloadauth.MTLSClientForService(spiffeSource, workloadauth.ServiceSecrets, nil)
+	if err != nil {
+		return fmt.Errorf("billing secrets mtls: %w", err)
+	}
+	secretsClient, err := secretsinternalclient.NewClient(workloadauth.InternalURL(workloadauth.ServiceSecrets), secretsinternalclient.WithHTTPClient(secretsHTTPClient))
+	if err != nil {
+		return fmt.Errorf("create secrets internal client: %w", err)
+	}
+	stripeKey, webhookSecret, err := loadStripeProviderSecrets(ctx, secretsClient)
+	if err != nil {
+		return err
 	}
 	pgConfig, err := pgxpool.ParseConfig(pgDSN)
 	if err != nil {
@@ -226,6 +238,49 @@ func billingInternalPeerServices() []string {
 		workloadauth.ServiceIAM,
 		workloadauth.ServiceSandboxRental,
 		workloadauth.ServiceSecrets,
+	}
+}
+
+func loadStripeProviderSecrets(ctx context.Context, client *secretsinternalclient.Client) (string, string, error) {
+	stripeKey, stripeKeyFound, err := loadOptionalRuntimeSecret(ctx, client, stripeSecretKeyRuntimeSecret)
+	if err != nil {
+		return "", "", err
+	}
+	webhookSecret, webhookSecretFound, err := loadOptionalRuntimeSecret(ctx, client, stripeWebhookSecretRuntimeSecret)
+	if err != nil {
+		return "", "", err
+	}
+	if !stripeKeyFound && !webhookSecretFound {
+		return "", "", nil
+	}
+	if !stripeKeyFound {
+		return "", "", fmt.Errorf("billing stripe provider secret %s is required when %s exists", stripeSecretKeyRuntimeSecret, stripeWebhookSecretRuntimeSecret)
+	}
+	if !webhookSecretFound {
+		return "", "", fmt.Errorf("billing stripe provider secret %s is required when %s exists", stripeWebhookSecretRuntimeSecret, stripeSecretKeyRuntimeSecret)
+	}
+	return stripeKey, webhookSecret, nil
+}
+
+func loadOptionalRuntimeSecret(ctx context.Context, client *secretsinternalclient.Client, name string) (string, bool, error) {
+	resp, err := client.GetRuntimeSecret(ctx, secretsinternalclient.GetRuntimeSecretRequest{SecretName: secretsinternalclient.SecretName(name)})
+	if err != nil {
+		return "", false, fmt.Errorf("read runtime secret %s: %w", name, err)
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if resp.Result == nil {
+			return "", false, fmt.Errorf("read runtime secret %s: empty response", name)
+		}
+		value := strings.TrimSpace(string(resp.Result.Value))
+		if value == "" {
+			return "", false, fmt.Errorf("runtime secret %s is empty", name)
+		}
+		return value, true, nil
+	case http.StatusNotFound:
+		return "", false, nil
+	default:
+		return "", false, fmt.Errorf("read runtime secret %s: status %d", name, resp.StatusCode)
 	}
 }
 

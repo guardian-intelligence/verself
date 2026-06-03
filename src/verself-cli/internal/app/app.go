@@ -123,7 +123,6 @@ func (c CLI) usage() error {
   %[1]s orgs members invite <email> [--role ROLE] [--given-name NAME] [--family-name NAME] [--json]
   %[1]s company configure <name> [flags]
   %[1]s company options add <company> <key> [--stdin|--from-file PATH|--value VALUE]
-  %[1]s company secret generate <company> --all|--key KEY
   %[1]s projects list [--state active|archived] [--json]
   %[1]s projects get <project-id> [--json]
   %[1]s projects create <display-name> [--slug SLUG] [--description TEXT] [--json]
@@ -199,8 +198,6 @@ func (c CLI) runCompany(ctx context.Context, args []string) error {
 		return c.companyRemove(args[1:])
 	case "options":
 		return c.companyOptions(args[1:])
-	case "secret":
-		return c.companySecret(args[1:])
 	default:
 		return fmt.Errorf("unknown company command %q", args[0])
 	}
@@ -470,195 +467,6 @@ func (c CLI) companyOptionRemove(args []string) error {
 		}
 	}
 	company.Options = out
-	return store.SaveCompany(company)
-}
-
-func (c CLI) companySecret(args []string) error {
-	if len(args) == 0 {
-		return errors.New("company secret command is required")
-	}
-	switch args[0] {
-	case "generate":
-		return c.companySecretGenerate(args[1:])
-	case "reveal":
-		return c.companySecretReveal(args[1:])
-	case "set":
-		return c.companySecretSet(args[1:])
-	case "list":
-		return c.companySecretList(args[1:])
-	case "remove", "rm":
-		return c.companySecretRemove(args[1:])
-	default:
-		return fmt.Errorf("unknown company secret command %q", args[0])
-	}
-}
-
-func (c CLI) companySecretGenerate(args []string) error {
-	fs := flag.NewFlagSet("company secret generate", flag.ContinueOnError)
-	fs.SetOutput(c.err)
-	all := fs.Bool("all", false, "generate all known secrets")
-	key := fs.String("key", "", "generate one known secret")
-	reveal := fs.Bool("reveal-once", false, "print plaintext after writing encrypted/local stores")
-	jsonOut := fs.Bool("json", false, "json output")
-	if err := parseInterspersed(fs, args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 || (*all == (*key != "")) {
-		return errors.New("usage: company secret generate <company> --all|--key <key>")
-	}
-	store, err := newStore(c.getenv)
-	if err != nil {
-		return err
-	}
-	company, err := store.LoadCompany(fs.Arg(0))
-	if err != nil {
-		return err
-	}
-	var items []SecretInventoryItem
-	if *all {
-		items, err = ensureAllGeneratedSecrets(store, &company, *reveal)
-		if err != nil {
-			return err
-		}
-	} else {
-		item, err := ensureGeneratedSecret(store, &company, *key, *reveal)
-		if err != nil {
-			return err
-		}
-		items = []SecretInventoryItem{item}
-	}
-	if err := store.SaveCompany(company); err != nil {
-		return err
-	}
-	if *jsonOut {
-		return writeJSON(c.out, items)
-	}
-	for _, item := range items {
-		if item.Plaintext != "" {
-			if err := writef(c.out, "%s: %s\n", item.Key, item.Plaintext); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := writef(c.out, "generated  %-36s -> %s\n", item.Key, item.Destination); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c CLI) companySecretReveal(args []string) error {
-	fs := flag.NewFlagSet("company secret reveal", flag.ContinueOnError)
-	fs.SetOutput(c.err)
-	key := fs.String("key", "", "secret key")
-	if err := parseInterspersed(fs, args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 || *key == "" {
-		return errors.New("usage: company secret reveal <company> --key <key>")
-	}
-	store, err := newStore(c.getenv)
-	if err != nil {
-		return err
-	}
-	company, err := store.LoadCompany(fs.Arg(0))
-	if err != nil {
-		return err
-	}
-	secret := findSecret(&company, *key)
-	if secret == nil {
-		return fmt.Errorf("secret %s not found", *key)
-	}
-	value, err := store.ReadCredential(secret.ValueRef)
-	if err != nil {
-		return err
-	}
-	return writeln(c.out, value)
-}
-
-func (c CLI) companySecretSet(args []string) error {
-	fs := flag.NewFlagSet("company secret set", flag.ContinueOnError)
-	fs.SetOutput(c.err)
-	key := fs.String("key", "", "secret key")
-	fromFile := fs.String("from-file", "", "read value from file")
-	stdin := fs.Bool("stdin", false, "read value from stdin")
-	if err := parseInterspersed(fs, args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 || *key == "" {
-		return errors.New("usage: company secret set <company> --key <key>")
-	}
-	value, source, _, err := c.readInputValue(*fromFile, *stdin, "", true)
-	if err != nil {
-		return err
-	}
-	_ = source
-	store, err := newStore(c.getenv)
-	if err != nil {
-		return err
-	}
-	company, err := store.LoadCompany(fs.Arg(0))
-	if err != nil {
-		return err
-	}
-	ref, err := store.SaveCredential(value)
-	if err != nil {
-		return err
-	}
-	spec := findSecretSpec(company.Site, *key)
-	secret := CompanySecret{
-		Key:           *key,
-		Kind:          spec.Kind,
-		Sensitivity:   "secret",
-		ValueRef:      ref,
-		RenderTargets: spec.RenderTargets,
-		RevealCommand: fmt.Sprintf("%s company secret reveal %s --key %s", c.binary, company.Name, *key),
-		UpdatedAt:     time.Now().UTC(),
-	}
-	upsertSecret(&company, secret)
-	return store.SaveCompany(company)
-}
-
-func (c CLI) companySecretList(args []string) error {
-	if len(args) != 1 {
-		return errors.New("usage: company secret list <company>")
-	}
-	store, err := newStore(c.getenv)
-	if err != nil {
-		return err
-	}
-	company, err := store.LoadCompany(args[0])
-	if err != nil {
-		return err
-	}
-	return writeJSON(c.out, company.Secrets)
-}
-
-func (c CLI) companySecretRemove(args []string) error {
-	fs := flag.NewFlagSet("company secret remove", flag.ContinueOnError)
-	fs.SetOutput(c.err)
-	key := fs.String("key", "", "secret key")
-	if err := parseInterspersed(fs, args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 || *key == "" {
-		return errors.New("usage: company secret remove <company> --key <key>")
-	}
-	store, err := newStore(c.getenv)
-	if err != nil {
-		return err
-	}
-	company, err := store.LoadCompany(fs.Arg(0))
-	if err != nil {
-		return err
-	}
-	out := company.Secrets[:0]
-	for _, secret := range company.Secrets {
-		if secret.Key != *key {
-			out = append(out, secret)
-		}
-	}
-	company.Secrets = out
 	return store.SaveCompany(company)
 }
 
@@ -1110,6 +918,10 @@ func classifyOption(company CompanyRecord, name string) CompanyOption {
 	return opt
 }
 
+func openBaoRuntimeTarget(key string) string {
+	return "openbao://kv-runtime/secret/org/" + key
+}
+
 func upsertOption(company *CompanyRecord, opt CompanyOption) {
 	for i := range company.Options {
 		if company.Options[i].Name == opt.Name {
@@ -1118,20 +930,6 @@ func upsertOption(company *CompanyRecord, opt CompanyOption) {
 		}
 	}
 	company.Options = append(company.Options, opt)
-}
-
-func findSecretSpec(site, key string) SecretSpec {
-	for _, spec := range secretCatalog(site) {
-		if spec.Key == key {
-			return spec
-		}
-	}
-	return SecretSpec{
-		Key:           key,
-		Kind:          "secret",
-		RenderTargets: []string{openBaoRuntimeTarget(key)},
-		Generator:     func() (string, error) { return randomSecret(32) },
-	}
 }
 
 func writeJSON(w io.Writer, value any) error {

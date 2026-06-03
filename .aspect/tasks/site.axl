@@ -29,7 +29,7 @@ def _abs(ctx, path):
     return ws_path(ctx, path)
 
 def _default_site_root_key(site):
-    return ".verself/site-bootstrap/" + site + "/site-root.key"
+    return ".verself/bootstrap/" + site + "/site-root.key"
 
 def _default_inventory(site):
     return HOST_CONFIGURATION_DIR + "/sites/" + site + "/inventory.ini"
@@ -186,7 +186,7 @@ converge_host = task(
     summary = "Converge the minimum host foundation and Nomad substrate for a site.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
-        "openbao_site_root_key_file": args.string(default = "", description = "Site root key file. Defaults to .verself/site-bootstrap/<site>/site-root.key."),
+        "openbao_site_root_key_file": args.string(default = "", description = "Site root key file. Defaults to .verself/bootstrap/<site>/site-root.key."),
     },
 )
 

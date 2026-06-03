@@ -433,9 +433,8 @@ secrets, or operator terminals.
 
 4. Pull credentials into a local handoff workspace.
 
-   `stripe projects env --pull` refreshes the local vault and `.env` file for
-   local handoff. The import tool reads only catalog-approved variable names and
-   writes OpenBao entries.
+   `stripe projects env --pull` refreshes the provider-local handoff material.
+   The import tool reads only catalog-approved names and writes OpenBao entries.
 
 5. Add service ownership.
 
@@ -484,7 +483,7 @@ Credential and integration operations emit operational evidence:
 | --- | --- |
 | Catalog validation | Site, integration key, owner, storage target, missing or extra keys. |
 | Provider import | Site, provider project ID, variable names, target keys, value fingerprints, no plaintext. |
-| Host materialization | Bootstrap output paths and generated secret fingerprints. |
+| Host materialization | Bootstrap output paths and OpenBao runtime declaration names. |
 | OpenBao reconciliation | Mount, namespace, secret names, version fingerprints, policies, and roles. |
 | Runtime read | Workload SPIFFE ID, secret name, OpenBao role, result class. |
 | Provider canary | Provider, resource ID, endpoint, route, deploy run key, pass/fail. |

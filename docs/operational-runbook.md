@@ -226,11 +226,12 @@ event, and notify the operator instead of retrying silently or deleting old
 credentials.
 
 ```shell
-install -m 700 -d .verself/site-bootstrap/gamma
-printf '%s\n' '<gamma-root-password>' > .verself/site-bootstrap/gamma/root-password.txt
-chmod 600 .verself/site-bootstrap/gamma/root-password.txt
-printf '%s\n' '<gamma-site-root-key>' > .verself/site-bootstrap/gamma/site-root.key
-chmod 600 .verself/site-bootstrap/gamma/site-root.key
+BOOTSTRAP_SECRET_DIR="$(mktemp -d -t verself-bootstrap.XXXXXX)"
+chmod 700 "$BOOTSTRAP_SECRET_DIR"
+printf '%s\n' '<gamma-root-password>' > "$BOOTSTRAP_SECRET_DIR/root-password"
+chmod 600 "$BOOTSTRAP_SECRET_DIR/root-password"
+printf '%s\n' '<gamma-site-root-key>' > "$BOOTSTRAP_SECRET_DIR/site-root-key"
+chmod 600 "$BOOTSTRAP_SECRET_DIR/site-root-key"
 ```
 
 Prefer pinned host key verification:
@@ -239,7 +240,7 @@ Prefer pinned host key verification:
 aspect site root-handoff \
   --site=gamma \
   --host=<gamma-public-ip> \
-  --root-password-file=.verself/site-bootstrap/gamma/root-password.txt \
+  --root-password-file="$BOOTSTRAP_SECRET_DIR/root-password" \
   --host-key-sha256='<SHA256:fingerprint>' \
   --force-inventory
 ```
@@ -250,7 +251,7 @@ If you do not have the host key fingerprint yet, use TOFU explicitly:
 aspect site root-handoff \
   --site=gamma \
   --host=<gamma-public-ip> \
-  --root-password-file=.verself/site-bootstrap/gamma/root-password.txt \
+  --root-password-file="$BOOTSTRAP_SECRET_DIR/root-password" \
   --trust-first-use \
   --force-inventory
 ```
@@ -268,7 +269,7 @@ shell history, or logs.
 aspect integrations cloudflare-control-plane --site=gamma --action=provision-site-bootstrap
 aspect site converge-host \
   --site=gamma \
-  --openbao-site-root-key-file=.verself/site-bootstrap/gamma/site-root.key
+  --openbao-site-root-key-file="$BOOTSTRAP_SECRET_DIR/site-root-key"
 aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns --dry-run
 aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns
 aspect site bootstrap-deploy --site=gamma --sha="$(git rev-parse HEAD)"

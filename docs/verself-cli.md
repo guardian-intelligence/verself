@@ -644,15 +644,15 @@ Company options are supplied through stdin, explicit non-secret values, or
 structured field sets:
 
 ```text
-printf '%s' "$CLOUDFLARE_ACCOUNT_ADMIN_A" | verself company options add guardian cloudflare.account_admin_a --stdin
-printf '%s' "$CLOUDFLARE_ACCOUNT_ADMIN_B" | verself company options add guardian cloudflare.account_admin_b --stdin
-printf '%s' "$LATITUDESH_AUTH_TOKEN" | verself company options add guardian latitude.api_token --stdin
+verself company options add guardian cloudflare.account_admin_a --stdin < /secure-handoff/cloudflare-account-admin-a
+verself company options add guardian cloudflare.account_admin_b --stdin < /secure-handoff/cloudflare-account-admin-b
+verself company options add guardian latitude.api_token --stdin < /secure-handoff/latitude-api-token
 verself company options set guardian latitude.project_id --value <project-id>
 verself company options set guardian latitude.region --value ASH
 verself company options set guardian latitude.plan --value f4-metal-medium
-printf '%s' "$STRIPE_SECRET_KEY" | verself company options add guardian stripe.secret_key --stdin
-printf '%s' "$STRIPE_WEBHOOK_SECRET" | verself company options add guardian stripe.webhook_secret --stdin
-verself company options set guardian stripe.publishable_key --value "$STRIPE_PUBLISHABLE_KEY"
+verself company options add guardian stripe.secret_key --stdin < /secure-handoff/stripe-secret-key
+verself company options add guardian stripe.webhook_secret --stdin < /secure-handoff/stripe-webhook-secret
+verself company options set guardian stripe.publishable_key --value <publishable-key>
 verself company options set guardian stripe.default_currency --value usd
 ```
 
@@ -726,7 +726,7 @@ An option has:
 | Field | Meaning |
 | --- | --- |
 | `name` | Stable semantic name when the value cannot be classified from shape alone. |
-| `source` | `env`, `stdin`, `credential_store`, `openbao`, `literal`, or `generated`. |
+| `source` | `stdin`, `credential_store`, `openbao`, `literal`, or `generated`. |
 | `sensitivity` | `secret`, `confidential`, or `public`. |
 | `value_ref` | Redacted local reference, never the raw secret. |
 | `classification` | Derived provider, kind, capability set, and confidence. |
@@ -734,9 +734,9 @@ An option has:
 | `render_targets` | Site vars, provisioning tfvars, OpenBao runtime path, bootstrap manifest, README, or service config template. |
 | `required_by` | Phase, command surface, or service capability that cannot run without this option. |
 
-Opaque credentials are classified from value shape, environment variable name,
-and structured field names. Multi-field integrations use the same option shape
-with `fields` instead of `secret`. Ambiguous values produce
+Opaque credentials are classified from value shape, semantic option name, and
+structured field names. Multi-field integrations use the same option shape with
+`fields` instead of `secret`. Ambiguous values produce
 `company_option.unclassified` and require a semantic option name.
 
 Initial local rendering has no hard runtime integration requirement. Every
@@ -760,8 +760,8 @@ sensitivity, classifier evidence, validation, render targets, consuming service,
 and verification evidence. Service code then consumes generated config through
 the normal service runtime and never through CLI-only shortcuts.
 
-Secret-valued options store metadata and a `value_ref`; the plaintext lives in
-the company secret store or the catalog-approved OpenBao target.
+Secret-valued options store metadata and a local `value_ref` only for operator
+handoff. Runtime plaintext lives in catalog-approved OpenBao targets.
 
 Site root keys and unseal material are scoped to the target site. Global
 provider authorities such as Cloudflare DNS/TLS live in the prod controller and
@@ -785,35 +785,23 @@ inputs:
   repository_slug: verself
 company_options:
   - name: latitudesh-auth-token
-    source: env:LATITUDESH_AUTH_TOKEN
+    source: stdin
     sensitivity: secret
-    classification:
-      provider: latitude
-      kind: api_token
-      confidence: high
+    provider: latitude
+    kind: api_token
     purpose: infrastructure
     render_targets:
-      - openbao://controller/prod/bootstrap/latitudesh-auth-token
+      - openbao://kv-runtime/secret/org/latitude.api_token
     required_by: infrastructure.provisioning
   - name: stripe-secret-key
-    source: env:STRIPE_SECRET_KEY
+    source: stdin
     sensitivity: secret
-    classification:
-      provider: stripe
-      kind: secret_key
-      confidence: high
+    provider: stripe
+    kind: secret_key
     purpose: billing
     render_targets:
-      - openbao://prod/kv/runtime/billing-service.stripe.secret_key
+      - openbao://kv-runtime/secret/org/billing-service.stripe.secret_key
     required_by: billing-service.runtime
-openbao_bootstrap:
-  bootstrap_key: openbao.bootstrap_token
-  provider: openbao
-  scope:
-    org: guardianintelligence.org
-    project: verself
-    environment: bootstrap
-  secret_ref: openbao://controller/prod/bootstrap/openbao.bootstrap_token
 derived:
   owner_email: shovon@guardianintelligence.org
   organization_name: guardianintelligence.org
@@ -834,7 +822,7 @@ Derived locally:
 - stable product UUIDs for repo-owned project/repository/backend records;
 - OIDC redirect/logout URLs from service origins.
 
-Resolved by later provisioning and seeding commands:
+Resolved by later provisioning and reconciliation commands:
 
 - Cloudflare zone IDs;
 - Latitude.sh server IDs and public IP addresses;
@@ -842,21 +830,13 @@ Resolved by later provisioning and seeding commands:
   validates an option;
 - Zitadel organization, project, application, and authorization IDs;
 - Forgejo repository numeric IDs;
-- secret values and key material.
+- OpenBao secret values and key material.
 
 Generated by bootstrap rendering:
 
 - OpenBao runtime secret declarations and generated bootstrap evidence;
 - bootstrap run identifiers;
 - rendered artifact manifest hashes.
-
-Generated by company secret generation:
-
-- scoped OpenBao bootstrap values when the account does not already have them;
-- passwords and tokens using cryptographic randomness;
-- service signing and encryption keys;
-- metadata describing target OpenBao mounts, consuming components, and rotation
-  commands.
 
 ## Site Artifacts [DESCOPED]
 
@@ -1012,8 +992,7 @@ normal organization membership.
   reference and non-secret subject/org metadata.
 - Provider tokens enter company options through stdin, OS credential stores, or
   catalog-approved OpenBao imports.
-- Generated secrets use cryptographic randomness and are written to encrypted
-  storage.
+- Runtime generated secrets use OpenBao transit/random and stay in OpenBao.
 - Secret updates use stdin, credential-store prompts, or OpenBao import
   commands. `--value` is reserved for non-secret options.
 - The Zitadel admin PAT is consumed by `iam-service`, component reconcilers, and
@@ -1042,10 +1021,8 @@ CLI implementation should have deterministic tests for:
 - company record writes under XDG data and active company pointer updates under
   XDG config;
 - company option classification without leaking raw credential material;
-- company secret generation with deterministic metadata and nondeterministic
-  values from cryptographic randomness;
-- secret set command behavior, including no plaintext in default JSON or
-  progress output;
+- secret-valued company option behavior, including no plaintext in default JSON
+  or progress output;
 - generated next-command output that uses `aspect deploy` for deployment;
 - Smithy/OpenAPI-derived request shapes for SDK-backed commands;
 - idempotency key generation and retry behavior for mutating commands;

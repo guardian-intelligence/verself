@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -176,14 +175,6 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 		"bazelisk build //src/guardian-cli:guardian",
 		"aspect deploy --site=prod --sha=HEAD",
 	})
-
-	obsoleteSeedDir := filepath.Join(repoRoot, ".verself", "site-bootstrap")
-	if _, err := os.Stat(obsoleteSeedDir); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("rendered obsolete local secret directory at %s: %v", obsoleteSeedDir, err)
-	}
-	if found, path := treeContains(t, repoRoot, "verself-cred://"); found {
-		t.Fatalf("rendered repository contains local credential ref in %s", path)
-	}
 
 	overrideRepoRoot := t.TempDir()
 	runCLI(t, nil,
@@ -1479,30 +1470,4 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
-}
-
-func treeContains(t *testing.T, root, needle string) (bool, string) {
-	t.Helper()
-	var foundPath string
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if bytes.Contains(data, []byte(needle)) {
-			foundPath = path
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk %s: %v", root, err)
-	}
-	return foundPath != "", foundPath
 }

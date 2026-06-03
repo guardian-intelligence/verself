@@ -365,7 +365,7 @@ func certificateProjectionDir(cfg config) string {
 		}
 		return filepath.Join(cfg.repoRoot, cfg.certificateProjectionDir)
 	}
-	return filepath.Join(cfg.repoRoot, ".verself", "site-bootstrap", cfg.site, "tls", "haproxy")
+	return filepath.Join(cfg.repoRoot, ".verself", "bootstrap", cfg.site, "tls", "haproxy")
 }
 
 func acmeContact(raw string) (string, error) {

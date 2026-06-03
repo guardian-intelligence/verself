@@ -188,7 +188,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini.")
 	fs.IntVar(&cfg.dnsConcurrency, "dns-concurrency", 8, "Maximum parallel Cloudflare DNS write requests for --action=reconcile-dns.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print and report the DNS diff without applying writes for --action=reconcile-dns.")
-	fs.StringVar(&cfg.certificateProjectionDir, "certificate-projection-dir", "", "Local directory to receive HAProxy public certificate PEM projections. Defaults to .verself/site-bootstrap/<site>/tls/haproxy.")
+	fs.StringVar(&cfg.certificateProjectionDir, "certificate-projection-dir", "", "Local directory to receive HAProxy public certificate PEM projections. Defaults to .verself/bootstrap/<site>/tls/haproxy.")
 	fs.StringVar(&cfg.acmeDirectoryURL, "acme-directory-url", letsEncryptProductionDirectoryURL, "ACME directory URL for public certificate issuance.")
 	fs.StringVar(&cfg.acmeContactEmail, "acme-contact-email", "", "ACME account contact email for --action=issue-site-certificates.")
 	fs.DurationVar(&cfg.acmeDNSPropagationWait, "acme-dns-propagation-wait", 2*time.Minute, "Maximum wait for ACME DNS-01 TXT propagation.")

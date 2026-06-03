@@ -16,12 +16,12 @@ import (
 
 func TestLoadBundleBuildsNomadRuntimeRoles(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/services/billing-service/nomad.hcl", `job "billing" {
-  group "billing" {
-    task "billing" {
+	write(t, root, "src/services/example-service/nomad.hcl", `job "example-service" {
+  group "example-service" {
+    task "example-service" {
       template {
         data = <<-EOT
-STRIPE_SECRET_KEY={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.secret_key" }}{{ .Data.data.value }}{{ end }}
+EXAMPLE_API_TOKEN={{ with secret "kv-runtime/data/secret/org/example-service.external_api_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
     }
@@ -32,28 +32,28 @@ EOT
     task "webhook-proxy" {
       template {
         data = <<-EOT
-STRIPE_SECRET_KEY={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.secret_key" }}{{ .Data.data.value }}{{ end }}
+EXAMPLE_API_TOKEN={{ with secret "kv-runtime/data/secret/org/example-service.external_api_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
     }
   }
 }`)
-	write(t, root, "src/services/billing-service/deploy/runtime-secrets.yml", `
+	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_declarations:
-  - name: billing-service.stripe.secret_key
+  - name: example-service.external_api_token
     consumer_job_ids: [webhook-proxy]
     external_openbao: true
 `)
-	write(t, root, "src/services/billing-service/deploy/postgres.yml", `
+	write(t, root, "src/services/example-service/deploy/postgres.yml", `
 postgresql_service_databases:
-  - { name: billing, owner: billing }
+  - { name: example, owner: example }
 postgresql_peer_mappings:
-  - { system_user: billing, pg_user: billing }
+  - { system_user: example, pg_user: example }
 `)
 	bundle, err := LoadBundle(root, "gamma", []Component{{
-		Component: "billing",
-		JobID:     "billing",
-		JobSpec:   filepath.Join(root, "src/services/billing-service/nomad.hcl"),
+		Component: "example",
+		JobID:     "example-service",
+		JobSpec:   filepath.Join(root, "src/services/example-service/nomad.hcl"),
 	}, {
 		Component: "webhook_proxy",
 		JobID:     "webhook-proxy",
@@ -68,75 +68,75 @@ postgresql_peer_mappings:
 	if got := bundle.OpenBao.RuntimeSecrets[0].Source.Kind; got != RuntimeSecretSourceExternal {
 		t.Fatalf("source kind = %q", got)
 	}
-	if len(bundle.OpenBao.NomadRoles) != 2 || bundle.OpenBao.NomadRoles[0].Name != "billing-runtime" || bundle.OpenBao.NomadRoles[1].Name != "webhook-proxy-runtime" {
+	if len(bundle.OpenBao.NomadRoles) != 2 || bundle.OpenBao.NomadRoles[0].Name != "example-service-runtime" || bundle.OpenBao.NomadRoles[1].Name != "webhook-proxy-runtime" {
 		t.Fatalf("roles = %#v", bundle.OpenBao.NomadRoles)
 	}
-	if len(bundle.OpenBao.NomadRoles[1].Secrets) != 1 || bundle.OpenBao.NomadRoles[1].Secrets[0] != "billing-service.stripe.secret_key" {
+	if len(bundle.OpenBao.NomadRoles[1].Secrets) != 1 || bundle.OpenBao.NomadRoles[1].Secrets[0] != "example-service.external_api_token" {
 		t.Fatalf("consumer role secrets = %#v", bundle.OpenBao.NomadRoles[1].Secrets)
 	}
-	if len(bundle.Postgres.Databases) != 1 || bundle.Postgres.Databases[0].Name != "billing" {
+	if len(bundle.Postgres.Databases) != 1 || bundle.Postgres.Databases[0].Name != "example" {
 		t.Fatalf("databases = %#v", bundle.Postgres.Databases)
 	}
 }
 
 func TestLoadBundleRejectsUndeclaredNomadRuntimeSecretReference(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/services/billing-service/nomad.hcl", `job "billing" {
-  group "billing" {
-    task "billing" {
+	write(t, root, "src/services/example-service/nomad.hcl", `job "example-service" {
+  group "example-service" {
+    task "example-service" {
       template {
         data = <<-EOT
-STRIPE_SECRET_KEY={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.secret_key" }}{{ .Data.data.value }}{{ end }}
+EXAMPLE_API_TOKEN={{ with secret "kv-runtime/data/secret/org/example-service.external_api_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
     }
   }
 }`)
-	write(t, root, "src/services/billing-service/deploy/postgres.yml", `
+	write(t, root, "src/services/example-service/deploy/postgres.yml", `
 postgresql_service_databases:
-  - { name: billing, owner: billing }
+  - { name: example, owner: example }
 postgresql_peer_mappings:
-  - { system_user: billing, pg_user: billing }
+  - { system_user: example, pg_user: example }
 `)
 	_, err := LoadBundle(root, "gamma", []Component{{
-		Component: "billing",
-		JobID:     "billing",
-		JobSpec:   filepath.Join(root, "src/services/billing-service/nomad.hcl"),
+		Component: "example",
+		JobID:     "example-service",
+		JobSpec:   filepath.Join(root, "src/services/example-service/nomad.hcl"),
 	}})
-	if err == nil || !strings.Contains(err.Error(), `references undeclared OpenBao runtime secret "billing-service.stripe.secret_key"`) {
+	if err == nil || !strings.Contains(err.Error(), `references undeclared OpenBao runtime secret "example-service.external_api_token"`) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestLoadBundleRejectsUndeclaredNomadRuntimeSecretConsumer(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/services/billing-service/nomad.hcl", `job "billing" {}`)
+	write(t, root, "src/services/example-service/nomad.hcl", `job "example-service" {}`)
 	write(t, root, "src/infrastructure-components/webhook-proxy/nomad.hcl", `job "webhook-proxy" {
   group "webhook-proxy" {
     task "webhook-proxy" {
       template {
         data = <<-EOT
-STRIPE_SECRET_KEY={{ with secret "kv-runtime/data/secret/org/billing-service.stripe.secret_key" }}{{ .Data.data.value }}{{ end }}
+EXAMPLE_API_TOKEN={{ with secret "kv-runtime/data/secret/org/example-service.external_api_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
     }
   }
 }`)
-	write(t, root, "src/services/billing-service/deploy/runtime-secrets.yml", `
+	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_declarations:
-  - name: billing-service.stripe.secret_key
+  - name: example-service.external_api_token
     external_openbao: true
 `)
-	write(t, root, "src/services/billing-service/deploy/postgres.yml", `
+	write(t, root, "src/services/example-service/deploy/postgres.yml", `
 postgresql_service_databases:
-  - { name: billing, owner: billing }
+  - { name: example, owner: example }
 postgresql_peer_mappings:
-  - { system_user: billing, pg_user: billing }
+  - { system_user: example, pg_user: example }
 `)
 	_, err := LoadBundle(root, "gamma", []Component{{
-		Component: "billing",
-		JobID:     "billing",
-		JobSpec:   filepath.Join(root, "src/services/billing-service/nomad.hcl"),
+		Component: "example",
+		JobID:     "example-service",
+		JobSpec:   filepath.Join(root, "src/services/example-service/nomad.hcl"),
 	}, {
 		Component: "webhook_proxy",
 		JobID:     "webhook-proxy",
@@ -153,10 +153,10 @@ func TestBundleSHA256IgnoresDeployAttemptIdentity(t *testing.T) {
 		Site:          "gamma",
 		OpenBao: OpenBaoBundle{
 			RuntimeSecrets: []RuntimeSecret{{
-				Name:      "billing-service.stripe.secret_key",
-				OwnerPath: "src/services/billing-service/deploy/runtime-secrets.yml",
-				Component: "billing",
-				JobID:     "billing",
+				Name:      "example-service.external_api_token",
+				OwnerPath: "src/services/example-service/deploy/runtime-secrets.yml",
+				Component: "example",
+				JobID:     "example-service",
 				Source: RuntimeSecretSource{
 					Kind: RuntimeSecretSourceExternal,
 				},
@@ -371,7 +371,7 @@ func TestReconcileRuntimeSecretSkipsExternalOpenBao(t *testing.T) {
 		token: "token",
 		http:  server.Client(),
 	}, RuntimeSecret{
-		Name: "billing-service.stripe.secret_key",
+		Name: "example-service.external_api_token",
 		Source: RuntimeSecretSource{
 			Kind: RuntimeSecretSourceExternal,
 		},

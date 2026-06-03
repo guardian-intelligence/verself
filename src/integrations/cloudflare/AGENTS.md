@@ -61,7 +61,7 @@ DNS and ACME/TLS issuer authority are controller-only surfaces. Site hosts may c
 HAProxy public certificates are issued by the prod Cloudflare control plane before host convergence. The account-admin token creates short-lived ACME DNS-01 TXT records in the managed Cloudflare zones, completes the ACME authorization, deletes the TXT records, and projects combined private-key plus certificate-chain PEM files under:
 
 ```text
-.verself/site-bootstrap/<site>/tls/haproxy/<certificate-name>.pem
+.verself/bootstrap/<site>/tls/haproxy/<certificate-name>.pem
 ```
 
 Host convergence copies those projected PEM files to `/etc/haproxy/certs` and reloads HAProxy. It must fail when a projected certificate is missing. A site bootstrap should provision the real public certificate; it should not manage a temporary public-edge certificate lifecycle.
@@ -158,4 +158,4 @@ The bootstrap artifact publisher is a dynamic provider credential. The current c
 - `r2-control-plane/cmd/cloudflare-r2-control-plane/server.go` signs per-object upload and download URLs from the OpenBao-projected publisher credential.
 - `../../services/object-storage-service/nomad.hcl` reads the object-storage R2 admin/proxy credentials through Nomad OpenBao templates.
 
-Generated local files under `.verself/site-bootstrap/<site>/` are operator bootstrap artifacts. Do not commit them.
+Generated local files under `.verself/bootstrap/<site>/` are operator bootstrap artifacts. Do not commit them.

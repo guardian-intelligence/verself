@@ -71,7 +71,6 @@ type CompanyRecord struct {
 	OwnerEmail       string          `json:"owner_email"`
 	TrustTier        string          `json:"trust_tier"`
 	Options          []CompanyOption `json:"options,omitempty"`
-	Secrets          []CompanySecret `json:"secrets,omitempty"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
 }
@@ -87,16 +86,6 @@ type CompanyOption struct {
 	Purpose       string    `json:"purpose,omitempty"`
 	RenderTargets []string  `json:"render_targets,omitempty"`
 	RequiredBy    string    `json:"required_by,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at"`
-}
-
-type CompanySecret struct {
-	Key           string    `json:"key"`
-	Kind          string    `json:"kind"`
-	Sensitivity   string    `json:"sensitivity"`
-	ValueRef      string    `json:"value_ref"`
-	RenderTargets []string  `json:"render_targets,omitempty"`
-	RevealCommand string    `json:"reveal_command,omitempty"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
@@ -143,13 +132,6 @@ type InstallReceipt struct {
 	InstalledPath      string    `json:"installed_path"`
 	Traceparent        string    `json:"traceparent,omitempty"`
 	InstalledAt        time.Time `json:"installed_at"`
-}
-
-type SecretSpec struct {
-	Key           string
-	Kind          string
-	RenderTargets []string
-	Generator     func() (string, error)
 }
 
 type OptionOverride struct {

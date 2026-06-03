@@ -85,6 +85,21 @@ type InjectionEnvValue struct {
 	Value SecretValue      `json:"value"`
 }
 
+type SecretValueDTO struct {
+	Branch         *Branch       `json:"branch,omitempty"`
+	CreatedAt      string        `json:"created_at"`
+	CurrentVersion SecretVersion `json:"current_version"`
+	EnvID          *EnvId        `json:"env_id,omitempty"`
+	Kind           string        `json:"kind"`
+	Name           SecretName    `json:"name"`
+	ResourceName   *ResourceName `json:"resourceName,omitempty"`
+	ScopeLevel     ScopeLevel    `json:"scope_level"`
+	SecretID       string        `json:"secret_id"`
+	SourceID       *SourceId     `json:"source_id,omitempty"`
+	UpdatedAt      string        `json:"updated_at"`
+	Value          SecretValue   `json:"value"`
+}
+
 type InjectionSecretRequest struct {
 	Branch     *Branch          `json:"branch,omitempty"`
 	EnvID      *EnvId           `json:"env_id,omitempty"`
@@ -206,6 +221,18 @@ type ResolveInjectionResponse struct {
 	StatusCode   int
 	Body         []byte
 	Result       *InjectionResolveOutputBody
+	Problem      *ErrorModel
+	HTTPResponse *http.Response
+}
+
+type GetRuntimeSecretRequest struct {
+	SecretName SecretName
+}
+
+type GetRuntimeSecretResponse struct {
+	StatusCode   int
+	Body         []byte
+	Result       *SecretValueDTO
 	Problem      *ErrorModel
 	HTTPResponse *http.Response
 }
@@ -396,6 +423,54 @@ func (c *Client) VerifyInternalOpaqueCredential(ctx context.Context, request Ver
 	return parseVerifyInternalOpaqueCredentialResponse(resp)
 }
 
+func (c *Client) GetRuntimeSecret(ctx context.Context, request GetRuntimeSecretRequest, reqEditors ...RequestEditorFn) (*GetRuntimeSecretResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("%s SDK transport: client is not initialized", ServiceName)
+	}
+	req, err := c.newGetRuntimeSecretRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	for _, editor := range c.requestEditors {
+		if err := editor(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	for _, editor := range reqEditors {
+		if editor != nil {
+			if err := editor(ctx, req); err != nil {
+				return nil, err
+			}
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseGetRuntimeSecretResponse(resp)
+}
+
+func (c *Client) newGetRuntimeSecretRequest(ctx context.Context, request GetRuntimeSecretRequest) (*http.Request, error) {
+	secretName := strings.TrimSpace(string(request.SecretName))
+	if secretName == "" {
+		return nil, fmt.Errorf("runtime secret name is required")
+	}
+	endpoint, err := url.Parse(c.server + "/api/v1/secrets/" + url.PathEscape(secretName))
+	if err != nil {
+		return nil, err
+	}
+	query := endpoint.Query()
+	query.Set("kind", "secret")
+	query.Set("scope_level", "org")
+	endpoint.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
 func (c *Client) newVerifyInternalOpaqueCredentialRequest(ctx context.Context, request VerifyInternalOpaqueCredentialRequest) (*http.Request, error) {
 	path := "/internal/v1/credentials:verify"
 	endpoint, err := url.Parse(c.server + path)
@@ -466,6 +541,27 @@ func parseVerifyInternalOpaqueCredentialResponse(resp *http.Response) (*VerifyIn
 	result := &VerifyInternalOpaqueCredentialResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
 	if resp.StatusCode == 200 {
 		var decoded VerifyInternalOpaqueCredentialOutputBody
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				return nil, err
+			}
+		}
+		result.Result = &decoded
+		return result, nil
+	}
+	result.Problem = decodeProblem(body)
+	return result, nil
+}
+
+func parseGetRuntimeSecretResponse(resp *http.Response) (*GetRuntimeSecretResponse, error) {
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	result := &GetRuntimeSecretResponse{StatusCode: resp.StatusCode, Body: body, HTTPResponse: resp}
+	if resp.StatusCode == 200 {
+		var decoded SecretValueDTO
 		if len(body) > 0 {
 			if err := json.Unmarshal(body, &decoded); err != nil {
 				return nil, err

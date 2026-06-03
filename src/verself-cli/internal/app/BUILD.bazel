@@ -16,7 +16,6 @@ go_library(
         "render.go",
         "repos.go",
         "sandbox.go",
-        "secrets.go",
         "signup.go",
         "store.go",
         "upgrade.go",

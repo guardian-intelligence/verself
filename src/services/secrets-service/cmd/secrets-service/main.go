@@ -174,6 +174,10 @@ func run() error {
 			{Service: workloadauth.ServiceGitHubIntegration, SecretNamePrefixes: []string{
 				secretsclient.GitHubIntegrationUserTokenSecretPrefix,
 			}},
+			{Service: workloadauth.ServiceBilling, SecretNames: []string{
+				"billing-service.stripe.secret_key",
+				"billing-service.stripe.webhook_secret",
+			}},
 		},
 		RuntimeSecretWritePolicies: []secretsapi.RuntimeSecretPolicy{
 			{Service: workloadauth.ServiceSandboxRental, SecretNamePrefixes: []string{

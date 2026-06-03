@@ -29,12 +29,6 @@ func renderBootstrap(store *Store, company CompanyRecord, opts RenderOptions) (B
 	if company.Site == "" {
 		return BootstrapRun{}, errors.New("bootstrap render: site is required")
 	}
-	if _, err := ensureAllGeneratedSecrets(store, &company, false); err != nil {
-		return BootstrapRun{}, err
-	}
-	if err := store.SaveCompany(company); err != nil {
-		return BootstrapRun{}, err
-	}
 	renderCompany := company
 	if opts.Site != "" {
 		renderCompany.Site = opts.Site

@@ -226,7 +226,7 @@ func newBucketProviderFromEnv(ctx context.Context, l *envconfig.Loader, cfg obje
 	case objectstorage.ProviderGarage:
 		garageAdminURLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_URLS"))
 		proxyAccessKeyID := l.RequireCredential("garage-proxy-access-key-id")
-		garageAdminToken := l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_TOKEN")
+		garageAdminToken := l.RequireCredential("garage-admin-token")
 		if err := l.Err(); err != nil {
 			return nil, "", err
 		}
